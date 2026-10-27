@@ -1,112 +1,120 @@
 # C04 package-total promo — production activation package for the owner
 
-Ringkas (ID): paket ini untuk pemegang akses Supabase dan Vercel production. Isinya: cek awal (hanya baca), satu
-file pasang (menulis), cek baca-balik (hanya baca), rencana mundur, lalu cara menyalakan fitur. **Belum ada yang
-dijalankan ke production.** Jalankan hanya pada giliran rilis dari Wowo (jangan bersamaan dengan migrasi A02/R05),
-dengan akses owner yang sudah ada (tidak perlu token/akses baru), dan berhenti di langkah mana pun yang hasilnya
-tidak sesuai.
+Ringkas (ID): paket untuk pemegang akses Supabase dan Vercel production. Isinya cek awal (baca saja), satu file
+pasang, cek baca-balik, rollback, serta penahan darurat setelah fitur dinyalakan (bekukan/cairkan promo paket).
+**Belum ada yang dijalankan ke production.** Jalankan hanya pada slot rilis yang dialokasikan koordinator, dengan
+akses owner yang sudah ada, dan berhenti di langkah mana pun yang hasilnya tidak sesuai.
 
-The app half of C04 is already live (PR #223, merge `e7737406`, Production deployment completed 2026-10-27
-02:45Z; current Production `906bc98c` includes it). Package-total is hidden and refused until the flag below is
-set, so nothing in this package changes day-to-day behaviour until Step 5.
+The app half of C04 is live (PR #223); package-total stays hidden and refused until the flag in Step 5 is set.
+Production identifiers and outputs are kept out of this public repository; the coordinator holds the private record.
 
-Rehearsed end to end on throwaway native PostgreSQL **17.6** (production's version) and 16.15 clusters with every migration on main except C04
-(production-like history table), fictional data only: before-tests → preflight → apply → readback → after-tests →
-second apply refused → rollback refused while a package promo exists → rollback → preflight → after-rollback tests
-→ re-apply → readback → tests. Logs: `rehearsal-pg17.log`, `rehearsal-pg16.log`; both versions generate
-byte-identical SQL files and the same fingerprints. Reproduce:
-`python3 docs/evidence/2026-10-27-c04-package-activation/owner-apply/build-and-verify.py [pg bin dir]`
-(regenerates the four SQL files). The 17.6 server binaries came from npm `@embedded-postgres/linux-x64@17.6.0-beta.15`
-(integrity `sha512-f04/oSB35rc2…YRgMw==`), run with `LD_LIBRARY_PATH` set to its `lib` dir.
+## Gates
 
-**Read-only production check already done** (27 Oct 03:32Z): preflight Query A `0 failed`, Query B without C04,
-backup and flag state — see `production-preflight-2026-10-27.md`. Repeat Query A inside the release slot.
+**Mandatory (policy or hard technical stop):**
+
+| Gate | Source |
+|---|---|
+| Change reaches `main` through a PR whose exact head passes the required `Technical checks` | `main` ruleset "KAMO main PR and technical checks" (id 25854038): `pull_request` with `required_approving_review_count: 0`; `required_status_checks: Technical checks` |
+| PR description carries the release report before merge; one PR comment after merge/deploy (merge SHA, deployment URL, Production, live checks, untested items) | `AGENTS.md`, "Laporan rilis KAMO" 1–2 |
+| PR #249 merged before Step 3 (it changes the migration file) | the migration in `main` must be the one applied |
+| Release slot allocated by the coordinator; no other migration in the same window | coordinator instruction |
+| Step 2 preflight `0 failed` inside the slot; Step 4 readback `0 failed` before Step 5 | the scripts stop otherwise |
+
+Human approval is not required by repository policy (0 required approvals); it is not listed as a gate.
+
+**Precautions (developer recommendation, not policy):**
+
+- Independent security review by a separate agent before apply (done: `../SECURITY-REVIEW.md`).
+- Record the newest **completed** backup time before Step 3. This follows the K02 owner runbook (step 0, item 2:
+  "write down the time of the newest completed backup"). It is not a wait for the next nightly backup: C04 changes
+  no data rows, and its recovery is proven without a restore (`04` rollback, `06`/`07` containment, rehearsed on
+  PostgreSQL 17.6 and 16.15). A full backup restore stays a last-resort incident decision.
+- `lock_timeout 5s` in `02` so the apply gives up rather than queueing checkout reads.
 
 ## Files
 
 | File | Writes? | sha256 |
 |---|---|---|
 | `supabase/migrations/20261026002100_promo_package_total_mode.sql` | yes (the migration) | `5aa9cae66fdc02f79fdac57e067a951b95b0cf0b09cd039edb8810a0ff8f0a7e` |
-| `00-optional-scoped-snapshot-writes.sql` | **yes** — optional, promos/promo_items copy in schema `ops_backup` | `3d929afbffb37f7c84928bcd43557f5a98a15e28c63c2cfc70838ace2d5b3e8f` |
 | `01-preflight-readonly.sql` | no | `252e7416467923821a2650cc13dc9a68bb55c567f5fbaf37dfe7ab7502ee9cbb` |
-| `02-apply-writes.sql` | **yes** — migration + history row, one transaction, `lock_timeout 5s` | `616cf5ed48e09a8d4a1b718fb6ec8ebbf7d81fc110c237ea6ca883ad6201aff7` |
+| `02-apply-writes.sql` | **yes** — migration + history row, one transaction | `616cf5ed48e09a8d4a1b718fb6ec8ebbf7d81fc110c237ea6ca883ad6201aff7` |
 | `03-readback-readonly.sql` | no | `1cc17d0bf07941be2d9fa7ffa011e303699f6d8f28ac0ccf47ac3452bde0df71` |
 | `04-rollback-only-if-decided.sql` | **yes** — only on a rollback decision | `19b1c711212eec038b30b24124dfba348dad536b61792b857a800ac32f27b9a0` |
-| `05-restore-from-snapshot-only-if-decided.sql` | **yes** — only on a decision, only if `00` was run | `fc271b9e570421d330dd12abe0032cf6b96156edd49e819053f18800879664bf` |
+| `06-contain-package-promos-writes.sql` | **yes** — incident only: freeze active package promos | `f499b252bf496f88a1d50d2ccd8bbacff33dade90a42544cbc4180be249cb406` |
+| `07-thaw-unchanged-package-promos-writes.sql` | **yes** — incident only: re-activate unchanged frozen promos | `da6db97bad6ea0ac362a58ae510129f15c010a4535a1fb939dc0c48748141150` |
 
-The migration hash above is the version on this package's branch (it closes a NULL gap found in security review,
-see `SECURITY-REVIEW.md`). Use these files only after that branch is merged to main.
+All are generated by `build-and-verify.py`, which also rehearses them on a throwaway cluster with every migration on
+`main` except C04 (production-like history), fictional data only. The two server versions produce byte-identical
+files. Logs: `rehearsal-pg17.log` (17.6), `rehearsal-pg16.log` (16.15). Reproduce:
+`python3 docs/evidence/2026-10-27-c04-package-activation/owner-apply/build-and-verify.py [pg bin dir]`.
+Package pricing against the live cashier FIFO floor and containment/thaw are covered by
+`scripts/test-promo-package-fifo-floor-postgres.py` (both versions).
 
-## Step 0 — target, slot and backup (dashboard, no SQL)
+## Step 0 — target and backup (dashboard, no SQL)
 
-1. Supabase project `koaglxcyjqfmgfzxszkj` (verified 27 Oct: only project, PostgreSQL 17.6; the live app's
-   `/booking` query appears in its edge log — `../BACKUP-OPTIONS.md`). Do not use any other project.
-2. Backup gate: a daily backup newer than 2026-10-26T15:20:57Z must show `COMPLETED` (Dashboard → Database →
-   Backups, or `GET /database/backups`). PITR is off; on-demand backup is not offered on this plan; the run time
-   cannot be read with current access. Paths, costs and the optional scoped snapshot: `../BACKUP-OPTIONS.md`.
-   If the coordinator wants the snapshot as well, run `00-optional-scoped-snapshot-writes.sql` right before Step 3.
-3. Release slot from Wowo; no other migration (A02, R05) in the same window. Quiet time: the migration briefly
-   locks `promos`/`promo_items` (constraint + triggers); with `lock_timeout 5s` it gives up instead of queueing
-   checkout reads.
+1. Supabase project serving Vercel Production (identity verified read-only on 27 Oct; recorded privately).
+2. Write down the newest **completed** backup time (Database → Backups) in the private release record. No waiting
+   for a later nightly backup (see Gates).
+3. Slot from the coordinator; quiet time. The migration briefly locks `promos`/`promo_items`.
 
 ## Step 1 — the exact file
 
-`shasum -a 256` of the five files must match the table. Anything else: stop.
+`shasum -a 256` of the files must match the table. Anything else: stop.
 
 ## Step 2 — preflight (read-only): `01-preflight-readonly.sql`
 
 SQL Editor, each query separately.
 
-- **Query A**: every row with an expected value shows `ok = true`; `SUMMARY` = `0 failed`. Confirms C04 is not
-  applied, `edit_promo` is byte-identical to the repository (`fingerprint f4a53d51…`), keeps SECURITY DEFINER,
-  empty search_path and its grants (authenticated only), the editor and both tables are owned by `postgres` (the
-  SQL Editor role that applies), all four
-  anchors the migration replaces occur exactly once, and no promo already stores `discount_mode`.
-- **Query B**: no row `20261026002100`. Several newer versions are expected (e.g. `20261026100000`); C04 is
-  applied out of order on purpose. Note whether `20261027090000` is present (R05) — informational only.
-- **Query C**: export as CSV and keep with the backup note (pre-C04 editor body; fallback rollback only).
-
-Stop and send the output to the developer if any `ok = false`, the fingerprint differs, Query B already has
-`20261026002100`, or the history table does not exist.
+- **Query A**: every row with an expected value shows `ok = true`; `SUMMARY` = `0 failed`. Confirms:
+  - C04 is not applied;
+  - `edit_promo` is byte-identical to the repository (`f4a53d51…`), with SECURITY DEFINER, empty search_path and
+    grants for authenticated only;
+  - the editor and both tables are owned by `postgres`;
+  - all four anchors occur exactly once;
+  - no promo stores `discount_mode`.
+- **Query B**: no row `20261026002100`. Newer versions are expected; C04 is applied out of order on purpose.
+- **Query C**: export as CSV and keep it privately with the backup note (pre-C04 editor body; fallback rollback only).
 
 ## Step 3 — apply (writes): `02-apply-writes.sql`
 
-Paste the whole file into a new SQL Editor query and run once. Success = no error. On any error (for example
-`C04_PROMO_EDITOR_GUARD_DRIFT`, `C04_PROMO_EDITOR_VALIDATION_DRIFT`, or a lock timeout) the transaction is rolled
-back and **nothing changed**; do not retry blindly, send the message to the developer (a lock timeout may simply
-be retried later in a quieter moment). Do not use `supabase db push`: the version is older than applied ones.
+Paste the whole file, run once. On any error the transaction rolls back and nothing changes. Errors include
+`C04_PROMO_EDITOR_GUARD_DRIFT`, `C04_PROMO_EDITOR_VALIDATION_DRIFT` and lock timeout. Send the message to the developer.
+Do not use `supabase db push` (version older than applied ones).
 
 ## Step 4 — readback (read-only): `03-readback-readonly.sql`
 
-- **Query A**: `SUMMARY` = `0 failed`; `data: package promos` = 0. Confirms constraint (not validated), guard
-  function (SECURITY DEFINER, empty search_path, no EXECUTE for anon/authenticated/service_role), both triggers
-  enabled + deferrable + initially deferred, `edit_promo` fingerprint `bb4be6aa…` with unchanged grants, all four
-  patches present once.
-- **Query B**: exactly one row `20261026002100 promo_package_total_mode`.
+- **Query A**: `SUMMARY` = `0 failed`.
+- **Query B**: one row `20261026002100 promo_package_total_mode`.
 
 ## Step 5 — turn the feature on (Vercel, owner)
 
-Only after Step 4 passes: Vercel → `kamo-vet-os` → Settings → Environment Variables → Production:
-`PROMO_PACKAGE_TOTAL_ENABLED` = `1`, then redeploy the current Production deployment (env changes need a new
-deployment). Check: `/crm/promo` shows **Cara hitung diskon nominal**. **Never set the flag before Step 4**: the
-database guard is what keeps an active package promo from running without its one target.
+Only after Step 4: Production env `PROMO_PACKAGE_TOTAL_ENABLED` = `1`, redeploy. `/crm/promo` shows **Cara hitung
+diskon nominal**. Never before Step 4. Field UAT follows.
 
-Optional smoke test (writes one promo row — owner's call): create a package promo for one SKU with *Berlaku dari*
-far in the future (not applied at checkout), confirm the list shows `Rp…/paket min N`, then deactivate and delete it.
-Field UAT with a real campaign remains a separate step.
+Package-total discounts still go through the existing cashier FIFO floor (`20261025060000`): a sale whose net
+price for a stock line falls below FIFO cost, or to zero, is rejected and nothing is issued. No exemption is added.
 
-## Rollback plan
+## Containment and recovery (only on an incident decision)
 
-- **Turn off only**: unset the flag and redeploy. This hides the option for new promos; **package promos that
-  already exist keep being priced at checkout** until they are deactivated. Deactivate them in `/crm/promo` if the
-  goal is to stop package pricing.
-- **Database rollback, before any package promo exists** (Query A `data: package promos` = 0 and no promo stores
-  `discount_mode`): flag off + redeploy first, then run `04-rollback-only-if-decided.sql` once. One transaction: it
-  refuses while any promo stores `discount_mode`, drops the two triggers, the guard function and the constraint,
-  reverses the four editor patches, verifies the editor is back to `f4a53d51…`, removes the history row. Then
-  preflight Query A must show `0 failed` again. Rehearsed, including the refusal case.
-- **If the rollback refuses on a patch** (editor changed after apply): nothing changed. The developer restores the
-  editor from the Query C export and drops the C04 objects by hand.
-- **After package promos were used**: no database rollback; sales already carry their saved line discount (history
-  is never recalculated). Deactivate the promos and fix forward. Restoring the backup is a last resort that discards
-  every transaction since the backup; owner's call only.
+1. **Stop new package promos:** unset `PROMO_PACKAGE_TOTAL_ENABLED`, redeploy.
+2. **Freeze existing ones:** run `06` once (safe to re-run).
+   - It first checks that the installed C04 objects match the tested build; on any difference it raises
+     `C04_INSTALL_DRIFT` and changes nothing.
+   - It sets `is_active = false` only on *active* package-total promos and records each one's fingerprint in
+     the private table `ops_c04.frozen_package_promos` (no API grants).
+   - It never touches sales, receipts, stock, journals, legacy promos or any other promo field, and restores no
+     old values.
+3. **Forward repair (business decision, normal UI):** a manager edits a frozen promo (e.g. converts it to per
+   unit with chosen values), or leaves it frozen. Edits made at any time are kept.
+4. **Thaw:** after the cause is fixed and the flag decision is made, run `07`.
+   - It re-activates only frozen promos whose row and targets are unchanged since `06`.
+   - If any frozen promo was edited, retargeted, deleted or re-activated, nothing is re-activated, and
+     `C04_THAW_DRIFT` lists it. Record a decision per listed promo:
+     `update ops_c04.frozen_package_promos set thawed_at = now(), resolution = '<decision>' where promo_id = '<id>';`
+     Then re-run `07`.
+   - Re-activation still passes the C04 target guard and the FIFO floor.
+5. **Remove C04 from the database (rarely needed):** first get every package promo converted or deleted, then
+   run `04`. It refuses while any promo stores `discount_mode`. It restores the exact pre-C04 editor (`f4a53d51…`)
+   and removes the C04 objects and the history row.
+
+Posted sales keep their saved line discount in every path. History is never recalculated.
