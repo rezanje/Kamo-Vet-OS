@@ -314,7 +314,9 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
     }
   }
 
-  return { baris, omzetTanpaPenjual };
+  // H05: every reader (komisi, target, laporan penjual, payroll) sees a package as the
+  // package — its component lines never reach anyone as normal SKU sales.
+  return { baris: ringkasPaket(baris), omzetTanpaPenjual };
 }
 
 /**
@@ -465,9 +467,8 @@ export async function komisiPeriode(
     muatVisitRanap(supabase, periode),
     muatKelompokKomisi(supabase),
   ]);
-  // H05 folds package components before anything else sees them; H06 visits are
-  // separate source rows that only visit rules can pay.
-  const baris = [...ringkasPaket(barisJual), ...visit.baris];
+  // H06 visits are separate source rows that only visit rules can pay.
+  const baris = [...barisJual, ...visit.baris];
   const prepared = prepareServiceCommission(baris, aturan, policies, groups);
   const {data: allocations} = await completeReportQuery(supabase.from("clinic_demo_incentive_allocations")
     .select("id,invoice_id,employee_id,amount,clinic_demo_invoice_snapshots!inner(service_basis),invoices!inner(paid_at,paid_status,voided_at)", {count:"exact"})

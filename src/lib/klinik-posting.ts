@@ -27,6 +27,8 @@ export type ClinicInvoiceLineInput = {
   discount_percent: number;
   service_performers?: ServicePerformersInput | null;
   salesperson_id?: string;
+  package_item_id?: string;
+  package_qty?: number;
 };
 
 export type ClinicInvoiceInput = {

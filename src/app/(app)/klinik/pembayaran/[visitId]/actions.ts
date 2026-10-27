@@ -31,6 +31,9 @@ type Line = {
   source_invoice_item_id?: string | null;
   service_performers?: ServicePerformersInput | null;
   salesperson_id?: string | null;
+  /** H05: package origin of a component line (new invoices only; corrections inherit it). */
+  package_item_id?: string | null;
+  package_qty?: number | null;
 };
 
 const uncertainPayment = "Hasil pembayaran belum dapat dipastikan. Periksa invoice yang sudah tersimpan sebelum mencoba lagi dengan permintaan yang sama; jangan menerima pembayaran ulang.";
@@ -50,6 +53,7 @@ function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceL
     discount_percent: row.diskon_persen ?? 0,
     ...(row.service_performers != null ? {service_performers:row.service_performers} : {}),
     ...(row.salesperson_id ? {salesperson_id:row.salesperson_id} : {}),
+    ...(!inheritInvoice && row.package_item_id && Number(row.package_qty) > 0 ? {package_item_id:row.package_item_id,package_qty:Number(row.package_qty)} : {}),
   }));
 }
 
@@ -154,6 +158,9 @@ export async function bayarVisit(formData: FormData) {
       ...(existing && l.source_invoice_item_id ? {source_invoice_item_id:l.source_invoice_item_id} : {}),
       recipe_id: l.recipe_id ?? null,
       ...(typeof l.salesperson_id === "string" && l.salesperson_id.trim() ? {salesperson_id:l.salesperson_id.trim()} : {}),
+      // H05: the database verifies the package really contains this SKU.
+      ...(!existing && typeof l.package_item_id === "string" && l.item_id && Number(l.package_qty) > 0
+        ? {package_item_id:l.package_item_id,package_qty:Number(l.package_qty)} : {}),
       ...(l.jenis === "jasa" && l.service_performers != null ? {service_performers:clinicServicePerformerInput(l.jenis, l.service_performers)} : {}),
     }));
 

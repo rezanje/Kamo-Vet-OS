@@ -43,7 +43,12 @@ type Line = {
    * Koreksi harganya lewat kolom diskon, yang tetap terbuka.
    */
   terkunci?: boolean;
+  /** H05: package (Grup) this component line was sold in, and how many packages. */
+  package_item_id?: string | null;
+  package_qty?: number | null;
 };
+export type PackageOption = { id: string; name: string; componentIds: string[] };
+const NO_PACKAGES: PackageOption[] = [];
 export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number; units?: ItemUnit[]; tindakan_kategori?: string | null };
 type Patient = {
   photo: string | null; name: string; species: string; owner: string; phone: string; address: string;
@@ -61,13 +66,15 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, sealedSalespeople = false, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, sealedSalespeople = false, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; sealedSalespeople?: boolean; groomingDoctorRequired?: boolean;
   groomingApplies?: boolean;
   /** S01: source rows saved with an explicit empty performer snapshot stay assignable by the cashier. */
   openSourceIds?: ReadonlySet<string>;
+  /** H05: packages offered for tagging a component line (new invoices only). */
+  packages?: PackageOption[];
 }) {
   const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id));
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -87,13 +94,13 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
     if(item){
       const changed=rows[i]?.item_id!==item.id || !!rows[i]?.recipe_id;
       set(i,{deskripsi:item.name,item_id:item.id,harga:item.harga,satuan:item.unit,kategori:item.tindakan_kategori,
-        ...(changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null} : {})});
+        ...(changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null,package_item_id:null,package_qty:null} : {})});
     }
   };
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v) ?? byName.get(v.trim().toLowerCase());
     const changed=it ? rows[i]?.item_id!==it.id || !!rows[i]?.recipe_id : v!==rows[i]?.deskripsi;
-    const clearSource=changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null} : {};
+    const clearSource=changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null,package_item_id:null,package_qty:null} : {};
     set(i, it
       ? { deskripsi: it.name, item_id: it.id, harga: it.harga, satuan: it.unit, kategori:it.tindakan_kategori, ...clearSource }
       : {
@@ -139,6 +146,21 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                       {serviceStaff.map(person => <option key={person.id} value={person.id}>{person.nama}</option>)}
                     </select>
                   </label>}
+                {(() => {
+                  const choices = r.item_id && !r.recipe_id && !r.terkunci ? packages.filter(option => option.componentIds.includes(r.item_id!)) : [];
+                  if (choices.length === 0) return null;
+                  return <div style={{display:'flex',gap:4,alignItems:'flex-end',marginTop:4}}>
+                    <label style={{display:'block',fontSize:10,flex:1}}>Asal paket
+                      <select className="fi" aria-label={`Asal paket ${r.deskripsi}`} value={r.package_item_id ?? ''}
+                        onChange={event => set(i,{package_item_id:event.target.value || null,package_qty:event.target.value ? (r.package_qty ?? 1) : null})} style={{height:25,fontSize:10}}>
+                        <option value="">Bukan paket (penjualan biasa)</option>
+                        {choices.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+                      </select></label>
+                    {r.package_item_id && <label style={{display:'block',fontSize:10,width:70}}>Jml paket
+                      <NumberInput className="fi" type="number" min={1} step="1" aria-label={`Jumlah paket ${r.deskripsi}`} value={r.package_qty ?? 1}
+                        onChange={event => set(i,{package_qty:Math.max(1,Number(event.target.value) || 1)})} style={{height:25,fontSize:10}} /></label>}
+                  </div>;
+                })()}
               </td>
               <td>
                 <NumberInput className="fi" type="number" min={1} value={r.qty}
@@ -208,10 +230,11 @@ function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:
   </div>;
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new` }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   draftUserId?: string; draftScope?: string; sourceVersion?: string;
+  packages?: PackageOption[];
   demoPolicy?: DemoFinancialPolicy | null; demoStaff?: PilihanPenjual[];
   manualUnitsEnabled?: boolean;
   serviceStaff?: ServiceStaff[]; cashierName?: string;
@@ -425,8 +448,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           </div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".03em", marginBottom: 10 }}>RINCIAN LAYANAN DAN OBAT</div>
 
-          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedSalespeople={editMode} />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} sealedSalespeople={editMode} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} />
+          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedSalespeople={editMode} packages={editMode ? NO_PACKAGES : packages} />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} sealedSalespeople={editMode} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} packages={editMode ? NO_PACKAGES : packages} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 12 }}>
