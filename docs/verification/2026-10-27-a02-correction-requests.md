@@ -1,11 +1,11 @@
 # A02 — permintaan koreksi pembelian tersimpan + antrean/notifikasi
 
-Stack: PR221 (approval read fail-closed) → PR233 (dashboard pending work) → PR ini.
-Base kode: head PR233 `69f193984807baa9fa2483df8ea5aa494b505064`. Main saat diperiksa:
-`0aea0979db5f969542ab723c505c319b252ead57`; gabungan head PR ini dengan main bersih (tanpa konflik)
-dan migration baru berurutan setelah migration terakhir main (`20261026100000_k02_procedure_bmhp.sql`).
+Stack: PR221 (approval read fail-closed) → PR233 (dashboard pending work) → PR248 (request koreksi tersimpan).
+Base kode PR248: head PR233 `69f193984807baa9fa2483df8ea5aa494b505064`. Main terakhir diperiksa:
+`906bc98c82c2cc42388e8821a5066f2a9b64598b` (sudah berisi C04 #223 app-first dan R05 #246 parsial).
+Gabungan ketiga PR dengan main bersih (tanpa konflik teks).
 
-Tidak ada deploy preview, penulisan production, atau perubahan Sheet. Sheet checklist hanya dibaca.
+Tidak ada merge, deploy, migrasi production, atau perubahan Sheet. Sheet checklist hanya dibaca.
 
 ## Aturan yang dipakai (sudah ada, tidak dikarang)
 
@@ -19,7 +19,7 @@ Tidak ada deploy preview, penulisan production, atau perubahan Sheet. Sheet chec
 
 ## Yang dibangun
 
-- Tabel `purchase_correction_requests` (migration `20261027090000_purchase_correction_requests.sql`):
+- Tabel `purchase_correction_requests` (migration `20261027153000_purchase_correction_requests.sql`):
   terikat tepat satu dokumen asal (`po_id` **atau** `invoice_id`, FK + check), snapshot nomor dokumen,
   cabang dokumen, pemohon, rincian, status, pemroses, waktu, tindak lanjut.
 - Siklus: `pending` → `selesai` (label UI "Sudah diproses"). Tidak ada transisi lain.
@@ -60,35 +60,66 @@ Tidak ada deploy preview, penulisan production, atau perubahan Sheet. Sheet chec
 | Kanal notifikasi di luar aplikasi (WhatsApp) | **Belum** — keputusan belum ada | — |
 | UAT/simulasi pengguna | **Ditunda** sesuai arahan | — |
 
-## Keputusan yang masih diperlukan (tidak dikarang)
+## Keputusan minimal untuk Reza (belum diterapkan; perilaku sekarang = opsi pertama)
 
-1. Apakah ADMIN/FINANCE perlu **melihat** (tanpa memproses) antrean koreksi pembelian milik orang lain? Saat ini tidak.
-2. Apakah perlu status **ditolak** terpisah, atau cukup "Sudah diproses" + catatan alasan (saat ini)?
-3. Apakah pemohon boleh **membatalkan** request yang masih menunggu? Saat ini tidak ada pembatalan.
-4. Pemetaan "manajer/super admin" (P01): bila manajer selain OWNER boleh memproses, itu perubahan role yang harus diputuskan dulu.
-5. Kanal notifikasi luar aplikasi (WhatsApp, dll.).
+| # | Keputusan | Sekarang | Dampak bila diubah |
+|---|---|---|---|
+| 1 | Admin/Finance **melihat** antrean koreksi orang lain (tanpa memproses)? | Tidak; hanya Super Admin + pemohon sendiri | Perlu ubah aturan baca + dashboard Admin/Finance; tidak menambah hak ubah transaksi. Finance bawaan tetap tanpa modul Pembelian kecuali Akses Grup diubah. |
+| 2 | Status **Ditolak** terpisah? | Tidak; "Sudah diproses" + catatan alasan | Perlu migrasi kecil (status baru) + tampilan; laporan bisa membedakan dikoreksi vs ditolak. |
+| 3 | Pemohon boleh **membatalkan** request yang menunggu? | Tidak | Perlu status/aksi baru + migrasi; mengurangi antrean salah kirim. |
+| 4 | Notifikasi **WhatsApp** / kanal luar aplikasi? | Tidak; hanya dashboard + antrean dalam aplikasi | Butuh penyedia, nomor, template, persetujuan kirim pesan; tidak ada kredensial sekarang. |
+| 5 | Pemroses selain Super Admin ("manajer", P01)? | Tidak | Perubahan matriks role; di luar A02, ikut keputusan P01. |
 
-## Migration & rollback
+## Migrasi persis, urutan rilis, backup & rollback
 
-- Satu migration baru, **belum diterapkan** ke database mana pun selain database uji sementara. Terapkan sebelum/bersama
-  rilis aplikasi ini; tanpa migration, halaman detail menampilkan "status belum dapat dimuat" dan form disembunyikan,
-  antrean menampilkan error, dashboard OWNER menampilkan "status belum dapat dimuat" — tidak ada angka palsu.
-- Rollback: sembunyikan UI (revert aplikasi). Jangan menghapus tabel berisi request nyata tanpa ekspor; bila belum ada data,
-  `drop function` dua RPC + dua helper, hapus baris `activity_log_sources`, `drop table`.
+- Satu migrasi: `supabase/migrations/20261027153000_purchase_correction_requests.sql` (aditif: 1 tabel baru, 4 fungsi baru,
+  1 policy, 1 baris `activity_log_sources`, 2 trigger pada tabel baru). Tidak mengubah tabel/fungsi lama, tidak ada grant global,
+  tidak ada backfill. PR221 dan PR233 tidak punya migrasi.
+- Nomor versi semula `20261027090000` bentrok dengan `20261027090000_private_report_promo_history_presets.sql` di main;
+  sudah dipindah ke `20261027153000` dan dijaga tes (gagal pada kode lama + main, lulus sekarang).
+- Urutan rilis yang disarankan (setelah giliran dari Wowo, tidak bersamaan dengan C04):
+  1. Pastikan PR221 & PR233 di-update dengan main terbaru dan `Technical checks` hijau di GitHub (keduanya belum pernah
+     menjalankan workflow karena dibuat sebelum workflow ada). Merge PR221 → PR233, lalu arahkan PR248 ke `main`, tunggu
+     `Technical checks` hijau di head final.
+  2. Catat titik backup/PITR database production sebelum migrasi.
+  3. Terapkan **hanya** file migrasi A02 di atas (jangan `db push` massal bila migrasi C04 `20261026002100_promo_package_total_mode.sql`
+     masih tertunda — itu akan ikut terpasang). Verifikasi: riwayat migrasi berisi `20261027153000` sekali; tabel RLS aktif;
+     `anon` tanpa EXECUTE; `authenticated` hanya SELECT tabel + EXECUTE 4 fungsi; 2 trigger aktif.
+  4. Merge PR248 (deploy aplikasi). Migrasi duluan aman untuk aplikasi lama (aditif). Bila aplikasi terlanjur jalan tanpa migrasi,
+     layar gagal tertutup: "status belum dapat dimuat", form disembunyikan, tidak ada angka palsu.
+  5. Komentar pasca-deploy di PR248 sesuai AGENTS.md.
+- Rollback: `docs/rollback/2026-10-27-a02-purchase-correction-requests.sql` (belum dijalankan di target). Langkah 1 membekukan
+  pembuatan/pemrosesan dan menyimpan semua request + log; diuji di database sementara. Langkah 2 (hapus total) dikomentari dan
+  menolak jalan bila ada request nyata.
 - Catatan: fungsi lama `reset_simulasi_barang_dan_stok` tidak diperluas untuk tabel ini (sama seperti tabel request lain
   yang ditambahkan setelahnya); FK default akan menahan reset bila ada request.
 
-## Verifikasi
+## Verifikasi (main terakhir `906bc98`, data uji fiktif saja)
 
-- SQL: `python3 docs/evidence/2026-10-27-a02-correction-requests/run-native-pg.py scripts/test-purchase-correction-requests-postgres.py`
-  → PostgreSQL 16.15 sementara (socket lokal, dihapus setelahnya), seluruh migration repo + main, suite lulus, 0 baris tersisa.
-  Runner Docker yang sama: `python3 scripts/test-purchase-correction-requests-postgres.py`.
-- Regresi SQL terkait dengan runner yang ada (`test-activity-audit-postgres.py`, plus `purchase_invoice_lifecycle`,
-  `purchase_order_lifecycle`, `purchase_payment_corrections`, `activity_audit_framework/financial` lewat runner umum) dijalankan
-  pada main murni dan pada gabungan main + PR ini: hasil **identik** (13 PASS; kegagalan lama yang sama di kedua sisi, mis.
-  batas "179 sumber" dari sebelum refund A01 dan prasyarat fixture lama). Tidak ada kegagalan baru.
-- Head branch: `npm test` 499 berkas / 3.624 tes lulus; `tsc --noEmit` lulus; `npm run lint` 0 error (12 warning lama);
-  `npm run build` lulus.
-- Technical checks (urutan workflow `technical.yml`: npm ci → lint → test → tsc → build) pada gabungan main + PR ini:
-  lint 0 error, 507 berkas / 3.690 tes lulus (1 di-skip, bawaan main), tsc lulus, build lulus dengan rute `/pembelian/koreksi`.
-  Workflow GitHub hanya berjalan untuk PR ke `main`, jadi akan jalan otomatis setelah PR221/PR233 masuk dan PR ini diarahkan ke main.
+### Lulus
+- SQL A02 (PostgreSQL 16.15 sementara, socket lokal, dihapus setelahnya; seluruh migrasi repo + main):
+  `purchase_correction_requests.sql` lulus (lifecycle pending→selesai, idempotensi, tautan asal, pemroses/catatan,
+  pelacakan pemohon, isolasi STAFF/ADMIN/FINANCE/cabang lain/OWNER nonaktif, tulis langsung ditolak,
+  PO/faktur/jurnal/pembayaran tidak berubah, log A01 tanpa teks bebas); 0 baris tersisa; rollback langkah 1 diuji.
+  Perintah: `python3 docs/evidence/2026-10-27-a02-correction-requests/run-native-pg.py scripts/test-purchase-correction-requests-postgres.py`
+  (Docker: `python3 scripts/test-purchase-correction-requests-postgres.py`).
+- Regresi SQL terkait lulus dan identik main vs main+A02: `purchase_invoice_lifecycle`, `purchase_short_close`,
+  13 suite PASS di `test-activity-audit-postgres.py`.
+- Gabungan main `906bc98` + PR221/233/248: `npm run lint` 0 error (12 warning lama), `npm test` 508 berkas / 3.717 tes lulus
+  (1 skip bawaan main), `tsc --noEmit` lulus.
+- Tes pengaman versi migrasi: gagal pada kode A02 lama + main (bentrok `20261027090000` terdeteksi), lulus setelah dipindah.
+- Bukti build main murni di GitHub: Technical checks run 40440914658 pada `906bc98` sukses.
+
+### Kegagalan baseline (sama persis di main murni; bukan dari A02)
+- `test-activity-audit-postgres.py`: 6 suite gagal identik di main murni dan main+A02 (`activity_audit_framework` batas
+  "179 sumber" yang belum mengikuti sumber refund, `activity_audit_financial/inventory/remaining_modules`,
+  `posted_sale_cancellations`, `purchase_payment_corrections`).
+- Lewat runner umum (tanpa prasyarat runner khususnya): `po_price_after_advance`, `promo_package_total` gagal identik di main.
+- `npm run build` lokal kehabisan memori (heap Node) di sandbox ini, **juga pada main murni** `906bc98`; tidak diulang dan
+  tidak diakali (tidak menaikkan batas/menambah resource).
+
+### Masih ditunggu
+- Technical checks GitHub pada **head final PR248** (termasuk build): workflow hanya berjalan untuk PR ke `main`; PR248
+  berbasis cabang PR233 sehingga belum ada run. Akan tersedia setelah PR221 → PR233 masuk dan PR248 diarahkan ke `main`.
+- PR221 dan PR233 belum pernah punya run Technical checks (dibuat sebelum workflow ada); perlu update dengan main agar jalan.
+- UAT pengguna: ditunda sesuai arahan.
