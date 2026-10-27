@@ -415,7 +415,10 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                 </>
               )}
               {(tab === "Jasa" || tab === "Tindakan") && (
-                <ClinicServicePicker key={tab} kind={tab} items={tab === "Jasa" ? jasaItems : tindakanItems} onAdd={addObat} />
+                <>
+                  {tab === "Tindakan" && <div className="p2ban" role="note" style={{ fontSize: 11, marginBottom: 8 }}>Tekan + pada tindakan, lalu isi BMHP pada baris tindakan di Keranjang.</div>}
+                  <ClinicServicePicker key={tab} kind={tab} items={tab === "Jasa" ? jasaItems : tindakanItems} onAdd={addObat} />
+                </>
               )}
               {tab === "Racikan" && (
                 <CompoundEditor items={racikanItems} materials={bahanItems} catalog={katalogRacikan} allowCustom={bolehManual}

@@ -331,7 +331,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 </>
               )}
               {(tab === "Jasa" || tab === "Tindakan") && (
-                <ClinicServicePicker key={tab} kind={tab} items={tab === "Jasa" ? jasaItems : tindakanItems} onAdd={addObat} />
+                <>
+                  {tab === "Tindakan" && <div className="p2ban" role="note" style={{ fontSize: 11, marginBottom: 8 }}>Tekan + pada tindakan, lalu isi BMHP pada baris tindakan di Keranjang.</div>}
+                  <ClinicServicePicker key={tab} kind={tab} items={tab === "Jasa" ? jasaItems : tindakanItems} onAdd={addObat} />
+                </>
               )}
               {tab === "Racikan" && (
                 // K03: racikan rawat jalan harus lewat komposisi; jangan tampilkan jalan pintas stok obat jadi.
