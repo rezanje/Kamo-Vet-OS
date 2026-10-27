@@ -3,6 +3,7 @@ import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
 import { ambilPenjualanBarang, waktuWIB } from "./data";
 import { normalizeReportColumns } from "@/lib/report-columns";
+import { jenisLaporan, SEMUA_JENIS_KLINIK } from "@/lib/laporan-penjualan-barang";
 
 const rupiah = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 const UKURAN_HALAMAN_TAMPILAN = 100;
@@ -15,7 +16,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const dari = sp.dari || `${hariIni.slice(0, 8)}01`;
   const sampai = sp.sampai || hariIni;
   const kanal = ["POS", "Online", "Klinik"].includes(sp.kanal ?? "") ? sp.kanal! : "Klinik";
-  const jenis = kanal === "Klinik" && ["Obat", "Jasa", "Racikan", "Biaya Admin"].includes(sp.jenis ?? "") ? sp.jenis! : kanal === "Klinik" ? "Racikan" : "Barang";
+  const jenis = jenisLaporan(kanal, sp.jenis);
   const q = (sp.q ?? "").trim().slice(0, 120);
   const cabangId = (sp.cabang_id ?? "").slice(0, 80);
   const pelaksanaId = (sp.pelaksana_id ?? "").slice(0, 80);
@@ -56,6 +57,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
         <div><label className="flab">Jenis</label><select className="fi" name="jenis" defaultValue={jenis}>
           {kanal === "Klinik" ? <>
             <option value="Racikan">Racikan</option><option value="Obat">Obat lain</option>
+            <option value={SEMUA_JENIS_KLINIK}>Semua baris invoice klinik</option>
             <option value="Jasa">Jasa/tindakan</option><option value="Biaya Admin">Biaya admin DEMO</option>
           </> : <option value="Barang">Barang kasir/online</option>}
         </select></div>
