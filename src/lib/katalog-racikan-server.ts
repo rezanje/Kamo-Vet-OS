@@ -36,6 +36,10 @@ export async function bolehRacikKhusus(): Promise<boolean> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return false;
-  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  return data?.role === "OWNER" || data?.role === "ADMIN";
+  const { data } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
+  if (data?.is_active !== true) return false;
+  if (data.role === "OWNER" || data.role === "ADMIN") return true;
+  if (data.role !== "DOCTOR") return false;
+  const { data: ready, error } = await supabase.rpc("clinic_doctor_custom_compound_supported");
+  return !error && ready === true;
 }
