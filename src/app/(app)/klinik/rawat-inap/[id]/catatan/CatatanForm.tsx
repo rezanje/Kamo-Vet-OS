@@ -22,7 +22,7 @@ import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound
 import { InpatientStaffFields } from '@/components/InpatientStaffFields';
 import type { ClinicalStaff, InpatientStaff } from '@/lib/clinical-staff';
 
-export type ItemLite = { id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number; item_type?: string; tindakan_kategori?: string | null; units?: ItemUnit[] };
+export type ItemLite = { id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number; item_type?: string; tindakan_kategori?: string | null; units?: ItemUnit[] };
 type CartRow = {
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
   faktor: number;
@@ -133,7 +133,10 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
     },
   });
 
-  const obatMatches = useMemo(() => items.filter((it) => it.name.toLowerCase().includes(search.toLowerCase())), [items, search]);
+  const obatMatches = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return items.filter(it => [it.name, it.code, it.upc].some(value => value?.toLowerCase().includes(term)));
+  }, [items, search]);
   const obatPages = Math.max(1, Math.ceil(obatMatches.length / 40));
   const currentObatPage = Math.min(obatPage, obatPages);
   const filtered = obatMatches.slice((currentObatPage - 1) * 40, currentObatPage * 40);

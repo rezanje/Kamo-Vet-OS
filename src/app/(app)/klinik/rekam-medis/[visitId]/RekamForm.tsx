@@ -26,7 +26,7 @@ import { staffForService } from "@/lib/clinical-staff";
 import { isMedicalService } from "@/lib/clinic-required-fields";
 
 export type ItemLite = {
-  id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number;
+  id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number;
   tindakan_kategori?: string | null; item_type?: string;
   units?: ItemUnit[];   // satuan berjenjang (pcs/box, ml/btl) — kosong = hanya satuan dasar
 };
@@ -135,7 +135,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     setSaleItemId(""); setOfficialVersionId(""); setRacikNama(""); setRacikAturan(""); setRacikBahan([]);
   };
 
-  const obatMatches = useMemo(() => items.filter((it) => it.name.toLowerCase().includes(search.toLowerCase())), [items, search]);
+  const obatMatches = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return items.filter(it => [it.name, it.code, it.upc].some(value => value?.toLowerCase().includes(term)));
+  }, [items, search]);
   const obatPages = Math.max(1, Math.ceil(obatMatches.length / 40));
   const currentObatPage = Math.min(obatPage, obatPages);
   const filtered = obatMatches.slice((currentObatPage - 1) * 40, currentObatPage * 40);
