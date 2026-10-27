@@ -3,13 +3,40 @@ import type { createClient } from './supabase/server';
 import { readCompleteList } from './checked-list';
 type Db=Awaited<ReturnType<typeof createClient>>;
 export type HandoffRecord={id:string;visit_id:string;created_at:string;anamnesis:string|null;diagnosis:string|null;catatan_resep:string|null};
-export type HandoffPrescription={service_performers?:ServicePerformersSnapshot|null;id:string;medical_record_id:string;nama_obat:string;qty:number;satuan:string|null;jenis:string;aturan_pakai:string|null;compound_recipe_id:string|null;created_at:string};
+export type HandoffPrescription={service_performers?:ServicePerformersSnapshot|null;id:string;medical_record_id:string;kategori?:string|null;nama_obat:string;qty:number;satuan:string|null;jenis:string;aturan_pakai:string|null;compound_recipe_id:string|null;created_at:string};
 export type HandoffRecipe={id:string;medical_record_id:string;recipe_name:string;total_volume:string;dosage_form:string;dosage_instruction:string;status:string;created_at:string};
 export type HandoffInvoice={id:string;invoice_no:string|null;paid_status:string;voided_at:string|null;created_at:string};
 export type HandoffInvoiceLine={id:string;invoice_id:string;prescription_item_id:string|null;compound_recipe_id:string|null;qty:number};
 export type HandoffEvidence={id:string;prescription_item_id:string;kind:'handover'|'administration';qty:number|string;unit:string|null;occurred_at:string;recorded_by_name:string|null;note:string|null;voided_at:string|null;voided_by_name:string|null;void_reason:string|null};
 /** evidence: [] = none recorded, null = could not be read completely (never shown as "none"). */
-export type InpatientHandoff={doctor:string|null;complaint:string|null;records:HandoffRecord[];prescriptions:HandoffPrescription[];recipes:HandoffRecipe[];invoices:HandoffInvoice[];invoiceLines:HandoffInvoiceLine[];evidence:HandoffEvidence[]|null};
+export type InpatientHandoff={doctor:string|null;complaint:string|null;records:HandoffRecord[];prescriptions:HandoffPrescription[];recipes:HandoffRecipe[];invoices:HandoffInvoice[];invoiceLines:HandoffInvoiceLine[];evidence:HandoffEvidence[]|null;stayIds?:string[]|null};
+/** stayed = billable days so far (same rule as the discharge fee); paid/remaining null = not determinable. */
+export type PaidStayDays={kind:'paid'|'unpaid'|'unbilled'|'unverified';stayed:number;paid:number|null;remaining:number|null;invoiceNo:string|null};
+/**
+ * Paid inpatient days for one stay, read-only. Days count as paid only when the visit's single
+ * Rawat Inap service line is on exactly one active invoice with the same qty and that invoice is
+ * Lunas. DP/partial payments are never allocated to days. A visit with several stays or several
+ * Rawat Inap service lines cannot be bound to one stay and stays unverified (no name/date guessing).
+ */
+export function paidStayDays(data:Pick<InpatientHandoff,'prescriptions'|'invoices'|'invoiceLines'|'stayIds'>,recordId:string,stayed:number):PaidStayDays{
+ const unknown:PaidStayDays={kind:'unverified',stayed,paid:null,remaining:null,invoiceNo:null};
+ const unbilled:PaidStayDays={kind:'unbilled',stayed,paid:0,remaining:stayed,invoiceNo:null};
+ const fees=data.prescriptions.filter(row=>row.jenis==='jasa'&&row.kategori==='Rawat Inap');
+ if(!fees.length)return unbilled;
+ if(!data.stayIds||data.stayIds.length!==1||data.stayIds[0]!==recordId||fees.length!==1)return unknown;
+ const fee=fees[0];
+ if(!Number.isInteger(Number(fee.qty))||Number(fee.qty)<=0)return unknown;
+ const invoices=new Map(data.invoices.map(invoice=>[invoice.id,invoice]));
+ const linked=data.invoiceLines.filter(line=>line.prescription_item_id===fee.id);
+ if(linked.some(line=>!invoices.has(line.invoice_id)))return unknown;
+ const active=linked.filter(line=>!invoices.get(line.invoice_id)?.voided_at);
+ if(!active.length)return unbilled;
+ if(active.length!==1||Number(active[0].qty)!==Number(fee.qty))return unknown;
+ const invoice=invoices.get(active[0].invoice_id)!;
+ if(invoice.paid_status==='Lunas'){const paid=Number(fee.qty);return {kind:'paid',stayed,paid,remaining:Math.max(0,stayed-paid),invoiceNo:invoice.invoice_no};}
+ if(invoice.paid_status==='DP'||invoice.paid_status==='Belum Lunas')return {kind:'unpaid',stayed,paid:0,remaining:stayed,invoiceNo:invoice.invoice_no};
+ return unknown;
+}
 
 export type HandoffSourceRow={key:string;name:string;kind:string;prescribed:string;billing:string;payment:string;handover:string;administration:string;duplicateActiveInvoices:boolean};
 export type HandoffSourceStatus={rows:HandoffSourceRow[];gaps:string[]};
@@ -69,7 +96,7 @@ export function handoffSourceStatus(data:InpatientHandoff):HandoffSourceStatus{
   'Bukti penyerahan dan pemberian tidak mengubah stok, jurnal, atau tagihan.',
   ...(evidence===null?['Bukti penyerahan/pemberian obat biasa belum dapat dimuat lengkap; jangan menyimpulkan obat belum diserahkan atau diberikan.']:[]),
   'Status bayar tersimpan per faktur, bukan per baris; faktur DP tidak dialokasikan ke obat/tindakan tertentu.',
-  'Lama inap terbayar tidak dihitung: tagihan belum menyimpan tanggal cakupan rawat inap.',
+  'Hari inap terbayar hanya dihitung dari satu baris jasa rawat inap pada faktur lunas; DP/cicilan tidak dialokasikan per hari.',
   ...(unlinked?[`${unlinked} baris resep/racikan belum punya tautan tagihan per baris dan tidak dipasangkan berdasarkan nama.`]:[]),
   ...(freeLines?[`${freeLines} baris faktur tanpa ID resep/racikan tidak dipasangkan ke baris mana pun.`]:[]),
  ]};
@@ -89,7 +116,7 @@ export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string)
   for(let offset=0;offset<records.length;offset+=200){
    const ids=records.slice(offset,offset+200).map(row=>row.id);
    const [rx,compounds]=await Promise.all([
-    readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at,service_performers',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
+    readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,kategori,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at,service_performers',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
     readCompleteList<HandoffRecipe>((from,to)=>db.from('compounding_recipes').select('id,medical_record_id,recipe_name,total_volume,dosage_form,dosage_instruction,status,created_at',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Racikan handoff',{maxRows:null}),
    ]);prescriptions.push(...rx);recipes.push(...compounds);
   }
@@ -97,6 +124,9 @@ export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string)
    const ids=invoices.slice(offset,offset+200).map(row=>row.id);
    invoiceLines.push(...await readCompleteList<HandoffInvoiceLine>((from,to)=>db.from('invoice_items').select('id,invoice_id,prescription_item_id,compound_recipe_id,qty',{count:'exact'}).in('invoice_id',ids).order('id').range(from,to),'Tautan tagihan handoff',{maxRows:null}));
   }
+  // Stays on this visit decide whether the visit's Rawat Inap fee can be bound to one stay; failure = unverified.
+  let stayIds:string[]|null=null;
+  try{stayIds=(await readCompleteList<{id:string}>((from,to)=>db.from('inpatient_records').select('id',{count:'exact'}).eq('visit_id',visitId).order('id').range(from,to),'Rawat inap kunjungan',{maxRows:null})).map(row=>row.id);}catch{stayIds=null;}
   // Evidence is read separately: a missing table or partial read disables recording, not the whole summary.
   let evidence:HandoffEvidence[]|null=[];
   try{
@@ -106,6 +136,6 @@ export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string)
     evidence.push(...await readCompleteList<HandoffEvidence>((from,to)=>db.from('inpatient_rx_evidence').select('id,prescription_item_id,kind,qty,unit,occurred_at,recorded_by_name,note,voided_at,voided_by_name,void_reason',{count:'exact'}).in('prescription_item_id',ids).order('occurred_at').order('id').range(from,to),'Bukti obat biasa',{maxRows:null}));
    }
   }catch{evidence=null;}
-  return {doctor:visit.data.dokter,complaint:visit.data.keluhan,records,prescriptions,recipes,invoices,invoiceLines,evidence};
+  return {doctor:visit.data.dokter,complaint:visit.data.keluhan,records,prescriptions,recipes,invoices,invoiceLines,evidence,stayIds};
  }catch{return null;}
 }
