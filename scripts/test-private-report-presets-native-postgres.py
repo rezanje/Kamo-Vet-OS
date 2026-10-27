@@ -3,7 +3,7 @@
 
 No Docker, no DB URL: initdb into a temp dir, unix socket only, deleted at the end.
 Usage: python3 scripts/test-private-report-presets-native-postgres.py [/path/to/postgresql/bin]
-(default: $PG_BIN, then /usr/lib/postgresql/16/bin). Run as root, it uses the `postgres` OS user.
+(default: $PG_BIN, then /usr/lib/postgresql/16/bin); see scripts/native_postgres.py.
 
 Checks:
 - every report path and every query key the app keeps in `src/lib/report-presets.ts` is accepted by the
@@ -13,11 +13,10 @@ Checks:
 """
 import os
 import re
-import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
+
+from native_postgres import NativePostgres
 
 ROOT = Path(__file__).resolve().parents[1]
 BIN = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PG_BIN", "/usr/lib/postgresql/16/bin"))
@@ -43,36 +42,6 @@ def app_allowlist():
     return sets["paths"], sets["filters"], specific
 
 
-class NativePostgres:
-    def __enter__(self):
-        self.root = Path(tempfile.mkdtemp(prefix="pgr05."))
-        self.as_user = ["runuser", "-u", "postgres", "--"] if os.geteuid() == 0 else []
-        if self.as_user:
-            shutil.chown(self.root, "postgres")
-        self.run(BIN / "initdb", "-D", self.root / "data", "-U", "postgres", "-E", "UTF8", "--locale=C.UTF-8", "-A", "trust")
-        self.run(BIN / "pg_ctl", "-D", self.root / "data", "-l", self.root / "log", "-w", "start",
-                 "-o", f"-c listen_addresses='' -k {self.root} -c timezone=Etc/UTC")
-        return self
-
-    def __exit__(self, *_):
-        subprocess.run(self.as_user + [str(BIN / "pg_ctl"), "-D", str(self.root / "data"), "-m", "fast", "-w", "stop"], capture_output=True)
-        shutil.rmtree(self.root, ignore_errors=True)
-        print("Stopped and removed the throwaway PostgreSQL cluster.", flush=True)
-
-    def run(self, *args):
-        subprocess.run(self.as_user + [str(a) for a in args], check=True, capture_output=True)
-
-    def last(self, source):
-        return self.sql(source).splitlines()[-1]
-
-    def sql(self, source):
-        result = subprocess.run(self.as_user + [str(BIN / "psql"), "-X", "-qAt", "-h", str(self.root), "-U", "postgres", "-v", "ON_ERROR_STOP=1"],
-                                input=source, text=True, capture_output=True, env={**os.environ, "PSQLRC": "/dev/null"})
-        if result.returncode:
-            raise RuntimeError(result.stderr + result.stdout)
-        return result.stdout.strip()
-
-
 def as_user(user):
     return f"""set local role authenticated;
 select set_config('request.jwt.claim.role','authenticated',true);
@@ -94,9 +63,8 @@ def denied(db, user, href, expected="PRIVATE_PRESET_INVALID"):
 
 
 paths, filters, specific = app_allowlist()
-with NativePostgres() as db:
+with NativePostgres(BIN) as db:
     db.sql(f"""
-create extension pgcrypto;
 create role anon; create role authenticated; create role service_role;
 create schema auth;
 create function auth.uid() returns uuid language sql stable as $$
