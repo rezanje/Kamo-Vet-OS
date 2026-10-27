@@ -4,6 +4,7 @@ import { branchDisplayName } from "@/lib/branch-display";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL } from "@/lib/inpatient";
+import { readStayTypes, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -54,6 +55,8 @@ export default async function RawatInapPage({
   if (filter === "aktif") query = query.is("discharged_at", null);
 
   const { data: records } = await query;
+  // K14: tipe dibaca terpisah supaya daftar tetap tampil sebelum migrasinya terpasang.
+  const stayTypes = await readStayTypes(supabase, (records ?? []).map((r) => r.id as string));
 
   // Card counters (§3 dashboard req) — dihitung dari query terpisah tanpa filter tabel.
   let counterQ = supabase.from("inpatient_records").select("condition_status, admitted_at, discharged_at").in("branch_id", branchIds);
@@ -155,7 +158,7 @@ export default async function RawatInapPage({
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
             <thead>
-              <tr><th style={{ width: 30 }}>No.</th><th>Pasien</th><th>Pemilik</th><th>Cabang</th><th>Dokter PIC</th><th>Tanggal Masuk</th><th>Lama Inap</th><th>Kondisi</th><th>Catatan</th><th>Aksi</th></tr>
+              <tr><th style={{ width: 30 }}>No.</th><th>Pasien</th><th>Tipe</th><th>Pemilik</th><th>Cabang</th><th>Dokter PIC</th><th>Tanggal Masuk</th><th>Lama Inap</th><th>Kondisi</th><th>Catatan</th><th>Aksi</th></tr>
             </thead>
             <tbody>
               {(records ?? []).map((r, idx) => {
@@ -176,6 +179,7 @@ export default async function RawatInapPage({
                         </div>
                       </div>
                     </td>
+                    <td><span className={`bge ${stayTypes.get(r.id) === "pet_hotel" ? "b" : "o"}`}>{STAY_TYPE_LABEL[stayTypes.get(r.id) ?? "sakit"]}</span></td>
                     <td><div style={{ fontSize: 11.5 }}>{cust?.name ?? "—"}</div><div style={{ fontSize: 10, color: "var(--tm)" }}>{cust?.phone}</div></td>
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{r.doctor_name ?? "—"}</td>
@@ -206,7 +210,7 @@ export default async function RawatInapPage({
                 );
               })}
               {(records ?? []).length === 0 && (
-                <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>Tidak ada pasien rawat inap.</td></tr>
+                <tr><td colSpan={11} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>Tidak ada pasien rawat inap.</td></tr>
               )}
             </tbody>
           </table>

@@ -12,9 +12,9 @@ type CatalogItem = { id: string; code: string; name: string; unit: string; sell_
 export default async function BaruPOPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; harga_cek?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, harga_cek } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -73,6 +73,7 @@ export default async function BaruPOPage({
         branches={branches ?? []}
         items={katalog}
         stock={stock}
+        priceWarning={harga_cek}
       />
     </>
   );

@@ -7,6 +7,7 @@ import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { loadRekeningAktif } from "@/components/PilihRekening";
 import { NoDok } from "@/components/NoDok";
 import { hariIniWIB } from "@/lib/tanggal";
+import { PurchaseCorrectionQuickRequest } from "@/components/PurchaseCorrectionQuickRequest";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string | null) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -22,10 +23,13 @@ type UangMukaSiap = { id: string; no_um: string; sisa: number };
 
 type PoBelum = { id: string; no_po: string | null; supplier: string; tanggal: string; nilai: number; warning: string | null };
 
-export default async function HutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; replace_payment?: string }> }) {
-  const { success, error, replace_payment } = await searchParams;
+export default async function HutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; replace_payment?: string; koreksi?: string; koreksi_error?: string }> }) {
+  const { success, error, replace_payment, koreksi, koreksi_error } = await searchParams;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
+  // P01: siapa pun yang bisa membuka faktur di sini boleh meminta koreksi; OWNER memakai kontrol koreksi langsung.
+  const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle();
+  const bolehMintaKoreksi = profile?.is_active === true && profile.role !== "OWNER";
   const today = hariIniWIB();
   const rekening = await loadRekeningAktif(supabase);
 
@@ -170,6 +174,10 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
         </div>
       )}
 
+      <div id="request-purchase-correction" style={{ scrollMarginTop: 90 }}>
+        {koreksi === "terkirim" && <p role="status" className="p2ban" style={{ background: "#e8f5ee", color: "#15803d" }}>Permintaan koreksi tersimpan dan masuk antrean Super Admin.</p>}
+        {koreksi_error && <p role="alert" className="p2ban" style={{ background: "#fef2f2", color: "#b91c1c" }}>{koreksi_error}</p>}
+      </div>
       {replace_payment && !replacement && <div role="alert" className="p2ban">Pembayaran pengganti tidak tersedia. Periksa riwayat dan sisa hutang terbaru.</div>}
       <div className="crm-sec">
         <SecHeader num="01" title="UMUR HUTANG (AP AGING)" desc="Faktur pembelian belum lunas, dikelompokkan menurut umur JATUH TEMPO (pola Accurate)." />
@@ -243,6 +251,8 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                       <PurchasePaymentForm userId={user?.id ?? ""} invoiceId={r.id} remaining={r.sisa} today={today} accounts={rekening}
                         advances={umPerSupplier.get(r.supplier_id ?? "") ?? []} replacement={replacement?.invoice_id === r.id ? replacement : undefined} />
                     </details>
+                    {bolehMintaKoreksi && <PurchaseCorrectionQuickRequest kind="purchase_invoice" sourceId={r.id} label={r.no_faktur}
+                      back="/keuangan/hutang" requestKey={crypto.randomUUID()} />}
                   </td>
                 </tr>
               ))}

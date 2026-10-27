@@ -158,6 +158,22 @@ describe("request actions", () => {
       .rejects.toThrow("koreksi_error=" + encodeURIComponent("Permintaan koreksi belum tersimpan. Coba lagi."));
   });
 
+  it("P01: returns a requester from the Hutang screen there, and ignores unlisted return paths", async () => {
+    await expect(ajukanKoreksiPembelian(form({ source_kind: "purchase_invoice", source_id: invoice, request_key: "fixture-key-0006", detail: "Total faktur seharusnya 90", back: "/keuangan/hutang" })))
+      .rejects.toThrow("REDIRECT /keuangan/hutang?koreksi=terkirim#request-purchase-correction");
+    await expect(ajukanKoreksiPembelian(form({ source_kind: "purchase_invoice", source_id: invoice, request_key: "fixture-key-0007", detail: "Total faktur seharusnya 90", back: "https://evil.example/x" })))
+      .rejects.toThrow(`REDIRECT /pembelian/faktur/${invoice}?koreksi=terkirim`);
+  });
+
+  it("P01: the Hutang quick form posts the invoice origin and its return path", async () => {
+    const { PurchaseCorrectionQuickRequest } = await import("@/components/PurchaseCorrectionQuickRequest");
+    const html = renderToStaticMarkup(<PurchaseCorrectionQuickRequest kind="purchase_invoice" sourceId={invoice} label="FB-1" back="/keuangan/hutang" requestKey="fixture-key-0008" />);
+    expect(html).toContain('name="source_kind" value="purchase_invoice"');
+    expect(html).toContain(`name="source_id" value="${invoice}"`);
+    expect(html).toContain('name="back" value="/keuangan/hutang"');
+    expect(html).toContain("Faktur dan pembayaran tidak berubah");
+  });
+
   it("never forwards a malformed source id", async () => {
     await expect(ajukanKoreksiPembelian(form({ source_kind: "purchase_order", source_id: "not-a-uuid", request_key: "fixture-key-0004", detail: "Rincian cukup panjang" })))
       .rejects.toThrow("REDIRECT /pembelian?");

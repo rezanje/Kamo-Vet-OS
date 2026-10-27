@@ -16,13 +16,16 @@ import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
 import { clinicAdmissionReadiness } from "@/lib/clinic-admission-readiness";
 import { templatesForBranch } from "@/lib/consent";
-import { admitInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
+import { admitInpatient, continueToInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
+import { readVisitContinuation, STAY_TYPE_LABEL, STAY_TYPES } from "@/lib/inpatient-stay";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
 import { ReferralPanel } from "./ReferralPanel";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 import { readCompleteList } from "@/lib/checked-list";
+import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
+import { tambahAdendumRekamMedis } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -189,6 +192,18 @@ export default async function RekamMedisPage({
     penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
     prescriptions: resep, compounds: racikanList,
   } : undefined;
+  // K01: once billing is posted the original form stays locked; doctors append
+  // a diagnosis/therapy addendum instead (no invoice, stock or payment change).
+  const addendumScope = recorded && mrId && !mrLoadFailed;
+  // Any invoice, active or voided: unpaid Edit closes as soon as one ever existed.
+  const anyInvoice = addendumScope
+    ? await supabase.from("invoices").select("id").eq("visit_id", visitId).limit(1).maybeSingle()
+    : { data: null, error: null };
+  const addenda: AddendaLoad = addendumScope && mrId ? await loadRecordAddenda(supabase, mrId) : { state: "ok", rows: [] };
+  const addendumCheck = addendumScope && mrId && anyInvoice.data && !anyInvoice.error && addenda.state === "ok"
+    ? await supabase.rpc("clinic_can_add_record_addendum", { p_record_id: mrId }) : { data: false, error: null };
+  const canAddAddendum = addendumCheck.data === true && !addendumCheck.error;
+  const showAddenda = addenda.state !== "missing" && (canAddAddendum || addenda.rows.length > 0 || addenda.state === "error");
   const { data: savedProvider } = editing && visit.service_provider_id
     ? await supabase.from("employees").select("id,nama,jabatan").eq("id", visit.service_provider_id).maybeSingle()
     : { data: null };
@@ -256,8 +271,20 @@ export default async function RekamMedisPage({
     (tplRows ?? []) as { id: string; nama: string; kategori?: string; branch_id: string | null; is_active: boolean }[],
     (visit.branch_id as string) ?? null,
   );
+  // K06: kunjungan yang tagihannya sudah Lunas dianggap tutup — rawat inap lewat
+  // kunjungan lanjutan. Tagihan yang belum lunas tetap memakai jalur langsung seperti dulu.
+  const [activeInvoiceCheck, continuation] = await Promise.all([
+    !inpatient && menungguBayar
+      ? supabase.from("invoices").select("id, voided_at, paid_status").eq("visit_id", visitId)
+      : Promise.resolve({ data: [] as { id: string; voided_at: string | null; paid_status: string }[], error: null }),
+    readVisitContinuation(supabase, visitId),
+  ]);
+  const hasPaidInvoice = Array.isArray(activeInvoiceCheck.data)
+    && (activeInvoiceCheck.data as { voided_at: string | null; paid_status?: string }[])
+      .some((row) => !row.voided_at && row.paid_status === "Lunas");
   const admission = clinicAdmissionReadiness({
-    readFailed: !!(consentsError || templatesError || ruleError || inpatientError || mrLoadFailed),
+    readFailed: !!(consentsError || templatesError || ruleError || inpatientError || mrLoadFailed || activeInvoiceCheck.error),
+    hasPaidInvoice,
     status: visit.status, checkedOutAt: visit.checked_out_at ?? null, doctorId: visit.doctor_id ?? null,
     medicalRecordId: mrId, rule: inpatientConsentRule, consents: consentRows ?? [],
   });
@@ -306,6 +333,18 @@ export default async function RekamMedisPage({
         </div>
       )}
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
+      {success === "addendum" && <div className="p2ban" role="status">Adendum rekam medis tersimpan; catatan asli, tagihan, dan stok tidak berubah.</div>}
+      {success === "lanjutan" && (
+        <div className="p2ban" role="status" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Kunjungan lanjutan rawat inap dibuka. Tandatangani persetujuan rawat inap, lalu masukkan pasien di bagian Rawat inap di bawah.
+        </div>
+      )}
+      {continuation.sourceVisit && (
+        <div className="p2ban" style={{ justifyContent: "space-between" }}>
+          <span><i className="ti ti-link" /> Lanjutan rawat inap dari kunjungan rawat jalan{continuation.sourceVisit.created_at ? ` ${fmtDaftar(continuation.sourceVisit.created_at)}` : ""}. Tagihan kunjungan asal tidak diubah; biaya rawat inap ditagih di kunjungan ini.</span>
+          <Link href={`/klinik/rekam-medis/${continuation.sourceVisit.id}`} className="btn-def" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>Rekam medis asal</Link>
+        </div>
+      )}
       {edit && !editing && <div className="p2ban" role="alert">Koreksi belum dapat dibuka. Periksa akses, status kunjungan, dan muat ulang data pemeriksaan.</div>}
       {racikan === "dibuat" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
@@ -457,6 +496,29 @@ export default async function RekamMedisPage({
             </div>
           </div>
 
+          {showAddenda && <section className="card" style={{ marginTop: 12 }}>
+            <div className="card-hd"><span><i className="ti ti-file-plus" style={{ color: "var(--acc)" }} /> Adendum diagnosa / terapi</span></div>
+            <p style={{ fontSize: 11, color: "var(--tm)" }}>Tagihan sudah pernah terbit, jadi hasil pemeriksaan asli dikunci. Tambahan dicatat terpisah beserta nama dan waktunya; tagihan, obat, dan stok tidak berubah.</p>
+            {addenda.state === "error" && <p role="alert">Riwayat adendum belum dapat dimuat. Muat ulang sebelum mencetak rekam medis.</p>}
+            {addenda.rows.map(row => <div key={row.id} style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8, marginTop: 8, fontSize: 11.5 }}>
+              <div><b>{addendumAuthor(row)}</b> · {new Date(row.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</div>
+              {row.diagnosis_addendum && <div>Diagnosa: {row.diagnosis_addendum}</div>}
+              {row.therapy_addendum && <div>Terapi: {row.therapy_addendum}</div>}
+              {row.reason && <div style={{ color: "var(--tm)" }}>Alasan: {row.reason}</div>}
+            </div>)}
+            {canAddAddendum && mrId && <TransactionForm userId={draftUserId} scope={`clinical-addendum:${visitId}:${mrId}`} action={tambahAdendumRekamMedis}>
+              <input type="hidden" name="visitId" value={visitId} />
+              <input type="hidden" name="medical_record_id" value={mrId} />
+              <label className="flab" htmlFor="addendum-diagnosis">Tambahan diagnosa</label>
+              <textarea id="addendum-diagnosis" className="fi" name="diagnosis_addendum" maxLength={4000} rows={2} />
+              <label className="flab" htmlFor="addendum-therapy">Tambahan terapi</label>
+              <textarea id="addendum-therapy" className="fi" name="therapy_addendum" maxLength={4000} rows={2} />
+              <label className="flab" htmlFor="addendum-reason">Alasan (opsional)</label>
+              <input id="addendum-reason" className="fi" name="reason" maxLength={1000} />
+              <SubmitButton className="btn-acc" pendingText="Mencatat adendum…">Catat adendum</SubmitButton>
+            </TransactionForm>}
+          </section>}
+
           {/* Racik obat (Addendum §2) — bisa >1 racikan per rekam medis (racikan harian rawat inap). */}
           <div className="card" style={{ marginTop: 12 }}>
             <div className="card-hd">
@@ -521,10 +583,32 @@ export default async function RekamMedisPage({
                   {inpatient.condition_status}
                 </span>
               </div>
+            ) : null}
+            {!inpatient && continuation.continuations.length > 0 && (
+              <div style={{ fontSize: 11.5, color: "var(--tm)", marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                Lanjutan rawat inap dari kunjungan ini:
+                {continuation.continuations.map((c) => (
+                  <Link key={c.id} href={`/klinik/rekam-medis/${c.id}`}>{fmtDaftar(c.created_at)}</Link>
+                ))}
+              </div>
+            )}
+            {inpatient ? null : admission.continueFromClosed ? (
+              <TransactionForm userId={draftUserId} scope={`inpatient-continue:${visitId}`} action={continueToInpatient} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <input type="hidden" name="visitId" value={visit.id} />
+                <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
+                <div role="status" style={{ width: "100%", fontSize: 12, color: "var(--tm)" }}><p>{admission.reason}</p></div>
+                <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…">Lanjutkan ke Rawat Inap</SubmitButton>
+              </TransactionForm>
             ) : (
               <TransactionForm userId={draftUserId} scope={`inpatient-admit:${visitId}`} action={admitInpatient} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
                 <input type="hidden" name="visitId" value={visit.id} />
                 <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
+                <div style={{ flex: 1, minWidth: 170 }}>
+                  <label className="flab">Tipe rawat inap *</label>
+                  <select className="fi" name="stay_type" defaultValue="sakit" required>
+                    {STAY_TYPES.map((t) => <option key={t} value={t}>{STAY_TYPE_LABEL[t]}</option>)}
+                  </select>
+                </div>
                 <div style={{ flex: 2, minWidth: 240 }}>
                   <label className="flab">Rencana tindakan dari dokter PIC *</label>
                   <input className="fi" name="treatment_plan" required maxLength={4000} placeholder="mis. Infus, monitoring intensif 3 hari, terapi antibiotik" />

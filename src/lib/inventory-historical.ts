@@ -32,7 +32,7 @@ function amount(value: number | string, label: string): Decimal {
 }
 
 function eventPositions(events: CostEvent[]) {
-  const positions = new Map<string, { event: CostEvent; qty: Decimal; value: Decimal | null; complete: boolean }>();
+  const positions = new Map<string, { event: CostEvent; qty: Decimal; value: Decimal | null; complete: boolean; lastAverage: Decimal | null }>();
   for (const event of events) {
     const key = `${event.warehouse_id}:${event.item_id}`;
     const qty = amount(event.qty_after, "Qty");
@@ -56,7 +56,17 @@ function eventPositions(events: CostEvent[]) {
     // saved closing both take value_after as-is), so an earlier unknown cost no longer
     // blocks later values; continuity is checked strictly again from this zero.
     const knownZero = qty.isZero() && value !== null && value.isZero();
-    positions.set(key, { event, qty, value, complete: knownZero || ((previous?.complete ?? true) && monetaryLink) });
+    // R04: last known moving-average cost for this position. The writer stores
+    // nullif(average,0), so a NULL average next to a recorded value means:
+    // - qty ≠ 0: a true zero average (value_after is then 0) → known 0;
+    // - qty = 0: a reset with no average → nothing known any more (no stale carry-over).
+    // Only a NULL average with an unknown value keeps the previous known average.
+    const average = event.average_after === null ? null : amount(event.average_after, "HPP rata-rata");
+    if (average !== null && average.isNegative()) throw new ReportInputError("HPP rata-rata negatif dalam riwayat nilai persediaan.");
+    const lastAverage = average !== null ? average
+      : value === null ? previous?.lastAverage ?? null
+      : qty.isZero() ? null : new Exact(0);
+    positions.set(key, { event, qty, value, complete: knownZero || ((previous?.complete ?? true) && monetaryLink), lastAverage });
   }
   return [...positions.values()];
 }
@@ -177,10 +187,22 @@ export async function loadHistoricalInventory(client: SupabaseClient, input: { t
     const branch = warehouse && branchMap.get(warehouse.branch_id);
     if (!warehouse || !item || !branch) throw new ReportInputError("Identitas sumber nilai historis tidak lengkap.");
     const average = event.average_after === null ? null : amount(event.average_after, "HPP rata-rata").toFixed();
+    const negative = position.qty.isNegative();
+    // R04 policy for minus positions whose value chain is not provable:
+    // 1. the event's own recorded value_after when present (flagged, unlinked);
+    // 2. otherwise qty × the last known moving-average cost (flagged);
+    // 3. otherwise unavailable. Positive positions keep the strict recorded-value rule.
+    const lastAverage = position.lastAverage;
+    let value: string | null = null;
+    let valueBasis: "event" | "event-unlinked" | "last-average" | null = null;
+    if (position.complete && position.value !== null) { value = position.value.toFixed(); valueBasis = "event"; }
+    else if (negative && position.value !== null) { value = position.value.toFixed(); valueBasis = "event-unlinked"; }
+    else if (negative && lastAverage !== null) { value = position.qty.times(lastAverage).toFixed(); valueBasis = "last-average"; }
+    const estimated = valueBasis === "event-unlinked" || valueBasis === "last-average";
     return { id: `${event.warehouse_id}:${event.item_id}`, branchId: branch.id, branch: branch.name,
       warehouse: warehouse.name, warehouseCode: warehouse.code, item: item.name, itemCode: item.code, unit: item.unit,
-      qty: position.qty.toFixed(), value: position.complete && position.value !== null ? position.value.toFixed() : null,
-      average, negative: position.qty.isNegative(), source: event.source, sourceRef: event.source_ref, sourceDate: event.tanggal };
+      qty: position.qty.toFixed(), value, valueBasis, estimated, estimateAverage: valueBasis === "last-average" && lastAverage ? lastAverage.toFixed() : null,
+      average, negative, source: event.source, sourceRef: event.source_ref, sourceDate: event.tanggal };
   }).sort((a, b) => a.branch.localeCompare(b.branch) || a.warehouse.localeCompare(b.warehouse) || a.item.localeCompare(b.item) || a.id.localeCompare(b.id));
   const fullBranchAccess = allBranches.length > 0 && branches.length === allBranches.length;
   const ledger = canViewLedger ? await inventoryLedgerAtDate(client, asOf, selected.map(branch => branch.id),
@@ -193,11 +215,14 @@ export async function loadHistoricalInventory(client: SupabaseClient, input: { t
     const ledgerValue = ledger?.balances.get(branch.id)?.toFixed() ?? null;
     return { ...branch, count: scoped.length, value, ledgerValue,
       difference: value === null || ledgerValue === null ? null : new Exact(value).minus(ledgerValue).toFixed(),
-      negativeCount: scoped.filter(row => row.negative).length };
+      negativeCount: scoped.filter(row => row.negative).length, estimatedCount: scoped.filter(row => row.estimated).length,
+      estimatedValue: scoped.filter(row => row.estimated).reduce((sum, row) => sum.plus(row.value ?? 0), new Exact(0)).toFixed() };
   });
   const total = subtotal(rows);
   const scopedLedgerValue = ledger ? selected.reduce((sum, branch) => sum.plus(ledger.balances.get(branch.id) ?? 0), new Exact(0)).toFixed() : null;
   return { asOf, activatedAt, available: true as const, branches, selectedIds, selected, canViewLedger, rows, summary, total,
+    estimatedCount: summary.reduce((sum, branch) => sum + branch.estimatedCount, 0),
+    estimatedValue: summary.reduce((sum, branch) => sum.plus(branch.estimatedValue), new Exact(0)).toFixed(),
     scopedLedgerValue, scopedDifference: total === null || scopedLedgerValue === null ? null : new Exact(total).minus(scopedLedgerValue).toFixed(),
     unallocatedLedger: ledger && fullBranchAccess && selected.length === branches.length ? ledger.unallocated.toFixed() : null, fullBranchAccess };
 }

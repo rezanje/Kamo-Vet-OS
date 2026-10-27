@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { recoverInvoiceSubmission } from "../actions";
+import { PRICE_CONFIRM_FIELD, priceCheckBeforeSave } from "@/lib/purchase-price-check";
+import { loadUnitOptions, resolveSubmittedUnit } from "@/lib/satuan";
 
 type Row = { item_id: string; qty: number; harga: number; satuan?: string; exp_date?: string };
 
@@ -28,6 +30,12 @@ export async function buatFakturLangsung(formData: FormData) {
     replaces_invoice_id: replacement || null,
     items: items.map(r => ({ item_id: r.item_id, qty: r.qty, harga: r.harga, satuan: r.satuan || null, exp_date: r.exp_date || null })),
   };
+  // P04: hanya barang di baris faktur ini yang dibaca HPP-nya. Satuan tidak valid = biarkan RPC menolak.
+  let factors = new Map<string, number>();
+  if (formData.get(PRICE_CONFIRM_FIELD) !== "1") try { const units = await loadUnitOptions(supabase, items.map(r => r.item_id)); factors = new Map(items.map(r => [`${r.item_id}:${r.satuan ?? ""}`, resolveSubmittedUnit(units.get(r.item_id) ?? [], r.satuan).factor])); }
+  catch { /* RPC memvalidasi satuan dan memberi pesan sendiri. */ }
+  const hargaCek = factors.size ? await priceCheckBeforeSave(supabase, formData, items.map(r => ({ item_id: r.item_id, harga: r.harga, factor: factors.get(`${r.item_id}:${r.satuan ?? ""}`) }))) : null;
+  if (hargaCek) redirect(`${back}harga_cek=${encodeURIComponent(hargaCek)}`);
   const { data, error } = await supabase.rpc("create_direct_purchase_invoice", { p_request_key: value("draft_key"), p_payload: payload });
   if (error) fail(error.message);
   if (!data?.invoice_id || !data.no_jurnal) fail("Hasil faktur belum terkonfirmasi. Periksa hasil terakhir sebelum mengulang.");

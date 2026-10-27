@@ -67,7 +67,7 @@ export default async function PODetailPage({
     supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
     readCompleteList<POItem>((from,to)=>supabase.from("purchase_order_items").select("id,item_id,nama,qty,satuan,faktor,qty_terima,qty_rusak,harga_beli",{count:"exact"}).eq("po_id",id).order("id").range(from,to),"Baris PO",{maxRows:null}),
     readCompleteList<{id:string;no_faktur:string;voided_at:string|null}>((from,to)=>supabase.from("purchase_invoices").select("id,no_faktur,voided_at",{count:"exact"}).eq("po_id",id).order("tanggal",{ascending:false}).order("id").range(from,to),"Faktur PO",{maxRows:null}),
-    readCompleteList<{id:string;no_terima:string;tanggal:string}>((from,to)=>supabase.from("goods_receipts").select("id,no_terima,tanggal",{count:"exact"}).eq("po_id",id).order("tanggal",{ascending:false}).order("id").range(from,to),"Penerimaan PO",{maxRows:null}),
+    readCompleteList<{id:string;no_terima:string;tanggal:string;voided_at:string|null}>((from,to)=>supabase.from("goods_receipts").select("id,no_terima,tanggal,voided_at",{count:"exact"}).eq("po_id",id).order("tanggal",{ascending:false}).order("id").range(from,to),"Penerimaan PO",{maxRows:null}),
     readCompleteList<{id:string;tanggal:string;amount:number;metode:string}>((from,to)=>supabase.from("po_payments").select("id,tanggal,amount,metode",{count:"exact"}).eq("po_id",id).order("tanggal",{ascending:false}).order("id").range(from,to),"Pembayaran PO",{maxRows:null}),
     readCompleteList<{id:string;no_retur:string;voided_at:string|null}>((from,to)=>supabase.from("purchase_returns").select("id,no_retur,voided_at",{count:"exact"}).eq("po_id",id).order("id").range(from,to),"Retur PO",{maxRows:null}),
     readCompleteList<{id:string;no_um:string;status:string;jumlah:number;terpakai:number}>((from,to)=>supabase.from("purchase_advances").select("id,no_um,status,jumlah,terpakai",{count:"exact"}).eq("po_id",id).order("id").range(from,to),"Uang muka PO",{maxRows:null}),
@@ -86,7 +86,7 @@ export default async function PODetailPage({
   const units = editable ? Object.fromEntries(await loadUnitOptions(supabase, items.flatMap(item => item.item_id ? [item.item_id] : []), { includeInactive: true })) : {};
 
   const related: RelatedDocument[] = [
-    ...receipts.map(r => ({ kind: 'goods-receipt' as const, id: r.id, label: `Penerimaan ${r.no_terima}`, status: 'Dokumen tersimpan' })),
+    ...receipts.map(r => ({ kind: 'goods-receipt' as const, id: r.id, label: `Penerimaan ${r.no_terima}`, status: r.voided_at ? 'Dibatalkan' : 'Dokumen tersimpan' })),
     ...invoices.map(r => ({ kind: 'purchase-invoice' as const, id: r.id, label: `Faktur ${r.no_faktur}`, status: r.voided_at ? 'Dibatalkan' : 'Aktif' })),
     ...payments.map(p => ({kind:'legacy-purchase-payment' as const,id:p.id,parentId:po.id,label:`Pembayaran PO ${p.tanggal} · ${rp(p.amount)}`,status:'Dokumen lama; alokasi faktur tidak tersimpan'})),
     ...returns.map(r => ({kind:'purchase-return' as const,id:r.id,label:`Retur ${r.no_retur}`,status:r.voided_at?'Dibatalkan':'Tersimpan'})),

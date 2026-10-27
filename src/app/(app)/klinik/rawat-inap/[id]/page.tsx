@@ -11,6 +11,7 @@ import { CONDITION_LABEL, ripWaMessage, type Condition, hariRawatInap } from "@/
 import { hasSignedConsent } from "@/lib/consent";
 import { changeCondition, sendRipWa } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { readStayTypes, readVisitContinuation, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -110,6 +111,11 @@ export default async function RawatInapDetailPage({
     dokter: l.doctor_name,
   }));
 
+  // K14 tipe & K06 asal kunjungan: dibaca toleran (aman sebelum migrasi terpasang).
+  const [stayTypes, continuation] = await Promise.all([
+    readStayTypes(supabase, [id]), readVisitContinuation(supabase, String(rec.visit_id)),
+  ]);
+  const stayType = stayTypes.get(id) ?? "sakit";
   const cond = rec.condition_status as Condition;
   const isDoctor = me?.role === "DOCTOR";
   const active = !rec.discharged_at;
@@ -215,6 +221,13 @@ export default async function RawatInapDetailPage({
             <PairRow label="Tanggal Masuk" value={`${fmtDate(rec.admitted_at)} ${fmtT(admitDate.toISOString())}`} />
             <PairRow label="No. Rekam Medis" value={noRM} />
             <PairRow label="Dokter PIC" value={rec.doctor_name} />
+            <PairRow label="Tipe" value={STAY_TYPE_LABEL[stayType]} />
+            {continuation.sourceVisit && (
+              <div style={{ fontSize: 11.5, padding: "4px 0" }}>
+                Lanjutan dari kunjungan rawat jalan yang sudah ditagih —{" "}
+                <Link href={`/klinik/rekam-medis/${continuation.sourceVisit.id}`}>rekam medis asal</Link>
+              </div>
+            )}
             {rec.discharged_at && <PairRow label="Tanggal Keluar" value={`${fmtDate(rec.discharged_at)} ${fmtT(rec.discharged_at)}`} />}
             {/* Jumlah hari yang akan ditagih: pembulatan ke atas per 24 jam, dihitung
                 dari jam masuk — bukan selisih tanggal. */}
