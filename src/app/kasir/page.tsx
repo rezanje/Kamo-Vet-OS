@@ -18,6 +18,7 @@ import { loadBranchGroomingPolicy } from "@/lib/service-performers-server";
 import { isGroomingService } from "@/lib/grooming-requirements";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
 import { readCompleteList } from "@/lib/checked-list";
+import { loadActiveVouchers } from "@/lib/voucher-loader";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -46,7 +47,7 @@ export default async function KasirPage({
   }
   const replacementDraft = replacement ? saleReplacementDraft(replacement) : undefined;
 
-  const [itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, { data: vouchers }, promos] = await Promise.all([
+  const [itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, vouchers, promos] = await Promise.all([
     loadKasirItems(supabase),
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
@@ -59,9 +60,7 @@ export default async function KasirPage({
       .select("total, visits!inner(customer_id)")
       .eq("paid_status", "Lunas")
       .is("voided_at", null),
-    supabase.from("vouchers")
-      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
-      .eq("is_active", true),
+    loadActiveVouchers(supabase),
     readCompleteList<PromoFull>((from,to)=>supabase.from("promos")
       .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value",{count:"exact"})
       .eq("is_active", true).order("id").range(from,to),"Promo aktif kasir",{maxRows:null}),
