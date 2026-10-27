@@ -15,6 +15,7 @@ type Dok = {
   no_terima: string;
   tanggal: string;
   surat_jalan: string | null;
+  voided_at: string | null;
   purchase_orders: Rel<{ no_po: string | null; suppliers: Rel<{ nama: string }> }>;
 };
 
@@ -26,7 +27,7 @@ export default async function PenerimaanPage({ searchParams }: { searchParams: P
   const totals = new Map<string, { nilai: number; rusak: number }>();
   try {
     receiptPage = await readListPage<Dok>((from, to) => supabase.from("goods_receipts")
-      .select("id, no_terima, tanggal, surat_jalan, purchase_orders(no_po, suppliers(nama))", { count: "exact" })
+      .select("id, no_terima, tanggal, surat_jalan, voided_at, purchase_orders(no_po, suppliers(nama))", { count: "exact" })
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).order("id")
       .range(from, to), "Daftar penerimaan barang", hal);
     const ids = receiptPage.rows.map(receipt => receipt.id);
@@ -83,6 +84,7 @@ export default async function PenerimaanPage({ searchParams }: { searchParams: P
                       <Link href={`/pembelian/penerimaan/${d.id}`} style={{ color: "#2563eb", textDecoration: "none" }}>
                         {d.no_terima}
                       </Link>
+                      {d.voided_at && <span className="bge r" style={{ marginLeft: 6 }}>Dibatalkan</span>}
                     </td>
                     <td style={{ fontSize: 11 }}>{tgl(d.tanggal)}</td>
                     <td style={{ fontSize: 11.5 }}>{one(po?.suppliers ?? null)?.nama ?? "—"}</td>
@@ -91,7 +93,7 @@ export default async function PenerimaanPage({ searchParams }: { searchParams: P
                     <td style={{ fontSize: 10.5 }}>
                       {rsk > 0 ? <span className="bge r">{rsk} unit</span> : <span style={{ color: "var(--td)" }}>—</span>}
                     </td>
-                    <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600 }}>{rp(summary.nilai)}</td>
+                    <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, textDecoration: d.voided_at ? "line-through" : undefined }}>{rp(summary.nilai)}</td>
                   </tr>
                 );
               })}

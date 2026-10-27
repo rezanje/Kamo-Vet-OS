@@ -24,6 +24,8 @@ import { ReferralPanel } from "./ReferralPanel";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 import { readCompleteList } from "@/lib/checked-list";
+import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
+import { tambahAdendumRekamMedis } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -190,6 +192,18 @@ export default async function RekamMedisPage({
     penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
     prescriptions: resep, compounds: racikanList,
   } : undefined;
+  // K01: once billing is posted the original form stays locked; doctors append
+  // a diagnosis/therapy addendum instead (no invoice, stock or payment change).
+  const addendumScope = recorded && mrId && !mrLoadFailed;
+  // Any invoice, active or voided: unpaid Edit closes as soon as one ever existed.
+  const anyInvoice = addendumScope
+    ? await supabase.from("invoices").select("id").eq("visit_id", visitId).limit(1).maybeSingle()
+    : { data: null, error: null };
+  const addenda: AddendaLoad = addendumScope && mrId ? await loadRecordAddenda(supabase, mrId) : { state: "ok", rows: [] };
+  const addendumCheck = addendumScope && mrId && anyInvoice.data && !anyInvoice.error && addenda.state === "ok"
+    ? await supabase.rpc("clinic_can_add_record_addendum", { p_record_id: mrId }) : { data: false, error: null };
+  const canAddAddendum = addendumCheck.data === true && !addendumCheck.error;
+  const showAddenda = addenda.state !== "missing" && (canAddAddendum || addenda.rows.length > 0 || addenda.state === "error");
   const { data: savedProvider } = editing && visit.service_provider_id
     ? await supabase.from("employees").select("id,nama,jabatan").eq("id", visit.service_provider_id).maybeSingle()
     : { data: null };
@@ -319,6 +333,7 @@ export default async function RekamMedisPage({
         </div>
       )}
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
+      {success === "addendum" && <div className="p2ban" role="status">Adendum rekam medis tersimpan; catatan asli, tagihan, dan stok tidak berubah.</div>}
       {success === "lanjutan" && (
         <div className="p2ban" role="status" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Kunjungan lanjutan rawat inap dibuka. Tandatangani persetujuan rawat inap, lalu masukkan pasien di bagian Rawat inap di bawah.
@@ -480,6 +495,29 @@ export default async function RekamMedisPage({
               )}
             </div>
           </div>
+
+          {showAddenda && <section className="card" style={{ marginTop: 12 }}>
+            <div className="card-hd"><span><i className="ti ti-file-plus" style={{ color: "var(--acc)" }} /> Adendum diagnosa / terapi</span></div>
+            <p style={{ fontSize: 11, color: "var(--tm)" }}>Tagihan sudah pernah terbit, jadi hasil pemeriksaan asli dikunci. Tambahan dicatat terpisah beserta nama dan waktunya; tagihan, obat, dan stok tidak berubah.</p>
+            {addenda.state === "error" && <p role="alert">Riwayat adendum belum dapat dimuat. Muat ulang sebelum mencetak rekam medis.</p>}
+            {addenda.rows.map(row => <div key={row.id} style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8, marginTop: 8, fontSize: 11.5 }}>
+              <div><b>{addendumAuthor(row)}</b> · {new Date(row.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</div>
+              {row.diagnosis_addendum && <div>Diagnosa: {row.diagnosis_addendum}</div>}
+              {row.therapy_addendum && <div>Terapi: {row.therapy_addendum}</div>}
+              {row.reason && <div style={{ color: "var(--tm)" }}>Alasan: {row.reason}</div>}
+            </div>)}
+            {canAddAddendum && mrId && <TransactionForm userId={draftUserId} scope={`clinical-addendum:${visitId}:${mrId}`} action={tambahAdendumRekamMedis}>
+              <input type="hidden" name="visitId" value={visitId} />
+              <input type="hidden" name="medical_record_id" value={mrId} />
+              <label className="flab" htmlFor="addendum-diagnosis">Tambahan diagnosa</label>
+              <textarea id="addendum-diagnosis" className="fi" name="diagnosis_addendum" maxLength={4000} rows={2} />
+              <label className="flab" htmlFor="addendum-therapy">Tambahan terapi</label>
+              <textarea id="addendum-therapy" className="fi" name="therapy_addendum" maxLength={4000} rows={2} />
+              <label className="flab" htmlFor="addendum-reason">Alasan (opsional)</label>
+              <input id="addendum-reason" className="fi" name="reason" maxLength={1000} />
+              <SubmitButton className="btn-acc" pendingText="Mencatat adendum…">Catat adendum</SubmitButton>
+            </TransactionForm>}
+          </section>}
 
           {/* Racik obat (Addendum §2) — bisa >1 racikan per rekam medis (racikan harian rawat inap). */}
           <div className="card" style={{ marginTop: 12 }}>

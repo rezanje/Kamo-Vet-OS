@@ -1,6 +1,6 @@
 import React from'react';import{beforeEach,it,expect,vi}from'vitest';
 const state=vi.hoisted(()=>({allowed:true,failed:'',authReads:0,doctorReads:0,tables:{}as Record<string,Record<string,unknown>[]>}));
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>{state.authReads++;return{data:{user:{id:'user'}}}}},rpc:async()=>({data:state.allowed,error:state.failed==='rpc'?{}:null}),from:(table:string)=>{const filters:((r:Record<string,unknown>)=>boolean)[]=[];const result=()=>({data:state.failed===table?null:(state.tables[table]??[]).filter(r=>filters.every(f=>f(r))),error:state.failed===table?{}:null});const q={select:()=>q,eq:(k:string,v:unknown)=>{filters.push(r=>r[k]===v);return q},or:()=>q,order:()=>q,limit:()=>q,range:async()=>({...result(),count:result().data?.length??0}),maybeSingle:async()=>({...result(),data:result().data?.[0]??null}),then:(resolve:(x:unknown)=>void)=>Promise.resolve(result()).then(resolve)};return q}})}));
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>{state.authReads++;return{data:{user:{id:'user'}}}}},rpc:async()=>({data:state.allowed,error:state.failed==='rpc'?{}:null}),from:(table:string)=>{const filters:((r:Record<string,unknown>)=>boolean)[]=[];const result=()=>({data:state.failed===table?null:(state.tables[table]??[]).filter(r=>filters.every(f=>f(r))),error:state.failed===table?{}:null});const q={select:()=>q,eq:(k:string,v:unknown)=>{filters.push(r=>r[k]===v);return q},or:()=>q,is:()=>q,order:()=>q,limit:()=>q,range:async()=>({...result(),count:result().data?.length??0}),maybeSingle:async()=>({...result(),data:result().data?.[0]??null}),then:(resolve:(x:unknown)=>void)=>Promise.resolve({...result(),count:result().data?.length??null}).then(resolve)};return q}})}));
 vi.mock('@/lib/dokter',()=>({daftarDokter:async()=>{state.doctorReads++;return[{id:'doctor',nama:'Dr. Fiction',jabatan:'Dokter Hewan'},{id:'groomer',nama:'Groomer Fiction',jabatan:'Groomer'}]}}));vi.mock('@/lib/service-performers-server',()=>({loadServiceStaff:async()=>[],loadBranchGroomingPolicy:async()=>null}));vi.mock('@/lib/rombongan-server',()=>({bacaSaudaraKunjungan:async()=>[]}));vi.mock('@/lib/katalog-racikan-server',()=>({bolehRacikKhusus:async()=>false,loadKatalogRacikan:async()=>[]}));
 vi.mock('@/app/(app)/klinik/rekam-medis/[visitId]/RekamForm',()=>({RekamForm:()=>null}));vi.mock('@/app/(app)/klinik/rekam-medis/[visitId]/RacikanInline',()=>({RacikanInline:()=>null}));vi.mock('@/app/(app)/klinik/rawat-inap/actions',()=>({admitInpatient:vi.fn()}));
 import Page from'@/app/(app)/klinik/rekam-medis/[visitId]/page';
@@ -41,4 +41,12 @@ it('offers late racikan only while the same saved record is eligible and unpaid'
   state.failed='';
   state.tables.visits[0].status='Selesai';
   expect((await page()).some(x=>x.props.medicalRecordId==='record')).toBe(false);
+});
+it('K01: once an invoice is posted, offers an addendum form and lists saved addenda with author',async()=>{
+ expect((await page()).some(x=>String(x.props.scope??'').startsWith('clinical-addendum:'))).toBe(false);
+ state.tables.invoices=[{id:'invoice',visit_id:'visit',voided_at:null}];
+ state.tables.clinic_record_addenda=[{id:'ad',medical_record_id:'record',diagnosis_addendum:'Tambahan diagnosa',therapy_addendum:null,reason:null,created_at:'2026-10-25T00:00:00Z',created_by:'user',profiles:{full_name:'Dokter Fiksi'}}];
+ const nodes=await page();
+ expect(nodes.some(x=>x.props.scope==='clinical-addendum:visit:record')).toBe(true);
+ expect(nodes.some(x=>React.Children.toArray(x.props.children as React.ReactNode).includes('Dokter Fiksi'))).toBe(true);
 });
