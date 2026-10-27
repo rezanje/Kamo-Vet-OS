@@ -4,6 +4,8 @@ import { NumberInput } from "@/components/NumberInput";
 
 import { useMemo, useState } from "react";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
+import { ProcedureBmhpField } from "@/components/ProcedureBmhpField";
+import type { BmhpRow } from "@/lib/procedure-bmhp";
 import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import Link from "next/link";
@@ -20,7 +22,7 @@ import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound
 import { InpatientStaffFields } from '@/components/InpatientStaffFields';
 import type { ClinicalStaff, InpatientStaff } from '@/lib/clinical-staff';
 
-export type ItemLite = { id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number; item_type?: string; tindakan_kategori?: string | null; units?: ItemUnit[] };
+export type ItemLite = { id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number; item_type?: string; tindakan_kategori?: string | null; units?: ItemUnit[] };
 type CartRow = {
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
   faktor: number;
@@ -30,6 +32,8 @@ type CartRow = {
   official_version_id?: string;
   sale_item_id?: string;
   service_performers?: ServicePerformersInput | null;
+  /** K02: actual consumables on a procedure row (optional). */
+  bmhp?: BmhpRow[];
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -129,7 +133,10 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
     },
   });
 
-  const obatMatches = useMemo(() => items.filter((it) => it.name.toLowerCase().includes(search.toLowerCase())), [items, search]);
+  const obatMatches = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return items.filter(it => [it.name, it.code, it.upc].some(value => value?.toLowerCase().includes(term)));
+  }, [items, search]);
   const obatPages = Math.max(1, Math.ceil(obatMatches.length / 40));
   const currentObatPage = Math.min(obatPage, obatPages);
   const filtered = obatMatches.slice((currentObatPage - 1) * 40, currentObatPage * 40);
@@ -455,6 +462,8 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                               grooming={groomingApplies && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}
                               onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
+                            {r.jenis === "jasa" && r.item_id && <ProcedureBmhpField label={r.nama_obat} value={r.bmhp} items={items}
+                              onChange={bmhp => setCart(rows => rows.map(row => row.key === r.key ? {...row, bmhp} : row))} />}
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
                                 {(r.ingredients ?? []).map((b) => (

@@ -1,0 +1,12 @@
+server: postgres (PostgreSQL) 16.14 (Homebrew) | cluster: <tmp-cluster>
+Applied 267 repository migrations to isolated PostgreSQL 16 with auth/storage shims and pre-0068 COA fixtures.
+clinic_procedure_bmhp.sql: passed (FIFO).
+clinic_invoice_post.sql: passed (FIFO).
+clinic_billing_lifecycle.sql: passed (FIFO).
+clinic_compound_issue.sql: passed (FIFO).
+clinic_manual_invoice_units.sql: passed (FIFO).
+clinic_inpatient_action_category.sql: passed (FIFO).
+official_compound_catalog.sql: passed (FIFO).
+compound_catalog_sku_binding.sql: passed (FIFO).
+clinic_procedure_bmhp.sql: passed (moving average).
+cleanup: temp cluster removed

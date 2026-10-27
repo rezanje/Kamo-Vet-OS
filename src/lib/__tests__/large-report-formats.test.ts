@@ -27,7 +27,11 @@ it.each(["csv", "xlsx", "print"])("exports a complete item-sales cohort beyond 5
     const sheet = book.getWorksheet("Penjualan barang")!;
     expect(sheet.rowCount).toBe(count + 1);
     expect(sheet.getRow(count + 1).getCell(2).value).toBe("STRUK-05200");
-    expect(book.getWorksheet("Ringkasan dan filter")!.getRow(10).getCell(2).value).toBe(count * 100);
+    const summary = book.getWorksheet("Ringkasan dan filter")!;
+    const totalRows: number[] = [];
+    summary.eachRow((row, rowNumber) => { if (row.getCell(1).value === "Neto barang sebelum retur dan fee (Rp)") totalRows.push(rowNumber); });
+    expect(totalRows).toHaveLength(1);
+    expect(summary.getRow(totalRows[0]).getCell(2).value).toBe(count * 100);
   } else {
     const output = await response.text();
     expect(output).toContain("STRUK-00000");

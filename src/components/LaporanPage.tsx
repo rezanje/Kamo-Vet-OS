@@ -10,7 +10,7 @@ import { ReportColumns, ReportColumnsFilterInput } from "./ReportColumns";
 import { reportFilterDefaults } from "@/lib/report-filter-defaults";
 
 export function LaporanPage({
-  icon, title, desc, filter, ringkasan, children, unduhTampilan = true,
+  icon, title, desc, filter, ringkasan, children, unduhTampilan = true, pilihKolom = false,
 }: {
   icon: string;
   title: string;
@@ -20,7 +20,10 @@ export function LaporanPage({
   children: ReactNode;
   /** Paginated financial reports use their complete server export instead. */
   unduhTampilan?: boolean;
+  /** Allow saved column choices even when this report has its own full export. */
+  pilihKolom?: boolean;
 }) {
+  const pilihanKolom = unduhTampilan || pilihKolom;
   return (
     <div data-report-page>
       <div style={{ marginBottom: 4 }}>
@@ -42,12 +45,12 @@ export function LaporanPage({
 
       {filter && (
         <form data-report-filters className="crm-sec" style={{ marginBottom: 12 }}>
-          {unduhTampilan && <Suspense fallback={null}><ReportColumnsFilterInput /></Suspense>}
+          {pilihanKolom && <Suspense fallback={null}><ReportColumnsFilterInput /></Suspense>}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>{filter}</div>
         </form>
       )}
 
-      {unduhTampilan ? <Suspense fallback={<div id="laporan-isi">{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</div>}>
+      {pilihanKolom ? <Suspense fallback={<div id="laporan-isi">{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</div>}>
         <ReportColumns>{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</ReportColumns>
       </Suspense> : <div id="laporan-isi">{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</div>}
     </div>

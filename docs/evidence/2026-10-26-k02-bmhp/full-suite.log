@@ -1,0 +1,10 @@
+Full vitest (commit ac29fedd): Test Files 7 failed | 495 passed | 1 skipped (503); Tests 14 failed | 3621 passed | 1 skipped (3636).
+The 7 failing files are identical to main on this host (unrelated, pre-existing):
+ FAIL  src/components/__tests__/cashier-stock-request-draft.test.tsx
+ FAIL  src/components/__tests__/correction-transaction-form.test.tsx
+ FAIL  src/components/__tests__/expense-form.test.tsx
+ FAIL  src/components/__tests__/production-request-identity.test.tsx
+ FAIL  src/components/__tests__/report-presets.test.tsx
+ FAIL  src/components/__tests__/sales-request-form.test.tsx
+ FAIL  src/components/__tests__/transaction-form-draft.test.tsx
+next build exit 0; tsc --noEmit exit 0; eslint 0 errors.

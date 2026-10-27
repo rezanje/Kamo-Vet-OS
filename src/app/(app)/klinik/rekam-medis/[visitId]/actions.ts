@@ -1,5 +1,6 @@
 "use server";
 import { servicePerformerInput, type ServicePerformersInput } from "@/lib/service-performers";
+import { bmhpInput, type BmhpInput } from "@/lib/procedure-bmhp";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
@@ -15,6 +16,7 @@ import { validateClinicalCompletion } from "@/lib/clinic-required-fields";
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
   service_performers?: ServicePerformersInput | null;
+  bmhp?: BmhpInput[];
   nama_obat: string; qty: number; satuan?: string; harga?: number; aturan_pakai?: string; jenis?: string;
   kategori?: string; ingredients?: RacikBahan[]; dosage_form?: string;
   item_id?: string | null; faktor?: number; key?: string;
@@ -125,9 +127,20 @@ export async function simpanRekamMedis(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
 
+  // K02: BMHP is only sent once the database exposes the migrated contract;
+  // older databases keep the exact previous payload instead of failing saves.
+  let bmhpRows: (BmhpInput[] | null)[];
+  try { bmhpRows = resep.map(r => r.jenis === "jasa" && r.item_id ? bmhpInput(r.bmhp) : null); }
+  catch (error) { return redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "BMHP tidak valid")}`); }
+  const bmhpSupported = bmhpRows.some(row => row?.length)
+    ? (await supabase.rpc("clinic_bmhp_supported")).data === true : false;
+  if (bmhpRows.some(row => row?.length) && !bmhpSupported) {
+    return redirect(`${back}?error=${encodeURIComponent("Pencatatan BMHP tindakan belum aktif di database. Hapus BMHP atau hubungi admin.")}`);
+  }
   const rows = resep
-    .filter((r) => r.nama_obat?.trim() && r.jenis !== "racikan")
-    .map((r) => ({
+    .map((r, index) => ({ r, bmhp: bmhpRows[index] }))
+    .filter(({ r }) => r.nama_obat?.trim() && r.jenis !== "racikan")
+    .map(({ r, bmhp }) => ({
       nama_obat: r.nama_obat.trim(),
       // Tautan ke master barang (migrasi 0084) — tanpa ini stok obat klinik
       // tidak bisa dipotong dan modalnya tidak pernah tercatat.
@@ -143,6 +156,7 @@ export async function simpanRekamMedis(formData: FormData) {
       ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers: servicePerformerInput(r.service_performers)} : {}),
       // Kategori tindakan (§6.3) — dasar penentuan wajib/tidaknya form persetujuan.
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
+      ...(bmhp?.length ? { bmhp_components: bmhp } : {}),
     }));
   // Satu RPC untuk seluruh pemeriksaan. Gagal pada formula, stok, follow-up,
   // atau status kunjungan akan me-rollback semua baris, termasuk rekam medis.

@@ -91,7 +91,7 @@ export default async function AppLayout({
           </>
         )}
         {activeBranch}
-        {canCreateAccount && <div style={{ padding: "8px 16px" }}><Link href="/pengaturan/pengguna" className="back-btn">Tambah akun karyawan</Link></div>}
+        {canCreateAccount && <div className="no-print" style={{ padding: "8px 16px" }}><Link href="/pengaturan/pengguna" className="back-btn">Tambah akun karyawan</Link></div>}
         <div className="ct"><ActivityMenuLink />{children}</div>
       </div>
     </div></DraftUserProvider></ActivityNavigationProvider>

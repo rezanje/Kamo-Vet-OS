@@ -11,5 +11,5 @@ export function ActivityMenuLink() {
   const href = activityMenuHref(path);
   const object = activityRouteObject(path);
   if (!allowed || (!href && !object)) return null;
-  return <div style={{ marginBottom: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>{href && <Link href={href} className="back-btn"><i className="ti ti-history" /> Riwayat aktivitas menu</Link>}{object && <ActivityHistoryLink entity={object.entity} id={object.id} />}</div>;
+  return <div className="no-print" style={{ marginBottom: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>{href && <Link href={href} className="back-btn"><i className="ti ti-history" /> Riwayat aktivitas menu</Link>}{object && <ActivityHistoryLink entity={object.entity} id={object.id} />}</div>;
 }

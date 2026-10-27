@@ -33,3 +33,11 @@ it('preserves the requested4/5/6 quantity boundary without inventing package tot
  expect([4,5,6,10].map(qty=>hitungPromoKeranjang(repeating,[{item_id:'a',qty,harga:10000}]).reduce((sum,r)=>sum+r.potongan,0))).toEqual([0,10000,10000,20000]);
  expect(hitungPromoKeranjang([{...rules[0],minQty:null,maxQty:null}],[{item_id:'a',qty:1,harga:10000}])[0].potongan).toBe(2000);
 });
+it('loads explicit package-total mode and fails closed on malformed active configuration',async()=>{
+ const row=promo('p',{rule:{discount_mode:'package_total'},min_qty:5,max_qty:5});
+ const targets=[{promo_id:'p',item_id:'a'}];
+ const rules=await loadPromoAktif(database([row],targets),'own');
+ expect([4,5,6,10].map(qty=>hitungPromoKeranjang(rules,[{item_id:'a',qty,harga:10000}]).reduce((sum,r)=>sum+r.potongan,0))).toEqual([0,2000,2000,2000]);
+ await expect(loadPromoAktif(database([row],[]),'own')).rejects.toThrow('satu barang');
+ await expect(loadPromoAktif(database([promo('p',{rule:{discount_mode:'unknown'}})],[]),'own')).rejects.toThrow('Cara hitung');
+});

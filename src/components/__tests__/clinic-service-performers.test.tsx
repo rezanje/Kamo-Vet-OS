@@ -125,6 +125,24 @@ it('payment keeps repeated manual services separate and bulk fill preserves an o
  expect(rows.map((row:{service_performers:unknown})=>row.service_performers)).toEqual([source.service_performers,{doctor_id:'doctor-a',staff_id:null},{doctor_id:null,staff_id:'staff-a'}]);
 });
 
+it('S01 payment lets the cashier assign performers to an unassigned clinic service source row, keeping recorded and legacy rows sealed',async()=>{
+ const recorded={deskripsi:'Jasa tercatat',qty:1,harga:100,prescription_item_id:'recorded',service_performers:{version:1,doctor_id:'saved-doctor',doctor_name:'Dokter Lama',staff_id:null}};
+ const empty={deskripsi:'Jasa kosong',qty:1,harga:100,prescription_item_id:'empty',service_performers:{version:1,doctor_id:null,staff_id:null,doctor_name:null,staff_name:null}};
+ const legacy={deskripsi:'Jasa lama',qty:1,harga:100,prescription_item_id:'legacy',service_performers:null};
+ await act(async()=>root.render(<PembayaranForm visitId="s01" requestKey="pay" draftUserId="cashier" sourceVersion="source" patient={{...patient,jenisLayanan:'Klinik',noInvoice:'baru',tanggal:'hari ini'}} initialObat={[]} initialJasa={[recorded,empty,legacy]} serviceStaff={common.serviceStaff} catatanResep={null} bekal={{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-23',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1}} />));
+ const fieldsFor=(name:string)=>[...host.querySelectorAll('fieldset')].filter(field=>field.querySelector('legend')?.textContent===`Pelaksana ${name}`);
+ expect(fieldsFor('Jasa tercatat')).toHaveLength(0);
+ expect(fieldsFor('Jasa lama')).toHaveLength(0);
+ expect(fieldsFor('Jasa kosong')).toHaveLength(1);
+ const bulk=[...host.querySelectorAll('fieldset')].find(field=>field.textContent?.includes('Isi pelaksana'))!;
+ expect(bulk).toBeDefined();
+ await act(async()=>{const select=bulk.querySelectorAll('select')[1];select.value='staff-a';select.dispatchEvent(new Event('change',{bubbles:true}));});
+ await act(async()=>[...host.querySelectorAll('button')].find(button=>button.textContent?.includes('Isi baris jasa kosong'))!.click());
+ const rows=JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
+ expect(rows.map((row:{service_performers:unknown})=>row.service_performers)).toEqual([recorded.service_performers,{doctor_id:null,staff_id:'staff-a'},null]);
+ expect(rows.map((row:{prescription_item_id:string})=>row.prescription_item_id)).toEqual(['recorded','empty','legacy']);
+});
+
 it.each(['exam','inpatient'])('%s recovers a legacy draft without silently adding performer fields',async kind=>{
  await render(kind);await tab('Jasa');await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Konsultasi"]')!.click());
  const key=Object.keys(sessionStorage).find(key=>key.includes('clinic-draft')&&key.includes(kind==='exam'?'exam:visit':'inpatient:inpatient'))!;
@@ -133,3 +151,41 @@ it.each(['exam','inpatient'])('%s recovers a legacy draft without silently addin
  await act(async()=>root.unmount());root=createRoot(host);await render(kind);
  expect(cart()).toHaveLength(1);expect(cart()[0]).not.toHaveProperty('service_performers');
 });
+
+it.each(['exam','inpatient'])('K02 %s procedure rows record optional BMHP from stock items into the same cart payload', async kind => {
+  await render(kind); await tab("Jasa");
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Konsultasi"]')!.click());
+  const picker = host.querySelector<HTMLInputElement>('input[aria-label="Tambah BMHP Konsultasi"]')!;
+  expect(picker, 'BMHP picker on procedure row').toBeTruthy();
+  await act(async () => {
+    picker.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(picker, 'Makanan');
+    picker.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => picker.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+  await act(async () => picker.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  const row = cart().find((item: { item_id: string }) => item.item_id === 'consult');
+  expect(row.bmhp).toEqual([{ item_id: 'food', nama: 'Makanan kucing', qty: 1, unit: 'pcs' }]);
+  expect(host.querySelector('input[aria-label="Tambah BMHP Makanan kucing"]')).toBeNull();
+});
+
+it.each(['exam','inpatient'])('K02 %s action cart keeps chosen BMHP after reopening the draft', async kind => {
+  await render(kind); await tab('Tindakan');
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
+  const picker = host.querySelector<HTMLInputElement>('input[aria-label="Tambah BMHP Steril"]')!;
+  expect(picker).toBeTruthy();
+  await act(async () => {
+    picker.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(picker, 'Makanan');
+    picker.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => picker.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+  await act(async () => picker.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  expect(cart()).toEqual([expect.objectContaining({
+    item_id: 'steril', jenis: 'jasa', bmhp: [{ item_id: 'food', nama: 'Makanan kucing', qty: 1, unit: 'pcs' }],
+  })]);
+  await act(async () => root.unmount()); root = createRoot(host); await render(kind);
+  expect(cart()[0].bmhp).toEqual([{ item_id: 'food', nama: 'Makanan kucing', qty: 1, unit: 'pcs' }]);
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Makanan kucing"]')?.value).toBe('1');
+});
+

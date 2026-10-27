@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ ranges: [] as number[][], reads: [] as { table: string; filters: unknown[][] }[] }));
+const fixture = vi.hoisted(() => ({ ranges: [] as number[][], reads: [] as { table: string; filters: unknown[][] }[], move: null as null | Record<string, unknown> }));
 const items = Array.from({ length: 1205 }, (_, i) => ({ id: `item-${i}`, code: `SKU-${i}`, name: i >= 1203 ? "Zebra Tuna" : `Pakan ${i}`, unit: "pcs" }));
 vi.mock("@/lib/satuan", async original => ({ ...await original<typeof import("@/lib/satuan")>(), loadItemUnits: async () => new Map() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
@@ -18,7 +18,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       lte: (column: string, value: unknown) => { read.filters.push(["lte", column, value]); return query; },
       order: () => query,
       range: (from: number, to: number) => { start = from; end = to; fixture.ranges.push([from, to]); return query; },
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: table === "items" ? items.slice(start, end + 1) : table === "warehouses" ? [{ id: "wh-1", code: "WH1", name: "Gudang Uji" }] : [], error: null }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: table === "items" ? items.slice(start, end + 1) : table === "warehouses" ? [{ id: "wh-1", code: "WH1", name: "Gudang Uji" }] : table === "stock_moves" && fixture.move && read.filters.some(f => f[0] === "gte") ? [fixture.move] : [], error: null }).then(resolve),
     };
     return query;
   },
@@ -28,7 +28,7 @@ import KartuStokPage from "@/app/(app)/pos/kartu-stok/page";
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  fixture.ranges = []; fixture.reads = [];
+  fixture.ranges = []; fixture.reads = []; fixture.move = null;
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
@@ -113,4 +113,11 @@ it("rejects unknown item/warehouse query IDs on the server", async () => {
   expect(itemId()).toBe(""); expect(nameInput().value).toBe(""); expect(codeInput().value).toBe("");
   expect(new FormData(host.querySelector("form")!).get("gudang")).toBe("");
   expect(fixture.reads.some(r => r.table === "stock_moves")).toBe(false);
+});
+
+it("opens the exact racikan source from a material stock movement", async () => {
+  const recipeId = "11111111-2222-4333-8444-555555555555";
+  fixture.move = { tanggal: "2026-10-19", qty: -2, unit_cost: 5, source: "racik", source_ref: recipeId, warehouse_id: "wh-1", warehouses: { code: "WH1", name: "Gudang Uji" } };
+  await render({ item: "item-1204", dari: "2026-10-01", sampai: "2026-10-20" });
+  expect(host.querySelector(`a[href="/klinik/racik/${recipeId}"]`)?.textContent).toBe(recipeId);
 });

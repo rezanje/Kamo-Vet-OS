@@ -105,6 +105,25 @@ describe("compound master SKUs reach clinic POS", () => {
     expect(props?.bahanItems).toEqual([expect.objectContaining({ id: "material", name: "Bahan", code: "CODE-material" })]);
     expect(props?.racikanItems).toEqual([expect.objectContaining({ id: "racik", name: "Obat Racik Sirup Flu", code: "CODE-racik" })]);
   });
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s sends inventory barcodes to the medicine search", async (_name, page) => {
+    fixture.tables.items[0].upc = "8900012345678";
+    const props = formProps(await page());
+    expect(props?.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: "ordinary-0", upc: "8900012345678" })]));
+  });
+  it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s lists active finished compounds in child racikan categories only", async (_name, page) => {
+    fixture.tables.item_categories.push({ id: "cat-child", name: "Sirup", parent_id: "cat" });
+    fixture.tables.items.push(
+      { id: "child-compound", name: "Sirup batuk fiktif", is_active: true, is_compound_material: false, item_type: "Persediaan", category_id: "cat-child", unit: "PCS", sell_price: 18000 },
+      { id: "child-material", name: "Bahan sirup fiktif", is_active: true, is_compound_material: true, item_type: "Persediaan", category_id: "cat-child", unit: "PCS", sell_price: 1000 },
+      { id: "child-inactive", name: "Sirup lama fiktif", is_active: false, is_compound_material: false, item_type: "Persediaan", category_id: "cat-child", unit: "PCS", sell_price: 18000 },
+    );
+    const props = formProps(await page());
+    const compoundIds = (props?.racikanItems as { id: string }[]).map(item => item.id);
+    expect(compoundIds).toContain("child-compound");
+    expect(compoundIds).not.toContain("child-material");
+    expect(compoundIds).not.toContain("child-inactive");
+    expect((props?.items as { id: string }[]).map(item => item.id)).not.toContain("child-compound");
+  });
   it("does not reopen the editable initial form for a recorded visit", async () => {
     fixture.tables.visits[0].status = "Pembayaran";
     expect(formProps(await exam())).toBeUndefined();

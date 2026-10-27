@@ -6,6 +6,8 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ClinicalCorrection } from "@/lib/clinical-correction";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
+import { ProcedureBmhpField } from "@/components/ProcedureBmhpField";
+import type { BmhpRow } from "@/lib/procedure-bmhp";
 import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -24,7 +26,7 @@ import { staffForService } from "@/lib/clinical-staff";
 import { isMedicalService } from "@/lib/clinic-required-fields";
 
 export type ItemLite = {
-  id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number;
+  id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number;
   tindakan_kategori?: string | null; item_type?: string;
   units?: ItemUnit[];   // satuan berjenjang (pcs/box, ml/btl) — kosong = hanya satuan dasar
 };
@@ -37,6 +39,8 @@ type CartRow = {
   official_version_id?: string;
   sale_item_id?: string;
   service_performers?: ServicePerformersInput | null;
+  /** K02: actual consumables on a procedure row (optional). */
+  bmhp?: BmhpRow[];
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -131,7 +135,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     setSaleItemId(""); setOfficialVersionId(""); setRacikNama(""); setRacikAturan(""); setRacikBahan([]);
   };
 
-  const obatMatches = useMemo(() => items.filter((it) => it.name.toLowerCase().includes(search.toLowerCase())), [items, search]);
+  const obatMatches = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return items.filter(it => [it.name, it.code, it.upc].some(value => value?.toLowerCase().includes(term)));
+  }, [items, search]);
   const obatPages = Math.max(1, Math.ceil(obatMatches.length / 40));
   const currentObatPage = Math.min(obatPage, obatPages);
   const filtered = obatMatches.slice((currentObatPage - 1) * 40, currentObatPage * 40);
@@ -372,6 +379,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                               grooming={groomingApplies && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}
                               onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
+                            {r.jenis === "jasa" && r.item_id && <ProcedureBmhpField label={r.nama_obat} value={r.bmhp} items={items}
+                              onChange={bmhp => setCart(rows => rows.map(row => row.key === r.key ? {...row, bmhp} : row))} />}
                             {r.jenis === "racikan" && expanded[r.key] && (
                               <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
                                 {(r.ingredients ?? []).map((b) => (
