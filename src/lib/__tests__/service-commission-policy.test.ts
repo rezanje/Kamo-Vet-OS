@@ -73,3 +73,47 @@ it("never replaces a DEMO snapshot or an ambiguous return source",()=>{
  expect(prepared.rows[0].fixedCommission).toBe(true);
  expect(prepared.rows[1].commissionPending).toBe(true);
 });
+
+it("personal rules pay each actor on the full basis, as labelled",()=>{
+ const configured=prepareServiceCommission([source],[rule("doctor","doctor"),rule("staff","staff",5)],[policy("personal_rules")]);
+ expect(configured.calculationRows.map(row=>[row.employeeId,row.qty,row.omzet])).toEqual([["doctor",1,1000],["staff",1,1000]]);
+});
+
+it("a return follows the policy of its original sale date, not the return date",()=>{
+ const ret={...source,tanggal:"2026-12-03",commissionPolicyDate:"2026-11-12",qty:-1,omzet:-100,laba:-100};
+ const policies=[policy("split",{id:"november"}),policy("both_full",{id:"december",effectiveFrom:"2026-12-01"})];
+ expect(prepareServiceCommission([ret],[rule("global",null)],policies).calculationRows.map(row=>row.omzet)).toEqual([-60,-40]);
+ const dated={...ret,commissionPolicyDate:undefined};
+ expect(prepareServiceCommission([dated],[rule("global",null)],policies).calculationRows.map(row=>row.omzet)).toEqual([-100,-100]);
+});
+
+it("breaks a same-day tie by creation time, then id",()=>{
+ const earlier=policy("both_full",{id:"b",createdAt:"2026-10-26T00:00:00Z"});
+ const later=policy("split",{id:"a",createdAt:"2026-10-27T00:00:00Z"});
+ expect(prepareServiceCommission([source],[rule("global",null)],[earlier,later]).calculationRows.map(row=>row.omzet)).toEqual([600,400]);
+ const sameTime=policy("split",{id:"c",createdAt:"2026-10-26T00:00:00Z",doctorSharePct:30,staffSharePct:70});
+ expect(prepareServiceCommission([source],[rule("global",null)],[earlier,sameTime]).calculationRows.map(row=>row.omzet)).toEqual([300,700]);
+});
+
+it("a zero share needs no rule for that actor and pays it nothing",()=>{
+ const doctorOnly=policy("split",{doctorSharePct:100,staffSharePct:0});
+ const prepared=prepareServiceCommission([source],[rule("doctor","doctor")],[doctorOnly]);
+ expect(prepared.rows[0].commissionPending).toBe(false);
+ expect(hitungKomisi(prepared.calculationRows,[rule("doctor","doctor")]).map(row=>[row.employeeId,row.komisi])).toEqual([["doctor",100],["staff",0]]);
+});
+
+it("a newer invalid policy blocks instead of falling back to an older valid one",()=>{
+ const prepared=prepareServiceCommission([source],[rule("global",null)],[
+  policy("both_full",{id:"old"}),policy("split",{id:"broken",effectiveFrom:"2026-11-05",doctorSharePct:50,staffSharePct:40}),
+ ]);
+ expect(prepared.rows[0].commissionPending).toBe(true);
+ expect(()=>assertServiceAttributionReady(prepared.rows)).toThrow("SERVICE_ATTRIBUTION_PENDING");
+});
+
+it("a source without a branch uses only an all-branch policy",()=>{
+ const noBranch={...source,branchId:null};
+ const branchOnly=policy("both_full",{branchId:"branch"});
+ expect(prepareServiceCommission([noBranch],[rule("global",null)],[branchOnly]).rows[0].commissionPending).toBe(true);
+ expect(prepareServiceCommission([noBranch],[rule("global",null)],[branchOnly,policy("split",{id:"all"})]).calculationRows
+  .map(row=>row.omzet)).toEqual([600,400]);
+});

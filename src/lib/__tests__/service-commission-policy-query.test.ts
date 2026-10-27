@@ -61,3 +61,10 @@ it("maps stored numeric shares and leaves policies after the period out",async()
  expect((await muatKebijakanKomisiJasa(client())).policies).toEqual([{id:"policy",branchId:null,effectiveFrom:"2026-11-01",mode:"both_full",
   doctorSharePct:null,staffSharePct:null,createdAt:"2026-10-26T00:00:00Z"}]);
 });
+
+it("maps stored split shares returned as numeric strings",async()=>{
+ const row={id:"split",branch_id:"branch",effective_from:"2026-11-01",mode:"split",doctor_share_pct:"62.50",staff_share_pct:"37.50",created_at:"2026-10-27T00:00:00Z"};
+ const q={select:()=>q,lte:()=>q,order:()=>q,range:()=>q,then:(resolve:(result:unknown)=>unknown)=>Promise.resolve({data:[row],count:1,error:null}).then(resolve)};
+ expect((await muatKebijakanKomisiJasa({from:()=>q})).policies).toEqual([{id:"split",branchId:"branch",effectiveFrom:"2026-11-01",
+  mode:"split",doctorSharePct:62.5,staffSharePct:37.5,createdAt:"2026-10-27T00:00:00Z"}]);
+});

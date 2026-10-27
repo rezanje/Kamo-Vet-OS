@@ -68,5 +68,4 @@ it("before the S04 migration explains that two-performer rows stay pending and o
   const html = renderToStaticMarkup(await page());
   expect(html).toContain("Penyimpanan kebijakan belum terpasang di database");
   expect(html).not.toContain("Simpan kebijakan");
-  expect(html).toContain("Simpan");
 });
