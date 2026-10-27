@@ -1,0 +1,9 @@
+apply.sql written from 4 migrations
+Applied 276 repository migrations to isolated PostgreSQL 17.11 (Homebrew) with fictional auth/storage shims.
+preflight: SUMMARY|t|0 failed
+apply + readback: SUMMARY|t
+re-apply is idempotent; preflight after apply: SUMMARY|t|0 failed
+rollback: objects removed, clinic_post_invoice restored
+apply after rollback + readback: SUMMARY|t
+Stopped and removed the throwaway PostgreSQL cluster.
+REHEARSAL PASSED

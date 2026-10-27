@@ -1,0 +1,10 @@
+Applied 280 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+d1000000-0000-4000-8000-000000000001
+authenticated
+authenticated
+fc000000-0000-4000-8000-000000000001
+fc000000-0000-4000-8000-000000000002
+fc000000-0000-4000-8000-000000000003
+h_payroll_incentives: all assertions passed
+PASS H05 package origin, H04 groups, H06 visit rate, H03 turnover components, H02 templates + history + access
+Stopped and removed the throwaway PostgreSQL cluster.
