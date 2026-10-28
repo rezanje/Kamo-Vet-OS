@@ -7,6 +7,10 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   // Session and module checks read Supabase in Seoul on every navigation.
+  // `regions` alone is ignored by Edge middleware (it always runs at the
+  // nearest edge, e.g. Singapore). Node.js middleware (stable since Next 15.5)
+  // runs as a Vercel Function, so it honors icn1. Rollback: delete this line.
+  runtime: "nodejs",
   regions: ["icn1"],
   matcher: [
     // `api/cron` sengaja dikecualikan: cron Vercel memanggilnya TANPA sesi login,
