@@ -24,6 +24,7 @@ import { ReferralPanel } from "./ReferralPanel";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 import { readCompleteList } from "@/lib/checked-list";
+import { Popup } from "@/components/Popup";
 import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
 import { tambahAdendumRekamMedis } from "./actions";
 
@@ -327,11 +328,7 @@ export default async function RekamMedisPage({
         </div>
       )}
 
-      {error && (
-        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-          <i className="ti ti-alert-circle" /> {error}
-        </div>
-      )}
+      <Popup message={error} />
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
       {success === "addendum" && <div className="p2ban" role="status">Adendum rekam medis tersimpan; catatan asli, tagihan, dan stok tidak berubah.</div>}
       {success === "lanjutan" && (

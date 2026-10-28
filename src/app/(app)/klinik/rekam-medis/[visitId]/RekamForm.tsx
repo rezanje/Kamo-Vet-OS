@@ -12,6 +12,8 @@ import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bm
 import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
+import { Popup } from "@/components/Popup";
+import { kekuranganStok } from "@/lib/stok-keranjang";
 import { simpanRekamMedis, koreksiRekamMedis } from "./actions";
 import { type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
@@ -90,6 +92,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
+  const [stokKurang, setStokKurang] = useState<string | null>(null);
 
   // Builder racikan
   const [racikNama, setRacikNama] = useState("");
@@ -221,9 +224,15 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const ppn = 0; // ponytail: PPN 0% (display); tarif final ditentukan kasir saat pembayaran
   const total = Math.max(0, subtotal - discountVal + ppn);
 
-  return (
+  const stokById = useMemo(() => new Map([...items, ...bahanItems, ...racikanItems].map(it => [it.id, { stok: it.stok, unit: it.unit }])), [items, bahanItems, racikanItems]);
+
+  return (<>
+    {/* Di luar <form>: dialog punya form method="dialog" sendiri. */}
+    <Popup message={stokKurang} title="Stok tidak cukup" onClose={() => setStokKurang(null)} />
     <form ref={draftAttachForm} action={(data) => draftSubmit(data, correction ? koreksiRekamMedis : simpanRekamMedis)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
+      const kurang = correction ? [] : kekuranganStok(cart, stokById);
       if (procedureDraft) { event.preventDefault(); event.stopPropagation(); setTab("Tindakan"); setProcedureError("Selesaikan komposisi BMHP tindakan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
+      else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(`${kurang.join("; ")}. Kurangi jumlah atau ganti obat sebelum melanjutkan.`); }
       else draftCapture();
     }}>
       {draftRecovered && <div role="status" className="p2ban">Draf dipulihkan <button type="button" className="btn-def" onClick={draftDiscard}>Buang draf</button></div>}
@@ -516,7 +525,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
         <SubmitButton className="btn-acc" icon="ti-bed" name="next" value="rawatinap" style={{ padding: "10px 20px", fontSize: 13 }} pendingText="Menyimpan…" busy={draftLeaving}>Simpan &amp; Lanjut Rawat Inap</SubmitButton>
       </div>}
     </form>
-  );
+  </>);
 }
 
 function MiniKV({ k, v }: { k: string; v: string }) {
