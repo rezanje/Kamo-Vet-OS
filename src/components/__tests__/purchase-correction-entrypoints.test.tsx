@@ -20,7 +20,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       : table === "purchase_advances" ? advances
       : table === "purchase_invoices" && actor.received ? [{ id: "invoice", no_faktur: "INV-1", voided_at: null }] : [];
     let from = 0, to = Infinity;
-    const query = { select: () => query, eq: () => query, order: () => query, range: (start:number,end:number) => { from=start;to=end;return query; },
+    const query = { select: () => query, eq: () => query, in: () => query, order: () => query, range: (start:number,end:number) => { from=start;to=end;return query; },
       maybeSingle: async () => ({ data, error:null }),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data:Array.isArray(data)?data.slice(from,to+1):data, count:Array.isArray(data)?data.length:null, error:null }).then(resolve) };
     return query;

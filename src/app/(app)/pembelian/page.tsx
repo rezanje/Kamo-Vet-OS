@@ -218,8 +218,8 @@ export default async function PembelianPage({
                               </Link>
                             </>
                           )}
-                          {/* Draft/Dipesan tanpa transaksi turunan diedit langsung; sisanya lewat koreksi pembelian. */}
-                          <Link href={`/pembelian/${po.id}${po.status === "Diterima" ? "#purchase-correction" : "#edit-po"}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5 }}>{po.status === "Batal" ? "Lihat" : <><i className="ti ti-pencil" /> Edit</>}</Link>
+                          {/* Edit per baris ada di tabel barang detail PO (pop-up). */}
+                          <Link href={`/pembelian/${po.id}#daftar-item`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5 }}>{po.status === "Batal" ? "Lihat" : <><i className="ti ti-pencil" /> Edit</>}</Link>
                         </div>
                       </td>
                     </tr>
