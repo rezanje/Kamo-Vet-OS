@@ -53,7 +53,7 @@ export function POLineEdit({ poId, revision, row, today, hargaDiterima }: { poId
     <button type="button" className="btn-def" onClick={open} style={{ padding: "3px 9px", fontSize: 10.5 }}>
       <i className="ti ti-pencil" /> Edit
     </button>
-    <dialog ref={dialog} aria-labelledby={`edit-${row.id}`} style={{ border: ".5px solid var(--bd)", borderRadius: 12, padding: 20, maxWidth: 460, width: "calc(100% - 32px)" }}>
+    <dialog ref={dialog} aria-labelledby={`edit-${row.id}`} style={{ margin: "auto", border: ".5px solid var(--bd)", borderRadius: 12, padding: 20, maxWidth: 460, width: "calc(100% - 32px)" }}>
       <form onSubmit={save}>
         <div id={`edit-${row.id}`} style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Edit {row.nama}</div>
         <p style={{ fontSize: 11, color: "var(--tm)", marginTop: 0 }}>
