@@ -1,6 +1,6 @@
--- Read-only. Expected after apply: body_md5 = f9630a9197f26870696f688e6eee6d7b, triggers unchanged (3 rows, enabled 'O'),
+-- Read-only. Expected after apply: body_md5 = 20ffd58493e4d4127fe15597e54e5158, triggers unchanged (3 rows, enabled 'O'),
 -- and no EXECUTE for anon/authenticated/service_role.
-select md5(pg_get_functiondef('public.enforce_branch_grooming_performers()'::regprocedure)) = 'f9630a9197f26870696f688e6eee6d7b' as body_ok;
+select md5(pg_get_functiondef('public.enforce_branch_grooming_performers()'::regprocedure)) = '20ffd58493e4d4127fe15597e54e5158' as body_ok;
 select c.relname, t.tgenabled, pg_get_triggerdef(t.oid)
   from pg_trigger t join pg_class c on c.oid = t.tgrelid
  where t.tgname = 'zz_grooming_requirement' order by 1;

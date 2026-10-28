@@ -1,6 +1,6 @@
 server: 16.14 (Homebrew)
 Applied 297 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
-preflight (fix already in migrations): f9630a9197f26870696f688e6eee6d7b|ALREADY APPLIED
+preflight (fix already in migrations): 20ffd58493e4d4127fe15597e54e5158|ALREADY APPLIED
 preflight after rollback: 019ceed5f3e0951a00cd97c7e22e984a|READY: original body
 RED as expected on original body: record "new" has no field "sale_id"
 RED as expected on original body: editing a compound's dosage instruction fails (sync UPDATE of prescription_items)

@@ -8,7 +8,7 @@ begin;
 -- Grooming rules, INSERT behaviour, messages, trigger definitions and ACLs are unchanged.
 -- Provenance: replaces only the exact 20261025040000 body (md5) or this migration's own.
 do $guard$declare h text:=md5(pg_get_functiondef('public.enforce_branch_grooming_performers()'::regprocedure));begin
- if h not in('019ceed5f3e0951a00cd97c7e22e984a','f9630a9197f26870696f688e6eee6d7b') then
+ if h not in('019ceed5f3e0951a00cd97c7e22e984a','20ffd58493e4d4127fe15597e54e5158') then
   raise exception 'enforce_branch_grooming_performers differs from main (md5 %); stop and review',h;
  end if;
 end$guard$;
@@ -19,22 +19,26 @@ declare v_branch uuid; v_kind text; v_category text; v_type text; v_override boo
 begin
   -- PL/pgSQL resolves every NEW/OLD field in an IF expression even when an earlier
   -- AND term is false, so each table's columns are only referenced inside its own branch.
+  -- Unchanged rows keep historical attribution; any key or performer change re-runs the rule.
   if tg_op = 'UPDATE' then
     if tg_table_name = 'sale_items' then
       if new.sale_id is not distinct from old.sale_id
-        and new.item_id is not distinct from old.item_id then return new; end if;
+        and new.item_id is not distinct from old.item_id
+        and new.service_performers is not distinct from old.service_performers then return new; end if;
     elsif tg_table_name = 'prescription_items' then
       if old.kategori = 'Grooming' and new.kategori is distinct from old.kategori then
         raise exception using errcode = 'P0001', message = 'CARE_INVALID: kategori Grooming tersimpan tidak dapat diganti langsung';
       end if;
       if new.medical_record_id is not distinct from old.medical_record_id
         and new.item_id is not distinct from old.item_id and new.jenis is not distinct from old.jenis
-        and new.kategori is not distinct from old.kategori then return new; end if;
+        and new.kategori is not distinct from old.kategori
+        and new.service_performers is not distinct from old.service_performers then return new; end if;
     else
       if new.invoice_id is not distinct from old.invoice_id
         and new.item_id is not distinct from old.item_id and new.jenis is not distinct from old.jenis
         and new.prescription_item_id is not distinct from old.prescription_item_id
-        and new.service_source_line_id is not distinct from old.service_source_line_id then return new; end if;
+        and new.service_source_line_id is not distinct from old.service_source_line_id
+        and new.service_performers is not distinct from old.service_performers then return new; end if;
     end if;
   end if;
   if tg_table_name = 'sale_items' then
@@ -81,6 +85,6 @@ begin
 end $$;
 revoke all on function public.enforce_branch_grooming_performers() from public, anon, authenticated, service_role;
 do $check$declare h text:=md5(pg_get_functiondef('public.enforce_branch_grooming_performers()'::regprocedure));begin
- if h<>'f9630a9197f26870696f688e6eee6d7b' then raise exception 'enforce_branch_grooming_performers result unexpected (md5 %)',h;end if;
+ if h<>'20ffd58493e4d4127fe15597e54e5158' then raise exception 'enforce_branch_grooming_performers result unexpected (md5 %)',h;end if;
 end$check$;
 commit;

@@ -2,7 +2,7 @@
 -- which brings back the UPDATE error. Guarded so it only replaces this fix's body.
 begin;
 do $guard$declare h text:=md5(pg_get_functiondef('public.enforce_branch_grooming_performers()'::regprocedure));begin
- if h not in('f9630a9197f26870696f688e6eee6d7b','019ceed5f3e0951a00cd97c7e22e984a') then raise exception 'unexpected body (md5 %); stop and review',h;end if;
+ if h not in('20ffd58493e4d4127fe15597e54e5158','019ceed5f3e0951a00cd97c7e22e984a') then raise exception 'unexpected body (md5 %); stop and review',h;end if;
 end$guard$;
 create or replace function public.enforce_branch_grooming_performers() returns trigger
 language plpgsql security definer set search_path = '' as $$

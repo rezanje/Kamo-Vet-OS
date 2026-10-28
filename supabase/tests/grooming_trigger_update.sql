@@ -43,6 +43,16 @@ update public.prescription_items set qty = 2, harga = 60 where id = 'fa900000-00
 select pg_temp.ok((select qty = 2 and harga = 60 from public.prescription_items where id = 'fa900000-0000-4000-8000-000000000001'), 'grooming prescription UPDATE succeeds');
 select pg_temp.reject($q$update public.prescription_items set kategori = 'Konsultasi' where id = 'fa900000-0000-4000-8000-000000000001'$q$,
   'kategori Grooming tersimpan', 'saved Grooming category cannot be changed');
+-- Removing the groomer from a saved grooming line is rejected. The earlier service performer
+-- guard already blocks any performer rewrite; with it disabled (test-only, rolled back) the
+-- grooming rule itself must still reject, so a performer change never takes the early return.
+select pg_temp.reject($q$update public.prescription_items set service_performers = '{}' where id = 'fa900000-0000-4000-8000-000000000001'$q$,
+  'CARE_INVALID', 'prescription performer rewrite (all triggers)');
+alter table public.prescription_items disable trigger service_line_performers;
+select pg_temp.reject($q$update public.prescription_items set service_performers = '{}' where id = 'fa900000-0000-4000-8000-000000000001'$q$,
+  'groomer wajib', 'prescription groomer removal (grooming rule alone)');
+update public.prescription_items set harga = 70 where id = 'fa900000-0000-4000-8000-000000000001';
+alter table public.prescription_items enable trigger service_line_performers;
 -- Key change of a plain line into grooming re-runs the rule.
 select pg_temp.reject($q$update public.prescription_items set item_id = 'fa300000-0000-4000-8000-000000000001', jenis = 'jasa'
   where id = 'd9000000-0000-4000-8000-000000000001'$q$, 'groomer wajib', 'switching a line to grooming without groomer');
@@ -66,12 +76,29 @@ begin
     jsonb_build_array(jsonb_build_object('description', 'Consult', 'qty', 1, 'price', 100, 'kind', 'jasa',
       'item_id', 'fa300000-0000-4000-8000-000000000002', 'unit', 'pcs', 'discount_percent', 0)));
   perform pg_temp.ok(inv is not null, 'non-grooming invoice posts');
+  inv := public.clinic_post_invoice('d6000000-0000-4000-8000-000000000003', 'GTU.groom.valid', header,
+    jsonb_build_array(jsonb_build_object('description', 'Groom', 'qty', 1, 'price', 100, 'kind', 'jasa',
+      'item_id', 'fa300000-0000-4000-8000-000000000001', 'unit', 'pcs', 'discount_percent', 0,
+      'service_performers', jsonb_build_object('staff_id', 'fa400000-0000-4000-8000-000000000001', 'doctor_id', 'fa400000-0000-4000-8000-000000000002'))));
+  perform pg_temp.ok(inv is not null, 'valid grooming invoice posts');
 end $$;
 reset role;
 update public.invoice_items set deskripsi = 'Consult (renamed)'
   where invoice_id = (select id from public.invoices where request_key = 'GTU.consult');
 select pg_temp.ok((select deskripsi = 'Consult (renamed)' from public.invoice_items
   where invoice_id = (select id from public.invoices where request_key = 'GTU.consult')), 'invoice line UPDATE succeeds');
+
+select pg_temp.reject($q$update public.invoice_items set service_performers = '{}'
+  where invoice_id = (select id from public.invoices where request_key = 'GTU.groom.valid')$q$, 'CARE_INVALID', 'invoice performer rewrite (all triggers)');
+alter table public.invoice_items disable trigger service_line_performers;
+select pg_temp.reject($q$update public.invoice_items set service_performers = '{}'
+  where invoice_id = (select id from public.invoices where request_key = 'GTU.groom.valid')$q$, 'groomer wajib', 'invoice groomer removal (grooming rule alone)');
+update public.invoice_items set deskripsi = 'Groom (renamed)'
+  where invoice_id = (select id from public.invoices where request_key = 'GTU.groom.valid');
+select pg_temp.ok((select deskripsi = 'Groom (renamed)' and service_performers->>'staff_id' = 'fa400000-0000-4000-8000-000000000001'
+  from public.invoice_items where invoice_id = (select id from public.invoices where request_key = 'GTU.groom.valid')),
+  'grooming invoice line non-key UPDATE keeps attribution');
+alter table public.invoice_items enable trigger service_line_performers;
 
 -- 5. sale_items: changing item_id falls through to the rule without touching invoice-only fields.
 insert into public.sale_items(id, sale_id, item_id, nama, qty, harga) values
