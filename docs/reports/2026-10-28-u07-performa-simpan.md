@@ -45,12 +45,26 @@ Advisor performa Supabase menandai kolom yang difilter di halaman ini tanpa inde
 - Kode **tidak bergantung** pada index ini; boleh dirilis sebelum/sesudah. Belum diterapkan ke produksi.
 
 ## Yang belum dikerjakan
-- Jalur pembayaran (`bayarVisit`) masih ±15 tahap berurutan sebelum posting (shift, consent,
-  invoice aktif, periode, kunjungan, promo, poin, pajak, salesperson). Ini jalur uang — tidak
-  diubah urutannya di PR ini; kandidat lanjutan dengan uji regresi pembayaran khusus.
+- ~~Jalur pembayaran (`bayarVisit`) masih ±15 tahap berurutan sebelum posting.~~ Dikerjakan
+  di PR lanjutan `claude/u07-payment-speed` (lihat bagian di bawah).
 - Halaman rawat inap & catatan rawat inap belum diaudit sedalam rekam medis.
 - Form pemeriksaan masih mengirim seluruh katalog (±3.600 barang beserta satuan) ke browser;
   ukuran kirim besar. Solusi sebenarnya = pencarian barang di server (perubahan UX, di luar U07).
 - 58 kebijakan RLS memanggil `auth.*()` per baris (advisor `auth_rls_initplan`), beberapa di
   tabel klinik; belum disentuh karena menyangkut keamanan akses.
 - Belum ada pengukuran waktu nyata di produksi sebelum/sesudah; perlu dicek setelah deploy.
+
+## Lanjutan: jalur pembayaran (branch `claude/u07-payment-speed`)
+- `bayarVisit`: bacaan sebelum posting dimulai bersamaan dalam 2 gelombang
+  (gelombang 1: user+shift, gate consent, invoice aktif, periode, kunjungan, pajak, aturan DEMO;
+  gelombang 2 setelah kunjungan: promo/voucher/golongan, poin, kode akun kas per metode,
+  salesperson). ±15 tahap berurutan → ±3 tahap sebelum RPC posting.
+- Setiap hasil tetap ditunggu & divalidasi **di posisi lama** (helper `mulai`), jadi urutan
+  validasi dan pesan galat identik. Bacaan yang gagal membuat proses berhenti sebelum posting
+  (fail closed); bacaan yang ditinggal karena redirect lebih awal tidak jadi galat liar.
+- `recomputeCustomerTier` (statistik turunan, best effort) pindah ke `after()` bersama struk WA.
+  `catatPoinKlinik` tetap sebelum respons (nilai uang).
+- `bayarRombongan`: bacaan awal paralel; persiapan tagihan tiap hewan berjalan bersamaan lalu
+  dipakai berurutan (urutan nota, "dilewati", dan galat sama). Posting nota tetap satu per satu.
+- Log waktu: `console.info("[u07:bayarVisit] <visit> baca1=..ms baca2=..ms posting=..ms pasca=..ms total=..ms")`
+  (rombongan: `baca`, `posting`). Dipakai untuk ukur produksi setelah deploy.
