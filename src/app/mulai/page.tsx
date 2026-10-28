@@ -40,9 +40,7 @@ export default async function MulaiPage({
       )}
       {capabilities.create_accounts && <Link href="/pengaturan/pengguna" className="btn-def">Tambah akun karyawan</Link>}
       <div className="pshop-hero">
-        <div style={{ width: 52, height: 52, background: "var(--acc)", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
-          <i className="ti ti-paw" style={{ fontSize: 28, color: "#fff" }} />
-        </div>
+        <img src="/kamo-logo.png" alt="Kamo Group" width={180} height={84} style={{ display: "block", width: 180, height: "auto", margin: "0 auto 14px" }} />
         <div className="pshop-welcome" style={{ fontSize: 24 }}>Selamat datang, {nama.split(" ")[0]}!</div>
         <div style={{ fontSize: 12.5, color: "var(--tm)", marginTop: 4 }}>
           Mau kerja di mana hari ini? <span style={{ opacity: .7 }}>({profile?.role ?? "—"})</span>
