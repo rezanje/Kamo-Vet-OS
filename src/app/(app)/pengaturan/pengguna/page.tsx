@@ -21,9 +21,9 @@ const ROLE_BADGE: Record<string, string> = { OWNER: "r", ADMIN: "b", FINANCE: "o
 export default async function PenggunaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; q?: string; role?: string; status?: string }>;
 }) {
-  const { success, error } = await searchParams;
+  const { success, error, q, role: roleFilter, status: statusFilter } = await searchParams;
   const supabase = await assertAccountCreator("/mulai");
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -50,6 +50,17 @@ export default async function PenggunaPage({
   const emps = (employees ?? []) as unknown as Emp[];
   const empByProfile = new Map(emps.filter((e) => e.profile_id).map((e) => [e.profile_id as string, `${e.nama} · ${e.nik ?? e.id}`]));
   const empBebas = emps.filter((e) => !e.profile_id && e.status === "Aktif");
+  // Pencarian: nama akun, nama/NIK karyawan HRIS, cabang, atau role.
+  const term = (q ?? "").trim().toLowerCase();
+  const roles = [...new Set(rows.map((p) => p.role))].sort();
+  const shown = rows.filter((p) => {
+    if (roleFilter && p.role !== roleFilter) return false;
+    if (statusFilter === "aktif" && !p.is_active) return false;
+    if (statusFilter === "nonaktif" && p.is_active) return false;
+    if (!term) return true;
+    return [p.full_name, p.role, empByProfile.get(p.id), ...(ubMap.get(p.id) ?? [])]
+      .some((v) => (v ?? "").toLowerCase().includes(term));
+  });
 
   return (
     <>
@@ -72,6 +83,22 @@ export default async function PenggunaPage({
 
       <div className="crm-sec">
         <SecHeader num="01" title="DAFTAR PENGGUNA" desc="Semua akun login VetOS beserta role, cabang, dan status." />
+        <form method="get" role="search" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "8px 0 10px" }}>
+          <input className="fi" type="search" name="q" defaultValue={q ?? ""} aria-label="Cari pengguna"
+            placeholder="Cari nama, NIK, cabang, atau role…" style={{ flex: "1 1 240px", minWidth: 0 }} autoFocus={!!q} />
+          <select className="fi" name="role" defaultValue={roleFilter ?? ""} aria-label="Filter role" style={{ width: 140 }}>
+            <option value="">Semua role</option>
+            {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+          <select className="fi" name="status" defaultValue={statusFilter ?? ""} aria-label="Filter status" style={{ width: 130 }}>
+            <option value="">Semua status</option>
+            <option value="aktif">Aktif</option>
+            <option value="nonaktif">Nonaktif</option>
+          </select>
+          <button type="submit" className="btn-def"><i className="ti ti-search" /> Cari</button>
+          {(term || roleFilter || statusFilter) && <Link href="/pengaturan/pengguna" className="btn-def">Reset</Link>}
+          <span style={{ fontSize: 11, color: "var(--tm)" }}>{shown.length} dari {rows.length} pengguna</span>
+        </form>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
             <thead>
@@ -85,7 +112,8 @@ export default async function PenggunaPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map((p) => (
+              {shown.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", fontSize: 11.5, color: "var(--tm)", padding: 16 }}>Tidak ada pengguna yang cocok.</td></tr>}
+              {shown.map((p) => (
                 <tr key={p.id} style={!p.is_active ? { opacity: 0.55 } : undefined}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{p.full_name ?? "—"}</td>
                   <td><span className={`bge ${ROLE_BADGE[p.role] ?? "x"}`}>{p.role}</span></td>
