@@ -56,11 +56,13 @@ async function search(label: string, value: string) {
   });
 }
 const cart = () => JSON.parse(host.querySelector<HTMLInputElement>('input[name="resep"]')!.value);
+// Tindakan dan racikan kini digabung pada satu tab.
+const TINDAKAN = "Tindakan & Racikan";
 
 it.each(["exam", "inpatient"])("%s picks catalog actions and restores unchanged item IDs, prices and consent categories", async kind => {
   await render(kind);
   expect([...host.querySelectorAll("button")].some(button => button.textContent?.trim() === "Paket")).toBe(false);
-  await tab("Tindakan");
+  await tab(TINDAKAN);
   expect(host.textContent).toContain("Steril"); expect(host.textContent).not.toContain("Konsultasi");
   await search("Cari tindakan", "Konsultasi");
   expect(host.textContent).not.toContain("Steril");
@@ -132,7 +134,7 @@ it.each(["exam", "inpatient"])("%s finds an inventory medicine by master code or
 });
 
 it.each(["exam", "inpatient"])("%s searches only finished compounds and designated ingredients in Racikan", async kind => {
-  await render(kind); await tab("Racikan");
+  await render(kind); await tab(TINDAKAN);
   await search("Cari obat racik", "Obat");
   expect(host.querySelector('button[aria-label="Pilih Obat Racik Sirup"]')).not.toBeNull();
   expect(host.querySelector('button[aria-label="Pilih Vaksin"]')).toBeNull();
@@ -143,7 +145,7 @@ it.each(["exam", "inpatient"])("%s searches only finished compounds and designat
 });
 
 it.each(["exam", "inpatient"])("%s retains a doctor-selected patient composition for a finished compound after draft reload", async kind => {
-  await render(kind); await tab("Racikan");
+  await render(kind); await tab(TINDAKAN);
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Obat Racik Sirup"]')!.click());
   await search("Cari bahan racikan", "Bahan");
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih bahan Bahan diizinkan"]')!.click());

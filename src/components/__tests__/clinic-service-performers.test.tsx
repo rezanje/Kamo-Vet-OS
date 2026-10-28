@@ -49,9 +49,11 @@ async function tab(name: string) {
   await act(async () => button!.click());
 }
 const cart = () => JSON.parse(host.querySelector<HTMLInputElement>('input[name="resep"]')!.value);
+// Tindakan dan racikan kini digabung pada satu tab.
+const TINDAKAN = "Tindakan & Racikan";
 
 it.each(['exam', 'inpatient'])('%s compound requires a composition path instead of offering direct finished-stock use', async kind => {
-  await render(kind); await tab('Racikan');
+  await render(kind); await tab(TINDAKAN);
   const search = host.querySelector<HTMLInputElement>('[aria-label="Cari obat racik"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'Obat Racik');
@@ -193,7 +195,7 @@ async function chooseBmhp(label: string, query: string) {
 }
 
 it.each(['exam','inpatient'])('K02 %s composes two BMHP materials before adding an action and reopens its persisted composition', async kind => {
-  await render(kind); await tab('Tindakan');
+  await render(kind); await tab(TINDAKAN);
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
   expect(host.textContent).toContain('Komposisi BMHP tindakan');
   expect(cart()).toHaveLength(0);
@@ -224,7 +226,7 @@ it.each(['exam','inpatient'])('K02 %s composes two BMHP materials before adding 
 
 it.each(['exam','inpatient'])('%s keeps unfinished BMHP composition across reload and blocks premature clinical save', async kind => {
   vi.clearAllMocks();
-  await render(kind); await tab('Tindakan');
+  await render(kind); await tab(TINDAKAN);
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
   await chooseBmhp('Steril', 'Kasa');
   expect(cart()).toHaveLength(0);
@@ -240,7 +242,7 @@ it.each(['exam','inpatient'])('%s records separate per-line performers for medic
   await render(kind);
   const foodRow=[...host.querySelectorAll('tr')].find(row=>row.textContent?.includes('Makanan kucing'))!;
   await act(async()=>foodRow.querySelector<HTMLButtonElement>('button')!.click());
-  await tab('Tindakan');
+  await tab(TINDAKAN);
   await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
   await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah tindakan Steril ke keranjang"]')!.click());
   expect(host.querySelector('select[aria-label="Penjual Makanan kucing"]')).toBeNull();

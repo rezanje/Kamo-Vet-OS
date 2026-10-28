@@ -60,6 +60,8 @@ async function tab(name: string) {
 const click = (selector: string) => act(async () => host.querySelector<HTMLButtonElement>(selector)!.click());
 const cart = () => JSON.parse(host.querySelector<HTMLInputElement>('input[name="resep"]')!.value);
 const bmhpEditors = () => host.querySelectorAll('input[aria-label^="Tambah BMHP"], button[aria-label^="Ubah BMHP"]');
+// Tindakan dan racikan kini satu tab; Jasa tetap tanpa BMHP maupun peracikan.
+const TINDAKAN = "Tindakan & Racikan";
 
 it("classifies by category tree, not by service type or name", () => {
   expect(groups.tindakan.map(item => item.id)).toEqual(["steril", "vaksin", "vaksinasi", "vial2", "vaksinasi2"]);
@@ -80,7 +82,7 @@ it.each(["exam", "inpatient"])("%s grooming and pickup services join the cart wi
 });
 
 it.each(["exam", "inpatient"])("%s procedure composes materials with qty and unit, reopens them, and carries each material once", async kind => {
-  await render(kind); await tab("Tindakan");
+  await render(kind); await tab(TINDAKAN);
   await click('button[aria-label="Tambah Sintetis Steril"]');
   expect(host.textContent).toContain("Komposisi BMHP tindakan");
   const picker = host.querySelector<HTMLInputElement>('input[aria-label="Tambah BMHP Sintetis Steril"]')!;
@@ -120,13 +122,46 @@ it.each(["exam", "inpatient"])("%s keeps BMHP already stored on a service row re
   expect(host.textContent).toContain("Kasa sintetis × 2 lembar");
 });
 
-it.each(["exam", "inpatient"])("%s stocked procedure SKU joins the cart as stock without a BMHP composer that could not be saved", async kind => {
-  await render(kind); await tab("Tindakan");
+it.each(["exam", "inpatient"])("%s stocked procedure SKU composes BMHP and is still billed as a stock line", async kind => {
+  await render(kind); await tab(TINDAKAN);
   await click('button[aria-label="Tambah Sintetis Vaksin Stok"]');
-  expect(host.textContent).not.toContain("Komposisi BMHP tindakan");
+  expect(host.textContent).toContain("Komposisi BMHP tindakan");
+  expect(cart()).toHaveLength(0);
+  const picker = host.querySelector<HTMLInputElement>('input[aria-label="Tambah BMHP Sintetis Vaksin Stok"]')!;
+  await act(async () => {
+    picker.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(picker, "Kasa");
+    picker.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => picker.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+  await act(async () => picker.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await click('button[aria-label="Tambah tindakan Sintetis Vaksin Stok ke keranjang"]');
+  // Pekerjaan pesanan: barisnya tetap barang persediaan, BMHP-nya menumpang di baris itu.
   expect(cart()).toHaveLength(1);
-  expect(cart()[0]).toMatchObject({ item_id: "vaksin", jenis: "obat", satuan: "VIAL", harga: 235000 });
-  expect(cart()[0]).not.toHaveProperty("bmhp");
+  expect(cart()[0]).toMatchObject({ item_id: "vaksin", jenis: "obat", satuan: "VIAL", harga: 235000,
+    bmhp: [{ item_id: "gauze", nama: "Kasa sintetis", qty: 1, unit: "lembar" }] });
+  expect(host.querySelector('button[aria-label="Ubah BMHP Sintetis Vaksin Stok"]')).not.toBeNull();
+});
+
+it.each(["exam", "inpatient"])("%s stocked procedure without BMHP keeps an empty composition instead of a hidden one", async kind => {
+  await render(kind); await tab(TINDAKAN);
+  await click('button[aria-label="Tambah Sintetis Vaksin Stok"]');
+  await click('button[aria-label="Tambah tindakan Sintetis Vaksin Stok ke keranjang"]');
+  expect(cart()).toHaveLength(1);
+  expect(cart()[0]).toMatchObject({ item_id: "vaksin", jenis: "obat", bmhp: [] });
+});
+
+it.each(["exam", "inpatient"])("%s merges procedures and compounding into one tab, leaving Jasa untouched", async kind => {
+  await render(kind);
+  const names = [...host.querySelectorAll("button")].map(button => button.textContent?.trim());
+  expect(names).toContain("Obat"); expect(names).toContain("Jasa"); expect(names).toContain(TINDAKAN);
+  expect(names).not.toContain("Tindakan"); expect(names).not.toContain("Racikan");
+  await tab(TINDAKAN);
+  expect(host.querySelector('section[aria-label="Pilihan tindakan"]')).not.toBeNull();
+  expect(host.textContent).toContain("Komposisi racikan");
+  await tab("Jasa");
+  expect(host.querySelector('section[aria-label="Pilihan jasa"]')).not.toBeNull();
+  expect(host.textContent).not.toContain("Komposisi racikan");
   expect(bmhpEditors()).toHaveLength(0);
 });
 
@@ -143,13 +178,13 @@ it.each(["exam", "inpatient"])("%s vaccine vial picked from the medicine list op
 });
 
 it.each(["exam", "inpatient"])("%s vaccination picked from the procedure tab starts with its vial as BMHP", async kind => {
-  await render(kind); await tab("Tindakan");
+  await render(kind); await tab(TINDAKAN);
   await click('button[aria-label="Tambah Vaksinasi Sintetis"]');
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Vaccine Sintetis"]')?.value).toBe("1");
 });
 
 it.each(["exam", "inpatient"])("%s vaccine vial listed under TINDAKAN still opens its vaccination", async kind => {
-  await render(kind); await tab("Tindakan");
+  await render(kind); await tab(TINDAKAN);
   await click('button[aria-label="Tambah Vaccine Nyasar"]');
   expect(host.textContent).toContain("Komposisi BMHP tindakan");
   await click('button[aria-label="Tambah tindakan Vaksinasi Nyasar ke keranjang"]');

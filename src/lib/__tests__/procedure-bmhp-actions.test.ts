@@ -18,14 +18,16 @@ beforeEach(()=>{fixture.supported=true;fixture.calls=[];});
 function form(resep:unknown[]){const data=new FormData();for(const [key,value] of Object.entries({visitId:'visit',petId:'pet',recordId:'inpatient',request_key:'stable-key',doctor_id:'doctor',keluhan:'Batuk',condition_note:'Fictional clinical note',next:'resep'}))data.set(key,value);data.set('resep',JSON.stringify(resep));return data;}
 const cases=[['initial',simpanRekamMedis,'clinic_save_initial_record'],['inpatient',addDailyLogPos,'clinic_save_inpatient_log_with_status']] as const;
 
-it.each(cases)('%s sends procedure BMHP IDs/qty/unit only, in the same atomic save',async(_n,save,rpc)=>{
+it.each(cases)('%s sends procedure BMHP IDs/qty/unit only, for service and stocked procedures alike',async(_n,save,rpc)=>{
  expect(await save(form([
   {item_id:'action-sku',nama_obat:'Vaksin',qty:1,harga:75000,jenis:'jasa',bmhp:[{item_id:'syr',nama:'Forged',qty:2,unit:'pcs',cost:1}]},
-  {item_id:'action-sku',nama_obat:'Obat',qty:1,harga:100,jenis:'obat',bmhp:[{item_id:'syr',qty:1,unit:'pcs'}]},
+  {item_id:'action-sku',nama_obat:'Tindakan Stok',qty:1,harga:100,jenis:'obat',bmhp:[{item_id:'syr',qty:1,unit:'pcs'}]},
+  {item_id:'action-sku',nama_obat:'Obat biasa',qty:1,harga:100,jenis:'obat'},
  ]))).toMatchObject({saved:true});
  const call=fixture.calls.find(c=>c.name===rpc)!;
  expect(call.args.p_rows).toEqual([
   expect.objectContaining({jenis:'jasa',bmhp_components:[{item_id:'syr',qty:2,unit:'pcs'}]}),
+  expect.objectContaining({jenis:'obat',bmhp_components:[{item_id:'syr',qty:1,unit:'pcs'}]}),
   expect.not.objectContaining({bmhp_components:expect.anything()}),
  ]);
  expect(JSON.stringify(call.args)).not.toContain('Forged');

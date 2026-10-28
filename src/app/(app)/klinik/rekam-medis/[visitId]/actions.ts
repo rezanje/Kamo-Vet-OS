@@ -90,7 +90,8 @@ export async function simpanRekamMedis(formData: FormData) {
   // older databases keep the exact previous payload instead of failing saves.
   let bmhpRows: (BmhpInput[] | null)[] = [];
   let bmhpError: string | null = null;
-  try { bmhpRows = resep.map(r => r.jenis === "jasa" && r.item_id ? bmhpInput(r.bmhp) : null); }
+  // Tindakan jasa maupun persediaan (pekerjaan pesanan) sama-sama boleh membawa BMHP.
+  try { bmhpRows = resep.map(r => r.item_id && r.jenis !== "racikan" ? bmhpInput(r.bmhp) : null); }
   catch (error) { bmhpError = error instanceof Error ? error.message : "BMHP tidak valid"; }
   const needsBmhp = bmhpRows.some(row => row?.length);
 

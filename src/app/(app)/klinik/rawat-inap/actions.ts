@@ -146,7 +146,8 @@ export async function addDailyLogPos(formData: FormData) {
   // K02: BMHP is only sent once the database exposes the migrated contract.
   let bmhpRows: (BmhpInput[] | null)[] = [];
   let bmhpError: string | null = null;
-  try { bmhpRows = resepList.map(r => r.jenis === "jasa" && r.item_id ? bmhpInput(r.bmhp) : null); }
+  // Tindakan jasa maupun persediaan (pekerjaan pesanan) sama-sama boleh membawa BMHP.
+  try { bmhpRows = resepList.map(r => r.item_id && r.jenis !== "racikan" ? bmhpInput(r.bmhp) : null); }
   catch (error) { bmhpError = error instanceof Error ? error.message : "BMHP tidak valid"; }
   const needsBmhp = !bmhpError && bmhpRows.some(row => row?.length);
 
