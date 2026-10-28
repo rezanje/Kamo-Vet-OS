@@ -9,7 +9,7 @@ let root: Root; let host: HTMLDivElement;
 beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); sessionStorage.clear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 it("shows preserved receipts, zero physical stock change and live customer credit before correction", async () => {
-  await act(async () => root.render(<WholesaleCorrectionForm userId="owner" invoiceId="invoice" revision={4} today="2026-10-21" due="2026-11-21" note="" paid={150} total={200} taxRate={0} items={[{ id: "line", nama: "Box delivered", qty: 2, harga: 100, satuan: "box" }]} />));
+  await act(async () => root.render(<WholesaleCorrectionForm userId="owner" invoiceId="invoice" revision={4} today="2026-10-21" due="2026-11-21" note="" paid={150} total={200} taxRate={0} items={[{ id: "line", nama: "Box delivered", qty: 2, harga: 100, diskon: 0, satuan: "box" }]} />));
   const input = host.querySelector<HTMLInputElement>('input[name="harga_line"]')!;
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "50"); input.dispatchEvent(new Event("input", { bubbles: true })); });
   expect(host.querySelector('[data-testid="credit-preview"]')?.textContent).toContain("50");
@@ -20,7 +20,7 @@ it("shows preserved receipts, zero physical stock change and live customer credi
   expect(host.querySelector<HTMLInputElement>('input[name="draft_key"]')!.value).toBeTruthy();
 });
 it("restores prices and action with the same preview after reload or a rejected redirect", async () => {
-  const render = async () => act(async () => root.render(<WholesaleCorrectionForm userId="owner" invoiceId="invoice" revision={4} today="2026-10-21" due="2026-11-21" note="" paid={150} total={200} taxRate={0} items={[{ id: "line", nama: "Box delivered", qty: 2, harga: 100, satuan: "box" }]} />));
+  const render = async () => act(async () => root.render(<WholesaleCorrectionForm userId="owner" invoiceId="invoice" revision={4} today="2026-10-21" due="2026-11-21" note="" paid={150} total={200} taxRate={0} items={[{ id: "line", nama: "Box delivered", qty: 2, harga: 100, diskon: 0, satuan: "box" }]} />));
   await render();
   const input = host.querySelector<HTMLInputElement>('input[name="harga_line"]')!;
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "50"); input.dispatchEvent(new Event("input", { bubbles: true })); });

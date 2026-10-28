@@ -142,7 +142,8 @@ export default async function FakturJualPage({
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader
           num={credits.length > 0 ? "03" : "02"} title="FAKTUR PENJUALAN RESELLER"
-          desc={`Piutang berjalan ${rp(totalPiutang)} dari ${berjalan.length} faktur. Faktur diterbitkan dari halaman pesanan.`}
+          desc={`Piutang berjalan ${rp(totalPiutang)} dari ${berjalan.length} faktur. Faktur bisa diterbitkan dari pesanan atau langsung di sini.`}
+          action={boleh ? <Link href="/penjualan/faktur/baru" className="btn-acc" style={{ textDecoration: "none" }}>+ Faktur Penjualan baru</Link> : undefined}
         />
 
         <div style={{ overflowX: "auto" }}>
@@ -157,6 +158,7 @@ export default async function FakturJualPage({
                 <th style={{ width: 130, textAlign: "right" }}>Sisa</th>
                 <th style={{ width: 110 }}>Umur</th>
                 {boleh && <th style={{ width: 120 }}>Terima</th>}
+                <th style={{ width: 90 }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -241,12 +243,17 @@ export default async function FakturJualPage({
                         )}
                       </td>
                     )}
+                    <td>
+                      <Link href={`/penjualan/faktur/${f.id}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5 }}>
+                        {f.status === "batal" ? "Lihat" : <><i className="ti ti-pencil" /> Edit</>}
+                      </Link>
+                    </td>
                   </tr>
                 );
               })}
               {rows.length === 0 && (
-                <tr><td colSpan={boleh ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
-                  Belum ada faktur penjualan. Terbitkan dari halaman pesanan setelah barangnya dikirim.
+                <tr><td colSpan={boleh ? 9 : 8} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
+                  Belum ada faktur penjualan. Terbitkan dari halaman pesanan setelah barangnya dikirim, atau pakai tombol Faktur Penjualan baru.
                 </td></tr>
               )}
             </tbody>

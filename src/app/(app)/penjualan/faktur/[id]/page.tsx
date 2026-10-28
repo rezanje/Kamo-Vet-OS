@@ -6,11 +6,14 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { hariIniWIB } from "@/lib/tanggal";
 import { WholesaleCorrectionForm } from "./WholesaleCorrectionForm";
+import { FakturLineEdit } from "./FakturLineEdit";
+import { ReceiptDeleteForm } from "./ReceiptDeleteForm";
 import { readCompleteList } from "@/lib/checked-list";
 import { bisaKoreksiGrosir } from "@/lib/wholesale-correction-access";
+import { alasanTidakBisaEdit, penerimaanAktif, subtotalBaris, type BarisFakturEdit } from "@/lib/faktur-jual-edit";
 
 const rp = (n: number) => `Rp ${Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 })}`;
-type Receipt = { advance_id: string | null; advance: {id: string;no_um: string;status: string} | {id: string;no_um: string;status: string}[] | null; id: string; no_terima: string; tanggal: string; jumlah: number; dari_uang_muka: number; metode: string; journal_id: string | null };
+type Receipt = { advance_id: string | null; advance: {id: string;no_um: string;status: string} | {id: string;no_um: string;status: string}[] | null; id: string; no_terima: string; tanggal: string; jumlah: number; dari_uang_muka: number; metode: string; journal_id: string | null; voided_at: string | null; void_reason: string | null; reversal_of: string | null; revision: number };
 type InvoiceReceipt = Receipt & { invoice_id: string };
 type Invoice = { status: string; id: string; no_faktur: string; total: number; carried_paid: number; replaces_invoice_id: string | null; sales_receipts: Receipt[] };
 type InvoiceSummary = Omit<Invoice, "sales_receipts">;
@@ -18,6 +21,9 @@ type Correction = { id: string; created_at: string; tanggal: string; reason: str
   paid_preserved: number; customer_credit: number; original_journal_id: string | null;
   reversal_journal_id: string | null; replacement_journal_id: string | null; credit_journal_id: string | null };
 type InvoiceCorrection = Correction & { invoice_id: string };
+type OrderLine = { id: string; qty_kirim: number; qty_faktur: number };
+type ReceiptCancellation = { id: string; invoice_id: string; tanggal: string; reason: string; created_by: string | null;
+  created_at: string; advance_restored: number; original_journal_id: string; reversal_journal_id: string };
 
 export default async function WholesaleInvoicePage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; success?: string; from?: string }>;
@@ -27,13 +33,13 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   const db = await createClient();
   const { data: { user } } = await db.auth.getUser();
   const { data: invoice, error } = await db.from("sales_invoices")
-    .select("id,no_faktur,order_id,tanggal,jatuh_tempo,total,dpp,ppn,carried_paid,revision,status,voided_on,void_reason,replaces_invoice_id,catatan,opening_batch_id,customers(name)")
+    .select("id,no_faktur,order_id,tanggal,jatuh_tempo,total,dpp,ppn,carried_paid,revision,status,voided_on,void_reason,replaces_invoice_id,catatan,kategori,opening_batch_id,customers(name)")
     .eq("id", id).maybeSingle();
   if (error) throw new Error("Rincian faktur belum dapat dibaca: " + error.message);
   if (!invoice) notFound();
   const [{ data: profile }, lines, orderInvoices, settings] = await Promise.all([
     db.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
-    db.from("sales_invoice_items").select("id,nama,qty,harga,satuan,hpp").eq("invoice_id", id).order("id"),
+    db.from("sales_invoice_items").select("id,nama,qty,harga,diskon,satuan,hpp,order_item_id").eq("invoice_id", id).order("id"),
     readCompleteList<InvoiceSummary>((from, to) => db.from("sales_invoices")
       .select("id,no_faktur,total,status,carried_paid,replaces_invoice_id", { count: "exact" })
       .eq(invoice.order_id ? "order_id" : "id", invoice.order_id ?? id).order("id").range(from, to),
@@ -57,7 +63,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
     invoiceGroups.push(ancestors.slice(start, start + 50).map((source) => source.id));
   }
   const receiptGroups = await Promise.all(invoiceGroups.map((ids) => readCompleteList<InvoiceReceipt>((from, to) => db.from("sales_receipts")
-    .select("id,invoice_id,no_terima,tanggal,jumlah,dari_uang_muka,advance_id,advance:sales_advances!advance_id(id,no_um,status),metode,journal_id", { count: "exact" })
+    .select("id,invoice_id,no_terima,tanggal,jumlah,dari_uang_muka,advance_id,advance:sales_advances!advance_id(id,no_um,status),metode,journal_id,voided_at,void_reason,reversal_of,revision", { count: "exact" })
     .in("invoice_id", ids).order("id").range(from, to),
   "Penerimaan faktur", { maxRows: null })));
   const receiptByInvoice = new Map<string, Receipt[]>();
@@ -75,9 +81,34 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
     .in("invoice_id", ids).order("created_at").order("id").range(from, to),
   "Riwayat koreksi", { maxRows: null })));
   const corrections = correctionLists.flat().sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  const cancellationLists = await Promise.all(invoiceGroups.map((ids) => readCompleteList<ReceiptCancellation>((from, to) => db.from("sales_receipt_cancellations")
+    .select("id,invoice_id,tanggal,reason,created_by,created_at,advance_restored,original_journal_id,reversal_journal_id", { count: "exact" })
+    .in("invoice_id", ids).order("created_at").order("id").range(from, to),
+  "Riwayat hapus penerimaan", { maxRows: null })));
+  const cancellations = cancellationLists.flat().sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
   const credits = corrections.reduce((sum, c) => sum + Number(c.customer_credit), 0);
   const customer = Array.isArray(invoice.customers) ? invoice.customers[0] : invoice.customers;
   const today = hariIniWIB();
+  // Batas qty per baris: yang sudah dikirim dan belum ditagih faktur lain, ditambah qty baris ini.
+  const orderLines = invoice.order_id
+    ? await readCompleteList<OrderLine>((from, to) => db.from("sales_order_items")
+      .select("id,qty_kirim,qty_faktur", { count: "exact" })
+      .eq("order_id", invoice.order_id!).order("id").range(from, to), "Baris pesanan faktur", { maxRows: null })
+    : [];
+  const orderById = new Map(orderLines.map((row) => [row.id, row]));
+  const bolehKoreksi = bisaKoreksiGrosir(profile);
+  const ownReceipts = byId.get(id)?.sales_receipts ?? [];
+  const blokirEdit = alasanTidakBisaEdit(
+    { status: invoice.status, order_id: invoice.order_id, opening_batch_id: invoice.opening_batch_id, kategori: invoice.kategori, carried_paid: Number(invoice.carried_paid) },
+    ownReceipts, !!successor);
+  const barisEdit: BarisFakturEdit[] = (lines.data ?? []).map((i) => {
+    const asal = i.order_item_id ? orderById.get(i.order_item_id) : undefined;
+    const sisa = asal ? Number(asal.qty_kirim) - Number(asal.qty_faktur) : 0;
+    return { id: i.id, nama: i.nama, satuan: i.satuan, qty: Number(i.qty), harga: Number(i.harga), diskon: Number(i.diskon ?? 0), maksQty: Number(i.qty) + Math.max(0, sisa) };
+  });
+  const hppBaris = new Map((lines.data ?? []).map((i) => [i.id, Number(i.hpp ?? 0)]));
+  const bolehEditBaris = bolehKoreksi && !blokirEdit && barisEdit.length > 0 && !!user;
+  const taxRate = Number(invoice.ppn) > 0 ? Number(settings.data?.ppn_rate) || 11 : 0;
   return <>
     <DocumentBackLink from={sp.from} />
     <ActivityHistoryLink entity="sales_invoices" id={id} />
@@ -93,20 +124,44 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
       {invoice.replaces_invoice_id && <p>{byId.has(invoice.replaces_invoice_id) ? <>Menggantikan <DocumentLink kind="sales-invoice" id={invoice.replaces_invoice_id} from={`/penjualan/faktur/${id}`}>{byId.get(invoice.replaces_invoice_id)!.no_faktur}</DocumentLink> · {byId.get(invoice.replaces_invoice_id)!.status}</> : "Faktur asal tidak tersedia atau tidak dapat diakses."}</p>}
       {successor && <p>Diganti oleh <DocumentLink kind="sales-invoice" id={successor.id} from={`/penjualan/faktur/${id}`}>{successor.no_faktur}</DocumentLink> · {successor.status}</p>}
       {invoice.voided_on && <p>Dibatalkan {invoice.voided_on}: {invoice.void_reason}. Pengiriman fisik dan dokumen asli tetap disimpan.</p>}
-      <div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>HPP alokasi</th></tr></thead><tbody>
-        {(lines.data ?? []).map(i => <tr key={i.id}><td>{i.nama}</td><td>{Number(i.qty)} {i.satuan}</td><td>{rp(i.harga)}</td><td>{rp(i.hpp ?? 0)}</td></tr>)}
+      {bolehKoreksi && <details style={{ margin: "6px 0 12px" }}>
+        <summary className="btn-def" style={{ padding: "5px 12px", fontSize: 11, cursor: "pointer", listStyle: "none", display: "inline-block" }}>
+          <i className="ti ti-dots-vertical" /> Aksi
+        </summary>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: "8px 0", fontSize: 11.5 }}>
+          {bolehEditBaris
+            ? <Link className="btn-acc" href={`/penjualan/faktur/${id}#baris-faktur`} style={{ textDecoration: "none", padding: "5px 12px" }}><i className="ti ti-pencil" /> Edit faktur</Link>
+            : <span style={{ color: "var(--td)" }}>Edit faktur tidak tersedia: {blokirEdit ?? "tidak ada baris barang untuk diedit."}</span>}
+          {penerimaanAktif(ownReceipts).length > 0 && <Link className="btn-def" href={`/penjualan/faktur/${id}#penerimaan`} style={{ textDecoration: "none", padding: "5px 12px" }}><i className="ti ti-trash" /> Hapus penerimaan</Link>}
+        </div>
+      </details>}
+      <div id="baris-faktur" style={{overflowX:"auto", scrollMarginTop: 90}}><table className="tbl"><thead><tr><th>Barang</th><th>Qty</th><th>Harga</th><th>Diskon</th><th>Subtotal</th><th>HPP alokasi</th>{bolehEditBaris && <th>Aksi</th>}</tr></thead><tbody>
+        {barisEdit.map((baris) => <tr key={baris.id}>
+          <td>{baris.nama}</td><td>{baris.qty} {baris.satuan}</td><td>{rp(baris.harga)}</td><td>{rp(baris.diskon)}</td>
+          <td>{rp(subtotalBaris(baris))}</td><td>{rp(hppBaris.get(baris.id) ?? 0)}</td>
+          {bolehEditBaris && <td><FakturLineEdit key={`${baris.id}:${invoice.revision}`} invoiceId={id} revision={Number(invoice.revision)}
+            today={today} jatuhTempo={invoice.jatuh_tempo ?? today} catatan={invoice.catatan ?? ""} taxRate={taxRate} rows={barisEdit} row={baris} /></td>}
+        </tr>)}
       </tbody></table></div>
+      {bolehKoreksi && blokirEdit && <p role="status" style={{ fontSize: 11.5 }}><i className="ti ti-info-circle" /> {blokirEdit}</p>}
+      {bolehEditBaris && <p style={{ fontSize: 11, color: "var(--tm)" }}>
+        Aksi → Edit membetulkan qty, harga dan diskon baris. Faktur lama dibalik jurnalnya dan terbit faktur pengganti bernomor baru;
+        barang yang sudah dikirim tetap keluar gudang, jadi stok dan jurnal HPP pengiriman tidak berubah.
+      </p>}
     </div>
     <div className="crm-sec">
       <h2 style={{ fontSize: 14 }}>Riwayat pembayaran asli</h2>
       {ancestors.some(i => i.replaces_invoice_id && !byId.has(i.replaces_invoice_id)) && <p>Sebagian riwayat faktur asal tidak tersedia atau tidak dapat diakses. Pembayaran lama tidak direkonstruksi.</p>}
       <p>Pembayaran dari faktur terdahulu dibawa sebagai pelunasan pengganti. Angka di bawah adalah transaksi uang asli; tidak dijumlah ulang sebagai kas masuk.</p>
-      <div style={{overflowX:"auto"}}><table className="tbl"><thead><tr><th>Penerimaan</th><th>Faktur asal</th><th>Tanggal</th><th>Jumlah</th><th>Dari uang muka / dokumen</th><th>Status</th></tr></thead><tbody>
+      <div id="penerimaan" style={{overflowX:"auto", scrollMarginTop: 90}}><table className="tbl"><thead><tr><th>Penerimaan</th><th>Faktur asal</th><th>Tanggal</th><th>Jumlah</th><th>Dari uang muka / dokumen</th><th>Status</th>{bolehKoreksi && <th>Aksi</th>}</tr></thead><tbody>
         {ancestors.flatMap(i => (i.sales_receipts ?? []).map(r => { const advance=Array.isArray(r.advance)?r.advance[0]:r.advance;return <tr id={documentAnchor('receipt',r.id)} style={{scrollMarginTop:90}} key={r.id}>
           <td><DocumentLink kind="sales-receipt" id={r.id} parentId={i.id} from={i.id===id?undefined:`/penjualan/faktur/${id}`}>{r.no_terima}</DocumentLink> · {r.metode}<div><ActivityHistoryLink entity="sales_receipts" id={r.id} /></div></td>
           <td><DocumentLink kind="sales-invoice" id={i.id} from={i.id===id?undefined:`/penjualan/faktur/${id}`}>{i.no_faktur}</DocumentLink></td><td>{r.tanggal}</td><td>{rp(r.jumlah)}</td>
           <td>{rp(r.dari_uang_muka ?? 0)}{advance ? <p><DocumentLink kind="sales-advance" id={advance.id} from={`/penjualan/faktur/${id}#receipt-${r.id}`}>Uang muka {advance.no_um}</DocumentLink> · {advance.status}</p> : (r.advance_id || Number(r.dari_uang_muka)>0) && <p>Uang muka terkait tidak tersedia atau tidak dapat diakses. Alokasi lama tidak ditebak.</p>}</td>
-          <td>Transaksi uang tersimpan{ i.status==='batal' ? ' · faktur asal dibatalkan' : ''}</td>
+          <td>{r.reversal_of ? 'Pembalik penerimaan' : r.voided_at ? `Dihapus · ${r.void_reason ?? ''}` : 'Transaksi uang tersimpan'}{ i.status==='batal' ? ' · faktur asal dibatalkan' : ''}</td>
+          {bolehKoreksi && <td>{i.id===id && !r.voided_at && !r.reversal_of && invoice.status!=='batal' && !successor && user
+            ? <ReceiptDeleteForm userId={user.id} invoiceId={id} receiptId={r.id} noTerima={r.no_terima} revision={Number(r.revision)} dariUangMuka={Number(r.dari_uang_muka ?? 0)} />
+            : <span style={{ fontSize: 10.5, color: "var(--td)" }}>—</span>}</td>}
         </tr>}))}
       </tbody></table></div>
       <p>Kredit pelanggan dari rangkaian ini: <strong>{rp(credits)}</strong>. Tercatat sebagai kewajiban pada akun 2103, terpisah dari uang muka yang dapat dipakai. Penyelesaian atau usulan pengembalian perlu ditinjau keuangan; tidak ada refund/transfer otomatis.</p>
@@ -120,11 +175,18 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
         <div style={{ fontSize: 11 }}>Jurnal asli {c.original_journal_id} · pembalik {c.reversal_journal_id}{c.replacement_journal_id ? ` · pengganti ${c.replacement_journal_id}` : ""}{c.credit_journal_id ? ` · kredit ${c.credit_journal_id}` : ""}</div>
       </div>)}
       {!corrections.length && <p>Belum ada koreksi.</p>}
+      <h3 style={{ fontSize: 13, marginTop: 12 }}>Penerimaan yang dihapus</h3>
+      {cancellations.map(c => <div key={c.id} style={{ paddingBottom: 10 }}>
+        <div>{c.tanggal} · {c.reason} · oleh {c.created_by}</div>
+        <div>Uang muka dikembalikan {rp(c.advance_restored)}</div>
+        <div style={{ fontSize: 11 }}>Jurnal asli {c.original_journal_id} · pembalik {c.reversal_journal_id}</div>
+      </div>)}
+      {!cancellations.length && <p>Belum ada penerimaan yang dihapus.</p>}
     </div>
     {bisaKoreksiGrosir(profile) && invoice.order_id && invoice.status !== "batal" && <div className="crm-sec">
       <h2 style={{ fontSize: 14 }}>Koreksi pencatatan grosir — OWNER/FINANCE</h2>
       <WholesaleCorrectionForm userId={user?.id ?? ""} invoiceId={id} revision={Number(invoice.revision)} today={today} due={invoice.jatuh_tempo} note={invoice.catatan ?? ""} paid={paid} total={Number(invoice.total)}
-        taxRate={Number(invoice.ppn) > 0 ? Number(settings.data?.ppn_rate) || 11 : 0} items={(lines.data ?? []).map(i => ({ id: i.id, nama: i.nama, qty: Number(i.qty), harga: Number(i.harga), satuan: i.satuan }))} />
+        taxRate={Number(invoice.ppn) > 0 ? Number(settings.data?.ppn_rate) || 11 : 0} items={(lines.data ?? []).map(i => ({ id: i.id, nama: i.nama, qty: Number(i.qty), harga: Number(i.harga), diskon: Number(i.diskon ?? 0), satuan: i.satuan }))} />
     </div>}
   </>;
 }
