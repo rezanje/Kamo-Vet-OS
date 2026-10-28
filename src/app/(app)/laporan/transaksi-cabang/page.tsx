@@ -172,9 +172,11 @@ export default async function TransaksiCabangPage({
         </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
           Transaksi menggabungkan tiga pintu: kasir petshop (POS), pesanan online, dan tagihan klinik.
-          Omzet sudah dikurangi retur penjualan, dan tagihan klinik yang dibatalkan tidak ikut dihitung.<br />
+          Omzet sudah dikurangi retur penjualan dan refund klinik yang sudah diposting (tunai, atau transfer
+          yang sudah selesai diproses finance; permintaan transfer yang masih menunggu belum mengurangi omzet),
+          dan tagihan klinik yang dibatalkan tidak ikut dihitung.<br />
           Nilai memakai total dokumen setelah diskon, termasuk pajak/biaya yang sudah ada pada dokumen; bukan laporan nilai sebelum pajak atau arus kas.<br />
-          Dasar tanggal adalah tanggal dokumen penjualan menurut WIB. Retur mengikuti struk asal, termasuk retur yang dicatat setelah hari penjualan; laporan ini bukan arus kas/refund per hari.<br />
+          Dasar tanggal adalah tanggal dokumen penjualan menurut WIB. Retur dan refund klinik mengikuti struk/invoice asal, termasuk yang dicatat setelah hari penjualan; laporan ini bukan arus kas/refund per hari.<br />
           &quot;Pelanggan dilayani&quot; = pelanggan berkartu yang berbeda, ditambah tiap struk pembeli umum
           yang identitasnya tidak dicatat. &quot;Rata-rata kunjungan&quot; hanya dihitung dari pelanggan
           berkartu — struk umum tidak bisa dilacak orangnya, kalau ikut dihitung angkanya selalu 1x

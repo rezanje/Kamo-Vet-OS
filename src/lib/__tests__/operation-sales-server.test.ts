@@ -11,6 +11,9 @@ function fakeSupabase(options: {
   layers?: { warehouse_id: string; item_id: string; qty_left: number; unit_cost: number }[];
   sales?: Record<string, unknown>[];
   returns?: Record<string, unknown>[];
+  visits?: Record<string, unknown>[];
+  invoices?: Record<string, unknown>[];
+  clinicRefunds?: Record<string, unknown>[];
 }) {
   const records: QueryRecord[] = [];
   const errors = options.errors ?? {};
@@ -27,7 +30,9 @@ function fakeSupabase(options: {
             ? [{ id: "w1", branch_id: "b1" }]
           : table === "stock_layers"
             ? options.layers ?? []
-          : table === "sales" ? options.sales ?? [] : table === "sales_returns" ? options.returns ?? [] : [], error: errors[table] ?? null };
+          : table === "sales" ? options.sales ?? [] : table === "sales_returns" ? options.returns ?? []
+          : table === "visits" ? options.visits ?? [] : table === "invoices" ? options.invoices ?? []
+          : table === "clinic_refunds" ? options.clinicRefunds ?? [] : [], error: errors[table] ?? null };
     const query: Record<string, unknown> = {};
     for (const method of ["select", "eq", "in", "gte", "lte", "lt", "gt", "is", "not", "neq", "order", "limit", "maybeSingle"]) {
       query[method] = (...args: unknown[]) => {
@@ -58,6 +63,19 @@ describe("operation sales server collector", () => {
       returns: [{ sale_id: "sale", total: 50800 }],
     }), { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" });
     expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 50000, transactions: 1 } } });
+  });
+  it("R02: nets posted clinic refunds from the source invoice up to the period end", async () => {
+    const supabase = fakeSupabase({
+      visits: [{ id: "v1", branch_id: "b1", customer_id: "c1" }],
+      invoices: [{ id: "inv-1", visit_id: "v1", total: 200000, created_at: "2026-08-15T05:00:00Z", voided_at: null,
+        invoice_items: [{ item_id: null, qty: 1, harga: 150000, hpp: null, jenis: "tindakan" }, { item_id: "obat", qty: 1, harga: 50000, hpp: 20000, jenis: "obat" }] }],
+      clinicRefunds: [{ invoice_id: "inv-1", total: 50000 }, { invoice_id: "inv-1", total: 25000.5 }],
+    });
+    const result = await collectDashboard(supabase, { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" });
+    expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 124999.5, transactions: 1 }, split: { clinic: 124999.5 } } });
+    const calls = supabase.records.filter(record => record.table === "clinic_refunds").flatMap(record => record.calls);
+    expect(calls).toContainEqual({ method: "in", args: ["invoice_id", ["inv-1"]] });
+    expect(calls).toContainEqual({ method: "lte", args: ["tanggal", "2026-08-31"] });
   });
   it("excludes merchant fee from product sales, margin, targets and customer spending", async () => {
     const sale = { id: "sale", total: 101600, merchant_fee_total: 1600, branch_id: "b1", customer_id: "c1", channel: null, created_at: "2026-08-15T05:00:00Z",

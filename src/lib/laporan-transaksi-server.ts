@@ -6,6 +6,7 @@ import { tanggalWIB } from "./tanggal";
 import { batasTanggalWIB } from "./laporan-transaksi";
 import type { Trx } from "./laporan-transaksi";
 import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
+import { clinicRefundPerInvoice, type ClinicRefundRow } from "./clinic-refund-reporting";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -23,7 +24,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   // jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
 
-  const [hasilSales, hasilInvoices, hasilReturs, hasilCabang] =
+  const [hasilSales, hasilInvoices, hasilReturs, hasilRefundKlinik, hasilCabang] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
         .select("id, branch_id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(id)", { count: "exact" })
@@ -36,6 +37,9 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
       // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
       // dan omzet struk itu harus terlihat sudah berkurang.
       completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" }).is("voided_at", null)),
+      // R02: refund klinik yang sudah diposting (Tunai, atau Transfer yang sudah selesai)
+      // mengurangi invoice asalnya dengan aturan yang sama seperti retur struk di atas.
+      completeReportQuery(supabase.from("clinic_refunds").select("id, invoice_id, total", { count: "exact" })),
       completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
     ]);
 
@@ -43,6 +47,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   const { data: sales } = hasilSales;
   const { data: invoices } = hasilInvoices;
   const { data: returs } = hasilReturs;
+  const refundPerInvoice = clinicRefundPerInvoice(hasilRefundKlinik.data as ClinicRefundRow[]);
   const { data: cabangList } = hasilCabang;
 
   const returPerStruk = new Map<string, number>();
@@ -81,7 +86,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
       cabang: one(v?.branches ?? null)?.name ?? "—",
       cabangId: v?.branch_id ?? null,
       customerId: v?.customer_id ?? null,
-      omzet: Number(inv.total) || 0,
+      omzet: (Number(inv.total) || 0) - (refundPerInvoice.get(inv.id) ?? 0),
       item: inv.invoice_items?.length ?? 0,
       kanal: "Klinik",
     });

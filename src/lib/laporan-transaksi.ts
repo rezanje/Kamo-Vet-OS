@@ -12,7 +12,7 @@ export type Trx = {
   cabang: string;
   cabangId?: string | null;
   customerId: string | null; // null = pembeli umum yang identitasnya tidak dicatat
-  omzet: number;             // sudah dikurangi retur
+  omzet: number;             // sudah dikurangi retur petshop / refund klinik yang sudah diposting
   item: number;              // jumlah BARIS item pada dokumen
   kanal: Kanal;
 };

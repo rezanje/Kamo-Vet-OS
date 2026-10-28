@@ -44,6 +44,22 @@ it("does not count a cancelled return without replacement in yearly or daily sal
   expect(result.penjualan.total).toBe(200);
   expect(result.trenPenjualan.find(row => row.tanggal === "2026-10-20")?.total).toBe(0);
 });
+it("R02: nets posted clinic refunds from this year's clinic sales on the refund date", async () => {
+  // Fictional: two paid clinic invoices; one refund this year (cash or finished transfer),
+  // one dated last year (already in last year's figure), one dated after today (not yet).
+  const result = await getDashboard(client({
+    invoices: [
+      { id: "inv-1", total: 300, dp_amount: 300, paid_status: "lunas", created_at: "2026-10-19T03:00:00Z", voided_at: null },
+      { id: "inv-2", total: 100, dp_amount: 100, paid_status: "lunas", created_at: "2026-10-20T03:00:00Z", voided_at: null },
+    ],
+    clinic_refunds: [
+      { id: "rf-1", invoice_id: "inv-1", total: 120.5, tanggal: "2026-10-21" },
+      { id: "rf-old", invoice_id: "inv-old", total: 50, tanggal: "2025-12-31" },
+      { id: "rf-future", invoice_id: "inv-2", total: 10, tanggal: "2026-10-22" },
+    ],
+  }), "2026-10-21");
+  expect(result.penjualan).toEqual({ total: 279.5, lunas: 279.5, belumLunas: 0 });
+});
 it("restates supplier subledger opening balance without adding a current-year reversal", async () => {
   const db = client({
     purchase_invoices: [{ no_faktur: "INV", tanggal: "2025-12-30", total: 200, supplier_id: "supplier", suppliers: { nama: "Fiction" }, purchase_invoice_payments: [] }],

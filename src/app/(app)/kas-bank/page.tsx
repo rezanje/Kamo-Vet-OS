@@ -17,10 +17,14 @@ export default async function KasBankPage() {
     user ? supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
   const canViewRefund = !profileError && profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
-  const pendingResult = canViewRefund
-    ? await supabase.rpc("get_sales_refund_requests", { p_sale_id: null, p_office: true, p_status: "pending", p_offset: 0 })
-    : null;
-  const hasPendingRefund = !pendingResult?.error && Array.isArray(pendingResult?.data) && pendingResult.data.length > 0;
+  // A02: the queue holds petshop and clinic (J03) transfer refunds; either one waiting shows the notice.
+  const pendingResults = canViewRefund
+    ? await Promise.all([
+      supabase.rpc("get_sales_refund_requests", { p_sale_id: null, p_office: true, p_status: "pending", p_offset: 0 }),
+      supabase.rpc("get_clinic_refund_requests", { p_invoice: null, p_office: true, p_status: "pending", p_offset: 0 }),
+    ])
+    : [];
+  const hasPendingRefund = pendingResults.some(result => !result.error && Array.isArray(result.data) && result.data.length > 0);
 
   const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
   const rekening = (rekData ?? []) as { id: string; nama: string; jenis: string; coa_code: string }[];
