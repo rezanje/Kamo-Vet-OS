@@ -18,6 +18,8 @@ import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { addDailyLogPos } from "../../actions";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
 import { ClinicServicePicker } from "@/components/ClinicServicePicker";
+import { Popup } from "@/components/Popup";
+import { kekuranganStok } from "@/lib/stok-keranjang";
 import { CompoundEditor } from "@/components/CompoundEditor";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
 import { InpatientStaffFields } from '@/components/InpatientStaffFields';
@@ -73,6 +75,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const [cart, setCart] = useState<CartRow[]>([]);
   const [procedureDraft, setProcedureDraft] = useState<{ item: ItemLite; bmhp: BmhpRow[]; editKey: string | null } | null>(null);
   const [procedureError, setProcedureError] = useState("");
+  const [stokKurang, setStokKurang] = useState<string | null>(null);
   const procedureCommitted = useRef(false);
   const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
@@ -236,9 +239,15 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
-  return (
+  // Same pre-check as rekam medis: medicine lines and procedure BMHP (e.g. vaccine vials) against branch stock.
+  const stokById = new Map([...items, ...bahanItems, ...racikanItems].filter(it => it.item_type !== "Jasa").map(it => [it.id, { stok: it.stok, unit: it.unit }]));
+
+  return (<>
+    <Popup message={stokKurang} title="Stok tidak cukup" onClose={() => setStokKurang(null)} />
     <form ref={draftAttachForm} action={(data) => draftSubmit(data, addDailyLogPos)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
+      const kurang = kekuranganStok(cart, stokById, (id, unit) => unitsOf(id).find(u => u.unit === unit)?.factor ?? 1);
       if (procedureDraft) { event.preventDefault(); event.stopPropagation(); setTab("Tindakan"); setProcedureError("Selesaikan komposisi BMHP tindakan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
+      else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(`${kurang.join("; ")}. Kurangi jumlah atau ganti obat sebelum melanjutkan.`); }
       else draftCapture();
     }}>
       {draftRecovered && <div role="status" className="p2ban">Draf dipulihkan <button type="button" className="btn-def" onClick={draftDiscard}>Buang draf</button></div>}
@@ -598,7 +607,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
         </div>
       </div>
     </form>
-  );
+  </>);
 }
 
 function MiniKV({ k, v }: { k: string; v: string }) {
