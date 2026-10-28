@@ -9,7 +9,7 @@ import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compo
 import { nextStatus, type RecipeStatus } from "@/lib/compounding";
 
 import { hargaCabang } from "@/lib/harga-cabang";
-import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams, type ClinicVoidCompoundParams } from "@/lib/klinik-posting";
+import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams } from "@/lib/klinik-posting";
 import { loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 
 export type BahanRacikan = { id: string; name: string; unit: string; sell_price: number; stok: number };
@@ -183,15 +183,59 @@ export async function advanceRecipeStatus(formData: FormData) {
   redirect(`/klinik/racik/${recipeId}?success=${next}`);
 }
 
-// §2 edge case: perubahan setelah diproses → void racikan lama (stok bahan dikembalikan), buat baru.
-export async function voidRecipe(formData: FormData) {
-  const supabase = await createClient();
+// Alasan wajib untuk kedua aksi racikan; database menolak alasan kosong juga.
+function alasanRacikan(formData: FormData): string | null {
+  const reason = String(formData.get("reason") ?? "").trim();
+  return reason.length >= 3 && reason.length <= 500 ? reason : null;
+}
+
+/** Ubah komposisi racikan: hanya selisih jumlahnya yang menggerakkan stok bahan.
+ * Syarat (belum diserahkan, tagihan belum dibayar) ditegakkan ulang di database. */
+export async function ubahKomposisiRacikan(formData: FormData) {
   const recipeId = String(formData.get("recipeId") ?? "");
   const visitId = String(formData.get("visitId") ?? "");
+  const back = `/klinik/racik/${recipeId}`;
   if (!recipeId) redirect(`/klinik/racik?error=${encodeURIComponent("Racikan tidak valid")}`);
-  const params: ClinicVoidCompoundParams = { p_recipe_id: recipeId };
-  const { error } = await supabase.rpc("clinic_void_compound", params);
-  if (error) redirect(`${visitId ? `/klinik/rekam-medis/${visitId}` : `/klinik/racik/${recipeId}`}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
+  const reason = alasanRacikan(formData);
+  if (!reason) redirect(`${back}?error=${encodeURIComponent("Alasan perubahan komposisi wajib diisi (3–500 karakter)")}`);
 
-  redirect(visitId ? `/klinik/rekam-medis/${visitId}?racikan=void` : `/klinik/racik?success=void`);
+  let bahan: unknown;
+  try { bahan = JSON.parse(String(formData.get("ingredients") ?? "[]")); }
+  catch { return redirect(`${back}?error=${encodeURIComponent("Komposisi racikan tidak valid")}`); }
+  const rows = Array.isArray(bahan) ? bahan.map(raw => {
+    const row = (raw ?? {}) as Record<string, unknown>;
+    return { item_id: typeof row.item_id === "string" ? row.item_id.trim() : "", quantity: Number(row.quantity) };
+  }) : [];
+  if (!rows.length || rows.length > 100
+    || rows.some(row => !row.item_id || !Number.isFinite(row.quantity) || row.quantity <= 0)
+    || new Set(rows.map(row => row.item_id)).size !== rows.length) {
+    redirect(`${back}?error=${encodeURIComponent("Komposisi racikan tidak valid: periksa bahan dan jumlahnya")}`);
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("clinic_adjust_compound", {
+    p_recipe_id: recipeId, p_ingredients: rows, p_reason: reason,
+  });
+  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
+  revalidatePath(back);
+  if (visitId) { revalidatePath(`/klinik/rekam-medis/${visitId}`); revalidatePath(`/klinik/pembayaran/${visitId}`); }
+  redirect(`${back}?success=komposisi${transactionDraftAck(formData)}`);
+}
+
+/** §2 edge case: perubahan setelah diproses → bahan dikembalikan ke stok pada harga pokok
+ * saat diambil, racikan ditandai void dan tetap tersimpan, lalu racikan baru dibuat. */
+export async function kembalikanBahanRacikan(formData: FormData) {
+  const recipeId = String(formData.get("recipeId") ?? "");
+  const visitId = String(formData.get("visitId") ?? "");
+  const back = `/klinik/racik/${recipeId}`;
+  if (!recipeId) redirect(`/klinik/racik?error=${encodeURIComponent("Racikan tidak valid")}`);
+  const reason = alasanRacikan(formData);
+  if (!reason) redirect(`${back}?error=${encodeURIComponent("Alasan pengembalian bahan wajib diisi (3–500 karakter)")}`);
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("clinic_return_compound", { p_recipe_id: recipeId, p_reason: reason });
+  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
+  revalidatePath(back);
+  if (visitId) { revalidatePath(`/klinik/rekam-medis/${visitId}`); revalidatePath(`/klinik/pembayaran/${visitId}`); }
+  redirect(visitId ? `/klinik/rekam-medis/${visitId}?racikan=kembali` : `/klinik/racik?success=kembali`);
 }

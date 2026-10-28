@@ -7,7 +7,7 @@ const state = vi.hoisted(() => ({
   filters: [] as { table: string; key: string; value: string }[],
 }));
 vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND'); }, useSearchParams: () => new URLSearchParams() }));
-vi.mock('@/app/(app)/klinik/racik/actions', () => ({ advanceRecipeStatus: vi.fn(), voidRecipe: vi.fn(), updateRacikPetunjuk: vi.fn(), updateRacikPemakaian: vi.fn() }));
+vi.mock('@/app/(app)/klinik/racik/actions', () => ({ advanceRecipeStatus: vi.fn(), ubahKomposisiRacikan: vi.fn(), kembalikanBahanRacikan: vi.fn(), bahanRacikanUntukKunjungan: vi.fn(async () => []), updateRacikPetunjuk: vi.fn(), updateRacikPemakaian: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ from(table: string) {
   const query = {
     select() { return query; },
