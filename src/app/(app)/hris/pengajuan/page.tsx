@@ -7,7 +7,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { jadwalCicilan } from "@/lib/kasbon";
-import { getAturanGaji } from "@/lib/payroll-aturan";
+import { bacaAturanGaji } from "@/lib/payroll-aturan";
 import {
   setujuiKasbon, setujuiLembur, setujuiReimburse,
   tolakKasbon, tolakLembur, tolakReimburse,
@@ -29,7 +29,7 @@ export default async function PengajuanPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data: lemburData }, { data: kasbonData }, { data: reimData }, rekening, aturan] = await Promise.all([
+  const [{ data: lemburData }, { data: kasbonData }, { data: reimData }, rekening, { aturan }] = await Promise.all([
     supabase.from("overtime_requests")
       .select("id, tanggal, jam, alasan, status, employees(nama, jabatan)")
       .eq("status", "Menunggu").order("tanggal"),
@@ -40,7 +40,7 @@ export default async function PengajuanPage({
       .select("id, tanggal, kategori, jumlah, keterangan, status, employees(nama, jabatan)")
       .eq("status", "Menunggu").order("tanggal"),
     loadRekeningAktif(supabase),
-    getAturanGaji(supabase),
+    bacaAturanGaji(supabase),
   ]);
 
   // Utang berjalan yang SUDAH disetujui — termasuk utang selisih kas yang lahir

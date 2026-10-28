@@ -47,19 +47,32 @@ export function menitTelat(jamShift: string | null, jamAbsen: string | null): nu
   return Math.max(0, ke(jamAbsen) - ke(jamShift));
 }
 
-export async function getAturanGaji(supabase: AnyClient): Promise<AturanGaji> {
+export const ATURAN_GAJI_BELUM_DISIMPAN =
+  "Aturan gaji belum pernah disimpan. OWNER perlu menyimpannya dulu di Pengaturan → Aturan gaji.";
+
+// Baca baris tunggal aturan gaji. `tersimpan: false` = barisnya memang belum ada
+// (bukan gagal baca) — layar tetap bisa dibuka supaya OWNER bisa mengisinya.
+export async function bacaAturanGaji(supabase: AnyClient): Promise<{ aturan: AturanGaji; tersimpan: boolean }> {
   const { data, error } = await supabase
     .from("payroll_settings")
     .select("telat_mulai_menit, telat_blok_menit, telat_nominal_per_blok, telat_maks, bolos_per_hari, lembur_per_jam")
     .eq("id", true).maybeSingle();
-  // A failed or RLS-hidden read cannot be interpreted as a configured zero rate.
-  if (error || !data) throw new Error("Aturan gaji belum dapat diverifikasi. Coba muat ulang.");
-  return {
+  if (error) throw new Error("Aturan gaji belum dapat diverifikasi. Coba muat ulang.");
+  if (!data) return { aturan: { ...ATURAN_KOSONG }, tersimpan: false };
+  return { aturan: {
     telat_mulai_menit: Number(data.telat_mulai_menit) || 0,
     telat_blok_menit: Number(data.telat_blok_menit) || 5,
     telat_nominal_per_blok: Number(data.telat_nominal_per_blok) || 0,
     telat_maks: Number(data.telat_maks) || 0,
     bolos_per_hari: Number(data.bolos_per_hari) || 0,
     lembur_per_jam: Number(data.lembur_per_jam) || 0,
-  };
+  }, tersimpan: true };
+}
+
+// Untuk menghitung gaji: baris yang belum ada atau tersembunyi RLS tidak boleh
+// dianggap sebagai tarif nol yang sudah diputuskan pemilik.
+export async function getAturanGaji(supabase: AnyClient): Promise<AturanGaji> {
+  const { aturan, tersimpan } = await bacaAturanGaji(supabase);
+  if (!tersimpan) throw new Error(ATURAN_GAJI_BELUM_DISIMPAN);
+  return aturan;
 }

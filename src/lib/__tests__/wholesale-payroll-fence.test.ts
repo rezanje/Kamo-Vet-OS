@@ -29,3 +29,9 @@ it("explains unresolved service attribution before any payroll write",async()=>{
  await expect(hitungPenggajian(form())).rejects.toThrow("error=Periksa%20atribusi%20jasa%20di%20Komisi%20Penjual");
  expect(fixture.upsert).not.toHaveBeenCalled();
 });
+it("explains never-saved payroll settings as a readable error before any payroll write",async()=>{
+ const { ATURAN_GAJI_BELUM_DISIMPAN } = await import("@/lib/payroll-aturan");
+ fixture.calculate.mockRejectedValue(Error(ATURAN_GAJI_BELUM_DISIMPAN));
+ await expect(hitungPenggajian(form())).rejects.toThrow("error=" + encodeURIComponent(ATURAN_GAJI_BELUM_DISIMPAN));
+ expect(fixture.upsert).not.toHaveBeenCalled();
+});

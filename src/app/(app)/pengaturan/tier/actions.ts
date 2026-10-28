@@ -24,14 +24,19 @@ export async function updateTierSettings(formData: FormData) {
   const downgradeEnabled = formData.get("tier_downgrade_enabled") === "on";
   const downgradeDays = Math.max(1, Math.min(3650, Number(formData.get("tier_downgrade_days")) || 180));
 
-  const { error } = await supabase.from("tier_settings").update({
+  // Tabel satu baris: upsert, lalu pastikan benar-benar 1 baris tertulis.
+  // Update atas baris yang belum ada lolos tanpa error padahal tidak menyimpan apa pun.
+  const { data, error } = await supabase.from("tier_settings").upsert({
+    id: 1,
     bronze_min, silver_min, gold_min, platinum_min,
     points_expiry_enabled: pointsExpiryEnabled,
     points_expiry_months: pointsExpiryMonths,
     tier_downgrade_enabled: downgradeEnabled,
     tier_downgrade_days: downgradeDays,
-  }).eq("id", 1);
-  if (error) redirect("/pengaturan/tier?error=" + encodeURIComponent("Gagal menyimpan aturan loyalty"));
+  }, { onConflict: "id" }).select("id");
+  if (error || !Array.isArray(data) || data.length !== 1) {
+    redirect("/pengaturan/tier?error=" + encodeURIComponent("Gagal menyimpan aturan loyalty"));
+  }
   revalidatePath("/pengaturan/tier");
   redirect("/pengaturan/tier?success=1");
 }

@@ -10,11 +10,13 @@ import { jurnalPenggajian } from "@/lib/payroll";
 import { akhirBulan, kumpulkanDataGaji } from "@/lib/payroll-data";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
 import { SERVICE_ATTRIBUTION_PENDING } from "@/lib/commission-readiness";
+import { ATURAN_GAJI_BELUM_DISIMPAN } from "@/lib/payroll-aturan";
 
 async function kumpulkanGajiDenganAtribusi(...args:Parameters<typeof kumpulkanDataGaji>) {
   try { return await kumpulkanDataGaji(...args); }
   catch(error) {
     if(error instanceof Error && error.message.startsWith(SERVICE_ATTRIBUTION_PENDING)) redirect(`${kembali(args[1])}&error=${encodeURIComponent(error.message.slice(SERVICE_ATTRIBUTION_PENDING.length).trim())}`);
+    if(error instanceof Error && error.message===ATURAN_GAJI_BELUM_DISIMPAN) redirect(`${kembali(args[1])}&error=${encodeURIComponent(error.message)}`);
     throw error;
   }
 }

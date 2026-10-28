@@ -7,7 +7,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaPayroll } from "@/lib/master-guard";
 import { hariIniWIB } from "@/lib/tanggal";
-import { getAturanGaji } from "@/lib/payroll-aturan";
+import { bacaAturanGaji } from "@/lib/payroll-aturan";
 import { muatPeringatanAturanKomisi } from "@/lib/komisi-data";
 import { hitungPenggajian, sahkanPenggajian, simpanKoreksi } from "./actions";
 
@@ -47,13 +47,13 @@ export default async function PenggajianPage({
 
   const periode = /^\d{4}-\d{2}$/.test(sp.periode ?? "") ? sp.periode! : hariIniWIB().slice(0, 7);
 
-  const [{ data: slipData }, { data: riwayatData }, rekening, aturan, peringatanKomisi] = await Promise.all([
+  const [{ data: slipData }, { data: riwayatData }, rekening, { aturan, tersimpan: aturanTersimpan }, peringatanKomisi] = await Promise.all([
     supabase.from("payrolls")
       .select("employee_id, gaji_pokok, tunjangan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, komisi, penyesuaian, catatan, status, employees(nama, jabatan)")
       .eq("periode", periode),
     supabase.from("payrolls").select("periode, total, status").order("periode", { ascending: false }),
     loadRekeningAktif(supabase),
-    getAturanGaji(supabase),
+    bacaAturanGaji(supabase),
     muatPeringatanAturanKomisi(supabase),
   ]);
 
@@ -113,8 +113,10 @@ export default async function PenggajianPage({
       )}
       {aturanKosong && (
         <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
-          <i className="ti ti-alert-triangle" /> Aturan gaji masih nol semua — telat, bolos, dan lembur tidak akan
-          berpengaruh. Isi dulu di <Link href="/pengaturan/gaji" style={{ textDecoration: "underline" }}>Pengaturan → Aturan gaji</Link>.
+          <i className="ti ti-alert-triangle" /> {aturanTersimpan
+            ? "Aturan gaji masih nol semua — telat, bolos, dan lembur tidak akan berpengaruh."
+            : "Aturan gaji belum pernah disimpan — tombol Hitung akan ditolak sampai OWNER menyimpannya."}{" "}
+          Isi dulu di <Link href="/pengaturan/gaji" style={{ textDecoration: "underline" }}>Pengaturan → Aturan gaji</Link>.
         </div>
       )}
 

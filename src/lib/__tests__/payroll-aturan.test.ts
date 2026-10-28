@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ATURAN_KOSONG, getAturanGaji, menitTelat, potonganTelat, type AturanGaji } from "../payroll-aturan";
+import { ATURAN_GAJI_BELUM_DISIMPAN, ATURAN_KOSONG, bacaAturanGaji, getAturanGaji, menitTelat, potonganTelat, type AturanGaji } from "../payroll-aturan";
 import { durasiShiftMenit, validasiShift } from "../shift-master";
 
 // Contoh dari PDF tim: Rp10rb tiap 5 menit, mulai menit ke-1, maksimal Rp2 juta.
@@ -57,8 +57,13 @@ describe("baca aturan penggajian", () => {
     await expect(getAturanGaji(client(aturan))).resolves.toEqual(aturan);
   });
   it("stops calculation when the singleton is unavailable or its read fails", async () => {
-    await expect(getAturanGaji(client(null))).rejects.toThrow("belum dapat diverifikasi");
+    await expect(getAturanGaji(client(null))).rejects.toThrow(ATURAN_GAJI_BELUM_DISIMPAN);
     await expect(getAturanGaji(client(null, { message: "read failed" }))).rejects.toThrow("belum dapat diverifikasi");
+  });
+  it("lets screens open with neutral defaults when the singleton was never saved, but not on read failure", async () => {
+    await expect(bacaAturanGaji(client(null))).resolves.toEqual({ aturan: ATURAN_KOSONG, tersimpan: false });
+    await expect(bacaAturanGaji(client(aturan))).resolves.toEqual({ aturan, tersimpan: true });
+    await expect(bacaAturanGaji(client(null, { message: "read failed" }))).rejects.toThrow("belum dapat diverifikasi");
   });
 });
 

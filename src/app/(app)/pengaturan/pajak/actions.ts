@@ -26,14 +26,19 @@ export async function simpanPajak(formData: FormData) {
   }
 
   const { data: { user } } = await supabase.auth.getUser();
-  const { error } = await supabase
+  // Tabel satu baris: upsert + cek 1 baris tertulis (update atas baris yang hilang
+  // lolos tanpa error padahal tidak menyimpan apa pun).
+  const { data, error } = await supabase
     .from("company_settings")
-    .update({
-      mode_pkp, ppn_rate, nama_perusahaan, npwp, alamat,
+    .upsert({
+      id: true, mode_pkp, ppn_rate, nama_perusahaan, npwp, alamat,
       updated_by: user?.id ?? null, updated_at: new Date().toISOString(),
-    })
-    .eq("id", true);
+    }, { onConflict: "id" })
+    .select("id");
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  if (!Array.isArray(data) || data.length !== 1) {
+    redirect(`${back}?error=${encodeURIComponent("Pengaturan pajak tidak tersimpan. Muat ulang lalu coba lagi.")}`);
+  }
 
   revalidatePath(back);
   redirect(`${back}?success=${encodeURIComponent(mode_pkp ? `Mode PKP AKTIF — PPN ${ppn_rate}% mulai berlaku di transaksi baru.` : "Mode PKP nonaktif — transaksi baru tanpa PPN.")}`);

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { getAturanGaji, potonganTelat } from "@/lib/payroll-aturan";
+import { bacaAturanGaji, potonganTelat } from "@/lib/payroll-aturan";
 import { simpanAturanGaji } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -15,8 +15,8 @@ export default async function AturanGajiPage({
 }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
-  const a = await getAturanGaji(supabase);
-  const aktif = a.telat_nominal_per_blok > 0 || a.bolos_per_hari > 0 || a.lembur_per_jam > 0;
+  const { aturan: a, tersimpan } = await bacaAturanGaji(supabase);
+  const aktif = tersimpan && (a.telat_nominal_per_blok > 0 || a.bolos_per_hari > 0 || a.lembur_per_jam > 0);
 
   // Contoh hidup pakai aturan yang tersimpan — biar kelihatan efeknya sebelum gajian.
   const contoh = [1, 5, 6, 30, 120].map((m) => ({ menit: m, potong: potonganTelat(m, a) }));
@@ -30,6 +30,12 @@ export default async function AturanGajiPage({
         <span className={`bge ${aktif ? "g" : "x"}`}>{aktif ? "Aturan aktif" : "Belum diatur"}</span>
       </div>
 
+      {!tersimpan && !error && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+          <i className="ti ti-alert-triangle" /> Aturan gaji belum pernah disimpan. Penggajian belum bisa dihitung sampai
+          OWNER menekan Simpan aturan di bawah (isi 0 kalau memang tidak ada potongan/lembur).
+        </div>
+      )}
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Aturan gaji tersimpan. Berlaku saat penggajian dihitung.

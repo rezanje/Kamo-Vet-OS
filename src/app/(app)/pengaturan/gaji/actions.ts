@@ -28,11 +28,17 @@ export async function simpanAturanGaji(formData: FormData) {
   }
 
   const { data: { user } } = await supabase.auth.getUser();
-  const { error } = await supabase
+  // Tabel satu baris: upsert, bukan update. Update atas baris yang belum ada
+  // "berhasil" tanpa menyimpan apa pun — begitu yang terjadi di produksi.
+  const { data, error } = await supabase
     .from("payroll_settings")
-    .update({ ...row, updated_by: user?.id ?? null, updated_at: new Date().toISOString() })
-    .eq("id", true);
+    .upsert(
+      { id: true, ...row, updated_by: user?.id ?? null, updated_at: new Date().toISOString() },
+      { onConflict: "id" },
+    )
+    .select("id");
   if (error) gagal(error.message);
+  if (!Array.isArray(data) || data.length !== 1) gagal("Aturan gaji tidak tersimpan. Muat ulang lalu coba lagi.");
 
   revalidatePath(BACK);
   redirect(`${BACK}?success=1`);
