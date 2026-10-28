@@ -9,7 +9,8 @@ import { createClient } from "@/lib/supabase/server";
 import { nilaiPantauUntukDatabase } from "@/lib/monitoring-inap";
 import { canTransition, ripWaMessage, type Condition, type Role } from "@/lib/inpatient";
 import { parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klinik-posting";
-import { loadUnitOptions, pickUnit } from "@/lib/satuan";
+import { loadUnitOptions, pickUnit, type ItemUnit } from "@/lib/satuan";
+import { catatWaktu, mulai } from "@/lib/u07-waktu";
 import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
 import { inpatientStaffInput } from '@/lib/clinical-staff';
@@ -121,9 +122,9 @@ type ResepItem = {
   official_version_id?: string;
   sale_item_id?: string;
 };
+const INPATIENT_STATUSES: string[] = ["stabil", "kritis", "sembuh", "rip", "pulang_paksa"];
 export async function addDailyLogPos(formData: FormData) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
   const recordId = String(formData.get("recordId") ?? "");
   const conditionNote = String(formData.get("condition_note") ?? "").trim();
   const tindakan = String(formData.get("tindakan") ?? "").trim() || null;
@@ -136,12 +137,48 @@ export async function addDailyLogPos(formData: FormData) {
   const cetak = String(formData.get("cetak") ?? "") === "1";
   const back = `/klinik/rawat-inap/${recordId}`;
   if (!recordId || !conditionNote || !requestKey) redirect(`${back}/catatan?error=${encodeURIComponent("Isi kondisi pasien dan muat ulang formulir")}`);
+  const waktu = catatWaktu("addDailyLogPos", recordId);
 
-  const { data: rec } = await supabase
-    .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle();
+  // Keranjang obat/jasa & BMHP diurai dari form lebih dulu (tanpa database) supaya
+  // bacaan master bisa ikut dimulai bersamaan. Validasinya tetap di posisi lama.
+  let resep: ResepItem[] = [];
+  try { resep = JSON.parse(String(formData.get("resep") ?? "[]")); } catch { resep = []; }
+  const resepList: ResepItem[] = Array.isArray(resep) ? resep : [];
+  // K02: BMHP is only sent once the database exposes the migrated contract.
+  let bmhpRows: (BmhpInput[] | null)[] = [];
+  let bmhpError: string | null = null;
+  try { bmhpRows = resepList.map(r => r.jenis === "jasa" && r.item_id ? bmhpInput(r.bmhp) : null); }
+  catch (error) { bmhpError = error instanceof Error ? error.message : "BMHP tidak valid"; }
+  const needsBmhp = !bmhpError && bmhpRows.some(row => row?.length);
+
+  // U07: dulu hingga 7 bacaan berurutan sebelum RPC simpan. Sekarang semua dimulai
+  // bersamaan (gelombang 1); yang butuh data rawat inap/pengguna langsung menyusul
+  // (gelombang 2). Tiap hasil tetap ditunggu & diperiksa di posisi lama, jadi urutan
+  // validasi dan pesan galat sama; bacaan gagal menghentikan simpan (fail closed).
+  const userP = mulai(supabase.auth.getUser());
+  const recP = mulai(supabase
+    .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle());
+  const stayP = mulai(readStayTypesChecked(supabase, [recordId]));
+  const mrP = mulai(recP.then(({ data }) => data && !data.medical_record_id
+    ? supabase.from("medical_records").select("id").eq("visit_id", data.visit_id)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle()
+    : null));
+  const bmhpSupportP = needsBmhp ? mulai(supabase.rpc("clinic_bmhp_supported")) : null;
+  // Faktor satuan diambil ulang dari master, bukan dari form (lihat simpanRekamMedis).
+  const unitsP = resepList.length
+    ? mulai(loadUnitOptions(supabase, resepList.map((r) => r.item_id).filter((x): x is string => !!x)))
+    : null;
+  const roleP = newStatus && INPATIENT_STATUSES.includes(newStatus)
+    ? mulai(Promise.all([userP, recP]).then(([{ data: { user } }, { data }]) => data && newStatus !== data.condition_status
+      ? supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle()
+      : null))
+    : null;
+
+  await userP;
+  const { data: rec } = await recP;
   if (!rec) redirect(`${back}/catatan?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
   // K14: catatan harian pet hotel diisi paramedis; dokter/suhu tidak wajib.
-  const stay = await readStayTypesChecked(supabase, [recordId]);
+  const stay = await stayP;
   if (stay.failed) redirect(`${back}/catatan?error=${encodeURIComponent("Tipe rawat inap belum dapat diverifikasi. Muat ulang lalu simpan lagi.")}`);
   if (stay.types.get(recordId) === "pet_hotel" && !String(formData.get("paramedic_id") ?? "").trim()) {
     redirect(`${back}/catatan?error=${encodeURIComponent("Pilih paramedis yang mengisi catatan pet hotel")}`);
@@ -159,12 +196,11 @@ export async function addDailyLogPos(formData: FormData) {
   // Resep ditautkan ke rekam medis dan disimpan bersama log dalam satu transaksi.
   let mrId = rec!.medical_record_id as string | null;
   if (!mrId) {
-    const { data: mr } = await supabase.from("medical_records").select("id").eq("visit_id", rec!.visit_id)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-    mrId = mr?.id ?? null;
+    const mr = await mrP;
+    // Fail closed: rekam medis yang gagal dibaca tidak boleh dianggap "belum ada".
+    if (mr?.error) redirect(`${back}/catatan?error=${encodeURIComponent("Rekam medis belum dapat dibaca. Muat ulang lalu simpan lagi.")}`);
+    mrId = mr?.data?.id ?? null;
   }
-  let resep: ResepItem[] = [];
-  try { resep = JSON.parse(String(formData.get("resep") ?? "[]")); } catch { resep = []; }
   const racikan = resep.filter((r) => r.jenis === "racikan");
   if (racikan.some((r) => !r.official_version_id &&
     (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
@@ -174,16 +210,20 @@ export async function addDailyLogPos(formData: FormData) {
     redirect(`${back}/catatan?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
   }
   let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string; kategori: string | null; service_performers?: ServicePerformersInput | null; bmhp_components?: BmhpInput[] }[] = [];
-  // K02: BMHP is only sent once the database exposes the migrated contract.
-  let bmhpRows: (BmhpInput[] | null)[];
-  try { bmhpRows = resep.map(r => r.jenis === "jasa" && r.item_id ? bmhpInput(r.bmhp) : null); }
-  catch (error) { return redirect(`${back}/catatan?error=${encodeURIComponent(error instanceof Error ? error.message : "BMHP tidak valid")}`); }
-  if (bmhpRows.some(row => row?.length) && (await supabase.rpc("clinic_bmhp_supported")).data !== true) {
-    return redirect(`${back}/catatan?error=${encodeURIComponent("Pencatatan BMHP tindakan belum aktif di database. Hapus BMHP atau hubungi admin.")}`);
+  if (bmhpError) return redirect(`${back}/catatan?error=${encodeURIComponent(bmhpError)}`);
+  if (needsBmhp) {
+    // Fail closed: cek kontrak yang gagal dibaca = belum aktif (pesan lama tetap).
+    const support = await bmhpSupportP!;
+    if (support.error || support.data !== true) {
+      return redirect(`${back}/catatan?error=${encodeURIComponent("Pencatatan BMHP tindakan belum aktif di database. Hapus BMHP atau hubungi admin.")}`);
+    }
   }
   if (mrId && resep.length) {
-    // Faktor satuan diambil ulang dari master, bukan dari form (lihat simpanRekamMedis).
-    const unitOpts = await loadUnitOptions(supabase, resep.map((r) => r.item_id).filter((x): x is string => !!x));
+    // Master satuan yang gagal dibaca tampil sebagai pesan jelas (pola simpanRekamMedis),
+    // bukan "periksa koneksi"; simpan tidak dijalankan.
+    let unitOpts: Map<string, ItemUnit[]>;
+    try { unitOpts = await unitsP!; }
+    catch (error) { return redirect(`${back}/catatan?error=${encodeURIComponent(error instanceof Error ? error.message : "Satuan barang belum dapat dibaca")}`); }
     rows = resep.map((r, index) => ({ r, bmhp: bmhpRows[index] })).filter(({ r }) => r.nama_obat?.trim() && r.jenis !== "racikan").map(({ r, bmhp }) => ({
       nama_obat: r.nama_obat.trim(), item_id: r.item_id ?? null,
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
@@ -217,15 +257,18 @@ export async function addDailyLogPos(formData: FormData) {
     request_key: r.key ?? "",
     ...(typeof r.salesperson_id === "string" && r.salesperson_id.trim() ? {salesperson_id:r.salesperson_id.trim()} : {}),
   });
-  if (newStatus && !["stabil", "kritis", "sembuh", "rip", "pulang_paksa"].includes(newStatus)) {
+  if (newStatus && !INPATIENT_STATUSES.includes(newStatus)) {
     redirect(`${back}/catatan?error=${encodeURIComponent("Status kondisi tidak valid")}`);
   }
   if (newStatus && newStatus !== rec!.condition_status) {
-    const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-    if (!canTransition((me?.role ?? "STAFF") as Role, newStatus)) {
+    const role = await roleP!;
+    // Fail closed: peran yang gagal dibaca tidak boleh diperlakukan sebagai STAFF biasa.
+    if (!role || role.error) redirect(`${back}/catatan?error=${encodeURIComponent("Peran pengguna belum dapat diverifikasi. Muat ulang lalu simpan lagi.")}`);
+    if (!canTransition((role!.data?.role ?? "STAFF") as Role, newStatus)) {
       redirect(`${back}/catatan?error=${encodeURIComponent("Transisi kondisi hanya boleh dilakukan dokter")}`);
     }
   }
+  waktu.tandai("baca");
   const { error: saveError } = await supabase.rpc("clinic_save_inpatient_log_with_status", {
     p_inpatient_id: recordId,
     p_medical_record_id: mrId,
@@ -235,10 +278,13 @@ export async function addDailyLogPos(formData: FormData) {
     p_request_key: requestKey,
     p_new_status: newStatus && newStatus !== rec!.condition_status ? newStatus : null,
   });
+  waktu.tandai("simpan");
+  waktu.selesai();
   if (saveError) redirect(`${back}/catatan?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
-  revalidatePath(back);
-  revalidatePath(`${back}/catatan`);
-  revalidatePath(`/klinik/rekam-medis/${rec!.visit_id}/resep`);
+  // U07: sengaja TANPA revalidatePath. Revalidasi apa pun membuat Next merender ulang
+  // halaman aktif (form catatan + seluruh katalog ±1 MB) di respons simpan, lalu
+  // dibuang karena klien langsung pindah ke `href`. Semua tujuan halaman dinamis
+  // (router cache dinamis = 0 dtk), jadi `router.push` tetap mengambil data segar.
 
   return { saved: true, href: cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log` };
 }

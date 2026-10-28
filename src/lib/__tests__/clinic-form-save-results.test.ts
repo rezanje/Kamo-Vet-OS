@@ -48,7 +48,9 @@ it('returns confirmed initial save destination so the client can clear its draft
 });
 it('returns confirmed inpatient save destination so the client can clear its draft',async()=>{
  expect(await addDailyLogPos(form())).toEqual({saved:true,href:'/klinik/rawat-inap/inpatient?success=log'});
- expect(fixture.revalidated).toContain('/klinik/rawat-inap/inpatient');
+ // U07: no revalidation — it would re-render the heavy log form only for the client to
+ // navigate away; the dynamic destination page is fetched fresh by the client push.
+ expect(fixture.revalidated).toEqual([]);
 });
 it('returns failed inpatient save to the editable form',async()=>{
  fixture.error={message:'STOCK_SHORT: Fictional medicine'};
