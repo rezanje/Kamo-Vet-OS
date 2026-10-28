@@ -152,6 +152,8 @@ export type Potongan = {
   voucherCode?: string | null;
   /** Kode kampanye yang diketik (C05); null bila bukan kode kampanye. */
   campaignCode?: string | null;
+  /** Promo tujuan kode kampanye (C05): tersedia di cabang ini & potongannya di tagihan ini. */
+  promoKode?: { tersedia: boolean; potongan: number };
 };
 
 const KOSONG: Potongan = { promo: 0, voucher: 0, golongan: 0, total: 0, tolakVoucher: null };
@@ -172,6 +174,11 @@ export async function hitungPotonganKlinik(
     customerId: string | null;
     rows: BarisPotongan[];
     voucherCode?: string | null;
+    /**
+     * Rombongan (C05): promo tujuan kode kampanye yang sudah dibaca sekali untuk seluruh
+     * kedatangan. Promo itu ikut dipotong di tagihan hewan ini; voucher dihitung terpisah.
+     */
+    promoKodeId?: string | null;
     /** False only when replaying a committed invoice without a pricing version. */
     groupServices?: boolean;
   },
@@ -183,14 +190,15 @@ export async function hitungPotonganKlinik(
   const kampanye = await bacaKodeKampanye(supabase, kodeMasuk);
   const terbaca = bacaKode(kodeMasuk, kampanye ? [kampanye] : []);
   const kodeHasil = { voucherCode: terbaca.voucherCode, campaignCode: kampanye?.code ?? null };
-  if (subtotal <= 0) return { ...KOSONG, ...kodeHasil };
+  const promoKodeId = terbaca.promoId ?? opts.promoKodeId ?? null;
+  if (subtotal <= 0) return { ...KOSONG, ...kodeHasil, ...(promoKodeId ? { promoKode: { tersedia: false, potongan: 0 } } : {}) };
 
   const kode = terbaca.voucherCode;
 
   // Promo otomatis: dari master, per baris, pakai mesin yang sama dengan petshop.
   const promoAktif = promoDenganKode(
-    opts.branchId ? await loadPromoAktif(supabase, opts.branchId, terbaca.promoId ? [terbaca.promoId] : []) : [],
-    terbaca.promoId,
+    opts.branchId ? await loadPromoAktif(supabase, opts.branchId, promoKodeId ? [promoKodeId] : []) : [],
+    promoKodeId,
   );
   const pricingSource = rows.map(line => ({
     item_id:line.item_id ?? "", qty:Number(line.qty), harga:Number(line.harga), satuan:line.satuan,
@@ -250,7 +258,11 @@ export async function hitungPotonganKlinik(
   // Total potongan tidak boleh melebihi tagihan — kalau lewat, DPP jadi minus dan
   // jurnal pendapatannya ikut salah.
   const total = Math.min(subtotal, promo + golongan + voucher);
-  return { promo, voucher, golongan, total, tolakVoucher, ...kodeHasil };
+  const promoKode = promoKodeId ? {
+    tersedia: promoAktif.some((p) => p.id === promoKodeId),
+    potongan: potonganPromo.filter((p) => p.promoId === promoKodeId).reduce((a, p) => a + Number(p.potongan), 0),
+  } : undefined;
+  return { promo, voucher, golongan, total, tolakVoucher, ...kodeHasil, ...(promoKode ? { promoKode } : {}) };
 }
 
 export type BekalPotongan = {

@@ -1,0 +1,26 @@
+server: postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) | cluster: /tmp/vetos-c05cov-sibekvs7
+Applied 304 repository migrations to isolated PostgreSQL with auth/storage shims.
+Re-applied the new migration: idempotent (patched functions byte-identical).
+c05_campaign_rombongan_backoffice.sql: passed.
+c05_campaign_codes.sql: passed.
+q01_new_customer_quest.sql: passed.
+clinic_invoice_post.sql: passed.
+clinic_billing_lifecycle.sql: passed.
+clinic_demo_financial_policy.sql: passed.
+clinic_manual_invoice_units.sql: passed.
+clinic_procedure_bmhp.sql: passed.
+clinic_compound_issue.sql: passed.
+quest_config_write_guard.sql: passed.
+pos_payment_method_corrections.sql: passed.
+pos_split_payments.sql: passed.
+pos_merchant_fees.sql: passed.
+clinic_refund_source.sql (on clinic_invoice_post.sql prelude): passed.
+clinic_refund_post.sql (on clinic_invoice_post.sql prelude): passed.
+clinic_line_salespeople.sql (on clinic_invoice_post.sql prelude): passed.
+clinic_record_line_salespeople.sql (on clinic_invoice_post.sql prelude): passed.
+clinic_service_performers.sql (on clinic_invoice_post.sql prelude): passed.
+service_line_performers.sql (on pos_split_payments.sql prelude): passed.
+C05 concurrency: two simultaneous payments at cap 1 -> 1 finalized, 1 refused.
+Group concurrency: two owners' group payments at cap 1 -> 1 group posted, 1 refused.
+Group concurrency: two pets of one group at cap 1 posted together -> 2 invoices, 1 use.
+cleanup: temp cluster removed
