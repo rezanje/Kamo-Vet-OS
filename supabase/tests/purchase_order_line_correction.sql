@@ -110,6 +110,7 @@ do $$declare inv record;pv jsonb;res jsonb;line uuid;jcount int;begin
  perform pg_temp.ok((select qty=3 and qty_terima=3 and harga_beli=100 from purchase_order_items where id='f9600000-0000-4000-8000-000000000001'),'PO line follows');
  perform pg_temp.ok((select total=480 and status='Diterima' from purchase_orders where id='f9500000-0000-4000-8000-000000000001'),'PO total follows');
  perform pg_temp.ok((select gi.qty_terima from goods_receipt_items gi where gi.po_item_id='f9600000-0000-4000-8000-000000000001')=3,'receipt line follows');
+ perform pg_temp.ok((select gi.harga from goods_receipt_items gi where gi.po_item_id='f9600000-0000-4000-8000-000000000001')=100,'receipt price unchanged when price same');
  perform pg_temp.ok((select qty from purchase_invoice_items where id=line)=3 and (select total from purchase_invoices where id=inv.invoice_id)=480,'invoice follows');
  perform pg_temp.ok((select qty from stock where item_id='f9400000-0000-4000-8000-000000000001')=5 and pg_temp.stock_value('f9400000-0000-4000-8000-000000000001')=50,'stock 5 pcs @10');
  perform pg_temp.ok(not exists(select 1 from journal_entries e where e.source='purchase-inv-correction' and (select sum(debit)-sum(credit) from journal_lines where entry_id=e.id)<>0),'journal balanced');
@@ -120,6 +121,7 @@ do $$declare inv record;pv jsonb;res jsonb;line uuid;jcount int;begin
  res:=correct_purchase_order_line('pol-price-key','f9600000-0000-4000-8000-000000000001',pg_temp.rev('f9500000-0000-4000-8000-000000000001'),null,3,120,current_date,'Harga pemasok 120',pv);
  perform pg_temp.ok((select harga_beli from purchase_order_items where id='f9600000-0000-4000-8000-000000000001')=120 and (select harga from purchase_invoice_items where id=line)=120,'price follows');
  perform pg_temp.ok((select total from purchase_orders where id='f9500000-0000-4000-8000-000000000001')=540,'PO total 3x120+3x60');
+ perform pg_temp.ok((select gi.harga from goods_receipt_items gi where gi.po_item_id='f9600000-0000-4000-8000-000000000001')=120,'receipt price follows');
 
  -- Faktur sudah dibayar: ditolak dengan pesan jelas.
  perform pay_purchase_invoice_atomic('pol-pay-key',inv.invoice_id,current_date,100,'Transfer',null,'f9700000-0000-4000-8000-000000000001',null);
@@ -141,6 +143,9 @@ do $$declare inv record;pv jsonb;res jsonb;begin
   pv||'{"sold_qty":2.0833333333333335,"remaining_qty":1.9166666666666667}'::jsonb);
  perform pg_temp.ok((select qty=3 and qty_terima=3 and harga_beli=132 from purchase_order_items where id='f9600000-0000-4000-8000-000000000004'),'dozen line follows');
  perform pg_temp.ok((select qty from stock where item_id='f9400000-0000-4000-8000-000000000004')=11,'48-25-12 pcs left');
+ -- Penerimaan dicatat @120 (harga PO); faktur @132. Setelah edit, nilai penerimaan = PO = faktur.
+ perform pg_temp.ok((select gi.qty_terima*gi.harga from goods_receipt_items gi where gi.po_item_id='f9600000-0000-4000-8000-000000000004')
+  =(select total from purchase_orders where id='f9500000-0000-4000-8000-000000000003'),'receipt value equals PO value');
 end$$;
 
 select pg_temp.ok(not exists(select 1 from journal_entries e where (select coalesce(sum(debit)-sum(credit),0) from journal_lines where entry_id=e.id)<>0),'every journal balanced');
