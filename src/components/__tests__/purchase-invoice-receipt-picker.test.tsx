@@ -37,6 +37,19 @@ it("N01: picking a PO pre-selects its receipts not yet invoiced; an invoiced one
   expect(container.textContent).toContain("Pilih minimal satu penerimaan");
 });
 
+it("N01: receipts of a PO with an old unlinked invoice are shown but cannot be ticked; saving needs no choice", async () => {
+  const legacy: PoOption[] = [{ ...options[0], receipts: [
+    { id: "gr7", no_terima: "TB.7", tanggal: "2026-10-01", ringkas: "Obat 4 box", sudahDifaktur: "faktur lama (PO yang sama)" },
+  ] }];
+  await act(async () => root.render(<FakturForm userId="owner" options={legacy} />));
+  const select = container.querySelector("select")!;
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(select, "po1"); select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(container.textContent).toContain("TB.7 · 2026-10-01 · Obat 4 box · faktur lama (PO yang sama)");
+  expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true);
+  expect(chosen()).toEqual([]);
+  expect(container.textContent).not.toContain("Pilih minimal satu penerimaan");
+});
+
 it("N01: a replacement invoice offers the voided invoice's stored receipts again", async () => {
   await act(async () => root.render(<FakturForm userId="owner" options={options} initial={{
     id: "old", po_id: "po1", tanggal: "2026-10-03", jatuh_tempo: "2026-11-03", no_faktur_pemasok: null, keterangan: null,

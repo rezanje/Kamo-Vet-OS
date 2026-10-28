@@ -24,12 +24,13 @@ Migrasi aman untuk kode lama (fungsi lama tetap ada dan tidak berubah; hanya 4 f
 | Langkah | File | Menulis? | sha256 |
 |---|---|---|---|
 | 1 | `preflight.sql` | tidak | `730b52e47c2ab0d4ee1f8312796ff8142f53a50fe92a07b7e95f20ac090ff2fe` |
-| 2 | `apply.sql` (= migrasi `20261029110000` + `20261029111000` persis + baris riwayat, satu transaksi, aman diulang) | **ya** | `1b3c69a67d8b43890e4d7409972a7d5b3504e55ab298dc9f46618c920ae20dc0` |
-| 3 | `readback.sql` | tidak | `b63be55c91361866d6f60dddf5d921a8919203e2926f23114805c05347077d5f` |
+| 2 | `apply.sql` (= migrasi `20261029110000` + `20261029111000` persis + baris riwayat, satu transaksi, aman diulang) | **ya** | `6ccba58932438624da3019cda76623811c77973fd718acbf868953fc6427d60c` |
+| 3 | `readback.sql` | tidak | `0f9075c4f5b20cdf42acae56eaa672f965ac85f140200a33901a03ce21ed496c` |
 | — | `rollback.sql` (hanya bila diputuskan mundur, **setelah** kode dikembalikan) | ya | `330dcf87a31666a0ba18cdc4e9c2cf94f1b9c1c0372cb99dde84ec914fb99884` |
+| nanti | `followup-revoke-old-invoice-rpc.sql` (seluruhnya dikomentari; **bukan** bagian rilis ini) | — | `5c9ab0ea1071bd8dd0807b83d10696663e3d710dd6fa1d058ab6cff9ed3400b5` |
 
-Migrasi: `20261029110000_n01_purchase_invoice_receipts.sql` sha256 `cf36a578a587560b96f3c8f7321e058b1fff17a97428365ded1810221a03fd69`,
-`20261029111000_p08_advance_cancel_cascade.sql` sha256 `79364ceb4bc37705b876922fb784e05e7b0482081746572c0670028bca278868`.
+Migrasi: `20261029110000_n01_purchase_invoice_receipts.sql` sha256 `31ec92c10e82ebd6519daa63cdf7b364935003cdbe7d1533ec5ed0f375cf11ee`,
+`20261029111000_p08_advance_cancel_cascade.sql` sha256 `cf76ba95128faf1b3359766ee849568a6e35e87c2c14b2949973a5eb6de9e7b2`.
 
 Sidik isi fungsi (md5 `pg_get_functiondef`) — sama di production (PostgreSQL 17.6, dicek baca-saja 28 Okt)
 dan di PG16/PG17 lokal:
@@ -54,6 +55,13 @@ Dipanggil tanpa diubah (preflight memastikan persis main): `create_purchase_invo
    halaman uang muka yang sudah terpakai menampilkan tautan "Batalkan + pembayaran" (pratinjau hanya untuk
    Super Admin).
 
+## Tindak lanjut setelah rilis stabil
+
+Fungsi faktur lama (13 argumen) sengaja tetap bisa dipanggil aplikasi selama peralihan (tab browser lama).
+Setelah semua faktur baru dari PO terlihat menyimpan penerimaan, putuskan menutupnya untuk pengguna aplikasi
+dengan `followup-revoke-old-invoice-rpc.sql` (hapus tanda komentar, jalankan sebagai `postgres`). Fungsi baru
+tetap berjalan karena memanggil fungsi lama sebagai pemiliknya; gladi membuktikan ini.
+
 ## Rollback
 
 Kembalikan kode dulu. `rollback.sql` mengembalikan 4 fungsi persis main (dicek md5), menghapus tabel/fungsi
@@ -66,4 +74,5 @@ beruntun — itu catatan bisnis; perbaiki maju dengan migrasi baru.
 (native, tanpa Docker; `--write` membuat ulang `apply.sql`). Hasil: `rehearsal-pg16.log`, `rehearsal-pg17.log` —
 suite N01 gagal di basis (mendeteksi perubahan belum ada) → fungsi yang diubah satu karakter ditolak preflight
 & apply → preflight → apply → readback → apply ulang → suite N01 + P08 + pembatalan penerimaan → rollback (isi
-fungsi kembali persis) → preflight → apply → satu tautan fiktif → rollback ditolak, data utuh.
+fungsi kembali persis) → preflight → apply → satu tautan fiktif → rollback ditolak, data utuh → revoke
+tindak lanjut hanya menutup fungsi faktur lama.

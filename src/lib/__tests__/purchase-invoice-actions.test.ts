@@ -23,6 +23,7 @@ it("posts direct invoice, items and attachments in one request with a durable id
   expect(state.revalidate).toHaveBeenCalledWith("/pembelian/perintah-bayar");
 });
 it("refreshes the dashboard and payment candidates after recovering a committed PO invoice", async () => {
+  state.from.mockImplementation(readOnly({ purchase_invoice_receipts: [] }));
   state.rpc.mockResolvedValue({ data: { invoice_id: "saved", no_jurnal: "JRN-1" }, error: null });
   await expect(buatFaktur(form({ items: '[{"po_item_id":"line","qty":1,"harga":10}]' }))).rejects.toThrow("REDIRECT:/pembelian/faktur/saved?success=");
   expect(state.revalidate).toHaveBeenCalledWith("/");
@@ -98,6 +99,14 @@ it("N01: stores the chosen receipts with the PO invoice in the same RPC", async 
   state.rpc.mockClear();
   await expect(buatFaktur(form({ items: '[{"po_item_id":"line","qty":1,"harga":100}]', receipt_ids: '[1]' }))).rejects.toThrow("error=");
   expect(state.rpc).not.toHaveBeenCalledWith("create_purchase_invoice_from_po_receipts", expect.anything());
+});
+it("N01: a recovered invoice is acknowledged only when its stored receipts match the submitted choice", async () => {
+  state.from.mockImplementation(readOnly({ purchase_invoice_receipts: [{ id: "x", goods_receipt_id: "gr-2" }, { id: "y", goods_receipt_id: "gr-1" }] }));
+  state.rpc.mockResolvedValue({ data: { invoice_id: "saved", no_jurnal: "JRN-1" }, error: null });
+  await expect(buatFaktur(form({ items: '[{"po_item_id":"line","qty":1,"harga":100}]', receipt_ids: '["gr-1","gr-2"]' }))).rejects.toThrow("REDIRECT:/pembelian/faktur/saved?success=");
+  await expect(buatFaktur(form({ items: '[{"po_item_id":"line","qty":1,"harga":100}]', receipt_ids: '["gr-1"]' }))).rejects.toThrow("pilihan%20penerimaan%20berbeda");
+  expect(state.rpc).not.toHaveBeenCalledWith("create_purchase_invoice_from_po_receipts", expect.anything());
+  expect(state.revalidate).toHaveBeenCalledTimes(5);
 });
 it("P04: holds a PO whose box price per base unit deviates, then saves once confirmed", async () => {
   state.from.mockImplementation(readOnly({ ...costTables, item_units: [{ item_id: "item", unit: "box", factor: 10, sell_price: 0, buy_price: 0 }] }));

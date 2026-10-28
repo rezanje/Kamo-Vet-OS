@@ -5,7 +5,7 @@ set local lock_timeout = '5s';
 set local statement_timeout = '60s';
 do $$ begin if current_user <> 'postgres' then raise exception 'N01/P08 apply must run as postgres (current role: %); nothing was applied', current_user; end if; end $$;
 
--- ===== 20261029110000_n01_purchase_invoice_receipts.sql (sha256 cf36a578a587560b96f3c8f7321e058b1fff17a97428365ded1810221a03fd69) =====
+-- ===== 20261029110000_n01_purchase_invoice_receipts.sql (sha256 31ec92c10e82ebd6519daa63cdf7b364935003cdbe7d1533ec5ed0f375cf11ee) =====
 -- N01: record which goods receipts a purchase invoice (from PO) covers.
 --
 -- * purchase_invoice_receipts(invoice_id, goods_receipt_id): written only by the invoice RPC below,
@@ -131,6 +131,13 @@ begin
     if bad is not null then
       raise exception 'Penerimaan sudah ditagih di faktur aktif lain: %', bad using errcode = '23505';
     end if;
+    -- An active invoice without stored receipts (older invoice) may already cover any receipt of
+    -- this PO; a new link would be a guess, so receipts of such a PO cannot be claimed.
+    if cardinality(v_ids) > 0 and exists (select 1 from public.purchase_invoices i
+        where i.po_id = p_po_id and i.voided_at is null
+          and not exists (select 1 from public.purchase_invoice_receipts l where l.invoice_id = i.id)) then
+      raise exception 'PO ini punya faktur lama aktif tanpa catatan penerimaan; penerimaannya tidak bisa dipilih. Simpan faktur tanpa memilih penerimaan' using errcode = '22023';
+    end if;
   end if;
 
   select * into created from public.create_purchase_invoice_from_po(p_po_id, p_no_faktur_prefix, p_no_faktur_digits,
@@ -224,7 +231,7 @@ begin
   if h <> applied_hash then raise exception 'cancel_goods_receipt patch result unexpected (md5 %)', h; end if;
 end $upgrade$;
 
--- ===== 20261029111000_p08_advance_cancel_cascade.sql (sha256 79364ceb4bc37705b876922fb784e05e7b0482081746572c0670028bca278868) =====
+-- ===== 20261029111000_p08_advance_cancel_cascade.sql (sha256 cf76ba95128faf1b3359766ee849568a6e35e87c2c14b2949973a5eb6de9e7b2) =====
 -- P08: one-step cancel of a purchase advance (uang muka) that is already used, plus
 -- "cancelled receipts must not freeze the PO".
 --
@@ -232,7 +239,7 @@ end $upgrade$;
 --   payment that used the advance, together with every payment that shares its journal (a payment
 --   order is reversed as its whole group, exactly as cancel_purchase_payment does today).
 -- * preview_purchase_advance_cascade(advance): OWNER-only read of that plan + a fingerprint.
--- * cancel_purchase_advance_cascade(advance, reason, request_key[, expected fingerprint]):
+-- * cancel_purchase_advance_cascade(advance, reason, request_key, preview fingerprint):
 --   OWNER-only, one transaction: lock PO then advance (same order as cancel_purchase_advance_atomic),
 --   run the existing cancel_purchase_payment for each payment that used it (oldest first; a group
 --   already reversed with an earlier payment is skipped), then the existing
@@ -328,7 +335,7 @@ revoke all on function public.preview_purchase_advance_cascade(uuid) from public
 grant execute on function public.preview_purchase_advance_cascade(uuid) to authenticated;
 
 create or replace function public.cancel_purchase_advance_cascade(
-  p_advance_id uuid, p_reason text, p_request_key text, p_expected_fingerprint text default null
+  p_advance_id uuid, p_reason text, p_request_key text, p_expected_fingerprint text
 ) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -348,6 +355,10 @@ begin
   if length(v_reason) not between 3 and 1000 then
     raise exception 'Alasan pembatalan wajib diisi (3 sampai 1.000 karakter)' using errcode = '22023';
   end if;
+  -- The cascade only runs what the owner previewed: the preview fingerprint is mandatory.
+  if p_expected_fingerprint is null or length(p_expected_fingerprint) <> 32 then
+    raise exception 'Pratinjau pembatalan wajib diperiksa dulu. Muat ulang halaman pratinjau' using errcode = '22023';
+  end if;
   payload := jsonb_build_object('advance_id', p_advance_id, 'reason', v_reason);
   perform pg_advisory_xact_lock(hashtextextended('vetos:purchase-advance-cascade:' || auth.uid()::text || ':' || p_request_key, 0));
   select * into prior from public.purchase_advance_cascade_cancellations where actor_id = auth.uid() and request_key = p_request_key;
@@ -360,6 +371,15 @@ begin
 
   select a.po_id into v_po from public.purchase_advances a where a.id = p_advance_id;
   if not found then raise exception 'Uang muka tidak ditemukan' using errcode = '22023'; end if;
+  -- Same lock order as cancel_purchase_payment: payment orders (and their items) first, then PO,
+  -- then the advance. The plan read here is unlocked; the fingerprint check below, taken after all
+  -- locks, rejects any payment set that changed in between.
+  perform 1 from public.payment_orders o where o.id in (
+    select (x->>'payment_order_id')::uuid from jsonb_array_elements(public.purchase_advance_cascade_plan(p_advance_id)) x
+    where x->>'payment_order_id' is not null) order by o.id for update;
+  perform 1 from public.payment_order_items i where i.order_id in (
+    select (x->>'payment_order_id')::uuid from jsonb_array_elements(public.purchase_advance_cascade_plan(p_advance_id)) x
+    where x->>'payment_order_id' is not null) order by i.id for update;
   if v_po is not null then perform 1 from public.purchase_orders where id = v_po for update; end if;
   select * into adv from public.purchase_advances where id = p_advance_id for update;
   if adv.po_id is distinct from v_po then raise exception 'Sumber uang muka berubah; muat ulang' using errcode = '55000'; end if;
@@ -367,7 +387,7 @@ begin
   if adv.status <> 'aktif' then raise exception 'Uang muka ini sudah dibatalkan; periksa daftar' using errcode = '55000'; end if;
 
   plan := public.purchase_advance_cascade_plan(adv.id);
-  if p_expected_fingerprint is not null and p_expected_fingerprint is distinct from public.purchase_advance_cascade_fingerprint(plan, adv.terpakai) then
+  if p_expected_fingerprint is distinct from public.purchase_advance_cascade_fingerprint(plan, adv.terpakai) then
     raise exception 'Pembayaran yang memakai uang muka ini berubah sejak pratinjau. Muat ulang dan periksa lagi' using errcode = '40001';
   end if;
 

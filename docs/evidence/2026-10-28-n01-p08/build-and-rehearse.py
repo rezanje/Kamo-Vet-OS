@@ -10,6 +10,7 @@ fictional fixtures only:
   -> N01 + P08 suites + goods_receipt_cancellation suite (all roll back)
   -> rollback restores the four patched bodies byte-identical, preflight passes again
   -> apply -> readback -> one fictional link committed -> rollback refused (N01_IN_USE), data intact
+  -> the commented follow-up revoke closes only the old 13-argument invoice RPC
 
 Usage: python3 docs/evidence/2026-10-28-n01-p08/build-and-rehearse.py BIN_DIR [--write]
   Without --write, an apply.sql that differs from the generated text fails the run.
@@ -133,6 +134,13 @@ insert into purchase_invoice_receipts(invoice_id,goods_receipt_id,po_id) values(
         assert db.sql('select count(*) from purchase_invoice_receipts;') == '1'
         all_ok(db, 'readback.sql')
         print('PASS rollback refused once a link exists; data and objects intact', flush=True)
+
+        # Follow-up (not part of this release): the commented revoke closes only the old entry point.
+        followup = '\n'.join(line[3:] for line in (HERE / 'followup-revoke-old-invoice-rpc.sql').read_text().splitlines()
+                             if line.startswith('-- '))
+        followup = followup[followup.index('begin;'):followup.index('commit;') + len('commit;')]
+        assert db.sql(followup).splitlines()[-1] == 't|t', 'follow-up revoke did not leave old closed / new open'
+        print('PASS follow-up revoke (commented in package) closes the old RPC and keeps the new one', flush=True)
 
 
 if __name__ == '__main__':

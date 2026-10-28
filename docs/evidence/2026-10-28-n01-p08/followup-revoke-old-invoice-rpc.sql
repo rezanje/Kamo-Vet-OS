@@ -1,0 +1,19 @@
+-- N01 FOLLOW-UP — NOT part of this release. Everything below is commented out on purpose.
+--
+-- After the new app is live everywhere (no browser tab still runs the old invoice form) and a few days
+-- of invoices from PO show stored receipts, the old 13-argument entry point can be closed to app users,
+-- so every new PO invoice must go through create_purchase_invoice_from_po_receipts (which records the
+-- receipts). The wrapper is SECURITY DEFINER and keeps calling the old function as its owner, so this
+-- revoke does not break it. Decide separately; run as postgres in one transaction; verify with the
+-- readback line at the end.
+--
+-- begin;
+-- revoke execute on function public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric,text,uuid)
+--   from authenticated;
+-- select not has_function_privilege('authenticated',
+--   'public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric,text,uuid)', 'execute') as old_rpc_closed,
+--   has_function_privilege('authenticated',
+--   'public.create_purchase_invoice_from_po_receipts(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric,text,uuid,uuid[])', 'execute') as new_rpc_open;
+-- commit;
+--
+-- Undo (if needed): grant execute on function public.create_purchase_invoice_from_po(uuid,text,integer,text,date,date,text,jsonb,jsonb,jsonb,numeric,text,uuid) to authenticated;

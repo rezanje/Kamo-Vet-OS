@@ -76,15 +76,16 @@ select pg_temp.expect_error(format('select cancel_purchase_advance_atomic(%L)',p
 -- 3. Preview: OWNER only; lists exactly the payments that used the advance.
 select set_config('request.jwt.claim.sub','f2000000-0000-4000-8000-000000000002',true);
 select pg_temp.expect_error(format('select preview_purchase_advance_cascade(%L)',pg_temp.r('UM1')->>'advance_id'),'Super Admin');
-select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','Salah pemasok','p08c-finance'),'Super Admin');
+select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','Salah pemasok','p08c-finance',md5('x')),'Super Admin');
 select set_config('request.jwt.claim.sub','f2000000-0000-4000-8000-000000000001',true);
 insert into p08c_results select 'preview',preview_purchase_advance_cascade((pg_temp.r('UM1')->>'advance_id')::uuid);
 select pg_temp.ok(jsonb_array_length(pg_temp.r('preview')->'payments')=2
  and (select bool_and((x->>'uses_this_advance')::boolean) from jsonb_array_elements(pg_temp.r('preview')->'payments') x)
  and (pg_temp.r('preview')->'payments'->0->>'payment_id')=(pg_temp.r('P1')->>'payment_id'),'preview lists P1 then P2 only');
 -- Stale fingerprint and bad input change nothing.
-select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','Salah pemasok','p08c-stale','0000'),'berubah sejak pratinjau');
-select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','x','p08c-short'),'Alasan pembatalan wajib');
+select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','Salah pemasok','p08c-stale',md5('stale')),'berubah sejak pratinjau');
+select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L,null)',pg_temp.r('UM1')->>'advance_id','Salah pemasok','p08c-nofp'),'Pratinjau pembatalan wajib');
+select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','x','p08c-short',md5('x')),'Alasan pembatalan wajib');
 select pg_temp.ok((select count(*) from purchase_invoice_payments where reversal_of is not null)=0,'refusals reversed nothing');
 
 -- 4. Failure in the final advance cancel rolls back every payment reversal.
@@ -115,14 +116,14 @@ do $$declare res jsonb:=pg_temp.r('cascade');adv uuid:=(pg_temp.r('UM1')->>'adva
   where a.code='1303' and j.source_ref in((select no_um from purchase_advances where id=adv)) )=0,'advance account nets to zero for this DP');
 end$$;
 -- Replay and key reuse.
-select pg_temp.ok(cancel_purchase_advance_cascade((pg_temp.r('UM1')->>'advance_id')::uuid,'Salah pemasok','p08c-ok')=pg_temp.r('cascade'),'same key returns recorded result');
-select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','Alasan lain','p08c-ok'),'rincian berbeda');
-select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','Salah pemasok','p08c-again'),'sudah dibatalkan');
+select pg_temp.ok(cancel_purchase_advance_cascade((pg_temp.r('UM1')->>'advance_id')::uuid,'Salah pemasok','p08c-ok',pg_temp.r('preview')->>'fingerprint')=pg_temp.r('cascade'),'same key returns recorded result');
+select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','Alasan lain','p08c-ok',pg_temp.r('preview')->>'fingerprint'),'rincian berbeda');
+select pg_temp.expect_error(format('select cancel_purchase_advance_cascade(%L,%L,%L,%L)',pg_temp.r('UM1')->>'advance_id','Salah pemasok','p08c-again',pg_temp.r('preview')->>'fingerprint'),'sudah dibatalkan');
 select pg_temp.ok((select count(*) from journal_entries where source in('purchase-pay-void','purchase-advance-void'))=3,'no second effect');
 select pg_temp.expect_error('select * from purchase_advance_cascade_cancellations','permission denied');
 
 -- 6. Unused advance: the same RPC simply cancels it.
-insert into p08c_results select 'cascade-um2',cancel_purchase_advance_cascade((pg_temp.r('UM2')->>'advance_id')::uuid,'DP tidak jadi','p08c-um2');
+insert into p08c_results select 'cascade-um2',cancel_purchase_advance_cascade((pg_temp.r('UM2')->>'advance_id')::uuid,'DP tidak jadi','p08c-um2',preview_purchase_advance_cascade((pg_temp.r('UM2')->>'advance_id')::uuid)->>'fingerprint');
 select pg_temp.ok((pg_temp.r('cascade-um2')->>'payment_count')::int=0 and (select status from purchase_advances where id=(pg_temp.r('UM2')->>'advance_id')::uuid)='batal','unused DP cancelled');
 
 reset role;

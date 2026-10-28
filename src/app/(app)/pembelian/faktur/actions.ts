@@ -42,7 +42,16 @@ export async function buatFaktur(formData: FormData) {
   };
   const { data: recovered, error: recoveryError } = await supabase.rpc("recover_purchase_operation", { p_kind: "invoice", p_request_key: requestKey, p_payload: payload });
   if (recoveryError) fail(recoveryError.message);
-  if (recovered?.invoice_id) finish(recovered.invoice_id);
+  if (recovered?.invoice_id) {
+    // N01: a replayed key must also carry the same receipt choice that was stored with the invoice.
+    const { data: stored, error: storedError } = await supabase.from("purchase_invoice_receipts")
+      .select("goods_receipt_id").eq("invoice_id", recovered.invoice_id);
+    if (storedError || !Array.isArray(stored)) fail("Penerimaan faktur tersimpan belum dapat diperiksa. Periksa hasil terakhir sebelum mengulang.");
+    const same = (a: string[], b: string[]) => a.length === b.length && [...a].sort().every((id, i) => id === [...b].sort()[i]);
+    if (!same((stored ?? []).map(row => String(row.goods_receipt_id)), receiptIds))
+      fail("Faktur ini sudah tersimpan dengan pilihan penerimaan berbeda. Periksa hasil terakhir sebelum mengulang.");
+    finish(recovered.invoice_id);
+  }
   // P04: harga faktur per satuan PO ÷ faktor baris PO, dibanding harga pokok acuan. Gagal baca = tanpa peringatan.
   const { data: poLines } = await supabase.from("purchase_order_items").select("id,item_id,faktor").in("id", payload.items.map(r => r.po_item_id));
   const poLine = new Map(((poLines ?? []) as { id: string; item_id: string | null; faktor: number | null }[]).map(r => [r.id, r]));

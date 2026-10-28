@@ -26,6 +26,8 @@ select 'cascade + preview RPCs for app users (OWNER checked inside)',
   and has_function_privilege('authenticated','public.preview_purchase_advance_cascade(uuid)','execute')
   and not has_function_privilege('anon','public.cancel_purchase_advance_cascade(uuid,text,text,text)','execute')
 union all
+select 'cascade requires the preview fingerprint (no default)', (select pronargdefaults = 0 from pg_proc where oid = 'public.cancel_purchase_advance_cascade(uuid,text,text,text)'::regprocedure)
+union all
 select 'cascade plan is internal', not has_function_privilege('authenticated','public.purchase_advance_cascade_plan(uuid)','execute')
 union all
 select 'cascade evidence hidden from app users', not has_table_privilege('authenticated','public.purchase_advance_cascade_cancellations','select');

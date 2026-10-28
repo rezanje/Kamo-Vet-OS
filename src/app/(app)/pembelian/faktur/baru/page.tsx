@@ -131,12 +131,16 @@ export default async function FakturBaruPage({
 
   // N01: receipts of each PO, marked when an active invoice already covers them.
   const linkByReceipt = new Map(activeLinks.map(link => [link.id, one(link.purchase_invoices)?.no_faktur ?? "faktur lain"]));
+  // An active invoice without stored receipts (older invoice) may cover any receipt of its PO:
+  // those receipts are not offered (the database refuses them too).
+  const linkedInvoiceIds = new Set(activeLinks.map(link => link.invoice_id));
+  const legacyPoIds = new Set(invoiceRows.filter(invoice => invoice.po_id && !linkedInvoiceIds.has(invoice.id)).map(invoice => invoice.po_id as string));
   const receiptsByPo = new Map<string, PoReceiptOption[]>();
   for (const receipt of receiptRows) receiptsByPo.set(receipt.po_id, [...(receiptsByPo.get(receipt.po_id) ?? []), {
     id: receipt.id, no_terima: receipt.no_terima, tanggal: receipt.tanggal,
     ringkas: (receipt.goods_receipt_items ?? []).filter(line => Number(line.qty_terima) > 0)
       .map(line => `${line.nama} ${Number(line.qty_terima)} ${line.satuan ?? ""}`.trim()).join(", "),
-    sudahDifaktur: linkByReceipt.get(receipt.id) ?? null,
+    sudahDifaktur: linkByReceipt.get(receipt.id) ?? (legacyPoIds.has(receipt.po_id) ? "faktur lama (PO yang sama)" : null),
   }]);
 
   const options: PoOption[] = loadError ? [] : pos.map((p) => {

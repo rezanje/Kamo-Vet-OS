@@ -123,6 +123,13 @@ begin
     if bad is not null then
       raise exception 'Penerimaan sudah ditagih di faktur aktif lain: %', bad using errcode = '23505';
     end if;
+    -- An active invoice without stored receipts (older invoice) may already cover any receipt of
+    -- this PO; a new link would be a guess, so receipts of such a PO cannot be claimed.
+    if cardinality(v_ids) > 0 and exists (select 1 from public.purchase_invoices i
+        where i.po_id = p_po_id and i.voided_at is null
+          and not exists (select 1 from public.purchase_invoice_receipts l where l.invoice_id = i.id)) then
+      raise exception 'PO ini punya faktur lama aktif tanpa catatan penerimaan; penerimaannya tidak bisa dipilih. Simpan faktur tanpa memilih penerimaan' using errcode = '22023';
+    end if;
   end if;
 
   select * into created from public.create_purchase_invoice_from_po(p_po_id, p_no_faktur_prefix, p_no_faktur_digits,

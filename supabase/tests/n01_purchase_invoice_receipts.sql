@@ -122,6 +122,9 @@ insert into n01_results select 'R3',receive_purchase_order('f1500000-0000-4000-8
 select create_purchase_invoice_from_po('f1500000-0000-4000-8000-000000000002','FB.N01.',5,null,current_date,current_date,null,
  '[{"po_item_id":"f1600000-0000-4000-8000-000000000002","qty":2,"harga":100}]','[]','[]',0,'n01-old-invoice');
 select pg_temp.expect_error(format('select cancel_goods_receipt(%L,%L,%L)',pg_temp.rid('R3'),'n01-cancel-r3','Salah input'),'PO ini sudah punya faktur pembelian aktif');
+-- Receipts of a PO with such an old unlinked invoice cannot be claimed by a new invoice.
+select pg_temp.expect_error(format('select pg_temp.inv(%L,%L,1,array[%L]::uuid[],%L)','f1500000-0000-4000-8000-000000000002','n01-legacy',pg_temp.rid('R3'),'f1600000-0000-4000-8000-000000000002'),'faktur lama aktif');
+select pg_temp.ok(not exists(select 1 from purchase_invoice_receipts where goods_receipt_id=pg_temp.rid('R3')),'no guessed link on a legacy PO');
 
 -- 5. Remainder of a partly billed receipt; layer and link guards on cancel.
 insert into n01_results select 'R4',receive_purchase_order('f1500000-0000-4000-8000-000000000003','n01-r4','TB.N01.',5,current_date,null,null,'[{"id":"f1600000-0000-4000-8000-000000000003","qty_terima":2}]');

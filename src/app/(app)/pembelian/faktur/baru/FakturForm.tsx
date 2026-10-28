@@ -176,7 +176,7 @@ export function FakturForm({ options, userId, initial, priceWarning }: { options
                   onChange={(e) => setReceiptIds((ids) => e.target.checked ? [...ids.filter((id) => id !== r.id), r.id] : ids.filter((id) => id !== r.id))} />
                 <span>
                   <strong>{r.no_terima}</strong> · {r.tanggal}{r.ringkas && ` · ${r.ringkas}`}
-                  {r.sudahDifaktur && <> · sudah ditagih di faktur {r.sudahDifaktur}</>}
+                  {r.sudahDifaktur && <> · {r.sudahDifaktur.startsWith("faktur lama") ? r.sudahDifaktur : `sudah ditagih di faktur ${r.sudahDifaktur}`}</>}
                 </span>
               </label>
             ))}
