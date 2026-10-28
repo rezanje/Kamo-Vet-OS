@@ -124,14 +124,7 @@ select pg_temp.ok(not exists(select 1 from stock_layers where item_id=md5('i08-o
 select pg_temp.ok((select sum(qty*unit_cost)=0.3125 from stock_moves where source='produksi' and item_id=md5('i08-output')::uuid),'incoming movement cost matches consumed WIP');
 rollback;
 
-begin;
-update inventory_costing_settings set method='moving_average' where id;
-set local role authenticated;
-select set_config('request.jwt.claim.sub',md5('i08-owner')::uuid::text,true);
-select set_config('request.jwt.claim.role','authenticated',true);
-select pg_temp.reject($q$select post_production_atomic('start','i08-average',pg_temp.input())$q$,'unreconciled average path fails closed');
-select pg_temp.ok(not exists(select 1 from production_orders),'average rejection has no source');
-rollback;
+-- The active moving-average mode is covered by production_average.sql (I08).
 
 begin;
 select stock_in_fifo(md5('i08-wh')::uuid,md5('i08-material')::uuid,2,0,'fixture','I08-FREE',current_date-1,null);

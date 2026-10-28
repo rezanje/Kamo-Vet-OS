@@ -86,4 +86,7 @@ if __name__=='__main__':
   print('PASS production_atomic.sql',flush=True)
   db.sql((ROOT/'supabase/tests/production_adhoc.sql').read_text())
   print('PASS production_adhoc.sql',flush=True)
+  for name in ['production_average.sql','production_trace_i08_i09.sql']:
+   db.sql((ROOT/'supabase/tests'/name).read_text())
+   print('PASS '+name,flush=True)
   if '--sql-only' not in sys.argv:races(db)
