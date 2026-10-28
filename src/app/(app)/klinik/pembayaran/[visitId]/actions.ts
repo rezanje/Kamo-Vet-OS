@@ -21,7 +21,7 @@ import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
 import { clinicServicePerformerInput, parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
-import { bacaKodeKampanye } from "@/lib/kode-kampanye";
+import { bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
@@ -535,13 +535,13 @@ export async function bayarRombongan(formData: FormData) {
   const requestKey = String(formData.get("requestKey") ?? "").trim();
   if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang halaman lalu coba lagi.")}`);
   const metode = String(formData.get("metode_bayar") ?? "Tunai");
-  const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
+  const kodeDiketik = normalizeKode(formData.get("voucherCode")) || null;
   const poinDiminta = Number(formData.get("poinDigunakan")) || 0;
   const waktu = catatWaktu("bayarRombongan", visitId);
 
   // U07 batch 1: reads that need only the visit id start together; each is still
   // awaited (and validated) at its original place below.
-  const kampanyeP = voucherCode ? mulai(bacaKodeKampanye(supabase, voucherCode)) : null;
+  const kampanyeP = kodeDiketik ? mulai(bacaKodeKampanye(supabase, kodeDiketik)) : null;
   const shiftP = mulai(supabase.auth.getUser().then(({ data: { user } }) =>
     user ? getOpenShift(supabase as never, user.id, "klinik") : null));
   const rombonganP = mulai(bacaRombongan(supabase, visitId));
@@ -550,11 +550,19 @@ export async function bayarRombongan(formData: FormData) {
   const aturanConsentP = mulai(bacaAturanConsent(supabase));
   const poinP = mulai(rombonganP.then((r) => bacaPoinPelanggan(supabase, r?.customerId ?? null)));
 
-  // Satu pembayaran rombongan menerbitkan beberapa invoice; kode kampanye berbatas
-  // dihitung per dokumen, jadi kode kampanye dipakai per kunjungan saja.
-  if (kampanyeP && await kampanyeP) {
-    redirect(`${back}?error=${encodeURIComponent("Kode kampanye dipakai per kunjungan, bukan pembayaran rombongan. Bayar kunjungan ini sendiri untuk memakai kode tersebut.")}`);
+  // Kode kampanye (C05): satu kedatangan = satu kali pakai kode. Kodenya diterjemahkan ke
+  // voucher/promo tujuannya, potongannya dibagi ke nota tiap hewan seperti voucher biasa,
+  // dan kodenya ditempel ke SATU nota saja (nota pertama yang kena potongannya) supaya
+  // database menghitung satu pemakaian dan menegakkan batasnya di situ.
+  const kampanye = kampanyeP ? await kampanyeP : null;
+  if (kampanye && !kampanye.is_active) {
+    redirect(`${back}?error=${encodeURIComponent(pesanKampanyeDitolak(kampanye, true, true) ?? "Kode kampanye tidak berlaku")}`);
   }
+  if (kampanye && !kampanye.promo_id && !kampanye.voucher_code) {
+    redirect(`${back}?error=${encodeURIComponent(`Voucher untuk kode ${kampanye.code} tidak ditemukan`)}`);
+  }
+  const voucherCode = kampanye ? kampanye.voucher_code : kodeDiketik;
+  const promoKampanyeId = kampanye?.promo_id ?? null;
 
   const klinikShift = await shiftP;
   if (!klinikShift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
@@ -584,6 +592,9 @@ export async function bayarRombongan(formData: FormData) {
     cartVersion: string | null;
     subtotal: number;
     potonganNonVoucher: number;
+    /** Promo kode kampanye memotong tagihan hewan ini / berlaku di cabangnya. */
+    kenaPromoKampanye: boolean;
+    promoKampanyeTersedia: boolean;
   };
   const siap: Siap[] = [];
 
@@ -621,9 +632,11 @@ export async function bayarRombongan(formData: FormData) {
       const potonganPet = await hitungPotonganKlinik(supabase, {
         branchId: v.branch_id ?? null, customerId: v.customer_id ?? null,
         rows:rows.map(line=>({item_id:line.item_id,qty:line.qty,harga:hargaNetto(line),jenis:line.jenis,satuan:line.satuan})),
+        ...(promoKampanyeId ? { promoKampanyeId } : {}),
       });
       const salespersonId = await salespersonP;
-      return { b, salespersonId, rows, cartVersion, subtotal, potonganNonVoucher: potonganPet.total };
+      return { b, salespersonId, rows, cartVersion, subtotal, potonganNonVoucher: potonganPet.total,
+        kenaPromoKampanye: !!potonganPet.promoKampanyeTerpakai, promoKampanyeTersedia: !!potonganPet.promoKampanyeTersedia };
     })());
   };
   const persiapan = belum.map(siapkan);
@@ -633,6 +646,12 @@ export async function bayarRombongan(formData: FormData) {
     siap.push(hasil);
   }
   waktu.tandai("baca");
+
+  // Kode terikat promo: cukup satu hewan yang kena promonya (diperiksa untuk seluruh rombongan).
+  if (kampanye?.promo_id) {
+    const tolak = pesanKampanyeDitolak(kampanye, siap.some((s) => s.promoKampanyeTersedia), siap.some((s) => s.kenaPromoKampanye));
+    if (tolak) redirect(`${back}?error=${encodeURIComponent(tolak)}`);
+  }
 
   // Voucher dihitung dari GABUNGAN tagihan seluruh hewan (setelah promo & golongan),
   // lalu dibagi proporsional. Satu kedatangan = satu kali pakai kode.
@@ -659,6 +678,8 @@ export async function bayarRombongan(formData: FormData) {
     voucherTotal = potonganVoucher(dasarPerPet.reduce((a, d) => a + d, 0), vRow as VoucherRow);
   }
   const voucherPerPet = bagiPotongan(dasarPerPet, voucherTotal);
+  // Nota yang menikmati kode kampanye: kena potongan vouchernya, atau kena promonya.
+  const pakaiKode = siap.map((s, i) => !!kampanye && (kampanye.promo_id ? s.kenaPromoKampanye : voucherPerPet[i] > 0));
 
   // Poin dipakai untuk SATU kedatangan, lalu dibagi proporsional ke nota tiap hewan
   // — perlakuannya persis voucher (permintaan Pak Aldi: poin di klinik harus sama
@@ -670,10 +691,20 @@ export async function bayarRombongan(formData: FormData) {
   );
   const poinPerPet = bagiPotongan(dasarSetelahVoucher, poinDipakai * RUPIAH_PER_POIN);
 
-  // TAHAP 2 — terbitkan notanya satu per satu.
+  // TAHAP 2 — terbitkan notanya satu per satu. Dengan kode kampanye, nota yang kena
+  // potongannya diterbitkan lebih dulu: nota pertama membawa kodenya, sehingga batas
+  // pemakaian sudah diperiksa database sebelum nota lain ikut menikmati potongan.
   const notaPoin: NotaPoin[] = [];
-  for (const [idx, s] of siap.entries()) {
+  const urutan = siap.map((_, i) => i);
+  if (kampanye) urutan.sort((a, b) => Number(pakaiKode[b]) - Number(pakaiKode[a]));
+  let kodeMenunggu = kampanye?.code ?? null;     // belum menempel di nota mana pun
+  let kampanyeDitolak: string | null = null;
+  let notaTersimpan = 0;                          // termasuk nota yang nomornya belum terbaca
+  for (const idx of urutan) {
+    const s = siap[idx];
     const { b, rows, subtotal, salespersonId, cartVersion } = s;
+    if (pakaiKode[idx] && kampanyeDitolak) { dilewati.push(`${b.hewan}: ${kampanyeDitolak}`); continue; }
+    const bawaKode = pakaiKode[idx] ? kodeMenunggu : null;
     const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx]);
     const dpp = Math.max(0, subtotal - discount);
     const { tax, total } = tambahPpn(dpp, pajakSettings);
@@ -685,11 +716,21 @@ export async function bayarRombongan(formData: FormData) {
         tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: 0, dp_date: null,
         paid_status: "Lunas", metode_bayar: metode, shift_id: klinikShift.id,
         voucher_code: voucherPerPet[idx] > 0 ? voucherCode : null, salesperson_id: salespersonId,
+        ...(bawaKode ? { campaign_code: bawaKode } : {}),
         service_pricing_version:1,
       },
       p_lines: barisUntukPosting(rows),
     }, undefined, undefined, undefined, cartVersion ?? undefined);
+    // Nota yang tersimpan sudah memakai kodenya (dihitung database), walau nomornya belum terbaca.
+    if (posted.invoiceId) notaTersimpan++;
+    if (bawaKode && posted.invoiceId) kodeMenunggu = null;
     if (posted.error || !posted.invoiceNo) {
+      const pesanKampanye = bawaKode && !posted.invoiceId ? pesanGagalKampanye(posted.error?.message) : null;
+      if (pesanKampanye) {
+        // Batas/izin kode ditolak database: belum ada nota terbit → batalkan semuanya dengan pesan jelas.
+        if (notaTersimpan === 0) redirect(`${back}?error=${encodeURIComponent(pesanKampanye)}`);
+        kampanyeDitolak = pesanKampanye;   // nota lain yang menikmati kode ini ikut dilewati
+      }
       dilewati.push(`${b.hewan}: ${posted.invoiceId ? "invoice sudah tersimpan; periksa status tanpa membayar ulang" : parseClinicPostingError(posted.error, uncertainPayment)}`);
       continue;
     }

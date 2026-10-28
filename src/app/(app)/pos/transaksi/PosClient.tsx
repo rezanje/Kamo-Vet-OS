@@ -16,6 +16,8 @@ import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { totalPotonganPromo, type PromoHitung } from "@/lib/promo-hitung";
 import { aggregateServiceLines, serviceLinePromos } from "@/lib/service-line-promos";
 import { posNetTotal, posSubtotal } from "@/lib/pos-money";
+import { bacaKode, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
+import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 
 export type Item = { id: string; code?: string; name: string; item_type?: string; tindakan_kategori?: string | null; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
@@ -42,9 +44,13 @@ const sameProductUnit = (a: Line, b: Line) => a.item_id === b.item_id && a.satua
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
 
-export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {} }: {
+export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "" }: {
   items: Item[]; customers: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
   promoPerCabang?: Record<string, PromoHitung[]>;
+  /** C05: kode kampanye aktif + voucher tujuannya — hanya untuk tampilan; server memeriksa ulang. */
+  kodeKampanye?: KodeKampanye[];
+  voucherKampanye?: VoucherRow[];
+  hariIni?: string;
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
 }) {
@@ -56,6 +62,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
   const [petId, setPetId] = useState<string>("");
   const [metode, setMetode] = useState("Tunai");
   const [discount, setDiscount] = useState(0);
+  const [voucher, setVoucher] = useState("");
   const [bayar, setBayar] = useState(0);
   const [split, setSplit] = useState(false);
   const [merchantFeePercent, setMerchantFeePercent] = useState(0);
@@ -98,6 +105,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
         setSplit(draft.split ?? draft.metode === "Split");
         if (draft.payments?.length) setPayments(draft.payments);
         setDiscount(draft.discount);
+        setVoucher(draft.voucher ?? "");
         setBayar(draft.bayar);
         setCart(restoredCart);
       }
@@ -126,10 +134,11 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
       ...(merchantFeePercent ? { merchantFeePercent } : {}),
       discount,
       bayar,
+      ...(voucher.trim() ? { voucher } : {}),
       cart,
     };
     sessionStorage.setItem(POS_DRAFT_KEY, JSON.stringify(draft));
-  }, [branchId, bayar, cart, cust?.id, discount, metode, split, payments, merchantFeePercent, petId, legacySalespersonId, checkoutKey]);
+  }, [branchId, bayar, cart, cust?.id, discount, voucher, metode, split, payments, merchantFeePercent, petId, legacySalespersonId, checkoutKey]);
 
   // Katalog dengan harga cabang terpasang — dasar untuk tampilan & keranjang.
   const katalog = useMemo(() => {
@@ -203,13 +212,33 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
   const subtotal = posSubtotal(cart);
   // Pakai rumus dan master yang sama dengan checkout, termasuk promo cabang
   // serta pengecualian diskon golongan per produk/kategori.
-  const promoDiscount = totalPotonganPromo(serviceLinePromos(promoPerCabang[branchId] ?? [], cart));
+  // C05: kode kampanye terikat promo → promo itu ikut dipotong; terikat voucher → rumus voucher itu.
+  const kode = bacaKode(voucher, kodeKampanye);
+  const promoCabang = promoDenganKode(promoPerCabang[branchId] ?? [], kode.promoId);
+  const rincianPromo = serviceLinePromos(promoCabang, cart);
+  const promoDiscount = totalPotonganPromo(rincianPromo);
   const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
   const diskonKategori = diskonGolonganKeranjang(
     aggregateServiceLines(cart), cust?.golonganId ? aturanDiskon[cust.golonganId] ?? [] : [],
     cust?.golongan?.diskon_persen ?? 0, infoMap,
   );
-  const total = posNetTotal(subtotal, promoDiscount, diskonKategori, discount);
+  let tolakKode: string | null = null;
+  let voucherVal = 0;
+  if (voucher.trim()) {
+    if (!kode.kampanye) tolakKode = `Kode kampanye ${kode.kode ?? ""} tidak ditemukan`;
+    else tolakKode = pesanKampanyeDitolak(kode.kampanye,
+      promoCabang.some((p) => p.id === kode.promoId), rincianPromo.some((h) => h.promoId === kode.promoId));
+    if (!tolakKode && kode.kampanye && !kode.kampanye.promo_id) {
+      const voucherRow = voucherKampanye.find((v) => v.code === kode.voucherCode) ?? null;
+      const dasarVoucher = posNetTotal(subtotal, promoDiscount);
+      tolakKode = pesanVoucherDitolak(voucherRow, hariIni, {
+        dasar: dasarVoucher, adaPromoOtomatis: rincianPromo.length > 0,
+        customerId: cust?.id ?? null, categoryId: cust?.golonganId ?? null,
+      });
+      if (!tolakKode && voucherRow) voucherVal = potonganVoucher(dasarVoucher, voucherRow);
+    }
+  }
+  const total = posNetTotal(subtotal, promoDiscount, diskonKategori, discount, voucherVal);
   const kembali = Math.max(0, bayar - total);
   const poin = cust ? poinDidapat(total, cust.golongan?.rupiah_per_poin) : 0;
   const kurang = metode === "Tunai" && bayar < total;
@@ -222,7 +251,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
     finalTotal = quote.total;
     resolvePosPayments({ total: quote.total, method: split ? "Split" : metode, bayar, payments: split ? quote.parts : [] });
   } catch { paymentValid = false; }
-  const canPay = checkoutKey && branchId && cart.length > 0 && paymentValid;
+  const canPay = checkoutKey && branchId && cart.length > 0 && paymentValid && !tolakKode;
 
   const pickCust = (c: Cust) => { setCust(c); setCustQ(c.name); setPetId(""); };
   const clearCust = () => { setCust(null); setCustQ(""); setPetId(""); };
@@ -238,6 +267,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
       <input type="hidden" name="split_payments" value={JSON.stringify(split ? payments : [])} />
       <input type="hidden" name="merchant_fee_percent" value={split ? 0 : merchantFeePercent} />
       <input type="hidden" name="discount" value={discount} />
+      <input type="hidden" name="voucherCode" value={voucher} />
       <input type="hidden" name="bayar" value={bayar} />
       <input type="hidden" name="cart" value={JSON.stringify(cart)} />
 
@@ -359,6 +389,13 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
               <span>Diskon manual / promo</span>
               <NumberInput className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
             </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
+              <span>Kode kampanye</span>
+              <input className="fi" aria-label="Kode kampanye" value={voucher} placeholder="opsional" onChange={(e) => setVoucher(e.target.value)}
+                style={{ width: 110, textTransform: "uppercase", padding: "3px 6px", borderColor: tolakKode ? "#fca5a5" : undefined }} />
+            </div>
+            {tolakKode && <div style={{ fontSize: 9.5, color: "#b91c1c", textAlign: "right" }}>{tolakKode}</div>}
+            {voucherVal > 0 && <Row k={`Kode ${kode.kampanye?.code ?? ""}`} v={`-${rp(voucherVal)}`} />}
             <Row k="Tagihan barang" v={rp(total)} />
             <Row k="Fee merchant" v={rp(feeTotal)} />
             <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>

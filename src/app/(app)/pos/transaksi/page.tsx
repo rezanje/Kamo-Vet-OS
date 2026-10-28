@@ -7,6 +7,10 @@ import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
 import { readCompleteList } from "@/lib/checked-list";
+import { loadKodeKampanyeAktif } from "@/lib/kode-kampanye";
+import { loadActiveVouchers } from "@/lib/voucher-loader";
+import { voucherBerlaku, type VoucherRow } from "@/lib/voucher";
+import { hariIniWIB } from "@/lib/tanggal";
 import { groomingDoctorRequired, isGroomingOutlet, isGroomingService } from "@/lib/grooming-requirements";
 
 type CatalogItem = { id: string; code: string; name: string; item_type: string; tindakan_kategori: string | null; unit: string; sell_price: number; target_species: string };
@@ -69,8 +73,16 @@ export default async function TransaksiPage({
   });
 
   const categoryIds = [...new Set(pelanggan.flatMap(customer => customer.golonganId ? [customer.golonganId] : []))];
+  // C05: kode kampanye aktif (hanya tampilan; server memeriksa ulang saat bayar).
+  const hariIni = hariIniWIB();
+  const kodeKampanye = await loadKodeKampanyeAktif(supabase);
+  const promoKodeIds = kodeKampanye.flatMap((k) => (k.promo_id ? [k.promo_id] : []));
+  const voucherKodes = new Set(kodeKampanye.flatMap((k) => (k.voucher_code ? [k.voucher_code] : [])));
+  const voucherKampanye = voucherKodes.size
+    ? ((await loadActiveVouchers(supabase)) as VoucherRow[]).filter((v) => voucherKodes.has(v.code) && voucherBerlaku(v, hariIni))
+    : [];
   const [promoEntries, discountEntries, itemInfo, serviceStaffEntries] = await Promise.all([
-    Promise.all((branches ?? []).map(async branch => [branch.id, await loadPromoAktif(supabase, branch.id)] as const)),
+    Promise.all((branches ?? []).map(async branch => [branch.id, await loadPromoAktif(supabase, branch.id, promoKodeIds)] as const)),
     Promise.all(categoryIds.map(async categoryId => [categoryId, await loadAturanDiskon(supabase, categoryId)] as const)),
     loadInfoBarang(supabase, katalog.map(item => item.id)),
     Promise.all((branches ?? []).filter(branch => canUseBranch(allowedBranches, branch.id))
@@ -121,6 +133,9 @@ export default async function TransaksiPage({
         promoPerCabang={Object.fromEntries(promoEntries)}
         aturanDiskon={Object.fromEntries(discountEntries)}
         infoBarang={Object.fromEntries(itemInfo)}
+        kodeKampanye={kodeKampanye}
+        voucherKampanye={voucherKampanye}
+        hariIni={hariIni}
       />
     </>
   );

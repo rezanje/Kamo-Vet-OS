@@ -27,7 +27,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       item_branch_prices: [],
     };
     const query = {
-      select() { return query; }, eq() { return query; }, order() { return query; }, range() { return query; },
+      select() { return query; }, eq() { return query; }, order() { return query; }, range() { return query; }, limit() { return query; },
       maybeSingle: async () => ({ data: { id: "open-shift" } }),
       then(resolve: (value: { data: unknown[]; count: number; error: null }) => unknown) { const data = rows[table] ?? []; return Promise.resolve(resolve({ data, count: data.length, error: null })); },
     };
