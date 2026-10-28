@@ -17,6 +17,15 @@ describe("parseClinicPostingError", () => {
       .toBe("Akun jurnal tidak siap: 5101");
   });
 
+  it("names the reason a procedure BMHP was rejected", () => {
+    expect(parseClinicPostingError({ code: "P0001", message: "BMHP_INVALID: satuan BMHP tidak ditemukan" }))
+      .toBe("BMHP tindakan ditolak: satuan BMHP tidak ditemukan");
+    expect(parseClinicRecordError({ code: "P0001", message: "BMHP_INVALID: BMHP harus barang persediaan aktif" }))
+      .toBe("BMHP tindakan ditolak: BMHP harus barang persediaan aktif");
+    expect(parseClinicPostingError({ code: "P0001", message: "BMHP_POSTED: BMHP tindakan ini sudah diposting" }))
+      .toBe("BMHP tindakan sudah tercatat di tagihan aktif: BMHP tindakan ini sudah diposting");
+  });
+
   it("explains branch access and invalid compound ingredients", () => {
     expect(parseClinicPostingError({ code: "P0001", message: "ACCESS_DENIED: kunjungan" }))
       .toBe("Akses cabang atau kunjungan tidak diizinkan.");

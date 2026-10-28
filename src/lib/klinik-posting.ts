@@ -132,6 +132,9 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       COST_MISSING: "HPP historis bahan tidak tersedia",
       RECIPE_INVALID: "Racikan tidak dapat diubah",
       UNIT_INVALID: "Satuan barang tidak cocok",
+      // K02: database rejections of procedure BMHP name the reason (unit, item, qty).
+      BMHP_INVALID: "BMHP tindakan ditolak",
+      BMHP_POSTED: "BMHP tindakan sudah tercatat di tagihan aktif",
     };
     const fixedMessages: Record<string, string> = {
       POLICY_INVALID: "Versi aturan DEMO berubah atau tidak valid. Muat ulang halaman dan periksa aturan.",

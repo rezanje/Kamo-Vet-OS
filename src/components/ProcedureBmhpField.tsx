@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { NumberInput } from "@/components/NumberInput";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { BMHP_MAX_COMPONENTS, type BmhpRow } from "@/lib/procedure-bmhp";
@@ -23,9 +24,8 @@ export function ProcedureBmhpField({ label, value, items, onChange }: {
     <legend style={{ fontSize: 11, fontWeight: 600 }}>BMHP dipakai · {label}</legend>
     {rows.map(row => <div key={row.item_id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, marginBottom: 3 }}>
       <span style={{ flex: 1, minWidth: 0 }}>{row.nama}</span>
-      <NumberInput className="fi" type="number" min={0.001} step="any" aria-label={`Jumlah BMHP ${row.nama}`} value={row.qty || ""}
-        onChange={event => onChange(rows.map(item => item.item_id === row.item_id ? { ...item, qty: Number(event.target.value) } : item))}
-        style={{ width: 54, padding: "1px 4px", fontSize: 10 }} />
+      <QtyInput label={row.nama} qty={row.qty}
+        onChange={qty => onChange(rows.map(item => item.item_id === row.item_id ? { ...item, qty } : item))} />
       <select className="fi" aria-label={`Satuan BMHP ${row.nama}`} value={row.unit} style={{ width: 66, padding: "1px 3px", fontSize: 10 }}
         onChange={event => onChange(rows.map(item => item.item_id === row.item_id ? { ...item, unit: event.target.value } : item))}>
         {unitsFor(row.item_id).map(unit => <option key={unit} value={unit}>{unit}</option>)}
@@ -38,4 +38,13 @@ export function ProcedureBmhpField({ label, value, items, onChange }: {
       onChange={id => { const item = items.find(row => row.id === id); if (item) onChange([...rows, { item_id: item.id, nama: item.name, qty: 1, unit: item.unit }]); }} />}
     <div style={{ fontSize: 9, color: "var(--tm)" }}>Stok BMHP dipotong saat tagihan klinik disimpan; biayanya masuk HPP tindakan, harga jual tidak berubah.</div>
   </fieldset>;
+}
+
+// Keeps what was typed: deriving the field from the number cleared a leading "0", so "0.5" showed as ".5".
+function QtyInput({ label, qty, onChange }: { label: string; qty: number; onChange: (qty: number) => void }) {
+  const [text, setText] = useState(qty ? String(qty) : "");
+  const shown = Number(text) === qty ? text : qty ? String(qty) : "";
+  return <NumberInput className="fi" type="number" min={0.001} step="any" aria-label={`Jumlah BMHP ${label}`} value={shown}
+    onChange={event => { setText(event.target.value); onChange(Number(event.target.value)); }}
+    style={{ width: 54, padding: "1px 4px", fontSize: 10 }} />;
 }
