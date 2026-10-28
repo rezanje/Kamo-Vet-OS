@@ -1,6 +1,7 @@
 import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
+import { ErrorPopup } from "@/components/ErrorPopup";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
@@ -256,11 +257,7 @@ export default async function PembayaranPage({
         </div>
       </div>
 
-      {error && (
-        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-          <i className="ti ti-alert-circle" /> {error}
-        </div>
-      )}
+      <ErrorPopup message={error} />
       {!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Pembayaran berhasil. Cetak struk / invoice di bawah.
