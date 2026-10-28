@@ -73,7 +73,7 @@ export default async function PenjualanRinciPage({
   // jadi batasnya digeser 7 jam supaya struk jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const {mulai,akhir} = batasTanggalWIB(dari,sampai);
 
-  const [{ data: sales }, { data: invoices }, { data: grosir }, { data: returs }, { data: cabangList }] = await Promise.all([
+  const [{ data: sales }, { data: invoices }, { data: grosir }, { data: returs }, { data: refundKlinik }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase
       .from("sales")
       .select("id, branch_id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name)", { count: "exact" })
@@ -94,12 +94,19 @@ export default async function PenjualanRinciPage({
     // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
     // dan omzet struk itu harus terlihat sudah berkurang di daftar ini.
     completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" }).is("voided_at", null)),
+    // J03: refund klinik yang sudah diposting mengurangi invoice asalnya, sama seperti retur struk.
+    completeReportQuery(supabase.from("clinic_refunds").select("id, invoice_id, total", { count: "exact" })),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
   const returPerStruk = new Map<string, number>();
   for (const r of (returs ?? []) as { sale_id: string; total: number }[]) {
     returPerStruk.set(r.sale_id, (returPerStruk.get(r.sale_id) ?? 0) + (Number(r.total) || 0));
+  }
+
+  const refundPerInvoice = new Map<string, number>();
+  for (const r of (refundKlinik ?? []) as { invoice_id: string; total: number }[]) {
+    refundPerInvoice.set(r.invoice_id, (refundPerInvoice.get(r.invoice_id) ?? 0) + (Number(r.total) || 0));
   }
 
   type SaleRow = SalePaymentSource & {
@@ -148,7 +155,7 @@ export default async function PenjualanRinciPage({
       merchandise: Number(i.total) || 0,
       merchantFee: 0,
       refundedFee: 0,
-      retur: 0,               // retur klinik dicatat sebagai pembatalan invoice, bukan retur barang
+      retur: refundPerInvoice.get(i.id) ?? 0, // refund klinik (J03), berapa pun tanggal refundnya
       status: i.paid_status ?? "—",
     };
   });

@@ -30,7 +30,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   // jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
 
-  const [hasilSales, hasilInvoices, hasilGrosir, hasilReturs, hasilCabang] =
+  const [hasilSales, hasilInvoices, hasilGrosir, hasilReturs, hasilRefundKlinik, hasilCabang] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
         .select("id, branch_id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(id)", { count: "exact" })
@@ -48,6 +48,11 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
       // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
       // dan omzet struk itu harus terlihat sudah berkurang.
       completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" }).is("voided_at", null)),
+      // J03: refund klinik diperlakukan sama dengan retur petshop — ditarik tanpa batas
+      // tanggal dan mengurangi omzet invoice asalnya (tanggal & cabang invoice), supaya
+      // omzet klinik tidak melebihi nilai yang benar-benar diterima. Refund klinik hanya
+      // ada setelah diposting (tunai atau transfer selesai) dan tidak dapat di-void.
+      completeReportQuery(supabase.from("clinic_refunds").select("id, invoice_id, total", { count: "exact" })),
       completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
     ]);
 
@@ -56,11 +61,17 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   const { data: invoices } = hasilInvoices;
   const { data: grosir } = hasilGrosir;
   const { data: returs } = hasilReturs;
+  const { data: refundKlinik } = hasilRefundKlinik;
   const { data: cabangList } = hasilCabang;
 
   const returPerStruk = new Map<string, number>();
   for (const r of (returs ?? []) as { sale_id: string; total: number }[]) {
     returPerStruk.set(r.sale_id, (returPerStruk.get(r.sale_id) ?? 0) + (Number(r.total) || 0));
+  }
+
+  const refundPerInvoice = new Map<string, number>();
+  for (const r of (refundKlinik ?? []) as { invoice_id: string; total: number }[]) {
+    refundPerInvoice.set(r.invoice_id, (refundPerInvoice.get(r.invoice_id) ?? 0) + (Number(r.total) || 0));
   }
 
   type SaleRow = SaleCompletion & {
@@ -94,7 +105,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
       cabang: one(v?.branches ?? null)?.name ?? "—",
       cabangId: v?.branch_id ?? null,
       customerId: v?.customer_id ?? null,
-      omzet: Number(inv.total) || 0,
+      omzet: (Number(inv.total) || 0) - (refundPerInvoice.get(inv.id) ?? 0),
       item: inv.invoice_items?.length ?? 0,
       kanal: "Klinik",
     });
