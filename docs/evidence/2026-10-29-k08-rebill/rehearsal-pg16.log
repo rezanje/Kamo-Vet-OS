@@ -1,0 +1,48 @@
+server: postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) | cluster: /tmp/vetos-k08-rebill-native-a22qqz9l
+ok  apply.sql carries the migration verbatim (sha256 cb665447e990826d21fc9d98ece53121a3db2aeb17c03efeae8986081a58c6ec) and its history row
+ok  acceptance test layout (demo marker, rollback) as expected
+Applied 303 repository migrations to isolated PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) with fictional auth/storage shims.
+discharge RPC clinic_change_inpatient_condition(uuid,text,text) exists|t
+K08 rebill patch not applied yet (marker K08_REBILL_PERIODS absent)|t
+declaration anchor present exactly once|t
+stay-fee anchor present exactly once (definition matches main)|t
+discharge still refuses a visit with an active invoice (INVOICE_EXISTS guard)|t
+SECURITY DEFINER with empty search_path|t
+executable by authenticated, not by anon|t
+columns used by the patch exist|t
+migration history table present|t
+already applied (informational): history row 20261029152000 present|f
+SUMMARY: 0 failed|t
+ok  preflight on pre-K08 target: SUMMARY 0 failed
+ok  preflight lists are empty before any affected data exists
+A under-billed|K08-REBILL|e8600000-0000-4000-8000-000000000001|Pembayaran|2|2|5|2|1||||2026-10-24 09:01 s/d 2026-10-26 10:01 = 3 hari; 2026-10-27 12:01 s/d 2026-10-28 13:01 = 2 hari
+ok  preflight Query A lists the fictional visit billed 2 of 5 days by the old definition
+discharge RPC exists|t
+K08 rebill block present exactly once|t
+fee sums every discharged stay of the visit|t
+earlier automatic lines of the visit are replaced, not kept|t
+old single-stay fee formula gone|t
+INVOICE_EXISTS guard kept (no discharge while the visit has an active invoice)|t
+forced-discharge consent guard kept|t
+SECURITY DEFINER with empty search_path kept|t
+executable by authenticated, not by anon|t
+migration history row 20261029152000 present|t
+SUMMARY: 0 failed|t
+ok  readback after apply: SUMMARY 0 failed
+ok  apply changes no existing rows (the old short line stays for a separate decision)
+ok  second apply refused, nothing changed
+ok  readback still 0 failed after the refused second apply
+ok  preflight now reports the patch as applied (marker present)
+ok  acceptance test green after apply.sql
+ok  preflight 0 failed again after rollback (exact pre-K08 block)
+ok  readback fails after rollback, as it should
+ok  rollback removed the history row
+ok  acceptance red again after rollback (bug is back)
+ok  rollback refused when K08 is not applied
+C open stay with active invoice|K08-REBILL|e8600000-0000-4000-8000-000000000004|f5626943-10fa-4e64-a5e4-22c6b7891b2a|stabil|2026-10-26 12:01:13.54575|2026-10-28 13:01:13.54575|K08-REBILL-INV4|Belum Lunas
+ok  post-fix discharges leave no under-billed visit and no duplicate automatic line
+ok  preflight Query C lists the stay reopened after its invoice (cannot be discharged)
+Removed owned PostgreSQL test container and volumes.
+PASS K08 rebill owner package rehearsal
+cleanup: temp cluster removed
+exit 0

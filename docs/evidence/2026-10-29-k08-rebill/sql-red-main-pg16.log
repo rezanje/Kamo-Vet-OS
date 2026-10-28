@@ -1,0 +1,19 @@
+Native PostgreSQL 16.15, C.UTF-8. Database = all 303 migrations of main 3453183 (20261029152000 NOT applied).
+$ psql -v ON_ERROR_STOP=1 -f <main (3453183) supabase/tests/clinic_inpatient_discharge.sql, unchanged>
+ERROR:  ACCESS_DENIED: pengguna tidak terautentikasi
+CONTEXT:  PL/pgSQL function public.protect_inpatient_care_staff() line 5 at RAISE
+exit 3
+
+$ psql -v ON_ERROR_STOP=1 -f <candidate supabase/tests/clinic_inpatient_discharge.sql (fixture gap closed)>
+PASS clinic_inpatient_discharge: atomic fee, retry, rounded days
+exit 0
+
+$ psql -v ON_ERROR_STOP=1 -f <candidate supabase/tests/k08_inpatient_rebill_periods.sql (new acceptance)>
+ERROR:  K08 re-discharge billed 1 line(s) / 2 day(s) / 200000.00; expected 1 line, 5 days (3+2), 500000 - every period exactly once
+CONTEXT:  PL/pgSQL function inline_code_block line 7 at RAISE
+exit 3
+
+$ probe: same acceptance file with ONLY the scenario-1 assertion replaced by a notice (scratch copy, not committed), to show the remaining scenarios on main
+NOTICE:  scenario 1 on main: 1 line(s) / 2 day(s) (assertion skipped in this probe only)
+ERROR:  K08 tariff change double-billed: 2 line(s) / 8 day(s); expected 1 line, 5 days
+(scenario 2 reopen and scenario 3 invoiced period already pass on main; scenario 4 tariff change double-bills)
