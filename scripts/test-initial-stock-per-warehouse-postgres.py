@@ -16,7 +16,7 @@ sales.PSQL[-1] = sales.DB
 subprocess.run(['createdb', '-h127.0.0.1', '-p5432', sales.DB], check=True)
 try:
     sales.bootstrap_database()
-    for name in ['initial_stock_per_warehouse.sql', 'accurate_inventory_preparation.sql', 'accurate_inventory_source_precision.sql',
+    for name in ['initial_stock_per_warehouse.sql', 'inventory_review_exact_transport.sql', 'accurate_inventory_preparation.sql', 'accurate_inventory_source_precision.sql',
                  'accurate_inventory_accounting.sql', 'accurate_inventory_accounting_guards.sql',
                  'accurate_inventory_accounting_review.sql', 'accurate_inventory_accounting_m01.sql']:
         sales.sql((ROOT / 'supabase/tests' / name).read_text())

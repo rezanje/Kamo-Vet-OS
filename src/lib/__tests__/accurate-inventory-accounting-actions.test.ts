@@ -51,14 +51,23 @@ it("rejects historical reports before sending any posting request", async () => 
   expect(fixture.rpc).not.toHaveBeenCalled();
 });
 
-it("passes the complete reviewed evidence unchanged into the atomic posting RPC", async () => {
+it("posts the exact database evidence when it matches the reviewed report", async () => {
   const receipt = { run_id: report.run_id, journal_id: "journal", amount: 150000 };
-  fixture.rpc.mockResolvedValue({ data: receipt, error: null });
+  // 16569.4200000000000001 is beyond JavaScript precision; the RPC must receive the database text, not the browser number.
+  const exact = JSON.stringify({ ...report, original_qty: 3 }).replace('"original_qty":3', '"original_qty":3.0000000000000000001');
+  fixture.rpc.mockResolvedValueOnce({ data: exact, error: null }).mockResolvedValueOnce({ data: receipt, error: null });
   expect(await postInventoryAccounting({ report, reason: "Reviewed source workbook", confirmed: true })).toEqual({ ok: true, receipt });
-  expect(fixture.rpc).toHaveBeenCalledExactlyOnceWith("post_accurate_inventory_accounting", {
-    p_run_id: report.run_id, p_equity_account_id: report.equity_account.id, p_expected: report, p_reason: "Reviewed source workbook",
+  expect(fixture.rpc).toHaveBeenNthCalledWith(1, "preview_accurate_inventory_accounting_text", { p_run_id: report.run_id, p_equity_account_id: report.equity_account.id });
+  expect(fixture.rpc).toHaveBeenNthCalledWith(2, "post_accurate_inventory_accounting_text", {
+    p_run_id: report.run_id, p_equity_account_id: report.equity_account.id, p_expected: exact, p_reason: "Reviewed source workbook",
   });
   expect(fixture.revalidate).toHaveBeenCalledWith("/keuangan/neraca");
+});
+
+it("refuses to post when the database evidence differs from the reviewed report", async () => {
+  fixture.rpc.mockResolvedValueOnce({ data: JSON.stringify({ ...report, original_value: 150001 }), error: null });
+  expect(await postInventoryAccounting({ report, reason: "Reviewed source workbook", confirmed: true })).toEqual({ ok: false, error: "Bukti berubah; tinjau preview ulang" });
+  expect(fixture.rpc).toHaveBeenCalledOnce();
 });
 
 it("reports uncertain transport failure without silently retrying a financial mutation", async () => {

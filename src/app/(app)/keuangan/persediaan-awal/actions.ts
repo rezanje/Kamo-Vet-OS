@@ -1,5 +1,6 @@
 "use server";
 
+import { isDeepStrictEqual } from "node:util";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { InventoryAccountingReport, InventoryAccountingPreviewResult, InventoryAccountingPostResult } from "./types";
@@ -37,8 +38,13 @@ export async function postInventoryAccounting(input: { report: InventoryAccounti
     if (report.status !== "previewed" || !report.can_post || report.blockers.length || !report.equity_account || !uuid.test(report.run_id) || !uuid.test(report.equity_account.id)) {
       throw new Error("Batch ini tidak dapat diposting. Tinjau laporan dan keputusan keuangan yang diperlukan.");
     }
-    const { data, error } = await supabase.rpc("post_accurate_inventory_accounting", {
-      p_run_id: report.run_id, p_equity_account_id: report.equity_account.id, p_expected: report, p_reason: input.reason.trim(),
+    // The browser copy holds JavaScript numbers (about 15 digits). Re-read the exact database text,
+    // require it to be the report the OWNER reviewed, and post with that exact text.
+    const fresh = await supabase.rpc("preview_accurate_inventory_accounting_text", { p_run_id: report.run_id, p_equity_account_id: report.equity_account.id });
+    if (fresh.error) throw new Error(fresh.error.message);
+    if (typeof fresh.data !== "string" || !isDeepStrictEqual(JSON.parse(fresh.data), report)) throw new Error("Bukti berubah; tinjau preview ulang");
+    const { data, error } = await supabase.rpc("post_accurate_inventory_accounting_text", {
+      p_run_id: report.run_id, p_equity_account_id: report.equity_account.id, p_expected: fresh.data, p_reason: input.reason.trim(),
     });
     if (error) throw new Error(error.message);
     if (!data) throw new Error("Hasil posting belum diterima. Periksa laporan batch sebelum mencoba kembali.");
