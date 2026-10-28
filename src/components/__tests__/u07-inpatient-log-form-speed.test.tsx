@@ -80,7 +80,7 @@ it("sends only the item fields the form uses, sharing one object per item across
   const props = s.formProps as Record<string, Record<string, unknown>[]>;
   const drug = props.items.find((item) => item.id === "drug")!;
   expect(drug).toEqual({ id: "drug", code: "D1", name: "Drug", unit: "tab", sell_price: 10, stok: 7, item_type: "Persediaan",
-    units: [{ unit: "tab", factor: 1, sell_price: 10, buy_price: 0 }, { unit: "box", factor: 10, sell_price: 90, buy_price: 0 }] });
+    units: [{ unit: "tab", factor: 1, sell_price: 10 }, { unit: "box", factor: 10, sell_price: 90 }] });
   expect(props.bahanItems.find((item) => item.id === "drug")).toBe(drug);
   const service = props.jasaItems.find((item) => item.id === "service")!;
   expect(service).toMatchObject({ tindakan_kategori: "Grooming", item_type: "Jasa" });

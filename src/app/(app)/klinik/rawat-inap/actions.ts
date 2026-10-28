@@ -281,10 +281,14 @@ export async function addDailyLogPos(formData: FormData) {
   waktu.tandai("simpan");
   waktu.selesai();
   if (saveError) redirect(`${back}/catatan?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
-  // U07: sengaja TANPA revalidatePath. Revalidasi apa pun membuat Next merender ulang
-  // halaman aktif (form catatan + seluruh katalog ±1 MB) di respons simpan, lalu
-  // dibuang karena klien langsung pindah ke `href`. Semua tujuan halaman dinamis
-  // (router cache dinamis = 0 dtk), jadi `router.push` tetap mengambil data segar.
+  // Kesegaran data di atas kecepatan: revalidasi membersihkan router cache klien, jadi
+  // Back/Forward, sensus rawat inap, tagihan, antrean racik dan stok tidak menampilkan
+  // data lama (risiko catatan / baris tagihan ganda). Form catatan sendiri tidak masuk
+  // daftar, tapi Next 15.5 tetap merender ulang halaman aktif begitu ada revalidasi
+  // apa pun (`pathWasRevalidated`); biaya render itu ditekan lewat bacaan paralel di
+  // halaman form, bukan dengan melewatkan revalidasi.
+  for (const path of [back, "/klinik/rawat-inap", `/klinik/rekam-medis/${rec!.visit_id}/resep`,
+    `/klinik/pembayaran/${rec!.visit_id}`, "/klinik/racik", "/klinik/stok", "/pos/stok"]) revalidatePath(path);
 
   return { saved: true, href: cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log` };
 }

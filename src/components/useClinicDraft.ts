@@ -6,22 +6,6 @@ import { useRouter } from "next/navigation";
 const MAX_AGE = 12 * 60 * 60 * 1000;
 type Draft<T> = { version: 1; savedAt: number; requestKey: string; fields: Record<string, string>; snapshot: T };
 
-// U07: saves that leave the form no longer refresh it on the server, so browser Back
-// can restore the form with the request key that was just acknowledged. Reusing it
-// would replay (or conflict with) the saved entry, so remember acknowledged keys for
-// this tab and mint a fresh key when such a form is opened again.
-const ACKED_KEYS = "vetos:clinic-draft:v1:acked";
-function readAcked(): string[] {
-  try {
-    const parsed = JSON.parse(sessionStorage.getItem(ACKED_KEYS) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
-  } catch { return []; }
-}
-function rememberAcked(requestKey: string) {
-  try { sessionStorage.setItem(ACKED_KEYS, JSON.stringify([...readAcked().filter(k => k !== requestKey), requestKey].slice(-50))); }
-  catch { /* Storage may be disabled; the server still rejects a reused key safely. */ }
-}
-
 /** Session-only drafts are isolated by the authenticated server user and encounter. */
 export function useClinicDraft<T extends Record<string, unknown>>({ userId, scope, requestKey, snapshot, restore, optionalSnapshotKeys = [], uncertainMessage }: {
   userId: string; scope: string; requestKey: string; snapshot: T; restore: (value: T) => void;
@@ -69,8 +53,6 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
     queueMicrotask(() => {
       if (cancelled) return;
       try {
-        const acked = readAcked();
-        let restoredKey: string | null = null;
         const raw = sessionStorage.getItem(key);
         if (raw) {
           const draft = JSON.parse(raw) as Draft<T>;
@@ -83,7 +65,6 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
                 ? true : Array.isArray(value) ? Array.isArray(draft.snapshot[name]) : typeof draft.snapshot[name] === typeof value);
           if (valid) {
             latest.current.restore(draft.snapshot);
-            restoredKey = draft.requestKey;
             setSubmissionKey(draft.requestKey);
             for (const control of Array.from(formRef.current?.elements ?? [])) {
               if ((control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)
@@ -95,11 +76,6 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
             lastSnapshot.current = JSON.stringify(draft.snapshot);
             setRecovered(true);
           } else sessionStorage.removeItem(key);
-        }
-        if (acked.includes(restoredKey ?? latest.current.submissionKey)) {
-          const fresh = crypto.randomUUID();
-          latest.current.submissionKey = fresh;
-          setSubmissionKey(fresh);
         }
       } catch {
         // Malformed or unavailable storage must never prevent the clinic form opening.
@@ -154,7 +130,6 @@ export function useClinicDraft<T extends Record<string, unknown>>({ userId, scop
       const result = await action(data);
       if (result.saved) {
         allowReset.current = true; clear();
-        rememberAcked(latest.current.submissionKey);
         // A revalidating action already returned the fresh current page (for the
         // initial exam, the recorded view replaces this form); pushing the same URL
         // would render that whole page a second time. Only a real navigation keeps

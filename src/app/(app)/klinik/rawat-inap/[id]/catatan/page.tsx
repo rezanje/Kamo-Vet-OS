@@ -26,7 +26,7 @@ type MasterRow = {
 /** U07: payload katalog ke browser — hanya kolom yang dibaca form. `category_id` &
  * `is_compound_material` cuma dipakai server untuk membagi grup; nilai kosong tidak
  * dikirim (form memperlakukan null & tidak ada sama); harga beli satuan tidak dipakai
- * form klinik, jadi tidak ikut dikirim. */
+ * form klinik, jadi tidak ada di tipe satuan untuk browser (`UnitLite`). */
 function itemUntukKlien(item: {
   id: string; code: string | null; upc: string | null; name: string; unit: string; sell_price: number; stok: number;
   item_type: string; tindakan_kategori: string | null; units: ItemUnit[];
@@ -36,7 +36,7 @@ function itemUntukKlien(item: {
     ...(item.code != null ? { code: item.code } : {}),
     ...(item.upc != null ? { upc: item.upc } : {}),
     ...(item.tindakan_kategori != null ? { tindakan_kategori: item.tindakan_kategori } : {}),
-    units: item.units.map((unit) => ({ unit: unit.unit, factor: unit.factor, sell_price: unit.sell_price, buy_price: 0 })),
+    units: item.units.map((unit) => ({ unit: unit.unit, factor: unit.factor, sell_price: unit.sell_price })),
   };
 }
 

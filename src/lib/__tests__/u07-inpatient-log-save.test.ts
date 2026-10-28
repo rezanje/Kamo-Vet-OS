@@ -84,8 +84,20 @@ it("starts every pre-save read before the slowest one finishes, then saves once"
   expect(fx.rpcCalls.filter((name) => name === "clinic_save_inpatient_log_with_status")).toHaveLength(1);
 });
 
-it("does not revalidate (so the heavy log form is not rendered again in the save response)", async () => {
+it("keeps every page that shows the saved log, billing lines or stock fresh after a save", async () => {
   await expect(addDailyLogPos(form({ cetak: "1" }))).resolves.toEqual({ saved: true, href: "/klinik/rekam-medis/visit/resep" });
+  const paths = revalidatePath.mock.calls.map(([path]) => path);
+  for (const path of ["/klinik/rawat-inap/stay", "/klinik/rawat-inap", "/klinik/pembayaran/visit", "/klinik/rekam-medis/visit/resep",
+    "/klinik/racik", "/klinik/stok", "/pos/stok"]) expect(paths).toContain(path);
+  // Revalidation happens only after the save is confirmed by the database.
+  expect(fx.rpcCalls.at(-1)).toBe("clinic_save_inpatient_log_with_status");
+});
+
+it("does not revalidate anything when the save fails or is refused", async () => {
+  fx.errorOn = "clinic_save_inpatient_log_with_status";
+  expect((await run(addDailyLogPos(form()))).error).toMatch(/^REDIRECT \/klinik\/rawat-inap\/stay\/catatan\?error=/);
+  fx.errorOn = "profiles";
+  expect((await run(addDailyLogPos(form()))).error).toContain("Peran%20pengguna");
   expect(revalidatePath).not.toHaveBeenCalled();
 });
 
