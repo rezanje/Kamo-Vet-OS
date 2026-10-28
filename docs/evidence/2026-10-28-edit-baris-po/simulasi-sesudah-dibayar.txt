@@ -1,0 +1,9 @@
+Buku besar 1301 Persediaan : 2,340,000.00
+Buku besar 2101 Hutang usaha : -6,300,000.00
+Buku besar 2102 Hutang Belum Difakturkan : 0.00
+Buku besar 5101 HPP : 3,960,000.00
+Faktur FB.2026.10.00001 : qty 35 | harga 180000 | total 6300000 | dibayar 0
+Jurnal seimbang? : true
+PO : qty 35 | diterima 35 | harga 180000 | total 6300000 | status Diterima | revisi 2
+Penerimaan TB.2026.10.00001 : diterima 35 | harga 187545
+Stok gudang : qty 13.0000 | nilai 2340000.0000000000000000
