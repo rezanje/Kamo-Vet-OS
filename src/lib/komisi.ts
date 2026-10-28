@@ -1,3 +1,4 @@
+import { tanggalWIB } from "./tanggal";
 // Hitungan komisi penjual (migrasi 0091) — murni, dites di __tests__/komisi.test.ts.
 //
 // Masukan: baris penjualan satu periode (retur ikut, bernilai negatif) + aturan komisi.
@@ -7,8 +8,10 @@
 /**
  * kasir = struk POS & penjualan online · klinik = tagihan kunjungan yang sudah lunas ·
  * reseller = faktur penjualan B2B dari rantai dokumen (migrasi 0098).
+ * visit_ranap = visit dokter rawat inap yang dikerjakan (H06) — bukan penjualan: omzet 0,
+ * dan hanya aturan bersumber visit_ranap yang boleh membayarnya.
  */
-export type SumberJual = "kasir" | "klinik" | "reseller";
+export type SumberJual = "kasir" | "klinik" | "reseller" | "visit_ranap";
 
 export type BarisJual = {
   /** Recorded service evidence stays one revenue row even when two people worked. */
@@ -27,6 +30,16 @@ export type BarisJual = {
   personalRulesOnly?: boolean;
   /** Posted DEMO allocation replaces legacy commission while retaining target revenue. */
   fixedCommission?: boolean;
+  /**
+   * H05: component line sold as part of a package. Such a line is never a normal SKU
+   * sale; `ringkasPaket` folds it into one package row (item = package, qty = package qty).
+   */
+  paketAsal?: { itemId: string; qty: number; kategoriIds: string[] };
+  /** H05 evidence on a folded package row: number of component lines it replaced. */
+  paketKomponen?: number;
+  /** H06 evidence: visit date (Asia/Jakarta) and inpatient stay of a counted doctor visit. */
+  visitTanggal?: string;
+  visitRawatInapId?: string;
   tanggal: string;              // YYYY-MM-DD
   sumber: SumberJual;
   // null = struknya tidak terhubung ke karyawan mana pun. Barisnya tetap dibawa
@@ -56,7 +69,14 @@ export type AturanKomisi = {
   minOmzet: number;
   dari: string | null;
   sampai: string | null;
+  /** Optional configured grade/group; null leaves the legacy rule unrestricted. */
+  commissionGroup?: string | null;
+  /** Individual rule explicitly replaces this group rule on intersecting lines. */
+  overrideGroupRuleId?: string | null;
 };
+
+/** employeeId → configured commission group/grade (H04). */
+export type KelompokKaryawan = ReadonlyMap<string, string | null>;
 
 export type RincianAturan = {
   aturanId: string;
@@ -103,8 +123,14 @@ export function realisasiTarget(baris: BarisJual[], t: TargetPenjualan): { reali
   return { realisasi, persen: t.target > 0 ? Math.round((realisasi / t.target) * 100) : 0 };
 }
 
-export function cocokAturanKomisi(b: BarisJual, a: AturanKomisi): boolean {
+export function cocokAturanKomisi(b: BarisJual, a: AturanKomisi, groups?: KelompokKaryawan): boolean {
   if (b.fixedCommission) return false;
+  // A component line still tagged with its package is never a normal SKU sale (H05).
+  if (b.paketAsal) return false;
+  // Inpatient visits are paid only by visit rules; a sales rule never pays a visit,
+  // and a visit rule never pays a sale (H06).
+  if ((a.sumber === "visit_ranap") !== (b.sumber === "visit_ranap")) return false;
+  if (a.commissionGroup && (!b.employeeId || groups?.get(b.employeeId) !== a.commissionGroup)) return false;
   if (b.personalRulesOnly && a.employeeId !== b.employeeId) return false;
   // Tanpa saringan sumber, aturan "insentif dokter" ikut membayar penjualan petshop
   // begitu dokternya sekali saja menutup struk kasir.
@@ -120,7 +146,15 @@ export function cocokAturanKomisi(b: BarisJual, a: AturanKomisi): boolean {
   return true;
 }
 
-export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[]): HasilKomisi[] {
+export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[], groupPerEmployee: KelompokKaryawan = new Map()): HasilKomisi[] {
+  const ruleById = new Map(aturan.map(rule => [rule.id, rule]));
+  const overridesByParent = new Map<string, AturanKomisi[]>();
+  for (const rule of aturan) {
+    if (!rule.overrideGroupRuleId) continue;
+    const list = overridesByParent.get(rule.overrideGroupRuleId) ?? [];
+    list.push(rule);
+    overridesByParent.set(rule.overrideGroupRuleId, list);
+  }
   const perOrang = new Map<string, BarisJual[]>();
   for (const b of baris) {
     if (!b.employeeId) continue;
@@ -139,7 +173,17 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[]): HasilK
     const rincian: RincianAturan[] = [];
 
     for (const a of aturan) {
-      const kena = milikDia.filter((b) => cocokAturanKomisi(b, a));
+      const base = a.overrideGroupRuleId ? ruleById.get(a.overrideGroupRuleId) : null;
+      // A stale/deactivated group rule must not leave a standalone individual payout.
+      if (a.overrideGroupRuleId && (!base?.commissionGroup || groupPerEmployee.get(employeeId) !== base.commissionGroup)) continue;
+      const kena = milikDia.filter((b) => {
+        if (!cocokAturanKomisi(b, a, groupPerEmployee)) return false;
+        if (base && !cocokAturanKomisi(b, base, groupPerEmployee)) return false;
+        if (!a.commissionGroup) return true;
+        // An explicit individual exception replaces this group rule on the lines it covers.
+        return !(overridesByParent.get(a.id) ?? []).some(individual =>
+          individual.employeeId === employeeId && cocokAturanKomisi(b, individual, groupPerEmployee));
+      });
       if (kena.length === 0) continue;
 
       let dasar = 0;
@@ -162,12 +206,16 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[]): HasilK
       // Ambang diukur dari realisasi karyawan sebulan, bukan dari baris yang kena aturan —
       // "komisi cair kalau bulan ini tembus sekian" memang maksudnya begitu.
       const realisasi = a.basis === "laba" ? laba : omzet;
-      const cair = a.minOmzet <= 0 || realisasi >= a.minOmzet;
+      const parentRealisasi = base?.basis === "laba" ? laba : omzet;
+      const cair = (a.minOmzet <= 0 || realisasi >= a.minOmzet)
+        && (!base || base.minOmzet <= 0 || parentRealisasi >= base.minOmzet);
 
       // Komisi negatif (retur melebihi penjualan) ditahan di nol: gaji orang tidak
       // dipotong gara-gara komisi, potongan retur diurus terpisah kalau memang perlu.
       const nilai = cair ? Math.max(0, Math.round(komisi)) : 0;
-      rincian.push({ aturanId: a.id, nama: a.nama, dasar: Math.round(dasar), komisi: nilai, cair });
+      // Qty may be fractional (for example a half-unit service). Rounding it in
+      // the evidence while calculating payout from the original qty misstates the rate.
+      rincian.push({ aturanId: a.id, nama: a.nama, dasar: a.tipe === "nominal" ? dasar : Math.round(dasar), komisi: nilai, cair });
     }
 
     hasil.push({
@@ -197,4 +245,104 @@ export function mergeSharedIncentives(hasil: HasilKomisi[], allocations: readonl
     rows.set(row.employeeId,row);
   }
   return [...rows.values()];
+}
+
+/**
+ * H05: fold package component lines into one package row per document and package.
+ * Omzet/laba of the package = sum of its component lines; qty = package qty, so a rule
+ * on the package item counts packages and a rule on the component SKU never sees them.
+ * Example: 3 bundles + 1 normal vaccine → SKU rule qty 1, package rule qty 3.
+ */
+export function ringkasPaket(rows: readonly BarisJual[]): BarisJual[] {
+  const out: BarisJual[] = [];
+  const groups = new Map<string, BarisJual>();
+  const qtyCounted = new Set<string>();
+  for (const row of rows) {
+    const { paketAsal: asal, ...rest } = row;
+    if (!asal) { out.push(row); continue; }
+    const sign = row.qty < 0 ? -1 : 1;
+    const paketKey = `${row.sumber}:${row.sourceDocumentId ?? ""}:${row.tanggal}:${asal.itemId}:${sign}`;
+    // Components keep their own attribution: a service component with two performers keeps
+    // its S04 split, and components sold by different people are never merged into one seller.
+    const actorKey = `${row.employeeId ?? ""}|${row.commissionPending ? 1 : 0}|${JSON.stringify(row.servicePerformers ?? null)}`;
+    const key = `${paketKey}|${actorKey}`;
+    const existing = groups.get(key);
+    if (!existing) {
+      // The package qty is counted once per package sale, on its first attribution group;
+      // further groups carry their omzet share with qty 0 so a per-package rule never doubles.
+      const first = !qtyCounted.has(paketKey);
+      qtyCounted.add(paketKey);
+      const folded: BarisJual = { ...rest, itemId: asal.itemId, kategoriIds: asal.kategoriIds,
+        qty: first ? sign * asal.qty : 0, paketKomponen: 1 };
+      groups.set(key, folded);
+      out.push(folded);
+      continue;
+    }
+    existing.omzet += row.omzet;
+    existing.laba = existing.laba === null || row.laba === null ? null : existing.laba + row.laba;
+    existing.paketKomponen = (existing.paketKomponen ?? 0) + 1;
+  }
+  return out;
+}
+
+/**
+ * H04: configuration that silently pays nothing — an individual exception whose group rule
+ * is gone/inactive or whose employee left that group, and group rules nobody belongs to.
+ * `aturan` holds active rules only.
+ */
+export function peringatanAturanKomisi(aturan: readonly AturanKomisi[], groups: KelompokKaryawan,
+  namaKaryawan: ReadonlyMap<string, string> = new Map()): string[] {
+  const byId = new Map(aturan.map((rule) => [rule.id, rule]));
+  const anggota = new Set([...groups.values()].filter((code): code is string => !!code));
+  const out: string[] = [];
+  for (const rule of aturan) {
+    if (rule.overrideGroupRuleId) {
+      const base = byId.get(rule.overrideGroupRuleId);
+      const nama = rule.employeeId ? namaKaryawan.get(rule.employeeId) ?? "karyawan" : "karyawan";
+      if (!base?.commissionGroup) out.push(`Pengecualian "${rule.nama}" tidak dibayar: aturan kelompok yang diganti sudah nonaktif atau terhapus.`);
+      else if (!rule.employeeId || groups.get(rule.employeeId) !== base.commissionGroup)
+        out.push(`Pengecualian "${rule.nama}" tidak dibayar: ${nama} tidak lagi di kelompok ${base.commissionGroup}.`);
+    }
+    if (rule.commissionGroup && !anggota.has(rule.commissionGroup))
+      out.push(`Aturan kelompok "${rule.nama}" tidak dibayar: belum ada karyawan di kelompok ${rule.commissionGroup}.`);
+  }
+  return out;
+}
+
+export type LogVisitDokter = {
+  id: string;
+  inpatientRecordId: string;
+  doctorId: string | null;
+  branchId: string | null;
+  createdAt: string;
+};
+
+export type VisitDobel = LogVisitDokter & { tanggal: string; dihitungLogId: string };
+
+/**
+ * H06: doctor visits actually done on inpatient stays. At most one visit counts per doctor,
+ * per stay, per calendar date in Asia/Jakarta; the earliest log is the counted evidence.
+ * A log without a doctor never counts (nobody to pay).
+ */
+export function barisVisitRanap(logs: readonly LogVisitDokter[]): { baris: BarisJual[]; dobel: VisitDobel[] } {
+  const sorted = [...logs].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  const counted = new Map<string, string>();
+  const baris: BarisJual[] = [];
+  const dobel: VisitDobel[] = [];
+  for (const log of sorted) {
+    if (!log.doctorId) continue;
+    const tanggal = tanggalWIB(log.createdAt);
+    const key = `${log.doctorId}:${log.inpatientRecordId}:${tanggal}`;
+    const first = counted.get(key);
+    if (first) { dobel.push({ ...log, tanggal, dihitungLogId: first }); continue; }
+    counted.set(key, log.id);
+    baris.push({
+      tanggal, sumber: "visit_ranap", employeeId: log.doctorId, branchId: log.branchId,
+      itemId: null, kategoriIds: [], qty: 1, omzet: 0, laba: 0,
+      sourceLineId: log.id, sourceDocumentId: log.inpatientRecordId,
+      sourceDocumentHref: `/klinik/rawat-inap/${log.inpatientRecordId}`,
+      visitTanggal: tanggal, visitRawatInapId: log.inpatientRecordId,
+    });
+  }
+  return { baris, dobel };
 }

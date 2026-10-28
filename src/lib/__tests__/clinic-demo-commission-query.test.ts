@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { komisiPeriode } from "../komisi-data";
+// Timestamps compare as instants (offset-less = UTC, like Postgres on Supabase); dates/text as strings.
+const at = (v: string) => /T\d\d:/.test(v) ? Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(v) ? v : `${v}Z`) : NaN;
+const cmp = (a: string, b: string) => { const x = at(a), y = at(b); return Number.isNaN(x) || Number.isNaN(y) ? (a < b ? -1 : a > b ? 1 : 0) : x - y; };
 
 type Row = Record<string, unknown>;
 function client(reissued = false) {
@@ -19,8 +22,9 @@ function client(reissued = false) {
       eq(key:string,v:unknown){filters.push(row=>value(row,key)===v);return q;},
       neq(key:string,v:unknown){filters.push(row=>value(row,key)!==v);return q;},
       is(key:string,v:unknown){filters.push(row=>value(row,key)===v);return q;},
-      gte(key:string,v:string){filters.push(row=>String(value(row,key))>=v);return q;},
-      lte(key:string,v:string){filters.push(row=>String(value(row,key))<=v);return q;},
+      gte(key:string,v:string){filters.push(row=>cmp(String(value(row,key)),v)>=0);return q;},
+      lte(key:string,v:string){filters.push(row=>cmp(String(value(row,key)),v)<=0);return q;},
+      lt(key:string,v:string){filters.push(row=>cmp(String(value(row,key)),v)<0);return q;},
       range(a:number,b:number){from=a;to=b;return q;},
       then(resolve:(result:unknown)=>unknown){
         // PostgREST exposes both the direct FK and an inferred relationship;

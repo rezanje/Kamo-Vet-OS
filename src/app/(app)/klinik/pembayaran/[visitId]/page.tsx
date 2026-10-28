@@ -4,7 +4,7 @@ import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
-import { loadClinicPaymentMaster } from "@/lib/clinic-payment";
+import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { randomUUID, createHash } from "node:crypto";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -202,6 +202,7 @@ export default async function PembayaranPage({
   // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat
   // terjual tapi persediaan tidak pernah berkurang.
   const { obat: masterObat, jasa: masterJasa, all: master } = await loadClinicPaymentMaster(supabase, visit.branch_id ?? null);
+  const clinicPackages = invoice ? [] : await loadClinicPackages(supabase);
   const serviceStaff = invoice && !canEdit ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
   const groomingPolicy = visit.branch_id ? await loadBranchGroomingPolicy(supabase, visit.branch_id) : null;
   const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
@@ -556,6 +557,7 @@ export default async function PembayaranPage({
           masterObat={masterObat}
           masterJasa={masterJasa}
           bekal={bekal}
+          packages={clinicPackages}
           demoPolicy={demoPolicy}
           demoStaff={demoStaffResult.data ?? []}
           serviceStaff={serviceStaff}

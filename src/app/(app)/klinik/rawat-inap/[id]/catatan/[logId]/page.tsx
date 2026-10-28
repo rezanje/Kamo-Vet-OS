@@ -35,6 +35,10 @@ export default async function LogDetailPage({
       .eq("id", logId).maybeSingle(),
   ]);
   if (!rec || !log || log.inpatient_record_id !== id) notFound();
+  // H06: only OWNER/ADMIN may correct a doctor visit's time, doctor or kind (the database enforces it too).
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = user ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle() : { data: null };
+  const bolehKoreksiVisit = ["OWNER", "ADMIN"].includes(String(profile?.role ?? ""));
   const [doctors,paramedics]=await Promise.all([
     daftarDokter(supabase,{branchId:rec.branch_id,role:'doctor'}),
     daftarDokter(supabase,{branchId:rec.branch_id,role:'paramedic'}),
@@ -90,6 +94,7 @@ export default async function LogDetailPage({
         recordId={id}
         backHref={`/klinik/rawat-inap/${id}`}
         editable={!rec.discharged_at}
+        bolehKoreksiVisit={bolehKoreksiVisit}
         edits={edits}
         doctors={doctors}
         paramedics={paramedics}

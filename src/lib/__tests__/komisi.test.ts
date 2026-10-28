@@ -35,6 +35,48 @@ const aturan = (o: Partial<AturanKomisi> = {}): AturanKomisi => ({
 const satu = (b: BarisJual[], a: AturanKomisi[]) => hitungKomisi(b, a)[0];
 
 describe("hitungKomisi", () => {
+  it("uses configured SKU rates by doctor group and keeps separate sales percent rules", () => {
+    // Dummy fixture values exercise different configured rates; no production tariff is seeded.
+    const rows = [baris({ employeeId: "doctor-old", qty: 2, omzet: 80_000 }), baris({ employeeId: "doctor-new", qty: 1, omzet: 40_000 })];
+    const oldRule = aturan({ id: "old", tipe: "nominal", nominal: 15_000, persen: 0, itemId: "it1", commissionGroup: "doctor_old" });
+    const newRule = aturan({ id: "new", tipe: "nominal", nominal: 10_000, persen: 0, itemId: "it1", commissionGroup: "doctor_new" });
+    const salesRule = aturan({ id: "sales", employeeId: "doctor-new", persen: 5 });
+    const result = hitungKomisi(rows, [oldRule, newRule, salesRule], new Map([
+      ["doctor-old", "doctor_old"], ["doctor-new", "doctor_new"],
+    ]));
+    expect(result.find(r => r.employeeId === "doctor-old")?.komisi).toBe(30_000);
+    expect(result.find(r => r.employeeId === "doctor-new")?.komisi).toBe(12_000);
+  });
+
+  it("replaces a group rule only for matching individual SKU lines", () => {
+    const groupRule = aturan({ id: "group", tipe: "nominal", nominal: 10_000, persen: 0, commissionGroup: "doctor_new" });
+    const exception = aturan({ id: "exception", tipe: "nominal", nominal: 15_000, persen: 0, employeeId: "doctor-a", itemId: "it1", overrideGroupRuleId: "group" });
+    const rows = [baris({ employeeId: "doctor-a", itemId: "it1" }), baris({ employeeId: "doctor-a", itemId: "it2" })];
+    const [result] = hitungKomisi(rows, [groupRule, exception], new Map([["doctor-a", "doctor_new"]]));
+    expect(result.komisi).toBe(25_000);
+    expect(result.rincian.find(r => r.aturanId === "group")?.dasar).toBe(1);
+    expect(result.rincian.find(r => r.aturanId === "exception")?.dasar).toBe(1);
+  });
+
+  it("does not apply a group rule when employee has no configured group", () => {
+    expect(satu([baris()], [aturan({ commissionGroup: "doctor_old" })]).komisi).toBe(0);
+  });
+
+  it("does not pay an individual exception after its group changes or parent is inactive", () => {
+    const groupRule = aturan({ id: "group", commissionGroup: "doctor_old" });
+    const exception = aturan({ id: "exception", employeeId: "emp1", overrideGroupRuleId: "group", persen: 20 });
+    expect(hitungKomisi([baris()], [groupRule, exception], new Map([["emp1", "doctor_new"]]))[0].komisi).toBe(0);
+    expect(hitungKomisi([baris()], [exception], new Map([["emp1", "doctor_old"]]))[0].komisi).toBe(0);
+  });
+
+  it("limits an individual exception to parent SKU and threshold", () => {
+    const groupRule = aturan({ id: "group", commissionGroup: "doctor_old", itemId: "it1", minOmzet: 200_000 });
+    const exception = aturan({ id: "exception", employeeId: "emp1", overrideGroupRuleId: "group", persen: 20 });
+    const group = new Map([["emp1", "doctor_old"]]);
+    expect(hitungKomisi([baris({ itemId: "it2", omzet: 300_000 })], [groupRule, exception], group)[0].komisi).toBe(0);
+    expect(hitungKomisi([baris({ itemId: "it1", omzet: 100_000 })], [groupRule, exception], group)[0].komisi).toBe(0);
+    expect(hitungKomisi([baris({ itemId: "it1", omzet: 300_000 })], [groupRule, exception], group)[0].komisi).toBe(60_000);
+  });
   it("persen dari omzet", () => {
     expect(satu([baris()], [aturan()]).komisi).toBe(2_000);
   });
@@ -45,6 +87,12 @@ describe("hitungKomisi", () => {
 
   it("nominal dikali qty, bukan sekali per struk", () => {
     expect(satu([baris({ qty: 3 })], [aturan({ tipe: "nominal", nominal: 5_000 })]).komisi).toBe(15_000);
+  });
+
+  it("keeps a fractional quantity in nominal-rule evidence", () => {
+    const result = satu([baris({ qty: 0.5 })], [aturan({ tipe: "nominal", nominal: 5_000 })]);
+    expect(result.komisi).toBe(2_500);
+    expect(result.rincian[0].dasar).toBe(0.5);
   });
 
   it("beberapa aturan bisa kena bersamaan", () => {

@@ -21,7 +21,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
 }})}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')},redirect:(url:string)=>{throw Error(url)}}));
 vi.mock('@/lib/clinic-demo-policy-server',()=>({readDemoPolicy:async()=>null}));
-vi.mock('@/lib/clinic-payment',()=>({loadClinicPaymentMaster:async()=>({obat:[],jasa:[],all:[]})}));
+vi.mock('@/lib/clinic-payment',()=>({loadClinicPaymentMaster:async()=>({obat:[],jasa:[],all:[]}),loadClinicPackages:async()=>[]}));
 vi.mock('@/lib/penjual',()=>({daftarPenjual:async()=>[]}));
 vi.mock('@/lib/master-guard',()=>({bolehTransaksiKas:async()=>false}));
 vi.mock('@/components/PilihRekening',()=>({loadRekeningAktif:async()=>[],PilihRekening:()=>null}));

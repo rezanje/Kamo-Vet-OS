@@ -38,3 +38,25 @@ export async function resolveClinicSalesperson(client: any, branchId: string | n
   }
   return null;
 }
+
+/** H05: a clinic package (Grup item) and the SKUs its recipe contains. */
+export type ClinicPackageOption = { id: string; name: string; componentIds: string[];
+  /** Base-unit quantity of each component in ONE package (the database checks line qty = packages x this). */
+  perPaket: Record<string, number> };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function loadClinicPackages(client: any): Promise<ClinicPackageOption[]> {
+  type Row = { id: string; group_item_id: string; component_item_id: string; qty: number; factor: number; items: { name: string; is_active: boolean; item_type: string } | { name: string; is_active: boolean; item_type: string }[] | null };
+  const rows = await readCompleteList<Row>((from,to)=>client.from("item_group_components")
+    .select("id,group_item_id,component_item_id,qty,factor,items!item_group_components_group_item_id_fkey(name,is_active,item_type)",{count:"exact"})
+    .order("id").range(from,to),"Paket klinik");
+  const byPackage = new Map<string, ClinicPackageOption>();
+  for (const row of rows) {
+    const group = Array.isArray(row.items) ? row.items[0] ?? null : row.items;
+    if (!group?.is_active || group.item_type !== "Grup") continue;
+    const option = byPackage.get(row.group_item_id) ?? { id: row.group_item_id, name: group.name, componentIds: [], perPaket: {} };
+    if (!option.componentIds.includes(row.component_item_id)) option.componentIds.push(row.component_item_id);
+    option.perPaket[row.component_item_id] = (option.perPaket[row.component_item_id] ?? 0) + Number(row.qty) * Number(row.factor);
+    byPackage.set(row.group_item_id, option);
+  }
+  return [...byPackage.values()].sort((a, b) => a.name.localeCompare(b.name, "id-ID"));
+}

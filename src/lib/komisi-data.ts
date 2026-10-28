@@ -11,12 +11,53 @@ import { prepareServiceCommission, type ServiceCommissionPolicy } from "./servic
 // sumber angka yang sama persis.
 
 import { lineSubtotal } from "./pos-calc";
-import { mergeSharedIncentives, hitungKomisi, type AturanKomisi, type BarisJual, type HasilKomisi } from "./komisi";
+import { tanggalWIB } from "./tanggal";
+import { barisVisitRanap, mergeSharedIncentives, hitungKomisi, peringatanAturanKomisi, ringkasPaket, type AturanKomisi, type BarisJual, type HasilKomisi, type LogVisitDokter, type VisitDobel } from "./komisi";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
 export const awalPeriode = (periode: string) => `${periode}-01`;
+
+/**
+ * Period boundaries for every timestamp filter (struk kasir, pelunasan klinik, visit ranap,
+ * pool DEMO). From the go-live period (2026-11) on, a period is the Asia/Jakarta month:
+ * [1st 00:00 WIB, next 1st 00:00 WIB). Earlier periods keep the legacy window exactly as
+ * they were calculated (UTC dates, inclusive 23:59:59). The go-live month itself starts where
+ * the legacy October window ended (2026-11-01 00:00 UTC = 07:00 WIB), so the 00:00–06:59 WIB
+ * hours of 1 November stay in October and are never counted in two months.
+ */
+export const PERIODE_WIB_MULAI = "2026-11";
+/** End of the legacy October window: rows from this instant on are dated by WIB. */
+const CUTOVER_WIB_ISO = "2026-11-01T00:00:00.000Z";
+
+const periodeBerikut = (periode: string): string => {
+  const [thn, bln] = periode.split("-").map(Number);
+  return bln === 12 ? `${thn + 1}-01` : `${thn}-${String(bln + 1).padStart(2, "0")}`;
+};
+
+export type BatasPeriode = { dari: string; sampai: string; sampaiEksklusif: boolean };
+export function batasPeriode(periode: string): BatasPeriode {
+  if (periode >= PERIODE_WIB_MULAI) {
+    const dari = periode === PERIODE_WIB_MULAI ? CUTOVER_WIB_ISO : `${awalPeriode(periode)}T00:00:00+07:00`;
+    return { dari, sampai: `${periodeBerikut(periode)}-01T00:00:00+07:00`, sampaiEksklusif: true };
+  }
+  return { dari: `${awalPeriode(periode)}T00:00:00`, sampai: `${akhirPeriode(periode)}T23:59:59`, sampaiEksklusif: false };
+}
+
+/** Apply the period window to a timestamp column (gte + lt for WIB periods, gte + lte for legacy). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function filterPeriode<Q extends { gte: (c: string, v: string) => any }>(query: Q, column: string, periode: string) {
+  const b = batasPeriode(periode);
+  const q = query.gte(column, b.dari);
+  return b.sampaiEksklusif ? q.lt(column, b.sampai) : q.lte(column, b.sampai);
+}
+
+/** Row date: WIB calendar date from the go-live instant on, legacy UTC slice before it. */
+export function tanggalBaris(iso: string): string {
+  if (!iso) return "";
+  return new Date(iso).getTime() >= Date.parse(CUTOVER_WIB_ISO) ? tanggalWIB(iso) : iso.slice(0, 10);
+}
 
 export const akhirPeriode = (periode: string): string => {
   const [thn, bln] = periode.split("-").map(Number);
@@ -60,7 +101,8 @@ type InvoiceRow = {
   total: number;
   salesperson_id: string | null;
   visits: { branch_id: string | null; doctor_id: string | null } | { branch_id: string | null; doctor_id: string | null }[] | null;
-  invoice_items: { id?: string;service_performers?: ServicePerformersSnapshot | null;salesperson_id?: string | null;item_id: string | null; qty: number; harga: number; hpp: number | null }[] | null;
+  invoice_items: { id?: string;service_performers?: ServicePerformersSnapshot | null;salesperson_id?: string | null;item_id: string | null; qty: number; harga: number; hpp: number | null;
+    package_item_id?: string | null; package_qty?: number | string | null }[] | null;
 };
 
 type SourceAttribution = Pick<BarisJual,"employeeId"|"servicePerformers"|"sourceLineId"|"sourceDocumentId"|"sourceDocumentNumber"|"sourceDocumentHref"|"commissionPending">;
@@ -82,7 +124,7 @@ type FakturJualRow = {
   sales_invoice_items: { order_item_id: string | null; item_id: string | null; qty: number; harga: number }[] | null;
 };
 
-const INVOICE_KOMISI_SELECT = "id, invoice_no, visit_id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(id, item_id, qty, harga, hpp, service_performers, salesperson_id), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)";
+const INVOICE_KOMISI_SELECT = "id, invoice_no, visit_id, paid_at, total, salesperson_id, visits(branch_id, doctor_id), invoice_items(id, item_id, qty, harga, hpp, service_performers, salesperson_id, package_item_id, package_qty), clinic_demo_invoice_snapshots!clinic_demo_invoice_snapshots_invoice_id_fkey(invoice_id)";
 
 type RefundKlinikRow = { id: string; invoice_id: string; tanggal: string; clinic_refund_items: { invoice_item_id: string; qty: number }[] | null };
 
@@ -123,9 +165,8 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   const akhir = akhirPeriode(periode);
 
   const [{ data: salesData }, { data: empData }, { data: itemData }, { data: katData }] = await Promise.all([
-    completeReportQuery(supabase.from("sales")
-      .select("id, no_struk, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(id, item_id, qty, harga, item_discount_type, item_discount_value, hpp, service_performers)", { count: "exact" })
-      .gte("created_at", `${awal}T00:00:00`).lte("created_at", `${akhir}T23:59:59`)),
+    completeReportQuery(filterPeriode(supabase.from("sales")
+      .select("id, no_struk, created_at, branch_id, cashier_id, salesperson_id, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, sale_items(id, item_id, qty, harga, item_discount_type, item_discount_value, hpp, service_performers)", { count: "exact" }), "created_at", periode)),
     completeReportQuery(supabase.from("employees").select("id, profile_id", { count: "exact" }).not("profile_id", "is", null)),
     completeReportQuery(supabase.from("items").select("id, category_id", { count: "exact" })),
     completeReportQuery(supabase.from("item_categories").select("id, parent_id", { count: "exact" })),
@@ -179,7 +220,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       // tidak boleh kehilangan omzet cuma karena kasirnya belum terhubung ke
       // data karyawan. `hitungKomisi` yang menyaringnya.
       baris.push({
-        tanggal: s.created_at.slice(0, 10),
+        tanggal: tanggalBaris(s.created_at),
         sumber: "kasir",
         ...attribution,
         branchId: s.branch_id,
@@ -191,7 +232,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       });
     }
 
-    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s,lines:items,documentId:s.id,number:s.no_struk,sourceDate:s.created_at.slice(0,10) });
+    infoStruk.set(s.id, { employeeId, branchId: s.branch_id, hppPerUnit, sale: s,lines:items,documentId:s.id,number:s.no_struk,sourceDate:tanggalBaris(s.created_at) });
   }
 
   // ── Retur: mengurangi komisi orang yang menjualnya, di bulan returnya terjadi ──
@@ -234,11 +275,10 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // ── Klinik: tagihan kunjungan yang sudah lunas, jadi haknya dokter ────────────
   // Dipatok pada tanggal bayar, bukan tanggal periksa: yang dikomisikan adalah uang
   // yang benar-benar masuk. Tagihan DP/belum lunas menyusul di bulan pelunasannya.
-  const { data: invData } = await completeReportQuery(supabase
+  const { data: invData } = await completeReportQuery(filterPeriode(supabase
     .from("invoices")
     .select(INVOICE_KOMISI_SELECT, { count: "exact" })
-    .eq("paid_status", "Lunas").is("voided_at", null)
-    .gte("paid_at", `${awal}T00:00:00`).lte("paid_at", `${akhir}T23:59:59`));
+    .eq("paid_status", "Lunas").is("voided_at", null), "paid_at", periode));
 
   const barisInvoice = (inv: InvoiceRow) => {
     const v = Array.isArray(inv.visits) ? inv.visits[0] ?? null : inv.visits;
@@ -255,12 +295,19 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
       // A selected line seller overrides the legacy invoice seller. Existing
       // service performer attribution retains its precedence and payout policy.
-      const attribution=serviceAttribution(it,it.salesperson_id ?? employeeId,inv.id,inv.invoice_no,inv.visit_id?`/klinik/pembayaran/${inv.visit_id}`:undefined);
+      const href=inv.visit_id?`/klinik/pembayaran/${inv.visit_id}`:undefined;
+      // H05: a package component is sold as the package (folded by ringkasPaket); it keeps its
+      // own attribution, including a two-performer service split.
+      const paketAsal = it.package_item_id && Number(it.package_qty) > 0
+        ? { itemId: it.package_item_id, qty: Number(it.package_qty), kategoriIds: rantaiKategori(katPerItem.get(it.package_item_id) ?? null, indukPerKat) }
+        : undefined;
+      const attribution=serviceAttribution(it,it.salesperson_id ?? employeeId,inv.id,inv.invoice_no,href);
       const row: BarisJual = {
-        tanggal: inv.paid_at.slice(0, 10),
+        tanggal: tanggalBaris(inv.paid_at),
         sumber: "klinik",
         fixedCommission: Array.isArray(inv.clinic_demo_invoice_snapshots) ? inv.clinic_demo_invoice_snapshots.length>0 : !!inv.clinic_demo_invoice_snapshots,
         ...attribution,
+        ...(paketAsal ? { paketAsal } : {}),
         branchId: v?.branch_id ?? null,
         itemId: it.item_id,
         kategoriIds: rantaiKategori(it.item_id ? katPerItem.get(it.item_id) ?? null : null, indukPerKat),
@@ -311,6 +358,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
         tanggal: refund.tanggal,
         commissionPolicyDate: row.tanggal,
         qty: -Number(it.qty),
+        ...(row.paketAsal ? { paketAsal: { ...row.paketAsal, qty: row.paketAsal.qty * porsi } } : {}),
         omzet,
         laba: row.laba === null ? null : -row.laba * porsi,
       });
@@ -365,7 +413,9 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
     }
   }
 
-  return { baris, omzetTanpaPenjual };
+  // H05: every reader (komisi, target, laporan penjual, payroll) sees a package as the
+  // package — its component lines never reach anyone as normal SKU sales.
+  return { baris: ringkasPaket(baris), omzetTanpaPenjual };
 }
 
 /**
@@ -412,14 +462,14 @@ async function infoStrukLuarPeriode(
     branchId: data.branch_id,
     hppPerUnit,
     sale: data,
-    lines:data.sale_items??[],documentId:saleId,number:data.no_struk,sourceDate:String(data.created_at??"").slice(0,10),
+    lines:data.sale_items??[],documentId:saleId,number:data.no_struk,sourceDate:data.created_at?tanggalBaris(String(data.created_at)):"",
   };
 }
 
 export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomisi[]> {
   const { data } = await completeReportQuery(supabase
     .from("commission_rules")
-    .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai", { count: "exact" })
+    .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, commission_group, override_group_rule_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai", { count: "exact" })
     .eq("is_active", true)
     .order("nama"));
 
@@ -428,10 +478,12 @@ export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomis
     nama: String(r.nama),
     tipe: r.tipe as "persen" | "nominal",
     basis: r.basis as "omzet" | "laba",
-    sumber: r.sumber as "semua" | "kasir" | "klinik",
+    sumber: r.sumber as AturanKomisi["sumber"],
     persen: Number(r.persen),
     nominal: Number(r.nominal),
     employeeId: (r.employee_id as string | null) ?? null,
+    commissionGroup: (r.commission_group as string | null) ?? null,
+    overrideGroupRuleId: (r.override_group_rule_id as string | null) ?? null,
     branchId: (r.branch_id as string | null) ?? null,
     categoryId: (r.category_id as string | null) ?? null,
     itemId: (r.item_id as string | null) ?? null,
@@ -439,6 +491,39 @@ export async function muatAturanKomisi(supabase: AnyClient): Promise<AturanKomis
     dari: (r.berlaku_dari as string | null) ?? null,
     sampai: (r.berlaku_sampai as string | null) ?? null,
   }));
+}
+
+/**
+ * H06: doctor visit logs on inpatient stays in the period (by Asia/Jakarta calendar date).
+ * The basis is visits done, not billed: no invoice is consulted.
+ */
+export async function muatVisitRanap(supabase: AnyClient, periode: string): Promise<{ baris: BarisJual[]; dobel: VisitDobel[] }> {
+  type Row = { id: string; inpatient_record_id: string; visit_doctor_id: string | null; created_at: string;
+    inpatient_records: { branch_id: string | null } | { branch_id: string | null }[] | null };
+  const { data } = await completeReportQuery(filterPeriode(supabase.from("inpatient_daily_logs")
+    .select("id, inpatient_record_id, visit_doctor_id, created_at, inpatient_records(branch_id)", { count: "exact" })
+    .eq("log_kind", "doctor_visit").not("visit_doctor_id", "is", null), "created_at", periode));
+  const logs: LogVisitDokter[] = ((data ?? []) as Row[]).map((row) => {
+    const record = Array.isArray(row.inpatient_records) ? row.inpatient_records[0] ?? null : row.inpatient_records;
+    return { id: row.id, inpatientRecordId: row.inpatient_record_id, doctorId: row.visit_doctor_id,
+      branchId: record?.branch_id ?? null, createdAt: row.created_at };
+  });
+  return barisVisitRanap(logs);
+}
+
+/** H04: configured commission group per employee. */
+export async function muatKelompokKomisi(supabase: AnyClient): Promise<Map<string, string | null>> {
+  const { data } = await completeReportQuery(supabase.from("employees").select("id, commission_group", { count: "exact" }));
+  return new Map(((data ?? []) as { id: string; commission_group: string | null }[]).map((row) => [row.id, row.commission_group]));
+}
+
+/** H04: configuration that pays nothing (stale exception / empty group), for komisi & payroll screens. */
+export async function muatPeringatanAturanKomisi(supabase: AnyClient): Promise<string[]> {
+  const [aturan, groups, { data: emp }] = await Promise.all([
+    muatAturanKomisi(supabase), muatKelompokKomisi(supabase),
+    completeReportQuery(supabase.from("employees").select("id, nama", { count: "exact" })),
+  ]);
+  return peringatanAturanKomisi(aturan, groups, new Map(((emp ?? []) as { id: string; nama: string }[]).map((e) => [e.id, e.nama])));
 }
 
 /** Komisi seluruh karyawan untuk satu periode — dipakai layar komisi & penggajian. */
@@ -481,20 +566,25 @@ export async function muatKebijakanKomisiJasa(supabase: AnyClient, sampai?: stri
 export async function komisiPeriode(
   supabase: AnyClient,
   periode: string,
-): Promise<{ hasil: HasilKomisi[]; baris: BarisJual[]; omzetTanpaPenjual: number }> {
-  const [{ baris, omzetTanpaPenjual }, aturan, { policies }] = await Promise.all([
+): Promise<{ hasil: HasilKomisi[]; baris: BarisJual[]; barisHitung: BarisJual[]; omzetTanpaPenjual: number; visitDobel: VisitDobel[]; peringatanAturan: string[] }> {
+  const [{ baris: barisJual, omzetTanpaPenjual }, aturan, { policies }, visit, groups] = await Promise.all([
     kumpulkanBarisKomisi(supabase, periode),
     muatAturanKomisi(supabase),
     muatKebijakanKomisiJasa(supabase, akhirPeriode(periode)),
+    muatVisitRanap(supabase, periode),
+    muatKelompokKomisi(supabase),
   ]);
-  const prepared = prepareServiceCommission(baris, aturan, policies);
-  const {data: allocations} = await completeReportQuery(supabase.from("clinic_demo_incentive_allocations")
+  // H06 visits are separate source rows that only visit rules can pay.
+  const baris = [...barisJual, ...visit.baris];
+  const prepared = prepareServiceCommission(baris, aturan, policies, groups);
+  const {data: allocations} = await completeReportQuery(filterPeriode(supabase.from("clinic_demo_incentive_allocations")
     .select("id,invoice_id,employee_id,amount,clinic_demo_invoice_snapshots!inner(service_basis),invoices!inner(paid_at,paid_status,voided_at)", {count:"exact"})
-    .eq("invoices.paid_status","Lunas").is("invoices.voided_at",null)
-    .gte("clinic_demo_invoice_snapshots.earned_at",`${awalPeriode(periode)}T00:00:00`).lte("clinic_demo_invoice_snapshots.earned_at",`${akhirPeriode(periode)}T23:59:59`));
+    .eq("invoices.paid_status","Lunas").is("invoices.voided_at",null), "clinic_demo_invoice_snapshots.earned_at", periode));
   type Allocation = {invoice_id:string;employee_id:string;amount:number;clinic_demo_invoice_snapshots:{service_basis:number}|{service_basis:number}[]};
   const shared = (allocations as Allocation[]).map(row=>({employeeId:row.employee_id,invoiceId:row.invoice_id,amount:Number(row.amount),
     basis:Number((Array.isArray(row.clinic_demo_invoice_snapshots) ? row.clinic_demo_invoice_snapshots[0] : row.clinic_demo_invoice_snapshots).service_basis)}));
-  return { hasil: mergeSharedIncentives(hitungKomisi(prepared.calculationRows, aturan),shared),
-    baris:prepared.rows, omzetTanpaPenjual:omzetTanpaPenjual-prepared.resolvedUnassignedOmzet };
+  return { hasil: mergeSharedIncentives(hitungKomisi(prepared.calculationRows, aturan, groups),shared),
+    baris:prepared.rows, barisHitung:prepared.calculationRows,
+    omzetTanpaPenjual:omzetTanpaPenjual-prepared.resolvedUnassignedOmzet, visitDobel: visit.dobel,
+    peringatanAturan: peringatanAturanKomisi(aturan, groups) };
 }

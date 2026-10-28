@@ -23,10 +23,12 @@ const num = (n: number) => n.toLocaleString("id-ID", { maximumFractionDigits: 2 
 
 const periodeSekarang = () => hariIniWIB().slice(0, 7);
 
-const LABEL_SUMBER: Record<SumberJual, string> = {
+// Visit rawat inap (H06) bukan penjualan dan tidak pernah dibaca layar ini.
+type SumberPenjualan = Exclude<SumberJual, "visit_ranap">;
+const LABEL_SUMBER: Record<SumberPenjualan, string> = {
   kasir: "Kasir / petshop", klinik: "Klinik", reseller: "Reseller B2B",
 };
-const SUMBER: SumberJual[] = ["kasir", "klinik", "reseller"];
+const SUMBER: SumberPenjualan[] = ["kasir", "klinik", "reseller"];
 
 export default async function PenjualPage({
   searchParams,
@@ -69,13 +71,13 @@ export default async function PenjualPage({
   type Rekap = {
     employeeId: string; nama: string;
     omzet: number; laba: number; adaLabaTakDiketahui: boolean; qty: number; barisJual: number;
-    perSumber: Record<SumberJual, number>;
+    perSumber: Record<SumberPenjualan, number>;
     perBarang: Map<string, { nama: string; satuan: string; qty: number; omzet: number }>;
   };
   const perPenjual = new Map<string, Rekap>();
 
   for (const b of baris) {
-    if (!b.employeeId) continue;
+    if (!b.employeeId || b.sumber === "visit_ranap") continue;
     const row = perPenjual.get(b.employeeId) ?? {
       employeeId: b.employeeId,
       nama: namaEmp.get(b.employeeId) ?? "(karyawan terhapus)",

@@ -5,27 +5,31 @@ import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { bolehKelolaMaster } from "@/lib/master-guard";
+import { bolehKelolaMaster, bolehKelolaPayroll } from "@/lib/master-guard";
 import { komisiPeriode, muatKebijakanKomisiJasa } from "@/lib/komisi-data";
-import { hapusAturanKomisi, simpanAturanKomisi, simpanKebijakanKomisiJasa, toggleAturanKomisi } from "./actions";
+import { hapusAturanKomisi, simpanAturanKomisi, simpanKebijakanKomisiJasa, simpanKelompokKomisi, toggleAturanKomisi } from "./actions";
 import { readCompleteList } from "@/lib/checked-list";
 import { ListLoadFailure } from "@/components/ListPagination";
 import { ItemReferenceField } from "@/components/ItemReferenceField";
+import { rincianKomisiText } from "@/lib/komisi-detail";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const periodeSekarang = () => new Date().toISOString().slice(0, 7);
+const periodeSekarang = () => hariIniWIB().slice(0, 7);
 
 const LABEL_SUMBER: Record<string, string> = {
   semua: "Semua penjualan",
   kasir: "Kasir / petshop",
   klinik: "Klinik",
   reseller: "Reseller (B2B)",
+  visit_ranap: "Visit rawat inap",
 };
 
 type Aturan = {
   id: string; nama: string; tipe: string; basis: string; sumber: string; persen: number; nominal: number;
   employee_id: string | null; branch_id: string | null; category_id: string | null; item_id: string | null;
   min_omzet: number; berlaku_dari: string | null; berlaku_sampai: string | null; is_active: boolean;
+  commission_group: string | null; override_group_rule_id: string | null;
 };
 
 export default async function KomisiPage({
@@ -38,14 +42,20 @@ export default async function KomisiPage({
 
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
+  // Group membership and personal/group/exception rules are pay configuration: OWNER only.
+  const bolehAturGaji = await bolehKelolaPayroll();
+  // Personal/group/exception rules are readable by OWNER/ADMIN/FINANCE only (RLS); others see partial totals.
+  const { data: { user: viewer } } = await supabase.auth.getUser();
+  const { data: viewerProfile } = viewer ? await supabase.from("profiles").select("role").eq("id", viewer.id).maybeSingle() : { data: null };
+  const aturanKhususTersembunyi = !["OWNER", "ADMIN", "FINANCE"].includes(String(viewerProfile?.role ?? ""));
 
   let loaded;
   try { loaded = await Promise.all([
       readCompleteList<Aturan>((from, to) => supabase.from("commission_rules")
-        .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai, is_active", { count: "exact" })
+        .select("id, nama, tipe, basis, sumber, persen, nominal, employee_id, commission_group, override_group_rule_id, branch_id, category_id, item_id, min_omzet, berlaku_dari, berlaku_sampai, is_active", { count: "exact" })
         .order("nama").order("id").range(from, to), "Aturan komisi", { maxRows: null }),
-      readCompleteList<{ id: string; nama: string; jabatan: string | null }>((from, to) => supabase.from("employees")
-        .select("id, nama, jabatan", { count: "exact" }).eq("status", "Aktif").order("nama").order("id").range(from, to), "Karyawan komisi", { maxRows: null }),
+      readCompleteList<{ id: string; nama: string; jabatan: string | null; commission_group: string | null }>((from, to) => supabase.from("employees")
+        .select("id, nama, jabatan, commission_group", { count: "exact" }).eq("status", "Aktif").order("nama").order("id").range(from, to), "Karyawan komisi", { maxRows: null }),
       readCompleteList<{ id: string; name: string }>((from, to) => supabase.from("branches")
         .select("id, name", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Cabang komisi", { maxRows: null }),
       readCompleteList<{ id: string; name: string; parent_id: string | null }>((from, to) => supabase.from("item_categories")
@@ -62,10 +72,17 @@ export default async function KomisiPage({
   const namaCab = new Map(cabang.map((c) => [c.id, c.name]));
   const namaKat = new Map(kategori.map((k) => [k.id, k.name]));
   const namaItem = new Map(barang.map((i) => [i.id, i.name]));
+  const aturanById = new Map(aturan.map((a) => [a.id, a]));
+  const groupEmp = new Map(karyawan.map((k) => [k.id, k.commission_group]));
+  const kodeKelompok = [...new Set(karyawan.map(k => k.commission_group).filter((code): code is string => !!code))].sort();
+  const barisVisit = (hitungan.baris ?? []).filter(row => row.sumber === "visit_ranap");
+  const barisPaket = (hitungan.baris ?? []).filter(row => (row.paketKomponen ?? 0) > 0);
 
   const cakupan = (a: Aturan): string => {
     const bagian = [
       a.employee_id ? namaEmp.get(a.employee_id) ?? "karyawan" : null,
+      a.commission_group ? `kelompok ${a.commission_group}` : null,
+      a.override_group_rule_id ? `mengganti ${aturanById.get(a.override_group_rule_id)?.nama ?? "aturan kelompok"}` : null,
       a.branch_id ? namaCab.get(a.branch_id) ?? "cabang" : null,
       a.category_id ? `kategori ${namaKat.get(a.category_id) ?? "?"}` : null,
       a.item_id ? namaItem.get(a.item_id) ?? "produk" : null,
@@ -77,6 +94,7 @@ export default async function KomisiPage({
   const totalKomisi = hasil.reduce((a, h) => a + h.komisi, 0);
   // Each source line is counted once even when an explicit policy gives two actors a full commission basis.
   const totalOmzet = hitungan.baris.reduce((a, row) => a + row.omzet, 0);
+  const visitDobel = hitungan.visitDobel ?? [];
   const tanpaHpp = hasil.reduce((a, h) => a + h.barisTanpaHpp, 0);
   const adaAturanLaba = aturan.some((a) => a.is_active && a.basis === "laba");
 
@@ -128,6 +146,17 @@ export default async function KomisiPage({
           </div>}
       </div>
       <div className="crm-sec">
+        <SecHeader num="K" title="KELOMPOK INSENTIF" desc="Tetapkan kode grade/kelompok karyawan sesuai keputusan bisnis. Kode kosong berarti tanpa kelompok; tarifnya diatur di aturan bawah." />
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          {karyawan.map(k => <form key={k.id} action={simpanKelompokKomisi} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="hidden" name="employee_id" value={k.id} />
+            <label className="flab" htmlFor={`group-${k.id}`}>{k.nama}</label>
+            {bolehAturGaji ? <><input id={`group-${k.id}`} className="fi" name="commission_group" maxLength={40} pattern="[a-z0-9][a-z0-9_\-]{0,39}" defaultValue={k.commission_group ?? ""} placeholder="kode kelompok" style={{ width: 145 }} />
+              <SubmitButton className="btn-def" pendingText="Menyimpan…">Simpan</SubmitButton></> : <span>{k.commission_group ?? "—"}</span>}
+          </form>)}
+        </div>
+      </div>
+      <div className="crm-sec">
         <SecHeader
           num="01" title="DAFTAR ATURAN"
           desc="Beberapa aturan boleh berlaku bersamaan pada satu struk."
@@ -161,6 +190,7 @@ export default async function KomisiPage({
                   <option value="kasir">Kasir / petshop saja</option>
                   <option value="klinik">Klinik saja (insentif dokter)</option>
                   <option value="reseller">Reseller / B2B saja (faktur penjualan)</option>
+                  <option value="visit_ranap">Visit dokter rawat inap (nominal per visit)</option>
                 </select>
               </div>
             </div>
@@ -187,6 +217,22 @@ export default async function KomisiPage({
                   <option value="">— semua karyawan —</option>
                   {karyawan.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="flab">Khusus grade/kelompok</label>
+                <select className="fi" name="commission_group" defaultValue="">
+                  <option value="">— semua kelompok —</option>
+                  {kodeKelompok.map(code => <option key={code} value={code}>{code}</option>)}
+                </select>
+                <div style={{ fontSize: 10, color: "var(--tm)" }}>Pilih kelompok atau karyawan khusus (hanya OWNER).</div>
+              </div>
+              <div>
+                <label className="flab">Pengecualian individu: ganti aturan kelompok</label>
+                <select className="fi" name="override_group_rule_id" defaultValue="">
+                  <option value="">— tidak mengganti —</option>
+                  {aturan.filter(a => a.commission_group).map(a => <option key={a.id} value={a.id}>{a.nama} ({a.commission_group})</option>)}
+                </select>
+                <div style={{ fontSize: 10, color: "var(--tm)" }}>Perlu pilih satu karyawan; aturan kelompok diganti hanya pada baris yang cocok.</div>
               </div>
               <div>
                 <label className="flab">Khusus cabang</label>
@@ -256,7 +302,7 @@ export default async function KomisiPage({
                   <td style={{ fontSize: 11 }}>
                     {a.tipe === "persen"
                       ? `${Number(a.persen)}% dari ${a.basis === "laba" ? "laba" : "omzet"}`
-                      : `${rp(Number(a.nominal))} / unit`}
+                      : `${rp(Number(a.nominal))} / ${a.sumber === "visit_ranap" ? "visit" : "unit"}`}
                   </td>
                   <td style={{ fontSize: 10.5 }}>
                     <span className={`bge ${a.sumber === "klinik" ? "b" : ""}`}>{LABEL_SUMBER[a.sumber] ?? a.sumber}</span>
@@ -312,6 +358,18 @@ export default async function KomisiPage({
           <b style={{ color: "#15803d" }}>{rp(totalKomisi)}</b>
         </div>
 
+        {aturanKhususTersembunyi && (
+          <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "#1e40af" }}>
+            <i className="ti ti-eye-off" /> Aturan khusus karyawan/kelompok disembunyikan untuk akun ini, jadi total komisi di sini
+            bisa belum lengkap. Angka resmi ada di penggajian yang dihitung Owner.
+          </div>
+        )}
+        {(hitungan.peringatanAturan ?? []).length > 0 && (
+          <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+            <i className="ti ti-alert-triangle" /> Aturan yang saat ini tidak membayar apa pun:
+            <ul style={{ margin: "4px 0 0 18px" }}>{hitungan.peringatanAturan.map((w) => <li key={w}>{w}</li>)}</ul>
+          </div>
+        )}
         {hitungan.omzetTanpaPenjual !== 0 && (
           <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
             <i className="ti ti-alert-triangle" /> {rp(hitungan.omzetTanpaPenjual)} penjualan tidak punya penerima komisi —
@@ -341,18 +399,20 @@ export default async function KomisiPage({
                 <tr key={h.employeeId}>
                   <td style={{ fontSize: 11.5 }}>
                     <b>{namaEmp.get(h.employeeId) ?? "—"}</b>
+                    {groupEmp.get(h.employeeId) && <span style={{ marginLeft: 6, color: "var(--tm)" }}>({groupEmp.get(h.employeeId)})</span>}
                     {h.rincian.length > 0 && (
                       <details style={{ marginTop: 4 }}>
                         <summary style={{ fontSize: 10, color: "var(--tm)", cursor: "pointer" }}>
                           rincian {h.rincian.length} aturan
                         </summary>
                         <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 4, lineHeight: 1.7 }}>
-                          {h.rincian.map((r) => (
-                            <div key={r.aturanId}>
-                              {r.nama}: dasar {rp(r.dasar)} → <b>{rp(r.komisi)}</b>
+                          {h.rincian.map((r) => {
+                            const detail = rincianKomisiText(r, aturanById.get(r.aturanId));
+                            return <div key={r.aturanId}>
+                              {r.nama}: {detail.basis}{detail.tarif ? ` × ${detail.tarif}` : ""} → <b>{rp(r.komisi)}</b>
                               {!r.cair && <span style={{ color: "#b45309" }}> (ambang belum tembus)</span>}
-                            </div>
-                          ))}
+                            </div>;
+                          })}
                         </div>
                       </details>
                     )}
@@ -372,6 +432,33 @@ export default async function KomisiPage({
         </div>
       </div>
       <ServiceAttributionTable rows={hitungan.baris ?? []} />
+      <div className="crm-sec">
+        <SecHeader num="03" title="DASAR VISIT RAWAT INAP"
+          desc="Visit dokter yang tercatat di catatan rawat inap. Maksimal satu visit terhitung per dokter, per rawat inap, per tanggal (WIB). Dasarnya visit dikerjakan, bukan ditagih." />
+        {barisVisit.length === 0 && visitDobel.length === 0 ? <p style={{ fontSize: 11 }}>Tidak ada visit dokter rawat inap tercatat di periode ini.</p> :
+          <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 560 }}>
+            <thead><tr><th>Tanggal</th><th>Dokter</th><th>Rawat inap</th><th>Status</th></tr></thead>
+            <tbody>
+              {barisVisit.map(row => <tr key={row.sourceLineId}>
+                <td>{row.visitTanggal}</td><td>{row.employeeId ? namaEmp.get(row.employeeId) ?? "Dokter nonaktif" : "—"}</td>
+                <td>{row.sourceDocumentHref ? <Link href={row.sourceDocumentHref}>Buka catatan</Link> : "—"}</td><td>Dihitung</td></tr>)}
+              {visitDobel.map(row => <tr key={row.id}>
+                <td>{row.tanggal}</td><td>{row.doctorId ? namaEmp.get(row.doctorId) ?? "Dokter nonaktif" : "—"}</td>
+                <td><Link href={`/klinik/rawat-inap/${row.inpatientRecordId}`}>Buka catatan</Link></td><td>Tidak dihitung — visit kedua di tanggal yang sama</td></tr>)}
+            </tbody></table></div>}
+      </div>
+      <div className="crm-sec">
+        <SecHeader num="04" title="PENJUALAN PAKET"
+          desc="Baris komponen yang berasal dari paket dihitung sebagai paket: qty = jumlah paket, omzet = jumlah baris komponennya. Komponen paket tidak ikut komisi SKU biasa." />
+        {barisPaket.length === 0 ? <p style={{ fontSize: 11 }}>Tidak ada penjualan paket klinik di periode ini.</p> :
+          <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 560 }}>
+            <thead><tr><th>Tanggal</th><th>Dokumen</th><th>Paket</th><th style={{ textAlign: "right" }}>Qty paket</th><th style={{ textAlign: "right" }}>Omzet</th><th>Penjual</th></tr></thead>
+            <tbody>{barisPaket.map((row, index) => <tr key={`${row.sourceDocumentId}-${row.itemId}-${index}`}>
+              <td>{row.tanggal}</td><td>{row.sourceDocumentHref ? <Link href={row.sourceDocumentHref}>{row.sourceDocumentNumber ?? "Buka"}</Link> : row.sourceDocumentNumber ?? "—"}</td>
+              <td>{row.itemId ? namaItem.get(row.itemId) ?? "Paket" : "Paket"} · {row.paketKomponen} komponen</td>
+              <td style={{ textAlign: "right" }}>{row.qty}</td><td style={{ textAlign: "right" }}>{rp(row.omzet)}</td>
+              <td>{row.employeeId ? namaEmp.get(row.employeeId) ?? "—" : "Belum ada penerima"}</td></tr>)}</tbody></table></div>}
+      </div>
     </MasterPage>
   );
 }
