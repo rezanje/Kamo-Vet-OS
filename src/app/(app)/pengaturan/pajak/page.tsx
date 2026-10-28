@@ -11,8 +11,11 @@ export default async function PajakPage({
 }) {
   const { success, error } = await searchParams;
   const supabase = await createClient();
-  const { data: s } = await supabase
+  const { data: s, error: readError } = await supabase
     .from("company_settings").select("mode_pkp, ppn_rate, nama_perusahaan, npwp, alamat").eq("id", true).maybeSingle();
+  if (readError) throw new Error("Pengaturan pajak belum dapat diverifikasi. Muat ulang halaman.");
+  // company_settings bisa dibaca semua akun login: baris kosong = memang belum pernah disimpan.
+  const tersimpan = !!s;
   const modePkp = !!s?.mode_pkp;
   const rate = Number(s?.ppn_rate) || 11;
   const nama = (s?.nama_perusahaan as string | null) ?? "";
@@ -25,9 +28,15 @@ export default async function PajakPage({
         <Link href="/pengaturan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Pajak (Mode PKP)</span>
-        <span className={`bge ${modePkp ? "g" : "x"}`}>{modePkp ? `PKP AKTIF · PPN ${rate}%` : "Non-PKP"}</span>
+        <span className={`bge ${modePkp ? "g" : "x"}`}>{!tersimpan ? "Belum diatur" : modePkp ? `PKP AKTIF · PPN ${rate}%` : "Non-PKP"}</span>
       </div>
 
+      {!tersimpan && !error && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+          <i className="ti ti-alert-triangle" /> Pengaturan pajak belum pernah disimpan. OWNER perlu mengetik tarif PPN
+          lalu menekan Simpan.
+        </div>
+      )}
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {success}
@@ -52,7 +61,7 @@ export default async function PajakPage({
           </label>
           <div className="fg" style={{ maxWidth: 160 }}>
             <label className="flab">Tarif PPN (%)</label>
-            <NumberInput className="fi" type="number" name="ppn_rate" defaultValue={rate} min={1} max={50} step="any" />
+            <NumberInput className="fi" type="number" name="ppn_rate" defaultValue={tersimpan ? rate : ""} min={1} max={50} step="any" required />
           </div>
           <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 10, lineHeight: 1.6 }}>
             Saat AKTIF: harga POS dianggap sudah termasuk PPN (dipisah di pembukuan), tagihan klinik

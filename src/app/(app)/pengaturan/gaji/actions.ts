@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
+import { angkaIsian } from "@/lib/form-angka";
 
 const BACK = "/pengaturan/gaji";
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
@@ -10,7 +11,12 @@ const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURICompone
 export async function simpanAturanGaji(formData: FormData) {
   const supabase = await assertRole(BACK, "aturan gaji", ["OWNER"]);
 
-  const angka = (n: string) => Number(formData.get(n)) || 0;
+  // Semua angka wajib diketik (0 boleh). Kolom kosong tidak boleh diam-diam jadi
+  // tarif nol yang "sudah diputuskan" pemilik.
+  const kolom = ["telat_mulai_menit", "telat_blok_menit", "telat_nominal_per_blok", "telat_maks", "bolos_per_hari", "lembur_per_jam"] as const;
+  const isian = Object.fromEntries(kolom.map((k) => [k, angkaIsian(formData, k)])) as Record<(typeof kolom)[number], number | null>;
+  if (kolom.some((k) => isian[k] === null)) gagal("Semua angka wajib diisi. Ketik 0 kalau memang tidak ada potongan/lembur.");
+  const angka = (k: (typeof kolom)[number]) => isian[k] as number;
   const row = {
     telat_mulai_menit: Math.floor(angka("telat_mulai_menit")),
     telat_blok_menit: Math.floor(angka("telat_blok_menit")),
@@ -28,11 +34,17 @@ export async function simpanAturanGaji(formData: FormData) {
   }
 
   const { data: { user } } = await supabase.auth.getUser();
-  const { error } = await supabase
+  // Tabel satu baris: upsert, bukan update. Update atas baris yang belum ada
+  // "berhasil" tanpa menyimpan apa pun — begitu yang terjadi di produksi.
+  const { data, error } = await supabase
     .from("payroll_settings")
-    .update({ ...row, updated_by: user?.id ?? null, updated_at: new Date().toISOString() })
-    .eq("id", true);
+    .upsert(
+      { id: true, ...row, updated_by: user?.id ?? null, updated_at: new Date().toISOString() },
+      { onConflict: "id" },
+    )
+    .select("id");
   if (error) gagal(error.message);
+  if (!Array.isArray(data) || data.length !== 1) gagal("Aturan gaji tidak tersimpan. Muat ulang lalu coba lagi.");
 
   revalidatePath(BACK);
   redirect(`${BACK}?success=1`);

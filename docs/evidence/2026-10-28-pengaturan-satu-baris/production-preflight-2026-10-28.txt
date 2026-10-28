@@ -1,0 +1,18 @@
+Production preflight (read-only, preflight.sql), 2026-10-28 — tidak ada yang diubah:
+
+payroll_settings rows                                   | 0
+tier_settings rows                                      | 0
+company_settings rows                                   | 1
+tier_settings policies                                  | tier_settings_read:SELECT, tier_settings_write:UPDATE
+company_settings policies                               | csettings_all:ALL:true
+payroll_settings policies                               | payroll_settings_owner_all:ALL, payroll_settings_select_manager:SELECT
+public.is_admin() exists                                | true
+private.is_hris_owner() exists                          | true
+active OWNER accounts                                   | 1
+tier_settings RLS enabled                               | true
+company_settings RLS enabled                            | true
+migrations recorded (20261029140000, 20261029140500)    | -
+
+Tambahan (read-only): tidak ada fungsi database di produksi yang menulis ke company_settings
+(pencarian pg_proc atas update/insert/delete company_settings = 0 hasil). Satu-satunya penulis
+adalah layar Pengaturan → Pajak, yang sekarang khusus OWNER.
