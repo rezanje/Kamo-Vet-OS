@@ -1,7 +1,7 @@
 import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
-import { ErrorPopup } from "@/components/ErrorPopup";
+import { Popup } from "@/components/Popup";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
@@ -257,12 +257,10 @@ export default async function PembayaranPage({
         </div>
       </div>
 
-      <ErrorPopup message={error} />
-      {!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" && (
-        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Pembayaran berhasil. Cetak struk / invoice di bawah.
-        </div>
-      )}
+      <Popup message={error} />
+      <Popup tone="success" title="Pembayaran berhasil"
+        message={!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" ? `Invoice ${invoice.invoice_no ?? ""} lunas. Cetak struk untuk pelanggan.` : null}
+        action={{ href: `/klinik/pembayaran/${visit.id}/struk`, label: "Cetak struk", icon: "ti-printer" }} />
       {!invoice && <div className="p2ban" role="status">Draf tagihan kunjungan ini belum menjadi invoice tersimpan dan belum tercatat sebagai pembayaran atau penjualan.</div>}
       {!error && success === "bayar" && invoice && invoice.paid_status !== "Lunas" && <div className="p2ban" role="status">Invoice tersimpan. Status {invoice.paid_status}; pembayaran belum lunas. Lanjutkan pelunasan melalui tagihan yang sama.</div>}
       {invoice?.paid_status === "Lunas" && visit.status !== "Selesai" && <div className="p2ban" role="alert">Pembayaran sudah tercatat, tetapi status kunjungan belum selesai. Jangan menerima pembayaran ulang; periksa penyelesaian kunjungan.</div>}

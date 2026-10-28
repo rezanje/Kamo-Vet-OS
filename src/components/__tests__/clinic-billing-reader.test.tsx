@@ -42,13 +42,13 @@ it('keeps old paid415000 and new unposted400000 bound to their own visit IDs',as
  state.mode='draft';state.visitStatus='Pembayaran';const draft=renderToStaticMarkup(await render());expect(draft).toContain('DRAFT 400000');expect(draft).not.toContain('INV-OLD-415');expect(draft).toContain('belum tercatat sebagai pembayaran');expect(state.calls).toContainEqual(['invoices','eq','visit_id','new-visit']);expect(state.calls).toContainEqual(['prescription_items','eq','medical_record_id','mr-new']);
 });
 it.each(['draft','unpaid','dp'])('does not claim successful payment just because a URL says success: %s',async mode=>{
- state.mode=mode;const html=renderToStaticMarkup(await render('bayar'));expect(html).not.toContain('Pembayaran berhasil.');if(mode!=='draft')expect(html).toContain('Invoice tersimpan');
+ state.mode=mode;const html=renderToStaticMarkup(await render('bayar'));expect(html).not.toContain('Pembayaran berhasil');if(mode!=='draft')expect(html).toContain('Invoice tersimpan');
 });
 it('shows completed payment only when the read confirms paid and finished visit',async()=>{
- state.mode='paid';state.visitStatus='Selesai';expect(renderToStaticMarkup(await render('bayar'))).toContain('Pembayaran berhasil.');
+ state.mode='paid';state.visitStatus='Selesai';expect(renderToStaticMarkup(await render('bayar'))).toContain('Pembayaran berhasil');
 });
 it('distinguishes committed money from incomplete visit checkout',async()=>{
- state.mode='paid';const html=renderToStaticMarkup(await render('bayar'));expect(html).toContain('status kunjungan belum selesai');expect(html).not.toContain('Pembayaran berhasil.');expect(html).not.toContain('data-draft');
+ state.mode='paid';const html=renderToStaticMarkup(await render('bayar'));expect(html).toContain('status kunjungan belum selesai');expect(html).not.toContain('Pembayaran berhasil');expect(html).not.toContain('data-draft');
 });
 it.each(['invoices','medical_records','inpatient_records','prescription_items'])('blocks unknown source state instead of manufacturing a new empty/unpaid invoice: %s',async table=>{
  state.fail=table;await expect(render()).rejects.toThrow('belum dapat diverifikasi');
