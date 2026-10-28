@@ -12,6 +12,8 @@ import { hasSignedConsent } from "@/lib/consent";
 import { changeCondition, sendRipWa } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readStayTypes, readVisitContinuation, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
+import { loadInpatientMedicationHistory } from "@/lib/inpatient-medication-history";
+import { catatWaktu, mulai } from "@/lib/u07-waktu";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -50,17 +52,20 @@ export default async function RawatInapDetailPage({
   const { id } = await params;
   const { error, success, wa } = await searchParams;
   const supabase = await createClient();
-  const { data: { user: draftUser } } = await supabase.auth.getUser();
-  if (!draftUser) notFound();
-  const draftUserId = draftUser.id;
-  const allowedBranches = await allowedBranchIds(supabase,draftUser.id);
-
-  const { data: rec } = await supabase
+  const waktu = catatWaktu("detailRawatInap", id);
+  // U07: data induk dibaca bersamaan dengan pengguna & hak cabangnya. Tidak ada bacaan
+  // anak (konsultasi, log, obat, dll.) yang dimulai sebelum penjaga cabang lolos.
+  const recP = mulai(supabase
     .from("inpatient_records")
     .select(`id, condition_status, treatment_plan, doctor_name, admitted_at, discharged_at, visit_id, branch_id,
       branches(name), visits(id, poli, keluhan, created_at, pets(name, species, breed, dob, weight, photo_url), customers(name, phone, address))`)
-    .eq("id", id).maybeSingle();
+    .eq("id", id).maybeSingle());
+  const { data: { user: draftUser } } = await supabase.auth.getUser();
+  if (!draftUser) notFound();
+  const draftUserId = draftUser.id;
+  const [allowedBranches, { data: rec }] = await Promise.all([allowedBranchIds(supabase,draftUser.id), recP]);
   if (!rec || !canUseBranch(allowedBranches,String(rec.branch_id))) notFound();
+  waktu.tandai("induk");
 
   const visit = one(rec.visits as Rel<{ id: string; poli: string; keluhan: string | null; created_at: string; pets: Rel<{ name: string; species: string | null; breed: string | null; dob: string | null; weight: number | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
@@ -68,7 +73,9 @@ export default async function RawatInapDetailPage({
   const branch = one(rec.branches as Rel<{ name: string }>);
 
   // Reads below depend only on the parent that already passed the branch guard, so they run together.
-  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }] = await Promise.all([
+  // U07: tipe inap, asal kunjungan dan riwayat obat khusus ikut gelombang ini (dulu
+  // menyusul berurutan, dan Obat Khusus membaca pengguna sekali lagi).
+  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }, stayTypes, continuation, medicationHistory] = await Promise.all([
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
@@ -82,7 +89,13 @@ export default async function RawatInapDetailPage({
     // Tanpa jasa berkategori Rawat Inap, lama menginap tidak punya tarif dan
     // tagihannya tidak bisa terbentuk sendiri saat pasien pulang.
     supabase.from("items").select("id").eq("tindakan_kategori", "Rawat Inap").eq("is_active", true).limit(1).maybeSingle(),
+    // K14 tipe & K06 asal kunjungan: dibaca toleran (aman sebelum migrasi terpasang).
+    readStayTypes(supabase, [id]),
+    readVisitContinuation(supabase, String(rec.visit_id)),
+    // Gagal/terpotong = null; Obat Khusus lalu menampilkan peringatan, bukan daftar kosong.
+    loadInpatientMedicationHistory(supabase, id),
   ]);
+  waktu.tandai("anak");
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
   const paksaConsentSigned = (consentRows ?? []).some((c) => c.status === "sudah_ttd" && c.kategori === "Pulang Paksa" && !!c.signed_at && new Date(c.signed_at).getTime() >= new Date(rec.admitted_at).getTime());
 
@@ -111,10 +124,7 @@ export default async function RawatInapDetailPage({
     dokter: l.doctor_name,
   }));
 
-  // K14 tipe & K06 asal kunjungan: dibaca toleran (aman sebelum migrasi terpasang).
-  const [stayTypes, continuation] = await Promise.all([
-    readStayTypes(supabase, [id]), readVisitContinuation(supabase, String(rec.visit_id)),
-  ]);
+  waktu.selesai();
   const stayType = stayTypes.get(id) ?? "sakit";
   const cond = rec.condition_status as Condition;
   const isDoctor = me?.role === "DOCTOR";
@@ -317,7 +327,7 @@ export default async function RawatInapDetailPage({
 
       {/* Obat berprotokol dicatat terpisah dari laporan harian: satu protokol bisa
           berjalan beberapa hari dan diberikan beberapa kali sehari oleh orang berbeda. */}
-      <div id="obat-khusus"><ObatKhusus recordId={id} aktif={active} /></div>
+      <div id="obat-khusus"><ObatKhusus recordId={id} aktif={active} userId={draftUserId} history={medicationHistory} /></div>
 
       {/* Laporan rawat inap harian — tabel utama (gaya referensi) */}
       <div className="crm-sec">

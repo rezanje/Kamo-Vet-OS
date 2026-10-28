@@ -31,7 +31,8 @@ export function unitOptions(base: BaseItem, extra: ItemUnit[] = []): ItemUnit[] 
 
 // Satuan yang dipilih di form bisa saja sudah dihapus dari master → jangan
 // mengarang faktor 1 diam-diam (stok bakal salah potong); pakai satuan dasar.
-export function pickUnit(options: ItemUnit[], unit: string | null | undefined): ItemUnit {
+// Generik: form klinik memakai satuan tanpa harga beli (tidak dikirim ke browser).
+export function pickUnit<U extends Pick<ItemUnit, "unit">>(options: U[], unit: string | null | undefined): U {
   return options.find((o) => o.unit === unit) ?? options[0];
 }
 

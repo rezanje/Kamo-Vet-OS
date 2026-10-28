@@ -48,7 +48,10 @@ it('returns confirmed initial save destination so the client can clear its draft
 });
 it('returns confirmed inpatient save destination so the client can clear its draft',async()=>{
  expect(await addDailyLogPos(form())).toEqual({saved:true,href:'/klinik/rawat-inap/inpatient?success=log'});
- expect(fixture.revalidated).toContain('/klinik/rawat-inap/inpatient');
+ // Freshness first: the stay detail, census, billing, pharmacy and stock views are all
+ // invalidated so Back/forward never shows a pre-save page (duplicate log/billing risk).
+ expect(fixture.revalidated).toEqual(expect.arrayContaining(['/klinik/rawat-inap/inpatient','/klinik/rawat-inap',
+  '/klinik/pembayaran/visit','/klinik/rekam-medis/visit/resep','/klinik/racik','/klinik/stok','/pos/stok']));
 });
 it('returns failed inpatient save to the editable form',async()=>{
  fixture.error={message:'STOCK_SHORT: Fictional medicine'};

@@ -107,26 +107,33 @@ export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string)
  try{
   const visit=await db.from('visits').select('id,dokter,keluhan').eq('id',visitId).eq('branch_id',branchId).maybeSingle();
   if(visit.error||!visit.data)return null;
+  // Stays on this visit decide whether the visit's Rawat Inap fee can be bound to one stay; failure = unverified.
+  // U07: started now (needs only the guarded visit) instead of after every other read.
+  const stayIdsP:Promise<string[]|null>=readCompleteList<{id:string}>((from,to)=>db.from('inpatient_records').select('id',{count:'exact'}).eq('visit_id',visitId).order('id').range(from,to),'Rawat inap kunjungan',{maxRows:null})
+   .then(rows=>rows.map(row=>row.id),()=>null);
   const [records,invoices]=await Promise.all([
    readCompleteList<HandoffRecord>((from,to)=>db.from('medical_records').select('id,visit_id,created_at,anamnesis,diagnosis,catatan_resep',{count:'exact'}).eq('visit_id',visitId).order('created_at').order('id').range(from,to),'Rekam medis handoff',{maxRows:null}),
    readCompleteList<HandoffInvoice>((from,to)=>db.from('invoices').select('id,invoice_no,paid_status,voided_at,created_at',{count:'exact'}).eq('visit_id',visitId).order('created_at').order('id').range(from,to),'Faktur handoff',{maxRows:null}),
   ]);
   const prescriptions:HandoffPrescription[]=[],recipes:HandoffRecipe[]=[],invoiceLines:HandoffInvoiceLine[]=[];
   // Bounded IN lists, with complete checked pagination within each scope.
-  for(let offset=0;offset<records.length;offset+=200){
-   const ids=records.slice(offset,offset+200).map(row=>row.id);
-   const [rx,compounds]=await Promise.all([
-    readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,kategori,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at,service_performers',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
-    readCompleteList<HandoffRecipe>((from,to)=>db.from('compounding_recipes').select('id,medical_record_id,recipe_name,total_volume,dosage_form,dosage_instruction,status,created_at',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Racikan handoff',{maxRows:null}),
-   ]);prescriptions.push(...rx);recipes.push(...compounds);
-  }
-  for(let offset=0;offset<invoices.length;offset+=200){
-   const ids=invoices.slice(offset,offset+200).map(row=>row.id);
-   invoiceLines.push(...await readCompleteList<HandoffInvoiceLine>((from,to)=>db.from('invoice_items').select('id,invoice_id,prescription_item_id,compound_recipe_id,qty',{count:'exact'}).in('invoice_id',ids).order('id').range(from,to),'Tautan tagihan handoff',{maxRows:null}));
-  }
-  // Stays on this visit decide whether the visit's Rawat Inap fee can be bound to one stay; failure = unverified.
-  let stayIds:string[]|null=null;
-  try{stayIds=(await readCompleteList<{id:string}>((from,to)=>db.from('inpatient_records').select('id',{count:'exact'}).eq('visit_id',visitId).order('id').range(from,to),'Rawat inap kunjungan',{maxRows:null})).map(row=>row.id);}catch{stayIds=null;}
+  // U07: prescription/compound pages and invoice-line pages are independent, so both
+  // loops run together; any failure still rejects the whole summary (returns null).
+  await Promise.all([(async()=>{
+   for(let offset=0;offset<records.length;offset+=200){
+    const ids=records.slice(offset,offset+200).map(row=>row.id);
+    const [rx,compounds]=await Promise.all([
+     readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,kategori,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at,service_performers',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
+     readCompleteList<HandoffRecipe>((from,to)=>db.from('compounding_recipes').select('id,medical_record_id,recipe_name,total_volume,dosage_form,dosage_instruction,status,created_at',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Racikan handoff',{maxRows:null}),
+    ]);prescriptions.push(...rx);recipes.push(...compounds);
+   }
+  })(),(async()=>{
+   for(let offset=0;offset<invoices.length;offset+=200){
+    const ids=invoices.slice(offset,offset+200).map(row=>row.id);
+    invoiceLines.push(...await readCompleteList<HandoffInvoiceLine>((from,to)=>db.from('invoice_items').select('id,invoice_id,prescription_item_id,compound_recipe_id,qty',{count:'exact'}).in('invoice_id',ids).order('id').range(from,to),'Tautan tagihan handoff',{maxRows:null}));
+   }
+  })()]);
+  const stayIds=await stayIdsP;
   // Evidence is read separately: a missing table or partial read disables recording, not the whole summary.
   let evidence:HandoffEvidence[]|null=[];
   try{
