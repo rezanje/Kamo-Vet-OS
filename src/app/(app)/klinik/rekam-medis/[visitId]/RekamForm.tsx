@@ -224,13 +224,13 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const ppn = 0; // ponytail: PPN 0% (display); tarif final ditentukan kasir saat pembayaran
   const total = Math.max(0, subtotal - discountVal + ppn);
 
-  const stokById = useMemo(() => new Map([...items, ...bahanItems, ...racikanItems].map(it => [it.id, { stok: it.stok, unit: it.unit }])), [items, bahanItems, racikanItems]);
+  const stokById = useMemo(() => new Map([...items, ...bahanItems, ...racikanItems].filter(it => it.item_type !== "Jasa").map(it => [it.id, { stok: it.stok, unit: it.unit }])), [items, bahanItems, racikanItems]);
 
   return (<>
     {/* Di luar <form>: dialog punya form method="dialog" sendiri. */}
     <Popup message={stokKurang} title="Stok tidak cukup" onClose={() => setStokKurang(null)} />
     <form ref={draftAttachForm} action={(data) => draftSubmit(data, correction ? koreksiRekamMedis : simpanRekamMedis)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
-      const kurang = correction ? [] : kekuranganStok(cart, stokById);
+      const kurang = correction ? [] : kekuranganStok(cart, stokById, (id, unit) => unitsOf(id).find(u => u.unit === unit)?.factor ?? 1);
       if (procedureDraft) { event.preventDefault(); event.stopPropagation(); setTab("Tindakan"); setProcedureError("Selesaikan komposisi BMHP tindakan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
       else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(`${kurang.join("; ")}. Kurangi jumlah atau ganti obat sebelum melanjutkan.`); }
       else draftCapture();
