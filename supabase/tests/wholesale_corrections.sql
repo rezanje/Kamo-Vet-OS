@@ -211,3 +211,52 @@ update sales_receipts set advance_id='fb400000-0000-4000-8000-000000000001',jour
 set local role authenticated;
 select wholesale_test_reject(format('select correct_wholesale_invoice(%L,0,''legacy-advance-proof'',''cancel'',''Salah pencatatan'',jsonb_build_object(''tanggal'',current_date))',invoice_id),'pendanaan uang muka penerimaan lama') from wholesale_test_state;
 rollback;
+-- J01 (28 Okt 2026): FINANCE may correct a paid B2B invoice; receipts stay. ADMIN/STAFF/DOCTOR still cannot.
+-- FINANCE still needs the Penjualan module (Akses Grup), exactly like wholesale receipts today.
+reset role;
+begin;
+alter table profiles disable trigger guard_profile_privileges;
+update profiles set role='FINANCE' where id='f1000000-0000-4000-8000-000000000002';
+alter table profiles enable trigger guard_profile_privileges;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
+select wholesale_test_reject(format('select correct_wholesale_invoice(%L,%s,''j01-finance-no-module'',''cancel'',''Salah pencatatan'',jsonb_build_object(''tanggal'',current_date))',s.invoice_id,si.revision),'tidak dapat diakses')
+ from wholesale_test_state s join sales_invoices si on si.id=s.invoice_id;
+reset role;
+insert into role_modules(role,module_id) values('FINANCE','penjualan');
+set local role authenticated;
+do $$declare inv uuid;line uuid;rev int;paid numeric;receipts jsonb;r jsonb;begin
+ select invoice_id,line_id into inv,line from wholesale_test_state;
+ select revision,coalesce(carried_paid,0)+coalesce((select sum(jumlah) from sales_receipts where invoice_id=inv),0) into rev,paid from sales_invoices where id=inv;
+ select jsonb_agg(to_jsonb(t) order by id) into receipts from sales_receipts t;
+ perform wholesale_test_assert(paid>0,'J01 fixture invoice must already be (partly) paid');
+ r:=correct_wholesale_invoice(inv,rev,'j01-finance','replace','Harga dikoreksi oleh finance',
+  jsonb_build_object('tanggal',current_date,'jatuh_tempo',current_date+20,'items',jsonb_build_array(jsonb_build_object('id',line,'harga',95))));
+ perform wholesale_test_assert((select created_by='f1000000-0000-4000-8000-000000000002' and paid_preserved=paid from wholesale_invoice_corrections where id=(r->>'correction_id')::uuid),'J01 finance correction audited with paid amount preserved');
+ perform wholesale_test_assert((select jsonb_agg(to_jsonb(t) order by id) from sales_receipts t)=receipts,'J01 receipts unchanged');
+ perform wholesale_test_assert((select carried_paid=paid and harga=95 from sales_invoices si join sales_invoice_items ii on ii.invoice_id=si.id where si.id=(r->>'replacement_id')::uuid),'J01 replacement carries payment and new price');
+ perform wholesale_test_assert(get_wholesale_operation(inv,'correction','j01-finance')=r,'J01 finance reads own correction result');
+end$$;
+rollback;
+reset role;
+begin;
+alter table profiles disable trigger guard_profile_privileges;
+update profiles set role='ADMIN' where id='f1000000-0000-4000-8000-000000000002';
+alter table profiles enable trigger guard_profile_privileges;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
+select wholesale_test_reject(format('select correct_wholesale_invoice(%L,%s,''j01-admin'',''replace'',''Harga dikoreksi'',%L)',s.invoice_id,si.revision,
+ jsonb_build_object('tanggal',current_date,'jatuh_tempo',current_date+20,'items',jsonb_build_array(jsonb_build_object('id',s.line_id,'harga',95)))),'OWNER/FINANCE')
+ from wholesale_test_state s join sales_invoices si on si.id=s.invoice_id;
+select wholesale_test_reject(format('select get_wholesale_operation(%L,''correction'',''j01-admin'')',invoice_id),'OWNER/FINANCE') from wholesale_test_state;
+rollback;
+reset role;
+begin;
+alter table profiles disable trigger guard_profile_privileges;
+update profiles set role='STAFF' where id='f1000000-0000-4000-8000-000000000002';
+alter table profiles enable trigger guard_profile_privileges;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
+select wholesale_test_reject(format('select correct_wholesale_invoice(%L,%s,''j01-staff'',''cancel'',''Salah pencatatan'',jsonb_build_object(''tanggal'',current_date))',s.invoice_id,si.revision),'OWNER/FINANCE')
+ from wholesale_test_state s join sales_invoices si on si.id=s.invoice_id;
+rollback;

@@ -119,7 +119,8 @@ export async function hapusAturanKomisi(formData: FormData) {
 
 /** Append-only: a later row at the same scope/date supersedes the previous choice. */
 export async function simpanKebijakanKomisiJasa(formData: FormData) {
-  const supabase = await assertMasterAdmin(BASE, "kebijakan komisi jasa");
+  // Pay configuration: OWNER only (DB-enforced by RLS too).
+  const supabase = await assertRole(BASE, "kebijakan komisi jasa", ["OWNER"]);
   const mode = String(formData.get("mode") ?? "");
   const effectiveFrom = String(formData.get("effective_from") ?? "");
   const branchId = opsional(formData.get("branch_id"));

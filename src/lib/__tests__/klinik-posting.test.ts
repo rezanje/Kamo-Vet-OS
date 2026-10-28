@@ -71,6 +71,10 @@ describe("parseClinicRecordError", () => {
       .toMatch(/rawat inap/);
     expect(parseClinicRecordError({ code: "P0001", message: "IDEMPOTENCY_CONFLICT: key" }))
       .toMatch(/Form pemeriksaan/);
+    expect(parseClinicRecordError({ code: "P0001", message: "RECIPE_REQUIRED: Obat Racik Batuk" }))
+      .toBe('Obat racik "Obat Racik Batuk" wajib diisi komposisinya. Hapus baris ini lalu tambahkan lewat tombol "Racikan baru" di rekam medis.');
+    expect(parseClinicPostingError({ code: "P0001", message: "RECIPE_REQUIRED: Obat Racik Batuk" }))
+      .toMatch(/^Obat racik "Obat Racik Batuk" wajib diisi komposisinya/);
     expect(parseClinicRecordError({ code: "23505", message: "sensitive database constraint" }))
       .toBe("Rekam medis belum tersimpan. Periksa data dan coba lagi.");
   });
