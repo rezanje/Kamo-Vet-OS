@@ -23,7 +23,9 @@ import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound
 import { InpatientStaffFields } from '@/components/InpatientStaffFields';
 import type { ClinicalStaff, InpatientStaff } from '@/lib/clinical-staff';
 
-export type ItemLite = { id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number; item_type?: string; tindakan_kategori?: string | null; units?: ItemUnit[] };
+/** U07: satuan yang dikirim ke browser — tanpa harga beli (tidak dipakai form klinik). */
+export type UnitLite = Omit<ItemUnit, "buy_price">;
+export type ItemLite = { id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number; item_type?: string; tindakan_kategori?: string | null; units?: UnitLite[] };
 type CartRow = {
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
   faktor: number;

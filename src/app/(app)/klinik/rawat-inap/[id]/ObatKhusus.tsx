@@ -23,13 +23,18 @@ const jamWib = (iso: string) =>
 const tglPendek = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short" });
 
-export async function ObatKhusus({ recordId, aktif }: { recordId: string; aktif: boolean }) {
-  const supabase = await createClient();
-  const { data: { user: draftUser } } = await supabase.auth.getUser();
-  const draftUserId = draftUser?.id ?? "";
+/** U07: halaman detail sudah membaca pengguna & riwayat obat di gelombang paralelnya
+ * dan mengopernya ke sini. Tanpa props itu komponen tetap membaca sendiri. */
+export async function ObatKhusus({ recordId, aktif, userId, history: preloaded }: {
+  recordId: string; aktif: boolean;
+  userId?: string;
+  history?: Awaited<ReturnType<typeof loadInpatientMedicationHistory>>;
+}) {
+  const supabase = userId === undefined || preloaded === undefined ? await createClient() : null;
+  const draftUserId = userId ?? (await supabase!.auth.getUser()).data.user?.id ?? "";
   const hariIni = hariIniWIB();
 
-  const history=await loadInpatientMedicationHistory(supabase,recordId);
+  const history = preloaded !== undefined ? preloaded : await loadInpatientMedicationHistory(supabase!,recordId);
   if(!history)return <section className="crm-sec"><h2 style={{fontSize:13}}>OBAT KHUSUS</h2><p role="alert">Riwayat protokol dan pemberian obat belum dapat dimuat lengkap. Muat ulang sebelum menambah atau mencatat pemberian obat; daftar kosong dan progres belum dapat dipastikan.</p></section>;
   const daftar=history.medications;
   const semuaDosis: Pemberian[] = history.doses.map((d) => ({

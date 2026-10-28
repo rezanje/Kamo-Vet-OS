@@ -5,7 +5,7 @@ import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { BMHP_MAX_COMPONENTS, type BmhpRow } from "@/lib/procedure-bmhp";
 import type { ItemUnit } from "@/lib/satuan";
 
-type BmhpItem = { id: string; code?: string | null; name: string; unit: string; stok: number; units?: ItemUnit[] };
+type BmhpItem = { id: string; code?: string | null; name: string; unit: string; stok: number; units?: Omit<ItemUnit, "buy_price">[] };
 
 /** K02: actual consumables used on one procedure row. Optional; stock is issued
  * only when the clinic invoice posts, and the cost becomes the procedure HPP. */

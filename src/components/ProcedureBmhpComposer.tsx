@@ -4,7 +4,7 @@ import { ProcedureBmhpField } from "@/components/ProcedureBmhpField";
 import { bmhpInput, type BmhpRow } from "@/lib/procedure-bmhp";
 import type { ItemUnit } from "@/lib/satuan";
 
-type Material = { id: string; code?: string | null; name: string; unit: string; stok: number; units?: ItemUnit[] };
+type Material = { id: string; code?: string | null; name: string; unit: string; stok: number; units?: Omit<ItemUnit, "buy_price">[] };
 
 /** Compose actual materials before the procedure joins the cart. The existing K02
  * line payload and posting engine remain the single source of stock and HPP. */
