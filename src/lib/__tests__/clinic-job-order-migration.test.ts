@@ -13,7 +13,8 @@ describe("urutan migrasi", () => {
   it("dipasang setelah migrasi pelaksana per baris dan tidak menyentuh migrasi lama", () => {
     const semua = readdirSync("supabase/migrations").filter(name => name.endsWith(".sql")).sort();
     expect(semua).toContain(NAMA);
-    expect(semua[semua.length - 1]).toBe(NAMA);
+    // Migrasi lain boleh menyusul sesudahnya; yang dijaga hanya urutan relatifnya.
+    expect(semua.indexOf(NAMA)).toBeGreaterThan(semua.indexOf("20261030090000_line_performers_all_items.sql"));
     expect(NAMA > "20261030090000_line_performers_all_items.sql").toBe(true);
     // Gaya tambal yang sama: jangkar eksak, gagal tertutup, lalu blok pemeriksaan akhir.
     expect(SQL).toContain("pg_get_functiondef");
