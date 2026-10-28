@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState, useTransition, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { NumberInput } from "@/components/NumberInput";
 import { pratinjauBarisPO, simpanBarisPO, type LinePreview } from "./line-actions";
 
@@ -12,7 +11,6 @@ type Row = { id: string; nama: string; satuan: string | null; qty: number; qty_t
 
 /** Edit satu baris PO dalam pop-up. Belum diterima: Qty PO & harga. Sudah diterima: qty/harga diterima, PO ikut. */
 export function POLineEdit({ poId, revision, row, today, hargaDiterima }: { poId: string; revision: number; row: Row; today: string; hargaDiterima?: number }) {
-  const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const received = Number(row.qty_terima ?? 0) > 0 || Number(row.qty_rusak ?? 0) > 0;
   const [qty, setQty] = useState(String(row.qty));
@@ -46,9 +44,8 @@ export function POLineEdit({ poId, revision, row, today, hargaDiterima }: { poId
     start(async () => {
       const res = await simpanBarisPO(form);
       if (!res.ok) { setError(res.error); return; }
-      dialog.current?.close();
-      router.replace(`/pembelian/${poId}?success=1#daftar-item`);
-      router.refresh();
+      // Muat ulang penuh: tabel, total, status, dan revisi PO pasti segar; pop-up ikut tertutup.
+      window.location.replace(`/pembelian/${poId}?success=1#daftar-item`);
     });
   };
 

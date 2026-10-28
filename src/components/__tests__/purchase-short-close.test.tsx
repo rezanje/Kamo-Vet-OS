@@ -7,7 +7,7 @@ vi.mock("@/components/dokumen/DokumenPanel", () => ({ DokumenPanel: () => null }
 vi.mock("@/components/ActivityHistoryLink", () => ({ ActivityHistoryLink: () => null }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) }, from(table: string) {
   let from = 0, to = Infinity;
-  const q = { select: () => q, eq: () => q, order: () => q, range: (start:number,end:number) => { from=start;to=end;return q; }, maybeSingle: () => q, then(resolve: (value: unknown) => void) {
+  const q = { select: () => q, eq: () => q, in: () => q, order: () => q, range: (start:number,end:number) => { from=start;to=end;return q; }, maybeSingle: () => q, then(resolve: (value: unknown) => void) {
     const data = table === "purchase_orders" ? { id: "po", no_po: "PO.FICTION", tanggal: "2026-10-23", status: state.status, total: 1000, revision: 0, branch_id: "branch", to_warehouse_id: "warehouse", supplier_id: "supplier" }
       : table === "purchase_order_items" ? [{ id: "line", item_id: "item", nama: "Fiction item", qty: 10, qty_terima: state.received, qty_rusak: 0, harga_beli: 100, satuan: "pcs", faktor: 1 }]
       : table === "goods_receipts" ? [{ id: "receipt", no_terima: "TB.FICTION", tanggal:"2026-10-23" }]

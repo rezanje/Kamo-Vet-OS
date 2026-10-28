@@ -2,7 +2,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
 vi.mock("./line-actions", () => ({ pratinjauBarisPO: vi.fn(), simpanBarisPO: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }) }));
 
 import { POLineEdit } from "./POLineEdit";
 
