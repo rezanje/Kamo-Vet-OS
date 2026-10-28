@@ -18,7 +18,11 @@ PASS apply s04
 PASS owner-apply-s04/readback.sql -> SUMMARY: 0 failed|t
 PASS second s04 apply: refused and rolled back (already exists)
 PASS owner-apply-s04/preflight.sql -> SUMMARY: 3 failed|f
-PASS rollback s04
+PASS s04 rollback with a later policy row: refused and rolled back (S04 rollback ditolak)
+PASS rollback s04 with explicit owner flag (extra row present)
+PASS owner-apply-s04/preflight.sql -> SUMMARY: 0 failed|t
+PASS re-apply s04
+PASS rollback s04 (only the seeded row, no flag needed)
 PASS owner-apply-s04/preflight.sql -> SUMMARY: 0 failed|t
 PASS re-apply s04
 PASS owner-apply-s04/readback.sql -> SUMMARY: 0 failed|t

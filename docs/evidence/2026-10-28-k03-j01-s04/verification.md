@@ -4,7 +4,7 @@
 
 | Paket | Hasil |
 |-------|-------|
-| `owner-apply-k03-j01/preflight.sql` | SUMMARY: 0 failed (11/11 ok) — termasuk md5 tubuh `wholesale_access` = versi yang ditinjau |
+| `owner-apply-k03-j01/preflight.sql` | SUMMARY: 0 failed (11/11 ok; diulang setelah review dengan cek kolom sumber salinan) — termasuk md5 tubuh `wholesale_access` = versi yang ditinjau |
 | `owner-apply-s04/preflight.sql` | SUMMARY: 0 failed (8/8 ok) — tabel S04 belum ada, versi 20261026002000 belum tercatat, tepat satu OWNER aktif |
 
 Pengamatan hanya-baca lain (tanpa angka data):
@@ -19,11 +19,11 @@ Runner: `run-native-pg.py <script>` menerjemahkan panggilan `docker` skrip repo 
 
 | Tes | Hasil |
 |-----|-------|
-| `supabase/tests/clinic_compound_issue.sql` (blok K03 baru: rawat jalan, catatan harian ranap, tagihan manual ditolak `RECIPE_REQUIRED` tanpa sisa data; obat biasa lolos; racik master + tagihannya lolos; baris lama bisa diubah & ditagih, ganti barang ke SKU racik ditolak) | lulus PG17 & PG16; merah tanpa migrasi K03 |
+| `supabase/tests/clinic_compound_issue.sql` (blok K03 baru: rawat jalan, catatan harian ranap, tagihan manual ditolak `RECIPE_REQUIRED` tanpa sisa data; obat biasa lolos; racik master + tagihannya lolos; baris lama bisa diubah & ditagih, ganti barang ke SKU racik ditolak; terbit ulang invoice yang dulu menagih SKU racik sebagai baris manual tetap jalan, dan pengecualian salinan tidak bisa dipinjam invoice lain) | lulus PG17 & PG16; merah tanpa migrasi K03 |
 | `scripts/test-procedure-bmhp-postgres.py` (BMHP, invoice klinik, billing lifecycle, compound issue, manual units, kategori tindakan, katalog resmi, binding SKU racik, BMHP moving average) | lulus — `clinic-regression-pg17.log` |
 | `scripts/test-wholesale-corrections-postgres.py` (suite grosir lama + blok J01: FINANCE tanpa modul Penjualan ditolak; FINANCE dengan modul mengoreksi faktur yang sudah dibayar, penerimaan tidak berubah, pembayaran terbawa ke faktur pengganti; ADMIN & STAFF ditolak; uji race 2 sesi) | lulus — `j01-wholesale-suite-pg17.log`; merah tanpa migrasi J01 |
-| `scripts/test-service-commission-policy-postgres.py` (RLS/hak akses tabel S04) | lulus — `s04-policy-suite-pg17.log` |
-| Latihan paket owner (`rehearse-owner-apply.py`) | lulus PG17 & PG16 — `rehearsal-pg17.log`, `rehearsal-pg16.log` |
+| `scripts/test-service-commission-policy-postgres.py` (RLS/hak akses tabel S04; tulis hanya OWNER, ADMIN ditolak) | lulus — `s04-policy-suite-pg17.log` |
+| Latihan paket owner (`rehearse-owner-apply.py`; termasuk rollback S04 ditolak saat ada baris kebijakan lain, lolos dengan flag owner) | lulus PG17 & PG16 — `rehearsal-pg17.log`, `rehearsal-pg16.log` |
 | Runner klinik lain: refund klinik, koreksi rekam medis belum bayar, bukti obat ranap, riwayat rekam medis, penjual per baris, pelaksana jasa, lanjut ranap, insentif payroll, C05/Q01 | lulus |
 
 Catatan runner: `scripts/test-posted-sales-postgres.py` (bootstrap suite grosir) belum punya shim `auth.jwt()`

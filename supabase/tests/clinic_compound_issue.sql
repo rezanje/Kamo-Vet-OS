@@ -379,10 +379,10 @@ insert into visits (id, branch_id, customer_id, pet_id, status, doctor_id, dokte
 select ('c3a60000-0000-4000-8000-00000000000' || n)::uuid, 'c3a10000-0000-4000-8000-000000000001',
   'c3a40000-0000-4000-8000-000000000001', 'c3a50000-0000-4000-8000-000000000001', 'Diperiksa',
   'c3ac0000-0000-4000-8000-000000000001', 'Dokter K03', now()
-from generate_series(1, 4) n;
+from generate_series(1, 5) n;
 insert into medical_records (id, visit_id, diagnosis)
 select ('c3a70000-0000-4000-8000-00000000000' || n)::uuid, ('c3a60000-0000-4000-8000-00000000000' || n)::uuid, 'Uji K03'
-from generate_series(2, 4) n;
+from generate_series(2, 5) n;
 -- The inpatient admission guard needs an authenticated actor even for fixtures.
 select set_config('request.jwt.claim.sub', 'c3a00000-0000-4000-8000-000000000001', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
@@ -519,5 +519,57 @@ begin
   if v_invoice is null then raise exception 'K03 blocked billing of a legacy prescription row'; end if;
 end;
 $$;
+
+-- 7. Terbit ulang (void-reissue) of an invoice that already billed a racikan SKU as a manual line
+--    (allowed before K03) copies that line into the replacement; the copy is not new billing.
+reset role;
+alter table invoice_items disable trigger zz_racikan_recipe_required;
+set local role authenticated;
+select public.clinic_post_invoice('c3a60000-0000-4000-8000-000000000005', 'k03-invoice-old-manual',
+  jsonb_build_object('tanggal', current_date::text, 'subtotal', 50, 'discount', 0, 'tax', 0, 'total', 50,
+    'dp_amount', 0, 'dp_date', null, 'paid_status', 'Lunas', 'metode_bayar', 'Tunai',
+    'shift_id', 'c3ab0000-0000-4000-8000-000000000001', 'voucher_code', null, 'salesperson_id', null),
+  jsonb_build_array(jsonb_build_object('description','Obat Racik K03 Uji','qty',1,'price',50,'kind','obat',
+    'item_id','c3a20000-0000-4000-8000-000000000001','unit',null,'prescription_item_id',null,'recipe_id',null,'discount_percent',0)));
+reset role;
+alter table invoice_items enable trigger zz_racikan_recipe_required;
+set local role authenticated;
+do $$
+declare v_old uuid; v_new uuid; v_err text;
+begin
+  select id into v_old from invoices where visit_id = 'c3a60000-0000-4000-8000-000000000005';
+  begin
+    v_new := public.clinic_void_reissue_invoice(v_old, 'k03-reissue', 'Koreksi K03');
+  exception when others then v_err := sqlerrm;
+  end;
+  if v_new is null then raise exception 'K03 blocked void-reissue of an already billed racikan line: %', v_err; end if;
+  if not exists (select 1 from invoice_items n join invoice_items o on o.id = n.service_source_line_id
+      where n.invoice_id = v_new and o.invoice_id = v_old and n.item_id = 'c3a20000-0000-4000-8000-000000000001') then
+    raise exception 'K03 reissue did not carry the copied racikan line';
+  end if;
+end;
+$$;
+-- The copy exemption cannot be borrowed by an unrelated invoice: a line pointing at the old line
+-- from a different invoice is still refused (direct write as table owner; the app has no grant;
+-- the salesperson-source guard is switched off here so only K03 is exercised).
+reset role;
+alter table invoice_items disable trigger clinic_line_salesperson;
+do $$
+declare v_old uuid; v_err text;
+begin
+  select id into v_old from invoices where visit_id = 'c3a60000-0000-4000-8000-000000000005' and voided_at is not null;
+  begin
+    insert into invoice_items (invoice_id, deskripsi, qty, harga, jenis, item_id, service_source_line_id)
+    select i.id, 'Obat Racik K03 Uji', 1, 50, 'obat', 'c3a20000-0000-4000-8000-000000000001',
+      (select id from invoice_items where invoice_id = v_old limit 1)
+    from invoices i where i.visit_id = 'c3a60000-0000-4000-8000-000000000004' limit 1;
+  exception when others then v_err := sqlerrm;
+  end;
+  if position('RECIPE_REQUIRED:' in coalesce(v_err, '')) <> 1 then
+    raise exception 'K03 copy exemption leaked to an unrelated invoice: %', coalesce(v_err, 'accepted');
+  end if;
+end;
+$$;
+alter table invoice_items enable trigger clinic_line_salesperson;
 
 rollback;

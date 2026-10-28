@@ -1,5 +1,5 @@
 -- S04 APPLY — WRITES. Satu transaksi: migrasi 20261026002000_service_commission_policy.sql apa adanya
--- (sha256 b3a7547b5e747088042996fb3e8cf41466e8761270e4fee159a52659beb2a8c6) + baris riwayat, lalu SATU pernyataan terpisah: kebijakan keputusan pemilik 28 Okt 2026
+-- (sha256 e3aca6121b9f345f113a7b9948e97dc66bd8085e6fa878836344d1abd285eb39) + baris riwayat, lalu SATU pernyataan terpisah: kebijakan keputusan pemilik 28 Okt 2026
 -- (dua pelaksana jasa = masing-masing memakai aturan komisinya sendiri, mulai 2026-11-01, semua cabang).
 -- Galat apa pun membatalkan semuanya.
 begin;
@@ -14,6 +14,8 @@ end $$;
 -- ===== Migrasi S04 (verbatim) =====
 -- S04: an explicit, append-only choice for ordinary two-performer service commission.
 -- No policy row means the existing pending/payroll-blocking behavior continues.
+-- Writes are OWNER-only (pay configuration, same as H04 commission groups/personal rules);
+-- changed 28 Oct 2026 before this migration was ever applied to production.
 create table public.service_commission_policies (
  id uuid primary key default gen_random_uuid(),
  branch_id uuid references public.branches(id) on delete restrict,
@@ -46,7 +48,7 @@ create policy service_commission_policies_insert on public.service_commission_po
  for insert to authenticated with check (
   created_by=(select auth.uid()) and exists(
    select 1 from public.profiles p where p.id=(select auth.uid())
-    and p.is_active and p.role in ('OWNER','ADMIN')
+    and p.is_active and p.role = 'OWNER'
   )
  );
 comment on table public.service_commission_policies is

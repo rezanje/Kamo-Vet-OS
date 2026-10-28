@@ -2,10 +2,11 @@
 -- Jangan salin keluaran production (jumlah data, ID) ke repo/PR.
 with checks(check_name, ok) as (
   select 'tabel prescription_items & invoice_items ada', to_regclass('public.prescription_items') is not null and to_regclass('public.invoice_items') is not null
-  union all select 'kolom yang dipakai trigger K03 ada',
+  union all select 'kolom yang dipakai trigger K03 ada (termasuk sumber salinan terbit ulang/koreksi)',
     (select count(*) from information_schema.columns where table_schema='public'
       and ((table_name='prescription_items' and column_name in ('item_id','compound_recipe_id','nama_obat'))
-        or (table_name='invoice_items' and column_name in ('item_id','compound_recipe_id','prescription_item_id','deskripsi')))) = 7
+        or (table_name='invoice_items' and column_name in ('item_id','compound_recipe_id','prescription_item_id','deskripsi','service_source_line_id','invoice_id'))
+        or (table_name='invoices' and column_name='reissued_from'))) = 10
   union all select 'kolom aturan SKU racik ada (items.item_type/is_compound_material/category_id, item_categories.name)',
     (select count(*) from information_schema.columns where table_schema='public'
       and ((table_name='items' and column_name in ('item_type','is_compound_material','category_id','name'))

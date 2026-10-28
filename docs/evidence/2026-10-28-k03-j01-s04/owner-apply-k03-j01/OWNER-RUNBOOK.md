@@ -26,7 +26,8 @@ Yang berubah:
 - **K03:** baris obat dengan SKU obat racik (nama "Obat Racik…/Obat Racikan…" atau kategori OBAT RACIK /
   OBAT RACIKAN / RACIKAN, jenis Persediaan, bukan bahan racik) ditolak di rekam medis rawat jalan, catatan harian
   rawat inap, koreksi rekam medis, dan baris manual tagihan klinik bila tidak membawa komposisi racikan.
-  Jalur "Racikan baru" (SKU + komposisi) tetap jalan. Baris lama yang sudah ada tidak diubah dan tetap bisa
+  Jalur "Racikan baru" (SKU + komposisi) tetap jalan. Terbit ulang invoice batal dan koreksi invoice yang hanya
+  menyalin baris lama (baris sumber dari invoice asal terbit ulang atau invoice yang sama) tidak ditolak. Baris lama yang sudah ada tidak diubah dan tetap bisa
   ditagih; hanya baris baru atau baris yang barangnya diganti yang diperiksa. Kasir petshop tidak terdampak.
 - **J01:** koreksi harga faktur grosir (termasuk yang sudah dibayar) oleh OWNER **atau FINANCE**. Pembayaran
   tetap tercatat; kelebihan bayar jadi kredit pelanggan (perilaku lama). Perubahan qty tetap lewat retur/pengiriman

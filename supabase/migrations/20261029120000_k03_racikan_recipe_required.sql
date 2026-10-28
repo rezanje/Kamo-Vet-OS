@@ -15,7 +15,8 @@
 -- 2) invoice_items (tagihan klinik; tabel ini khusus klinik, invoices.visit_id NOT NULL):
 --    tolak baris manual (tanpa prescription_item_id) bertipe SKU racik tanpa compound_recipe_id.
 --    Baris yang berasal dari resep tetap mengikuti hasil pemeriksaan di prescription_items,
---    sehingga baris resep lama tetap dapat ditagih.
+--    sehingga baris resep lama tetap dapat ditagih. Salinan baris yang sudah ditagih (terbit ulang
+--    invoice batal, atau koreksi invoice yang mempertahankan baris) juga dikecualikan.
 -- Nama trigger diawali zz_ agar berjalan paling akhir (setelah zz_grooming_requirement).
 -- Idempoten: create or replace + drop trigger if exists.
 
@@ -53,7 +54,17 @@ returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   if new.compound_recipe_id is null and new.prescription_item_id is null and new.item_id is not null
      and (tg_op = 'INSERT' or new.item_id is distinct from old.item_id)
-     and clinic_private.is_racikan_sku(new.item_id) then
+     and clinic_private.is_racikan_sku(new.item_id)
+     -- Copies of an already-billed line are not new billing: terbit ulang (void-reissue) copies every
+     -- line of the voided invoice into its replacement, and koreksi invoice re-inserts retained lines,
+     -- both carrying the source line in service_source_line_id. Exempt only an exact item copy whose
+     -- source line belongs to the invoice this one was reissued from, or to the same invoice.
+     and not exists (
+       select 1 from public.invoice_items s
+       join public.invoices target on target.id = new.invoice_id
+       where s.id = new.service_source_line_id and s.item_id = new.item_id
+         and (s.invoice_id = target.reissued_from or s.invoice_id = new.invoice_id)
+     ) then
     raise exception using errcode = 'P0001',
       message = format('RECIPE_REQUIRED: %s', left(coalesce(new.deskripsi, 'obat racik'), 90));
   end if;

@@ -116,7 +116,7 @@ export default async function KomisiPage({
           desc="Pilih cara memakai tarif komisi existing saat satu baris jasa dikerjakan dokter dan non-dokter. Tanpa pilihan yang cocok, komisi dan penggajian baris itu tetap tertahan." />
         <p style={{fontSize:11}}>Pilihan bertanggal tersimpan sebagai riwayat. Cabang khusus mengalahkan pilihan semua cabang; pilihan terbaru pada tanggal yang sama berlaku. Retur mengikuti pilihan pada tanggal struk asal. Pool DEMO tetap memakai snapshot yang sudah ada.</p>
         {!kebijakanTersimpan.installed && <p style={{fontSize:11}}>Penyimpanan kebijakan belum terpasang di database. Baris dua pelaksana tetap tertahan; komisi lain tetap dihitung.</p>}
-        {bolehKelola && kebijakanTersimpan.installed && <form action={simpanKebijakanKomisiJasa}>
+        {bolehAturGaji && kebijakanTersimpan.installed && <form action={simpanKebijakanKomisiJasa}>
           <div className="frow">
             <div><label className="flab" htmlFor="service-policy-mode">Cara menghitung *</label>
               <select className="fi" id="service-policy-mode" name="mode" defaultValue="" required>

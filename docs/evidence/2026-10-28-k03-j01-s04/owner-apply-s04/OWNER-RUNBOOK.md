@@ -7,6 +7,10 @@ Migrasi `20261026002000_service_commission_policy.sql` sudah ada di `main` (dan 
 tetapi **belum diterapkan di production**. Selama tabelnya belum ada, aplikasi menganggap "belum ada keputusan":
 baris jasa dengan dua pelaksana ditahan dan memblokir penggajian. Tidak ada perubahan kode aplikasi di paket ini.
 
+**Perubahan sebelum diterapkan (review 28 Okt):** isi migrasi 20261026002000 diubah agar menyimpan kebijakan
+**hanya OWNER** (sebelumnya OWNER/ADMIN), sejalan dengan keputusan H04 (konfigurasi gaji = OWNER). Versi tetap
+20261026002000 karena migrasi ini belum pernah diterapkan di production. Form di layar Komisi juga hanya tampil untuk OWNER.
+
 Keputusan pemilik 28 Okt 2026: dua pelaksana jasa = **masing-masing memakai aturan komisinya sendiri**
 (mode `personal_rules`, dasar penuh untuk keduanya), berlaku **2026-11-01**, **semua cabang**.
 
@@ -30,8 +34,10 @@ layar Komisi (tabel append-only; baris baru dengan tanggal sama/lebih baru mengg
 
 Mundur: `rollback.sql` menghapus tabel kebijakan (aplikasi kembali ke "ditahan"). Pakai hanya sebelum ada
 penggajian yang memakai kebijakan ini; kalau sudah dipakai, lebih aman simpan kebijakan baru "Ditahan" dari layar Komisi.
+Rollback **menolak sendiri** (tanpa menghapus apa pun) bila tabel berisi baris selain baris yang ditanam apply.sql;
+hanya jalan bila OWNER sengaja mengaktifkan baris `set_config('kamo.s04_rollback_confirm', ...)` di file itu.
 
 Dilatih ujung-ke-ujung di cluster sementara PostgreSQL 17.11 dan 16.14 (Homebrew): preflight → readback (galat,
-tabel belum ada) → apply → readback → apply kedua ditolak (rollback penuh) → rollback → preflight → apply ulang
-→ readback. Log: `../rehearsal-pg17.log`, `../rehearsal-pg16.log`. Suite RLS/hak akses S04:
+tabel belum ada) → apply → readback → apply kedua ditolak → rollback ditolak saat ada baris lain → rollback
+dengan flag owner → apply ulang → rollback tanpa flag (hanya baris tanam) → apply ulang → readback. Log: `../rehearsal-pg17.log`, `../rehearsal-pg16.log`. Suite RLS/hak akses S04:
 `../s04-policy-suite-pg17.log`.

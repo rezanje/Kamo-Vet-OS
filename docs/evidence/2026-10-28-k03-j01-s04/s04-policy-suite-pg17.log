@@ -1,4 +1,4 @@
 server: postgres (PostgreSQL) 17.11 (Homebrew) | cluster: <temp>
-PASS: append-only choices, admin/owner insert, active-profile RLS, no anonymous/edit access, and share validation.
+PASS: append-only choices, OWNER-only insert (ADMIN/cashier/inactive refused), active-profile RLS, no anonymous/edit access, and share validation.
 Removed owned PostgreSQL test container and volumes.
 cleanup: temp cluster removed

@@ -96,8 +96,20 @@ update public.profiles set role='OWNER', is_active=true where id='c3f00000-0000-
     assert rows == '1', rows
     refused(db, S4 / 'apply.sql', 'already exists', 'second s04 apply')
     expect(db, S4 / 'preflight.sql', 'some')
+    # A later choice saved from the Komisi screen makes rollback refuse unless the owner flag is set.
+    db.sql("""insert into public.service_commission_policies(effective_from,mode,created_by)
+      values('2026-12-01','pending','c3f00000-0000-4000-8000-000000000001');""")
+    refused(db, S4 / 'rollback.sql', 'S04 rollback ditolak', 's04 rollback with a later policy row')
+    assert db.sql("select count(*) from public.service_commission_policies") == '2', 'refused rollback changed rows'
+    flagged = (S4 / 'rollback.sql').read_text().replace(
+        "-- select set_config('kamo.s04_rollback_confirm'", "select set_config('kamo.s04_rollback_confirm'", 1)
+    db.sql(flagged)
+    print('PASS rollback s04 with explicit owner flag (extra row present)', flush=True)
+    expect(db, S4 / 'preflight.sql', 0)
+    db.sql((S4 / 'apply.sql').read_text())
+    print('PASS re-apply s04', flush=True)
     db.sql((S4 / 'rollback.sql').read_text())
-    print('PASS rollback s04', flush=True)
+    print('PASS rollback s04 (only the seeded row, no flag needed)', flush=True)
     expect(db, S4 / 'preflight.sql', 0)
     db.sql((S4 / 'apply.sql').read_text())
     print('PASS re-apply s04', flush=True)

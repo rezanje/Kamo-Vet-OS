@@ -52,10 +52,13 @@ select set_config('request.jwt.claim.sub','fa100000-0000-4000-8000-00000000000{u
     insert = """insert into service_commission_policies(effective_from,mode)
 values('2026-11-01','personal_rules');"""
     db.sql(session("1") + insert + "commit;")
-    db.sql(session("2") + """insert into service_commission_policies
+    split = """insert into service_commission_policies
  (branch_id,effective_from,mode,doctor_share_pct,staff_share_pct)
  values('fb100000-0000-4000-8000-000000000001','2026-11-01','split',60,40);
-commit;""")
+commit;"""
+    # Pay configuration is OWNER-only (H04 decision), ADMIN included in the refusal.
+    denied(db, session("2") + split, "row-level security policy")
+    db.sql(session("1") + split)
     denied(db, session("3") + insert + "commit;", "row-level security policy")
     denied(db, session("4") + insert + "commit;", "row-level security policy")
     denied(db, session("1", "anon") + "select * from service_commission_policies;commit;", "permission denied")
@@ -79,4 +82,4 @@ commit;""")
       values('2026-12-01','pending');commit;""")
     result = db.sql(session("1") + "select count(*) from service_commission_policies;commit;")
     assert result.splitlines()[-1] == "4", result
-    print("PASS: append-only choices, admin/owner insert, active-profile RLS, no anonymous/edit access, and share validation.")
+    print("PASS: append-only choices, OWNER-only insert (ADMIN/cashier/inactive refused), active-profile RLS, no anonymous/edit access, and share validation.")

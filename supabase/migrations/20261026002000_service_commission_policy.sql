@@ -1,5 +1,7 @@
 -- S04: an explicit, append-only choice for ordinary two-performer service commission.
 -- No policy row means the existing pending/payroll-blocking behavior continues.
+-- Writes are OWNER-only (pay configuration, same as H04 commission groups/personal rules);
+-- changed 28 Oct 2026 before this migration was ever applied to production.
 create table public.service_commission_policies (
  id uuid primary key default gen_random_uuid(),
  branch_id uuid references public.branches(id) on delete restrict,
@@ -32,7 +34,7 @@ create policy service_commission_policies_insert on public.service_commission_po
  for insert to authenticated with check (
   created_by=(select auth.uid()) and exists(
    select 1 from public.profiles p where p.id=(select auth.uid())
-    and p.is_active and p.role in ('OWNER','ADMIN')
+    and p.is_active and p.role = 'OWNER'
   )
  );
 comment on table public.service_commission_policies is

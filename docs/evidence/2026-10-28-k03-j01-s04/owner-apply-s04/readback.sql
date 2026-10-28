@@ -6,6 +6,9 @@ with checks(check_name, ok) as (
   union all select 'policy baca & tulis ada',
     (select count(*) from pg_policies where schemaname='public' and tablename='service_commission_policies'
       and policyname in ('service_commission_policies_read','service_commission_policies_insert')) = 2
+  union all select 'menulis kebijakan hanya OWNER aktif (ADMIN tidak)',
+    (select with_check like '%''OWNER''%' and with_check not like '%ADMIN%' from pg_policies
+      where schemaname='public' and tablename='service_commission_policies' and policyname='service_commission_policies_insert')
   union all select 'authenticated boleh SELECT/INSERT (kolom terbatas, tanpa created_by), tidak UPDATE/DELETE; anon tidak boleh baca',
     has_table_privilege('authenticated','public.service_commission_policies','select')
     and has_column_privilege('authenticated','public.service_commission_policies','mode','insert')
