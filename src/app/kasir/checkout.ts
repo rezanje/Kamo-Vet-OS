@@ -9,6 +9,7 @@ import { computeTotals, lineDiscount, linePromoApplied } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, type VoucherRow } from "@/lib/voucher";
+import { bacaKode, bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
 import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
@@ -80,7 +81,9 @@ export async function checkoutKasir(formData: FormData) {
   const diskon = Math.max(0, Number(formData.get("diskon")) || 0);
   // normalizeKode = aturan yang sama dengan layar pengelola voucher, jadi kode
   // yang diketik pakai spasi ("HEMAT 10") tetap ketemu barisnya.
-  const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
+  // Kolom yang sama menerima kode kampanye (C05): kode itu diterjemahkan ke voucher
+  // atau promo tujuannya di bawah, dan dicatat apa adanya di struk.
+  const kodeMasuk = normalizeKode(formData.get("voucherCode")) || null;
   const poinReq = Math.max(0, Math.floor(Number(formData.get("poinDigunakan")) || 0));
   const bayar = Number(formData.get("bayar")) || 0;
 
@@ -262,8 +265,18 @@ export async function checkoutKasir(formData: FormData) {
   // Promo dihitung ULANG di server dari master, bukan dipercaya dari keranjang:
   // layar kasir yang sudah lama terbuka bisa memegang promo yang sudah dicabut,
   // dan angka dari klien tidak boleh menentukan potongan uang.
-  const promoAktif = await loadPromoAktif(supabase, branchId);
+  const kampanye = await bacaKodeKampanye(supabase, kodeMasuk);
+  const kode = bacaKode(kodeMasuk, kampanye ? [kampanye] : []);
+  const voucherCode = kode.voucherCode;
+  const campaignCode = kode.kampanye?.code ?? null;
+  const promoMaster = await loadPromoAktif(supabase, branchId, kode.promoId ? [kode.promoId] : []);
+  const promoAktif = promoDenganKode(promoMaster, kode.promoId);
   const potonganPromo = serviceLinePromos(promoAktif, rows);
+  if (kode.kampanye) {
+    const tolakKampanye = pesanKampanyeDitolak(kode.kampanye,
+      promoAktif.some((p) => p.id === kode.promoId), potonganPromo.some((h) => h.promoId === kode.promoId));
+    if (tolakKampanye) redirect(`${failureUrl}${encodeURIComponent(tolakKampanye)}`);
+  }
   // Promo mana yang kena di baris mana ikut disimpan ke struk (migrasi 0127) —
   // tanpa itu laporan promo cuma bisa menghitung total diskon, tidak bisa bilang
   // program mana yang menghabiskannya.
@@ -440,13 +453,14 @@ export async function checkoutKasir(formData: FormData) {
       payment_plan: quote.parts,
       checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
       poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
+      ...(campaignCode ? { campaign_code: campaignCode } : {}),
       cashier_id: user?.id ?? null, shift_id: shift!.id,
       salesperson_id: salespersonId, cashier_name: cashier.name,
     })
     .select("id").single();
   if (saleErr || !sale) {
     await resumePosCheckout(supabase, user.id, checkout, "cashier", undefined, replacementId);
-    redirect(`${failureUrl}${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+    redirect(`${failureUrl}${encodeURIComponent(pesanGagalKampanye(saleErr?.message) ?? saleErr?.message ?? "Gagal simpan transaksi")}`);
   }
 
   // Validate every pending line snapshot before any separate stock request.
@@ -490,7 +504,7 @@ export async function checkoutKasir(formData: FormData) {
       }
     }
   } catch (error) {
-    checkoutFailure = error instanceof Error ? error.message : "Gagal memproses stok atau rincian transaksi";
+    checkoutFailure = error instanceof Error ? pesanGagalKampanye(error.message) ?? error.message : "Gagal memproses stok atau rincian transaksi";
     console.error(`[checkout] gagal menyimpan ${noStruk}:`, error);
   }
   if (checkoutFailure) {
@@ -510,7 +524,7 @@ export async function checkoutKasir(formData: FormData) {
     await resumePosCheckout(supabase, user.id, checkout, "cashier", sale.id, replacementId);
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
     if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
-    redirect(`${failureUrl}${encodeURIComponent(finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
+    redirect(`${failureUrl}${encodeURIComponent(pesanGagalKampanye(finalizationErr?.message) ?? finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
   }
 
   // Saldo/ledger poin disimpan atomik oleh finalizer; golongan mengikuti penjualan selesai.

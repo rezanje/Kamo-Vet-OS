@@ -16,6 +16,7 @@ import { diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang } from "./har
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, voucherBerlaku, type VoucherRow } from "./voucher";
 import { hariIniWIB } from "./tanggal";
 import { loadActiveVouchers } from "./voucher-loader";
+import { bacaKode, bacaKodeKampanye, loadKodeKampanyeAktif, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "./kode-kampanye";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -147,6 +148,10 @@ export type Potongan = {
   total: number;
   /** Alasan voucher ditolak; null kalau tidak ada kode / kodenya sah. */
   tolakVoucher: string | null;
+  /** Kode voucher yang disimpan di invoice (tujuan kode kampanye bila ada). */
+  voucherCode?: string | null;
+  /** Kode kampanye yang diketik (C05); null bila bukan kode kampanye. */
+  campaignCode?: string | null;
 };
 
 const KOSONG: Potongan = { promo: 0, voucher: 0, golongan: 0, total: 0, tolakVoucher: null };
@@ -173,12 +178,20 @@ export async function hitungPotonganKlinik(
 ): Promise<Potongan> {
   const rows = opts.rows.filter((l) => Number(l.qty) > 0);
   const subtotal = rows.reduce((a, l) => a + Number(l.qty) * Number(l.harga), 0);
-  if (subtotal <= 0) return KOSONG;
+  const kodeMasuk = normalizeKode(opts.voucherCode) || null;
+  // Kode kampanye (C05) diterjemahkan ke voucher/promo tujuannya.
+  const kampanye = await bacaKodeKampanye(supabase, kodeMasuk);
+  const terbaca = bacaKode(kodeMasuk, kampanye ? [kampanye] : []);
+  const kodeHasil = { voucherCode: terbaca.voucherCode, campaignCode: kampanye?.code ?? null };
+  if (subtotal <= 0) return { ...KOSONG, ...kodeHasil };
 
-  const kode = normalizeKode(opts.voucherCode) || null;
+  const kode = terbaca.voucherCode;
 
   // Promo otomatis: dari master, per baris, pakai mesin yang sama dengan petshop.
-  const promoAktif = opts.branchId ? await loadPromoAktif(supabase, opts.branchId) : [];
+  const promoAktif = promoDenganKode(
+    opts.branchId ? await loadPromoAktif(supabase, opts.branchId, terbaca.promoId ? [terbaca.promoId] : []) : [],
+    terbaca.promoId,
+  );
   const pricingSource = rows.map(line => ({
     item_id:line.item_id ?? "", qty:Number(line.qty), harga:Number(line.harga), satuan:line.satuan,
     item_type:line.jenis === "jasa" && line.item_id ? "Jasa" : "Persediaan",
@@ -186,6 +199,8 @@ export async function hitungPotonganKlinik(
   const pricingRows = opts.groupServices === false ? pricingSource : aggregateServiceLines(pricingSource);
   const potonganPromo = hitungPromoKeranjang(promoAktif, pricingRows);
   const promo = potonganPromo.reduce((a, p) => a + Number(p.potongan), 0);
+  const tolakKampanye = kampanye ? pesanKampanyeDitolak(kampanye,
+    promoAktif.some((p) => p.id === terbaca.promoId), potonganPromo.some((p) => p.promoId === terbaca.promoId)) : null;
 
   const afterPromo = Math.max(0, subtotal - promo);
 
@@ -216,7 +231,9 @@ export async function hitungPotonganKlinik(
   // Voucher dihitung dari nilai setelah promo, sama urutannya dengan §6 di POS.
   let voucher = 0;
   let tolakVoucher: string | null = null;
-  if (kode) {
+  if (tolakKampanye) {
+    tolakVoucher = tolakKampanye;
+  } else if (kode) {
     const { data: v } = await supabase
       .from("vouchers")
       .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
@@ -233,12 +250,14 @@ export async function hitungPotonganKlinik(
   // Total potongan tidak boleh melebihi tagihan — kalau lewat, DPP jadi minus dan
   // jurnal pendapatannya ikut salah.
   const total = Math.min(subtotal, promo + golongan + voucher);
-  return { promo, voucher, golongan, total, tolakVoucher };
+  return { promo, voucher, golongan, total, tolakVoucher, ...kodeHasil };
 }
 
 export type BekalPotongan = {
   promos: import("./promo-hitung").PromoHitung[];
   vouchers: VoucherRow[];
+  /** Kode kampanye aktif (C05) — hanya untuk tampilan, server memeriksa ulang. */
+  kodeKampanye?: KodeKampanye[];
   aturanDiskon: import("./harga-golongan").AturanDiskon[];
   infoBarang: Record<string, import("./harga-golongan").BarangDiskon>;
   golonganPersen: number;
@@ -268,8 +287,10 @@ export async function bekalPotonganKlinik(
   itemIds: string[],
 ): Promise<BekalPotongan> {
   const hariIni = hariIniWIB();
+  const kodeKampanye = await loadKodeKampanyeAktif(supabase);
+  const promoKodeIds = kodeKampanye.flatMap((k) => (k.promo_id ? [k.promo_id] : []));
   const [promos, vouchers, cust] = await Promise.all([
-    branchId ? loadPromoAktif(supabase, branchId) : Promise.resolve([]),
+    branchId ? loadPromoAktif(supabase, branchId, promoKodeIds) : Promise.resolve([]),
     loadActiveVouchers(supabase),
     customerId
       ? supabase.from("customers")
@@ -293,6 +314,7 @@ export async function bekalPotonganKlinik(
   return {
     promos,
     vouchers: ((vouchers ?? []) as VoucherRow[]).filter((v) => voucherBerlaku(v, hariIni)),
+    kodeKampanye,
     aturanDiskon,
     // Map tidak bisa dikirim ke komponen klien — layar merakit ulang Map-nya.
     infoBarang: Object.fromEntries(infoMap),

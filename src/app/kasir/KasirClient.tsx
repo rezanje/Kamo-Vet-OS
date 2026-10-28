@@ -10,7 +10,8 @@ import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
-import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
+import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
+import { bacaKode, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
 import { type PromoHitung } from "@/lib/promo-hitung";
 import type { ItemUnit } from "@/lib/satuan";
 import { hargaTingkat, type Tingkat } from "@/lib/harga-tingkat";
@@ -94,12 +95,12 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 };
 
 export function KasirClient({
-  branchName, items, customers, vouchers, hariIni, draftContext, shiftId, promos = [], promoHitung = [],
+  branchName, items, customers, vouchers, kodeKampanye = [], hariIni, draftContext, shiftId, promos = [], promoHitung = [],
   aturanDiskon = {}, infoBarang = {}, salespeople = [], cashierName = "Akun login", error, replacementDraft, replacementId,
   groomingDoctorRequired = false, groomingApplies = true,
 }: {
   draftContext?: string; shiftId?: string; replacementDraft?: KasirDraft; replacementId?: string;
-  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; hariIni: string;
+  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; kodeKampanye?: KodeKampanye[]; hariIni: string;
   promos?: PromoRow[]; promoHitung?: PromoHitung[];
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
@@ -307,7 +308,11 @@ export function KasirClient({
 
   // Promo otomatis (migrasi 0079): dihitung ulang tiap isi keranjang berubah.
   // Angka di sini cuma untuk DITAMPILKAN — server menghitung ulang saat bayar.
-  const potonganPromo = useMemo(() => serviceLinePromos(promoHitung, cart), [promoHitung, cart]);
+  // Kode kampanye (C05) yang terikat promo membuat promo itu ikut dipotong di sini.
+  const kodeTerbaca = useMemo(() => bacaKode(voucher, kodeKampanye), [voucher, kodeKampanye]);
+  const promoKodeId = kodeTerbaca.promoId;
+  const promoEfektif = useMemo(() => promoDenganKode(promoHitung, kodeTerbaca.promoId), [promoHitung, kodeTerbaca]);
+  const potonganPromo = useMemo(() => serviceLinePromos(promoEfektif, cart), [promoEfektif, cart]);
   const promoPerItem = useMemo(
     () => new Map(potonganPromo.map((p) => [p.lineIndex, p])),
     [potonganPromo],
@@ -351,15 +356,18 @@ export function KasirClient({
     ),
     [cart, cust, aturanDiskon, infoMap],
   );
-  const v = vouchers.find((x) => x.code === normalizeKode(voucher));
+  const v = kodeTerbaca.voucherCode ? vouchers.find((x) => x.code === kodeTerbaca.voucherCode) : undefined;
+  const kampanye = kodeTerbaca.kampanye;
+  const tolakKampanye = kampanye ? pesanKampanyeDitolak(kampanye,
+    promoEfektif.some((p) => p.id === promoKodeId), potonganPromo.some((h) => h.promoId === promoKodeId)) : null;
   // Syarat keranjang diperiksa di layar juga supaya kasir tahu SEBELUM menekan
   // bayar — kalau hanya di server, pelanggan sudah terlanjur diberi tahu totalnya.
-  const tolakVoucher = voucher.trim() === "" ? null : pesanVoucherDitolak(v ?? null, hariIni, {
+  const tolakVoucher = voucher.trim() === "" ? null : tolakKampanye ?? (kampanye && !kampanye.voucher_code ? null : pesanVoucherDitolak(v ?? null, hariIni, {
     dasar: afterItems,
     adaPromoOtomatis: potonganPromo.length > 0,
     customerId: cust?.id ?? null,
     categoryId: cust?.golonganId ?? null,
-  });
+  }));
   const voucherVal = v && !tolakVoucher ? potonganVoucher(afterItems, v) : 0;
   const voucherInvalid = tolakVoucher !== null;
   const totals = computeTotals(cartHitung, diskonVal + diskonKategori, voucherVal, 0);
@@ -597,7 +605,7 @@ export function KasirClient({
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />
           <input type="hidden" name="diskon" value={diskonVal} />
           <input type="hidden" name="poinDigunakan" value={poinUsed} />
-          <input type="hidden" name="voucherCode" value={v ? v.code : ""} />
+          <input type="hidden" name="voucherCode" value={kampanye ? kampanye.code : v ? v.code : ""} />
           <input type="hidden" name="metode" value={split ? "Split" : metode} />
           <input type="hidden" name="split_payments" value={JSON.stringify(split ? payments : [])} />
           <input type="hidden" name="merchant_fee_percent" value={split ? 0 : merchantFeePercent} />
@@ -749,7 +757,7 @@ export function KasirClient({
             {poinUsed > 0 && <Row k="" v={`- ${rp(poinUsed)}`} red />}
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0" }}>
-              <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Kode voucher</span>
+              <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Kode voucher / kampanye</span>
               <input className="fi" value={voucher} onChange={(e) => setVoucher(e.target.value)} placeholder="mis. HEMAT10"
                 style={{ width: 110, padding: "3px 7px", fontSize: 11, textTransform: "uppercase", borderColor: voucherInvalid ? "#fca5a5" : undefined }} />
             </div>

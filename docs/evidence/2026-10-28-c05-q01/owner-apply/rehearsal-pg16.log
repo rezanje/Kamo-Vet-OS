@@ -1,0 +1,14 @@
+server: postgres (PostgreSQL) 16.14 (Homebrew)
+baseline: 286 earlier migrations applied
+preflight (before): 7 rows ok
+readback: 10 rows ok
+readback after re-apply (idempotent): 10 rows ok
+rollback (default): functions identical to baseline; campaign code row kept in campaign_codes_archived_c05q01
+preflight (after rollback): 7 rows ok
+readback (re-apply over archive): 10 rows ok
+rollback (owner flag): functions identical to baseline; new tables/columns dropped
+readback (re-apply): 10 rows ok
+C05 campaign codes: passed
+Q01 new customer quest: passed
+apply.sql sha256 772d0461da8d0c48eedbeee4b4312e4257bff65359470fd0f27891ac5453f011
+cleanup: temp cluster removed

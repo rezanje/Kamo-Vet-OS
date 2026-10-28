@@ -3,13 +3,30 @@
 export type QuestDef = {
   id: string;
   quest_type: "daily" | "monthly";
-  target_kind: "product_qty" | "category_qty" | "total_sales_amount";
+  target_kind: "product_qty" | "category_qty" | "total_sales_amount" | "new_customer";
   target_ref_id: string | null;
   target_value: number;
   points_reward: number;
 };
 
 export type SaleLine = { item_id: string | null; category_id: string | null; qty: number };
+
+export function normalizeQuestTarget(kind: string, value: number, ref: string | null) {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  switch (kind) {
+    case "new_customer":
+      return Number.isInteger(value)
+        ? { target_kind: kind, target_value: value, target_ref_id: null }
+        : null;
+    case "total_sales_amount":
+      return { target_kind: kind, target_value: value, target_ref_id: null };
+    case "product_qty":
+    case "category_qty":
+      return { target_kind: kind, target_value: value, target_ref_id: ref?.trim() || null };
+    default:
+      return null;
+  }
+}
 
 // WIB (UTC+7) — reset harian mengikuti timezone cabang, default WIB.
 export function periodKey(questType: "daily" | "monthly", now: Date): string {
@@ -28,6 +45,8 @@ export function saleContribution(
   saleTotal: number,
 ): number {
   if (quest.target_kind === "total_sales_amount") return saleTotal;
+  // Customer acquisition is checked against the global phone history in the database.
+  if (quest.target_kind === "new_customer") return 0;
   if (quest.target_kind === "product_qty") {
     return lines
       .filter((l) => !quest.target_ref_id || l.item_id === quest.target_ref_id)
@@ -73,7 +92,7 @@ export function monthlyLeaderboard(
   const sums = new Map<string, number>();
   for (const l of ledger) {
     if (l.source_type !== "quest_completion") continue;
-    if (!l.created_at.startsWith(month)) continue;
+    if (periodKey("monthly", new Date(l.created_at)) !== month) continue;
     sums.set(l.staff_id, (sums.get(l.staff_id) ?? 0) + l.points_delta);
   }
   return [...sums.entries()]

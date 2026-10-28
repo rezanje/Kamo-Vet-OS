@@ -40,7 +40,11 @@ async function simpan(supabase: Db, jenis: JenisImpor, baris: ReturnType<typeof 
         .map((c) => normalTelp(c.phone ?? "")).filter(Boolean)),
     });
     if (siap.length === 0) return { masuk: 0, salah, pesanGagal: null };
-    const { error } = await supabase.from("customers").insert(siap);
+    // Kartu hasil impor = pelanggan lama, tidak pernah dihitung "customer baru" di quest staf (Q01).
+    const importedAt = new Date().toISOString();
+    let { error } = await supabase.from("customers").insert(siap.map((row) => ({ ...row, imported_at: importedAt })));
+    // Sebelum langkah database Q01 kolomnya belum ada: impor tetap jalan tanpa penanda.
+    if (error && /imported_at/.test(error.message)) ({ error } = await supabase.from("customers").insert(siap));
     if (error) return { masuk: 0, salah, pesanGagal: pesanSimpanGagal(error.message) };
     return { masuk: siap.length, salah, pesanGagal: null };
   }

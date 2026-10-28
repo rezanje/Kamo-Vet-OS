@@ -20,6 +20,7 @@ import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
 import { clinicServicePerformerInput, parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
+import { bacaKodeKampanye } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
@@ -178,7 +179,7 @@ export async function bayarVisit(formData: FormData) {
 
   const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
   const diskonManual = Number(formData.get("discount")) || 0;
-  const voucherCode = existing ? existing.voucher_code : normalizeKode(formData.get("voucherCode")) || null;
+  const kodeDiketik = existing ? existing.voucher_code : normalizeKode(formData.get("voucherCode")) || null;
 
   // Promo, voucher, dan diskon golongan DIHITUNG ULANG di server dari master —
   // angka dari layar tidak menentukan uang. Layar kasir yang sudah lama terbuka
@@ -187,9 +188,12 @@ export async function bayarVisit(formData: FormData) {
     branchId: v?.branch_id ?? null, customerId: v?.customer_id ?? null,
     // Promo & voucher menghitung dari harga yang SUDAH kena diskon baris.
     rows: rows.map((l) => ({ item_id: l.item_id ?? null, qty: l.qty, harga: hargaNetto(l), jenis:l.jenis, satuan:l.satuan })),
-    voucherCode, groupServices:groupedServicePricing,
+    voucherCode: kodeDiketik, groupServices:groupedServicePricing,
   });
   if (potongan.tolakVoucher) redirect(`${back}?error=${encodeURIComponent(potongan.tolakVoucher)}`);
+  // Kode kampanye (C05) disimpan terpisah; invoice tetap menyimpan voucher aslinya.
+  const voucherCode = existing ? existing.voucher_code : ("voucherCode" in potongan ? potongan.voucherCode ?? null : null);
+  const campaignCode = !existing && "campaignCode" in potongan ? potongan.campaignCode ?? null : null;
 
   // "Bayar & Selesai" memaksa lunas; "Simpan" pakai status turunan dari jumlah bayar.
   const finalize = String(formData.get("finalize") ?? "") === "1";
@@ -291,6 +295,7 @@ export async function bayarVisit(formData: FormData) {
       tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
       shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
+      ...(campaignCode ? { campaign_code: campaignCode } : {}),
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
     p_lines: barisUntukPosting(rows),
@@ -367,6 +372,11 @@ export async function bayarRombongan(formData: FormData) {
   const metode = String(formData.get("metode_bayar") ?? "Tunai");
   const voucherCode = normalizeKode(formData.get("voucherCode")) || null;
   const poinDiminta = Number(formData.get("poinDigunakan")) || 0;
+  // Satu pembayaran rombongan menerbitkan beberapa invoice; kode kampanye berbatas
+  // dihitung per dokumen, jadi kode kampanye dipakai per kunjungan saja.
+  if (voucherCode && await bacaKodeKampanye(supabase, voucherCode)) {
+    redirect(`${back}?error=${encodeURIComponent("Kode kampanye dipakai per kunjungan, bukan pembayaran rombongan. Bayar kunjungan ini sendiri untuk memakai kode tersebut.")}`);
+  }
 
   const { data: { user } } = await supabase.auth.getUser();
   const klinikShift = user ? await getOpenShift(supabase as never, user.id, "klinik") : null;

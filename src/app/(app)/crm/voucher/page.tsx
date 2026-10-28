@@ -73,6 +73,9 @@ export default async function VoucherPage({
         <Link href="/crm/voucher" className="back-btn" style={tabAktif(true)}>
           <i className="ti ti-ticket" /> Kode Voucher
         </Link>
+        <Link href="/crm/kampanye" className="back-btn" style={tabAktif(false)}>
+          <i className="ti ti-tag" /> Kode Kampanye
+        </Link>
       </div>
 
       {error && (

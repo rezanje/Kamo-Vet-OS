@@ -27,7 +27,7 @@ export default async function QuestPage({
   const now = new Date();
   const dailyKey = periodKey("daily", now);
   const monthlyKey = periodKey("monthly", now);
-  const monthStart = `${monthlyKey}-01T00:00:00Z`;
+  const monthStart = new Date(`${monthlyKey}-01T00:00:00+07:00`).toISOString();
 
   const [{ data: defs }, { data: progress }, { data: sp }, { data: streak }, { data: rewards },
     { data: redemptions }, { data: monthLedger }, { data: cfg }] = await Promise.all([
@@ -232,7 +232,7 @@ export default async function QuestPage({
                         <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: done ? "linear-gradient(90deg,#34d399,#16a34a)" : "linear-gradient(90deg,var(--posb),var(--posb))" }} />
                       </div>
                       <div style={{ fontSize: 9.5, color: "var(--tm)", marginTop: 3 }}>
-                        {isAmount ? `${rp(cur)} / ${rp(target)}` : `${cur} / ${target}`}
+                        {isAmount ? `${rp(cur)} / ${rp(target)}` : `${cur} / ${target}${def.target_kind === "new_customer" ? " customer" : ""}`}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", minWidth: 74 }}>
