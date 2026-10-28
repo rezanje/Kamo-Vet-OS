@@ -4,7 +4,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { setujuiPermintaan, terimaDariBackoffice, updateRequestStatus } from "../actions";
+import { kirimPermintaan, setujuiPermintaan, terimaDariBackoffice, updateRequestStatus } from "../actions";
+import { siapkanKirim, type BarisPermintaan } from "@/lib/permintaan-kirim";
+import { loadWarehouseStock } from "@/lib/warehouse-stock";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -24,14 +26,17 @@ type Detail = {
   created_at: string;
   priority: string | null;
   catatan: string | null;
+  to_warehouse_id: string | null;
   branches: Rel<{ name: string }>;
   warehouses: Rel<{ name: string }>;
-  stock_request_items: {
-    id: string; nama: string; satuan: string | null;
-    qty_diminta: number; qty_disetujui: number | null; qty_diterima: number | null;
-    kondisi: string | null; catatan: string | null;
-  }[] | null;
+  stock_request_items: ({
+    qty_diterima: number | null;
+    kondisi: string | null;
+    catatan: string | null;
+  } & BarisPermintaan)[] | null;
 };
+
+const qty = (v: number) => Number(v.toFixed(6)).toLocaleString("id-ID", { maximumFractionDigits: 6 });
 
 export default async function PermintaanDetailPage({
   params, searchParams,
@@ -46,7 +51,7 @@ export default async function PermintaanDetailPage({
   const { data: { user } } = await supabase.auth.getUser();
   const { data } = await supabase
     .from("stock_requests")
-    .select("id, no_request, status, created_at, priority, catatan, branches(name), warehouses(name), stock_request_items(id, nama, satuan, qty_diminta, qty_disetujui, qty_diterima, kondisi, catatan)")
+    .select("id, no_request, status, created_at, priority, catatan, to_warehouse_id, branches(name), warehouses(name), stock_request_items(id, item_id, nama, satuan, faktor, qty_diminta, qty_disetujui, qty_dikirim, qty_diterima, kondisi, catatan)")
     .eq("id", id)
     .maybeSingle();
 
@@ -55,7 +60,20 @@ export default async function PermintaanDetailPage({
 
   const items = req.stock_request_items ?? [];
   const menunggu = req.status === "Menunggu Persetujuan";
+  const disetujui = req.status === "Disetujui";
   const dikirim = req.status === "Dikirim";
+
+  // Stok gudang pengirim ditarik begitu layarnya masih bisa memutuskan jumlah.
+  // Tanpa ini, kekurangan stok baru ketahuan di cabang penerima — persis keluhan
+  // yang dilaporkan Andri (minta 500, gudang punya 250, tetap bisa "Dikirim").
+  const butuhStok = menunggu || disetujui;
+  const stok = butuhStok && req.to_warehouse_id
+    ? await loadWarehouseStock(supabase, [req.to_warehouse_id])
+    : [];
+  const petaStok = new Map(stok.map((s) => [s.item_id, Number(s.qty)]));
+  const barisStok = siapkanKirim(items, petaStok, menunggu ? "diminta" : "disetujui");
+  const stokBaris = new Map(barisStok.map((b) => [b.id, b]));
+  const adaKurang = barisStok.some((b) => b.kurang);
 
   return (
     <>
@@ -72,7 +90,9 @@ export default async function PermintaanDetailPage({
           <i className="ti ti-circle-check" />{" "}
           {success === "terima"
             ? `Barang diterima${trm ? ` (${trm})` : ""} — stok cabang sudah bertambah.`
-            : "Permintaan disetujui dengan jumlah yang kamu tetapkan."}
+            : success === "kirim"
+              ? "Barang dikirim — stok gudang pengirim sudah berkurang dan menunggu diterima cabang."
+              : "Permintaan disetujui dengan jumlah yang kamu tetapkan."}
         </div>
       )}
       {error && (
@@ -116,7 +136,9 @@ export default async function PermintaanDetailPage({
                   <th>Nama Barang</th>
                   <th>Satuan</th>
                   <th style={{ textAlign: "center" }}>Diminta</th>
+                  {butuhStok && <th style={{ textAlign: "center" }}>Stok gudang</th>}
                   <th style={{ textAlign: "center", width: 120 }}>Disetujui</th>
+                  {!menunggu && <th style={{ textAlign: "center" }}>Dikirim</th>}
                   <th style={{ textAlign: "center" }}>Diterima</th>
                   <th>Catatan</th>
                 </tr>
@@ -128,35 +150,51 @@ export default async function PermintaanDetailPage({
                     <td style={{ fontSize: 11.5, fontWeight: 500 }}>{it.nama}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{it.satuan ?? "—"}</td>
                     <td style={{ textAlign: "center", fontSize: 11.5 }}>{Number(it.qty_diminta)}</td>
+                    {butuhStok && (
+                      <td style={{ textAlign: "center", fontSize: 11.5, color: stokBaris.get(it.id)?.kurang ? "#b91c1c" : "var(--tm)", fontWeight: stokBaris.get(it.id)?.kurang ? 700 : 400 }}>
+                        {qty(stokBaris.get(it.id)?.tersedia ?? 0)}
+                      </td>
+                    )}
                     <td style={{ textAlign: "center" }}>
                       {menunggu ? (
                         <NumberInput
                           className="fi" type="number" min={0} step="any"
                           name={`qty_${it.id}`}
-                          defaultValue={it.qty_disetujui ?? it.qty_diminta}
+                          defaultValue={it.qty_disetujui ?? stokBaris.get(it.id)?.usulan ?? it.qty_diminta}
                           style={{ width: 80, textAlign: "center" }}
                         />
                       ) : (
                         <span style={{ fontSize: 11.5 }}>{it.qty_disetujui != null ? Number(it.qty_disetujui) : "—"}</span>
                       )}
                     </td>
+                    {!menunggu && (
+                      <td style={{ textAlign: "center", fontSize: 11.5 }}>{it.qty_dikirim != null ? qty(Number(it.qty_dikirim)) : "—"}</td>
+                    )}
                     <td style={{ textAlign: "center", fontSize: 11.5 }}>{it.qty_diterima != null ? Number(it.qty_diterima) : "—"}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{it.catatan ?? "—"}</td>
                   </tr>
                 ))}
                 {items.length === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>Tidak ada barang.</td></tr>
+                  <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>Tidak ada barang.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
 
           {menunggu && (
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-              <button type="submit" className="btn-acc">
-                <i className="ti ti-check" /> Setujui dengan jumlah ini
-              </button>
-            </div>
+            <>
+              {adaKurang && (
+                <div style={{ fontSize: 10.5, color: "#b91c1c", marginTop: 8 }}>
+                  <i className="ti ti-alert-triangle" /> Ada barang yang stok gudangnya kurang dari yang diminta.
+                  Jumlah disetujui sudah diturunkan ke stok yang ada — persetujuan di atas stok akan ditolak.
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+                <button type="submit" className="btn-acc">
+                  <i className="ti ti-check" /> Setujui dengan jumlah ini
+                </button>
+              </div>
+            </>
           )}
         </div>
       </TransactionForm>
@@ -171,6 +209,65 @@ export default async function PermintaanDetailPage({
         </form>
       )}
 
+      {/* Pengiriman: di sinilah stok gudang pengirim BENAR-BENAR keluar (ke gudang
+          transit). Dulu "Tandai Dikirim" cuma mengganti label, jadi kekurangan stok
+          baru ketahuan saat cabang menerima. */}
+      {disetujui && (
+        <TransactionForm userId={user?.id ?? ""} scope={`pos:permintaan:ship:${id}`} action={kirimPermintaan}>
+          <input type="hidden" name="id" value={req.id} />
+          <div className="crm-sec">
+            <SecHeader
+              num="02"
+              title="KIRIM BARANG"
+              desc="Isi jumlah yang benar-benar dikirim. Stok gudang pengirim langsung berkurang; jumlah di atas stok ditolak."
+            />
+            <div style={{ overflowX: "auto" }}>
+              <table className="tbl" style={{ minWidth: 640 }}>
+                <thead>
+                  <tr>
+                    <th>Nama Barang</th>
+                    <th style={{ width: 90 }}>Satuan</th>
+                    <th style={{ width: 90, textAlign: "center" }}>Disetujui</th>
+                    <th style={{ width: 100, textAlign: "center" }}>Stok gudang</th>
+                    <th style={{ width: 120, textAlign: "center" }}>Qty Dikirim</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {barisStok.map((b) => (
+                    <tr key={b.id}>
+                      <td style={{ fontSize: 11.5, fontWeight: 500 }}>{b.nama}</td>
+                      <td style={{ fontSize: 11, color: "var(--tm)" }}>{b.satuan ?? "—"}</td>
+                      <td style={{ textAlign: "center", fontSize: 11.5 }}>{qty(b.plafon)}</td>
+                      <td style={{ textAlign: "center", fontSize: 11.5, color: b.kurang ? "#b91c1c" : "var(--tm)", fontWeight: b.kurang ? 700 : 400 }}>
+                        {qty(b.tersedia)}
+                      </td>
+                      <td>
+                        <NumberInput
+                          className="fi" type="number" min={0} max={b.plafon} step="any"
+                          name={`qty_${b.id}`}
+                          defaultValue={b.usulan}
+                          style={{ textAlign: "center" }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 9.5, color: adaKurang ? "#b91c1c" : "var(--td)", margin: "8px 0 0" }}>
+              {adaKurang
+                ? "Stok gudang kurang untuk sebagian barang. Jumlah kirim sudah diturunkan ke stok yang ada; sisanya tidak ikut terkirim dan perlu permintaan baru setelah stok masuk."
+                : "Kiriman sebagian diperbolehkan: isi lebih kecil dari jumlah disetujui bila hanya sebagian yang dikirim."}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              <button type="submit" className="btn-acc">
+                <i className="ti ti-truck-delivery" /> Kirim barang &amp; kurangi stok gudang
+              </button>
+            </div>
+          </div>
+        </TransactionForm>
+      )}
+
       {/* Penerimaan: satu-satunya cara permintaan jadi "Selesai", karena di sinilah
           stok benar-benar berpindah dari gudang pengirim ke gudang cabang. */}
       {dikirim && (
@@ -178,7 +275,7 @@ export default async function PermintaanDetailPage({
           <input type="hidden" name="id" value={req.id} />
           <div className="crm-sec">
             <SecHeader
-              num="02"
+              num="03"
               title="TERIMA BARANG"
               desc="Isi jumlah yang BENAR-BENAR sampai. Stok cabang bertambah sesuai angka ini, dan selisihnya jadi dasar klaim ke gudang pengirim."
             />
@@ -199,13 +296,13 @@ export default async function PermintaanDetailPage({
                       <td style={{ fontSize: 11.5, fontWeight: 500 }}>{it.nama}</td>
                       <td style={{ fontSize: 11, color: "var(--tm)" }}>{it.satuan ?? "—"}</td>
                       <td style={{ textAlign: "center", fontSize: 11.5 }}>
-                        {Number(it.qty_disetujui ?? it.qty_diminta)}
+                        {qty(Number(it.qty_dikirim ?? it.qty_disetujui ?? it.qty_diminta))}
                       </td>
                       <td>
                         <NumberInput
-                          className="fi" type="number" min={0} step="any"
+                          className="fi" type="number" min={0} max={Number(it.qty_dikirim ?? it.qty_disetujui ?? it.qty_diminta)} step="any"
                           name={`qty_${it.id}`}
-                          defaultValue={Number(it.qty_disetujui ?? it.qty_diminta)}
+                          defaultValue={Number(it.qty_dikirim ?? it.qty_disetujui ?? it.qty_diminta)}
                           style={{ textAlign: "center" }}
                         />
                       </td>

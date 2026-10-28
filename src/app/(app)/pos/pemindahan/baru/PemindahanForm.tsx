@@ -11,6 +11,7 @@ import { WarehouseStockHint } from "@/components/WarehouseStockHint";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { buatKirim } from "../actions";
+import { kurangStokPemindahan } from "@/lib/pemindahan";
 import { hariIniWIB } from "@/lib/tanggal";
 
 type Warehouse = { id: string; name: string };
@@ -48,6 +49,24 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
   };
 
   const payload = rows.filter((r) => r.item_id).map((r) => ({ item_id: r.item_id, qty: r.qty, satuan: r.satuan }));
+
+  // Kekurangan stok dihentikan di layar gudang asal, bukan menunggu penolakan
+  // database setelah tombol ditekan — dan disebutkan per barang.
+  const kurang = warehouseId
+    ? kurangStokPemindahan(
+        payload.map((r) => {
+          const it = byId.get(r.item_id);
+          return {
+            item_id: r.item_id,
+            nama: it?.name ?? "Barang",
+            qty: Number(r.qty) || 0,
+            faktor: Number(it?.units.find((u) => u.unit === r.satuan)?.factor) || 1,
+            satuan: r.satuan || it?.unit || "",
+          };
+        }),
+        stockByItem,
+      )
+    : null;
 
   return (
     <form action={save}>
@@ -121,8 +140,14 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
         </div>
       </div>
 
+      {kurang && (
+        <div role="alert" className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", marginTop: 12 }}>
+          <i className="ti ti-alert-circle" /> Stok gudang asal tidak cukup. {kurang}. Kurangi kuantitasnya.
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <SubmitButton className="btn-acc" disabled={payload.length === 0} icon="ti-truck-delivery" pendingText="Menyimpan pemindahan…">
+        <SubmitButton className="btn-acc" disabled={payload.length === 0 || kurang !== null} icon="ti-truck-delivery" pendingText="Menyimpan pemindahan…">
           Kirim barang
         </SubmitButton>
       </div>

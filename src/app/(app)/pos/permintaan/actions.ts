@@ -8,6 +8,8 @@ import { canApprove, canTransitionRequest } from "@/lib/stock-recon";
 import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
 import { prosesTerimaPermintaan, type BarisTerima } from "@/lib/terima-permintaan";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { bacaQtyKirim, pesanKurangStok, siapkanKirim, type BarisPermintaan } from "@/lib/permintaan-kirim";
+import { loadWarehouseStock } from "@/lib/warehouse-stock";
 import { hariIniWIB } from "@/lib/tanggal";
 
 export async function buatPermintaan(formData: FormData) {
@@ -80,6 +82,60 @@ export async function setujuiPermintaan(formData: FormData) {
 
   revalidatePath("/pos/permintaan");
   redirect(`${kembali}?success=setuju${transactionDraftAck(formData)}`);
+}
+
+/**
+ * Kirim barang dari gudang pengirim (status Disetujui → Dikirim).
+ *
+ * Dulu tombol ini cuma mengganti label: stok gudang tidak keluar sama sekali,
+ * jadi kekurangan stok baru ketahuan waktu cabang menekan "Terima barang"
+ * (laporan Andri 28 Okt: minta 500, stok 250, tetap bisa "Dikirim"). Sekarang
+ * stoknya benar-benar keluar ke gudang transit di RPC yang sama, dan kekurangan
+ * ditolak di sini dengan rincian per barang.
+ */
+export async function kirimPermintaan(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "");
+  const kembali = `/pos/permintaan/${id}`;
+
+  const { data: req } = await supabase
+    .from("stock_requests")
+    .select("status, to_warehouse_id, stock_request_items(id, item_id, nama, satuan, faktor, qty_diminta, qty_disetujui, qty_dikirim)")
+    .eq("id", id).maybeSingle();
+  if (!req) redirect(`/pos/permintaan?error=${encodeURIComponent("Permintaan tidak ditemukan")}`);
+  if (req!.status !== "Disetujui") {
+    redirect(`${kembali}?error=${encodeURIComponent(`Hanya permintaan Disetujui yang bisa dikirim (sekarang ${req!.status}).`)}`);
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  if (!canApprove(me?.role ?? "")) {
+    redirect(`${kembali}?error=${encodeURIComponent("Hanya Kepala Gudang / Manajer yang bisa mengirim")}`);
+  }
+
+  const baris = ((req!.stock_request_items ?? []) as BarisPermintaan[]);
+  const stok = await loadWarehouseStock(supabase, [String(req!.to_warehouse_id ?? "")]);
+  const peta = new Map(stok.map((s) => [s.item_id, Number(s.qty)]));
+  const rows = siapkanKirim(baris, peta, "disetujui");
+  const kirim = bacaQtyKirim(rows, (name) => {
+    const value = formData.get(name);
+    return value == null ? null : String(value);
+  });
+
+  // Pesan ramah lebih dulu; database tetap jadi penjaga terakhir (balapan dua kiriman).
+  const kurang = pesanKurangStok(
+    rows.map((r, i) => ({ ...r, plafon: kirim[i]?.qty ?? 0 })),
+    peta,
+  );
+  if (kurang) {
+    redirect(`${kembali}?error=${encodeURIComponent(`Stok gudang pengirim tidak cukup. ${kurang}. Kurangi jumlah kirim atau tunggu stok masuk.`)}`);
+  }
+
+  const { error } = await supabase.rpc("ship_stock_request_atomic", { p_id: id, p_rows: kirim });
+  if (error) redirect(`${kembali}?error=${encodeURIComponent(error.message)}`);
+
+  revalidatePath("/pos/permintaan");
+  redirect(`${kembali}?success=kirim${transactionDraftAck(formData)}`);
 }
 
 /**
@@ -156,6 +212,15 @@ export async function updateRequestStatus(formData: FormData) {
   // Sebelum penjagaan ini ada, tombol "Terima / Selesai" di backoffice cuma
   // mengganti label: permintaan tampak beres padahal stok cabang tidak bertambah
   // sama sekali (dilaporkan tim 2026-08-11).
+  // "Dikirim" juga tidak lagi lahir dari sini: sejak Okt 2026 stok gudang pengirim
+  // benar-benar keluar saat pengiriman, jadi harus lewat layar Kirim barang yang
+  // memeriksa stok per barang terlebih dahulu.
+  if (status === "Dikirim") {
+    redirect(`/pos/permintaan?error=${encodeURIComponent(
+      "Pengiriman dicatat lewat layar Kirim barang di halaman permintaan — di situ stok gudang diperiksa dan dikeluarkan.",
+    )}`);
+  }
+
   if (status === "Selesai") {
     redirect(`/pos/permintaan?error=${encodeURIComponent(
       "Permintaan ditutup lewat penerimaan barang di cabang penerima, bukan dari sini — supaya stoknya ikut berpindah.",
