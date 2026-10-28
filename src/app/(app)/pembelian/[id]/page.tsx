@@ -11,6 +11,8 @@ import {POPriceCorrectionForm} from "./POPriceCorrectionForm";
 import { POShortCloseForm } from "./POShortCloseForm";
 import type { ReceiptClosure } from "@/lib/purchase-short-close";
 import { POEditForm, POCancelForm } from "./POCorrectionForm";
+import { POLineEdit } from "./POLineEdit";
+import { hariIniWIB } from "@/lib/tanggal";
 import { readCompleteList } from "@/lib/checked-list";
 import { PurchaseCorrectionRequestPanel } from "@/components/PurchaseCorrectionRequestPanel";
 import { loadRequestsForSource, type PurchaseCorrectionRequest } from "@/lib/purchase-correction-requests";
@@ -82,6 +84,14 @@ export default async function PODetailPage({
   const activeReceipts = receipts.filter(r => !r.voided_at);
   const hasChildren = items.some(item => Number(item.qty_terima) > 0) || activeReceipts.length > 0
     || payments.length > 0 || returns.length > 0 || advances.length > 0 || invoices.length > 0;
+  // Edit per baris (pop-up): Super Admin, selama PO belum batal / sisa belum ditutup. Aturan lengkap di database.
+  const lineEdit = owner && po.status !== "Batal" && !closure && !closureError;
+  // Harga yang benar-benar ditagih pemasok per baris PO: jadi isian awal harga diterima di pop-up.
+  const activeInvoiceIds = invoices.filter(invoice => !invoice.voided_at).map(invoice => invoice.id);
+  const { data: invoicedRows } = lineEdit && activeInvoiceIds.length
+    ? await supabase.from("purchase_invoice_items").select("po_item_id,harga").in("invoice_id", activeInvoiceIds)
+    : { data: [] as { po_item_id: string | null; harga: number }[] };
+  const invoicedPrice = new Map((invoicedRows ?? []).flatMap(row => row.po_item_id ? [[row.po_item_id, Number(row.harga)] as const] : []));
   const editable = owner && !hasChildren && (po.status === "Draft" || po.status === "Dipesan");
   const priceEditable=owner&&!closureError&&!closure&&!editable&&!!advances.length&&items.length>0&&items.length<=1000&&(po.status==='Draft'||po.status==='Dipesan')&&!items.some(row=>Number(row.qty_terima??0)!==0||Number(row.qty_rusak??0)!==0)&&!activeReceipts.length&&!payments.length&&!returns.length&&!invoices.length;
   const activeAdvances=advances.filter(a=>a.status==='aktif').reduce((sum,a)=>sum.plus(Number(a.jumlah)),new PosDecimal(0)).toNumber();
@@ -147,7 +157,7 @@ export default async function PODetailPage({
 
       <RelatedDocuments documents={related} from={`/pembelian/${po.id}`} />
 
-      <div className="crm-sec">
+      <div className="crm-sec" id="daftar-item" style={{ scrollMarginTop: 90 }}>
         <SecHeader num="01" title="DAFTAR ITEM" desc="Barang, satuan, jumlah dipesan & diterima." />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 660 }}>
@@ -160,6 +170,7 @@ export default async function PODetailPage({
                 <th style={{ textAlign: "center" }}>Qty Diterima</th>
                 <th style={{ textAlign: "right" }}>Harga</th>
                 <th style={{ textAlign: "right" }}>Subtotal</th>
+                {lineEdit && <th>Aksi</th>}
               </tr>
             </thead>
             <tbody>
@@ -172,10 +183,11 @@ export default async function PODetailPage({
                   <td style={{ textAlign: "center", fontSize: 11.5 }}>{it.qty_terima != null ? Number(it.qty_terima) : "—"}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(it.harga_beli))}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(Number(it.qty) * Number(it.harga_beli))}</td>
+                  {lineEdit && <td><POLineEdit key={`${it.id}:${po.revision}`} poId={po.id} revision={po.revision} today={hariIniWIB()} row={it} hargaDiterima={invoicedPrice.get(it.id)} /></td>}
                 </tr>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>Tidak ada item.</td></tr>
+                <tr><td colSpan={lineEdit ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>Tidak ada item.</td></tr>
               )}
             </tbody>
           </table>

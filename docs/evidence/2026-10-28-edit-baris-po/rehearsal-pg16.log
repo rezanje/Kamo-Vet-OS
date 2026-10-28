@@ -1,0 +1,40 @@
+server: 16.14 (Homebrew)
+Applied 303 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+PREFLIGHT
+prasyarat migrasi tercatat|20261020134110, 20261023200000, 20261028160000, 20261029110000
+migrasi 20261029150000 tercatat|-
+mesin koreksi faktur 8 argumen ada|true
+md5 isi mesin koreksi faktur|02610c3a87d6901abe5122c8e827229e
+fungsi edit baris PO sudah ada|false
+koreksi faktur tercatat|0
+permintaan PO tercatat|0
+akun OWNER aktif|0
+APPLY 2x ok
+READBACK
+preview edit baris PO (authenticated)|true
+simpan edit baris PO (authenticated)|true
+run edit baris PO tertutup untuk authenticated|true
+mesin koreksi faktur 9 argumen ada|true
+mesin koreksi faktur 8 argumen hilang|true
+koreksi faktur biasa tetap ada|true
+migrasi 20261029150000 tercatat|20261029150000
+koreksi faktur tercatat|0
+permintaan PO tercatat|0
+PASS edit baris PO + koreksi faktur (fifo) setelah apply
+PASS edit baris PO + koreksi faktur (average) setelah apply
+ROLLBACK ok
+READBACK setelah rollback
+preview edit baris PO (authenticated)|false
+PREFLIGHT setelah rollback
+prasyarat migrasi tercatat|20261020134110, 20261023200000, 20261028160000, 20261029110000
+migrasi 20261029150000 tercatat|-
+mesin koreksi faktur 8 argumen ada|true
+md5 isi mesin koreksi faktur|02610c3a87d6901abe5122c8e827229e
+fungsi edit baris PO sudah ada|false
+koreksi faktur tercatat|0
+permintaan PO tercatat|0
+akun OWNER aktif|0
+PASS koreksi faktur (fifo) setelah rollback
+PASS koreksi faktur (average) setelah rollback
+EXPECTED FAIL edit baris PO setelah rollback: ERROR:  Wrong error: function preview_purchase_order_line_correction(unknown, integer, unknown, integer, date) does not exist wanted hanya oleh Super Admin
+Stopped and removed the throwaway PostgreSQL cluster.
