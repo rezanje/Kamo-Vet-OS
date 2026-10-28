@@ -3,7 +3,8 @@
 
 No remote URL or credentials are accepted. Every suite gets a fresh database
 cloned from the fully migrated fictional template inside one network-none PG16
-container, so a legacy suite that commits cannot pollute a different suite.
+container (or, with --pg-bin, a throwaway native PostgreSQL cluster), so a legacy
+suite that commits cannot pollute a different suite.
 """
 import argparse
 import importlib.util
@@ -19,6 +20,12 @@ spec.loader.exec_module(fixture)
 legacy_spec = importlib.util.spec_from_file_location('activity_legacy_fixture', ROOT / 'scripts/test-posted-sales-postgres.py')
 legacy = importlib.util.module_from_spec(legacy_spec)
 legacy_spec.loader.exec_module(legacy)
+sys.path.insert(0, str(ROOT / 'scripts'))
+from native_postgres import NativePostgres  # noqa: E402
+
+
+class NativeDisposablePostgres(NativePostgres):
+    bootstrap = fixture.DisposablePostgres.bootstrap
 
 
 def suite_source(test):
@@ -42,6 +49,7 @@ def suite_source(test):
 
 
 DEFAULTS = [
+    'activity_audit_coverage.sql',
     'activity_audit.sql', 'activity_audit_framework.sql',
     'activity_audit_financial.sql', 'activity_audit_inventory.sql',
     'activity_audit_people_settings.sql', 'activity_audit_remaining_modules.sql',
@@ -55,6 +63,7 @@ DEFAULTS = [
 ]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('tests', nargs='*', default=DEFAULTS)
+parser.add_argument('--pg-bin', type=Path, help='Use a throwaway native PostgreSQL cluster from this bin directory instead of Docker')
 parser.add_argument('--schema-output', type=Path, help='Write owned test database schema metadata only (no source row values)')
 args = parser.parse_args()
 tests = []
@@ -64,7 +73,7 @@ for name in args.tests:
         parser.error('Expected an existing SQL filename directly in supabase/tests')
     tests.append(path)
 failures = []
-with fixture.DisposablePostgres() as database:
+with (NativeDisposablePostgres(args.pg_bin) if args.pg_bin else fixture.DisposablePostgres()) as database:
     database.bootstrap()
     if args.schema_output:
         destination = args.schema_output.resolve()
