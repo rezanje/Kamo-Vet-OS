@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ long: false, voucher: false, split: false, invalidSplit: false, pending: false, decimal: false, merchantFee: false }));
+const fixture = vi.hoisted(() => ({ long: false, voucher: false, split: false, invalidSplit: false, pending: false, decimal: false, merchantFee: false, promo: false, promoDitimpa: false }));
 vi.mock("@/components/ActiveBranch", () => ({ ActiveBranch: async () => null }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/kasir/struk/receipt", useSearchParams: () => new URLSearchParams(),
   redirect: () => { throw Error("redirect"); }, notFound: () => { throw Error("not found"); } }));
@@ -34,7 +34,11 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Debit", amount: fixture.decimal ? 81600.51 : 81600, fee_percent: 2, fee_amount: fixture.decimal ? 1600.01 : 1600 }] });
     const item = { nama: "BarangDenganNamaSangatPanjangTanpaSpasiUntukPengujianCetak", qty: fixture.long ? 1 : 5,
       satuan: "BotolDenganUkuranSangatPanjang100mL", harga: 25000, item_discount_type: null,
-      item_discount_value: 0, promos: null, sale_item_group_components: [{ component_name: "Komponen panjang", qty_per_group: 2, unit: "pcs", sort_order: 1 }] };
+      item_discount_value: 0, promo_discount: 0, promos: null, sale_item_group_components: [{ component_name: "Komponen panjang", qty_per_group: 2, unit: "pcs", sort_order: 1 }] };
+    // Struk promo: satu baris 5 x 25.000, potongan promo Rp5.000 (= sale.discount).
+    if (fixture.promo) Object.assign(item, { promo_discount: 5000, promos: { name: "PROMO LEBARAN HEMAT" } });
+    // Baris lama: promo tercatat tetapi diskon manual kasir yang menang (promo_discount 0).
+    if (fixture.promoDitimpa) Object.assign(item, { item_discount_type: "nominal", item_discount_value: 5000, promo_discount: 0, promos: { name: "PROMO LEBARAN HEMAT" } });
     const data = table === "sales" ? sale : table === "sale_items" ? Array.from({ length: fixture.long ? 30 : 1 }, () => item)
       : table === "profiles" ? { full_name: "Operator Uji", is_active: true } : [];
     const q = { select: () => q, eq: () => q, is: () => q, order: () => q,
@@ -46,7 +50,7 @@ import ReceiptPage from "@/app/kasir/struk/[saleId]/page";
 import BackofficeReceiptPage from "@/app/(app)/pos/struk/[saleId]/page";
 import KasirLayout from "@/app/kasir/layout";
 
-beforeEach(() => { fixture.long = false; fixture.voucher = false; fixture.split = false; fixture.invalidSplit = false; fixture.pending = false; fixture.decimal = false; fixture.merchantFee = false; });
+beforeEach(() => { fixture.long = false; fixture.voucher = false; fixture.split = false; fixture.invalidSplit = false; fixture.pending = false; fixture.decimal = false; fixture.merchantFee = false; fixture.promo = false; fixture.promoDitimpa = false; });
 async function render(print = "") {
   const page = await ReceiptPage({ params: Promise.resolve({ saleId: "receipt" }), searchParams: Promise.resolve({ print }) });
   const markup = renderToStaticMarkup(await KasirLayout({ children: page }));
@@ -141,4 +145,22 @@ it("retains a long voucher code alongside its discount and total", async () => {
   expect(doc.body.textContent).toContain("Diskon + voucher VOUCHER1234567890123456789");
   expect(doc.body.textContent).toContain("-Rp 5.000");
   expect(doc.body.textContent).toContain("Rp 120.000");
+});
+
+it("prints the promo discount on its own line and never repeats it as a transaction discount", async () => {
+  fixture.promo = true;
+  const doc = await render();
+  const text = doc.body.textContent ?? "";
+  expect(text).toContain("Pot. PROMO LEBARAN HEMAT");
+  expect(text).toContain("Pot. per item-Rp 5.000");
+  expect(text).not.toContain("Diskon transaksi");
+});
+
+it("labels a cashier override as an item discount, not as the promo it displaced", async () => {
+  fixture.promoDitimpa = true;
+  const doc = await render();
+  const text = doc.body.textContent ?? "";
+  expect(text).toContain("Pot. item");
+  expect(text).not.toContain("PROMO LEBARAN HEMAT");
+  expect(text).toContain("Pot. per item-Rp 5.000");
 });
