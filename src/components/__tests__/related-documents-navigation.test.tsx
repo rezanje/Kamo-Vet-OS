@@ -1,7 +1,7 @@
 import { ActivityNavigationProvider } from '../ActivityHistoryLink';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
-const m=vi.hoisted(()=>({from:vi.fn(),calls:[] as unknown[][],rootMissing:false,relatedError:false,denied:false,replacementVisible:false,salesLegacy:false,salesCorrected:false}));
+const m=vi.hoisted(()=>({from:vi.fn(),calls:[] as unknown[][],rootMissing:false,relatedError:false,denied:false,replacementVisible:false,salesLegacy:false,salesCorrected:false,links:[] as {invoice_id:string;goods_receipt_id:string}[]}));
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:'user'}}})},from:m.from})}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
 vi.mock('@/components/dokumen/DokumenPanel',()=>({DokumenPanel:()=>null}));
@@ -17,7 +17,7 @@ const id=(n:number)=>'10000000-0000-4000-8000-'+String(n).padStart(12,'0');
 const po={id:id(1),no_po:'PO-1',tanggal:'2026-10-22',status:'Diterima',total:100,revision:0,branch_id:id(99),purchase_order_items:[],goods_receipts:[{id:id(2),no_terima:'GR-ONE',tanggal:'2026-10-22'},{id:id(3),no_terima:'GR-TWO',tanggal:'2026-10-22'}],purchase_advances:[{id:id(4),no_um:'DP-ONE',status:'aktif'}],po_payments:[],purchase_returns:[]};
 const payment=(n:number,extra={})=>({id:id(n),tanggal:'2026-10-22',amount:10,metode:'Transfer',revision:0,advance_id:null,advance:null,payment_order_id:null,payment_order:null,reversal_of:null,replaces_payment_id:null,voided_at:null,...extra});
 beforeEach(()=>{
- m.calls=[];m.rootMissing=false;m.relatedError=false;m.denied=false;m.replacementVisible=false;m.salesLegacy=false;m.salesCorrected=false;
+ m.calls=[];m.rootMissing=false;m.relatedError=false;m.denied=false;m.replacementVisible=false;m.salesLegacy=false;m.salesCorrected=false;m.links=[];
  m.from.mockImplementation((table:string)=>{
  const filters:Record<string,unknown>={};let single=false;let rangeFrom:number|undefined,rangeTo:number|undefined;
  const q:Record<string,unknown>={then:(resolve:(x:unknown)=>void)=>{
@@ -39,6 +39,7 @@ beforeEach(()=>{
   if(table==='sales_invoices'&&!single&&m.salesCorrected)data=[...(data as unknown[]),{id:id(45),no_faktur:'SI-ORIGINAL',status:'batal',carried_paid:0,replaces_invoice_id:null,sales_receipts:[{id:id(46),no_terima:'OLD-RECEIPT',tanggal:'2026-10-21',jumlah:30,metode:'Transfer'}]}];
   if(table==='sales_receipts')data=[{id:id(41),invoice_id:id(40),no_terima:'SPLIT-CASH',tanggal:'2026-10-22',jumlah:20,metode:'Tunai',advance_id:null},{id:id(42),invoice_id:id(40),no_terima:'SPLIT-DP',tanggal:'2026-10-22',jumlah:30,metode:'Transfer',dari_uang_muka:10,advance_id:id(43),advance:m.denied?null:{id:id(43),no_um:'SALES-DP',status:'aktif'}},...(m.salesCorrected?[{id:id(46),invoice_id:id(45),no_terima:'OLD-RECEIPT',tanggal:'2026-10-21',jumlah:30,metode:'Transfer'}]:[])].filter(r=>Array.isArray(filters.invoice_id)&&filters.invoice_id.includes(r.invoice_id));
   if(table==='company_settings')data={ppn_rate:11};
+  if(table==='purchase_invoice_receipts')data=m.links.filter(l=>(!filters.invoice_id||l.invoice_id===filters.invoice_id));
   const count=Array.isArray(data)?data.length:null;
   resolve({data:Array.isArray(data)&&rangeFrom!==undefined?data.slice(rangeFrom,(rangeTo??rangeFrom)+1):data,error,count});
  }};
@@ -130,4 +131,18 @@ it('retains per-payment and per-receipt audit links alongside their document anc
  const salesPage=await SalesInvoice({params:Promise.resolve({id:id(40)}),searchParams:Promise.resolve({})});
  const sales=renderToStaticMarkup(<ActivityNavigationProvider allowed>{salesPage}</ActivityNavigationProvider>);
  expect(sales).toContain(`entity=sales_receipts&amp;object=${id(41)}`);expect(sales).toContain(`id="receipt-${id(41)}"`);
+});
+it('N01: an invoice with stored receipts shows only those receipts, without the same-PO note',async()=>{
+ m.links=[{invoice_id:id(10),goods_receipt_id:id(3)}];
+ const html=renderToStaticMarkup(await Invoice({params:Promise.resolve({id:id(10)}),searchParams:Promise.resolve({})}));
+ expect(html).toContain('GR-TWO');expect(html).not.toContain('GR-ONE');expect(html).toContain('Ditagih faktur ini');
+ expect(html).not.toContain('alokasi langsung ke faktur ini tidak tersimpan');
+});
+it('N01: a receipt shows the invoice that recorded it, and hides invoices linked to other receipts',async()=>{
+ m.links=[{invoice_id:id(10),goods_receipt_id:id(2)}];
+ let html=renderToStaticMarkup(await Receipt({params:Promise.resolve({id:id(2)})}));
+ expect(html).toContain('/pembelian/faktur/'+id(10));expect(html).toContain('menagih penerimaan ini');expect(html).not.toContain('PO yang sama');
+ m.links=[{invoice_id:id(10),goods_receipt_id:id(3)}];
+ html=renderToStaticMarkup(await Receipt({params:Promise.resolve({id:id(2)})}));
+ expect(html).not.toContain('/pembelian/faktur/'+id(10));
 });

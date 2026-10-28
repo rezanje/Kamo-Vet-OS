@@ -78,10 +78,12 @@ export default async function PODetailPage({
   const closure = one(closureData as unknown as Rel<ReceiptClosure>);
   const partial = items.some(row => Number(row.qty_terima ?? 0) > 0) && items.some(row => Number(row.qty_terima ?? 0) < Number(row.qty));
   const owner = !!user && profile?.role === "OWNER" && profile.is_active;
-  const hasChildren = items.some(item => Number(item.qty_terima) > 0) || receipts.length > 0
+  // P08: a cancelled receipt (stock, journal and PO qty already reversed) no longer freezes the PO.
+  const activeReceipts = receipts.filter(r => !r.voided_at);
+  const hasChildren = items.some(item => Number(item.qty_terima) > 0) || activeReceipts.length > 0
     || payments.length > 0 || returns.length > 0 || advances.length > 0 || invoices.length > 0;
   const editable = owner && !hasChildren && (po.status === "Draft" || po.status === "Dipesan");
-  const priceEditable=owner&&!closureError&&!closure&&!editable&&!!advances.length&&items.length>0&&items.length<=1000&&(po.status==='Draft'||po.status==='Dipesan')&&!items.some(row=>Number(row.qty_terima??0)!==0||Number(row.qty_rusak??0)!==0)&&!receipts.length&&!payments.length&&!returns.length&&!invoices.length;
+  const priceEditable=owner&&!closureError&&!closure&&!editable&&!!advances.length&&items.length>0&&items.length<=1000&&(po.status==='Draft'||po.status==='Dipesan')&&!items.some(row=>Number(row.qty_terima??0)!==0||Number(row.qty_rusak??0)!==0)&&!activeReceipts.length&&!payments.length&&!returns.length&&!invoices.length;
   const activeAdvances=advances.filter(a=>a.status==='aktif').reduce((sum,a)=>sum.plus(Number(a.jumlah)),new PosDecimal(0)).toNumber();
   const units = editable ? Object.fromEntries(await loadUnitOptions(supabase, items.flatMap(item => item.item_id ? [item.item_id] : []), { includeInactive: true })) : {};
 

@@ -24,6 +24,10 @@ export async function buatFaktur(formData: FormData) {
   let items: ItemInput[];
   try { items = JSON.parse(String(formData.get("items") ?? "[]")); } catch { return fail("Rincian faktur tidak dapat dibaca."); }
   if (!Array.isArray(items) || !items.length || items.some(r => !r || !r.po_item_id || !Number.isFinite(r.qty) || r.qty <= 0 || !Number.isFinite(r.harga) || r.harga < 0)) return fail("Periksa jumlah dan harga barang.");
+  // N01: receipts this invoice covers; stored atomically with the invoice by the database.
+  let receiptIds: string[];
+  try { receiptIds = JSON.parse(String(formData.get("receipt_ids") ?? "[]")); } catch { return fail("Pilihan penerimaan tidak dapat dibaca."); }
+  if (!Array.isArray(receiptIds) || receiptIds.some(id => typeof id !== "string" || !id)) return fail("Pilihan penerimaan tidak valid. Muat ulang formulir.");
   const payload = {
     po_id: String(formData.get("po_id") ?? ""), tanggal,
     jatuh_tempo: String(formData.get("jatuh_tempo") ?? ""),
@@ -47,11 +51,11 @@ export async function buatFaktur(formData: FormData) {
   const { prefix, digit } = await nomorBerikutnya(supabase, "FB", tanggal, { table: "purchase_invoices", column: "no_faktur" });
   const total = items.reduce((sum, row) => sum + row.qty * row.harga, 0);
   const { ppn } = splitPpnInklusif(total, await getPajakSettings(supabase));
-  const { data, error } = await supabase.rpc("create_purchase_invoice_from_po", {
+  const { data, error } = await supabase.rpc("create_purchase_invoice_from_po_receipts", {
     p_po_id: payload.po_id, p_request_key: requestKey, p_no_faktur_prefix: prefix, p_no_faktur_digits: digit,
     p_no_faktur_pemasok: payload.no_faktur_pemasok, p_tanggal: tanggal, p_jatuh_tempo: payload.jatuh_tempo,
     p_keterangan: payload.keterangan, p_items: payload.items, p_layer_updates: [], p_layer_inserts: [], p_ppn: ppn,
-    p_replaces_invoice_id: replacement || null,
+    p_replaces_invoice_id: replacement || null, p_receipt_ids: receiptIds,
   });
   if (error) fail(error.message);
   const created = Array.isArray(data) ? data[0] : data;

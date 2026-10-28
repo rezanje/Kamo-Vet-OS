@@ -1,0 +1,18 @@
+apply.sql sha256 1b3c69a67d8b43890e4d7409972a7d5b3504e55ab298dc9f46618c920ae20dc0
+Applied 296 repository migrations to isolated PostgreSQL 17.11 (Homebrew) with fictional auth/storage shims.
+PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin27.0.0, compiled by Apple clang version 21.0.0 (clang-2100.3.34.2), 64-bit
+PASS N01 suite fails on the base (detects the missing change)
+PASS drifted body refused by preflight and apply (exact md5)
+PASS preflight.sql (11 checks ok)
+PASS readback.sql (12 checks ok)
+PASS readback.sql (12 checks ok)
+PASS apply is idempotent; history rows recorded once
+PASS n01_purchase_invoice_receipts.sql
+PASS p08_advance_cancel_cascade.sql
+PASS goods_receipt_cancellation.sql
+PASS rollback restores the 4 patched bodies byte-identical and removes new objects
+PASS preflight.sql (11 checks ok)
+PASS readback.sql (12 checks ok)
+PASS readback.sql (12 checks ok)
+PASS rollback refused once a link exists; data and objects intact
+Stopped and removed the throwaway PostgreSQL cluster.
