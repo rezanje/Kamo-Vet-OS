@@ -56,9 +56,11 @@ describe("purchase server action boundaries",()=>{
  });
  it("recovers a committed invoice before re-reading now exhausted PO quantities",async()=>{
   state.rpc.mockResolvedValue({data:{invoice_id:"inv-1",no_faktur:"FB.FIC.00001"},error:null});
+  // N01: only the stored receipt choice of the recovered invoice is read; PO quantities are not.
+  state.from.mockImplementation((table:string)=>{if(table!=="purchase_invoice_receipts")throw new Error("Unexpected direct table access");const q={select:()=>q,eq:async()=>({data:[],error:null})};return q;});
   await expect(buatFaktur(form({po_id:"po-1",request_key:"invoice-key",tanggal:"2026-10-04",jatuh_tempo:"2026-11-04",items:'[{"po_item_id":"row-1","qty":2,"harga":100}]'}))).rejects.toThrow("REDIRECT:/pembelian/faktur/inv-1?success=");
   expect(state.rpc).toHaveBeenCalledWith("recover_purchase_operation",expect.objectContaining({p_kind:"invoice",p_request_key:"invoice-key",p_payload:expect.objectContaining({po_id:"po-1",items:[{po_item_id:"row-1",qty:2,harga:100}]})}));
-  expect(state.from).not.toHaveBeenCalled();
+  expect(state.from.mock.calls).toEqual([["purchase_invoice_receipts"]]);
  });
   it("routes PO edit and cancel through the audited revision RPC",async()=>{
     state.rpc.mockResolvedValue({data:{po_id:"po-1",revision:1},error:null});

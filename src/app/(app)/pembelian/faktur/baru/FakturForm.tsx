@@ -12,9 +12,13 @@ import { buatFaktur } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { PriceDeviationConfirm } from "@/components/PriceDeviationConfirm";
 
+/** N01: a non-cancelled receipt of the PO; `sudahDifaktur` = number of the active invoice that already covers it. */
+export type PoReceiptOption = { id: string; no_terima: string; tanggal: string; ringkas: string; sudahDifaktur: string | null };
+
 export type PoOption = {
   id: string;
   label: string;
+  receipts?: PoReceiptOption[];
   /** Termin bawaan pemasoknya — jatuh tempo ikut menyesuaikan saat PO dipilih. */
   terminHari: number;
   warning: string | null;
@@ -31,7 +35,9 @@ const plusDays = (iso: string, days: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-export type PoInvoiceInitial = { id: string; po_id: string; tanggal: string; jatuh_tempo: string; no_faktur_pemasok: string | null; keterangan: string | null; purchase_invoice_items: { po_item_id: string; qty: number; harga: number }[] };
+export type PoInvoiceInitial = { id: string; po_id: string; tanggal: string; jatuh_tempo: string; no_faktur_pemasok: string | null; keterangan: string | null; receipt_ids?: string[]; purchase_invoice_items: { po_item_id: string; qty: number; harga: number }[] };
+
+const selectable = (o?: PoOption) => (o?.receipts ?? []).filter((r) => !r.sudahDifaktur).map((r) => r.id);
 
 export function FakturForm({ options, userId, initial, priceWarning }: { options: PoOption[]; userId: string; initial?: PoInvoiceInitial; priceWarning?: string }) {
   const today = hariIniWIB();
@@ -39,8 +45,14 @@ export function FakturForm({ options, userId, initial, priceWarning }: { options
   const [qty, setQty] = useState<Record<string, number>>(Object.fromEntries((initial?.purchase_invoice_items ?? []).map(row => [row.po_item_id, Number(row.qty)])));
   const [harga, setHarga] = useState<Record<string, number>>(Object.fromEntries((initial?.purchase_invoice_items ?? []).map(row => [row.po_item_id, Number(row.harga)])));
   const [tempo, setTempo] = useState(initial?.jatuh_tempo ?? plusDays(today, 30));
+  const [receiptIds, setReceiptIds] = useState<string[]>(() => {
+    const open = selectable(options.find((o) => o.id === initial?.po_id));
+    return (initial?.receipt_ids ?? []).filter((id) => open.includes(id));
+  });
 
   const po = options.find((o) => o.id === poId);
+  const openReceipts = selectable(po);
+  const chosenReceipts = receiptIds.filter((id) => openReceipts.includes(id));
 
   const pilihPo = (id: string) => {
     setPoId(id);
@@ -49,6 +61,8 @@ export function FakturForm({ options, userId, initial, priceWarning }: { options
     setQty(Object.fromEntries((o?.items ?? []).filter((it) => !it.blockedReason).map((it) => [it.po_item_id, it.sisa])));
     setHarga(Object.fromEntries((o?.items ?? []).filter((it) => !it.blockedReason).map((it) => [it.po_item_id, it.harga_po])));
     setTempo(plusDays(today, o?.terminHari ?? 30));
+    // Default: every receipt not yet covered by an active invoice; untick what this invoice does not bill.
+    setReceiptIds(selectable(o));
   };
 
   const payload = (po?.items ?? [])
@@ -61,9 +75,11 @@ export function FakturForm({ options, userId, initial, priceWarning }: { options
   const total = payload.reduce((a, r) => a + r.qty * r.harga, 0);
 
   return (
-    <CorrectionTransactionForm action={buatFaktur} scope={`invoice${initial ? `:${initial.id}` : ""}`} userId={userId} state={{ snapshot: { poId, qty, harga, tempo }, restore(value) {
+    <CorrectionTransactionForm action={buatFaktur} scope={`invoice${initial ? `:${initial.id}` : ""}`} userId={userId} state={{ snapshot: { poId, qty, harga, tempo, receiptIds }, restore(value) {
         if (typeof value.poId !== "string" || typeof value.tempo !== "string" || !draftRecord(value.qty, draftNumber) || !draftRecord(value.harga, draftNumber)) return false;
-        setPoId(value.poId); setQty(value.qty); setHarga(value.harga); setTempo(value.tempo); return true;
+        setPoId(value.poId); setQty(value.qty); setHarga(value.harga); setTempo(value.tempo);
+        if (Array.isArray(value.receiptIds) && value.receiptIds.every((id: unknown) => typeof id === "string")) setReceiptIds(value.receiptIds);
+        return true;
       } }}>
       {({ ready }) => <>
       <input type="hidden" name="invoice_kind" value="invoice" />
@@ -71,6 +87,7 @@ export function FakturForm({ options, userId, initial, priceWarning }: { options
       <button type="submit" formNoValidate name="tindakan" value="periksa" disabled={!ready} className="btn-def">Periksa hasil terakhir</button>
       <input type="hidden" name="po_id" value={poId} />
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
+      <input type="hidden" name="receipt_ids" value={JSON.stringify(chosenReceipts)} />
 
       <div className="grid2">
         <div className="crm-sec" style={{ marginBottom: 0 }}>
@@ -148,9 +165,31 @@ export function FakturForm({ options, userId, initial, priceWarning }: { options
         </div>
       </div>
 
+      {po && (
+        <fieldset className="crm-sec" style={{ marginTop: 12, marginBottom: 0 }}>
+          <SecHeader num="03" title="PENERIMAAN YANG DITAGIH" desc="Centang surat terima barang yang ditagih faktur ini. Stok ditagih mulai dari penerimaan terlama." />
+          {(po.receipts ?? []).length === 0 && <div style={{ fontSize: 11, color: "var(--td)" }}>Belum ada penerimaan aktif di PO ini.</div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {(po.receipts ?? []).map((r) => (
+              <label key={r.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, color: r.sudahDifaktur ? "var(--td)" : undefined }}>
+                <input type="checkbox" disabled={!!r.sudahDifaktur} checked={chosenReceipts.includes(r.id)}
+                  onChange={(e) => setReceiptIds((ids) => e.target.checked ? [...ids.filter((id) => id !== r.id), r.id] : ids.filter((id) => id !== r.id))} />
+                <span>
+                  <strong>{r.no_terima}</strong> · {r.tanggal}{r.ringkas && ` · ${r.ringkas}`}
+                  {r.sudahDifaktur && <> · {r.sudahDifaktur.startsWith("faktur lama") ? r.sudahDifaktur : `sudah ditagih di faktur ${r.sudahDifaktur}`}</>}
+                </span>
+              </label>
+            ))}
+          </div>
+          {openReceipts.length > 0 && chosenReceipts.length === 0 && (
+            <div role="alert" style={{ fontSize: 11, color: "#92400e", marginTop: 6 }}>Pilih minimal satu penerimaan yang ditagih faktur ini.</div>
+          )}
+        </fieldset>
+      )}
+
       <PriceDeviationConfirm warning={priceWarning} />
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <SubmitButton className="btn-acc" disabled={!ready || !poId || payload.length === 0}>
+        <SubmitButton className="btn-acc" disabled={!ready || !poId || payload.length === 0 || (openReceipts.length > 0 && chosenReceipts.length === 0)}>
           <i className="ti ti-file-invoice" /> Simpan faktur
         </SubmitButton>
       </div>

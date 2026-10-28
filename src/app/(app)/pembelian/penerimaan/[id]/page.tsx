@@ -35,11 +35,26 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
   if (!data) notFound();
 
   const po = one(data.purchase_orders as Rel<{ id: string; no_po: string | null; status: string; branches: Rel<{ name: string }>; warehouses: Rel<{ name: string }>; suppliers: Rel<{ nama: string }> }>);
-  const invoices = po && data.po_id ? await supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('po_id',data.po_id).order('tanggal') : {data: [],error: null};
+  // N01: invoices that recorded this receipt are shown directly. Invoices of the same PO without any
+  // stored receipt (older invoices) keep the "same PO" grouping; invoices linked to other receipts are not shown.
+  const [invoices, poLinks] = po && data.po_id ? await Promise.all([
+    supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('po_id',data.po_id).order('tanggal'),
+    supabase.from('purchase_invoice_receipts').select('invoice_id,goods_receipt_id').eq('po_id',data.po_id),
+  ]) : [{data: [],error: null},{data: [],error: null}];
+  const linkedInvoices = new Set((poLinks.data ?? []).map(l => String(l.invoice_id)));
+  const ownInvoices = new Set((poLinks.data ?? []).filter(l => l.goods_receipt_id === id).map(l => String(l.invoice_id)));
+  const shownInvoices = (invoices.data ?? []).filter(i => ownInvoices.has(i.id) || !linkedInvoices.has(i.id));
+  const legacyShown = shownInvoices.some(i => !linkedInvoices.has(i.id));
   const related: RelatedDocument[] = [
     ...(po ? [{kind:'purchase-order' as const,id:po.id,label:`PO ${po.no_po ?? 'tanpa nomor'}`,status:po.status}] : []),
-    ...(invoices.data ?? []).map(i => ({kind:'purchase-invoice' as const,id:i.id,label:`Faktur ${i.no_faktur}`,status:i.voided_at?'Dibatalkan':'Aktif'})),
+    ...shownInvoices.map(i => ({kind:'purchase-invoice' as const,id:i.id,label:`Faktur ${i.no_faktur}`,
+      status:`${i.voided_at?'Dibatalkan':'Aktif'}${ownInvoices.has(i.id)?' · menagih penerimaan ini':' · faktur lama (PO yang sama)'}`})),
   ];
+  const invoiceNote = !po
+    ? "PO terkait tidak tersedia atau tidak dapat diakses. Hubungan faktur tidak ditebak dari nomor dokumen."
+    : legacyShown
+      ? "Faktur yang menagih penerimaan ini ditandai. Faktur lama tanpa catatan penerimaan dikelompokkan lewat PO yang sama."
+      : "Faktur yang menagih penerimaan ini, tercatat saat faktur dibuat.";
   const baris = (data.goods_receipt_items ?? []) as Baris[];
   const penerima = one(data.profiles as Rel<{ full_name: string | null }>)?.full_name ?? "—";
 
@@ -49,7 +64,7 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
   return (
     <>
       <DocumentBackLink from={sp?.from} />
-      <RelatedDocuments documents={related} from={`/pembelian/penerimaan/${id}`} error={!!invoices.error} note={po ? "Faktur pada PO yang sama. Alokasi faktur per penerimaan tidak tersimpan." : "PO terkait tidak tersedia atau tidak dapat diakses. Hubungan faktur tidak ditebak dari nomor dokumen."} />
+      <RelatedDocuments documents={related} from={`/pembelian/penerimaan/${id}`} error={!!invoices.error || !!poLinks.error} note={invoiceNote} />
       {sp?.success && <div role="status" className="p2ban no-print">{sp.success}</div>}
       {sp?.error && <div role="alert" className="p2ban no-print">{sp.error}</div>}
       <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>

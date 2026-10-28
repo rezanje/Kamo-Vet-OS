@@ -42,21 +42,31 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   ]);
   const po = one(invoice.purchase_orders);
   const correctionRequests = await correctionRequestsRead;
-  const [replacementResult, originalResult, receipts, returns] = await Promise.all([
+  const [replacementResult, originalResult, receipts, receiptLinks, returns] = await Promise.all([
     supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('replaces_invoice_id',id).maybeSingle(),
     invoice.replaces_invoice_id ? supabase.from('purchase_invoices').select('id,no_faktur,voided_at').eq('id',invoice.replaces_invoice_id).maybeSingle() : {data:null,error:null},
-    po && invoice.po_id ? supabase.from('goods_receipts').select('id,no_terima').eq('po_id',invoice.po_id).order('tanggal') : {data:[],error:null},
+    po && invoice.po_id ? supabase.from('goods_receipts').select('id,no_terima,voided_at').eq('po_id',invoice.po_id).order('tanggal') : {data:[],error:null},
+    // N01: receipts this invoice covers, stored when it was created. Older invoices have none.
+    invoice.po_id ? supabase.from('purchase_invoice_receipts').select('goods_receipt_id').eq('invoice_id',id) : {data:[],error:null},
     po && invoice.po_id ? supabase.from('purchase_returns').select('id,no_retur,voided_at').eq('po_id',invoice.po_id).order('tanggal') : {data:[],error:null},
   ]);
   const replacement = replacementResult.data;
   const replacementError = replacementResult.error;
   const original = originalResult.data;
+  const linkedIds = new Set((receiptLinks.data ?? []).map(link => String(link.goods_receipt_id)));
+  const linked = linkedIds.size > 0;
+  const shownReceipts = (receipts.data ?? []).filter(r => !linked || linkedIds.has(r.id));
+  const receiptNote = !invoice.po_id
+    ? "Faktur ini tidak memiliki relasi PO tersimpan. Penerimaan dan retur tidak ditebak dari nomor dokumen."
+    : linked
+      ? `Penerimaan yang ditagih faktur ini tercatat saat faktur dibuat${shownReceipts.length < linkedIds.size ? "; sebagian tidak dapat diakses" : ""}. Retur dikelompokkan melalui PO yang sama.`
+      : "Faktur lama: penerimaan dan retur dikelompokkan melalui PO yang sama; alokasi langsung ke faktur ini tidak tersimpan.";
   const related: RelatedDocument[] = [
     ...(po ? [{kind:'purchase-order' as const,id:po.id,label:`PO ${po.no_po ?? 'tanpa nomor'}`,status:po.status}] : []),
     ...(original ? [{kind:'purchase-invoice' as const,id:original.id,label:`Faktur asal ${original.no_faktur}`,status:original.voided_at?'Dibatalkan':'Aktif'}] : []),
     ...(replacement ? [{kind:'purchase-invoice' as const,id:replacement.id,label:`Faktur pengganti ${replacement.no_faktur}`,status:replacement.voided_at?'Dibatalkan':'Aktif'}] : []),
     ...payments.map(p => ({kind:'purchase-payment' as const,id:p.id,parentId:id,label:`Pembayaran ${p.tanggal} · ${rp(p.amount)}`,status:p.reversal_of?'Pembalik pembayaran':p.voided_at?'Dibatalkan':p.replaces_payment_id?'Pengganti':'Tersimpan'})),
-    ...(receipts.data ?? []).map(r => ({kind:'goods-receipt' as const,id:r.id,label:`Penerimaan ${r.no_terima}`,status:'Dokumen tersimpan'})),
+    ...shownReceipts.map(r => ({kind:'goods-receipt' as const,id:r.id,label:`Penerimaan ${r.no_terima}`,status:r.voided_at?'Dibatalkan':linked?'Ditagih faktur ini':'Dokumen tersimpan'})),
     ...(returns.data ?? []).map(r => ({kind:'purchase-return' as const,id:r.id,label:`Retur PO ${r.no_retur}`,status:r.voided_at?'Dibatalkan':'Tersimpan'})),
   ];
   const owner = profile?.role === "OWNER" && profile.is_active;
@@ -103,7 +113,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
     <PurchaseCorrectionRequestPanel kind="purchase_invoice" sourceId={id} label={invoice.no_faktur} owner={!!owner}
       requests={correctionRequests} requestKey={crypto.randomUUID()}
       notice={sp.koreksi === "terkirim" ? "Permintaan koreksi tersimpan dan masuk antrean Super Admin." : undefined} error={sp.koreksi_error} />
-    <RelatedDocuments documents={related} from={`/pembelian/faktur/${id}`} error={!!receipts.error || !!returns.error || !!replacementError || !!originalResult.error} note={invoice.po_id ? "Penerimaan dan retur dikelompokkan melalui PO yang sama; alokasi langsung ke faktur ini tidak tersimpan." : "Faktur ini tidak memiliki relasi PO tersimpan. Penerimaan dan retur tidak ditebak dari nomor dokumen."} />
+    <RelatedDocuments documents={related} from={`/pembelian/faktur/${id}`} error={!!receipts.error || !!receiptLinks.error || !!returns.error || !!replacementError || !!originalResult.error} note={receiptNote} />
     <section className="crm-sec">
       <SecHeader num="02" title="RIWAYAT PEMBAYARAN" desc="Pembatalan mempertahankan pembayaran asli dan mencatat pembaliknya. Faktur dan barang tetap tercatat." />
       {payments.length === 0 && <p>Belum ada pembayaran.</p>}

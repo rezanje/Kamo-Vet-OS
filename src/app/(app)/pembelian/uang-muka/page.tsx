@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { DocumentBackLink, DocumentLink } from "@/components/RelatedDocuments";
 import { AdvanceUsageList } from "@/components/AdvanceUsageList";
@@ -37,7 +38,7 @@ export default async function UangMukaPage({
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
-  let daftar:UM[]=[],pemasok:{id:string;nama:string}[]=[],po:AdvancePO[]=[],receipts:{id:string;po_id:string}[]=[];
+  let daftar:UM[]=[],pemasok:{id:string;nama:string}[]=[],po:AdvancePO[]=[],receipts:{id:string;po_id:string;voided_at?:string|null}[]=[];
   let loadError="";
   const rekening=await loadRekeningAktif(supabase);
   try {
@@ -47,14 +48,15 @@ export default async function UangMukaPage({
         .order("tanggal",{ascending:false}).order("id").range(from,to),"Daftar uang muka",{maxRows:null}),
       readCompleteList<{id:string;nama:string}>((from,to)=>supabase.from("suppliers").select("id,nama",{count:"exact"}).eq("is_active",true).order("nama").order("id").range(from,to),"Pemasok uang muka",{maxRows:null}),
       readCompleteList<AdvancePO>((from,to)=>supabase.from("purchase_orders").select("id,no_po,supplier_id,status,total",{count:"exact"}).order("tanggal",{ascending:false}).order("id").range(from,to),"PO uang muka",{maxRows:null}),
-      readCompleteList<{id:string;po_id:string}>((from,to)=>supabase.from("goods_receipts").select("id,po_id",{count:"exact"}).order("id").range(from,to),"Penerimaan PO uang muka",{maxRows:null}),
+      readCompleteList<{id:string;po_id:string;voided_at?:string|null}>((from,to)=>supabase.from("goods_receipts").select("id,po_id,voided_at",{count:"exact"}).order("id").range(from,to),"Penerimaan PO uang muka",{maxRows:null}),
     ]);
   }catch(error){if(!(error instanceof ListLoadError))throw error;loadError=error.message;}
   const { usage, usageError } = daftar.length
     ? await loadPurchaseAdvanceUsage(supabase, daftar.map(u => u.id))
       .then(usage => ({ usage, usageError: false }), () => ({ usage: new Map<string, AdvanceUsage[]>(), usageError: true }))
     : { usage: new Map<string, AdvanceUsage[]>(), usageError: false };
-  const receivedPOs = new Set(receipts.map(row=>row.po_id));
+  // P08: a cancelled receipt no longer blocks a new DP (the database ignores it too).
+  const receivedPOs = new Set(receipts.filter(row=>!row.voided_at).map(row=>row.po_id));
   po = po.map(row=>({...row,hasReceipt:receivedPOs.has(row.id)}));
 
   const aktif = daftar.filter((u) => u.status === "aktif");
@@ -134,6 +136,12 @@ export default async function UangMukaPage({
                               Batalkan
                             </SubmitButton>
                           </form>
+                        )}
+                        {/* P08: a used advance is cancelled together with its payments, after a preview (Super Admin). */}
+                        {u.status === "aktif" && Number(u.terpakai) > 0 && (
+                          <Link href={`/pembelian/uang-muka/${u.id}/batal`} style={{ fontSize: 10.5, color: "#b91c1c" }}>
+                            Batalkan + pembayaran
+                          </Link>
                         )}
                       </td>
                     )}

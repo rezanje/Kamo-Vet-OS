@@ -4,7 +4,7 @@ import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { loadUnitOptions } from "@/lib/satuan";
-import { FakturForm, type PoOption, type PoInvoiceInitial } from "./FakturForm";
+import { FakturForm, type PoOption, type PoInvoiceInitial, type PoReceiptOption } from "./FakturForm";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? value[0] ?? null : value;
@@ -30,6 +30,8 @@ type InvoiceRow = {
 type PoHeader = Omit<PoRow, "purchase_order_items">;
 type PoItem = NonNullable<PoRow["purchase_order_items"]>[number] & { po_id: string };
 type InvoiceItem = NonNullable<InvoiceRow["purchase_invoice_items"]>[number] & { id: string; invoice_id: string };
+type ReceiptRow = { id: string; po_id: string; no_terima: string; tanggal: string; goods_receipt_items: { nama: string; qty_terima: number; satuan: string | null }[] | null };
+type ActiveLink = { id: string; invoice_id: string; purchase_invoices: Rel<{ no_faktur: string }> };
 type SourceLine = { id: string; po_item_id: string | null; item_id: string | null; qty: number; harga: number; satuan: string | null; faktor: number | null };
 
 export default async function FakturBaruPage({
@@ -64,7 +66,11 @@ export default async function FakturBaruPage({
       || new Set(linked).size !== linked.length) {
       return <div role="alert" className="p2ban">Rincian faktur sumber tidak dapat disiapkan otomatis. Periksa baris dan tautan PO pada faktur asal.</div>;
     }
-    initial = { ...source, purchase_invoice_items: sourceLines.map(line => ({
+    // N01: the voided source invoice's stored receipt choice is offered again; never guessed.
+    const { data: sourceLinks, error: sourceLinkError } = await supabase.from("purchase_invoice_receipts")
+      .select("goods_receipt_id").eq("invoice_id", source.id);
+    if (sourceLinkError) return <div role="alert" className="p2ban">Penerimaan faktur sumber belum dapat dibaca. Muat ulang halaman.</div>;
+    initial = { ...source, receipt_ids: (sourceLinks ?? []).map(link => String(link.goods_receipt_id)), purchase_invoice_items: sourceLines.map(line => ({
       po_item_id: line.po_item_id, qty: line.qty, harga: line.harga,
     })) } as PoInvoiceInitial;
   }
@@ -73,6 +79,8 @@ export default async function FakturBaruPage({
   let loadError: unknown;
   let pos: PoRow[] = [];
   let invoiceRows: InvoiceRow[] = [];
+  let receiptRows: ReceiptRow[] = [];
+  let activeLinks: ActiveLink[] = [];
   try {
     poPage = await readListPage<PoHeader>((from, to) => {
       let query = supabase.from("purchase_orders")
@@ -84,14 +92,22 @@ export default async function FakturBaruPage({
     }, "Daftar PO untuk faktur", initial || poNo ? "1" : hal);
     const poIds = poPage.rows.map(po => po.id);
     if (poIds.length) {
-      const [poItems, invoices] = await Promise.all([
+      const [poItems, invoices, receipts, links] = await Promise.all([
         readCompleteList<PoItem>((from, to) => supabase.from("purchase_order_items")
           .select("id, po_id, item_id, qty, qty_terima, harga_beli, nama, satuan, faktor, items(unit)", { count: "exact" })
           .in("po_id", poIds).order("id").range(from, to), "Baris PO untuk faktur", { maxRows: null }),
         readCompleteList<{ id: string; po_id: string | null }>((from, to) => supabase.from("purchase_invoices")
           .select("id, po_id", { count: "exact" }).in("po_id", poIds).is("voided_at", null)
           .order("id").range(from, to), "Faktur terkait PO", { maxRows: null }),
+        readCompleteList<ReceiptRow>((from, to) => supabase.from("goods_receipts")
+          .select("id, po_id, no_terima, tanggal, goods_receipt_items(nama, qty_terima, satuan)", { count: "exact" })
+          .in("po_id", poIds).is("voided_at", null).order("tanggal").order("id").range(from, to), "Penerimaan PO untuk faktur", { maxRows: null }),
+        readCompleteList<ActiveLink>((from, to) => supabase.from("purchase_invoice_receipts")
+          .select("id:goods_receipt_id, invoice_id, purchase_invoices(no_faktur)", { count: "exact" })
+          .in("po_id", poIds).eq("active", true).order("goods_receipt_id").range(from, to), "Penerimaan yang sudah difakturkan", { maxRows: null }),
       ]);
+      receiptRows = receipts;
+      activeLinks = links;
       const itemsByPo = new Map<string, PoItem[]>();
       for (const item of poItems) itemsByPo.set(item.po_id, [...(itemsByPo.get(item.po_id) ?? []), item]);
       pos = poPage.rows.map(po => ({ ...po, purchase_order_items: itemsByPo.get(po.id) ?? [] }));
@@ -113,6 +129,20 @@ export default async function FakturBaruPage({
     invoicesByPo.set(invoice.po_id, rows);
   }
 
+  // N01: receipts of each PO, marked when an active invoice already covers them.
+  const linkByReceipt = new Map(activeLinks.map(link => [link.id, one(link.purchase_invoices)?.no_faktur ?? "faktur lain"]));
+  // An active invoice without stored receipts (older invoice) may cover any receipt of its PO:
+  // those receipts are not offered (the database refuses them too).
+  const linkedInvoiceIds = new Set(activeLinks.map(link => link.invoice_id));
+  const legacyPoIds = new Set(invoiceRows.filter(invoice => invoice.po_id && !linkedInvoiceIds.has(invoice.id)).map(invoice => invoice.po_id as string));
+  const receiptsByPo = new Map<string, PoReceiptOption[]>();
+  for (const receipt of receiptRows) receiptsByPo.set(receipt.po_id, [...(receiptsByPo.get(receipt.po_id) ?? []), {
+    id: receipt.id, no_terima: receipt.no_terima, tanggal: receipt.tanggal,
+    ringkas: (receipt.goods_receipt_items ?? []).filter(line => Number(line.qty_terima) > 0)
+      .map(line => `${line.nama} ${Number(line.qty_terima)} ${line.satuan ?? ""}`.trim()).join(", "),
+    sudahDifaktur: linkByReceipt.get(receipt.id) ?? (legacyPoIds.has(receipt.po_id) ? "faktur lama (PO yang sama)" : null),
+  }]);
+
   const options: PoOption[] = loadError ? [] : pos.map((p) => {
     const poItems = (p.purchase_order_items ?? []).map((r) => ({
       id: r.id,
@@ -133,6 +163,7 @@ export default async function FakturBaruPage({
       id: p.id,
       label: `${p.no_po ?? p.id.slice(0, 8)} — ${one(p.suppliers)?.nama ?? "Tanpa pemasok"} (${p.tanggal})${one(p.purchase_order_receipt_closures ?? null) ? " — Selesai parsial" : ""}`,
       terminHari: Number(one(p.suppliers)?.termin_hari ?? 30),
+      receipts: receiptsByPo.get(p.id) ?? [],
       warning: warningParts.join(" ") || null,
       items: (p.purchase_order_items ?? []).flatMap((r) => {
         if (!r.item_id) return [];

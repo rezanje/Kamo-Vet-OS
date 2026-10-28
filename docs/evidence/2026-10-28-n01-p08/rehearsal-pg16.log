@@ -1,0 +1,19 @@
+apply.sql sha256 6ccba58932438624da3019cda76623811c77973fd718acbf868953fc6427d60c
+Applied 296 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+PostgreSQL 16.14 (Homebrew) on aarch64-apple-darwin25.4.0, compiled by Apple clang version 21.0.0 (clang-2100.0.123.102), 64-bit
+PASS N01 suite fails on the base (detects the missing change)
+PASS drifted body refused by preflight and apply (exact md5)
+PASS preflight.sql (11 checks ok)
+PASS readback.sql (13 checks ok)
+PASS readback.sql (13 checks ok)
+PASS apply is idempotent; history rows recorded once
+PASS n01_purchase_invoice_receipts.sql
+PASS p08_advance_cancel_cascade.sql
+PASS goods_receipt_cancellation.sql
+PASS rollback restores the 4 patched bodies byte-identical and removes new objects
+PASS preflight.sql (11 checks ok)
+PASS readback.sql (13 checks ok)
+PASS readback.sql (13 checks ok)
+PASS rollback refused once a link exists; data and objects intact
+PASS follow-up revoke (commented in package) closes the old RPC and keeps the new one
+Stopped and removed the throwaway PostgreSQL cluster.
