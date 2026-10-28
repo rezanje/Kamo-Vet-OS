@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { jalankanPerawatanLoyalty } from "@/lib/loyalty-server";
+import { angkaIsian } from "@/lib/form-angka";
 
 export async function updateTierSettings(formData: FormData) {
   const supabase = await createClient();
@@ -13,16 +14,22 @@ export async function updateTierSettings(formData: FormData) {
     redirect(`/pengaturan/tier?error=${encodeURIComponent("Hanya owner/admin")}`);
   }
 
-  const num = (k: string) => Math.max(0, Number(formData.get(k)) || 0);
+  // Semua angka wajib diketik: kolom kosong tidak boleh jadi 0 / angka bawaan diam-diam.
+  const kolom = ["bronze_min", "silver_min", "gold_min", "platinum_min", "points_expiry_months", "tier_downgrade_days"];
+  const isian = new Map(kolom.map((k) => [k, angkaIsian(formData, k)]));
+  if ([...isian.values()].some((v) => v === null || v < 0)) {
+    redirect(`/pengaturan/tier?error=${encodeURIComponent("Semua angka wajib diisi (tidak boleh negatif)")}`);
+  }
+  const num = (k: string) => isian.get(k) as number;
   const bronze_min = num("bronze_min"), silver_min = num("silver_min"), gold_min = num("gold_min"), platinum_min = num("platinum_min");
   if (!(bronze_min < silver_min && silver_min < gold_min && gold_min < platinum_min)) {
     redirect(`/pengaturan/tier?error=${encodeURIComponent("Threshold harus naik: Bronze < Silver < Gold < Platinum")}`);
   }
 
   const pointsExpiryEnabled = formData.get("points_expiry_enabled") === "on";
-  const pointsExpiryMonths = Math.max(1, Math.min(120, Number(formData.get("points_expiry_months")) || 12));
+  const pointsExpiryMonths = Math.max(1, Math.min(120, Math.floor(num("points_expiry_months"))));
   const downgradeEnabled = formData.get("tier_downgrade_enabled") === "on";
-  const downgradeDays = Math.max(1, Math.min(3650, Number(formData.get("tier_downgrade_days")) || 180));
+  const downgradeDays = Math.max(1, Math.min(3650, Math.floor(num("tier_downgrade_days"))));
 
   // Tabel satu baris: upsert, lalu pastikan benar-benar 1 baris tertulis.
   // Update atas baris yang belum ada lolos tanpa error padahal tidak menyimpan apa pun.

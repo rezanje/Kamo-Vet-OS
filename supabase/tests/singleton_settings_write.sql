@@ -16,6 +16,7 @@ where id in ('5e100000-0000-4000-8000-000000000001','5e100000-0000-4000-8000-000
 -- Kondisi produksi: baris tunggalnya hilang.
 delete from payroll_settings;
 delete from tier_settings;
+delete from company_settings;
 
 set local role authenticated;
 
@@ -86,14 +87,46 @@ do $$ declare n int; begin
     raise exception 'Second tier settings row accepted';
   exception when check_violation then null; end;
 end $$;
--- Pajak (company_settings): upsert mengubah baris yang sudah ada, tidak menambah baris.
+-- Pajak (company_settings): hanya OWNER yang boleh menulis; semua akun login tetap membaca.
+do $$ declare u uuid; n int; begin
+  foreach u in array array['5e100000-0000-4000-8000-000000000002','5e100000-0000-4000-8000-000000000003','5e100000-0000-4000-8000-000000000004']::uuid[] loop
+    perform set_config('request.jwt.claims',json_build_object('sub',u,'role','authenticated')::text,true);
+    begin
+      insert into company_settings(id,mode_pkp,ppn_rate) values(true,true,12)
+        on conflict(id) do update set mode_pkp=excluded.mode_pkp,ppn_rate=excluded.ppn_rate;
+      raise exception 'Non-owner % wrote company settings',u;
+    exception when insufficient_privilege then null; end;
+  end loop;
+end $$;
+select set_config('request.jwt.claims',json_build_object('sub','5e100000-0000-4000-8000-000000000001','role','authenticated')::text,true);
 do $$ declare n int; begin
-  insert into company_settings(id,ppn_rate) values(true,12)
-    on conflict(id) do update set ppn_rate=excluded.ppn_rate;
-  get diagnostics n=row_count; if n<>1 then raise exception 'Company settings upsert wrote % rows',n; end if;
+  insert into company_settings(id,mode_pkp,ppn_rate) values(true,false,11)
+    on conflict(id) do update set mode_pkp=excluded.mode_pkp,ppn_rate=excluded.ppn_rate;
+  get diagnostics n=row_count; if n<>1 then raise exception 'Owner company settings upsert wrote % rows',n; end if;
+  if (select count(*) from company_settings)<>1 then raise exception 'Owner upsert did not insert exactly one company settings row'; end if;
+  insert into company_settings(id,mode_pkp,ppn_rate) values(true,true,12)
+    on conflict(id) do update set mode_pkp=excluded.mode_pkp,ppn_rate=excluded.ppn_rate;
   if (select count(*) from company_settings)<>1 or (select ppn_rate from company_settings)<>12 then
     raise exception 'Company settings singleton not updated in place';
   end if;
 end $$;
+-- Akun non-OWNER tetap membaca, tetapi update langsung lewat API tidak mengubah apa pun.
+do $$ declare u uuid; n int; begin
+  foreach u in array array['5e100000-0000-4000-8000-000000000002','5e100000-0000-4000-8000-000000000003','5e100000-0000-4000-8000-000000000004']::uuid[] loop
+    perform set_config('request.jwt.claims',json_build_object('sub',u,'role','authenticated')::text,true);
+    if (select count(*) from company_settings)<>1 then raise exception 'Role % lost read access to company settings',u; end if;
+    update company_settings set mode_pkp=false,ppn_rate=1 where id; get diagnostics n=row_count;
+    if n<>0 then raise exception 'Role % updated company settings',u; end if;
+    begin
+      delete from company_settings where id; get diagnostics n=row_count;
+      if n<>0 then raise exception 'Role % deleted company settings',u; end if;
+    end;
+  end loop;
+end $$;
 reset role;
+do $$ begin
+  if (select ppn_rate from company_settings)<>12 or not (select mode_pkp from company_settings) then
+    raise exception 'Company settings changed by a non-owner';
+  end if;
+end $$;
 rollback;

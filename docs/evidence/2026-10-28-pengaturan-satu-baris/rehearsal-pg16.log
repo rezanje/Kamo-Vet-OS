@@ -5,25 +5,38 @@ payroll_settings rows|1
 tier_settings rows|1
 company_settings rows|1
 tier_settings policies|tier_settings_read:SELECT, tier_settings_write:UPDATE
+company_settings policies|csettings_all:ALL:true
 payroll_settings policies|payroll_settings_owner_all:ALL, payroll_settings_select_manager:SELECT
 public.is_admin() exists|true
+private.is_hris_owner() exists|true
+active OWNER accounts|0
 tier_settings RLS enabled|true
-migration 20261029140000 recorded|false
+company_settings RLS enabled|true
+migrations recorded (20261029140000, 20261029140500)|-
 APPLY x2 ok
 READBACK
-tier_settings_insert|INSERT|{authenticated}||( SELECT is_admin() AS is_admin)
-tier_settings_read|SELECT|{authenticated}|true|
-tier_settings_write|UPDATE|{authenticated}|is_admin()|is_admin()
+company_settings|csettings_owner_write|ALL|{authenticated}|( SELECT private.is_hris_owner() AS is_hris_owner)|( SELECT private.is_hris_owner() AS is_hris_owner)
+company_settings|csettings_select|SELECT|{authenticated}|true|
+tier_settings|tier_settings_insert|INSERT|{authenticated}||( SELECT is_admin() AS is_admin)
+tier_settings|tier_settings_read|SELECT|{authenticated}|true|
+tier_settings|tier_settings_write|UPDATE|{authenticated}|is_admin()|is_admin()
 tier_settings rows|1
 payroll_settings rows|1
-migration 20261029140000 recorded|true
+company_settings rows|1
+migrations recorded (20261029140000, 20261029140500)|20261029140000, 20261029140500
 DB TEST after apply: passed
 ROLLBACK readback
-tier_settings_read|SELECT|{authenticated}|true|
-tier_settings_write|UPDATE|{authenticated}|is_admin()|is_admin()
+company_settings|csettings_all|ALL|{authenticated}|true|true
+tier_settings|tier_settings_read|SELECT|{authenticated}|true|
+tier_settings|tier_settings_write|UPDATE|{authenticated}|is_admin()|is_admin()
 tier_settings rows|1
 payroll_settings rows|1
-migration 20261029140000 recorded|false
+company_settings rows|1
+migrations recorded (20261029140000, 20261029140500)|-
+DB TEST after rollback: fails as expected -> ERROR:  new row violates row-level security policy for table "tier_settings"
 Removed owned PostgreSQL test container and volumes.
-migration restored: True
+migrations restored: True
 cleanup: temp cluster removed
+
+# Uji merah terpisah: hanya policy tier dipasang, migrasi company_settings TIDAK:
+COMPANY RED (tier policy only, no company migration) -> ERROR:  Non-owner 5e100000-0000-4000-8000-000000000002 wrote company settings

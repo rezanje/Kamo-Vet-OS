@@ -40,7 +40,7 @@ const gajiForm = () => {
 };
 const tierForm = () => {
   const f = new FormData();
-  for (const [k, v] of Object.entries({ bronze_min: "1", silver_min: "2", gold_min: "3", platinum_min: "4" })) f.set(k, v);
+  for (const [k, v] of Object.entries({ bronze_min: "1", silver_min: "2", gold_min: "3", platinum_min: "4", points_expiry_months: "12", tier_downgrade_days: "180" })) f.set(k, v);
   return f;
 };
 const pajakForm = () => { const f = new FormData(); f.set("ppn_rate", "11"); return f; };
@@ -84,4 +84,32 @@ it("upserts tax settings and reports 0 written rows as a failure", async () => {
   expect(db.upserts[0]).toMatchObject({ table: "company_settings", values: { id: true, ppn_rate: 11 }, options: { onConflict: "id" } });
   db.result = { data: [], error: null };
   await expect(simpanPajak(pajakForm())).rejects.toThrow("/pengaturan/pajak?error=");
+});
+
+it.each(["telat_mulai_menit", "telat_blok_menit", "telat_nominal_per_blok", "telat_maks", "bolos_per_hari", "lembur_per_jam"])(
+  "refuses to save payroll settings when %s was left empty (typed 0 is still accepted)", async (field) => {
+    const f = gajiForm(); f.set(field, "");
+    await expect(simpanAturanGaji(f)).rejects.toThrow(/\/pengaturan\/gaji\?error=Semua%20angka%20wajib%20diisi/);
+    f.delete(field);
+    await expect(simpanAturanGaji(f)).rejects.toThrow(/\/pengaturan\/gaji\?error=Semua%20angka%20wajib%20diisi/);
+    expect(db.upserts).toHaveLength(0);
+  });
+
+it.each(["bronze_min", "silver_min", "gold_min", "platinum_min", "points_expiry_months", "tier_downgrade_days"])(
+  "refuses to write default loyalty numbers when %s was left empty", async (field) => {
+    const f = tierForm(); f.set(field, "");
+    await expect(updateTierSettings(f)).rejects.toThrow("/pengaturan/tier?error=Semua%20angka%20wajib%20diisi");
+    expect(db.upserts).toHaveLength(0);
+  });
+
+it("refuses to write the default PPN rate when the rate was left empty", async () => {
+  const f = pajakForm(); f.set("ppn_rate", "");
+  await expect(simpanPajak(f)).rejects.toThrow("/pengaturan/pajak?error=Tarif%20PPN%20wajib%20diisi.");
+  expect(db.upserts).toHaveLength(0);
+});
+
+it.each(["ADMIN", "FINANCE", "STAFF", "CASHIER"])("keeps tax settings OWNER-only (%s is refused before any write)", async (role) => {
+  db.role = role;
+  await expect(simpanPajak(pajakForm())).rejects.toThrow("?error=denied");
+  expect(db.upserts).toHaveLength(0);
 });

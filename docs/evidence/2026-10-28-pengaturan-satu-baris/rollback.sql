@@ -1,8 +1,16 @@
--- Hanya kalau diputuskan mundur. Mengembalikan tier_settings ke hak tulis UPDATE saja.
--- Baris tier_settings yang sudah dibuat lewat layar TIDAK dihapus (itu data pemilik).
--- Akibat rollback: simpan Pengaturan Loyalitas kembali gagal (sekarang dengan pesan error)
--- bila barisnya belum ada.
+-- Hanya kalau diputuskan mundur. Mengembalikan policy persis seperti sebelum apply.sql.
+-- Baris data yang sudah dibuat/diubah lewat layar TIDAK disentuh (itu data pemilik).
+-- Akibat rollback:
+--   - simpan Pengaturan Loyalitas kembali gagal (dengan pesan error) bila barisnya belum ada;
+--   - company_settings kembali bisa DITULIS oleh akun login mana pun lewat API (celah lama).
 begin;
 drop policy if exists tier_settings_insert on public.tier_settings;
-delete from supabase_migrations.schema_migrations where version = '20261029140000';
+
+drop policy if exists csettings_owner_write on public.company_settings;
+drop policy if exists csettings_select on public.company_settings;
+drop policy if exists csettings_all on public.company_settings;
+create policy csettings_all on public.company_settings
+  for all to authenticated using (true) with check (true);
+
+delete from supabase_migrations.schema_migrations where version in ('20261029140000', '20261029140500');
 commit;

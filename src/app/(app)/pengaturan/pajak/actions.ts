@@ -2,16 +2,21 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/master-guard";
+import { angkaIsian } from "@/lib/form-angka";
 import { npwpSah } from "@/lib/faktur-pajak";
 
 // Simpan Mode PKP + tarif PPN. Berlaku ke transaksi BARU saja (data lama tidak diubah).
 export async function simpanPajak(formData: FormData) {
-  const supabase = await createClient();
-  const mode_pkp = String(formData.get("mode_pkp") ?? "") === "on";
-  const ppn_rate = Number(formData.get("ppn_rate")) || 11;
   const back = "/pengaturan/pajak";
+  // Mode PKP & tarif PPN mengubah pembukuan semua transaksi baru: khusus OWNER
+  // (RLS company_settings juga hanya mengizinkan OWNER menulis).
+  const supabase = await assertRole(back, "pengaturan pajak", ["OWNER"]);
+  const mode_pkp = String(formData.get("mode_pkp") ?? "") === "on";
+  // Tarif wajib diketik; kolom kosong tidak boleh jadi angka bawaan diam-diam.
+  const ppn_rate = angkaIsian(formData, "ppn_rate");
 
+  if (ppn_rate === null) redirect(`${back}?error=${encodeURIComponent("Tarif PPN wajib diisi.")}`);
   if (ppn_rate <= 0 || ppn_rate > 50) redirect(`${back}?error=${encodeURIComponent("Tarif PPN tidak wajar.")}`);
 
   // Identitas perusahaan dipakai berkas pajak (dan nanti kop dokumen cetak).

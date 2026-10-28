@@ -33,7 +33,7 @@ export default async function AturanGajiPage({
       {!tersimpan && !error && (
         <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
           <i className="ti ti-alert-triangle" /> Aturan gaji belum pernah disimpan. Penggajian belum bisa dihitung sampai
-          OWNER menekan Simpan aturan di bawah (isi 0 kalau memang tidak ada potongan/lembur).
+          OWNER mengisi semua angka di bawah lalu menekan Simpan aturan (ketik 0 kalau memang tidak ada potongan/lembur).
         </div>
       )}
       {success && (
@@ -56,25 +56,25 @@ export default async function AturanGajiPage({
           <div className="frow">
             <div>
               <label className="flab">Potongan mulai dari menit ke-</label>
-              <NumberInput className="fi" name="telat_mulai_menit" type="number" min={0} step={1} defaultValue={a.telat_mulai_menit} />
+              <NumberInput className="fi" name="telat_mulai_menit" type="number" min={0} step={1} defaultValue={tersimpan ? a.telat_mulai_menit : ""} required />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Telat di bawah angka ini tidak dipotong.</div>
             </div>
             <div>
               <label className="flab">Tiap berapa menit</label>
-              <NumberInput className="fi" name="telat_blok_menit" type="number" min={1} step={1} defaultValue={a.telat_blok_menit} />
+              <NumberInput className="fi" name="telat_blok_menit" type="number" min={1} step={1} defaultValue={tersimpan ? a.telat_blok_menit : ""} required />
             </div>
             <div>
               <label className="flab">Potongan per blok</label>
-              <NumberInput className="fi" name="telat_nominal_per_blok" type="number" min={0} step="any" defaultValue={a.telat_nominal_per_blok} />
+              <NumberInput className="fi" name="telat_nominal_per_blok" type="number" min={0} step="any" defaultValue={tersimpan ? a.telat_nominal_per_blok : ""} required />
             </div>
             <div>
               <label className="flab">Batas atas per hari</label>
-              <NumberInput className="fi" name="telat_maks" type="number" min={0} step="any" defaultValue={a.telat_maks} />
+              <NumberInput className="fi" name="telat_maks" type="number" min={0} step="any" defaultValue={tersimpan ? a.telat_maks : ""} required />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>0 = tanpa batas atas.</div>
             </div>
           </div>
 
-          <div style={{ marginTop: 12, background: "var(--sf1)", borderRadius: 8, padding: "10px 12px" }}>
+          {tersimpan && <div style={{ marginTop: 12, background: "var(--sf1)", borderRadius: 8, padding: "10px 12px" }}>
             <div style={{ fontSize: 10.5, fontWeight: 600, marginBottom: 6 }}>Contoh dengan aturan tersimpan:</div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11 }}>
               {contoh.map((c) => (
@@ -83,7 +83,7 @@ export default async function AturanGajiPage({
                 </span>
               ))}
             </div>
-          </div>
+          </div>}
         </div>
 
         <div className="crm-sec">
@@ -91,11 +91,11 @@ export default async function AturanGajiPage({
           <div className="frow">
             <div>
               <label className="flab">Potongan bolos per hari</label>
-              <NumberInput className="fi" name="bolos_per_hari" type="number" min={0} step="any" defaultValue={a.bolos_per_hari} />
+              <NumberInput className="fi" name="bolos_per_hari" type="number" min={0} step="any" defaultValue={tersimpan ? a.bolos_per_hari : ""} required />
             </div>
             <div>
               <label className="flab">Upah lembur per jam</label>
-              <NumberInput className="fi" name="lembur_per_jam" type="number" min={0} step="any" defaultValue={a.lembur_per_jam} />
+              <NumberInput className="fi" name="lembur_per_jam" type="number" min={0} step="any" defaultValue={tersimpan ? a.lembur_per_jam : ""} required />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Dipakai untuk lembur yang sudah disetujui.</div>
             </div>
           </div>

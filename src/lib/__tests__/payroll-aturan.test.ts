@@ -50,8 +50,10 @@ describe("potonganTelat", () => {
 });
 
 describe("baca aturan penggajian", () => {
-  const client = (data: unknown, error: unknown = null) => ({
-    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data, error }) }) }) }),
+  const client = (data: unknown, error: unknown = null, role = "OWNER", is_active = true) => ({
+    auth: { getUser: async () => ({ data: { user: { id: "a0000000-0000-4000-8000-000000000001" } }, error: null }) },
+    from: (table: string) => ({ select: () => ({ eq: () => ({ maybeSingle: async () =>
+      table === "profiles" ? { data: { role, is_active }, error: null } : { data, error } }) }) }),
   });
   it("uses the configured values", async () => {
     await expect(getAturanGaji(client(aturan))).resolves.toEqual(aturan);
@@ -64,6 +66,16 @@ describe("baca aturan penggajian", () => {
     await expect(bacaAturanGaji(client(null))).resolves.toEqual({ aturan: ATURAN_KOSONG, tersimpan: false });
     await expect(bacaAturanGaji(client(aturan))).resolves.toEqual({ aturan, tersimpan: true });
     await expect(bacaAturanGaji(client(null, { message: "read failed" }))).rejects.toThrow("belum dapat diverifikasi");
+  });
+  it.each(["ADMIN", "FINANCE"])("treats an empty read as never-saved for %s, who may read the row", async (role) => {
+    await expect(bacaAturanGaji(client(null, null, role))).resolves.toMatchObject({ tersimpan: false });
+  });
+  it("does not report never-saved when the row may merely be hidden by RLS", async () => {
+    for (const role of ["STAFF", "DOCTOR", "CASHIER"]) {
+      await expect(bacaAturanGaji(client(null, null, role))).rejects.toThrow("belum dapat diverifikasi");
+    }
+    await expect(bacaAturanGaji(client(null, null, "OWNER", false))).rejects.toThrow("belum dapat diverifikasi");
+    await expect(getAturanGaji(client(null, null, "STAFF"))).rejects.toThrow("belum dapat diverifikasi");
   });
 });
 

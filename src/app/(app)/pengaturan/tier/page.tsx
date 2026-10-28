@@ -13,7 +13,12 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   if (!me || !["OWNER", "ADMIN"].includes(me.role)) redirect("/pengaturan");
 
-  const { data: cfg } = await supabase.from("tier_settings").select("bronze_min, silver_min, gold_min, platinum_min, points_expiry_enabled, points_expiry_months, tier_downgrade_enabled, tier_downgrade_days").eq("id", 1).maybeSingle();
+  const { data: cfg, error: cfgError } = await supabase.from("tier_settings").select("bronze_min, silver_min, gold_min, platinum_min, points_expiry_enabled, points_expiry_months, tier_downgrade_enabled, tier_downgrade_days").eq("id", 1).maybeSingle();
+  if (cfgError) throw new Error("Aturan loyalty belum dapat diverifikasi. Muat ulang halaman.");
+  // tier_settings bisa dibaca semua akun login: baris kosong = memang belum pernah disimpan.
+  const tersimpan = !!cfg;
+  // Angka di bawah hanya untuk "Saat ini" — sama dengan cadangan yang dipakai database
+  // selama baris belum ada. Tidak pernah dijadikan isian form.
   const c = cfg ?? { bronze_min: 1000000, silver_min: 5000000, gold_min: 15000000, platinum_min: 50000000, points_expiry_enabled: false, points_expiry_months: 12, tier_downgrade_enabled: false, tier_downgrade_days: 180 };
 
   // Angka poin beredar dipakai supaya penutupan tidak ditekan buta.
@@ -41,6 +46,12 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", marginBottom: 12 }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success && <div className="p2ban" style={{ background: "#f0fdf4", border: ".5px solid #86efac", color: "#166534", marginBottom: 12 }}><i className="ti ti-check" /> {success === "1" ? "Tersimpan" : success}</div>}
 
+      {!tersimpan && !error && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", marginBottom: 12 }}>
+          <i className="ti ti-alert-triangle" /> Aturan loyalty belum pernah disimpan. Sistem sementara memakai angka bawaan;
+          ketik semua angka di bawah lalu simpan supaya aturannya resmi.
+        </div>
+      )}
       <form action={updateTierSettings} className="crm-sec" style={{ maxWidth: 460 }}>
         <div style={{ fontSize: 11, color: "var(--td)", marginBottom: 10 }}>
           Minimum total transaksi (gabungan petshop + klinik) untuk tiap tier. Di bawah Bronze = New.
@@ -48,8 +59,8 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
         {rows.map((r) => (
           <div className="fg" key={r.k}>
             <label className="flab">{r.name} — minimum (Rp)</label>
-            <NumberInput className="fi" name={r.k} type="number" min={0} defaultValue={r.v} />
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>Saat ini: {rp(r.v)}</div>
+            <NumberInput className="fi" name={r.k} type="number" min={0} defaultValue={tersimpan ? r.v : ""} required />
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>Saat ini: {rp(r.v)}{tersimpan ? "" : " (bawaan sistem, belum disimpan)"}</div>
           </div>
         ))}
         <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Aturan expiry & downgrade</div>
@@ -58,14 +69,14 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
         </label>
         <div className="fg">
           <label className="flab">Poin hangus setelah (bulan)</label>
-          <NumberInput className="fi" name="points_expiry_months" type="number" min={1} max={120} defaultValue={c.points_expiry_months} />
+          <NumberInput className="fi" name="points_expiry_months" type="number" min={1} max={120} defaultValue={tersimpan ? c.points_expiry_months : ""} required />
         </div>
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5, margin: "10px 0 8px" }}>
           <input type="checkbox" name="tier_downgrade_enabled" defaultChecked={!!c.tier_downgrade_enabled} /> Aktifkan downgrade tier
         </label>
         <div className="fg">
           <label className="flab">Turun satu tingkat setelah tidak transaksi (hari)</label>
-          <NumberInput className="fi" name="tier_downgrade_days" type="number" min={1} max={3650} defaultValue={c.tier_downgrade_days} />
+          <NumberInput className="fi" name="tier_downgrade_days" type="number" min={1} max={3650} defaultValue={tersimpan ? c.tier_downgrade_days : ""} required />
         </div>
         <button type="submit" className="btn-acc" style={{ marginTop: 6 }}>Simpan Aturan Loyalty</button>
       </form>

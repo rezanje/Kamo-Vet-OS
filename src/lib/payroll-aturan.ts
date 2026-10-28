@@ -50,6 +50,18 @@ export function menitTelat(jamShift: string | null, jamAbsen: string | null): nu
 export const ATURAN_GAJI_BELUM_DISIMPAN =
   "Aturan gaji belum pernah disimpan. OWNER perlu menyimpannya dulu di Pengaturan → Aturan gaji.";
 
+const TIDAK_TERVERIFIKASI = "Aturan gaji belum dapat diverifikasi. Coba muat ulang.";
+const PERAN_BACA_ATURAN_GAJI = ["OWNER", "ADMIN", "FINANCE"];
+
+async function bolehBacaAturanGaji(supabase: AnyClient): Promise<boolean> {
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  const userId = auth?.user?.id;
+  if (authError || !userId) return false;
+  const { data: profil, error } = await supabase
+    .from("profiles").select("role, is_active").eq("id", userId).maybeSingle();
+  return !error && profil?.is_active === true && PERAN_BACA_ATURAN_GAJI.includes(String(profil.role));
+}
+
 // Baca baris tunggal aturan gaji. `tersimpan: false` = barisnya memang belum ada
 // (bukan gagal baca) — layar tetap bisa dibuka supaya OWNER bisa mengisinya.
 export async function bacaAturanGaji(supabase: AnyClient): Promise<{ aturan: AturanGaji; tersimpan: boolean }> {
@@ -57,8 +69,14 @@ export async function bacaAturanGaji(supabase: AnyClient): Promise<{ aturan: Atu
     .from("payroll_settings")
     .select("telat_mulai_menit, telat_blok_menit, telat_nominal_per_blok, telat_maks, bolos_per_hari, lembur_per_jam")
     .eq("id", true).maybeSingle();
-  if (error) throw new Error("Aturan gaji belum dapat diverifikasi. Coba muat ulang.");
-  if (!data) return { aturan: { ...ATURAN_KOSONG }, tersimpan: false };
+  if (error) throw new Error(TIDAK_TERVERIFIKASI);
+  if (!data) {
+    // Baris kosong baru berarti "belum disimpan" bagi peran yang memang boleh
+    // membacanya (RLS: OWNER, ADMIN, FINANCE aktif). Peran lain bisa saja hanya
+    // tidak diberi lihat — itu tidak boleh dilaporkan sebagai belum diatur.
+    if (!(await bolehBacaAturanGaji(supabase))) throw new Error(TIDAK_TERVERIFIKASI);
+    return { aturan: { ...ATURAN_KOSONG }, tersimpan: false };
+  }
   return { aturan: {
     telat_mulai_menit: Number(data.telat_mulai_menit) || 0,
     telat_blok_menit: Number(data.telat_blok_menit) || 5,
