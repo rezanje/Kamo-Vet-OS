@@ -38,8 +38,8 @@ body {
 }
 .sb { width: 185px; background: var(--sb); display: flex; flex-direction: column; height: 100vh; flex-shrink: 0; transition: width .18s ease; }
 .sb-logo { padding: 14px 14px 12px; border-bottom: .5px solid rgba(255,255,255,.07); display: flex; align-items: center; gap: 10px; }
-.sb-mark { width: 32px; height: 32px; background: var(--acc); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.sb-mark i { color: #fff; font-size: 17px; }
+.sb-mark { width: 32px; height: 32px; background: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sb-mark img { width: 24px; height: 24px; object-fit: contain; display: block; }
 .sb-brand div:first-child { color: #fff; font-size: 13px; font-weight: 500; }
 .sb-brand div:last-child { color: rgba(255,255,255,.38); font-size: 10px; }
 .sb-branch { padding: 8px 11px; border-bottom: .5px solid rgba(255,255,255,.07); }

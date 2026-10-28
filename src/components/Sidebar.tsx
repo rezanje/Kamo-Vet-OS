@@ -60,7 +60,7 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
     <div className={`sb${collapsed ? " collapsed" : ""}`}>
       <div className="sb-logo">
         <div className="sb-mark">
-          <i className="ti ti-paw" />
+          <img src="/kamo-mark.png" alt="Kamo Group" width={24} height={24} />
         </div>
         <div className="sb-brand">
           <div>VetOS</div>
