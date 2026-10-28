@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   mappingError: true,
   recoverError: false,
+  openingDate: null as string | null,
   prepare: vi.fn(async () => ({ data: "11111111-1111-4111-8111-111111111111", error: null })),
 }));
 
@@ -22,6 +23,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
         : table === "import_run_rows"
           ? [{ source_row: 2, source_code: "FIX-A", status: "valid", reason: null,
             payload: { item_id: "fixture-item", warehouse_id: "fixture-wh", base_qty: "5", base_unit_cost: "10", unit: "PCS" } }]
+          : table === "stock_layers" && fixture.openingDate ? [{ tanggal: fixture.openingDate }]
           : [], error: null }),
       maybeSingle: async () => table === "import_runs" && fixture.recoverError
         ? { data: null, error: { message: "fixture read timeout" } }
@@ -89,5 +91,19 @@ it("keeps the prepared batch ID when its saved rows cannot be read back", async 
     expect(result.message).not.toMatch(/belum diposting/i);
   } finally {
     fixture.recoverError = false;
+  }
+});
+
+it("refuses a warehouse that already has an Accurate opening before preparing a batch", async () => {
+  fixture.openingDate = "2026-10-21";
+  fixture.prepare.mockClear();
+  try {
+    const result = await previewSaldoAwalAccurate(await form());
+    expect(fixture.prepare).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: false, run_id: null });
+    expect(result.message).toContain("Gudang Fiction Warehouse sudah punya stok awal sejak 21 Oktober 2026");
+    expect(result.message).toContain("Stok Opname");
+  } finally {
+    fixture.openingDate = null;
   }
 });

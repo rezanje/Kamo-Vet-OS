@@ -13,7 +13,7 @@ async function date(v:string){await act(async()=>{const i=host.querySelector<HTM
 beforeEach(async()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});action.mockReset().mockResolvedValue(prepared);host=document.createElement('div');root=createRoot(host);await act(async()=>root.render(<StockOnlyImport/>));});
 afterEach(async()=>{await act(async()=>root.unmount());});
 it('requires a file/date and sends explicit stock-only strict mode without inventing master metadata',async()=>{
- expect(button().disabled).toBe(true);await file();expect(button().disabled).toBe(true);await date('2026-01-01');await act(async()=>button().click());
+ expect(host.textContent).toContain('Pilih file saldo .xlsx');expect(host.textContent).toContain('Belum ada file dipilih');expect(button().disabled).toBe(true);await file();expect(host.textContent).toContain('fiction.xlsx');expect(button().disabled).toBe(true);await date('2026-01-01');await act(async()=>button().click());
  const data=action.mock.calls[0][0] as FormData;expect(data.get('import_mode')).toBe('stock_only');expect(data.get('valuation_policy')).toBe('STRICT');expect(data.get('master_run_id')).toBeNull();
  expect(host.textContent).toContain('0.333333');expect(host.textContent).toContain('-0.003333');expect(host.textContent).toContain('Stok BELUM masuk');expect(host.querySelector('a')?.getAttribute('href')).toContain('run_id=fiction-run');
 });
