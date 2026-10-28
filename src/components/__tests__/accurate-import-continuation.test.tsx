@@ -77,8 +77,8 @@ it("hands a prepared batch to accounting review instead of offering import prepa
   expect(reviewLinks()).toHaveLength(0); // Preflight has no saved batch to review.
   await act(async () => button("Import Sekali")!.click());
   expect(reviewLinks().length).toBeGreaterThan(0);
-  expect(host.textContent).toContain("Master tersimpan");
-  expect(host.textContent).toContain("Stok dan jurnal belum diposting");
+  expect(host.textContent).toContain("Stok BELUM masuk — tinggal 1 langkah");
+  expect(host.textContent).toContain("belum tampil di halaman Stok");
   expect(button("Import Sekali")).toBeUndefined();
   expect(button("Lanjutkan Import Sekali")).toBeUndefined();
   expect(button("Cek perubahan")?.disabled).toBe(true);

@@ -51,9 +51,9 @@ export function StockOnlyImport() {
       {state.scope_clarification.candidates.map(candidate=><button type="button" className="btn-def" key={candidate.warehouse.id} disabled={busy} onClick={()=>void prepare({branchId:candidate.branch.id,warehouseId:candidate.warehouse.id})}>Gunakan {candidate.branch.name} / {candidate.warehouse.name}</button>)}
     </div>}
     {state?.ok&&state.run_id&&<div role="status">
-      <p>Persiapan: batch tersimpan. Review: {state.phase==='done'?'sudah diposting; periksa bukti':'menunggu OWNER'}. {state.phase!=='done'&&'Stok dan jurnal belum diposting.'}</p>
+      <p><b>{state.phase==='done'?'Stok sudah masuk.':'Stok BELUM masuk — tinggal 1 langkah.'}</b> {state.phase==='done'?'Periksa bukti posting di Persediaan Awal.':'Saldo sudah disiapkan; OWNER perlu membuka Persediaan Awal, memilih akun Modal, lalu menekan Posting.'}</p>
       <StockValuation state={state}/>
-      <Link className="btn-acc" href={`/keuangan/persediaan-awal?run_id=${encodeURIComponent(state.run_id)}`}>Tinjau stok + jurnal / bukti posting</Link>
+      <Link className="btn-acc" href={`/keuangan/persediaan-awal?run_id=${encodeURIComponent(state.run_id)}`}>{state.phase==='done'?'Lihat bukti posting':'Posting stok sekarang'}</Link>
     </div>}
     <p>File browser tidak bertahan setelah reload. Batch yang sudah tersimpan dapat dipulihkan dari daftar di atas; file yang belum tersimpan harus dipilih ulang. Bila file/tanggal diubah saat permintaan berjalan, hasil lama tidak dipakai; batch lama yang sempat tersimpan tetap dapat diperiksa setelah reload.</p>
   </section>;

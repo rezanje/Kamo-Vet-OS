@@ -508,11 +508,15 @@ export function AccurateImportForm({
       )}
 
       {accountingReviewReady && !isBusy && (
-        <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
-          <div style={{ fontSize: 12, fontWeight: 900 }}>Master tersimpan, batch saldo siap ditinjau</div>
-          <div style={{ fontSize: 11, marginTop: 4 }}>
-            Stok dan jurnal belum diposting. Lanjutkan melalui Tinjau dan posting stok + jurnal. OWNER perlu memeriksa batch, cabang, tanggal, nilai, dan akun ekuitas sebelum posting.
+        <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #f59e0b", borderRadius: 9, background: "#fffbeb", color: "#92400e" }}>
+          <div style={{ fontSize: 13, fontWeight: 900 }}><i className="ti ti-alert-triangle" /> Stok BELUM masuk — tinggal 1 langkah</div>
+          <div style={{ fontSize: 11, marginTop: 4, lineHeight: 1.55 }}>
+            Data barang sudah tersimpan dan {readyStockCount.toLocaleString("id-ID")} saldo stok sudah disiapkan, tapi belum tampil di halaman Stok.
+            OWNER perlu membuka Persediaan Awal, memilih akun Modal, lalu menekan Posting. Setelah itu stok dan jurnalnya masuk bersamaan.
           </div>
+          <Link href={accountingReviewHref} className="btn-acc" style={{ display: "inline-flex", marginTop: 9, background: "#b45309", textDecoration: "none" }}>
+            <i className="ti ti-clipboard-check" /> Posting stok sekarang
+          </Link>
         </div>
       )}
 
@@ -710,7 +714,7 @@ export function AccurateImportForm({
         <div role="status" style={{ marginTop: 12, padding: 13, border: ".5px solid #86efac", borderRadius: 9, background: "#f0fdf4", color: "#166534" }}>
           <div style={{ fontSize: 12, fontWeight: 900 }}><i className="ti ti-circle-check" /> Siap dilanjutkan</div>
           <div style={{ fontSize: 10.5, marginTop: 4 }}>
-            {skipInitialStock ? "Master dan kategori siap diperbarui. Saldo stok yang sudah ada tidak ditambahkan lagi." : `Master sudah dicek dan ${readyStockCount.toLocaleString("id-ID")} saldo aman siap masuk. Tekan tombol ini untuk menyimpan semuanya.`}
+            {skipInitialStock ? "Master dan kategori siap diperbarui. Saldo stok yang sudah ada tidak ditambahkan lagi." : `Master sudah dicek dan ${readyStockCount.toLocaleString("id-ID")} saldo stok siap disiapkan. Tekan tombol ini untuk menyimpan barang; stoknya baru masuk setelah diposting OWNER di langkah berikutnya.`}
           </div>
           <button type="button" className="btn-acc" onClick={importSekali} style={{ marginTop: 9, background: "#15803d" }}>
             <i className="ti ti-database-import" /> Lanjutkan Import Sekali

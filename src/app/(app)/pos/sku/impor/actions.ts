@@ -1085,6 +1085,28 @@ function initialStockRowsState(rows: ResolvedSaldoAwal[], names: ReadonlyMap<str
   return rows.map((row) => ({ ...row, itemName: names.get(row.itemId) ?? null }));
 }
 
+// Sama dengan aturan di database: barang yang sudah punya stok/transaksi di gudang
+// tujuan dilewati (masuk lewat Stok Opname), bukan memblokir seluruh file.
+// ponytail: cuma ramalan untuk layar; database tetap penentu saat batch disiapkan.
+const ALASAN_SUDAH_BERTRANSAKSI = "Barang ini sudah punya stok/transaksi di gudang ini; masukkan lewat Stok Opname";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function lewatiBarangBertransaksi(supabase: any, warehouseId: string, rows: ResolvedSaldoAwal[]): Promise<ResolvedSaldoAwal[]> {
+  const ids = [...new Set(rows.filter((row) => row.status === "valid" && /^[0-9a-f-]{36}$/i.test(row.itemId)).map((row) => row.itemId))];
+  const ada = new Set<string>();
+  for (let start = 0; start < ids.length; start += 200) {
+    const chunk = ids.slice(start, start + 200);
+    const results = await Promise.all(["stock_moves", "stock_layers"].map((table) =>
+      supabase.from(table).select("item_id").eq("warehouse_id", warehouseId).in("item_id", chunk)));
+    for (const result of results) {
+      if (result.error) throw new Error(result.error.message);
+      for (const row of result.data ?? []) ada.add(String(row.item_id));
+    }
+  }
+  return rows.map((row) => row.status === "valid" && ada.has(row.itemId)
+    ? { ...row, status: "skipped", reason: ALASAN_SUDAH_BERTRANSAKSI }
+    : row);
+}
+
 function initialStockSummary(rows: ResolvedSaldoAwal[]) {
   const valid = rows.filter((row) => row.status === "valid");
   const skipped = rows.filter((row) => row.status === "skipped");
@@ -1236,13 +1258,15 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
         units: item.units.map((unit) => ({ unit: unit.unit, factor: unit.factor })),
       });
     }
-    const resolved = resolveSaldoAwalRows(saldo.rows, projected, warehouse.id);
+    const resolved = await lewatiBarangBertransaksi(supabase, warehouse.id, resolveSaldoAwalRows(saldo.rows, projected, warehouse.id));
     const summary = initialStockSummary(resolved);
     const names = new Map([...projected.values()].map((item) => [item.id, item.code]));
     return {
       ok: summary.valid > 0,
       phase: "preview",
-      message: summary.rejected
+      message: summary.valid === 0 && resolved.some((row) => row.reason === ALASAN_SUDAH_BERTRANSAKSI)
+        ? "Semua barang di file ini sudah punya stok di gudang tujuan, jadi saldo awal gudang ini tidak bisa diimpor ulang. Koreksi jumlahnya lewat Stok Opname; kalau cuma mau memperbarui data barang, pilih impor barang saja."
+        : summary.rejected
         ? `${summary.valid} baris siap untuk impor. ${summary.skipped} dilewati, ${summary.rejected} perlu klarifikasi dan tidak masuk.`
         : `${summary.valid} baris siap untuk impor sekali. ${summary.skipped} baris dilewati.`,
       branch_id: null,
@@ -1278,10 +1302,10 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     if (!scope.ok) return initialStockStateError(scope.message, scope.clarification ?? null);
     const { branch, warehouse, asOf } = scope;
     const master = await muatMasterSaldoAwal(supabase);
-    const resolved = resolveSaldoAwalRows(parsed.rows, master, warehouse.id);
+    const resolved = await lewatiBarangBertransaksi(supabase, warehouse.id, resolveSaldoAwalRows(parsed.rows, master, warehouse.id));
     const sourceHash = await hashFiles([
       { name: file.name, data: bytes },
-      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v6-decimal-source:${branch.id}:${warehouse.id}:${asOf}:${formData.get("valuation_policy") ?? "STRICT"}:${stockOnly ? "stock_only" : "master"}`) },
+      { name: "aturan-saldo-awal", data: new TextEncoder().encode(`v7-per-warehouse:${branch.id}:${warehouse.id}:${asOf}:${formData.get("valuation_policy") ?? "STRICT"}:${stockOnly ? "stock_only" : "master"}`) },
     ]);
     const policy = String(formData.get("valuation_policy") ?? "STRICT");
     const rowPayload = resolved.map(row => ({
