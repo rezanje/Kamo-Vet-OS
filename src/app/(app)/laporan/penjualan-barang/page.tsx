@@ -92,14 +92,18 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
               <th style={{ textAlign: "right" }}>{kanal === "Online" ? "Diskon item" : "Potongan / pembulatan"}</th><th style={{ textAlign: "right" }}>Nilai baris</th>
             </tr></thead>
             <tbody>
-              {terlihat.map((row) => <tr key={row.id}>
-                <td style={{ whiteSpace: "nowrap", fontSize: 10.5 }}>{waktuWIB(row.waktu)}</td>
-                <td><Link href={row.href} style={{ color: "#2563eb", fontWeight: 700 }}>{row.dokumen}</Link></td>
-                <td>{row.cabang}</td><td>{row.pelanggan}{row.hewan !== "—" && <div style={{ color: "var(--td)" }}>Pasien: {row.hewan}</div>}</td>
-                <td style={{ fontWeight: 600 }}>{row.nama}<div style={{ fontSize: 9.5, fontWeight: 400, color: "var(--td)" }}>{row.jenis}{row.status !== "—" ? ` · ${row.status}` : ""}</div></td>
-                <td>{row.pelaksana}</td>
-                <td style={{ textAlign: "right" }}>{row.qty.toLocaleString("id-ID", { maximumFractionDigits: 2 })}</td>
-                <td style={{ textAlign: "right" }}>{rupiah(row.harga)}</td>
+              {terlihat.map((row) => <tr key={row.id} style={row.indukId ? { background: "var(--sf1)" } : undefined}>
+                <td style={{ whiteSpace: "nowrap", fontSize: 10.5 }}>{row.indukId ? "" : waktuWIB(row.waktu)}</td>
+                <td>{row.indukId ? "" : <Link href={row.href} style={{ color: "#2563eb", fontWeight: 700 }}>{row.dokumen}</Link>}</td>
+                <td>{row.indukId ? "" : row.cabang}</td><td>{row.indukId ? "" : <>{row.pelanggan}{row.hewan !== "—" && <div style={{ color: "var(--td)" }}>Pasien: {row.hewan}</div>}</>}</td>
+                {/* Baris anak = BMHP tindakan: hanya jumlah, satuan dan HPP-nya; nilai jualnya nol. */}
+                <td style={{ fontWeight: row.indukId ? 400 : 600, paddingLeft: row.indukId ? 24 : undefined }}>{row.nama}
+                  <div style={{ fontSize: 9.5, fontWeight: 400, color: "var(--td)" }}>
+                    {row.indukId ? `BMHP tindakan · HPP ${rupiah(row.hpp ?? 0)}` : `${row.jenis}${row.status !== "—" ? ` · ${row.status}` : ""}`}
+                  </div></td>
+                <td>{row.indukId ? "" : row.pelaksana}</td>
+                <td style={{ textAlign: "right" }}>{row.qty.toLocaleString("id-ID", { maximumFractionDigits: 2 })}{row.satuan ? ` ${row.satuan}` : ""}</td>
+                <td style={{ textAlign: "right" }}>{row.indukId ? "—" : rupiah(row.harga)}</td>
                 <td style={{ textAlign: "right" }}>{row.diskon ? rupiah(row.diskon) : "—"}</td>
                 <td style={{ textAlign: "right", fontWeight: 700 }}>{rupiah(row.nilai)}</td>
               </tr>)}
@@ -119,6 +123,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
               : kanal === "Klinik"
                 ? "Neto invoice klinik dibagi ke tiap baris setelah diskon invoice, termasuk promo, voucher, poin, dan pembulatan; pajak dan pembayaran DP tidak masuk nilai baris. Selisih pembulatan bisa bernilai negatif."
                 : "Nilai baris sudah memperhitungkan diskon per barang. Diskon tingkat nota, retur, dan pajak belum dibagi ke tiap baris; total bisa berbeda dari pembayaran."}
+            {" "}BMHP tindakan klinik tampil sebagai baris anak dengan nilai nol; biayanya sudah masuk HPP baris tindakan, jadi omzet tidak dihitung dua kali.
             {" "}Racikan dicocokkan dengan resep pada kunjungan yang sama. Filter pelaksana memakai ID yang tersimpan pada baris jasa; baris dengan dokter dan pelaksana muncul pada filter masing-masing, tetapi omzet cabang menghitung baris itu sekali. Ini laporan penjualan, bukan total insentif.
           </div>
         </div>
