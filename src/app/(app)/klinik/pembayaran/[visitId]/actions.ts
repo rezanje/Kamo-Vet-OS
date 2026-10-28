@@ -216,11 +216,10 @@ export async function bayarVisit(formData: FormData) {
       prescription_item_id: l.prescription_item_id ?? null,
       ...(existing && l.source_invoice_item_id ? {source_invoice_item_id:l.source_invoice_item_id} : {}),
       recipe_id: l.recipe_id ?? null,
-      ...(typeof l.salesperson_id === "string" && l.salesperson_id.trim() ? {salesperson_id:l.salesperson_id.trim()} : {}),
       // H05: the database verifies the package really contains this SKU.
       ...(!existing && typeof l.package_item_id === "string" && l.item_id && Number(l.package_qty) > 0
         ? {package_item_id:l.package_item_id,package_qty:Number(l.package_qty)} : {}),
-      ...(l.jenis === "jasa" && l.service_performers != null ? {service_performers:clinicServicePerformerInput(l.jenis, l.service_performers)} : {}),
+      ...(l.service_performers != null ? {service_performers:clinicServicePerformerInput(l.service_performers)} : {}),
     }));
 
   if (rows.length === 0) {

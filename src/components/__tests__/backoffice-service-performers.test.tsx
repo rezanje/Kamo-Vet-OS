@@ -42,29 +42,29 @@ it("keeps repeated service lines independent while physical products still merge
   expect(cart()).toHaveLength(3);
   expect(new Set(cart().map((row: { row_key: string }) => row.row_key)).size).toBe(3);
   expect(cart().filter((row: { item_id: string }) => row.item_id === "food")[0].qty).toBe(2);
-  const serviceRows = host.querySelectorAll<HTMLElement>('[data-service-row]');
-  expect(serviceRows).toHaveLength(2);
-  await act(async () => serviceRows[1].querySelector<HTMLButtonElement>('[aria-label="Tambah jumlah Grooming"]')!.click());
+  // Atribusi per baris berlaku untuk semua baris, jadi barang fisik ikut bertanda.
+  const cartRows = host.querySelectorAll<HTMLElement>('[data-service-row]');
+  expect(cartRows).toHaveLength(3);
+  await act(async () => cartRows[1].querySelector<HTMLButtonElement>('[aria-label="Tambah jumlah Grooming"]')!.click());
   expect(cart().slice(0, 2).map((row: { qty: number }) => row.qty)).toEqual([1, 2]);
-  await act(async () => serviceRows[0].querySelector<HTMLButtonElement>('[aria-label="Hapus Grooming"]')!.click());
+  await act(async () => cartRows[0].querySelector<HTMLButtonElement>('[aria-label="Hapus Grooming"]')!.click());
   expect(cart().filter((row: { item_id: string }) => row.item_id === "service")).toHaveLength(1);
   expect(cart()[0].qty).toBe(2);
 });
 
-it("fills only empty service rows, preserves explicit overrides and restores exact rows after retry", async () => {
+it("fills every empty row including goods, preserves explicit overrides and restores exact rows after retry", async () => {
   await render(); await select(host.querySelector("select")!, "branch");
   await add("Grooming"); await add("Grooming"); await add("Pakan");
   const rows = host.querySelectorAll<HTMLElement>('[data-service-row]');
-  expect(rows).toHaveLength(2);
+  expect(rows).toHaveLength(3);
   await select(rows[0].querySelectorAll("select")[1], "staff");
   const bulk = host.querySelector<HTMLElement>('[data-service-bulk]')!;
   expect(bulk).not.toBeNull();
   await select(bulk.querySelectorAll("select")[0], "doctor");
   await act(async () => bulk.querySelector<HTMLButtonElement>("button")!.click());
-  expect(cart().slice(0, 2).map((row: { service_performers: unknown }) => row.service_performers)).toEqual([
-    { doctor_id: null, staff_id: "staff" }, { doctor_id: "doctor", staff_id: null },
+  expect(cart().map((row: { service_performers: unknown }) => row.service_performers)).toEqual([
+    { doctor_id: null, staff_id: "staff" }, { doctor_id: "doctor", staff_id: null }, { doctor_id: "doctor", staff_id: null },
   ]);
-  expect(cart()[2].service_performers).toBeNull();
   const expected = cart();
   await act(async () => root.unmount()); root = createRoot(host); await render();
   expect(cart()).toEqual(expected);

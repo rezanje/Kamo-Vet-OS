@@ -54,10 +54,11 @@ it("allows an authenticated cashier without an employee mapping", async () => {
   expect(await checkoutSale(form()).catch(error => error.message)).toContain("/struk/sale");
   expect(state.headers[0].salesperson_id).toBeNull();
 });
-it("rejects attribution on a physical product despite a forged submitted Jasa type before saving", async () => {
+it("saves ID-only attribution on a physical product too, ignoring forged names and types", async () => {
   state.itemType = "Persediaan";
-  expect(await checkoutSale(form()).catch(error => error.message)).not.toContain("/struk/");
-  expect(state.headers).toHaveLength(0); expect(state.lines).toHaveLength(0);
+  expect(await checkoutSale(form()).catch(error => error.message)).toContain("/struk/sale");
+  expect(state.lines.map(line => line.service_performers)).toEqual([{ doctor_id: "doctor", staff_id: "staff" }, { doctor_id: null, staff_id: "different" }]);
+  expect(JSON.stringify(state.lines)).not.toContain("Forged name");
 });
 it("stores physical products with null performers when both role slots are blank", async () => {
   state.itemType = "Persediaan";

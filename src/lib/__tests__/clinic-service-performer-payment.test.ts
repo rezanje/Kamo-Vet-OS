@@ -47,20 +47,21 @@ it('carries independent performer IDs and existing case attribution through one 
  expect(state.calls[0]).toMatchObject({name:'clinic_post_invoice',params:{p_invoice:{salesperson_id:'groomer'},p_lines:[
   expect.objectContaining({service_performers:{doctor_id:'doctor-a',staff_id:null}}),
   expect.objectContaining({service_performers:{doctor_id:null,staff_id:'staff-b'}}),
-  expect.not.objectContaining({service_performers:expect.anything()}),
+  expect.objectContaining({service_performers:{doctor_id:'doctor-a',staff_id:'staff-b'}}),
  ]}});
  expect(JSON.stringify(state.calls)).not.toContain('Forged');
 });
-it('passes only selected per-line seller IDs on medicine and service invoices',async()=>{
+it('drops the retired per-line seller field and carries doctor plus non-doctor on medicine and service lines',async()=>{
  const data=form();data.set('items',JSON.stringify([
-  {deskripsi:'Obat',qty:1,harga:50,jenis:'obat',item_id:'medicine',salesperson_id:'doctor-a',salesperson_name:'FORGED'},
-  {deskripsi:'Tindakan',qty:1,harga:50,jenis:'jasa',item_id:'procedure',salesperson_id:'staff-b',salesperson_name:'FORGED'},
+  {deskripsi:'Obat',qty:1,harga:50,jenis:'obat',item_id:'medicine',salesperson_id:'doctor-a',salesperson_name:'FORGED',service_performers:{doctor_id:'doctor-a',staff_id:'groomer-c'}},
+  {deskripsi:'Tindakan',qty:1,harga:50,jenis:'jasa',item_id:'procedure',salesperson_id:'staff-b',salesperson_name:'FORGED',service_performers:{doctor_id:'doctor-a',staff_id:'staff-b'}},
  ]));
  await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});
- expect(state.calls[0]).toMatchObject({name:'clinic_post_invoice',params:{p_lines:[
-  expect.objectContaining({salesperson_id:'doctor-a'}),
-  expect.objectContaining({salesperson_id:'staff-b'}),
- ]}});
+ expect(state.calls[0].params.p_lines).toEqual([
+  expect.objectContaining({service_performers:{doctor_id:'doctor-a',staff_id:'groomer-c'}}),
+  expect.objectContaining({service_performers:{doctor_id:'doctor-a',staff_id:'staff-b'}}),
+ ]);
+ for(const line of state.calls[0].params.p_lines as Record<string,unknown>[])expect(line).not.toHaveProperty('salesperson_id');
  expect(JSON.stringify(state.calls)).not.toContain('FORGED');
 });
 it('preserves unrecorded legacy source attribution and explicit empty new-service attribution',async()=>{

@@ -1,6 +1,7 @@
 import { expect,it } from "vitest";
 import { kumpulkanBarisKomisi } from "../komisi-data";
 import { hitungKomisi,realisasiTarget,type AturanKomisi } from "../komisi";
+import { prepareServiceCommission, type ServiceCommissionPolicy } from "../service-commission-policy";
 function client() {
  const source=[{id:"a",item_id:"service",qty:1,harga:100,hpp:0,service_performers:{version:1,doctor_id:"doctor",staff_id:null,doctor_name:"Historical vet"}},
  {id:"b",item_id:"service",qty:1,harga:100,hpp:0,service_performers:{version:1,doctor_id:null,staff_id:"groomer",staff_name:"Historical groomer"}},
@@ -70,4 +71,28 @@ it("J03: reads refunded invoices from earlier periods in bounded id batches",asy
    range:async()=>({data,count:data.length,error:null}),then:(resolve:(result:unknown)=>unknown)=>Promise.resolve({data,count:data.length,error:null}).then(resolve)};return q;}};
  await kumpulkanBarisKomisi(fake,"2026-10");
  expect(batches).toEqual([200,200,50]);
+});
+
+// Atribusi per baris berlaku untuk barang biasa juga, bukan cuma jasa (permintaan Andri).
+it("pays an ordinary goods line to its own doctor and non-doctor, splitting by the service commission policy",async()=>{
+ const invoice={id:"clinic",invoice_no:"FICT-GOODS",visit_id:"visit",paid_at:"2026-10-23T10:00:00Z",total:300,salesperson_id:null,
+  visits:{branch_id:"branch",doctor_id:"visit-doctor"},invoice_items:[
+   {id:"food",item_id:"medicine",qty:1,harga:100,hpp:40,salesperson_id:null,
+    service_performers:{version:1,doctor_id:"doctor",staff_id:null,doctor_name:"Historical vet"}},
+   {id:"shampoo",item_id:"medicine",qty:1,harga:100,hpp:40,salesperson_id:null,
+    service_performers:{version:1,doctor_id:"doctor",staff_id:"groomer",doctor_name:"Historical vet",staff_name:"Historical groomer"}},
+   {id:"legacy",item_id:"medicine",qty:1,harga:100,hpp:40,salesperson_id:null,service_performers:null},
+  ]};
+ const fake={from(table:string){const data=table==="invoices"?[invoice]:[];
+  const q={select:()=>q,eq:()=>q,is:()=>q,not:()=>q,neq:()=>q,gte:()=>q,lte:()=>q,in:()=>q,order:()=>q,
+   range:async()=>({data,count:data.length,error:null}),then:(resolve:(result:unknown)=>unknown)=>Promise.resolve({data,count:data.length,error:null}).then(resolve)};return q;}};
+ const result=await kumpulkanBarisKomisi(fake,"2026-10");
+ // Baris lama (tanpa atribusi) tetap jatuh ke dokter PJ kunjungan seperti sebelum fitur ini.
+ expect(result.baris.map(row=>row.employeeId)).toEqual(["doctor",null,"visit-doctor"]);
+ expect(result.baris[1]).toMatchObject({commissionPending:true,sourceLineId:"shampoo",servicePerformers:{staff_name:"Historical groomer"}});
+ const clinicRule:AturanKomisi={...rule,id:"clinic-rule",sumber:"klinik"};
+ const policy:ServiceCommissionPolicy={id:"policy",branchId:null,effectiveFrom:"2026-01-01",mode:"split",doctorSharePct:60,staffSharePct:40,createdAt:"2026-01-01T00:00:00Z"};
+ const {calculationRows}=prepareServiceCommission(result.baris,[clinicRule],[policy]);
+ expect(calculationRows.filter(row=>row.sourceLineId==="shampoo").map(row=>[row.employeeId,row.omzet]))
+  .toEqual([["doctor",60],["groomer",40]]);
 });

@@ -122,7 +122,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
             {(items ?? []).map((it, i) => (
               <tr key={i}>
                 <td style={{ color: "var(--td)" }}>{i + 1}</td>
-                <td style={{ fontWeight: 500 }}>{it.deskripsi}{it.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}</td>
+                <td style={{ fontWeight: 500 }}>{it.deskripsi}{(it.jenis === "jasa" || it.service_performers != null) && <div style={{fontSize:10}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}</td>
                 <td style={{ textAlign: "center" }}>{it.qty}</td>
                 <td style={{ textAlign: "right" }}>{rp(it.harga)}</td>
                 <td style={{ textAlign: "center" }}>{Number(it.diskon_persen) > 0 ? `${Number(it.diskon_persen)}%` : "—"}</td>

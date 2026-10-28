@@ -48,13 +48,14 @@ it.each(cases)('%s rejects invalid BMHP before any write',async(_n,save,rpc)=>{
  expect(fixture.calls.some(c=>c.name===rpc)).toBe(false);
 });
 
-it.each(cases)('%s carries selected seller IDs for ordinary and compound output rows in one clinical save',async(_n,save,rpc)=>{
+it.each(cases)('%s carries per-line performers for ordinary and compound output rows, dropping the retired seller field',async(_n,save,rpc)=>{
  expect(await save(form([
-  {item_id:'action-sku',nama_obat:'Tindakan',qty:1,harga:75000,jenis:'jasa',salesperson_id:'seller-a',salesperson_name:'FORGED'},
-  {item_id:null,sale_item_id:'compound-sku',nama_obat:'Obat Racik Fiktif',qty:1,harga:20000,jenis:'racikan',official_version_id:'formula',salesperson_id:'seller-b',salesperson_name:'FORGED'},
+  {item_id:'action-sku',nama_obat:'Tindakan',qty:1,harga:75000,jenis:'jasa',salesperson_id:'seller-a',salesperson_name:'FORGED',service_performers:{doctor_id:'doctor-a',staff_id:null}},
+  {item_id:null,sale_item_id:'compound-sku',nama_obat:'Obat Racik Fiktif',qty:1,harga:20000,jenis:'racikan',official_version_id:'formula',salesperson_id:'seller-b',salesperson_name:'FORGED',service_performers:{doctor_id:null,staff_id:'staff-b'}},
  ]))).toMatchObject({saved:true});
  const call=fixture.calls.find(c=>c.name===rpc)!;
- expect(call.args.p_rows).toEqual([expect.objectContaining({salesperson_id:'seller-a'})]);
- expect(call.args.p_compounds).toEqual([expect.objectContaining({sale_item_id:'compound-sku',salesperson_id:'seller-b'})]);
+ expect(call.args.p_rows).toEqual([expect.objectContaining({service_performers:{doctor_id:'doctor-a',staff_id:null}})]);
+ expect(call.args.p_compounds).toEqual([expect.objectContaining({sale_item_id:'compound-sku',service_performers:{doctor_id:null,staff_id:'staff-b'}})]);
+ expect(JSON.stringify(call.args)).not.toContain('seller-a');
  expect(JSON.stringify(call.args)).not.toContain('FORGED');
 });

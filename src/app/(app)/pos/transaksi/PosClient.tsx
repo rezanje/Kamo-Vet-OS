@@ -85,7 +85,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
           const rowKey = line.row_key && !rowKeys.has(line.row_key) ? line.row_key : crypto.randomUUID();
           rowKeys.add(rowKey);
           return [{ ...line, row_key: rowKey, item_type: item.item_type, tindakan_kategori: item.tindakan_kategori,
-            service_performers: item.item_type === "Jasa" ? line.service_performers ?? emptyServicePerformers() : null,
+            service_performers: line.service_performers ?? emptyServicePerformers(),
             nama: item.name, target_species: item.target_species, harga: price, faktor: unit.factor }];
         });
         setBranchId(branch);
@@ -162,7 +162,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
     const ov = hargaPerCabang[id];
     setCart((c) => c.map((l) => ({
       ...l,
-      service_performers: l.item_type === "Jasa" ? emptyServicePerformers() : null,
+      service_performers: emptyServicePerformers(),
       harga: ov?.[`${l.item_id}|${l.satuan}`]
         ?? items.find((i) => i.id === l.item_id)?.units.find((u) => u.unit === l.satuan)?.sell_price
         ?? l.harga,
@@ -174,7 +174,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
       const u = it.units[0];
       const baris: Line = {
         row_key: crypto.randomUUID(), item_type: it.item_type, tindakan_kategori: it.tindakan_kategori,
-        service_performers: it.item_type === "Jasa" ? emptyServicePerformers() : null,
+        service_performers: emptyServicePerformers(),
         item_id: it.id, nama: it.name, qty: 1, harga: u.sell_price,
         target_species: it.target_species, satuan: u.unit, faktor: u.factor,
       };
@@ -306,12 +306,12 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
           )}
 
           <div style={{ fontSize: 10, color: "var(--td)" }}>Kasir tercatat otomatis dari akun yang sedang masuk.</div>
-          {cart.some(line => line.item_type === "Jasa") && <div data-service-bulk>
-            <ServicePerformersField label="Isi pelaksana untuk jasa yang masih kosong" value={bulkPerformers}
+          {cart.length > 0 && <div data-service-bulk>
+            <ServicePerformersField label="Isi pelaksana untuk baris yang masih kosong" value={bulkPerformers}
               staff={serviceStaffByBranch[branchId] ?? []} onChange={setBulkPerformers} />
             <button type="button" className="back-btn" disabled={!branchId || (!bulkPerformers.doctor_id && !bulkPerformers.staff_id)}
               onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris kosong</button>
-            <p style={{ fontSize: 10, color: "var(--td)", margin: "5px 0" }}>Pilihan per baris yang sudah diisi tetap dipertahankan. Pelaksana dapat diubah pada setiap baris jasa.</p>
+            <p style={{ fontSize: 10, color: "var(--td)", margin: "5px 0" }}>Pilihan per baris yang sudah diisi tetap dipertahankan. Pelaksana dapat diubah pada setiap baris.</p>
           </div>}
 
           {/* Items */}
@@ -319,7 +319,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
             const k = lineKey(l);
             const opts = unitsOf(l.item_id);
             return (
-              <div key={k} data-service-row={l.item_type === "Jasa" ? k : undefined}>
+              <div key={k} data-service-row={k}>
               <div className="ci">
                 <div style={{ flex: 1, fontSize: 10.5 }}>
                   {l.nama}
@@ -340,9 +340,9 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
                 <div style={{ fontSize: 10.5, minWidth: 62, textAlign: "right" }}>{rp(l.qty * l.harga)}</div>
                 <button type="button" aria-label={`Hapus ${l.nama}`} onClick={() => remove(k)} className="back-btn" style={{ color: "#b91c1c" }}><i className="ti ti-trash" /></button>
               </div>
-              {l.item_type === "Jasa" && <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers}
-                grooming={groomingAppliesByBranch[branchId] && l.tindakan_kategori === "Grooming"} doctorRequired={groomingDoctorByBranch[branchId]}
-                staff={serviceStaffByBranch[branchId] ?? []} onChange={value => setCart(rows => rows.map(row => row.row_key === k ? { ...row, service_performers: value } : row))} />}
+              <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers}
+                grooming={groomingAppliesByBranch[branchId] && l.item_type === "Jasa" && l.tindakan_kategori === "Grooming"} doctorRequired={groomingDoctorByBranch[branchId]}
+                staff={serviceStaffByBranch[branchId] ?? []} onChange={value => setCart(rows => rows.map(row => row.row_key === k ? { ...row, service_performers: value } : row))} />
               </div>
             );
           })}
