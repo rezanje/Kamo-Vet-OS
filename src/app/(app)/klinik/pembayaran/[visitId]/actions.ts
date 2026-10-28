@@ -38,11 +38,12 @@ type Line = {
 };
 
 /**
- * U07: start a read now, consume it later. The result (or its error) is awaited at the
- * exact point the old sequential code awaited it, so every validation, redirect and
- * error message keeps its order. A read abandoned by an earlier redirect is ignored
- * instead of surfacing as an unhandled rejection; nothing posts until all reads it
- * depends on have resolved successfully (fail closed).
+ * U07: start a read now, consume it later. The read is awaited at the exact point the
+ * old sequential code awaited it, so every validation, redirect and error message keeps
+ * its order, and a thrown/rejected read still rethrows there (before posting). A read
+ * abandoned by an earlier redirect is ignored instead of surfacing as an unhandled
+ * rejection. This does NOT inspect Supabase `{ error }` results: callers must check
+ * those themselves before relying on the data.
  */
 function mulai<T>(read: PromiseLike<T>): Promise<T> {
   const p = Promise.resolve(read);
@@ -53,13 +54,19 @@ function mulai<T>(read: PromiseLike<T>): Promise<T> {
 /** §6.3 gate input: service lines of the latest medical record (two dependent reads). */
 async function bacaJasaGate(
   supabase: Awaited<ReturnType<typeof createClient>>, visitId: string,
-): Promise<{ data: { jenis: string; kategori: string | null }[] | null }> {
-  const { data: mrGate } = await supabase
+): Promise<{ data: { jenis: string; kategori: string | null }[] | null; error: unknown }> {
+  const { data: mrGate, error: mrError } = await supabase
     .from("medical_records").select("id").eq("visit_id", visitId)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (!mrGate) return { data: [] };
-  return await supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mrGate.id);
+  // Fail closed: an unreadable record must not look like "no risky service".
+  if (mrError) return { data: null, error: mrError };
+  if (!mrGate) return { data: [], error: null };
+  const { data, error } = await supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mrGate.id);
+  return { data: error ? null : data, error };
 }
+
+const consentUnreadable = "Status persetujuan tindakan belum dapat diverifikasi. Muat ulang lalu coba lagi; pembayaran belum diproses.";
+const visitUnreadable = "Data kunjungan belum dapat dibaca. Muat ulang lalu coba lagi; pembayaran belum diproses.";
 
 /** U07: lightweight per-phase timing so production latency can be measured from logs. */
 function catatWaktu(label: string, ref: string) {
@@ -154,7 +161,9 @@ export async function bayarVisit(formData: FormData) {
   // §6.3: tindakan berisiko tidak boleh ditagih sebelum pemilik menandatangani form
   // persetujuan. Dicek server-side — UI menyembunyikan tombol, tapi itu bukan pengaman.
   {
-    const [{ data: jasaRows }, { data: inpatRow }, { data: consentRows }] = await Promise.all([jasaP, inpatP, consentsP]);
+    const [{ data: jasaRows, error: jasaError }, { data: inpatRow, error: inpatError }, { data: consentRows, error: consentError }] = await Promise.all([jasaP, inpatP, consentsP]);
+    // Fail closed (§6.3): a gate read that errored must not count as "nothing to sign".
+    if (jasaError || inpatError || consentError) redirect(`${back}?error=${encodeURIComponent(consentUnreadable)}`);
     if (inpatRow?.consent_id) {
       const linked = (await inpatConsentP)!;
       if (linked.error || linked.data !== true) redirect(`${back}?error=${encodeURIComponent("Persetujuan khusus rawat inap tidak valid.")}`);
@@ -223,7 +232,9 @@ export async function bayarVisit(formData: FormData) {
   const pesanPeriode = await periodeP;
   if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
 
-  const { data: v } = await visitP;
+  const { data: v, error: visitError } = await visitP;
+  // Fail closed: posting with an unread visit would lose branch/customer (promo, points, cash account).
+  if (visitError || !v) redirect(`${back}?error=${encodeURIComponent(visitUnreadable)}`);
   waktu.tandai("baca1");
 
   const rawSplit = formData.get("split_payments");
@@ -509,9 +520,12 @@ export async function bayarRombongan(formData: FormData) {
     const inpatP = mulai(supabase.from("inpatient_records").select("id").eq("visit_id", b.visitId).limit(1).maybeSingle());
     const consentsP = mulai(supabase.from("consents").select("status").eq("visit_id", b.visitId));
     return mulai((async (): Promise<Siap | null> => {
-      const { data: v } = await visitP;
+      const { data: v, error: visitError } = await visitP;
+      // Fail closed: an unreadable visit/gate stops the whole group before any invoice posts.
+      if (visitError) redirect(`${back}?error=${encodeURIComponent(`${b.hewan}: ${visitUnreadable}`)}`);
       if (!v) return null;
-      const [{ data: jasaRows }, { data: inpatRow }, { data: consentRows }] = await Promise.all([jasaP, inpatP, consentsP]);
+      const [{ data: jasaRows, error: jasaError }, { data: inpatRow, error: inpatError }, { data: consentRows, error: consentError }] = await Promise.all([jasaP, inpatP, consentsP]);
+      if (jasaError || inpatError || consentError) redirect(`${back}?error=${encodeURIComponent(`${b.hewan}: ${consentUnreadable}`)}`);
       if (!bolehBayar(
         (jasaRows ?? []) as { jenis: string; kategori: string | null }[],
         !!inpatRow,
