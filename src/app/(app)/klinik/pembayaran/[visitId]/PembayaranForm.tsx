@@ -14,7 +14,7 @@ import { quoteDemoPayments, type DemoFinancialPolicy } from "@/lib/clinic-demo-p
 import type { PilihanPenjual } from "@/lib/penjual";
 import type { ItemUnit } from "@/lib/satuan";
 import { useClinicDraft } from "@/components/useClinicDraft";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -247,9 +247,11 @@ function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:
   </div>;
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
+  /** Ada racikan kunjungan ini yang masih menunggu diracik. */
+  racikanPending?: boolean;
   draftUserId?: string; draftScope?: string; sourceVersion?: string;
   packages?: PackageOption[];
   demoPolicy?: DemoFinancialPolicy | null; demoStaff?: PilihanPenjual[];
@@ -352,6 +354,9 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
 
   const [bayar, setBayar] = useState(0);
   const [kurangBayar, setKurangBayar] = useState<string | null>(null);
+  // Racikan belum siap tidak menolak pembayaran; kasir hanya diminta mengkonfirmasi sekali.
+  const [konfirmasiRacikan, setKonfirmasiRacikan] = useState<FormData | null>(null);
+  const racikanDikonfirmasi = useRef(false);
   const splitAmount = splitPayments.reduce((sum, part) => sum + part.amount, 0);
   const totalDiterima = dpPaid + initialCreditAmount + (mixed ? splitAmount + customerFee : bayar);
   const kembalian = mixed ? 0 : Math.max(0, bayar - sisa);
@@ -404,11 +409,20 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   return (<>
     {/* Di luar <form>: dialog punya form method="dialog" sendiri. */}
     <Popup message={kurangBayar} title="Pembayaran kurang" onClose={() => setKurangBayar(null)} />
+    <RacikanBelumSiapDialog open={!!konfirmasiRacikan}
+      onCancel={() => setKonfirmasiRacikan(null)}
+      onConfirm={() => {
+        const data = konfirmasiRacikan;
+        racikanDikonfirmasi.current = true;
+        setKonfirmasiRacikan(null);
+        if (data) void submit(data, bayarVisit);
+      }} />
     <form action={data => {
       if (sourceChanged) return Promise.resolve();
       // "Bayar & Selesai" dicatat lunas di server berapa pun nominalnya, jadi uang kurang ditahan di sini.
       const kurang = !mixed && data.get("finalize") === "1" ? pesanKurangBayar(bayar, sisa) : null;
       if (kurang) { setKurangBayar(kurang); return Promise.resolve(); }
+      if (racikanPending && !racikanDikonfirmasi.current) { setKonfirmasiRacikan(data); return Promise.resolve(); }
       return submit(data, bayarVisit);
     }} ref={attachForm} onInput={capture} onChange={capture}>
       <input type="hidden" name="visitId" value={visitId} />
@@ -679,4 +693,22 @@ function SumRow({ label, value }: { label: string; value: string }) {
       <span style={{ fontWeight: 500 }}>{value}</span>
     </div>
   );
+}
+
+/** G: peringatan racikan belum siap. Pembayaran tetap boleh diteruskan setelah dikonfirmasi. */
+function RacikanBelumSiapDialog({ open, onConfirm, onCancel }: { open: boolean; onConfirm: () => void; onCancel: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (open && !ref.current?.open) ref.current?.showModal(); }, [open]);
+  if (!open) return null;
+  return <dialog ref={ref} role="alertdialog" aria-label="Racikan belum siap"
+    style={{ margin: "auto", border: ".5px solid #fcd34d", borderRadius: 12, padding: 20, maxWidth: 420, width: "calc(100% - 32px)" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700, color: "#92400e", marginBottom: 8 }}>
+      <i className="ti ti-alert-triangle" style={{ fontSize: 20 }} /> Racikan belum siap
+    </div>
+    <div style={{ fontSize: 13, color: "var(--sb)", marginBottom: 16 }}>Ada racikan yang belum siap diserahkan. Lanjutkan pembayaran?</div>
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <button type="button" className="btn-def" onClick={onCancel}>Batal</button>
+      <button type="button" className="btn-acc" autoFocus onClick={onConfirm}>Lanjutkan pembayaran</button>
+    </div>
+  </dialog>;
 }
