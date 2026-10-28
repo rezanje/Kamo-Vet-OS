@@ -9,7 +9,9 @@ select check_name, ok from (values
     and not has_table_privilege('authenticated','public.clinic_record_addenda','DELETE')),
   ('anon has no access to addenda', not has_table_privilege('anon','public.clinic_record_addenda','SELECT')),
   ('immutability triggers present',
-    (select count(*) from pg_trigger where tgrelid = to_regclass('public.clinic_record_addenda') and not tgisinternal) = 3),
+    -- a01_activity_* capture triggers (20261029150000) are counted separately, not as immutability guards.
+    (select count(*) from pg_trigger where tgrelid = to_regclass('public.clinic_record_addenda') and not tgisinternal
+      and tgname not like 'a01\_activity\_%') = 3),
   ('clinic_add_record_addendum executable by authenticated, not anon',
     has_function_privilege('authenticated','public.clinic_add_record_addendum(uuid,uuid,text,text,text,text)','EXECUTE')
     and not has_function_privilege('anon','public.clinic_add_record_addendum(uuid,uuid,text,text,text,text)','EXECUTE')),

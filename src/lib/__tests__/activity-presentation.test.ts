@@ -1,4 +1,5 @@
 import {expect,it} from 'vitest';
+import {readFileSync} from 'node:fs';
 import {activityValue,activityFieldLabel,activitySourceLinks,activitySourceKey} from '../activity-presentation';
 import type {ActivityRow} from '../activity-log';
 import type {SupabaseClient} from '@supabase/supabase-js';
@@ -60,4 +61,13 @@ it('checks stored parent branch relationships and fails closed when that relatio
  expect((await activitySourceLinks(db,rows,['allowed-branch'])).links.get(activitySourceKey('goods_receipts',a))).toBe('/pembelian/penerimaan/'+a);
  parent={branch_id:'other-branch'};expect((await activitySourceLinks(db,rows,['allowed-branch'])).links.size).toBe(0);
  parent=null;expect((await activitySourceLinks(db,rows,['allowed-branch'])).links.size).toBe(0);
+});
+
+it('labels every value captured from the sources registered on 29 Oct',()=>{
+ const sql=readFileSync('supabase/migrations/20261029150000_a01_audit_new_tables.sql','utf8');
+ const keys=[...sql.matchAll(/^ \('[a-z_]+', '[a-z-]+', (?:'[a-z_]+'|null), array\[([^\]]*)\]/gm)].flatMap(m=>[...m[1].matchAll(/'([a-z_]+)'/g)].map(k=>k[1]));
+ expect(keys).toEqual(expect.arrayContaining(['max_uses','doctor_required','ap_total','outstanding','restock','active']));
+ for(const key of keys)expect(activityFieldLabel(key)).not.toBe('Bagian lainnya');
+ expect(activityValue('restock',true)).toBe('Ya');
+ expect(activityValue('outstanding','1500000')).toBe('1.500.000');
 });

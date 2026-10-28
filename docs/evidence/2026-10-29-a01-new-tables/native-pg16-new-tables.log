@@ -1,0 +1,17 @@
+server: postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) | cluster: /tmp/vetos-a01-native-l9dfmrfw
+Applied 304 repository migrations to isolated PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) with fictional auth/storage shims.
+PASS idempotent re-apply (sources/triggers/registry hash unchanged: 203/405/a7c7af378583fe9ab689b5be23b3804b)
+PASS drift refused: registry row changed
+PASS drift refused: foreign trigger body
+PASS drift refused: source column renamed
+PASS activity_audit_new_tables.sql (after all migrations)
+readback after migrations: 7 checks ok
+rollback: 18 registrations and their triggers removed, 185 older sources intact.
+preflight after rollback: 6 checks ok
+apply.sql twice: same registry/triggers as the migration.
+preflight on applied database (re-run case): 6 checks ok
+readback after apply.sql: 7 checks ok
+PASS activity_audit_new_tables.sql (after owner package apply)
+Removed owned PostgreSQL test container and volumes.
+PASS A01 new-table coverage.
+cleanup: temp cluster removed

@@ -37,6 +37,9 @@ const FIELDS: Record<string,string> = {
  rencana_bayar:'Rencana pembayaran',streak_bonus_every_days:'Interval bonus (hari)',streak_bonus_points:'Bonus poin',tanggal_selesai:'Tanggal selesai',
  track_batch:'Lacak batch',track_expiry:'Lacak kedaluwarsa',umur_baru:'Umur baru',umur_lama:'Umur lama',
  valuation_adjustment:'Penyesuaian nilai',value:'Nilai',value_after:'Nilai sesudah',value_delta:'Perubahan nilai',variance:'Selisih nilai',
+ doctor_required:'Wajib dokter',max_uses:'Batas pemakaian',active:'Aktif',restock:'Kembali ke stok',row_no:'Nomor baris',
+ outstanding:'Sisa tagihan',original_total:'Total awal faktur',ap_count:'Jumlah faktur hutang',ap_total:'Total hutang',
+ ar_count:'Jumlah faktur piutang',ar_total:'Total piutang',
  catatan:'Catatan',name:'Nama',nama:'Nama',item_id:'Barang',supplier_id:'Pemasok',customer_id:'Pelanggan',branch_id:'Cabang',
 };
 const DATES=new Set(['tanggal','tanggal_perolehan','tanggal_mulai','tanggal_selesai','jatuh_tempo','rencana_kirim','rencana_bayar','dp_date','exp_date','paid_at','received_at','voided_at','voided_on','trashed_at','disbursed_at','opened_at','closed_at','activated_at','approved_at','locked_at','closed_through']);

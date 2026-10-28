@@ -8,7 +8,9 @@ end$$;
 do $$declare s public.activity_log_sources%rowtype;actual_keys text[];col text;ref jsonb;
  source_relation regclass;parent_relation regclass;local_type oid;parent_type oid;
 begin
- if (select count(*) from public.activity_log_sources)<>179 then raise exception 'Expected the reviewed 179-source capture boundary';end if;
+ -- 179 (22 Oct) + sales_refund_requests/payouts (23 Oct) + purchase_correction_requests (27 Oct)
+ -- + clinic_history_reads/clinic_refund_requests/clinic_refunds (28 Oct) + 18 tables (29 Oct audit).
+ if (select count(*) from public.activity_log_sources)<>203 then raise exception 'Expected the reviewed 203-source capture boundary';end if;
  for s in select * from public.activity_log_sources loop
   source_relation:=to_regclass('public.'||s.entity);
   if source_relation is null then raise exception 'Registered relation absent: %',s.entity;end if;
@@ -17,10 +19,11 @@ begin
    join pg_attribute a on a.attrelid=i.indrelid and a.attnum=k.attnum
    where i.indisprimary and i.indrelid=source_relation;
   if actual_keys is null or s.identity_keys is distinct from actual_keys then raise exception 'Actual primary key mismatch: %',s.entity;end if;
+  -- clinic_history_reads is append-only (immutability trigger): insert-only capture by design.
   if not exists(select 1 from pg_trigger where tgrelid=source_relation and tgname='a01_activity_change'
-   and tgfoid='public.capture_activity_log()'::regprocedure and tgtype=21 and tgenabled='O' and not tgisinternal)
-   or not exists(select 1 from pg_trigger where tgrelid=source_relation and tgname='a01_activity_delete'
-   and tgfoid='public.capture_activity_log()'::regprocedure and tgtype=11 and tgenabled='O' and not tgisinternal) then
+   and tgfoid='public.capture_activity_log()'::regprocedure and tgtype=case when s.entity='clinic_history_reads' then 5 else 21 end and tgenabled='O' and not tgisinternal)
+   or (s.entity<>'clinic_history_reads' and not exists(select 1 from pg_trigger where tgrelid=source_relation and tgname='a01_activity_delete'
+   and tgfoid='public.capture_activity_log()'::regprocedure and tgtype=11 and tgenabled='O' and not tgisinternal)) then
    raise exception 'Missing or disabled row capture trigger: %',s.entity;
   end if;
   foreach col in array s.value_keys||case when s.label_key is null then '{}'::text[] else array[s.label_key] end loop
@@ -38,7 +41,9 @@ begin
   end if;
   -- Sources with no authenticated SELECT policy must not gain even metadata
   -- visibility through the security-definer audit writer.
-  if cardinality(s.reader_roles)>0 and (
+  -- Reviewed exception (20261023193000, 20261028140000): refund request queues are read only
+  -- through finance RPCs; their metadata-only events stay visible to OWNER/ADMIN by design.
+  if cardinality(s.reader_roles)>0 and not (s.metadata_only and s.entity in ('sales_refund_requests','clinic_refund_requests')) and (
    exists(select 1 from unnest(s.identity_keys||s.value_keys||case when s.label_key is null then '{}'::text[] else array[s.label_key] end) k
     where not has_column_privilege('authenticated',source_relation,k,'SELECT')) or
    (select relrowsecurity from pg_class where oid=source_relation) and not exists(
