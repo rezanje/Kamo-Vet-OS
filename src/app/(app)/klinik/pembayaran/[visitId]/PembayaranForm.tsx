@@ -18,6 +18,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
+import { Popup } from "@/components/Popup";
 import { bayarVisit } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { METODE_BAYAR } from "@/lib/metode-bayar";
@@ -57,6 +58,10 @@ type Patient = {
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+export function pesanKurangBayar(bayar: number, sisa: number): string | null {
+  if (bayar >= sisa) return null;
+  return `Uang diterima ${rp(bayar)}, sisa tagihan ${rp(sisa)}. Kurang ${rp(sisa - bayar)}. Lengkapi jumlah bayar, atau pilih Simpan untuk mencatat sebagai DP.`;
+}
 
 const labelMaster = (it: MasterItem) => `${it.code} — ${it.name}`;
 const NO_OPEN_SOURCES: ReadonlySet<string> = new Set();
@@ -343,6 +348,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const sisa = Math.max(0, total - dpPaid - initialCreditAmount);
 
   const [bayar, setBayar] = useState(0);
+  const [kurangBayar, setKurangBayar] = useState<string | null>(null);
   const splitAmount = splitPayments.reduce((sum, part) => sum + part.amount, 0);
   const totalDiterima = dpPaid + initialCreditAmount + (mixed ? splitAmount + customerFee : bayar);
   const kembalian = mixed ? 0 : Math.max(0, bayar - sisa);
@@ -392,8 +398,16 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   ].filter((r) => r.deskripsi.trim()));
   const today = hariIniWIB();
 
-  return (
-    <form action={data => sourceChanged ? Promise.resolve() : submit(data, bayarVisit)} ref={attachForm} onInput={capture} onChange={capture}>
+  return (<>
+    {/* Di luar <form>: dialog punya form method="dialog" sendiri. */}
+    <Popup message={kurangBayar} title="Pembayaran kurang" onClose={() => setKurangBayar(null)} />
+    <form action={data => {
+      if (sourceChanged) return Promise.resolve();
+      // "Bayar & Selesai" dicatat lunas di server berapa pun nominalnya, jadi uang kurang ditahan di sini.
+      const kurang = !mixed && data.get("finalize") === "1" ? pesanKurangBayar(bayar, sisa) : null;
+      if (kurang) { setKurangBayar(kurang); return Promise.resolve(); }
+      return submit(data, bayarVisit);
+    }} ref={attachForm} onInput={capture} onChange={capture}>
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="requestKey" value={submissionKey} />
       {demoEnabled && !editMode && <>
@@ -644,7 +658,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
         </div>
       </div>
     </form>
-  );
+  </>);
 }
 
 function Pair({ label, value }: { label: string; value: string | null | undefined }) {

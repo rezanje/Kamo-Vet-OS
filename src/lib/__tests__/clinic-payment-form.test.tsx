@@ -10,7 +10,7 @@ vi.mock("@/lib/promo-hitung", async () => await import("../promo-hitung"));
 vi.mock("@/lib/harga-golongan", async () => await import("../harga-golongan"));
 vi.mock("@/lib/voucher", async () => await import("../voucher"));
 vi.mock("@/lib/tagihan-klinik", () => ({ hargaNetto: (r: {harga:number})=>r.harga, nilaiBaris: (r: {qty:number;harga:number})=>r.qty*r.harga }));
-import { ItemTable, PembayaranForm } from "../../app/(app)/klinik/pembayaran/[visitId]/PembayaranForm";
+import { ItemTable, PembayaranForm, pesanKurangBayar } from "../../app/(app)/klinik/pembayaran/[visitId]/PembayaranForm";
 function find(node: React.ReactNode, type: string, ariaLabel?: string): React.ReactElement<Record<string, unknown>> | undefined {
   if (!React.isValidElement<Record<string, unknown>>(node)) return;
   if (node.type === type && (!ariaLabel || node.props['aria-label'] === ariaLabel)) return node;
@@ -56,4 +56,10 @@ it("shows the automatic customer fee and recorded recipients before DEMO payment
  const html=renderToStaticMarkup(React.createElement(PembayaranForm,{...props,patient:{...props.patient,owner:"DEMO Owner"},initialMetode:"Transfer",initialJasa:[{deskripsi:"DEMO jasa",qty:1,harga:50000}],
   demoPolicy:{id:"policy",name:"DEMO 5%",incentivePercent:5,feeBearer:"customer",feeRates:{Transfer:100},adminRevenueCode:"4303",adminExpenseCode:"5501"},demoStaff:props.salespeople}));
  expect(html).toContain('name="demo_policy_id" value="policy"');expect(html).toContain('name="demo_employee_ids"');expect(html).toContain("Rp 50.500");expect(html).toContain("Admin pembayaran DEMO");
+});
+
+it("blocks Bayar & Selesai when received money is below the remaining bill",()=>{
+ expect(pesanKurangBayar(30000,100000)).toContain("Kurang Rp 70.000");
+ expect(pesanKurangBayar(100000,100000)).toBeNull();
+ expect(pesanKurangBayar(150000,100000)).toBeNull();
 });
