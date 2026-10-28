@@ -1,0 +1,19 @@
+server: 16.14 (Homebrew)
+Applied 297 repository migrations to isolated PostgreSQL 16.14 (Homebrew) with fictional auth/storage shims.
+preflight (fix already in migrations): f9630a9197f26870696f688e6eee6d7b|ALREADY APPLIED
+preflight after rollback: 019ceed5f3e0951a00cd97c7e22e984a|READY: original body
+RED as expected on original body: record "new" has no field "sale_id"
+RED as expected on original body: editing a compound's dosage instruction fails (sync UPDATE of prescription_items)
+readback: t | invoice_items|O|CREATE TRIGGER zz_grooming_requirement BEFORE INSERT OR UPDATE ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION enforce_branch_grooming_performers() | prescription_items|O|CREATE TRIGGER zz_grooming_requirement BEFORE INSERT OR UPDATE ON public.prescription_items FOR EACH ROW EXECUTE FUNCTION enforce_branch_grooming_performers() | sale_items|O|CREATE TRIGGER zz_grooming_requirement BEFORE INSERT OR UPDATE ON public.sale_items FOR EACH ROW EXECUTE FUNCTION enforce_branch_grooming_performers() | anon|f | authenticated|f | service_role|f
+PASS apply.sql re-run is a no-op
+PASS grooming_trigger_update.sql
+PASS existing regression: branch_grooming_requirements.sql
+PASS existing regression: clinic_service_performers.sql
+PASS existing regression: clinic_refund_source.sql
+PASS existing regression: clinic_refund_post.sql
+PASS existing regression: compound_recipient_instructions.sql
+PASS existing regression: clinic_invoice_post.sql
+PASS existing regression: clinic_billing_lifecycle.sql
+PASS existing regression: clinic_procedure_bmhp.sql
+PASS existing regression: pos_split_payments.sql
+Stopped and removed the throwaway PostgreSQL cluster.
