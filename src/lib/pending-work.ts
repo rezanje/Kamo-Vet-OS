@@ -10,6 +10,18 @@ import { CORRECTION_QUEUE_PATH } from "@/lib/purchase-correction-requests";
 type AnyClient = any;
 export type PendingWork = { label: string; href: string; count: number | null; hasMore?: boolean };
 
+/** Transfer refund queues behind /kas-bank/refund (petshop retur + clinic invoice refund). */
+export const REFUND_QUEUES = [
+  { rpc: "get_sales_refund_requests", source: "p_sale_id", optional: false },
+  // The queue page treats a missing clinic RPC (before the J03 database step) as no clinic rows.
+  { rpc: "get_clinic_refund_requests", source: "p_invoice", optional: true },
+] as const;
+
+/** PostgREST "function not found" — the database step that creates the RPC is not applied yet. */
+export function isMissingFunction(error: unknown): boolean {
+  return !!error && typeof error === "object" && (error as { code?: unknown }).code === "PGRST202";
+}
+
 export async function loadPendingWork(db: AnyClient, role: string | null): Promise<PendingWork[]> {
   if (!role || !["OWNER", "ADMIN", "FINANCE"].includes(role)) return [];
   let rules: { role: string; module_id: string }[] = [];
@@ -49,9 +61,12 @@ export async function loadPendingWork(db: AnyClient, role: string | null): Promi
       }), () => ({ label: "Permintaan koreksi pembelian", href: CORRECTION_QUEUE_PATH, count: null })));
   }
 
-  if (canOpen("/kas-bank/refund")) requests.push(Promise.all(["pending", "diproses"].map(status => Promise.resolve().then(() => db.rpc("get_sales_refund_requests", {
-    p_sale_id: null, p_office: true, p_status: status, p_offset: 0,
-  })))).then((results: { data: unknown; error: unknown }[]) => {
+  // Petshop and clinic (J03) transfer refunds share the /kas-bank/refund queue, so the alert
+  // counts both. Each RPC applies the same finance role + branch scope as the queue page.
+  if (canOpen("/kas-bank/refund")) requests.push(Promise.all(REFUND_QUEUES.flatMap(queue => ["pending", "diproses"].map(status =>
+    Promise.resolve().then(() => db.rpc(queue.rpc, { [queue.source]: null, p_office: true, p_status: status, p_offset: 0 }))
+      .then((result: { data: unknown; error: unknown }) => queue.optional && isMissingFunction(result.error) ? { data: [], error: null } : result)))
+  ).then((results: { data: unknown; error: unknown }[]) => {
     const valid = results.every(result => !result.error && Array.isArray(result.data));
     const firstPageCount = valid ? results.reduce((count, result) => count + (result.data as unknown[]).length, 0) : null;
     return { label: "Refund transfer belum selesai", href: "/kas-bank/refund",
