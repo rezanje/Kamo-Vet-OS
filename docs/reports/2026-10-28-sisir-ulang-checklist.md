@@ -16,7 +16,6 @@ Hasil: 85 butir; 56 Live, 29 belum Live (Parsial 26, Belum mulai 2, Terhalang 1)
 | K08 | Pemulangan ranap ulang hanya menagih periode terakhir; tes SQL pemulangan gagal | Perbaiki tagihan + tes |
 | C05 | Kode kampanye ditolak di bayar rombongan klinik & belum ada di POS back-office | Dukung di kedua jalur |
 | Q01 | Progres quest bisa hilang bila langkah terpisah gagal; tidak jalan dari POS back-office | Progres bisa dipulihkan, panggil dari POS back-office |
-| N01 | Faktur grosir/B2B tidak menampilkan tautan retur | Tautan dua arah faktur ↔ retur |
 
 ## B. Butuh keputusan pemilik/finance (rekomendasi di kolom kanan)
 
@@ -31,6 +30,9 @@ Hasil: 85 butir; 56 Live, 29 belum Live (Parsial 26, Belum mulai 2, Terhalang 1)
 | K07 | Perlu alur bayar ranap harian di muka? | Tidak sekarang; tetap tagih saat pulang |
 | J01 | Batal-terbit ulang/refund/retur diterima sebagai alur koreksi final? | Ya |
 | N01 | Retur pembelian dialokasikan ke faktur tertentu? | Cukup per PO dulu |
+| N01 | Retur faktur grosir/B2B: sistem belum punya dokumen retur grosir (retur hanya untuk struk POS), jadi tautan faktur↔retur tidak bisa dibuat tanpa skema baru | Buat dokumen retur grosir tertaut faktur (stok kembali, piutang/saldo pelanggan dikurangi) |
+| K08 | Kunjungan dengan invoice belum lunas masih bisa langsung masuk ranap, lalu tidak bisa dipulangkan selama invoice aktif | Wajib lunasi/batalkan invoice dulu sebelum masuk ranap |
+| A01 | Riwayat permintaan refund (petshop & klinik) tampil di log untuk OWNER/ADMIN walau tabelnya tertutup | Pertahankan (sesuai desain refund) |
 | C05 | Kode voucher asli yang ditautkan ke kampanye boleh dipakai langsung? | Diblok, wajib lewat kode kampanye |
 | K06 | Terima "kunjungan lanjutan tertaut" pengganti "kunjungan yang sama"? | Terima |
 | I09 | Definisi masuk/keluar induk racikan nonstok; halaman histori per SKU induk? | Masuk = racikan dibuat, keluar = racikan terjual; buat halaman histori |
@@ -49,3 +51,18 @@ finance), O01, O02, C06.
 
 Kolom "Yang sudah jadi"/"Sisa" pada T01, R02, R06, A02, O01, O02, C06 masih berisi teks butir lain (tergeser).
 Status/checkbox sesuai ID. Perlu dirapikan pemegang sheet (Wowo).
+
+## Hasil batch ini (branch `claude/dazzling-hawking-q1a4b6`)
+
+| ID | Perubahan | Migrasi |
+|----|-----------|---------|
+| R02 | Omzet per cabang & per hari (dan rincian penjualan) dikurangi refund klinik, pada tanggal/cabang invoice asal — sama dengan perlakuan retur petshop | — |
+| A02 | Alert pending dashboard & notice Kas-Bank menghitung refund transfer klinik | — |
+| K08 | Pemulangan ulang menagih total hari semua periode dikurangi yang sudah ditagih; buka ulang ranap ditolak bila ada invoice aktif; skrip review kunjungan lunas-belum-selesai (tidak dijalankan) | `20261030110000_k08_inpatient_redischarge_days.sql` |
+| A01 | 16 tabel bisnis baru masuk log aktivitas + tes cakupan semua tabel | `20261030111000_a01_activity_audit_new_sources.sql` |
+| C05 | Kode kampanye di bayar rombongan klinik (dihitung sekali per kedatangan) & POS back-office | — |
+| Q01 | Progres quest yang gagal dipulihkan otomatis tanpa hitung ganda; POS back-office ikut | `20261030112000_q01_staff_effects_recovery.sql` |
+
+Verifikasi gabungan: lint 0 error; typecheck lulus; vitest 567 berkas/4.203 tes lulus; build lulus; SQL lokal
+PostgreSQL 16 (semua migrasi): A01 coverage, K08 (6 suite + skrip review), C05/Q01 (12 suite + 2 uji konkurensi)
+lulus. Belum: apply migrasi production, UAT pengguna.

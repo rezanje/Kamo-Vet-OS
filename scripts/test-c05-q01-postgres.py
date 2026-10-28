@@ -15,7 +15,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 CONTAINER = 'vetos-c05-q01-test-' + uuid.uuid4().hex[:8]
 NEW = ['20261028180000_q01_new_customer_quest.sql', '20261028181000_c05_campaign_codes.sql',
-       '20261030110000_q01_staff_effects_recovery.sql']
+       '20261030112000_q01_staff_effects_recovery.sql']
 SUITES = ['c05_campaign_codes.sql', 'q01_new_customer_quest.sql', 'c05_q01_followup.sql']
 REGRESSIONS = ['clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinic_demo_financial_policy.sql',
                'quest_config_write_guard.sql', 'pos_payment_method_corrections.sql',
