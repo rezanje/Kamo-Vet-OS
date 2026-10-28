@@ -169,6 +169,9 @@ export function parseClinicRecordError(error: { code?: string; message: string }
   if (error?.code === "P0001") {
     if (error.message.startsWith("CONSENT_REQUIRED: tandatangani form Pulang Paksa")) return "Buat dan tandatangani form khusus Pulang Paksa untuk cabang pasien sebelum mengubah kondisi.";
     if (error.message.startsWith("INPATIENT_CLOSED:")) return "Pasien sudah keluar dari rawat inap; kondisi kepulangan tidak dapat diubah di sini.";
+    // K08: a discharged stay is not reopened once the visit is invoiced, or while another stay is live.
+    if (error.message.startsWith("INVOICE_EXISTS: tagihan sudah terbit; rawat inap yang sudah pulang")) return "Tagihan kunjungan ini sudah terbit, jadi rawat inap yang sudah pulang tidak bisa dibuka lagi. Untuk perawatan berikutnya, buka lanjutan rawat inap dari rekam medis setelah tagihan diselesaikan kasir.";
+    if (error.message.startsWith("ADMISSION_INVALID: pasien sudah memiliki rawat inap aktif")) return "Pasien masih punya rawat inap aktif lain; periode yang sudah pulang tidak bisa dibuka lagi.";
     if (error.message.startsWith("INPATIENT_ATOMIC_REQUIRED:")) return "Ubah kondisi melalui aksi rawat inap agar formulir dan biaya diperiksa bersama.";
     if (error.message.startsWith("RECORD_INVALID:")) return "Kunjungan belum siap diselesaikan atau data pemeriksaan tidak lengkap.";
     if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";
