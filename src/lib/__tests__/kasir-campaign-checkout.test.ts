@@ -6,7 +6,6 @@ vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "POS-SPLIT-TEST" }) }));
 vi.mock("@/lib/posting", () => ({ postJournal: async () => {} }));
-vi.mock("@/lib/quest-hook", () => ({ processQuestProgress: async () => {} }));
 vi.mock("@/lib/inventory", () => ({ stockOut: async () => ({ cost: 34567 }) }));
 vi.mock("@/lib/harga-cabang", () => ({ loadHargaCabang: async () => new Map(), hargaCabang: (_map: unknown, _id: string, _unit: string, price: number) => price, applyHargaCabang: (options: unknown) => options }));
 vi.mock("@/lib/promo-hitung", async original => ({ ...await original<typeof import("@/lib/promo-hitung")>(), loadPromoAktif: async () => [] }));

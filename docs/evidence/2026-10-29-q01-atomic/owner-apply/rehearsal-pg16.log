@@ -1,0 +1,23 @@
+server: postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+baseline: 303 earlier migrations applied
+preflight (before; kasir + back-office receipt paid without the hook seeded): 8 rows ok
+    info: Q01 claims whose quest progress was never recorded = 2
+    info: those receipts (first 50) = REHEARSE-KASIR @ 2026-10-28 13:10, REHEARSE-BACKOFFICE @ 2026-10-28 13:10
+    info: paid POS receipts (last 30 days, not void) without staff effects: kasir = 1, back office (/pos/transaksi, no shift) = 1
+    info: receipts still waiting for payment (they get staff effects when paid after apply) = 0
+readback: 6 rows ok
+    info: Q01 claims whose quest progress was never recorded (history, not backfilled) = 2
+readback after re-apply (idempotent): 6 rows ok
+    info: Q01 claims whose quest progress was never recorded (history, not backfilled) = 2
+rollback: apply_sale_staff_effects identical to baseline (md5 5fa27880d9f6aa2e31ac932e651c2535); trigger and new functions removed
+preflight (after rollback): 8 rows ok
+    info: Q01 claims whose quest progress was never recorded = 2
+    info: those receipts (first 50) = REHEARSE-KASIR @ 2026-10-28 13:10, REHEARSE-BACKOFFICE @ 2026-10-28 13:10
+    info: paid POS receipts (last 30 days, not void) without staff effects: kasir = 1, back office (/pos/transaksi, no shift) = 1
+    info: receipts still waiting for payment (they get staff effects when paid after apply) = 0
+readback (re-apply): 6 rows ok
+    info: Q01 claims whose quest progress was never recorded (history, not backfilled) = 2
+Q01 atomic quest progress: passed
+Q01 new customer quest: passed
+apply.sql sha256 d5901b34bd3ad1ca297795f25d96b396dfd9eb2485765e06b49f1dd7486c26bc
+Stopped and removed the throwaway PostgreSQL cluster.

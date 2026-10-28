@@ -1,0 +1,6 @@
+server: postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+All production migrations applied to disposable local PostgreSQL.
+Both redemption/cancellation lock orders preserve balances and durable redemption retries.
+Concurrent identical retries and both effect/cancel orderings passed.
+posted-sales concurrency_tests: passed
+cleanup: temp cluster removed

@@ -27,7 +27,9 @@ def fixture_owner_updates(source):
 def concurrency_tests():
     base=(ROOT/'supabase/tests/pos_merchant_fees.sql').read_text()
     setup=base[:base.index('set local role authenticated;')]+"\nupdate profiles set role='OWNER' where id='e1100000-0000-4000-8000-000000000001';\n"+AUTH
-    for ref in ['RACE.CANCEL','RACE.EFFECT.FIRST','RACE.VOID.FIRST']:
+    # Payment records staff effects (Q01 atomic), and a void reverses them latest-first per cashier,
+    # so pay in the reverse of the order the races below cancel them.
+    for ref in ['RACE.VOID.FIRST','RACE.EFFECT.FIRST','RACE.CANCEL']:
         setup+=f"select pg_temp.fee_sale('{ref}');select pg_temp.lines((select id from sales where no_struk='{ref}'));select finalize_pos_sale((select id from sales where no_struk='{ref}'));\n"
     sql(fixture_owner_updates(setup)+'commit;')
     def start(source):
@@ -56,20 +58,21 @@ def concurrency_tests():
     wait("wait_event_type='Lock' and query like '%sale-effects-cancel%'")
     finish(writer);finish(canceler)
     assert sql("select reversed_at is not null from sale_staff_effects where sale_id=(select id from sales where no_struk='RACE.EFFECT.FIRST');").stdout.strip()=='t'
-    assert sql("select count(*) from staff_quest_progress where staff_id='e1100000-0000-4000-8000-000000000001';").stdout.strip()=='0'
+    # Progress is back to exactly what the earlier, still-active RACE.VOID.FIRST payment left.
+    assert sql("select (select jsonb_agg(to_jsonb(p) order by p.id::text) from staff_quest_progress p where staff_id='e1100000-0000-4000-8000-000000000001') is not distinct from (select jsonb_agg(x order by x->>'id') from sale_staff_effects e cross join jsonb_array_elements(e.after_value->'progress') x where e.sale_id=(select id from sales where no_struk='RACE.VOID.FIRST'));").stdout.strip()=='t'
     canceler=start('begin;'+cancel('RACE.VOID.FIRST','race-void-first')+'select pg_sleep(1) /* sale-void-holder */;commit;')
     wait("wait_event='PgSleep' and query like '%sale-void-holder%'")
     writer=start('/* sale-late-effects */'+effects('RACE.VOID.FIRST'))
     wait("wait_event_type='Lock' and query like '%sale-late-effects%'")
     finish(canceler);err=finish(writer,False)
     assert 'dibatalkan' in err,err
-    assert sql("select count(*) from sale_staff_effects where sale_id=(select id from sales where no_struk='RACE.VOID.FIRST');").stdout.strip()=='0'
+    assert sql("select count(*) from sale_staff_effects where sale_id=(select id from sales where no_struk='RACE.VOID.FIRST') and reversed_at is null;").stdout.strip()=='0'
     reward='ebb00000-0000-4000-8000-000000000001'
     sql("insert into staff_reward_catalog(id,reward_name,reward_type,points_cost) values('"+reward+"','Race reward','free_product',25);insert into staff_quest_definitions(quest_type,title,target_kind,target_value,points_reward) values('daily','Race award','total_sales_amount',1,10);insert into staff_points(staff_id,total_points) values('e1100000-0000-4000-8000-000000000001',20);")
     # Reuse helper functions by recreating their temp definitions in this session.
     helpers='\n'.join(re.findall(r'create function pg_temp\.(?:sale|lines|fee_sale)\(.*?\$\$;',base,re.S))
-    for ref in ['RACE.REDEEM.FIRST','RACE.CANCEL.FIRST']:
-        sql(AUTH+helpers+f"select pg_temp.fee_sale('{ref}');select pg_temp.lines((select id from sales where no_struk='{ref}'));select finalize_pos_sale((select id from sales where no_struk='{ref}'));" )
+    def pay(ref):sql(AUTH+helpers+f"select pg_temp.fee_sale('{ref}');select pg_temp.lines((select id from sales where no_struk='{ref}'));select finalize_pos_sale((select id from sales where no_struk='{ref}'));" )
+    pay('RACE.REDEEM.FIRST')
     def redeem(key):return f"select redeem_staff_reward('{reward}','{key}');"
     sql(AUTH+effects('RACE.REDEEM.FIRST'))
     redeemer=start('begin;'+redeem('redeem-first')+'select pg_sleep(1) /* redeem-holder */;commit;')
@@ -80,6 +83,7 @@ def concurrency_tests():
     assert 'Saldo hadiah staf sudah berubah' in err,err
     assert sql("select total_points from staff_points where staff_id='e1100000-0000-4000-8000-000000000001';").stdout.strip()=='5'
     sql("update staff_points set total_points=20;delete from staff_quest_progress;delete from staff_streaks;")
+    pay('RACE.CANCEL.FIRST')
     sql(AUTH+effects('RACE.CANCEL.FIRST'))
     canceler=start('begin;'+cancel('RACE.CANCEL.FIRST','cancel-before-redeem')+'select pg_sleep(1) /* cancel-redeem-holder */;commit;')
     wait("wait_event='PgSleep' and query like '%cancel-redeem-holder%'")

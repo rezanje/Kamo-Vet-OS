@@ -274,6 +274,12 @@ select pg_temp.assert_ok((select qty=10 from stock where warehouse_id='e3300000-
 select pg_temp.assert_ok((select points=200 and total_spending=0 from customers where id='e9900000-0000-4000-8000-000000000001'),'WA loyalty and spending restored');
 -- A newly posted cashier sale can undo its attributable staff rewards exactly.
 reset role;
+-- Since 20261029153000 every receipt paid above already recorded its staff effects at payment
+-- (streak of today). Close those fixture effects so this section starts from the clean staff state
+-- its exact-restore assertions are written against.
+update sale_staff_effects set reversed_at=now() where staff_id='e1100000-0000-4000-8000-000000000001' and reversed_at is null;
+delete from staff_streaks where staff_id='e1100000-0000-4000-8000-000000000001';
+delete from staff_quest_progress where staff_id='e1100000-0000-4000-8000-000000000001';
 insert into staff_quest_definitions(id,quest_type,title,target_kind,target_value,points_reward)
  values('eaa00000-0000-4000-8000-000000000001','daily','Cancellation reward','total_sales_amount',1,10),
  ('eaa00000-0000-4000-8000-000000000002','daily','Merchandise threshold','total_sales_amount',101000,100);
