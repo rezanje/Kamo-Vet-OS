@@ -1,6 +1,6 @@
 # Pasang perubahan database untuk PR #291 (sebelum merge)
 
-Untuk: pemegang akses owner Supabase Production. Lama pengerjaan sekitar 15 menit. Bisa dikerjakan kapan saja,
+Untuk: pemegang akses owner Supabase Production. Ada 4 paket, lama pengerjaan sekitar 20 menit. Bisa dikerjakan kapan saja,
 tetapi **harus selesai sebelum PR #291 di-merge**, karena merge langsung men-deploy aplikasi.
 
 ## Cara menjalankan
@@ -30,7 +30,16 @@ Aturan umum:
 2. `apply.sql`
 3. `readback.sql` → `SUMMARY: 0 failed`
 
-### 3. Kode kampanye (C05) — `docs/evidence/2026-10-29-c05-coverage/owner-apply/`
+### 3. Progres quest staf (Q01) — `docs/evidence/2026-10-29-q01-atomic/owner-apply/`
+Syarat: paket C05 + Q01 dasar (28 Okt) sudah terpasang. Preflight memeriksanya.
+1. `preflight.sql` → 4 cek, semua `ok = true`. Baris `info:` hanya angka: jumlah klaim customer baru yang
+   progresnya pernah hilang dan struk tanpa efek staf. Simpan hasilnya. Data lama ini **tidak** diisi ulang otomatis.
+2. `apply.sql`
+3. `readback.sql` → 5 cek, semua `ok = true`
+
+Setelah langkah ini, kalau pencatatan quest gagal, pembayaran ikut ditolak (keputusan owner 28 Okt: pilihan B).
+
+### 4. Kode kampanye (C05) — `docs/evidence/2026-10-29-c05-coverage/owner-apply/`
 Syarat: paket C05 dasar (28 Okt) sudah terpasang. Preflight memeriksanya.
 1. `preflight.sql` → 12 baris, semua `ok = true` (baris berawalan `info` hanya angka untuk dibaca)
 2. `apply.sql`
@@ -40,5 +49,5 @@ Syarat: paket C05 dasar (28 Okt) sudah terpasang. Preflight memeriksanya.
 akan menghapus tambalan rombongan. Kalau terlanjur: jalankan lagi `apply.sql` C05 di atas, lalu `readback.sql`.
 
 ## Setelah selesai
-Kabari developer: "3 paket database PR #291 sudah terpasang, readback semua ok". Kirim juga hasil Query A/B/C
-dari K08. Developer lalu merge PR #291, memantau deploy, dan menulis laporan rilis di PR.
+Kabari developer: "4 paket database PR #291 sudah terpasang, readback semua ok". Kirim juga hasil Query A/B/C
+dari K08 dan baris `info:` dari preflight Q01. Developer lalu merge PR #291, memantau deploy, dan menulis laporan rilis di PR.
