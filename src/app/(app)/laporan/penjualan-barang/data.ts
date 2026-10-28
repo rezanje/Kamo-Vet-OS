@@ -20,9 +20,12 @@ type HubunganVisit = {
   customers: Rel<{ name: string }>;
   pets: Rel<{ name: string }>;
 };
+/** K02/pekerjaan pesanan: BMHP yang dipakai pada satu baris tindakan klinik. */
+type BmhpSnapshot = { cost?: number | null; components?: { name?: string | null; qty?: number | null; unit?: string | null; cost?: number | null }[] | null };
 type InvoiceItem = {
   id: string; deskripsi: string; qty: number; harga: number; diskon_persen: number;
   jenis: string | null; item_id: string | null; compound_recipe_id: string | null;
+  bmhp_components: BmhpSnapshot | null;
   service_performers: ServicePerformersSnapshot | null;
   invoices: Rel<{
     id: string; visit_id: string; invoice_no: string | null; created_at: string; paid_status: string;
@@ -46,6 +49,10 @@ export type Baris = {
   jenis: JenisBarisPenjualan; cabang: string; cabangId: string | null; pelanggan: string; hewan: string;
   nama: string; pelaksana: string; qty: number; harga: number; diskon: number; nilai: number; status: string;
   pelaksanaIds?: string[];
+  /** Baris anak BMHP: id baris induknya. Nilainya 0 dan tidak masuk total. */
+  indukId?: string;
+  satuan?: string;
+  hpp?: number;
 };
 export type PilihanPelaksana = { id: string; nama: string };
 
@@ -96,6 +103,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
   const tanggalSalah = !tanggalValid(dari) || !tanggalValid(sampai) || dari > sampai;
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
   const rows: Baris[] = [];
+  const anakBmhp = new Map<string, Baris[]>();
   const pilihanPelaksana = new Map<string, PilihanPelaksana>();
   let pesanError = tanggalSalah ? "Rentang tanggal tidak valid. Periksa tanggal awal dan akhir." : "";
   if (!tanggalSalah) {
@@ -106,7 +114,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
       const [invoiceItems, saleItems] = await Promise.all([
         bacaKlinik ? readReportRows<InvoiceItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("invoice_items")
-            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, subtotal, discount, voided_at, visits(branch_id, branches(name), customers(name), pets(name)))", { count: "exact" })
+            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, bmhp_components, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, subtotal, discount, voided_at, visits(branch_id, branches(name), customers(name), pets(name)))", { count: "exact" })
             .is("invoices.voided_at", null)
             .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
             .order("id").range(awal, ujung);
@@ -206,13 +214,14 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
         const invoice = one(item.invoices);
         if (!invoice?.id) throw new Error("Invoice sumber baris laporan tidak dapat diverifikasi.");
         const visit = one(invoice.visits);
+        const barisId = `klinik-${item.id}`;
         const nilai = netoKlinik.get(item.id);
         if (nilai == null) throw new Error("Alokasi nilai baris invoice klinik tidak tersedia.");
         const jenis = feeLineIds.has(item.id) ? "Biaya Admin" : jenisBarisKlinik(item, invoice.visit_id, namaRacikan);
         const pelaksana = jenis === "Jasa" || item.service_performers != null ? pelaksanaBaris(item.service_performers) : { ids: [], pilihan: [] };
         pelaksana.pilihan.forEach(pilihan => pilihanPelaksana.set(pilihan.id, pilihan));
         rows.push({
-          id: `klinik-${item.id}`, waktu: invoice.created_at, dokumen: invoice.invoice_no ?? "—",
+          id: barisId, waktu: invoice.created_at, dokumen: invoice.invoice_no ?? "—",
           href: `/klinik/pembayaran/${invoice.visit_id}/invoice?invoice_id=${encodeURIComponent(invoice.id)}`, kanal: "Klinik",
           jenis,
           cabang: one(visit?.branches ?? null)?.name ?? "—",
@@ -224,6 +233,22 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
           qty: Number(item.qty) || 0, harga: Number(item.harga) || 0,
           diskon: Math.max(0, (Number(item.qty) || 0) * (Number(item.harga) || 0) - nilai),
           nilai, status: invoice.paid_status,
+        });
+        // BMHP tampil sebagai baris anak: jumlah, satuan dan HPP-nya terlihat, tetapi
+        // nilai jualnya 0 supaya omzet baris tindakan tidak terhitung dua kali.
+        const bmhp = (item.bmhp_components?.components ?? []).filter(row => row && typeof row === "object");
+        bmhp.forEach((material, index) => {
+          const anak: Baris = {
+            id: `${barisId}-bmhp-${index}`, indukId: barisId, waktu: invoice.created_at,
+            dokumen: invoice.invoice_no ?? "—",
+            href: `/klinik/pembayaran/${invoice.visit_id}/invoice?invoice_id=${encodeURIComponent(invoice.id)}`, kanal: "Klinik",
+            jenis, cabang: one(visit?.branches ?? null)?.name ?? "—", cabangId: visit?.branch_id ?? null,
+            pelanggan: one(visit?.customers ?? null)?.name ?? "—", hewan: one(visit?.pets ?? null)?.name ?? "—",
+            nama: `BMHP · ${material.name ?? "Bahan"}`, pelaksana: "—",
+            qty: Number(material.qty) || 0, satuan: material.unit ?? undefined, hpp: Number(material.cost) || 0,
+            harga: 0, diskon: 0, nilai: 0, status: invoice.paid_status,
+          };
+          anakBmhp.set(barisId, [...(anakBmhp.get(barisId) ?? []), anak]);
         });
       }
       for (const item of saleItems) {
@@ -271,5 +296,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
   ).sort((a, b) => b.waktu.localeCompare(a.waktu) || a.id.localeCompare(b.id));
   const nilaiTotal = terpilih.reduce((sum, row) => sum + row.nilai, 0);
   const qtyTotal = terpilih.reduce((sum, row) => sum + row.qty, 0);
-  return { rows: terpilih, cabangOptions, pelaksanaOptions, pesanError, nilaiTotal, qtyTotal };
+  // Baris anak BMHP menyusul induknya dan tidak pernah ikut menghitung total.
+  const dengan = terpilih.flatMap(row => [row, ...(anakBmhp.get(row.id) ?? [])]);
+  return { rows: dengan, cabangOptions, pelaksanaOptions, pesanError, nilaiTotal, qtyTotal };
 }

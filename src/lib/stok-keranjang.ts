@@ -2,6 +2,8 @@
 // Racikan tidak dihitung di sini: bahannya sudah dicek saat racikan disimpan.
 // BMHP tindakan (mis. vial vaksin di Vaksinasi F3) ikut dihitung: stoknya dipotong saat pembayaran,
 // jadi kekurangannya harus ditolak di sini, sama seperti obat.
+// Tindakan persediaan ber-BMHP dikerjakan gaya pesanan: hasilnya diterima ke gudang dari
+// biaya BMHP saat pembayaran, jadi stok barang tindakan itu sendiri tidak perlu ada.
 type Bmhp = { item_id: string; nama: string; qty: number; unit: string };
 export function kekuranganStok(
   rows: { item_id: string | null; nama_obat: string; qty: number; faktor: number; jenis: string; bmhp?: Bmhp[] }[],
@@ -14,8 +16,11 @@ export function kekuranganStok(
     butuh.set(id, { nama: prev?.nama ?? nama, qty: (prev?.qty ?? 0) + qty });
   };
   for (const r of rows) {
-    if (r.jenis === "obat" && r.item_id) tambah(r.item_id, r.nama_obat, r.qty * (r.faktor || 1));
-    if (r.jenis === "jasa") for (const b of r.bmhp ?? []) tambah(b.item_id, b.nama, b.qty * (faktorSatuan(b.item_id, b.unit) || 1));
+    const bmhp = r.bmhp ?? [];
+    if (r.jenis === "obat" && r.item_id && bmhp.length === 0) tambah(r.item_id, r.nama_obat, r.qty * (r.faktor || 1));
+    if (r.jenis === "obat" || r.jenis === "jasa") {
+      for (const b of bmhp) tambah(b.item_id, b.nama, b.qty * (faktorSatuan(b.item_id, b.unit) || 1));
+    }
   }
   const kurang: string[] = [];
   for (const [id, { nama, qty }] of butuh) {

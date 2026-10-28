@@ -2,7 +2,8 @@ import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { advanceRecipeStatus, voidRecipe, updateRacikPetunjuk, updateRacikPemakaian } from "../actions";
+import { advanceRecipeStatus, bahanRacikanUntukKunjungan, updateRacikPetunjuk, updateRacikPemakaian } from "../actions";
+import { RacikanAksi } from "./RacikanAksi";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readCompleteList } from "@/lib/checked-list";
 import { hrefAsalBahan, hrefInvoiceTujuan, labelAsalBahan, readCompoundTrace, type CompoundTrace } from "@/lib/compound-trace";
@@ -100,6 +101,14 @@ export default async function RacikDetailPage({
     return `/pos/kartu-stok?item=${encodeURIComponent(itemId)}${dari ? `&dari=${dari}` : ""}`;
   };
 
+  // Aksi racikan butuh komposisi berjalan dan daftar bahan aktif cabang ini.
+  const komposisiIni = (recipes.find(row => row.id === r.id)?.compounding_ingredients ?? [])
+    .flatMap(row => row.item_id ? [{ item_id: row.item_id, nama: row.ingredient_name, qty: Number(row.quantity), satuan: row.unit }] : []);
+  const bahanPilihan = visit
+    ? await bahanRacikanUntukKunjungan(visit.id).then(rows => rows.map(row => ({ id: row.id, name: row.name, unit: row.unit, stok: row.stok })))
+      .catch(() => [] as { id: string; name: string; unit: string; stok: number }[])
+    : [];
+
   const tglResep = visit ? new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
   const tglPeriksa = visit ? new Date(visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
   const noRM = visit ? `RM/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(visit.id as string).slice(0, 3).toUpperCase()}` : "—";
@@ -186,6 +195,7 @@ export default async function RacikDetailPage({
       {success === "handed_over" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Racikan sudah diserahkan.</div>}
       {success === "petunjuk" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Petunjuk racik tersimpan.</div>}
       {success === "pemakaian" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Petunjuk pemakaian tersimpan.</div>}
+      {success === "komposisi" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Komposisi racikan tersimpan; hanya selisih bahannya yang menggerakkan stok.</div>}
 
       {/* Kartu pasien + catatan resep */}
       <div className="card" style={{ marginBottom: 14, padding: 20 }}>
@@ -348,16 +358,14 @@ export default async function RacikDetailPage({
             <input type="hidden" name="recipeId" value={r.id} />
             <SubmitButton className="pay-btn" icon="ti-circle-check" style={{ background: "#16a34a", minWidth: 260, padding: "12px 22px", fontSize: 13.5 }} pendingText="Memproses…">{r.status === "pending" ? "Obat Siap Diserahkan" : "Tandai Sudah Diserahkan"}</SubmitButton>
           </form>
-          <form action={voidRecipe}>
-            <input type="hidden" name="recipeId" value={r.id} />
-            <input type="hidden" name="visitId" value={visit?.id ?? ""} />
-            <SubmitButton className="btn-def" icon="ti-x" style={{ color: "#b91c1c", borderColor: "#fca5a5", padding: "12px 18px" }} pendingText="Memproses…">Void (resep berubah)</SubmitButton>
-          </form>
         </div>
+      )}
+      {(r.status === "pending" || r.status === "ready") && (
+        <RacikanAksi recipeId={r.id} visitId={visit?.id ?? ""} ingredients={komposisiIni} materials={bahanPilihan} />
       )}
       {r.status !== "pending" && r.status !== "ready" && (
         <div style={{ fontSize: 10, color: "var(--td)", textAlign: "center", marginTop: 12 }}>
-          Racikan sudah diproses — perubahan resep butuh racikan baru (void yang lama). Addendum §2.
+          Racikan sudah diproses — perubahan resep butuh racikan baru; komposisi dan pengembalian bahan hanya terbuka sebelum diserahkan dan sebelum tagihan dibayar. Addendum §2.
         </div>
       )}
     </>

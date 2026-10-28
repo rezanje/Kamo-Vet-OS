@@ -60,6 +60,14 @@ export default async function PembayaranPage({
 
   if (mrError) throw unverifiedBilling();
 
+  // G: racikan yang masih "Menunggu diracik" tidak menghalangi pembayaran, tapi kasir
+  // harus mengkonfirmasi dulu supaya obatnya tidak ikut tertinggal saat pemilik pulang.
+  const { data: racikanPendingRows, error: racikanPendingError } = mr
+    ? await supabase.from("compounding_recipes").select("id").eq("medical_record_id", mr.id).eq("status", "pending").limit(1)
+    : { data: [] as { id: string }[], error: null };
+  if (racikanPendingError) throw unverifiedBilling();
+  const racikanPending = (racikanPendingRows ?? []).length > 0;
+
   // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
   const { data: inpat, error: inpatientError } = await supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle();
   if (inpatientError) throw unverifiedBilling();
@@ -562,6 +570,7 @@ export default async function PembayaranPage({
           groomingApplies={groomingPolicy?.applies ?? false}
           cashierName={cashier.name}
           catatanResep={mr?.catatan_resep ?? null}
+          racikanPending={racikanPending}
         />
       )}
 
