@@ -135,7 +135,7 @@ export default async function PembayaranPage({
     jenis: r.jenis ?? "obat", item_id: r.item_id ?? null, satuan: r.satuan ?? null,
     prescription_item_id: r.id, recipe_id: r.compound_recipe_id ?? null,
     ...(r.salesperson_id ? {salesperson_id:r.salesperson_id, salesperson_name:r.salesperson_name ?? null} : {}),
-    ...(r.jenis === "jasa" && r.service_performers != null ? {service_performers:r.service_performers} : {}),
+    ...(r.service_performers != null ? {service_performers:r.service_performers} : {}),
   }));
 
   // §6.3: tindakan berisiko wajib punya consent bertanda tangan sebelum boleh ditagih.
@@ -181,7 +181,7 @@ export default async function PembayaranPage({
         ...(l.id ? {source_invoice_item_id:l.id} : {}),
         salesperson_id:l.salesperson_id ?? null, salesperson_name:l.salesperson_name ?? null,
         diskon_persen: Number(l.diskon_persen) || 0,
-        ...(l.jenis === "jasa" && l.service_performers != null ? {service_performers:l.service_performers} : {}),
+        ...(l.service_performers != null ? {service_performers:l.service_performers} : {}),
       }))
     : prefill;
   // Baris rawat inap jumlah harinya dihitung sistem saat pasien pulang, jadi
@@ -449,6 +449,7 @@ export default async function PembayaranPage({
           sealedSalespersonName={sealedSalespersonName}
           cashierName={cashier.name}
           serviceStaff={serviceStaff}
+          visitDoctorId={visit.doctor_id ?? null}
           editMode
         />
       ) : invoice ? (
@@ -494,7 +495,7 @@ export default async function PembayaranPage({
               <tbody>
                 {(invItems ?? []).map((l, i) => (
                   <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{l.deskripsi}{l.salesperson_name && <div style={{fontSize:10}}>Penjual SKU: {l.salesperson_name}</div>}{l.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(l.service_performers).join(" · ")}</div>}</td>
+                    <td style={{ fontWeight: 500 }}>{l.deskripsi}{l.salesperson_name && <div style={{fontSize:10}}>Penjual (data lama): {l.salesperson_name}</div>}<div style={{fontSize:10}}>{servicePerformerNames(l.service_performers).join(" · ")}</div></td>
                     <td style={{ textAlign: "center" }}>{l.qty}</td>
                     <td style={{ textAlign: "right" }}>{rp(l.harga)}</td>
                     <td style={{ textAlign: "center" }}>{Number(l.diskon_persen) > 0 ? `${Number(l.diskon_persen)}%` : "—"}</td>
@@ -556,6 +557,7 @@ export default async function PembayaranPage({
           demoPolicy={demoPolicy}
           demoStaff={demoStaffResult.data ?? []}
           serviceStaff={serviceStaff}
+          visitDoctorId={visit.doctor_id ?? null}
           groomingDoctorRequired={groomingDoctorRequired}
           groomingApplies={groomingPolicy?.applies ?? false}
           cashierName={cashier.name}

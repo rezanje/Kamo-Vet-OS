@@ -49,10 +49,11 @@ export async function loadBranchGroomingPolicy(client: any, branchId: string) {
 /** Preflight before JS stock issues; database repeats it under locks on insert. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function validateServicePerformerRows(client: any, branchId: string, rows: { item_type?: string; tindakan_kategori?: string | null; service_performers?: unknown }[]) {
+  // Goods lines carry the same doctor/non-doctor attribution as services. A goods line
+  // with nobody named stays NULL, so documents without attribution keep their old meaning.
   const normalized = rows.map(row => {
     const value = servicePerformerInput(row.service_performers);
-    if (row.item_type !== "Jasa" && (value.doctor_id || value.staff_id)) throw Error("Pelaksana per baris hanya untuk item Jasa");
-    return row.item_type === "Jasa" ? value : null;
+    return row.item_type === "Jasa" || value.doctor_id || value.staff_id ? value : null;
   });
   const hasGrooming = rows.some(row => isGroomingService(row.item_type, row.tindakan_kategori));
   if (!hasGrooming && !normalized.some(value => value?.doctor_id || value?.staff_id)) return normalized;

@@ -4,6 +4,8 @@ export type ServiceStaff = { id: string; nama: string; jabatan: string | null };
 export type ServicePerformersInput = { doctor_id: string | null; staff_id: string | null };
 export type ServicePerformersSnapshot = ServicePerformersInput & { version?: number; doctor_name?: string | null; staff_name?: string | null };
 export const emptyServicePerformers = (): ServicePerformersInput => ({ doctor_id: null, staff_id: null });
+/** Every clinic line starts on the visit's attending doctor (visits.doctor_id); admin may change it per line. */
+export const visitDefaultPerformers = (doctorId?: string | null): ServicePerformersInput => ({ doctor_id: doctorId || null, staff_id: null });
 
 /** Only reference IDs cross the write boundary. Database supplies the names. */
 export function servicePerformerInput(value: unknown): ServicePerformersInput {
@@ -25,10 +27,10 @@ export function serviceStaffSlots(staff: ServiceStaff[]) {
     staff: staff.filter(person => !clinicalRoles(person.jabatan).includes("doctor")) };
 }
 
-/** Bulk intentionally fills empty rows only. A later bulk action cannot overwrite an override. */
-export function bulkFillServicePerformers<T extends { jenis?: string; item_type?: string; service_performers?: ServicePerformersInput | null }>(rows: T[], value: ServicePerformersInput): T[] {
-  return rows.map(row => (row.jenis === "jasa" || row.item_type === "Jasa")
-    && !row.service_performers?.doctor_id && !row.service_performers?.staff_id
+/** Bulk intentionally fills empty rows only. A later bulk action cannot overwrite an override.
+ * Every billed line carries attribution now, so goods rows are filled just like services. */
+export function bulkFillServicePerformers<T extends { service_performers?: ServicePerformersInput | null }>(rows: T[], value: ServicePerformersInput): T[] {
+  return rows.map(row => !row.service_performers?.doctor_id && !row.service_performers?.staff_id
     ? { ...row, service_performers: { ...value } } : row);
 }
 

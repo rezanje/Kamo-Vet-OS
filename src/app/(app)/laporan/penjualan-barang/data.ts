@@ -209,7 +209,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
         const nilai = netoKlinik.get(item.id);
         if (nilai == null) throw new Error("Alokasi nilai baris invoice klinik tidak tersedia.");
         const jenis = feeLineIds.has(item.id) ? "Biaya Admin" : jenisBarisKlinik(item, invoice.visit_id, namaRacikan);
-        const pelaksana = jenis === "Jasa" ? pelaksanaBaris(item.service_performers) : { ids: [], pilihan: [] };
+        const pelaksana = jenis === "Jasa" || item.service_performers != null ? pelaksanaBaris(item.service_performers) : { ids: [], pilihan: [] };
         pelaksana.pilihan.forEach(pilihan => pilihanPelaksana.set(pilihan.id, pilihan));
         rows.push({
           id: `klinik-${item.id}`, waktu: invoice.created_at, dokumen: invoice.invoice_no ?? "—",
@@ -219,7 +219,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
           cabangId: visit?.branch_id ?? null,
           pelanggan: one(visit?.customers ?? null)?.name ?? "—",
           hewan: one(visit?.pets ?? null)?.name ?? "—",
-          nama: item.deskripsi, pelaksana: jenis === "Jasa" ? servicePerformerNames(item.service_performers).join(" · ") : "—",
+          nama: item.deskripsi, pelaksana: jenis === "Jasa" || item.service_performers != null ? servicePerformerNames(item.service_performers).join(" · ") : "—",
           pelaksanaIds: pelaksana.ids,
           qty: Number(item.qty) || 0, harga: Number(item.harga) || 0,
           diskon: Math.max(0, (Number(item.qty) || 0) * (Number(item.harga) || 0) - nilai),

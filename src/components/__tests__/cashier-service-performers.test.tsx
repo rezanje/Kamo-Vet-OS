@@ -30,7 +30,7 @@ it("bulk fill preserves row overrides and an individual quantity remains indepen
  const bulk=Array.from(host.querySelectorAll("fieldset")).find(field=>field.textContent?.includes("Isi pelaksana baris kosong"))!;
  expect(bulk).toBeTruthy();const pick=bulk.querySelectorAll("select")[1];
  await act(async()=>{pick.value="g";pick.dispatchEvent(new Event("change",{bubbles:true}));});
- await act(async()=>Array.from(host.querySelectorAll("button")).find(button=>button.textContent==="Isi baris jasa kosong")!.click());
+ await act(async()=>Array.from(host.querySelectorAll("button")).find(button=>button.textContent==="Isi baris kosong")!.click());
  expect(cart().map((row:{service_performers:{staff_id:string}})=>row.service_performers.staff_id)).toEqual(["g","n"]);
  const plus=fields[0].closest("tr")!.querySelectorAll<HTMLButtonElement>(".kpos-qtybtn")[1];await act(async()=>plus.click());
  expect(cart().map((row:{qty:number})=>row.qty)).toEqual([2,1]);

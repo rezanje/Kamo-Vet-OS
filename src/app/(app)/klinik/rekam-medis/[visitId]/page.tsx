@@ -482,7 +482,7 @@ export default async function RekamMedisPage({
                   <tbody>
                     {resep.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontWeight: 500 }}>{r.nama_obat}{r.jenis === "jasa" && <div style={{fontSize:10}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>}</td>
+                        <td style={{ fontWeight: 500 }}>{r.nama_obat}{(r.jenis === "jasa" || r.service_performers != null) && <div style={{fontSize:10}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>}</td>
                         <td style={{ textAlign: "center" }}>{r.qty}</td>
                         <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.aturan_pakai ?? "—"}</td>
                       </tr>

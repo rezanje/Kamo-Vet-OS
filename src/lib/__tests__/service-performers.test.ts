@@ -5,11 +5,13 @@ it("reuses doctor classification without treating an assistant as a second docto
   expect(serviceStaffSlots(staff).doctors.map(row=>row.id)).toEqual(["d"]);
   expect(serviceStaffSlots(staff).staff.map(row=>row.id)).toEqual(["n","g"]);
 });
-it("fills only wholly unassigned service rows, preserving explicit overrides, physical rows and input objects",()=>{
+it("fills every wholly unassigned row, services and goods alike, preserving explicit overrides and input objects",()=>{
   const rows=[{key:"one",jenis:"jasa",service_performers:null},{key:"two",jenis:"jasa",service_performers:{doctor_id:"other",staff_id:null}},{key:"three",jenis:"obat",service_performers:null}];
   const result=bulkFillServicePerformers(rows,{doctor_id:"d",staff_id:"g"});
   expect(result[0].service_performers).toEqual({doctor_id:"d",staff_id:"g"});
-  expect(result[1]).toBe(rows[1]); expect(result[2]).toBe(rows[2]); expect(rows[0].service_performers).toBeNull();
+  expect(result[1]).toBe(rows[1]);
+  expect(result[2].service_performers).toEqual({doctor_id:"d",staff_id:"g"});
+  expect(rows[0].service_performers).toBeNull(); expect(rows[2].service_performers).toBeNull();
 });
 it("accepts a single role but rejects malformed values, duplicate people or arbitrary role arrays",()=>{
   expect(servicePerformerInput({doctor_id:"d",staff_id:null,doctor_name:"spoof"})).toEqual({doctor_id:"d",staff_id:null});

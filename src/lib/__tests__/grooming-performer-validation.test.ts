@@ -49,3 +49,17 @@ it("does not impose grooming rules on other services", async () => {
   await expect(validateServicePerformerRows(client, "branch", [{ item_type: "Jasa", tindakan_kategori: "Konsultasi" }])).resolves.toEqual([{ doctor_id: null, staff_id: null }]);
   expect(client.reads).toEqual([]);
 });
+
+it("accepts a doctor and a non-doctor on an ordinary goods line, still checking branch membership", async () => {
+  const goods = (doctor_id: string | null, staff_id: string | null) => [{
+    item_type: "Persediaan", tindakan_kategori: null, service_performers: { doctor_id, staff_id },
+  }];
+  await expect(validateServicePerformerRows(db("KLINIK", null), "branch", goods("doctor", "groomer")))
+    .resolves.toEqual([{ doctor_id: "doctor", staff_id: "groomer" }]);
+  await expect(validateServicePerformerRows(db("KLINIK", null), "branch", goods("doctor", "outsider")))
+    .rejects.toThrow("Non-dokter harus aktif dan ditugaskan di cabang transaksi");
+  // Baris barang tanpa pelaksana tetap NULL, jadi dokumen lama tidak berubah artinya.
+  const client = db("KLINIK", null);
+  await expect(validateServicePerformerRows(client, "branch", goods(null, null))).resolves.toEqual([null]);
+  expect(client.reads).toEqual([]);
+});

@@ -7,9 +7,8 @@ import { useRouter } from "next/navigation";
 import type { ClinicalCorrection } from "@/lib/clinical-correction";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { ProcedureBmhpComposer } from "@/components/ProcedureBmhpComposer";
-import { ClinicLineSellerField } from "@/components/ClinicLineSellerField";
 import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bmhp";
-import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
+import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, visitDefaultPerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Popup } from "@/components/Popup";
@@ -42,7 +41,6 @@ type CartRow = {
   official_version_id?: string;
   sale_item_id?: string;
   service_performers?: ServicePerformersInput | null;
-  salesperson_id?: string | null;
   /** K02: actual consumables on a procedure row (optional). */
   bmhp?: BmhpRow[];
 };
@@ -89,6 +87,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const [procedureDraft, setProcedureDraft] = useState<{ item: ItemLite; bmhp: BmhpRow[]; editKey: string | null } | null>(null);
   const [procedureError, setProcedureError] = useState("");
   const procedureCommitted = useRef(false);
+  // Dokter PJ kunjungan jadi isian awal kolom Dokter tiap baris. Dibaca dari DOM supaya
+  // pemulihan draf (yang menulis langsung ke kontrol) tetap jadi acuan.
+  const dokterPjRef = useRef<HTMLSelectElement>(null);
+  const barisDefault = () => visitDefaultPerformers(dokterPjRef.current?.value ?? patient.dokterId);
   const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
@@ -141,7 +143,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const addRacikanToCart = () => {
     const sku = racikanItems.find(item => item.id === saleItemId) ?? null;
     const row = masterCompoundCartRow(sku, selectedFormula ?? null, compoundDraft, crypto.randomUUID(), bolehManual);
-    setCart(rows => [...rows, {...row, salesperson_id:null}]);
+    setCart(rows => [...rows, { ...row, service_performers: barisDefault() }]);
     setSaleItemId(""); setOfficialVersionId(""); setRacikNama(""); setRacikAturan(""); setRacikBahan([]);
   };
 
@@ -163,8 +165,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
         key: isService ? crypto.randomUUID() : it.id, item_id: it.id, nama_obat: it.name, qty: 1,
         satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
         kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
-        service_performers: isService ? emptyServicePerformers() : null,
-        salesperson_id: null,
+        service_performers: barisDefault(),
         ...(isService && bmhp ? { bmhp } : {}),
       }];
     });
@@ -266,7 +267,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                     dicatat sebagai penanggung jawab kunjungan; pelaksana jasa dipilih per baris. */}
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                   <span style={{ color: "var(--tm)", minWidth: 62 }}>Dokter PJ{isMedicalService(service) ? " *" : ""}</span>
-                  <select className="fi" name="doctor_id" disabled={!!correction} required={isMedicalService(service)} defaultValue={patient.dokterId ?? ""}
+                  <select className="fi" name="doctor_id" ref={dokterPjRef} disabled={!!correction} required={isMedicalService(service)} defaultValue={patient.dokterId ?? ""}
                     style={{ height: 24, fontSize: 10.5, padding: "0 6px", flex: 1 }}>
                     <option value="">— belum ditentukan —</option>
                     {correction && patient.dokterId && <option value={patient.dokterId}>{patient.dokter}</option>}
@@ -438,12 +439,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                                 </select>
                               ) : <span>{r.satuan}</span>}
                             </div>
-                            <ClinicLineSellerField name={r.nama_obat} value={r.salesperson_id} staff={serviceStaff}
-                              onChange={salesperson_id => setCart(rows => rows.map(row => row.key === r.key ? {...row, salesperson_id} : row))} />
-                            {r.jenis === "jasa" && <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
-                              grooming={groomingApplies && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
+                            <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
+                              grooming={groomingApplies && r.jenis === "jasa" && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}
-                              onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
+                              onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />
                             {r.jenis === "jasa" && r.item_id && tindakanItems.some(item => item.id === r.item_id) && <div style={{ fontSize: 10 }}>
                               <span>BMHP: {(r.bmhp ?? []).map(material => `${material.nama} × ${material.qty} ${material.unit}`).join(", ") || "belum diisi"}</span>{" "}
                               <button type="button" className="btn-def" aria-label={`Ubah BMHP ${r.nama_obat}`} onClick={() => editProcedure(r)}>Ubah BMHP</button>
@@ -485,9 +484,9 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 </div>
               )}
 
-              {cart.some(row => row.jenis === "jasa") && <div>
-                <ServicePerformersField label="Isi pelaksana jasa sekaligus" value={bulkPerformers} staff={serviceStaff} onChange={setBulkPerformers} />
-                <button type="button" className="btn-def" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris jasa kosong</button>
+              {cart.length > 0 && <div>
+                <ServicePerformersField label="Isi pelaksana sekaligus" value={bulkPerformers} staff={serviceStaff} onChange={setBulkPerformers} />
+                <button type="button" className="btn-def" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris kosong</button>
                 <p style={{fontSize:10}}>Baris yang sudah memiliki pelaksana tetap mengikuti pilihannya.</p>
               </div>}
               <div style={{ marginTop: 10, borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>

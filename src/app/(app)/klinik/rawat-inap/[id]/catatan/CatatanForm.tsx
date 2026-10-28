@@ -5,9 +5,8 @@ import { NumberInput } from "@/components/NumberInput";
 import { useMemo, useRef, useState } from "react";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { ProcedureBmhpComposer } from "@/components/ProcedureBmhpComposer";
-import { ClinicLineSellerField } from "@/components/ClinicLineSellerField";
 import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bmhp";
-import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
+import { bulkFillServicePerformers, emptyServicePerformers, visitDefaultPerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -37,7 +36,6 @@ type CartRow = {
   official_version_id?: string;
   sale_item_id?: string;
   service_performers?: ServicePerformersInput | null;
-  salesperson_id?: string | null;
   /** K02: actual consumables on a procedure row (optional). */
   bmhp?: BmhpRow[];
 };
@@ -51,8 +49,10 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, petHotel = false }: {
+export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, petHotel = false }: {
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
+  /** Dokter PJ kunjungan — isian awal kolom Dokter pada setiap baris. */
+  visitDoctorId?: string | null;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   items: ItemLite[];
   racikanItems: ItemLite[];
@@ -165,8 +165,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
       key: isService ? crypto.randomUUID() : it.id, item_id: it.id, nama_obat: it.name, qty: 1,
       satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
       kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
-        service_performers: isService ? emptyServicePerformers() : null,
-        salesperson_id: null,
+        service_performers: visitDefaultPerformers(visitDoctorId),
         ...(isService && bmhp ? { bmhp } : {}),
     }];
   });
@@ -214,7 +213,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const addRacikanToCart = () => {
     const sku = racikanItems.find(item => item.id === saleItemId) ?? null;
     const row = masterCompoundCartRow(sku, selectedFormula ?? null, compoundDraft, crypto.randomUUID(), bolehManual);
-    setCart(rows => [...rows, {...row, salesperson_id:null}]);
+    setCart(rows => [...rows, { ...row, service_performers: visitDefaultPerformers(visitDoctorId) }]);
     setSaleItemId(""); setOfficialVersionId(""); setRacikNama(""); setRacikAturan(""); setRacikBahan([]);
   };
 
@@ -530,12 +529,10 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                                 </select>
                               ) : <span>{r.satuan}</span>}
                             </div>
-                            <ClinicLineSellerField name={r.nama_obat} value={r.salesperson_id} staff={serviceStaff}
-                              onChange={salesperson_id => setCart(rows => rows.map(row => row.key === r.key ? {...row, salesperson_id} : row))} />
-                            {r.jenis === "jasa" && <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
-                              grooming={groomingApplies && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
+                            <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
+                              grooming={groomingApplies && r.jenis === "jasa" && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}
-                              onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
+                              onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />
                             {r.jenis === "jasa" && r.item_id && tindakanItems.some(item => item.id === r.item_id) && <div style={{ fontSize: 10 }}>
                               <span>BMHP: {(r.bmhp ?? []).map(material => `${material.nama} × ${material.qty} ${material.unit}`).join(", ") || "belum diisi"}</span>{" "}
                               <button type="button" className="btn-def" aria-label={`Ubah BMHP ${r.nama_obat}`} onClick={() => editProcedure(r)}>Ubah BMHP</button>
@@ -575,9 +572,9 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                 <textarea className="fi" rows={2} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="Aturan pakai obat…" style={{ resize: "vertical" }} />
               </div>
 
-              {cart.some(row => row.jenis === "jasa") && <div>
-                <ServicePerformersField label="Isi pelaksana jasa sekaligus" value={bulkPerformers} staff={serviceStaff} onChange={setBulkPerformers} />
-                <button type="button" className="btn-def" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris jasa kosong</button>
+              {cart.length > 0 && <div>
+                <ServicePerformersField label="Isi pelaksana sekaligus" value={bulkPerformers} staff={serviceStaff} onChange={setBulkPerformers} />
+                <button type="button" className="btn-def" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris kosong</button>
                 <p style={{fontSize:10}}>Baris yang sudah memiliki pelaksana tetap mengikuti pilihannya.</p>
               </div>}
               <div style={{ marginTop: 10, borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>

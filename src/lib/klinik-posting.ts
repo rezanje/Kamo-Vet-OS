@@ -1,9 +1,10 @@
 import { servicePerformerInput, type ServicePerformersInput } from "./service-performers";
 import { pesanGagalKampanye } from "./kode-kampanye";
 
-/** Keep legacy payload keys absent so retries retain their original request hash. */
-export function clinicServicePerformerInput(kind: string | undefined, value: unknown): ServicePerformersInput | undefined {
-  return kind !== "jasa" || value == null ? undefined : servicePerformerInput(value);
+/** Keep legacy payload keys absent so retries retain their original request hash.
+ * Attribution is per line regardless of kind: services and ordinary goods alike. */
+export function clinicServicePerformerInput(value: unknown): ServicePerformersInput | undefined {
+  return value == null ? undefined : servicePerformerInput(value);
 }
 
 export type ClinicPostingLine = {

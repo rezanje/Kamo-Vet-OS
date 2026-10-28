@@ -15,7 +15,7 @@ import { addDailyLogPos } from '../../app/(app)/klinik/rawat-inap/actions';
 beforeEach(()=>{fixture.lostResponse=false;fixture.error=null;fixture.calls=[];fixture.revalidated=[];fixture.doctorId='doctor';fixture.service='Poli Umum'});
 function form(){const data=new FormData();for(const [key,value] of Object.entries({visitId:'visit',petId:'pet',recordId:'inpatient',request_key:'stable-key',doctor_id:'doctor',keluhan:'Batuk',condition_note:'Fictional clinical note',next:'resep',resep:'[]'}))data.set(key,value);return data;}
 
-it.each([['initial', simpanRekamMedis, 'clinic_save_initial_record'], ['inpatient', addDailyLogPos, 'clinic_save_inpatient_log_with_status']] as const)('%s carries independent service performers in the same atomic save',async(_name,save,rpc)=>{
+it.each([['initial', simpanRekamMedis, 'clinic_save_initial_record'], ['inpatient', addDailyLogPos, 'clinic_save_inpatient_log_with_status']] as const)('%s carries independent per-line performers, goods included, in the same atomic save',async(_name,save,rpc)=>{
  const data=form();data.set('resep',JSON.stringify([
   {item_id:'action-sku',nama_obat:'Jasa A',qty:1,harga:75000,jenis:'jasa',service_performers:{doctor_id:'doctor-a',staff_id:null}},
   {item_id:'action-sku',nama_obat:'Jasa A',qty:1,harga:75000,jenis:'jasa',service_performers:{doctor_id:null,staff_id:'staff-b'}},
@@ -27,7 +27,7 @@ it.each([['initial', simpanRekamMedis, 'clinic_save_initial_record'], ['inpatien
  expect(call.args.p_rows).toEqual([
   expect.objectContaining({service_performers:{doctor_id:'doctor-a',staff_id:null}}),
   expect.objectContaining({service_performers:{doctor_id:null,staff_id:'staff-b'}}),
-  expect.not.objectContaining({service_performers:expect.anything()}),
+  expect.objectContaining({service_performers:{doctor_id:'doctor-a',staff_id:'staff-b'}}),
   expect.objectContaining({service_performers:{doctor_id:null,staff_id:null}}),
  ]);
  expect(fixture.calls).toHaveLength(1);

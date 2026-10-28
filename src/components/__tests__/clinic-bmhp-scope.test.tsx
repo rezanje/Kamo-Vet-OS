@@ -74,8 +74,8 @@ it.each(["exam", "inpatient"])("%s grooming and pickup services join the cart wi
   expect(cart().every((row: { bmhp?: unknown }) => row.bmhp === undefined)).toBe(true);
   expect(bmhpEditors()).toHaveLength(0);
   expect(host.textContent).not.toContain("Komposisi BMHP tindakan");
-  // Grooming performer and per-SKU seller stay available on the service rows.
-  expect(host.querySelector('select[aria-label="Penjual Sintetis Grooming"]')).toBeTruthy();
+  // Atribusi per baris dipakai untuk semua baris; isian "Penjual SKU" sudah tidak ada.
+  expect(host.querySelector('select[aria-label="Penjual Sintetis Grooming"]')).toBeNull();
   expect([...host.querySelectorAll("fieldset legend")].some(legend => legend.textContent === "Pelaksana Sintetis Grooming")).toBe(true);
 });
 

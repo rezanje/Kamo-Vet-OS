@@ -36,11 +36,11 @@ const common = {
   racikanItems: [{ ...base, id: "compound", name: "Obat Racik Sirup" }], katalogRacikan: [], bolehManual: true,
 };
 const patient = { name: "Milo", species: "Kucing", breed: null, noRM: "RM1", owner: "Pemilik", phone: "08123", address: "", photo: null, dokter: "Dokter" };
-async function render(kind: string) {
+async function render(kind: string, visitDoctorId: string | null = null) {
   await act(async () => root.render(kind === "exam"
-    ? <RekamForm {...common} visitId="visit" petId="pet" currentWeight={null} dokterOpsi={[]} providerOpsi={[]}
-      patient={{ ...patient, tglPeriksa: "13 Oct", dokterId: null, providerId: null, tier: "Umum", keluhan: "Kontrol" }} />
-    : <CatatanForm {...common} recordId="inpatient" backHref="/klinik/rawat-inap/inpatient"
+    ? <RekamForm {...common} visitId="visit" petId="pet" currentWeight={null} dokterOpsi={visitDoctorId ? common.serviceStaff : []} providerOpsi={[]}
+      patient={{ ...patient, tglPeriksa: "13 Oct", dokterId: visitDoctorId, providerId: null, tier: "Umum", keluhan: "Kontrol" }} />
+    : <CatatanForm {...common} recordId="inpatient" backHref="/klinik/rawat-inap/inpatient" visitDoctorId={visitDoctorId}
       patient={{ ...patient, tglMasuk: "13 Oct", kondisi: "Stabil" }} />));
 }
 async function tab(name: string) {
@@ -81,22 +81,35 @@ it.each(["exam", "inpatient"])("%s retains distinct repeated service rows and ex
   await act(async()=>root.unmount()); root=createRoot(host); await render(kind);
   expect(cart()).toEqual(expected);
 });
-it.each(["exam", "inpatient"])("%s offers performers only for services and preserves row overrides on bulk fill", async kind => {
+it.each(["exam", "inpatient"])("%s offers performers on goods rows too and preserves row overrides on bulk fill", async kind => {
   await render(kind);
   const foodRow=[...host.querySelectorAll("tr")].find(row=>row.textContent?.includes("Makanan kucing"))!;
   await act(async()=>foodRow.querySelector<HTMLButtonElement>("button")!.click());
-  expect(cart()[0].service_performers ?? null).toBeNull();
+  expect(cart()[0].service_performers).toEqual({doctor_id:null,staff_id:null});
   await tab("Jasa");
   for(let i=0;i<2;i++)await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Konsultasi"]')!.click());
   const selects=()=>[...host.querySelectorAll<HTMLSelectElement>('select')].filter(select=>select.closest('fieldset') && [...select.options].some(option=>option.value==="doctor-a"));
-  expect(selects()).toHaveLength(3);
+  // Tiga baris keranjang (termasuk makanan) + satu isian massal.
+  expect(selects()).toHaveLength(4);
   await act(async()=>{selects()[0].value="doctor-a";selects()[0].dispatchEvent(new Event("change",{bubbles:true}));});
   const bulkStaff=[...host.querySelectorAll<HTMLSelectElement>('select')].find(select=>select.closest('fieldset')?.textContent?.includes('Isi pelaksana')&&[...select.options].some(option=>option.value==='staff-a'))!;
   expect(bulkStaff).toBeDefined();
   await act(async()=>{bulkStaff.value='staff-a';bulkStaff.dispatchEvent(new Event('change',{bubbles:true}));});
-  const fill=[...host.querySelectorAll('button')].find(button=>button.textContent?.includes('Isi baris jasa kosong'))!;
+  const fill=[...host.querySelectorAll('button')].find(button=>button.textContent?.includes('Isi baris kosong'))!;
   await act(async()=>fill.click());
-  expect(cart().slice(1).map((row:{service_performers:unknown})=>row.service_performers)).toEqual([{doctor_id:'doctor-a',staff_id:null},{doctor_id:null,staff_id:'staff-a'}]);
+  expect(cart().map((row:{service_performers:unknown})=>row.service_performers)).toEqual([
+    {doctor_id:'doctor-a',staff_id:null},{doctor_id:null,staff_id:'staff-a'},{doctor_id:null,staff_id:'staff-a'},
+  ]);
+});
+it.each(["exam", "inpatient"])("%s prefills the visit attending doctor on goods and service rows alike", async kind => {
+  await render(kind, "doctor-a");
+  const foodRow=[...host.querySelectorAll("tr")].find(row=>row.textContent?.includes("Makanan kucing"))!;
+  await act(async()=>foodRow.querySelector<HTMLButtonElement>("button")!.click());
+  await tab("Jasa");
+  await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Konsultasi"]')!.click());
+  expect(cart().map((row:{service_performers:unknown})=>row.service_performers)).toEqual([
+    {doctor_id:'doctor-a',staff_id:null},{doctor_id:'doctor-a',staff_id:null},
+  ]);
 });
 
 it('payment shows persisted snapshots and login cashier, without editable global salesperson or source performers',async()=>{
@@ -108,7 +121,8 @@ it('payment shows persisted snapshots and login cashier, without editable global
  expect(host.textContent).toContain('Kasir Login');expect(host.textContent).toContain('Dokter Saat Transaksi');
  expect(host.textContent).toContain('Penjual Saat Resep');
  expect(host.querySelector('[aria-label="Penjual Jasa tersimpan"]')).toBeNull();
- expect(host.querySelector('[aria-label="Penjual Jasa lama"]')).not.toBeNull();
+ expect(host.querySelector('[aria-label="Penjual Jasa lama"]')).toBeNull();
+ expect(host.textContent).not.toContain('Penjual SKU');
  expect(host.textContent).toContain('data lama');
  expect([...host.querySelectorAll('fieldset')].filter(field=>field.textContent?.includes('Pelaksana Jasa tersimpan'))).toHaveLength(0);
 });
@@ -125,7 +139,7 @@ it('payment keeps repeated manual services separate and bulk fill preserves an o
  await act(async()=>{const select=manualFields[0].querySelector('select')!;select.value='doctor-a';select.dispatchEvent(new Event('change',{bubbles:true}));});
  const bulk=[...serviceSection.querySelectorAll('fieldset')].find(field=>field.textContent?.includes('Isi pelaksana'))!;
  await act(async()=>{const select=bulk.querySelectorAll('select')[1];select.value='staff-a';select.dispatchEvent(new Event('change',{bubbles:true}));});
- await act(async()=>[...serviceSection.querySelectorAll('button')].find(button=>button.textContent?.includes('Isi baris jasa kosong'))!.click());
+ await act(async()=>[...serviceSection.querySelectorAll('button')].find(button=>button.textContent?.includes('Isi baris kosong'))!.click());
  const rows=JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
  expect(rows).toHaveLength(3);expect(rows[1].key).not.toBe(rows[2].key);
  expect(rows.map((row:{service_performers:unknown})=>row.service_performers)).toEqual([source.service_performers,{doctor_id:'doctor-a',staff_id:null},{doctor_id:null,staff_id:'staff-a'}]);
@@ -143,7 +157,7 @@ it('S01 payment lets the cashier assign performers to an unassigned clinic servi
  const bulk=[...host.querySelectorAll('fieldset')].find(field=>field.textContent?.includes('Isi pelaksana'))!;
  expect(bulk).toBeDefined();
  await act(async()=>{const select=bulk.querySelectorAll('select')[1];select.value='staff-a';select.dispatchEvent(new Event('change',{bubbles:true}));});
- await act(async()=>[...host.querySelectorAll('button')].find(button=>button.textContent?.includes('Isi baris jasa kosong'))!.click());
+ await act(async()=>[...host.querySelectorAll('button')].find(button=>button.textContent?.includes('Isi baris kosong'))!.click());
  const rows=JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
  expect(rows.map((row:{service_performers:unknown})=>row.service_performers)).toEqual([recorded.service_performers,{doctor_id:null,staff_id:'staff-a'},null]);
  expect(rows.map((row:{prescription_item_id:string})=>row.prescription_item_id)).toEqual(['recorded','empty','legacy']);
@@ -222,38 +236,41 @@ it.each(['exam','inpatient'])('%s keeps unfinished BMHP composition across reloa
   expect(cart()).toHaveLength(0);
 });
 
-it.each(['exam','inpatient'])('%s records separate clinic sellers for medicine and procedure in its recoverable cart', async kind => {
+it.each(['exam','inpatient'])('%s records separate per-line performers for medicine and procedure in its recoverable cart, with no seller field left', async kind => {
   await render(kind);
   const foodRow=[...host.querySelectorAll('tr')].find(row=>row.textContent?.includes('Makanan kucing'))!;
   await act(async()=>foodRow.querySelector<HTMLButtonElement>('button')!.click());
   await tab('Tindakan');
   await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
   await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah tindakan Steril ke keranjang"]')!.click());
-  const medicine=host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Makanan kucing"]');
-  const procedure=host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Steril"]');
-  expect(medicine).toBeTruthy();expect(procedure).toBeTruthy();
-  await act(async()=>{medicine!.value='doctor-a';medicine!.dispatchEvent(new Event('change',{bubbles:true}));});
-  await act(async()=>{procedure!.value='staff-a';procedure!.dispatchEvent(new Event('change',{bubbles:true}));});
-  expect(cart().map((row:{salesperson_id:string})=>row.salesperson_id)).toEqual(['doctor-a','staff-a']);
+  expect(host.querySelector('select[aria-label="Penjual Makanan kucing"]')).toBeNull();
+  expect(host.textContent).not.toContain('Penjual SKU');
+  const fieldFor=(name:string)=>[...host.querySelectorAll('fieldset')].find(field=>field.querySelector('legend')?.textContent===`Pelaksana ${name}`)!;
+  const medicine=fieldFor('Makanan kucing').querySelectorAll('select')[0];
+  const procedure=fieldFor('Steril').querySelectorAll('select')[1];
+  await act(async()=>{medicine.value='doctor-a';medicine.dispatchEvent(new Event('change',{bubbles:true}));});
+  await act(async()=>{procedure.value='staff-a';procedure.dispatchEvent(new Event('change',{bubbles:true}));});
+  const expected=[{doctor_id:'doctor-a',staff_id:null},{doctor_id:null,staff_id:'staff-a'}];
+  expect(cart().map((row:{service_performers:unknown})=>row.service_performers)).toEqual(expected);
   await act(async()=>root.unmount());root=createRoot(host);await render(kind);
-  expect(cart().map((row:{salesperson_id:string})=>row.salesperson_id)).toEqual(['doctor-a','staff-a']);
+  expect(cart().map((row:{service_performers:unknown})=>row.service_performers)).toEqual(expected);
 });
 
-it('clinic payment records a different salesperson on medicine and procedure lines', async () => {
+it('clinic payment prefills the visit doctor on every line and records a different non-doctor per line', async () => {
   await act(async () => root.render(<PembayaranForm visitId="line-seller" requestKey="pay" draftUserId="cashier"
     patient={{...patient, jenisLayanan:'Klinik', noInvoice:'baru', tanggal:'hari ini'}}
     initialObat={[{deskripsi:'Obat A',qty:1,harga:100,item_id:'medicine'}]}
     initialJasa={[{deskripsi:'Tindakan B',qty:1,harga:200,item_id:'procedure'}]}
-    serviceStaff={common.serviceStaff} catatanResep={null}
+    serviceStaff={common.serviceStaff} visitDoctorId="doctor-a" catatanResep={null}
     bekal={{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-27',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1}} />));
-  const medicine = host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Obat A"]');
-  const procedure = host.querySelector<HTMLSelectElement>('select[aria-label="Penjual Tindakan B"]');
-  expect(medicine).toBeTruthy();
-  expect(procedure).toBeTruthy();
-  await act(async () => { medicine!.value='doctor-a'; medicine!.dispatchEvent(new Event('change',{bubbles:true})); });
-  await act(async () => { procedure!.value='staff-a'; procedure!.dispatchEvent(new Event('change',{bubbles:true})); });
-  const lines = JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
-  expect(lines.map((line:{salesperson_id:string})=>line.salesperson_id)).toEqual(['doctor-a','staff-a']);
+  expect(host.querySelector('select[aria-label="Penjual Obat A"]')).toBeNull();
+  expect(host.textContent).not.toContain('Penjual SKU');
+  const lines = () => JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
+  expect(lines().map((line:{service_performers:unknown})=>line.service_performers))
+    .toEqual([{doctor_id:'doctor-a',staff_id:null},{doctor_id:'doctor-a',staff_id:null}]);
+  const fieldFor=(name:string)=>[...host.querySelectorAll('fieldset')].find(field=>field.querySelector('legend')?.textContent===`Pelaksana ${name}`)!;
+  await act(async () => { const staff=fieldFor('Obat A').querySelectorAll('select')[1]; staff.value='staff-a'; staff.dispatchEvent(new Event('change',{bubbles:true})); });
+  expect(lines().map((line:{service_performers:{staff_id:string|null}})=>line.service_performers.staff_id)).toEqual(['staff-a',null]);
 });
 
 it('clinic invoice correction displays the stored seller name on a sealed source line', async () => {
@@ -262,7 +279,7 @@ it('clinic invoice correction displays the stored seller name on a sealed source
     initialObat={[{deskripsi:'Obat A',qty:1,harga:100,item_id:'medicine',source_invoice_item_id:'old-line',salesperson_id:'doctor-a',salesperson_name:'Nama saat transaksi'}]}
     initialJasa={[]} serviceStaff={common.serviceStaff} catatanResep={null}
     bekal={{promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-10-27',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1}} />));
-  expect(host.textContent).toContain('Penjual: Nama saat transaksi');
+  expect(host.textContent).toContain('Penjual (data lama): Nama saat transaksi');
   expect(host.querySelector('select[aria-label="Penjual Obat A"]')).toBeNull();
   const lines = JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
   expect(lines[0]).toMatchObject({source_invoice_item_id:'old-line',salesperson_id:'doctor-a'});

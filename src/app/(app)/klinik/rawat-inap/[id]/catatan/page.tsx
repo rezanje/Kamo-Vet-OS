@@ -53,7 +53,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   const userP = mulai(supabase.auth.getUser());
   const recP = mulai(supabase
     .from("inpatient_records")
-    .select("id, condition_status, doctor_name, admitted_at, visit_id, visits(created_at, branch_id, pets(name, species, breed, photo_url), customers(name, phone, address))")
+    .select("id, condition_status, doctor_name, admitted_at, visit_id, visits(created_at, branch_id, doctor_id, pets(name, species, breed, photo_url), customers(name, phone, address))")
     .eq("id", id).maybeSingle());
   const stayP = mulai(readStayTypesChecked(supabase, [id]));
   const masterP = mulai(readCompleteList<MasterRow>((from, to) => supabase
@@ -68,7 +68,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
   if (!rec) notFound();
   waktu.tandai("rawatInap");
 
-  const visit = one(rec.visits as Rel<{ created_at: string; branch_id: string; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
+  const visit = one(rec.visits as Rel<{ created_at: string; branch_id: string; doctor_id: string | null; pets: Rel<{ name: string; species: string | null; breed: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string; address: string | null }> }>);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
   const branchId = visit?.branch_id ?? null;
@@ -141,6 +141,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
       <CatatanForm
         key={`${user?.id ?? ""}:${id}`}
         serviceStaff={serviceStaff}
+        visitDoctorId={visit?.doctor_id ?? null}
         groomingDoctorRequired={groomingDoctorRequired}
         groomingApplies={groomingPolicy?.applies ?? false}
         recordId={id}

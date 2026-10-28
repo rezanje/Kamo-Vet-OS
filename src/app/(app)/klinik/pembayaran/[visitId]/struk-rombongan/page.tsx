@@ -101,7 +101,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
               {(inv ? itemsPerInv.get(inv.id) ?? [] : []).map((it, i) => (
                 <div key={i}>
                   <div>{it.deskripsi}</div>
-                  {it.jenis === "jasa" && <div style={{fontSize:9}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}
+                  {(it.jenis === "jasa" || it.service_performers != null) && <div style={{fontSize:9}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>{it.qty} x {rp(it.harga)}</span>
                     <span>{rp(it.qty * it.harga)}</span>

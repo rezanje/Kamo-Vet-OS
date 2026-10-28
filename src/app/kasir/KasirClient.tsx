@@ -169,7 +169,8 @@ export function KasirClient({
           nama: item.name,
           item_type: item.itemType,
           tindakanKategori: item.tindakanKategori,
-          ...(item.itemType === "Jasa" ? { row_key: String(line.row_key || crypto.randomUUID()), service_performers: line.service_performers as ServicePerformersInput ?? emptyServicePerformers() } : { service_performers: null }),
+          service_performers: line.service_performers as ServicePerformersInput ?? emptyServicePerformers(),
+          ...(item.itemType === "Jasa" ? { row_key: String(line.row_key || crypto.randomUUID()) } : {}),
           harga: unit?.sell_price ?? item.harga,
           hargaNormal: unit?.sell_price ?? item.harga,
           minJual: Math.max(1, Number(item.minJual) || 0),
@@ -251,7 +252,8 @@ export function KasirClient({
       const baris: CartLine = {
         item_type: it.itemType,
         tindakanKategori: it.tindakanKategori,
-        ...(it.itemType === "Jasa" ? { row_key: crypto.randomUUID(), service_performers: emptyServicePerformers() } : {}),
+        service_performers: emptyServicePerformers(),
+        ...(it.itemType === "Jasa" ? { row_key: crypto.randomUUID() } : {}),
         item_id: it.id, nama: it.name, qty: 0, harga: dasar?.sell_price ?? it.harga,
         hargaNormal: dasar?.sell_price ?? it.harga,
         minJual: Math.max(1, Number(it.minJual) || 0),
@@ -640,9 +642,6 @@ export function KasirClient({
                         <td style={{ fontSize: 10, color: "var(--tm)" }}>{i + 1}</td>
                         <td style={{ fontSize: 10.5 }}>
                           {l.nama}
-                          {l.item_type === "Jasa" && <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers} staff={salespeople}
-                            grooming={groomingApplies && l.tindakanKategori === "Grooming"} doctorRequired={groomingDoctorRequired}
-                            onChange={next => setCart(rows => rows.map(row => kunciBaris(row) === k ? { ...row, service_performers: next } : row))} />}
                           <div style={{ fontSize: 9, color: "var(--td)" }}>
                             {rp(l.harga)}{l.satuan ? ` / ${l.satuan}` : ""}
                           </div>
@@ -667,6 +666,9 @@ export function KasirClient({
                               ))}
                             </select>
                           )}
+                          <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers} staff={salespeople}
+                            grooming={groomingApplies && l.item_type === "Jasa" && l.tindakanKategori === "Grooming"} doctorRequired={groomingDoctorRequired}
+                            onChange={next => setCart(rows => rows.map(row => kunciBaris(row) === k ? { ...row, service_performers: next } : row))} />
                           {/* Addendum §6: potongan per item (nominal / persen) */}
                           <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}>
                             <span style={{ fontSize: 8.5, color: "var(--td)" }}>Pot.</span>
@@ -708,11 +710,11 @@ export function KasirClient({
           </div>
 
           <div style={{ borderTop: ".5px solid var(--bd)", paddingTop: 8 }}>
-            <p style={{ fontSize: 11 }}>Kasir: {cashierName} (akun login). Pelaksana jasa dipilih pada setiap baris.</p>
-            {cart.some(line => line.item_type === "Jasa") && <div>
+            <p style={{ fontSize: 11 }}>Kasir: {cashierName} (akun login). Pelaksana dipilih pada setiap baris.</p>
+            {cart.length > 0 && <div>
               <ServicePerformersField label="Isi pelaksana baris kosong" value={bulkPerformers} staff={salespeople} onChange={setBulkPerformers} />
-              <button className="btn-def" type="button" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris jasa kosong</button>
-              <p style={{ fontSize: 10 }}>Hanya baris kosong diisi. Pilihan per baris tetap. Jasa baru belum ditetapkan; pilih per baris atau isi lagi.</p>
+              <button className="btn-def" type="button" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris kosong</button>
+              <p style={{ fontSize: 10 }}>Hanya baris kosong diisi. Pilihan per baris tetap. Baris baru belum ditetapkan; pilih per baris atau isi lagi.</p>
             </div>}
             {/* Stok kurang tetap peringatan; aturan harga Persediaan diterapkan oleh server. */}
             {peringatan.stokKurang.length > 0 && (
