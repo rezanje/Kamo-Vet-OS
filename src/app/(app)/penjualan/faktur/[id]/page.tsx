@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hariIniWIB } from "@/lib/tanggal";
 import { WholesaleCorrectionForm } from "./WholesaleCorrectionForm";
 import { readCompleteList } from "@/lib/checked-list";
+import { bisaKoreksiGrosir } from "@/lib/wholesale-correction-access";
 
 const rp = (n: number) => `Rp ${Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 })}`;
 type Receipt = { advance_id: string | null; advance: {id: string;no_um: string;status: string} | {id: string;no_um: string;status: string}[] | null; id: string; no_terima: string; tanggal: string; jumlah: number; dari_uang_muka: number; metode: string; journal_id: string | null };
@@ -120,8 +121,8 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
       </div>)}
       {!corrections.length && <p>Belum ada koreksi.</p>}
     </div>
-    {profile?.is_active && profile.role === "OWNER" && invoice.order_id && invoice.status !== "batal" && <div className="crm-sec">
-      <h2 style={{ fontSize: 14 }}>Koreksi pencatatan grosir — OWNER</h2>
+    {bisaKoreksiGrosir(profile) && invoice.order_id && invoice.status !== "batal" && <div className="crm-sec">
+      <h2 style={{ fontSize: 14 }}>Koreksi pencatatan grosir — OWNER/FINANCE</h2>
       <WholesaleCorrectionForm userId={user?.id ?? ""} invoiceId={id} revision={Number(invoice.revision)} today={today} due={invoice.jatuh_tempo} note={invoice.catatan ?? ""} paid={paid} total={Number(invoice.total)}
         taxRate={Number(invoice.ppn) > 0 ? Number(settings.data?.ppn_rate) || 11 : 0} items={(lines.data ?? []).map(i => ({ id: i.id, nama: i.nama, qty: Number(i.qty), harga: Number(i.harga), satuan: i.satuan }))} />
     </div>}
