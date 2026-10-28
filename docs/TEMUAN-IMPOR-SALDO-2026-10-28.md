@@ -65,3 +65,19 @@ persediaan cabang itu perlu keputusan Keuangan terpisah.
 Tes: `scripts/test-initial-stock-per-warehouse-postgres.py` (suite baru + 6 suite Accurate lama),
 `scripts/test-reviewed-inventory-import-postgres.py` lulus. `scripts/test-m04-technical-e2e-postgres.py` sudah gagal
 di main sebelum perubahan ini (JSONDecodeError di runner), tidak terkait.
+
+## Simulasi file "STOK VET GRND (1).xlsx" (29 Okt 2026)
+
+- Isi file: 201 baris saldo, 232 barang; sumber tertulis **VET CIAW / WH VET CIAW** (Klinik Ciawi), bukan Petshop Granada
+  walau nama filenya "GRND". Aplikasi otomatis mengarahkan ke Kamo Pets Clinic Ciawi / WH VET CIAW.
+- Data produksi (dibaca saja): 201 kode ada, aktif, tipe Persediaan, tanpa kode ganda; WH VET CIAW belum punya stok/riwayat.
+- Simulasi di DB lokal (semua migrasi produksi + data barang yang sama), lewat fungsi asli:
+  1. siapkan tanpa pembulatan → ditolak (nilai < 1 sen) — wajib centang pembulatan 2 desimal;
+  2. dengan pembulatan → 201 baris siap; cek Keuangan bisa posting; nilai Rp29.427.901,38;
+  3. posting **gagal "Bukti berubah"** — total qty 16569.4200000000000001 terpotong jadi 16569.42 di JavaScript,
+     sehingga laporan yang dikirim balik dari browser tidak pernah sama dengan database. Berlaku untuk semua file
+     dengan angka Excel berpresisi tinggi.
+- Perbaikan: migrasi `20261029150000_inventory_review_exact_transport.sql` (pembungkus teks preview/posting) dan server
+  action posting membaca ulang teks persis dari database, mencocokkannya dengan laporan yang ditinjau, lalu posting dengan teks itu.
+- Simulasi ulang: posting OK, 201 barang bertambah stok di WH VET CIAW, layer = jurnal Dr 1301 = Cr 3101 = Rp29.427.901,38;
+  impor ulang file yang sama ditolak (tidak dobel).
