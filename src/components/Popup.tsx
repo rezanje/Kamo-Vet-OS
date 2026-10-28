@@ -22,7 +22,7 @@ export function Popup({ message, tone = "error", title, action, onClose }: {
   }, [message]);
   if (!message) return null;
   const t = TONES[tone];
-  return <dialog ref={ref} role={tone === "error" ? "alertdialog" : "dialog"} aria-labelledby="popup-title" onClose={onClose} style={{ border: `.5px solid ${t.border}`, borderRadius: 12, padding: 20, maxWidth: 420, width: "calc(100% - 32px)" }}>
+  return <dialog ref={ref} role={tone === "error" ? "alertdialog" : "dialog"} aria-labelledby="popup-title" onClose={onClose} style={{ margin: "auto", border: `.5px solid ${t.border}`, borderRadius: 12, padding: 20, maxWidth: 420, width: "calc(100% - 32px)" }}>
     <div id="popup-title" style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700, color: t.color, marginBottom: 8 }}>
       <i className={`ti ${t.icon}`} style={{ fontSize: 20 }} /> {title ?? t.title}
     </div>
