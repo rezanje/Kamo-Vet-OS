@@ -91,7 +91,9 @@ revoke all on function public.guard_prescription_bmhp() from public, anon, authe
 -- 3. Posting tagihan klinik: pekerjaan pesanan untuk tindakan persediaan ber-BMHP
 -- ---------------------------------------------------------------------------
 do $patch$
-declare p record; definition text; signature regprocedure;
+-- Semua tambalan satu fungsi diterapkan pada teksnya dulu, baru dikompilasi SEKALI:
+-- beberapa tambalan (if … else … end if) hanya valid bila diterapkan bersama.
+declare p record; definition text; signature regprocedure; pending jsonb := '{}'::jsonb; k text;
 begin
  for p in select * from (values
   -- Biaya pesanan baris berjalan.
@@ -135,11 +137,14 @@ begin
  ) as patches(sig, old_text, new_text) loop
   signature := to_regprocedure(p.sig);
   if signature is null then raise exception 'Pesanan tindakan: RPC wajib tidak ada: %', p.sig; end if;
-  definition := pg_get_functiondef(signature);
+  definition := coalesce(pending->>p.sig, pg_get_functiondef(signature));
   if (length(definition) - length(replace(definition, p.old_text, ''))) / length(p.old_text) <> 1 then
    raise exception 'Pesanan tindakan: jangkar harus muncul tepat sekali di %: %', p.sig, left(p.old_text, 80);
   end if;
-  execute replace(definition, p.old_text, p.new_text);
+  pending := pending || jsonb_build_object(p.sig, replace(definition, p.old_text, p.new_text));
+ end loop;
+ for k in select jsonb_object_keys(pending) loop
+  execute pending->>k;
  end loop;
 end $patch$;
 
