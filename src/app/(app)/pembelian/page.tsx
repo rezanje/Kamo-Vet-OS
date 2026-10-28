@@ -216,14 +216,10 @@ export default async function PembelianPage({
                               >
                                 <i className="ti ti-package-import" /> Terima Barang
                               </Link>
-                              <Link href={`/pembelian/${po.id}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5, color: "#b91c1c" }}>
-                                Kelola PO
-                              </Link>
                             </>
                           )}
-                          {(po.status === "Diterima" || po.status === "Batal") && (
-                            <span style={{ fontSize: 10.5, color: "var(--td)" }}>—</span>
-                          )}
+                          {/* Draft/Dipesan tanpa transaksi turunan diedit langsung; sisanya lewat koreksi pembelian. */}
+                          <Link href={`/pembelian/${po.id}${po.status === "Diterima" ? "#purchase-correction" : "#edit-po"}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5 }}>{po.status === "Batal" ? "Lihat" : <><i className="ti ti-pencil" /> Edit</>}</Link>
                         </div>
                       </td>
                     </tr>
@@ -231,7 +227,7 @@ export default async function PembelianPage({
                 })}
                 {pos.length === 0 && (
                   <tr>
-                    <td colSpan={bolehKelola ? 9 : 8} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                    <td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                       Belum ada Purchase Order.
                     </td>
                   </tr>

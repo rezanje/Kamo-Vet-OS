@@ -90,6 +90,7 @@ export default async function ReturBeliPage({
                 <th style={{ textAlign: "center" }}>Item</th>
                 <th>Keterangan</th>
                 <th style={{ textAlign: "right" }}>Total</th>
+                <th>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -102,11 +103,12 @@ export default async function ReturBeliPage({
                   <td style={{ textAlign: "center", fontSize: 11.5 }}>{itemCounts.get(r.id) ?? 0}</td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.keterangan ?? ""}</td>
                   <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600 }}>{rp(Number(r.total))}</td>
+                  <td><Link href={`/pembelian/retur/${r.id}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5 }}>{r.voided_at ? "Lihat" : <><i className="ti ti-pencil" /> Edit</>}</Link></td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                  <td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                     Belum ada retur pembelian.
                   </td>
                 </tr>

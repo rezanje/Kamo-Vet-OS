@@ -102,6 +102,7 @@ export default async function FakturBeliPage({
                 <th>PO</th>
                 <th style={{ textAlign: "right" }}>Total</th>
                 <th style={{ textAlign: "right" }}>Sisa</th>
+                <th>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -126,12 +127,13 @@ export default async function FakturBeliPage({
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: sisa > 0 ? "#b91c1c" : "#15803d" }}>
                       {sisa > 0 ? rp(sisa) : "Lunas"}
                     </td>
+                    <td><Link href={`/pembelian/faktur/${r.id}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5 }}>{r.voided_at ? "Lihat" : <><i className="ti ti-pencil" /> Edit</>}</Link></td>
                   </tr>
                 );
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                  <td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                     Belum ada faktur pembelian.
                   </td>
                 </tr>

@@ -71,6 +71,7 @@ export default async function PenerimaanPage({ searchParams }: { searchParams: P
                 <th style={{ width: 130 }}>Surat jalan</th>
                 <th style={{ width: 90 }}>Rusak</th>
                 <th style={{ width: 140, textAlign: "right" }}>Nilai diterima</th>
+                <th style={{ width: 80 }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -94,11 +95,12 @@ export default async function PenerimaanPage({ searchParams }: { searchParams: P
                       {rsk > 0 ? <span className="bge r">{rsk} unit</span> : <span style={{ color: "var(--td)" }}>—</span>}
                     </td>
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, textDecoration: d.voided_at ? "line-through" : undefined }}>{rp(summary.nilai)}</td>
+                    <td><Link href={`/pembelian/penerimaan/${d.id}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5 }}>{d.voided_at ? "Lihat" : <><i className="ti ti-pencil" /> Edit</>}</Link></td>
                   </tr>
                 );
               })}
               {dok.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "18px 0", fontSize: 11 }}>
                   Belum ada penerimaan barang. Dokumen dibuat otomatis saat kamu menerima barang dari layar PO.
                 </td></tr>
               )}
