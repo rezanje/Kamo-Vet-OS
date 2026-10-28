@@ -110,11 +110,18 @@ export function toClinicCompoundRecipeInput(input: {
   };
 }
 
+/** K03: obat racik di klinik wajib dibuat lewat menu racikan (komposisi), bukan baris obat biasa. */
+function recipeRequiredMessage(message: string): string {
+  const name = message.slice("RECIPE_REQUIRED:".length).trim().split(/[\r\n]/)[0].slice(0, 100);
+  return `Obat racik${name ? ` "${name}"` : ""} wajib diisi komposisinya. Hapus baris ini lalu tambahkan lewat tombol "Racikan baru" di rekam medis.`;
+}
+
 export function parseClinicPostingError(error: { code?: string; message: string } | null, uncertainFallback?: string): string {
   const kampanye = pesanGagalKampanye(error?.message);
   if (kampanye) return kampanye;
   if (error?.code === "P0001") {
     if(error.message.startsWith('CARE_INVALID:'))return error.message.slice('CARE_INVALID:'.length).trim();
+    if (error.message.startsWith("RECIPE_REQUIRED:")) return recipeRequiredMessage(error.message);
     const detailMessages: Record<string, string> = {
       STOCK_SHORT: "Stok tidak cukup",
       WAREHOUSE_MISSING: "Gudang aktif cabang belum tersedia",
@@ -162,6 +169,7 @@ export function parseClinicRecordError(error: { code?: string; message: string }
     if (error.message.startsWith("RECORD_INVALID:")) return "Kunjungan belum siap diselesaikan atau data pemeriksaan tidak lengkap.";
     if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";
     if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "Form pemeriksaan ini sudah dipakai untuk data berbeda. Muat ulang kunjungan.";
+    if (error.message.startsWith("RECIPE_REQUIRED:")) return recipeRequiredMessage(error.message);
   }
   const message = parseClinicPostingError(error);
   return message.startsWith("Transaksi belum tersimpan.")

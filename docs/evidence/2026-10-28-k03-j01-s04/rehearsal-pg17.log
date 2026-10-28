@@ -1,0 +1,27 @@
+server: postgres (PostgreSQL) 17.11 (Homebrew) | cluster: <temp>
+Applied 295 repository migrations to isolated PostgreSQL 17.11 (Homebrew) with fictional auth/storage shims.
+PASS owner-apply-k03-j01/preflight.sql -> SUMMARY: 0 failed|t
+PASS owner-apply-k03-j01/readback.sql -> SUMMARY: 8 failed|f
+PASS owner-apply-k03-j01/preflight.sql -> SUMMARY: 1 failed|f
+PASS apply with unreviewed wholesale_access body: refused and rolled back (berbeda dari versi yang ditinjau)
+PASS owner-apply-k03-j01/preflight.sql -> SUMMARY: 0 failed|t
+PASS apply k03-j01
+PASS owner-apply-k03-j01/readback.sql -> SUMMARY: 0 failed|t
+PASS owner-apply-k03-j01/preflight.sql -> SUMMARY: 5 failed|f
+PASS rollback k03-j01
+PASS owner-apply-k03-j01/preflight.sql -> SUMMARY: 0 failed|t
+PASS re-apply k03-j01
+PASS owner-apply-k03-j01/readback.sql -> SUMMARY: 0 failed|t
+PASS owner-apply-s04/preflight.sql -> SUMMARY: 0 failed|t
+PASS s04 readback before apply (table absent): refused and rolled back (does not exist)
+PASS apply s04
+PASS owner-apply-s04/readback.sql -> SUMMARY: 0 failed|t
+PASS second s04 apply: refused and rolled back (already exists)
+PASS owner-apply-s04/preflight.sql -> SUMMARY: 3 failed|f
+PASS rollback s04
+PASS owner-apply-s04/preflight.sql -> SUMMARY: 0 failed|t
+PASS re-apply s04
+PASS owner-apply-s04/readback.sql -> SUMMARY: 0 failed|t
+PASS suite clinic_compound_issue.sql
+Removed owned PostgreSQL test container and volumes.
+cleanup: temp cluster removed
