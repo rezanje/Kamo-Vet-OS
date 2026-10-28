@@ -37,7 +37,11 @@ export function StockOnlyImport() {
   return <section className="crm-sec">
     <h2 style={{fontSize:16}}>Saldo awal untuk SKU existing</h2>
     <p>Master: memakai jenis, satuan, konversi, dan aturan expiry yang sudah terdaftar. Kode baru, tidak aktif, atau ambigu ditahan; master tidak diperbarui.</p>
-    <label>File saldo .xlsx <input type="file" accept=".xlsx" onChange={e=>{invalidate();setFile(e.target.files?.[0]??null);}} /></label>
+    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:10}}>
+      <label className="btn-def" style={{cursor:"pointer"}}><i className="ti ti-file-spreadsheet" /> Pilih file saldo .xlsx
+        <input type="file" accept=".xlsx" aria-label="File saldo .xlsx" style={{display:"none"}} onChange={e=>{invalidate();setFile(e.target.files?.[0]??null);}} /></label>
+      <span style={{fontSize:11,color:file?"#166534":"var(--tm)"}}><i className="ti ti-paperclip" /> {file?file.name:"Belum ada file dipilih"}</span>
+    </div>
     <label style={{display:"block",marginTop:10}}>Tanggal posisi saldo awal <input type="date" required value={date} onChange={e=>{invalidate();setDate(e.target.value);}} /></label>
     <label style={{display:"block",marginTop:10}}><input type="checkbox" checked={normalize} onChange={e=>{invalidate();setNormalize(e.target.checked);}} /> Saya memilih normalisasi HALF_UP total batch ke dua desimal, dengan alokasi residu deterministik ke HPP yang dapat menyimpannya tepat.</label>
     <p>Nilai dan kuantitas asli tetap disimpan. Target dihitung dari file, bukan nilai kontrol Accurate yang diasumsikan. Jika residu tidak dapat direpresentasikan tepat, batch ditahan. OWNER tetap harus memeriksa nilai, akun ekuitas, dan konfirmasi sebelum posting.</p>

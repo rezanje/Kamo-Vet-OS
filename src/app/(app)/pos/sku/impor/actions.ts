@@ -1085,6 +1085,19 @@ function initialStockRowsState(rows: ResolvedSaldoAwal[], names: ReadonlyMap<str
   return rows.map((row) => ({ ...row, itemName: names.get(row.itemId) ?? null }));
 }
 
+// Satu gudang hanya sekali diisi saldo awal Accurate (database menolak posting kedua).
+// Ditolak di sini supaya pemakai tidak menyiapkan batch yang pasti tidak bisa diposting.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function pesanGudangSudahBersaldo(supabase: any, warehouse: { id: string; name: string }): Promise<string | null> {
+  const { data, error } = await supabase.from("stock_layers").select("tanggal")
+    .eq("warehouse_id", warehouse.id).eq("source", "saldo-awal-accurate").order("tanggal").range(0, 0);
+  if (error) throw new Error(error.message);
+  const tanggal = data?.[0]?.tanggal;
+  if (!tanggal) return null;
+  const sejak = new Date(`${tanggal}T00:00:00Z`).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  return `Gudang ${warehouse.name} sudah punya stok awal sejak ${sejak}, jadi file ini tidak bisa diimpor sebagai stok awal lagi (supaya stok tidak dobel). Koreksi jumlah atau tambah barang yang belum ada lewat Stok Opname. Kalau cuma mau memperbarui data barang, pilih impor barang saja.`;
+}
+
 // Sama dengan aturan di database: barang yang sudah punya stok/transaksi di gudang
 // tujuan dilewati (masuk lewat Stok Opname), bukan memblokir seluruh file.
 // ponytail: cuma ramalan untuk layar; database tetap penentu saat batch disiapkan.
@@ -1244,6 +1257,8 @@ export async function preflightSaldoAwalSekali(formData: FormData): Promise<Init
     const scope = await loadInitialScopeFromFile(supabase, saldo.rows, selectedAsOf, getInitialStockScopeSelection(formData));
     if (!scope.ok) return initialStockStateError(scope.message, scope.clarification ?? null);
     const { warehouse, asOf } = scope;
+    const sudahBersaldo = await pesanGudangSudahBersaldo(supabase, warehouse);
+    if (sudahBersaldo) return initialStockStateError(sudahBersaldo);
     const existing = await muatMasterSaldoAwal(supabase);
     const projected = new Map(existing);
     for (const item of barang.rows) {
@@ -1301,6 +1316,8 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     const scope = await loadInitialScopeFromFile(supabase, parsed.rows, selectedAsOf, getInitialStockScopeSelection(formData));
     if (!scope.ok) return initialStockStateError(scope.message, scope.clarification ?? null);
     const { branch, warehouse, asOf } = scope;
+    const sudahBersaldo = await pesanGudangSudahBersaldo(supabase, warehouse);
+    if (sudahBersaldo) return initialStockStateError(sudahBersaldo);
     const master = await muatMasterSaldoAwal(supabase);
     const resolved = await lewatiBarangBertransaksi(supabase, warehouse.id, resolveSaldoAwalRows(parsed.rows, master, warehouse.id));
     const sourceHash = await hashFiles([
