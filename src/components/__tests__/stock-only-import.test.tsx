@@ -15,7 +15,7 @@ afterEach(async()=>{await act(async()=>root.unmount());});
 it('requires a file/date and sends explicit stock-only strict mode without inventing master metadata',async()=>{
  expect(button().disabled).toBe(true);await file();expect(button().disabled).toBe(true);await date('2026-01-01');await act(async()=>button().click());
  const data=action.mock.calls[0][0] as FormData;expect(data.get('import_mode')).toBe('stock_only');expect(data.get('valuation_policy')).toBe('STRICT');expect(data.get('master_run_id')).toBeNull();
- expect(host.textContent).toContain('0.333333');expect(host.textContent).toContain('-0.003333');expect(host.textContent).toContain('belum diposting');expect(host.querySelector('a')?.getAttribute('href')).toContain('run_id=fiction-run');
+ expect(host.textContent).toContain('0.333333');expect(host.textContent).toContain('-0.003333');expect(host.textContent).toContain('Stok BELUM masuk');expect(host.querySelector('a')?.getAttribute('href')).toContain('run_id=fiction-run');
 });
 it('requires explicit monetary normalization selection',async()=>{await file();await date('2026-01-01');await act(async()=>host.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());await act(async()=>button().click());expect(action.mock.calls[0][0].get('valuation_policy')).toBe('HALF_UP_BATCH_V1');});
 it('shows the full quantity and monetary delta even when strict preparation requires a choice',async()=>{

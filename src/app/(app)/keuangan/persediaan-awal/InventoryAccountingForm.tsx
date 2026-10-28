@@ -6,6 +6,16 @@ import type { InventoryAccountingAccount, InventoryAccountingBatch, InventoryAcc
 import { inventoryBasisRows } from "@/lib/accurate-inventory-basis";
 import { initialStockBatchStage } from "@/lib/initial-stock-batch-status";
 
+// Alasan tahan dari database dalam bahasa operasional; teks aslinya tetap ada di bukti lengkap.
+const BLOCKER_BIASA: [string, string][] = [
+  ["Gudang ini sudah punya saldo awal", "Gudang ini sudah punya saldo awal. Koreksi jumlah stoknya lewat Stok Opname, bukan impor ulang."],
+  ["Barang sudah memiliki stok/layer/riwayat", "Sebagian barang di batch ini sudah punya stok/transaksi di gudang ini. Impor ulang file yang sama: barang itu otomatis dilewati dan sisanya bisa diposting."],
+  ["GL persediaan/saldo awal lain sudah ada", "Cabang ini sudah punya jurnal saldo awal persediaan lama. Perlu keputusan Keuangan sebelum posting."],
+  ["Jumlah/nilai sumber harus positif dan tepat dua desimal", "Nilai uang di batch ini punya pecahan di bawah 1 sen. Impor ulang file dengan centang \"Bulatkan total nilai uang ke 2 desimal\"."],
+  ["Pilih akun lawan EKUITAS", "Pilih akun Modal (ekuitas) dulu."],
+];
+const blockerBiasa = (blocker: string) => BLOCKER_BIASA.find(([awal]) => blocker.startsWith(awal))?.[1] ?? blocker;
+
 const money = (value: number | string) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value));
 
 export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }: { batches: InventoryAccountingBatch[]; accounts: InventoryAccountingAccount[]; initialRunId?: string }) {
@@ -104,7 +114,7 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
           {basis.rows.map(row => <tr key={`${row.warehouseId}:${row.itemId}`}><td>{row.code}</td><td>{row.warehouseId}</td><td>{row.sourceQty} / {money(row.sourceValue)}</td><td>{row.layerQty} / {money(row.layerValue)}</td><td>{row.moveQty} / {money(row.moveValue)}</td><td>{row.status === "match" ? "Cocok" : row.status === "mismatch" ? "Selisih" : "Menunggu posting"}</td></tr>)}
         </tbody></table> : null}
       </section>
-      {report.blockers.length > 0 && <div role="status"><strong>Keputusan / pemeriksaan diperlukan</strong><ul>{report.blockers.map((blocker, index) => <li key={`${index}-${blocker}`}>{blocker}</li>)}</ul></div>}
+      {report.blockers.length > 0 && <div role="status"><strong>Belum bisa diposting karena:</strong><ul>{report.blockers.map((blocker, index) => <li key={`${index}-${blocker}`} title={blocker}>{blockerBiasa(blocker)}</li>)}</ul></div>}
       {report.status !== "previewed" && !receipt && <p>Batch ini hanya dapat ditinjau. Tidak ada tindakan perbaikan historis yang akan dijalankan dari laporan ini.</p>}
       <button type="button" className="btn-def" onClick={download}>Unduh laporan JSON</button>
       <details style={{ marginTop: 10 }}><summary>Bukti lengkap untuk peninjauan</summary><pre style={{ maxHeight: 300, overflow: "auto", fontSize: 10 }}>{JSON.stringify(report, null, 2)}</pre></details>

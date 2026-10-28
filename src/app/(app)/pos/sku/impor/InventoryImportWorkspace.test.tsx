@@ -124,7 +124,7 @@ it("reopens a saved stock batch after navigating away and back, labelled by stag
   for (let visit = 0; visit < 2; visit += 1) {
     const host = document.createElement("div"); document.body.append(host); root = createRoot(host);
     act(() => root?.render(<InventoryImportWorkspace batches={batches} masterBatches={[]} masterError={null} recovered={savedStock} initialReceipt={null} />));
-    expect(host.textContent).toContain("menunggu review OWNER; stok dan jurnal belum diposting");
+    expect(host.textContent).toContain("Stok BELUM masuk — menunggu review OWNER untuk posting");
     expect(host.textContent).toContain("Stok sudah diposting");
     expect(host.textContent).toContain("tanpa tanggal");
     expect(host.textContent).not.toMatch(/· previewed ·|· posted ·/);

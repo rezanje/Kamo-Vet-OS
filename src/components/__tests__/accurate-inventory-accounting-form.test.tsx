@@ -66,6 +66,16 @@ it("shows consumed-stock historical data as a report with no posting control", a
   expect(actions.postInventoryAccounting).not.toHaveBeenCalled();
 });
 
+it("explains database blockers in operational language", async () => {
+  actions.previewInventoryAccounting.mockResolvedValue({ ok: true, report: { ...report, can_post: false,
+    blockers: ["Barang sudah memiliki stok/layer/riwayat; impor awal baru diblokir", "Gudang ini sudah punya saldo awal; koreksi jumlahnya lewat Stok Opname"] } });
+  await preview();
+  expect(container.textContent).toContain("Belum bisa diposting karena:");
+  expect(container.textContent).toContain("Impor ulang file yang sama: barang itu otomatis dilewati");
+  expect(container.textContent).toContain("Koreksi jumlah stoknya lewat Stok Opname, bukan impor ulang.");
+  expect(button("Posting stok + jurnal cabang")).toBeUndefined();
+});
+
 it("keeps reviewed choices and reason after response loss and permits exact retry", async () => {
   await preview();
   const reason = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Alasan audit"]')!;
