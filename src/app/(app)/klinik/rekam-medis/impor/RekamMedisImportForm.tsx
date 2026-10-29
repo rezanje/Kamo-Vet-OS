@@ -66,6 +66,12 @@ type Antrian = {
   /** Riwayat ditahan atau menunggu keputusan pada folder yang sedang diproses. */
   belumTuntas: number;
   berkasTotal: number;
+  /**
+   * Kiriman potongan yang sedang berjalan. Diurai dan disaring ganda SEKALI per potongan;
+   * bila pengiriman gagal, "Coba lagi" melanjutkan dari kiriman yang belum tersimpan, bukan
+   * mengurai ulang (pelacak ganda sudah melihat barisnya dan akan menganggapnya salinan).
+   */
+  kiriman: { daftar: RekamMedisImporRow[][]; berikut: number } | null;
 };
 
 function kunciPilihan(value: unknown) {
@@ -164,32 +170,37 @@ export function RekamMedisImportForm() {
     pengurai: PenguraiKartuMedis,
     potongan: PotonganImporRekamMedis,
     terakhir: boolean,
+    antrian: Antrian,
   ) => {
     const mulai = Date.now();
-    const besar = potongan.berkas.filter((berkas) => berkas.ukuran > BATAS_BYTES_BERKAS_REKAM_MEDIS);
-    const muat = potongan.berkas.filter((berkas) => berkas.ukuran <= BATAS_BYTES_BERKAS_REKAM_MEDIS);
-    if (besar.length) {
-      catatDitahan(besar.map((berkas) => ({
-        source_key: `terlalu-besar::${berkas.jalur}`,
-        source_file: berkas.nama,
-        source_sheet: "—",
-        reason: "File lebih dari 5 MB; pecah dulu kartunya lalu impor ulang",
-      })));
+    if (!antrian.kiriman) {
+      const besar = potongan.berkas.filter((berkas) => berkas.ukuran > BATAS_BYTES_BERKAS_REKAM_MEDIS);
+      const muat = potongan.berkas.filter((berkas) => berkas.ukuran <= BATAS_BYTES_BERKAS_REKAM_MEDIS);
+      if (besar.length) {
+        catatDitahan(besar.map((berkas) => ({
+          source_key: `terlalu-besar::${berkas.jalur}`,
+          source_file: berkas.nama,
+          source_sheet: "—",
+          reason: "File lebih dari 5 MB; pecah dulu kartunya lalu impor ulang",
+        })));
+      }
+      if (!muat.length) return;
+
+      const isi = [];
+      for (const berkas of muat) isi.push({ fileName: berkas.nama, sourcePath: berkas.jalur, bytes: await sumber.bacaBerkas(berkas) });
+      const hasil = await pengurai.urai(isi);
+      isi.length = 0;
+
+      if (hasil.held.length) catatDitahan(hasil.held);
+      const { siap, ditahan: ganda } = saringGandaPotongan(hasil.rows, pelacakRef.current);
+      if (ganda.length) catatDitahan(ganda);
+      hasil.rows.length = 0;
+      antrian.kiriman = { daftar: bagiKirimanBaris(siap), berikut: 0 };
     }
-    if (!muat.length) return;
 
-    const isi = [];
-    for (const berkas of muat) isi.push({ fileName: berkas.nama, sourcePath: berkas.jalur, bytes: await sumber.bacaBerkas(berkas) });
-    const hasil = await pengurai.urai(isi);
-    isi.length = 0;
-
-    if (hasil.held.length) catatDitahan(hasil.held);
-    const { siap, ditahan: ganda } = saringGandaPotongan(hasil.rows, pelacakRef.current);
-    if (ganda.length) catatDitahan(ganda);
-    hasil.rows.length = 0;
-
-    const kirimanSemua = bagiKirimanBaris(siap);
-    for (let index = 0; index < kirimanSemua.length; index += 1) {
+    const berjalan = antrian.kiriman;
+    const kirimanSemua = berjalan.daftar;
+    for (let index = berjalan.berikut; index < kirimanSemua.length; index += 1) {
       const kiriman = kirimanSemua[index];
       const jawaban = await kirimDenganUlangan<HasilPotonganImporRekamMedis>(async () => {
         const hasilKirim = await prosesPotonganImporRekamMedis(kiriman, [], true, terakhir && index === kirimanSemua.length - 1);
@@ -219,6 +230,8 @@ export function RekamMedisImportForm() {
         sudahAda: current.sudahAda + jawaban.sudah_ada,
         perluKeputusan: current.perluKeputusan + barisPertanyaan.length,
       }));
+      // Kiriman ini sudah dijawab server: Coba lagi tidak mengirimnya lagi.
+      berjalan.berikut = index + 1;
     }
 
     waktuRef.current = {
@@ -256,6 +269,7 @@ export function RekamMedisImportForm() {
           tuntas: [],
           belumTuntas: 0,
           berkasTotal: sisa.reduce((jumlah, folder) => jumlah + folder.berkas.length, 0),
+          kiriman: null,
         };
         setFolderTotal(semua.length);
         setFolderSelesai(semua.length - sisa.length);
@@ -277,11 +291,12 @@ export function RekamMedisImportForm() {
           }
           const terakhirFolder = antrian.iFolder === antrian.folders.length - 1 && antrian.iPotongan === potongan.length - 1;
           try {
-            await prosesPotongan(sumber, pengurai, potongan[antrian.iPotongan], terakhirFolder);
+            await prosesPotongan(sumber, pengurai, potongan[antrian.iPotongan], terakhirFolder, antrian);
           } catch (cause) {
             batasRef.current = sesuaikanBatasPotongan(batasRef.current, { gagal: true });
             throw cause;
           }
+          antrian.kiriman = null;
           antrian.iPotongan += 1;
           setSisaMs(perkiraanSisaWaktuImpor(waktuRef.current.terpakaiMs, waktuRef.current.berkas, antrian.berkasTotal));
         }

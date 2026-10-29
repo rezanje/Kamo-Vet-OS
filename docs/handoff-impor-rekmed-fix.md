@@ -25,12 +25,33 @@ dipasang di DB mana pun selain Postgres sekali-pakai. Dilanjutkan dari commit He
      pemilik yatim). `race()` sekarang bisa menunggu jenis kunci `row` selain `advisory`.
    - Migrasi: `import_legacy_source_conflict_reason` di-`revoke` dari `public, anon` (konsisten dengan fungsi lain).
 
+## Temuan review independen: "Coba lagi" di tab yang sama membuang riwayat (diperbaiki)
+- **Terbukti** (bug sudah ada di main sejak `0b4bb14`, bukan dari fix ini). `prosesPotongan` di
+  `RekamMedisImportForm.tsx` mencatat baris ke pelacak ganda (`saringGandaPotongan`) sebelum dikirim.
+  Bila keempat percobaan kirim gagal, "Coba lagi" mengurai ulang potongan yang sama; pelacak menilai
+  semua barisnya `salinan`, tidak ada yang dikirim, potongan dianggap selesai, folder dicatat tuntas, dan
+  layar menulis "selesai". Reproduksi di tes komponen: 0 dari 3 tersimpan; kasus 150+50: 50 hilang.
+- **Perbaikan minimum:** potongan diurai + disaring SEKALI; hasilnya (daftar kiriman + indeks kiriman
+  berikutnya) disimpan di antrian tab. Coba lagi melanjutkan dari kiriman yang belum dijawab server, tanpa
+  mengurai ulang. Bila tab ditutup, titik simpan per folder tetap membuat folder itu dibaca ulang dari
+  awal dengan pelacak baru, dan database membuktikan baris yang sudah tersimpan (`sudah_ada`).
+- **Tes regresi** `src/components/__tests__/medical-import-retry-resume.test.tsx` (gagal 3/3 di kode lama,
+  lulus 3/3 sesudah perbaikan):
+  1. 4 percobaan gagal sebelum commit → Coba lagi mengirim ulang dan menyimpan semua baris; folder tidak
+     tercatat selesai selama gagal.
+  2. kiriman 150 baris sukses, kiriman berikutnya gagal 4× → Coba lagi hanya mengirim 50 sisanya; 150
+     pertama tidak dikirim lagi; total 200 tersimpan, 0 sudah ada.
+  3. server sudah commit tetapi jawabannya hilang → dikirim ulang, dijawab `sudah_ada`, tidak ganda.
+- Sisa kecil (tampilan, bukan kehilangan data): di "Simpan keputusan identitas", bila kiriman pertama
+  sukses lalu kiriman berikutnya gagal, hitungan "tersimpan" kiriman pertama tidak ditampilkan; saat
+  dicoba lagi baris itu dijawab "sudah ada" oleh database.
+
 ## Hasil tes (head draft PR)
 - Harness `scripts/test-impor-rekam-medis-postgres.py --pg-bin <dir>`: **33/33 PASS, 0 FAIL, 0 BLOCKED**
   di PostgreSQL 17.10 (4× berturut-turut, stabil) dan 16.15. 319 migrasi repo teraplikasi.
 - Uji mutasi (fix sengaja dirusak sementara, lalu dipulihkan): tanpa kunci identitas di registrasi →
   C3/C4/C6 FAIL; tanpa cek sidik per baris → X3 FAIL. Harness memang menangkap regresi.
-- `npm test` penuh: 602 berkas / 4648 tes lulus (1 di-skip, sudah ada sebelumnya).
+- `npm test` penuh: 603 berkas / 4651 tes lulus (1 di-skip, sudah ada sebelumnya).
 - `npm run lint`: 0 error (14 warning `<img>` yang sudah ada, bukan di berkas yang diubah).
 - `npx tsc --noEmit` (heap 4 GB): lulus.
 - `npm run build` (heap 6 GB): lulus. Dengan heap bawaan mesin uji (≈2 GB) build kehabisan memori —
