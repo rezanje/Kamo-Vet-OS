@@ -193,31 +193,45 @@ ternyata sudah ada. Data benar; hitungan layar bisa lebih besar.
   membuat kartu baru lagi. Layar cari-HP di registrasi tampil kosong untuk nomor seperti ini.
   Jumlah nomor seperti ini di Production **belum diketahui** (tidak ada akses Production).
 
-## Celah Kasir / CRM / impor pelanggan — dilaporkan, BELUM dikerjakan (di luar scope)
-Jalur pembuat pelanggan lain belum memakai kunci identitas dan kunci HP kanonik:
+## Kasir / CRM — DITUTUP di PR dependent (draft), impor CSV pelanggan dilaporkan
+Keputusan koordinasi: tutup jalur pembuatan pelanggan yang melewati kunci identitas dalam kode, minimal, tanpa
+mengubah aturan bisnis. Dikerjakan di cabang `claude/relaxed-pascal-g1kbka-kasir-crm` (PR dependent, base = cabang
+PR #333).
 
-| Jalur | Celah |
-|---|---|
-| `src/app/kasir/actions.ts` `tambahCustomerKasir` | cek `eq("phone")` persis: `08..` vs `+62..` lolos → kartu ganda; cek-lalu-insert tanpa kunci → bisa ganda bila bersamaan dengan impor/registrasi; bila sudah ada >1 kartu dengan nomor persis sama, `maybeSingle()` gagal diam-diam → kartu ketiga dibuat. |
-| `src/app/(app)/crm/pelanggan/baru/actions.ts` `simpanPelanggan` | sama persis dengan Kasir. |
-| `src/app/(app)/pengaturan/impor/actions.ts` (impor CSV pelanggan) | normalisasi sendiri (`normalTelp`, tanpa batas panjang, `8xx` → `08xx`) dan pemeriksaan set di aplikasi tanpa kunci; tidak bentrok dengan impor rekam medis secara atomik. |
+Perilaku lama (diperiksa sebelum diubah):
+| Jalur | Validasi | Cek duplikat | Bila sudah ada | Insert |
+|---|---|---|---|---|
+| Kasir `tambahCustomerKasir` | nama+HP wajib, `nomorHpValid` | `eq("phone")` persis, `maybeSingle()` | tolak "No HP sudah terdaftar" | name, phone, email, dob, address, pekerjaan, sumber_info, catatan → kembalikan baris |
+| CRM `simpanPelanggan` | sama | sama | tolak (redirect pesan sama) | + npwp → redirect daftar |
 
-**Tidak ada proteksi global.** Kunci identitas di PR ini hanya melindungi impor rekam medis ↔ registrasi
-klinik. Kasir dan CRM tidak mengambil kunci itu dan tidak memakai HP kanonik, jadi selama Kasir/CRM belum
-diubah, kartu ganda tetap mungkin lewat jalur itu (nomor 08 vs +62, atau bersamaan dengan impor/registrasi).
+Perubahan minimal:
+- Migrasi draft `20261101110000_pelanggan_baru_atomik.sql`: `pelanggan_baru_atomik(...)` SECURITY INVOKER (RLS & hak
+  insert pemanggil tetap; revoke `public, anon`; grant `authenticated`), ambil `customer_identity_lock(HP)` lalu
+  `customer_pick_by_phone`; ada ≥1 pelanggan dengan HP kanonik sama → `{status:"terdaftar"}`; selain itu insert nilai
+  APA ADANYA (tanpa merapikan) → `{status:"dibuat", customer_id}`. Pra-cek (butuh migrasi 0900) & pasca-cek (kunci
+  sebelum cek, bukan SECURITY DEFINER) gagal tertutup.
+- Kasir/CRM memanggil RPC itu menggantikan blok cek+insert. Validasi di depan, pesan, kolom, dan alur sesudahnya sama;
+  Kasir membaca baris pelanggan baru dengan `select` kolom yang sama seperti dulu.
+- Tidak menyentuh kebutuhan pet, cabang, peran, flow pelanggan, atau hak akses.
 
-Usulan perubahan minimum (satu PR terpisah, perlu persetujuan):
-1. Satu RPC `tambah_pelanggan_atomik(nama, hp, …kolom tambahan)` di migrasi baru: ambil
-   `customer_identity_lock(hp)`, panggil `customer_pick_by_phone`; bila `one`/`ambiguous` → tolak
-   "No HP sudah terdaftar" (perilaku Kasir/CRM sekarang memang menolak, bukan memakai ulang); bila `none` → insert.
-2. Ganti blok cek+insert di Kasir dan CRM dengan RPC itu (±10 baris per berkas), tambah kasus harness
-   untuk Kasir/CRM bersamaan dengan impor.
-3. Impor CSV pelanggan dibiarkan dulu (beda aturan `8xx` adalah keputusan bisnis); cukup dicatat.
+Konsekuensi yang perlu diketahui (akibat kunci HP kanonik, bukan aturan baru): nomor sama dengan tulisan berbeda
+(08/+62/tanda hubung) kini ditolak; nomor yang sudah dipakai >1 kartu ditolak (dulu `maybeSingle()` diam-diam membuat
+kartu baru).
 
-Catatan lain: ada tiga normalisasi HP berbeda (`indonesian_phone_key`, `quest_customer_phone_key`,
-`normalTelp`). Menyatukannya menyentuh aturan bisnis (nomor `8xx` tanpa 0, minimum digit) → keputusan pemilik.
+Bukti: tes aksi `src/lib/__tests__/pelanggan-baru-atomik-action.test.ts` (8 lulus; 7 gagal di kode lama), harness
+B1–B7 dan C11–C15 (61/61 PG 17.10 + 16.15). Mutan: tanpa kunci → C11–C15 FAIL; cek nomor persis → B2–B4, C11, C12,
+C14 FAIL.
+
+**Jalur yang masih melewati kunci — dilaporkan, tidak diubah:** impor CSV pelanggan (Pengaturan → Impor,
+OWNER/ADMIN). Menutupnya butuh keputusan kebijakan yang tidak bisa dihindari: normalisasi `normalTelp` (nomor `8xx`
+dianggap `08xx`, `0062..` tidak dikonversi, tanpa batas panjang) berbeda dari `indonesian_phone_key`, dan perlu
+diputuskan apakah satu baris bentrok membatalkan seluruh berkas atau hanya baris itu. Sampai diputuskan: jangan
+dijalankan bersamaan dengan impor rekam medis.
+
+Catatan lain: ada tiga normalisasi HP berbeda (`indonesian_phone_key`, `quest_customer_phone_key`, `normalTelp`).
+Menyatukannya menyentuh aturan bisnis (nomor `8xx` tanpa 0, minimum digit) → keputusan pemilik.
 
 ## Sisa hambatan
-- Kedua migrasi belum dipasang di Production (butuh persetujuan teks persis migrasi).
+- Ketiga migrasi (`20261101090000`, `20261101100000`, `20261101110000`) belum dipasang di Production.
 - `Technical checks` GitHub di head final dicatat di PR.
-- Simulasi/UAT pengguna (Andri memeriksa sampel) belum dilakukan.
+- Verifikasi pengguna lapangan opsional (bukan syarat teknis); impor pasien nyata tetap izin terpisah.

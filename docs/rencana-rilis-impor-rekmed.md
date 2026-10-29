@@ -1,4 +1,4 @@
-# Rencana rilis operasional — impor rekam medis (PR #333, kode `e607722e`)
+# Rencana rilis operasional — impor rekam medis (PR #333 + PR dependent Kasir/CRM)
 
 **Ini rencana, bukan izin eksekusi.** Tidak ada apply migrasi, deploy, merge, atau approve yang dilakukan atau
 diizinkan oleh dokumen ini. Semua angka durasi lock **belum diketahui**: tidak ada akses Production, dan ukuran
@@ -11,12 +11,15 @@ Postgres sekali-pakai dengan data fiktif.
 |---|---|---|---|
 | 1 | Migrasi `supabase/migrations/20261101090000_impor_identitas_atomik.sql` | K1b (sidik isi), K3 (kunci HP kanonik), C3b (kunci identitas, RPC registrasi) | migrasi repo sebelumnya, terutama `20260910033000` (versi `import_legacy_medical_record_resolved`) dan `20261031210000` (impor massal, `import_legacy_phone_key`, indeks `customers_import_phone_key_idx`) |
 | 2 | Migrasi `supabase/migrations/20261101100000_impor_jejak_setara.sql` | jejak sumber setara 08/62/0062, gagal tertutup bila kecocokan historis > 1 | migrasi 1 |
-| 3 | Aplikasi (merge ke `main`) | registrasi klinik memakai RPC atomik; importer: Coba lagi, titik simpan berbasis SHA-256 isi | **migrasi 1 wajib sudah terpasang** |
+| 3 | Migrasi `supabase/migrations/20261101110000_pelanggan_baru_atomik.sql` (PR dependent Kasir/CRM) | RPC `pelanggan_baru_atomik`: Kasir/CRM menambah pelanggan di bawah kunci identitas | migrasi 1 |
+| 4 | Aplikasi (merge ke `main`) | registrasi klinik memakai RPC atomik; importer: Coba lagi, titik simpan berbasis SHA-256 isi; Kasir/CRM memakai `pelanggan_baru_atomik` | **migrasi 1 dan 3 wajib sudah terpasang** |
 
-**Urutan wajib: migrasi 1 → migrasi 2 → baru merge/deploy aplikasi.**
+**Urutan wajib: migrasi 1 → migrasi 2 → migrasi 3 → baru merge/deploy aplikasi.** PR dependent Kasir/CRM digabung ke
+cabang PR #333 lebih dulu, sehingga semuanya masuk `main` dalam satu merge.
 - `vercel.json` hanya mendeploy cabang `main`, jadi **merge = deploy Production**. Merge tidak boleh terjadi sebelum
   migrasi 1 terpasang: aplikasi baru memanggil `registrasi_pelanggan_atomik` dan `customer_pick_by_phone`; tanpa
-  migrasi 1 **registrasi klinik gagal** (fungsi tidak ada).
+  migrasi 1 **registrasi klinik gagal** (fungsi tidak ada); tanpa migrasi 3 **Kasir "Tambah customer" dan CRM
+  "Pelanggan baru" gagal** (`pelanggan_baru_atomik` tidak ada).
 - Aplikasi lama tetap jalan di atas database yang sudah dimigrasi (lihat §5), jadi jeda antara migrasi dan merge aman
   untuk operasional klinik — dengan importer DITAHAN.
 - Migrasi 2 tidak dibutuhkan aplikasi, tetapi tanpa migrasi 2 impor dari folder `08..` dan `+62..` bisa mencatat
@@ -48,7 +51,8 @@ select
   to_regclass('public.customers_import_phone_key_idx') is not null as indeks_hp_ada,
   to_regprocedure('public.indonesian_phone_key(text)') is null as migrasi1_belum_terpasang,
   not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'visits' and column_name = 'legacy_source_hash') as kolom_sidik_belum_ada,
-  to_regprocedure('public.import_legacy_source_key_canonical(text)') is null as migrasi2_belum_terpasang;
+  to_regprocedure('public.import_legacy_source_key_canonical(text)') is null as migrasi2_belum_terpasang,
+  to_regprocedure('public.pelanggan_baru_atomik(text,text,text,date,text,text,text,text,text)') is null as migrasi3_belum_terpasang;
 ```
 Semua kolom harus `true`. (Bila fungsi lama tidak ada sama sekali, kueri ini error → juga berhenti.)
 
@@ -104,6 +108,7 @@ Durasi bergantung ukuran tabel dan lalu lintas saat itu (P2/P3); tidak ditebak d
 | 1 | create/replace fungsi | lock katalog singkat | — |
 | 2 | `create index visits_legacy_source_key_canonical_idx` (tidak concurrent, parsial) | SHARE pada `visits` sampai transaksi migrasi 2 selesai | semua tulis `visits` (baca tetap jalan). Indeks parsial tetap memindai seluruh tabel saat dibangun |
 | 2 | create/replace fungsi | lock katalog singkat | — |
+| 3 | create fungsi `pelanggan_baru_atomik` (tanpa perubahan tabel/indeks) | lock katalog singkat; tidak ada lock tabel | — |
 
 Teramati pada Postgres 17.10 sekali-pakai (data fiktif), migrasi dijeda tepat sebelum commit:
 migrasi 1 memegang `visits` AccessExclusiveLock (+ ShareUpdateExclusiveLock), `customers` ShareLock, dan
@@ -124,6 +129,9 @@ Mitigasi yang bisa dipilih operator (tanpa mengubah teks migrasi):
 | Aplikasi lama + DB sesudah migrasi 1 (dan 2) | Ya | Nama/argumen RPC lama tidak berubah; registrasi lama (cek+insert) tetap jalan, **tanpa** perlindungan C3b; importer lama tetap jalan tetapi masih punya bug Coba lagi → **importer ditahan**. |
 | Aplikasi baru + DB tanpa migrasi 1 | **Tidak** | Registrasi klinik gagal. Jangan merge sebelum migrasi 1. |
 | Aplikasi baru + DB migrasi 1 tanpa migrasi 2 | Jalan, importer belum aman | Impor 08/62 bisa ganda → importer ditahan sampai migrasi 2. |
+| Aplikasi baru + DB tanpa migrasi 3 | **Tidak** | Kasir/CRM tambah pelanggan gagal. Jangan merge sebelum migrasi 3. |
+| Aplikasi lama + DB sesudah migrasi 3 | Ya | Fungsi baru tidak dipanggil aplikasi lama; Kasir/CRM lama jalan seperti sekarang (tanpa kunci). |
+| Rollback migrasi 3 | Hanya setelah aplikasi di-revert | `drop function public.pelanggan_baru_atomik(...)`; tidak ada data yang perlu dibalik. |
 | Rollback aplikasi (revert merge), DB tetap | Ya | Kembali ke baris pertama tabel ini. **Rollback yang disarankan.** |
 | Rollback migrasi 2 saja | Mungkin | Pasang ulang badan dua RPC dari migrasi 1, drop 3 fungsi baru + indeks. Skrip rollback **belum ada** di repo; perlu ditulis dan direview bila diwajibkan. |
 | Rollback migrasi 1 | Hanya setelah aplikasi di-revert | Pulihkan `import_legacy_medical_record_resolved` (dari `20260910033000`/definisi tersimpan §2), `import_legacy_medical_records_bulk` dan `import_legacy_phone_key` (dari `20261031210000`), lalu reindex indeks HP; drop fungsi baru. Kolom `legacy_source_hash` boleh dibiarkan (nullable). Skrip **belum ada**. |
@@ -145,37 +153,33 @@ tidak ada data yang perlu dibalik. Preferensi: perbaikan maju, bukan rollback DB
 - Smoke test pasca-deploy tanpa menulis data: buka registrasi, cari nomor pelanggan fiktif/uji yang sudah ada dengan
   format `08..` dan `+62..` (pencarian bersifat baca-saja).
 
-## 7. Batas nyata Kasir/CRM (belum memakai kunci identitas)
-`tambahCustomerKasir` (Kasir) dan `simpanPelanggan` (CRM) masih cek `phone` persis lalu insert, tanpa kunci identitas
-dan tanpa kunci HP kanonik. **Tidak ada perlindungan global** terhadap kartu pelanggan ganda.
+## 7. Kasir/CRM dan jalur pembuatan pelanggan lain
+**Sesudah migrasi 3 + aplikasi PR dependent:** `tambahCustomerKasir` (Kasir) dan `simpanPelanggan` (CRM) memanggil
+`pelanggan_baru_atomik`, yang mengambil kunci identitas yang sama dengan impor dan registrasi klinik lalu mencocokkan
+nomor dengan kunci HP kanonik. Aturan bisnis lama dipertahankan: nomor yang sudah terdaftar **ditolak** ("No HP sudah
+terdaftar"), bukan dipakai ulang; validasi, kolom, dan alur setelahnya tidak berubah. Dibuktikan sintetis: B1–B7 dan
+C11–C15 di harness (08/+62, tanda baca, nomor kembar, anon; Kasir/CRM bersamaan dengan impor, registrasi, dan
+Kasir/CRM lain).
 
-Celah yang tersisa setelah rilis ini:
-1. **Format nomor (tidak tergantung waktu).** Importer menyimpan nomor pelanggan baru sebagai digit dari nama folder
-   (mis. `62812..` atau `0812..`). Kasir/CRM yang mengetik `0812-..` atau `+62 812..` tidak menemukan kartu itu dan
-   **membuat kartu baru**. Celah ini sudah ada sebelum PR ini, tetapi impor menambah jumlah kartu yang bisa
-   "terlewat".
-2. **Balapan (tergantung waktu).** Kasir/CRM menambah pelanggan bersamaan dengan impor/registrasi untuk orang yang
-   sama → bisa dua kartu. Bila >1 kartu bernomor persis sama sudah ada, `maybeSingle()` gagal diam-diam → kartu
-   ketiga.
+Perubahan perilaku yang perlu diketahui (bukan aturan baru, konsekuensi kunci HP kanonik):
+- Kasir/CRM kini juga menolak nomor yang sama dengan tulisan berbeda (`0812..` vs `+62 812..`, atau dengan/ tanpa
+  tanda hubung). Dulu kartu ganda dibuat.
+- Bila nomor sudah dipakai lebih dari satu kartu, Kasir/CRM menolak. Dulu jalur `maybeSingle()` gagal diam-diam dan
+  membuat kartu baru lagi.
 
-Dampak: kartu pelanggan ganda (poin/riwayat belanja terpecah). **Rekam medis impor tidak hilang dan tidak digabung
-diam-diam**: impor berikutnya untuk pemilik dengan dua kartu bernama+HP sama akan **ditahan "Perlu keputusan"**
-(gagal tertutup).
+**Jalur yang masih melewati kunci (dilaporkan, TIDAK diubah):** impor CSV pelanggan di Pengaturan → Impor
+(`src/app/(app)/pengaturan/impor/actions.ts`, hanya OWNER/ADMIN). Ia menyisipkan banyak pelanggan sekaligus dengan
+pemeriksaan nomor di aplikasi memakai normalisasi sendiri (`normalTelp`: `8xx` → `08xx`, tanpa batas panjang), tanpa
+kunci identitas. Menutupnya butuh **keputusan kebijakan**: aturan mana yang berlaku untuk nomor tanpa awalan (`8xx`)
+dan `0062..` — `normalTelp` dan `indonesian_phone_key` berbeda di situ — serta apakah satu baris bentrok membatalkan
+seluruh berkas atau hanya ditolak per baris. Sampai diputuskan: jangan jalankan impor CSV pelanggan bersamaan dengan
+impor rekam medis (keduanya hanya OWNER/ADMIN, waktunya dikendalikan operator).
 
-**Apakah importer bisa diluncurkan secara teknis dengan pembatasan sementara?** Ya, *untuk ruang lingkup importer*
-— dengan pembatasan berikut, dan tanpa klaim aman global:
-- **Jendela impor** hanya di luar jam buka Kasir/petshop dan saat tidak ada staf yang menambah pelanggan lewat
-  Kasir/CRM (menutup celah 2 selama impor; tidak menutup celah 1).
-- **SOP staf (berlaku terus sampai Kasir/CRM diperbaiki):** sebelum "Tambah customer" di Kasir/CRM, cari dulu di
-  pencarian global dengan **8 digit terakhir** nomor HP dan dengan nama; pakai kartu yang ada bila ketemu.
-  (Pencarian global mencocokkan sebagian nomor, jadi `62812..`/`0812..` sama-sama muncul.)
-- **Laporan pasca-impor read-only** (P4 bagian "nomor dipakai banyak pelanggan", diulang sesudah tiap jendela impor):
-  kenaikannya diperiksa admin **manual**; tidak ada penggabungan otomatis.
-- Pemilik menerima secara tertulis bahwa risiko celah 1 tetap ada sampai Kasir/CRM diperbaiki.
+Dampak bila terjadi kartu ganda dari jalur mana pun: rekam medis impor tidak hilang dan tidak digabung diam-diam;
+impor berikutnya untuk pemilik dengan dua kartu bernama+HP sama **ditahan "Perlu keputusan"** (gagal tertutup).
 
 Keputusan koordinasi (29 Okt): celah Kasir/CRM **ditutup dalam kode** (PR dependent, draft) sebelum rilis — tidak
-mengandalkan SOP di luar jam. Pembatasan operasional di atas hanya relevan bila rilis dilakukan tanpa perubahan itu,
-dan itu bukan rencana saat ini.
+mengandalkan SOP di luar jam.
 
 **Penyelesaian teknis** cukup dibuktikan dengan uji sintetis lokal: harness Postgres sekali-pakai dengan data fiktif +
 tes vitest/komponen. **Tidak membuat preview deploy atau lingkungan baru tanpa izin.**
