@@ -158,7 +158,7 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
         return { data: data as unknown as GrosirItemRow[] | null, error, count };
       }),
       completeReportQuery(supabase.from("employees")
-        .select("id, nama, jabatan, status, profile_id, branches(name)", { count: "exact" })),
+        .select("id, nama, jabatan, status, profile_id, branches!employees_branch_id_fkey(name)", { count: "exact" })),
       completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true)),
     ]);
 
