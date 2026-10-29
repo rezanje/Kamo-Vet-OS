@@ -16,7 +16,7 @@ export function masterReturn(entity: MasterEntity, raw?: string) {
   const base = MASTER_PATHS[entity];
   const target = new URL(base, "https://local.invalid");
   const params = new URLSearchParams(raw);
-  for (const key of ["view", "cari", "kat", "induk", "jenis", "hal"]) {
+  for (const key of ["view", "cari", "kat", "induk", "jenis", "hal", "cabang", "peran"]) {
     const value = params.get(key);
     if (value) target.searchParams.set(key, value.slice(0, 200));
   }

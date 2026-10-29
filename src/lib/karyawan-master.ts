@@ -27,9 +27,11 @@ export function tampilkanKaryawan<T extends KaryawanMaster>(
     assignmentsByEmployee.set(assignment.employee_id, current);
   }
 
-  return employees.map(({ branch_id, ...employee }) => ({
+  // `branch_id` ikut dikembalikan supaya penyaringan per cabang tidak perlu
+  // mencocokkan nama cabang yang bisa berubah tampilannya.
+  return employees.map((employee) => ({
     ...employee,
-    branchName: branch_id ? branchName.get(branch_id) ?? "Cabang tidak ditemukan" : "—",
+    branchName: employee.branch_id ? branchName.get(employee.branch_id) ?? "Cabang tidak ditemukan" : "—",
     assignments: (assignmentsByEmployee.get(employee.id) ?? []).map((assignment) => ({
       ...assignment,
       branchName: branchName.get(assignment.branch_id) ?? "Cabang tidak ditemukan",

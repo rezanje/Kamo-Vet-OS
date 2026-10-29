@@ -43,6 +43,7 @@ insert into a01_excluded values
  ('sale_cancellations','domain correction trail'),('sale_payment_corrections','domain correction trail'),
  ('purchase_payment_cancellations','domain correction trail'),('wholesale_invoice_corrections','domain correction trail'),
  ('purchase_invoice_corrections','domain correction trail'),('purchase_receipt_cancellations','domain correction trail'),
+ ('sales_receipt_cancellations','domain correction trail: reversal receipt and journals are captured'),
  ('clinic_record_corrections','domain correction trail: medical record change is captured'),
  ('compound_adjustments','domain correction trail: compound ingredients are captured'),
  ('master_data_lifecycle_audit','domain audit trail'),('payslip_override_history','domain audit trail'),

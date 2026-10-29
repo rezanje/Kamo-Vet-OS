@@ -15,8 +15,15 @@ export type BarisKartu = Mutasi & { masuk: number; keluar: number; saldo: number
 // Label Indonesia untuk `source` yang ditulis lib/inventory.ts.
 export const LABEL_SOURCE: Record<string, string> = {
   "saldo-awal": "Saldo Awal",
+  // Impor saldo awal gaya Accurate menulis sumber ini — sebelum dinamai, kartu
+  // stok menampilkan slug mentahnya, padahal inilah mutasi terbanyak di Production.
+  "saldo-awal-accurate": "Saldo Awal (Impor Accurate)",
   purchase: "Penerimaan Pembelian",
+  "purchase-receipt-void": "Pembatalan Penerimaan Barang",
+  "purchase-invoice-void": "Pembatalan Faktur Pembelian",
   sale: "Faktur Penjualan",
+  "sale-group": "Faktur Penjualan (Paket)",
+  "sale-void": "Pembatalan Faktur Penjualan",
   "sale-online": "Penjualan Online",
   klinik: "Pemakaian Klinik",
   "klinik-bmhp": "BMHP Tindakan",
@@ -28,11 +35,20 @@ export const LABEL_SOURCE: Record<string, string> = {
   "transfer-in": "Pemindahan Masuk",
   "transfer-out": "Pemindahan Keluar",
   opname: "Stok Opname",
+  "opname-selisih": "Selisih Stok Opname",
+  penyesuaian: "Penyesuaian Persediaan",
+  produksi: "Produksi Own Brand",
+  "stock-correction": "Koreksi Stok",
+  "stock-correct-reverse": "Pembatalan Koreksi Stok",
   "retur-jual": "Retur Penjualan",
+  "retur-jual-group": "Retur Penjualan (Paket)",
+  "return-record-void": "Pembatalan Retur",
   "retur-klinik": "Refund Klinik",
   "retur-beli": "Retur Pembelian",
   "faktur-langsung": "Faktur Pembelian Langsung",
+  "kirim-permintaan": "Pengiriman Permintaan Barang",
   "terima-permintaan": "Penerimaan Permintaan Barang",
+  "retur-permintaan": "Sisa Kiriman Kembali ke Gudang",
   manual: "Penyesuaian Manual",
 };
 

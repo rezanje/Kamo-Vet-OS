@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton, AutoPrint } from "@/components/PrintButton";
-import { lineDiscount } from "@/lib/pos-calc";
+import { lineDiscount, linePromoApplied, type CartLine } from "@/lib/pos-calc";
 import { ClearKasirDraft } from "@/components/ClearKasirDraft";
 import { receiptPaymentRows, saleMerchandiseTotal } from "@/lib/sale-payment-reporting";
 
@@ -13,6 +13,15 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 const rp = formatPosMoney;
+
+/** Satu baris struk tersimpan dalam bentuk yang dimengerti lib/pos-calc. */
+type BarisTersimpan = { qty: number; harga: number; item_discount_type: string | null; item_discount_value: number | null; promo_discount?: number | null };
+const barisStruk = (it: BarisTersimpan): CartLine => ({
+  qty: Number(it.qty), harga: Number(it.harga),
+  item_discount_type: (it.item_discount_type as "nominal" | "percent" | null) ?? null,
+  item_discount_value: Number(it.item_discount_value) || 0,
+  promo_discount: Number(it.promo_discount) || 0,
+});
 
 export default async function KasirStrukPage({ params, searchParams }: { params: Promise<{ saleId: string }>; searchParams: Promise<{ print?: string; draft_done?: string }> }) {
   const { saleId } = await params;
@@ -29,7 +38,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   const { data: items } = await supabase
     .from("sale_items")
-    .select("nama, qty, satuan, service_performers, harga, item_discount_type, item_discount_value, promos(name), sale_item_group_components(component_name, qty_per_group, unit, sort_order)")
+    .select("nama, qty, satuan, service_performers, harga, item_discount_type, item_discount_value, promo_discount, promos(name), sale_item_group_components(component_name, qty_per_group, unit, sort_order)")
     .eq("sale_id", saleId).order("created_at");
 
   const cust = one(sale.customers);
@@ -73,8 +82,11 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
         <Hr />
         {(items ?? []).map((it, i) => {
           // Addendum §6: struk breakdown — potongan per item tampil di bawah barisnya.
-          const disc = lineDiscount({ qty: it.qty, harga: it.harga, item_discount_type: it.item_discount_type as "nominal" | "percent" | null, item_discount_value: it.item_discount_value });
-          const promo = one(it.promos as Rel<{ name: string }>);
+          // Potongan promo ikut dihitung: tanpa promo_discount baris yang hanya
+          // kena promo tercetak tanpa potongan, lalu angkanya muncul lagi di
+          // "Diskon transaksi" — pelanggan melihat total benar tapi rincian salah.
+          const disc = lineDiscount(barisStruk(it));
+          const promo = linePromoApplied(barisStruk(it)) > 0 ? one(it.promos as Rel<{ name: string }>) : null;
           const components = ([...((it.sale_item_group_components ?? []) as {
             component_name: string; qty_per_group: number; unit: string; sort_order: number;
           }[])]).sort((a, b) => Number(a.sort_order) - Number(b.sort_order));
@@ -103,7 +115,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
         })}
         <Hr />
         {(() => {
-          const itemDisc = (items ?? []).reduce((a, it) => a + lineDiscount({ qty: it.qty, harga: it.harga, item_discount_type: it.item_discount_type as "nominal" | "percent" | null, item_discount_value: it.item_discount_value }), 0);
+          const itemDisc = (items ?? []).reduce((a, it) => a + lineDiscount(barisStruk(it)), 0);
           const txnDisc = Math.max(0, Number(sale.discount) - itemDisc - Number(sale.poin_digunakan));
           return (
             <>
