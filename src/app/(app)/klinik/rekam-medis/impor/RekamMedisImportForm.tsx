@@ -28,6 +28,10 @@ import {
   saringGandaPotongan,
   sesuaikanBatasPotongan,
   sisakanFolderBelumSelesai,
+  buktikanFolderSelesai,
+  sidikIsiBerkas,
+  sidikIsiFolder,
+  type CatatanFolderSelesai,
   tandaRuangImpor,
   teksProgresImpor,
   tulisTitikSimpan,
@@ -59,10 +63,12 @@ type Antrian = {
   /** Rencana potongan folder berjalan; disimpan supaya jeda-lanjut tidak melewati berkas. */
   potongan: PotonganImporRekamMedis[] | null;
   ruang: string;
-  /** Folder yang sudah tercatat selesai SEBELUM sesi ini; tetap ikut ditulis ulang. */
-  selesaiAwal: string[];
-  /** Folder yang tuntas di sesi ini (tanpa riwayat ditahan/menunggu keputusan). */
-  tuntas: string[];
+  /** Folder yang terbukti selesai SEBELUM sesi ini (sidik isi sama); tetap ikut ditulis ulang. */
+  selesaiAwal: CatatanFolderSelesai;
+  /** Folder yang tuntas di sesi ini (tanpa riwayat ditahan/menunggu keputusan) beserta sidik isinya. */
+  tuntas: CatatanFolderSelesai;
+  /** Sidik isi tiap berkas folder yang sedang diproses, dari byte yang benar-benar diurai. */
+  sidikBerkas: Map<string, string | null>;
   /** Riwayat ditahan atau menunggu keputusan pada folder yang sedang diproses. */
   belumTuntas: number;
   berkasTotal: number;
@@ -187,7 +193,11 @@ export function RekamMedisImportForm() {
       if (!muat.length) return;
 
       const isi = [];
-      for (const berkas of muat) isi.push({ fileName: berkas.nama, sourcePath: berkas.jalur, bytes: await sumber.bacaBerkas(berkas) });
+      for (const berkas of muat) {
+        const bytes = await sumber.bacaBerkas(berkas);
+        antrian.sidikBerkas.set(berkas.jalur, await sidikIsiBerkas(bytes));
+        isi.push({ fileName: berkas.nama, sourcePath: berkas.jalur, bytes });
+      }
       const hasil = await pengurai.urai(isi);
       isi.length = 0;
 
@@ -255,10 +265,10 @@ export function RekamMedisImportForm() {
         const semua = await sumber.daftarFolder();
         if (!semua.length) throw new Error("Folder tidak berisi kartu medis .xlsx.");
         const ruang = tandaRuangImpor(sumber.akar, semua);
-        const sudah = bacaTitikSimpan(penyimpanLokal(), ruang);
-        const sisa = sisakanFolderBelumSelesai(semua, sudah);
+        // Folder tercatat selesai hanya dilewati bila ISINYA terbukti sama (dibaca ulang + SHA-256).
+        const selesaiAwal = await buktikanFolderSelesai(semua, bacaTitikSimpan(penyimpanLokal(), ruang), (berkas) => sumber.bacaBerkas(berkas));
+        const sisa = sisakanFolderBelumSelesai(semua, Object.keys(selesaiAwal));
         sumberRef.current = sumber;
-        const selesaiAwal = semua.filter((folder) => !sisa.includes(folder)).map((folder) => folder.id);
         antrianRef.current = {
           folders: sisa,
           iFolder: 0,
@@ -266,7 +276,8 @@ export function RekamMedisImportForm() {
           potongan: null,
           ruang,
           selesaiAwal,
-          tuntas: [],
+          tuntas: {},
+          sidikBerkas: new Map(),
           belumTuntas: 0,
           berkasTotal: sisa.reduce((jumlah, folder) => jumlah + folder.berkas.length, 0),
           kiriman: null,
@@ -302,13 +313,15 @@ export function RekamMedisImportForm() {
         }
         // Folder dengan riwayat ditahan/menunggu keputusan tidak dicatat selesai, supaya
         // dibaca ulang bila impor dilanjutkan setelah tab tertutup.
-        antrian.tuntas = folderSelesaiTercatat(antrian.tuntas, folder.id, antrian.belumTuntas);
+        const sidikFolder = await sidikIsiFolder(folder.berkas.map((berkas) => ({ jalur: berkas.jalur, sidik: antrian.sidikBerkas.get(berkas.jalur) })));
+        antrian.tuntas = folderSelesaiTercatat(antrian.tuntas, folder.id, sidikFolder, antrian.belumTuntas);
+        antrian.sidikBerkas = new Map();
         antrian.belumTuntas = 0;
         antrian.iFolder += 1;
         antrian.iPotongan = 0;
         antrian.potongan = null;
-        tulisTitikSimpan(penyimpanLokal(), antrian.ruang, [...antrian.selesaiAwal, ...antrian.tuntas]);
-        setFolderSelesai(antrian.selesaiAwal.length + antrian.iFolder);
+        tulisTitikSimpan(penyimpanLokal(), antrian.ruang, { ...antrian.selesaiAwal, ...antrian.tuntas });
+        setFolderSelesai(Object.keys(antrian.selesaiAwal).length + antrian.iFolder);
       }
       penguraiRef.current?.tutup();
       penguraiRef.current = null;

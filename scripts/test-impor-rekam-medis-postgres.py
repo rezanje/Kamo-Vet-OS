@@ -372,60 +372,97 @@ def run_cases(h):
     # ---------------------------------------------------------------- S  parser -> RPC: folder phone 08 vs +62
     # Rows are the REAL parser output for one card imported twice, from folders
     # "Fiktif Satu - 08000000011" and "Fiktif Satu - +62 800-0000-011" (kept in sync by
-    # src/lib/__tests__/impor-rekam-medis-varian-hp-folder.test.ts). The source key embeds the
-    # folder phone digits, so the two keys differ. Correct behaviour: no second visit.
+    # src/lib/__tests__/impor-rekam-medis-varian-hp-folder.test.ts). The stored source keys stay
+    # different (historical contract kept); the database must recognise them as the same card.
     parsed = json.loads((ROOT / 'src/lib/__tests__/fixtures/impor-folder-hp-varian.json').read_text())
-    for case, send in (('S1 bulk path', lambda r: h.bulk([r])[0]['visit_id']), ('S2 per-row path', h.per_row)):
-        h.reset()
-        first_id = send(parsed[0])
-        try:
-            second_id = send(parsed[1])
-            second = 'same visit (sudah ada)' if second_id == first_id else ('ditahan' if second_id is None else 'tersimpan')
-        except RuntimeError as error:
-            second = 'error: ' + str(error).strip().splitlines()[0][:80]
-        visits = int(h.scalar("select count(*) from public.visits where legacy_source_key in ("
-                              + ','.join(q(r['source_key']) for r in parsed) + ")"))
-        check(f'{case}: same card re-imported from a +62 folder after an 08 folder is not saved twice',
-              visits == 1 and second != 'tersimpan',
-              f'keys_differ={parsed[0]["source_key"] != parsed[1]["source_key"]} second={second!r} visits={visits} '
-              f'customers={h.snapshot()["customers"]} pets={h.snapshot()["pets"]}',
-              'source key embeds raw folder phone digits; DB fingerprint is only compared for an identical key')
+    s_keys_all = lambda extra=(): [r['source_key'] for r in parsed] + list(extra)
 
-    # Acceptance criteria for any source-key fix (see docs/handoff-impor-rekmed-fix.md, option C).
     def visits_for(keys):
         return int(h.scalar("select count(*) from public.visits where legacy_source_key in (" + ','.join(q(k) for k in keys) + ")"))
 
-    h.reset()
-    h.bulk([parsed[1]])
-    reverse = statuses(h.bulk([parsed[0]]))[0]
-    check('S3 reverse: card first saved from a +62 folder, then imported from an 08 folder, adds no visit',
-          reverse != 'tersimpan' and visits_for([r['source_key'] for r in parsed]) == 1,
-          f'second={reverse!r} visits={visits_for([r["source_key"] for r in parsed])}',
-          'source key embeds raw folder phone digits; DB fingerprint is only compared for an identical key')
-    h.reset()
-    h.bulk([parsed[0]])
-    edited = h.bulk([dict(parsed[1], diagnosis='Diagnosis diubah fiktif')])[0]
-    check('S4 phone-variant key with changed content is held as a conflict, nothing added or overwritten',
-          edited['status'] == 'ditahan' and 'bentrok' in (edited['reason'] or '') and visits_for([r['source_key'] for r in parsed]) == 1,
-          f'status={edited["status"]!r} visits={visits_for([r["source_key"] for r in parsed])}',
-          'phone-variant key is not recognised as the same card, so the edited content is saved as a new visit')
-    h.reset()
+    def send_bulk(r):
+        out = h.bulk([r])[0]
+        return out['status'], out['visit_id'], out['reason'] or ''
+
+    def send_row(r):
+        try:
+            return 'returned', h.per_row(r), ''
+        except RuntimeError as error:
+            return 'error', None, str(error).strip().splitlines()[0]
+
+    paths = (('bulk', send_bulk), ('per-row', send_row))
+    names = {0: 'existing 08 -> import +62', 1: 'existing +62 -> import 08'}
+    n = 0
+    for first, second in ((0, 1), (1, 0)):
+        for label, send in paths:
+            n += 1
+            h.reset()
+            seeded = send(parsed[first])
+            before = h.snapshot()
+            got = send(parsed[second])
+            same = got[1] is not None and got[1] == seeded[1] and got[0] in ('sudah_ada', 'returned')
+            check(f'S{n} {names[first]}, identical card, {label}: no new visit, the seeded visit is returned',
+                  same and visits_for(s_keys_all()) == 1 and h.snapshot() == before,
+                  f'seeded={seeded[0]} second={got[0]} same_visit={same} visits={visits_for(s_keys_all())}',
+                  'source key embeds raw folder phone digits; DB fingerprint is only compared for an identical key')
+
+    for label, send in paths:
+        n += 1
+        h.reset()
+        send(parsed[0])
+        before = h.snapshot()
+        got = send(dict(parsed[1], diagnosis='Diagnosis diubah fiktif'))
+        check(f'S{n} existing 08 -> import +62 with changed content, {label}: held as a conflict, nothing written',
+              got[1] is None and 'bentrok' in got[2] and h.snapshot() == before and visits_for(s_keys_all()) == 1,
+              f'second={got[0]} reason={got[2][:60]!r} visits={visits_for(s_keys_all())}',
+              'phone-variant key is not recognised as the same card, so the edited content is saved as a new visit')
+
     seed_customer = 'f7000000-0000-4000-8000-000000000301'
-    h.sql(f"insert into public.customers(id,name,phone) values ('{seed_customer}','Fiktif Satu','628000000011');"
-          f"insert into public.pets(id,customer_id,name) values ('f7000000-0000-4000-8000-000000000302','{seed_customer}','Kucing Fiktif');"
-          f"insert into public.visits(branch_id,customer_id,pet_id,poli,status,legacy_source_key) values "
-          f"('{BRANCH}','{seed_customer}','f7000000-0000-4000-8000-000000000302','Poli Umum','Selesai',{q(parsed[1]['source_key'])});")
-    unprovable = h.bulk([parsed[0]])[0]
-    check('S5 legacy +62 visit without a fingerprint, card re-imported from an 08 folder: held, no visit added',
-          unprovable['status'] == 'ditahan' and visits_for([r['source_key'] for r in parsed]) == 1,
-          f'status={unprovable["status"]!r} visits={visits_for([r["source_key"] for r in parsed])}',
-          'phone-variant key is not recognised, so an unprovable legacy card gets a second visit')
-    h.reset()
-    other_sheet = dict(parsed[0], source_key=parsed[0]['source_key'] + ' (2)')
-    separate = statuses(h.bulk([parsed[0]]) + h.bulk([other_sheet]))
-    check('S6 a different card (other sheet) with identical content for the same owner and pet stays a separate visit',
-          separate == ['tersimpan', 'tersimpan'] and visits_for([parsed[0]['source_key'], other_sheet['source_key']]) == 2,
-          f'statuses={separate}', 'distinct cards must not be merged on identical content (rules out option A)')
+    seed_pet = 'f7000000-0000-4000-8000-000000000302'
+
+    def seed_visits(keys_hashes):
+        h.sql(f"insert into public.customers(id,name,phone) values ('{seed_customer}','Fiktif Satu','628000000011');"
+              f"insert into public.pets(id,customer_id,name) values ('{seed_pet}','{seed_customer}','Kucing Fiktif');")
+        for key, with_hash in keys_hashes:
+            hash_sql = f'public.import_legacy_row_hash({lit(parsed[0])})' if with_hash else 'null'
+            h.sql(f"insert into public.visits(branch_id,customer_id,pet_id,poli,status,legacy_source_key,legacy_source_hash) values "
+                  f"('{BRANCH}','{seed_customer}','{seed_pet}','Poli Umum','Selesai',{q(key)},{hash_sql});")
+
+    for label, send in paths:
+        n += 1
+        h.reset()
+        seed_visits([(parsed[1]['source_key'], False)])
+        before = h.snapshot()
+        got = send(parsed[0])
+        check(f'S{n} legacy +62 visit without a fingerprint -> import 08, {label}: held as unprovable, nothing written',
+              got[1] is None and 'belum terbukti' in got[2] and h.snapshot() == before and visits_for(s_keys_all()) == 1,
+              f'second={got[0]} reason={got[2][:60]!r} visits={visits_for(s_keys_all())}',
+              'phone-variant key is not recognised, so an unprovable legacy card gets a second visit')
+
+    variant_0062 = dict(parsed[0], source_key=parsed[0]['source_key'].replace('::08000000011::', '::00628000000011::'), phone='00628000000011')
+    for label, send in paths:
+        for incoming, desc in ((parsed[0], 'exact 08 key'), (variant_0062, '0062 variant')):
+            n += 1
+            h.reset()
+            seed_visits([(parsed[0]['source_key'], True), (parsed[1]['source_key'], True)])
+            before = h.snapshot()
+            got = send(incoming)
+            check(f'S{n} two historical visits already match (08 and +62), import {desc}, {label}: fail closed, nothing picked or written',
+                  got[1] is None and 'ganda di riwayat lama' in got[2] and h.snapshot() == before
+                  and visits_for(s_keys_all([variant_0062['source_key']])) == 2,
+                  f'second={got[0]} reason={got[2][:60]!r} visits={visits_for(s_keys_all([variant_0062["source_key"]]))}',
+                  'an ambiguous historical match must be held, not resolved to one visit or a new one')
+
+    for label, send in paths:
+        n += 1
+        h.reset()
+        send(parsed[0])
+        other_sheet = dict(parsed[1], source_key=parsed[1]['source_key'] + ' (2)')
+        got = send(other_sheet)
+        check(f'S{n} a different source card (other tab, +62 folder) with identical content, {label}: stays a separate visit',
+              got[1] is not None and got[0] in ('tersimpan', 'returned') and visits_for(s_keys_all([other_sheet['source_key']])) == 2,
+              f'second={got[0]} visits={visits_for(s_keys_all([other_sheet["source_key"]]))}',
+              'distinct source cards must not be merged on identical content')
 
     # ---------------------------------------------------------------- N  08 vs +62 (K3 of PR #328)
     h.reset()

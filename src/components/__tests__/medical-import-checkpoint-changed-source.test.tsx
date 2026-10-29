@@ -60,9 +60,16 @@ function kartu(folder: string, isi: string, diubah: number) {
 
 const tombol = (pola: RegExp) => [...host.querySelectorAll('button')].find((item) => pola.test(item.textContent ?? ''));
 
-async function tenang() {
-  for (let kali = 0; kali < 8; kali += 1) await act(async () => { await Promise.resolve(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+/** Tunggu sampai impor berhenti (selesai atau tombol Coba lagi); sidik isi berjalan di luar antrean mikro. */
+async function tenang(batasMs = 3_000) {
+  const mulai = Date.now();
+  do {
+    await act(async () => { await Promise.resolve(); await new Promise((resolve) => setTimeout(resolve, 5)); });
+  } while (!berhenti() && Date.now() - mulai < batasMs);
 }
+
+const berhenti = () => [...host.querySelectorAll('button')].some((item) => /coba lagi/i.test(item.textContent ?? ''))
+  || /selesai/.test(host.querySelector('[role=status]')?.textContent ?? '');
 
 async function pilihDanMulai(berkas: File[]) {
   await act(async () => {
@@ -140,11 +147,10 @@ it('folder selesai yang tidak berubah tetap dilewati saat dilanjutkan', async ()
   expect(terkirim().map((row) => row.diagnosis)).toEqual(['Diagnosis B']);
 });
 
-// BATAS JAMINAN (dibuktikan, belum diperbaiki): tanda ruang hanya melihat jalur, ukuran, dan
-// waktu ubah. Isi yang berubah dengan ukuran DAN waktu ubah sama persis (mis. disalin dengan
-// timestamp dipertahankan) masih melewati folder yang tercatat selesai. `it.fails` lulus selama
-// celah ini ada; begitu sidik isi dipasang, tes ini merah dan `.fails` wajib dicabut.
-it.fails('BATAS: isi berubah dengan ukuran dan waktu ubah sama tetap dikirim ulang (belum terjamin)', async () => {
+// Isi berubah dengan ukuran DAN waktu ubah sama persis (mis. disalin dengan timestamp
+// dipertahankan): metadata tidak bisa membedakannya, jadi folder selesai dibuktikan lewat sidik
+// ISI (SHA-256 byte berkas) sebelum dilewati.
+it('isi berubah dengan ukuran DAN waktu ubah sama tetap dibaca dan dikirim ulang (sidik isi)', async () => {
   fixture.gagalFolder = 'akar/B';
   await act(async () => root!.render(<RekamMedisImportForm />));
   await pilihDanMulai([kartu('A', 'Diagnosis lama', 1_000), kartu('B', 'Diagnosis B', 1_000)]);

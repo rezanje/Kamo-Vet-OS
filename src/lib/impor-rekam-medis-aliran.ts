@@ -169,7 +169,12 @@ export type PenyimpanTitikSimpan = {
   removeItem(key: string): void;
 };
 
-const AWALAN_TITIK_SIMPAN = "kamo.impor-rekam-medis.v1:";
+// v2: catatan folder selesai menyimpan sidik ISI (SHA-256) tiap folder. Catatan v1 (hanya nama
+// folder) tidak dibaca lagi: folder-foldernya diproses ulang dan database membuktikan sudah ada.
+const AWALAN_TITIK_SIMPAN = "kamo.impor-rekam-medis.v2:";
+
+/** Folder yang tercatat selesai -> sidik isi semua berkasnya saat diimpor. */
+export type CatatanFolderSelesai = Record<string, string>;
 
 /**
  * Tanda ruang: pilihan folder yang sama menghasilkan tanda yang sama, beda pilihan beda tanda.
@@ -190,23 +195,23 @@ export function kunciTitikSimpan(ruang: string) {
   return `${AWALAN_TITIK_SIMPAN}${ruang}`;
 }
 
-export function bacaTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefined, ruang: string): string[] {
-  if (!penyimpan) return [];
+export function bacaTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefined, ruang: string): CatatanFolderSelesai {
+  if (!penyimpan) return {};
   try {
     const mentah = penyimpan.getItem(kunciTitikSimpan(ruang));
-    if (!mentah) return [];
-    const isi: unknown = JSON.parse(mentah);
-    if (!isi || typeof isi !== "object" || !Array.isArray((isi as { folderSelesai?: unknown }).folderSelesai)) return [];
-    return (isi as { folderSelesai: unknown[] }).folderSelesai.filter((item): item is string => typeof item === "string");
+    if (!mentah) return {};
+    const selesai: unknown = (JSON.parse(mentah) as { selesai?: unknown } | null)?.selesai;
+    if (!selesai || typeof selesai !== "object" || Array.isArray(selesai)) return {};
+    return Object.fromEntries(Object.entries(selesai).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== ""));
   } catch {
-    return [];
+    return {};
   }
 }
 
-export function tulisTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefined, ruang: string, folderSelesai: readonly string[]) {
+export function tulisTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefined, ruang: string, selesai: CatatanFolderSelesai) {
   if (!penyimpan) return;
   try {
-    penyimpan.setItem(kunciTitikSimpan(ruang), JSON.stringify({ folderSelesai: [...folderSelesai], diperbarui: new Date().toISOString() }));
+    penyimpan.setItem(kunciTitikSimpan(ruang), JSON.stringify({ selesai, diperbarui: new Date().toISOString() }));
   } catch {
     // Kuota penyimpanan penuh bukan alasan menghentikan impor; lanjut tanpa titik simpan.
   }
@@ -221,23 +226,73 @@ export function hapusTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefi
   }
 }
 
-/** Folder yang sudah tercatat selesai dilewati tanpa dibaca; sisanya tetap dicek ke database. */
+/** Folder yang terbukti selesai dilewati tanpa diurai; sisanya diproses dan dicek ke database. */
 export function sisakanFolderBelumSelesai(folders: readonly FolderImporRekamMedis[], selesai: readonly string[]) {
   const sudah = new Set(selesai);
   return folders.filter((folder) => !sudah.has(folder.id));
 }
 
+function heksa(bytes: ArrayBuffer) {
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** SHA-256 isi berkas; null bila browser tidak menyediakan Web Crypto (folder tidak akan dilewati). */
+export async function sidikIsiBerkas(bytes: Uint8Array): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null;
+  try {
+    return heksa(await subtle.digest("SHA-256", bytes as BufferSource));
+  } catch {
+    return null;
+  }
+}
+
+/** Sidik isi satu folder dari sidik semua berkasnya; null bila ada berkas tanpa sidik. */
+export async function sidikIsiFolder(berkas: ReadonlyArray<{ jalur: string; sidik: string | null | undefined }>): Promise<string | null> {
+  if (!berkas.length || berkas.some((item) => !item.sidik)) return null;
+  const teks = JSON.stringify(berkas.map((item) => [item.jalur, item.sidik]).sort());
+  return sidikIsiBerkas(new TextEncoder().encode(teks));
+}
+
 /**
- * Daftar folder selesai yang boleh ditulis ke titik simpan setelah satu folder diproses.
+ * Revalidasi titik simpan berbasis ISI: folder yang tercatat selesai dibaca ulang byte-nya
+ * (tanpa diurai dan tanpa dikirim) lalu di-hash. Hanya folder yang sidik isinya SAMA PERSIS
+ * dengan saat diimpor yang boleh dilewati; folder lain diproses ulang dan database yang
+ * membuktikan sudah ada atau menahan bentrok. Ukuran dan waktu ubah tidak dipercaya.
+ */
+export async function buktikanFolderSelesai(
+  folders: readonly FolderImporRekamMedis[],
+  catatan: CatatanFolderSelesai,
+  baca: (berkas: FolderImporRekamMedis["berkas"][number]) => Promise<Uint8Array>,
+): Promise<CatatanFolderSelesai> {
+  const terbukti: CatatanFolderSelesai = {};
+  for (const folder of folders) {
+    const tercatat = catatan[folder.id];
+    if (!tercatat) continue;
+    const berkas = [];
+    for (const item of folder.berkas) berkas.push({ jalur: item.jalur, sidik: await sidikIsiBerkas(await baca(item)) });
+    if ((await sidikIsiFolder(berkas)) === tercatat) terbukti[folder.id] = tercatat;
+  }
+  return terbukti;
+}
+
+/**
+ * Catatan folder selesai yang boleh ditulis ke titik simpan setelah satu folder diproses.
  *
  * Folder yang masih punya riwayat ditahan atau menunggu keputusan TIDAK dicatat selesai:
  * catatan ditahan hanya ada di memori tab, jadi bila tab tertutup, folder itu harus dibaca
- * ulang saat dilanjutkan. Riwayat yang sudah tersimpan tidak tergandakan karena database
- * hanya menerima kiriman ulang yang isinya terbukti identik.
+ * ulang saat dilanjutkan. Folder tanpa sidik isi juga tidak dicatat (tidak bisa dibuktikan
+ * sama nanti). Riwayat yang sudah tersimpan tidak tergandakan karena database hanya
+ * menerima kiriman ulang yang isinya terbukti identik.
  */
-export function folderSelesaiTercatat(sebelumnya: readonly string[], folderId: string, belumTuntas: number): string[] {
-  if (belumTuntas > 0 || sebelumnya.includes(folderId)) return [...sebelumnya];
-  return [...sebelumnya, folderId];
+export function folderSelesaiTercatat(
+  sebelumnya: CatatanFolderSelesai,
+  folderId: string,
+  sidik: string | null,
+  belumTuntas: number,
+): CatatanFolderSelesai {
+  if (belumTuntas > 0 || !sidik) return { ...sebelumnya };
+  return { ...sebelumnya, [folderId]: sidik };
 }
 
 // ---------------------------------------------------------------------------

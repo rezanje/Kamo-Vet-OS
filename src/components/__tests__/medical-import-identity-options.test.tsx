@@ -51,7 +51,7 @@ vi.mock('@/lib/impor-rekam-medis-pengurai', () => ({
 }));
 
 import { RekamMedisImportForm } from '@/app/(app)/klinik/rekam-medis/impor/RekamMedisImportForm';
-import { kunciTitikSimpan, tandaRuangImpor } from '@/lib/impor-rekam-medis-aliran';
+import { kunciTitikSimpan, sidikIsiBerkas, sidikIsiFolder, tandaRuangImpor } from '@/lib/impor-rekam-medis-aliran';
 import { sumberFolderLokal } from '@/lib/impor-rekam-medis-sumber';
 
 let root: Root | undefined;
@@ -67,9 +67,16 @@ function kartu(nama: string, folder: string) {
 
 const tombol = (pola: RegExp) => [...host.querySelectorAll('button')].find((item) => pola.test(item.textContent ?? ''));
 
-async function tenang(putaran = 6) {
-  for (let kali = 0; kali < putaran; kali += 1) await act(async () => { await Promise.resolve(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+/** Tunggu sampai impor berhenti (selesai atau tombol Coba lagi); sidik isi berjalan di luar antrean mikro. */
+async function tenang(batasMs = 3_000) {
+  const mulai = Date.now();
+  do {
+    await act(async () => { await Promise.resolve(); await new Promise((resolve) => setTimeout(resolve, 5)); });
+  } while (!berhenti() && Date.now() - mulai < batasMs);
 }
+
+const berhenti = () => [...host.querySelectorAll('button')].some((item) => /coba lagi/i.test(item.textContent ?? ''))
+  || /selesai/.test(host.querySelector('[role=status]')?.textContent ?? '');
 
 async function pilihDanMulai(berkas: File[]) {
   await act(async () => {
@@ -147,11 +154,13 @@ it('menampilkan kemajuan per folder beserta hitungan hasilnya dan tidak berhenti
 it('melewati folder yang sudah selesai saat folder yang sama dipilih ulang setelah terputus', async () => {
   await act(async () => root!.render(<RekamMedisImportForm />));
   const berkas = [kartu('A.xlsx', 'Owner A - 0801'), kartu('B.xlsx', 'Owner B - 0802')];
-  // Tanda ruang dihitung dari berkas yang sama (jalur, ukuran, waktu ubah), seperti tab sebelumnya.
+  // Titik simpan seperti yang ditulis tab sebelumnya: tanda ruang dari berkas yang sama dan
+  // sidik ISI folder A yang sudah diimpor.
   const ruang = tandaRuangImpor('akar', await sumberFolderLokal(berkas).daftarFolder());
+  const sidikA = await sidikIsiFolder([{ jalur: 'akar/Owner A - 0801/A.xlsx', sidik: await sidikIsiBerkas(new TextEncoder().encode('fictional')) }]);
   window.localStorage.setItem(
     kunciTitikSimpan(ruang),
-    JSON.stringify({ folderSelesai: ['akar/Owner A - 0801'], diperbarui: '2026-10-29T00:00:00.000Z' }),
+    JSON.stringify({ selesai: { 'akar/Owner A - 0801': sidikA }, diperbarui: '2026-10-29T00:00:00.000Z' }),
   );
   await pilihDanMulai(berkas);
   expect(fixture.potongan).toHaveLength(1);

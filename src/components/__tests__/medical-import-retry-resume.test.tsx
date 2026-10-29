@@ -84,9 +84,22 @@ function kartu(nama: string, folder: string) {
 const tombol = (pola: RegExp) => [...host.querySelectorAll('button')].find((item) => pola.test(item.textContent ?? ''));
 const status = () => host.querySelector('[role=status]')!.textContent ?? '';
 
-/** Majukan jam tiruan melewati seluruh jeda kirim ulang (800+1600+3200 ms). */
-async function tunggu(ms = 10_000) {
-  await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+const berhenti = () => Boolean(tombol(/coba lagi/i)) || /selesai/.test(host.querySelector('[role=status]')?.textContent ?? '');
+
+/**
+ * Majukan jam tiruan (jeda kirim ulang 800+1600+3200 ms) sampai impor berhenti -- gagal (tombol
+ * Coba lagi) atau selesai. Sidik isi (Web Crypto) selesai di luar antrean mikro, jadi tiap putaran
+ * juga memberi giliran event loop sungguhan; batas putaran mencegah tes menggantung.
+ */
+async function tunggu() {
+  for (let putaran = 0; putaran < 4_000; putaran += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+      await new Promise((resolve) => setImmediate(resolve));
+    });
+    if (berhenti()) return;
+  }
+  throw new Error('Impor tidak berhenti (gagal/selesai) dalam batas waktu tes.');
 }
 
 async function klik(pola: RegExp) {
@@ -119,7 +132,7 @@ async function pilihDanMulai() {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   fixture.barisPerBerkas = 3;
   fixture.gagalBerikut = 0;
   fixture.gagalMulaiPanggilan = 0;

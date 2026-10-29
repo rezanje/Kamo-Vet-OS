@@ -1,7 +1,7 @@
 # Serah-terima: tiga perbaikan impor rekam medis (temuan harness PR #328)
 
-Status: **draft PR siap direview (Claude Code, 29 Okt 2026).** Belum merge/deploy, migrasi belum
-dipasang di DB mana pun selain Postgres sekali-pakai. Dilanjutkan dari commit Hermes `3be71767`
+Status: **draft PR siap direview (Claude Code, 29 Okt 2026).** Belum merge/deploy, kedua migrasi
+(`20261101090000`, `20261101100000`) belum dipasang di DB mana pun selain Postgres sekali-pakai. Dilanjutkan dari commit Hermes `3be71767`
 (branch `hermes/impor-rekmed-fix`), tidak dibuat ulang dari main.
 
 ## Dasar & batas (dari Reza, via Wowo)
@@ -46,132 +46,126 @@ dipasang di DB mana pun selain Postgres sekali-pakai. Dilanjutkan dari commit He
   sukses lalu kiriman berikutnya gagal, hitungan "tersimpan" kiriman pertama tidak ditampilkan; saat
   dicoba lagi baris itu dijawab "sudah ada" oleh database.
 
-## Temuan review independen #2: jejak sumber dari folder "08.." vs "+62.." (TERBUKTI, BELUM DIUBAH)
-- `identityFromPath` (`src/lib/impor-rekam-medis.ts`) hanya membuang non-digit dari nomor di nama folder,
-  dan `sourceKey` memakai digit itu apa adanya. Kartu yang sama, diimpor di dua sesi terpisah dari folder
-  `Fiktif Satu - 08000000011` lalu `Fiktif Satu - +62 800-0000-011`, menghasilkan jejak
-  `fiktif satu::08000000011::…` dan `fiktif satu::628000000011::…`. Database hanya membandingkan sidik isi
-  bila jejaknya sama, jadi kartu kedua **tersimpan lagi**.
-- Bukti parser → RPC: `src/lib/__tests__/impor-rekam-medis-varian-hp-folder.test.ts` memastikan fixture
-  `src/lib/__tests__/fixtures/impor-folder-hp-varian.json` = keluaran parser sungguhan dari xlsx fiktif;
-  harness kasus **S1 (massal) dan S2 (per baris) FAIL**: 2 kunjungan, 1 pelanggan, 1 anabul — riwayat
-  medis tercatat ganda pada pasien yang sama. Dalam SATU sesi impor, penyaring ganda tab sudah memakai HP
-  kanonik, jadi ganda hanya terjadi lintas sesi.
-- Harness sengaja dibiarkan FAIL untuk temuan ini (harapan = perilaku benar; kegagalan = temuan terbuka).
-- **Tidak ada klaim soal isi Production.** Pra-cek "0 kunjungan impor" dari 29 Okt adalah catatan lama
-  Hermes, tidak dicek ulang; rancangan di bawah tidak bergantung padanya.
+## Temuan review independen #2: jejak sumber dari folder "08.." vs "+62.." (DIPERBAIKI, opsi C)
+- **Masalah (terbukti):** `identityFromPath` (`src/lib/impor-rekam-medis.ts`) hanya membuang non-digit dari
+  nomor di nama folder, dan `sourceKey` memakai digit itu apa adanya. Kartu yang sama, diimpor di dua sesi
+  dari folder `Fiktif Satu - 08000000011` lalu `Fiktif Satu - +62 800-0000-011`, mendapat jejak
+  `fiktif satu::08000000011::…` dan `fiktif satu::628000000011::…`; sidik isi hanya dibandingkan untuk
+  jejak yang sama, jadi kartu kedua tersimpan lagi (2 kunjungan, 1 pelanggan, 1 anabul).
+- **Keputusan koordinasi:** opsi C. Opsi A (menyatukan kartu berbeda yang isinya identik) dan B (format jejak
+  baru, bergantung data historis kosong) ditolak. Tidak ada klaim/pengecekan isi Production.
+- **Implementasi:** migrasi baru `supabase/migrations/20261101100000_impor_jejak_setara.sql` (draft, belum
+  dipasang di mana pun selain Postgres sekali-pakai). Parser dan aplikasi TIDAK diubah; jejak tersimpan dan
+  jejak baru tetap teks mentahnya; tidak ada backfill, UPDATE, DELETE, atau penggabungan pelanggan/kunjungan.
 
-### Kriteria terima (harness, berlaku untuk opsi apa pun)
-| Kasus | Harapan | Kode PR sekarang |
+### Asumsi struktur jejak (eksplisit)
+Dari `rowFromCard`:
+1. Jejak **berstruktur** = tepat 4 bagian dipisah `::` —
+   `kunciTeks(pemilik) :: digit HP folder :: kunciTeks(pasien/nama berkas) :: kunciTeks(nama tab)`.
+   `kunciTeks` membuang `.` dan `:`, jadi bagian 1, 3, 4 tidak pernah memuat `::`; bagian 2 hanya digit.
+2. Jejak **cadangan** `nama berkas::nama tab` (kartu di luar folder pemilik) = 2 bagian, tidak pernah
+   dianggap setara dengan jejak lain; tetap hanya cocok persis.
+3. Dua jejak berstruktur **setara** bila bagian 1, 3, 4 sama persis dan bagian 2 sama menurut
+   `indonesian_phone_key` (08.. / 62.. / 0062..). Pemilik, pasien/berkas, atau tab berbeda = kartu sumber
+   berbeda, walau isinya identik → tidak digabung.
+4. Varian hanya dicari bila HP kanonik di jejak = HP kanonik baris yang dikirim (parser selalu mengisi HP
+   baris dari folder yang sama). Kunci identitas HP yang dipegang pemanggil karena itu melindungi semua
+   varian jejaknya. Baris yang tidak memenuhi ini hanya dicocokkan persis.
+5. Risiko sisa yang diterima: nama berkas yang memuat `::` (mustahil di Windows) dengan bagian kedua berupa
+   digit bisa terbaca berstruktur; itu pun hanya setara dengan jejak yang sama persis selain nomor HP.
+
+### Aturan hasil
+| Kecocokan riwayat (persis + setara) | Hasil | Menulis? |
 |---|---|---|
-| S1/S2 | kartu dari folder `08..` lalu `+62..` (massal / per baris): tidak menambah kunjungan | FAIL (2 kunjungan) |
-| S3 | arah sebaliknya, `+62..` lalu `08..`: tidak menambah kunjungan | FAIL |
-| S4 | jejak varian HP + isi diubah: `ditahan` bentrok, tidak menimpa, tidak menambah | FAIL (tersimpan) |
-| S5 | riwayat lama `+62..` tanpa sidik, lalu impor `08..`: `ditahan`, tidak menambah | FAIL |
-| S6 | kartu berbeda (tab lain) yang isinya kebetulan identik, pemilik+anabul sama: tetap 2 kunjungan | PASS |
-| C9 | `08..` dan `+62..` diimpor BERSAMAAN (massal): 1 kunjungan | FAIL |
-| C10 | sama, jalur per baris: 1 kunjungan | FAIL |
+| tidak ada | dibuat baru | ya |
+| tepat 1, sidik identik | `sudah_ada` (kunjungan lama dikembalikan) | tidak |
+| tepat 1, sidik beda | `ditahan` — bentrok | tidak |
+| tepat 1, tanpa sidik (riwayat lama) | `ditahan` — belum terbukti | tidak |
+| **lebih dari 1** (data lama sudah ganda) | `ditahan` — "jejak sumber ganda di riwayat lama", **gagal tertutup** | tidak |
 
-S6 sengaja menolak opsi A (A akan menggabungkan dua kartu berbeda yang isinya identik). Opsi A tidak
-dijalankan tanpa keputusan.
+### Bagian database yang berubah
+1. `import_legacy_source_key_canonical(jejak)` — SQL, IMMUTABLE, `search_path=''`. Bagian HP jejak berstruktur
+   dikanonikkan; selain itu dikembalikan apa adanya. Hanya untuk mencocokkan.
+2. Indeks ekspresi **tidak unik**, parsial `where legacy_source_key is not null`:
+   `visits_legacy_source_key_canonical_idx`. Tidak unik supaya data lama yang mungkin sudah memuat dua varian
+   tidak memaksa backfill/penggabungan. Dibangun di dalam transaksi migrasi → menahan tulis ke `visits`
+   selama pembangunan (lamanya bergantung ukuran tabel; tidak kami cek).
+3. `import_legacy_source_match(jejak, hp)` — plpgsql, STABLE, SECURITY INVOKER: semua kunjungan yang cocok
+   (setara bila berstruktur & HP sama, selain itu persis).
+4. `import_legacy_source_ambiguous_reason()` — teks alasan gagal tertutup.
+5. `import_legacy_medical_records_bulk` dan `import_legacy_medical_record_resolved` diganti (`create or
+   replace`): kedua titik cari jejak di massal (biasa + jalur pengecualian/balapan) dan titik cari di per
+   baris memakai fungsi pencocokan + aturan di atas. Pra-cek gagal tertutup bila fungsi yang ditimpa bukan
+   versi `20261101090000`; pasca-cek memastikan bentuk kanonik, hitungan pemakaian pencocokan di massal,
+   aturan `> 1`, dan urutan kunci di per baris.
 
-### Rincian opsi C (disarankan) — BELUM diimplementasikan di PR
-Prototipe: `docs/usulan/impor-jejak-setara-opsi-c.prototipe.sql` (bukan migrasi; hanya dipasang sementara
-di Postgres sekali-pakai). Hasil: **41/41 PASS** di PG 17.10, termasuk S1–S6, C9, C10, dan semua kasus
-lama. Uji mutasi: tanpa memindahkan kunci ke sebelum pencarian (lihat "Kunci") → C10 FAIL; jadi urutan
-kunci itu wajib, bukan hiasan.
+### Kunci (lock)
+- **Massal:** tidak berubah — semua kunci identitas HP diambil terurut di awal. Karena varian hanya dicari
+  bila HP jejak = HP baris, varian 08/62 kartu yang sama selalu berbagi kunci yang sudah dipegang. Urutan
+  kunci sama → tidak ada deadlock baru (C7 lulus).
+- **Per baris:** `customer_identity_lock(p_phone)` sekarang diambil **sebelum** mencari jejak (dulu sesudah).
+  Varian jejak tidak dijaga indeks unik, jadi tanpa ini dua sesi bisa sama-sama tidak melihat varian lawan.
+  Akibat samping: kiriman ulang identik menunggu impor lain untuk HP yang sama selesai.
 
-Apa yang TIDAK berubah: jejak tersimpan (`visits.legacy_source_key`) tetap teks mentah apa adanya; jejak
-baru juga tetap format lama (parser tidak diubah); indeks unik jejak tetap; tidak ada backfill, UPDATE, DELETE,
-atau penggabungan; sidik isi tetap sama; tidak ada perubahan aplikasi yang wajib.
+### Keamanan
+- Tidak ada fungsi SECURITY DEFINER baru; pencarian berjalan dengan RLS pemanggil, sama seperti pencarian
+  persis sebelumnya. Gerbang OWNER/ADMIN pada impor tidak berubah.
+- `import_legacy_source_key_canonical`: revoke `public, anon`; grant `authenticated, service_role` — wajib,
+  karena pemeliharaan indeks ekspresi saat insert `visits` berjejak memeriksa hak EXECUTE peran penulis.
+  Kunjungan klinik biasa (tanpa jejak) tidak menghitungnya karena indeks parsial.
+- `import_legacy_source_match`, `import_legacy_source_ambiguous_reason`: revoke `public, anon`; grant `authenticated`.
 
-Bagian database yang berubah:
-1. Fungsi baru `import_legacy_source_key_canonical(jejak)` (SQL, IMMUTABLE, `search_path=''`): bila jejak
-   bergaya folder (tepat 4 bagian `pemilik::digitHP::pasien::tab`, bagian ke-2 digit saja), bagian HP diganti
-   `indonesian_phone_key`; selain itu jejak dikembalikan apa adanya. Bagian nama/pasien/tab tidak bisa
-   memuat `::` (parser membuang `.` dan `:`), jadi pemisahan aman. Jejak cadangan `berkas::tab` (kartu di
-   luar folder pemilik) tidak punya bagian HP → hanya cocok persis seperti sekarang.
-2. Indeks ekspresi baru, **tidak unik**, parsial `where legacy_source_key is not null` pada
-   `visits(import_legacy_source_key_canonical(legacy_source_key))`. Tidak unik karena data lama mungkin
-   sudah memuat dua varian; unik akan memaksa backfill/penggabungan. Dibangun dalam transaksi migrasi →
-   menahan tulis ke `visits` selama pembangunan; lamanya bergantung ukuran tabel di Production (tidak kami
-   ketahui). Alternatif: `create index concurrently` sebagai langkah terpisah sebelum migrasi fungsi.
-3. Fungsi baru `import_legacy_source_match(jejak, sidik, hp)` (plpgsql, STABLE, SECURITY INVOKER):
-   cocok persis dulu; bila tidak ada, cari jejak setara — **hanya** bila HP kanonik di jejak = HP kanonik
-   baris (jadi kunci identitas HP yang dipegang pemanggil juga melindungi semua varian jejaknya). Urutan
-   hasil: sidik identik dulu.
-4. Kedua RPC impor (`import_legacy_medical_records_bulk`, `import_legacy_medical_record_resolved`) memakai
-   fungsi pencocokan itu di semua titik cari jejak (termasuk jalur pengecualian/balapan massal). Aturan
-   tetap: sidik identik → `sudah_ada` (kunjungan lama dikembalikan, tidak ditulis apa pun); ada kecocokan
-   tetapi sidik beda → `ditahan` bentrok; kecocokan tanpa sidik → `ditahan` belum terbukti; tidak ada → buat
-   baru. Bila data lama punya beberapa varian setara, tidak ada yang digabung: satu yang identik → sudah ada,
-   tidak ada yang identik → ditahan.
+### Bukti (harness, data fiktif, PG 17.10 + 16.15: 49/49 PASS)
+Baris S = keluaran parser sungguhan (`src/lib/__tests__/impor-rekam-medis-varian-hp-folder.test.ts` menjaga
+fixture `impor-folder-hp-varian.json` tetap sama dengan parser).
+| Kasus | Skenario | Jalur |
+|---|---|---|
+| S1–S4 | riwayat ada 08 → impor +62, dan riwayat ada +62 → impor 08; isi sama: tidak ada kunjungan baru, kunjungan lama dikembalikan | massal + per baris |
+| S5–S6 | varian + isi diubah: ditahan bentrok, tidak ada yang ditulis | massal + per baris |
+| S7–S8 | riwayat lama +62 tanpa sidik → impor 08: ditahan belum terbukti | massal + per baris |
+| S9–S12 | sudah ada DUA riwayat (08 dan +62) → impor jejak 08 persis atau varian 0062: gagal tertutup, tidak memilih, tidak menulis | massal + per baris |
+| S13–S14 | kartu sumber berbeda (tab lain, folder +62) dengan isi identik: tetap kunjungan terpisah | massal + per baris |
+| C9–C10 | 08 dan +62 diimpor bersamaan: 1 kunjungan | massal + per baris |
 
-Kunci (lock):
-- Massal: tidak berubah — semua kunci identitas HP diambil terurut di awal; alias hanya dipakai bila HP
-  jejak = HP baris, jadi varian `08/62` dari kartu yang sama selalu berbagi kunci yang sudah dipegang.
-  Urutan kunci sama → tidak ada deadlock baru (C7 tetap lulus).
-- Per baris: `customer_identity_lock(p_phone)` dipindah ke SEBELUM pencarian jejak (sekarang sesudah).
-  Tanpa ini dua sesi bisa sama-sama tidak melihat varian lawan (C10 terbukti). Akibat samping: kiriman
-  ulang identik menunggu impor lain untuk HP yang sama selesai (benar dan singkat).
-- Varian jejak tidak dijaga indeks unik, jadi kebenaran bersamaan bergantung pada kunci HP di atas;
-  harness C9/C10 adalah penjaganya.
+Uji mutasi (migrasi dirusak sementara, pasca-cek dimatikan khusus mutan, lalu dipulihkan):
+tanpa pencarian setara → 14 FAIL (S1–S12, C9, C10); memilih kecocokan pertama → S9–S12 FAIL; kunci per
+baris sesudah pencarian → C10 FAIL. Dengan pasca-cek aktif, mutan urutan kunci ditolak saat migrasi.
 
-Keamanan:
-- Tidak ada fungsi SECURITY DEFINER baru; pencarian berjalan dengan RLS pemanggil seperti pencarian persis
-  sekarang. Gerbang OWNER/ADMIN pada impor tidak berubah.
-- `import_legacy_source_key_canonical`: revoke `public, anon`; grant `authenticated, service_role` — WAJIB,
-  karena pemeliharaan indeks ekspresi saat insert `visits` berjejak memeriksa hak EXECUTE peran penulis
-  (sudah dibuktikan dengan probe pada fungsi kunci HP). Kunjungan klinik biasa (tanpa jejak) tidak
-  memanggilnya karena indeks parsial.
-- `import_legacy_source_match`: revoke `public, anon`; grant `authenticated`.
+Batas yang tersisa: tampilan aplikasi. Pemindaian identitas di aplikasi masih mencocokkan jejak secara
+persis, jadi kartu varian dihitung "baru" sebelum dikirim; database tetap menjawab `sudah_ada`/`ditahan`
+dengan benar, dan di jalur per baris pesan "N riwayat baru berhasil disimpan" bisa ikut menghitung kartu yang
+ternyata sudah ada. Data benar; hitungan layar bisa lebih besar.
 
-Aplikasi: tidak wajib berubah. Opsional: pemindaian identitas (`import_legacy_identity_scan`) ikut
-melaporkan jejak setara sebagai "tercatat" supaya hitungan di layar tepat dan baris itu tidak memicu
-pertanyaan identitas yang tidak perlu (hasil akhir tetap benar tanpa ini).
-
-Opsi lain sebagai pembanding: **A** menggabungkan kartu berbeda yang isinya identik (gagal S6) — butuh
-keputusan bisnis. **B** (jejak baru pakai HP kanonik di parser) mengubah kontrak jejak: kartu yang dulu
-tersimpan dengan jejak `62..` akan mendapat jejak baru dan tercatat ganda saat diimpor ulang, kecuali
-digabung dengan C; keamanannya bergantung pada isi Production yang tidak kami cek.
-
-## Temuan review independen #3: titik simpan melewati folder yang isinya berubah (diperbaiki)
-- `tandaRuangImpor` hanya memakai akar + jumlah folder + jumlah berkas + total byte. Bila kartu di folder
-  yang sudah tercatat selesai diedit setelah impor terputus dan ukurannya sama, folder itu dilewati tanpa
-  dibaca, sehingga editan tidak pernah sampai ke pemeriksaan sidik/bentrok di database.
-- Perbaikan minimum (deteksi sumber berubah): sumber lokal mencatat waktu ubah tiap berkas (`diubah`),
-  dan tanda ruang memuat sidik (jalur, ukuran, waktu ubah) semua berkas. Satu berkas berubah → tanda beda →
-  titik simpan lama tidak dipakai → semua folder dibaca ulang; database menjawab `sudah_ada` untuk yang
-  sama dan menahan yang bentrok. Format titik simpan tidak berubah; titik simpan lama cukup tidak terpakai.
-- Tes: `src/components/__tests__/medical-import-checkpoint-changed-source.test.tsx` (kartu A diedit, isi
-  beda panjang sama, waktu ubah beda → wajib dikirim ulang; folder tak berubah tetap dilewati) dan unit
-  `tandaRuangImpor` di `impor-rekam-medis-aliran.test.ts`. Gagal di kode lama, lulus sesudahnya.
-  Tes lama "melewati folder yang sudah selesai" kini menghitung tanda dari berkas yang sama (bukan string
-  tetap), maksud tesnya tidak berubah.
-- **Batas jaminan (dibuktikan, belum diperbaiki):** isi yang berubah dengan ukuran DAN waktu ubah sama
-  persis — misalnya disalin/dipulihkan dengan timestamp dipertahankan — **masih melewati titik simpan**.
-  Tes `it.fails` "BATAS: …" di berkas tes yang sama membuktikannya (assertion biasa gagal: editan tidak
-  dikirim); begitu celah ditutup, tes itu merah dan `.fails` wajib dicabut. Jadi perbaikan #3 TIDAK menjamin
-  semua sumber berubah terdeteksi; ia hanya menangkap perubahan yang mengubah ukuran atau waktu ubah.
-- Usulan perlakuan minimum aman (belum dikerjakan, pilih satu):
-  - **Sidik isi per folder (disarankan):** saat folder tuntas, simpan di titik simpan SHA-256 (Web Crypto)
-    dari byte semua berkasnya — byte itu memang sudah dibaca saat impor. Saat dilanjutkan, folder yang
-    tercatat selesai dibaca byte-nya lagi dan di-hash (tanpa mengurai, tanpa kirim); dilewati hanya bila
-    sidik sama, selain itu diproses ulang dan database yang membuktikan. Biaya: membaca ulang byte folder
-    selesai dari disk lokal. Jaminan: perubahan isi apa pun terdeteksi (selain tabrakan SHA-256).
-  - **Tanpa lewati:** hapus fitur lewati folder selesai; semua folder diurai dan dikirim ulang, database
-    menjawab `sudah_ada`/bentrok. Paling sederhana dan paling kuat, tetapi melanjutkan impor besar jadi
-    selama impor dari awal.
-- Sumber Google Drive nanti wajib mengisi `diubah` (dan sidik isi bila usulan pertama dipakai).
+## Temuan review independen #3: titik simpan melewati folder yang isinya berubah (DIPERBAIKI, berbasis isi)
+- **Masalah:** folder yang tercatat selesai dilewati tanpa dibaca. Tanda ruang awal hanya memakai akar +
+  jumlah folder + jumlah berkas + total byte; tambahan waktu ubah (commit `5754eeef`) tetap tidak cukup:
+  isi yang berubah dengan ukuran DAN waktu ubah sama (mis. disalin dengan timestamp dipertahankan) terbukti
+  masih dilewati (tes `it.fails` di commit `473cc6b7`).
+- **Perbaikan:** titik simpan v2 menyimpan, untuk tiap folder tuntas, **SHA-256 isi** semua berkasnya —
+  dihitung dari byte yang benar-benar diurai dan dikirim. Saat dilanjutkan, folder tercatat dibaca ulang
+  byte-nya dan di-hash (tanpa mengurai, tanpa mengirim); hanya folder yang sidik isinya SAMA PERSIS yang
+  dilewati. Folder lain diproses ulang dan database membuktikan: kartu identik `sudah_ada`, kartu berubah
+  `ditahan` bentrok (idempoten). Metadata (ukuran, waktu ubah) tidak lagi dipercaya untuk melewati folder.
+- Catatan titik simpan lama (v1, hanya nama folder) tidak dibaca → semua folder diproses ulang sekali (aman).
+  Browser tanpa Web Crypto (konteks tidak aman) → tidak ada sidik → tidak ada folder yang dilewati (aman, lebih
+  lambat). Folder dengan riwayat ditahan/menunggu keputusan tetap tidak dicatat selesai.
+- Tes (gagal di kode lama/mutan, lulus sekarang): komponen "isi berubah dengan ukuran DAN waktu ubah sama tetap
+  dibaca dan dikirim ulang" (dulu `it.fails`), folder tak berubah tetap dilewati, unit `buktikanFolderSelesai`
+  (isi beda panjang sama → tidak terbukti; folder tanpa catatan tidak dibaca), `sidikIsiFolder` (jalur ikut,
+  berkas tanpa sidik → null), bentuk v1 ditolak. Mutan "percayai catatan tanpa membandingkan sidik" → 2 FAIL.
+- **Batas jaminan:** deteksi berbasis isi SHA-256 (tabrakan diabaikan). Biaya: saat melanjutkan, byte folder
+  yang tercatat selesai dibaca ulang dari disk sebelum impor jalan (tanpa indikator khusus di layar). Coba lagi
+  di tab yang SAMA tidak membaca ulang folder yang sudah tuntas di sesi itu — folder itu sudah diimpor dari
+  byte yang di-hash; editan sesudahnya diperlakukan seperti editan setelah impor (terdeteksi saat diimpor ulang).
+- Tes komponen impor kini menunggu sampai impor berhenti (selesai/Coba lagi) dengan batas waktu, bukan
+  jumlah putaran tetap, karena SHA-256 berjalan di luar antrean mikro.
 
 ## Hasil tes (head draft PR)
-- Harness `scripts/test-impor-rekam-medis-postgres.py --pg-bin <dir>`: **34 PASS, 7 FAIL, 0 BLOCKED** di
-  PostgreSQL 17.10. Ketujuh FAIL = kriteria terima temuan #2 (S1–S5, C9, C10) yang sengaja dibiarkan
-  terbuka. Semua kasus lain (P/R/U/K/X/N/A/C1–C8/S6/Z) lulus stabil. Dengan prototipe opsi C dipasang
-  sementara: 41/41 PASS. 319 migrasi repo teraplikasi.
+- Harness `scripts/test-impor-rekam-medis-postgres.py --pg-bin <dir>`: **49/49 PASS, 0 FAIL, 0 BLOCKED** di
+  PostgreSQL 17.10 (2×) dan 16.15; 320 migrasi repo teraplikasi.
 - Uji mutasi (fix sengaja dirusak sementara, lalu dipulihkan): tanpa kunci identitas di registrasi →
   C3/C4/C6 FAIL; tanpa cek sidik per baris → X3 FAIL. Harness memang menangkap regresi.
-- `npm test` penuh: 605 berkas / 4655 tes lulus + 1 `it.fails` (batas titik simpan) (1 di-skip lama).
+- `npm test` penuh: 605 berkas / 4658 tes lulus (1 di-skip lama). Tes impor terarah 3× berturut-turut stabil.
 - `npm run lint`: 0 error (14 warning `<img>` yang sudah ada, bukan di berkas yang diubah).
 - `npx tsc --noEmit` (heap 4 GB): lulus.
 - `npm run build` (heap 6 GB): lulus. Dengan heap bawaan mesin uji (≈2 GB) build kehabisan memori —
@@ -224,6 +218,6 @@ Catatan lain: ada tiga normalisasi HP berbeda (`indonesian_phone_key`, `quest_cu
 `normalTelp`). Menyatukannya menyentuh aturan bisnis (nomor `8xx` tanpa 0, minimum digit) → keputusan pemilik.
 
 ## Sisa hambatan
-- Migrasi belum dipasang di Production (butuh persetujuan teks persis migrasi).
+- Kedua migrasi belum dipasang di Production (butuh persetujuan teks persis migrasi).
 - `Technical checks` GitHub di head final dicatat di PR.
 - Simulasi/UAT pengguna (Andri memeriksa sampel) belum dilakukan.

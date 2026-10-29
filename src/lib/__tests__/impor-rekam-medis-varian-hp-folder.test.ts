@@ -1,6 +1,6 @@
 // Parser -> RPC (risiko review independen PR #333): kartu yang sama di folder pemilik yang
 // nomornya ditulis "08.." vs "+62 8.." pada dua impor terpisah. Tes ini memastikan fixture
-// yang dipakai harness PostgreSQL (kasus S1) adalah keluaran PARSER SUNGGUHAN, bukan
+// yang dipakai harness PostgreSQL (kasus S1–S14, C9, C10) adalah keluaran PARSER SUNGGUHAN, bukan
 // baris karangan. Harapan perilaku database ada di harness, bukan di sini.
 import ExcelJS from "exceljs";
 import { readFileSync } from "node:fs";
