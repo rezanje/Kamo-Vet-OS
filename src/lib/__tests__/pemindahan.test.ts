@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatNoPemindahan, hitungStatusKirim, kurangStokPemindahan as barisKurangPemindahan, sisaTransit } from "../pemindahan";
+import { bolehBatalKirim, formatNoPemindahan, hitungStatusKirim, kendalaBatalKirim, kurangStokPemindahan as barisKurangPemindahan, sisaTransit } from "../pemindahan";
+import { labelSource } from "../kartu-stok";
 import { formatKekuranganStok } from "../stok-kurang";
 
 // Hasil `kurangStokPemindahan` sekarang baris terstruktur untuk popup; kalimat
@@ -64,5 +65,44 @@ describe("kekurangan stok gudang asal ketahuan sebelum form dikirim", () => {
     expect(kurangStokPemindahan(
       [{ item_id: "itm-b", nama: "Obat B", qty: 1, faktor: 1, satuan: "pcs" }], new Map([["itm-b", -8]]),
     )).toBe("Obat B butuh 1 pcs, tersedia 0 pcs");
+  });
+});
+
+describe("batal pengiriman hanya selama belum ada yang diterima", () => {
+  const kirim = (status: string | null, penerimaan = 0) => ({ proses: "Kirim Barang", status, penerimaan });
+
+  it("dokumen Sedang dikirim tanpa penerimaan boleh dibatalkan", () => {
+    expect(kendalaBatalKirim(kirim("Sedang dikirim"))).toBeNull();
+    expect(bolehBatalKirim(kirim("Sedang dikirim"))).toBe(true);
+  });
+
+  it("satu dokumen Terima Barang saja sudah menutup pembatalan", () => {
+    expect(kendalaBatalKirim(kirim("Sedang dikirim", 1))).toContain("sudah diterima gudang tujuan");
+    expect(bolehBatalKirim(kirim("Sedang dikirim", 1))).toBe(false);
+  });
+
+  it("status Diterima Sebagian/Seluruhnya juga ditolak, tanpa menunggu hitungan dokumen", () => {
+    expect(kendalaBatalKirim(kirim("Diterima Sebagian"))).toContain("sudah diterima gudang tujuan");
+    expect(kendalaBatalKirim(kirim("Diterima Seluruhnya"))).toContain("sudah diterima gudang tujuan");
+  });
+
+  it("dokumen yang sudah dibatalkan tidak bisa dibatalkan dua kali", () => {
+    expect(kendalaBatalKirim(kirim("Dibatalkan"))).toBe("Pengiriman ini sudah dibatalkan.");
+  });
+
+  it("dokumen Terima Barang bukan sasaran pembatalan", () => {
+    expect(kendalaBatalKirim({ proses: "Terima Barang", status: null }))
+      .toContain("Hanya dokumen Kirim Barang");
+  });
+
+  it("status kosong (dokumen Terima) tidak pernah dianggap boleh", () => {
+    expect(bolehBatalKirim({ proses: "Kirim Barang", status: null })).toBe(false);
+  });
+});
+
+describe("kartu stok menamai mutasi pembatalan", () => {
+  it("pembalikan pemindahan dan pembalikan kiriman permintaan punya label sendiri", () => {
+    expect(labelSource("transfer-batal")).toBe("Pembatalan Pemindahan Barang");
+    expect(labelSource("batal-kirim-permintaan")).toBe("Pembatalan Pengiriman Permintaan Barang");
   });
 });
