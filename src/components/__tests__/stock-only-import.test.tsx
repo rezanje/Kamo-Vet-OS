@@ -12,12 +12,22 @@ async function file(){await act(async()=>{const i=host.querySelector<HTMLInputEl
 async function date(v:string){await act(async()=>{const i=host.querySelector<HTMLInputElement>('input[type=date]')!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(i,v);i.dispatchEvent(new Event('input',{bubbles:true}));});}
 beforeEach(async()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});action.mockReset().mockResolvedValue(prepared);host=document.createElement('div');root=createRoot(host);await act(async()=>root.render(<StockOnlyImport/>));});
 afterEach(async()=>{await act(async()=>root.unmount());});
-it('requires a file/date and sends explicit stock-only strict mode without inventing master metadata',async()=>{
+it('requires a file/date and sends the owner-approved per-line rupiah rounding by default without inventing master metadata',async()=>{
  expect(host.textContent).toContain('Pilih file saldo .xlsx');expect(host.textContent).toContain('Belum ada file dipilih');expect(button().disabled).toBe(true);await file();expect(host.textContent).toContain('fiction.xlsx');expect(button().disabled).toBe(true);await date('2026-01-01');await act(async()=>button().click());
- const data=action.mock.calls[0][0] as FormData;expect(data.get('import_mode')).toBe('stock_only');expect(data.get('valuation_policy')).toBe('STRICT');expect(data.get('master_run_id')).toBeNull();
- expect(host.textContent).toContain('0.333333');expect(host.textContent).toContain('-0.003333');expect(host.textContent).toContain('Stok BELUM masuk');expect(host.querySelector('a')?.getAttribute('href')).toContain('run_id=fiction-run');
+ const data=action.mock.calls[0][0] as FormData;expect(data.get('import_mode')).toBe('stock_only');expect(data.get('valuation_policy')).toBe('ROUND_LINE_RUPIAH_V1');expect(data.get('master_run_id')).toBeNull();
+ expect(host.textContent).toContain('0,333333');expect(host.textContent).toContain('-0,003333');expect(host.textContent).toContain('Stok BELUM masuk');expect(host.querySelector('a')?.getAttribute('href')).toContain('run_id=fiction-run');
 });
-it('requires explicit monetary normalization selection',async()=>{await file();await date('2026-01-01');await act(async()=>host.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());await act(async()=>button().click());expect(action.mock.calls[0][0].get('valuation_policy')).toBe('HALF_UP_BATCH_V1');});
+it('keeps the monetary rounding choice explicit, visible and changeable',async()=>{
+ const radios=[...host.querySelectorAll<HTMLInputElement>('input[type=radio]')];
+ expect(radios.map(r=>r.value)).toEqual(['ROUND_LINE_RUPIAH_V1','HALF_UP_BATCH_V1','STRICT']);expect(radios.find(r=>r.checked)?.value).toBe('ROUND_LINE_RUPIAH_V1');
+ expect(host.textContent).toContain('Bulatkan nilai tiap baris ke rupiah penuh');
+ await file();await date('2026-01-01');await act(async()=>radios[1].click());await act(async()=>button().click());expect(action.mock.calls[0][0].get('valuation_policy')).toBe('HALF_UP_BATCH_V1');});
+it('shows source total, rounded total and rounding difference for the per-line policy',async()=>{
+ action.mockResolvedValue({...prepared,valuation:{policy:'ROUND_LINE_RUPIAH_V1',source_value:'30000.4523',posted_value:'30000',residual:'-0.4523',rounding_difference:'-0.4523',source_lines:3,line_rounding:{unit:'1',mode:'HALF_UP',split_lines:1},allocated_source_row:null,rate_adjustment:'0',control:'computed_from_source_not_authoritative'},
+  decimal_preview:{quantity:'13',source_value:'30000.4523',rounded_value:'30000.45',rounding_delta:'-0.0023',line_rounded_value:'30000',line_rounding_delta:'-0.4523',lines:3}});
+ await file();await date('2026-01-01');await act(async()=>button().click());
+ expect(host.textContent).toContain('Total setelah tiap baris dibulatkan ke rupiah penuh');expect(host.textContent).toContain('30.000,00');
+ expect(host.textContent).toContain('-0,4523');expect(host.textContent).toContain('1 dari 3 baris');expect(host.textContent).toContain('Bulatkan nilai tiap baris ke rupiah penuh');});
 it('shows the full quantity and monetary delta even when strict preparation requires a choice',async()=>{
  action.mockResolvedValue({...prepared,ok:false,run_id:null,valuation:undefined,message:'Pilih pembulatan nilai uang',decimal_preview:{quantity:'0.1000000000000000001',source_value:'1.005',rounded_value:'1.01',rounding_delta:'0.005'}});
  await file();await date('2026-01-01');await act(async()=>button().click());

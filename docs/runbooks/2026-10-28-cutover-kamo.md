@@ -8,6 +8,7 @@ Setiap langkah dicentang dengan nama pelaksana, jam, dan total kontrol yang dica
 | Topik | Keputusan | Alasan |
 |---|---|---|
 | Stok final | Persediaan awal diposting **sekali**, 31 Okt malam, setelah Accurate ditutup | Posting persediaan awal terkunci setelah diposting (migrasi `20261021123000`); koreksi sesudahnya hanya lewat stok opname |
+| Pembulatan sen persediaan (M04/M01, disetujui pemilik 29 Okt) | Nilai tiap baris stok = qty × HPP, dibulatkan **ke rupiah penuh per baris** (HALF_UP). Selisih total terhadap total sumber dicatat di batch dan bukti posting | Accurate menyimpan pecahan sen; sistem menolak nilai yang tidak tepat dua desimal. Keputusan ini sudah diambil, finance tidak perlu memutuskan lagi di hari H |
 | Utang/piutang | Diimpor **per faktur** (M05), bukan total per akun | Pembayaran Desember dst. harus bisa dicocokkan ke faktur lama |
 | Saldo akun lain | Lewat Buku Besar › Saldo Awal, **kecuali** persediaan, utang usaha, piutang usaha, kas/bank | Masing-masing punya jalur sendiri; saldo global persediaan diblokir sistem setelah bridge persediaan dipakai |
 | Tanggal saldo | **31 Oktober 2026** untuk semua saldo pembuka | Transaksi VetOS mulai 1 November |
@@ -65,8 +66,12 @@ Urutan wajib. Jangan lanjut ke langkah berikut sebelum total kontrol langkah seb
 3. **Delta rekam medis** 28–31 Okt diimpor, seperti langkah 3. Cek bahwa pasien batch awal yang datang lagi punya riwayat lama dan baru.
 4. **Persediaan awal**:
    - Persediaan › Impor Barang: upload saldo stok, isi tanggal 31 Okt.
-   - Klik "Lanjutkan review / bukti posting batch" (halaman Persediaan Awal): review lalu posting oleh OWNER, termasuk akun ekuitas dan alasannya.
-   - Total kontrol: qty dan nilai per gudang **sama dengan** laporan persediaan Accurate. Kalau ada selisih pembulatan sen, finance memutuskan sebelum posting; sistem menolak nilai yang tidak tepat dua desimal.
+   - **Pembulatan nilai uang**: biarkan pilihan bawaan **"Bulatkan nilai tiap baris ke rupiah penuh"** (keputusan pemilik 29 Okt). Pilihan lain (bulatkan total batch 2 desimal, tanpa pembulatan) tetap terlihat tapi tidak dipakai untuk cutover. Jumlah stok tidak pernah dibulatkan; file tidak perlu diedit.
+   - Sebelum batch disiapkan, layar menampilkan: total sumber dari file, total setelah tiap baris dibulatkan, dan selisih pembulatan. Catat ketiganya di lembar kontrol.
+   - Klik "Lanjutkan review / bukti posting batch" (halaman Persediaan Awal): review lalu posting oleh OWNER, termasuk akun ekuitas dan alasannya. Bagian "Bukti normalisasi" menampilkan lagi total sumber, total yang diposting, dan selisih pembulatan; angka ini ikut tersimpan di bukti posting.
+   - Total kontrol: qty per gudang **sama persis** dengan laporan persediaan Accurate. Nilai: **total sumber** di layar harus sama dengan nilai Accurate; nilai yang diposting = total sumber + selisih pembulatan. Selisihnya paling banyak Rp0,50 per baris. Selisih di luar itu = jangan posting, cek file.
+   - Jurnal: debit Persediaan (1301) dan kredit akun ekuitas pilihan OWNER **sebesar total yang diposting**, jadi jurnal seimbang tanpa akun selisih pembulatan terpisah (bagan akun memang tidak punya akun itu). Akibatnya di Neraca, Persediaan dan Ekuitas VetOS sama-sama berbeda dari Accurate sebesar selisih pembulatan; selisih ini sudah tercatat dan menjadi penjelasan tertulis di langkah 8.
+   - Catatan teknis: bila nilai baris/qty tidak menghasilkan HPP desimal berhingga (contoh Rp10.000 untuk 3 pcs), baris itu disimpan sebagai dua layer lot yang sama dengan HPP beda Rp0,01 (1 pcs Rp3.333,34 + 2 pcs Rp3.333,33). Total qty dan nilai baris tetap tepat; di kartu stok barang itu tampil dua baris "Saldo Awal".
    - **Posting ini hanya sekali.** Setelah diposting, dasar stok terkunci dan koreksi hanya lewat stok opname.
 5. **Saldo utang & piutang per faktur** (M05):
    - Buku Besar › Saldo Awal per Faktur: unduh template `Format-Saldo-Awal-Faktur-VetOS.xlsx` (sheet `Saldo Awal Faktur`, atau dua sheet `Hutang` dan `Piutang`), isi Jenis, Kode Pihak (opsional), Nama Pihak, No Faktur, Tanggal Faktur dan Jatuh Tempo (**bila tersedia** — kosong disimpan kosong, tidak diganti tanggal lain; kolomnya tetap ada), **Sisa Tagihan** (bukan total asli), Total Faktur Asli (opsional), Keterangan.
@@ -76,7 +81,7 @@ Urutan wajib. Jangan lanjut ke langkah berikut sebelum total kontrol langkah seb
    - Jangan isi utang usaha atau piutang usaha di Buku Besar › Saldo Awal; sistem menolak supaya tidak dobel.
 6. **Saldo kas & bank**: Kas & Bank › Daftar Rekening › buka rekening › Saldo Awal, per rekening, tanggal 31 Okt. Total kontrol per rekening.
 7. **Saldo akun lain** (aset tetap, utang lain, ekuitas, dll.): Buku Besar › Saldo Awal.
-8. **Rekonsiliasi akhir**: Neraca VetOS per 31 Okt dibandingkan neraca Accurate per 31 Okt, akun per akun. Selisih wajib nol atau dijelaskan tertulis. Simpan screenshot/export di `04-bukti-posting`.
+8. **Rekonsiliasi akhir**: Neraca VetOS per 31 Okt dibandingkan neraca Accurate per 31 Okt, akun per akun. Selisih wajib nol atau dijelaskan tertulis. Selisih Persediaan dan Ekuitas sebesar total selisih pembulatan semua batch persediaan (langkah 4) dijelaskan dengan bukti normalisasi tiap batch. Simpan screenshot/export di `04-bukti-posting`.
 
 ## 6. Sabtu 1 November: mulai operasional
 
@@ -92,7 +97,7 @@ Urutan wajib. Jangan lanjut ke langkah berikut sebelum total kontrol langkah seb
 | Rekam medis batch awal: baris / masuk / dilewati | | | | |
 | Rekam medis delta: baris / masuk / dilewati | | | | |
 | Persediaan: qty per gudang | | | | |
-| Persediaan: nilai per gudang | | | | |
+| Persediaan: nilai per gudang (total sumber / total diposting / selisih pembulatan) | | | | |
 | Utang: jumlah faktur / total | | | | |
 | Piutang: jumlah faktur / total | | | | |
 | Kas & bank per rekening | | | | |

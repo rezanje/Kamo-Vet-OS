@@ -5,13 +5,14 @@ import { postInventoryAccounting, previewInventoryAccounting } from "./actions";
 import type { InventoryAccountingAccount, InventoryAccountingBatch, InventoryAccountingReceipt, InventoryAccountingReport } from "./types";
 import { inventoryBasisRows } from "@/lib/accurate-inventory-basis";
 import { initialStockBatchStage } from "@/lib/initial-stock-batch-status";
+import { valuationPolicyLabel } from "@/lib/initial-stock-valuation-policy";
 
 // Alasan tahan dari database dalam bahasa operasional; teks aslinya tetap ada di bukti lengkap.
 const BLOCKER_BIASA: [string, string][] = [
   ["Gudang ini sudah punya saldo awal", "Gudang ini sudah punya saldo awal. Koreksi jumlah stoknya lewat Stok Opname, bukan impor ulang."],
   ["Barang sudah memiliki stok/layer/riwayat", "Sebagian barang di batch ini sudah punya stok/transaksi di gudang ini. Impor ulang file yang sama: barang itu otomatis dilewati dan sisanya bisa diposting."],
   ["GL persediaan/saldo awal lain sudah ada", "Cabang ini sudah punya jurnal saldo awal persediaan lama. Perlu keputusan Keuangan sebelum posting."],
-  ["Jumlah/nilai sumber harus positif dan tepat dua desimal", "Nilai uang di batch ini punya pecahan di bawah 1 sen. Impor ulang file dengan centang \"Bulatkan total nilai uang ke 2 desimal\"."],
+  ["Jumlah/nilai sumber harus positif dan tepat dua desimal", "Nilai uang di batch ini punya pecahan sen. Impor ulang file dengan pilihan \"Bulatkan nilai tiap baris ke rupiah penuh\" (keputusan pemilik)."],
   ["Pilih akun lawan EKUITAS", "Pilih akun Modal (ekuitas) dulu."],
 ];
 const blockerBiasa = (blocker: string) => BLOCKER_BIASA.find(([awal]) => blocker.startsWith(awal))?.[1] ?? blocker;
@@ -73,7 +74,7 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
   const canPost = Boolean(report?.can_post && report.status === "previewed" && !report.blockers.length && confirmed && reason.trim().length >= 10 && reason.trim().length <= 1000 && !receipt && !pending);
   // Keep a request whose outcome may be uncertain unchanged until a read or exact retry resolves it.
   const freezeRequest = pending || uncertain;
-  const valuation = (report?.evidence as {summary?:{valuation?:{policy:string;source_value:string;posted_value:string;residual:string;allocated_source_row:number|null}}}|undefined)?.summary?.valuation;
+  const valuation = (report?.evidence as {summary?:{valuation?:{policy:string;source_value:string;posted_value:string;residual:string;allocated_source_row:number|null;rounding_difference?:string;source_lines?:number;line_rounding?:{split_lines:number}|null}}}|undefined)?.summary?.valuation;
   const basis = report ? inventoryBasisRows(report) : null;
 
   return <div style={{ display: "grid", gap: 12 }}>
@@ -105,7 +106,15 @@ export function InventoryAccountingForm({ batches, accounts, initialRunId = "" }
         <dt>Debit persediaan</dt><dd style={{ margin: 0 }}>{report.inventory_account ? `${report.inventory_account.code} — ${report.inventory_account.name}` : "Akun belum valid"} · {money(report.original_value)}</dd>
         <dt>Kredit ekuitas</dt><dd style={{ margin: 0 }}>{report.equity_account ? `${report.equity_account.code} — ${report.equity_account.name}` : "Akun belum valid"} · {money(report.original_value)}</dd>
       </dl>
-      {valuation && <section aria-label="Bukti normalisasi"><strong>Dasar valuasi: {valuation.policy}</strong><p>Nilai sumber presisi penuh: Rp {valuation.source_value}. Nilai posting: Rp {valuation.posted_value}. Residu: Rp {valuation.residual}. Baris alokasi: {valuation.allocated_source_row ?? "tidak ada"}.</p><p>Target dihitung dari sumber; bukan nilai kontrol Accurate yang diasumsikan. Cocokkan kebijakan dan residu sebelum konfirmasi.</p></section>}
+      {valuation && <section aria-label="Bukti normalisasi"><strong>Dasar valuasi: {valuationPolicyLabel(valuation.policy)} ({valuation.policy})</strong>
+        <dl aria-label="Rekonsiliasi total sumber dan posting" style={{ display: "grid", gridTemplateColumns: "minmax(120px, 1fr) 2fr", gap: 8, fontSize: 12, overflowWrap: "anywhere" }}>
+          <dt>Total sumber (file Accurate)</dt><dd style={{ margin: 0 }}>Rp {valuation.source_value}</dd>
+          <dt>Total {report.status === "posted" ? "diposting" : "yang akan diposting"}</dt><dd style={{ margin: 0 }}>Rp {valuation.posted_value}</dd>
+          <dt>Selisih pembulatan</dt><dd style={{ margin: 0 }}>Rp {valuation.rounding_difference ?? valuation.residual}</dd>
+          {valuation.line_rounding && <><dt>Baris dengan dua layer HPP sen</dt><dd style={{ margin: 0 }}>{valuation.line_rounding.split_lines} dari {valuation.source_lines ?? "?"} baris sumber</dd></>}
+          {valuation.allocated_source_row != null && <><dt>Baris alokasi residu</dt><dd style={{ margin: 0 }}>{valuation.allocated_source_row}</dd></>}
+        </dl>
+        <p>Total sumber dihitung dari file. Cocokkan dengan laporan persediaan Accurate; selisih pembulatan adalah penjelasan tertulis bila Neraca VetOS berbeda dari Accurate. Jurnal tetap seimbang: debit persediaan dan kredit ekuitas sama dengan total diposting.</p></section>}
       <section aria-label="Rekonsiliasi per barang dan gudang" style={{ overflowX: "auto" }}>
         <h3 style={{ fontSize: 14 }}>Dasar stok per barang dan gudang</h3>
         <p>{report.status === "posted" ? "Bandingkan baris batch dengan layer dan kartu stok saat posting. Stok hari ini bisa berkurang karena pemakaian." : "Baris batch siap ditinjau; layer dan kartu stok baru ada setelah posting."} Nilai batch mengikuti normalisasi impor, bukan total kontrol Accurate eksternal.</p>
