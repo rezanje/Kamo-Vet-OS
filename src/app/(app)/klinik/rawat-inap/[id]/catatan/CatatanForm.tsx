@@ -17,8 +17,9 @@ import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { addDailyLogPos } from "../../actions";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
 import { ClinicServicePicker } from "@/components/ClinicServicePicker";
-import { Popup } from "@/components/Popup";
 import { kekuranganStok } from "@/lib/stok-keranjang";
+import { StokKurangPopup, StokKurangDariPesan } from "@/components/StokKurangPopup";
+import type { BarisKurangStok } from "@/lib/stok-kurang";
 import { CompoundEditor } from "@/components/CompoundEditor";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
 import { InpatientStaffFields } from '@/components/InpatientStaffFields';
@@ -76,7 +77,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const [cart, setCart] = useState<CartRow[]>([]);
   const [procedureDraft, setProcedureDraft] = useState<{ item: ItemLite; bmhp: BmhpRow[]; editKey: string | null } | null>(null);
   const [procedureError, setProcedureError] = useState("");
-  const [stokKurang, setStokKurang] = useState<string | null>(null);
+  const [stokKurang, setStokKurang] = useState<BarisKurangStok[]>([]);
   const procedureCommitted = useRef(false);
   const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
@@ -245,11 +246,16 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   const stokById = new Map([...items, ...bahanItems, ...racikanItems].filter(it => it.item_type !== "Jasa").map(it => [it.id, { stok: it.stok, unit: it.unit }]));
 
   return (<>
-    <Popup message={stokKurang} title="Stok tidak cukup" onClose={() => setStokKurang(null)} />
+    <StokKurangPopup baris={stokKurang} onClose={() => setStokKurang([])}
+      petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />
+    {/* Penolakan dari database (mis. stok habis dipakai kasir lain sedetik lalu)
+        bermuara ke popup yang sama. Hanya satu dialog yang boleh terbuka. */}
+    {stokKurang.length === 0 && <StokKurangDariPesan pesan={draftSaveError}
+      petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />}
     <form ref={draftAttachForm} action={(data) => draftSubmit(data, addDailyLogPos)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
       const kurang = kekuranganStok(cart, stokById, (id, unit) => unitsOf(id).find(u => u.unit === unit)?.factor ?? 1);
       if (procedureDraft) { event.preventDefault(); event.stopPropagation(); setTab(TINDAKAN); setProcedureError("Selesaikan komposisi BMHP tindakan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
-      else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(`${kurang.join("; ")}. Kurangi jumlah atau ganti obat sebelum melanjutkan.`); }
+      else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(kurang); }
       else draftCapture();
     }}>
       {draftRecovered && <div role="status" className="p2ban">Draf dipulihkan <button type="button" className="btn-def" onClick={draftDiscard}>Buang draf</button></div>}

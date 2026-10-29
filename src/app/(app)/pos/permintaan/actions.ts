@@ -8,7 +8,8 @@ import { canApprove, canTransitionRequest } from "@/lib/stock-recon";
 import { loadMasterPermintaan, parseBarisInput, siapkanBaris } from "@/lib/permintaan";
 import { prosesTerimaPermintaan, type BarisTerima } from "@/lib/terima-permintaan";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
-import { bacaQtyKirim, pesanKurangStok, siapkanKirim, type BarisPermintaan } from "@/lib/permintaan-kirim";
+import { bacaQtyKirim, kurangStokPermintaan, siapkanKirim, type BarisPermintaan } from "@/lib/permintaan-kirim";
+import { formatKekuranganStok } from "@/lib/stok-kurang";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -123,12 +124,14 @@ export async function kirimPermintaan(formData: FormData) {
   });
 
   // Pesan ramah lebih dulu; database tetap jadi penjaga terakhir (balapan dua kiriman).
-  const kurang = pesanKurangStok(
+  // Kalimatnya dibentuk lib/stok-kurang supaya layar bisa menguraikannya kembali
+  // menjadi popup "Stok tidak cukup" yang sama dengan proses stok lain.
+  const kurang = kurangStokPermintaan(
     rows.map((r, i) => ({ ...r, plafon: kirim[i]?.qty ?? 0 })),
     peta,
   );
-  if (kurang) {
-    redirect(`${kembali}?error=${encodeURIComponent(`Stok gudang pengirim tidak cukup. ${kurang}. Kurangi jumlah kirim atau tunggu stok masuk.`)}`);
+  if (kurang.length) {
+    redirect(`${kembali}?error=${encodeURIComponent(`Stok gudang pengirim tidak cukup. ${formatKekuranganStok(kurang)}. Kurangi jumlah kirim atau tunggu stok masuk.`)}`);
   }
 
   const { error } = await supabase.rpc("ship_stock_request_atomic", { p_id: id, p_rows: kirim });

@@ -7,6 +7,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { kirimPermintaan, setujuiPermintaan, terimaDariBackoffice, updateRequestStatus } from "../actions";
 import { siapkanKirim, type BarisPermintaan } from "@/lib/permintaan-kirim";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -100,6 +101,9 @@ export default async function PermintaanDetailPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      {/* Penolakan stok (persetujuan maupun pengiriman) diangkat jadi popup yang
+          sama dengan proses stok lain; bilah merah di atas tetap jadi jejaknya. */}
+      <StokKurangDariPesan pesan={error} gudang={one(req.warehouses)?.name ?? null} />
 
       <div className="crm-sec">
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", paddingBottom: 12, borderBottom: ".5px solid var(--bd)", marginBottom: 14 }}>
@@ -160,6 +164,7 @@ export default async function PermintaanDetailPage({
                         <NumberInput
                           className="fi" type="number" min={0} step="any"
                           name={`qty_${it.id}`}
+                          data-stok-kurang={it.nama}
                           defaultValue={it.qty_disetujui ?? stokBaris.get(it.id)?.usulan ?? it.qty_diminta}
                           style={{ width: 80, textAlign: "center" }}
                         />
@@ -245,6 +250,7 @@ export default async function PermintaanDetailPage({
                         <NumberInput
                           className="fi" type="number" min={0} max={b.plafon} step="any"
                           name={`qty_${b.id}`}
+                          data-stok-kurang={b.nama}
                           defaultValue={b.usulan}
                           style={{ textAlign: "center" }}
                         />

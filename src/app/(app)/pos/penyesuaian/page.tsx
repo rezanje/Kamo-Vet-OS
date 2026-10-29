@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { ALASAN_WARNA } from "./alasan";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -65,6 +66,7 @@ export default async function PenyesuaianPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      <StokKurangDariPesan pesan={error} />
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {success}

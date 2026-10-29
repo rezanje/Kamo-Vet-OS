@@ -4,6 +4,7 @@ import { returnSourceRows, type PriorReturn } from "@/lib/return-source-units";
 import { qtyDiterima } from "@/lib/penerimaan";
 import { loadUnitOptions } from "@/lib/satuan";
 import { ReturBeliForm, type PoOption } from "./ReturBeliForm";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 type PoRow = {
   id: string;
@@ -62,6 +63,7 @@ export default async function ReturBeliBaruPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      <StokKurangDariPesan pesan={error} />
 
       {reconciliation && <div className="p2ban">{reconciliation}</div>}
       <ReturBeliForm userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done} options={options} />

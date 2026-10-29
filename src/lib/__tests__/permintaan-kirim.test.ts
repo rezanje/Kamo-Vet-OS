@@ -1,10 +1,18 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  bacaQtyKirim, faktorBaris, pesanKurangStok, siapkanKirim, tersediaSatuanDokumen,
+  bacaQtyKirim, faktorBaris, kurangStokPermintaan, siapkanKirim, tersediaSatuanDokumen,
   type BarisPermintaan,
 } from "../permintaan-kirim";
 import { labelSource } from "../kartu-stok";
+import { formatKekuranganStok } from "../stok-kurang";
+
+// Kekurangannya sekarang baris terstruktur (dipakai popup); kalimat `?error=`
+// dibentuk `formatKekuranganStok`. Pembantu ini menguji keduanya sekaligus.
+const pesanKurangStok = (rows: Parameters<typeof kurangStokPermintaan>[0], stok: Parameters<typeof kurangStokPermintaan>[1]) => {
+  const baris = kurangStokPermintaan(rows, stok);
+  return baris.length ? formatKekuranganStok(baris) : null;
+};
 
 const baris = (p: Partial<BarisPermintaan> & { id: string }): BarisPermintaan => ({
   nama: "Obat A", satuan: "pcs", faktor: 1, item_id: "item-a",

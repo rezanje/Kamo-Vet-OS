@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
 import { readCompleteList, readListPage } from "@/lib/checked-list";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? (value[0] ?? null) : value;
@@ -66,6 +67,7 @@ export default async function ReturBeliPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      <StokKurangDariPesan pesan={error} />
 
       <div className="crm-sec">
         <SecHeader

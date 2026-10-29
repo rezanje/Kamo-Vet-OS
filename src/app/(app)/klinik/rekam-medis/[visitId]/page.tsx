@@ -27,6 +27,8 @@ import { readCompleteList } from "@/lib/checked-list";
 import { Popup } from "@/components/Popup";
 import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
 import { tambahAdendumRekamMedis } from "./actions";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
+import { adalahKekuranganStok } from "@/lib/stok-kurang";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -328,7 +330,10 @@ export default async function RekamMedisPage({
         </div>
       )}
 
-      <Popup message={error} />
+      {/* Racikan & penyimpanan rekam medis: kekurangan stok pakai popup khusus,
+          sisanya tetap dialog umum. Hanya satu dialog yang boleh terbuka. */}
+      <StokKurangDariPesan pesan={error} />
+      <Popup message={adalahKekuranganStok(error) ? null : error} />
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
       {success === "addendum" && <div className="p2ban" role="status">Adendum rekam medis tersimpan; catatan asli, tagihan, dan stok tidak berubah.</div>}
       {success === "lanjutan" && (
