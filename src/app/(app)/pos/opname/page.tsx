@@ -119,7 +119,7 @@ export default async function OpnamePage({
                     ? <Link href={`/pos/opname/${r.id}#hasil`}>{r.opname_results.map(result => result.no_hasil).join(", ")}</Link>
                     : "—"}</td>
                   <td>
-                    <span className={`bge ${r.status === "Selesai" ? "g" : "o"}`}>{r.status}</span>
+                    <span className={`bge ${r.status === "Selesai" ? "g" : r.status === "Batal" ? "r" : "o"}`}>{r.status}</span>
                   </td>
                 </tr>
               ))}
