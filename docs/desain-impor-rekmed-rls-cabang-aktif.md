@@ -314,7 +314,11 @@ klaim "riwayat bersama tidak bisa berubah lewat jalur mana pun"**; yang diklaim:
   karyawan (`employee_account_operational_context`, `inpatient_consent`, `clinic_*`, dll.) hasilnya **identik** dengan dan
   tanpa migrasi baru (4 berkas sudah gagal di `main` sebelum PR ini — `ACCESS_DENIED` cabang pelaksana, `DP_MINIMAL`,
   status master — bukan akibat PR ini).
-- Aplikasi: `npm test` 4893 lulus; lint 0 error; `tsc --noEmit` bersih; `npm run build` sukses.
+- Aplikasi (lokal): di head `3000626` — `npm test` 4893 lulus, lint 0 error, `tsc --noEmit` bersih, `npm run build`
+  sukses. Di head `db26161` (perbaikan §8.1 menambah satu tes invarian; kode aplikasi tidak berubah) — `npm test`
+  **4894** lulus (1 dilewati), lint 0 error, `tsc --noEmit` bersih; build tidak diulang lokal.
+- CI (`Technical checks`, head persis, GitHub Actions): `3000626` lulus (run 40940596211). Hasil untuk head sesudahnya
+  dicatat di deskripsi PR #342 per head, bukan di sini, supaya dokumen tidak mengklaim hasil yang belum ada.
 
 ## 10. Gerbang operasional hosted (WAJIB sebelum apply; butuh izin terpisah; read-only)
 Kelayakan di Supabase hosted **belum terbukti**. Emulasi lokal tidak membuktikan `supautils`, hak `postgres` atas skema
@@ -323,8 +327,36 @@ prasyarat kurang (GRANT tanpa hak hanya WARNING — pasca-cek memeriksa hak seca
 jalankan read-only (izin terpisah) dan lampirkan hasilnya:
 1. `select rolname, rolsuper, rolcreaterole, rolbypassrls, rolinherit from pg_roles where rolname in (current_user,'postgres','authenticator','authenticated','anon','service_role','kamo_legacy_import_writer');` — role penulis belum ada; runner punya CREATEROLE.
 2. `select current_setting('server_version_num'), current_setting('createrole_self_grant', true);` — ≥160000; nilai self-grant dicatat (bila `set`/`inherit`, pasca-cek akan menolak → perlu keputusan).
-3. `select has_schema_privilege(current_user,'auth','USAGE'), has_function_privilege(current_user,'auth.uid()','EXECUTE'), exists(select 1 from aclexplode((select proacl from pg_proc where oid='auth.uid()'::regprocedure)) a where a.grantee=0 and a.privilege_type='EXECUTE') as public_exec, exists(select 1 from aclexplode((select nspacl from pg_namespace where nspname='auth')) a where a.grantee=0) as public_usage;` — role penulis harus bisa memakai `auth.uid()` (lewat PUBLIC atau GRANT dengan grant option).
-4. `select n.nspname from pg_namespace n where has_schema_privilege('public', n.oid, 'CREATE');` — harus kosong (bila ada, pasca-cek menolak).
+3. Hak PUBLIC (grantee `0`) dan runner atas `auth`/`auth.uid()`. ACL NULL berarti ACL bawaan, jadi dibaca lewat
+   `coalesce(acl, acldefault(...))` (fungsi: bawaan memberi EXECUTE ke PUBLIC; skema: bawaan hanya pemilik):
+   ```sql
+   select has_schema_privilege(current_user, 'auth', 'USAGE') as runner_usage,
+          has_function_privilege(current_user, 'auth.uid()', 'EXECUTE') as runner_exec,
+          exists (select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                  where p.oid = 'auth.uid()'::regprocedure and a.grantee = 0 and a.privilege_type = 'EXECUTE') as public_exec,
+          exists (select 1 from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+                  where n.nspname = 'auth' and a.grantee = 0 and a.privilege_type = 'USAGE') as public_usage;
+   ```
+   Role penulis harus bisa memakai `auth.uid()`: EXECUTE lewat PUBLIC atau GRANT runner dengan grant option, dan USAGE
+   skema `auth` lewat PUBLIC atau GRANT dengan grant option. Pasca-cek migrasi memeriksanya secara positif.
+4. Skema yang memberi CREATE ke PUBLIC (grantee `0`), termasuk ACL bawaan bila `nspacl` NULL. `PUBLIC` adalah
+   pseudo-role, jadi **tidak** boleh diaudit dengan `has_schema_privilege('public', ...)`:
+   ```sql
+   select n.nspname, a.privilege_type
+   from pg_namespace n
+   cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+   where a.grantee = 0 and a.privilege_type = 'CREATE'
+   order by 1;
+   ```
+   Harus kosong. Bila ada baris: **jangan apply** dan jangan mengubah hak supaya gerbang lulus; laporkan untuk keputusan
+   (pasca-cek migrasi juga akan menolak, karena role penulis mewarisi hak PUBLIC).
+
+   Validasi lokal (Postgres 17.10 sekali-pakai, semua migrasi repo, tanpa Production; setiap kontrol di transaksi yang
+   di-rollback): butir 4 kosong di basis; `grant create on schema public to public` → `public|CREATE`; skema baru dengan
+   `nspacl` NULL → kosong; skema baru + `grant create ... to public` → baris skema itu. Butir 3 di basis
+   `t|t|t|f`; sesudah `revoke execute on function auth.uid() from public` → `public_exec=f`; sesudah
+   `grant usage on schema auth to public` → `public_usage=t`. Kontrol ACL NULL: fungsi baru dengan `proacl` NULL →
+   `public_exec=t` lewat `acldefault` (bentuk lama tanpa `coalesce` salah membaca `f`).
 5. `select pg_get_userbyid(relowner), relname from pg_class where oid in ('public.visits'::regclass,'public.medical_records'::regclass,'public.customers'::regclass,'public.pets'::regclass,'public.profiles'::regclass);` — dimiliki runner migrasi (kebijakan & GRANT kolom butuh pemilik).
 6. `select defaclrole::regrole, defaclnamespace::regnamespace, defaclobjtype, defaclacl from pg_default_acl;` — default privileges dicatat; migrasi mencabut eksplisit dari PUBLIC/anon/authenticated/service_role lalu memberi ulang.
 7. Pengaturan Data API: skema yang diekspos (diharapkan `public`, `graphql_public`; `kamo_import` tidak perlu diekspos).
