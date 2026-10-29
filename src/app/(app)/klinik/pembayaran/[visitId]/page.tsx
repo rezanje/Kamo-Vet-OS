@@ -109,10 +109,16 @@ export default async function PembayaranPage({
   const invoiceAktif = invoiceRows ?? [];
   const invoice = invoiceAktif.length ? invoiceAktif[invoiceAktif.length - 1] : null;
   const tagihanBertahap = invoiceAktif.length > 1;
-  const [demoPolicy, demoStaffResult, demoSnapshotResult] = await Promise.all([
+  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
     invoice ? supabase.from("clinic_demo_invoice_snapshots").select("fee_bearer,fee_amount,payments,incentive_pool").eq("invoice_id",invoice.id).maybeSingle() : Promise.resolve({data:null,error:null}),
+    // Boleh-tidaknya tagihan ini dikoreksi DIPUTUSKAN DI BASIS DATA, bukan ditebak
+    // di layar: aturannya sama persis dengan penjaga tulis (peran, uang di baris
+    // pembayaran MAUPUN di kepala tagihan, riwayat yang sudah dibalik seluruhnya,
+    // cabang, DEMO, tagihan batal). Tebakan lama di layar ini menolak keadaan yang
+    // justru diterima RPC-nya, sehingga koreksi sesudah pembatalan kwitansi mentok.
+    invoice ? supabase.rpc("clinic_invoice_correction_eligible", {p_invoice_id:invoice.id}) : Promise.resolve({data:false,error:null}),
   ]);
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
@@ -123,13 +129,15 @@ export default async function PembayaranPage({
     ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
     : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
   if (itemsError || paymentsError) throw unverifiedBilling();
-  const hasPayments = (paymentRows ?? []).some((p) => !p.transferred_from);
   const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const paidAmount = Number(invoice?.dp_amount ?? 0) + (paymentRows ?? [])
     .reduce((sum, p) => sum + Number(p.amount), 0);
-  const canEdit = invoice && !demoSnapshot && !hasPayments
-    && (invoice.correction_pending || ((paymentRows ?? []).length === 0 && invoice.paid_status !== "Lunas"));
+  // Gagal membaca kelayakan = form koreksi tidak ditawarkan (bukan layar mati):
+  // kasir tetap bisa menerima pembayaran, dan tidak ada koreksi yang dijanjikan
+  // lalu ditolak server. Nilai ini BUKAN otorisasi — RPC koreksinya memeriksa
+  // ulang peran dan mengunci barisnya sendiri sebelum menyentuh uang.
+  const canEdit = Boolean(invoice) && !demoSnapshot && koreksiBolehResult.data === true;
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
   const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);

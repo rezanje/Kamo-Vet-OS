@@ -18,7 +18,9 @@ Satu-satunya yang dipalsukan adalah platform Supabase (skema `auth`/`storage`,
 yang diganti.
 
 Mode:
-  --pra-perbaikan   migrasi mitigasi diambil dari `git show 5fc24c78:<berkas>` (override: KAMO_RED_REVISION) (bukti RED)
+  --pra-perbaikan   migrasi mitigasi diambil dari `git show 5fc24c78:<berkas>` (override: KAMO_RED_REVISION) (bukti RED putaran 1-2)
+  --pra-putaran3    sama, tapi dari revisi f503424e — bukti RED untuk dua blokir
+                    putaran 3 (R2-01 kelayakan koreksi, R2-02 uang muka di kepala tagihan)
   (default)         migrasi mitigasi dari pohon kerja (bukti GREEN)
 
 Seluruh fixture fiktif: pemilik "Fiktif", telepon 0800000xxxx, tanpa identitas pasien
@@ -147,6 +149,37 @@ class Harness:
             f"select id from public.invoices where visit_id={q(visit)} and voided_at is null "
             "order by created_at, id limit 1")
 
+    def no_tagihan(self, invoice):
+        return self.nilai(f"select invoice_no from public.invoices where id={q(invoice)}")
+
+    def saldo_ref(self, code, invoice_no):
+        """Selisih debit-kredit satu rekening UNTUK SATU nomor tagihan saja."""
+        return self.angka(
+            "select coalesce(sum(l.debit-l.credit),0) from public.journal_lines l "
+            "join public.journal_entries e on e.id=l.entry_id "
+            f"join public.coa_accounts a on a.id=l.account_id where a.code={q(code)} "
+            f"and e.source_ref={q(invoice_no)}")
+
+    def layak(self, invoice, user):
+        """Jawaban RPC kelayakan koreksi apa adanya: 't'/'f', atau pesan galat."""
+        try:
+            return self.nilai(
+                f"select public.clinic_invoice_correction_eligible({q(invoice)});", user)
+        except RuntimeError as error:
+            return "GALAT: " + str(error).strip().splitlines()[0]
+
+    def potret_tagihan(self, invoice):
+        """Keadaan tagihan yang tidak boleh bergeser saat koreksi ditolak."""
+        return {
+            "total": self.angka(f"select total from public.invoices where id={q(invoice)}"),
+            "dp": self.angka(f"select dp_amount from public.invoices where id={q(invoice)}"),
+            "status": self.status_bayar(invoice),
+            "baris": self.angka(f"select count(*) from public.invoice_items where invoice_id={q(invoice)}"),
+            "bayar": self.angka(f"select count(*) from public.invoice_payments where invoice_id={q(invoice)}"),
+            "jurnal": self.angka("select count(*) from public.journal_entries"),
+            "stok": self.angka(f"select qty from public.stock where warehouse_id={q(WH)} and item_id={q(ITEM)}"),
+        }
+
 
 # ---------------------------------------------------------------------------
 # Fixture fiktif
@@ -189,7 +222,8 @@ insert into public.items (id,code,name,unit,buy_price,item_type,is_active,is_com
 insert into public.stock (warehouse_id,item_id,qty) values ({q(WH)},{q(ITEM)},200);
 insert into public.stock_layers (warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source)
  values ({q(WH)},{q(ITEM)},current_date,200,200,2000,'purchase');
-insert into public.cash_accounts (nama,jenis,coa_code) values ('Kas Klinik Fiktif','Kas','1101')
+insert into public.cash_accounts (nama,jenis,coa_code) values
+ ('Kas Klinik Fiktif','Kas','1101'),('Bank Klinik Fiktif','Bank','1102')
  on conflict (coa_code) do update set is_active=true;
 insert into public.cashier_shifts (id,branch_id,opened_by,shift_type,status) values {shifts};
 insert into public.consent_templates (id,nama,isi,kategori,is_active)
@@ -301,6 +335,25 @@ def lepas_sql(advance, key, alasan="Koreksi tagihan fiktif"):
 
 def terbit_ulang_sql(invoice, key, alasan="Koreksi fiktif"):
     return f"select public.clinic_void_reissue_invoice({q(invoice)},{q(key)},{q(alasan)});"
+
+
+def tagih_biasa_sql(visit, key, lines, user, dp=0, alasan=None, ganti=None):
+    """clinic_post_invoice — tagihan klinik BIASA (bukan tahap rawat inap), persis
+    seperti simpanPembayaran() memanggilnya. Uang mukanya disimpan di KEPALA tagihan
+    (invoices.dp_amount) dan dijurnal di situ, tanpa satu pun baris invoice_payments."""
+    subtotal = nilai_baris(lines)
+    invoice = {"tanggal": TGL, "subtotal": subtotal, "discount": 0, "tax": 0, "total": subtotal,
+               "dp_amount": dp, "dp_date": TGL if dp else None,
+               "paid_status": "DP" if dp else "Belum Lunas",
+               "metode_bayar": "Tunai", "shift_id": SHIFT[user], "voucher_code": None,
+               "salesperson_id": None}
+    if alasan:
+        # Uang muka minimal 50% berlaku juga di tagihan biasa; tagihan tanpa uang
+        # hanya boleh diterbitkan peran keuangan dengan alasan penerobosan.
+        invoice["dp_override_reason"] = alasan
+    if ganti:
+        invoice.update(ganti)
+    return (f"select public.clinic_post_invoice({q(visit)},{q(key)},{j(invoice)},{j(lines)});")
 
 
 def koreksi_sql(h, invoice, key, lines, alasan="Koreksi fiktif", paid_status=None):
@@ -497,6 +550,161 @@ def ind03_negatif(h, n, cust):
 
 
 # ---------------------------------------------------------------------------
+# R2-02 — uang muka LANGSUNG di kepala tagihan tetap "uang"
+# ---------------------------------------------------------------------------
+def r2_kepala_dp(h, n, cust):
+    """Tagihan klinik BIASA: total 100.000, dp_amount 60.000, NOL baris pembayaran.
+
+    Uang muka wujud ini dijurnal sama nyatanya dengan baris pembayaran, jadi
+    koreksinya pekerjaan keuangan. Tagihan tanpa uang sama sekali tetap kasir.
+    """
+    for i, (label, user) in enumerate([("staf", STAFF), ("dokter", DOCTOR)]):
+        visit = buat_kunjungan(h, n + i, cust, admitted=False)
+        h.sql(tagih_biasa_sql(visit, f"k{n}{i}-biasa", baris(n + i, 1), OWNER, dp=60000), OWNER)
+        inv = h.aktif(visit)
+        sebelum = h.potret_tagihan(inv)
+        galat = h.gagal(koreksi_sql(h, inv, f"k{n}{i}-koreksi", baris(n + i, 1, 3)), user)
+        sesudah = h.potret_tagihan(inv)
+        catat(f"R2-02-kepala-dp-{label}-ditolak",
+              bool(galat) and "ACCESS_DENIED" in str(galat) and sebelum == sesudah
+              and sebelum["dp"] == 60000 and sebelum["bayar"] == 0 and sebelum["total"] == 100000,
+              f"{str(galat).strip().splitlines()[0] if galat else 'DITERIMA'}; "
+              f"{'keadaan utuh' if sebelum == sesudah else f'{sebelum} -> {sesudah}'}", "IND-05")
+
+    # Peran keuangan boleh, dan uang muka di kepala tagihan tidak boleh hilang
+    # atau berpindah: kas tetap 60.000, piutangnya yang bertambah.
+    visit = buat_kunjungan(h, n + 2, cust, admitted=False)
+    h.sql(tagih_biasa_sql(visit, f"k{n}2-biasa", baris(n + 2, 1), OWNER, dp=60000), OWNER)
+    inv = h.aktif(visit)
+    no = h.no_tagihan(inv)
+    stok0 = h.angka(f"select qty from public.stock where warehouse_id={q(WH)} and item_id={q(ITEM)}")
+    galat = h.gagal(koreksi_sql(h, inv, f"k{n}2-koreksi", baris(n + 2, 1, 3)), FINANCE)
+    sesudah = h.potret_tagihan(inv)
+    kas, piutang = h.saldo_ref("1101", no), h.saldo_ref("1201", no)
+    pendapatan, hpp = h.saldo_ref("4201", no), h.saldo_ref("5101", no)
+    catat("R2-02-kepala-dp-keuangan-boleh",
+          galat is None and sesudah["dp"] == 60000 and sesudah["total"] == 150000
+          and sesudah["status"] == "DP" and sesudah["baris"] == 2 and sesudah["bayar"] == 0
+          and kas == 60000 and piutang == 90000 and pendapatan == -150000 and hpp == 4000
+          and stok0 - sesudah["stok"] == 2,
+          f"{'diterima' if galat is None else str(galat).strip().splitlines()[0]} "
+          f"dp={sesudah['dp']} total={sesudah['total']} status={sesudah['status']} "
+          f"kas={kas} piutang={piutang} pendapatan={pendapatan} hpp={hpp} "
+          f"stok-{stok0 - sesudah['stok']}", "IND-05")
+
+    # Tagihan yang belum pernah memegang uang: kasir tetap boleh mengoreksinya.
+    visit = buat_kunjungan(h, n + 3, cust, admitted=False)
+    h.sql(tagih_biasa_sql(visit, f"k{n}3-biasa", baris(n + 3, 1), OWNER, alasan="Uji fiktif DP"), OWNER)
+    inv = h.aktif(visit)
+    galat = h.gagal(koreksi_sql(h, inv, f"k{n}3-koreksi", baris(n + 3, 1, 4)), STAFF)
+    akhir = h.potret_tagihan(inv)
+    catat("R2-02-tanpa-uang-kasir-tetap-boleh",
+          galat is None and akhir["total"] == 160000 and akhir["dp"] == 0
+          and akhir["status"] == "Belum Lunas" and akhir["baris"] == 2,
+          f"{'diterima' if galat is None else str(galat).strip().splitlines()[0]} "
+          f"total={akhir['total']} dp={akhir['dp']} status={akhir['status']}", "IND-05")
+
+
+# ---------------------------------------------------------------------------
+# R2-01 — kelayakan koreksi: layar dan penjaga tulis harus sependapat
+# ---------------------------------------------------------------------------
+def cocok(h, label, inv, user, lines, key, harus, ind="IND-03", alasan="Koreksi fiktif"):
+    """Bandingkan jawaban RPC kelayakan dengan hasil penulisan yang SEBENARNYA.
+
+    Gagal bila keduanya berbeda pendapat — persis kontradiksi yang dilaporkan
+    peninjau (SQL menerima, layar menolak) — atau bila jawabannya bukan `harus`.
+    """
+    layak = h.layak(inv, user)
+    galat = h.gagal(koreksi_sql(h, inv, key, lines, alasan=alasan), user)
+    sepakat = (layak == "t") == (galat is None)
+    catat(f"R2-01-{label}", sepakat and layak == harus,
+          f"layak={layak} (wajib {harus}) tulis="
+          f"{'diterima' if galat is None else str(galat).strip().splitlines()[0]}", ind)
+    return galat
+
+
+def kelayakan(h, n, cust):
+    """Satu sumber kebenaran kelayakan koreksi, diuji lawan penulisan sungguhan."""
+    # 1. Riwayat yang SUDAH DIBALIK SELURUHNYA — keadaan yang dulu mentok di layar.
+    visit = buat_kunjungan(h, n, cust)
+    h.sql(bayar_sql(visit, f"k{n}-bayar", [{"method": "Tunai", "amount": 150000}]), OWNER)
+    receipt = h.nilai(f"select id from public.clinic_payment_receipts where visit_id={q(visit)}")
+    advance = h.nilai(f"select id from public.clinic_customer_advances where receipt_id={q(receipt)}")
+    h.sql(tagih_sql(visit, f"k{n}-tahap", baris(n, 1), STAFF), STAFF)
+    inv = h.aktif(visit)
+    h.sql(lepas_sql(advance, f"k{n}-lepas"), FINANCE)
+    h.sql(batal_kwitansi_sql(receipt, f"k{n}-batal"), FINANCE)
+    for label, user in [("staf", STAFF), ("dokter", DOCTOR),
+                        ("nonaktif", FIN_NONAKTIF), ("luar-cabang", FIN_LUAR)]:
+        cocok(h, f"nol-bersih-{label}", inv, user, baris(n, 1, 3), f"k{n}-{label}", "f", "IND-05")
+    # Jejak uang sebelum koreksi keuangan: dua baris pembayaran dan jurnalnya.
+    bayar_id = h.nilai(f"select string_agg(id::text,',' order by id) from public.invoice_payments"
+                       f" where invoice_id={q(inv)}")
+    jurnal0 = h.angka("select count(*) from public.journal_entries")
+    for user, label in [(ADMIN, "admin"), (OWNER, "pemilik")]:
+        jawab = h.layak(inv, user)
+        catat(f"R2-01-nol-bersih-{label}-layak", jawab == "t", f"layak={jawab}", "IND-03")
+    galat = cocok(h, "nol-bersih-keuangan-dikoreksi", inv, FINANCE, baris(n, 1, 3),
+                  f"k{n}-koreksi", "t")
+    bayar_id2 = h.nilai(f"select string_agg(id::text,',' order by id) from public.invoice_payments"
+                        f" where invoice_id={q(inv)}")
+    jurnal1 = h.angka("select count(*) from public.journal_entries")
+    catat("R2-01-jejak-uang-utuh-sesudah-koreksi",
+          galat is None and bayar_id == bayar_id2 and bayar_id.count(",") == 1 and jurnal1 >= jurnal0,
+          f"baris pembayaran {'sama' if bayar_id == bayar_id2 else 'BERUBAH'} ({bayar_id2}) "
+          f"jurnal {jurnal0}->{jurnal1}", "IND-03")
+
+    # 2. Pembalikan SEBAGIAN: masih ada uang, layar maupun basis data harus menolak.
+    visit2 = buat_kunjungan(h, n + 1, cust)
+    h.sql(tagih_sql(visit2, f"k{n}-tahap2", baris(n + 1, 1), OWNER, alasan="Uji fiktif DP"), OWNER)
+    inv2 = h.aktif(visit2)
+    h.sql(bayar_sql(visit2, f"k{n}-bayar2a", [{"method": "Tunai", "amount": 60000}]), OWNER)
+    h.sql(bayar_sql(visit2, f"k{n}-bayar2b", [{"method": "Tunai", "amount": 40000}]), OWNER)
+    kwt_b = h.nilai(f"select id from public.clinic_payment_receipts where visit_id={q(visit2)}"
+                    f" and total=40000")
+    h.sql(batal_kwitansi_sql(kwt_b, f"k{n}-batal2b"), FINANCE)
+    cocok(h, "sebagian-dibalik-keuangan", inv2, FINANCE, baris(n + 1, 1, 3), f"k{n}-koreksi2", "f")
+
+    # 3. Tagihan biasa tanpa uang: kasir layak, dan penulisannya memang diterima.
+    visit3 = buat_kunjungan(h, n + 2, cust, admitted=False)
+    h.sql(tagih_biasa_sql(visit3, f"k{n}-biasa3", baris(n + 2, 1), OWNER, alasan="Uji fiktif DP"), OWNER)
+    inv3 = h.aktif(visit3)
+    cocok(h, "biasa-tanpa-uang-kasir", inv3, STAFF, baris(n + 2, 1, 4), f"k{n}-koreksi3", "t")
+
+    # 4. Uang muka di kepala tagihan: kasir tidak layak, keuangan layak.
+    visit4 = buat_kunjungan(h, n + 3, cust, admitted=False)
+    h.sql(tagih_biasa_sql(visit4, f"k{n}-biasa4", baris(n + 3, 1), OWNER, dp=60000), OWNER)
+    inv4 = h.aktif(visit4)
+    cocok(h, "kepala-dp-kasir", inv4, STAFF, baris(n + 3, 1, 4), f"k{n}-koreksi4a", "f", "IND-05")
+    cocok(h, "kepala-dp-keuangan", inv4, FINANCE, baris(n + 3, 1, 4), f"k{n}-koreksi4b", "t", "IND-05")
+
+    # 5. Tagihan LUNAS: jalurnya terbit ulang, bukan koreksi — layar pun tidak boleh menawarkan.
+    visit5 = buat_kunjungan(h, n + 4, cust, admitted=False)
+    h.sql(tagih_biasa_sql(visit5, f"k{n}-biasa5", baris(n + 4, 1), OWNER,
+                          ganti={"paid_status": "Lunas", "dp_amount": 0}), OWNER)
+    inv5 = h.aktif(visit5)
+    cocok(h, "lunas-tidak-layak", inv5, FINANCE, baris(n + 4, 1, 4), f"k{n}-koreksi5", "f")
+
+    # 6. Sesudah terbit ulang: tagihan lama yang DIBATALKAN tidak layak, penggantinya layak
+    #    untuk keuangan dan tetap tidak layak untuk kasir walau uangnya hanya "dialihkan".
+    h.sql(terbit_ulang_sql(inv5, f"k{n}-ulang5"), FINANCE)
+    inv5b = h.aktif(visit5)
+    catat("R2-01-tagihan-dibatalkan-tidak-layak",
+          h.layak(inv5, FINANCE) == "f" and inv5b != inv5,
+          f"layak lama={h.layak(inv5, FINANCE)} pengganti={inv5b[:8]}", "IND-03")
+    cocok(h, "pengganti-kasir", inv5b, STAFF, baris(n + 4, 1, 4), f"k{n}-koreksi6a", "f", "IND-05")
+    cocok(h, "pengganti-keuangan", inv5b, FINANCE, baris(n + 4, 1, 4), f"k{n}-koreksi6b", "t")
+
+    # 7. Tagihan yang tidak dikenal/tidak terjangkau dijawab `false`, bukan galat yang
+    #    membocorkan ada-tidaknya baris.
+    asing = uid("e", 1)
+    jawab = h.layak(asing, FINANCE)
+    catat("R2-01-tagihan-asing-dijawab-false", jawab == "f", f"layak={jawab}", "IND-03")
+    luar = h.layak(inv3, FIN_LUAR)
+    catat("R2-01-cabang-lain-dijawab-false", luar == "f", f"layak={luar}", "IND-03")
+
+
+# ---------------------------------------------------------------------------
 # IND-04 — kepala tagihan tahap tidak boleh membawa uang
 # ---------------------------------------------------------------------------
 def ind04(h, n, cust):
@@ -578,6 +786,101 @@ def ind05(h, n, cust):
 
 
 # ---------------------------------------------------------------------------
+# Checkout campuran (split) dan checkout DEMO lewat skema penuh
+# ---------------------------------------------------------------------------
+def split_checkout(h, n, cust):
+    """Checkout campuran ASLI: dua rekening, satu tagihan lunas, jurnal per rekening."""
+    visit = buat_kunjungan(h, n, cust, admitted=False)
+    lines = baris(n, 1)
+    bagian = [{"method": "Tunai", "amount": 60000, "kas_code": "1101"},
+              {"method": "QRIS", "amount": 40000, "kas_code": "1102"}]
+    muatan = {"tanggal": TGL, "subtotal": 100000, "discount": 0, "tax": 0, "total": 100000,
+              "dp_amount": 0, "dp_date": None, "paid_status": "Lunas", "metode_bayar": "Tunai",
+              "shift_id": SHIFT[STAFF], "voucher_code": None, "salesperson_id": None}
+    galat = h.gagal(f"select public.clinic_post_split_invoice({q(visit)},{q(f'k{n}-split')},"
+                    f"{j(muatan)},{j(lines)},{j(bagian)});", STAFF)
+    inv = h.aktif(visit)
+    no = h.no_tagihan(inv) if inv else ""
+    kas, bank = h.saldo_ref("1101", no), h.saldo_ref("1102", no)
+    bayar = h.angka(f"select count(*) from public.invoice_payments where invoice_id={q(inv)}") if inv else 0
+    catat("LENGKAP-split-checkout", galat is None and kas == 60000 and bank == 40000
+          and bayar == 2 and h.status_bayar(inv) == "Lunas" and h.diterima(inv) == 100000,
+          f"{'diterima' if galat is None else str(galat).strip().splitlines()[0]} kas={kas} "
+          f"bank={bank} baris bayar={bayar} status={h.status_bayar(inv) if inv else '-'}")
+
+    # Tagihan lunas hasil checkout campuran tidak layak dikoreksi; jalurnya terbit ulang.
+    catat("LENGKAP-split-tidak-layak-koreksi", inv and h.layak(inv, FINANCE) == "f",
+          f"layak={h.layak(inv, FINANCE) if inv else '-'}", "IND-03")
+
+
+def demo_checkout(h, n, cust):
+    """Checkout DEMO: uang dan insentifnya terkunci snapshot, koreksi biasa ditolak."""
+    kebijakan = uid("f", 1)
+    h.sistem(f"""
+insert into public.clinic_demo_policies
+ (id,name,incentive_percent,fee_bearer,fee_rates,admin_revenue_code,admin_expense_code,is_active)
+ values ({q(kebijakan)},'DEMO Fiktif',5,'company','{{"Tunai":0}}'::jsonb,'4201','5101',true)
+ on conflict (id) do nothing;""")
+    visit = buat_kunjungan(h, n, cust)
+    # Checkout DEMO terjadi saat pasien PULANG; rawat inap yang masih terbuka
+    # ditolak lebih dulu oleh penjaga INPATIENT_OPEN.
+    pulangkan(h, visit)
+    muatan = {"tanggal": TGL, "subtotal": 100000, "discount": 0, "tax": 0, "total": 100000,
+              "dp_amount": 0, "dp_date": None, "paid_status": "Lunas", "metode_bayar": "Tunai",
+              "shift_id": SHIFT[STAFF], "voucher_code": None, "salesperson_id": None}
+    bagian = [{"method": "Tunai", "amount": 100000, "kas_code": "1101"}]
+    galat = h.gagal(
+        f"select public.clinic_post_demo_invoice({q(visit)},{q(f'k{n}-demo')},{j(muatan)},"
+        f"{j(baris(n, 1))},{q(kebijakan)},{j(bagian)},array[{q(DOKTER_PEGAWAI)}]::uuid[]);", STAFF)
+    if galat:
+        return catat("LENGKAP-demo-checkout", False,
+                     "checkout DEMO ditolak: " + str(galat).strip().splitlines()[0])
+    inv = h.aktif(visit)
+    potret = h.angka(f"select count(*) from public.clinic_demo_invoice_snapshots where invoice_id={q(inv)}")
+    catat("LENGKAP-demo-checkout", potret == 1 and h.status_bayar(inv) == "Lunas",
+          f"snapshot={potret} status={h.status_bayar(inv)}")
+    # Uang DEMO tidak boleh dikoreksi lewat jalur biasa, dan layar pun tidak boleh menawarkannya.
+    tolak = h.gagal(koreksi_sql(h, inv, f"k{n}-demo-koreksi", baris(n, 1, 4)), FINANCE)
+    catat("LENGKAP-demo-tidak-layak-koreksi",
+          bool(tolak) and "INVOICE_POSTED" in str(tolak) and h.layak(inv, FINANCE) == "f",
+          f"layak={h.layak(inv, FINANCE)} tulis="
+          f"{str(tolak).strip().splitlines()[0] if tolak else 'DITERIMA'}", "IND-03")
+
+
+# ---------------------------------------------------------------------------
+# Periode akuntansi yang sudah ditutup
+# ---------------------------------------------------------------------------
+def periode_tertutup(h, n, cust):
+    """Tutup buku mengunci jurnal: menagih dan mengoreksi harus gagal UTUH."""
+    visit = buat_kunjungan(h, n, cust, admitted=False)
+    h.sql(tagih_biasa_sql(visit, f"k{n}-biasa", baris(n, 1), OWNER, alasan="Uji fiktif DP"), OWNER)
+    inv = h.aktif(visit)
+    visit2 = buat_kunjungan(h, n + 1, cust, admitted=False)
+    try:
+        h.sistem(f"update public.accounting_locks set closed_until={q(TGL)} where id;")
+        stok = h.angka(f"select qty from public.stock where warehouse_id={q(WH)} and item_id={q(ITEM)}")
+        jurnal = h.angka("select count(*) from public.journal_entries")
+        galat = h.gagal(tagih_biasa_sql(visit2, f"k{n}-tutup", baris(n + 1, 3), OWNER,
+                                        alasan="Uji fiktif DP"), OWNER)
+        tagihan = h.angka(f"select count(*) from public.invoices where visit_id={q(visit2)}")
+        catat("LENGKAP-periode-tertutup-tolak-tagih",
+              bool(galat) and "sudah ditutup" in str(galat) and tagihan == 0
+              and h.angka(f"select qty from public.stock where warehouse_id={q(WH)} and item_id={q(ITEM)}") == stok
+              and h.angka("select count(*) from public.journal_entries") == jurnal,
+              f"{str(galat).strip().splitlines()[0] if galat else 'DITERIMA'} tagihan={tagihan}")
+        sebelum = h.potret_tagihan(inv)
+        galat2 = h.gagal(koreksi_sql(h, inv, f"k{n}-tutup-koreksi", baris(n, 1, 3)), FINANCE)
+        catat("LENGKAP-periode-tertutup-tolak-koreksi",
+              bool(galat2) and "sudah ditutup" in str(galat2) and h.potret_tagihan(inv) == sebelum,
+              f"{str(galat2).strip().splitlines()[0] if galat2 else 'DITERIMA'}")
+    finally:
+        h.sistem("update public.accounting_locks set closed_until=null where id;")
+    galat3 = h.gagal(koreksi_sql(h, inv, f"k{n}-buka-koreksi", baris(n, 1, 3)), FINANCE)
+    catat("LENGKAP-periode-dibuka-koreksi-jalan-lagi", galat3 is None,
+          "diterima" if galat3 is None else str(galat3).strip().splitlines()[0])
+
+
+# ---------------------------------------------------------------------------
 # Lintas-temuan: pemicu tertunda, stok/HPP sekali, konteks posting, idempotensi
 # ---------------------------------------------------------------------------
 def lintas(h, n, cust):
@@ -630,14 +933,24 @@ def jalankan(h):
     ind03(h, 31, buat_pelanggan(h, 31), False, "dirawat")
     ind03(h, 33, buat_pelanggan(h, 33), True, "sudah-pulang")
     ind03_negatif(h, 35, buat_pelanggan(h, 35))
+    r2_kepala_dp(h, 61, buat_pelanggan(h, 61))
+    kelayakan(h, 91, buat_pelanggan(h, 91))
     ind04(h, 41, buat_pelanggan(h, 41))
     ind05(h, 51, buat_pelanggan(h, 51))
+    split_checkout(h, 101, buat_pelanggan(h, 101))
+    demo_checkout(h, 103, buat_pelanggan(h, 103))
+    periode_tertutup(h, 105, buat_pelanggan(h, 105))
     lintas(h, 71, buat_pelanggan(h, 71))
 
 
-def siapkan_migrasi(pra_perbaikan, stack):
+# Revisi RED yang dipin per putaran: HEAD bergerak, bukti RED tidak boleh ikut bergerak.
+RED_PUTARAN2 = "5fc24c78780b12818c8e06b8aaa6656480f92c32"
+RED_PUTARAN3 = "f503424ecd16613ab96817c023490034247db26b"
+
+
+def siapkan_migrasi(revisi, stack):
     """Direktori migrasi yang dipakai bootstrap; mode RED memakai revisi tetap sebelum perbaikan."""
-    if not pra_perbaikan:
+    if not revisi:
         return ROOT
     tmp = stack.enter_context(tempfile.TemporaryDirectory(prefix="kamo-ranap-red-"))
     tujuan = Path(tmp) / "supabase/migrations"
@@ -645,7 +958,7 @@ def siapkan_migrasi(pra_perbaikan, stack):
     for sumber in (ROOT / "supabase/migrations").glob("*.sql"):
         if sumber.name != MITIGASI:
             (tujuan / sumber.name).symlink_to(sumber)
-    asal = subprocess.run(["git", "show", f"{os.environ.get('KAMO_RED_REVISION', '5fc24c78780b12818c8e06b8aaa6656480f92c32')}:supabase/migrations/{MITIGASI}"],
+    asal = subprocess.run(["git", "show", f"{revisi}:supabase/migrations/{MITIGASI}"],
                           cwd=ROOT, text=True, capture_output=True)
     if asal.returncode:
         raise SystemExit("Tidak dapat membaca revisi pra-perbaikan migrasi mitigasi: " + asal.stderr)
@@ -656,13 +969,20 @@ def siapkan_migrasi(pra_perbaikan, stack):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pra-perbaikan", action="store_true",
-                        help="pakai migrasi mitigasi sebelum perbaikan, revisi 5fc24c78 (bukti RED)")
+                        help="pakai migrasi mitigasi sebelum perbaikan, revisi 5fc24c78 (bukti RED putaran 1-2)")
+    parser.add_argument("--pra-putaran3", action="store_true",
+                        help="pakai migrasi mitigasi revisi f503424e (bukti RED putaran 3)")
     parser.add_argument("--json", type=Path, help="tulis hasil tiap kasus ke berkas ini")
     args = parser.parse_args()
 
+    revisi = None
+    if args.pra_perbaikan or args.pra_putaran3:
+        bawaan = RED_PUTARAN3 if args.pra_putaran3 else RED_PUTARAN2
+        revisi = os.environ.get("KAMO_RED_REVISION", bawaan)
+
     import contextlib
     with contextlib.ExitStack() as stack:
-        fixture.ROOT = siapkan_migrasi(args.pra_perbaikan, stack)
+        fixture.ROOT = siapkan_migrasi(revisi, stack)
         db = stack.enter_context(NativePostgres(BIN))
         fixture.DisposablePostgres.bootstrap(db)
         h = Harness(db)
@@ -673,12 +993,12 @@ def main():
 
     total = {s: sum(1 for r in HASIL if r["status"] == s) for s in ("PASS", "FAIL")}
     gagal_per_ind = sorted({r["ind"] for r in HASIL if r["status"] == "FAIL" and r["ind"]})
-    mode = "PRA-PERBAIKAN (RED)" if args.pra_perbaikan else "SESUDAH PERBAIKAN (GREEN)"
+    mode = f"PRA-PERBAIKAN (RED {revisi[:8]})" if revisi else "SESUDAH PERBAIKAN (GREEN)"
     print(f"TOTAL {mode} pass={total['PASS']} fail={total['FAIL']} "
           f"temuan-gagal={','.join(gagal_per_ind) or '-'}", flush=True)
     if args.json:
         args.json.write_text(json.dumps(
-            {"mode": "red" if args.pra_perbaikan else "green", "total": total,
+            {"mode": "red" if revisi else "green", "revisi_red": revisi, "total": total,
              "temuan_gagal": gagal_per_ind, "kasus": HASIL}, indent=2, ensure_ascii=False))
     sys.exit(0 if total["FAIL"] == 0 else 1)
 

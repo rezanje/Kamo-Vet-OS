@@ -946,6 +946,14 @@ grant execute on function public.clinic_void_reissue_invoice(uuid,text,text) to 
 -- sekarang. Begitu sebuah tagihan punya riwayat pembayaran — termasuk riwayat yang
 -- sudah dibalik dan tagihan pengganti hasil terbit ulang — koreksinya pekerjaan
 -- keuangan. Tidak ada peran akses baru yang diperkenalkan.
+--
+-- R2-02: uang tagihan klinik punya DUA wujud yang sama sahnya. Selain baris
+-- `invoice_payments`, tagihan biasa menyimpan uang muka LANGSUNG di kepala
+-- tagihan (`invoices.dp_amount`, dijurnal oleh clinic_post_invoice tanpa satu pun
+-- baris pembayaran). Aturan "koreksi yang menyangkut uang adalah pekerjaan
+-- keuangan" karena itu harus membaca kedua wujud; kalau tidak, tagihan ber-DP
+-- masih bisa dikoreksi petugas/dokter. Tagihan tanpa uang sama sekali (DP nol dan
+-- tanpa riwayat) tetap boleh dikoreksi kasir seperti sebelumnya.
 create or replace function public.clinic_edit_invoice(
   p_invoice_id uuid, p_request_key text, p_invoice jsonb, p_lines jsonb
 ) returns uuid language plpgsql security definer set search_path = '' as $function$
@@ -956,7 +964,8 @@ begin
     raise exception using errcode='P0001',
       message='ACCESS_DENIED: pengguna tidak aktif atau tidak terautentikasi';
   end if;
-  if exists(select 1 from public.invoice_payments where invoice_id = p_invoice_id)
+  if (exists(select 1 from public.invoice_payments where invoice_id = p_invoice_id)
+      or coalesce((select i.dp_amount from public.invoices i where i.id = p_invoice_id), 0) <> 0)
      and v_role not in ('OWNER','ADMIN','FINANCE') then
     raise exception using errcode='P0001',
       message='ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh mengoreksi tagihan yang sudah menyangkut uang';
@@ -970,3 +979,55 @@ end;
 $function$;
 revoke all on function public.clinic_edit_invoice(uuid,text,jsonb,jsonb) from public, anon, service_role;
 grant execute on function public.clinic_edit_invoice(uuid,text,jsonb,jsonb) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 12. Kelayakan koreksi: SATU sumber kebenaran untuk layar dan penjaga tulis (IND-03/R2-01)
+-- ---------------------------------------------------------------------------
+-- Layar pembayaran dulu menebak sendiri apakah sebuah tagihan boleh dikoreksi
+-- ("tidak ada baris pembayaran sama sekali"). Tebakan itu menolak keadaan yang
+-- kini SAH di basis data — riwayat yang sudah dibalik seluruhnya — sehingga jalan
+-- keluar lepas uang muka → batalkan kwitansi → koreksi biasa mentok di layar
+-- walaupun RPC-nya menerima. Fungsi ini mengembalikan keputusan yang sama dengan
+-- penjaga tulis, supaya layar dan basis data tidak lagi berbeda pendapat.
+--
+-- Ini BUKAN otorisasi: `clinic_edit_invoice` tetap memeriksa ulang peran dan
+-- `clinic_edit_invoice_core` tetap mengunci baris (`for update`) lalu menguji
+-- syarat yang sama sebelum menyentuh uang. Nilai di sini hanya menentukan apakah
+-- form koreksi ditawarkan. Tidak ada data tagihan yang dibocorkan: keluarannya
+-- satu boolean, dan tagihan di luar cabang/nonaktif/tidak dikenal dijawab `false`
+-- — bukan galat yang membedakan "ada" dari "tidak ada".
+create or replace function public.clinic_invoice_correction_eligible(p_invoice_id uuid)
+returns boolean language plpgsql stable security definer set search_path = '' as $function$
+declare v_role text; v_invoice public.invoices%rowtype; v_branch uuid; v_uang boolean;
+begin
+  if coalesce(auth.role(), '') <> 'authenticated' then return false; end if;
+  select p.role into v_role from public.profiles p where p.id = auth.uid() and p.is_active;
+  if v_role is null then return false; end if;
+  select i.* into v_invoice from public.invoices i where i.id = p_invoice_id;
+  if not found then return false; end if;
+  select v.branch_id into v_branch from public.visits v where v.id = v_invoice.visit_id;
+  if v_branch is null or not public.user_can_access_branch(v_branch) then return false; end if;
+  -- Uang dan insentif DEMO terkunci snapshot; koreksinya lewat terbit ulang.
+  if exists(select 1 from public.clinic_demo_invoice_snapshots where invoice_id = p_invoice_id) then
+    return false;
+  end if;
+  -- Cermin penjaga keadaan di clinic_edit_invoice_core (sesudah tambalan FIN-03).
+  if v_invoice.voided_at is not null or v_invoice.request_key is null
+     or (v_invoice.paid_status = 'Lunas' and not v_invoice.correction_pending)
+     or (exists(select 1 from public.invoice_payments
+           where invoice_id = p_invoice_id
+             and (transferred_from is null or not v_invoice.correction_pending))
+         and not clinic_private.payments_fully_reversed(p_invoice_id))
+     or exists(select 1 from public.invoice_items where invoice_id = p_invoice_id
+           and (compound_recipe_id is not null or (jenis = 'obat' and item_id is null))) then
+    return false;
+  end if;
+  -- Cermin batas peran pembungkus publik, termasuk uang muka di kepala tagihan.
+  v_uang := exists(select 1 from public.invoice_payments where invoice_id = p_invoice_id)
+         or coalesce(v_invoice.dp_amount, 0) <> 0;
+  if v_uang and v_role not in ('OWNER','ADMIN','FINANCE') then return false; end if;
+  return true;
+end;
+$function$;
+revoke all on function public.clinic_invoice_correction_eligible(uuid) from public, anon, service_role;
+grant execute on function public.clinic_invoice_correction_eligible(uuid) to authenticated;

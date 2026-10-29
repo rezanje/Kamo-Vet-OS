@@ -206,3 +206,43 @@ describe("tambalan RPC berjalan", () => {
     expect(SQL).not.toMatch(/alter\s+table\s+public\.(invoice_items|prescription_items)\b/i);
   });
 });
+
+describe("R2-01/R2-02 kelayakan koreksi satu pintu", () => {
+  it("uang muka di KEPALA tagihan ikut menentukan siapa boleh mengoreksi", () => {
+    // Tanpa ini, tagihan ber-DP tanpa baris pembayaran masih bisa dikoreksi
+    // petugas/dokter: uangnya nyata, wujudnya saja berbeda.
+    expect(SATU_BARIS).toContain(
+      "if (exists(select 1 from public.invoice_payments where invoice_id = p_invoice_id)"
+      + " or coalesce((select i.dp_amount from public.invoices i where i.id = p_invoice_id), 0) <> 0)"
+      + " and v_role not in ('OWNER','ADMIN','FINANCE') then");
+  });
+
+  it("RPC kelayakan hanya untuk akun aplikasi yang masuk, bukan anon", () => {
+    expect(SQL).toContain("create or replace function public.clinic_invoice_correction_eligible(p_invoice_id uuid)");
+    expect(SATU_BARIS).toContain(
+      "revoke all on function public.clinic_invoice_correction_eligible(uuid) from public, anon, service_role;");
+    expect(SATU_BARIS).toContain(
+      "grant execute on function public.clinic_invoice_correction_eligible(uuid) to authenticated;");
+  });
+
+  it("menjawab false untuk keadaan tak layak, bukan membocorkan isi tagihan", () => {
+    for (const penolakan of [
+      "if coalesce(auth.role(), '') <> 'authenticated' then return false; end if;",
+      "if v_role is null then return false; end if;",
+      "if v_branch is null or not public.user_can_access_branch(v_branch) then return false; end if;",
+      "if exists(select 1 from public.clinic_demo_invoice_snapshots where invoice_id = p_invoice_id) then",
+    ]) expect(SQL).toContain(penolakan);
+    expect(SQL).toContain("if v_invoice.voided_at is not null or v_invoice.request_key is null");
+    expect(SQL).toContain("and not clinic_private.payments_fully_reversed(p_invoice_id))");
+  });
+
+  it("kelayakan tidak menggantikan penjaga tulis: RPC koreksi tetap memeriksa sendiri", () => {
+    expect(SQL).toContain("create or replace function public.clinic_edit_invoice(");
+    expect(SATU_BARIS).toContain("message='ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh mengoreksi tagihan yang sudah menyangkut uang'");
+  });
+
+  it("skema bersama tidak pernah dijatuhkan", () => {
+    expect(SQL).not.toMatch(/drop\s+schema/i);
+    expect(SQL).not.toMatch(/drop\s+function/i);
+  });
+});

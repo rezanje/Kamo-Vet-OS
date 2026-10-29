@@ -56,6 +56,7 @@ FUNGSI = [
     "public.clinic_void_reissue_invoice(uuid,text,text)",
     "public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)",
     "public.clinic_edit_invoice(uuid,text,jsonb,jsonb)",
+    "public.clinic_invoice_correction_eligible(uuid)",
     "public.clinic_change_inpatient_condition(uuid,text,text)",
     "public.guard_invoice_item_billed_once_final()",
 ]
