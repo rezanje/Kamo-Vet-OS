@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadKatalogPermintaan } from "@/lib/permintaan";
 import { PemindahanForm } from "./PemindahanForm";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 export default async function PemindahanBaruPage({
   searchParams,
@@ -35,6 +36,9 @@ export default async function PemindahanBaruPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      {/* Penolakan `post_stock_transfer_atomic` memakai popup yang sama dengan
+          pemeriksaan di layar; gudang asalnya sudah disebut di kalimat database. */}
+      <StokKurangDariPesan pesan={error} />
 
       <PemindahanForm warehouses={whs ?? []} items={items} stock={stock} userId={user?.id ?? ""} />
     </>

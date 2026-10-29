@@ -11,8 +11,9 @@ import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bm
 import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, visitDefaultPerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
-import { Popup } from "@/components/Popup";
 import { kekuranganStok } from "@/lib/stok-keranjang";
+import { StokKurangPopup, StokKurangDariPesan } from "@/components/StokKurangPopup";
+import type { BarisKurangStok } from "@/lib/stok-kurang";
 import { simpanRekamMedis, koreksiRekamMedis } from "./actions";
 import { type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
@@ -101,7 +102,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
-  const [stokKurang, setStokKurang] = useState<string | null>(null);
+  const [stokKurang, setStokKurang] = useState<BarisKurangStok[]>([]);
 
   // Builder racikan
   const [racikNama, setRacikNama] = useState("");
@@ -238,11 +239,16 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
 
   return (<>
     {/* Di luar <form>: dialog punya form method="dialog" sendiri. */}
-    <Popup message={stokKurang} title="Stok tidak cukup" onClose={() => setStokKurang(null)} />
+    <StokKurangPopup baris={stokKurang} onClose={() => setStokKurang([])}
+      petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />
+    {/* Penolakan dari database (mis. stok habis dipakai kasir lain sedetik lalu)
+        bermuara ke popup yang sama. Hanya satu dialog yang boleh terbuka. */}
+    {stokKurang.length === 0 && <StokKurangDariPesan pesan={draftSaveError}
+      petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />}
     <form ref={draftAttachForm} action={(data) => draftSubmit(data, correction ? koreksiRekamMedis : simpanRekamMedis)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
       const kurang = correction ? [] : kekuranganStok(cart, stokById, (id, unit) => unitsOf(id).find(u => u.unit === unit)?.factor ?? 1);
       if (procedureDraft) { event.preventDefault(); event.stopPropagation(); setTab(TINDAKAN); setProcedureError("Selesaikan komposisi BMHP tindakan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
-      else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(`${kurang.join("; ")}. Kurangi jumlah atau ganti obat sebelum melanjutkan.`); }
+      else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(kurang); }
       else draftCapture();
     }}>
       {draftRecovered && <div role="status" className="p2ban">Draf dipulihkan <button type="button" className="btn-def" onClick={draftDiscard}>Buang draf</button></div>}

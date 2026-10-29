@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatNoPemindahan, hitungStatusKirim, kurangStokPemindahan, sisaTransit } from "../pemindahan";
+import { formatNoPemindahan, hitungStatusKirim, kurangStokPemindahan as barisKurangPemindahan, sisaTransit } from "../pemindahan";
+import { formatKekuranganStok } from "../stok-kurang";
+
+// Hasil `kurangStokPemindahan` sekarang baris terstruktur untuk popup; kalimat
+// yang dibaca petugas dibentuk `formatKekuranganStok`.
+const kurangStokPemindahan = (...args: Parameters<typeof barisKurangPemindahan>) => {
+  const baris = barisKurangPemindahan(...args);
+  return baris.length ? formatKekuranganStok(baris) : null;
+};
 
 describe("formatNoPemindahan", () => {
   it("format IT.YYYY.MM.NNNNN", () => {

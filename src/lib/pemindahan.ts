@@ -1,5 +1,7 @@
 // Logika murni Pemindahan Barang (kloning Accurate) — dites di __tests__/pemindahan.test.ts
 
+import type { BarisKurangStok } from "./stok-kurang";
+
 export type StatusKirim = "Sedang dikirim" | "Diterima Sebagian" | "Diterima Seluruhnya";
 
 // Nomor dokumen format Accurate: IT.YYYY.MM.NNNNN (seq per bulan).
@@ -40,7 +42,7 @@ export type BarisPindah = { item_id: string; nama: string; qty: number; faktor: 
 export function kurangStokPemindahan(
   rows: BarisPindah[],
   stokDasarPerItem: Map<string, number>,
-): string | null {
+): BarisKurangStok[] {
   const perItem = new Map<string, { nama: string; satuan: string; faktor: number; butuh: number; ada: number }>();
   for (const r of rows) {
     if (!r.item_id || !(r.qty > 0)) continue;
@@ -53,10 +55,10 @@ export function kurangStokPemindahan(
       ada: Math.max(0, Number(stokDasarPerItem.get(r.item_id)) || 0),
     });
   }
-  const angka = (v: number) => Number(v.toFixed(6)).toLocaleString("id-ID", { maximumFractionDigits: 6 });
-  const kurang = [...perItem.values()].filter((t) => t.butuh > t.ada + 1e-9);
-  if (!kurang.length) return null;
-  return kurang
-    .map((t) => `${t.nama} butuh ${angka(t.butuh / t.faktor)} ${t.satuan}, tersedia ${angka(t.ada / t.faktor)} ${t.satuan}`.trimEnd())
-    .join("; ");
+  return [...perItem.entries()]
+    .filter(([, t]) => t.butuh > t.ada + 1e-9)
+    .map(([itemId, t]) => ({
+      kunci: itemId, item_id: itemId, nama: t.nama, satuan: t.satuan,
+      butuh: t.butuh / t.faktor, tersedia: t.ada / t.faktor,
+    }));
 }
