@@ -8,6 +8,7 @@ import { kirimPermintaan, setujuiPermintaan, terimaDariBackoffice, updateRequest
 import { siapkanKirim, type BarisPermintaan } from "@/lib/permintaan-kirim";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
+import { BatalKirimPermintaanForm } from "./BatalKirimPermintaanForm";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -35,6 +36,13 @@ type Detail = {
     kondisi: string | null;
     catatan: string | null;
   } & BarisPermintaan)[] | null;
+};
+
+type RiwayatBatal = {
+  id: string;
+  reason: string;
+  created_at: string;
+  pelaku: Rel<{ full_name: string | null }>;
 };
 
 const qty = (v: number) => Number(v.toFixed(6)).toLocaleString("id-ID", { maximumFractionDigits: 6 });
@@ -72,6 +80,15 @@ export default async function PermintaanDetailPage({
     ? await loadWarehouseStock(supabase, [req.to_warehouse_id])
     : [];
   const petaStok = new Map(stok.map((s) => [s.item_id, Number(s.qty)]));
+  // Riwayat pembatalan pengiriman. Permintaan yang dibatalkan kembali ke "Disetujui",
+  // jadi tanpa jejak ini layar kehilangan alasan kenapa kiriman sebelumnya ditarik.
+  const { data: pembatalan } = await supabase
+    .from("stock_request_shipment_cancellations")
+    .select("id, reason, created_at, pelaku:profiles!stock_request_shipment_cancellations_actor_id_fkey(full_name)")
+    .eq("request_id", id)
+    .order("created_at", { ascending: false });
+  const riwayatBatal = (pembatalan ?? []) as unknown as RiwayatBatal[];
+
   const barisStok = siapkanKirim(items, petaStok, menunggu ? "diminta" : "disetujui");
   const stokBaris = new Map(barisStok.map((b) => [b.id, b]));
   const adaKurang = barisStok.some((b) => b.kurang);
@@ -93,7 +110,9 @@ export default async function PermintaanDetailPage({
             ? `Barang diterima${trm ? ` (${trm})` : ""} — stok cabang sudah bertambah.`
             : success === "kirim"
               ? "Barang dikirim — stok gudang pengirim sudah berkurang dan menunggu diterima cabang."
-              : "Permintaan disetujui dengan jumlah yang kamu tetapkan."}
+              : success === "batal-kirim"
+                ? "Pengiriman dibatalkan — barang sudah kembali ke stok gudang pengirim dan permintaan ini bisa dikirim ulang."
+                : "Permintaan disetujui dengan jumlah yang kamu tetapkan."}
         </div>
       )}
       {error && (
@@ -104,6 +123,20 @@ export default async function PermintaanDetailPage({
       {/* Penolakan stok (persetujuan maupun pengiriman) diangkat jadi popup yang
           sama dengan proses stok lain; bilah merah di atas tetap jadi jejaknya. */}
       <StokKurangDariPesan pesan={error} gudang={one(req.warehouses)?.name ?? null} />
+
+      {riwayatBatal.length > 0 && (
+        <div role="status" className="p2ban" style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#9a3412" }}>
+          <strong>Pengiriman pernah dibatalkan.</strong> Barangnya sudah kembali ke stok gudang pengirim.
+          <ul style={{ margin: "5px 0 0", paddingLeft: 16 }}>
+            {riwayatBatal.map((b) => (
+              <li key={b.id} style={{ fontSize: 11 }}>
+                {fmtDt(b.created_at)}
+                {one(b.pelaku)?.full_name ? ` — ${one(b.pelaku)!.full_name}` : ""} — {b.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="crm-sec">
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", paddingBottom: 12, borderBottom: ".5px solid var(--bd)", marginBottom: 14 }}>
@@ -336,6 +369,10 @@ export default async function PermintaanDetailPage({
           </div>
         </TransactionForm>
       )}
+
+      {/* Koreksi salah kirim: satu-satunya jalan mengembalikan stok yang sudah keluar ke
+          gudang transit tanpa memaksa cabang menerima barang yang salah. */}
+      {dikirim && <BatalKirimPermintaanForm userId={user?.id ?? ""} requestId={req.id} />}
     </>
   );
 }

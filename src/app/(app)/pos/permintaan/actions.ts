@@ -13,6 +13,8 @@ import { formatKekuranganStok } from "@/lib/stok-kurang";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
 import { hariIniWIB } from "@/lib/tanggal";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function buatPermintaan(formData: FormData) {
   const supabase = await createClient();
 
@@ -139,6 +141,52 @@ export async function kirimPermintaan(formData: FormData) {
 
   revalidatePath("/pos/permintaan");
   redirect(`${kembali}?success=kirim${transactionDraftAck(formData)}`);
+}
+
+/**
+ * Batalkan pengiriman permintaan (Dikirim → Disetujui), selama cabang belum menerima.
+ *
+ * Sisi kembarannya dari kirimPermintaan: stok yang sudah keluar ke gudang transit
+ * dikembalikan ke gudang pengirim dengan lapisan harga pokok aslinya, dan
+ * permintaannya kembali ke "Disetujui" supaya bisa dikirim ulang dengan isi yang
+ * benar. Pagar nyatanya ada di RPC cancel_stock_request_shipment.
+ */
+export async function batalkanPengirimanPermintaan(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "");
+  const kembali = `/pos/permintaan/${id}`;
+  const alasan = String(formData.get("alasan") ?? "").trim();
+  const kunci = String(formData.get("draft_key") ?? "");
+  if (alasan.length < 3) {
+    redirect(`${kembali}?error=${encodeURIComponent("Alasan pembatalan wajib diisi (minimal 3 karakter).")}`);
+  }
+  // Kunci kiriman menjaga klik ganda tidak membalik stok transit dua kali; bentuknya
+  // diperiksa di sini supaya layar tidak kebagian pesan cast mentah dari database.
+  if (!UUID.test(kunci)) {
+    redirect(`${kembali}?error=${encodeURIComponent("Identitas pembatalan tidak lengkap. Muat ulang halaman lalu coba lagi.")}`);
+  }
+
+  const { data: req } = await supabase.from("stock_requests").select("status").eq("id", id).maybeSingle();
+  if (!req) redirect(`/pos/permintaan?error=${encodeURIComponent("Permintaan tidak ditemukan")}`);
+  if (req!.status !== "Dikirim") {
+    redirect(`${kembali}?error=${encodeURIComponent(`Hanya permintaan berstatus Dikirim yang pengirimannya bisa dibatalkan (sekarang ${req!.status}).`)}`);
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  if (!canApprove(me?.role ?? "")) {
+    redirect(`${kembali}?error=${encodeURIComponent("Hanya Kepala Gudang / Manajer yang bisa membatalkan pengiriman")}`);
+  }
+
+  const { data, error } = await supabase.rpc("cancel_stock_request_shipment", {
+    p_id: id, p_request_key: kunci, p_reason: alasan,
+  });
+  if (error) redirect(`${kembali}?error=${encodeURIComponent(error.message)}`);
+  if (!data || data.request_id !== id) throw new Error("Pembatalan belum terkonfirmasi. Muat ulang halaman sebelum mengulang.");
+
+  // Stok gudang pengirim ikut berubah, jadi layar stok juga disegarkan.
+  for (const path of [kembali, "/pos/permintaan", "/pos/stok"]) revalidatePath(path);
+  redirect(`${kembali}?success=batal-kirim${transactionDraftAck(formData)}`);
 }
 
 /**
