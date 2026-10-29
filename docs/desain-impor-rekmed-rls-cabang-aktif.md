@@ -289,10 +289,35 @@ EXECUTE `auth.uid`, `authenticated` USAGE tanpa grant option; runner emulasi non
 option — sebelumnya emulasi keliru memberi grant option sehingga masalah ini lolos). Tiruan `auth.uid()` di fixture
 bersama (`scripts/test-accurate-inventory-accounting-postgres.py`) disamakan teksnya dengan hosted (semantik sama).
 
-Dampak samping (dilaporkan, belum diubah): ±20 harness Postgres lain yang memutar semua migrasi dengan tiruan
-`auth.uid()` sendiri (mis. `scripts/test-employee-account-context-postgres.py`, `test-clinic-demo-postgres.py`,
-`test-posted-sales-postgres.py`, …) akan berhenti di gerbang sidik migrasi ini sampai tiruannya disamakan dengan teks
-hosted. Itu perilaku gagal-tertutup yang disengaja; penyelarasan tiruan butuh keputusan terpisah.
+Regresi integrasi harness (temuan review `487009d`, diperbaiki di PR yang sama): harness yang memutar semua migrasi
+memakai tiruan `auth.uid()` satu baris yang berbeda dari hosted, sehingga gerbang sidik (benar) menolaknya. Perbaikan:
+**satu sumber** `supabase/tests/fixtures/hosted_auth_uid.sql` (teks `auth.uid()` hosted persis + pemilik terpisah
+`supabase_auth_admin`; ACL tetap bawaan = EXECUTE PUBLIC; USAGE skema per harness tetap tanpa grant option) dipasang
+sebelum migrasi oleh fixture bersama dan 18 harness. Gerbang, migrasi, dan kegagalan yang diharapkan tidak diubah; tidak
+ada allowlist sidik tiruan.
+
+Bukti (lokal, data fiktif; "sebelum" = `31911b0` tanpa gerbang sidik, "rusak" = `487009d`, "sesudah" = head ini; harness
+Docker dijalankan lewat shim Postgres 16 native; `posted-sales` pada server TCP lokal yang direset tiap run;
+`clinic-record-history` dijalankan sebagai user `postgres` karena initdb menolak root):
+
+| Harness | Sebelum | `487009d` | Sesudah |
+|---|---|---|---|
+| clinic-record-history | lulus (323 migrasi) | **gagal di gerbang** | lulus (sama) |
+| pos-split-payments | lulus (323 migrasi) | **gagal di gerbang** | lulus (sama) |
+| c05-q01, clinic-demo, procedure-bmhp | 323 migrasi, lalu gagal `DP_MINIMAL` (bawaan) | **gagal di gerbang** | sama dengan sebelum |
+| compound-catalog | 323 migrasi, lalu gagal "Perubahan status wajib melalui aksi master" (bawaan) | **gagal di gerbang** | sama |
+| employee-account-context | 323 migrasi, lalu gagal `ACCESS_DENIED` cabang pelaksana (bawaan) | **gagal di gerbang** | sama |
+| return-record-corrections | 323 migrasi, lalu gagal "reconciled method blocks correction" (bawaan) | **gagal di gerbang** | sama |
+| posted-sales | semua migrasi, lalu gagal `posted_sale_cancellations.sql` (bawaan) | **gagal di gerbang** | sama |
+| asset-correction, branch-stock-requests, online-return, pos-complaints, pos-merchant-fees, purchase-payment, sales-posting, stock-transfer | gagal di `20261023091210` (`auth.jwt()` tidak ada di tiruan; bawaan) | sama | sama |
+| master-data-lifecycle | gagal di `20261021183000` (urutan guard master; bawaan) | sama | sama |
+
+Ringkas: 9 harness rusak oleh gerbang di `487009d` kini kembali **identik** dengan baseline (rc, tahap, galat terakhir);
+9 harness lain gagal **sebelum** mencapai migrasi ini di ketiga titik (kegagalan bawaan, tidak dinilai di sini). Tidak
+terdampak: harness yang memasang migrasi tertentu saja (mis. `test-purchase-recovery-db.py`,
+`test-tagihan-berjalan-postgres.py`). Catatan: role penulis bersifat global per klaster, jadi `posted-sales` yang memakai
+server lokal yang sama dua kali akan berhenti di prasyarat "role sudah ada" (gagal-tertutup yang disengaja); pakai
+server/klaster baru per run.
 
 ### Batas janji D2 (residual, sengaja tidak diklaim)
 D2 hanya menutup tulis **langsung** oleh `authenticated` (Data API / RPC INVOKER). RPC `SECURITY DEFINER` lama milik

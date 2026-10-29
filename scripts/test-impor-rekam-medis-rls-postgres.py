@@ -622,9 +622,9 @@ AUTH_FP = 'ea3b41bf29e2ad573067939329aa088e'
 
 
 def hosted_auth(raw):
-    raw.sql("""create role supabase_auth_admin nologin noinherit;
-alter schema auth owner to supabase_auth_admin;
-alter function auth.uid() owner to supabase_auth_admin;
+    # auth.uid() itself (text + separate owner) comes from supabase/tests/fixtures/hosted_auth_uid.sql via the shared
+    # fixture bootstrap; here the schema owner and ACLs are tightened to the hosted state.
+    raw.sql("""alter schema auth owner to supabase_auth_admin;
 revoke all on schema auth from public;
 revoke all on function auth.uid() from public, anon, authenticated, service_role;
 grant execute on function auth.uid() to public;""")

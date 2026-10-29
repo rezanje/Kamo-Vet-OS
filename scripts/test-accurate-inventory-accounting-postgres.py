@@ -16,6 +16,8 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+# Single source of the exact hosted auth.uid() (fingerprinted by migration 20261101120000).
+HOSTED_AUTH_UID = (ROOT / 'supabase/tests/fixtures/hosted_auth_uid.sql').read_text()
 IMAGE = "postgres:16"
 DOCKER = ["docker", "--host=unix:///var/run/docker.sock"]
 
@@ -69,14 +71,7 @@ class DisposablePostgres:
 create role anon; create role authenticated; create role service_role bypassrls;
 create schema auth; create schema storage;
 create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
--- Same text as Supabase hosted auth.uid() (catalog read 2026-10-29); migrations may fingerprint it.
-create function auth.uid() returns uuid language sql stable as $function$
-  select 
-  coalesce(
-    nullif(current_setting('request.jwt.claim.sub', true), ''),
-    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
-  )::uuid
-$function$;
+""" + HOSTED_AUTH_UID + """
 create function auth.role() returns text language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'role')$$;
 create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
 create table storage.buckets(id text primary key,name text,public boolean);
