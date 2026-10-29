@@ -27,7 +27,7 @@ export default async function LaporanAbsensiPage({
   const [{ data: absen }, { data: karyawan }, { data: setting }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase.from("attendance").select("id, employee_id, status, jam_masuk, jam_pulang", { count: "exact" })
       .gte("tanggal", awal).lt("tanggal", akhir)),
-    completeReportQuery(supabase.from("employees").select("id, nama, jabatan, status, branches(name)", { count: "exact" }).order("nama")),
+    completeReportQuery(supabase.from("employees").select("id, nama, jabatan, status, branches!employees_branch_id_fkey(name)", { count: "exact" }).order("nama")),
     supabase.from("company_settings")
       .select("jam_masuk_standar, jam_pulang_standar, toleransi_telat_menit").maybeSingle(),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),

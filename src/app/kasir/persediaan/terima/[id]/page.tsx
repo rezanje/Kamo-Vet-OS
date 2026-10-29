@@ -35,7 +35,7 @@ export default async function TerimaBarangPage({
   const unavailable = <div role="alert" className="p2ban">Data penerimaan belum dapat dimuat lengkap. Muat ulang sebelum menerima barang. <Link href="/kasir/persediaan?tab=penerimaan">Kembali ke penerimaan</Link></div>;
   const { data, error } = await supabase
     .from("stock_requests")
-    .select("id, no_request, status, from_branch_id, warehouses(name)")
+    .select("id, no_request, status, from_branch_id, warehouses!stock_requests_to_warehouse_id_fkey(name)")
     .eq("id", id)
     .maybeSingle();
 

@@ -30,7 +30,7 @@ export default async function KlinikPermintaanPage({
 
   let query = supabase
     .from("stock_requests")
-    .select("id, no_request, status, priority, catatan, created_at, from_branch_id, branches(name), warehouses(name), stock_request_items(id), profiles!requested_by(full_name, role)")
+    .select("id, no_request, status, priority, catatan, created_at, from_branch_id, branches(name), warehouses!stock_requests_to_warehouse_id_fkey(name), stock_request_items(id), profiles!requested_by(full_name, role)")
     .order("created_at", { ascending: false }).limit(100);
   if (branchId) query = query.eq("from_branch_id", branchId);
   if (status) query = query.eq("status", status);
