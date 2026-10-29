@@ -703,6 +703,7 @@ export async function bayarRombongan(formData: FormData) {
   const urutan = siap.map((_, i) => i);
   if (kampanye) urutan.sort((a, b) => Number(pakaiKode[b]) - Number(pakaiKode[a]));
   let kodeMenunggu = kampanye?.code ?? null;     // belum menempel di nota mana pun
+  let notaPembawa: string | null = null;         // nota yang sudah membawa kode kampanye
   let kampanyeDitolak: string | null = null;
   let notaTersimpan = 0;                          // termasuk nota yang nomornya belum terbaca
   for (const idx of urutan) {
@@ -710,6 +711,9 @@ export async function bayarRombongan(formData: FormData) {
     const { b, rows, subtotal, salespersonId, cartVersion } = s;
     if (pakaiKode[idx] && kampanyeDitolak) { dilewati.push(`${b.hewan}: ${kampanyeDitolak}`); continue; }
     const bawaKode = pakaiKode[idx] ? kodeMenunggu : null;
+    // Nota hewan lain yang ikut menikmati voucher kampanye menunjuk nota pembawa kodenya;
+    // database memverifikasi rombongannya dan tidak menghitung pemakaian tambahan.
+    const pendamping = !bawaKode && !!kampanye?.voucher_code && voucherPerPet[idx] > 0 ? notaPembawa : null;
     const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx]);
     const dpp = Math.max(0, subtotal - discount);
     const { tax, total } = tambahPpn(dpp, pajakSettings);
@@ -722,13 +726,14 @@ export async function bayarRombongan(formData: FormData) {
         paid_status: "Lunas", metode_bayar: metode, shift_id: klinikShift.id,
         voucher_code: voucherPerPet[idx] > 0 ? voucherCode : null, salesperson_id: salespersonId,
         ...(bawaKode ? { campaign_code: bawaKode } : {}),
+        ...(pendamping ? { campaign_carrier_id: pendamping } : {}),
         service_pricing_version:1,
       },
       p_lines: barisUntukPosting(rows),
     }, undefined, undefined, undefined, cartVersion ?? undefined);
     // Nota yang tersimpan sudah memakai kodenya (dihitung database), walau nomornya belum terbaca.
     if (posted.invoiceId) notaTersimpan++;
-    if (bawaKode && posted.invoiceId) kodeMenunggu = null;
+    if (bawaKode && posted.invoiceId) { kodeMenunggu = null; notaPembawa = posted.invoiceId; }
     if (posted.error || !posted.invoiceNo) {
       const pesanKampanye = bawaKode && !posted.invoiceId ? pesanGagalKampanye(posted.error?.message) : null;
       if (pesanKampanye) {

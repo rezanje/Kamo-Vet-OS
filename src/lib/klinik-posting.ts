@@ -48,6 +48,11 @@ export type ClinicInvoiceInput = {
   voucher_code: string | null;
   /** Kode kampanye yang diketik (C05); batas pemakaiannya dijaga database. */
   campaign_code?: string | null;
+  /**
+   * Rombongan (C05): nota pembawa kode kampanye. Nota hewan lain menikmati voucher kampanyenya
+   * lewat penanda ini tanpa menambah pemakaian; database memeriksa rombongannya cocok.
+   */
+  campaign_carrier_id?: string | null;
   salesperson_id: string | null;
 };
 

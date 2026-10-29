@@ -32,16 +32,20 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "kasir" } } }) },
   from(table: string) {
     let key: unknown = null;
+    let linked: unknown = null;
     const row = () => table === "campaign_codes" ? state.kampanye[key as string] ?? null
       : table === "vouchers" ? (key === "HEMAT10" ? VOUCHER : null)
       : table === "customers" ? { category_id: null }
       : table === "visits" ? { branch_id: "branch", customer_id: "customer", doctor_id: null, service_provider_id: null, poli: "Poli Umum" }
       : table === "invoices" ? { invoice_no: `INV-${key}` } : null;
     const q = {
-      select: () => q, eq: (k: string, v: unknown) => { if (k === "code" || k === "id") key = v; return q; },
+      select: () => q, eq: (k: string, v: unknown) => { if (k === "code" || k === "id") key = v; if (k === "vouchers.code") linked = v; return q; },
       is: () => q, order: () => q, limit: () => q, in: () => q,
       maybeSingle: async () => ({ data: row(), error: null }),
-      then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve),
+      // Raw-voucher check (cekVoucherLewatKampanye): active campaign rows bound to this voucher.
+      then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: table === "campaign_codes" && linked !== null
+        ? Object.values(state.kampanye).filter((k) => { const r = k as { is_active: boolean; vouchers: { code: string } | null }; return r.is_active && r.vouchers?.code === linked; })
+        : [], error: null }).then(resolve),
     };
     return q;
   },
@@ -51,7 +55,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       return { data: null, error: { code: "P0001", message: `KODE_KAMPANYE: Kode ${params.p_invoice.campaign_code} sudah mencapai batas pemakaian (1 kali)` } };
     }
     state.posts.push({ visit: params.p_visit_id, invoice: params.p_invoice });
-    return { data: params.p_visit_id, error: null };
+    return { data: `id-${params.p_visit_id}`, error: null };
   },
 }) }));
 import { bayarRombongan } from "@/app/(app)/klinik/pembayaran/[visitId]/actions";
@@ -75,6 +79,8 @@ it("voucher-bound code: discount shared across invoices, code recorded on exactl
     ["pet-a", "HEMAT10", "PROMO10", 10000],
     ["pet-b", "HEMAT10", null, 5000],
   ]);
+  // The sibling points at the carrier invoice, so the database accepts the campaign voucher without a second use.
+  expect(state.posts.map((p) => p.invoice.campaign_carrier_id ?? null)).toEqual([null, "id-pet-a"]);
 });
 
 it("cap reached: the carrier invoice is refused first and nothing is posted", async () => {
@@ -103,6 +109,12 @@ it("inactive code is refused before posting", async () => {
 });
 
 it("plain voucher codes keep working in group payment without a campaign code", async () => {
+  delete state.kampanye.PROMO10;   // HEMAT10 then belongs to no active campaign
   expect(await pay("hemat10")).toContain("success=rombongan&lunas=2");
-  expect(state.posts.every((p) => p.invoice.voucher_code === "HEMAT10" && !("campaign_code" in p.invoice))).toBe(true);
+  expect(state.posts.every((p) => p.invoice.voucher_code === "HEMAT10" && !("campaign_code" in p.invoice) && !("campaign_carrier_id" in p.invoice))).toBe(true);
+});
+
+it("raw voucher of an active campaign is refused in group payment before posting", async () => {
+  expect(await pay("hemat10")).toContain("error=Voucher ini hanya bisa dipakai lewat kode kampanye");
+  expect(state.posts).toEqual([]);
 });
