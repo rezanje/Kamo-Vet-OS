@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barisVisitRanap, hitungKomisi, peringatanAturanKomisi, ringkasPaket, type AturanKomisi, type BarisJual, type LogVisitDokter } from "../komisi";
+import { bagiRupiahRata, barisVisitRanap, hitungKomisi, peringatanAturanKomisi, ringkasPaket, type AturanKomisi, type BarisJual, type LogVisitDokter } from "../komisi";
 
 // Fictional fixture values only; no production tariff is configured here.
 const baris = (o: Partial<BarisJual> = {}): BarisJual => ({
@@ -42,25 +42,81 @@ describe("H05 package components", () => {
     expect(rows[0].laba).toBeNull();
   });
 
-  it("components sold by different people keep their seller; the package qty is counted once", () => {
+  it("components sold by different people keep their seller; the package qty is split evenly", () => {
     const rows = ringkasPaket([
       baris({ paketAsal: paket, omzet: 60_000 }),
       baris({ paketAsal: paket, employeeId: "other", omzet: 40_000 }),
     ]);
-    expect(rows.map(r => [r.employeeId, r.qty, r.omzet])).toEqual([["doc", 3, 60_000], ["other", 0, 40_000]]);
+    expect(rows.map(r => [r.employeeId, r.qty, r.omzet])).toEqual([["doc", 1.5, 60_000], ["other", 1.5, 40_000]]);
     const [doc, other] = hitungKomisi(rows, [aturan({ itemId: "paket-vaksin" })]);
-    expect(doc.komisi + other.komisi).toBe(3_000);
+    expect([doc.komisi, other.komisi]).toEqual([1_500, 1_500]);
   });
 
-  it("a service component with two performers keeps its own row for the S04 split", () => {
+  describe("owner decision 29 Oct: package nominal split evenly among distinct sellers", () => {
+    const satu = { itemId: "paket-vaksin", qty: 1, kategoriIds: ["kat-paket"] };
+    const rule = aturan({ id: "pkg", itemId: "paket-vaksin", nominal: 10_001 });
+    const komisiPer = (rows: BarisJual[]) => Object.fromEntries(hitungKomisi(ringkasPaket(rows), [rule]).map(h => [h.employeeId, h.komisi]));
+
+    it("1 seller (several lines) keeps the whole nominal", () => {
+      expect(komisiPer([baris({ paketAsal: satu }), baris({ paketAsal: satu, itemId: "jasa-suntik" })])).toEqual({ doc: 10_001 });
+    });
+
+    it("2 sellers split in rupiah, remainder to the first seller", () => {
+      expect(komisiPer([baris({ paketAsal: satu }), baris({ paketAsal: satu, employeeId: "b" })])).toEqual({ doc: 5_001, b: 5_000 });
+    });
+
+    it("3 sellers split in rupiah; the same seller on two lines counts once; total is exact", () => {
+      const hasil = komisiPer([
+        baris({ paketAsal: satu, employeeId: "c" }),
+        baris({ paketAsal: satu, employeeId: "a" }),
+        baris({ paketAsal: satu, employeeId: "c", itemId: "jasa-suntik" }),
+        baris({ paketAsal: satu, employeeId: "b" }),
+      ]);
+      expect(hasil).toEqual({ c: 3_335, a: 3_333, b: 3_333 });
+      expect(Object.values(hasil).reduce((x, y) => x + y, 0)).toBe(10_001);
+    });
+
+    it("a line without any seller takes no share; qty 3 packages x 3 sellers", () => {
+      const rows = ringkasPaket([
+        baris({ paketAsal: paket, employeeId: null }),
+        baris({ paketAsal: paket, employeeId: "a" }),
+        baris({ paketAsal: paket, employeeId: "b" }),
+        baris({ paketAsal: paket, employeeId: "c" }),
+      ]);
+      expect(rows.map(r => r.qty)).toEqual([0, 1, 1, 1]);
+      const hasil = hitungKomisi(rows, [aturan({ itemId: "paket-vaksin", nominal: 1_001 })]);
+      expect(hasil.map(h => [h.employeeId, h.komisi])).toEqual([["a", 1_001], ["b", 1_001], ["c", 1_001]]);
+    });
+
+    it("a refund of a two-seller package reverses the same even split", () => {
+      const hasil = komisiPer([
+        baris({ paketAsal: satu }), baris({ paketAsal: satu, employeeId: "b" }),
+        baris({ tanggal: "2026-10-12", qty: -1, omzet: -100_000, paketAsal: satu }),
+        baris({ tanggal: "2026-10-12", qty: -1, omzet: -100_000, paketAsal: satu, employeeId: "b" }),
+      ]);
+      expect(hasil).toEqual({ doc: 0, b: 0 });
+    });
+
+    it("splits whole rupiah deterministically", () => {
+      expect([0, 1, 2].map(ke => bagiRupiahRata(100, 3, ke))).toEqual([34, 33, 33]);
+      expect([0, 1].map(ke => bagiRupiahRata(-101, 2, ke))).toEqual([-51, -50]);
+      expect(bagiRupiahRata(777, 1, 0)).toBe(777);
+    });
+  });
+
+  it("a service component with two performers keeps its own row and counts as one seller", () => {
     const performers = { doctor_id: "doc", staff_id: "nurse" } as unknown as BarisJual["servicePerformers"];
     const rows = ringkasPaket([
       baris({ paketAsal: paket, employeeId: "seller" }),
       baris({ paketAsal: paket, employeeId: null, commissionPending: true, servicePerformers: performers, itemId: "jasa-suntik" }),
     ]);
     expect(rows).toHaveLength(2);
-    expect(rows[1]).toMatchObject({ itemId: "paket-vaksin", qty: 0, commissionPending: true, servicePerformers: performers });
+    expect(rows[1]).toMatchObject({ itemId: "paket-vaksin", qty: 1.5, commissionPending: true, servicePerformers: performers });
     expect(rows[1].paketAsal).toBeUndefined();
+    // Both performers paid in full on that slot (S04 "both_full"): each actor keeps the slot qty.
+    const actors = [rows[0], { ...rows[1], employeeId: "doc", commissionPending: false }, { ...rows[1], employeeId: "nurse", commissionPending: false }];
+    const hasil = hitungKomisi(actors, [aturan({ itemId: "paket-vaksin", nominal: 1_001 })]);
+    expect(hasil.map(h => [h.employeeId, h.komisi])).toEqual([["seller", 1_502], ["doc", 1_501], ["nurse", 1_501]]);
   });
 
   it("a component line that slipped past folding is never paid as a normal SKU", () => {

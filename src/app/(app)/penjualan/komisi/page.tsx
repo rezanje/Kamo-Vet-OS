@@ -449,14 +449,14 @@ export default async function KomisiPage({
       </div>
       <div className="crm-sec">
         <SecHeader num="04" title="PENJUALAN PAKET"
-          desc="Baris komponen yang berasal dari paket dihitung sebagai paket: qty = jumlah paket, omzet = jumlah baris komponennya. Komponen paket tidak ikut komisi SKU biasa." />
+          desc="Baris komponen yang berasal dari paket dihitung sebagai paket: qty = jumlah paket, omzet = jumlah baris komponennya. Komponen paket tidak ikut komisi SKU biasa. Kalau satu paket dijual beberapa penjual, jumlah paket dan komisi nominalnya dibagi rata; sisa pembulatan rupiah ke penjual pertama." />
         {barisPaket.length === 0 ? <p style={{ fontSize: 11 }}>Tidak ada penjualan paket klinik di periode ini.</p> :
           <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 560 }}>
             <thead><tr><th>Tanggal</th><th>Dokumen</th><th>Paket</th><th style={{ textAlign: "right" }}>Qty paket</th><th style={{ textAlign: "right" }}>Omzet</th><th>Penjual</th></tr></thead>
             <tbody>{barisPaket.map((row, index) => <tr key={`${row.sourceDocumentId}-${row.itemId}-${index}`}>
               <td>{row.tanggal}</td><td>{row.sourceDocumentHref ? <Link href={row.sourceDocumentHref}>{row.sourceDocumentNumber ?? "Buka"}</Link> : row.sourceDocumentNumber ?? "—"}</td>
               <td>{row.itemId ? namaItem.get(row.itemId) ?? "Paket" : "Paket"} · {row.paketKomponen} komponen</td>
-              <td style={{ textAlign: "right" }}>{row.qty}</td><td style={{ textAlign: "right" }}>{rp(row.omzet)}</td>
+              <td style={{ textAlign: "right" }}>{row.paketBagi ? `${row.paketBagi.qtyPaket} ÷ ${row.paketBagi.dari} penjual` : row.qty}</td><td style={{ textAlign: "right" }}>{rp(row.omzet)}</td>
               <td>{row.employeeId ? namaEmp.get(row.employeeId) ?? "—" : "Belum ada penerima"}</td></tr>)}</tbody></table></div>}
       </div>
     </MasterPage>
