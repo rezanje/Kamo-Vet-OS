@@ -1,3 +1,4 @@
+import { bacaAksesDiskonManual } from "@/lib/akses-diskon";
 import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
@@ -216,6 +217,9 @@ export default async function PembayaranPage({
   const groomingPolicy = visit.branch_id ? await loadBranchGroomingPolicy(supabase, visit.branch_id) : null;
   const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
   const cashier = invoice ? {name:invoice.cashier_name ?? "Kasir belum tercatat"} : draftUser ? await loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null) : {name:"Akun kasir"};
+  // Diskon manual (keputusan pemilik 29 Okt 2026) — kolomnya hanya bisa dibaca
+  // oleh akun tanpa hak; server dan database menolak lagi kalau dipaksa.
+  const bolehDiskonManual = draftUser ? await bacaAksesDiskonManual(supabase, draftUser.id) : false;
   // Older databases retain their base-unit-only invoice posting contract.
   const unitCapability = await supabase.rpc("clinic_manual_invoice_units_supported");
   const manualUnitsEnabled = !unitCapability.error && unitCapability.data === true;
@@ -458,6 +462,7 @@ export default async function PembayaranPage({
           cashierName={cashier.name}
           serviceStaff={serviceStaff}
           visitDoctorId={visit.doctor_id ?? null}
+          bolehDiskonManual={bolehDiskonManual}
           editMode
         />
       ) : invoice ? (
@@ -571,6 +576,7 @@ export default async function PembayaranPage({
           cashierName={cashier.name}
           catatanResep={mr?.catatan_resep ?? null}
           racikanPending={racikanPending}
+          bolehDiskonManual={bolehDiskonManual}
         />
       )}
 

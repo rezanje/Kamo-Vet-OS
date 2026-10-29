@@ -23,6 +23,10 @@ update public.profiles set role = 'OWNER', is_active = true where id = 'c5000000
 update public.profiles set role = 'ADMIN', is_active = true where id = 'c5000000-0000-4000-8000-000000000002';
 update public.profiles set role = 'STAFF', is_active = true where id = 'c5000000-0000-4000-8000-000000000003';
 update public.profiles set role = 'DOCTOR', is_active = true where id = 'c5000000-0000-4000-8000-000000000004';
+-- Diskon manual (migrasi 20261031120000): fixture ini sengaja memasang potongan,
+-- jadi peran STAFF & DOCTOR diberi hak diskon manual supaya yang diuji tetap jalur aslinya.
+insert into public.role_capabilities(role,manual_discount) values('STAFF',true),('DOCTOR',true)
+ on conflict(role) do update set manual_discount=true;
 insert into public.branches (id, code, name, type) values
   ('c5100000-0000-4000-8000-000000000001', 'C05P', 'Petshop C05', 'PETSHOP'),
   ('c5100000-0000-4000-8000-000000000002', 'C05K', 'Klinik C05', 'KLINIK');

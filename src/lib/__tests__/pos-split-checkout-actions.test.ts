@@ -31,7 +31,10 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     let lineUpdate: Record<string, unknown> | null = null;
     let data: unknown = table === "items" ? [{ id: "item", nama: "Pakan", name: "Pakan", unit: "pcs", item_type: state.stock ? "Persediaan" : "Jasa", sell_price: 100000, buy_price: 30000, min_sell_qty: 1, is_active: true }]
       : table === "stock_layers" && state.stock ? [{ id: "layer", item_id: "item", qty_left: 1, unit_cost: state.stockCost, exp_date: null, tanggal: "2026-10-15", created_at: "2026-10-15T00:00:00Z" }] : [];
-    const single = () => ({ data: table === "sales" && lookup ? state.prior : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" }
+    // Diskon manual (migrasi 20261031120000): skenario di berkas ini memang
+    // memasang potongan nota, jadi aktornya berperan pemilik.
+    const single = () => ({ data: table === "profiles" ? { role: "OWNER", is_active: true }
+      : table === "sales" && lookup ? state.prior : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" }
       : table === "customers" ? { points: 0, total_spending: 0, category_id: null, customer_categories: null }
         : table === "warehouses" ? (state.stock ? { id: "warehouse" } : null) : { id: table === "sales" ? "sale" : "line" }, error: null });
     const query = {

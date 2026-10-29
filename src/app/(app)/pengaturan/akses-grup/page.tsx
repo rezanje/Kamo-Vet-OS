@@ -115,8 +115,10 @@ export default async function AksesGrupPage({
             <legend style={{ fontWeight: 700, marginBottom: 10 }}>Hak cabang &amp; akun</legend>
             <label><input type="checkbox" name="all_branches" defaultChecked={capabilities.all_branches} /> Akses semua cabang (termasuk pilihan Semua cabang di klinik)</label>
             <label><input type="checkbox" name="create_accounts" defaultChecked={capabilities.create_accounts} /> Boleh menambahkan akun karyawan</label>
+            <label><input type="checkbox" name="manual_discount" defaultChecked={capabilities.manual_discount} /> Diskon manual (potongan yang diketik sendiri di kasir, POS, dan tagihan klinik)</label>
             <p style={{ fontSize: 11, color: "var(--tm)", margin: 0 }}>Hanya Super Admin yang dapat mengubah hak ini. Pemberian akses akun tidak memberikan hak mengubah pengaturan akses.</p>
-            {akuOwner && <SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan hak cabang &amp; akun {dipilih}</SubmitButton>}
+            <p style={{ fontSize: 11, color: "var(--tm)", margin: 0 }}>Tanpa hak diskon manual, akun tetap mendapat promo otomatis, voucher, diskon golongan pelanggan, dan diskon default barang — yang tidak bisa dia lakukan hanya mengetik potongan sendiri.</p>
+            {akuOwner && <SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan hak cabang, akun &amp; diskon {dipilih}</SubmitButton>}
           </fieldset>
         </form>
 

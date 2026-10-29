@@ -35,7 +35,7 @@ export default async function PenggunaPage({
     supabase.from("user_branches").select("user_id, branches(code,name,type)"),
     supabase.from("branches").select("id, code, name, type, is_active").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, nik, nama, jabatan, profile_id, status").order("nama"),
-    supabase.from("role_capabilities").select("role, all_branches, create_accounts"),
+    supabase.from("role_capabilities").select("role, all_branches, create_accounts, manual_discount"),
   ]);
 
   const capabilityMap = new Map((capabilityRows ?? []).map((r: RoleCapabilities & { role: string }) => [r.role, r]));

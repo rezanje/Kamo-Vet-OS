@@ -24,6 +24,7 @@ import { bacaKodeKampanye } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
+import { bacaAksesDiskonManual, PESAN_DISKON_MANUAL } from "@/lib/akses-diskon";
 
 type Line = {
   deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null;
@@ -105,6 +106,28 @@ function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceL
   }));
 }
 
+/**
+ * Koreksi tagihan klinik menaikkan diskon baris? (temuan audit S-4)
+ *
+ * Baris koreksi menunjuk baris lama lewat `source_invoice_item_id`. Baris baru
+ * yang tidak menunjuk ke mana pun dihitung menaikkan bila diskonnya di atas nol.
+ */
+async function barisKoreksiMenaikkanDiskon(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  invoiceId: string,
+  rows: { diskon_persen?: number; source_invoice_item_id?: string | null }[],
+): Promise<boolean> {
+  const berdiskon = rows.filter((l) => Number(l.diskon_persen) > 0);
+  if (berdiskon.length === 0) return false;
+  const { data, error } = await supabase
+    .from("invoice_items").select("id, diskon_persen").eq("invoice_id", invoiceId);
+  // Gagal tertutup: rincian lama tidak terbaca = anggap diskonnya naik.
+  if (error || !data) return true;
+  const lama = new Map((data as { id: string; diskon_persen: number | null }[])
+    .map((row) => [row.id, Number(row.diskon_persen) || 0]));
+  return berdiskon.some((l) => Number(l.diskon_persen) > (lama.get(l.source_invoice_item_id ?? "") ?? 0));
+}
+
 async function postInvoiceAtomik(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: ClinicPostInvoiceParams,
@@ -135,7 +158,8 @@ export async function bayarVisit(formData: FormData) {
 
   // U07 batch 1: every read that needs only the visit id starts together. Each is
   // still awaited (and validated) at its original place below.
-  const shiftP = mulai(supabase.auth.getUser().then(({ data: { user } }) =>
+  const aktorP = mulai(supabase.auth.getUser().then(({ data: { user } }) => user));
+  const shiftP = mulai(aktorP.then((user) =>
     user ? getOpenShift(supabase as never, user.id, "klinik") : null));
   const jasaP = mulai(bacaJasaGate(supabase, visitId));
   const inpatP = mulai(supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle());
@@ -244,6 +268,7 @@ export async function bayarVisit(formData: FormData) {
     catch (error) { redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Pembayaran campuran tidak valid.")}`); }
   }
 
+  const aktor = await aktorP;
   const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
   const diskonManual = Number(formData.get("discount")) || 0;
   const kodeDiketik = existing ? existing.voucher_code : normalizeKode(formData.get("voucherCode")) || null;
@@ -291,6 +316,24 @@ export async function bayarVisit(formData: FormData) {
   const potonganPoin = poinDipakai * RUPIAH_PER_POIN;
 
   const discount = Math.min(subtotal, sebelumPoin + potonganPoin);
+
+  // Diskon manual hanya untuk akun berwenang (keputusan pemilik 29 Okt 2026).
+  // Promo, voucher, kode kampanye, diskon golongan, dan poin TIDAK termasuk —
+  // semuanya dihitung ulang server dari master.
+  //
+  // Jalur KOREKSI (temuan audit S-4) memakai aturan "tidak boleh dinaikkan":
+  // promo tidak dihitung ulang saat koreksi, jadi potongan tagihan lama ikut
+  // terbawa ke kolom diskon. Memaksa nol akan menolak koreksi yang sah; yang
+  // dilarang adalah MENAMBAH potongan, baik di nota maupun di baris. Patokannya
+  // kolom `discount` yang benar-benar tersimpan, sama dengan yang dipakai
+  // assert_manual_discount_clinic_edit() di database.
+  const adaDiskonManual = existing
+    ? discount > Number(existing.discount) || await barisKoreksiMenaikkanDiskon(supabase, existing.id, rows)
+    : diskonManual > 0 || rows.some((l) => Number(l.diskon_persen) > 0);
+  if (adaDiskonManual && !(await bacaAksesDiskonManual(supabase, aktor?.id ?? ""))) {
+    redirect(`${back}?error=${encodeURIComponent(PESAN_DISKON_MANUAL)}`);
+  }
+
   const dpp = Math.max(0, subtotal - discount);
   // PPN hanya ditambahkan bila Mode PKP aktif (pengaturan/pajak); OFF → tax 0.
   const { tax, total } = tambahPpn(dpp, await pajakP);
@@ -375,6 +418,10 @@ export async function bayarVisit(formData: FormData) {
       tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
       shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
+      // Rincian potongan ikut dikirim supaya database bisa memeriksa bahwa kolom
+      // `discount` yang gelondongan tidak menyembunyikan diskon manual.
+      manual_discount: diskonManual, auto_discount: potongan.total + potonganPoin,
+      ...(diskonManual > 0 ? { manual_discount_by: aktor?.id ?? null } : {}),
       ...(campaignCode ? { campaign_code: campaignCode } : {}),
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
@@ -604,6 +651,9 @@ export async function bayarRombongan(formData: FormData) {
         paid_status: "Lunas", metode_bayar: metode, shift_id: klinikShift.id,
         voucher_code: voucherPerPet[idx] > 0 ? voucherCode : null, salesperson_id: salespersonId,
         service_pricing_version:1,
+        // Pembayaran rombongan tidak punya kolom diskon manual sama sekali.
+        manual_discount: 0,
+        auto_discount: s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx],
       },
       p_lines: barisUntukPosting(rows),
     });

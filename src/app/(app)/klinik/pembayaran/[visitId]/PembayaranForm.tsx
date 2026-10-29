@@ -25,6 +25,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { METODE_BAYAR } from "@/lib/metode-bayar";
 import { hitungPromoKeranjang } from "@/lib/promo-hitung";
 import { diskonGolonganKeranjang } from "@/lib/harga-golongan";
+import { PESAN_DISKON_MANUAL } from "@/lib/akses-diskon";
 import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
 import { bacaKode, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
 import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
@@ -73,7 +74,9 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, bolehDiskonManual = true }: {
+  /** Akun berwenang memberi diskon manual? Server menolak lagi kalau tidak. */
+  bolehDiskonManual?: boolean;
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; groomingDoctorRequired?: boolean;
@@ -210,6 +213,8 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
               <td>
                 <NumberInput className="fi" type="number" min={0} max={100} step="any"
                   value={r.diskon_persen ?? 0}
+                  readOnly={!bolehDiskonManual} aria-readonly={!bolehDiskonManual}
+                  title={bolehDiskonManual ? undefined : PESAN_DISKON_MANUAL}
                   onChange={(e) => set(i, { diskon_persen: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
                   style={{ textAlign: "center" }} />
               </td>
@@ -248,7 +253,7 @@ function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:
   </div>;
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, bolehDiskonManual = true }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   /** Ada racikan kunjungan ini yang masih menunggu diracik. */
@@ -265,6 +270,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
+  /** Akun berwenang memberi diskon manual? Server menolak lagi kalau tidak. */
+  bolehDiskonManual?: boolean;
 }) {
   const [draftSourceVersion, setDraftSourceVersion] = useState(sourceVersion);
   const sourceChanged = !!sourceVersion && draftSourceVersion !== sourceVersion;
@@ -507,8 +514,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
           </div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".03em", marginBottom: 10 }}>RINCIAN LAYANAN DAN OBAT</div>
 
-          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} packages={editMode ? NO_PACKAGES : packages} />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} packages={editMode ? NO_PACKAGES : packages} />
+          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} packages={editMode ? NO_PACKAGES : packages} bolehDiskonManual={bolehDiskonManual} />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} packages={editMode ? NO_PACKAGES : packages} bolehDiskonManual={bolehDiskonManual} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             <div style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", borderRadius: 10, padding: 12 }}>
@@ -520,8 +527,14 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
               <SumRow label="Subtotal (Obat + Jasa)" value={rp(subtotal)} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0" }}>
                 <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Diskon</span>
-                <NumberInput className="fi" type="number" min={0} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 100, textAlign: "right" }} />
+                <NumberInput className="fi" type="number" min={0} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value))}
+                  readOnly={!bolehDiskonManual} aria-readonly={!bolehDiskonManual}
+                  title={bolehDiskonManual ? undefined : PESAN_DISKON_MANUAL}
+                  style={{ width: 100, textAlign: "right" }} />
               </div>
+              {!bolehDiskonManual && (
+                <div style={{ fontSize: 10.5, color: "var(--tm)", textAlign: "right" }}>{PESAN_DISKON_MANUAL}</div>
+              )}
               {promoVal > 0 && <SumRow label="Promo otomatis" value={`- ${rp(promoVal)}`} />}
               {golonganVal > 0 && <SumRow label="Diskon golongan pelanggan" value={`- ${rp(golonganVal)}`} />}
 

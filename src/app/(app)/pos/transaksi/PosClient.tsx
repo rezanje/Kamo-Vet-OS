@@ -7,6 +7,7 @@ import { checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { diskonGolonganKeranjang, poinDidapat, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
+import { PESAN_DISKON_MANUAL } from "@/lib/akses-diskon";
 import { bacaDraftPos, POS_DRAFT_KEY, type PosDraft } from "@/lib/pos-draft";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
@@ -42,7 +43,9 @@ const sameProductUnit = (a: Line, b: Line) => a.item_id === b.item_id && a.satua
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
 
-export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {} }: {
+export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {}, bolehDiskonManual = true }: {
+  /** Akun berwenang memberi diskon manual? Server menolak lagi kalau tidak. */
+  bolehDiskonManual?: boolean;
   items: Item[]; customers: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
   promoPerCabang?: Record<string, PromoHitung[]>;
   aturanDiskon?: Record<string, AturanDiskon[]>;
@@ -357,8 +360,14 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
             )}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
               <span>Diskon manual / promo</span>
-              <NumberInput className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
+              <NumberInput className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))}
+                readOnly={!bolehDiskonManual} aria-readonly={!bolehDiskonManual}
+                title={bolehDiskonManual ? undefined : PESAN_DISKON_MANUAL}
+                style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
             </div>
+            {!bolehDiskonManual && (
+              <div style={{ fontSize: 9.5, color: "var(--tm)", textAlign: "right" }}>{PESAN_DISKON_MANUAL}</div>
+            )}
             <Row k="Tagihan barang" v={rp(total)} />
             <Row k="Fee merchant" v={rp(feeTotal)} />
             <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>

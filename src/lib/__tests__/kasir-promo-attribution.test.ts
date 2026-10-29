@@ -23,7 +23,10 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       ? [{ id: "promo-sku", nama: "Bolt Ikan 800gr", name: "Bolt Ikan 800gr", unit: "pcs", item_type: "Jasa",
           sell_price: 20000, buy_price: 0, min_sell_qty: 0, is_active: true }]
       : [];
-    const single = () => ({ data: table === "sales" && lookup ? null
+    // Diskon manual (migrasi 20261031120000): berkas ini menguji atribusi promo
+    // saat kasir mengetik potongan sendiri, jadi aktornya berperan pemilik.
+    const single = () => ({ data: table === "profiles" ? { role: "OWNER", is_active: true }
+      : table === "sales" && lookup ? null
       : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" }
       : table === "customers" ? { points: 0, total_spending: 0, category_id: null, customer_categories: null }
       : table === "warehouses" ? null : { id: table === "sales" ? "sale" : "line" }, error: null });

@@ -21,6 +21,7 @@ import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
+import { bacaAksesDiskonManual, PESAN_DISKON_MANUAL } from "@/lib/akses-diskon";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -140,6 +141,13 @@ export async function checkoutSale(formData: FormData) {
     }
   }
 
+  // Diskon manual hanya untuk akun berwenang (keputusan pemilik 29 Okt 2026).
+  // Promo dan diskon golongan di atas dihitung server dari master, jadi tidak
+  // termasuk; yang dibatasi hanya angka yang diketik di layar.
+  if (discount > 0 && !(await bacaAksesDiskonManual(supabase, user.id))) {
+    redirect(`/pos/transaksi?error=${encodeURIComponent(PESAN_DISKON_MANUAL)}`);
+  }
+
   const total = posNetTotal(subtotal, potonganPromo, diskonKategori, discount);
   const invoiceSubtotal = roundPosMoney(subtotal);
   const invoiceDiscount = posNetTotal(invoiceSubtotal, total);
@@ -182,6 +190,10 @@ export async function checkoutSale(formData: FormData) {
       diskon_kategori: invoiceCategoryDiscount,
       total: quote.total, merchant_fee_total: quote.feeTotal, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
       payment_plan: quote.parts, poin_earned: poin,
+      // Rincian potongan disimpan terpisah supaya database bisa memeriksa kolom
+      // `discount` yang gelondongan. POS back-office tidak mengenal voucher.
+      manual_discount: roundPosMoney(discount), voucher_discount: 0,
+      manual_discount_by: discount > 0 ? user.id : null,
       checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
       cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
       cashier_name: cashier.name, salesperson_id: cashier.employeeId,
@@ -207,7 +219,11 @@ export async function checkoutSale(formData: FormData) {
         target_species: l.target_species, satuan: l.satuan, faktor: l.faktor,
         service_performers: l.service_performers,
         promo_id: l.item_id ? (promoPerLine.get(index)?.promoId ?? null) : null,
-        promo_discount: l.item_id ? (promoPerLine.get(index)?.potongan ?? 0) : 0,
+        // Potongan promo dicatat di SEMUA baris, termasuk baris ketikan bebas —
+        // sama dengan kasir petshop. Kalau baris ketikan bebas ikut kena promo
+        // tapi potongannya tidak tersimpan di barisnya, kolom `discount` nota
+        // jadi lebih besar daripada rincian yang bisa dijelaskan.
+        promo_discount: promoPerLine.get(index)?.potongan ?? 0,
         hpp: l.item_id ? 0 : null,
       }).select("id").single();
       if (itemErr || !insertedLine) throw new Error(itemErr?.message ?? "Gagal menyimpan rincian transaksi");
