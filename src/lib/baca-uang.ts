@@ -9,7 +9,7 @@
 export type BacaError = { code?: string | null; message?: string | null } | null | undefined;
 
 /** Kode PostgREST/PostgreSQL yang benar-benar berarti tabelnya belum ada. */
-const BELUM_ADA = new Set(["42P01", "PGRST205", "PGRST200"]);
+const BELUM_ADA = new Set(["42P01", "PGRST205"]);
 
 export function tabelBelumAda(error: BacaError): boolean {
   if (!error) return false;

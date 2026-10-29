@@ -11,6 +11,9 @@ describe("membedakan fitur belum terpasang dari gangguan baca", () => {
     // PGRST201 = relasi embed ambigu. Inilah yang dulu membuat riwayat kwitansi
     // diam-diam kosong padahal uangnya ada.
     expect(gagalBacaUang({ code: "PGRST201", message: "Could not embed because more than one relationship was found" })).toBe(true);
+    // PGRST200 = relasi hilang di schema cache; bukan tabel hilang.
+    expect(gagalBacaUang({ code: "PGRST200", message: "Could not find a relationship in the schema cache" })).toBe(true);
+    expect(tabelBelumAda({ code: "PGRST200" })).toBe(false);
     expect(gagalBacaUang({ code: "42501", message: "permission denied for table clinic_payment_receipts" })).toBe(true);
     expect(gagalBacaUang({ message: "fetch failed" })).toBe(true);
     expect(gagalBacaUang({ code: "57014", message: "canceling statement due to statement timeout" })).toBe(true);
