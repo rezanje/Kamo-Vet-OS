@@ -67,6 +67,17 @@ select pg_temp.assert_ok((select count(*)=2 and bool_and(net=0) from(
 select pg_temp.assert_ok((select count(*)=1 from sale_items where sale_id='e8700000-0000-4000-8000-000000000001')
  and (select count(*)=0 from stock_moves where source_ref='J02.CASH'),
  'items and stock untouched');
+-- Reversal/replacement journals are as fixed as the original sale journal.
+select pg_temp.reject($q$delete from journal_lines where entry_id=(select reversal_journal_id from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000001')$q$,
+ 'reversal lines cannot be deleted through the API','Jurnal pembayaran POS sudah tetap');
+select pg_temp.reject($q$update journal_lines set debit=debit+1 where debit>0 and entry_id=(select replacement_journal_id from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000001')$q$,
+ 'replacement lines cannot be edited through the API','Jurnal pembayaran POS sudah tetap');
+select pg_temp.reject($q$update journal_entries set voided_at=now() where id=(select reversal_journal_id from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000001')$q$,
+ 'reversal header cannot be voided through the API');
+select pg_temp.reject($q$insert into journal_lines(entry_id,account_id,debit,credit) select c.replacement_journal_id,a.id,1,0 from sale_payment_corrections c,coa_accounts a where c.sale_id='e8700000-0000-4000-8000-000000000001' and a.code='1141'$q$,
+ 'no extra line on the replacement journal','Jurnal pembayaran POS sudah tetap');
+select pg_temp.assert_ok(pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000001','1142')=100000
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000001','4101')=-100000,'ledger unchanged after tamper attempts');
 select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000001',0,'j02-correct-one','Kasir salah pilih metode',0,100000);
 select pg_temp.assert_ok((select count(*)=1 from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000001'),
  'same retry key does not create a second correction');

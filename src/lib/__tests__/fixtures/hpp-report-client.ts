@@ -26,7 +26,7 @@ export function clientFixture(options: { role?: string; active?: boolean; module
       let range: [number,number] | undefined;
       const ordering: string[] = [];
       const query: Record<string, unknown> = {};
-      for (const method of ["select","eq","in","gt","gte","lte","is","not","order","range","maybeSingle"]) {
+      for (const method of ["select","eq","in","gt","lt","gte","lte","is","not","order","range","maybeSingle"]) {
         query[method] = (...args: unknown[]) => {
           records.push({ table, method, args });
           const key = String(args[0]);
@@ -35,6 +35,7 @@ export function clientFixture(options: { role?: string; active?: boolean; module
           if (method === "in") data = data.filter(row => (args[1] as unknown[]).includes(nested(row,key)));
           if (method === "not") data = data.filter(row => nested(row,key) !== args[2]);
           if (method === "gt") data = data.filter(row => Number(nested(row,key)) > Number(args[1]));
+          if (method === "lt") data = data.filter(row => Number(nested(row,key)) < Number(args[1]));
           if (method === "gte") data = data.filter(row => String(nested(row,key)) >= String(args[1]));
           if (method === "lte") data = data.filter(row => String(nested(row,key)) <= String(args[1]));
           if (method === "order") ordering.push(key);
