@@ -4,7 +4,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
-import { batasTanggalWIB } from "@/lib/laporan-transaksi";
+import { batasTanggalWIB, KANAL_SEMUA, LABEL_KANAL, type Kanal } from "@/lib/laporan-transaksi";
+import { fakturGrosirOmzet, omzetDokumenGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "@/lib/laporan-grosir";
 import { isCompletedSale, saleMerchandiseTotal, salePaymentDescription, saleRefundMerchantFee, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 import { hrefInvoiceKlinik } from "@/lib/tautan-dokumen";
 
@@ -23,8 +24,10 @@ const jam = (iso: string) =>
   });
 
 const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
-
-type Kanal = "POS" | "Online" | "Klinik";
+const tanggalDokumen = (t: string) =>
+  new Date(`${t}T00:00:00+07:00`).toLocaleDateString("id-ID", {
+    day: "2-digit", month: "short", year: "2-digit", timeZone: "Asia/Jakarta",
+  });
 
 type Baris = {
   id: string;
@@ -42,12 +45,15 @@ type Baris = {
   refundedFee: number;
   retur: number;
   status: string;
+  /** Faktur grosir hanya punya tanggal, bukan jam — jamnya tidak boleh dikarang. */
+  hanyaTanggal?: boolean;
 };
 
 const BADGE: Record<Kanal, { cls: string; style?: React.CSSProperties }> = {
   POS: { cls: "bge g" },
   Online: { cls: "bge", style: { background: "#fff1eb", color: "#ea580c" } },
   Klinik: { cls: "bge b" },
+  Grosir: { cls: "bge", style: { background: "#f1f0ff", color: "#6d28d9" } },
 };
 
 export default async function PenjualanRinciPage({
@@ -67,7 +73,7 @@ export default async function PenjualanRinciPage({
   // jadi batasnya digeser 7 jam supaya struk jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const {mulai,akhir} = batasTanggalWIB(dari,sampai);
 
-  const [{ data: sales }, { data: invoices }, { data: returs }, { data: refundKlinik }, { data: cabangList }] = await Promise.all([
+  const [{ data: sales }, { data: invoices }, { data: grosir }, { data: returs }, { data: refundKlinik }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase
       .from("sales")
       .select("id, branch_id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name)", { count: "exact" })
@@ -79,6 +85,12 @@ export default async function PenjualanRinciPage({
       .is("voided_at", null)
       .gte("created_at", mulai).lte("created_at", akhir)
       .order("created_at", { ascending: false })),
+    // Faktur grosir disaring memakai kolom tanggal faktur (sudah tanggal WIB),
+    // bukan created_at: faktur boleh ditanggali mundur dari saat pengetikannya.
+    completeReportQuery(supabase
+      .from("sales_invoices")
+      .select(`${SELECT_FAKTUR_GROSIR}, branches(name), customers(name)`, { count: "exact" })
+      .gte("tanggal", dari).lte("tanggal", sampai)),
     // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
     // dan omzet struk itu harus terlihat sudah berkurang di daftar ini.
     completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" }).is("voided_at", null)),
@@ -148,10 +160,39 @@ export default async function PenjualanRinciPage({
     };
   });
 
-  const rows = [...barisSales, ...barisKlinik]
+  type GrosirRow = FakturGrosirInti & {
+    no_faktur: string | null; branch_id: string | null; tanggal: string; total: number;
+    branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
+  };
+
+  // Grosir tidak punya retur barang: koreksi nilai faktur dikerjakan dengan membatalkan
+  // faktur lama dan menerbitkan penggantinya, dan yang batal sudah disaring di sini.
+  const barisGrosir: Baris[] = fakturGrosirOmzet((grosir ?? []) as unknown as GrosirRow[]).map((f) => ({
+    id: f.id,
+    href: `/penjualan/faktur/${f.id}`,
+    nomor: f.no_faktur ?? "—",
+    waktu: `${f.tanggal}T00:00:00+07:00`,
+    hanyaTanggal: true,
+    kanal: "Grosir" as const,
+    cabang: one(f.branches)?.name ?? "—",
+    cabangId: f.branch_id ?? null,
+    pelanggan: one(f.customers)?.name ?? "—",
+    metode: "Faktur / tempo",
+    total: omzetDokumenGrosir(f),
+    merchandise: omzetDokumenGrosir(f),
+    merchantFee: 0,
+    refundedFee: 0,
+    retur: 0,
+    // Akrual: faktur yang masih berjalan tetap omzet, statusnya saja yang belum lunas.
+    status: (f.status ?? "").trim().toLowerCase() === "lunas" ? "Lunas" : "Belum lunas",
+  }));
+
+  const rows = [...barisSales, ...barisKlinik, ...barisGrosir]
     .filter((r) => (cabangId ? r.cabangId === cabangId : cabang ? r.cabang === cabang : true))
     .filter((r) => (kanal ? r.kanal === kanal : true))
-    .sort((a, b) => b.waktu.localeCompare(a.waktu));
+    // Dibandingkan sebagai waktu, bukan sebagai teks: struk memakai stempel UTC
+    // sedangkan faktur grosir memakai awal hari WIB, jadi urutan hurufnya bisa keliru.
+    .sort((a, b) => Date.parse(b.waktu) - Date.parse(a.waktu) || a.nomor.localeCompare(b.nomor));
 
   const totalOmzet = rows.reduce((a, r) => a + r.total, 0);
   const totalRetur = rows.reduce((a, r) => a + r.retur, 0);
@@ -165,7 +206,7 @@ export default async function PenjualanRinciPage({
   return (
     <LaporanPage
       icon="ti-list-details" title="RINCIAN PENJUALAN PER TRANSAKSI"
-      desc="Semua struk kasir, order online, dan invoice klinik dalam satu daftar. Klik nomornya untuk melihat isi transaksi."
+      desc="Semua struk kasir, order online, invoice klinik, dan faktur penjualan grosir dalam satu daftar. Klik nomornya untuk melihat isi transaksi."
       filter={
         <>
           <div>
@@ -193,9 +234,7 @@ export default async function PenjualanRinciPage({
             <label className="flab">Jenis</label>
             <select className="fi" name="kanal" defaultValue={kanal}>
               <option value="">Semua jenis</option>
-              <option value="POS">Kasir (POS)</option>
-              <option value="Online">Online</option>
-              <option value="Klinik">Klinik</option>
+              {KANAL_SEMUA.map((k) => <option key={k} value={k}>{LABEL_KANAL[k]}</option>)}
             </select>
           </div>
           <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
@@ -210,9 +249,7 @@ export default async function PenjualanRinciPage({
           { label: "Retur", nilai: totalRetur ? `− ${rp(totalRetur)}` : "—", warna: totalRetur ? "#b91c1c" : undefined },
           { label: "Retur fee", nilai: totalRefundedFee ? `− ${rp(totalRefundedFee)}` : "—" },
           { label: "Tagihan bersih", nilai: rp(totalOmzet - totalRetur), warna: "#15803d" },
-          { label: "Kasir (POS)", nilai: rp(perKanal("POS")) },
-          { label: "Online", nilai: rp(perKanal("Online")) },
-          { label: "Klinik", nilai: rp(perKanal("Klinik")) },
+          ...KANAL_SEMUA.map((k) => ({ label: LABEL_KANAL[k], nilai: rp(perKanal(k)) })),
         ]} />
       }
     >
@@ -241,7 +278,7 @@ export default async function PenjualanRinciPage({
                   <td style={{ fontFamily: "monospace", fontSize: 10.5, fontWeight: 600 }}>
                     <Link href={r.href} style={{ color: "#2563eb", textDecoration: "none" }}>{r.nomor}</Link>
                   </td>
-                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{jam(r.waktu)}</td>
+                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{r.hanyaTanggal ? tanggalDokumen(r.waktu.slice(0, 10)) : jam(r.waktu)}</td>
                   <td>
                     <span className={BADGE[r.kanal].cls} style={{ fontSize: 9, ...BADGE[r.kanal].style }}>{r.kanal}</span>
                   </td>
@@ -276,7 +313,10 @@ export default async function PenjualanRinciPage({
           berarti dananya masih ditahan marketplace. Struk yang sebagian barangnya dikembalikan tampil
           dengan nilai bersihnya — retur dihitung berapa pun tanggal returnya. Fee merchant POS
           ditampilkan terpisah dari nilai belanja. Retur sudah termasuk retur fee; total bersih
-          dan angka per jenis tetap menunjukkan uang setelah retur.
+          dan angka per jenis tetap menunjukkan uang setelah retur.<br />
+          Faktur grosir memakai tanggal faktur, bukan jam pengetikannya, dan ikut dihitung sejak
+          fakturnya terbit walau pembayarannya belum masuk. Faktur batal, faktur yang sudah diganti
+          faktur koreksi, faktur saldo awal, dan faktur selisih stok dari opname tidak ditampilkan.
         </div>
       </div>
     </LaporanPage>

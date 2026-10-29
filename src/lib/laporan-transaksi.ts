@@ -1,11 +1,25 @@
-// Rekap transaksi lintas kanal (POS, Online, Klinik) — logika murni,
+// Rekap transaksi lintas kanal (POS, Online, Klinik, Grosir) — logika murni,
 // dites di __tests__/laporan-transaksi.test.ts.
 //
 // Satu sumber angka untuk empat laporan dasar yang diminta Kamo Group:
 // jumlah transaksi per cabang, rata-rata transaksi per pelanggan,
 // rata-rata item per struk, dan jumlah pelanggan per hari.
 
-export type Kanal = "POS" | "Online" | "Klinik";
+export type Kanal = "POS" | "Online" | "Klinik" | "Grosir";
+
+/** Urutan tetap kanal di filter, kolom pecahan, dan kartu ringkasan tiap laporan. */
+export const KANAL_SEMUA: Kanal[] = ["POS", "Online", "Klinik", "Grosir"];
+
+/** Nama yang dibaca pengguna. Nilai di URL tetap kode kanalnya supaya tautan lama hidup. */
+export const LABEL_KANAL: Record<Kanal, string> = {
+  POS: "Kasir (POS)",
+  Online: "Online",
+  Klinik: "Klinik",
+  Grosir: "Grosir (Faktur Penjualan)",
+};
+
+/** Pecahan kosong per kanal — dipakai sebagai titik awal penjumlahan. */
+export const kanalKosong = (): Record<Kanal, number> => ({ POS: 0, Online: 0, Klinik: 0, Grosir: 0 });
 
 export type Trx = {
   tanggal: string;           // YYYY-MM-DD menurut WIB
@@ -107,9 +121,9 @@ export function perHari(list: Trx[]): BarisHari[] {
     .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
 }
 
-/** Pecahan per kanal untuk satu kumpulan transaksi — kolom POS / Online / Klinik. */
+/** Pecahan per kanal untuk satu kumpulan transaksi — kolom POS / Online / Klinik / Grosir. */
 export function perKanal(list: Trx[]): Record<Kanal, number> {
-  const h: Record<Kanal, number> = { POS: 0, Online: 0, Klinik: 0 };
+  const h = kanalKosong();
   for (const t of list) h[t.kanal]++;
   return h;
 }

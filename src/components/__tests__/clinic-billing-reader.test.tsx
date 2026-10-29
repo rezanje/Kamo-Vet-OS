@@ -61,12 +61,9 @@ it('does not offer paid checkout recovery through an active inpatient stay',asyn
  state.mode='paid';state.inpatientOpen=true;const html=renderToStaticMarkup(await render());expect(html).not.toContain('Sinkronkan status kunjungan');
 });
 
-import FakturPage from '@/app/(app)/penjualan/faktur/page';
-it('shows zero remaining for stored single paid clinic invoices without receipt rows while preserving partial payments',async()=>{
- const html=renderToStaticMarkup(await FakturPage({searchParams:Promise.resolve({})}));
- const row=html.split('<tr').find(r=>r.includes('INV-OLD-415'))!;expect(row).toContain('lunas');expect(row.match(/Rp 415.000/g)).toHaveLength(1);
- const partial=html.split('<tr').find(r=>r.includes('INV-DP'))!;expect(partial).toContain('Rp 250.000');expect(partial).toContain('DP');
-});
+// Status tagihan klinik di daftar Faktur Penjualan gabungan dijaga di
+// components/__tests__/sales-invoice-list-completeness.test.tsx sejak daftarnya
+// berhalaman: statusnya dibaca dari paid_status tersimpan, bukan dihitung ulang.
 
 it('retains the pre-performer billing source fingerprint when stored rows have no attribution',async()=>{
  const source=[{deskripsi:'Care',qty:1,harga:305000,jenis:'jasa',item_id:'service',satuan:null,prescription_item_id:'prescription-a',recipe_id:null},{deskripsi:'Addition',qty:1,harga:95000,jenis:'jasa',item_id:'added-service',satuan:null,prescription_item_id:'prescription-b',recipe_id:null}];

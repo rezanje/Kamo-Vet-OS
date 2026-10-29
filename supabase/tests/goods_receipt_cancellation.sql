@@ -54,11 +54,18 @@ insert into p08_results select 'A',receive_purchase_order('f8500000-0000-4000-80
 insert into p08_results select 'D',receive_purchase_order('f8500000-0000-4000-8000-000000000002','p08-receipt-d','TB.P08.',5,current_date,null,null,'[{"id":"f8600000-0000-4000-8000-000000000002","qty_terima":2}]');
 insert into p08_results select 'E',receive_purchase_order('f8500000-0000-4000-8000-000000000003','p08-receipt-e','TB.P08.',5,current_date,null,null,'[{"id":"f8600000-0000-4000-8000-000000000003","qty_terima":2}]');
 select pg_temp.ok((select qty from stock where item_id='f8400000-0000-4000-8000-000000000001')=20,'receipt A posted 20 base units');
+-- P02: a live receipt's lines cannot be rewritten outside the official RPCs
+-- (that would change source qty/price without stock, FIFO layers or 1301/2102).
+select pg_temp.expect_error(format('update goods_receipt_items set harga=harga+1,qty_terima=qty_terima+1 where receipt_id=%L',(select result->>'receipt_id' from p08_results where name='D')),'permission denied');
+select pg_temp.expect_error(format('delete from goods_receipt_items where receipt_id=%L',(select result->>'receipt_id' from p08_results where name='D')),'permission denied');
+select pg_temp.expect_error(format('insert into goods_receipt_items(receipt_id,nama,qty_terima,harga) values(%L,%L,1,1)',(select result->>'receipt_id' from p08_results where name='D'),'Fiktif'),'permission denied');
+select pg_temp.expect_error(format('update goods_receipts set tanggal=tanggal-1 where id=%L',(select result->>'receipt_id' from p08_results where name='D')),'permission denied');
+select pg_temp.ok((select count(*)=1 and sum(qty_terima)=2 from goods_receipt_items where receipt_id=(select (result->>'receipt_id')::uuid from p08_results where name='D')),'receipt D lines unchanged');
 
 -- 1. Non-owner refused, nothing changes; direct status writes refused.
 select set_config('request.jwt.claim.sub','f8000000-0000-4000-8000-000000000002',true);
 select pg_temp.expect_error(format('select cancel_goods_receipt(%L,%L,%L)',(select result->>'receipt_id' from p08_results where name='A'),'p08-admin','Salah input'),'hanya oleh Super Admin');
-select pg_temp.expect_error(format('update goods_receipts set voided_at=now(),void_reason=%L where id=%L','manual',(select result->>'receipt_id' from p08_results where name='A')),'pembatalan resmi');
+select pg_temp.expect_error(format('update goods_receipts set voided_at=now(),void_reason=%L where id=%L','manual',(select result->>'receipt_id' from p08_results where name='A')),'permission denied');
 do $$begin
  insert into stock_moves(tanggal,warehouse_id,item_id,qty,unit_cost,source,source_ref) values(current_date,'f8200000-0000-4000-8000-000000000001','f8400000-0000-4000-8000-000000000001',-1,10,'purchase-receipt-void','FAKE');
  raise exception 'Forged receipt-void stock move accepted';
@@ -107,8 +114,9 @@ do $$declare rid uuid:=(select (result->>'receipt_id')::uuid from p08_results wh
  perform pg_temp.ok((select qty from stock where item_id='f8400000-0000-4000-8000-000000000001')=0,'stock unchanged by retry');
  perform pg_temp.expect_error(format('select cancel_goods_receipt(%L,%L,%L,current_date)',rid,'p08-cancel-a','Alasan lain'),'rincian berbeda');
 end$$;
-select pg_temp.expect_error(format('update goods_receipts set catatan=%L where id=%L','ubah',(select result->>'receipt_id' from p08_results where name='A')),'sudah dibatalkan');
-select pg_temp.expect_error(format('delete from goods_receipt_items where receipt_id=%L',(select result->>'receipt_id' from p08_results where name='A')),'sudah dibatalkan');
+-- P02 (20261031115000): direct API writes on receipts are refused before the void trigger runs.
+select pg_temp.expect_error(format('update goods_receipts set catatan=%L where id=%L','ubah',(select result->>'receipt_id' from p08_results where name='A')),'permission denied');
+select pg_temp.expect_error(format('delete from goods_receipt_items where receipt_id=%L',(select result->>'receipt_id' from p08_results where name='A')),'permission denied');
 -- Reopened quantity can be received again through the normal path.
 select pg_temp.ok((receive_purchase_order('f8500000-0000-4000-8000-000000000001','p08-receipt-a2','TB.P08.',5,current_date,null,null,
  '[{"id":"f8600000-0000-4000-8000-000000000001","qty_terima":4},{"id":"f8600000-0000-4000-8000-000000000004","qty_terima":1}]')->>'complete')::boolean,'re-receipt after cancel completes PO');

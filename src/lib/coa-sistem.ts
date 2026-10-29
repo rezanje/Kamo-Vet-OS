@@ -73,7 +73,7 @@ export const KODE_SISTEM: Record<string, string> = {
   "5601": "beban penyusutan",
   "5602": "rugi pelepasan aset tetap",
   "5901": "selisih kas tutup shift",
-  "5902": "selisih persediaan (opname & retur barang rusak)",
+  "5902": "selisih persediaan (opname, penyesuaian & retur barang rusak)",
 };
 
 export const akunSistem = (code: string) => code in KODE_SISTEM;

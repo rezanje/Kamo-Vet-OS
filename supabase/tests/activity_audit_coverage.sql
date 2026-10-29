@@ -22,6 +22,7 @@ insert into a01_excluded values
  ('return_record_requests','request receipt'),('sale_cancellation_requests','request receipt'),
  ('sale_payment_correction_requests','request receipt'),('sales_posting_requests','request receipt'),
  ('staff_reward_requests','request receipt'),('stock_document_correction_requests','request receipt'),
+ ('inventory_adjustment_requests','request receipt'),
  ('unit_posting_requests','request receipt'),('wholesale_operation_requests','request receipt'),
  ('promo_import_batches','import receipt: imported promos are captured'),
  ('promo_import_targets','import receipt: imported promos are captured'),

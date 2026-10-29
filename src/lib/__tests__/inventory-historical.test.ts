@@ -306,3 +306,41 @@ it("R04: never carries a stale average across a zero reset, and treats a NULL av
   expect(zeroAvg.rows.find(row => row.itemCode === "SKU-Z")).toMatchObject({ value: "0", valueBasis: "last-average", estimateAverage: "0" });
   expect(zeroAvg.total).toBe("300");
 });
+
+it("M01: reconciles today's FIFO layer value per branch against GL 1301 without estimating minus stock", async () => {
+  const today = hariIniWIB();
+  const fifo = clientFixture({ tables: {
+    inventory_costing_settings: [{ id: true, method: "fifo", activated_at: null }],
+    warehouses: [{ id: "w1", branch_id: "b1", code: "W1", name: "Gudang satu" }, { id: "w2", branch_id: "b2", code: "W2", name: "Gudang dua" }],
+    stock_layers: [
+      { id: "l1", warehouse_id: "w1", item_id: "i", qty_left: "3", unit_cost: "50" },
+      { id: "l2", warehouse_id: "w1", item_id: "j", qty_left: "2", unit_cost: "10.5" },
+      { id: "l3", warehouse_id: "w2", item_id: "i", qty_left: "4", unit_cost: "25" },
+      { id: "l4", warehouse_id: "w2", item_id: "j", qty_left: "0", unit_cost: "999" },
+    ],
+    stock: [{ id: "s1", warehouse_id: "w2", item_id: "k", qty: -2 }, { id: "s2", warehouse_id: "w1", item_id: "i", qty: 3 }],
+    coa_accounts: [{ id: "a1301", code: "1301" }],
+    journal_lines: [
+      { id: "g1", account_id: "a1301", debit: "171", credit: "0", journal_entries: { tanggal: today, branch_id: "b1" } },
+      { id: "g2", account_id: "a1301", debit: "150", credit: "30", journal_entries: { tanggal: today, branch_id: "b2" } },
+      { id: "g3", account_id: "a1301", debit: "7", credit: "0", journal_entries: { tanggal: today, branch_id: null } },
+    ],
+  } });
+  const report = await loadHistoricalInventory(fifo.client, { tanggal: today });
+  expect(report.available).toBe(false);
+  expect(report.fifoCurrent?.summary.map(row => [row.id, row.layerValue, row.ledgerValue, row.difference, row.negativeCount])).toEqual([
+    ["b1", "171", "171", "0", 0], ["b2", "100", "120", "-20", 1],
+  ]);
+  expect([report.fifoCurrent?.total, report.fifoCurrent?.ledgerTotal, report.fifoCurrent?.difference, report.fifoCurrent?.unallocatedLedger]).toEqual(["271", "291", "-20", "7"]);
+  expect(fifo.records).toContainEqual({ table: "stock_layers", method: "gt", args: ["qty_left", 0] });
+  expect(fifo.records.some(row => row.table === "inventory_cost_events")).toBe(false);
+  // Read-only: nothing is written while reconciling.
+  expect(fifo.records.some(row => ["insert", "update", "delete", "upsert"].includes(row.method))).toBe(false);
+});
+
+it("M01: does not present a FIFO position for a past date", async () => {
+  const fifo = clientFixture({ tables: { ...tables(), inventory_costing_settings: [{ id: true, method: "fifo", activated_at: null }] } });
+  const report = await loadHistoricalInventory(fifo.client, { tanggal: "2026-10-23" });
+  expect(report.fifoCurrent).toBeNull();
+  expect(fifo.records.some(row => row.table === "stock_layers")).toBe(false);
+});
