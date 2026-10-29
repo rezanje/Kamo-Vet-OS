@@ -51,6 +51,8 @@ vi.mock('@/lib/impor-rekam-medis-pengurai', () => ({
 }));
 
 import { RekamMedisImportForm } from '@/app/(app)/klinik/rekam-medis/impor/RekamMedisImportForm';
+import { kunciTitikSimpan, tandaRuangImpor } from '@/lib/impor-rekam-medis-aliran';
+import { sumberFolderLokal } from '@/lib/impor-rekam-medis-sumber';
 
 let root: Root | undefined;
 let host: HTMLDivElement;
@@ -145,8 +147,10 @@ it('menampilkan kemajuan per folder beserta hitungan hasilnya dan tidak berhenti
 it('melewati folder yang sudah selesai saat folder yang sama dipilih ulang setelah terputus', async () => {
   await act(async () => root!.render(<RekamMedisImportForm />));
   const berkas = [kartu('A.xlsx', 'Owner A - 0801'), kartu('B.xlsx', 'Owner B - 0802')];
+  // Tanda ruang dihitung dari berkas yang sama (jalur, ukuran, waktu ubah), seperti tab sebelumnya.
+  const ruang = tandaRuangImpor('akar', await sumberFolderLokal(berkas).daftarFolder());
   window.localStorage.setItem(
-    'kamo.impor-rekam-medis.v1:akar|2|2|18',
+    kunciTitikSimpan(ruang),
     JSON.stringify({ folderSelesai: ['akar/Owner A - 0801'], diperbarui: '2026-10-29T00:00:00.000Z' }),
   );
   await pilihDanMulai(berkas);

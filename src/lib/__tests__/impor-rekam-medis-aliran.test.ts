@@ -188,6 +188,12 @@ describe("titik simpan supaya impor bisa dilanjutkan", () => {
     expect(tandaRuangImpor("akar", satu)).toBe(tandaRuangImpor("akar", [folder("A", [["a.xlsx", 10]])]));
   });
 
+  it("membedakan ruang bila satu kartu diedit dengan ukuran sama (waktu ubah berbeda)", () => {
+    const diubah = (waktu: number) => [{ ...folder("A", [["a.xlsx", 10]]), berkas: [{ ...folder("A", [["a.xlsx", 10]]).berkas[0], diubah: waktu }] }];
+    expect(tandaRuangImpor("akar", diubah(1))).not.toBe(tandaRuangImpor("akar", diubah(2)));
+    expect(tandaRuangImpor("akar", diubah(1))).toBe(tandaRuangImpor("akar", diubah(1)));
+  });
+
   it("melewati folder yang sudah selesai tanpa membacanya lagi", () => {
     const semua = [folder("A", [["a.xlsx", 1]]), folder("B", [["b.xlsx", 1]])];
     expect(sisakanFolderBelumSelesai(semua, ["A"]).map((item) => item.id)).toEqual(["B"]);

@@ -104,11 +104,14 @@ export function kunciGandaRiwayat(row: Pick<RekamMedisImporRow, "owner_name" | "
 
 /** Sidik pendek: menahan 20.000 baris di memori tanpa menyimpan isi medisnya. */
 export function sidikRiwayat(row: RekamMedisImporRow) {
-  const teks = JSON.stringify([
+  return sidikTeks(JSON.stringify([
     row.record_no, row.owner_name, row.phone, row.patient_name, row.record_date,
     row.species, row.breed, row.gender, row.dob, row.doctor,
     row.note, row.anamnesis, row.clinical_findings, row.diagnosis, row.therapy,
-  ]);
+  ]));
+}
+
+function sidikTeks(teks: string) {
   let a = 0x811c9dc5;
   let b = 0x01000193;
   for (let index = 0; index < teks.length; index += 1) {
@@ -168,11 +171,19 @@ export type PenyimpanTitikSimpan = {
 
 const AWALAN_TITIK_SIMPAN = "kamo.impor-rekam-medis.v1:";
 
-/** Tanda ruang: pilihan folder yang sama menghasilkan tanda yang sama, beda pilihan beda tanda. */
+/**
+ * Tanda ruang: pilihan folder yang sama menghasilkan tanda yang sama, beda pilihan beda tanda.
+ *
+ * Folder yang tercatat selesai dilewati tanpa dibaca ulang, jadi tanda ini juga memuat sidik
+ * jalur, ukuran, dan waktu ubah SETIAP berkas: kartu yang diedit setelah impor terputus --
+ * walau ukurannya sama -- membuat tanda berbeda, titik simpan lama tidak dipakai, dan semua
+ * folder dibaca ulang (database yang membuktikan sama atau menahan bentrok).
+ */
 export function tandaRuangImpor(akar: string, folders: readonly FolderImporRekamMedis[]) {
-  const berkas = folders.reduce((jumlah, folder) => jumlah + folder.berkas.length, 0);
+  const semua = folders.flatMap((folder) => folder.berkas);
   const bytes = folders.reduce((jumlah, folder) => jumlah + folder.ukuran, 0);
-  return `${akar}|${folders.length}|${berkas}|${bytes}`;
+  const sidik = sidikTeks(JSON.stringify(semua.map((item) => [item.jalur, item.ukuran, item.diubah ?? null]).sort()));
+  return `${akar}|${folders.length}|${semua.length}|${bytes}|${sidik}`;
 }
 
 export function kunciTitikSimpan(ruang: string) {

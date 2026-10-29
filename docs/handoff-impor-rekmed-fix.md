@@ -46,12 +46,54 @@ dipasang di DB mana pun selain Postgres sekali-pakai. Dilanjutkan dari commit He
   sukses lalu kiriman berikutnya gagal, hitungan "tersimpan" kiriman pertama tidak ditampilkan; saat
   dicoba lagi baris itu dijawab "sudah ada" oleh database.
 
+## Temuan review independen #2: jejak sumber dari folder "08.." vs "+62.." (TERBUKTI, BELUM DIUBAH)
+- `identityFromPath` (`src/lib/impor-rekam-medis.ts`) hanya membuang non-digit dari nomor di nama folder,
+  dan `sourceKey` memakai digit itu apa adanya. Kartu yang sama, diimpor di dua sesi terpisah dari folder
+  `Fiktif Satu - 08000000011` lalu `Fiktif Satu - +62 800-0000-011`, menghasilkan jejak
+  `fiktif satu::08000000011::…` dan `fiktif satu::628000000011::…`. Database hanya membandingkan sidik isi
+  bila jejaknya sama, jadi kartu kedua **tersimpan lagi**.
+- Bukti parser → RPC: `src/lib/__tests__/impor-rekam-medis-varian-hp-folder.test.ts` memastikan fixture
+  `src/lib/__tests__/fixtures/impor-folder-hp-varian.json` = keluaran parser sungguhan dari xlsx fiktif;
+  harness kasus **S1 (massal) dan S2 (per baris) FAIL**: 2 kunjungan, 1 pelanggan, 1 anabul — riwayat
+  medis tercatat ganda pada pasien yang sama. Dalam SATU sesi impor, penyaring ganda tab sudah memakai HP
+  kanonik, jadi ganda hanya terjadi lintas sesi.
+- Harness sengaja dibiarkan FAIL di S1/S2 (harapan = perilaku benar; kegagalan = temuan terbuka).
+- Kontrak jejak sumber TIDAK diubah, tidak ada backfill. Usulan minimum yang kompatibel (pilih satu):
+  - **A (disarankan):** di RPC, sebelum membuat kunjungan baru, cari kunjungan impor milik pemilik+anabul
+    yang sama dengan `legacy_source_hash` IDENTIK (sidik sudah memakai HP kanonik, nama, pasien, tanggal,
+    isi klinis) → jawab `sudah_ada`. Jejak lama/baru tidak berubah; satu indeks parsial baru pada
+    `visits(legacy_source_hash)`; pencarian dilakukan di bawah kunci identitas yang sudah ada. Konsisten
+    dengan aturan penyaring ganda di tab (pemilik+HP+pasien+tanggal sama dan isi identik = salinan).
+    Konsekuensi: dua kartu yang benar-benar identik isi dan tanggalnya untuk pasien yang sama dianggap satu.
+  - **B:** jejak sumber baru memakai HP kanonik (`kunciHpIndonesia`). Satu baris kode, tetapi MENGUBAH
+    kontrak jejak: kartu dari folder "+62.." yang sudah pernah diimpor akan mendapat jejak baru dan ganda
+    bila diimpor ulang. Aman hanya bila Production masih 0 kunjungan impor saat dipasang (pra-cek 29 Okt: 0).
+  - **C:** RPC menerima `source_key_aliases` (varian kanonik) dan menganggap jejak alias yang sudah ada
+    sebagai jejak sama (tetap dengan bukti sidik). Kompatibel penuh, tetapi lebih banyak kode SQL + app.
+
+## Temuan review independen #3: titik simpan melewati folder yang isinya berubah (diperbaiki)
+- `tandaRuangImpor` hanya memakai akar + jumlah folder + jumlah berkas + total byte. Bila kartu di folder
+  yang sudah tercatat selesai diedit setelah impor terputus dan ukurannya sama, folder itu dilewati tanpa
+  dibaca, sehingga editan tidak pernah sampai ke pemeriksaan sidik/bentrok di database.
+- Perbaikan minimum (deteksi sumber berubah): sumber lokal mencatat waktu ubah tiap berkas (`diubah`),
+  dan tanda ruang memuat sidik (jalur, ukuran, waktu ubah) semua berkas. Satu berkas berubah → tanda beda →
+  titik simpan lama tidak dipakai → semua folder dibaca ulang; database menjawab `sudah_ada` untuk yang
+  sama dan menahan yang bentrok. Format titik simpan tidak berubah; titik simpan lama cukup tidak terpakai.
+- Tes: `src/components/__tests__/medical-import-checkpoint-changed-source.test.tsx` (kartu A diedit, isi
+  beda panjang sama, waktu ubah beda → wajib dikirim ulang; folder tak berubah tetap dilewati) dan unit
+  `tandaRuangImpor` di `impor-rekam-medis-aliran.test.ts`. Gagal di kode lama, lulus sesudahnya.
+  Tes lama "melewati folder yang sudah selesai" kini menghitung tanda dari berkas yang sama (bukan string
+  tetap), maksud tesnya tidak berubah.
+- Sisa: berkas yang isinya berubah tetapi ukuran DAN waktu ubahnya sama persis (alat yang memalsukan
+  waktu ubah) tetap tidak terdeteksi. Sumber Google Drive nanti wajib mengisi `diubah`.
+
 ## Hasil tes (head draft PR)
-- Harness `scripts/test-impor-rekam-medis-postgres.py --pg-bin <dir>`: **33/33 PASS, 0 FAIL, 0 BLOCKED**
-  di PostgreSQL 17.10 (4× berturut-turut, stabil) dan 16.15. 319 migrasi repo teraplikasi.
+- Harness `scripts/test-impor-rekam-medis-postgres.py --pg-bin <dir>`: **33 PASS, 2 FAIL (S1/S2 =
+  temuan #2 terbuka), 0 BLOCKED** di PostgreSQL 17.10 dan 16.15. Semua kasus lain (P/R/U/K/X/N/A/C1–C8/Z)
+  lulus stabil. 319 migrasi repo teraplikasi.
 - Uji mutasi (fix sengaja dirusak sementara, lalu dipulihkan): tanpa kunci identitas di registrasi →
   C3/C4/C6 FAIL; tanpa cek sidik per baris → X3 FAIL. Harness memang menangkap regresi.
-- `npm test` penuh: 603 berkas / 4651 tes lulus (1 di-skip, sudah ada sebelumnya).
+- `npm test` penuh: 605 berkas / 4655 tes lulus (1 di-skip, sudah ada sebelumnya).
 - `npm run lint`: 0 error (14 warning `<img>` yang sudah ada, bukan di berkas yang diubah).
 - `npx tsc --noEmit` (heap 4 GB): lulus.
 - `npm run build` (heap 6 GB): lulus. Dengan heap bawaan mesin uji (≈2 GB) build kehabisan memori —
@@ -87,6 +129,10 @@ Jalur pembuat pelanggan lain belum memakai kunci identitas dan kunci HP kanonik:
 | `src/app/kasir/actions.ts` `tambahCustomerKasir` | cek `eq("phone")` persis: `08..` vs `+62..` lolos → kartu ganda; cek-lalu-insert tanpa kunci → bisa ganda bila bersamaan dengan impor/registrasi; bila sudah ada >1 kartu dengan nomor persis sama, `maybeSingle()` gagal diam-diam → kartu ketiga dibuat. |
 | `src/app/(app)/crm/pelanggan/baru/actions.ts` `simpanPelanggan` | sama persis dengan Kasir. |
 | `src/app/(app)/pengaturan/impor/actions.ts` (impor CSV pelanggan) | normalisasi sendiri (`normalTelp`, tanpa batas panjang, `8xx` → `08xx`) dan pemeriksaan set di aplikasi tanpa kunci; tidak bentrok dengan impor rekam medis secara atomik. |
+
+**Tidak ada proteksi global.** Kunci identitas di PR ini hanya melindungi impor rekam medis ↔ registrasi
+klinik. Kasir dan CRM tidak mengambil kunci itu dan tidak memakai HP kanonik, jadi selama Kasir/CRM belum
+diubah, kartu ganda tetap mungkin lewat jalur itu (nomor 08 vs +62, atau bersamaan dengan impor/registrasi).
 
 Usulan perubahan minimum (satu PR terpisah, perlu persetujuan):
 1. Satu RPC `tambah_pelanggan_atomik(nama, hp, …kolom tambahan)` di migrasi baru: ambil

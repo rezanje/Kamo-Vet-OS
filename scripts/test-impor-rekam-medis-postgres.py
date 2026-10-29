@@ -167,8 +167,10 @@ class Harness:
             "from public.visits v join public.medical_records m on m.visit_id=v.id where v.legacy_source_key like 'wowo-test::%'))"))
 
     def reset(self):
-        self.sql("delete from public.medical_records where visit_id in (select id from public.visits where legacy_source_key like 'wowo-test::%' or keluhan like 'wowo-test-live%');"
-                 "delete from public.visits where legacy_source_key like 'wowo-test::%' or keluhan like 'wowo-test-live%';"
+        fixture_visit = (f"(legacy_source_key like 'wowo-test::%' or keluhan like 'wowo-test-live%' "
+                         f"or customer_id in (select id from public.customers where {FIXTURE_PHONE}))")
+        self.sql(f"delete from public.medical_records where visit_id in (select id from public.visits where {fixture_visit});"
+                 f"delete from public.visits where {fixture_visit};"
                  f"delete from public.pets where customer_id in (select id from public.customers where {FIXTURE_PHONE});"
                  f"delete from public.customers where {FIXTURE_PHONE};")
 
@@ -366,6 +368,27 @@ def run_cases(h):
         x3_ok, x3_msg = 'bentrok' in str(error), str(error).strip().splitlines()[0][:110]
     check('X3 per row: same key, different content is refused with the conflict reason, nothing written',
           x3_ok and h.snapshot() == base, x3_msg)
+
+    # ---------------------------------------------------------------- S  parser -> RPC: folder phone 08 vs +62
+    # Rows are the REAL parser output for one card imported twice, from folders
+    # "Fiktif Satu - 08000000011" and "Fiktif Satu - +62 800-0000-011" (kept in sync by
+    # src/lib/__tests__/impor-rekam-medis-varian-hp-folder.test.ts). The source key embeds the
+    # folder phone digits, so the two keys differ. Correct behaviour: no second visit.
+    parsed = json.loads((ROOT / 'src/lib/__tests__/fixtures/impor-folder-hp-varian.json').read_text())
+    for case, send in (('S1 bulk path', lambda r: statuses(h.bulk([r]))[0]), ('S2 per-row path', lambda r: 'tersimpan' if h.per_row(r) else '?')):
+        h.reset()
+        send(parsed[0])
+        try:
+            second = send(parsed[1])
+        except RuntimeError as error:
+            second = 'error: ' + str(error).strip().splitlines()[0][:80]
+        visits = int(h.scalar("select count(*) from public.visits where legacy_source_key in ("
+                              + ','.join(q(r['source_key']) for r in parsed) + ")"))
+        check(f'{case}: same card re-imported from a +62 folder after an 08 folder is not saved twice',
+              visits == 1 and second != 'tersimpan',
+              f'keys_differ={parsed[0]["source_key"] != parsed[1]["source_key"]} second={second!r} visits={visits} '
+              f'customers={h.snapshot()["customers"]} pets={h.snapshot()["pets"]}',
+              'source key embeds raw folder phone digits; DB fingerprint is only compared for an identical key')
 
     # ---------------------------------------------------------------- N  08 vs +62 (K3 of PR #328)
     h.reset()
