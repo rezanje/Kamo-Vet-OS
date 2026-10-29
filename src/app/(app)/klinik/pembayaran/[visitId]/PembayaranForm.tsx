@@ -663,6 +663,10 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             </div>
           </div>}
 
+          {/* P03: alasan penolakan muncul setelah simpan; aturannya diberitahukan lebih dulu. */}
+          <div role="status" style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 6 }}>
+            Obat/barang (termasuk paket berisi barang) dengan harga neto nol atau di bawah HPP akan ditolak saat disimpan. Jasa/tindakan tetap boleh gratis.
+          </div>
           {/* Aksi */}
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: 6 }}>
             {editMode ? (

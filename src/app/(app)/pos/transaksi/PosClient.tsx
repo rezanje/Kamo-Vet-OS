@@ -5,6 +5,7 @@ import { NumberInput } from "@/components/NumberInput";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { HppConfirmField } from "@/components/HppConfirmField";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { diskonGolonganKeranjang, poinDidapat, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
 import { bacaDraftPos, POS_DRAFT_KEY, type PosDraft } from "@/lib/pos-draft";
@@ -44,8 +45,10 @@ const sameProductUnit = (a: Line, b: Line) => a.item_id === b.item_id && a.satua
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
 
-export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "" }: {
+export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
   items: Item[]; customers: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
+  /** P03: peringatan jual di bawah HPP dari simpan sebelumnya; wajib dikonfirmasi sebelum simpan ulang. */
+  hppWarning?: string | null; hppSignature?: string | null;
   promoPerCabang?: Record<string, PromoHitung[]>;
   /** C05: kode kampanye aktif + voucher tujuannya — hanya untuk tampilan; server memeriksa ulang. */
   kodeKampanye?: KodeKampanye[];
@@ -425,6 +428,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
             </div>
           )}
 
+          <HppConfirmField warning={hppWarning} signature={hppSignature} />
           <SubmitButton className="pay-btn" icon="ti-circle-check" disabled={!canPay} style={{ marginTop: 8, opacity: canPay ? 1 : 0.5 }} pendingText="Memproses…">Bayar {rp(finalTotal)}</SubmitButton>
         </div>
       </div>
