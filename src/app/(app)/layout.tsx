@@ -1,8 +1,6 @@
 import { ActivityNavigationProvider } from "@/components/ActivityHistoryLink";
 import { ActivityMenuLink } from "@/components/ActivityMenuLink";
 import { bolehBukaPath } from "@/lib/akses";
-import Link from "next/link";
-import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { Suspense } from "react";
 import { DraftUserProvider, TransactionDraftComplete } from "@/components/LocalTransactionDraft";
 import { redirect } from "next/navigation";
@@ -57,7 +55,6 @@ export default async function AppLayout({
   const activeBranch = await ActiveBranch({ catalog: branches ?? [] });
   const staffBranchMaster = branches?.find(branch => branch.id === staffBranch?.branch_id);
   const staffBranchName = staffBranchMaster ? branchDisplayName(staffBranchMaster, branches ?? []) : staffBranch?.branchName ?? "—";
-  const canCreateAccount = (await loadRoleCapabilities(supabase, profile?.role ?? "")).create_accounts;
 
   const canReadActivity = !!profile?.is_active && ["OWNER", "ADMIN"].includes(profile.role)
     && bolehBukaPath(profile.role, "/perusahaan/log-aktifitas", aksesModul ?? []);
@@ -91,7 +88,6 @@ export default async function AppLayout({
           </>
         )}
         {activeBranch}
-        {canCreateAccount && <div className="no-print" style={{ padding: "8px 16px" }}><Link href="/pengaturan/pengguna" className="back-btn">Tambah akun karyawan</Link></div>}
         <div className="ct"><ActivityMenuLink />{children}</div>
       </div>
     </div></DraftUserProvider></ActivityNavigationProvider>
