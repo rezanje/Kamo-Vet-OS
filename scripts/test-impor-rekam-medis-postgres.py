@@ -4,7 +4,7 @@
 Runs the REAL database functions after every repository migration is applied:
   import_legacy_medical_records_bulk, import_legacy_medical_record_resolved,
   import_legacy_identity_scan, registrasi_pelanggan_atomik, customer_pick_by_phone,
-  indonesian_phone_key.
+  indonesian_phone_key, pelanggan_baru_atomik (Kasir/CRM).
 
 Never accepts a database URL and never connects to Production. All rows are fictional
 (`wowo-test::` source keys, made-up owners, phones in the reserved 0800000xxxx range).
@@ -51,7 +51,7 @@ STAFF = 'f7000000-0000-4000-8000-000000000002'
 BRANCH = 'f7000000-0000-4000-8000-000000000101'
 SYNC_TIMEOUT = 20.0
 RESULTS = []
-FIXTURE_PHONE = "(phone like '0800000%' or phone like '+62800000%' or phone like '62800000%' or phone like '+62 800%')"
+FIXTURE_PHONE = "(phone like '0800000%' or phone like '+62800000%' or phone like '62800000%' or phone like '+62 800%' or phone like '0800-%')"
 
 
 def record(case, status, detail):
@@ -91,6 +91,17 @@ def per_row_sql(r):
         value = r.get(name)
         args.append(f"p_{name} => " + ('null' if value is None else q(value)) + f'::{kind}')
     return 'public.import_legacy_medical_record_resolved(' + ', '.join(args) + ')'
+
+
+def pelanggan_baru_sql(name, phone, **extra):
+    """The Kasir/CRM RPC exactly as tambahCustomerKasir/simpanPelanggan call it (values already trimmed)."""
+    cols = [('p_email', 'text'), ('p_dob', 'date'), ('p_address', 'text'), ('p_pekerjaan', 'text'),
+            ('p_sumber_info', 'text'), ('p_catatan', 'text'), ('p_npwp', 'text')]
+    args = [f'p_name => {q(name)}', f'p_phone => {q(phone)}']
+    for col, kind in cols:
+        value = extra.get(col)
+        args.append(f'{col} => ' + ('null' if value is None else q(value)) + f'::{kind}')
+    return 'public.pelanggan_baru_atomik(' + ', '.join(args) + ')'
 
 
 def as_actor(sql, actor=OWNER):
@@ -595,6 +606,81 @@ def run_cases(h):
                                              a == 0 and w and h.scalar(s_visits) == '1',
                                              f'B rc={b} B waited={w} visits={h.scalar(s_visits)}',
                                              'per-row path looks up the source key before taking the identity lock'))
+
+    # ---------------------------------------------------------------- B  Kasir / CRM customer creation
+    # Same business rule as before (an already registered number is REJECTED, not reused), now under
+    # the shared identity lock and the canonical phone key.
+    def tambah(name, phone, actor=STAFF, **extra):
+        return json.loads(h.scalar(as_actor(f'select {pelanggan_baru_sql(name, phone, **extra)};', actor)))
+
+    def count_phone_key(phone):
+        return int(h.scalar(f"select count(*) from public.customers where public.indonesian_phone_key(phone) = public.indonesian_phone_key({q(phone)})"))
+
+    h.reset()
+    full = dict(p_email='fiktif@contoh.test', p_dob='2000-01-02', p_address='Jl. Fiktif', p_pekerjaan='Pegawai',
+                p_sumber_info='Instagram', p_catatan='Catatan fiktif', p_npwp='01.234.567.8-901.000')
+    made = tambah('Pelanggan Fiktif', '+62 800-0000-021', **full)
+    stored = h.scalar("select row(name, phone, email, dob, address, pekerjaan, sumber_info, catatan, npwp)::text from public.customers "
+                      f"where id = {q(made.get('customer_id'))}")
+    check('B1 Kasir/CRM new customer (as STAFF): created, every field stored exactly as sent',
+          made.get('status') == 'dibuat' and stored == '("Pelanggan Fiktif","+62 800-0000-021",fiktif@contoh.test,2000-01-02,"Jl. Fiktif",Pegawai,Instagram,"Catatan fiktif",01.234.567.8-901.000)',
+          f'result={made} stored={stored}')
+    for case, existing, typed in (('B2 existing 08, Kasir/CRM types +62', '08000000022', '+62 800-0000-022'),
+                                  ('B3 existing +62, Kasir/CRM types 08', '+628000000023', '08000000023'),
+                                  ('B4 existing 08 without punctuation, typed with dashes', '08000000024', '0800-0000-024')):
+        h.reset()
+        h.sql(f"insert into public.customers(name, phone) values ('Pemilik Lama Fiktif', {q(existing)});")
+        got = tambah('Pelanggan Lain Fiktif', typed)
+        check(f'{case}: rejected as already registered, no new card', got == {'status': 'terdaftar'} and count_phone_key(typed) == 1,
+              f'result={got} cards={count_phone_key(typed)}')
+    h.reset()
+    h.sql("insert into public.customers(name, phone) values ('Kembar A Fiktif', '08000000025'), ('Kembar B Fiktif', '+628000000025');")
+    twin = tambah('Kembar C Fiktif', '08000000025')
+    check('B5 number already shared by two cards: rejected, no third card (old maybeSingle path created one)',
+          twin == {'status': 'terdaftar'} and count_phone_key('08000000025') == 2, f'result={twin} cards={count_phone_key("08000000025")}')
+    h.reset()
+    h.sql("insert into public.customers(name, phone) values ('Pemilik Lama Fiktif', '08000000026');")
+    other = tambah('Pelanggan Baru Fiktif', '08000000027')
+    check('B6 a different number is not over-matched: created', other.get('status') == 'dibuat', f'result={other}')
+    try:
+        h.sql("set role anon;\nselect " + pelanggan_baru_sql('Anon Fiktif', '08000000028') + ";")
+        anon_ok, anon_msg = False, 'anon call succeeded'
+    except RuntimeError as error:
+        anon_ok, anon_msg = 'permission denied' in str(error), str(error).strip().splitlines()[0][:90]
+    check('B7 anon cannot call the Kasir/CRM RPC (no new privilege)', anon_ok and count_phone_key('08000000028') == 0, anon_msg)
+
+    kasir_count = lambda phone: f"select count(*) from public.customers where public.indonesian_phone_key(phone) = public.indonesian_phone_key({q(phone)})"
+    concurrent('C11 import open, Kasir adds the same owner (+62): Kasir waits, then rejected; one customer',
+               as_actor(f"select public.import_legacy_medical_records_bulk({lit([row('wowo-test::c11', owner='Fiktif Kasir', phone='08000000031')])});"),
+               as_actor(f"select {pelanggan_baru_sql('Fiktif Kasir', '+62 800-0000-031')};", STAFF),
+               lambda a, b, ao, bo, w: check('C11 import open, Kasir adds the same owner (+62): Kasir waits, then rejected; one customer',
+                                             a == 0 and b == 0 and w and last_json(bo) == {'status': 'terdaftar'} and h.scalar(kasir_count('08000000031')) == '1',
+                                             f'B waited={w} kasir={last_json(bo)} customers={h.scalar(kasir_count("08000000031"))}'))
+    concurrent('C12 registration open, CRM adds the same owner (08 vs +62): CRM waits, then rejected; one customer',
+               as_actor("select public.registrasi_pelanggan_atomik('Fiktif CRM','+62 800-0000-032',null,null,null,null);", STAFF),
+               as_actor(f"select {pelanggan_baru_sql('Fiktif CRM', '08000000032', p_npwp='01.234.567.8-901.000')};", STAFF),
+               lambda a, b, ao, bo, w: check('C12 registration open, CRM adds the same owner (08 vs +62): CRM waits, then rejected; one customer',
+                                             a == 0 and b == 0 and w and last_json(bo) == {'status': 'terdaftar'} and h.scalar(kasir_count('08000000032')) == '1',
+                                             f'B waited={w} crm={last_json(bo)} customers={h.scalar(kasir_count("08000000032"))}'))
+    concurrent('C13 Kasir adding an owner while an import of that owner arrives: import waits, reuses the card; one customer',
+               as_actor(f"select {pelanggan_baru_sql('Fiktif Kasir', '08000000033')};", STAFF),
+               as_actor(f"select public.import_legacy_medical_records_bulk({lit([row('wowo-test::c13', owner='Fiktif Kasir', phone='+628000000033')])});"),
+               lambda a, b, ao, bo, w: check('C13 Kasir adding an owner while an import of that owner arrives: import waits, reuses the card; one customer',
+                                             a == 0 and b == 0 and w and (last_json(bo) or [{}])[0].get('status') == 'tersimpan'
+                                             and h.scalar(kasir_count('08000000033')) == '1',
+                                             f'B waited={w} import={(last_json(bo) or [{}])[0].get("status")!r} customers={h.scalar(kasir_count("08000000033"))}'))
+    concurrent('C14 Kasir (08) and CRM (+62) add the same number at once: second rejected; one customer',
+               as_actor(f"select {pelanggan_baru_sql('Fiktif Dobel', '08000000034')};", STAFF),
+               as_actor(f"select {pelanggan_baru_sql('Fiktif Dobel', '+62 800-0000-034')};", STAFF),
+               lambda a, b, ao, bo, w: check('C14 Kasir (08) and CRM (+62) add the same number at once: second rejected; one customer',
+                                             a == 0 and b == 0 and w and last_json(bo) == {'status': 'terdaftar'} and h.scalar(kasir_count('08000000034')) == '1',
+                                             f'B waited={w} second={last_json(bo)} customers={h.scalar(kasir_count("08000000034"))}'))
+    concurrent('C15 Kasir adding an owner while clinic registration of that owner arrives: registration reuses the card',
+               as_actor(f"select {pelanggan_baru_sql('Fiktif Klinik', '08000000035')};", STAFF),
+               as_actor("select public.registrasi_pelanggan_atomik('Fiktif Klinik','+62 800-0000-035',null,null,null,null);", STAFF),
+               lambda a, b, ao, bo, w: check('C15 Kasir adding an owner while clinic registration of that owner arrives: registration reuses the card',
+                                             a == 0 and b == 0 and w and (last_json(bo) or {}).get('dibuat') is False and h.scalar(kasir_count('08000000035')) == '1',
+                                             f'B waited={w} registration={last_json(bo)} customers={h.scalar(kasir_count("08000000035"))}'))
 
     h.reset()
     left = h.snapshot()

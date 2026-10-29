@@ -30,14 +30,21 @@ export async function tambahCustomerKasir(formData: FormData): Promise<NewCustRe
   // No. HP = kunci pengenal pelanggan lama; nomor asal bikin dedup gagal.
   if (!nomorHpValid(phone)) return { ok: false, error: PESAN_HP_TIDAK_VALID };
 
-  // dedup by phone — sama pola /crm/pelanggan/baru.
-  const { data: existing } = await supabase.from("customers").select("id").eq("phone", phone).maybeSingle();
-  if (existing) return { ok: false, error: "No HP sudah terdaftar" };
+  // dedup by phone — sama pola /crm/pelanggan/baru. Cek + insert ATOMIK di bawah kunci identitas
+  // yang sama dengan impor rekam medis & registrasi klinik (08.. = +62..), jadi tidak bisa balapan.
+  const { data: hasil, error: tambahError } = await supabase.rpc("pelanggan_baru_atomik", {
+    p_name: nama, p_phone: phone, p_email: email, p_dob: dob, p_address: alamat,
+    p_pekerjaan: pekerjaan, p_sumber_info: sumber_info, p_catatan: catatan,
+  });
+  if (tambahError) return { ok: false, error: tambahError.message };
+  const tambah = hasil as { status?: unknown; customer_id?: unknown } | null;
+  if (tambah?.status === "terdaftar") return { ok: false, error: "No HP sudah terdaftar" };
+  if (typeof tambah?.customer_id !== "string") return { ok: false, error: "Gagal simpan customer" };
 
   const { data, error } = await supabase
     .from("customers")
-    .insert({ name: nama, phone, email, dob, address: alamat, pekerjaan, sumber_info, catatan })
     .select("id, name, phone, points, tier, kategori")
+    .eq("id", tambah.customer_id)
     .single();
 
   if (error || !data) return { ok: false, error: error?.message ?? "Gagal simpan customer" };
