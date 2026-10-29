@@ -60,11 +60,40 @@ insert into public.visits (id, branch_id, customer_id, pet_id) values
   ('d0600000-0000-4000-8000-000000000002', 'd0100000-0000-4000-8000-000000000001', 'd0400000-0000-4000-8000-000000000001', 'd0500000-0000-4000-8000-000000000002'),
   ('d0600000-0000-4000-8000-000000000003', 'd0100000-0000-4000-8000-000000000001', 'd0400000-0000-4000-8000-000000000001', 'd0500000-0000-4000-8000-000000000003');
 -- Invoices exactly as bayarRombongan writes them (the code guard runs on every invoice insert).
-insert into public.invoices (visit_id, invoice_no, subtotal, discount, tax, total, paid_status, voucher_code, campaign_code)
-  values ('d0600000-0000-4000-8000-000000000001', 'INV-FUP-A', 60000, 6000, 0, 54000, 'Lunas', 'FUPV', 'ROMBONGAN');
-insert into public.invoices (visit_id, invoice_no, subtotal, discount, tax, total, paid_status, voucher_code)
-  values ('d0600000-0000-4000-8000-000000000002', 'INV-FUP-B', 40000, 4000, 0, 36000, 'Lunas', 'FUPV');
+insert into public.invoices (id, visit_id, invoice_no, subtotal, discount, tax, total, paid_status, voucher_code, campaign_code)
+  values ('d0700000-0000-4000-8000-000000000001', 'd0600000-0000-4000-8000-000000000001', 'INV-FUP-A', 60000, 6000, 0, 54000, 'Lunas', 'FUPV', 'ROMBONGAN');
+-- FUPV is linked to an active campaign: a sibling invoice WITHOUT the carrier marker is a raw voucher
+-- and stays blocked (20261101150000); with the marker it is accepted (20261101152000).
+select pg_temp.rejects($$insert into public.invoices (visit_id, invoice_no, subtotal, discount, tax, total, paid_status, voucher_code)
+  values ('d0600000-0000-4000-8000-000000000002', 'INV-FUP-B', 40000, 4000, 0, 36000, 'Lunas', 'FUPV')$$,
+  'Voucher ini hanya bisa dipakai lewat kode kampanye', 'sibling without carrier marker is a raw voucher');
+-- A marker that does not fit the group is refused: other voucher, other owner, other day, self-reference.
+insert into public.vouchers (id, code, tipe, nilai) values ('d0300000-0000-4000-8000-000000000002', 'FUPLAIN', 'nominal', 1000);
+insert into public.customers (id, name, phone) values ('d0400000-0000-4000-8000-000000000002', 'Pemilik lain', '081277770002');
+insert into public.pets (id, customer_id, name) values ('d0500000-0000-4000-8000-000000000009', 'd0400000-0000-4000-8000-000000000002', 'Delta');
+insert into public.visits (id, branch_id, customer_id, pet_id, created_at) values
+  ('d0600000-0000-4000-8000-000000000008', 'd0100000-0000-4000-8000-000000000001', 'd0400000-0000-4000-8000-000000000002', 'd0500000-0000-4000-8000-000000000009', now()),
+  ('d0600000-0000-4000-8000-000000000009', 'd0100000-0000-4000-8000-000000000001', 'd0400000-0000-4000-8000-000000000001', 'd0500000-0000-4000-8000-000000000003', now() - interval '3 days');
+select pg_temp.rejects($$insert into public.invoices (visit_id, invoice_no, subtotal, total, paid_status, voucher_code, campaign_carrier_id)
+  values ('d0600000-0000-4000-8000-000000000002', 'INV-FUP-X1', 1, 1, 'Lunas', 'FUPLAIN', 'd0700000-0000-4000-8000-000000000001')$$,
+  'tidak cocok dengan nota pembawa', 'marker with another voucher');
+select pg_temp.rejects($$insert into public.invoices (visit_id, invoice_no, subtotal, total, paid_status, voucher_code, campaign_carrier_id)
+  values ('d0600000-0000-4000-8000-000000000008', 'INV-FUP-X2', 1, 1, 'Lunas', 'FUPV', 'd0700000-0000-4000-8000-000000000001')$$,
+  'tidak cocok dengan nota pembawa', 'marker from another owner');
+select pg_temp.rejects($$insert into public.invoices (visit_id, invoice_no, subtotal, total, paid_status, voucher_code, campaign_carrier_id)
+  values ('d0600000-0000-4000-8000-000000000009', 'INV-FUP-X3', 1, 1, 'Lunas', 'FUPV', 'd0700000-0000-4000-8000-000000000001')$$,
+  'tidak cocok dengan nota pembawa', 'marker from another day');
+select pg_temp.rejects($$insert into public.invoices (visit_id, invoice_no, subtotal, total, paid_status, voucher_code, campaign_carrier_id)
+  values ('d0600000-0000-4000-8000-000000000001', 'INV-FUP-X4', 1, 1, 'Lunas', 'FUPV', 'd0700000-0000-4000-8000-000000000001')$$,
+  'tidak cocok dengan nota pembawa', 'marker on the carrier''s own visit');
+select pg_temp.rejects($$insert into public.invoices (visit_id, invoice_no, subtotal, total, paid_status, voucher_code, campaign_code, campaign_carrier_id)
+  values ('d0600000-0000-4000-8000-000000000002', 'INV-FUP-X5', 1, 1, 'Lunas', 'FUPV', 'ROMBONGAN', 'd0700000-0000-4000-8000-000000000001')$$,
+  'sekaligus menjadi nota pendamping', 'carrier cannot also be a sibling');
+insert into public.invoices (visit_id, invoice_no, subtotal, discount, tax, total, paid_status, voucher_code, campaign_carrier_id)
+  values ('d0600000-0000-4000-8000-000000000002', 'INV-FUP-B', 40000, 4000, 0, 36000, 'Lunas', 'FUPV', 'd0700000-0000-4000-8000-000000000001');
 select pg_temp.ok(public.campaign_code_used('ROMBONGAN') = 1, 'group of two invoices uses the code once');
+select pg_temp.rejects($$update public.invoices set campaign_carrier_id = null where invoice_no = 'INV-FUP-B'$$,
+  'tidak boleh diubah', 'carrier marker is immutable');
 -- Next arrival: cap 1 reached, so its carrier invoice is refused before anything is written.
 select pg_temp.rejects($$insert into public.invoices (visit_id, invoice_no, subtotal, discount, tax, total, paid_status, voucher_code, campaign_code)
   values ('d0600000-0000-4000-8000-000000000003', 'INV-FUP-C', 50000, 5000, 0, 45000, 'Lunas', 'FUPV', 'ROMBONGAN')$$,

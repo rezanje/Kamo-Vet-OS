@@ -140,6 +140,24 @@ select pg_temp.ok((select count(*) from public.invoices where visit_id in ('c5a5
   'clinic: campaign code, unlinked voucher, and inactive-campaign voucher all still post');
 select pg_temp.ok((select campaign_code = 'KAMPTAUT' and voucher_code = 'TAUT10' from public.invoices
   where visit_id = 'c5a50000-0000-4000-8000-000000000001'), 'clinic invoice via campaign keeps both codes');
+-- Group payment with the campaign code (20261101152000): the sibling pet's invoice carries the voucher
+-- plus the carrier marker through clinic_post_invoice, and the arrival still counts as ONE use.
+reset role;
+create temp table c5a_used as select public.campaign_code_used('KAMPTAUT') n;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'c5a00000-0000-4000-8000-000000000004', true);
+select public.clinic_post_invoice('c5a50000-0000-4000-8000-000000000004', 'c5a-clinic-4-sibling',
+  jsonb_build_object('tanggal', current_date::text, 'subtotal', 100000, 'discount', 10000, 'tax', 0, 'total', 90000,
+    'dp_amount', 0, 'dp_date', null, 'paid_status', 'Lunas', 'metode_bayar', 'Tunai',
+    'shift_id', 'c5a70000-0000-4000-8000-000000000002', 'voucher_code', 'TAUT10', 'salesperson_id', null,
+    'campaign_carrier_id', (select id from public.invoices where visit_id = 'c5a50000-0000-4000-8000-000000000001' and voided_at is null)),
+  jsonb_build_array(jsonb_build_object('description', 'Konsultasi', 'qty', 1, 'price', 100000, 'kind', 'jasa', 'discount_percent', 0)));
+reset role;
+select pg_temp.ok((select campaign_code is null and voucher_code = 'TAUT10' and campaign_carrier_id is not null from public.invoices
+  where visit_id = 'c5a50000-0000-4000-8000-000000000004'), 'group sibling stored with voucher and carrier marker, no code');
+select pg_temp.ok(public.campaign_code_used('KAMPTAUT') = (select n from c5a_used), 'group sibling adds no campaign use');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'c5a00000-0000-4000-8000-000000000004', true);
 reset role;
 
 -- Reissue of a legacy invoice keeps its voucher; switching the reissue to a linked voucher is blocked.
