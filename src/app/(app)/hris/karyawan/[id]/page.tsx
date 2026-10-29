@@ -9,6 +9,9 @@ import { bacaGajiPokok } from "@/lib/employee-salary";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { editKaryawan } from "../actions";
+import { AkhiriPenugasanForm } from "../AkhiriPenugasanForm";
+import { hariIniWIB } from "@/lib/tanggal";
+import { keadaanPenugasan, labelPenugasan, tanggalSingkat } from "@/lib/employee-assignment";
 import { pasangKomponen, lepasKomponen, pasangTemplateKaryawan } from "../../komponen-gaji/actions";
 
 const rp = (value: number) => `Rp ${Number(value).toLocaleString("id-ID")}`;
@@ -23,12 +26,14 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const { edit, error, success } = await searchParams;
   const supabase = await createClient();
   const aturGaji = await bolehKelolaPayroll();
-  const [empResult, detailResult, componentsResult, assignedResult, branchesResult] = await Promise.all([
+  const [empResult, detailResult, componentsResult, assignedResult, branchesResult, penugasanResult] = await Promise.all([
     supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, status, branch_id, trashed_at").eq("id", id).maybeSingle(),
     supabase.from("employee_import_details").select("fields, imported_at").eq("employee_id", id).maybeSingle(),
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active, calculation_basis, sales_source, sales_scope, rate_percent").order("nama"),
     supabase.from("employee_salary_components").select("id, component_id, nominal, rate_percent_override").eq("employee_id", id),
-    supabase.from("branches").select("id, code, name, type"),
+    supabase.from("branches").select("id, code, name, type, is_active"),
+    supabase.from("employee_branch_assignments")
+      .select("branch_id, role, effective_date, end_date, ended_reason").eq("employee_id", id).order("effective_date"),
   ]);
   if (empResult.error) throw new Error("Profil karyawan gagal dimuat");
   const employee = empResult.data;
@@ -37,8 +42,25 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const gajiPokok = aturGaji ? ((await bacaGajiPokok(supabase, [id])).get(id) ?? 0) : null;
   const nilai = (key: string): string | number | null =>
     key === "gaji_pokok" ? gajiPokok : (employee as Record<string, string | number | null>)[key];
-  const primaryBranch = branchesResult.data?.find(branch => branch.id === employee.branch_id);
-  const primaryBranchName = primaryBranch ? branchDisplayName(primaryBranch, branchesResult.data ?? []) : "Belum ditentukan";
+  const branchCatalog = branchesResult.data ?? [];
+  const namaCabang = (branchId: string) => {
+    const branch = branchCatalog.find(item => item.id === branchId);
+    return branch ? branchDisplayName(branch, branchCatalog) : "Cabang tidak ditemukan";
+  };
+  const primaryBranchName = employee.branch_id ? namaCabang(employee.branch_id) : "Belum ditentukan";
+  // Cabang nonaktif tidak ditawarkan, kecuali cabang yang sedang dipakai karyawan ini.
+  const pilihanCabang = branchCatalog
+    .filter(branch => branch.is_active || branch.id === employee.branch_id)
+    .map(branch => ({ id: branch.id, name: branchDisplayName(branch, branchCatalog) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "id"));
+  const hariIni = hariIniWIB();
+  type Penugasan = { branch_id: string; role: "PRIMARY" | "SECONDARY"; effective_date: string; end_date: string | null; ended_reason: string | null };
+  const penugasan = ((penugasanResult.data ?? []) as Penugasan[]).map(row => ({
+    ...row,
+    branchName: namaCabang(row.branch_id),
+    keadaan: keadaanPenugasan(row, hariIni),
+    keterangan: labelPenugasan(row, hariIni),
+  }));
   const detail = detailResult.data;
   const fields = detail?.fields && typeof detail.fields === "object" && !Array.isArray(detail.fields)
     ? detail.fields as Record<string, string> : {};
@@ -80,6 +102,17 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
             <label className="flab" htmlFor={key}>{label}</label>
             <NumberInput id={key} className="fi" name={key} type={type} defaultValue={nilai(key) ?? ""} required={key === "nama" || key === "gaji_pokok"} min={type === "number" ? 0 : undefined} step={type === "number" ? "any" : undefined} />
           </div>)}
+          <div>
+            <label className="flab" htmlFor="branch_id">Cabang utama{employee.status === "Aktif" ? " *" : ""}</label>
+            <select id="branch_id" className="fi" name="branch_id" defaultValue={employee.branch_id ?? ""} required={employee.status === "Aktif"}>
+              <option value="">Belum ditentukan</option>
+              {pilihanCabang.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="flab" htmlFor="alasan_cabang">Alasan pindah cabang (opsional)</label>
+            <input id="alasan_cabang" className="fi" name="alasan_cabang" minLength={3} maxLength={300} placeholder="Diisi bila cabang utama diganti" />
+          </div>
           <div><label className="flab">Status</label><input type="hidden" name="status" value={employee.status} />{employee.status}<p>Gunakan aksi di daftar karyawan untuk mengubah status dengan alasan. Status ini tidak mencabut akses login.</p></div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}><SubmitButton className="btn-acc" pendingText="Menyimpan…">Simpan Perubahan</SubmitButton><Link className="btn-def" href={`/hris/karyawan/${id}`}>Batal</Link></div>
@@ -87,10 +120,29 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
         {inputs.map(([key, label]) => <div key={key}><dt className="flab">{label.replace(" *", "")}</dt><dd style={{ margin: 0 }}>{key === "gaji_pokok" ? rp(gajiPokok ?? 0) : nilai(key) || "—"}</dd></div>)}
         <div><dt className="flab">Status</dt><dd style={{ margin: 0 }}>{employee.status}</dd></div>
       </dl>}
-      <p>Cabang utama: {branchesResult.error ? "Gagal dimuat" : primaryBranchName}. <Link href="/hris/karyawan">Kelola penugasan cabang</Link></p>
+      <p>Cabang utama: <b>{branchesResult.error ? "Gagal dimuat" : primaryBranchName}</b>. Ganti cabang utama lewat tombol Edit Karyawan di atas; perubahannya tercatat beserta pelakunya.</p>
+    </div>
+    <div className="crm-sec">
+      <SecHeader num="02" title="PENUGASAN CABANG" desc="Cabang utama dan cabang tambahan tempat orang ini boleh dipilih sebagai petugas."
+        action={<Link className="btn-def" href="/hris/karyawan/penugasan">Tambah penugasan</Link>} />
+      {penugasanResult.error ? <p role="alert">Penugasan cabang gagal dimuat. Muat ulang halaman.</p> : <div style={{ overflowX: "auto" }}>
+        <table className="tbl"><thead><tr><th>Cabang</th><th>Jenis</th><th>Mulai</th><th>Keadaan</th><th>Alasan berakhir</th><th>Aksi</th></tr></thead><tbody>
+          {penugasan.map(row => <tr key={row.branch_id} style={{ opacity: row.keadaan === "berakhir" ? .6 : 1 }}>
+            <td style={{ fontSize: 11 }}>{row.branchName}</td>
+            <td style={{ fontSize: 11, color: "var(--tm)" }}>{row.role === "PRIMARY" ? "Cabang utama" : "Tambahan"}</td>
+            <td style={{ fontSize: 11 }}>{tanggalSingkat(row.effective_date, hariIni)}</td>
+            <td style={{ fontSize: 11 }}>{row.keadaan === "berjalan" ? "Berjalan" : row.keadaan === "akan-datang" ? "Belum berlaku" : "Berakhir"}{row.keterangan ? ` · ${row.keterangan}` : ""}</td>
+            <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.ended_reason ?? "—"}</td>
+            <td>{row.role === "PRIMARY" ? <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Ubah lewat Edit Karyawan</span>
+              : row.end_date ? <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Sudah diakhiri</span>
+              : <AkhiriPenugasanForm employeeId={id} branchId={row.branch_id} branchName={row.branchName} today={hariIni} minDate={row.effective_date} />}</td>
+          </tr>)}
+          {!penugasan.length && <tr><td colSpan={6} style={{ fontSize: 11, color: "var(--td)", textAlign: "center", padding: "12px 0" }}>Belum ada penugasan cabang untuk karyawan ini.</td></tr>}
+        </tbody></table>
+      </div>}
     </div>
     {aturGaji && <div className="crm-sec">
-      <SecHeader num="02" title="BENEFIT & KOMPONEN GAJI" desc="Gaji pokok, tunjangan, insentif omzet, dan potongan yang berlaku untuk karyawan ini." action={<Link className="btn-def" href={`/hris/komponen-gaji?emp=${id}`}>Master Komponen</Link>} />
+      <SecHeader num="03" title="BENEFIT & KOMPONEN GAJI" desc="Gaji pokok, tunjangan, insentif omzet, dan potongan yang berlaku untuk karyawan ini." action={<Link className="btn-def" href={`/hris/komponen-gaji?emp=${id}`}>Master Komponen</Link>} />
       <p>Gaji pokok: <b>{rp(gajiPokok ?? 0)}</b>. Nominal atau persentase khusus kosong mengikuti master. Perubahan berlaku pada perhitungan gaji berikutnya; slip yang telah disahkan tetap tersimpan.</p>
       {benefitError ? <p role="alert">Komponen gaji gagal dimuat. Muat ulang halaman sebelum mengubah benefit.</p> : <>
         <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Komponen</th><th>Jenis</th><th>Nominal / tarif</th><th>Aksi</th></tr></thead><tbody>
@@ -122,7 +174,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
         </tbody></table></div>}
       <p><Link href="/hris/penggajian">Buka Penggajian & Slip Gaji</Link></p>
     </div>}
-    <div className="crm-sec"><SecHeader num="03" title="RINCIAN IMPOR EXCEL" desc="Data tambahan dari sumber impor." />
+    <div className="crm-sec"><SecHeader num="04" title="RINCIAN IMPOR EXCEL" desc="Data tambahan dari sumber impor." />
       {detailResult.error ? <p>Rincian impor gagal dimuat.</p> : !detail ? <p>Belum ada rincian dari unggahan Excel.</p> : <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 12 }}>{Object.entries(fields).map(([label, value]) => <div key={label}><dt className="flab">{label}</dt><dd style={{ margin: 0, overflowWrap: "anywhere" }}>{value || "—"}</dd></div>)}</dl>}
     </div>
   </>;

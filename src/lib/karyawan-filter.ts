@@ -15,6 +15,13 @@ export const GRUP_JABATAN: readonly { id: string; label: string; role: ClinicalR
   { id: "lainnya", label: "Lainnya", role: null },
 ];
 
+/** Label peran klinis untuk layar HR: "Dokter", "Groomer", "Dokter + Groomer", atau "Lainnya". */
+export function labelPeranKlinis(jabatan: string | null): string {
+  const peran = clinicalRoles(jabatan);
+  const label = GRUP_JABATAN.filter((item) => item.role && peran.includes(item.role)).map((item) => item.label);
+  return label.length ? label.join(" + ") : "Lainnya";
+}
+
 export function cocokGrupJabatan(jabatan: string | null, grup: string): boolean {
   const pilihan = GRUP_JABATAN.find((item) => item.id === grup);
   if (!pilihan) return true;
