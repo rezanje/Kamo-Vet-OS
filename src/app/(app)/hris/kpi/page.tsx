@@ -2,6 +2,7 @@ import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { EmployeePicker } from "@/components/EmployeePicker";
 import { simpanKpi } from "./actions";
 
 // ponytail: KPI karyawan per periode — input skor + lihat penilaian kinerja.
@@ -139,15 +140,9 @@ export default async function KpiPage({
         <form action={simpanKpi}>
           <div className="grid2">
             <div>
-              <label className="flab">Karyawan *</label>
-              <select className="fi" name="employee_id" required>
-                <option value="">Pilih karyawan aktif</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nama}{e.jabatan ? ` — ${e.jabatan}` : ""}
-                  </option>
-                ))}
-              </select>
+              <label className="flab" htmlFor="kpi-employee">Karyawan *</label>
+              <EmployeePicker inputId="kpi-employee" name="employee_id" required employees={employees}
+                placeholder="Ketik nama atau jabatan karyawan aktif…" />
             </div>
             <div>
               <label className="flab">Periode *</label>
