@@ -213,6 +213,9 @@ Perubahan minimal:
 - Kasir/CRM memanggil RPC itu menggantikan blok cek+insert. Validasi di depan, pesan, kolom, dan alur sesudahnya sama;
   Kasir membaca baris pelanggan baru dengan `select` kolom yang sama seperti dulu.
 - Tidak menyentuh kebutuhan pet, cabang, peran, flow pelanggan, atau hak akses.
+- Kasir: bila RPC sudah menyimpan tetapi membaca baris pelanggan sesudahnya gagal, pesan kini menyatakan pelanggan
+  sudah tersimpan dan meminta mencari lalu memilihnya (dulu galat mentah seolah gagal simpan, lalu tambah ulang
+  ditolak "No HP sudah terdaftar"). CRM tidak membaca ulang, jadi tidak terkena. Tes regresi di tes aksi.
 
 Konsekuensi yang perlu diketahui (akibat kunci HP kanonik, bukan aturan baru): nomor sama dengan tulisan berbeda
 (08/+62/tanda hubung) kini ditolak; nomor yang sudah dipakai >1 kartu ditolak (dulu `maybeSingle()` diam-diam membuat
