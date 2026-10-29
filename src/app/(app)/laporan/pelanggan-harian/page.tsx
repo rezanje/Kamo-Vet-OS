@@ -2,7 +2,7 @@ import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB, rentangTanggal } from "@/lib/tanggal";
 import { tanggalIndo } from "@/lib/followup";
 import { tarikTransaksi } from "@/lib/laporan-transaksi-server";
-import { perHari, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
+import { KANAL_SEMUA, LABEL_KANAL, kanalKosong, perHari, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
 
 // "Jumlah pelanggan per hari" — laporan dasar yang diminta Kamo Group (24 Agu 2026).
 // Hari tanpa transaksi sengaja tetap ditampilkan sebagai baris nol: hari sepi adalah
@@ -17,7 +17,8 @@ const namaHari = (t: string) => HARI[new Date(`${t}T00:00:00`).getDay()];
 
 const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
 
-const KANAL: Kanal[] = ["POS", "Online", "Klinik"];
+const KANAL: Kanal[] = KANAL_SEMUA;
+const pecahanKanal = (k: Record<Kanal, number>) => KANAL.map((nama) => k[nama]).join(" / ");
 
 export default async function PelangganHarianPage({
   searchParams,
@@ -38,7 +39,7 @@ export default async function PelangganHarianPage({
   const isiPerHari = new Map(perHari(trx).map((h) => [h.tanggal, h]));
   const kanalPerHari = new Map<string, Record<Kanal, number>>();
   for (const t of trx) {
-    const k = kanalPerHari.get(t.tanggal) ?? { POS: 0, Online: 0, Klinik: 0 };
+    const k = kanalPerHari.get(t.tanggal) ?? kanalKosong();
     k[t.kanal]++;
     kanalPerHari.set(t.tanggal, k);
   }
@@ -56,7 +57,7 @@ export default async function PelangganHarianPage({
   return (
     <LaporanPage
       icon="ti-users-group" title="PELANGGAN PER HARI"
-      desc="Berapa orang yang dilayani tiap hari, dari kasir petshop, pesanan online, dan klinik."
+      desc="Berapa orang yang dilayani tiap hari, dari kasir petshop, pesanan online, klinik, dan faktur grosir."
       filter={
         <>
           <div>
@@ -78,7 +79,7 @@ export default async function PelangganHarianPage({
             <label className="flab">Pintu transaksi</label>
             <select className="fi" name="kanal" defaultValue={kanal}>
               <option value="">Semua</option>
-              {KANAL.map((k) => <option key={k} value={k}>{k}</option>)}
+              {KANAL.map((k) => <option key={k} value={k}>{LABEL_KANAL[k]}</option>)}
             </select>
           </div>
           <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
@@ -112,7 +113,7 @@ export default async function PelangganHarianPage({
                 <th style={{ width: 100, textAlign: "center" }}>Berkartu</th>
                 <th style={{ width: 100, textAlign: "center" }}>Pembeli umum</th>
                 <th style={{ width: 90, textAlign: "center" }}>Transaksi</th>
-                <th style={{ width: 150, textAlign: "center" }}>POS / Online / Klinik</th>
+                <th style={{ width: 180, textAlign: "center" }}>POS / Online / Klinik / Grosir</th>
                 <th style={{ width: 90, textAlign: "center" }}>Rata-rata item</th>
                 <th style={{ width: 140, textAlign: "right" }}>Omzet</th>
               </tr>
@@ -120,7 +121,7 @@ export default async function PelangganHarianPage({
             <tbody>
               {hari.map((t) => {
                 const h = isiPerHari.get(t);
-                const k = kanalPerHari.get(t) ?? { POS: 0, Online: 0, Klinik: 0 };
+                const k = kanalPerHari.get(t) ?? kanalKosong();
                 const sepi = !h;
                 return (
                   <tr key={t} style={sepi ? { opacity: .5 } : undefined}>
@@ -131,7 +132,7 @@ export default async function PelangganHarianPage({
                     <td style={{ textAlign: "center", fontSize: 11, color: "var(--tm)" }}>{h?.trxTanpaAkun ?? 0}</td>
                     <td style={{ textAlign: "center", fontSize: 11 }}>{h?.trx ?? 0}x</td>
                     <td style={{ textAlign: "center", fontSize: 10.5, color: "var(--tm)" }}>
-                      {k.POS} / {k.Online} / {k.Klinik}
+                      {pecahanKanal(k)}
                     </td>
                     <td style={{ textAlign: "center", fontSize: 11 }}>{h ? angka(h.rataItemPerTrx) : "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: h ? 700 : 400 }}>
@@ -151,7 +152,9 @@ export default async function PelangganHarianPage({
           dua kali tanpa menyebut nama. Baris pucat berarti hari itu tidak ada transaksi sama sekali.<br />
           &quot;Pelanggan berbeda di rentang ini&quot; menghitung tiap orang sekali saja untuk seluruh
           rentang, jadi angkanya lebih kecil dari penjumlahan kolom harian — dan memang bukan
-          penjumlahannya.
+          penjumlahannya.<br />
+          Faktur grosir ikut pada tanggal fakturnya meski belum dibayar. Faktur grosir tanpa pelanggan
+          terdaftar dihitung seperti pembeli umum, sama seperti struk kasir tanpa nama.
         </div>
       </div>
     </LaporanPage>
