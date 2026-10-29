@@ -1,5 +1,38 @@
 # Supabase SQL checks
 
+## Rekam medis import regression harness (test-only)
+
+```sh
+python3 scripts/test-impor-rekam-medis-postgres.py                 # Docker postgres:16, network none
+python3 scripts/test-impor-rekam-medis-postgres.py --pg-bin DIR    # native throwaway cluster, no Docker
+```
+
+Measures the **current** behaviour of the real `import_legacy_medical_records_bulk` →
+`import_legacy_medical_record_resolved` RPCs after every repository migration, using only
+fictional rows (`wowo-test::` keys, phones in the reserved `0800000xxxx` range). It accepts no
+database URL and changes no application code, parser, key, phone normalisation, hold rule or
+migration. Expectations encode the correct outcome (no loss, no silent duplicate, no overwrite);
+a failing case is a recorded finding, not a test to relax. Exit status is non-zero while any case
+fails or is blocked.
+
+Cases: retry/resend dedupe (R1), duplicate key inside one batch (R2), one bad row not sinking the
+batch (R3), resume after an uncommitted chunk (R4), source-key collision with different content
+(K1), key already used by a branch visit (K2), the same owner written `08…` vs `+62…` (K3), STAFF
+denied (A1), and three independent-session races: same key (C1), same new owner on different keys
+(C2), and an import open while a live visit registers the same owner (C3).
+
+Findings at `ac3c3647` (PostgreSQL 17.11 native cluster, 318 migrations): 15 pass, 3 fail —
+K1b a different card sharing a source key is reported `sudah_ada` and dropped with no signal;
+K3 `08…`/`+62…` create two customers; C3b the live path does not take the import lock and
+`customers.phone` is not unique, so a concurrent live registration duplicates the owner.
+
+Evidence boundary: database level only. The live-visit side of C3 is a direct SQL stand-in that
+mirrors the registration action's exact-phone lookup then insert; it is not the real server
+action. Browser parsing,
+Web Worker chunking, the server action, PostgREST and checkpoint/resume in the browser are not
+exercised; R4 proves only that resending every chunk after an uncommitted one converges. Shims
+replace Supabase auth/storage; this is not a full `supabase db reset` or Production parity.
+
 ## Atomic monthly recurring journals
 
 ```sh
