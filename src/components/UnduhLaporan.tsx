@@ -19,7 +19,7 @@ function unduh(blob: Blob, nama: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function UnduhLaporan({ judul, selector = "#laporan-isi" }: { judul: string; selector?: string }) {
+export function UnduhLaporan({ judul, selector = "#laporan-isi", inline = false }: { judul: string; selector?: string; inline?: boolean }) {
   const [sibuk, setSibuk] = useState(false);
   const [pesan, setPesan] = useState("");
   const nama = judul.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "laporan";
@@ -72,11 +72,11 @@ export function UnduhLaporan({ judul, selector = "#laporan-isi" }: { judul: stri
   }
 
   return (
-    <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-      <span style={{ fontSize: 11, color: "var(--tm)" }}>Unduh data yang tampil:</span>
-      <button type="button" className="btn-def" disabled={sibuk} onClick={() => void simpan("csv")}>CSV</button>
-      <button type="button" className="btn-def" disabled={sibuk} onClick={() => void simpan("xlsx")}>Excel</button>
-      <button type="button" className="btn-def" onClick={cetak}>Cetak / PDF</button>
+    <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: inline ? 0 : 12 }}>
+      <span style={{ fontSize: 11, color: "var(--tm)" }}>{inline ? "Unduh:" : "Unduh data yang tampil:"}</span>
+      <button type="button" className="btn-def" style={inline ? { fontSize: 11 } : undefined} disabled={sibuk} onClick={() => void simpan("csv")}>CSV</button>
+      <button type="button" className="btn-def" style={inline ? { fontSize: 11 } : undefined} disabled={sibuk} onClick={() => void simpan("xlsx")}>Excel</button>
+      <button type="button" className="btn-def" style={inline ? { fontSize: 11 } : undefined} onClick={cetak}>Cetak / PDF</button>
       {pesan && <span role="alert" style={{ fontSize: 11, color: "#b91c1c" }}>{pesan}</span>}
     </div>
   );

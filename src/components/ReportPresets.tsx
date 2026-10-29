@@ -6,12 +6,12 @@ import {useDraftUserId} from './LocalTransactionDraft';
 import {readReportPresets,reportPresetHref,reportPresetKey,type ReportPreset} from '@/lib/report-presets';
 import {listPrivateReportPresets,savePrivateReportPreset,deletePrivateReportPreset,type PrivatePresetResult} from '@/app/(app)/laporan/preset-actions';
 
-export function ReportPresets({title,directory=false,appliedDefaults=''}:{title:string;directory?:boolean;appliedDefaults?:string}){
+export function ReportPresets({title,directory=false,appliedDefaults='',compact=false}:{title:string;directory?:boolean;appliedDefaults?:string;compact?:boolean}){
  const userId=useDraftUserId(),path=usePathname(),query=useSearchParams().toString();
  if(!userId||(!directory&&!path.startsWith('/laporan/')))return null;
- return <PresetEditor key={`${userId}:${path}:${query}:${appliedDefaults}`} userId={userId} path={path} query={query} title={title} directory={directory} appliedDefaults={appliedDefaults}/>;
+ return <PresetEditor key={`${userId}:${path}:${query}:${appliedDefaults}`} userId={userId} path={path} query={query} title={title} directory={directory} appliedDefaults={appliedDefaults} compact={compact}/>;
 }
-function PresetEditor({userId,path,query,title,directory,appliedDefaults}:{userId:string;path:string;query:string;title:string;directory:boolean;appliedDefaults:string}){
+function PresetEditor({userId,path,query,title,directory,appliedDefaults,compact}:{userId:string;path:string;query:string;title:string;directory:boolean;appliedDefaults:string;compact:boolean}){
  const [rows,setRows]=useState<ReportPreset[]>([]),[legacy,setLegacy]=useState<ReportPreset[]>([]),[name,setName]=useState(''),[error,setError]=useState(''),[warning,setWarning]=useState('');
  const [ready,setReady]=useState(false),[loading,setLoading]=useState(true),[pending,setPending]=useState(false);
  const retry=useRef<{signature:string;id:string}|null>(null);
@@ -50,10 +50,9 @@ function PresetEditor({userId,path,query,title,directory,appliedDefaults}:{userI
  }
  async function remove(id:string){setPending(true);try{accept(await deletePrivateReportPreset(id,userId));}catch{setError('Hasil penghapusan belum dapat dikonfirmasi. Muat ulang daftar sebelum mencoba lagi.');}finally{setPending(false);}}
  const old=legacy.filter(row=>!rows.some(saved=>saved.id===row.id||(saved.name===row.name&&saved.href===row.href)));
- return <div className="crm-sec no-print" style={{marginBottom:12,overflowWrap:'anywhere'}} aria-busy={loading||pending}>
-  <strong>Konfigurasi laporan tersimpan</strong>
-  <p style={{fontSize:12,margin:'6px 0'}}>Pribadi untuk akun ini dan tersedia di browser lain setelah masuk dengan akun yang sama. Filter serta pilihan kolom yang telah diterapkan disimpan; data dan izin akses mengikuti laporan asal.</p>
-  <button type="button" className="btn-def" disabled={loading||pending} onClick={()=>void reload()}>Muat ulang daftar</button>
+ const isi=<>
+  <p style={{fontSize:11,margin:'6px 0',color:'var(--tm)'}}>Simpan filter + pilihan kolom yang sedang dipakai, untuk akun ini (bisa dibuka dari browser lain).</p>
+  <button type="button" className="btn-def" style={{fontSize:11}} disabled={loading||pending} onClick={()=>void reload()}>Muat ulang daftar</button>
   {!directory&&<div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center',marginTop:8}}>
    <input className="fi" aria-label="Nama konfigurasi laporan" maxLength={80} disabled={pending||loading} placeholder={`Nama konfigurasi ${title}`} value={name} onChange={e=>setName(e.target.value)} style={{width:260,maxWidth:'100%'}}/>
    <button type="button" className="btn-def" disabled={!ready||loading||pending||!name.trim()} onClick={()=>void saveCurrent()}>{pending?'Menyimpan…':'Simpan konfigurasi'}</button>
@@ -67,5 +66,13 @@ function PresetEditor({userId,path,query,title,directory,appliedDefaults}:{userI
   {old.length>0&&<details style={{marginTop:10}}><summary>Konfigurasi browser lama — belum disalin ke akun</summary><ul>{old.map(row=><li key={row.id}>
    <Link href={row.href}>{row.name}</Link>{' '}<button type="button" className="btn-def" disabled={!ready||loading||pending} onClick={()=>void save(row.name,row.href,/^[0-9a-f-]{36}$/i.test(row.id)?row.id:undefined)}>{`Salin ${row.name} ke akun`}</button>
   </li>)}</ul></details>}
+ </>;
+ if(compact)return <details data-report-presets className="no-print" style={{position:'relative',overflowWrap:'anywhere'}} aria-busy={loading||pending}>
+  <summary className="btn-def" style={{fontSize:11,listStyle:'none',cursor:'pointer'}}><i className="ti ti-bookmark" /> Konfigurasi tersimpan{rows.length>0?` (${rows.length})`:''}</summary>
+  <div className="crm-sec" style={{position:'absolute',zIndex:20,top:'calc(100% + 6px)',left:0,width:420,maxWidth:'90vw',marginBottom:0}}>{isi}</div>
+ </details>;
+ return <div className="crm-sec no-print" style={{marginBottom:12,overflowWrap:'anywhere'}} aria-busy={loading||pending}>
+  <strong>Konfigurasi laporan tersimpan</strong>
+  {isi}
  </div>;
 }

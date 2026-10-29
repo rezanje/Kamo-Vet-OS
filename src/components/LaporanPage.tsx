@@ -30,21 +30,25 @@ export function LaporanPage({
         <Link href="/laporan" className="back-btn"><i className="ti ti-arrow-left" /> Daftar Laporan</Link>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <i className={`ti ${icon}`} style={{ fontSize: 22, color: "#2563eb" }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <i className={`ti ${icon}`} style={{ fontSize: 18, color: "#2563eb" }} />
         </div>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>{title}</div>
-          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>{desc}</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 17, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>{title}</div>
+          <div style={{ fontSize: 11, color: "var(--tm)" }}>{desc}</div>
         </div>
       </div>
 
-      <Suspense fallback={null}><ReportPresets title={title} appliedDefaults={reportFilterDefaults(filter)} /></Suspense>
-      {unduhTampilan && <UnduhLaporan judul={title} />}
+      {/* Satu baris alat: unduh + konfigurasi tersimpan (terlipat). Dulu dua kotak
+          besar yang makan setengah layar sebelum filter (keluhan Andri 29 Okt). */}
+      <div data-report-toolbar className="no-print" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        {unduhTampilan && <UnduhLaporan judul={title} inline />}
+        <Suspense fallback={null}><ReportPresets title={title} appliedDefaults={reportFilterDefaults(filter)} compact /></Suspense>
+      </div>
 
       {filter && (
-        <form data-report-filters className="crm-sec" style={{ marginBottom: 12 }}>
+        <form data-report-filters className="crm-sec" style={{ marginBottom: 8, padding: "10px 12px" }}>
           {pilihanKolom && <Suspense fallback={null}><ReportColumnsFilterInput /></Suspense>}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>{filter}</div>
         </form>
