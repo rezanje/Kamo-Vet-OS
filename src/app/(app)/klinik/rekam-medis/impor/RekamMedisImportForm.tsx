@@ -1,67 +1,84 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  previewImporRekamMedis,
-  simpanBatchImporRekamMedis,
+  prosesPotonganImporRekamMedis,
+  type HasilPotonganImporRekamMedis,
   type RekamMedisIdentityDecision,
-  type RekamMedisImportState,
 } from "./actions";
-import {
-  bagiBatchImporRekamMedis,
-  jalankanTerbatasImporRekamMedis,
-  bolehKonfirmasiImporRekamMedis,
-  cariRiwayatImporRekamMedis,
-  infoProgresImporRekamMedis,
-  rencanaSimpanBesarRekamMedis,
-  type TahapProgresImporRekamMedis,
+import type {
+  RekamMedisIdentityClarification,
+  RekamMedisImporHeld,
+  RekamMedisImporRow,
 } from "@/lib/impor-rekam-medis";
+import {
+  BATAS_POTONGAN_AWAL,
+  bacaTitikSimpan,
+  bagiKirimanBaris,
+  csvRiwayatDitahan,
+  hapusTitikSimpan,
+  HITUNGAN_IMPOR_KOSONG,
+  kirimDenganUlangan,
+  labelTombolAliran,
+  namaBerkasCatatanDitahan,
+  PelacakGandaRiwayat,
+  perkiraanSisaWaktuImpor,
+  rencanakanPotonganImpor,
+  saringGandaPotongan,
+  sesuaikanBatasPotongan,
+  sisakanFolderBelumSelesai,
+  tandaRuangImpor,
+  teksProgresImpor,
+  tulisTitikSimpan,
+  type BatasPotonganImpor,
+  type HitunganImporRekamMedis,
+  type PotonganImporRekamMedis,
+  type StatusAliranImpor,
+} from "@/lib/impor-rekam-medis-aliran";
+import {
+  BATAS_BYTES_BERKAS_REKAM_MEDIS,
+  sumberFolderLokal,
+  type FolderImporRekamMedis,
+  type SumberImporRekamMedis,
+} from "@/lib/impor-rekam-medis-sumber";
+import { buatPenguraiKartuMedis, type PenguraiKartuMedis } from "@/lib/impor-rekam-medis-pengurai";
 
-function pesanError(cause: unknown, fallback: string) {
-  const message = cause instanceof Error ? cause.message : "";
-  if (/unexpected response|failed to fetch|network/i.test(message)) {
-    return "Server belum memberi jawaban saat mengecek file. Data belum disimpan. Coba ulangi dengan file lebih sedikit.";
-  }
-  return message || fallback;
-}
+/** Batas tampilan dan memori: impor besar tidak boleh menumpuk isi medis di tab. */
+const MAKS_DITAHAN_DISIMPAN = 20_000;
+const MAKS_PERTANYAAN_DISIMPAN = 2_000;
+const MAKS_BARIS_TAMPIL = 200;
 
-function key(value: unknown) {
+type Antrian = {
+  folders: FolderImporRekamMedis[];
+  iFolder: number;
+  iPotongan: number;
+  /** Rencana potongan folder berjalan; disimpan supaya jeda-lanjut tidak melewati berkas. */
+  potongan: PotonganImporRekamMedis[] | null;
+  ruang: string;
+  /** Folder yang sudah tercatat selesai SEBELUM sesi ini; tetap ikut ditulis ulang. */
+  selesaiAwal: string[];
+  berkasTotal: number;
+};
+
+function kunciPilihan(value: unknown) {
   return String(value ?? "").trim().toLocaleLowerCase("id-ID").replace(/[.:]/g, "").replace(/\s+/g, " ");
 }
 
-function rowFingerprint(row: RekamMedisImportState["rows"][number]) {
-  return JSON.stringify([
-    row.record_no,
-    row.owner_name,
-    row.phone,
-    row.patient_name,
-    row.record_date,
-    row.species,
-    row.breed,
-    row.gender,
-    row.dob,
-    row.doctor,
-    row.note,
-    row.anamnesis,
-    row.clinical_findings,
-    row.diagnosis,
-    row.therapy,
-  ]);
+function penyimpanLokal() {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
-function decisionPayload(identityDecisions: Record<string, string>): RekamMedisIdentityDecision[] {
-  return Object.entries(identityDecisions).flatMap(([source_key, decision]): RekamMedisIdentityDecision[] => {
-    if (decision === "skip") return [{ source_key, decision: "skip" }];
+export function keputusanKePayload(keputusan: Record<string, string>): RekamMedisIdentityDecision[] {
+  return Object.entries(keputusan).flatMap(([source_key, pilihan]): RekamMedisIdentityDecision[] => {
+    if (pilihan === "skip") return [{ source_key, decision: "skip" }];
     try {
-      const parsed = JSON.parse(decision) as { customer_id?: unknown; pet_id?: unknown };
+      const parsed = JSON.parse(pilihan) as { customer_id?: unknown; pet_id?: unknown };
       if (typeof parsed.customer_id !== "string") return [];
-      return [{
-        source_key,
-        decision: {
-          customer_id: parsed.customer_id,
-          pet_id: typeof parsed.pet_id === "string" ? parsed.pet_id : null,
-        },
-      }];
+      return [{ source_key, decision: { customer_id: parsed.customer_id, pet_id: typeof parsed.pet_id === "string" ? parsed.pet_id : null } }];
     } catch {
       return [];
     }
@@ -69,167 +86,285 @@ function decisionPayload(identityDecisions: Record<string, string>): RekamMedisI
 }
 
 export function RekamMedisImportForm() {
-  const [files, setFiles] = useState<File[]>([]);
-  const [approved, setApproved] = useState(false);
-  const [state, setState] = useState<RekamMedisImportState | null>(null);
+  const [berkasTerpilih, setBerkasTerpilih] = useState<File[]>([]);
+  const [status, setStatus] = useState<StatusAliranImpor>("siap");
+  const [setuju, setSetuju] = useState(false);
+  const [hitungan, setHitungan] = useState<HitunganImporRekamMedis>(HITUNGAN_IMPOR_KOSONG);
+  const [folderSelesai, setFolderSelesai] = useState(0);
+  const [folderTotal, setFolderTotal] = useState(0);
+  const [sisaMs, setSisaMs] = useState<number | null>(null);
+  const [ditahan, setDitahan] = useState<RekamMedisImporHeld[]>([]);
+  const [pertanyaan, setPertanyaan] = useState<RekamMedisIdentityClarification[]>([]);
+  const [keputusan, setKeputusan] = useState<Record<string, string>>({});
+  const [pesan, setPesan] = useState("");
   const [error, setError] = useState("");
-  const [tahapProgres, setTahapProgres] = useState<TahapProgresImporRekamMedis | null>(null);
-  const [identityDecisions, setIdentityDecisions] = useState<Record<string, string>>({});
-  const [detailProgres, setDetailProgres] = useState({ current: 0, total: 0 });
-  const [kataKunciReview, setKataKunciReview] = useState("");
-  const [pending, startTransition] = useTransition();
-  const filteredRows = useMemo(() => cariRiwayatImporRekamMedis(state?.rows ?? [], kataKunciReview), [state?.rows, kataKunciReview]);
-  const filteredHeld = useMemo(() => cariRiwayatImporRekamMedis(state?.held ?? [], kataKunciReview), [state?.held, kataKunciReview]);
-  const visibleRows = useMemo(() => filteredRows.slice(0, 200), [filteredRows]);
-  const visibleHeld = useMemo(() => filteredHeld.slice(0, 200), [filteredHeld]);
-  const summary = useMemo(() => {
-    const rows = state?.rows ?? [];
-    const owners = new Set(rows.map((row) => `${row.owner_name?.toLocaleLowerCase("id-ID")}::${row.phone?.replace(/\D/g, "")}`));
-    const pets = new Set(rows.map((row) => `${row.owner_name?.toLocaleLowerCase("id-ID")}::${row.phone?.replace(/\D/g, "")}::${row.patient_name?.toLocaleLowerCase("id-ID")}`));
-    return { owners: owners.size, pets: pets.size };
-  }, [state]);
-  const clarificationComplete = (state?.clarifications ?? []).every((row) => Boolean(identityDecisions[row.source_key]));
-  const selectedRows = (state?.rows ?? []).filter((row) => identityDecisions[row.source_key] !== "skip").length;
-  const canConfirm = bolehKonfirmasiImporRekamMedis(selectedRows, approved) && clarificationComplete;
-  const progres = tahapProgres ? infoProgresImporRekamMedis(tahapProgres) : null;
+  const [menyimpanKeputusan, setMenyimpanKeputusan] = useState(false);
 
-  const runPreview = () => {
-    if (!files.length) return setError("Pilih file kartu medis .xlsx terlebih dulu.");
-    setError("");
-    setTahapProgres("baca");
-    // Satu workbook per request. ExcelJS bisa berat walau total file kecil;
-    // mengirim beberapa workbook sekaligus membuat fungsi produksi timeout.
-    const fileBatches = files.map((file) => [file]);
-    setDetailProgres({ current: 0, total: fileBatches.length });
-    startTransition(async () => {
-      const rows: RekamMedisImportState["rows"] = [];
-      const held: RekamMedisImportState["held"] = [];
-      const clarifications: RekamMedisImportState["clarifications"] = [];
-      let ignoredSheets = 0;
-      const errors: string[] = [];
-      try {
-        for (let index = 0; index < fileBatches.length; index += 1) {
-          const batch = fileBatches[index];
-          setDetailProgres({ current: index + 1, total: fileBatches.length });
-          const form = new FormData();
-          batch.forEach((file) => {
-            form.append("files", file);
-            form.append("paths", file.webkitRelativePath || file.name);
-          });
-          let result: RekamMedisImportState;
-          try {
-            result = await previewImporRekamMedis(form);
-          } catch (cause) {
-            const message = pesanError(cause, "File gagal dicek.");
-            const namaBatch = batch.length === 1 ? batch[0].name : `${batch.length} file`;
-            errors.push(`${namaBatch}: ${message}`);
-            held.push({ source_key: `error::${index}::${namaBatch}`, source_file: namaBatch, source_sheet: "—", reason: message });
-            continue;
-          }
-          rows.push(...result.rows);
-          held.push(...result.held);
-          clarifications.push(...result.clarifications);
-          ignoredSheets += result.ignored_sheets;
-          if (!result.ok && result.rows.length === 0 && result.held.length === 0) {
-            const namaBatch = batch.length === 1 ? batch[0].name : `${batch.length} file`;
-            errors.push(`${namaBatch}: ${result.message}`);
-            held.push({ source_key: `error::${index}::${namaBatch}`, source_file: namaBatch, source_sheet: "—", reason: result.message });
-          }
-        }
+  const antrianRef = useRef<Antrian | null>(null);
+  const sumberRef = useRef<SumberImporRekamMedis | null>(null);
+  const penguraiRef = useRef<PenguraiKartuMedis | null>(null);
+  const pelacakRef = useRef(new PelacakGandaRiwayat());
+  const batasRef = useRef<BatasPotonganImpor>(BATAS_POTONGAN_AWAL);
+  const jedaRef = useRef(false);
+  const berjalanRef = useRef(false);
+  const waktuRef = useRef({ terpakaiMs: 0, berkas: 0 });
+  const tertundaRef = useRef(new Map<string, RekamMedisImporRow>());
+  const ditahanRef = useRef<RekamMedisImporHeld[]>([]);
 
-        const seen = new Map<string, string>();
-        const uniqueRows: RekamMedisImportState["rows"] = [];
-        let duplicateSheets = 0;
-        rows.forEach((row) => {
-          const duplicateKey = [key(row.owner_name), row.phone?.replace(/\D/g, ""), key(row.patient_name), row.record_date].join("::");
-          const fingerprint = rowFingerprint(row);
-          const previous = seen.get(duplicateKey);
-          if (previous === fingerprint) {
-            duplicateSheets += 1;
-            return;
-          }
-          if (previous) {
-            held.push({
-              source_key: `duplicate::${row.source_key}::${held.length}`,
-              source_file: row.source_file,
-              source_sheet: row.source_sheet,
-              reason: "Kemungkinan riwayat ganda: pemilik, pasien, dan tanggal sama",
-            });
-            return;
-          }
-          seen.set(duplicateKey, fingerprint);
-          uniqueRows.push(row);
-        });
+  const progres = useMemo(
+    () => teksProgresImpor(status, { selesai: folderSelesai, total: folderTotal }, hitungan, sisaMs),
+    [status, folderSelesai, folderTotal, hitungan, sisaMs],
+  );
+  const pertanyaanTerjawab = pertanyaan.every((item) => Boolean(keputusan[item.source_key]));
 
-        const uniqueKeys = new Set(uniqueRows.map((row) => row.source_key));
-        const uniqueClarifications = [...new Map(clarifications.map((row) => [row.source_key, row])).values()]
-          .filter((row) => uniqueKeys.has(row.source_key));
-        setState({
-          ok: uniqueRows.length > 0,
-          phase: "preview",
-          message: uniqueRows.length
-            ? `${uniqueRows.length} riwayat siap dicek. ${held.length} riwayat ditahan.${uniqueClarifications.length ? ` ${uniqueClarifications.length} perlu keputusan.` : ""}${errors.length ? ` ${errors.length} file perlu dicek ulang.` : ""}`
-            : "Tidak ada riwayat yang aman untuk diimpor.",
-          rows: uniqueRows,
-          held,
-          ignored_sheets: ignoredSheets + duplicateSheets,
-          clarifications: uniqueClarifications,
-        });
-      } catch (cause) {
-        setError(pesanError(cause, "File gagal dibaca. Coba pilih ulang file."));
-      } finally {
-        setTahapProgres(null);
-        setDetailProgres({ current: 0, total: 0 });
-      }
-    });
+  const catatDitahan = useCallback((rows: RekamMedisImporHeld[]) => {
+    if (!rows.length) return;
+    const sisa = Math.max(0, MAKS_DITAHAN_DISIMPAN - ditahanRef.current.length);
+    if (sisa > 0) ditahanRef.current.push(...rows.slice(0, sisa));
+    setDitahan([...ditahanRef.current]);
+    setHitungan((current) => ({ ...current, ditahan: current.ditahan + rows.length }));
+  }, []);
+
+  const pilihBerkas = (daftar: File[]) => {
+    penguraiRef.current?.tutup();
+    penguraiRef.current = null;
+    antrianRef.current = null;
+    sumberRef.current = null;
+    pelacakRef.current = new PelacakGandaRiwayat();
+    tertundaRef.current = new Map();
+    ditahanRef.current = [];
+    batasRef.current = BATAS_POTONGAN_AWAL;
+    waktuRef.current = { terpakaiMs: 0, berkas: 0 };
+    jedaRef.current = false;
+    setBerkasTerpilih(daftar);
+    setStatus("siap");
+    setHitungan(HITUNGAN_IMPOR_KOSONG);
+    setFolderSelesai(0);
+    setFolderTotal(0);
+    setSisaMs(null);
+    setDitahan([]);
+    setPertanyaan([]);
+    setKeputusan({});
+    setPesan("");
+    setError(daftar.length ? "" : "Folder tidak berisi kartu medis .xlsx.");
   };
 
-  const runImport = () => {
-    if (!approved) return setError("Centang persetujuan impor setelah meninjau hasil cek.");
-    if (!clarificationComplete) return setError("Tentukan keputusan untuk setiap data yang mirip lebih dulu.");
-    if (!selectedRows) return setError("Tidak ada riwayat yang dipilih untuk diimpor.");
+  const prosesPotongan = useCallback(async (
+    sumber: SumberImporRekamMedis,
+    pengurai: PenguraiKartuMedis,
+    potongan: PotonganImporRekamMedis,
+    terakhir: boolean,
+  ) => {
+    const mulai = Date.now();
+    const besar = potongan.berkas.filter((berkas) => berkas.ukuran > BATAS_BYTES_BERKAS_REKAM_MEDIS);
+    const muat = potongan.berkas.filter((berkas) => berkas.ukuran <= BATAS_BYTES_BERKAS_REKAM_MEDIS);
+    if (besar.length) {
+      catatDitahan(besar.map((berkas) => ({
+        source_key: `terlalu-besar::${berkas.jalur}`,
+        source_file: berkas.nama,
+        source_sheet: "—",
+        reason: "File lebih dari 5 MB; pecah dulu kartunya lalu impor ulang",
+      })));
+    }
+    if (!muat.length) return;
+
+    const isi = [];
+    for (const berkas of muat) isi.push({ fileName: berkas.nama, sourcePath: berkas.jalur, bytes: await sumber.bacaBerkas(berkas) });
+    const hasil = await pengurai.urai(isi);
+    isi.length = 0;
+
+    if (hasil.held.length) catatDitahan(hasil.held);
+    const { siap, ditahan: ganda } = saringGandaPotongan(hasil.rows, pelacakRef.current);
+    if (ganda.length) catatDitahan(ganda);
+    hasil.rows.length = 0;
+
+    const kirimanSemua = bagiKirimanBaris(siap);
+    for (let index = 0; index < kirimanSemua.length; index += 1) {
+      const kiriman = kirimanSemua[index];
+      const jawaban = await kirimDenganUlangan<HasilPotonganImporRekamMedis>(async () => {
+        const hasilKirim = await prosesPotonganImporRekamMedis(kiriman, [], true, terakhir && index === kirimanSemua.length - 1);
+        if (!hasilKirim.ok) throw new Error(hasilKirim.message);
+        return hasilKirim;
+      });
+      // Pertanyaan identitas menahan barisnya di memori tab; batasi supaya impor sebesar
+      // apa pun tidak menghabiskan RAM. Kelebihannya dicatat sebagai ditahan, bukan hilang.
+      const muatPertanyaan = Math.max(0, MAKS_PERTANYAAN_DISIMPAN - tertundaRef.current.size);
+      const barisPertanyaan = jawaban.perlu_keputusan.slice(0, muatPertanyaan);
+      for (const item of barisPertanyaan) {
+        const row = kiriman.find((candidate) => candidate.source_key === item.source_key);
+        if (row) tertundaRef.current.set(item.source_key, row);
+      }
+      if (barisPertanyaan.length) setPertanyaan((current) => [...current, ...barisPertanyaan]);
+      const luberPertanyaan = jawaban.perlu_keputusan.slice(muatPertanyaan);
+      catatDitahan([...jawaban.ditahan, ...luberPertanyaan.map((item) => ({
+        source_key: item.source_key,
+        source_file: item.source_file,
+        source_sheet: item.source_sheet,
+        reason: "Pertanyaan identitas menumpuk; jawab yang sudah muncul lalu impor ulang folder ini",
+      }))]);
+      setHitungan((current) => ({
+        ...current,
+        tersimpan: current.tersimpan + jawaban.tersimpan,
+        sudahAda: current.sudahAda + jawaban.sudah_ada,
+        perluKeputusan: current.perluKeputusan + barisPertanyaan.length,
+      }));
+    }
+
+    waktuRef.current = {
+      terpakaiMs: waktuRef.current.terpakaiMs + (Date.now() - mulai),
+      berkas: waktuRef.current.berkas + potongan.berkas.length,
+    };
+    // Batas baru berlaku mulai folder berikutnya; rencana folder berjalan tidak diubah
+    // di tengah jalan supaya tidak ada berkas yang terlewat atau terkirim dua kali.
+    batasRef.current = sesuaikanBatasPotongan(batasRef.current, { durasiMs: Date.now() - mulai });
+  }, [catatDitahan]);
+
+  const jalankan = useCallback(async () => {
+    if (berjalanRef.current) return;
+    berjalanRef.current = true;
+    jedaRef.current = false;
     setError("");
-    setTahapProgres("simpan");
-    startTransition(async () => {
+    setStatus("berjalan");
+    try {
+      if (!antrianRef.current) {
+        const sumber = sumberFolderLokal(berkasTerpilih);
+        const semua = await sumber.daftarFolder();
+        if (!semua.length) throw new Error("Folder tidak berisi kartu medis .xlsx.");
+        const ruang = tandaRuangImpor(sumber.akar, semua);
+        const sudah = bacaTitikSimpan(penyimpanLokal(), ruang);
+        const sisa = sisakanFolderBelumSelesai(semua, sudah);
+        sumberRef.current = sumber;
+        const selesaiAwal = semua.filter((folder) => !sisa.includes(folder)).map((folder) => folder.id);
+        antrianRef.current = {
+          folders: sisa,
+          iFolder: 0,
+          iPotongan: 0,
+          potongan: null,
+          ruang,
+          selesaiAwal,
+          berkasTotal: sisa.reduce((jumlah, folder) => jumlah + folder.berkas.length, 0),
+        };
+        setFolderTotal(semua.length);
+        setFolderSelesai(semua.length - sisa.length);
+      }
+      const antrian = antrianRef.current;
+      const sumber = sumberRef.current;
+      if (!sumber) throw new Error("Pilih ulang folder rekam medis.");
+      penguraiRef.current ??= buatPenguraiKartuMedis();
+      const pengurai = penguraiRef.current;
+
+      while (antrian.iFolder < antrian.folders.length) {
+        const folder = antrian.folders[antrian.iFolder];
+        antrian.potongan ??= rencanakanPotonganImpor([folder], batasRef.current);
+        const potongan = antrian.potongan;
+        while (antrian.iPotongan < potongan.length) {
+          if (jedaRef.current) {
+            setStatus("jeda");
+            return;
+          }
+          const terakhirFolder = antrian.iFolder === antrian.folders.length - 1 && antrian.iPotongan === potongan.length - 1;
+          try {
+            await prosesPotongan(sumber, pengurai, potongan[antrian.iPotongan], terakhirFolder);
+          } catch (cause) {
+            batasRef.current = sesuaikanBatasPotongan(batasRef.current, { gagal: true });
+            throw cause;
+          }
+          antrian.iPotongan += 1;
+          setSisaMs(perkiraanSisaWaktuImpor(waktuRef.current.terpakaiMs, waktuRef.current.berkas, antrian.berkasTotal));
+        }
+        antrian.iFolder += 1;
+        antrian.iPotongan = 0;
+        antrian.potongan = null;
+        tulisTitikSimpan(penyimpanLokal(), antrian.ruang, [
+          ...antrian.selesaiAwal,
+          ...antrian.folders.slice(0, antrian.iFolder).map((item) => item.id),
+        ]);
+        setFolderSelesai(antrian.selesaiAwal.length + antrian.iFolder);
+      }
+      penguraiRef.current?.tutup();
+      penguraiRef.current = null;
+      hapusTitikSimpan(penyimpanLokal(), antrian.ruang);
+      setStatus("selesai");
+      setSisaMs(null);
+      setPesan("Semua folder selesai diproses. Riwayat yang sudah masuk tidak akan digandakan bila diimpor lagi.");
+    } catch (cause) {
+      setStatus("gagal");
+      setError(cause instanceof Error ? cause.message : "Impor berhenti. Data yang sudah masuk aman dan tidak akan digandakan.");
+    } finally {
+      berjalanRef.current = false;
+    }
+  }, [berkasTerpilih, prosesPotongan]);
+
+  const tombolAliran = () => {
+    if (status === "berjalan") {
+      jedaRef.current = true;
+      return;
+    }
+    if (!setuju) return setError("Centang persetujuan impor sebelum memulai.");
+    if (!berkasTerpilih.length) return setError("Pilih folder rekam medis terlebih dulu.");
+    void jalankan();
+  };
+
+  const simpanKeputusan = () => {
+    if (!pertanyaanTerjawab) return setError("Tentukan keputusan untuk setiap data yang mirip lebih dulu.");
+    setError("");
+    setMenyimpanKeputusan(true);
+    void (async () => {
       try {
-        const rencana = rencanaSimpanBesarRekamMedis(selectedRows);
-        const batches = bagiBatchImporRekamMedis(state?.rows ?? [], rencana.ukuranBatch);
-        const decisions = decisionPayload(identityDecisions);
-        setDetailProgres({ current: 0, total: batches.length });
-        const hasil = await jalankanTerbatasImporRekamMedis(
-          batches.map((batch, index) => ({ batch, index })),
-          rencana.batasBersamaan,
-          async ({ batch, index }) => {
-            const result = await simpanBatchImporRekamMedis(batch, decisions, true, index === batches.length - 1);
-            setDetailProgres((current) => ({ ...current, current: current.current + 1 }));
-            return result;
-          },
-        );
+        const payload = keputusanKePayload(keputusan);
+        const rows = pertanyaan.flatMap((item) => {
+          const row = tertundaRef.current.get(item.source_key);
+          return row ? [row] : [];
+        });
+        const kirimanSemua = bagiKirimanBaris(rows);
         let tersimpan = 0;
         let sudahAda = 0;
         let dilewati = 0;
-        for (const result of hasil) {
-          if (!result.ok) throw new Error(result.message);
-          tersimpan += result.tersimpan;
-          sudahAda += result.sudah_ada;
-          dilewati += result.dilewati;
+        for (let index = 0; index < kirimanSemua.length; index += 1) {
+          const kiriman = kirimanSemua[index];
+          const kunci = new Set(kiriman.map((row) => row.source_key));
+          const jawaban = await kirimDenganUlangan<HasilPotonganImporRekamMedis>(async () => {
+            const hasil = await prosesPotonganImporRekamMedis(kiriman, payload.filter((item) => kunci.has(item.source_key)), true, index === kirimanSemua.length - 1);
+            if (!hasil.ok) throw new Error(hasil.message);
+            return hasil;
+          });
+          tersimpan += jawaban.tersimpan;
+          sudahAda += jawaban.sudah_ada;
+          dilewati += jawaban.dilewati;
+          if (jawaban.ditahan.length) catatDitahan(jawaban.ditahan);
         }
-        const existingMessage = sudahAda ? ` ${sudahAda} riwayat sudah ada dan tidak digandakan.` : "";
-        const skippedMessage = dilewati ? ` ${dilewati} riwayat dipilih untuk tidak diimpor.` : "";
-        setState((current) => current ? {
+        for (const row of rows) tertundaRef.current.delete(row.source_key);
+        setPertanyaan([]);
+        setKeputusan({});
+        setHitungan((current) => ({
           ...current,
-          ok: true,
-          phase: "done",
-          message: `${tersimpan} riwayat baru berhasil disimpan.${existingMessage}${skippedMessage}`,
-        } : current);
+          tersimpan: current.tersimpan + tersimpan,
+          sudahAda: current.sudahAda + sudahAda,
+          dilewati: current.dilewati + dilewati,
+          perluKeputusan: Math.max(0, current.perluKeputusan - rows.length),
+        }));
+        setPesan(`${tersimpan} riwayat dari pertanyaan identitas berhasil disimpan.`);
       } catch (cause) {
-        setError(pesanError(cause, "Impor gagal. Data yang sudah masuk aman dan tidak akan digandakan saat dicoba lagi."));
+        setError(cause instanceof Error ? cause.message : "Keputusan identitas gagal disimpan.");
       } finally {
-        setTahapProgres(null);
-        setDetailProgres({ current: 0, total: 0 });
+        setMenyimpanKeputusan(false);
       }
-    });
+    })();
   };
+
+  const unduhCatatan = () => {
+    if (typeof window === "undefined" || !ditahanRef.current.length) return;
+    const blob = new Blob([csvRiwayatDitahan(ditahanRef.current)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const tautan = document.createElement("a");
+    tautan.href = url;
+    tautan.download = namaBerkasCatatanDitahan(new Date());
+    tautan.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const berjalan = status === "berjalan";
+  const persen = folderTotal ? Math.min(100, Math.max(2, Math.round((folderSelesai / folderTotal) * 100))) : 0;
 
   return (
     <div className="crm-sec">
@@ -237,102 +372,95 @@ export function RekamMedisImportForm() {
         <i className="ti ti-shield-check" /> Pilih folder utama yang berisi folder owner. Sistem membaca owner dari folder, nama hewan dari kartu, dan setiap sheet sebagai satu histori bersama untuk semua cabang klinik.
       </div>
       <div className="p2ban" style={{ marginTop: 8, background: "#f8fafc", border: ".5px solid #cbd5e1", color: "#475569" }}>
-        <i className="ti ti-info-circle" /> Tidak ada batas jumlah file. Excel tidak dikonversi ulang; sistem mengecek satu file per permintaan supaya folder besar tetap stabil. Batas ukuran: 5 MB per file.
+        <i className="ti ti-info-circle" /> Folder diproses sepotong demi sepotong dan langsung disimpan, jadi folder besar tidak perlu ditahan di memori. Bisa dijeda, dan bila terputus tinggal pilih folder yang sama lagi — bagian yang sudah masuk dilewati. Batas 5 MB per file kartu.
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 12 }}>
         <label className="btn-def" style={{ cursor: "pointer" }}>
           <i className="ti ti-folder" /> Pilih folder rekam medis
-          <input type="file" multiple ref={(input) => { if (input) input.webkitdirectory = true; }} style={{ display: "none" }} onChange={(event) => {
-            const selected = Array.from(event.target.files ?? []).filter((file) => file.name.toLowerCase().endsWith(".xlsx") && !file.name.startsWith("~$"));
-            setFiles(selected); setState(null); setApproved(false); setIdentityDecisions({}); setError(selected.length ? "" : "Folder tidak berisi kartu medis .xlsx.");
+          <input type="file" multiple ref={(input) => { if (input) input.webkitdirectory = true; }} style={{ display: "none" }} disabled={berjalan} onChange={(event) => {
+            pilihBerkas(Array.from(event.target.files ?? []).filter((file) => file.name.toLowerCase().endsWith(".xlsx") && !file.name.startsWith("~$")));
           }} />
         </label>
         <label className="btn-def" style={{ cursor: "pointer" }}>
           <i className="ti ti-files" /> Pilih file satuan
-          <input type="file" multiple accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: "none" }} onChange={(event) => {
-            setFiles(Array.from(event.target.files ?? [])); setState(null); setApproved(false); setIdentityDecisions({}); setError("");
+          <input type="file" multiple accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: "none" }} disabled={berjalan} onChange={(event) => {
+            pilihBerkas(Array.from(event.target.files ?? []));
           }} />
         </label>
-        <button type="button" className="btn-acc" disabled={pending || Boolean(tahapProgres) || !files.length} onClick={runPreview} style={{ background: "var(--posb)" }}>
-          {pending || tahapProgres ? <span className="btn-spin" /> : <i className="ti ti-eye" />} {pending || tahapProgres ? "Memproses…" : "Cek data"}
+        <button type="button" className="btn-acc" disabled={!berkasTerpilih.length || (!setuju && status !== "berjalan") || menyimpanKeputusan} onClick={tombolAliran} style={{ background: berjalan ? "#b45309" : "#15803d" }}>
+          {berjalan ? <i className="ti ti-player-pause" /> : <i className="ti ti-database-import" />} {labelTombolAliran(status)}
         </button>
+        {ditahan.length > 0 && <button type="button" className="btn-def" onClick={unduhCatatan}><i className="ti ti-download" /> Unduh catatan ditahan ({ditahan.length})</button>}
       </div>
-      {files.length > 0 && <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 8 }}>{files.length} file dipilih. Total data belum disimpan.</div>}
-      {progres && <div role="status" style={{ marginTop: 12, padding: "10px 12px", border: ".5px solid #bfdbfe", borderRadius: 8, background: "#eff6ff", color: "#1e40af" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, fontWeight: 800 }}><span className="btn-spin" /> {progres.label} {detailProgres.total ? `(${detailProgres.current}/${detailProgres.total})` : ""}</div>
-        <div aria-label={progres.label} role="progressbar" aria-valuemin={0} aria-valuemax={detailProgres.total || 1} aria-valuenow={detailProgres.current} style={{ width: "100%", height: 8, marginTop: 8, borderRadius: 999, background: "#dbeafe", overflow: "hidden" }}>
-          <div style={{ width: `${detailProgres.total ? Math.max(4, Math.round((detailProgres.current / detailProgres.total) * 100)) : 4}%`, height: "100%", background: "#2563eb", borderRadius: 999, transition: "width .2s ease" }} />
-        </div>
-        <div style={{ fontSize: 10.5, marginTop: 5 }}>Jangan tutup halaman sampai proses selesai.</div>
-      </div>}
-      {(error || (state && !state.ok)) && <div className="p2ban" style={{ marginTop: 12, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error || state?.message}</div>}
+      {berkasTerpilih.length > 0 && <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 8 }}>{berkasTerpilih.length} file dipilih.</div>}
 
-      {state && (state.rows.length > 0 || state.held.length > 0) && (
-        <>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 14 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: "#1e40af", background: "#dbeafe", borderRadius: 999, padding: "5px 9px" }}>Owner {summary.owners}</span>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: "#1e40af", background: "#dbeafe", borderRadius: 999, padding: "5px 9px" }}>Hewan {summary.pets}</span>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "5px 9px" }}>Siap dicek {state.rows.length}</span>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: "#b91c1c", background: "#fee2e2", borderRadius: 999, padding: "5px 9px" }}>Ditahan {state.held.length}</span>
-            <span style={{ fontSize: 10.5, fontWeight: 800, color: "#475569", background: "#f1f5f9", borderRadius: 999, padding: "5px 9px" }}>Sheet dilewati {state.ignored_sheets}</span>
+      <label style={{ fontSize: 11, color: "var(--tm)", display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
+        <input type="checkbox" checked={setuju} disabled={berjalan} onChange={(event) => setSetuju(event.target.checked)} />
+        Saya setuju menyimpan riwayat yang aman sambil berjalan. Riwayat yang ditahan dan yang perlu keputusan tidak ikut disimpan otomatis.
+      </label>
+
+      {status !== "siap" && (
+        <div role="status" style={{ marginTop: 12, padding: "10px 12px", border: ".5px solid #bfdbfe", borderRadius: 8, background: "#eff6ff", color: "#1e40af" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, fontWeight: 800 }}>
+            {berjalan && <span className="btn-spin" />} {progres}
           </div>
-          <input
-            className="fi"
-            value={kataKunciReview}
-            onChange={(event) => setKataKunciReview(event.target.value)}
-            placeholder="Cari nama owner, hewan, atau file…"
-            style={{ marginTop: 10, maxWidth: 420 }}
-          />
-          {state.clarifications.length > 0 && (
-            <div style={{ marginTop: 10, padding: 11, borderRadius: 8, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 900 }}><i className="ti ti-git-compare" /> {state.clarifications.length} data mirip perlu keputusan</div>
-              <div style={{ fontSize: 10.5, marginTop: 4 }}>Sistem tidak akan menggabungkan pemilik atau anabul hanya karena namanya mirip atau nomor teleponnya sama.</div>
-              <div style={{ display: "grid", gap: 8, marginTop: 9 }}>
-                {state.clarifications.map((clarification) => (
-                  <div key={clarification.source_key} style={{ padding: 9, borderRadius: 7, background: "white", border: ".5px solid #fde68a" }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 800 }}>
-                      Dari file: {clarification.owner_name} · {clarification.phone} · anabul {clarification.patient_name}
-                    </div>
-                    <select
-                      value={identityDecisions[clarification.source_key] ?? ""}
-                      onChange={(event) => setIdentityDecisions((current) => ({ ...current, [clarification.source_key]: event.target.value }))}
-                      style={{ marginTop: 7, width: "100%", maxWidth: 560, padding: "7px 8px", borderRadius: 6, border: ".5px solid #d6d3d1", background: "white", fontSize: 10.5 }}
-                    >
-                      <option value="">Pilih keputusan…</option>
-                      {clarification.candidates.map((candidate) => (
-                        <option key={`${candidate.customer_id}-${candidate.pet_id ?? "baru"}`} value={JSON.stringify({ customer_id: candidate.customer_id, pet_id: candidate.pet_id })}>
-                          Ini sama: {candidate.customer_name} · {candidate.customer_phone || "tanpa nomor"} · {candidate.pet_name ? `anabul ${candidate.pet_name}` : "buat anabul baru"}
-                          {clarification.candidates.some(other => other !== candidate && key(other.customer_name) === key(candidate.customer_name) && key(other.customer_phone) === key(candidate.customer_phone) && key(other.pet_name) === key(candidate.pet_name)) && ` · referensi ${candidate.pet_id ?? candidate.customer_id}`}
-                        </option>
-                      ))}
-                      <option value="skip">Beda — jangan impor riwayat ini</option>
-                    </select>
-                  </div>
-                ))}
+          <div role="progressbar" aria-label="Kemajuan impor rekam medis" aria-valuemin={0} aria-valuemax={folderTotal || 1} aria-valuenow={folderSelesai} style={{ width: "100%", height: 8, marginTop: 8, borderRadius: 999, background: "#dbeafe", overflow: "hidden" }}>
+            <div style={{ width: `${persen}%`, height: "100%", background: "#2563eb", borderRadius: 999, transition: "width .2s ease" }} />
+          </div>
+          {berjalan && <div style={{ fontSize: 10.5, marginTop: 5 }}>Boleh dijeda kapan saja. Bila halaman tertutup, riwayat yang sudah masuk tetap aman.</div>}
+        </div>
+      )}
+
+      {error && <div className="p2ban" style={{ marginTop: 12, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
+      {pesan && <div className="p2ban" style={{ marginTop: 12, background: "#ecfdf5", border: ".5px solid #86efac", color: "#166534" }}><i className="ti ti-check" /> {pesan}</div>}
+
+      {pertanyaan.length > 0 && (
+        <div style={{ marginTop: 12, padding: 11, borderRadius: 8, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
+          <div style={{ fontSize: 11.5, fontWeight: 900 }}><i className="ti ti-git-compare" /> {pertanyaan.length} data mirip perlu keputusan</div>
+          <div style={{ fontSize: 10.5, marginTop: 4 }}>Impor tetap jalan tanpa menunggu jawaban. Sistem tidak akan menggabungkan pemilik atau anabul hanya karena namanya mirip atau nomor teleponnya sama.</div>
+          <div style={{ display: "grid", gap: 8, marginTop: 9 }}>
+            {pertanyaan.slice(0, MAKS_BARIS_TAMPIL).map((item) => (
+              <div key={item.source_key} style={{ padding: 9, borderRadius: 7, background: "white", border: ".5px solid #fde68a" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800 }}>Dari file: {item.owner_name} · {item.phone} · anabul {item.patient_name}</div>
+                <select
+                  value={keputusan[item.source_key] ?? ""}
+                  onChange={(event) => setKeputusan((current) => ({ ...current, [item.source_key]: event.target.value }))}
+                  style={{ marginTop: 7, width: "100%", maxWidth: 560, padding: "7px 8px", borderRadius: 6, border: ".5px solid #d6d3d1", background: "white", fontSize: 10.5 }}
+                >
+                  <option value="">Pilih keputusan…</option>
+                  {item.candidates.map((candidate) => (
+                    <option key={`${candidate.customer_id}-${candidate.pet_id ?? "baru"}`} value={JSON.stringify({ customer_id: candidate.customer_id, pet_id: candidate.pet_id })}>
+                      Ini sama: {candidate.customer_name} · {candidate.customer_phone || "tanpa nomor"} · {candidate.pet_name ? `anabul ${candidate.pet_name}` : "buat anabul baru"}
+                      {item.candidates.some((other) => other !== candidate && kunciPilihan(other.customer_name) === kunciPilihan(candidate.customer_name) && kunciPilihan(other.customer_phone) === kunciPilihan(candidate.customer_phone) && kunciPilihan(other.pet_name) === kunciPilihan(candidate.pet_name)) && ` · referensi ${candidate.pet_id ?? candidate.customer_id}`}
+                    </option>
+                  ))}
+                  <option value="skip">Beda — jangan impor riwayat ini</option>
+                </select>
               </div>
-            </div>
-          )}
-          <div style={{ marginTop: 10, maxHeight: 390, overflow: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
-            <table className="dt" style={{ width: "100%", minWidth: 1120 }}>
-              <thead><tr><th>File / sheet</th><th>Hewan</th><th>Owner</th><th>Tanggal</th><th>Catatan kunjungan</th><th>Isi medis</th><th>Status</th></tr></thead>
+            ))}
+          </div>
+          {pertanyaan.length > MAKS_BARIS_TAMPIL && <div style={{ fontSize: 10.5, marginTop: 6 }}>Menampilkan {MAKS_BARIS_TAMPIL} pertanyaan pertama. Jawab dan simpan dulu, sisanya menyusul.</div>}
+          <button type="button" className="btn-acc" disabled={menyimpanKeputusan || !pertanyaanTerjawab} onClick={simpanKeputusan} style={{ marginTop: 10, background: "#15803d" }}>
+            {menyimpanKeputusan ? <span className="btn-spin" /> : <i className="ti ti-check" />} Simpan keputusan identitas
+          </button>
+        </div>
+      )}
+
+      {ditahan.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: "#b91c1c" }}>Riwayat ditahan ({ditahan.length})</div>
+          <div style={{ marginTop: 6, maxHeight: 320, overflow: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
+            <table className="dt" style={{ width: "100%", minWidth: 620 }}>
+              <thead><tr><th>File</th><th>Sheet</th><th>Alasan</th></tr></thead>
               <tbody>
-                {visibleRows.map((row) => <tr key={row.source_key}>
-                  <td>{row.source_file} — {row.source_sheet}</td><td>{row.patient_name}</td><td>{row.owner_name}</td><td>{row.record_date}</td>
-                  <td style={{ fontSize: 10.5 }}>{row.note || "—"}</td>
-                  <td style={{ fontSize: 10.5, minWidth: 260 }}><details><summary style={{ cursor: "pointer", fontWeight: 700 }}>Lihat isi</summary><div style={{ marginTop: 5, whiteSpace: "pre-wrap", lineHeight: 1.45 }}><b>Anamnesa:</b> {row.anamnesis || "—"}<br /><b>Gambaran klinis:</b> {row.clinical_findings || "—"}<br /><b>Diagnosa:</b> {row.diagnosis || "—"}<br /><b>Terapi:</b> {row.therapy || "—"}</div></details></td>
-                  <td style={{ fontSize: 10.5 }}>{row.warning.join(", ") || "Siap"}</td>
-                </tr>)}
-                {visibleHeld.map((row) => <tr key={row.source_key} style={{ background: "#fff7f7" }}><td>{row.source_file} — {row.source_sheet}</td><td colSpan={6} style={{ color: "#b91c1c" }}>{row.reason}</td></tr>)}
+                {ditahan.slice(-MAKS_BARIS_TAMPIL).map((row, index) => (
+                  <tr key={`${row.source_key}-${index}`}><td>{row.source_file}</td><td>{row.source_sheet}</td><td style={{ color: "#b91c1c" }}>{row.reason}</td></tr>
+                ))}
               </tbody>
             </table>
           </div>
-          {(filteredRows.length > visibleRows.length || filteredHeld.length > visibleHeld.length) && <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 6 }}>Menampilkan maksimal 200 hasil pencarian. Sempitkan kata kunci untuk melihat data lain.</div>}
-          {state.phase === "preview" && <div style={{ marginTop: 12, display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ fontSize: 11, color: "var(--tm)", display: "flex", alignItems: "center", gap: 6 }}><input type="checkbox" checked={approved} onChange={(event) => setApproved(event.target.checked)} /> Saya sudah meninjau hasil cek dan setuju menyimpan riwayat yang siap. Data yang ditahan tidak ikut disimpan.</label>
-            <button type="button" className="btn-acc" disabled={pending || Boolean(tahapProgres) || !state.ok || !canConfirm} onClick={runImport} style={{ background: "#15803d" }}>{pending || tahapProgres ? <span className="btn-spin" /> : <i className="ti ti-database-import" />} {pending || tahapProgres ? "Menyimpan…" : `Simpan ${selectedRows} riwayat yang siap`}</button>
-          </div>}
-          {state.phase === "done" && <div className="p2ban" style={{ marginTop: 12, background: "#ecfdf5", border: ".5px solid #86efac", color: "#166534" }}><i className="ti ti-check" /> {state.message}</div>}
-        </>
+          {ditahan.length > MAKS_BARIS_TAMPIL && <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 6 }}>Menampilkan {MAKS_BARIS_TAMPIL} terakhir. Unduh catatan untuk daftar lengkap beserta alasannya.</div>}
+        </div>
       )}
     </div>
   );
