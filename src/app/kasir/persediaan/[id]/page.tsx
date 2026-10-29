@@ -52,7 +52,7 @@ export default async function PersediaanDetailPage({ params }: { params: Promise
 
   const { data } = await supabase
     .from("stock_requests")
-    .select("id, no_request, status, created_at, priority, catatan, from_branch_id, warehouses(name), requester:requested_by(full_name), stock_request_items(id, nama, qty_diminta, satuan, qty_disetujui, qty_diterima, kondisi, catatan)")
+    .select("id, no_request, status, created_at, priority, catatan, from_branch_id, warehouses!stock_requests_to_warehouse_id_fkey(name), requester:requested_by(full_name), stock_request_items(id, nama, qty_diminta, satuan, qty_disetujui, qty_diterima, kondisi, catatan)")
     .eq("id", id)
     .maybeSingle();
 

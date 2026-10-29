@@ -37,7 +37,7 @@ export default async function PersediaanKasirPage({
 
   const { data } = await supabase
     .from("stock_requests")
-    .select("id, no_request, status, created_at, warehouses(code, name), requester:requested_by(full_name), stock_request_items(id)")
+    .select("id, no_request, status, created_at, warehouses!stock_requests_to_warehouse_id_fkey(code, name), requester:requested_by(full_name), stock_request_items(id)")
     .eq("from_branch_id", shift.branch_id)
     .order("created_at", { ascending: false });
 

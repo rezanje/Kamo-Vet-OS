@@ -24,7 +24,7 @@ export default async function KlinikPenerimaanPage({ searchParams }: {
   // Perlu diterima: permintaan Disetujui / Dikirim untuk cabang ini.
   let pendingQ = supabase
     .from("stock_requests")
-    .select("id, no_request, status, created_at, branches(name), warehouses(name), stock_request_items(id)")
+    .select("id, no_request, status, created_at, branches(name), warehouses!stock_requests_to_warehouse_id_fkey(name), stock_request_items(id)")
     .in("status", ["Disetujui", "Dikirim"]).order("created_at", { ascending: false });
   if (branchId) pendingQ = pendingQ.eq("from_branch_id", branchId);
   const { data: pending } = await pendingQ;

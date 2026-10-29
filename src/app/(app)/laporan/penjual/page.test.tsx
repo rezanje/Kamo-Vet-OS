@@ -1,79 +1,120 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
+import type { BarisPenjual } from "@/lib/laporan-tenaga-penjual";
+import type { DataTenagaPenjual } from "./data";
 
-const fixture = vi.hoisted(() => ({
-  sales: [] as Array<Record<string, unknown>>,
-  rows: {
-    employees: [
-      { id: "employee-1", nama: "Sari", profile_id: "profile-1", status: "Aktif" },
-      { id: "employee-2", nama: "Sari", profile_id: "profile-2", status: "Aktif" },
-    ],
-    items: [],
-    sales_invoices: [
-      { id: "invoice-1", no_faktur: "F-1", tanggal: "2026-10-01", jatuh_tempo: null, total: 100, carried_paid: 0, status: "belum", created_by: "profile-1", customers: null },
-      { id: "invoice-2", no_faktur: "F-2", tanggal: "2026-10-02", jatuh_tempo: null, total: 200, carried_paid: 0, status: "belum", created_by: "profile-2", customers: null },
-    ],
-    sales_receipts: [],
-  } as Record<string, unknown[]>,
-}));
+// Fixture fiktif: nama orang dan dokumen di sini tidak merujuk data nyata.
 
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
-  from: (table: string) => {
-    const query = { table, select: () => query, neq: () => query, is: () => query, gte: () => query, lte: () => query };
-    return query;
-  },
-}) }));
-vi.mock("@/lib/report-query", () => ({ completeReportQuery: async (query: { table: string }) => ({ data: fixture.rows[query.table] }) }));
-vi.mock("@/lib/komisi-data", () => ({ kumpulkanBarisKomisi: async () => ({ baris: fixture.sales, omzetTanpaPenjual: 0 }) }));
+const state = vi.hoisted(() => ({ data: null as unknown }));
+
+vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a> }));
+vi.mock("@/components/EmployeePicker", () => ({ EmployeePicker: () => <input name="karyawan" /> }));
 vi.mock("@/components/LaporanPage", () => ({
-  LaporanPage: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
-  KartuAngka: () => null,
-  TabelKosong: () => null,
+  LaporanPage: ({ ringkasan, children }: { ringkasan: React.ReactNode; children: React.ReactNode }) => <main>{ringkasan}{children}</main>,
+  KartuAngka: ({ items }: { items: { label: string; nilai: string }[] }) => <ul>{items.map((k) => <li key={k.label}>{k.label}: {k.nilai}</li>)}</ul>,
+  TabelKosong: ({ pesan }: { pesan: string }) => <tr><td>{pesan}</td></tr>,
 }));
-vi.mock("@/components/ServiceAttributionTable", () => ({ ServiceAttributionTable: () => null }));
+vi.mock("./data", () => ({ ambilTenagaPenjual: async () => state.data }));
 
 import PenjualPage from "./page";
 
-it("keeps invoices of same-named employees separate by stored employee ID", async () => {
-  const html = renderToStaticMarkup(await PenjualPage({ searchParams: Promise.resolve({ periode: "2026-10" }) }));
-  const summary = html.split("02 · FAKTUR BELUM LUNAS PER PENJUAL")[1].split("03 · RINCIAN FAKTUR PENJUALAN")[0];
+function baris(over: Partial<BarisPenjual> & { id: string }): BarisPenjual {
+  return {
+    dokumenId: "inv", dokumen: "INV-1", href: "/klinik/pembayaran/visit/invoice", waktu: "2026-10-20T03:00:00Z",
+    tanggal: "2026-10-20", kanal: "Klinik", jenis: "Jasa", cabangId: "cabang", cabang: "Cabang Uji",
+    pelanggan: "Pemilik Fiktif", pasien: "Milo", item: "Operasi", qty: 1, bruto: 200, netto: 200,
+    dokterId: null, stafId: null, penjualId: null, retur: false, ...over,
+  };
+}
 
-  expect(summary.match(/<tr>/g)).toHaveLength(3); // header and one row for each employee
-  expect(summary).toContain("Rp 100");
-  expect(summary).toContain("Rp 200");
-  expect(summary).not.toContain("Rp 300");
-  expect(summary).toContain("Sari (ID ployee-1)");
-  expect(summary).toContain("Sari (ID ployee-2)");
+function data(rows: BarisPenjual[], over: Partial<DataTenagaPenjual> = {}): DataTenagaPenjual {
+  return {
+    rows,
+    karyawan: [{ id: "dokter", nama: "Drh. Fiktif", jabatan: "Dokter", branchName: "Cabang Uji" }],
+    namaKaryawan: new Map([["dokter", "Drh. Fiktif"], ["perawat", "Perawat Fiktif"]]),
+    cabangOptions: [{ id: "cabang", name: "Cabang Uji" }],
+    faktur: [], selisihDokumen: 0, returTanpaSumber: 0, pesanError: "", ...over,
+  };
+}
+
+const render = (sp: Record<string, string> = {}) =>
+  PenjualPage({ searchParams: Promise.resolve(sp) }).then(renderToStaticMarkup);
+
+beforeEach(() => { state.data = data([]); });
+
+it("memberi baris dua pelaksana ke dua orang tanpa melipatgandakan total perusahaan", async () => {
+  state.data = data([baris({ id: "a", dokterId: "dokter", stafId: "perawat" })]);
+  const html = await render();
+
+  expect(html).toContain("Drh. Fiktif");
+  expect(html).toContain("Perawat Fiktif");
+  expect(html).toContain("Non-dokter");
+  // Kartu ringkasan memakai total perusahaan: satu baris tetap satu kali.
+  expect(html).toContain("Total perusahaan (netto): Rp 200");
+  expect(html).toContain("Tenaga penjual: 2 orang");
 });
 
-it("keeps the invoice totals with the same employee after their display name changes", async () => {
-  const employee = fixture.rows.employees[0] as { nama: string };
-  employee.nama = "Maya";
-  try {
-    const html = renderToStaticMarkup(await PenjualPage({ searchParams: Promise.resolve({ periode: "2026-10" }) }));
-    const summary = html.split("02 · FAKTUR BELUM LUNAS PER PENJUAL")[1].split("03 · RINCIAN FAKTUR PENJUALAN")[0];
-
-    expect(summary.match(/<tr>/g)).toHaveLength(3);
-    expect(summary).toContain("Maya");
-    expect(summary).toContain("Sari");
-    expect(summary).not.toContain("(ID ");
-    expect(summary).toContain("Rp 100");
-    expect(summary).toContain("Rp 200");
-  } finally {
-    employee.nama = "Sari";
-  }
+it("menampilkan baris tanpa tenaga penjual dan menyebut angkanya di ringkasan", async () => {
+  state.data = data([baris({ id: "a", netto: 75, bruto: 75 })]);
+  const html = await render();
+  expect(html).toContain("Tanpa tenaga penjual");
+  expect(html).toContain("Tanpa tenaga penjual: Rp 75");
 });
 
-it("disambiguates same-named employees in sales summary and product details", async () => {
-  fixture.sales = ["employee-1", "employee-2"].map((employeeId) => ({
-    employeeId, sumber: "kasir", itemId: null, qty: 1, omzet: 100, laba: 25,
-  }));
-  try {
-    const html = renderToStaticMarkup(await PenjualPage({ searchParams: Promise.resolve({ periode: "2026-10" }) }));
-    const sales = html.split("01 · REKAP PER PENJUAL")[1].split("02 · FAKTUR BELUM LUNAS PER PENJUAL")[0];
-    expect(sales.match(/Sari \(ID ployee-1\)/g)).toHaveLength(2);
-    expect(sales.match(/Sari \(ID ployee-2\)/g)).toHaveLength(2);
-  } finally {
-    fixture.sales = [];
-  }
+it("menyaring per peran tanpa membuang sisi lain dari barisnya", async () => {
+  state.data = data([baris({ id: "a", dokterId: "dokter", stafId: "perawat" })]);
+  const html = await render({ peran: "Non-dokter" });
+  expect(html).toContain("Perawat Fiktif");
+  expect(html).not.toContain("Drh. Fiktif<");
+  expect(html).toContain("Total perusahaan (netto): Rp 200");
+});
+
+it("menyaring per karyawan, kanal dan jenis", async () => {
+  state.data = data([
+    baris({ id: "a", dokterId: "dokter" }),
+    baris({ id: "b", penjualId: "perawat", kanal: "Petshop", jenis: "Barang", netto: 50, bruto: 50, dokumenId: "struk" }),
+  ]);
+  expect(await render({ kanal: "Petshop" })).toContain("Total perusahaan (netto): Rp 50");
+  expect(await render({ jenis: "Jasa" })).toContain("Total perusahaan (netto): Rp 200");
+  expect(await render({ karyawan: "dokter" })).toContain("Total perusahaan (netto): Rp 200");
+});
+
+it("mengabaikan saringan karyawan yang tidak ada di daftar", async () => {
+  state.data = data([baris({ id: "a", dokterId: "dokter" })]);
+  expect(await render({ karyawan: "orang-asing" })).toContain("Total perusahaan (netto): Rp 200");
+});
+
+it("menautkan tiap baris rincian ke dokumen asalnya lengkap dengan perannya", async () => {
+  state.data = data([baris({ id: "a", dokterId: "dokter", dokumen: "INV-9", href: "/penjualan/xyz" })]);
+  const html = await render();
+  expect(html).toContain('href="/penjualan/xyz"');
+  expect(html).toContain("INV-9");
+  expect(html).toContain("Milo");
+  expect(html).toContain("Pemilik Fiktif");
+});
+
+it("menjelaskan retur tak bersumber dan selisih kepala dokumen kalau ada", async () => {
+  state.data = data([baris({ id: "a", dokterId: "dokter" })], { returTanpaSumber: 40, selisihDokumen: 11 });
+  const html = await render();
+  expect(html).toContain("Rp 40");
+  expect(html).toContain("Rp 11");
+});
+
+it("menampilkan pesan kesalahan pembacaan apa adanya", async () => {
+  state.data = data([], { pesanError: "Laporan belum bisa dibaca." });
+  expect(await render()).toContain("Laporan belum bisa dibaca.");
+});
+
+it("merekap sisa tagihan faktur grosir per penjual dan merincinya", async () => {
+  state.data = data([], { faktur: [
+    { id: "f1", no_faktur: "FJ-1", tanggal: "2026-10-10", penjualId: "perawat", nilai: 1000, dibayar: 400, sisa: 600 },
+    { id: "f2", no_faktur: "FJ-2", tanggal: "2026-10-11", penjualId: "perawat", nilai: 500, dibayar: 500, sisa: 0 },
+  ] });
+  const html = await render();
+  const rekap = html.split("03 · FAKTUR GROSIR BELUM LUNAS PER PENJUAL")[1];
+  expect(rekap).toContain("Perawat Fiktif");
+  expect(rekap).toContain("Rp 1.500");
+  expect(rekap).toContain("FJ-1");
+  expect(rekap).toContain("FJ-2");
+  expect(rekap).toContain("Rp 600");
 });

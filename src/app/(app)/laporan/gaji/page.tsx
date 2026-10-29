@@ -25,7 +25,7 @@ export default async function LaporanGajiPage({
   const supabase = await createClient();
   const [{ data }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase.from("payrolls")
-      .select("id, gaji_pokok, tunjangan, potongan, total, employees(nama, jabatan, branches(name))", { count: "exact" })
+      .select("id, gaji_pokok, tunjangan, potongan, total, employees(nama, jabatan, branches!employees_branch_id_fkey(name))", { count: "exact" })
       .eq("periode", periode)),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);

@@ -60,7 +60,7 @@ export default async function PermintaanDetailPage({
   const { data: { user } } = await supabase.auth.getUser();
   const { data } = await supabase
     .from("stock_requests")
-    .select("id, no_request, status, created_at, priority, catatan, to_warehouse_id, branches(name), warehouses(name), stock_request_items(id, item_id, nama, satuan, faktor, qty_diminta, qty_disetujui, qty_dikirim, qty_diterima, kondisi, catatan)")
+    .select("id, no_request, status, created_at, priority, catatan, to_warehouse_id, branches(name), warehouses!stock_requests_to_warehouse_id_fkey(name), stock_request_items(id, item_id, nama, satuan, faktor, qty_diminta, qty_disetujui, qty_dikirim, qty_diterima, kondisi, catatan)")
     .eq("id", id)
     .maybeSingle();
 

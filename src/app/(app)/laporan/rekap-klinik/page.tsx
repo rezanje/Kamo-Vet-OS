@@ -45,7 +45,7 @@ export default async function RekapKlinikPage({
   const supabase = await createClient();
   const [{ data: itemRows }, { data: inapRows }, { data: fuRows }, { data: branches }] = await Promise.all([
     completeReportQuery(supabase.from("invoice_items")
-      .select("id, qty, harga, jenis, items(tindakan_kategori, item_type), invoices!inner(created_at, voided_at, visits!inner(branch_id))", { count: "exact" })
+      .select("id, qty, harga, jenis, items!invoice_items_item_id_fkey(tindakan_kategori, item_type), invoices!inner(created_at, voided_at, visits!inner(branch_id))", { count: "exact" })
       .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
       .is("invoices.voided_at", null)),
     completeReportQuery(supabase.from("inpatient_records")

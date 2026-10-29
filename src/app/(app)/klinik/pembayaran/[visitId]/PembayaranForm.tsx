@@ -1,6 +1,7 @@
 "use client";
 
 import { NumberInput } from "@/components/NumberInput";
+import { QtyInput } from "@/components/QtyInput";
 import { aggregateServiceLines } from "@/lib/service-line-promos";
 
 import { ServicePerformersField } from "@/components/ServicePerformersField";
@@ -89,6 +90,8 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => setRows([...rows, { key: crypto.randomUUID(), deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0, service_performers: visitDefaultPerformers(defaultDoctorId) }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
+  // Andri 29 Okt: baris resep/racikan yang dihapus tidak pernah tertagih lagi (1 kunjungan
+  // = 1 tagihan). Minta konfirmasi dulu; baris yang ditambah kasir sendiri langsung hapus.
   const subtotal = rows.reduce((a, r) => a + nilaiBaris(r), 0);
 
   // Cocokkan ketikan ke master SKU. Kalau kena, item_id + harga jual ikut terisi
@@ -175,14 +178,14 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                         {choices.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
                       </select></label>
                     {r.package_item_id && <label style={{display:'block',fontSize:10,width:70}}>Jml paket
-                      <NumberInput className="fi" type="number" min={1} step="1" aria-label={`Jumlah paket ${r.deskripsi}`} value={r.package_qty ?? 1}
-                        onChange={event => { const jumlah = Math.max(1, Number(event.target.value) || 1); set(i,{package_qty:jumlah,...qtyUntuk(r.package_item_id!, jumlah)}); }} style={{height:25,fontSize:10}} /></label>}
+                      <QtyInput className="fi" min={1} step="1" aria-label={`Jumlah paket ${r.deskripsi}`} value={r.package_qty ?? 1}
+                        onValue={jumlah => { set(i,{package_qty:jumlah,...qtyUntuk(r.package_item_id!, jumlah)}); }} style={{height:25,fontSize:10}} /></label>}
                   </div>;
                 })()}
               </td>
               <td>
-                <NumberInput className="fi" type="number" min={1} value={r.qty}
-                  onChange={(e) => set(i, { qty: Number(e.target.value) })}
+                <QtyInput className="fi" min={1} aria-label={`Jumlah ${r.deskripsi}`} value={r.qty}
+                  onValue={(qty) => set(i, { qty })}
                   readOnly={r.terkunci || !!r.recipe_id} disabled={r.terkunci}
                   title={r.terkunci ? "Dihitung otomatis dari lama rawat inap" : r.recipe_id ? "Satu hasil racikan tersimpan" : undefined}
                   style={{ textAlign: "center", ...(r.terkunci ? { background: "#f3f4f6", cursor: "not-allowed" } : {}) }} />
@@ -222,7 +225,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
               <td style={{ textAlign: "center" }}>
                 {r.terkunci
                   ? <i className="ti ti-lock" title="Baris otomatis dari rawat inap" style={{ color: "var(--td)" }} />
-                  : <i className="ti ti-x" onClick={() => del(i)} style={{ cursor: "pointer", color: "#dc2626" }} />}
+                  : <HapusBaris row={r} label={`Hapus baris ${r.deskripsi || i + 1}`} onHapus={() => del(i)} />}
               </td>
             </tr>
           ))}
@@ -238,6 +241,36 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
       </div>
     </div>
   );
+}
+
+function HapusBaris({ row, label, onHapus }: { row: Line; label: string; onHapus: () => void }) {
+  const [tanya, setTanya] = useState(false);
+  const perluTanya = !!row.prescription_item_id || !!row.recipe_id;
+  return <>
+    <i className="ti ti-x" role="button" aria-label={label} onClick={() => perluTanya ? setTanya(true) : onHapus()} style={{ cursor: "pointer", color: "#dc2626" }} />
+    <HapusItemDialog row={tanya ? row : null} onConfirm={() => { setTanya(false); onHapus(); }} onCancel={() => setTanya(false)} />
+  </>;
+}
+
+function HapusItemDialog({ row, onConfirm, onCancel }: { row: Line | null; onConfirm: () => void; onCancel: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (row && !ref.current?.open) ref.current?.showModal(); }, [row]);
+  if (!row) return null;
+  const racikan = !!row.recipe_id || row.satuan === "racikan";
+  return <dialog ref={ref} role="alertdialog" aria-label="Hapus item tagihan" onCancel={(event) => { event.preventDefault(); onCancel(); }}
+    style={{ margin: "auto", border: ".5px solid #fca5a5", borderRadius: 12, padding: 20, maxWidth: 440, width: "calc(100% - 32px)" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700, color: "#b91c1c", marginBottom: 8 }}>
+      <i className="ti ti-alert-triangle" style={{ fontSize: 20 }} /> Hapus {row.deskripsi || "item ini"}?
+    </div>
+    <div style={{ fontSize: 13, color: "var(--sb)", marginBottom: 16, lineHeight: 1.5 }}>
+      Item ini tidak bisa ditagih lagi di pembayaran berikutnya.{racikan ? " Bahan racikan sudah keluar dari stok saat diracik." : ""}{" "}
+      Kalau uang pemilik kurang, jangan hapus item — isi jumlah yang dibayar lalu klik <b>Simpan</b> (tercatat DP/Belum Lunas, sisanya jadi piutang).
+    </div>
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <button type="button" className="btn-acc" autoFocus onClick={onCancel}>Batal</button>
+      <button type="button" className="btn-def" style={{ color: "#b91c1c" }} onClick={onConfirm}>Tetap hapus</button>
+    </div>
+  </dialog>;
 }
 
 function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:(rows:Line[])=>void;staff:ServiceStaff[];locked:(row:Line)=>boolean}) {
@@ -353,7 +386,11 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const dpPaid = initialDpAmount;
   const sisa = Math.max(0, total - dpPaid - initialCreditAmount);
 
-  const [bayar, setBayar] = useState(0);
+  const [bayarKetik, setBayar] = useState(0);
+  // Samakan dengan kasir petshop (Andri 29 Okt): selain Tunai, jumlah bayar otomatis
+  // = sisa tagihan. Kasir tetap boleh mengubahnya (mis. DP sebagian lewat transfer).
+  const [bayarManual, setBayarManual] = useState(false);
+  const bayar = metode !== "Tunai" && !bayarManual ? sisa : bayarKetik;
   const [kurangBayar, setKurangBayar] = useState<string | null>(null);
   // Racikan belum siap tidak menolak pembayaran; kasir hanya diminta mengkonfirmasi sekali.
   const [konfirmasiRacikan, setKonfirmasiRacikan] = useState<FormData | null>(null);
@@ -392,7 +429,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       };
       setObat(restoreRows(value.obat, initialObat)); setJasa(restoreRows(value.jasa, initialJasa));
       setDiscount(value.discount); setMetode(value.metode); setReason(value.reason);
-      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setSalesperson(value.salesperson);
+      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setBayarManual(value.metode !== "Tunai" && Number(value.bayar) > 0); setSalesperson(value.salesperson);
       setDemoEnabled(!editMode && !!demoPolicy && value.demoEnabled === true);
       setDemoPolicyId(typeof value.demoPolicyId === "string" ? value.demoPolicyId : demoPolicy?.id ?? "");
       setDemoEmployees(Array.isArray(value.demoEmployees) ? value.demoEmployees.filter(id => demoStaff.some(person => person.id === id)) : demoStaff.map(person => person.id));
@@ -635,7 +672,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             </div> :
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {METODE_BAYAR.map(({ m, ic, desc }) => (
-                <button key={m} type="button" disabled={editMode} onClick={() => setMetode(m)} style={{
+                <button key={m} type="button" disabled={editMode} onClick={() => { setMetode(m); setBayarManual(false); if (m !== "Tunai") setBayar(0); }} style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: "pointer", textAlign: "left",
                   border: `1.5px solid ${metode === m ? "var(--posb)" : "var(--bd)"}`, background: metode === m ? "#eff4ff" : "#fff",
                 }}>
@@ -655,7 +692,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>PENERIMAAN PEMBAYARAN</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Jumlah Bayar</span>
-              <NumberInput className="fi" type="number" min={0} step={1} disabled={editMode} value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 130, textAlign: "right" }} />
+              <NumberInput className="fi" type="number" min={0} step={1} disabled={editMode} value={bayar || ""} aria-label="Jumlah Bayar" onChange={(e) => { setBayarManual(true); setBayar(Number(e.target.value)); }} style={{ width: 130, textAlign: "right" }} />
+              {metode !== "Tunai" && !bayarManual && !editMode && <span style={{ fontSize: 10, color: "var(--tm)" }}>otomatis = sisa tagihan</span>}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
               <span style={{ fontWeight: 600, color: "#15803d" }}>Kembalian</span>

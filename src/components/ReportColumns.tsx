@@ -69,8 +69,8 @@ function ColumnBoundary({ children, path, query }: { children: ReactNode; path: 
 
   return <>
     {active && error && <p className="no-print" role="alert">{error}</p>}
-    {active && (tables.length > 0 || unsupported > 0 || error) && <details className="crm-sec no-print" style={{ marginBottom: 12 }}>
-      <summary style={{ cursor: "pointer", fontWeight: 700 }}>Pilih kolom laporan</summary>
+    {active && (tables.length > 0 || unsupported > 0 || error) && <details className="crm-sec no-print" style={{ marginBottom: 8, padding: "8px 12px" }}>
+      <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 11.5 }}>Pilih kolom laporan</summary>
       <p style={{ fontSize: 12 }}>Pilih kolom yang ditampilkan, lalu terapkan. Minimal satu kolom per tabel; total perhitungan tetap mengikuti laporan asal.</p>
       {unsupported > 0 && <p style={{ fontSize: 12 }}>{unsupported} tabel dengan struktur khusus tetap ditampilkan lengkap.</p>}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>{tables.map((table, tableIndex) => {

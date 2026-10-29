@@ -33,7 +33,7 @@ export default async function KlinikPengeluaranPage({
   // Daftar terfilter.
   let query = supabase
     .from("expenses")
-    .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, created_at, voided_at, profiles(full_name), branches(name)")
+    .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, created_at, voided_at, profiles!expenses_created_by_fkey(full_name), branches(name)")
     .order("created_at", { ascending: false }).limit(100);
   if (branchId) query = query.eq("branch_id", branchId);
   if (from) query = query.gte("tanggal", from);
