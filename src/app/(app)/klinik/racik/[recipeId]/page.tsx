@@ -7,6 +7,7 @@ import { RacikanAksi } from "./RacikanAksi";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readCompleteList } from "@/lib/checked-list";
 import { hrefAsalBahan, hrefInvoiceTujuan, labelAsalBahan, readCompoundTrace, type CompoundTrace } from "@/lib/compound-trace";
+import { hrefRiwayatIndukRacikan } from "@/lib/riwayat-induk-racikan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -140,7 +141,8 @@ export default async function RacikDetailPage({
       <div className="crm-sec" aria-label="Jejak sumber racikan" style={{ marginBottom: 14 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>Jejak sumber racikan</div>
         <p>Induk racikan adalah identitas penjualan nonstok; stok fisik dan mutasinya berada pada bahan.</p>
-        {sellingParent ? <p>Induk penjualan: <Link href={`/pos/sku/${encodeURIComponent(sellingParent.sale_item_id)}`}>{sellingParent.sale_name}</Link></p>
+        {sellingParent ? <p>Induk penjualan: <Link href={`/pos/sku/${encodeURIComponent(sellingParent.sale_item_id)}`}>{sellingParent.sale_name}</Link>
+          {" · "}<Link href={hrefRiwayatIndukRacikan(sellingParent.sale_item_id)}>Riwayat racikan SKU ini</Link></p>
           : <p>{saleBindingError ? "Tautan induk belum dapat diperiksa. Coba muat ulang." : "Induk penjualan tersimpan belum tersedia untuk racikan ini."}</p>}
         {visit && mr && <p>Dokumen asal: <Link href={`/klinik/rekam-medis/${encodeURIComponent(visit.id)}`}>Kunjungan / rekam medis</Link></p>}
       </div>

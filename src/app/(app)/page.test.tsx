@@ -2,14 +2,15 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
-const calls = vi.hoisted(() => [] as { table: string; fields: string; count: boolean; head: boolean; filters: [string, string, unknown][] }[]);
-const fixture = vi.hoisted(() => ({ role: "OWNER", visits: 1400, grooming: 1205, groomingError: false }));
+const calls = vi.hoisted(() => [] as { table: string; fields: string; count: boolean; head: boolean; filters: [string, string, unknown][]; range?: [number, number]; pages: number }[]);
+// kasirGrooming: qty per POS grooming line visible to the viewer (RLS-scoped by the fixture).
+const fixture = vi.hoisted(() => ({ role: "OWNER", visits: 1400, grooming: 1205, groomingError: false, kasirGrooming: [] as number[], kasirError: false }));
 vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a> }));
 vi.mock("@/components/Charts", () => ({ Donut: () => null, LineChart: () => null, CashFlowChart: () => null }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
   from(table: string) {
-    const call = { table, fields: "", count: false, head: false, filters: [] as [string, string, unknown][] };
+    const call = { table, fields: "", count: false, head: false, filters: [] as [string, string, unknown][], range: undefined as [number, number] | undefined, pages: 0 };
     calls.push(call);
     const query = {
       select(fields: string, options?: { count?: string; head?: boolean }) {
@@ -22,8 +23,17 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       lte(field: string, value: unknown) { call.filters.push(["lte", field, value]); return query; },
       lt(field: string, value: unknown) { call.filters.push(["lt", field, value]); return query; },
       ilike(field: string, value: unknown) { call.filters.push(["ilike", field, value]); return query; },
+      is(field: string, value: unknown) { call.filters.push(["is", field, value]); return query; },
+      order(field: string) { call.filters.push(["order", field, true]); return query; },
+      range(from: number, to: number) { call.range = [from, to]; call.pages += 1; return query; },
       maybeSingle: async () => ({ data: { role: fixture.role }, error: null }),
       then(resolve: (value: unknown) => unknown) {
+        if (table === "sale_items") {
+          const rows = fixture.kasirGrooming.map((qty, index) => ({ id: `line-${index}`, qty }));
+          const [from, to] = call.range ?? [0, rows.length - 1];
+          return Promise.resolve(fixture.kasirError ? { data: null, count: null, error: { message: "fixture read error" } }
+            : { data: rows.slice(from, to + 1), count: rows.length, error: null }).then(resolve);
+        }
         const grooming = call.filters.some(([op, field, value]) => op === "ilike" && field === "poli" && value === "%grooming%");
         const data = table === "visits" && !call.head
           ? Array.from({ length: 1000 }, () => ({ poli: "Grooming" })) : [];
@@ -86,5 +96,45 @@ it("shows zero on an empty day and an unavailable marker on read errors", async 
     expect(failed).toContain("Sebagian angka klinik belum dapat dibaca");
   } finally {
     fixture.visits = 1400; fixture.grooming = 1205; fixture.groomingError = false;
+  }
+});
+
+it("adds grooming services sold at the POS cashier, read completely past the API page limit", async () => {
+  // 1203 POS grooming lines (one with qty 2) -> 1204 units; clinic 1205 -> 2409 total.
+  fixture.kasirGrooming = [2, ...Array.from({ length: 1202 }, () => 1)];
+  try {
+    const html = await renderOperationalDashboard();
+    expect(html).toMatch(/Grooming hari ini<\/div><div class="kval"[^>]*>2409<\/div>/);
+    expect(html).toContain("Klinik 1205 · Kasir 1204");
+    const kasir = calls.filter((call) => call.table === "sale_items" && call.count);
+    expect(kasir).toHaveLength(1);
+    expect(kasir[0].pages).toBeGreaterThan(2); // paged, never one truncated read
+    const filters = kasir[0].filters;
+    expect(filters).toContainEqual(["eq", "items.item_type", "Jasa"]);
+    expect(filters).toContainEqual(["eq", "items.tindakan_kategori", "Grooming"]);
+    expect(filters).toContainEqual(["is", "sales.voided_at", null]);
+    expect(filters.some(([, field]) => field === "sales.branch_id")).toBe(false); // RLS scopes branches
+    const from = filters.find(([op, field]) => op === "gte" && field === "sales.created_at")?.[2];
+    const until = filters.find(([op, field]) => op === "lt" && field === "sales.created_at")?.[2];
+    expect(new Date(String(until)).getTime() - new Date(String(from)).getTime()).toBe(86_400_000);
+    expect(new Date(String(from)).getUTCHours()).toBe(17); // WIB midnight, exclusive end
+  } finally {
+    fixture.kasirGrooming = [];
+  }
+});
+
+it("shows the clinic and cashier breakdown, and a marker when the cashier count cannot be read", async () => {
+  fixture.visits = 4; fixture.grooming = 3;
+  try {
+    const zero = await renderOperationalDashboard();
+    expect(zero).toMatch(/Grooming hari ini<\/div><div class="kval"[^>]*>3<\/div>/);
+    expect(zero).toContain("Klinik 3 · Kasir 0");
+    fixture.kasirError = true;
+    const failed = await renderOperationalDashboard();
+    expect(failed).toMatch(/Grooming hari ini<\/div><div class="kval"[^>]*>—<\/div>/);
+    expect(failed).toContain("Klinik 3 · Kasir —");
+    expect(failed).toContain("Angka grooming kasir belum dapat dibaca");
+  } finally {
+    fixture.visits = 1400; fixture.grooming = 1205; fixture.kasirError = false;
   }
 });

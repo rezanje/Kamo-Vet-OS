@@ -1,9 +1,16 @@
 // Kategori tindakan (PRD v2.0 §6.3) + aturan mana yang wajib form persetujuan.
 
+// "Pet Hotel" (K14) = tarif harian penitipan hewan sehat; dipakai otomatis saat pet hotel pulang.
 export const TINDAKAN_KATEGORI = [
-  "Konsultasi", "Vaksinasi", "Operasi", "Grooming", "Rawat Inap", "Lab",
+  "Konsultasi", "Vaksinasi", "Operasi", "Grooming", "Rawat Inap", "Lab", "Pet Hotel",
 ] as const;
 export type TindakanKategori = (typeof TINDAKAN_KATEGORI)[number];
+
+// Kategori yang punya aturan & formulir persetujuan. Pet hotel (hewan sehat) belum punya
+// jenis formulir sendiri (keputusan owner 29 Okt: tidak ada formulir wajib), jadi tidak ikut.
+export const KATEGORI_CONSENT = [
+  "Konsultasi", "Vaksinasi", "Operasi", "Grooming", "Rawat Inap", "Lab",
+] as const satisfies readonly TindakanKategori[];
 
 // Aturan yang berlaku kalau tabel `consent_rules` belum terbaca (mis. komponen
 // klien yang tidak punya akses database). Aturan sebenarnya diatur klinik sendiri

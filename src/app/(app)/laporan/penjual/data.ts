@@ -406,11 +406,11 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
 
     // ── Sisa tagihan faktur grosir per penjual ────────────────────────────────
     const fakturDihitung = [...fakturPer.values()].filter((faktur) => grosirDihitung.has(faktur.id));
-    const nilaiFaktur = new Map<string, { no_faktur: string | null; tanggal: string; total: number; carried_paid: number; created_by: string | null }>();
+    const nilaiFaktur = new Map<string, { no_faktur: string | null; tanggal: string; total: number; carried_paid: number; returned_ar?: number | null; created_by: string | null }>();
     for (const batch of potong(fakturDihitung.map((faktur) => faktur.id))) {
       const { data } = await completeReportQuery(supabase.from("sales_invoices")
-        .select("id, no_faktur, tanggal, total, carried_paid, created_by", { count: "exact" }).in("id", batch));
-      for (const row of (data ?? []) as { id: string; no_faktur: string | null; tanggal: string; total: number; carried_paid: number; created_by: string | null }[]) {
+        .select("id, no_faktur, tanggal, total, carried_paid, returned_ar, created_by", { count: "exact" }).in("id", batch));
+      for (const row of (data ?? []) as { id: string; no_faktur: string | null; tanggal: string; total: number; carried_paid: number; returned_ar?: number | null; created_by: string | null }[]) {
         nilaiFaktur.set(row.id, row);
       }
     }
@@ -426,7 +426,8 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
     const faktur: FakturBelumLunas[] = [...nilaiFaktur.entries()]
       .filter(([id]) => diizinkan === null || diizinkan.includes(fakturCabang.get(id) ?? ""))
       .map(([id, row]) => {
-        const dibayar = (Number(row.carried_paid) || 0) + (dibayarPer.get(id) ?? 0);
+        // Pengurang piutang dari retur faktur grosir (N01) ikut menyelesaikan tagihan.
+        const dibayar = (Number(row.carried_paid) || 0) + (Number(row.returned_ar) || 0) + (dibayarPer.get(id) ?? 0);
         return {
           id, no_faktur: row.no_faktur ?? "—", tanggal: row.tanggal,
           penjualId: row.created_by ? empPerProfile.get(row.created_by) ?? null : null,

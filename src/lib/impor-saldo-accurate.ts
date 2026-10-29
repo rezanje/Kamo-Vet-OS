@@ -83,6 +83,8 @@ export type ResolvedSaldoAwal = SaldoAwalDraft & {
   warehouseId: string;
   sourceRows?: number[];
   sourceValues?: { qty: string; unit_cost: string; factor: string; unit: string }[];
+  /** Tersimpan saja: baris sumber yang dibawa dua layer HPP sen (pembulatan rupiah per baris). */
+  linePart?: 1 | 2;
   status: "valid" | "rejected" | "skipped";
   reason: string | null;
 };

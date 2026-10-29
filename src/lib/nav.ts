@@ -172,6 +172,8 @@ export const TILES: Record<string, Tile[]> = {
     // fakturnya dua kali.
     { label: "Penerimaan Penjualan", icon: "ti-cash-banknote", ...G, href: "/penjualan/faktur" },
     { label: "Retur Penjualan", icon: "ti-arrow-back-up", ...G, href: "/penjualan/retur" },
+    // Retur atas Faktur Penjualan grosir (N01/J01): barang kembali, piutang/kredit pelanggan dikoreksi.
+    { label: "Retur Faktur Penjualan", icon: "ti-receipt-refund", ...G, href: "/penjualan/retur-grosir" },
     { label: "Komisi Penjual", icon: "ti-percentage", ...A, href: "/penjualan/komisi" },
     { label: "Target Penjualan", icon: "ti-target", ...A, href: "/penjualan/target" },
     { label: "Penjualan Online", icon: "ti-world", ...G, nw: true, href: "/penjualan/online" },

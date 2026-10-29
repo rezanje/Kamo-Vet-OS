@@ -290,3 +290,19 @@ and fractional advance guards, payment/journal/advance/approval rollback, and
 aggregate payment-order settlement. Two independent sessions test both lock
 orders: payment before return and return before payment. No production or
 connected database URL is accepted.
+
+## K08 inpatient re-discharge billing (2026-10-28)
+
+```sh
+python3 scripts/test-clinic-inpatient-discharge-postgres.py [/usr/lib/postgresql/16/bin]
+```
+
+Throwaway native PostgreSQL 16 cluster (no Docker, no URL) with every migration. Runs
+`clinic_inpatient_discharge.sql` (its old unauthenticated-fixture gap is fixed) plus the inpatient
+regression suites. Coverage: one fee line for all discharged periods of a visit (3+2=5 days, not only
+the last period), a period already invoiced is never billed again (5 billed + 2 new = 7), a fee line
+kept by a voided invoice no longer breaks re-discharge, and a discharged stay cannot be reopened when
+the visit has an active invoice or the patient has another live stay. It also exercises
+`scripts/review-k08-paid-unfinished-visits.sql` on fictional committed rows: preview is read-only, a
+wrong expected count aborts, and the guarded repair only finishes visits without touching invoices,
+payments or journals. That script is for reviewed production maintenance; it was not run anywhere else.

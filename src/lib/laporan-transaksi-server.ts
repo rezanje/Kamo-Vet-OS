@@ -30,7 +30,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   // jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
 
-  const [hasilSales, hasilInvoices, hasilGrosir, hasilReturs, hasilCabang] =
+  const [hasilSales, hasilInvoices, hasilGrosir, hasilReturs, hasilRefundKlinik, hasilReturGrosir, hasilCabang] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
         .select("id, branch_id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(id)", { count: "exact" })
@@ -48,6 +48,13 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
       // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
       // dan omzet struk itu harus terlihat sudah berkurang.
       completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" }).is("voided_at", null)),
+      // J03: refund klinik diperlakukan sama dengan retur petshop — ditarik tanpa batas
+      // tanggal dan mengurangi omzet invoice asalnya (tanggal & cabang invoice), supaya
+      // omzet klinik tidak melebihi nilai yang benar-benar diterima. Refund klinik hanya
+      // ada setelah diposting (tunai atau transfer selesai) dan tidak dapat di-void.
+      completeReportQuery(supabase.from("clinic_refunds").select("id, invoice_id, total", { count: "exact" })),
+      // Retur faktur grosir (N01/J01) diperlakukan sama: tanpa batas tanggal, mengurangi faktur sumbernya.
+      completeReportQuery(supabase.from("wholesale_returns").select("id, invoice_id, total", { count: "exact" }).eq("status", "posted")),
       completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
     ]);
 
@@ -56,11 +63,18 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   const { data: invoices } = hasilInvoices;
   const { data: grosir } = hasilGrosir;
   const { data: returs } = hasilReturs;
+  const { data: refundKlinik } = hasilRefundKlinik;
+  const { data: returGrosir } = hasilReturGrosir;
   const { data: cabangList } = hasilCabang;
 
   const returPerStruk = new Map<string, number>();
   for (const r of (returs ?? []) as { sale_id: string; total: number }[]) {
     returPerStruk.set(r.sale_id, (returPerStruk.get(r.sale_id) ?? 0) + (Number(r.total) || 0));
+  }
+
+  const refundPerInvoice = new Map<string, number>();
+  for (const r of (refundKlinik ?? []) as { invoice_id: string; total: number }[]) {
+    refundPerInvoice.set(r.invoice_id, (refundPerInvoice.get(r.invoice_id) ?? 0) + (Number(r.total) || 0));
   }
 
   type SaleRow = SaleCompletion & {
@@ -94,22 +108,25 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
       cabang: one(v?.branches ?? null)?.name ?? "—",
       cabangId: v?.branch_id ?? null,
       customerId: v?.customer_id ?? null,
-      omzet: Number(inv.total) || 0,
+      omzet: (Number(inv.total) || 0) - (refundPerInvoice.get(inv.id) ?? 0),
       item: inv.invoice_items?.length ?? 0,
       kanal: "Klinik",
     });
   }
 
-  // Grosir tidak punya dokumen retur sendiri: pengurangan nilai dikerjakan lewat
-  // koreksi faktur (faktur lama dibatalkan, faktur pengganti terbit), dan itu sudah
-  // tersaring di fakturGrosirOmzet. Jadi tidak ada retur yang perlu dikurangkan di sini.
+  // Koreksi faktur grosir (batal + pengganti) sudah tersaring di fakturGrosirOmzet. Retur barang
+  // atas faktur grosir mengurangi omzet faktur sumbernya, sama seperti retur struk kasir.
+  const returPerFaktur = new Map<string, number>();
+  for (const r of (returGrosir ?? []) as { invoice_id: string; total: number }[]) {
+    returPerFaktur.set(r.invoice_id, (returPerFaktur.get(r.invoice_id) ?? 0) + (Number(r.total) || 0));
+  }
   for (const f of fakturGrosirOmzet((grosir ?? []) as unknown as FakturGrosirRow[])) {
     trx.push({
       tanggal: f.tanggal,
       cabang: one(f.branches)?.name ?? "—",
       cabangId: f.branch_id ?? null,
       customerId: f.customer_id ?? null,
-      omzet: omzetDokumenGrosir(f),
+      omzet: omzetDokumenGrosir(f) - (returPerFaktur.get(f.id) ?? 0),
       item: f.sales_invoice_items?.length ?? 0,
       kanal: "Grosir",
     });

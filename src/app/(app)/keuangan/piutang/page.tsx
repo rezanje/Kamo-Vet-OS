@@ -41,7 +41,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
       .order("created_at"),
     supabase
       .from("sales_invoices")
-      .select("id, no_faktur, tanggal, total, carried_paid, opening_batch_id, catatan, customers(name)")
+      .select("id, no_faktur, tanggal, total, carried_paid, returned_ar, opening_batch_id, catatan, customers(name)")
       .neq("status", "batal")
       .order("tanggal"),
     supabase.from("sales_receipts").select("invoice_id, jumlah"),
@@ -61,13 +61,14 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
   }
 
   const barisReseller: Row[] = ((fjs ?? []) as unknown as {
-    id: string; no_faktur: string; tanggal: string | null; total: number; carried_paid: number;
+    id: string; no_faktur: string; tanggal: string | null; total: number; carried_paid: number; returned_ar?: number | null;
     opening_batch_id: string | null; catatan: string | null;
     customers: { name: string } | { name: string }[] | null;
   }[])
     .map((f) => {
       const cust = Array.isArray(f.customers) ? f.customers[0] : f.customers;
-      const dibayar = Number(f.carried_paid ?? 0) + (fjPaid.get(f.id) ?? 0);
+      // Retur faktur grosir mengurangi piutang tanpa uang masuk; dihitung sebagai bagian yang sudah selesai.
+      const dibayar = Number(f.carried_paid ?? 0) + Number(f.returned_ar ?? 0) + (fjPaid.get(f.id) ?? 0);
       return {
         id: f.id, invoice_no: f.no_faktur, tanggal: f.tanggal,
         customer: cust?.name ?? "—",

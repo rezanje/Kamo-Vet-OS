@@ -3,7 +3,7 @@
 
 Never accepts a database URL or touches real data. Requires Docker and postgres:16, or run it through
 docs/evidence/2026-10-28-c05-q01/run-native-pg.py (Homebrew PostgreSQL, no Docker).
-Steps: apply every repository migration in order, re-apply the two new migrations (idempotency),
+Steps: apply every repository migration in order, re-apply the new migrations (idempotency),
 run the new SQL suites, the touched-area regressions, and two concurrency races on separate sessions.
 """
 from pathlib import Path
@@ -14,8 +14,11 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTAINER = 'vetos-c05-q01-test-' + uuid.uuid4().hex[:8]
-NEW = ['20261028180000_q01_new_customer_quest.sql', '20261028181000_c05_campaign_codes.sql']
-SUITES = ['c05_campaign_codes.sql', 'q01_new_customer_quest.sql']
+NEW = ['20261028180000_q01_new_customer_quest.sql', '20261028181000_c05_campaign_codes.sql',
+       '20261030112000_q01_staff_effects_recovery.sql', '20261101150000_c05_voucher_hanya_lewat_kampanye.sql',
+       '20261101151000_i09_riwayat_induk_racikan.sql', '20261101152000_c05_rombongan_nota_pendamping.sql']
+SUITES = ['c05_campaign_codes.sql', 'q01_new_customer_quest.sql', 'c05_q01_followup.sql',
+          'c05_voucher_lewat_kampanye.sql', 'i09_riwayat_induk_racikan.sql']
 REGRESSIONS = ['clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinic_demo_financial_policy.sql',
                'quest_config_write_guard.sql', 'pos_payment_method_corrections.sql',
                'clinic_manual_invoice_units.sql', 'clinic_procedure_bmhp.sql']
@@ -101,7 +104,7 @@ alter default privileges in schema public grant all on sequences to authenticate
     print(f'Applied {len(migrations)} repository migrations to isolated PostgreSQL with auth/storage shims.')
     for name in NEW:
         sql('begin;\n' + (ROOT / 'supabase/migrations' / name).read_text() + '\ncommit;')
-    print('Re-applied both new migrations: idempotent.')
+    print(f'Re-applied {len(NEW)} new migrations: idempotent.')
 
     tests = ROOT / 'supabase/tests'
     for name in SUITES + REGRESSIONS:

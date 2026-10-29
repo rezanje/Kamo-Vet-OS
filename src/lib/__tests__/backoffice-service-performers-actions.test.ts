@@ -1,8 +1,9 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { PromoHitung } from "@/lib/promo-hitung";
+import { HPP_CONFIRM_FIELD } from "@/lib/hpp-warning";
 
 const state = vi.hoisted(() => ({ headers: [] as Record<string, unknown>[], lines: [] as Record<string, unknown>[], itemType: "Jasa", employeeId: "login-employee" as string | null, promos: [] as PromoHitung[], price: 100, categoryPercent: 0,
-  stock: false, stockCalls: 0, rejectedItem: "", events: [] as string[], hppUpdates: [] as { id: string; hpp: unknown }[] }));
+  stock: false, stockCalls: 0, rejectedItem: "", events: [] as string[], hppUpdates: [] as { id: string; hpp: unknown }[], layerCost: 0 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
@@ -19,10 +20,11 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   rpc: async () => ({ data: { sale_id: "sale", finalized: true }, error: null }),
   from(table: string) {
     const data = table === "items" ? [{ id: "item", item_type: state.itemType }, { id: "physical", item_type: "Persediaan" }]
-      : table === "employees" ? [{ id: "doctor", nama: "Dokter", jabatan: "Dokter Hewan" }, { id: "staff", nama: "Staf", jabatan: "Groomer" }, { id: "different", nama: "Staf lain", jabatan: "Groomer" }] : [];
+      : table === "employees" ? [{ id: "doctor", nama: "Dokter", jabatan: "Dokter Hewan" }, { id: "staff", nama: "Staf", jabatan: "Groomer" }, { id: "different", nama: "Staf lain", jabatan: "Groomer" }]
+      : table === "stock_layers" && state.layerCost > 0 ? [{ id: "layer", item_id: "physical", qty_left: 10, unit_cost: state.layerCost, exp_date: null, tanggal: "2026-10-01", created_at: "2026-10-01T00:00:00Z" }] : [];
     let lineId = "", rejected = false, hpp: unknown;
     const query = {
-      select: () => query, eq: (key: string, value: string) => { if (table === "sale_items" && key === "id" && hpp !== undefined) state.hppUpdates.push({ id: value, hpp }); return query; }, in: () => query, lte: () => query, order: () => query, range: () => query, limit: () => query,
+      select: () => query, eq: (key: string, value: string) => { if (table === "sale_items" && key === "id" && hpp !== undefined) state.hppUpdates.push({ id: value, hpp }); return query; }, in: () => query, lte: () => query, gt: () => query, not: () => query, order: () => query, range: () => query, limit: () => query,
       insert: (value: Record<string, unknown>) => { if (table === "sales") state.headers.push(value); if (table === "sale_items") {
         state.events.push(`line:${value.item_id}`); rejected = value.item_id === state.rejectedItem;
         if (!rejected) { lineId = `line-${state.lines.length + 1}`; state.lines.push({ ...value, id: lineId }); }
@@ -35,7 +37,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 }) }));
 import { checkoutSale } from "@/app/(app)/pos/transaksi/actions";
 beforeEach(() => { state.headers = []; state.lines = []; state.itemType = "Jasa"; state.employeeId = "login-employee"; state.promos = []; state.price = 100; state.categoryPercent = 0;
-  state.stock = false; state.stockCalls = 0; state.rejectedItem = ""; state.events = []; state.hppUpdates = []; });
+  state.stock = false; state.stockCalls = 0; state.rejectedItem = ""; state.events = []; state.hppUpdates = []; state.layerCost = 0; });
 function form(performers: unknown = { doctor_id: "doctor", staff_id: "staff", doctor_name: "Forged name", branch_id: "forged" }) {
   const data = new FormData();
   Object.entries({ branchId: "branch", salespersonId: "forged-seller", metode: "Transfer", cart: JSON.stringify([
@@ -109,4 +111,15 @@ it("issues mixed-cart stock only after all source rows exist and writes cost to 
   expect(await checkoutSale(mixedForm()).catch(error => error.message)).toContain("/struk/sale");
   expect(state.events.slice(0, 2)).toEqual(["line:physical", "line:item"]);
   expect(state.hppUpdates).toEqual([{ id: "line-1", hpp: 25 }, { id: "line-2", hpp: 25 }]);
+});
+it("warns before saving goods below the FIFO cost and saves once that exact warning is confirmed (P03)", async () => {
+  state.stock = true; state.layerCost = 150;
+  const outcome = decodeURIComponent(await checkoutSale(mixedForm()).catch(error => error.message));
+  expect(outcome).toContain("REDIRECT:/pos/transaksi?hpp_warning=");
+  expect(outcome).toContain("Jasa (neto Rp100, HPP Rp150)");
+  expect(state.headers).toHaveLength(0); expect(state.stockCalls).toBe(0);
+  const signature = new URLSearchParams(outcome.slice(outcome.indexOf("?") + 1)).get("hpp_sig") ?? "";
+  const confirmed = mixedForm(); confirmed.set(HPP_CONFIRM_FIELD, signature);
+  expect(await checkoutSale(confirmed).catch(error => error.message)).toContain("/struk/sale");
+  expect(state.headers).toHaveLength(1);
 });

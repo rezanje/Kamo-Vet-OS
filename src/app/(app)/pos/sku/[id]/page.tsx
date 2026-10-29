@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BarangForm } from "../BarangForm";
 import { siapkanFormBarang, loadBarang } from "../data";
+import { adalahIndukRacikan, hrefRiwayatIndukRacikan } from "@/lib/riwayat-induk-racikan";
 
 export default async function BarangDetailPage({
   params,
@@ -35,6 +36,12 @@ export default async function BarangDetailPage({
             {barang.is_active ? "" : " · nonaktif"}
           </div>
         </div>
+        {/* I09: induk racikan nonstok tidak punya kartu stok; riwayatnya virtual. */}
+        {adalahIndukRacikan(barang, categories) && (
+          <Link href={hrefRiwayatIndukRacikan(id)} className="btn-def" style={{ textDecoration: "none" }}>
+            <i className="ti ti-history" /> Riwayat racikan
+          </Link>
+        )}
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}

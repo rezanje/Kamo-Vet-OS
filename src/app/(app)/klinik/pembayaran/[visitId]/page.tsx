@@ -5,6 +5,8 @@ import { Popup } from "@/components/Popup";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
+import { ClinicPaymentCorrectionPanel, type ClinicPaymentCorrectionRow } from "./ClinicPaymentCorrectionPanel";
+import { clinicCorrectableParts } from "@/lib/clinic-payment-correction";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { randomUUID, createHash } from "node:crypto";
 import Link from "next/link";
@@ -15,6 +17,8 @@ import { PembayaranForm } from "./PembayaranForm";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { getPajakSettings } from "@/lib/pajak";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
+import { readConsentStay } from "@/lib/inpatient-stay";
+import { readStayTariffs } from "@/lib/inpatient-tariff";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { perkiraanTagihan, bekalPotonganKlinik, nilaiBaris } from "@/lib/tagihan-klinik";
@@ -71,11 +75,14 @@ export default async function PembayaranPage({
   // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
   const { data: inpat, error: inpatientError } = await supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle();
   if (inpatientError) throw unverifiedBilling();
+  // K14: persetujuan Rawat Inap hanya untuk rawat inap sakit; pet hotel (hewan sehat) tidak.
+  const { data: inpatSakit, error: inpatSakitError } = inpat ? await readConsentStay(supabase, visitId) : { data: null, error: null };
+  if (inpatSakitError) throw unverifiedBilling();
   if (inpat?.consent_id) {
     const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
     if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
   }
-  const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
+  const jenisLayanan = inpat ? (inpatSakit ? "Rawat Inap" : "Pet Hotel") : visit.poli;
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
@@ -109,8 +116,8 @@ export default async function PembayaranPage({
     ? await supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name").eq("invoice_id", invoice.id).order("created_at")
     : { error: null, data: [] as { id?: string; deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
   const { data: paymentRows, error: paymentsError } = invoice
-    ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
-    : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
+    ? await supabase.from("invoice_payments").select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id)
+    : { error: null, data: [] as { id: string; amount: number; metode: string | null; transferred_from: string | null }[] };
   if (itemsError || paymentsError) throw unverifiedBilling();
   const hasPayments = (paymentRows ?? []).some((p) => !p.transferred_from);
   const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
@@ -156,8 +163,8 @@ export default async function PembayaranPage({
   // Aturan tindakan mana yang wajib berformulir diatur klinik sendiri di layar
   // Form Persetujuan, bukan dikunci di kode.
   const aturanConsent = await bacaAturanConsent(supabase);
-  const bolehTagih = bolehBayar(jasaKategori, !!inpat, consentList, aturanConsent);
-  const katBerisiko = kategoriBerisiko(jasaKategori, !!inpat, aturanConsent);
+  const bolehTagih = bolehBayar(jasaKategori, !!inpatSakit, consentList, aturanConsent);
+  const katBerisiko = kategoriBerisiko(jasaKategori, !!inpatSakit, aturanConsent);
   const prefill = resepRows.length
     ? resepRows
     : [{ deskripsi: `Jasa Konsultasi ${visit.poli}`, qty: 1, harga: 0, jenis: "jasa", item_id: null as string | null }];
@@ -170,6 +177,22 @@ export default async function PembayaranPage({
 
   const lunas = invoice?.paid_status === "Lunas";
   const refundData = invoice && lunas && !invoice.correction_pending ? await loadClinicRefundData(supabase, invoice.id) : null;
+
+  // J02: Owner/Finance boleh mengoreksi Tunai <-> Transfer, juga sesudah shift ditutup.
+  const { data: viewerProfile } = invoice && draftUser
+    ? await supabase.from("profiles").select("role,is_active").eq("id", draftUser.id).maybeSingle()
+    : { data: null };
+  const canCorrectMethod = !!invoice && !invoice.correction_pending && !invoice.reissued_from && viewerProfile?.is_active === true
+    && (viewerProfile.role === "OWNER" || viewerProfile.role === "FINANCE");
+  const { data: correctionData, error: correctionError } = canCorrectMethod && invoice
+    ? await supabase.from("clinic_payment_corrections")
+      .select("id, revision, amount, from_method, to_method, reason, created_at")
+      .eq("invoice_id", invoice.id).order("revision", { ascending: false })
+    : { data: [], error: null };
+  const correctionParts = invoice ? clinicCorrectableParts(invoice, paymentRows ?? []) : [];
+  const correctionBlocked = refundData && (refundData.refunds.length > 0
+    || refundData.requests.some((r) => r.status === "pending" || r.status === "diproses"))
+    ? "Invoice sudah direfund atau sedang diproses refund; koreksi metode memerlukan rekonsiliasi finance." : null;
 
   // Kasir menyebut angka ke pemilik SEBELUM memilih metode bayar. Kunjungan yang
   // invoicenya belum dibuat tidak punya total tersimpan, jadi dihitung di sini
@@ -195,13 +218,10 @@ export default async function PembayaranPage({
   // Baris rawat inap jumlah harinya dihitung sistem saat pasien pulang, jadi
   // qty-nya dikunci di layar (keputusan Aldi, 19 Agustus). Koreksi nilainya lewat
   // kolom diskon, yang tetap terbuka dan mengikuti hak akses.
-  const { data: jasaInap } = await supabase
-    .from("items").select("id")
-    .eq("tindakan_kategori", "Rawat Inap").eq("is_active", true)
-    .order("name").limit(1).maybeSingle();
-  const idJasaInap = (jasaInap?.id as string | undefined) ?? null;
+  // K14: tarif harian pet hotel juga dihitung sistem, jadi ikut dikunci.
+  const { feeItemIds } = inpat ? await readStayTariffs(supabase) : { feeItemIds: [] as string[] };
   const tandai = <T extends { item_id: string | null }>(r: T) =>
-    ({ ...r, terkunci: !!idJasaInap && r.item_id === idJasaInap && !!inpat });
+    ({ ...r, terkunci: !!r.item_id && feeItemIds.includes(r.item_id) && !!inpat });
 
   const sourceVersion = createHash("sha256").update(JSON.stringify(sourceItems)).digest("hex");
   const initialObat = sourceItems.filter((r) => r.jenis !== "jasa").map(tandai);
@@ -281,6 +301,11 @@ export default async function PembayaranPage({
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {lunasParam ?? ""} tagihan diselesaikan sekaligus — cetak struk gabungan di panel bawah.
           {dilewati && <b style={{ marginLeft: 6, color: "#b45309" }}>Belum termasuk: {dilewati} — selesaikan satu per satu.</b>}
+        </div>
+      )}
+      {!error && success === "koreksi-metode" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Metode pembayaran terkoreksi pada invoice ini. Jurnal koreksi dan alasannya tersimpan.
         </div>
       )}
       {!error && success === "reissue" && (
@@ -529,11 +554,18 @@ export default async function PembayaranPage({
               invoice={{ id: invoice.id, subtotal: Number(invoice.subtotal), total: Number(invoice.total) }}
               lines={(invItems ?? []).map((l) => ({ id: l.id, deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis, item_id: l.item_id,
                 diskon_persen: l.diskon_persen === null ? null : Number(l.diskon_persen), compound_recipe_id: l.compound_recipe_id, satuan: l.satuan }))}
-              message={success && !["bayar", "edit", "rombongan", "reissue"].includes(success) ? success : undefined} />
+              message={success && !["bayar", "edit", "rombongan", "reissue", "koreksi-metode"].includes(success) ? success : undefined} />
+          )}
+
+          {/* J02: koreksi Tunai <-> Transfer (Owner/Finance), jurnal koreksi; struk dan nominal tetap. */}
+          {canCorrectMethod && draftUser && (correctionParts.length > 0 || (correctionData ?? []).length > 0) && (
+            <ClinicPaymentCorrectionPanel userId={draftUser.id} visitId={visit.id} invoiceId={invoice.id}
+              parts={correctionParts} history={(correctionData ?? []) as ClinicPaymentCorrectionRow[]}
+              readError={!!correctionError} blocked={correctionBlocked} />
           )}
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
-          {(lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
+          {(lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (correctionData ?? []).length === 0 && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG

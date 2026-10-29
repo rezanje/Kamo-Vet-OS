@@ -25,15 +25,13 @@ with fixture.DisposablePostgres() as database:
             database.sql(migration)
             if database.sql(identity) != candidate:
                 raise RuntimeError('Migration/rollback roundtrip changed function security or definition')
-        clone = 'k08_legacy_probe'
+        # The discharge suite's former fixture gap (unauthenticated setup) is fixed; it must pass
+        # on both function versions. Re-discharge coverage: scripts/test-clinic-inpatient-discharge-postgres.py.
+        clone = 'k08_discharge_probe'
         database.sql('create database ' + clone + ' template postgres;')
         try:
             database.sql('\\connect ' + clone + "\n" + (ROOT / 'supabase/tests/clinic_inpatient_discharge.sql').read_text())
-            raise RuntimeError('Legacy baseline probe unexpectedly passed; reclassify evidence')
-        except RuntimeError as error:
-            if 'ACCESS_DENIED: pengguna tidak terautentikasi' not in str(error) or 'protect_inpatient_care_staff' not in str(error):
-                raise
-            print('CONFIRMED existing fixture failure ' + label + ': protect_inpatient_care_staff unauthenticated setup', flush=True)
+            print('PASS clinic_inpatient_discharge.sql on ' + label, flush=True)
         finally:
             database.sql('drop database ' + clone + ' with (force);')
     print('PASS migration/rollback roundtrip: exact definition/owner/security/ACL preserved', flush=True)

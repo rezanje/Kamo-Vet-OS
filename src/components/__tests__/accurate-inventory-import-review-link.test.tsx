@@ -23,7 +23,7 @@ it('ignores a late manual preparation after changing the rounding choice',async(
  const input=host.querySelector<HTMLInputElement>('input[type=date]')!;
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'2026-01-01');input.dispatchEvent(new Event('input',{bubbles:true}));});
  await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent?.includes('Cek saldo'))!.click());
- await act(async()=>host.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());
+ await act(async()=>host.querySelector<HTMLInputElement>('input[type=radio][value=STRICT]')!.click());
  await act(async()=>resolve({ok:true,phase:'preview',run_id:'old-batch',rows:[],source_qty:1,source_value:1,checks:[]} as unknown as InitialStockState));
  expect(host.querySelector('a')).toBeNull();await act(async()=>root.unmount());
 });

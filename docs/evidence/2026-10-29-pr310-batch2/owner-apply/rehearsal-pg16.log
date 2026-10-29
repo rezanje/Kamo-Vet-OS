@@ -1,0 +1,41 @@
+baseline: 318 main migrations applied (16.15 (Ubuntu 16.15-0ubuntu0.24.04.1))
+batch 1 preflight: 20 checks, 0 failed
+batch 1 readback: 15 checks, 0 failed
+Supabase-like default privileges set (new functions/tables granted to anon, authenticated, service_role); service_role granted on the 13 replaced functions whose grants batch 2 resets
+apply without batch 1: refused with PR310B2_BATCH1_MISSING
+preflight: 40 checks, 0 failed
+readback: 137 checks, 0 failed
+batch 1 readback after batch 2: 15 checks, 0 failed
+apply again: refused with PR310B2_ALREADY_APPLIED, nothing changed
+rollback: catalog fingerprint (8888 lines: functions+ACLs, tables, columns, constraints, triggers, policies, indexes, log sources, items, history, schemas) identical to before apply
+preflight after rollback: 40 checks, 0 failed
+readback after re-apply: 137 checks, 0 failed
+re-apply: catalog fingerprint identical to first apply
+PASS p03_price_floor.sql
+PASS pos_payment_method_corrections.sql
+PASS clinic_payment_method_corrections.sql
+PASS wholesale_returns.sql
+PASS clinic_inpatient_discharge.sql
+PASS inpatient_continuation_pet_hotel.sql
+PASS c05_campaign_codes.sql
+PASS c05_voucher_lewat_kampanye.sql
+PASS c05_q01_followup.sql
+PASS i09_riwayat_induk_racikan.sql
+PASS accurate_inventory_line_rupiah_rounding.sql
+PASS activity_audit_coverage.sql
+rollback with a batch 2 record present: refused with PR310B2_ROLLBACK_HAS_DATA, nothing changed
+preflight.sql sha256 4be7fcec95cc7709a51b6875401756a28aa995b99b4b5872408c10ed681ff409
+apply.sql sha256 1c856244c204f50a3a9bf1670a7527c154a5083b40f2346a591243533e8f2ea9
+readback.sql sha256 755e9f3def91a22f01f88b03433f993388465cf8a4a3746fc4544f5a61eb0f23
+rollback.sql sha256 fd77cff1797029494a3780b55ed2ac6f0efa4a882761b66154569ffca8050dcf
+20261101100000_p03_harga_bawah_hpp_kasir_klinik.sql sha256 77703b7b5ad70f590860ad3374ecffe2347fad3a87cdb6aad7dba95cab4b0ab7
+20261101110000_j02_pos_correction_after_shift_finance.sql sha256 41f1c939e399f401640be9fa5ac92c1347c2dca5cf55342daf309708b74abb17
+20261101111000_j02_clinic_payment_correction.sql sha256 0014babf1579d8da04afa1f72bdaf5c4a947a578711eea266aab0b60ebab3b2f
+20261101130000_n01_retur_faktur_grosir.sql sha256 227591929b76fc031b2d8c6eaca6674239c94f87524d3036cbc222a6494da266
+20261101140000_k08_admission_requires_settled_invoice.sql sha256 d9696ec68d010bd3aa1fd9d8b32a96082e44a9670b443fd815a0c68e55cdc73e
+20261101141000_k14_pet_hotel_checkin_tariff.sql sha256 9f6a1d82bc34d7789cd95388db85f264ca359a83e4f70fceebb8ac409b47629c
+20261101150000_c05_voucher_hanya_lewat_kampanye.sql sha256 58ca8acf3b372444bd791e0d283fd0ae58c9f70b0d193971944a64e507d77b88
+20261101151000_i09_riwayat_induk_racikan.sql sha256 bdcd1506bf62fd69ee0d3abb69f278c245229b08c0aa31314fbfb2b715b08a82
+20261101152000_c05_rombongan_nota_pendamping.sql sha256 5fd1f3f88752d5faedfd409bf33e8d1e959eeb9af7e00d5feb83b96a0b9dc093
+20261101160000_opening_stock_line_rupiah_rounding.sql sha256 749a82309cb325a3a6bcd441954a1027922c9df42354791b7d63186a60b2a8d3
+Stopped and removed the throwaway PostgreSQL cluster.

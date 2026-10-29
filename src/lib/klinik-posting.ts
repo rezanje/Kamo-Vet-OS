@@ -48,6 +48,11 @@ export type ClinicInvoiceInput = {
   voucher_code: string | null;
   /** Kode kampanye yang diketik (C05); batas pemakaiannya dijaga database. */
   campaign_code?: string | null;
+  /**
+   * Rombongan (C05): nota pembawa kode kampanye. Nota hewan lain menikmati voucher kampanyenya
+   * lewat penanda ini tanpa menambah pemakaian; database memeriksa rombongannya cocok.
+   */
+  campaign_carrier_id?: string | null;
   salesperson_id: string | null;
 };
 
@@ -123,6 +128,9 @@ export function parseClinicPostingError(error: { code?: string; message: string 
   if (error?.code === "P0001") {
     if(error.message.startsWith('CARE_INVALID:'))return error.message.slice('CARE_INVALID:'.length).trim();
     if (error.message.startsWith("RECIPE_REQUIRED:")) return recipeRequiredMessage(error.message);
+    // P03: database names the line/package, its net price and HPP; the text is already for the cashier.
+    const priceFloor = /^(PRICE_ZERO|PRICE_BELOW_HPP):\s*([^\r\n]{1,300})/.exec(error.message);
+    if (priceFloor) return `Penjualan ditolak. ${priceFloor[2].trim()}`;
     const detailMessages: Record<string, string> = {
       STOCK_SHORT: "Stok tidak cukup",
       WAREHOUSE_MISSING: "Gudang aktif cabang belum tersedia",
@@ -169,6 +177,9 @@ export function parseClinicRecordError(error: { code?: string; message: string }
   if (error?.code === "P0001") {
     if (error.message.startsWith("CONSENT_REQUIRED: tandatangani form Pulang Paksa")) return "Buat dan tandatangani form khusus Pulang Paksa untuk cabang pasien sebelum mengubah kondisi.";
     if (error.message.startsWith("INPATIENT_CLOSED:")) return "Pasien sudah keluar dari rawat inap; kondisi kepulangan tidak dapat diubah di sini.";
+    // K08: a discharged stay is not reopened once the visit is invoiced, or while another stay is live.
+    if (error.message.startsWith("INVOICE_EXISTS: tagihan sudah terbit; rawat inap yang sudah pulang")) return "Tagihan kunjungan ini sudah terbit, jadi rawat inap yang sudah pulang tidak bisa dibuka lagi. Untuk perawatan berikutnya, buka lanjutan rawat inap dari rekam medis setelah tagihan diselesaikan kasir.";
+    if (error.message.startsWith("ADMISSION_INVALID: pasien sudah memiliki rawat inap aktif")) return "Pasien masih punya rawat inap aktif lain; periode yang sudah pulang tidak bisa dibuka lagi.";
     if (error.message.startsWith("INPATIENT_ATOMIC_REQUIRED:")) return "Ubah kondisi melalui aksi rawat inap agar formulir dan biaya diperiksa bersama.";
     if (error.message.startsWith("RECORD_INVALID:")) return "Kunjungan belum siap diselesaikan atau data pemeriksaan tidak lengkap.";
     if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";

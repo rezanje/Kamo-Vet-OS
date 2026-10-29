@@ -71,10 +71,11 @@ begin
   begin perform public.clinic_admit_inpatient('d6600000-0000-4000-8000-000000000001','DEMO plan','k06-direct');
   exception when raise_exception then failed:=sqlerrm like 'ADMISSION_INVALID: kunjungan sudah selesai%';end;
   if not failed then raise exception 'K06 baseline: paid visit should still be rejected by the direct path';end if;
-  -- A visit in Pembayaran with an unpaid invoice keeps the normal admission path.
+  -- K08 (owner decision 29 Oct): a visit in Pembayaran with an unpaid invoice is neither continued
+  -- nor admitted directly; the refusal names the next step (pay or void the invoice).
   failed:=false;
   begin perform public.clinic_continue_visit_to_inpatient('d6600000-0000-4000-8000-000000000002','k06-open');
-  exception when raise_exception then failed:=sqlerrm like 'ADMISSION_INVALID: kunjungan belum selesai%';end;
+  exception when raise_exception then failed:=sqlerrm like 'ADMISSION_INVALID: tagihan kunjungan ini belum lunas; lunasi atau batalkan%';end;
   if not failed then raise exception 'K06: continuation offered for a visit with an unpaid invoice still in Pembayaran';end if;
 
   c1:=public.clinic_continue_visit_to_inpatient('d6600000-0000-4000-8000-000000000001','k06-a');
@@ -172,17 +173,120 @@ begin
       and visit_doctor_id is null and suhu is null and makan is not null) then
     raise exception 'K14: pet hotel log without doctor or temperature was not stored';end if;
 
-  -- Discharge bills the stay on the continuation visit only.
+  -- Discharge bills the stay on the continuation visit only. K14 (b): the Pet Hotel service
+  -- seeded by the migration has no price yet (0), so the Rawat Inap price is used with a warning.
   if not public.clinic_change_inpatient_condition(r1,'sembuh','DEMO pick-up') then raise exception 'K14: discharge failed';end if;
-  if not exists(select 1 from public.prescription_items where medical_record_id=m1 and kategori='Rawat Inap')
+  if not exists(select 1 from public.prescription_items p join public.items i on i.id=p.item_id
+      where p.medical_record_id=m1 and p.kategori='Pet Hotel' and i.code='JASA-PET-HOTEL' and i.tindakan_kategori='Pet Hotel'
+        and p.harga=100000 and p.qty=1
+        and p.aturan_pakai='Otomatis dari lama pet hotel: 1 hari; tarif Pet Hotel belum diatur, memakai tarif Rawat Inap')
+    or exists(select 1 from public.prescription_items where medical_record_id=m1 and kategori='Rawat Inap')
     or exists(select 1 from public.prescription_items where medical_record_id='d6700000-0000-4000-8000-000000000001') then
-    raise exception 'K06: stay fee must land on the continuation record, never on the paid visit';end if;
+    raise exception 'K06/K14: pet hotel fee must use the Pet Hotel service (fallback price + warning) on the continuation record only';end if;
   -- After discharge the next continuation of the same patient can be admitted.
   if public.clinic_admit_inpatient_typed(cb,'DEMO second','k06-cb-2','sakit') is null then raise exception 'K06: admission after discharge failed';end if;
 
-  -- Existing sick flow (Pembayaran + unpaid invoice) is admitted directly as before, default 'sakit'.
+  -- K08: Pembayaran + active UNPAID invoice is no longer admitted directly (any path, any type).
+  failed:=false;
+  begin perform public.clinic_admit_inpatient('d6600000-0000-4000-8000-000000000002','DEMO infusion','k14-legacy');
+  exception when raise_exception then failed:=sqlerrm like 'ADMISSION_INVALID: tagihan kunjungan ini belum lunas; lunasi atau batalkan%';end;
+  if not failed then raise exception 'K08: unpaid invoice visit admitted directly (old RPC)';end if;
+  failed:=false;
+  begin perform public.clinic_admit_inpatient_typed('d6600000-0000-4000-8000-000000000002','DEMO infusion','k08-typed','sakit');
+  exception when raise_exception then failed:=sqlerrm like 'ADMISSION_INVALID: tagihan kunjungan ini belum lunas; lunasi atau batalkan%';end;
+  if not failed then raise exception 'K08: unpaid invoice visit admitted directly (typed sakit)';end if;
+  failed:=false;
+  begin perform public.clinic_admit_inpatient_typed('d6600000-0000-4000-8000-000000000002','DEMO boarding','k08-hotel','pet_hotel');
+  exception when raise_exception then failed:=sqlerrm like 'ADMISSION_INVALID: tagihan kunjungan ini belum lunas; lunasi atau batalkan%';end;
+  if not failed then raise exception 'K08: unpaid invoice visit checked in to pet hotel';end if;
+  if exists(select 1 from public.inpatient_records where visit_id='d6600000-0000-4000-8000-000000000002') then
+    raise exception 'K08: refused admission left a stay behind';end if;
+end $$;
+
+-- Finance voids the unpaid invoice: the direct path opens again, default stay type 'sakit'.
+reset role;
+update public.invoices set voided_at=now() where id='d6800000-0000-4000-8000-000000000002';
+set local role authenticated;
+do $$
+declare rb uuid;
+begin
   rb:=public.clinic_admit_inpatient('d6600000-0000-4000-8000-000000000002','DEMO infusion','k14-legacy');
   if (select stay_type from public.inpatient_records where id=rb)<>'sakit' then raise exception 'K14: default stay type must be sakit';end if;
+end $$;
+
+-- K14 (a): pet hotel check-in by a paramedic-side STAFF account on a visit that was never examined,
+-- has no doctor and no signed consent, while the Rawat Inap consent rule is mandatory.
+reset role;
+insert into auth.users(id,raw_user_meta_data) values ('d6100000-0000-4000-8000-000000000003','{}');
+update public.profiles set role='STAFF' where id='d6100000-0000-4000-8000-000000000003';
+insert into public.user_branches(user_id,branch_id) values ('d6100000-0000-4000-8000-000000000003','d6200000-0000-4000-8000-000000000001');
+insert into public.pets(id,customer_id,name) values
+ ('d6400000-0000-4000-8000-000000000003','d6300000-0000-4000-8000-000000000001','DEMO Hotel Guest');
+insert into public.visits(id,branch_id,customer_id,pet_id,keluhan,status) values
+ ('d6600000-0000-4000-8000-000000000005','d6200000-0000-4000-8000-000000000001','d6300000-0000-4000-8000-000000000001',
+  'd6400000-0000-4000-8000-000000000003','DEMO titip 1 malam','Menunggu');
+select set_config('request.jwt.claims','{"role":"authenticated","sub":"d6100000-0000-4000-8000-000000000003"}',true);
+select set_config('request.jwt.claim.sub','d6100000-0000-4000-8000-000000000003',true);
+set local role authenticated;
+do $$
+declare h1 uuid;h2 uuid;m uuid;failed boolean;
+begin
+  -- Sick admission keeps every requirement: no exam/doctor is still refused.
+  failed:=false;
+  begin perform public.clinic_admit_inpatient_typed('d6600000-0000-4000-8000-000000000005','DEMO sick','k14-sick-noexam','sakit');
+  exception when raise_exception then failed:=sqlerrm like 'ADMISSION_INVALID: selesaikan pemeriksaan dan pilih dokter%';end;
+  if not failed then raise exception 'K14: sick admission without exam/doctor was accepted';end if;
+  -- A Selesai visit is not checked in directly.
+  failed:=false;
+  begin perform public.clinic_admit_inpatient_typed('d6600000-0000-4000-8000-000000000001','DEMO boarding','k14-hotel-closed','pet_hotel');
+  exception when raise_exception then failed:=sqlerrm like 'ADMISSION_INVALID: kunjungan sudah selesai%';end;
+  if not failed then raise exception 'K14: pet hotel checked in on a finished visit';end if;
+
+  h1:=public.clinic_admit_inpatient_typed('d6600000-0000-4000-8000-000000000005','Makan 2x, jemput besok','k14-hotel-staff','pet_hotel');
+  h2:=public.clinic_admit_inpatient_typed('d6600000-0000-4000-8000-000000000005','Makan 2x, jemput besok','k14-hotel-staff','pet_hotel');
+  if h1 is distinct from h2 then raise exception 'K14: pet hotel check-in retry created another stay';end if;
+  failed:=false;
+  begin perform public.clinic_admit_inpatient_typed('d6600000-0000-4000-8000-000000000005','Makan 2x, jemput besok','k14-hotel-staff','sakit');
+  exception when raise_exception then failed:=sqlerrm like 'IDEMPOTENCY_CONFLICT:%';end;
+  if not failed then raise exception 'K14: pet hotel key replayed as sick';end if;
+  failed:=false;
+  begin perform public.clinic_admit_inpatient_typed('d6600000-0000-4000-8000-000000000005','Plan lain','k14-hotel-staff','pet_hotel');
+  exception when raise_exception then failed:=sqlerrm like 'IDEMPOTENCY_CONFLICT:%';end;
+  if not failed then raise exception 'K14: pet hotel key replayed with another note';end if;
+
+  select medical_record_id into m from public.inpatient_records where id=h1;
+  if not exists(select 1 from public.inpatient_records where id=h1 and stay_type='pet_hotel' and doctor_id is null
+      and doctor_name is null and consent_id is null and discharged_at is null and treatment_plan='Makan 2x, jemput besok') then
+    raise exception 'K14: pet hotel stay must have no doctor and no consent';end if;
+  if not exists(select 1 from public.medical_records where id=m and visit_id='d6600000-0000-4000-8000-000000000005'
+      and diagnosis is null and submission_key='k14-pet-hotel:k14-hotel-staff'
+      and submitted_by='d6100000-0000-4000-8000-000000000003') then
+    raise exception 'K14: pet hotel check-in did not create the short billing record';end if;
+  if not exists(select 1 from public.visits where id='d6600000-0000-4000-8000-000000000005' and status='Pembayaran'
+      and service_started_at is not null and service_finished_at is not null and doctor_id is null) then
+    raise exception 'K14: unexamined visit did not move to Pembayaran on check-in';end if;
+  if (select count(*) from public.visit_operational_events where visit_id='d6600000-0000-4000-8000-000000000005'
+      and event_type='service_finished' and payload->>'source'='pet_hotel_check_in')<>1 then
+    raise exception 'K14: check-in event missing or duplicated';end if;
+  if (select count(*) from public.inpatient_status_log where inpatient_record_id=h1)<>1 then
+    raise exception 'K14: check-in status log missing';end if;
+end $$;
+
+-- K14 (b): the owner sets the Pet Hotel price; the next discharge uses it without a warning.
+reset role;
+update public.items set sell_price=75000 where code='JASA-PET-HOTEL';
+set local role authenticated;
+do $$
+declare h uuid;m uuid;
+begin
+  select id,medical_record_id into h,m from public.inpatient_records where admission_request_key='k14-hotel-staff';
+  if not public.clinic_change_inpatient_condition(h,'sembuh','DEMO dijemput') then raise exception 'K14: STAFF could not discharge pet hotel';end if;
+  if (select count(*) from public.prescription_items where medical_record_id=m)<>1
+    or not exists(select 1 from public.prescription_items p join public.items i on i.id=p.item_id
+      where p.medical_record_id=m and i.code='JASA-PET-HOTEL' and p.kategori='Pet Hotel' and p.jenis='jasa'
+        and p.harga=75000 and p.qty=1 and p.aturan_pakai='Otomatis dari lama pet hotel: 1 hari') then
+    raise exception 'K14: configured Pet Hotel tariff not billed: %',
+      (select jsonb_agg(to_jsonb(p)) from public.prescription_items p where p.medical_record_id=m);end if;
 end $$;
 
 -- The paid invoice of the original visit is untouched.
@@ -195,5 +299,5 @@ do $$ begin
     or (select status::text from public.visits where id='d6600000-0000-4000-8000-000000000001')<>'Selesai' then
     raise exception 'K06: original paid invoice or visit changed';end if;
 end $$;
-select 'PASS K06/K14 continuation, idempotency, one live stay per patient, role gate, pet hotel log, separate billing';
+select 'PASS K06/K14 continuation, idempotency, one live stay per patient, role gate, pet hotel log, separate billing, K08 unpaid invoice guard, pet hotel check-in without doctor/exam/consent, Pet Hotel tariff + fallback';
 rollback;

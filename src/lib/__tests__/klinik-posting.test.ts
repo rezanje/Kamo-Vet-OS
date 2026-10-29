@@ -64,6 +64,15 @@ describe("parseClinicPostingError", () => {
     expect(parseClinicPostingError({ code: "P0001", message: "JOURNAL_UNBALANCED: invoice" }))
       .toMatch(/tidak seimbang/);
   });
+
+  it("shows why goods were rejected below HPP or at zero (P03)", () => {
+    expect(parseClinicPostingError({ code: "P0001",
+      message: "PRICE_BELOW_HPP: Harga neto Obat A Rp900 di bawah HPP Rp1.000. Naikkan harga atau kurangi diskon." }))
+      .toBe("Penjualan ditolak. Harga neto Obat A Rp900 di bawah HPP Rp1.000. Naikkan harga atau kurangi diskon.");
+    expect(parseClinicPostingError({ code: "P0001",
+      message: "PRICE_ZERO: Harga neto paket Paket Steril Rp0. Paket yang berisi obat/barang tidak boleh gratis." }))
+      .toBe("Penjualan ditolak. Harga neto paket Paket Steril Rp0. Paket yang berisi obat/barang tidak boleh gratis.");
+  });
 });
 
 describe("parseClinicRecordError", () => {
@@ -72,6 +81,15 @@ describe("parseClinicRecordError", () => {
       .toMatch(/Pulang Paksa/);
     expect(parseClinicRecordError({ code: "P0001", message: "INPATIENT_CLOSED: pasien sudah keluar" }))
       .toMatch(/sudah keluar/);
+  });
+  it("explains why a discharged stay cannot be reopened (K08 re-discharge billing)", () => {
+    expect(parseClinicRecordError({ code: "P0001", message: "INVOICE_EXISTS: tagihan sudah terbit; rawat inap yang sudah pulang tidak dapat dibuka lagi pada kunjungan ini" }))
+      .toMatch(/^Tagihan kunjungan ini sudah terbit, jadi rawat inap yang sudah pulang tidak bisa dibuka lagi/);
+    expect(parseClinicRecordError({ code: "P0001", message: "ADMISSION_INVALID: pasien sudah memiliki rawat inap aktif" }))
+      .toMatch(/rawat inap aktif lain/);
+    // The discharge-time rejection keeps its existing wording.
+    expect(parseClinicRecordError({ code: "P0001", message: "INVOICE_EXISTS: tagihan sudah terbit sebelum biaya rawat inap dihitung" }))
+      .toBe("Kunjungan sudah memiliki invoice aktif.");
   });
   it("explains failed initial exams without exposing raw database details", () => {
     expect(parseClinicRecordError({ code: "P0001", message: "RECORD_INVALID: kunjungan belum siap" }))

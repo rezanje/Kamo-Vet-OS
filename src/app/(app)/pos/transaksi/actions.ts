@@ -21,6 +21,12 @@ import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
+import { processQuestProgress } from "@/lib/quest-hook";
+import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
+import { bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
+import { priceFloorFindings } from "@/lib/cashier-price-floor";
+import { quoteSaleLineCosts } from "@/lib/sale-fifo-quote";
+import { hppWarningConfirmed, hppWarningQuery, hppWarningsFrom, type HppWarning } from "@/lib/hpp-warning";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -41,6 +47,9 @@ export async function checkoutSale(formData: FormData) {
   const metode = String(formData.get("metode") ?? "Tunai");
   const discount = Number(formData.get("discount")) || 0;
   const bayar = Number(formData.get("bayar")) || 0;
+  // C05: layar back-office hanya menerima KODE KAMPANYE (bukan kode voucher mentah) —
+  // kebijakan voucher mentah masih menunggu keputusan pemilik dan tidak diperluas ke sini.
+  const kodeMasuk = normalizeKode(formData.get("voucherCode")) || null;
 
   if (!branchId) redirect(`/pos/transaksi?error=${encodeURIComponent("Pilih cabang dulu")}`);
   let checkout: ReturnType<typeof posCheckoutIdentity>;
@@ -101,10 +110,21 @@ export async function checkoutSale(formData: FormData) {
   // dengan layar kasir. Sengaja dipasang di KEDUA jalur POS: diskon golongan
   // dulu sempat hanya jalan di sini dan tidak di /kasir, dan selisih diam-diam
   // antara dua layar yang sama-sama menagih uang itu mahal ketahuannya.
-  const promoAktif = await loadPromoAktif(supabase, branchId);
+  const kampanye = kodeMasuk ? await bacaKodeKampanye(supabase, kodeMasuk) : null;
+  if (kodeMasuk && !kampanye) {
+    redirect(`/pos/transaksi?error=${encodeURIComponent(`Kode kampanye ${kodeMasuk} tidak ditemukan`)}`);
+  }
+  // Kode terikat promo: promo itu ikut dipotong di transaksi ini (juga yang tidak otomatis).
+  const promoKodeId = kampanye?.promo_id ?? null;
+  const promoAktif = promoDenganKode(await loadPromoAktif(supabase, branchId, promoKodeId ? [promoKodeId] : []), promoKodeId);
   const rincianPromo = serviceLinePromos(
     promoAktif, rows.map((l) => ({ ...l, item_id: l.item_id ?? "" })),
   );
+  if (kampanye) {
+    const tolak = pesanKampanyeDitolak(kampanye,
+      promoAktif.some((p) => p.id === promoKodeId), rincianPromo.some((h) => h.promoId === promoKodeId));
+    if (tolak) redirect(`/pos/transaksi?error=${encodeURIComponent(tolak)}`);
+  }
   const potonganPromo = totalPotonganPromo(rincianPromo);
   // Rinciannya ikut disimpan ke baris struk (migrasi 0127) supaya laporan promo
   // bisa menyebut program mana yang menghabiskan uang, bukan cuma totalnya.
@@ -114,6 +134,7 @@ export async function checkoutSale(formData: FormData) {
   // Kalau dibaca dari form, kasir bisa mengarang diskon golongan sesukanya.
   let diskonKategori = 0;
   let rupiahPerPoin: number | null = null;
+  let categoryId: string | null = null;
   if (customerId) {
     const { data: cust } = await supabase
       .from("customers")
@@ -126,6 +147,7 @@ export async function checkoutSale(formData: FormData) {
       | null
       | undefined;
     const kat = Array.isArray(rel) ? rel[0] : rel;
+    categoryId = (cust?.category_id as string | null) ?? null;
     if (kat?.is_active) {
       // Per baris sejak 0082 — aturan sama persis dengan layar kasir.
       const [aturan, infoBarang] = await Promise.all([
@@ -140,7 +162,24 @@ export async function checkoutSale(formData: FormData) {
     }
   }
 
-  const total = posNetTotal(subtotal, potonganPromo, diskonKategori, discount);
+  // Kode terikat voucher: syarat & rumus voucher itu apa adanya, dihitung dari nilai
+  // setelah promo — urutan yang sama dengan /kasir (§6).
+  const voucherCode = kampanye?.voucher_code ?? null;
+  let voucherVal = 0;
+  if (kampanye && !kampanye.promo_id) {
+    const { data: v } = voucherCode ? await supabase
+      .from("vouchers")
+      .select("code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id")
+      .eq("code", voucherCode).maybeSingle() : { data: null };
+    const dasarVoucher = posNetTotal(subtotal, potonganPromo);
+    const tolak = pesanVoucherDitolak((v ?? null) as VoucherRow | null, hariIniWIB(), {
+      dasar: dasarVoucher, adaPromoOtomatis: rincianPromo.length > 0, customerId, categoryId,
+    });
+    if (tolak) redirect(`/pos/transaksi?error=${encodeURIComponent(tolak)}`);
+    voucherVal = potonganVoucher(dasarVoucher, v as VoucherRow);
+  }
+
+  const total = posNetTotal(subtotal, potonganPromo, diskonKategori, discount, voucherVal);
   const invoiceSubtotal = roundPosMoney(subtotal);
   const invoiceDiscount = posNetTotal(invoiceSubtotal, total);
   const invoiceCategoryDiscount = Math.min(roundPosMoney(diskonKategori), invoiceDiscount);
@@ -151,6 +190,28 @@ export async function checkoutSale(formData: FormData) {
     payment = resolvePosPayments({ total: quote.total, method: metode, bayar, payments: metode === "Split" ? quote.parts : [] });
   } catch (error) {
     redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
+  }
+
+  // HPP disimpan per baris agar finalisasi database membukukan biaya FIFO riil.
+  const { data: wh } = await supabase
+    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
+
+  // P03: back office boleh menjual di bawah HPP, tetapi hanya setelah peringatan yang
+  // menyebut barangnya dikonfirmasi. Perkiraan HPP = FIFO gudang saat ini.
+  const hppGoods = rows.filter(row => row.item_id && row.item_type === "Persediaan");
+  if (wh && hppGoods.length > 0) {
+    let warnings: HppWarning[] = [];
+    try {
+      const lines = rows.map((row, index) => ({ ...row, promo_discount: row.item_id ? (promoPerLine.get(index)?.potongan ?? 0) : 0 }));
+      const costs = await quoteSaleLineCosts(supabase, wh.id, rows.map(row => ({
+        item_id: row.item_id, item_type: row.item_type, qty: Number(row.qty), faktor: row.faktor,
+      })));
+      warnings = hppWarningsFrom(priceFloorFindings(lines, total, costs));
+    } catch (error) {
+      // Peringatan tidak boleh menghentikan transaksi bila HPP tidak terbaca; FIFO riil tetap dibukukan.
+      console.error("[pos/transaksi] perkiraan HPP gagal dibaca:", error);
+    }
+    if (!hppWarningConfirmed(formData, warnings)) redirect(`/pos/transaksi?${hppWarningQuery(warnings)}`);
   }
 
   // §2.1: tautkan ke shift kasir yang sedang terbuka (kalau ada) untuk rekonsiliasi kas.
@@ -185,16 +246,16 @@ export async function checkoutSale(formData: FormData) {
       checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
       cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
       cashier_name: cashier.name, salesperson_id: cashier.employeeId,
+      // Kode kampanye dicatat apa adanya; batas pemakaiannya dijaga database (dihitung
+      // hanya dari struk yang lunas, void membebaskan kuota) — sama dengan /kasir.
+      ...(kampanye ? { voucher_code: voucherCode, campaign_code: kampanye.code } : {}),
     })
     .select("id").single();
   if (saleErr || !sale) {
     await resumePosCheckout(supabase, user.id, checkout, "backoffice");
-    redirect(`/pos/transaksi?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+    redirect(`/pos/transaksi?error=${encodeURIComponent(pesanGagalKampanye(saleErr?.message) ?? saleErr?.message ?? "Gagal simpan transaksi")}`);
   }
 
-  // HPP disimpan per baris agar finalisasi database membukukan biaya FIFO riil.
-  const { data: wh } = await supabase
-    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
   let checkoutFailure: string | null = null;
   try {
     const pendingLines: { id: string; line: typeof rows[number] }[] = [];
@@ -236,10 +297,14 @@ export async function checkoutSale(formData: FormData) {
     await resumePosCheckout(supabase, user.id, checkout, "backoffice", sale.id);
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
     if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
-    redirect(`/pos/transaksi?error=${encodeURIComponent(finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
+    redirect(`/pos/transaksi?error=${encodeURIComponent(pesanGagalKampanye(finalizationErr?.message) ?? finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
   }
 
   if (customerId) await recomputeCustomerTier(supabase, customerId);
+
+  // Progres quest staf (termasuk customer baru Q01) — best effort, tidak mem-block
+  // pembayaran; yang gagal diulang otomatis pada checkout berikutnya.
+  await processQuestProgress(supabase, { saleId: sale.id });
 
   redirect(`/pos/struk/${sale!.id}?draft_done=${encodeURIComponent(checkout.key)}`);
 }

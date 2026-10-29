@@ -9,6 +9,7 @@ import type { ServicePerformersSnapshot } from "./service-performers";
 // yang ternyata tidak sama dengan yang tercetak di struk.
 
 import { bolehBayar } from "./tindakan";
+import { readConsentStay } from "./inpatient-stay";
 import { bacaAturanConsent } from "./consent-server";
 import { tambahPpn, type PajakSettings } from "./pajak";
 import { hitungPromoKeranjang, loadPromoAktif } from "./promo-hitung";
@@ -16,7 +17,7 @@ import { diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang } from "./har
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, voucherBerlaku, type VoucherRow } from "./voucher";
 import { hariIniWIB } from "./tanggal";
 import { loadActiveVouchers } from "./voucher-loader";
-import { bacaKode, bacaKodeKampanye, loadKodeKampanyeAktif, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "./kode-kampanye";
+import { bacaKode, bacaKodeKampanye, cekVoucherLewatKampanye, loadKodeKampanyeAktif, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "./kode-kampanye";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -152,6 +153,10 @@ export type Potongan = {
   voucherCode?: string | null;
   /** Kode kampanye yang diketik (C05); null bila bukan kode kampanye. */
   campaignCode?: string | null;
+  /** Rombongan (C05): promo kode kampanye benar-benar memotong tagihan ini. */
+  promoKampanyeTerpakai?: boolean;
+  /** Rombongan (C05): promo kode kampanye berlaku di cabang ini hari ini. */
+  promoKampanyeTersedia?: boolean;
 };
 
 const KOSONG: Potongan = { promo: 0, voucher: 0, golongan: 0, total: 0, tolakVoucher: null };
@@ -172,6 +177,11 @@ export async function hitungPotonganKlinik(
     customerId: string | null;
     rows: BarisPotongan[];
     voucherCode?: string | null;
+    /**
+     * Rombongan (C05): promo milik kode kampanye ikut dipotong di tagihan hewan ini tanpa
+     * menolak hewan yang tidak kena promonya — kodenya diperiksa sekali untuk seluruh rombongan.
+     */
+    promoKampanyeId?: string | null;
     /** False only when replaying a committed invoice without a pricing version. */
     groupServices?: boolean;
   },
@@ -181,7 +191,8 @@ export async function hitungPotonganKlinik(
   const kodeMasuk = normalizeKode(opts.voucherCode) || null;
   // Kode kampanye (C05) diterjemahkan ke voucher/promo tujuannya.
   const kampanye = await bacaKodeKampanye(supabase, kodeMasuk);
-  const terbaca = bacaKode(kodeMasuk, kampanye ? [kampanye] : []);
+  const dibaca = bacaKode(kodeMasuk, kampanye ? [kampanye] : []);
+  const terbaca = { ...dibaca, promoId: dibaca.promoId ?? opts.promoKampanyeId ?? null };
   const kodeHasil = { voucherCode: terbaca.voucherCode, campaignCode: kampanye?.code ?? null };
   if (subtotal <= 0) return { ...KOSONG, ...kodeHasil };
 
@@ -199,8 +210,9 @@ export async function hitungPotonganKlinik(
   const pricingRows = opts.groupServices === false ? pricingSource : aggregateServiceLines(pricingSource);
   const potonganPromo = hitungPromoKeranjang(promoAktif, pricingRows);
   const promo = potonganPromo.reduce((a, p) => a + Number(p.potongan), 0);
-  const tolakKampanye = kampanye ? pesanKampanyeDitolak(kampanye,
-    promoAktif.some((p) => p.id === terbaca.promoId), potonganPromo.some((p) => p.promoId === terbaca.promoId)) : null;
+  const promoKampanyeTersedia = !!terbaca.promoId && promoAktif.some((p) => p.id === terbaca.promoId);
+  const promoKampanyeTerpakai = !!terbaca.promoId && potonganPromo.some((p) => p.promoId === terbaca.promoId);
+  const tolakKampanye = kampanye ? pesanKampanyeDitolak(kampanye, promoKampanyeTersedia, promoKampanyeTerpakai) : null;
 
   const afterPromo = Math.max(0, subtotal - promo);
 
@@ -231,8 +243,12 @@ export async function hitungPotonganKlinik(
   // Voucher dihitung dari nilai setelah promo, sama urutannya dengan §6 di POS.
   let voucher = 0;
   let tolakVoucher: string | null = null;
+  // Voucher milik kampanye aktif hanya berlaku lewat kode kampanyenya (keputusan pemilik 29 Okt).
+  const tolakMentah = kampanye ? null : await cekVoucherLewatKampanye(supabase, kode);
   if (tolakKampanye) {
     tolakVoucher = tolakKampanye;
+  } else if (tolakMentah) {
+    tolakVoucher = tolakMentah;
   } else if (kode) {
     const { data: v } = await supabase
       .from("vouchers")
@@ -250,7 +266,8 @@ export async function hitungPotonganKlinik(
   // Total potongan tidak boleh melebihi tagihan — kalau lewat, DPP jadi minus dan
   // jurnal pendapatannya ikut salah.
   const total = Math.min(subtotal, promo + golongan + voucher);
-  return { promo, voucher, golongan, total, tolakVoucher, ...kodeHasil };
+  return { promo, voucher, golongan, total, tolakVoucher, ...kodeHasil,
+    ...(opts.promoKampanyeId ? { promoKampanyeTerpakai, promoKampanyeTersedia } : {}) };
 }
 
 export type BekalPotongan = {
@@ -359,7 +376,8 @@ async function gerbangConsent(supabase: AnyClient, visitId: string): Promise<boo
     mr
       ? supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mr.id)
       : Promise.resolve({ data: [] as { jenis: string; kategori: string | null }[] }),
-    supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle(),
+    // K14: hanya rawat inap sakit yang menuntut persetujuan Rawat Inap; pet hotel tidak.
+    readConsentStay(supabase, visitId),
     supabase.from("consents").select("status").eq("visit_id", visitId),
     bacaAturanConsent(supabase),
   ]);

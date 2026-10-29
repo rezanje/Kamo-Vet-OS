@@ -78,6 +78,7 @@ const SOURCE_ROUTES:Record<string,(id:string)=>string|null>={
  sales_invoices:id=>relatedDocumentHref('sales-invoice',id),
  sales_orders:id=>`/penjualan/pesanan/${id}`,
  sales_returns:id=>`/penjualan/retur/${id}`,
+ wholesale_returns:id=>relatedDocumentHref('sales-return-wholesale',id),
  sales:id=>`/pos/struk/${id}`,
 };
 export const activitySourceKey=(entity:string,id:string)=>JSON.stringify([entity,id]);

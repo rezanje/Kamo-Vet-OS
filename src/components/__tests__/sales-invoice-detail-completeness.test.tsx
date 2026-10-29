@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   failReceiptSecondPage: false, omitInvoiceList: false, ancestorCount: 1,
-  correctionsEnabled: false, failCorrectionBatch: false,
+  correctionsEnabled: false, failCorrectionBatch: false, returnsEnabled: false,
   receiptPages: [] as number[], correctionBatches: [] as number[],
 }));
 const id = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -14,7 +14,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     let to = 999;
     let selectedIds: string[] = [];
     const invoice = { id: id(1), no_faktur: "FJ.FICTION", order_id: state.ancestorCount > 1 ? id(9000) : null,
-      tanggal: "2026-10-24", jatuh_tempo: "2026-11-24", total: 1000, carried_paid: 0,
+      tanggal: "2026-10-24", jatuh_tempo: "2026-11-24", total: 1000, carried_paid: 0, returned_ar: state.returnsEnabled ? 300 : 0,
       revision: 0, status: "aktif", customers: null };
     const q = {
       select: () => q, eq: () => q, order: () => q,
@@ -28,6 +28,10 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
             id: id(n + 100), invoice_id: id(1), no_terima: `RC.FICTION.${n}`, tanggal: "2026-10-24",
             jumlah: 1, dari_uang_muka: 0, advance_id: null, advance: null, metode: "Transfer", journal_id: null,
           })) : [];
+          return resolve({ data: rows.slice(from, to + 1), count: rows.length, error: null });
+        }
+        if (table === "wholesale_returns") {
+          const rows = state.returnsEnabled ? [{ id: id(7000), no_retur: "RJG.FICTION", tanggal: "2026-10-25", total: 300, ar_reduction: 300, customer_credit: 0, status: "posted", voided_on: null }] : [];
           return resolve({ data: rows.slice(from, to + 1), count: rows.length, error: null });
         }
         if (table === "wholesale_invoice_corrections") {
@@ -54,7 +58,7 @@ import Detail from "@/app/(app)/penjualan/faktur/[id]/page";
 
 beforeEach(() => {
   state.failReceiptSecondPage = false; state.omitInvoiceList = false; state.ancestorCount = 1;
-  state.correctionsEnabled = false; state.failCorrectionBatch = false;
+  state.correctionsEnabled = false; state.failCorrectionBatch = false; state.returnsEnabled = false;
   state.receiptPages = []; state.correctionBatches = [];
 });
 
@@ -88,4 +92,13 @@ it("includes a unique correction per predecessor across more than 1,000 invoices
 it("refuses a partial customer credit amount when a later correction batch fails", async () => {
   state.ancestorCount = 51; state.correctionsEnabled = true; state.failCorrectionBatch = true;
   await expect(Detail({ params: Promise.resolve({ id: id(1) }), searchParams: Promise.resolve({}) })).rejects.toThrow(/belum|tidak dapat/);
+});
+
+it("links its wholesale returns by stored ID and nets their receivable reduction", async () => {
+  state.returnsEnabled = true;
+  const html = renderToStaticMarkup(await Detail({ params: Promise.resolve({ id: id(1) }), searchParams: Promise.resolve({}) }));
+  expect(html).toContain(`href="/penjualan/retur-grosir/${id(7000)}?from=%2Fpenjualan%2Ffaktur%2F${id(1)}"`);
+  expect(html).toContain("RJG.FICTION");
+  expect(html).toContain("Dikurangi retur Rp 300");
+  expect(html).toContain("Sisa piutang Rp 199");
 });

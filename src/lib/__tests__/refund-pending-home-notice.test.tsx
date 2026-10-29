@@ -2,7 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ role: "FINANCE", pending: false, rpcCalls: [] as { name: string; args: unknown }[] }));
+const state = vi.hoisted(() => ({ role: "FINANCE", pending: false, clinicPending: false, rpcCalls: [] as { name: string; args: unknown }[] }));
 vi.mock("next/link", () => ({ default: ({ children, prefetch, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { prefetch?: boolean }) => <a {...props} data-prefetch={prefetch ? "true" : undefined}>{children}</a> }));
 vi.mock("@/lib/ledger", () => ({ getAccountBalances: async () => [] }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
@@ -15,13 +15,14 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   },
   rpc: async (name: string, args: unknown) => {
     state.rpcCalls.push({ name, args });
-    return { data: state.pending ? [{ id: "pending-refund" }] : [], error: null };
+    const pending = name === "get_clinic_refund_requests" ? state.clinicPending : state.pending;
+    return { data: pending ? [{ id: "pending-refund" }] : [], error: null };
   },
 }) }));
 
 import KasBankPage from "@/app/(app)/kas-bank/page";
 
-beforeEach(() => { state.role = "FINANCE"; state.pending = false; state.rpcCalls = []; });
+beforeEach(() => { state.role = "FINANCE"; state.pending = false; state.clinicPending = false; state.rpcCalls = []; });
 
 it("shows an authorized finance user that a transfer refund is waiting", async () => {
   state.pending = true;
@@ -39,4 +40,11 @@ it("keeps the refund queue entry out of a cashier's module home", async () => {
   expect(html).not.toContain('href="/kas-bank/refund"');
   expect(html).not.toContain("Ada refund transfer menunggu");
   expect(state.rpcCalls).toEqual([]);
+});
+
+it("shows the waiting notice for a clinic transfer refund in the shared queue", async () => {
+  state.clinicPending = true;
+  const html = renderToStaticMarkup(await KasBankPage());
+  expect(html).toContain("Ada refund transfer menunggu");
+  expect(state.rpcCalls).toContainEqual({ name: "get_clinic_refund_requests", args: { p_invoice: null, p_office: true, p_status: "pending", p_offset: 0 } });
 });
