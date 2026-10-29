@@ -29,6 +29,9 @@ import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
 import { readCompleteList } from "@/lib/checked-list";
 import { cashierPriceFloorIssue, cashierStockCostEvents, quoteCashierLineCosts } from "@/lib/cashier-price-floor";
 import {
+  bacaAksesDiskonManual, barisDiskonManual, diskonBawaanBaris, PESAN_DISKON_MANUAL,
+} from "@/lib/akses-diskon";
+import {
   expandBarisGrup,
   kebutuhanStokCheckout,
   validasiKomponenGrup,
@@ -106,9 +109,12 @@ export async function checkoutKasir(formData: FormData) {
   // harga sendiri. Baris tanpa item_id (ketikan manual) tetap pakai harga yang diisi.
   const cartIds = [...new Set(rows.map((l) => l.item_id).filter(Boolean))];
   const masterBuyPrices = new Map<string, number>();
+  // Diskon default barang dibaca dari MASTER (temuan audit S-6): angka yang
+  // dikirim layar tidak pernah menentukan potongan bawaan sebuah baris.
+  const masterDefaultDiscount = new Map<string, number>();
   if (cartIds.length > 0) {
     const [{ data: itemsHarga }, hargaMap, unitMap] = await Promise.all([
-      supabase.from("items").select("id, nama:name, unit, item_type, tindakan_kategori, sell_price, buy_price, min_sell_qty, is_active").in("id", cartIds),
+      supabase.from("items").select("id, nama:name, unit, item_type, tindakan_kategori, sell_price, buy_price, min_sell_qty, default_discount, is_active").in("id", cartIds),
       loadHargaCabang(supabase, branchId, cartIds),
       // Faktor satuan WAJIB dari master: faktor palsu dari klien = stok terpotong
       // lebih sedikit daripada barang yang benar-benar keluar dari rak.
@@ -117,13 +123,16 @@ export async function checkoutKasir(formData: FormData) {
     type ItemHarga = {
       id: string; nama: string; unit: string; item_type: JenisKomponen;
       tindakan_kategori: string | null;
-      sell_price: number; buy_price: number; min_sell_qty: number; is_active: boolean;
+      sell_price: number; buy_price: number; min_sell_qty: number; default_discount: number; is_active: boolean;
     };
     const pusat = new Map(
       ((itemsHarga ?? []) as ItemHarga[])
         .map((i) => [i.id, i]),
     );
-    for (const item of pusat.values()) masterBuyPrices.set(item.id, Number(item.buy_price));
+    for (const item of pusat.values()) {
+      masterBuyPrices.set(item.id, Number(item.buy_price));
+      masterDefaultDiscount.set(item.id, Number(item.default_discount) || 0);
+    }
     const groupIds = [...new Set(rows
       .map((line) => line.item_id ? pusat.get(line.item_id) : undefined)
       .filter((item): item is ItemHarga => item?.item_type === "Grup")
@@ -226,6 +235,22 @@ export async function checkoutKasir(formData: FormData) {
       const pesan = kurangMin.map(({ p }) => `${p!.nama} minimal ${Number(p!.min_sell_qty)}`).join(", ");
       redirect(`${failureUrl}${encodeURIComponent(`Di bawah minimum jual: ${pesan}`)}`);
     }
+  }
+
+  // Diskon manual hanya untuk akun berwenang (keputusan pemilik 29 Okt 2026).
+  // Yang dihitung manual: potongan per baris yang bukan diskon default master,
+  // dan diskon nota yang diketik kasir. Promo, voucher, kode kampanye, dan
+  // diskon golongan tidak termasuk — semuanya dihitung server dari master.
+  const barisManual = new Set(rows.filter((l) =>
+    barisDiskonManual(l, masterDefaultDiscount.get(l.item_id ?? "") ?? 0)));
+  const adaDiskonManual = barisManual.size > 0 || diskon > 0;
+  if (adaDiskonManual && !(await bacaAksesDiskonManual(supabase, user.id))) {
+    redirect(`${failureUrl}${encodeURIComponent(PESAN_DISKON_MANUAL)}`);
+  }
+  // Baris tanpa diskon manual ditetapkan ULANG dari master, bukan dari layar.
+  for (const l of rows) {
+    if (barisManual.has(l)) continue;
+    Object.assign(l, diskonBawaanBaris(masterDefaultDiscount.get(l.item_id ?? "") ?? 0));
   }
 
   try {
@@ -453,6 +478,10 @@ export async function checkoutKasir(formData: FormData) {
       payment_plan: quote.parts,
       checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
       poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
+      // Rincian potongan disimpan terpisah supaya database bisa memeriksa bahwa
+      // kolom `discount` yang gelondongan tidak menyembunyikan diskon manual.
+      manual_discount: roundPosMoney(diskon), voucher_discount: roundPosMoney(voucherVal),
+      manual_discount_by: adaDiskonManual ? user.id : null,
       ...(campaignCode ? { campaign_code: campaignCode } : {}),
       cashier_id: user?.id ?? null, shift_id: shift!.id,
       salesperson_id: salespersonId, cashier_name: cashier.name,

@@ -20,6 +20,7 @@ import { isCompletedSale } from "@/lib/sale-payment-reporting";
 import { readCompleteList } from "@/lib/checked-list";
 import { loadActiveVouchers } from "@/lib/voucher-loader";
 import { loadKodeKampanyeAktif } from "@/lib/kode-kampanye";
+import { bacaAksesDiskonManual } from "@/lib/akses-diskon";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -267,6 +268,7 @@ export default async function KasirPage({
       aturanDiskon={aturanPerGolongan}
       infoBarang={Object.fromEntries(infoBarang)}
       cashierName={(await loggedInCashier(supabase, user.id, shift.branch_id)).name}
+      bolehDiskonManual={await bacaAksesDiskonManual(supabase, user.id)}
       salespeople={salespeople}
       error={error}
     />

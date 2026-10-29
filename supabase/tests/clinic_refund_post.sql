@@ -10,6 +10,10 @@ select 'Tunai','d2000000-0000-4000-8000-000000000001',id from public.cash_accoun
 insert into auth.users(id,raw_user_meta_data)values('d1000000-0000-4000-8000-000000000004','{"full_name":"Finance Test"}'),('d1000000-0000-4000-8000-000000000005','{"full_name":"Staf tanpa shift"}');
 update public.profiles set role='FINANCE' where id='d1000000-0000-4000-8000-000000000004';
 update public.profiles set role='STAFF' where id='d1000000-0000-4000-8000-000000000005';
+-- Diskon manual (migrasi 20261031220000): fixture ini sengaja memasang potongan,
+-- jadi peran STAFF diberi hak diskon manual supaya yang diuji tetap jalur aslinya.
+insert into public.role_capabilities(role,manual_discount) values('STAFF',true)
+ on conflict(role) do update set manual_discount=true;
 insert into public.user_branches(user_id,branch_id)values('d1000000-0000-4000-8000-000000000004','d2000000-0000-4000-8000-000000000001'),('d1000000-0000-4000-8000-000000000005','d2000000-0000-4000-8000-000000000001');
 create function pg_temp.ok(c boolean,msg text) returns void language plpgsql as $$begin if c is not true then raise exception 'FAILED: %',msg;end if;end$$;
 create function pg_temp.reject(q text,msg text) returns void language plpgsql as $$begin

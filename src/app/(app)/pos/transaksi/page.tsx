@@ -8,6 +8,7 @@ import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
 import { readCompleteList } from "@/lib/checked-list";
 import { groomingDoctorRequired, isGroomingOutlet, isGroomingService } from "@/lib/grooming-requirements";
+import { bacaAksesDiskonManual } from "@/lib/akses-diskon";
 
 type CatalogItem = { id: string; code: string; name: string; item_type: string; tindakan_kategori: string | null; unit: string; sell_price: number; target_species: string };
 
@@ -121,6 +122,7 @@ export default async function TransaksiPage({
         promoPerCabang={Object.fromEntries(promoEntries)}
         aturanDiskon={Object.fromEntries(discountEntries)}
         infoBarang={Object.fromEntries(itemInfo)}
+        bolehDiskonManual={user ? await bacaAksesDiskonManual(supabase, user.id) : false}
       />
     </>
   );

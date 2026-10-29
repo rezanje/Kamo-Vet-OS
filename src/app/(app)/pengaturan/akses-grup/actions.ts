@@ -94,7 +94,9 @@ export async function simpanKemampuanPeran(form: FormData) {
   const { error } = await client.from("role_capabilities").upsert({
     role, all_branches: form.get("all_branches") === "on",
     create_accounts: form.get("create_accounts") === "on",
+    // Diskon manual (keputusan pemilik 29 Okt 2026) — lihat lib/akses-diskon.
+    manual_discount: form.get("manual_discount") === "on",
   }, { onConflict: "role" });
   if (error) gagal("Hak akses gagal disimpan.");
-  redirect(`${BASE}?success=${encodeURIComponent(`Hak cabang dan akun ${role} disimpan.`)}&peran=${role}`);
+  redirect(`${BASE}?success=${encodeURIComponent(`Hak cabang, akun, dan diskon ${role} disimpan.`)}&peran=${role}`);
 }

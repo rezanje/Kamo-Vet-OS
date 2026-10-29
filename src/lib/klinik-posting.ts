@@ -49,6 +49,12 @@ export type ClinicInvoiceInput = {
   /** Kode kampanye yang diketik (C05); batas pemakaiannya dijaga database. */
   campaign_code?: string | null;
   salesperson_id: string | null;
+  /** Potongan yang DIKETIK petugas; database menolak bila akunnya tidak berwenang. */
+  manual_discount?: number;
+  /** Promo + voucher + diskon golongan + poin — seluruhnya dihitung server. */
+  auto_discount?: number;
+  /** Akun yang memberi diskon manual (hanya terisi bila diskonnya di atas nol). */
+  manual_discount_by?: string | null;
 };
 
 export type ClinicPostInvoiceParams = {

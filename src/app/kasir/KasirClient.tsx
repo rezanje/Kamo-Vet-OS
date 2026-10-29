@@ -10,6 +10,7 @@ import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
+import { PESAN_DISKON_MANUAL } from "@/lib/akses-diskon";
 import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { bacaKode, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
 import { type PromoHitung } from "@/lib/promo-hitung";
@@ -98,7 +99,7 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 export function KasirClient({
   branchName, items, customers, vouchers, kodeKampanye = [], hariIni, draftContext, shiftId, promos = [], promoHitung = [],
   aturanDiskon = {}, infoBarang = {}, salespeople = [], cashierName = "Akun login", error, replacementDraft, replacementId,
-  groomingDoctorRequired = false, groomingApplies = true,
+  groomingDoctorRequired = false, groomingApplies = true, bolehDiskonManual = true,
 }: {
   draftContext?: string; shiftId?: string; replacementDraft?: KasirDraft; replacementId?: string;
   branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; kodeKampanye?: KodeKampanye[]; hariIni: string;
@@ -108,6 +109,8 @@ export function KasirClient({
   salespeople?: PilihanPenjual[]; cashierName?: string;
   groomingDoctorRequired?: boolean;
   groomingApplies?: boolean;
+  /** Akun berwenang memberi diskon manual? Server menolak lagi kalau tidak. */
+  bolehDiskonManual?: boolean;
   error?: string;
 }) {
   const [q, setQ] = useState("");
@@ -674,13 +677,18 @@ export function KasirClient({
                           <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers} staff={salespeople}
                             grooming={groomingApplies && l.item_type === "Jasa" && l.tindakanKategori === "Grooming"} doctorRequired={groomingDoctorRequired}
                             onChange={next => setCart(rows => rows.map(row => kunciBaris(row) === k ? { ...row, service_performers: next } : row))} />
-                          {/* Addendum §6: potongan per item (nominal / persen) */}
+                          {/* Addendum §6: potongan per item (nominal / persen).
+                              Tanpa hak diskon manual kolomnya hanya bisa dibaca —
+                              diskon default barang tetap tampil apa adanya. */}
                           <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}>
                             <span style={{ fontSize: 8.5, color: "var(--td)" }}>Pot.</span>
                             <NumberInput className="fi" type="number" min={0} value={l.item_discount_value || ""} placeholder="0"
+                              readOnly={!bolehDiskonManual} aria-readonly={!bolehDiskonManual}
+                              title={bolehDiskonManual ? undefined : PESAN_DISKON_MANUAL}
                               onChange={(e) => setPot(k, Number(e.target.value))}
                               style={{ width: 52, padding: "1px 4px", fontSize: 9, textAlign: "right" }} />
-                            <button type="button" onClick={() => togglePotType(k)} className="btn-def" style={{ padding: "0px 5px", fontSize: 8.5 }}>
+                            <button type="button" onClick={() => togglePotType(k)} className="btn-def" disabled={!bolehDiskonManual}
+                              style={{ padding: "0px 5px", fontSize: 8.5 }}>
                               {l.item_discount_type === "percent" ? "%" : "Rp"}
                             </button>
                           </div>
@@ -750,10 +758,16 @@ export function KasirClient({
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0", gap: 6 }}>
               <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Diskon</span>
               <span style={{ display: "flex", gap: 4 }}>
-                <NumberInput className="fi" type="number" min={0} step="0.01" value={diskon || ""} onChange={(e) => setDiskon(Number(e.target.value))} placeholder="0" style={{ width: 90, padding: "3px 7px", textAlign: "right", fontSize: 11 }} />
-                <button type="button" onClick={() => setDiskonPct(!diskonPct)} className="btn-def" style={{ padding: "2px 8px", fontSize: 10 }}>{diskonPct ? "%" : "Rp"}</button>
+                <NumberInput className="fi" type="number" min={0} step="0.01" value={diskon || ""} onChange={(e) => setDiskon(Number(e.target.value))} placeholder="0"
+                  readOnly={!bolehDiskonManual} aria-readonly={!bolehDiskonManual}
+                  title={bolehDiskonManual ? undefined : PESAN_DISKON_MANUAL}
+                  style={{ width: 90, padding: "3px 7px", textAlign: "right", fontSize: 11 }} />
+                <button type="button" onClick={() => setDiskonPct(!diskonPct)} className="btn-def" disabled={!bolehDiskonManual} style={{ padding: "2px 8px", fontSize: 10 }}>{diskonPct ? "%" : "Rp"}</button>
               </span>
             </div>
+            {!bolehDiskonManual && (
+              <div style={{ fontSize: 9.5, color: "var(--tm)", marginTop: -2, marginBottom: 4 }}>{PESAN_DISKON_MANUAL}</div>
+            )}
             {diskonVal > 0 && <Row k="" v={`- ${rp(diskonVal)}`} red />}
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0" }}>

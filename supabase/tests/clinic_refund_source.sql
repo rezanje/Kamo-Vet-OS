@@ -20,6 +20,10 @@ end$$;
 reset role;
 insert into auth.users(id,raw_user_meta_data)values('d1000000-0000-4000-8000-000000000003','{"full_name":"Unassigned fictional actor"}');
 update profiles set role='STAFF'where id='d1000000-0000-4000-8000-000000000003';
+-- Diskon manual (migrasi 20261031220000): fixture ini sengaja memasang potongan,
+-- jadi peran STAFF diberi hak diskon manual supaya yang diuji tetap jalur aslinya.
+insert into public.role_capabilities(role,manual_discount) values('STAFF',true)
+ on conflict(role) do update set manual_discount=true;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000003',true);
 do $$begin
