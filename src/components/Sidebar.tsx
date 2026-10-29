@@ -6,6 +6,7 @@ import { MODULES } from "@/lib/nav";
 import { bolehBukaPath, modulDiizinkan, type AturanTersimpan } from "@/lib/akses";
 import { logout } from "@/app/login/actions";
 import { useEffect, useState } from "react";
+import { moduleHref, rememberPath } from "@/lib/menu-last-path";
 
 type Props = {
   branches: { code: string; name: string }[];
@@ -31,6 +32,23 @@ function activeModule(pathname: string): string {
 export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  // Halaman terakhir per modul (ikut filter di URL) — dibaca setelah mount supaya
+  // markup server dan klien sama; sebelum itu menu memakai halaman utama modul.
+  const [store, setStore] = useState<Storage | null>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try { setStore(window.sessionStorage); } catch { setStore(null); }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    if (store) rememberPath(store, pathname, window.location.search);
+  }, [store, pathname]);
+  // Filter laporan berubah lewat query string tanpa ganti path; simpan posisi terkini
+  // persis saat pengguna meninggalkan modul lewat menu.
+  const rememberCurrent = () => {
+    if (store) rememberPath(store, window.location.pathname, window.location.search);
+  };
   useEffect(() => {
     const timer = window.setTimeout(() => setCollapsed(window.localStorage.getItem("vetos:sidebar-collapsed") === "1"), 0);
     return () => window.clearTimeout(timer);
@@ -89,7 +107,8 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
           return (
             <Link
               key={m.id}
-              href={m.href}
+              href={moduleHref(store, m.id, m.href, active)}
+              onClick={rememberCurrent}
               prefetch={false}
               className={`sbi${active === m.id ? " on" : ""}`}
               aria-current={active === m.id ? "page" : undefined}
