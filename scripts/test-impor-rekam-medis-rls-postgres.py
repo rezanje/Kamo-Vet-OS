@@ -378,6 +378,8 @@ set session_replication_role = origin;""")
     ok, msg = d.try_(f"set role anon;\nselect kamo_import.simpan_riwayat_bersama('{{}}'::jsonb, null, null);")
     record('D1 anon tidak bisa memanggil penulis', not ok and 'permission denied' in msg, msg)
 
+    branch_collision(d)
+
     # ---------------- triggers under the writer role
     act = d.last(f"select count(*)||'/'||count(*) filter (where actor_id='{OWNER}') from public.activity_log where row_entity='visits' "
                  f"and row_id=(select id::text from public.visits where legacy_source_key='wowo-test::langsung-ok')")
@@ -446,6 +448,70 @@ set session_replication_role = origin;""")
     for r in ('authenticator', 'authenticated', 'anon', 'service_role'):
         ok, msg = d.try_(f"set role {WRITER_ROLE};", user='authenticator') if r == 'authenticator' else d.try_(f"set role {r};\nset role {WRITER_ROLE};", user='authenticator')
         record(f'Gerbang: SET ROLE {WRITER_ROLE} dari sesi authenticator (sebagai {r}) ditolak', not ok, msg)
+
+
+def branch_collision(d):
+    """A historical import stored WITH branch B (20260907160000) must not leak to, or be duplicated by, a caller
+    who cannot access B: no UUID/hash in any answer, nothing written, a generic hold. Authorized callers still
+    deduplicate against it (sudah_ada / bentrok), and shared NULL history is unaffected (cases above)."""
+    cust, pet, vid = uid('cust-kolisi-b'), uid('pet-kolisi-b'), uid('visit-kolisi-b')
+    # Structured key (owner::phone::patient::sheet) so the 08/+62 equivalent lookup is exercised too.
+    key08 = 'fiktif kolisi::08000000077::kucing kolisi::15012026'
+    key62 = 'fiktif kolisi::628000000077::kucing kolisi::15012026'
+    row08 = base.row(key08, owner='Fiktif Kolisi', phone='08000000077', patient='Kucing Kolisi')
+    row62 = dict(row08, source_key=key62, phone='628000000077')
+    d.sql(f"""insert into public.customers(id,name,phone) values ('{cust}','Fiktif Kolisi','08000000077');
+insert into public.pets(id,customer_id,name) values ('{pet}','{cust}','Kucing Kolisi');
+insert into public.visits(id,branch_id,customer_id,pet_id,poli,status,legacy_source_key,legacy_source_hash)
+ values ('{vid}','{BR_B}','{cust}','{pet}','Poli Umum','Selesai',{q(key08)},public.import_legacy_row_hash({lit(row08)}));""")
+    secret_hash = d.last(f"select legacy_source_hash from public.visits where id='{vid}'")
+    count_sql = f"select count(*) from public.visits where public.import_legacy_source_key_canonical(legacy_source_key) = public.import_legacy_source_key_canonical({q(key08)})"
+
+    def leaks(text):
+        return vid in text or secret_hash in text
+
+    d.sql("insert into public.role_capabilities(role, all_branches, create_accounts) values ('ADMIN', false, false) "
+          "on conflict(role) do update set all_branches=false")
+    for label, r in (('jejak persis', row08), ('jejak setara +62', row62)):
+        ok, out = d.try_(actor(f"select coalesce(jsonb_agg(t), '[]') from kamo_import.cari_jejak({q(r['source_key'])}, {q(r['phone'])}) t;", ADMIN_A, BR_A))
+        record(f'Kolisi cabang B ({label}), ADMIN_A all_branches=false header A: cari_jejak tanpa UUID/sidik B, hanya tanda terkunci',
+               ok and not leaks(out) and json.loads(out) == [{'visit_id': None, 'existing_hash': None, 'terkunci': True}], out[:160])
+        ok, out = d.try_(actor(f"select kamo_import.simpan_riwayat_bersama({lit(r)}, '{cust}', '{pet}');", ADMIN_A, BR_A))
+        record(f'Kolisi cabang B ({label}): penulis langsung ditolak generik, tanpa UUID/sidik, tidak menulis',
+               not ok and 'tidak bisa diakses' in out and not leaks(out) and d.last(count_sql) == '1', out[:160])
+        ok, out = d.try_(actor(f"select {base.per_row_sql(r)};", ADMIN_A, BR_A))
+        record(f'Kolisi cabang B ({label}): RPC per baris ditolak generik, tanpa UUID/sidik, tidak menulis',
+               not ok and 'tidak bisa diakses' in out and not leaks(out) and d.last(count_sql) == '1', out[:160])
+        ok, out = d.try_(actor(f"select public.import_legacy_medical_records_bulk({lit([r])});", ADMIN_A, BR_A))
+        got = (json.loads(out) if ok else [{}])[0]
+        record(f'Kolisi cabang B ({label}): RPC massal ditahan generik, visit_id kosong, tanpa UUID/sidik, tidak menulis',
+               ok and got.get('status') == 'ditahan' and got.get('visit_id') is None and 'tidak bisa diakses' in (got.get('reason') or '')
+               and not leaks(out) and d.last(count_sql) == '1', out[:200])
+    # Changed content must not reveal more (no "bentrok" vs "belum terbukti" distinction) either.
+    ok, out = d.try_(actor(f"select public.import_legacy_medical_records_bulk({lit([dict(row08, diagnosis='Isi lain')])});", ADMIN_A, BR_A))
+    got = (json.loads(out) if ok else [{}])[0]
+    record('Kolisi cabang B, isi berbeda: tetap alasan generik yang sama (tidak membedakan bentrok/belum terbukti)',
+           ok and 'tidak bisa diakses' in (got.get('reason') or '') and 'bentrok' not in (got.get('reason') or '') and not leaks(out), out[:200])
+    # OWNER with header A cannot access B either (header scopes the request): generic hold, not a duplicate.
+    ok, out = d.try_(actor(f"select public.import_legacy_medical_records_bulk({lit([row08])});", OWNER, BR_A))
+    got = (json.loads(out) if ok else [{}])[0]
+    record('Kolisi cabang B, OWNER header A: ditahan generik, tidak menulis', ok and got.get('status') == 'ditahan' and not leaks(out)
+           and d.last(count_sql) == '1', out[:200])
+
+    # Authorized callers keep historical-key deduplication against B.
+    for label, who, hdr, cap in (('OWNER header B', OWNER, BR_B, None), ('OWNER tanpa header', OWNER, None, None),
+                                 ('ADMIN_A all_branches=true tanpa header', ADMIN_A, None, 'true')):
+        if cap:
+            d.sql(f"insert into public.role_capabilities(role, all_branches, create_accounts) values ('ADMIN', {cap}, false) "
+                  "on conflict(role) do update set all_branches=excluded.all_branches")
+        out = json.loads(d.last(actor(f"select public.import_legacy_medical_records_bulk({lit([row08, row62])});", who, hdr)))
+        same = d.try_(actor(f"select {base.per_row_sql(row62)};", who, hdr))
+        changed = json.loads(d.last(actor(f"select public.import_legacy_medical_records_bulk({lit([dict(row08, diagnosis='Isi lain')])});", who, hdr)))
+        record(f'Kolisi cabang B, berhak ({label}): massal sudah_ada kunjungan B (persis & +62), per baris kunjungan B, isi beda bentrok; tidak menulis',
+               [x['status'] for x in out] == ['sudah_ada', 'sudah_ada'] and all(x['visit_id'] == vid for x in out)
+               and same == (True, vid) and changed[0]['status'] == 'ditahan' and 'bentrok' in (changed[0]['reason'] or '')
+               and d.last(count_sql) == '1', f"{[x['status'] for x in out]} per_row={same[1][:40]} changed={changed[0]['status']}")
+    d.sql("delete from public.role_capabilities where role='ADMIN'")
 
 
 def concurrency(d, header):

@@ -112,6 +112,13 @@ describe("migrasi penulis riwayat bersama (invarian teks; perilaku diuji di harn
     expect(SQL).not.toContain("p_row ->> 'legacy_source_hash'");
     expect(SQL).not.toMatch(/grant insert \([^)]*\b(branch_id|continued_from_visit_id|continued_from_record_id)\b/);
   });
+  it("pencarian jejak tidak membocorkan kecocokan di cabang yang tidak terjangkau dan semua jalur menahannya", () => {
+    expect(SQL).toContain("where v.branch_id is not null and public.user_can_access_branch(v.branch_id) is not true");
+    expect(SQL).toContain("return query select null::uuid, null::text, true;");
+    // Penulis, RPC per baris, dan kedua jalur RPC massal memeriksa tanda terkunci sebelum apa pun.
+    expect(SQL.match(/\n\s+if v_terkunci then\n/g) ?? []).toHaveLength(4);
+    expect(SQL).toContain("from kamo_import.cari_jejak(v_key, v_phone) m;");
+  });
   it("D2 menutup semua tabel anak kunjungan yang bisa ditulis authenticated", () => {
     for (const tabel of ["visits", "medical_records", "prescription_items", "compounding_recipes", "compounding_ingredients", "consents",
       "inpatient_records", "inpatient_medications", "inpatient_daily_logs", "inpatient_status_log", "inpatient_med_doses",

@@ -170,17 +170,37 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- 4. Pencarian jejak (persis/setara) atas riwayat berjejak, dengan validasi
+-- 4. Pencarian jejak (persis/setara) atas riwayat berjejak, dengan validasi + otorisasi per baris
 -- ---------------------------------------------------------------------------
+-- Role penulis MELIHAT kunjungan berjejak bercabang (impor paling awal menyimpan cabang) supaya jejak
+-- yang sudah dipakai tidak pernah dianggap kosong lalu disimpan ganda. Yang BOLEH keluar ke pemanggil
+-- hanya kecocokan yang memang terjangkau pemanggil: riwayat bersama (cabang NULL) atau cabang yang lolos
+-- user_can_access_branch di konteks pemanggil (JWT + header cabang aktif, sama seperti RLS biasanya).
+-- Bila ADA kecocokan di cabang yang tidak terjangkau, jawabannya satu baris generik
+-- (visit_id NULL, existing_hash NULL, terkunci true): tanpa UUID, sidik, cabang, atau jumlah kecocokan;
+-- pemanggil wajib menahan baris itu (tidak menyimpan, tidak menimpa).
+create function kamo_import.alasan_jejak_tidak_terjangkau() returns text
+language sql immutable security definer set search_path = '' as $$
+  select 'Jejak sumber ini sudah tercatat pada riwayat yang tidak bisa diakses dari akun/cabang aktif ini. Tidak ada yang disimpan atau ditimpa. Impor ulang dari konteks yang berhak, atau minta pemilik memeriksanya.'::text
+$$;
+
 create function kamo_import.cari_jejak(p_source_key text, p_phone text)
-returns table(visit_id uuid, existing_hash text)
+returns table(visit_id uuid, existing_hash text, terkunci boolean)
 language plpgsql stable security definer set search_path = '' as $$
 begin
   perform kamo_import.pastikan_pengimpor();
   if p_source_key is null or btrim(p_source_key) = '' or length(p_source_key) > 500 then
     raise exception using errcode = '22023', message = 'Jejak sumber wajib diisi (maksimal 500 karakter)';
   end if;
-  return query select m.visit_id, m.existing_hash from public.import_legacy_source_match(p_source_key, p_phone) m;
+  if exists (
+    select 1 from public.import_legacy_source_match(p_source_key, p_phone) m
+    join public.visits v on v.id = m.visit_id
+    where v.branch_id is not null and public.user_can_access_branch(v.branch_id) is not true
+  ) then
+    return query select null::uuid, null::text, true;
+    return;
+  end if;
+  return query select m.visit_id, m.existing_hash, false from public.import_legacy_source_match(p_source_key, p_phone) m;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -198,6 +218,7 @@ declare
   v_matches int;
   v_visit uuid;
   v_existing_hash text;
+  v_terkunci boolean;
 begin
   perform kamo_import.pastikan_pengimpor();
   if p_row is null or jsonb_typeof(p_row) <> 'object' then
@@ -217,9 +238,12 @@ begin
   v_hash := public.import_legacy_row_hash(p_row);
 
   perform public.customer_identity_lock(v_phone);
-  select count(*)::int, (array_agg(m.visit_id))[1], (array_agg(m.existing_hash))[1]
-    into v_matches, v_visit, v_existing_hash
-  from public.import_legacy_source_match(v_key, v_phone) m;
+  select count(*)::int, (array_agg(m.visit_id))[1], (array_agg(m.existing_hash))[1], coalesce(bool_or(m.terkunci), false)
+    into v_matches, v_visit, v_existing_hash, v_terkunci
+  from kamo_import.cari_jejak(v_key, v_phone) m;
+  if v_terkunci then
+    raise exception using errcode = 'P0001', message = kamo_import.alasan_jejak_tidak_terjangkau();
+  end if;
   if v_matches > 1 then
     raise exception using errcode = 'P0001', message = public.import_legacy_source_ambiguous_reason();
   end if;
@@ -434,6 +458,7 @@ declare
   v_hash text;
   v_existing_hash text;
   v_matches int;
+  v_terkunci boolean;
   v_exact uuid[];
 begin
   if auth.uid() is null or not public.is_admin() then
@@ -463,9 +488,12 @@ begin
   perform public.customer_identity_lock(p_phone);
 
   -- Riwayat bersama tidak terlihat oleh pemanggil di cabang aktif: cari lewat penulis (tervalidasi).
-  select count(*)::int, (array_agg(m.visit_id))[1], (array_agg(m.existing_hash))[1]
-    into v_matches, v_visit_id, v_existing_hash
+  select count(*)::int, (array_agg(m.visit_id))[1], (array_agg(m.existing_hash))[1], coalesce(bool_or(m.terkunci), false)
+    into v_matches, v_visit_id, v_existing_hash, v_terkunci
   from kamo_import.cari_jejak(p_source_key, p_phone) m;
+  if v_terkunci then
+    raise exception using errcode = 'P0001', message = kamo_import.alasan_jejak_tidak_terjangkau();
+  end if;
   if v_matches > 1 then
     raise exception using errcode = 'P0001', message = public.import_legacy_source_ambiguous_reason();
   end if;
@@ -548,6 +576,7 @@ declare
   v_hash text;
   v_existing_hash text;
   v_matches int;
+  v_terkunci boolean;
   v_status text;
   v_reason text;
   v_hasil jsonb := '[]'::jsonb;
@@ -600,10 +629,14 @@ begin
         v_status := 'ditahan';
         v_reason := coalesce(v_reason, 'Isi riwayat tidak terbaca');
       else
-        select count(*)::int, (array_agg(m.visit_id))[1], (array_agg(m.existing_hash))[1]
-          into v_matches, v_visit, v_existing_hash
+        select count(*)::int, (array_agg(m.visit_id))[1], (array_agg(m.existing_hash))[1], coalesce(bool_or(m.terkunci), false)
+          into v_matches, v_visit, v_existing_hash, v_terkunci
         from kamo_import.cari_jejak(v_key, v_row->>'phone') m;
-        if v_matches > 1 then
+        if v_terkunci then
+          v_status := 'ditahan';
+          v_reason := kamo_import.alasan_jejak_tidak_terjangkau();
+          v_visit := null;
+        elsif v_matches > 1 then
           v_status := 'ditahan';
           v_reason := public.import_legacy_source_ambiguous_reason();
           v_visit := null;
@@ -642,10 +675,14 @@ begin
           exception when others then
             v_reason := sqlerrm;
             -- Kiriman lain mungkin baru saja menyimpan jejak yang sama/setara (pernyataan baru, snapshot baru).
-            select count(*)::int, (array_agg(m.visit_id))[1], (array_agg(m.existing_hash))[1]
-              into v_matches, v_visit, v_existing_hash
+            select count(*)::int, (array_agg(m.visit_id))[1], (array_agg(m.existing_hash))[1], coalesce(bool_or(m.terkunci), false)
+              into v_matches, v_visit, v_existing_hash, v_terkunci
             from kamo_import.cari_jejak(v_key, v_row->>'phone') m;
-            if v_matches > 1 then
+            if v_terkunci then
+              v_status := 'ditahan';
+              v_reason := kamo_import.alasan_jejak_tidak_terjangkau();
+              v_visit := null;
+            elsif v_matches > 1 then
               v_status := 'ditahan';
               v_reason := public.import_legacy_source_ambiguous_reason();
               v_visit := null;
@@ -689,6 +726,7 @@ grant execute on function public.import_legacy_medical_record_resolved(
 revoke all on all functions in schema kamo_import from public, anon, authenticated, service_role;
 grant execute on function
   kamo_import.pastikan_pengimpor(),
+  kamo_import.alasan_jejak_tidak_terjangkau(),
   kamo_import.cari_jejak(text, text),
   kamo_import.simpan_riwayat_bersama(jsonb, uuid, uuid),
   kamo_import.baca_hasil_impor(text[]),
@@ -727,7 +765,7 @@ declare
   w constant text := 'kamo_legacy_import_writer';
   v_role pg_roles%rowtype;
   v_bad text;
-  v_allowed_exec text[] := array['pastikan_pengimpor', 'cari_jejak', 'simpan_riwayat_bersama', 'baca_hasil_impor',
+  v_allowed_exec text[] := array['pastikan_pengimpor', 'alasan_jejak_tidak_terjangkau', 'cari_jejak', 'simpan_riwayat_bersama', 'baca_hasil_impor',
     'tanpa_cabang_kunjungan', 'tanpa_cabang_rekam', 'tanpa_cabang_racikan', 'tanpa_cabang_persetujuan',
     'tanpa_cabang_ranap', 'tanpa_cabang_obat_ranap', 'tanpa_cabang_booking', 'tanpa_cabang_tagihan'];
   v_d2_tables text[] := array['visits', 'medical_records', 'prescription_items', 'compounding_recipes',
@@ -739,7 +777,7 @@ begin
   -- Pemilik: semua fungsi kamo_import milik role (ALTER OWNER bisa gagal diam-diam bila prasyarat kurang).
   select string_agg(p.oid::regprocedure::text, ', ') into v_bad from pg_proc p
   where p.pronamespace = 'kamo_import'::regnamespace and pg_get_userbyid(p.proowner) <> w;
-  if v_bad is not null or (select count(*) from pg_proc p where p.pronamespace = 'kamo_import'::regnamespace) <> 12 then
+  if v_bad is not null or (select count(*) from pg_proc p where p.pronamespace = 'kamo_import'::regnamespace) <> 13 then
     raise exception 'Gerbang: fungsi kamo_import tidak dimiliki role penulis: %', coalesce(v_bad, 'jumlah fungsi salah');
   end if;
   -- Atribut role.
@@ -814,6 +852,18 @@ begin
          or array_to_string(p.proconfig, ',') is distinct from 'search_path=""');
   if v_bad is not null then
     raise exception 'Gerbang: ACL/konfigurasi fungsi kamo_import salah: %', v_bad;
+  end if;
+  -- Pencarian jejak: kecocokan di cabang yang tidak terjangkau tidak pernah keluar (UUID/sidik), dan
+  -- penulis memakai pencarian yang sama (tidak ada jalur yang menganggapnya kosong lalu menulis ganda).
+  d := pg_get_functiondef('kamo_import.cari_jejak(text,text)'::regprocedure);
+  if position('public.user_can_access_branch(v.branch_id) is not true' in d) = 0
+     or position('return query select null::uuid, null::text, true;' in d) = 0 then
+    raise exception 'Gerbang: cari_jejak belum mengotorisasi kecocokan per cabang';
+  end if;
+  d := pg_get_functiondef('kamo_import.simpan_riwayat_bersama(jsonb,uuid,uuid)'::regprocedure);
+  if position('from kamo_import.cari_jejak(v_key, v_phone) m' in d) = 0 or position('import_legacy_source_match' in d) > 0
+     or position('if v_terkunci then' in d) = 0 or position('if v_terkunci then' in d) > position('insert into public.visits' in d) then
+    raise exception 'Gerbang: penulis belum menahan kecocokan cabang yang tidak terjangkau sebelum menulis';
   end if;
   -- RPC publik tetap INVOKER dan memakai penulis.
   if exists (select 1 from pg_proc p where p.oid in (

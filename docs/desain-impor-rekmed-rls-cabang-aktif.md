@@ -212,7 +212,7 @@ gagal = seluruh migrasi batal (terbukti tes, §9).
 
 | Butir | Desain rev. 3 | Implementasi | Alasan |
 |---|---|---|---|
-| SELECT `visits` untuk role | `branch_id is null` | `branch_id is null or legacy_source_key is not null` (kolom terbatas) | Impor paling awal (`20260907160000`) menyimpan kunjungan berjejak **dengan** cabang. Pencarian jejak (persis/setara) harus tetap melihatnya, kalau tidak kiriman ulang kartu lama jadi duplikat (kasus K3/S lama). RS-1 tetap hanya mengembalikan baris tanpa cabang. |
+| SELECT `visits` untuk role | `branch_id is null` | `branch_id is null or legacy_source_key is not null` (kolom terbatas) **+ otorisasi per baris di keluaran** (§8.1) | Impor paling awal (`20260907160000`) menyimpan kunjungan berjejak **dengan** cabang. Penulis harus tetap melihatnya, kalau tidak kiriman ulang kartu lama jadi duplikat (kasus K3/S lama). Yang keluar ke pemanggil dibatasi per cabang (§8.1). RS-1 tetap hanya mengembalikan baris tanpa cabang. |
 | INSERT `medical_records` role | + "belum ada rekam medis di kunjungan itu" | dibuang | Kebijakan yang membaca tabelnya sendiri = rekursi RLS. Satu rekam medis per kunjungan dijamin kode penulis (INSERT berpasangan), bukan kebijakan. |
 | `kamo_import.pastikan_pengimpor()` | internal | EXECUTE untuk `authenticated` | RPC publik (INVOKER) memanggilnya di depan, sebelum membuat pelanggan/anabul, supaya konteks salah ditolak utuh. Fungsi hanya memvalidasi, tidak membaca/menulis data lain. |
 | Tautan `continued_from_*` di D2 | predikat anak umum | hanya di WITH CHECK (baris baru) | Baris itu sendiri bercabang; trigger lama sudah menolak `authenticated` mengubah tautan. USING pada tautan lama akan mengunci kunjungan cabang yang sah. |
@@ -229,6 +229,39 @@ Aplikasi: `prosesPotonganImporRekamMedis` mengembalikan `kunci_tersimpan` (tersi
 menyimpan ≤500 jejak terakhir dan menampilkan panel **Periksa hasil impor** (server action
 `periksaHasilImporRekamMedis` → `hasil_impor_rekam_medis`). Halaman pasien dan akses dokter tidak berubah.
 
+### 8.1 Perbaikan BLOCKER review (head `3000626`): metadata jejak cabang lain
+Temuan: `kamo_import.cari_jejak` memvalidasi pemanggil/header tetapi tidak cabang **baris** yang cocok. ADMIN yang hanya
+ditugaskan ke cabang A (`all_branches=false`, header A) bisa mendapat UUID + sidik kunjungan berjejak cabang B, dan RPC
+publik mengembalikan UUID B sebagai `sudah_ada`.
+
+Perilaku sekarang (kebijakan SELECT role tetap melihat jejak bercabang supaya kecocokan tidak pernah dianggap kosong):
+- `cari_jejak` menilai setiap kecocokan (persis **dan** setara 08/62) dengan `user_can_access_branch(branch_id)` di
+  konteks pemanggil (JWT + header cabang aktif). Riwayat bersama (cabang NULL) selalu terjangkau.
+- Semua kecocokan terjangkau → keluaran seperti sebelumnya (`visit_id`, `existing_hash`, `terkunci=false`).
+- **Ada satu saja kecocokan tidak terjangkau** → tepat satu baris `(NULL, NULL, terkunci=true)`: tanpa UUID, sidik,
+  cabang, atau jumlah kecocokan. Tidak membedakan isi sama/berbeda/tanpa sidik.
+- Semua pemakai menahannya **sebelum** menulis: penulis `simpan_riwayat_bersama` (memakai `cari_jejak` yang sama,
+  bukan pencarian mentah) dan RPC per baris menolak dengan pesan generik `kamo_import.alasan_jejak_tidak_terjangkau()`;
+  RPC massal (jalur utama dan jalur pengecualian/balapan) memberi `ditahan` + pesan generik + `visit_id` NULL. Tidak ada
+  INSERT kunjungan ganda dan tidak ada penimpaan.
+- Pemanggil yang berhak atas cabang itu (mis. OWNER dengan header B atau tanpa header; ADMIN `all_branches=true` tanpa
+  header) tetap mendapat dedup historis: `sudah_ada` dengan kunjungan B, isi berbeda → `bentrok`.
+- Catatan: OWNER dengan header A juga mendapat tahanan generik untuk jejak milik cabang B (header membatasi permintaan,
+  sama seperti RLS biasa). Pesan generik memberi tahu bahwa jejak sudah tercatat di tempat yang tidak terjangkau; itu
+  disengaja (gagal tertutup tanpa menyimpan ganda), tanpa detail apa pun.
+- Gerbang pasca-cek menambah: `cari_jejak` memuat otorisasi per cabang dan penanda generik; penulis memakai
+  `cari_jejak` dan memeriksa `v_terkunci` sebelum INSERT.
+
+Hasil tes (PG 17.10 & PG 16, harness **376/376**): di head lama 10 kasus baru gagal (UUID/sidik B bocor di `cari_jejak`;
+penulis, per baris, massal mengembalikan B; OWNER header A dapat `sudah_ada` B). Sesudah perbaikan: ADMIN_A
+`all_branches=false` header A — `cari_jejak` hanya `{visit_id:null, existing_hash:null, terkunci:true}` (persis & +62);
+penulis langsung, RPC per baris, RPC massal ditolak/ditahan generik tanpa UUID/sidik, jumlah kunjungan jejak itu tetap 1;
+isi berbeda → pesan generik yang sama; OWNER header A → ditahan generik. Berhak (OWNER header B, OWNER tanpa header,
+ADMIN_A `all_branches=true` tanpa header) → massal `sudah_ada` kunjungan B (persis & +62), per baris kunjungan B, isi
+berbeda `bentrok`, tidak menulis. Riwayat bersama NULL: semua kasus D1 sebelumnya tetap lulus. Mutasi: mematikan cek
+cabang → 10 kasus gagal (tertangkap). Mematikan cek penanda di jalur utama RPC massal saja = mutan setara (RPC per baris
+yang dipanggilnya menolak generik dan jalur pengecualian menahan dengan pesan yang sama; tidak ada tulisan yang tersisa).
+
 ### Batas janji D2 (residual, sengaja tidak diklaim)
 D2 hanya menutup tulis **langsung** oleh `authenticated` (Data API / RPC INVOKER). RPC `SECURITY DEFINER` lama milik
 pemilik tabel melewati RLS dan **tidak** dinilai/diubah di PR ini. Yang menulis tabel rantai kunjungan (dari katalog,
@@ -242,7 +275,7 @@ masing-masing menolak kunjungan tanpa cabang bergantung pada pemeriksaan di dala
 klaim "riwayat bersama tidak bisa berubah lewat jalur mana pun"**; yang diklaim: tidak bisa lewat tulis langsung.
 
 ## 9. Bukti tes (lokal, Postgres sekali-pakai, data fiktif; tanpa Production)
-- `scripts/test-impor-rekam-medis-rls-postgres.py` — PG 17.10 dan PG 16: **363/363 lulus**. Di basis tanpa migrasi
+- `scripts/test-impor-rekam-medis-rls-postgres.py` — PG 17.10 dan PG 16: **376/376 lulus** (363 + 13 kasus kolisi cabang, §8.1). Di basis tanpa migrasi
   baru (TDD merah): 100 gagal (D2 terbuka untuk OWNER/ADMIN/FINANCE tanpa header, anak & pindah induk terbuka, penulis
   belum ada).
   - D2 `visits`: INSERT tanpa cabang (jejak palsu/kosong/NULL), UPDATE/DELETE riwayat bersama, UPDATE bercabang → NULL;
