@@ -12,6 +12,14 @@ function canonical(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Ditampilkan saat nomor struk masih bentrok sesudah beberapa kali dicoba ulang.
+ * Kepala struk ditolak sebelum baris, stok, dan pembayaran disentuh, jadi kasir
+ * aman menyimpan ulang.
+ */
+export const PESAN_STRUK_BENTROK =
+  "Nomor struk sedang dipakai transaksi lain. Coba simpan lagi; transaksi ini belum tersimpan dan stok belum keluar.";
+
 /** The same draft must resolve to its existing sale after a lost response. */
 export function posCheckoutIdentity(form: FormData, branchId: string): PosCheckoutIdentity {
   const key = String(form.get("checkout_key") ?? "");
