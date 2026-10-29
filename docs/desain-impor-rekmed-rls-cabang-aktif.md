@@ -1,116 +1,132 @@
-# Desain: impor rekam medis gagal di cabang aktif (RLS `operational_branch_isolation`)
+# Desain (revisi 2): impor rekam medis gagal di cabang aktif (RLS `operational_branch_isolation`)
 
-Status: **DESAIN untuk review — belum ada implementasi, migrasi, atau perubahan Production.**
-Basis: `main` `a561b05`. Repro hanya di Postgres 17.10 sekali-pakai dengan data fiktif.
+Status: **DESAIN untuk review independen — belum ada implementasi, migrasi, atau perubahan Production.**
+Basis: `main` `a561b05`. Semua repro dan pemetaan hanya di Postgres 17.10 sekali-pakai berisi semua migrasi repo
+dan data fiktif. Revisi 1 (`a843be4`, opsi A) **diblokir** oleh review keamanan; alasannya ada di §3.
 
 ## 1. Gejala (UAT live 29 Okt 17:15 UTC, dilaporkan)
 OWNER, cabang aktif VET_CMGG, folder sintetis 1 pemilik / 1 hewan / 2 tab → `0 tersimpan, 0 sudah ada, 2 ditahan`,
 alasan `new row violates row-level security policy "operational_branch_isolation" for table "visits"`. Pembacaan
 terbatas: 0 pelanggan, 0 riwayat untuk nama/HP uji.
 
-## 2. Diagnosis (dibuktikan sendiri, konteks authenticated + header seperti server aplikasi)
-Repro: role `authenticated`, `request.jwt.claim.sub` = OWNER/ADMIN fiktif, dan
-`request.headers = {"x-kamo-operational-branch": "<cabang>"}` — persis yang dikirim `src/lib/supabase/server.ts`
-saat cabang aktif bukan "Semua cabang".
+## 2. Diagnosis (dibuktikan sendiri: role `authenticated`, JWT fiktif, `request.headers` seperti server aplikasi)
 
 | Aktor | Header cabang | Simpan massal | Per baris | Pelanggan/anabul tersisa |
 |---|---|---|---|---|
-| OWNER | tidak ada | 2 tersimpan | tersimpan | 1/1 |
-| OWNER | ada | **2 ditahan (RLS visits)** | **ERROR RLS visits** | **0/0** (dibatalkan subtransaksi) |
-| ADMIN | tidak ada | 2 tersimpan | tersimpan | 1/1 |
-| ADMIN | ada | **2 ditahan (RLS visits)** | **ERROR RLS visits** | **0/0** |
+| OWNER / ADMIN | tidak ada | 2 tersimpan | tersimpan | 1/1 |
+| OWNER / ADMIN | ada | **2 ditahan (RLS visits)** | **ERROR RLS visits** | **0/0** (dibatalkan) |
 
-Riwayat bersama yang SUDAH ada, dibaca OWNER: tanpa header 2 kunjungan + 2 rekam medis terlihat, kirim ulang
-`sudah_ada`; **dengan header 0 terlihat**, kirim ulang ditahan RLS (dedup tidak bisa membuktikan apa pun).
-`user_can_access_branch(NULL)` untuk OWNER: tanpa header `true`, dengan header `false`.
+- Riwayat bersama yang sudah ada, dibaca OWNER: tanpa header 2 kunjungan + 2 rekam medis terlihat; **dengan header 0**.
+- `user_can_access_branch(NULL)` untuk OWNER: tanpa header `true`, dengan header `false`
+  (`20261017090000`: `v_selected <> NULL` → NULL, `not exists(... id = NULL)` → true → `return false`).
+- Kebijakan **restrictive** `operational_branch_isolation` (FOR ALL, `20261014052234`) di-AND dengan permissive
+  `visits_write`/`visits_select` (`20260908133000`), sehingga pengecualian lama `legacy_source_key is not null and
+  is_admin()` tidak berlaku lagi di cabang aktif.
+- DOCTOR tidak pernah melihat riwayat bersama (dengan/tanpa header), walau `can_read_legacy_medical_history()` true.
+- Harness lama tidak mengisi `request.headers` → lulus padahal UI gagal.
 
-Akar masalah:
-1. Impor menyimpan riwayat bersama dengan `visits.branch_id = NULL` (sengaja: lintas cabang).
-2. `20261014052234` menambah kebijakan **restrictive** `operational_branch_isolation` (FOR ALL) pada `visits`:
-   `user_can_access_branch(branch_id)`. Restrictive di-AND dengan kebijakan permissive, jadi pengecualian lama di
-   permissive `visits_write`/`visits_select` (`legacy_source_key is not null and is_admin()` /
-   `can_read_legacy_medical_history()`, dari `20260908133000`) tidak lagi cukup.
-3. `user_can_access_branch` (versi `20261017090000`): bila header cabang ada, `v_selected <> NULL::text` bernilai
-   NULL dan `not exists(... where id = NULL)` bernilai true → **false**, bahkan untuk OWNER.
-4. `operational_parent_isolation` pada `medical_records` memeriksa kunjungan induk di bawah RLS pemanggil → rekam
-   medis ikut tak terlihat/tertolak.
-5. Harness lama (`scripts/test-impor-rekam-medis-postgres.py`) tidak pernah mengisi `request.headers`, jadi lulus
-   padahal UI gagal. Ini celah tes, bukan bug di logika impor.
+## 3. Kenapa revisi 1 (opsi A) diblokir — dibuktikan dari katalog kebijakan
+### 3a. Terlihatnya induk = izin tulis anak
+`operational_parent_isolation` (restrictive, FOR ALL) pada anak hanya mensyaratkan **induk terlihat** oleh pemanggil.
+Bila kunjungan bersama dibuat terlihat (SELECT) untuk OWNER/ADMIN di cabang aktif, penulisan anak hanya dibatasi
+kebijakan permissive masing-masing:
 
-Temuan terkait (bukan bug impor, perlu keputusan terpisah): **DOCTOR tidak bisa melihat riwayat bersama sama sekali**
-(dengan maupun tanpa header) walau `can_read_legacy_medical_history()` = true, karena `user_can_access_branch(NULL)`
-selalu false untuk akun tanpa hak semua cabang. OWNER/ADMIN pun hanya melihatnya di konteks "Semua cabang".
+| Anak (kedalaman dari `visits`) | Permissive yang ada | Hak `authenticated` | Terbuka bila induk bersama terlihat |
+|---|---|---|---|
+| medical_records (1) | `mr_write` ALL: induk `user_can_access_branch` **atau `legacy_source_key not null and is_admin()`** | S/I/U/D | **INSERT/UPDATE/DELETE** untuk OWNER/ADMIN (+ ubah `visit_id`) |
+| prescription_items (2) | `pi_all` ALL `true` | S/I/U/D | **I/U/D** |
+| compounding_recipes (2), compounding_ingredients (3) | `cr_all`/`ci_all` ALL `true` | S/I/U/D | **I/U/D** |
+| consents (1) | `cs_all` ALL `true` | S/I/U/D | **I/U/D** |
+| inpatient_records (1) | `ir_all` ALL `user_can_access_branch(branch_id)` (cabang baris sendiri) | S/I | **INSERT** (rawat inap menempel ke kunjungan bersama) |
+| inpatient_medications (2), inpatient_daily_logs (2), inpatient_status_log (2), inpatient_med_doses (3) | `true` / insert `true` | S/I/U/D | **I/U(/D)** lewat rawat inap di atas |
+| visit_operational_events (1), visit_referrals (1) | insert: cabang baris sendiri + `exists(visits v ... v.branch_id = v.branch_id)` (tautologi) | S/I | **INSERT** menempel ke kunjungan bersama |
+| invoices (1), invoice_items (2), invoice_payments (2), invoice_edit_log (2), clinic_demo_* (2) | induk `user_can_access_branch(v.branch_id)` | S (tanpa I/U/D) | tertutup (NULL → false di cabang aktif) |
 
-Jalan pintas operasional yang sudah ada (tanpa perubahan kode): di mode klinik, OWNER/ADMIN bisa memilih
-"Semua cabang"; header tidak dikirim, impor berjalan. Tidak dijalankan ulang di Production tanpa izin.
+Akibatnya: walau UPDATE/DELETE `visits` ditolak, isi klinis anak bisa diubah sehingga `legacy_source_hash`
+(sidik isi di `visits`) **basi** dan dedup salah. **Kondisi yang sama sudah ada hari ini** untuk OWNER/ADMIN/FINANCE
+di konteks "Semua cabang" (tanpa header, `user_can_access_branch(NULL)` = true) — paparan lama, bukan dari PR ini.
 
-## 3. Alternatif
+### 3b. `legacy_source_key IS NOT NULL` bukan bukti asal
+Kunci boleh kosong/palsu; INSERT langsung ke `visits` oleh OWNER/ADMIN lewat Data API melewati kunci identitas,
+sidik, dan dedup di RPC. Format kunci, sidik yang dikirim pemanggil, atau GUC yang bisa diset pemanggil bukan bukti asal.
 
-| Opsi | Inti | Penilaian |
-|---|---|---|
-| **A (disarankan)** | Pecah restrictive `operational_branch_isolation` pada `visits` per perintah. SELECT dan INSERT: `user_can_access_branch(branch_id) OR <kunjungan bersama impor oleh OWNER/ADMIN aktif>`. UPDATE dan DELETE: tetap ketat `user_can_access_branch(branch_id)`. | Paling sempit: hanya baris `branch_id IS NULL AND legacy_source_key IS NOT NULL`, hanya OWNER/ADMIN aktif, hanya baca+sisip. Tanpa definer-bypass, header tetap, RLS tetap aktif. |
-| A+ | A, ditambah syarat penanda transaksi lokal yang hanya diset di dalam RPC impor (sisip hanya lewat RPC). | Lebih sempit lagi, tetapi menambah mekanisme baru yang perlu dibuktikan tidak bisa diset dari luar; untung kecil karena OWNER/ADMIN memang berhak impor. Tidak disarankan untuk perbaikan minimal. |
-| B | RPC impor `SECURITY DEFINER` (pemilik melewati RLS). | Ditolak: bypass RLS. |
-| C | RPC menghapus/mengosongkan `request.headers` sementara. | Ditolak: memalsukan konteks keamanan. |
-| D | Isi `branch_id` kunjungan impor dengan cabang aktif. | Ditolak: riwayat bersama jadi lokal cabang. |
-| E | Ubah `user_can_access_branch(NULL)` → true untuk OWNER/ADMIN saat ada header. | Ditolak: membuka baris NULL di 6 tabel (`sales`, `expenses`, …), bukan hanya impor. |
-| F | Tidak ada perubahan; SOP "pilih Semua cabang sebelum impor". | Tanpa risiko keamanan baru, tetapi mudah lupa dan pesan galatnya membingungkan. Cocok sebagai sementara. |
+## 4. Inti masalah desain (dinyatakan terus terang)
+Di bawah RPC **SECURITY INVOKER**, sisipan dari RPC dan sisipan langsung oleh pemanggil yang sama dinilai RLS dengan
+konteks identik. **Tidak ada kebijakan RLS untuk `authenticated` yang bisa mengizinkan yang pertama tanpa mengizinkan
+yang kedua**, kecuali dengan sinyal asal yang tidak bisa dipalsukan pemanggil. Dengan batasan "tanpa definer
+bypass, tanpa service-role, tanpa GUC dari pemanggil", **asal-tulis lewat RPC tidak bisa dijamin** tanpa keputusan
+kebijakan tambahan (D1 di §6). Desain di bawah tidak mengklaim aman sebelum keputusan itu.
 
-## 4. Batas persis opsi A (draf, belum diterapkan)
-Migrasi baru (sesudah `20261101110000`), satu transaksi, pra-cek/pasca-cek gagal tertutup:
+## 5. Alternatif revisi
 
-```sql
--- Predikat sempit, satu sumber kebenaran.
-create function public.shared_legacy_visit_admin(p_branch uuid, p_legacy_key text) returns boolean
-language sql stable security definer set search_path = '' as $$
-  select p_branch is null and p_legacy_key is not null and exists (
-    select 1 from public.profiles p
-    where p.id = auth.uid() and p.is_active and p.role in ('OWNER', 'ADMIN'))
-$$;
-revoke all on function public.shared_legacy_visit_admin(uuid, text) from public, anon;
-grant execute on function public.shared_legacy_visit_admin(uuid, text) to authenticated;
+| Opsi | Inti | Menjaga asal-tulis RPC? | Catatan / risiko |
+|---|---|---|---|
+| **R1 (disarankan, butuh D1)** | Penulis sempit: fungsi `SECURITY DEFINER` di skema tidak terekspos (mis. `kamo_import`), **dimiliki role khusus `NOLOGIN NOBYPASSRLS`** (bukan pemilik tabel, bukan `postgres`). RLS tetap berlaku untuk role itu; ia hanya diberi hak + kebijakan SELECT/INSERT pada baris kunjungan bersama dan rekam medisnya. RPC impor publik tetap INVOKER dan memanggil penulis ini untuk dedup + sisip. **Tidak ada kebijakan baru untuk `authenticated`** → anak tidak terbuka. | Ya, untuk jalur cabang aktif. INSERT langsung `authenticated` di cabang aktif tetap ditolak. | Menambah satu role DB (tanpa login, tanpa bypass RLS). Butuh verifikasi Production: skema terekspos Data API, kemampuan `postgres` membuat/menjadi pemilik role, trigger `visits`/`medical_records` berjalan dengan role ini (audit `a01_*`, `protect_*`). |
+| R1-ketat (butuh D1 + D2) | R1 + tutup tulis langsung `authenticated` ke baris bersama di semua konteks: hapus disjungsi `legacy... and is_admin()` dari `visits_write`/`mr_write`, dan tambahkan guard restrictive INSERT/UPDATE/DELETE "induk bukan kunjungan bersama" pada anak di §3a. | Ya, di semua konteks. | Mengubah perilaku "Semua cabang" hari ini: OWNER/ADMIN tidak bisa lagi mengedit riwayat bersama/anaknya langsung. Perlu cek apakah ada alur UI yang memakainya. |
+| R2 | Pengecualian restrictive berdasar `request.path` = `/rpc/import_legacy_…` (diset PostgREST). | Bergantung semantik PostgREST/Data API. | Tidak disarankan: GUC berasal dari permintaan; reviewer menolak sinyal yang dikendalikan pemanggil; rapuh bila ada jalur selain PostgREST. |
+| R3 | Tanpa perubahan; SOP "Semua cabang" sebelum impor. | Tidak (paparan lama tetap). | Tanpa risiko baru; impor jalan; masalah asal-tulis & anak tetap seperti hari ini. |
+| Ditolak | Definer milik `postgres`/service-role (bypass), mengosongkan header, `branch_id` lokal, `user_can_access_branch(NULL)` → true, carve-out SELECT/INSERT untuk `authenticated` (revisi 1). | — | Melanggar batas atau membuka anak (§3a). |
 
-drop policy operational_branch_isolation on public.visits;
-create policy operational_branch_isolation on public.visits as restrictive for select to authenticated
-  using (public.user_can_access_branch(branch_id) or public.shared_legacy_visit_admin(branch_id, legacy_source_key));
-create policy operational_branch_isolation_insert on public.visits as restrictive for insert to authenticated
-  with check (public.user_can_access_branch(branch_id) or public.shared_legacy_visit_admin(branch_id, legacy_source_key));
-create policy operational_branch_isolation_update on public.visits as restrictive for update to authenticated
-  using (public.user_can_access_branch(branch_id)) with check (public.user_can_access_branch(branch_id));
-create policy operational_branch_isolation_delete on public.visits as restrictive for delete to authenticated
-  using (public.user_can_access_branch(branch_id));
-```
+## 6. Keputusan yang dibutuhkan sebelum implementasi
+- **D1 — boleh menambah role DB `NOLOGIN NOBYPASSRLS` khusus sebagai pemilik satu fungsi penulis?** Tanpa ini,
+  syarat "asal-tulis RPC + INVOKER + tanpa bypass + tanpa GUC" tidak bisa dipenuhi bersamaan (§4).
+- **D2 — tutup juga tulis langsung OWNER/ADMIN ke riwayat bersama di konteks "Semua cabang" (R1-ketat)?** Kalau
+  tidak, paparan lama (§3a baris terakhir, sidik bisa basi lewat edit anak) tetap ada di konteks tanpa header.
+- **D3 — visibilitas baca riwayat bersama** (DOCTOR/cabang aktif). Tidak termasuk R1. Bila diinginkan nanti, harus
+  didahului pemisahan `operational_parent_isolation` per perintah pada semua anak di §3a (baca boleh ikut induk,
+  tulis tidak), supaya membuka baca tidak membuka tulis.
 
-- `SECURITY DEFINER` di predikat hanya untuk membaca `profiles` (pola sama dengan `is_admin`/`user_can_access_branch`);
-  tidak ada penulisan dan tidak melewati RLS tabel mana pun.
-- Berbeda dari `is_admin()` yang ada: predikat ini mensyaratkan `is_active`.
-- Kebijakan permissive (`visits_select`, `visits_write`), tabel lain, `user_can_access_branch`, header aplikasi,
-  dan RPC impor **tidak diubah**. `medical_records` ikut berfungsi karena induknya kini terlihat oleh OWNER/ADMIN.
-- Efek samping yang disengaja: di cabang aktif, OWNER/ADMIN kini **melihat** riwayat bersama (diperlukan untuk
-  dedup impor dan sesuai "riwayat bersama"). Tidak ada kunjungan bercabang lain yang terbuka.
-- Perubahan perilaku kecil: UPDATE/DELETE kunjungan bersama oleh OWNER/ADMIN tetap hanya mungkin tanpa header
-  ("Semua cabang"), sama seperti sekarang.
+## 7. Batas persis R1 (rancangan; belum ditulis sebagai migrasi)
+- Role: `kamo_legacy_import_writer` NOLOGIN NOINHERIT NOBYPASSRLS; tidak diberikan ke pengguna mana pun.
+- Skema `kamo_import` (tidak ada di skema terekspos Data API; diverifikasi read-only di Production sebelum rilis).
+- Fungsi `kamo_import.simpan_kunjungan_bersama(<isi baris>, p_customer_id, p_pet_id)` SECURITY DEFINER,
+  `search_path=''`, pemilik role di atas, EXECUTE hanya untuk `authenticated` (dipanggil RPC publik). Di dalamnya:
+  1. `auth.uid()` = profil **aktif** OWNER/ADMIN; selain itu tolak.
+  2. Header cabang: bila ada, wajib `user_can_access_branch(header)` true (cabang aktif & berhak); konteks tidak
+     dipalsukan dan tidak dihapus.
+  3. Kunci sumber: tidak kosong, panjang dibatasi; **sidik dihitung ulang di server** dari isi (bukan dari pemanggil).
+  4. Ambil `customer_identity_lock` (re-entrant dengan RPC), cari jejak persis/setara dengan aturan `20261101100000`
+     (identik → sudah ada; beda → bentrok; tanpa sidik → belum terbukti; >1 → gagal tertutup).
+  5. Validasi identitas: anabul milik pelanggan; pelanggan ada; kunci HP pelanggan = kunci HP baris kecuali pilihan
+     manusia eksplisit (aturan pilihan sama seperti sekarang).
+  6. INSERT `visits` (`branch_id NULL`, kunci, sidik) + `medical_records`. Tidak ada UPDATE/DELETE.
+- Hak role: SELECT, INSERT pada `visits`, `medical_records`; SELECT pada `customers`, `pets`; EXECUTE fungsi
+  pembantu yang diperlukan. Kebijakan TO role itu:
+  - `visits` SELECT `using (branch_id is null and legacy_source_key is not null)`;
+    INSERT `with check (branch_id is null and legacy_source_key is not null and legacy_source_hash is not null)`.
+  - `medical_records` INSERT `with check (exists(induk bersama))`; tanpa SELECT/UPDATE/DELETE.
+  - `customers`/`pets` SELECT seperlunya untuk validasi.
+- RPC publik (`import_legacy_medical_records_bulk`, `import_legacy_medical_record_resolved`) tetap SECURITY INVOKER,
+  tetap membuat/memakai pelanggan & anabul di bawah RLS pemanggil, tetap memegang kunci identitas, lalu memanggil
+  penulis. **Tidak ada kebijakan baru untuk `authenticated`** pada `visits` maupun anak.
 
-## 5. Rencana tes (test-first, sebelum migrasi ditulis)
-Harness Postgres dengan `request.headers` diisi seperti server aplikasi; harus GAGAL di `main` dan LULUS sesudah:
-- OWNER dan ADMIN, header cabang aktif: impor massal + per baris → `tersimpan`; kirim ulang → `sudah_ada`; jejak
-  setara 08/62 → `sudah_ada`; rekam medis terlihat; pelanggan/anabul tercipta sekali.
-- Negatif (harus tetap DITOLAK/0 baris), dengan header:
-  - STAFF, DOCTOR, FINANCE: sisip kunjungan bersama ditolak; baca kunjungan bersama 0 baris; RPC impor ditolak
-    oleh gerbang OWNER/ADMIN.
-  - OWNER/ADMIN: sisip kunjungan `branch_id NULL` **tanpa** `legacy_source_key` ditolak (NULL biasa).
-  - OWNER/ADMIN di cabang A: sisip/baca kunjungan cabang B ditolak/0 baris (lintas cabang).
-  - OWNER/ADMIN: UPDATE/DELETE kunjungan bersama ditolak.
-  - Profil OWNER/ADMIN `is_active = false`: ditolak.
-- Seluruh kasus harness lama tetap lulus (tanpa header), plus tes repo yang memeriksa kebijakan
-  (`scripts/test-employee-account-context-postgres.py`) tetap lulus.
+## 8. Rancangan tes (test-first; semua dengan `request.headers` diisi seperti server aplikasi kecuali disebut)
+Positif (gagal di `main`, lulus sesudah): OWNER & ADMIN aktif, cabang aktif — massal & per baris tersimpan; kirim
+ulang `sudah_ada`; 08↔62 `sudah_ada`; >1 kecocokan historis gagal tertutup; bentrok isi ditahan; balapan C1–C15
+(dengan header) tetap 1 kunjungan / 1 pelanggan.
 
-## 6. Keputusan terpisah (tidak termasuk opsi A kecuali disetujui)
-- **Visibilitas riwayat bersama untuk DOCTOR/klinik** (temuan §2). Bila diinginkan: tambah ke SELECT restrictive
-  `or (branch_id is null and legacy_source_key is not null and public.can_read_legacy_medical_history())`. Ini
-  membuka BACA riwayat bersama untuk peran yang sudah diizinkan permissive; perlu persetujuan kebijakan sendiri.
-- Namespace fixture XLSX: isu terpisah, tidak disentuh.
+Negatif (harus DITOLAK atau 0 baris; sidik `visits.legacy_source_hash` & isi rekam medis tetap sama setelah percobaan):
+- Anak langsung oleh OWNER/ADMIN di cabang aktif: UPDATE/DELETE `medical_records` riwayat bersama; ubah `visit_id`
+  rekam medis ke/dari kunjungan bersama; INSERT tambahan `medical_records`, `prescription_items`, `compounding_*`,
+  `consents`, `inpatient_records`, `visit_operational_events`, `visit_referrals` yang menempel ke kunjungan bersama.
+- `visits` langsung oleh OWNER/ADMIN di cabang aktif: INSERT baris bersama (kunci kosong, palsu, sidik palsu);
+  UPDATE/DELETE baris bersama.
+- Lewat fungsi penulis/RPC: kunci kosong; kunci terlalu panjang; sidik dari pemanggil diabaikan (sidik tersimpan =
+  sidik hitungan server); identitas tidak cocok (anabul bukan milik pelanggan; HP pelanggan ≠ HP baris tanpa pilihan).
+- Peran tidak berhak: STAFF, DOCTOR, FINANCE (dengan & tanpa header); profil OWNER/ADMIN `is_active=false`.
+- Konteks: header ke cabang nonaktif; header ke cabang yang tidak diizinkan; kapabilitas `all_branches` ADMIN
+  diaktifkan/dinonaktifkan lewat `role_capabilities` (hasil impor tidak bergantung padanya; negatif tetap negatif).
+- Pemanggilan langsung fungsi penulis oleh `anon` ditolak; skema `kamo_import` tidak bisa dicapai lewat Data API
+  (diverifikasi konfigurasi, bukan diasumsikan).
+- Regresi: seluruh harness impor lama (tanpa header) + `scripts/test-employee-account-context-postgres.py`.
+- Bila D2 disetujui: kasus anak/visits langsung di atas diulang **tanpa header** dan harus ditolak.
 
-## 7. Batas
-Tidak ada service-role, penghapusan header, disable/bypass RLS, perluasan peran, perubahan riwayat bersama menjadi
-lokal, migrasi/penulisan Production, impor pasien nyata, atau pembersihan data uji di Production.
+## 9. Di luar scope
+Namespace fixture XLSX; visibilitas baca (D3); paparan lama FINANCE menulis baris `branch_id NULL` tanpa header
+(`user_can_access_branch(NULL)` true untuk `all_branches`) — dicatat untuk tindak lanjut terpisah; hak TRUNCATE
+`authenticated` pada beberapa tabel klinis (tidak terjangkau Data API, dicatat saja).
+
+## 10. Batas
+Tidak ada service-role, bypass/disable RLS, penghapusan header, perluasan peran pengguna, perubahan riwayat bersama
+menjadi lokal, migrasi/penulisan Production, impor pasien nyata, atau pembersihan data. Implementasi menunggu review
+independen revisi ini dan keputusan D1/D2.
