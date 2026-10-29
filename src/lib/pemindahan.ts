@@ -62,3 +62,33 @@ export function kurangStokPemindahan(
       butuh: t.butuh / t.faktor, tersedia: t.ada / t.faktor,
     }));
 }
+
+// Pembatalan pengiriman (audit stok, bagian "Pemindahan Barang").
+//
+// Status "Dibatalkan" sudah ada di skema sejak awal, tapi tidak ada layar yang
+// bisa mengisinya: salah kirim barang/jumlah tidak punya jalan koreksi sama
+// sekali. Syaratnya cuma satu dan keras — belum ada sebutir pun yang diterima
+// gudang tujuan. Begitu ada dokumen Terima Barang, koreksinya lewat penerimaan
+// atau pemindahan balik, bukan pembatalan.
+export type DokumenKirim = {
+  proses: string;
+  status: string | null;
+  /** Jumlah dokumen "Terima Barang" yang sudah dibuat dari dokumen ini. */
+  penerimaan?: number;
+};
+
+export function kendalaBatalKirim(d: DokumenKirim): string | null {
+  if (d.proses !== "Kirim Barang") {
+    return "Hanya dokumen Kirim Barang yang bisa dibatalkan. Dokumen Terima Barang dikoreksi dengan pemindahan balik dari gudang tujuan.";
+  }
+  if (d.status === "Dibatalkan") return "Pengiriman ini sudah dibatalkan.";
+  if ((d.penerimaan ?? 0) > 0 || d.status === "Diterima Sebagian" || d.status === "Diterima Seluruhnya") {
+    return "Sebagian barang kiriman ini sudah diterima gudang tujuan, jadi pengirimannya tidak bisa dibatalkan. Selesaikan lewat Terima Barang, lalu buat pemindahan balik bila barangnya memang harus kembali.";
+  }
+  if (d.status !== "Sedang dikirim") return "Dokumen ini belum berstatus Sedang dikirim, jadi tidak ada pengiriman yang bisa dibatalkan.";
+  return null;
+}
+
+export function bolehBatalKirim(d: DokumenKirim): boolean {
+  return kendalaBatalKirim(d) === null;
+}

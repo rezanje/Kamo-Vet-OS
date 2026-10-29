@@ -18,6 +18,8 @@ vi.mock("@/lib/supabase/server", () => ({
     from: () => {
       const query = {
         select: () => query, eq: () => query,
+        // riwayat pembatalan pengiriman (Batal Pemindahan): daftar kosong
+        order: async () => ({ data: [], error: null }),
         maybeSingle: async () => ({
           data: {
             id: "req", no_request: "PRM-1", status: "Disetujui", created_at: "2026-10-29T03:00:00Z",

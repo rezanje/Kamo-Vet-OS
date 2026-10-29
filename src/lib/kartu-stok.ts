@@ -32,6 +32,7 @@ export const LABEL_SOURCE: Record<string, string> = {
   "racik-koreksi": "Koreksi Racikan",
   "racik-kembali": "Pengembalian Racikan",
   transfer: "Pemindahan Barang",
+  "transfer-batal": "Pembatalan Pemindahan Barang",
   "transfer-in": "Pemindahan Masuk",
   "transfer-out": "Pemindahan Keluar",
   opname: "Stok Opname",
@@ -49,6 +50,7 @@ export const LABEL_SOURCE: Record<string, string> = {
   "kirim-permintaan": "Pengiriman Permintaan Barang",
   "terima-permintaan": "Penerimaan Permintaan Barang",
   "retur-permintaan": "Sisa Kiriman Kembali ke Gudang",
+  "batal-kirim-permintaan": "Pembatalan Pengiriman Permintaan Barang",
   manual: "Penyesuaian Manual",
 };
 
