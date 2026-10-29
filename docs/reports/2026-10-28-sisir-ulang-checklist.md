@@ -17,7 +17,9 @@ Hasil: 85 butir; 56 Live, 29 belum Live (Parsial 26, Belum mulai 2, Terhalang 1)
 | C05 | Kode kampanye ditolak di bayar rombongan klinik & belum ada di POS back-office | Dukung di kedua jalur |
 | Q01 | Progres quest bisa hilang bila langkah terpisah gagal; tidak jalan dari POS back-office | Progres bisa dipulihkan, panggil dari POS back-office |
 
-## B. Butuh keputusan pemilik/finance (rekomendasi di kolom kanan)
+## B. Keputusan pemilik/finance
+
+**Disetujui Reza 29 Okt 2026: "A" — semua rekomendasi di kolom kanan dipakai.** Finance boleh mengoreksi belakangan.
 
 | ID | Pertanyaan audit | Rekomendasi |
 |----|------------------|-------------|
