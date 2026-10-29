@@ -28,7 +28,62 @@
 -- Pra-pemeriksaan Production 29 Okt 2026 (hitungan saja, tanpa data pribadi):
 -- 113 karyawan aktif, 88 tanpa cabang utama, 56 tanpa cabang utama sekaligus
 -- tanpa penugasan; 204 baris penugasan (26 PRIMARY, 178 SECONDARY).
--- BELUM DITERAPKAN ke Production. Terapkan bersama rilis berikutnya.
+-- BELUM DITERAPKAN ke database mana pun selain klaster uji sekali pakai.
+--
+-- ---------------------------------------------------------------------------
+-- CARA MEMERIKSA SETELAH DIPASANG (semua SELECT, aman dijalankan kapan saja)
+-- ---------------------------------------------------------------------------
+--  1. Kolom & aturan terpasang:
+--       select column_name from information_schema.columns
+--        where table_name='employee_branch_assignments'
+--          and column_name in ('end_date','ended_at','ended_by','ended_reason');
+--       -- harus 4 baris
+--  2. Kolom pengakhiran terkunci dari tulis langsung:
+--       select count(*) from information_schema.column_privileges
+--        where grantee='authenticated' and table_name='employee_branch_assignments'
+--          and column_name in ('end_date','ended_at','ended_by','ended_reason')
+--          and privilege_type in ('INSERT','UPDATE');
+--       -- harus 0
+--  3. Seluruh pembaca menyaring tanggal berakhir:
+--       select p.oid::regprocedure::text
+--         from pg_proc p where p.proname in ('clinic_demo_care_staff','clinic_save_initial_record',
+--              'set_visit_service_state','clinic_staff_name','normalize_service_performers',
+--              'guard_clinic_line_salesperson','guard_clinic_record_seller','change_master_data_lifecycle')
+--          and position('employee_assignment_current' in pg_get_functiondef(p.oid)) = 0;
+--       -- harus 0 baris
+--  4. Tidak ada data lama yang berubah: migrasi ini tidak melakukan UPDATE/DELETE
+--     atas baris penugasan yang sudah ada. Pembandingnya:
+--       select count(*), count(end_date) from public.employee_branch_assignments;
+--       -- jumlah baris sama dengan sebelum pemasangan, count(end_date) = 0
+--
+-- ---------------------------------------------------------------------------
+-- CARA MEMBATALKAN (rollback) — jalankan dalam SATU transaksi
+-- ---------------------------------------------------------------------------
+-- Migrasi ini hanya MENAMBAH kolom/tabel/fungsi dan menambahkan satu saringan
+-- pada delapan fungsi; tidak ada baris data lama yang diubah. Pembatalannya:
+--
+--   begin;
+--   -- a. kembalikan kedelapan fungsi + assign_employee_secondary_branches ke
+--   --    definisi sebelum migrasi ini (jalankan ulang migrasi sumbernya:
+--   --    20261012110000, 20261023121700, 20261006090000, 20261023143000,
+--   --    20261027150000, 20261021134543, 20261005100000).
+--   -- b. kembalikan hak tulis kolom:
+--   grant insert, update on table public.employee_branch_assignments to authenticated;
+--   -- c. lepas RPC dan tabel jejak:
+--   drop function if exists public.set_employee_primary_branches(uuid[], uuid, text);
+--   drop function if exists public.end_employee_branch_assignment(uuid, uuid, date, text);
+--   drop function if exists public.reopen_employee_branch_assignments(uuid, uuid[], date);
+--   drop table if exists public.employee_branch_change_log;
+--   drop function if exists public.employee_assignment_current(date, date);
+--   -- d. kolom end_date boleh DITINGGAL (aplikasi lama mengabaikannya). Hanya
+--   --    bila benar-benar harus bersih — ini MENGHAPUS riwayat pengakhiran:
+--   -- alter table public.employee_branch_assignments
+--   --   drop column end_date, drop column ended_at, drop column ended_by, drop column ended_reason;
+--   commit;
+--
+-- Kompatibilitas maju-mundur: aplikasi versi lama tidak mengenal end_date dan
+-- akan menampilkan penugasan yang sudah berakhir seolah masih berjalan, tetapi
+-- tidak akan error. Jadi migrasi boleh dipasang sebelum kode di-deploy.
 
 -- ---------------------------------------------------------------------------
 -- 1. Kolom akhir penugasan
@@ -63,6 +118,26 @@ comment on column public.employee_branch_assignments.end_date is
 
 create index if not exists employee_branch_assignments_current
   on public.employee_branch_assignments(branch_id, employee_id) where end_date is null;
+
+-- Mengakhiri penugasan HANYA boleh lewat RPC beraudit di bawah.
+--
+-- Policy tabel ini `for all to authenticated` untuk OWNER/ADMIN, jadi tanpa
+-- penguncian kolom seorang ADMIN bisa mengisi end_date langsung lewat PostgREST
+-- dan tidak ada satu pun baris jejak yang tertulis — "penugasan diakhiri dan
+-- tercatat pelakunya" jadi tidak bisa dipegang. Hak kolom tidak bisa dicabut
+-- sebagian dari hak setingkat tabel, jadi INSERT/UPDATE dicabut dulu lalu
+-- diberikan ulang hanya untuk kolom yang memang diisi aplikasi
+-- (Tambah Karyawan, impor Excel, dan penugasan lintas cabang).
+-- SELECT/DELETE tidak diubah; fungsi SECURITY DEFINER berjalan sebagai pemilik
+-- fungsi sehingga tidak terpengaruh pencabutan ini.
+do $acl$
+begin
+  revoke insert, update on table public.employee_branch_assignments from authenticated, anon;
+  grant insert (employee_id, branch_id, role, effective_date, created_at)
+    on table public.employee_branch_assignments to authenticated;
+  grant update (employee_id, branch_id, role, effective_date)
+    on table public.employee_branch_assignments to authenticated;
+end $acl$;
 
 -- ---------------------------------------------------------------------------
 -- 2. Jejak perubahan cabang karyawan
@@ -254,31 +329,58 @@ revoke all on function public.end_employee_branch_assignment(uuid, uuid, date, t
 grant execute on function public.end_employee_branch_assignment(uuid, uuid, date, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 6. Jejak "dibuka kembali" untuk penugasan yang pernah berakhir
+-- 6. Membuka kembali penugasan yang pernah berakhir, berikut jejaknya
 -- ---------------------------------------------------------------------------
 -- assign_employee_secondary_branches() berjalan sebagai pengguna (security
--- invoker) sehingga tidak boleh menulis tabel jejak langsung. Penolong ini
--- memeriksa perannya sendiri dan memaksa actor_id = pengguna yang login.
-create or replace function public.log_employee_branch_reopen(
+-- invoker): ia tidak boleh menulis tabel jejak, dan sejak kolom end_date dikunci
+-- ia juga tidak boleh mengosongkan end_date sendiri. Penolong SECURITY DEFINER
+-- ini yang mengerjakan keduanya, dipanggil tepat sebelum penugasan disimpan.
+--
+-- Karena ia bisa dipanggil langsung oleh `authenticated`, jangkauan pengelolaan
+-- diperiksa di sini juga — bukan hanya di pemanggilnya. Tanpa itu, ADMIN satu
+-- cabang bisa menghidupkan kembali penugasan di cabang yang bukan wewenangnya.
+create or replace function public.reopen_employee_branch_assignments(
   p_employee_id uuid, p_branch_ids uuid[], p_effective_date date
 ) returns integer language plpgsql security definer set search_path = '' as $$
-declare v_count integer := 0;
+declare v_count integer := 0; v_branch uuid;
 begin
   perform 1 from public.profiles where id = auth.uid() and role in ('OWNER', 'ADMIN') and is_active = true;
   if not found then
     raise exception using errcode = 'P0001', message = 'ACCESS_DENIED: hanya pemilik atau admin aktif yang boleh mengubah penugasan';
   end if;
+  if p_employee_id is null or p_branch_ids is null
+    or array_ndims(p_branch_ids) is distinct from 1
+    or cardinality(p_branch_ids) not between 1 and 50
+    or array_position(p_branch_ids, null) is not null
+    or p_effective_date is null then
+    raise exception using errcode = 'P0001', message = 'ASSIGNMENT_INVALID: pilih karyawan, cabang, dan tanggal mulai yang valid';
+  end if;
+  if not private.can_manage_hris_employee(p_employee_id) then
+    raise exception using errcode = 'P0001', message = 'ACCESS_DENIED: karyawan di luar cabang yang diizinkan';
+  end if;
+  foreach v_branch in array p_branch_ids loop
+    if not public.user_can_access_branch(v_branch) or not private.can_manage_hris_branch(v_branch) then
+      raise exception using errcode = 'P0001', message = 'ACCESS_DENIED: ada cabang yang tidak diizinkan';
+    end if;
+  end loop;
+
   insert into public.employee_branch_change_log
     (employee_id, action, branch_id, old_branch_id, new_branch_id, effective_date, end_date, actor_id)
   select p_employee_id, 'assignment_reopened', a.branch_id, a.branch_id, a.branch_id, p_effective_date, a.end_date, auth.uid()
   from public.employee_branch_assignments a
   where a.employee_id = p_employee_id and a.branch_id = any(p_branch_ids)
-    and a.role = 'SECONDARY' and a.end_date is not null;
+    and a.role = 'SECONDARY' and a.end_date is not null
+  for update of a;
   get diagnostics v_count = row_count;
+
+  update public.employee_branch_assignments a
+    set end_date = null, ended_at = null, ended_by = null, ended_reason = null
+    where a.employee_id = p_employee_id and a.branch_id = any(p_branch_ids)
+      and a.role = 'SECONDARY' and a.end_date is not null;
   return v_count;
 end $$;
-revoke all on function public.log_employee_branch_reopen(uuid, uuid[], date) from public, anon, service_role;
-grant execute on function public.log_employee_branch_reopen(uuid, uuid[], date) to authenticated;
+revoke all on function public.reopen_employee_branch_assignments(uuid, uuid[], date) from public, anon, service_role;
+grant execute on function public.reopen_employee_branch_assignments(uuid, uuid[], date) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 7. Tambalan jangkar eksak pada fungsi yang sudah berjalan
@@ -316,12 +418,12 @@ begin
    E'exists(select 1 from public.employee_branch_assignments where employee_id=p_id and not public.user_can_access_branch(branch_id))',
    E'exists(select 1 from public.employee_branch_assignments where employee_id=p_id and public.employee_assignment_current(effective_date,end_date) and not public.user_can_access_branch(branch_id))'),
   -- (d) Menugaskan ulang cabang yang pernah diakhiri membuka kembali barisnya.
+  --     Pengosongan end_date dikerjakan penolong SECURITY DEFINER, bukan di sini:
+  --     fungsi ini security invoker dan kolom end_date tidak lagi boleh ditulis
+  --     langsung oleh `authenticated`.
   ('public.assign_employee_secondary_branches(uuid,uuid[],date)',
    E'  insert into public.employee_branch_assignments(employee_id,branch_id,role,effective_date)',
-   E'  perform public.log_employee_branch_reopen(p_employee_id,v_ids,p_effective_date);\n  insert into public.employee_branch_assignments(employee_id,branch_id,role,effective_date)'),
-  ('public.assign_employee_secondary_branches(uuid,uuid[],date)',
-   E'on conflict(employee_id,branch_id) do update set effective_date=excluded.effective_date',
-   E'on conflict(employee_id,branch_id) do update set effective_date=excluded.effective_date,end_date=null,ended_at=null,ended_by=null,ended_reason=null')
+   E'  perform public.reopen_employee_branch_assignments(p_employee_id,v_ids,p_effective_date);\n  insert into public.employee_branch_assignments(employee_id,branch_id,role,effective_date)')
  ) as patches(sig, old_text, new_text) loop
   signature := to_regprocedure(p.sig);
   if signature is null then raise exception 'Cabang HRIS: fungsi wajib tidak ada: %', p.sig; end if;
@@ -365,14 +467,26 @@ begin
   end if;
  end loop;
  d := pg_get_functiondef('public.assign_employee_secondary_branches(uuid,uuid[],date)'::regprocedure);
- if position('log_employee_branch_reopen' in d) = 0 or position('end_date=null,ended_at=null' in d) = 0 then
+ if position('reopen_employee_branch_assignments' in d) = 0 then
   raise exception 'Cabang HRIS: penugasan ulang belum membuka kembali baris yang berakhir';
  end if;
  if to_regprocedure('public.set_employee_primary_branches(uuid[],uuid,text)') is null
-  or to_regprocedure('public.end_employee_branch_assignment(uuid,uuid,date,text)') is null then
+  or to_regprocedure('public.end_employee_branch_assignment(uuid,uuid,date,text)') is null
+  or to_regprocedure('public.reopen_employee_branch_assignments(uuid,uuid[],date)') is null then
   raise exception 'Cabang HRIS: RPC cabang utama / akhiri penugasan tidak terpasang';
  end if;
  if to_regclass('public.employee_branch_change_log') is null then
   raise exception 'Cabang HRIS: tabel jejak perubahan cabang tidak terpasang';
+ end if;
+ -- Kolom pengakhiran harus tetap terkunci: kalau `authenticated` bisa menulisnya
+ -- langsung, penugasan bisa diakhiri tanpa jejak siapa pun.
+ if exists (
+   select 1 from information_schema.column_privileges
+   where grantee = 'authenticated' and table_schema = 'public'
+     and table_name = 'employee_branch_assignments'
+     and column_name in ('end_date', 'ended_at', 'ended_by', 'ended_reason')
+     and privilege_type in ('INSERT', 'UPDATE')
+ ) then
+  raise exception 'Cabang HRIS: kolom tanggal berakhir masih bisa ditulis langsung oleh authenticated';
  end if;
 end $check$;

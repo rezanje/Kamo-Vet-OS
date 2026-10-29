@@ -39,7 +39,8 @@ export type KaryawanTersaring = {
   status?: string;
   branch_id?: string | null;
   branchName?: string;
-  assignments?: { branch_id: string; branchName?: string }[];
+  /** `keadaan` diisi layar daftar lewat tampilkanKaryawan(); "berakhir" tidak lagi dihitung penugasan. */
+  assignments?: { branch_id: string; branchName?: string; keadaan?: string }[];
 };
 
 export type SaringanKaryawan = { cari?: string; cabang?: string; grup?: string };
@@ -51,7 +52,12 @@ export function saringKaryawan<T extends KaryawanTersaring>(rows: T[], saringan:
   const grup = (saringan.grup ?? "").trim();
   return rows.filter((row) => {
     const penugasan = row.assignments ?? [];
-    if (cabang && row.branch_id !== cabang && !penugasan.some((item) => item.branch_id === cabang)) return false;
+    // Saringan "cabang" menjawab "siapa yang sekarang bisa dipilih di cabang ini",
+    // jadi penugasan yang sudah berakhir tidak boleh ikut menjaring orangnya.
+    // Pencarian teks di bawah tetap memakai seluruh penugasan supaya riwayatnya
+    // masih bisa ditemukan lewat kotak cari.
+    const berlaku = penugasan.filter((item) => item.keadaan !== "berakhir");
+    if (cabang && row.branch_id !== cabang && !berlaku.some((item) => item.branch_id === cabang)) return false;
     if (grup && !cocokGrupJabatan(row.jabatan ?? null, grup)) return false;
     if (!kata) return true;
     const sumber = [row.nama, row.nik, row.jabatan, row.departemen, row.phone, row.email, row.status, row.branchName,

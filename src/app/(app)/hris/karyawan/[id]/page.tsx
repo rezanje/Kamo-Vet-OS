@@ -26,7 +26,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const { edit, error, success } = await searchParams;
   const supabase = await createClient();
   const aturGaji = await bolehKelolaPayroll();
-  const [empResult, detailResult, componentsResult, assignedResult, branchesResult, penugasanResult] = await Promise.all([
+  const [empResult, detailResult, componentsResult, assignedResult, branchesResult, penugasanResult, jejakResult] = await Promise.all([
     supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, status, branch_id, trashed_at").eq("id", id).maybeSingle(),
     supabase.from("employee_import_details").select("fields, imported_at").eq("employee_id", id).maybeSingle(),
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active, calculation_basis, sales_source, sales_scope, rate_percent").order("nama"),
@@ -34,6 +34,12 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
     supabase.from("branches").select("id, code, name, type, is_active"),
     supabase.from("employee_branch_assignments")
       .select("branch_id, role, effective_date, end_date, ended_reason").eq("employee_id", id).order("effective_date"),
+    // Jejak perubahan cabang: hanya bisa dibaca OWNER/ADMIN (RLS), ditulis khusus
+    // lewat RPC. Ditampilkan supaya "tercatat siapa yang mengubah" benar-benar
+    // bisa dilihat, bukan cuma tersimpan.
+    supabase.from("employee_branch_change_log")
+      .select("id, action, old_branch_id, new_branch_id, branch_id, effective_date, end_date, reason, actor_id, created_at")
+      .eq("employee_id", id).order("created_at", { ascending: false }).limit(20),
   ]);
   if (empResult.error) throw new Error("Profil karyawan gagal dimuat");
   const employee = empResult.data;
@@ -61,6 +67,23 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
     keadaan: keadaanPenugasan(row, hariIni),
     keterangan: labelPenugasan(row, hariIni),
   }));
+  type JejakCabang = {
+    id: string; action: string; old_branch_id: string | null; new_branch_id: string | null;
+    branch_id: string | null; effective_date: string | null; end_date: string | null;
+    reason: string | null; actor_id: string; created_at: string;
+  };
+  const jejak = (jejakResult.data ?? []) as JejakCabang[];
+  const pelakuIds = [...new Set(jejak.map(row => row.actor_id))];
+  const { data: pelakuData } = pelakuIds.length
+    ? await supabase.from("profiles").select("id, full_name").in("id", pelakuIds)
+    : { data: [] };
+  const namaPelaku = new Map(((pelakuData ?? []) as { id: string; full_name: string | null }[])
+    .map(row => [row.id, row.full_name ?? "Pengguna"]));
+  const AKSI_JEJAK: Record<string, string> = {
+    primary_branch: "Cabang utama dipindahkan",
+    assignment_ended: "Penugasan diakhiri",
+    assignment_reopened: "Penugasan dibuka kembali",
+  };
   const detail = detailResult.data;
   const fields = detail?.fields && typeof detail.fields === "object" && !Array.isArray(detail.fields)
     ? detail.fields as Record<string, string> : {};
@@ -140,6 +163,30 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
           {!penugasan.length && <tr><td colSpan={6} style={{ fontSize: 11, color: "var(--td)", textAlign: "center", padding: "12px 0" }}>Belum ada penugasan cabang untuk karyawan ini.</td></tr>}
         </tbody></table>
       </div>}
+      <div style={{ marginTop: 14 }}>
+        <b style={{ fontSize: 11 }}>Riwayat perubahan cabang</b>
+        {jejakResult.error ? <p role="alert" style={{ fontSize: 11 }}>Riwayat perubahan cabang gagal dimuat.</p>
+          : !jejak.length ? <p style={{ fontSize: 10.5, color: "var(--tm)" }}>Belum ada perubahan cabang yang tercatat untuk karyawan ini.</p>
+          : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr>
+              <th>Waktu</th><th>Perubahan</th><th>Dari → ke</th><th>Tanggal</th><th>Alasan</th><th>Oleh</th>
+            </tr></thead><tbody>
+              {jejak.map(row => <tr key={row.id}>
+                <td style={{ fontSize: 10.5 }}>{new Date(row.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</td>
+                <td style={{ fontSize: 10.5 }}>{AKSI_JEJAK[row.action] ?? row.action}</td>
+                <td style={{ fontSize: 10.5 }}>
+                  {row.action === "primary_branch"
+                    ? `${row.old_branch_id ? namaCabang(row.old_branch_id) : "Belum ada"} → ${row.new_branch_id ? namaCabang(row.new_branch_id) : "—"}`
+                    : row.branch_id ? namaCabang(row.branch_id) : "—"}
+                </td>
+                <td style={{ fontSize: 10.5 }}>
+                  {row.end_date ? `berakhir ${tanggalSingkat(row.end_date, hariIni)}`
+                    : row.effective_date ? `mulai ${tanggalSingkat(row.effective_date, hariIni)}` : "—"}
+                </td>
+                <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.reason ?? "—"}</td>
+                <td style={{ fontSize: 10.5 }}>{namaPelaku.get(row.actor_id) ?? "Pengguna"}</td>
+              </tr>)}
+            </tbody></table></div>}
+      </div>
     </div>
     {aturGaji && <div className="crm-sec">
       <SecHeader num="03" title="BENEFIT & KOMPONEN GAJI" desc="Gaji pokok, tunjangan, insentif omzet, dan potongan yang berlaku untuk karyawan ini." action={<Link className="btn-def" href={`/hris/komponen-gaji?emp=${id}`}>Master Komponen</Link>} />
