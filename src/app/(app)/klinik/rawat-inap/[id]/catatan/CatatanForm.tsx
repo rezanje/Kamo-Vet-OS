@@ -1,6 +1,7 @@
 "use client";
 
 import { NumberInput } from "@/components/NumberInput";
+import { QtyInput } from "@/components/QtyInput";
 
 import { useMemo, useRef, useState } from "react";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
@@ -605,7 +606,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                           <td style={{ textAlign: "center" }}>
                             {r.jenis === "racikan"
                               ? <span style={{ fontSize: 10.5 }}>1</span>
-                              : <NumberInput className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
+                              : <QtyInput className="fi" min={1} aria-label={`Jumlah ${r.nama_obat}`} value={r.qty} onValue={(n) => setQty(r.key, n)} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
                           </td>
                           <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(r.qty * r.harga)}</td>
                           <td style={{ textAlign: "center" }}>
