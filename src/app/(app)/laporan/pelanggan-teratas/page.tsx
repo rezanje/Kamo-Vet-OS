@@ -4,6 +4,7 @@ import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { tanggalIndo } from "@/lib/followup";
 import { hariIniWIB } from "@/lib/tanggal";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
+import { fakturGrosirOmzet, omzetDokumenGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "@/lib/laporan-grosir";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -31,10 +32,11 @@ export default async function PelangganTeratasPage({
 
   const supabase = await createClient();
 
-  // Belanja pelanggan datang dari DUA pintu: penjualan petshop/online (sales)
-  // dan tagihan klinik yang sudah lunas (invoices lewat visits). Menghitung
-  // salah satunya saja bikin pelanggan klinik terlihat tidak pernah belanja.
-  const [{ data: sales }, { data: invoices }, { data: customers }] = await Promise.all([
+  // Belanja pelanggan datang dari TIGA pintu: penjualan petshop/online (sales),
+  // tagihan klinik yang sudah lunas (invoices lewat visits), dan faktur penjualan
+  // grosir. Menghitung sebagiannya saja bikin pelanggan pintu lain terlihat tidak
+  // pernah belanja — pelanggan reseller paling sering jadi korbannya.
+  const [{ data: sales }, { data: invoices }, { data: grosir }, { data: customers }] = await Promise.all([
     completeReportQuery(supabase.from("sales")
       .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at, voided_at", { count: "exact" })
       .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
@@ -42,6 +44,11 @@ export default async function PelangganTeratasPage({
       .select("id, total, created_at, visits!inner(customer_id)", { count: "exact" })
       .eq("paid_status", "Lunas").is("voided_at", null)
       .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
+    // Faktur grosir memakai tanggal faktur dan dihitung sejak terbit (akrual),
+    // tidak menunggu pelunasan seperti tagihan klinik di atas.
+    completeReportQuery(supabase.from("sales_invoices")
+      .select(SELECT_FAKTUR_GROSIR, { count: "exact" })
+      .gte("tanggal", dari).lte("tanggal", sampai)),
     completeReportQuery(supabase.from("customers")
       .select("id, name, phone, customer_categories(nama)", { count: "exact" })),
   ]);
@@ -62,6 +69,10 @@ export default async function PelangganTeratasPage({
   for (const iv of (invoices ?? []) as unknown as
     { total: number; created_at: string; visits: Rel<{ customer_id: string | null }> }[]) {
     catat(one(iv.visits)?.customer_id ?? null, iv.total, iv.created_at);
+  }
+  type FakturGrosirRow = FakturGrosirInti & { customer_id: string | null; tanggal: string; total: number };
+  for (const f of fakturGrosirOmzet((grosir ?? []) as unknown as FakturGrosirRow[])) {
+    catat(f.customer_id, omzetDokumenGrosir(f), f.tanggal);
   }
 
   type CustRow = { id: string; name: string; phone: string; customer_categories: Rel<{ nama: string }> };
@@ -85,7 +96,7 @@ export default async function PelangganTeratasPage({
   return (
     <LaporanPage
       icon="ti-trophy" title="PELANGGAN TERATAS"
-      desc="Peringkat pelanggan berdasarkan total belanja — petshop, online, dan klinik digabung."
+      desc="Peringkat pelanggan berdasarkan total belanja — petshop, online, klinik, dan faktur grosir digabung."
       filter={
         <>
           <div>
@@ -137,6 +148,11 @@ export default async function PelangganTeratasPage({
               {rows.length === 0 && <TabelKosong kolom={8} pesan="Belum ada transaksi di rentang tanggal ini." />}
             </tbody>
           </table>
+        </div>
+        <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
+          Tagihan klinik baru masuk setelah lunas, sedangkan struk kasir dan faktur grosir masuk sejak
+          dokumennya terbit. Faktur grosir memakai tanggal fakturnya; faktur batal, faktur yang sudah
+          diganti faktur koreksi, faktur saldo awal, dan faktur selisih stok opname tidak ikut.
         </div>
       </div>
     </LaporanPage>

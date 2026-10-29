@@ -5,6 +5,7 @@ import { bolehBukaPath } from "@/lib/akses";
 import { reportCsv } from "@/lib/csv-report";
 import { hariIniWIB } from "@/lib/tanggal";
 import { jenisLaporan } from "@/lib/laporan-penjualan-barang";
+import { KANAL_SEMUA, type Kanal } from "@/lib/laporan-transaksi";
 import { ambilPenjualanBarang, waktuWIB } from "../data";
 
 export async function GET(request: Request) {
@@ -23,8 +24,8 @@ export async function GET(request: Request) {
   const hariIni = hariIniWIB();
   const dari = params.get("dari") || `${hariIni.slice(0, 8)}01`;
   const sampai = params.get("sampai") || hariIni;
-  const kanalInput = params.get("kanal");
-  const kanal = kanalInput === "POS" || kanalInput === "Online" ? kanalInput : "Klinik";
+  const kanalInput = params.get("kanal") ?? "";
+  const kanal: Kanal = (KANAL_SEMUA as string[]).includes(kanalInput) ? kanalInput as Kanal : "Klinik";
   const jenis = jenisLaporan(kanal, params.get("jenis"));
   const q = (params.get("q") ?? "").trim().slice(0, 120);
   const cabangId = (params.get("cabang_id") ?? "").slice(0, 80);
@@ -36,9 +37,13 @@ export async function GET(request: Request) {
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
   };
-  const columns = ["Waktu WIB", "No. dokumen", "Sumber", "Jenis", "Cabang", "Pelanggan", "Pasien", "Barang / layanan", "Pelaksana tersimpan", "Qty", "Harga", kanal === "Online" ? "Diskon item" : "Potongan / pembulatan", "Nilai baris", "Status"];
-  const data = rows.map(row => [waktuWIB(row.waktu), row.dokumen, row.kanal, row.jenis, row.cabang, row.pelanggan, row.hewan, row.nama, row.pelaksana, row.qty, row.harga, row.diskon, row.nilai, row.status]);
-  const context = kanal === "POS"
+  const columns = ["Waktu WIB", "No. dokumen", "Sumber", "Jenis", "Cabang", "Pelanggan", "Pasien", "Barang / layanan", "Pelaksana tersimpan", "Qty", "Harga", kanal === "Online" || kanal === "Grosir" ? "Diskon item" : "Potongan / pembulatan", "Nilai baris", "Status", "HPP"];
+  // HPP hanya ada pada baris yang modalnya memang tercatat (BMHP klinik dan baris
+  // faktur grosir yang sudah dikirim); sisanya sengaja dibiarkan kosong, bukan nol.
+  const data = rows.map(row => [waktuWIB(row.waktu), row.dokumen, row.kanal, row.jenis, row.cabang, row.pelanggan, row.hewan, row.nama, row.pelaksana, row.qty, row.harga, row.diskon, row.nilai, row.status, row.hpp ?? ""]);
+  const context = kanal === "Grosir"
+    ? "Nilai baris faktur grosir = qty × harga − diskon baris (dasar DPP sebelum PPN); jumlah barisnya sama dengan DPP faktur. Faktur dihitung pada tanggal fakturnya dan ikut sejak terbit walau belum dibayar. Faktur batal, faktur yang sudah diganti faktur koreksi, faktur saldo awal, dan faktur selisih stok opname tidak ikut. HPP grosir diakui di dokumen Pengiriman; baris tanpa pengiriman dibiarkan kosong."
+    : kanal === "POS"
     ? "Neto POS dibagi ke tiap barang dari total struk sebelum fee merchant, termasuk diskon nota, voucher, poin, dan pembulatan. Selisih pembulatan bisa negatif. Retur belum dialokasikan ke baris."
     : kanal === "Klinik"
       ? "Neto invoice klinik dibagi ke tiap baris setelah diskon invoice, termasuk promo, voucher, poin, dan pembulatan. Pajak dan DP tidak masuk nilai baris. Racikan dicocokkan dengan resep pada kunjungan yang sama."
@@ -46,7 +51,7 @@ export async function GET(request: Request) {
   const metadata: (string | number)[][] = [["Rincian penjualan per barang"], ["Dari tanggal WIB", dari], ["Sampai tanggal WIB", sampai],
     ["Sumber", kanal], ["Jenis", jenis], ["Cabang", cabangId ? `${cabangOptions.find(branch => branch.id === cabangId)?.name ?? "Tidak tersedia"} · ${cabangId}` : "Semua cabang yang dapat diakses"],
     ["Pelaksana tersimpan", pelaksanaId ? `${pelaksanaOptions.find(person => person.id === pelaksanaId)?.nama ?? "Tidak tersedia"} · ${pelaksanaId}` : "Semua pelaksana"], ["Cari", q], ["Baris penjualan", rows.length], ["Jumlah terjual", qtyTotal],
-    [kanal === "POS" ? "Neto barang sebelum retur dan fee (Rp)" : kanal === "Klinik" ? "Neto baris sebelum pajak (Rp)" : "Nilai setelah diskon item (Rp)", nilaiTotal], ["Keterangan", context]];
+    [kanal === "POS" ? "Neto barang sebelum retur dan fee (Rp)" : kanal === "Klinik" || kanal === "Grosir" ? "Neto baris sebelum pajak (Rp)" : "Nilai setelah diskon item (Rp)", nilaiTotal], ["Keterangan", context]];
   const filename = `penjualan-barang-${dari}-${sampai}`;
   if (params.get("format") === "xlsx") {
     const book = new ExcelJS.Workbook();
@@ -55,8 +60,9 @@ export async function GET(request: Request) {
     sheet.getRow(1).font = { bold: true };
     sheet.addRows(data);
     columns.forEach((_, index) => {
-      sheet.getColumn(index + 1).width = index >= 9 && index <= 12 ? 20 : 28;
-      if (index >= 9 && index <= 12) sheet.getColumn(index + 1).numFmt = '#,##0.00';
+      const angka = (index >= 9 && index <= 12) || index === 14;
+      sheet.getColumn(index + 1).width = angka ? 20 : 28;
+      if (angka) sheet.getColumn(index + 1).numFmt = '#,##0.00';
     });
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
     book.addWorksheet("Ringkasan dan filter").addRows(metadata);
