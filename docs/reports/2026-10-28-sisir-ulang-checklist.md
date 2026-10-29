@@ -68,3 +68,22 @@ Status/checkbox sesuai ID. Perlu dirapikan pemegang sheet (Wowo).
 Verifikasi gabungan: lint 0 error; typecheck lulus; vitest 567 berkas/4.203 tes lulus; build lulus; SQL lokal
 PostgreSQL 16 (semua migrasi): A01 coverage, K08 (6 suite + skrip review), C05/Q01 (12 suite + 2 uji konkurensi)
 lulus. Belum: apply migrasi production, UAT pengguna.
+
+## Hasil batch 2 (keputusan 29 Okt, PR #310)
+
+| ID | Perubahan | Migrasi |
+|----|-----------|---------|
+| P03 | Kasir klinik & paket Grup (petshop/klinik) diblok bila barang dijual nol/di bawah HPP FIFO; jasa bebas. Back office/grosir: peringatan + centang konfirmasi | `20261101100000` |
+| J02 | Koreksi Tunai↔Transfer sesudah shift ditutup untuk OWNER/FINANCE (jurnal tanggal koreksi, angka tutup shift tetap) + koreksi metode bayar invoice klinik | `20261101110000`, `20261101111000` |
+| N01/J01 | Dokumen Retur Faktur Grosir tertaut faktur (stok kembali, jurnal balik, piutang/saldo pelanggan), void, tautan dua arah, omzet grosir & sisa piutang dikurangi retur | `20261101130000` |
+| K08 | Kunjungan dengan invoice belum lunas tidak bisa langsung masuk ranap | `20261101140000` |
+| K14 | Check-in pet hotel tanpa dokter/pemeriksaan/consent; tarif harian Pet Hotel tersendiri (fallback tarif ranap + peringatan bila belum diisi) | `20261101141000` |
+| C05 | Voucher yang ditautkan kampanye aktif hanya bisa lewat kode kampanye; nota pendamping rombongan tetap sah lewat penanda nota pembawa | `20261101150000`, `20261101152000` |
+| I09 | Halaman riwayat per SKU induk racikan (Masuk = dibuat, Keluar = ditagih) | `20261101151000` |
+| H05 | Komisi paket dibagi rata antar penjual baris paket | — |
+| R06 | KPI grooming owner = klinik + kasir petshop (rincian Klinik/Kasir) | — |
+| M04/M01 | Default impor stok awal: nilai dibulatkan rupiah penuh per baris; selisih pembulatan tercatat & tampil; runbook diperbarui | `20261101160000` |
+
+Paket langkah database owner: `docs/evidence/2026-10-29-pr310-batch2/owner-apply/` (wajib sesudah paket batch 1).
+
+Sisa terbuka setelah batch 2: komisi penjual dikurangi retur grosir? (rekomendasi: ya, konsisten dengan J03); saldo kredit pelanggan 2103 belum bisa dipakai/dikembalikan; koreksi DP klinik oleh FINANCE tanpa shift; UAT seluruhnya.
