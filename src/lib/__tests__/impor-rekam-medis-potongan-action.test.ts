@@ -101,8 +101,26 @@ it("mengulang potongan yang sama tanpa menulis dua kali", async () => {
   await prosesPotonganImporRekamMedis(rows, [], true);
   const ulang = await prosesPotonganImporRekamMedis(rows, [], true);
   expect(ulang).toMatchObject({ ok: true, tersimpan: 0, sudah_ada: 1 });
-  // Pengulangan tidak lagi mengirim baris itu ke transaksi penyimpanan.
-  expect(massal()).toHaveLength(1);
+  // Jejak yang sudah tercatat tetap dikirim supaya database membuktikan isinya identik (K1b),
+  // tetapi database tidak menulis apa pun untuknya.
+  expect(massal()).toHaveLength(2);
+  expect(db.tersimpan.size).toBe(1);
+});
+
+it("jejak tercatat dikirim tanpa pilihan identitas dan tanpa ditanyakan ulang", async () => {
+  db.tersimpan.add(baris().source_key);
+  db.owners = [{ id: "pemilik", name: "Pemilik Lain", phone: "0800000001" }];
+  const hasil = await prosesPotonganImporRekamMedis([baris()], [], true);
+  expect(hasil).toMatchObject({ ok: true, tersimpan: 0, sudah_ada: 1, perlu_keputusan: [] });
+  expect((massal()[0].args.p_rows as BarisMassal[])[0]).toMatchObject({ customer_id: null, pet_id: null });
+});
+
+it("jejak sama dengan isi berbeda yang ditolak database dilaporkan sebagai ditahan beserta alasannya", async () => {
+  db.tersimpan.add(baris().source_key);
+  db.gagalBaris.set(baris().source_key, "Jejak sumber bentrok: isinya berbeda");
+  const hasil = await prosesPotonganImporRekamMedis([baris({ diagnosis: "Lain" })], [], true);
+  expect(hasil).toMatchObject({ ok: true, tersimpan: 0, sudah_ada: 0 });
+  expect(hasil.ditahan).toEqual([expect.objectContaining({ source_key: baris().source_key, reason: expect.stringContaining("bentrok") })]);
 });
 
 it("membawa identitas persis yang dikenali pemindaian ke penyimpanan", async () => {
@@ -180,4 +198,12 @@ it("meneruskan batas waktu database apa adanya supaya layar bisa mengulang poton
 it("mengirim kunci yang sudah dinormalkan ke pemindaian identitas", async () => {
   await prosesPotonganImporRekamMedis([baris({ owner_name: "Pemilik  Fiktif.", phone: "0800-000-0001" })], [], true);
   expect(pindai()[0].args).toMatchObject({ p_owner_keys: ["pemilik fiktif"], p_phone_keys: ["08000000001"] });
+});
+
+it("mengirim kunci HP kanonik: +62 dan 08 menjadi satu kunci pemindaian", async () => {
+  await prosesPotonganImporRekamMedis([
+    baris({ source_key: "a", phone: "+62 800-000-0001" }),
+    baris({ source_key: "b", phone: "0800-000-0001" }),
+  ], [], true);
+  expect(pindai()[0].args).toMatchObject({ p_phone_keys: ["08000000001"] });
 });

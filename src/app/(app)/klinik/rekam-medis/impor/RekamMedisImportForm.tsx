@@ -31,6 +31,7 @@ import {
   tandaRuangImpor,
   teksProgresImpor,
   tulisTitikSimpan,
+  folderSelesaiTercatat,
   type BatasPotonganImpor,
   type HitunganImporRekamMedis,
   type PotonganImporRekamMedis,
@@ -60,6 +61,10 @@ type Antrian = {
   ruang: string;
   /** Folder yang sudah tercatat selesai SEBELUM sesi ini; tetap ikut ditulis ulang. */
   selesaiAwal: string[];
+  /** Folder yang tuntas di sesi ini (tanpa riwayat ditahan/menunggu keputusan). */
+  tuntas: string[];
+  /** Riwayat ditahan atau menunggu keputusan pada folder yang sedang diproses. */
+  belumTuntas: number;
   berkasTotal: number;
 };
 
@@ -123,6 +128,7 @@ export function RekamMedisImportForm() {
 
   const catatDitahan = useCallback((rows: RekamMedisImporHeld[]) => {
     if (!rows.length) return;
+    if (antrianRef.current) antrianRef.current.belumTuntas += rows.length;
     const sisa = Math.max(0, MAKS_DITAHAN_DISIMPAN - ditahanRef.current.length);
     if (sisa > 0) ditahanRef.current.push(...rows.slice(0, sisa));
     setDitahan([...ditahanRef.current]);
@@ -199,6 +205,7 @@ export function RekamMedisImportForm() {
         if (row) tertundaRef.current.set(item.source_key, row);
       }
       if (barisPertanyaan.length) setPertanyaan((current) => [...current, ...barisPertanyaan]);
+      if (barisPertanyaan.length && antrianRef.current) antrianRef.current.belumTuntas += barisPertanyaan.length;
       const luberPertanyaan = jawaban.perlu_keputusan.slice(muatPertanyaan);
       catatDitahan([...jawaban.ditahan, ...luberPertanyaan.map((item) => ({
         source_key: item.source_key,
@@ -246,6 +253,8 @@ export function RekamMedisImportForm() {
           potongan: null,
           ruang,
           selesaiAwal,
+          tuntas: [],
+          belumTuntas: 0,
           berkasTotal: sisa.reduce((jumlah, folder) => jumlah + folder.berkas.length, 0),
         };
         setFolderTotal(semua.length);
@@ -276,13 +285,14 @@ export function RekamMedisImportForm() {
           antrian.iPotongan += 1;
           setSisaMs(perkiraanSisaWaktuImpor(waktuRef.current.terpakaiMs, waktuRef.current.berkas, antrian.berkasTotal));
         }
+        // Folder dengan riwayat ditahan/menunggu keputusan tidak dicatat selesai, supaya
+        // dibaca ulang bila impor dilanjutkan setelah tab tertutup.
+        antrian.tuntas = folderSelesaiTercatat(antrian.tuntas, folder.id, antrian.belumTuntas);
+        antrian.belumTuntas = 0;
         antrian.iFolder += 1;
         antrian.iPotongan = 0;
         antrian.potongan = null;
-        tulisTitikSimpan(penyimpanLokal(), antrian.ruang, [
-          ...antrian.selesaiAwal,
-          ...antrian.folders.slice(0, antrian.iFolder).map((item) => item.id),
-        ]);
+        tulisTitikSimpan(penyimpanLokal(), antrian.ruang, [...antrian.selesaiAwal, ...antrian.tuntas]);
         setFolderSelesai(antrian.selesaiAwal.length + antrian.iFolder);
       }
       penguraiRef.current?.tutup();

@@ -6,6 +6,7 @@
 import { reportCsv } from "./csv-report";
 import type { BerkasImporRekamMedis, FolderImporRekamMedis } from "./impor-rekam-medis-sumber";
 import type { RekamMedisImporHeld, RekamMedisImporRow } from "./impor-rekam-medis";
+import { kunciHpIndonesia } from "./kontak";
 
 export type BatasPotonganImpor = { berkas: number; bytes: number };
 
@@ -98,7 +99,7 @@ export function bagiKirimanBaris<T>(rows: readonly T[], maks: number = MAKS_BARI
 const rapikan = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase("id-ID").replace(/[.:]/g, "").replace(/\s+/g, " ");
 
 export function kunciGandaRiwayat(row: Pick<RekamMedisImporRow, "owner_name" | "phone" | "patient_name" | "record_date">) {
-  return [rapikan(row.owner_name), String(row.phone ?? "").replace(/\D/g, ""), rapikan(row.patient_name), row.record_date ?? ""].join("::");
+  return [rapikan(row.owner_name), kunciHpIndonesia(row.phone), rapikan(row.patient_name), row.record_date ?? ""].join("::");
 }
 
 /** Sidik pendek: menahan 20.000 baris di memori tanpa menyimpan isi medisnya. */
@@ -213,6 +214,19 @@ export function hapusTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefi
 export function sisakanFolderBelumSelesai(folders: readonly FolderImporRekamMedis[], selesai: readonly string[]) {
   const sudah = new Set(selesai);
   return folders.filter((folder) => !sudah.has(folder.id));
+}
+
+/**
+ * Daftar folder selesai yang boleh ditulis ke titik simpan setelah satu folder diproses.
+ *
+ * Folder yang masih punya riwayat ditahan atau menunggu keputusan TIDAK dicatat selesai:
+ * catatan ditahan hanya ada di memori tab, jadi bila tab tertutup, folder itu harus dibaca
+ * ulang saat dilanjutkan. Riwayat yang sudah tersimpan tidak tergandakan karena database
+ * hanya menerima kiriman ulang yang isinya terbukti identik.
+ */
+export function folderSelesaiTercatat(sebelumnya: readonly string[], folderId: string, belumTuntas: number): string[] {
+  if (belumTuntas > 0 || sebelumnya.includes(folderId)) return [...sebelumnya];
+  return [...sebelumnya, folderId];
 }
 
 // ---------------------------------------------------------------------------

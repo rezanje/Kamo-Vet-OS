@@ -21,6 +21,7 @@ import {
   sesuaikanBatasPotongan,
   sidikRiwayat,
   sisakanFolderBelumSelesai,
+  folderSelesaiTercatat,
   tandaRuangImpor,
   teksProgresImpor,
   tulisTitikSimpan,
@@ -47,6 +48,16 @@ function baris(ubah: Partial<RekamMedisImporRow> = {}): RekamMedisImporRow {
     ...ubah,
   };
 }
+
+describe("titik simpan hanya mencatat folder yang tuntas", () => {
+  it("folder dengan riwayat ditahan atau menunggu keputusan tidak ditandai selesai", () => {
+    expect(folderSelesaiTercatat(["A"], "B", 0)).toEqual(["A", "B"]);
+    // Bila tab tertutup setelah titik simpan ditulis, catatan ditahan di memori hilang.
+    // Folder yang belum tuntas harus dibaca ulang saat dilanjutkan, bukan dilewati.
+    expect(folderSelesaiTercatat(["A"], "B", 1)).toEqual(["A"]);
+    expect(folderSelesaiTercatat(["A", "B"], "B", 0)).toEqual(["A", "B"]);
+  });
+});
 
 describe("rencana potongan folder", () => {
   it("tidak pernah mencampur dua folder pemilik dalam satu potongan", () => {
