@@ -54,7 +54,7 @@ const TINDAKAN = "Tindakan & Racikan";
 
 it.each(['exam', 'inpatient'])('%s compound requires a composition path instead of offering direct finished-stock use', async kind => {
   await render(kind); await tab(TINDAKAN);
-  const search = host.querySelector<HTMLInputElement>('[aria-label="Cari obat racik"]')!;
+  const search = host.querySelector<HTMLInputElement>('[aria-label="Cari tindakan / racikan"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'Obat Racik');
     search.dispatchEvent(new Event('input', { bubbles: true }));
@@ -65,7 +65,7 @@ it.each(['exam', 'inpatient'])('%s compound requires a composition path instead 
   expect(host.textContent).toContain('Komposisi racikan');
   expect(host.textContent).not.toContain('Ambil stok obat jadi');
   const addCompound = [...host.querySelectorAll<HTMLButtonElement>('button')]
-    .find(button => button.textContent?.includes('Tambah racikan ke keranjang'));
+    .find(button => button.textContent?.trim() === 'Tambah ke keranjang');
   expect(addCompound?.disabled).toBe(true);
 });
 
@@ -196,16 +196,16 @@ async function chooseBmhp(label: string, query: string) {
 
 it.each(['exam','inpatient'])('K02 %s composes two BMHP materials before adding an action and reopens its persisted composition', async kind => {
   await render(kind); await tab(TINDAKAN);
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
-  expect(host.textContent).toContain('Komposisi BMHP tindakan');
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Steril"]')!.click());
+  expect(host.textContent).toContain('Bahan / BMHP');
   expect(cart()).toHaveLength(0);
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Steril"]')!.click());
   expect(cart()).toHaveLength(0);
   await chooseBmhp('Steril', 'Makanan');
   await chooseBmhp('Steril', 'Kasa');
   const qty = host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Kasa steril"]')!;
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(qty, '2'); qty.dispatchEvent(new Event('input', { bubbles: true })); });
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah tindakan Steril ke keranjang"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril ke keranjang"]')!.click());
   expect(cart()).toHaveLength(1);
   expect(cart()[0]).toMatchObject({ item_id: 'steril', jenis: 'jasa', harga: 75000, bmhp: [
     { item_id: 'food', nama: 'Makanan kucing', qty: 1, unit: 'pcs' },
@@ -219,7 +219,7 @@ it.each(['exam','inpatient'])('K02 %s composes two BMHP materials before adding 
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Kasa steril"]')?.value).toBe('2');
   const reopenedQty = host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Kasa steril"]')!;
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(reopenedQty, '3'); reopenedQty.dispatchEvent(new Event('input', { bubbles: true })); });
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Simpan BMHP Steril"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Simpan Steril"]')!.click());
   expect(cart()).toHaveLength(1);
   expect(cart()[0]).toMatchObject({ key, harga: 75000, bmhp: [expect.any(Object), { qty: 3 }] });
 });
@@ -227,12 +227,12 @@ it.each(['exam','inpatient'])('K02 %s composes two BMHP materials before adding 
 it.each(['exam','inpatient'])('%s keeps unfinished BMHP composition across reload and blocks premature clinical save', async kind => {
   vi.clearAllMocks();
   await render(kind); await tab(TINDAKAN);
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Steril"]')!.click());
   await chooseBmhp('Steril', 'Kasa');
   expect(cart()).toHaveLength(0);
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(kind === 'exam' ? simpanRekamMedis : addDailyLogPos).not.toHaveBeenCalled();
-  expect(host.textContent).toContain('Selesaikan komposisi BMHP tindakan');
+  expect(host.textContent).toContain('Selesaikan form tindakan / racikan');
   await act(async () => root.unmount()); root = createRoot(host); await render(kind);
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Kasa steril"]')?.value).toBe('1');
   expect(cart()).toHaveLength(0);
@@ -243,8 +243,8 @@ it.each(['exam','inpatient'])('%s records separate per-line performers for medic
   const foodRow=[...host.querySelectorAll('tr')].find(row=>row.textContent?.includes('Makanan kucing'))!;
   await act(async()=>foodRow.querySelector<HTMLButtonElement>('button')!.click());
   await tab(TINDAKAN);
-  await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
-  await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah tindakan Steril ke keranjang"]')!.click());
+  await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Steril"]')!.click());
+  await act(async()=>host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril ke keranjang"]')!.click());
   expect(host.querySelector('select[aria-label="Penjual Makanan kucing"]')).toBeNull();
   expect(host.textContent).not.toContain('Penjual SKU');
   const fieldFor=(name:string)=>[...host.querySelectorAll('fieldset')].find(field=>field.querySelector('legend')?.textContent===`Pelaksana ${name}`)!;
