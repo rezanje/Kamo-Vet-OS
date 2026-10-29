@@ -61,8 +61,11 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   // K01: addenda are part of the clinical record; never print a partial history.
   const addenda: AddendaLoad = mr ? await loadRecordAddenda(supabase, mr.id) : { state: "ok", rows: [] };
 
+  // Rawat inap bertahap: beberapa tagihan aktif per kunjungan. Dokumen rekam medis
+  // hanya menyebut tagihan terakhir; rinciannya ada di layar tagihan rawat inap.
   const { data: invoice } = await supabase
-    .from("invoices").select("metode_bayar, total, paid_status").eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+    .from("invoices").select("metode_bayar, total, paid_status").eq("visit_id", visitId).is("voided_at", null)
+    .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1).maybeSingle();
 
   const { data: inpat } = await supabase
     .from("inpatient_records").select("admitted_at, condition_status").eq("visit_id", visitId).order("admitted_at", { ascending: false });

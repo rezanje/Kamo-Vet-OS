@@ -11,7 +11,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from(table:string)
  const rows=table==='invoice_items'?[{invoice_id:'invoice',deskripsi:'Jasa tersimpan',jenis:'jasa',qty:1,harga:100,service_performers:state.legacy?null:{version:1,doctor_id:'doctor',doctor_name:'Dokter Saat Transaksi',staff_id:'staff',staff_name:'Perawat Saat Transaksi'}}]
   :table==='invoices'?[invoice]:table==='visits'?[visit]:table==='employees'?[{id:'dokter-pj',nama:'Dokter PJ Tersimpan'}]:[];
  const result={data:rows,error:null};
- const q={select:()=>q,eq:()=>q,is:()=>q,in:()=>q,order:()=>q,maybeSingle:async()=>({data:table==='visits'?visit:table==='invoices'?invoice:null,error:null}),then:(resolve:(value:unknown)=>void)=>Promise.resolve(result).then(resolve)};return q;
+ const q={select:()=>q,eq:()=>q,is:()=>q,in:()=>q,order:()=>q,limit:()=>q,maybeSingle:async()=>({data:table==='visits'?visit:table==='invoices'?invoice:null,error:null}),then:(resolve:(value:unknown)=>void)=>Promise.resolve(result).then(resolve)};return q;
 }})}));
 import {HandoffPanel} from '@/app/(app)/klinik/rawat-inap/[id]/HandoffPanel';
 import Struk from '@/app/(app)/klinik/pembayaran/[visitId]/struk/page';

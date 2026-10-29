@@ -9,6 +9,7 @@ import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerName
 import styles from "./PembayaranForm.module.css";
 
 import { METODE_BAYAR as SPLIT_METHODS } from "@/lib/kas-akun";
+import { kurangUangMuka, pesanDpMinimal } from "@/lib/dp-minimal";
 import { validateSplitPaymentTotal, type SplitPaymentDraft } from "@/lib/clinic-split-payment";
 
 import { quoteDemoPayments, type DemoFinancialPolicy } from "@/lib/clinic-demo-policy";
@@ -281,7 +282,7 @@ function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:
   </div>;
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, minDpPercent = 0, bolehTerobosDp = false }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   /** Ada racikan kunjungan ini yang masih menunggu diracik. */
@@ -298,6 +299,10 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
+  /** Uang muka minimal tagihan klinik (persen). 0 = aturannya dimatikan. */
+  minDpPercent?: number;
+  /** Peran kasir boleh menyimpan di bawah minimum dengan alasan (OWNER/ADMIN/FINANCE). */
+  bolehTerobosDp?: boolean;
 }) {
   const [draftSourceVersion, setDraftSourceVersion] = useState(sourceVersion);
   const sourceChanged = !!sourceVersion && draftSourceVersion !== sourceVersion;
@@ -318,6 +323,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const [demoEnabled, setDemoEnabled] = useState(!editMode && !!demoPolicy && demoStaff.length > 0 && /^DEMO\b/i.test(patient.owner));
   const [demoPolicyId, setDemoPolicyId] = useState(demoPolicy?.id ?? "");
   const [demoEmployees, setDemoEmployees] = useState(demoStaff.map(person => person.id));
+  const [dpOverrideReason, setDpOverrideReason] = useState("");
   const [mixed, setMixed] = useState(false);
   const [splitPayments, setSplitPayments] = useState<SplitPaymentDraft[]>([{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
 
@@ -404,6 +410,9 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
     catch (error) { splitError = error instanceof Error ? error.message : "Periksa rincian pembayaran."; }
   }
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
+  // Uang muka minimal (Andri, 29 Oktober 2026). Database yang menolak; layar hanya
+  // memberi tahu lebih awal supaya kasir tidak menyebut angka yang nanti ditolak.
+  const kurangDp = editMode || mixed ? 0 : kurangUangMuka(total, totalDiterima, minDpPercent);
   const statusColor = paidStatus === "Lunas" ? "#15803d" : paidStatus === "DP" ? "#7c3aed" : "#b91c1c";
 
   const { submissionKey, attachForm, capture, recovered, discard, storageError, saveError, submit, leaving } = useClinicDraft({
@@ -484,6 +493,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       <input type="hidden" name="dp_amount" value={editMode ? dpPaid : totalDiterima} />
       <input type="hidden" name="dp_date" value={initialDpDate ?? today} />
       {editMode && <input type="hidden" name="edit_reason" value={reason} />}
+      {kurangDp > 0 && bolehTerobosDp && <input type="hidden" name="dp_override_reason" value={dpOverrideReason} />}
 
       {recovered && <div className="p2ban">Draf dipulihkan. Periksa isian sebelum menyimpan.
         <button type="button" className="btn-def" onClick={discard}>Buang draf</button>
@@ -700,6 +710,23 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
               <span style={{ fontWeight: 700, color: "#15803d" }}>{rp(kembalian)}</span>
             </div>
           </div>}
+
+          {kurangDp > 0 && (
+            <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", marginBottom: 8 }}>
+              <i className="ti ti-alert-triangle" /> {pesanDpMinimal(total, totalDiterima, minDpPercent)}
+              {bolehTerobosDp
+                ? " Isi alasan di bawah untuk tetap menyimpan."
+                : " Minta OWNER/ADMIN/FINANCE yang menyimpan di bawah minimum."}
+            </div>
+          )}
+          {kurangDp > 0 && bolehTerobosDp && (
+            <div className="fg" style={{ marginBottom: 8 }}>
+              <label className="flab" htmlFor="dp-override-reason">Alasan di bawah uang muka minimal</label>
+              <input className="fi" id="dp-override-reason" maxLength={500} value={dpOverrideReason}
+                onChange={(e) => setDpOverrideReason(e.target.value)}
+                placeholder="Mis. pelanggan lama, sisanya transfer besok" />
+            </div>
+          )}
 
           {/* Aksi */}
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: 6 }}>

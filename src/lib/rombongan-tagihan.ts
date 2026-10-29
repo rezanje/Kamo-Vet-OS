@@ -9,8 +9,10 @@
 export type KunjunganSerombongan = {
   visitId: string;
   hewan: string;
-  /** null = tagihannya belum dibuat sama sekali. */
+  /** null = tagihannya belum dibuat sama sekali. Rawat inap bertahap: nomor TERTUA. */
   invoiceNo: string | null;
+  /** Semua nomor tagihan aktif kunjungan ini (rawat inap bisa lebih dari satu tahap). */
+  invoiceNos?: string[];
   total: number;
   /** 'Lunas' | 'DP' | 'Belum Lunas' | null (belum ada tagihan) */
   paidStatus: string | null;

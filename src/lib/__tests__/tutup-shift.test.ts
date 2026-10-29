@@ -19,6 +19,7 @@ type Db = {
   employees?: Any[];
   cash_advances_inserted?: Any[];
   journalLines?: Any[];
+  clinic_payment_receipts?: Any[];
 };
 
 function makeClient(db: Db) {
@@ -60,6 +61,7 @@ function makeClient(db: Db) {
         eq: (k: string, v: Any) => ((f[k] = v), self),
         in: () => self,
         is: () => self,
+        or: () => self,
         not: () => self,
         order: () => self,
         limit: () => self,
@@ -121,6 +123,45 @@ describe("pemasukanShift", () => {
     const result = await hitungShift(makeClient(db), shift());
     expect(result.expected).toBe(118000);
     expect(result.breakdown.Transfer).toBe(80000);
+  });
+
+  // Tagihan berjalan rawat inap (Andri, 29 Oktober 2026): uangnya masuk lewat kwitansi
+  // per kunjungan, bukan lewat kepala invoice, jadi kas fisik shift harus ikut membacanya.
+  it("counts inpatient receipt parts per method in the clinic drawer", async () => {
+    const db: Db = {
+      invoices: [{ id: "tahap-1", total: 300000, dp_amount: 0, paid_status: "Belum Lunas", metode_bayar: "Tunai" }],
+      invoice_payments: [{ invoice_id: "tahap-1", amount: 250000, metode: "Tunai", transferred_from: null }],
+      clinic_payment_receipts: [{
+        id: "kwt-1", status: "aktif", shift_id: "S1", void_shift_id: null,
+        clinic_payment_receipt_parts: [{ metode: "Tunai", amount: 120000 }, { metode: "QRIS", amount: 130000 }],
+      }],
+    };
+    const result = await hitungShift(makeClient(db), shift({ shift_type: "klinik" }));
+    expect(result.breakdown).toMatchObject({ Tunai: 120000, QRIS: 130000 });
+    // Tagihan tahapnya sendiri tidak menambah laci: uangnya sudah dihitung dari kwitansi.
+    expect(result.expected).toBe(220000);
+  });
+
+  it("does not treat an applied customer advance as cash received", async () => {
+    const db: Db = {
+      invoices: [{ id: "tahap-2", total: 50000, dp_amount: 0, paid_status: "Lunas", metode_bayar: "Tunai" }],
+      invoice_payments: [{ invoice_id: "tahap-2", amount: 50000, metode: "Uang Muka", kas_code: "2103", transferred_from: null }],
+      clinic_payment_receipts: [],
+    };
+    const result = await hitungShift(makeClient(db), shift({ shift_type: "klinik" }));
+    expect(result.breakdown.Tunai).toBe(0);
+    expect(result.expected).toBe(100000);
+  });
+
+  it("removes a voided receipt from the drawer that gave the money back", async () => {
+    const parts = [{ metode: "Tunai", amount: 80000 }];
+    const sama: Db = { clinic_payment_receipts: [{ id: "kwt-2", status: "batal", shift_id: "S1", void_shift_id: "S1", clinic_payment_receipt_parts: parts }] };
+    expect((await hitungShift(makeClient(sama), shift({ shift_type: "klinik" }))).breakdown.Tunai).toBe(0);
+
+    const lain: Db = { clinic_payment_receipts: [{ id: "kwt-3", status: "batal", shift_id: "S0", void_shift_id: "S1", clinic_payment_receipt_parts: parts }] };
+    const hasil = await hitungShift(makeClient(lain), shift({ shift_type: "klinik" }));
+    expect(hasil.breakdown.Tunai).toBe(-80000);
+    expect(hasil.expected).toBe(20000);
   });
 
   it("counts original mixed checkout parts separately in the clinic shift", async () => {

@@ -1,0 +1,166 @@
+"use server";
+// Tagihan berjalan rawat inap: tagih tahap, terima pembayaran, batalkan kwitansi.
+//
+// Ketiganya hanya meneruskan ke RPC. Semua aturan uang (tagih-sekali, alokasi tertua
+// lebih dulu, uang muka, uang muka minimal, shift, peran) ditegakkan di database —
+// layar tidak boleh jadi satu-satunya penjaga.
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { getOpenShift } from "@/lib/shift";
+import { getPajakSettings, tambahPpn } from "@/lib/pajak";
+import { cekPeriode } from "@/lib/jurnal-guard";
+import { hariIniWIB } from "@/lib/tanggal";
+import { parseClinicPostingError } from "@/lib/klinik-posting";
+import { METODE_BAYAR } from "@/lib/kas-akun";
+import { nilaiBarisResep, type BarisResep } from "@/lib/tagihan-berjalan";
+import { transactionDraftAck } from "@/lib/transaction-draft-ack";
+
+const tidakPasti = "Hasil penyimpanan belum dapat dipastikan. Muat ulang dan periksa tagihan yang sudah tersimpan sebelum mencoba lagi.";
+
+function kembali(recordId: string) {
+  return `/klinik/rawat-inap/${recordId}/tagihan`;
+}
+
+async function shiftKlinik(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data: { user } } = await supabase.auth.getUser();
+  const shift = user ? await getOpenShift(supabase as never, user.id, "klinik") : null;
+  if (!shift) {
+    redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses tagihan rawat inap")}`);
+  }
+  return shift;
+}
+
+/** Baris resep yang dipilih staf, diverifikasi ulang milik kunjungan ini dan belum ditagih. */
+async function barisTerpilih(
+  supabase: Awaited<ReturnType<typeof createClient>>, visitId: string, ids: string[],
+): Promise<BarisResep[]> {
+  const { data: mrs, error: mrError } = await supabase
+    .from("medical_records").select("id").eq("visit_id", visitId);
+  if (mrError) throw new Error("gagal-baca");
+  const mrIds = ((mrs ?? []) as { id: string }[]).map((r) => r.id);
+  if (!mrIds.length) return [];
+  const { data, error } = await supabase
+    .from("prescription_items")
+    .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id")
+    .in("medical_record_id", mrIds).in("id", ids).order("created_at");
+  if (error) throw new Error("gagal-baca");
+  return (data ?? []) as BarisResep[];
+}
+
+export async function tagihSekarang(formData: FormData) {
+  const supabase = await createClient();
+  const recordId = String(formData.get("recordId") ?? "");
+  const visitId = String(formData.get("visitId") ?? "");
+  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  if (!recordId || !visitId) redirect("/klinik/rawat-inap?error=Rawat%20inap%20tidak%20valid");
+  const back = kembali(recordId);
+  if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang halaman lalu coba lagi.")}`);
+
+  const shift = await shiftKlinik(supabase);
+  const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
+  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
+
+  let ids: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(String(formData.get("ids") ?? "[]"));
+    if (Array.isArray(parsed)) ids = parsed.filter((v): v is string => typeof v === "string" && !!v);
+  } catch { ids = []; }
+  if (!ids.length) {
+    redirect(`${back}?error=${encodeURIComponent("Pilih minimal satu baris yang mau ditagih sekarang.")}`);
+  }
+
+  let rows: BarisResep[];
+  try { rows = await barisTerpilih(supabase, visitId, ids); }
+  catch { redirect(`${back}?error=${encodeURIComponent("Rincian resep belum dapat dibaca. Muat ulang sebelum menagih.")}`); }
+  if (rows.length !== ids.length) {
+    redirect(`${back}?error=${encodeURIComponent("Ada baris yang sudah berubah atau bukan milik kunjungan ini. Muat ulang daftarnya.")}`);
+  }
+
+  const subtotal = rows.reduce((sum, r) => sum + nilaiBarisResep(r), 0);
+  if (subtotal <= 0) {
+    redirect(`${back}?error=${encodeURIComponent("Nilai tagihan nol — isi harga di rekam medis dulu.")}`);
+  }
+  const { tax, total } = tambahPpn(subtotal, await getPajakSettings(supabase));
+  const alasan = String(formData.get("dp_override_reason") ?? "").trim();
+
+  const { error } = await supabase.rpc("clinic_post_inpatient_stage_invoice", {
+    p_visit_id: visitId,
+    p_request_key: requestKey,
+    p_invoice: {
+      tanggal: hariIniWIB(), subtotal, discount: 0, tax, total,
+      dp_amount: 0, dp_date: null, paid_status: "Belum Lunas", metode_bayar: "Tunai",
+      shift_id: shift.id, voucher_code: null, salesperson_id: null,
+      ...(alasan ? { dp_override_reason: alasan } : {}),
+    },
+    p_lines: rows.map((r) => ({
+      description: r.nama_obat, qty: Number(r.qty), price: Number(r.harga) || 0,
+      kind: r.jenis === "jasa" ? "jasa" : "obat",
+      item_id: r.item_id ?? null, unit: r.satuan ?? null,
+      prescription_item_id: r.id, recipe_id: r.compound_recipe_id ?? null,
+      discount_percent: 0,
+    })),
+  });
+  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error, tidakPasti))}`);
+  revalidatePath(back);
+  redirect(`${back}?success=tagih${transactionDraftAck(formData)}`);
+}
+
+export async function terimaPembayaran(formData: FormData) {
+  const supabase = await createClient();
+  const recordId = String(formData.get("recordId") ?? "");
+  const visitId = String(formData.get("visitId") ?? "");
+  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  if (!recordId || !visitId) redirect("/klinik/rawat-inap?error=Rawat%20inap%20tidak%20valid");
+  const back = kembali(recordId);
+  if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang halaman lalu coba lagi.")}`);
+  await shiftKlinik(supabase);
+  const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
+  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
+
+  let parts: { method: string; amount: number }[] = [];
+  try {
+    const parsed: unknown = JSON.parse(String(formData.get("parts") ?? "[]"));
+    if (Array.isArray(parsed)) {
+      parts = parsed.map((p) => ({
+        method: String((p as { method?: unknown }).method ?? ""),
+        amount: Number((p as { amount?: unknown }).amount) || 0,
+      })).filter((p) => p.amount > 0);
+    }
+  } catch { parts = []; }
+  if (!parts.length || parts.length > 6
+      || parts.some((p) => !METODE_BAYAR.includes(p.method as (typeof METODE_BAYAR)[number])
+        || !Number.isSafeInteger(p.amount))) {
+    redirect(`${back}?error=${encodeURIComponent("Isi metode dan nominal rupiah bulat pada setiap bagian pembayaran (maksimal 6 bagian).")}`);
+  }
+
+  const invoiceId = String(formData.get("invoice_id") ?? "").trim() || null;
+  const catatan = String(formData.get("catatan") ?? "").trim() || null;
+  const { error } = await supabase.rpc("clinic_receive_visit_payment", {
+    p_visit_id: visitId, p_request_key: requestKey, p_tanggal: hariIniWIB(),
+    p_parts: parts, p_invoice_id: invoiceId, p_catatan: catatan,
+  });
+  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error, tidakPasti))}`);
+  revalidatePath(back);
+  redirect(`${back}?success=bayar${transactionDraftAck(formData)}`);
+}
+
+export async function batalkanKwitansi(formData: FormData) {
+  const supabase = await createClient();
+  const recordId = String(formData.get("recordId") ?? "");
+  const receiptId = String(formData.get("receiptId") ?? "");
+  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!recordId) redirect("/klinik/rawat-inap?error=Rawat%20inap%20tidak%20valid");
+  const back = kembali(recordId);
+  if (!receiptId || !requestKey || !reason) {
+    redirect(`${back}?error=${encodeURIComponent("Isi alasan pembatalan kwitansi lalu coba lagi.")}`);
+  }
+  await shiftKlinik(supabase);
+  const { error } = await supabase.rpc("clinic_void_payment_receipt", {
+    p_receipt_id: receiptId, p_request_key: requestKey, p_reason: reason,
+  });
+  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error, tidakPasti))}`);
+  revalidatePath(back);
+  redirect(`${back}?success=batal${transactionDraftAck(formData)}`);
+}

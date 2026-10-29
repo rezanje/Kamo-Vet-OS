@@ -3,20 +3,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
-import { tambahKapasitasRawatInap } from "./actions";
+import { tambahKapasitasRawatInap, simpanUangMukaMinimal } from "./actions";
+import { getDpMinimalPercent } from "@/lib/dp-minimal";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? value[0] ?? null : value;
 
-export default async function OperasionalKlinikSettings({ searchParams }: { searchParams: Promise<{ error?: string; success?: string }> }) {
-  const { error, success } = await searchParams;
+export default async function OperasionalKlinikSettings({ searchParams }: { searchParams: Promise<{ error?: string; success?: string; persen?: string }> }) {
+  const { error, success, persen } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  const [{ data: profile }, { data: branches }, { data: periods }] = await Promise.all([
+  const [{ data: profile }, { data: branches }, { data: periods }, minDpPercent] = await Promise.all([
     supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
     supabase.from("branches").select("id,name").eq("is_active", true).order("name"),
     supabase.from("branch_capacity_periods").select("id,branch_id,capacity,valid_from,valid_until,created_at,branches(name)").order("valid_from", { ascending: false }),
+    getDpMinimalPercent(supabase),
   ]);
   const boleh = profile?.role === "OWNER" || profile?.role === "ADMIN";
   return (
@@ -27,7 +29,26 @@ export default async function OperasionalKlinikSettings({ searchParams }: { sear
         <div><div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>OPERASIONAL KLINIK</div><div style={{ fontSize: 11.5, color: "var(--tm)" }}>Kapasitas rawat inap dan periode berlakunya</div></div>
       </div>
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success && <div className="p2ban" style={{ background: "#f0fdf4", border: ".5px solid #86efac", color: "#166534" }}><i className="ti ti-circle-check" /> Kapasitas tersimpan. Periode lama tidak ditimpa.</div>}
+      {success === "dp"
+        ? <div className="p2ban" style={{ background: "#f0fdf4", border: ".5px solid #86efac", color: "#166534" }}><i className="ti ti-circle-check" /> Uang muka minimal sekarang {persen ?? minDpPercent}% — berlaku untuk tagihan klinik baru.</div>
+        : success && <div className="p2ban" style={{ background: "#f0fdf4", border: ".5px solid #86efac", color: "#166534" }}><i className="ti ti-circle-check" /> Kapasitas tersimpan. Periode lama tidak ditimpa.</div>}
+
+      {/* Uang muka minimal: satu angka untuk semua tagihan klinik (Andri, 29 Oktober 2026). */}
+      <section className="crm-sec" style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Uang muka minimal tagihan klinik</div>
+        <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 4, lineHeight: 1.6 }}>
+          Tagihan klinik yang disimpan belum lunas wajib sudah menerima minimal sekian persen dari totalnya —
+          berlaku untuk rawat jalan maupun tiap tahap tagihan rawat inap. Uang muka pemilik yang terpakai ikut dihitung.
+          Pelunasan piutang menyusul dan kasir petshop tidak terpengaruh.
+          OWNER, ADMIN, atau FINANCE boleh menerima di bawah minimum dengan alasan yang dicatat permanen.
+        </div>
+        {boleh ? (
+          <form action={simpanUangMukaMinimal} style={{ display: "flex", gap: 8, alignItems: "flex-end", marginTop: 11 }}>
+            <label className="flab">Minimal (%)<NumberInput className="fi" name="min_dp_percent" type="number" min="0" max="100" step="any" defaultValue={minDpPercent} required /></label>
+            <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>Simpan minimal</SubmitButton>
+          </form>
+        ) : <div className="p2ban" style={{ marginTop: 11 }}><i className="ti ti-lock" /> Berlaku {minDpPercent}%. Hanya OWNER/ADMIN yang bisa mengubahnya.</div>}
+      </section>
       {boleh ? (
         <form action={tambahKapasitasRawatInap} className="crm-sec" style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Tambah periode kapasitas</div>
