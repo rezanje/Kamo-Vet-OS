@@ -12,7 +12,7 @@ vi.mock("@/lib/consent-server", () => ({ bacaAturanConsent: async () => [] }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/pajak", () => ({ getPajakSettings: async () => ({}), tambahPpn: (dpp: number) => ({ tax: 0, total: dpp }) }));
 vi.mock("@/lib/clinic-payment", () => ({ resolveClinicSalesperson: async () => null }));
-vi.mock("@/lib/poin-klinik", () => ({ RUPIAH_PER_POIN: 1, bacaPoinPelanggan: async () => ({ saldo: 0, rupiahPerPoin: null }), poinTerpakai: () => 0, catatPoinKlinik: async () => undefined }));
+vi.mock("@/lib/poin-klinik", () => ({ RUPIAH_PER_POIN: 1, bacaPoinPelanggan: async () => ({ saldo: 0, rupiahPerPoin: null }), poinTerpakai: () => 0, catatPoinKlinik: async () => undefined, catatPoinNota: async () => undefined }));
 vi.mock("@/lib/customer-tier", () => ({ recomputeCustomerTier: async () => true }));
 vi.mock("@/lib/wa-engine", () => ({ kirimStrukWa: vi.fn() }));
 vi.mock("@/lib/rombongan-server", () => ({ bacaRombongan: async () => ({ customerId: "customer", customerName: "Owner",
