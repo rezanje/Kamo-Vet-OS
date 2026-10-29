@@ -18,7 +18,7 @@ Satu-satunya yang dipalsukan adalah platform Supabase (skema `auth`/`storage`,
 yang diganti.
 
 Mode:
-  --pra-perbaikan   migrasi mitigasi diambil dari `git show HEAD:<berkas>` (bukti RED)
+  --pra-perbaikan   migrasi mitigasi diambil dari `git show 5fc24c78:<berkas>` (override: KAMO_RED_REVISION) (bukti RED)
   (default)         migrasi mitigasi dari pohon kerja (bukti GREEN)
 
 Seluruh fixture fiktif: pemilik "Fiktif", telepon 0800000xxxx, tanpa identitas pasien
@@ -636,7 +636,7 @@ def jalankan(h):
 
 
 def siapkan_migrasi(pra_perbaikan, stack):
-    """Direktori migrasi yang dipakai bootstrap; mode RED memakai berkas versi HEAD."""
+    """Direktori migrasi yang dipakai bootstrap; mode RED memakai revisi tetap sebelum perbaikan."""
     if not pra_perbaikan:
         return ROOT
     tmp = stack.enter_context(tempfile.TemporaryDirectory(prefix="kamo-ranap-red-"))
@@ -645,10 +645,10 @@ def siapkan_migrasi(pra_perbaikan, stack):
     for sumber in (ROOT / "supabase/migrations").glob("*.sql"):
         if sumber.name != MITIGASI:
             (tujuan / sumber.name).symlink_to(sumber)
-    asal = subprocess.run(["git", "show", f"HEAD:supabase/migrations/{MITIGASI}"],
+    asal = subprocess.run(["git", "show", f"{os.environ.get('KAMO_RED_REVISION', '5fc24c78780b12818c8e06b8aaa6656480f92c32')}:supabase/migrations/{MITIGASI}"],
                           cwd=ROOT, text=True, capture_output=True)
     if asal.returncode:
-        raise SystemExit("Tidak dapat membaca versi HEAD migrasi mitigasi: " + asal.stderr)
+        raise SystemExit("Tidak dapat membaca revisi pra-perbaikan migrasi mitigasi: " + asal.stderr)
     (tujuan / MITIGASI).write_text(asal.stdout)
     return Path(tmp)
 
@@ -656,7 +656,7 @@ def siapkan_migrasi(pra_perbaikan, stack):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pra-perbaikan", action="store_true",
-                        help="pakai migrasi mitigasi versi HEAD (bukti RED)")
+                        help="pakai migrasi mitigasi sebelum perbaikan, revisi 5fc24c78 (bukti RED)")
     parser.add_argument("--json", type=Path, help="tulis hasil tiap kasus ke berkas ini")
     args = parser.parse_args()
 
