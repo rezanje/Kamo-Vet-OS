@@ -1,0 +1,16 @@
+baseline: 316 other migrations applied (16.15 (Ubuntu 16.15-0ubuntu0.24.04.1))
+preflight: 20 checks, 0 failed
+readback: 15 checks, 0 failed
+apply again: refused with PR310_ALREADY_APPLIED, nothing changed
+rollback: functions byte-identical, triggers/sources/history/index/schema as before apply
+preflight after rollback: 20 checks, 0 failed
+readback after re-apply: 15 checks, 0 failed
+PASS clinic_inpatient_discharge.sql
+PASS inpatient_continuation_pet_hotel.sql
+PASS clinic_billing_lifecycle.sql
+PASS activity_audit_coverage.sql
+PASS activity_audit_framework.sql
+PASS q01_new_customer_quest.sql
+PASS c05_q01_followup.sql
+apply.sql sha256 8dc926ec209fbf4ca923d33496173359d6eb3a736408ec9b13464ae5c0609476
+Stopped and removed the throwaway PostgreSQL cluster.
