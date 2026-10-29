@@ -12,13 +12,13 @@ import {
 } from "@/lib/harga-golongan";
 import { loadPromoAktif, totalPotonganPromo } from "@/lib/promo-hitung";
 import { aggregateServiceLines, serviceLinePromos } from "@/lib/service-line-promos";
-import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { simpanBernomor } from "@/lib/simpan-bernomor";
 import { loggedInCashier, validateServicePerformerRows } from "@/lib/service-performers-server";
 import type { ServicePerformersInput } from "@/lib/service-performers";
 import { readCompleteList } from "@/lib/checked-list";
 import { resolvePosPayments } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
-import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
+import { PESAN_STRUK_BENTROK, posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 
@@ -163,33 +163,37 @@ export async function checkoutSale(formData: FormData) {
     // pernah ikut dihitung saat tutup shift, jadi selisih kurang palsu.
     .eq("shift_type", "petshop").maybeSingle();
 
-  // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
-  const { nomor: noStruk } = await nomorBerikutnya(supabase, "POS", hariIniWIB(), {
-    table: "sales", column: "no_struk",
-  });
-
   // Poin ikut golongan pelanggan (migrasi 0078) — rumus sama dengan layar kasir.
   const poin = customerId ? poinDidapat(total, rupiahPerPoin) : 0;
 
-  const { data: sale, error: saleErr } = await supabase
-    .from("sales")
-    .insert({
-      branch_id: branchId, customer_id: customerId, pet_id: petId, no_struk: noStruk,
-      // Potongan promo digabung ke `discount` (potongan tingkat transaksi) —
-      // `diskon_kategori` sengaja tetap berisi diskon golongan saja supaya
-      // laporan yang memisahkan keduanya tidak berubah artinya.
-      subtotal: invoiceSubtotal, discount: posNetTotal(invoiceDiscount, invoiceCategoryDiscount),
-      diskon_kategori: invoiceCategoryDiscount,
-      total: quote.total, merchant_fee_total: quote.feeTotal, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
-      payment_plan: quote.parts, poin_earned: poin,
-      checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
-      cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
-      cashier_name: cashier.name, salesperson_id: cashier.employeeId,
-    })
-    .select("id").single();
-  if (saleErr || !sale) {
+  // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
+  // Nomor yang sama bisa terbaca dua orang sekaligus; yang kalah mengulang kepala
+  // struk dengan nomor baru (lib/simpan-bernomor) — belum ada baris atau stok
+  // yang tersentuh pada titik ini.
+  const { data: sale, error: saleErr, nomor: noStruk, bentrok } = await simpanBernomor<{ id: string }>(
+    supabase,
+    { jenis: "POS", tanggal: hariIniWIB(), table: "sales", column: "no_struk" },
+    (no_struk) => supabase
+      .from("sales")
+      .insert({
+        branch_id: branchId, customer_id: customerId, pet_id: petId, no_struk,
+        // Potongan promo digabung ke `discount` (potongan tingkat transaksi) —
+        // `diskon_kategori` sengaja tetap berisi diskon golongan saja supaya
+        // laporan yang memisahkan keduanya tidak berubah artinya.
+        subtotal: invoiceSubtotal, discount: posNetTotal(invoiceDiscount, invoiceCategoryDiscount),
+        diskon_kategori: invoiceCategoryDiscount,
+        total: quote.total, merchant_fee_total: quote.feeTotal, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
+        payment_plan: quote.parts, poin_earned: poin,
+        checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
+        cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
+        cashier_name: cashier.name, salesperson_id: cashier.employeeId,
+      })
+      .select("id").single(),
+  );
+  if (bentrok || saleErr || !sale) {
     await resumePosCheckout(supabase, user.id, checkout, "backoffice");
-    redirect(`/pos/transaksi?error=${encodeURIComponent(saleErr?.message ?? "Gagal simpan transaksi")}`);
+    const pesan = bentrok ? PESAN_STRUK_BENTROK : saleErr?.message ?? "Gagal simpan transaksi";
+    redirect(`/pos/transaksi?error=${encodeURIComponent(pesan)}`);
   }
 
   // HPP disimpan per baris agar finalisasi database membukukan biaya FIFO riil.

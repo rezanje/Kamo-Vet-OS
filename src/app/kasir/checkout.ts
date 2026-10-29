@@ -14,7 +14,7 @@ import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
-import { nomorBerikutnya } from "@/lib/no-dokumen";
+import { simpanBernomor } from "@/lib/simpan-bernomor";
 import { hariIniWIB } from "@/lib/tanggal";
 import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -23,7 +23,7 @@ import { loggedInCashier, validateServicePerformerRows } from "@/lib/service-per
 import type { ServicePerformersInput } from "@/lib/service-performers";
 import { resolvePosPayments } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
-import { posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
+import { PESAN_STRUK_BENTROK, posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
 import { readCompleteList } from "@/lib/checked-list";
@@ -434,33 +434,39 @@ export async function checkoutKasir(formData: FormData) {
     const priceIssue = cashierPriceFloorIssue(rows.map(row => ({ ...row, item_type: row.item_type })), total, lineCosts);
     if (priceIssue) redirect(`${failureUrl}${encodeURIComponent(priceIssue)}`);
   }
-  // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
-  const { nomor: noStruk } = await nomorBerikutnya(supabase, "POS", hariIniWIB(), {
-    table: "sales", column: "no_struk",
-  });
-
   // Poin ikut golongan pelanggan (migrasi 0078); golongan tanpa pengaturan
   // sendiri tetap Rp1.000 = 1 poin seperti sebelumnya.
   const poinEarned = customerId ? poinDidapat(total, rupiahPerPoin) : 0;
 
-  const { data: sale, error: saleErr } = await supabase
-    .from("sales")
-    .insert({
-      branch_id: branchId, customer_id: customerId, no_struk: noStruk,
-      subtotal: invoiceSubtotal, discount: posNetTotal(invoiceDiscount, invoiceCategoryDiscount),
-      diskon_kategori: invoiceCategoryDiscount,
-      total: quote.total, merchant_fee_total: quote.feeTotal, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
-      payment_plan: quote.parts,
-      checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
-      poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
-      ...(campaignCode ? { campaign_code: campaignCode } : {}),
-      cashier_id: user?.id ?? null, shift_id: shift!.id,
-      salesperson_id: salespersonId, cashier_name: cashier.name,
-    })
-    .select("id").single();
-  if (saleErr || !sale) {
+  // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
+  // Dua kasir yang membayar pada detik yang sama bisa memegang nomor yang sama;
+  // yang kalah mengulang kepala struk dengan nomor baru (lib/simpan-bernomor),
+  // bukan memperlihatkan penolakan database ke kasir.
+  const { data: sale, error: saleErr, nomor: noStruk, bentrok } = await simpanBernomor<{ id: string }>(
+    supabase,
+    { jenis: "POS", tanggal: hariIniWIB(), table: "sales", column: "no_struk" },
+    (no_struk) => supabase
+      .from("sales")
+      .insert({
+        branch_id: branchId, customer_id: customerId, no_struk,
+        subtotal: invoiceSubtotal, discount: posNetTotal(invoiceDiscount, invoiceCategoryDiscount),
+        diskon_kategori: invoiceCategoryDiscount,
+        total: quote.total, merchant_fee_total: quote.feeTotal, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
+        payment_plan: quote.parts,
+        checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
+        poin_earned: poinEarned, poin_digunakan: poinDigunakan, voucher_code: voucherCode,
+        ...(campaignCode ? { campaign_code: campaignCode } : {}),
+        cashier_id: user?.id ?? null, shift_id: shift!.id,
+        salesperson_id: salespersonId, cashier_name: cashier.name,
+      })
+      .select("id").single(),
+  );
+  if (bentrok || saleErr || !sale) {
     await resumePosCheckout(supabase, user.id, checkout, "cashier", undefined, replacementId);
-    redirect(`${failureUrl}${encodeURIComponent(pesanGagalKampanye(saleErr?.message) ?? saleErr?.message ?? "Gagal simpan transaksi")}`);
+    const pesan = bentrok
+      ? PESAN_STRUK_BENTROK
+      : pesanGagalKampanye(saleErr?.message) ?? saleErr?.message ?? "Gagal simpan transaksi";
+    redirect(`${failureUrl}${encodeURIComponent(pesan)}`);
   }
 
   // Validate every pending line snapshot before any separate stock request.
