@@ -275,10 +275,10 @@ export async function muatRincianFaktur(db: AnyClient, kunci: readonly KunciFakt
 export async function muatSisaGrosir(db: AnyClient, ids: readonly string[]): Promise<Map<string, number>> {
   const daftar = [...new Set(ids)];
   if (daftar.length === 0) return new Map();
-  type Ringkas = { id: string; total: number; carried_paid: number; status: string };
+  type Ringkas = { id: string; total: number; carried_paid: number; returned_ar?: number | null; status: string };
   const [faktur, bayar] = await Promise.all([
     perBatch<Ringkas>(daftar, (batch) => db.from("sales_invoices")
-      .select("id,total,carried_paid,status").in("id", batch), "Sisa tagihan faktur grosir"),
+      .select("id,total,carried_paid,returned_ar,status").in("id", batch), "Sisa tagihan faktur grosir"),
     loadSalesInvoicePayments(db as never, daftar, []),
   ]);
   const peta = new Map<string, number>();
@@ -286,7 +286,7 @@ export async function muatSisaGrosir(db: AnyClient, ids: readonly string[]): Pro
     const row = faktur.get(id);
     if (!row) continue;
     peta.set(id, row.status === "batal" ? 0
-      : sisaTagihan(Number(row.total) - Number(row.carried_paid ?? 0), bayar.receipts.get(id) ?? []));
+      : sisaTagihan(Number(row.total) - Number(row.carried_paid ?? 0) - Number(row.returned_ar ?? 0), bayar.receipts.get(id) ?? []));
   }
   return peta;
 }

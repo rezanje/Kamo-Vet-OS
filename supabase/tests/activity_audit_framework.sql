@@ -10,7 +10,7 @@ do $$declare s public.activity_log_sources%rowtype;actual_keys text[];col text;r
 begin
  -- 179 reviewed on 22 Oct, +6 later source migrations, +16 in 20261030110000.
  -- activity_audit_coverage.sql proves every other public table is explicitly excluded.
- if (select count(*) from public.activity_log_sources)<>201 then raise exception 'Expected the reviewed 201-source capture boundary';end if;
+ if (select count(*) from public.activity_log_sources)<>203 then raise exception 'Expected the reviewed 203-source capture boundary';end if;
  for s in select * from public.activity_log_sources loop
   source_relation:=to_regclass('public.'||s.entity);
   if source_relation is null then raise exception 'Registered relation absent: %',s.entity;end if;

@@ -48,7 +48,7 @@ export default async function PenjualPage({
       completeReportQuery(supabase.from("employees").select("id, nama, profile_id, status", { count: "exact" })),
       completeReportQuery(supabase.from("items").select("id, name, unit", { count: "exact" })),
       completeReportQuery(supabase.from("sales_invoices")
-        .select("id, no_faktur, tanggal, jatuh_tempo, total, carried_paid, status, created_by, customers(name)", { count: "exact" })
+        .select("id, no_faktur, tanggal, jatuh_tempo, total, carried_paid, returned_ar, status, created_by, customers(name)", { count: "exact" })
         .neq("status", "batal").is("opening_batch_id", null).gte("tanggal", awal).lte("tanggal", akhir)),
       completeReportQuery(supabase.from("sales_receipts").select("id, invoice_id, jumlah", { count: "exact" })),
     ]);
@@ -112,11 +112,12 @@ export default async function PenjualPage({
 
   type Fj = {
     id: string; no_faktur: string; tanggal: string; jatuh_tempo: string | null; total: number;
-    carried_paid: number; status: string | null; created_by: string | null; customers: Rel<{ name: string }>;
+    carried_paid: number; returned_ar?: number | null; status: string | null; created_by: string | null; customers: Rel<{ name: string }>;
   };
   const faktur = ((fjData ?? []) as unknown as Fj[]).map((f) => {
     const empId = f.created_by ? empPerProfile.get(f.created_by) ?? null : null;
-    const dibayar = Number(f.carried_paid ?? 0) + (dibayarPer.get(f.id) ?? 0);
+    // Pengurang piutang dari retur faktur grosir ikut menyelesaikan tagihan.
+    const dibayar = Number(f.carried_paid ?? 0) + Number(f.returned_ar ?? 0) + (dibayarPer.get(f.id) ?? 0);
     return {
       ...f,
       empId,

@@ -31,7 +31,7 @@ describe("tarikTransaksi clinic invoices", () => {
       sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }], payments_finalized_at: "2026-10-15T05:00:01Z" };
     const tables = { sales: query({ data: [sale, { ...sale, id: "pending", payments_finalized_at: null }], error: null }),
       invoices: query({ data: [], error: null }), sales_invoices: query({ data: [], error: null }),
-      sales_returns: query({ data: [], error: null }), clinic_refunds: query({ data: [], error: null }), branches: query({ data: [], error: null }) };
+      sales_returns: query({ data: [], error: null }), clinic_refunds: query({ data: [], error: null }), wholesale_returns: query({ data: [], error: null }), branches: query({ data: [], error: null }) };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
     const result = await tarikTransaksi("2026-10-15", "2026-10-15");
     expect(result.trx).toHaveLength(1);
@@ -49,7 +49,7 @@ describe("tarikTransaksi clinic invoices", () => {
       invoices,
       sales_invoices: query({ data: [], error: null }),
       sales_returns: query({ data: [], error: null }),
-      clinic_refunds: query({ data: [], error: null }),
+      clinic_refunds: query({ data: [], error: null }), wholesale_returns: query({ data: [], error: null }),
       branches: query({ data: [{ id: "b1", name: "Klinik A" }], error: null }),
     };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
@@ -68,7 +68,7 @@ describe("tarikTransaksi clinic invoices", () => {
       invoices: query({ data: null, error: { message: "query failed" } }),
       sales_invoices: query({ data: [], error: null }),
       sales_returns: query({ data: [], error: null }),
-      clinic_refunds: query({ data: [], error: null }),
+      clinic_refunds: query({ data: [], error: null }), wholesale_returns: query({ data: [], error: null }),
       branches: query({ data: [], error: null }),
     };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
@@ -88,6 +88,7 @@ describe("tarikTransaksi clinic invoices", () => {
       // Two partial refunds on inv-a (one dated after the report range) and one refund of an invoice outside the range.
       clinic_refunds: query({ data: [{ id: "f1", invoice_id: "inv-a", total: 100_000 }, { id: "f2", invoice_id: "inv-a", total: 50_000 },
         { id: "f3", invoice_id: "inv-lain", total: 999_000 }], error: null }),
+      wholesale_returns: query({ data: [], error: null }),
       branches: query({ data: [{ id: "A", name: "A" }, { id: "B", name: "B" }], error: null }),
     };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
@@ -110,6 +111,7 @@ describe("tarikTransaksi clinic invoices", () => {
     const tables = {
       sales: query({ data: [], error: null }), invoices: query({ data: [], error: null }), sales_invoices: query({ data: [], error: null }),
       sales_returns: query({ data: [], error: null }), clinic_refunds: query({ data: null, error: { message: "refund read failed" } }),
+      wholesale_returns: query({ data: [], error: null }),
       branches: query({ data: [], error: null }),
     };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
@@ -127,9 +129,9 @@ describe("tarikTransaksi faktur grosir", () => {
     branches: { name: "DC" }, sales_invoice_items: [{ id: "l1" }, { id: "l2" }], ...over,
   });
 
-  function jalankan(sales_invoices: ReturnType<typeof query>) {
+  function jalankan(sales_invoices: ReturnType<typeof query>, wholesale_returns = query({ data: [], error: null })) {
     const tables = { sales: query({ data: [], error: null }), invoices: query({ data: [], error: null }),
-      sales_invoices, sales_returns: query({ data: [], error: null }), clinic_refunds: query({ data: [], error: null }),
+      sales_invoices, sales_returns: query({ data: [], error: null }), clinic_refunds: query({ data: [], error: null }), wholesale_returns,
       branches: query({ data: [], error: null }) };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
     return tables;
@@ -142,6 +144,14 @@ describe("tarikTransaksi faktur grosir", () => {
       kanal: "Grosir", tanggal: "2026-10-29", cabang: "DC", cabangId: "dc",
       customerId: "reseller", omzet: 1_050_000, item: 2,
     })]);
+  });
+
+  it("mengurangi omzet faktur grosir dengan retur faktur yang masih aktif, berapa pun tanggal returnya", async () => {
+    const wholesale_returns = query({ data: [{ id: "r1", invoice_id: "f1", total: 50_000 }, { id: "r2", invoice_id: "lain", total: 7 }], error: null });
+    jalankan(query({ data: [faktur({})], error: null }), wholesale_returns);
+    const result = await tarikTransaksi("2026-10-29", "2026-10-29");
+    expect(wholesale_returns.eq).toHaveBeenCalledWith("status", "posted");
+    expect(result.trx).toEqual([expect.objectContaining({ kanal: "Grosir", omzet: 1_000_000 })]);
   });
 
   it("menyaring faktur grosir memakai tanggal faktur WIB, bukan jam pembuatannya", async () => {
