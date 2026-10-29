@@ -1,6 +1,7 @@
 // Pembacaan layar "Tagihan rawat inap berjalan". Semua angka uang dihitung ulang oleh
 // RPC saat disimpan; yang di sini hanya untuk ditampilkan.
 import type { createClient } from "./supabase/server";
+import { gagalBacaUang } from "./baca-uang";
 import {
   barisBelumDitagih, ringkasTahap, saldoUangMuka, totalPiutang,
   type BarisInvoice, type BarisResep, type RingkasTahap, type TagihanTahap,
@@ -35,6 +36,12 @@ export type TagihanBerjalan = {
   kwitansi: Kwitansi[];
   uangMuka: UangMuka[];
   saldoUangMuka: number;
+  /**
+   * false = tabel kwitansi/uang muka memang belum ada di lingkungan ini (migrasi
+   * tagihan berjalan belum terpasang). Riwayat uang ditampilkan kosong DAN layar
+   * harus mengunci aksi uang; bukan berarti "belum ada pembayaran".
+   */
+  riwayatUangTerpasang: boolean;
 };
 
 /** Semua baris yang dibutuhkan satu layar tagihan rawat inap, atau lempar bila tidak lengkap. */
@@ -85,6 +92,12 @@ export async function muatTagihanBerjalan(db: Db, recordId: string): Promise<Tag
   ]);
   if (resepRes.error || lineRes.error || bayarRes.error) throw gagal();
 
+  // Riwayat uang gagal-TERTUTUP. Error baca/izin/relasi tidak boleh tampil sebagai
+  // "Belum ada pembayaran": staf bisa menagih ulang uang yang sebenarnya sudah masuk.
+  // Yang tetap boleh kosong hanyalah tabel yang memang belum ada di lingkungan ini.
+  if (gagalBacaUang(kwitansiRes.error) || gagalBacaUang(mukaRes.error)) throw gagal();
+  const riwayatUangTerpasang = !kwitansiRes.error && !mukaRes.error;
+
   const resep = (resepRes.data ?? []) as BarisResep[];
   const tahap = ringkasTahap(invoices, (bayarRes.data ?? []) as { invoice_id: string; amount: number }[]);
   const uangMuka = (mukaRes.error ? [] : (mukaRes.data ?? [])) as UangMuka[];
@@ -105,8 +118,9 @@ export async function muatTagihanBerjalan(db: Db, recordId: string): Promise<Tag
     belumDitagih: barisBelumDitagih(resep, (lineRes.data ?? []) as BarisInvoice[], invoices),
     tahap,
     piutang: totalPiutang(tahap),
-    // Kwitansi dan uang muka ikut gagal-tertutup kosong bila migrasinya belum terpasang,
-    // supaya layar tetap terbuka dan staf melihat tagihannya.
+    riwayatUangTerpasang,
+    // Kosong hanya bila migrasinya belum terpasang, supaya layar tetap terbuka dan staf
+    // melihat tagihannya; layar sendiri yang mengunci aksi uangnya.
     kwitansi: (kwitansiRes.error ? [] : (kwitansiRes.data ?? [])).map((row: Record<string, unknown>): Kwitansi => ({
       id: row.id as string, no_kwitansi: row.no_kwitansi as string, tanggal: row.tanggal as string,
       total: Number(row.total) || 0, status: row.status as string,
@@ -120,5 +134,51 @@ export async function muatTagihanBerjalan(db: Db, recordId: string): Promise<Tag
     })),
     uangMuka,
     saldoUangMuka: saldoUangMuka(uangMuka),
+  };
+}
+
+export type RingkasBelumDitagih = {
+  /** false = salah satu sumbernya gagal dibaca; angkanya TIDAK boleh dipercaya. */
+  terbaca: boolean;
+  baris: number;
+  nilai: number;
+};
+
+/**
+ * Biaya yang sudah tercatat di rekam medis tetapi belum masuk tagihan aktif mana pun.
+ *
+ * Dipakai layar rawat inap untuk memperlihatkan sisa biaya SEBELUM pasien dipulangkan.
+ * Kepulangan tetap tidak diblokir oleh angka ini — pasien boleh pulang walau masih ada
+ * tagihan; yang dicegah hanyalah biaya terlewat tanpa ada yang melihatnya.
+ */
+export async function ringkasBelumDitagih(db: Db, visitId: string): Promise<RingkasBelumDitagih> {
+  const [mrRes, invoiceRes] = await Promise.all([
+    db.from("medical_records").select("id").eq("visit_id", visitId),
+    db.from("invoices").select("id, voided_at").eq("visit_id", visitId),
+  ]);
+  if (mrRes.error || invoiceRes.error) return { terbaca: false, baris: 0, nilai: 0 };
+  const mrIds = ((mrRes.data ?? []) as { id: string }[]).map((r) => r.id);
+  const invoices = (invoiceRes.data ?? []) as { id: string; voided_at: string | null }[];
+  const invoiceIds = invoices.map((i) => i.id);
+  const [resepRes, lineRes] = await Promise.all([
+    mrIds.length
+      ? db.from("prescription_items")
+          .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id")
+          .in("medical_record_id", mrIds)
+      : Promise.resolve({ data: [] as BarisResep[], error: null }),
+    invoiceIds.length
+      ? db.from("invoice_items").select("invoice_id, prescription_item_id").in("invoice_id", invoiceIds)
+      : Promise.resolve({ data: [] as BarisInvoice[], error: null }),
+  ]);
+  if (resepRes.error || lineRes.error) return { terbaca: false, baris: 0, nilai: 0 };
+  const sisa = barisBelumDitagih(
+    (resepRes.data ?? []) as BarisResep[],
+    (lineRes.data ?? []) as BarisInvoice[],
+    invoices.map((i) => ({ id: i.id, voided_at: i.voided_at })),
+  );
+  return {
+    terbaca: true,
+    baris: sisa.length,
+    nilai: sisa.reduce((sum, r) => sum + (Number(r.qty) || 0) * (Number(r.harga) || 0), 0),
   };
 }

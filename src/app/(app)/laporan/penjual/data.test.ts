@@ -87,6 +87,25 @@ it("membagi potongan kepala tagihan klinik persis seperti laporan komisi", async
   expect(laporan.selisihDokumen).toBe(0);
 });
 
+// FIN-10: diskon BARIS hanya mengurangi baris itu. Dulu dasarnya harga kotor, sehingga
+// potongan khusus satu baris ikut memotong kontribusi pelaksana baris lain.
+it("diskon baris hanya mengurangi barisnya sendiri, bukan kontribusi orang lain", async () => {
+  const invoice = { ...invoiceDiskon, total: 150 };
+  state.tables.invoice_items = [
+    { id: "baris-a", deskripsi: "Jasa A", qty: 1, harga: 100, diskon_persen: 50, jenis: "jasa", item_id: null, compound_recipe_id: null, service_performers: { version: 1, doctor_id: "dokter", staff_id: null }, salesperson_id: null, invoices: invoice },
+    { id: "baris-b", deskripsi: "Jasa B", qty: 1, harga: 100, diskon_persen: 0, jenis: "jasa", item_id: null, compound_recipe_id: null, service_performers: { version: 1, doctor_id: null, staff_id: "perawat" }, salesperson_id: null, invoices: invoice },
+  ];
+  const { rows, selisihDokumen } = await ambilTenagaPenjual(RENTANG);
+  expect(rows.map((r) => r.netto)).toEqual([50, 100]);
+  expect(rows.map((r) => r.bruto)).toEqual([100, 100]);
+  expect(selisihDokumen).toBe(0);
+
+  const { orang, total } = rekapTenagaPenjual(atribusiPenjual(rows));
+  expect(Object.fromEntries(orang.map((r) => [r.employeeId, r.netto]))).toEqual({ dokter: 50, perawat: 100 });
+  // Total perusahaan tetap menghitung tiap baris sekali.
+  expect(total.netto).toBe(150);
+});
+
 it("menghitung baris dua pelaksana untuk keduanya tanpa melipatgandakan total perusahaan", async () => {
   state.tables.invoice_items = [{
     id: "baris", deskripsi: "Operasi", qty: 1, harga: 200, jenis: "jasa", item_id: null, compound_recipe_id: null,

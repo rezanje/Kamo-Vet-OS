@@ -61,6 +61,7 @@ type InvoiceRel = {
 };
 type InvoiceItemRow = {
   id: string; deskripsi: string; qty: number; harga: number; jenis: string | null;
+  diskon_persen: number | null;
   item_id: string | null; compound_recipe_id: string | null;
   service_performers: ServicePerformersSnapshot | null; salesperson_id: string | null;
   invoices: Rel<InvoiceRel>;
@@ -137,7 +138,7 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
     const [invoiceItems, saleItems, grosirItems, karyawanRows, cabangRows] = await Promise.all([
       readReportRows<InvoiceItemRow>(async (awal, ujung) => {
         const { data, error, count } = await supabase.from("invoice_items")
-          .select("id, deskripsi, qty, harga, jenis, item_id, compound_recipe_id, service_performers, salesperson_id, invoices!inner(id, visit_id, invoice_no, created_at, total, salesperson_id, voided_at, visits(branch_id, doctor_id, branches(name), customers(name), pets(name)))", { count: "exact" })
+          .select("id, deskripsi, qty, harga, jenis, diskon_persen, item_id, compound_recipe_id, service_performers, salesperson_id, invoices!inner(id, visit_id, invoice_no, created_at, total, salesperson_id, voided_at, visits(branch_id, doctor_id, branches(name), customers(name), pets(name)))", { count: "exact" })
           .is("invoices.voided_at", null)
           .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
           .order("id").range(awal, ujung);
@@ -182,10 +183,21 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
     const qtyAsalKlinik = new Map<string, number>();
     for (const items of barisPerInvoice.values()) {
       const invoice = one(items[0].invoices)!;
-      const kotor = items.map((item) => (Number(item.qty) || 0) * (Number(item.harga) || 0));
-      const neto = alokasiPotonganDokumen(kotor, Number(invoice.total) || 0);
+      // Diskon BARIS mengurangi baris itu saja. Kalau dasarnya memakai harga kotor,
+      // potongan khusus satu baris ikut dibagi ke baris pelaksana lain — kontribusi
+      // per dokter/penjual jadi berbeda dari laporan Penjualan per Barang. Hanya
+      // potongan tingkat DOKUMEN yang dialokasikan proporsional, setelah diskon baris.
+      //
+      // Catatan: `komisi-data.ts` masih memakai dasar kotor. Menyamakannya mengubah
+      // NILAI KOMISI yang dibayarkan ke karyawan, jadi perubahannya butuh keputusan
+      // pemilik dan dikerjakan terpisah dari mitigasi audit ini.
+      const dasar = items.map((item) => {
+        const persen = Math.min(100, Math.max(0, Number(item.diskon_persen) || 0));
+        return (Number(item.qty) || 0) * (Number(item.harga) || 0) * (1 - persen / 100);
+      });
+      const neto = alokasiPotonganDokumen(dasar, Number(invoice.total) || 0);
       items.forEach((item, index) => netoKlinik.set(item.id, neto[index]));
-      selisihDokumen += Math.max(0, (Number(invoice.total) || 0) - kotor.reduce((a, b) => a + b, 0));
+      selisihDokumen += Math.max(0, (Number(invoice.total) || 0) - dasar.reduce((a, b) => a + b, 0));
     }
 
     for (const item of invoiceItems) {

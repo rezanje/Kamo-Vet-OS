@@ -142,6 +142,7 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       STAGE_INVALID: "Tagihan bertahap ditolak",
       RECEIPT_INVALID: "Kwitansi ditolak",
       DOC_NO_INVALID: "Nomor dokumen ditolak",
+      RELEASE_INVALID: "Pelepasan uang muka ditolak",
     };
     const fixedMessages: Record<string, string> = {
       POLICY_INVALID: "Versi aturan DEMO berubah atau tidak valid. Muat ulang halaman dan periksa aturan.",
@@ -159,7 +160,13 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       JOURNAL_MISSING: "Catatan pembukuan lama belum lengkap. Minta keuangan meninjau tagihan.",
       INPATIENT_OPEN: "Pasien masih dirawat. Tagih lewat layar Tagihan rawat inap berjalan, bukan tagihan sekali jadi.",
       DP_OVERRIDE_DENIED: "Hanya OWNER, ADMIN, atau FINANCE yang boleh menerima di bawah uang muka minimal.",
-      ADVANCE_USED: "Uang muka dari kwitansi ini sudah menempel di tagihan. Batalkan tagihannya lebih dulu.",
+      // Pesan ini HARUS menunjuk jalan keluar yang benar-benar ada. Instruksi lama
+      // ("batalkan tagihannya lebih dulu") buntu: selama pasien dirawat, tagihan
+      // penggantinya tidak bisa terbit, dan sesudah pulang saldo terpakainya tetap.
+      ADVANCE_USED: "Uang muka kwitansi ini sudah dipakai di tagihan. OWNER/ADMIN/FINANCE melepas pemakaiannya dulu lewat tombol Lepas pemakaian di riwayat uang muka, baru kwitansinya bisa dibatalkan.",
+      ADVANCE_RELEASED: "Pemakaian uang muka ini sudah pernah dilepas.",
+      ADVANCE_IMBALANCE: "Sisa uang muka per rekening tidak cocok. Minta keuangan memeriksa kwitansinya sebelum dibatalkan.",
+      STAGE_RECEIPT: "Uang tagihan rawat inap diterima di layar Tagihan rawat inap supaya tercatat sebagai kwitansi dan masuk shift klinik.",
       ADVANCE_INVALID: "Kelebihan uang tidak dapat disimpan tanpa data pemilik. Lengkapi data pelanggan.",
       RECEIPT_VOIDED: "Kwitansi ini sudah dibatalkan.",
       INVOICE_NO_INVALID: "Format nomor invoice tidak valid.",

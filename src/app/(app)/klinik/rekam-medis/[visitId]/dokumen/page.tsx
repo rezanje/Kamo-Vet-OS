@@ -61,11 +61,35 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   // K01: addenda are part of the clinical record; never print a partial history.
   const addenda: AddendaLoad = mr ? await loadRecordAddenda(supabase, mr.id) : { state: "ok", rows: [] };
 
-  // Rawat inap bertahap: beberapa tagihan aktif per kunjungan. Dokumen rekam medis
-  // hanya menyebut tagihan terakhir; rinciannya ada di layar tagihan rawat inap.
-  const { data: invoice } = await supabase
-    .from("invoices").select("metode_bayar, total, paid_status").eq("visit_id", visitId).is("voided_at", null)
-    .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1).maybeSingle();
+  // Rawat inap bertahap: satu kunjungan bisa punya BEBERAPA tagihan aktif, dan uang yang
+  // benar-benar diterima ada di invoice_payments + dp_amount — bukan di invoice.total.
+  // Menyebut total tagihan sebagai "Total Dibayarkan" membuat DP terbaca seolah lunas.
+  const { data: invoiceRows, error: invoiceError } = await supabase
+    .from("invoices").select("id, invoice_no, created_at, metode_bayar, total, dp_amount, paid_status")
+    .eq("visit_id", visitId).is("voided_at", null)
+    .order("created_at", { ascending: true }).order("id", { ascending: true });
+  const invoiceIds = ((invoiceRows ?? []) as { id: string }[]).map((i) => i.id);
+  const { data: invoicePays, error: invoicePayError } = invoiceIds.length
+    ? await supabase.from("invoice_payments").select("invoice_id, amount").in("invoice_id", invoiceIds)
+    : { data: [] as { invoice_id: string; amount: number }[], error: null };
+  const tagihanTerbaca = !invoiceError && !invoicePayError;
+  const masukPerInvoice = new Map<string, number>();
+  for (const p of (invoicePays ?? []) as { invoice_id: string; amount: number }[]) {
+    masukPerInvoice.set(p.invoice_id, (masukPerInvoice.get(p.invoice_id) ?? 0) + (Number(p.amount) || 0));
+  }
+  const tagihan = ((invoiceRows ?? []) as {
+    id: string; invoice_no: string | null; metode_bayar: string | null; total: number;
+    dp_amount: number; paid_status: string;
+  }[]).map((i) => {
+    const dibayar = (Number(i.dp_amount) || 0) + (masukPerInvoice.get(i.id) ?? 0);
+    return { ...i, dibayar, sisa: Math.max(0, (Number(i.total) || 0) - dibayar) };
+  });
+  const totalTagihan = tagihan.reduce((s, i) => s + (Number(i.total) || 0), 0);
+  const totalDibayar = tagihan.reduce((s, i) => s + i.dibayar, 0);
+  const totalSisa = tagihan.reduce((s, i) => s + i.sisa, 0);
+  const metodeTagihan = Array.from(new Set(tagihan.map((i) => i.metode_bayar).filter(Boolean))).join(" + ");
+  const statusTagihan = !tagihan.length ? "Belum ditagih"
+    : totalSisa <= 0 ? "Lunas" : totalDibayar > 0 ? "DP" : "Belum Lunas";
 
   const { data: inpat } = await supabase
     .from("inpatient_records").select("admitted_at, condition_status").eq("visit_id", visitId).order("admitted_at", { ascending: false });
@@ -221,9 +245,22 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
           </div>
           <div>
             <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 6 }}>RINCIAN PEMBAYARAN</div>
-            <Row label="Metode Pembayaran" value={invoice?.metode_bayar ?? "-"} />
-            <Row label="Total Dibayarkan" value={invoice?.total ? rp(Number(invoice.total)) : "-"} />
-            <Row label="Status" value={invoice?.paid_status ?? "Belum Lunas"} />
+            {tagihanTerbaca ? (
+              <>
+                <Row label="Metode Pembayaran" value={metodeTagihan || "-"} />
+                <Row label="Total Tagihan" value={tagihan.length ? rp(totalTagihan) : "-"} />
+                <Row label="Sudah Dibayar" value={tagihan.length ? rp(totalDibayar) : "-"} />
+                <Row label="Sisa Tagihan" value={tagihan.length ? rp(totalSisa) : "-"} />
+                <Row label="Status" value={statusTagihan} />
+                {tagihan.length > 1 && (
+                  <div style={{ fontSize: 9, color: "var(--tm)", marginTop: 4 }}>
+                    Mencakup {tagihan.length} tagihan tahap: {tagihan.map((i) => i.invoice_no ?? "—").join(", ")}.
+                  </div>
+                )}
+              </>
+            ) : (
+              <Row label="Rincian pembayaran" value="Belum dapat dibaca — cetak ulang setelah datanya tersedia" />
+            )}
           </div>
         </div>
 

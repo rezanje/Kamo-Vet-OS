@@ -284,7 +284,9 @@ export default async function PembayaranPage({
         <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "var(--posb-dk)", justifyContent: "space-between" }}>
           <span>
             <i className="ti ti-stack-2" /> Kunjungan ini ditagih bertahap ({invoiceAktif.length} tagihan aktif).
-            Layar ini menampilkan tagihan terakhir; seluruh tahap, riwayat pembayaran, dan sisa piutang ada di layar tagihan rawat inap.
+            Panel di bawah — termasuk koreksi, terbit ulang, dan refund — bekerja pada tagihan
+            <b> {invoice?.invoice_no ?? "terakhir"}</b> saja, bukan tahap yang lain.
+            Seluruh tahap, riwayat pembayaran, dan sisa piutang ada di layar tagihan rawat inap.
           </span>
           {inpat && (
             <Link href={`/klinik/rawat-inap/${inpat.id}/tagihan`} className="btn-acc"
