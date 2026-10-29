@@ -75,7 +75,9 @@ export function sumberFolderLokal(berkasTerpilih: readonly BerkasLokal[]): Sumbe
     daftar.push({ id, nama: file.name, jalur, ukuran: file.size });
   });
   const folders = kelompokkanFolderImpor(daftar);
-  const akar = daftar[0]?.jalur.split("/")[0] ?? "lokal";
+  // Bisa beberapa folder utama sekaligus (tombol "Tambah folder lain"):
+  // tanda ruang impor memakai semua akar, terurut, supaya lanjut-setelah-putus tetap cocok.
+  const akar = [...new Set(daftar.map((berkas) => berkas.jalur.split("/")[0]))].sort().join(" + ") || "lokal";
   return {
     nama: "Folder di komputer ini",
     akar,
@@ -88,4 +90,24 @@ export function sumberFolderLokal(berkasTerpilih: readonly BerkasLokal[]): Sumbe
       return new Uint8Array(await file.arrayBuffer());
     },
   };
+}
+
+/** Gabungkan pilihan folder baru ke pilihan sebelumnya; berkas yang sama
+ * (jalur + ukuran) tidak dihitung dua kali bila folder yang sama dipilih ulang. */
+export function gabungBerkasPilihan<T extends { name: string; size: number; webkitRelativePath?: string }>(lama: readonly T[], baru: readonly T[]): T[] {
+  const kunci = (file: T) => `${file.webkitRelativePath || file.name}::${file.size}`;
+  const ada = new Set(lama.map(kunci));
+  const hasil = [...lama];
+  for (const file of baru) {
+    const k = kunci(file);
+    if (ada.has(k)) continue;
+    ada.add(k);
+    hasil.push(file);
+  }
+  return hasil;
+}
+
+/** Nama folder utama yang sedang dipilih (untuk ditampilkan). */
+export function daftarFolderUtama(berkas: readonly { name: string; webkitRelativePath?: string }[]): string[] {
+  return [...new Set(berkas.map((file) => (file.webkitRelativePath || "").split("/")[0]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id-ID"));
 }

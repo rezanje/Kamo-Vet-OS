@@ -347,3 +347,21 @@ describe("pengukuran perjalanan bolak-balik", () => {
     expect(ukuran.panggilanSimpanMassal).toBe(ukuran.potongan);
   });
 });
+
+describe("pilih beberapa folder", () => {
+  const f = (jalur: string, size = 10) => ({ name: jalur.split("/").at(-1)!, size, webkitRelativePath: jalur, arrayBuffer: async () => new ArrayBuffer(0) });
+  it("menggabung folder kedua tanpa dobel", async () => {
+    const { gabungBerkasPilihan, daftarFolderUtama } = await import("../impor-rekam-medis-sumber");
+    const a = [f("Bagian 1/Budi - 0812/Snowy.xlsx"), f("Bagian 1/Ani - 0813/Moly.xlsx")];
+    const b = [f("Bagian 2/Cici - 0814/Kiki.xlsx"), f("Bagian 1/Budi - 0812/Snowy.xlsx")];
+    const gabung = gabungBerkasPilihan(a, b);
+    expect(gabung).toHaveLength(3);
+    expect(daftarFolderUtama(gabung)).toEqual(["Bagian 1", "Bagian 2"]);
+    const sumber = sumberFolderLokal(gabung);
+    const folders = await sumber.daftarFolder();
+    expect(folders.map((x) => x.nama)).toEqual(["Bagian 1/Ani - 0813", "Bagian 1/Budi - 0812", "Bagian 2/Cici - 0814"]);
+    expect(sumber.akar).toBe("Bagian 1 + Bagian 2");
+    // urutan pilih tidak mengubah tanda ruang (lanjut setelah putus tetap cocok)
+    expect(sumberFolderLokal(gabungBerkasPilihan(b, a)).akar).toBe("Bagian 1 + Bagian 2");
+  });
+});

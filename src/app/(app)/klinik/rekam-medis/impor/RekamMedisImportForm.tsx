@@ -38,6 +38,8 @@ import {
 import {
   BATAS_BYTES_BERKAS_REKAM_MEDIS,
   sumberFolderLokal,
+  gabungBerkasPilihan,
+  daftarFolderUtama,
   type FolderImporRekamMedis,
   type SumberImporRekamMedis,
 } from "@/lib/impor-rekam-medis-sumber";
@@ -369,7 +371,7 @@ export function RekamMedisImportForm() {
   return (
     <div className="crm-sec">
       <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "#1e40af" }}>
-        <i className="ti ti-shield-check" /> Pilih folder utama yang berisi folder owner. Sistem membaca owner dari folder, nama hewan dari kartu, dan setiap sheet sebagai satu histori bersama untuk semua cabang klinik.
+        <i className="ti ti-shield-check" /> Pilih folder utama yang berisi folder owner. Kalau datanya terpecah di beberapa folder, pilih folder pertama lalu klik “Tambah folder lain” untuk folder berikutnya (atau pilih satu folder induk yang membawahi semuanya). Sistem membaca owner dari folder, nama hewan dari kartu, dan setiap sheet sebagai satu histori bersama untuk semua cabang klinik.
       </div>
       <div className="p2ban" style={{ marginTop: 8, background: "#f8fafc", border: ".5px solid #cbd5e1", color: "#475569" }}>
         <i className="ti ti-info-circle" /> Folder diproses sepotong demi sepotong dan langsung disimpan, jadi folder besar tidak perlu ditahan di memori. Bisa dijeda, dan bila terputus tinggal pilih folder yang sama lagi — bagian yang sudah masuk dilewati. Batas 5 MB per file kartu.
@@ -379,8 +381,17 @@ export function RekamMedisImportForm() {
           <i className="ti ti-folder" /> Pilih folder rekam medis
           <input type="file" multiple ref={(input) => { if (input) input.webkitdirectory = true; }} style={{ display: "none" }} disabled={berjalan} onChange={(event) => {
             pilihBerkas(Array.from(event.target.files ?? []).filter((file) => file.name.toLowerCase().endsWith(".xlsx") && !file.name.startsWith("~$")));
+            event.target.value = "";
           }} />
         </label>
+        {berkasTerpilih.length > 0 && <label className="btn-def" style={{ cursor: berjalan ? "not-allowed" : "pointer" }}>
+          <i className="ti ti-folder-plus" /> Tambah folder lain
+          <input type="file" multiple ref={(input) => { if (input) input.webkitdirectory = true; }} style={{ display: "none" }} disabled={berjalan} onChange={(event) => {
+            const baru = Array.from(event.target.files ?? []).filter((file) => file.name.toLowerCase().endsWith(".xlsx") && !file.name.startsWith("~$"));
+            event.target.value = "";
+            if (baru.length) pilihBerkas(gabungBerkasPilihan(berkasTerpilih, baru));
+          }} />
+        </label>}
         <label className="btn-def" style={{ cursor: "pointer" }}>
           <i className="ti ti-files" /> Pilih file satuan
           <input type="file" multiple accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: "none" }} disabled={berjalan} onChange={(event) => {
@@ -392,7 +403,14 @@ export function RekamMedisImportForm() {
         </button>
         {ditahan.length > 0 && <button type="button" className="btn-def" onClick={unduhCatatan}><i className="ti ti-download" /> Unduh catatan ditahan ({ditahan.length})</button>}
       </div>
-      {berkasTerpilih.length > 0 && <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 8 }}>{berkasTerpilih.length} file dipilih.</div>}
+      {berkasTerpilih.length > 0 && (() => {
+        const utama = daftarFolderUtama(berkasTerpilih);
+        return <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 8 }}>
+          {berkasTerpilih.length.toLocaleString("id-ID")} file dipilih{utama.length > 1 ? ` dari ${utama.length} folder` : ""}.
+          {utama.length > 1 && <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>{utama.map((nama) => <li key={nama}>{nama}</li>)}</ul>}
+          {!berjalan && <button type="button" className="btn-def" style={{ fontSize: 10, marginLeft: 8 }} onClick={() => pilihBerkas([])}>Kosongkan pilihan</button>}
+        </div>;
+      })()}
 
       <label style={{ fontSize: 11, color: "var(--tm)", display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
         <input type="checkbox" checked={setuju} disabled={berjalan} onChange={(event) => setSetuju(event.target.checked)} />
