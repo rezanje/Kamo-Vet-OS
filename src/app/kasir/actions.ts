@@ -13,6 +13,10 @@ export type NewCustResult =
   | { ok: true; customer: { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number; belanja: number } }
   | { ok: false; error: string };
 
+// File "use server" hanya boleh mengekspor fungsi async; pesan ini tetap lokal.
+const PESAN_TERSIMPAN_GAGAL_MUAT =
+  "Pelanggan sudah tersimpan, tetapi datanya gagal dimuat. Jangan tambah ulang: cari pelanggan dengan nomor HP ini di kolom pencarian lalu pilih.";
+
 // Tambah customer inline dari POS — insert + kembalikan row (BUKAN redirect: cart di client, jangan pindah halaman).
 export async function tambahCustomerKasir(formData: FormData): Promise<NewCustResult> {
   const supabase = await createClient();
@@ -47,7 +51,9 @@ export async function tambahCustomerKasir(formData: FormData): Promise<NewCustRe
     .eq("id", tambah.customer_id)
     .single();
 
-  if (error || !data) return { ok: false, error: error?.message ?? "Gagal simpan customer" };
+  // Pelanggan SUDAH tersimpan (RPC sudah commit); yang gagal hanya memuat datanya. Jangan bilang
+  // "gagal simpan" -- kasir akan menambah ulang dan ditolak "No HP sudah terdaftar".
+  if (error || !data) return { ok: false, error: PESAN_TERSIMPAN_GAGAL_MUAT };
 
   return { ok: true, customer: { ...data, trx: 0, belanja: 0 } };
 }

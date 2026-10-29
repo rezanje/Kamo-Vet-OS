@@ -10,6 +10,7 @@ const s = vi.hoisted(() => ({
   tabel: [] as string[],
   hasil: { status: "dibuat", customer_id: "pelanggan-baru" } as Record<string, unknown> | null,
   rpcError: "",
+  muatError: "",
 }));
 
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Object.assign(new Error(`REDIRECT:${url}`), { url }); } }));
@@ -26,7 +27,7 @@ vi.mock("@/lib/supabase/server", () => ({
       Object.assign(q, {
         select: chain, eq: chain,
         insert: () => { throw new Error("insert langsung ke customers tidak boleh lagi"); },
-        single: async () => ({
+        single: async () => s.muatError ? { data: null, error: { message: s.muatError } } : ({
           data: { id: "pelanggan-baru", name: "Pelanggan Fiktif", phone: "+62 800-0000-001", points: 0, tier: "New", kategori: null },
           error: null,
         }),
@@ -67,6 +68,7 @@ beforeEach(() => {
   s.tabel = [];
   s.hasil = { status: "dibuat", customer_id: "pelanggan-baru" };
   s.rpcError = "";
+  s.muatError = "";
 });
 
 describe("Kasir: tambahCustomerKasir", () => {
@@ -96,6 +98,18 @@ describe("Kasir: tambahCustomerKasir", () => {
     expect(await tambahCustomerKasir(form({ nama: "", phone: "0800000001" }))).toEqual({ ok: false, error: "Nama dan No. HP wajib diisi" });
     expect((await tambahCustomerKasir(form({ nama: "Fiktif", phone: "0" }))).ok).toBe(false);
     expect(s.rpc).toEqual([]);
+  });
+
+  it("pelanggan sudah tersimpan tetapi gagal dimuat: pesan pemulihan, bukan 'gagal simpan', dan tidak menambah ulang", async () => {
+    s.muatError = "network error";
+    const hasil = await tambahCustomerKasir(form(lengkap));
+    expect(hasil.ok).toBe(false);
+    if (hasil.ok) return;
+    expect(hasil.error).toContain("sudah tersimpan");
+    expect(hasil.error).toContain("Jangan tambah ulang");
+    expect(hasil.error).not.toMatch(/gagal simpan/i);
+    // Satu RPC saja: tidak ada percobaan menyimpan kedua.
+    expect(s.rpc.map((item) => item.name)).toEqual(["pelanggan_baru_atomik"]);
   });
 
   it("galat database diteruskan sebagai pesan, tanpa insert langsung", async () => {
