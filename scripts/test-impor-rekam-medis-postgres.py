@@ -78,6 +78,21 @@ def q(text):
     return "'" + str(text).replace("'", "''") + "'"
 
 
+PER_ROW_ARGS = [('record_no', 'text'), ('record_date', 'timestamptz'), ('owner_name', 'text'), ('phone', 'text'),
+                ('address', 'text'), ('patient_name', 'text'), ('species', 'text'), ('breed', 'text'), ('gender', 'text'),
+                ('dob', 'date'), ('doctor', 'text'), ('note', 'text'), ('anamnesis', 'text'),
+                ('clinical_findings', 'text'), ('diagnosis', 'text'), ('therapy', 'text'),
+                ('customer_id', 'uuid'), ('pet_id', 'uuid')]
+
+
+def per_row_sql(r):
+    args = [f"p_source_key => {q(r['source_key'])}"]
+    for name, kind in PER_ROW_ARGS:
+        value = r.get(name)
+        args.append(f"p_{name} => " + ('null' if value is None else q(value)) + f'::{kind}')
+    return 'public.import_legacy_medical_record_resolved(' + ', '.join(args) + ')'
+
+
 def as_actor(sql, actor=OWNER):
     return ("set role authenticated;\n"
             "select set_config('request.jwt.claim.role','authenticated',false);\n"
@@ -135,6 +150,10 @@ class Harness:
     def bulk(self, rows, actor=OWNER):
         return json.loads(self.sql(as_actor(f'select public.import_legacy_medical_records_bulk({lit(rows)});', actor)).splitlines()[-1])
 
+    def per_row(self, r, actor=OWNER):
+        """The per-row RPC exactly as konfirmasiImporRekamMedis/simpanBatchImporRekamMedis call it."""
+        return self.scalar(as_actor(f'select {per_row_sql(r)};', actor))
+
     def snapshot(self):
         """Exact counts plus a content hash of every fictional row, to prove nothing was added or changed."""
         return json.loads(self.scalar(
@@ -165,6 +184,9 @@ class Harness:
     def waiting_on(self, app, kind):
         if kind == 'gate':
             cond = "wait_event_type='Lock' and wait_event in ('tuple','transactionid','relation')"
+        elif kind == 'row':
+            # Waiting for another transaction to settle a unique-key conflict (visits.legacy_source_key).
+            cond = "wait_event_type='Lock' and wait_event='transactionid'"
         else:
             cond = "wait_event_type='Lock' and wait_event='advisory'"
         return f"select exists(select 1 from pg_stat_activity where application_name='{app}' and {cond})"
@@ -177,11 +199,12 @@ class Harness:
         return (f"select exists(select 1 from pg_stat_activity where application_name='{app}') "
                 f"and not exists(select 1 from pg_stat_activity where application_name='{app}' and state<>'idle')")
 
-    def race(self, first_sql, second_sql):
+    def race(self, first_sql, second_sql, b_wait='advisory'):
         """A holds its locks parked on the gate; B starts only once A is provably parked.
 
         Returns (a_rc, b_rc, a_out, b_out, b_waited). b_waited is True only when B was
-        observed blocked on the identity advisory lock. Raises SyncTimeout when a
+        observed blocked on the lock named by b_wait ('advisory' = the identity lock,
+        'row' = A's uncommitted visit with the same source key). Raises SyncTimeout when a
         synchronisation point is never reached (the caller records BLOCKED).
         """
         ctl = Session(self.psql_cmd, 'ctl')
@@ -198,7 +221,7 @@ class Harness:
             b.send("set application_name='harness_b';\nbegin;\n" + second_sql + "\ncommit;")
             self.wait_for(self.connected('harness_b'), 'session B connected')
             try:
-                self.wait_for(self.waiting_on('harness_b', 'advisory'), 'session B blocked on the identity advisory lock')
+                self.wait_for(self.waiting_on('harness_b', b_wait), f'session B blocked on the {b_wait} lock')
                 b_waited = True
             except SyncTimeout:
                 # B never blocked. Make sure it really finished (a finding), not still starting.
@@ -318,6 +341,32 @@ def run_cases(h):
     check('K4 identity scan reports recorded keys (the app forwards them for proof instead of counting them)',
           scan['sudah_ada'] == ['wowo-test::k1'], f'sudah_ada={scan["sudah_ada"]}')
 
+    # ---------------------------------------------------------------- X  per-row path (konfirmasi / simpan batch)
+    # The app sends recorded keys through import_legacy_medical_record_resolved too; both paths
+    # must compute the same fingerprint, or a card saved by one is wrongly held by the other.
+    h.reset()
+    x1 = row('wowo-test::x1', record_no='RM-01', address='Jl. Fiktif 1', species='Kucing', dob='2020-02-02',
+             doctor='drh. Fiktif', therapy='Terapi fiktif', clinical_findings='Temuan fiktif')
+    saved = h.per_row(x1)
+    base = h.snapshot()
+    via_bulk = h.bulk([dict(x1, phone='+62 800-000-0001', owner_name='FIKTIF  SATU')])
+    check('X1 card saved per row, resent through the bulk path: sudah_ada, same visit, nothing written',
+          statuses(via_bulk) == ['sudah_ada'] and via_bulk[0]['visit_id'] == saved and h.snapshot() == base,
+          f'status={statuses(via_bulk)} same_visit={via_bulk[0]["visit_id"] == saved}')
+    x2 = row('wowo-test::x2', patient='Anjing Fiktif', note='Catatan fiktif')
+    first_bulk = h.bulk([x2])
+    base = h.snapshot()
+    again_row = h.per_row(dict(x2, owner_name=' fiktif satu'))
+    check('X2 card saved in bulk, resent per row: the same visit is returned, nothing written',
+          again_row == first_bulk[0]['visit_id'] and h.snapshot() == base, f'same_visit={again_row == first_bulk[0]["visit_id"]}')
+    try:
+        h.per_row(dict(x1, diagnosis='Diagnosis kartu lain'))
+        x3_ok, x3_msg = False, 'accepted'
+    except RuntimeError as error:
+        x3_ok, x3_msg = 'bentrok' in str(error), str(error).strip().splitlines()[0][:110]
+    check('X3 per row: same key, different content is refused with the conflict reason, nothing written',
+          x3_ok and h.snapshot() == base, x3_msg)
+
     # ---------------------------------------------------------------- N  08 vs +62 (K3 of PR #328)
     h.reset()
     h.bulk([row('wowo-test::n1-a', phone='08000000004')])
@@ -356,10 +405,10 @@ def run_cases(h):
     check('A1 STAFF cannot call the bulk import', denied and h.snapshot()['visits'] == 0, message)
 
     # ---------------------------------------------------------------- C  deterministic concurrency
-    def concurrent(case, first_sql, second_sql, verify):
+    def concurrent(case, first_sql, second_sql, verify, b_wait='advisory'):
         h.reset()
         try:
-            a_rc, b_rc, a_out, b_out, b_waited = h.race(first_sql, second_sql)
+            a_rc, b_rc, a_out, b_out, b_waited = h.race(first_sql, second_sql, b_wait)
         except SyncTimeout as error:
             record(case, 'BLOCKED', str(error))
             h.reset()
@@ -416,6 +465,19 @@ def run_cases(h):
                lambda a, b, ao, bo, w: check('C7 two imports sharing two owners in opposite order: no deadlock, both complete',
                                              a == 0 and b == 0 and w and h.snapshot()['visits'] == 4 and h.snapshot()['customers'] == 2,
                                              f'A rc={a} B rc={b} B waited={w} snapshot={h.snapshot()}'))
+
+    # Same key, different owner phone: no shared identity lock, so B must be stopped by A's
+    # uncommitted visit (unique key), then held, with its own customer/pet rolled back.
+    c8_phone = "select count(*) from public.customers where phone='08000000009'"
+    concurrent('C8 same key, different owner phone, concurrent: B waits on the key, held, no orphan owner',
+               as_actor(f"select public.import_legacy_medical_records_bulk({lit([row('wowo-test::c8', diagnosis='Kartu A')])});"),
+               as_actor(f"select public.import_legacy_medical_records_bulk({lit([row('wowo-test::c8', owner='Pemilik Lain Fiktif', phone='08000000009', diagnosis='Kartu B')])});"),
+               lambda a, b, ao, bo, w: check('C8 same key, different owner phone, concurrent: B waits on the key, held, no orphan owner',
+                                             a == 0 and b == 0 and w and (last_json(bo) or [{}])[0].get('status') == 'ditahan'
+                                             and 'bentrok' in ((last_json(bo) or [{}])[0].get('reason') or '')
+                                             and h.snapshot()['visits'] == 1 and h.scalar(c8_phone) == '0',
+                                             f'B waited={w} B={last_json(bo)} visits={h.snapshot()["visits"]} orphan_owners={h.scalar(c8_phone)}'),
+               b_wait='row')
 
     h.reset()
     left = h.snapshot()

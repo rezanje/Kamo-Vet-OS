@@ -215,6 +215,7 @@ language sql immutable set search_path = '' as $$
       'Jejak sumber bentrok: kartu ini memakai jejak sumber yang sama dengan riwayat tersimpan, tetapi isinya berbeda. Riwayat lama tidak diubah; periksa nama folder, file, atau tab lalu impor ulang.'
   end
 $$;
+revoke all on function public.import_legacy_source_conflict_reason(text) from public, anon;
 grant execute on function public.import_legacy_source_conflict_reason(text) to authenticated;
 
 -- ---------------------------------------------------------------------------
