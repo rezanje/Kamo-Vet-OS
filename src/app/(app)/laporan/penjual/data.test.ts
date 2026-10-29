@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 import { kumpulkanBarisKomisi } from "@/lib/komisi-data";
 import { atribusiPenjual, rekapTenagaPenjual } from "@/lib/laporan-tenaga-penjual";
@@ -165,4 +167,10 @@ it("menolak rentang tanggal yang tidak masuk akal tanpa membaca database", async
   const hasil = await ambilTenagaPenjual({ dari: "2026-10-31", sampai: "2026-10-01" });
   expect(hasil.rows).toEqual([]);
   expect(hasil.pesanError).toContain("Rentang tanggal tidak valid");
+});
+
+it("query karyawan menyebut relasi cabang utama secara eksplisit (employees punya 2 jalur ke branches)", () => {
+  const src = readFileSync(join(__dirname, "data.ts"), "utf8");
+  expect(src).toContain("branches!employees_branch_id_fkey(name)");
+  expect(src).not.toMatch(/from\("employees"\)\s*\.select\("[^"]*\bbranches\(name\)/);
 });
