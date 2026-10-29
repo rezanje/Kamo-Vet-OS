@@ -29,7 +29,7 @@ export default async function SlipPage({
 
   const { data } = await supabase
     .from("payrolls")
-    .select("employee_id, gaji_pokok, tunjangan, potongan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, komisi, penyesuaian, catatan, status, component_breakdown, employees(nama, nik, jabatan, branches(name))")
+    .select("employee_id, gaji_pokok, tunjangan, potongan, total, hari_kerja, hari_hadir, hari_bolos, menit_telat, jam_lembur, upah_lembur, potongan_telat, potongan_bolos, cicilan_kasbon, reimburse, komisi, penyesuaian, catatan, status, component_breakdown, employees(nama, nik, jabatan, branches!employees_branch_id_fkey(name))")
     .eq("periode", periode);
 
   const slip = ((data ?? []) as unknown as Slip[])

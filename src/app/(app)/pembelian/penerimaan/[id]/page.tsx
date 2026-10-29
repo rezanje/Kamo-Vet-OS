@@ -27,7 +27,7 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
 
   const { data, error } = await supabase
     .from("goods_receipts")
-    .select("id, po_id, no_terima, tanggal, surat_jalan, catatan, voided_at, voided_on, void_reason, purchase_orders(id,no_po,status, branches(name), warehouses(name), suppliers(nama)), profiles(full_name), goods_receipt_items(id, nama, satuan, qty_pesan, qty_sisa_sebelum, qty_terima, qty_rusak, harga, catatan)")
+    .select("id, po_id, no_terima, tanggal, surat_jalan, catatan, voided_at, voided_on, void_reason, purchase_orders(id,no_po,status, branches(name), warehouses(name), suppliers(nama)), profiles!goods_receipts_received_by_fkey(full_name), goods_receipt_items(id, nama, satuan, qty_pesan, qty_sisa_sebelum, qty_terima, qty_rusak, harga, catatan)")
     .eq("id", id)
     .maybeSingle();
 

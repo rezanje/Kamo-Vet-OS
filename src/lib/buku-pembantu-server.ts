@@ -28,7 +28,7 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
 
   const [{ data: invs }, { data: fjs }, { data: rcs }, { data: credits, error: creditError }, { data: fjTanpaTanggal, error: undatedSalesError }] = await Promise.all([
     supabase.from("invoices")
-      .select("id, invoice_no, total, dp_amount, dp_date, paid_status, paid_at, created_at, visits(customer_id, customers(name)), invoice_payments(id, tanggal, amount, metode, transferred_from)")
+      .select("id, invoice_no, total, dp_amount, dp_date, paid_status, paid_at, created_at, visits(customer_id, customers(name)), invoice_payments!invoice_payments_invoice_id_fkey(id, tanggal, amount, metode, transferred_from)")
       .is("voided_at", null).lte("created_at", batas),
     supabase.from("sales_invoices")
       .select("id, no_faktur, tanggal, total, status, voided_on, customer_id, customers(name)")
