@@ -1,4 +1,4 @@
-import { servicePerformerNames } from "@/lib/service-performers";
+import { bacaNamaDokter, namaDokterPJ } from "@/lib/dokter-pj";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,7 +17,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, poli, dokter, pets(name, species), customers(name), branches(name, code)")
+    .select("id, poli, dokter, doctor_id, pets(name, species), customers(name), branches(name, code)")
     .eq("id", visitId).maybeSingle();
   if (!visit) notFound();
 
@@ -28,7 +28,9 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   if (!invoice) notFound();
 
   const { data: items } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga, jenis, service_performers").eq("invoice_id", invoice.id).order("created_at");
+    .from("invoice_items").select("deskripsi, qty, harga, jenis").eq("invoice_id", invoice.id).order("created_at");
+  // Struk hanya menyebut satu nama: dokter PJ kunjungan. Pelaksana per baris tidak dicetak.
+  const dokterPJ = namaDokterPJ(visit, await bacaNamaDokter(supabase, [visit.doctor_id]));
   const { data: payments } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
@@ -65,13 +67,13 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
         <Kv k="No" v={invoice.invoice_no ?? "-"} />
         <Kv k="Tgl" v={tgl} />
         <Kv k="Kasir" v={invoice.cashier_name ?? "Kasir belum tercatat"} />
+        {dokterPJ && <Kv k="Dokter PJ" v={dokterPJ} />}
         <Kv k="Pasien" v={`${pet?.name ?? "-"} (${pet?.species ?? "-"})`} />
         <Kv k="Pemilik" v={cust?.name ?? "-"} />
         <Hr />
         {(items ?? []).map((it, i) => (
           <div key={i} style={{ marginBottom: 3 }}>
             <div>{it.deskripsi}</div>
-            {(it.jenis === "jasa" || it.service_performers != null) && <div style={{fontSize:9}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>{it.qty} x {rp(it.harga)}</span>
               <span>{rp(it.qty * it.harga)}</span>

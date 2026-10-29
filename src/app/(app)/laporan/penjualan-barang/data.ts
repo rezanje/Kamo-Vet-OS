@@ -1,10 +1,10 @@
 import { readReportRows } from "@/lib/hpp-reports-server";
-import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { lineDiscount } from "@/lib/pos-calc";
 import { PosDecimal } from "@/lib/pos-money";
-import { jenisBarisKlinik, kunciRacikan, SEMUA_JENIS_KLINIK, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
+import { jenisBarisKlinik, SEMUA_JENIS_KLINIK, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
+import { namaRacikanPerKunjungan } from "@/lib/racikan-klinik-server";
 import type { Kanal } from "@/lib/laporan-transaksi";
 import { fakturGrosirOmzet, hppBarisGrosir, nilaiBarisGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "@/lib/laporan-grosir";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
@@ -211,25 +211,10 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
 
       // Invoice menyimpan nama racikan sebagai baris obat biasa. Cocokkan nama
       // dengan resep di kunjungan sama agar racikan terpisah dari obat ketikan.
-      const visitIds = [...new Set(invoiceItems.flatMap((item) => {
+      const namaRacikan = await namaRacikanPerKunjungan(supabase, invoiceItems.flatMap((item) => {
         const visitId = one(item.invoices)?.visit_id;
         return visitId ? [visitId] : [];
-      }))];
-      const medicalRecords: { id: string; visit_id: string }[] = [];
-      for (const batch of potong(visitIds)) {
-        const { data } = await completeReportQuery(supabase.from("medical_records").select("id, visit_id", { count: "exact" }).in("visit_id", batch));
-        medicalRecords.push(...(data ?? []));
-      }
-      const visitPerRecord = new Map(medicalRecords.map((record) => [record.id, record.visit_id]));
-      const namaRacikan = new Set<string>();
-      for (const batch of potong(medicalRecords.map((record) => record.id))) {
-        const { data } = await completeReportQuery(supabase.from("compounding_recipes")
-          .select("id, medical_record_id, recipe_name", { count: "exact" }).in("medical_record_id", batch));
-        for (const recipe of data ?? []) {
-          const visitId = visitPerRecord.get(recipe.medical_record_id);
-          if (visitId) namaRacikan.add(kunciRacikan(visitId, recipe.recipe_name));
-        }
-      }
+      }));
 
       for (const item of invoiceItems) {
         const invoice = one(item.invoices);
