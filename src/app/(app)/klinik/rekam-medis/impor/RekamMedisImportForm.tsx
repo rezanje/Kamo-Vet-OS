@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { FolderDropZone } from "@/components/FolderDropZone";
 import {
   prosesPotonganImporRekamMedis,
   type HasilPotonganImporRekamMedis,
@@ -101,6 +102,7 @@ export function RekamMedisImportForm() {
   const [pesan, setPesan] = useState("");
   const [error, setError] = useState("");
   const [menyimpanKeputusan, setMenyimpanKeputusan] = useState(false);
+  const [membacaFolder, setMembacaFolder] = useState(false);
 
   const antrianRef = useRef<Antrian | null>(null);
   const sumberRef = useRef<SumberImporRekamMedis | null>(null);
@@ -298,6 +300,7 @@ export function RekamMedisImportForm() {
   }, [berkasTerpilih, prosesPotongan]);
 
   const tombolAliran = () => {
+    if (membacaFolder) return;
     if (status === "berjalan") {
       jedaRef.current = true;
       return;
@@ -366,27 +369,31 @@ export function RekamMedisImportForm() {
   };
 
   const berjalan = status === "berjalan";
+  const terkunci = berjalan || membacaFolder;
   const persen = folderTotal ? Math.min(100, Math.max(2, Math.round((folderSelesai / folderTotal) * 100))) : 0;
 
   return (
     <div className="crm-sec">
       <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "#1e40af" }}>
-        <i className="ti ti-shield-check" /> Pilih folder utama yang berisi folder owner. Kalau datanya terpecah di beberapa folder, pilih folder pertama lalu klik “Tambah folder lain” untuk folder berikutnya (atau pilih satu folder induk yang membawahi semuanya). Sistem membaca owner dari folder, nama hewan dari kartu, dan setiap sheet sebagai satu histori bersama untuk semua cabang klinik.
+        <i className="ti ti-shield-check" /> Pilih satu folder induk, atau pilih banyak folder di Windows Explorer dengan Shift/Ctrl lalu seret sekaligus ke kotak biru di bawah. Sistem membaca owner dari folder, nama hewan dari kartu, dan setiap sheet sebagai satu histori bersama untuk semua cabang klinik.
       </div>
       <div className="p2ban" style={{ marginTop: 8, background: "#f8fafc", border: ".5px solid #cbd5e1", color: "#475569" }}>
         <i className="ti ti-info-circle" /> Folder diproses sepotong demi sepotong dan langsung disimpan, jadi folder besar tidak perlu ditahan di memori. Bisa dijeda, dan bila terputus tinggal pilih folder yang sama lagi — bagian yang sudah masuk dilewati. Batas 5 MB per file kartu.
       </div>
+      <FolderDropZone disabled={berjalan || menyimpanKeputusan}
+        onBusy={setMembacaFolder} onError={setError}
+        onChoose={(files) => pilihBerkas(gabungBerkasPilihan(berkasTerpilih, files))} />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 12 }}>
         <label className="btn-def" style={{ cursor: "pointer" }}>
           <i className="ti ti-folder" /> Pilih folder rekam medis
-          <input type="file" multiple ref={(input) => { if (input) input.webkitdirectory = true; }} style={{ display: "none" }} disabled={berjalan} onChange={(event) => {
+          <input type="file" multiple ref={(input) => { if (input) input.webkitdirectory = true; }} style={{ display: "none" }} disabled={terkunci} onChange={(event) => {
             pilihBerkas(Array.from(event.target.files ?? []).filter((file) => file.name.toLowerCase().endsWith(".xlsx") && !file.name.startsWith("~$")));
             event.target.value = "";
           }} />
         </label>
         {berkasTerpilih.length > 0 && <label className="btn-def" style={{ cursor: berjalan ? "not-allowed" : "pointer" }}>
           <i className="ti ti-folder-plus" /> Tambah folder lain
-          <input type="file" multiple ref={(input) => { if (input) input.webkitdirectory = true; }} style={{ display: "none" }} disabled={berjalan} onChange={(event) => {
+          <input type="file" multiple ref={(input) => { if (input) input.webkitdirectory = true; }} style={{ display: "none" }} disabled={terkunci} onChange={(event) => {
             const baru = Array.from(event.target.files ?? []).filter((file) => file.name.toLowerCase().endsWith(".xlsx") && !file.name.startsWith("~$"));
             event.target.value = "";
             if (baru.length) pilihBerkas(gabungBerkasPilihan(berkasTerpilih, baru));
@@ -394,11 +401,11 @@ export function RekamMedisImportForm() {
         </label>}
         <label className="btn-def" style={{ cursor: "pointer" }}>
           <i className="ti ti-files" /> Pilih file satuan
-          <input type="file" multiple accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: "none" }} disabled={berjalan} onChange={(event) => {
+          <input type="file" multiple accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: "none" }} disabled={terkunci} onChange={(event) => {
             pilihBerkas(Array.from(event.target.files ?? []));
           }} />
         </label>
-        <button type="button" className="btn-acc" disabled={!berkasTerpilih.length || (!setuju && status !== "berjalan") || menyimpanKeputusan} onClick={tombolAliran} style={{ background: berjalan ? "#b45309" : "#15803d" }}>
+        <button type="button" className="btn-acc" disabled={membacaFolder || !berkasTerpilih.length || (!setuju && status !== "berjalan") || menyimpanKeputusan} onClick={tombolAliran} style={{ background: berjalan ? "#b45309" : "#15803d" }}>
           {berjalan ? <i className="ti ti-player-pause" /> : <i className="ti ti-database-import" />} {labelTombolAliran(status)}
         </button>
         {ditahan.length > 0 && <button type="button" className="btn-def" onClick={unduhCatatan}><i className="ti ti-download" /> Unduh catatan ditahan ({ditahan.length})</button>}
@@ -408,12 +415,12 @@ export function RekamMedisImportForm() {
         return <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 8 }}>
           {berkasTerpilih.length.toLocaleString("id-ID")} file dipilih{utama.length > 1 ? ` dari ${utama.length} folder` : ""}.
           {utama.length > 1 && <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>{utama.map((nama) => <li key={nama}>{nama}</li>)}</ul>}
-          {!berjalan && <button type="button" className="btn-def" style={{ fontSize: 10, marginLeft: 8 }} onClick={() => pilihBerkas([])}>Kosongkan pilihan</button>}
+          {!terkunci && <button type="button" className="btn-def" style={{ fontSize: 10, marginLeft: 8 }} onClick={() => pilihBerkas([])}>Kosongkan pilihan</button>}
         </div>;
       })()}
 
       <label style={{ fontSize: 11, color: "var(--tm)", display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
-        <input type="checkbox" checked={setuju} disabled={berjalan} onChange={(event) => setSetuju(event.target.checked)} />
+        <input type="checkbox" checked={setuju} disabled={terkunci} onChange={(event) => setSetuju(event.target.checked)} />
         Saya setuju menyimpan riwayat yang aman sambil berjalan. Riwayat yang ditahan dan yang perlu keputusan tidak ikut disimpan otomatis.
       </label>
 
