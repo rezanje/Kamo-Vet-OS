@@ -139,3 +139,22 @@ it('folder selesai yang tidak berubah tetap dilewati saat dilanjutkan', async ()
 
   expect(terkirim().map((row) => row.diagnosis)).toEqual(['Diagnosis B']);
 });
+
+// BATAS JAMINAN (dibuktikan, belum diperbaiki): tanda ruang hanya melihat jalur, ukuran, dan
+// waktu ubah. Isi yang berubah dengan ukuran DAN waktu ubah sama persis (mis. disalin dengan
+// timestamp dipertahankan) masih melewati folder yang tercatat selesai. `it.fails` lulus selama
+// celah ini ada; begitu sidik isi dipasang, tes ini merah dan `.fails` wajib dicabut.
+it.fails('BATAS: isi berubah dengan ukuran dan waktu ubah sama tetap dikirim ulang (belum terjamin)', async () => {
+  fixture.gagalFolder = 'akar/B';
+  await act(async () => root!.render(<RekamMedisImportForm />));
+  await pilihDanMulai([kartu('A', 'Diagnosis lama', 1_000), kartu('B', 'Diagnosis B', 1_000)]);
+
+  await act(async () => root!.unmount());
+  root = createRoot(host);
+  fixture.panggilan = [];
+  fixture.gagalFolder = null;
+  await act(async () => root!.render(<RekamMedisImportForm />));
+  await pilihDanMulai([kartu('A', 'Diagnosis baru', 1_000), kartu('B', 'Diagnosis B', 1_000)]);
+
+  expect(terkirim().map((row) => row.diagnosis)).toContain('Diagnosis baru');
+});

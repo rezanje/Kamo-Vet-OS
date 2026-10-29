@@ -375,11 +375,12 @@ def run_cases(h):
     # src/lib/__tests__/impor-rekam-medis-varian-hp-folder.test.ts). The source key embeds the
     # folder phone digits, so the two keys differ. Correct behaviour: no second visit.
     parsed = json.loads((ROOT / 'src/lib/__tests__/fixtures/impor-folder-hp-varian.json').read_text())
-    for case, send in (('S1 bulk path', lambda r: statuses(h.bulk([r]))[0]), ('S2 per-row path', lambda r: 'tersimpan' if h.per_row(r) else '?')):
+    for case, send in (('S1 bulk path', lambda r: h.bulk([r])[0]['visit_id']), ('S2 per-row path', h.per_row)):
         h.reset()
-        send(parsed[0])
+        first_id = send(parsed[0])
         try:
-            second = send(parsed[1])
+            second_id = send(parsed[1])
+            second = 'same visit (sudah ada)' if second_id == first_id else ('ditahan' if second_id is None else 'tersimpan')
         except RuntimeError as error:
             second = 'error: ' + str(error).strip().splitlines()[0][:80]
         visits = int(h.scalar("select count(*) from public.visits where legacy_source_key in ("
@@ -389,6 +390,42 @@ def run_cases(h):
               f'keys_differ={parsed[0]["source_key"] != parsed[1]["source_key"]} second={second!r} visits={visits} '
               f'customers={h.snapshot()["customers"]} pets={h.snapshot()["pets"]}',
               'source key embeds raw folder phone digits; DB fingerprint is only compared for an identical key')
+
+    # Acceptance criteria for any source-key fix (see docs/handoff-impor-rekmed-fix.md, option C).
+    def visits_for(keys):
+        return int(h.scalar("select count(*) from public.visits where legacy_source_key in (" + ','.join(q(k) for k in keys) + ")"))
+
+    h.reset()
+    h.bulk([parsed[1]])
+    reverse = statuses(h.bulk([parsed[0]]))[0]
+    check('S3 reverse: card first saved from a +62 folder, then imported from an 08 folder, adds no visit',
+          reverse != 'tersimpan' and visits_for([r['source_key'] for r in parsed]) == 1,
+          f'second={reverse!r} visits={visits_for([r["source_key"] for r in parsed])}',
+          'source key embeds raw folder phone digits; DB fingerprint is only compared for an identical key')
+    h.reset()
+    h.bulk([parsed[0]])
+    edited = h.bulk([dict(parsed[1], diagnosis='Diagnosis diubah fiktif')])[0]
+    check('S4 phone-variant key with changed content is held as a conflict, nothing added or overwritten',
+          edited['status'] == 'ditahan' and 'bentrok' in (edited['reason'] or '') and visits_for([r['source_key'] for r in parsed]) == 1,
+          f'status={edited["status"]!r} visits={visits_for([r["source_key"] for r in parsed])}',
+          'phone-variant key is not recognised as the same card, so the edited content is saved as a new visit')
+    h.reset()
+    seed_customer = 'f7000000-0000-4000-8000-000000000301'
+    h.sql(f"insert into public.customers(id,name,phone) values ('{seed_customer}','Fiktif Satu','628000000011');"
+          f"insert into public.pets(id,customer_id,name) values ('f7000000-0000-4000-8000-000000000302','{seed_customer}','Kucing Fiktif');"
+          f"insert into public.visits(branch_id,customer_id,pet_id,poli,status,legacy_source_key) values "
+          f"('{BRANCH}','{seed_customer}','f7000000-0000-4000-8000-000000000302','Poli Umum','Selesai',{q(parsed[1]['source_key'])});")
+    unprovable = h.bulk([parsed[0]])[0]
+    check('S5 legacy +62 visit without a fingerprint, card re-imported from an 08 folder: held, no visit added',
+          unprovable['status'] == 'ditahan' and visits_for([r['source_key'] for r in parsed]) == 1,
+          f'status={unprovable["status"]!r} visits={visits_for([r["source_key"] for r in parsed])}',
+          'phone-variant key is not recognised, so an unprovable legacy card gets a second visit')
+    h.reset()
+    other_sheet = dict(parsed[0], source_key=parsed[0]['source_key'] + ' (2)')
+    separate = statuses(h.bulk([parsed[0]]) + h.bulk([other_sheet]))
+    check('S6 a different card (other sheet) with identical content for the same owner and pet stays a separate visit',
+          separate == ['tersimpan', 'tersimpan'] and visits_for([parsed[0]['source_key'], other_sheet['source_key']]) == 2,
+          f'statuses={separate}', 'distinct cards must not be merged on identical content (rules out option A)')
 
     # ---------------------------------------------------------------- N  08 vs +62 (K3 of PR #328)
     h.reset()
@@ -501,6 +538,26 @@ def run_cases(h):
                                              and h.snapshot()['visits'] == 1 and h.scalar(c8_phone) == '0',
                                              f'B waited={w} B={last_json(bo)} visits={h.snapshot()["visits"]} orphan_owners={h.scalar(c8_phone)}'),
                b_wait='row')
+
+    # Acceptance criteria for the source-key fix under concurrency: the same card from an 08 folder and
+    # a +62 folder in two sessions at once must still end as one visit (both paths).
+    s_keys = "(" + ','.join(q(r['source_key']) for r in parsed) + ")"
+    s_visits = f"select count(*) from public.visits where legacy_source_key in {s_keys}"
+    concurrent('C9 same card from 08 and +62 folders, concurrent bulk imports: one visit',
+               as_actor(f"select public.import_legacy_medical_records_bulk({lit([parsed[0]])});"),
+               as_actor(f"select public.import_legacy_medical_records_bulk({lit([parsed[1]])});"),
+               lambda a, b, ao, bo, w: check('C9 same card from 08 and +62 folders, concurrent bulk imports: one visit',
+                                             a == 0 and b == 0 and w and (last_json(bo) or [{}])[0].get('status') != 'tersimpan'
+                                             and h.scalar(s_visits) == '1',
+                                             f'B waited={w} B={(last_json(bo) or [{}])[0].get("status")!r} visits={h.scalar(s_visits)}',
+                                             'phone-variant source keys are not recognised as the same card'))
+    concurrent('C10 same card from 08 and +62 folders, concurrent per-row imports: one visit',
+               as_actor(f"select {per_row_sql(parsed[0])};"),
+               as_actor(f"select {per_row_sql(parsed[1])};"),
+               lambda a, b, ao, bo, w: check('C10 same card from 08 and +62 folders, concurrent per-row imports: one visit',
+                                             a == 0 and w and h.scalar(s_visits) == '1',
+                                             f'B rc={b} B waited={w} visits={h.scalar(s_visits)}',
+                                             'per-row path looks up the source key before taking the identity lock'))
 
     h.reset()
     left = h.snapshot()
