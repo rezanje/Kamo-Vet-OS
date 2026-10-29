@@ -1,4 +1,5 @@
-import { aggregateServiceLines } from "./service-line-promos";
+import { aggregateServiceLines, serviceLinePromos } from "./service-line-promos";
+import type { RincianPromoKlinik } from "./clinic-promo-attribution";
 import type { ServicePerformersSnapshot } from "./service-performers";
 // Perakitan baris tagihan klinik dari resep dokter — dipakai layar pembayaran
 // (untuk memperlihatkan perkiraan sebelum ditagih) DAN aksi bayar rombongan
@@ -11,7 +12,7 @@ import type { ServicePerformersSnapshot } from "./service-performers";
 import { bolehBayar } from "./tindakan";
 import { bacaAturanConsent } from "./consent-server";
 import { tambahPpn, type PajakSettings } from "./pajak";
-import { hitungPromoKeranjang, loadPromoAktif } from "./promo-hitung";
+import { loadPromoAktif } from "./promo-hitung";
 import { diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang } from "./harga-golongan";
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, voucherBerlaku, type VoucherRow } from "./voucher";
 import { hariIniWIB } from "./tanggal";
@@ -152,9 +153,11 @@ export type Potongan = {
   voucherCode?: string | null;
   /** Kode kampanye yang diketik (C05); null bila bukan kode kampanye. */
   campaignCode?: string | null;
+  /** Promo mana memotong baris mana — index mengikuti `opts.rows` yang dikirim. */
+  rincianPromo: RincianPromoKlinik[];
 };
 
-const KOSONG: Potongan = { promo: 0, voucher: 0, golongan: 0, total: 0, tolakVoucher: null };
+const KOSONG: Potongan = { promo: 0, voucher: 0, golongan: 0, total: 0, tolakVoucher: null, rincianPromo: [] };
 
 /**
  * Potongan otomatis untuk satu tagihan klinik. SELALU dihitung ulang di server
@@ -176,7 +179,10 @@ export async function hitungPotonganKlinik(
     groupServices?: boolean;
   },
 ): Promise<Potongan> {
-  const rows = opts.rows.filter((l) => Number(l.qty) > 0);
+  // Index asal dipertahankan: atribusi promo harus menempel pada baris invoice
+  // yang benar, bukan pada urutan setelah baris kosong dibuang.
+  const dipakai = opts.rows.map((line, index) => ({ line, index })).filter((x) => Number(x.line.qty) > 0);
+  const rows = dipakai.map((x) => x.line);
   const subtotal = rows.reduce((a, l) => a + Number(l.qty) * Number(l.harga), 0);
   const kodeMasuk = normalizeKode(opts.voucherCode) || null;
   // Kode kampanye (C05) diterjemahkan ke voucher/promo tujuannya.
@@ -197,8 +203,19 @@ export async function hitungPotonganKlinik(
     item_type:line.jenis === "jasa" && line.item_id ? "Jasa" : "Persediaan",
   }));
   const pricingRows = opts.groupServices === false ? pricingSource : aggregateServiceLines(pricingSource);
-  const potonganPromo = hitungPromoKeranjang(promoAktif, pricingRows);
+  // serviceLinePromos memberi hasil yang sama dengan hitungPromoKeranjang atas
+  // baris yang digabung, tapi mengembalikan alokasinya PER BARIS sumber. Saat
+  // penggabungan jasa dimatikan, tiap baris jadi kelompoknya sendiri.
+  const potonganPromo = serviceLinePromos(
+    promoAktif,
+    opts.groupServices === false
+      ? pricingSource.map((line) => ({ ...line, item_type: "Persediaan" }))
+      : pricingSource,
+  );
   const promo = potonganPromo.reduce((a, p) => a + Number(p.potongan), 0);
+  const rincianPromo: RincianPromoKlinik[] = potonganPromo
+    .filter((p) => Number(p.potongan) > 0)
+    .map((p) => ({ lineIndex: dipakai[p.lineIndex].index, promoId: p.promoId, promoName: p.promoName, potongan: Number(p.potongan) }));
   const tolakKampanye = kampanye ? pesanKampanyeDitolak(kampanye,
     promoAktif.some((p) => p.id === terbaca.promoId), potonganPromo.some((p) => p.promoId === terbaca.promoId)) : null;
 
@@ -250,7 +267,7 @@ export async function hitungPotonganKlinik(
   // Total potongan tidak boleh melebihi tagihan — kalau lewat, DPP jadi minus dan
   // jurnal pendapatannya ikut salah.
   const total = Math.min(subtotal, promo + golongan + voucher);
-  return { promo, voucher, golongan, total, tolakVoucher, ...kodeHasil };
+  return { promo, voucher, golongan, total, tolakVoucher, rincianPromo, ...kodeHasil };
 }
 
 export type BekalPotongan = {

@@ -23,7 +23,7 @@ vi.mock("@/lib/jurnal-guard",()=>({cekPeriode:async()=>state.periodeError?"Gagal
 vi.mock("@/lib/tanggal",async()=>await import("../tanggal"));
 vi.mock("@/lib/pajak",()=>({getPajakSettings:async()=>{if(state.pajakThrow)throw Error("Pajak read failed");return {};},tambahPpn:(dpp:number)=>({tax:0,total:dpp})}));
 vi.mock("@/lib/rombongan-server",()=>({bacaRombongan:vi.fn()}));
-vi.mock("@/lib/tagihan-klinik",()=>({nilaiBaris:(r:{qty:number;harga:number})=>r.qty*r.harga,hargaNetto:(r:{harga:number})=>r.harga,hitungPotonganKlinik:async()=>({total:0,tolakVoucher:null}),barisTagihanVisit:vi.fn(),bagiPotongan:vi.fn()}));
+vi.mock("@/lib/tagihan-klinik",()=>({nilaiBaris:(r:{qty:number;harga:number})=>r.qty*r.harga,hargaNetto:(r:{harga:number})=>r.harga,hitungPotonganKlinik:async()=>({promo:0,voucher:0,golongan:0,total:0,tolakVoucher:null,rincianPromo:[]}),barisTagihanVisit:vi.fn(),bagiPotongan:vi.fn()}));
 vi.mock("@/lib/voucher",()=>({normalizeKode:()=>"",pesanVoucherDitolak:vi.fn(),potonganVoucher:vi.fn()}));
 vi.mock("@/lib/klinik-posting",async()=>await import("../klinik-posting"));
 vi.mock("@/lib/poin-klinik",async()=>await import("../poin-klinik"));

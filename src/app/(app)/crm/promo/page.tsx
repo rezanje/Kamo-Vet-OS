@@ -110,7 +110,10 @@ export default async function PromoAdminPage({
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : "Promo baru dibuat."}</div>}
 
-      {canEdit&&<div style={{marginBottom:12}}><Link className="btn-def" href="/crm/promo/impor"><i className="ti ti-file-import" /> Impor promo dari Excel</Link></div>}
+      {canEdit&&<div style={{marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Link className="btn-def" href="/crm/promo/impor-daftar"><i className="ti ti-file-import" /> Impor daftar promo (banyak barang)</Link>
+        <Link className="btn-def" href="/crm/promo/impor"><i className="ti ti-file-import" /> Impor promo per SKU</Link>
+      </div>}
 
       <div className="crm-sec">
         <SecHeader num="01" title="BUAT PROMO" desc="Set promo per cabang + masa berlaku. Kosongkan cabang = berlaku semua cabang." />
