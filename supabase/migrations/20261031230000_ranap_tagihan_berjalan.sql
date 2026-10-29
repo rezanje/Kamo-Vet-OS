@@ -275,7 +275,7 @@ begin
     -- menampilkan rinciannya apa adanya, bukan jatuh ke pesan umum.
     raise exception using errcode='P0001', message=format(
       'DP_MINIMAL: minimal %s%% = Rp %s, baru diterima Rp %s',
-      trim(to_char(v_pct, 'FM999990.99')), trim(to_char(v_min, 'FM999999999990')),
+      rtrim(rtrim(to_char(v_pct, 'FM999990.99'), '0'), '.'), trim(to_char(v_min, 'FM999999999990')),
       trim(to_char(v_received, 'FM999999999990')));
   end if;
   if length(v_reason) > 500 then
@@ -438,6 +438,9 @@ begin
   end if;
   if v_used > 0 and v_remaining <= 0 then
     update public.invoices set paid_status = 'Lunas', paid_at = now() where id = v_invoice_id;
+  elsif v_used > 0 then
+    -- Sebagian tertutup uang muka: statusnya DP, bukan Belum Lunas.
+    update public.invoices set paid_status = 'DP' where id = v_invoice_id and paid_status = 'Belum Lunas';
   end if;
 
   perform clinic_private.enforce_min_dp(v_invoice_id, p_invoice ->> 'dp_override_reason');
