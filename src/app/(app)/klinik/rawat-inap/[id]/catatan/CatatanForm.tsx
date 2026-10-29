@@ -54,8 +54,11 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, petHotel = false }: {
+export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, petHotel = false, tabAwal }: {
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
+  /** `?tab=tindakan` membuka form langsung di tab "Tindakan & Racikan" — dipakai tombol
+   * "Tambah tindakan / obat" di Detail rekam medis. Nilai lain tetap mulai dari "Obat". */
+  tabAwal?: string;
   /** Dokter PJ kunjungan — isian awal kolom Dokter pada setiap baris. */
   visitDoctorId?: string | null;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
@@ -74,7 +77,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   petHotel?: boolean;
 }) {
   const [staff,setStaff]=useState<InpatientStaff>({log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null});
-  const [tab, setTab] = useState<Tab>("Obat");
+  const [tab, setTab] = useState<Tab>(tabAwal === "tindakan" ? TINDAKAN : "Obat");
   const [search, setSearch] = useState("");
   const [obatPage, setObatPage] = useState(1);
   const [cart, setCart] = useState<CartRow[]>([]);

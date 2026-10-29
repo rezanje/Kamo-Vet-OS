@@ -40,9 +40,9 @@ function itemUntukKlien(item: {
   };
 }
 
-export default async function CatatanRawatInapPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{ error?: string }> }) {
+export default async function CatatanRawatInapPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{ error?: string; tab?: string }> }) {
   const { id } = await params;
-  const { error } = await (searchParams ?? Promise.resolve({} as { error?: string }));
+  const { error, tab } = await (searchParams ?? Promise.resolve({} as { error?: string; tab?: string }));
   const supabase = await createClient();
   const waktu = catatWaktu("catatanRawatInap", id);
 
@@ -140,6 +140,7 @@ export default async function CatatanRawatInapPage({ params, searchParams }: { p
 
       <CatatanForm
         key={`${user?.id ?? ""}:${id}`}
+        tabAwal={tab}
         serviceStaff={serviceStaff}
         visitDoctorId={visit?.doctor_id ?? null}
         groomingDoctorRequired={groomingDoctorRequired}

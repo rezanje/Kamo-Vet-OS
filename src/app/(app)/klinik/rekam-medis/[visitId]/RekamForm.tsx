@@ -70,8 +70,11 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, correction }: {
+export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, correction, tabAwal }: {
   correction?: ClinicalCorrection;
+  /** `?tab=tindakan` membuka form langsung di tab "Tindakan & Racikan" — dipakai tombol
+   * "Tambah tindakan / obat" di Detail rekam medis. Nilai lain tetap mulai dari "Obat". */
+  tabAwal?: string;
   visitId: string; petId: string; requestKey: string; draftUserId: string;
   service?: string | null;
   serviceStaff?: ServiceStaff[];
@@ -92,7 +95,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const router = useRouter();
   // Tab "Tindakan & Racikan" menggabungkan pemilihan tindakan (beserta komposisi BMHP)
   // dengan peracikan; tab Jasa tetap murni jasa dan tidak pernah menampilkan BMHP.
-  const [tab, setTab] = useState<Tab>("Obat");
+  const [tab, setTab] = useState<Tab>(tabAwal === "tindakan" ? TINDAKAN : "Obat");
   const [search, setSearch] = useState("");
   const [obatPage, setObatPage] = useState(1);
   const [cart, setCart] = useState<CartRow[]>([]);
