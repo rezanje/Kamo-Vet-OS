@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import {InitialStockDecimalPreview} from "./InitialStockDecimalPreview";
+import {ValuationPolicyChoice} from "./ValuationPolicyChoice";
+import {DEFAULT_VALUATION_POLICY,valuationPolicyLabel,type InitialStockValuationPolicy} from "@/lib/initial-stock-valuation-policy";
+import {formatImportDecimal} from "@/lib/initial-stock-decimal";
 import { useEffect, useRef, useState } from "react";
 import { previewSaldoAwalAccurate, type InitialStockState } from "./actions";
 
 export function StockOnlyImport() {
   const [file, setFile] = useState<File | null>(null);
   const [date, setDate] = useState("");
-  const [normalize, setNormalize] = useState(false);
+  const [policy, setPolicy] = useState<InitialStockValuationPolicy>(DEFAULT_VALUATION_POLICY);
   const [state, setState] = useState<InitialStockState | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -21,7 +24,7 @@ export function StockOnlyImport() {
     const data = new FormData();
     data.set("initial_stock_file", file); data.set("initial_stock_as_of", date);
     if (selection) { data.set("scope_branch_id", selection.branchId); data.set("scope_warehouse_id", selection.warehouseId); }
-    data.set("import_mode", "stock_only"); data.set("valuation_policy", normalize ? "HALF_UP_BATCH_V1" : "STRICT");
+    data.set("import_mode", "stock_only"); data.set("valuation_policy", policy);
     try {
       const result = await previewSaldoAwalAccurate(data);
       if (token !== generation.current) return;
@@ -43,13 +46,13 @@ export function StockOnlyImport() {
       <span style={{fontSize:11,color:file?"#166534":"var(--tm)"}}><i className="ti ti-paperclip" /> {file?file.name:"Belum ada file dipilih"}</span>
     </div>
     <label style={{display:"block",marginTop:10}}>Tanggal posisi saldo awal <input type="date" required value={date} onChange={e=>{invalidate();setDate(e.target.value);}} /></label>
-    <label style={{display:"block",marginTop:10}}><input type="checkbox" checked={normalize} onChange={e=>{invalidate();setNormalize(e.target.checked);}} /> Saya memilih normalisasi HALF_UP total batch ke dua desimal, dengan alokasi residu deterministik ke HPP yang dapat menyimpannya tepat.</label>
-    <p>Nilai dan kuantitas asli tetap disimpan. Target dihitung dari file, bukan nilai kontrol Accurate yang diasumsikan. Jika residu tidak dapat direpresentasikan tepat, batch ditahan. OWNER tetap harus memeriksa nilai, akun ekuitas, dan konfirmasi sebelum posting.</p>
+    <ValuationPolicyChoice value={policy} onChange={next=>{invalidate();setPolicy(next);}} />
+    <p>Nilai dan kuantitas asli tetap disimpan. Total sumber dihitung dari file; cocokkan dengan laporan persediaan Accurate. OWNER tetap harus memeriksa nilai, selisih pembulatan, akun ekuitas, dan konfirmasi sebelum posting.</p>
     <button type="button" className="btn-acc" disabled={!file||!date||busy||Boolean(state?.ok)} onClick={()=>void prepare()}>Siapkan batch saldo</button>
     {busy&&<p role="status">Persiapan: menyiapkan batch. Stok dan jurnal belum diposting.</p>}
     {(error||(state&&!state.ok))&&<p role="alert">{error||state?.message}</p>}
     {state&&!state.ok&&state.run_id&&<Link className="btn-def" href={`/pos/sku/impor?run_id=${encodeURIComponent(state.run_id)}`}>Buka batch tersimpan</Link>}
-    <InitialStockDecimalPreview preview={state?.decimal_preview}/>
+    <InitialStockDecimalPreview preview={state?.decimal_preview} policy={state?.valuation?.policy??policy}/>
     {state?.scope_clarification&&<div role="group" aria-label="Pilih tujuan saldo">
       <p>Konfirmasi alias sumber: {state.scope_clarification.sourceBranch} / {state.scope_clarification.sourceWarehouse}. Pilih hanya jika tujuan berikut adalah gudang yang sama.</p>
       {state.scope_clarification.candidates.map(candidate=><button type="button" className="btn-def" key={candidate.warehouse.id} disabled={busy} onClick={()=>void prepare({branchId:candidate.branch.id,warehouseId:candidate.warehouse.id})}>Gunakan {candidate.branch.name} / {candidate.warehouse.name}</button>)}
@@ -66,11 +69,12 @@ export function StockOnlyImport() {
 export function StockValuation({state}:{state:InitialStockState}) {
   const v=state.valuation;
   if(!v)return null;
-  return <dl style={{overflowWrap:"anywhere"}}>
-    <dt>Kebijakan valuasi</dt><dd>{v.policy}</dd>
-    <dt>Nilai sumber presisi penuh (Rp)</dt><dd>{v.source_value}</dd>
-    <dt>Nilai stok dan jurnal yang ditinjau (Rp)</dt><dd>{v.posted_value}</dd>
-    <dt>Residu terhadap sumber (Rp)</dt><dd>{v.residual}</dd>
+  return <dl aria-label="Rekonsiliasi nilai batch" style={{overflowWrap:"anywhere"}}>
+    <dt>Kebijakan valuasi</dt><dd>{valuationPolicyLabel(v.policy)} ({v.policy})</dd>
+    <dt>Total sumber dari file (Rp)</dt><dd>{formatImportDecimal(v.source_value)}</dd>
+    <dt>Total yang akan/sudah diposting ke stok dan jurnal (Rp)</dt><dd>{formatImportDecimal(v.posted_value,false,2)}</dd>
+    <dt>Selisih pembulatan (Rp)</dt><dd>{formatImportDecimal(v.rounding_difference??v.residual,true)}</dd>
+    {v.line_rounding&&<><dt>Baris dibawa dua layer HPP sen</dt><dd>{v.line_rounding.split_lines} dari {v.source_lines} baris</dd></>}
     {v.allocated_source_row!=null&&<><dt>Baris alokasi residu</dt><dd>{v.allocated_source_row}</dd></>}
   </dl>;
 }

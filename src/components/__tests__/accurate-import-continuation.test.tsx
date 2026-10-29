@@ -87,9 +87,11 @@ it("hands a prepared batch to accounting review instead of offering import prepa
   expect(actions.previewSaldoAwalAccurate).toHaveBeenCalledTimes(1);
 });
 
-it('offers explicit money normalization without editing the file and forwards it to both stages',async()=>{
- const option=host.querySelector<HTMLInputElement>('input[aria-label="Bulatkan nilai uang ke 2 desimal"]');
- expect(option).not.toBeNull();expect(option?.checked).toBe(false);
+it('defaults to per-line rupiah rounding and forwards an explicitly changed choice to both stages',async()=>{
+ const options=[...host.querySelectorAll<HTMLInputElement>('input[type=radio]')];
+ expect(options.find(option=>option.checked)?.value).toBe('ROUND_LINE_RUPIAH_V1');
+ const option=options.find(candidate=>candidate.value==='HALF_UP_BATCH_V1');
+ expect(option).toBeDefined();
  await act(async()=>option!.click());await check();
  expect(actions.preflightSaldoAwalSekali.mock.calls[0][0].get('valuation_policy')).toBe('HALF_UP_BATCH_V1');
  await act(async()=>button('Import Sekali')!.click());
