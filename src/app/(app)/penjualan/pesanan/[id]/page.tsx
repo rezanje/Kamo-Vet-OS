@@ -11,6 +11,7 @@ import { bolehTransaksiKas } from "@/lib/master-guard";
 import { sisaFaktur, sisaKirim } from "@/lib/penjualan-dokumen";
 import { batalPesanan, buatFakturJual, buatPengiriman } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string | null) => (s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -86,6 +87,8 @@ export default async function DetailPesananPage({
           <i className="ti ti-alert-circle" /> {sp.error}
         </div>
       )}
+      {/* Pengiriman pesanan grosir mengeluarkan stok; penolakannya memakai popup yang sama. */}
+      <StokKurangDariPesan pesan={sp.error} />
       {sp.success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {sp.success}

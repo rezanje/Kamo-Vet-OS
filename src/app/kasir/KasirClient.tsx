@@ -30,6 +30,7 @@ import { serviceLinePromos, aggregateServiceLines } from "@/lib/service-line-pro
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput } from "@/lib/service-performers";
 import { KasirQuantityInput } from "./KasirQuantityInput";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 export type GroupComponentRow = {
   itemId: string; code: string; name: string;
@@ -432,6 +433,10 @@ export function KasirClient({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      {/* Penolakan stok dari server (cashier_post_stock_atomic) naik jadi popup.
+          Peringatan oranye di keranjang sengaja TIDAK diubah: kasir tetap boleh
+          melanjutkan kalau barangnya memang ada di rak. */}
+      <StokKurangDariPesan pesan={error} petunjuk="Kurangi jumlahnya, atau catat selisih stok lewat Stok Opname lalu ulangi." />
 
 
       {/* DATA CUSTOMER strip */}

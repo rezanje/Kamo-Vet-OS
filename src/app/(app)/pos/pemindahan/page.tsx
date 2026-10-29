@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { bolehBatalKirim } from "@/lib/pemindahan";
 
 const STATUS_BADGE: Record<string, string> = {
   "Sedang dikirim": "b",
@@ -111,7 +112,7 @@ export default async function PemindahanPage({
         </form>
 
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 860 }}>
+          <table className="tbl" style={{ minWidth: 1010 }}>
             <thead>
               <tr>
                 <th>Nomor #</th>
@@ -122,6 +123,7 @@ export default async function PemindahanPage({
                 <th style={{ textAlign: "center" }}>Item</th>
                 <th>Keterangan</th>
                 <th>Status Pengiriman</th>
+                <th style={{ width: 150 }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -145,11 +147,26 @@ export default async function PemindahanPage({
                       <span style={{ color: "var(--td)", fontSize: 11 }}>—</span>
                     )}
                   </td>
+                  <td>
+                    {/* Pola daftar Pembelian: Lihat selalu ada, aksi lanjutan muncul bila status
+                        mengizinkan. "Batalkan" membuka form alasannya di halaman dokumen —
+                        pembatalan tanpa alasan tidak pernah boleh terjadi sekali klik. */}
+                    <div style={{ display: "flex", gap: 5 }}>
+                      <Link href={`/pos/pemindahan/${r.id}`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5 }}>
+                        <i className="ti ti-eye" /> Lihat
+                      </Link>
+                      {bolehBatalKirim({ proses: r.proses, status: r.status }) && (
+                        <Link href={`/pos/pemindahan/${r.id}#batal`} className="btn-def" style={{ textDecoration: "none", padding: "4px 10px", fontSize: 10.5, color: "#b91c1c" }}>
+                          <i className="ti ti-ban" /> Batalkan
+                        </Link>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                  <td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                     Belum ada pemindahan barang.
                   </td>
                 </tr>

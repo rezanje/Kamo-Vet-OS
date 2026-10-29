@@ -5,6 +5,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { hariIniWIB } from "@/lib/tanggal";
 import { simpanPenyesuaian } from "../actions";
 import { BarisForm, type BarangStok } from "./BarisForm";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -65,6 +66,7 @@ export default async function PenyesuaianBaruPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      <StokKurangDariPesan pesan={error} />
 
       <div className="crm-sec" style={{ paddingBottom: 12 }}>
         <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 8 }}>Pilih gudang</div>

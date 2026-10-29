@@ -19,6 +19,7 @@ import Link from "next/link";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Popup } from "@/components/Popup";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { bayarVisit } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { METODE_BAYAR } from "@/lib/metode-bayar";
@@ -409,6 +410,10 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   return (<>
     {/* Di luar <form>: dialog punya form method="dialog" sendiri. */}
     <Popup message={kurangBayar} title="Pembayaran kurang" onClose={() => setKurangBayar(null)} />
+    {/* Stok klinik benar-benar keluar saat pembayaran: penolakan "Stok tidak cukup"
+        dari database naik jadi popup yang sama dengan proses stok lain. */}
+    {!kurangBayar && <StokKurangDariPesan pesan={saveError}
+      petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada, lalu simpan ulang." />}
     <RacikanBelumSiapDialog open={!!konfirmasiRacikan}
       onCancel={() => setKonfirmasiRacikan(null)}
       onConfirm={() => {

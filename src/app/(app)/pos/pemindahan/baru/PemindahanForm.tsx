@@ -12,6 +12,8 @@ import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { buatKirim } from "../actions";
 import { kurangStokPemindahan } from "@/lib/pemindahan";
+import { StokKurangPopup } from "@/components/StokKurangPopup";
+import { angkaTampil, formatKekuranganStok, kekurangan, type BarisKurangStok } from "@/lib/stok-kurang";
 import { hariIniWIB } from "@/lib/tanggal";
 
 type Warehouse = { id: string; name: string };
@@ -34,6 +36,7 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
   }, []);
   const stockByItem = new Map(stock.filter(s => s.warehouse_id === warehouseId).map(s => [s.item_id, Number(s.qty)]));
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
+  const [popupKurang, setPopupKurang] = useState<BarisKurangStok[]>([]);
 
   const byLabel = new Map(items.map((it) => [label(it), it]));
   const byId = new Map(items.map(item => [item.id, item]));
@@ -66,10 +69,23 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
         }),
         stockByItem,
       )
-    : null;
+    : [];
+  const kurangPerItem = new Map(kurang.map((b) => [b.item_id ?? "", b]));
+  const namaGudang = warehouses.find((w) => w.id === warehouseId)?.name ?? null;
 
   return (
-    <form action={save}>
+    <>
+    {/* Di luar <form>: dialog punya tombol penutupnya sendiri. */}
+    <StokKurangPopup baris={popupKurang} gudang={namaGudang} onClose={() => setPopupKurang([])}
+      petunjuk="Kurangi jumlahnya, atau pilih gudang asal lain yang stoknya cukup." />
+    <form action={save} onSubmitCapture={(event) => {
+      // Tombolnya tidak lagi dimatikan: petugas yang menekan Kirim harus melihat
+      // barang mana yang kurang dan berapa kurangnya, bukan tombol yang diam saja.
+      if (!kurang.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPopupKurang(kurang);
+    }}>
       <LocalTransactionDraft userId={userId} scope="pos:pemindahan:baru" state={{ snapshot: { rows, requestKey, warehouseId }, reset: () => { setWarehouseId(""); setRows([{ ...blank }]); setRequestKey(crypto.randomUUID()); }, restore: (value) => { const draft = value as { rows?: Row[]; requestKey?: string; warehouseId?: string }; if (Array.isArray(draft.rows)) setRows(draft.rows); if (draft.requestKey) setRequestKey(draft.requestKey); if (typeof draft.warehouseId === "string") setWarehouseId(draft.warehouseId); return true; } }} />
       <input type="hidden" name="request_key" value={requestKey} />
       {failure && <div role="alert" className="p2ban">{failure}</div>}
@@ -122,6 +138,7 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
                     onTextChange={text => onDisplay(i, text)} onChange={id => { const selected = byId.get(id); if (selected) set(i, { item_id: id, display: selected.name, satuan: selected.units[0]?.unit ?? "" }); }} /></div>
                   <NumberInput className="fi" type="number" min={0} step="any" value={r.qty}
                     onChange={(e) => set(i, { qty: Number(e.target.value) })}
+                    data-stok-kurang={kurangPerItem.has(r.item_id) ? r.item_id : undefined}
                     style={{ width: 80 }} title="Kuantitas" />
                   <select className="fi" aria-label="Satuan barang" value={r.satuan} onChange={e => set(i, { satuan: e.target.value })} style={{ width: 90 }}>{(it?.units ?? []).map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}</select>
                   <button type="button" onClick={() => del(i)} className="btn-def"
@@ -130,6 +147,11 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
                   </button>
                 </div>
                   {it && <WarehouseStockHint warehouseId={warehouseId} quantity={stockByItem.get(it.id) ?? 0} baseUnit={it.unit} selectedUnit={it.units.find(u => u.unit === r.satuan)} />}
+                  {it && kurangPerItem.has(it.id) && (
+                    <div role="alert" style={{ fontSize: 10, color: "#b91c1c", marginTop: 2 }}>
+                      <i className="ti ti-alert-triangle" /> Kurang {angkaTampil(kekurangan(kurangPerItem.get(it.id)!))} {kurangPerItem.get(it.id)!.satuan}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -140,17 +162,18 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
         </div>
       </div>
 
-      {kurang && (
+      {kurang.length > 0 && (
         <div role="alert" className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", marginTop: 12 }}>
-          <i className="ti ti-alert-circle" /> Stok gudang asal tidak cukup. {kurang}. Kurangi kuantitasnya.
+          <i className="ti ti-alert-circle" /> Stok gudang asal tidak cukup. {formatKekuranganStok(kurang)}. Kurangi kuantitasnya.
         </div>
       )}
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <SubmitButton className="btn-acc" disabled={payload.length === 0 || kurang !== null} icon="ti-truck-delivery" pendingText="Menyimpan pemindahan…">
+        <SubmitButton className="btn-acc" disabled={payload.length === 0} icon="ti-truck-delivery" pendingText="Menyimpan pemindahan…">
           Kirim barang
         </SubmitButton>
       </div>
     </form>
+    </>
   );
 }

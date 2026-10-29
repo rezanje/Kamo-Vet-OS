@@ -9,11 +9,16 @@ import {
   jalankanTerbatasImporRekamMedis,
   klarifikasiIdentitasRekamMedis,
   identitasPersisRekamMedis,
+  kunciTeksImporRekamMedis,
+  kunciTeleponImporRekamMedis,
   pilahRiwayatTersimpan,
+  type RekamMedisExistingOwner,
+  type RekamMedisExistingPet,
   type RekamMedisIdentityClarification,
   type RekamMedisImporHeld,
   type RekamMedisImporRow,
 } from "@/lib/impor-rekam-medis";
+import { bagiKirimanBaris, MAKS_BARIS_PER_KIRIMAN, MAKS_BARIS_POTONGAN_REKAM_MEDIS } from "@/lib/impor-rekam-medis-aliran";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_BATCH_BYTES = 30 * 1024 * 1024;
@@ -194,9 +199,9 @@ function cleanText(value: unknown, max: number): string | null {
   return text ? text.slice(0, max) : null;
 }
 
-function validasiRows(input: unknown): RekamMedisImporRow[] {
+function validasiRows(input: unknown, maksBaris = 50): RekamMedisImporRow[] {
   if (!Array.isArray(input) || input.length === 0) throw new Error("Tidak ada riwayat yang siap disimpan.");
-  if (input.length > 50) throw new Error("Terlalu banyak riwayat dalam satu kiriman.");
+  if (input.length > maksBaris) throw new Error("Terlalu banyak riwayat dalam satu kiriman.");
   return input.map((candidate) => {
     if (!candidate || typeof candidate !== "object") throw new Error("Format riwayat tidak valid.");
     const row = candidate as Partial<RekamMedisImporRow>;
@@ -353,5 +358,207 @@ export async function simpanBatchImporRekamMedis(
       sudah_ada: 0,
       dilewati: 0,
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Jalur mengalir: satu permintaan per potongan folder, satu transaksi per kiriman
+// ---------------------------------------------------------------------------
+
+type PemindaiRpcClient = {
+  rpc: (name: "import_legacy_identity_scan" | "import_legacy_medical_records_bulk", args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
+};
+
+export type HasilPotonganImporRekamMedis = {
+  ok: boolean;
+  message: string;
+  tersimpan: number;
+  sudah_ada: number;
+  dilewati: number;
+  ditahan: RekamMedisImporHeld[];
+  perlu_keputusan: RekamMedisIdentityClarification[];
+};
+
+const potonganKosong = (message: string): HasilPotonganImporRekamMedis => ({
+  ok: false, message, tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [],
+});
+
+function pesanRpc(message: string) {
+  if (/does not exist|could not find the function|schema cache/i.test(message)) {
+    return "Database belum diperbarui untuk impor cepat. Hubungi tim teknis sebelum mengulang.";
+  }
+  return message;
+}
+
+/**
+ * Satu panggilan: riwayat mana yang sudah pernah diimpor, dan siapa saja calon pemilik/anabul
+ * yang relevan untuk potongan ini. Penyaring di database sengaja lebih luas daripada aturan
+ * aplikasi, jadi keputusan "mirip -> tanya manusia" tetap diambil oleh kode yang sudah teruji.
+ */
+async function pindaiIdentitasPotongan(supabase: Awaited<ReturnType<typeof createClient>>, rows: RekamMedisImporRow[]) {
+  const kosong = { existing: [] as string[], owners: [] as RekamMedisExistingOwner[], pets: [] as RekamMedisExistingPet[] };
+  if (!rows.length) return kosong;
+  const { data, error } = await (supabase as unknown as PemindaiRpcClient).rpc("import_legacy_identity_scan", {
+    p_source_keys: [...new Set(rows.map((row) => row.source_key))],
+    p_owner_keys: [...new Set(rows.map((row) => kunciTeksImporRekamMedis(row.owner_name)))],
+    p_phone_keys: [...new Set(rows.map((row) => kunciTeleponImporRekamMedis(row.phone)))],
+  });
+  if (error) throw new Error(pesanRpc(error.message));
+  if (!data || typeof data !== "object") throw new Error("Pemeriksaan identitas tidak memberi jawaban. Coba lagi.");
+  const payload = data as { sudah_ada?: unknown; customers?: unknown; pets?: unknown };
+  const list = (value: unknown) => Array.isArray(value) ? value : [];
+  return {
+    existing: list(payload.sudah_ada).flatMap((item) => typeof item === "string" ? [item] : []),
+    owners: list(payload.customers).flatMap((item): RekamMedisExistingOwner[] => {
+      const owner = item as { id?: unknown; name?: unknown; phone?: unknown };
+      return typeof owner?.id === "string" ? [{ id: owner.id, name: String(owner.name ?? ""), phone: owner.phone == null ? null : String(owner.phone) }] : [];
+    }),
+    pets: list(payload.pets).flatMap((item): RekamMedisExistingPet[] => {
+      const pet = item as { id?: unknown; customer_id?: unknown; name?: unknown };
+      return typeof pet?.id === "string" && typeof pet?.customer_id === "string"
+        ? [{ id: pet.id, customer_id: pet.customer_id, name: String(pet.name ?? "") }]
+        : [];
+    }),
+  };
+}
+
+type StatusBarisMassal = { source_key: string; status: string; reason: string | null };
+
+/** Satu transaksi per kiriman; pengulangan aman karena kunci sumber unik di database. */
+async function simpanMassalRekamMedis(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  rows: RekamMedisImporRow[],
+  mappings: Map<string, { customer_id: string; pet_id: string | null }>,
+) {
+  const status: StatusBarisMassal[] = [];
+  for (const kiriman of bagiKirimanBaris(rows, MAKS_BARIS_PER_KIRIMAN)) {
+    const payload = kiriman.map((row) => {
+      const mapping = mappings.get(row.source_key);
+      return {
+        source_key: row.source_key,
+        record_no: row.record_no,
+        record_date: `${row.record_date}T00:00:00+07:00`,
+        owner_name: row.owner_name,
+        phone: row.phone,
+        address: row.address,
+        patient_name: row.patient_name,
+        species: row.species,
+        breed: row.breed,
+        gender: row.gender,
+        dob: row.dob,
+        doctor: row.doctor,
+        note: row.note,
+        anamnesis: row.anamnesis,
+        clinical_findings: row.clinical_findings,
+        diagnosis: row.diagnosis,
+        therapy: row.therapy,
+        customer_id: mapping?.customer_id ?? null,
+        pet_id: mapping?.pet_id ?? null,
+      };
+    });
+    const { data, error } = await (supabase as unknown as PemindaiRpcClient).rpc("import_legacy_medical_records_bulk", { p_rows: payload });
+    if (error) throw new Error(pesanRpc(error.message));
+    if (!Array.isArray(data)) throw new Error("Penyimpanan tidak memberi jawaban per riwayat. Coba lagi.");
+    if (data.length !== kiriman.length) throw new Error("Penyimpanan tidak melaporkan semua riwayat. Coba lagi.");
+    for (const item of data as Array<Record<string, unknown>>) {
+      status.push({
+        source_key: String(item?.source_key ?? ""),
+        status: String(item?.status ?? "ditahan"),
+        reason: item?.reason == null ? null : String(item.reason),
+      });
+    }
+  }
+  return status;
+}
+
+/**
+ * Memproses satu potongan folder: cek yang sudah ada, selesaikan identitas yang jelas,
+ * simpan massal, dan KEMBALIKAN -- bukan melempar -- pertanyaan identitas yang masih
+ * perlu keputusan manusia supaya aliran impor tidak berhenti di tengah folder.
+ */
+export async function prosesPotonganImporRekamMedis(
+  input: RekamMedisImporRow[],
+  decisionsInput: RekamMedisIdentityDecision[],
+  approved: boolean,
+  revalidate = false,
+): Promise<HasilPotonganImporRekamMedis> {
+  try {
+    const supabase = await assertBolehImpor();
+    if (!approved) throw new Error("Centang persetujuan impor setelah meninjau hasil cek.");
+    const rows = validasiRows(input, MAKS_BARIS_POTONGAN_REKAM_MEDIS);
+    const decisions = parseIdentityDecisions(decisionsInput);
+    const keputusan = new Map(decisions.map((item) => [item.source_key, item.decision]));
+
+    const dilewati = rows.filter((row) => keputusan.get(row.source_key) === "skip").length;
+    const dipilih = rows.filter((row) => keputusan.get(row.source_key) !== "skip");
+
+    const pindai = await pindaiIdentitasPotongan(supabase, dipilih);
+    const { baru, sudah_ada } = pilahRiwayatTersimpan(dipilih, pindai.existing);
+
+    const mappings = new Map<string, { customer_id: string; pet_id: string | null }>();
+    for (const row of baru) {
+      const identity = identitasPersisRekamMedis(row, pindai.owners, pindai.pets);
+      if (identity) mappings.set(row.source_key, identity);
+    }
+
+    const ditahan: RekamMedisImporHeld[] = [];
+    const perluKeputusan: RekamMedisIdentityClarification[] = [];
+    const tertunda = new Set<string>();
+    for (const clarification of klarifikasiIdentitasRekamMedis(baru, pindai.owners, pindai.pets)) {
+      const decision = keputusan.get(clarification.source_key);
+      if (!decision) {
+        perluKeputusan.push(clarification);
+        tertunda.add(clarification.source_key);
+        continue;
+      }
+      if (decision === "skip") continue;
+      const valid = clarification.candidates.some((candidate) => candidate.customer_id === decision.customer_id && candidate.pet_id === decision.pet_id);
+      if (!valid) {
+        ditahan.push({
+          source_key: clarification.source_key,
+          source_file: clarification.source_file,
+          source_sheet: clarification.source_sheet,
+          reason: "Pilihan pemilik atau anabul sudah berubah. Pilih ulang lalu simpan lagi.",
+        });
+        tertunda.add(clarification.source_key);
+        continue;
+      }
+      mappings.set(clarification.source_key, decision);
+    }
+
+    const kirim = baru.filter((row) => !tertunda.has(row.source_key));
+    const status = await simpanMassalRekamMedis(supabase, kirim, mappings);
+    const perBaris = new Map(kirim.map((row) => [row.source_key, row]));
+    let tersimpan = 0;
+    let sudahAda = sudah_ada;
+    for (const item of status) {
+      if (item.status === "tersimpan") tersimpan += 1;
+      else if (item.status === "sudah_ada") sudahAda += 1;
+      else {
+        const row = perBaris.get(item.source_key);
+        ditahan.push({
+          source_key: item.source_key,
+          source_file: row?.source_file ?? "—",
+          source_sheet: row?.source_sheet ?? "—",
+          reason: item.reason ?? "Riwayat ditolak database.",
+        });
+      }
+    }
+
+    if (revalidate && tersimpan > 0) {
+      revalidatePath("/klinik/antrian");
+      revalidatePath("/crm/pelanggan");
+    }
+    return {
+      ok: true,
+      message: `${tersimpan} riwayat baru disimpan, ${sudahAda} sudah ada, ${ditahan.length} ditahan, ${perluKeputusan.length} perlu keputusan.`,
+      tersimpan,
+      sudah_ada: sudahAda,
+      dilewati,
+      ditahan,
+      perlu_keputusan: perluKeputusan,
+    };
+  } catch (error) {
+    return potonganKosong(error instanceof Error ? error.message : "Potongan impor gagal diproses.");
   }
 }

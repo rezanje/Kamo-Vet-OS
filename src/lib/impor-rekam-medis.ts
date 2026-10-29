@@ -172,6 +172,11 @@ const cleanMultiline = (value: unknown): string => String(value ?? "")
 const key = (value: unknown) => clean(value).toLocaleLowerCase("id-ID").replace(/[.:]/g, "").replace(/\s+/g, " ");
 const phoneKey = (value: unknown) => clean(value).replace(/\D/g, "");
 
+/** Kunci pencocokan identitas; harus sama persis dengan import_legacy_text_key di database. */
+export const kunciTeksImporRekamMedis = (value: unknown) => key(value);
+/** Kunci telepon; harus sama persis dengan import_legacy_phone_key di database. */
+export const kunciTeleponImporRekamMedis = (value: unknown) => phoneKey(value);
+
 export function isPlaceholderOwnerName(value: string | null | undefined) {
   return /(?:^|[-_\s])drive[-_\s]?download(?:[-_\s]|$)/i.test(clean(value));
 }
@@ -417,7 +422,9 @@ function heldReason(row: RekamMedisImporRow): string | null {
 
 export async function bacaWorkbookRekamMedis(bytes: Uint8Array, fileName: string, sourcePath?: string): Promise<RekamMedisWorkbookResult> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(Buffer.from(bytes) as never);
+  // Di browser (Web Worker) tidak ada global Buffer. JSZip di dalam ExcelJS menerima
+  // Uint8Array apa adanya, jadi kartu medis bisa diurai di tab pengguna tanpa polyfill.
+  await workbook.xlsx.load((typeof Buffer === "undefined" ? bytes : Buffer.from(bytes)) as never);
   const rows: RekamMedisImporRow[] = [];
   const held: RekamMedisImporHeld[] = [];
   let ignored = 0;
@@ -462,7 +469,24 @@ export async function bacaWorkbookRekamMedis(bytes: Uint8Array, fileName: string
 
 export async function bacaWorkbooksRekamMedis(files: RekamMedisFile[]): Promise<RekamMedisWorkbookResult> {
   const parsed: RekamMedisWorkbookResult[] = [];
-  for (const file of files) parsed.push(await bacaWorkbookRekamMedis(file.bytes, file.fileName, file.sourcePath));
+  for (const file of files) {
+    // Satu berkas rusak tidak boleh menjatuhkan seluruh potongan: tahan berkasnya,
+    // catat alasannya, dan teruskan sisa folder.
+    try {
+      parsed.push(await bacaWorkbookRekamMedis(file.bytes, file.fileName, file.sourcePath));
+    } catch (cause) {
+      parsed.push({
+        rows: [],
+        held: [{
+          source_key: `gagal-baca::${file.sourcePath ?? file.fileName}`,
+          source_file: file.fileName,
+          source_sheet: "\u2014",
+          reason: `File gagal dibaca: ${cause instanceof Error ? cause.message : "format tidak dikenali"}`.slice(0, 255),
+        }],
+        ignored_sheets: 0,
+      });
+    }
+  }
   const rows = completeProfiles(parsed.flatMap((result) => result.rows));
   const held = parsed.flatMap((result) => result.held);
   const seen = new Map<string, string>();

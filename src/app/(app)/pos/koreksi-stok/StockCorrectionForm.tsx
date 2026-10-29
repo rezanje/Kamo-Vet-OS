@@ -1,6 +1,7 @@
 "use client";
 
 import { NumberInput } from "@/components/NumberInput";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -77,6 +78,8 @@ export function StockCorrectionForm({ userId, kind, documentId, revision, rows }
     <label className="flab" htmlFor={`stock-reason-${documentId}`}>Alasan koreksi</label>
     <input id={`stock-reason-${documentId}`} className="fi" name="reason" required minLength={3} maxLength={1000} value={saved?.reason ?? ""} disabled={!saved || busy || !!saved.submission || done} onChange={e => { if(saved) persist({ ...saved, reason: e.target.value }); }} />
     {message && <div role="status" className="p2ban">{message}</div>}
+    {/* "Stok tidak cukup untuk koreksi" naik jadi popup yang sama dengan proses stok lain. */}
+    <StokKurangDariPesan pesan={message} />
     {preview && <div role="region" aria-label="Preview dampak koreksi">
       <h4>Dampak sebelum disimpan</h4>
       {preview.lines.map(line => <p key={line.item_id}>{line.name}: jumlah transaksi {line.old_qty} → {line.new_qty}; stok sekarang {line.stock_before} → {line.stock_after} (selisih {line.delta}).</p>)}

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { kekuranganStok } from "../stok-keranjang";
+import { kekuranganStok as barisKurangKeranjang } from "../stok-keranjang";
+import { angkaStok } from "../stok-kurang";
+
+// Hasilnya sekarang baris terstruktur yang langsung dipakai popup "Stok tidak
+// cukup". Pembantu ini merangkainya kembali jadi kalimat klinik yang lama
+// supaya harapan tiap kasus tetap terbaca apa adanya.
+const kekuranganStok = (...args: Parameters<typeof barisKurangKeranjang>) =>
+  barisKurangKeranjang(...args).map((b) =>
+    `${b.nama}: butuh ${angkaStok(b.butuh ?? 0)} ${b.satuan}, stok ${angkaStok(b.tersedia ?? 0)} ${b.satuan}`);
 
 const stok = new Map([["a", { stok: 5, unit: "pcs" }], ["b", { stok: 20, unit: "ml" }]]);
 describe("kekuranganStok", () => {
