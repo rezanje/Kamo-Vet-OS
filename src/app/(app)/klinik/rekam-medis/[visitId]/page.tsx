@@ -54,10 +54,10 @@ export default async function RekamMedisPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; racikan?: string; success?: string; edit?: string }>;
+  searchParams: Promise<{ error?: string; racikan?: string; success?: string; edit?: string; tab?: string }>;
 }) {
   const { visitId } = await params;
-  const { error, racikan, success, edit } = await searchParams;
+  const { error, racikan, success, edit, tab } = await searchParams;
   const supabase = await createClient();
   // U07: semua bacaan yang cuma butuh visitId jalan bareng dalam satu putaran.
   // Dulu halaman ini antre ±12 perjalanan ke database satu per satu, dan halaman
@@ -188,6 +188,25 @@ export default async function RekamMedisPage({
   const canAddRacikan = !!(menungguBayar && !visit.checked_out_at && mrId && !mrLoadFailed
     && !correctionDataFailed && !invoiceCheck.error && !invoiceCheck.data);
   const editing = !!edit && edit === mrId && canCorrect;
+  // Tindakan/obat susulan tidak punya jalur tulis sendiri di layar Detail — aturan BMHP
+  // dan stok hanya hidup di form yang sudah ada. Tombol di kartu "Tindakan & Racikan"
+  // cuma mengantar ke form yang benar, langsung terbuka di tab Tindakan & Racikan.
+  //
+  // Rawat jalan sengaja diarahkan ke Pembayaran, bukan ke koreksi `?edit=`: koreksi
+  // rekam medis (`clinic_correct_unpaid_record`) hanya menerima catatan klinis dan
+  // formnya memang tidak punya pemilih obat/jasa, jadi tombol ke sana akan buntu.
+  const inpatientAktif = inpatient && !inpatient.discharged_at ? inpatient : null;
+  const tambahItemHref = inpatientAktif
+    ? `/klinik/rawat-inap/${inpatientAktif.id}/catatan?tab=tindakan`
+    : canCorrect && mrId
+      ? `/klinik/pembayaran/${visit.id}`
+      : null;
+  const tambahItemNota = !tambahItemHref
+    ? selesai || visit.checked_out_at ? "Kunjungan sudah selesai — tindakan baru dicatat di kunjungan berikutnya."
+      : latestInvoice.data ? "Tagihan sudah dibuat — tambah item lewat koreksi tagihan di Pembayaran."
+      : "Tambah tindakan belum bisa dibuka dari sini. Muat ulang halaman, lalu lanjutkan lewat Pembayaran."
+    : inpatientAktif ? ""
+    : "Rawat jalan: tindakan / obat susulan ditambahkan di layar Pembayaran supaya ikut tagihan.";
   const correction: ClinicalCorrection | undefined = editing && record && mrId ? {
     recordId: mrId, revision: record.clinical_revision ?? 0,
     anamnesis: record.anamnesis, diagnosis: record.diagnosis, therapy: record.therapy,
@@ -523,11 +542,19 @@ export default async function RekamMedisPage({
 
           {/* Racik obat (Addendum §2) — bisa >1 racikan per rekam medis (racikan harian rawat inap). */}
           <div className="card" style={{ marginTop: 12 }}>
-            <div className="card-hd">
+            <div className="card-hd" style={{ justifyContent: "space-between" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <i className="ti ti-flask" style={{ color: "#7c3aed" }} /> Obat racikan
+                <i className="ti ti-flask" style={{ color: "#7c3aed" }} /> Tindakan &amp; Racikan
               </span>
+              {tambahItemHref && (
+                <Link href={tambahItemHref} aria-label="Tambah tindakan / obat" className="btn-acc" style={{ textDecoration: "none" }}>
+                  <i className="ti ti-plus" /> Tambah tindakan / obat
+                </Link>
+              )}
             </div>
+            {tambahItemNota && (
+              <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 8 }}>{tambahItemNota}</div>
+            )}
             {racikanList.length === 0 ? (
               <div style={{ fontSize: 11, color: "var(--td)" }}>Belum ada racikan untuk kunjungan ini.</div>
             ) : (
@@ -628,6 +655,7 @@ export default async function RekamMedisPage({
       ) : (
         <RekamForm
           service={visit.poli}
+          tabAwal={tab}
           key={`${user?.id ?? ""}:${visitId}:${correction ? `${correction.recordId}:${correction.revision}` : "initial"}`}
           correction={correction}
           visitId={visit.id}
