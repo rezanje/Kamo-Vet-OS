@@ -33,7 +33,7 @@
 -- membukanya, dan penandanya mati sendiri saat transaksi berakhir.
 revoke all on schema clinic_private from public, anon, authenticated, service_role;
 
-create unlogged table clinic_private.posting_ctx (
+create unlogged table if not exists clinic_private.posting_ctx (
   txid bigint primary key,
   kind text not null check (kind in ('stage','split','demo')),
   visit_id uuid not null,
@@ -41,7 +41,7 @@ create unlogged table clinic_private.posting_ctx (
 );
 revoke all on table clinic_private.posting_ctx from public, anon, authenticated, service_role;
 
-create function clinic_private.context_begin(p_kind text, p_visit_id uuid) returns void
+create or replace function clinic_private.context_begin(p_kind text, p_visit_id uuid) returns void
 language plpgsql set search_path = '' as $function$
 begin
   insert into clinic_private.posting_ctx (txid, kind, visit_id)
@@ -51,7 +51,7 @@ end;
 $function$;
 revoke all on function clinic_private.context_begin(text, uuid) from public, anon, authenticated, service_role;
 
-create function clinic_private.context_end() returns void
+create or replace function clinic_private.context_end() returns void
 language plpgsql set search_path = '' as $function$
 begin
   delete from clinic_private.posting_ctx where txid = pg_catalog.txid_current();
@@ -61,7 +61,7 @@ revoke all on function clinic_private.context_end() from public, anon, authentic
 
 -- Tanpa xid yang sudah diberikan tidak mungkin ada konteks: kembalikan NULL, jangan
 -- memaksa transaksi baca mengambil xid.
-create function clinic_private.posting_context(p_visit_id uuid) returns text
+create or replace function clinic_private.posting_context(p_visit_id uuid) returns text
 language sql stable set search_path = '' as $$
   select c.kind from clinic_private.posting_ctx c
   where c.txid = pg_catalog.txid_current_if_assigned() and c.visit_id = p_visit_id;
@@ -79,7 +79,7 @@ $$;
 -- Hanya pembungkus internal yang boleh menunda uang muka minimal: tahap rawat inap
 -- (menerapkan uang muka dulu), checkout campuran dan checkout DEMO (keduanya sudah
 -- memvalidasi bahwa seluruh tagihan dibayar sebelum posting).
-create function clinic_private.dp_deferred(p_visit_id uuid) returns boolean
+create or replace function clinic_private.dp_deferred(p_visit_id uuid) returns boolean
 language sql stable set search_path = '' as $$
   select coalesce(clinic_private.posting_context(p_visit_id) in ('stage','split','demo'), false);
 $$;
@@ -111,7 +111,7 @@ where i.request_key is not null
 -- ---------------------------------------------------------------------------
 -- 3. Status bayar selalu dihitung dari uang yang benar-benar masuk (FIN-04)
 -- ---------------------------------------------------------------------------
-create function clinic_private.sync_paid_status(p_invoice_id uuid) returns void
+create or replace function clinic_private.sync_paid_status(p_invoice_id uuid) returns void
 language plpgsql security definer set search_path = '' as $function$
 declare v_total numeric(15,2); v_received numeric(15,2);
 begin
@@ -136,7 +136,7 @@ revoke all on function clinic_private.sync_paid_status(uuid) from public, anon, 
 -- ---------------------------------------------------------------------------
 -- Terbit ulang mem-void tagihan lama dan menyalin isinya ke tagihan baru lewat
 -- kolom reissued_from. Pembalik uang harus mengenai dokumen yang masih hidup.
-create function clinic_private.active_invoice(p_invoice_id uuid) returns uuid
+create or replace function clinic_private.active_invoice(p_invoice_id uuid) returns uuid
 language plpgsql stable set search_path = '' as $function$
 declare v_id uuid := p_invoice_id; v_voided timestamptz; v_next uuid; v_hop integer := 0;
 begin
@@ -155,6 +155,56 @@ end;
 $function$;
 revoke all on function clinic_private.active_invoice(uuid) from public, anon, authenticated, service_role;
 
+-- Alokasi HIDUP satu kwitansi. Terbit ulang menyalin baris pembayaran beserta
+-- receipt_id-nya, jadi satu rupiah asli bisa muncul sebagai beberapa baris pada
+-- rantai dokumen. Pembalikan DAN perhitungan sisa uang muka wajib memakai daftar
+-- yang sama ini: tiap alokasi asli tepat satu baris, pada dokumen yang masih hidup.
+create or replace function clinic_private.receipt_allocations(p_receipt_id uuid)
+returns table (payment_id uuid, source_invoice_id uuid, target_invoice_id uuid,
+               amount numeric, metode text, kas_code text)
+language sql stable set search_path = '' as $$
+  select p.id, p.invoice_id, coalesce(t.aktif, p.invoice_id), p.amount,
+         p.metode::text, p.kas_code::text
+  from public.invoice_payments p
+  join public.invoices i on i.id = p.invoice_id
+  cross join lateral (select clinic_private.active_invoice(p.invoice_id) as aktif) t
+  where p.receipt_id = p_receipt_id and p.reversal_of is null and p.amount > 0
+    and not (
+      i.voided_at is not null and t.aktif is not null
+      and exists (select 1 from public.invoice_payments qq
+        where qq.receipt_id = p_receipt_id and qq.reversal_of is null and qq.amount > 0
+          and qq.invoice_id = t.aktif)
+    )
+  order by p.created_at, p.id;
+$$;
+revoke all on function clinic_private.receipt_allocations(uuid)
+  from public, anon, authenticated, service_role;
+
+-- Riwayat pembayaran yang sudah DIBALIK SELURUHNYA. Barisnya tetap tersimpan
+-- sebagai jejak (positif dan negatifnya), tetapi tidak ada satu rupiah pun yang
+-- belum dikompensasi: nol bersih PER REKENING KAS, tiap baris negatif adalah
+-- pembalik yang menunjuk pembayaran positif nyata, dan kepala tagihan tidak
+-- menyimpan uang muka langsung. Dipakai untuk memutuskan apakah tagihan tanpa uang
+-- masih boleh dikoreksi biasa.
+create or replace function clinic_private.payments_fully_reversed(p_invoice_id uuid) returns boolean
+language sql stable set search_path = '' as $$
+  select exists (select 1 from public.invoice_payments p where p.invoice_id = p_invoice_id)
+    and coalesce((select i.dp_amount from public.invoices i where i.id = p_invoice_id), 0) = 0
+    and coalesce((select sum(p.amount) from public.invoice_payments p
+      where p.invoice_id = p_invoice_id), 0) = 0
+    and not exists (
+      select 1 from public.invoice_payments p where p.invoice_id = p_invoice_id
+        and (p.amount = 0
+          or (p.amount > 0 and p.reversal_of is not null)
+          or (p.amount < 0 and not exists (select 1 from public.invoice_payments o
+                where o.id = p.reversal_of and o.amount > 0))))
+    and not exists (
+      select 1 from public.invoice_payments p where p.invoice_id = p_invoice_id
+      group by p.kas_code having sum(p.amount) <> 0);
+$$;
+revoke all on function clinic_private.payments_fully_reversed(uuid)
+  from public, anon, authenticated, service_role;
+
 -- ---------------------------------------------------------------------------
 -- 5. Pelepasan uang muka yang sudah dipakai (FIN-03)
 -- ---------------------------------------------------------------------------
@@ -162,21 +212,38 @@ revoke all on function clinic_private.active_invoice(uuid) from public, anon, au
 -- tabel-tabel ini sudah punya FK ke sana, dan FK kedua membuat relasi embed PostgREST
 -- jadi ambigu (PGRST201) sehingga layar riwayat diam-diam kosong.
 alter table public.clinic_advance_applications
-  add column released_at timestamptz,
-  add column released_by uuid,
-  add column release_reason text,
-  add column release_payment_id uuid;
+  add column if not exists released_at timestamptz,
+  add column if not exists released_by uuid,
+  add column if not exists release_reason text,
+  add column if not exists release_payment_id uuid;
 
 alter table public.clinic_customer_advances
-  add column release_request_key text,
-  add column released_at timestamptz,
-  add column released_by uuid,
-  add column release_reason text,
-  add column release_shift_id uuid;
-create unique index clinic_customer_advances_release_key
+  add column if not exists release_request_key text,
+  add column if not exists released_at timestamptz,
+  add column if not exists released_by uuid,
+  add column if not exists release_reason text,
+  add column if not exists release_shift_id uuid;
+create unique index if not exists clinic_customer_advances_release_key
   on public.clinic_customer_advances(release_request_key) where release_request_key is not null;
 
-create function public.clinic_release_advance_application(
+-- Idempotensi pelepasan dicatat PER PERMINTAAN, bukan dengan mematikan pelepasan
+-- pada uang mukanya. Menyimpan satu kunci permanen di barisnya membuat uang muka
+-- yang (karena sebab apa pun) terpakai lagi tidak pernah bisa dilepas kedua kali —
+-- dan kwitansinya terkunci selamanya di ADVANCE_USED.
+create table if not exists public.clinic_advance_release_requests (
+  request_key text primary key,
+  advance_id uuid not null references public.clinic_customer_advances(id),
+  released_count integer not null default 0,
+  released_amount numeric(15,2) not null default 0,
+  reason text,
+  created_by uuid,
+  created_at timestamptz not null default now()
+);
+alter table public.clinic_advance_release_requests enable row level security;
+revoke all on table public.clinic_advance_release_requests
+  from public, anon, authenticated, service_role;
+
+create or replace function public.clinic_release_advance_application(
   p_advance_id uuid, p_request_key text, p_reason text
 ) returns integer language plpgsql security definer set search_path = '' as $function$
 declare
@@ -187,9 +254,11 @@ declare
   v_key text := nullif(btrim(p_request_key), '');
   v_reason text := nullif(btrim(p_reason), '');
   v_app record;
+  v_req public.clinic_advance_release_requests%rowtype;
   v_target uuid;
   v_payment_id uuid;
   v_count integer := 0;
+  v_amount numeric(15,2) := 0;
 begin
   if coalesce(nullif(current_setting('request.jwt.claim.role', true), ''),
       nullif(current_setting('role', true), 'none')) is distinct from 'authenticated' or v_user is null then
@@ -208,12 +277,15 @@ begin
   if not found or not public.user_can_access_branch(v_adv.branch_id) then
     raise exception using errcode='P0001', message='ACCESS_DENIED: uang muka tidak ditemukan atau cabang tidak diizinkan';
   end if;
-  -- Diulang dengan kunci yang sama: jawab apa adanya, jangan melepas dua kali.
-  if v_adv.release_request_key is not null then
-    if v_adv.release_request_key is distinct from v_key then
-      raise exception using errcode='P0001', message='ADVANCE_RELEASED: uang muka ini sudah pernah dilepas';
+  -- Diulang dengan kunci yang sama: jawab hasil yang dulu, jangan melepas dua kali.
+  -- Cabang tetap diperiksa lebih dulu supaya pengulangan tidak jadi celah baca.
+  select * into v_req from public.clinic_advance_release_requests where request_key = v_key;
+  if found then
+    if v_req.advance_id is distinct from p_advance_id then
+      raise exception using errcode='P0001',
+        message='IDEMPOTENCY_CONFLICT: kunci pelepasan dipakai untuk uang muka berbeda';
     end if;
-    return 0;
+    return v_req.released_count;
   end if;
   if v_adv.status <> 'aktif' then
     raise exception using errcode='P0001', message='RELEASE_INVALID: uang muka sudah dibatalkan';
@@ -257,8 +329,15 @@ begin
       and exists (select 1 from public.invoices i2 where i2.visit_id = visits.id
         and i2.voided_at is null and i2.paid_status <> 'Lunas');
     v_count := v_count + 1;
+    v_amount := v_amount + v_app.amount;
   end loop;
 
+  insert into public.clinic_advance_release_requests(
+    request_key, advance_id, released_count, released_amount, reason, created_by
+  ) values (v_key, p_advance_id, v_count, v_amount, v_reason, v_user);
+  -- Saldo yang sudah dilepas BERHENTI otomatis memotong tahap berikutnya: ia menunggu
+  -- koreksi, dan jalan pulangnya adalah pembatalan kwitansinya. Tanpa ini, tahap
+  -- berikutnya memakainya lagi di antara dua aksi layar yang terpisah.
   update public.clinic_customer_advances
     set release_request_key = v_key, released_at = now(), released_by = v_user,
         release_reason = v_reason, release_shift_id = v_shift.id
@@ -306,6 +385,22 @@ begin
   if not exists (select 1 from public.inpatient_records r where r.visit_id = p_visit_id) then
     raise exception using errcode='P0001', message='STAGE_INVALID: kunjungan ini bukan rawat inap';
   end if;
+  -- Uang tagihan tahap HANYA boleh masuk lewat kwitansi kunjungan
+  -- (clinic_receive_visit_payment) di dalam shift klinik. Kepala tagihan yang
+  -- membawa uang ditolak apa adanya — termasuk nilai bukan angka, null, negatif,
+  -- pecahan, dan titipan kunci pembayaran campuran. Tanpa ini pemanggil RPC
+  -- langsung (bukan layar) bisa membukukan kas tanpa kwitansi dan tanpa jejak
+  -- pembatalan.
+  if p_invoice ? 'split_payments' or p_invoice ? 'min_dp_deferred'
+     or coalesce(nullif(p_invoice ->> 'paid_status', ''), 'Belum Lunas') is distinct from 'Belum Lunas'
+     or (p_invoice ? 'dp_amount' and (
+          jsonb_typeof(p_invoice -> 'dp_amount') not in ('number', 'null')
+          or (jsonb_typeof(p_invoice -> 'dp_amount') = 'number'
+              and (p_invoice ->> 'dp_amount')::numeric is distinct from 0)))
+     or (p_invoice ? 'dp_date' and jsonb_typeof(p_invoice -> 'dp_date') is distinct from 'null') then
+    raise exception using errcode='P0001',
+      message='STAGE_INVALID: uang tagihan tahap hanya lewat kwitansi kunjungan';
+  end if;
   v_branch := v_visit.branch_id;
   v_tanggal := nullif(p_invoice ->> 'tanggal', '')::date;
   v_replay := exists (select 1 from public.invoices i where i.request_key = v_key);
@@ -328,7 +423,7 @@ begin
     for v_adv in
       select a.* from public.clinic_customer_advances a
       where a.customer_id = v_visit.customer_id and a.branch_id = v_branch
-        and a.status = 'aktif' and a.amount > a.applied
+        and a.status = 'aktif' and a.amount > a.applied and a.released_at is null
       order by a.created_at, a.id
       for update
     loop
@@ -595,28 +690,20 @@ begin
       message='ADVANCE_USED: lepas dulu pemakaian uang muka kwitansi ini, baru batalkan';
   end if;
 
-  for v_row in
-    select p.*, i.voided_at as invoice_voided
-    from public.invoice_payments p
-    join public.invoices i on i.id = p.invoice_id
-    where p.receipt_id = p_receipt_id and p.reversal_of is null and p.amount > 0
-    order by p.created_at, p.id
+  -- Terbit ulang mem-void tagihan lama dan menyalin pembayarannya beserta receipt_id.
+  -- clinic_private.receipt_allocations memulangkan tiap alokasi asli TEPAT SEKALI,
+  -- pada dokumen yang masih hidup. Daftar yang sama dipakai lagi di bawah untuk
+  -- menghitung sisa uang muka per rekening — kalau tidak, salinan terbit ulang
+  -- terhitung dua kali dan kwitansinya terkunci selamanya (ADVANCE_IMBALANCE).
+  for v_row in select * from clinic_private.receipt_allocations(p_receipt_id)
   loop
-    -- Terbit ulang mem-void tagihan lama dan menyalin pembayarannya. Pembalik harus
-    -- mengenai dokumen yang masih hidup, dan hanya SEKALI untuk tiap rupiah.
-    v_target := clinic_private.active_invoice(v_row.invoice_id);
-    if v_row.invoice_voided is not null and v_target is not null
-       and exists (select 1 from public.invoice_payments q
-         where q.receipt_id = p_receipt_id and q.reversal_of is null and q.amount > 0
-           and q.invoice_id = v_target) then
-      continue;
-    end if;
-    v_target := coalesce(v_target, v_row.invoice_id);
+    v_target := v_row.target_invoice_id;
     insert into public.invoice_payments(
       invoice_id, tanggal, amount, metode, catatan, kas_code, created_by, receipt_id, reversal_of
     ) values (
       v_target, current_date, -v_row.amount, v_row.metode,
-      'Pembatalan kwitansi ' || v_receipt.no_kwitansi, v_row.kas_code, v_user, p_receipt_id, v_row.id
+      'Pembatalan kwitansi ' || v_receipt.no_kwitansi, v_row.kas_code, v_user, p_receipt_id,
+      v_row.payment_id
     );
     perform public.clinic_write_journal(current_date,
       'Pembatalan pembayaran ' || v_receipt.no_kwitansi, 'klinik-ar',
@@ -638,18 +725,18 @@ begin
     -- Pembaliknya harus mengkredit rekening sisa itu, bukan rekening bagian pertama:
     -- jurnal yang seimbang tetapi salah rekening membuat saldo Kas dan Bank meleset.
     select coalesce(jsonb_agg(jsonb_build_object('code', t.kas_code, 'debit', 0, 'credit', t.sisa)
-             order by t.kas_code), '[]'::jsonb),
+             order by t.kas_code) filter (where t.sisa > 0), '[]'::jsonb),
            coalesce(sum(t.sisa), 0)
       into v_lines, v_sisa_total
     from (
       select pt.kas_code,
-        sum(pt.amount) - coalesce((select sum(p.amount) from public.invoice_payments p
-          where p.receipt_id = p_receipt_id and p.reversal_of is null and p.amount > 0
-            and p.kas_code = pt.kas_code), 0) as sisa
+        sum(pt.amount) - coalesce((select sum(a.amount)
+          from clinic_private.receipt_allocations(p_receipt_id) a
+          where a.kas_code = pt.kas_code), 0) as sisa
       from public.clinic_payment_receipt_parts pt
       where pt.receipt_id = p_receipt_id
       group by pt.kas_code
-    ) t where t.sisa > 0;
+    ) t;
     if v_sisa_total is distinct from v_adv.amount then
       raise exception using errcode='P0001',
         message='ADVANCE_IMBALANCE: sisa per rekening tidak cocok dengan saldo uang muka';
@@ -677,7 +764,7 @@ grant execute on function public.clinic_void_payment_receipt(uuid, text, text) t
 -- yang sama. Karena itu duplikatnya diperiksa pada akhir transaksi: koreksi yang sah
 -- lolos, sedangkan payload berisi dua salinan baris resep membatalkan seluruh
 -- transaksi (invoice, stok, HPP, jurnal) sekaligus.
-create function public.guard_invoice_item_billed_once_final() returns trigger
+create or replace function public.guard_invoice_item_billed_once_final() returns trigger
 language plpgsql security definer set search_path = '' as $function$
 begin
   if new.prescription_item_id is null then return null; end if;
@@ -692,6 +779,7 @@ end;
 $function$;
 revoke all on function public.guard_invoice_item_billed_once_final()
   from public, anon, authenticated, service_role;
+drop trigger if exists guard_invoice_item_billed_once_final on public.invoice_items;
 create constraint trigger guard_invoice_item_billed_once_final
   after insert on public.invoice_items deferrable initially deferred
   for each row execute function public.guard_invoice_item_billed_once_final();
@@ -746,6 +834,19 @@ begin
   ('public.clinic_void_reissue_invoice_core(uuid,text,text)',
    E'  returning id into v_new_id;\n  insert into public.invoice_items(invoice_id,deskripsi,qty,harga,jenis,diskon_persen,',
    E'  returning id into v_new_id;\n  if v_invoice.stage_billing then\n    perform clinic_private.context_end();\n    update public.invoices set stage_billing=true where id=v_new_id;\n  end if;\n  insert into public.invoice_items(invoice_id,deskripsi,qty,harga,jenis,diskon_persen,'),
+  -- FIN-03/IND-03: tagihan yang riwayat pembayarannya SUDAH DIBALIK SELURUHNYA
+  -- (nol bersih per rekening) boleh dikoreksi biasa. Barisnya tetap tersimpan
+  -- sebagai jejak; yang ditolak tetap riwayat yang masih memegang uang. Tanpa ini
+  -- tagihan sesudah pelepasan uang muka + pembatalan kwitansi mentok: terbit ulang
+  -- menolak karena tidak ada uang, koreksi menolak karena ada baris pembayaran.
+  ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)',
+   E'     or exists(select 1 from public.invoice_payments\n       where invoice_id=p_invoice_id and (transferred_from is null or not v_invoice.correction_pending))',
+   E'     or (exists(select 1 from public.invoice_payments\n       where invoice_id=p_invoice_id and (transferred_from is null or not v_invoice.correction_pending))\n       and not clinic_private.payments_fully_reversed(p_invoice_id))'),
+  -- Uang yang sudah dibalik bukan lagi "kredit" yang harus ditutup nilai koreksi:
+  -- yang dipakai adalah SISA BERSIH pembayaran, bukan jumlah baris yang dialihkan.
+  ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)',
+   E'  select coalesce(sum(amount),0) into v_credit from public.invoice_payments\n    where invoice_id=p_invoice_id and transferred_from is not null;',
+   E'  select coalesce(sum(amount),0) into v_credit from public.invoice_payments\n    where invoice_id=p_invoice_id;'),
   -- UF-04: hari rawat tidak dihitung ulang kalau petugas sudah mencatat jasa rawat
   -- inapnya sendiri. Kompatibilitas data lama (belum ada tagihan DAN belum ada baris
   -- Rawat Inap) tetap dipertahankan.
@@ -756,6 +857,12 @@ begin
   signature := to_regprocedure(p.sig);
   if signature is null then raise exception 'Mitigasi ranap: RPC wajib tidak ada: %', p.sig; end if;
   definition := coalesce(pending ->> p.sig, pg_get_functiondef(signature));
+  -- Tambalan sudah terpasang (mis. migrasi dijalankan ulang sesudah rollback
+  -- tertarget): lewati, jangan menempelkannya dua kali.
+  if position(p.new_text in definition) > 0 then
+   pending := jsonb_set(pending, array[p.sig], to_jsonb(definition));
+   continue;
+  end if;
   if (length(definition) - length(replace(definition, p.old_text, ''))) / length(p.old_text) <> 1 then
    raise exception 'Mitigasi ranap: jangkar harus muncul tepat sekali di %; periksa definisi sebelum menerapkan', p.sig;
   end if;
@@ -782,3 +889,84 @@ revoke all on function public.clinic_void_reissue_invoice_core(uuid,text,text)
   from public, anon, authenticated, service_role;
 revoke all on function public.clinic_change_inpatient_condition(uuid,text,text) from public, anon, service_role;
 grant execute on function public.clinic_change_inpatient_condition(uuid,text,text) to authenticated;
+revoke all on function public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)
+  from public, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 11. Batas peran pada PINTU MASUK PUBLIK siklus hidup tagihan (ACCESS/IND-05)
+-- ---------------------------------------------------------------------------
+-- Mencabut EXECUTE pada `_core` bukan pengamanan: pembungkus publiknya SECURITY
+-- DEFINER dan diberikan ke `authenticated`, jadi ia tetap memanggil `_core` atas
+-- nama siapa pun. Aturan yang sudah disepakati — membatalkan/menerbitkan ulang
+-- tagihan adalah pekerjaan keuangan — karena itu ditegakkan DI SINI, tidak
+-- bergantung pada tampilan layar.
+create or replace function public.clinic_void_reissue_invoice(
+  p_invoice_id uuid, p_request_key text, p_reason text
+) returns uuid language plpgsql security definer set search_path = '' as $function$
+declare
+  v_id uuid; v_role text;
+  v_s public.clinic_demo_invoice_snapshots%rowtype;
+  v_p public.clinic_demo_policies%rowtype;
+  v_old_no text; v_new_no text;
+begin
+  select p.role into v_role from public.profiles p where p.id = auth.uid() and p.is_active;
+  if coalesce(auth.role(), '') <> 'authenticated' or v_role is null then
+    raise exception using errcode='P0001',
+      message='ACCESS_DENIED: pengguna tidak aktif atau tidak terautentikasi';
+  end if;
+  if v_role not in ('OWNER','ADMIN','FINANCE') then
+    raise exception using errcode='P0001',
+      message='ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh membatalkan dan menerbitkan ulang tagihan';
+  end if;
+  v_id := public.clinic_void_reissue_invoice_core(p_invoice_id, p_request_key, p_reason);
+  select * into v_s from public.clinic_demo_invoice_snapshots where invoice_id = p_invoice_id;
+  if found and not exists(select 1 from public.clinic_demo_invoice_snapshots where invoice_id = v_id) then
+    select * into v_p from public.clinic_demo_policies where id = v_s.policy_id;
+    select invoice_no into v_old_no from public.invoices where id = p_invoice_id;
+    select invoice_no into v_new_no from public.invoices where id = v_id;
+    insert into public.clinic_demo_invoice_snapshots(invoice_id,policy_id,branch_id,request_key,request_hash,base_total,fee_amount,fee_bearer,payments,service_basis,incentive_pool,earned_at)
+      values(v_id,v_s.policy_id,v_s.branch_id,p_request_key,md5(p_invoice_id::text||p_request_key),v_s.base_total,v_s.fee_amount,v_s.fee_bearer,v_s.payments,v_s.service_basis,v_s.incentive_pool,v_s.earned_at);
+    insert into public.clinic_demo_incentive_allocations(invoice_id,employee_id,amount)
+      select v_id,employee_id,amount from public.clinic_demo_incentive_allocations where invoice_id=p_invoice_id;
+    if v_s.fee_bearer='customer' and v_s.fee_amount>0 then
+      perform public.clinic_write_journal(current_date,'Pembalikan admin DEMO '||v_old_no,'klinik-demo-admin-void',v_old_no,v_s.branch_id,
+        jsonb_build_array(jsonb_build_object('code',v_p.admin_revenue_code,'debit',v_s.fee_amount,'credit',0),jsonb_build_object('code','4201','debit',0,'credit',v_s.fee_amount)));
+      perform public.clinic_write_journal(current_date,'Admin DEMO terbit ulang '||v_new_no,'klinik-demo-admin',v_new_no,v_s.branch_id,
+        jsonb_build_array(jsonb_build_object('code','4201','debit',v_s.fee_amount,'credit',0),jsonb_build_object('code',v_p.admin_revenue_code,'debit',0,'credit',v_s.fee_amount)));
+    end if;
+    update public.invoices set correction_pending=false where id=v_id;
+  end if;
+  return v_id;
+end;
+$function$;
+revoke all on function public.clinic_void_reissue_invoice(uuid,text,text) from public, anon, service_role;
+grant execute on function public.clinic_void_reissue_invoice(uuid,text,text) to authenticated;
+
+-- Koreksi tagihan yang BELUM pernah memegang uang tetap pekerjaan kasir seperti
+-- sekarang. Begitu sebuah tagihan punya riwayat pembayaran — termasuk riwayat yang
+-- sudah dibalik dan tagihan pengganti hasil terbit ulang — koreksinya pekerjaan
+-- keuangan. Tidak ada peran akses baru yang diperkenalkan.
+create or replace function public.clinic_edit_invoice(
+  p_invoice_id uuid, p_request_key text, p_invoice jsonb, p_lines jsonb
+) returns uuid language plpgsql security definer set search_path = '' as $function$
+declare v_role text;
+begin
+  select p.role into v_role from public.profiles p where p.id = auth.uid() and p.is_active;
+  if coalesce(auth.role(), '') <> 'authenticated' or v_role is null then
+    raise exception using errcode='P0001',
+      message='ACCESS_DENIED: pengguna tidak aktif atau tidak terautentikasi';
+  end if;
+  if exists(select 1 from public.invoice_payments where invoice_id = p_invoice_id)
+     and v_role not in ('OWNER','ADMIN','FINANCE') then
+    raise exception using errcode='P0001',
+      message='ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh mengoreksi tagihan yang sudah menyangkut uang';
+  end if;
+  if exists(select 1 from public.clinic_demo_invoice_snapshots where invoice_id = p_invoice_id) then
+    raise exception using errcode='P0001',
+      message='INVOICE_POSTED: uang dan pembagian insentif DEMO terkunci; terbit ulang mempertahankan snapshot';
+  end if;
+  return public.clinic_edit_invoice_core(p_invoice_id, p_request_key, p_invoice, p_lines);
+end;
+$function$;
+revoke all on function public.clinic_edit_invoice(uuid,text,jsonb,jsonb) from public, anon, service_role;
+grant execute on function public.clinic_edit_invoice(uuid,text,jsonb,jsonb) to authenticated;

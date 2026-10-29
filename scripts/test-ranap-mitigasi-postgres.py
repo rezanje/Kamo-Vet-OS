@@ -49,6 +49,10 @@ SUMBER = {
                                  "create function public.clinic_post_demo_invoice(", None),
     "clinic_change_inpatient_condition": ("20261025180000_inpatient_forced_discharge.sql",
                                           "create or replace function public.clinic_change_inpatient_condition(", None),
+    # Jalan keluar koreksi tagihan tanpa uang (IND-03) menambal inti koreksi tagihan.
+    "clinic_edit_invoice_core": ("20260929120000_clinic_billing_lifecycle.sql",
+                                 "create function public.clinic_edit_invoice(",
+                                 "public.clinic_edit_invoice_core("),
 }
 
 # Jangkar yang dipakai migrasi mitigasi, persis seperti tertulis di berkasnya.
@@ -61,6 +65,8 @@ JANGKAR = [
     "PAYMENT_INVALID: selesaikan koreksi tagihan sebelum menerima pembayaran",
     "update public.invoices set voided_at=now() where id=p_invoice_id;",
     "returning id into v_new_id;",
+    "where invoice_id=p_invoice_id and (transferred_from is null or not v_invoice.correction_pending))",
+    "where invoice_id=p_invoice_id and transferred_from is not null;",
 ]
 
 LAPORAN = []
@@ -542,7 +548,9 @@ def definisi_asli(nama):
     akhir, tutup = min((i, s) for i, s in kandidat if i != -1)
     potongan = teks[mulai:akhir + len(tutup)]
     if rename:
-        potongan = potongan.replace(mulai_teks[len("create or replace function "):], rename, 1)
+        # Dua gaya pembuka dipakai: `create function` dan `create or replace function`.
+        nama_lama = mulai_teks.split("function ", 1)[1]
+        potongan = potongan.replace(nama_lama, rename, 1)
     return potongan
 
 
@@ -564,6 +572,10 @@ def reset(pg):
     pg.sql(GUARD_ASLI)
     for stub in (STUB_POST, STUB_RECEIVE, STUB_SPLIT, STUB_DEMO, STUB_VOID, STUB_CONDITION):
         pg.sql(stub)
+    # Inti koreksi tagihan dipasang APA ADANYA dari migrasi sumbernya (bukan stub):
+    # migrasi mitigasi menambalnya, jadi jangkarnya harus benar-benar ada. Babak B/C
+    # tidak memanggilnya — siklus koreksi penuhnya diuji oleh harness skema penuh.
+    pg.sql(definisi_asli("clinic_edit_invoice_core"))
 
 
 TAHAP = ("select public.clinic_post_inpatient_stage_invoice('%s', '%s', "
@@ -707,9 +719,14 @@ def fin03(pg, mitigasi):
     assert debit_setelah(pg, tanda) == {"1201": 100000.0}, debit_setelah(pg, tanda)
     assert pg.sql(f"select applied from public.clinic_customer_advances where id='{adv}'") == "0.00"
     assert dibayar(pg, inv) == 0.0 and status(pg, inv) == "Belum Lunas"
-    # Tidak boleh dilepas dua kali; kunci yang sama menjawab apa adanya.
-    assert nilai(pg, f"select public.clinic_release_advance_application('{adv}', 's3-l', 'salah metode pembayaran')") == "0"
-    ditolak(pg, f"select public.clinic_release_advance_application('{adv}', 's3-l2', 'lagi')", "ADVANCE_RELEASED")
+    # Tidak boleh dilepas dua kali. Kunci yang sama menjawab hasil yang dulu; kunci
+    # baru tidak ditolak permanen (itu yang dulu membuat jalan buntu), tetapi tidak
+    # ada lagi pemakaian yang bisa dilepas sehingga hasilnya nol dan jurnal diam.
+    diam = jml_jurnal(pg)
+    assert nilai(pg, f"select public.clinic_release_advance_application('{adv}', 's3-l', 'salah metode pembayaran')") == "1"
+    assert nilai(pg, f"select public.clinic_release_advance_application('{adv}', 's3-l2', 'lagi')") == "0"
+    assert jml_jurnal(pg) == diam, "pelepasan ulang menulis jurnal baru"
+    assert pg.sql(f"select applied from public.clinic_customer_advances where id='{adv}'") == "0.00"
     tanda2 = jml_jurnal(pg)
     sebagai(pg, f"select public.clinic_void_payment_receipt('{kwt}', 's3-v2', 'salah metode pembayaran')")
     assert kredit_setelah(pg, tanda2) == {"1101": 150000.0}, kredit_setelah(pg, tanda2)
@@ -941,6 +958,16 @@ def babak_kompilasi(pg):
         ],
         "public.clinic_change_inpatient_condition(uuid,text,text)": [
             "pi.kategori='Rawat Inap'",
+        ],
+        "public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)": [
+            "and not clinic_private.payments_fully_reversed(p_invoice_id))",
+            "select coalesce(sum(amount),0) into v_credit from public.invoice_payments\n    where invoice_id=p_invoice_id;",
+        ],
+        "public.clinic_void_reissue_invoice(uuid,text,text)": [
+            "ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh membatalkan dan menerbitkan ulang tagihan",
+        ],
+        "public.clinic_edit_invoice(uuid,text,jsonb,jsonb)": [
+            "ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh mengoreksi tagihan yang sudah menyangkut uang",
         ],
     }
     for sig, potongan in harus.items():

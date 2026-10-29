@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
 import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
+import { TANPA_BAYAR, bayarPerTagihan, sisaTagihan, statusUangTagihan, uangDiterimaTagihan } from "@/lib/uang-tagihan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null { return Array.isArray(r) ? (r[0] ?? null) : r; }
@@ -65,7 +66,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   // benar-benar diterima ada di invoice_payments + dp_amount — bukan di invoice.total.
   // Menyebut total tagihan sebagai "Total Dibayarkan" membuat DP terbaca seolah lunas.
   const { data: invoiceRows, error: invoiceError } = await supabase
-    .from("invoices").select("id, invoice_no, created_at, metode_bayar, total, dp_amount, paid_status")
+    .from("invoices").select("id, invoice_no, created_at, metode_bayar, total, dp_amount, paid_status, reissued_from")
     .eq("visit_id", visitId).is("voided_at", null)
     .order("created_at", { ascending: true }).order("id", { ascending: true });
   const invoiceIds = ((invoiceRows ?? []) as { id: string }[]).map((i) => i.id);
@@ -73,23 +74,20 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
     ? await supabase.from("invoice_payments").select("invoice_id, amount").in("invoice_id", invoiceIds)
     : { data: [] as { invoice_id: string; amount: number }[], error: null };
   const tagihanTerbaca = !invoiceError && !invoicePayError;
-  const masukPerInvoice = new Map<string, number>();
-  for (const p of (invoicePays ?? []) as { invoice_id: string; amount: number }[]) {
-    masukPerInvoice.set(p.invoice_id, (masukPerInvoice.get(p.invoice_id) ?? 0) + (Number(p.amount) || 0));
-  }
+  const masukPerInvoice = bayarPerTagihan((invoicePays ?? []) as { invoice_id: string; amount: number }[]);
   const tagihan = ((invoiceRows ?? []) as {
     id: string; invoice_no: string | null; metode_bayar: string | null; total: number;
-    dp_amount: number; paid_status: string;
+    dp_amount: number; paid_status: string; reissued_from: string | null;
   }[]).map((i) => {
-    const dibayar = (Number(i.dp_amount) || 0) + (masukPerInvoice.get(i.id) ?? 0);
-    return { ...i, dibayar, sisa: Math.max(0, (Number(i.total) || 0) - dibayar) };
+    const bayar = masukPerInvoice.get(i.id) ?? TANPA_BAYAR;
+    return { ...i, dibayar: uangDiterimaTagihan(i, bayar), sisa: sisaTagihan(i, bayar) };
   });
   const totalTagihan = tagihan.reduce((s, i) => s + (Number(i.total) || 0), 0);
   const totalDibayar = tagihan.reduce((s, i) => s + i.dibayar, 0);
   const totalSisa = tagihan.reduce((s, i) => s + i.sisa, 0);
   const metodeTagihan = Array.from(new Set(tagihan.map((i) => i.metode_bayar).filter(Boolean))).join(" + ");
   const statusTagihan = !tagihan.length ? "Belum ditagih"
-    : totalSisa <= 0 ? "Lunas" : totalDibayar > 0 ? "DP" : "Belum Lunas";
+    : statusUangTagihan(totalTagihan, totalDibayar);
 
   const { data: inpat } = await supabase
     .from("inpatient_records").select("admitted_at, condition_status").eq("visit_id", visitId).order("admitted_at", { ascending: false });

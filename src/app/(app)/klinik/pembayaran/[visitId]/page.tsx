@@ -15,6 +15,7 @@ import { PembayaranForm } from "./PembayaranForm";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
+import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -183,6 +184,9 @@ export default async function PembayaranPage({
     draftUser ? supabase.from("profiles").select("role").eq("id", draftUser.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   const bolehTerobosDp = bolehMenerobosDp((profilKasir as { role?: string } | null)?.role);
+  // Batalkan + terbitkan ulang adalah pekerjaan keuangan (ditegakkan di database);
+  // layar tidak menawarkannya ke peran lain supaya tidak menabrak penolakan.
+  const bolehTerbitUlang = bolehSiklusTagihan((profilKasir as { role?: string } | null)?.role);
 
   const lunas = invoice?.paid_status === "Lunas";
   const refundData = invoice && lunas && !invoice.correction_pending ? await loadClinicRefundData(supabase, invoice.id) : null;
@@ -562,7 +566,7 @@ export default async function PembayaranPage({
           )}
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
-          {(lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
+          {bolehTerbitUlang && (lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG

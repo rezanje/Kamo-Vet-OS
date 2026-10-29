@@ -60,7 +60,7 @@ export async function muatTagihanBerjalan(db: Db, recordId: string): Promise<Tag
       .eq("id", visitId).maybeSingle(),
     db.from("medical_records").select("id").eq("visit_id", visitId).order("created_at"),
     db.from("invoices")
-      .select("id, invoice_no, created_at, total, dp_amount, paid_status, voided_at, correction_pending")
+      .select("id, invoice_no, created_at, total, dp_amount, paid_status, voided_at, correction_pending, reissued_from")
       .eq("visit_id", visitId).order("created_at"),
     db.from("clinic_payment_receipts")
       // created_by DAN voided_by sama-sama menunjuk profiles: embed tanpa `!nama_fk`

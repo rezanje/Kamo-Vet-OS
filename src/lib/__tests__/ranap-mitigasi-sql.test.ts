@@ -10,7 +10,7 @@ const SATU_BARIS = SQL.replace(/\s+/g, " ");
 
 describe("FIN-06/ACCESS-02 konteks posting internal", () => {
   it("penanda posting adalah baris tabel privat, bukan isi permintaan pemanggil", () => {
-    expect(SQL).toContain("create unlogged table clinic_private.posting_ctx (");
+    expect(SQL).toContain("create unlogged table if not exists clinic_private.posting_ctx (");
     expect(SATU_BARIS).toContain("revoke all on table clinic_private.posting_ctx from public, anon, authenticated, service_role;");
     expect(SATU_BARIS).toContain("revoke all on schema clinic_private from public, anon, authenticated, service_role;");
   });
@@ -34,9 +34,17 @@ describe("FIN-06/ACCESS-02 konteks posting internal", () => {
 });
 
 describe("FIN-01 pembalikan kwitansi per rekening", () => {
-  it("sisa uang muka dihitung per kas_code: diterima dikurangi yang sudah teralokasi", () => {
-    expect(SATU_BARIS).toContain("sum(pt.amount) - coalesce((select sum(p.amount) from public.invoice_payments p where p.receipt_id = p_receipt_id and p.reversal_of is null and p.amount > 0 and p.kas_code = pt.kas_code), 0) as sisa");
+  it("sisa uang muka dihitung per kas_code dari alokasi hidup, bukan tiap salinan", () => {
+    // IND-01: terbit ulang menyalin baris pembayaran beserta receipt_id-nya. Kalau
+    // sisanya dijumlahkan dari SEMUA baris, satu alokasi terhitung dua kali dan
+    // kwitansinya terkunci di ADVANCE_IMBALANCE.
+    expect(SATU_BARIS).toContain("sum(pt.amount) - coalesce((select sum(a.amount) from clinic_private.receipt_allocations(p_receipt_id) a where a.kas_code = pt.kas_code), 0) as sisa");
+    expect(SQL).toContain("create or replace function clinic_private.receipt_allocations(p_receipt_id uuid)");
     expect(SQL).toContain("ADVANCE_IMBALANCE");
+  });
+
+  it("sisa yang negatif ikut terjumlah, tidak disaring diam-diam", () => {
+    expect(SATU_BARIS).toContain("order by t.kas_code) filter (where t.sisa > 0), '[]'::jsonb)");
   });
 
   it("tidak ada lagi pembalik yang menumpuk ke rekening bagian pertama", () => {
@@ -44,9 +52,22 @@ describe("FIN-01 pembalikan kwitansi per rekening", () => {
   });
 });
 
+describe("gerbang rollback", () => {
+  it("migrasi aman dijalankan ulang sesudah rollback tertarget", () => {
+    // Rollback tertarget mengembalikan definisi fungsi lama tanpa menjatuhkan apa pun.
+    // Pemasangan ulang setelah itu tidak boleh menggandakan tambalan atau gagal karena
+    // objek yang sudah ada.
+    expect(SQL).toContain("if position(p.new_text in definition) > 0 then");
+    expect(SQL).toContain("create unlogged table if not exists clinic_private.posting_ctx (");
+    expect(SQL).toContain("create table if not exists public.clinic_advance_release_requests (");
+    expect(SQL).toContain("drop trigger if exists guard_invoice_item_billed_once_final on public.invoice_items;");
+    expect(SQL).not.toMatch(/\ncreate function (public|clinic_private)\./);
+  });
+});
+
 describe("FIN-04 status bayar mengikuti uang yang benar-benar masuk", () => {
   it("nol = Belum Lunas, sebagian = DP, penuh = Lunas", () => {
-    expect(SQL).toContain("create function clinic_private.sync_paid_status(p_invoice_id uuid)");
+    expect(SQL).toContain("create or replace function clinic_private.sync_paid_status(p_invoice_id uuid)");
     expect(SATU_BARIS).toContain("if v_total <= 0 or v_received >= v_total then update public.invoices set paid_status = 'Lunas', paid_at = coalesce(paid_at, now())");
     expect(SATU_BARIS).toContain("elsif v_received > 0 then update public.invoices set paid_status = 'DP', paid_at = null");
   });
@@ -67,16 +88,53 @@ describe("FIN-02/FIN-03 lineage kwitansi dan pelepasan uang muka", () => {
   });
 
   it("pembalik mengenai dokumen yang masih hidup, tepat sekali", () => {
-    expect(SQL).toContain("create function clinic_private.active_invoice(p_invoice_id uuid)");
-    expect(SATU_BARIS).toContain("v_target := clinic_private.active_invoice(v_row.invoice_id);");
+    expect(SQL).toContain("create or replace function clinic_private.active_invoice(p_invoice_id uuid)");
+    expect(SATU_BARIS).toContain("for v_row in select * from clinic_private.receipt_allocations(p_receipt_id)");
+    expect(SATU_BARIS).toContain("v_target := v_row.target_invoice_id;");
   });
 
   it("pelepasan uang muka dibatasi peran keuangan, shift, alasan, dan kunci permintaan", () => {
-    expect(SQL).toContain("create function public.clinic_release_advance_application(");
+    expect(SQL).toContain("create or replace function public.clinic_release_advance_application(");
     expect(SQL).toContain("ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh melepas uang muka");
     expect(SQL).toContain("SHIFT_INVALID: shift klinik aktif tidak ditemukan");
-    expect(SQL).toContain("ADVANCE_RELEASED: uang muka ini sudah pernah dilepas");
+    // IND-02: idempotensi per PERMINTAAN, bukan mematikan pelepasan pada uang mukanya.
+    expect(SQL).toContain("create table if not exists public.clinic_advance_release_requests (");
+    expect(SQL).toContain("IDEMPOTENCY_CONFLICT: kunci pelepasan dipakai untuk uang muka berbeda");
+    expect(SQL).not.toContain("ADVANCE_RELEASED: uang muka ini sudah pernah dilepas");
     expect(SATU_BARIS).toContain("grant execute on function public.clinic_release_advance_application(uuid, text, text) to authenticated;");
+  });
+
+  it("saldo yang sudah dilepas berhenti memotong tahap berikutnya", () => {
+    // IND-02: tanpa ini, tahap berikutnya memakai lagi saldo yang baru dilepas, dan
+    // kwitansinya kembali terkunci ADVANCE_USED sebelum sempat dibatalkan.
+    expect(SATU_BARIS).toContain("and a.status = 'aktif' and a.amount > a.applied and a.released_at is null");
+  });
+
+  it("riwayat pembayaran yang sudah dibalik seluruhnya boleh dikoreksi biasa", () => {
+    // IND-03: terbit ulang menolak tagihan tanpa uang, koreksi menolak tagihan yang
+    // punya baris pembayaran. Tanpa jalan ini, tagihan sesudah pelepasan uang muka +
+    // pembatalan kwitansi tidak bisa diperbaiki sama sekali.
+    expect(SQL).toContain("create or replace function clinic_private.payments_fully_reversed(p_invoice_id uuid)");
+    expect(SQL).toContain("and not clinic_private.payments_fully_reversed(p_invoice_id))");
+    expect(SQL).toContain("public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)");
+  });
+
+  it("uang tahap hanya lewat kwitansi: kepala tagihan bermuatan uang ditolak", () => {
+    // IND-04: pemanggil RPC langsung (bukan layar) tidak boleh membukukan kas lewat
+    // dp_amount/paid_status tanpa kwitansi kunjungan.
+    expect(SQL).toContain("STAGE_INVALID: uang tagihan tahap hanya lewat kwitansi kunjungan");
+    expect(SATU_BARIS).toContain("if p_invoice ? 'split_payments' or p_invoice ? 'min_dp_deferred'");
+    expect(SATU_BARIS).toContain("jsonb_typeof(p_invoice -> 'dp_amount') not in ('number', 'null')");
+  });
+
+  it("batas peran ditegakkan di pembungkus PUBLIK, bukan hanya dengan mencabut _core", () => {
+    // IND-05: pembungkus publiknya SECURITY DEFINER dan diberikan ke authenticated,
+    // jadi mencabut EXECUTE pada _core sama sekali tidak menutup aksesnya.
+    expect(SQL).toContain("create or replace function public.clinic_void_reissue_invoice(");
+    expect(SQL).toContain("ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh membatalkan dan menerbitkan ulang tagihan");
+    expect(SQL).toContain("create or replace function public.clinic_edit_invoice(");
+    expect(SQL).toContain("ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh mengoreksi tagihan yang sudah menyangkut uang");
+    expect(SATU_BARIS).toContain("revoke all on function public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb) from public, anon, authenticated, service_role;");
   });
 
   it("pesan ADVANCE_USED menunjuk jalan keluar, bukan jalan buntu", () => {
@@ -86,8 +144,8 @@ describe("FIN-02/FIN-03 lineage kwitansi dan pelepasan uang muka", () => {
   it("kolom jejak baru tidak menambah FK kedua ke tabel yang sudah dirujuk", () => {
     // FK kedua ke profiles/cashier_shifts/invoice_payments membuat embed PostgREST
     // ambigu (PGRST201) dan riwayatnya diam-diam kosong.
-    expect(SATU_BARIS).toContain("add column released_by uuid, add column release_reason text, add column release_payment_id uuid;");
-    expect(SATU_BARIS).toContain("add column release_request_key text, add column released_at timestamptz, add column released_by uuid, add column release_reason text, add column release_shift_id uuid;");
+    expect(SATU_BARIS).toContain("add column if not exists released_by uuid, add column if not exists release_reason text, add column if not exists release_payment_id uuid;");
+    expect(SATU_BARIS).toContain("add column if not exists release_request_key text, add column if not exists released_at timestamptz, add column if not exists released_by uuid, add column if not exists release_reason text, add column if not exists release_shift_id uuid;");
   });
 });
 
