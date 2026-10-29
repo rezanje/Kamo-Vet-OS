@@ -9,6 +9,7 @@ import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerName
 import styles from "./PembayaranForm.module.css";
 
 import { METODE_BAYAR as SPLIT_METHODS } from "@/lib/kas-akun";
+import { depositDipakai as depositApply, kelebihanDeposit } from "@/lib/deposit-ranap";
 import { validateSplitPaymentTotal, type SplitPaymentDraft } from "@/lib/clinic-split-payment";
 
 import { quoteDemoPayments, type DemoFinancialPolicy } from "@/lib/clinic-demo-policy";
@@ -281,7 +282,7 @@ function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:
   </div>;
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, depositBalance = 0 }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   /** Ada racikan kunjungan ini yang masih menunggu diracik. */
@@ -298,6 +299,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
+  /** Sisa deposit rawat inap kunjungan ini. Server menghitung ulang sebelum memotong. */
+  depositBalance?: number;
 }) {
   const [draftSourceVersion, setDraftSourceVersion] = useState(sourceVersion);
   const sourceChanged = !!sourceVersion && draftSourceVersion !== sourceVersion;
@@ -383,8 +386,15 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
     if (!demoEmployees.length) demoError = "Pilih petugas penerima insentif.";
   }
   const total = baseTotal + customerFee;
+  // Deposit rawat inap memotong tagihan lebih dulu; angka pastinya tetap dihitung
+  // server saat menyimpan. Campuran metode & aturan DEMO belum bisa digabung
+  // dengan deposit, jadi di sana potongannya tidak diperlihatkan sama sekali.
+  const depositTersedia = Math.max(0, Number(depositBalance) || 0);
+  const depositGabungTerlarang = depositTersedia > 0 && (mixed || demoEnabled);
+  const depositDipakai = depositGabungTerlarang ? 0 : depositApply(depositTersedia, total);
+  const depositLebih = depositGabungTerlarang ? 0 : kelebihanDeposit(depositTersedia, total);
   const dpPaid = initialDpAmount;
-  const sisa = Math.max(0, total - dpPaid - initialCreditAmount);
+  const sisa = Math.max(0, total - dpPaid - initialCreditAmount - depositDipakai);
 
   const [bayarKetik, setBayar] = useState(0);
   // Samakan dengan kasir petshop (Andri 29 Okt): selain Tunai, jumlah bayar otomatis
@@ -396,12 +406,16 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const [konfirmasiRacikan, setKonfirmasiRacikan] = useState<FormData | null>(null);
   const racikanDikonfirmasi = useRef(false);
   const splitAmount = splitPayments.reduce((sum, part) => sum + part.amount, 0);
-  const totalDiterima = dpPaid + initialCreditAmount + (mixed ? splitAmount + customerFee : bayar);
+  const totalDiterima = dpPaid + initialCreditAmount + depositDipakai + (mixed ? splitAmount + customerFee : bayar);
   const kembalian = mixed ? 0 : Math.max(0, bayar - sisa);
   let splitError: string | null = null;
   if (mixed) {
     try { validateSplitPaymentTotal(splitPayments, baseTotal); }
     catch (error) { splitError = error instanceof Error ? error.message : "Periksa rincian pembayaran."; }
+  }
+  if (depositGabungTerlarang) {
+    const pesan = "Deposit rawat inap belum bisa digabung dengan pembayaran campuran atau aturan DEMO. Matikan pilihan itu supaya titipan pemilik terpakai.";
+    if (mixed) splitError = pesan; else demoError = pesan;
   }
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
   const statusColor = paidStatus === "Lunas" ? "#15803d" : paidStatus === "DP" ? "#7c3aed" : "#b91c1c";
@@ -482,6 +496,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       <input type="hidden" name="metode_bayar" value={metode} />
       {mixed && !editMode && <input type="hidden" name="split_payments" value={JSON.stringify(splitPayments)} />}
       <input type="hidden" name="dp_amount" value={editMode ? dpPaid : totalDiterima} />
+      {!editMode && <input type="hidden" name="cash_received" value={bayar} />}
       <input type="hidden" name="dp_date" value={initialDpDate ?? today} />
       {editMode && <input type="hidden" name="edit_reason" value={reason} />}
 
@@ -624,11 +639,18 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>RINGKASAN PEMBAYARAN</div>
             <SumRow label="Total Tagihan" value={rp(total)} />
             {initialCreditAmount > 0 && <SumRow label="Pembayaran dialihkan" value={rp(initialCreditAmount)} />}
+            {depositDipakai > 0 && <SumRow label="Deposit dipakai" value={rp(depositDipakai)} />}
             <SumRow label="Total Pembayaran" value={rp(totalDiterima)} />
             <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, marginTop: 4, borderTop: "1px solid var(--bd)" }}>
               <span style={{ fontSize: 12, fontWeight: 700 }}>Sisa yang Harus Dibayar</span>
               <span style={{ fontSize: 13, fontWeight: 800, color: statusColor }}>{rp(Math.max(0, total - totalDiterima))}</span>
             </div>
+            {depositLebih > 0 && (
+              <div style={{ fontSize: 10.5, color: "#92400e", marginTop: 6 }}>
+                Deposit lebih {rp(depositLebih)} — tetap menjadi saldo pemilik. Kembalikan lewat
+                tombol &quot;Kembalikan sisa deposit&quot; di layar rawat inap.
+              </div>
+            )}
           </div>
 
           {/* DP */}

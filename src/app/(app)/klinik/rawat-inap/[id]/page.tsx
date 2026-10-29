@@ -1,3 +1,8 @@
+import { randomUUID } from "node:crypto";
+import { DepositPanel } from "./DepositPanel";
+import { bacaDepositRecord } from "@/lib/deposit-ranap-server";
+import { getPajakSettings } from "@/lib/pajak";
+import { perkiraanTagihan } from "@/lib/tagihan-klinik";
 import { HandoffPanel } from "./HandoffPanel";
 import { loadInpatientHandoff } from "@/lib/inpatient-handoff";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
@@ -47,10 +52,12 @@ export default async function RawatInapDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; success?: string; wa?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; wa?: string; deposit?: string }>;
 }) {
   const { id } = await params;
   const { error, success, wa } = await searchParams;
+  // Satu kunci per pemuatan halaman: klik ganda pada form uang tidak menggandakan deposit.
+  const depositKeys = { catat: randomUUID(), kelola: randomUUID() };
   const supabase = await createClient();
   const waktu = catatWaktu("detailRawatInap", id);
   // U07: data induk dibaca bersamaan dengan pengguna & hak cabangnya. Tidak ada bacaan
@@ -75,7 +82,7 @@ export default async function RawatInapDetailPage({
   // Reads below depend only on the parent that already passed the branch guard, so they run together.
   // U07: tipe inap, asal kunjungan dan riwayat obat khusus ikut gelombang ini (dulu
   // menyusul berurutan, dan Obat Khusus membaca pengguna sekali lagi).
-  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }, stayTypes, continuation, medicationHistory] = await Promise.all([
+  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }, stayTypes, continuation, medicationHistory, deposits, perkiraanDeposit] = await Promise.all([
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
@@ -94,6 +101,16 @@ export default async function RawatInapDetailPage({
     readVisitContinuation(supabase, String(rec.visit_id)),
     // Gagal/terpotong = null; Obat Khusus lalu menampilkan peringatan, bukan daftar kosong.
     loadInpatientMedicationHistory(supabase, id),
+    // Deposit rawat inap: null = belum terbaca (panelnya memperingatkan, bukan diam).
+    bacaDepositRecord(supabase, id),
+    // Perkiraan tagihan berjalan — tambahan informasi saja, tidak boleh menggagalkan halaman.
+    (async () => {
+      try {
+        const nilai = (await perkiraanTagihan(supabase, [String(rec.visit_id)], await getPajakSettings(supabase)))
+          .get(String(rec.visit_id))?.total;
+        return typeof nilai === "number" && Number.isFinite(nilai) ? nilai : null;
+      } catch { return null; }
+    })(),
   ]);
   waktu.tandai("anak");
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
@@ -172,6 +189,9 @@ export default async function RawatInapDetailPage({
       {success === "logedit" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Catatan dikoreksi — isi lama tersimpan di riwayat koreksi.</div>}
       {success === "status" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Kondisi pasien diperbarui & tercatat di log.</div>}
       {success === "wa" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-brand-whatsapp" /> WA duka terkirim ke pemilik.</div>}
+      {success === "deposit" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Deposit tercatat dan masuk kas shift. Cetak bukti terimanya untuk pemilik.</div>}
+      {success === "depositbatal" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Deposit dibatalkan — uangnya dikeluarkan lagi dan catatannya tetap tersimpan.</div>}
+      {success === "depositkembali" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Sisa deposit dikembalikan ke pemilik.</div>}
       {success === "rxbukti" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>Bukti obat biasa tercatat.</div>}
       {success === "rxbuktibatal" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>Bukti obat biasa dibatalkan dan tersimpan di riwayat.</div>}
       {success === "obat" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Protokol obat ditambahkan.</div>}
@@ -320,6 +340,9 @@ export default async function RawatInapDetailPage({
           </div>
         )}
       </div>
+
+      <DepositPanel recordId={id} deposits={deposits} aktif={active} userId={draftUserId}
+        role={(me?.role as string | null) ?? null} keys={depositKeys} perkiraanTagihan={perkiraanDeposit} />
 
       <HandoffPanel data={handoff} visitId={String(rec.visit_id)} admittedAt={String(rec.admitted_at)} recordId={String(rec.id)} active={!rec.discharged_at} stayedDays={hariRawatInap(rec.admitted_at, rec.discharged_at ?? new Date().toISOString())}/>
 

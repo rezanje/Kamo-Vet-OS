@@ -16,6 +16,7 @@
 //
 // Semua rumusnya sekarang di sini, dan jenis shift menentukan sumber angkanya.
 
+import { depositKasShift, type BarisKasDeposit } from "./deposit-ranap";
 import { kodeAkunBayar } from "./kas-akun";
 import { AKUN_PIUTANG_KARYAWAN } from "./kasbon";
 import { jurnalTersimpan } from "./jurnal-guard";
@@ -78,7 +79,15 @@ export async function pemasukanShift(
       susulan.set(p.invoice_id, (susulan.get(p.invoice_id) ?? 0) + Number(p.amount));
     }
 
-    return [...originalParts, ...invoiceCashRows(
+    // Deposit rawat inap ikut laci kasir klinik: masuk saat dititipkan, keluar lagi
+    // saat dibatalkan atau sisanya dikembalikan. Deposit yang dipakai menutup
+    // tagihan TIDAK dihitung di sini — tidak ada uang fisik yang berpindah.
+    const { data: deposits } = await supabase
+      .from("inpatient_deposits")
+      .select("jumlah, dikembalikan, metode, shift_id, void_shift_id, refund_shift_id")
+      .or(`shift_id.eq.${shift.id},void_shift_id.eq.${shift.id},refund_shift_id.eq.${shift.id}`);
+
+    return [...depositKasShift((deposits ?? []) as BarisKasDeposit[], shift.id), ...originalParts, ...invoiceCashRows(
       ((invoices ?? []) as {
         id: string; total: number; dp_amount: number; paid_status: string; metode_bayar: string;
         shift_cash_carry?: number | null;

@@ -6,6 +6,11 @@ import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
+import { bacaDepositVisit } from "@/lib/deposit-ranap-server";
+import { saldoDeposit } from "@/lib/deposit-ranap";
+import { pakaiDepositTagihan } from "./deposit-actions";
+import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { SubmitButton } from "@/components/SubmitButton";
 import { randomUUID, createHash } from "node:crypto";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -76,6 +81,13 @@ export default async function PembayaranPage({
     if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
   }
   const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
+
+  // Deposit rawat inap: saldo titipan pemilik yang akan memotong tagihan ini.
+  // Gagal baca = berhenti. Menganggapnya nol membuat kasir menagih penuh uang
+  // yang sebenarnya sudah dititipkan.
+  const depositRows = inpat ? await bacaDepositVisit(supabase, visitId) : [];
+  if (depositRows === null) throw new Error("Saldo deposit rawat inap belum dapat dibaca. Muat ulang sebelum memproses pembayaran.");
+  const depositSaldo = saldoDeposit(depositRows);
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
@@ -532,6 +544,28 @@ export default async function PembayaranPage({
               message={success && !["bayar", "edit", "rombongan", "reissue"].includes(success) ? success : undefined} />
           )}
 
+          {/* Deposit rawat inap yang belum terpakai pada tagihan yang sudah tersimpan.
+              Terjadi setelah void & terbit ulang: titipan kembali jadi saldo pemilik. */}
+          {depositSaldo > 0 && !lunas && !invoice.correction_pending && (
+            <div className="card" style={{ marginTop: 12, borderColor: "#86efac" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#15803d", marginBottom: 6 }}>
+                <i className="ti ti-pig-money" /> DEPOSIT RAWAT INAP TERSEDIA {rp(depositSaldo)}
+              </div>
+              <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
+                Titipan pemilik belum terpakai pada tagihan ini. Memakainya mengurangi sisa tagihan
+                tanpa menerima uang lagi; kelebihannya tetap menjadi saldo pemilik.
+              </div>
+              <TransactionForm userId={draftUser?.id} scope={`clinic-deposit-apply:${invoice.id}`} action={pakaiDepositTagihan}>
+                <input type="hidden" name="visitId" value={visit.id} />
+                <input type="hidden" name="invoice_id" value={invoice.id} />
+                <input type="hidden" name="request_key" value={randomUUID()} />
+                <SubmitButton className="btn-acc" icon="ti-cash" pendingText="Memakai deposit…">
+                  Pakai deposit {rp(Math.min(depositSaldo, Number(invoice.total) - paidAmount))}
+                </SubmitButton>
+              </TransactionForm>
+            </div>
+          )}
+
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
           {(lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
@@ -571,6 +605,7 @@ export default async function PembayaranPage({
           cashierName={cashier.name}
           catatanResep={mr?.catatan_resep ?? null}
           racikanPending={racikanPending}
+          depositBalance={depositSaldo}
         />
       )}
 

@@ -120,6 +120,7 @@ export const FORMAT_BAWAAN: FormatDokumen[] = [
   { jenis: "POS", label: "Struk Kasir", pola: "POS-{YYYY}{MM}{DD}-", digit: 4, kelompok: "Kasir & Klinik" },
   { jenis: "ONL", label: "Pesanan Online", pola: "ONL-{YYYY}{MM}{DD}-", digit: 4, kelompok: "Kasir & Klinik" },
   { jenis: "INV", label: "Tagihan Klinik", pola: "INV-{YYYY}{MM}-", digit: 4, kelompok: "Kasir & Klinik" },
+  { jenis: "DEP", label: "Deposit Rawat Inap", pola: "DEP-{YYYY}{MM}{DD}-", digit: 4, kelompok: "Kasir & Klinik" },
 
   { jenis: "PRM", label: "Permintaan Barang", pola: "PRM-{YYYY}{MM}{DD}-", digit: 4, kelompok: "Persediaan" },
   { jenis: "TRM", label: "Terima Permintaan", pola: "TRM-{YY}{MM}{DD}-", digit: 3, kelompok: "Persediaan" },

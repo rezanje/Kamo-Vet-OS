@@ -9,6 +9,7 @@ type Db = {
   sales?: Any[];
   invoices?: Any[];
   invoice_payments?: Any[];
+  inpatient_deposits?: Any[];
   expenses?: Any[];
   coa_accounts?: Any[];
   cash_accounts?: Any[];
@@ -60,6 +61,7 @@ function makeClient(db: Db) {
         eq: (k: string, v: Any) => ((f[k] = v), self),
         in: () => self,
         is: () => self,
+        or: () => self,
         not: () => self,
         order: () => self,
         limit: () => self,
@@ -105,6 +107,27 @@ describe("pemasukanShift", () => {
     expect(Object.values(result.breakdown).reduce((sum, value) => sum + value, 0)).toBe(101600);
     expect(result.expected).toBe(120000);
   });
+  it("deposit rawat inap tunai menambah target kas shift klinik", async () => {
+    const db: Db = { invoices: [], inpatient_deposits: [
+      { jumlah: 500000, dikembalikan: 0, metode: "Tunai", shift_id: "S1", void_shift_id: null, refund_shift_id: null },
+      { jumlah: 200000, dikembalikan: 0, metode: "Transfer", shift_id: "S1", void_shift_id: null, refund_shift_id: null },
+    ] };
+    const result = await hitungShift(makeClient(db), shift({ shift_type: "klinik" }));
+    expect(result.breakdown).toMatchObject({ Tunai: 500000, Transfer: 200000 });
+    // Hanya tunai yang menambah laci; transfer masuk rekening bank.
+    expect(result.expected).toBe(600000);
+  });
+
+  it("deposit yang dibatalkan dan sisanya yang dikembalikan mengurangi laci shift itu", async () => {
+    const db: Db = { invoices: [], inpatient_deposits: [
+      { jumlah: 500000, dikembalikan: 0, metode: "Tunai", shift_id: "S1", void_shift_id: "S1", refund_shift_id: null },
+      { jumlah: 300000, dikembalikan: 120000, metode: "Tunai", shift_id: null, void_shift_id: null, refund_shift_id: "S1" },
+    ] };
+    const result = await hitungShift(makeClient(db), shift({ shift_type: "klinik" }));
+    expect(result.breakdown.Tunai).toBe(-120000);
+    expect(result.expected).toBe(-20000);
+  });
+
   it("does not count an unfinished planned sale in shift cash", async () => {
     const db: Db = { sales: [{ total: 100000, metode_bayar: "Split", payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }],
       payments_finalized_at: null, sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }] }] };

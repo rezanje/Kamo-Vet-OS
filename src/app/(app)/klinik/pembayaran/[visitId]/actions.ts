@@ -23,6 +23,8 @@ import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } 
 import { bacaKodeKampanye } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
+import { depositDipakai as hitungDepositDipakai } from "@/lib/deposit-ranap";
+import { bacaSaldoDepositVisit } from "@/lib/deposit-ranap-server";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
 
 type Line = {
@@ -110,11 +112,15 @@ async function postInvoiceAtomik(
   params: ClinicPostInvoiceParams,
   payments?: ClinicSplitPayment[],
   demo?: { policyId: string; employees: string[] },
+  /** Deposit rawat inap: invoice + pemotongan titipan harus satu transaksi. */
+  deposit?: boolean,
 ): Promise<{ invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
   const { data: invoiceId, error } = demo
     ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
     : payments
     ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
+    : deposit
+    ? await supabase.rpc("clinic_post_invoice_with_deposit", params)
     : await supabase.rpc("clinic_post_invoice", params);
   if (error || !invoiceId) return { invoiceId: null, invoiceNo: null, error: error ?? { message: "Invoice tidak terbentuk" } };
   const { data: invoice, error: readError } = await supabase
@@ -141,6 +147,9 @@ export async function bayarVisit(formData: FormData) {
   const inpatP = mulai(supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle());
   const inpatConsentP = mulai(inpatP.then(({ data }) => data?.consent_id
     ? supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId}) : null));
+  // Deposit rawat inap hanya mungkin ada pada kunjungan yang pernah dirawat inap.
+  // null = saldo tidak terbaca; itu menghentikan pembayaran, bukan dianggap nol.
+  const depositP = mulai(inpatP.then(({ data }) => data ? bacaSaldoDepositVisit(supabase, visitId) : 0));
   const consentsP = mulai(supabase.from("consents").select("status").eq("visit_id", visitId));
   const aturanConsentP = mulai(bacaAturanConsent(supabase));
   const activeInvoiceP = mulai(supabase
@@ -294,6 +303,32 @@ export async function bayarVisit(formData: FormData) {
   const dpp = Math.max(0, subtotal - discount);
   // PPN hanya ditambahkan bila Mode PKP aktif (pengaturan/pajak); OFF → tax 0.
   const { tax, total } = tambahPpn(dpp, await pajakP);
+
+  // ---- deposit rawat inap ----
+  // Saldo titipan dihitung ulang di server; layar tidak menentukan uang. Yang
+  // dipotong tidak pernah melebihi total tagihan — kelebihannya tetap jadi saldo
+  // pemilik dan dikembalikan lewat tombol "Kembalikan sisa deposit".
+  const saldoDepositVisit = existing ? 0 : await depositP;
+  if (saldoDepositVisit === null) {
+    redirect(`${back}?error=${encodeURIComponent("Saldo deposit rawat inap belum dapat dibaca. Muat ulang lalu coba lagi; pembayaran belum diproses.")}`);
+  }
+  const depositDipakai = hitungDepositDipakai(saldoDepositVisit ?? 0, total);
+  const pakaiDeposit = !existing && depositDipakai > 0;
+  if (pakaiDeposit && (split || demoPolicyId)) {
+    redirect(`${back}?error=${encodeURIComponent("Deposit rawat inap belum bisa digabung dengan pembayaran campuran atau aturan DEMO. Matikan dulu pilihan itu.")}`);
+  }
+  const tunaiDiterima = Math.max(0, Math.min(Number(formData.get("cash_received")) || 0, total - depositDipakai));
+  const dibayarEfektif = tunaiDiterima + depositDipakai;
+  const paidStatusEfektif = pakaiDeposit
+    ? (dibayarEfektif >= total && total > 0 ? "Lunas" : dibayarEfektif > 0 ? "DP" : "Belum Lunas")
+    : paidStatus;
+  // Poin hanya terpotong saat tagihan LUNAS. Kalau saldo deposit berubah sejak
+  // layar dibuka, potongan poin sudah terlanjur dihitung tapi saldonya tidak akan
+  // dipotong — berhenti di sini daripada memberi potongan gratis.
+  if (poinDipakai > 0 && paidStatusEfektif !== "Lunas") {
+    redirect(`${back}?error=${encodeURIComponent("Saldo deposit berubah sejak layar dibuka sehingga tagihan belum lunas. Muat ulang lalu ulangi pembayaran.")}`);
+  }
+
   let payments: ClinicSplitPayment[] | undefined;
   if (split && kasSplitP) {
     try {
@@ -309,7 +344,7 @@ export async function bayarVisit(formData: FormData) {
   const dpDate = paidStatus === "DP" ? String(formData.get("dp_date") ?? "") || null : null;
   const reason = String(formData.get("edit_reason") ?? "").trim() || null;
   // Visit ditutup hanya saat lunas; DP/Belum Lunas tetap tahap Pembayaran (bisa dilanjut).
-  const visitStatus = paidStatus === "Lunas" ? "Selesai" : "Pembayaran";
+  const visitStatus = paidStatusEfektif === "Lunas" ? "Selesai" : "Pembayaran";
 
   if (existing) {
     if (existing.paid_status === "Lunas" && !existing.correction_pending) {
@@ -375,11 +410,12 @@ export async function bayarVisit(formData: FormData) {
       tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
       shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
+      ...(pakaiDeposit ? { cash_received: tunaiDiterima } : {}),
       ...(campaignCode ? { campaign_code: campaignCode } : {}),
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
     p_lines: barisUntukPosting(rows),
-  }, payments, demo);
+  }, payments, demo, pakaiDeposit);
   if (posted.error || !posted.invoiceNo) {
     redirect(`${back}?error=${encodeURIComponent(posted.invoiceId ? "Invoice sudah tersimpan, tetapi rinciannya belum dapat dibaca. Jangan menerima pembayaran ulang; muat ulang dan periksa invoice yang sama." : parseClinicPostingError(posted.error, uncertainPayment))}`);
   }
@@ -395,7 +431,7 @@ export async function bayarVisit(formData: FormData) {
 
   // Poin: dipakai & didapat dicatat saat tagihan benar-benar LUNAS. Kalau dicatat
   // saat DP, pelanggan sudah dapat poin atas uang yang belum masuk.
-  if (paidStatus === "Lunas" && !isCreationReplay) {
+  if (paidStatusEfektif === "Lunas" && !isCreationReplay) {
     await catatPoinKlinik(supabase, {
       customerId: v?.customer_id ?? null, ref: invoiceNo,
       dipakai: poinDipakai, totalDibayar: total,
@@ -407,7 +443,7 @@ export async function bayarVisit(formData: FormData) {
   const pet = v?.pets as { name?: string } | { name?: string }[] | null;
   const cust = Array.isArray(customer) ? customer[0] : customer;
   const patient = Array.isArray(pet) ? pet[0] : pet;
-  if (paidStatus === "Lunas" && v?.customer_id && cust?.phone) {
+  if (paidStatusEfektif === "Lunas" && v?.customer_id && cust?.phone) {
     const struk = {
       invoiceNo, customerId: v.customer_id, phone: cust.phone, customerName: cust.name ?? "Kak", petName: patient?.name,
       total: total + demoCustomerFee, items: [...rows.map((r) => ({ deskripsi: r.deskripsi, qty: r.qty, harga: r.harga })),

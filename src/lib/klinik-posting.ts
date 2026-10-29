@@ -49,6 +49,12 @@ export type ClinicInvoiceInput = {
   /** Kode kampanye yang diketik (C05); batas pemakaiannya dijaga database. */
   campaign_code?: string | null;
   salesperson_id: string | null;
+  /**
+   * Uang yang benar-benar diterima di meja kasir, khusus jalur deposit rawat inap
+   * (clinic_post_invoice_with_deposit). Database yang memutuskan berapa deposit
+   * terpakai, lalu menurunkan sendiri paid_status dan dp_amount dari angka ini.
+   */
+  cash_received?: number;
 };
 
 export type ClinicPostInvoiceParams = {
