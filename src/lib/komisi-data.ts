@@ -1,3 +1,4 @@
+import { alokasiPotonganDokumen } from "./alokasi-potongan";
 import { completeReportQuery } from "./report-query";
 import { readReportRows } from "./hpp-reports-server";
 import { isCompletedSale, saleMerchandiseTotal, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
@@ -199,20 +200,18 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
       item_discount_type: it.item_discount_type,
       item_discount_value: Number(it.item_discount_value ?? 0),
     }));
-    const jumlahBaris = subtotalPer.reduce((a, v) => a + v, 0);
-
     // Potongan tingkat struk (voucher, poin, diskon golongan, diskon manual kasir) tidak
-    // tersimpan per baris. Selisih antara jumlah baris dan total struk dibagi rata secara
-    // proporsional supaya komisi tidak dihitung dari harga sebelum potongan.
-    const potonganStruk = Math.max(0, jumlahBaris - saleMerchandiseTotal(s));
+    // tersimpan per baris; `alokasiPotonganDokumen` membaginya proporsional supaya komisi
+    // tidak dihitung dari harga sebelum potongan — rumus yang sama dipakai laporan
+    // Penjualan per Tenaga Penjual.
+    const netoPer = alokasiPotonganDokumen(subtotalPer, saleMerchandiseTotal(s));
 
     const hppPerUnit = new Map<string, number>();
     for (const [idx, it] of items.entries()) {
       const qty = Number(it.qty);
       if (it.item_id && it.hpp !== null && qty > 0) hppPerUnit.set(it.item_id, Number(it.hpp) / qty);
 
-      const kotor = subtotalPer[idx];
-      const omzet = jumlahBaris > 0 ? kotor - (potonganStruk * kotor) / jumlahBaris : kotor;
+      const omzet = netoPer[idx];
       const attribution=serviceAttribution(it,employeeId,s.id,s.no_struk,`/penjualan/${s.id}`);
       if (!attribution.employeeId) omzetTanpaPenjual += omzet;
 
@@ -287,12 +286,10 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
     // Baris tagihan klinik tidak punya diskon per baris; potongannya cuma di kepala
     // tagihan, jadi dibagi proporsional seperti struk kasir.
-    const kotorPer = items.map((it) => Number(it.qty) * Number(it.harga));
-    const jumlahBaris = kotorPer.reduce((a, x) => a + x, 0);
-    const potongan = Math.max(0, jumlahBaris - Number(inv.total));
+    const netoPer = alokasiPotonganDokumen(items.map((it) => Number(it.qty) * Number(it.harga)), Number(inv.total));
 
     return items.map((it, idx) => {
-      const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
+      const omzet = netoPer[idx];
       // A selected line seller overrides the legacy invoice seller. Existing
       // service performer attribution retains its precedence and payout policy.
       const href=inv.visit_id?`/klinik/pembayaran/${inv.visit_id}`:undefined;
@@ -388,13 +385,11 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
     // Baris faktur tidak punya diskon sendiri; potongan kepala faktur (kalau ada)
     // dibagi proporsional. Dasarnya DPP, bukan total — PPN bukan omzet penjual.
-    const kotorPer = items.map((it) => Number(it.qty) * Number(it.harga));
-    const jumlahBaris = kotorPer.reduce((a, x) => a + x, 0);
-    const potongan = Math.max(0, jumlahBaris - Number(f.dpp));
+    const netoPer = alokasiPotonganDokumen(items.map((it) => Number(it.qty) * Number(it.harga)), Number(f.dpp));
 
     for (const [idx, it] of items.entries()) {
       const qty = Number(it.qty);
-      const omzet = jumlahBaris > 0 ? kotorPer[idx] - (potongan * kotorPer[idx]) / jumlahBaris : kotorPer[idx];
+      const omzet = netoPer[idx];
       if (!employeeId) omzetTanpaPenjual += omzet;
 
       const hppUnit = it.order_item_id ? hppPerOrderItem.get(it.order_item_id) : undefined;

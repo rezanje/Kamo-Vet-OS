@@ -162,10 +162,12 @@ describe("U07 group payment reads",()=>{
   vi.mocked(bagiPotongan).mockImplementation(((dasar:number[])=>dasar.map(()=>0)) as never);
   vi.mocked(barisTagihanVisit).mockImplementation((async(_s:unknown,visitId:string)=>[{deskripsi:`Service ${visitId}`,qty:1,harga:100,jenis:"obat",item_id:"item",satuan:"pcs"}]) as never);
  });
- it("prepares every pet together but still posts one invoice per pet in order, points once, tier after",async()=>{
+ it("prepares every pet together but still posts one invoice per pet in order, points per invoice, tier after",async()=>{
   await expect(bayarRombongan(groupForm())).rejects.toThrow("REDIRECT:/klinik/pembayaran/visit?success=rombongan&lunas=2");
   expect(state.calls.filter(c=>c.name.startsWith("clinic_post")).map(c=>c.params.p_request_key)).toEqual(["group:pet-a","group:pet-b"]);
-  expect(state.pointWrites).toHaveLength(1);expect(state.tierAfterPoints).toBe(1);
+  // J03: one earn row per posted invoice (ref = invoice number) so a refund of either invoice finds its points;
+  // the combined earn is unchanged (Rp200 at Rp10/poin = 20 poin) and the tier is refreshed after both rows.
+  expect(state.pointWrites).toMatchObject([{delta:10,ref:"INV-FIC"},{delta:10,ref:"INV-FIC"}]);expect(state.tierAfterPoints).toBe(2);
  });
  it("fails closed without posting any pet when one pet's bill cannot be read",async()=>{
   vi.mocked(barisTagihanVisit).mockImplementation((async(_s:unknown,visitId:string)=>{if(visitId==="pet-b")throw Error("bill read failed");return [{deskripsi:"A",qty:1,harga:100,jenis:"obat",item_id:"item",satuan:"pcs"}];}) as never);

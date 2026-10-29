@@ -42,9 +42,17 @@ export default async function RawatInapPage({
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  const branches = await availableOperationalBranches(supabase, user.id, "klinik");
-  const { data: labelCatalog } = await supabase.from("branches").select("code,name,type").eq("is_active", true);
+  // U07: bacaan yang tidak saling bergantung jalan bersamaan (dulu enam bacaan berurutan).
+  const [branches, { data: labelCatalog }] = await Promise.all([
+    availableOperationalBranches(supabase, user.id, "klinik"),
+    supabase.from("branches").select("code,name,type").eq("is_active", true),
+  ]);
   const branchIds = branches.map(b => b.id);
+
+  // Server jalan di UTC, klinik di WIB. Tanpa geser +7 jam, pasien yang masuk
+  // 00.00–07.00 WIB terhitung "kemarin" di kartu RAWAT INAP HARI INI.
+  const tglWIB = (iso: string) => new Date(new Date(iso).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+  const hariIniWIB = tglWIB(new Date().toISOString());
 
   let query = supabase
     .from("inpatient_records")
@@ -54,19 +62,16 @@ export default async function RawatInapPage({
   if (branch) query = query.eq("branch_id", branch);
   if (filter === "aktif") query = query.is("discharged_at", null);
 
-  const { data: records } = await query;
+  // Card counters (§3 dashboard req) — dihitung dari query terpisah tanpa filter tabel.
+  // Kartu hanya butuh pasien yang masih dirawat atau masuk hari ini, jadi riwayat lama
+  // tidak ikut dibaca (dulu seluruh riwayat, yang juga terpotong batas 1.000 baris).
+  let counterQ = supabase.from("inpatient_records").select("condition_status, admitted_at, discharged_at").in("branch_id", branchIds)
+    .or(`discharged_at.is.null,admitted_at.gte."${new Date(`${hariIniWIB}T00:00:00+07:00`).toISOString()}"`);
+  if (branch) counterQ = counterQ.eq("branch_id", branch);
+
+  const [{ data: records }, { data: allRecs }] = await Promise.all([query, counterQ]);
   // K14: tipe dibaca terpisah supaya daftar tetap tampil sebelum migrasinya terpasang.
   const stayTypes = await readStayTypes(supabase, (records ?? []).map((r) => r.id as string));
-
-  // Card counters (§3 dashboard req) — dihitung dari query terpisah tanpa filter tabel.
-  let counterQ = supabase.from("inpatient_records").select("condition_status, admitted_at, discharged_at").in("branch_id", branchIds);
-  if (branch) counterQ = counterQ.eq("branch_id", branch);
-  const { data: allRecs } = await counterQ;
-
-  // Server jalan di UTC, klinik di WIB. Tanpa geser +7 jam, pasien yang masuk
-  // 00.00–07.00 WIB terhitung "kemarin" di kartu RAWAT INAP HARI INI.
-  const tglWIB = (iso: string) => new Date(new Date(iso).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
-  const hariIniWIB = tglWIB(new Date().toISOString());
 
   const counts = {
     total: (allRecs ?? []).filter((r) => !r.discharged_at).length,

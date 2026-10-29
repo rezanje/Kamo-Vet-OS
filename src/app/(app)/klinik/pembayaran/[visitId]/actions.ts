@@ -14,7 +14,7 @@ import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { readConsentStay } from "@/lib/inpatient-stay";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
-import { bacaPoinPelanggan, catatPoinKlinik, poinTerpakai, RUPIAH_PER_POIN } from "@/lib/poin-klinik";
+import { bacaPoinPelanggan, catatPoinKlinik, catatPoinNota, poinTerpakai, RUPIAH_PER_POIN, type NotaPoin } from "@/lib/poin-klinik";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -618,8 +618,7 @@ export async function bayarRombongan(formData: FormData) {
   // TAHAP 2 — terbitkan notanya satu per satu. Dengan kode kampanye, nota yang kena
   // potongannya diterbitkan lebih dulu: nota pertama membawa kodenya, sehingga batas
   // pemakaian sudah diperiksa database sebelum nota lain ikut menikmati potongan.
-  let poinTerpakaiRupiah = 0;
-  let totalDibayarRombongan = 0;
+  const notaPoin: NotaPoin[] = [];
   const urutan = siap.map((_, i) => i);
   if (kampanye) urutan.sort((a, b) => Number(pakaiKode[b]) - Number(pakaiKode[a]));
   let kodeMenunggu = kampanye?.code ?? null;     // belum menempel di nota mana pun
@@ -666,18 +665,16 @@ export async function bayarRombongan(formData: FormData) {
     }
 
     // Poin yang benar-benar terpakai dihitung dari nota yang BERHASIL terbit —
-    // porsi hewan yang gagal tidak boleh ikut memotong saldo pelanggan.
-    poinTerpakaiRupiah += poinPerPet[idx];
-    totalDibayarRombongan += total;
+    // porsi hewan yang gagal tidak boleh ikut memotong saldo pelanggan. Dicatat per
+    // nota (ref = nomor invoice) supaya refund invoice itu ikut menyesuaikan poinnya.
+    notaPoin.push({ ref: posted.invoiceNo, dipakai: Math.floor(poinPerPet[idx] / RUPIAH_PER_POIN), total });
     jumlahLunas++;
   }
 
   if (jumlahLunas > 0) {
-    await catatPoinKlinik(supabase, {
+    await catatPoinNota(supabase, {
       customerId: rombongan.customerId ?? null,
-      ref: `Rombongan ${rombongan.customerName ?? ""}`.trim(),
-      dipakai: Math.floor(poinTerpakaiRupiah / RUPIAH_PER_POIN),
-      totalDibayar: totalDibayarRombongan,
+      nota: notaPoin,
       rupiahPerPoin: poin.rupiahPerPoin,
       saldoAwal: poin.saldo,
     });
