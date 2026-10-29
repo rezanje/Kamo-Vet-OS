@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { labelSusulanRingkas, type SusulanFields } from "@/lib/rekam-medis-susulan";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "./PrintButton";
@@ -31,9 +32,9 @@ export default async function ResepPage({ params, searchParams }: { params: Prom
   if (requestedRecord) recordQuery = recordQuery.eq("id", requestedRecord);
   const { data: mr, error: recordError } = await recordQuery.order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (recordError || (requestedRecord && !mr)) notFound();
-  const { data: resep } = mr
-    ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai").eq("medical_record_id", mr.id).order("created_at")
-    : { data: [] as { nama_obat: string; qty: number; satuan: string | null; aturan_pakai: string | null }[] };
+  const { data: resep, error: resepError } = mr
+    ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai, susulan_at, susulan_by_name, susulan_source").eq("medical_record_id", mr.id).order("created_at")
+    : { data: [] as (SusulanFields & { nama_obat: string; qty: number; satuan: string | null; aturan_pakai: string | null })[], error: null };
 
   const tgl = new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
 
@@ -77,12 +78,16 @@ export default async function ResepPage({ params, searchParams }: { params: Prom
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ fontSize: 30, fontWeight: 700, fontStyle: "italic", lineHeight: 1, color: "#16213e" }}>R/</div>
           <div style={{ flex: 1 }}>
-            {(resep ?? []).length === 0 ? (
+            {resepError ? (
+              /* Gagal tertutup: resep yang tidak terbaca tidak boleh tercetak sebagai "tidak ada". */
+              <div role="alert" style={{ color: "#b91c1c" }}>Resep belum dapat dimuat. Muat ulang halaman sebelum mencetak.</div>
+            ) : (resep ?? []).length === 0 ? (
               <div style={{ color: "var(--td)" }}>Tidak ada resep.</div>
             ) : (
               (resep ?? []).map((r, i) => (
                 <div key={i} style={{ marginBottom: 14, paddingBottom: 12, borderBottom: i < (resep ?? []).length - 1 ? ".5px dashed var(--bd)" : "none" }}>
                   <div style={{ fontWeight: 600 }}>{r.nama_obat} <span style={{ color: "var(--tm)", fontWeight: 400 }}>No. {`${r.qty}${r.satuan ? ` ${r.satuan}` : ""}`}</span></div>
+                  {labelSusulanRingkas(r) && <div style={{ fontSize: 9.5, color: "var(--tm)" }}>{labelSusulanRingkas(r)}</div>}
                   <div style={{ fontSize: 12, color: "var(--tm)", marginTop: 2 }}>
                     <span style={{ fontStyle: "italic" }}>S</span> {r.aturan_pakai ?? "—"}
                   </div>

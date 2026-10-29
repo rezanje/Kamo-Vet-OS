@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { labelSusulanRingkas, type SusulanFields } from "@/lib/rekam-medis-susulan";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
@@ -52,9 +53,9 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
     penunjangUrls = (signed ?? []).map((s) => s.signedUrl).filter((u): u is string => !!u);
   }
 
-  const { data: presc } = mr
-    ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai, jenis").eq("medical_record_id", mr.id).order("created_at")
-    : { data: [] as { nama_obat: string; qty: number; satuan: string; aturan_pakai: string | null; jenis: string }[] };
+  const { data: presc, error: prescError } = mr
+    ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai, jenis, susulan_at, susulan_by_name, susulan_source").eq("medical_record_id", mr.id).order("created_at")
+    : { data: [] as (SusulanFields & { nama_obat: string; qty: number; satuan: string; aturan_pakai: string | null; jenis: string })[], error: null };
   const obat = (presc ?? []).filter((p) => p.jenis !== "jasa");
   const jasa = (presc ?? []).filter((p) => p.jenis === "jasa");
 
@@ -176,12 +177,17 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
           {/* KANAN: tindakan & terapi */}
           <div>
             <SecTitle icon="ti-first-aid-kit" text="RINCIAN TINDAKAN & TERAPI" />
+            {/* Gagal tertutup: daftar obat/tindakan yang tidak terbaca tidak boleh tercetak
+                sebagai "tidak ada" — itu rekam medis yang salah, bukan rekam medis kosong. */}
+            {prescError && <div role="alert" style={{ fontSize: 11, color: "#b91c1c", marginBottom: 6 }}>
+              Daftar obat &amp; tindakan belum dapat dimuat. Jangan dipakai sebagai rekam medis; muat ulang halaman sebelum mencetak.
+            </div>}
             <div style={{ fontSize: 11, fontWeight: 700, color: BLUE, margin: "4px 0 6px" }}>OBAT YANG DIBERIKAN</div>
             <table className="rm-tbl">
               <thead><tr><th style={{ width: 30 }}>No.</th><th>Nama Obat</th><th>Aturan Pakai</th><th style={{ width: 54 }}>Jumlah</th><th style={{ width: 58 }}>Satuan</th></tr></thead>
               <tbody>
                 {obat.map((o, i) => (
-                  <tr key={i}><td>{i + 1}.</td><td>{o.nama_obat}</td><td>{o.aturan_pakai ?? "—"}</td><td style={{ textAlign: "center" }}>{o.qty}</td><td>{o.satuan}</td></tr>
+                  <tr key={i}><td>{i + 1}.</td><td>{o.nama_obat}{labelSusulanRingkas(o) && <div style={{ fontSize: 9 }}>{labelSusulanRingkas(o)}</div>}</td><td>{o.aturan_pakai ?? "—"}</td><td style={{ textAlign: "center" }}>{o.qty}</td><td>{o.satuan}</td></tr>
                 ))}
                 {obat.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--td)" }}>Tidak ada obat.</td></tr>}
               </tbody>
@@ -192,7 +198,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
               <thead><tr><th style={{ width: 30 }}>No.</th><th>Nama Tindakan</th><th>Keterangan</th></tr></thead>
               <tbody>
                 {jasa.map((j, i) => (
-                  <tr key={i}><td>{i + 1}.</td><td>{j.nama_obat}</td><td>{j.aturan_pakai ?? "—"}</td></tr>
+                  <tr key={i}><td>{i + 1}.</td><td>{j.nama_obat}{labelSusulanRingkas(j) && <div style={{ fontSize: 9 }}>{labelSusulanRingkas(j)}</div>}</td><td>{j.aturan_pakai ?? "—"}</td></tr>
                 ))}
                 {jasa.length === 0 && <tr><td colSpan={3} style={{ textAlign: "center", color: "var(--td)" }}>Tidak ada tindakan.</td></tr>}
               </tbody>

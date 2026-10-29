@@ -24,6 +24,7 @@ import { bacaKodeKampanye } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
+import { isMissingRpc } from "@/lib/inpatient-stay";
 
 type Line = {
   deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null;
@@ -105,17 +106,33 @@ function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceL
   }));
 }
 
+/**
+ * Andri 29 Okt (opsi B): baris yang ditambah kasir sendiri — yang tidak berasal dari
+ * resep dokter — harus ikut tercatat di rekam medis. Pembungkus `*_with_record`
+ * membuat baris resepnya lalu memanggil RPC posting/koreksi yang sama dalam SATU
+ * transaksi; badan RPC posting tidak berubah sama sekali.
+ *
+ * Sebelum migrasinya terpasang, pembungkusnya belum ada di database. Pembayaran tidak
+ * boleh ikut mati karenanya: jalur lama dipakai apa adanya (persis perilaku hari ini).
+ */
 async function postInvoiceAtomik(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: ClinicPostInvoiceParams,
   payments?: ClinicSplitPayment[],
   demo?: { policyId: string; employees: string[] },
 ): Promise<{ invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
-  const { data: invoiceId, error } = demo
-    ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
-    : payments
-    ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
-    : await supabase.rpc("clinic_post_invoice", params);
+  const terbungkus = await supabase.rpc("clinic_post_invoice_with_record", {
+    ...params,
+    ...(payments ? { p_payments: payments } : {}),
+    ...(demo ? { p_policy_id: demo.policyId, p_payments: payments, p_employee_ids: demo.employees } : {}),
+  });
+  const { data: invoiceId, error } = isMissingRpc(terbungkus.error)
+    ? demo
+      ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
+      : payments
+      ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
+      : await supabase.rpc("clinic_post_invoice", params)
+    : terbungkus;
   if (error || !invoiceId) return { invoiceId: null, invoiceNo: null, error: error ?? { message: "Invoice tidak terbentuk" } };
   const { data: invoice, error: readError } = await supabase
     .from("invoices").select("invoice_no").eq("id", invoiceId).maybeSingle();
@@ -330,13 +347,19 @@ export async function bayarVisit(formData: FormData) {
     if (!requestKey || !reason) {
       redirect(`${back}?error=${encodeURIComponent("Isi alasan koreksi dan muat ulang halaman bila perlu")}`);
     }
-    const { error } = await supabase.rpc("clinic_edit_invoice", {
+    const koreksi = {
       p_invoice_id: existing.id,
       p_request_key: requestKey,
       p_invoice: { subtotal, discount, tax, total, dp_amount: dpAmount,
         paid_status: paidStatus, metode_bayar: metode, voucher_code: voucherCode, reason },
       p_lines: barisUntukPosting(rows, true),
-    });
+    };
+    // Baris BARU yang ditambahkan kasir saat koreksi ikut tercatat di rekam medis;
+    // baris warisan tagihan lama dibiarkan apa adanya oleh pembungkusnya.
+    const terbungkus = await supabase.rpc("clinic_edit_invoice_with_record", koreksi);
+    const { error } = isMissingRpc(terbungkus.error)
+      ? await supabase.rpc("clinic_edit_invoice", koreksi)
+      : terbungkus;
     if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
     waktu.tandai("koreksi");
     // U07: tier pelanggan = statistik turunan (best effort), dihitung setelah respons.

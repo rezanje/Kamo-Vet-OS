@@ -181,6 +181,8 @@ export function parseClinicRecordError(error: { code?: string; message: string }
     if (error.message.startsWith("INPATIENT_CLOSED:")) return "Pasien sudah keluar dari rawat inap; kondisi kepulangan tidak dapat diubah di sini.";
     if (error.message.startsWith("INPATIENT_ATOMIC_REQUIRED:")) return "Ubah kondisi melalui aksi rawat inap agar formulir dan biaya diperiksa bersama.";
     if (error.message.startsWith("RECORD_INVALID:")) return "Kunjungan belum siap diselesaikan atau data pemeriksaan tidak lengkap.";
+    // Item susulan (Andri 29 Okt): jalur dokter tertutup begitu tagihan terbit.
+    if (error.message.startsWith("RECORD_LOCKED:")) return "Item susulan sudah tertutup untuk kunjungan ini: tagihan sudah terbit atau kunjungan sudah selesai. Tambahkan lewat koreksi tagihan di layar Pembayaran.";
     if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";
     if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "Form pemeriksaan ini sudah dipakai untuk data berbeda. Muat ulang kunjungan.";
     if (error.message.startsWith("RECIPE_REQUIRED:")) return recipeRequiredMessage(error.message);
