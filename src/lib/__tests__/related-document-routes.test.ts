@@ -48,3 +48,11 @@ it('opens a stored sales order by its exact ID only', () => {
  expect(relatedDocumentHref('sales-order',id)).toBe('/penjualan/pesanan/'+id);
  expect(relatedDocumentHref('sales-order','SO-NUMBER')).toBeNull();
 });
+it('links a wholesale sales return and accepts it as a return location', () => {
+ expect(relatedDocumentHref('sales-return-wholesale',id)).toBe('/penjualan/retur-grosir/'+id);
+ const from='/penjualan/retur-grosir/'+id;
+ expect(documentBackHref(from)).toBe(from);
+ const href=relatedDocumentHref('sales-invoice',parent,undefined,from)!;
+ expect(new URL(href,'http://localhost').searchParams.get('from')).toBe(from);
+ expect(relatedDocumentHref('sales-return-wholesale','RJG.2026.10.00001')).toBeNull();
+});

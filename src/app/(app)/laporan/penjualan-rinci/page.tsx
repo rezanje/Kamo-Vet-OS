@@ -73,7 +73,7 @@ export default async function PenjualanRinciPage({
   // jadi batasnya digeser 7 jam supaya struk jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const {mulai,akhir} = batasTanggalWIB(dari,sampai);
 
-  const [{ data: sales }, { data: invoices }, { data: grosir }, { data: returs }, { data: refundKlinik }, { data: cabangList }] = await Promise.all([
+  const [{ data: sales }, { data: invoices }, { data: grosir }, { data: returs }, { data: refundKlinik }, { data: returGrosir }, { data: cabangList }] = await Promise.all([
     completeReportQuery(supabase
       .from("sales")
       .select("id, branch_id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name)", { count: "exact" })
@@ -96,6 +96,8 @@ export default async function PenjualanRinciPage({
     completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" }).is("voided_at", null)),
     // J03: refund klinik yang sudah diposting mengurangi invoice asalnya, sama seperti retur struk.
     completeReportQuery(supabase.from("clinic_refunds").select("id, invoice_id, total", { count: "exact" })),
+    // Retur faktur grosir aktif, juga tanpa batas tanggal, dikurangkan dari faktur sumbernya.
+    completeReportQuery(supabase.from("wholesale_returns").select("id, invoice_id, total", { count: "exact" }).eq("status", "posted")),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
@@ -165,8 +167,12 @@ export default async function PenjualanRinciPage({
     branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
   };
 
-  // Grosir tidak punya retur barang: koreksi nilai faktur dikerjakan dengan membatalkan
-  // faktur lama dan menerbitkan penggantinya, dan yang batal sudah disaring di sini.
+  // Koreksi nilai faktur (batal + pengganti) sudah disaring di sini; retur barang grosir
+  // tampil di kolom Retur dan mengurangi omzet bersih, sama seperti retur struk kasir.
+  const returPerFaktur = new Map<string, number>();
+  for (const r of (returGrosir ?? []) as { invoice_id: string; total: number }[]) {
+    returPerFaktur.set(r.invoice_id, (returPerFaktur.get(r.invoice_id) ?? 0) + (Number(r.total) || 0));
+  }
   const barisGrosir: Baris[] = fakturGrosirOmzet((grosir ?? []) as unknown as GrosirRow[]).map((f) => ({
     id: f.id,
     href: `/penjualan/faktur/${f.id}`,
@@ -182,7 +188,7 @@ export default async function PenjualanRinciPage({
     merchandise: omzetDokumenGrosir(f),
     merchantFee: 0,
     refundedFee: 0,
-    retur: 0,
+    retur: returPerFaktur.get(f.id) ?? 0,
     // Akrual: faktur yang masih berjalan tetap omzet, statusnya saja yang belum lunas.
     status: (f.status ?? "").trim().toLowerCase() === "lunas" ? "Lunas" : "Belum lunas",
   }));
