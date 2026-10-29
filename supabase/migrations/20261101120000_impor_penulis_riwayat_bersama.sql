@@ -35,6 +35,14 @@
 -- Role penulis tidak punya hak kolom continued_from_*, jadi tautan itu tetap NULL. Trigger baru pada
 -- kedua tabel kelak WAJIB memperhitungkan role ini (pasca-cek di bawah gagal bila trigger invoker baru).
 -- Tidak ada UPDATE/DELETE data, backfill, atau penggabungan.
+--
+-- Identitas pemanggil di fungsi milik role penulis: role TIDAK diberi USAGE skema `auth` (di Supabase hosted
+-- `postgres` memegang USAGE `auth` tanpa grant option; memperluasnya tidak diizinkan). Maka role memakai
+-- kamo_import.uid_permintaan(): tanpa argumen, tanpa akses tabel, SECURITY INVOKER, isi SQL byte-identik
+-- dengan auth.uid() hosted (termasuk urutan request.jwt.claim.sub lalu request.jwt.claims->>'sub'). Migrasi
+-- batal bila definisi auth.uid() (md5 pg_get_functiondef: teks, tanda tangan, volatilitas, security, config)
+-- berbeda dari yang dibaca di katalog hosted, atau bila isi helper tidak sama persis dengan auth.uid().
+-- RPC publik SECURITY INVOKER tetap memakai auth.uid() asli.
 
 -- ---------------------------------------------------------------------------
 -- 0. Prasyarat — gagal tertutup
@@ -50,6 +58,11 @@ begin
   end if;
   if to_regnamespace('kamo_import') is not null then
     raise exception 'Penulis riwayat bersama: skema kamo_import sudah ada';
+  end if;
+  -- Sidik auth.uid() dari katalog hosted (dibaca read-only 2026-10-29, proyek koaglxcyjqfmgfzxszkj).
+  if to_regprocedure('auth.uid()') is null
+     or md5(pg_get_functiondef('auth.uid()'::regprocedure)) <> 'ea3b41bf29e2ad573067939329aa088e' then
+    raise exception 'Penulis riwayat bersama: definisi auth.uid() berbeda dari sidik yang ditinjau; helper identitas tidak bisa dijamin setara';
   end if;
   if to_regprocedure('public.import_legacy_source_match(text,text)') is null
      or to_regprocedure('public.import_legacy_source_key_canonical(text)') is null
@@ -81,10 +94,24 @@ revoke all on schema kamo_import from public;
 grant usage on schema kamo_import to authenticated, kamo_legacy_import_writer;
 
 -- ---------------------------------------------------------------------------
+-- 1b. Identitas permintaan untuk fungsi milik role penulis (pengganti auth.uid() tanpa USAGE skema auth)
+-- ---------------------------------------------------------------------------
+-- Isi di antara $uid$ HARUS byte-identik dengan prosrc auth.uid() hosted (diperiksa gerbang di bawah).
+-- Tanpa argumen, tanpa tabel, SECURITY INVOKER: hanya membaca GUC permintaan; UUID/JSON rusak = galat.
+create function kamo_import.uid_permintaan() returns uuid
+language sql stable security invoker set search_path = '' as $uid$
+  select 
+  coalesce(
+    nullif(current_setting('request.jwt.claim.sub', true), ''),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
+  )::uuid
+$uid$;
+comment on function kamo_import.uid_permintaan() is
+  'Salinan persis isi auth.uid() (sidik ditinjau) untuk fungsi milik kamo_legacy_import_writer, yang tidak diberi USAGE skema auth.';
+
+-- ---------------------------------------------------------------------------
 -- 2. Hak minimal role penulis (hak kolom; tanpa UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER)
 -- ---------------------------------------------------------------------------
-grant usage on schema auth to kamo_legacy_import_writer;
-grant execute on function auth.uid() to kamo_legacy_import_writer;
 grant execute on function
   public.user_can_access_branch(uuid),
   public.indonesian_phone_key(text),
@@ -132,7 +159,7 @@ create policy kamo_import_tulis on public.medical_records for insert to kamo_leg
                           and v.branch_id is null and v.legacy_source_key is not null));
 create policy kamo_import_baca on public.customers for select to kamo_legacy_import_writer using (true);
 create policy kamo_import_baca on public.pets for select to kamo_legacy_import_writer using (true);
-create policy kamo_import_baca on public.profiles for select to kamo_legacy_import_writer using (id = (select auth.uid()));
+create policy kamo_import_baca on public.profiles for select to kamo_legacy_import_writer using (id = (select kamo_import.uid_permintaan()));
 create policy kamo_import_baca on public.compounding_recipes for select to kamo_legacy_import_writer
   using (exists (select 1 from public.medical_records m where m.id = compounding_recipes.medical_record_id));
 create policy kamo_import_baca on public.consents for select to kamo_legacy_import_writer
@@ -153,11 +180,13 @@ create policy kamo_import_baca on public.invoices for select to kamo_legacy_impo
 -- ---------------------------------------------------------------------------
 create function kamo_import.pastikan_pengimpor() returns void
 language plpgsql stable security definer set search_path = '' as $$
-declare v_header text;
+declare
+  v_header text;
+  v_uid uuid := kamo_import.uid_permintaan();
 begin
-  if auth.uid() is null or not exists (
+  if v_uid is null or not exists (
     select 1 from public.profiles p
-    where p.id = auth.uid() and p.is_active and p.role in ('OWNER', 'ADMIN')
+    where p.id = v_uid and p.is_active and p.role in ('OWNER', 'ADMIN')
   ) then
     raise exception using errcode = '42501', message = 'Hanya OWNER/ADMIN aktif yang boleh mengimpor rekam medis';
   end if;
@@ -777,7 +806,7 @@ begin
   -- Pemilik: semua fungsi kamo_import milik role (ALTER OWNER bisa gagal diam-diam bila prasyarat kurang).
   select string_agg(p.oid::regprocedure::text, ', ') into v_bad from pg_proc p
   where p.pronamespace = 'kamo_import'::regnamespace and pg_get_userbyid(p.proowner) <> w;
-  if v_bad is not null or (select count(*) from pg_proc p where p.pronamespace = 'kamo_import'::regnamespace) <> 13 then
+  if v_bad is not null or (select count(*) from pg_proc p where p.pronamespace = 'kamo_import'::regnamespace) <> 14 then
     raise exception 'Gerbang: fungsi kamo_import tidak dimiliki role penulis: %', coalesce(v_bad, 'jumlah fungsi salah');
   end if;
   -- Atribut role.
@@ -802,9 +831,28 @@ begin
   if v_bad is not null then
     raise exception 'Gerbang: role penulis punya CREATE di skema: %', v_bad;
   end if;
-  if not has_schema_privilege(w, 'public', 'USAGE') or not has_schema_privilege(w, 'auth', 'USAGE')
-     or not has_schema_privilege(w, 'kamo_import', 'USAGE') then
-    raise exception 'Gerbang: role penulis kekurangan USAGE skema public/auth/kamo_import';
+  if not has_schema_privilege(w, 'public', 'USAGE') or not has_schema_privilege(w, 'kamo_import', 'USAGE') then
+    raise exception 'Gerbang: role penulis kekurangan USAGE skema public/kamo_import';
+  end if;
+  -- Batas skema auth tidak diperluas: role penulis tidak memegang USAGE auth dan tidak memanggil auth.uid().
+  if has_schema_privilege(w, 'auth', 'USAGE') then
+    raise exception 'Gerbang: role penulis tidak boleh memegang USAGE skema auth';
+  end if;
+  select string_agg(p.oid::regprocedure::text, ', ') into v_bad from pg_proc p
+  where p.pronamespace = 'kamo_import'::regnamespace and p.prosrc ~* 'auth\s*\.\s*uid';
+  if v_bad is not null
+     or position('uid_permintaan' in (select pg_get_expr(pol.polqual, pol.polrelid) from pg_policy pol
+                                     where pol.polrelid = 'public.profiles'::regclass and pol.polname = 'kamo_import_baca')) = 0 then
+    raise exception 'Gerbang: fungsi/kebijakan role penulis masih memakai auth.uid(): %', coalesce(v_bad, 'kebijakan profiles');
+  end if;
+  -- Helper identitas: setara persis dengan auth.uid() yang sidiknya ditinjau.
+  if md5(pg_get_functiondef('auth.uid()'::regprocedure)) <> 'ea3b41bf29e2ad573067939329aa088e'
+     or (select prosrc from pg_proc where oid = 'kamo_import.uid_permintaan()'::regprocedure)
+        is distinct from (select prosrc from pg_proc where oid = 'auth.uid()'::regprocedure)
+     or exists (select 1 from pg_proc p where p.oid = 'kamo_import.uid_permintaan()'::regprocedure
+                and (p.prosecdef or p.provolatile <> 's' or p.pronargs <> 0 or p.prorettype <> 'uuid'::regtype
+                     or p.proretset or p.prolang <> (select oid from pg_language where lanname = 'sql'))) then
+    raise exception 'Gerbang: helper identitas tidak setara dengan auth.uid() yang ditinjau';
   end if;
   -- Tabel: tanpa UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER di mana pun; INSERT hanya visits & medical_records;
   -- tidak memiliki tabel.
@@ -827,7 +875,7 @@ begin
     raise exception 'Gerbang: hak kolom role penulis tidak sesuai';
   end if;
   -- Fungsi yang dipanggil penulis benar-benar bisa dieksekusi role (GRANT tanpa hak hanya memberi WARNING).
-  if not has_function_privilege(w, 'auth.uid()', 'EXECUTE')
+  if not has_function_privilege(w, 'kamo_import.uid_permintaan()', 'EXECUTE')
      or not has_function_privilege(w, 'public.user_can_access_branch(uuid)', 'EXECUTE')
      or not has_function_privilege(w, 'public.import_legacy_source_match(text,text)', 'EXECUTE')
      or not has_function_privilege(w, 'public.import_legacy_source_key_canonical(text)', 'EXECUTE')
@@ -848,7 +896,7 @@ begin
          or has_function_privilege('anon', p.oid, 'EXECUTE')
          or has_function_privilege('service_role', p.oid, 'EXECUTE')
          or has_function_privilege('authenticated', p.oid, 'EXECUTE') <> (p.proname = any(v_allowed_exec))
-         or not p.prosecdef
+         or p.prosecdef <> (p.proname <> 'uid_permintaan')
          or array_to_string(p.proconfig, ',') is distinct from 'search_path=""');
   if v_bad is not null then
     raise exception 'Gerbang: ACL/konfigurasi fungsi kamo_import salah: %', v_bad;

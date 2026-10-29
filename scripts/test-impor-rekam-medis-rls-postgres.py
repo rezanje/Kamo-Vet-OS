@@ -378,6 +378,7 @@ set session_replication_role = origin;""")
     ok, msg = d.try_(f"set role anon;\nselect kamo_import.simpan_riwayat_bersama('{{}}'::jsonb, null, null);")
     record('D1 anon tidak bisa memanggil penulis', not ok and 'permission denied' in msg, msg)
 
+    identity_cases(d)
     branch_collision(d)
 
     # ---------------- triggers under the writer role
@@ -448,6 +449,60 @@ set session_replication_role = origin;""")
     for r in ('authenticator', 'authenticated', 'anon', 'service_role'):
         ok, msg = d.try_(f"set role {WRITER_ROLE};", user='authenticator') if r == 'authenticator' else d.try_(f"set role {r};\nset role {WRITER_ROLE};", user='authenticator')
         record(f'Gerbang: SET ROLE {WRITER_ROLE} dari sesi authenticator (sebagai {r}) ditolak', not ok, msg)
+
+
+def actor_ident(sql, sub, claims, header=None):
+    """Like actor(), but with explicit request.jwt.claim.sub / request.jwt.claims values (PostgREST GUCs)."""
+    hdr = ("select set_config('request.headers', %s, false);\n" % q(json.dumps({'x-kamo-operational-branch': header}))
+           if header else "select set_config('request.headers', '', false);\n")
+    return ("set role authenticated;\nselect set_config('request.jwt.claim.role','authenticated',false);\n"
+            f"select set_config('request.jwt.claim.sub', {q(sub)}, false);\nselect set_config('request.jwt.claims', {q(claims)}, false);\n"
+            + hdr + sql)
+
+
+def identity_cases(d):
+    """kamo_import.uid_permintaan() must behave exactly like auth.uid(), including precedence and failures."""
+    state = hosted_auth_state(d.db)
+    record('Harness meniru batas auth hosted: pemilik terpisah, PUBLIC tanpa USAGE auth, PUBLIC EXECUTE auth.uid, '
+           'authenticated USAGE tanpa grant option, sidik auth.uid sama dengan katalog hosted',
+           state['schema_owner'] == 'supabase_auth_admin' and state['uid_owner'] == 'supabase_auth_admin' and not state['public_usage']
+           and state['public_exec'] and state['authenticated_usage'] and state['authenticated_usage_grantable'] is False
+           and state['fingerprint'] == AUTH_FP, json.dumps(state))
+    w_auth = d.last(f"select has_schema_privilege('{WRITER_ROLE}', 'auth', 'USAGE')::text || '/' || "
+                    f"has_function_privilege('{WRITER_ROLE}', 'auth.uid()', 'EXECUTE')::text")
+    record('Role penulis tanpa USAGE skema auth (EXECUTE auth.uid hanya lewat PUBLIC, tidak bisa dipakai)', w_auth == 'false/true', w_auth)
+    a, b = OWNER, ADMIN
+    cases = [
+        ('claim.sub menang atas claims.sub', a, json.dumps({'sub': b}), a),
+        ('claim.sub kosong -> claims.sub', '', json.dumps({'sub': b}), b),
+        ('identitas kosong/hilang -> NULL', '', '', ''),
+        ('claims tanpa sub -> NULL', '', json.dumps({'role': 'authenticated'}), ''),
+        ('claim.sub sah, claims rusak -> claim.sub (claims tidak dibaca, sama seperti auth.uid)', a, '{rusak', a),
+        ('claim.sub bukan UUID -> galat, tidak jatuh ke claims', 'bukan-uuid', json.dumps({'sub': b}), 'ERROR'),
+        ('claims JSON rusak -> galat', '', '{rusak', 'ERROR'),
+        ('claims.sub bukan UUID -> galat', '', json.dumps({'sub': 'zz'}), 'ERROR'),
+    ]
+    for label, sub, claims, expect in cases:
+        prefix = f"select set_config('request.jwt.claim.sub', {q(sub)}, false);\nselect set_config('request.jwt.claims', {q(claims)}, false);\n"
+        got = []
+        for fn in ('kamo_import.uid_permintaan()', 'auth.uid()'):
+            # Marker prefix: an empty/NULL identity must not be confused with the previous output line.
+            ok, out = d.try_(prefix + f"select 'uid=' || coalesce({fn}::text, '<null>');")
+            got.append(out.removeprefix('uid=') if ok and out.startswith('uid=') else 'ERROR')
+        want = expect or '<null>'
+        record(f'Identitas: {label}', got[0] == got[1] == want, f'helper={got[0]!r} auth.uid={got[1]!r} expect={want!r}')
+    # End to end through the private validator and the public RPC (header A).
+    ok, out = d.try_(actor_ident(f"select public.import_legacy_medical_records_bulk({lit([base.row('wowo-test::identitas-claims')])});",
+                                 '', json.dumps({'sub': OWNER}), BR_A))
+    record('Identitas hanya di request.jwt.claims (OWNER, header A): impor massal tersimpan',
+           ok and json.loads(out)[0]['status'] == 'tersimpan', out[:140])
+    for label, sub, claims in (('identitas kosong', '', ''), ('claim.sub bukan UUID (claims berisi OWNER sah)', 'bukan-uuid', json.dumps({'sub': OWNER})),
+                               ('claims JSON rusak', '', '{rusak'), ('OWNER nonaktif lewat claims', '', json.dumps({'sub': OWNER_OFF}))):
+        ok, out = d.try_(actor_ident("select kamo_import.pastikan_pengimpor();", sub, claims, BR_A))
+        ok2, out2 = d.try_(actor_ident(f"select kamo_import.simpan_riwayat_bersama({lit(base.row('wowo-test::identitas-tolak'))}, null, null);", sub, claims, BR_A))
+        saved = d.last("select count(*) from public.visits where legacy_source_key='wowo-test::identitas-tolak'")
+        record(f'Validator & penulis menolak: {label} (tanpa jatuh ke identitas lain, tidak menulis)', not ok and not ok2 and saved == '0',
+               f'{out[:80]} | {out2[:60]}')
 
 
 def branch_collision(d):
@@ -557,6 +612,36 @@ def fresh_without_new(pg_bin, raw):
         finally:
             base.fixture.ROOT = saved
     raw.sql("grant anon, authenticated, service_role to authenticator;")
+    hosted_auth(raw)
+
+
+# Supabase hosted auth boundary (catalog read 2026-10-29): schema `auth` and auth.uid() belong to a separate
+# role; PUBLIC has EXECUTE on auth.uid() but no USAGE on schema auth; runner/authenticated hold USAGE WITHOUT
+# grant option. auth.uid() text is the hosted one (shared fixture), md5(pg_get_functiondef) = AUTH_FP.
+AUTH_FP = 'ea3b41bf29e2ad573067939329aa088e'
+
+
+def hosted_auth(raw):
+    raw.sql("""create role supabase_auth_admin nologin noinherit;
+alter schema auth owner to supabase_auth_admin;
+alter function auth.uid() owner to supabase_auth_admin;
+revoke all on schema auth from public;
+revoke all on function auth.uid() from public, anon, authenticated, service_role;
+grant execute on function auth.uid() to public;""")
+
+
+def hosted_auth_state(raw):
+    return json.loads(raw.sql(f"""select json_build_object(
+ 'schema_owner', (select pg_get_userbyid(nspowner) from pg_namespace where nspname = 'auth'),
+ 'uid_owner', (select pg_get_userbyid(proowner) from pg_proc where oid = 'auth.uid()'::regprocedure),
+ 'public_usage', exists(select 1 from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
+                        where n.nspname = 'auth' and a.grantee = 0 and a.privilege_type = 'USAGE'),
+ 'public_exec', exists(select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                       where p.oid = 'auth.uid()'::regprocedure and a.grantee = 0 and a.privilege_type = 'EXECUTE'),
+ 'authenticated_usage_grantable', (select bool_or(a.is_grantable) from pg_namespace n cross join lateral aclexplode(n.nspacl) a
+                                   where n.nspname = 'auth' and a.grantee = 'authenticated'::regrole and a.privilege_type = 'USAGE'),
+ 'authenticated_usage', has_schema_privilege('authenticated', 'auth', 'USAGE'),
+ 'fingerprint', md5(pg_get_functiondef('auth.uid()'::regprocedure)))"""))
 
 
 def leftovers(raw, before):
@@ -577,6 +662,15 @@ def gate_rollback(pg_bin):
     """The migration must fail closed and leave nothing behind when a precondition or the post-check fails."""
     from native_postgres import NativePostgres
     hostile = [
+        ('definisi auth.uid() berubah (urutan klaim ditukar)',
+         "create or replace function auth.uid() returns uuid language sql stable as $f$ select coalesce("
+         "(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'), "
+         "nullif(current_setting('request.jwt.claim.sub', true), ''))::uuid $f$;",
+         f"select count(*)::text from pg_roles where rolname='{WRITER_ROLE}'", '0'),
+        ('volatilitas auth.uid() berubah (VOLATILE)', "alter function auth.uid() volatile;",
+         f"select count(*)::text from pg_roles where rolname='{WRITER_ROLE}'", '0'),
+        ('auth.uid() menjadi SECURITY DEFINER', "alter function auth.uid() security definer;",
+         f"select count(*)::text from pg_roles where rolname='{WRITER_ROLE}'", '0'),
         ('role penulis sudah ada dengan BYPASSRLS', f"create role {WRITER_ROLE} nologin bypassrls;", f"select rolbypassrls::text from pg_roles where rolname='{WRITER_ROLE}'", 'true'),
         ('PUBLIC punya CREATE di skema public (pasca-cek skema)', "grant create on schema public to public;", f"select count(*)::text from pg_roles where rolname='{WRITER_ROLE}'", '0'),
         ('trigger invoker baru pada visits (pasca-cek trigger)',
@@ -612,8 +706,8 @@ def hosted_emulation(pg_bin):
                   'clinic_record_addenda', 'clinic_record_corrections', 'invoice_edit_log']
         raw.sql("create role mig_emul login createrole bypassrls;\n"
                 "grant create on database postgres to mig_emul;\n"
-                "grant usage on schema auth to mig_emul with grant option;\n"
-                "grant execute on function auth.uid() to mig_emul with grant option;\n"
+                # Like hosted `postgres`: USAGE on auth WITHOUT grant option; auth.uid() only through PUBLIC.
+                "grant usage on schema auth to mig_emul;\n"
                 + ''.join(f"alter table public.{t} owner to mig_emul;\n" for t in tables)
                 + "alter function public.import_legacy_medical_records_bulk(jsonb) owner to mig_emul;\n"
                 "alter function public.import_legacy_medical_record_resolved(text,text,timestamptz,text,text,text,text,text,text,text,date,text,text,text,text,text,text,uuid,uuid) owner to mig_emul;\n"

@@ -216,6 +216,7 @@ gagal = seluruh migrasi batal (terbukti tes, §9).
 | INSERT `medical_records` role | + "belum ada rekam medis di kunjungan itu" | dibuang | Kebijakan yang membaca tabelnya sendiri = rekursi RLS. Satu rekam medis per kunjungan dijamin kode penulis (INSERT berpasangan), bukan kebijakan. |
 | `kamo_import.pastikan_pengimpor()` | internal | EXECUTE untuk `authenticated` | RPC publik (INVOKER) memanggilnya di depan, sebelum membuat pelanggan/anabul, supaya konteks salah ditolak utuh. Fungsi hanya memvalidasi, tidak membaca/menulis data lain. |
 | Tautan `continued_from_*` di D2 | predikat anak umum | hanya di WITH CHECK (baris baru) | Baris itu sendiri bercabang; trigger lama sudah menolak `authenticated` mengubah tautan. USING pada tautan lama akan mengunci kunjungan cabang yang sah. |
+| Identitas di fungsi role penulis (§8.2) | `auth.uid()` + USAGE skema `auth` untuk role | `kamo_import.uid_permintaan()` (salinan persis isi `auth.uid()`, sidik hosted), role **tanpa** USAGE `auth` | Preflight hosted: `postgres` memegang USAGE `auth` tanpa grant option; perluasan akses tidak diizinkan (opsi A disetujui review). |
 | Helper D2 | `kunjungan_tanpa_cabang` dst. | `kamo_import.tanpa_cabang_{kunjungan,rekam,racikan,persetujuan,ranap,obat_ranap,booking,tagihan}` | Satu helper per induk; `helper(NULL)` = false; dipakai sebagai `helper(fk) is false` (galat/NULL = tolak). |
 
 Validasi penulis (`simpan_riwayat_bersama`, dipanggil langsung pun aman): OWNER/ADMIN **aktif**; header cabang bila
@@ -262,6 +263,37 @@ berbeda `bentrok`, tidak menulis. Riwayat bersama NULL: semua kasus D1 sebelumny
 cabang → 10 kasus gagal (tertangkap). Mematikan cek penanda di jalur utama RPC massal saja = mutan setara (RPC per baris
 yang dipanggilnya menolak generik dan jalur pengecualian menahan dengan pesan yang sama; tidak ada tulisan yang tersisa).
 
+### 8.2 Perbaikan preflight hosted (opsi A): identitas tanpa skema `auth`
+Temuan preflight read-only (2026-10-29 20:21Z, §10.1): di Supabase hosted, skema `auth` milik `supabase_admin`; PUBLIC
+tanpa USAGE; `postgres` memegang USAGE **tanpa grant option**; `auth.uid()` milik `supabase_auth_admin` dengan EXECUTE
+untuk PUBLIC. `grant usage on schema auth to kamo_legacy_import_writer` hanya akan memberi WARNING, lalu pasca-cek
+membatalkan migrasi. Opsi B (jembatan milik admin) dan C (perubahan ACL `auth`) ditolak.
+
+Perubahan (draft, tanpa hak baru):
+- `kamo_import.uid_permintaan()`: tanpa argumen, `LANGUAGE sql STABLE SECURITY INVOKER`, `search_path=''`, tanpa akses
+  tabel; isi SQL **byte-identik** dengan `prosrc` `auth.uid()` hosted (`md5(prosrc)` = `cdef18c69c4f4cbbced2eaf81e628b49`),
+  termasuk urutan: `request.jwt.claim.sub` non-kosong menang; kalau kosong, `request.jwt.claims->>'sub'`; UUID/JSON rusak =
+  galat (tidak jatuh ke sumber lain).
+- Dipakai di `kamo_import.pastikan_pengimpor()` dan kebijakan `profiles` TO role penulis. RPC publik INVOKER tetap memakai
+  `auth.uid()` asli.
+- Dicabut: GRANT USAGE `auth` dan EXECUTE `auth.uid()` ke role, beserta pasca-cek positifnya.
+- Gerbang baru (prasyarat **dan** pasca-cek): `md5(pg_get_functiondef('auth.uid()'))` harus
+  `ea3b41bf29e2ad573067939329aa088e` (teks, tanda tangan, bahasa, volatilitas, SECURITY, config; sama dengan angka
+  reviewer, dicocokkan ke katalog hosted 2026-10-29 20:29Z, juga sama di PG16/PG17 lokal); `prosrc` helper = `prosrc`
+  `auth.uid()`; helper INVOKER/STABLE/tanpa argumen/`uuid`/SQL; role penulis **tidak** memegang USAGE `auth`; tidak ada
+  fungsi `kamo_import` yang memanggil `auth.uid`; kebijakan `profiles` role memakai helper. Definisi `auth.uid()` yang
+  berubah = migrasi batal utuh (tidak dinormalkan diam-diam).
+
+Harness kini meniru batas `auth` hosted (pemilik `supabase_auth_admin` terpisah, PUBLIC tanpa USAGE `auth`, PUBLIC
+EXECUTE `auth.uid`, `authenticated` USAGE tanpa grant option; runner emulasi non-superuser USAGE `auth` tanpa grant
+option — sebelumnya emulasi keliru memberi grant option sehingga masalah ini lolos). Tiruan `auth.uid()` di fixture
+bersama (`scripts/test-accurate-inventory-accounting-postgres.py`) disamakan teksnya dengan hosted (semantik sama).
+
+Dampak samping (dilaporkan, belum diubah): ±20 harness Postgres lain yang memutar semua migrasi dengan tiruan
+`auth.uid()` sendiri (mis. `scripts/test-employee-account-context-postgres.py`, `test-clinic-demo-postgres.py`,
+`test-posted-sales-postgres.py`, …) akan berhenti di gerbang sidik migrasi ini sampai tiruannya disamakan dengan teks
+hosted. Itu perilaku gagal-tertutup yang disengaja; penyelarasan tiruan butuh keputusan terpisah.
+
 ### Batas janji D2 (residual, sengaja tidak diklaim)
 D2 hanya menutup tulis **langsung** oleh `authenticated` (Data API / RPC INVOKER). RPC `SECURITY DEFINER` lama milik
 pemilik tabel melewati RLS dan **tidak** dinilai/diubah di PR ini. Yang menulis tabel rantai kunjungan (dari katalog,
@@ -275,7 +307,10 @@ masing-masing menolak kunjungan tanpa cabang bergantung pada pemeriksaan di dala
 klaim "riwayat bersama tidak bisa berubah lewat jalur mana pun"**; yang diklaim: tidak bisa lewat tulis langsung.
 
 ## 9. Bukti tes (lokal, Postgres sekali-pakai, data fiktif; tanpa Production)
-- `scripts/test-impor-rekam-medis-rls-postgres.py` — PG 17.10 dan PG 16: **376/376 lulus** (363 + 13 kasus kolisi cabang, §8.1). Di basis tanpa migrasi
+- `scripts/test-impor-rekam-medis-rls-postgres.py` — PG 17.10 dan PG 16: **394/394 lulus** (376 + 18 kasus §8.2: batas auth
+  harness, role tanpa USAGE `auth`, 8 kasus identitas helper vs `auth.uid()`, identitas hanya di claims JSON, 4 penolakan
+  validator/penulis, 3 rollback definisi/volatilitas/SECURITY `auth.uid()`). Mutasi §8.2 (validator hanya `claim.sub`,
+  tanpa gerbang sidik, isi helper beda) semuanya tertangkap. Sebelumnya: 376/376 (363 + 13 kasus kolisi cabang, §8.1). Di basis tanpa migrasi
   baru (TDD merah): 100 gagal (D2 terbuka untuk OWNER/ADMIN/FINANCE tanpa header, anak & pindah induk terbuka, penulis
   belum ada).
   - D2 `visits`: INSERT tanpa cabang (jejak palsu/kosong/NULL), UPDATE/DELETE riwayat bersama, UPDATE bercabang → NULL;
@@ -337,8 +372,12 @@ jalankan read-only (izin terpisah) dan lampirkan hasilnya:
           exists (select 1 from pg_namespace n cross join lateral aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
                   where n.nspname = 'auth' and a.grantee = 0 and a.privilege_type = 'USAGE') as public_usage;
    ```
-   Role penulis harus bisa memakai `auth.uid()`: EXECUTE lewat PUBLIC atau GRANT runner dengan grant option, dan USAGE
-   skema `auth` lewat PUBLIC atau GRANT dengan grant option. Pasca-cek migrasi memeriksanya secara positif.
+   Sesudah §8.2 role penulis **tidak** memakai skema `auth`; butir ini tinggal mencatat batasnya. Yang menentukan sekarang:
+   ```sql
+   select md5(pg_get_functiondef('auth.uid()'::regprocedure)) as fingerprint, md5(p.prosrc) as md5_prosrc
+   from pg_proc p where p.oid = 'auth.uid()'::regprocedure;
+   ```
+   harus `ea3b41bf29e2ad573067939329aa088e` / `cdef18c69c4f4cbbced2eaf81e628b49`. Beda = jangan apply (migrasi juga batal).
 4. Skema yang memberi CREATE ke PUBLIC (grantee `0`), termasuk ACL bawaan bila `nspacl` NULL. `PUBLIC` adalah
    pseudo-role, jadi **tidak** boleh diaudit dengan `has_schema_privilege('public', ...)`:
    ```sql
@@ -363,3 +402,24 @@ jalankan read-only (izin terpisah) dan lampirkan hasilnya:
 8. Daftar trigger `visits`/`medical_records` di Production sama dengan lokal (pasca-cek menolak trigger invoker baru).
 Bila salah satu butir tidak sesuai: **jangan apply**; laporkan dan kembali ke keputusan desain. Apply tetap butuh
 persetujuan eksplisit atas teks persis migrasi ini, cadangan segar, dan jendela rilis — PR ini tidak memberi izin itu.
+
+### 10.1 Hasil preflight hosted read-only (2026-10-29, proyek `koaglxcyjqfmgfzxszkj`)
+Akun/proyek: ref & nama cocok ("rezarezanje.kamo@gmail.com's Project"), org `mdyagjwhgydptsaozzgb`, `ACTIVE_HEALTHY`,
+PG 17.6, sesi `postgres`; token hanya melihat proyek ini. Hanya SELECT katalog + GET konfigurasi (20:20:42–20:23:00Z;
+sidik `auth.uid()` 20:29:03Z). Tidak ada tulis/DDL/GRANT.
+
+| Butir | Hasil | Bukti |
+|---|---|---|
+| 1 role | PASS | `postgres` non-superuser, CREATEROLE, BYPASSRLS, INHERIT; role penulis belum ada |
+| 2 versi/self-grant/supautils | PASS (runtime UNKNOWN) | `170006`; `createrole_self_grant=''`; supautils aktif; nama role tidak di `reserved_roles`/`reserved_memberships` |
+| 3 auth (rancangan lama) | FAIL → diselesaikan §8.2 | PUBLIC EXECUTE `auth.uid`; PUBLIC tanpa USAGE `auth`; `postgres` USAGE tanpa grant option |
+| 3 auth (sesudah §8.2) | PASS | sidik `ea3b41bf…`, `md5(prosrc)` `cdef18c6…`; role tak butuh `auth` |
+| 4 PUBLIC CREATE skema | PASS | kosong |
+| 5 kepemilikan | PASS | 22 tabel & 12 fungsi milik `postgres`; CREATE db & `public`; `kamo_import` & RPC RS-1 belum ada; RPC impor versi `20261101100000`; migrasi terakhir `20261101110000` |
+| 6 default ACL | PASS (tercatat) | `postgres`@`public`: fungsi baru EXECUTE ke anon/authenticated/service_role; migrasi mencabut eksplisit |
+| 7 Data API | PASS | `db_schema=public,graphql_public` |
+| 8 trigger | PASS | 12 trigger sama dengan lokal; satu-satunya invoker `protect_inpatient_continuation_link` |
+| tambahan | PASS | PUBLIC tanpa hak tulis tabel/kolom; event trigger hanya bawaan Supabase |
+
+Read-only tidak membuktikan migrasi akan sukses saat dijalankan (supautils atas CREATE ROLE/ALTER OWNER, dsb.); itu tetap
+gerbang terpisah (pasang atomik gagal-tertutup) dan butuh izin perubahan keamanan tersendiri.

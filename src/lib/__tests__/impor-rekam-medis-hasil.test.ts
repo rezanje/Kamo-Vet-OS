@@ -119,6 +119,14 @@ describe("migrasi penulis riwayat bersama (invarian teks; perilaku diuji di harn
     expect(SQL.match(/\n\s+if v_terkunci then\n/g) ?? []).toHaveLength(4);
     expect(SQL).toContain("from kamo_import.cari_jejak(v_key, v_phone) m;");
   });
+  it("role penulis tidak memakai skema auth: helper identitas salinan persis auth.uid() dengan sidik hosted", () => {
+    expect(SQL).not.toMatch(/grant [^;]*on schema auth/i);
+    expect(SQL).not.toMatch(/grant [^;]*on function auth\.uid/i);
+    expect(SQL).toContain("create function kamo_import.uid_permintaan() returns uuid\nlanguage sql stable security invoker set search_path = '' as $uid$\n  select \n  coalesce(\n    nullif(current_setting('request.jwt.claim.sub', true), ''),\n    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')\n  )::uuid\n$uid$;");
+    expect(SQL.match(/md5\(pg_get_functiondef\('auth\.uid\(\)'::regprocedure\)\) <> 'ea3b41bf29e2ad573067939329aa088e'/g) ?? []).toHaveLength(2);
+    expect(SQL).toContain("using (id = (select kamo_import.uid_permintaan()))");
+    expect(SQL).toContain("v_uid uuid := kamo_import.uid_permintaan();");
+  });
   it("D2 menutup semua tabel anak kunjungan yang bisa ditulis authenticated", () => {
     for (const tabel of ["visits", "medical_records", "prescription_items", "compounding_recipes", "compounding_ingredients", "consents",
       "inpatient_records", "inpatient_medications", "inpatient_daily_logs", "inpatient_status_log", "inpatient_med_doses",
