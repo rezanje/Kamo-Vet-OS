@@ -16,7 +16,7 @@ import { diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang } from "./har
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, voucherBerlaku, type VoucherRow } from "./voucher";
 import { hariIniWIB } from "./tanggal";
 import { loadActiveVouchers } from "./voucher-loader";
-import { bacaKode, bacaKodeKampanye, loadKodeKampanyeAktif, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "./kode-kampanye";
+import { bacaKode, bacaKodeKampanye, cekVoucherLewatKampanye, loadKodeKampanyeAktif, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "./kode-kampanye";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -242,8 +242,12 @@ export async function hitungPotonganKlinik(
   // Voucher dihitung dari nilai setelah promo, sama urutannya dengan §6 di POS.
   let voucher = 0;
   let tolakVoucher: string | null = null;
+  // Voucher milik kampanye aktif hanya berlaku lewat kode kampanyenya (keputusan pemilik 29 Okt).
+  const tolakMentah = kampanye ? null : await cekVoucherLewatKampanye(supabase, kode);
   if (tolakKampanye) {
     tolakVoucher = tolakKampanye;
+  } else if (tolakMentah) {
+    tolakVoucher = tolakMentah;
   } else if (kode) {
     const { data: v } = await supabase
       .from("vouchers")

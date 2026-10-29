@@ -9,7 +9,7 @@ import { computeTotals, lineDiscount, linePromoApplied } from "@/lib/pos-calc";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, type VoucherRow } from "@/lib/voucher";
-import { bacaKode, bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
+import { bacaKode, bacaKodeKampanye, cekVoucherLewatKampanye, pesanGagalKampanye, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
 import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
@@ -276,6 +276,10 @@ export async function checkoutKasir(formData: FormData) {
     const tolakKampanye = pesanKampanyeDitolak(kode.kampanye,
       promoAktif.some((p) => p.id === kode.promoId), potonganPromo.some((h) => h.promoId === kode.promoId));
     if (tolakKampanye) redirect(`${failureUrl}${encodeURIComponent(tolakKampanye)}`);
+  } else {
+    // Voucher milik kampanye aktif hanya berlaku lewat kode kampanyenya (keputusan pemilik 29 Okt).
+    const tolakMentah = await cekVoucherLewatKampanye(supabase, voucherCode);
+    if (tolakMentah) redirect(`${failureUrl}${encodeURIComponent(tolakMentah)}`);
   }
   // Promo mana yang kena di baris mana ikut disimpan ke struk (migrasi 0127) —
   // tanpa itu laporan promo cuma bisa menghitung total diskon, tidak bisa bilang
