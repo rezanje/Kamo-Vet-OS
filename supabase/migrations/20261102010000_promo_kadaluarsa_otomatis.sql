@@ -29,6 +29,61 @@
 --      nonaktif di statement yang sama.
 --
 -- Aman dijalankan berulang (idempoten) dan tidak menyentuh baris transaksi.
+--
+-- ── VERIFIKASI SETELAH DIPASANG ─────────────────────────────────────────────
+--   1. Tambalan terpasang dan pemeriksaan OWNER/ADMIN masih ada:
+--        select position('KADALUARSA_SWEEP' in pg_get_functiondef(
+--                 'public.guard_promo_configuration()'::regprocedure)) > 0
+--             , position('assert_promo_manager' in pg_get_functiondef(
+--                 'public.guard_promo_configuration()'::regprocedure)) > 0;
+--      Keduanya harus true. Bila migrasinya berhenti dengan
+--      PROMO_KADALUARSA_GUARD_DRIFT, definisi guard-nya berubah sejak
+--      20261023070134 — tinjau dulu, jangan dipaksa.
+--   2. Hak fungsi penyapu (authenticated boleh, anon/service_role tidak):
+--        select has_function_privilege(r, 'public.nonaktifkan_promo_kadaluarsa()', 'EXECUTE')
+--        from unnest(array['authenticated','anon','service_role']) r;
+--      Harus true, false, false.
+--   3. Hitung dulu, baru jalankan — berapa baris yang akan terdampak:
+--        select (select count(*) from public.promos where is_active
+--                  and valid_until < (now() at time zone 'Asia/Jakarta')::date) as promo,
+--               (select count(*) from public.vouchers where is_active
+--                  and valid_until < (now() at time zone 'Asia/Jakarta')::date) as voucher;
+--      Lalu: select public.nonaktifkan_promo_kadaluarsa();  -- angkanya harus sama,
+--      dan panggilan kedua harus mengembalikan 0/0/0 (idempoten).
+--   4. Jejak auditnya atas nama sistem, bukan pengguna:
+--        select actor_kind, count(*) from public.activity_log
+--        where row_entity in ('promos','vouchers')
+--          and occurred_at > now() - interval '5 minutes' group by 1;   -- harus 'system'
+--   5. Jadwal pg_cron: select * from cron.job where jobname='promo-kadaluarsa-harian';
+--      Kosong selama ekstensinya belum terpasang — itu yang diharapkan sekarang.
+--
+-- ── SEBELUM DIPASANG (wajib, supaya rollback-nya sepele) ────────────────────
+--   select pg_get_functiondef('public.guard_promo_configuration()'::regprocedure);
+-- Simpan keluarannya. Itulah satu-satunya hal yang ditambal migrasi ini pada
+-- objek yang sudah ada; sisanya objek baru yang tinggal di-drop.
+--
+-- ── ROLLBACK ────────────────────────────────────────────────────────────────
+-- Baris promo/voucher yang terlanjur dinonaktifkan TIDAK dihidupkan kembali
+-- oleh rollback ini: keputusannya memang "lewat batas waktu = nonaktif", dan
+-- menghidupkannya lagi butuh perpanjangan tanggal lewat layar Edit. Yang
+-- dikembalikan hanya mekanismenya:
+--
+--   drop trigger if exists promo_kadaluarsa_otomatis on public.promos;
+--   drop trigger if exists voucher_kadaluarsa_otomatis on public.vouchers;
+--   drop function if exists public.guard_aktivasi_kadaluarsa();
+--   drop function if exists public.nonaktifkan_promo_kadaluarsa();
+--   drop index if exists public.promos_aktif_berakhir;
+--   drop index if exists public.vouchers_aktif_berakhir;
+--   drop index if exists public.campaign_codes_aktif_tujuan;
+--   -- lalu jalankan ulang definisi guard yang disimpan di langkah "SEBELUM
+--   -- DIPASANG" apa adanya (satu CREATE OR REPLACE FUNCTION; ACL ikut terjaga),
+--   -- dan bila pg_cron sempat terpasang:
+--   --   select cron.unschedule('promo-kadaluarsa-harian');
+--   -- Periksa ulang: KADALUARSA_SWEEP hilang, assert_promo_manager masih ada.
+--
+-- Aplikasi lama/baru aman dua arah: memanggil rpc penyapu yang belum ada hanya
+-- menghasilkan error yang sengaja didiamkan (lib/promo-kadaluarsa.ts), dan
+-- aplikasi lama tanpa panggilan itu tetap menyaring tanggal saat membaca.
 
 -- ── 1. Indeks parsial: pemeriksaan "ada yang lewat tanggal?" harus murah ─────
 -- Jalur lazy dipanggil tiap kali kasir dibuka; tanpa indeks ini pemeriksaannya
@@ -41,16 +96,26 @@ create index if not exists campaign_codes_aktif_tujuan
   on public.campaign_codes (promo_id, voucher_id) where is_active;
 
 -- ── 2. Guard konfigurasi promo: izinkan penonaktifan karena kedaluwarsa ──────
--- Definisi sama dengan migrasi 20261023070134, ditambah satu cabang di depan.
 -- Menonaktifkan promo yang MEMANG sudah lewat tanggal adalah penegakan aturan,
 -- bukan perubahan konfigurasi: hasilnya identik dengan yang sudah dilihat kasir
 -- hari ini, jadi tidak perlu hak OWNER/ADMIN. Tulis langsung dari peran lain
 -- tetap ditahan RLS (migrasi 20261031090000); cabang ini hanya membuka jalan
 -- untuk fungsi SECURITY DEFINER di bawah, yang hanya bisa mengubah is_active.
-create or replace function public.guard_promo_configuration() returns trigger
-language plpgsql security definer set search_path='' as $$
-declare old_row jsonb:='{}';new_row jsonb:='{}';parent record;
-begin
+--
+-- Cabangnya DISISIPKAN ke definisi yang sedang berjalan lewat satu jangkar,
+-- bukan ditimpa dengan salinan definisi lama. Kalau rilis lain sempat mengubah
+-- guard_promo_configuration, menimpanya akan diam-diam mengembalikan perubahan
+-- itu; dengan jangkar, migrasinya berhenti dengan pesan GUARD_DRIFT dan minta
+-- ditinjau ulang. Blok ini juga berhenti tanpa efek bila cabangnya sudah ada,
+-- jadi aman dijalankan berulang.
+do $patch$
+declare
+ guard_oid oid := to_regprocedure('public.guard_promo_configuration()');
+ definition text;
+ jangkar text := $jangkar$begin
+ if auth.uid() is not null or current_setting('role',true) in('authenticated','anon','service_role') then$jangkar$;
+ pengganti text := $pengganti$begin
+ -- KADALUARSA_SWEEP (migrasi 20261102010000): penonaktifan karena lewat tanggal.
  -- Dibungkus if bersarang, bukan satu rangkaian AND: OLD hanya terisi pada
  -- UPDATE/DELETE dan PostgreSQL tidak menjamin urutan evaluasi AND.
  if tg_op='UPDATE' and tg_table_name='promos' then
@@ -61,19 +126,33 @@ begin
    return new;
   end if;
  end if;
- if auth.uid() is not null or current_setting('role',true) in('authenticated','anon','service_role') then
-  perform public.assert_promo_manager();
+ if auth.uid() is not null or current_setting('role',true) in('authenticated','anon','service_role') then$pengganti$;
+begin
+ if guard_oid is null then
+  raise exception 'PROMO_KADALUARSA_GUARD_DRIFT: guard_promo_configuration() tidak ada; migrasi 20261023070134 belum terpasang';
  end if;
- if tg_table_name='promo_items' then
-  if tg_op<>'INSERT' then old_row:=to_jsonb(old);end if;
-  if tg_op<>'DELETE' then new_row:=to_jsonb(new);end if;
-  for parent in select id from public.promos where id in((old_row->>'promo_id')::uuid,(new_row->>'promo_id')::uuid) order by id for update loop
-   null;
-  end loop;
+ definition := pg_get_functiondef(guard_oid);
+ -- Sudah dipasang (pemasangan ulang / rilis berulang): tidak ada yang dikerjakan.
+ if position('KADALUARSA_SWEEP' in definition) > 0 then
+  return;
  end if;
- return coalesce(new,old);
-end$$;
-revoke all on function public.guard_promo_configuration() from public,anon,authenticated,service_role;
+ -- Atribut keamanan fungsi harus persis seperti yang diasumsikan cabang baru ini.
+ if not exists (select 1 from pg_proc p where p.oid = guard_oid
+   and p.prosecdef and p.proconfig @> array['search_path=""']::text[])
+  or has_function_privilege('anon', guard_oid, 'EXECUTE')
+  or has_function_privilege('authenticated', guard_oid, 'EXECUTE')
+  or has_function_privilege('service_role', guard_oid, 'EXECUTE') then
+  raise exception 'PROMO_KADALUARSA_GUARD_DRIFT: atribut/hak guard_promo_configuration berubah';
+ end if;
+ if (length(definition) - length(replace(definition, jangkar, ''))) / length(jangkar) <> 1 then
+  raise exception 'PROMO_KADALUARSA_GUARD_DRIFT: jangkar guard_promo_configuration tidak ditemukan tepat sekali';
+ end if;
+ execute replace(definition, jangkar, pengganti);
+ -- Pemeriksaan OWNER/ADMIN harus tetap ada setelah disisipi.
+ if position('perform public.assert_promo_manager();' in pg_get_functiondef(guard_oid)) = 0 then
+  raise exception 'PROMO_KADALUARSA_GUARD_DRIFT: pemeriksaan assert_promo_manager hilang setelah tambalan';
+ end if;
+end $patch$;
 
 -- ── 3. Pagar tulis: aktif + sudah lewat tanggal tidak boleh tersimpan ────────
 -- Dua perlakuan berbeda, sengaja:

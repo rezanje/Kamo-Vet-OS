@@ -1,6 +1,6 @@
 // Pagar formulir: promo/voucher/kode yang sudah lewat tanggal tidak bisa
 // dihidupkan lagi sebelum masa berlakunya diperpanjang. Database menolak juga
-// (migrasi 20261031150000); yang diuji di sini pesannya ke pengguna dan bahwa
+// (migrasi 20261102010000); yang diuji di sini pesannya ke pengguna dan bahwa
 // tulisnya memang tidak terjadi.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 

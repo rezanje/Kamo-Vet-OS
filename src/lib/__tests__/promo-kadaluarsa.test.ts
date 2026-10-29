@@ -96,7 +96,7 @@ describe("mengaktifkan kembali harus lewat perpanjangan tanggal", () => {
 // Tanpa database di CI, invarian migrasinya diperiksa dari teks SQL-nya —
 // pola yang sama dengan promo-rls-migration.test.ts.
 describe("migrasi penonaktifan otomatis", () => {
-  const SQL = readFileSync("supabase/migrations/20261031150000_promo_kadaluarsa_otomatis.sql", "utf8");
+  const SQL = readFileSync("supabase/migrations/20261102010000_promo_kadaluarsa_otomatis.sql", "utf8");
 
   it("memakai tanggal Asia/Jakarta, bukan tanggal server", () => {
     expect(SQL).toContain("(now() at time zone 'Asia/Jakarta')::date");
