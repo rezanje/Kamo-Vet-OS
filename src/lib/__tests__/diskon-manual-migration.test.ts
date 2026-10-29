@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 // Keputusan pemilik 29 Okt 2026: diskon manual hanya untuk akun berwenang.
 // Tanpa database di CI, invariannya diperiksa dari teks migrasinya — termasuk
 // jangkar eksak yang dipakai menambal RPC yang sudah berjalan.
-const NAMA = "20261031120000_diskon_manual_akses.sql";
+const NAMA = "20261031220000_diskon_manual_akses.sql";
 const SQL = readFileSync(`supabase/migrations/${NAMA}`, "utf8");
 
 describe("migrasi akses diskon manual", () => {

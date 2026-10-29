@@ -10,7 +10,7 @@ select 'Tunai','d2000000-0000-4000-8000-000000000001',id from public.cash_accoun
 insert into auth.users(id,raw_user_meta_data)values('d1000000-0000-4000-8000-000000000004','{"full_name":"Finance Test"}'),('d1000000-0000-4000-8000-000000000005','{"full_name":"Staf tanpa shift"}');
 update public.profiles set role='FINANCE' where id='d1000000-0000-4000-8000-000000000004';
 update public.profiles set role='STAFF' where id='d1000000-0000-4000-8000-000000000005';
--- Diskon manual (migrasi 20261031120000): fixture ini sengaja memasang potongan,
+-- Diskon manual (migrasi 20261031220000): fixture ini sengaja memasang potongan,
 -- jadi peran STAFF diberi hak diskon manual supaya yang diuji tetap jalur aslinya.
 insert into public.role_capabilities(role,manual_discount) values('STAFF',true)
  on conflict(role) do update set manual_discount=true;

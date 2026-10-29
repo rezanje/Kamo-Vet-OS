@@ -9,7 +9,7 @@ select pg_temp.assert_ok(to_regclass('public.sale_payments') is not null,'Split 
 insert into auth.users(id,raw_user_meta_data) values
 ('e1100000-0000-4000-8000-000000000001','{"full_name":"Split cashier"}'),('e1100000-0000-4000-8000-000000000002','{"full_name":"Other cashier"}');
 update profiles set role='STAFF',is_active=true where id in('e1100000-0000-4000-8000-000000000001','e1100000-0000-4000-8000-000000000002');
--- Diskon manual (migrasi 20261031120000): fixture ini sengaja memasang potongan,
+-- Diskon manual (migrasi 20261031220000): fixture ini sengaja memasang potongan,
 -- jadi peran STAFF diberi hak diskon manual supaya yang diuji tetap jalur aslinya.
 insert into public.role_capabilities(role,manual_discount) values('STAFF',true)
  on conflict(role) do update set manual_discount=true;

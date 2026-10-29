@@ -33,7 +33,7 @@ insert into auth.users (id, raw_user_meta_data) values
   ('d1000000-0000-4000-8000-000000000002', '{"full_name":"Pemilik Test"}');
 update public.profiles set role = 'DOCTOR' where id = 'd1000000-0000-4000-8000-000000000001';
 update public.profiles set role = 'OWNER' where id = 'd1000000-0000-4000-8000-000000000002';
--- Diskon manual (migrasi 20261031120000): fixture ini sengaja memasang potongan,
+-- Diskon manual (migrasi 20261031220000): fixture ini sengaja memasang potongan,
 -- jadi peran DOCTOR diberi hak diskon manual supaya yang diuji tetap jalur aslinya.
 insert into public.role_capabilities(role,manual_discount) values('DOCTOR',true)
  on conflict(role) do update set manual_discount=true;
