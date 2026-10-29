@@ -18,9 +18,9 @@ type CatalogItem = { id: string; code: string; name: string; item_type: string; 
 export default async function TransaksiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; completed_sale_id?: string; draft_used?: string }>;
+  searchParams: Promise<{ error?: string; completed_sale_id?: string; draft_used?: string; hpp_warning?: string; hpp_sig?: string }>;
 }) {
-  const { error, completed_sale_id: completedSaleId, draft_used: usedDraftKey } = await searchParams;
+  const { error, completed_sale_id: completedSaleId, draft_used: usedDraftKey, hpp_warning: hppWarning, hpp_sig: hppSignature } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -136,6 +136,8 @@ export default async function TransaksiPage({
         kodeKampanye={kodeKampanye}
         voucherKampanye={voucherKampanye}
         hariIni={hariIni}
+        hppWarning={hppWarning ?? null}
+        hppSignature={hppSignature ?? null}
       />
     </>
   );

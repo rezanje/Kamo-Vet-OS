@@ -605,6 +605,11 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
 
           {allowDpAdmission && !editMode && <DpAdmissionFields selected={admitAfterDp} onChange={setAdmitAfterDp} />}
           {allowDpAdmission && <Link href={`/klinik/rekam-medis/${visitId}#persetujuan-rawat-inap`} className="back-btn">Periksa persetujuan / dokter Rawat Inap</Link>}
+
+          {/* P03: alasan penolakan muncul setelah simpan; aturannya diberitahukan lebih dulu. */}
+          <div role="status" style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 6 }}>
+            Obat/barang (termasuk paket berisi barang) dengan harga neto nol atau di bawah HPP akan ditolak saat disimpan. Jasa/tindakan tetap boleh gratis.
+          </div>
           {/* Aksi */}
           <PaymentActions print={editMode ? (
               <Link href={`/klinik/pembayaran/${visitId}/invoice${targetInvoiceId ? `?invoice_id=${targetInvoiceId}` : ""}`} className="btn-def" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", fontSize: 11, textDecoration: "none" }}>

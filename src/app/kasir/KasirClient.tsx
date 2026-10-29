@@ -729,7 +729,7 @@ export function KasirClient({
                 catat selisihnya lewat Stok Opname.
               </div>
             )}
-            {cart.some(line => line.item_type === "Persediaan") && <div className="p2ban" role="status">Harga neto barang Persediaan nol atau di bawah HPP FIFO aktif akan ditolak saat bayar. Jasa gratis tetap diperbolehkan.</div>}
+            {cart.some(line => line.item_type === "Persediaan" || line.item_type === "Grup") && <div className="p2ban" role="status">Harga neto barang Persediaan nol atau di bawah HPP FIFO aktif akan ditolak saat bayar. Paket Grup berisi barang dibandingkan dengan total HPP komponennya. Jasa gratis tetap diperbolehkan.</div>}
             {zeroPriceIssue && <div role="alert" style={{ color: "#b91c1c" }}>{zeroPriceIssue}</div>}
             <Row k={`Total item`} v={`${cart.reduce((a, l) => a + l.qty, 0)}`} />
             <Row k="Subtotal" v={rp(subtotal)} />

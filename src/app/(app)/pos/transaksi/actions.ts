@@ -24,6 +24,9 @@ import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { processQuestProgress } from "@/lib/quest-hook";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
+import { priceFloorFindings } from "@/lib/cashier-price-floor";
+import { quoteSaleLineCosts } from "@/lib/sale-fifo-quote";
+import { hppWarningConfirmed, hppWarningQuery, hppWarningsFrom, type HppWarning } from "@/lib/hpp-warning";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -189,6 +192,28 @@ export async function checkoutSale(formData: FormData) {
     redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
   }
 
+  // HPP disimpan per baris agar finalisasi database membukukan biaya FIFO riil.
+  const { data: wh } = await supabase
+    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
+
+  // P03: back office boleh menjual di bawah HPP, tetapi hanya setelah peringatan yang
+  // menyebut barangnya dikonfirmasi. Perkiraan HPP = FIFO gudang saat ini.
+  const hppGoods = rows.filter(row => row.item_id && row.item_type === "Persediaan");
+  if (wh && hppGoods.length > 0) {
+    let warnings: HppWarning[] = [];
+    try {
+      const lines = rows.map((row, index) => ({ ...row, promo_discount: row.item_id ? (promoPerLine.get(index)?.potongan ?? 0) : 0 }));
+      const costs = await quoteSaleLineCosts(supabase, wh.id, rows.map(row => ({
+        item_id: row.item_id, item_type: row.item_type, qty: Number(row.qty), faktor: row.faktor,
+      })));
+      warnings = hppWarningsFrom(priceFloorFindings(lines, total, costs));
+    } catch (error) {
+      // Peringatan tidak boleh menghentikan transaksi bila HPP tidak terbaca; FIFO riil tetap dibukukan.
+      console.error("[pos/transaksi] perkiraan HPP gagal dibaca:", error);
+    }
+    if (!hppWarningConfirmed(formData, warnings)) redirect(`/pos/transaksi?${hppWarningQuery(warnings)}`);
+  }
+
   // §2.1: tautkan ke shift kasir yang sedang terbuka (kalau ada) untuk rekonsiliasi kas.
   const { data: openShift } = await supabase
     .from("cashier_shifts").select("id")
@@ -235,9 +260,6 @@ export async function checkoutSale(formData: FormData) {
     redirect(`/pos/transaksi?error=${encodeURIComponent(pesan)}`);
   }
 
-  // HPP disimpan per baris agar finalisasi database membukukan biaya FIFO riil.
-  const { data: wh } = await supabase
-    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
   let checkoutFailure: string | null = null;
   try {
     const pendingLines: { id: string; line: typeof rows[number] }[] = [];

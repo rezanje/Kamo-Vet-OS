@@ -128,6 +128,9 @@ export function parseClinicPostingError(error: { code?: string; message: string 
   if (error?.code === "P0001") {
     if(error.message.startsWith('CARE_INVALID:'))return error.message.slice('CARE_INVALID:'.length).trim();
     if (error.message.startsWith("RECIPE_REQUIRED:")) return recipeRequiredMessage(error.message);
+    // P03: database names the line/package, its net price and HPP; the text is already for the cashier.
+    const priceFloor = /^(PRICE_ZERO|PRICE_BELOW_HPP):\s*([^\r\n]{1,300})/.exec(error.message);
+    if (priceFloor) return `Penjualan ditolak. ${priceFloor[2].trim()}`;
     const detailMessages: Record<string, string> = {
       STOCK_SHORT: "Stok tidak cukup",
       WAREHOUSE_MISSING: "Gudang aktif cabang belum tersedia",
