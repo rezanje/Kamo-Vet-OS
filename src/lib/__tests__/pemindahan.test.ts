@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatNoPemindahan, hitungStatusKirim, sisaTransit } from "../pemindahan";
+import { formatNoPemindahan, hitungStatusKirim, kurangStokPemindahan, sisaTransit } from "../pemindahan";
 
 describe("formatNoPemindahan", () => {
   it("format IT.YYYY.MM.NNNNN", () => {
@@ -29,5 +29,32 @@ describe("sisaTransit", () => {
   });
   it("tanpa penerimaan -> semua sisa", () => {
     expect(sisaTransit({ a: 3 }, {})).toEqual({ a: 3 });
+  });
+});
+
+describe("kekurangan stok gudang asal ketahuan sebelum form dikirim", () => {
+  const stok = new Map([["itm-a", 250]]);
+  it("menyebut barang, jumlah perlu, dan jumlah tersedia", () => {
+    expect(kurangStokPemindahan(
+      [{ item_id: "itm-a", nama: "Obat A", qty: 500, faktor: 1, satuan: "pcs" }], stok,
+    )).toBe("Obat A butuh 500 pcs, tersedia 250 pcs");
+  });
+  it("satuan besar dihitung ke satuan dasar dulu, lalu ditampilkan kembali", () => {
+    expect(kurangStokPemindahan(
+      [{ item_id: "itm-a", nama: "Obat A", qty: 30, faktor: 10, satuan: "box" }], stok,
+    )).toBe("Obat A butuh 30 box, tersedia 25 box");
+  });
+  it("dua baris barang sama dijumlahkan, bukan dibandingkan sendiri-sendiri", () => {
+    expect(kurangStokPemindahan([
+      { item_id: "itm-a", nama: "Obat A", qty: 150, faktor: 1, satuan: "pcs" },
+      { item_id: "itm-a", nama: "Obat A", qty: 150, faktor: 1, satuan: "pcs" },
+    ], stok)).toBe("Obat A butuh 300 pcs, tersedia 250 pcs");
+  });
+  it("stok cukup, baris kosong, dan stok minus", () => {
+    expect(kurangStokPemindahan([{ item_id: "itm-a", nama: "Obat A", qty: 250, faktor: 1, satuan: "pcs" }], stok)).toBeNull();
+    expect(kurangStokPemindahan([{ item_id: "", nama: "", qty: 5, faktor: 1, satuan: "pcs" }], stok)).toBeNull();
+    expect(kurangStokPemindahan(
+      [{ item_id: "itm-b", nama: "Obat B", qty: 1, faktor: 1, satuan: "pcs" }], new Map([["itm-b", -8]]),
+    )).toBe("Obat B butuh 1 pcs, tersedia 0 pcs");
   });
 });

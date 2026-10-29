@@ -10,7 +10,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { koreksiFakturGrosir } from "./actions";
 
 const rp = (n: number) => `Rp ${n.toLocaleString("id-ID", { maximumFractionDigits: 2 })}`;
-type Line = { id: string; nama: string; qty: number; harga: number; satuan: string | null };
+type Line = { id: string; nama: string; qty: number; harga: number; diskon: number; satuan: string | null };
 export function WholesaleCorrectionForm({ userId, invoiceId, revision, today, due, note, paid, total, taxRate, items }: {
   userId: string; invoiceId: string; revision: number; today: string; due: string; note: string;
   paid: number; total: number; taxRate: number; items: Line[];
@@ -22,7 +22,8 @@ export function WholesaleCorrectionForm({ userId, invoiceId, revision, today, du
   for (const item of items) {
     const price = Number(prices[item.id]);
     if (prices[item.id] === "" || !Number.isFinite(price) || price < 0 || price > 1000000000) { valid = false; continue; }
-    dpp = dpp.plus(new Decimal(price).times(item.qty));
+    // Diskon baris ikut terbawa ke faktur pengganti, jadi pratinjaunya harus memotongnya juga.
+    dpp = dpp.plus(new Decimal(price).times(item.qty)).minus(item.diskon);
   }
   const newTotal = action === "cancel" ? 0 : dpp.plus(dpp.times(taxRate).div(100).toDecimalPlaces(0, Decimal.ROUND_HALF_UP)).toNumber();
   const credit = Math.max(0, paid - newTotal);
@@ -50,10 +51,11 @@ export function WholesaleCorrectionForm({ userId, invoiceId, revision, today, du
         <div><label className="flab">Tanggal koreksi</label><input className="fi" type="date" name="tanggal" required defaultValue={today} max={today} /></div>
         <div><label className="flab">Jatuh tempo pengganti</label><input className="fi" type="date" name="jatuh_tempo" required={action === "replace"} defaultValue={due < today ? today : due} /></div>
       </div>
-      <table className="tbl"><thead><tr><th>Barang terkirim</th><th>Qty tetap</th><th>Harga pengganti</th></tr></thead>
+      <table className="tbl"><thead><tr><th>Barang terkirim</th><th>Qty tetap</th><th>Diskon tetap</th><th>Harga pengganti</th></tr></thead>
         <tbody>{items.map(item => <tr key={item.id}>
           <td>{item.nama}<input type="hidden" name="line_id" value={item.id} /></td>
           <td>{item.qty} {item.satuan}</td>
+          <td>{rp(item.diskon)}</td>
           <td><NumberInput className="fi" type="number" name={`harga_${item.id}`} aria-label={`Harga ${item.nama}`} min="0" max="1000000000" step="0.01" value={prices[item.id]} onInput={e => { const value = e.currentTarget.value; setPrices(p => ({ ...p, [item.id]: value })); }} readOnly={action === "cancel"} /></td>
         </tr>)}</tbody>
       </table>

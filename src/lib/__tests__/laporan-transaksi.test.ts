@@ -77,6 +77,6 @@ describe("perHari", () => {
 describe("perKanal", () => {
   it("menghitung tiap pintu transaksi, termasuk yang nol", () => {
     expect(perKanal([t({ kanal: "POS" }), t({ kanal: "Klinik" }), t({ kanal: "Klinik" })]))
-      .toEqual({ POS: 1, Online: 0, Klinik: 2 });
+      .toEqual({ POS: 1, Online: 0, Klinik: 2, Grosir: 0 });
   });
 });

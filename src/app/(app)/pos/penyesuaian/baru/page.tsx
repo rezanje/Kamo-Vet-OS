@@ -82,6 +82,8 @@ export default async function PenyesuaianBaruPage({
       {dipilih && (
         <PreservedForm action={simpanPenyesuaian}>
           <input type="hidden" name="warehouse_id" value={dipilih.id} />
+          {/* Satu kunci per formulir: kirim ulang formulir yang sama tidak memposting dua kali. */}
+          <input type="hidden" name="request_key" value={crypto.randomUUID()} />
 
           <div className="crm-sec">
             <SecHeader

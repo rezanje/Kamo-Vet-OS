@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
+import { EmployeePicker } from "@/components/EmployeePicker";
 import { simpanPenugasanCabang } from "./actions";
 
-type Employee = { id: string; nama: string; jabatan: string | null; branch_id: string | null };
+type Employee = { id: string; nama: string; jabatan: string | null; branch_id: string | null; branchName?: string | null };
 export function PenugasanCabangForm({ employees, branches, today }: {
   employees: Employee[]; branches: { id: string; name: string }[]; today: string;
 }) {
@@ -18,10 +19,9 @@ export function PenugasanCabangForm({ employees, branches, today }: {
     <div className="grid2">
       <div>
         <label className="flab" htmlFor="assignment-employee">Karyawan *</label>
-        <select id="assignment-employee" className="fi" name="employee_id" required value={employeeId} onChange={event => { setEmployeeId(event.target.value); setSelected([]); }}>
-          <option value="">Pilih karyawan aktif</option>
-          {employees.map(row => <option key={row.id} value={row.id}>{row.nama} · {row.jabatan ?? "—"}</option>)}
-        </select>
+        <EmployeePicker inputId="assignment-employee" name="employee_id" required ariaLabel="Karyawan"
+          placeholder="Ketik nama karyawan aktif, jabatan, atau cabang…"
+          employees={employees} value={employeeId} onChange={id => { setEmployeeId(id); setSelected([]); }} />
       </div>
       <div>
         <label className="flab" htmlFor="assignment-date">Mulai berlaku *</label>

@@ -129,14 +129,17 @@ export async function loadHistoricalInventory(client: SupabaseClient, input: { t
   if (settingsError) throw new Error(settingsError.message);
   const activatedAt = typeof settings?.activated_at === "string" ? tanggalWIB(settings.activated_at) : null;
   const available = settings?.method === "moving_average" && !!activatedAt && asOf >= activatedAt;
-  if (!available) return { asOf, activatedAt, available: false as const, branches, selectedIds, selected, canViewLedger, rows: [], summary: [], total: null };
-
-  const warehouses: Warehouse[] = [];
-  for (let start = 0; start < selected.length; start += 100) {
-    const ids = selected.slice(start, start + 100).map(branch => branch.id);
-    warehouses.push(...await readReportRows<Warehouse>(async (from, to) => client.from("warehouses")
-      .select("id,branch_id,name,code", { count: "exact" }).in("branch_id", ids).order("id").range(from, to)));
+  const fullBranchAccess = allBranches.length > 0 && branches.length === allBranches.length;
+  const includeUnallocated = fullBranchAccess && selected.length === branches.length;
+  if (!available) {
+    // M01: in FIFO mode only TODAY's position can be read exactly (remaining layers).
+    const fifoCurrent = settings?.method !== "moving_average" && asOf === hariIniWIB()
+      ? await fifoPositionVersusLedger(client, asOf, selected, await warehousesOf(client, selected), canViewLedger, includeUnallocated)
+      : null;
+    return { asOf, activatedAt, available: false as const, branches, selectedIds, selected, canViewLedger, rows: [], summary: [], total: null, fifoCurrent, fullBranchAccess };
   }
+
+  const warehouses = await warehousesOf(client, selected);
   const events: CostEvent[] = [];
   for (let start = 0; start < warehouses.length; start += 100) {
     const ids = warehouses.slice(start, start + 100).map(warehouse => warehouse.id);
@@ -204,9 +207,7 @@ export async function loadHistoricalInventory(client: SupabaseClient, input: { t
       qty: position.qty.toFixed(), value, valueBasis, estimated, estimateAverage: valueBasis === "last-average" && lastAverage ? lastAverage.toFixed() : null,
       average, negative, source: event.source, sourceRef: event.source_ref, sourceDate: event.tanggal };
   }).sort((a, b) => a.branch.localeCompare(b.branch) || a.warehouse.localeCompare(b.warehouse) || a.item.localeCompare(b.item) || a.id.localeCompare(b.id));
-  const fullBranchAccess = allBranches.length > 0 && branches.length === allBranches.length;
-  const ledger = canViewLedger ? await inventoryLedgerAtDate(client, asOf, selected.map(branch => branch.id),
-    fullBranchAccess && selected.length === branches.length) : null;
+  const ledger = canViewLedger ? await inventoryLedgerAtDate(client, asOf, selected.map(branch => branch.id), includeUnallocated) : null;
   const subtotal = (subset: typeof rows) => subset.some(row => row.value === null) ? null
     : subset.reduce((sum, row) => sum.plus(row.value!), new Exact(0)).toFixed();
   const summary = selected.map(branch => {
@@ -224,5 +225,58 @@ export async function loadHistoricalInventory(client: SupabaseClient, input: { t
     estimatedCount: summary.reduce((sum, branch) => sum + branch.estimatedCount, 0),
     estimatedValue: summary.reduce((sum, branch) => sum.plus(branch.estimatedValue), new Exact(0)).toFixed(),
     scopedLedgerValue, scopedDifference: total === null || scopedLedgerValue === null ? null : new Exact(total).minus(scopedLedgerValue).toFixed(),
-    unallocatedLedger: ledger && fullBranchAccess && selected.length === branches.length ? ledger.unallocated.toFixed() : null, fullBranchAccess };
+    unallocatedLedger: ledger && includeUnallocated ? ledger.unallocated.toFixed() : null, fullBranchAccess, fifoCurrent: null };
+}
+
+async function warehousesOf(client: SupabaseClient, selected: Branch[]) {
+  const warehouses: Warehouse[] = [];
+  for (let start = 0; start < selected.length; start += 100) {
+    const ids = selected.slice(start, start + 100).map(branch => branch.id);
+    warehouses.push(...await readReportRows<Warehouse>(async (from, to) => client.from("warehouses")
+      .select("id,branch_id,name,code", { count: "exact" }).in("branch_id", ids).order("id").range(from, to)));
+  }
+  return warehouses;
+}
+
+/**
+ * M01 FIFO reconciliation, read-only: remaining FIFO layer value per branch
+ * (sum qty_left × unit_cost, all warehouses incl. inactive) against GL 1301.
+ * Negative stock has no layer and therefore no value here; it is counted, never
+ * estimated. A difference is shown for review only — nothing is journaled.
+ */
+async function fifoPositionVersusLedger(client: SupabaseClient, asOf: string, selected: Branch[], warehouses: Warehouse[],
+  canViewLedger: boolean, includeUnallocated: boolean) {
+  const branchOf = new Map(warehouses.map(warehouse => [warehouse.id, warehouse.branch_id]));
+  const layerValue = new Map(selected.map(branch => [branch.id, new Exact(0)]));
+  const negative = new Map(selected.map(branch => [branch.id, 0]));
+  for (let start = 0; start < warehouses.length; start += 100) {
+    const ids = warehouses.slice(start, start + 100).map(warehouse => warehouse.id);
+    const layers = await readReportRows<{ id: string; warehouse_id: string; qty_left: number | string; unit_cost: number | string }>(async (from, to) => client.from("stock_layers")
+      .select("id,warehouse_id,qty_left::text,unit_cost::text", { count: "exact" }).in("warehouse_id", ids).gt("qty_left", 0).order("id").range(from, to));
+    for (const layer of layers) {
+      const qty = amount(layer.qty_left, "Qty lapisan");
+      const cost = amount(layer.unit_cost, "Biaya lapisan");
+      if (cost.isNegative()) throw new ReportInputError("Biaya lapisan stok negatif; rekonsiliasi sumber diperlukan.");
+      const branch = branchOf.get(layer.warehouse_id)!;
+      layerValue.set(branch, layerValue.get(branch)!.plus(qty.times(cost)));
+    }
+    const minus = await readReportRows<{ id: string; warehouse_id: string }>(async (from, to) => client.from("stock")
+      .select("id,warehouse_id", { count: "exact" }).in("warehouse_id", ids).lt("qty", 0).order("id").range(from, to));
+    for (const row of minus) {
+      const branch = branchOf.get(row.warehouse_id)!;
+      negative.set(branch, negative.get(branch)! + 1);
+    }
+  }
+  const ledger = canViewLedger ? await inventoryLedgerAtDate(client, asOf, selected.map(branch => branch.id), includeUnallocated) : null;
+  const summary = selected.map(branch => {
+    const value = layerValue.get(branch.id)!.toFixed();
+    const ledgerValue = ledger?.balances.get(branch.id)?.toFixed() ?? null;
+    return { ...branch, layerValue: value, ledgerValue, negativeCount: negative.get(branch.id)!,
+      difference: ledgerValue === null ? null : new Exact(value).minus(ledgerValue).toFixed() };
+  });
+  const total = summary.reduce((sum, branch) => sum.plus(branch.layerValue), new Exact(0)).toFixed();
+  const ledgerTotal = ledger ? summary.reduce((sum, branch) => sum.plus(branch.ledgerValue ?? 0), new Exact(0)).toFixed() : null;
+  return { summary, total, ledgerTotal, difference: ledgerTotal === null ? null : new Exact(total).minus(ledgerTotal).toFixed(),
+    unallocatedLedger: ledger && includeUnallocated ? ledger.unallocated.toFixed() : null,
+    ledgerMissing: canViewLedger && ledger === null };
 }

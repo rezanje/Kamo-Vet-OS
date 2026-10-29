@@ -33,7 +33,7 @@ declare
   v_periods integer;
   v_discharged_at timestamptz;
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'authenticated'
+  if coalesce(auth.role(), '') <> 'authenticated'
      or v_user is null then
     raise exception using errcode='P0001', message='ACCESS_DENIED: pengguna tidak terautentikasi';
   end if;

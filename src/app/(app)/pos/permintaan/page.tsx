@@ -122,14 +122,14 @@ export default async function PermintaanPage({
                             </form>
                           </>
                         )}
+                        {/* "Tandai Dikirim" sekali tekan dihapus: sejak Okt 2026 pengiriman
+                            mengeluarkan stok gudang beneran, jadi jumlah per barang harus
+                            ditetapkan dulu di halaman detail — di situ stok gudang terlihat
+                            dan kekurangannya ditolak sebelum barang dianggap jalan. */}
                         {r.status === "Disetujui" && (
-                          <form action={updateRequestStatus}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <input type="hidden" name="status" value="Dikirim" />
-                            <button type="submit" className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5 }}>
-                              <i className="ti ti-truck-delivery" /> Tandai Dikirim
-                            </button>
-                          </form>
+                          <Link href={`/pos/permintaan/${r.id}`} className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                            <i className="ti ti-truck-delivery" /> Siapkan &amp; kirim
+                          </Link>
                         )}
                         {/* "Selesai" TIDAK bisa ditekan dari sini. Dulu bisa, dan itu cuma
                             mengganti label: stok DC tidak berkurang, stok cabang tidak

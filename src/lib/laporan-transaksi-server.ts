@@ -5,10 +5,17 @@ import { createClient } from "./supabase/server";
 import { tanggalWIB } from "./tanggal";
 import { batasTanggalWIB } from "./laporan-transaksi";
 import type { Trx } from "./laporan-transaksi";
+import { fakturGrosirOmzet, omzetDokumenGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "./laporan-grosir";
 import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
+
+/** Baris faktur grosir seperti dibaca laporan omzet. */
+type FakturGrosirRow = FakturGrosirInti & {
+  branch_id: string | null; customer_id: string | null; tanggal: string; total: number;
+  branches: Rel<{ name: string }>; sales_invoice_items: { id: string }[] | null;
+};
 
 
 export type HasilTarik = {
@@ -23,7 +30,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   // jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
 
-  const [hasilSales, hasilInvoices, hasilReturs, hasilRefundKlinik, hasilCabang] =
+  const [hasilSales, hasilInvoices, hasilGrosir, hasilReturs, hasilRefundKlinik, hasilCabang] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
         .select("id, branch_id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(id)", { count: "exact" })
@@ -33,6 +40,11 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
         .select("id, total, created_at, visits(customer_id, branch_id, branches(name)), invoice_items(id)", { count: "exact" })
         .is("voided_at", null)
         .gte("created_at", mulai).lte("created_at", akhir)),
+      // Faktur grosir memakai kolom tanggal faktur (date, sudah WIB), bukan created_at:
+      // fakturnya boleh dibuat mundur dan omzetnya milik tanggal fakturnya.
+      completeReportQuery(supabase.from("sales_invoices")
+        .select(`${SELECT_FAKTUR_GROSIR}, branches(name), sales_invoice_items(id)`, { count: "exact" })
+        .gte("tanggal", dari).lte("tanggal", sampai)),
       // Retur ditarik tanpa batas tanggal: struk bulan lalu bisa diretur bulan ini,
       // dan omzet struk itu harus terlihat sudah berkurang.
       completeReportQuery(supabase.from("sales_returns").select("id, sale_id, total", { count: "exact" }).is("voided_at", null)),
@@ -47,6 +59,7 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
   // completeReportQuery throws before returning any failed or incomplete source.
   const { data: sales } = hasilSales;
   const { data: invoices } = hasilInvoices;
+  const { data: grosir } = hasilGrosir;
   const { data: returs } = hasilReturs;
   const { data: refundKlinik } = hasilRefundKlinik;
   const { data: cabangList } = hasilCabang;
@@ -98,6 +111,21 @@ export async function tarikTransaksi(dari: string, sampai: string): Promise<Hasi
     });
   }
 
+  // Grosir tidak punya dokumen retur sendiri: pengurangan nilai dikerjakan lewat
+  // koreksi faktur (faktur lama dibatalkan, faktur pengganti terbit), dan itu sudah
+  // tersaring di fakturGrosirOmzet. Jadi tidak ada retur yang perlu dikurangkan di sini.
+  for (const f of fakturGrosirOmzet((grosir ?? []) as unknown as FakturGrosirRow[])) {
+    trx.push({
+      tanggal: f.tanggal,
+      cabang: one(f.branches)?.name ?? "—",
+      cabangId: f.branch_id ?? null,
+      customerId: f.customer_id ?? null,
+      omzet: omzetDokumenGrosir(f),
+      item: f.sales_invoice_items?.length ?? 0,
+      kanal: "Grosir",
+    });
+  }
+
   return {
     trx,
     cabangList: (cabangList ?? []) as { id: string; name: string }[],
@@ -118,16 +146,20 @@ export type TrxRiwayat = {
 export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[]; terpotong: boolean }> {
   const supabase = await createClient();
   const akhir = `${sampai}T23:59:59+07:00`;
-  const [hasilSales, hasilInvoices] = await Promise.all([
+  const [hasilSales, hasilInvoices, hasilGrosir] = await Promise.all([
     completeReportQuery(supabase.from("sales")
       .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at, voided_at, branches(name)", { count: "exact" })
       .lte("created_at", akhir)),
     completeReportQuery(supabase.from("invoices")
       .select("id, total, created_at, visits(customer_id, branches(name))", { count: "exact" })
       .is("voided_at", null).lte("created_at", akhir)),
+    completeReportQuery(supabase.from("sales_invoices")
+      .select(`${SELECT_FAKTUR_GROSIR}, branches(name)`, { count: "exact" })
+      .lte("tanggal", sampai)),
   ]);
   const { data: sales } = hasilSales;
   const { data: invoices } = hasilInvoices;
+  const { data: grosir } = hasilGrosir;
 
   type S = SaleCompletion & { customer_id: string | null; total: number; created_at: string; branches: Rel<{ name: string }> };
   type I = { total: number; created_at: string; visits: Rel<{ customer_id: string | null; branches: Rel<{ name: string }> }> };
@@ -148,6 +180,14 @@ export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[];
       tanggal: tanggalWIB(i.created_at),
       cabang: one(v?.branches ?? null)?.name ?? "—",
       omzet: Number(i.total) || 0,
+    });
+  }
+  for (const f of fakturGrosirOmzet((grosir ?? []) as unknown as FakturGrosirRow[])) {
+    trx.push({
+      customerId: f.customer_id ?? null,
+      tanggal: f.tanggal,
+      cabang: one(f.branches)?.name ?? "—",
+      omzet: omzetDokumenGrosir(f),
     });
   }
 

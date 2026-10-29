@@ -476,7 +476,12 @@ export async function checkoutKasir(formData: FormData) {
         service_performers: r.service_performers,
         item_discount_type: r.item_discount_type ?? null,
         item_discount_value: Math.max(0, Number(r.item_discount_value) || 0),
-        promo_id: r.item_id ? (promoPerItem.get(lineIndex) ?? null) : null,
+        // Promo hanya dicatat kalau uangnya benar-benar keluar. Diskon manual
+        // kasir menang atas promo (lib/pos-calc), jadi menyimpan promo_id pada
+        // baris yang potongannya nol membuat laporan promo menghitung pemakaian
+        // program yang tidak pernah membayar apa pun — dan struk menamai diskon
+        // kasir dengan nama promo.
+        promo_id: r.item_id && linePromoApplied(r) > 0 ? (promoPerItem.get(lineIndex) ?? null) : null,
         promo_discount: linePromoApplied(r),
         hpp: r.item_id ? 0 : null,
       }).select("id").single();

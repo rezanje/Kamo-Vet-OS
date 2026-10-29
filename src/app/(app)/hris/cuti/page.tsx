@@ -2,6 +2,7 @@ import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { EmployeePicker } from "@/components/EmployeePicker";
 import { ajukanCuti, updateLeaveStatus } from "./actions";
 
 type Rel<T> = T | T[] | null;
@@ -130,15 +131,9 @@ export default async function CutiPage({
         <form action={ajukanCuti}>
           <div className="grid2">
             <div>
-              <label className="flab">Karyawan *</label>
-              <select className="fi" name="employee_id" required>
-                <option value="">Pilih karyawan aktif</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nama}
-                  </option>
-                ))}
-              </select>
+              <label className="flab" htmlFor="cuti-employee">Karyawan *</label>
+              <EmployeePicker inputId="cuti-employee" name="employee_id" required employees={employees}
+                placeholder="Ketik nama karyawan aktif…" />
             </div>
             <div>
               <label className="flab">Jenis *</label>
