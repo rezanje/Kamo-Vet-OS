@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
 import { ClearPosDraft } from "@/components/ClearPosDraft";
 import { receiptPaymentRows, saleMerchandiseTotal } from "@/lib/sale-payment-reporting";
-import { servicePerformerNames } from "@/lib/service-performers";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -29,7 +28,7 @@ export default async function PosStrukPage({ params, searchParams }: {
   const paymentRows = receiptPaymentRows(sale);
 
   const { data: items } = await supabase
-    .from("sale_items").select("nama, qty, harga, satuan, service_performers").eq("sale_id", saleId).order("created_at");
+    .from("sale_items").select("nama, qty, harga, satuan").eq("sale_id", saleId).order("created_at");
 
   const cust = one(sale.customers) as { name: string; customer_categories?: unknown } | null;
   const branch = one(sale.branches);
@@ -65,7 +64,6 @@ export default async function PosStrukPage({ params, searchParams }: {
         {(items ?? []).map((it, i) => (
           <div key={i} style={{ marginBottom: 3 }}>
             <div>{it.nama}</div>
-            {it.service_performers != null && <div style={{ fontSize: 9 }}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>{it.qty}{it.satuan ? ` ${it.satuan}` : ""} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
             </div>
@@ -87,7 +85,6 @@ export default async function PosStrukPage({ params, searchParams }: {
         {Number(sale.kembali) > 0 && <Row k="Kembali" v={rp(sale.kembali)} />}
         {sale.poin_earned > 0 && <Row k="Poin didapat" v={`+${sale.poin_earned}`} />}
         <Hr />
-        <div className="no-print" style={{ fontSize: 9 }}>Pelaksana per baris hanya ditampilkan jika tercatat; dokumen lama dapat belum memilikinya.</div>
         <div style={{ textAlign: "center", fontSize: 10, marginTop: 6 }}>Terima kasih 🐾<br />Barang dibeli tidak dapat dikembalikan</div>
       </div>
     </>

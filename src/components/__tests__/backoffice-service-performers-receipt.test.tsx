@@ -14,22 +14,24 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from(tabl
 } }) }));
 import Receipt from "@/app/(app)/pos/struk/[saleId]/page";
 beforeEach(() => { state.queries = []; state.cashierName = "Kasir tersimpan"; state.lines = []; });
-it("prints stored cashier and line performer names while keeping legacy attribution honest", async () => {
+// Permintaan Andri 29 Okt 2026: struk petshop tidak menyebut nama tenaga penjual
+// sama sekali. Struk kasir juga tidak terhubung ke kunjungan, jadi tidak ada dokter PJ.
+it("prints the stored cashier but never a line performer name", async () => {
   state.lines = [
     { nama: "Jasa baru", qty: 1, harga: 100, service_performers: { version: 1, doctor_id: "doctor", staff_id: "staff", doctor_name: "Dokter saat transaksi", staff_name: "Staf saat transaksi" } },
     { nama: "Jasa lama", qty: 1, harga: 100, service_performers: null },
   ];
   const markup = renderToStaticMarkup(await Receipt({ params: Promise.resolve({ saleId: "sale" }) }));
-  expect(markup).toContain("Kasir tersimpan"); expect(markup).toContain("Dokter saat transaksi"); expect(markup).toContain("Staf saat transaksi");
-  expect(markup).toContain("Pelaksana per baris hanya ditampilkan jika tercatat; dokumen lama dapat belum memilikinya.");
-  expect(markup).not.toContain("Pelaksana per baris belum tercatat (data lama)");
+  expect(markup).toContain("Kasir tersimpan");
+  expect(markup).not.toContain("Dokter saat transaksi"); expect(markup).not.toContain("Staf saat transaksi");
+  expect(markup).not.toContain("Pelaksana");
+  expect(markup).not.toContain("Dokter PJ");
   expect(state.queries).toEqual(["sales", "sale_items"]);
 });
 it("keeps physical lines free from claims that a service performer is missing", async () => {
   state.lines = [{ nama: "Pakan", qty: 1, harga: 200, service_performers: null }];
   const markup = renderToStaticMarkup(await Receipt({ params: Promise.resolve({ saleId: "sale" }) }));
-  expect(markup).not.toContain("Pelaksana per baris belum tercatat (data lama)");
-  expect(markup.match(/Pelaksana per baris hanya ditampilkan/g)).toHaveLength(1);
+  expect(markup).not.toContain("Pelaksana");
 });
 it("shows a missing historical cashier snapshot without reconstructing an employee name", async () => {
   state.cashierName = null;
