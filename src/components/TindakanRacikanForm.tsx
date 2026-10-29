@@ -8,6 +8,7 @@ import type { CompoundDraft } from "@/lib/master-compound-cart";
 import type { KatalogRacikan } from "@/lib/katalog-racikan";
 import type { ItemUnit } from "@/lib/satuan";
 import { kategoriWajibConsent } from "@/lib/tindakan";
+import { alasanRacikanBelumLengkap } from "@/lib/racikan";
 
 /** Satu form untuk tindakan dan racikan (permintaan Andri 29 Okt): satu pemilih item dan
  * satu daftar "Bahan / BMHP". Komponen ini murni lapisan tampilan — bentuk data yang
@@ -24,16 +25,20 @@ const BENTUK = ["sirup", "nebul", "salep", "puyer", "kapsul", "lainnya"];
 const PER_HALAMAN = 40;
 
 export function TindakanRacikanForm<T extends FormItem>({
-  tindakanItems, racikanItems, bmhpItems, bahanItems, katalogRacikan, bolehManual,
-  tindakan, racikan, editing, harga,
+  tindakanItems = [], racikanItems, bmhpItems = [], bahanItems, katalogRacikan, bolehManual,
+  tindakan = null, racikan, editing, harga, labelSimpan,
   onPilihTindakan, onPilihRacikan, onUbahBmhp, onUbahRacikan, onSimpan, onBatal,
 }: {
-  tindakanItems: T[]; racikanItems: T[]; bmhpItems: T[]; bahanItems: T[];
+  /** Tanpa daftar tindakan form ini jadi form racikan saja (halaman detail rekam medis). */
+  tindakanItems?: T[]; racikanItems: T[]; bmhpItems?: T[]; bahanItems: T[];
   katalogRacikan: KatalogRacikan[]; bolehManual: boolean;
-  tindakan: TindakanDraft<T> | null; racikan: CompoundDraft; editing: boolean; harga: number;
-  onPilihTindakan: (item: T) => void; onPilihRacikan: (item: T) => void;
-  onUbahBmhp: (rows: BmhpRow[]) => void; onUbahRacikan: (value: CompoundDraft) => void;
-  onSimpan: () => void; onBatal: () => void;
+  tindakan?: TindakanDraft<T> | null; racikan: CompoundDraft; editing: boolean; harga: number;
+  /** Teks tombol simpan bila bukan "tambah ke keranjang". */
+  labelSimpan?: string;
+  onPilihTindakan?: (item: T) => void; onPilihRacikan: (item: T) => void;
+  onUbahBmhp?: (rows: BmhpRow[]) => void; onUbahRacikan: (value: CompoundDraft) => void;
+  /** Tanpa onSimpan tombolnya menyimpan form induk (submit), bukan memanggil keranjang. */
+  onSimpan?: () => void; onBatal: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -41,6 +46,9 @@ export function TindakanRacikanForm<T extends FormItem>({
   const sku = racikanItems.find(item => item.id === racikan.saleItemId) ?? null;
   const terpilih = tindakan ? tindakan.item : sku;
   const isRacikan = !tindakan && !!sku;
+  // Halaman detail rekam medis memakai form yang sama, tapi hanya untuk racikan.
+  const hanyaRacikan = !tindakanItems.length;
+  const judul = hanyaRacikan ? "racikan" : "tindakan / racikan";
 
   const daftar = [
     ...tindakanItems.map(item => ({ item, jenis: "Tindakan" as const })),
@@ -63,13 +71,18 @@ export function TindakanRacikanForm<T extends FormItem>({
 
   let bmhpValid = true;
   try { bmhpInput(tindakan?.bmhp ?? []); } catch { bmhpValid = false; }
-  const racikanValid = !!sku && (!!formula || (!racikan.formulaId && bolehManual
-    && racikan.ingredients.length > 0 && racikan.ingredients.every(row => Number.isFinite(row.qty) && row.qty > 0)));
-  const valid = tindakan ? bmhpValid : racikanValid;
+  // Tombol simpan yang mati selalu menyebut alasannya, bukan diam saja.
+  const alasan = tindakan
+    ? (bmhpValid ? "" : "Periksa jumlah dan satuan BMHP.")
+    : alasanRacikanBelumLengkap({
+      skuDipilih: !!sku, resepResmiDipilih: !!formula, resepResmiTerisi: !!racikan.formulaId,
+      adaResepResmi: katalogSku.length > 0, bolehManual, bahan: racikan.ingredients,
+    });
+  const valid = !alasan;
 
   const pilih = (item: T, jenis: "Tindakan" | "Racikan") => {
     setSearch(""); setPage(1);
-    if (jenis === "Tindakan") onPilihTindakan(item); else onPilihRacikan(item);
+    if (jenis === "Tindakan") onPilihTindakan?.(item); else onPilihRacikan(item);
   };
   const stokTeks = (id: string, cadangan: string) => {
     const item = (tindakan ? bmhpItems : bahanItems).find(row => row.id === id);
@@ -81,14 +94,14 @@ export function TindakanRacikanForm<T extends FormItem>({
     return item ? [item.unit, ...extra.filter(unit => unit !== item.unit)] : [];
   };
 
-  return <section aria-label="Pilih tindakan / racikan" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-    <input className="fi" aria-label="Cari tindakan / racikan" placeholder="Cari tindakan atau racikan…"
+  return <section aria-label={`Pilih ${judul}`} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <input className="fi" aria-label={`Cari ${judul}`} placeholder={hanyaRacikan ? "Cari obat racik…" : "Cari tindakan atau racikan…"}
       value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} />
     <div style={{ maxHeight: 210, overflowY: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
       {!daftar.length && <div style={{ fontSize: 10.5, color: "var(--td)", padding: 10 }}>
-        Belum ada tindakan atau obat racik aktif. Tambahkan di Barang &amp; Jasa.
+        {hanyaRacikan ? "Belum ada obat racik aktif." : "Belum ada tindakan atau obat racik aktif."} Tambahkan di Barang &amp; Jasa.
       </div>}
-      {!!daftar.length && !cocok.length && <div style={{ fontSize: 10.5, color: "var(--td)", padding: 10 }}>Tidak ada tindakan / racikan cocok.</div>}
+      {!!daftar.length && !cocok.length && <div style={{ fontSize: 10.5, color: "var(--td)", padding: 10 }}>Tidak ada {judul} cocok.</div>}
       {cocok.slice((halamanKini - 1) * PER_HALAMAN, halamanKini * PER_HALAMAN).map(({ item, jenis }) => <div key={`${jenis}-${item.id}`}
         style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", borderBottom: ".5px solid var(--bd)" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -149,23 +162,23 @@ export function TindakanRacikanForm<T extends FormItem>({
       </>}
 
       <fieldset style={{ border: 0, padding: 0, margin: "2px 0", minWidth: 0 }}>
-        <legend style={{ fontSize: 11, fontWeight: 600 }}>Bahan / BMHP · {terpilih.name}</legend>
+        <legend style={{ fontSize: 11, fontWeight: 600 }}>{hanyaRacikan ? "Bahan racikan" : "Bahan / BMHP"} · {terpilih.name}</legend>
 
         {tindakan && <>
           {tindakan.bmhp.map(row => <BahanBaris key={row.item_id} nama={row.nama} keterangan={stokTeks(row.item_id, row.unit)}
             qtyLabel={`Jumlah BMHP ${row.nama}`} qty={row.qty}
-            onQty={qty => onUbahBmhp(tindakan.bmhp.map(item => item.item_id === row.item_id ? { ...item, qty } : item))}
+            onQty={qty => onUbahBmhp?.(tindakan.bmhp.map(item => item.item_id === row.item_id ? { ...item, qty } : item))}
             satuan={row.unit} satuanPilihan={satuanPilihan(row.item_id)} satuanLabel={`Satuan BMHP ${row.nama}`}
-            onSatuan={unit => onUbahBmhp(tindakan.bmhp.map(item => item.item_id === row.item_id ? { ...item, unit } : item))}
+            onSatuan={unit => onUbahBmhp?.(tindakan.bmhp.map(item => item.item_id === row.item_id ? { ...item, unit } : item))}
             hapusLabel={`Hapus BMHP ${row.nama}`}
-            onHapus={() => onUbahBmhp(tindakan.bmhp.filter(item => item.item_id !== row.item_id))} />)}
+            onHapus={() => onUbahBmhp?.(tindakan.bmhp.filter(item => item.item_id !== row.item_id))} />)}
           {tindakan.bmhp.length < BMHP_MAX_COMPONENTS && <SearchableItemPicker
             items={bmhpItems.filter(item => !tindakan.bmhp.some(row => row.item_id === item.id))
               .map(item => ({ id: item.id, code: item.code ?? "", name: `${item.name} (stok ${item.stok} ${item.unit})` }))}
             value="" ariaLabel={`Tambah BMHP ${terpilih.name}`} placeholder="Tambah BMHP dipakai (opsional)"
             onChange={id => {
               const item = bmhpItems.find(row => row.id === id);
-              if (item) onUbahBmhp([...tindakan.bmhp, { item_id: item.id, nama: item.name, qty: 1, unit: item.unit }]);
+              if (item) onUbahBmhp?.([...tindakan.bmhp, { item_id: item.id, nama: item.name, qty: 1, unit: item.unit }]);
             }} />}
           <div style={{ fontSize: 9, color: "var(--tm)" }}>Stok BMHP dipotong saat tagihan klinik disimpan; biayanya masuk HPP tindakan, harga jual tidak berubah.</div>
         </>}
@@ -206,13 +219,11 @@ export function TindakanRacikanForm<T extends FormItem>({
         </> : <div style={{ fontSize: 10.5, color: "var(--tm)" }}>Pilih resep resmi untuk mengisi bahan racikan.</div>)}
       </fieldset>
 
-      {!valid && <div role="alert" style={{ fontSize: 10, color: "#b91c1c" }}>
-        {tindakan ? "Periksa jumlah dan satuan BMHP." : "Pilih komposisi racikan: resep resmi atau minimal satu bahan."}
-      </div>}
+      {!!alasan && <div role="alert" style={{ fontSize: 10, color: "#b91c1c" }}>{alasan}</div>}
       <div style={{ display: "flex", gap: 6 }}>
-        <button type="button" className="btn-acc" disabled={!valid} onClick={onSimpan}
-          aria-label={editing ? `Simpan ${terpilih.name}` : `Tambah ${terpilih.name} ke keranjang`}>
-          {editing ? "Simpan" : "Tambah ke keranjang"}
+        <button type={onSimpan ? "button" : "submit"} className="btn-acc" disabled={!valid} onClick={onSimpan}
+          aria-label={labelSimpan ?? (editing ? `Simpan ${terpilih.name}` : `Tambah ${terpilih.name} ke keranjang`)}>
+          {labelSimpan ?? (editing ? "Simpan" : "Tambah ke keranjang")}
         </button>
         <button type="button" className="btn-def" onClick={onBatal}>Batal</button>
       </div>
