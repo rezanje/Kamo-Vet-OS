@@ -139,9 +139,9 @@ tidak ada data yang perlu dibalik. Preferensi: perbaikan maju, bukan rollback DB
   depan bila ditolak (mis. admin memeriksa data pelanggan dulu). Agen tidak memutuskan aturan ini.
 - **Importer DITAHAN** (tidak dipakai untuk data pasien nyata):
   1. sejak preflight sampai migrasi 1 + 2 terpasang **dan** aplikasi baru ter-deploy + smoke test lulus;
-  2. sampai UAT (§8) lulus dan ditandatangani;
+  2. sampai ada izin terpisah untuk impor pasien nyata/Production (rencana ini bukan izin itu);
   3. selama jendela migrasi/rollback apa pun;
-  4. sesuai pembatasan Kasir/CRM di §7 selama celahnya belum ditutup.
+  4. selama celah Kasir/CRM di §7 belum ditutup oleh perubahan yang ikut dirilis.
 - Smoke test pasca-deploy tanpa menulis data: buka registrasi, cari nomor pelanggan fiktif/uji yang sudah ada dengan
   format `08..` dan `+62..` (pencarian bersifat baca-saja).
 
@@ -173,21 +173,23 @@ diam-diam**: impor berikutnya untuk pemilik dengan dua kartu bernama+HP sama aka
   kenaikannya diperiksa admin **manual**; tidak ada penggabungan otomatis.
 - Pemilik menerima secara tertulis bahwa risiko celah 1 tetap ada sampai Kasir/CRM diperbaiki.
 
-Blocker wajib **sebelum UAT**:
-- Lingkungan non-Production dengan **kedua migrasi** terpasang dan aplikasi dari cabang PR. Preview deploy Vercel
-  dimatikan untuk cabang selain `main`, jadi lingkungan ini **belum ada/terkonfirmasi** (opsi: Supabase non-produksi
-  + aplikasi dijalankan dari cabang PR).
-- Set data uji fiktif (§8).
+Keputusan koordinasi (29 Okt): celah Kasir/CRM **ditutup dalam kode** (PR dependent, draft) sebelum rilis — tidak
+mengandalkan SOP di luar jam. Pembatasan operasional di atas hanya relevan bila rilis dilakukan tanpa perubahan itu,
+dan itu bukan rencana saat ini.
 
-Blocker wajib **sebelum rilis Production**:
-- UAT §8 lulus dan ditandatangani (Andri untuk sampel klinis).
-- Persetujuan atas teks persis kedua migrasi; preflight P1 hijau; backup §2 terkonfirmasi; jendela waktu dipilih.
-- Keputusan pemilik: SOP penolakan registrasi (§6) dan penerimaan pembatasan Kasir/CRM di atas — **atau** memilih
-  memperbaiki Kasir/CRM lebih dulu (PR terpisah; bukan bagian rencana ini).
+**Penyelesaian teknis** cukup dibuktikan dengan uji sintetis lokal: harness Postgres sekali-pakai dengan data fiktif +
+tes vitest/komponen. **Tidak membuat preview deploy atau lingkungan baru tanpa izin.**
+
+Syarat sebelum rilis Production (operasional, bukan tambahan teknis):
+- Persetujuan atas teks persis migrasi; preflight P1 hijau; backup §2 terkonfirmasi; jendela waktu dipilih.
+- Keputusan pemilik: SOP meja depan bila registrasi ditolak karena nomor dipakai beberapa pelanggan (§6).
 - Bila rollback DB diwajibkan: skrip rollback §5 ditulis dan direview lebih dulu.
+- Impor pasien nyata/Production tetap izin terpisah.
 
-## 8. Checklist UAT singkat (data fiktif, lingkungan non-Production)
-Bukti tiap langkah: tangkapan layar hasil impor + jumlah riwayat pasien uji sebelum/sesudah.
+## 8. Checklist verifikasi pengguna (opsional; data fiktif)
+**Bukan syarat teknis tambahan.** Skenario yang sama sudah dibuktikan otomatis oleh uji sintetis lokal. Checklist ini
+hanya dipakai bila pemilik meminta verifikasi lapangan, dan hanya di lingkungan yang sudah diizinkan (tidak membuat
+lingkungan baru). Bukti tiap langkah: tangkapan layar hasil impor + jumlah riwayat pasien uji sebelum/sesudah.
 
 | # | Langkah | Hasil yang diharapkan |
 |---|---|---|
@@ -203,5 +205,5 @@ Bukti tiap langkah: tangkapan layar hasil impor + jumlah riwayat pasien uji sebe
 | U10 | **Registrasi:** pelanggan uji terdaftar `0800..`; daftar ulang dengan `+62 800..` | memakai pelanggan yang sama; tidak ada kartu baru |
 | U11 | **Registrasi ambigu:** nomor uji yang dipakai dua pelanggan uji | ditolak dengan pesan "minta admin memeriksa data pelanggan" |
 
-Belum dilakukan: seluruh UAT di atas. Bukti otomatis yang sudah ada (harness Postgres 49/49, tes komponen) bukan
-pengganti UAT pengguna.
+Status: checklist ini belum dijalankan oleh pengguna. Padanan otomatisnya sudah lulus: harness Postgres (S1–S14,
+C9–C10, X1–X3, K/U/R), tes komponen Coba lagi dan titik simpan berbasis isi.
