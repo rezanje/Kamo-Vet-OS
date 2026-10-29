@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { kunciHpIndonesia } from "./kontak";
 
 export type RekamMedisImporRow = {
   source_key: string;
@@ -48,10 +49,19 @@ export type RekamMedisWorkbookResult = {
 
 export type RekamMedisFile = { fileName: string; sourcePath?: string; bytes: Uint8Array };
 
+/**
+ * Pisahkan baris yang jejak sumbernya belum pernah tercatat dari yang sudah.
+ *
+ * Jejak yang sudah tercatat BUKAN otomatis "sudah ada" (temuan K1b, PR #328): kartu lain
+ * dengan isi berbeda bisa menghasilkan jejak yang sama. Hanya database yang bisa
+ * membuktikan isinya identik, jadi baris `tercatat` tetap dikirim untuk diverifikasi.
+ */
 export function pilahRiwayatTersimpan<T extends Pick<RekamMedisImporRow, "source_key">>(rows: T[], existingKeys: Iterable<string>) {
   const existing = new Set(existingKeys);
-  const baru = rows.filter((row) => !existing.has(row.source_key));
-  return { baru, sudah_ada: rows.length - baru.length };
+  const baru: T[] = [];
+  const tercatat: T[] = [];
+  for (const row of rows) (existing.has(row.source_key) ? tercatat : baru).push(row);
+  return { baru, tercatat };
 }
 
 export function bagiBatchImporRekamMedis<T>(rows: T[], ukuran = 25): T[][] {
@@ -129,7 +139,7 @@ function completeProfiles(rows: RekamMedisImporRow[]): RekamMedisImporRow[] {
   const ownerAddresses = new Map<string, string>();
   const petProfiles = new Map<string, Pick<RekamMedisImporRow, "species" | "breed" | "gender" | "dob">>();
   rows.forEach((row) => {
-    const ownerKey = [key(row.owner_name), row.phone?.replace(/\D/g, "")].join("::");
+    const ownerKey = [key(row.owner_name), phoneKey(row.phone)].join("::");
     const petKey = [ownerKey, key(row.patient_name)].join("::");
     if (row.address && !ownerAddresses.has(ownerKey)) ownerAddresses.set(ownerKey, row.address);
     const profile = petProfiles.get(petKey) ?? { species: null, breed: null, gender: null, dob: null };
@@ -141,7 +151,7 @@ function completeProfiles(rows: RekamMedisImporRow[]): RekamMedisImporRow[] {
     });
   });
   return rows.map((row) => {
-    const ownerKey = [key(row.owner_name), row.phone?.replace(/\D/g, "")].join("::");
+    const ownerKey = [key(row.owner_name), phoneKey(row.phone)].join("::");
     const profile = petProfiles.get([ownerKey, key(row.patient_name)].join("::"));
     return {
       ...row,
@@ -170,11 +180,11 @@ const cleanMultiline = (value: unknown): string => String(value ?? "")
   .join("\n")
   .replace(/^:\s*/, "");
 const key = (value: unknown) => clean(value).toLocaleLowerCase("id-ID").replace(/[.:]/g, "").replace(/\s+/g, " ");
-const phoneKey = (value: unknown) => clean(value).replace(/\D/g, "");
+const phoneKey = (value: unknown) => kunciHpIndonesia(clean(value));
 
 /** Kunci pencocokan identitas; harus sama persis dengan import_legacy_text_key di database. */
 export const kunciTeksImporRekamMedis = (value: unknown) => key(value);
-/** Kunci telepon; harus sama persis dengan import_legacy_phone_key di database. */
+/** Kunci telepon kanonik; harus sama persis dengan import_legacy_phone_key/indonesian_phone_key di database. */
 export const kunciTeleponImporRekamMedis = (value: unknown) => phoneKey(value);
 
 export function isPlaceholderOwnerName(value: string | null | undefined) {
@@ -494,7 +504,7 @@ export async function bacaWorkbooksRekamMedis(files: RekamMedisFile[]): Promise<
   let ignoredSheets = parsed.reduce((sum, result) => sum + result.ignored_sheets, 0);
 
   rows.forEach((row) => {
-    const duplicateKey = [key(row.owner_name), row.phone?.replace(/\D/g, ""), key(row.patient_name), row.record_date].join("::");
+    const duplicateKey = [key(row.owner_name), phoneKey(row.phone), key(row.patient_name), row.record_date].join("::");
     const fingerprint = JSON.stringify([
       row.record_no, row.owner_name, row.phone, row.patient_name, row.record_date,
       row.species, row.breed, row.gender, row.dob, row.doctor,

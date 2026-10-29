@@ -13,6 +13,8 @@ export type BerkasImporRekamMedis = {
   /** Jalur relatif terhadap akar pilihan, mis. "Budi - 0812/Snowy.xlsx". */
   jalur: string;
   ukuran: number;
+  /** Waktu ubah berkas (ms) bila sumbernya tahu; ikut tanda ruang titik simpan. */
+  diubah?: number;
 };
 
 export type FolderImporRekamMedis = {
@@ -61,7 +63,7 @@ export function kelompokkanFolderImpor(berkas: BerkasImporRekamMedis[]): FolderI
     .sort((a, b) => urut(a.nama, b.nama));
 }
 
-type BerkasLokal = { name: string; size: number; webkitRelativePath?: string; arrayBuffer(): Promise<ArrayBuffer> };
+type BerkasLokal = { name: string; size: number; lastModified?: number; webkitRelativePath?: string; arrayBuffer(): Promise<ArrayBuffer> };
 
 /** Sumber folder lokal: berkas yang sudah ada di komputer pengguna. */
 export function sumberFolderLokal(berkasTerpilih: readonly BerkasLokal[]): SumberImporRekamMedis {
@@ -72,7 +74,7 @@ export function sumberFolderLokal(berkasTerpilih: readonly BerkasLokal[]): Sumbe
     const jalur = jalurAman(file.webkitRelativePath || file.name, file.name);
     const id = `${index}::${jalur}`;
     isi.set(id, file);
-    daftar.push({ id, nama: file.name, jalur, ukuran: file.size });
+    daftar.push({ id, nama: file.name, jalur, ukuran: file.size, diubah: file.lastModified });
   });
   const folders = kelompokkanFolderImpor(daftar);
   // Bisa beberapa folder utama sekaligus (tombol "Tambah folder lain"):

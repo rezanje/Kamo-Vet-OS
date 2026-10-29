@@ -21,6 +21,10 @@ import {
   sesuaikanBatasPotongan,
   sidikRiwayat,
   sisakanFolderBelumSelesai,
+  buktikanFolderSelesai,
+  sidikIsiBerkas,
+  sidikIsiFolder,
+  folderSelesaiTercatat,
   tandaRuangImpor,
   teksProgresImpor,
   tulisTitikSimpan,
@@ -47,6 +51,17 @@ function baris(ubah: Partial<RekamMedisImporRow> = {}): RekamMedisImporRow {
     ...ubah,
   };
 }
+
+describe("titik simpan hanya mencatat folder yang tuntas", () => {
+  it("folder dengan riwayat ditahan atau menunggu keputusan tidak ditandai selesai", () => {
+    expect(folderSelesaiTercatat({ A: "sa" }, "B", "sb", 0)).toEqual({ A: "sa", B: "sb" });
+    // Bila tab tertutup setelah titik simpan ditulis, catatan ditahan di memori hilang.
+    // Folder yang belum tuntas harus dibaca ulang saat dilanjutkan, bukan dilewati.
+    expect(folderSelesaiTercatat({ A: "sa" }, "B", "sb", 1)).toEqual({ A: "sa" });
+    // Tanpa sidik isi (mis. browser tanpa Web Crypto) folder tidak bisa dibuktikan sama nanti.
+    expect(folderSelesaiTercatat({ A: "sa" }, "B", null, 0)).toEqual({ A: "sa" });
+  });
+});
 
 describe("rencana potongan folder", () => {
   it("tidak pernah mencampur dua folder pemilik dalam satu potongan", () => {
@@ -147,19 +162,22 @@ describe("titik simpan supaya impor bisa dilanjutkan", () => {
 
   it("menyimpan dan membaca folder yang sudah selesai", () => {
     const toko = penyimpan();
-    tulisTitikSimpan(toko, "ruang", ["A", "B"]);
-    expect(bacaTitikSimpan(toko, "ruang")).toEqual(["A", "B"]);
+    tulisTitikSimpan(toko, "ruang", { A: "sa", B: "sb" });
+    expect(bacaTitikSimpan(toko, "ruang")).toEqual({ A: "sa", B: "sb" });
     expect([...toko.isi.keys()]).toEqual([kunciTitikSimpan("ruang")]);
     hapusTitikSimpan(toko, "ruang");
-    expect(bacaTitikSimpan(toko, "ruang")).toEqual([]);
+    expect(bacaTitikSimpan(toko, "ruang")).toEqual({});
   });
 
   it("mengabaikan catatan rusak dan penyimpanan yang tidak tersedia", () => {
     const toko = penyimpan();
     toko.isi.set(kunciTitikSimpan("ruang"), "{bukan json");
-    expect(bacaTitikSimpan(toko, "ruang")).toEqual([]);
-    expect(bacaTitikSimpan(null, "ruang")).toEqual([]);
-    expect(() => tulisTitikSimpan(null, "ruang", ["A"])).not.toThrow();
+    expect(bacaTitikSimpan(toko, "ruang")).toEqual({});
+    // Bentuk lama (v1: hanya nama folder, tanpa sidik isi) tidak dipercaya.
+    toko.isi.set(kunciTitikSimpan("ruang"), JSON.stringify({ folderSelesai: ["A"] }));
+    expect(bacaTitikSimpan(toko, "ruang")).toEqual({});
+    expect(bacaTitikSimpan(null, "ruang")).toEqual({});
+    expect(() => tulisTitikSimpan(null, "ruang", { A: "sa" })).not.toThrow();
   });
 
   it("tidak menghentikan impor saat kuota penyimpanan penuh", () => {
@@ -167,7 +185,7 @@ describe("titik simpan supaya impor bisa dilanjutkan", () => {
       getItem: () => null,
       setItem: () => { throw new Error("QuotaExceededError"); },
       removeItem: () => {},
-    }, "ruang", ["A"])).not.toThrow();
+    }, "ruang", { A: "sa" })).not.toThrow();
   });
 
   it("memisahkan ruang untuk pilihan folder yang berbeda", () => {
@@ -177,9 +195,38 @@ describe("titik simpan supaya impor bisa dilanjutkan", () => {
     expect(tandaRuangImpor("akar", satu)).toBe(tandaRuangImpor("akar", [folder("A", [["a.xlsx", 10]])]));
   });
 
-  it("melewati folder yang sudah selesai tanpa membacanya lagi", () => {
+  it("membedakan ruang bila satu kartu diedit dengan ukuran sama (waktu ubah berbeda)", () => {
+    const diubah = (waktu: number) => [{ ...folder("A", [["a.xlsx", 10]]), berkas: [{ ...folder("A", [["a.xlsx", 10]]).berkas[0], diubah: waktu }] }];
+    expect(tandaRuangImpor("akar", diubah(1))).not.toBe(tandaRuangImpor("akar", diubah(2)));
+    expect(tandaRuangImpor("akar", diubah(1))).toBe(tandaRuangImpor("akar", diubah(1)));
+  });
+
+  it("melewati folder yang sudah terbukti selesai", () => {
     const semua = [folder("A", [["a.xlsx", 1]]), folder("B", [["b.xlsx", 1]])];
     expect(sisakanFolderBelumSelesai(semua, ["A"]).map((item) => item.id)).toEqual(["B"]);
+  });
+
+  it("hanya membuktikan folder selesai bila sidik ISI semua berkasnya sama (metadata tidak dipercaya)", async () => {
+    const isi = new Map([["A/a.xlsx", "isi lama"], ["B/b.xlsx", "isi B"]]);
+    const baca = async (berkas: { jalur: string }) => new TextEncoder().encode(isi.get(berkas.jalur) ?? "");
+    const sidik = async (jalur: string) => sidikIsiFolder([{ jalur, sidik: await sidikIsiBerkas(await baca({ jalur })) }]);
+    const semua = [folder("A", [["a.xlsx", 8]]), folder("B", [["b.xlsx", 5]])];
+    const catatan = { A: (await sidik("A/a.xlsx"))!, B: (await sidik("B/b.xlsx"))! };
+    expect(catatan.A).toMatch(/^[0-9a-f]{64}$/);
+    expect(await buktikanFolderSelesai(semua, catatan, baca)).toEqual(catatan);
+    // Isi A berubah, panjang (ukuran) sama: tidak terbukti, wajib diproses ulang.
+    isi.set("A/a.xlsx", "isi baru");
+    expect(await buktikanFolderSelesai(semua, catatan, baca)).toEqual({ B: catatan.B });
+    // Folder tanpa catatan tidak dibaca sama sekali.
+    const dibaca: string[] = [];
+    await buktikanFolderSelesai(semua, { B: catatan.B }, async (berkas) => { dibaca.push(berkas.jalur); return baca(berkas); });
+    expect(dibaca).toEqual(["B/b.xlsx"]);
+  });
+
+  it("sidik folder memuat jalur tiap berkas dan menolak berkas tanpa sidik", async () => {
+    expect(await sidikIsiFolder([{ jalur: "A/a.xlsx", sidik: "x" }])).not.toBe(await sidikIsiFolder([{ jalur: "A/b.xlsx", sidik: "x" }]));
+    expect(await sidikIsiFolder([{ jalur: "A/a.xlsx", sidik: "x" }, { jalur: "A/b.xlsx", sidik: null }])).toBeNull();
+    expect(await sidikIsiFolder([])).toBeNull();
   });
 });
 

@@ -33,25 +33,28 @@ export async function simpanPelanggan(formData: FormData) {
   }
 
   // ponytail: dedup by phone — same as registrasi pattern, but here we reject duplicates.
-  const { data: existing } = await supabase
-    .from("customers")
-    .select("id")
-    .eq("phone", phone)
-    .maybeSingle();
-
-  if (existing) {
-    redirect(
-      `/crm/pelanggan/baru?error=${encodeURIComponent("No HP sudah terdaftar")}`
-    );
-  }
-
-  const { error } = await supabase.from("customers").insert({
-    name: nama, phone, email, dob, address: alamat, pekerjaan, sumber_info, catatan, npwp,
+  // Cek + insert ATOMIK di bawah kunci identitas yang sama dengan impor rekam medis & registrasi
+  // klinik (08.. = +62..), jadi tidak bisa balapan.
+  const { data: hasil, error } = await supabase.rpc("pelanggan_baru_atomik", {
+    p_name: nama, p_phone: phone, p_email: email, p_dob: dob, p_address: alamat,
+    p_pekerjaan: pekerjaan, p_sumber_info: sumber_info, p_catatan: catatan, p_npwp: npwp,
   });
 
   if (error) {
     redirect(
       `/crm/pelanggan/baru?error=${encodeURIComponent(error.message)}`
+    );
+  }
+
+  const tambah = hasil as { status?: unknown } | null;
+  if (tambah?.status === "terdaftar") {
+    redirect(
+      `/crm/pelanggan/baru?error=${encodeURIComponent("No HP sudah terdaftar")}`
+    );
+  }
+  if (tambah?.status !== "dibuat") {
+    redirect(
+      `/crm/pelanggan/baru?error=${encodeURIComponent("Gagal simpan pelanggan")}`
     );
   }
 

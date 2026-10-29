@@ -185,13 +185,62 @@ async function prepareMedicalDelta(supabase: Awaited<ReturnType<typeof createCli
       .in("legacy_source_key", keys).order("id").range(from, to), "Riwayat medis tersimpan", { maxRows: null });
     existingKeys.push(...existing.flatMap(row => row.legacy_source_key ? [row.legacy_source_key] : []));
   }
-  const { baru, sudah_ada } = pilahRiwayatTersimpan(selected, existingKeys);
+  const { baru, tercatat } = pilahRiwayatTersimpan(selected, existingKeys);
   const { clarifications, mappings } = await loadIdentityPlan(supabase, baru);
   const resolved = resolveIdentityDecisions(clarifications, decisions);
   resolved.skipped = skipped;
   for (const [source, identity] of mappings) resolved.mappings.set(source, identity);
   await validasiMappingBatch(supabase, resolved.mappings);
-  return { baru, sudah_ada, resolved, clarifications };
+  return { baru, tercatat, resolved, clarifications };
+}
+
+type ImportRpcArgs = Record<string, unknown>;
+
+function argumenImporBaris(row: RekamMedisImporRow, mapping: { customer_id: string; pet_id: string | null } | undefined): ImportRpcArgs {
+  return {
+    p_source_key: row.source_key,
+    p_record_no: row.record_no,
+    p_record_date: `${row.record_date}T00:00:00+07:00`,
+    p_owner_name: row.owner_name,
+    p_phone: row.phone,
+    p_address: row.address,
+    p_patient_name: row.patient_name,
+    p_species: row.species,
+    p_breed: row.breed,
+    p_gender: row.gender,
+    p_dob: row.dob,
+    p_doctor: row.doctor,
+    p_note: row.note,
+    p_anamnesis: row.anamnesis,
+    p_clinical_findings: row.clinical_findings,
+    p_diagnosis: row.diagnosis,
+    p_therapy: row.therapy,
+    p_customer_id: mapping?.customer_id ?? null,
+    p_pet_id: mapping?.pet_id ?? null,
+  };
+}
+
+/**
+ * Jalur per baris (pratinjau berkas dan simpan batch). Baris `tercatat` dikirim juga:
+ * database mengembalikan kunjungan yang sama bila isinya terbukti identik, dan menolak
+ * dengan alasan bila isinya berbeda (K1b). Penolakan itu dihentikan di sini supaya tidak
+ * ada yang dihitung "sudah ada" tanpa bukti.
+ */
+async function simpanPerBarisRekamMedis(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  baru: RekamMedisImporRow[],
+  tercatat: RekamMedisImporRow[],
+  mappings: Map<string, { customer_id: string; pet_id: string | null }>,
+) {
+  const importClient = supabase as unknown as ImportRpcClient;
+  for (const row of tercatat) {
+    const { error } = await importClient.rpc("import_legacy_medical_record_resolved", argumenImporBaris(row, undefined));
+    if (error) throw new Error(`${row.source_file} — ${row.source_sheet}: ${error.message}`);
+  }
+  await jalankanTerbatasImporRekamMedis(baru, BERSAMAAN_SIMPAN, async (row) => {
+    const { error } = await importClient.rpc("import_legacy_medical_record_resolved", argumenImporBaris(row, mappings.get(row.source_key)));
+    if (error) throw new Error(error.message);
+  });
 }
 
 function cleanText(value: unknown, max: number): string | null {
@@ -262,37 +311,12 @@ export async function konfirmasiImporRekamMedis(formData: FormData): Promise<Rek
     if (String(formData.get("approved") ?? "") !== "true") throw new Error("Centang persetujuan impor setelah meninjau hasil cek.");
     const result = await baca(formData);
     if (!bolehKonfirmasiImporRekamMedis(result.rows.length, true)) throw new Error("Tidak ada riwayat yang aman untuk diimpor.");
-    const { baru, sudah_ada, resolved: decisions, clarifications } = await prepareMedicalDelta(supabase, result.rows, identityDecisions(formData));
+    const { baru, tercatat, resolved: decisions, clarifications } = await prepareMedicalDelta(supabase, result.rows, identityDecisions(formData));
 
-    const importClient = supabase as unknown as ImportRpcClient;
-    await jalankanTerbatasImporRekamMedis(baru, BERSAMAAN_SIMPAN, async (row) => {
-      const mapping = decisions.mappings.get(row.source_key);
-      const { error } = await importClient.rpc("import_legacy_medical_record_resolved", {
-        p_source_key: row.source_key,
-        p_record_no: row.record_no,
-        p_record_date: `${row.record_date}T00:00:00+07:00`,
-        p_owner_name: row.owner_name,
-        p_phone: row.phone,
-        p_address: row.address,
-        p_patient_name: row.patient_name,
-        p_species: row.species,
-        p_breed: row.breed,
-        p_gender: row.gender,
-        p_dob: row.dob,
-        p_doctor: row.doctor,
-        p_note: row.note,
-        p_anamnesis: row.anamnesis,
-        p_clinical_findings: row.clinical_findings,
-        p_diagnosis: row.diagnosis,
-        p_therapy: row.therapy,
-        p_customer_id: mapping?.customer_id ?? null,
-        p_pet_id: mapping?.pet_id ?? null,
-      });
-      if (error) throw new Error(error.message);
-    });
+    await simpanPerBarisRekamMedis(supabase, baru, tercatat, decisions.mappings);
     revalidatePath("/klinik/antrian");
     revalidatePath("/crm/pelanggan");
-    const existingMessage = sudah_ada ? ` ${sudah_ada} riwayat sudah ada dan tidak digandakan.` : "";
+    const existingMessage = tercatat.length ? ` ${tercatat.length} riwayat sudah ada (isinya terbukti sama) dan tidak digandakan.` : "";
     const skippedMessage = decisions.skipped.size ? ` ${decisions.skipped.size} riwayat dipilih untuk tidak diimpor.` : "";
     return { ok: true, phase: "done", message: `${baru.length} riwayat baru berhasil disimpan.${existingMessage}${skippedMessage}`, ...result, clarifications };
   } catch (error) {
@@ -311,34 +335,9 @@ export async function simpanBatchImporRekamMedis(
     if (!approved) throw new Error("Centang persetujuan impor setelah meninjau hasil cek.");
     const rows = validasiRows(input);
     const decisions = parseIdentityDecisions(decisionsInput);
-    const { baru, sudah_ada, resolved } = await prepareMedicalDelta(supabase, rows, decisions);
+    const { baru, tercatat, resolved } = await prepareMedicalDelta(supabase, rows, decisions);
 
-    const importClient = supabase as unknown as ImportRpcClient;
-    await jalankanTerbatasImporRekamMedis(baru, BERSAMAAN_SIMPAN, async (row) => {
-      const mapping = resolved.mappings.get(row.source_key);
-      const { error } = await importClient.rpc("import_legacy_medical_record_resolved", {
-        p_source_key: row.source_key,
-        p_record_no: row.record_no,
-        p_record_date: `${row.record_date}T00:00:00+07:00`,
-        p_owner_name: row.owner_name,
-        p_phone: row.phone,
-        p_address: row.address,
-        p_patient_name: row.patient_name,
-        p_species: row.species,
-        p_breed: row.breed,
-        p_gender: row.gender,
-        p_dob: row.dob,
-        p_doctor: row.doctor,
-        p_note: row.note,
-        p_anamnesis: row.anamnesis,
-        p_clinical_findings: row.clinical_findings,
-        p_diagnosis: row.diagnosis,
-        p_therapy: row.therapy,
-        p_customer_id: mapping?.customer_id ?? null,
-        p_pet_id: mapping?.pet_id ?? null,
-      });
-      if (error) throw new Error(error.message);
-    });
+    await simpanPerBarisRekamMedis(supabase, baru, tercatat, resolved.mappings);
     if (finalBatch) {
       revalidatePath("/klinik/antrian");
       revalidatePath("/crm/pelanggan");
@@ -347,7 +346,7 @@ export async function simpanBatchImporRekamMedis(
       ok: true,
       message: `${baru.length} riwayat baru berhasil disimpan.`,
       tersimpan: baru.length,
-      sudah_ada,
+      sudah_ada: tercatat.length,
       dilewati: resolved.skipped.size,
     };
   } catch (error) {
@@ -493,7 +492,9 @@ export async function prosesPotonganImporRekamMedis(
     const dipilih = rows.filter((row) => keputusan.get(row.source_key) !== "skip");
 
     const pindai = await pindaiIdentitasPotongan(supabase, dipilih);
-    const { baru, sudah_ada } = pilahRiwayatTersimpan(dipilih, pindai.existing);
+    // Jejak yang sudah tercatat tetap dikirim: hanya database yang bisa membuktikan isinya
+    // identik (K1b). Baris itu tidak akan dibuat baru, jadi tidak perlu pilihan identitas.
+    const { baru, tercatat } = pilahRiwayatTersimpan(dipilih, pindai.existing);
 
     const mappings = new Map<string, { customer_id: string; pet_id: string | null }>();
     for (const row of baru) {
@@ -526,11 +527,11 @@ export async function prosesPotonganImporRekamMedis(
       mappings.set(clarification.source_key, decision);
     }
 
-    const kirim = baru.filter((row) => !tertunda.has(row.source_key));
+    const kirim = [...tercatat, ...baru.filter((row) => !tertunda.has(row.source_key))];
     const status = await simpanMassalRekamMedis(supabase, kirim, mappings);
     const perBaris = new Map(kirim.map((row) => [row.source_key, row]));
     let tersimpan = 0;
-    let sudahAda = sudah_ada;
+    let sudahAda = 0;
     for (const item of status) {
       if (item.status === "tersimpan") tersimpan += 1;
       else if (item.status === "sudah_ada") sudahAda += 1;

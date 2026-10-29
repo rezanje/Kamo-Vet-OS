@@ -6,6 +6,7 @@
 import { reportCsv } from "./csv-report";
 import type { BerkasImporRekamMedis, FolderImporRekamMedis } from "./impor-rekam-medis-sumber";
 import type { RekamMedisImporHeld, RekamMedisImporRow } from "./impor-rekam-medis";
+import { kunciHpIndonesia } from "./kontak";
 
 export type BatasPotonganImpor = { berkas: number; bytes: number };
 
@@ -98,16 +99,19 @@ export function bagiKirimanBaris<T>(rows: readonly T[], maks: number = MAKS_BARI
 const rapikan = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase("id-ID").replace(/[.:]/g, "").replace(/\s+/g, " ");
 
 export function kunciGandaRiwayat(row: Pick<RekamMedisImporRow, "owner_name" | "phone" | "patient_name" | "record_date">) {
-  return [rapikan(row.owner_name), String(row.phone ?? "").replace(/\D/g, ""), rapikan(row.patient_name), row.record_date ?? ""].join("::");
+  return [rapikan(row.owner_name), kunciHpIndonesia(row.phone), rapikan(row.patient_name), row.record_date ?? ""].join("::");
 }
 
 /** Sidik pendek: menahan 20.000 baris di memori tanpa menyimpan isi medisnya. */
 export function sidikRiwayat(row: RekamMedisImporRow) {
-  const teks = JSON.stringify([
+  return sidikTeks(JSON.stringify([
     row.record_no, row.owner_name, row.phone, row.patient_name, row.record_date,
     row.species, row.breed, row.gender, row.dob, row.doctor,
     row.note, row.anamnesis, row.clinical_findings, row.diagnosis, row.therapy,
-  ]);
+  ]));
+}
+
+function sidikTeks(teks: string) {
   let a = 0x811c9dc5;
   let b = 0x01000193;
   for (let index = 0; index < teks.length; index += 1) {
@@ -165,36 +169,49 @@ export type PenyimpanTitikSimpan = {
   removeItem(key: string): void;
 };
 
-const AWALAN_TITIK_SIMPAN = "kamo.impor-rekam-medis.v1:";
+// v2: catatan folder selesai menyimpan sidik ISI (SHA-256) tiap folder. Catatan v1 (hanya nama
+// folder) tidak dibaca lagi: folder-foldernya diproses ulang dan database membuktikan sudah ada.
+const AWALAN_TITIK_SIMPAN = "kamo.impor-rekam-medis.v2:";
 
-/** Tanda ruang: pilihan folder yang sama menghasilkan tanda yang sama, beda pilihan beda tanda. */
+/** Folder yang tercatat selesai -> sidik isi semua berkasnya saat diimpor. */
+export type CatatanFolderSelesai = Record<string, string>;
+
+/**
+ * Tanda ruang: pilihan folder yang sama menghasilkan tanda yang sama, beda pilihan beda tanda.
+ *
+ * Folder yang tercatat selesai dilewati tanpa dibaca ulang, jadi tanda ini juga memuat sidik
+ * jalur, ukuran, dan waktu ubah SETIAP berkas: kartu yang diedit setelah impor terputus --
+ * walau ukurannya sama -- membuat tanda berbeda, titik simpan lama tidak dipakai, dan semua
+ * folder dibaca ulang (database yang membuktikan sama atau menahan bentrok).
+ */
 export function tandaRuangImpor(akar: string, folders: readonly FolderImporRekamMedis[]) {
-  const berkas = folders.reduce((jumlah, folder) => jumlah + folder.berkas.length, 0);
+  const semua = folders.flatMap((folder) => folder.berkas);
   const bytes = folders.reduce((jumlah, folder) => jumlah + folder.ukuran, 0);
-  return `${akar}|${folders.length}|${berkas}|${bytes}`;
+  const sidik = sidikTeks(JSON.stringify(semua.map((item) => [item.jalur, item.ukuran, item.diubah ?? null]).sort()));
+  return `${akar}|${folders.length}|${semua.length}|${bytes}|${sidik}`;
 }
 
 export function kunciTitikSimpan(ruang: string) {
   return `${AWALAN_TITIK_SIMPAN}${ruang}`;
 }
 
-export function bacaTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefined, ruang: string): string[] {
-  if (!penyimpan) return [];
+export function bacaTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefined, ruang: string): CatatanFolderSelesai {
+  if (!penyimpan) return {};
   try {
     const mentah = penyimpan.getItem(kunciTitikSimpan(ruang));
-    if (!mentah) return [];
-    const isi: unknown = JSON.parse(mentah);
-    if (!isi || typeof isi !== "object" || !Array.isArray((isi as { folderSelesai?: unknown }).folderSelesai)) return [];
-    return (isi as { folderSelesai: unknown[] }).folderSelesai.filter((item): item is string => typeof item === "string");
+    if (!mentah) return {};
+    const selesai: unknown = (JSON.parse(mentah) as { selesai?: unknown } | null)?.selesai;
+    if (!selesai || typeof selesai !== "object" || Array.isArray(selesai)) return {};
+    return Object.fromEntries(Object.entries(selesai).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== ""));
   } catch {
-    return [];
+    return {};
   }
 }
 
-export function tulisTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefined, ruang: string, folderSelesai: readonly string[]) {
+export function tulisTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefined, ruang: string, selesai: CatatanFolderSelesai) {
   if (!penyimpan) return;
   try {
-    penyimpan.setItem(kunciTitikSimpan(ruang), JSON.stringify({ folderSelesai: [...folderSelesai], diperbarui: new Date().toISOString() }));
+    penyimpan.setItem(kunciTitikSimpan(ruang), JSON.stringify({ selesai, diperbarui: new Date().toISOString() }));
   } catch {
     // Kuota penyimpanan penuh bukan alasan menghentikan impor; lanjut tanpa titik simpan.
   }
@@ -209,10 +226,73 @@ export function hapusTitikSimpan(penyimpan: PenyimpanTitikSimpan | null | undefi
   }
 }
 
-/** Folder yang sudah tercatat selesai dilewati tanpa dibaca; sisanya tetap dicek ke database. */
+/** Folder yang terbukti selesai dilewati tanpa diurai; sisanya diproses dan dicek ke database. */
 export function sisakanFolderBelumSelesai(folders: readonly FolderImporRekamMedis[], selesai: readonly string[]) {
   const sudah = new Set(selesai);
   return folders.filter((folder) => !sudah.has(folder.id));
+}
+
+function heksa(bytes: ArrayBuffer) {
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** SHA-256 isi berkas; null bila browser tidak menyediakan Web Crypto (folder tidak akan dilewati). */
+export async function sidikIsiBerkas(bytes: Uint8Array): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null;
+  try {
+    return heksa(await subtle.digest("SHA-256", bytes as BufferSource));
+  } catch {
+    return null;
+  }
+}
+
+/** Sidik isi satu folder dari sidik semua berkasnya; null bila ada berkas tanpa sidik. */
+export async function sidikIsiFolder(berkas: ReadonlyArray<{ jalur: string; sidik: string | null | undefined }>): Promise<string | null> {
+  if (!berkas.length || berkas.some((item) => !item.sidik)) return null;
+  const teks = JSON.stringify(berkas.map((item) => [item.jalur, item.sidik]).sort());
+  return sidikIsiBerkas(new TextEncoder().encode(teks));
+}
+
+/**
+ * Revalidasi titik simpan berbasis ISI: folder yang tercatat selesai dibaca ulang byte-nya
+ * (tanpa diurai dan tanpa dikirim) lalu di-hash. Hanya folder yang sidik isinya SAMA PERSIS
+ * dengan saat diimpor yang boleh dilewati; folder lain diproses ulang dan database yang
+ * membuktikan sudah ada atau menahan bentrok. Ukuran dan waktu ubah tidak dipercaya.
+ */
+export async function buktikanFolderSelesai(
+  folders: readonly FolderImporRekamMedis[],
+  catatan: CatatanFolderSelesai,
+  baca: (berkas: FolderImporRekamMedis["berkas"][number]) => Promise<Uint8Array>,
+): Promise<CatatanFolderSelesai> {
+  const terbukti: CatatanFolderSelesai = {};
+  for (const folder of folders) {
+    const tercatat = catatan[folder.id];
+    if (!tercatat) continue;
+    const berkas = [];
+    for (const item of folder.berkas) berkas.push({ jalur: item.jalur, sidik: await sidikIsiBerkas(await baca(item)) });
+    if ((await sidikIsiFolder(berkas)) === tercatat) terbukti[folder.id] = tercatat;
+  }
+  return terbukti;
+}
+
+/**
+ * Catatan folder selesai yang boleh ditulis ke titik simpan setelah satu folder diproses.
+ *
+ * Folder yang masih punya riwayat ditahan atau menunggu keputusan TIDAK dicatat selesai:
+ * catatan ditahan hanya ada di memori tab, jadi bila tab tertutup, folder itu harus dibaca
+ * ulang saat dilanjutkan. Folder tanpa sidik isi juga tidak dicatat (tidak bisa dibuktikan
+ * sama nanti). Riwayat yang sudah tersimpan tidak tergandakan karena database hanya
+ * menerima kiriman ulang yang isinya terbukti identik.
+ */
+export function folderSelesaiTercatat(
+  sebelumnya: CatatanFolderSelesai,
+  folderId: string,
+  sidik: string | null,
+  belumTuntas: number,
+): CatatanFolderSelesai {
+  if (belumTuntas > 0 || !sidik) return { ...sebelumnya };
+  return { ...sebelumnya, [folderId]: sidik };
 }
 
 // ---------------------------------------------------------------------------

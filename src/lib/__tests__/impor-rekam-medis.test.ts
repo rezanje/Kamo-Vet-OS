@@ -53,7 +53,7 @@ async function pilah(rows: Array<Record<string, unknown>>, existingKeys: string[
   const loaded = await import("../impor-rekam-medis").catch(() => ({}));
   expect(loaded).toHaveProperty("pilahRiwayatTersimpan");
   return (loaded as { pilahRiwayatTersimpan: (r: typeof rows, e: string[]) => unknown })
-    .pilahRiwayatTersimpan(rows, existingKeys) as { baru: Array<Record<string, unknown>>; sudah_ada: number };
+    .pilahRiwayatTersimpan(rows, existingKeys) as { baru: Array<Record<string, unknown>>; tercatat: Array<Record<string, unknown>> };
 }
 
 async function bolehKonfirmasi(riwayatSiap: number, disetujui: boolean) {
@@ -307,7 +307,9 @@ describe("bacaWorkbookRekamMedis", () => {
     const dipilah = await pilah(hasil.rows, [String(hasil.rows[0].source_key)]);
 
     expect(dipilah.baru).toHaveLength(1);
-    expect(dipilah.sudah_ada).toBe(1);
+    // Jejak yang sudah tercatat dikirim ulang untuk dibuktikan identik oleh database (K1b),
+    // bukan langsung dihitung "sudah ada" di aplikasi.
+    expect(dipilah.tercatat).toHaveLength(1);
   });
 
   it("melengkapi profil hewan dari sheet histori yang lebih lengkap", async () => {

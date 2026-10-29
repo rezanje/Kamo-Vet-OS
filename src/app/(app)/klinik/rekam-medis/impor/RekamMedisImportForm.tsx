@@ -28,9 +28,14 @@ import {
   saringGandaPotongan,
   sesuaikanBatasPotongan,
   sisakanFolderBelumSelesai,
+  buktikanFolderSelesai,
+  sidikIsiBerkas,
+  sidikIsiFolder,
+  type CatatanFolderSelesai,
   tandaRuangImpor,
   teksProgresImpor,
   tulisTitikSimpan,
+  folderSelesaiTercatat,
   type BatasPotonganImpor,
   type HitunganImporRekamMedis,
   type PotonganImporRekamMedis,
@@ -58,9 +63,21 @@ type Antrian = {
   /** Rencana potongan folder berjalan; disimpan supaya jeda-lanjut tidak melewati berkas. */
   potongan: PotonganImporRekamMedis[] | null;
   ruang: string;
-  /** Folder yang sudah tercatat selesai SEBELUM sesi ini; tetap ikut ditulis ulang. */
-  selesaiAwal: string[];
+  /** Folder yang terbukti selesai SEBELUM sesi ini (sidik isi sama); tetap ikut ditulis ulang. */
+  selesaiAwal: CatatanFolderSelesai;
+  /** Folder yang tuntas di sesi ini (tanpa riwayat ditahan/menunggu keputusan) beserta sidik isinya. */
+  tuntas: CatatanFolderSelesai;
+  /** Sidik isi tiap berkas folder yang sedang diproses, dari byte yang benar-benar diurai. */
+  sidikBerkas: Map<string, string | null>;
+  /** Riwayat ditahan atau menunggu keputusan pada folder yang sedang diproses. */
+  belumTuntas: number;
   berkasTotal: number;
+  /**
+   * Kiriman potongan yang sedang berjalan. Diurai dan disaring ganda SEKALI per potongan;
+   * bila pengiriman gagal, "Coba lagi" melanjutkan dari kiriman yang belum tersimpan, bukan
+   * mengurai ulang (pelacak ganda sudah melihat barisnya dan akan menganggapnya salinan).
+   */
+  kiriman: { daftar: RekamMedisImporRow[][]; berikut: number } | null;
 };
 
 function kunciPilihan(value: unknown) {
@@ -123,6 +140,7 @@ export function RekamMedisImportForm() {
 
   const catatDitahan = useCallback((rows: RekamMedisImporHeld[]) => {
     if (!rows.length) return;
+    if (antrianRef.current) antrianRef.current.belumTuntas += rows.length;
     const sisa = Math.max(0, MAKS_DITAHAN_DISIMPAN - ditahanRef.current.length);
     if (sisa > 0) ditahanRef.current.push(...rows.slice(0, sisa));
     setDitahan([...ditahanRef.current]);
@@ -158,32 +176,41 @@ export function RekamMedisImportForm() {
     pengurai: PenguraiKartuMedis,
     potongan: PotonganImporRekamMedis,
     terakhir: boolean,
+    antrian: Antrian,
   ) => {
     const mulai = Date.now();
-    const besar = potongan.berkas.filter((berkas) => berkas.ukuran > BATAS_BYTES_BERKAS_REKAM_MEDIS);
-    const muat = potongan.berkas.filter((berkas) => berkas.ukuran <= BATAS_BYTES_BERKAS_REKAM_MEDIS);
-    if (besar.length) {
-      catatDitahan(besar.map((berkas) => ({
-        source_key: `terlalu-besar::${berkas.jalur}`,
-        source_file: berkas.nama,
-        source_sheet: "—",
-        reason: "File lebih dari 5 MB; pecah dulu kartunya lalu impor ulang",
-      })));
+    if (!antrian.kiriman) {
+      const besar = potongan.berkas.filter((berkas) => berkas.ukuran > BATAS_BYTES_BERKAS_REKAM_MEDIS);
+      const muat = potongan.berkas.filter((berkas) => berkas.ukuran <= BATAS_BYTES_BERKAS_REKAM_MEDIS);
+      if (besar.length) {
+        catatDitahan(besar.map((berkas) => ({
+          source_key: `terlalu-besar::${berkas.jalur}`,
+          source_file: berkas.nama,
+          source_sheet: "—",
+          reason: "File lebih dari 5 MB; pecah dulu kartunya lalu impor ulang",
+        })));
+      }
+      if (!muat.length) return;
+
+      const isi = [];
+      for (const berkas of muat) {
+        const bytes = await sumber.bacaBerkas(berkas);
+        antrian.sidikBerkas.set(berkas.jalur, await sidikIsiBerkas(bytes));
+        isi.push({ fileName: berkas.nama, sourcePath: berkas.jalur, bytes });
+      }
+      const hasil = await pengurai.urai(isi);
+      isi.length = 0;
+
+      if (hasil.held.length) catatDitahan(hasil.held);
+      const { siap, ditahan: ganda } = saringGandaPotongan(hasil.rows, pelacakRef.current);
+      if (ganda.length) catatDitahan(ganda);
+      hasil.rows.length = 0;
+      antrian.kiriman = { daftar: bagiKirimanBaris(siap), berikut: 0 };
     }
-    if (!muat.length) return;
 
-    const isi = [];
-    for (const berkas of muat) isi.push({ fileName: berkas.nama, sourcePath: berkas.jalur, bytes: await sumber.bacaBerkas(berkas) });
-    const hasil = await pengurai.urai(isi);
-    isi.length = 0;
-
-    if (hasil.held.length) catatDitahan(hasil.held);
-    const { siap, ditahan: ganda } = saringGandaPotongan(hasil.rows, pelacakRef.current);
-    if (ganda.length) catatDitahan(ganda);
-    hasil.rows.length = 0;
-
-    const kirimanSemua = bagiKirimanBaris(siap);
-    for (let index = 0; index < kirimanSemua.length; index += 1) {
+    const berjalan = antrian.kiriman;
+    const kirimanSemua = berjalan.daftar;
+    for (let index = berjalan.berikut; index < kirimanSemua.length; index += 1) {
       const kiriman = kirimanSemua[index];
       const jawaban = await kirimDenganUlangan<HasilPotonganImporRekamMedis>(async () => {
         const hasilKirim = await prosesPotonganImporRekamMedis(kiriman, [], true, terakhir && index === kirimanSemua.length - 1);
@@ -199,6 +226,7 @@ export function RekamMedisImportForm() {
         if (row) tertundaRef.current.set(item.source_key, row);
       }
       if (barisPertanyaan.length) setPertanyaan((current) => [...current, ...barisPertanyaan]);
+      if (barisPertanyaan.length && antrianRef.current) antrianRef.current.belumTuntas += barisPertanyaan.length;
       const luberPertanyaan = jawaban.perlu_keputusan.slice(muatPertanyaan);
       catatDitahan([...jawaban.ditahan, ...luberPertanyaan.map((item) => ({
         source_key: item.source_key,
@@ -212,6 +240,8 @@ export function RekamMedisImportForm() {
         sudahAda: current.sudahAda + jawaban.sudah_ada,
         perluKeputusan: current.perluKeputusan + barisPertanyaan.length,
       }));
+      // Kiriman ini sudah dijawab server: Coba lagi tidak mengirimnya lagi.
+      berjalan.berikut = index + 1;
     }
 
     waktuRef.current = {
@@ -235,10 +265,10 @@ export function RekamMedisImportForm() {
         const semua = await sumber.daftarFolder();
         if (!semua.length) throw new Error("Folder tidak berisi kartu medis .xlsx.");
         const ruang = tandaRuangImpor(sumber.akar, semua);
-        const sudah = bacaTitikSimpan(penyimpanLokal(), ruang);
-        const sisa = sisakanFolderBelumSelesai(semua, sudah);
+        // Folder tercatat selesai hanya dilewati bila ISINYA terbukti sama (dibaca ulang + SHA-256).
+        const selesaiAwal = await buktikanFolderSelesai(semua, bacaTitikSimpan(penyimpanLokal(), ruang), (berkas) => sumber.bacaBerkas(berkas));
+        const sisa = sisakanFolderBelumSelesai(semua, Object.keys(selesaiAwal));
         sumberRef.current = sumber;
-        const selesaiAwal = semua.filter((folder) => !sisa.includes(folder)).map((folder) => folder.id);
         antrianRef.current = {
           folders: sisa,
           iFolder: 0,
@@ -246,7 +276,11 @@ export function RekamMedisImportForm() {
           potongan: null,
           ruang,
           selesaiAwal,
+          tuntas: {},
+          sidikBerkas: new Map(),
+          belumTuntas: 0,
           berkasTotal: sisa.reduce((jumlah, folder) => jumlah + folder.berkas.length, 0),
+          kiriman: null,
         };
         setFolderTotal(semua.length);
         setFolderSelesai(semua.length - sisa.length);
@@ -268,22 +302,26 @@ export function RekamMedisImportForm() {
           }
           const terakhirFolder = antrian.iFolder === antrian.folders.length - 1 && antrian.iPotongan === potongan.length - 1;
           try {
-            await prosesPotongan(sumber, pengurai, potongan[antrian.iPotongan], terakhirFolder);
+            await prosesPotongan(sumber, pengurai, potongan[antrian.iPotongan], terakhirFolder, antrian);
           } catch (cause) {
             batasRef.current = sesuaikanBatasPotongan(batasRef.current, { gagal: true });
             throw cause;
           }
+          antrian.kiriman = null;
           antrian.iPotongan += 1;
           setSisaMs(perkiraanSisaWaktuImpor(waktuRef.current.terpakaiMs, waktuRef.current.berkas, antrian.berkasTotal));
         }
+        // Folder dengan riwayat ditahan/menunggu keputusan tidak dicatat selesai, supaya
+        // dibaca ulang bila impor dilanjutkan setelah tab tertutup.
+        const sidikFolder = await sidikIsiFolder(folder.berkas.map((berkas) => ({ jalur: berkas.jalur, sidik: antrian.sidikBerkas.get(berkas.jalur) })));
+        antrian.tuntas = folderSelesaiTercatat(antrian.tuntas, folder.id, sidikFolder, antrian.belumTuntas);
+        antrian.sidikBerkas = new Map();
+        antrian.belumTuntas = 0;
         antrian.iFolder += 1;
         antrian.iPotongan = 0;
         antrian.potongan = null;
-        tulisTitikSimpan(penyimpanLokal(), antrian.ruang, [
-          ...antrian.selesaiAwal,
-          ...antrian.folders.slice(0, antrian.iFolder).map((item) => item.id),
-        ]);
-        setFolderSelesai(antrian.selesaiAwal.length + antrian.iFolder);
+        tulisTitikSimpan(penyimpanLokal(), antrian.ruang, { ...antrian.selesaiAwal, ...antrian.tuntas });
+        setFolderSelesai(Object.keys(antrian.selesaiAwal).length + antrian.iFolder);
       }
       penguraiRef.current?.tutup();
       penguraiRef.current = null;
