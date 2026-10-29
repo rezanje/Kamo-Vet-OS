@@ -36,6 +36,12 @@ ROOT = Path(__file__).resolve().parents[1]
 # adanya saat memulihkan; `create or replace` tidak peduli urutan pemanggilan.
 FUNGSI = [
     "clinic_private.stage_billing(uuid)",
+    "clinic_private.billing_key(uuid,uuid,uuid)",
+    "clinic_private.billing_lock(text[])",
+    "clinic_private.billing_keys_visit(uuid)",
+    "clinic_private.billing_keys_invoice(uuid)",
+    "clinic_private.billing_keys_advance(uuid)",
+    "clinic_private.billing_keys_receipt(uuid)",
     "clinic_private.context_begin(text,uuid)",
     "clinic_private.context_end()",
     "clinic_private.posting_context(uuid)",

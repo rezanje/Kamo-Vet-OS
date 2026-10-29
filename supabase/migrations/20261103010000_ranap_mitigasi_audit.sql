@@ -243,6 +243,128 @@ alter table public.clinic_advance_release_requests enable row level security;
 revoke all on table public.clinic_advance_release_requests
   from public, anon, authenticated, service_role;
 
+-- ---------------------------------------------------------------------------
+-- 4b. Koordinator urutan pengambilan kunci siklus hidup uang (LOCK-01/LOCK-02)
+-- ---------------------------------------------------------------------------
+-- Dua deadlock 40P01 NYATA direproduksi di PostgreSQL lokal sekali pakai: setiap
+-- pintu masuk uang mengunci baris yang sama dengan urutan berbeda.
+--
+--   pelepasan uang muka : baris uang muka -> shift kasir -> tagihan/kunjungan
+--   tagih tahap         : kunjungan/tagihan (lewat clinic_post_invoice) -> baris uang muka
+--   pembatalan kwitansi : kwitansi -> shift kasir -> baris uang muka
+--
+-- Tiga urutan berbeda pada himpunan baris yang sama = siklus tunggu. Rollback-nya
+-- memang menyelamatkan uang, tetapi percobaan pertama pemakai GAGAL; mengulang
+-- otomatis bukan perbaikan.
+--
+-- Perbaikannya satu KONTRAK URUTAN yang sama untuk semua pintu masuk:
+--
+--   1. autentikasi, peran, dan cabang diperiksa dari pembacaan TANPA kunci;
+--   2. kunci koordinator per (pemilik, cabang) — advisory seumur transaksi,
+--      diambil SEKALIGUS dan URUT NAIK, sebelum satu pun baris dikunci;
+--   3. kunci idempotensi per kunci permintaan (advisory);
+--   4. baris mengikuti penjaga fungsi asli DI DALAM bagian kritis koordinator;
+--      pelepasan mengambil shift sebelum uang muka (sama dengan pembatalan).
+--      Fungsi lain masih punya urutan baris berbeda; keselamatan siklus lintas
+--      kunjungan/tagihan/uang muka bergantung pada koordinator diambil lebih dulu,
+--      bukan klaim bahwa seluruh urutan baris lama sudah ditulis ulang;
+--   5. keputusan uang hanya boleh memakai baris yang DIBACA ULANG di bawah kunci.
+--
+-- Pembungkus tepercaya yang bersarang (checkout campuran, checkout DEMO, tagih
+-- tahap) hanya mengambil ulang kunci koordinator yang SUDAH dipegang, jadi tidak
+-- pernah ada kunci koordinator baru yang diminta di tengah transaksi — syarat yang
+-- membuat pengambilan urut naik bebas deadlock.
+--
+-- Yang SENGAJA tidak dilakukan: mengunci per cabang (akan membuat seluruh cabang
+-- antre) dan menangkap 40P01 lalu mengulang diam-diam.
+create or replace function clinic_private.billing_key(
+  p_customer_id uuid, p_branch_id uuid, p_visit_id uuid
+) returns text language sql immutable set search_path = '' as $function$
+  select case when p_customer_id is not null then 'c:' || p_customer_id::text
+              else 'v:' || coalesce(p_visit_id::text, '-') end
+         || '@' || coalesce(p_branch_id::text, '-');
+$function$;
+revoke all on function clinic_private.billing_key(uuid, uuid, uuid)
+  from public, anon, authenticated, service_role;
+
+-- Pengambilan kunci koordinator: unik, URUT NAIK, satu kali per transaksi.
+-- Mengambil ulang kunci yang sudah dipegang tidak pernah menunggu.
+create or replace function clinic_private.billing_lock(p_keys text[]) returns void
+language plpgsql security definer set search_path = '' as $function$
+declare v_key text;
+begin
+  for v_key in
+    select distinct k from unnest(coalesce(p_keys, '{}'::text[])) k where k is not null order by 1
+  loop
+    perform pg_advisory_xact_lock(hashtextextended('clinic-billing:' || v_key, 0));
+  end loop;
+end;
+$function$;
+revoke all on function clinic_private.billing_lock(text[])
+  from public, anon, authenticated, service_role;
+
+-- Satu kunjungan = satu kunci: pemiliknya kalau ada, kunjungannya kalau kunjungan
+-- itu memang tanpa pemilik (kasus walk-in). Keduanya selalu beserta cabang.
+create or replace function clinic_private.billing_keys_visit(p_visit_id uuid) returns text[]
+language sql stable set search_path = '' as $function$
+  select array[clinic_private.billing_key(v.customer_id, v.branch_id, v.id)]
+  from public.visits v where v.id = p_visit_id;
+$function$;
+revoke all on function clinic_private.billing_keys_visit(uuid)
+  from public, anon, authenticated, service_role;
+
+create or replace function clinic_private.billing_keys_invoice(p_invoice_id uuid) returns text[]
+language sql stable set search_path = '' as $function$
+  select clinic_private.billing_keys_visit(i.visit_id)
+  from public.invoices i where i.id = p_invoice_id;
+$function$;
+revoke all on function clinic_private.billing_keys_invoice(uuid)
+  from public, anon, authenticated, service_role;
+
+-- Pelepasan uang muka menyentuh baris uang mukanya DAN tagihan pada kunjungan yang
+-- pemakaiannya belum dilepas. Normalnya semuanya satu pemilik satu cabang, jadi
+-- himpunan ini berisi satu kunci; kalau pernah ada penggabungan pelanggan dan
+-- kuncinya berbeda, semuanya diambil urut naik — tetap bebas deadlock, bukan
+-- diserahkan pada nasib.
+create or replace function clinic_private.billing_keys_advance(p_advance_id uuid) returns text[]
+language sql stable set search_path = '' as $function$
+  select array_agg(distinct t.k) from (
+    select clinic_private.billing_key(a.customer_id, a.branch_id, a.visit_id) as k
+      from public.clinic_customer_advances a where a.id = p_advance_id
+    union
+    select clinic_private.billing_key(v.customer_id, v.branch_id, v.id)
+      from public.clinic_advance_applications ap
+      join public.invoices i on i.id = ap.invoice_id
+      join public.visits v on v.id = i.visit_id
+     where ap.advance_id = p_advance_id and ap.released_at is null
+  ) t;
+$function$;
+revoke all on function clinic_private.billing_keys_advance(uuid)
+  from public, anon, authenticated, service_role;
+
+-- Pembatalan kwitansi menyentuh kwitansinya, kunjungannya, uang mukanya, dan setiap
+-- tagihan yang pernah menerima alokasi kwitansi itu (termasuk tagihan pengganti
+-- hasil terbit ulang).
+create or replace function clinic_private.billing_keys_receipt(p_receipt_id uuid) returns text[]
+language sql stable set search_path = '' as $function$
+  select array_agg(distinct t.k) from (
+    select clinic_private.billing_key(r.customer_id, r.branch_id, r.visit_id) as k
+      from public.clinic_payment_receipts r where r.id = p_receipt_id
+    union
+    select clinic_private.billing_key(v.customer_id, v.branch_id, v.id)
+      from public.clinic_payment_receipts r join public.visits v on v.id = r.visit_id
+     where r.id = p_receipt_id
+    union
+    select clinic_private.billing_key(v.customer_id, v.branch_id, v.id)
+      from public.invoice_payments p
+      join public.invoices i on i.id = p.invoice_id
+      join public.visits v on v.id = i.visit_id
+     where p.receipt_id = p_receipt_id
+  ) t;
+$function$;
+revoke all on function clinic_private.billing_keys_receipt(uuid)
+  from public, anon, authenticated, service_role;
+
 create or replace function public.clinic_release_advance_application(
   p_advance_id uuid, p_request_key text, p_reason text
 ) returns integer language plpgsql security definer set search_path = '' as $function$
@@ -272,11 +394,15 @@ begin
     raise exception using errcode='P0001',
       message='ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh melepas uang muka';
   end if;
-  perform pg_advisory_xact_lock(hashtextextended('clinic-advance-release:' || v_key, 0));
-  select * into v_adv from public.clinic_customer_advances where id = p_advance_id for update;
+  -- LOCK-01 langkah 1: pembacaan tepercaya TANPA kunci, hanya untuk memeriksa cabang
+  -- dan menentukan kunci koordinator. Tidak ada nilai uang yang diputuskan di sini.
+  select * into v_adv from public.clinic_customer_advances where id = p_advance_id;
   if not found or not public.user_can_access_branch(v_adv.branch_id) then
     raise exception using errcode='P0001', message='ACCESS_DENIED: uang muka tidak ditemukan atau cabang tidak diizinkan';
   end if;
+  -- LOCK-01 langkah 2 lalu 3: koordinator dulu, baru kunci idempotensi permintaan.
+  perform clinic_private.billing_lock(clinic_private.billing_keys_advance(p_advance_id));
+  perform pg_advisory_xact_lock(hashtextextended('clinic-advance-release:' || v_key, 0));
   -- Diulang dengan kunci yang sama: jawab hasil yang dulu, jangan melepas dua kali.
   -- Cabang tetap diperiksa lebih dulu supaya pengulangan tidak jadi celah baca.
   select * into v_req from public.clinic_advance_release_requests where request_key = v_key;
@@ -287,14 +413,24 @@ begin
     end if;
     return v_req.released_count;
   end if;
-  if v_adv.status <> 'aktif' then
-    raise exception using errcode='P0001', message='RELEASE_INVALID: uang muka sudah dibatalkan';
-  end if;
+  -- LOCK-01 langkah 4: shift kasir SEBELUM baris uang muka. Urutan lamanya terbalik
+  -- (uang muka dulu, shift kemudian) dan itulah separuh deadlock 40P01 melawan
+  -- pembatalan kwitansi yang justru mengunci shift lebih dulu.
   select s.* into v_shift from public.cashier_shifts s
   where s.branch_id = v_adv.branch_id and s.opened_by = v_user
     and s.shift_type = 'klinik' and s.status = 'open' for update;
   if not found then
     raise exception using errcode='P0001', message='SHIFT_INVALID: shift klinik aktif tidak ditemukan';
+  end if;
+  -- LOCK-01 langkah 5: baris uang muka dibaca ULANG di bawah kunci; keputusan uang
+  -- tidak pernah memakai potret tanpa kunci di atas.
+  select * into v_adv from public.clinic_customer_advances where id = p_advance_id for update;
+  if not found or not public.user_can_access_branch(v_adv.branch_id)
+     or v_shift.branch_id is distinct from v_adv.branch_id then
+    raise exception using errcode='P0001', message='ACCESS_DENIED: uang muka tidak ditemukan atau cabang tidak diizinkan';
+  end if;
+  if v_adv.status <> 'aktif' then
+    raise exception using errcode='P0001', message='RELEASE_INVALID: uang muka sudah dibatalkan';
   end if;
 
   for v_app in
@@ -401,6 +537,13 @@ begin
     raise exception using errcode='P0001',
       message='STAGE_INVALID: uang tagihan tahap hanya lewat kwitansi kunjungan';
   end if;
+  -- LOCK-01 langkah 2: koordinator diambil SEBELUM clinic_post_invoice mengunci
+  -- baris apa pun, lalu potret kunjungannya dibaca ulang di dalam bagian kritis.
+  perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));
+  select v.* into v_visit from public.visits v where v.id = p_visit_id;
+  if not found or not public.user_can_access_branch(v_visit.branch_id) then
+    raise exception using errcode='P0001', message='ACCESS_DENIED: kunjungan tidak ditemukan atau cabang tidak diizinkan';
+  end if;
   v_branch := v_visit.branch_id;
   v_tanggal := nullif(p_invoice ->> 'tanggal', '')::date;
   v_replay := exists (select 1 from public.invoices i where i.request_key = v_key);
@@ -502,6 +645,14 @@ begin
      or jsonb_array_length(p_parts) not between 1 and 6 then
     raise exception using errcode='P0001', message='PAYMENT_INVALID: rincian pembayaran tidak lengkap';
   end if;
+  -- LOCK-01 langkah 1-3: cabang diperiksa dari pembacaan tanpa kunci, koordinator
+  -- diambil lebih dulu, kunci idempotensi kwitansi sesudahnya, baru barisnya.
+  select v.* into v_visit from public.visits v where v.id = p_visit_id;
+  if not found or not public.user_can_access_branch(v_visit.branch_id) then
+    raise exception using errcode='P0001', message='ACCESS_DENIED: kunjungan tidak ditemukan atau cabang tidak diizinkan';
+  end if;
+  perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));
+  perform pg_advisory_xact_lock(hashtextextended('clinic-receipt:' || v_key, 0));
   select v.* into v_visit from public.visits v where v.id = p_visit_id for update;
   if not found or not public.user_can_access_branch(v_visit.branch_id) then
     raise exception using errcode='P0001', message='ACCESS_DENIED: kunjungan tidak ditemukan atau cabang tidak diizinkan';
@@ -516,7 +667,6 @@ begin
 
   v_hash := md5(jsonb_build_object('visit', p_visit_id, 'tanggal', p_tanggal,
     'parts', p_parts, 'invoice', p_invoice_id, 'catatan', nullif(btrim(p_catatan), ''))::text);
-  perform pg_advisory_xact_lock(hashtextextended('clinic-receipt:' || v_key, 0));
   select * into v_existing from public.clinic_payment_receipts where request_key = v_key for update;
   if found then
     if v_existing.visit_id is distinct from p_visit_id or v_existing.request_hash is distinct from v_hash then
@@ -664,6 +814,14 @@ begin
     raise exception using errcode='P0001',
       message='ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh membatalkan kwitansi';
   end if;
+  -- LOCK-01 langkah 1-3: cabang dari pembacaan tanpa kunci, koordinator, lalu kunci
+  -- idempotensi pembatalan. Barisnya dikunci sesudah itu — kwitansi, shift, uang muka.
+  select * into v_receipt from public.clinic_payment_receipts where id = p_receipt_id;
+  if not found or not public.user_can_access_branch(v_receipt.branch_id) then
+    raise exception using errcode='P0001', message='ACCESS_DENIED: kwitansi tidak ditemukan atau cabang tidak diizinkan';
+  end if;
+  perform clinic_private.billing_lock(clinic_private.billing_keys_receipt(p_receipt_id));
+  perform pg_advisory_xact_lock(hashtextextended('clinic-receipt-void:' || v_key, 0));
   select * into v_receipt from public.clinic_payment_receipts where id = p_receipt_id for update;
   if not found or not public.user_can_access_branch(v_receipt.branch_id) then
     raise exception using errcode='P0001', message='ACCESS_DENIED: kwitansi tidak ditemukan atau cabang tidak diizinkan';
@@ -791,6 +949,32 @@ do $patch$
 declare p record; definition text; signature regprocedure; pending jsonb := '{}'::jsonb; k text;
 begin
  for p in select * from (values
+  -- LOCK-01: kunci koordinator diambil pada SETIAP pintu masuk uang yang menyentuh
+  -- baris kunjungan/tagihan/shift/uang muka yang sama, dan selalu SEBELUM kunci
+  -- idempotensi permintaan maupun baris mana pun. Tanpa ini checkout campuran dan
+  -- checkout DEMO akan mengunci baris kunjungan DULU lalu meminta koordinator di
+  -- dalam clinic_post_invoice — persis pembalikan urutan yang sedang diperbaiki.
+  ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',
+   E'  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-request:'' || v_request_key, 0));',
+   E'  perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));\n  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-request:'' || v_request_key, 0));'),
+  ('public.clinic_post_split_invoice(uuid,text,jsonb,jsonb,jsonb)',
+   E'  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-request:'' || v_key, 0));',
+   E'  perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));\n  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-request:'' || v_key, 0));'),
+  ('public.clinic_post_demo_invoice(uuid,text,jsonb,jsonb,uuid,jsonb,uuid[])',
+   E'  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-request:''||v_key,0));',
+   E'  perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));\n  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-request:''||v_key,0));'),
+  -- Pelunasan piutang, koreksi tagihan, dan terbit ulang mengunci baris kunjungan dan
+  -- tagihan yang sama dengan pelepasan uang muka serta pembatalan kwitansi, jadi
+  -- ketiganya ikut memakai koordinator yang sama.
+  ('public.clinic_receive_invoice_payment(uuid,date,numeric,text,text,text,text)',
+   E'  -- Visit first, invoice second: same lock order as posting and void/reissue.',
+   E'  perform clinic_private.billing_lock(clinic_private.billing_keys_invoice(p_invoice_id));\n  -- Visit first, invoice second: same lock order as posting and void/reissue.'),
+  ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)',
+   E'  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-operation:''||v_key,0));',
+   E'  perform clinic_private.billing_lock(clinic_private.billing_keys_invoice(p_invoice_id));\n  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-operation:''||v_key,0));'),
+  ('public.clinic_void_reissue_invoice_core(uuid,text,text)',
+   E'  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-operation:''||v_key,0));',
+   E'  perform clinic_private.billing_lock(clinic_private.billing_keys_invoice(p_invoice_id));\n  perform pg_advisory_xact_lock(hashtextextended(''clinic-invoice-operation:''||v_key,0));'),
   -- FIN-06/ACCESS-02: penundaan uang muka minimal tidak boleh berasal dari isi
   -- permintaan. Hanya konteks internal (tahap/split/DEMO) yang boleh menundanya.
   ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',

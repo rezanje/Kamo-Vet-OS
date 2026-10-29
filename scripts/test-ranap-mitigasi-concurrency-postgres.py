@@ -334,7 +334,11 @@ def cancel_race(h, db, n, cancellation_first=False, hazard=False):
             attempts["release"] = {"ok": True}
             attempts["void"] = attempt(b)
     DIAGNOSTICS.update({"barriers":evidence,"first_attempts":attempts})
-    expected_rejection = cancellation_first and not attempts["void"]["ok"] and "ADVANCE_USED" in attempts["void"].get("error", "")
+    # Both schedules start cancellation before release. Under the corrected shared
+    # coordinator cancellation can now reach ADVANCE_USED before release proceeds;
+    # that is the required business guard, NOT a database retry/deadlock success.
+    # In particular 40P01/timeouts cannot satisfy this exact allowed rejection.
+    expected_rejection = (cancellation_first or hazard) and not attempts["void"]["ok"] and "ADVANCE_USED" in attempts["void"].get("error", "") and "40P01" not in attempts["void"].get("error", "")
     retries = []
     initial = snapshot(h, visit, advance)
     initial_delta = {c:v-before[c] for c,v in balances(h).items()}
@@ -368,6 +372,47 @@ def cancel_race(h, db, n, cancellation_first=False, hazard=False):
     assert_equal(number(h, "select count(*) from public.journal_entries"), journal_before)
     detail["numeric_invariants_pass"] = True
     return attempts["release"]["ok"] and (expected_rejection or attempts["void"]["ok"]), detail
+
+
+def unrelated_customers_race(h, db, n, shared_cashier_shift):
+    """Distinct customer coordinators: independent work proceeds; shared shift queues safely."""
+    _, visit_a, _, advance_a = fixture(h, n)
+    _, visit_b, _, advance_b = fixture(h, n + 1)
+    release_a = f.lepas_sql(advance_a, f"cc-{n}-release-a")
+    evidence = []
+    with Session(db, f"cc-{n}-observer") as obs, Session(db, f"cc-{n}-a", f.FINANCE) as a, Session(db, f"cc-{n}-b", f.FINANCE if shared_cashier_shift else f.OWNER) as b:
+        a.sql("begin; " + release_a)
+        if shared_cashier_shift:
+            action_b = f.lepas_sql(advance_b, f"cc-{n}-release-b")
+            b.send("begin; " + action_b)
+            wait_block(obs, b, a, evidence)
+            a.sql("commit;")
+            second = attempt(b)
+        else:
+            action_b = f.tagih_sql(visit_b, f"cc-{n}-independent-stage", f.baris(n + 1, 2), f.OWNER, alasan="Uji concurrency pelanggan berbeda")
+            # Different customers have distinct billing coordinators, but original
+            # business functions can still share shift/journal rows. Observe that
+            # genuine row wait, then commit the first transaction; completion must
+            # not require recovery from a deadlock or timeout.
+            b.send("begin; " + action_b)
+            wait_block(obs, b, a, evidence)
+            assert_equal(evidence[-1]["wait_event_type"], "Lock")
+            assert evidence[-1]["wait_event"] in ("transactionid", "tuple"), evidence[-1]
+            a.sql("commit;")
+            second = attempt(b)
+    detail = {"shared_cashier_shift": shared_cashier_shift, "barriers": evidence, "second_attempt": second,
+              "a": snapshot(h, visit_a, advance_a), "b": snapshot(h, visit_b, advance_b)}
+    DIAGNOSTICS.update(detail)
+    assert_equal(second["ok"], True)
+    assert_equal(detail["a"]["advance"], {"amount":150000,"applied":0,"status":"aktif","released":True})
+    if shared_cashier_shift:
+        assert_equal(detail["b"]["advance"], {"amount":150000,"applied":0,"status":"aktif","released":True})
+    else:
+        assert_equal(detail["b"]["advance"]["applied"], 150000)
+        assert_equal(detail["b"]["advance"]["released"], False)
+    verify_clean(detail["a"])
+    verify_clean(detail["b"])
+    return True, detail
 
 
 def duplicate_race(h, db, n, invoice_first):
@@ -432,12 +477,14 @@ def run_case(name, fn):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", type=Path, default=Path("/opt/data/kamo-ranap-mitigasi-concurrency-results.json"))
+    parser.add_argument("--migration-revision", help="Replay only corrective SQL from this git revision (RED baseline)")
     args = parser.parse_args()
     head = subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip()
     started = time.monotonic()
     version = None
     try:
-        with BoundedPostgres(f.BIN) as db:
+        with contextlib.ExitStack() as stack, BoundedPostgres(f.BIN) as db:
+            f.fixture.ROOT = f.siapkan_migrasi(args.migration_revision, stack)
             f.fixture.DisposablePostgres.bootstrap(db)
             version = db.sql("show server_version;")
 
@@ -453,6 +500,8 @@ def main():
                 ("overlapping-release-void-same-cashier-lock-order",lambda:cancel_race(h,db,209,hazard=True)),
                 ("duplicate-payment-before-invoice",lambda:duplicate_race(h,db,207,False)),
                 ("duplicate-payment-allocated-and-advance",lambda:duplicate_race(h,db,208,True)),
+                ("different-customers-same-cashier-shift",lambda:unrelated_customers_race(h,db,211,True)),
+                ("different-customers-existing-row-lock-queues",lambda:unrelated_customers_race(h,db,213,False)),
             ]
             for name, fn in cases:
                 run_case(name,fn)
