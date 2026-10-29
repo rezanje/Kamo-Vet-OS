@@ -107,6 +107,15 @@ it("mengulang potongan yang sama tanpa menulis dua kali", async () => {
   expect(db.tersimpan.size).toBe(1);
 });
 
+it("mengembalikan jejak yang tersimpan atau sudah ada (untuk Periksa hasil), bukan yang ditahan", async () => {
+  db.tersimpan.add("lama");
+  db.gagalBaris.set("tahan", "Jejak sumber bentrok: isinya berbeda");
+  const hasil = await prosesPotonganImporRekamMedis([baris({ source_key: "baru" }), baris({ source_key: "lama" }), baris({ source_key: "tahan" })], [], true);
+  expect(hasil).toMatchObject({ ok: true, tersimpan: 1, sudah_ada: 1 });
+  expect(hasil.kunci_tersimpan.sort()).toEqual(["baru", "lama"]);
+  expect(hasil.ditahan.map((item) => item.source_key)).toEqual(["tahan"]);
+});
+
 it("jejak tercatat dikirim tanpa pilihan identitas dan tanpa ditanyakan ulang", async () => {
   db.tersimpan.add(baris().source_key);
   db.owners = [{ id: "pemilik", name: "Pemilik Lain", phone: "0800000001" }];

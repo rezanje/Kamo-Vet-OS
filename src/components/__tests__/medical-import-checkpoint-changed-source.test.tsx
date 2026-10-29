@@ -19,9 +19,9 @@ vi.mock('@/app/(app)/klinik/rekam-medis/impor/actions', () => ({
   prosesPotonganImporRekamMedis: async (rows: RekamMedisImporRow[]) => {
     fixture.panggilan.push(rows.map((row) => ({ source_key: row.source_key, diagnosis: row.diagnosis })));
     if (fixture.gagalFolder && rows.some((row) => row.source_key.startsWith(fixture.gagalFolder!))) {
-      return { ok: false, message: 'Sesi berakhir; masuk ulang', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [] };
+      return { ok: false, message: 'Sesi berakhir; masuk ulang', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [], kunci_tersimpan: [] };
     }
-    return { ok: true, message: 'ok', tersimpan: rows.length, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [] };
+    return { ok: true, message: 'ok', tersimpan: rows.length, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [], kunci_tersimpan: [] };
   },
 }));
 

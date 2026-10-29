@@ -1,6 +1,7 @@
 # Desain (revisi 3): impor rekam medis gagal di cabang aktif (RLS `operational_branch_isolation`)
 
-Status: **DESAIN untuk review independen — belum ada implementasi, migrasi, atau perubahan Production.**
+Status: **IMPLEMENTASI DRAFT (D1 + D2 + RS-1) untuk review independen — belum ada perubahan Production.**
+Kode & tes: lihat §8–§10 (catatan implementasi revisi 4). Bagian §1–§7 adalah desain revisi 3 yang disetujui.
 Basis: `main` `a561b05`. Semua repro, pemetaan, dan probe hanya di Postgres 17.10 sekali-pakai (semua migrasi repo,
 data fiktif). Riwayat: revisi 1 `a843be4` (opsi A) diblokir; revisi 2 `0ddded9` diminta direvisi (D2 tidak cukup,
 schema privat bukan batas keamanan, read-side belum selesai).
@@ -202,3 +203,98 @@ TRUNCATE `authenticated` pada beberapa tabel (tidak terjangkau Data API).
 Tidak ada service-role, bypass/disable RLS untuk pemanggil, penghapusan header, perluasan peran pengguna, perubahan
 riwayat bersama menjadi lokal, migrasi/penulisan Production, impor pasien nyata, atau pembersihan data. Implementasi
 menunggu review independen revisi ini dan keputusan D1/D2/read-side.
+
+---
+
+## 8. Catatan implementasi (revisi 4) — penyimpangan kecil dari desain dan alasannya
+Migrasi: `supabase/migrations/20261101120000_impor_penulis_riwayat_bersama.sql`. Semua di satu transaksi; pasca-cek
+gagal = seluruh migrasi batal (terbukti tes, §9).
+
+| Butir | Desain rev. 3 | Implementasi | Alasan |
+|---|---|---|---|
+| SELECT `visits` untuk role | `branch_id is null` | `branch_id is null or legacy_source_key is not null` (kolom terbatas) | Impor paling awal (`20260907160000`) menyimpan kunjungan berjejak **dengan** cabang. Pencarian jejak (persis/setara) harus tetap melihatnya, kalau tidak kiriman ulang kartu lama jadi duplikat (kasus K3/S lama). RS-1 tetap hanya mengembalikan baris tanpa cabang. |
+| INSERT `medical_records` role | + "belum ada rekam medis di kunjungan itu" | dibuang | Kebijakan yang membaca tabelnya sendiri = rekursi RLS. Satu rekam medis per kunjungan dijamin kode penulis (INSERT berpasangan), bukan kebijakan. |
+| `kamo_import.pastikan_pengimpor()` | internal | EXECUTE untuk `authenticated` | RPC publik (INVOKER) memanggilnya di depan, sebelum membuat pelanggan/anabul, supaya konteks salah ditolak utuh. Fungsi hanya memvalidasi, tidak membaca/menulis data lain. |
+| Tautan `continued_from_*` di D2 | predikat anak umum | hanya di WITH CHECK (baris baru) | Baris itu sendiri bercabang; trigger lama sudah menolak `authenticated` mengubah tautan. USING pada tautan lama akan mengunci kunjungan cabang yang sah. |
+| Helper D2 | `kunjungan_tanpa_cabang` dst. | `kamo_import.tanpa_cabang_{kunjungan,rekam,racikan,persetujuan,ranap,obat_ranap,booking,tagihan}` | Satu helper per induk; `helper(NULL)` = false; dipakai sebagai `helper(fk) is false` (galat/NULL = tolak). |
+
+Validasi penulis (`simpan_riwayat_bersama`, dipanggil langsung pun aman): OWNER/ADMIN **aktif**; header cabang bila
+ada harus `user_can_access_branch` (JSON/uuid rusak = tolak); jejak 1–500 karakter; sidik dihitung ulang server (kunci
+`legacy_source_hash` kiriman diabaikan); kunci identitas diambil sebelum mencari; >1 kecocokan = gagal tertutup;
+pelanggan wajib kandidat (kunci HP sama **atau** kunci nama sama, predikat yang sama dengan klarifikasi aplikasi);
+anabul wajib milik pelanggan itu. RS-1 `baca_hasil_impor`: validasi sama, 1–500 jejak, jejak ≤500 karakter, maks. 500
+baris, hanya `branch_id is null`, pencocokan memakai bentuk kanonik jejak (08/62 setara).
+
+Aplikasi: `prosesPotonganImporRekamMedis` mengembalikan `kunci_tersimpan` (tersimpan + sudah ada); layar impor
+menyimpan ≤500 jejak terakhir dan menampilkan panel **Periksa hasil impor** (server action
+`periksaHasilImporRekamMedis` → `hasil_impor_rekam_medis`). Halaman pasien dan akses dokter tidak berubah.
+
+### Batas janji D2 (residual, sengaja tidak diklaim)
+D2 hanya menutup tulis **langsung** oleh `authenticated` (Data API / RPC INVOKER). RPC `SECURITY DEFINER` lama milik
+pemilik tabel melewati RLS dan **tidak** dinilai/diubah di PR ini. Yang menulis tabel rantai kunjungan (dari katalog,
+setelah semua migrasi; "auth" = bisa dipanggil `authenticated`):
+`clinic_adjust_compound` (auth), `clinic_admit_inpatient` (auth), `clinic_admit_inpatient_typed` (auth),
+`clinic_change_inpatient_condition` (auth), `clinic_continue_visit_to_inpatient` (auth), `clinic_receive_invoice_payment`
+(auth), `clinic_receive_visit_payment` (auth), `clinic_return_compound` (auth), `clinic_update_inpatient_log` (auth),
+`clinic_void_compound` (auth), `clinic_void_payment_receipt` (auth), `clinic_edit_invoice_core`,
+`clinic_void_reissue_invoice_core`, ditambah fungsi trigger definer (mis. `apply_clinic_record_correction`). Apakah
+masing-masing menolak kunjungan tanpa cabang bergantung pada pemeriksaan di dalam fungsi itu sendiri. Maka **tidak ada
+klaim "riwayat bersama tidak bisa berubah lewat jalur mana pun"**; yang diklaim: tidak bisa lewat tulis langsung.
+
+## 9. Bukti tes (lokal, Postgres sekali-pakai, data fiktif; tanpa Production)
+- `scripts/test-impor-rekam-medis-rls-postgres.py` — PG 17.10 dan PG 16: **363/363 lulus**. Di basis tanpa migrasi
+  baru (TDD merah): 100 gagal (D2 terbuka untuk OWNER/ADMIN/FINANCE tanpa header, anak & pindah induk terbuka, penulis
+  belum ada).
+  - D2 `visits`: INSERT tanpa cabang (jejak palsu/kosong/NULL), UPDATE/DELETE riwayat bersama, UPDATE bercabang → NULL;
+    OWNER/ADMIN dengan & tanpa header, FINANCE, ADMIN `all_branches` on/off.
+  - D2 setiap jalur FK anak (§2A, termasuk multi-FK dan `continued_from_*`): INSERT ke riwayat bersama (dengan trigger,
+    **dan** tanpa trigger sehingga hanya RLS yang menahan), kontrol payload yang sama ke rantai cabang sendiri **boleh**,
+    UPDATE/DELETE anak yang menempel, pindah induk cabang→bersama dan bersama→cabang; induk tersembunyi; lintas cabang.
+  - Sidik isi riwayat bersama (kunjungan, rekam medis, semua anak) sama sebelum/sesudah semua percobaan.
+  - Regresi cabang biasa tetap boleh (INSERT/UPDATE kunjungan & rekam medis, racikan, booking, follow-up, obat ranap,
+    DELETE anak).
+  - D1 lewat RPC publik dengan header: OWNER & ADMIN massal tersimpan → kirim ulang sudah_ada, `branch_id` NULL, sidik
+    hitungan server; per baris idempoten; 08↔62 sudah_ada; isi berubah ditahan bentrok; STAFF/DOCTOR/FINANCE, OWNER
+    nonaktif, header cabang nonaktif, header cabang tak berhak (`all_branches` off), header bukan uuid → ditolak tanpa
+    sisa; ADMIN ditugaskan cabang A, `all_branches` on/off, header A → tersimpan.
+  - Penulis dipanggil langsung: jejak kosong/>500, pelanggan bukan kandidat, anabul milik orang lain, pelanggan kosong,
+    peran salah → ditolak; sidik palsu diabaikan; `anon` tidak bisa EXECUTE.
+  - Trigger: log aktivitas mencatat aktor = importir; `continued_from_visit_id` tetap NULL.
+  - RS-1: baca isi klinis; tolak >500 jejak, jejak >500 karakter, array kosong, STAFF, DOCTOR, OWNER nonaktif, header
+    cabang nonaktif; tepat 500 diterima; kunjungan bercabang berjejak tidak dikembalikan; RPC publik tetap INVOKER.
+  - Helper gagal: tanpa EXECUTE (galat) → tulis anak ditolak; helper mengembalikan NULL → ditolak; dipulihkan → boleh.
+  - Gerbang: pemilik, tanpa BYPASSRLS/LOGIN, tanpa keanggotaan SET/INHERIT, tidak terjangkau SET ROLE dari
+    `authenticator`/`authenticated`/`anon`/`service_role`, tanpa CREATE skema, tanpa UPDATE/DELETE/TRUNCATE, ACL kolom
+    & fungsi.
+  - Balapan dengan header (barrier deterministik): jejak sama; 08 dan +62 bersamaan → satu kunjungan.
+  - Rollback gerbang (klaster baru): role sudah ada dengan BYPASSRLS; PUBLIC punya CREATE di `public`; trigger invoker
+    baru di `visits` → migrasi gagal, tanpa skema/kebijakan sisa, RPC lama utuh.
+  - Emulasi hosted: runner **non-superuser** `CREATEROLE BYPASSRLS` yang memiliki tabel → migrasi lulus pasca-cek,
+    pemilik pindah, runner hanya tersisa ADMIN tanpa SET/INHERIT, runner tidak bisa SET ROLE ke role penulis.
+- Mutasi (harness harus gagal): 8 mutasi logika (tanpa guard booking, NULL lolos, tanpa cek kandidat, sidik dari
+  pemanggil, pembaca tanpa validasi, UPDATE tanpa USING, tanpa cek header, tanpa pindah pemilik) **semua tertangkap**;
+  18 mutasi "guard tabel X = true": 16 tertangkap. Dua yang lolos adalah mutan setara di skema saat ini:
+  `visit_referrals` (kebijakan INSERT lama `v.branch_id = v.branch_id` bernilai NULL untuk induk tanpa cabang) dan
+  `invoice_edit_log` (`authenticated` tanpa hak INSERT dan tanpa kebijakan permissive UPDATE/DELETE). Guard tetap
+  dipasang sebagai pertahanan berlapis.
+- Regresi: harness impor lama `scripts/test-impor-rekam-medis-postgres.py` 61/61 (tanpa header). Uji SQL rangkaian
+  karyawan (`employee_account_operational_context`, `inpatient_consent`, `clinic_*`, dll.) hasilnya **identik** dengan dan
+  tanpa migrasi baru (4 berkas sudah gagal di `main` sebelum PR ini — `ACCESS_DENIED` cabang pelaksana, `DP_MINIMAL`,
+  status master — bukan akibat PR ini).
+- Aplikasi: `npm test` 4893 lulus; lint 0 error; `tsc --noEmit` bersih; `npm run build` sukses.
+
+## 10. Gerbang operasional hosted (WAJIB sebelum apply; butuh izin terpisah; read-only)
+Kelayakan di Supabase hosted **belum terbukti**. Emulasi lokal tidak membuktikan `supautils`, hak `postgres` atas skema
+`auth`, default privileges Supabase, atau skema yang diekspos Data API. Migrasi sendiri gagal tertutup bila salah satu
+prasyarat kurang (GRANT tanpa hak hanya WARNING — pasca-cek memeriksa hak secara positif). Sebelum meminta izin apply,
+jalankan read-only (izin terpisah) dan lampirkan hasilnya:
+1. `select rolname, rolsuper, rolcreaterole, rolbypassrls, rolinherit from pg_roles where rolname in (current_user,'postgres','authenticator','authenticated','anon','service_role','kamo_legacy_import_writer');` — role penulis belum ada; runner punya CREATEROLE.
+2. `select current_setting('server_version_num'), current_setting('createrole_self_grant', true);` — ≥160000; nilai self-grant dicatat (bila `set`/`inherit`, pasca-cek akan menolak → perlu keputusan).
+3. `select has_schema_privilege(current_user,'auth','USAGE'), has_function_privilege(current_user,'auth.uid()','EXECUTE'), exists(select 1 from aclexplode((select proacl from pg_proc where oid='auth.uid()'::regprocedure)) a where a.grantee=0 and a.privilege_type='EXECUTE') as public_exec, exists(select 1 from aclexplode((select nspacl from pg_namespace where nspname='auth')) a where a.grantee=0) as public_usage;` — role penulis harus bisa memakai `auth.uid()` (lewat PUBLIC atau GRANT dengan grant option).
+4. `select n.nspname from pg_namespace n where has_schema_privilege('public', n.oid, 'CREATE');` — harus kosong (bila ada, pasca-cek menolak).
+5. `select pg_get_userbyid(relowner), relname from pg_class where oid in ('public.visits'::regclass,'public.medical_records'::regclass,'public.customers'::regclass,'public.pets'::regclass,'public.profiles'::regclass);` — dimiliki runner migrasi (kebijakan & GRANT kolom butuh pemilik).
+6. `select defaclrole::regrole, defaclnamespace::regnamespace, defaclobjtype, defaclacl from pg_default_acl;` — default privileges dicatat; migrasi mencabut eksplisit dari PUBLIC/anon/authenticated/service_role lalu memberi ulang.
+7. Pengaturan Data API: skema yang diekspos (diharapkan `public`, `graphql_public`; `kamo_import` tidak perlu diekspos).
+8. Daftar trigger `visits`/`medical_records` di Production sama dengan lokal (pasca-cek menolak trigger invoker baru).
+Bila salah satu butir tidak sesuai: **jangan apply**; laporkan dan kembali ke keputusan desain. Apply tetap butuh
+persetujuan eksplisit atas teks persis migrasi ini, cadangan segar, dan jendela rilis — PR ini tidak memberi izin itu.
