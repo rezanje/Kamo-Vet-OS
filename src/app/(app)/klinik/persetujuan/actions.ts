@@ -62,10 +62,10 @@ export async function simpanAturanConsent(formData: FormData) {
     redirect(`${BACK}?error=${encodeURIComponent("Hanya owner/admin yang bisa mengubah aturan formulir")}`);
   }
 
-  const { TINDAKAN_KATEGORI } = await import("@/lib/tindakan");
+  const { KATEGORI_CONSENT } = await import("@/lib/tindakan");
   const sekarang = new Date().toISOString();
 
-  for (const kategori of TINDAKAN_KATEGORI) {
+  for (const kategori of KATEGORI_CONSENT) {
     const wajib = formData.get(`wajib__${kategori}`) === "on";
     const templateRaw = String(formData.get(`template__${kategori}`) ?? "").trim();
     // Formulir yang dipilih diverifikasi ada & masih aktif — jangan percaya kiriman layar.

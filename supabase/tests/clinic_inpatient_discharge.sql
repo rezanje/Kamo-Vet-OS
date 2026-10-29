@@ -269,5 +269,81 @@ begin
 end;
 $$;
 
-select 'PASS clinic_inpatient_discharge: single period, re-discharge not invoiced (3+2=5), invoiced period not billed twice (5+2=7), reopen guards';
+-- 4. K14 separate daily tariff: a sick period and a pet hotel period on one visit are billed as
+--    two lines (Rawat Inap tariff vs Pet Hotel tariff); without an active Pet Hotel service the
+--    pet hotel days fall back to the Rawat Inap price and the line carries a warning.
+reset role;
+insert into public.items(id,code,name,unit,item_type,is_active,tindakan_kategori,sell_price)
+values('fb200000-0000-4000-8000-000000000003','BILL-HOTEL-FEE','AAA Biaya Pet Hotel','malam','Jasa',true,'Pet Hotel',60000);
+insert into public.pets(id,customer_id,name)
+values ('fb500000-0000-4000-8000-000000000003','fb400000-0000-4000-8000-000000000001','Pasien Uji Tiga'),
+       ('fb500000-0000-4000-8000-000000000004','fb400000-0000-4000-8000-000000000001','Pasien Uji Empat');
+insert into public.visits(id,branch_id,customer_id,pet_id,doctor_id,dokter,status,service_started_at)
+values ('fb600000-0000-4000-8000-000000000003','fb100000-0000-4000-8000-000000000001',
+  'fb400000-0000-4000-8000-000000000001','fb500000-0000-4000-8000-000000000003',
+  'fb900000-0000-4000-8000-000000000001','Dokter Uji','Pembayaran',now()),
+       ('fb600000-0000-4000-8000-000000000004','fb100000-0000-4000-8000-000000000001',
+  'fb400000-0000-4000-8000-000000000001','fb500000-0000-4000-8000-000000000004',
+  null,null,'Pembayaran',now());
+insert into public.medical_records(id,visit_id,diagnosis)
+values ('fb700000-0000-4000-8000-000000000003','fb600000-0000-4000-8000-000000000003','Rawat inap lalu titip'),
+       ('fb700000-0000-4000-8000-000000000004','fb600000-0000-4000-8000-000000000004',null);
+insert into public.inpatient_records(id,branch_id,visit_id,medical_record_id,admitted_at)
+values ('fb800000-0000-4000-8000-000000000005','fb100000-0000-4000-8000-000000000001',
+  'fb600000-0000-4000-8000-000000000003','fb700000-0000-4000-8000-000000000003',now()-interval '49 hours');
+set local role authenticated;
+do $$ begin
+  perform public.clinic_change_inpatient_condition('fb800000-0000-4000-8000-000000000005','sembuh','sembuh, lanjut titip');
+  perform public.test_shift_stay('fb800000-0000-4000-8000-000000000005','100 hours','51 hours');
+end $$;
+reset role;
+-- Healthy boarding after recovery on the same visit; the second visit never had a doctor.
+insert into public.inpatient_records(id,branch_id,visit_id,medical_record_id,admitted_at,stay_type)
+values ('fb800000-0000-4000-8000-000000000006','fb100000-0000-4000-8000-000000000001',
+  'fb600000-0000-4000-8000-000000000003','fb700000-0000-4000-8000-000000000003',now()-interval '25 hours','pet_hotel'),
+       ('fb800000-0000-4000-8000-000000000007','fb100000-0000-4000-8000-000000000001',
+  'fb600000-0000-4000-8000-000000000004','fb700000-0000-4000-8000-000000000004',now()-interval '2 hours','pet_hotel');
+set local role authenticated;
+do $$
+begin
+  if (select doctor_id from public.inpatient_records where id='fb800000-0000-4000-8000-000000000007') is not null then
+    raise exception 'pet hotel stay bound a doctor'; end if;
+  perform public.clinic_change_inpatient_condition('fb800000-0000-4000-8000-000000000006','sembuh','dijemput');
+  if (select count(*) from public.prescription_items where medical_record_id='fb700000-0000-4000-8000-000000000003')<>2
+     or not exists(select 1 from public.prescription_items where medical_record_id='fb700000-0000-4000-8000-000000000003'
+       and item_id='fb200000-0000-4000-8000-000000000002' and kategori='Rawat Inap' and qty=3 and harga=100000
+       and aturan_pakai='Otomatis dari lama rawat inap: 3 hari')
+     or not exists(select 1 from public.prescription_items where medical_record_id='fb700000-0000-4000-8000-000000000003'
+       and item_id='fb200000-0000-4000-8000-000000000003' and kategori='Pet Hotel' and qty=2 and harga=60000
+       and satuan='malam' and aturan_pakai='Otomatis dari lama pet hotel: 2 hari') then
+    raise exception 'sick and pet hotel periods not billed with separate tariffs: %',
+      (select jsonb_agg(jsonb_build_object('item',item_id,'kat',kategori,'qty',qty,'harga',harga,'note',aturan_pakai))
+       from public.prescription_items where medical_record_id='fb700000-0000-4000-8000-000000000003'); end if;
+end $$;
+reset role;
+-- Fixture (owner): deactivate every Pet Hotel service, including the one seeded by the migration.
+do $$ declare v uuid; begin
+  for v in select id from public.items where tindakan_kategori='Pet Hotel' loop
+    perform set_config('kamo.master_lifecycle','items:'||v::text,true);
+    update public.items set is_active=false where id=v;
+  end loop;
+  perform set_config('kamo.master_lifecycle','',true);
+end $$;
+set local role authenticated;
+do $$
+begin
+  perform public.clinic_change_inpatient_condition('fb800000-0000-4000-8000-000000000007','sembuh','dijemput');
+  if (select count(*) from public.prescription_items where medical_record_id='fb700000-0000-4000-8000-000000000004')<>1
+     or not exists(select 1 from public.prescription_items where medical_record_id='fb700000-0000-4000-8000-000000000004'
+       and item_id='fb200000-0000-4000-8000-000000000002' and kategori='Pet Hotel' and qty=1 and harga=100000
+       and aturan_pakai='Otomatis dari lama pet hotel: 1 hari; tarif Pet Hotel belum diatur, memakai tarif Rawat Inap') then
+    raise exception 'pet hotel without its own tariff did not fall back to the Rawat Inap price with a warning: %',
+      (select jsonb_agg(jsonb_build_object('item',item_id,'kat',kategori,'qty',qty,'harga',harga,'note',aturan_pakai))
+       from public.prescription_items where medical_record_id='fb700000-0000-4000-8000-000000000004'); end if;
+  -- The first visit's sick-only lines are unaffected by the second visit's discharge.
+  if public.test_fee_days('fb600000-0000-4000-8000-000000000001')<>5 then
+    raise exception 'other visit fee changed'; end if;
+end $$;
+
+select 'PASS clinic_inpatient_discharge: single period, re-discharge not invoiced (3+2=5), invoiced period not billed twice (5+2=7), reopen guards, separate pet hotel tariff + fallback';
 rollback;

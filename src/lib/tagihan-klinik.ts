@@ -9,6 +9,7 @@ import type { ServicePerformersSnapshot } from "./service-performers";
 // yang ternyata tidak sama dengan yang tercetak di struk.
 
 import { bolehBayar } from "./tindakan";
+import { readConsentStay } from "./inpatient-stay";
 import { bacaAturanConsent } from "./consent-server";
 import { tambahPpn, type PajakSettings } from "./pajak";
 import { hitungPromoKeranjang, loadPromoAktif } from "./promo-hitung";
@@ -375,7 +376,8 @@ async function gerbangConsent(supabase: AnyClient, visitId: string): Promise<boo
     mr
       ? supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mr.id)
       : Promise.resolve({ data: [] as { jenis: string; kategori: string | null }[] }),
-    supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle(),
+    // K14: hanya rawat inap sakit yang menuntut persetujuan Rawat Inap; pet hotel tidak.
+    readConsentStay(supabase, visitId),
     supabase.from("consents").select("status").eq("visit_id", visitId),
     bacaAturanConsent(supabase),
   ]);

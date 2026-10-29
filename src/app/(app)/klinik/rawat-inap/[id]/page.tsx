@@ -12,6 +12,7 @@ import { hasSignedConsent } from "@/lib/consent";
 import { changeCondition, sendRipWa } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readStayTypes, readVisitContinuation, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
+import { petHotelTariffWarning, readStayTariffs } from "@/lib/inpatient-tariff";
 import { loadInpatientMedicationHistory } from "@/lib/inpatient-medication-history";
 import { catatWaktu, mulai } from "@/lib/u07-waktu";
 
@@ -75,7 +76,7 @@ export default async function RawatInapDetailPage({
   // Reads below depend only on the parent that already passed the branch guard, so they run together.
   // U07: tipe inap, asal kunjungan dan riwayat obat khusus ikut gelombang ini (dulu
   // menyusul berurutan, dan Obat Khusus membaca pengguna sekali lagi).
-  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }, stayTypes, continuation, medicationHistory] = await Promise.all([
+  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, tariffs, stayTypes, continuation, medicationHistory] = await Promise.all([
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
@@ -87,8 +88,9 @@ export default async function RawatInapDetailPage({
     // Same signed-in user as the guard above; no second auth read.
     supabase.from("profiles").select("role").eq("id", draftUserId).maybeSingle(),
     // Tanpa jasa berkategori Rawat Inap, lama menginap tidak punya tarif dan
-    // tagihannya tidak bisa terbentuk sendiri saat pasien pulang.
-    supabase.from("items").select("id").eq("tindakan_kategori", "Rawat Inap").eq("is_active", true).limit(1).maybeSingle(),
+    // tagihannya tidak bisa terbentuk sendiri saat pasien pulang. K14: pet hotel punya
+    // tarif sendiri (jasa berkategori Pet Hotel), dengan cadangan tarif Rawat Inap.
+    readStayTariffs(supabase),
     // K14 tipe & K06 asal kunjungan: dibaca toleran (aman sebelum migrasi terpasang).
     readStayTypes(supabase, [id]),
     readVisitContinuation(supabase, String(rec.visit_id)),
@@ -96,7 +98,11 @@ export default async function RawatInapDetailPage({
     loadInpatientMedicationHistory(supabase, id),
   ]);
   waktu.tandai("anak");
-  const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
+  const stayType = stayTypes.get(id) ?? "sakit";
+  // Pet hotel (hewan sehat) tidak membutuhkan form persetujuan (keputusan owner 29 Okt).
+  const consentBelum = stayType !== "pet_hotel" && !hasSignedConsent((consentRows ?? []) as { status: string }[]);
+  const tarifInap = tariffs.failed || !!tariffs.sick;
+  const tarifPetHotelWarning = stayType === "pet_hotel" && !tariffs.failed ? petHotelTariffWarning(tariffs) : null;
   const paksaConsentSigned = (consentRows ?? []).some((c) => c.status === "sudah_ttd" && c.kategori === "Pulang Paksa" && !!c.signed_at && new Date(c.signed_at).getTime() >= new Date(rec.admitted_at).getTime());
 
   // Bentuk laporan untuk papan pemantauan. Tanggalnya memakai log_date (tanggal
@@ -125,7 +131,6 @@ export default async function RawatInapDetailPage({
   }));
 
   waktu.selesai();
-  const stayType = stayTypes.get(id) ?? "sakit";
   const cond = rec.condition_status as Condition;
   const isDoctor = me?.role === "DOCTOR";
   const active = !rec.discharged_at;
@@ -156,7 +161,17 @@ export default async function RawatInapDetailPage({
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {!tarifInap && (
+      {tarifPetHotelWarning && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#b45309", justifyContent: "space-between" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <i className="ti ti-alert-triangle" /> {tarifPetHotelWarning}
+          </span>
+          <Link href="/pos/sku" className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+            Atur tarif
+          </Link>
+        </div>
+      )}
+      {!tarifInap && stayType !== "pet_hotel" && (
         <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#b45309", justifyContent: "space-between" }}>
           <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <i className="ti ti-alert-triangle" /> Tarif rawat inap belum ada di master jasa, jadi lama menginap

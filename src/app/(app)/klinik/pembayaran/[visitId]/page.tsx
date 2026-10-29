@@ -17,6 +17,8 @@ import { PembayaranForm } from "./PembayaranForm";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { getPajakSettings } from "@/lib/pajak";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
+import { readConsentStay } from "@/lib/inpatient-stay";
+import { readStayTariffs } from "@/lib/inpatient-tariff";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { perkiraanTagihan, bekalPotonganKlinik, nilaiBaris } from "@/lib/tagihan-klinik";
@@ -73,11 +75,14 @@ export default async function PembayaranPage({
   // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
   const { data: inpat, error: inpatientError } = await supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle();
   if (inpatientError) throw unverifiedBilling();
+  // K14: persetujuan Rawat Inap hanya untuk rawat inap sakit; pet hotel (hewan sehat) tidak.
+  const { data: inpatSakit, error: inpatSakitError } = inpat ? await readConsentStay(supabase, visitId) : { data: null, error: null };
+  if (inpatSakitError) throw unverifiedBilling();
   if (inpat?.consent_id) {
     const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
     if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
   }
-  const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
+  const jenisLayanan = inpat ? (inpatSakit ? "Rawat Inap" : "Pet Hotel") : visit.poli;
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
@@ -158,8 +163,8 @@ export default async function PembayaranPage({
   // Aturan tindakan mana yang wajib berformulir diatur klinik sendiri di layar
   // Form Persetujuan, bukan dikunci di kode.
   const aturanConsent = await bacaAturanConsent(supabase);
-  const bolehTagih = bolehBayar(jasaKategori, !!inpat, consentList, aturanConsent);
-  const katBerisiko = kategoriBerisiko(jasaKategori, !!inpat, aturanConsent);
+  const bolehTagih = bolehBayar(jasaKategori, !!inpatSakit, consentList, aturanConsent);
+  const katBerisiko = kategoriBerisiko(jasaKategori, !!inpatSakit, aturanConsent);
   const prefill = resepRows.length
     ? resepRows
     : [{ deskripsi: `Jasa Konsultasi ${visit.poli}`, qty: 1, harga: 0, jenis: "jasa", item_id: null as string | null }];
@@ -213,13 +218,10 @@ export default async function PembayaranPage({
   // Baris rawat inap jumlah harinya dihitung sistem saat pasien pulang, jadi
   // qty-nya dikunci di layar (keputusan Aldi, 19 Agustus). Koreksi nilainya lewat
   // kolom diskon, yang tetap terbuka dan mengikuti hak akses.
-  const { data: jasaInap } = await supabase
-    .from("items").select("id")
-    .eq("tindakan_kategori", "Rawat Inap").eq("is_active", true)
-    .order("name").limit(1).maybeSingle();
-  const idJasaInap = (jasaInap?.id as string | undefined) ?? null;
+  // K14: tarif harian pet hotel juga dihitung sistem, jadi ikut dikunci.
+  const { feeItemIds } = inpat ? await readStayTariffs(supabase) : { feeItemIds: [] as string[] };
   const tandai = <T extends { item_id: string | null }>(r: T) =>
-    ({ ...r, terkunci: !!idJasaInap && r.item_id === idJasaInap && !!inpat });
+    ({ ...r, terkunci: !!r.item_id && feeItemIds.includes(r.item_id) && !!inpat });
 
   const sourceVersion = createHash("sha256").update(JSON.stringify(sourceItems)).digest("hex");
   const initialObat = sourceItems.filter((r) => r.jenis !== "jasa").map(tandai);

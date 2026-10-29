@@ -18,6 +18,7 @@ import { clinicAdmissionReadiness } from "@/lib/clinic-admission-readiness";
 import { templatesForBranch } from "@/lib/consent";
 import { admitInpatient, continueToInpatient } from "@/app/(app)/klinik/rawat-inap/actions";
 import { readVisitContinuation, STAY_TYPE_LABEL, STAY_TYPES } from "@/lib/inpatient-stay";
+import { petHotelTariffWarning, readStayTariffs } from "@/lib/inpatient-tariff";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
 import { ReferralPanel } from "./ReferralPanel";
@@ -275,22 +276,30 @@ export default async function RekamMedisPage({
     (visit.branch_id as string) ?? null,
   );
   // K06: kunjungan yang tagihannya sudah Lunas dianggap tutup — rawat inap lewat
-  // kunjungan lanjutan. Tagihan yang belum lunas tetap memakai jalur langsung seperti dulu.
-  const [activeInvoiceCheck, continuation] = await Promise.all([
-    !inpatient && menungguBayar
+  // kunjungan lanjutan. K08 (keputusan owner 29 Okt): tagihan aktif yang belum lunas
+  // menutup jalur langsung sampai dilunasi atau dibatalkan.
+  const [activeInvoiceCheck, continuation, tariffs] = await Promise.all([
+    !inpatient && !selesai
       ? supabase.from("invoices").select("id, voided_at, paid_status").eq("visit_id", visitId)
       : Promise.resolve({ data: [] as { id: string; voided_at: string | null; paid_status: string }[], error: null }),
     readVisitContinuation(supabase, visitId),
+    !inpatient ? readStayTariffs(supabase) : Promise.resolve(null),
   ]);
-  const hasPaidInvoice = Array.isArray(activeInvoiceCheck.data)
-    && (activeInvoiceCheck.data as { voided_at: string | null; paid_status?: string }[])
-      .some((row) => !row.voided_at && row.paid_status === "Lunas");
-  const admission = clinicAdmissionReadiness({
+  const activeInvoices = Array.isArray(activeInvoiceCheck.data)
+    ? (activeInvoiceCheck.data as { voided_at: string | null; paid_status?: string }[]).filter((row) => !row.voided_at)
+    : [];
+  const hasPaidInvoice = activeInvoices.some((row) => row.paid_status === "Lunas");
+  const hasUnpaidInvoice = activeInvoices.some((row) => row.paid_status !== "Lunas");
+  const readinessInput = {
     readFailed: !!(consentsError || templatesError || ruleError || inpatientError || mrLoadFailed || activeInvoiceCheck.error),
-    hasPaidInvoice,
+    hasPaidInvoice, hasUnpaidInvoice,
     status: visit.status, checkedOutAt: visit.checked_out_at ?? null, doctorId: visit.doctor_id ?? null,
     medicalRecordId: mrId, rule: inpatientConsentRule, consents: consentRows ?? [],
-  });
+  };
+  const admission = clinicAdmissionReadiness(readinessInput);
+  // K14: pet hotel (hewan sehat) tidak butuh pemeriksaan, dokter, maupun persetujuan Rawat Inap.
+  const petHotel = clinicAdmissionReadiness({ ...readinessInput, stayType: "pet_hotel" });
+  const petHotelWarning = tariffs && !tariffs.failed ? petHotelTariffWarning(tariffs) : null;
 
   const petIdCode = pet
     ? `RM-${new Date(visit.created_at as string).toISOString().slice(2, 10).replace(/-/g, "")}-${(visit.id as string).slice(0, 4).toUpperCase()}`
@@ -621,11 +630,20 @@ export default async function RekamMedisPage({
                 </div>
                 {!admission.canAdmit && <div role="status" style={{width:"100%",fontSize:12,color:"#b45309"}}><p>{admission.reason}</p>{admission.consentAction&&<a className="back-btn" href="#persetujuan-rawat-inap">Periksa persetujuan khusus Rawat Inap</a>}</div>}
                 <SubmitButton className="btn-acc" icon="ti-bed" pendingText="Memproses…" disabled={!admission.canAdmit}>Masukkan Rawat Inap</SubmitButton>
+                {admission.canAdmit && petHotelWarning && <div role="status" style={{width:"100%",fontSize:11.5,color:"#b45309"}}>Pet hotel: {petHotelWarning}</div>}
               </TransactionForm>
+            )}
+            {!inpatient && !admission.canAdmit && !admission.continueFromClosed && petHotel.canAdmit && (
+              <PetHotelCheckIn visitId={visit.id as string} userId={draftUserId} warning={petHotelWarning} reason={null} />
             )}
           </div>
         </>
       ) : (
+        <>
+        {!recorded && !inpatient && (
+          <PetHotelCheckIn visitId={visit.id as string} userId={draftUserId} warning={petHotelWarning}
+            reason={petHotel.canAdmit ? null : petHotel.reason} collapsible />
+        )}
         <RekamForm
           service={visit.poli}
           key={`${user?.id ?? ""}:${visitId}:${correction ? `${correction.recordId}:${correction.revision}` : "initial"}`}
@@ -664,8 +682,50 @@ export default async function RekamMedisPage({
           }}
           providerOpsi={savedProvider ? [savedProvider] : providerOpsi}
         />
+        </>
       )}
     </>
+  );
+}
+
+// K14: check-in pet hotel oleh paramedis/staf — tanpa pemeriksaan dokter, tanpa dokter
+// pada kunjungan, tanpa persetujuan khusus Rawat Inap (keputusan owner 29 Okt).
+function PetHotelCheckIn({ visitId, userId, warning, reason, collapsible = false }: {
+  visitId: string; userId: string; warning: string | null; reason: string | null; collapsible?: boolean;
+}) {
+  const form = (
+    <TransactionForm userId={userId} scope={`inpatient-pet-hotel:${visitId}`} action={admitInpatient} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+      <input type="hidden" name="visitId" value={visitId} />
+      <input type="hidden" name="stay_type" value="pet_hotel" />
+      <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
+      <div style={{ width: "100%", fontSize: 11.5, color: "var(--tm)" }}>
+        Untuk hewan sehat yang dititipkan: tidak perlu pemeriksaan dokter maupun persetujuan rawat inap. Biaya menginap dihitung otomatis dengan tarif Pet Hotel saat hewan dijemput.
+      </div>
+      <div style={{ flex: 2, minWidth: 240 }}>
+        <label className="flab">Catatan penitipan *</label>
+        <input className="fi" name="treatment_plan" required maxLength={4000} placeholder="mis. makan 2x sehari, bawa pakan sendiri, dijemput Sabtu" />
+      </div>
+      {warning && <div role="status" style={{ width: "100%", fontSize: 11.5, color: "#b45309" }}>{warning}</div>}
+      {reason && <div role="status" style={{ width: "100%", fontSize: 12, color: "#b45309" }}><p>{reason}</p></div>}
+      <SubmitButton className="btn-acc" icon="ti-home-heart" pendingText="Memproses…" disabled={!!reason}>Check-in Pet Hotel</SubmitButton>
+    </TransactionForm>
+  );
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      {collapsible ? (
+        <details>
+          <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+            <i className="ti ti-home-heart" style={{ color: "var(--acc)" }} /> Titip pet hotel (hewan sehat) — tanpa pemeriksaan dokter
+          </summary>
+          {form}
+        </details>
+      ) : (
+        <>
+          <div className="card-hd"><span style={{ display: "flex", alignItems: "center", gap: 6 }}><i className="ti ti-home-heart" style={{ color: "var(--acc)" }} /> Pet hotel (hewan sehat)</span></div>
+          {form}
+        </>
+      )}
+    </div>
   );
 }
 

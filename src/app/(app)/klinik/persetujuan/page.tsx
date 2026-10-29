@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { TemplateForm, type TemplateRow } from "./TemplateForm";
 import { toggleTemplate, simpanAturanConsent } from "./actions";
-import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
+import { KATEGORI_CONSENT } from "@/lib/tindakan";
 
 // Kelola template form persetujuan (spec 2026-07-20). Admin/owner saja.
 export default async function PersetujuanPage({
@@ -78,7 +78,7 @@ export default async function PersetujuanPage({
               </tr>
             </thead>
             <tbody>
-              {TINDAKAN_KATEGORI.map((kat) => {
+              {KATEGORI_CONSENT.map((kat) => {
                 const a = aturan.get(kat);
                 return (
                   <tr key={kat}>

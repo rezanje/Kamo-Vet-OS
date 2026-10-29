@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getPajakSettings, tambahPpn } from "@/lib/pajak";
 import { getOpenShift } from "@/lib/shift";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
+import { readConsentStay } from "@/lib/inpatient-stay";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { bacaPoinPelanggan, catatPoinKlinik, poinTerpakai, RUPIAH_PER_POIN } from "@/lib/poin-klinik";
@@ -138,7 +139,8 @@ export async function bayarVisit(formData: FormData) {
   const shiftP = mulai(supabase.auth.getUser().then(({ data: { user } }) =>
     user ? getOpenShift(supabase as never, user.id, "klinik") : null));
   const jasaP = mulai(bacaJasaGate(supabase, visitId));
-  const inpatP = mulai(supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle());
+  // K14: only a sick stay needs the inpatient consent; a pet hotel stay does not.
+  const inpatP = mulai(readConsentStay(supabase, visitId));
   const inpatConsentP = mulai(inpatP.then(({ data }) => data?.consent_id
     ? supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId}) : null));
   const consentsP = mulai(supabase.from("consents").select("status").eq("visit_id", visitId));
@@ -532,7 +534,7 @@ export async function bayarRombongan(formData: FormData) {
     // §6.3: tindakan berisiko wajib punya persetujuan bertanda tangan. Berlaku per
     // hewan — satu hewan yang belum menandatangani tidak boleh ikut terbayar diam-diam.
     const jasaP = mulai(bacaJasaGate(supabase, b.visitId));
-    const inpatP = mulai(supabase.from("inpatient_records").select("id").eq("visit_id", b.visitId).limit(1).maybeSingle());
+    const inpatP = mulai(readConsentStay(supabase, b.visitId));
     const consentsP = mulai(supabase.from("consents").select("status").eq("visit_id", b.visitId));
     return mulai((async (): Promise<Siap | null> => {
       const { data: v, error: visitError } = await visitP;

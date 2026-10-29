@@ -47,6 +47,23 @@ export async function readStayTypesChecked(db: Db, ids: string[]): Promise<{ typ
   return { types, failed: false };
 }
 
+/**
+ * Rawat inap yang menuntut persetujuan khusus Rawat Inap di kasir: hanya tipe "sakit".
+ * Pet hotel (hewan sehat) tidak (keputusan owner 29 Okt). Database tanpa kolom stay_type
+ * (migrasi K14 belum terpasang) = semua rawat inap dianggap sakit, seperti dulu.
+ * Bentuk hasil sama dengan `.maybeSingle()` supaya pemanggil tetap fail closed pada `error`.
+ */
+export async function readConsentStay(
+  db: Pick<Db, "from">, visitId: string,
+): Promise<{ data: { id: string; consent_id: string | null } | null; error: { code?: string; message?: string } | null }> {
+  const typed = await db.from("inpatient_records").select("id, consent_id")
+    .eq("visit_id", visitId).eq("stay_type", "sakit").limit(1).maybeSingle();
+  if (typed.error && isMissingStayColumn(typed.error)) {
+    return await db.from("inpatient_records").select("id, consent_id").eq("visit_id", visitId).limit(1).maybeSingle();
+  }
+  return typed;
+}
+
 /** Untuk tampilan saja: gagal baca = tampil sebagai bawaan "sakit". */
 export async function readStayTypes(db: Db, ids: string[]): Promise<Map<string, StayType>> {
   return (await readStayTypesChecked(db, ids)).types;
