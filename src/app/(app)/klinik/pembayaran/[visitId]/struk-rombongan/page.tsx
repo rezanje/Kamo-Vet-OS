@@ -30,7 +30,10 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
 
   // Rincian tiap tagihan. Kunjungan yang belum ditagih sengaja tetap tampil sebagai
   // baris kosong — pemilik berhak tahu ada pemeriksaan yang tagihannya belum keluar.
-  const invoiceIds = rombongan.baris.map((b) => b.invoiceNo).filter(Boolean) as string[];
+  // Rawat inap bertahap: satu kunjungan bisa punya beberapa nomor tagihan aktif.
+  const invoiceIds = rombongan.baris
+    .flatMap((b) => b.invoiceNos ?? (b.invoiceNo ? [b.invoiceNo] : []))
+    .filter(Boolean) as string[];
   const { data: invs } = invoiceIds.length
     ? await supabase
         .from("invoices")
@@ -96,18 +99,19 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
         <Hr />
 
         {rombongan.baris.map((b) => {
-          const inv = b.invoiceNo ? invPerNo.get(b.invoiceNo) : null;
+          const nomor = b.invoiceNos ?? (b.invoiceNo ? [b.invoiceNo] : []);
+          const daftar = nomor.map((no) => invPerNo.get(no)).filter(Boolean) as Inv[];
           const dokterPJ = namaDokterPJ(kunjunganPer.get(b.visitId), namaDokter);
           return (
             <div key={b.visitId} style={{ marginBottom: 6 }}>
               <div style={{ fontWeight: 700 }}>
                 {b.hewan}
-                {inv ? <span style={{ fontWeight: 400, fontSize: 9.5 }}> · {inv.invoice_no}</span> : null}
+                {daftar.length ? <span style={{ fontWeight: 400, fontSize: 9.5 }}> · {daftar.map((i) => i.invoice_no).join(", ")}</span> : null}
               </div>
-              {inv && <Kv k="Kasir" v={inv.cashier_name ?? "Kasir belum tercatat"} />}
+              {daftar[0] && <Kv k="Kasir" v={daftar[0].cashier_name ?? "Kasir belum tercatat"} />}
               {dokterPJ && <Kv k="Dokter PJ" v={dokterPJ} />}
-              {!inv && <div style={{ fontSize: 9.5 }}>(tagihan belum dibuat)</div>}
-              {(inv ? itemsPerInv.get(inv.id) ?? [] : []).map((it, i) => (
+              {!daftar.length && <div style={{ fontSize: 9.5 }}>(tagihan belum dibuat)</div>}
+              {daftar.flatMap((inv) => itemsPerInv.get(inv.id) ?? []).map((it, i) => (
                 <div key={i}>
                   <div>{it.deskripsi}</div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -116,9 +120,10 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
                   </div>
                 </div>
               ))}
-              {inv && (
+              {daftar.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
-                  <span>Subtotal {b.hewan}</span><span>{rp(inv.total)}</span>
+                  <span>Subtotal {b.hewan}</span>
+                  <span>{rp(daftar.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0))}</span>
                 </div>
               )}
             </div>

@@ -104,7 +104,8 @@ export async function bacaRombongan(supabase: AnyClient, visitId: string): Promi
     .from("invoices")
     .select("id, visit_id, invoice_no, total, dp_amount, paid_status")
     .in("visit_id", rows.map((v) => v.id))
-    .is("voided_at", null);
+    .is("voided_at", null)
+    .order("created_at");
 
   type InvRow = { id: string; visit_id: string; invoice_no: string; total: number; dp_amount: number; paid_status: string };
   const invRows = (invs ?? []) as InvRow[];
@@ -119,20 +120,31 @@ export async function bacaRombongan(supabase: AnyClient, visitId: string): Promi
     dibayarExtra.set(p.invoice_id, (dibayarExtra.get(p.invoice_id) ?? 0) + Number(p.amount));
   }
 
-  const invPerVisit = new Map(invRows.map((i) => [i.visit_id, i]));
+  // Rawat inap ditagih BERTAHAP: satu kunjungan bisa punya beberapa tagihan aktif.
+  // Dulu baris ini memakai Map biasa, jadi tagihan terakhir menimpa yang lain dan
+  // panel rombongan menyebut total yang jauh lebih kecil dari tagihan sebenarnya.
+  const invPerVisit = new Map<string, InvRow[]>();
+  for (const inv of invRows) invPerVisit.set(inv.visit_id, [...(invPerVisit.get(inv.visit_id) ?? []), inv]);
 
   const baris: KunjunganSerombongan[] = rows.map((v) => {
-    const inv = invPerVisit.get(v.id);
-    if (!inv) {
-      return { visitId: v.id, hewan: one(v.pets)?.name ?? "—", invoiceNo: null, total: 0, paidStatus: null, dibayar: 0 };
+    const hewan = one(v.pets)?.name ?? "—";
+    const daftar = invPerVisit.get(v.id) ?? [];
+    if (daftar.length === 0) {
+      return { visitId: v.id, hewan, invoiceNo: null, total: 0, paidStatus: null, dibayar: 0 };
     }
-    const total = Number(inv.total) || 0;
-    const dibayar = inv.paid_status === "Lunas"
-      ? total
-      : Number(inv.dp_amount || 0) + (dibayarExtra.get(inv.id) ?? 0);
+    const total = daftar.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+    const dibayar = daftar.reduce((sum, inv) => sum + (inv.paid_status === "Lunas"
+      ? Number(inv.total) || 0
+      : Number(inv.dp_amount || 0) + (dibayarExtra.get(inv.id) ?? 0)), 0);
+    // Beberapa tahap baru disebut lunas kalau SEMUANYA lunas; nomornya menyebut
+    // tagihan tertua supaya kasir punya pegangan untuk membuka rinciannya.
+    const paidStatus = daftar.every((inv) => inv.paid_status === "Lunas") ? "Lunas"
+      : dibayar > 0 ? "DP" : "Belum Lunas";
     return {
-      visitId: v.id, hewan: one(v.pets)?.name ?? "—",
-      invoiceNo: inv.invoice_no, total, paidStatus: inv.paid_status, dibayar,
+      visitId: v.id, hewan,
+      invoiceNo: daftar[0].invoice_no,
+      invoiceNos: daftar.map((inv) => inv.invoice_no),
+      total, paidStatus, dibayar,
     };
   });
 

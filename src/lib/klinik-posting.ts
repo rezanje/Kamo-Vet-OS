@@ -136,6 +136,12 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       // K02: database rejections of procedure BMHP name the reason (unit, item, qty).
       BMHP_INVALID: "BMHP tindakan ditolak",
       BMHP_POSTED: "BMHP tindakan sudah tercatat di tagihan aktif",
+      // Tagihan berjalan rawat inap (Andri, 29 Okt).
+      DP_MINIMAL: "Uang muka belum cukup",
+      LINE_BILLED: "Baris resep sudah ditagih",
+      STAGE_INVALID: "Tagihan bertahap ditolak",
+      RECEIPT_INVALID: "Kwitansi ditolak",
+      DOC_NO_INVALID: "Nomor dokumen ditolak",
     };
     const fixedMessages: Record<string, string> = {
       POLICY_INVALID: "Versi aturan DEMO berubah atau tidak valid. Muat ulang halaman dan periksa aturan.",
@@ -151,7 +157,11 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       INVOICE_INVALID: "Nilai atau rincian invoice tidak konsisten.",
       PAYMENT_INVALID: "Pembayaran tidak cocok dengan sisa piutang.",
       JOURNAL_MISSING: "Catatan pembukuan lama belum lengkap. Minta keuangan meninjau tagihan.",
-      INPATIENT_OPEN: "Biaya rawat inap belum dihitung. Selesaikan kepulangan pasien sebelum membuat tagihan.",
+      INPATIENT_OPEN: "Pasien masih dirawat. Tagih lewat layar Tagihan rawat inap berjalan, bukan tagihan sekali jadi.",
+      DP_OVERRIDE_DENIED: "Hanya OWNER, ADMIN, atau FINANCE yang boleh menerima di bawah uang muka minimal.",
+      ADVANCE_USED: "Uang muka dari kwitansi ini sudah menempel di tagihan. Batalkan tagihannya lebih dulu.",
+      ADVANCE_INVALID: "Kelebihan uang tidak dapat disimpan tanpa data pemilik. Lengkapi data pelanggan.",
+      RECEIPT_VOIDED: "Kwitansi ini sudah dibatalkan.",
       INVOICE_NO_INVALID: "Format nomor invoice tidak valid.",
       LINE_INVALID: "Rincian invoice tidak valid.",
       JOURNAL_UNBALANCED: "Jurnal invoice tidak seimbang; tidak ada perubahan yang disimpan.",

@@ -21,10 +21,14 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
     .eq("id", visitId).maybeSingle();
   if (!visit) notFound();
 
+  // Rawat inap bertahap: satu kunjungan bisa punya beberapa tagihan aktif, jadi
+  // `maybeSingle()` dulu menggagalkan cetak. Tanpa pilihan eksplisit dicetak yang TERBARU.
   const { data: invoice } = await supabase
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, paid_at, created_at, cashier_name")
-    .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+    .eq("visit_id", visitId).is("voided_at", null)
+    .order("created_at", { ascending: false }).order("id", { ascending: false })
+    .limit(1).maybeSingle();
   if (!invoice) notFound();
 
   const { data: items } = await supabase

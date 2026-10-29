@@ -2,7 +2,7 @@ import{renderToStaticMarkup}from 'react-dom/server';import{beforeEach,expect,it,
 const s=vi.hoisted(()=>({missing:false,fail:'',calls:[]as unknown[][]}));
 const old='a0000000-0000-4000-8000-000000000001',current='a0000000-0000-4000-8000-000000000002';
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from(table:string){const filters:Record<string,unknown>={};const q={select:()=>q,eq:(key:string,value:unknown)=>{filters[key]=value;s.calls.push([table,key,value]);return q;},is:()=>q,order:()=>q,maybeSingle:()=>q,
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from(table:string){const filters:Record<string,unknown>={};const q={select:()=>q,eq:(key:string,value:unknown)=>{filters[key]=value;s.calls.push([table,key,value]);return q;},is:()=>q,order:()=>q,limit:()=>q,maybeSingle:()=>q,
  then(resolve:(r:unknown)=>unknown){const id=filters.id??current;const invoice={id,invoice_no:id===old?'INV-REQUESTED':'INV-CURRENT',total:100,subtotal:100,discount:0,tax:0,dp_amount:0,paid_status:'Lunas',created_at:'2026-10-23T00:00:00Z'};
  const data=table==='visits'?{id:'visit',poli:'Clinic',created_at:'2026-10-23T00:00:00Z'}:table==='invoices'?(s.missing&&filters.id?null:invoice):table==='clinic_demo_invoice_snapshots'?null:[];
  return Promise.resolve({data:s.fail===table?null:data,error:s.fail===table?{message:'Private failure'}:null}).then(resolve);

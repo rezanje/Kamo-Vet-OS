@@ -11,7 +11,7 @@ vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ from(table: string) {
   const query = {
     select(columns: string) { if (table === 'invoice_items') state.selected.push(columns); return query; },
-    eq() { return query; }, is() { return query; }, order() { return query; },
+    eq() { return query; }, is() { return query; }, order() { return query; }, limit() { return query; },
     maybeSingle: async () => ({ data: table === 'visits' ? { id: visitId, poli: 'Umum', created_at: '2026-10-24T00:00:00Z' } : table === 'invoices' ? {
       id: invoiceId, invoice_no: 'INV-FICTION', subtotal: 100, discount: 0, tax: 0, total: 100, dp_amount: 0, paid_status: 'Lunas', created_at: '2026-10-24T00:00:00Z',
     } : null, error: null }),

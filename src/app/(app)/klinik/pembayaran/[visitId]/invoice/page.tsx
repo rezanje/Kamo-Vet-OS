@@ -29,7 +29,9 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
     .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name")
     .eq("visit_id",visitId).is("voided_at",null);
   if(requested)invoiceQuery=invoiceQuery.eq("id",requested);
-  const{data:invoice,error:invoiceError}=await invoiceQuery.maybeSingle();
+  // Rawat inap bertahap: tanpa `invoice_id` pilih tagihan TERBARU, bukan menggagalkan cetak.
+  const{data:invoice,error:invoiceError}=await invoiceQuery
+    .order("created_at",{ascending:false}).order("id",{ascending:false}).limit(1).maybeSingle();
   if(invoiceError)throw new Error("Invoice sumber belum dapat diverifikasi. Muat ulang sebelum mencetak.");
   if(!invoice||(requested&&invoice.id!==requested))notFound();
 

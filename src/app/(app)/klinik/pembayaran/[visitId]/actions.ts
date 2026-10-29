@@ -143,10 +143,16 @@ export async function bayarVisit(formData: FormData) {
     ? supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId}) : null));
   const consentsP = mulai(supabase.from("consents").select("status").eq("visit_id", visitId));
   const aturanConsentP = mulai(bacaAturanConsent(supabase));
+  // Rawat inap bertahap: beberapa invoice aktif per kunjungan sejak 29 Oktober 2026.
+  // `maybeSingle()` di sini dulu berubah jadi galat "tagihan belum dapat diverifikasi"
+  // begitu tahap kedua terbit, sehingga rawat jalan pun ikut macet. Yang dipakai jalur
+  // koreksi adalah tagihan TERBARU; tahapnya dikelola di layar tagihan rawat inap.
   const activeInvoiceP = mulai(supabase
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending, service_pricing_version, salesperson_id")
-    .eq("visit_id", visitId).is("voided_at", null).maybeSingle());
+    .eq("visit_id", visitId).is("voided_at", null)
+    .order("created_at", { ascending: false }).order("id", { ascending: false })
+    .limit(1).maybeSingle());
   const periodeP = mulai(cekPeriode(supabase, todayIso()));
   const visitP = mulai(supabase.from("visits").select("branch_id, customer_id, doctor_id, service_provider_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle());
   const pajakP = mulai(getPajakSettings(supabase));
@@ -308,6 +314,7 @@ export async function bayarVisit(formData: FormData) {
     : paidStatus === "DP" ? Number(formData.get("dp_amount")) || 0 : 0;
   const dpDate = paidStatus === "DP" ? String(formData.get("dp_date") ?? "") || null : null;
   const reason = String(formData.get("edit_reason") ?? "").trim() || null;
+  const dpOverrideReason = String(formData.get("dp_override_reason") ?? "").trim().slice(0, 500) || null;
   // Visit ditutup hanya saat lunas; DP/Belum Lunas tetap tahap Pembayaran (bisa dilanjut).
   const visitStatus = paidStatus === "Lunas" ? "Selesai" : "Pembayaran";
 
@@ -375,6 +382,9 @@ export async function bayarVisit(formData: FormData) {
       tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
       shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
+      // Uang muka minimal ditegakkan di RPC posting; alasan penerobosan ikut dikirim dan
+      // dicatat di sana beserta siapa dan kapannya (Andri, 29 Oktober 2026).
+      ...(dpOverrideReason ? { dp_override_reason: dpOverrideReason } : {}),
       ...(campaignCode ? { campaign_code: campaignCode } : {}),
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },

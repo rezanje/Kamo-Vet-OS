@@ -11,10 +11,15 @@ const AMBIGU: [string, string][] = [
   ["stock_requests", "warehouses"],
   ["employees", "branches"],
   ["invoices", "invoice_payments"],
+  ["invoice_payments", "invoices"],
   ["invoice_items", "items"],
   ["staff_reward_redemptions", "profiles"],
   ["goods_receipts", "profiles"],
   ["expenses", "profiles"],
+  // Kwitansi klinik: dibuat oleh satu orang, dibatalkan orang lain, dan punya shift
+  // pembuat + shift pembatal. Keduanya dua jalur ke tabel yang sama.
+  ["clinic_payment_receipts", "profiles"],
+  ["clinic_payment_receipts", "cashier_shifts"],
 ];
 
 const SRC = join(__dirname, "..", "..");

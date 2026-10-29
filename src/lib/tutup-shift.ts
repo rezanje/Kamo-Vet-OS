@@ -49,6 +49,39 @@ export type HasilTutup =
       dibebankanKe: string | null }
   | { ok: false; error: string };
 
+
+type KwitansiShift = {
+  id: string; status: string; shift_id: string | null; void_shift_id: string | null;
+  clinic_payment_receipt_parts?: { metode: string; amount: number }[] | null;
+};
+
+/**
+ * Bagian kwitansi klinik yang menggerakkan laci shift ini.
+ *
+ * Gagal baca (mis. migrasi tagihan berjalan belum terpasang) dikembalikan kosong, sama
+ * seperti sebelum fitur ini ada: shift tetap bisa ditutup dengan rumus lama.
+ */
+async function kwitansiKlinikRows(
+  supabase: AnyClient, shiftId: string,
+): Promise<{ total: number; metode_bayar: string }[]> {
+  const { data, error } = await supabase
+    .from("clinic_payment_receipts")
+    .select("id, status, shift_id, void_shift_id, clinic_payment_receipt_parts(metode, amount)")
+    .or(`shift_id.eq.${shiftId},void_shift_id.eq.${shiftId}`);
+  if (error) return [];
+  const rows: { total: number; metode_bayar: string }[] = [];
+  for (const kwitansi of (data ?? []) as KwitansiShift[]) {
+    const bagian = kwitansi.clinic_payment_receipt_parts ?? [];
+    if (kwitansi.shift_id === shiftId) {
+      for (const part of bagian) rows.push({ total: Number(part.amount) || 0, metode_bayar: part.metode });
+    }
+    if (kwitansi.void_shift_id === shiftId) {
+      for (const part of bagian) rows.push({ total: -(Number(part.amount) || 0), metode_bayar: part.metode });
+    }
+  }
+  return rows;
+}
+
 /** Uang masuk shift ini, dari sumber yang benar menurut jenis shiftnya. */
 export async function pemasukanShift(
   supabase: AnyClient,
@@ -78,7 +111,18 @@ export async function pemasukanShift(
       susulan.set(p.invoice_id, (susulan.get(p.invoice_id) ?? 0) + Number(p.amount));
     }
 
-    return [...originalParts, ...invoiceCashRows(
+    // Tagihan berjalan rawat inap: uangnya TIDAK masuk lewat kepala invoice, tapi lewat
+    // kwitansi per kunjungan (boleh campuran metode, boleh beberapa kali). Tiap bagian
+    // kwitansi yang diterima di shift ini menambah laci; kwitansi yang DIBATALKAN di shift
+    // ini menguranginya. Kwitansi yang terbit dan dibatalkan di shift yang sama otomatis
+    // saling meniadakan.
+    //
+    // Yang sengaja TIDAK dihitung: pemakaian uang muka pada tagihan (metode "Uang Muka").
+    // Itu bukan uang masuk, hanya utang klinik ke pemilik yang berkurang — uangnya sudah
+    // masuk laci pada shift saat kwitansinya dibuat.
+    const kwitansiRows = await kwitansiKlinikRows(supabase, shift.id);
+
+    return [...originalParts, ...kwitansiRows, ...invoiceCashRows(
       ((invoices ?? []) as {
         id: string; total: number; dp_amount: number; paid_status: string; metode_bayar: string;
         shift_cash_carry?: number | null;

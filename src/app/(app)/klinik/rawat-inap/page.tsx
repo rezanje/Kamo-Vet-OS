@@ -161,9 +161,9 @@ export default async function RawatInapPage({
         </div>
 
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 820 }}>
+          <table className="tbl" style={{ minWidth: 940 }}>
             <thead>
-              <tr><th style={{ width: 30 }}>No.</th><th>Pasien</th><th>Tipe</th><th>Pemilik</th><th>Cabang</th><th>Dokter PIC</th><th>Tanggal Masuk</th><th>Lama Inap</th><th>Kondisi</th><th>Catatan</th><th>Aksi</th></tr>
+              <tr><th style={{ width: 30 }}>No.</th><th>Pasien</th><th>Tipe</th><th>Pemilik</th><th>Cabang</th><th>Dokter PIC</th><th>Tanggal Masuk</th><th>Lama Inap</th><th>Kondisi</th><th>Catatan</th><th>Aksi</th><th>Tagihan</th></tr>
             </thead>
             <tbody>
               {(records ?? []).map((r, idx) => {
@@ -211,11 +211,19 @@ export default async function RawatInapPage({
                         </Link>
                       </div>
                     </td>
+                    {/* Tagihan berjalan: kasir tidak perlu membuka rekam medis dulu untuk
+                        menagih tahap berikutnya atau menerima uang (Andri, 29 Oktober). */}
+                    <td>
+                      <Link href={`/klinik/rawat-inap/${r.id}/tagihan`} className="btn-acc"
+                        style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                        <i className="ti ti-cash" /> Bayar tagihan
+                      </Link>
+                    </td>
                   </tr>
                 );
               })}
               {(records ?? []).length === 0 && (
-                <tr><td colSpan={11} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>Tidak ada pasien rawat inap.</td></tr>
+                <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>Tidak ada pasien rawat inap.</td></tr>
               )}
             </tbody>
           </table>
