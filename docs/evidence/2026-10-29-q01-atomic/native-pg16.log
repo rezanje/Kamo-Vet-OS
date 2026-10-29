@@ -1,0 +1,23 @@
+server: postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) 
+Applied 304 repository migrations in order.
+Re-applied 20261028180000_q01_new_customer_quest.sql + 20261029153000_q01_quest_progress_atomic.sql: idempotent.
+q01_quest_progress_atomic.sql: passed
+q01_new_customer_quest.sql: passed
+c05_campaign_codes.sql: passed
+quest_config_write_guard.sql: passed
+pos_merchant_fees.sql: passed
+pos_split_payments.sql: passed
+pos_payment_method_corrections.sql: passed
+cashier_atomic_fifo_floor.sql: passed
+posted_sale_cancellations.sql (fee prelude, minus other-FIFO-callers block): passed
+refund_payout.sql (fee prelude): passed
+return_planned_corrections.sql (fee prelude): passed
+customer_return_spending.sql (fee prelude): passed
+negative_stock_hpp.sql (fee prelude): passed
+average_sale_corrections.sql (fee prelude + average opening): passed
+service_line_performers.sql (split prelude): passed
+sold_sku_units.sql (split prelude): passed
+promo_edit.sql (split prelude): passed
+Q01 race: one new customer paid at two counters at once -> claims,progress,effects = 1,1,2
+All Q01 atomic checks passed.
+Stopped and removed the throwaway PostgreSQL cluster.

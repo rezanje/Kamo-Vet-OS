@@ -18,6 +18,7 @@ import {
 import { collectOperationalClinic } from "./operasional-klinik-server";
 import { batasTanggalWIB } from "./laporan-transaksi";
 import { isCompletedSale, saleMerchandiseTotal, saleRefundMerchantFee, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
+import { clinicRefundPerInvoice, type ClinicRefundRow } from "./clinic-refund-reporting";
 
 type AnyClient = any;
 
@@ -263,7 +264,16 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
     const invoiceResult = await read(invoiceQuery);
     queryError(invoiceResult);
     const visitMap = new Map(visits.map((visit) => [visit.id, visit]));
-    for (const invoice of (invoiceResult.data ?? []) as InvoiceRow[]) {
+    const invoices = (invoiceResult.data ?? []) as InvoiceRow[];
+    // R02: posted clinic refunds (cash, or transfer marked done by finance) net the source
+    // invoice exactly like customer returns net the source sale above (refund date <= period end).
+    let clinicRefunds = new Map<string, number>();
+    if (invoices.length > 0) {
+      const refundResult = await read(supabase.from("clinic_refunds").select("invoice_id,total").in("invoice_id", invoices.map((invoice) => invoice.id)).lte("tanggal", filter.to));
+      queryError(refundResult);
+      clinicRefunds = clinicRefundPerInvoice(refundResult.data as ClinicRefundRow[]);
+    }
+    for (const invoice of invoices) {
       const visit = visitMap.get(invoice.visit_id);
       if (!visit) continue;
       documents.push(itemNetRows(
@@ -273,6 +283,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
         invoice.created_at,
         Number(invoice.total) || 0,
         (invoice.invoice_items ?? []).map((item) => ({ qty: item.qty, hpp: item.hpp, harga: item.harga, itemId: item.item_id, kind: "clinic" as const })),
+        clinicRefunds.get(invoice.id) ?? 0,
       ));
     }
   }

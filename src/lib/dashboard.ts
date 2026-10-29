@@ -4,6 +4,7 @@ import { getAccountBalances, nilaiSeksi } from "./ledger";
 import { kodeSemuaRekening } from "./kas-akun";
 import { sisaFakturablePerBaris, type ItemFakturPoTersimpan } from "./faktur-beli";
 import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
+import { clinicRefundTotalBetween, type ClinicRefundRow } from "./clinic-refund-reporting";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -36,13 +37,17 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
 
   const kodeRekening = await kodeSemuaRekening(supabase);
 
-  const [balances, salesRows, salesReturnRows, invRows, invPays, fjRows, fjReceipts, poRows, poFaktur, poRetur, cashLines] = await Promise.all([
+  const [balances, salesRows, salesReturnRows, clinicRefundRows, invRows, invPays, fjRows, fjReceipts, poRows, poFaktur, poRetur, cashLines] = await Promise.all([
     getAccountBalances(supabase, { from: awalTahun, to: today }),
     supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status, payment_plan, payments_finalized_at, voided_at"),
     // Return corrections restate the original open date. Include both YTD and
     // the complete seven-day window, which can begin in the preceding year.
     completeReportQuery(supabase.from("sales_returns").select("id,total,tanggal", { count: "exact" }).is("voided_at", null)
       .gte("tanggal", awal7 < awalTahun ? awal7 : awalTahun).lte("tanggal", today)),
+    // R02: posted clinic refunds (cash, or transfer marked done by finance) reduce clinic
+    // sales on the refund's own date, mirroring the dated customer returns above.
+    completeReportQuery(supabase.from("clinic_refunds").select("id,total,tanggal", { count: "exact" })
+      .gte("tanggal", awalTahun).lte("tanggal", today)),
     supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at").is("voided_at", null),
     supabase.from("invoice_payments").select("invoice_id, amount"),
     // Retain prior-year/cancelled sources: their dated reversals may fall in
@@ -111,6 +116,8 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     invTotal += Number(i.total);
     invBelum += Math.max(0, Number(i.total) - dibayar);
   }
+  // Paid-out clinic refunds leave both this year's sales and its paid share (the money went back).
+  invTotal -= clinicRefundTotalBetween(clinicRefundRows.data as ClinicRefundRow[], awalTahun, today);
   // POS dianggap lunas (bayar tunai/QRIS di kasir). Order online marketplace TIDAK —
   // dana ditahan platform di akun 1202 Piutang Marketplace sampai "Tandai cair" dijalankan,
   // jadi ikut dihitung belum lunas selama marketplace_status masih 'piutang'.

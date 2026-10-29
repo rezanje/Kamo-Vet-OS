@@ -28,12 +28,10 @@ with fixture.DisposablePostgres() as database:
         clone = 'k08_legacy_probe'
         database.sql('create database ' + clone + ' template postgres;')
         try:
+            # The 2026-10-22 fixture gap (unauthenticated setup refused by protect_inpatient_care_staff)
+            # was closed in the K08 rebill batch; the discharge assertions now run on both definitions.
             database.sql('\\connect ' + clone + "\n" + (ROOT / 'supabase/tests/clinic_inpatient_discharge.sql').read_text())
-            raise RuntimeError('Legacy baseline probe unexpectedly passed; reclassify evidence')
-        except RuntimeError as error:
-            if 'ACCESS_DENIED: pengguna tidak terautentikasi' not in str(error) or 'protect_inpatient_care_staff' not in str(error):
-                raise
-            print('CONFIRMED existing fixture failure ' + label + ': protect_inpatient_care_staff unauthenticated setup', flush=True)
+            print('PASS clinic_inpatient_discharge.sql on ' + label, flush=True)
         finally:
             database.sql('drop database ' + clone + ' with (force);')
     print('PASS migration/rollback roundtrip: exact definition/owner/security/ACL preserved', flush=True)

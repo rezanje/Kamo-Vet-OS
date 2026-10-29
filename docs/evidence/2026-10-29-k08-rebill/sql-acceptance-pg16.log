@@ -1,0 +1,20 @@
+server: postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) | cluster: /tmp/vetos-k08-rebill-native-sjn63ll1
+Applied 304 repository migrations to isolated PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) with fictional auth/storage shims.
+GREEN candidate: PASS K08 re-discharge bills every inpatient period of a visit exactly once
+RED pre-K08 definition: ERROR:  K08 re-discharge billed 1 line(s) / 2 day(s) / 200000.00; expected 1 line, 5 days (3+2), 500000 - every period exactly once
+PASS rollback/re-apply roundtrip: identical definition, owner, SECURITY DEFINER, search_path, ACL; second apply refused
+PASS k08_inpatient_rebill_periods.sql
+PASS clinic_inpatient_discharge.sql
+PASS inpatient_continuation_pet_hotel.sql
+PASS inpatient_consent.sql
+PASS clinic_inpatient_action_category.sql
+PASS clinic_invoice_post.sql
+PASS clinic_billing_lifecycle.sql
+PASS clinic_procedure_bmhp.sql
+PASS clinic_demo_financial_policy.sql
+PASS clinic_manual_invoice_units.sql
+PASS clinic_compound_issue.sql
+Removed owned PostgreSQL test container and volumes.
+PASS K08 rebill: red/green proven, 11 SQL suites pass; owned database removed.
+cleanup: temp cluster removed
+exit 0

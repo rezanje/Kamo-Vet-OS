@@ -29,7 +29,7 @@ describe("tarikTransaksi clinic invoices", () => {
       sale_items: [{ id: "item" }], payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }],
       sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }], payments_finalized_at: "2026-10-15T05:00:01Z" };
     const tables = { sales: query({ data: [sale, { ...sale, id: "pending", payments_finalized_at: null }], error: null }),
-      invoices: query({ data: [], error: null }), sales_returns: query({ data: [], error: null }), branches: query({ data: [], error: null }) };
+      invoices: query({ data: [], error: null }), sales_returns: query({ data: [], error: null }), clinic_refunds: query({ data: [], error: null }), branches: query({ data: [], error: null }) };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
     const result = await tarikTransaksi("2026-10-15", "2026-10-15");
     expect(result.trx).toHaveLength(1);
@@ -46,6 +46,7 @@ describe("tarikTransaksi clinic invoices", () => {
         sale_items: [{ id: "i3" }] }], error: null }),
       invoices,
       sales_returns: query({ data: [], error: null }),
+      clinic_refunds: query({ data: [], error: null }),
       branches: query({ data: [{ id: "b1", name: "Klinik A" }], error: null }),
     };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
@@ -58,11 +59,54 @@ describe("tarikTransaksi clinic invoices", () => {
     ]);
   });
 
+  it("R02: nets posted clinic refunds from their source invoice like petshop returns from their receipt", async () => {
+    // Fictional data: invoice 200.000 on 20 Oct, two posted refunds later (one cash, one finished
+    // transfer). A pending transfer request has no clinic_refunds row and so cannot appear here.
+    const refunds = query({ data: [
+      { id: "rf-1", invoice_id: "inv-a", total: 30_000 },
+      { id: "rf-2", invoice_id: "inv-a", total: 20_000.5 },
+      { id: "rf-3", invoice_id: "inv-luar-rentang", total: 99_000 },
+    ], error: null });
+    const tables = {
+      sales: query({ data: [{ id: "s1", branch_id: "b1", customer_id: null, total: 40_000, channel: null, created_at: "2026-10-20T03:00:00Z",
+        branches: { name: "Cabang Fiktif" }, sale_items: [{ id: "x" }] }], error: null }),
+      invoices: query({ data: [
+        { id: "inv-a", total: 200_000, created_at: "2026-10-20T04:00:00Z", visits: { customer_id: "c1", branch_id: "b1", branches: { name: "Cabang Fiktif" } }, invoice_items: [{ id: "l1" }] },
+        { id: "inv-b", total: 50_000, created_at: "2026-10-21T04:00:00Z", visits: { customer_id: "c2", branch_id: "b1", branches: { name: "Cabang Fiktif" } }, invoice_items: [{ id: "l2" }] },
+      ], error: null }),
+      sales_returns: query({ data: [{ id: "r1", sale_id: "s1", total: 10_000 }], error: null }),
+      clinic_refunds: refunds,
+      branches: query({ data: [{ id: "b1", name: "Cabang Fiktif" }], error: null }),
+    };
+    createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
+
+    const { trx } = await tarikTransaksi("2026-10-20", "2026-10-21");
+    expect(refunds.gte).not.toHaveBeenCalled();
+    expect(trx.map(t => [t.kanal, t.tanggal, t.omzet])).toEqual([
+      ["POS", "2026-10-20", 30_000],
+      ["Klinik", "2026-10-20", 149_999.5],
+      ["Klinik", "2026-10-21", 50_000],
+    ]);
+  });
+
+  it("fails closed when posted clinic refunds cannot be read", async () => {
+    const tables = {
+      sales: query({ data: [], error: null }),
+      invoices: query({ data: [], error: null }),
+      sales_returns: query({ data: [], error: null }),
+      clinic_refunds: query({ data: null, error: { message: "refund read failed" } }),
+      branches: query({ data: [], error: null }),
+    };
+    createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
+    await expect(tarikTransaksi("2026-10-20", "2026-10-20")).rejects.toThrow("refund read failed");
+  });
+
   it("fails closed when clinic invoices cannot be read instead of showing partial revenue", async () => {
     const tables = {
       sales: query({ data: [], error: null }),
       invoices: query({ data: null, error: { message: "query failed" } }),
       sales_returns: query({ data: [], error: null }),
+      clinic_refunds: query({ data: [], error: null }),
       branches: query({ data: [], error: null }),
     };
     createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });

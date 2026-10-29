@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/server";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
 import { computeTotals, lineDiscount, linePromoApplied } from "@/lib/pos-calc";
-import { processQuestProgress } from "@/lib/quest-hook";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
 import { pesanVoucherDitolak, potonganVoucher, normalizeKode, type VoucherRow } from "@/lib/voucher";
 import { bacaKode, bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
@@ -530,12 +529,8 @@ export async function checkoutKasir(formData: FormData) {
   // Saldo/ledger poin disimpan atomik oleh finalizer; golongan mengikuti penjualan selesai.
   if (customerId) await recomputeCustomerTier(supabase, customerId);
 
-  // Addendum §8: progres quest staff (best-effort, tidak mem-block checkout).
-  if (user?.id) {
-    await processQuestProgress(supabase, {
-      saleId: sale.id,
-    });
-  }
+  // Addendum §8: progres quest staff dicatat database di transaksi finalisasi yang sama
+  // (migrasi 20261029153000), untuk /kasir maupun /pos/transaksi — tidak ada panggilan terpisah.
 
   // Auto-cetak struk (fire window.print di halaman struk) — semua metode bayar.
   const checkoutKey = String(formData.get("checkout_key") ?? "");

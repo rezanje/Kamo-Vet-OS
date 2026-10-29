@@ -45,7 +45,7 @@ DEFAULTS = [
     'activity_audit.sql', 'activity_audit_framework.sql',
     'activity_audit_financial.sql', 'activity_audit_inventory.sql',
     'activity_audit_people_settings.sql', 'activity_audit_remaining_modules.sql',
-    'master_data_lifecycle.sql', 'master_item_code_history.sql',
+    'activity_audit_new_tables.sql', 'master_data_lifecycle.sql', 'master_item_code_history.sql',
     'stock_document_corrections.sql', 'clinic_billing_lifecycle.sql',
     'manual-journal-corrections.sql', 'cash-entry-corrections.sql',
     'posted_sale_cancellations.sql', 'wholesale_corrections.sql',

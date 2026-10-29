@@ -21,11 +21,19 @@ insert into public.customers(id,name,phone)
 values ('fb400000-0000-4000-8000-000000000001','Pemilik Uji','080000000003');
 insert into public.pets(id,customer_id,name)
 values ('fb500000-0000-4000-8000-000000000001','fb400000-0000-4000-8000-000000000001','Pasien Uji');
-insert into public.visits(id,branch_id,customer_id,pet_id,status,service_started_at)
+-- Fixture gap closed (K08): an admission now needs the visit's responsible doctor
+-- (protect_inpatient_care_staff) and an authenticated, active actor with branch
+-- access even for fixture rows. The guard itself is unchanged.
+insert into public.employees(id,nama,jabatan,branch_id,status)
+values ('fb900000-0000-4000-8000-000000000001','Dokter Uji','Dokter','fb100000-0000-4000-8000-000000000001','Aktif');
+insert into public.visits(id,branch_id,customer_id,pet_id,doctor_id,dokter,status,service_started_at)
 values ('fb600000-0000-4000-8000-000000000001','fb100000-0000-4000-8000-000000000001',
-  'fb400000-0000-4000-8000-000000000001','fb500000-0000-4000-8000-000000000001','Diperiksa',now());
+  'fb400000-0000-4000-8000-000000000001','fb500000-0000-4000-8000-000000000001',
+  'fb900000-0000-4000-8000-000000000001','Dokter Uji','Diperiksa',now());
 insert into public.medical_records(id,visit_id,diagnosis)
 values ('fb700000-0000-4000-8000-000000000001','fb600000-0000-4000-8000-000000000001','Rawat inap');
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub','fb000000-0000-4000-8000-000000000001',true);
 insert into public.inpatient_records(id,branch_id,visit_id,medical_record_id)
 values ('fb800000-0000-4000-8000-000000000001','fb100000-0000-4000-8000-000000000001',
   'fb600000-0000-4000-8000-000000000001','fb700000-0000-4000-8000-000000000001');
@@ -105,4 +113,5 @@ begin
 end;
 $$;
 
+select 'PASS clinic_inpatient_discharge: atomic fee, retry, rounded days';
 rollback;

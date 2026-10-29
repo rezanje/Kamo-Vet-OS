@@ -49,9 +49,12 @@ export async function loadPendingWork(db: AnyClient, role: string | null): Promi
       }), () => ({ label: "Permintaan koreksi pembelian", href: CORRECTION_QUEUE_PATH, count: null })));
   }
 
-  if (canOpen("/kas-bank/refund")) requests.push(Promise.all(["pending", "diproses"].map(status => Promise.resolve().then(() => db.rpc("get_sales_refund_requests", {
-    p_sale_id: null, p_office: true, p_status: status, p_offset: 0,
-  })))).then((results: { data: unknown; error: unknown }[]) => {
+  // A02: the /kas-bank/refund queue holds petshop (sales) and clinic (J03) transfer refunds.
+  // Both are counted through the queue's own RPCs, so role/branch scope matches the queue.
+  if (canOpen("/kas-bank/refund")) requests.push(Promise.all(["pending", "diproses"].flatMap(status => [
+    Promise.resolve().then(() => db.rpc("get_sales_refund_requests", { p_sale_id: null, p_office: true, p_status: status, p_offset: 0 })),
+    Promise.resolve().then(() => db.rpc("get_clinic_refund_requests", { p_invoice: null, p_office: true, p_status: status, p_offset: 0 })),
+  ])).then((results: { data: unknown; error: unknown }[]) => {
     const valid = results.every(result => !result.error && Array.isArray(result.data));
     const firstPageCount = valid ? results.reduce((count, result) => count + (result.data as unknown[]).length, 0) : null;
     return { label: "Refund transfer belum selesai", href: "/kas-bank/refund",

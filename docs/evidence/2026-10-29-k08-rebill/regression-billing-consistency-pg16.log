@@ -1,0 +1,14 @@
+server: postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) | cluster: /tmp/vetos-k08-rebill-native-gagj5pb1
+Applied 304 repository migrations to isolated PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) with fictional auth/storage shims.
+PASS clinic_inpatient_discharge.sql on main222-function
+PASS clinic_inpatient_discharge.sql on candidate223-function
+PASS migration/rollback roundtrip: exact definition/owner/security/ACL preserved
+PASS clinic_billing_consistency.sql
+PASS clinic_invoice_post.sql
+PASS clinic_billing_lifecycle.sql
+PASS inpatient_consent.sql
+PASS clinic_demo_financial_policy.sql
+Removed owned PostgreSQL test container and volumes.
+PASS all5 K08/native suites; owned container/volumes removed.
+cleanup: temp cluster removed
+exit 0

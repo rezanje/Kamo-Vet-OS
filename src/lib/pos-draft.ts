@@ -58,6 +58,8 @@ export type PosDraft = PaymentDraft & {
   salespersonId: string;
   metode: string;
   discount: number;
+  /** Kode kampanye (C05) yang diketik; ikut identitas transaksi, jadi wajib dipulihkan. */
+  voucherCode?: string;
   bayar: number;
   cart: PosDraftLine[];
 };
@@ -79,6 +81,7 @@ export function bacaDraftPos(raw: string | null, now = Date.now()): PosDraft | n
       metode: String(draft.metode ?? "Tunai"),
       ...paymentDraftFields(draft),
       discount: Math.max(0, Number(draft.discount) || 0),
+      ...(typeof draft.voucherCode === "string" && draft.voucherCode.trim() ? { voucherCode: draft.voucherCode.slice(0, 40) } : {}),
       bayar: Math.max(0, Number(draft.bayar) || 0),
       cart: draft.cart.filter((line): line is PosDraftLine => Boolean(
         line && typeof line === "object" && String(line.item_id ?? "") && Number(line.qty) > 0,

@@ -8,6 +8,9 @@ import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
 import { readCompleteList } from "@/lib/checked-list";
 import { groomingDoctorRequired, isGroomingOutlet, isGroomingService } from "@/lib/grooming-requirements";
+import { loadKodeKampanyeAktif } from "@/lib/kode-kampanye";
+import { loadActiveVouchers } from "@/lib/voucher-loader";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type CatalogItem = { id: string; code: string; name: string; item_type: string; tindakan_kategori: string | null; unit: string; sell_price: number; target_species: string };
 
@@ -69,13 +72,21 @@ export default async function TransaksiPage({
   });
 
   const categoryIds = [...new Set(pelanggan.flatMap(customer => customer.golonganId ? [customer.golonganId] : []))];
-  const [promoEntries, discountEntries, itemInfo, serviceStaffEntries] = await Promise.all([
-    Promise.all((branches ?? []).map(async branch => [branch.id, await loadPromoAktif(supabase, branch.id)] as const)),
+  // Kode kampanye (C05) aktif + voucher tujuannya — hanya untuk tampilan; server memeriksa ulang.
+  // A failed read only hides the codes on screen; checkout still resolves the typed code itself.
+  const kodeKampanye = await loadKodeKampanyeAktif(supabase).catch(() => []);
+  const promoKodeIds = kodeKampanye.flatMap((k) => (k.promo_id ? [k.promo_id] : []));
+  const voucherKodeSet = new Set(kodeKampanye.flatMap((k) => (k.voucher_code ? [k.voucher_code] : [])));
+  const [promoEntries, discountEntries, itemInfo, serviceStaffEntries, voucherAktif] = await Promise.all([
+    Promise.all((branches ?? []).map(async branch => [branch.id, await loadPromoAktif(supabase, branch.id, promoKodeIds)] as const)),
     Promise.all(categoryIds.map(async categoryId => [categoryId, await loadAturanDiskon(supabase, categoryId)] as const)),
     loadInfoBarang(supabase, katalog.map(item => item.id)),
     Promise.all((branches ?? []).filter(branch => canUseBranch(allowedBranches, branch.id))
       .map(async branch => [branch.id, await loadServiceStaff(supabase, branch.id)] as const)),
+    // Display only: an unreadable list just hides the preview; checkout re-reads the voucher.
+    voucherKodeSet.size ? loadActiveVouchers(supabase).catch(() => []) : Promise.resolve([]),
   ]);
+  const voucherKampanye = voucherAktif.filter((v) => voucherKodeSet.has(v.code));
 
   const { data: openShift } = await supabase
     .from("cashier_shifts").select("id").eq("opened_by", user?.id ?? "").eq("status", "open")
@@ -121,6 +132,9 @@ export default async function TransaksiPage({
         promoPerCabang={Object.fromEntries(promoEntries)}
         aturanDiskon={Object.fromEntries(discountEntries)}
         infoBarang={Object.fromEntries(itemInfo)}
+        kodeKampanye={kodeKampanye}
+        voucherKampanye={voucherKampanye}
+        hariIni={hariIniWIB()}
       />
     </>
   );

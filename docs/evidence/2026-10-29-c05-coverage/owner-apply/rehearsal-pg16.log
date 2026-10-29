@@ -1,0 +1,15 @@
+server: postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+baseline: 303 earlier migrations applied (production state before this step)
+preflight (before): 12 rows ok
+readback: 7 rows ok
+readback after re-apply (idempotent, functions byte-identical): 7 rows ok
+rollback (default): functions + trigger identical to baseline; group keys kept in campaign_group_archived_c05cov
+preflight (after rollback): 12 rows ok
+readback (re-apply over archive): 7 rows ok
+rollback (owner flag): functions + trigger identical to baseline; live group-key column dropped
+preflight (after flagged rollback): 12 rows ok
+readback (final apply): 7 rows ok
+c05_campaign_rombongan_backoffice.sql: C05 campaign codes in group payment and back-office POS: passed
+c05_campaign_codes.sql: C05 campaign codes: passed
+apply.sql sha256 8640cd644134f2411e02d79e35b602ea878ee9ceec2b0eb7365ead91927b0296
+cleanup: temp cluster removed

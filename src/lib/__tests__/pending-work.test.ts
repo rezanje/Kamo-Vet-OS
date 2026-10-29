@@ -9,7 +9,8 @@ const approvals = [
 const orders = [{ id: "draft", status: "draft" }, { id: "paid", status: "dibayar" }];
 const corrections = [{ id: "c1", status: "pending" }, { id: "c2", status: "pending" }, { id: "c3", status: "selesai" }];
 
-function fixture(roleModules: { role: string; module_id: string }[] = [], rulesError: unknown = null) {
+function fixture(roleModules: { role: string; module_id: string }[] = [], rulesError: unknown = null,
+  clinicRequests: { id: string; status: string }[] = []) {
   const db = {
     from: vi.fn((table: string) => {
       const filters: [string, unknown][] = [];
@@ -31,8 +32,10 @@ function fixture(roleModules: { role: string; module_id: string }[] = [], rulesE
       };
       return query;
     }),
-    rpc: vi.fn(async (_name: string, args: { p_status: string }) => ({
-      data: args.p_status === "pending" ? [{ id: "refund" }] : [], error: null,
+    rpc: vi.fn(async (name: string, args: { p_status: string }) => ({
+      data: name === "get_sales_refund_requests" ? (args.p_status === "pending" ? [{ id: "refund" }] : [])
+        : name === "get_clinic_refund_requests" ? clinicRequests.filter(row => row.status === args.p_status) : null,
+      error: name === "get_sales_refund_requests" || name === "get_clinic_refund_requests" ? null : { message: "unknown rpc" },
     })),
   };
   return db;
@@ -96,6 +99,43 @@ describe("pending action alerts", () => {
     db.rpc.mockRejectedValueOnce(new Error("offline"));
     const items = await loadPendingWork(db, "FINANCE");
     expect(items.find(item => item.href === "/kas-bank/refund")?.count).toBeNull();
+  });
+
+  it("A02: counts pending and in-process clinic transfer refunds in the same refund alert", async () => {
+    // Fictional queue: one petshop pending (fixture) + clinic pending, in process, and finished/cancelled.
+    const db = fixture([], null, [
+      { id: "rk-1", status: "pending" }, { id: "rk-2", status: "diproses" },
+      { id: "rk-3", status: "selesai" }, { id: "rk-4", status: "batal" },
+    ]);
+    expect((await loadPendingWork(db, "FINANCE")).find(item => item.href === "/kas-bank/refund"))
+      .toEqual({ label: "Refund transfer belum selesai", href: "/kas-bank/refund", count: 3, hasMore: false });
+    for (const status of ["pending", "diproses"]) {
+      expect(db.rpc).toHaveBeenCalledWith("get_clinic_refund_requests", { p_invoice: null, p_office: true, p_status: status, p_offset: 0 });
+    }
+  });
+
+  it("A02: shows the alert for clinic-only transfer refunds and flags a full first page", async () => {
+    const db = fixture();
+    db.rpc.mockImplementation(async (name: string, args: { p_status: string }) => ({
+      data: name === "get_clinic_refund_requests" && args.p_status === "diproses" ? Array.from({ length: 100 }, (_, i) => ({ id: `rk-${i}` })) : [],
+      error: null,
+    }));
+    expect((await loadPendingWork(db, "OWNER")).find(item => item.href === "/kas-bank/refund"))
+      .toEqual({ label: "Refund transfer belum selesai", href: "/kas-bank/refund", count: 100, hasMore: true });
+  });
+
+  it("A02: shows the refund alert as unknown when the clinic queue cannot be read", async () => {
+    const db = fixture();
+    const rpc = db.rpc.getMockImplementation()!;
+    db.rpc.mockImplementation(async (name: string, args: { p_status: string }) => name === "get_clinic_refund_requests"
+      ? { data: null, error: { message: "denied" } } : rpc(name, args));
+    expect((await loadPendingWork(db, "FINANCE")).find(item => item.href === "/kas-bank/refund")?.count).toBeNull();
+  });
+
+  it("A02: does not read the clinic refund queue when the role cannot open it", async () => {
+    const db = fixture([{ role: "ADMIN", module_id: "pembelian" }], null, [{ id: "rk-1", status: "pending" }]);
+    expect((await loadPendingWork(db, "ADMIN")).some(item => item.href === "/kas-bank/refund")).toBe(false);
+    expect(db.rpc).not.toHaveBeenCalledWith("get_clinic_refund_requests", expect.anything());
   });
 
   it("keeps purchase correction requests in the Super Admin queue only", async () => {

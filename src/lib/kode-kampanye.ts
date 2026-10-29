@@ -52,6 +52,35 @@ export function pesanKampanyeDitolak(k: KodeKampanye, promoTersedia: boolean, pr
   return null;
 }
 
+/**
+ * Pembayaran rombongan (C05): satu pemilik membayar beberapa hewan sekaligus pada satu
+ * hari (WIB) = SATU kali pakai kode, sama seperti voucher di jalur itu. Semua nota yang
+ * memuat kode menyimpan kunci ini; database menghitung pemakaian per kunci dan hanya
+ * menerima kunci milik pemilik kunjungan itu untuk hari ini. null = tanpa pemilik,
+ * kode kampanye tidak bisa dipakai di rombongan.
+ */
+export function kunciGrupKampanye(customerId: string | null | undefined, tanggalWib: string): string | null {
+  return customerId && /^\d{4}-\d{2}-\d{2}$/.test(tanggalWib) ? `${customerId}:${tanggalWib}` : null;
+}
+
+/**
+ * Nota rombongan mana yang memuat kode kampanye: hanya nota yang benar-benar mendapat
+ * potongan dari kode itu (porsi voucher tujuan, atau potongan promo tujuan) — sama
+ * seperti voucher_code yang hanya ditulis di nota yang kebagian potongan voucher.
+ */
+export function notaMemuatKampanye(k: KodeKampanye | null, potongan: { voucher: number; promoKode: number }): boolean {
+  if (!k) return false;
+  return k.voucher_code ? potongan.voucher > 0 : potongan.promoKode > 0;
+}
+
+/**
+ * POS back-office menerima kode KAMPANYE saja (voucher biasa tetap lewat layar kasir).
+ * Kode yang diketik tapi bukan kode kampanye aktif ditolak dengan pesan ini.
+ */
+export function pesanBukanKampanye(kode: string | null, kampanye: KodeKampanye | null): string | null {
+  return kode && !kampanye ? `Kode ${kode} bukan kode kampanye. Voucher biasa dipakai lewat layar kasir.` : null;
+}
+
 /** Pesan database (batas pemakaian dll.) diteruskan apa adanya bila memang pesan kampanye. */
 export function pesanGagalKampanye(message: string | null | undefined): string | null {
   if (!message) return null;
