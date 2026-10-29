@@ -21,7 +21,7 @@ import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
 import { clinicServicePerformerInput, parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
-import { bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak } from "@/lib/kode-kampanye";
+import { bacaKodeKampanye, cekVoucherLewatKampanye, pesanGagalKampanye, pesanKampanyeDitolak } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
@@ -563,6 +563,11 @@ export async function bayarRombongan(formData: FormData) {
   }
   const voucherCode = kampanye ? kampanye.voucher_code : kodeDiketik;
   const promoKampanyeId = kampanye?.promo_id ?? null;
+  // Voucher milik kampanye aktif hanya berlaku lewat kode kampanyenya (keputusan pemilik 29 Okt).
+  if (!kampanye) {
+    const tolakVoucherMentah = await cekVoucherLewatKampanye(supabase, kodeDiketik);
+    if (tolakVoucherMentah) redirect(`${back}?error=${encodeURIComponent(tolakVoucherMentah)}`);
+  }
 
   const klinikShift = await shiftP;
   if (!klinikShift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);

@@ -15,7 +15,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { bayarRombongan } from "./actions";
 import { METODE_BAYAR } from "@/lib/metode-bayar";
 import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
-import { bacaKode } from "@/lib/kode-kampanye";
+import { bacaKode, pesanVoucherLewatKampanye } from "@/lib/kode-kampanye";
 import type { BekalPotongan } from "@/lib/tagihan-klinik";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -46,8 +46,11 @@ export function LunasiRombonganForm({ visitId, requestKey, contextKey, jumlahPas
   const kode = bacaKode(voucher, bekal.kodeKampanye ?? []);
   const kampanye = kode.kampanye;
   const voucherRow = kode.voucherCode ? bekal.vouchers.find((v) => v.code === kode.voucherCode) : undefined;
+  // Voucher milik kampanye aktif hanya berlaku lewat kode kampanyenya (server & database ikut menolak).
+  const lewatKampanye = pesanVoucherLewatKampanye(kode, bekal.kodeKampanye ?? []);
   const tolakVoucher = voucher.trim() === "" ? null
     : kampanye && !kampanye.is_active ? `Kode ${kampanye.code} sedang dinonaktifkan`
+    : lewatKampanye ? lewatKampanye
     : kampanye?.promo_id ? null
     : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
       dasar: total, adaPromoOtomatis: promoTotal > 0,

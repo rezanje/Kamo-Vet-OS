@@ -28,7 +28,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { hitungPromoKeranjang } from "@/lib/promo-hitung";
 import { diskonGolonganKeranjang } from "@/lib/harga-golongan";
 import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
-import { bacaKode, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
+import { bacaKode, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganKode } from "@/lib/kode-kampanye";
 import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
 
 type Line = {
@@ -360,7 +360,7 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
   const voucherRow = kodeTerbaca.voucherCode ? bekal.vouchers.find((v) => v.code === kodeTerbaca.voucherCode) : undefined;
   const tolakKampanye = kampanye && !editMode ? pesanKampanyeDitolak(kampanye,
     promoEfektif.some((p) => p.id === kodeTerbaca.promoId), hasilPromo.some((p) => p.promoId === kodeTerbaca.promoId)) : null;
-  const tolakVoucher = voucher.trim() === "" ? null : tolakKampanye ?? (kampanye && !kampanye.voucher_code ? null : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
+  const tolakVoucher = voucher.trim() === "" ? null : tolakKampanye ?? (editMode ? null : pesanVoucherLewatKampanye(kodeTerbaca, bekal.kodeKampanye ?? [])) ?? (kampanye && !kampanye.voucher_code ? null : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
     dasar: dasarVoucher, adaPromoOtomatis: promoVal > 0,
     customerId: bekal.customerId, categoryId: bekal.categoryId,
   }));
