@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
+import { EmployeePicker } from "@/components/EmployeePicker";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaPayroll } from "@/lib/master-guard";
 import { bacaGajiPokok } from "@/lib/employee-salary";
@@ -209,9 +210,11 @@ export default async function KomponenGajiPage({
           desc="Pilih karyawan, lalu pasang komponen yang berlaku untuknya."
           action={
             <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <select className="fi" name="emp" defaultValue={dipilih} style={{ fontSize: 11, height: 30, width: 190 }}>
-                {karyawan.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
-              </select>
+              <div style={{ width: 220 }}>
+                <label className="flab" htmlFor="komponen-employee">Karyawan</label>
+                <EmployeePicker inputId="komponen-employee" name="emp" employees={karyawan} defaultValue={dipilih}
+                  placeholder="Ketik nama atau jabatan karyawan…" />
+              </div>
               <button type="submit" className="btn-def" style={{ height: 30, fontSize: 11 }}>Lihat</button>
             </form>
           }
