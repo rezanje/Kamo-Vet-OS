@@ -1,5 +1,15 @@
 # PR341 — checkpoint readiness, bukan izin rilis
 
+## Diagnosis exact-run CI 40989157281 (sesudah checkpoint 8af373a1)
+
+- Run https://github.com/rezanje/Kamo-Vet-OS/actions/runs/40989157281 pada exact SHA `8af373a157e665b019e2bd77663021ab547d7902` berakhir FAILURE `2026-10-30T02:07:25Z`. `npm test`: 5040 lulus / 1 gagal / 1 skip existing. Lint, typecheck dan build sukses. Log diunduh, tidak melakukan blind rerun.
+- Sebelum tindakan: remote HEAD masih 8af373a1, worktree bersih, antrean kosong, tidak ditemukan worker dengan cwd worktree existing atau catatan penanganan lain di PR. Hermes tetap owner.
+- Penyebab pasti: tes `koreksi-aksi-nol-bersih.test.ts` dari main masih mengharuskan `clinic_edit_invoice`, sedangkan PR341 sengaja memanggil `clinic_edit_invoice_with_record` agar tambahan kasir juga tercatat di rekam medis. Semua isi muatan pada kegagalan cocok; mismatch-nya hanya nama jalur. Tes ini tidak tercakup filter tes terarah sebelumnya (`clinic`, bukan direktori `klinik`).
+- Reproduksi terisolasi pada 8af373a1: **1 gagal / 2 lulus**, mismatch identik dengan exact-run. Koreksi minimal hanya fixture/kontrak tes, **tidak ada perubahan aplikasi, migrasi atau keputusan A**. Tetap memeriksa jumlah baris, uang muka tersimpan dan status pembayaran; menambah 2 kasus fungsi wrapper belum tersedia (PGRST202/42883) dengan muatan fallback identik, serta penolakan bisnis yang wajib menghentikan koreksi tanpa fallback. Hasil terarah: **6/6 lulus**. Tidak skip, melonggarkan nilai uang, atau memaksa jalur lama.
+- Full Vitest lokal Node **v26.5.1**: **5030 pass / 14 fail / 1 skip existing**. Ke-14 gagal berada pada tujuh berkas penyimpanan browser, bukan file koreksi ini, dan tidak gagal pada exact-run CI Node22. Tidak diperbaiki di scope ini. Eksekusi pembanding snapshot current-main terblokir pengaman tool, sehingga tidak diklaim telah membuktikan baseline current-main. Hasil lengkap gagal dipertahankan di `/opt/data/kamo-pr341-full-vitest-ci-fix.json`.
+- ESLint file tes dan typecheck setelah koreksi: exit 0. Review independen read-only menyetujui perubahan tes terbatas: kontrak wrapper, dua kode fallback dan penghentian pada penolakan bisnis cocok dengan aplikasi; tidak ada pelemahan/skip. CI baru harus berjalan pada commit koreksi; status lama tidak boleh diganti hijau. Bukti ringkas: `docs/evidence/pr341-ci-diagnosis.json`.
+
+
 ## Scope, owner, runtime
 
 - Owner implementasi: Hermes, branch existing `hermes/susulan-rekam-medis`, worktree `/opt/data/kamo-wt-susulan`.
@@ -45,7 +55,7 @@ Bukti mencakup dokter menambah item; retry identik/isi berubah; replay dari caba
 - Tidak ada perubahan pada migrasi PR342 atau PR343.
 - Belum ada UAT browser terautentikasi dokter → kasir → dokumen cetak; tes render memakai sumber data mock, tes database tidak menjalankan Next.js/PostgREST.
 - Belum menguji fungsi racikan asli, jalur split/DEMO asli, konkurensi dokter/racikan dengan keuangan, atau seluruh variasi peran. Harness mini mencakup beberapa jalur dengan stub, bukan pengganti gap tersebut.
-- Belum menjalankan ulang full Vitest seluruh repo atau build pada checkpoint ini; hasil lama tidak diklaim sebagai bukti head baru.
+- Full Vitest sudah dijalankan pada tindak lanjut CI (lihat bagian diagnosis paling atas): lokal Node26 masih 14 gagal penyimpanan browser; build lokal tidak diulang. Build exact-run 8af373a1 sukses, bukan bukti head koreksi baru.
 - CI final, hosted preflight, backup/rollback dan persetujuan perubahan persis tetap gerbang terpisah. Tidak ada klaim siap rilis/live.
 - Review independen pertama mengonfirmasi urutan koordinator dan dua overlap, tetapi menemukan pesan kosong yang masih muncul saat query resep gagal serta bukti jurnal/readback yang terlalu lemah. Pesan cetak diperbaiki lewat RED (1 gagal/2 lulus) → GREEN; jurnal kini dibuktikan bernilai dan seimbang per entry, dan kedua jadwal konkurensi punya readback. Temuan harness mini yang kehilangan dependensi sudah ditutup dengan 12 PASS setelah mengambil koordinator asli. Pemeriksaan ulang independen read-only selesai: kedua temuan tertutup, penguatan bukti terkonfirmasi, tidak ada blocker konkret tersisa dalam lingkup review terbatas. Ini bukan persetujuan rilis atau audit keamanan penuh; tidak ada worker implementasi kedua.
 - Bukti eksekusi yang bisa dibaca reviewer ada di `docs/evidence/pr341-local-regression.json`; log historis tambahan tetap di workspace. Tidak ada hasil gagal yang dibuang atau diubah menjadi lulus.
