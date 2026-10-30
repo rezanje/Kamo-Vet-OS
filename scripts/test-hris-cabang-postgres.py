@@ -33,7 +33,7 @@ from native_postgres import NativePostgres  # noqa: E402
 
 BIN = os.environ.get("KAMO_PG_BIN", "/opt/data/kamo-pg-harness/bin")
 MIGRATIONS = ROOT / "supabase/migrations"
-MIGRASI = MIGRATIONS / "20261102020000_hris_cabang_penugasan.sql"
+MIGRASI = MIGRATIONS / "20261104060000_hris_cabang_penugasan.sql"
 
 # Jangkar persis seperti yang dipakai migrasi (bagian 7).
 JANGKAR = [
@@ -74,8 +74,7 @@ create table if not exists auth.users(id uuid primary key default gen_random_uui
   deleted_at timestamptz, banned_until timestamptz, aud text default 'authenticated',
   role text default 'authenticated', instance_id uuid,
   created_at timestamptz default now(), updated_at timestamptz default now());
-create or replace function auth.uid() returns uuid language sql stable as
-  $f$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $f$;
+""" + (ROOT / "supabase/tests/fixtures/hosted_auth_uid.sql").read_text() + """
 create or replace function auth.role() returns text language sql stable as
   $f$ select nullif(current_setting('request.jwt.claim.role', true), '') $f$;
 create or replace function auth.email() returns text language sql stable as
@@ -200,7 +199,7 @@ def putar_ulang(pg):
         if berkas.name in SEBELUM:
             pg.sql(SEBELUM[berkas.name])
         try:
-            pg.sql(berkas.read_text())
+            pg.sql("begin;\n" + berkas.read_text() + "\ncommit;")
         except RuntimeError as error:
             raise AssertionError(f"Migrasi {berkas.name} gagal di klaster bersih:\n{str(error)[:2000]}") from None
     print(f"PASS: {len(lain)} migrasi repo (tanpa migrasi ini) berjalan dari nol", flush=True)
@@ -362,12 +361,116 @@ def babak_perilaku(pg):
     print("PASS: jejak perubahan cabang tertutup untuk STAFF", flush=True)
 
 
+def babak_matriks(pg):
+    """Exercise original RPCs under real roles/branch scope; roll back every case."""
+    admin_b = '22222222-2222-2222-2222-222222222223'
+    employee_a = 'dddddddd-0000-0000-0000-00000000000a'
+    employee_b = 'dddddddd-0000-0000-0000-00000000000b'
+    pg.sql(f"""
+insert into auth.users(id) values ('{admin_b}');
+update public.profiles set role='ADMIN',is_active=true,full_name='Admin Cabang B Uji' where id='{admin_b}';
+insert into public.user_branches(user_id,branch_id) values ('{admin_b}','{CABANG_B}');
+insert into public.employees(id,nama,jabatan,status,branch_id) values
+ ('{employee_a}','Dokter Matriks A','Dokter','Aktif','{CABANG_A}'),
+ ('{employee_b}','Dokter Matriks B','Dokter','Aktif','{CABANG_B}');
+insert into public.employee_branch_assignments(employee_id,branch_id,role,effective_date) values
+ ('{employee_a}','{CABANG_A}','PRIMARY',current_date-30),
+ ('{employee_a}','{CABANG_B}','SECONDARY',current_date-30),
+ ('{employee_b}','{CABANG_B}','PRIMARY',current_date-30),
+ ('{employee_b}','{CABANG_A}','SECONDARY',current_date-30);
+""")
+    count = 0
+    for role, user, allowed in [('OWNER', OWNER, {CABANG_A, CABANG_B}),
+                                ('ADMIN_A', ADMIN_A, {CABANG_A}),
+                                ('ADMIN_B', admin_b, {CABANG_B}),
+                                ('STAFF', STAFF, set()), ('DOCTOR', DOCTOR, set())]:
+        for branch, employee in [(CABANG_A, employee_b), (CABANG_B, employee_a)]:
+            for operation in ['primary', 'end', 'reopen']:
+                preparation = ''
+                if operation == 'primary':
+                    call = f"select public.set_employee_primary_branches(array['{employee}']::uuid[],'{branch}','Matriks cabang');"
+                    check = f"(select branch_id='{branch}' from public.employees where id='{employee}')"
+                    action = 'primary_branch'
+                elif operation == 'end':
+                    call = f"select public.end_employee_branch_assignment('{employee}','{branch}',current_date,'Matriks cabang');"
+                    check = f"(select end_date=current_date and ended_by='{user}' from public.employee_branch_assignments where employee_id='{employee}' and branch_id='{branch}')"
+                    action = 'assignment_ended'
+                else:
+                    preparation = f"update public.employee_branch_assignments set end_date=current_date-1,ended_at=now(),ended_by='{OWNER}',ended_reason='Fixture periode selesai' where employee_id='{employee}' and branch_id='{branch}';"
+                    call = f"select public.reopen_employee_branch_assignments('{employee}',array['{branch}']::uuid[],current_date);"
+                    check = f"(select end_date is null and ended_by is null from public.employee_branch_assignments where employee_id='{employee}' and branch_id='{branch}')"
+                    action = 'assignment_reopened'
+                # Claims role metadata is untrusted; persisted profile remains decisive.
+                claims = ('{"sub":"'+user+'","role":"OWNER","app_metadata":{"role":"ADMIN"}}')
+                sql = (f"begin; {preparation}\nset local role authenticated;\n"
+                       f"select set_config('request.jwt.claim.sub','{user}',true);\n"
+                       "select set_config('request.jwt.claim.role','authenticated',true);\n"
+                       f"select set_config('request.jwt.claims','{claims}',true);\n" + call +
+                       f"select {check} and exists(select from public.employee_branch_change_log where employee_id='{employee}' and action='{action}' and actor_id='{user}'); rollback;")
+                try:
+                    result = pg.sql(sql)
+                except RuntimeError as error:
+                    assert branch not in allowed and 'ACCESS_DENIED' in str(error), f'{role}/{branch}/{operation}: {error}'
+                else:
+                    assert branch in allowed, f'{role}/{branch}/{operation}: forbidden call succeeded'
+                    assert result.splitlines()[-1] == 't', f'{role}/{operation}: mutation/audit readback failed: {result}'
+                count += 1
+    assert pg.sql(f"select count(*) from public.employee_branch_change_log where employee_id in ('{employee_a}','{employee_b}');") == '0', 'matrix rollback leaked audit rows'
+    print(f'PASS: {count} native RPC role/branch cases (OWNER, ADMIN A/B, STAFF, DOCTOR), spoofed metadata cannot elevate roles', flush=True)
+    return admin_b
+
+
+def babak_pembaca_publik(pg, admin_b):
+    """Reach actual public care picker, not a stubbed business core."""
+    customer = 'cccccccc-0000-0000-0000-000000000001'
+    pet = 'cccccccc-0000-0000-0000-000000000002'
+    visit_a = 'cccccccc-0000-0000-0000-000000000003'
+    visit_b = 'cccccccc-0000-0000-0000-000000000004'
+    pg.sql(f"""
+set session_replication_role=replica;
+insert into public.customers(id,name,phone) values ('{customer}','Pemilik Fiktif Matriks HRIS','08000009001');
+insert into public.pets(id,customer_id,name) values ('{pet}','{customer}','Hewan Fiktif Matriks HRIS');
+insert into public.visits(id,customer_id,pet_id,branch_id,doctor_id) values
+ ('{visit_a}','{customer}','{pet}','{CABANG_A}','{DRH}'),
+ ('{visit_b}','{customer}','{pet}','{CABANG_B}','{DRH}');
+set session_replication_role=origin;
+""")
+    assert pg.sql("select cardinality(public.clinic_employee_roles('Staff Klinik (Admin - PCA)'));") == '0', 'PCA must remain outside paramedic mapping'
+    n = 0
+    today = "(now() at time zone 'Asia/Jakarta')::date"
+    for state, effective, end, visible in [('current',today+'-30','null',True),
+                                           ('last_day',today+'-30',today,True),
+                                           ('future_end',today+'-30',today+'+7',True),
+                                           ('expired',today+'-30',today+'-1',False),
+                                           ('future_start',today+'+1','null',False)]:
+        # Owner-only fixture edits represent elapsed time, never replace the reader.
+        pg.sql(f"update public.employee_branch_assignments set effective_date={effective},end_date={end},"
+               f"ended_at={'null' if end=='null' else 'now()'},ended_by={'null' if end=='null' else chr(39)+OWNER+chr(39)},"
+               f"ended_reason={'null' if end=='null' else chr(39)+'Fixture periode'+chr(39)} "
+               f"where employee_id='{DRH}' and branch_id='{CABANG_B}';")
+        for role,user,allowed in [('OWNER',OWNER,{CABANG_A,CABANG_B}),('ADMIN_A',ADMIN_A,{CABANG_A}),
+                                  ('ADMIN_B',admin_b,{CABANG_B}),('STAFF',STAFF,{CABANG_A}),('DOCTOR',DOCTOR,{CABANG_A})]:
+            for branch,visit in [(CABANG_A,visit_a),(CABANG_B,visit_b)]:
+                query = f"select coalesce(string_agg(id::text,','),'EMPTY') from public.clinic_demo_care_staff('{visit}');"
+                if branch not in allowed:
+                    ditolak(pg,query,'ACCESS_DENIED',user,f'{role}/{state}/forbidden branch')
+                else:
+                    result = sebagai(pg,query,user).splitlines()[-1]
+                    expected = DRH if branch==CABANG_A or visible else 'EMPTY'
+                    assert result==expected, f'{role}/{state}/{branch}: {result!r} != {expected!r}'
+                n += 1
+    print(f'PASS: {n} public clinical picker role/branch/period cases; primary branch stays available; PCA excluded', flush=True)
+
+
 def main():
     with NativePostgres(BIN) as pg:
         putar_ulang(pg)
         babak_jangkar(pg)
         babak_idempoten(pg)
+        print('CATALOG_ASSIGNMENT_READERS=' + pg.sql("select jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'period_filter',position('employee_assignment_current' in p.prosrc)>0) order by p.oid::regprocedure::text) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','private') and p.prokind='f' and position('employee_branch_assignments' in p.prosrc)>0;"), flush=True)
         babak_perilaku(pg)
+        admin_b = babak_matriks(pg)
+        babak_pembaca_publik(pg, admin_b)
     print("SEMUA PEMERIKSAAN HRIS CABANG LULUS", flush=True)
 
 

@@ -59,14 +59,17 @@
 -- ---------------------------------------------------------------------------
 -- CARA MEMBATALKAN (rollback) — jalankan dalam SATU transaksi
 -- ---------------------------------------------------------------------------
+-- Sebelum pasang, BACKUP pg_get_functiondef + proacl + proconfig SEMBILAN fungsi
+-- yang disebut di bagian 7, serta ACL tabel/kolom employee_branch_assignments dan
+-- pg_policies tabel penugasan/jejak. Simpan data jejak bila sudah dipakai pengguna.
+-- Rollback wajib memakai definisi/ACL hasil backup dari basis rilis ini, BUKAN
+-- menjalankan ulang migrasi sumber lama: main dapat membawa fitur yang lebih baru.
 -- Migrasi ini hanya MENAMBAH kolom/tabel/fungsi dan menambahkan satu saringan
 -- pada delapan fungsi; tidak ada baris data lama yang diubah. Pembatalannya:
 --
 --   begin;
---   -- a. kembalikan kedelapan fungsi + assign_employee_secondary_branches ke
---   --    definisi sebelum migrasi ini (jalankan ulang migrasi sumbernya:
---   --    20261012110000, 20261023121700, 20261006090000, 20261023143000,
---   --    20261027150000, 20261021134543, 20261005100000).
+--   -- a. restore persis SEMBILAN definisi fungsi + ACL/proconfig hasil backup
+--   --    sebelum migrasi ini; jangan menimpa coordinator/fitur main dengan SQL lama.
 --   -- b. kembalikan hak tulis kolom:
 --   grant insert, update on table public.employee_branch_assignments to authenticated;
 --   -- c. lepas RPC dan tabel jejak:

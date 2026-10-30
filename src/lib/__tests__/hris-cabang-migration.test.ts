@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 // Audit HRIS 2026-10-29 (T1 & T2). Tanpa database di CI, invarian migrasinya
 // diperiksa dari teksnya — sama seperti tambalan RPC lain di repo ini.
-const NAMA = "20261102020000_hris_cabang_penugasan.sql";
+const NAMA = "20261104060000_hris_cabang_penugasan.sql";
 const SQL = readFileSync(`supabase/migrations/${NAMA}`, "utf8");
 
 describe("T2 — kolom dan aturan akhir penugasan", () => {

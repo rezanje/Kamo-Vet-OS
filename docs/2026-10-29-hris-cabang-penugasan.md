@@ -1,7 +1,7 @@
 # HRIS — cabang utama & akhir penugasan (temuan audit T1, T2, R1)
 
 Tanggal: 29 Oktober 2026 · Branch: `hermes/hris-cabang` ·
-Migrasi: `supabase/migrations/20261102020000_hris_cabang_penugasan.sql`
+Migrasi: `supabase/migrations/20261104060000_hris_cabang_penugasan.sql`
 
 Catatan teknis pendamping laporan audit `kamo-audit-hris-report.md`. Semua angka di
 dokumen ini adalah hitungan; tidak ada nama, NIK, atau nomor HP siapa pun.
@@ -190,9 +190,11 @@ baru terasa bila pemilik mematikan kapabilitas itu. Harness mengujinya dengan
 ## 6. Memeriksa dan membatalkan pemasangan
 
 Langkah verifikasi (semua `SELECT`) dan urutan rollback ditulis lengkap di kepala
-`supabase/migrations/20261102020000_hris_cabang_penugasan.sql`. Ringkasnya: migrasi ini
+`supabase/migrations/20261104060000_hris_cabang_penugasan.sql`. Ringkasnya: migrasi ini
 hanya **menambah** kolom/tabel/fungsi dan menambahkan satu saringan pada delapan fungsi;
 tidak ada satu baris data lama pun yang di-UPDATE atau DELETE, sehingga pembatalannya
-cukup mengembalikan definisi fungsi dari migrasi sumbernya, mengembalikan hak tulis
-kolom, dan melepas RPC + tabel jejak. Kolom `end_date` boleh ditinggal karena aplikasi
+memakai definisi fungsi + ACL/proconfig yang dibackup tepat sebelum pemasangan,
+bukan menjalankan ulang migrasi sumber lama yang bisa menghapus fitur main lebih baru.
+Pulihkan hak tulis kolom dan lepas RPC + tabel jejak hanya setelah jejak pengguna
+disimpan terpisah. Kolom `end_date` boleh ditinggal karena aplikasi
 versi lama mengabaikannya — jadi migrasi aman dipasang sebelum kode di-deploy.
