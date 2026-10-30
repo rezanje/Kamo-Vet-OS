@@ -146,7 +146,10 @@ def wait_block(observer, waiter, blocker, evidence):
             f"from pg_stat_activity where pid={waiter.pid};")
         if rows:
             state = json.loads(rows[-1])
-            if blocker.pid in state["blockers"]:
+            # pg_blocking_pids and wait-event sampling need not update together.
+            # A matching blocker with a null event is not yet a complete barrier.
+            if (blocker.pid in state["blockers"] and state["wait_event_type"] == "Lock"
+                    and state["wait_event"] is not None):
                 evidence.append(state)
                 return
         if waiter.p.poll() is not None:
@@ -394,6 +397,8 @@ def correction_authorization_race(h, db, n, actor, with_history=True):
             # creating any payment history. Non-financial editing must remain usable.
             money.sql("begin; " + f.koreksi_sql(h, invoice, f"cc-{n}-no-money", initial_lines))
         committed_journals = int(money.sql("select count(*) from public.journal_entries;")[-1])
+        DIAGNOSTICS.update({"actor":f.PERAN[actor], "with_history":with_history,
+                            "barriers":evidence, "phase":"waiting for coordinator"})
         editor.send("begin; " + edit)
         wait_block(observer, editor, money, evidence)
         assert_equal(evidence[-1]["wait_event"], "advisory")
