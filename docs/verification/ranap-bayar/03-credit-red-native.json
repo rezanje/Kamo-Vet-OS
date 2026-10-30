@@ -1,0 +1,43 @@
+{
+  "mode": "candidate",
+  "migration_count": 329,
+  "cases": [
+    {
+      "case": "one action pending medicine and services posts invoice stock revenue AR actual split receipt",
+      "status": "PASS",
+      "detail": {
+        "error": null
+      }
+    },
+    {
+      "case": "real invoice and journal amounts",
+      "status": "PASS",
+      "detail": {
+        "invoice": "639de1f9-6491-4269-8fa4-38c405096365",
+        "revenue": -330000.0,
+        "hpp": 4000.0,
+        "ar": 0.0,
+        "stock": 198.0
+      }
+    },
+    {
+      "case": "exact replay invoice receipt stock GL once",
+      "status": "PASS",
+      "detail": {
+        "unchanged": true
+      }
+    },
+    {
+      "case": "available owner advance offsets existing and pending debt without collecting twice",
+      "status": "FAIL",
+      "detail": {
+        "error": null,
+        "debt": 100000.0
+      }
+    }
+  ],
+  "totals": {
+    "PASS": 3,
+    "FAIL": 1
+  }
+}

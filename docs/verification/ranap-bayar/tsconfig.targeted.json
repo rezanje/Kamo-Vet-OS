@@ -1,0 +1,13 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": [
+    "../../../next-env.d.ts",
+    "../../../src/app/(app)/klinik/rawat-inap/[id]/tagihan/**/*.ts",
+    "../../../src/app/(app)/klinik/rawat-inap/[id]/tagihan/**/*.tsx",
+    "../../../src/components/__tests__/ranap-simpan-bayar.test.tsx",
+    "../../../src/components/__tests__/ranap-payment-popup.test.tsx",
+    "../../../src/lib/ranap-payment.ts"
+  ],
+  "exclude": ["../../../node_modules"]
+}

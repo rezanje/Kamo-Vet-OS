@@ -1,0 +1,8 @@
+
+ RUN  v4.1.9 /opt/data/kamo-wt-ranap-bayar
+
+
+ Test Files  4 passed (4)
+      Tests  82 passed (82)
+   Start at  08:52:29
+   Duration  1.95s (transform 372ms, setup 0ms, import 612ms, tests 433ms, environment 337ms)

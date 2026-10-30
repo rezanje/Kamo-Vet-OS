@@ -38,9 +38,26 @@ export function promoActiveFor(p: PromoRow, branchId: string, today: string): bo
   return true;
 }
 
+// Lewat tanggal diperiksa SEBELUM is_active. Sejak promo kedaluwarsa dimatikan
+// otomatis (migrasi 20261104050000) barisnya memang is_active = false, dan
+// label "Nonaktif" akan menyembunyikan ALASAN-nya — padahal "Kadaluarsa" itulah
+// yang memberi tahu pemilik bahwa tinggal memperpanjang tanggalnya.
 export function promoScheduleStatus(p: PromoRow, today: string): "aktif" | "terjadwal" | "kadaluarsa" | "nonaktif" {
-  if (!p.is_active) return "nonaktif";
   if (p.valid_until && p.valid_until < today) return "kadaluarsa";
+  if (!p.is_active) return "nonaktif";
   if (p.valid_from && p.valid_from > today) return "terjadwal";
   return "aktif";
+}
+
+/**
+ * Pesan penolakan saat promo/voucher/kode yang sudah lewat tanggal hendak
+ * dihidupkan lagi. null = boleh diaktifkan.
+ *
+ * Mengaktifkan tanpa memperpanjang masa berlaku tidak ada gunanya: penyapu
+ * harian (dan pagar database) akan mematikannya lagi, dan kasir tetap tidak
+ * mendapat potongan. Jadi urutannya dibalik — perpanjang dulu, baru aktif.
+ */
+export function pesanAktivasiKadaluarsa(judul: string, validUntil: string | null, today: string): string | null {
+  if (!validUntil || validUntil >= today) return null;
+  return `${judul} sudah melewati masa berlaku (berakhir ${validUntil}). Perpanjang dulu tanggal "Berlaku s/d" lewat Edit, baru diaktifkan kembali.`;
 }

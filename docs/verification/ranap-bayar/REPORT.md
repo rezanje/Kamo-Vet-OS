@@ -1,0 +1,356 @@
+# Laporan rilis KAMO — #56 Simpan/Bayar rawat inap
+
+**Status: implementasi LOCAL selesai, verifikasi terarah lulus; belum live.**
+
+Branch: `hermes/ranap-bayar-sekali` · base `5e2cce8d2ca32a80255e8a63e8b425e553e61646`
+
+## Perubahan
+- Satu Simpan/Bayar: derive seluruh resep pending milik kunjungan di DB di bawah koordinator uang, gunakan kredit tersedia pada piutang tertua, penerimaan asli lalu posting tahap asli dalam satu transaksi. Gagal apa pun membatalkan invoice, stok, omzet/HPP/piutang dan penerimaan/advance sekaligus.
+- DP awal/global dan override beralasan tetap; lanjutan boleh nol tanpa kwitansi palsu. Pengulangan kunci sama tidak menerima uang atau mengeluarkan stok lagi.
+- Lebih bayar ditolak sebelum uang ditulis sampai ada persetujuan eksplisit yang terikat nominal, metode, saldo, resep pending, pajak dan rekening terkini. Surplus tetap saldo pemilik/utang 2103, bukan omzet atau kembalian otomatis. Data berubah memerlukan persetujuan ulang.
+- Panel pembayaran di atas rincian; enam tombol metode berwarna, nominal besar, split maksimal enam, isian tidak ditimpa, informasi rekening aktual. DP terpakai dan saldo pemilik terpisah. Tidak ada Tagih terpisah pada alur utama.
+- Sukses baru terikat kwitansi/invoice nyata milik kunjungan yang sedang dibuka; Simpan nol uang disebut transaksi, bukan penerimaan fiktif.
+
+## Hasil tes final
+- new unified public RPC: **51 PASS / 0 FAIL**, rantai lengkap 329 migrasi (328 asli + 1 kandidat) pada PostgreSQL native lokal sekali pakai. Bukti `19-native-final.json`.
+- original rekap / initial minimum / optional followup: **24 PASS / 0 FAIL**, rantai lengkap 329 migrasi (328 asli + 1 kandidat) pada PostgreSQL native lokal sekali pakai. Bukti `20-original-rekap-regression.json`.
+- original compound / public clinical notes: **39 PASS / 0 FAIL**, rantai lengkap 329 migrasi (328 asli + 1 kandidat) pada PostgreSQL native lokal sekali pakai. Bukti `21-original-racikan-regression.json`.
+- Targeted Vitest: **177 PASS / 0 FAIL**, 9 berkas; bukan full suite/UAT. Bukti `30-ui-final.json`.
+- Typecheck terarah, eslint seluruh TS/TSX berubah, git diff --check: exit 0 (`30-quality-gates.json`). Full-project typecheck: OOM pada batas 2048 MB, belum lulus; tidak diulang dengan heap lebih besar.
+- Expected posting diperiksa tidak hanya seimbang: obat 2×25000 + jasa 280000 = invoice/omzet 330000, HPP 4000, stok -2; pembayaran campuran tunai 100000 + bank 300000 untuk tagihan 340000 menyisakan kredit nyata 60000. Racikan HPP 2000 tanpa pengeluaran bahan kedua; BMHP HPP 3000/stok bahan -3. Bank cabang 1109 dan per-bagian kwitansi diperiksa.
+
+## Migrasi / urutan penerapan
+`20261104040000_ranap_simpan_bayar.sql` baru, sesudah dependensi `20261104030000`. Tidak ada SQL lama yang ditulis ulang dan tidak ada assertion harus menjadi migrasi terbaru. Kandidat menambah tabel permintaan privat, quote privat/publik, wrapper publik, dan mengekstrak loop aplikasi advance ASLI dari stage ke helper privat lewat satu jangkar eksak. `clinic_post_invoice`, `clinic_receive_visit_payment`, dan aturan minimum global tidak diganti.
+
+**DB-dependent: parent wajib backup, preflight, apply dan readback migrasi sebelum merge**, sesudah rebase/CI/review sesuai otorisasi parent. Tidak ada perubahan hosted di pekerjaan ini.
+
+## Sisa kendala / batas
+- LOCAL ONLY. No network, hosted read/write/preflight, Production patient rows, push, PR creation, merge, deployment, packages, paid CLI or new browser/Auth stack used. Parent owns rebase/new main, independent review, exact-head CI, backup, hosted compilation/apply/readback and release. Latest steering says meeting hold was lifted; this child scope nevertheless remains LOCAL ONLY.
+- Full-project typecheck remains unverified after heap-2048 OOM; focused typecheck, changed-file lint and targeted tests passed. No full 5000-test suite, production build, Technical checks CI or authenticated browser/PostgREST/UAT claim.
+- Bank selection is existing method->branch/global/default mapping only. Displays actual cash-account name/bank/number and validates resulting receipt account. No per-transaction bank dropdown, arbitrary client COA, global map mutation or new banking authority.
+- Overpayment acknowledgment and one-action orchestration are enforced at NEW public clinic_bill_and_pay_inpatient and the new visible form. Existing low-level public clinic_receive_visit_payment / legacy server actions remain their original advance-capable contract; this change does not retrofit acknowledgment onto every legacy money API. Parent should review this explicit compatibility boundary before release.
+- Original public stage invoice batch limit of 200 lines is retained; a larger pending batch fails atomically, not partially. Original clinical/stock restrictions and posted snapshots remain authoritative; no historical real money was corrected.
+- The original native bootstrap fakes only Supabase auth/storage/platform, never accounting/stock/minimum/role business cores. New harness uses JWT claims JSON and actual authenticated public RPCs. Regression harness adapts temp placement only; it does not substitute business functions.
+- RED evidence covers tracer and discovered defects/UX slices; later expanded native cases are regression coverage, not a claim that all 51 individual final cases were each run RED before all implementation.
+- Independent reviewer is the parent: no delegate/reviewer tool is exposed in this child and paid/network CLI was prohibited. No independently-reviewed or release-ready badge claimed.
+
+## Riwayat RED dan kegagalan (tidak ditimpa menjadi hijau)
+Raw log byte-exact disimpan di `raw-logs.tar.gz`, diverifikasi SHA256 per berkas di `raw-logs-manifest.json`; salinan `.log` yang bisa dibaca hanya dinormalisasi whitespace akhir. Pemeriksaan staged pertama gagal karena whitespace log mentah (exit 2), bukan sumber; pemeriksaan staged final dicatat terpisah. Supporting static scan production tidak menemukan pola yang dicari, bukan pengganti review independen.
+
+- `01-red-native.json` — **expected RED**: Original 328 migrations: new public one-action RPC absent; 0 PASS / 1 FAIL. First tracer fixture record argument corrected to actual stay before GREEN; this RED is absence proof, not a complete clinical journey.
+- `03-credit-red-native.json` — **real implementation defect, fixed**: 3 PASS / 1 FAIL: old AR 100000 remained despite available owner credit. Extracted original stage allocation loop to one private helper and apply existing available credit oldest-first; original public stage still uses same helper.
+- `05-ui-red.log` — **initial test setup failure**: New component did not exist; import resolution failed, zero executed tests. Kept separately from assertion RED.
+- `06-ui-red-assertions.log` — **expected RED**: Empty component: 5 failed tests; absent controls also produce null-input errors. Subsequent real rendered-component tests passed.
+- `07-action-red-ui-first.log` — **expected RED**: Missing simpanBayar action: 10 FAIL / 5 PASS.
+- `08-page-red.log` — **expected RED**: New top-order and fail-closed quote tests: 2 FAIL / 27 PASS.
+- `09-focused-first.log` — **outdated old-contract assertions**: 6 FAIL / 74 PASS: separate Tagih/manual selection, DP including unused credit, old helper copy. Replaced only superseded UI expectations while preserving money assertions and adding initial-minimum/current-quote rendering checks.
+- `10-native-matrix-first.json` — **fixture error, fixed**: 21 PASS / 1 HARNESS FAIL: ON CONFLICT(metode,branch_id) did not match existing partial unique index. Plain insert into fictional new branch mapping fixed fixture; no production index changes.
+- `12-native-matrix-second.json` — **assertion error, fixed**: 34 PASS / 2 FAIL: actual original error codes are STOCK_SHORT and Indonesian closed-period text, not STOCK_SHORTAGE/PERIOD. Both failures already showed unchanged=true. Exact expected rejection strings corrected; no retry masked either run.
+- `13-typecheck.log` — **unfinished full-project gate**: Full-project tsc --noEmit --incremental false hit 2048 MB heap limit, process exit 134. Core removed. No larger heap/full rerun. Focused typecheck of changed route/components/tests and transitive imports passes. Not proof full-project tsc passes or that baseline has same failure.
+- `18-bank-race-red.json` — **real implementation race, fixed**: 42 PASS / 1 FAIL: changing payment map while receipt waited at shift lock could post a different account from current quote. Added actual receipt-parts vs quoted-method account comparison; mismatch raises ACCOUNT_INVALID and entire transaction rolls back. Deterministic real independent-session proof now passes.
+- `22-next-navigation-red.log` — **real Next navigation issue, fixed**: 3 FAIL / 13 PASS after source inspection of installed Next reducer proved redirect promises reject. New async client catch could swallow redirect. New action now returns verified document-bound SAVED href; useRouter navigates/refreshes. Old actions unchanged.
+- `23-session-red.log` — **expected RED**: 1 FAIL / 16 PASS: expired session redirected through old helper. New action now returns explicit session/shift error without a redirect inside local catch.
+- `26-ui-targeted-final.json` — **existing route mock incomplete, fixed**: 1 FAIL / 174 PASS: original popup test lacked new quote RPC and useRouter mock, so fail-closed page correctly omitted form. Extended mock with actual new read shape; retained original dialog/no-resubmit assertions.
+- `27-no-excess-reconfirm-red.log` — **expected RED**: 1 FAIL / 6 PASS: stale quote with zero excess wrongly described credit Rp0. Modal now explicitly says Tagihan berubah / Tidak ada kelebihan bayar and requires fresh acknowledgment.
+- `29-authoritative-tax-red.log` — **real display inconsistency, fixed**: 1 FAIL / 31 PASS: UI tax fallback OFF could disagree with trusted quote tax. Total transaction card/footer now combine stored invoices with DB-validated pending amount, including its tax.
+
+## Kasus native final — tepat sesuai hasil eksekusi
+
+### new unified public RPC
+- PASS — one action pending medicine and services posts invoice stock revenue AR actual split receipt
+- PASS — real invoice and journal amounts
+- PASS — exact replay invoice receipt stock GL once
+- PASS — available owner advance offsets existing and pending debt without collecting twice
+- PASS — direct public RPC overpayment rejected before ANY money or invoice writes
+- PASS — confirmation bound to exact amount and split methods
+- PASS — added prescription invalidates acknowledged quote
+- PASS — acknowledged surplus kept once as real owner liability not revenue
+- PASS — acknowledged double-submit idempotent including surplus
+- PASS — cached replay wrong branch denied
+- PASS — changed payload same key rejected
+- PASS — settled/no-new-items primary cannot collect again
+- PASS — explicit Tambah saldo owner mode preserves advance-before-items
+- PASS — receipt reversal invalidates quote even when payment is no longer excess
+- PASS — initial payment below minimum rolls back receipt advance invoice stock GL
+- PASS — initial zero-money has no minimum bypass
+- PASS — STAFF initial override still denied
+- PASS — followup zero money posts revenue AR without fake zero receipt or changing old invoice
+- PASS — new receipt allocates existing debt oldest-first not new-stage-first
+- PASS — authorized reason initial zero creates real AR and logged DP exception
+- PASS — ordinary initial header DP excluded from pending and preserved verbatim
+- PASS — six methods use actual branch bank map and preserve receipt split
+- PASS — discharged visit settles old debt and pending pre-discharge contract without re-admission
+- PASS — stock failure rolls back BOTH receipt and invoice/advance/stock/GL
+- PASS — period failure rolls back BOTH receipt and invoice/advance/stock/GL
+- PASS — shift failure rolls back BOTH receipt and invoice/advance/stock/GL
+- PASS — inactive failure rolls back BOTH receipt and invoice/advance/stock/GL
+- PASS — branch failure rolls back BOTH receipt and invoice/advance/stock/GL
+- PASS — record failure rolls back BOTH receipt and invoice/advance/stock/GL
+- PASS — tax failure rolls back BOTH receipt and invoice/advance/stock/GL
+- PASS — account failure rolls back BOTH receipt and invoice/advance/stock/GL
+- PASS — original Catatan racikan billed HPP once without ingredient stock double-issue
+- PASS — original Catatan BMHP posts real material stock HPP revenue AR once
+- PASS — BMHP unified replay has no second material issue or HPP
+- PASS — STAFF manual compound remains denied through original Catatan
+- PASS — pending replacement blocks unified billing safely
+- PASS — completed replacement excludes all old Rx and counts transferred money once
+- PASS — cancel/release after replacement nets once, no negative-payment double count
+- PASS — bank mapping changed after quote rolls back both money and invoice
+- PASS — concurrent exact bill/pay two sessions waits on coordinator and commits once
+- PASS — doctor addition before waiting bill/pay included without deadlock
+- PASS — role revocation after coordinator wait denies before any money
+- PASS — concurrent different-key settled payment requires new excess confirmation not second collection
+- PASS — acknowledged quote stale after real coordinator wait returns reconfirm with new pending amount
+- PASS — cashier-first doctor-second both commit without deadlock or auto-post on note save
+- PASS — DOCTOR original cashier role retained for valid initial collection
+- PASS — ADMIN original cashier role retained for valid initial collection
+- PASS — FINANCE original cashier role retained for valid initial collection
+- PASS — OWNER original cashier role retained for valid initial collection
+- PASS — public grant boundary and private orchestration state inaccessible to app role
+- PASS — nonempty journals each balanced and trusted posting context cleared
+
+### original rekap / initial minimum / optional followup
+- PASS — initial-STAFF-header-DP-preserved
+- PASS — STAFF-repeat-zero-DP-no-override
+- PASS — repeat-posts-real-revenue-AR-not-money
+- PASS — repeat-stage-idempotent-no-duplicates
+- PASS — combined-remaining-not-added-items-or-cumulative-target
+- PASS — later-mixed-receipt-oldest-initial-first
+- PASS — cancellation-restores-header-net-and-method-accounts
+- PASS — outpatient-minimum
+- PASS — first-stage-minimum
+- PASS — all-journals-balanced
+- PASS — repeat-zero-DP-stock-FIFO-HPP-once
+- PASS — cross-branch-repeat-denied-no-effects
+- PASS — inactive-repeat-denied-no-effects
+- PASS — client-defer-still-rejected
+- PASS — initial-stage-advance-minimum-preserved
+- PASS — cancelled-initial-receipt-active-invoice-still-qualifies
+- PASS — void-original-plus-pending-replacement-not-qualifying
+- PASS — completed-reissue-qualifies-header-money-counted-once
+- PASS — concurrent-zero-DP-double-submit-once
+- PASS — repeat-role-rechecked-after-coordinator-wait
+- PASS — zero-value-document-not-an-initial-DP-bypass
+- PASS — stored-price-tax-discount-not-repriced-from-clinical
+- PASS — closed-period-repeat-atomic
+- PASS — all-extended-journals-balanced
+
+### original compound / public clinical notes
+- PASS — DOCTOR official original Catatan public RPC after DP
+- PASS — later stage posts revenue AR HPP without second ingredient issue
+- PASS — original DP retained
+- PASS — exact issue note stage replay after posting is effect-free
+- PASS — changed compound retry conflicts
+- PASS — old billed recipe cannot be returned
+- PASS — old billed recipe cannot be voided
+- PASS — DOCTOR custom after DP
+- PASS — DOCTOR custom cannot alter issued composition after DP
+- PASS — STAFF official after DP
+- PASS — OWNER custom after DP
+- PASS — OWNER custom cannot alter issued composition after DP
+- PASS — ADMIN official after DP
+- PASS — STAFF manual remains denied
+- PASS — DOCTOR legacy no-SKU custom remains denied
+- PASS — FINANCE not compound stock role
+- PASS — direct public official after DP
+- PASS — legacy OWNER direct custom after DP
+- PASS — actual fully paid admission still permits NEW compound
+- PASS — explicit historical Selesai active-care fixture permits NEW compound
+- PASS — outpatient issued invoice denies
+- PASS — outpatient voided historical invoice denies
+- PASS — discharged denied before stock
+- PASS — checked-out denied before stock
+- PASS — wrong-branch denied before stock
+- PASS — inactive denied before stock
+- PASS — foreign-record denied before stock
+- PASS — nonclinical denied before stock
+- PASS — original invoker initial outpatient record retains permissions and coordinator order
+- PASS — new issue first concurrent stage second both commit once
+- PASS — master simultaneous original stage and new issue no deadlock
+- PASS — official simultaneous original stage and new issue no deadlock
+- PASS — direct simultaneous original stage and new issue no deadlock
+- PASS — note simultaneous original stage and new issue no deadlock
+- PASS — concurrent duplicate note issues and prescribes exactly once
+- PASS — recheck after coordinator wait inactive
+- PASS — recheck after coordinator wait DOCTOR-to-STAFF-custom
+- PASS — recheck after coordinator wait branch-revoked
+- PASS — nonempty per-entry journals balanced and posting context clean
+
+## Kasus UI/action final
+- passed — popup hasil pembayaran pada route tagihan ranap pelunasan hanya disebut lunas saat biaya nyata sudah seluruhnya tertutup dan riwayat terbaca
+- passed — popup hasil pembayaran pada route tagihan ranap piutang terbit nol dengan biaya pending bukan pelunasan kunjungan
+- passed — popup hasil pembayaran pada route tagihan ranap pending yang tertutup saldo uang muka tetap belum disebut lunas sebelum diterbitkan
+- passed — popup hasil pembayaran pada route tagihan ranap saldo sisa nol bukan bukti pelunasan (tanpa invoice)
+- passed — popup hasil pembayaran pada route tagihan ranap saldo sisa nol bukan bukti pelunasan (invoice nol)
+- passed — popup hasil pembayaran pada route tagihan ranap saldo sisa nol bukan bukti pelunasan (koreksi belum selesai)
+- passed — popup hasil pembayaran pada route tagihan ranap riwayat belum terbaca tidak menghasilkan sukses/lunas dan aksi uang tetap terkunci
+- passed — popup hasil pembayaran pada route tagihan ranap query sukses tanpa uang tercatat tidak menciptakan bukti penerimaan
+- passed — popup hasil pembayaran pada route tagihan ranap error mengalahkan success tanpa dua dialog atau sukses semu
+- passed — popup hasil pembayaran pada route tagihan ranap tombol Mengerti hanya menutup native dialog, tidak mengirim pembayaran lagi
+- passed — popup hasil pembayaran pada route tagihan ranap DP memakai native modal terpusat walau kasir di bawah halaman, dengan angka rekap terkini
+- passed — has six colored methods and actual mapped bank; choosing noncash fills only empty draft
+- passed — split parts stay intact and optional DP cannot clobber typed money
+- passed — prominent excess warning before submit; cancel ack does not submit money
+- passed — explicit confirmation sends exact current token and original typed parts
+- passed — changed quote with no excess still requires reviewing current balance, not false credit
+- passed — saved real-document URL navigates without swallowing a Next redirect in local catch
+- passed — zero new money has explicit save later path; settled primary is disabled
+- passed — muatTagihanBerjalan menyisakan baris resep yang belum masuk tagihan aktif
+- passed — muatTagihanBerjalan rincian memakai baris invoice tersimpan dan mengecualikan invoice void, tidak harga resep terbaru
+- passed — muatTagihanBerjalan menghitung dibayar dan sisa tiap tahap beserta total piutangnya
+- passed — muatTagihanBerjalan mengurutkan bagian kwitansi dan menyebut kasirnya
+- passed — muatTagihanBerjalan saldo uang muka = nominal dikurangi yang sudah terpakai
+- passed — muatTagihanBerjalan rawat inap yang tidak ada mengembalikan null, bukan layar kosong palsu
+- passed — muatTagihanBerjalan gagal baca inpatient_records menghentikan layar, bukan menampilkan angka setengah
+- passed — muatTagihanBerjalan gagal baca visits menghentikan layar, bukan menampilkan angka setengah
+- passed — muatTagihanBerjalan gagal baca invoices menghentikan layar, bukan menampilkan angka setengah
+- passed — muatTagihanBerjalan gagal baca prescription_items menghentikan layar, bukan menampilkan angka setengah
+- passed — muatTagihanBerjalan gagal baca invoice_items menghentikan layar, bukan menampilkan angka setengah
+- passed — muatTagihanBerjalan gagal baca invoice_payments menghentikan layar, bukan menampilkan angka setengah
+- passed — muatTagihanBerjalan tabel kwitansi/uang muka yang MEMANG belum ada tidak mematikan layar tagihan
+- passed — muatTagihanBerjalan gagal baca clinic_payment_receipts (PGRST201) menghentikan layar, bukan menampilkan nol
+- passed — muatTagihanBerjalan gagal baca clinic_payment_receipts (42501) menghentikan layar, bukan menampilkan nol
+- passed — muatTagihanBerjalan gagal baca clinic_customer_advances (57014) menghentikan layar, bukan menampilkan nol
+- passed — muatTagihanBerjalan riwayat uang yang lengkap menandai layar boleh memproses uang
+- passed — ringkasBelumDitagih menjumlahkan baris resep yang belum menempel pada tagihan aktif
+- passed — ringkasBelumDitagih baris pada tagihan yang sudah di-void kembali terhitung belum ditagih
+- passed — ringkasBelumDitagih sumber yang gagal dibaca dilaporkan tidak terbaca, bukan nol
+- passed — rombongan dengan tagihan bertahap menjumlahkan seluruh tahap satu kunjungan, bukan memakai yang terakhir saja
+- passed — rombongan dengan tagihan bertahap menyimpan semua nomor tagihannya supaya struk gabungan tidak kehilangan tahap
+- passed — rombongan dengan tagihan bertahap baru disebut lunas kalau seluruh tahapnya lunas
+- passed — rombongan dengan tagihan bertahap kunjungan tanpa tagihan tetap dilaporkan belum ditagih
+- passed — tabel baru kwitansi menyimpan kunjungan, pemilik, cabang, dan shift penerimanya
+- passed — tabel baru klik ganda tidak menggandakan uang: kunci permintaan kwitansi unik
+- passed — tabel baru kwitansi tidak pernah dihapus — pembatalan hanya menandai barisnya
+- passed — tabel baru saldo uang muka tidak bisa jadi negatif walau ada tulisan nakal
+- passed — tabel baru bagian kwitansi dibatasi metode resmi dan maksimal enam
+- passed — tabel baru uang muka minimal disimpan sebagai persen 0–100 satu baris
+- passed — hak akses tabel tabel uang hanya boleh dibaca pengguna yang berhak atas cabangnya; tulisan lewat RPC
+- passed — hak akses tabel setelan uang muka minimal dibaca semua akun login, ditulis OWNER/ADMIN saja
+- passed — hak akses tabel RPC uang hanya diberikan ke pengguna terautentikasi, tidak ke anon atau service_role
+- passed — hak akses tabel penolong internal tidak bisa dipanggil akun aplikasi sama sekali
+- passed — penjaga RPC setiap RPC memeriksa peran terautentikasi lebih dulu
+- passed — penjaga RPC cabang kunjungan selalu diperiksa, tidak cuma id-nya
+- passed — penjaga RPC menerima dan membatalkan uang wajib punya shift klinik terbuka milik kasirnya
+- passed — penjaga RPC membatalkan kwitansi dibatasi peran keuangan dan wajib beralasan
+- passed — penjaga RPC uang muka minimal ditegakkan di database, penerobosnya dicatat
+- passed — penjaga RPC satu baris resep hanya boleh menempel pada satu tagihan aktif
+- passed — penjaga RPC mencabut kunci unik satu-invoice-per-kunjungan tanpa kehilangan indeks pencariannya
+- passed — penjaga RPC penjaga INPATIENT_OPEN hanya dibuka untuk jalur tagihan tahap
+- passed — penjaga RPC uang muka hanya dipakai milik pemilik dan cabang yang sama, tertua lebih dulu
+- passed — penjaga RPC alokasi pembayaran mendahulukan tagihan yang dipilih kasir lalu tahap tertua
+- passed — penjaga RPC kunjungan tidak ditutup selagi pasien dirawat atau masih ada tahap belum lunas
+- passed — tambalan RPC berjalan gagal tertutup bila jangkarnya tidak muncul tepat sekali
+- passed — tambalan RPC berjalan menambal keempat RPC uang yang terdampak
+- passed — tambalan RPC berjalan checkout campuran dan tahap rawat inap tidak diperiksa dua kali
+- passed — tambalan RPC berjalan kepulangan pasien tidak lagi diblokir tagihan yang sudah terbit
+- passed — tambalan RPC berjalan tarif rawat inap tidak dihitung otomatis lagi untuk kunjungan yang sudah ditagih
+- passed — batas perubahan tidak menyentuh kasir petshop, promo, racikan, atau BMHP
+- passed — batas perubahan tidak mengubah migrasi lama: hanya menambah kolom pada invoice_payments
+- passed — pemilihan baris tahap hanya menawarkan baris yang belum pernah masuk tagihan aktif
+- passed — pemilihan baris tahap baris pada tagihan yang sudah di-void terbuka lagi — sama dengan penjaga database
+- passed — pemilihan baris tahap baris bebas pada tagihan (tanpa id resep) tidak menutup baris resep mana pun
+- passed — pemilihan baris tahap nilai baris = qty x harga
+- passed — ringkasan tahap mengurutkan dari tahap tertua dan membuang yang sudah dibatalkan
+- passed — ringkasan tahap menjumlahkan uang muka di kepala invoice dengan seluruh pembayarannya
+- passed — ringkasan tahap piutang kunjungan = jumlah sisa seluruh tahap aktif
+- passed — alokasi pembayaran memotong tahap tertua lebih dulu, memakai bagian metode berurutan
+- passed — alokasi pembayaran tagihan yang dipilih kasir didahulukan
+- passed — alokasi pembayaran tanpa tagihan yang belum lunas, seluruh uang jadi uang muka pemilik
+- passed — alokasi pembayaran tagihan yang sedang dikoreksi dilewati, bukan ikut dibayar
+- passed — uang muka pemilik saldo = nominal dikurangi yang sudah terpakai, hanya yang berstatus aktif
+- passed — uang muka pemilik yang terpakai pada satu tahap tidak pernah melebihi saldo maupun totalnya
+- passed — bayangan jurnal terima pembayaran selalu seimbang
+- passed — bayangan jurnal uang muka masuk campuran selalu seimbang
+- passed — bayangan jurnal pemakaian uang muka selalu seimbang
+- passed — bayangan jurnal pembatalan kwitansi selalu seimbang
+- passed — bayangan jurnal uang masuk sebelum ada tagihan masuk akun Uang Muka Penjualan 2103, bukan pendapatan
+- passed — bayangan jurnal pemakaian uang muka menurunkan utang ke pemilik dan melunasi piutang, tanpa kas
+- passed — uang diterima per tagihan checkout biasa satu metode yang lunas di meja: dibayar penuh, sisa nol
+- passed — uang diterima per tagihan DP 40.000 tanpa pelunasan: dibayar 40.000, bukan totalnya
+- passed — uang diterima per tagihan DP yang dilunasi lewat piutang: uang muka kepala + pelunasan susulan
+- passed — uang diterima per tagihan checkout campuran: seluruh uangnya ada di baris pembayaran, kepala tagihan nol
+- passed — uang diterima per tagihan tagihan tahap rawat inap yang baru dibayar sebagian
+- passed — uang diterima per tagihan kwitansi tahap yang dibatalkan: baris positif dan pembaliknya saling meniadakan
+- passed — uang diterima per tagihan tagihan pengganti hasil terbit ulang: uang lama tidak dihitung dua kali
+- passed — uang diterima per tagihan tagihan pengganti yang kwitansinya kemudian dibatalkan: nol, bukan total
+- passed — uang diterima per tagihan beberapa tahap dalam satu kunjungan dijumlahkan per tagihan
+- passed — tagih sekarang menagih pasien yang masih dirawat lewat RPC tahap, bukan jalur invoice tunggal
+- passed — tagih sekarang hanya baris yang dicentang yang masuk tagihan tahap ini
+- passed — tagih sekarang mengirim kunci yang sama saat dicoba ulang — database yang menolak tagihan kedua
+- passed — tagih sekarang tidak ada yang dicentang: pesan ramah, tanpa menyentuh uang
+- passed — tagih sekarang baris yang sudah berubah atau bukan milik kunjungan ini ditolak sebelum posting
+- passed — tagih sekarang tanpa shift klinik terbuka, kasir diarahkan membuka shift lebih dulu
+- passed — tagih sekarang periode yang sudah ditutup menghentikan penagihan
+- passed — tagih sekarang alasan penerobosan uang muka minimal ikut dikirim ke database
+- passed — tagih sekarang tanpa alasan, kolom penerobosan tidak dikirim sama sekali
+- passed — tagih sekarang penolakan uang muka minimal dari database ditampilkan apa adanya ke kasir
+- passed — tagih sekarang baris yang sudah ditagih ditolak database dan diterjemahkan jelas
+- passed — terima pembayaran mengirim seluruh bagian metode apa adanya ke RPC kwitansi
+- passed — terima pembayaran tagihan yang dipilih kasir diteruskan supaya didahulukan
+- passed — terima pembayaran mengirim kunci yang sama saat dicoba ulang — database yang menolak kwitansi kedua
+- passed — terima pembayaran menolak tanpa bagian sama sekali tanpa menyentuh uang
+- passed — terima pembayaran menolak nominal nol tanpa menyentuh uang
+- passed — terima pembayaran menolak nominal pecahan tanpa menyentuh uang
+- passed — terima pembayaran menolak metode di luar daftar tanpa menyentuh uang
+- passed — terima pembayaran menolak lebih dari enam bagian tanpa menyentuh uang
+- passed — terima pembayaran menolak tanpa kunci permintaan tanpa menyentuh uang
+- passed — terima pembayaran tanpa shift klinik terbuka, uang tidak boleh diterima
+- passed — terima pembayaran kelebihan uang tanpa data pemilik ditolak database dengan pesan yang bisa ditindaklanjuti
+- passed — batalkan kwitansi meneruskan kwitansi, kunci, dan alasannya ke RPC pembalik
+- passed — batalkan kwitansi menolak tanpa alasan tanpa membalik apa pun
+- passed — batalkan kwitansi menolak tanpa kwitansi tanpa membalik apa pun
+- passed — batalkan kwitansi menolak tanpa kunci tanpa membalik apa pun
+- passed — batalkan kwitansi peran di luar keuangan ditolak database, bukan hanya disembunyikan layar
+- passed — batalkan kwitansi uang muka yang sudah menempel di tagihan menunjuk jalan keluarnya, bukan jalan buntu
+- passed — batalkan kwitansi tanpa shift klinik terbuka, kwitansi tidak bisa dibatalkan
+- passed — lepas pemakaian uang muka meneruskan uang muka, kunci, dan alasannya ke RPC pelepasan
+- passed — lepas pemakaian uang muka menolak tanpa alasan tanpa melepas apa pun
+- passed — lepas pemakaian uang muka menolak tanpa uang muka tanpa melepas apa pun
+- passed — lepas pemakaian uang muka menolak tanpa kunci tanpa melepas apa pun
+- passed — lepas pemakaian uang muka tanpa shift klinik terbuka, pelepasan tidak dijalankan
+- passed — lepas pemakaian uang muka peran di luar keuangan ditolak database
+- passed — lepas pemakaian uang muka pelepasan kedua dengan kunci berbeda ditolak dan dijelaskan
+- passed — display totals use validated DB pending tax instead of an OFF fallback from UI tax read
+- passed — unified payment controls are above invoice detail and no separate Tagih button
+- passed — new-flow success is bound to this visit active receipt and current lunas state
+- passed — zero-money save reports transaction not invented receipt, no bare success query trust
+- passed — bank/quote read errors fail closed before any destination or payment controls
+- passed — layar tagihan rawat inap berjalan success tak dikenal diabaikan tanpa modal/banner (tidak-dikenal)
+- passed — layar tagihan rawat inap berjalan success tak dikenal diabaikan tanpa modal/banner (__proto__)
+- passed — layar tagihan rawat inap berjalan success tak dikenal diabaikan tanpa modal/banner (constructor)
+- passed — layar tagihan rawat inap berjalan success tak dikenal diabaikan tanpa modal/banner (toString)
+- passed — layar tagihan rawat inap berjalan pesan sukses tagih tetap tersedia
+- passed — layar tagihan rawat inap berjalan pesan sukses batal tetap tersedia
+- passed — layar tagihan rawat inap berjalan pesan sukses lepas tetap tersedia
+- passed — layar tagihan rawat inap berjalan tanpa pending tidak menyisakan heading/form/helper (normal)
+- passed — layar tagihan rawat inap berjalan tanpa pending tidak menyisakan heading/form/helper (tanpa shift)
+- passed — layar tagihan rawat inap berjalan tanpa pending tidak menyisakan heading/form/helper (riwayat belum terbaca)
+- passed — layar tagihan rawat inap berjalan pending tetap terlihat dan ikut satu Simpan/Bayar tanpa Tagih terpisah
+- passed — layar tagihan rawat inap berjalan menampilkan keempat bagian wajibnya
+- passed — layar tagihan rawat inap berjalan tagihan tahap menyebut nomor, total, dibayar, sisa, dan statusnya
+- passed — layar tagihan rawat inap berjalan riwayat pembayaran memperlihatkan nomor kwitansi, metode per bagian, dan kasirnya
+- passed — layar tagihan rawat inap berjalan menyediakan cetak invoice tahap dan cetak kwitansi
+- passed — layar tagihan rawat inap berjalan rekap ringkas hanya berisi Total transaksi, DP, Sisa pembayaran tanpa catatan berulang
+- passed — layar tagihan rawat inap berjalan rekap menampilkan header DP walau saldo wallet nol, bukan kartu minimum berulang
+- passed — layar tagihan rawat inap berjalan rincian invoice tersimpan dan pending terpisah; footer tidak menghitung ulang harga klinis
+- passed — layar tagihan rawat inap berjalan tanpa invoice aktif selesai, minimum awal tetap ditampilkan
+- passed — layar tagihan rawat inap berjalan invoice yang koreksinya belum selesai tidak membuka pengecualian DP lanjutan
+- passed — layar tagihan rawat inap berjalan invoice nol rupiah tidak menonaktifkan minimum DP awal sebenarnya
+- passed — layar tagihan rawat inap berjalan tanpa shift klinik terbuka, uang terkunci tapi tagihannya tetap terbaca
+- passed — layar tagihan rawat inap berjalan rawat inap yang sudah pulang tetap bisa dibuka untuk melunasi sisanya
+- passed — layar tagihan rawat inap berjalan form terima pembayaran dan tagih sekarang tersedia saat shift terbuka
+- passed — layar tagihan rawat inap berjalan riwayat uang yang belum tersedia mengunci aksi uang dan menjelaskan sebabnya
+- passed — layar tagihan rawat inap berjalan uang muka yang sudah terpakai menawarkan pelepasan hanya untuk peran keuangan
+- passed — layar tagihan rawat inap berjalan kwitansi yang dibatalkan ditandai beserta alasannya, bukan dihapus
+- passed — exactly one monetary RPC with trusted IDs not client invoice/price/COA
+- passed — backend overpayment confirmation returns exact current quote without success redirect
+- passed — zero money is forwarded as empty parts, not fake receipt
+- passed — invalid money bad-json fails closed
+- passed — invalid money [{"method":"Tunai","amount":0}] fails closed
+- passed — invalid money [{"method":"Arbitrary","amount":10}] fails closed
+- passed — invalid money [{"method":"Tunai","amount":-1}] fails closed
+- passed — invalid money [{"method":"Tunai","amount":1.5}] fails closed
+- passed — expired session returns a visible error without a swallowed redirect
+- passed — no compatibility fallback on missing/internal function
+- passed — wrong returned visit/record cannot produce success feedback

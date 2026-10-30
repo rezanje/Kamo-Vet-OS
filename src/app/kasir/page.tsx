@@ -20,6 +20,7 @@ import { isCompletedSale } from "@/lib/sale-payment-reporting";
 import { readCompleteList } from "@/lib/checked-list";
 import { loadActiveVouchers } from "@/lib/voucher-loader";
 import { loadKodeKampanyeAktif } from "@/lib/kode-kampanye";
+import { nonaktifkanPromoKadaluarsa } from "@/lib/promo-kadaluarsa";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -48,7 +49,12 @@ export default async function KasirPage({
   }
   const replacementDraft = replacement ? saleReplacementDraft(replacement) : undefined;
 
-  const [itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, vouchers, promos, kodeKampanye] = await Promise.all([
+  const [, itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, vouchers, promos, kodeKampanye] = await Promise.all([
+    // Penyapu promo/voucher kedaluwarsa ikut dijalankan dari sini karena kasir
+    // adalah layar yang paling sering dibuka; fungsinya berhenti lebih awal
+    // lewat indeks kalau memang tidak ada yang lewat tanggal. Hasil bacaan di
+    // bawah tetap disaring tanggal, jadi urutannya tidak perlu dijamin.
+    nonaktifkanPromoKadaluarsa(supabase),
     loadKasirItems(supabase),
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.

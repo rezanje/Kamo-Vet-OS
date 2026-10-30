@@ -7,9 +7,14 @@ const state = vi.hoisted(() => ({
   data: null as unknown,
   shift: { id: "shift-1" } as { id: string } | null,
   role: "STAFF" as string,
+  quoteError: null as { message: string } | null,
+  quoteTax: 0,
+  applications: [] as { id: string; invoice_id: string; amount: number; released_at: string | null }[],
+  applicationError: false,
 }));
 
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
   redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); },
   notFound: () => { throw new Error("NOT_FOUND"); },
 }));
@@ -19,8 +24,18 @@ vi.mock("@/lib/tagihan-berjalan-server", () => ({ muatTagihanBerjalan: async () 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: "kasir-1" } } }) },
+    rpc: async () => {
+      const d = state.data as ReturnType<typeof dasar>;
+      if (state.quoteError || d.tahap.some(t => t.correction_pending)) return { data: null, error: state.quoteError ?? { message: "pending correction" } };
+      const pending = d.belumDitagih.reduce((sum, b) => sum + b.qty * b.harga, 0) + state.quoteTax;
+      const debt = d.tahap.reduce((sum, t) => sum + t.sisa, 0);
+      return { error: null, data: { token: "quote", remaining: Math.max(0, debt + pending - d.saldoUangMuka), credit: d.saldoUangMuka, pending, debt, amount: 0, excess: 0, accounts: [{ method: "Transfer", code: "1102", name: "Bank Fiktif", bank: "Bank Fiktif", number: "123456" }] } };
+    },
     from: () => ({
-      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { role: state.role, min_dp_percent: 50 } }) }) }),
+      select: () => ({
+        in: async () => ({ data: state.applications, error: state.applicationError ? { message: "failed proof" } : null }),
+        eq: () => ({ maybeSingle: async () => ({ data: { role: state.role, min_dp_percent: 50 } }) }),
+      }),
     }),
   }),
 }));
@@ -45,11 +60,56 @@ const dasar = () => ({
   riwayatUangTerpasang: true,
 });
 
-const render = async (query: { success?: string; error?: string } = {}) => renderToStaticMarkup(
+const render = async (query: { success?: string; error?: string; receipt?: string; invoice?: string; applications?: string } = {}) => renderToStaticMarkup(
   await TagihanRawatInapPage({ params: Promise.resolve({ id: "rec-1" }), searchParams: Promise.resolve(query) }),
 );
 
-beforeEach(() => { state.data = dasar(); state.shift = { id: "shift-1" }; state.role = "STAFF"; });
+beforeEach(() => { state.data = dasar(); state.shift = { id: "shift-1" }; state.role = "STAFF"; state.quoteError = null; state.quoteTax = 0; state.applications = []; state.applicationError = false; });
+
+it("credit-only success requires actual active same-visit allocation, not wallet balance or URL", async () => {
+  const id = "fa900000-0000-4000-8000-000000000001";
+  const query = { success: "transaksi", applications: id };
+  expect(await render(query)).not.toContain("Saldo pemilik diterapkan");
+  state.applications = [{ id, invoice_id: "inv-1", amount: 165000, released_at: null }];
+  expect(await render(query)).toContain("Saldo pemilik diterapkan");
+  state.applications[0].invoice_id = "foreign-visit-invoice";
+  expect(await render(query)).not.toContain("Saldo pemilik diterapkan");
+  state.applications[0].invoice_id = "inv-1"; state.applications[0].released_at = "2026-11-03";
+  expect(await render(query)).not.toContain("Saldo pemilik diterapkan");
+  state.applications[0].released_at = null; state.applicationError = true;
+  expect(await render(query)).not.toContain("Saldo pemilik diterapkan");
+});
+
+it("display totals use validated DB pending tax instead of an OFF fallback from UI tax read", async () => {
+  state.quoteTax = 11000;
+  const html = await render();
+  expect(html).toContain("Total transaksi: Rp 411.000"); expect(html).toContain("Sisa pembayaran: Rp 261.000");
+});
+it("unified payment controls are above invoice detail and no separate Tagih button", async () => {
+  const html = await render();
+  expect(html.indexOf("METODE PEMBAYARAN")).toBeGreaterThan(0);
+  expect(html.indexOf("METODE PEMBAYARAN")).toBeLessThan(html.indexOf("RINCIAN TAGIHAN"));
+  expect(html).not.toContain("Tagih sekarang");
+  expect(html).toContain("Saldo pemilik");
+});
+it("new-flow success is bound to this visit active receipt and current lunas state", async () => {
+  const d = dasar(); d.belumDitagih = []; d.saldoUangMuka = 0;
+  d.tahap[0] = { ...d.tahap[0], total: 100000, dibayar: 100000, sisa: 0, paid_status: "Lunas" }; state.data = d;
+  const html = await render({ success: "transaksi", receipt: "kwt-1", invoice: "inv-1" });
+  expect(html).toContain("Pembayaran lunas"); expect(html).toContain("KWT-202610-0001: Rp 100.000");
+  const spoof = await render({ success: "transaksi", receipt: "foreign-receipt", invoice: "inv-1" });
+  expect(spoof).not.toContain("Pembayaran lunas"); expect(spoof).not.toContain('role="dialog"');
+});
+it("zero-money save reports transaction not invented receipt, no bare success query trust", async () => {
+  expect(await render({ success: "transaksi", invoice: "inv-1" })).toContain("Transaksi tersimpan");
+  expect(await render({ success: "transaksi" })).not.toContain("Transaksi tersimpan");
+});
+
+it("bank/quote read errors fail closed before any destination or payment controls", async () => {
+  state.quoteError = { message: "missing bank table" };
+  const html = await render(); expect(html).not.toContain("METODE PEMBAYARAN");
+  expect(html).toContain("Rekening atau tagihan terkini belum terbaca");
+});
 
 describe("layar tagihan rawat inap berjalan", () => {
   it.each(["tidak-dikenal", "__proto__", "constructor", "toString"])("success tak dikenal diabaikan tanpa modal/banner (%s)", async (success) => {
@@ -89,12 +149,13 @@ describe("layar tagihan rawat inap berjalan", () => {
     if (kondisi === "riwayat belum terbaca") expect(html).toContain("Riwayat pembayaran dan uang muka belum tersedia");
   });
 
-  it("pending tetap ditandai singkat dan dapat ditagih manual tanpa paragraf penjelasan", async () => {
+  it("pending tetap terlihat dan ikut satu Simpan/Bayar tanpa Tagih terpisah", async () => {
     const html = await render();
     expect(html).toContain(">Belum ditagih<");
     expect(html).toContain("Infus NaCl");
-    expect(html).toContain('name="ids"');
-    expect(html).toContain("Tagih sekarang");
+    expect(html).not.toContain('name="ids"');
+    expect(html).not.toContain("Tagih sekarang");
+    expect(html).toContain("Simpan transaksi · Bayar nanti");
     expect(html).not.toContain("pending, belum menjadi piutang / omzet");
     expect(html).not.toContain("Tetap manual:");
   });
@@ -136,7 +197,9 @@ describe("layar tagihan rawat inap berjalan", () => {
     expect(cards[0]).toContain("TOTAL TRANSAKSI");
     expect(cards[0]).toContain("Rp 400.000");
     expect(cards[1]).toContain(">DP<");
-    expect(cards[1]).toContain("Rp 150.000");
+    expect(cards[1]).toContain("Rp 100.000");
+    expect(html).toContain("Saldo pemilik");
+    expect(html).toContain("Rp 50.000");
     expect(cards[2]).toContain("SISA PEMBAYARAN");
     expect(cards[2]).toContain("Rp 250.000");
     for (const prose of [
@@ -145,7 +208,7 @@ describe("layar tagihan rawat inap berjalan", () => {
       "Estimasi pending (termasuk PPN", "Piutang dibukukan:", "Saldo uang muka belum terpakai:",
     ]) expect(html).not.toContain(prose);
     expect(html).toContain("Total transaksi: Rp 400.000");
-    expect(html).toContain("DP: Rp 150.000");
+    expect(html).toContain("DP: Rp 100.000");
     expect(html).toContain("Sisa pembayaran: Rp 250.000");
   });
 
@@ -199,7 +262,7 @@ describe("layar tagihan rawat inap berjalan", () => {
     state.data = data;
     const html = await render();
     expect(html).toContain("Uang muka minimal 50%");
-    expect(html).toContain("Kurang Rp 50.000");
+    expect(html).toContain("Rp 50.000");
     expect(html).not.toContain("Isi saran 50% sisa total");
   });
 
@@ -210,8 +273,8 @@ describe("layar tagihan rawat inap berjalan", () => {
     state.data = data;
     const html = await render();
     expect(html).toContain("Koreksi belum selesai");
-    expect(html).toContain("Uang muka minimal 50%");
-    expect(html).not.toContain("Isi saran 50% sisa total");
+    expect(html).toContain("Rekening atau tagihan terkini belum terbaca");
+    expect(html).not.toContain("METODE PEMBAYARAN");
   });
 
   it("invoice nol rupiah tidak menonaktifkan minimum DP awal sebenarnya", async () => {
