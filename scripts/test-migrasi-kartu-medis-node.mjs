@@ -88,6 +88,7 @@ function klienPsql(uid, konteks, opsi = {}) {
       let sql;
       if (nama === "import_legacy_identity_scan") sql = `select public.import_legacy_identity_scan(${arr(args.p_source_keys)}, ${arr(args.p_owner_keys)}, ${arr(args.p_phone_keys)});`;
       else if (nama === "import_legacy_medical_records_bulk") sql = `select public.import_legacy_medical_records_bulk(${lit(JSON.stringify(args.p_rows))}::jsonb);`;
+      else if (nama === "hasil_impor_rekam_medis") sql = `select coalesce(jsonb_agg(t),'[]'::jsonb) from public.hasil_impor_rekam_medis(${arr(args.p_keys)}) t;`;
       else if (nama === "detail_riwayat_bersama") sql = `select coalesce(jsonb_agg(t),'[]'::jsonb) from public.detail_riwayat_bersama(${lit(String(args.p_visit))}::uuid) t;`;
       else if (nama === "riwayat_bersama_hewan") {
         if (!Number.isInteger(args.p_dari) || !Number.isInteger(args.p_jumlah)) throw new Error("paginasi tidak sah");
@@ -292,6 +293,55 @@ async function main() {
     try { jC = await eks.jalankanMigrasi(klienPsql(OWNER, kC), rC, bC, { ukuranBatch: 2 }); } catch (e) { pesan = e.message; }
     bC.tutup();
     catat("Cabang nonaktif C: tidak ada yang tersimpan (ditolak DB atau gagal tertutup)", hitung("legacy_source_key='cabang-c.xlsx::Sheet1'") === 0 && (pesan || jC?.status === "berhenti_tidak_pasti"), pesan || JSON.stringify(jC));
+  }
+
+  // 10) R1 di DB nyata: percobaan pertama putus SEBELUM commit, lalu aktor lain membuat pemilik persis + dua anabul senama
+  //     (satu nonaktif). Lanjutan wajib berhenti tidak pasti tanpa memanggil simpan massal (fallback LIMIT 1 tidak tersentuh).
+  {
+    const f = fixture.masterDasar(1);
+    f.pemilik[0] = { ...f.pemilik[0], name: "UJI R1", phone: "082000000001", address: null };
+    f.hewan[0] = { ...f.hewan[0], species: null, breed: null, gender: null, dob: null };
+    f.perSheet[0] = { ...f.perSheet[0], source_key: "r1.xlsx::Sheet1", file: "r1.xlsx", sheet: "Sheet1" };
+    f.riwayat[0].source_sheet = "Sheet1";
+    const r = await buatRencana(f);
+    const dir = join(mkdtempSync(join(tmpdir(), "mkm-r1-")), "ledger");
+    const meta = { runId: "r1", versiKontrak: r.versi, sha256Berkas: r.sha256Berkas, sidikRencana: r.sidikRencana, konteks: SEMUA, ukuranBatch: 2 };
+    let sekali = true;
+    const ba = B.BukuBesar.buka(dir, meta).buku;
+    await eks.jalankanMigrasi(klienPsql(OWNER, SEMUA, { sebelumRpc: (n) => { if (sekali && n === "import_legacy_medical_records_bulk") { sekali = false; throw new Error("ECONNRESET"); } } }), r, ba, { ukuranBatch: 2 });
+    ba.tutup();
+    sqlSuper(`insert into public.customers(id,name,phone) values ('0d000000-0000-4000-8000-000000000021','UJI R1','082000000001');
+      insert into public.pets(id,customer_id,name,status) values ('0d000000-0000-4000-8000-000000000022','0d000000-0000-4000-8000-000000000021','UJI KUCING','Nonaktif'),
+        ('0d000000-0000-4000-8000-000000000023','0d000000-0000-4000-8000-000000000021','uji kucing','Aktif');`);
+    const panggil = [];
+    const bb = B.BukuBesar.buka(dir, meta).buku;
+    const jb = await eks.jalankanMigrasi(klienPsql(OWNER, SEMUA, { sebelumRpc: (n) => panggil.push(n) }), r, bb, { ukuranBatch: 2 });
+    bb.tutup();
+    catat("R1: ambiguitas muncul sebelum commit -> lanjutan berhenti tidak pasti, simpan massal TIDAK dipanggil, nol riwayat",
+      jb.status === "berhenti_tidak_pasti" && jb.sebab === "identitas_berubah_sebelum_ulang" && !panggil.includes("import_legacy_medical_records_bulk")
+      && hitung("legacy_source_key='r1.xlsx::Sheet1'") === 0, JSON.stringify({ jb, panggil }));
+  }
+
+  // 11) R2 di DB nyata: ledger awalan (sebagian) ditolak sebelum bacaan DB apa pun.
+  {
+    const f = fixture.masterDasar(3);
+    f.pemilik[0] = { ...f.pemilik[0], name: "UJI R2", phone: "082100000001" };
+    f.perSheet.forEach((m, i) => { m.source_key = `r2-${i}.xlsx::Sheet1`; m.file = `r2-${i}.xlsx`; m.sheet = "Sheet1"; });
+    f.riwayat.forEach((x) => { x.source_sheet = "Sheet1"; });
+    const r = await buatRencana(f);
+    const dir = join(mkdtempSync(join(tmpdir(), "mkm-r2-")), "ledger");
+    const meta = { runId: "r2", versiKontrak: r.versi, sha256Berkas: r.sha256Berkas, sidikRencana: r.sidikRencana, konteks: SEMUA, ukuranBatch: 2 };
+    const ba = B.BukuBesar.buka(dir, meta).buku;
+    await eks.jalankanMigrasi(klienPsql(OWNER, SEMUA), r, ba, { ukuranBatch: 2 });
+    ba.tutup();
+    const st = JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
+    writeFileSync(join(dir, "state.json"), JSON.stringify({ ...st, batches: st.batches.slice(0, 1) }));
+    const panggil = [];
+    const bb = B.BukuBesar.buka(dir, meta).buku;
+    let pesan = "";
+    try { await eks.readbackMigrasi(klienPsql(OWNER, SEMUA, { sebelumRpc: (n) => panggil.push(n) }), r, bb); } catch (e) { pesan = e.message; }
+    bb.tutup();
+    catat("R2: readback menolak ledger awalan yang menyembunyikan baris, tanpa RPC", /Ledger tidak lengkap/.test(pesan) && !panggil.length, pesan);
   }
 
   process.stdout.write(hasil.map((h) => JSON.stringify(h)).join("\n") + "\n");

@@ -27,12 +27,15 @@ class DbPalsu {
   putus: null | "sebelum" | "sesudah" = null;
   rusak: null | ((data: unknown[]) => unknown) = null;
   panggilan: NamaRpcMigrasi[] = [];
+  pilihan: string[] = [];
+  rs1Rusak = false;
   hookScan: null | (() => void) = null;
   klien(konteks: KonteksJaringan = { mode: "semua-cabang" }): KlienMigrasi {
     return {
       konteks,
       idPengguna: async () => OWNER,
       pilih: async (tabel, _kolom, ids) => {
+        this.pilihan.push(tabel);
         if (tabel === "profiles") return { data: ids.includes(OWNER) ? [{ id: OWNER, role: this.role, is_active: this.active }] : [], error: null };
         const src = tabel === "customers" ? this.customers : this.pets;
         return { data: src.filter((r) => ids.includes(r.id)).map((r) => ({ ...r })), error: null };
@@ -56,6 +59,11 @@ class DbPalsu {
         if (nama === "detail_riwayat_bersama") {
           const v = this.visits.find((x) => x.id === args.p_visit);
           return { data: v ? [this.baris(v)] : [], error: null };
+        }
+        if (nama === "hasil_impor_rekam_medis") {
+          if (this.rs1Rusak) return { data: null, error: { message: "gagal" } };
+          const keys = args.p_keys as string[];
+          return { data: this.visits.filter((v) => keys.includes(v.key)).map((v) => ({ kunci: v.key, visit_id: v.id })), error: null };
         }
         if (nama === "riwayat_bersama_hewan") {
           const rows = this.visits.filter((v) => v.pet_id === args.p_pet).map((v) => this.baris(v));
@@ -106,7 +114,7 @@ describe("eksekutor + ledger (klien palsu)", () => {
     expect(statSync(join(dir, "state.json")).mode & 0o777).toBe(0o600);
     expect(statSync(dir).mode & 0o777).toBe(0o700);
     const rb = await readbackMigrasi(db.klien(), r, buku);
-    expect(rb).toEqual({ ok: true, diperiksa: 5, selisih: [] });
+    expect(rb).toEqual({ ok: true, status: "terverifikasi", diperiksa: 5, disposisi: { siap: 5, denganKunjungan: 5, ditahanDb: 0, ditahanIdentitas: 0 }, selisih: [] });
     buku.tutup();
   });
   it("replays the same file with zero new rows (sudah_ada with the same visit ids)", async () => {
@@ -168,18 +176,8 @@ describe("eksekutor + ledger (klien palsu)", () => {
     expect(() => BukuBesar.buka(dir, meta(r, { mode: "cabang", cabangId: CABANG }))).toThrow(/konteks berubah/);
     expect(() => BukuBesar.buka(dir, meta(r, { mode: "semua-cabang" }, 3))).toThrow(/ukuranBatch berubah/);
   });
-  it("holds an exclusive run lock, takes over only a dead same-host lock, and refuses a ledger inside the repo", async () => {
-    const r = await rencana(masterDasar(1)); const dir = folder();
-    const a = BukuBesar.buka(dir, meta(r)).buku;
-    expect(() => BukuBesar.buka(dir, meta(r))).toThrow("kunci eksklusif");
-    a.tutup();
-    BukuBesar.buka(dir, meta(r));                            // dibiarkan terkunci (crash)
-    const lock = JSON.parse(readFileSync(join(dir, "run.lock"), "utf8"));
-    writeFileSync(join(dir, "run.lock"), JSON.stringify({ ...lock, pid: 2 ** 22 + 7 }));
-    const takeover = BukuBesar.buka(dir, meta(r));
-    expect(takeover.kunciBasiDiambil).toBe(true);
-    takeover.buku.tutup();
-    expect(existsSync(join(dir, "run.lock"))).toBe(false);
+  it("refuses a ledger inside the repo", async () => {
+    const r = await rencana(masterDasar(1));
     expect(() => BukuBesar.buka(join(process.cwd(), "tmp-ledger"), meta(r), { akarRepo: process.cwd() })).toThrow("di dalam repo");
   });
   it.each([
@@ -259,5 +257,177 @@ describe("eksekutor + ledger (klien palsu)", () => {
     await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 });
     db.visits[0].p = { ...db.visits[0].p, therapy: "diubah" };
     expect((await readbackMigrasi(db.klien(), r, a)).selisih).toEqual([{ local_record_id: "R1", kode: "readback.terapi" }]);
+  });
+
+  // ---------------------------------------------------------------- R1: kirim ulang batch tidak pasti
+  const putusSebelum = async (db: DbPalsu, f: FixtureMaster) => {
+    const r = await rencana(f); const dir = folder();
+    const a = BukuBesar.buka(dir, meta(r)).buku;
+    db.putus = "sebelum";
+    expect((await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).status).toBe("berhenti_tidak_pasti");
+    a.tutup();
+    return { r, dir };
+  };
+  const bulk = (db: DbPalsu) => db.panggilan.filter((n) => n === "import_legacy_medical_records_bulk").length;
+  it("R1: an ambiguity introduced BEFORE the lost first attempt committed blocks the replay with zero bulk calls", async () => {
+    const db = new DbPalsu();
+    const { r, dir } = await putusSebelum(db, masterDasar(1));
+    expect(bulk(db)).toBe(1);
+    // Aktor lain membuat pemilik persis + dua anabul senama (satu nonaktif) sebelum lanjutan.
+    db.customers.push({ id: uuid(), name: "UJI PEMILIK", phone: "081234567890", address: "Jl. Fiktif 1" });
+    db.pets.push({ id: uuid(), customer_id: db.customers[0].id, name: "UJI KUCING", species: null, breed: null, gender: null, dob: null, status: "Nonaktif" },
+      { id: uuid(), customer_id: db.customers[0].id, name: "uji kucing", species: null, breed: null, gender: null, dob: null, status: "Aktif" });
+    const b = BukuBesar.buka(dir, meta(r)).buku;
+    const j = await jalankanMigrasi(db.klien(), r, b, { ukuranBatch: 2 });
+    expect(j).toMatchObject({ status: "berhenti_tidak_pasti", sebab: "identitas_berubah_sebelum_ulang", tersimpan: 0 });
+    expect(bulk(db)).toBe(1);
+    expect(db.visits).toHaveLength(0);
+    expect(JSON.parse(readFileSync(join(dir, "state.json"), "utf8")).batches[0]).toMatchObject({ status: "tidak_pasti", sebab: "identitas_berubah_sebelum_ulang" });
+  });
+  it("R1: a changed existing owner/pet relation before commit blocks the replay", async () => {
+    const db = new DbPalsu();
+    db.customers.push({ id: uuid(), name: "UJI PEMILIK", phone: "081234567890", address: "Jl. Fiktif 1" });
+    db.pets.push({ id: uuid(), customer_id: db.customers[0].id, name: "UJI KUCING", species: "Kucing", breed: "Domestik", gender: "Betina", dob: "2023-05-01", status: "Aktif" });
+    const { r, dir } = await putusSebelum(db, masterDasar(1));
+    const ledger = JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
+    expect(ledger.batches[0].baris[0].pet_id).toBe(db.pets[0].id);
+    db.customers.push({ id: uuid(), name: "PEMILIK BARU", phone: "081111111111", address: null });
+    db.pets[0].customer_id = db.customers[1].id;               // anabul dipindah ke pemilik lain
+    const b = BukuBesar.buka(dir, meta(r)).buku;
+    expect(await jalankanMigrasi(db.klien(), r, b, { ukuranBatch: 2 })).toMatchObject({ status: "berhenti_tidak_pasti", sebab: "identitas_berubah_sebelum_ulang" });
+    expect(bulk(db)).toBe(1);
+  });
+  it("R1: a lost reply AFTER commit replays idempotently even if identities changed afterwards", async () => {
+    const db = new DbPalsu(); const r = await rencana(masterDasar(2)); const dir = folder();
+    const a = BukuBesar.buka(dir, meta(r)).buku;
+    db.putus = "sesudah";
+    await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 }); a.tutup();
+    db.pets.push({ id: uuid(), customer_id: db.customers[0].id, name: "UJI KUCING ", species: null, breed: null, gender: null, dob: null, status: "Nonaktif" });
+    const b = BukuBesar.buka(dir, meta(r)).buku;
+    expect(await jalankanMigrasi(db.klien(), r, b, { ukuranBatch: 2 })).toMatchObject({ status: "selesai", tersimpan: 0, sudahAda: 2 });
+    expect(db.visits).toHaveLength(2);
+  });
+  it.each([
+    ["the commit-state reader is unavailable", (db: DbPalsu) => { db.rs1Rusak = true; }, "status_commit_tidak_terbukti"],
+    ["the identity scan is malformed", (db: DbPalsu) => { db.hookScan = () => { throw new Error("scan putus"); }; }, "identitas_tidak_terbukti"],
+  ])("R1: replay stays uncertain with zero mutation when %s", async (_l, rusak, sebab) => {
+    const db = new DbPalsu();
+    const { r, dir } = await putusSebelum(db, masterDasar(1));
+    rusak(db);
+    const b = BukuBesar.buka(dir, meta(r)).buku;
+    expect(await jalankanMigrasi(db.klien(), r, b, { ukuranBatch: 2 })).toMatchObject({ status: "berhenti_tidak_pasti", sebab });
+    expect(bulk(db)).toBe(1);
+    expect(db.visits).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------- R2: readback hanya untuk ledger lengkap dan terikat
+  it("R2: rejects an empty ledger for a plan with ready rows, before any DB read", async () => {
+    const db = new DbPalsu(); const r = await rencana(masterDasar(1));
+    const b = BukuBesar.buka(folder(), meta(r)).buku;
+    await expect(readbackMigrasi(db.klien(), r, b)).rejects.toThrow("Ledger tidak lengkap: 1 baris siap");
+    expect([db.panggilan, db.pilihan]).toEqual([[], []]);
+  });
+  it("R2: rejects a partially acknowledged prefix that hides unattempted rows", async () => {
+    const db = new DbPalsu(); const r = await rencana(masterDasar(3)); const dir = folder();
+    const a = BukuBesar.buka(dir, meta(r)).buku;
+    await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 }); a.tutup();
+    const st = JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
+    writeFileSync(join(dir, "state.json"), JSON.stringify({ ...st, batches: st.batches.slice(0, 1) }));
+    const b = BukuBesar.buka(dir, meta(r)).buku;
+    db.panggilan = [];
+    await expect(readbackMigrasi(db.klien(), r, b)).rejects.toThrow("Ledger tidak lengkap: 1 baris siap");
+    expect(db.panggilan).toEqual([]);
+  });
+  it("R2: rejects a ledger for another plan or context", async () => {
+    const db = new DbPalsu(); const r = await rencana(masterDasar(1));
+    const a = BukuBesar.buka(folder(), meta(r)).buku; await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 });
+    const f = masterDasar(1); f.riwayat[0].note = "lain"; const r2 = await rencana(f);
+    db.panggilan = []; db.pilihan = [];
+    await expect(readbackMigrasi(db.klien(), r2, a)).rejects.toThrow("bukan untuk rencana ini");
+    await expect(readbackMigrasi(db.klien({ mode: "cabang", cabangId: CABANG }), r, a)).rejects.toThrow("Konteks klien berbeda");
+    expect([db.panggilan, db.pilihan]).toEqual([[], []]);
+  });
+  it.each([
+    ["a duplicate local id", (st: { batches: { baris: object[]; hasil: object[] }[] }) => { st.batches[1].baris[0] = st.batches[0].baris[0]; st.batches[1].hasil[0] = st.batches[0].hasil[0]; }],
+    ["a missing visit id on success", (st: { batches: { hasil: { visit_id: unknown }[] }[] }) => { st.batches[0].hasil[0].visit_id = null; }],
+    ["a duplicated visit id", (st: { batches: { hasil: { visit_id: unknown }[] }[] }) => { st.batches[0].hasil[1].visit_id = st.batches[0].hasil[0].visit_id; }],
+    ["an unknown local id", (st: { ditahanIdentitas: object[] }) => { st.ditahanIdentitas.push({ local_record_id: "R99", alasan: ["x"] }); }],
+    ["a tampered payload fingerprint", (st: { batches: { baris: { sidikPayload: string }[] }[] }) => { st.batches[0].baris[0].sidikPayload = "0".repeat(64); }],
+    ["a malformed state", (st: Record<string, unknown>) => { st.batches = "rusak"; }],
+  ])("R2: rejects %s before any DB read", async (_l, rusak) => {
+    const db = new DbPalsu(); const r = await rencana(masterDasar(3)); const dir = folder();
+    const a = BukuBesar.buka(dir, meta(r)).buku; await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 }); a.tutup();
+    const st = JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
+    rusak(st);
+    writeFileSync(join(dir, "state.json"), JSON.stringify(st));
+    const b = BukuBesar.buka(dir, meta(r)).buku;
+    db.panggilan = []; db.pilihan = [];
+    await expect(readbackMigrasi(db.klien(), r, b)).rejects.toThrow(/Ledger rusak|tidak cocok/);
+    expect([db.panggilan, db.pilihan]).toEqual([[], []]);
+  });
+  it("R2: an all-held run or a plan with no eligible rows reads back as 'kosong', never a successful migration", async () => {
+    const db = new DbPalsu();
+    db.customers.push({ id: uuid(), name: "ORANG LAIN", phone: "081234567890", address: null });
+    const r = await rencana(masterDasar(1)); const a = BukuBesar.buka(folder(), meta(r)).buku;
+    await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 });
+    expect(await readbackMigrasi(db.klien(), r, a)).toMatchObject({ ok: false, status: "kosong", diperiksa: 0, disposisi: { siap: 1, ditahanIdentitas: 1 } });
+    const f = masterDasar(1); f.riwayat[0].decision = null; const r0 = await rencana(f);
+    const b = BukuBesar.buka(folder(), meta(r0)).buku;
+    expect(await readbackMigrasi(db.klien(), r0, b)).toMatchObject({ ok: false, status: "kosong", disposisi: { siap: 0 } });
+  });
+
+  // ---------------------------------------------------------------- R3: kunci milik pemegang, pemulihan basi eksplisit
+  const kunciIsi = (dir: string) => JSON.parse(readFileSync(join(dir, "run.lock"), "utf8"));
+  const matikan = (dir: string) => writeFileSync(join(dir, "run.lock"), JSON.stringify({ ...kunciIsi(dir), pid: 2 ** 22 + 7 }));
+  it("R3: close is idempotent and owner-bound: an old handle never releases a newer owner's lock", async () => {
+    const r = await rencana(masterDasar(1)); const dir = folder();
+    const a = BukuBesar.buka(dir, meta(r)).buku;
+    expect(() => BukuBesar.buka(dir, meta(r))).toThrow("kunci eksklusif");
+    a.tutup();
+    const b = BukuBesar.buka(dir, meta(r)).buku;
+    a.tutup(); a.tutup();
+    expect(() => BukuBesar.buka(dir, meta(r))).toThrow("kunci eksklusif");
+    expect(() => b.simpan(b.baca())).not.toThrow();
+    expect(() => a.simpan({ batches: [], ditahanIdentitas: [] })).toThrow("sudah ditutup");
+    b.tutup();
+    expect(existsSync(join(dir, "run.lock"))).toBe(false);
+  });
+  it("R3: a dead same-host lock is never stolen automatically; explicit recovery needs its exact token (crash recovery keeps state)", async () => {
+    const db = new DbPalsu(); const r = await rencana(masterDasar(2)); const dir = folder();
+    const a = BukuBesar.buka(dir, meta(r)).buku;
+    db.putus = "sebelum";
+    await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 });   // "crash": tidak ditutup
+    matikan(dir);
+    const token = kunciIsi(dir).token;
+    expect(() => BukuBesar.buka(dir, meta(r))).toThrow(`Kunci basi terdeteksi (token ${token})`);
+    expect(() => BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: "salah-token-0000000000" })).toThrow("Kunci basi terdeteksi");
+    const pulih = BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: token });
+    expect(pulih.kunciBasiDipulihkan).toBe(true);
+    expect(pulih.buku.baca().batches[0].status).toBe("tidak_pasti");
+    expect(() => a.simpan(a.baca())).toThrow("bukan milik run ini");
+    expect(await jalankanMigrasi(db.klien(), r, pulih.buku, { ukuranBatch: 2 })).toMatchObject({ status: "selesai", tersimpan: 2 });
+  });
+  it("R3: simultaneous stale-lock recovery has exactly one winner (atomic rename), the loser fails closed", async () => {
+    const r = await rencana(masterDasar(1)); const dir = folder();
+    BukuBesar.buka(dir, meta(r)); matikan(dir);
+    const token = kunciIsi(dir).token;
+    let pemenang: BukuBesar | null = null;
+    expect(() => BukuBesar.buka(dir, meta(r), {
+      pulihkanKunciBasi: token,
+      _ujiSetelahBacaKunci: () => { pemenang = BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: token }).buku; },
+    })).toThrow(/Kunci berubah saat dipulihkan|sudah diambil pesaing/);
+    expect(pemenang).not.toBeNull();
+    expect(() => pemenang!.simpan(pemenang!.baca())).not.toThrow();
+    expect(() => BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: token })).toThrow("kunci eksklusif");
+  });
+  it.each([
+    ["a malformed lock", (dir: string) => writeFileSync(join(dir, "run.lock"), "bukan json")],
+    ["a foreign-host lock", (dir: string) => writeFileSync(join(dir, "run.lock"), JSON.stringify({ ...kunciIsi(dir), host: "host-lain", pid: 2 ** 22 + 7 }))],
+  ])("R3: %s fails closed even with a recovery token", async (_l, rusak) => {
+    const r = await rencana(masterDasar(1)); const dir = folder();
+    BukuBesar.buka(dir, meta(r));
+    const token = kunciIsi(dir).token;
+    rusak(dir);
+    expect(() => BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: token })).toThrow(/rusak|host lain/);
   });
 });

@@ -64,6 +64,8 @@ export type HasilJalan = {
   ditahanDb: Record<string, number>;
   ditahanIdentitas: Record<string, number>;
   belumDikirim: number;
+  /** Mengapa run berhenti tidak pasti (kode, tanpa PHI). */
+  sebab?: string;
 };
 
 function ringkas(state: StateLedger, siap: number, status: HasilJalan["status"]): HasilJalan {
@@ -86,6 +88,96 @@ function ringkas(state: StateLedger, siap: number, status: HasilJalan["status"])
 
 function payloadKirim(r: BarisRencana, customer_id: string | null, pet_id: string | null): PayloadKirim {
   return { ...r.payload!, customer_id, pet_id };
+}
+
+const STATUS_BATCH = new Set(["dikirim", "diakui", "tidak_pasti"]);
+const STATUS_HASIL = new Set(["tersimpan", "sudah_ada", "ditahan"]);
+const nullAtauUuid = (v: unknown) => v === null || (typeof v === "string" && UUID_RE.test(v));
+
+/**
+ * Ledger wajib terikat ke rencana + konteks ini dan utuh, SEBELUM ada bacaan DB. `lengkap` (readback): semua batch diakui dan
+ * SETIAP baris siap punya tepat satu disposisi (hasil batch atau tahan identitas) — tanpa ID ganda/hilang/asing.
+ */
+export function validasiLedger(rencana: Rencana, buku: BukuBesar, konteks: KlienMigrasi["konteks"], lengkap: boolean): StateLedger {
+  const m = buku.meta;
+  if (m.sidikRencana !== rencana.sidikRencana || m.sha256Berkas !== rencana.sha256Berkas || m.versiKontrak !== rencana.versi) {
+    throw new GagalTertutup("Ledger bukan untuk rencana ini.");
+  }
+  if (JSON.stringify(m.konteks) !== JSON.stringify(konteks)) throw new GagalTertutup("Konteks klien berbeda dengan ledger.");
+  const state = buku.baca();
+  const rusak = () => new GagalTertutup("Ledger rusak atau tidak konsisten.");
+  if (!state || !Array.isArray(state.batches) || !Array.isArray(state.ditahanIdentitas)) throw rusak();
+  const siap = new Map(rencana.baris.filter((r) => r.status === "siap" && r.payload).map((r) => [r.local_record_id, r]));
+  const lihat = new Set<string>();
+  const visit = new Set<string>();
+  const catat = (id: unknown) => {
+    if (typeof id !== "string" || !siap.has(id) || lihat.has(id)) throw rusak();
+    lihat.add(id);
+  };
+  state.batches.forEach((b, i) => {
+    if (!b || b.no !== i + 1 || !STATUS_BATCH.has(b.status) || !Array.isArray(b.baris) || !b.baris.length) throw rusak();
+    for (const lr of b.baris) {
+      catat(lr.local_record_id);
+      if (!nullAtauUuid(lr.customer_id) || !nullAtauUuid(lr.pet_id) || (lr.pet_id && !lr.customer_id)) throw rusak();
+      const p = payloadKirim(siap.get(lr.local_record_id)!, lr.customer_id, lr.pet_id);
+      if (sha256(kanonikJson(p)) !== lr.sidikPayload || sha256(p.source_key) !== lr.kunciHash) throw new GagalTertutup("Payload ledger tidak cocok dengan rencana.");
+    }
+    if (b.status === "diakui") {
+      if (!Array.isArray(b.hasil) || b.hasil.length !== b.baris.length) throw rusak();
+      b.hasil.forEach((h, j) => {
+        if (!h || h.local_record_id !== b.baris[j].local_record_id || !STATUS_HASIL.has(h.status)) throw rusak();
+        if (h.status === "ditahan" ? h.visit_id !== null : !(typeof h.visit_id === "string" && UUID_RE.test(h.visit_id))) throw rusak();
+        if (h.visit_id) { if (visit.has(h.visit_id)) throw rusak(); visit.add(h.visit_id); }
+      });
+    } else if (b.hasil !== undefined) throw rusak();
+  });
+  for (const d of state.ditahanIdentitas) {
+    catat(d?.local_record_id);
+    if (!Array.isArray(d.alasan) || !d.alasan.length || d.alasan.some((a) => typeof a !== "string")) throw rusak();
+  }
+  if (lengkap) {
+    if (state.batches.some((b) => b.status !== "diakui")) throw new GagalTertutup("Masih ada batch tidak pasti; lanjutkan dulu.");
+    const hilang = [...siap.keys()].filter((id) => !lihat.has(id)).length;
+    if (hilang) throw new GagalTertutup(`Ledger tidak lengkap: ${hilang} baris siap belum punya disposisi.`);
+  }
+  return state;
+}
+
+/**
+ * Sebelum mengirim ulang batch yang belum pasti (R1): buktikan BACA-SAJA bahwa pengiriman ulang payload identik tidak
+ * bisa membuat identitas lewat fallback DB yang berubah sejak percobaan pertama.
+ * - Jejak yang sudah ada (pembaca RS-1, jejak setara kanonik; cermin cari_jejak untuk baris rencana) -> DB tidak membuat
+ *   apa pun untuk baris itu (sudah_ada / ditahan).
+ * - Jejak yang belum ada -> resolusi identitas segar wajib `kirim` dengan customer_id/pet_id SAMA dengan yang tersimpan.
+ * Selain itu (jawaban rusak/tidak lengkap, identitas berubah) -> tidak aman; batch tetap tidak pasti, nol mutasi.
+ */
+async function amanDiulang(klien: KlienMigrasi, batch: BatchLedger, perId: Map<string, BarisRencana>, kiriman: PayloadKirim[]): Promise<string | null> {
+  const kunci = kiriman.map((k) => k.source_key);
+  let ada: Set<string>;
+  try {
+    const { data, error } = await klien.rpc("hasil_impor_rekam_medis", { p_keys: kunci });
+    if (error || !Array.isArray(data) || data.length >= 500) return "status_commit_tidak_terbukti";
+    ada = new Set();
+    for (const row of data as Record<string, unknown>[]) {
+      if (typeof row?.kunci !== "string" || !kunci.includes(row.kunci) || typeof row.visit_id !== "string" || !UUID_RE.test(row.visit_id)) return "status_commit_tidak_terbukti";
+      ada.add(row.kunci);
+    }
+  } catch {
+    return "status_commit_tidak_terbukti";
+  }
+  const belum = batch.baris.filter((_, i) => !ada.has(kunci[i]));
+  if (!belum.length) return null;
+  let res: Map<string, Resolusi>;
+  try {
+    res = await resolusiIdentitas(klien, belum.map((b) => perId.get(b.local_record_id)!));
+  } catch {
+    return "identitas_tidak_terbukti";
+  }
+  for (const b of belum) {
+    const r = res.get(b.local_record_id);
+    if (r?.status !== "kirim" || r.customer_id !== b.customer_id || r.pet_id !== b.pet_id) return "identitas_berubah_sebelum_ulang";
+  }
+  return null;
 }
 
 async function kirimBatch(klien: KlienMigrasi, buku: BukuBesar, state: StateLedger, batch: BatchLedger, kiriman: PayloadKirim[]) {
@@ -119,27 +211,24 @@ export async function jalankanMigrasi(klien: KlienMigrasi, rencana: Rencana, buk
   if (!Number.isInteger(opsi.ukuranBatch) || opsi.ukuranBatch < 1 || opsi.ukuranBatch > UKURAN_BATCH_MAKS) {
     throw new GagalTertutup(`Ukuran batch 1–${UKURAN_BATCH_MAKS}.`);
   }
-  if (buku.meta.sidikRencana !== rencana.sidikRencana || buku.meta.sha256Berkas !== rencana.sha256Berkas || buku.meta.versiKontrak !== rencana.versi) {
-    throw new GagalTertutup("Ledger bukan untuk rencana ini.");
-  }
-  if (JSON.stringify(buku.meta.konteks) !== JSON.stringify(klien.konteks)) throw new GagalTertutup("Konteks klien berbeda dengan ledger.");
+  const state = validasiLedger(rencana, buku, klien.konteks, false);
   await pastikanPemanggil(klien);
 
   const siap = rencana.baris.filter((r) => r.status === "siap" && r.payload);
   const perId = new Map(siap.map((r) => [r.local_record_id, r]));
-  const state = buku.baca();
 
-  // 1) Batch yang belum pasti: kirim ulang payload IDENTIK (urutan, jejak, UUID yang sama).
+  // 1) Batch yang belum pasti: payload IDENTIK (urutan, jejak, UUID yang sama), hanya setelah terbukti aman diulang.
   for (const batch of state.batches) {
     if (batch.status === "diakui") continue;
-    const kiriman = batch.baris.map((b) => {
-      const r = perId.get(b.local_record_id);
-      if (!r) throw new GagalTertutup("Ledger merujuk baris yang tidak ada di rencana.");
-      const p = payloadKirim(r, b.customer_id, b.pet_id);
-      if (sha256(kanonikJson(p)) !== b.sidikPayload || sha256(p.source_key) !== b.kunciHash) throw new GagalTertutup("Payload berubah sejak dikirim; lanjutkan ditolak.");
-      return p;
-    });
-    if (!(await kirimBatch(klien, buku, state, batch, kiriman))) return ringkas(state, siap.length, "berhenti_tidak_pasti");
+    const kiriman = batch.baris.map((b) => payloadKirim(perId.get(b.local_record_id)!, b.customer_id, b.pet_id));
+    const sebab = await amanDiulang(klien, batch, perId, kiriman);
+    if (sebab) {
+      batch.status = "tidak_pasti";
+      batch.sebab = sebab;
+      buku.simpan(state);
+      return { ...ringkas(state, siap.length, "berhenti_tidak_pasti"), sebab };
+    }
+    if (!(await kirimBatch(klien, buku, state, batch, kiriman))) return { ...ringkas(state, siap.length, "berhenti_tidak_pasti"), sebab: batch.sebab };
   }
 
   // 2) Baris yang belum tercakup, per batch: resolusi identitas (baca-saja) lalu cek ulang TEPAT sebelum kirim.
@@ -174,7 +263,7 @@ export async function jalankanMigrasi(klien: KlienMigrasi, rencana: Rencana, buk
     }));
     const batch: BatchLedger = { no: ++no, status: "dikirim", baris };
     state.batches.push(batch);
-    if (!(await kirimBatch(klien, buku, state, batch, kiriman))) return ringkas(state, siap.length, "berhenti_tidak_pasti");
+    if (!(await kirimBatch(klien, buku, state, batch, kiriman))) return { ...ringkas(state, siap.length, "berhenti_tidak_pasti"), sebab: batch.sebab };
   }
   return ringkas(state, siap.length, "selesai");
 }
@@ -186,12 +275,21 @@ export async function jalankanMigrasi(klien: KlienMigrasi, rencana: Rencana, buk
 export const HALAMAN_READBACK = 200;
 export const MAKS_READBACK_PER_HEWAN = 1000;
 
-export type HasilReadback = { ok: boolean; diperiksa: number; selisih: { local_record_id: string | null; kode: string }[] };
+/**
+ * `terverifikasi` hanya bila ada ≥1 riwayat termigrasi dan semuanya cocok. `kosong` (nol baris siap, atau semua ditahan)
+ * BUKAN migrasi yang berhasil. Ledger yang tidak lengkap/asing/rusak ditolak sebelum bacaan DB.
+ */
+export type HasilReadback = {
+  ok: boolean;
+  status: "terverifikasi" | "kosong" | "selisih";
+  diperiksa: number;
+  disposisi: { siap: number; denganKunjungan: number; ditahanDb: number; ditahanIdentitas: number };
+  selisih: { local_record_id: string | null; kode: string }[];
+};
 
 export async function readbackMigrasi(klien: KlienMigrasi, rencana: Rencana, buku: BukuBesar): Promise<HasilReadback> {
+  const state = validasiLedger(rencana, buku, klien.konteks, true);
   await pastikanPemanggil(klien);
-  const state = buku.baca();
-  if (state.batches.some((b) => b.status !== "diakui")) throw new GagalTertutup("Masih ada batch tidak pasti; lanjutkan dulu.");
   const perId = new Map(rencana.baris.map((r) => [r.local_record_id, r]));
   const selisih: HasilReadback["selisih"] = [];
   const target: { lr: BarisLedger; h: HasilLedger; r: BarisRencana }[] = [];
@@ -280,5 +378,12 @@ export async function readbackMigrasi(klien: KlienMigrasi, rencana: Rencana, buk
       d.baru.pet ? null : { id: d.pet, customer_id: String(pt.customer_id), name: String(pt.name), species: (pt.species as string) ?? null, breed: (pt.breed as string) ?? null, gender: (pt.gender as string) ?? null, dob: (pt.dob as string) ?? null });
     for (const kode of lama) selisih.push({ local_record_id: d.r.local_record_id, kode: `readback.${kode}` });
   }
-  return { ok: selisih.length === 0, diperiksa: target.length, selisih };
+  const disposisi = {
+    siap: rencana.baris.filter((r) => r.status === "siap" && r.payload).length,
+    denganKunjungan: target.length,
+    ditahanDb: state.batches.flatMap((b) => b.hasil!).filter((h) => h.status === "ditahan").length,
+    ditahanIdentitas: state.ditahanIdentitas.length,
+  };
+  const status = selisih.length ? "selisih" : target.length ? "terverifikasi" : "kosong";
+  return { ok: status === "terverifikasi", status, diperiksa: target.length, disposisi, selisih };
 }

@@ -11,7 +11,8 @@ export type NamaRpcMigrasi =
   | "import_legacy_identity_scan"
   | "import_legacy_medical_records_bulk"
   | "detail_riwayat_bersama"
-  | "riwayat_bersama_hewan";
+  | "riwayat_bersama_hewan"
+  | "hasil_impor_rekam_medis";
 
 export interface KlienMigrasi {
   readonly konteks: KonteksJaringan;

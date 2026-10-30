@@ -61,8 +61,9 @@ def main():
         d = rls.Db(db)
         terbaru = sorted(p.name for p in (ROOT / 'supabase/migrations').glob('*.sql'))[-1]
         ada = d.last("select (to_regproc('public.clinic_bill_and_pay_inpatient') is not null"
-                     " and to_regproc('public.nonaktifkan_promo_kadaluarsa') is not null)::text")
-        record('Rantai migrasi repo terkini terpasang (objek 20261104040000 + 20261104050000 ada)', ada == 'true', terbaru)
+                     " and to_regproc('public.nonaktifkan_promo_kadaluarsa') is not null"
+                     " and to_regproc('public.set_employee_primary_branches') is not null)::text")
+        record('Rantai migrasi repo terkini terpasang (objek 20261104040000 + 050000 + 060000 ada)', ada == 'true', terbaru)
         h = rls.base.Harness(db, None)
         rls.base.bootstrap_fixture(h)
         rls.bootstrap(d)
