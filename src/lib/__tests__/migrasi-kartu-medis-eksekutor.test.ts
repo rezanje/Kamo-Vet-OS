@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync, statSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, statSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -376,7 +376,7 @@ describe("eksekutor + ledger (klien palsu)", () => {
     expect(await readbackMigrasi(db.klien(), r0, b)).toMatchObject({ ok: false, status: "kosong", disposisi: { siap: 0 } });
   });
 
-  // ---------------------------------------------------------------- R3: kunci milik pemegang, pemulihan basi eksplisit
+  // ---------------------------------------------------------------- R3: kunci milik pemegang, tanpa pengambilalihan di proses
   const kunciIsi = (dir: string) => JSON.parse(readFileSync(join(dir, "run.lock"), "utf8"));
   const matikan = (dir: string) => writeFileSync(join(dir, "run.lock"), JSON.stringify({ ...kunciIsi(dir), pid: 2 ** 22 + 7 }));
   it("R3: close is idempotent and owner-bound: an old handle never releases a newer owner's lock", async () => {
@@ -392,42 +392,63 @@ describe("eksekutor + ledger (klien palsu)", () => {
     b.tutup();
     expect(existsSync(join(dir, "run.lock"))).toBe(false);
   });
-  it("R3: a dead same-host lock is never stolen automatically; explicit recovery needs its exact token (crash recovery keeps state)", async () => {
+  const sidikKunci = (dir: string) => { const st = statSync(join(dir, "run.lock")); return `${st.ino}:${readFileSync(join(dir, "run.lock"), "utf8")}`; };
+  it("R3: any existing lock (live, dead, malformed, foreign host) fails closed; buka never moves or deletes it", async () => {
+    const r = await rencana(masterDasar(1));
+    const kasus: [string, (dir: string) => void, RegExp][] = [
+      ["hidup", () => {}, /kunci eksklusif/],
+      ["basi", (dir) => matikan(dir), /Kunci basi terdeteksi .*Tidak diambil alih otomatis/],
+      ["rusak", (dir) => writeFileSync(join(dir, "run.lock"), "bukan json"), /rusak/],
+      ["host lain", (dir) => writeFileSync(join(dir, "run.lock"), JSON.stringify({ ...kunciIsi(dir), host: "host-lain", pid: 2 ** 22 + 7 })), /host lain/],
+    ];
+    for (const [, ubah, pesan] of kasus) {
+      const dir = folder();
+      BukuBesar.buka(dir, meta(r));
+      ubah(dir);
+      const sebelum = sidikKunci(dir);
+      for (let i = 0; i < 3; i += 1) expect(() => BukuBesar.buka(dir, meta(r))).toThrow(pesan);
+      expect(sidikKunci(dir)).toBe(sebelum);
+    }
+  });
+  it("R3: three contenders — A stale reader, B live replacement, C gap acquirer: no lock is ever displaced", async () => {
+    const r = await rencana(masterDasar(1)); const dir = folder();
+    BukuBesar.buka(dir, meta(r)); matikan(dir);                           // pemegang lama mati (crash)
+    const basi = sidikKunci(dir);
+    // A dan B sama-sama melihat kunci basi T: keduanya hanya MEMBACA dan gagal tertutup; kunci T tetap utuh.
+    expect(() => BukuBesar.buka(dir, meta(r))).toThrow("Kunci basi terdeteksi");
+    expect(() => BukuBesar.buka(dir, meta(r))).toThrow("Kunci basi terdeteksi");
+    expect(sidikKunci(dir)).toBe(basi);
+    // Pemulihan MANUAL oleh operator saat semua proses berhenti (di luar runner), lalu B memperoleh kunci hidup.
+    unlinkSync(join(dir, "run.lock"));
+    const b = BukuBesar.buka(dir, meta(r)).buku;
+    const milikB = sidikKunci(dir);
+    // A (masih berbekal bacaan basi T) dan C (pendatang di sela) mencoba: keduanya ditolak; kunci B tidak bergeser.
+    expect(() => BukuBesar.buka(dir, meta(r))).toThrow("kunci eksklusif");
+    expect(() => BukuBesar.buka(dir, meta(r))).toThrow("kunci eksklusif");
+    expect(sidikKunci(dir)).toBe(milikB);
+    expect(() => b.simpan(b.baca())).not.toThrow();
+    b.tutup();
+    expect(existsSync(join(dir, "run.lock"))).toBe(false);
+  });
+  it("R3: crash recovery after manual lock removal keeps the ledger state and resumes", async () => {
     const db = new DbPalsu(); const r = await rencana(masterDasar(2)); const dir = folder();
     const a = BukuBesar.buka(dir, meta(r)).buku;
     db.putus = "sebelum";
-    await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 });   // "crash": tidak ditutup
+    await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 });          // "crash": tidak ditutup
     matikan(dir);
-    const token = kunciIsi(dir).token;
-    expect(() => BukuBesar.buka(dir, meta(r))).toThrow(`Kunci basi terdeteksi (token ${token})`);
-    expect(() => BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: "salah-token-0000000000" })).toThrow("Kunci basi terdeteksi");
-    const pulih = BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: token });
-    expect(pulih.kunciBasiDipulihkan).toBe(true);
-    expect(pulih.buku.baca().batches[0].status).toBe("tidak_pasti");
+    expect(() => BukuBesar.buka(dir, meta(r))).toThrow("Kunci basi terdeteksi");
+    unlinkSync(join(dir, "run.lock"));                                     // pemulihan manual (semua proses berhenti)
+    const b = BukuBesar.buka(dir, meta(r)).buku;
+    expect(b.baca().batches[0].status).toBe("tidak_pasti");
     expect(() => a.simpan(a.baca())).toThrow("bukan milik run ini");
-    expect(await jalankanMigrasi(db.klien(), r, pulih.buku, { ukuranBatch: 2 })).toMatchObject({ status: "selesai", tersimpan: 2 });
+    expect(await jalankanMigrasi(db.klien(), r, b, { ukuranBatch: 2 })).toMatchObject({ status: "selesai", tersimpan: 2 });
   });
-  it("R3: simultaneous stale-lock recovery has exactly one winner (atomic rename), the loser fails closed", async () => {
-    const r = await rencana(masterDasar(1)); const dir = folder();
-    BukuBesar.buka(dir, meta(r)); matikan(dir);
-    const token = kunciIsi(dir).token;
-    let pemenang: BukuBesar | null = null;
-    expect(() => BukuBesar.buka(dir, meta(r), {
-      pulihkanKunciBasi: token,
-      _ujiSetelahBacaKunci: () => { pemenang = BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: token }).buku; },
-    })).toThrow(/Kunci berubah saat dipulihkan|sudah diambil pesaing/);
-    expect(pemenang).not.toBeNull();
-    expect(() => pemenang!.simpan(pemenang!.baca())).not.toThrow();
-    expect(() => BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: token })).toThrow("kunci eksklusif");
-  });
-  it.each([
-    ["a malformed lock", (dir: string) => writeFileSync(join(dir, "run.lock"), "bukan json")],
-    ["a foreign-host lock", (dir: string) => writeFileSync(join(dir, "run.lock"), JSON.stringify({ ...kunciIsi(dir), host: "host-lain", pid: 2 ** 22 + 7 }))],
-  ])("R3: %s fails closed even with a recovery token", async (_l, rusak) => {
-    const r = await rencana(masterDasar(1)); const dir = folder();
-    BukuBesar.buka(dir, meta(r));
-    const token = kunciIsi(dir).token;
-    rusak(dir);
-    expect(() => BukuBesar.buka(dir, meta(r), { pulihkanKunciBasi: token })).toThrow(/rusak|host lain/);
+  it("R3: the ledger module has no lock takeover path (only its own token is ever released)", () => {
+    const src = readFileSync(join(process.cwd(), "src/lib/migrasi-kartu-medis/buku-besar.ts"), "utf8");
+    expect(src).not.toMatch(/\blinkSync\b|pulihkanKunciBasi|_uji/);
+    expect(src.match(/renameSync\(/g)).toHaveLength(1);                    // hanya tulis atomik state/meta
+    expect(src.match(/unlinkSync\(kunci\)/g)).toHaveLength(2);           // keduanya dijaga cek token milik sendiri
+    expect(src).toMatch(/if \(isi\?\.token === milikku\.token\) unlinkSync\(kunci\)/);
+    expect(src).toMatch(/if \(bacaKunci\(kunci\)\?\.token === this\.token\) unlinkSync\(kunci\)/);
   });
 });

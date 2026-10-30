@@ -6,7 +6,7 @@
  * dan kode alasan. Hash ID dan visit_id tetap metadata PSEUDONIM yang sensitif (bukan anonim) — simpan sebagai rahasia.
  */
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, relative, resolve, isAbsolute } from "node:path";
 import type { KonteksJaringan } from "./klien";
@@ -72,16 +72,7 @@ function buatKunci(path: string, isi: IsiKunci) {
   try { writeSync(fd, JSON.stringify(isi)); fsyncSync(fd); } finally { closeSync(fd); }
 }
 
-export type OpsiBuka = {
-  akarRepo?: string;
-  /**
-   * Pemulihan EKSPLISIT kunci basi (proses pemegang mati, host sama): token persis dari pesan galat. Tanpa ini,
-   * kunci yang ada selalu ditolak (tidak ada pengambilalihan otomatis).
-   */
-  pulihkanKunciBasi?: string;
-  /** Khusus tes: disela setelah kunci basi dibaca (mensimulasikan pesaing). */
-  _ujiSetelahBacaKunci?: () => void;
-};
+export type OpsiBuka = { akarRepo?: string };
 
 export class BukuBesar {
   private tertutup = false;
@@ -89,11 +80,11 @@ export class BukuBesar {
 
   /**
    * Buka (atau buat) ledger. Menolak folder di dalam repo, meta yang berbeda (berkas/rencana/konteks/ukuran batch berubah),
-   * dan kunci yang ada. Kunci basi hanya dipulihkan bila operator memberi tokennya persis (`pulihkanKunciBasi`), pemegangnya
-   * mati, dan host sama; pengambilalihan memakai rename atomik sehingga hanya satu pesaing yang menang. Kunci rusak atau milik
-   * host lain selalu ditolak.
+   * dan KUNCI APA PUN yang sudah ada — hidup, basi, rusak, atau milik host lain. Tidak ada pemulihan/pengambilalihan di
+   * dalam proses (tidak pernah memindah atau menghapus kunci yang bukan miliknya). Pemulihan kunci basi hanya MANUAL oleh
+   * operator setelah memastikan semua proses runner untuk folder ini berhenti (lihat docs/rencana-migrasi-kartu-medis.md §12).
    */
-  static buka(dirInput: string, meta: MetaRun, opsi: OpsiBuka = {}): { buku: BukuBesar; kunciBasiDipulihkan: boolean } {
+  static buka(dirInput: string, meta: MetaRun, opsi: OpsiBuka = {}): { buku: BukuBesar } {
     const dir = resolve(dirInput);
     if (opsi.akarRepo) {
       const rel = relative(resolve(opsi.akarRepo), dir);
@@ -103,38 +94,16 @@ export class BukuBesar {
     if ((statSync(dir).mode & 0o077) !== 0) throw new Error("Folder ledger harus berizin 0700.");
     const kunci = join(dir, "run.lock");
     const milikku: IsiKunci = { pid: process.pid, host: hostname(), token: randomUUID() };
-    let kunciBasiDipulihkan = false;
     try {
-      buatKunci(kunci, milikku);
+      buatKunci(kunci, milikku);                        // O_CREAT|O_EXCL: satu-satunya jalan memperoleh kunci
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
       const lama = bacaKunci(kunci);
       if (!lama) throw new Error("Kunci ledger rusak; periksa manual (tidak diambil alih).");
       if (lama.host !== hostname()) throw new Error("Kunci ledger milik host lain; periksa manual (tidak diambil alih).");
       if (prosesHidup(lama.pid)) throw new Error("Ledger sedang dipakai run lain (kunci eksklusif).");
-      if (opsi.pulihkanKunciBasi !== lama.token) {
-        throw new Error(`Kunci basi terdeteksi (token ${lama.token}). Pulihkan hanya secara eksplisit setelah memastikan run lama berhenti.`);
-      }
-      opsi._ujiSetelahBacaKunci?.();
-      const arsip = join(dir, `.run.lock.basi.${milikku.token}`);
-      try {
-        renameSync(kunci, arsip);                       // atomik: hanya satu pesaing yang berhasil memindahkannya
-      } catch {
-        throw new Error("Kunci basi sudah diambil pesaing lain.");
-      }
-      const dipindah = bacaKunci(arsip);
-      if (!dipindah || dipindah.token !== lama.token) {
-        // Yang terpindah bukan kunci basi yang diperiksa (pemilik baru masuk di sela): kembalikan tanpa menimpa.
-        try { linkSync(arsip, kunci); unlinkSync(arsip); } catch { /* kunci lain sudah ada; arsip disimpan sebagai bukti */ }
-        throw new Error("Kunci berubah saat dipulihkan; tidak diambil alih.");
-      }
-      try {
-        buatKunci(kunci, milikku);
-      } catch {
-        throw new Error("Kunci baru sudah dibuat pesaing lain.");
-      }
-      unlinkSync(arsip);
-      kunciBasiDipulihkan = true;
+      throw new Error(`Kunci basi terdeteksi (token ${lama.token}, pid ${lama.pid} tidak aktif). Tidak diambil alih otomatis: `
+        + "pulihkan manual hanya setelah memastikan SEMUA proses runner untuk folder ini berhenti.");
     }
     try {
       const metaPath = join(dir, "run.json");
@@ -150,7 +119,7 @@ export class BukuBesar {
       }
       const statePath = join(dir, "state.json");
       const state = existsSync(statePath) ? (JSON.parse(readFileSync(statePath, "utf8")) as StateLedger) : structuredClone(STATE_KOSONG);
-      return { buku: new BukuBesar(dir, metaFinal, state, milikku.token), kunciBasiDipulihkan };
+      return { buku: new BukuBesar(dir, metaFinal, state, milikku.token) };
     } catch (e) {
       const isi = bacaKunci(kunci);
       if (isi?.token === milikku.token) unlinkSync(kunci);

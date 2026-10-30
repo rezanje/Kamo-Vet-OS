@@ -619,9 +619,7 @@ Hasil readback:
 **R3 — kunci ledger (`buku-besar.ts`).**
 - Token pemilik unik.
 - `tutup()` idempoten dan hanya melepas kunci bertoken miliknya. `simpan()` menolak bila kunci bukan miliknya lagi.
-- Kunci basi **tidak** diambil alih otomatis. Pemulihan hanya eksplisit dengan token persis (setelah operator memastikan
-  run lama berhenti), lewat `rename` atomik sehingga hanya satu pesaing yang menang. Yang kalah gagal tertutup.
-- Kunci rusak atau milik host lain selalu ditolak.
+- Pemulihan kunci basi di dalam proses **dihapus** (lihat §12): kunci apa pun yang sudah ada selalu gagal tertutup.
 
 **Batasan yang dipertahankan (tidak diklaim selesai).**
 - **Blok Mapping FILE** saat ini hanya dibaca (tanda tangan dan batas tabel). Nilainya tidak divalidasi atau
@@ -635,3 +633,37 @@ Hasil readback:
 - **Master asli belum pernah dijalankan** (reviewer pun tidak menjalankan ExcelJS pada master), dan tidak ada data nyata
   yang dikirim. Struktur header dwibahasa yang diserahkan cocok dengan bentuk 1 pemilik / 1 hewan / 5 riwayat /
   2 FILE / 7 PER-SHEET. Ini cukup sebagai acuan fixture unit, tetapi **belum siap DB**.
+
+---
+
+## 12. Rereview 2ac20d8: kunci basi — tanpa pengambilalihan di dalam proses
+
+Temuan: `renameSync(run.lock, arsip)` hanya pemindahan atomik, bukan pemindahan bersyarat (token/inode). Urutan tiga pesaing
+dapat memindah kunci HIDUP milik pesaing lain sebelum pemeriksaan sesudah-rename sempat menolak:
+- A membaca token basi T;
+- B memulihkan T dan memperoleh kunci hidup;
+- A memindah kunci B, lalu C masuk ke celah.
+
+Pemeriksaan kepemilikan di `simpan()` tidak membatalkan RPC yang sedang berjalan.
+
+Perbaikan (opsi konservatif minimal):
+- `BukuBesar.buka` memperoleh kunci **hanya** lewat `open(O_CREAT|O_EXCL)`.
+- Kunci apa pun yang sudah ada (hidup, basi, rusak, host lain) selalu ditolak, tanpa memindah atau menghapus apa pun.
+  Opsi `pulihkanKunciBasi` dan hook ujinya dihapus.
+- Satu-satunya `unlink` kunci adalah pelepasan milik sendiri, setelah cek token. `rename` hanya dipakai untuk tulis atomik
+  `state.json`/`run.json`.
+
+**Pemulihan manual** (di luar runner, oleh operator):
+1. Pastikan **semua** proses runner untuk folder ledger ini sudah berhenti. Pesan galat menampilkan token dan pid basi
+   sebagai bantuan; itu bukan bukti.
+2. Barulah hapus `run.lock` secara manual.
+3. Buka lagi. `state.json` tetap utuh, dan lanjutan memakai pembuktian R1 sebelum kirim ulang.
+
+Tidak ada klaim pengambilalihan atomik berbasis token.
+
+Tes:
+- semua jenis kunci yang ada gagal tertutup, dengan inode dan isi kunci tidak berubah;
+- tiga pesaing (A pembaca basi, B pengganti hidup, C pendatang di sela): tidak ada kunci yang tergeser;
+- pemulihan crash lewat penghapusan manual;
+- pemeriksaan statis bahwa modul tidak punya jalur pengambilalihan;
+- tutup idempoten dan cek kepemilikan dipertahankan.
