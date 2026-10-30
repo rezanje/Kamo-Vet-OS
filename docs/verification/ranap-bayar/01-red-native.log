@@ -1,0 +1,4 @@
+Applied 328 repository migrations to isolated PostgreSQL 17.11 (Debian 17.11-0+deb13u1) with fictional auth/storage shims.
+FAIL one action pending medicine and services posts invoice stock revenue AR actual split receipt {"error": "ERROR:  function public.clinic_bill_and_pay_inpatient(unknown, unknown, unknown, unknown, jsonb, unknown, boolean, unknown) does not exist\nLINE 1: select public.clinic_bill_and_pay_inpatient('fa700000-0000-4...\n               ^\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts.\n{\"sub\": \"fa100000-0000-4000-8000-000000000004\", \"role\": \"authenticated\"}\n"}
+Stopped and removed the throwaway PostgreSQL cluster.
+TOTAL {'PASS': 0, 'FAIL': 1}

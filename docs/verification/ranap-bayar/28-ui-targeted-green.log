@@ -1,0 +1,19 @@
+
+ RUN  v4.1.9 /opt/data/kamo-wt-ranap-bayar
+
+ ✓ src/components/__tests__/ranap-payment-popup.test.tsx (11 tests) 354ms
+ ✓ src/components/__tests__/ranap-simpan-bayar.test.tsx (7 tests) 229ms
+ ✓ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/page.test.tsx (31 tests) 175ms
+ ✓ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/actions.test.ts (36 tests) 49ms
+ ✓ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts (11 tests) 33ms
+ ✓ src/lib/__tests__/tagihan-berjalan-server.test.ts (24 tests) 13ms
+ ✓ src/lib/__tests__/tagihan-berjalan-sql.test.ts (28 tests) 10ms
+ ✓ src/lib/__tests__/tagihan-berjalan.test.ts (19 tests) 8ms
+ ✓ src/lib/__tests__/uang-tagihan.test.ts (9 tests) 6ms
+
+ Test Files  9 passed (9)
+      Tests  176 passed (176)
+   Start at  09:07:10
+   Duration  4.00s (transform 596ms, setup 0ms, import 1.03s, tests 877ms, environment 757ms)
+
+JSON report written to /opt/data/kamo-wt-ranap-bayar/docs/verification/ranap-bayar/28-ui-targeted-green.json

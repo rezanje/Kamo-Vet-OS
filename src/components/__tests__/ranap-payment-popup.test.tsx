@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   shift: { id: "shift-1" } as { id: string } | null,
 }));
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
   redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); },
   notFound: () => { throw new Error("NOT_FOUND"); },
 }));
@@ -18,6 +19,13 @@ vi.mock("@/lib/tagihan-berjalan-server", () => ({ muatTagihanBerjalan: async () 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: "cashier-fixture" } } }) },
+    rpc: async () => {
+      const d = state.data!;
+      const pending = d.belumDitagih.reduce((sum, b) => sum + Number(b.qty) * Number(b.harga), 0);
+      const debt = d.tahap.reduce((sum, t) => sum + t.sisa, 0);
+      return { error: null, data: { token: "fixture-quote", amount: 0, excess: 0, pending, debt, remaining: Math.max(0, debt + pending - d.saldoUangMuka), credit: d.saldoUangMuka,
+        accounts: ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"].map(method => ({ method, code: method === "Tunai" ? "1101" : "1102", name: "Rekening Fiktif", bank: null, number: null })) } };
+    },
     from: (table: string) => ({
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data:
         table === "clinic_billing_settings" ? { min_dp_percent: 50 } : { role: "STAFF" },
@@ -26,7 +34,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 vi.mock("@/app/(app)/klinik/rawat-inap/[id]/tagihan/actions", () => ({
-  tagihSekarang: vi.fn(), terimaPembayaran: vi.fn(), batalkanKwitansi: vi.fn(), lepaskanUangMuka: vi.fn(),
+  simpanBayar: vi.fn(), tagihSekarang: vi.fn(), terimaPembayaran: vi.fn(), batalkanKwitansi: vi.fn(), lepaskanUangMuka: vi.fn(),
 }));
 import TagihanRawatInapPage from "@/app/(app)/klinik/rawat-inap/[id]/tagihan/page";
 import * as actions from "@/app/(app)/klinik/rawat-inap/[id]/tagihan/actions";
