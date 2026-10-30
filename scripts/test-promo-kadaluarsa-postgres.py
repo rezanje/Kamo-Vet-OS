@@ -19,14 +19,14 @@ sys.dont_write_bytecode = True
 from native_postgres import NativePostgres  # noqa: E402
 
 BIN = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PG_BIN", "/usr/lib/postgresql/17/bin"))
-NEW = "20261102010000_promo_kadaluarsa_otomatis.sql"
+NEW = "20261104050000_promo_kadaluarsa_otomatis.sql"
 SUITE = "promo_kadaluarsa.sql"
 
 SHIM = """
 create role anon; create role authenticated; create role service_role bypassrls;
 create schema auth; create schema storage;
 create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
-create function auth.uid() returns uuid language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid$$;
+""" + (ROOT / "supabase/tests/fixtures/hosted_auth_uid.sql").read_text() + """
 create function auth.role() returns text language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'role')$$;
 create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb)$$;
 create table storage.buckets(id text primary key,name text,public boolean);
@@ -85,7 +85,8 @@ def main():
             raise RuntimeError("Re-applying the migration changed the guard again (not idempotent).")
         print("Re-applied the new migration: idempotent, guard unchanged.", flush=True)
 
-        db.sql((ROOT / "supabase/tests" / SUITE).read_text())
+        output = db.sql((ROOT / "supabase/tests" / SUITE).read_text())
+        print(next(line for line in output.splitlines() if line.startswith("PROMO_NATIVE_ASSERTIONS=")), flush=True)
         print(f"{SUITE}: passed.", flush=True)
 
         # Touched-area regressions on the same cluster.

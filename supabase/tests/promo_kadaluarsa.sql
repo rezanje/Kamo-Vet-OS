@@ -2,8 +2,14 @@
 -- Data fiktif saja; seluruh transaksi di-rollback di akhir. Tidak pernah
 -- menyentuh database nyata dan tidak menerima URL database.
 begin;
+create temporary table promo_native_assertions(n int);
+insert into promo_native_assertions values (0);
+grant select, update on promo_native_assertions to authenticated;
 create function pg_temp.ok(cond boolean, msg text) returns void language plpgsql as $$
-begin if cond is distinct from true then raise exception 'Assertion failed: %', msg; end if; end $$;
+begin
+ if cond is distinct from true then raise exception 'Assertion failed: %', msg; end if;
+ update pg_temp.promo_native_assertions set n=n+1;
+end $$;
 create function pg_temp.rejects(stmt text, needle text, msg text) returns void language plpgsql as $$
 declare hit boolean := false;
 begin
@@ -12,6 +18,7 @@ begin
     if not hit then raise exception 'Wrong rejection for %: %', msg, sqlerrm; end if;
   end;
   if not hit then raise exception 'Expected rejection: %', msg; end if;
+  update pg_temp.promo_native_assertions set n=n+1;
 end $$;
 grant execute on function pg_temp.ok(boolean, text) to authenticated;
 grant execute on function pg_temp.rejects(text, text, text) to authenticated;
@@ -22,7 +29,11 @@ grant execute on function pg_temp.wib() to authenticated;
 
 insert into auth.users (id, raw_user_meta_data) values
   ('ec000000-0000-4000-8000-000000000001', '{"full_name":"Owner Kadaluarsa"}'),
-  ('ec000000-0000-4000-8000-000000000002', '{"full_name":"Kasir Kadaluarsa"}');
+  ('ec000000-0000-4000-8000-000000000002', '{"full_name":"Kasir Kadaluarsa"}'),
+  ('ec000000-0000-4000-8000-000000000003', '{"full_name":"Doctor Kadaluarsa"}'),
+  ('ec000000-0000-4000-8000-000000000004', '{"full_name":"Admin Kadaluarsa"}');
+update public.profiles set role = 'DOCTOR', is_active = true where id = 'ec000000-0000-4000-8000-000000000003';
+update public.profiles set role = 'ADMIN', is_active = true where id = 'ec000000-0000-4000-8000-000000000004';
 update public.profiles set role = 'OWNER', is_active = true where id = 'ec000000-0000-4000-8000-000000000001';
 update public.profiles set role = 'STAFF', is_active = true where id = 'ec000000-0000-4000-8000-000000000002';
 insert into public.branches (id, code, name, type)
@@ -90,6 +101,42 @@ select pg_temp.ok(not (select is_active from public.promos where id = 'ec200000-
 update public.promos set name = 'Dirampas kasir' where id = 'ec200000-0000-4000-8000-000000000001';
 select pg_temp.ok((select name from public.promos where id = 'ec200000-0000-4000-8000-000000000001') = 'Lewat tanggal, masih hijau',
   'cashier cannot rename a promo');
+
+-- STAFF/DOCTOR cannot elevate the persisted profile role via caller JWT metadata.
+-- These are real table writes with RLS/triggers enabled, not simulated clients.
+do $matrix$
+declare actor uuid;
+begin
+ foreach actor in array array['ec000000-0000-4000-8000-000000000002'::uuid,
+                             'ec000000-0000-4000-8000-000000000003'::uuid] loop
+  perform set_config('request.jwt.claim.sub', actor::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', actor, 'role', 'OWNER',
+    'app_metadata', jsonb_build_object('role','ADMIN'))::text, true);
+  perform pg_temp.rejects($q$insert into public.promos(name,promo_type,discount_type,discount_value)
+    values('Spoof master','diskon_produk','percent',99)$q$, 'Hanya owner/manajer aktif', 'spoofed role cannot insert promo');
+  perform pg_temp.rejects($q$insert into public.vouchers(code,tipe,nilai)
+    values('ECSPOOF','nominal',99)$q$, 'row-level security', 'spoofed role cannot insert voucher');
+  perform pg_temp.rejects($q$insert into public.campaign_codes(code,promo_id)
+    values('ECSPOOF','ec200000-0000-4000-8000-000000000002')$q$, 'row-level security', 'spoofed role cannot insert campaign');
+  update public.promos set name='Spoof', is_active=false where id='ec200000-0000-4000-8000-000000000002';
+  perform pg_temp.ok((select name='Hari terakhir' and is_active from public.promos
+    where id='ec200000-0000-4000-8000-000000000002'), 'spoofed role cannot change valid promo');
+  update public.vouchers set nilai=99999, is_active=false where id='ec300000-0000-4000-8000-000000000002';
+  perform pg_temp.ok((select nilai=5000 and is_active from public.vouchers
+    where id='ec300000-0000-4000-8000-000000000002'), 'spoofed role cannot change valid voucher');
+  update public.campaign_codes set code='SPOOF', is_active=false where id='ec400000-0000-4000-8000-000000000002';
+  perform pg_temp.ok((select code='ECKODEOK' and is_active from public.campaign_codes
+    where id='ec400000-0000-4000-8000-000000000002'), 'spoofed role cannot change valid campaign');
+  delete from public.promos where id='ec200000-0000-4000-8000-000000000002';
+  perform pg_temp.ok(exists(select from public.promos where id='ec200000-0000-4000-8000-000000000002'), 'spoofed role cannot delete promo');
+  delete from public.vouchers where id='ec300000-0000-4000-8000-000000000002';
+  perform pg_temp.ok(exists(select from public.vouchers where id='ec300000-0000-4000-8000-000000000002'), 'spoofed role cannot delete voucher');
+  delete from public.campaign_codes where id='ec400000-0000-4000-8000-000000000002';
+  perform pg_temp.ok(exists(select from public.campaign_codes where id='ec400000-0000-4000-8000-000000000002'), 'spoofed role cannot delete campaign');
+ end loop;
+end $matrix$;
+select set_config('request.jwt.claims', '', true);
+select set_config('request.jwt.claim.sub', 'ec000000-0000-4000-8000-000000000002', true);
 
 -- Penyapu: satu panggilan, hanya yang benar-benar lewat tanggal yang mati.
 select pg_temp.ok(
@@ -162,6 +209,15 @@ update public.promos set is_active = true, name = 'Tanpa tanggal akhir' where id
 select pg_temp.ok((select is_active from public.promos where id = 'ec200000-0000-4000-8000-000000000003'),
   'owner can still switch it back on');
 
+-- ADMIN retains valid-master write access; no role or grant is broadened.
+select set_config('request.jwt.claim.sub', 'ec000000-0000-4000-8000-000000000004', true);
+update public.promos set name='Admin valid promo' where id='ec200000-0000-4000-8000-000000000002';
+select pg_temp.ok((select name='Admin valid promo' from public.promos where id='ec200000-0000-4000-8000-000000000002'), 'ADMIN can edit valid promo');
+update public.vouchers set nilai=6000 where id='ec300000-0000-4000-8000-000000000002';
+select pg_temp.ok((select nilai=6000 from public.vouchers where id='ec300000-0000-4000-8000-000000000002'), 'ADMIN can edit valid voucher');
+update public.campaign_codes set note='Admin valid campaign' where id='ec400000-0000-4000-8000-000000000002';
+select pg_temp.ok((select note='Admin valid campaign' from public.campaign_codes where id='ec400000-0000-4000-8000-000000000002'), 'ADMIN can edit valid campaign');
+
 -- ── Pagar trigger berdiri sendiri, bukan hanya RLS ─────────────────────────
 -- RLS dimatikan sebentar supaya yang diuji benar-benar cabang baru di dalam
 -- guard_promo_configuration: kasir tetap harus ditolak untuk APA PUN selain
@@ -194,5 +250,6 @@ reset role;
 set constraints all immediate;
 alter table public.promos enable row level security;
 
+select 'PROMO_NATIVE_ASSERTIONS=' || n from pg_temp.promo_native_assertions;
 select 'Promo kadaluarsa: passed';
 rollback;

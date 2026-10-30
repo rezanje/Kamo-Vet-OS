@@ -1,6 +1,6 @@
 // Penegakan "lewat batas waktu = otomatis nonaktif" di luar jam cron.
 //
-// Proyek ini belum memasang pg_cron (lihat migrasi 20261102010000), jadi
+// Proyek ini belum memasang pg_cron (lihat migrasi 20261104050000), jadi
 // penyapunya dipanggil malas: setiap kali layar yang memperlihatkan atau
 // memakai promo dimuat. Fungsinya idempoten dan berhenti lebih awal lewat
 // indeks parsial kalau memang tidak ada yang lewat tanggal, jadi aman dipanggil

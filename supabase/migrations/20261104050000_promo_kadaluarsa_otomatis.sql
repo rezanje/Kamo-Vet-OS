@@ -43,13 +43,25 @@
 --        select has_function_privilege(r, 'public.nonaktifkan_promo_kadaluarsa()', 'EXECUTE')
 --        from unnest(array['authenticated','anon','service_role']) r;
 --      Harus true, false, false.
---   3. Hitung dulu, baru jalankan — berapa baris yang akan terdampak:
---        select (select count(*) from public.promos where is_active
---                  and valid_until < (now() at time zone 'Asia/Jakarta')::date) as promo,
---               (select count(*) from public.vouchers where is_active
---                  and valid_until < (now() at time zone 'Asia/Jakarta')::date) as voucher;
---      Lalu: select public.nonaktifkan_promo_kadaluarsa();  -- angkanya harus sama,
---      dan panggilan kedua harus mengembalikan 0/0/0 (idempoten).
+--   3. Hitung dan BACKUP sebelum pasang/jalankan (termasuk campaign_codes):
+--      Simpan hasil SELECT berikut di berkas backup lokal milik operator, jangan
+--      hanya menyimpan jumlah. Deployment UI/cron bisa memicu sapuan pertama.
+--        select 'promos' as source, to_jsonb(p) as row from public.promos p
+--          where is_active and valid_until < (now() at time zone 'Asia/Jakarta')::date
+--        union all
+--        select 'vouchers', to_jsonb(v) from public.vouchers v
+--          where is_active and valid_until < (now() at time zone 'Asia/Jakarta')::date
+--        union all
+--        select 'campaign_codes', to_jsonb(c) from public.campaign_codes c
+--          where c.is_active and (
+--            exists(select from public.promos p where p.id=c.promo_id
+--              and p.valid_until < (now() at time zone 'Asia/Jakarta')::date)
+--            or exists(select from public.vouchers v where v.id=c.voucher_id
+--              and v.valid_until < (now() at time zone 'Asia/Jakarta')::date));
+--      Hitung hasil per source. Lalu: select public.nonaktifkan_promo_kadaluarsa();
+--      Cocokkan tiga jumlah; readback ID backup: hanya is_active yang berubah
+--      pada promo/voucher, campaign juga updated_at. Periksa master belum lewat
+--      tetap utuh, lalu panggilan kedua harus mengembalikan 0/0/0 (idempoten).
 --   4. Jejak auditnya atas nama sistem, bukan pengguna:
 --        select actor_kind, count(*) from public.activity_log
 --        where row_entity in ('promos','vouchers')
@@ -115,7 +127,7 @@ declare
  jangkar text := $jangkar$begin
  if auth.uid() is not null or current_setting('role',true) in('authenticated','anon','service_role') then$jangkar$;
  pengganti text := $pengganti$begin
- -- KADALUARSA_SWEEP (migrasi 20261102010000): penonaktifan karena lewat tanggal.
+ -- KADALUARSA_SWEEP (migrasi 20261104050000): penonaktifan karena lewat tanggal.
  -- Dibungkus if bersarang, bukan satu rangkaian AND: OLD hanya terisi pada
  -- UPDATE/DELETE dan PostgreSQL tidak menjamin urutan evaluasi AND.
  if tg_op='UPDATE' and tg_table_name='promos' then

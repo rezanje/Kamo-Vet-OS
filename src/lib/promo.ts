@@ -39,7 +39,7 @@ export function promoActiveFor(p: PromoRow, branchId: string, today: string): bo
 }
 
 // Lewat tanggal diperiksa SEBELUM is_active. Sejak promo kedaluwarsa dimatikan
-// otomatis (migrasi 20261102010000) barisnya memang is_active = false, dan
+// otomatis (migrasi 20261104050000) barisnya memang is_active = false, dan
 // label "Nonaktif" akan menyembunyikan ALASAN-nya — padahal "Kadaluarsa" itulah
 // yang memberi tahu pemilik bahwa tinggal memperpanjang tanggalnya.
 export function promoScheduleStatus(p: PromoRow, today: string): "aktif" | "terjadwal" | "kadaluarsa" | "nonaktif" {
