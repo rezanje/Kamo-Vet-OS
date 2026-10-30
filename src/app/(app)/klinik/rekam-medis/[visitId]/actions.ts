@@ -288,7 +288,7 @@ export async function koreksiRekamMedis(formData: FormData) {
   return { saved: true, href: `${back}?success=correction` };
 }
 
-/** Full doctor edit; the database revalidates role, revision and billing state. */
+/** Full OWNER/DOCTOR edit; the database revalidates role, revision and billing state. */
 export async function koreksiRekamMedisLengkap(formData: FormData) {
   const visitId = String(formData.get("visitId") ?? "");
   const recordId = String(formData.get("medical_record_id") ?? "");
