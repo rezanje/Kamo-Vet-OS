@@ -23,13 +23,54 @@ Panel RS-1 di layar impor menampilkan dua riwayat yang sama dengan benar (15/1/2
    Untuk riwayat bersama, `branch_id` bernilai NULL. Bila header ada, `v_selected <> NULL` bernilai NULL dan
    `not exists(branch NULL)` bernilai true, sehingga fungsi **mengembalikan false**. Akibatnya kunjungan disaring.
    `medical_records` ikut tersaring lewat `operational_parent_isolation` dan `mr_select`.
-5. **Dropdown "Semua Cabang" di sidebar hanya tampilan.** Sidebar sendiri menyebutnya "display-only for now".
-   Dropdown itu tidak mengubah cabang aktif, jadi header tetap VET_CMGG. Inilah sebabnya demo terlihat
-   "Semua cabang" padahal datanya tersaring per cabang.
+5. **Konteks efektif saat UAT benar-benar VET_CMGG.** UAT dilakukan dengan login baru, memilih klinik
+   VET_CMGG, lalu dropdown sidebar tidak diubah. Jadi tidak ada konteks "Semua cabang" klinik yang sesungguhnya;
+   header DB = VET_CMGG.
+   - Dropdown "Semua Cabang" di sidebar memang hanya tampilan ("display-only for now") dan bukan konteks klinik.
+   - Spanduk cabang aktif (`ActiveBranch`) dirender di layout `(app)` hanya bila ada header mode. Spanduk itu
+     bisa tetap terlihat di CRM setelah navigasi sisi-klien karena layout tidak dirender ulang. Ini tidak
+     mengubah query: query CRM berjalan tanpa header, sedangkan query `/klinik/rekam-medis` membawa header VET_CMGG.
+
+### 2.1 Verifikasi produksi baca-saja (30 Okt 2026 04:28Z, terbatas dummy + katalog)
+
+Pembungkus baca-saja hanya menerima satu SELECT/WITH dan menolak kata kunci tulis. Lingkupnya hanya UUID
+dummy dan nama dummy persis. Tidak ada relink, impor ulang, atau penulisan, dan tidak ada pasien lain yang dibaca.
+
+**Relasi dummy (exact join):**
+
+- Pelanggan `90cfe46c-afee-4387-90bb-e29f64c68df0` "UJI SIM REKMED 291026" punya 1 hewan.
+- Hewan `e3f979b2-0b67-4b46-825b-2ce0bc1409ab` "UJI KUCING SINTETIS" punya `customer_id` = pelanggan itu (cocok).
+- Tepat 2 kunjungan memiliki `pet_id` = hewan itu atau `customer_id` = pelanggan itu. Keduanya cocok
+  ke pet **dan** customer, tanpa cabang, berjejak impor, status Selesai, dengan 1 rekam medis masing-masing
+  dan terapi terisi:
+
+  | kunjungan | waktu (UTC) | diagnosis |
+  |---|---|---|
+  | `dc0e732e-ef3b-4363-b98f-f8501a06ccd7` | 2026-01-14 17:00 (15/1 WIB) | "UJI DIAGNOSIS 1 - BUKAN PASIEN NYATA" |
+  | `8c944baf-0506-42da-9992-9c0f5f12bf12` | 2026-01-15 17:00 (16/1 WIB) | "UJI DIAGNOSIS 2 - BUKAN PASIEN NYATA" |
+
+- Tidak ada pelanggan/hewan lain dengan nama dummy yang sama, dan tidak ada kunjungan lain untuk hewan
+  bernama itu. Artinya dua hasil RS-1 **memang** terhubung ke UUID pet/customer di atas, tanpa duplikat.
+
+**Konteks efektif dan drift kebijakan** (produksi PG 17.6 dibandingkan repo `main` 847fd9d di PG 17.10 lokal):
+
+- Fungsi `user_can_access_branch`, `can_read_legacy_medical_history`, `has_role_capability`, dan `is_admin`
+  identik menurut `md5(pg_get_functiondef)`.
+- Kebijakan pada `visits`, `medical_records`, `pets`, `customers`, `inpatient_records`, `branches`, dan
+  `profiles`: himpunannya sama (39). Semua kebijakan **SELECT** identik.
+- `role_capabilities` kosong di produksi maupun lokal, sehingga OWNER memegang `all_branches` lewat
+  `p.role='OWNER'`. Di produksi ada 1 profil OWNER aktif. VET_CMGG adalah cabang KLINIK aktif.
+- Kesimpulan konteks: OWNER aktif + header VET_CMGG → `user_can_access_branch(NULL)` = false → kedua
+  kunjungan tersaring. Dengan "Semua cabang" klinik yang sesungguhnya (header dihapus), OWNER lolos.
+  Ini sama persis dengan reproduksi di bawah dan dengan pernyataan reviewer.
+- **Satu drift, sisi tulis, di luar cakupan:** `medical_records.mr_write` WITH CHECK di produksi memakai
+  `can_read_legacy_medical_history()`, sedangkan repo (`20260908133000`) memakai `is_admin()`. USING-nya identik.
+  Drift ini tidak memengaruhi visibilitas baca. Untuk riwayat bersama, tulisan tetap ditolak oleh D2
+  (`riwayat_bersama_terkunci_*`) dan oleh restrictive parent isolation. Ini dilaporkan, tidak diubah.
 
 ### Reproduksi lokal
 
-Reproduksi memakai PG16 sekali pakai, 324 migrasi repo + `20261101120000`, dan data fiktif. Isinya: satu
+Reproduksi memakai PG16 (dan diulang di PG17) sekali pakai, 324 migrasi repo + `20261101120000`, dan data fiktif. Isinya: satu
 riwayat bersama dan satu riwayat cabang A untuk hewan berbeda. Query yang diuji setara daftar (filter pet +
 inner MR), detail, MR, dan pets.
 
@@ -95,7 +136,7 @@ end $$;
 
 -- Daftar per hewan: HANYA kunjungan tanpa cabang yang berjejak impor. Satu baris per kunjungan.
 create function kamo_import.baca_riwayat_bersama_hewan(p_pet uuid, p_dari integer, p_jumlah integer)
-returns table(visit_id uuid, tanggal timestamptz, dokter text, keluhan text,
+returns table(visit_id uuid, pet_id uuid, customer_id uuid, tanggal timestamptz, dokter text, keluhan text,
               diagnosis text, anamnesis text, gejala_klinis text, terapi text)
 language plpgsql stable security definer set search_path = '' as $$
 #variable_conflict use_column
@@ -106,8 +147,9 @@ begin
     raise exception using errcode = '22023', message = 'Hewan wajib diisi; halaman 0–10000, jumlah 1–200';
   end if;
   return query
-    select v.id, v.created_at, v.dokter::text, v.keluhan, m.diagnosis, m.anamnesis, m.gejala_klinis, m.catatan_resep
+    select v.id, v.pet_id, v.customer_id, v.created_at, v.dokter::text, v.keluhan, m.diagnosis, m.anamnesis, m.gejala_klinis, m.catatan_resep
     from public.visits v
+    join public.pets p on p.id = v.pet_id and p.customer_id = v.customer_id   -- pelanggan↔hewan↔kunjungan konsisten
     join lateral (select mr.diagnosis, mr.anamnesis, mr.gejala_klinis, mr.catatan_resep
                   from public.medical_records mr where mr.visit_id = v.id order by mr.id limit 1) m on true
     where v.pet_id = p_pet and v.branch_id is null and v.legacy_source_key is not null
@@ -117,7 +159,7 @@ end $$;
 
 -- Detail satu kunjungan: kosong bila tidak ada ATAU bercabang (tidak bisa dibedakan, jadi tidak membocorkan metadata).
 create function kamo_import.baca_detail_riwayat_bersama(p_visit uuid)
-returns table(visit_id uuid, pet_id uuid, tanggal timestamptz, dokter text, keluhan text,
+returns table(visit_id uuid, pet_id uuid, customer_id uuid, tanggal timestamptz, dokter text, keluhan text,
               diagnosis text, anamnesis text, gejala_klinis text, terapi text)
 language plpgsql stable security definer set search_path = '' as $$
 #variable_conflict use_column
@@ -127,8 +169,9 @@ begin
     raise exception using errcode = '22023', message = 'Kunjungan wajib diisi';
   end if;
   return query
-    select v.id, v.pet_id, v.created_at, v.dokter::text, v.keluhan, m.diagnosis, m.anamnesis, m.gejala_klinis, m.catatan_resep
+    select v.id, v.pet_id, v.customer_id, v.created_at, v.dokter::text, v.keluhan, m.diagnosis, m.anamnesis, m.gejala_klinis, m.catatan_resep
     from public.visits v
+    join public.pets p on p.id = v.pet_id and p.customer_id = v.customer_id
     join lateral (select mr.diagnosis, mr.anamnesis, mr.gejala_klinis, mr.catatan_resep
                   from public.medical_records mr where mr.visit_id = v.id order by mr.id limit 1) m on true
     where v.id = p_visit and v.branch_id is null and v.legacy_source_key is not null;
@@ -136,13 +179,13 @@ end $$;
 
 -- Pembungkus publik INVOKER (identitas & header asli pemanggil).
 create function public.riwayat_bersama_hewan(p_pet uuid, p_dari integer, p_jumlah integer)
-returns table(visit_id uuid, tanggal timestamptz, dokter text, keluhan text,
+returns table(visit_id uuid, pet_id uuid, customer_id uuid, tanggal timestamptz, dokter text, keluhan text,
               diagnosis text, anamnesis text, gejala_klinis text, terapi text)
 language sql stable security invoker set search_path = '' as $$
   select * from kamo_import.baca_riwayat_bersama_hewan(p_pet, p_dari, p_jumlah)
 $$;
 create function public.detail_riwayat_bersama(p_visit uuid)
-returns table(visit_id uuid, pet_id uuid, tanggal timestamptz, dokter text, keluhan text,
+returns table(visit_id uuid, pet_id uuid, customer_id uuid, tanggal timestamptz, dokter text, keluhan text,
               diagnosis text, anamnesis text, gejala_klinis text, terapi text)
 language sql stable security invoker set search_path = '' as $$
   select * from kamo_import.baca_detail_riwayat_bersama(p_visit)
@@ -226,6 +269,8 @@ dan pemindahan pemilik ala §10 PR342.
 | OWNER, header A atau tanpa header | daftar 1 baris (diagnosis benar); detail riwayat bersama 1 baris |
 | OWNER, detail kunjungan cabang A, cabang B, atau UUID acak | 0 baris, ketiganya identik |
 | OWNER, hewan yang hanya punya riwayat bercabang | daftar 0 baris |
+| kunjungan bersama dengan `pet_id` hewan X tapi `customer_id` bukan pemilik X | tidak muncul di daftar X; detail 0 baris |
+| ID keluaran daftar | `visit_id`/`pet_id`/`customer_id` cocok persis dengan fixture |
 | OWNER, header cabang C nonaktif | ditolak "Cabang aktif tidak valid" |
 | ADMIN, DOCTOR, STAFF, OWNER nonaktif (header apa pun) | ditolak "hanya untuk OWNER" |
 | batas halaman/jumlah (−1, 0, 201, 10001) | ditolak |
@@ -243,6 +288,9 @@ dan pemindahan pemilik ala §10 PR342.
   INSERT/UPDATE/DELETE baru. D2 tetap berlaku.
 - **Identitas asli.** Pembungkus INVOKER membawa JWT dan header yang dipilih middleware. Header tidak dihapus
   atau diganti. Header rusak atau cabang tidak sah ditolak 42501.
+- **Relasi konsisten.** Pembaca hanya mengembalikan kunjungan yang `customer_id`-nya sama dengan pemilik hewan di
+  `pets`, dan ikut mengembalikan `pet_id`/`customer_id`. Aplikasi menolak baris yang tidak cocok dengan pet/customer
+  halaman.
 - **Hanya OWNER.** ADMIN, DOCTOR, STAFF, FINANCE, OWNER nonaktif, dan anon ditolak. Perluasan ke ADMIN atau
   dokter adalah keputusan terpisah (D3).
 
@@ -258,6 +306,7 @@ dan pemindahan pemilik ala §10 PR342.
 - Negatif header: cabang C nonaktif, cabang yang tidak boleh diakses, JSON rusak, dan UUID rusak ditolak 42501.
 - Kebocoran: detail dengan ID kunjungan cabang A, cabang B, dan UUID acak menghasilkan kosong yang identik.
   Daftar untuk hewan dengan campuran baris tidak pernah memuat baris bercabang.
+- Konsistensi: `visit_id`↔`pet_id`↔`customer_id` dicek pada setiap baris; tautan silang tidak muncul.
 - Batas:
   - halaman −1 atau 10001, jumlah 0 atau 201, serta argumen NULL ditolak 22023;
   - paginasi stabil, tanpa tumpang-tindih atau baris hilang antarhalaman;
