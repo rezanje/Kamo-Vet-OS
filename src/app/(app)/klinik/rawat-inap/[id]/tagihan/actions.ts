@@ -167,11 +167,21 @@ export async function simpanBayar(formData: FormData): Promise<RanapPaymentState
   if (!shift) return { status: "ERROR", error: "Buka shift klinik sebelum menyimpan pembayaran." };
   const periode = await cekPeriode(supabase, hariIniWIB());
   if (periode) return { status: "ERROR", error: periode };
-  const { data, error } = await supabase.rpc("clinic_bill_and_pay_inpatient", {
+  const cashierDraft = formData.has("pending_snapshot");
+  let draftRows: unknown[] = [];
+  if (cashierDraft) {
+    try {
+      const value: unknown = JSON.parse(String(formData.get("pending_rows") ?? ""));
+      if (!Array.isArray(value) || value.length > 200) return invalid();
+      draftRows = value;
+    } catch {return invalid();}
+  }
+  const { data, error } = await supabase.rpc(cashierDraft ? "clinic_save_inpatient_cashier" : "clinic_bill_and_pay_inpatient", {
     p_record_id: recordId, p_visit_id: visitId, p_request_key: requestKey, p_tanggal: hariIniWIB(), p_parts: parts,
     p_overpayment_ack: String(formData.get("overpayment_ack") ?? "").trim() || null,
     p_add_owner_credit: formData.get("add_owner_credit") === "true",
     p_dp_override_reason: String(formData.get("dp_override_reason") ?? "").trim() || null,
+    ...(cashierDraft ? {p_snapshot:String(formData.get("pending_snapshot") ?? ""),p_rows:draftRows,p_reason:String(formData.get("cart_reason") ?? "").trim()} : {}),
   });
   if (error) return { status: "ERROR", error: parseClinicPostingError(error, tidakPasti) };
   if (data?.status === "OVERPAYMENT_CONFIRM_REQUIRED" && data.quote) return { status: "OVERPAYMENT_CONFIRM_REQUIRED", quote: data.quote };
@@ -184,8 +194,9 @@ export async function simpanBayar(formData: FormData): Promise<RanapPaymentState
   if (data.receipt_id) query.set("receipt", data.receipt_id);
   if (data.invoice_id) query.set("invoice", data.invoice_id);
   if (applicationIds.length) query.set("applications", applicationIds.join(","));
-  const back = kembali(recordId);
+  const back = cashierDraft ? `/klinik/pembayaran/${visitId}` : kembali(recordId);
   revalidatePath(back);
+  revalidatePath(`/klinik/rekam-medis/${visitId}`);
   return { status: "SAVED", href: `${back}?${query}${transactionDraftAck(formData)}` };
 }
 

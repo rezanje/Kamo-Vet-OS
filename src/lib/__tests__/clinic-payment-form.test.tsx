@@ -18,6 +18,7 @@ function find(node: React.ReactNode, type: string, ariaLabel?: string): React.Re
 }
 const row={deskripsi:"Fiction medicine",qty:2,harga:1000,item_id:"item",satuan:"PCS"};
 const master=[{id:"item",code:"FIC",name:"Fiction medicine",unit:"PCS",harga:1000,units:[{unit:"PCS",factor:1,sell_price:1000,buy_price:500},{unit:"box",factor:10,sell_price:9000,buy_price:5000}]}];
+it('locks stage discounts only in inpatient cart while outpatient stays editable',()=>{const html=renderToStaticMarkup(<ItemTable title="OBAT" icon="pill" color="black" rows={[row]} setRows={()=>{}} master={master} listId="stage" discountsDisabled/>);expect(html).toMatch(/aria-label="Diskon Fiction medicine"[^>]*readOnly=""/i);});
 describe("clinic payment units",()=>{
   it("changes manual unit and branch unit price while preserving entered quantity",()=>{
     let updated: typeof row[]=[];

@@ -138,6 +138,7 @@ export async function bayarVisit(formData: FormData) {
   if (!visitId) redirect(`/klinik/antrian?error=${encodeURIComponent("Visit tidak valid")}`);
   const back = `/klinik/pembayaran/${visitId}`;
   const waktu = catatWaktu("bayarVisit", visitId);
+  const targetInvoiceId = String(formData.get("target_invoice_id") ?? "").trim();
 
   // U07 batch 1: every read that needs only the visit id starts together. Each is
   // still awaited (and validated) at its original place below.
@@ -153,10 +154,11 @@ export async function bayarVisit(formData: FormData) {
   // `maybeSingle()` di sini dulu berubah jadi galat "tagihan belum dapat diverifikasi"
   // begitu tahap kedua terbit, sehingga rawat jalan pun ikut macet. Yang dipakai jalur
   // koreksi adalah tagihan TERBARU; tahapnya dikelola di layar tagihan rawat inap.
-  const activeInvoiceP = mulai(supabase
+  const activeInvoiceQuery = supabase
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending, service_pricing_version, salesperson_id")
-    .eq("visit_id", visitId).is("voided_at", null)
+    .eq("visit_id", visitId).is("voided_at", null);
+  const activeInvoiceP = mulai((targetInvoiceId ? activeInvoiceQuery.eq("id",targetInvoiceId) : activeInvoiceQuery)
     .order("created_at", { ascending: false }).order("id", { ascending: false })
     .limit(1).maybeSingle());
   const periodeP = mulai(cekPeriode(supabase, todayIso()));
@@ -197,6 +199,7 @@ export async function bayarVisit(formData: FormData) {
   const { data: activeInvoice, error: activeInvoiceError } = await activeInvoiceP;
 
   if (activeInvoiceError) redirect(`${back}?error=${encodeURIComponent("Tagihan belum dapat diverifikasi. Muat ulang tanpa membuat pembayaran baru.")}`);
+  if (targetInvoiceId && !activeInvoice) redirect(`${back}?error=${encodeURIComponent("Invoice yang dipilih sudah berubah atau tidak sesuai kunjungan. Muat ulang; tidak ada transaksi yang disimpan.")}`);
 
   // A lost create response must replay its sealed request/hash instead of
   // becoming a correction. Different creation keys keep the normal edit path.

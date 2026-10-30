@@ -147,6 +147,13 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
   const back = `/klinik/rawat-inap/${recordId}`;
   const formHref = billables ? `${back}/obat-khusus` : `${back}/catatan`;
   if (!recordId || (!billables && !conditionNote) || !requestKey) redirect(`${formHref}?error=${encodeURIComponent("Isi data dan muat ulang formulir")}`);
+  if (!billables && formData.has('visit_label')) {
+    const label = formData.get('visit_label');
+    if (label !== 'Visit 1' && label !== 'Visit 2') redirect(`${formHref}?error=${encodeURIComponent('Jenis Visit tidak valid')}`);
+    if (formData.get('log_kind') !== 'doctor_visit') redirect(`${formHref}?error=${encodeURIComponent('Visit 1 / Visit 2 harus berupa visit dokter')}`);
+    // Reuse existing doctor-ID validation; role/HRIS/branch authorization stays in the RPC.
+    bacaPetugas(formData, formHref);
+  }
   const waktu = catatWaktu("addDailyLogPos", recordId);
 
   // Keranjang obat/jasa & BMHP diurai dari form lebih dulu (tanpa database) supaya
@@ -197,7 +204,11 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
 
   const stamp = waktuInputWIB(logDate, logTime);
   const log = {
-    condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
+    // A new clinical label lives in the existing visible note, not a new DB field.
+    // Keep legacy/no-label payloads byte-for-byte compatible with previous requests.
+    condition_note: !billables && formData.has('visit_label')
+      ? `${String(formData.get('visit_label'))}\n${String(formData.get('condition_note') ?? '')}` : conditionNote,
+    tindakan, keterangan, doctor_name: doctorName,
     ...(!billables ? bacaPetugas(formData,formHref) : {}),
     ...bacaPemantauan(formData),
     log_date: logDate || null,

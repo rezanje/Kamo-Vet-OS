@@ -16,6 +16,7 @@ const tagihan = (id: string, patch: Partial<TagihanTahap> = {}): TagihanTahap =>
 });
 
 describe("pemilihan baris tahap", () => {
+  it('does not resurrect a withdrawn pending billing line after other invoices are voided',()=>{expect(barisBelumDitagih([resep('withdrawn',{billing_withdrawn_at:'2026-11-03T00:00:00Z'}),resep('current')],[],[]).map(row=>row.id)).toEqual(['current']);});
   it("hanya menawarkan baris yang belum pernah masuk tagihan aktif", () => {
     const hasil = barisBelumDitagih(
       [resep("1"), resep("2"), resep("3")],

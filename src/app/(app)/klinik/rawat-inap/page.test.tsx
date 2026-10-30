@@ -93,13 +93,13 @@ describe("Status Rawat Inap — kolom tagihan", () => {
     const html = renderToStaticMarkup(await RawatInapPage({ searchParams: Promise.resolve({}) }));
     expect(html).toContain('>Lunas</span>');
     expect(html).toContain("Lihat tagihan");
-    expect(html).toContain("/klinik/rawat-inap/rec-1/tagihan");
+    expect(html).toContain("/klinik/pembayaran/visit-1");
   });
 
   it("menampilkan tombol Bayar tagihan ke layar tagihan rawat inap berjalan", async () => {
     state.tables.invoices[0].dp_amount = 0;
     const html = renderToStaticMarkup(await RawatInapPage({ searchParams: Promise.resolve({}) }));
-    expect(html).toContain("/klinik/rawat-inap/rec-1/tagihan");
+    expect(html).toContain("/klinik/pembayaran/visit-1");
     expect(html).toContain("Bayar tagihan");
   });
 
@@ -109,7 +109,7 @@ describe("Status Rawat Inap — kolom tagihan", () => {
       expect(html).toContain(`>${label}</span>`);
       expect(html).toContain(action);
       expect(html).toContain('>Stabil</span>');
-      expect(html).toContain('/klinik/rawat-inap/rec-1/tagihan');
+      expect(html).toContain('/klinik/pembayaran/visit-1');
     };
     await status("Lunas", "Lihat tagihan");
     state.tables.medical_records = [{ id: "mr-1", visit_id: "visit-1" }];
@@ -129,7 +129,7 @@ describe("Status Rawat Inap — kolom tagihan", () => {
     const html = renderToStaticMarkup(await RawatInapPage({ searchParams: Promise.resolve({ filter: "semua", branch: "b1" }) }));
     expect(html).toContain('>Lunas</span>');
     expect(html).toContain("Lihat tagihan");
-    expect(html).toContain("/klinik/rawat-inap/rec-1/tagihan");
+    expect(html).toContain("/klinik/pembayaran/visit-1");
     expect(html).not.toContain("Isi laporan harian");
     expect(state.filters).toContainEqual({ table: "inpatient_records", op: "in", args: ["branch_id", ["b1"]] });
     expect(state.filters).toContainEqual({ table: "inpatient_records", op: "eq", args: ["branch_id", "b1"] });

@@ -16,6 +16,7 @@ export const AKUN_PIUTANG_USAHA = "1201";
 export const METODE_UANG_MUKA = "Uang Muka";
 
 export type BarisResep = {
+  billing_withdrawn_at?: string | null;
   id: string;
   nama_obat: string;
   qty: number;
@@ -68,7 +69,7 @@ export function barisBelumDitagih(
       .filter((l) => l.prescription_item_id && aktif.has(l.invoice_id))
       .map((l) => l.prescription_item_id as string),
   );
-  return resep.filter((r) => !tertagih.has(r.id));
+  return resep.filter((r) => !r.billing_withdrawn_at && !tertagih.has(r.id));
 }
 
 export type RingkasTahap = TagihanTahap & { dibayar: number; sisa: number };
