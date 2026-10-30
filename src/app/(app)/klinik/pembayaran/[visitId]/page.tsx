@@ -1,3 +1,7 @@
+import { admitInpatient } from "../../rawat-inap/actions";
+import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { SubmitButton } from "@/components/SubmitButton";
+import { STAY_TYPES, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
@@ -12,8 +16,11 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
+import { InpatientPaymentPage } from "./InpatientPaymentPage";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { getPajakSettings } from "@/lib/pajak";
+import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
+import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -36,10 +43,11 @@ export default async function PembayaranPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; success?: string; edit?: string; lunas?: string; dilewati?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string; lunas?: string; dilewati?: string; rawatinap?: string;invoice?:string;receipt?:string;applications?:string;invoice_id?:string }>;
 }) {
   const { visitId } = await params;
-  const { error, success, lunas: lunasParam, dilewati } = await searchParams;
+  const query = await searchParams;
+  const { error, success, lunas: lunasParam, dilewati, rawatinap } = query;
   const invoiceRequestKey = randomUUID();
   const groupRequestKey = randomUUID();
   const supabase = await createClient();
@@ -69,12 +77,14 @@ export default async function PembayaranPage({
   const racikanPending = (racikanPendingRows ?? []).length > 0;
 
   // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
-  const { data: inpat, error: inpatientError } = await supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle();
+  const { data: inpat, error: inpatientError } = await supabase.from("inpatient_records").select("id,consent_id,discharged_at").eq("visit_id", visitId).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (inpatientError) throw unverifiedBilling();
   if (inpat?.consent_id) {
     const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
     if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
   }
+  if (inpat && !query.invoice_id) return InpatientPaymentPage({db:supabase,visitId,recordId:inpat.id,branchId:visit.branch_id,userId:draftUser?.id??"",query,
+    patientLabel:`${one(visit.pets)?.name??"Pasien"} · ${one(visit.customers)?.name??"Pemilik"}${visit.dokter?` · Dokter PJ: ${visit.dokter}`:""}${inpat.discharged_at?" · Sudah pulang":" · Masih dirawat"}`});
   const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
 
   const pet = one(visit.pets);
@@ -94,14 +104,30 @@ export default async function PembayaranPage({
   const belumDitagih = (rombongan?.baris ?? []).filter((b) => b.invoiceNo === null);
 
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
-  const { data: invoice, error: invoiceError } = await supabase
+  //
+  // Rawat inap ditagih BERTAHAP sejak 29 Oktober 2026, jadi satu kunjungan bisa punya
+  // beberapa invoice aktif. `maybeSingle()` dulu berubah jadi galat begitu tahap kedua
+  // terbit, dan seluruh layar pembayaran mati. Layar ini menangani tagihan TERBARU;
+  // pengelolaan tahapnya ada di layar Tagihan rawat inap berjalan.
+  const { data: invoiceRows, error: invoiceError } = await supabase
     .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id, cashier_name, service_pricing_version")
-    .eq("visit_id", visitId).is("voided_at", null).maybeSingle();
+    .eq("visit_id", visitId).is("voided_at", null)
+    .order("created_at", { ascending: true }).order("id", { ascending: true });
   if (invoiceError) throw unverifiedBilling();
-  const [demoPolicy, demoStaffResult, demoSnapshotResult] = await Promise.all([
+  const invoiceAktif = invoiceRows ?? [];
+  const invoice = query.invoice_id ? invoiceAktif.find(row=>row.id===query.invoice_id) ?? null : invoiceAktif.length ? invoiceAktif[invoiceAktif.length - 1] : null;
+  if (query.invoice_id && !invoice) notFound();
+  const tagihanBertahap = invoiceAktif.length > 1;
+  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
     invoice ? supabase.from("clinic_demo_invoice_snapshots").select("fee_bearer,fee_amount,payments,incentive_pool").eq("invoice_id",invoice.id).maybeSingle() : Promise.resolve({data:null,error:null}),
+    // Boleh-tidaknya tagihan ini dikoreksi DIPUTUSKAN DI BASIS DATA, bukan ditebak
+    // di layar: aturannya sama persis dengan penjaga tulis (peran, uang di baris
+    // pembayaran MAUPUN di kepala tagihan, riwayat yang sudah dibalik seluruhnya,
+    // cabang, DEMO, tagihan batal). Tebakan lama di layar ini menolak keadaan yang
+    // justru diterima RPC-nya, sehingga koreksi sesudah pembatalan kwitansi mentok.
+    invoice ? supabase.rpc("clinic_invoice_correction_eligible", {p_invoice_id:invoice.id}) : Promise.resolve({data:false,error:null}),
   ]);
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
@@ -112,13 +138,15 @@ export default async function PembayaranPage({
     ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
     : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
   if (itemsError || paymentsError) throw unverifiedBilling();
-  const hasPayments = (paymentRows ?? []).some((p) => !p.transferred_from);
   const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const paidAmount = Number(invoice?.dp_amount ?? 0) + (paymentRows ?? [])
     .reduce((sum, p) => sum + Number(p.amount), 0);
-  const canEdit = invoice && !demoSnapshot && !hasPayments
-    && (invoice.correction_pending || ((paymentRows ?? []).length === 0 && invoice.paid_status !== "Lunas"));
+  // Gagal membaca kelayakan = form koreksi tidak ditawarkan (bukan layar mati):
+  // kasir tetap bisa menerima pembayaran, dan tidak ada koreksi yang dijanjikan
+  // lalu ditolak server. Nilai ini BUKAN otorisasi — RPC koreksinya memeriksa
+  // ulang peran dan mengunci barisnya sendiri sebelum menyentuh uang.
+  const canEdit = Boolean(invoice) && !demoSnapshot && koreksiBolehResult.data === true;
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
   const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
@@ -167,6 +195,15 @@ export default async function PembayaranPage({
   // pernah tercatat di invoice.
   const pajak = await getPajakSettings(supabase);
   const ppnRate = pajak.mode_pkp ? Number(pajak.ppn_rate) : 0;
+  // Uang muka minimal berlaku untuk SEMUA tagihan klinik (Andri, 29 Oktober 2026).
+  const [minDpPercent, { data: profilKasir }] = await Promise.all([
+    getDpMinimalPercent(supabase),
+    draftUser ? supabase.from("profiles").select("role").eq("id", draftUser.id).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  const bolehTerobosDp = bolehMenerobosDp((profilKasir as { role?: string } | null)?.role);
+  // Batalkan + terbitkan ulang adalah pekerjaan keuangan (ditegakkan di database);
+  // layar tidak menawarkannya ke peran lain supaya tidak menabrak penolakan.
+  const bolehTerbitUlang = bolehSiklusTagihan((profilKasir as { role?: string } | null)?.role);
 
   const lunas = invoice?.paid_status === "Lunas";
   const refundData = invoice && lunas && !invoice.correction_pending ? await loadClinicRefundData(supabase, invoice.id) : null;
@@ -192,20 +229,14 @@ export default async function PembayaranPage({
         ...(l.service_performers != null ? {service_performers:l.service_performers} : {}),
       }))
     : prefill;
-  // Baris rawat inap jumlah harinya dihitung sistem saat pasien pulang, jadi
-  // qty-nya dikunci di layar (keputusan Aldi, 19 Agustus). Koreksi nilainya lewat
-  // kolom diskon, yang tetap terbuka dan mengikuti hak akses.
-  const { data: jasaInap } = await supabase
-    .from("items").select("id")
-    .eq("tindakan_kategori", "Rawat Inap").eq("is_active", true)
-    .order("name").limit(1).maybeSingle();
-  const idJasaInap = (jasaInap?.id as string | undefined) ?? null;
-  const tandai = <T extends { item_id: string | null }>(r: T) =>
-    ({ ...r, terkunci: !!idJasaInap && r.item_id === idJasaInap && !!inpat });
-
+  // Tarif rawat inap sekarang MANUAL (keputusan Andri, 29 Oktober 2026): staf memilih
+  // jasa rawat inapnya dan mengetik sendiri jumlah hari yang mau ditagih pada tahap ini.
+  // Kunci qty otomatis dari lama inap (keputusan Aldi, 19 Agustus) dicabut — sistem tidak
+  // lagi menghitung hari sendiri. Dukungan `terkunci` di form sengaja dibiarkan supaya
+  // draf lama yang tersimpan di peramban tetap terbuka tanpa error.
   const sourceVersion = createHash("sha256").update(JSON.stringify(sourceItems)).digest("hex");
-  const initialObat = sourceItems.filter((r) => r.jenis !== "jasa").map(tandai);
-  const initialJasa = sourceItems.filter((r) => r.jenis === "jasa").map(tandai);
+  const initialObat = sourceItems.filter((r) => r.jenis !== "jasa");
+  const initialJasa = sourceItems.filter((r) => r.jenis === "jasa");
 
   // Baris tambahan di kasir klinik wajib bisa dipilih dari master, bukan diketik
   // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat
@@ -267,9 +298,20 @@ export default async function PembayaranPage({
 
       <Popup message={error} />
       <Popup tone="success" title="Pembayaran berhasil"
-        message={!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" ? `Invoice ${invoice.invoice_no ?? ""} lunas. Cetak struk untuk pelanggan.` : null}
-        action={{ href: `/klinik/pembayaran/${visit.id}/struk`, label: "Cetak struk", icon: "ti-printer" }} />
+        message={!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" ? `Invoice ${invoice.invoice_no ?? ""} lunas. Cetak invoice untuk pelanggan.` : null}
+        action={invoice ? { href: `/klinik/pembayaran/${visit.id}/invoice?invoice_id=${invoice.id}`, label: "Cetak Invoice", icon: "ti-printer" } : undefined} />
       {!invoice && <div className="p2ban" role="status">Draf tagihan kunjungan ini belum menjadi invoice tersimpan dan belum tercatat sebagai pembayaran atau penjualan.</div>}
+      {tagihanBertahap && (
+        <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "var(--posb-dk)", justifyContent: "space-between" }}>
+          <span>
+            <i className="ti ti-stack-2" /> Kunjungan ini ditagih bertahap ({invoiceAktif.length} tagihan aktif).
+            Panel di bawah — termasuk koreksi, terbit ulang, dan refund — bekerja pada tagihan
+            <b> {invoice?.invoice_no ?? "terakhir"}</b> saja, bukan tahap yang lain.
+            Seluruh tahap, riwayat pembayaran, dan sisa piutang ada di layar tagihan rawat inap.
+          </span>
+
+        </div>
+      )}
       {!error && success === "bayar" && invoice && invoice.paid_status !== "Lunas" && <div className="p2ban" role="status">Invoice tersimpan. Status {invoice.paid_status}; pembayaran belum lunas. Lanjutkan pelunasan melalui tagihan yang sama.</div>}
       {invoice?.paid_status === "Lunas" && visit.status !== "Selesai" && <div className="p2ban" role="alert">Pembayaran sudah tercatat, tetapi status kunjungan belum selesai. Jangan menerima pembayaran ulang; periksa penyelesaian kunjungan.</div>}
       {!error && success === "edit" && (
@@ -364,7 +406,10 @@ export default async function PembayaranPage({
                     <td style={{ fontSize: 11.5, fontWeight: b.visitId === visitId ? 700 : 500 }}>
                       {b.hewan}{b.visitId === visitId ? " · sedang dibuka" : ""}
                     </td>
-                    <td style={{ fontSize: 10.5, fontFamily: "monospace", color: "var(--tm)" }}>{b.invoiceNo ?? "—"}</td>
+                    <td style={{ fontSize: 10.5, fontFamily: "monospace", color: "var(--tm)" }}>
+                      {b.invoiceNo ?? "—"}
+                      {(b.invoiceNos?.length ?? 0) > 1 && <div style={{ fontSize: 9 }}>+{(b.invoiceNos?.length ?? 1) - 1} tahap lain</div>}
+                    </td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>
                       {b.invoiceNo === null && perkiraan.has(b.visitId) ? (
                         <>
@@ -432,6 +477,19 @@ export default async function PembayaranPage({
         </div>
       )}
 
+
+      {!inpat && invoice?.paid_status === "DP" && !invoice.correction_pending && <div className="card">
+        <h3>DP tercatat — lanjutkan Rawat Inap</h3>
+        <p>Hanya untuk pasien yang diputuskan Rawat Inap. Tagihan dan DP lama tidak diubah atau diterima ulang. Dokter PIC dan persetujuan khusus tetap diperiksa.</p>
+        <TransactionForm userId={draftUser?.id ?? ""} scope={`inpatient-admit:${visitId}`} action={admitInpatient}>
+          <input type="hidden" name="visitId" value={visitId} />
+          <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
+          <label>Tipe rawat inap<select name="stay_type" className="fi" required>{STAY_TYPES.map(type => <option key={type} value={type}>{STAY_TYPE_LABEL[type]}</option>)}</select></label>
+          <label>Rencana tindakan dari dokter PIC<input name="treatment_plan" className="fi" required maxLength={4000} /></label>
+          <Link href={`/klinik/rekam-medis/${visitId}#persetujuan-rawat-inap`}>Periksa dokter / persetujuan</Link>
+          <SubmitButton className="btn-acc" pendingText="Memproses…">Masukkan Rawat Inap (tanpa pembayaran ulang)</SubmitButton>
+        </TransactionForm>
+      </div>}
       {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
           key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
@@ -458,7 +516,10 @@ export default async function PembayaranPage({
           cashierName={cashier.name}
           serviceStaff={serviceStaff}
           visitDoctorId={visit.doctor_id ?? null}
+          minDpPercent={minDpPercent}
+          bolehTerobosDp={bolehTerobosDp}
           editMode
+          targetInvoiceId={invoice.id}
         />
       ) : invoice ? (
         <>
@@ -481,18 +542,18 @@ export default async function PembayaranPage({
               </span>
               <span style={{ display: "flex", gap: 5 }}>
                 {canEdit && (
-                  <Link href={`/klinik/pembayaran/${visit.id}?edit=1`} className="btn-def"
+                  <Link href={`/klinik/pembayaran/${visit.id}?edit=1&invoice_id=${invoice.id}`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <i className="ti ti-pencil" /> Edit Invoice
                   </Link>
                 )}
-                {lunas && (
+                {lunas && !inpat && (
                   <Link href={`/klinik/pembayaran/${visit.id}/struk`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <i className="ti ti-receipt-2" /> Struk
                   </Link>
                 )}
-                <Link href={`/klinik/pembayaran/${visit.id}/invoice`} className="btn-acc"
+                <Link href={`/klinik/pembayaran/${visit.id}/invoice?invoice_id=${invoice.id}`} className="btn-acc"
                   style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                   <i className="ti ti-file-invoice" /> Invoice
                 </Link>
@@ -533,7 +594,7 @@ export default async function PembayaranPage({
           )}
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
-          {(lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
+          {bolehTerbitUlang && (lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG
@@ -570,7 +631,11 @@ export default async function PembayaranPage({
           groomingApplies={groomingPolicy?.applies ?? false}
           cashierName={cashier.name}
           catatanResep={mr?.catatan_resep ?? null}
+          allowDpAdmission={!inpat}
+          initialDpAdmission={rawatinap === "1"}
           racikanPending={racikanPending}
+          minDpPercent={minDpPercent}
+          bolehTerobosDp={bolehTerobosDp}
         />
       )}
 

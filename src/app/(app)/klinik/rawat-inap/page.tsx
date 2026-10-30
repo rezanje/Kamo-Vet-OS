@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL } from "@/lib/inpatient";
 import { readStayTypes, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
+import { BILLING_UNREAD, readInpatientBillingStatuses } from "@/lib/inpatient-billing-status";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -42,31 +43,39 @@ export default async function RawatInapPage({
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  const branches = await availableOperationalBranches(supabase, user.id, "klinik");
-  const { data: labelCatalog } = await supabase.from("branches").select("code,name,type").eq("is_active", true);
+  // U07: bacaan yang tidak saling bergantung jalan bersamaan (dulu enam bacaan berurutan).
+  const [branches, { data: labelCatalog }] = await Promise.all([
+    availableOperationalBranches(supabase, user.id, "klinik"),
+    supabase.from("branches").select("code,name,type").eq("is_active", true),
+  ]);
   const branchIds = branches.map(b => b.id);
-
-  let query = supabase
-    .from("inpatient_records")
-    .select("id, condition_status, admitted_at, discharged_at, doctor_name, treatment_plan, branches(name), visits(pets(name, species, breed, dob, photo_url), customers(name, phone))")
-    .in("branch_id", branchIds)
-    .order("admitted_at", { ascending: false });
-  if (branch) query = query.eq("branch_id", branch);
-  if (filter === "aktif") query = query.is("discharged_at", null);
-
-  const { data: records } = await query;
-  // K14: tipe dibaca terpisah supaya daftar tetap tampil sebelum migrasinya terpasang.
-  const stayTypes = await readStayTypes(supabase, (records ?? []).map((r) => r.id as string));
-
-  // Card counters (§3 dashboard req) — dihitung dari query terpisah tanpa filter tabel.
-  let counterQ = supabase.from("inpatient_records").select("condition_status, admitted_at, discharged_at").in("branch_id", branchIds);
-  if (branch) counterQ = counterQ.eq("branch_id", branch);
-  const { data: allRecs } = await counterQ;
 
   // Server jalan di UTC, klinik di WIB. Tanpa geser +7 jam, pasien yang masuk
   // 00.00–07.00 WIB terhitung "kemarin" di kartu RAWAT INAP HARI INI.
   const tglWIB = (iso: string) => new Date(new Date(iso).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
   const hariIniWIB = tglWIB(new Date().toISOString());
+
+  let query = supabase
+    .from("inpatient_records")
+    .select("id, visit_id, branch_id, condition_status, admitted_at, discharged_at, doctor_name, treatment_plan, branches(name), visits(pets(name, species, breed, dob, photo_url), customers(name, phone))")
+    .in("branch_id", branchIds)
+    .order("admitted_at", { ascending: false });
+  if (branch) query = query.eq("branch_id", branch);
+  if (filter === "aktif") query = query.is("discharged_at", null);
+
+  // Card counters (§3 dashboard req) — dihitung dari query terpisah tanpa filter tabel.
+  // Kartu hanya butuh pasien yang masih dirawat atau masuk hari ini, jadi riwayat lama
+  // tidak ikut dibaca (dulu seluruh riwayat, yang juga terpotong batas 1.000 baris).
+  let counterQ = supabase.from("inpatient_records").select("condition_status, admitted_at, discharged_at").in("branch_id", branchIds)
+    .or(`discharged_at.is.null,admitted_at.gte."${new Date(`${hariIniWIB}T00:00:00+07:00`).toISOString()}"`);
+  if (branch) counterQ = counterQ.eq("branch_id", branch);
+
+  const [{ data: records }, { data: allRecs }] = await Promise.all([query, counterQ]);
+  // K14: tipe dibaca terpisah supaya daftar tetap tampil sebelum migrasinya terpasang.
+  const [stayTypes, billingStatuses] = await Promise.all([
+    readStayTypes(supabase, (records ?? []).map((r) => r.id as string)),
+    readInpatientBillingStatuses(supabase, records ?? []),
+  ]);
 
   const counts = {
     total: (allRecs ?? []).filter((r) => !r.discharged_at).length,
@@ -156,9 +165,9 @@ export default async function RawatInapPage({
         </div>
 
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 820 }}>
+          <table className="tbl" style={{ minWidth: 940 }}>
             <thead>
-              <tr><th style={{ width: 30 }}>No.</th><th>Pasien</th><th>Tipe</th><th>Pemilik</th><th>Cabang</th><th>Dokter PIC</th><th>Tanggal Masuk</th><th>Lama Inap</th><th>Kondisi</th><th>Catatan</th><th>Aksi</th></tr>
+              <tr><th style={{ width: 30 }}>No.</th><th>Pasien</th><th>Tipe</th><th>Pemilik</th><th>Cabang</th><th>Dokter PIC</th><th>Tanggal Masuk</th><th>Lama Inap</th><th>Kondisi</th><th>Catatan</th><th>Aksi</th><th>Tagihan</th></tr>
             </thead>
             <tbody>
               {(records ?? []).map((r, idx) => {
@@ -167,6 +176,7 @@ export default async function RawatInapPage({
                 const cust = one(visit?.customers ?? null);
                 const br = one(r.branches as Rel<{ name: string }>);
                 const age = petAge(pet?.dob);
+                const billing = billingStatuses.get(r.visit_id) ?? BILLING_UNREAD;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{idx + 1}</td>
@@ -206,11 +216,20 @@ export default async function RawatInapPage({
                         </Link>
                       </div>
                     </td>
+                    {/* Tagihan berjalan: kasir tidak perlu membuka rekam medis dulu untuk
+                        menagih tahap berikutnya atau menerima uang (Andri, 29 Oktober). */}
+                    <td>
+                      <div style={{ marginBottom: 5 }}><span className={`bge ${billing.badge}`}>{billing.label}</span></div>
+                      <Link href={`/klinik/pembayaran/${r.visit_id}`} className="btn-acc"
+                        style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                        <i className="ti ti-cash" /> {billing.action}
+                      </Link>
+                    </td>
                   </tr>
                 );
               })}
               {(records ?? []).length === 0 && (
-                <tr><td colSpan={11} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>Tidak ada pasien rawat inap.</td></tr>
+                <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>Tidak ada pasien rawat inap.</td></tr>
               )}
             </tbody>
           </table>

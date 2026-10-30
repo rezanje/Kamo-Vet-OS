@@ -40,7 +40,7 @@ export default async function PermintaanPage({
 
   const { data } = await supabase
     .from("stock_requests")
-    .select("id, no_request, status, priority, created_at, branches(code, name), warehouses(code, name), stock_request_items(id)")
+    .select("id, no_request, status, priority, created_at, branches(code, name), warehouses!stock_requests_to_warehouse_id_fkey(code, name), stock_request_items(id)")
     .order("created_at", { ascending: false });
 
   const reqs = (data ?? []) as unknown as Req[];

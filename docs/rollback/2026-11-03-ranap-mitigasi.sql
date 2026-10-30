@@ -1,0 +1,50 @@
+-- Rollback TERTARGET migrasi 20261103010000_ranap_mitigasi_audit.sql.
+-- Ditinjau untuk dijalankan operator; TIDAK pernah dijalankan otomatis.
+--
+-- CARA PAKAI — skrip pemulihannya DIHASILKAN, bukan ditulis tangan, supaya yang
+-- dikembalikan benar-benar definisi yang berjalan di target, bukan tebakan:
+--
+--   1. SEBELUM migrasi dipasang, ambil cadangan tertarget di konsol SQL target:
+--        python3 scripts/rollback-ranap-mitigasi.py --cadangkan   -> kueri baca-saja
+--      Simpan keluarannya (satu nilai JSON) sebagai berkas cadangan.
+--   2. Bila perlu rollback:
+--        python3 scripts/rollback-ranap-mitigasi.py --pulihkan cadangan.json > rollback.sql
+--      Tinjau rollback.sql, lalu jalankan di target.
+--
+-- Pulang-perginya diuji lokal oleh scripts/test-ranap-mitigasi-rollback-postgres.py:
+-- cadangkan -> pasang -> pulihkan -> pasang ulang. Yang diperiksa: definisi dan hak
+-- akses kembali identik, pemicu baru tercabut, aplikasi versi LAMA masih bisa
+-- menagih tahap dan menerima pembayaran, dan tidak ada satu baris uang pun hilang.
+--
+-- YANG DIKEMBALIKAN
+--   * Definisi dan hak akses fungsi yang diganti/ditambal migrasi ini:
+--     clinic_post_invoice, clinic_post_split_invoice, clinic_post_demo_invoice,
+--     clinic_receive_invoice_payment, clinic_void_reissue_invoice(+_core),
+--     clinic_edit_invoice(+_core), clinic_change_inpatient_condition,
+--     clinic_post_inpatient_stage_invoice, clinic_receive_visit_payment,
+--     clinic_void_payment_receipt, clinic_private.stage_billing.
+--   * Pemicu guard_invoice_item_billed_once_final dicabut dari invoice_items.
+--   * Fungsi yang BARU (pelepasan uang muka, konteks posting, penolong uang)
+--     dibekukan — EXECUTE dicabut — supaya tidak terpanggil, TETAPI tidak dihapus.
+--
+-- YANG SENGAJA TIDAK DISENTUH — jangan pernah menambahkannya ke rollback:
+--   * `drop schema clinic_private` (apalagi CASCADE). Skema itu dipakai bersama
+--     fitur lain; menjatuhkannya merusak fitur di luar lingkup rilis ini.
+--   * Kolom/tabel jejak: invoices.stage_billing, clinic_advance_applications.released_*,
+--     clinic_customer_advances.release_*, clinic_advance_release_requests,
+--     clinic_private.posting_ctx. Semuanya sudah berisi jejak begitu fiturnya dipakai.
+--   * Satu baris uang pun: invoice_payments, journal_entries/journal_lines,
+--     clinic_payment_receipts(+parts), clinic_customer_advances. Tidak ada DELETE.
+--
+-- YANG HARUS DIREKONSILIASI MANUAL SESUDAH ROLLBACK (bukan pekerjaan skrip):
+--   * Uang muka yang sempat DILEPAS lewat clinic_release_advance_application.
+--     Fungsi lama clinic_void_payment_receipt tidak mengenal pelepasan, sehingga
+--     kwitansi yang terkait perlu diperiksa keuangan satu per satu sebelum
+--     dibatalkan. Jejaknya ada di clinic_advance_applications.released_at dan
+--     clinic_advance_release_requests.
+--   * Tagihan tahap yang sudah dikoreksi lewat jalur riwayat-nol-bersih tetap sah;
+--     jurnalnya sudah lengkap dan tidak perlu diputar balik.
+--
+-- Berkas ini sengaja tidak memuat perintah SQL apa pun: menjalankan definisi lama
+-- yang ditulis tangan berisiko menimpa tambalan rilis LAIN yang kebetulan menyentuh
+-- fungsi yang sama. Pakai cadangan dari target, sesuai langkah 1-2 di atas.

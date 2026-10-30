@@ -209,7 +209,8 @@ export default async function RetensiPage({
         </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
           Ambangnya bisa diubah di kotak filter — bawaannya {AMBANG_BAWAAN} hari sesuai permintaan.
-          Yang dihitung adalah transaksi terakhir, baik di petshop maupun di klinik.
+          Yang dihitung adalah transaksi terakhir — di petshop, di klinik, maupun lewat faktur
+          penjualan grosir.
           Struk tanpa identitas pembeli tidak bisa dinisbahkan ke siapa pun, jadi ada kemungkinan
           orang di daftar ini sebenarnya sempat belanja tanpa menyebut nama.<br />
           Tombol WA membuka WhatsApp dengan pesan pembuka yang sudah disiapkan — isinya sengaja

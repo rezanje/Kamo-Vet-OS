@@ -3,7 +3,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import Link from "next/link";
 import { formatPosMoney } from "@/lib/pos-money";
 import { tarikTransaksi } from "@/lib/laporan-transaksi-server";
-import { perCabang, perHari, perKanal, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
+import { KANAL_SEMUA, LABEL_KANAL, kanalKosong, perCabang, perHari, perKanal, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
 
 // Menjawab tiga laporan dasar sekaligus (permintaan Kamo Group 24 Agu 2026):
 // jumlah transaksi per cabang, rata-rata transaksi per pelanggan, dan
@@ -16,7 +16,8 @@ const angka = (n: number, desimal = 1) =>
 
 const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
 
-const KANAL: Kanal[] = ["POS", "Online", "Klinik"];
+const KANAL: Kanal[] = KANAL_SEMUA;
+const pecahanKanal = (k: Record<Kanal, number>) => KANAL.map((nama) => k[nama]).join(" / ");
 
 export default async function TransaksiCabangPage({
   searchParams,
@@ -27,7 +28,7 @@ export default async function TransaksiCabangPage({
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const kanal = (sp.kanal || "") as Kanal | "";
-  if (kanal && !KANAL.includes(kanal)) throw new Error("Pintu transaksi tidak valid. Pilih POS, Online, Klinik, atau semua.");
+  if (kanal && !KANAL.includes(kanal)) throw new Error("Pintu transaksi tidak valid. Pilih POS, Online, Klinik, Grosir, atau semua.");
   const cabangId = sp.cabang_id || "";
 
   const { trx: semua, cabangList, terpotong } = await tarikTransaksi(dari, sampai);
@@ -47,7 +48,7 @@ export default async function TransaksiCabangPage({
   return (
     <LaporanPage
       icon="ti-building-store" title="TRANSAKSI PER CABANG"
-      desc="Berapa transaksi tiap cabang, berapa orang yang dilayani, dan seberapa besar sekali belanja."
+      desc="Berapa transaksi tiap cabang, berapa orang yang dilayani, dan seberapa besar sekali belanja. Sudah termasuk faktur penjualan grosir."
       filter={
         <>
           <div>
@@ -70,7 +71,7 @@ export default async function TransaksiCabangPage({
             <label className="flab">Pintu transaksi</label>
             <select className="fi" name="kanal" defaultValue={kanal}>
               <option value="">Semua</option>
-              {KANAL.map((k) => <option key={k} value={k}>{k}</option>)}
+              {KANAL.map((k) => <option key={k} value={k}>{LABEL_KANAL[k]}</option>)}
             </select>
           </div>
           <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
@@ -103,7 +104,7 @@ export default async function TransaksiCabangPage({
                 <th style={{ width: 40 }}>#</th>
                 <th>Cabang</th>
                 <th style={{ width: 90, textAlign: "center" }}>Transaksi</th>
-                <th style={{ width: 150, textAlign: "center" }}>POS / Online / Klinik</th>
+                <th style={{ width: 180, textAlign: "center" }}>POS / Online / Klinik / Grosir</th>
                 <th style={{ width: 100, textAlign: "center" }}>Pelanggan dilayani</th>
                 <th style={{ width: 100, textAlign: "center" }}>Pelanggan berkartu</th>
                 <th style={{ width: 110, textAlign: "center" }}>Rata-rata kunjungan</th>
@@ -114,14 +115,14 @@ export default async function TransaksiCabangPage({
             </thead>
             <tbody>
               {baris.map((b, i) => {
-                const k = perCabangKanal.get(b.cabangId ?? b.cabang) ?? { POS: 0, Online: 0, Klinik: 0 };
+                const k = perCabangKanal.get(b.cabangId ?? b.cabang) ?? kanalKosong();
                 return (
                   <tr key={b.cabangId ?? b.cabang}>
                     <td style={{ fontSize: 11, fontWeight: i < 3 ? 800 : 400, color: i < 3 ? "#b45309" : "var(--tm)" }}>{i + 1}</td>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>{b.cabangId ? <Link href={`?${new URLSearchParams({dari,sampai,cabang_id:b.cabangId,...(kanal?{kanal}:{})})}`}>{b.cabang} · {b.cabangId.slice(0,8)}</Link> : b.cabang}</td>
                     <td style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700 }}>{b.trx}x</td>
                     <td style={{ textAlign: "center", fontSize: 10.5, color: "var(--tm)" }}>
-                      {k.POS} / {k.Online} / {k.Klinik}
+                      {pecahanKanal(k)}
                     </td>
                     <td style={{ textAlign: "center", fontSize: 11 }}>{b.pelangganDilayani}</td>
                     <td style={{ textAlign: "center", fontSize: 11, color: "var(--tm)" }}>
@@ -162,17 +163,21 @@ export default async function TransaksiCabangPage({
         <p style={{fontSize:11,color:"var(--tm)"}}>Klik tanggal untuk membuka struk dan invoice pada hari WIB serta cabang/pintu transaksi yang dipilih.</p>
         <div style={{overflowX:"auto"}}>
           <table className="tbl" aria-label="Omzet per hari" style={{minWidth:540}}>
-            <thead><tr><th>Tanggal WIB</th><th>Transaksi</th><th>POS / Online / Klinik</th><th style={{textAlign:"right"}}>Omzet</th></tr></thead>
+            <thead><tr><th>Tanggal WIB</th><th>Transaksi</th><th>POS / Online / Klinik / Grosir</th><th style={{textAlign:"right"}}>Omzet</th></tr></thead>
             <tbody>{hari.map(h => {const k=perKanal(trx.filter(t=>t.tanggal===h.tanggal));return <tr key={h.tanggal}>
               <td><Link href={`/laporan/penjualan-rinci?${new URLSearchParams({dari:h.tanggal,sampai:h.tanggal,...(cabangId?{cabang_id:cabangId}:{}),...(kanal?{kanal}:{})})}`}>{h.tanggal}</Link></td>
-              <td>{h.trx}x</td><td>{k.POS} / {k.Online} / {k.Klinik}</td><td style={{textAlign:"right"}}>{rp(h.omzet)}</td>
+              <td>{h.trx}x</td><td>{pecahanKanal(k)}</td><td style={{textAlign:"right"}}>{rp(h.omzet)}</td>
             </tr>})}{!hari.length&&<TabelKosong kolom={4} pesan="Belum ada transaksi pada filter ini."/>}</tbody>
             {!!hari.length&&<tfoot><tr><th>TOTAL</th><th>{total.trx}x</th><th/><th style={{textAlign:"right"}}>{rp(total.omzet)}</th></tr></tfoot>}
           </table>
         </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
-          Transaksi menggabungkan tiga pintu: kasir petshop (POS), pesanan online, dan tagihan klinik.
-          Omzet sudah dikurangi retur penjualan, dan tagihan klinik yang dibatalkan tidak ikut dihitung.<br />
+          Transaksi menggabungkan empat pintu: kasir petshop (POS), pesanan online, tagihan klinik, dan
+          faktur penjualan grosir. Omzet sudah dikurangi retur penjualan, dan tagihan klinik yang
+          dibatalkan tidak ikut dihitung.<br />
+          Faktur grosir dihitung pada tanggal fakturnya meski belum dibayar; faktur batal, faktur yang
+          sudah diganti faktur koreksi, faktur saldo awal, dan faktur selisih stok dari opname tidak ikut.
+          Grosir tidak punya dokumen retur sendiri — pengurangan nilainya lewat koreksi faktur.<br />
           Nilai memakai total dokumen setelah diskon, termasuk pajak/biaya yang sudah ada pada dokumen; bukan laporan nilai sebelum pajak atau arus kas.<br />
           Dasar tanggal adalah tanggal dokumen penjualan menurut WIB. Retur mengikuti struk asal, termasuk retur yang dicatat setelah hari penjualan; laporan ini bukan arus kas/refund per hari.<br />
           &quot;Pelanggan dilayani&quot; = pelanggan berkartu yang berbeda, ditambah tiap struk pembeli umum

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { EmployeePicker } from "@/components/EmployeePicker";
 import { simpanAbsensi } from "./actions";
 
 type Rel<T> = T | T[] | null;
@@ -116,15 +117,9 @@ export default async function AbsensiPage({
         <form action={simpanAbsensi}>
           <div className="grid2">
             <div>
-              <label className="flab">Karyawan *</label>
-              <select className="fi" name="employee_id" required>
-                <option value="">Pilih karyawan aktif</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nama}{e.jabatan ? ` — ${e.jabatan}` : ""}
-                  </option>
-                ))}
-              </select>
+              <label className="flab" htmlFor="absensi-employee">Karyawan *</label>
+              <EmployeePicker inputId="absensi-employee" name="employee_id" required employees={employees}
+                placeholder="Ketik nama atau jabatan karyawan aktif…" />
             </div>
             <div>
               <label className="flab">Tanggal *</label>

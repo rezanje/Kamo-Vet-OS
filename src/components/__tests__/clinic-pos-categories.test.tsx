@@ -55,6 +55,26 @@ async function search(label: string, value: string) {
     control.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+/** Daftar bahan/BMHP memakai pemilih berportal: isi kata kunci lalu baca pilihannya. */
+async function bukaPemilih(label: string, query: string) {
+  const picker = host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  expect(picker, label).not.toBeNull();
+  await act(async () => {
+    picker.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(picker, query);
+    picker.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  return picker;
+}
+const opsiBahan = async (label: string, query: string) => {
+  await bukaPemilih(label, query);
+  return [...document.querySelectorAll('[role="option"]')].map(option => option.textContent ?? "");
+};
+async function pilihBahan(label: string, query: string) {
+  const picker = await bukaPemilih(label, query);
+  await act(async () => picker.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+  await act(async () => picker.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+}
 const cart = () => JSON.parse(host.querySelector<HTMLInputElement>('input[name="resep"]')!.value);
 // Tindakan dan racikan kini digabung pada satu tab.
 const TINDAKAN = "Tindakan & Racikan";
@@ -64,12 +84,12 @@ it.each(["exam", "inpatient"])("%s picks catalog actions and restores unchanged 
   expect([...host.querySelectorAll("button")].some(button => button.textContent?.trim() === "Paket")).toBe(false);
   await tab(TINDAKAN);
   expect(host.textContent).toContain("Steril"); expect(host.textContent).not.toContain("Konsultasi");
-  await search("Cari tindakan", "Konsultasi");
+  await search("Cari tindakan / racikan", "Konsultasi");
   expect(host.textContent).not.toContain("Steril");
-  await search("Cari tindakan", "Steril");
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril"]')!.click());
+  await search("Cari tindakan / racikan", "Steril");
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Steril"]')!.click());
   expect(cart()).toEqual([]);
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah tindakan Steril ke keranjang"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Steril ke keranjang"]')!.click());
   expect(cart()).toEqual([expect.objectContaining({ item_id: "steril", harga: 75000, qty: 1, jenis: "jasa", kategori: "Operasi" })]);
   await tab("Jasa");
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Tambah Konsultasi"]')!.click());
@@ -133,28 +153,33 @@ it.each(["exam", "inpatient"])("%s finds an inventory medicine by master code or
   expect(host.textContent).toContain("1 obat · 1/1");
 });
 
-it.each(["exam", "inpatient"])("%s searches only finished compounds and designated ingredients in Racikan", async kind => {
+it.each(["exam", "inpatient"])("%s offers procedures and finished compounds in one picker, with designated ingredients only", async kind => {
   await render(kind); await tab(TINDAKAN);
-  await search("Cari obat racik", "Obat");
+  // Satu pemilih: tindakan dan obat racik dicari di kolom yang sama.
+  await search("Cari tindakan / racikan", "Obat");
   expect(host.querySelector('button[aria-label="Pilih Obat Racik Sirup"]')).not.toBeNull();
   expect(host.querySelector('button[aria-label="Pilih Vaksin"]')).toBeNull();
-  await search("Cari bahan racikan", "Bahan");
-  expect(host.querySelector('button[aria-label="Pilih bahan Bahan diizinkan"]')).not.toBeNull();
-  await search("Cari bahan racikan", "Makanan");
-  expect(host.querySelector('button[aria-label="Pilih bahan Makanan kucing"]')).toBeNull();
+  await search("Cari tindakan / racikan", "Steril");
+  expect(host.querySelector('button[aria-label="Pilih Steril"]')).not.toBeNull();
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Steril"]')!.click());
+  // Tindakan: daftar bahan diisi dari BMHP, bukan dari bahan racikan.
+  expect(await opsiBahan("Tambah BMHP Steril", "Makanan")).toEqual(["Makanan kucing (stok 5 pcs)"]);
+  await search("Cari tindakan / racikan", "Obat Racik");
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Obat Racik Sirup"]')!.click());
+  expect(await opsiBahan("Tambah bahan Obat Racik Sirup", "Bahan")).toEqual(["Bahan diizinkan (stok 5 pcs)"]);
+  expect(await opsiBahan("Tambah bahan Obat Racik Sirup", "Makanan")).toEqual([]);
 });
 
 it.each(["exam", "inpatient"])("%s retains a doctor-selected patient composition for a finished compound after draft reload", async kind => {
   await render(kind); await tab(TINDAKAN);
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih Obat Racik Sirup"]')!.click());
-  await search("Cari bahan racikan", "Bahan");
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Pilih bahan Bahan diizinkan"]')!.click());
+  await pilihBahan("Tambah bahan Obat Racik Sirup", "Bahan");
   const quantity = host.querySelector<HTMLInputElement>('input[aria-label="Jumlah bahan Bahan diizinkan"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(quantity, "2");
     quantity.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const add = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.includes("Tambah racikan ke keranjang"))!;
+  const add = [...host.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "Tambah ke keranjang")!;
   await act(async () => add.click());
   const expected = [expect.objectContaining({ sale_item_id: "compound", item_id: null, jenis: "racikan",
     ingredients: [expect.objectContaining({ item_id: "ingredient", qty: 2 })] })];

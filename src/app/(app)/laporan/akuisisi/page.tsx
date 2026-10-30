@@ -208,7 +208,9 @@ export default async function AkuisisiPage({
           Struk yang identitas pembelinya tidak dicatat dilaporkan terpisah dan TIDAK ikut membagi
           porsi — kalau ikut, pelanggan lama terlihat menyusut padahal cuma tidak dicatat namanya.
           Di cabang yang angka &quot;tanpa identitas&quot;-nya besar, porsi di sebelah kanan belum bisa
-          dipercaya penuh; itu tanda kasirnya perlu dibiasakan menanyakan nama pelanggan.
+          dipercaya penuh; itu tanda kasirnya perlu dibiasakan menanyakan nama pelanggan.<br />
+          Riwayatnya menggabungkan struk kasir, pesanan online, tagihan klinik, dan faktur penjualan
+          grosir, jadi pelanggan reseller juga punya tanggal belanja pertama di sini.
         </div>
       </div>
     </LaporanPage>

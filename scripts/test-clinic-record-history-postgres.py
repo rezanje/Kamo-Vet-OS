@@ -15,6 +15,8 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+# Single source of the exact hosted auth.uid() (fingerprinted by migration 20261101120000).
+HOSTED_AUTH_UID = (ROOT / 'supabase/tests/fixtures/hosted_auth_uid.sql').read_text()
 BIN = Path(sys.argv[1] if len(sys.argv) > 1 else '/opt/homebrew/opt/postgresql@16/bin')
 WORK = Path(tempfile.mkdtemp(prefix='vetos-k13-k01-'))
 DATA, SOCK, PORT = WORK / 'data', WORK / 'sock', '54331'
@@ -41,7 +43,7 @@ try:
     sql("""create role anon; create role authenticated; create role service_role bypassrls;
 create schema auth; create schema storage;
 create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
-create function auth.uid() returns uuid language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid$$;
+""" + HOSTED_AUTH_UID + """
 create function auth.role() returns text language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'role')$$;
 create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb)$$;
 create table storage.buckets(id text primary key,name text,public boolean);

@@ -18,6 +18,7 @@ function find(node: React.ReactNode, type: string, ariaLabel?: string): React.Re
 }
 const row={deskripsi:"Fiction medicine",qty:2,harga:1000,item_id:"item",satuan:"PCS"};
 const master=[{id:"item",code:"FIC",name:"Fiction medicine",unit:"PCS",harga:1000,units:[{unit:"PCS",factor:1,sell_price:1000,buy_price:500},{unit:"box",factor:10,sell_price:9000,buy_price:5000}]}];
+it('locks stage discounts only in inpatient cart while outpatient stays editable',()=>{const html=renderToStaticMarkup(<ItemTable title="OBAT" icon="pill" color="black" rows={[row]} setRows={()=>{}} master={master} listId="stage" discountsDisabled/>);expect(html).toMatch(/aria-label="Diskon Fiction medicine"[^>]*readOnly=""/i);});
 describe("clinic payment units",()=>{
   it("changes manual unit and branch unit price while preserving entered quantity",()=>{
     let updated: typeof row[]=[];
@@ -50,6 +51,14 @@ describe("clinic salesperson form",()=>{
     const html=renderToStaticMarkup(React.createElement(PembayaranForm,{...props,editMode:true,sealedSalespersonName:"Original Doctor"}));
     expect(html).not.toContain('name="salesperson_id"');expect(html).toContain("Original Doctor");
   });
+});
+
+it("offers an explicit inpatient decision with plan/type on payment, never infers it from services",()=>{
+ const html=renderToStaticMarkup(React.createElement(PembayaranForm,{...props,allowDpAdmission:true}));
+ expect(html).toContain('name="admit_after_dp"');expect(html).not.toContain('name="admit_after_dp" checked=""');
+ const intended=renderToStaticMarkup(React.createElement(PembayaranForm,{...props,allowDpAdmission:true,initialDpAdmission:true}));
+ expect(intended).toContain('name="treatment_plan"');expect(intended).toContain('name="stay_type"');
+ expect(intended).toContain('name="admit_after_dp"');
 });
 
 it("shows the automatic customer fee and recorded recipients before DEMO payment",()=>{

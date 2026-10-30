@@ -8,6 +8,8 @@
 // Semua qty di sini dalam SATUAN DOKUMEN (satuan yang dipilih saat meminta).
 // Saldo `stock.qty` di database selalu satuan dasar, jadi dibagi faktor dulu.
 
+import type { BarisKurangStok } from "./stok-kurang";
+
 export type BarisPermintaan = {
   id: string;
   nama: string;
@@ -70,19 +72,17 @@ export function siapkanKirim(
   });
 }
 
-const angka = (v: number) =>
-  Number(v.toFixed(6)).toLocaleString("id-ID", { maximumFractionDigits: 6 });
-
 /**
- * Pesan untuk petugas gudang: per barang, berapa yang dibutuhkan dan berapa yang ada.
- * Dikumpulkan per barang (bukan per baris) supaya angkanya cocok dengan database,
+ * Kekurangan per BARANG (bukan per baris), supaya angkanya cocok dengan database
  * yang juga menjumlahkan baris dengan barang sama sebelum membandingkan stok.
+ * Hasilnya baris terstruktur — kalimat untuk `?error=` dibentuk pemanggil lewat
+ * `formatKekuranganStok`, dan popup memakai barisnya langsung.
  */
-export function pesanKurangStok(
+export function kurangStokPermintaan(
   rows: BarisKirim[],
   stokDasarPerItem: Map<string, number>,
-): string | null {
-  const perItem = new Map<string, { nama: string; satuan: string; faktor: number; butuh: number; ada: number }>();
+): BarisKurangStok[] {
+  const perItem = new Map<string, { kunci: string; nama: string; satuan: string; faktor: number; butuh: number; ada: number }>();
   for (const r of rows) {
     if (r.plafon <= 0) continue;
     const key = r.item_id ?? r.id;
@@ -90,6 +90,7 @@ export function pesanKurangStok(
     const ada = perItem.get(key);
     if (ada) ada.butuh += r.plafon * faktor;
     else perItem.set(key, {
+      kunci: r.id,
       nama: r.nama,
       satuan: r.satuan ?? "",
       faktor,
@@ -97,11 +98,12 @@ export function pesanKurangStok(
       ada: Math.max(0, n(stokDasarPerItem.get(key) ?? 0)),
     });
   }
-  const kurang = [...perItem.values()].filter((t) => t.butuh > t.ada + 1e-9);
-  if (!kurang.length) return null;
-  return kurang
-    .map((t) => `${t.nama} butuh ${angka(t.butuh / t.faktor)} ${t.satuan}, tersedia ${angka(t.ada / t.faktor)} ${t.satuan}`.trimEnd())
-    .join("; ");
+  return [...perItem.entries()]
+    .filter(([, t]) => t.butuh > t.ada + 1e-9)
+    .map(([itemId, t]) => ({
+      kunci: t.kunci, item_id: itemId, nama: t.nama, satuan: t.satuan,
+      butuh: t.butuh / t.faktor, tersedia: t.ada / t.faktor,
+    }));
 }
 
 /** Baca qty kirim dari form. Baris tanpa isian dianggap sebanyak usulannya. */

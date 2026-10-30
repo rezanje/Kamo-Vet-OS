@@ -8,6 +8,8 @@ import argparse
 import time
 import uuid
 ROOT = Path(__file__).resolve().parents[1]
+# Single source of the exact hosted auth.uid() (fingerprinted by migration 20261101120000).
+HOSTED_AUTH_UID = (ROOT / 'supabase/tests/fixtures/hosted_auth_uid.sql').read_text()
 CONTAINER = 'vetos-master-lifecycle-' + uuid.uuid4().hex[:8]
 parser=argparse.ArgumentParser()
 parser.add_argument('--compatibility-migration',action='append',default=[])
@@ -22,7 +24,7 @@ def sql(source, check=True, tuples=False):
 BOOT = """create role anon; create role authenticated; create role service_role bypassrls;
 create schema auth; create schema storage;
 create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
-create function auth.uid() returns uuid language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid$$;
+""" + HOSTED_AUTH_UID + """
 create function auth.role() returns text language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'role')$$;
 create table storage.buckets(id text primary key,name text,public boolean);
 create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text,owner uuid);

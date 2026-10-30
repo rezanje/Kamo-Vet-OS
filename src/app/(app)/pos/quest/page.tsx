@@ -24,7 +24,7 @@ export default async function QuestAdminPage({
   const [{ data: defs }, { data: rewards }, { data: redemptions }, branches, items] = await Promise.all([
     supabase.from("staff_quest_definitions").select("id, quest_type, title, target_kind, target_value, points_reward, is_active, branches(name)").order("created_at", { ascending: false }),
     supabase.from("staff_reward_catalog").select("id, reward_name, reward_type, points_cost, is_active").order("points_cost"),
-    supabase.from("staff_reward_redemptions").select("id, points_spent, status, redeemed_at, profiles(full_name), staff_reward_catalog(reward_name)").order("redeemed_at", { ascending: false }).limit(20),
+    supabase.from("staff_reward_redemptions").select("id, points_spent, status, redeemed_at, profiles!staff_reward_redemptions_staff_id_fkey(full_name), staff_reward_catalog(reward_name)").order("redeemed_at", { ascending: false }).limit(20),
     readCompleteList<{ id: string; name: string }>((from, to) => supabase.from("branches")
       .select("id, name", { count: "exact" }).eq("is_active", true)
       .order("name").order("id").range(from, to), "Cabang target quest", { maxRows: null }),

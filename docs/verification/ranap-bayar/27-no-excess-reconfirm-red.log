@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /opt/data/kamo-wt-ranap-bayar
+
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx (7 tests | 1 failed) 219ms
+   × changed quote with no excess still requires reviewing current balance, not false credit 21ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/ranap-simpan-bayar.test.tsx > changed quote with no excess still requires reviewing current balance, not false credit
+AssertionError: expected 'Periksa pembayaranSisa tagihan terkin…' to contain 'Tagihan berubah'
+
+Expected: "Tagihan berubah"
+Received: "Periksa pembayaranSisa tagihan terkini: Rp 200.000Uang diterima: Rp 150.000Lebih Rp 0 disimpan sebagai saldo pemilikBatalSetuju, simpan saldo pemilik"
+
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:52:30
+     50|   save.mockResolvedValue({ status: "OVERPAYMENT_CONFIRM_REQUIRED", quo…
+     51|   await submit(); const dialog = host.querySelector('[role="dialog"]')…
+     52|   expect(dialog.textContent).toContain("Tagihan berubah"); expect(dial…
+       |                              ^
+     53|   expect(button("Setuju, lanjutkan pembayaran")).toBeDefined();
+     54| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 6 passed (7)
+   Start at  09:05:51
+   Duration  933ms (transform 126ms, setup 0ms, import 183ms, tests 219ms, environment 332ms)

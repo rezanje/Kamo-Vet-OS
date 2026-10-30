@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { sisaTransit } from "@/lib/pemindahan";
+import { bolehBatalKirim, sisaTransit } from "@/lib/pemindahan";
 import { TerimaForm } from "./TerimaForm";
+import { BatalKirimForm } from "./BatalKirimForm";
 
 const STATUS_BADGE: Record<string, string> = {
   "Sedang dikirim": "b",
@@ -22,6 +23,9 @@ type Doc = {
   status: string | null;
   keterangan: string | null;
   source_transfer_id: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  pembatal: { full_name: string | null } | null;
   from: Wh;
   to: Wh;
   stock_transfer_items: ItemRow[] | null;
@@ -29,6 +33,8 @@ type Doc = {
 
 const fmtD = (d: string) =>
   new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
+const fmtDt = (iso: string) =>
+  new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 export default async function PemindahanDetailPage({
   params,
@@ -45,7 +51,8 @@ export default async function PemindahanDetailPage({
   const { data: docRaw } = await supabase
     .from("stock_transfers")
     .select(
-      "id, no_pemindahan, proses, tanggal, status, keterangan, source_transfer_id, " +
+      "id, no_pemindahan, proses, tanggal, status, keterangan, source_transfer_id, cancelled_at, cancel_reason, " +
+        "pembatal:profiles!stock_transfers_cancelled_by_fkey(full_name), " +
         "from:warehouses!stock_transfers_from_warehouse_id_fkey(code, name), " +
         "to:warehouses!stock_transfers_to_warehouse_id_fkey(code, name), " +
         "stock_transfer_items(item_id, qty, selected_qty, satuan, faktor, items(code, name, unit))",
@@ -63,6 +70,8 @@ export default async function PemindahanDetailPage({
   // sisa Transit (hanya relevan utk dokumen Kirim)
   let sisa: Record<string, number> = {};
   let sourceNo: string | null = null;
+  // Jumlah dokumen Terima Barang yang lahir dari dokumen ini — dasar boleh/tidaknya dibatalkan.
+  let penerimaan = 0;
   if (isKirim) {
     const dikirim: Record<string, number> = {};
     for (const r of items) dikirim[r.item_id] = (dikirim[r.item_id] ?? 0) + Number(r.qty);
@@ -71,6 +80,7 @@ export default async function PemindahanDetailPage({
       .select("stock_transfer_items(item_id, qty)")
       .eq("source_transfer_id", id);
     const diterima: Record<string, number> = {};
+    penerimaan = (prev ?? []).length;
     for (const d of prev ?? [])
       for (const r of d.stock_transfer_items ?? []) diterima[r.item_id] = (diterima[r.item_id] ?? 0) + Number(r.qty);
     sisa = sisaTransit(dikirim, diterima);
@@ -81,6 +91,7 @@ export default async function PemindahanDetailPage({
   }
 
   const totalQty = items.reduce((a, r) => a + Number(r.qty), 0);
+  const bolehBatal = bolehBatalKirim({ proses: doc.proses, status: doc.status, penerimaan });
 
   return (
     <>
@@ -101,6 +112,15 @@ export default async function PemindahanDetailPage({
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+
+      {doc.cancelled_at && (
+        <div role="status" className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#991b1b" }}>
+          <strong>DIBATALKAN</strong> pada {fmtDt(doc.cancelled_at)}
+          {doc.pembatal?.full_name ? ` oleh ${doc.pembatal.full_name}` : ""}.
+          {doc.cancel_reason ? ` Alasan: ${doc.cancel_reason}.` : ""} Barang sudah kembali ke gudang asal
+          dengan harga pokok aslinya; dokumen ini tetap tersimpan sebagai bukti.
         </div>
       )}
 
@@ -184,6 +204,8 @@ export default async function PemindahanDetailPage({
             }))}
         />
       )}
+
+      {bolehBatal && <BatalKirimForm userId={user?.id ?? ""} transferId={doc.id} nomor={doc.no_pemindahan} />}
     </>
   );
 }

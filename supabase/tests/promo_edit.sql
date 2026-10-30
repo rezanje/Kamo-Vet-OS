@@ -93,8 +93,20 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
 select pg_temp.reject_like($q$select read_promo_edit(md5('c01')::uuid)$q$,'Hanya owner');
 select pg_temp.reject_like($q$select edit_promo(md5('c01')::uuid,'spoof',pg_temp.payload(),array[]::uuid[])$q$,'Hanya owner');
-select pg_temp.reject_like($q$update promos set name='Spoof' where id=md5('c01')::uuid$q$,'Hanya owner');
-select pg_temp.reject_like($q$delete from promo_items where promo_id=md5('c01')::uuid$q$,'Hanya owner');
+-- Sejak master promo dikunci OWNER/ADMIN di tingkat RLS (20261031090000), UPDATE
+-- dan DELETE langsung dari STAFF tidak lagi MELEDAK: barisnya tersaring lebih
+-- dulu sehingga triggernya tidak pernah jalan. Yang harus tetap benar adalah
+-- hasilnya — tidak ada satu pun tulisan yang lolos. INSERT masih meledak karena
+-- trigger BEFORE INSERT jalan sebelum WITH CHECK RLS.
+do $$declare nama text;anak bigint;begin
+ select name into nama from promos where id=md5('c01')::uuid;
+ select count(*) into anak from promo_items where promo_id=md5('c01')::uuid;
+ update promos set name='Spoof' where id=md5('c01')::uuid;
+ delete from promo_items where promo_id=md5('c01')::uuid;
+ perform pg_temp.assert_ok((select name from promos where id=md5('c01')::uuid)=nama
+  and (select count(*) from promo_items where promo_id=md5('c01')::uuid)=anak,
+  'STAFF direct DML on promo master is filtered away by RLS: nothing written');
+end$$;
 select pg_temp.reject_like($q$insert into promos(name,promo_type) values('Spoof','bundling')$q$,'Hanya owner');
 reset role;
 select set_config('request.jwt.claim.sub','',true);

@@ -9,6 +9,7 @@
 type AnyClient = any;
 import { clinicalRoles, type ClinicalRole } from './clinical-staff';
 import { hariIniWIB } from './tanggal';
+import { saringanPenugasanAktif } from './employee-assignment';
 
 export type PilihanDokter = { id: string; nama: string; jabatan: string | null; jaga?: boolean };
 
@@ -28,10 +29,12 @@ export async function daftarDokter(
   if(error)throw Error('Daftar karyawan belum dapat dimuat');
 
   if (konteks?.branchId && semua.length) {
+    const hariIni = hariIniWIB();
     const { data: assignments, error: assignmentError } = await supabase
       .from("employee_branch_assignments").select("employee_id")
       .eq("branch_id", konteks.branchId)
-      .lte("effective_date", hariIniWIB())
+      .lte("effective_date", hariIni)
+      .or(saringanPenugasanAktif(hariIni))
       .in("employee_id", semua.map((e) => e.id));
     if(assignmentError)throw Error('Penugasan cabang belum dapat dimuat');
     const assigned = new Set((assignments ?? []).map((r: { employee_id: string }) => r.employee_id));

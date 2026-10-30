@@ -14,6 +14,7 @@ import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { ProductionAdhocForm } from "./ProductionAdhocForm";
 import { hrefDokumen, hrefNomorModul, hrefPerintahProduksi } from "@/lib/tautan-dokumen";
 import { ListPagination } from "@/components/ListPagination";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 // Produksi own brand: resep → perintah (bahan keluar) → penyelesaian (barang jadi
 // masuk). Satu halaman karena ketiganya dipakai berurutan oleh orang yang sama;
@@ -148,6 +149,7 @@ export default async function ProduksiPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      <StokKurangDariPesan pesan={error} />
 
       {sourceFailed && <div role="alert" className="p2ban">Bukti sumber produksi belum dapat diperiksa. Penyelesaian ditahan; muat ulang sebelum melanjutkan.</div>}
 

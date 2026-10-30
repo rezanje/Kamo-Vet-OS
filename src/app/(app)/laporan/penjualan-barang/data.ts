@@ -1,10 +1,12 @@
 import { readReportRows } from "@/lib/hpp-reports-server";
-import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { lineDiscount } from "@/lib/pos-calc";
 import { PosDecimal } from "@/lib/pos-money";
-import { jenisBarisKlinik, kunciRacikan, SEMUA_JENIS_KLINIK, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
+import { jenisBarisKlinik, SEMUA_JENIS_KLINIK, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
+import { namaRacikanPerKunjungan } from "@/lib/racikan-klinik-server";
+import type { Kanal } from "@/lib/laporan-transaksi";
+import { fakturGrosirOmzet, hppBarisGrosir, nilaiBarisGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "@/lib/laporan-grosir";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 
@@ -44,8 +46,18 @@ type SaleItem = {
     branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
   }>;
 };
+/** Faktur grosir seperti dibaca baris item: cukup untuk menyaring dan menamai barisnya. */
+type FakturGrosirBaris = FakturGrosirInti & {
+  no_faktur: string | null; branch_id: string | null; tanggal: string;
+  branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
+};
+type GrosirItem = {
+  id: string; nama: string; satuan: string | null; qty: number; harga: number;
+  diskon: number | null; hpp: number | null; item_id: string | null;
+  sales_invoices: Rel<FakturGrosirBaris>;
+};
 export type Baris = {
-  id: string; waktu: string; dokumen: string; href: string; kanal: "POS" | "Online" | "Klinik";
+  id: string; waktu: string; dokumen: string; href: string; kanal: Kanal;
   jenis: JenisBarisPenjualan; cabang: string; cabangId: string | null; pelanggan: string; hewan: string;
   nama: string; pelaksana: string; qty: number; harga: number; diskon: number; nilai: number; status: string;
   pelaksanaIds?: string[];
@@ -97,7 +109,7 @@ function alokasiNetoBaris(bases: InstanceType<typeof PosDecimal>[], target: Inst
 
 
 export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId = "", pelaksanaId = "" }: {
-  dari: string; sampai: string; kanal: "POS" | "Online" | "Klinik";
+  dari: string; sampai: string; kanal: Kanal;
   jenis: string; q: string; cabangId?: string; pelaksanaId?: string;
 }): Promise<{ rows: Baris[]; cabangOptions: { id: string; name: string }[]; pelaksanaOptions: PilihanPelaksana[]; pesanError: string; nilaiTotal: number; qtyTotal: number }> {
   const tanggalSalah = !tanggalValid(dari) || !tanggalValid(sampai) || dari > sampai;
@@ -111,7 +123,8 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
       const supabase = await createClient();
       const bacaKlinik = kanal === "Klinik";
       const bacaKasir = kanal === "POS" || kanal === "Online";
-      const [invoiceItems, saleItems] = await Promise.all([
+      const bacaGrosir = kanal === "Grosir";
+      const [invoiceItems, saleItems, grosirItems] = await Promise.all([
         bacaKlinik ? readReportRows<InvoiceItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("invoice_items")
             .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, bmhp_components, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, subtotal, discount, voided_at, visits(branch_id, branches(name), customers(name), pets(name)))", { count: "exact" })
@@ -127,6 +140,14 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
             .order("id").range(awal, ujung);
           return { data: data as unknown as SaleItem[] | null, error, count };
         }) : Promise.resolve([] as SaleItem[]),
+        // Faktur grosir disaring lewat tanggal faktur (date, sudah WIB), bukan created_at.
+        bacaGrosir ? readReportRows<GrosirItem>(async (awal, ujung) => {
+          const { data, error, count } = await supabase.from("sales_invoice_items")
+            .select(`id, nama, satuan, qty, harga, diskon, hpp, item_id, sales_invoices!inner(${SELECT_FAKTUR_GROSIR}, branches(name), customers(name))`, { count: "exact" })
+            .gte("sales_invoices.tanggal", dari).lte("sales_invoices.tanggal", sampai)
+            .order("id").range(awal, ujung);
+          return { data: data as unknown as GrosirItem[] | null, error, count };
+        }) : Promise.resolve([] as GrosirItem[]),
       ]);
 
       const clinicLines = new Map<string, InvoiceItem[]>();
@@ -190,25 +211,10 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
 
       // Invoice menyimpan nama racikan sebagai baris obat biasa. Cocokkan nama
       // dengan resep di kunjungan sama agar racikan terpisah dari obat ketikan.
-      const visitIds = [...new Set(invoiceItems.flatMap((item) => {
+      const namaRacikan = await namaRacikanPerKunjungan(supabase, invoiceItems.flatMap((item) => {
         const visitId = one(item.invoices)?.visit_id;
         return visitId ? [visitId] : [];
-      }))];
-      const medicalRecords: { id: string; visit_id: string }[] = [];
-      for (const batch of potong(visitIds)) {
-        const { data } = await completeReportQuery(supabase.from("medical_records").select("id, visit_id", { count: "exact" }).in("visit_id", batch));
-        medicalRecords.push(...(data ?? []));
-      }
-      const visitPerRecord = new Map(medicalRecords.map((record) => [record.id, record.visit_id]));
-      const namaRacikan = new Set<string>();
-      for (const batch of potong(medicalRecords.map((record) => record.id))) {
-        const { data } = await completeReportQuery(supabase.from("compounding_recipes")
-          .select("id, medical_record_id, recipe_name", { count: "exact" }).in("medical_record_id", batch));
-        for (const recipe of data ?? []) {
-          const visitId = visitPerRecord.get(recipe.medical_record_id);
-          if (visitId) namaRacikan.add(kunciRacikan(visitId, recipe.recipe_name));
-        }
-      }
+      }));
 
       for (const item of invoiceItems) {
         const invoice = one(item.invoices);
@@ -275,6 +281,38 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
           pelaksana: item.service_performers ? servicePerformerNames(item.service_performers).join(" · ") : "—",
           pelaksanaIds: pelaksana.ids,
           qty, harga, diskon: new PosDecimal(qty).times(harga).minus(nilai).toNumber(), nilai, status: "—",
+        });
+      }
+      // Faktur batal, faktur yang sudah diganti faktur koreksi, faktur saldo awal, dan
+      // faktur selisih stok opname disaring sekaligus dari kumpulan faktur induknya.
+      const fakturGrosir = new Map<string, FakturGrosirBaris>();
+      for (const item of grosirItems) {
+        const faktur = one(item.sales_invoices);
+        if (!faktur?.id) throw new Error("Faktur grosir sumber baris laporan tidak dapat diverifikasi.");
+        fakturGrosir.set(faktur.id, faktur);
+      }
+      const grosirDihitung = new Set(fakturGrosirOmzet([...fakturGrosir.values()]).map(faktur => faktur.id));
+      for (const item of grosirItems) {
+        const faktur = one(item.sales_invoices)!;
+        if (!grosirDihitung.has(faktur.id)) continue;
+        const qty = Number(item.qty) || 0;
+        const harga = Number(item.harga) || 0;
+        const nilai = nilaiBarisGrosir(item);
+        const hpp = hppBarisGrosir(item);
+        rows.push({
+          id: `grosir-${item.id}`,
+          // Faktur hanya menyimpan tanggal, bukan jam; dipatok awal hari WIB.
+          waktu: `${faktur.tanggal}T00:00:00+07:00`,
+          dokumen: faktur.no_faktur ?? "—",
+          href: `/penjualan/faktur/${faktur.id}`, kanal: "Grosir", jenis: "Barang",
+          cabang: one(faktur.branches)?.name ?? "—", cabangId: faktur.branch_id ?? null,
+          pelanggan: one(faktur.customers)?.name ?? "—", hewan: "—",
+          nama: item.nama, pelaksana: "—", pelaksanaIds: [],
+          qty, harga, diskon: Number(item.diskon) || 0, nilai,
+          satuan: item.satuan ?? undefined,
+          ...(hpp === null ? {} : { hpp }),
+          // Akrual: faktur berjalan tetap omzet, statusnya saja yang belum lunas.
+          status: (faktur.status ?? "").trim().toLowerCase() === "lunas" ? "Lunas" : "Belum lunas",
         });
       }
     } catch (error) {

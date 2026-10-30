@@ -1,5 +1,5 @@
 import type { ClinicalCorrection } from "@/lib/clinical-correction";
-import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
+import { servicePerformerNames } from "@/lib/service-performers";
 import { loadBranchGroomingPolicy, loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
@@ -27,6 +27,11 @@ import { readCompleteList } from "@/lib/checked-list";
 import { Popup } from "@/components/Popup";
 import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
 import { tambahAdendumRekamMedis } from "./actions";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
+import { adalahKekuranganStok } from "@/lib/stok-kurang";
+import { adalahRiwayatBersama, bacaDetailRiwayatBersama, ownerAktif } from "@/lib/riwayat-bersama";
+import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
+import { RekamMedisGagalDimuat, RiwayatBersamaDetail } from "./RiwayatBersamaDetail";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -52,17 +57,17 @@ export default async function RekamMedisPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; racikan?: string; success?: string; edit?: string }>;
+  searchParams: Promise<{ error?: string; racikan?: string; success?: string; edit?: string; tab?: string }>;
 }) {
   const { visitId } = await params;
-  const { error, racikan, success, edit } = await searchParams;
+  const { error, racikan, success, edit, tab } = await searchParams;
   const supabase = await createClient();
   // U07: semua bacaan yang cuma butuh visitId jalan bareng dalam satu putaran.
   // Dulu halaman ini antre ±12 perjalanan ke database satu per satu, dan halaman
   // ini ikut dirender ulang tiap kali rekam medis disimpan.
   const [
     { data: { user } },
-    { data: visit },
+    { data: visit, error: visitError },
     latestRecord,
     latestInvoice,
     [{ data: inpatient, error: inpatientError }, { data: referralRows }],
@@ -74,7 +79,7 @@ export default async function RekamMedisPage({
     supabase.auth.getUser(),
     supabase
       .from("visits")
-      .select("id, pet_id, branch_id, poli, status, dokter, doctor_id, keluhan, created_at, source, checked_in_at, service_started_at, service_finished_at, checked_out_at, service_provider_id, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
+      .select("id, pet_id, branch_id, legacy_source_key, poli, status, dokter, doctor_id, keluhan, created_at, source, checked_in_at, service_started_at, service_finished_at, checked_out_at, service_provider_id, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
       .eq("id", visitId)
       .maybeSingle(),
     // Rekam medis & invoice terakhir: dipakai hanya bila kunjungan sudah tersimpan,
@@ -114,6 +119,31 @@ export default async function RekamMedisPage({
   ]);
   const draftUserId = user?.id ?? "";
 
+  // RS-2: riwayat bersama hasil impor dibuka OWNER lewat pembaca baca-saja, dengan tampilan yang sama di cabang
+  // aktif (SELECT biasa kosong) maupun "Semua cabang" (SELECT biasa melihatnya). Peran lain tidak berubah.
+  // Gagal dimuat ≠ tidak ada: hanya jawaban kosong yang menjadi notFound.
+  if (!visit || adalahRiwayatBersama(visit)) {
+    let owner: boolean;
+    try { owner = await ownerAktif(supabase, user?.id); }
+    catch { return <RekamMedisGagalDimuat />; }
+    if (owner) {
+      const shared = await bacaDetailRiwayatBersama(supabase, visitId);
+      if (shared.status === "gagal") return <RekamMedisGagalDimuat />;
+      if (shared.status === "tidak-ada") {
+        // Terlihat di SELECT biasa tapi ditolak pembaca (relasi tidak konsisten), atau bacaan biasa galat.
+        if (visit || visitError) return <RekamMedisGagalDimuat />;
+        notFound();
+      }
+      const { data: sharedPet, error: petError } = await supabase.from("pets")
+        .select("id, customer_id, name, species, breed, customers(name, phone)").eq("id", shared.row.pet_id).maybeSingle();
+      if (petError || !sharedPet || sharedPet.customer_id !== shared.row.customer_id) return <RekamMedisGagalDimuat />;
+      const pemilik = one(sharedPet.customers as Rel<{ name: string; phone: string | null }>);
+      const pemilikTidakSah = isPlaceholderOwnerName(pemilik?.name);
+      return <RiwayatBersamaDetail row={shared.row} petName={sharedPet.name ?? "—"} species={sharedPet.species ?? null} breed={sharedPet.breed ?? null}
+        ownerName={pemilikTidakSah ? "Pemilik perlu verifikasi" : pemilik?.name ?? "—"} phone={pemilikTidakSah ? "" : pemilik?.phone ?? ""} />;
+    }
+  }
+  if (visitError) return <RekamMedisGagalDimuat />;
   if (!visit) notFound();
 
   const pet = one(visit.pets);
@@ -126,7 +156,7 @@ export default async function RekamMedisPage({
   let mrId: string | null = null;
   let mrLoadFailed = false;
   let correctionDataFailed = false;
-  let resep: { nama_obat: string; qty: number; satuan?: string | null; aturan_pakai: string | null; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[] = [];
+  let resep: ClinicalCorrection["prescriptions"] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
     mrLoadFailed = !!latestRecord.error;
@@ -144,7 +174,7 @@ export default async function RekamMedisPage({
     recorded && mrId ? Promise.all([
       supabase
         .from("prescription_items")
-        .select("nama_obat, qty, satuan, aturan_pakai, jenis, service_performers")
+        .select("id, item_id, nama_obat, qty, harga, satuan, faktor, aturan_pakai, jenis, kategori, service_performers, compound_recipe_id, bmhp_components")
         .eq("medical_record_id", mrId)
         .order("created_at"),
       // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
@@ -157,7 +187,7 @@ export default async function RekamMedisPage({
         ? supabase.rpc("clinic_can_correct_record", { p_record_id: mrId })
         : Promise.resolve({ data: false, error: null }),
     ]) : null,
-    !recorded ? Promise.all([
+    !recorded || (edit === mrId && menungguBayar && !visit.checked_out_at && !latestInvoice.data && !latestInvoice.error) ? Promise.all([
       loadServiceStaff(supabase, visit.branch_id ?? null),
       daftarDokter(supabase, { branchId: visit.branch_id }),
       loadKatalogRacikan(),
@@ -181,13 +211,33 @@ export default async function RekamMedisPage({
   const providerOpsi = recorded ? [] : performersForService(dokterOpsi, visit.poli);
 
   // Koreksi hanya bila resep & racikan juga terbaca (syarat lama tetap berlaku).
-  const canCorrect = !correctionDataFailed && correctionCheck.data === true && !correctionCheck.error;
+  const canCorrect = !correctionDataFailed && correctionCheck.data === true && !correctionCheck.error
+    && !latestInvoice.error && !latestInvoice.data;
   const invoiceCheck = menungguBayar && mrId ? latestInvoice : { data: null, error: null };
   const canAddRacikan = !!(menungguBayar && !visit.checked_out_at && mrId && !mrLoadFailed
     && !correctionDataFailed && !invoiceCheck.error && !invoiceCheck.data);
   const editing = !!edit && edit === mrId && canCorrect;
+  // Tindakan/obat susulan tidak punya jalur tulis sendiri di layar Detail — aturan BMHP
+  // dan stok hanya hidup di form yang sudah ada. Tombol di kartu "Tindakan & Racikan"
+  // cuma mengantar ke form yang benar, langsung terbuka di tab Tindakan & Racikan.
+  //
+  // Rawat jalan sengaja diarahkan ke Pembayaran, bukan ke koreksi `?edit=`: koreksi
+  // rekam medis (`clinic_correct_unpaid_record`) hanya menerima catatan klinis dan
+  // formnya memang tidak punya pemilih obat/jasa, jadi tombol ke sana akan buntu.
+  const inpatientAktif = inpatient && !inpatient.discharged_at ? inpatient : null;
+  const tambahItemHref = inpatientAktif
+    ? `/klinik/rawat-inap/${inpatientAktif.id}/obat-khusus?tab=tindakan`
+    : canCorrect && mrId
+      ? `/klinik/pembayaran/${visit.id}`
+      : null;
+  const tambahItemNota = !tambahItemHref
+    ? selesai || visit.checked_out_at ? "Kunjungan sudah selesai — tindakan baru dicatat di kunjungan berikutnya."
+      : latestInvoice.data ? "Tagihan sudah dibuat — tambah item lewat koreksi tagihan di Pembayaran."
+      : "Tambah tindakan belum bisa dibuka dari sini. Muat ulang halaman, lalu lanjutkan lewat Pembayaran."
+    : inpatientAktif ? ""
+    : "Rawat jalan: tindakan / obat susulan ditambahkan di layar Pembayaran supaya ikut tagihan.";
   const correction: ClinicalCorrection | undefined = editing && record && mrId ? {
-    recordId: mrId, revision: record.clinical_revision ?? 0,
+    fullEdit: true, recordId: mrId, revision: record.clinical_revision ?? 0,
     anamnesis: record.anamnesis, diagnosis: record.diagnosis, therapy: record.therapy,
     suhu: record.suhu, berat: record.berat, gejala_klinis: record.gejala_klinis, hasil_penunjang: record.hasil_penunjang,
     penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
@@ -328,7 +378,10 @@ export default async function RekamMedisPage({
         </div>
       )}
 
-      <Popup message={error} />
+      {/* Racikan & penyimpanan rekam medis: kekurangan stok pakai popup khusus,
+          sisanya tetap dialog umum. Hanya satu dialog yang boleh terbuka. */}
+      <StokKurangDariPesan pesan={error} />
+      <Popup message={adalahKekuranganStok(error) ? null : error} />
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
       {success === "addendum" && <div className="p2ban" role="status">Adendum rekam medis tersimpan; catatan asli, tagihan, dan stok tidak berubah.</div>}
       {success === "lanjutan" && (
@@ -518,11 +571,19 @@ export default async function RekamMedisPage({
 
           {/* Racik obat (Addendum §2) — bisa >1 racikan per rekam medis (racikan harian rawat inap). */}
           <div className="card" style={{ marginTop: 12 }}>
-            <div className="card-hd">
+            <div className="card-hd" style={{ justifyContent: "space-between" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <i className="ti ti-flask" style={{ color: "#7c3aed" }} /> Obat racikan
+                <i className="ti ti-flask" style={{ color: "#7c3aed" }} /> Tindakan &amp; Racikan
               </span>
+              {tambahItemHref && (
+                <Link href={tambahItemHref} aria-label="Tambah tindakan / obat" className="btn-acc" style={{ textDecoration: "none" }}>
+                  <i className="ti ti-plus" /> Tambah tindakan / obat
+                </Link>
+              )}
             </div>
+            {tambahItemNota && (
+              <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 8 }}>{tambahItemNota}</div>
+            )}
             {racikanList.length === 0 ? (
               <div style={{ fontSize: 11, color: "var(--td)" }}>Belum ada racikan untuk kunjungan ini.</div>
             ) : (
@@ -623,6 +684,7 @@ export default async function RekamMedisPage({
       ) : (
         <RekamForm
           service={visit.poli}
+          tabAwal={tab}
           key={`${user?.id ?? ""}:${visitId}:${correction ? `${correction.recordId}:${correction.revision}` : "initial"}`}
           correction={correction}
           visitId={visit.id}

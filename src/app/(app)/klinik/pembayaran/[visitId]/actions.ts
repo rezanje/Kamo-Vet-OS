@@ -1,4 +1,5 @@
 "use server";
+import { parseStayType } from "@/lib/inpatient-stay";
 import { quoteDemoPayments, type DemoFinancialPolicy } from "@/lib/clinic-demo-policy";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
@@ -13,7 +14,7 @@ import { getOpenShift } from "@/lib/shift";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
-import { bacaPoinPelanggan, catatPoinKlinik, poinTerpakai, RUPIAH_PER_POIN } from "@/lib/poin-klinik";
+import { bacaPoinPelanggan, catatPoinKlinik, catatPoinNota, poinTerpakai, RUPIAH_PER_POIN, type NotaPoin } from "@/lib/poin-klinik";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -117,19 +118,24 @@ async function postInvoiceAtomik(
   params: ClinicPostInvoiceParams,
   payments?: ClinicSplitPayment[],
   demo?: { policyId: string; employees: string[] },
-): Promise<{ invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
-  const { data: invoiceId, error } = demo
+  admission?: { plan: string; stayType: string },
+): Promise<{ inpatientId?: string; invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
+  const { data: result, error } = admission
+    ? await supabase.rpc("clinic_post_dp_and_admit", { ...params, p_treatment_plan: admission.plan, p_stay_type: admission.stayType })
+    : demo
     ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
     : payments
     ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
     : await supabase.rpc("clinic_post_invoice", params);
-  if (error || !invoiceId) return { invoiceId: null, invoiceNo: null, error: error ?? { message: "Invoice tidak terbentuk" } };
+  const invoiceId = admission ? result?.invoice_id : result;
+  const inpatientId = admission ? result?.inpatient_id : undefined;
+  if (error || !invoiceId || (admission && !inpatientId)) return { invoiceId: null, invoiceNo: null, error: error ?? { message: "Hasil invoice/rawat inap belum terkonfirmasi" } };
   const { data: invoice, error: readError } = await supabase
     .from("invoices").select("invoice_no").eq("id", invoiceId).maybeSingle();
   if (readError || !invoice?.invoice_no) {
     return { invoiceId, invoiceNo: null, error: readError ?? { message: "Nomor invoice tidak terbaca setelah tersimpan" } };
   }
-  return { invoiceId, invoiceNo: invoice.invoice_no, error: null };
+  return { invoiceId, inpatientId, invoiceNo: invoice.invoice_no, error: null };
 }
 
 export async function bayarVisit(formData: FormData) {
@@ -139,6 +145,7 @@ export async function bayarVisit(formData: FormData) {
   if (!visitId) redirect(`/klinik/antrian?error=${encodeURIComponent("Visit tidak valid")}`);
   const back = `/klinik/pembayaran/${visitId}`;
   const waktu = catatWaktu("bayarVisit", visitId);
+  const targetInvoiceId = String(formData.get("target_invoice_id") ?? "").trim();
 
   // U07 batch 1: every read that needs only the visit id starts together. Each is
   // still awaited (and validated) at its original place below.
@@ -150,10 +157,17 @@ export async function bayarVisit(formData: FormData) {
     ? supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId}) : null));
   const consentsP = mulai(supabase.from("consents").select("status").eq("visit_id", visitId));
   const aturanConsentP = mulai(bacaAturanConsent(supabase));
-  const activeInvoiceP = mulai(supabase
+  // Rawat inap bertahap: beberapa invoice aktif per kunjungan sejak 29 Oktober 2026.
+  // `maybeSingle()` di sini dulu berubah jadi galat "tagihan belum dapat diverifikasi"
+  // begitu tahap kedua terbit, sehingga rawat jalan pun ikut macet. Yang dipakai jalur
+  // koreksi adalah tagihan TERBARU; tahapnya dikelola di layar tagihan rawat inap.
+  const activeInvoiceQuery = supabase
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending, service_pricing_version, salesperson_id")
-    .eq("visit_id", visitId).is("voided_at", null).maybeSingle());
+    .eq("visit_id", visitId).is("voided_at", null);
+  const activeInvoiceP = mulai((targetInvoiceId ? activeInvoiceQuery.eq("id",targetInvoiceId) : activeInvoiceQuery)
+    .order("created_at", { ascending: false }).order("id", { ascending: false })
+    .limit(1).maybeSingle());
   const periodeP = mulai(cekPeriode(supabase, todayIso()));
   const visitP = mulai(supabase.from("visits").select("branch_id, customer_id, doctor_id, service_provider_id, pets(name), customers(name, phone)").eq("id", visitId).maybeSingle());
   const pajakP = mulai(getPajakSettings(supabase));
@@ -192,12 +206,22 @@ export async function bayarVisit(formData: FormData) {
   const { data: activeInvoice, error: activeInvoiceError } = await activeInvoiceP;
 
   if (activeInvoiceError) redirect(`${back}?error=${encodeURIComponent("Tagihan belum dapat diverifikasi. Muat ulang tanpa membuat pembayaran baru.")}`);
+  if (targetInvoiceId && !activeInvoice) redirect(`${back}?error=${encodeURIComponent("Invoice yang dipilih sudah berubah atau tidak sesuai kunjungan. Muat ulang; tidak ada transaksi yang disimpan.")}`);
 
   // A lost create response must replay its sealed request/hash instead of
   // becoming a correction. Different creation keys keep the normal edit path.
   const submittedRequestKey = String(formData.get("requestKey") ?? "").trim();
   const isCreationReplay = !!activeInvoice && activeInvoice.request_key === submittedRequestKey;
   const existing = isCreationReplay ? null : activeInvoice;
+  const intendsAdmission = formData.get("admit_after_dp") === "1";
+  const stayType = formData.has("stay_type") ? parseStayType(formData.get("stay_type")) : null;
+  const plan = String(formData.get("treatment_plan") ?? "").trim();
+  if (intendsAdmission && (existing || !stayType || !plan || plan.length > 4000
+      || formData.get("finalize") === "1" || formData.get("paid_status") !== "DP"
+      || formData.has("split_payments") || demoPolicyId)) {
+    redirect(`${back}?error=${encodeURIComponent("Untuk DP & Rawat Inap, isi rencana dan tipe rawat inap, bayar sebagian lalu pilih Simpan. Tagihan lama tidak diubah.")}`);
+  }
+  const admission = intendsAdmission && stayType ? { plan, stayType } : undefined;
   const groupedServicePricing = !isCreationReplay || activeInvoice?.service_pricing_version === 1;
 
   let items: Line[] = [];
@@ -323,6 +347,7 @@ export async function bayarVisit(formData: FormData) {
     : paidStatus === "DP" ? Number(formData.get("dp_amount")) || 0 : 0;
   const dpDate = paidStatus === "DP" ? String(formData.get("dp_date") ?? "") || null : null;
   const reason = String(formData.get("edit_reason") ?? "").trim() || null;
+  const dpOverrideReason = String(formData.get("dp_override_reason") ?? "").trim().slice(0, 500) || null;
   // Visit ditutup hanya saat lunas; DP/Belum Lunas tetap tahap Pembayaran (bisa dilanjut).
   const visitStatus = paidStatus === "Lunas" ? "Selesai" : "Pembayaran";
 
@@ -391,11 +416,14 @@ export async function bayarVisit(formData: FormData) {
       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
       shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
       voucher_discount: atribusi.voucher_discount, diskon_kategori: atribusi.diskon_kategori,
+      // Uang muka minimal ditegakkan di RPC posting; alasan penerobosan ikut dikirim dan
+      // dicatat di sana beserta siapa dan kapannya (Andri, 29 Oktober 2026).
+      ...(dpOverrideReason ? { dp_override_reason: dpOverrideReason } : {}),
       ...(campaignCode ? { campaign_code: campaignCode } : {}),
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
     p_lines: barisUntukPosting(rows, false, atribusi.baris),
-  }, payments, demo);
+  }, payments, demo, admission);
   if (posted.error || !posted.invoiceNo) {
     redirect(`${back}?error=${encodeURIComponent(posted.invoiceId ? "Invoice sudah tersimpan, tetapi rinciannya belum dapat dibaca. Jangan menerima pembayaran ulang; muat ulang dan periksa invoice yang sama." : parseClinicPostingError(posted.error, uncertainPayment))}`);
   }
@@ -404,7 +432,7 @@ export async function bayarVisit(formData: FormData) {
 
   // Paid creation and checkout commit atomically in the posting RPC. Do not
   // repeat checkout here: a retry may arrive after later inpatient admission.
-  if (visitStatus !== "Selesai") {
+  if (visitStatus !== "Selesai" && !admission) {
     const visitUpdated = await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
     if (visitUpdated.error) redirect(`${back}?error=${encodeURIComponent("Invoice sudah tersimpan, tetapi status kunjungan belum terkonfirmasi. Jangan membuat invoice baru; muat ulang dan periksa tagihan yang sama.")}`);
   }
@@ -450,6 +478,10 @@ export async function bayarVisit(formData: FormData) {
   // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
   revalidatePath(back);
   waktu.selesai();
+  if (posted.inpatientId) {
+    for (const path of ["/klinik/rawat-inap", "/klinik/antrian", "/klinik/rekam-medis", `/klinik/rekam-medis/${visitId}`]) revalidatePath(path);
+    return { saved: true, href: `/klinik/rawat-inap/${posted.inpatientId}?success=admit` };
+  }
   return { saved: true, href: `/klinik/pembayaran/${visitId}?success=bayar` };
 }
 
@@ -607,8 +639,7 @@ export async function bayarRombongan(formData: FormData) {
   const poinPerPet = bagiPotongan(dasarSetelahVoucher, poinDipakai * RUPIAH_PER_POIN);
 
   // TAHAP 2 — terbitkan notanya satu per satu.
-  let poinTerpakaiRupiah = 0;
-  let totalDibayarRombongan = 0;
+  const notaPoin: NotaPoin[] = [];
   for (const [idx, s] of siap.entries()) {
     const { b, rows, subtotal, salespersonId } = s;
     const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx]);
@@ -636,18 +667,16 @@ export async function bayarRombongan(formData: FormData) {
     }
 
     // Poin yang benar-benar terpakai dihitung dari nota yang BERHASIL terbit —
-    // porsi hewan yang gagal tidak boleh ikut memotong saldo pelanggan.
-    poinTerpakaiRupiah += poinPerPet[idx];
-    totalDibayarRombongan += total;
+    // porsi hewan yang gagal tidak boleh ikut memotong saldo pelanggan. Dicatat per
+    // nota (ref = nomor invoice) supaya refund invoice itu ikut menyesuaikan poinnya.
+    notaPoin.push({ ref: posted.invoiceNo, dipakai: Math.floor(poinPerPet[idx] / RUPIAH_PER_POIN), total });
     jumlahLunas++;
   }
 
   if (jumlahLunas > 0) {
-    await catatPoinKlinik(supabase, {
+    await catatPoinNota(supabase, {
       customerId: rombongan.customerId ?? null,
-      ref: `Rombongan ${rombongan.customerName ?? ""}`.trim(),
-      dipakai: Math.floor(poinTerpakaiRupiah / RUPIAH_PER_POIN),
-      totalDibayar: totalDibayarRombongan,
+      nota: notaPoin,
       rupiahPerPoin: poin.rupiahPerPoin,
       saldoAwal: poin.saldo,
     });

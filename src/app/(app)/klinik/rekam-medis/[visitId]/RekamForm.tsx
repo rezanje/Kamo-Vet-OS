@@ -1,19 +1,23 @@
 "use client";
 
 import { NumberInput } from "@/components/NumberInput";
+import { QtyInput } from "@/components/QtyInput";
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ClinicalCorrection } from "@/lib/clinical-correction";
+import Link from "next/link";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
-import { ProcedureBmhpComposer } from "@/components/ProcedureBmhpComposer";
+import { TindakanRacikanForm } from "@/components/TindakanRacikanForm";
+import { KeranjangBahan } from "@/components/KeranjangBahan";
 import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bmhp";
 import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, visitDefaultPerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
-import { Popup } from "@/components/Popup";
 import { kekuranganStok } from "@/lib/stok-keranjang";
-import { simpanRekamMedis, koreksiRekamMedis } from "./actions";
+import { StokKurangPopup, StokKurangDariPesan } from "@/components/StokKurangPopup";
+import type { BarisKurangStok } from "@/lib/stok-kurang";
+import { simpanRekamMedis, koreksiRekamMedis, koreksiRekamMedisLengkap } from "./actions";
 import { type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
 import { PetPhotoUpload } from "@/components/PetPhotoUpload";
@@ -22,7 +26,6 @@ import { ClinicServicePicker } from "@/components/ClinicServicePicker";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { batasBeratWajar } from "@/lib/anabul";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
-import { CompoundEditor } from "@/components/CompoundEditor";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
 import { staffForService } from "@/lib/clinical-staff";
 import { isMedicalService } from "@/lib/clinic-required-fields";
@@ -33,6 +36,7 @@ export type ItemLite = {
   units?: ItemUnit[];   // satuan berjenjang (pcs/box, ml/btl) — kosong = hanya satuan dasar
 };
 type CartRow = {
+  prescription_item_id?: string;
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
   faktor: number;
   jenis: "obat" | "jasa" | "racikan";
@@ -43,6 +47,8 @@ type CartRow = {
   service_performers?: ServicePerformersInput | null;
   /** K02: actual consumables on a procedure row (optional). */
   bmhp?: BmhpRow[];
+  /** Diisi hanya bila racikan sudah pernah diracik (stok bahan sudah keluar). */
+  compound_recipe_id?: string;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -65,8 +71,11 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, correction }: {
+export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, correction, tabAwal }: {
   correction?: ClinicalCorrection;
+  /** `?tab=tindakan` membuka form langsung di tab "Tindakan & Racikan" — dipakai tombol
+   * "Tambah tindakan / obat" di Detail rekam medis. Nilai lain tetap mulai dari "Obat". */
+  tabAwal?: string;
   visitId: string; petId: string; requestKey: string; draftUserId: string;
   service?: string | null;
   serviceStaff?: ServiceStaff[];
@@ -87,10 +96,17 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const router = useRouter();
   // Tab "Tindakan & Racikan" menggabungkan pemilihan tindakan (beserta komposisi BMHP)
   // dengan peracikan; tab Jasa tetap murni jasa dan tidak pernah menampilkan BMHP.
-  const [tab, setTab] = useState<Tab>("Obat");
+  const [tab, setTab] = useState<Tab>(tabAwal === "tindakan" ? TINDAKAN : "Obat");
   const [search, setSearch] = useState("");
   const [obatPage, setObatPage] = useState(1);
-  const [cart, setCart] = useState<CartRow[]>([]);
+  const [cart, setCart] = useState<CartRow[]>(() => correction?.fullEdit ? correction.prescriptions.map((row, index) => ({
+    key: row.id ?? `saved-${index}`, prescription_item_id: row.id, item_id: row.item_id ?? null,
+    nama_obat: row.nama_obat, qty: Number(row.qty), satuan: row.satuan ?? "pcs", harga: Number(row.harga ?? 0), faktor: Number(row.faktor ?? 1),
+    jenis: row.compound_recipe_id ? "racikan" : row.jenis === "jasa" ? "jasa" : "obat",
+    kategori: row.kategori ?? undefined, aturan_pakai: row.aturan_pakai ?? undefined,
+    compound_recipe_id: row.compound_recipe_id ?? undefined, service_performers: row.service_performers,
+    bmhp: row.bmhp_components?.map(material => ({...material,nama:material.name ?? material.item_id})),
+  })) : []);
   const [procedureDraft, setProcedureDraft] = useState<{ item: ItemLite; bmhp: BmhpRow[]; editKey: string | null } | null>(null);
   const [procedureError, setProcedureError] = useState("");
   const procedureCommitted = useRef(false);
@@ -101,7 +117,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);
-  const [stokKurang, setStokKurang] = useState<string | null>(null);
+  const [stokKurang, setStokKurang] = useState<BarisKurangStok[]>([]);
 
   // Builder racikan
   const [racikNama, setRacikNama] = useState("");
@@ -110,7 +126,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const [racikForm, setRacikForm] = useState("sirup");
   const [racikAturan, setRacikAturan] = useState("");
   const [racikBahan, setRacikBahan] = useState<RacikanIngredient[]>([]);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [racikanEditKey, setRacikanEditKey] = useState<string | null>(null);
 
   const [followUps, setFollowUps] = useState<FollowUpDraft[]>([]);
   const [penunjangPaths, setPenunjangPaths] = useState<string[]>(correction?.penunjang_urls ?? []);
@@ -120,12 +136,13 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     capture: draftCapture, discard: draftDiscard, submit: draftSubmit, leaving: draftLeaving,
   } = useClinicDraft({
     userId: draftUserId, scope: correction ? `correction:${visitId}:${correction.recordId}:v${correction.revision}` : `exam:${visitId}`, requestKey,
-    optionalSnapshotKeys: ["saleItemId", "procedureDraft"],
-    snapshot: { saleItemId, cart, procedureDraft, catatan, discountPct, racikNama, officialVersionId, racikForm, racikAturan, racikBahan, followUps, penunjangPaths },
+    optionalSnapshotKeys: ["saleItemId", "procedureDraft", "racikanEditKey"],
+    snapshot: { saleItemId, cart, procedureDraft, racikanEditKey, catatan, discountPct, racikNama, officialVersionId, racikForm, racikAturan, racikBahan, followUps, penunjangPaths },
     restore: (value) => {
       setCart(value.cart);
       setProcedureDraft(value.procedureDraft ?? null);
-      if (value.procedureDraft) setTab(TINDAKAN);
+      setRacikanEditKey(value.racikanEditKey ?? null);
+      if (value.procedureDraft || value.saleItemId) setTab(TINDAKAN);
       setCatatan(value.catatan);
       setDiscountPct(value.discountPct);
       setRacikNama(value.racikNama);
@@ -147,11 +164,22 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     setRacikAturan(value.instruction); setRacikBahan(value.ingredients);
     setRacikNama(racikanItems.find(item => item.id === value.saleItemId)?.name ?? "");
   };
+  const resetRacikan = () => {
+    setSaleItemId(""); setOfficialVersionId(""); setRacikNama(""); setRacikForm("sirup"); setRacikAturan(""); setRacikBahan([]);
+    setRacikanEditKey(null);
+  };
+  /** Racikan baru maupun baris keranjang yang diubah memakai bentuk baris yang sama persis. */
   const addRacikanToCart = () => {
     const sku = racikanItems.find(item => item.id === saleItemId) ?? null;
-    const row = masterCompoundCartRow(sku, selectedFormula ?? null, compoundDraft, crypto.randomUUID(), bolehManual);
-    setCart(rows => [...rows, { ...row, service_performers: barisDefault() }]);
-    setSaleItemId(""); setOfficialVersionId(""); setRacikNama(""); setRacikAturan(""); setRacikBahan([]);
+    let dibuat;
+    try { dibuat = masterCompoundCartRow(sku, selectedFormula ?? null, compoundDraft, racikanEditKey ?? crypto.randomUUID(), bolehManual); }
+    catch (error) { setProcedureError(error instanceof Error ? error.message : "Racikan belum lengkap"); return; }
+    const baris = dibuat; // konstan supaya bisa dipakai di dalam penutup setCart
+    setCart(rows => racikanEditKey
+      ? rows.map(line => line.key === racikanEditKey ? { ...baris, service_performers: line.service_performers } : line)
+      : [...rows, { ...baris, service_performers: barisDefault() }]);
+    resetRacikan();
+    setProcedureError("");
   };
 
   const obatMatches = useMemo(() => {
@@ -183,11 +211,22 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     // yang tetap dialihkan ke jasa vaksinasinya sendiri.
     const vaccination = item.item_type !== "Jasa" ? vaccinationOf(item, tindakanItems) : undefined;
     const picked = vaccination ?? item;
+    setTab(TINDAKAN);
     if (procedureDraft?.item.id === picked.id && !procedureDraft.editKey) return;
     procedureCommitted.current = false;
     setProcedureError("");
+    resetRacikan();
     setProcedureDraft({ item: picked, bmhp: vaccinationBmhp(picked, [...items, ...tindakanItems]), editKey: null });
+  };
+  /** Racikan dipilih dari pemilih yang sama dengan tindakan; hanya satu yang aktif. */
+  const selectRacikan = (item: ItemLite): void => {
     setTab(TINDAKAN);
+    setProcedureDraft(null);
+    setProcedureError("");
+    if (saleItemId === item.id && !racikanEditKey) return;
+    setRacikanEditKey(null);
+    setSaleItemId(item.id); setRacikNama(item.name);
+    setOfficialVersionId(""); setRacikForm("sirup"); setRacikAturan(""); setRacikBahan([]);
   };
   const pickObat = (it: ItemLite): void => {
     const vaccination = vaccinationOf(it, tindakanItems);
@@ -201,6 +240,16 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     procedureCommitted.current = false;
     setProcedureError("");
     setProcedureDraft({ item, bmhp: [...(row.bmhp ?? [])], editKey: row.key });
+    setTab(TINDAKAN);
+  };
+  const editRacikan = (row: CartRow) => {
+    setProcedureDraft(null);
+    setProcedureError("");
+    setSaleItemId(row.sale_item_id ?? ""); setRacikNama(row.nama_obat);
+    setOfficialVersionId(row.official_version_id ?? "");
+    setRacikForm(row.dosage_form ?? "sirup"); setRacikAturan(row.aturan_pakai ?? "");
+    setRacikBahan([...(row.ingredients ?? [])]);
+    setRacikanEditKey(row.key);
     setTab(TINDAKAN);
   };
   const commitProcedure = () => {
@@ -223,8 +272,18 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
       const u = pickUnit(unitsOf(itemId), unit);
       return u ? { ...r, satuan: u.unit, harga: u.sell_price, faktor: u.factor } : r;
     }));
-  const del = (key: string) => { setCart((c) => c.filter((r) => r.key !== key)); if (procedureDraft?.editKey === key) setProcedureDraft(null); };
-  const clear = () => { setCart([]); setProcedureDraft(null); };
+  const del = (key: string) => {
+    setCart((c) => c.filter((r) => r.key !== key));
+    if (procedureDraft?.editKey === key) setProcedureDraft(null);
+    if (racikanEditKey === key) resetRacikan();
+  };
+  const clear = () => { setCart([]); setProcedureDraft(null); resetRacikan(); };
+  // Satu form: tindakan dan racikan memakai tombol simpan/batal yang sama.
+  const formItem = procedureDraft?.item ?? racikanItems.find(item => item.id === saleItemId) ?? null;
+  const formEditKey = procedureDraft ? procedureDraft.editKey : racikanEditKey;
+  const formHarga = (formEditKey ? cart.find(row => row.key === formEditKey)?.harga : undefined) ?? formItem?.sell_price ?? 0;
+  const commitForm = () => (procedureDraft ? commitProcedure() : addRacikanToCart());
+  const cancelForm = () => { setProcedureDraft(null); resetRacikan(); setProcedureError(""); };
 
   // ponytail: catatan resep hanya relevan untuk SKU racikan
   const hasRacikan = cart.some((r) => r.jenis === "racikan");
@@ -238,17 +297,22 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
 
   return (<>
     {/* Di luar <form>: dialog punya form method="dialog" sendiri. */}
-    <Popup message={stokKurang} title="Stok tidak cukup" onClose={() => setStokKurang(null)} />
-    <form ref={draftAttachForm} action={(data) => draftSubmit(data, correction ? koreksiRekamMedis : simpanRekamMedis)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
+    <StokKurangPopup baris={stokKurang} onClose={() => setStokKurang([])}
+      petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />
+    {/* Penolakan dari database (mis. stok habis dipakai kasir lain sedetik lalu)
+        bermuara ke popup yang sama. Hanya satu dialog yang boleh terbuka. */}
+    {stokKurang.length === 0 && <StokKurangDariPesan pesan={draftSaveError}
+      petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />}
+    <form ref={draftAttachForm} action={(data) => draftSubmit(data, correction?.fullEdit ? koreksiRekamMedisLengkap : correction ? koreksiRekamMedis : simpanRekamMedis)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
       const kurang = correction ? [] : kekuranganStok(cart, stokById, (id, unit) => unitsOf(id).find(u => u.unit === unit)?.factor ?? 1);
-      if (procedureDraft) { event.preventDefault(); event.stopPropagation(); setTab(TINDAKAN); setProcedureError("Selesaikan komposisi BMHP tindakan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
-      else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(`${kurang.join("; ")}. Kurangi jumlah atau ganti obat sebelum melanjutkan.`); }
+      if (procedureDraft || saleItemId) { event.preventDefault(); event.stopPropagation(); setTab(TINDAKAN); setProcedureError("Selesaikan form tindakan / racikan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
+      else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(kurang); }
       else draftCapture();
     }}>
       {draftRecovered && <div role="status" className="p2ban">Draf dipulihkan <button type="button" className="btn-def" onClick={draftDiscard}>Buang draf</button></div>}
       {procedureError && <div role="alert" className="p2ban">{procedureError}</div>}
       {(draftStorageError || draftSaveError) && <div role="alert" className="p2ban">{draftSaveError || draftStorageError}</div>}
-      {correction && <div className="p2ban">Koreksi catatan klinis. Resep, racikan, tindak lanjut, dan data pasien tetap mengikuti pemeriksaan tersimpan.</div>}
+      {correction && <div className="p2ban">{correction.fullEdit ? "Edit owner / dokter sebelum tagihan terbit: obat, jasa, tindakan dan BMHP. Baris tersimpan tidak dihapus. Racikan yang sudah dibuat dikoreksi melalui Aksi racikan; bahan tidak dikeluarkan ulang. Data pasien dan tindak lanjut tetap mengikuti pemeriksaan tersimpan." : "Koreksi catatan klinis. Resep, racikan, tindak lanjut, dan data pasien tetap mengikuti pemeriksaan tersimpan."}</div>}
       {correction && <><input type="hidden" name="medical_record_id" value={correction.recordId} /><input type="hidden" name="expected_revision" value={correction.revision} /></>}
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="petId" value={petId} />
@@ -340,7 +404,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
             <i className="ti ti-shopping-cart" style={{ color: "var(--posb)" }} /> INPUT OBAT &amp; JASA (POS)
           </div>
 
-          {correction ? <>
+          {correction && !correction.fullEdit ? <>
             <p>Resep obat &amp; jasa tersimpan</p>
             <table className="tbl"><thead><tr><th>Obat / jasa</th><th>Qty</th><th>Aturan pakai</th></tr></thead><tbody>
               {correction.prescriptions.map((row, i) => <tr key={i}><td>{row.nama_obat}{row.service_performers && <div>{servicePerformerNames(row.service_performers).join(" · ")}</div>}</td><td>{row.qty} {row.satuan}</td><td>{row.aturan_pakai ?? "—"}</td></tr>)}
@@ -400,17 +464,14 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
               {tab === "Jasa" && (
                 <ClinicServicePicker key={tab} kind="Jasa" items={jasaItems} onAdd={addObat} />
               )}
+              {/* K03: racikan rawat jalan tetap harus lewat komposisi; tidak ada jalan pintas stok obat jadi. */}
               {tab === TINDAKAN && (
-                <>
-                  <ClinicServicePicker key={tab} kind="Tindakan" items={tindakanItems} onAdd={selectProcedure} />
-                  {procedureDraft && <ProcedureBmhpComposer name={procedureDraft.item.name} price={procedureDraft.editKey ? cart.find(row => row.key === procedureDraft.editKey)?.harga ?? procedureDraft.item.sell_price : procedureDraft.item.sell_price}
-                    items={items} value={procedureDraft.bmhp} editing={!!procedureDraft.editKey}
-                    onChange={bmhp => setProcedureDraft(draft => draft ? { ...draft, bmhp } : draft)}
-                    onCommit={commitProcedure} onCancel={() => { setProcedureDraft(null); setProcedureError(""); }} />}
-                  {/* K03: racikan rawat jalan harus lewat komposisi; jangan tampilkan jalan pintas stok obat jadi. */}
-                  <CompoundEditor items={racikanItems} materials={bahanItems} catalog={katalogRacikan} allowCustom={bolehManual}
-                    value={compoundDraft} onChange={changeCompound} onAdd={addRacikanToCart} />
-                </>
+                <TindakanRacikanForm tindakanItems={tindakanItems} racikanItems={correction?.fullEdit ? [] : racikanItems} bmhpItems={items} bahanItems={bahanItems}
+                  katalogRacikan={katalogRacikan} bolehManual={bolehManual}
+                  tindakan={procedureDraft} racikan={compoundDraft} editing={!!formEditKey} harga={formHarga}
+                  onPilihTindakan={selectProcedure} onPilihRacikan={selectRacikan}
+                  onUbahBmhp={bmhp => setProcedureDraft(draft => draft ? { ...draft, bmhp } : draft)}
+                  onUbahRacikan={changeCompound} onSimpan={commitForm} onBatal={cancelForm} />
               )}
             </div>
 
@@ -418,7 +479,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)" }}>KERANJANG ({cart.length})</span>
-                {cart.length > 0 && <button type="button" onClick={clear} className="back-btn" style={{ fontSize: 10, color: "#b91c1c" }}>Hapus semua</button>}
+                {cart.length > 0 && !correction?.fullEdit && <button type="button" onClick={clear} className="back-btn" style={{ fontSize: 10, color: "#b91c1c" }}>Hapus semua</button>}
               </div>
               <div style={{ minHeight: 60, overflowX: "auto" }}>
                 {cart.length === 0 ? (
@@ -432,53 +493,56 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                       {cart.map((r) => (
                         <tr key={r.key}>
                           <td style={{ fontSize: 10.5 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              {r.jenis === "racikan" && (
-                                <i className={`ti ti-chevron-${expanded[r.key] ? "down" : "right"}`} style={{ cursor: "pointer", fontSize: 12, color: "var(--tm)" }}
-                                  onClick={() => setExpanded((e) => ({ ...e, [r.key]: !e[r.key] }))} />
-                              )}
-                              <span>{r.nama_obat}</span>
+                            {/* Item utama ditebalkan; pelaksana & bahan jadi rincian kecil di bawahnya. */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                              <strong data-cart-item style={{ fontSize: 12.5, fontWeight: 700, color: "var(--tx)" }}>{r.nama_obat}</strong>
+                              {correction?.fullEdit && !r.compound_recipe_id && <select className="fi" aria-label={`Ganti item ${r.nama_obat}`} value={r.item_id ?? ""} onChange={event => {
+                                const item = [...items, ...jasaItems, ...tindakanItems].find(item => item.id === event.target.value);
+                                if (item) setCart(rows => rows.map(row => row.key === r.key ? {...row,item_id:item.id,nama_obat:item.name,satuan:item.unit,faktor:1,harga:item.sell_price,jenis:item.item_type === "Jasa" ? "jasa" : "obat",kategori:item.tindakan_kategori ?? undefined,bmhp:[]} : row));
+                              }}><option value={r.item_id ?? ""}>{r.nama_obat}</option>{[...items,...jasaItems,...tindakanItems].filter(item=>item.id!==r.item_id).map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>}
                               {r.jenis === "racikan" && <span className="bge b" style={{ fontSize: 8 }}>racikan</span>}
+                              <span style={{ fontSize: 9, color: "var(--tm)", display: "flex", alignItems: "center", gap: 4 }}>
+                                {rp(r.harga)} /
+                                {unitsOf(r.item_id).length > 1 && r.jenis === "obat" ? (
+                                  <select className="fi" value={r.satuan} onChange={(e) => setSatuan(r.key, r.item_id, e.target.value)}
+                                    style={{ width: 62, padding: "1px 3px", fontSize: 9.5 }} title="Satuan">
+                                    {unitsOf(r.item_id).map((u) => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
+                                  </select>
+                                ) : <span>{r.satuan}</span>}
+                              </span>
                             </div>
-                            <div style={{ fontSize: 9, color: "var(--tm)", display: "flex", alignItems: "center", gap: 4 }}>
-                              <span>{rp(r.harga)} /</span>
-                              {unitsOf(r.item_id).length > 1 && r.jenis === "obat" ? (
-                                <select className="fi" value={r.satuan} onChange={(e) => setSatuan(r.key, r.item_id, e.target.value)}
-                                  style={{ width: 62, padding: "1px 3px", fontSize: 9.5 }} title="Satuan">
-                                  {unitsOf(r.item_id).map((u) => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
-                                </select>
-                              ) : <span>{r.satuan}</span>}
-                            </div>
-                            <ServicePerformersField label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
+                            {!r.prescription_item_id && <ServicePerformersField compact label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
                               grooming={groomingApplies && r.jenis === "jasa" && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}
-                              onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />
-                            {r.jenis !== "racikan" && r.item_id && tindakanItems.some(item => item.id === r.item_id) && <div style={{ fontSize: 10 }}>
-                              <span>BMHP: {(r.bmhp ?? []).map(material => `${material.nama} × ${material.qty} ${material.unit}`).join(", ") || "belum diisi"}</span>{" "}
-                              <button type="button" className="btn-def" aria-label={`Ubah BMHP ${r.nama_obat}`} onClick={() => editProcedure(r)}>Ubah BMHP</button>
-                            </div>}
+                              onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
+                            {r.jenis !== "racikan" && r.item_id && tindakanItems.some(item => item.id === r.item_id) &&
+                              <KeranjangBahan nada="bmhp" judul="BMHP" kosong="belum diisi"
+                                baris={(r.bmhp ?? []).map(material => `${material.nama} × ${material.qty} ${material.unit}`)}>
+                                <button type="button" className="btn-def" aria-label={`Ubah BMHP ${r.nama_obat}`}
+                                  style={{ marginTop: 3, padding: "1px 7px", fontSize: 9.5 }} onClick={() => editProcedure(r)}>Ubah BMHP</button>
+                              </KeranjangBahan>}
                             {/* BMHP is composed only for clinic procedures (TINDAKAN); other services keep any stored BMHP read-only. */}
-                            {r.jenis === "jasa" && r.item_id && !tindakanItems.some(item => item.id === r.item_id) && (r.bmhp?.length ?? 0) > 0 && <div style={{ fontSize: 10 }}>
-                              BMHP tersimpan: {r.bmhp!.map(material => `${material.nama} × ${material.qty} ${material.unit}`).join(", ")}
-                            </div>}
-                            {r.jenis === "racikan" && expanded[r.key] && (
-                              <div style={{ marginTop: 4, paddingLeft: 14, borderLeft: "2px solid var(--bd)" }}>
-                                {(r.ingredients ?? []).map((b) => (
-                                  <div key={b.item_id} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 9, color: "var(--tm)" }}>
-                                    <span>{b.nama} × {b.qty} {b.satuan}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                            {r.jenis === "jasa" && r.item_id && !tindakanItems.some(item => item.id === r.item_id) && (r.bmhp?.length ?? 0) > 0 &&
+                              <KeranjangBahan nada="bmhp" judul="BMHP tersimpan"
+                                baris={r.bmhp!.map(material => `${material.nama} × ${material.qty} ${material.unit}`)} />}
+                            {r.jenis === "racikan" &&
+                              <KeranjangBahan nada="racikan" judul="Bahan racikan" kosong="belum diisi"
+                                baris={(r.ingredients ?? []).map(b => `${b.nama} × ${b.qty} ${b.satuan}`)}>
+                                {r.compound_recipe_id
+                                  ? <div style={{ fontSize: 9.5, color: "#b91c1c" }}>Sudah diracik — bahannya diubah lewat{" "}
+                                    <Link href={`/klinik/racik/${r.compound_recipe_id}`}>Aksi → Ubah komposisi</Link> supaya stok tidak keluar dua kali.</div>
+                                  : <button type="button" className="btn-def" aria-label={`Ubah bahan ${r.nama_obat}`}
+                                    style={{ marginTop: 3, padding: "1px 7px", fontSize: 9.5 }} onClick={() => editRacikan(r)}>Ubah bahan</button>}
+                              </KeranjangBahan>}
                           </td>
                           <td style={{ textAlign: "center" }}>
                             {r.jenis === "racikan"
                               ? <span style={{ fontSize: 10.5 }}>1</span>
-                              : <NumberInput className="fi" type="number" min={1} value={r.qty} onChange={(e) => setQty(r.key, Number(e.target.value))} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
+                              : <QtyInput className="fi" min={1} aria-label={`Jumlah ${r.nama_obat}`} value={r.qty} onValue={(n) => setQty(r.key, n)} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
                           </td>
                           <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(r.qty * r.harga)}</td>
                           <td style={{ textAlign: "center" }}>
-                            <i className="ti ti-x" onClick={() => del(r.key)} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />
+                            {!r.prescription_item_id && <i className="ti ti-x" onClick={() => del(r.key)} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />}
                           </td>
                         </tr>
                       ))}

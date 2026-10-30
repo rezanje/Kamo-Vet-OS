@@ -170,7 +170,10 @@ export default async function PenjualanKasirPage({
         </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
           Omset bersih sudah dikurangi retur penjualan di rentang tanggal ini; peringkat kasir memakai angka bersih.
-          Kolom &quot;diskon diberi&quot; berguna untuk melihat siapa yang paling sering memotong harga.
+          Kolom &quot;diskon diberi&quot; berguna untuk melihat siapa yang paling sering memotong harga.<br />
+          Laporan ini sengaja HANYA struk kasir petshop, karena pertanyaannya &quot;siapa kasirnya&quot;.
+          Tagihan klinik dan faktur penjualan grosir tidak ditutup di kasir, jadi tidak ikut di sini —
+          omzet seluruh pintu ada di Transaksi per Cabang dan Rincian Penjualan per Transaksi.
         </div>
       </div>
     </LaporanPage>

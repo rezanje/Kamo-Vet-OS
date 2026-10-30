@@ -1,6 +1,6 @@
 "use client";
 
-import { NumberInput } from "@/components/NumberInput";
+import { QtyInput } from "@/components/QtyInput";
 
 import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
 import { draftRows } from "@/components/TransactionDraft";
@@ -75,7 +75,7 @@ export function PermintaanFormKlinik({ userId, branchName, shiftId, warehouses, 
               return <div key={i}>
                 <div style={{marginBottom:5}}><SearchableItemPicker items={items.map(item=>({...item,code:item.code??""}))} value={row.item_id} textValue={item?.name??row.cari} onTextChange={text=>set(i,{cari:text,item_id:"",satuan:""})} onChange={id=>setItem(i,id)} ariaLabel={`Barang permintaan ${i+1}`}/></div>
                 <div style={{ display: "flex", flexWrap:"wrap", gap: 6, alignItems: "center" }}>
-                  <NumberInput className="fi" type="number" min={0} step="any" value={row.qty_diminta} onChange={(e) => set(i, { qty_diminta: Number(e.target.value) })} style={{ width: 70 }} title="Qty diminta" />
+                  <QtyInput className="fi" min={0} step="any" aria-label="Qty diminta" value={row.qty_diminta} onValue={(qty) => set(i, { qty_diminta: qty })} style={{ width: 70 }} title="Qty diminta" />
                   {units.length > 1 ? <select className="fi" value={row.satuan} onChange={(e) => set(i, { satuan: e.target.value })} style={{ width: 82, flexShrink: 0 }}>{units.map((u) => <option key={u.unit} value={u.unit}>{u.unit}</option>)}</select> : <span style={{ width: 82, flexShrink: 0, fontSize: 10.5, color: "var(--tm)" }}>{row.satuan || "—"}</span>}
                   <input className="fi" value={row.catatan} placeholder="Catatan" onChange={(e) => set(i, { catatan: e.target.value })} style={{ flex: 1, minWidth:80 }} />
                   <button type="button" onClick={() => setRows((all) => all.length > 1 ? all.filter((_, j) => j !== i) : all)} className="btn-def" style={{ padding: "0 9px", color: "#b91c1c" }} title="Hapus"><i className="ti ti-trash" /></button>

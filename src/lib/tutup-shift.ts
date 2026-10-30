@@ -23,6 +23,7 @@ import { postJournal } from "./posting";
 import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBreakdown } from "./shift-calc";
 import { hariIniWIB } from "./tanggal";
 import { salePaymentRows } from "./sale-payment-reporting";
+import { gagalBacaUang } from "./baca-uang";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -49,6 +50,46 @@ export type HasilTutup =
       dibebankanKe: string | null }
   | { ok: false; error: string };
 
+
+type KwitansiShift = {
+  id: string; status: string; shift_id: string | null; void_shift_id: string | null;
+  clinic_payment_receipt_parts?: { metode: string; amount: number }[] | null;
+};
+
+/** Pesan tunggal untuk semua sumber uang shift yang tidak terbaca. */
+export const UANG_SHIFT_TIDAK_TERBACA =
+  "Uang shift belum dapat dibaca lengkap. Muat ulang dan coba lagi — shift tidak ditutup supaya penerimaan yang nyata tidak terhitung sebagai kas lebih.";
+
+/**
+ * Bagian kwitansi klinik yang menggerakkan laci shift ini.
+ *
+ * Tabel yang memang belum ada (migrasi tagihan berjalan belum terpasang di lingkungan
+ * ini) dikembalikan kosong, sama seperti sebelum fitur ini ada. Gangguan baca lain
+ * TIDAK boleh menjadi nol: uang yang benar-benar diterima akan terbaca sebagai kas
+ * lebih dan dijurnal ke pendapatan lain-lain.
+ */
+async function kwitansiKlinikRows(
+  supabase: AnyClient, shiftId: string,
+): Promise<{ total: number; metode_bayar: string }[]> {
+  const { data, error } = await supabase
+    .from("clinic_payment_receipts")
+    .select("id, status, shift_id, void_shift_id, clinic_payment_receipt_parts(metode, amount)")
+    .or(`shift_id.eq.${shiftId},void_shift_id.eq.${shiftId}`);
+  if (gagalBacaUang(error)) throw new Error(UANG_SHIFT_TIDAK_TERBACA);
+  if (error) return [];
+  const rows: { total: number; metode_bayar: string }[] = [];
+  for (const kwitansi of (data ?? []) as KwitansiShift[]) {
+    const bagian = kwitansi.clinic_payment_receipt_parts ?? [];
+    if (kwitansi.shift_id === shiftId) {
+      for (const part of bagian) rows.push({ total: Number(part.amount) || 0, metode_bayar: part.metode });
+    }
+    if (kwitansi.void_shift_id === shiftId) {
+      for (const part of bagian) rows.push({ total: -(Number(part.amount) || 0), metode_bayar: part.metode });
+    }
+  }
+  return rows;
+}
+
 /** Uang masuk shift ini, dari sumber yang benar menurut jenis shiftnya. */
 export async function pemasukanShift(
   supabase: AnyClient,
@@ -56,16 +97,18 @@ export async function pemasukanShift(
 ): Promise<{ total: number; metode_bayar: string }[]> {
   if (shift.shift_type === "klinik") {
     // Invoice yang dibatalkan TIDAK pernah jadi uang di laci.
-    const { data: invoices } = await supabase
+    const { data: invoices, error: invoiceError } = await supabase
       .from("invoices")
       .select("id, total, dp_amount, paid_status, metode_bayar, shift_cash_carry")
       .eq("shift_id", shift.id)
       .is("voided_at", null);
+    if (invoiceError) throw new Error(UANG_SHIFT_TIDAK_TERBACA);
 
     const ids = ((invoices ?? []) as { id: string }[]).map((i) => i.id);
-    const { data: pays } = ids.length
+    const { data: pays, error: payError } = ids.length
       ? await supabase.from("invoice_payments").select("invoice_id, amount, metode, checkout_payment").in("invoice_id", ids)
-      : { data: [] as { invoice_id: string; amount: number }[] };
+      : { data: [] as { invoice_id: string; amount: number }[], error: null };
+    if (payError) throw new Error(UANG_SHIFT_TIDAK_TERBACA);
     const susulan = new Map<string, number>();
     const originalParts: { total: number; metode_bayar: string }[] = [];
     const mixedInvoices = new Set<string>();
@@ -78,7 +121,18 @@ export async function pemasukanShift(
       susulan.set(p.invoice_id, (susulan.get(p.invoice_id) ?? 0) + Number(p.amount));
     }
 
-    return [...originalParts, ...invoiceCashRows(
+    // Tagihan berjalan rawat inap: uangnya TIDAK masuk lewat kepala invoice, tapi lewat
+    // kwitansi per kunjungan (boleh campuran metode, boleh beberapa kali). Tiap bagian
+    // kwitansi yang diterima di shift ini menambah laci; kwitansi yang DIBATALKAN di shift
+    // ini menguranginya. Kwitansi yang terbit dan dibatalkan di shift yang sama otomatis
+    // saling meniadakan.
+    //
+    // Yang sengaja TIDAK dihitung: pemakaian uang muka pada tagihan (metode "Uang Muka").
+    // Itu bukan uang masuk, hanya utang klinik ke pemilik yang berkurang — uangnya sudah
+    // masuk laci pada shift saat kwitansinya dibuat.
+    const kwitansiRows = await kwitansiKlinikRows(supabase, shift.id);
+
+    return [...originalParts, ...kwitansiRows, ...invoiceCashRows(
       ((invoices ?? []) as {
         id: string; total: number; dp_amount: number; paid_status: string; metode_bayar: string;
         shift_cash_carry?: number | null;
@@ -88,16 +142,19 @@ export async function pemasukanShift(
 
   const { data: sales, error } = await supabase
     .from("sales").select("no_struk, total, metode_bayar, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount)").eq("shift_id", shift.id);
-  if (error) throw new Error("Rincian pembayaran shift belum dapat dibaca. Coba lagi sebelum menutup shift.");
+  if (error) throw new Error(UANG_SHIFT_TIDAK_TERBACA);
   return salePaymentRows(sales ?? []);
 }
 
 /** Hitung target kas shift tanpa menutupnya — dipakai juga oleh force-close. */
 export async function hitungShift(supabase: AnyClient, shift: ShiftTutup) {
-  const [masuk, { data: expenses }] = await Promise.all([
+  const [masuk, { data: expenses, error: expenseError }] = await Promise.all([
     pemasukanShift(supabase, shift),
     supabase.from("expenses").select("jumlah, metode_bayar").eq("shift_id", shift.id),
   ]);
+  // Pengeluaran tunai mengurangi target laci. Kalau gagal dibaca lalu dianggap nol,
+  // target kasnya terlalu tinggi dan kasir ditagih selisih yang tidak pernah ada.
+  if (expenseError) throw new Error(UANG_SHIFT_TIDAK_TERBACA);
   const breakdown = methodBreakdown(masuk);
   const expected = expectedCash(
     Number(shift.opening_balance) || 0, breakdown, cashExpenseTotal(expenses ?? []),
@@ -122,7 +179,7 @@ export async function tutupShift(
   try {
     calculation = await hitungShift(supabase, shift);
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Rincian pembayaran shift belum dapat dihitung." };
+    return { ok: false, error: error instanceof Error ? error.message : UANG_SHIFT_TIDAK_TERBACA };
   }
   const { breakdown, expected } = calculation;
   const selisih = closing === null ? 0 : cashVariance(closing, expected);

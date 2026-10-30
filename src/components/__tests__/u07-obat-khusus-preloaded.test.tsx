@@ -12,8 +12,10 @@ beforeEach(() => { s.clientCalls = 0; });
 it("renders preloaded history without opening its own database session or reading the user again", async () => {
   const html = renderToStaticMarkup(await ObatKhusus({ recordId: "inpat", aktif: true, userId: "actor", history: { medications: [], doses: [] } }));
   expect(s.clientCalls).toBe(0);
-  expect(html).toContain("Belum ada obat berprotokol");
-  expect(html).toContain("<form");
+  expect(html).toContain("Belum ada riwayat obat berprotokol");
+  expect(html).not.toContain("<form");
+  expect(html).not.toContain("TAMBAH OBAT BERPROTOKOL");
+  expect(html).toContain('/klinik/rawat-inap/inpat/obat-khusus');
 });
 
 it("a preloaded failed history still shows the incomplete-history warning and no forms", async () => {
@@ -21,6 +23,6 @@ it("a preloaded failed history still shows the incomplete-history warning and no
   expect(s.clientCalls).toBe(0);
   expect(html).toContain('role="alert"');
   expect(html).toContain("belum dapat dimuat lengkap");
-  expect(html).not.toContain("Belum ada obat berprotokol");
+  expect(html).not.toContain("Belum ada riwayat obat berprotokol");
   expect(html).not.toContain("<form");
 });

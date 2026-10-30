@@ -1,5 +1,7 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
+import { hariIniWIB } from "./tanggal";
+import { saringanPenugasanAktif } from "./employee-assignment";
 
 export type PilihanPenjual = { id: string; nama: string; jabatan: string | null };
 
@@ -12,10 +14,13 @@ export async function daftarPenjual(supabase: AnyClient, branchId: string): Prom
   const semua = (data ?? []) as (PilihanPenjual & { branch_id: string | null })[];
   if (!branchId || semua.length === 0) return semua;
 
+  const hariIni = hariIniWIB();
   const { data: assignments } = await supabase
     .from("employee_branch_assignments")
     .select("employee_id")
     .eq("branch_id", branchId)
+    .lte("effective_date", hariIni)
+    .or(saringanPenugasanAktif(hariIni))
     .in("employee_id", semua.map((e) => e.id));
   const assigned = new Set((assignments ?? []).map((r: { employee_id: string }) => r.employee_id));
   return semua.filter((e) => e.branch_id === branchId || assigned.has(e.id));
@@ -31,11 +36,14 @@ export async function penjualValid(supabase: AnyClient, employeeId: string, bran
     .maybeSingle();
   if (!employee) return false;
   if (employee.branch_id === branchId) return true;
+  const hariIni = hariIniWIB();
   const { data: assignment } = await supabase
     .from("employee_branch_assignments")
     .select("employee_id")
     .eq("employee_id", employeeId)
     .eq("branch_id", branchId)
+    .lte("effective_date", hariIni)
+    .or(saringanPenugasanAktif(hariIni))
     .maybeSingle();
   return Boolean(assignment);
 }

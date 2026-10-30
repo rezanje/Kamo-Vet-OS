@@ -1,4 +1,3 @@
-import { servicePerformerNames } from "@/lib/service-performers";
 import { formatPosMoney } from "@/lib/pos-money";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -38,7 +37,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   const { data: items } = await supabase
     .from("sale_items")
-    .select("nama, qty, satuan, service_performers, harga, item_discount_type, item_discount_value, promo_discount, promos(name), sale_item_group_components(component_name, qty_per_group, unit, sort_order)")
+    .select("nama, qty, satuan, harga, item_discount_type, item_discount_value, promo_discount, promos(name), sale_item_group_components(component_name, qty_per_group, unit, sort_order)")
     .eq("sale_id", saleId).order("created_at");
 
   const cust = one(sale.customers);
@@ -73,7 +72,6 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
           <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>KAMO PETSHOP</div>
           <div style={{ fontSize: 9.5 }}>{branch?.name ?? "Petshop"}</div>
         </div>
-        <p className="no-print" style={{fontSize:9}}>Pelaksana per baris hanya ditampilkan jika tercatat; dokumen lama dapat belum memilikinya.</p>
         <Hr />
         <Row k="No" v={sale.no_struk ?? "-"} />
         <Row k="Tgl" v={tgl} />
@@ -93,7 +91,6 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
           return (
             <div key={i} style={{ marginBottom: 3 }}>
               <div>{it.nama}</div>
-              {it.service_performers && servicePerformerNames(it.service_performers).map(name => <div key={name} style={{fontSize:9.5}}>{name}</div>)}
               <div style={{ display: "flex", justifyContent: "space-between", gap: 4, alignItems: "start" }}>
                 {/* Satuan ikut tercetak (permintaan Bu Nisa, meeting 14 Agustus):
                     "2 x 35.000" tidak memberi tahu 2 botol atau 2 dus. */}

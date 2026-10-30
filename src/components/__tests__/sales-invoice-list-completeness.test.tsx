@@ -1,36 +1,106 @@
-import React from 'react';
-import{renderToStaticMarkup}from 'react-dom/server';
-import{beforeEach,expect,it,vi}from 'vitest';
-const s=vi.hoisted(()=>({fail:'',calls:[]as {table:string;from:number;to:number}[],missingCount:false}));
-vi.mock('next/link',()=>({default:({children,...p}:React.AnchorHTMLAttributes<HTMLAnchorElement>)=><a {...p}>{children}</a>}));
-vi.mock('@/components/MasterPage',()=>({MasterPage:({children}:React.PropsWithChildren)=><main>{children}</main>}));
-vi.mock('@/components/PilihRekening',()=>({loadRekeningAktif:async()=>[],PilihRekening:()=>null}));
-vi.mock('@/lib/master-guard',()=>({bolehTransaksiKas:async()=>false}));
-vi.mock('@/app/(app)/penjualan/faktur/actions',()=>({terimaPembayaranJual:vi.fn()}));
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({
- auth:{getUser:async()=>({data:{user:{id:'actor'}}})},
- from(table:string){let first=0,last=999,ids:string[]|undefined,select='';
-  const q={select:(v:string)=>{select=v;return q;},eq:()=>q,is:()=>q,gt:()=>q,order:()=>q,in:(_key:string,v:string[])=>{ids=v;return q;},range:(a:number,b:number)=>{first=a;last=b;return q;},
-   then(resolve:(v:unknown)=>unknown){
-    let rows:Record<string,unknown>[]=[];
-    if(table==='sales_invoices')rows=Array.from({length:1001},(_,i)=>({id:`w${i}`,no_faktur:`INV-W-${String(i).padStart(4,'0')}`,tanggal:'2026-10-23',jatuh_tempo:'2026-10-23',total:2000,carried_paid:0,status:'aktif',kategori:'selisih_stok',customers:{name:'Fictional customer'},sales_receipts:select.includes('sales_receipts(')?Array.from({length:i===0?1000:0},()=>({jumlah:1})):undefined}));
-    if(table==='invoices')rows=Array.from({length:1001},(_,i)=>({id:`c${i}`,visit_id:`visit${i}`,invoice_no:`INV-C-${String(i).padStart(4,'0')}`,created_at:'2026-10-23T00:00:00Z',total:2000,dp_amount:0,paid_status:'Belum Lunas',visits:{pets:{name:'Fictional pet'},customers:{name:'Fictional customer'},branches:{name:'Fictional branch'}},invoice_payments:select.includes('invoice_payments(')?Array.from({length:i===0?1000:0},()=>({amount:1})):undefined}));
-    if(table==='sales_receipts')rows=Array.from({length:1001},(_,i)=>({id:`r${i}`,invoice_id:'w0',jumlah:1}));
-    if(table==='invoice_payments')rows=Array.from({length:1001},(_,i)=>({id:`p${i}`,invoice_id:'c0',amount:1}));
-    if(ids)rows=rows.filter(r=>ids!.includes(String(r.invoice_id)));
-    s.calls.push({table,from:first,to:last});
-    if(s.fail===table||s.fail===`${table}:late`&&first>0)return Promise.resolve({data:null,error:{message:'Fictional private failure'},count:null}).then(resolve);
-    return Promise.resolve({data:rows.slice(first,Math.min(last,first+999)+1),error:null,count:s.missingCount?undefined:rows.length}).then(resolve);
-   }};return q;
- }
-})}));
-import Page from '@/app/(app)/penjualan/faktur/page';
-const render=async()=>renderToStaticMarkup(await Page({searchParams:Promise.resolve({})}));
-beforeEach(()=>{s.fail='';s.calls=[];s.missingCount=false;});
-it('shows the1001st wholesale and clinic invoice instead of accepting the default API cap',async()=>{const html=await render();expect(html.includes('INV-W-1000')).toBe(true);expect(html.includes('INV-C-1000')).toBe(true);});
-it('uses all1001 payments for displayed source balances without double counting embedded rows',async()=>{
- const html=await render();for(const key of['INV-W-0000','INV-C-0000']){const start=html.indexOf(key);expect(html.slice(start,html.indexOf('</tr>',start))).toContain('Rp 999');}
- expect(s.calls.filter(c=>['invoice_payments','sales_receipts'].includes(c.table)).every(c=>c.to-c.from<500)).toBe(true);
+// Daftar Faktur Penjualan gabungan tidak boleh pernah menyajikan angka separuh.
+// Dua jebakannya: batas 1.000 baris per permintaan API, dan sumber yang gagal
+// dibaca di tengah jalan. Keduanya harus berakhir sebagai jumlah yang benar
+// atau peringatan yang terlihat — bukan daftar pendek yang tampak wajar.
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { beforeEach, expect, it, vi } from "vitest";
+import { buatDbPalsu, type JejakBaca, type Row } from "@/lib/__tests__/helpers/faktur-db";
+
+const s = vi.hoisted(() => ({ gagal: "", tanpaCount: false, jejak: [] as unknown[] }));
+vi.mock("next/link", () => ({ default: ({ children, ...p }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...p}>{children}</a> }));
+vi.mock("@/components/MasterPage", () => ({ MasterPage: ({ children }: React.PropsWithChildren) => <main>{children}</main> }));
+vi.mock("@/components/PilihRekening", () => ({ loadRekeningAktif: async () => [], PilihRekening: () => null }));
+vi.mock("@/lib/master-guard", () => ({ bolehTransaksiKas: async () => true }));
+vi.mock("@/app/(app)/penjualan/faktur/actions", () => ({ terimaPembayaranJual: vi.fn() }));
+
+const BANYAK = 1001;
+const tanggal = (i: number) => `2026-10-${String((i % 28) + 1).padStart(2, "0")}`;
+
+const grosir = Array.from({ length: BANYAK }, (_, i) => ({
+  id: `w${i}`, no_faktur: `INV-W-${String(i).padStart(4, "0")}`, tanggal: tanggal(i),
+  jatuh_tempo: "2026-11-23", total: 2000, carried_paid: 0, status: "berjalan", voided_on: null,
+  branch_id: "branch", customer_id: null, replaces_invoice_id: null, catatan: null,
+  kategori: null, opening_batch_id: null, customers: null, branches: { name: "Cabang rekaan" }, sales_orders: null,
+}));
+const klinik = Array.from({ length: BANYAK }, (_, i) => ({
+  id: `c${i}`, visit_id: `visit${i}`, invoice_no: `INV-C-${String(i).padStart(4, "0")}`,
+  created_at: `${tanggal(i)}T05:00:00+00:00`, total: 2000, voided_at: null,
+  paid_status: i === 0 ? "Lunas" : i === 1 ? "DP" : "Belum Lunas",
+  visits: { branch_id: "branch", customer_id: null, pets: null, customers: { name: "Pelanggan rekaan" }, branches: { name: "Cabang rekaan" } },
+}));
+
+const sumber = (tabel: string): Row[] => ({
+  profiles: [{ id: "user-1", role: "OWNER", is_active: true }],
+  branches: [{ id: "branch", code: "RK", name: "Cabang rekaan", type: "PETSHOP", is_active: true }],
+  customers: [], sales: [], user_branches: [],
+  invoices: klinik, sales_invoices: grosir,
+  sales_receipts: [], invoice_payments: [], sales_advances: [], wholesale_invoice_corrections: [],
+}[tabel] ?? []);
+
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => buatDbPalsu(
+  (tabel) => sumber(tabel),
+  { jejak: s.jejak as JejakBaca[], gagal: () => s.gagal, tanpaCount: () => s.tanpaCount },
+) }));
+
+import Page from "@/app/(app)/penjualan/faktur/page";
+const render = async (sp: Record<string, string> = {}) =>
+  renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", ...sp }) }));
+
+beforeEach(() => { s.gagal = ""; s.tanpaCount = false; s.jejak = []; });
+
+it("menghitung baris ke-1001 tiap sumber, bukan berhenti di batas bawaan API", async () => {
+  const html = await render();
+  expect(html).toContain((BANYAK * 2).toLocaleString("id-ID"));
+  expect(html).toContain("Rp 4.004.000");
+  const jejak = s.jejak as JejakBaca[];
+  expect(jejak.filter(j => j.tabel === "invoices" && j.dari > 0).length).toBeGreaterThan(0);
+  expect(jejak.filter(j => j.tabel === "sales_invoices" && j.dari > 0).length).toBeGreaterThan(0);
 });
-it.each(['sales_invoices','invoices:late','sales_receipts:late','invoice_payments:late','sales_advances','wholesale_invoice_corrections'])('refuses an incomplete %s read instead of presenting empty or paid data',async table=>{s.fail=table;await expect(render()).rejects.toThrow(/belum|tidak dapat/);});
-it('refuses missing source counts instead of assuming completeness',async()=>{s.missingCount=true;await expect(render()).rejects.toThrow('jumlah data tidak dapat diverifikasi');});
+
+it("dokumen tertua tiap sumber tetap dapat dijangkau lewat halaman terakhir", async () => {
+  // 1.001 dokumen per sumber = 21 halaman; yang ke-1001 ada di halaman terakhir.
+  expect(await render({ sumber: "grosir", hal: "21" })).toContain("INV-W-0000");
+  expect(await render({ sumber: "klinik", hal: "21" })).toContain("INV-C-0000");
+  expect((await render()).includes("INV-W-0000")).toBe(false);
+});
+
+it("status tiap tagihan klinik mengikuti status tersimpannya, bukan hitungan ulang", async () => {
+  const akhir = await render({ hal: "41" });
+  const baris = akhir.slice(akhir.indexOf("INV-C-0000"), akhir.indexOf("</tr>", akhir.indexOf("INV-C-0000")));
+  expect(baris).toContain("Lunas");
+  expect(baris).not.toContain("Belum Lunas");
+  // Tagihan DP dan tagihan tanpa bayar sama-sama belum lunas, dan yang berstatus
+  // Lunas tidak boleh ikut terjaring walau baris penerimaannya tidak ada.
+  const belum = await render({ sumber: "klinik", status: "belum" });
+  expect(belum).toContain("Belum Lunas");
+  expect(belum).not.toContain("INV-C-0000<");
+  expect(belum).toContain((BANYAK - 1).toLocaleString("id-ID"));
+});
+
+it("rincian baris yang tampil diambil per potongan kecil, bukan sekaligus ribuan id", async () => {
+  await render();
+  const rincian = (s.jejak as JejakBaca[]).filter(j => j.jumlahId > 0);
+  expect(rincian.length).toBeGreaterThan(0);
+  expect(rincian.every(j => j.jumlahId <= 100)).toBe(true);
+});
+
+it.each(["sales", "invoices:lanjutan", "sales_invoices:lanjutan", "customers"])(
+  "menolak membaca %s separuh dan memasang peringatan, bukan daftar pendek", async (tabel) => {
+    s.gagal = tabel;
+    const html = await render({ cari: "rekaan" });
+    expect(html).toContain("Coba muat ulang");
+    expect(html).not.toContain("INV-W-");
+    expect(html).not.toContain("INV-C-");
+  });
+
+it("sumber tanpa jumlah baris yang dapat diverifikasi juga ditolak", async () => {
+  s.tanpaCount = true;
+  await expect(render()).rejects.toThrow("tidak dapat diverifikasi");
+});
+
+it.each(["sales_advances", "wholesale_invoice_corrections"])(
+  "kegagalan %s menghentikan halaman, bukan menyembunyikan datanya", async (tabel) => {
+    s.gagal = tabel;
+    await expect(render()).rejects.toThrow(/belum|tidak dapat/);
+  });

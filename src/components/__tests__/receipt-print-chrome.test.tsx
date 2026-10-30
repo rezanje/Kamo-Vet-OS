@@ -76,18 +76,20 @@ it("keeps the branch selector on screen but out of the printed cashier receipt",
   expect(paper).not.toContain("Cabang aktif");
   expect(paper).not.toContain("Ganti cabang");
   expect(paper).not.toContain("Cetak Struk");
-  expect(paper).not.toContain("Pelaksana per baris hanya ditampilkan");
+  // Nama tenaga penjual per baris tidak pernah tercetak lagi (permintaan Andri 29 Okt 2026).
+  expect(paper).not.toContain("Groomer Sintetis");
+  expect(paper).not.toContain("Pelaksana");
   expect(paper.trimStart().startsWith("KAMO PETSHOP")).toBe(true);
   for (const text of ["Kamo Petshop Sintetis", "POS-SINTETIS-0001", "Kasir Sintetis", "Pelanggan Sintetis", "Grooming Sintetis",
-    "Groomer Sintetis", "5 pcs x Rp 25.000", "Rp 125.000", "TOTALRp 120.000", "KembaliRp 30.000"]) expect(paper).toContain(text);
+    "5 pcs x Rp 25.000", "Rp 125.000", "TOTALRp 120.000", "KembaliRp 30.000"]) expect(paper).toContain(text);
 });
 
-it("keeps the screen-only note on the backoffice receipt out of print", async () => {
+it("keeps the backoffice receipt free of per-line seller names", async () => {
   const markup = renderToStaticMarkup(await BackofficeReceiptPage({ params: Promise.resolve({ saleId: "receipt" }) }));
-  expect(markup).toContain("Pelaksana per baris hanya ditampilkan jika tercatat");
+  expect(markup).not.toContain("Pelaksana");
   const paper = printed(markup);
-  expect(paper).not.toContain("Pelaksana per baris hanya ditampilkan");
-  for (const text of ["KAMO PET CARE", "Kamo Petshop Sintetis", "Groomer Sintetis", "Rp 120.000"]) expect(paper).toContain(text);
+  expect(paper).not.toContain("Groomer Sintetis");
+  for (const text of ["KAMO PET CARE", "Kamo Petshop Sintetis", "Grooming Sintetis", "Rp 120.000"]) expect(paper).toContain(text);
 });
 
 it("hides shared app chrome from every printed document", async () => {

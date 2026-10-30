@@ -1,6 +1,7 @@
 "use client";
 
 import { NumberInput } from "@/components/NumberInput";
+import { QtyInput } from "@/components/QtyInput";
 import { aggregateServiceLines } from "@/lib/service-line-promos";
 
 import { ServicePerformersField } from "@/components/ServicePerformersField";
@@ -8,6 +9,7 @@ import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerName
 import styles from "./PembayaranForm.module.css";
 
 import { METODE_BAYAR as SPLIT_METHODS } from "@/lib/kas-akun";
+import { kurangUangMuka, pesanDpMinimal } from "@/lib/dp-minimal";
 import { validateSplitPaymentTotal, type SplitPaymentDraft } from "@/lib/clinic-split-payment";
 
 import { quoteDemoPayments, type DemoFinancialPolicy } from "@/lib/clinic-demo-policy";
@@ -19,7 +21,9 @@ import Link from "next/link";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Popup } from "@/components/Popup";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { bayarVisit } from "./actions";
+import { DpAdmissionFields } from "./DpAdmissionFields";
 import { hariIniWIB } from "@/lib/tanggal";
 import { METODE_BAYAR } from "@/lib/metode-bayar";
 import { hitungPromoKeranjang } from "@/lib/promo-hitung";
@@ -72,7 +76,7 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; groomingDoctorRequired?: boolean;
@@ -83,11 +87,14 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   openSourceIds?: ReadonlySet<string>;
   /** H05: packages offered for tagging a component line (new invoices only). */
   packages?: PackageOption[];
+  discountsDisabled?: boolean;
 }) {
   const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id));
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => setRows([...rows, { key: crypto.randomUUID(), deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0, service_performers: visitDefaultPerformers(defaultDoctorId) }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
+  // Andri 29 Okt: baris resep/racikan yang dihapus tidak pernah tertagih lagi (1 kunjungan
+  // = 1 tagihan). Minta konfirmasi dulu; baris yang ditambah kasir sendiri langsung hapus.
   const subtotal = rows.reduce((a, r) => a + nilaiBaris(r), 0);
 
   // Cocokkan ketikan ke master SKU. Kalau kena, item_id + harga jual ikut terisi
@@ -174,14 +181,14 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                         {choices.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
                       </select></label>
                     {r.package_item_id && <label style={{display:'block',fontSize:10,width:70}}>Jml paket
-                      <NumberInput className="fi" type="number" min={1} step="1" aria-label={`Jumlah paket ${r.deskripsi}`} value={r.package_qty ?? 1}
-                        onChange={event => { const jumlah = Math.max(1, Number(event.target.value) || 1); set(i,{package_qty:jumlah,...qtyUntuk(r.package_item_id!, jumlah)}); }} style={{height:25,fontSize:10}} /></label>}
+                      <QtyInput className="fi" min={1} step="1" aria-label={`Jumlah paket ${r.deskripsi}`} value={r.package_qty ?? 1}
+                        onValue={jumlah => { set(i,{package_qty:jumlah,...qtyUntuk(r.package_item_id!, jumlah)}); }} style={{height:25,fontSize:10}} /></label>}
                   </div>;
                 })()}
               </td>
               <td>
-                <NumberInput className="fi" type="number" min={1} value={r.qty}
-                  onChange={(e) => set(i, { qty: Number(e.target.value) })}
+                <QtyInput className="fi" min={1} aria-label={`Jumlah ${r.deskripsi}`} value={r.qty}
+                  onValue={(qty) => set(i, { qty })}
                   readOnly={r.terkunci || !!r.recipe_id} disabled={r.terkunci}
                   title={r.terkunci ? "Dihitung otomatis dari lama rawat inap" : r.recipe_id ? "Satu hasil racikan tersimpan" : undefined}
                   style={{ textAlign: "center", ...(r.terkunci ? { background: "#f3f4f6", cursor: "not-allowed" } : {}) }} />
@@ -208,6 +215,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
               <td><NumberInput className="fi" type="number" min={0} step="any" value={r.harga} readOnly={!!r.recipe_id} title={r.recipe_id ? "Harga racikan tersimpan; koreksi melalui diskon" : undefined} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
               <td>
                 <NumberInput className="fi" type="number" min={0} max={100} step="any"
+                  aria-label={`Diskon ${r.deskripsi}`} readOnly={discountsDisabled} title={discountsDisabled ? "Diskon tidak berlaku pada invoice tahap rawat inap" : undefined}
                   value={r.diskon_persen ?? 0}
                   onChange={(e) => set(i, { diskon_persen: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
                   style={{ textAlign: "center" }} />
@@ -221,7 +229,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
               <td style={{ textAlign: "center" }}>
                 {r.terkunci
                   ? <i className="ti ti-lock" title="Baris otomatis dari rawat inap" style={{ color: "var(--td)" }} />
-                  : <i className="ti ti-x" onClick={() => del(i)} style={{ cursor: "pointer", color: "#dc2626" }} />}
+                  : <HapusBaris row={r} label={`Hapus baris ${r.deskripsi || i + 1}`} onHapus={() => del(i)} />}
               </td>
             </tr>
           ))}
@@ -239,6 +247,36 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   );
 }
 
+function HapusBaris({ row, label, onHapus }: { row: Line; label: string; onHapus: () => void }) {
+  const [tanya, setTanya] = useState(false);
+  const perluTanya = !!row.prescription_item_id || !!row.recipe_id;
+  return <>
+    <i className="ti ti-x" role="button" aria-label={label} onClick={() => perluTanya ? setTanya(true) : onHapus()} style={{ cursor: "pointer", color: "#dc2626" }} />
+    <HapusItemDialog row={tanya ? row : null} onConfirm={() => { setTanya(false); onHapus(); }} onCancel={() => setTanya(false)} />
+  </>;
+}
+
+function HapusItemDialog({ row, onConfirm, onCancel }: { row: Line | null; onConfirm: () => void; onCancel: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (row && !ref.current?.open) ref.current?.showModal(); }, [row]);
+  if (!row) return null;
+  const racikan = !!row.recipe_id || row.satuan === "racikan";
+  return <dialog ref={ref} role="alertdialog" aria-label="Hapus item tagihan" onCancel={(event) => { event.preventDefault(); onCancel(); }}
+    style={{ margin: "auto", border: ".5px solid #fca5a5", borderRadius: 12, padding: 20, maxWidth: 440, width: "calc(100% - 32px)" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700, color: "#b91c1c", marginBottom: 8 }}>
+      <i className="ti ti-alert-triangle" style={{ fontSize: 20 }} /> Hapus {row.deskripsi || "item ini"}?
+    </div>
+    <div style={{ fontSize: 13, color: "var(--sb)", marginBottom: 16, lineHeight: 1.5 }}>
+      Item ini tidak bisa ditagih lagi di pembayaran berikutnya.{racikan ? " Bahan racikan sudah keluar dari stok saat diracik." : ""}{" "}
+      Kalau uang pemilik kurang, jangan hapus item — isi jumlah yang dibayar lalu klik <b>Simpan</b> (tercatat DP/Belum Lunas, sisanya jadi piutang).
+    </div>
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <button type="button" className="btn-acc" autoFocus onClick={onCancel}>Batal</button>
+      <button type="button" className="btn-def" style={{ color: "#b91c1c" }} onClick={onConfirm}>Tetap hapus</button>
+    </div>
+  </dialog>;
+}
+
 function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:(rows:Line[])=>void;staff:ServiceStaff[];locked:(row:Line)=>boolean}) {
   const [value,setValue]=useState(emptyServicePerformers);
   return <div>
@@ -247,11 +285,13 @@ function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:
   </div>;
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false }: {
+export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, minDpPercent = 0, bolehTerobosDp = false, allowDpAdmission = false, initialDpAdmission = false }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
+  targetInvoiceId?: string;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   /** Ada racikan kunjungan ini yang masih menunggu diracik. */
   racikanPending?: boolean;
+  allowDpAdmission?: boolean; initialDpAdmission?: boolean;
   draftUserId?: string; draftScope?: string; sourceVersion?: string;
   packages?: PackageOption[];
   demoPolicy?: DemoFinancialPolicy | null; demoStaff?: PilihanPenjual[];
@@ -264,7 +304,12 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
   initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
+  /** Uang muka minimal tagihan klinik (persen). 0 = aturannya dimatikan. */
+  minDpPercent?: number;
+  /** Peran kasir boleh menyimpan di bawah minimum dengan alasan (OWNER/ADMIN/FINANCE). */
+  bolehTerobosDp?: boolean;
 }) {
+  const [admitAfterDp, setAdmitAfterDp] = useState(allowDpAdmission && initialDpAdmission);
   const [draftSourceVersion, setDraftSourceVersion] = useState(sourceVersion);
   const sourceChanged = !!sourceVersion && draftSourceVersion !== sourceVersion;
   const latestSourceSubtotal = [...initialObat, ...initialJasa].reduce((sum,row)=>sum+nilaiBaris(row),0);
@@ -284,6 +329,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const [demoEnabled, setDemoEnabled] = useState(!editMode && !!demoPolicy && demoStaff.length > 0 && /^DEMO\b/i.test(patient.owner));
   const [demoPolicyId, setDemoPolicyId] = useState(demoPolicy?.id ?? "");
   const [demoEmployees, setDemoEmployees] = useState(demoStaff.map(person => person.id));
+  const [dpOverrideReason, setDpOverrideReason] = useState("");
   const [mixed, setMixed] = useState(false);
   const [splitPayments, setSplitPayments] = useState<SplitPaymentDraft[]>([{ method: "Tunai", amount: 0 }, { method: "Transfer", amount: 0 }]);
 
@@ -352,7 +398,15 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const dpPaid = initialDpAmount;
   const sisa = Math.max(0, total - dpPaid - initialCreditAmount);
 
-  const [bayar, setBayar] = useState(0);
+  const [bayarKetik, setBayar] = useState(0);
+  // Samakan dengan kasir petshop (Andri 29 Okt): selain Tunai, jumlah bayar otomatis
+  // = sisa tagihan. Kasir tetap boleh mengubahnya (mis. DP sebagian lewat transfer).
+  //
+  // KOREKSI tidak menerima uang (kolomnya pun dimatikan), jadi otomatisasi itu tidak
+  // berlaku di sana: kalau ikut terbawa, form mengirim status "Lunas" untuk tagihan
+  // yang tersimpan belum lunas dan aksinya menolak koreksi tersebut.
+  const [bayarManual, setBayarManual] = useState(false);
+  const bayar = !editMode && metode !== "Tunai" && !bayarManual ? sisa : bayarKetik;
   const [kurangBayar, setKurangBayar] = useState<string | null>(null);
   // Racikan belum siap tidak menolak pembayaran; kasir hanya diminta mengkonfirmasi sekali.
   const [konfirmasiRacikan, setKonfirmasiRacikan] = useState<FormData | null>(null);
@@ -366,6 +420,9 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
     catch (error) { splitError = error instanceof Error ? error.message : "Periksa rincian pembayaran."; }
   }
   const paidStatus = totalDiterima >= total && total > 0 ? "Lunas" : totalDiterima > 0 ? "DP" : "Belum Lunas";
+  // Uang muka minimal (Andri, 29 Oktober 2026). Database yang menolak; layar hanya
+  // memberi tahu lebih awal supaya kasir tidak menyebut angka yang nanti ditolak.
+  const kurangDp = editMode || mixed ? 0 : kurangUangMuka(total, totalDiterima, minDpPercent);
   const statusColor = paidStatus === "Lunas" ? "#15803d" : paidStatus === "DP" ? "#7c3aed" : "#b91c1c";
 
   const { submissionKey, attachForm, capture, recovered, discard, storageError, saveError, submit, leaving } = useClinicDraft({
@@ -391,7 +448,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       };
       setObat(restoreRows(value.obat, initialObat)); setJasa(restoreRows(value.jasa, initialJasa));
       setDiscount(value.discount); setMetode(value.metode); setReason(value.reason);
-      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setSalesperson(value.salesperson);
+      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setBayarManual(value.metode !== "Tunai" && Number(value.bayar) > 0); setSalesperson(value.salesperson);
       setDemoEnabled(!editMode && !!demoPolicy && value.demoEnabled === true);
       setDemoPolicyId(typeof value.demoPolicyId === "string" ? value.demoPolicyId : demoPolicy?.id ?? "");
       setDemoEmployees(Array.isArray(value.demoEmployees) ? value.demoEmployees.filter(id => demoStaff.some(person => person.id === id)) : demoStaff.map(person => person.id));
@@ -409,6 +466,10 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   return (<>
     {/* Di luar <form>: dialog punya form method="dialog" sendiri. */}
     <Popup message={kurangBayar} title="Pembayaran kurang" onClose={() => setKurangBayar(null)} />
+    {/* Stok klinik benar-benar keluar saat pembayaran: penolakan "Stok tidak cukup"
+        dari database naik jadi popup yang sama dengan proses stok lain. */}
+    {!kurangBayar && <StokKurangDariPesan pesan={saveError}
+      petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada, lalu simpan ulang." />}
     <RacikanBelumSiapDialog open={!!konfirmasiRacikan}
       onCancel={() => setKonfirmasiRacikan(null)}
       onConfirm={() => {
@@ -426,6 +487,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       return submit(data, bayarVisit);
     }} ref={attachForm} onInput={capture} onChange={capture}>
       <input type="hidden" name="visitId" value={visitId} />
+      {editMode && targetInvoiceId && <input type="hidden" name="target_invoice_id" value={targetInvoiceId}/>}
       <input type="hidden" name="requestKey" value={submissionKey} />
       {demoEnabled && !editMode && <>
         <input type="hidden" name="demo_policy_id" value={demoPolicyId}/>
@@ -442,6 +504,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       <input type="hidden" name="dp_amount" value={editMode ? dpPaid : totalDiterima} />
       <input type="hidden" name="dp_date" value={initialDpDate ?? today} />
       {editMode && <input type="hidden" name="edit_reason" value={reason} />}
+      {kurangDp > 0 && bolehTerobosDp && <input type="hidden" name="dp_override_reason" value={dpOverrideReason} />}
 
       {recovered && <div className="p2ban">Draf dipulihkan. Periksa isian sebelum menyimpan.
         <button type="button" className="btn-def" onClick={discard}>Buang draf</button>
@@ -630,7 +693,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             </div> :
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {METODE_BAYAR.map(({ m, ic, desc }) => (
-                <button key={m} type="button" disabled={editMode} onClick={() => setMetode(m)} style={{
+                <button key={m} type="button" disabled={editMode} onClick={() => { setMetode(m); setBayarManual(false); if (m !== "Tunai") setBayar(0); }} style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: "pointer", textAlign: "left",
                   border: `1.5px solid ${metode === m ? "var(--posb)" : "var(--bd)"}`, background: metode === m ? "#eff4ff" : "#fff",
                 }}>
@@ -650,7 +713,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--posb)", marginBottom: 8 }}>PENERIMAAN PEMBAYARAN</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Jumlah Bayar</span>
-              <NumberInput className="fi" type="number" min={0} step={1} disabled={editMode} value={bayar || ""} onChange={(e) => setBayar(Number(e.target.value))} style={{ width: 130, textAlign: "right" }} />
+              <NumberInput className="fi" type="number" min={0} step={1} disabled={editMode} value={bayar || ""} aria-label="Jumlah Bayar" onChange={(e) => { setBayarManual(true); setBayar(Number(e.target.value)); }} style={{ width: 130, textAlign: "right" }} />
+              {metode !== "Tunai" && !bayarManual && !editMode && <span style={{ fontSize: 10, color: "var(--tm)" }}>otomatis = sisa tagihan</span>}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
               <span style={{ fontWeight: 600, color: "#15803d" }}>Kembalian</span>
@@ -658,6 +722,25 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             </div>
           </div>}
 
+          {kurangDp > 0 && (
+            <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", marginBottom: 8 }}>
+              <i className="ti ti-alert-triangle" /> {pesanDpMinimal(total, totalDiterima, minDpPercent)}
+              {bolehTerobosDp
+                ? " Isi alasan di bawah untuk tetap menyimpan."
+                : " Minta OWNER/ADMIN/FINANCE yang menyimpan di bawah minimum."}
+            </div>
+          )}
+          {kurangDp > 0 && bolehTerobosDp && (
+            <div className="fg" style={{ marginBottom: 8 }}>
+              <label className="flab" htmlFor="dp-override-reason">Alasan di bawah uang muka minimal</label>
+              <input className="fi" id="dp-override-reason" maxLength={500} value={dpOverrideReason}
+                onChange={(e) => setDpOverrideReason(e.target.value)}
+                placeholder="Mis. pelanggan lama, sisanya transfer besok" />
+            </div>
+          )}
+
+          {allowDpAdmission && !editMode && <DpAdmissionFields selected={admitAfterDp} onChange={setAdmitAfterDp} />}
+          {allowDpAdmission && <Link href={`/klinik/rekam-medis/${visitId}#persetujuan-rawat-inap`} className="back-btn">Periksa persetujuan / dokter Rawat Inap</Link>}
           {/* Aksi */}
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: 6 }}>
             {editMode ? (
@@ -670,7 +753,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
               </span>
             )}
             <SubmitButton className="btn-acc" name="finalize" value="0" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} busy={leaving} icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>{demoEnabled ? "Simpan lunas DEMO" : "Simpan"}</SubmitButton>
-            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} busy={leaving} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
+            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={admitAfterDp || sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} busy={leaving} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
           </div>
         </div>
       </div>

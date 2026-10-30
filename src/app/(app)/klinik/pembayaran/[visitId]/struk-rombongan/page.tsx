@@ -1,4 +1,4 @@
-import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
+import { bacaNamaDokter, namaDokterPJ, type VisitDokter } from "@/lib/dokter-pj";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -30,7 +30,10 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
 
   // Rincian tiap tagihan. Kunjungan yang belum ditagih sengaja tetap tampil sebagai
   // baris kosong — pemilik berhak tahu ada pemeriksaan yang tagihannya belum keluar.
-  const invoiceIds = rombongan.baris.map((b) => b.invoiceNo).filter(Boolean) as string[];
+  // Rawat inap bertahap: satu kunjungan bisa punya beberapa nomor tagihan aktif.
+  const invoiceIds = rombongan.baris
+    .flatMap((b) => b.invoiceNos ?? (b.invoiceNo ? [b.invoiceNo] : []))
+    .filter(Boolean) as string[];
   const { data: invs } = invoiceIds.length
     ? await supabase
         .from("invoices")
@@ -45,15 +48,22 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   const invRows = (invs ?? []) as unknown as Inv[];
 
   const { data: allItems } = invRows.length
-    ? await supabase.from("invoice_items").select("invoice_id, deskripsi, qty, harga, jenis, service_performers")
+    ? await supabase.from("invoice_items").select("invoice_id, deskripsi, qty, harga, jenis")
         .in("invoice_id", invRows.map((i) => i.id)).order("created_at")
-    : { data: [] as { invoice_id: string; deskripsi: string; qty: number; harga: number; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[] };
+    : { data: [] as { invoice_id: string; deskripsi: string; qty: number; harga: number; jenis?: string }[] };
 
-  const itemsPerInv = new Map<string, { deskripsi: string; qty: number; harga: number; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[]>();
-  for (const it of (allItems ?? []) as { invoice_id: string; deskripsi: string; qty: number; harga: number; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[]) {
+  const itemsPerInv = new Map<string, { deskripsi: string; qty: number; harga: number; jenis?: string }[]>();
+  for (const it of (allItems ?? []) as { invoice_id: string; deskripsi: string; qty: number; harga: number; jenis?: string }[]) {
     itemsPerInv.set(it.invoice_id, [...(itemsPerInv.get(it.invoice_id) ?? []), it]);
   }
   const invPerNo = new Map(invRows.map((i) => [i.invoice_no, i]));
+
+  // Tiap hewan punya kunjungannya sendiri, jadi dokter PJ-nya juga sendiri-sendiri.
+  // Yang dicetak hanya dokter PJ; pelaksana per baris tidak ikut (permintaan Andri).
+  const { data: visitRows } = await supabase
+    .from("visits").select("id, doctor_id, dokter").in("id", rombongan.baris.map((b) => b.visitId));
+  const kunjunganPer = new Map(((visitRows ?? []) as (VisitDokter & { id: string })[]).map((v) => [v.id, v]));
+  const namaDokter = await bacaNamaDokter(supabase, [...kunjunganPer.values()].map((v) => v.doctor_id));
 
   const totalDiskon = invRows.reduce((a, i) => a + (Number(i.discount) || 0), 0);
   const totalPpn = invRows.reduce((a, i) => a + (Number(i.tax) || 0), 0);
@@ -89,28 +99,31 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
         <Hr />
 
         {rombongan.baris.map((b) => {
-          const inv = b.invoiceNo ? invPerNo.get(b.invoiceNo) : null;
+          const nomor = b.invoiceNos ?? (b.invoiceNo ? [b.invoiceNo] : []);
+          const daftar = nomor.map((no) => invPerNo.get(no)).filter(Boolean) as Inv[];
+          const dokterPJ = namaDokterPJ(kunjunganPer.get(b.visitId), namaDokter);
           return (
             <div key={b.visitId} style={{ marginBottom: 6 }}>
               <div style={{ fontWeight: 700 }}>
                 {b.hewan}
-                {inv ? <span style={{ fontWeight: 400, fontSize: 9.5 }}> · {inv.invoice_no}</span> : null}
+                {daftar.length ? <span style={{ fontWeight: 400, fontSize: 9.5 }}> · {daftar.map((i) => i.invoice_no).join(", ")}</span> : null}
               </div>
-              {inv && <Kv k="Kasir" v={inv.cashier_name ?? "Kasir belum tercatat"} />}
-              {!inv && <div style={{ fontSize: 9.5 }}>(tagihan belum dibuat)</div>}
-              {(inv ? itemsPerInv.get(inv.id) ?? [] : []).map((it, i) => (
+              {daftar[0] && <Kv k="Kasir" v={daftar[0].cashier_name ?? "Kasir belum tercatat"} />}
+              {dokterPJ && <Kv k="Dokter PJ" v={dokterPJ} />}
+              {!daftar.length && <div style={{ fontSize: 9.5 }}>(tagihan belum dibuat)</div>}
+              {daftar.flatMap((inv) => itemsPerInv.get(inv.id) ?? []).map((it, i) => (
                 <div key={i}>
                   <div>{it.deskripsi}</div>
-                  {(it.jenis === "jasa" || it.service_performers != null) && <div style={{fontSize:9}}>{servicePerformerNames(it.service_performers).join(" · ")}</div>}
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>{it.qty} x {rp(it.harga)}</span>
                     <span>{rp(it.qty * it.harga)}</span>
                   </div>
                 </div>
               ))}
-              {inv && (
+              {daftar.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
-                  <span>Subtotal {b.hewan}</span><span>{rp(inv.total)}</span>
+                  <span>Subtotal {b.hewan}</span>
+                  <span>{rp(daftar.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0))}</span>
                 </div>
               )}
             </div>

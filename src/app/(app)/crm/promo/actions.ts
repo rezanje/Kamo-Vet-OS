@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 
 import {assertPackageTotalReleased,promoEditInput} from "@/lib/promo-edit";
 import {promoDiscountMode,validatePackageDiscount} from "@/lib/promo-hitung";
+import {pesanAktivasiKadaluarsa} from "@/lib/promo";
+import {hariIniWIB} from "@/lib/tanggal";
 
 const BACK = "/crm/promo";
 
@@ -65,6 +67,9 @@ export async function createPromo(formData: FormData) {
   if (maxQty != null && maxQty <= 0) gagal("Maks. qty harus lebih dari 0");
   if (minQty != null && maxQty != null && maxQty < minQty) gagal("Maks. qty tidak boleh lebih kecil dari min. qty");
   if (validFrom && validUntil && validUntil < validFrom) gagal("Tanggal berakhir lebih awal dari tanggal mulai");
+  // Promo yang tanggal akhirnya sudah lewat langsung dimatikan lagi oleh penyapu
+  // kedaluwarsa — menyimpannya cuma menghasilkan baris mati yang membingungkan.
+  if (validUntil && validUntil < hariIniWIB()) gagal("Tanggal berakhir sudah lewat. Isi tanggal hari ini atau sesudahnya.");
 
   // Potong otomatis tanpa nilai diskon = promo yang terlihat aktif di daftar
   // tapi tidak memotong apa pun. Ditolak supaya tidak menyesatkan.
@@ -122,6 +127,15 @@ export async function togglePromo(formData: FormData) {
   const supabase = await requireManager();
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "1";
+  // Menghidupkan promo yang masa berlakunya sudah lewat tidak memberi potongan
+  // apa pun di kasir dan akan dimatikan lagi oleh penyapu kedaluwarsa. Ditolak
+  // di sini supaya pesannya menyebut langkah yang benar; database menolak juga
+  // (trigger promo_kadaluarsa_otomatis) buat jalur tulis lain.
+  if (active) {
+    const { data: promo } = await supabase.from("promos").select("name, valid_until").eq("id", id).maybeSingle();
+    const pesan = promo && pesanAktivasiKadaluarsa(`Promo "${promo.name}"`, promo.valid_until, hariIniWIB());
+    if (pesan) redirect(`${BACK}?error=${encodeURIComponent(pesan)}`);
+  }
   await supabase.from("promos").update({ is_active: active }).eq("id", id);
   revalidatePath(BACK);
   redirect(BACK);

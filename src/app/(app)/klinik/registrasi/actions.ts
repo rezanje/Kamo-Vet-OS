@@ -69,20 +69,17 @@ async function daftar(formData: FormData): Promise<string[]> {
     }
   }
 
-  // ponytail: lookup-by-phone reuses an existing customer instead of duplicating.
-  let customerId: string;
-  const { data: existing } = await supabase
-    .from("customers").select("id").eq("phone", phone).maybeSingle();
-
-  if (existing) {
-    customerId = existing.id;
-  } else {
-    const { data: created, error } = await supabase
-      .from("customers").insert({ name, phone, dob, email, address, catatan }).select("id").single();
-    if (error || !created) {
-      redirect(`/klinik/registrasi?error=${encodeURIComponent(error?.message ?? "Gagal simpan pelanggan")}`);
-    }
-    customerId = created!.id;
+  // Cari-atau-buat pemilik secara ATOMIK (temuan C3b, PR #328): RPC ini memegang kunci
+  // identitas yang sama dengan impor rekam medis, mencocokkan HP dengan kunci kanonik
+  // (08.. = +62..), dan menolak bila satu HP terdaftar pada beberapa pelanggan alih-alih
+  // memilih salah satu. Cari-lalu-insert terpisah di sini dulu bisa membuat pemilik ganda
+  // bila impor sedang berjalan untuk orang yang sama.
+  const { data: pemilik, error: pemilikError } = await supabase.rpc("registrasi_pelanggan_atomik", {
+    p_name: name, p_phone: phone, p_dob: dob, p_email: email, p_address: address, p_catatan: catatan,
+  });
+  const customerId = (pemilik as { customer_id?: unknown } | null)?.customer_id;
+  if (pemilikError || typeof customerId !== "string") {
+    redirect(`/klinik/registrasi?error=${encodeURIComponent(pemilikError?.message ?? "Gagal simpan pelanggan")}`);
   }
 
   // Nomor antrian <KODE CABANG>-<Huruf><3 digit> per cabang per hari (Addendum §4 +
@@ -208,8 +205,17 @@ export async function lookupPetsByPhone(phone: string): Promise<{ customer: Cust
   const p = phone.trim();
   if (!p) return { customer: null, pets: [] };
 
+  // Kunci HP kanonik yang sama dengan penyimpanan (08.. = +62..). Bila satu HP terdaftar
+  // pada beberapa pelanggan, tidak ada yang dipilih otomatis: layar mengisi kosong dan
+  // penyimpanan akan menolak dengan pesan yang jelas.
+  const { data: pilihan } = await supabase.rpc("customer_pick_by_phone", { p_phone: p });
+  const customerId = (pilihan as { status?: unknown; customer_id?: unknown } | null)?.status === "one"
+    ? (pilihan as { customer_id?: unknown }).customer_id
+    : null;
+  if (typeof customerId !== "string") return { customer: null, pets: [] };
+
   const { data: customer } = await supabase
-    .from("customers").select("id, name, dob, email, address, tier").eq("phone", p).maybeSingle();
+    .from("customers").select("id, name, dob, email, address, tier").eq("id", customerId).maybeSingle();
   if (!customer) return { customer: null, pets: [] };
 
   const { data: pets } = await supabase

@@ -1,0 +1,40 @@
+[
+  {
+    "source_key": "fiktif satu::08000000011::kucing fiktif::15012026",
+    "record_no": null,
+    "record_date": "2026-01-15T00:00:00+07:00",
+    "owner_name": "Fiktif Satu",
+    "phone": "08000000011",
+    "address": null,
+    "patient_name": "Kucing Fiktif",
+    "species": null,
+    "breed": null,
+    "gender": null,
+    "dob": null,
+    "doctor": null,
+    "note": null,
+    "anamnesis": "Anamnesis fiktif",
+    "clinical_findings": null,
+    "diagnosis": "Diagnosis fiktif",
+    "therapy": null
+  },
+  {
+    "source_key": "fiktif satu::628000000011::kucing fiktif::15012026",
+    "record_no": null,
+    "record_date": "2026-01-15T00:00:00+07:00",
+    "owner_name": "Fiktif Satu",
+    "phone": "628000000011",
+    "address": null,
+    "patient_name": "Kucing Fiktif",
+    "species": null,
+    "breed": null,
+    "gender": null,
+    "dob": null,
+    "doctor": null,
+    "note": null,
+    "anamnesis": "Anamnesis fiktif",
+    "clinical_findings": null,
+    "diagnosis": "Diagnosis fiktif",
+    "therapy": null
+  }
+]

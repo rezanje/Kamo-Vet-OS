@@ -19,6 +19,9 @@ type Db = {
   employees?: Any[];
   cash_advances_inserted?: Any[];
   journalLines?: Any[];
+  clinic_payment_receipts?: Any[];
+  /** Tabel yang bacaannya gagal — untuk menguji gagal-tertutup. */
+  gagal?: Record<string, { code?: string; message: string }>;
 };
 
 function makeClient(db: Db) {
@@ -60,6 +63,7 @@ function makeClient(db: Db) {
         eq: (k: string, v: Any) => ((f[k] = v), self),
         in: () => self,
         is: () => self,
+        or: () => self,
         not: () => self,
         order: () => self,
         limit: () => self,
@@ -71,6 +75,8 @@ function makeClient(db: Db) {
         },
         single: async () => ({ data: null, error: null }),
         then: (res: Any, rej: Any) => {
+          const gagal = db.gagal?.[table];
+          if (gagal && mode !== "update") return Promise.resolve({ data: null, error: gagal }).then(res, rej);
           let data: Any = [];
           if (mode === "update" && table === "cashier_shifts") {
             // Meniru `.eq("status","open")`: kalau shiftnya tidak lagi terbuka,
@@ -121,6 +127,45 @@ describe("pemasukanShift", () => {
     const result = await hitungShift(makeClient(db), shift());
     expect(result.expected).toBe(118000);
     expect(result.breakdown.Transfer).toBe(80000);
+  });
+
+  // Tagihan berjalan rawat inap (Andri, 29 Oktober 2026): uangnya masuk lewat kwitansi
+  // per kunjungan, bukan lewat kepala invoice, jadi kas fisik shift harus ikut membacanya.
+  it("counts inpatient receipt parts per method in the clinic drawer", async () => {
+    const db: Db = {
+      invoices: [{ id: "tahap-1", total: 300000, dp_amount: 0, paid_status: "Belum Lunas", metode_bayar: "Tunai" }],
+      invoice_payments: [{ invoice_id: "tahap-1", amount: 250000, metode: "Tunai", transferred_from: null }],
+      clinic_payment_receipts: [{
+        id: "kwt-1", status: "aktif", shift_id: "S1", void_shift_id: null,
+        clinic_payment_receipt_parts: [{ metode: "Tunai", amount: 120000 }, { metode: "QRIS", amount: 130000 }],
+      }],
+    };
+    const result = await hitungShift(makeClient(db), shift({ shift_type: "klinik" }));
+    expect(result.breakdown).toMatchObject({ Tunai: 120000, QRIS: 130000 });
+    // Tagihan tahapnya sendiri tidak menambah laci: uangnya sudah dihitung dari kwitansi.
+    expect(result.expected).toBe(220000);
+  });
+
+  it("does not treat an applied customer advance as cash received", async () => {
+    const db: Db = {
+      invoices: [{ id: "tahap-2", total: 50000, dp_amount: 0, paid_status: "Lunas", metode_bayar: "Tunai" }],
+      invoice_payments: [{ invoice_id: "tahap-2", amount: 50000, metode: "Uang Muka", kas_code: "2103", transferred_from: null }],
+      clinic_payment_receipts: [],
+    };
+    const result = await hitungShift(makeClient(db), shift({ shift_type: "klinik" }));
+    expect(result.breakdown.Tunai).toBe(0);
+    expect(result.expected).toBe(100000);
+  });
+
+  it("removes a voided receipt from the drawer that gave the money back", async () => {
+    const parts = [{ metode: "Tunai", amount: 80000 }];
+    const sama: Db = { clinic_payment_receipts: [{ id: "kwt-2", status: "batal", shift_id: "S1", void_shift_id: "S1", clinic_payment_receipt_parts: parts }] };
+    expect((await hitungShift(makeClient(sama), shift({ shift_type: "klinik" }))).breakdown.Tunai).toBe(0);
+
+    const lain: Db = { clinic_payment_receipts: [{ id: "kwt-3", status: "batal", shift_id: "S0", void_shift_id: "S1", clinic_payment_receipt_parts: parts }] };
+    const hasil = await hitungShift(makeClient(lain), shift({ shift_type: "klinik" }));
+    expect(hasil.breakdown.Tunai).toBe(-80000);
+    expect(hasil.expected).toBe(20000);
   });
 
   it("counts original mixed checkout parts separately in the clinic shift", async () => {
@@ -302,5 +347,50 @@ describe("selisih kas kurang jadi piutang kasir", () => {
     const akun = (db.journalLines ?? []).map((l: Any) => l.account_id);
     expect(akun).toContain("a5901");
     expect(akun).not.toContain("a4303");
+  });
+});
+
+// FIN-09/UF-09: pembacaan uang yang gagal TIDAK boleh menjadi nol. Shift yang ditutup
+// dengan target kas terlalu rendah membukukan penerimaan nyata sebagai kas lebih
+// (Pendapatan Lain-lain) — uang hilang dari piutang dan tidak pernah ketahuan.
+describe("pembacaan uang shift gagal-tertutup", () => {
+  const dbKlinik = (): Db => ({
+    invoices: [{ id: "tahap-1", total: 300000, dp_amount: 0, paid_status: "Belum Lunas", metode_bayar: "Tunai" }],
+    invoice_payments: [],
+    clinic_payment_receipts: [{
+      id: "kwt-1", status: "aktif", shift_id: "S1", void_shift_id: null,
+      clinic_payment_receipt_parts: [{ metode: "Tunai", amount: 120000 }],
+    }],
+  });
+
+  it.each([
+    ["clinic_payment_receipts", { code: "PGRST201", message: "embed ambigu" }],
+    ["invoices", { code: "57014", message: "statement timeout" }],
+    ["invoice_payments", { code: "42501", message: "permission denied" }],
+    ["expenses", { code: "57014", message: "statement timeout" }],
+  ])("gagal baca %s membatalkan tutup shift klinik", async (tabel, error) => {
+    const db = { ...dbKlinik(), gagal: { [tabel]: error } };
+    const hasil = await tutupShift(makeClient(db), { shift: shift({ shift_type: "klinik" }), closing: 100_000 });
+    expect(hasil.ok).toBe(false);
+    expect(hasil.ok === false && hasil.error).toMatch(/belum dapat dibaca lengkap/);
+    // Tidak ada jurnal selisih kas yang terlanjur diposting.
+    expect(db.journal ?? []).toEqual([]);
+  });
+
+  it("tabel kwitansi yang memang belum ada tetap boleh ditutup dengan rumus lama", async () => {
+    const db: Db = {
+      ...dbKlinik(),
+      clinic_payment_receipts: [],
+      gagal: { clinic_payment_receipts: { code: "42P01", message: 'relation "clinic_payment_receipts" does not exist' } },
+    };
+    const hasil = await hitungShift(makeClient(db), shift({ shift_type: "klinik" }));
+    expect(hasil.expected).toBe(100_000);
+  });
+
+  it("gagal baca penjualan juga menahan tutup shift petshop", async () => {
+    const db: Db = { sales: [], gagal: { sales: { code: "57014", message: "statement timeout" } } };
+    const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 100_000 });
+    expect(hasil.ok).toBe(false);
+    expect(db.journal ?? []).toEqual([]);
   });
 });

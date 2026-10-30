@@ -11,8 +11,15 @@ import { SecHeader } from "@/components/SecHeader";
 import { promoScheduleStatus, type PromoRow } from "@/lib/promo";
 import { createPromo, togglePromo } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { nonaktifkanPromoKadaluarsa } from "@/lib/promo-kadaluarsa";
 
 const STATUS_BADGE: Record<string, string> = { aktif: "g", terjadwal: "b", kadaluarsa: "x", nonaktif: "r" };
+
+// Dua kelas promo yang paling sering disalahpahami pemilik toko. Warnanya
+// sengaja beda jauh: hijau = uang benar-benar berkurang sendiri di kasir,
+// oranye = tidak ada potongan sampai kodenya diketik.
+const POTONG_BADGE: Record<string, string> = { ya: "g", tidak: "o" };
+const POTONG_LABEL: Record<string, string> = { ya: "Potong otomatis", tidak: "Pengingat saja — tidak memotong" };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -47,6 +54,9 @@ export default async function PromoAdminPage({
   const { error, success, kategori = "" } = await searchParams;
   const supabase = await createClient();
   const today = hariIniWIB();
+  // Promo yang sudah lewat tanggal dimatikan dulu, baru daftarnya dibaca, supaya
+  // yang terlihat di layar sama dengan yang tersimpan. Lihat lib/promo-kadaluarsa.
+  await nonaktifkanPromoKadaluarsa(supabase);
   const {data:{user}} = await supabase.auth.getUser();
 
   const {data:me}=await supabase.from("profiles").select("role,is_active").eq("id",user?.id??"").maybeSingle();
@@ -127,6 +137,11 @@ export default async function PromoAdminPage({
 
       <div className="crm-sec">
         <SecHeader num="02" title="DAFTAR PROMO" desc="Semua promo terdaftar + status masa berlaku." />
+        <p style={{fontSize:11,color:"var(--tm)",marginBottom:8}}>
+          <span className="bge g">Potong otomatis</span> = potongan langsung terhitung sendiri di kasir begitu syaratnya terpenuhi.{" "}
+          <span className="bge o">Pengingat saja</span> = kasir hanya melihat saran di layar; tidak ada potongan kecuali pelanggan memakai kode kampanye yang ditautkan ke promo ini.{" "}
+          <span className="bge x">Kadaluarsa</span> = masa berlakunya sudah lewat dan promonya dinonaktifkan otomatis; perpanjang tanggal &quot;Berlaku s/d&quot; lewat Edit promo kalau mau dipakai lagi.
+        </p>
         <form method="get" style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"end",marginBottom:12}}>
           <label className="flab" style={{minWidth:0,maxWidth:"100%"}}>Kategori daftar promo
             <select className="fi" aria-label="Kategori daftar promo" name="kategori" defaultValue={kategori} style={{display:"block",width:280,maxWidth:"100%"}}>
@@ -140,10 +155,10 @@ export default async function PromoAdminPage({
         <p style={{fontSize:11,color:"var(--tm)"}}>Kategori mengikuti master barang saat ini. Promo semua barang ikut setiap kategori; filter ini tidak mengubah aturan promo.</p>
         {invalidCategory&&<p role="alert">Filter kategori tidak tersedia. Bersihkan filter atau pilih kategori yang tersedia.</p>}
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 760 }}>
+          <table className="tbl" style={{ minWidth: 900 }}>
             <thead>
               <tr>
-                <th>Nama</th><th>Berlaku untuk</th><th>Kategori</th><th>Aturan</th><th>Cabang</th>
+                <th>Nama</th><th>Cara potong</th><th>Berlaku untuk</th><th>Kategori</th><th>Aturan</th><th>Cabang</th>
                 <th>Tanggal</th><th>Status</th><th /></tr>
             </thead>
             <tbody>
@@ -160,11 +175,9 @@ export default async function PromoAdminPage({
                       {p.name}
                       <div style={{ fontSize: 9.5, color: "var(--td)", textTransform: "capitalize" }}>
                         {p.promo_type.replace("_", " ")}
-                        {p.auto_apply
-                          ? <span style={{ color: "#15803d", fontWeight: 700 }}> · potong otomatis</span>
-                          : <span> · pengingat saja</span>}
                       </div>
                     </td>
+                    <td><span className={`bge ${POTONG_BADGE[p.auto_apply ? "ya" : "tidak"]}`}>{POTONG_LABEL[p.auto_apply ? "ya" : "tidak"]}</span></td>
                     <td style={{ fontSize: 11 }}>{ringkasBarang(targets.length?targets.map(id=>itemById.get(id)?.name??"Barang tidak tersedia"):undefined)}</td>
                     <td style={{fontSize:11,minWidth:160,maxWidth:260,overflowWrap:"anywhere"}}>{categoryLabels.join(", ")}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{ringkasAturan(p)}</td>
@@ -184,7 +197,7 @@ export default async function PromoAdminPage({
                   </tr>
                 );
               })}
-              {rows.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>{kategori ? "Tidak ada promo pada filter ini." : "Belum ada promo."}</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>{kategori ? "Tidak ada promo pada filter ini." : "Belum ada promo."}</td></tr>}
             </tbody>
           </table>
         </div>

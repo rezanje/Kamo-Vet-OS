@@ -1,3 +1,8 @@
+/** Worklists hide an active stay; explicit history/patient views must not. */
+export function hasActiveInpatient(records: { discharged_at: string | null } | { discharged_at: string | null }[] | null | undefined): boolean {
+  return (records ? (Array.isArray(records) ? records : [records]) : []).some(record => record.discharged_at === null);
+}
+
 export type CatatanStatusRawatInap = {
   created_at: string;
   discharged_at: string | null;

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { expect, it, vi } from "vitest";
 import { clientFixture } from "./fixtures/hpp-report-client";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const fixture = vi.hoisted(() => ({ client: null as SupabaseClient | null }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => fixture.client }));
@@ -96,4 +97,21 @@ it("R04: shows a minus position valued at the last known average with a visible 
   expect(html.match(/<td>Rp -30 \(1 baris\)<\/td>/g)).toHaveLength(2);
   expect(html).toContain("Kebijakan stok minus (R04)");
   expect(html).not.toContain("Belum tersedia</td><td>Rp 0");
+});
+
+it("M01: shows today's FIFO layer value against GL 1301 per branch without a balancing entry", async () => {
+  fixture.client = clientFixture({ tables: {
+    inventory_costing_settings: [{ id: true, method: "fifo", activated_at: null }],
+    warehouses: [{ id: "w1", branch_id: "b1", code: "W1", name: "Gudang satu" }],
+    stock_layers: [{ id: "l1", warehouse_id: "w1", item_id: "i", qty_left: "3", unit_cost: "50" }],
+    stock: [],
+    coa_accounts: [{ id: "a1301", code: "1301" }],
+    journal_lines: [{ id: "g1", account_id: "a1301", debit: "100", credit: "0", journal_entries: { tanggal: hariIniWIB(), branch_id: "b1" } }],
+  } }).client;
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: hariIniWIB(), cabang: "b1" }) }));
+  expect(html).toContain("POSISI FIFO HARI INI vs GL 1301");
+  expect(html).toContain("Rp 150");
+  expect(html).toContain("Rp 100");
+  expect(html).toContain("Rp 50");
+  expect(html).toContain("tidak ada jurnal penyeimbang");
 });

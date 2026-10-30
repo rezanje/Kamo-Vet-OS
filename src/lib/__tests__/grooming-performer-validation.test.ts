@@ -15,7 +15,7 @@ function db(type: string, override: boolean | null) {
       reads.push(table);
       let from = 0, to = 499;
       const q = {
-        select: () => q, eq: () => q, lte: () => q, order: () => q, in: () => q,
+        select: () => q, eq: () => q, lte: () => q, order: () => q, in: () => q, or: () => q,
         range: (start: number, end: number) => { from = start; to = end; return q; },
         maybeSingle: async () => ({ data: table === "branches" ? { type } : table === "branch_grooming_rules" && override !== null ? { doctor_required: override } : null, error: null }),
         then: (resolve: (result: unknown) => unknown) => {

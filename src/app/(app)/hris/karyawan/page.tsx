@@ -1,7 +1,7 @@
 import { NumberInput } from "@/components/NumberInput";
 import { MasterLifecycleActions } from "@/components/MasterLifecycleActions";
-import { MasterLifecycleFilter } from "@/components/MasterLifecycleFilter";
 import { masterView, visibleMasters, type LifecycleRow } from "@/lib/master-lifecycle";
+import { GRUP_JABATAN, saringKaryawan } from "@/lib/karyawan-filter";
 import Link from "next/link";
 import { EmployeeOccupationField } from "@/components/EmployeeOccupationField";
 import { createClient } from "@/lib/supabase/server";
@@ -9,9 +9,9 @@ import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster, bolehKelolaPayroll, bolehLihatGaji } from "@/lib/master-guard";
 import { bacaGajiPokok } from "@/lib/employee-salary";
 import { simpanKaryawan } from "./actions";
-import { PenugasanCabangForm } from "./PenugasanCabangForm";
 import { hariIniWIB } from "@/lib/tanggal";
-import { tampilkanKaryawan } from "@/lib/karyawan-master";
+import { tampilkanKaryawan, type PenugasanKaryawan } from "@/lib/karyawan-master";
+import { penugasanBerlaku } from "@/lib/employee-assignment";
 import { branchDisplayName } from "@/lib/branch-display";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -22,57 +22,78 @@ type EmployeeRow = {
   nama: string;
   jabatan: string | null;
   departemen: string | null;
+  phone: string | null;
+  email: string | null;
   status: string;
   branch_id: string | null;
 } & LifecycleRow;
 
 const STATUS_LIST = ["Aktif", "Nonaktif"];
+// Kotak status di form pencarian memakai parameter `view` yang sama dengan daftar master lain.
+const TAMPILAN_LIST = [["all", "Semua (tanpa Sampah)"], ["active", "Aktif"], ["inactive", "Nonaktif"], ["trash", "Sampah"]] as const;
 
 export default async function KaryawanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; cari?: string; view?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; cari?: string; q?: string; view?: string; cabang?: string; peran?: string }>;
 }) {
-  const { error, success, cari, view: viewRaw } = await searchParams;
+  const { error, success, cari: cariRaw, q, view: viewRaw, cabang: cabangFilter, peran } = await searchParams;
+  // `cari` dipakai pencarian global di topbar; `q` diterima sebagai alias.
+  const cari = (cariRaw ?? q ?? "").trim();
   const view = masterView(viewRaw);
   const supabase = await createClient();
-  const bolehKelola = await bolehKelolaMaster();
-  const [lihatGaji, aturGaji] = await Promise.all([bolehLihatGaji(), bolehKelolaPayroll()]);
 
-  const { data: branches } = await supabase
-    .from("branches")
-    .select("id, code, name, type")
-    .eq("is_active", true)
-    .order("name");
-
+  // Ketiga guard memakai pemeriksaan peran yang sama (dimemo per permintaan), dan
+  // ketiga pembacaan master tidak saling bergantung — semuanya jalan berbarengan.
   // Nama cabang dipetakan di aplikasi. Master karyawan tetap muncul bila relasi
   // cabang di database belum terbaca oleh layar daftar.
-  const [{ data: rowsRaw }, { data: assignmentsRaw }] = await Promise.all([
+  const [bolehKelola, lihatGaji, aturGaji, { data: branches }, { data: rowsRaw }, { data: assignmentsRaw }] = await Promise.all([
+    bolehKelolaMaster(),
+    bolehLihatGaji(),
+    bolehKelolaPayroll(),
+    supabase
+      .from("branches")
+      .select("id, code, name, type")
+      .eq("is_active", true)
+      .order("name"),
     supabase
       .from("employees")
-      .select("id, nik, nama, jabatan, departemen, status, branch_id, trashed_at, lifecycle_revision")
-      // `cari` datang dari pencarian global di topbar.
-      .or(cari ? `nama.ilike.%${cari}%,nik.ilike.%${cari}%` : "nama.not.is.null")
+      // Pencarian & penyaringan dikerjakan di server atas seluruh daftar supaya
+      // satu kotak cari bisa mencakup jabatan, cabang, no HP, dan email sekaligus.
+      .select("id, nik, nama, jabatan, departemen, phone, email, status, branch_id, trashed_at, lifecycle_revision")
       .order("nama"),
     supabase
       .from("employee_branch_assignments")
-      .select("employee_id, branch_id, role, effective_date")
+      .select("employee_id, branch_id, role, effective_date, end_date")
       .order("role")
       .order("effective_date"),
   ]);
   const branchCatalog = branches ?? [];
   const displayBranches = branchCatalog.map(branch => ({ ...branch, name: branchDisplayName(branch, branchCatalog) }));
-  const rows = tampilkanKaryawan(
-    visibleMasters((rowsRaw ?? []) as unknown as EmployeeRow[], view, row => row.status === "Aktif"),
+  const semuaKaryawan = (rowsRaw ?? []) as unknown as EmployeeRow[];
+  const hariIni = hariIniWIB();
+  const semuaPenugasan = (assignmentsRaw ?? []) as PenugasanKaryawan[];
+  const dalamTampilan = tampilkanKaryawan(
+    visibleMasters(semuaKaryawan, view, row => row.status === "Aktif"),
     displayBranches,
-    (assignmentsRaw ?? []) as { employee_id: string; branch_id: string; role: "PRIMARY" | "SECONDARY"; effective_date: string }[],
+    semuaPenugasan,
+    hariIni,
   );
+  const rows = saringKaryawan(dalamTampilan, { cari, cabang: cabangFilter, grup: peran });
+  const adaSaringan = Boolean(cari || cabangFilter || peran || viewRaw);
 
   const gajiPer = lihatGaji ? await bacaGajiPokok(supabase, rows.map((r) => r.id)) : new Map<string, number>();
 
-  const total = rows.length;
-  const aktif = rows.filter((r) => r.status === "Aktif").length;
-  const nonaktif = rows.filter((r) => r.status === "Nonaktif").length;
+  // Kartu ringkasan selalu menggambarkan seluruh direktori, bukan hasil pencarian.
+  const terdaftar = semuaKaryawan.filter((r) => !r.trashed_at);
+  const total = terdaftar.length;
+  const aktif = terdaftar.filter((r) => r.status === "Aktif").length;
+  const nonaktif = terdaftar.filter((r) => r.status === "Nonaktif").length;
+
+  // T1: karyawan aktif tanpa cabang utama tidak pernah muncul di pemilih petugas klinik.
+  const punyaPenugasanBerlaku = new Set(semuaPenugasan.filter((t) => penugasanBerlaku(t, hariIni)).map((t) => t.employee_id));
+  const tanpaCabang = terdaftar.filter((r) => r.status === "Aktif" && !r.branch_id);
+  const tanpaCabangTanpaTugas = tanpaCabang.filter((r) => !punyaPenugasanBerlaku.has(r.id)).length;
 
   return (
     <>
@@ -94,14 +115,21 @@ export default async function KaryawanPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
-      {success && success !== "assignment" && (
+      {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {success === "1" ? "Data karyawan berhasil disimpan." : success}
         </div>
       )}
-      {success === "assignment" && (
-        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Penugasan cabang berhasil disimpan.
+
+      {bolehKelola && tanpaCabang.length > 0 && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <i className="ti ti-alert-triangle" />
+          <span>
+            {tanpaCabang.length} karyawan aktif belum punya cabang utama
+            {tanpaCabangTanpaTugas > 0 && `, ${tanpaCabangTanpaTugas} di antaranya belum punya penugasan cabang mana pun`}.
+            Selama cabangnya kosong, mereka tidak bisa dipilih sebagai dokter, petugas, atau groomer di klinik dan kasir.
+          </span>
+          <Link className="btn-def" href="/hris/karyawan/tanpa-cabang" style={{ marginLeft: "auto" }}>Perbaiki sekarang</Link>
         </div>
       )}
 
@@ -177,18 +205,37 @@ export default async function KaryawanPage({
       {bolehKelola && (
         <div className="crm-sec">
           <SecHeader num="02" title="PENUGASAN LINTAS CABANG" desc="Satu dokter atau tenaga medis bisa dijadwalkan di beberapa cabang." />
-          <PenugasanCabangForm
-            employees={((rowsRaw ?? []) as unknown as EmployeeRow[]).filter(row => row.status === "Aktif" && !row.trashed_at)}
-            branches={displayBranches}
-            today={hariIniWIB()}
-          />
+          <p style={{ fontSize: 11, color: "var(--tm)" }}>
+            Form penugasan dan daftar penugasan (termasuk tombol Akhiri penugasan) pindah ke halaman tersendiri supaya menyimpannya tidak perlu memuat ulang seluruh daftar karyawan.
+          </p>
+          <Link className="btn-def" href="/hris/karyawan/penugasan"><i className="ti ti-git-branch" /> Buka Penugasan Lintas Cabang</Link>
         </div>
       )}
 
-      <MasterLifecycleFilter entity="employees" view={view} />
       {/* 02 DAFTAR KARYAWAN */}
       <div className="crm-sec">
         <SecHeader num="03" title="DAFTAR KARYAWAN" desc="Seluruh karyawan diurutkan berdasarkan nama." />
+        <form method="get" role="search" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "8px 0 10px" }}>
+          <input className="fi" type="search" name="cari" defaultValue={cari} aria-label="Cari karyawan"
+            placeholder="Cari nama, NIK, jabatan, cabang, no HP, atau email…" style={{ flex: "1 1 240px", minWidth: 0 }} autoFocus={!!cari} />
+          <select className="fi" name="cabang" defaultValue={cabangFilter ?? ""} aria-label="Filter cabang" style={{ width: 170 }}>
+            <option value="">Semua cabang</option>
+            {displayBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <select className="fi" name="view" defaultValue={view} aria-label="Filter status" style={{ width: 170 }}>
+            {TAMPILAN_LIST.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          <select className="fi" name="peran" defaultValue={peran ?? ""} aria-label="Filter jabatan" style={{ width: 150 }}>
+            <option value="">Semua jabatan</option>
+            {GRUP_JABATAN.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+          </select>
+          <button type="submit" className="btn-def"><i className="ti ti-search" /> Cari</button>
+          {adaSaringan && <Link href="/hris/karyawan" className="btn-def">Reset</Link>}
+          <span style={{ fontSize: 11, color: "var(--tm)" }}>{rows.length} dari {dalamTampilan.length} karyawan</span>
+        </form>
+        <p style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 0 }}>
+          Sampah dapat dipulihkan. Riwayat dipertahankan lewat Nonaktifkan. Filter jabatan memakai aturan yang sama dengan pemilih dokter/petugas di klinik.
+        </p>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 780 }}>
             <thead>
@@ -219,7 +266,12 @@ export default async function KaryawanPage({
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.departemen ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{r.branchName}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
-                      {tugas.length ? tugas.map((t) => `${t.branchName}${t.role === "PRIMARY" ? " (utama)" : ""}`).join(", ") : "—"}
+                      {tugas.length ? tugas.map((t) => (
+                        <div key={`${t.employee_id}-${t.branch_id}`} style={{ opacity: t.keadaan === "berakhir" ? .6 : 1 }}>
+                          {t.branchName}{t.role === "PRIMARY" ? " (utama)" : ""}
+                          {t.keterangan ? ` · ${t.keterangan}` : ""}
+                        </div>
+                      )) : "—"}
                     </td>
                     {lihatGaji && (
                       <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
@@ -245,7 +297,7 @@ export default async function KaryawanPage({
                     colSpan={(bolehKelola ? 9 : 8) - (lihatGaji ? 0 : 1)}
                     style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}
                   >
-                    Belum ada data karyawan. Tambahkan karyawan pertama di atas.
+                    {adaSaringan ? "Tidak ada karyawan yang cocok dengan pencarian atau filter ini." : "Belum ada data karyawan. Tambahkan karyawan pertama di atas."}
                   </td>
                 </tr>
               )}

@@ -34,7 +34,7 @@ export function HandoffPanel({data,visitId,admittedAt,recordId,active,stayedDays
    {paidStay.kind==='unverified'
     ?<p role="alert">Sudah menginap {paidStay.stayed} hari. Hari yang sudah dibayar belum dapat dipastikan: kunjungan ini punya lebih dari satu periode/baris jasa rawat inap atau tagihannya tidak cocok. Cek rincian di halaman pembayaran.</p>
     :<p>Sudah menginap <b>{paidStay.stayed} hari</b> · sudah dibayar <b>{paidStay.paid} hari</b> · sisa belum dibayar <b>{paidStay.remaining} hari</b>{paidStay.invoiceNo?` · ${paidStay.invoiceNo}`:''}.</p>}
-   {paidStay.kind==='unbilled'&&<p style={{fontSize:12}}>Biaya hari inap belum masuk faktur lunas. Sistem menghitung jasa rawat inap otomatis saat pasien dipulangkan, lalu ditagih di pembayaran.</p>}
+   {paidStay.kind==='unbilled'&&<p style={{fontSize:12}}>Biaya hari inap belum masuk faktur lunas. Jasa dan jumlah hari rawat inap dicatat MANUAL di rekam medis, lalu ditagih lewat layar Tagihan rawat inap — tidak dihitung otomatis saat pasien dipulangkan.</p>}
    {paidStay.kind==='unpaid'&&<p style={{fontSize:12}}>Faktur rawat inap masih DP/belum lunas; DP tidak dihitung sebagai hari tertentu.</p>}
   </div>}
   <h3 style={{fontSize:13}}>Status sumber per baris</h3>

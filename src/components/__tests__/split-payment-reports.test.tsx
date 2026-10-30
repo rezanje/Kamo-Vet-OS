@@ -3,7 +3,8 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ sales: [] as Record<string, unknown>[] }));
+const fixture = vi.hoisted(() => ({ sales: [] as Record<string, unknown>[],
+  promos: [] as Record<string, unknown>[], vouchers: [] as Record<string, unknown>[] }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("not found"); } }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/components/LocalTransactionDraft", () => ({ TransactionForm: ({ children }: { children: React.ReactNode }) => <form>{children}</form> }));
@@ -17,7 +18,10 @@ vi.mock("@/components/PostingRequestIdentity", () => ({ PostingRequestIdentity: 
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
   from(table: string) {
     const filters: Record<string, unknown> = {};
+    const alternatives: ((row: Record<string, unknown>) => boolean)[] = [];
     const data = () => table === "sales" ? fixture.sales.filter(s => Object.entries(filters).every(([k,v]) => !(k in s) || s[k] === v))
+      : table === "promos" || table === "vouchers" ? fixture[table].filter(row =>
+        Object.entries(filters).every(([key, value]) => row[key] === value) && alternatives.every(matches => matches(row)))
       : table === "sale_items" ? fixture.sales.map(sale => ({ id: `item-${sale.id}`, sale_id: sale.id, nama: "Makanan", qty: 1, harga: 100000, sales: sale }))
       : table === "expenses" ? [{ jumlah: 2000, metode_bayar: "Tunai" }]
       : table === "cashier_shifts" ? filters.status === "closed" ? [] : [{ id: "shift", opening_balance: 100000, opened_at: "2026-10-15T05:00:00Z", branch_id: "branch", branches: { name: "A" } }]
@@ -25,6 +29,16 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { g
       : [];
     const result = () => ({ data: data(), error: null, count: data().length });
     const q = { select: () => q, eq: (key: string, value: unknown) => { filters[key] = value; return q; },
+      or: (expression: string) => {
+        const clauses = expression.split(",").map(clause => {
+          const [key, op, value] = clause.split(".");
+          if (op === "is" && value === "null") return (row: Record<string, unknown>) => row[key] === null;
+          if (op === "gte") return (row: Record<string, unknown>) => typeof row[key] === "string" && row[key] >= value;
+          throw new Error(`Unsupported fixture filter: ${clause}`);
+        });
+        alternatives.push(row => clauses.some(matches => matches(row)));
+        return q;
+      },
       is: () => q, in: () => q, order: () => q, limit: () => q, lt: () => q, gt: () => q, gte: () => q, lte: () => q, ilike: () => q,
       range: async () => result(), maybeSingle: async () => ({ data: table === "profiles" ? { role: "ADMIN" } : data()[0] ?? null, error: null }),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve) };
@@ -46,8 +60,20 @@ import { detailPelanggan } from "@/app/(app)/crm/pelanggan/actions";
 import DashboardPage from "@/app/(app)/page";
 import ReturKasirPage from "@/app/kasir/retur/page";
 import ReturJualBaruPage from "@/app/(app)/penjualan/retur/baru/page";
+import { hariIniWIB } from "@/lib/tanggal";
 
 beforeEach(() => {
+  fixture.promos = [
+    { id: "promo-today", is_active: true, valid_until: hariIniWIB() },
+    { id: "promo-unlimited", is_active: true, valid_until: null },
+    { id: "promo-expired", is_active: true, valid_until: "0001-01-01" },
+    { id: "promo-inactive", is_active: false, valid_until: null },
+  ].map(row => ({ ...row, name: row.id, promo_type: "diskon_produk" }));
+  fixture.vouchers = [
+    { id: "voucher-future", is_active: true, valid_until: "9999-12-31" },
+    { id: "voucher-expired", is_active: true, valid_until: "0001-01-01" },
+    { id: "voucher-inactive", is_active: false, valid_until: null },
+  ].map(row => ({ ...row, code: row.id, tipe: "nominal", nilai: 5000, valid_from: null }));
   fixture.sales = [{ id: "sale", no_struk: "POS-split", total: 100000, subtotal: 100000, discount: 0, metode_bayar: "Split", bayar: 110000, kembali: 10000,
     channel: null, customer_id: "c1", cashier_id: "actor", shift_id: "shift", created_at: "2026-10-15T05:00:00Z", branches: { name: "A" }, customers: null, kasir: null, sale_items: [],
     sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }],
@@ -130,6 +156,11 @@ it.each(["operasional", "marketing"])("excludes pending sales from the %s dashbo
   } else {
     expect(content.body.textContent).toContain("Makanan");
     expect(content.body.textContent).toContain("1 terjual");
+    expect(content.body.textContent).not.toContain("2 terjual");
+    const kpi = (label: string) => [...content.querySelectorAll(".kcard")]
+      .find(card => card.querySelector(".klab")?.textContent === label)?.querySelector(".kval")?.textContent;
+    expect(kpi("Promo aktif")).toBe("2");
+    expect(kpi("Voucher aktif")).toBe("1");
   }
 });
 

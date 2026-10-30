@@ -5,6 +5,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { hariIniWIB } from "@/lib/tanggal";
 import { simpanPenyesuaian } from "../actions";
 import { BarisForm, type BarangStok } from "./BarisForm";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -65,6 +66,7 @@ export default async function PenyesuaianBaruPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      <StokKurangDariPesan pesan={error} />
 
       <div className="crm-sec" style={{ paddingBottom: 12 }}>
         <div style={{ fontSize: 10, color: "var(--tm)", marginBottom: 8 }}>Pilih gudang</div>
@@ -82,6 +84,8 @@ export default async function PenyesuaianBaruPage({
       {dipilih && (
         <PreservedForm action={simpanPenyesuaian}>
           <input type="hidden" name="warehouse_id" value={dipilih.id} />
+          {/* Satu kunci per formulir: kirim ulang formulir yang sama tidak memposting dua kali. */}
+          <input type="hidden" name="request_key" value={crypto.randomUUID()} />
 
           <div className="crm-sec">
             <SecHeader

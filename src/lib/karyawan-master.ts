@@ -1,3 +1,5 @@
+import { keadaanPenugasan, labelPenugasan, type KeadaanPenugasan } from "./employee-assignment";
+
 export type KaryawanMaster = {
   id: string;
   nama: string;
@@ -12,12 +14,21 @@ export type PenugasanKaryawan = {
   branch_id: string;
   role: "PRIMARY" | "SECONDARY";
   effective_date: string;
+  end_date?: string | null;
+};
+
+export type PenugasanTampil = PenugasanKaryawan & {
+  branchName: string;
+  keadaan: KeadaanPenugasan;
+  /** "Mulai 5 Nov" / "Berakhir 30 Okt" / "" bila sedang berjalan tanpa batas. */
+  keterangan: string;
 };
 
 export function tampilkanKaryawan<T extends KaryawanMaster>(
   employees: T[],
   branches: CabangMaster[],
   assignments: PenugasanKaryawan[],
+  hariIni: string,
 ) {
   const branchName = new Map(branches.map((branch) => [branch.id, branch.name]));
   const assignmentsByEmployee = new Map<string, PenugasanKaryawan[]>();
@@ -27,12 +38,16 @@ export function tampilkanKaryawan<T extends KaryawanMaster>(
     assignmentsByEmployee.set(assignment.employee_id, current);
   }
 
-  return employees.map(({ branch_id, ...employee }) => ({
+  // `branch_id` ikut dikembalikan supaya penyaringan per cabang tidak perlu
+  // mencocokkan nama cabang yang bisa berubah tampilannya.
+  return employees.map((employee) => ({
     ...employee,
-    branchName: branch_id ? branchName.get(branch_id) ?? "Cabang tidak ditemukan" : "—",
-    assignments: (assignmentsByEmployee.get(employee.id) ?? []).map((assignment) => ({
+    branchName: employee.branch_id ? branchName.get(employee.branch_id) ?? "Cabang tidak ditemukan" : "—",
+    assignments: (assignmentsByEmployee.get(employee.id) ?? []).map((assignment): PenugasanTampil => ({
       ...assignment,
       branchName: branchName.get(assignment.branch_id) ?? "Cabang tidak ditemukan",
+      keadaan: keadaanPenugasan(assignment, hariIni),
+      keterangan: labelPenugasan(assignment, hariIni),
     })),
   }));
 }

@@ -2,6 +2,7 @@ import { NumberInput } from "@/components/NumberInput";
 import type {PromoRow} from "@/lib/promo";
 import type {MultiSelectItem,MultiSelectCategory} from "@/components/SearchableMultiSelect";
 import {PromoTargets} from "./PromoTargets";
+import {AutoApplyField} from "./AutoApplyField";
 export function PromoFields({userId,items,branches,categories,today,promo,itemIds,scope,packageTotal=false}:{userId:string;items:MultiSelectItem[];branches:MultiSelectItem[];categories:MultiSelectCategory[];today?:string;promo?:PromoRow;itemIds?:string[];scope?:string;packageTotal?:boolean}) {
  const savedMode=promo?.rule?.discount_mode ?? "per_unit";
  // Without the C04 database release only the legacy per-unit meaning is offered.
@@ -83,15 +84,7 @@ export function PromoFields({userId,items,branches,categories,today,promo,itemId
           <PromoTargets userId={userId} items={items} branches={branches} categories={categories} initialItemIds={itemIds} initialBranchIds={promo?.branch_ids ?? []} scope={scope} lockItems={!!promo?.rule?.unit}/>
 
           {/* ── Potong otomatis ─────────────────────────────────────────── */}
-          <div style={{ gridColumn: "1 / -1", background: "#f8fafc", border: ".5px solid var(--bd)", borderRadius: 7, padding: "9px 11px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700 }}>
-              <input type="checkbox" name="auto_apply" value="1" defaultChecked={promo?.auto_apply} /> Potong otomatis di kasir
-            </label>
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-              Dicentang: potongan langsung masuk keranjang, kasir tidak perlu mengetik apa pun —
-              butuh jenis & nilai diskon terisi. Tidak dicentang: promo cuma muncul sebagai pengingat di layar kasir.
-            </div>
-          </div>
+          <AutoApplyField defaultChecked={!!promo?.auto_apply} />
           <div>
             <label className="flab">Berlaku dari</label>
             <input className="fi" name="valid_from" type="date" defaultValue={promo ? promo.valid_from ?? "" : today} />

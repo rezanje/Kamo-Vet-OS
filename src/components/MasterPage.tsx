@@ -3,6 +3,7 @@
 // field tiap master berbeda — sengaja TIDAK bikin tabel generik.
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { StokKurangDariPesan } from "./StokKurangPopup";
 
 export function MasterPage({
   back, icon, iconBg = "#eff6ff", iconFg = "#2563eb", title, desc,
@@ -45,6 +46,9 @@ export function MasterPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      {/* Satu pintu untuk semua layar berkerangka ini: penolakan "stok tidak cukup"
+          naik jadi popup; pesan lain tidak menampilkan apa pun di sini. */}
+      <StokKurangDariPesan pesan={error} />
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           {/* Layar biasa mengirim success=1 dan pesannya ditulis di sini. Impor
