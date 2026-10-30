@@ -535,3 +535,52 @@ Implementasi sintetis tidak diblokir.
    - Bukti harness `psql` hanya berlaku untuk DB sintetis, bukan bukti PostgREST/auth/jaringan hosted.
    - Foto dikecualikan, tanpa OCR. Teks klinis dipertahankan, tanpa ekstraksi satuan/stok/tagihan.
    - Tiga kandidat bentuk + 2 yang ditahan saat ini **0 yang disetujui/terbukti di DB**.
+
+---
+
+## 10. Implementasi draft (kode + tes sintetis)
+
+**Modul** (`src/lib/migrasi-kartu-medis/`, murni TypeScript, import relatif; `actions.ts`/UI dan RPC/DB **tidak diubah**):
+
+| Berkas | Isi |
+|---|---|
+| `kontrak.ts` | Tanda tangan header persis (K2), `legacy-master-v0`, penanda versi, batas sumber (K9), literal `SETUJU` (K3) |
+| `baca-master.ts` | Cek zip dari direktori pusat (ukuran/entri, tanpa zip64), tolak sistem tanggal 1904, model sel (teks/angka/tanggal/rumus/galat), deteksi header terbatas, dua blok Mapping, batas tabel jelas |
+| `rencana.ts` | Validasi per field memakai batas efektif DB (tanpa potong), gabung ID lokal, jejak asli dari Mapping, aturan tanggal (§9 no. 4), karantina > pengecualian > siap, tabrakan jejak/isi ganda (TAHAN SEMUA), payload beku + SHA-256, rekonsiliasi 100% |
+| `dry-run.ts` | Dry-run offline bawaan; laporan tanpa PHI, dengan catatan "bukan otorisasi produksi; status DB tidak diketahui" |
+| `klien.ts` | Antarmuka klien terautentikasi yang di-inject (K4); prasyarat OWNER aktif + konteks eksplisit (K5/K6) |
+| `identitas.ts` | Scan baca-saja tervalidasi (F4), hitung semua anabul cocok termasuk nonaktif (F2), UUID eksplisit hanya bila terbukti, demografi yang sudah ada dibandingkan (TAHAN bila beda) |
+| `buku-besar.ts` | Ledger 0700/0600, checkpoint atomik, kunci `wx` (ambil alih hanya untuk kunci basi host sama), tanpa PHI, tolak bila berkas/rencana/konteks/ukuran batch berubah |
+| `eksekutor.ts` | Batch ≤150; resolusi identitas **per batch** + cek ulang tepat sebelum kirim; penanda `dikirim` sebelum jaringan; validasi penuh jawaban sebelum diakui; kirim ulang identik; readback RS-2 (detail per `visit_id`, paginasi per hewan sampai habis/>1000 = gagal, demografi) |
+
+Catatan desain dari implementasi:
+- Resolusi identitas dijalankan per batch, tidak sekali untuk seluruh run. Pemilik/anabul baru yang dibuat batch
+  sebelumnya dikenali sebagai identitas persis di batch berikutnya, jadi tidak salah ditahan sebagai "kandidat berubah".
+  Cek ulang tetap dilakukan tepat sebelum tiap kiriman.
+- Hitungan `HasilJalan` kumulatif per ledger (semua lanjutan dengan rencana yang sama).
+- Galat level panggilan (mis. header cabang tidak sah ditolak DB) diperlakukan sebagai **tidak pasti** (konservatif):
+  run berhenti, dan lanjutan mengirim ulang payload identik.
+
+**CLI:** `node scripts/migrasi-kartu-medis.mjs dry-run --berkas <xlsx> [--laporan <json di luar repo>]`.
+- Hanya offline. Modul jaringan tidak dimuat (diuji dengan `fetch` yang melempar).
+- Tanpa dependensi baru: `typescript` yang sudah ada mentranspilasi modul ke `node_modules/.cache`.
+- Tidak ada perintah jalankan/lanjutkan di CLI sampai login operasional OWNER diputuskan.
+
+**Harness integrasi:** `scripts/test-migrasi-kartu-medis-postgres.py` + `scripts/test-migrasi-kartu-medis-node.mjs`.
+- Rantai migrasi repo terkini dipasang, sampai `20261104050000`, termasuk ranap 20261104040000.
+- Eksekutor asli memanggil RPC lewat adaptor `psql` yang meniru PostgREST: satu panggilan = satu transaksi, `authenticated`,
+  klaim JWT, header cabang.
+- Ini **hanya** bukti DB sintetis, bukan bukti PostgREST/auth/jaringan hosted.
+
+### Gerbang yang masih terbuka (operasional/bisnis)
+
+1. **Login/sesi OWNER untuk apply** (K4). Belum ada mode jalankan di CLI; tidak ada kredensial dikumpulkan.
+2. **F3 / Q01 `imported_at`** (K8). Pilihannya:
+   - (A) penandaan historis, butuh review DB terpisah;
+   - (B) menerima kredit quest secara eksplisit, butuh keputusan bisnis.
+3. **Kolom resolusi tanggal tertinjau** untuk tab ≠ sel. Sampai ada di kontrak berikutnya, baris seperti itu dikarantina.
+4. **Selisih demografi pemilik/anabul yang sudah ada.** Baris ditahan; master perlu diselaraskan atau ada keputusan
+   tertinjau. RPC tidak memperbarui data yang sudah ada.
+5. **Risiko sisa F2.** Fallback pembuatan anabul di DB tetap ada, jadi cek ulang tidak menjamin bebas balapan.
+6. **Apply ke produksi, audit sampel nyata, merge, deploy:** masing-masing butuh izin terpisah.
+   - 3 kandidat bentuk + 2 yang ditahan = 0 yang disetujui/terbukti di DB.
