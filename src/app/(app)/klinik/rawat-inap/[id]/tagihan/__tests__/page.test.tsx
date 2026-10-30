@@ -32,7 +32,8 @@ const dasar = () => ({
   visit: { id: "vis-1", status: "Diperiksa", poli: "Poli Umum", dokter: "drh. A", customer_id: "c1" },
   pasien: "Bimo · Kucing", pemilik: "Reza", telepon: "0812",
   belumDitagih: [{ id: "p1", nama_obat: "Infus NaCl", qty: 2, harga: 50_000, jenis: "obat", item_id: null, satuan: "kolf", compound_recipe_id: null }],
-  tahap: [{ id: "inv-1", invoice_no: "INV-1", created_at: "2026-10-27T01:00:00Z", total: 300_000, dp_amount: 0, paid_status: "Belum Lunas", voided_at: null, dibayar: 100_000, sisa: 200_000 }],
+  rincianDitagih: [{ id: "line-1", invoice_id: "inv-1", prescription_item_id: null, deskripsi: "Jasa tersimpan", qty: 2, harga: 150_000, diskon_persen: 0 }],
+  tahap: [{ id: "inv-1", invoice_no: "INV-1", created_at: "2026-10-27T01:00:00Z", subtotal: 300_000, discount: 0, tax: 0, total: 300_000, dp_amount: 0, paid_status: "Belum Lunas", voided_at: null, dibayar: 100_000, sisa: 200_000, correction_pending: false }],
   piutang: 200_000,
   kwitansi: [{
     id: "kwt-1", no_kwitansi: "KWT-202610-0001", tanggal: "2026-10-27", total: 100_000, status: "aktif",
@@ -81,13 +82,79 @@ describe("layar tagihan rawat inap berjalan", () => {
     expect(html).toContain("/klinik/rawat-inap/rec-1/tagihan/kwitansi/kwt-1");
   });
 
-  it("menyebut saldo uang muka pemilik, piutang, dan uang muka minimal", async () => {
+  it("rekap menampilkan header DP walau saldo wallet nol, bukan kartu minimum berulang", async () => {
+    const data = dasar();
+    data.tahap[0] = { ...data.tahap[0], total: 1_300_000, dp_amount: 500_000, dibayar: 500_000, sisa: 800_000, paid_status: "DP" };
+    data.belumDitagih[0] = { ...data.belumDitagih[0], qty: 1, harga: 200_000 };
+    data.saldoUangMuka = 0;
+    data.uangMuka = [];
+    data.kwitansi = [];
+    state.data = data;
     const html = await render();
-    expect(html).toContain("UANG MUKA PEMILIK");
-    expect(html).toContain("Rp 50.000");
-    expect(html).toContain("TOTAL PIUTANG");
-    expect(html).toContain("UANG MUKA MINIMAL");
-    expect(html).toContain("50%");
+    expect(html).toContain("TOTAL TRANSAKSI");
+    expect(html).toContain("DP / TOTAL DIBAYAR");
+    expect(html).toContain("SISA TAGIHAN");
+    expect(html).toContain("Rp 1.500.000");
+    expect(html).toContain("Rp 500.000");
+    expect(html).toContain("Rp 1.000.000");
+    expect(html).not.toContain("berlaku tiap tagihan tahap");
+    expect(html).not.toContain("Belum ada pembayaran untuk kunjungan ini");
+  });
+
+  it("rincian invoice tersimpan dan pending terpisah; footer tidak menghitung ulang harga klinis", async () => {
+    const data = dasar();
+    data.tahap[0] = { ...data.tahap[0], subtotal: 900_000, discount: 100_000, tax: 88_000, total: 888_000, dp_amount: 500_000, dibayar: 500_000, sisa: 388_000, paid_status: "DP" };
+    data.rincianDitagih[0] = { ...data.rincianDitagih[0], qty: 1, harga: 1_000_000, diskon_persen: 10 };
+    data.belumDitagih[0] = { ...data.belumDitagih[0], qty: 1, harga: 200_000 };
+    data.saldoUangMuka = 0;
+    state.data = data;
+    const html = await render();
+    expect(html).toContain("RINCIAN TAGIHAN");
+    expect(html).toContain("Jasa tersimpan");
+    expect(html).toContain("Subtotal tersimpan Rp 900.000");
+    expect(html).toContain("Diskon nota Rp 100.000");
+    expect(html).toContain("PPN Rp 88.000");
+    expect(html).toContain("Total invoice Rp 888.000");
+    expect(html).toContain("pending, belum menjadi piutang / omzet");
+    expect(html).toContain("Total transaksi: Rp 1.088.000");
+    expect(html).toContain("Sisa tagihan: Rp 588.000");
+    expect(html).toContain("Rp 294.000");
+    expect(html.match(/class="card"/g)).toHaveLength(3);
+    expect(html).toContain("DP lanjutan opsional");
+    expect(html).not.toContain("Kurang Rp");
+  });
+
+  it("tanpa invoice aktif selesai, minimum awal tetap ditampilkan", async () => {
+    const data = dasar();
+    data.tahap = [];
+    data.rincianDitagih = [];
+    data.saldoUangMuka = 0;
+    state.data = data;
+    const html = await render();
+    expect(html).toContain("Uang muka minimal 50%");
+    expect(html).toContain("Kurang Rp 50.000");
+    expect(html).not.toContain("Isi saran 50% sisa total");
+  });
+
+  it("invoice yang koreksinya belum selesai tidak membuka pengecualian DP lanjutan", async () => {
+    const data = dasar();
+    data.tahap[0].correction_pending = true;
+    data.saldoUangMuka = 0;
+    state.data = data;
+    const html = await render();
+    expect(html).toContain("Koreksi belum selesai");
+    expect(html).toContain("Uang muka minimal 50%");
+    expect(html).not.toContain("Isi saran 50% sisa total");
+  });
+
+  it("invoice nol rupiah tidak menonaktifkan minimum DP awal sebenarnya", async () => {
+    const data = dasar();
+    data.tahap[0] = { ...data.tahap[0], total: 0, dibayar: 0, sisa: 0 };
+    data.saldoUangMuka = 0;
+    state.data = data;
+    const html = await render();
+    expect(html).toContain("Uang muka minimal 50%");
+    expect(html).not.toContain("Isi saran 50% sisa total");
   });
 
   it("tanpa shift klinik terbuka, uang terkunci tapi tagihannya tetap terbaca", async () => {

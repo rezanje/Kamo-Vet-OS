@@ -15,11 +15,11 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
  * minimal yang harus sudah diterima.
  */
 export function TagihSekarangForm({
-  recordId, visitId, requestKey, baris, ppnRate, minDpPercent, saldoUangMuka, bolehTerobos,
+  recordId, visitId, requestKey, baris, ppnRate, minDpPercent, saldoUangMuka, bolehTerobos, dpLanjutanOpsional = false,
 }: {
   recordId: string; visitId: string; requestKey: string;
   baris: BarisResep[]; ppnRate: number; minDpPercent: number;
-  saldoUangMuka: number; bolehTerobos: boolean;
+  saldoUangMuka: number; bolehTerobos: boolean; dpLanjutanOpsional?: boolean;
 }) {
   const [dipilih, setDipilih] = useState<string[]>(() => baris.map((b) => b.id));
   const pilih = (id: string) =>
@@ -32,7 +32,7 @@ export function TagihSekarangForm({
   }, [baris, dipilih, ppnRate]);
 
   const terpakai = uangMukaTerpakai(saldoUangMuka, total);
-  const kurang = kurangUangMuka(total, terpakai, minDpPercent);
+  const kurang = dpLanjutanOpsional ? 0 : kurangUangMuka(total, terpakai, minDpPercent);
 
   if (!baris.length) {
     return (
@@ -88,7 +88,8 @@ export function TagihSekarangForm({
           <b>Total tahap ini</b><b style={{ color: "var(--acc)" }}>{rp(total)}</b>
         </div>
         <Baris label="Uang muka pemilik dipakai" value={rp(terpakai)} />
-        <Baris label={`Uang muka minimal ${minDpPercent}%`} value={rp(uangMukaMinimal(total, minDpPercent))} />
+        {!dpLanjutanOpsional && <Baris label={`Uang muka minimal ${minDpPercent}%`} value={rp(uangMukaMinimal(total, minDpPercent))} />}
+        {dpLanjutanOpsional && <div>DP lanjutan opsional — boleh ditagih tanpa pembayaran tambahan.</div>}
       </div>
 
       {kurang > 0 && (

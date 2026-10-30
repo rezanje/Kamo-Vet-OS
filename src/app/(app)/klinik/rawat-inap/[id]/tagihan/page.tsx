@@ -7,7 +7,7 @@ import { getOpenShift } from "@/lib/shift";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { muatTagihanBerjalan } from "@/lib/tagihan-berjalan-server";
-import { nilaiBarisResep } from "@/lib/tagihan-berjalan";
+import { nilaiBarisResep, ringkasRekap } from "@/lib/tagihan-berjalan";
 import { TagihSekarangForm } from "./TagihSekarangForm";
 import { TerimaPembayaranForm } from "./TerimaPembayaranForm";
 import { BatalKwitansiForm } from "./BatalKwitansiForm";
@@ -54,6 +54,11 @@ export default async function TagihanRawatInapPage({
   const ppnRate = pajak.mode_pkp ? Number(pajak.ppn_rate) : 0;
   const bolehTerobos = bolehMenerobosDp(profil.data?.role as string | null);
   const estimasi = data.belumDitagih.reduce((sum, b) => sum + nilaiBarisResep(b), 0);
+  const estimasiPpn = ppnRate > 0 && estimasi > 0 ? Math.round(estimasi * ppnRate / 100) : 0;
+  const rekap = ringkasRekap(data.tahap, estimasi + estimasiPpn, data.saldoUangMuka);
+  // Hanya pratinjau; DB memeriksa lagi invoice aktif lain di pembungkus tahap.
+  const dpLanjutanOpsional = data.tahap.some((t) => Number(t.total) > 0 && !t.correction_pending);
+  const dpAwal = data.tahap.filter((t) => !t.reissued_from && Number(t.dp_amount) > 0);
   // Riwayat kwitansi/uang muka belum tersedia = saldo yang tampil belum bisa dipercaya.
   // Menerima uang atau membatalkan kwitansi di atas angka yang belum lengkap berisiko
   // penerimaan dobel, jadi aksinya dikunci sampai datanya terbaca.
@@ -97,22 +102,40 @@ export default async function TagihanRawatInapPage({
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 14 }}>
-        <Kartu label="BELUM DITAGIH" value={rp(estimasi)} sub={`${data.belumDitagih.length} baris`} color="#d97706" bg="#fffbeb" icon="ti-clipboard-list" />
-        <Kartu label="TOTAL PIUTANG" value={rp(data.piutang)} sub={`${data.tahap.length} tagihan tahap`} color="#b91c1c" bg="#fef2f2" icon="ti-clock-dollar" />
-        <Kartu label="UANG MUKA PEMILIK" value={rp(data.saldoUangMuka)} sub="otomatis memotong tahap berikutnya" color="var(--posb)" bg="#eff6ff" icon="ti-wallet" />
-        <Kartu label="UANG MUKA MINIMAL" value={`${minDpPercent}%`} sub="berlaku tiap tagihan tahap" color="#15803d" bg="#e8f5ee" icon="ti-percentage" />
+        <Kartu label="TOTAL TRANSAKSI" value={rp(rekap.total)} sub={`termasuk estimasi belum diterbitkan ${rp(rekap.pending)}`} color="var(--posb)" bg="#eff6ff" icon="ti-file-invoice" />
+        <Kartu label="DP / TOTAL DIBAYAR" value={data.riwayatUangTerpasang ? rp(rekap.dibayar) : "Belum terbaca"} sub="bersih, termasuk DP awal dan saldo uang muka" color="#15803d" bg="#e8f5ee" icon="ti-cash" />
+        <Kartu label="SISA TAGIHAN" value={data.riwayatUangTerpasang ? rp(rekap.sisa) : "Belum terbaca"} sub="termasuk estimasi item belum diterbitkan" color="#b91c1c" bg="#fef2f2" icon="ti-clock-dollar" />
       </div>
 
       <section className="crm-sec" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)", marginBottom: 9 }}>
-          <i className="ti ti-clipboard-list" /> BELUM DITAGIH
+          <i className="ti ti-clipboard-list" /> RINCIAN TAGIHAN
         </div>
+        {data.tahap.map((t) => (
+          <div key={t.id} style={{ marginBottom: 12 }}>
+            <b>{t.invoice_no ?? "(tanpa nomor)"}</b> · {t.correction_pending ? "Koreksi belum selesai" : "Sudah diterbitkan"}
+            <table className="tbl" style={{ width: "100%" }}>
+              <thead><tr><th>Item</th><th>Qty</th><th>Harga</th><th>Diskon baris</th><th>Nilai baris</th></tr></thead>
+              <tbody>{data.rincianDitagih.filter((l) => l.invoice_id === t.id).map((l) => (
+                <tr key={l.id}><td>{l.deskripsi}</td><td>{l.qty}</td><td>{rp(Number(l.harga))}</td>
+                  <td>{Number(l.diskon_persen)}%</td>
+                  <td>{rp(Math.round(Number(l.qty) * Number(l.harga) * (1 - Number(l.diskon_persen) / 100)))}</td></tr>
+              ))}</tbody>
+            </table>
+            <div style={{ fontSize: 11, textAlign: "right" }}>
+              Subtotal tersimpan {rp(Number(t.subtotal) || 0)} · Diskon nota {rp(Number(t.discount) || 0)} · PPN {rp(Number(t.tax) || 0)} · <b>Total invoice {rp(Number(t.total))}</b>
+            </div>
+          </div>
+        ))}
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>BELUM DITAGIH — pending, belum menjadi piutang / omzet</div>
+        <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 8 }}>Tetap manual: hanya item yang dipilih akan diterbitkan saat menekan Tagih sekarang.</div>
         {shift && data.riwayatUangTerpasang ? (
           <TagihSekarangForm
             key={`${data.record.id}:${data.belumDitagih.map((b) => b.id).join(",")}`}
             recordId={data.record.id} visitId={data.visit.id} requestKey={randomUUID()}
             baris={data.belumDitagih} ppnRate={ppnRate} minDpPercent={minDpPercent}
             saldoUangMuka={data.saldoUangMuka} bolehTerobos={bolehTerobos}
+            dpLanjutanOpsional={dpLanjutanOpsional}
           />
         ) : (
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
@@ -122,6 +145,14 @@ export default async function TagihanRawatInapPage({
               : " Buka shift klinik untuk menagih."}
           </div>
         )}
+        <div style={{ borderTop: "1px solid var(--bd)", marginTop: 12, paddingTop: 8, textAlign: "right", fontSize: 12 }}>
+          <div>Total invoice diterbitkan: {rp(rekap.tertagih)}</div>
+          <div>Estimasi pending (termasuk PPN {rp(estimasiPpn)}): {rp(rekap.pending)} — belum dibukukan</div>
+          <div><b>Total transaksi: {rp(rekap.total)}</b></div>
+          <div>DP / total dibayar: {data.riwayatUangTerpasang ? rp(rekap.dibayar) : "Belum terbaca"}</div>
+          <div><b>Sisa tagihan: {data.riwayatUangTerpasang ? rp(rekap.sisa) : "Belum terbaca"}</b></div>
+          <div>Piutang dibukukan: {rp(data.piutang)} · Saldo uang muka belum terpakai: {data.riwayatUangTerpasang ? rp(data.saldoUangMuka) : "Belum terbaca"}</div>
+        </div>
       </section>
 
       <section className="crm-sec" style={{ marginBottom: 14 }}>
@@ -177,6 +208,13 @@ export default async function TagihanRawatInapPage({
               </tr>
             </thead>
             <tbody>
+              {dpAwal.map((t) => (
+                <tr key={`dp-awal:${t.id}`}>
+                  <td>DP awal</td><td>{t.invoice_no}</td><td>{tgl(t.created_at)}</td>
+                  <td>{t.metode_bayar ?? "Lihat invoice"}</td><td style={{ textAlign: "right" }}>{rp(Number(t.dp_amount))}</td>
+                  <td colSpan={3}>Tercatat di kepala invoice, bukan saldo wallet atau kwitansi baru.</td>
+                </tr>
+              ))}
               {data.kwitansi.map((k, i) => (
                 <tr key={k.id}>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>DP {i + 1}</td>
@@ -204,10 +242,10 @@ export default async function TagihanRawatInapPage({
                   </td>
                 </tr>
               ))}
-              {!data.kwitansi.length && (
+              {!data.kwitansi.length && !dpAwal.length && (
                 <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
                   {data.riwayatUangTerpasang
-                    ? "Belum ada pembayaran untuk kunjungan ini."
+                    ? rekap.dibayar > 0 ? "Pembayaran tercatat pada invoice / uang muka di atas; lihat dokumen asal untuk riwayatnya." : "Belum ada pembayaran untuk kunjungan ini."
                     : "Riwayat pembayaran belum dapat dibaca — ini BUKAN berarti belum ada uang masuk."}
                 </td></tr>
               )}
@@ -241,7 +279,8 @@ export default async function TagihanRawatInapPage({
         </div>
         {bolehProsesUang ? (
           <TerimaPembayaranForm key={`bayar:${data.kwitansi.length}:${data.tahap.length}`}
-            recordId={data.record.id} visitId={data.visit.id} requestKey={randomUUID()} tahap={data.tahap} />
+            recordId={data.record.id} visitId={data.visit.id} requestKey={randomUUID()} tahap={data.tahap}
+            dpOpsional={dpLanjutanOpsional ? rekap.dpOpsional : undefined} />
         ) : (
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
             {shift

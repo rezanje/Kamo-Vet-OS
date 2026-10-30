@@ -52,6 +52,18 @@ describe("muatTagihanBerjalan", () => {
     expect(data.pemilik).toBe("Reza");
   });
 
+  it("rincian memakai baris invoice tersimpan dan mengecualikan invoice void, tidak harga resep terbaru", async () => {
+    const tables = dasar() as Record<string, Any[]>;
+    tables.invoice_items = [
+      { id: "line-old", invoice_id: "inv-void", prescription_item_id: "p1", deskripsi: "Jasa lama", qty: 2, harga: 9_000, diskon_persen: 0 },
+      { id: "line-active", invoice_id: "inv-1", prescription_item_id: "p1", deskripsi: "Jasa tersimpan", qty: 2, harga: 50_000, diskon_persen: 10 },
+    ];
+    tables.invoices.push({ ...tables.invoices[0], id: "inv-void", voided_at: "2026-10-28" });
+    const data = (await muatTagihanBerjalan(klien(tables) as never, "rec-1"))!;
+    expect(data.rincianDitagih).toEqual([tables.invoice_items[1]]);
+    expect(data.belumDitagih.map((b) => b.id)).toEqual(["p2"]);
+  });
+
   it("menghitung dibayar dan sisa tiap tahap beserta total piutangnya", async () => {
     const data = (await muatTagihanBerjalan(klien(dasar()) as never, "rec-1"))!;
     expect(data.tahap).toMatchObject([{ id: "inv-1", dibayar: 40_000, sisa: 60_000 }]);
