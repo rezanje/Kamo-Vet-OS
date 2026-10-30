@@ -83,7 +83,8 @@ export default async function PembayaranPage({
     const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
     if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
   }
-  if (inpat && !query.invoice_id) return InpatientPaymentPage({db:supabase,visitId,recordId:inpat.id,branchId:visit.branch_id,userId:draftUser?.id??"",query});
+  if (inpat && !query.invoice_id) return InpatientPaymentPage({db:supabase,visitId,recordId:inpat.id,branchId:visit.branch_id,userId:draftUser?.id??"",query,
+    patientLabel:`${one(visit.pets)?.name??"Pasien"} · ${one(visit.customers)?.name??"Pemilik"}${visit.dokter?` · Dokter PJ: ${visit.dokter}`:""}${inpat.discharged_at?" · Sudah pulang":" · Masih dirawat"}`});
   const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
 
   const pet = one(visit.pets);

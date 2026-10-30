@@ -10,8 +10,9 @@ import type { InpatientCashierData } from "@/lib/inpatient-cashier";
 import { InpatientCashier } from "./InpatientCashier";
 const rp=(n:number)=>`Rp ${Math.round(n).toLocaleString("id-ID")}`;
 type Query={error?:string;success?:string;invoice?:string;receipt?:string;applications?:string};
-export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,query}: {
+export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,query,patientLabel}: {
  db:Awaited<ReturnType<typeof createClient>>;visitId:string;recordId:string;branchId:string|null;userId:string;query:Query;
+ patientLabel:string;
 }) {
  const [read,master,pajak,minDpPercent,profile]=await Promise.all([
   db.rpc("clinic_read_inpatient_cashier",{p_record_id:recordId,p_visit_id:visitId}),loadClinicPaymentMaster(db,branchId),getPajakSettings(db),getDpMinimalPercent(db),
@@ -28,6 +29,7 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
  return <>
   <Link className="back-btn" href="/klinik/rawat-inap">Status Rawat Inap</Link>
   <h1 style={{fontSize:21}}>PEMBAYARAN RAWAT INAP</h1>
+  <p style={{fontWeight:700}}>{patientLabel}</p>
   <Popup message={query.error}/>
   {!query.error&&saved&&<Popup tone="success" title={settled&&data.history.length?"Pembayaran lunas":savedApplications?"Saldo pemilik diterapkan":savedReceipt?"Pembayaran diterima":"Transaksi tersimpan"} message={`${savedInvoice?.invoice_no??savedReceipt?.no_kwitansi??"Pemakaian saldo pemilik"} · Sisa pembayaran ${rp(data.quote.remaining)}`}/>}
   <InpatientCashier key={data.snapshot} data={data} visitId={visitId} recordId={recordId} requestKey={randomUUID()} masterObat={master.obat} masterJasa={master.jasa}

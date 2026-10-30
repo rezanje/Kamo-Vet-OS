@@ -60,7 +60,7 @@ it.each(['invoice_items','invoice_payments'])('does not allow an invoice correct
  state.mode='dp';state.fail=table;await expect(render()).rejects.toThrow('belum dapat diverifikasi');
 });
 
-it('opens inpatient pending cart in main cashier instead of a read-only detour',async()=>{state.inpatientOpen=true;const html=renderToStaticMarkup(await render());expect(html).toContain('KERANJANG BELUM DITAGIH');expect(html).toContain('name="pending_snapshot"');});
+it('opens inpatient pending cart in main cashier instead of a read-only detour',async()=>{state.inpatientOpen=true;const html=renderToStaticMarkup(await render());expect(html).toContain('KERANJANG BELUM DITAGIH');expect(html).toContain('name="pending_snapshot"');expect(html).toContain('New patient');expect(html).toContain('Fictional owner');});
 it('routes active inpatient with no invoice to staged billing instead of ordinary INPATIENT_OPEN posting',async()=>{
  state.inpatientOpen=true;const html=renderToStaticMarkup(await render());
  expect(html).toContain('href="/klinik/rawat-inap/inpatient/tagihan"');expect(html).not.toContain('data-draft');
