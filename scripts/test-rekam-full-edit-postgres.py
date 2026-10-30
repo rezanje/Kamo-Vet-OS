@@ -113,6 +113,19 @@ def run(h):
  err=h.gagal(f"select clinic_bill_and_pay_inpatient({q(stay)},{q(v)},'post-full-bmhp','2026-11-03',{j(parts)},null,false,null);",r.STAFF)
  inv=h.aktif(v);no=h.no_tagihan(inv)
  check('saved procedure BMHP posts original stock HPP once with issued compound preserved',not err and h.angka(f'select qty from stock where item_id={q(material)}')==stock-4 and h.angka(f'select total from invoices where id={q(inv)}')==quote['pending'] and h.saldo_ref('5101',no)==6000 and h.saldo_ref('1201',no)==0,dict(error=err,quote=quote,stock_before=stock,stock_after=h.angka(f'select qty from stock where item_id={q(material)}'),hpp=h.saldo_ref('5101',no)))
+ # Original INITIAL creation is SECURITY INVOKER. Exercise it as both valid
+ # clinic roles, with actual BMHP and an official compound, not a hand-built
+ # submitted record. The new direct-write guard must not break creation.
+ for n,user in [(1905,r.DOCTOR),(1906,r.STAFF)]:
+  fresh=r.buat_kunjungan(h,n,r.buat_pelanggan(h,n),admitted=False)
+  h.sql(f"delete from prescription_items where medical_record_id={q(r.uid(7,n))};delete from medical_records where id={q(r.uid(7,n))};update visits set status='Diperiksa',service_started_at=now(),poli='Umum' where id={q(fresh)};")
+  fields=dict(anamnesis='Awal Fiktif',diagnosis='Diagnosis awal',therapy='Terapi awal',suhu=38.25,berat=3,penunjang_urls=[])
+  ordinary=[dict(item_id=r.ITEM,nama_obat='Obat Fiktif',qty=1,harga=25000,satuan='pcs',faktor=1,jenis='obat'),dict(item_id=procedure,nama_obat='Tindakan Fiktif',qty=1,harga=80000,satuan='kali',faktor=1,jenis='obat',bmhp_components=[dict(item_id=material,qty=1,unit='gram')])]
+  compounds=[x.payload(h.nilai('select id from compound_formula_versions limit 1'),'initial-official-'+str(n))]
+  old_stock=h.angka(f'select qty from stock where item_id={q(material)}')
+  sql=f"select clinic_save_initial_record({q(fresh)},{q(r.uid(5,n))},{j(fields)},'[]',{j(ordinary)},{j(compounds)},null,{q(r.DOKTER_PEGAWAI)},'Dokter Fiktif','Keluhan awal Fiktif',{q('initial-public-'+str(n))});"
+  err=h.gagal(sql,user)
+  check('original initial public RPC '+r.PERAN[user]+' medicine BMHP official compound completion',not err and h.angka(f'select count(*) from medical_records where visit_id={q(fresh)} and submission_key is not null')==1 and h.angka(f'select count(*) from prescription_items p join medical_records m on m.id=p.medical_record_id where m.visit_id={q(fresh)}')==3 and h.angka(f'select qty from stock where item_id={q(material)}')==old_stock-2 and h.nilai(f'select status from visits where id={q(fresh)}')=='Pembayaran' and h.angka(f'select count(*) from invoices where visit_id={q(fresh)}')==0,dict(error=err))
 
 def main():
  p=argparse.ArgumentParser();p.add_argument('--baseline',action='store_true');p.add_argument('--include-cashier',action='store_true');p.add_argument('--json',type=Path,required=True);a=p.parse_args()
