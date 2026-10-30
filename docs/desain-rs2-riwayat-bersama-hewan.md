@@ -382,3 +382,43 @@ dan pemindahan pemilik ala §10 PR342.
   terpisah, misalnya diberi teks "ganti cabang aktif di sini".
 - Impor ulang, audit backlog, dan data pasien asli: tidak disentuh.
 - Produksi (migrasi, apply, merge, deploy) selalu menunggu review persis dan izin spesifik.
+
+## 8. Implementasi draft dan hasil tes (30 Okt 2026)
+
+**File:**
+
+- `supabase/migrations/20261104010000_rs2_riwayat_bersama_hewan.sql`: prasyarat, jepretan, 3 fungsi privat,
+  2 pembungkus, ACL, pindah pemilik, dan gerbang.
+- `src/lib/riwayat-bersama.ts`: pembaca aplikasi (paging, cek baris ke-1.001, validasi relasi, gagal ≠ kosong).
+- `src/app/(app)/klinik/rekam-medis/page.tsx`: gabung daftar per hewan untuk OWNER.
+- `src/app/(app)/klinik/rekam-medis/[visitId]/page.tsx` dan `RiwayatBersamaDetail.tsx`: renderer baca-saja
+  serta pesan gagal generik.
+- `scripts/test-riwayat-bersama-hewan-postgres.py`: harness SQL RS-2.
+- `scripts/test-impor-rekam-medis-rls-postgres.py`: perubahan kecil saja. Migrasi turunan dikecualikan dari
+  bootstrap PR342, dan ada kait `after` di emulasi hosted. Kasus PR342 tidak diubah.
+- `src/lib/__tests__/riwayat-bersama.test.ts` dan `src/components/__tests__/riwayat-bersama-pages.test.tsx`.
+
+**Hasil (lokal, Postgres sekali pakai, data fiktif; tidak ada panggilan produksi):**
+
+| uji | hasil |
+|---|---|
+| Harness RS-2 PG16 / PG17 | 89/89 dan 89/89 |
+| Rincian harness RS-2 | 16 mutan (validator tanpa OWNER/header, pembaca tanpa syarat tanpa-cabang/relasi/validasi, batas dilonggarkan, VOLATILE, pembungkus DEFINER, EXECUTE ke anon/validator ke authenticated, hak kolom baru, kebijakan SELECT luas, fungsi akses cabang diubah, role tetap bisa di-SET, auth.uid berubah, kebijakan baca hilang): semua batal tanpa sisa dan katalog lama utuh. Ditambah positif OWNER (header A dan tanpa header), kebocoran (cabang A/B, UUID acak, tautan silang, tanpa jejak, tanpa MR), dua MR → satu baris, paginasi 205 baris, batas, 7 peran/identitas ditolak, anon, validator privat, header rusak/nonaktif/tidak ada, kontrol RLS normal tak berubah, D2 tetap menolak tulis, katalog/ACL, pasang dua kali ditolak, emulasi runner non-superuser |
+| Regresi PR342 RLS PG16 / PG17 | 394/394 dan 394/394 |
+| Regresi importer lama | 61/61 |
+| Ranap mitigasi (PR345) | 66/66 |
+| Terapi klinik | lulus |
+| Suite 18 harness yang memasang semua migrasi | status dan galat identik dengan `main` 847fd9d (2 lulus, 16 gagal bawaan sebelum/di luar RS-2, misalnya tiruan `auth.jwt` dan DP minimal) |
+| Vitest baru | 51/51 (22 modul + 29 halaman) |
+| `npm test` penuh | 5055 lulus, 1 dilewati (bawaan) |
+| `npm run lint` dan `tsc --noEmit` | bersih |
+| `npm run build` | lulus. Percobaan pertama kehabisan memori karena berjalan bersamaan dengan harness Postgres; lulus saat diulang dengan heap 8 GB |
+| CI `Technical checks` | hijau di 5e7110a (run 41005054554) |
+
+**Gerbang hosted sebelum apply.** Ini terpisah dan butuh izin. Bacaan katalog baca-saja diperlukan untuk:
+
+- memastikan runner masih memegang keanggotaan ADMIN-only atas `kamo_legacy_import_writer` (syarat pindah
+  pemilik §7 migrasi);
+- memastikan 14 fungsi `kamo_import` pasca-PR342 utuh.
+
+**Belum diuji:** UAT peramban di Production. Migrasi ini belum dipasang di mana pun selain Postgres lokal sekali pakai.
