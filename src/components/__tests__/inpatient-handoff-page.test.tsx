@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { handoffSourceStatus, type InpatientHandoff } from '@/lib/inpatient-handoff';
-const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,forcedConsent:false,paidStay:'' as ''|'Lunas'|'DP',secondStay:false,broken:'',authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
+const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,forcedConsent:false,paidStay:'' as ''|'Lunas'|'DP',secondStay:false,broken:'',dailyLogs:false,authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
 vi.mock('@/lib/branch-access',()=>({allowedBranchIds:async()=>s.allowed,canUseBranch:(allowed:string[]|null,id:string)=>allowed===null||allowed.includes(id)}));
 vi.mock('@/app/(app)/klinik/rawat-inap/[id]/PapanPemantauan',()=>({PapanPemantauan:()=> <div>DAILY MONITORING</div>}));
@@ -13,6 +13,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
   let data:unknown=[];
   if(table==='inpatient_records')data={id:'inpat',branch_id:s.branch,visit_id:'visit-a',admitted_at:'2026-10-22T10:00:00Z',condition_status:'stabil',discharged_at:null,treatment_plan:'Fictional care',doctor_name:'Drh Inap',branches:{name:'Branch A'},visits:{id:'visit-a',poli:'Umum',keluhan:'Fictional complaint',created_at:'2026-10-22T08:00:00Z',pets:{name:'Fictional pet'},customers:{name:'Fictional owner'}}};
   if(table==='inpatient_records'&&request.eq.visit_id)data=s.secondStay?[{id:'inpat'},{id:'inpat-old'}]:[{id:'inpat'}];
+  if(table==='inpatient_daily_logs'&&s.dailyLogs)data=[{id:'log-am',log_date:'2026-10-22',created_at:'2026-10-22T02:00:00Z',condition_note:'Pengamatan fiktif pagi',berat:3,suhu:38.5},{id:'log-pm',log_date:'2026-10-22',created_at:'2026-10-22T09:00:00Z',condition_note:'Pengamatan fiktif sore',berat:3.1,suhu:38.6}];
   if(table==='profiles')data={role:'DOCTOR'};
   if(table==='consents'&&s.forcedConsent)data=[{status:'sudah_ttd',kategori:'Pulang Paksa',signed_at:'2026-10-22T12:00:00Z'}];
   if(table==='visits')data={id:'visit-a',branch_id:s.branch,dokter:'Drh Konsultasi',keluhan:'Fictional complaint',created_at:'2026-10-22T08:00:00Z',status:'Pembayaran'};
@@ -31,10 +32,32 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
  }};return q;}})}));
 import Page from '@/app/(app)/klinik/rawat-inap/[id]/page';
 const render=async()=>renderToStaticMarkup(await Page({params:Promise.resolve({id:'inpat'}),searchParams:Promise.resolve({})}));
-beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.forcedConsent=false;s.paidStay='';s.secondStay=false;s.broken='';s.authReads=0;s.reads=[]});
+beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.forcedConsent=false;s.paidStay='';s.secondStay=false;s.broken='';s.dailyLogs=false;s.authReads=0;s.reads=[]});
+it('removes the monitoring board while retaining both same-day notes and detail links',async()=>{
+ s.dailyLogs=true;const html=await render();
+ expect(html).not.toContain('DAILY MONITORING');
+ expect(html).not.toContain('PAPAN PEMANTAUAN');
+ expect(html).toContain('Pengamatan fiktif pagi');
+ expect(html).toContain('Pengamatan fiktif sore');
+ expect(html).toContain('/klinik/rawat-inap/inpat/catatan/log-am');
+ expect(html).toContain('/klinik/rawat-inap/inpat/catatan/log-pm');
+ expect(html).toContain('LAPORAN RAWAT INAP HARIAN');
+ expect(html).toContain('LOG PERUBAHAN STATUS');
+ expect(html).toContain('DOSE PROTOCOL');
+});
+it('does not request or advertise an automatic inpatient tariff; manual care and billing remain available',async()=>{
+ const html=await render();
+ expect(html).not.toContain('Tarif rawat inap belum ada');
+ expect(html).not.toContain('Buat tarif');
+ expect(s.reads.some(r=>r.table==='items')).toBe(false);
+ expect(html).toContain('jasa dan jumlah hari rawat inap dicatat manual');
+ expect(html).toContain('LAPORAN RAWAT INAP HARIAN');
+ expect(html).toContain('/klinik/rawat-inap/inpat/catatan');
+ expect(html).toContain('/klinik/rawat-inap/inpat/tagihan');
+});
 it('shows consultation, prescriptions and compound status before daily visit notes with explicit source links',async()=>{
  const html=await render();expect(html).toContain('Ringkasan konsultasi dan resep');expect(html).toContain('Keluhan awal kunjungan');expect(html).toContain('Fictional complaint');expect(html).toContain('Fictional consultation note');expect(html).toContain('Fictional tablet');expect(html).toContain('Fictional mixture instructions');expect(html).toContain('Drh Konsultasi');
- expect(html.indexOf('Ringkasan konsultasi dan resep')).toBeLessThan(html.indexOf('DAILY MONITORING'));expect(html).toContain('/klinik/rekam-medis/visit-a');expect(html).toContain('/klinik/racik/recipe-a');
+ expect(html.indexOf('Ringkasan konsultasi dan resep')).toBeLessThan(html.indexOf('LAPORAN RAWAT INAP HARIAN'));expect(html).toContain('/klinik/rekam-medis/visit-a');expect(html).toContain('/klinik/racik/recipe-a');
 });
 it('keeps paid invoice, void history and unlinked additions distinct without claiming administration or paid duration',async()=>{
  const html=await render();expect(html).toContain('INV.PAID');expect(html).toContain('Lunas');expect(html).toContain('INV.OLD');expect(html).toContain('Dibatalkan');expect(html).toContain('Belum ada tautan tagihan per baris');expect(html).toContain('Diserahkan oleh farmasi');expect(html).toContain('bukan bukti obat sudah diberikan');expect(html).toContain('Lama inap terbayar hanya dari baris jasa rawat inap pada faktur lunas');
@@ -73,7 +96,7 @@ it('starts no consent, log, role or tariff read before the parent passes the bra
  s.allowed=['branch-a'];s.user=false;s.reads=[];s.authReads=0;await expect(render()).rejects.toThrow('NOT_FOUND');expect(s.reads.some(r=>CHILD_READS.includes(r.table))).toBe(false);expect(s.authReads).toBe(1);
 });
 it('still renders the page when the handoff summary fails while the other reads succeed',async()=>{
- s.broken='medical_records';const html=await render();expect(html).toContain('Ringkasan belum dapat dimuat lengkap');expect(html).toContain('DAILY MONITORING');expect(s.authReads).toBe(1);
+ s.broken='medical_records';const html=await render();expect(html).toContain('Ringkasan belum dapat dimuat lengkap');expect(html).toContain('LAPORAN RAWAT INAP HARIAN');expect(s.authReads).toBe(1);
 });
 
 it('keeps source billing, invoice payment, pharmacy handover and administration distinct in the existing panel',async()=>{
