@@ -59,9 +59,9 @@ create table kamo_import.kartu_tertunda (
 comment on table kamo_import.kartu_tertunda is
   'Kartu rekam medis lama yang belum lengkap (Perlu Dilengkapi). Bukan riwayat resmi; dipindah lewat lengkapi_kartu_tertunda.';
 create index kartu_tertunda_status_idx on kamo_import.kartu_tertunda (status, dibuat_pada desc, id);
-alter table kamo_import.kartu_tertunda owner to kamo_legacy_import_writer;
 alter table kamo_import.kartu_tertunda enable row level security;
 revoke all on table kamo_import.kartu_tertunda from public, anon, authenticated, service_role;
+-- Pemilik dipindah ke role penulis di §4 (setelah semua hak diatur, pola PR342/RS-2).
 
 -- ---------------------------------------------------------------------------
 -- 2. Helper (SECURITY DEFINER, milik role penulis)
@@ -226,7 +226,7 @@ begin
   end if;
 end $$;
 
-do $milik$
+do $hak$
 declare f regprocedure;
 begin
   foreach f in array array[
@@ -234,11 +234,10 @@ begin
     'kamo_import.simpan_kartu_tertunda(jsonb)', 'kamo_import.baca_kartu_tertunda(uuid,text,text,integer,integer)',
     'kamo_import.kunci_kartu_tertunda(uuid)', 'kamo_import.tutup_kartu_tertunda(uuid,uuid,jsonb,text)'
   ]::regprocedure[] loop
-    execute format('alter function %s owner to kamo_legacy_import_writer', f);
     execute format('revoke all on function %s from public, anon, service_role', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
-end $milik$;
+end $hak$;
 
 -- ---------------------------------------------------------------------------
 -- 3. RPC publik (SECURITY INVOKER)
@@ -419,3 +418,44 @@ revoke all on function public.simpan_kartu_tertunda(jsonb), public.daftar_kartu_
 grant execute on function public.simpan_kartu_tertunda(jsonb), public.daftar_kartu_tertunda(text, text, integer, integer),
   public.detail_kartu_tertunda(uuid), public.batalkan_kartu_tertunda(uuid, text),
   public.lengkapi_kartu_tertunda(uuid, text, uuid, text, text, uuid, date) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 4. Pindah pemilik tabel + enam fungsi baru ke role penulis (urutan identik PR342/RS-2: keanggotaan sementara
+--    SET tanpa INHERIT + CREATE skema sementara, keduanya dicabut lagi di transaksi ini). Hak sudah diatur di atas.
+-- ---------------------------------------------------------------------------
+do $pemilik$
+declare
+  v_runner text := current_user;
+  f regprocedure;
+begin
+  execute format('grant kamo_legacy_import_writer to %I with set true, inherit false', v_runner);
+  grant create on schema kamo_import to kamo_legacy_import_writer;
+  alter table kamo_import.kartu_tertunda owner to kamo_legacy_import_writer;
+  foreach f in array array[
+    'kamo_import.teks_kartu(jsonb,text,integer)', 'kamo_import.tanggal_kartu(jsonb,text)',
+    'kamo_import.simpan_kartu_tertunda(jsonb)', 'kamo_import.baca_kartu_tertunda(uuid,text,text,integer,integer)',
+    'kamo_import.kunci_kartu_tertunda(uuid)', 'kamo_import.tutup_kartu_tertunda(uuid,uuid,jsonb,text)'
+  ]::regprocedure[] loop
+    execute format('alter function %s owner to kamo_legacy_import_writer', f);
+  end loop;
+  revoke create on schema kamo_import from kamo_legacy_import_writer;
+  execute format('revoke kamo_legacy_import_writer from %I granted by %I', v_runner, v_runner);
+end $pemilik$;
+
+-- Gerbang pasca-cek: pemilik, RLS, tanpa hak langsung, keanggotaan SET/INHERIT sementara sudah dicabut.
+do $gerbang$
+begin
+  if (select pg_get_userbyid(relowner) from pg_class where oid = 'kamo_import.kartu_tertunda'::regclass) <> 'kamo_legacy_import_writer'
+     or not (select relrowsecurity from pg_class where oid = 'kamo_import.kartu_tertunda'::regclass)
+     or has_table_privilege('authenticated', 'kamo_import.kartu_tertunda', 'SELECT')
+     or has_table_privilege('anon', 'kamo_import.kartu_tertunda', 'SELECT')
+     -- Keanggotaan SET/INHERIT sementara sudah dicabut (keanggotaan admin bawaan pembuat role tidak termasuk).
+     or exists (select 1 from pg_auth_members m where m.roleid = 'kamo_legacy_import_writer'::regrole and m.member = current_user::regrole
+                  and (m.set_option or m.inherit_option))
+     or has_schema_privilege('kamo_legacy_import_writer', 'kamo_import', 'CREATE')
+     or (select count(*) from pg_proc p where p.pronamespace = 'kamo_import'::regnamespace
+           and p.proname in ('teks_kartu', 'tanggal_kartu', 'simpan_kartu_tertunda', 'baca_kartu_tertunda', 'kunci_kartu_tertunda', 'tutup_kartu_tertunda')
+           and pg_get_userbyid(p.proowner) = 'kamo_legacy_import_writer') <> 6 then
+    raise exception 'Kartu tertunda: gerbang pasca-cek gagal';
+  end if;
+end $gerbang$;
