@@ -71,6 +71,9 @@ select pg_temp.ok(not has_function_privilege('authenticated', 'public.guard_akti
 select pg_temp.ok((select prosecdef and proconfig @> array['search_path=""']::text[]
     from pg_proc where oid = 'public.nonaktifkan_promo_kadaluarsa()'::regprocedure),
   'sweeper is SECURITY DEFINER with an empty search_path');
+select pg_temp.ok((select proconfig = array['search_path=""']::text[]
+    from pg_proc where oid = 'public.nonaktifkan_promo_kadaluarsa()'::regprocedure),
+  'hosted-compatible proconfig contains only search_path, never JWT SET attributes');
 select pg_temp.ok(
   position('KADALUARSA_SWEEP' in pg_get_functiondef('public.guard_promo_configuration()'::regprocedure)) > 0
   and position('assert_promo_manager' in pg_get_functiondef('public.guard_promo_configuration()'::regprocedure)) > 0,
@@ -139,9 +142,47 @@ select set_config('request.jwt.claims', '', true);
 select set_config('request.jwt.claim.sub', 'ec000000-0000-4000-8000-000000000002', true);
 
 -- Penyapu: satu panggilan, hanya yang benar-benar lewat tanggal yang mati.
+select set_config('request.jwt.claims', '{ "sub": "ec000000-0000-4000-8000-000000000002", "role": "authenticated", "trace": "preserve exact whitespace" }', true);
+create temporary table promo_caller_identity as select
+  auth.uid() as uid, current_setting('request.jwt.claims', true) as claims,
+  current_setting('request.jwt.claim.sub', true) as sub,
+  current_setting('request.jwt.claim.role', true) as role;
+-- Fail on the second table, after the promo UPDATE/audit has already run.
+reset role;
+create function pg_temp.fail_expiry_voucher() returns trigger language plpgsql as $$
+begin raise exception 'PROMO353_INJECTED_FAILURE' using errcode = 'P0353'; end $$;
+create trigger promo353_injected_failure before update on public.vouchers
+  for each row execute function pg_temp.fail_expiry_voucher();
+set local role authenticated;
+do $$begin
+  perform public.nonaktifkan_promo_kadaluarsa();
+  raise exception 'injected expiry failure was swallowed';
+exception when sqlstate 'P0353' then
+  perform pg_temp.ok(sqlerrm = 'PROMO353_INJECTED_FAILURE', 'original failure SQLSTATE and message are preserved');
+end $$;
+select pg_temp.ok((select auth.uid() = uid
+  and current_setting('request.jwt.claims', true) is not distinct from claims
+  and current_setting('request.jwt.claim.sub', true) is not distinct from sub
+  and current_setting('request.jwt.claim.role', true) is not distinct from role
+  from promo_caller_identity), 'failed sweep restores exact caller identity');
+select pg_temp.ok((select is_active from public.promos where id='ec200000-0000-4000-8000-000000000001')
+  and (select is_active from public.vouchers where id='ec300000-0000-4000-8000-000000000001')
+  and (select bool_and(is_active) from public.campaign_codes where code in ('ECKODEEXP','ECKODEVEXP')),
+  'failed sweep rolls back every master write');
+reset role;
+select pg_temp.ok(not exists(select from public.activity_log where row_entity in ('promos','vouchers')
+  and row_id in ('ec200000-0000-4000-8000-000000000001','ec300000-0000-4000-8000-000000000001')),
+  'failed sweep leaves no audit residue');
+drop trigger promo353_injected_failure on public.vouchers;
+set local role authenticated;
 select pg_temp.ok(
   (select public.nonaktifkan_promo_kadaluarsa()) = jsonb_build_object('tanggal', pg_temp.wib(), 'promo', 1, 'voucher', 1, 'kode', 2),
   'cashier may run the sweeper; it reports 1 promo, 1 voucher, 2 campaign codes');
+select pg_temp.ok((select auth.uid() = uid
+  and current_setting('request.jwt.claims', true) is not distinct from claims
+  and current_setting('request.jwt.claim.sub', true) is not distinct from sub
+  and current_setting('request.jwt.claim.role', true) is not distinct from role
+  from promo_caller_identity), 'real STAFF sweep restores caller uid and all exact JWT settings');
 select pg_temp.ok(not (select is_active from public.promos where id = 'ec200000-0000-4000-8000-000000000001'), 'expired promo is off');
 select pg_temp.ok((select is_active from public.promos where id = 'ec200000-0000-4000-8000-000000000002'), 'last valid day stays on');
 select pg_temp.ok((select is_active from public.promos where id = 'ec200000-0000-4000-8000-000000000003'), 'promo without an end date stays on');
@@ -158,6 +199,11 @@ select pg_temp.ok((select name from public.promos where id = 'ec200000-0000-4000
 select pg_temp.ok(
   (select public.nonaktifkan_promo_kadaluarsa()) = jsonb_build_object('tanggal', pg_temp.wib(), 'promo', 0, 'voucher', 0, 'kode', 0),
   'second sweep is a no-op');
+select pg_temp.ok((select auth.uid() = uid
+  and current_setting('request.jwt.claims', true) is not distinct from claims
+  and current_setting('request.jwt.claim.sub', true) is not distinct from sub
+  and current_setting('request.jwt.claim.role', true) is not distinct from role
+  from promo_caller_identity), 'no-op sweep leaves caller identity untouched');
 
 -- Jejak audit atas nama sistem, bukan atas nama kasir yang kebetulan membuka layar.
 -- Dibaca sebagai pemilik database supaya yang diuji isinya, bukan RLS activity_log.
@@ -173,6 +219,7 @@ select pg_temp.ok((select count(*) from public.activity_log
 set local role authenticated;
 
 -- ── Pemilik (OWNER): perpanjang dulu, baru boleh dihidupkan ─────────────────
+select set_config('request.jwt.claims', '', true);
 select set_config('request.jwt.claim.sub', 'ec000000-0000-4000-8000-000000000001', true);
 select pg_temp.rejects($$update public.promos set is_active = true where id = 'ec200000-0000-4000-8000-000000000001'$$,
   'KADALUARSA', 'owner cannot switch an expired promo back on');

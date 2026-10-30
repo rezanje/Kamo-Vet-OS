@@ -116,8 +116,21 @@ describe("migrasi penonaktifan otomatis", () => {
   });
 
   it("tercatat sebagai perubahan sistem, bukan atas nama pengguna yang membuka layar", () => {
-    expect(SQL).toContain(`set "request.jwt.claims" to ''`);
-    expect(SQL).toContain(`set "request.jwt.claim.sub" to ''`);
+    const sweeper = SQL.split("create or replace function public.nonaktifkan_promo_kadaluarsa()")[1].split("end$$;")[0];
+    const [attributes, body] = sweeper.split("as $$");
+    expect(attributes).toContain("set search_path = ''");
+    expect(attributes).not.toMatch(/set\s+"?request\.jwt\./i);
+    for (const [setting, saved] of [
+      ["request.jwt.claims", "old_claims"],
+      ["request.jwt.claim.sub", "old_sub"],
+      ["request.jwt.claim.role", "old_role"],
+    ]) {
+      expect(body).toContain(`${saved} := current_setting('${setting}', true)`);
+      expect(body).toContain(`set_config('${setting}', '', true)`);
+      expect(body).toContain(`set_config('${setting}', ${saved}, true)`);
+    }
+    expect(body.indexOf("old_claims :=")).toBeGreaterThan(body.indexOf("if not pg_try_advisory_xact_lock"));
+    expect(body).toMatch(/exception when others then\s+raise;/);
   });
 
   it("tidak bisa dipanggil anon/service_role dan tidak bocor lewat search_path", () => {

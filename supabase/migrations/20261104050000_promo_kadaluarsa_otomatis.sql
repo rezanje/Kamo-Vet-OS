@@ -208,20 +208,19 @@ create trigger voucher_kadaluarsa_otomatis before insert or update on public.vou
  for each row execute function public.guard_aktivasi_kadaluarsa();
 
 -- ── 4. Penyapu: satu fungsi, dipakai pg_cron maupun jalur lazy ───────────────
--- Klaim JWT dikosongkan di tingkat fungsi (dipulihkan otomatis saat fungsi
--- selesai) dengan dua alasan: trigger audit a01_activity_change mencatat
+-- Klaim JWT dikosongkan lokal hanya selama UPDATE, lalu dipulihkan persis.
+-- Jangan memakai atribut FUNCTION SET request.jwt.*: hosted postgres tidak
+-- berhak memasangnya meskipun set_config lokal didukung. Trigger audit mencatat
 -- perubahan ini atas nama "Sistem / database" alih-alih pengguna yang kebetulan
 -- membuka layar, dan guard_promo_configuration tidak salah menagih hak
 -- OWNER/ADMIN ke kasir yang memicunya.
 create or replace function public.nonaktifkan_promo_kadaluarsa() returns jsonb
 language plpgsql security definer
 set search_path = ''
-set "request.jwt.claims" to ''
-set "request.jwt.claim.sub" to ''
-set "request.jwt.claim.role" to ''
 as $$
 declare hari date := (now() at time zone 'Asia/Jakarta')::date;
  n_promo int := 0; n_voucher int := 0; n_kode int := 0;
+ old_claims text; old_sub text; old_role text;
 begin
  -- Murah dulu: tiga pemeriksaan berindeks, tidak mengunci apa pun. Hampir
  -- selalu inilah satu-satunya yang dikerjakan saat halaman dimuat.
@@ -240,6 +239,16 @@ begin
   return jsonb_build_object('tanggal', hari, 'promo', 0, 'voucher', 0, 'kode', 0, 'dilewati', true);
  end if;
 
+ old_claims := current_setting('request.jwt.claims', true);
+ old_sub := current_setting('request.jwt.claim.sub', true);
+ old_role := current_setting('request.jwt.claim.role', true);
+ -- Subtransaction restores all three settings and rolls back every write on
+ -- error, before rethrowing the original SQLSTATE/message without swallowing it.
+ begin
+ perform set_config('request.jwt.claims', '', true);
+ perform set_config('request.jwt.claim.sub', '', true);
+ perform set_config('request.jwt.claim.role', '', true);
+
  update public.promos set is_active = false where is_active and valid_until < hari;
  get diagnostics n_promo = row_count;
  update public.vouchers set is_active = false where is_active and valid_until < hari;
@@ -253,6 +262,13 @@ begin
       exists (select 1 from public.promos p where p.id = c.promo_id and p.valid_until < hari)
    or exists (select 1 from public.vouchers v where v.id = c.voucher_id and v.valid_until < hari));
  get diagnostics n_kode = row_count;
+ exception when others then
+  raise;
+ end;
+
+ perform set_config('request.jwt.claims', old_claims, true);
+ perform set_config('request.jwt.claim.sub', old_sub, true);
+ perform set_config('request.jwt.claim.role', old_role, true);
 
  return jsonb_build_object('tanggal', hari, 'promo', n_promo, 'voucher', n_voucher, 'kode', n_kode);
 end$$;
