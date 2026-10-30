@@ -312,7 +312,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
       {draftRecovered && <div role="status" className="p2ban">Draf dipulihkan <button type="button" className="btn-def" onClick={draftDiscard}>Buang draf</button></div>}
       {procedureError && <div role="alert" className="p2ban">{procedureError}</div>}
       {(draftStorageError || draftSaveError) && <div role="alert" className="p2ban">{draftSaveError || draftStorageError}</div>}
-      {correction && <div className="p2ban">{correction.fullEdit ? "Edit dokter sebelum tagihan terbit: obat, jasa, tindakan dan BMHP. Baris tersimpan tidak dihapus. Racikan yang sudah dibuat dikoreksi melalui Aksi racikan; bahan tidak dikeluarkan ulang. Data pasien dan tindak lanjut tetap mengikuti pemeriksaan tersimpan." : "Koreksi catatan klinis. Resep, racikan, tindak lanjut, dan data pasien tetap mengikuti pemeriksaan tersimpan."}</div>}
+      {correction && <div className="p2ban">{correction.fullEdit ? "Edit owner / dokter sebelum tagihan terbit: obat, jasa, tindakan dan BMHP. Baris tersimpan tidak dihapus. Racikan yang sudah dibuat dikoreksi melalui Aksi racikan; bahan tidak dikeluarkan ulang. Data pasien dan tindak lanjut tetap mengikuti pemeriksaan tersimpan." : "Koreksi catatan klinis. Resep, racikan, tindak lanjut, dan data pasien tetap mengikuti pemeriksaan tersimpan."}</div>}
       {correction && <><input type="hidden" name="medical_record_id" value={correction.recordId} /><input type="hidden" name="expected_revision" value={correction.revision} /></>}
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="petId" value={petId} />
