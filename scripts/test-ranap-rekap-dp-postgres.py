@@ -15,7 +15,7 @@ assert spec is not None and spec.loader is not None
 dp = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(dp)
 r = dp.r
-MIGRATION = '20261103030000_ranap_rekap_dp_opsional.sql'
+MIGRATION = '20261104020000_ranap_rekap_dp_opsional.sql'
 
 
 def extra(h, v, n, amount):

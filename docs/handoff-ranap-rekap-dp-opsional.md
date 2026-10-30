@@ -18,7 +18,7 @@ Base: `847fd9de93405ca51e9f5a4f9437e3a9c3450c67`, branch `hermes/ranap-rekap-dp-
 
 ## Exact DB qualification
 
-Forward migration: `20261103030000_ranap_rekap_dp_opsional.sql`, after `20261103020000`.
+Forward migration: `20261104020000_ranap_rekap_dp_opsional.sql`, after main/hosted RS2 migration `20261104010000`. Parent rebased onto main `688fe64c`; the uninstalled candidate was renamed without changing its SQL body. Earlier local counts and artifacts below refer to the pre-rebase baseline and must not be presented as proof of the rebased head.
 
 Only the trusted public `clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb)` wrapper is changed. It retains its coordinator lock, authorization, shift, period, clinical-line, duplicate, stock, journal and private posting-context checks. At its final DP enforcement point it waives the minimum only if another invoice of the **same visit** exists with:
 
