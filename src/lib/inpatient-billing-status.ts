@@ -8,7 +8,7 @@ export const BILLING_UNREAD: BillingStatus = { label: "Belum terbaca", badge: "o
 type Stay = { visit_id: string; branch_id: string };
 type Invoice = TagihanTahap & { visit_id: string };
 type Medical = { id: string; visit_id: string };
-type Prescription = { id: string; medical_record_id: string };
+type Prescription = { id: string; medical_record_id: string; billing_withdrawn_at?:string|null };
 type Table = "invoices" | "medical_records" | "invoice_items" | "invoice_payments" | "prescription_items";
 const PAGE_SIZE = 500;
 
@@ -42,12 +42,12 @@ export async function readInpatientBillingStatuses(db: Db, stays: readonly Stay[
     const [payments, lines, prescriptions] = await Promise.all([
       readRows<BarisBayar>(db, "invoice_payments", "invoice_id, amount", "invoice_id", invoiceIds),
       readRows<{ prescription_item_id: string | null }>(db, "invoice_items", "prescription_item_id", "invoice_id", invoiceIds),
-      readRows<Prescription>(db, "prescription_items", "id, medical_record_id", "medical_record_id", records.map(r => r.id)),
+      readRows<Prescription>(db, "prescription_items", "id, medical_record_id, billing_withdrawn_at", "medical_record_id", records.map(r => r.id)),
     ]);
     // Only active invoice links close a prescription (ordinary initial DP included).
     const billed = new Set(lines.map(r => r.prescription_item_id));
     const recordVisits = new Map(records.map(r => [r.id, r.visit_id]));
-    const pendingVisits = new Set(prescriptions.filter(r => !billed.has(r.id)).map(r => recordVisits.get(r.medical_record_id)));
+    const pendingVisits = new Set(prescriptions.filter(r => !r.billing_withdrawn_at && !billed.has(r.id)).map(r => recordVisits.get(r.medical_record_id)));
     for (const visitId of visitIds) {
       const stages = ringkasTahap(invoices.filter(i => i.visit_id === visitId), payments);
       const positive = stages.filter(i => Number(i.total) > 0);

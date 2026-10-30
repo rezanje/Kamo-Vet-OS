@@ -76,7 +76,7 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; groomingDoctorRequired?: boolean;
@@ -87,6 +87,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   openSourceIds?: ReadonlySet<string>;
   /** H05: packages offered for tagging a component line (new invoices only). */
   packages?: PackageOption[];
+  discountsDisabled?: boolean;
 }) {
   const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id));
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -214,6 +215,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
               <td><NumberInput className="fi" type="number" min={0} step="any" value={r.harga} readOnly={!!r.recipe_id} title={r.recipe_id ? "Harga racikan tersimpan; koreksi melalui diskon" : undefined} onChange={(e) => set(i, { harga: Number(e.target.value) })} style={{ textAlign: "right" }} /></td>
               <td>
                 <NumberInput className="fi" type="number" min={0} max={100} step="any"
+                  aria-label={`Diskon ${r.deskripsi}`} readOnly={discountsDisabled} title={discountsDisabled ? "Diskon tidak berlaku pada invoice tahap rawat inap" : undefined}
                   value={r.diskon_persen ?? 0}
                   onChange={(e) => set(i, { diskon_persen: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
                   style={{ textAlign: "center" }} />
@@ -283,8 +285,9 @@ function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:
   </div>;
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, minDpPercent = 0, bolehTerobosDp = false, allowDpAdmission = false, initialDpAdmission = false }: {
+export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, minDpPercent = 0, bolehTerobosDp = false, allowDpAdmission = false, initialDpAdmission = false }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
+  targetInvoiceId?: string;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   /** Ada racikan kunjungan ini yang masih menunggu diracik. */
   racikanPending?: boolean;
@@ -484,6 +487,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
       return submit(data, bayarVisit);
     }} ref={attachForm} onInput={capture} onChange={capture}>
       <input type="hidden" name="visitId" value={visitId} />
+      {editMode && targetInvoiceId && <input type="hidden" name="target_invoice_id" value={targetInvoiceId}/>}
       <input type="hidden" name="requestKey" value={submissionKey} />
       {demoEnabled && !editMode && <>
         <input type="hidden" name="demo_policy_id" value={demoPolicyId}/>

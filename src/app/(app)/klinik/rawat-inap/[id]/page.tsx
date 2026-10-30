@@ -143,7 +143,7 @@ export default async function RawatInapDetailPage({
               <>Biaya belum ditagih tidak dapat dihitung sekarang — periksa langsung di layar tagihan sebelum memulangkan pasien.</>
             )}
           </span>
-          <Link href={`/klinik/rawat-inap/${rec.id}/tagihan`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+          <Link href={`/klinik/pembayaran/${rec.visit_id}`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
             Buka tagihan
           </Link>
         </div>
@@ -276,7 +276,7 @@ export default async function RawatInapDetailPage({
         {cond === "sembuh" && visit && (
           <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d", marginTop: 10, justifyContent: "space-between" }}>
             <span><i className="ti ti-paw" /> Boleh pulang — lanjutkan ke tagihan rawat inap.</span>
-            <Link href={`/klinik/rawat-inap/${rec.id}/tagihan`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+            <Link href={`/klinik/pembayaran/${rec.visit_id}`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
               Tagih & terima uang <i className="ti ti-arrow-right" />
             </Link>
           </div>
@@ -288,7 +288,7 @@ export default async function RawatInapDetailPage({
               <Link href={`/klinik/rawat-inap/${rec.id}?wa=review`} className="btn-def" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
                 <i className="ti ti-brand-whatsapp" /> Review WA Duka
               </Link>
-              <Link href={`/klinik/rawat-inap/${rec.id}/tagihan`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+              <Link href={`/klinik/pembayaran/${rec.visit_id}`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
                 Tagih & terima uang <i className="ti ti-arrow-right" />
               </Link>
             </span>
@@ -297,7 +297,7 @@ export default async function RawatInapDetailPage({
         {cond === "pulang_paksa" && visit && (
           <div className="p2ban" style={{ marginTop: 10, justifyContent: "space-between" }}>
             <span>Pulang Paksa tercatat dengan form bertanda tangan; biaya rawat inap tetap masuk tagihan.</span>
-            <Link href={`/klinik/rawat-inap/${rec.id}/tagihan`} className="btn-acc" style={{ padding: "4px 12px", textDecoration: "none" }}>Tagih & terima uang</Link>
+            <Link href={`/klinik/pembayaran/${rec.visit_id}`} className="btn-acc" style={{ padding: "4px 12px", textDecoration: "none" }}>Tagih & terima uang</Link>
           </div>
         )}
       </div>

@@ -8,21 +8,24 @@ import { simpanBayar } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const colors = ["#15803d", "#1d4ed8", "#7c3aed", "#be185d", "#0369a1", "#b45309"];
-export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pendingCount, accounts, applyCredit = 0, dpOpsional, bolehTerobos = false }: {
+export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pendingCount, accounts, applyCredit = 0, dpOpsional, bolehTerobos = false, extraFields = {}, compoundPending = false }: {
   recordId: string; visitId: string; requestKey: string; remaining: number; pendingCount: number;
   accounts: RanapPaymentAccount[]; applyCredit?: number; dpOpsional?: number; bolehTerobos?: boolean;
+  extraFields?: Record<string,string>;
+  compoundPending?: boolean;
 }) {
   const router = useRouter();
   const [parts, setParts] = useState([{ method: accounts.find(a => a.method === "Tunai")?.method ?? accounts[0]?.method ?? "", amount: "" }]);
   const [creditMode, setCreditMode] = useState(false);
+  const [compoundAck,setCompoundAck] = useState(false);
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState("");
-  const [confirmation, setConfirmation] = useState<{ quote: RanapPaymentQuote; draft: FormData } | null>(null);
+  const [confirmation, setConfirmation] = useState<{ quote: RanapPaymentQuote; draft: FormData; draftVersion:string } | null>(null);
   const total = parts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const excess = Math.max(0, total - remaining);
   const typed = parts.some(p => p.amount.trim() !== "" && Number(p.amount) !== 0);
-  const blocked = busy || (!creditMode && remaining === 0 && pendingCount === 0 && applyCredit <= 0)
+  const blocked = busy || (compoundPending && !compoundAck) || (!creditMode && remaining === 0 && pendingCount === 0 && applyCredit <= 0)
     || (total === 0 && pendingCount === 0 && applyCredit <= 0)
     || parts.some(p => Number(p.amount) > 0 && !accounts.some(a => a.method === p.method));
   function change(index: number, patch: Partial<typeof parts[number]>) {
@@ -34,7 +37,7 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
     submitting.current = true; setBusy(true); setError("");
     try {
       const result = await simpanBayar(draft);
-      if (result.status === "OVERPAYMENT_CONFIRM_REQUIRED") setConfirmation({ quote: result.quote, draft });
+      if (result.status === "OVERPAYMENT_CONFIRM_REQUIRED") setConfirmation({ quote: result.quote, draft, draftVersion:JSON.stringify(extraFields) });
       else if (result.status === "SAVED") { router.push(result.href); router.refresh(); }
       else setError(result.error);
     } catch {
@@ -47,6 +50,8 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
     <input type="hidden" name="requestKey" value={requestKey} />
     <input type="hidden" name="parts" value={JSON.stringify(parts.filter(p => Number(p.amount) > 0).map(p => ({ method: p.method, amount: Number(p.amount) })))} />
     <input type="hidden" name="add_owner_credit" value={String(creditMode)} />
+    {Object.entries(extraFields).map(([name,value])=><input key={name} type="hidden" name={name} value={value}/>)}
+    {compoundPending&&<label style={{display:"block",background:"#fffbeb",padding:10,marginBottom:10}}><input type="checkbox" aria-label="Konfirmasi racikan belum siap" checked={compoundAck} onChange={e=>setCompoundAck(e.target.checked)}/> Racikan masih menunggu diracik. Saya sudah memastikan penyerahan obat; pembayaran boleh dilanjutkan.</label>}
     <fieldset disabled={busy || !!confirmation} style={{ border: 0, padding: 0, margin: 0 }}>
       <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>METODE PEMBAYARAN</div>
       {parts.map((part, index) => {
@@ -97,6 +102,7 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
         <div style={{ display: "flex", gap: 10 }}>
           <button autoFocus type="button" className="btn-def" disabled={busy} onClick={() => setConfirmation(null)}>Batal</button>
           <button type="button" className="btn-acc" disabled={busy} onClick={() => {
+            if (confirmation.draftVersion !== JSON.stringify(extraFields)) {setConfirmation(null);setError("Keranjang berubah. Periksa nominal dan konfirmasi ulang sebelum membayar.");return;}
             const draft = new FormData(); confirmation.draft.forEach((value, key) => draft.append(key, value));
             draft.set("overpayment_ack", confirmation.quote.token); void send(draft);
           }}>{confirmation.quote.excess > 0 ? "Setuju, simpan saldo pemilik" : "Setuju, lanjutkan pembayaran"}</button>

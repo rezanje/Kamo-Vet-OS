@@ -53,7 +53,7 @@ it('does not request or advertise an automatic inpatient tariff; manual care and
  expect(html).toContain('jasa dan jumlah hari rawat inap dicatat manual');
  expect(html).toContain('LAPORAN RAWAT INAP HARIAN');
  expect(html).toContain('/klinik/rawat-inap/inpat/catatan');
- expect(html).toContain('/klinik/rawat-inap/inpat/tagihan');
+ expect(html).toContain('/klinik/pembayaran/visit-a');
 });
 it('shows consultation, prescriptions and compound status before daily visit notes with explicit source links',async()=>{
  const html=await render();expect(html).toContain('Ringkasan konsultasi dan resep');expect(html).toContain('Keluhan awal kunjungan');expect(html).toContain('Fictional complaint');expect(html).toContain('Fictional consultation note');expect(html).toContain('Fictional tablet');expect(html).toContain('Fictional mixture instructions');expect(html).toContain('Drh Konsultasi');
