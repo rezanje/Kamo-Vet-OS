@@ -34,14 +34,7 @@ export function TagihSekarangForm({
   const terpakai = uangMukaTerpakai(saldoUangMuka, total);
   const kurang = dpLanjutanOpsional ? 0 : kurangUangMuka(total, terpakai, minDpPercent);
 
-  if (!baris.length) {
-    return (
-      <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
-        Semua obat, tindakan, dan jasa yang tercatat sudah masuk tagihan tahap. Item baru yang
-        diinput dokter akan muncul di sini untuk ditagih pada tahap berikutnya.
-      </div>
-    );
-  }
+  if (!baris.length) return null;
 
   return (
     <form action={tagihSekarang}>

@@ -83,9 +83,9 @@ describe("Tagih sekarang", () => {
     expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
   });
 
-  it("tanpa baris tersisa, layar menjelaskan semuanya sudah ditagih", async () => {
+  it("tanpa baris tersisa, form tidak menyisakan helper kosong", async () => {
     await render({ baris: [] });
-    expect(host.textContent).toContain("sudah masuk tagihan tahap");
+    expect(host.textContent).toBe("");
     expect(host.querySelector("form")).toBeNull();
   });
 });
