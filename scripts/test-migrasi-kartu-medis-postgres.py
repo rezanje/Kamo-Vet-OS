@@ -45,9 +45,19 @@ def hitung_finansial(d):
     return {row.split('|')[0]: int(row.split('|')[1]) for row in d.sql(f"select t||'|'||n from ({union}) x order by t").splitlines()}
 
 
+# Fungsi jalur impor/pembaca yang dipakai runner; hash definisinya dibandingkan dengan target (katalog saja, tanpa data).
+HASH_FUNGSI_SQL = """select coalesce(jsonb_agg(jsonb_build_object('sig', p.oid::regprocedure::text, 'h', md5(pg_get_functiondef(p.oid))) order by p.oid::regprocedure::text), '[]')::text
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where (n.nspname = 'public' and p.proname in ('import_legacy_medical_records_bulk','import_legacy_medical_record_resolved',
+        'import_legacy_identity_scan','hasil_impor_rekam_medis','riwayat_bersama_hewan','detail_riwayat_bersama',
+        'import_legacy_row_hash','import_legacy_phone_key','indonesian_phone_key','import_legacy_text_key','capture_activity_log','is_admin'))
+    or n.nspname = 'kamo_import'"""
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--pg-bin', required=True)
+    parser.add_argument('--hash-fungsi', type=Path, help='tulis md5(pg_get_functiondef) fungsi jalur impor (pembanding target)')
     parser.add_argument('--json', type=Path)
     args = parser.parse_args()
     sys.path.insert(0, str(ROOT / 'scripts'))
@@ -105,8 +115,10 @@ def main():
         d.try_(rls.actor(f"delete from public.visits where id='{visit}';", rls.OWNER))
         record('D2: OWNER tetap tidak bisa mengubah/menghapus riwayat hasil migrasi secara langsung',
                d.last(f"select m.diagnosis from public.visits v join public.medical_records m on m.visit_id=v.id where v.id='{visit}'") == 'Dx R4', visit)
-        record('F3 (risiko yang ada, terdokumentasi): pelanggan baru hasil migrasi berpenanda imported_at NULL',
-               d.last("select bool_and(imported_at is null)::text from public.customers where name like 'UJI PEMILIK%'") == 'true', 'perilaku RPC yang ada; keputusan K8')
+        record('F3 dimitigasi runner: pemilik baru hasil migrasi lahir dengan imported_at (Q01 tidak menghitungnya pelanggan baru)',
+               d.last("select bool_and(imported_at is not null)::text from public.customers where name like 'UJI PEMILIK%'") == 'true', 'kartu dibuat runner lewat RLS OWNER; fallback RPC tidak dipakai')
+        if args.hash_fungsi:
+            args.hash_fungsi.write_text(d.last(HASH_FUNGSI_SQL) + '\n')
     fails = [x for x in rls.RESULTS if x['status'] != 'PASS']
     print(f"TOTAL pass={len(rls.RESULTS) - len(fails)} fail={len(fails)}", flush=True)
     if args.json:

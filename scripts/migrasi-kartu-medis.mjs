@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Migrasi kartu medis — CLI OFFLINE saja (dry-run). Tidak ada mode jaringan/tulis di CLI ini: login/sesi OWNER untuk
- * apply masih keputusan operasional terbuka (docs/rencana-migrasi-kartu-medis.md §9 K4).
+ * Migrasi kartu medis — CLI OFFLINE saja (dry-run). Tidak ada mode jaringan/tulis di CLI ini; runner jaringan (login
+ * OWNER) ada di skrip terpisah scripts/migrasi-kartu-medis-produksi.mjs (docs/rencana-migrasi-kartu-medis.md §13).
  *
  *   node scripts/migrasi-kartu-medis.mjs dry-run --berkas master.xlsx [--laporan laporan.json]
- *        [--hari-ini YYYY-MM-DD] [--tanggal-minimum YYYY-MM-DD]
+ *        [--hari-ini YYYY-MM-DD] [--tanggal-minimum YYYY-MM-DD] [--setujui-berkas <sha256 berkas>]
  *
  * Tanpa dependensi baru: modul TypeScript offline ditranspilasi (typescript yang sudah ada) ke folder cache di
  * node_modules/.cache lalu dimuat. Hanya modul offline yang ikut (klien/eksekutor/identitas TIDAK dimuat).
@@ -23,6 +23,7 @@ export const MODUL_OFFLINE = [
   "src/lib/kontak.ts",
   "src/lib/impor-rekam-medis.ts",
   "src/lib/migrasi-kartu-medis/kontrak.ts",
+  "src/lib/migrasi-kartu-medis/baca-xlsx.ts",
   "src/lib/migrasi-kartu-medis/baca-master.ts",
   "src/lib/migrasi-kartu-medis/rencana.ts",
   "src/lib/migrasi-kartu-medis/dry-run.ts",
@@ -64,11 +65,14 @@ async function main() {
   const { perintah, opsi } = argumen(process.argv.slice(2));
   if (perintah !== "dry-run") throw new Error("Hanya perintah `dry-run` (offline) yang tersedia.");
   if (!opsi.berkas) throw new Error("--berkas wajib.");
-  const izin = new Set(["berkas", "laporan", "hari-ini", "tanggal-minimum"]);
+  const izin = new Set(["berkas", "laporan", "hari-ini", "tanggal-minimum", "setujui-berkas"]);
   for (const k of Object.keys(opsi)) if (!izin.has(k)) throw new Error(`Opsi tidak dikenal: --${k}`);
   if (opsi.laporan && diDalamRepo(opsi.laporan)) throw new Error("--laporan harus di luar repo.");
   const { dryRunOffline } = muatDryRun();
-  const laporan = await dryRunOffline(new Uint8Array(readFileSync(opsi.berkas)), { hariIni: opsi["hari-ini"], tanggalMinimum: opsi["tanggal-minimum"] });
+  const laporan = await dryRunOffline(new Uint8Array(readFileSync(opsi.berkas)), {
+    hariIni: opsi["hari-ini"], tanggalMinimum: opsi["tanggal-minimum"],
+    ...(opsi["setujui-berkas"] ? { persetujuanBerkas: opsi["setujui-berkas"] } : {}),
+  });
   if (opsi.laporan) writeFileSync(opsi.laporan, JSON.stringify(laporan, null, 1), { mode: 0o600 });
   const ringkas = {
     mode: laporan.mode, ok: laporan.ok, versi: laporan.versi, sha256Berkas: laporan.sha256Berkas, sidikRencana: laporan.sidikRencana,

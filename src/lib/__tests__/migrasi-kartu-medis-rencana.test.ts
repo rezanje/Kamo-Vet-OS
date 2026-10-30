@@ -183,4 +183,22 @@ describe("rencana dry-run offline", () => {
     expect(r.hitungan).toMatchObject({ riwayat: 5, siap: 2, karantina: 1, dikecualikan: 2 });
     expect(r.hitungan.perAlasan).toEqual({ belum_disetujui: 1, "riwayat.doctor.terlalu_panjang": 1, "tanggal.belum_terselesaikan": 1 });
   });
+  it("file-level OWNER approval (SHA-256 bound) replaces per-row SETUJU but never lifts quarantine or exclusions", async () => {
+    const f = masterDasar(4);
+    for (const r of f.riwayat) r.decision = null;
+    f.pemilik[0].decision = null;
+    f.riwayat[1].record_date = null;                     // dikecualikan: tanggal belum terselesaikan
+    f.riwayat[2].doctor = "x".repeat(101);               // karantina
+    const bytes = await buatMaster(f);
+    const h = await bacaMaster(bytes);
+    if (!h.ok) throw new Error(h.galat.join("; "));
+    const tanpa = buatRencana(h.versi, h.sha256, h.blok, OPSI);
+    expect(tanpa.hitungan).toMatchObject({ siap: 0, karantina: 1, dikecualikan: 3 });
+    const dengan = buatRencana(h.versi, h.sha256, h.blok, { ...OPSI, persetujuanBerkas: h.sha256 });
+    expect(dengan.hitungan).toMatchObject({ siap: 2, karantina: 1, dikecualikan: 1, disetujui: 3 });
+    expect(baris(dengan, "R2").alasan).toEqual(["tanggal.belum_terselesaikan"]);
+    expect(baris(dengan, "R3").status).toBe("karantina");
+    expect(dengan.sidikRencana).not.toBe(tanpa.sidikRencana);
+    expect(() => buatRencana(h.versi, h.sha256, h.blok, { ...OPSI, persetujuanBerkas: "0".repeat(64) })).toThrow(/tidak cocok/);
+  });
 });

@@ -5,18 +5,18 @@ import { describe, expect, it } from "vitest";
 import { bacaMaster } from "@/lib/migrasi-kartu-medis/baca-master";
 import { BukuBesar, type MetaRun } from "@/lib/migrasi-kartu-medis/buku-besar";
 import { jalankanMigrasi, readbackMigrasi, validasiJawabanBulk, type PayloadKirim } from "@/lib/migrasi-kartu-medis/eksekutor";
-import type { KlienMigrasi, KonteksJaringan, NamaRpcMigrasi } from "@/lib/migrasi-kartu-medis/klien";
+import type { KartuPemilikBaru, KlienMigrasi, KonteksJaringan, NamaRpcMigrasi } from "@/lib/migrasi-kartu-medis/klien";
 import { kunciHpIndonesia } from "@/lib/kontak";
 import { kunciTeksImporRekamMedis as kunci } from "@/lib/impor-rekam-medis";
 import { buatRencana, kanonikJson, type Rencana } from "@/lib/migrasi-kartu-medis/rencana";
-import { buatMaster, masterDasar, type FixtureMaster } from "./fixtures/master-kartu-medis";
+import { buatMaster, masterDasar, tgl, type FixtureMaster } from "./fixtures/master-kartu-medis";
 
 const OWNER = "0f000000-0000-4000-8000-000000000001";
 const CABANG = "0f000000-0000-4000-8000-0000000000b1";
 let seq = 0;
 const uuid = () => `0e000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
 
-type Cust = { id: string; name: string; phone: string; address: string | null };
+type Cust = { id: string; name: string; phone: string; address: string | null; imported_at?: string | null };
 type Pet = { id: string; customer_id: string; name: string; species: string | null; breed: string | null; gender: string | null; dob: string | null; status: string };
 type Visit = { id: string; key: string; hash: string; customer_id: string; pet_id: string; p: PayloadKirim };
 
@@ -30,15 +30,24 @@ class DbPalsu {
   pilihan: string[] = [];
   rs1Rusak = false;
   hookScan: null | (() => void) = null;
+  buatGagal: null | "sebelum" | "sesudah" = null;
+  kartuDibuat: KartuPemilikBaru[] = [];
   klien(konteks: KonteksJaringan = { mode: "semua-cabang" }): KlienMigrasi {
     return {
       konteks,
+      buatPemilik: async (kartu) => {
+        if (this.buatGagal === "sebelum") { this.buatGagal = null; throw new Error("ECONNRESET"); }
+        const c = { id: uuid(), name: kartu.name, phone: kartu.phone, address: kartu.address, imported_at: kartu.imported_at };
+        this.customers.push(c); this.kartuDibuat.push(kartu);
+        if (this.buatGagal === "sesudah") { this.buatGagal = null; throw new Error("ECONNRESET"); }
+        return { data: [{ id: c.id }], error: null };
+      },
       idPengguna: async () => OWNER,
       pilih: async (tabel, _kolom, ids) => {
         this.pilihan.push(tabel);
         if (tabel === "profiles") return { data: ids.includes(OWNER) ? [{ id: OWNER, role: this.role, is_active: this.active }] : [], error: null };
         const src = tabel === "customers" ? this.customers : this.pets;
-        return { data: src.filter((r) => ids.includes(r.id)).map((r) => ({ ...r })), error: null };
+        return { data: (src as Array<{ id: string }>).filter((r) => ids.includes(r.id)).map((r) => ({ imported_at: null, ...r })), error: null };
       },
       rpc: async (nama, args) => {
         this.panggilan.push(nama);
@@ -223,18 +232,125 @@ describe("eksekutor + ledger (klien palsu)", () => {
   });
   it("holds rows whose candidates changed between resolution and the batch recheck (race)", async () => {
     const db = new DbPalsu(); const r = await rencana(masterDasar(1));
+    // scan 1: nol kandidat -> kartu dibuat; scan 2: resolusi ulang; scan 3 (cek ulang): muncul kartu kedua dengan HP sama.
     let n = 0;
-    db.hookScan = () => { if (++n === 2) db.customers.push({ id: uuid(), name: "UJI PEMILIK", phone: "089999999999", address: null }); };
+    db.hookScan = () => { if (++n === 3) db.customers.push({ id: uuid(), name: "KARTU LAIN", phone: "+62 812-3456-7890", address: null }); };
     const a = BukuBesar.buka(folder(), meta(r)).buku;
     expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ tersimpan: 0, ditahanIdentitas: { "identitas.kandidat_berubah": 1 } });
     expect(db.panggilan).not.toContain("import_legacy_medical_records_bulk");
   });
-  it("holds an ambiguous owner (name or phone match, not exact) without merging or inventing a phone", async () => {
+  it("treats the same phone with a different name as ONE owner: old card used, its name kept, variant noted", async () => {
     const db = new DbPalsu();
-    db.customers.push({ id: uuid(), name: "ORANG LAIN", phone: "081234567890", address: null });
+    const lama = { id: uuid(), name: "ORANG LAIN", phone: "+6281234567890", address: "Alamat lama" };
+    db.customers.push(lama);
+    const r = await rencana(masterDasar(2)); const dir = folder(); const a = BukuBesar.buka(dir, meta(r)).buku;
+    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ tersimpan: 2, ditahanIdentitas: {} });
+    expect(db.customers).toEqual([lama]);
+    expect(db.kartuDibuat).toHaveLength(0);
+    expect(db.visits.every((v) => v.customer_id === lama.id)).toBe(true);
+    const state = JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
+    expect(state.batches[0].baris[0].catatan).toEqual(expect.arrayContaining(["demografi.pemilik.name_dipertahankan", "demografi.pemilik.address_dipertahankan"]));
+    expect(await readbackMigrasi(db.klien(), r, a)).toMatchObject({ ok: true, status: "terverifikasi", selisih: [] });
+  });
+  it("holds (never merges) when two existing cards share the phone, and never invents a phone", async () => {
+    const db = new DbPalsu();
+    db.customers.push({ id: uuid(), name: "ORANG A", phone: "081234567890", address: null }, { id: uuid(), name: "ORANG B", phone: "6281234567890", address: null });
     const r = await rencana(masterDasar(1)); const a = BukuBesar.buka(folder(), meta(r)).buku;
-    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ ditahanIdentitas: { "identitas.perlu_keputusan_pemilik": 1 } });
+    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ tersimpan: 0, ditahanIdentitas: { "identitas.pemilik_ganda_hp": 1 } });
+    expect(db.customers).toHaveLength(2);
+    expect(db.panggilan).not.toContain("import_legacy_medical_records_bulk");
+  });
+  it("ignores a same-name card with a different phone (phone is the primary key) and notes it", async () => {
+    const db = new DbPalsu();
+    db.customers.push({ id: uuid(), name: "UJI PEMILIK", phone: "089999999999", address: null });
+    const r = await rencana(masterDasar(1)); const dir = folder(); const a = BukuBesar.buka(dir, meta(r)).buku;
+    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ tersimpan: 1 });
+    expect(db.kartuDibuat).toHaveLength(1);
+    const state = JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
+    expect(state.batches[0].baris[0].catatan).toEqual(expect.arrayContaining(["identitas.pemilik_baru", "identitas.nama_sama_nomor_beda"]));
+  });
+  // ------------------------------------------------ batch kartu medis: HP patokan, pemilik baru bertanda impor (Q01)
+  /** Dua pemilik lokal dengan HP setara (08… / +628…), nama berbeda; dua hewan lokal bernama sama + satu hewan lain. */
+  const masterVarian = (genderH2: string | null = null): FixtureMaster => {
+    const f = masterDasar(1);
+    f.pemilik.push({ local_owner_id: "P2", name: "UJI PEMILIK VARIAN", phone: "+62 812-3456-7890", address: "Jl. Fiktif 2", decision: "SETUJU" });
+    f.hewan[0].gender = null;
+    f.hewan.push({ local_pet_id: "H2", local_owner_id: "P2", name: "uji kucing ", gender: genderH2, decision: "SETUJU" });
+    f.hewan.push({ local_pet_id: "H3", local_owner_id: "P1", name: "UJI ANJING", species: "Anjing", decision: "SETUJU" });
+    for (const [id, pet, tanggal] of [["R2", "H2", "2026-02-01"], ["R3", "H3", "2026-02-02"]] as const) {
+      f.riwayat.push({ ...f.riwayat[0], local_record_id: id, local_pet_id: pet, record_date: tgl(tanggal), source_sheet: id, diagnosis: `DIAG ${id}` });
+      f.perSheet.push({ local_ref: id, file: "UJI.xlsx", sheet: id, source_key: `UJI.xlsx::${id}`, tab_date: tgl(tanggal), cell_date: tgl(tanggal) });
+    }
+    return f;
+  };
+  it("creates ONE new owner card per phone (name 'A / B', imported_at set) and never sends a row without a card", async () => {
+    const db = new DbPalsu(); const r = await rencana(masterVarian()); const dir = folder();
+    const kiriman: PayloadKirim[] = [];
+    const k = db.klien();
+    const klien: KlienMigrasi = { ...k, rpc: async (n, a) => { if (n === "import_legacy_medical_records_bulk") kiriman.push(...(a.p_rows as PayloadKirim[])); return k.rpc(n, a); } };
+    const a = BukuBesar.buka(dir, meta(r, undefined, 150)).buku;
+    expect(await jalankanMigrasi(klien, r, a, { ukuranBatch: 150 })).toMatchObject({ status: "selesai", tersimpan: 3, ditahanIdentitas: {} });
+    expect(db.kartuDibuat).toEqual([{ name: "UJI PEMILIK / UJI PEMILIK VARIAN", phone: "081234567890", address: "Jl. Fiktif 1", imported_at: expect.any(String) }]);
     expect(db.customers).toHaveLength(1);
+    expect(kiriman.every((p) => p.customer_id === db.customers[0].id)).toBe(true);
+    // Hewan tetap terpisah per nama: UJI KUCING (dua hewan lokal, nama setara) = satu hewan; UJI ANJING terpisah.
+    expect(db.pets.map((p) => p.name).sort()).toEqual(["UJI ANJING", "UJI KUCING"]);
+    const state = JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
+    expect(state.pemilikBaru).toEqual([{ kunciHash: expect.stringMatching(/^[0-9a-f]{64}$/), status: "dibuat", customer_id: db.customers[0].id }]);
+    expect(JSON.stringify(state)).not.toContain("081234567890");
+    expect(await readbackMigrasi(db.klien(), r, a)).toMatchObject({ ok: true, status: "terverifikasi", diperiksa: 3, selisih: [] });
+    // Kartu tanpa penanda impor terdeteksi readback.
+    db.customers[0].imported_at = null;
+    expect((await readbackMigrasi(db.klien(), r, a)).selisih).toContainEqual({ local_record_id: null, kode: "readback.pemilik_baru_tanpa_penanda_impor" });
+  });
+  it("holds two local pets that would become one new pet with conflicting data (never guesses)", async () => {
+    const f = masterVarian("Jantan"); f.hewan[0].gender = "Betina";
+    const db = new DbPalsu(); const r = await rencana(f); const a = BukuBesar.buka(folder(), meta(r, undefined, 150)).buku;
+    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 150 })).toMatchObject({ tersimpan: 1, ditahanIdentitas: { "identitas.hewan_baru_demografi_bentrok": 2 } });
+    expect(db.pets.map((p) => p.name)).toEqual(["UJI ANJING"]);
+  });
+  it("compatible merged pet: the extra value is noted as not applied, and readback still verifies", async () => {
+    const db = new DbPalsu(); const r = await rencana(masterVarian("neutered")); const dir = folder();
+    const a = BukuBesar.buka(dir, meta(r, undefined, 150)).buku;
+    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 150 })).toMatchObject({ tersimpan: 3 });
+    const state = JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
+    expect(state.batches[0].baris.find((b: { local_record_id: string }) => b.local_record_id === "R2").catatan).toContain("demografi.hewan.gender_tidak_diisi");
+    expect(await readbackMigrasi(db.klien(), r, a)).toMatchObject({ ok: true, selisih: [] });
+  });
+  it("existing pet: empty field in DB = note (not overwritten); conflicting species = hold", async () => {
+    const db = new DbPalsu();
+    const c = { id: uuid(), name: "UJI PEMILIK", phone: "081234567890", address: "Jl. Fiktif 1" };
+    db.customers.push(c);
+    db.pets.push({ id: uuid(), customer_id: c.id, name: "UJI KUCING", species: "Kucing", breed: null, gender: "Betina", dob: "2023-05-01", status: "Aktif" });
+    const r = await rencana(masterDasar(1)); const dir = folder(); const a = BukuBesar.buka(dir, meta(r)).buku;
+    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ tersimpan: 1 });
+    expect(db.pets[0].breed).toBeNull();
+    expect(JSON.parse(readFileSync(join(dir, "state.json"), "utf8")).batches[0].baris[0].catatan).toContain("demografi.hewan.breed_tidak_diisi");
+    const db2 = new DbPalsu(); db2.customers.push(c);
+    db2.pets.push({ id: uuid(), customer_id: c.id, name: "UJI KUCING", species: "Anjing", breed: null, gender: null, dob: null, status: "Aktif" });
+    const b = BukuBesar.buka(folder(), meta(r)).buku;
+    expect(await jalankanMigrasi(db2.klien(), r, b, { ukuranBatch: 2 })).toMatchObject({ tersimpan: 0, ditahanIdentitas: { "demografi.hewan.species": 1 } });
+  });
+  it.each(["sebelum", "sesudah"] as const)("new owner card: a %s-commit disconnect stops, and resume yields exactly one card", async (kapan) => {
+    const db = new DbPalsu(); const r = await rencana(masterDasar(2)); const dir = folder();
+    const a = BukuBesar.buka(dir, meta(r)).buku;
+    db.buatGagal = kapan;
+    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ status: "berhenti_tidak_pasti", sebab: "pemilik_baru_tidak_pasti", tersimpan: 0 });
+    expect(db.panggilan).not.toContain("import_legacy_medical_records_bulk");
+    await expect(readbackMigrasi(db.klien(), r, a)).rejects.toThrow(/tidak pasti/);
+    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ status: "selesai", tersimpan: 2 });
+    expect(db.customers).toHaveLength(1);
+    expect(db.customers[0].imported_at).toEqual(expect.any(String));
+    expect(await readbackMigrasi(db.klien(), r, a)).toMatchObject({ ok: true, status: "terverifikasi" });
+  });
+  it("an uncertain card attempt is not adopted when the card found for that phone lacks the import marker", async () => {
+    const db = new DbPalsu(); const r = await rencana(masterDasar(1)); const dir = folder();
+    const a = BukuBesar.buka(dir, meta(r)).buku;
+    db.buatGagal = "sebelum";
+    await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 });
+    db.customers.push({ id: uuid(), name: "KASIR BARU", phone: "081234567890", address: null, imported_at: null });
+    expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ tersimpan: 0, ditahanIdentitas: { "pemilik_baru.tidak_terbukti": 1 } });
+    expect(db.panggilan).not.toContain("import_legacy_medical_records_bulk");
   });
   it("fails closed on a malformed identity scan", async () => {
     const db = new DbPalsu(); const r = await rencana(masterDasar(1)); const a = BukuBesar.buka(folder(), meta(r)).buku;
@@ -367,7 +483,7 @@ describe("eksekutor + ledger (klien palsu)", () => {
   });
   it("R2: an all-held run or a plan with no eligible rows reads back as 'kosong', never a successful migration", async () => {
     const db = new DbPalsu();
-    db.customers.push({ id: uuid(), name: "ORANG LAIN", phone: "081234567890", address: null });
+    db.customers.push({ id: uuid(), name: "ORANG A", phone: "081234567890", address: null }, { id: uuid(), name: "ORANG B", phone: "081234567890", address: null });
     const r = await rencana(masterDasar(1)); const a = BukuBesar.buka(folder(), meta(r)).buku;
     await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 });
     expect(await readbackMigrasi(db.klien(), r, a)).toMatchObject({ ok: false, status: "kosong", diperiksa: 0, disposisi: { siap: 1, ditahanIdentitas: 1 } });

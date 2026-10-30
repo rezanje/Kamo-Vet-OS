@@ -6,12 +6,15 @@
  *   UUID) SEBELUM diakui. Jawaban rusak/parsial/putus = `tidak_pasti` dan run berhenti.
  * - Lanjutkan mengirim ulang payload, urutan, dan jejak YANG SAMA (sidik rencana sama). DB mengembalikan `sudah_ada`
  *   untuk baris yang ternyata sudah ter-commit (jejak + sidik baris sama).
- * - Hanya RPC simpan massal yang menulis; tidak ada INSERT tabel langsung.
+ * - Riwayat hanya ditulis RPC simpan massal. Satu-satunya INSERT langsung: kartu pemilik BARU lewat RLS OWNER dengan
+ *   `imported_at` terisi (pola impor pelanggan aplikasi), supaya kartu riwayat lama tidak pernah dihitung "pelanggan baru"
+ *   Q01. Invarian: baris TIDAK PERNAH dikirim dengan customer_id null (fallback DB akan membuat kartu tanpa penanda).
  */
-import { BukuBesar, type BarisLedger, type BatchLedger, type HasilLedger, type StateLedger } from "./buku-besar";
-import { GagalTertutup, UUID_RE, pastikanPemanggil, type KlienMigrasi } from "./klien";
-import { resolusiIdentitas, selisihDemografi, snapshotSama, type Resolusi } from "./identitas";
-import { kanonikJson, sha256, type BarisRencana, type PayloadBaris, type Rencana } from "./rencana";
+import { BukuBesar, type BarisLedger, type BatchLedger, type HasilLedger, type PemilikBaruLedger, type StateLedger } from "./buku-besar";
+import { GagalTertutup, UUID_RE, pastikanPemanggil, type KartuPemilikBaru, type KlienMigrasi } from "./klien";
+import { kunciHpPayload, resolusiIdentitas, selisihDemografi, snapshotSama, type Resolusi } from "./identitas";
+import { kunciTeksImporRekamMedis as kunciTeks } from "../impor-rekam-medis";
+import { BATAS_FIELD, kanonikJson, sha256, type BarisRencana, type PayloadBaris, type Rencana } from "./rencana";
 
 export const UKURAN_BATCH_MAKS = 150;
 
@@ -86,6 +89,117 @@ function ringkas(state: StateLedger, siap: number, status: HasilJalan["status"])
   };
 }
 
+/** SHA-256 kunci HP kanonik (ledger tidak pernah menyimpan HP mentah). */
+export const hashHp = (kunciHp: string) => sha256(`hp:${kunciHp}`);
+
+/**
+ * Kartu pemilik baru untuk satu nomor HP, deterministik dari SEMUA baris siap rencana dengan nomor itu: nama varian
+ * digabung "A / B" (urutan kemunculan; bila >100 karakter, nama pertama), HP dari baris pertama, alamat pertama yang terisi.
+ */
+export function kartuPemilikBaru(rencana: Rencana, kunciHp: string, importedAt: string): KartuPemilikBaru {
+  const baris = rencana.baris.filter((r) => r.status === "siap" && r.payload && kunciHpPayload(r.payload) === kunciHp).map((r) => r.payload!);
+  if (!baris.length) throw new GagalTertutup("Kartu pemilik baru tanpa baris rencana.");
+  const nama: string[] = [];
+  for (const p of baris) if (!nama.some((n) => kunciTeks(n) === kunciTeks(p.owner_name))) nama.push(p.owner_name);
+  const gabung = nama.join(" / ");
+  return {
+    name: [...gabung].length <= BATAS_FIELD.owner_name ? gabung : nama[0],
+    phone: baris[0].phone,
+    address: baris.find((p) => p.address !== null)?.address ?? null,
+    imported_at: importedAt,
+  };
+}
+
+async function penandaImpor(klien: KlienMigrasi, ids: string[]): Promise<Map<string, boolean>> {
+  const hasil = new Map<string, boolean>();
+  const unik = [...new Set(ids)];
+  for (let i = 0; i < unik.length; i += 100) {
+    const potong = unik.slice(i, i + 100);
+    const { data, error } = await klien.pilih("customers", "id,imported_at", potong);
+    if (error || !Array.isArray(data)) throw new GagalTertutup("Penanda impor pemilik tidak terbaca.");
+    for (const row of data as Record<string, unknown>[]) {
+      if (typeof row?.id !== "string" || !potong.includes(row.id)) throw new GagalTertutup("Penanda impor pemilik tidak konsisten.");
+      hasil.set(row.id, typeof row.imported_at === "string" && row.imported_at !== "");
+    }
+  }
+  return hasil;
+}
+
+/**
+ * Buat kartu untuk nomor HP yang belum punya pemilik (nol kandidat menurut resolusi segar). Penanda `dikirim` ditulis
+ * SEBELUM jaringan. Jawaban rusak/putus = `tidak_pasti` (run berhenti). Pada lanjutan, nol kandidat untuk penanda yang
+ * belum pasti berarti INSERT tidak ter-commit (OWNER membaca semua pelanggan), jadi dibuat ulang; satu kandidat diadopsi
+ * hanya bila bertanda impor (lihat `adopsiPemilikBaru`).
+ */
+async function buatPemilikBaru(klien: KlienMigrasi, buku: BukuBesar, state: StateLedger, rencana: Rencana, potong: BarisRencana[], resolusi: Map<string, Resolusi>): Promise<number | "tidak_pasti"> {
+  const daftar = (state.pemilikBaru ??= []);
+  const hpBaru = new Set<string>();
+  for (const r of potong) {
+    const res = resolusi.get(r.local_record_id);
+    if (res?.status === "kirim" && res.customer_id === null) hpBaru.add(kunciHpPayload(r.payload!));
+  }
+  let dibuat = 0;
+  for (const hp of hpBaru) {
+    const kunciHash = hashHp(hp);
+    let entri = daftar.find((e) => e.kunciHash === kunciHash);
+    if (entri?.status === "dibuat") throw new GagalTertutup("Kartu pemilik baru buatan run ini tidak ditemukan lagi; periksa manual.");
+    if (!entri) { entri = { kunciHash, status: "dikirim", customer_id: null }; daftar.push(entri); }
+    entri.status = "dikirim";
+    buku.simpan(state);                                // penanda tahan-crash SEBELUM jaringan
+    let id: string | null = null;
+    try {
+      const { data, error } = await klien.buatPemilik(kartuPemilikBaru(rencana, hp, new Date().toISOString()));
+      const row = Array.isArray(data) ? (data.length === 1 ? data[0] : null) : data;
+      const v = row && typeof row === "object" ? (row as Record<string, unknown>).id : null;
+      if (!error && typeof v === "string" && UUID_RE.test(v)) id = v.toLowerCase();
+    } catch {
+      id = null;
+    }
+    if (!id) { entri.status = "tidak_pasti"; buku.simpan(state); return "tidak_pasti"; }
+    entri.status = "dibuat";
+    entri.customer_id = id;
+    buku.simpan(state);
+    dibuat += 1;
+  }
+  return dibuat;
+}
+
+/**
+ * Setelah resolusi: (1) penanda pembuatan yang belum pasti + satu kandidat dengan HP itu -> diadopsi hanya bila kartu itu
+ * bertanda impor; (2) setiap baris yang memakai kartu buatan run ini wajib terbukti bertanda impor; (3) baris tanpa kartu
+ * TIDAK PERNAH dikirim. Mengembalikan alasan tahan per local_record_id.
+ */
+async function periksaPemilikBaru(klien: KlienMigrasi, buku: BukuBesar, state: StateLedger, potong: BarisRencana[], resolusi: Map<string, Resolusi>) {
+  const daftar = (state.pemilikBaru ??= []);
+  const tahan = new Map<string, string>();
+  const kirim = potong.flatMap((r) => {
+    const res = resolusi.get(r.local_record_id);
+    return res?.status === "kirim" ? [{ r, res, hash: hashHp(kunciHpPayload(r.payload!)) }] : [];
+  });
+  const belumPasti = new Map(daftar.filter((e) => e.status !== "dibuat").map((e) => [e.kunciHash, e]));
+  const calonAdopsi = kirim.filter((k) => k.res.customer_id && belumPasti.has(k.hash));
+  const buatanRun = new Set(daftar.filter((e) => e.status === "dibuat").map((e) => e.customer_id!));
+  const perlu = [...new Set([...calonAdopsi.map((k) => k.res.customer_id!), ...kirim.filter((k) => k.res.customer_id && buatanRun.has(k.res.customer_id)).map((k) => k.res.customer_id!)])];
+  const penanda = perlu.length ? await penandaImpor(klien, perlu) : new Map<string, boolean>();
+  let ubah = false;
+  for (const k of calonAdopsi) {
+    const e = belumPasti.get(k.hash)!;
+    if (penanda.get(k.res.customer_id!) === true) {
+      e.status = "dibuat";
+      e.customer_id = k.res.customer_id;
+      buatanRun.add(k.res.customer_id!);
+      ubah = true;
+    } else tahan.set(k.r.local_record_id, "pemilik_baru.tidak_terbukti");
+  }
+  if (ubah) buku.simpan(state);
+  for (const k of kirim) {
+    if (tahan.has(k.r.local_record_id)) continue;
+    if (!k.res.customer_id) tahan.set(k.r.local_record_id, "pemilik_baru.belum_ada_kartu");
+    else if (buatanRun.has(k.res.customer_id) && penanda.get(k.res.customer_id) !== true) tahan.set(k.r.local_record_id, "pemilik_baru.penanda_impor_tidak_terbukti");
+  }
+  return tahan;
+}
+
 function payloadKirim(r: BarisRencana, customer_id: string | null, pet_id: string | null): PayloadKirim {
   return { ...r.payload!, customer_id, pet_id };
 }
@@ -107,6 +221,15 @@ export function validasiLedger(rencana: Rencana, buku: BukuBesar, konteks: Klien
   const state = buku.baca();
   const rusak = () => new GagalTertutup("Ledger rusak atau tidak konsisten.");
   if (!state || !Array.isArray(state.batches) || !Array.isArray(state.ditahanIdentitas)) throw rusak();
+  const pemilikBaru: PemilikBaruLedger[] = state.pemilikBaru ?? [];
+  if (!Array.isArray(pemilikBaru)) throw rusak();
+  const hashLihat = new Set<string>();
+  for (const e of pemilikBaru) {
+    if (!e || typeof e.kunciHash !== "string" || !/^[0-9a-f]{64}$/.test(e.kunciHash) || hashLihat.has(e.kunciHash)) throw rusak();
+    hashLihat.add(e.kunciHash);
+    if (!["dikirim", "dibuat", "tidak_pasti"].includes(e.status) || !nullAtauUuid(e.customer_id) || (e.status === "dibuat") !== (e.customer_id !== null)) throw rusak();
+  }
+  if (lengkap && pemilikBaru.some((e) => e.status !== "dibuat")) throw new GagalTertutup("Masih ada pembuatan kartu pemilik yang tidak pasti; lanjutkan dulu.");
   const siap = new Map(rencana.baris.filter((r) => r.status === "siap" && r.payload).map((r) => [r.local_record_id, r]));
   const lihat = new Set<string>();
   const visit = new Set<string>();
@@ -240,26 +363,34 @@ export async function jalankanMigrasi(klien: KlienMigrasi, rencana: Rencana, buk
   let no = state.batches.length;
   for (let i = 0; i < sisa.length; i += opsi.ukuranBatch) {
     const potongRencana = sisa.slice(i, i + opsi.ukuranBatch);
-    const resolusi = await resolusiIdentitas(klien, potongRencana);
+    let resolusi = await resolusiIdentitas(klien, potongRencana);
+    const dibuat = await buatPemilikBaru(klien, buku, state, rencana, potongRencana, resolusi);
+    if (dibuat === "tidak_pasti") return { ...ringkas(state, siap.length, "berhenti_tidak_pasti"), sebab: "pemilik_baru_tidak_pasti" };
+    // Catatan resolusi pertama (mis. pemilik baru, nama sama nomor beda) dipertahankan setelah kartu dibuat.
+    const catatanAwal = new Map([...resolusi].flatMap(([id, res]) => (res.status === "kirim" && res.customer_id === null ? [[id, res.catatan] as const] : [])));
+    if (dibuat > 0) resolusi = await resolusiIdentitas(klien, potongRencana);
+    const tahanPemilik = await periksaPemilikBaru(klien, buku, state, potongRencana, resolusi);
     const potong: { r: BarisRencana; res: Extract<Resolusi, { status: "kirim" }> }[] = [];
     for (const r of potongRencana) {
       const res = resolusi.get(r.local_record_id);
       if (!res) throw new GagalTertutup("Resolusi identitas tidak lengkap.");
       if (res.status === "tahan") state.ditahanIdentitas.push({ local_record_id: r.local_record_id, alasan: res.alasan });
+      else if (tahanPemilik.has(r.local_record_id)) state.ditahanIdentitas.push({ local_record_id: r.local_record_id, alasan: [tahanPemilik.get(r.local_record_id)!] });
       else potong.push({ r, res });
     }
     const ulang = potong.length ? await resolusiIdentitas(klien, potong.map((p) => p.r)) : new Map<string, Resolusi>();
     const tetap = potong.filter(({ r, res }) => {
       const baru = ulang.get(r.local_record_id);
-      if (baru?.status === "kirim" && snapshotSama(baru.snapshot, res.snapshot)) return true;
+      if (baru?.status === "kirim" && snapshotSama(baru.snapshot, res.snapshot) && res.customer_id !== null) return true;
       state.ditahanIdentitas.push({ local_record_id: r.local_record_id, alasan: ["identitas.kandidat_berubah"] });
       return false;
     });
     if (!tetap.length) { buku.simpan(state); continue; }
     const kiriman = tetap.map(({ r, res }) => payloadKirim(r, res.customer_id, res.pet_id));
-    const baris: BarisLedger[] = tetap.map(({ r }, j) => ({
+    const baris: BarisLedger[] = tetap.map(({ r, res }, j) => ({
       local_record_id: r.local_record_id, kunciHash: sha256(kiriman[j].source_key),
       customer_id: kiriman[j].customer_id, pet_id: kiriman[j].pet_id, sidikPayload: sha256(kanonikJson(kiriman[j])),
+      catatan: [...new Set([...(catatanAwal.get(r.local_record_id) ?? []), ...res.catatan])],
     }));
     const batch: BatchLedger = { no: ++no, status: "dikirim", baris };
     state.batches.push(batch);
@@ -359,24 +490,47 @@ export async function readbackMigrasi(klien: KlienMigrasi, rencana: Rencana, buk
     }
     return peta;
   };
-  const customers = await baca("customers", "id,name,phone,address", ids("customer"));
+  const customers = await baca("customers", "id,name,phone,address,imported_at", ids("customer"));
   const pets = await baca("pets", "id,customer_id,name,species,breed,gender,dob", ids("pet"));
+  // Hewan baru: nilai yang terisi wajib berasal dari salah satu baris master yang dipetakan ke hewan itu.
+  const nilaiMasterPerHewan = new Map<string, Record<string, Set<string>>>();
+  for (const d of ditemukan) {
+    if (!d.baru.pet) continue;
+    const p = d.r.payload!;
+    const peta = nilaiMasterPerHewan.get(d.pet) ?? { species: new Set(), breed: new Set(), gender: new Set(), dob: new Set() };
+    for (const f of ["species", "breed", "gender", "dob"] as const) if (p[f] !== null) peta[f].add(p[f]!);
+    nilaiMasterPerHewan.set(d.pet, peta);
+  }
   for (const d of ditemukan) {
     const c = customers.get(d.customer);
     const pt = pets.get(d.pet);
     if (!c || !pt) { selisih.push({ local_record_id: d.r.local_record_id, kode: "readback.demografi_tidak_terbaca" }); continue; }
     if (pt.customer_id !== d.customer) selisih.push({ local_record_id: d.r.local_record_id, kode: "readback.hewan_bukan_milik_pemilik" });
     const p = d.r.payload!;
-    if (d.baru.customer && (c.name !== p.owner_name || c.phone !== p.phone || (c.address ?? null) !== p.address)) {
-      selisih.push({ local_record_id: d.r.local_record_id, kode: "readback.pemilik_baru_beda" });
+    if (d.baru.customer) selisih.push({ local_record_id: d.r.local_record_id, kode: "readback.pemilik_dibuat_fallback_db" });
+    const petLama = { id: d.pet, customer_id: String(pt.customer_id), name: String(pt.name), species: (pt.species as string) ?? null, breed: (pt.breed as string) ?? null, gender: (pt.gender as string) ?? null, dob: (pt.dob as string) ?? null };
+    if (d.baru.pet) {
+      const izin = nilaiMasterPerHewan.get(d.pet)!;
+      if (kunciTeks(petLama.name) !== kunciTeks(p.patient_name)) selisih.push({ local_record_id: d.r.local_record_id, kode: "readback.hewan_baru_beda" });
+      for (const f of ["species", "breed", "gender", "dob"] as const) {
+        const v = f === "dob" ? (petLama.dob ? petLama.dob.slice(0, 10) : null) : petLama[f];
+        if (v !== null && !izin[f].has(v)) selisih.push({ local_record_id: d.r.local_record_id, kode: "readback.hewan_baru_beda" });
+      }
     }
-    if (d.baru.pet && (pt.name !== p.patient_name || (pt.species ?? null) !== p.species || (pt.breed ?? null) !== p.breed
-      || (pt.gender ?? null) !== p.gender || (pt.dob ?? null) !== p.dob)) {
-      selisih.push({ local_record_id: d.r.local_record_id, kode: "readback.hewan_baru_beda" });
-    }
-    const lama = selisihDemografi(p, d.baru.customer ? null : { id: d.customer, name: String(c.name), phone: (c.phone as string) ?? null, address: (c.address as string) ?? null },
-      d.baru.pet ? null : { id: d.pet, customer_id: String(pt.customer_id), name: String(pt.name), species: (pt.species as string) ?? null, breed: (pt.breed as string) ?? null, gender: (pt.gender as string) ?? null, dob: (pt.dob as string) ?? null });
+    const lama = selisihDemografi(p, { id: d.customer, name: String(c.name), phone: (c.phone as string) ?? null, address: (c.address as string) ?? null },
+      d.baru.pet ? null : petLama);
     for (const kode of lama) selisih.push({ local_record_id: d.r.local_record_id, kode: `readback.${kode}` });
+  }
+  // Kartu pemilik buatan run ini: bertanda impor (Q01) dan sama dengan kartu yang direncanakan.
+  for (const e of state.pemilikBaru ?? []) {
+    const { data, error } = await klien.pilih("customers", "id,name,phone,address,imported_at", [e.customer_id!]);
+    if (error || !Array.isArray(data) || data.length !== 1) { selisih.push({ local_record_id: null, kode: "readback.pemilik_baru_tidak_terbaca" }); continue; }
+    const c = data[0] as Record<string, unknown>;
+    if (typeof c.imported_at !== "string" || !c.imported_at) selisih.push({ local_record_id: null, kode: "readback.pemilik_baru_tanpa_penanda_impor" });
+    const hp = [...new Set(rencana.baris.filter((r) => r.status === "siap" && r.payload).map((r) => kunciHpPayload(r.payload!)))].find((k) => hashHp(k) === e.kunciHash);
+    if (!hp) { selisih.push({ local_record_id: null, kode: "readback.pemilik_baru_asing" }); continue; }
+    const kartu = kartuPemilikBaru(rencana, hp, "");
+    if (c.name !== kartu.name || c.phone !== kartu.phone || (c.address ?? null) !== kartu.address) selisih.push({ local_record_id: null, kode: "readback.pemilik_baru_beda" });
   }
   const disposisi = {
     siap: rencana.baris.filter((r) => r.status === "siap" && r.payload).length,
@@ -386,4 +540,58 @@ export async function readbackMigrasi(klien: KlienMigrasi, rencana: Rencana, buk
   };
   const status = selisih.length ? "selisih" : target.length ? "terverifikasi" : "kosong";
   return { ok: status === "terverifikasi", status, diperiksa: target.length, disposisi, selisih };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Validasi terhadap database TANPA menulis (OWNER, RLS): jejak yang sudah ada + resolusi identitas per baris siap.
+// ---------------------------------------------------------------------------------------------------------------
+
+export type HasilValidasiDb = {
+  siapMasuk: number;
+  sudahAda: number;
+  ditahan: number;
+  pemilikBaru: number;
+  perAlasanTahan: Record<string, number>;
+  baris: { local_record_id: string; status: "siap_masuk" | "sudah_ada" | "ditahan"; alasan: string[]; catatan: string[] }[];
+};
+
+/** Nol mutasi: hanya pembaca RS-1, pemindai identitas, dan SELECT demografi. */
+export async function validasiDb(klien: KlienMigrasi, rencana: Rencana): Promise<HasilValidasiDb> {
+  await pastikanPemanggil(klien);
+  const siap = rencana.baris.filter((r) => r.status === "siap" && r.payload);
+  const ada = new Set<string>();
+  for (let i = 0; i < siap.length; i += 400) {
+    const kunci = siap.slice(i, i + 400).map((r) => r.payload!.source_key);
+    const { data, error } = await klien.rpc("hasil_impor_rekam_medis", { p_keys: kunci });
+    if (error || !Array.isArray(data) || data.length >= 500) throw new GagalTertutup("Pemeriksaan jejak yang sudah ada gagal.");
+    for (const row of data as Record<string, unknown>[]) {
+      if (typeof row?.kunci !== "string" || !kunci.includes(row.kunci) || typeof row.visit_id !== "string" || !UUID_RE.test(row.visit_id)) {
+        throw new GagalTertutup("Jawaban jejak yang sudah ada rusak.");
+      }
+      ada.add(row.kunci);
+    }
+  }
+  const resolusi = new Map<string, Resolusi>();
+  for (let i = 0; i < siap.length; i += UKURAN_BATCH_MAKS) {
+    for (const [id, res] of await resolusiIdentitas(klien, siap.slice(i, i + UKURAN_BATCH_MAKS))) resolusi.set(id, res);
+  }
+  const baris: HasilValidasiDb["baris"] = siap.map((r) => {
+    const res = resolusi.get(r.local_record_id);
+    if (!res) throw new GagalTertutup("Resolusi identitas tidak lengkap.");
+    if (ada.has(r.payload!.source_key)) return { local_record_id: r.local_record_id, status: "sudah_ada", alasan: [], catatan: [] };
+    if (res.status === "tahan") return { local_record_id: r.local_record_id, status: "ditahan", alasan: res.alasan, catatan: [] };
+    return { local_record_id: r.local_record_id, status: "siap_masuk", alasan: [], catatan: res.catatan };
+  });
+  const perAlasanTahan: Record<string, number> = {};
+  for (const b of baris) for (const a of b.alasan) perAlasanTahan[a] = (perAlasanTahan[a] ?? 0) + 1;
+  const hpBaru = new Set(siap.filter((r) => { const res = resolusi.get(r.local_record_id); return res?.status === "kirim" && res.customer_id === null && !ada.has(r.payload!.source_key); })
+    .map((r) => kunciHpPayload(r.payload!)));
+  return {
+    siapMasuk: baris.filter((b) => b.status === "siap_masuk").length,
+    sudahAda: baris.filter((b) => b.status === "sudah_ada").length,
+    ditahan: baris.filter((b) => b.status === "ditahan").length,
+    pemilikBaru: hpBaru.size,
+    perAlasanTahan,
+    baris,
+  };
 }

@@ -6,20 +6,13 @@
  * Tidak ada I/O selain bytes yang diberikan; tidak ada jaringan.
  */
 import { createHash } from "node:crypto";
-import ExcelJS from "exceljs";
+import { bacaXlsx, XlsxTidakTerbaca, type Sel, type SheetXlsx } from "./baca-xlsx";
 import {
   BATAS_SUMBER, LABEL_PENANDA_VERSI, SHEET_WAJIB, TANDA_TANGAN, VERSI_DIKENAL, VERSI_LEGACY_MASTER_V0,
   normalLabel, type NamaBlok,
 } from "./kontrak";
 
-export type Sel =
-  | { jenis: "kosong" }
-  | { jenis: "teks"; teks: string }
-  | { jenis: "angka"; angka: number }
-  | { jenis: "tanggal"; tanggal: Date }
-  | { jenis: "boolean"; nilai: boolean }
-  | { jenis: "rumus"; hasil: Sel }
-  | { jenis: "galat"; teks: string };
+export type { Sel } from "./baca-xlsx";
 
 export type BarisBlok = { baris: number; sel: Record<string, Sel> };
 export type Blok = { nama: NamaBlok; sheet: string; barisHeader: number; baris: BarisBlok[]; catatanDilewati: number };
@@ -28,34 +21,9 @@ export type HasilBacaMaster =
   | { ok: true; versi: string; sha256: string; peringatan: string[]; blok: Record<NamaBlok, Blok> }
   | { ok: false; sha256: string | null; galat: string[] };
 
-const KOSONG: Sel = { jenis: "kosong" };
-
 /** Sel kosong untuk keperluan batas tabel: kosong, atau teks yang hanya berisi spasi. */
 export function selKosong(sel: Sel): boolean {
   return sel.jenis === "kosong" || (sel.jenis === "teks" && sel.teks.trim() === "");
-}
-
-export function selDari(value: ExcelJS.CellValue | undefined): Sel {
-  if (value === null || value === undefined) return KOSONG;
-  if (typeof value === "string") return value === "" ? KOSONG : { jenis: "teks", teks: value };
-  if (typeof value === "number") return { jenis: "angka", angka: value };
-  if (typeof value === "boolean") return { jenis: "boolean", nilai: value };
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? { jenis: "galat", teks: "tanggal tidak valid" } : { jenis: "tanggal", tanggal: value };
-  if (typeof value === "object") {
-    const v = value as unknown as Record<string, unknown>;
-    if ("formula" in v || "sharedFormula" in v) return { jenis: "rumus", hasil: selDari(v.result as ExcelJS.CellValue | undefined) };
-    if (Array.isArray(v.richText)) {
-      const teks = (v.richText as Array<{ text?: unknown }>).map((part) => String(part?.text ?? "")).join("");
-      return teks === "" ? KOSONG : { jenis: "teks", teks };
-    }
-    if ("hyperlink" in v && "text" in v) {
-      const inner = v.text;
-      if (typeof inner === "string") return inner === "" ? KOSONG : { jenis: "teks", teks: inner };
-      return selDari(inner as ExcelJS.CellValue);
-    }
-    if ("error" in v) return { jenis: "galat", teks: String(v.error) };
-  }
-  return { jenis: "galat", teks: "jenis sel tidak dikenal" };
 }
 
 /** Teks sel untuk mencocokkan label/penanda (bukan untuk data). */
@@ -93,15 +61,7 @@ export function periksaZip(bytes: Uint8Array): string | null {
   return null;
 }
 
-type Kisi = { baris: number; kolom: number; sel: (r: number, c: number) => Sel };
-
-function kisi(sheet: ExcelJS.Worksheet): Kisi {
-  return {
-    baris: sheet.rowCount,
-    kolom: sheet.columnCount,
-    sel: (r, c) => selDari(sheet.getRow(r).getCell(c).value),
-  };
-}
+type Kisi = SheetXlsx;
 
 type Header = { nama: NamaBlok; baris: number; kolom: Record<string, number> };
 
@@ -150,6 +110,8 @@ function bacaBlok(k: Kisi, sheetName: string, header: Header, semuaHeader: Heade
   const kolom = Object.values(header.kolom);
   const headerBerikut = semuaHeader.map((h) => h.baris).filter((b) => b > header.baris).sort((a, b) => a - b)[0];
   const akhirSheet = k.baris;
+  // Baris catatan: satu sel terisi. Tidak ada blok yang barisnya lengkap dengan satu sel, jadi catatan (sebelum header
+  // berikut ATAU setelah blok terakhir) dilewati dan dihitung; ≥2 sel terisi setelah akhir tabel = batas ambigu.
   const baris: BarisBlok[] = [];
   let r = header.baris + 1;
   for (; r <= akhirSheet && r !== headerBerikut; r += 1) {
@@ -164,7 +126,7 @@ function bacaBlok(k: Kisi, sheetName: string, header: Header, semuaHeader: Heade
   for (let s = r; s <= sampai; s += 1) {
     const terisi = kolom.filter((c) => !selKosong(k.sel(s, c))).length;
     if (!terisi) continue;
-    if (!headerBerikut || terisi >= 2) {
+    if (terisi >= 2) {
       galat.push(`Sheet ${sheetName} baris ${s}: ada isi setelah akhir tabel ${header.nama} (baris kosong di tengah data?). Batas tabel ambigu.`);
       return [];
     }
@@ -175,9 +137,9 @@ function bacaBlok(k: Kisi, sheetName: string, header: Header, semuaHeader: Heade
 function catatanDiAntara(k: Kisi, header: Header, semuaHeader: Header[], jumlahData: number) {
   const kolom = Object.values(header.kolom);
   const headerBerikut = semuaHeader.map((h) => h.baris).filter((b) => b > header.baris).sort((a, b) => a - b)[0];
-  if (!headerBerikut) return 0;
+  const sampai = headerBerikut ?? k.baris + 1;
   let n = 0;
-  for (let s = header.baris + jumlahData + 1; s < headerBerikut; s += 1) if (!barisKosong(k, s, kolom)) n += 1;
+  for (let s = header.baris + jumlahData + 1; s < sampai; s += 1) if (!barisKosong(k, s, kolom)) n += 1;
   return n;
 }
 
@@ -215,28 +177,30 @@ export async function bacaMaster(bytes: Uint8Array): Promise<HasilBacaMaster> {
   const zip = periksaZip(bytes);
   if (zip) return { ok: false, sha256, galat: [zip] };
 
-  const workbook = new ExcelJS.Workbook();
+  let buku;
   try {
-    await workbook.xlsx.load(Buffer.from(bytes) as never);
-  } catch {
-    return { ok: false, sha256, galat: ["Berkas .xlsx tidak terbaca."] };
+    buku = await bacaXlsx(bytes, {
+      baris: BATAS_SUMBER.barisPindaiHeader + BATAS_SUMBER.barisDataPerSheet * 2,
+      kolom: BATAS_SUMBER.kolom,
+    });
+  } catch (e) {
+    return { ok: false, sha256, galat: [e instanceof XlsxTidakTerbaca ? e.message : "Berkas .xlsx tidak terbaca."] };
   }
   const galat: string[] = [];
   const peringatan: string[] = [];
-  if ((workbook.properties as { date1904?: boolean } | undefined)?.date1904) {
+  if (buku.date1904) {
     return { ok: false, sha256, galat: ["Sistem tanggal 1904 tidak didukung; simpan ulang master dengan sistem tanggal 1900."] };
   }
-  const sheets = new Map(workbook.worksheets.map((sheet) => [sheet.name, sheet]));
+  const sheets = new Map(buku.sheets.map((sheet) => [sheet.nama, sheet]));
   for (const nama of SHEET_WAJIB) if (!sheets.has(nama)) galat.push(`Sheet wajib "${nama}" tidak ada.`);
-  const lain = workbook.worksheets.map((s) => s.name).filter((nama) => !SHEET_WAJIB.includes(nama));
+  const lain = buku.sheets.map((s) => s.nama).filter((nama) => !SHEET_WAJIB.includes(nama));
   if (lain.length) peringatan.push(`${lain.length} sheet lain diabaikan (tidak dibaca sebagai data atau otorisasi).`);
   if (galat.length) return { ok: false, sha256, galat };
 
   const blok = {} as Record<NamaBlok, Blok>;
   let versi: string | null = null;
   for (const nama of SHEET_WAJIB) {
-    const sheet = sheets.get(nama)!;
-    const k = kisi(sheet);
+    const k = sheets.get(nama)!;
     if (k.kolom > BATAS_SUMBER.kolom) { galat.push(`Sheet ${nama}: lebih dari ${BATAS_SUMBER.kolom} kolom.`); continue; }
     if (k.baris > BATAS_SUMBER.barisPindaiHeader + BATAS_SUMBER.barisDataPerSheet * 2) {
       galat.push(`Sheet ${nama}: terlalu banyak baris.`);

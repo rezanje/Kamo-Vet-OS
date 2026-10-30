@@ -26,15 +26,21 @@ export function hariIniWib(sekarang = new Date()): string {
 
 export const CATATAN_DRY_RUN = "Dry-run offline: kelayakan review, BUKAN otorisasi produksi. Tidak ada panggilan jaringan; status di database tidak diketahui.";
 
-export async function dryRunOffline(bytes: Uint8Array, opsi: { hariIni?: string; tanggalMinimum?: string } = {}): Promise<LaporanDryRun> {
+export type OpsiDryRun = { hariIni?: string; tanggalMinimum?: string; persetujuanBerkas?: string };
+
+export async function dryRunOffline(bytes: Uint8Array, opsi: OpsiDryRun = {}): Promise<LaporanDryRun> {
   const dasar = { mode: "dry-run-offline" as const, catatan: CATATAN_DRY_RUN };
   const hasil = await bacaMaster(bytes);
   if (!hasil.ok) {
     return { ...dasar, ok: false, galat: hasil.galat, versi: null, sha256Berkas: hasil.sha256, sidikRencana: null, peringatan: [], hitungan: null, baris: [] };
   }
+  if (opsi.persetujuanBerkas !== undefined && opsi.persetujuanBerkas !== hasil.sha256) {
+    return { ...dasar, ok: false, galat: ["Persetujuan berkas tidak cocok dengan SHA-256 berkas yang dibaca."], versi: hasil.versi, sha256Berkas: hasil.sha256, sidikRencana: null, peringatan: [], hitungan: null, baris: [] };
+  }
   const rencana = buatRencana(hasil.versi, hasil.sha256, hasil.blok, {
     hariIni: opsi.hariIni ?? hariIniWib(),
     tanggalMinimum: opsi.tanggalMinimum ?? OPSI_BAWAAN_TANGGAL_MINIMUM,
+    ...(opsi.persetujuanBerkas !== undefined ? { persetujuanBerkas: opsi.persetujuanBerkas } : {}),
   }, hasil.peringatan);
   return {
     ...dasar, ok: true, galat: [], versi: rencana.versi, sha256Berkas: rencana.sha256Berkas, sidikRencana: rencana.sidikRencana,

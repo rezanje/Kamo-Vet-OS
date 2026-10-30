@@ -20,7 +20,11 @@ export type MetaRun = {
   ukuranBatch: number;
 };
 
-export type BarisLedger = { local_record_id: string; kunciHash: string; customer_id: string | null; pet_id: string | null; sidikPayload: string };
+export type BarisLedger = {
+  local_record_id: string; kunciHash: string; customer_id: string | null; pet_id: string | null; sidikPayload: string;
+  /** Kode catatan identitas (mis. nama pemilik lama dipertahankan); tanpa PHI. */
+  catatan?: string[];
+};
 export type HasilLedger = { local_record_id: string; status: "tersimpan" | "sudah_ada" | "ditahan"; alasan: string | null; visit_id: string | null };
 export type BatchLedger = {
   no: number;
@@ -29,13 +33,17 @@ export type BatchLedger = {
   hasil?: HasilLedger[];
   sebab?: string;
 };
+/** Kartu pemilik baru yang dibuat run ini (kunci = SHA-256 kunci HP; tanpa nama/HP mentah). */
+export type PemilikBaruLedger = { kunciHash: string; status: "dikirim" | "dibuat" | "tidak_pasti"; customer_id: string | null };
 export type StateLedger = {
   batches: BatchLedger[];
   /** Ditahan sebelum RPC (identitas/demografi/kandidat berubah). Final untuk run ini. */
   ditahanIdentitas: { local_record_id: string; alasan: string[] }[];
+  /** Penanda tahan-crash pembuatan kartu pemilik baru (ditulis SEBELUM jaringan). Ledger lama tanpa field ini = kosong. */
+  pemilikBaru?: PemilikBaruLedger[];
 };
 
-const STATE_KOSONG: StateLedger = { batches: [], ditahanIdentitas: [] };
+const STATE_KOSONG: StateLedger = { batches: [], ditahanIdentitas: [], pemilikBaru: [] };
 
 function tulisAtomik(dir: string, nama: string, isi: string) {
   const tujuan = join(dir, nama);

@@ -46,7 +46,7 @@ export type BarisRencana = {
   local_pet_id: string;
   local_owner_id: string;
   status: StatusRencana;
-  /** Pemilik, hewan, dan riwayat sama-sama `SETUJU` (kelayakan review). */
+  /** Pemilik, hewan, dan riwayat sama-sama `SETUJU`, ATAU persetujuan tingkat berkas (SHA-256) dari OWNER. */
   disetujui: boolean;
   alasan: string[];
   peringatan: string[];
@@ -90,6 +90,12 @@ export type OpsiRencana = {
   hariIni: string;
   /** Kebijakan karantina advisori (bukan constraint DB). */
   tanggalMinimum: string;
+  /**
+   * Persetujuan OWNER tingkat berkas: SHA-256 berkas yang disetujui untuk dimasukkan "hanya baris yang lolos validasi".
+   * Wajib sama persis dengan SHA-256 berkas yang dibaca (berkas lain/berubah = ditolak). Menggantikan kolom keputusan per
+   * baris, TIDAK melonggarkan karantina/pengecualian lain. Ikut sidik rencana.
+   */
+  persetujuanBerkas?: string;
 };
 
 export const OPSI_BAWAAN_TANGGAL_MINIMUM = "1990-01-01";
@@ -255,6 +261,10 @@ function bacaHewan(blok: Blok, opsi: OpsiRencana): Hewan[] {
 
 export function buatRencana(versi: string, sha256Berkas: string, blok: Record<NamaBlok, Blok>, opsi: OpsiRencana, peringatanMaster: string[] = []): Rencana {
   if (!isoValid(opsi.hariIni) || !isoValid(opsi.tanggalMinimum)) throw new Error("Opsi tanggal rencana tidak valid.");
+  if (opsi.persetujuanBerkas !== undefined && opsi.persetujuanBerkas !== sha256Berkas) {
+    throw new Error("Persetujuan berkas tidak cocok dengan SHA-256 berkas yang dibaca.");
+  }
+  const setujuBerkas = opsi.persetujuanBerkas !== undefined;
   const peringatan = [...peringatanMaster];
   const pemilik = bacaPemilik(blok.pemilik);
   const hewan = bacaHewan(blok.hewan, opsi);
@@ -342,7 +352,7 @@ export function buatRencana(versi: string, sha256Berkas: string, blok: Record<Na
     }
     if (pet?.dobMentah && !pet.dob) peringatanBaris.push("hewan.dob_parsial_tidak_dikirim");
 
-    const disetujui = keputusan(b.sel.decision) && !!pet?.setuju && !!owner?.setuju;
+    const disetujui = setujuBerkas || (keputusan(b.sel.decision) && !!pet?.setuju && !!owner?.setuju);
     const klinis = [doctor, note, anamnesis, clinical, diagnosis, therapy].every((n) => n.ok && n.nilai === null);
 
     let status: StatusRencana = "siap";

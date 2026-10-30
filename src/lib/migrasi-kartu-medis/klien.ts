@@ -20,7 +20,15 @@ export interface KlienMigrasi {
   rpc(nama: NamaRpcMigrasi, args: Record<string, unknown>): Promise<JawabanKlien>;
   /** SELECT biasa (RLS pemanggil) dengan filter `id in (...)`. */
   pilih(tabel: "profiles" | "customers" | "pets", kolom: string, nilaiId: string[]): Promise<JawabanKlien>;
+  /**
+   * INSERT satu kartu pelanggan lewat RLS pemanggil, sama dengan impor pelanggan di aplikasi (Pengaturan > Impor):
+   * `imported_at` terisi sejak lahir sehingga kartu riwayat lama tidak pernah dihitung "pelanggan baru" (Q01).
+   * Jawaban: `{ id }` (atau larik satu baris) kartu yang dibuat.
+   */
+  buatPemilik(kartu: KartuPemilikBaru): Promise<JawabanKlien>;
 }
+
+export type KartuPemilikBaru = { name: string; phone: string; address: string | null; imported_at: string };
 
 export class GagalTertutup extends Error {}
 

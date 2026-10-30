@@ -20,7 +20,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const MODUL = [
   "src/lib/kontak.ts", "src/lib/impor-rekam-medis.ts",
-  "src/lib/migrasi-kartu-medis/kontrak.ts", "src/lib/migrasi-kartu-medis/baca-master.ts", "src/lib/migrasi-kartu-medis/rencana.ts",
+  "src/lib/migrasi-kartu-medis/kontrak.ts", "src/lib/migrasi-kartu-medis/baca-xlsx.ts", "src/lib/migrasi-kartu-medis/baca-master.ts", "src/lib/migrasi-kartu-medis/rencana.ts",
   "src/lib/migrasi-kartu-medis/klien.ts", "src/lib/migrasi-kartu-medis/identitas.ts", "src/lib/migrasi-kartu-medis/buku-besar.ts",
   "src/lib/migrasi-kartu-medis/eksekutor.ts", "src/lib/__tests__/fixtures/master-kartu-medis.ts",
 ];
@@ -83,6 +83,12 @@ function klienPsql(uid, konteks, opsi = {}) {
     pilih: async (tabel, kolom, ids) => {
       if (!["profiles", "customers", "pets"].includes(tabel) || !/^[a-z_,]+$/.test(kolom)) throw new Error("pilih tidak sah");
       return jawab(jalankanPsql(`${prefix()}select coalesce(jsonb_agg(t),'[]'::jsonb) from (select ${kolom} from public.${tabel} where id = any(${arr(ids)}::uuid[])) t;`));
+    },
+    buatPemilik: async (kartu) => {
+      if (opsi.sebelumRpc) await opsi.sebelumRpc("buatPemilik");
+      const r = jawab(jalankanPsql(`${prefix()}with t as (insert into public.customers(name, phone, address, imported_at) values (${lit(kartu.name)}, ${lit(kartu.phone)}, ${kartu.address === null ? "null" : lit(kartu.address)}, ${lit(kartu.imported_at)}::timestamptz) returning id) select coalesce(jsonb_agg(t),'[]'::jsonb) from t;`));
+      if (opsi.sesudahRpc) await opsi.sesudahRpc("buatPemilik", r);
+      return r;
     },
     rpc: async (nama, args) => {
       let sql;
@@ -343,6 +349,61 @@ async function main() {
     bb.tutup();
     catat("R2: readback menolak ledger awalan yang menyembunyikan baris, tanpa RPC", /Ledger tidak lengkap/.test(pesan) && !panggil.length, pesan);
   }
+
+  // 12) Bentuk master asli: HP 08 / +628 + nama varian = SATU pemilik baru "A / B" bertanda impor; hewan lokal bernama
+  //     sama = satu hewan, hewan lain terpisah; persetujuan tingkat berkas; validasi DB nol tulis lebih dulu.
+  {
+    const f = fixture.masterDasar(1);
+    for (const r of f.riwayat) r.decision = null;
+    f.pemilik[0] = { local_owner_id: "P1", name: "UJI PEMILIK VAR A", phone: "082200000001", address: "Jl. Fiktif 8 No. 11" };
+    f.pemilik.push({ local_owner_id: "P2", name: "UJI PEMILIK VAR B", phone: "+62 822-0000-0001", address: "Jl Fiktif 8 no 11" });
+    f.hewan[0] = { local_pet_id: "H1", local_owner_id: "P1", name: "UJI KUCING SATU", species: "Kucing", breed: "Angora", dob_raw: "07/2022" };
+    f.hewan.push({ local_pet_id: "H2", local_owner_id: "P2", name: "UJI KUCING DUA" }, { local_pet_id: "H3", local_owner_id: "P1", name: "uji kucing dua", gender: "neutered" });
+    f.perSheet[0] = { ...f.perSheet[0], source_key: "bentuk-asli-1.xlsx::01032024", file: "bentuk-asli-1.xlsx", sheet: "01032024" };
+    f.riwayat[0].source_sheet = "01032024";
+    for (const [id, pet, d] of [["R2", "H2", "2024-05-22"], ["R3", "H2", "2024-06-11"], ["R4", "H3", "2026-09-26"]]) {
+      f.riwayat.push({ local_record_id: id, local_pet_id: pet, record_date: tgl(d), record_no: "0001", doctor: "drh. Uji", note: `Keluhan ${id}`,
+        anamnesis: null, clinical_findings: null, diagnosis: `Dx ${id}`, therapy: `Tx ${id}`, source_sheet: id });
+      f.perSheet.push({ local_ref: id, file: "bentuk-asli-2.xlsx", sheet: id, source_key: `bentuk-asli-2.xlsx::${id}`, tab_date: tgl(d), cell_date: tgl(d) });
+    }
+    const bytes = await fixture.buatMaster(f);
+    const h = await baca.bacaMaster(bytes);
+    const tanpa = R.buatRencana(h.versi, h.sha256, h.blok, OPSI, h.peringatan);
+    const r = R.buatRencana(h.versi, h.sha256, h.blok, { ...OPSI, persetujuanBerkas: h.sha256 }, h.peringatan);
+    catat("Persetujuan berkas: tanpa persetujuan 0 siap; dengan SHA yang sama 4 siap", tanpa.hitungan.siap === 0 && r.hitungan.siap === 4, JSON.stringify(r.hitungan));
+    const jumlah = () => sqlSuper("select (select count(*) from public.customers)||'/'||(select count(*) from public.pets)||'/'||(select count(*) from public.visits)||'/'||(select count(*) from public.medical_records)");
+    const sebelumValidasi = jumlah();
+    const v = await eks.validasiDb(klienPsql(OWNER, SEMUA), r);
+    catat("Validasi DB tanpa menulis: 4 siap masuk, 1 pemilik baru, nol perubahan tabel", v.siapMasuk === 4 && v.pemilikBaru === 1 && jumlah() === sebelumValidasi, JSON.stringify({ v: { ...v, baris: undefined } }));
+    const b = ledger(r, SEMUA, 150);
+    const j = await eks.jalankanMigrasi(klienPsql(OWNER, SEMUA), r, b, { ukuranBatch: 150 });
+    const rb = await eks.readbackMigrasi(klienPsql(OWNER, SEMUA), r, b);
+    b.tutup();
+    const kartu = sqlSuper("select count(*)||'|'||string_agg(name||'|'||phone||'|'||coalesce(address,'')||'|'||(imported_at is not null)::text, ';') from public.customers where public.import_legacy_phone_key(phone)=public.import_legacy_phone_key('082200000001')");
+    catat("Satu kartu pemilik baru untuk HP setara: nama 'A / B', HP & alamat baris pertama, imported_at terisi", kartu === "1|UJI PEMILIK VAR A / UJI PEMILIK VAR B|082200000001|Jl. Fiktif 8 No. 11|true", kartu);
+    const hewan = sqlSuper("select string_agg(p.name||':'||(select count(*) from public.visits v where v.pet_id=p.id), ',' order by p.name) from public.pets p join public.customers c on c.id=p.customer_id where c.phone='082200000001'");
+    catat("Hewan terpisah per nama: UJI KUCING SATU 1 riwayat, UJI KUCING DUA 3 riwayat (dua hewan lokal bernama sama)", hewan === "UJI KUCING DUA:3,UJI KUCING SATU:1", hewan);
+    catat("Jalan + readback: 4 tersimpan, terverifikasi tanpa selisih", j.status === "selesai" && j.tersimpan === 4 && rb.ok && rb.diperiksa === 4, JSON.stringify({ j, rb }));
+    // Pemilik yang SUDAH ADA dengan HP sama + nama berbeda: dipakai, nama lama tidak berubah, tidak ada kartu baru.
+    sqlSuper(`insert into public.customers(id,name,phone,address) values ('0d000000-0000-4000-8000-000000000031','NAMA LAMA DB','6282300000001','Alamat DB');`);
+    const f2 = fixture.masterDasar(1);
+    f2.pemilik[0] = { ...f2.pemilik[0], name: "UJI NAMA KARTU", phone: "082300000001" };
+    f2.perSheet[0] = { ...f2.perSheet[0], source_key: "lama.xlsx::Sheet1", file: "lama.xlsx", sheet: "Sheet1" };
+    f2.riwayat[0].source_sheet = "Sheet1";
+    const r2 = await buatRencana(f2);
+    const b2 = ledger(r2);
+    const j2 = await eks.jalankanMigrasi(klienPsql(OWNER, SEMUA), r2, b2, { ukuranBatch: 2 });
+    const rb2 = await eks.readbackMigrasi(klienPsql(OWNER, SEMUA), r2, b2);
+    b2.tutup();
+    catat("HP sama nama beda (pemilik sudah ada): dipakai, nama/alamat lama utuh, tanpa kartu baru",
+      j2.tersimpan === 1 && rb2.ok && sqlSuper("select count(*)||'|'||string_agg(name||'|'||coalesce(address,''),';') from public.customers where public.import_legacy_phone_key(phone)=public.import_legacy_phone_key('082300000001')") === "1|NAMA LAMA DB|Alamat DB"
+      && sqlSuper("select customer_id::text from public.visits where legacy_source_key='lama.xlsx::Sheet1'") === "0d000000-0000-4000-8000-000000000031", JSON.stringify({ j2, rb2 }));
+  }
+
+  // 13) Q01: tidak ada kartu pelanggan buatan runner tanpa penanda impor (hanya fixture superuser 0d… yang boleh NULL).
+  catat("Q01: setiap pemilik riwayat migrasi yang dibuat runner bertanda imported_at", sqlSuper(`select count(*) from public.customers c
+    where exists (select 1 from public.visits v where v.customer_id=c.id and v.legacy_source_key is not null)
+      and c.imported_at is null and c.id::text not like '0d000000-%'`) === "0", "");
 
   process.stdout.write(hasil.map((h) => JSON.stringify(h)).join("\n") + "\n");
 }

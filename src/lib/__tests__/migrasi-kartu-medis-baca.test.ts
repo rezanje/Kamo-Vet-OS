@@ -1,5 +1,8 @@
+import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import { bacaMaster, periksaZip } from "@/lib/migrasi-kartu-medis/baca-master";
+import { bacaXlsx, formatTanggal, tanggalDariIso, tanggalDariSeri } from "@/lib/migrasi-kartu-medis/baca-xlsx";
+import { buatRencana } from "@/lib/migrasi-kartu-medis/rencana";
 import { VERSI_LEGACY_MASTER_V0 } from "@/lib/migrasi-kartu-medis/kontrak";
 import { buatMaster, masterDasar, tgl } from "./fixtures/master-kartu-medis";
 
@@ -77,5 +80,113 @@ describe("kontrak master v0", () => {
     f.riwayat[0].decision = { formula: '"SETUJU"', result: "SETUJU" } as never;
     const hasil = await bacaMaster(await buatMaster(f));
     expect(hasil.ok && hasil.blok.riwayat.baris[0].sel.decision.jenis).toBe("rumus");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Berkas gaya OpenXML SDK (bentuk master asli): elemen ber-prefix `x:`, target relasi absolut, sel tanggal `t="d"`.
+// ---------------------------------------------------------------------------------------------------------------
+
+const NS_UTAMA = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+
+/** Ubah keluaran ExcelJS menjadi bentuk OpenXML SDK tanpa mengubah isi sel. */
+async function gayaOpenXmlSdk(bytes: Uint8Array, opsi: { tanggalIso?: boolean } = {}): Promise<Uint8Array> {
+  const zip = await JSZip.loadAsync(bytes);
+  const styles = await zip.file("xl/styles.xml")!.async("string");
+  const fmt = new Map([...styles.matchAll(/<numFmt numFmtId="(\d+)" formatCode="([^"]*)"/g)].map((m) => [Number(m[1]), m[2]]));
+  const cellXfs = styles.slice(styles.indexOf("<cellXfs"), styles.indexOf("</cellXfs>"));
+  const xfTanggal = [...cellXfs.matchAll(/<xf [^>]*numFmtId="(\d+)"/g)].map((m) => {
+    const id = Number(m[1]);
+    return fmt.has(id) ? formatTanggal(fmt.get(id)!) : (id >= 14 && id <= 22);
+  });
+  for (const nama of Object.keys(zip.files)) {
+    const f = zip.file(nama);
+    if (!f) continue;
+    let xml = await f.async("string");
+    if (nama.endsWith(".rels")) {
+      const dasar = nama.replace(/_rels\/[^/]*$/, "");
+      xml = xml.replace(/Target="(?!\/|https?:)([^"]+)"/g, (_m, t: string) => `Target="/${(dasar + t).replace(/[^/]+\/\.\.\//g, "")}"`);
+    } else if (xml.includes(`xmlns="${NS_UTAMA}"`)) {
+      if (opsi.tanggalIso && nama.startsWith("xl/worksheets/")) {
+        xml = xml.replace(/<c r="([A-Z]+\d+)" s="(\d+)"( t="n")?><v>([0-9.]+)<\/v><\/c>/g, (m, r: string, s: string, _t, v: string) => {
+          if (!xfTanggal[Number(s)]) return m;
+          return `<c r="${r}" s="${s}" t="d"><v>${tanggalDariSeri(Number(v))!.toISOString()}</v></c>`;
+        });
+      }
+      xml = xml.replace(/<(\/?)([A-Za-z][\w.]*)(?=[\s/>])/g, "<$1x:$2").replace(`xmlns="${NS_UTAMA}"`, `xmlns:x="${NS_UTAMA}"`);
+    }
+    zip.file(nama, xml);
+  }
+  return new Uint8Array(await zip.generateAsync({ type: "uint8array" }));
+}
+
+describe("pembaca .xlsx (bentuk OpenXML SDK seperti master asli)", () => {
+  it("reads prefixed namespaces, absolute relationship targets, and t=\"d\" dates exactly like the plain file", async () => {
+    const f = masterDasar(3);
+    const asli = await buatMaster(f);
+    const sdk = await gayaOpenXmlSdk(asli, { tanggalIso: true });
+    const sdkXml = await (await JSZip.loadAsync(sdk)).file("xl/worksheets/sheet3.xml")!.async("string");
+    expect(sdkXml).toContain("<x:c ");
+    expect(sdkXml).toContain('t="d"');
+    const a = await bacaMaster(asli);
+    const b = await bacaMaster(sdk);
+    if (!a.ok || !b.ok) throw new Error("harus terbaca");
+    expect(b.blok).toEqual(a.blok);
+    const opsi = { hariIni: "2026-10-30", tanggalMinimum: "1990-01-01" };
+    const ra = buatRencana(a.versi, "x", a.blok, opsi);
+    const rb = buatRencana(b.versi, "x", b.blok, opsi);
+    expect(rb.baris).toEqual(ra.baris);
+    expect(rb.hitungan.siap).toBe(3);
+  });
+  it("parses every OOXML cell type without guessing", async () => {
+    const zip = new JSZip();
+    const ns = `xmlns:x="${NS_UTAMA}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`;
+    zip.file("[Content_Types].xml", "<Types/>");
+    zip.file("_rels/.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="a" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="/xl/workbook.xml"/></Relationships>');
+    zip.file("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/sheet1.xml"/><Relationship Id="t" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/><Relationship Id="y" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+    zip.file("xl/workbook.xml", `<x:workbook ${ns}><x:sheets><x:sheet name="S" sheetId="1" r:id="s"/></x:sheets></x:workbook>`);
+    zip.file("xl/sharedStrings.xml", `<x:sst ${ns}><x:si><x:t>satu</x:t></x:si><x:si><x:r><x:t>ka</x:t></x:r><x:r><x:t>ya</x:t></x:r><x:rPh><x:t>ABAIKAN</x:t></x:rPh></x:si></x:sst>`);
+    zip.file("xl/styles.xml", `<x:styleSheet ${ns}><x:numFmts><x:numFmt numFmtId="201" formatCode="dd mmm yyyy"/><x:numFmt numFmtId="202" formatCode="0"/></x:numFmts><x:cellXfs><x:xf numFmtId="0"/><x:xf numFmtId="201"/><x:xf numFmtId="202"/><x:xf numFmtId="14"/></x:cellXfs></x:styleSheet>`);
+    zip.file("xl/worksheets/sheet1.xml", `<x:worksheet ${ns}><x:sheetData><x:row r="1">`
+      + '<x:c r="A1" t="s"><x:v>0</x:v></x:c><x:c r="B1" t="s"><x:v>1</x:v></x:c><x:c r="C1" t="inlineStr"><x:is><x:t>inline</x:t></x:is></x:c>'
+      + '<x:c r="D1" t="str"><x:v>0001</x:v></x:c><x:c r="E1" s="2" t="n"><x:v>81384467002</x:v></x:c><x:c r="F1" t="b"><x:v>1</x:v></x:c>'
+      + '<x:c r="G1" t="e"><x:v>#N/A</x:v></x:c><x:c r="H1" s="1" t="d"><x:v>2024-03-01T00:00:00.000Z</x:v></x:c><x:c r="I1" s="3"><x:v>45352</x:v></x:c>'
+      + '<x:c r="J1" t="n"><x:f>COUNTA(A:A)</x:f><x:v>7</x:v></x:c><x:c r="K1" s="1" t="d"><x:v>2024-02-30</x:v></x:c><x:c r="L1" s="5"/>'
+      + "</x:row></x:sheetData></x:worksheet>");
+    const buku = await bacaXlsx(await zip.generateAsync({ type: "uint8array" }), { baris: 100, kolom: 64 });
+    const s = buku.sheets[0];
+    expect([s.nama, s.baris, s.kolom]).toEqual(["S", 1, 11]);
+    const sel = (c: number) => s.sel(1, c);
+    expect(sel(1)).toEqual({ jenis: "teks", teks: "satu" });
+    expect(sel(2)).toEqual({ jenis: "teks", teks: "kaya" });
+    expect(sel(3)).toEqual({ jenis: "teks", teks: "inline" });
+    expect(sel(4)).toEqual({ jenis: "teks", teks: "0001" });
+    expect(sel(5)).toEqual({ jenis: "angka", angka: 81384467002 });
+    expect(sel(6)).toEqual({ jenis: "boolean", nilai: true });
+    expect(sel(7)).toEqual({ jenis: "galat", teks: "#N/A" });
+    expect(sel(8)).toEqual({ jenis: "tanggal", tanggal: new Date("2024-03-01T00:00:00Z") });
+    expect(sel(9)).toEqual({ jenis: "tanggal", tanggal: new Date("2024-03-01T00:00:00Z") });
+    expect(sel(10)).toEqual({ jenis: "rumus", hasil: { jenis: "angka", angka: 7 } });
+    expect(sel(11)).toEqual({ jenis: "galat", teks: "tanggal tidak valid" });
+    expect(sel(12)).toEqual({ jenis: "kosong" });
+  });
+  it("converts Excel serials on both sides of the fictitious 1900-02-29 and recognises date formats", () => {
+    expect(tanggalDariSeri(1)!.toISOString()).toBe("1900-01-01T00:00:00.000Z");
+    expect(tanggalDariSeri(59)!.toISOString()).toBe("1900-02-28T00:00:00.000Z");
+    expect(tanggalDariSeri(60)).toBeNull();
+    expect(tanggalDariSeri(61)!.toISOString()).toBe("1900-03-01T00:00:00.000Z");
+    expect(tanggalDariSeri(45352.5)!.toISOString()).toBe("2024-03-01T12:00:00.000Z");
+    for (const kode of ["dd mmm yyyy", "yyyy-mm-dd", "[$-421]d mmmm yyyy", "h:mm"]) expect(formatTanggal(kode)).toBe(true);
+    for (const kode of ["0", "@", "General", '#,##0 "hari"', "[Red]0.00", "0.00E+00"]) expect(formatTanggal(kode)).toBe(false);
+    expect(tanggalDariIso("2024-03-01T07:00:00+07:00")!.toISOString()).toBe("2024-03-01T00:00:00.000Z");
+    expect(tanggalDariIso("2024-13-01")).toBeNull();
+  });
+  it("accepts single-cell notes after the last block but fails on trailing multi-cell rows", async () => {
+    const f = masterDasar(1);
+    const catatan = await buatMaster({ ...f, ubah: (wb) => { wb.getWorksheet("Mapping")!.getCell("A60").value = "REFERENSI KONTRAK (catatan)"; } });
+    const ok = await bacaMaster(catatan);
+    expect(ok.ok && ok.blok.mapping_sheet.catatanDilewati).toBe(1);
+    const ambigu = await buatMaster({ ...f, ubah: (wb) => { const ws = wb.getWorksheet("Mapping")!; ws.getCell("A60").value = "R9"; ws.getCell("D60").value = "x::y"; } });
+    expect((await gagal(ambigu)).join(" ")).toMatch(/Batas tabel ambigu/);
   });
 });

@@ -1,14 +1,18 @@
 /**
  * Resolusi identitas BACA-SAJA (tidak pernah memanggil simpan massal).
  *
- * - F4: `import_legacy_identity_scan` INVOKER/RLS, jejak persis saja -> `sudah_ada` BUKAN bukti baru/tidak ganda.
- *   Otoritas status = jejak kanonik + hasil simpan massal DB. Jawaban rusak/tidak lengkap = gagal tertutup.
- * - F2: penulis memilih anabul tertua `limit 1` tanpa filter status bila `pet_id` null. Di sini SEMUA anabul cocok
- *   milik pemilik dihitung (scan tidak memfilter status; predikat = kunci aplikasi ∪ lower(btrim) DB): >1 TAHAN,
- *   1 = UUID eksplisit, 0 = null. Residual: selama fallback pembuatan di DB masih ada, snapshot tidak menjamin bebas
- *   balapan antara cek dan RPC; karena itu dicek ulang tepat sebelum tiap batch.
- * - Demografi pemilik/anabul yang SUDAH ADA tidak diubah RPC: nilai master yang terisi wajib sama, selain itu TAHAN
- *   (tidak menimpa, tidak mengklaim dinormalisasi).
+ * Aturan identitas (keputusan OWNER, batch kartu medis 2026-10-30):
+ * - Nomor HP = patokan utama; 08… dan +628… sama setelah normalisasi. Nomor sama + nama berbeda = SATU pemilik (nama
+ *   lama di database dipertahankan, varian dicatat). >1 kartu database dengan nomor yang sama = TAHAN (tidak pernah
+ *   menggabungkan dua akun). Nomor kosong/tidak valid sudah dikarantina di rencana (tidak pernah dikarang).
+ * - Hewan tetap terpisah per nama di bawah pemilik: SEMUA anabul cocok dihitung, termasuk nonaktif (F2): >1 TAHAN,
+ *   1 = UUID eksplisit, 0 = dibuat DB. Dua hewan lokal yang menjadi satu hewan baru bernama sama wajib demografinya tidak
+ *   bertentangan; bila bertentangan = TAHAN.
+ * - F4: `import_legacy_identity_scan` INVOKER/RLS, jejak persis saja -> `sudah_ada` BUKAN bukti. Jawaban rusak = gagal.
+ * - Demografi yang SUDAH ADA tidak diubah RPC. Nama/alamat pemilik yang berbeda = catatan (dipertahankan). Data hewan yang
+ *   bertentangan (keduanya terisi, beda) = TAHAN; kosong di database = catatan "tidak diisi otomatis".
+ * Residual: selama fallback pembuatan anabul di DB masih ada, snapshot tidak menjamin bebas balapan; dicek ulang tepat
+ * sebelum tiap batch.
  */
 import { kunciHpIndonesia } from "../kontak";
 import { kunciTeksImporRekamMedis as kunciTeks } from "../impor-rekam-medis";
@@ -20,8 +24,8 @@ const MAKS_ID_PER_PILIH = 100;
 
 type Pemilik = { id: string; name: string; phone: string | null };
 type Hewan = { id: string; customer_id: string; name: string };
-type DemografiPemilik = { id: string; name: string; phone: string | null; address: string | null };
-type DemografiHewan = { id: string; customer_id: string; name: string; species: string | null; breed: string | null; gender: string | null; dob: string | null };
+export type DemografiPemilik = { id: string; name: string; phone: string | null; address: string | null };
+export type DemografiHewan = { id: string; customer_id: string; name: string; species: string | null; breed: string | null; gender: string | null; dob: string | null };
 
 export type SnapshotIdentitas = {
   customer_id: string | null;
@@ -32,7 +36,7 @@ export type SnapshotIdentitas = {
 };
 
 export type Resolusi =
-  | { status: "kirim"; customer_id: string | null; pet_id: string | null; snapshot: SnapshotIdentitas }
+  | { status: "kirim"; customer_id: string | null; pet_id: string | null; snapshot: SnapshotIdentitas; catatan: string[] }
   | { status: "tahan"; alasan: string[] };
 
 const lowerTrim = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
@@ -113,23 +117,44 @@ function demografiHewan(row: Record<string, unknown>): DemografiHewan {
   };
 }
 
-/** Nilai master yang TERISI wajib sama dengan data yang sudah ada (RPC tidak memperbaruinya). */
-export function selisihDemografi(p: PayloadBaris, pemilik: DemografiPemilik | null, hewan: DemografiHewan | null): string[] {
-  const selisih: string[] = [];
+const normal = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
+
+export type BandingDemografi = { tahan: string[]; catatan: string[] };
+
+/**
+ * Bandingkan nilai master dengan data yang sudah ada (RPC tidak memperbaruinya). Nomor HP / nama hewan beda = TAHAN;
+ * nama/alamat pemilik beda = catatan (data lama dipertahankan); data hewan bertentangan = TAHAN, kosong di DB = catatan.
+ */
+export function bandingDemografi(p: PayloadBaris, pemilik: DemografiPemilik | null, hewan: DemografiHewan | null): BandingDemografi {
+  const tahan: string[] = [];
+  const catatan: string[] = [];
   if (pemilik) {
-    if (kunciTeks(pemilik.name) !== kunciTeks(p.owner_name)) selisih.push("demografi.pemilik.name");
-    if (kunciHpIndonesia(pemilik.phone) !== kunciHpIndonesia(p.phone)) selisih.push("demografi.pemilik.phone");
-    if (p.address !== null && !sama(pemilik.address, p.address)) selisih.push("demografi.pemilik.address");
+    if (kunciHpIndonesia(pemilik.phone) !== kunciHpIndonesia(p.phone)) tahan.push("demografi.pemilik.phone");
+    if (kunciTeks(pemilik.name) !== kunciTeks(p.owner_name)) catatan.push("demografi.pemilik.name_dipertahankan");
+    if (p.address !== null && !sama(pemilik.address, p.address)) catatan.push("demografi.pemilik.address_dipertahankan");
   }
   if (hewan) {
-    if (kunciTeks(hewan.name) !== kunciTeks(p.patient_name)) selisih.push("demografi.hewan.name");
-    if (p.species !== null && !sama(hewan.species, p.species)) selisih.push("demografi.hewan.species");
-    if (p.breed !== null && !sama(hewan.breed, p.breed)) selisih.push("demografi.hewan.breed");
-    if (p.gender !== null && !sama(hewan.gender, p.gender)) selisih.push("demografi.hewan.gender");
-    if (p.dob !== null && (hewan.dob ?? "").slice(0, 10) !== p.dob) selisih.push("demografi.hewan.dob");
+    if (kunciTeks(hewan.name) !== kunciTeks(p.patient_name) && lowerTrim(hewan.name) !== lowerTrim(p.patient_name)) tahan.push("demografi.hewan.name");
+    const bidang: [string, string | null, string | null][] = [
+      ["species", hewan.species, p.species], ["breed", hewan.breed, p.breed], ["gender", hewan.gender, p.gender],
+      ["dob", hewan.dob ? hewan.dob.slice(0, 10) : null, p.dob],
+    ];
+    for (const [nama, lama, baru] of bidang) {
+      if (baru === null || normal(lama) === normal(baru)) continue;
+      if (normal(lama) === "") catatan.push(`demografi.hewan.${nama}_tidak_diisi`);
+      else tahan.push(`demografi.hewan.${nama}`);
+    }
   }
-  return selisih;
+  return { tahan, catatan };
 }
+
+/** Kompatibel lama: kode TAHAN saja. */
+export function selisihDemografi(p: PayloadBaris, pemilik: DemografiPemilik | null, hewan: DemografiHewan | null): string[] {
+  return bandingDemografi(p, pemilik, hewan).tahan;
+}
+
+/** Kunci HP kanonik payload (dipakai untuk mengelompokkan pemilik baru). */
+export const kunciHpPayload = (p: PayloadBaris) => kunciHpIndonesia(p.phone);
 
 /** Resolusi identitas untuk baris `siap` (payload + UUID eksplisit master). Satu Map per local_record_id. */
 export async function resolusiIdentitas(klien: KlienMigrasi, baris: BarisRencana[]): Promise<Map<string, Resolusi>> {
@@ -141,16 +166,19 @@ export async function resolusiIdentitas(klien: KlienMigrasi, baris: BarisRencana
   const awal = siap.map((b) => {
     const p = b.payload!;
     const alasan: string[] = [];
-    const exact = pemilik.filter((c) => kunciTeks(c.name) === kunciTeks(p.owner_name) && kunciHpIndonesia(c.phone) === kunciHpIndonesia(p.phone));
-    const mungkin = pemilik.filter((c) => kunciTeks(c.name) === kunciTeks(p.owner_name) || (kunciHpIndonesia(p.phone) !== "" && kunciHpIndonesia(c.phone) === kunciHpIndonesia(p.phone)));
+    const catatan: string[] = [];
+    const hp = kunciHpIndonesia(p.phone);
+    const viaHp = hp ? pemilik.filter((c) => kunciHpIndonesia(c.phone) === hp) : [];
     let customer: string | null = null;
     if (b.customer_uuid) {
-      if (!mungkin.some((c) => c.id === b.customer_uuid)) alasan.push("identitas.customers_id_bukan_kandidat");
-      else if (exact.length && !exact.some((c) => c.id === b.customer_uuid)) alasan.push("identitas.customers_id_bukan_yang_persis");
+      if (!viaHp.some((c) => c.id === b.customer_uuid)) alasan.push("identitas.customers_id_bukan_kandidat");
       customer = b.customer_uuid;
-    } else if (exact.length > 1) alasan.push("identitas.pemilik_ganda");
-    else if (exact.length === 1) customer = exact[0].id;
-    else if (mungkin.length) alasan.push("identitas.perlu_keputusan_pemilik");
+    } else if (viaHp.length > 1) alasan.push("identitas.pemilik_ganda_hp");
+    else if (viaHp.length === 1) customer = viaHp[0].id;
+    else {
+      catatan.push("identitas.pemilik_baru");
+      if (pemilik.some((c) => kunciTeks(c.name) === kunciTeks(p.owner_name))) catatan.push("identitas.nama_sama_nomor_beda");
+    }
 
     const milik = customer ? hewan.filter((h) => h.customer_id === customer) : [];
     const cocok = milik.filter((h) => kunciTeks(h.name) === kunciTeks(p.patient_name) || lowerTrim(h.name) === lowerTrim(p.patient_name));
@@ -162,11 +190,31 @@ export async function resolusiIdentitas(klien: KlienMigrasi, baris: BarisRencana
     } else if (cocok.length > 1) alasan.push("identitas.hewan_ganda");
     else if (cocok.length === 1) pet = cocok[0].id;
     return {
-      b, alasan, customer, pet,
-      kandidatPemilik: mungkin.map((c) => c.id).sort(),
+      b, alasan, catatan, customer, pet, hp,
+      kandidatPemilik: viaHp.map((c) => c.id).sort(),
       kandidatHewan: cocok.map((h) => h.id).sort(),
     };
   });
+
+  // Hewan BARU yang sama (pemilik/HP sama + nama sama) dari beberapa baris/hewan lokal: demografi tidak boleh bertentangan.
+  const grupBaru = new Map<string, typeof awal>();
+  for (const a of awal) {
+    if (a.alasan.length || a.pet) continue;
+    const k = `${a.customer ?? `hp:${a.hp}`}|${kunciTeks(a.b.payload!.patient_name)}`;
+    grupBaru.set(k, [...(grupBaru.get(k) ?? []), a]);
+  }
+  for (const grup of grupBaru.values()) {
+    const bentrok = (["species", "breed", "gender", "dob"] as const).some((f) => new Set(grup.map((a) => normal(a.b.payload![f])).filter(Boolean)).size > 1);
+    if (bentrok) { grup.forEach((a) => a.alasan.push("identitas.hewan_baru_demografi_bentrok")); continue; }
+    const pembuat = grup[0].b.payload!;
+    grup.forEach((a, i) => {
+      a.catatan.push("identitas.hewan_baru");
+      if (i === 0) return;
+      for (const f of ["species", "breed", "gender", "dob"] as const) {
+        if (a.b.payload![f] !== null && pembuat[f] === null) a.catatan.push(`demografi.hewan.${f}_tidak_diisi`);
+      }
+    });
+  }
 
   const ok = awal.filter((a) => !a.alasan.length);
   const demoPemilik = await pilihLengkap(klien, "customers", "id,name,phone,address", ok.flatMap((a) => (a.customer ? [a.customer] : [])), demografiPemilik);
@@ -177,10 +225,10 @@ export async function resolusiIdentitas(klien: KlienMigrasi, baris: BarisRencana
     const dp = a.customer ? demoPemilik.get(a.customer)! : null;
     const dh = a.pet ? demoHewan.get(a.pet)! : null;
     if (dh && dh.customer_id !== a.customer) { hasil.set(a.b.local_record_id, { status: "tahan", alasan: ["identitas.hewan_bukan_milik_pemilik"] }); continue; }
-    const selisih = selisihDemografi(a.b.payload!, dp, dh);
-    if (selisih.length) { hasil.set(a.b.local_record_id, { status: "tahan", alasan: selisih }); continue; }
+    const banding = bandingDemografi(a.b.payload!, dp, dh);
+    if (banding.tahan.length) { hasil.set(a.b.local_record_id, { status: "tahan", alasan: banding.tahan }); continue; }
     hasil.set(a.b.local_record_id, {
-      status: "kirim", customer_id: a.customer, pet_id: a.pet,
+      status: "kirim", customer_id: a.customer, pet_id: a.pet, catatan: [...a.catatan, ...banding.catatan],
       snapshot: {
         customer_id: a.customer, pet_id: a.pet, kandidatPemilik: a.kandidatPemilik, kandidatHewan: a.kandidatHewan,
         demografi: JSON.stringify([dp, dh]),

@@ -667,3 +667,146 @@ Tes:
 - pemulihan crash lewat penghapusan manual;
 - pemeriksaan statis bahwa modul tidak punya jalur pengambilalihan;
 - tutup idempoten dan cek kepemilikan dipertahankan.
+
+---
+
+## 13. Batch pertama dari OWNER (2026-10-30): master satu folder, 21 kartu teks
+
+Izin OWNER (pesan langsung, 2026-10-30): batch ini boleh dimasukkan ke produksi KAMO, **hanya baris yang lolos validasi**,
+lewat backend tanpa fitur Import. Izin ini diikat ke SHA-256 berkas:
+`ac6d0afb665842517cf5d3fed21930ec8644a5e26bc8c091c193faed74a18cee`. Berkas lain atau berkas yang berubah ditolak.
+
+### 13.1 Berkas asli dan pembacanya
+
+Master asli ditulis OpenXML SDK. Ciri-cirinya: elemen ber-prefix `x:`, target relasi absolut (`/xl/...`), sel tanggal
+ISO `t="d"`, dan tanpa shared string. Akibatnya untuk ExcelJS:
+- ExcelJS **gagal** membuka berkas ini.
+- Sel `t="d"` dibaca ExcelJS diam-diam sebagai angka.
+
+Jalur migrasi sekarang memakai pembaca sendiri, `baca-xlsx.ts`, dengan JSZip + saxes (keduanya sudah dependensi):
+- Sadar namespace, apa pun prefix-nya, dan menyelesaikan target absolut maupun relatif.
+- Membaca semua jenis sel: `s`, `str`, `inlineStr`, `n`, `b`, `e`, `d`, dan rumus. Nilai cache rumus diperlakukan sebagai hasil, bukan data.
+- Tanggal diambil dari `t="d"` atau dari angka seri bergaya tanggal (sistem 1900, termasuk titik 29 Feb 1900 fiktif).
+- Sel gabungan tidak disalin ke sel lain.
+- Batas baris dan kolom ditegakkan saat parsing.
+
+Aturan batas tabel juga sedikit dilonggarkan: baris satu-sel **setelah blok terakhir** sekarang dianggap catatan dan dihitung,
+misalnya "REFERENSI KONTRAK" di bawah Mapping. Alasannya, tidak ada blok yang barisnya lengkap dengan hanya satu sel.
+Baris dengan ≥2 sel setelah akhir tabel tetap gagal.
+
+Tes:
+- fixture ExcelJS diubah ke bentuk OpenXML SDK (prefix, target absolut, `t="d"`) menghasilkan blok dan rencana **identik**;
+- setiap jenis sel diuji, termasuk seri 1/59/60/61 dan deteksi format tanggal;
+- catatan setelah blok terakhir diterima, sedangkan baris multi-sel ditolak.
+
+### 13.2 Persetujuan tingkat berkas
+
+Opsi baru `persetujuanBerkas`, berisi SHA-256 berkas:
+- Menggantikan kolom keputusan per baris. Master ini memang tidak mengisi satu pun keputusan.
+- Wajib sama persis dengan SHA berkas yang dibaca.
+- Ikut dihitung dalam sidik rencana.
+- **Tidak** melonggarkan karantina maupun pengecualian lain.
+
+### 13.3 Aturan identitas (keputusan OWNER)
+
+Pemilik:
+- Nomor HP adalah patokan utama. Format `08…`, `+628…`, dan `628…` dianggap sama.
+- Satu kartu database dengan HP itu dipakai **eksplisit**. Kalau nama atau alamat di master berbeda, nama dan alamat lama
+  dipertahankan dan perbedaannya dicatat sebagai *catatan* (bukan tahan).
+- Lebih dari satu kartu dengan HP sama ditahan (`identitas.pemilik_ganda_hp`). Dua akun tidak pernah digabung.
+- Kartu dengan nama sama tapi HP beda bukan pemilik yang sama; hanya dicatat sebagai `identitas.nama_sama_nomor_beda`.
+- HP kosong atau tidak valid sudah dikarantina di rencana. HP tidak pernah dikarang.
+
+Hewan:
+- Hewan tetap terpisah per nama di bawah pemilik.
+- Dua hewan lokal yang menjadi **satu hewan baru** bernama sama boleh digabung asal demografinya tidak bertentangan.
+  Kalau bertentangan, ditahan (`identitas.hewan_baru_demografi_bentrok`).
+- Untuk hewan yang sudah ada:
+  - nilai yang bertentangan = tahan;
+  - nilai kosong di DB = catatan "tidak diisi otomatis" (RPC memang tidak memperbarui).
+
+### 13.4 Q01 / F3: pemilik baru tidak boleh jadi "pelanggan baru"
+
+RPC yang ada membuat kartu pelanggan **tanpa** `imported_at` bila `customer_id` null, sehingga Q01 bisa menghitungnya.
+Runner sekarang:
+1. Membuat kartu pemilik baru **sendiri** lewat RLS OWNER, dengan `imported_at` terisi sejak lahir. Ini pola yang sama
+   dengan impor pelanggan aplikasi (`Pengaturan > Impor`; kebijakan `customers_write` mengizinkan `authenticated`).
+   Ketentuan kartunya:
+   - satu kartu per HP;
+   - nama varian ditulis "A / B";
+   - HP diambil dari baris pertama, alamat dari alamat pertama yang terisi.
+2. Menulis penanda tahan-crash `pemilikBaru` **sebelum** jaringan. Isinya hanya hash HP, tanpa HP mentah.
+   - Kalau koneksi putus, run berhenti `tidak_pasti`.
+   - Pada lanjutan, nol kandidat berarti INSERT tidak ter-commit, jadi kartu dibuat ulang.
+   - Satu kandidat hanya diadopsi bila bertanda impor.
+3. **Tidak pernah** mengirim baris dengan `customer_id` null. Dengan begitu fallback DB tanpa penanda tidak pernah terpakai.
+4. Readback mewajibkan kartu buatan run bertanda impor dan sama dengan kartu yang direncanakan.
+
+Trigger produksi pada `visits`, `medical_records`, `customers`, dan `pets` sudah diperiksa lewat katalog (tanpa data):
+- **Tidak ada** penulis tagihan, stok, quest, atau komisi.
+- Isinya hanya log aktivitas a01 dan pengaman (rx-evidence, ranap, consent, master-ref, `imported_at` immutable, audit pindah pemilik).
+- Q01 hanya bereaksi pada `sales.payments_finalized_at`, dan kartu ber-`imported_at` langsung dilewati.
+
+### 13.5 Target produksi (katalog/metadata saja, tanpa data pasien)
+
+Proyek:
+- `koaglxcyjqfmgfzxszkj`, status `ACTIVE_HEALTHY`, PostgreSQL 17.6.
+- 319 entri riwayat migrasi; versi terakhir `20261104120000`, sama dengan migrasi terbaru `main` yang sudah di-merge ke cabang ini.
+- 29/29 definisi fungsi jalur impor/pembaca (`import_legacy_*`, `kamo_import.*`, RS-1/RS-2, `capture_activity_log`,
+  `is_admin`) **identik** (md5 `pg_get_functiondef`) dengan rantai repo yang dites harness.
+
+### 13.6 Hasil dry-run offline atas master asli (dengan persetujuan berkas)
+
+| Status | Jumlah | Rincian |
+|---|---|---|
+| Siap | 8 | LOCAL-RM-001, 002, 005, 007, 008, 009, 010, 011 |
+| Dikecualikan | 1 | LOCAL-RM-004 — tanpa isi klinis (sel Ket berupa label) |
+| Karantina | 12 | lihat di bawah |
+
+Rincian karantina (12):
+- **Pemilik tanpa nomor HP** (tidak dikarang): LOCAL-RM-006 dan LOCAL-RM-012–016.
+  - Pasangan salinan identik 012/013 juga sudah ditandai di master.
+- **Tanggal tab ≠ tanggal sel**: LOCAL-RM-003.
+- **Tanggal tab ≠ tanggal sel + pemilik dikarantina**: LOCAL-RM-017 sampai 020.
+  - 017: tanpa HP.
+  - 018–020: HP sumber berupa angka (nol awal hilang, tidak dipulihkan otomatis); 018/019 juga salinan identik.
+- **Pemilik dan nama pasien kosong**: LOCAL-RM-021.
+
+Foto (3, satu sheet) dikecualikan tanpa OCR, sesuai keputusan pemilik di master.
+
+Tes integrasi DB sintetis atas rantai lengkap (333 migrasi): **37/37 di PG16 dan PG17**. Skenario baru:
+- bentuk master asli: HP 08/+628 dengan nama varian menjadi satu kartu "A / B" ber-`imported_at`;
+- dua hewan lokal bernama sama menjadi satu hewan, sedangkan hewan lain tetap terpisah;
+- validasi DB tanpa menulis (hitungan tabel tidak berubah);
+- pemilik lama ber-HP sama dipakai tanpa diubah;
+- invarian Q01: tidak ada pemilik riwayat migrasi buatan runner yang tanpa `imported_at`.
+
+### 13.7 Runner produksi dan gerbang yang tersisa
+
+`scripts/migrasi-kartu-medis-produksi.mjs` menyediakan tiga perintah:
+- `validasi-db`: nol tulis;
+- `terapkan`: validasi → jalan/lanjut dari ledger → readback;
+- `readback`.
+
+Login memakai OWNER biasa: email + kata sandi lewat Supabase Auth dengan kunci publik anon. Konsekuensinya:
+- RLS dan cek role berlaku sama seperti aplikasi.
+- Tidak ada service-role atau SQL mentah.
+- Target diverifikasi dua kali: host URL dan `iss` token harus proyek yang dikonfirmasi.
+- Kredensial **hanya** dari environment (`KAMO_OWNER_EMAIL`, `KAMO_OWNER_PASSWORD`) dan tidak pernah dicetak.
+  Kunci publik anon (`KAMO_SUPABASE_ANON_KEY`) boleh diisi manual; bila kosong, runner mengambilnya lewat Management API.
+  Hanya kunci `anon`/publishable yang dipakai.
+- Laporan dan ledger wajib di luar repo.
+
+**Gerbang:** sesi ini tidak punya kredensial OWNER, jadi validasi DB dan apply belum dijalankan. Belum ada satu baris pun
+yang ditulis ke produksi. Environment cloud hanya membaca variabel baru pada sesi berikutnya. Langkah setelah pemilik
+mengisi dua variabel login di atas:
+
+```bash
+node scripts/migrasi-kartu-medis-produksi.mjs validasi-db --berkas <master.xlsx> \
+  --setujui-berkas ac6d0afb665842517cf5d3fed21930ec8644a5e26bc8c091c193faed74a18cee \
+  --hari-ini 2026-10-30 --konfirmasi-proyek koaglxcyjqfmgfzxszkj --laporan <di-luar-repo>/validasi.json
+node scripts/migrasi-kartu-medis-produksi.mjs terapkan  (opsi sama) --ledger <di-luar-repo>/ledger --laporan <di-luar-repo>/hasil.json
+```
+
+`--hari-ini` harus sama pada setiap lanjutan karena ikut sidik rencana. Kalau koneksi putus, jalankan perintah yang sama lagi.
+Ledger membuktikan dulu apa yang sudah tersimpan sebelum mengirim ulang.
