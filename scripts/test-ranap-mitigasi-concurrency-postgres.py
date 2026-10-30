@@ -374,6 +374,61 @@ def cancel_race(h, db, n, cancellation_first=False, hazard=False):
     return attempts["release"]["ok"] and (expected_rejection or attempts["void"]["ok"]), detail
 
 
+def correction_authorization_race(h, db, n, actor, with_history=True):
+    """Recheck money permission AFTER waiting; batch is SQL RPC-contract QA, not browser UAT."""
+    customer = f.buat_pelanggan(h, n)
+    visit = f.buat_kunjungan(h, n, customer)
+    initial_lines, corrected_lines = f.baris(n, 1), f.baris(n, 1, 4)
+    h.sql(f.tagih_sql(visit, f"cc-{n}-initial", initial_lines, f.OWNER,
+                       alasan="Uji fiktif koreksi bersamaan"), f.OWNER)
+    invoice = h.aktif(visit)
+    edit = f.koreksi_sql(h, invoice, f"cc-{n}-edit", corrected_lines)
+    before, accounts_before = h.potret_tagihan(invoice), h.saldo_semua(*CODES)
+    evidence = []
+    with Session(db, f"cc-{n}-money", f.OWNER) as money, Session(db, f"cc-{n}-edit", actor) as editor, Session(db, f"cc-{n}-observer") as observer:
+        if with_history:
+            receipt = money.sql("begin; " + f.bayar_sql(visit, f"cc-{n}-receive", [{"method":"Tunai", "amount":100000}]))[-1]
+            money.sql(f.batal_kwitansi_sql(receipt, f"cc-{n}-cancel"))
+        else:
+            # A legitimate no-money correction holds the same coordinator without
+            # creating any payment history. Non-financial editing must remain usable.
+            money.sql("begin; " + f.koreksi_sql(h, invoice, f"cc-{n}-no-money", initial_lines))
+        committed_journals = int(money.sql("select count(*) from public.journal_entries;")[-1])
+        editor.send("begin; " + edit)
+        wait_block(observer, editor, money, evidence)
+        assert_equal(evidence[-1]["wait_event"], "advisory")
+        money.sql("commit;")
+        outcome = attempt(editor)
+    after, accounts_after = h.potret_tagihan(invoice), h.saldo_semua(*CODES)
+    allowed = not with_history or actor in (f.OWNER, f.ADMIN, f.FINANCE)
+    detail = {"actor":f.PERAN[actor], "with_history":with_history, "allowed":allowed,
+              "barriers":evidence, "attempt":outcome, "before":before, "after":after,
+              "accounts_before":accounts_before, "accounts_after":accounts_after}
+    DIAGNOSTICS.update(detail)
+    if allowed:
+        assert_equal(outcome["ok"], True)
+        assert_equal(after["total"], f.nilai_baris(corrected_lines))
+        assert_equal(after["baris"], len(corrected_lines))
+        delta = f.nilai_baris(corrected_lines) - f.nilai_baris(initial_lines)
+        expected_accounts = {**accounts_before, "1201":accounts_before["1201"] + delta,
+                             "4201":accounts_before["4201"] - delta}
+        assert_equal(accounts_after, expected_accounts)
+    else:
+        assert_equal(outcome["ok"], False)
+        assert "ACCESS_DENIED" in outcome.get("error", ""), outcome
+        assert "40P01" not in outcome.get("error", ""), outcome
+        assert_equal(after, {**before, "bayar":2, "jurnal":committed_journals})
+        assert_equal(accounts_after, accounts_before)
+    assert_equal(after["dp"], 0)
+    assert_equal(after["status"], "Belum Lunas")
+    assert_equal(after["bayar"], 2 if with_history else 0)
+    assert_equal(after["stok"], before["stok"])
+    assert_equal(h.diterima(invoice), 0)
+    assert_equal(h.angka("select count(*) from clinic_private.posting_ctx"), 0)
+    assert_equal(h.angka("select count(*) from (select entry_id from public.journal_lines group by entry_id having sum(debit)<>sum(credit)) x"), 0)
+    return True, detail
+
+
 def unrelated_customers_race(h, db, n, shared_cashier_shift):
     """Distinct customer coordinators: independent work proceeds; shared shift queues safely."""
     _, visit_a, _, advance_a = fixture(h, n)
@@ -502,6 +557,11 @@ def main():
                 ("duplicate-payment-allocated-and-advance",lambda:duplicate_race(h,db,208,True)),
                 ("different-customers-same-cashier-shift",lambda:unrelated_customers_race(h,db,211,True)),
                 ("different-customers-existing-row-lock-queues",lambda:unrelated_customers_race(h,db,213,False)),
+                ("correction-role-recheck-after-wait-staff",lambda:correction_authorization_race(h,db,501,f.STAFF)),
+                ("correction-role-recheck-after-wait-doctor",lambda:correction_authorization_race(h,db,511,f.DOCTOR)),
+                ("correction-role-finance-history-after-wait-allowed",lambda:correction_authorization_race(h,db,521,f.FINANCE)),
+                ("correction-role-staff-no-history-after-wait-allowed",lambda:correction_authorization_race(h,db,531,f.STAFF,False)),
+                ("correction-role-doctor-no-history-after-wait-allowed",lambda:correction_authorization_race(h,db,541,f.DOCTOR,False)),
             ]
             for name, fn in cases:
                 run_case(name,fn)

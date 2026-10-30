@@ -1143,6 +1143,14 @@ create or replace function public.clinic_edit_invoice(
 ) returns uuid language plpgsql security definer set search_path = '' as $function$
 declare v_role text;
 begin
+  if coalesce(auth.role(), '') <> 'authenticated' or auth.uid() is null then
+    raise exception using errcode='P0001',
+      message='ACCESS_DENIED: pengguna tidak aktif atau tidak terautentikasi';
+  end if;
+  -- R3-01: keputusan peran/riwayat uang wajib memakai keadaan SETELAH menunggu
+  -- koordinator yang sama dengan penerimaan, pembatalan, dan core koreksi.
+  -- Mengunci hanya di core terlambat: riwayat nol dapat berubah saat menunggu.
+  perform clinic_private.billing_lock(clinic_private.billing_keys_invoice(p_invoice_id));
   select p.role into v_role from public.profiles p where p.id = auth.uid() and p.is_active;
   if coalesce(auth.role(), '') <> 'authenticated' or v_role is null then
     raise exception using errcode='P0001',
