@@ -12,9 +12,9 @@ vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({
    maybeSingle:async()=>{if(table===state.failTable)throw Error(`read failed: ${table}`);if(table===state.errorTable)return {data:null,error:{message:`${table} unavailable`}};return {data:table==="medical_records"?{id:"record"}:table==="clinic_demo_policies"?{id:"policy",name:"DEMO",incentive_percent:5,fee_bearer:"customer",fee_rates:{Transfer:100},admin_revenue_code:"4303",admin_expense_code:"5501"}:table==="customers"?{points:state.balance,customer_categories:{is_active:true,rupiah_per_poin:10}}:table==="visits"?{branch_id:"branch",customer_id:state.customer?"customer":null,doctor_id:null,service_provider_id:"groomer"}:table==="employees"?(id==="groomer"?{id,branch_id:"branch"}:id==="foreign"?{id,branch_id:"other"}:null):table==="inpatient_records"&&state.inpatientOpen?{id:"active-inpatient"}:table==="invoices"?(state.existing||id==="invoice"?invoice:null):null,error:table==="invoices"&&((id==="invoice"&&state.postReadError)||(id!=="invoice"&&state.activeReadError))?{message:"Invoice read unavailable"}:null};},
    then:(resolve:(v:unknown)=>unknown,reject?:(e:unknown)=>unknown)=>(table===state.failTable?Promise.reject(Error(`read failed: ${table}`)):Promise.resolve(table===state.errorTable?{data:null,error:{message:`${table} unavailable`}}:{data:[],error:null})).then(resolve,reject)};return q;
  },
- rpc:async(name:string,params:Record<string,unknown>)=>{state.calls.push({name,params});const posting=["clinic_post_invoice","clinic_post_split_invoice","clinic_post_demo_invoice"].includes(name);
+ rpc:async(name:string,params:Record<string,unknown>)=>{state.calls.push({name,params});const posting=["clinic_post_invoice","clinic_post_split_invoice","clinic_post_demo_invoice","clinic_post_dp_and_admit"].includes(name);
   if(posting&&state.lostResponse){state.version=(params.p_invoice as {service_pricing_version?:1}).service_pricing_version??null;state.savedSalesperson=(params.p_invoice as {salesperson_id:string|null}).salesperson_id;state.lostResponse=false;state.existing=true;state.retry=true;throw Error("Response lost after commit")}
-  return {data:posting&&!state.stockError?"invoice":null,error:posting&&state.transportError?{message:"Fetch failed"}:posting&&state.stockError?{code:"P0001",message:"STOCK_SHORT: Fiction medicine"}:name==="set_visit_service_state"&&state.checkoutError?{message:"Checkout response not confirmed"}:null};},
+  return {data:posting&&!state.stockError?(name==="clinic_post_dp_and_admit"?{invoice_id:"invoice",inpatient_id:"stay"}:"invoice"):null,error:posting&&state.transportError?{message:"Fetch failed"}:posting&&state.stockError?{code:"P0001",message:"STOCK_SHORT: Fiction medicine"}:name==="set_visit_service_state"&&state.checkoutError?{message:"Checkout response not confirmed"}:null};},
 })}));
 vi.mock("@/lib/shift",()=>({getOpenShift:async()=>{if(state.shift==="throw")throw Error("Shift gagal dimuat.");return state.shift==="open"?{id:"shift"}:null;}}));
 vi.mock("@/lib/tindakan",()=>({bolehBayar:()=>true,kategoriBerisiko:()=>[]}));
@@ -34,6 +34,34 @@ import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, bagiPotongan } from "@/lib/tagihan-klinik";
 function form(selected?:string){const f=new FormData();f.set("visitId","visit");f.set("requestKey","request");f.set("items",JSON.stringify([{deskripsi:"Medicine",qty:1,harga:100,satuan:"box",item_id:"item"}]));f.set("edit_reason","Correction");if(selected!==undefined)f.set("salesperson_id",selected);return f;}
 beforeEach(()=>{state.version=null;state.savedSalesperson="groomer";state.stockError=false;state.transportError=false;state.activeReadError=false;state.postReadError=false;state.checkoutError=false;state.lostResponse=false;state.paidExisting=false;state.inpatientOpen=false;state.correctionPending=false;state.shift="open";state.pajakThrow=false;state.periodeError=false;state.failTable="";state.errorTable="";state.tierAfterPoints=-1;state.visitWrites=[];state.existing=false;state.retry=false;state.customer=false;state.balance=100;state.pointWrites=[];state.calls=[];});
+describe("DP-first explicit inpatient orchestration (unit only)",()=>{
+ it("posts ordinary DP and explicit admission in ONE RPC, without a later visit write",async()=>{
+  const data=form();data.set("paid_status","DP");data.set("dp_amount","60");
+  data.set("admit_after_dp","1");data.set("treatment_plan","Monitoring fiktif");data.set("stay_type","sakit");
+  await expect(bayarVisit(data)).resolves.toEqual({saved:true,href:"/klinik/rawat-inap/stay?success=admit"});
+  expect(state.calls[0]).toMatchObject({name:"clinic_post_dp_and_admit",params:{p_treatment_plan:"Monitoring fiktif",p_stay_type:"sakit",p_invoice:{paid_status:"DP",dp_amount:60}}});
+  expect(state.visitWrites).toEqual([]);
+ });
+ it("never silently falls back to ordinary posting when atomic DP/admission is unavailable",async()=>{
+  state.transportError=true;const data=form();data.set("paid_status","DP");data.set("dp_amount","60");data.set("admit_after_dp","1");data.set("treatment_plan","Fiktif");data.set("stay_type","sakit");
+  await expect(bayarVisit(data)).rejects.toThrow("?error=");
+  expect(state.calls.map(c=>c.name)).toEqual(["clinic_post_dp_and_admit"]);
+ });
+ it.each(["treatment_plan","stay_type"])("requires explicit %s before recording money",async(field)=>{
+  const data=form();data.set("paid_status","DP");data.set("admit_after_dp","1");data.set("treatment_plan","Fiktif");data.set("stay_type","sakit");data.delete(field);
+  await expect(bayarVisit(data)).rejects.toThrow("?error=");expect(state.calls).toEqual([]);
+ });
+ it.each(["split_payments","demo_policy_id"])("rejects unsupported %s with inpatient intent before any money RPC",async(field)=>{
+  const data=form();data.set("paid_status","DP");data.set("dp_amount","60");data.set("admit_after_dp","1");data.set("treatment_plan","Fiktif");data.set("stay_type","sakit");
+  data.set(field,field==="demo_policy_id"?"policy":JSON.stringify([{method:"Tunai",amount:40},{method:"Transfer",amount:60}]));
+  await expect(bayarVisit(data)).rejects.toThrow("?error=");expect(state.calls).toEqual([]);expect(state.visitWrites).toEqual([]);
+ });
+ it("rejects finalize rather than silently checking out an intended inpatient",async()=>{
+  const data=form();data.set("finalize","1");data.set("admit_after_dp","1");data.set("treatment_plan","Fiktif");data.set("stay_type","sakit");
+  await expect(bayarVisit(data)).rejects.toThrow("?error=");expect(state.calls).toEqual([]);
+ });
+});
+
 describe("clinic payment salesperson boundary",()=>{
  it("posts mixed cash and transfer as a single atomic RPC", async()=>{
   const data=form("groomer");data.set("finalize","1");data.set("split_payments",JSON.stringify([{method:"Tunai",amount:40},{method:"Transfer",amount:60}]));

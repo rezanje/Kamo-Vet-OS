@@ -1,3 +1,7 @@
+import { admitInpatient } from "../../rawat-inap/actions";
+import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { SubmitButton } from "@/components/SubmitButton";
+import { STAY_TYPES, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
@@ -38,10 +42,10 @@ export default async function PembayaranPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; success?: string; edit?: string; lunas?: string; dilewati?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string; lunas?: string; dilewati?: string; rawatinap?: string }>;
 }) {
   const { visitId } = await params;
-  const { error, success, lunas: lunasParam, dilewati } = await searchParams;
+  const { error, success, lunas: lunasParam, dilewati, rawatinap } = await searchParams;
   const invoiceRequestKey = randomUUID();
   const groupRequestKey = randomUUID();
   const supabase = await createClient();
@@ -71,7 +75,7 @@ export default async function PembayaranPage({
   const racikanPending = (racikanPendingRows ?? []).length > 0;
 
   // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
-  const { data: inpat, error: inpatientError } = await supabase.from("inpatient_records").select("id,consent_id").eq("visit_id", visitId).limit(1).maybeSingle();
+  const { data: inpat, error: inpatientError } = await supabase.from("inpatient_records").select("id,consent_id,discharged_at").eq("visit_id", visitId).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (inpatientError) throw unverifiedBilling();
   if (inpat?.consent_id) {
     const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
@@ -471,6 +475,19 @@ export default async function PembayaranPage({
         </div>
       )}
 
+      {inpat && !inpat.discharged_at && <div className="p2ban"><Link href={`/klinik/rawat-inap/${inpat.id}/tagihan`}>Rawat Inap aktif — buka Tagihan berjalan untuk DP / penerimaan / Tagih sekarang</Link></div>}
+      {!inpat && invoice?.paid_status === "DP" && !invoice.correction_pending && <div className="card">
+        <h3>DP tercatat — lanjutkan Rawat Inap</h3>
+        <p>Hanya untuk pasien yang diputuskan Rawat Inap. Tagihan dan DP lama tidak diubah atau diterima ulang. Dokter PIC dan persetujuan khusus tetap diperiksa.</p>
+        <TransactionForm userId={draftUser?.id ?? ""} scope={`inpatient-admit:${visitId}`} action={admitInpatient}>
+          <input type="hidden" name="visitId" value={visitId} />
+          <input type="hidden" name="request_key" defaultValue={randomUUID()} data-draft-state />
+          <label>Tipe rawat inap<select name="stay_type" className="fi" required>{STAY_TYPES.map(type => <option key={type} value={type}>{STAY_TYPE_LABEL[type]}</option>)}</select></label>
+          <label>Rencana tindakan dari dokter PIC<input name="treatment_plan" className="fi" required maxLength={4000} /></label>
+          <Link href={`/klinik/rekam-medis/${visitId}#persetujuan-rawat-inap`}>Periksa dokter / persetujuan</Link>
+          <SubmitButton className="btn-acc" pendingText="Memproses…">Masukkan Rawat Inap (tanpa pembayaran ulang)</SubmitButton>
+        </TransactionForm>
+      </div>}
       {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
           key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
@@ -586,6 +603,8 @@ export default async function PembayaranPage({
             </div>
           )}
         </>
+      ) : inpat && !inpat.discharged_at ? (
+        <Link href={`/klinik/rawat-inap/${inpat.id}/tagihan`} className="btn-acc">Buka Tagihan Rawat Inap — DP / Tagih sekarang</Link>
       ) : (
         <PembayaranForm
           key={`${draftUser?.id ?? ""}:${visit.id}:new:${invoiceRequestKey}`}
@@ -611,6 +630,8 @@ export default async function PembayaranPage({
           groomingApplies={groomingPolicy?.applies ?? false}
           cashierName={cashier.name}
           catatanResep={mr?.catatan_resep ?? null}
+          allowDpAdmission={!inpat}
+          initialDpAdmission={rawatinap === "1"}
           racikanPending={racikanPending}
           minDpPercent={minDpPercent}
           bolehTerobosDp={bolehTerobosDp}

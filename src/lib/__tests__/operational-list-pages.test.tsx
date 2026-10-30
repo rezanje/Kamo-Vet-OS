@@ -63,6 +63,15 @@ describe("complete operational page sources", () => {
     expect(html).not.toContain("private DB detail");
     expect(html).not.toContain("<table");
   });
+  it("routes active inpatient out of default list but keeps explicit full/patient history", async () => {
+    fixture.tables.visits=[{...fixture.tables.visits[0],inpatient_records:[{created_at:"2026-11-03",discharged_at:null,condition_status:"stabil"}]}];
+    const normal=renderToStaticMarkup(await MedicalPage({searchParams:Promise.resolve({})}));
+    expect(normal).not.toContain('href="/klinik/rekam-medis/visit-0"');
+    const full=renderToStaticMarkup(await MedicalPage({searchParams:Promise.resolve({tampilan:"semua"})}));
+    expect(full).toContain('href="/klinik/rekam-medis/visit-0"');
+    const patient=renderToStaticMarkup(await MedicalPage({searchParams:Promise.resolve({pet:"pet-a"})}));
+    expect(patient).toContain('href="/klinik/rekam-medis/visit-0"');
+  });
   it("loads all 1200 customers for full summaries and client search", async () => {
     const page = await CustomersPage({ searchParams: Promise.resolve({}) });
     expect(customerProps(page)?.customers).toHaveLength(1200);
@@ -84,7 +93,7 @@ describe("complete operational page sources", () => {
     expect(tableRows(html)).toBe(50);
     expect(html).toContain("Pet 349");
     expect(html).not.toContain("Pet 0</div>");
-    expect(html).toMatch(/q=Pet(?:&amp;|&)pet=pet-a(?:&amp;|&)hal=6/);
+    expect(html).toMatch(/q=Pet(?:&amp;|&)pet=pet-a(?:&amp;|&)tampilan=semua(?:&amp;|&)hal=6/);
   });
   it("renders only selected warehouse page 24 while preserving truthful total and stable ordering", async () => {
     const html = renderToStaticMarkup(await StockPage({ searchParams: Promise.resolve({ wh: "wh-a", hal: "24" }) }));

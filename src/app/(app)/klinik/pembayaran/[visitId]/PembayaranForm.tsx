@@ -23,6 +23,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { Popup } from "@/components/Popup";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { bayarVisit } from "./actions";
+import { DpAdmissionFields } from "./DpAdmissionFields";
 import { hariIniWIB } from "@/lib/tanggal";
 import { METODE_BAYAR } from "@/lib/metode-bayar";
 import { hitungPromoKeranjang } from "@/lib/promo-hitung";
@@ -282,11 +283,12 @@ function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:
   </div>;
 }
 
-export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, minDpPercent = 0, bolehTerobosDp = false }: {
+export function PembayaranForm({ visitId, requestKey, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, minDpPercent = 0, bolehTerobosDp = false, allowDpAdmission = false, initialDpAdmission = false }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   masterObat?: MasterItem[]; masterJasa?: MasterItem[]; bekal: BekalPotongan;
   /** Ada racikan kunjungan ini yang masih menunggu diracik. */
   racikanPending?: boolean;
+  allowDpAdmission?: boolean; initialDpAdmission?: boolean;
   draftUserId?: string; draftScope?: string; sourceVersion?: string;
   packages?: PackageOption[];
   demoPolicy?: DemoFinancialPolicy | null; demoStaff?: PilihanPenjual[];
@@ -304,6 +306,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   /** Peran kasir boleh menyimpan di bawah minimum dengan alasan (OWNER/ADMIN/FINANCE). */
   bolehTerobosDp?: boolean;
 }) {
+  const [admitAfterDp, setAdmitAfterDp] = useState(allowDpAdmission && initialDpAdmission);
   const [draftSourceVersion, setDraftSourceVersion] = useState(sourceVersion);
   const sourceChanged = !!sourceVersion && draftSourceVersion !== sourceVersion;
   const latestSourceSubtotal = [...initialObat, ...initialJasa].reduce((sum,row)=>sum+nilaiBaris(row),0);
@@ -732,6 +735,8 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
             </div>
           )}
 
+          {allowDpAdmission && !editMode && <DpAdmissionFields selected={admitAfterDp} onChange={setAdmitAfterDp} />}
+          {allowDpAdmission && <Link href={`/klinik/rekam-medis/${visitId}#persetujuan-rawat-inap`} className="back-btn">Periksa persetujuan / dokter Rawat Inap</Link>}
           {/* Aksi */}
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: 6 }}>
             {editMode ? (
@@ -744,7 +749,7 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
               </span>
             )}
             <SubmitButton className="btn-acc" name="finalize" value="0" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} busy={leaving} icon="ti-device-floppy" pendingText="Menyimpan…" style={{ justifyContent: "center", padding: "9px 0", background: "var(--posb)" }}>{demoEnabled ? "Simpan lunas DEMO" : "Simpan"}</SubmitButton>
-            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} busy={leaving} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
+            {!editMode && <SubmitButton className="kpos-bayar" name="finalize" value="1" disabled={admitAfterDp || sourceChanged || !!splitError || !!demoError || (demoEnabled && !mixed && bayar < total)} busy={leaving} icon="ti-circle-check" pendingText="Memproses…" style={{ background: "#16a34a" }}>Bayar &amp; Selesai</SubmitButton>}
           </div>
         </div>
       </div>

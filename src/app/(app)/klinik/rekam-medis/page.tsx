@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { saringDaftarRekamMedis, type BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
-import { statusPasienRekamMedis, type CatatanStatusRawatInap } from "@/lib/status-pasien-rekam-medis";
+import { hasActiveInpatient, statusPasienRekamMedis, type CatatanStatusRawatInap } from "@/lib/status-pasien-rekam-medis";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 
 type Rel<T> = T | T[] | null;
@@ -25,6 +25,7 @@ type RekamRow = BarisDaftarRekamMedis & {
   note: string | null;
   diagnosis: string | null;
   isImported: boolean;
+  activeInpatient: boolean;
   patientStatus: ReturnType<typeof statusPasienRekamMedis>;
 };
 
@@ -35,9 +36,9 @@ const dateText = (iso: string) => new Date(iso).toLocaleDateString("id-ID", {
 export default async function DaftarRekamMedisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; pet?: string; hal?: string }>;
+  searchParams: Promise<{ q?: string; pet?: string; hal?: string; tampilan?: string }>;
 }) {
-  const { q = "", pet: petId = "", hal } = await searchParams;
+  const { q = "", pet: petId = "", hal, tampilan } = await searchParams;
   const supabase = await createClient();
 
   type SourceRow = {
@@ -86,10 +87,13 @@ export default async function DaftarRekamMedisPage({
       note: medical?.anamnesis ?? visit.keluhan,
       diagnosis: medical?.diagnosis ?? null,
       isImported: Boolean(visit.legacy_source_key),
+      activeInpatient: hasActiveInpatient(visit.inpatient_records),
       patientStatus: statusPasienRekamMedis(visit.inpatient_records, Boolean(visit.legacy_source_key)),
     };
   });
-  const filtered = saringDaftarRekamMedis(rows, q);
+  const fullHistory = tampilan === "semua" || !!petId;
+  const displayMode = fullHistory ? "semua" : "rawat-jalan";
+  const filtered = saringDaftarRekamMedis(fullHistory ? rows : rows.filter(row => !row.activeInpatient), q);
   const pageInfo = infoHalaman(hal, filtered.length, TABLE_PAGE_SIZE);
   const visibleRows = filtered.slice(pageInfo.from, pageInfo.to + 1);
   const pets = new Set(rows.map((row) => row.petId).filter(Boolean)).size;
@@ -122,6 +126,12 @@ export default async function DaftarRekamMedisPage({
       </div>
 
       <div className="crm-sec">
+        <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
+          <Link href={`/klinik/rekam-medis?${new URLSearchParams({q,tampilan:"rawat-jalan"})}`}>Daftar rekam medis · selain Rawat Inap aktif</Link>
+          <Link href={`/klinik/rekam-medis?${new URLSearchParams({q,tampilan:"semua"})}`}>Semua riwayat (termasuk Rawat Inap)</Link>
+          <Link href="/klinik/rawat-inap">Pasien Rawat Inap aktif</Link>
+        </div>
+        {!fullHistory && <p style={{ fontSize: 11 }}>Pasien Rawat Inap aktif ada di Status Rawat Inap. Riwayat medisnya tetap tersedia lewat Semua riwayat atau riwayat pasien.</p>}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Daftar riwayat</div>
@@ -130,10 +140,11 @@ export default async function DaftarRekamMedisPage({
             </div>
           </div>
           <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="hidden" name="tampilan" value={displayMode} />
             {petId && <input type="hidden" name="pet" value={petId} />}
             <input className="fi" name="q" defaultValue={q} placeholder="Cari owner atau hewan..." style={{ width: 240 }} />
             <button className="btn-def" type="submit"><i className="ti ti-search" /> Cari</button>
-            {(q || petId) && <Link href="/klinik/rekam-medis" className="btn-def" style={{ textDecoration: "none" }}>Semua riwayat</Link>}
+            {(q || petId) && <Link href="/klinik/rekam-medis?tampilan=semua" className="btn-def" style={{ textDecoration: "none" }}>Semua riwayat</Link>}
           </form>
         </div>
 
@@ -168,7 +179,7 @@ export default async function DaftarRekamMedisPage({
             </table>
           </div>
         )}
-        <ListPagination path="/klinik/rekam-medis" query={{ q, pet: petId }} total={filtered.length} pageInfo={pageInfo} />
+        <ListPagination path="/klinik/rekam-medis" query={{ q, pet: petId, tampilan: displayMode }} total={filtered.length} pageInfo={pageInfo} />
       </div>
     </>
   );

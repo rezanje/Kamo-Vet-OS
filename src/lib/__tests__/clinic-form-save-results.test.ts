@@ -42,6 +42,11 @@ it('preserves nonmedical grooming without a doctor',async()=>{
  fixture.doctorId=null;fixture.service='Grooming';const data=form();data.delete('keluhan');
  expect(await simpanRekamMedis(data)).toMatchObject({saved:true});
 });
+it('routes the explicit Rawat Inap button through ordinary payment before admission',async()=>{
+ const data=form();data.set("next","rawatinap");
+ expect(await simpanRekamMedis(data)).toEqual({saved:true,href:"/klinik/pembayaran/visit?rawatinap=1"});
+ expect(fixture.calls.map(c=>c.name)).toEqual(["clinic_save_initial_record"]);
+});
 it('returns confirmed initial save destination so the client can clear its draft',async()=>{
  expect(await simpanRekamMedis(form())).toEqual({saved:true,href:'/klinik/rekam-medis/visit/resep'});
  expect(fixture.revalidated).toContain('/klinik/rekam-medis/visit');

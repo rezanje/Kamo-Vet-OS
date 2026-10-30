@@ -52,6 +52,14 @@ describe("clinic salesperson form",()=>{
   });
 });
 
+it("offers an explicit inpatient decision with plan/type on payment, never infers it from services",()=>{
+ const html=renderToStaticMarkup(React.createElement(PembayaranForm,{...props,allowDpAdmission:true}));
+ expect(html).toContain('name="admit_after_dp"');expect(html).not.toContain('name="admit_after_dp" checked=""');
+ const intended=renderToStaticMarkup(React.createElement(PembayaranForm,{...props,allowDpAdmission:true,initialDpAdmission:true}));
+ expect(intended).toContain('name="treatment_plan"');expect(intended).toContain('name="stay_type"');
+ expect(intended).toContain('name="admit_after_dp"');
+});
+
 it("shows the automatic customer fee and recorded recipients before DEMO payment",()=>{
  const html=renderToStaticMarkup(React.createElement(PembayaranForm,{...props,patient:{...props.patient,owner:"DEMO Owner"},initialMetode:"Transfer",initialJasa:[{deskripsi:"DEMO jasa",qty:1,harga:50000}],
   demoPolicy:{id:"policy",name:"DEMO 5%",incentivePercent:5,feeBearer:"customer",feeRates:{Transfer:100},adminRevenueCode:"4303",adminExpenseCode:"5501"},demoStaff:props.salespeople}));
