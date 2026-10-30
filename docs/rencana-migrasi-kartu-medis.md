@@ -584,3 +584,54 @@ Catatan desain dari implementasi:
 5. **Risiko sisa F2.** Fallback pembuatan anabul di DB tetap ada, jadi cek ulang tidak menjamin bebas balapan.
 6. **Apply ke produksi, audit sampel nyata, merge, deploy:** masing-masing butuh izin terpisah.
    - 3 kandidat bentuk + 2 yang ditahan = 0 yang disetujui/terbukti di DB.
+
+---
+
+## 11. Review independen 0d81cbd: perbaikan R1–R3 dan batasan yang dipertahankan
+
+Basis kini `main` b4360bec. Main ini memuat HRIS PR354 dengan migrasi `20261104060000`, yang menambal
+`guard_clinic_record_seller`, `guard_clinic_line_salesperson`, dan helper `clinic_save_initial_record`/service-state.
+Area HRIS tidak disentuh, dan regresi impor/RLS/RS-2/runner dijalankan ulang atas rantai lengkap (329 migrasi).
+
+**R1 — kirim ulang batch yang tidak pasti (`eksekutor.ts` `amanDiulang`).**
+- Payload, urutan, jejak, dan UUID tersimpan dipertahankan. Payload tidak pernah ditulis ulang.
+- Sebelum dikirim ulang, ada pembuktian baca-saja:
+  1. Pembaca RS-1 `hasil_impor_rekam_medis` mencari jejak setara kanonik; untuk baris rencana ini, cara ini sama
+     dengan `cari_jejak`. Jejak yang sudah ada tidak bisa memicu fallback pembuatan di DB.
+  2. Jejak yang belum ada wajib lolos resolusi identitas segar (scan + demografi), dengan `customer_id`/`pet_id` yang
+     **sama** dengan yang tersimpan.
+- Bila pembaca tidak tersedia, jawabannya rusak atau tidak lengkap, scan gagal, atau identitas/relasi berubah: batch tetap
+  `tidak_pasti` dengan `sebab` (`status_commit_tidak_terbukti`, `identitas_tidak_terbukti`, atau
+  `identitas_berubah_sebelum_ulang`), dan **nol panggilan simpan massal**.
+- Tidak ada SQL atau solusi keamanan baru.
+
+**R2 — readback (`validasiLedger`).** Sebelum bacaan DB apa pun, ledger wajib:
+- terikat ke berkas, versi kontrak, rencana, dan konteks;
+- utuh secara struktur: nomor batch, status, panjang hasil, kesesuaian ID per posisi, UUID, tanpa `visit_id` ganda;
+- cocok dengan sidik payload kanonik dan hash jejak;
+- memberi **setiap** baris siap tepat satu disposisi (hasil batch atau tahan identitas), tanpa ID ganda, hilang, atau asing.
+
+Hasil readback:
+- `terverifikasi` hanya bila ada ≥1 riwayat termigrasi dan semuanya cocok;
+- `kosong` (nol siap, atau semua ditahan) bukan migrasi yang berhasil;
+- readback tetap baca-saja.
+
+**R3 — kunci ledger (`buku-besar.ts`).**
+- Token pemilik unik.
+- `tutup()` idempoten dan hanya melepas kunci bertoken miliknya. `simpan()` menolak bila kunci bukan miliknya lagi.
+- Kunci basi **tidak** diambil alih otomatis. Pemulihan hanya eksplisit dengan token persis (setelah operator memastikan
+  run lama berhenti), lewat `rename` atomik sehingga hanya satu pesaing yang menang. Yang kalah gagal tertutup.
+- Kunci rusak atau milik host lain selalu ditolak.
+
+**Batasan yang dipertahankan (tidak diklaim selesai).**
+- **Blok Mapping FILE** saat ini hanya dibaca (tanda tangan dan batas tabel). Nilainya tidak divalidasi atau
+  direkonsiliasi oleh rencana. Tidak ada klaim validasi SHA-256 berkas asli, provenance Drive, atau cakupan foto/berkas.
+  Yang dicatat hanya SHA-256 workbook master dan hitungan baris riwayat.
+- **Snapshot identitas tidak atomik** dengan fallback DB yang terjadi kemudian. Cek ulang tepat sebelum kirim dan
+  pembuktian sebelum kirim ulang memperkecil jendela itu, tetapi **tidak** menyelesaikan semua balapan.
+- **Klien terautentikasi yang di-inject** bukan login/transport operasional yang aman; itu tetap gerbang terbuka (K4).
+  CLI hanya offline.
+- **K8** (`imported_at`/Q01) masih keputusan bisnis yang terbuka.
+- **Master asli belum pernah dijalankan** (reviewer pun tidak menjalankan ExcelJS pada master), dan tidak ada data nyata
+  yang dikirim. Struktur header dwibahasa yang diserahkan cocok dengan bentuk 1 pemilik / 1 hewan / 5 riwayat /
+  2 FILE / 7 PER-SHEET. Ini cukup sebagai acuan fixture unit, tetapi **belum siap DB**.
