@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { NumberInput } from "@/components/NumberInput";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import {loadInpatientMedicationHistory} from "@/lib/inpatient-medication-history";
@@ -158,6 +159,10 @@ export async function ObatKhusus({ recordId, aktif, userId, history: preloaded }
         })}
       </div>
 
+      {aktif && <div className="p2ban">
+        <Link className="btn-acc" href={`/klinik/rawat-inap/${recordId}/obat-khusus`}>Tambah obat / BMHP ke tagihan</Link>
+        <div>Terhubung ke tagihan pasien yang sama, di luar Laporan Visit. Protokol / dosis di bawah tidak otomatis ditagihkan.</div>
+      </div>}
       {aktif && (
         <TransactionForm userId={draftUserId} scope={`inpatient-medication:${recordId}`} action={tambahObatInap} style={{ borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
           <input type="hidden" name="recordId" value={recordId} />
