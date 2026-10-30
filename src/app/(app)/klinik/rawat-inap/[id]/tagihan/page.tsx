@@ -19,7 +19,6 @@ const tgl = (iso: string) =>
 
 const SUKSES: Record<string, string> = {
   tagih: "Tagihan tahap terbit. Obat dan jasa yang baru ditagih sudah tercatat sebagai omzet.",
-  bayar: "Pembayaran tersimpan. Cetak kwitansinya untuk pemilik.",
   batal: "Kwitansi dibatalkan. Jurnal pembaliknya sudah tercatat.",
   lepas: "Pemakaian uang muka dilepas. Saldo pemilik kembali utuh dan kwitansinya sekarang bisa dibatalkan.",
 };
@@ -63,6 +62,10 @@ export default async function TagihanRawatInapPage({
   // Menerima uang atau membatalkan kwitansi di atas angka yang belum lengkap berisiko
   // penerimaan dobel, jadi aksinya dikunci sampai datanya terbaca.
   const bolehProsesUang = !!shift && data.riwayatUangTerpasang;
+  // Status tampilan dari rekap server, bukan bukti penerimaan baru dari query URL.
+  // Piutang invoice nol saja belum lunas bila masih ada biaya pending/koreksi.
+  const pembayaranLunas = data.riwayatUangTerpasang && rekap.total > 0 && rekap.sisa === 0
+    && data.belumDitagih.length === 0 && !data.tahap.some((t) => t.correction_pending);
 
   return (
     <>
@@ -83,7 +86,11 @@ export default async function TagihanRawatInapPage({
       </div>
 
       <Popup message={error} />
-      {!error && success && SUKSES[success] && (
+      {!error && success === "bayar" && data.riwayatUangTerpasang && rekap.dibayar > 0 && (
+        <Popup tone="success" title={pembayaranLunas ? "Pembayaran lunas" : "Pembayaran diterima"}
+          message={`Total dibayar: ${rp(rekap.dibayar)} · Sisa pembayaran: ${rp(rekap.sisa)}`} />
+      )}
+      {!error && success && Object.hasOwn(SUKSES, success) && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {SUKSES[success]}
         </div>
@@ -101,10 +108,10 @@ export default async function TagihanRawatInapPage({
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 14 }}>
-        <Kartu label="TOTAL TRANSAKSI" value={rp(rekap.total)} sub={`termasuk estimasi belum diterbitkan ${rp(rekap.pending)}`} color="var(--posb)" bg="#eff6ff" icon="ti-file-invoice" />
-        <Kartu label="DP / TOTAL DIBAYAR" value={data.riwayatUangTerpasang ? rp(rekap.dibayar) : "Belum terbaca"} sub="bersih, termasuk DP awal dan saldo uang muka" color="#15803d" bg="#e8f5ee" icon="ti-cash" />
-        <Kartu label="SISA TAGIHAN" value={data.riwayatUangTerpasang ? rp(rekap.sisa) : "Belum terbaca"} sub="termasuk estimasi item belum diterbitkan" color="#b91c1c" bg="#fef2f2" icon="ti-clock-dollar" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8, marginBottom: 10 }}>
+        <Kartu label="TOTAL TRANSAKSI" value={rp(rekap.total)} color="var(--posb)" bg="#eff6ff" icon="ti-file-invoice" />
+        <Kartu label="DP" value={data.riwayatUangTerpasang ? rp(rekap.dibayar) : "Belum terbaca"} color="#15803d" bg="#e8f5ee" icon="ti-cash" />
+        <Kartu label="SISA PEMBAYARAN" value={data.riwayatUangTerpasang ? rp(rekap.sisa) : "Belum terbaca"} color="#b91c1c" bg="#fef2f2" icon="ti-clock-dollar" />
       </div>
 
       <section className="crm-sec" style={{ marginBottom: 14 }}>
@@ -127,8 +134,8 @@ export default async function TagihanRawatInapPage({
             </div>
           </div>
         ))}
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>BELUM DITAGIH — pending, belum menjadi piutang / omzet</div>
-        <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 8 }}>Tetap manual: hanya item yang dipilih akan diterbitkan saat menekan Tagih sekarang.</div>
+        {data.belumDitagih.length > 0 && <>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Belum ditagih</div>
         {shift && data.riwayatUangTerpasang ? (
           <TagihSekarangForm
             key={`${data.record.id}:${data.belumDitagih.map((b) => b.id).join(",")}`}
@@ -145,13 +152,11 @@ export default async function TagihanRawatInapPage({
               : " Buka shift klinik untuk menagih."}
           </div>
         )}
+        </>}
         <div style={{ borderTop: "1px solid var(--bd)", marginTop: 12, paddingTop: 8, textAlign: "right", fontSize: 12 }}>
-          <div>Total invoice diterbitkan: {rp(rekap.tertagih)}</div>
-          <div>Estimasi pending (termasuk PPN {rp(estimasiPpn)}): {rp(rekap.pending)} — belum dibukukan</div>
           <div><b>Total transaksi: {rp(rekap.total)}</b></div>
-          <div>DP / total dibayar: {data.riwayatUangTerpasang ? rp(rekap.dibayar) : "Belum terbaca"}</div>
-          <div><b>Sisa tagihan: {data.riwayatUangTerpasang ? rp(rekap.sisa) : "Belum terbaca"}</b></div>
-          <div>Piutang dibukukan: {rp(data.piutang)} · Saldo uang muka belum terpakai: {data.riwayatUangTerpasang ? rp(data.saldoUangMuka) : "Belum terbaca"}</div>
+          <div>DP: {data.riwayatUangTerpasang ? rp(rekap.dibayar) : "Belum terbaca"}</div>
+          <div><b>Sisa pembayaran: {data.riwayatUangTerpasang ? rp(rekap.sisa) : "Belum terbaca"}</b></div>
         </div>
       </section>
 
@@ -293,18 +298,17 @@ export default async function TagihanRawatInapPage({
   );
 }
 
-function Kartu({ label, value, sub, color, bg, icon }: {
-  label: string; value: string; sub: string; color: string; bg: string; icon: string;
+function Kartu({ label, value, color, bg, icon }: {
+  label: string; value: string; color: string; bg: string; icon: string;
 }) {
   return (
-    <div className="card" style={{ padding: 14, display: "flex", alignItems: "center", gap: 11 }}>
+    <div className="card" style={{ padding: 10, display: "flex", alignItems: "center", gap: 9 }}>
       <div style={{ width: 40, height: 40, borderRadius: 10, background: bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <i className={`ti ${icon}`} style={{ color, fontSize: 20 }} />
       </div>
       <div>
         <div style={{ fontSize: 9.5, color, fontWeight: 700, letterSpacing: ".03em" }}>{label}</div>
         <div style={{ fontSize: 18, fontWeight: 800, color: "#141413", lineHeight: 1.2 }}>{value}</div>
-        <div style={{ fontSize: 9.5, color: "var(--tm)" }}>{sub}</div>
       </div>
     </div>
   );

@@ -45,16 +45,63 @@ const dasar = () => ({
   riwayatUangTerpasang: true,
 });
 
-const render = async () => renderToStaticMarkup(
-  await TagihanRawatInapPage({ params: Promise.resolve({ id: "rec-1" }), searchParams: Promise.resolve({}) }),
+const render = async (query: { success?: string; error?: string } = {}) => renderToStaticMarkup(
+  await TagihanRawatInapPage({ params: Promise.resolve({ id: "rec-1" }), searchParams: Promise.resolve(query) }),
 );
 
 beforeEach(() => { state.data = dasar(); state.shift = { id: "shift-1" }; state.role = "STAFF"; });
 
 describe("layar tagihan rawat inap berjalan", () => {
+  it.each(["tidak-dikenal", "__proto__", "constructor", "toString"])("success tak dikenal diabaikan tanpa modal/banner (%s)", async (success) => {
+    const html = await render({ success });
+    expect(html).not.toContain("<dialog");
+    expect(html).not.toContain('class="p2ban"');
+    expect(html).toContain("RIWAYAT PEMBAYARAN");
+  });
+
+  it.each([
+    ["tagih", "Tagihan tahap terbit."],
+    ["batal", "Kwitansi dibatalkan."],
+    ["lepas", "Pemakaian uang muka dilepas."],
+  ])("pesan sukses %s tetap tersedia", async (success, message) => {
+    const html = await render({ success });
+    expect(html).toContain(message);
+    expect(html).not.toContain('role="dialog"');
+  });
+
+  it.each(["normal", "tanpa shift", "riwayat belum terbaca"])("tanpa pending tidak menyisakan heading/form/helper (%s)", async (kondisi) => {
+    const data = dasar();
+    data.belumDitagih = [];
+    if (kondisi === "tanpa shift") state.shift = null;
+    if (kondisi === "riwayat belum terbaca") data.riwayatUangTerpasang = false;
+    state.data = data;
+    const html = await render();
+    for (const teks of ["BELUM DITAGIH", "Belum ditagih", "Tetap manual:", "sudah masuk tagihan tahap", "baris menunggu ditagih"]) {
+      expect(html).not.toContain(teks);
+    }
+    expect(html).not.toContain('name="ids"');
+    expect(html).toContain("RINCIAN TAGIHAN");
+    expect(html).toContain("Jasa tersimpan");
+    expect(html).toContain("Total transaksi: Rp 300.000");
+    expect(html).toContain("TAGIHAN TAHAP");
+    expect(html).toContain("RIWAYAT PEMBAYARAN");
+    if (kondisi === "tanpa shift") expect(html).toContain("Shift klinik belum dibuka");
+    if (kondisi === "riwayat belum terbaca") expect(html).toContain("Riwayat pembayaran dan uang muka belum tersedia");
+  });
+
+  it("pending tetap ditandai singkat dan dapat ditagih manual tanpa paragraf penjelasan", async () => {
+    const html = await render();
+    expect(html).toContain(">Belum ditagih<");
+    expect(html).toContain("Infus NaCl");
+    expect(html).toContain('name="ids"');
+    expect(html).toContain("Tagih sekarang");
+    expect(html).not.toContain("pending, belum menjadi piutang / omzet");
+    expect(html).not.toContain("Tetap manual:");
+  });
+
   it("menampilkan keempat bagian wajibnya", async () => {
     const html = await render();
-    for (const judul of ["BELUM DITAGIH", "TAGIHAN TAHAP", "RIWAYAT PEMBAYARAN", "TERIMA PEMBAYARAN"]) {
+    for (const judul of ["Belum ditagih", "TAGIHAN TAHAP", "RIWAYAT PEMBAYARAN", "TERIMA PEMBAYARAN"]) {
       expect(html).toContain(judul);
     }
   });
@@ -82,6 +129,26 @@ describe("layar tagihan rawat inap berjalan", () => {
     expect(html).toContain("/klinik/rawat-inap/rec-1/tagihan/kwitansi/kwt-1");
   });
 
+  it("rekap ringkas hanya berisi Total transaksi, DP, Sisa pembayaran tanpa catatan berulang", async () => {
+    const html = await render();
+    const cards = html.match(/class="card"[^]*?<\/div><\/div><\/div>/g)!;
+    expect(cards).toHaveLength(3);
+    expect(cards[0]).toContain("TOTAL TRANSAKSI");
+    expect(cards[0]).toContain("Rp 400.000");
+    expect(cards[1]).toContain(">DP<");
+    expect(cards[1]).toContain("Rp 150.000");
+    expect(cards[2]).toContain("SISA PEMBAYARAN");
+    expect(cards[2]).toContain("Rp 250.000");
+    for (const prose of [
+      "termasuk estimasi belum diterbitkan", "bersih, termasuk DP awal dan saldo uang muka",
+      "termasuk estimasi item belum diterbitkan", "Total invoice diterbitkan:",
+      "Estimasi pending (termasuk PPN", "Piutang dibukukan:", "Saldo uang muka belum terpakai:",
+    ]) expect(html).not.toContain(prose);
+    expect(html).toContain("Total transaksi: Rp 400.000");
+    expect(html).toContain("DP: Rp 150.000");
+    expect(html).toContain("Sisa pembayaran: Rp 250.000");
+  });
+
   it("rekap menampilkan header DP walau saldo wallet nol, bukan kartu minimum berulang", async () => {
     const data = dasar();
     data.tahap[0] = { ...data.tahap[0], total: 1_300_000, dp_amount: 500_000, dibayar: 500_000, sisa: 800_000, paid_status: "DP" };
@@ -92,8 +159,8 @@ describe("layar tagihan rawat inap berjalan", () => {
     state.data = data;
     const html = await render();
     expect(html).toContain("TOTAL TRANSAKSI");
-    expect(html).toContain("DP / TOTAL DIBAYAR");
-    expect(html).toContain("SISA TAGIHAN");
+    expect(html).toContain(">DP<");
+    expect(html).toContain("SISA PEMBAYARAN");
     expect(html).toContain("Rp 1.500.000");
     expect(html).toContain("Rp 500.000");
     expect(html).toContain("Rp 1.000.000");
@@ -115,9 +182,9 @@ describe("layar tagihan rawat inap berjalan", () => {
     expect(html).toContain("Diskon nota Rp 100.000");
     expect(html).toContain("PPN Rp 88.000");
     expect(html).toContain("Total invoice Rp 888.000");
-    expect(html).toContain("pending, belum menjadi piutang / omzet");
+    expect(html).toContain("Belum ditagih");
     expect(html).toContain("Total transaksi: Rp 1.088.000");
-    expect(html).toContain("Sisa tagihan: Rp 588.000");
+    expect(html).toContain("Sisa pembayaran: Rp 588.000");
     expect(html).toContain("Rp 294.000");
     expect(html.match(/class="card"/g)).toHaveLength(3);
     expect(html).toContain("DP lanjutan opsional");
