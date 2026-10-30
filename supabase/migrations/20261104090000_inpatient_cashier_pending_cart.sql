@@ -56,6 +56,16 @@ create function clinic_private.pending_cashier_rows(p_visit_id uuid)returns json
 $$;
 revoke all on function clinic_private.pending_cashier_rows(uuid)from public,anon,authenticated,service_role;
 
+-- Bind the current monetary quote and tax settings, not only rows/accounts.
+-- Amount/excess depend on the entered payment and are intentionally excluded.
+create function clinic_private.inpatient_cashier_snapshot(p_rows jsonb,p_quote jsonb)returns text
+language sql stable set search_path='' as $$
+ select md5(jsonb_build_array(p_rows,p_quote-array['token','amount','excess','lines','shift_id'],
+   jsonb_build_object('mode_pkp',s.mode_pkp,'ppn_rate',s.ppn_rate))::text)
+ from public.company_settings s where s.id=true;
+$$;
+revoke all on function clinic_private.inpatient_cashier_snapshot(jsonb,jsonb)from public,anon,authenticated,service_role;
+
 create function public.clinic_read_inpatient_cashier(p_record_id uuid,p_visit_id uuid)returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare quote jsonb;rows jsonb;history jsonb;receipts jsonb;applications jsonb;
@@ -69,7 +79,8 @@ begin
  select coalesce(jsonb_agg(to_jsonb(r)||jsonb_build_object('parts',(select coalesce(jsonb_agg(to_jsonb(p) order by p.urutan),'[]') from public.clinic_payment_receipt_parts p where p.receipt_id=r.id)) order by r.created_at,r.id),'[]') into receipts
  from public.clinic_payment_receipts r where r.visit_id=p_visit_id;
  select coalesce(jsonb_agg(to_jsonb(a) order by a.id),'[]') into applications from public.clinic_advance_applications a join public.invoices i on i.id=a.invoice_id where i.visit_id=p_visit_id and i.voided_at is null and a.released_at is null;
- return jsonb_build_object('snapshot',md5(jsonb_build_array(rows,quote->'accounts')::text),'rows',rows,'quote',quote-'lines'-'shift_id','history',history,'receipts',receipts,'applications',applications,
+ return jsonb_build_object('snapshot',clinic_private.inpatient_cashier_snapshot(rows,quote),'rows',rows,'quote',quote-'lines'-'shift_id','history',history,'receipts',receipts,'applications',applications,
+  'tax_settings',(select jsonb_build_object('mode_pkp',s.mode_pkp,'ppn_rate',s.ppn_rate) from public.company_settings s where s.id=true),
   'compound_pending',exists(select 1 from public.compounding_recipes c join public.medical_records m on m.id=c.medical_record_id where m.visit_id=p_visit_id and c.status='pending'));
 end$$;
 revoke all on function public.clinic_read_inpatient_cashier(uuid,uuid)from public,anon,authenticated,service_role;
@@ -89,6 +100,9 @@ begin
  initial_accounts:=quote->'accounts';
  locked_shift:=(quote->>'shift_id')::uuid;
  perform 1 from public.cashier_shifts where id=locked_shift for update;
+ -- Pin configuration after the shift, before invoice/stock/journal work, so
+ -- a tax writer cannot change the nominal between draft validation and352.
+ perform 1 from public.company_settings where id=true for share;
  quote:=clinic_private.inpatient_payment_quote(p_record_id,p_visit_id,p_parts);
  if locked_shift is distinct from (quote->>'shift_id')::uuid then raise exception 'SHIFT_INVALID: shift berubah';end if;
  if initial_accounts is distinct from quote->'accounts' then raise exception 'ACCOUNT_INVALID: rekening berubah saat menunggu shift; muat ulang';end if;
@@ -102,7 +116,7 @@ begin
   return cached.result;
  end if;
  before_rows:=clinic_private.pending_cashier_rows(p_visit_id);
- if p_snapshot is distinct from md5(jsonb_build_array(before_rows,quote->'accounts')::text)then raise exception 'CART_STALE: rekam medis/keranjang/rekening berubah; muat ulang dan periksa ulang';end if;
+ if p_snapshot is distinct from clinic_private.inpatient_cashier_snapshot(before_rows,quote)then raise exception 'CART_STALE: rekam medis/keranjang/rekening/pajak/saldo berubah; muat ulang dan periksa ulang';end if;
  begin
   insert into clinic_private.record_edit_permits values(txid_current(),auth.uid(),p_visit_id);
   for row_value in select value from jsonb_array_elements(p_rows)loop

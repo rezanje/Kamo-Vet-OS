@@ -26,14 +26,20 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   if (!visit) notFound();
 
   let invoiceQuery=supabase.from("invoices")
-    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name")
+    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name", {count:"exact"})
     .eq("visit_id",visitId).is("voided_at",null);
   if(requested)invoiceQuery=invoiceQuery.eq("id",requested);
-  // Rawat inap bertahap: tanpa `invoice_id` pilih tagihan TERBARU, bukan menggagalkan cetak.
-  const{data:invoice,error:invoiceError}=await invoiceQuery
+  const{data:invoice,error:invoiceError,count:invoiceCount}=await invoiceQuery
     .order("created_at",{ascending:false}).order("id",{ascending:false}).limit(1).maybeSingle();
   if(invoiceError)throw new Error("Invoice sumber belum dapat diverifikasi. Muat ulang sebelum mencetak.");
   if(!invoice||(requested&&invoice.id!==requested))notFound();
+  if(!requested&&(!Number.isInteger(invoiceCount)||invoiceCount===null))throw new Error("Jumlah invoice sumber belum dapat diverifikasi. Muat ulang sebelum mencetak.");
+  if(!requested&&(invoiceCount??0)>1)return <section className="card">
+    <h1>Pilih invoice yang akan dicetak</h1>
+    <p>Kunjungan ini memiliki beberapa invoice. Tidak ada invoice yang dipilih otomatis.</p>
+    <Link className="btn-acc" href={`/klinik/pembayaran/${visitId}/invoice?invoice_id=${invoice.id}`}>Invoice terbaru: {invoice.invoice_no}</Link>
+    <p><Link href={`/klinik/pembayaran/${visitId}`}>Pilih invoice lain dari riwayat pembayaran</Link></p>
+  </section>;
 
   const { data: items,error:itemsError } = await supabase
     .from("invoice_items").select("deskripsi, qty, harga, diskon_persen, jenis, compound_recipe_id, compounding_recipes(id, medical_records(visit_id))").eq("invoice_id", invoice.id).order("created_at");

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Popup } from "@/components/Popup";
 import type { createClient } from "@/lib/supabase/server";
 import { loadClinicPaymentMaster } from "@/lib/clinic-payment";
-import { getPajakSettings } from "@/lib/pajak";
+
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import type { InpatientCashierData } from "@/lib/inpatient-cashier";
@@ -14,12 +14,12 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
  db:Awaited<ReturnType<typeof createClient>>;visitId:string;recordId:string;branchId:string|null;userId:string;query:Query;
  patientLabel:string;
 }) {
- const [read,master,pajak,minDpPercent,profile]=await Promise.all([
-  db.rpc("clinic_read_inpatient_cashier",{p_record_id:recordId,p_visit_id:visitId}),loadClinicPaymentMaster(db,branchId),getPajakSettings(db),getDpMinimalPercent(db),
+ const [read,master,minDpPercent,profile]=await Promise.all([
+  db.rpc("clinic_read_inpatient_cashier",{p_record_id:recordId,p_visit_id:visitId}),loadClinicPaymentMaster(db,branchId),getDpMinimalPercent(db),
   db.from("profiles").select("role").eq("id",userId).maybeSingle(),
  ]);
  const data=read.data as InpatientCashierData|null;
- if(read.error||!data||typeof data.snapshot!=="string"||!Array.isArray(data.rows)||!Array.isArray(data.history)||!Array.isArray(data.receipts)||!Array.isArray(data.applications)||!data.quote||!Array.isArray(data.quote.accounts))return <section className="card" role="alert">Tagihan rawat inap belum dapat diverifikasi. Buka shift klinik dan muat ulang sebelum memproses uang. <Link href="/klinik/shift">Buka shift</Link></section>;
+ if(read.error||!data||typeof data.snapshot!=="string"||!Array.isArray(data.rows)||!Array.isArray(data.history)||!Array.isArray(data.receipts)||!Array.isArray(data.applications)||!data.quote||!Array.isArray(data.quote.accounts)||!data.tax_settings||typeof data.tax_settings.mode_pkp!=="boolean"||!Number.isFinite(Number(data.tax_settings.ppn_rate))||Number(data.tax_settings.ppn_rate)<0||Number(data.tax_settings.ppn_rate)>100)return <section className="card" role="alert">Tagihan rawat inap belum dapat diverifikasi. Buka shift klinik dan muat ulang sebelum memproses uang. <Link href="/klinik/shift">Buka shift</Link></section>;
  const savedInvoice=query.invoice?data.history.find(i=>i.id===query.invoice&&!i.correction_pending):null;
  const savedReceipt=query.receipt?data.receipts.find(r=>r.id===query.receipt&&r.status==="aktif"):null;
  const ids=query.applications?.split(",")??[];
@@ -33,7 +33,7 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
   <Popup message={query.error}/>
   {!query.error&&saved&&<Popup tone="success" title={settled&&data.history.length?"Pembayaran lunas":savedApplications?"Saldo pemilik diterapkan":savedReceipt?"Pembayaran diterima":"Transaksi tersimpan"} message={`${savedInvoice?.invoice_no??savedReceipt?.no_kwitansi??"Pemakaian saldo pemilik"} · Sisa pembayaran ${rp(data.quote.remaining)}`}/>}
   <InpatientCashier key={data.snapshot} data={data} visitId={visitId} recordId={recordId} requestKey={randomUUID()} masterObat={master.obat} masterJasa={master.jasa}
-   ppnRate={pajak.mode_pkp?Number(pajak.ppn_rate):0} minDpPercent={minDpPercent} bolehTerobos={bolehMenerobosDp(profile.data?.role??null)}/>
+   ppnRate={data.tax_settings.mode_pkp?Number(data.tax_settings.ppn_rate):0} minDpPercent={minDpPercent} bolehTerobos={bolehMenerobosDp(profile.data?.role??null)}/>
   <section className="card" style={{marginTop:12}}><h2 style={{fontSize:16}}>INVOICE / RIWAYAT TAHAP · BACA SAJA</h2>
    <p>Setiap pilihan membuka invoice yang benar-benar diterbitkan, bukan nomor invoice gabungan baru.</p>
    {data.history.map(invoice=><details key={invoice.id} style={{marginBottom:10}}><summary><b>{invoice.invoice_no}</b> · {invoice.paid_status} · Total {rp(invoice.total)} · Dibayar {rp(invoice.received)} · Sisa {rp(Math.max(0,invoice.total-invoice.received))} <Link href={`/klinik/pembayaran/${visitId}/invoice?invoice_id=${invoice.id}`} className="btn-acc">Cetak Invoice {invoice.invoice_no}</Link></summary>
