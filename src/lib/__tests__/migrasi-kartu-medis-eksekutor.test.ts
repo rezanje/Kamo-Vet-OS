@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bacaMaster } from "@/lib/migrasi-kartu-medis/baca-master";
 import { BukuBesar, type MetaRun } from "@/lib/migrasi-kartu-medis/buku-besar";
-import { jalankanMigrasi, readbackMigrasi, validasiJawabanBulk, type PayloadKirim } from "@/lib/migrasi-kartu-medis/eksekutor";
+import { jalankanMigrasi, readbackMigrasi, simpanKartuTertunda, validasiJawabanBulk, type PayloadKirim } from "@/lib/migrasi-kartu-medis/eksekutor";
 import type { KartuPemilikBaru, KlienMigrasi, KonteksJaringan, NamaRpcMigrasi } from "@/lib/migrasi-kartu-medis/klien";
 import { kunciHpIndonesia } from "@/lib/kontak";
 import { kunciTeksImporRekamMedis as kunci } from "@/lib/impor-rekam-medis";
@@ -32,6 +32,7 @@ class DbPalsu {
   hookScan: null | (() => void) = null;
   buatGagal: null | "sebelum" | "sesudah" = null;
   kartuDibuat: KartuPemilikBaru[] = [];
+  tertunda = new Map<string, { id: string; isi: string }>();
   klien(konteks: KonteksJaringan = { mode: "semua-cabang" }): KlienMigrasi {
     return {
       konteks,
@@ -73,6 +74,14 @@ class DbPalsu {
           if (this.rs1Rusak) return { data: null, error: { message: "gagal" } };
           const keys = args.p_keys as string[];
           return { data: this.visits.filter((v) => keys.includes(v.key)).map((v) => ({ kunci: v.key, visit_id: v.id })), error: null };
+        }
+        if (nama === "simpan_kartu_tertunda") {
+          return { data: this.rusak ? this.rusak(args.p_rows as unknown[]) : (args.p_rows as { source_key: string; batch_sha256: string }[]).map((k) => {
+            const ada = this.tertunda.get(k.source_key);
+            const isi = JSON.stringify(k);
+            if (!ada) { this.tertunda.set(k.source_key, { id: uuid(), isi }); return { source_key: k.source_key, status: "tersimpan", id: this.tertunda.get(k.source_key)!.id }; }
+            return { source_key: k.source_key, status: ada.isi === isi ? "sudah_ada" : "bentrok", id: ada.id };
+          }), error: null };
         }
         if (nama === "riwayat_bersama_hewan") {
           const rows = this.visits.filter((v) => v.pet_id === args.p_pet).map((v) => this.baris(v));
@@ -351,6 +360,24 @@ describe("eksekutor + ledger (klien palsu)", () => {
     db.customers.push({ id: uuid(), name: "KASIR BARU", phone: "081234567890", address: null, imported_at: null });
     expect(await jalankanMigrasi(db.klien(), r, a, { ukuranBatch: 2 })).toMatchObject({ tersimpan: 0, ditahanIdentitas: { "pemilik_baru.tidak_terbukti": 1 } });
     expect(db.panggilan).not.toContain("import_legacy_medical_records_bulk");
+  });
+  it("stores fixable incomplete cards in 'Perlu Dilengkapi' idempotently, bound to the file, and fails closed on bad answers", async () => {
+    const f = masterDasar(2);
+    f.pemilik[0].phone = null;
+    const db = new DbPalsu(); const r = await rencana(f);
+    expect(r.hitungan).toMatchObject({ siap: 0, tertunda: 2 });
+    const a = await simpanKartuTertunda(db.klien(), r);
+    expect(a.map((x) => x.status)).toEqual(["tersimpan", "tersimpan"]);
+    expect(a[0].kekurangan).toEqual(["hp_kosong"]);
+    expect([...db.tertunda.values()].every((v) => JSON.parse(v.isi).batch_sha256 === r.sha256Berkas)).toBe(true);
+    expect((await simpanKartuTertunda(db.klien(), r)).map((x) => x.status)).toEqual(["sudah_ada", "sudah_ada"]);
+    expect(db.panggilan).not.toContain("import_legacy_medical_records_bulk");
+    db.rusak = (rows) => rows.slice(1);
+    await expect(simpanKartuTertunda(db.klien(), r)).rejects.toThrow("tidak lengkap");
+    db.rusak = (rows) => rows.map(() => ({ source_key: "lain", status: "tersimpan", id: uuid() }));
+    await expect(simpanKartuTertunda(db.klien(), r)).rejects.toThrow("rusak");
+    db.rusak = null; db.role = "DOCTOR";
+    await expect(simpanKartuTertunda(db.klien(), r)).rejects.toThrow("OWNER");
   });
   it("fails closed on a malformed identity scan", async () => {
     const db = new DbPalsu(); const r = await rencana(masterDasar(1)); const a = BukuBesar.buka(folder(), meta(r)).buku;

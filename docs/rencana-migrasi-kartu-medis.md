@@ -810,3 +810,111 @@ node scripts/migrasi-kartu-medis-produksi.mjs terapkan  (opsi sama) --ledger <di
 
 `--hari-ini` harus sama pada setiap lanjutan karena ikut sidik rencana. Kalau koneksi putus, jalankan perintah yang sama lagi.
 Ledger membuktikan dulu apa yang sudah tersimpan sebelum mengirim ulang.
+
+---
+
+## 14. Ruang tunggu "Perlu Dilengkapi" (keputusan OWNER 2026-10-30, opsi A)
+
+Masalahnya: banyak kartu lama yang tidak lengkap, dan tim tidak mungkin menyusulkan datanya sekaligus. Solusinya, kartu
+seperti itu disimpan **utuh** di ruang tunggu terpisah. Tempatnya bukan di pelanggan/hewan/kunjungan, sehingga:
+- tidak ada nomor karangan;
+- tidak ada salah gabung;
+- tidak ada efek Q01.
+
+Tim melengkapinya dari aplikasi. Begitu lengkap, kartu dipindah ke riwayat resmi lewat jalur impor yang sudah ada.
+
+### 14.1 Database (migrasi `20261104140000_kartu_rekam_medis_tertunda.sql`, belum diterapkan ke produksi)
+
+Tabel `kamo_import.kartu_tertunda`:
+- Pemiliknya role penulis `kamo_legacy_import_writer`. RLS aktif tanpa kebijakan, dan tidak ada GRANT ke `anon`/`authenticated`/`service_role`.
+- Kolom: jejak sumber (unik), SHA berkas, ID lokal, berkas/sheet, `kekurangan[]`, `isi` (jsonb, kolom dibatasi), status
+  `perlu_dilengkapi | selesai | dibatalkan`, `visit_id`, `penyelesaian`, dan alasan batal.
+- Tidak ada DELETE.
+
+Fungsi `kamo_import.*` (SECURITY DEFINER milik role penulis, masing-masing `pastikan_pengimpor()`):
+- **`simpan_kartu_tertunda`** — idempoten per jejak, statusnya salah satu dari:
+  - `tersimpan`;
+  - `sudah_ada` (isi + kekurangan sama);
+  - `bentrok` (isi beda; kartu lama tidak ditimpa);
+  - `sudah_masuk` (jejak sudah jadi riwayat resmi).
+
+  Kolom tak dikenal, teks melebihi batas kolom DB (tidak dipotong), atau kartu tanpa isi klinis ditolak.
+- **`baca_kartu_tertunda`** — daftar berhalaman (≤200) dengan pencarian, atau detail satu kartu.
+- **`kunci_kartu_tertunda` / `tutup_kartu_tertunda`** — mengunci kartu (`FOR UPDATE`) lalu menutupnya:
+  - selesai: hanya bila kunjungan dengan jejak itu memang ada;
+  - batal: wajib alasan.
+
+RPC publik (SECURITY INVOKER, OWNER/ADMIN): `simpan_kartu_tertunda`, `daftar_kartu_tertunda`, `detail_kartu_tertunda`,
+`batalkan_kartu_tertunda`, dan `lengkapi_kartu_tertunda`. Aturan `lengkapi_kartu_tertunda` (satu transaksi):
+- **Pemilik:**
+  - Dipilih eksplisit, atau dicari lewat HP isian / HP kartu yang sah. HP kartu bertanda `hp_*` tidak pernah dipakai otomatis.
+  - HP harus 10–15 angka dan bukan angka berulang.
+  - Lebih dari satu pemilik ber-HP sama → ditolak, petugas wajib memilih.
+  - Tidak ada pemilik → kartu pemilik **baru** lewat INSERT biasa (RLS pemanggil) dengan `imported_at`.
+  - Pemilik yang sudah ada tidak diubah.
+- **Hewan:** dipilih eksplisit, atau dicari lewat nama kartu/isian. Lebih dari satu hewan senama (termasuk nonaktif) → ditolak, wajib pilih.
+- **Tanggal:** wajib dipilih bila kartu bertanda `tanggal_bentrok`/`tanggal_kosong`. Rentangnya 1990 sampai hari ini (WIB), disimpan sebagai 00:00 WIB.
+- **Penulisan:** lewat `import_legacy_medical_record_resolved` (jejak dan sidik sama; tanpa cabang). Kartu lalu ditutup dengan `visit_id`.
+  Kalau gagal di tengah, seluruh transaksi batal: tidak ada pemilik baru yang tertinggal.
+
+Uji `scripts/test-kartu-tertunda-postgres.py`: **42/42 di PG16 dan PG17**. Cakupannya:
+- peran DOCTOR, OWNER nonaktif, dan anon ditolak; akses tabel langsung ditolak;
+- simpan ulang / bentrok / sudah masuk;
+- validasi isi;
+- HP baru → pemilik bertanda impor;
+- HP sama nama beda → pemilik lama utuh;
+- dua pemilik ber-HP sama → harus pilih;
+- tanggal wajib dan tanggal masa depan ditolak;
+- hewan senama → harus pilih;
+- atomik;
+- batal wajib alasan;
+- tidak ada efek keuangan/stok/quest;
+- semua kebijakan, fungsi, dan hak lama identik (migrasi hanya menambah).
+
+### 14.2 Runner
+
+Rencana menyiapkan `tertunda` untuk baris tidak siap yang **semua** alasannya bisa dilengkapi petugas:
+
+| Alasan | Kode kekurangan |
+|---|---|
+| HP kosong | `hp_kosong` |
+| HP tidak valid | `hp_tidak_valid` |
+| HP sel angka | `hp_angka` |
+| Nama pemilik kosong | `nama_pemilik_kosong` |
+| Nama hewan kosong | `nama_hewan_kosong` |
+| Tanggal tab ≠ sel / usulan ≠ sumber | `tanggal_bentrok` |
+| Tanggal belum ada | `tanggal_kosong` |
+| Salinan identik | `kemungkinan_salinan` |
+
+Syarat tambahannya:
+- persetujuan tetap wajib;
+- teks terlalu panjang, jejak/Mapping bermasalah, dan kartu tanpa isi klinis tidak masuk.
+
+Isi kartu hanya berisi nilai yang terbaca dari master. HP sel angka disimpan sebagai angka sumber dan ditandai.
+
+`terapkan` menyimpan kartu ini setelah readback, lewat `simpan_kartu_tertunda` (idempoten). Pada master asli, **12 kartu**
+akan masuk ruang tunggu:
+- LOCAL-RM-003, 006, 012–021;
+- RM-004 (tanpa isi klinis) tidak ikut.
+
+### 14.3 Aplikasi
+
+**Klinik → Rekam Medis → "Perlu dilengkapi"** (`/klinik/rekam-medis/perlu-dilengkapi`), khusus OWNER/ADMIN:
+- Daftar per status, dengan pencarian dan halaman.
+- Halaman kartu menampilkan isi baca-saja, label kekurangan, dan pilihan tanggal dari kartu.
+- "Periksa nomor" menampilkan pemilik ber-HP sama lewat pemindai identitas yang sudah ada:
+  - lebih dari satu pemilik = pilih;
+  - lebih dari satu hewan senama = pilih;
+  - tidak ada pemilik = pemilik baru.
+- Lalu "Masukkan ke riwayat pasien", atau "Batalkan" dengan alasan.
+
+Galat database yang memang untuk petugas diteruskan; selain itu diganti pesan generik.
+
+Akses dokter belum dibuka (konsisten dengan riwayat bersama RS-2 yang hanya untuk OWNER; D3). Itu keputusan terpisah.
+
+### 14.4 Rilis (butuh izin terpisah)
+
+1. Merge PR dan terapkan migrasi `20261104140000` ke produksi.
+2. Deploy aplikasi.
+3. Jalankan ulang `terapkan` untuk batch `ac6d0afb…`: 8 riwayat tetap `sudah_ada`, 12 kartu masuk "Perlu dilengkapi".
+4. Cek tampilan.

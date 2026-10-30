@@ -201,4 +201,32 @@ describe("rencana dry-run offline", () => {
     expect(dengan.sidikRencana).not.toBe(tanpa.sidikRencana);
     expect(() => buatRencana(h.versi, h.sha256, h.blok, { ...OPSI, persetujuanBerkas: "0".repeat(64) })).toThrow(/tidak cocok/);
   });
+  it("prepares 'Perlu Dilengkapi' cards only for fixable gaps, with source values kept and nothing invented", async () => {
+    const f = masterDasar(6);
+    f.pemilik.push(
+      { local_owner_id: "P2", name: "UJI TANPA HP", phone: null, decision: "SETUJU" },
+      { local_owner_id: "P3", name: null, phone: 81234500001, decision: "SETUJU" },
+    );
+    f.hewan.push({ local_pet_id: "H2", local_owner_id: "P2", name: "UJI H2", decision: "SETUJU" }, { local_pet_id: "H3", local_owner_id: "P3", name: null, decision: "SETUJU" });
+    f.riwayat[0].local_pet_id = "H2";                                   // hp_kosong
+    f.riwayat[1].local_pet_id = "H3";                                   // hp_angka + nama pemilik/hewan kosong
+    f.perSheet[2].tab_date = tgl("2026-02-01");                         // tanggal bentrok
+    f.riwayat[3].doctor = "x".repeat(101);                              // tidak bisa dilengkapi petugas
+    f.riwayat[4].local_pet_id = "H2"; f.riwayat[4].note = f.riwayat[0].note; f.riwayat[4].anamnesis = f.riwayat[0].anamnesis;
+    f.riwayat[4].clinical_findings = f.riwayat[0].clinical_findings; f.riwayat[4].diagnosis = f.riwayat[0].diagnosis; f.riwayat[4].therapy = f.riwayat[0].therapy;
+    f.riwayat[4].record_no = f.riwayat[0].record_no; f.riwayat[4].record_date = f.riwayat[0].record_date; f.perSheet[4].tab_date = f.perSheet[0].tab_date; f.perSheet[4].cell_date = f.perSheet[0].cell_date;
+    const r = await rencana(f);
+    expect(baris(r, "R1").tertunda).toMatchObject({ kekurangan: ["hp_kosong", "kemungkinan_salinan"], source_key: f.perSheet[0].source_key, isi: { owner_name: "UJI TANPA HP", patient_name: "UJI H2" } });
+    expect(baris(r, "R1").tertunda!.isi.phone).toBeUndefined();
+    expect(baris(r, "R2").tertunda).toMatchObject({ kekurangan: ["hp_angka", "nama_hewan_kosong", "nama_pemilik_kosong"], isi: { phone: "81234500001" } });
+    expect(baris(r, "R2").tertunda!.isi.owner_name).toBeUndefined();
+    expect(baris(r, "R3").tertunda).toMatchObject({ kekurangan: ["tanggal_bentrok"], isi: { tanggal_tab: "2026-02-01", tanggal_sel: "2026-01-17", tanggal_usulan: "2026-01-17" } });
+    expect(baris(r, "R4").tertunda).toBeNull();
+    expect(baris(r, "R5").tertunda!.kekurangan).toEqual(["hp_kosong", "kemungkinan_salinan"]);
+    expect(baris(r, "R6").tertunda).toBeNull();                         // siap
+    expect(r.hitungan.tertunda).toBe(4);
+    // Tanpa persetujuan: kartu tertunda juga tidak disiapkan.
+    for (const x of f.riwayat) x.decision = null;
+    expect((await rencana(f)).hitungan.tertunda).toBe(0);
+  });
 });

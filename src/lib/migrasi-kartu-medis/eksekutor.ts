@@ -595,3 +595,32 @@ export async function validasiDb(klien: KlienMigrasi, rencana: Rencana): Promise
     baris,
   };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Ruang tunggu "Perlu Dilengkapi": kartu tidak lengkap disimpan utuh (bukan riwayat resmi), idempoten per jejak.
+// ---------------------------------------------------------------------------------------------------------------
+
+export type StatusKartuTertunda = "tersimpan" | "sudah_ada" | "bentrok" | "sudah_masuk";
+export type HasilKartuTertunda = { local_record_id: string; status: StatusKartuTertunda; id: string | null; kekurangan: string[] };
+
+export async function simpanKartuTertunda(klien: KlienMigrasi, rencana: Rencana): Promise<HasilKartuTertunda[]> {
+  await pastikanPemanggil(klien);
+  const kartu = rencana.baris.flatMap((r) => (r.tertunda ? [r.tertunda] : []));
+  const hasil: HasilKartuTertunda[] = [];
+  for (let i = 0; i < kartu.length; i += 500) {
+    const potong = kartu.slice(i, i + 500);
+    const { data, error } = await klien.rpc("simpan_kartu_tertunda", {
+      p_rows: potong.map((k) => ({ ...k, batch_sha256: rencana.sha256Berkas })),
+    });
+    if (error || !Array.isArray(data) || data.length !== potong.length) throw new GagalTertutup("Penyimpanan kartu tertunda gagal atau tidak lengkap.");
+    data.forEach((item, j) => {
+      const o = item as Record<string, unknown>;
+      if (!o || o.source_key !== potong[j].source_key || !["tersimpan", "sudah_ada", "bentrok", "sudah_masuk"].includes(o.status as string)
+        || (o.id !== null && !(typeof o.id === "string" && UUID_RE.test(o.id))) || (o.status !== "sudah_masuk" && o.id === null)) {
+        throw new GagalTertutup("Jawaban penyimpanan kartu tertunda rusak.");
+      }
+      hasil.push({ local_record_id: potong[j].local_record_id, status: o.status as StatusKartuTertunda, id: o.id as string | null, kekurangan: potong[j].kekurangan });
+    });
+  }
+  return hasil;
+}

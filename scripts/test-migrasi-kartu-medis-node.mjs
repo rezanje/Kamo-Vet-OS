@@ -94,6 +94,7 @@ function klienPsql(uid, konteks, opsi = {}) {
       let sql;
       if (nama === "import_legacy_identity_scan") sql = `select public.import_legacy_identity_scan(${arr(args.p_source_keys)}, ${arr(args.p_owner_keys)}, ${arr(args.p_phone_keys)});`;
       else if (nama === "import_legacy_medical_records_bulk") sql = `select public.import_legacy_medical_records_bulk(${lit(JSON.stringify(args.p_rows))}::jsonb);`;
+      else if (nama === "simpan_kartu_tertunda") sql = `select public.simpan_kartu_tertunda(${lit(JSON.stringify(args.p_rows))}::jsonb);`;
       else if (nama === "hasil_impor_rekam_medis") sql = `select coalesce(jsonb_agg(t),'[]'::jsonb) from public.hasil_impor_rekam_medis(${arr(args.p_keys)}) t;`;
       else if (nama === "detail_riwayat_bersama") sql = `select coalesce(jsonb_agg(t),'[]'::jsonb) from public.detail_riwayat_bersama(${lit(String(args.p_visit))}::uuid) t;`;
       else if (nama === "riwayat_bersama_hewan") {
@@ -398,6 +399,26 @@ async function main() {
     catat("HP sama nama beda (pemilik sudah ada): dipakai, nama/alamat lama utuh, tanpa kartu baru",
       j2.tersimpan === 1 && rb2.ok && sqlSuper("select count(*)||'|'||string_agg(name||'|'||coalesce(address,''),';') from public.customers where public.import_legacy_phone_key(phone)=public.import_legacy_phone_key('082300000001')") === "1|NAMA LAMA DB|Alamat DB"
       && sqlSuper("select customer_id::text from public.visits where legacy_source_key='lama.xlsx::Sheet1'") === "0d000000-0000-4000-8000-000000000031", JSON.stringify({ j2, rb2 }));
+  }
+
+  // 13b) Kartu tidak lengkap -> ruang tunggu "Perlu Dilengkapi" lewat RPC asli; idempoten; tidak menyentuh riwayat resmi.
+  {
+    const f = fixture.masterDasar(2);
+    f.pemilik[0] = { ...f.pemilik[0], name: "UJI TERTUNDA RUNNER", phone: null };
+    f.perSheet.forEach((m, i) => { m.source_key = `tertunda-${i}.xlsx::Sheet1`; m.file = `tertunda-${i}.xlsx`; m.sheet = "Sheet1"; });
+    f.riwayat.forEach((x) => { x.source_sheet = "Sheet1"; });
+    const r = await buatRencana(f);
+    const sebelum = hitung("legacy_source_key like 'tertunda-%'");
+    const a = await eks.simpanKartuTertunda(klienPsql(OWNER, SEMUA), r);
+    const b = await eks.simpanKartuTertunda(klienPsql(OWNER, SEMUA), r);
+    catat("Kartu tanpa HP masuk 'Perlu Dilengkapi' (2 tersimpan, kirim ulang 2 sudah_ada), riwayat resmi tidak bertambah",
+      a.map((x) => x.status).join() === "tersimpan,tersimpan" && b.map((x) => x.status).join() === "sudah_ada,sudah_ada"
+      && hitung("legacy_source_key like 'tertunda-%'") === sebelum
+      && sqlSuper("select count(*)||'|'||string_agg(distinct array_to_string(kekurangan,','),';') from kamo_import.kartu_tertunda where source_key like 'tertunda-%'") === "2|hp_kosong",
+      JSON.stringify({ a, b }));
+    let pesan = "";
+    try { await eks.simpanKartuTertunda(klienPsql(DOCTOR, SEMUA), r); } catch (e) { pesan = e.message; }
+    catat("DOCTOR tidak bisa menyimpan kartu tertunda (gagal sebelum RPC)", /OWNER/.test(pesan), pesan);
   }
 
   // 13) Q01: tidak ada kartu pelanggan buatan runner tanpa penanda impor (hanya fixture superuser 0d… yang boleh NULL).

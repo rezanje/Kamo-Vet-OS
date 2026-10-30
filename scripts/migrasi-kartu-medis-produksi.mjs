@@ -122,7 +122,7 @@ async function main() {
   };
   try {
     laporan.validasiDb = await eksekutor.validasiDb(klien, rencana);
-    const ringkasValidasi = { siapMasuk: laporan.validasiDb.siapMasuk, sudahAda: laporan.validasiDb.sudahAda, ditahan: laporan.validasiDb.ditahan, pemilikBaru: laporan.validasiDb.pemilikBaru, perAlasanTahan: laporan.validasiDb.perAlasanTahan };
+    const ringkasValidasi = { siapMasuk: laporan.validasiDb.siapMasuk, sudahAda: laporan.validasiDb.sudahAda, ditahan: laporan.validasiDb.ditahan, pemilikBaru: laporan.validasiDb.pemilikBaru, perAlasanTahan: laporan.validasiDb.perAlasanTahan, kandidatPerluDilengkapi: rencana.hitungan.tertunda };
     process.stdout.write(`${JSON.stringify({ rencana: rencana.hitungan, validasiDb: ringkasValidasi }, null, 1)}\n`);
     if (perintah === "validasi-db") { tulis(opsi.laporan, laporan); return; }
 
@@ -142,6 +142,13 @@ async function main() {
         ...state.ditahanIdentitas.map((d) => ({ local_record_id: d.local_record_id, status: "ditahan", alasan: d.alasan })),
       ];
       laporan.pemilikBaru = state.pemilikBaru ?? [];
+      if (perintah === "terapkan" && laporan.readback.status !== "selisih") {
+        // Kartu tidak lengkap -> ruang tunggu "Perlu Dilengkapi" (bukan riwayat resmi). Idempoten per jejak.
+        laporan.kartuTertunda = await eksekutor.simpanKartuTertunda(klien, rencana);
+        const hitung = {};
+        for (const k of laporan.kartuTertunda) hitung[k.status] = (hitung[k.status] ?? 0) + 1;
+        process.stdout.write(`${JSON.stringify({ kartuTertunda: hitung }, null, 1)}\n`);
+      }
       process.stdout.write(`${JSON.stringify({ readback: { ok: laporan.readback.ok, status: laporan.readback.status, diperiksa: laporan.readback.diperiksa, disposisi: laporan.readback.disposisi, selisih: laporan.readback.selisih.length } }, null, 1)}\n`);
       tulis(opsi.laporan, laporan);
       if (!laporan.readback.ok) process.exitCode = 4;

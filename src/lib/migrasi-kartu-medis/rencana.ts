@@ -41,6 +41,23 @@ export type PayloadBaris = {
 
 export type StatusRencana = "siap" | "karantina" | "dikecualikan";
 
+/** Kode kekurangan kartu tertunda (sama dengan CHECK tabel kamo_import.kartu_tertunda). */
+export type KodeKekurangan = "hp_kosong" | "hp_tidak_valid" | "hp_angka" | "nama_pemilik_kosong" | "nama_hewan_kosong"
+  | "tanggal_bentrok" | "tanggal_kosong" | "kemungkinan_salinan";
+
+/**
+ * Kartu yang belum lengkap tapi bisa dilengkapi petugas ("Perlu Dilengkapi"): disimpan utuh ke ruang tunggu, BUKAN ke
+ * riwayat resmi. Hanya bila SEMUA alasannya termasuk kekurangan yang bisa dilengkapi; selain itu tetap di master.
+ */
+export type KartuTertunda = {
+  source_key: string;
+  local_record_id: string;
+  sumber_berkas: string | null;
+  sumber_sheet: string | null;
+  kekurangan: KodeKekurangan[];
+  isi: Record<string, string>;
+};
+
 export type BarisRencana = {
   local_record_id: string;
   local_pet_id: string;
@@ -57,6 +74,8 @@ export type BarisRencana = {
   payload: PayloadBaris | null;
   /** SHA-256 payload kanonik (bukan sidik DB `import_legacy_row_hash`). */
   sidikPayload: string | null;
+  /** Untuk baris karantina/dikecualikan yang bisa dilengkapi petugas; null selain itu. */
+  tertunda: KartuTertunda | null;
 };
 
 export type HitunganRencana = {
@@ -72,6 +91,8 @@ export type HitunganRencana = {
   pemilik: number;
   hewan: number;
   mappingTakTerpakai: number;
+  /** Baris tidak siap yang bisa masuk ruang tunggu "Perlu Dilengkapi". */
+  tertunda: number;
 };
 
 export type Rencana = {
@@ -210,7 +231,7 @@ export function kanonikJson(value: unknown): string {
 
 export const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
-type Pemilik = { id: string; baris: BarisBlok; alasan: string[]; setuju: boolean; name: string | null; phone: string | null; address: string | null; uuid: string | null };
+type Pemilik = { id: string; baris: BarisBlok; alasan: string[]; setuju: boolean; name: string | null; phone: string | null; address: string | null; uuid: string | null; phoneAngka: string | null };
 type Hewan = { id: string; ownerId: string; alasan: string[]; setuju: boolean; name: string | null; species: string | null; breed: string | null; gender: string | null; dob: string | null; uuid: string | null; dobMentah: boolean };
 
 function kumpulkanGanda<T extends { id: string }>(items: T[]): Set<string> {
@@ -233,6 +254,7 @@ function bacaPemilik(blok: Blok): Pemilik[] {
     return {
       id: id.ok ? id.nilai : `#baris${b.baris}`, baris: b, alasan, setuju: keputusan(b.sel.decision),
       name: name.ok ? name.nilai : null, phone: phone.ok ? phone.nilai : null, address: address.ok ? address.nilai : null, uuid: uuid.ok ? uuid.nilai : null,
+      phoneAngka: (() => { const sel = selAsli(b.sel.phone); return sel.jenis === "angka" && Number.isSafeInteger(sel.angka) ? String(sel.angka) : null; })(),
     };
   });
 }
@@ -386,15 +408,26 @@ export function buatRencana(versi: string, sha256Berkas: string, blok: Record<Na
         therapy: therapy.ok ? therapy.nilai : null,
       };
     }
+    // Bahan kartu tertunda: nilai yang terbaca saja (tidak pernah dikarang); kelayakan diputuskan setelah tabrakan.
+    const isiTertunda: Record<string, string | null> | null = sourceKey && bentuk && [note, anamnesis, clinical, diagnosis, therapy, doctor, recordNo].every((n) => n.ok) ? {
+      owner_name: owner?.name ?? null, phone: owner?.phone ?? owner?.phoneAngka ?? null, address: owner?.address ?? null,
+      patient_name: pet?.name ?? null, species: pet?.species ?? null, breed: pet?.breed ?? null, gender: pet?.gender ?? null, dob: pet?.dob ?? null,
+      record_no: recordNo.ok ? recordNo.nilai : null, tanggal_usulan: recordDate.ok ? recordDate.nilai : null,
+      doctor: doctor.ok ? doctor.nilai : null, note: note.ok ? note.nilai : null, anamnesis: anamnesis.ok ? anamnesis.nilai : null,
+      clinical_findings: clinical.ok ? clinical.nilai : null, diagnosis: diagnosis.ok ? diagnosis.nilai : null, therapy: therapy.ok ? therapy.nilai : null,
+    } : null;
+    const tanggalSumber = maps.length === 1 ? { tab: tanggalMapping(maps[0].sel.tab_date, "t"), sel: tanggalMapping(maps[0].sel.cell_date, "s") } : null;
+    if (isiTertunda && tanggalSumber?.tab.ok && tanggalSumber.tab.nilai) isiTertunda.tanggal_tab = tanggalSumber.tab.nilai;
+    if (isiTertunda && tanggalSumber?.sel.ok && tanggalSumber.sel.nilai) isiTertunda.tanggal_sel = tanggalSumber.sel.nilai;
     return {
       local_record_id,
       local_pet_id: petRef.ok ? petRef.nilai : "",
       local_owner_id: pet?.ownerId ?? "",
       status, disetujui, alasan, peringatan: peringatanBaris, bentukJejak: bentuk,
       customer_uuid: owner?.uuid ?? null, pet_uuid: pet?.uuid ?? null,
-      payload, sidikPayload: payload ? sha256(kanonikJson(payload)) : null,
-      // jejak untuk tahap tabrakan (tidak diekspor)
-      ...{ _jejak: sourceKey } as object,
+      payload, sidikPayload: payload ? sha256(kanonikJson(payload)) : null, tertunda: null,
+      // jejak, bahan kartu tertunda, dan alasan induk untuk tahap berikut (tidak diekspor)
+      ...{ _jejak: sourceKey, _isi: isiTertunda, _induk: [...(owner?.alasan ?? []), ...(pet?.alasan ?? [])], _sumber: [sourceFile, sourceSheet] } as object,
     } as BarisRencana;
   });
 
@@ -427,8 +460,63 @@ export function buatRencana(versi: string, sha256Berkas: string, blok: Record<Na
   for (const grup of perIsi.values()) if (grup.length > 1) grup.forEach((r) => tandai(r, "isi.ganda"));
   // Karantina mengalahkan pengecualian: buang alasan pengecualian bila sudah karantina.
   for (const r of baris) {
+    (r as unknown as { _kunci?: string | null })._kunci = (r as unknown as { _jejak?: string | null })._jejak ?? null;
     delete (r as unknown as { _jejak?: string })._jejak;
     if (r.status === "karantina") r.alasan = r.alasan.filter((a) => !["belum_disetujui", "tanggal.belum_terselesaikan", "tanpa_isi_klinis"].includes(a));
+  }
+
+  // Ruang tunggu "Perlu Dilengkapi": hanya bila SETIAP alasan bisa dilengkapi petugas.
+  const PETA: Record<string, KodeKekurangan | "induk"> = {
+    "tanggal.tab_beda_sel": "tanggal_bentrok", "tanggal.usulan_beda_sumber": "tanggal_bentrok",
+    "tanggal.belum_terselesaikan": "tanggal_kosong", "isi.ganda": "kemungkinan_salinan",
+    "induk.pemilik_karantina": "induk", "induk.hewan_karantina": "induk",
+  };
+  const PETA_INDUK: Record<string, KodeKekurangan> = {
+    "pemilik.phone.kosong": "hp_kosong", "pemilik.phone.tidak_valid": "hp_tidak_valid", "pemilik.phone.sel_angka": "hp_angka",
+    "pemilik.name.kosong": "nama_pemilik_kosong", "hewan.name.kosong": "nama_hewan_kosong",
+  };
+  for (const r of baris) {
+    const x = r as unknown as { _isi: Record<string, string | null> | null; _induk: string[]; _sumber: [string | null, string | null] };
+    const isi = x._isi;
+    if (r.status !== "siap" && isi) {
+      const kode = new Set<KodeKekurangan>();
+      // Persetujuan (berkas atau ketiga tingkat) tetap syarat; kartu tertunda bukan jalan pintas otorisasi.
+      let layak = r.disetujui;
+      for (const a of r.alasan) {
+        const k = PETA[a];
+        if (!k) { layak = false; break; }
+        if (k !== "induk") kode.add(k);
+      }
+      if (layak && (r.alasan.includes("induk.pemilik_karantina") || r.alasan.includes("induk.hewan_karantina"))) {
+        for (const a of x._induk) {
+          const k = PETA_INDUK[a];
+          if (!k) { layak = false; break; }
+          kode.add(k);
+        }
+      }
+      const klinis = ["note", "anamnesis", "clinical_findings", "diagnosis", "therapy"].some((f) => isi[f]);
+      if (layak && kode.size && klinis) {
+        r.tertunda = {
+          source_key: (r as unknown as { _kunci: string })._kunci, local_record_id: r.local_record_id,
+          sumber_berkas: x._sumber[0], sumber_sheet: x._sumber[1], kekurangan: [...kode].sort(),
+          isi: Object.fromEntries(Object.entries(isi).filter((e): e is [string, string] => e[1] !== null)),
+        };
+      }
+    }
+    delete (x as { _isi?: unknown })._isi;
+    delete (x as { _induk?: unknown })._induk;
+    delete (x as { _sumber?: unknown })._sumber;
+    delete (r as unknown as { _kunci?: string })._kunci;
+  }
+  // Salinan identik di antara kartu tertunda (hewan lokal + isi sama, jejak beda): ditandai, keduanya tetap disimpan.
+  const perIsiTertunda = new Map<string, BarisRencana[]>();
+  for (const r of baris) {
+    if (!r.tertunda) continue;
+    const k = `${r.local_pet_id}|${kanonikJson(r.tertunda.isi)}`;
+    perIsiTertunda.set(k, [...(perIsiTertunda.get(k) ?? []), r]);
+  }
+  for (const grup of perIsiTertunda.values()) {
+    if (grup.length > 1) for (const r of grup) if (!r.tertunda!.kekurangan.includes("kemungkinan_salinan")) r.tertunda!.kekurangan = [...r.tertunda!.kekurangan, "kemungkinan_salinan" as const].sort();
   }
 
   const perAlasan: Record<string, number> = {};
@@ -444,6 +532,7 @@ export function buatRencana(versi: string, sha256Berkas: string, blok: Record<Na
     pemilik: pemilik.length,
     hewan: hewan.length,
     mappingTakTerpakai: [...mapping.keys()].filter((k) => !riwayatIds.has(k)).length,
+    tertunda: baris.filter((r) => r.tertunda).length,
   };
   if (hitungan.siap + hitungan.karantina + hitungan.dikecualikan !== hitungan.riwayat) throw new Error("Rekonsiliasi hitungan rencana gagal.");
   if (hitungan.mappingTakTerpakai) peringatan.push(`${hitungan.mappingTakTerpakai} baris mapping tidak merujuk riwayat mana pun.`);

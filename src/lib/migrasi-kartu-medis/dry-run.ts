@@ -16,7 +16,11 @@ export type LaporanDryRun = {
   sidikRencana: string | null;
   peringatan: string[];
   hitungan: HitunganRencana | null;
-  baris: { local_record_id: string; status: StatusRencana; disetujui: boolean; alasan: string[]; peringatan: string[]; bentukJejak: string | null }[];
+  baris: {
+    local_record_id: string; status: StatusRencana; disetujui: boolean; alasan: string[]; peringatan: string[]; bentukJejak: string | null;
+    /** Kekurangan bila kartu bisa masuk "Perlu Dilengkapi" (kode saja, tanpa isi). */
+    tertunda: string[] | null;
+  }[];
 };
 
 /** Tanggal hari ini menurut WIB (YYYY-MM-DD). */
@@ -45,6 +49,6 @@ export async function dryRunOffline(bytes: Uint8Array, opsi: OpsiDryRun = {}): P
   return {
     ...dasar, ok: true, galat: [], versi: rencana.versi, sha256Berkas: rencana.sha256Berkas, sidikRencana: rencana.sidikRencana,
     peringatan: rencana.peringatan, hitungan: rencana.hitungan,
-    baris: rencana.baris.map((r) => ({ local_record_id: r.local_record_id, status: r.status, disetujui: r.disetujui, alasan: r.alasan, peringatan: r.peringatan, bentukJejak: r.bentukJejak })),
+    baris: rencana.baris.map((r) => ({ local_record_id: r.local_record_id, status: r.status, disetujui: r.disetujui, alasan: r.alasan, peringatan: r.peringatan, bentukJejak: r.bentukJejak, tertunda: r.tertunda?.kekurangan ?? null })),
   };
 }

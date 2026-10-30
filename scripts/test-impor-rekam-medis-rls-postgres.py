@@ -253,8 +253,14 @@ set session_replication_role = origin;""")
             # Same insert with user triggers off (superuser-set before SET ROLE, rolled back): only RLS may stop it,
             # so the guard itself is proven for this path, not just an unrelated validation trigger.
             ok, msg = d.try_("begin;\nset session_replication_role = replica;\n" + actor(stmt, who, hdr) + "\nrollback;")
+            # Bila INSERT tabel ini sudah dicabut dari authenticated (mis. clinic_record_corrections sejak 20261104080000),
+            # jalur ini tertutup oleh hak tabel — lebih ketat dari RLS; kontrol payload tidak bisa dibuktikan dan dilewati.
+            dicabut = d.last(f"select has_table_privilege('authenticated', 'public.{table}', 'INSERT')::text") == 'false'
             record(f'D2 {table}.{col} INSERT ke riwayat bersama tanpa trigger (hanya RLS), {who_name}',
-                   not ok and 'row-level security' in msg, msg, 'RLS alone does not stop a child attached to shared history')
+                   not ok and ('row-level security' in msg or (dicabut and 'permission denied' in msg)), msg,
+                   'RLS alone does not stop a child attached to shared history')
+            if dicabut:
+                continue
             # Control: the identical payload pointed at the actor's own branch chain passes every policy, so the
             # denial above comes from the shared-history guard, not from an incomplete payload.
             if who == FINANCE and table in CLINIC_ROLE_GATED:

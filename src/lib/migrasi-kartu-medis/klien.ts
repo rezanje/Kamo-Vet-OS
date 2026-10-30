@@ -12,7 +12,8 @@ export type NamaRpcMigrasi =
   | "import_legacy_medical_records_bulk"
   | "detail_riwayat_bersama"
   | "riwayat_bersama_hewan"
-  | "hasil_impor_rekam_medis";
+  | "hasil_impor_rekam_medis"
+  | "simpan_kartu_tertunda";
 
 export interface KlienMigrasi {
   readonly konteks: KonteksJaringan;
