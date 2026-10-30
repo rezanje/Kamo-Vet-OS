@@ -13,10 +13,24 @@ const base={requestKey:'entry',draftUserId:'doctor',recordId:'stay',backHref:'/k
  items:[{id:'medicine',name:'Obat Fiktif',unit:'pcs',sell_price:10000,stok:10,item_type:'Persediaan'}],jasaItems:[],tindakanItems:[],bahanItems:[],racikanItems:[],katalogRacikan:[],bolehManual:false};
 beforeEach(()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});sessionStorage.clear();vi.clearAllMocks();host=document.createElement('div');document.body.append(host);root=createRoot(host);});
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();});
-it('OBAT KHUSUS offers separate billable entry without replacing protocol/doses',async()=>{
+it('OBAT KHUSUS keeps billable entry but removes the old add-protocol form',async()=>{
  await act(async()=>root.render(await ObatKhusus({recordId:'stay',aktif:true,userId:'doctor',history:{medications:[],doses:[]}})));
  expect(host.querySelector('a[href="/klinik/rawat-inap/stay/obat-khusus"]')?.textContent).toContain('Tambah obat / BMHP');
- expect(host.textContent).toContain('TAMBAH OBAT BERPROTOKOL');
+ expect(host.textContent).not.toContain('TAMBAH OBAT BERPROTOKOL');
+ expect(host.querySelector('[name="nama_obat"]')).toBeNull();
+ expect(host.querySelector('[name="frekuensi_per_hari"]')).toBeNull();
+ expect(host.textContent).not.toContain('Tambahkan di bawah');
+});
+it.each([true,false])('keeps existing protocol and dose history after removing creation form; active=%s',async aktif=>{
+ const history={medications:[{id:'protocol',nama_obat:'Obat historis fiktif',dosis:'1 ml',rute:'IV',frekuensi_per_hari:2,durasi_hari:3,mulai_tanggal:'2026-10-30',dihentikan_at:null,catatan:'Catatan historis fiktif'}],doses:[{id:'dose',medication_id:'protocol',diberikan_at:'2026-10-30T06:00:00Z',nama_pemberi:'Pemberi fiktif',catatan:'Dosis historis',dibatalkan_at:null}]};
+ await act(async()=>root.render(await ObatKhusus({recordId:'stay',aktif,userId:'doctor',history})));
+ expect(host.textContent).toContain('Obat historis fiktif');expect(host.textContent).toContain('JEJAK PEMBERIAN');expect(host.textContent).toContain('Pemberi fiktif');expect(host.textContent).toContain('Dosis historis');
+ expect(host.textContent).not.toContain('TAMBAH OBAT BERPROTOKOL');expect(host.querySelector('[name="frekuensi_per_hari"]')).toBeNull();
+ expect(Boolean(host.querySelector('a[href="/klinik/rawat-inap/stay/obat-khusus"]'))).toBe(aktif);
+});
+it('keeps unreadable history closed rather than inventing an empty list',async()=>{
+ await act(async()=>root.render(await ObatKhusus({recordId:'stay',aktif:true,userId:'doctor',history:null})));
+ expect(host.textContent).toContain('belum dapat dimuat lengkap');expect(host.querySelector('form')).toBeNull();
 });
 it('standalone cart saves medicine without required clinical log fields and uses billable action',async()=>{
  vi.mocked(addInpatientBillables).mockResolvedValue({saved:true,href:'/klinik/rawat-inap/stay#obat-khusus'});
