@@ -1,13 +1,22 @@
 import { employeeOccupationInput } from './employee-occupation';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function bacaEditKaryawan(data: FormData) {
   const text = (key: string) => String(data.get(key) ?? "").trim();
   const nama = text("nama"), status = text("status"), email = text("email"), tanggal = text("tgl_masuk");
   // Field gaji hanya ada di form OWNER; tanpa field = gaji tidak disentuh.
   const gaji_pokok = data.has("gaji_pokok") ? Number(text("gaji_pokok")) : null;
+  // Cabang utama dipindahkan lewat RPC tersendiri (bukan update kolom biasa),
+  // supaya baris penugasan ikut dirapikan dan perubahannya tercatat.
+  // null = tidak diubah; form tanpa field cabang meninggalkan cabang apa adanya.
+  const branch_id = text("branch_id") || null;
+  const alasan_cabang = text("alasan_cabang") || null;
   if (!nama) throw new Error("Nama karyawan wajib diisi");
   if (!["Aktif", "Nonaktif"].includes(status)) throw new Error("Status karyawan tidak valid");
+  if (branch_id && !UUID.test(branch_id)) throw new Error("Cabang utama tidak valid");
+  if (data.has("branch_id") && status === "Aktif" && !branch_id) throw new Error("Pilih cabang utama untuk karyawan aktif");
+  if (alasan_cabang && (alasan_cabang.length < 3 || alasan_cabang.length > 300)) throw new Error("Alasan pindah cabang harus 3 sampai 300 karakter");
   if (gaji_pokok !== null && (!Number.isFinite(gaji_pokok) || gaji_pokok < 0)) throw new Error("Gaji pokok tidak valid");
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Email tidak valid");
   if (tanggal && (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal) || Number.isNaN(Date.parse(tanggal)) || new Date(tanggal).toISOString().slice(0, 10) !== tanggal)) throw new Error("Tanggal masuk tidak valid");
-  return { nama, status, gaji_pokok, nik: text("nik") || null, jabatan: employeeOccupationInput(data), departemen: text("departemen") || null, phone: text("phone") || null, email: email || null, tgl_masuk: tanggal || null };
+  return { nama, status, gaji_pokok, branch_id, alasan_cabang, nik: text("nik") || null, jabatan: employeeOccupationInput(data), departemen: text("departemen") || null, phone: text("phone") || null, email: email || null, tgl_masuk: tanggal || null };
 }

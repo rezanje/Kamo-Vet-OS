@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       : table === "employees" ? [{ id: "doctor", nama: "Dokter", jabatan: "Dokter Hewan" }, { id: "staff", nama: "Staf", jabatan: "Groomer" }, { id: "different", nama: "Staf lain", jabatan: "Groomer" }] : [];
     let lineId = "", rejected = false, hpp: unknown;
     const query = {
-      select: () => query, eq: (key: string, value: string) => { if (table === "sale_items" && key === "id" && hpp !== undefined) state.hppUpdates.push({ id: value, hpp }); return query; }, in: () => query, lte: () => query, order: () => query, range: () => query, limit: () => query,
+      select: () => query, eq: (key: string, value: string) => { if (table === "sale_items" && key === "id" && hpp !== undefined) state.hppUpdates.push({ id: value, hpp }); return query; }, in: () => query, lte: () => query, or: () => query, order: () => query, range: () => query, limit: () => query,
       insert: (value: Record<string, unknown>) => { if (table === "sales") state.headers.push(value); if (table === "sale_items") {
         state.events.push(`line:${value.item_id}`); rejected = value.item_id === state.rejectedItem;
         if (!rejected) { lineId = `line-${state.lines.length + 1}`; state.lines.push({ ...value, id: lineId }); }

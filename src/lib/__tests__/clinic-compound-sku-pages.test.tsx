@@ -4,6 +4,7 @@ vi.mock("@/lib/service-performers-server",async(importOriginal)=>{
 });
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cocokOr } from "./helpers/postgrest-or";
 
 const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failed: "", realStaff:false }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
@@ -11,7 +12,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   from(table: string) {
     const filters: ((row: Record<string, unknown>) => boolean)[] = [];
     let from = 0; let to = 999; let counted = false; let fields = "";let missingColumn=false;
-    const assignmentColumns=new Set(['employee_id','branch_id','role','effective_date','created_at']);
+    const assignmentColumns=new Set(['employee_id','branch_id','role','effective_date','end_date','created_at']);
     const q = {
       select(selectedFields: string, opts?: { count: string }) { fields = selectedFields; counted = opts?.count === "exact";if(table==='employee_branch_assignments')missingColumn=fields.split(',').some(field=>!assignmentColumns.has(field.split(':').at(-1)!.trim()));return q; },
       eq(k: string, v: unknown) { filters.push(r => r[k] === v); return q; },
@@ -19,6 +20,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       lte(k:string,v:unknown){filters.push(r=>String(r[k])<=String(v));return q;},
       in(k: string, values: unknown[]) { filters.push(r => values.includes(r[k])); return q; },
       or(expression: string) {
+        if (expression.startsWith("end_date.")) { filters.push(row => cocokOr(row, expression)); return q; }
         const alternatives = expression.match(/category_id\.in\.\([^)]+\)|name\.ilike\.[^,]+/g) ?? [];
         filters.push(row => alternatives.some(filter => filter.startsWith("category_id.in.")
           ? filter.slice("category_id.in.(".length, -1).split(",").includes(String(row.category_id))
@@ -84,7 +86,12 @@ describe("compound master SKUs reach clinic POS", () => {
   it('opens an in-progress medical visit using the real staff reader against assignment columns without a synthetic id',async()=>{
     fixture.realStaff=true;
     fixture.tables.employees=[{id:'own',nama:'Fictional doctor',jabatan:'Dokter',status:'Aktif',branch_id:'branch'},{id:'assigned',nama:'Fictional nurse',jabatan:'Paramedis',status:'Aktif',branch_id:'other'}];
-    fixture.tables.employee_branch_assignments=[{employee_id:'assigned',branch_id:'branch',role:'SECONDARY',effective_date:'2020-01-01'}];
+    fixture.tables.employees.push({id:'ended',nama:'Fictional helper',jabatan:'Paramedis',status:'Aktif',branch_id:'other'});
+    fixture.tables.employee_branch_assignments=[
+      {employee_id:'assigned',branch_id:'branch',role:'SECONDARY',effective_date:'2020-01-01',end_date:null},
+      // T2: penugasan yang sudah berakhir tidak boleh lagi muncul sebagai pelaksana.
+      {employee_id:'ended',branch_id:'branch',role:'SECONDARY',effective_date:'2020-01-01',end_date:'2020-06-30'},
+    ];
     const props=formProps(await exam());
     expect(props?.serviceStaff).toEqual(expect.arrayContaining([expect.objectContaining({id:'own'}),expect.objectContaining({id:'assigned'})]));
     expect(props?.serviceStaff).toHaveLength(2);
@@ -92,10 +99,10 @@ describe("compound master SKUs reach clinic POS", () => {
   it('loads assignment pages beyond 500 while preserving branch, active and effective-date eligibility',async()=>{
     fixture.realStaff=true;
     fixture.tables.employees=Array.from({length:605},(_,i)=>({id:`staff-${i}`,nama:`Fictional ${i}`,jabatan:'Paramedis',status:i===603?'Nonaktif':'Aktif',branch_id:'other'}));
-    fixture.tables.employee_branch_assignments=fixture.tables.employees.map((row,i)=>({employee_id:row.id,branch_id:i===604?'other':'branch',effective_date:i===602?'2099-01-01':'2020-01-01',role:'SECONDARY'}));
+    fixture.tables.employee_branch_assignments=fixture.tables.employees.map((row,i)=>({employee_id:row.id,branch_id:i===604?'other':'branch',effective_date:i===602?'2099-01-01':'2020-01-01',role:'SECONDARY',end_date:i===601?'2020-06-30':null}));
     const staff=formProps(await exam())?.serviceStaff as {id:string}[];
-    expect(staff).toHaveLength(602);expect(staff.map(row=>row.id)).toContain('staff-601');
-    for(const id of ['staff-602','staff-603','staff-604'])expect(staff.map(row=>row.id)).not.toContain(id);
+    expect(staff).toHaveLength(601);expect(staff.map(row=>row.id)).toContain('staff-600');
+    for(const id of ['staff-601','staff-602','staff-603','staff-604'])expect(staff.map(row=>row.id)).not.toContain(id);
   });
   it.each([["exam", exam], ["inpatient", inpatient]] as const)("%s supplies separate code and name for every clinical picker", async (_name, page) => {
     fixture.tables.items.forEach(row => { row.code = `CODE-${row.id}`; });

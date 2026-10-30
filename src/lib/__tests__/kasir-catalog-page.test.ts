@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { cocokOr } from "./helpers/postgrest-or";
 
 const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failItemsFrom: -1 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
@@ -15,6 +16,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       eq: (column: string, value: unknown) => { rows = rows.filter(row => row[column] === value); return query; },
       is: () => query,
       lte: (column:string,value:string) => { rows=rows.filter(row=>String(row[column])<=value);return query; },
+      or: (ekspresi: string) => { rows = rows.filter(row => cocokOr(row, ekspresi)); return query; },
       in: (column: string, values: unknown[]) => { rows = rows.filter(row => values.includes(row[column])); return query; },
       order: () => query,
       limit: (size: number) => { end = size - 1; return query; },

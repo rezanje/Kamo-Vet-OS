@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { hariIniWIB } from "@/lib/tanggal";
+import { saringanPenugasanAktif } from "@/lib/employee-assignment";
 import { jamRingkas } from "@/lib/shift-master";
 import { isTenagaMedis, rentangTujuhHari, jumlahJaga, type BarisJadwal } from "@/lib/jadwal-dokter";
 import { branchDisplayName } from "@/lib/branch-display";
@@ -22,7 +23,8 @@ export default async function JadwalDokterPage({
     supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"),
     supabase.from("employees").select("id, nama, jabatan, branch_id").eq("status", "Aktif").order("nama"),
     supabase.from("work_shifts").select("id, nama, is_libur, jam_masuk, jam_pulang").eq("is_active", true),
-    supabase.from("employee_branch_assignments").select("employee_id, branch_id"),
+    supabase.from("employee_branch_assignments").select("employee_id, branch_id")
+      .lte("effective_date", hariIni).or(saringanPenugasanAktif(hariIni)),
   ]);
   const branches = branchData ?? [];
 

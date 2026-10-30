@@ -9,9 +9,9 @@ import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster, bolehKelolaPayroll, bolehLihatGaji } from "@/lib/master-guard";
 import { bacaGajiPokok } from "@/lib/employee-salary";
 import { simpanKaryawan } from "./actions";
-import { PenugasanCabangForm } from "./PenugasanCabangForm";
 import { hariIniWIB } from "@/lib/tanggal";
-import { tampilkanKaryawan } from "@/lib/karyawan-master";
+import { tampilkanKaryawan, type PenugasanKaryawan } from "@/lib/karyawan-master";
+import { penugasanBerlaku } from "@/lib/employee-assignment";
 import { branchDisplayName } from "@/lib/branch-display";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -42,18 +42,20 @@ export default async function KaryawanPage({
   const cari = (cariRaw ?? q ?? "").trim();
   const view = masterView(viewRaw);
   const supabase = await createClient();
-  const bolehKelola = await bolehKelolaMaster();
-  const [lihatGaji, aturGaji] = await Promise.all([bolehLihatGaji(), bolehKelolaPayroll()]);
 
-  const { data: branches } = await supabase
-    .from("branches")
-    .select("id, code, name, type")
-    .eq("is_active", true)
-    .order("name");
-
+  // Ketiga guard memakai pemeriksaan peran yang sama (dimemo per permintaan), dan
+  // ketiga pembacaan master tidak saling bergantung — semuanya jalan berbarengan.
   // Nama cabang dipetakan di aplikasi. Master karyawan tetap muncul bila relasi
   // cabang di database belum terbaca oleh layar daftar.
-  const [{ data: rowsRaw }, { data: assignmentsRaw }] = await Promise.all([
+  const [bolehKelola, lihatGaji, aturGaji, { data: branches }, { data: rowsRaw }, { data: assignmentsRaw }] = await Promise.all([
+    bolehKelolaMaster(),
+    bolehLihatGaji(),
+    bolehKelolaPayroll(),
+    supabase
+      .from("branches")
+      .select("id, code, name, type")
+      .eq("is_active", true)
+      .order("name"),
     supabase
       .from("employees")
       // Pencarian & penyaringan dikerjakan di server atas seluruh daftar supaya
@@ -62,17 +64,20 @@ export default async function KaryawanPage({
       .order("nama"),
     supabase
       .from("employee_branch_assignments")
-      .select("employee_id, branch_id, role, effective_date")
+      .select("employee_id, branch_id, role, effective_date, end_date")
       .order("role")
       .order("effective_date"),
   ]);
   const branchCatalog = branches ?? [];
   const displayBranches = branchCatalog.map(branch => ({ ...branch, name: branchDisplayName(branch, branchCatalog) }));
   const semuaKaryawan = (rowsRaw ?? []) as unknown as EmployeeRow[];
+  const hariIni = hariIniWIB();
+  const semuaPenugasan = (assignmentsRaw ?? []) as PenugasanKaryawan[];
   const dalamTampilan = tampilkanKaryawan(
     visibleMasters(semuaKaryawan, view, row => row.status === "Aktif"),
     displayBranches,
-    (assignmentsRaw ?? []) as { employee_id: string; branch_id: string; role: "PRIMARY" | "SECONDARY"; effective_date: string }[],
+    semuaPenugasan,
+    hariIni,
   );
   const rows = saringKaryawan(dalamTampilan, { cari, cabang: cabangFilter, grup: peran });
   const adaSaringan = Boolean(cari || cabangFilter || peran || viewRaw);
@@ -84,7 +89,11 @@ export default async function KaryawanPage({
   const total = terdaftar.length;
   const aktif = terdaftar.filter((r) => r.status === "Aktif").length;
   const nonaktif = terdaftar.filter((r) => r.status === "Nonaktif").length;
-  const namaCabang = new Map(displayBranches.map((b) => [b.id, b.name]));
+
+  // T1: karyawan aktif tanpa cabang utama tidak pernah muncul di pemilih petugas klinik.
+  const punyaPenugasanBerlaku = new Set(semuaPenugasan.filter((t) => penugasanBerlaku(t, hariIni)).map((t) => t.employee_id));
+  const tanpaCabang = terdaftar.filter((r) => r.status === "Aktif" && !r.branch_id);
+  const tanpaCabangTanpaTugas = tanpaCabang.filter((r) => !punyaPenugasanBerlaku.has(r.id)).length;
 
   return (
     <>
@@ -106,14 +115,21 @@ export default async function KaryawanPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
-      {success && success !== "assignment" && (
+      {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {success === "1" ? "Data karyawan berhasil disimpan." : success}
         </div>
       )}
-      {success === "assignment" && (
-        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Penugasan cabang berhasil disimpan.
+
+      {bolehKelola && tanpaCabang.length > 0 && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <i className="ti ti-alert-triangle" />
+          <span>
+            {tanpaCabang.length} karyawan aktif belum punya cabang utama
+            {tanpaCabangTanpaTugas > 0 && `, ${tanpaCabangTanpaTugas} di antaranya belum punya penugasan cabang mana pun`}.
+            Selama cabangnya kosong, mereka tidak bisa dipilih sebagai dokter, petugas, atau groomer di klinik dan kasir.
+          </span>
+          <Link className="btn-def" href="/hris/karyawan/tanpa-cabang" style={{ marginLeft: "auto" }}>Perbaiki sekarang</Link>
         </div>
       )}
 
@@ -189,12 +205,10 @@ export default async function KaryawanPage({
       {bolehKelola && (
         <div className="crm-sec">
           <SecHeader num="02" title="PENUGASAN LINTAS CABANG" desc="Satu dokter atau tenaga medis bisa dijadwalkan di beberapa cabang." />
-          <PenugasanCabangForm
-            employees={semuaKaryawan.filter(row => row.status === "Aktif" && !row.trashed_at)
-              .map(row => ({ id: row.id, nama: row.nama, jabatan: row.jabatan, branch_id: row.branch_id, branchName: row.branch_id ? namaCabang.get(row.branch_id) ?? null : null }))}
-            branches={displayBranches}
-            today={hariIniWIB()}
-          />
+          <p style={{ fontSize: 11, color: "var(--tm)" }}>
+            Form penugasan dan daftar penugasan (termasuk tombol Akhiri penugasan) pindah ke halaman tersendiri supaya menyimpannya tidak perlu memuat ulang seluruh daftar karyawan.
+          </p>
+          <Link className="btn-def" href="/hris/karyawan/penugasan"><i className="ti ti-git-branch" /> Buka Penugasan Lintas Cabang</Link>
         </div>
       )}
 
@@ -252,7 +266,12 @@ export default async function KaryawanPage({
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.departemen ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{r.branchName}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
-                      {tugas.length ? tugas.map((t) => `${t.branchName}${t.role === "PRIMARY" ? " (utama)" : ""}`).join(", ") : "—"}
+                      {tugas.length ? tugas.map((t) => (
+                        <div key={`${t.employee_id}-${t.branch_id}`} style={{ opacity: t.keadaan === "berakhir" ? .6 : 1 }}>
+                          {t.branchName}{t.role === "PRIMARY" ? " (utama)" : ""}
+                          {t.keterangan ? ` · ${t.keterangan}` : ""}
+                        </div>
+                      )) : "—"}
                     </td>
                     {lihatGaji && (
                       <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>
