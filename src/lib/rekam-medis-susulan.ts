@@ -12,6 +12,23 @@ export type SusulanFields = {
   susulan_source?: string | null;
 };
 
+/**
+ * Compatibility is only for the requested public wrapper being absent from the
+ * PostgREST schema cache. SQLSTATE 42883 can instead mean a missing INTERNAL
+ * dependency in an existing wrapper; falling back then would omit the record.
+ * An unrecognized message fails closed rather than guessing at availability.
+ */
+export function isMissingRecordWrapper(
+  error: { code?: string; message?: string } | null | undefined,
+  wrapper: "clinic_post_invoice_with_record" | "clinic_edit_invoice_with_record",
+  params: Record<string, unknown>,
+): boolean {
+  if (error?.code !== "PGRST202") return false;
+  // Supabase serializes args as JSON: undefined-valued keys are omitted.
+  const signature = Object.keys(params).filter((key) => params[key] !== undefined).sort().join(", ");
+  return error.message === `Could not find the function public.${wrapper}(${signature}) in the schema cache`;
+}
+
 const SUMBER: Record<string, string> = { dokter: "dokter", kasir: "kasir" };
 
 const jam = (iso: string) => new Date(iso).toLocaleString("id-ID", {

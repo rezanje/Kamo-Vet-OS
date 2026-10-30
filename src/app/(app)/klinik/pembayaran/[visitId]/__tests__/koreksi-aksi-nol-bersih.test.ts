@@ -93,8 +93,8 @@ it("mengirim koreksi riwayat nol-bersih lewat wrapper rekam medis tanpa uang bar
   expect((state.calls[0].params.p_lines as unknown[])).toHaveLength(2);
 });
 
-it.each(["PGRST202", "42883"])("memakai RPC lama hanya bila wrapper belum tersedia (%s), dengan muatan identik", async (code) => {
-  state.wrapperError = { code, message: "function unavailable" };
+it("memakai RPC lama hanya bila exact wrapper tidak ditemukan di schema cache, dengan muatan identik", async () => {
+  state.wrapperError = { code: "PGRST202", message: "Could not find the function public.clinic_edit_invoice_with_record(p_invoice, p_invoice_id, p_lines, p_request_key) in the schema cache" };
   await expect(bayarVisit(form())).resolves.toMatchObject({ saved: true });
   expect(state.calls.map((call) => call.name)).toEqual(["clinic_edit_invoice_with_record", "clinic_edit_invoice"]);
   expect(state.calls[1].params).toEqual(state.calls[0].params);

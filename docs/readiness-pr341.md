@@ -1,5 +1,16 @@
 # PR341 — checkpoint readiness, bukan izin rilis
 
+## Temuan review susulan: internal 42883 tidak boleh membuka jalur lama
+
+- **Temuan benar pada b68df9ff**, meskipun CI head tersebut sukses. Helper umum `isMissingRpc` menganggap semua 42883/PGRST202 sebagai wrapper tidak tersedia. Tes sebelumnya juga keliru menerima 42883 sebagai kompatibilitas aman; persetujuan review/CI sebelumnya bukan bukti batas ini aman.
+- Reproduksi server action asli dengan transport fixture: **51 PASS / 4 FAIL** sebelum perbaikan. Posting dan koreksi sama-sama tetap sukses lewat RPC lama ketika dependency baru hilang, atau error PGRST202 menyebut fungsi lain. Assertion fail-closed benar-benar merah, tidak sekadar uji nama helper.
+- Reproduksi database nyata sekali-pakai: sembunyikan hanya `clinic_private.link_unrecorded_lines(uuid,text,jsonb,text)` (bukan `billing_lock`). Wrapper posting DAN koreksi yang tetap ada menghasilkan **SQLSTATE 42883**, tanpa menyimpan efek parsial. RPC lama tetap dapat sukses pada kiriman yang sama dengan **0 baris resep**. Ini membuktikan mengapa fallback aplikasi lama bisa menghilangkan catatan susulan; bukan klaim bahwa database sendiri menutup panggilan legacy. Helper dipulihkan sebelum klaster dihapus.
+- Perbaikan sempit: hanya kedua call-site PR341 memakai `isMissingRecordWrapper`. Fallback kompatibilitas hanya **PGRST202 + pesan schema cache yang persis menyebut public wrapper yang diminta + nama parameter JSON yang persis dikirim**. Semua 42883, fungsi/skema/signature lain, pesan generik atau tidak dikenal gagal tertutup. Key bernilai undefined mengikuti JSON serialization (tidak dianggap dikirim). Helper umum `src/lib/inpatient-stay.ts` tidak diubah agar jalur lain tetap di luar scope.
+- Kasus positif exact-wrapper missing tetap diuji untuk posting dan koreksi; assertion payload/DP/status dan penghentian penolakan bisnis tetap ada. Kasus 42883 yang sebelumnya menerima sukses diganti dengan kewajiban ditolak, bukan di-skip atau dilonggarkan.
+- Hasil terbaru: **76 file / 789 tes regresi PASS, 0 FAIL**; full-schema + dua fault-injection asli **18 PASS / 0 FAIL / 0 BLOCKED**; ESLint file berubah dan typecheck exit 0. Bukti: `docs/evidence/pr341-internal-dependency-guard.json`.
+- Review ulang independen read-only: tidak menemukan fail-open, pelemahan tes atau blocker kompatibilitas konkret dalam perubahan sempit ini. Review bersifat statis, bukan verifikasi eksekusi atau persetujuan seluruh PR. Batas: handler server action memakai transport mock, fault injection memakai RPC bisnis database asli. Belum menjalankan PostgREST/browser UAT atau mengonfirmasi variasi pesan schema-cache hosted; pesan tak dikenal sengaja ditolak. CI head baru harus dibaca terpisah dari sukses CI b68df9ff. Tidak ada migrasi, kebijakan A atau Production yang diubah.
+
+
 ## Diagnosis exact-run CI 40989157281 (sesudah checkpoint 8af373a1)
 
 - Run https://github.com/rezanje/Kamo-Vet-OS/actions/runs/40989157281 pada exact SHA `8af373a157e665b019e2bd77663021ab547d7902` berakhir FAILURE `2026-10-30T02:07:25Z`. `npm test`: 5040 lulus / 1 gagal / 1 skip existing. Lint, typecheck dan build sukses. Log diunduh, tidak melakukan blind rerun.

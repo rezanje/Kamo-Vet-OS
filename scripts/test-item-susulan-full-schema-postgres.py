@@ -147,6 +147,52 @@ insert into public.medical_records(id,visit_id,submission_key,diagnosis)
     except RuntimeError as e:
         check('G1 PR342 guard still refuses direct prescription writes on shared imported record', False, e)
     concurrency(db, h)
+    missing_dependency_probe(h)
+
+
+def missing_dependency_probe(h):
+    """Actual 42883 from the NEW private helper, not the shared billing coordinator.
+
+    This documents why app fallback is unsafe: the old public RPC remains callable
+    while the record-linking wrapper fails. It is not a claim of browser/PostgREST
+    testing; server-action regression tests enforce that this error never falls back.
+    """
+    customer = real.buat_pelanggan(h, 94)
+    visit, mr, pet = (real.uid(g, 94) for g in (6, 7, 5))
+    h.sql(f"""
+insert into public.pets(id,customer_id,name) values({q(pet)},{q(customer['id'])},'Anabul UJI missing dependency');
+insert into public.visits(id,branch_id,customer_id,pet_id,status,doctor_id,service_started_at,service_finished_at)
+ values({q(visit)},{q(real.BRANCH)},{q(customer['id'])},{q(pet)},'Pembayaran',{q(real.DOKTER_PEGAWAI)},now(),now());
+insert into public.medical_records(id,visit_id,submission_key) values({q(mr)},{q(visit)},'pr341-missing-private-helper');
+""")
+    invoice = dict(tanggal='2026-10-30', subtotal=10000, discount=0, tax=0, total=10000,
+                   dp_amount=0, paid_status='Belum Lunas', metode_bayar='Tunai', shift_id=real.SHIFT[real.OWNER],
+                   dp_override_reason='Uji dummy private helper PR341')
+    lines = [dict(description='Jasa UJI private helper', qty=1, price=10000, kind='jasa', unit='jasa', discount_percent=0)]
+    h.sql('alter function clinic_private.link_unrecorded_lines(uuid,text,jsonb,text) rename to pr341_hidden_link_unrecorded_lines;')
+    try:
+        broken = h.gagal('\\set VERBOSITY verbose\n' + f"select public.clinic_post_invoice_with_record({q(visit)},'pr341-fault-post',{j(invoice)},{j(lines)});", real.OWNER)
+        no_write = h.angka(f'select count(*) from public.invoices where visit_id={q(visit)}') == 0
+        legacy = h.nilai(f"select public.clinic_post_invoice({q(visit)},'pr341-fault-legacy-post',{j(invoice)},{j(lines)});", real.OWNER)
+        rows = h.angka(f'select count(*) from public.prescription_items where medical_record_id={q(mr)}')
+        check('F1 actual missing new helper yields 42883; legacy posting alone is not a safe fallback',
+              bool(broken and '42883' in broken and 'link_unrecorded_lines' in broken) and no_write and bool(legacy) and rows == 0,
+              dict(wrapper_error=broken, wrapper_rolled_back=no_write, legacy_invoice=legacy, prescriptions=rows))
+        source_id = h.nilai(f'select id from public.invoice_items where invoice_id={q(legacy)} limit 1')
+        edit_lines = [dict(lines[0], source_invoice_item_id=source_id),
+                      dict(description='Tambahan UJI dependency', qty=1, price=1000, kind='jasa', unit='jasa', discount_percent=0)]
+        payload = dict(subtotal=11000, discount=0, tax=0, total=11000, dp_amount=0, paid_status='Belum Lunas',
+                       metode_bayar='Tunai', reason='Uji dummy internal dependency', dp_override_reason='Uji dummy PR341')
+        broken_edit = h.gagal('\\set VERBOSITY verbose\n' + f"select public.clinic_edit_invoice_with_record({q(legacy)},'pr341-fault-edit',{j(payload)},{j(edit_lines)});", real.FINANCE)
+        unchanged = h.angka(f'select total from public.invoices where id={q(legacy)}') == 10000
+        old_result = h.nilai(f"select public.clinic_edit_invoice({q(legacy)},'pr341-fault-legacy-edit',{j(payload)},{j(edit_lines)});", real.FINANCE)
+        rows = h.angka(f'select count(*) from public.prescription_items where medical_record_id={q(mr)}')
+        check('F2 actual missing new helper yields 42883; legacy correction could omit the record too',
+              bool(broken_edit and '42883' in broken_edit and 'link_unrecorded_lines' in broken_edit) and unchanged
+              and old_result == legacy and rows == 0 and h.angka(f'select total from public.invoices where id={q(legacy)}') == 11000,
+              dict(wrapper_error=broken_edit, wrapper_rolled_back=unchanged, legacy_invoice=old_result, prescriptions=rows))
+    finally:
+        h.sql('alter function clinic_private.pr341_hidden_link_unrecorded_lines(uuid,text,jsonb,text) rename to link_unrecorded_lines;')
 
 
 def concurrency(db, h):

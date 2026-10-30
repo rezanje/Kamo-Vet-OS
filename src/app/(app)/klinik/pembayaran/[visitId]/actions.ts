@@ -24,7 +24,7 @@ import { bacaKodeKampanye } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
-import { isMissingRpc } from "@/lib/inpatient-stay";
+import { isMissingRecordWrapper } from "@/lib/rekam-medis-susulan";
 
 type Line = {
   deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null;
@@ -121,12 +121,13 @@ async function postInvoiceAtomik(
   payments?: ClinicSplitPayment[],
   demo?: { policyId: string; employees: string[] },
 ): Promise<{ invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
-  const terbungkus = await supabase.rpc("clinic_post_invoice_with_record", {
+  const wrappedParams = {
     ...params,
     ...(payments ? { p_payments: payments } : {}),
     ...(demo ? { p_policy_id: demo.policyId, p_payments: payments, p_employee_ids: demo.employees } : {}),
-  });
-  const { data: invoiceId, error } = isMissingRpc(terbungkus.error)
+  };
+  const terbungkus = await supabase.rpc("clinic_post_invoice_with_record", wrappedParams);
+  const { data: invoiceId, error } = isMissingRecordWrapper(terbungkus.error, "clinic_post_invoice_with_record", wrappedParams)
     ? demo
       ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
       : payments
@@ -357,7 +358,7 @@ export async function bayarVisit(formData: FormData) {
     // Baris BARU yang ditambahkan kasir saat koreksi ikut tercatat di rekam medis;
     // baris warisan tagihan lama dibiarkan apa adanya oleh pembungkusnya.
     const terbungkus = await supabase.rpc("clinic_edit_invoice_with_record", koreksi);
-    const { error } = isMissingRpc(terbungkus.error)
+    const { error } = isMissingRecordWrapper(terbungkus.error, "clinic_edit_invoice_with_record", koreksi)
       ? await supabase.rpc("clinic_edit_invoice", koreksi)
       : terbungkus;
     if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
