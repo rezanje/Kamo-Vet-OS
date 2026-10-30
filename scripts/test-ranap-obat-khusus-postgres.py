@@ -173,6 +173,19 @@ def races(h,db,version,row):
             pending=h.angka(f'select count(*) from prescription_items p where medical_record_id={q(m)} and not exists(select 1 from invoice_items i where i.prescription_item_id=p.id)')
             check('simultaneous actual bill/pay then new entry: billed seed once, new medicine remains pending SAME visit',h.saldo_ref('4201',no)==-100000 and h.saldo_ref('1201',no)==100000 and h.saldo_ref('5101',no)==4000 and pending==1,dict(revenue=h.saldo_ref('4201',no),ar=h.saldo_ref('1201',no),hpp=h.saldo_ref('5101',no),pending=pending))
         h.sql(f"update profiles set is_active=true,role='DOCTOR' where id={q(r.DOCTOR)};insert into user_branches(user_id,branch_id) values({q(r.DOCTOR)},{q(r.BRANCH)}) on conflict do nothing")
+    # Branch eligibility must survive the final MR/request wait without relying
+    # on the optional operational-branch header, for fresh AND cached requests.
+    for n,kind,cached,change in [(950,'record',False,'inactive'),(951,'record',True,'inactive'),(952,'request',False,'type'),(953,'request',True,'type')]:
+        v,m=x.visit(h,n);stay=h.nilai(f'select id from inpatient_records where visit_id={q(v)}');key=f'branch-late-{n}';sql=save(stay,key,[row])
+        if cached:h.sql(sql,r.DOCTOR)
+        before=snapshot(h);evidence=[];old_type=h.nilai(f'select type from branches where id={q(r.BRANCH)}')
+        with c.Session(db,f'branch-obs-{n}') as obs,c.Session(db,f'branch-gate-{n}') as gate,x.session(db,f'branch-wait-{n}',r.DOCTOR) as waiter:
+            waiter.sql("select set_config('request.headers','{}',false);")
+            lock=(f'select id from medical_records where id={q(m)} for update;' if kind=='record' else f"select pg_advisory_xact_lock(hashtextextended('inpatient-entry:'||{q(r.DOCTOR)}||':'||{q(key)},0));")
+            gate.sql('begin;'+lock);waiter.send('begin;'+sql);c.wait_block(obs,waiter,gate,evidence)
+            gate.sql((f'update branches set is_active=false where id={q(r.BRANCH)};' if change=='inactive' else f"update branches set type='PETSHOP' where id={q(r.BRANCH)};")+'commit;');result=c.attempt(waiter)
+        check(f'branch {change} rechecked after late {kind} wait '+('cached' if cached else 'fresh'),not result['ok'] and 'ACCESS_DENIED' in result.get('error','') and snapshot(h)==before,dict(result=result,barriers=evidence))
+        h.sql(f'update branches set is_active=true,type={q(old_type)} where id={q(r.BRANCH)}')
     v,m=x.visit(h,940);stay=h.nilai(f'select id from inpatient_records where visit_id={q(v)}');sql=save(stay,'simultaneous-duplicate',[row]);before=x.state(h);evidence=[]
     with c.Session(db,'dup-obs') as obs,x.session(db,'dup-a',r.DOCTOR) as a,x.session(db,'dup-b',r.DOCTOR) as b:
         a.sql('begin;'+sql);b.send('begin;'+sql);c.wait_block(obs,b,a,evidence);a.sql('commit;');result=c.attempt(b)

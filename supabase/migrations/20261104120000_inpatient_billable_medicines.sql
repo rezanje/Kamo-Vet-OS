@@ -83,6 +83,14 @@ begin
  end if;
  -- Same actor request keys may span visits, so serialize BEFORE checking/issuing.
  perform pg_advisory_xact_lock(hashtextextended('inpatient-entry:'||v_user::text||':'||v_key,0));
+ -- Branch activity/type can change while the MR/request lock is waiting.
+ -- SHARE (not KEY SHARE) pins these non-key fields until commit, and the
+ -- actor gate below also revalidates after a wait on this branch lock.
+ perform 1 from public.branches where id=v_visit.branch_id and is_active
+   and type in('KLINIK','BOTH') for share;
+ if not found then
+   raise exception 'ACCESS_DENIED: cabang klinik tidak aktif' using errcode='42501';
+ end if;
  -- The MR/request locks above can also wait after the initial coordinator check.
  -- Re-read authorization immediately before cached replay and all new writes.
  if not public.clinic_record_correction_actor(v_stay.visit_id)
