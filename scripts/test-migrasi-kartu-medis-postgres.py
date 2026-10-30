@@ -68,6 +68,8 @@ def main():
         record('Prasyarat: 20261101120000 terpasang', ok, msg[:120] if not ok else 'ok')
         ok, msg = rs2.apply_sql(db, rs2.RS2.read_text())
         record('Prasyarat: 20261104010000 (RS-2) terpasang', ok, msg[:120] if not ok else 'ok')
+        ok, msg = rs2.apply_sql(db, (ROOT / 'supabase/migrations/20261104140000_kartu_rekam_medis_tertunda.sql').read_text())
+        record('Prasyarat: 20261104140000 (kartu tertunda) terpasang', ok, msg[:120] if not ok else 'ok')
         d = rls.Db(db)
         terbaru = sorted(p.name for p in (ROOT / 'supabase/migrations').glob('*.sql'))[-1]
         ada = d.last("select (to_regproc('public.clinic_bill_and_pay_inpatient') is not null"

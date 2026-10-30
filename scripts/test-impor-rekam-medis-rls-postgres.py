@@ -40,7 +40,7 @@ _spec.loader.exec_module(base)
 NEW_MIGRATION = '20261101120000_impor_penulis_riwayat_bersama.sql'
 # Later migrations that build on kamo_import: left out of the bootstrap here (they need this migration first)
 # and covered by their own harness (scripts/test-riwayat-bersama-hewan-postgres.py).
-DEPENDENT_MIGRATIONS = {'20261104010000_rs2_riwayat_bersama_hewan.sql'}
+DEPENDENT_MIGRATIONS = {'20261104010000_rs2_riwayat_bersama_hewan.sql', '20261104140000_kartu_rekam_medis_tertunda.sql'}
 MIGRATION_FILE = ROOT / 'supabase/migrations' / NEW_MIGRATION   # --migration overrides (mutation checks)
 WRITER_ROLE = 'kamo_legacy_import_writer'
 OWNER, STAFF, BR_A = base.OWNER, base.STAFF, base.BRANCH
