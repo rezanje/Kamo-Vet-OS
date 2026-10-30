@@ -67,6 +67,15 @@ def run(h):
  # rolls back if the unguarded baseline succeeds, preserving later test fixtures.
  err=h.gagal(f"begin; insert into prescription_items(medical_record_id,nama_obat,qty,harga,jenis) values({q(m)},'Forged STAFF item',1,100,'obat');rollback;",r.STAFF)
  check('direct submitted Rx insert denied STAFF',bool(err and 'ACCESS_DENIED' in err),dict(error=err))
+ # Source attribution is real normalized data, not NULL-only toy rows: a new
+ # line ordered by the doctor must keep its doctor when the product is replaced.
+ cart=rows(h,m);cart.append(dict(item_id=r.ITEM,nama_obat='Obat Fiktif',qty=1,harga=25000,satuan='pcs',jenis='obat',service_performers=dict(doctor_id=r.DOKTER_PEGAWAI,staff_id=None)))
+ err=h.gagal(edit(v,m,3,cart,'add-attributed'),r.DOCTOR)
+ check('doctor new row carries normalized ordering attribution',not err,dict(error=err))
+ if not err:
+  cart=rows(h,m);newrow=next(row for row in cart if row['id'] not in {old['id'] for old in oldrows});author=newrow['service_performers'];newrow.update(item_id=material,nama_obat='Bahan racik Fiktif',harga=5000,satuan='gram')
+  err=h.gagal(edit(v,m,4,cart,'replace-attributed'),r.DOCTOR)
+  check('doctor replaces attributed product without rewriting who ordered it',not err and next(row for row in rows(h,m) if row['id']==newrow['id'])['service_performers']==author,dict(error=err))
  # Actual money-engine concurrency: doctor owns coordinator first, cashier waits,
  # then sees the committed clinical cart. No reverse row/coord order, no 40P01.
  import contextlib
@@ -103,26 +112,24 @@ def run(h):
  parts=[dict(method='Tunai',amount=int(quote['remaining']))]
  err=h.gagal(f"select clinic_bill_and_pay_inpatient({q(stay)},{q(v)},'post-full-bmhp','2026-11-03',{j(parts)},null,false,null);",r.STAFF)
  inv=h.aktif(v);no=h.no_tagihan(inv)
- check('saved procedure BMHP posts original stock HPP once with issued compound preserved',not err and h.angka(f'select qty from stock where item_id={q(material)}')==stock-3 and h.angka(f'select total from invoices where id={q(inv)}')==quote['pending'] and h.saldo_ref('5101',no)==5000 and h.saldo_ref('1201',no)==0,dict(error=err,quote=quote,stock_before=stock,stock_after=h.angka(f'select qty from stock where item_id={q(material)}'),hpp=h.saldo_ref('5101',no)))
+ check('saved procedure BMHP posts original stock HPP once with issued compound preserved',not err and h.angka(f'select qty from stock where item_id={q(material)}')==stock-4 and h.angka(f'select total from invoices where id={q(inv)}')==quote['pending'] and h.saldo_ref('5101',no)==6000 and h.saldo_ref('1201',no)==0,dict(error=err,quote=quote,stock_before=stock,stock_after=h.angka(f'select qty from stock where item_id={q(material)}'),hpp=h.saldo_ref('5101',no)))
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('--baseline',action='store_true');p.add_argument('--json',type=Path,required=True);a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--baseline',action='store_true');p.add_argument('--include-cashier',action='store_true');p.add_argument('--json',type=Path,required=True);a=p.parse_args()
  # Bootstrap the entire original chain first, then the candidate (never fingerprint bypass).
  candidates=list((ROOT/'supabase/migrations').glob('*.sql'))
  import tempfile
  with tempfile.TemporaryDirectory(prefix='chain.',dir=ROOT) as d:
   root=Path(d);target=root/'supabase/migrations';target.mkdir(parents=True)
-  selected=[s for s in candidates if s.name!=CANDIDATE]
+  selected=[s for s in candidates if not(a.baseline and s.name==CANDIDATE) and (a.include_cashier or s.name!='20261104090000_inpatient_cashier_pending_cart.sql')]
   for s in selected:(target/s.name).symlink_to(s)
   r.fixture.ROOT=root
   try:
    with r.NativePostgres(r.BIN) as db:
     r.fixture.DisposablePostgres.bootstrap(db)
-    candidate=ROOT/'supabase/migrations'/CANDIDATE
-    if not a.baseline and candidate.exists():db.sql('begin;'+candidate.read_text()+'commit;')
     run(x.Harness(db))
   except Exception as e:check('HARNESS',False,str(e))
  totals={s:sum(c['status']==s for c in RESULTS) for s in ['PASS','FAIL']}
- a.json.write_text(json.dumps(dict(mode='RED' if a.baseline else 'candidate',migration_count=len(selected)+(not a.baseline and (ROOT/'supabase/migrations'/CANDIDATE).exists()),cases=RESULTS,totals=totals),indent=2));print(totals)
+ a.json.write_text(json.dumps(dict(mode='RED' if a.baseline else 'candidate',migration_count=len(selected),cases=RESULTS,totals=totals),indent=2));print(totals)
  return int(totals['FAIL']>0)
 if __name__=='__main__':sys.exit(main())
