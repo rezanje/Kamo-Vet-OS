@@ -1,5 +1,5 @@
 import type { ClinicalCorrection } from "@/lib/clinical-correction";
-import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
+import { servicePerformerNames } from "@/lib/service-performers";
 import { loadBranchGroomingPolicy, loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
@@ -156,7 +156,7 @@ export default async function RekamMedisPage({
   let mrId: string | null = null;
   let mrLoadFailed = false;
   let correctionDataFailed = false;
-  let resep: { nama_obat: string; qty: number; satuan?: string | null; aturan_pakai: string | null; jenis?: string; service_performers?: ServicePerformersSnapshot | null }[] = [];
+  let resep: ClinicalCorrection["prescriptions"] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
     mrLoadFailed = !!latestRecord.error;
@@ -174,7 +174,7 @@ export default async function RekamMedisPage({
     recorded && mrId ? Promise.all([
       supabase
         .from("prescription_items")
-        .select("nama_obat, qty, satuan, aturan_pakai, jenis, service_performers")
+        .select("id, item_id, nama_obat, qty, harga, satuan, faktor, aturan_pakai, jenis, kategori, service_performers, compound_recipe_id, bmhp_components")
         .eq("medical_record_id", mrId)
         .order("created_at"),
       // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
@@ -187,7 +187,7 @@ export default async function RekamMedisPage({
         ? supabase.rpc("clinic_can_correct_record", { p_record_id: mrId })
         : Promise.resolve({ data: false, error: null }),
     ]) : null,
-    !recorded ? Promise.all([
+    !recorded || (edit === mrId && menungguBayar && !visit.checked_out_at && !latestInvoice.data && !latestInvoice.error) ? Promise.all([
       loadServiceStaff(supabase, visit.branch_id ?? null),
       daftarDokter(supabase, { branchId: visit.branch_id }),
       loadKatalogRacikan(),
@@ -236,7 +236,7 @@ export default async function RekamMedisPage({
     : inpatientAktif ? ""
     : "Rawat jalan: tindakan / obat susulan ditambahkan di layar Pembayaran supaya ikut tagihan.";
   const correction: ClinicalCorrection | undefined = editing && record && mrId ? {
-    recordId: mrId, revision: record.clinical_revision ?? 0,
+    fullEdit: true, recordId: mrId, revision: record.clinical_revision ?? 0,
     anamnesis: record.anamnesis, diagnosis: record.diagnosis, therapy: record.therapy,
     suhu: record.suhu, berat: record.berat, gejala_klinis: record.gejala_klinis, hasil_penunjang: record.hasil_penunjang,
     penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
