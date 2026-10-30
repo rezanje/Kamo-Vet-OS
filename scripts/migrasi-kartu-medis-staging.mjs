@@ -117,7 +117,12 @@ async function main() {
   if (perintah !== "terapkan") {
     if (!opsi.paket.length || !opsi["hari-ini"] || !opsi.laporan) throw new Error("--paket, --hari-ini, --laporan wajib.");
     const { paket, sha256 } = bacaMasukan(opsi, staging);
-    let rencana = staging.rencanaDariStaging(paket.kartu, { hariIni: opsi["hari-ini"], tanggalMinimum: opsi["tanggal-minimum"] ?? "1990-01-01", sha256Paket: sha256 });
+    // --ket-disetujui <json>: daftar stable_key persetujuan OWNER per kartu ("Ket" -> Catatan). Rencana DIBATASI ke kartu itu saja.
+    const ketDisetujui = opsi["ket-disetujui"] ? JSON.parse(readFileSync(opsi["ket-disetujui"], "utf8")) : null;
+    if (ketDisetujui && (!Array.isArray(ketDisetujui) || ketDisetujui.some((k) => !/^[0-9a-f]{64}$/.test(k)))) throw new Error("--ket-disetujui harus larik stable_key.");
+    const kartu = ketDisetujui ? paket.kartu.filter((k) => ketDisetujui.includes(k.stable_key)) : paket.kartu;
+    if (ketDisetujui && kartu.length !== new Set(ketDisetujui).size) throw new Error("Sebagian kartu yang disetujui tidak ada di paket.");
+    let rencana = staging.rencanaDariStaging(kartu, { hariIni: opsi["hari-ini"], tanggalMinimum: opsi["tanggal-minimum"] ?? "1990-01-01", sha256Paket: sha256, ...(ketDisetujui ? { ketKeCatatan: ketDisetujui } : {}) });
     const laporan = { perintah, sha256Paket: sha256, kartu: paket.kartu.length, delta: { diterapkan: paket.deltaDiterapkan, diluarCakupan: paket.deltaDiluarCakupan, ditahanGerbang: paket.deltaDitahan.length }, rencana: ringkas(rencana) };
     if (perintah === "rencana") {
       if (!opsi["konfirmasi-proyek"] || !opsi.rencana) throw new Error("--konfirmasi-proyek dan --rencana wajib.");

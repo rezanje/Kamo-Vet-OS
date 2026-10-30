@@ -160,7 +160,22 @@ const PETA_TAHAN: Record<string, KodeKekurangan | null> = {
   DELTA_GATE_MISMATCH: null,
 };
 
-export type OpsiRencanaStaging = { hariIni: string; tanggalMinimum: string; sha256Paket: string };
+export type OpsiRencanaStaging = {
+  hariIni: string; tanggalMinimum: string; sha256Paket: string;
+  /**
+   * Persetujuan OWNER PER KARTU (stable_key): teks "Ket" asli digabung ke Catatan sebagai baris "Ket: …". Hanya
+   * membebaskan alasan "Ket tanpa kolom"; alasan tahan lain tetap berlaku.
+   */
+  ketKeCatatan?: string[];
+};
+
+/** Catatan dokter dipertahankan persis; "Ket: <teks asli>" ditambahkan sekali sebagai baris baru (tidak digandakan). */
+export function gabungKet(catatan: string | null, ket: string): string {
+  const baris = `Ket: ${ket}`;
+  if (catatan === null) return baris;
+  if (catatan.includes(baris)) return catatan;
+  return `${catatan}\n${baris}`;
+}
 
 /**
  * Rencana runner dari kartu staging. Persetujuan = izin OWNER untuk paket ini (terikat sha256Paket).
@@ -169,6 +184,7 @@ export type OpsiRencanaStaging = { hariIni: string; tanggalMinimum: string; sha2
 export function rencanaDariStaging(kartu: KartuStaging[], opsi: OpsiRencanaStaging): Rencana {
   if (!isoSah(opsi.hariIni) || !isoSah(opsi.tanggalMinimum) || !HEX64.test(opsi.sha256Paket)) throw new Error("Opsi rencana staging tidak valid.");
   const urut = [...kartu].sort((a, b) => a.stable_key.localeCompare(b.stable_key));
+  const ketDisetujui = new Set(opsi.ketKeCatatan ?? []);
   const baris: BarisRencana[] = urut.map((k) => {
     const f = k.normalized_fields;
     const alasan: string[] = [];
@@ -200,8 +216,12 @@ export function rencanaDariStaging(kartu: KartuStaging[], opsi: OpsiRencanaStagi
         ["clinical_findings", BATAS_FIELD.clinical_findings], ["diagnosis", BATAS_FIELD.diagnosis], ["therapy", BATAS_FIELD.therapy]];
       for (const [c, n] of batas) if ([...(f[c] ?? "")].length > n) alasan.push(`riwayat.${c}.terlalu_panjang`);
       if ((hp ?? "").length > BATAS_FIELD.phone) alasan.push("pemilik.phone.terlalu_panjang");
-      // "Ket" klinis tidak punya kolom tujuan: ditahan, bukan dibuang.
-      if (isi(f.additional_notes)) alasan.push("riwayat.ket_tanpa_kolom");
+      // "Ket" klinis tidak punya kolom tujuan: ditahan, kecuali disetujui OWNER per kartu untuk digabung ke Catatan.
+      if (isi(f.additional_notes)) {
+        if (!ketDisetujui.has(k.stable_key)) alasan.push("riwayat.ket_tanpa_kolom");
+        else if ([...gabungKet(isi(f.note), f.additional_notes!)].length > BATAS_FIELD.note) alasan.push("riwayat.note.terlalu_panjang");
+        else peringatan.push("riwayat.ket_digabung_ke_catatan");
+      }
     }
     if (isi(f.fur_color)) peringatan.push("hewan.warna_bulu_tidak_dikirim");
     if (isi(f.dob_raw)) peringatan.push("hewan.dob_parsial_tidak_dikirim");
@@ -221,7 +241,7 @@ export function rencanaDariStaging(kartu: KartuStaging[], opsi: OpsiRencanaStagi
         gender: gender && [...gender.trim()].length <= BATAS_FIELD.gender ? gender.trim() : null, dob: null,
         doctor: isi(f.doctor)?.trim() ?? null,
         // Teks klinis utuh (tanpa trim/potong).
-        note: isi(f.note), anamnesis: isi(f.anamnesis), clinical_findings: isi(f.clinical_findings), diagnosis: isi(f.diagnosis), therapy: isi(f.therapy),
+        note: isi(f.additional_notes) && ketDisetujui.has(k.stable_key) ? gabungKet(isi(f.note), f.additional_notes!) : isi(f.note), anamnesis: isi(f.anamnesis), clinical_findings: isi(f.clinical_findings), diagnosis: isi(f.diagnosis), therapy: isi(f.therapy),
       };
     }
 
@@ -293,7 +313,7 @@ export function rencanaDariStaging(kartu: KartuStaging[], opsi: OpsiRencanaStagi
     mappingTakTerpakai: 0,
     tertunda: baris.filter((r) => r.tertunda).length,
   };
-  const opsiRencana = { hariIni: opsi.hariIni, tanggalMinimum: opsi.tanggalMinimum };
+  const opsiRencana = { hariIni: opsi.hariIni, tanggalMinimum: opsi.tanggalMinimum, ...(ketDisetujui.size ? { ketKeCatatan: [...ketDisetujui].sort() } : {}) };
   const sidikRencana = sha256(kanonikJson({
     versi: VERSI_KONTRAK_STAGING, sha256Berkas: opsi.sha256Paket, opsi: opsiRencana,
     baris: baris.map((r) => [r.local_record_id, r.status, r.sidikPayload, r.customer_uuid, r.pet_uuid]),

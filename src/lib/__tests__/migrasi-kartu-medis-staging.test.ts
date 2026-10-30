@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bacaPaketStaging, jejakStaging, rencanaDariStaging, sha256Paket, stableKey } from "@/lib/migrasi-kartu-medis/staging-json";
+import { bacaPaketStaging, gabungKet, jejakStaging, rencanaDariStaging, sha256Paket, stableKey } from "@/lib/migrasi-kartu-medis/staging-json";
 import { muatRencanaBeku, terapkanRekonsiliasi } from "@/lib/migrasi-kartu-medis/rekonsiliasi-staging";
 
 const SHA = "c".repeat(64);
@@ -77,5 +77,21 @@ describe("adapter paket staging JSON", () => {
     expect(rek.sidikRencana).not.toBe(ok.sidikRencana);
     expect(sha256Paket([{ nama: "b", bytes: new Uint8Array([1]) }, { nama: "a", bytes: new Uint8Array([2]) }]))
       .toBe(sha256Paket([{ nama: "a", bytes: new Uint8Array([2]) }, { nama: "b", bytes: new Uint8Array([1]) }]));
+  });
+  it("per-card Ket approval: appends 'Ket: <original>' once, keeps the doctor's note verbatim, releases ONLY the Ket hold", () => {
+    expect(gabungKet("catatan dokter ", "kontrol 1 minggu")).toBe("catatan dokter \nKet: kontrol 1 minggu");
+    expect(gabungKet(null, " a\nb ")).toBe("Ket:  a\nb ");
+    expect(gabungKet("x\nKet: k", "k")).toBe("x\nKet: k");
+    const a = kartu("F1", "A", { additional_notes: "kontrol 1 minggu" });
+    const b = kartu("F2", "B", { additional_notes: "rawat inap", phone_raw: null, phone_canonical: null });
+    const c = kartu("F3", "C", { additional_notes: "tidak disetujui" });
+    const r = rencanaDariStaging(bacaPaketStaging([batch("07", [a, b, c])]).kartu, { ...OPSI, ketKeCatatan: [a.stable_key, b.stable_key] });
+    const per = (x: { stable_key: string }) => r.baris.find((y) => y.local_record_id === x.stable_key)!;
+    expect(per(a)).toMatchObject({ status: "siap", peringatan: ["riwayat.ket_digabung_ke_catatan"] });
+    expect(per(a).payload!.note).toBe("keluhan \nKet: kontrol 1 minggu");
+    expect(per(a).payload!.anamnesis).toBe("  baris 1\nbaris 2  ");
+    expect(per(b)).toMatchObject({ status: "karantina", alasan: ["pemilik.phone.kosong"] });
+    expect(per(c)).toMatchObject({ status: "karantina", alasan: ["riwayat.ket_tanpa_kolom"] });
+    expect(r.opsi).toMatchObject({ ketKeCatatan: [a.stable_key, b.stable_key].sort() });
   });
 });
