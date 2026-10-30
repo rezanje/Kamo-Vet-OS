@@ -1,0 +1,52 @@
+
+ RUN  v4.1.9 /opt/data/kamo-wt-ranap-bayar
+
+ ✓ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts (11 tests) 37ms
+ ❯ src/components/__tests__/ranap-payment-popup.test.tsx (11 tests | 1 failed) 306ms
+     ✓ pelunasan hanya disebut lunas saat biaya nyata sudah seluruhnya tertutup dan riwayat terbaca 115ms
+     ✓ piutang terbit nol dengan biaya pending bukan pelunasan kunjungan 27ms
+     ✓ pending yang tertutup saldo uang muka tetap belum disebut lunas sebelum diterbitkan 27ms
+     ✓ saldo sisa nol bukan bukti pelunasan (tanpa invoice) 16ms
+     ✓ saldo sisa nol bukan bukti pelunasan (invoice nol) 19ms
+     ✓ saldo sisa nol bukan bukti pelunasan (koreksi belum selesai) 19ms
+     ✓ riwayat belum terbaca tidak menghasilkan sukses/lunas dan aksi uang tetap terkunci 24ms
+     ✓ query sukses tanpa uang tercatat tidak menciptakan bukti penerimaan 11ms
+     ✓ error mengalahkan success tanpa dua dialog atau sukses semu 11ms
+     × tombol Mengerti hanya menutup native dialog, tidak mengirim pembayaran lagi 23ms
+     ✓ DP memakai native modal terpusat walau kasir di bawah halaman, dengan angka rekap terkini 13ms
+ ✓ src/components/__tests__/ranap-simpan-bayar.test.tsx (6 tests) 211ms
+ ✓ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/page.test.tsx (31 tests) 173ms
+ ✓ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/actions.test.ts (36 tests) 43ms
+ ✓ src/lib/__tests__/tagihan-berjalan-server.test.ts (24 tests) 15ms
+ ✓ src/lib/__tests__/tagihan-berjalan-sql.test.ts (28 tests) 14ms
+ ✓ src/lib/__tests__/tagihan-berjalan.test.ts (19 tests) 7ms
+ ✓ src/lib/__tests__/uang-tagihan.test.ts (9 tests) 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/ranap-payment-popup.test.tsx > popup hasil pembayaran pada route tagihan ranap > tombol Mengerti hanya menutup native dialog, tidak mengirim pembayaran lagi
+AssertionError: expected undefined to be '[]' // Object.is equality
+
+- Expected:
+"[]"
+
++ Received:
+undefined
+
+ ❯ src/components/__tests__/ranap-payment-popup.test.tsx:160:75
+    158|     expect(showModal).toHaveBeenCalledTimes(1);
+    159|     for (const action of Object.values(actions)) expect(action).not.to…
+    160|     expect(host.querySelector<HTMLInputElement>('[name="parts"]')?.val…
+       |                                                                           ^
+    161|   });
+    162|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 8 passed (9)
+      Tests  1 failed | 174 passed (175)
+   Start at  09:03:48
+   Duration  3.83s (transform 572ms, setup 0ms, import 1.00s, tests 810ms, environment 714ms)
+
+JSON report written to /opt/data/kamo-wt-ranap-bayar/docs/verification/ranap-bayar/26-ui-targeted-final.json

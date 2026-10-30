@@ -14,6 +14,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { parseClinicPostingError } from "@/lib/klinik-posting";
 import { METODE_BAYAR } from "@/lib/kas-akun";
 import { nilaiBarisResep, type BarisResep } from "@/lib/tagihan-berjalan";
+import type { RanapPaymentState } from "@/lib/ranap-payment";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 const tidakPasti = "Hasil penyimpanan belum dapat dipastikan. Muat ulang dan periksa tagihan yang sudah tersimpan sebelum mencoba lagi.";
@@ -143,6 +144,49 @@ export async function terimaPembayaran(formData: FormData) {
   if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error, tidakPasti))}`);
   revalidatePath(back);
   redirect(`${back}?success=bayar${transactionDraftAck(formData)}`);
+}
+
+/** One write RPC. Its internal original stage + receipt calls share a transaction. */
+export async function simpanBayar(formData: FormData): Promise<RanapPaymentState> {
+  const recordId = String(formData.get("recordId") ?? "");
+  const visitId = String(formData.get("visitId") ?? "");
+  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  const invalid = (): RanapPaymentState => ({ status: "ERROR", error: "Periksa metode, nominal rupiah bulat positif, dan kunci transaksi (maksimal 6 bagian)." });
+  if (!recordId || !visitId || !requestKey || requestKey.length > 80) return invalid();
+  let parts: { method: string; amount: number }[];
+  try {
+    const value: unknown = JSON.parse(String(formData.get("parts") ?? "[]"));
+    if (!Array.isArray(value) || value.length > 6 || value.some(p => !p || typeof p !== "object"
+      || !METODE_BAYAR.includes(p.method) || typeof p.amount !== "number" || !Number.isSafeInteger(p.amount) || p.amount <= 0)) return invalid();
+    parts = value.map(p => ({ method: p.method, amount: p.amount }));
+  } catch { return invalid(); }
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { status: "ERROR", error: "Sesi berakhir. Masuk lagi sebelum menyimpan pembayaran." };
+  const shift = await getOpenShift(supabase as never, user.id, "klinik");
+  if (!shift) return { status: "ERROR", error: "Buka shift klinik sebelum menyimpan pembayaran." };
+  const periode = await cekPeriode(supabase, hariIniWIB());
+  if (periode) return { status: "ERROR", error: periode };
+  const { data, error } = await supabase.rpc("clinic_bill_and_pay_inpatient", {
+    p_record_id: recordId, p_visit_id: visitId, p_request_key: requestKey, p_tanggal: hariIniWIB(), p_parts: parts,
+    p_overpayment_ack: String(formData.get("overpayment_ack") ?? "").trim() || null,
+    p_add_owner_credit: formData.get("add_owner_credit") === "true",
+    p_dp_override_reason: String(formData.get("dp_override_reason") ?? "").trim() || null,
+  });
+  if (error) return { status: "ERROR", error: parseClinicPostingError(error, tidakPasti) };
+  if (data?.status === "OVERPAYMENT_CONFIRM_REQUIRED" && data.quote) return { status: "OVERPAYMENT_CONFIRM_REQUIRED", quote: data.quote };
+  const applicationIds: string[] = Array.isArray(data?.application_ids) && data.application_ids.every((id: unknown) =>
+    typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) ? data.application_ids : [];
+  if (data?.status !== "SAVED" || data.visit_id !== visitId || data.record_id !== recordId || (!data.receipt_id && !data.invoice_id && !applicationIds.length)) {
+    return { status: "ERROR", error: tidakPasti };
+  }
+  const query = new URLSearchParams({ success: "transaksi" });
+  if (data.receipt_id) query.set("receipt", data.receipt_id);
+  if (data.invoice_id) query.set("invoice", data.invoice_id);
+  if (applicationIds.length) query.set("applications", applicationIds.join(","));
+  const back = kembali(recordId);
+  revalidatePath(back);
+  return { status: "SAVED", href: `${back}?${query}${transactionDraftAck(formData)}` };
 }
 
 export async function batalkanKwitansi(formData: FormData) {

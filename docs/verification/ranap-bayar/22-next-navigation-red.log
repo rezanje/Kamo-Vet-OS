@@ -1,0 +1,60 @@
+
+ RUN  v4.1.9 /opt/data/kamo-wt-ranap-bayar
+
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx (6 tests | 1 failed) 197ms
+   × saved real-document URL navigates without swallowing a Next redirect in local catch 18ms
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts (10 tests | 2 failed) 38ms
+   × exactly one monetary RPC with trusted IDs not client invoice/price/COA 30ms
+   × zero money is forwarded as empty parts, not fake receipt 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/ranap-simpan-bayar.test.tsx > saved real-document URL navigates without swallowing a Next redirect in local catch
+AssertionError: expected "vi.fn()" to be called with arguments: [ Array(1) ]
+
+Number of calls: 0
+
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:52:41
+     50|   const href = "/klinik/rawat-inap/r/tagihan?success=transaksi&receipt…
+     51|   save.mockResolvedValue({ status: "SAVED", href });
+     52|   await submit(); expect(navigate.push).toHaveBeenCalledWith(href); ex…
+       |                                         ^
+     53| });
+     54| it("zero new money has explicit save later path; settled primary is di…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > exactly one monetary RPC with trusted IDs not client invoice/price/COA
+AssertionError: promise rejected "Error: REDIRECT:/klinik/rawat-inap/record…" instead of resolving
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:13:36
+
+
+Caused by: Error: REDIRECT:/klinik/rawat-inap/record/tagihan?success=transaksi&receipt=receipt&invoice=invoice
+ ❯ redirect src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:3:72
+ ❯ Module.simpanBayar src/app/(app)/klinik/rawat-inap/[id]/tagihan/actions.ts:183:3
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:13:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > zero money is forwarded as empty parts, not fake receipt
+AssertionError: promise rejected "Error: REDIRECT:/klinik/rawat-inap/record…" instead of resolving
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:25:31
+     23|   s.rpc.mockResolvedValue({ data: { status: "SAVED", receipt_id: null,…
+     24|   const f = form(); f.set("parts", "[]");
+     25|   await expect(simpanBayar(f)).resolves.toEqual({ status: "SAVED", hre…
+       |                               ^
+     26|   expect(s.rpc.mock.calls[0][1].p_parts).toEqual([]);
+     27| });
+
+Caused by: Error: REDIRECT:/klinik/rawat-inap/record/tagihan?success=transaksi&invoice=invoice
+ ❯ redirect src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:3:72
+ ❯ Module.simpanBayar src/app/(app)/klinik/rawat-inap/[id]/tagihan/actions.ts:183:3
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:25:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  3 failed | 13 passed (16)
+   Start at  08:59:51
+   Duration  1.25s (transform 245ms, setup 0ms, import 332ms, tests 234ms, environment 349ms)

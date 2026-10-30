@@ -1,0 +1,12 @@
+{
+  "scope": "supporting static scan of added production lines only",
+  "files": [
+    "src/app/(app)/klinik/rawat-inap/[id]/tagihan/SimpanBayarForm.tsx",
+    "src/app/(app)/klinik/rawat-inap/[id]/tagihan/actions.ts",
+    "src/app/(app)/klinik/rawat-inap/[id]/tagihan/page.tsx",
+    "src/lib/ranap-payment.ts",
+    "supabase/migrations/20261104040000_ranap_simpan_bayar.sql"
+  ],
+  "findings": [],
+  "independent_review": "parent pending"
+}
