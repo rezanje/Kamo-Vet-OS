@@ -77,7 +77,8 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
   /** K14: pet hotel = catatan makan, kondisi, catatan bebas oleh paramedis; dokter/suhu tidak wajib. */
   petHotel?: boolean;
 }) {
-  const [staff,setStaff]=useState<InpatientStaff>({log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null});
+  const clinicalVisit = mode === "clinical" && !petHotel;
+  const [staff,setStaff]=useState<InpatientStaff>({log_kind:clinicalVisit?'doctor_visit':'monitoring',visit_doctor_id:null,paramedic_id:null});
   const billables = mode === "billables";
   const clinical = mode === "clinical";
   const [tab, setTab] = useState<Tab>(mode === "clinical" ? "Jasa" : tabAwal === "tindakan" ? TINDAKAN : "Obat");
@@ -140,7 +141,8 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
     optionalSnapshotKeys: ["saleItemId","staff","procedureDraft","racikanEditKey"],
     snapshot: { staff,saleItemId, cart, procedureDraft, racikanEditKey, catatan, discountPct, racikNama, officialVersionId, racikForm, racikAturan, racikBahan, fotoUrl, jasaNama, jasaHarga },
     restore: (value) => {
-      setStaff(value.staff??{log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null});
+      const restoredStaff=value.staff??{log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null};
+      setStaff(clinicalVisit?{...restoredStaff,log_kind:'doctor_visit'}:restoredStaff);
       setCart(value.cart);
       setProcedureDraft(value.procedureDraft ?? null);
       setRacikanEditKey(value.racikanEditKey ?? null);
@@ -495,7 +497,12 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
                 <label className="flab">Paramedis yang mencatat *<select className="fi" name="paramedic_id" aria-label="Paramedis yang mencatat" required value={staff.paramedic_id ?? ""} onChange={event => setStaff({ log_kind: "monitoring", visit_doctor_id: null, paramedic_id: event.target.value || null })}>
                   <option value="">— pilih paramedis —</option>{paramedics.map(row => <option key={row.id} value={row.id}>{row.nama}</option>)}
                 </select></label>
-              </> : <InpatientStaffFields value={staff} onChange={setStaff} doctors={doctors} paramedics={paramedics}/>}
+              </> : <>
+                {clinicalVisit && <label className="flab">Jenis Visit<select className="fi" name="visit_label" aria-label="Jenis Visit" defaultValue="Visit 1" required>
+                  <option value="Visit 1">Visit 1</option><option value="Visit 2">Visit 2</option>
+                </select></label>}
+                <InpatientStaffFields value={staff} onChange={setStaff} doctors={doctors} paramedics={paramedics} hideKind={clinicalVisit}/>
+              </>}
             </div>
             <div>
               <label className="flab">Ubah kondisi</label>

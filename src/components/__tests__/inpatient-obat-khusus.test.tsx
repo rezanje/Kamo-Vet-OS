@@ -55,6 +55,20 @@ it('clinical mode keeps only the clinical report in a single full-width column',
  expect(host.querySelector('.grid2')).toBeNull();
  expect(host.querySelector('a[href="/klinik/rawat-inap/stay/obat-khusus"]')).not.toBeNull();
 });
+it('new clinical reports offer only Visit 1 / Visit 2 and both require the same doctor visit',async()=>{
+ await act(async()=>root.render(<CatatanForm {...base} mode="clinical" />));
+ const label=host.querySelector<HTMLSelectElement>('[aria-label="Jenis Visit"]');
+ expect(label).not.toBeNull();
+ expect([...label!.options].map(option=>[option.value,option.text])).toEqual([['Visit 1','Visit 1'],['Visit 2','Visit 2']]);
+ expect(host.querySelector('[aria-label="Jenis laporan"]')).toBeNull();
+ for(const value of ['Visit 1','Visit 2']){
+  await act(async()=>{label!.value=value;label!.dispatchEvent(new Event('change',{bubbles:true}));});
+  expect(host.querySelector<HTMLInputElement>('[name="log_kind"]')!.value).toBe('doctor_visit');
+  expect(host.querySelector<HTMLSelectElement>('[name="visit_doctor_id"]')!.required).toBe(true);
+  expect(host.querySelector('form')!.checkValidity()).toBe(false);
+  for(const text of ['JASA VISIT','KERANJANG','Rp '])expect(host.textContent).not.toContain(text);
+ }
+});
 it('billables keeps Jasa entry and saves it on the same standalone billing action',async()=>{
  vi.mocked(addInpatientBillables).mockResolvedValue({saved:true,href:'/klinik/rawat-inap/stay#obat-khusus'});
  await act(async()=>root.render(<CatatanForm {...base} mode="billables" jasaItems={[{id:'service',name:'Jasa fiktif',unit:'kali',sell_price:20000,stok:0,item_type:'Jasa'}]} />));
@@ -67,11 +81,13 @@ it('billables keeps Jasa entry and saves it on the same standalone billing actio
 async function submitClinical(){
  const form=host.querySelector('form')!;
  form.querySelector<HTMLTextAreaElement>('[name="condition_note"]')!.value='Stabil fiktif';
+ const doctor=form.querySelector<HTMLSelectElement>('[name="visit_doctor_id"]')!;
+ await act(async()=>{doctor.value='dc000000-0000-4000-8000-000000000002';doctor.dispatchEvent(new Event('change',{bubbles:true}));});
  const paramedic=form.querySelector<HTMLSelectElement>('[name="paramedic_id"]')!;
  await act(async()=>{paramedic.value='paramedic';paramedic.dispatchEvent(new Event('change',{bubbles:true}));});
  await act(async()=>form.requestSubmit());
 }
-const clinicalProps={...base,mode:'clinical' as const,paramedics:[{id:'paramedic',nama:'Paramedis fiktif',jabatan:null}]};
+const clinicalProps={...base,mode:'clinical' as const,doctors:[{id:'dc000000-0000-4000-8000-000000000002',nama:'Dokter fiktif',jabatan:'Dokter'}],paramedics:[{id:'paramedic',nama:'Paramedis fiktif',jabatan:null}]};
 it('clinical save sends an empty prescription without billing notes or prices',async()=>{
  vi.mocked(addDailyLogPos).mockResolvedValue({saved:true,href:base.backHref});
  await act(async()=>root.render(<CatatanForm {...clinicalProps} />));
@@ -81,6 +97,28 @@ it('clinical save sends an empty prescription without billing notes or prices',a
  expect(data.get('resep')).toBe('[]');expect(data.get('catatan_resep')).toBeNull();
  for(const name of ['discountPct','discount','harga','subtotal','total']) expect(data.get(name)).toBeNull();
  expect(data.get('condition_note')).toBe('Stabil fiktif');expect(data.get('paramedic_id')).toBe('paramedic');
+ expect(data.get('visit_label')).toBe('Visit 1');expect(data.get('log_kind')).toBe('doctor_visit');expect(data.get('visit_doctor_id')).toBe('dc000000-0000-4000-8000-000000000002');
+});
+it('Visit 2 survives draft recovery and submits the chosen label with a required doctor and no charges',async()=>{
+ await act(async()=>root.render(<CatatanForm {...clinicalProps} />));
+ const label=host.querySelector<HTMLSelectElement>('[name="visit_label"]')!;
+ await act(async()=>{label.value='Visit 2';label.dispatchEvent(new Event('change',{bubbles:true}));});
+ const note=host.querySelector<HTMLTextAreaElement>('[name="condition_note"]')!;
+ await act(async()=>{note.value='Catatan draf asli';note.dispatchEvent(new Event('input',{bubbles:true}));});
+ const key='vetos:clinic-draft:v1:doctor:inpatient:stay';
+ expect(JSON.parse(sessionStorage.getItem(key)!).fields.visit_label).toBe('Visit 2');
+ await act(async()=>root.unmount());root=createRoot(host);
+ await act(async()=>root.render(<CatatanForm {...clinicalProps} />));
+ expect(host.querySelector<HTMLSelectElement>('[name="visit_label"]')!.value).toBe('Visit 2');
+ expect(host.querySelector<HTMLTextAreaElement>('[name="condition_note"]')!.value).toBe('Catatan draf asli');
+ expect(host.querySelector<HTMLSelectElement>('[name="visit_doctor_id"]')!.required).toBe(true);
+ expect(host.querySelector('form')!.checkValidity()).toBe(false);
+ vi.mocked(addDailyLogPos).mockResolvedValue({saved:true,href:base.backHref});
+ await submitClinical();
+ const data=vi.mocked(addDailyLogPos).mock.calls[0][0];
+ expect(data.get('visit_label')).toBe('Visit 2');expect(data.get('log_kind')).toBe('doctor_visit');
+ expect(data.get('visit_doctor_id')).toBe('dc000000-0000-4000-8000-000000000002');expect(data.get('resep')).toBe('[]');
+ expect(addInpatientBillables).not.toHaveBeenCalled();
 });
 it.each(['cart','procedure','compound','legacy-service'])('clinical recovery blocks an old %s draft without losing it until explicitly discarded',async kind=>{
  await act(async()=>root.render(<CatatanForm {...base} />));
@@ -98,13 +136,16 @@ it.each(['cart','procedure','compound','legacy-service'])('clinical recovery blo
  await act(async()=>root.render(<CatatanForm {...clinicalProps} />));
  expect(host.querySelector('[role="alert"]')?.textContent).toContain('Draf tagihan lama');
  expect(host.textContent).toContain('belum dipindahkan');
+ expect(host.querySelector<HTMLInputElement>('[name="log_kind"]')!.value).toBe('doctor_visit');
+ expect(host.querySelector<HTMLSelectElement>('[name="visit_doctor_id"]')!.required).toBe(true);
+ expect(host.querySelector<HTMLSelectElement>('[name="visit_doctor_id"]')!.value).toBe('');
  await submitClinical();
  expect(addDailyLogPos).not.toHaveBeenCalled();expect(addInpatientBillables).not.toHaveBeenCalled();
- expect(JSON.parse(sessionStorage.getItem(key)!).snapshot).toEqual({...saved.snapshot,staff:{...saved.snapshot.staff,paramedic_id:'paramedic'}});
+ expect(JSON.parse(sessionStorage.getItem(key)!).snapshot).toEqual({...saved.snapshot,staff:{...saved.snapshot.staff,log_kind:'doctor_visit',visit_doctor_id:'dc000000-0000-4000-8000-000000000002',paramedic_id:'paramedic'}});
  expect(host.querySelector<HTMLTextAreaElement>('[name="condition_note"]')!.value).toBe('Stabil fiktif');
  await act(async()=>root.unmount());root=createRoot(host);
  await act(async()=>root.render(<CatatanForm {...clinicalProps} />));
- expect(JSON.parse(sessionStorage.getItem(key)!).snapshot).toEqual({...saved.snapshot,staff:{...saved.snapshot.staff,paramedic_id:'paramedic'}});
+ expect(JSON.parse(sessionStorage.getItem(key)!).snapshot).toEqual({...saved.snapshot,staff:{...saved.snapshot.staff,log_kind:'doctor_visit',visit_doctor_id:'dc000000-0000-4000-8000-000000000002',paramedic_id:'paramedic'}});
  expect(host.querySelector('[role="alert"]')?.textContent).toContain('Draf tagihan lama');
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="Buang item tagihan dari draf"]')!.click());
  expect(host.querySelector<HTMLTextAreaElement>('[name="condition_note"]')!.value).toBe('Stabil fiktif');
