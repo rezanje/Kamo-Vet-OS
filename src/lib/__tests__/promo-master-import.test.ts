@@ -1,4 +1,6 @@
 import ExcelJS from "exceljs";
+import { writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   PROMO_MASTER_HEADERS, PROMO_MASTER_SHEET, makePromoMasterTemplate, readPromoMasterExcel,
@@ -47,6 +49,36 @@ const baris = (over: Isi = {}, line = 2): PromoMasterExcelRow => ({
 });
 
 describe("format Excel daftar promo", () => {
+  it("fills the real downloadable template, parses/reviews it, and can hand exact plans to native RPC verification", async () => {
+    const branch = { id: "fa200000-0000-4000-8000-000000000001", code: "FA-RANAP", name: "Klinik Fiktif", is_active: true };
+    const items = [
+      { id: "fa800000-0000-4000-8000-000000000001", code: "FA-OBAT", name: "Obat Fiktif", is_active: true },
+      { id: "fae00000-0000-4000-8000-000000000002", code: "PROMO-JASA", name: "Jasa Fiktif", is_active: true },
+    ];
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(Buffer.from(await makePromoMasterTemplate([branch])) as never);
+    const sheet = book.getWorksheet(PROMO_MASTER_SHEET)!;
+    for (const item of items) {
+      const row: Isi = { ...BARIS, "Nama Promo": "Native Workbook", "Kode SKU": item.code, Cabang: branch.code,
+        "Tanggal Mulai": "2026-01-01", "Tanggal Berakhir": "2099-12-31", Nilai: 20 };
+      sheet.addRow(PROMO_MASTER_HEADERS.map(header => row[header] ?? ""));
+    }
+    const bytes = new Uint8Array(await book.xlsx.writeBuffer());
+    const parsed = await readPromoMasterExcel(bytes);
+    const reviewed = reviewPromoMaster(parsed, { items, branches: [branch], existing: [] });
+    expect(reviewed.valid).toBe(true);
+    expect(reviewed.plans).toHaveLength(1);
+    expect(reviewed.plans[0].item_ids).toEqual(items.map(item => item.id));
+    // Optional real bridge, not a synthesized API response. The native suite reads
+    // this exact parser/review output and invokes the original public import RPC.
+    const prefix = process.env.KAMO_PROMO_NATIVE_ARTIFACTS;
+    if (prefix) {
+      writeFileSync(`${prefix}.xlsx`, bytes);
+      writeFileSync(`${prefix}.json`, JSON.stringify({
+        workbook: `${prefix}.xlsx`, sha256: createHash("sha256").update(bytes).digest("hex"), plans: reviewed.plans,
+      }, null, 2));
+    }
+  });
   it("berkas format berisi sheet isian, kolom lengkap, dan petunjuk pengisian", async () => {
     const book = new ExcelJS.Workbook();
     await book.xlsx.load(Buffer.from(await makePromoMasterTemplate([
@@ -98,6 +130,13 @@ describe("format Excel daftar promo", () => {
 });
 
 describe("pemeriksaan isi berkas", () => {
+  it("menandai tanggal berakhir yang sudah lewat merah sebelum DB menolak aktivasi", () => {
+    const hasil = reviewPromoMaster([
+      baris({ "Tanggal Mulai": "2000-01-01", "Tanggal Berakhir": "2000-12-31" }),
+    ], MASTER);
+    expect(hasil.valid).toBe(false);
+    expect(hasil.rows[0].error).toMatch(/kedaluwarsa|lewat|perpanjang/i);
+  });
   it("menggabungkan baris bernama sama jadi satu promo berisi banyak barang", () => {
     const hasil = reviewPromoMaster([
       baris({}, 2), baris({ "Kode SKU": "SKU-2" }, 3),

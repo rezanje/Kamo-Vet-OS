@@ -1,4 +1,5 @@
 import type { PromoMasterExcelRow } from "./promo-master-excel";
+import { hariIniWIB } from "./tanggal";
 
 // Pemeriksaan berkas "Daftar Promo" — murni, tanpa database, supaya layar preview
 // dan server memakai hasil yang persis sama. Tidak ada satu pun promo tersimpan
@@ -183,6 +184,7 @@ export function reviewPromoMaster(
       setError(index, `Kode cabang tidak dikenal atau nonaktif: ${branch_codes.filter(code => !branchByCode.get(code.toLowerCase())?.is_active).join(", ")}`);
     } else if (!mulai || !akhir) setError(index, "Tanggal Mulai dan Tanggal Berakhir wajib format YYYY-MM-DD");
     else if (akhir < mulai) setError(index, "Tanggal Berakhir mendahului Tanggal Mulai");
+    else if (akhir < hariIniWIB()) setError(index, "Tanggal Berakhir sudah lewat; perpanjang dulu sebelum mengaktifkan promo.");
     else if (minRaw && (!Number.isFinite(minQty as number) || (minQty as number) <= 0)) setError(index, "Min Qty harus lebih dari 0 atau dikosongkan");
     else if (maksRaw && (!Number.isFinite(maxQty as number) || (maxQty as number) <= 0)) setError(index, "Maks Qty harus lebih dari 0 atau dikosongkan");
     else if (minQty != null && maxQty != null && maxQty < minQty) setError(index, "Maks Qty tidak boleh lebih kecil dari Min Qty");

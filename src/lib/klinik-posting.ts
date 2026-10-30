@@ -31,9 +31,6 @@ export type ClinicInvoiceLineInput = {
   salesperson_id?: string;
   package_item_id?: string;
   package_qty?: number;
-  /** Promo yang memotong baris ini; hanya dikirim bila potongannya > 0. */
-  promo_id?: string;
-  promo_discount?: number;
 };
 
 export type ClinicInvoiceInput = {
@@ -51,10 +48,6 @@ export type ClinicInvoiceInput = {
   voucher_code: string | null;
   /** Kode kampanye yang diketik (C05); batas pemakaiannya dijaga database. */
   campaign_code?: string | null;
-  /** Bagian `discount` yang berasal dari voucher; dipisah supaya laporan tidak menebak. */
-  voucher_discount?: number;
-  /** Bagian `discount` yang berasal dari diskon golongan pelanggan. */
-  diskon_kategori?: number;
   salesperson_id: string | null;
 };
 

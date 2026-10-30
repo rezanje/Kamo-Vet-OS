@@ -44,7 +44,6 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { g
       then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve) };
     return q;
   },
-  rpc: async () => ({ data: [], error: null }),
 }) }));
 
 import ShiftPage from "@/app/(app)/pos/shift/page";
