@@ -1,5 +1,6 @@
 // Guard peran untuk halaman master data & transaksi keuangan. Aturannya satu
 // tempat: OWNER/ADMIN boleh mengubah master data, FINANCE ikut untuk Kas & Bank.
+import { cache } from "react";
 import { loadRoleCapabilities } from "./role-capabilities";
 import { redirect } from "next/navigation";
 import { bolehKelolaPayroll as peranBolehKelolaPayroll } from "@/lib/hris-access";
@@ -7,13 +8,17 @@ import { createClient } from "@/lib/supabase/server";
 
 const ADMIN = ["OWNER", "ADMIN"];
 
-async function roleSaya() {
+// Satu halaman memanggil beberapa guard sekaligus (bolehKelolaMaster +
+// bolehLihatGaji + bolehKelolaPayroll). Tanpa memo, tiap panggilan mengulang
+// auth.getUser() dan satu baca `profiles` — enam perjalanan ke server untuk
+// jawaban yang sama. `cache` dari React memoize per permintaan, jadi cukup satu.
+const roleSaya = cache(async () => {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
   return { supabase, role: profile?.is_active ? profile.role : "" };
-}
+});
 
 // Dipakai server action: menulis tanpa hak = tendang balik dengan pesan.
 export async function assertRole(back: string, apa: string, boleh: string[]) {
@@ -26,6 +31,13 @@ export async function assertRole(back: string, apa: string, boleh: string[]) {
 
 export async function assertMasterAdmin(back: string, apa: string) {
   return assertRole(back, apa, ADMIN);
+}
+
+// Dipakai server action yang mengembalikan pesan di layar (useActionState) alih-alih
+// redirect: null = tidak berhak, tanpa memaksa pindah halaman.
+export async function klienMasterAdmin() {
+  const { supabase, role } = await roleSaya();
+  return ADMIN.includes(role) ? supabase : null;
 }
 
 export async function assertHrisManager(back: string) {

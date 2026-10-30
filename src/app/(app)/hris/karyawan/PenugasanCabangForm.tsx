@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { EmployeePicker } from "@/components/EmployeePicker";
 import { simpanPenugasanCabang } from "./actions";
@@ -11,11 +11,24 @@ export function PenugasanCabangForm({ employees, branches, today }: {
   const [employeeId, setEmployeeId] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  // Hasil simpan tampil di halaman ini juga — tidak lagi pindah ke daftar karyawan
+  // yang harus merender ulang seluruh direktori hanya untuk menampilkan satu pesan.
+  const [state, simpan] = useActionState(simpanPenugasanCabang, null);
+  // Centang dibersihkan saat render berikutnya setelah simpan berhasil — tanpa
+  // efek, supaya tidak memicu render berantai.
+  const [terakhir, setTerakhir] = useState(state);
+  if (state !== terakhir) { setTerakhir(state); if (state?.ok) setSelected([]); }
   const employee = employees.find(row => row.id === employeeId);
   const filtered = branches.filter(branch => branch.name.toLowerCase().includes(search.trim().toLowerCase()));
-  return <form action={simpanPenugasanCabang}>
+  return <form action={simpan}>
     <input type="hidden" name="role" value="SECONDARY" />
     {selected.map(id => <input key={id} type="hidden" name="branch_ids" value={id} />)}
+    {state && <div role={state.ok ? "status" : "alert"} className="p2ban"
+      style={state.ok
+        ? { background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }
+        : { background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+      <i className={`ti ${state.ok ? "ti-circle-check" : "ti-alert-circle"}`} /> {state.pesan}
+    </div>}
     <div className="grid2">
       <div>
         <label className="flab" htmlFor="assignment-employee">Karyawan *</label>
@@ -45,7 +58,7 @@ export function PenugasanCabangForm({ employees, branches, today }: {
       </div>
     </fieldset>
     <div aria-live="polite" style={{ fontSize: 11, color: "var(--tm)", marginTop: 8 }}>
-      {selected.length} cabang dipilih{selected.length ? `: ${branches.filter(branch => selected.includes(branch.id)).map(branch => branch.name).join(", ")}` : ""}. Penugasan cabang yang sudah ada tetap tersimpan.
+      {selected.length} cabang dipilih{selected.length ? `: ${branches.filter(branch => selected.includes(branch.id)).map(branch => branch.name).join(", ")}` : ""}. Penugasan cabang yang sudah ada tetap tersimpan. Cabang yang pernah diakhiri akan dibuka kembali dengan tanggal mulai baru.
     </div>
     <div style={{ marginTop: 12 }}><SubmitButton className="btn-acc" icon="ti-git-branch" pendingText="Menyimpan penugasan…" disabled={!employeeId || selected.length === 0}>Simpan Penugasan</SubmitButton></div>
   </form>;

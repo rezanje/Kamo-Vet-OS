@@ -43,6 +43,22 @@ describe("saringKaryawan", () => {
     expect(nama(saringKaryawan(daftar, { cabang: "b1" }))).toEqual(["e1", "e4"]);
   });
 
+  // T2: penugasan yang sudah berakhir tidak boleh lagi menjaring orangnya ke
+  // cabang itu — kalau masih, HR mengira dokternya masih bisa dipilih di sana.
+  it("saringan cabang mengabaikan penugasan yang sudah berakhir", () => {
+    const berakhir = [
+      { ...daftar[0], assignments: [{ branch_id: "b2", branchName: "Kamo Bogor", keadaan: "berakhir" }] },
+      daftar[1],
+    ];
+    expect(nama(berakhir as typeof daftar)).toEqual(["e1", "e2"]);
+    expect(nama(saringKaryawan(berakhir as typeof daftar, { cabang: "b2" }))).toEqual(["e2"]);
+    // Penugasan yang belum berlaku tetap ikut: orangnya memang akan bertugas di sana.
+    const akanDatang = [{ ...daftar[0], assignments: [{ branch_id: "b2", branchName: "Kamo Bogor", keadaan: "akan-datang" }] }];
+    expect(nama(saringKaryawan(akanDatang as typeof daftar, { cabang: "b2" }))).toEqual(["e1"]);
+    // Kotak cari tetap menemukan riwayatnya lewat nama cabang.
+    expect(nama(saringKaryawan(berakhir as typeof daftar, { cari: "bogor" }))).toEqual(["e1", "e2"]);
+  });
+
   it("menyaring per grup jabatan klinis dan menyisakan sisanya di Lainnya", () => {
     expect(nama(saringKaryawan(daftar, { grup: "dokter" }))).toEqual(["e1"]);
     expect(nama(saringKaryawan(daftar, { grup: "paramedis" }))).toEqual(["e3"]);
