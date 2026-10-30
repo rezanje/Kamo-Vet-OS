@@ -1,0 +1,28 @@
+
+ RUN  v4.1.9 /opt/data/kamo-wt-ranap-bayar
+
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts (11 tests | 1 failed) 39ms
+   × expired session returns a visible error without a swallowed redirect 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > expired session returns a visible error without a swallowed redirect
+Error: REDIRECT:/klinik/shift?error=Mulai%20shift%20klinik%20dulu%20sebelum%20memproses%20tagihan%20rawat%20inap
+ ❯ redirect src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:3:72
+      1| import { beforeEach, expect, it, vi } from "vitest";
+      2| const s = vi.hoisted(() => ({ rpc: vi.fn(), user: true, period: null a…
+      3| vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw…
+       |                                                                        ^
+      4| vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+      5| vi.mock("@/lib/shift", () => ({ getOpenShift: async () => ({ id: "shif…
+ ❯ shiftKlinik src/app/(app)/klinik/rawat-inap/[id]/tagihan/actions.ts:30:5
+ ❯ Module.simpanBayar src/app/(app)/klinik/rawat-inap/[id]/tagihan/actions.ts:164:3
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:33:10
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 16 passed (17)
+   Start at  09:01:47
+   Duration  1.17s (transform 204ms, setup 0ms, import 296ms, tests 231ms, environment 333ms)

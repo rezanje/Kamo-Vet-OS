@@ -1,0 +1,32 @@
+
+ RUN  v4.1.9 /opt/data/kamo-wt-ranap-bayar
+
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/ranap-simpan-bayar.test.tsx [ src/components/__tests__/ranap-simpan-bayar.test.tsx ]
+Error: Failed to resolve import "@/app/(app)/klinik/rawat-inap/[id]/tagihan/SimpanBayarForm" from "src/components/__tests__/ranap-simpan-bayar.test.tsx". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /opt/data/kamo-wt-ranap-bayar/src/components/__tests__/ranap-simpan-bayar.test.tsx:7:0
+  4  |  const __vi_import_1__ = await import("react-dom/client");
+  5  |  const __vi_import_2__ = await import("react/jsx-dev-runtime");
+  6  |  const __vi_import_3__ = await import("@/app/(app)/klinik/rawat-inap/[id]/tagihan/SimpanBayarForm");
+     |                                       ^
+  7  |  // @vitest-environment jsdom
+  8  |
+ ❯ TransformPluginContext._formatLog ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/vite/dist/node/chunks/node.js:29960:39
+ ❯ TransformPluginContext.error ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/vite/dist/node/chunks/node.js:29957:14
+ ❯ normalizeUrl ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/vite/dist/node/chunks/node.js:26993:18
+ ❯ ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/vite/dist/node/chunks/node.js:27056:30
+ ❯ TransformPluginContext.transform ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/vite/dist/node/chunks/node.js:27024:4
+ ❯ EnvironmentPluginContainer.transform ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/vite/dist/node/chunks/node.js:29745:14
+ ❯ loadAndTransform ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/vite/dist/node/chunks/node.js:19729:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  08:35:39
+   Duration  605ms (transform 0ms, setup 0ms, import 0ms, tests 0ms, environment 333ms)

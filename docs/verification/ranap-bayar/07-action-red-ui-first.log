@@ -1,0 +1,88 @@
+
+ RUN  v4.1.9 /opt/data/kamo-wt-ranap-bayar
+
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts (10 tests | 10 failed) 28ms
+   × exactly one monetary RPC with trusted IDs not client invoice/price/COA 23ms
+   × backend overpayment confirmation returns exact current quote without success redirect 1ms
+   × zero money is forwarded as empty parts, not fake receipt 1ms
+   × invalid money bad-json fails closed 0ms
+   × invalid money [{"method":"Tunai","amount":0}] fails closed 0ms
+   × invalid money [{"method":"Arbitrary","amount":10}] fails closed 0ms
+   × invalid money [{"method":"Tunai","amount":-1}] fails closed 1ms
+   × invalid money [{"method":"Tunai","amount":1.5}] fails closed 0ms
+   × no compatibility fallback on missing/internal function 0ms
+   × wrong returned visit/record cannot produce success feedback 0ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > exactly one monetary RPC with trusted IDs not client invoice/price/COA
+TypeError: simpanBayar is not a function
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:13:16
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > backend overpayment confirmation returns exact current quote without success redirect
+TypeError: simpanBayar is not a function
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:20:16
+     18|   const quote = { token: "new", excess: 50000, remaining: 50000, amoun…
+     19|   s.rpc.mockResolvedValue({ data: { status: "OVERPAYMENT_CONFIRM_REQUI…
+     20|   expect(await simpanBayar(form())).toEqual({ status: "OVERPAYMENT_CON…
+       |                ^
+     21| });
+     22| it("zero money is forwarded as empty parts, not fake receipt", async (…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > zero money is forwarded as empty parts, not fake receipt
+TypeError: simpanBayar is not a function
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:25:16
+     23|   s.rpc.mockResolvedValue({ data: { status: "SAVED", receipt_id: null,…
+     24|   const f = form(); f.set("parts", "[]");
+     25|   await expect(simpanBayar(f)).rejects.toThrow("success=transaksi&invo…
+       |                ^
+     26|   expect(s.rpc.mock.calls[0][1].p_parts).toEqual([]);
+     27| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > invalid money bad-json fails closed
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > invalid money [{"method":"Tunai","amount":0}] fails closed
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > invalid money [{"method":"Arbitrary","amount":10}] fails closed
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > invalid money [{"method":"Tunai","amount":-1}] fails closed
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > invalid money [{"method":"Tunai","amount":1.5}] fails closed
+TypeError: simpanBayar is not a function
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:29:55
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > no compatibility fallback on missing/internal function
+TypeError: simpanBayar is not a function
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:33:17
+     31| it("no compatibility fallback on missing/internal function", async () …
+     32|   s.rpc.mockResolvedValue({ data: null, error: { code: "42883", messag…
+     33|   expect((await simpanBayar(form())).status).toBe("ERROR"); expect(s.r…
+       |                 ^
+     34| });
+     35| it("wrong returned visit/record cannot produce success feedback", asyn…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts > wrong returned visit/record cannot produce success feedback
+TypeError: simpanBayar is not a function
+ ❯ src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts:37:17
+     35| it("wrong returned visit/record cannot produce success feedback", asyn…
+     36|   s.rpc.mockResolvedValue({ data: { status: "SAVED", receipt_id: "rece…
+     37|   expect((await simpanBayar(form())).status).toBe("ERROR");
+       |                 ^
+     38| });
+     39|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  10 failed | 5 passed (15)
+   Start at  08:37:21
+   Duration  1.22s (transform 225ms, setup 0ms, import 315ms, tests 200ms, environment 339ms)

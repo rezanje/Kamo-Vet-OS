@@ -1,0 +1,424 @@
+{
+  "mode": "candidate",
+  "migration_count": 329,
+  "cases": [
+    {
+      "case": "one action pending medicine and services posts invoice stock revenue AR actual split receipt",
+      "status": "PASS",
+      "detail": {
+        "error": null
+      }
+    },
+    {
+      "case": "real invoice and journal amounts",
+      "status": "PASS",
+      "detail": {
+        "invoice": "c00af1e6-6409-4a5a-b148-446e32c51691",
+        "revenue": -330000.0,
+        "hpp": 4000.0,
+        "ar": 0.0,
+        "stock": 198.0
+      }
+    },
+    {
+      "case": "exact replay invoice receipt stock GL once",
+      "status": "PASS",
+      "detail": {
+        "unchanged": true
+      }
+    },
+    {
+      "case": "available owner advance offsets existing and pending debt without collecting twice",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "debt": 0.0
+      }
+    },
+    {
+      "case": "direct public RPC overpayment rejected before ANY money or invoice writes",
+      "status": "PASS",
+      "detail": {
+        "quote": {
+          "tax": 0,
+          "debt": 0,
+          "token": "0b412312b0a871b0a14586c0d60e5f51",
+          "amount": 400000,
+          "credit": 0,
+          "excess": 70000.0,
+          "pending": 330000.0,
+          "accounts": [
+            {
+              "bank": null,
+              "code": "1101",
+              "name": "Kas",
+              "method": "Tunai",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Transfer",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Debit",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Kredit",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "QRIS",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "E-Wallet",
+              "number": null
+            }
+          ],
+          "subtotal": 330000.0,
+          "remaining": 330000.0
+        },
+        "status": "OVERPAYMENT_CONFIRM_REQUIRED"
+      }
+    },
+    {
+      "case": "confirmation bound to exact amount and split methods",
+      "status": "PASS",
+      "detail": {
+        "quote": {
+          "tax": 0,
+          "debt": 0,
+          "token": "845b2c79394b13b29ef06307177fed6d",
+          "amount": 410000,
+          "credit": 0,
+          "excess": 80000.0,
+          "pending": 330000.0,
+          "accounts": [
+            {
+              "bank": null,
+              "code": "1101",
+              "name": "Kas",
+              "method": "Tunai",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Transfer",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Debit",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Kredit",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "QRIS",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "E-Wallet",
+              "number": null
+            }
+          ],
+          "subtotal": 330000.0,
+          "remaining": 330000.0
+        },
+        "status": "OVERPAYMENT_CONFIRM_REQUIRED"
+      }
+    },
+    {
+      "case": "added prescription invalidates acknowledged quote",
+      "status": "PASS",
+      "detail": {
+        "quote": {
+          "tax": 0,
+          "debt": 0,
+          "token": "a9c936404d1b1c80dfd76943bea32901",
+          "amount": 400000,
+          "credit": 0,
+          "excess": 60000.0,
+          "pending": 340000.0,
+          "accounts": [
+            {
+              "bank": null,
+              "code": "1101",
+              "name": "Kas",
+              "method": "Tunai",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Transfer",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Debit",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Kredit",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "QRIS",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "E-Wallet",
+              "number": null
+            }
+          ],
+          "subtotal": 340000.0,
+          "remaining": 340000.0
+        },
+        "status": "OVERPAYMENT_CONFIRM_REQUIRED"
+      }
+    },
+    {
+      "case": "acknowledged surplus kept once as real owner liability not revenue",
+      "status": "PASS",
+      "detail": {
+        "result": {
+          "status": "SAVED",
+          "visit_id": "fa600000-0000-4000-8000-000000000910",
+          "record_id": "5516304d-a9a9-43bf-8ba4-02bacc48e0fc",
+          "invoice_id": "fe7af4e9-496e-4cdc-9eb4-3a5b4e4a068a",
+          "receipt_id": "4e3a5105-571c-4191-8b8e-372f4f8a5ceb"
+        },
+        "cash_delta": 100000.0,
+        "bank_delta": 300000.0,
+        "invoice_received": 340000.0,
+        "revenue": -340000.0,
+        "unused": 60000
+      }
+    },
+    {
+      "case": "acknowledged double-submit idempotent including surplus",
+      "status": "PASS",
+      "detail": {
+        "unchanged": true
+      }
+    },
+    {
+      "case": "cached replay wrong branch denied",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  ACCESS_DENIED: rawat inap atau akses tidak valid\nCONTEXT:  PL/pgSQL function clinic_private.inpatient_payment_quote(uuid,uuid,jsonb) line 17 at RAISE\nPL/pgSQL function public.clinic_bill_and_pay_inpatient(uuid,uuid,text,date,jsonb,text,boolean,text) line 6 at assignment\n{\"sub\": \"fa100000-0000-4000-8000-000000000007\", \"role\": \"authenticated\"}\n",
+        "unchanged": true
+      }
+    },
+    {
+      "case": "changed payload same key rejected",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  IDEMPOTENCY_CONFLICT: kunci dipakai untuk data berbeda\nCONTEXT:  PL/pgSQL function public.clinic_bill_and_pay_inpatient(uuid,uuid,text,date,jsonb,text,boolean,text) line 14 at RAISE\n{\"sub\": \"fa100000-0000-4000-8000-000000000004\", \"role\": \"authenticated\"}\n",
+        "unchanged": true
+      }
+    },
+    {
+      "case": "settled/no-new-items primary cannot collect again",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  PAYMENT_SETTLED: tidak ada tagihan baru; gunakan Tambah saldo pemilik secara eksplisit\nCONTEXT:  PL/pgSQL function public.clinic_bill_and_pay_inpatient(uuid,uuid,text,date,jsonb,text,boolean,text) line 23 at RAISE\n{\"sub\": \"fa100000-0000-4000-8000-000000000004\", \"role\": \"authenticated\"}\n",
+        "unchanged": true
+      }
+    },
+    {
+      "case": "explicit Tambah saldo owner mode preserves advance-before-items",
+      "status": "PASS",
+      "detail": {
+        "status": "SAVED",
+        "visit_id": "fa600000-0000-4000-8000-000000000910",
+        "record_id": "5516304d-a9a9-43bf-8ba4-02bacc48e0fc",
+        "invoice_id": null,
+        "receipt_id": "5780a418-5b2f-41a5-a8dd-a5155b965d70"
+      }
+    },
+    {
+      "case": "receipt reversal invalidates quote even when payment is no longer excess",
+      "status": "PASS",
+      "detail": {
+        "quote": {
+          "tax": 0,
+          "debt": 340000.0,
+          "token": "e82327a71acd7b06f964113a6ed23dc0",
+          "amount": 100000,
+          "credit": 50000.0,
+          "excess": 0,
+          "pending": 0.0,
+          "accounts": [
+            {
+              "bank": null,
+              "code": "1101",
+              "name": "Kas",
+              "method": "Tunai",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Transfer",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Debit",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "Kredit",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "QRIS",
+              "number": null
+            },
+            {
+              "bank": "BCA",
+              "code": "1102",
+              "name": "Bank BCA",
+              "method": "E-Wallet",
+              "number": null
+            }
+          ],
+          "subtotal": 0.0,
+          "remaining": 290000.0
+        },
+        "status": "OVERPAYMENT_CONFIRM_REQUIRED"
+      }
+    },
+    {
+      "case": "initial payment below minimum rolls back receipt advance invoice stock GL",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  DP_MINIMAL: minimal 50% = Rp 165000, baru diterima Rp 10000\nCONTEXT:  PL/pgSQL function clinic_private.enforce_min_dp(uuid,text) line 21 at RAISE\nSQL statement \"SELECT clinic_private.enforce_min_dp(v_invoice_id, p_invoice ->> 'dp_override_reason')\"\nPL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 83 at PERFORM\nPL/pgSQL function public.clinic_bill_and_pay_inpatient(uuid,uuid,text,date,jsonb,text,boolean,text) line 40 at assignment\n{\"sub\": \"fa100000-0000-4000-8000-000000000004\", \"role\": \"authenticated\"}\n",
+        "unchanged": true
+      }
+    },
+    {
+      "case": "initial zero-money has no minimum bypass",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  DP_MINIMAL: minimal 50% = Rp 165000, baru diterima Rp 0\nCONTEXT:  PL/pgSQL function clinic_private.enforce_min_dp(uuid,text) line 21 at RAISE\nSQL statement \"SELECT clinic_private.enforce_min_dp(v_invoice_id, p_invoice ->> 'dp_override_reason')\"\nPL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 83 at PERFORM\nPL/pgSQL function public.clinic_bill_and_pay_inpatient(uuid,uuid,text,date,jsonb,text,boolean,text) line 40 at assignment\n{\"sub\": \"fa100000-0000-4000-8000-000000000004\", \"role\": \"authenticated\"}\n",
+        "unchanged": true
+      }
+    },
+    {
+      "case": "STAFF initial override still denied",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  DP_OVERRIDE_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh menerima di bawah uang muka minimal\nCONTEXT:  PL/pgSQL function clinic_private.enforce_min_dp(uuid,text) line 31 at RAISE\nSQL statement \"SELECT clinic_private.enforce_min_dp(v_invoice_id, p_invoice ->> 'dp_override_reason')\"\nPL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 83 at PERFORM\nPL/pgSQL function public.clinic_bill_and_pay_inpatient(uuid,uuid,text,date,jsonb,text,boolean,text) line 40 at assignment\n{\"sub\": \"fa100000-0000-4000-8000-000000000004\", \"role\": \"authenticated\"}\n",
+        "unchanged": true
+      }
+    },
+    {
+      "case": "followup zero money posts revenue AR without fake zero receipt or changing old invoice",
+      "status": "PASS",
+      "detail": {
+        "status": "SAVED",
+        "visit_id": "fa600000-0000-4000-8000-000000000920",
+        "record_id": "97ca0b50-f526-43e9-8ed6-8ef71d386fce",
+        "invoice_id": "77c575dc-8eeb-4bc2-bf94-90ceaf918c3b",
+        "receipt_id": null
+      }
+    },
+    {
+      "case": "new receipt allocates existing debt oldest-first not new-stage-first",
+      "status": "PASS",
+      "detail": {
+        "status": "SAVED",
+        "visit_id": "fa600000-0000-4000-8000-000000000920",
+        "record_id": "97ca0b50-f526-43e9-8ed6-8ef71d386fce",
+        "invoice_id": null,
+        "receipt_id": "33ed8ea9-8577-489c-9d84-30bebe0ab850"
+      }
+    },
+    {
+      "case": "authorized reason initial zero creates real AR and logged DP exception",
+      "status": "PASS",
+      "detail": {
+        "status": "SAVED",
+        "visit_id": "fa600000-0000-4000-8000-000000000923",
+        "record_id": "0e2d5e9f-a456-4e67-8340-f3e55d54c411",
+        "invoice_id": "9a893233-5d28-487e-98ce-968c6235133d",
+        "receipt_id": null
+      }
+    },
+    {
+      "case": "ordinary initial header DP excluded from pending and preserved verbatim",
+      "status": "PASS",
+      "detail": {
+        "status": "SAVED",
+        "visit_id": "fa600000-0000-4000-8000-000000000924",
+        "record_id": "c9144de7-f01d-433c-bff3-4ca98e642758",
+        "invoice_id": "de3af63c-fa07-40f6-a6a4-71f2dfd2e785",
+        "receipt_id": null
+      }
+    },
+    {
+      "case": "HARNESS",
+      "status": "FAIL",
+      "detail": "ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification\n"
+    }
+  ],
+  "totals": {
+    "PASS": 21,
+    "FAIL": 1
+  }
+}
