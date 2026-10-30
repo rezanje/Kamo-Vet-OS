@@ -4,7 +4,7 @@
  * Bukan salinan workbook asli; semua isi fiktif.
  */
 import ExcelJS from "exceljs";
-import { TANDA_TANGAN, type NamaBlok } from "@/lib/migrasi-kartu-medis/kontrak";
+import { TANDA_TANGAN, type NamaBlok } from "../../migrasi-kartu-medis/kontrak";
 
 type Nilai = ExcelJS.CellValue;
 export type BarisFixture = Record<string, Nilai>;

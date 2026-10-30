@@ -55,6 +55,7 @@ export function validasiJawabanBulk(data: unknown, kiriman: PayloadKirim[]) {
   });
 }
 
+/** Hitungan KUMULATIF untuk seluruh ledger (semua run/lanjutan dengan rencana yang sama), bukan hanya pemanggilan ini. */
 export type HasilJalan = {
   status: "selesai" | "berhenti_tidak_pasti";
   batchDiakui: number;
