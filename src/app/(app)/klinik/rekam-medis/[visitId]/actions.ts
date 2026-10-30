@@ -224,7 +224,7 @@ export async function simpanRekamMedis(formData: FormData) {
 
   // Tujuan setelah simpan tergantung tombol yg dipencet.
   if (next === "resep") return { saved: true, href: `${back}/resep` };            // cetak resep
-  if (next === "rawatinap") return { saved: true, href: back };                   // form admit rawat inap ada di view recorded
+  if (next === "rawatinap") return { saved: true, href: `/klinik/pembayaran/${visitId}?rawatinap=1` };                   // DP dahulu; rencana/tipe dipilih eksplisit di Pembayaran
   return { saved: true, href: `/klinik/pembayaran/${visitId}` };                  // fallback
 }
 

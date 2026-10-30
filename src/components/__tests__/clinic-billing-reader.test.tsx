@@ -59,6 +59,14 @@ it.each(['invoice_items','invoice_payments'])('does not allow an invoice correct
  state.mode='dp';state.fail=table;await expect(render()).rejects.toThrow('belum dapat diverifikasi');
 });
 
+it('routes active inpatient with no invoice to staged billing instead of ordinary INPATIENT_OPEN posting',async()=>{
+ state.inpatientOpen=true;const html=renderToStaticMarkup(await render());
+ expect(html).toContain('href="/klinik/rawat-inap/inpatient/tagihan"');expect(html).not.toContain('data-draft');
+});
+it('offers an explicit money-free admit form for a previously recorded DP',async()=>{
+ state.mode="dp";const html=renderToStaticMarkup(await render());
+ expect(html).toContain("Masukkan Rawat Inap (tanpa pembayaran ulang)");expect(html).toContain('name="treatment_plan"');expect(html).toContain('name="stay_type"');
+});
 it('does not offer paid checkout recovery through an active inpatient stay',async()=>{
  state.mode='paid';state.inpatientOpen=true;const html=renderToStaticMarkup(await render());expect(html).not.toContain('Sinkronkan status kunjungan');
 });

@@ -43,6 +43,7 @@ export async function admitInpatient(formData: FormData) {
     }));
   }
   if (error || !recordId) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal masuk rawat inap")}`);
+  for (const path of ["/klinik/antrian", "/klinik/rekam-medis", "/klinik/rawat-inap", `/klinik/pembayaran/${visitId}`, back]) revalidatePath(path);
   redirect(`/klinik/rawat-inap/${recordId}?success=admit${transactionDraftAck(formData)}`);
 }
 
