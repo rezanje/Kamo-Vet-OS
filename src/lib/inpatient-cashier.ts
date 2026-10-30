@@ -1,0 +1,4 @@
+import type { RanapPaymentQuote } from "@/lib/ranap-payment";
+import type { ServicePerformersSnapshot } from "@/lib/service-performers";
+export type InpatientCashierRow = { id:string; medical_record_id?:string; item_id:string|null; nama_obat:string; qty:number; harga:number; satuan:string|null; jenis:string; compound_recipe_id?:string|null; bmhp_components?:unknown; service_performers?:ServicePerformersSnapshot|null };
+export type InpatientCashierData = {compound_pending?:boolean;snapshot:string;rows:InpatientCashierRow[];quote:RanapPaymentQuote;history:{id:string;invoice_no:string;total:number;received:number;dp_amount:number;paid_status:string;correction_pending:boolean;lines:{id:string;deskripsi:string;qty:number;harga:number}[]}[];receipts:{id:string;no_kwitansi:string;total:number;status:string;parts:{metode:string;amount:number}[]}[];applications:{id:string;invoice_id:string;amount:number;released_at:string|null}[]};

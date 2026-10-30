@@ -16,6 +16,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { PembayaranForm } from "./PembayaranForm";
+import { InpatientPaymentPage } from "./InpatientPaymentPage";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
@@ -42,10 +43,11 @@ export default async function PembayaranPage({
   searchParams,
 }: {
   params: Promise<{ visitId: string }>;
-  searchParams: Promise<{ error?: string; success?: string; edit?: string; lunas?: string; dilewati?: string; rawatinap?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string; lunas?: string; dilewati?: string; rawatinap?: string;invoice?:string;receipt?:string;applications?:string;invoice_id?:string }>;
 }) {
   const { visitId } = await params;
-  const { error, success, lunas: lunasParam, dilewati, rawatinap } = await searchParams;
+  const query = await searchParams;
+  const { error, success, lunas: lunasParam, dilewati, rawatinap } = query;
   const invoiceRequestKey = randomUUID();
   const groupRequestKey = randomUUID();
   const supabase = await createClient();
@@ -81,6 +83,7 @@ export default async function PembayaranPage({
     const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
     if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
   }
+  if (inpat && !query.invoice_id) return InpatientPaymentPage({db:supabase,visitId,recordId:inpat.id,branchId:visit.branch_id,userId:draftUser?.id??"",query});
   const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
 
   const pet = one(visit.pets);
@@ -111,7 +114,8 @@ export default async function PembayaranPage({
     .order("created_at", { ascending: true }).order("id", { ascending: true });
   if (invoiceError) throw unverifiedBilling();
   const invoiceAktif = invoiceRows ?? [];
-  const invoice = invoiceAktif.length ? invoiceAktif[invoiceAktif.length - 1] : null;
+  const invoice = query.invoice_id ? invoiceAktif.find(row=>row.id===query.invoice_id) ?? null : invoiceAktif.length ? invoiceAktif[invoiceAktif.length - 1] : null;
+  if (query.invoice_id && !invoice) notFound();
   const tagihanBertahap = invoiceAktif.length > 1;
   const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
@@ -293,8 +297,8 @@ export default async function PembayaranPage({
 
       <Popup message={error} />
       <Popup tone="success" title="Pembayaran berhasil"
-        message={!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" ? `Invoice ${invoice.invoice_no ?? ""} lunas. Cetak struk untuk pelanggan.` : null}
-        action={{ href: `/klinik/pembayaran/${visit.id}/struk`, label: "Cetak struk", icon: "ti-printer" }} />
+        message={!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" ? `Invoice ${invoice.invoice_no ?? ""} lunas. Cetak invoice untuk pelanggan.` : null}
+        action={invoice ? { href: `/klinik/pembayaran/${visit.id}/invoice?invoice_id=${invoice.id}`, label: "Cetak Invoice", icon: "ti-printer" } : undefined} />
       {!invoice && <div className="p2ban" role="status">Draf tagihan kunjungan ini belum menjadi invoice tersimpan dan belum tercatat sebagai pembayaran atau penjualan.</div>}
       {tagihanBertahap && (
         <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "var(--posb-dk)", justifyContent: "space-between" }}>
@@ -304,10 +308,7 @@ export default async function PembayaranPage({
             <b> {invoice?.invoice_no ?? "terakhir"}</b> saja, bukan tahap yang lain.
             Seluruh tahap, riwayat pembayaran, dan sisa piutang ada di layar tagihan rawat inap.
           </span>
-          {inpat && (
-            <Link href={`/klinik/rawat-inap/${inpat.id}/tagihan`} className="btn-acc"
-              style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>Buka tagihan rawat inap</Link>
-          )}
+
         </div>
       )}
       {!error && success === "bayar" && invoice && invoice.paid_status !== "Lunas" && <div className="p2ban" role="status">Invoice tersimpan. Status {invoice.paid_status}; pembayaran belum lunas. Lanjutkan pelunasan melalui tagihan yang sama.</div>}
@@ -475,7 +476,7 @@ export default async function PembayaranPage({
         </div>
       )}
 
-      {inpat && !inpat.discharged_at && <div className="p2ban"><Link href={`/klinik/rawat-inap/${inpat.id}/tagihan`}>Rawat Inap aktif — buka Tagihan berjalan untuk DP / penerimaan / Tagih sekarang</Link></div>}
+
       {!inpat && invoice?.paid_status === "DP" && !invoice.correction_pending && <div className="card">
         <h3>DP tercatat — lanjutkan Rawat Inap</h3>
         <p>Hanya untuk pasien yang diputuskan Rawat Inap. Tagihan dan DP lama tidak diubah atau diterima ulang. Dokter PIC dan persetujuan khusus tetap diperiksa.</p>
@@ -517,6 +518,7 @@ export default async function PembayaranPage({
           minDpPercent={minDpPercent}
           bolehTerobosDp={bolehTerobosDp}
           editMode
+          targetInvoiceId={invoice.id}
         />
       ) : invoice ? (
         <>
@@ -539,18 +541,18 @@ export default async function PembayaranPage({
               </span>
               <span style={{ display: "flex", gap: 5 }}>
                 {canEdit && (
-                  <Link href={`/klinik/pembayaran/${visit.id}?edit=1`} className="btn-def"
+                  <Link href={`/klinik/pembayaran/${visit.id}?edit=1&invoice_id=${invoice.id}`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <i className="ti ti-pencil" /> Edit Invoice
                   </Link>
                 )}
-                {lunas && (
+                {lunas && !inpat && (
                   <Link href={`/klinik/pembayaran/${visit.id}/struk`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <i className="ti ti-receipt-2" /> Struk
                   </Link>
                 )}
-                <Link href={`/klinik/pembayaran/${visit.id}/invoice`} className="btn-acc"
+                <Link href={`/klinik/pembayaran/${visit.id}/invoice?invoice_id=${invoice.id}`} className="btn-acc"
                   style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                   <i className="ti ti-file-invoice" /> Invoice
                 </Link>
@@ -603,8 +605,6 @@ export default async function PembayaranPage({
             </div>
           )}
         </>
-      ) : inpat && !inpat.discharged_at ? (
-        <Link href={`/klinik/rawat-inap/${inpat.id}/tagihan`} className="btn-acc">Buka Tagihan Rawat Inap — DP / Tagih sekarang</Link>
       ) : (
         <PembayaranForm
           key={`${draftUser?.id ?? ""}:${visit.id}:new:${invoiceRequestKey}`}

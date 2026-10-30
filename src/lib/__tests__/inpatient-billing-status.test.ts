@@ -31,6 +31,7 @@ const read = async (tables: Record<string, Row[]>, errors: string[] = []) => {
 };
 
 describe("inpatient list billing read model", () => {
+ it('withdrawn pending billing source does not make a settled visit look unbilled',async()=>{expect((await read({invoices:[invoice()],medical_records:[{id:'medical-a',visit_id:stay.visit_id}],prescription_items:[{id:'rx-withdrawn',medical_record_id:'medical-a',billing_withdrawn_at:'2026-11-03'}]})).label).toBe('Lunas')});
   it.each([
     ["legacy fully paid header", { paid_status: "Lunas", dp_amount: 0 }, [], "Lunas"],
     ["header DP plus allocation", { dp_amount: 30 }, [{ invoice_id: "invoice-a", amount: 70 }], "Lunas"],

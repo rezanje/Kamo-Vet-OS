@@ -3,7 +3,7 @@ vi.mock("@/lib/service-performers-server",()=>({loadServiceStaff:async()=>[],loa
 import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({mode:'draft',fail:'',inpatientOpen:false,visitStatus:'Pembayaran',calls:[] as unknown[][]}));
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:'cashier'}}})},rpc:async()=>({data:false,error:null}),from(table:string){
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:'cashier'}}})},rpc:async(name:string)=>({data:name==='clinic_read_inpatient_cashier'?{snapshot:'current',rows:[{id:'pending',nama_obat:'Pending Fiktif',qty:1,harga:100,jenis:'obat',item_id:'sku'}],history:[],receipts:[],applications:[],quote:{accounts:[{method:'Tunai',code:'1101',name:'Kas Fiktif'}],remaining:100,pending:100,debt:0,credit:0}}:false,error:null}),from(table:string){
  let single=false;let selected='';let range:number[]|undefined;let ids:string[]|undefined;const filters:Record<string,unknown>={};const q:Record<string,unknown>={then:(resolve:(v:unknown)=>void)=>{
  let data:unknown=[];const error=state.fail===table?{message:'PRIVATE database problem'}:null;
  if(table==='visits')data={id:state.mode==='old'?'old-visit':'new-visit',status:state.visitStatus,poli:'Umum',created_at:'2026-10-22T00:00:00Z',branch_id:'branch',pets:{name:state.mode==='old'?'Old patient':'New patient'},customers:{name:'Fictional owner'}};
@@ -21,7 +21,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
  resolve({data:error?null:data,error,count});}};
  for(const method of ['select','eq','gt','is','in','order','limit','range','maybeSingle'])q[method]=(...args:unknown[])=>{state.calls.push([table,method,...args]);if(method==='select')selected=String(args[0]);if(method==='range')range=args as number[];if(method==='in')ids=args[1]as string[];if(method==='eq')filters[String(args[0])]=args[1];if(method==='maybeSingle')single=true;return q};return q;
 }})}));
-vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')},redirect:(url:string)=>{throw Error(url)}}));
+vi.mock('next/navigation',()=>({useRouter:()=>({push:vi.fn(),refresh:vi.fn()}),notFound:()=>{throw Error('NOT_FOUND')},redirect:(url:string)=>{throw Error(url)}}));
 vi.mock('@/lib/clinic-demo-policy-server',()=>({readDemoPolicy:async()=>null}));
 vi.mock('@/lib/clinic-payment',()=>({loadClinicPaymentMaster:async()=>({obat:[],jasa:[],all:[]}),loadClinicPackages:async()=>[]}));
 vi.mock('@/lib/penjual',()=>({daftarPenjual:async()=>[]}));
@@ -33,7 +33,7 @@ vi.mock('@/lib/tindakan',()=>({bolehBayar:()=>true,kategoriBerisiko:()=>[]}));
 vi.mock('@/lib/consent-server',()=>({bacaAturanConsent:async()=>[]}));
 vi.mock('@/lib/rombongan-server',()=>({bacaRombongan:async()=>null}));
 vi.mock('@/lib/tagihan-klinik',()=>({perkiraanTagihan:async()=>new Map(),bekalPotonganKlinik:async()=>({}),nilaiBaris:(r:{qty:number;harga:number})=>r.qty*r.harga}));
-vi.mock('@/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm',()=>({PembayaranForm:(props:{visitId:string;initialJasa:{qty:number;harga:number}[];sourceVersion?:string})=><div data-draft={props.visitId} data-source={props.sourceVersion}>DRAFT {props.initialJasa.reduce((s,r)=>s+r.qty*r.harga,0)}</div>}));
+vi.mock('@/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm',()=>({ItemTable:()=>null,PembayaranForm:(props:{visitId:string;initialJasa:{qty:number;harga:number}[];sourceVersion?:string})=><div data-draft={props.visitId} data-source={props.sourceVersion}>DRAFT {props.initialJasa.reduce((s,r)=>s+r.qty*r.harga,0)}</div>}));
 vi.mock('@/app/(app)/klinik/pembayaran/[visitId]/LunasiRombonganForm',()=>({LunasiRombonganForm:()=>null}));
 vi.mock('@/app/(app)/klinik/pembayaran/[visitId]/VoidReissueForm',()=>({VoidReissueForm:()=>null}));
 import Page from '@/app/(app)/klinik/pembayaran/[visitId]/page';
@@ -46,6 +46,7 @@ it('keeps old paid415000 and new unposted400000 bound to their own visit IDs',as
 it.each(['draft','unpaid','dp'])('does not claim successful payment just because a URL says success: %s',async mode=>{
  state.mode=mode;const html=renderToStaticMarkup(await render('bayar'));expect(html).not.toContain('Pembayaran berhasil');if(mode!=='draft')expect(html).toContain('Invoice tersimpan');
 });
+it('paid clinic output uses the actual formal invoice ID rather than latest/thermal output',async()=>{state.mode='paid';state.visitStatus='Selesai';const html=renderToStaticMarkup(await render('bayar'));expect(html).toContain('/klinik/pembayaran/new-visit/invoice?invoice_id=new-invoice')});
 it('shows completed payment only when the read confirms paid and finished visit',async()=>{
  state.mode='paid';state.visitStatus='Selesai';expect(renderToStaticMarkup(await render('bayar'))).toContain('Pembayaran berhasil');
 });
@@ -59,6 +60,7 @@ it.each(['invoice_items','invoice_payments'])('does not allow an invoice correct
  state.mode='dp';state.fail=table;await expect(render()).rejects.toThrow('belum dapat diverifikasi');
 });
 
+it('opens inpatient pending cart in main cashier instead of a read-only detour',async()=>{state.inpatientOpen=true;const html=renderToStaticMarkup(await render());expect(html).toContain('KERANJANG BELUM DITAGIH');expect(html).toContain('name="pending_snapshot"');});
 it('routes active inpatient with no invoice to staged billing instead of ordinary INPATIENT_OPEN posting',async()=>{
  state.inpatientOpen=true;const html=renderToStaticMarkup(await render());
  expect(html).toContain('href="/klinik/rawat-inap/inpatient/tagihan"');expect(html).not.toContain('data-draft');
