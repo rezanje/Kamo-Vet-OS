@@ -5,13 +5,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/app/(app)/klinik/rekam-medis/[visitId]/actions", () => ({ simpanRekamMedis: vi.fn() }));
-vi.mock("@/app/(app)/klinik/rawat-inap/actions", () => ({ addDailyLogPos: vi.fn() }));
+vi.mock("@/app/(app)/klinik/rawat-inap/actions", () => ({ addDailyLogPos: vi.fn(), addInpatientBillables: vi.fn() }));
 vi.mock("@/components/PetPhotoUpload", () => ({ PetPhotoUpload: () => null }));
 vi.mock("@/components/PenunjangUpload", () => ({ PenunjangUpload: () => null }));
 import { RekamForm } from "@/app/(app)/klinik/rekam-medis/[visitId]/RekamForm";
 import { simpanRekamMedis } from "@/app/(app)/klinik/rekam-medis/[visitId]/actions";
 import { CatatanForm } from "@/app/(app)/klinik/rawat-inap/[id]/catatan/CatatanForm";
-import { addDailyLogPos } from "@/app/(app)/klinik/rawat-inap/actions";
+import { addDailyLogPos, addInpatientBillables } from "@/app/(app)/klinik/rawat-inap/actions";
 import type { KatalogRacikan } from "@/lib/katalog-racikan";
 
 // Satu form "Tindakan & Racikan": satu pemilih item, satu daftar Bahan / BMHP, satu tombol simpan.
@@ -46,7 +46,7 @@ async function render(kind: string) {
   await act(async () => root.render(kind === "exam"
     ? <RekamForm {...common} visitId="visit" petId="pet" currentWeight={null} dokterOpsi={[]} providerOpsi={[]}
       patient={{ ...patient, tglPeriksa: "29 Oct", dokterId: null, providerId: null, tier: "Umum", keluhan: "Kontrol" }} />
-    : <CatatanForm {...common} recordId="inpatient" backHref="/klinik/rawat-inap/inpatient"
+    : <CatatanForm {...common} mode={kind === "standalone" ? "billables" : "legacy"} recordId="inpatient" backHref="/klinik/rawat-inap/inpatient"
       patient={{ ...patient, tglMasuk: "29 Oct", kondisi: "Stabil" }} />));
 }
 async function openTab() {
@@ -78,7 +78,21 @@ async function pickFrom(label: string, query: string) {
 }
 const cell = (name: string) => [...host.querySelectorAll("td")].find(td => td.querySelector("[data-cart-item]")?.textContent === name);
 
-it.each(["exam", "inpatient"])("%s shows one picker listing procedures and compounds side by side", async kind => {
+it("standalone checkpoint clearly refuses a multi-recipe batch without submitting or losing cart", async () => {
+  await render("standalone"); await openTab();
+  for (let i=0;i<2;i++) {
+    await click('button[aria-label="Pilih Obat Racik Sirup"]');
+    await pickFrom("Komposisi racikan", "Puyer");
+    await click('button[aria-label="Tambah Obat Racik Sirup ke keranjang"]');
+  }
+  vi.clearAllMocks();
+  await act(async()=>host.querySelector('form')!.requestSubmit());
+  expect(addInpatientBillables).not.toHaveBeenCalled();
+  expect(cart()).toHaveLength(2);
+  expect(host.textContent).toContain("Simpan satu racikan per penambahan");
+});
+
+it.each(["exam", "inpatient", "standalone"])("%s shows one picker listing procedures and compounds side by side", async kind => {
   await render(kind); await openTab();
   const picker = host.querySelector('section[aria-label="Pilih tindakan / racikan"]')!;
   expect(picker.textContent).toContain("Steril");
@@ -90,7 +104,7 @@ it.each(["exam", "inpatient"])("%s shows one picker listing procedures and compo
   expect(field("Cari obat racik")).toBeNull();
 });
 
-it.each(["exam", "inpatient"])("%s picked procedure shows only the materials list, without compound fields", async kind => {
+it.each(["exam", "inpatient", "standalone"])("%s picked procedure shows only the materials list, without compound fields", async kind => {
   await render(kind); await openTab();
   await click('button[aria-label="Pilih Steril"]');
   expect(host.textContent).toContain("Bahan / BMHP · Steril");
@@ -100,7 +114,7 @@ it.each(["exam", "inpatient"])("%s picked procedure shows only the materials lis
   expect(host.textContent).not.toContain("Komposisi racikan");
 });
 
-it.each(["exam", "inpatient"])("%s picked compound keeps the same materials list and adds dosage form and instruction", async kind => {
+it.each(["exam", "inpatient", "standalone"])("%s picked compound keeps the same materials list and adds dosage form and instruction", async kind => {
   await render(kind); await openTab();
   await click('button[aria-label="Pilih Obat Racik Sirup"]');
   expect(host.textContent).toContain("Bahan / BMHP · Obat Racik Sirup");
@@ -110,7 +124,7 @@ it.each(["exam", "inpatient"])("%s picked compound keeps the same materials list
   expect(host.textContent).toContain("Komposisi racikan");
 });
 
-it.each(["exam", "inpatient"])("%s official formula prefills the materials list and keeps the recorded compound payload", async kind => {
+it.each(["exam", "inpatient", "standalone"])("%s official formula prefills the materials list and keeps the recorded compound payload", async kind => {
   await render(kind); await openTab();
   await click('button[aria-label="Pilih Obat Racik Sirup"]');
   await pickFrom("Komposisi racikan", "Puyer");
@@ -127,7 +141,7 @@ it.each(["exam", "inpatient"])("%s official formula prefills the materials list 
   }]);
 });
 
-it.each(["exam", "inpatient"])("%s commits a procedure and a patient compound with the payload shape of the old flows", async kind => {
+it.each(["exam", "inpatient", "standalone"])("%s commits a procedure and a patient compound with the payload shape of the old flows", async kind => {
   await render(kind); await openTab();
   await click('button[aria-label="Pilih Steril"]');
   await pickFrom("Tambah BMHP Steril", "Kasa");
@@ -152,7 +166,7 @@ it.each(["exam", "inpatient"])("%s commits a procedure and a patient compound wi
   expect(cart()[1]).not.toHaveProperty("official_version_id");
 });
 
-it.each(["exam", "inpatient"])("%s reopens a compound cart line prefilled and saves it in place", async kind => {
+it.each(["exam", "inpatient", "standalone"])("%s reopens a compound cart line prefilled and saves it in place", async kind => {
   await render(kind); await openTab();
   await click('button[aria-label="Pilih Obat Racik Sirup"]');
   await pickFrom("Tambah bahan Obat Racik Sirup", "Bahan");
@@ -171,7 +185,7 @@ it.each(["exam", "inpatient"])("%s reopens a compound cart line prefilled and sa
     ingredients: [{ item_id: "ingredient", qty: 4, satuan: "pcs", harga: 5000 }] });
 });
 
-it.each(["exam", "inpatient"])("%s reopens a procedure cart line prefilled from the same form", async kind => {
+it.each(["exam", "inpatient", "standalone"])("%s reopens a procedure cart line prefilled from the same form", async kind => {
   await render(kind); await openTab();
   await click('button[aria-label="Pilih Steril"]');
   await pickFrom("Tambah BMHP Steril", "Kasa");
@@ -184,7 +198,7 @@ it.each(["exam", "inpatient"])("%s reopens a procedure cart line prefilled from 
   expect(cart()[0].bmhp).toEqual([{ item_id: "gauze", nama: "Kasa steril", qty: 5, unit: "lembar" }]);
 });
 
-it.each(["exam", "inpatient"])("%s routes an already compounded line to the racik correction instead of reissuing stock", async kind => {
+it.each(["exam", "inpatient", "standalone"])("%s routes an already compounded line to the racik correction instead of reissuing stock", async kind => {
   await render(kind); await openTab();
   await click('button[aria-label="Pilih Obat Racik Sirup"]');
   await pickFrom("Komposisi racikan", "Puyer");
@@ -199,7 +213,7 @@ it.each(["exam", "inpatient"])("%s routes an already compounded line to the raci
   expect(host.querySelector('a[href="/klinik/racik/recipe-1"]')).not.toBeNull();
 });
 
-it.each(["exam", "inpatient"])("%s cart line keeps the item name bold with its materials block underneath", async kind => {
+it.each(["exam", "inpatient", "standalone"])("%s cart line keeps the item name bold with its materials block underneath", async kind => {
   await render(kind); await openTab();
   await click('button[aria-label="Pilih Steril"]');
   await pickFrom("Tambah BMHP Steril", "Kasa");
@@ -226,7 +240,7 @@ it.each(["exam", "inpatient"])("%s cart line keeps the item name bold with its m
   expect(bahan.textContent).toContain("Bahan diizinkan × 2 pcs");
 });
 
-it.each(["exam", "inpatient"])("%s blocks saving while the single form still has an uncommitted item", async kind => {
+it.each(["exam", "inpatient", "standalone"])("%s blocks saving while the single form still has an uncommitted item", async kind => {
   vi.clearAllMocks();
   await render(kind); await openTab();
   await click('button[aria-label="Pilih Obat Racik Sirup"]');

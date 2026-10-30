@@ -16,7 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 import { type RacikanIngredient } from "@/lib/racikan";
 import { OPSI_MAKAN, OPSI_MINUM, OPSI_BAB, OPSI_PIPIS, OPSI_KOMUNIKASI } from "@/lib/monitoring-inap";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
-import { addDailyLogPos } from "../../actions";
+import { addDailyLogPos, addInpatientBillables } from "../../actions";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
 import { ClinicServicePicker } from "@/components/ClinicServicePicker";
 import { kekuranganStok } from "@/lib/stok-keranjang";
@@ -54,7 +54,8 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, petHotel = false, tabAwal }: {
+export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, petHotel = false, tabAwal }: {
+  mode?: "legacy" | "clinical" | "billables";
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
   /** `?tab=tindakan` membuka form langsung di tab "Tindakan & Racikan" — dipakai tombol
    * "Tambah tindakan / obat" di Detail rekam medis. Nilai lain tetap mulai dari "Obat". */
@@ -77,7 +78,8 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
   petHotel?: boolean;
 }) {
   const [staff,setStaff]=useState<InpatientStaff>({log_kind:'monitoring',visit_doctor_id:null,paramedic_id:null});
-  const [tab, setTab] = useState<Tab>(tabAwal === "tindakan" ? TINDAKAN : "Obat");
+  const billables = mode === "billables";
+  const [tab, setTab] = useState<Tab>(mode === "clinical" ? "Jasa" : tabAwal === "tindakan" ? TINDAKAN : "Obat");
   const [search, setSearch] = useState("");
   const [obatPage, setObatPage] = useState(1);
   const [cart, setCart] = useState<CartRow[]>([]);
@@ -133,7 +135,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
     storageError: draftStorageError, saveError: draftSaveError,
     capture: draftCapture, discard: draftDiscard, submit: draftSubmit, leaving: draftLeaving,
   } = useClinicDraft({
-    userId: draftUserId, scope: `inpatient:${recordId}`, requestKey,
+    userId: draftUserId, scope: billables ? `inpatient-billables:${recordId}` : `inpatient:${recordId}`, requestKey,
     optionalSnapshotKeys: ["saleItemId","staff","procedureDraft","racikanEditKey"],
     snapshot: { staff,saleItemId, cart, procedureDraft, racikanEditKey, catatan, discountPct, racikNama, officialVersionId, racikForm, racikAturan, racikBahan, fotoUrl, jasaNama, jasaHarga },
     restore: (value) => {
@@ -301,9 +303,10 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
         bermuara ke popup yang sama. Hanya satu dialog yang boleh terbuka. */}
     {stokKurang.length === 0 && <StokKurangDariPesan pesan={draftSaveError}
       petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />}
-    <form ref={draftAttachForm} action={(data) => draftSubmit(data, addDailyLogPos)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
+    <form ref={draftAttachForm} action={(data) => draftSubmit(data, billables ? addInpatientBillables : addDailyLogPos)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
       const kurang = kekuranganStok(cart, stokById, (id, unit) => unitsOf(id).find(u => u.unit === unit)?.factor ?? 1);
-      if (procedureDraft || saleItemId) { event.preventDefault(); event.stopPropagation(); setTab(TINDAKAN); setProcedureError("Selesaikan form tindakan / racikan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
+      if (billables && cart.filter(row => row.jenis === "racikan").length > 1) { event.preventDefault(); event.stopPropagation(); setProcedureError("Simpan satu racikan per penambahan. Obat / BMHP boleh beberapa baris; racikan berikutnya disimpan terpisah."); }
+      else if (procedureDraft || saleItemId) { event.preventDefault(); event.stopPropagation(); setTab(TINDAKAN); setProcedureError("Selesaikan form tindakan / racikan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
       else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(kurang); }
       else draftCapture();
     }}>
@@ -342,6 +345,12 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
             </div>
           </div>
 
+          {billables ? <div className="p2ban">
+            Obat / BMHP masuk tagihan pasien pada kunjungan yang sama, tanpa membuat Laporan Visit.
+            <label className="flab">Alasan penambahan<input className="fi" name="entry_reason" required minLength={3} maxLength={1000} defaultValue="Penambahan obat / BMHP rawat inap" /></label>
+            Protokol dan pemberian dosis tetap dicatat terpisah, tidak otomatis menambah tagihan.
+            <div>Satu racikan per penyimpanan; obat dan tindakan / BMHP boleh beberapa baris.</div>
+          </div> : <>
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0 10px" }}>
             <i className="ti ti-clipboard-list" style={{ fontSize: 16, color: "var(--posb)" }} />
             <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--posb)" }}>DETAIL RAWAT INAP</span>
@@ -434,7 +443,7 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
             <label className="flab">Tindakan / perawatan</label>
             <textarea className="fi" name="tindakan" rows={2} placeholder="mis. Wound dressing, terapi cairan, injeksi antibiotik, observasi" style={{ resize: "vertical" }} />
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-              Obat yang ditagihkan cukup dipilih di panel kanan — kolom ini untuk tindakan medisnya.
+              Obat / BMHP yang ditagihkan dicatat di OBAT KHUSUS — kolom ini untuk tindakan medisnya.
             </div>
           </div>}
           <div className="fg">
@@ -484,15 +493,17 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
             <Link href={backHref} className="btn-def">Batal</Link>
             <SubmitButton className="pay-btn" icon="ti-device-floppy" pendingText="Menyimpan…" busy={draftLeaving} style={{ width: "auto", flex: 1 }}>Simpan Catatan Rawat Inap</SubmitButton>
           </div>
+          </>}
         </div>
 
-        {/* ===== KANAN: POS obat & jasa ===== */}
+        {/* ===== KANAN: shared cart, standalone OBAT KHUSUS or clinical visit Jasa ===== */}
         <div className="crm-sec" style={{ marginBottom: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--sb)", letterSpacing: ".02em", marginBottom: 12 }}>
-            <i className="ti ti-shopping-cart" style={{ color: "var(--posb)" }} /> INPUT OBAT &amp; JASA (POS)
+            <i className="ti ti-shopping-cart" style={{ color: "var(--posb)" }} /> {billables ? "OBAT KHUSUS · OBAT / BMHP & RACIKAN" : mode === "clinical" ? "JASA VISIT" : "INPUT OBAT & JASA (POS)"}
+            {mode === "clinical" && <Link href={`${backHref}/obat-khusus`} className="btn-def">Obat / BMHP → OBAT KHUSUS</Link>}
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            {TABS.map((t) => (
+            {TABS.filter(t => mode !== "clinical" || t.id === "Jasa").map((t) => (
               <button key={t.id} type="button" onClick={() => setTab(t.id)} className="back-btn" style={{
                 flex: 1, justifyContent: "center", padding: "8px 0", borderRadius: 8, fontSize: 11.5, fontWeight: 600,
                 border: ".5px solid var(--bd)", background: tab === t.id ? "var(--posb)" : "#fff", color: tab === t.id ? "#fff" : "var(--tm)",
@@ -647,12 +658,12 @@ export function CatatanForm({ recordId, requestKey, draftUserId, backHref, patie
                   <span style={{ fontSize: 12.5, fontWeight: 700 }}>TOTAL</span>
                   <span style={{ fontSize: 17, fontWeight: 800, color: "var(--posb)" }}>{rp(total)}</span>
                 </div>
-                <div style={{ fontSize: 9, color: "var(--td)", marginTop: 6 }}>Obat, jasa &amp; racikan masuk resep visit → ikut tagihan saat pasien pulang.</div>
+                <div style={{ fontSize: 9, color: "var(--td)", marginTop: 6 }}>Masuk resep kunjungan yang sama → ditagihkan melalui Bayar tagihan. Belum menerima uang atau menerbitkan faktur.</div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 6, marginTop: 12 }}>
                 <SubmitButton className="btn-def" icon="ti-printer" name="cetak" value="1" pendingText="…" busy={draftLeaving} style={{ padding: "9px 0", fontSize: 11.5 }}>Simpan &amp; Cetak</SubmitButton>
-                <SubmitButton className="btn-acc" icon="ti-circle-check" name="cetak" value="0" pendingText="Menyimpan…" busy={draftLeaving} style={{ justifyContent: "center", padding: "9px 0", fontSize: 12, background: "#16a34a" }}>Simpan Catatan &amp; Lanjut</SubmitButton>
+                <SubmitButton className="btn-acc" icon="ti-circle-check" name="cetak" value="0" pendingText="Menyimpan…" busy={draftLeaving} style={{ justifyContent: "center", padding: "9px 0", fontSize: 12, background: "#16a34a" }}>{billables ? "Simpan obat / BMHP" : "Simpan Catatan & Lanjut"}</SubmitButton>
               </div>
             </div>
           </div>
