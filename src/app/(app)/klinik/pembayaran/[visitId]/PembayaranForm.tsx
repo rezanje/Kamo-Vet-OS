@@ -395,8 +395,12 @@ export function PembayaranForm({ visitId, requestKey, patient, initialObat, init
   const [bayarKetik, setBayar] = useState(0);
   // Samakan dengan kasir petshop (Andri 29 Okt): selain Tunai, jumlah bayar otomatis
   // = sisa tagihan. Kasir tetap boleh mengubahnya (mis. DP sebagian lewat transfer).
+  //
+  // KOREKSI tidak menerima uang (kolomnya pun dimatikan), jadi otomatisasi itu tidak
+  // berlaku di sana: kalau ikut terbawa, form mengirim status "Lunas" untuk tagihan
+  // yang tersimpan belum lunas dan aksinya menolak koreksi tersebut.
   const [bayarManual, setBayarManual] = useState(false);
-  const bayar = metode !== "Tunai" && !bayarManual ? sisa : bayarKetik;
+  const bayar = !editMode && metode !== "Tunai" && !bayarManual ? sisa : bayarKetik;
   const [kurangBayar, setKurangBayar] = useState<string | null>(null);
   // Racikan belum siap tidak menolak pembayaran; kasir hanya diminta mengkonfirmasi sekali.
   const [konfirmasiRacikan, setKonfirmasiRacikan] = useState<FormData | null>(null);

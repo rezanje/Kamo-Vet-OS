@@ -59,6 +59,8 @@ it("daftar yang gagal dibaca memperingatkan, bukan tercetak sebagai kosong", asy
   state.gagal = true;
   const html = await dokumen();
   expect(html).toContain("Daftar obat &amp; tindakan belum dapat dimuat");
+  expect(html).not.toContain("Tidak ada obat.");
+  expect(html).not.toContain("Tidak ada tindakan.");
   const cetakResep = await resep();
   expect(cetakResep).toContain("Resep belum dapat dimuat");
   expect(cetakResep).not.toContain("Tidak ada resep.");

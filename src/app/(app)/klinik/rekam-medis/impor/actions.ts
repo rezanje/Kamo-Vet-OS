@@ -19,6 +19,7 @@ import {
   type RekamMedisImporRow,
 } from "@/lib/impor-rekam-medis";
 import { bagiKirimanBaris, MAKS_BARIS_PER_KIRIMAN, MAKS_BARIS_POTONGAN_REKAM_MEDIS } from "@/lib/impor-rekam-medis-aliran";
+import { barisHasilImpor, kunciPeriksaHasil, type HasilImporRekamMedis } from "@/lib/impor-rekam-medis-hasil";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_BATCH_BYTES = 30 * 1024 * 1024;
@@ -365,7 +366,7 @@ export async function simpanBatchImporRekamMedis(
 // ---------------------------------------------------------------------------
 
 type PemindaiRpcClient = {
-  rpc: (name: "import_legacy_identity_scan" | "import_legacy_medical_records_bulk", args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
+  rpc: (name: "import_legacy_identity_scan" | "import_legacy_medical_records_bulk" | "hasil_impor_rekam_medis", args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
 };
 
 export type HasilPotonganImporRekamMedis = {
@@ -376,10 +377,12 @@ export type HasilPotonganImporRekamMedis = {
   dilewati: number;
   ditahan: RekamMedisImporHeld[];
   perlu_keputusan: RekamMedisIdentityClarification[];
+  /** Jejak yang dinyatakan database tersimpan atau sudah ada, untuk "Periksa hasil impor". */
+  kunci_tersimpan: string[];
 };
 
 const potonganKosong = (message: string): HasilPotonganImporRekamMedis => ({
-  ok: false, message, tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [],
+  ok: false, message, tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [], kunci_tersimpan: [],
 });
 
 function pesanRpc(message: string) {
@@ -532,10 +535,13 @@ export async function prosesPotonganImporRekamMedis(
     const perBaris = new Map(kirim.map((row) => [row.source_key, row]));
     let tersimpan = 0;
     let sudahAda = 0;
+    const kunciTersimpan: string[] = [];
     for (const item of status) {
-      if (item.status === "tersimpan") tersimpan += 1;
-      else if (item.status === "sudah_ada") sudahAda += 1;
-      else {
+      if (item.status === "tersimpan" || item.status === "sudah_ada") {
+        if (item.status === "tersimpan") tersimpan += 1;
+        else sudahAda += 1;
+        kunciTersimpan.push(item.source_key);
+      } else {
         const row = perBaris.get(item.source_key);
         ditahan.push({
           source_key: item.source_key,
@@ -558,8 +564,40 @@ export async function prosesPotonganImporRekamMedis(
       dilewati,
       ditahan,
       perlu_keputusan: perluKeputusan,
+      kunci_tersimpan: kunciTersimpan,
     };
   } catch (error) {
     return potonganKosong(error instanceof Error ? error.message : "Potongan impor gagal diproses.");
+  }
+}
+
+export type HasilPeriksaImporRekamMedis = {
+  ok: boolean;
+  message: string;
+  diminta: number;
+  rows: HasilImporRekamMedis[];
+};
+
+/**
+ * Periksa hasil impor di cabang aktif (RS-1): riwayat bersama tidak tampil di halaman pasien saat
+ * cabang dipilih, jadi layar impor membacanya lewat RPC baca-saja yang dibatasi database
+ * (OWNER/ADMIN aktif, header cabang tetap dikirim, maks. 500 jejak, hanya riwayat tanpa cabang).
+ */
+export async function periksaHasilImporRekamMedis(kunciInput: string[]): Promise<HasilPeriksaImporRekamMedis> {
+  try {
+    const supabase = await assertBolehImpor();
+    const kunci = kunciPeriksaHasil(kunciInput);
+    const { data, error } = await (supabase as unknown as PemindaiRpcClient).rpc("hasil_impor_rekam_medis", { p_keys: kunci });
+    if (error) throw new Error(pesanRpc(error.message));
+    const rows = barisHasilImpor(data);
+    const ditemukan = new Set(rows.map((row) => row.kunci)).size;
+    return {
+      ok: true,
+      message: `${ditemukan} dari ${kunci.length} riwayat ditemukan di riwayat bersama.`,
+      diminta: kunci.length,
+      rows,
+    };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Hasil impor gagal diperiksa.", diminta: 0, rows: [] };
   }
 }

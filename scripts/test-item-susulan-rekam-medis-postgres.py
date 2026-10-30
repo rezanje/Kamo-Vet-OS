@@ -188,6 +188,19 @@ def fungsi_koreksi() -> str:
 
 def jalan(pg) -> None:
     pg.sql(RANGKA)
+    # The candidate now depends on PR343's coordinator. Use its exact four
+    # functions, not no-op lock stubs. Posting/racikan remain intentionally stubbed
+    # in this legacy harness; full-schema evidence lives in the companion script.
+    pg.sql("alter table public.visits add column customer_id uuid;")
+    source = (ROOT / "supabase/migrations/20261103010000_ranap_mitigasi_audit.sql").read_text()
+    coordinator = []
+    for name in ("billing_key", "billing_lock", "billing_keys_visit", "billing_keys_invoice"):
+        anchor = f"create or replace function clinic_private.{name}("
+        assert source.count(anchor) == 1, name
+        start = source.index(anchor)
+        end = source.index("$function$;", source.index("$function$", start) + len("$function$")) + len("$function$;")
+        coordinator.append(source[start:end])
+    pg.sql("\n".join(coordinator))
     pg.sql(fungsi_koreksi())
     pg.sql(DATA)
     pg.sql("begin;\n" + MIGRASI.read_text() + "\ncommit;")

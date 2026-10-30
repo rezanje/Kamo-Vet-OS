@@ -19,10 +19,20 @@ export async function terimaPelunasan(formData: FormData) {
   if (!invoiceId || !requestKey || !Number.isFinite(amount) || amount <= 0) {
     redirect(`${back}?error=${encodeURIComponent("Data pembayaran tidak lengkap; muat ulang halaman")}`);
   }
-  const { data: inv } = await supabase.from("invoices")
-    .select("visit_id, visits(branch_id)").eq("id", invoiceId).maybeSingle();
+  const { data: inv, error: invError } = await supabase.from("invoices")
+    .select("visit_id, visits(branch_id, inpatient_records(id))").eq("id", invoiceId).maybeSingle();
+  if (invError) redirect(`${back}?error=${encodeURIComponent("Tagihan belum dapat dibaca. Muat ulang sebelum menerima uang.")}`);
   if (!inv) redirect(`${back}?error=${encodeURIComponent("Tagihan tidak ditemukan")}`);
   const visit = Array.isArray(inv.visits) ? inv.visits[0] : inv.visits;
+  // Uang rawat inap WAJIB lewat kwitansi kunjungan di dalam shift klinik: hanya di sana
+  // uangnya muncul pada riwayat DP dan ikut rekonsiliasi laci kasir penerimanya. Layar
+  // ini tidak membuat kwitansi, jadi petugas diarahkan ke layar tagihannya.
+  const ranap = (visit?.inpatient_records ?? []) as { id: string }[];
+  const record = Array.isArray(ranap) ? ranap[0] : ranap;
+  if (record?.id) {
+    redirect(`/klinik/rawat-inap/${record.id}/tagihan?error=${encodeURIComponent(
+      "Pembayaran rawat inap diterima di layar Tagihan rawat inap supaya tercatat sebagai kwitansi dan masuk shift klinik.")}`);
+  }
   const kasCode = await kodeAkunBayar(supabase, metode, visit?.branch_id ?? null, accountId);
   const { error } = await supabase.rpc("clinic_receive_invoice_payment", {
     p_invoice_id: invoiceId, p_tanggal: tanggal, p_amount: amount,

@@ -14,6 +14,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { readStayTypes, readVisitContinuation, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 import { loadInpatientMedicationHistory } from "@/lib/inpatient-medication-history";
 import { catatWaktu, mulai } from "@/lib/u07-waktu";
+import { ringkasBelumDitagih } from "@/lib/tagihan-berjalan-server";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -75,7 +76,7 @@ export default async function RawatInapDetailPage({
   // Reads below depend only on the parent that already passed the branch guard, so they run together.
   // U07: tipe inap, asal kunjungan dan riwayat obat khusus ikut gelombang ini (dulu
   // menyusul berurutan, dan Obat Khusus membaca pengguna sekali lagi).
-  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }, stayTypes, continuation, medicationHistory] = await Promise.all([
+  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, { data: tarifInap }, stayTypes, continuation, medicationHistory, belumDitagih] = await Promise.all([
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
@@ -94,6 +95,8 @@ export default async function RawatInapDetailPage({
     readVisitContinuation(supabase, String(rec.visit_id)),
     // Gagal/terpotong = null; Obat Khusus lalu menampilkan peringatan, bukan daftar kosong.
     loadInpatientMedicationHistory(supabase, id),
+    // Biaya yang sudah tercatat tapi belum ditagih — diperlihatkan SEBELUM pasien pulang.
+    ringkasBelumDitagih(supabase, String(rec.visit_id)),
   ]);
   waktu.tandai("anak");
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
@@ -164,6 +167,24 @@ export default async function RawatInapDetailPage({
           </span>
           <Link href="/pos/sku/baru" className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
             Buat tarif
+          </Link>
+        </div>
+      )}
+      {visit && (belumDitagih.baris > 0 || !belumDitagih.terbaca) && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", justifyContent: "space-between" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <i className="ti ti-receipt-off" />
+            {belumDitagih.terbaca ? (
+              <>
+                {belumDitagih.baris} biaya sudah tercatat tapi <b>belum ditagih</b> (± Rp {Math.round(belumDitagih.nilai).toLocaleString("id-ID")}, belum termasuk PPN).
+                {active ? " Periksa sebelum memulangkan pasien — kepulangan tetap boleh walau masih ada sisa tagihan." : " Pasien sudah pulang; sisanya masih bisa ditagih bertahap."}
+              </>
+            ) : (
+              <>Biaya belum ditagih tidak dapat dihitung sekarang — periksa langsung di layar tagihan sebelum memulangkan pasien.</>
+            )}
+          </span>
+          <Link href={`/klinik/rawat-inap/${rec.id}/tagihan`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+            Buka tagihan
           </Link>
         </div>
       )}
@@ -284,7 +305,7 @@ export default async function RawatInapDetailPage({
         </TransactionForm>}
         {cond === "pulang_paksa" && <div style={{ fontSize: 12 }}>Status kepulangan sudah tercatat. Koreksi selanjutnya perlu proses terpisah.</div>}
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
-          Transisi ke RIP hanya oleh dokter{isDoctor ? "" : " (akun ini bukan dokter)"} · Pulang Paksa memerlukan form khusus yang ditandatangani setelah pasien masuk · setiap status pulang tetap membuat biaya rawat inap.
+          Transisi ke RIP hanya oleh dokter{isDoctor ? "" : " (akun ini bukan dokter)"} · Pulang Paksa memerlukan form khusus yang ditandatangani setelah pasien masuk · jasa dan jumlah hari rawat inap dicatat manual di rekam medis, lalu ditagih lewat layar Tagihan rawat inap.
         </div>
         {!paksaConsentSigned && active && visit && (
           <div className="p2ban" style={{ marginTop: 10, justifyContent: "space-between" }}>
@@ -294,9 +315,9 @@ export default async function RawatInapDetailPage({
         )}
         {cond === "sembuh" && visit && (
           <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d", marginTop: 10, justifyContent: "space-between" }}>
-            <span><i className="ti ti-paw" /> Boleh pulang — lanjutkan ke pembayaran.</span>
-            <Link href={`/klinik/pembayaran/${visit.id}`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
-              Buat Invoice <i className="ti ti-arrow-right" />
+            <span><i className="ti ti-paw" /> Boleh pulang — lanjutkan ke tagihan rawat inap.</span>
+            <Link href={`/klinik/rawat-inap/${rec.id}/tagihan`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+              Tagih & terima uang <i className="ti ti-arrow-right" />
             </Link>
           </div>
         )}
@@ -307,8 +328,8 @@ export default async function RawatInapDetailPage({
               <Link href={`/klinik/rawat-inap/${rec.id}?wa=review`} className="btn-def" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
                 <i className="ti ti-brand-whatsapp" /> Review WA Duka
               </Link>
-              <Link href={`/klinik/pembayaran/${visit.id}`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
-                Buat Invoice <i className="ti ti-arrow-right" />
+              <Link href={`/klinik/rawat-inap/${rec.id}/tagihan`} className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+                Tagih & terima uang <i className="ti ti-arrow-right" />
               </Link>
             </span>
           </div>
@@ -316,7 +337,7 @@ export default async function RawatInapDetailPage({
         {cond === "pulang_paksa" && visit && (
           <div className="p2ban" style={{ marginTop: 10, justifyContent: "space-between" }}>
             <span>Pulang Paksa tercatat dengan form bertanda tangan; biaya rawat inap tetap masuk tagihan.</span>
-            <Link href={`/klinik/pembayaran/${visit.id}`} className="btn-acc" style={{ padding: "4px 12px", textDecoration: "none" }}>Buat Invoice</Link>
+            <Link href={`/klinik/rawat-inap/${rec.id}/tagihan`} className="btn-acc" style={{ padding: "4px 12px", textDecoration: "none" }}>Tagih & terima uang</Link>
           </div>
         )}
       </div>

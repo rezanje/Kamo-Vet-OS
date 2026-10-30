@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { muatTagihanBerjalan, TagihanBerjalanError } from "../tagihan-berjalan-server";
+import { muatTagihanBerjalan, ringkasBelumDitagih, TagihanBerjalanError } from "../tagihan-berjalan-server";
 import { bacaRombongan } from "../rombongan-server";
 
 // Supabase palsu seadanya: tiap tabel mengembalikan barisnya apa adanya, dan
 // `gagal` menandai tabel yang bacaannya error (untuk menguji gagal-tertutup).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
-function klien(tables: Record<string, Any[]>, gagal: string[] = []) {
+function klien(tables: Record<string, Any[]>, gagal: string[] = [], kode?: string) {
   return {
     from(table: string) {
-      const error = gagal.includes(table) ? { message: `gagal baca ${table}` } : null;
+      const error = gagal.includes(table)
+        ? { code: kode ?? "57014", message: `gagal baca ${table}` }
+        : null;
       const hasil = { data: error ? null : (tables[table] ?? []), error };
       const self: Any = {
         select: () => self, eq: () => self, in: () => self, is: () => self,
@@ -77,12 +79,52 @@ describe("muatTagihanBerjalan", () => {
         .rejects.toBeInstanceOf(TagihanBerjalanError);
     });
 
-  it("kwitansi dan uang muka yang belum ada di database tidak mematikan layar tagihan", async () => {
-    // Migrasi belum terpasang: tagihan tahap tetap harus terbaca.
-    const data = (await muatTagihanBerjalan(klien(dasar(), ["clinic_payment_receipts", "clinic_customer_advances"]) as never, "rec-1"))!;
+  it("tabel kwitansi/uang muka yang MEMANG belum ada tidak mematikan layar tagihan", async () => {
+    // Migrasi belum terpasang: tagihan tahap tetap harus terbaca, tetapi layar diberi
+    // tahu bahwa riwayat uangnya belum tersedia supaya aksi uangnya dikunci.
+    const data = (await muatTagihanBerjalan(
+      klien(dasar(), ["clinic_payment_receipts", "clinic_customer_advances"], "42P01") as never, "rec-1"))!;
     expect(data.kwitansi).toEqual([]);
     expect(data.saldoUangMuka).toBe(0);
     expect(data.tahap).toHaveLength(1);
+    expect(data.riwayatUangTerpasang).toBe(false);
+  });
+
+  // FIN-09/UF-09: gangguan baca pada riwayat uang DULU tampil sebagai "Belum ada
+  // pembayaran" dan saldo uang muka nol — staf bisa meminta pembayaran ulang.
+  it.each([
+    ["clinic_payment_receipts", "PGRST201"],
+    ["clinic_payment_receipts", "42501"],
+    ["clinic_customer_advances", "57014"],
+  ])("gagal baca %s (%s) menghentikan layar, bukan menampilkan nol", async (tabel, kode) => {
+    await expect(muatTagihanBerjalan(klien(dasar(), [tabel], kode) as never, "rec-1"))
+      .rejects.toBeInstanceOf(TagihanBerjalanError);
+  });
+
+  it("riwayat uang yang lengkap menandai layar boleh memproses uang", async () => {
+    const data = (await muatTagihanBerjalan(klien(dasar()) as never, "rec-1"))!;
+    expect(data.riwayatUangTerpasang).toBe(true);
+  });
+});
+
+// UF-03: biaya yang sudah tercatat tetapi belum ditagih harus terlihat SEBELUM pasien
+// dipulangkan; kepulangan sendiri tetap tidak diblokir oleh angka ini.
+describe("ringkasBelumDitagih", () => {
+  it("menjumlahkan baris resep yang belum menempel pada tagihan aktif", async () => {
+    const hasil = await ringkasBelumDitagih(klien(dasar()) as never, "vis-1");
+    expect(hasil).toEqual({ terbaca: true, baris: 1, nilai: 300_000 });
+  });
+
+  it("baris pada tagihan yang sudah di-void kembali terhitung belum ditagih", async () => {
+    const data = dasar() as Record<string, Any[]>;
+    data.invoices = [{ ...data.invoices[0], voided_at: "2026-10-28T00:00:00Z" }];
+    const hasil = await ringkasBelumDitagih(klien(data) as never, "vis-1");
+    expect(hasil).toMatchObject({ terbaca: true, baris: 2, nilai: 400_000 });
+  });
+
+  it("sumber yang gagal dibaca dilaporkan tidak terbaca, bukan nol", async () => {
+    expect(await ringkasBelumDitagih(klien(dasar(), ["invoice_items"]) as never, "vis-1"))
+      .toEqual({ terbaca: false, baris: 0, nilai: 0 });
   });
 });
 

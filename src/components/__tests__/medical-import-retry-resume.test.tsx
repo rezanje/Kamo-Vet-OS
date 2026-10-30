@@ -35,7 +35,7 @@ vi.mock('@/app/(app)/klinik/rekam-medis/impor/actions', () => ({
     const ke = fixture.panggilan.length;
     if (fixture.gagalMulaiPanggilan && ke >= fixture.gagalMulaiPanggilan && fixture.gagalBerikut > 0) {
       fixture.gagalBerikut -= 1;
-      return { ok: false, message: 'Failed to fetch', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [] };
+      return { ok: false, message: 'Failed to fetch', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [], kunci_tersimpan: [] };
     }
     let tersimpan = 0;
     let sudahAda = 0;
@@ -51,9 +51,9 @@ vi.mock('@/app/(app)/klinik/rekam-medis/impor/actions', () => ({
       fixture.gagalSesudahSimpan = false;
       fixture.gagalBerikut = 3;
       fixture.gagalMulaiPanggilan = ke + 1;
-      return { ok: false, message: 'Failed to fetch', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [] };
+      return { ok: false, message: 'Failed to fetch', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [], kunci_tersimpan: [] };
     }
-    return { ok: true, message: 'ok', tersimpan, sudah_ada: sudahAda, dilewati: 0, ditahan: [], perlu_keputusan: [] };
+    return { ok: true, message: 'ok', tersimpan, sudah_ada: sudahAda, dilewati: 0, ditahan: [], perlu_keputusan: [], kunci_tersimpan: [] };
   },
 }));
 

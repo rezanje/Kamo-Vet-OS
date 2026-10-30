@@ -377,7 +377,10 @@ begin
      or jsonb_array_length(p_lines) not between 1 and 200 then
     raise exception using errcode = 'P0001', message = 'INVOICE_INVALID: data invoice tidak lengkap';
   end if;
-  -- Urutan kunci sama dengan RPC posting: kunci permintaan, lalu kunjungan.
+  -- PR343 acquires the billing coordinator BEFORE request/visit locks. This new
+  -- wrapper must follow the same order or race with an original public posting
+  -- can deadlock (full-schema deterministic regression L1).
+  perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));
   perform pg_advisory_xact_lock(hashtextextended('clinic-invoice-request:' || v_key, 0));
   perform 1 from public.visits where id = p_visit_id for update;
   v_lines := clinic_private.link_unrecorded_lines(p_visit_id, v_key, p_lines, 'kasir');
@@ -411,6 +414,8 @@ begin
      or jsonb_array_length(p_lines) not between 1 and 200 then
     raise exception using errcode = 'P0001', message = 'INVOICE_INVALID: koreksi dan alasan wajib diisi';
   end if;
+  -- Match PR343 before reading correction eligibility or taking visit/request locks.
+  perform clinic_private.billing_lock(clinic_private.billing_keys_invoice(p_invoice_id));
   perform pg_advisory_xact_lock(hashtextextended('clinic-invoice-operation:' || v_key, 0));
   select i.visit_id into v_visit from public.invoices i where i.id = p_invoice_id;
   if v_visit is null then

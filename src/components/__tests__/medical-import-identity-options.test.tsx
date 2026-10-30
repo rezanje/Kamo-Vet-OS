@@ -31,9 +31,9 @@ vi.mock('@/app/(app)/klinik/rekam-medis/impor/actions', () => ({
   prosesPotonganImporRekamMedis: async (rows: RekamMedisImporRow[]) => {
     fixture.kiriman.push(rows);
     if (fixture.gagalPertama && fixture.kiriman.length === 1) {
-      return { ok: false, message: 'Failed to fetch', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [] };
+      return { ok: false, message: 'Failed to fetch', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [], kunci_tersimpan: [] };
     }
-    return fixture.jawaban.shift() ?? { ok: true, message: 'ok', tersimpan: rows.length, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [] };
+    return fixture.jawaban.shift() ?? { ok: true, message: 'ok', tersimpan: rows.length, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [], kunci_tersimpan: [] };
   },
 }));
 
@@ -121,7 +121,7 @@ afterEach(async () => {
 });
 
 it('distinguishes same-name patient candidates before the user chooses a destination', async () => {
-  fixture.jawaban = [{ ok: true, message: 'ok', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [klarifikasi] }];
+  fixture.jawaban = [{ ok: true, message: 'ok', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [klarifikasi], kunci_tersimpan: [] }];
   await act(async () => root!.render(<RekamMedisImportForm />));
   await pilihDanMulai([kartu('Fictional.xlsx', 'Fictional owner - 080000000001')]);
   const options = [...host.querySelectorAll('option')].filter((item) => item.value.includes('pet-reference'));
@@ -133,8 +133,8 @@ it('distinguishes same-name patient candidates before the user chooses a destina
 
 it('menampilkan kemajuan per folder beserta hitungan hasilnya dan tidak berhenti karena pertanyaan identitas', async () => {
   fixture.jawaban = [
-    { ok: true, message: 'ok', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [klarifikasi] },
-    { ok: true, message: 'ok', tersimpan: 1, sudah_ada: 2, dilewati: 0, ditahan: [{ source_key: 'x', source_file: 'B.xlsx', source_sheet: '1', reason: 'Tanggal wajib diisi' }], perlu_keputusan: [] },
+    { ok: true, message: 'ok', tersimpan: 0, sudah_ada: 0, dilewati: 0, ditahan: [], perlu_keputusan: [klarifikasi], kunci_tersimpan: [] },
+    { ok: true, message: 'ok', tersimpan: 1, sudah_ada: 2, dilewati: 0, ditahan: [{ source_key: 'x', source_file: 'B.xlsx', source_sheet: '1', reason: 'Tanggal wajib diisi' }], perlu_keputusan: [], kunci_tersimpan: [] },
   ];
   await act(async () => root!.render(<RekamMedisImportForm />));
   await pilihDanMulai([kartu('A.xlsx', 'Owner A - 0801'), kartu('B.xlsx', 'Owner B - 0802')]);

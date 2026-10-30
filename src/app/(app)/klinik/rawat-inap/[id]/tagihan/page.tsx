@@ -11,6 +11,7 @@ import { nilaiBarisResep } from "@/lib/tagihan-berjalan";
 import { TagihSekarangForm } from "./TagihSekarangForm";
 import { TerimaPembayaranForm } from "./TerimaPembayaranForm";
 import { BatalKwitansiForm } from "./BatalKwitansiForm";
+import { LepasUangMukaForm } from "./LepasUangMukaForm";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (iso: string) =>
@@ -20,6 +21,7 @@ const SUKSES: Record<string, string> = {
   tagih: "Tagihan tahap terbit. Obat dan jasa yang baru ditagih sudah tercatat sebagai omzet.",
   bayar: "Pembayaran tersimpan. Cetak kwitansinya untuk pemilik.",
   batal: "Kwitansi dibatalkan. Jurnal pembaliknya sudah tercatat.",
+  lepas: "Pemakaian uang muka dilepas. Saldo pemilik kembali utuh dan kwitansinya sekarang bisa dibatalkan.",
 };
 
 /**
@@ -52,6 +54,10 @@ export default async function TagihanRawatInapPage({
   const ppnRate = pajak.mode_pkp ? Number(pajak.ppn_rate) : 0;
   const bolehTerobos = bolehMenerobosDp(profil.data?.role as string | null);
   const estimasi = data.belumDitagih.reduce((sum, b) => sum + nilaiBarisResep(b), 0);
+  // Riwayat kwitansi/uang muka belum tersedia = saldo yang tampil belum bisa dipercaya.
+  // Menerima uang atau membatalkan kwitansi di atas angka yang belum lengkap berisiko
+  // penerimaan dobel, jadi aksinya dikunci sampai datanya terbaca.
+  const bolehProsesUang = !!shift && data.riwayatUangTerpasang;
 
   return (
     <>
@@ -77,6 +83,12 @@ export default async function TagihanRawatInapPage({
           <i className="ti ti-circle-check" /> {SUKSES[success]}
         </div>
       )}
+      {!data.riwayatUangTerpasang && (
+        <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+          <i className="ti ti-alert-triangle" /> Riwayat pembayaran dan uang muka belum tersedia di server ini —
+          angka di bawah BELUM lengkap. Menerima uang dan membatalkan kwitansi dikunci sampai datanya terbaca.
+        </div>
+      )}
       {!shift && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", justifyContent: "space-between" }}>
           <span><i className="ti ti-lock" /> Shift klinik belum dibuka — menagih dan menerima uang masih terkunci.</span>
@@ -95,7 +107,7 @@ export default async function TagihanRawatInapPage({
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)", marginBottom: 9 }}>
           <i className="ti ti-clipboard-list" /> BELUM DITAGIH
         </div>
-        {shift ? (
+        {shift && data.riwayatUangTerpasang ? (
           <TagihSekarangForm
             key={`${data.record.id}:${data.belumDitagih.map((b) => b.id).join(",")}`}
             recordId={data.record.id} visitId={data.visit.id} requestKey={randomUUID()}
@@ -104,7 +116,10 @@ export default async function TagihanRawatInapPage({
           />
         ) : (
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
-            {data.belumDitagih.length} baris menunggu ditagih senilai {rp(estimasi)} (belum termasuk PPN). Buka shift klinik untuk menagih.
+            {data.belumDitagih.length} baris menunggu ditagih senilai {rp(estimasi)} (belum termasuk PPN).
+            {shift
+              ? " Saldo uang muka belum terbaca — muat ulang sebelum menagih."
+              : " Buka shift klinik untuk menagih."}
           </div>
         )}
       </section>
@@ -182,7 +197,7 @@ export default async function TagihanRawatInapPage({
                         style={{ padding: "3px 9px", fontSize: 10, textDecoration: "none" }}>
                         <i className="ti ti-receipt" /> Kwitansi
                       </Link>
-                      {k.status === "aktif" && shift && (
+                      {k.status === "aktif" && bolehProsesUang && (
                         <BatalKwitansiForm recordId={data.record.id} receiptId={k.id} requestKey={randomUUID()} />
                       )}
                     </div>
@@ -191,15 +206,31 @@ export default async function TagihanRawatInapPage({
               ))}
               {!data.kwitansi.length && (
                 <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
-                  Belum ada pembayaran untuk kunjungan ini.
+                  {data.riwayatUangTerpasang
+                    ? "Belum ada pembayaran untuk kunjungan ini."
+                    : "Riwayat pembayaran belum dapat dibaca — ini BUKAN berarti belum ada uang masuk."}
                 </td></tr>
               )}
             </tbody>
           </table>
         </div>
         {data.uangMuka.length > 0 && (
-          <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 8 }}>
-            Uang muka: {data.uangMuka.map((u) => `${u.no_uang_muka} ${rp(Number(u.amount))} (terpakai ${rp(Number(u.applied))}${u.status === "batal" ? ", dibatalkan" : ""})`).join(" · ")}
+          <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 8, display: "grid", gap: 5 }}>
+            {data.uangMuka.map((u) => (
+              <div key={u.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span>
+                  Uang muka {u.no_uang_muka} {rp(Number(u.amount))} (terpakai {rp(Number(u.applied))}
+                  {u.status === "batal" ? ", dibatalkan" : ""})
+                </span>
+                {/* Salah nominal/metode pada kwitansi yang uang mukanya sudah dipakai dulu
+                    terkunci: kwitansinya ditolak ADVANCE_USED dan tidak ada jalan keluar.
+                    Pelepasan ini jalurnya — peran, shift, alasan, dan jurnalnya dijaga RPC. */}
+                {u.status === "aktif" && Number(u.applied) > 0 && bolehProsesUang && bolehTerobos && (
+                  <LepasUangMukaForm recordId={data.record.id} advanceId={u.id}
+                    requestKey={randomUUID()} nomor={u.no_uang_muka} />
+                )}
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -208,11 +239,15 @@ export default async function TagihanRawatInapPage({
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)", marginBottom: 9 }}>
           <i className="ti ti-cash" /> TERIMA PEMBAYARAN
         </div>
-        {shift ? (
+        {bolehProsesUang ? (
           <TerimaPembayaranForm key={`bayar:${data.kwitansi.length}:${data.tahap.length}`}
             recordId={data.record.id} visitId={data.visit.id} requestKey={randomUUID()} tahap={data.tahap} />
         ) : (
-          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Buka shift klinik untuk menerima uang.</div>
+          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
+            {shift
+              ? "Riwayat pembayaran belum terbaca — muat ulang halaman sebelum menerima uang."
+              : "Buka shift klinik untuk menerima uang."}
+          </div>
         )}
       </section>
     </>
