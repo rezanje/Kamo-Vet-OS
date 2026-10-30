@@ -1,6 +1,7 @@
-# Migrasi kartu medis dari master ternormalisasi — audit kontrak + rencana (checkpoint 1)
+# Migrasi kartu medis dari master ternormalisasi — audit kontrak + rencana
 
-Status: **AUDIT + DESAIN, belum ada kode.** Menunggu review sebelum implementasi draft.
+Status: checkpoint 1 (ac2277fd) sudah direview. **§9 "Koreksi review" berlaku dan menggantikan bagian yang bertentangan.**
+Implementasi draft (kode + tes sintetis + dry-run offline bawaan) mengikuti §9.
 
 Batas sesi ini:
 - Default baca-saja dan dry-run.
@@ -411,3 +412,126 @@ Plus lint, tsc, `npm test` penuh, build, dan regresi harness impor/RLS yang ada.
 - Foto/OCR.
 - Audit sampel nyata. Itu tahap offline terpisah (3 kandidat bentuk + 1 tanpa tanggal + 1 karantina) dan bukan data
   siap DB; kandidat tidak dianggap persetujuan.
+
+---
+
+## 9. Koreksi review checkpoint 1 (default teknis; berlaku)
+
+Default di bawah adalah default teknis untuk tujuan pengguna, bukan persetujuan produksi. Basis kode kini `main` b1279f15,
+yang memuat afb555e dan rantai migrasi sampai `20261104050000`. Area ranap tidak disentuh.
+
+**K1 Versi kontrak.**
+- Master tanpa penanda diterima **hanya** sebagai `legacy-master-v0`, dengan dua syarat: tanda tangan header persis
+  dikenali (K2), dan muncul peringatan "tanpa penanda versi".
+- Penanda eksplisit (sel `contract_version` + nilai di kanannya, di sheet Mapping) boleh dipakai. Nilai yang dikenal hanya
+  `legacy-master-v0`; nilai lain berarti gagal.
+- Master tidak pernah ditulis ulang. Versi kontrak dicatat di rencana dan ledger.
+
+**K2 Header aktual, tidak bergantung urutan, dicocokkan persis setelah normalisasi** (huruf kecil, spasi dirapatkan).
+
+| Sheet / blok | Label wajib |
+|---|---|
+| Pemilik | `local_owner_id (staging)`, `Nama pemilik \| name`, `Nomor telepon \| phone`, `Alamat \| address`, `customers.id (UUID aktual)`, `Status review (staging)`, `Keputusan reviewer (staging)` |
+| Hewan | `local_pet_id (staging)`, `local_owner_id (staging)`, `Nama hewan \| name`, `Jenis \| species`, `Ras \| breed`, `Kelamin \| gender`, `Tanggal lahir \| dob`, `DOB mentah (staging)`, `pets.id (UUID aktual)`, `Status review (staging)`, `Keputusan reviewer (staging)` |
+| RiwayatMedis | `local_record_id (staging)`, `local_pet_id (staging)`, `Tanggal usulan \| record_date`, `No. rekam \| record_no`, `Dokter \| doctor`, `Catatan / keluhan \| note`, `Anamnesis \| anamnesis`, `Gejala klinis \| clinical_findings`, `Diagnosis \| diagnosis`, `Terapi \| therapy`, `Status review (staging)`, `Sheet sumber (staging)`, `Keputusan reviewer (staging)` |
+| Mapping FILE | `sample_id`, `File asli`, `Path components asli (JSON)`, `SHA-256 file`, `Drive file URL`, `Jumlah sheet`, `Foto medis dikecualikan`, `Perubahan asli` |
+| Mapping PER-SHEET | `ID lokal / sumber`, `File`, `Sheet asli`, `source_key asli`, `Tanggal tab`, `Tanggal sel`, `Catatan perubahan staging`, `Relasi dedupe` |
+
+Aturan pemindaian dan batas tabel:
+- Pemindaian terbatas, baris 1–60 per sheet.
+- Baris header adalah baris yang memuat **semua** label sebuah tanda tangan, masing-masing tepat sekali.
+- Mapping wajib memuat tepat satu blok FILE dan tepat satu blok PER-SHEET. Dua blok **berbeda** bukan duplikat; blok
+  **sama** yang muncul dua kali berarti gagal.
+- Baris 5 dan 29/35 hanya petunjuk, tidak di-hardcode.
+- Catatan skema di atas header bukan record.
+- Data blok dimulai tepat di bawah header dan berakhir di baris pertama yang semua kolom bloknya kosong, atau di header
+  blok lain.
+- Isi apa pun di kolom blok setelah batas itu (selain header blok lain) menggagalkan **seluruh file** (batas tabel ambigu).
+  Header dan catatan di bawahnya tidak pernah terbaca sebagai baris.
+
+**K3 Kelayakan review, bukan otorisasi produksi.**
+- Literal `SETUJU` (setelah trim, persis) harus ada di pemilik, hewan, **dan** riwayat. Itu hanya membuat baris layak
+  ditinjau untuk apply.
+- Kosong, rumus, atau teks bebas lain tidak dihitung persetujuan.
+- Dry-run tetap mem-parse dan memvalidasi **semua** baris, sehingga hitungan "kandidat" dan "disetujui" dilaporkan
+  terpisah. Persetujuan kosong tidak menutupi galat struktur.
+- Karantina dan konflik tanggal tidak bisa dibatalkan oleh `SETUJU`.
+
+**K4** Klien user terautentikasi di-inject untuk kode dan tes. Tidak ada kredensial sekarang. Login/sesi operasional
+OWNER nanti masih **terbuka**. Tidak ada pengumpulan password/rahasia di chat, log, atau berkas env.
+
+**K5** Mode end-to-end (tulis + readback RS-2) mewajibkan **OWNER** aktif. ADMIN ditolak sejak awal, supaya tidak ada
+verifikasi palsu.
+
+**K6** Mode jaringan mewajibkan konteks eksplisit:
+- `cabang` dengan UUID: header selalu dikirim, tidak pernah dijatuhkan;
+- `semua-cabang`: hanya bila terbukti berhak (profil OWNER aktif dibaca dulu). Flag saja bukan izin.
+
+Mode offline tidak memakai auth maupun cabang.
+
+**K7** Perbaikan pemotongan UI dan ekstraksi layanan berada di luar PR ini.
+
+**K8** Semantik RPC yang ada dipertahankan; PR ini hanya kode dan tes. Risiko `imported_at`/Q01 (F3) didokumentasikan.
+Ada dua jalan, dan **tidak** dipilih diam-diam:
+- (A) penandaan historis, yang butuh review DB terpisah;
+- (B) menerima kredit quest secara eksplisit, yang butuh keputusan bisnis.
+
+Implementasi sintetis tidak diblokir.
+
+**K9** Satu pekerja.
+- Batch bisa diatur, dengan plafon 150. Angka itu ukuran UI yang ada, bukan kapasitas produksi terukur.
+- Batas eksplisit (lebih → gagal, tanpa potong):
+
+  | Ukuran | Batas |
+  |---|---|
+  | berkas | 20 MB |
+  | total tak terkompresi zip | 200 MB |
+  | jumlah entri zip | 2.000 |
+  | baris data per sheet | 20.000 |
+  | kolom yang dipindai | 64 |
+
+- Pemilihan run lewat rencana tertinjau. Semua yang dikecualikan atau dikarantina tetap dihitung.
+
+**K10** Ledger lokal operator di luar repo.
+- Berkas mode 0600, folder 0700.
+- Checkpoint atomik (tulis sementara → fsync → rename) dan kunci run eksklusif (`wx`).
+- Tanpa `source_key` mentah atau PHI di log. Hash ID dan `visit_id` adalah **metadata pseudonim sensitif**, bukan anonim.
+
+### Koreksi wajib
+
+1. **F2 (penulis L574–579, anabul tertua `limit 1` tanpa filter status).**
+   - Sebelum RPC baris baru, hitung **semua** anabul cocok milik pemilik itu, termasuk nonaktif (scan tidak memfilter
+     status). Predikatnya gabungan kunci aplikasi dan `lower(btrim(name))` milik DB.
+   - Lebih dari satu → TAHAN. Satu → kirim UUID eksplisit. Nol → `pet_id` null.
+   - Pengecekan diulang tepat sebelum eksekusi, dan perubahan kandidat → TAHAN (diuji).
+   - **Risiko sisa yang diungkap:** selama fallback pembuatan di DB masih ada, snapshot tidak menjamin bebas balapan antara
+     pengecekan dan RPC.
+2. **F4 (scan INVOKER/RLS, persis).**
+   - Ketiadaan di scan **bukan** bukti baru atau tidak ganda. Otoritasnya ada pada jejak kanonik dan hasil simpan massal
+     DB; offline menyatakan "tidak diketahui".
+   - Scan yang hilang, rusak, atau tidak lengkap → gagal tertutup.
+   - Jejak dipertahankan. Tabrakan jejak 2 bagian lintas pemilik dan jejak setara HP kanonik → TAHAN SEMUA.
+   - Tahan identitas tidak dilewati hanya karena jejak tampak sudah ada.
+3. **Readback RS-2.**
+   - Paginasi dihabiskan, dengan >1000 baris per hewan dianggap gagal tidak lengkap. `visit_id` dicocokkan persis
+     (bukan 200 terakhir, nama, atau tanggal).
+   - Demografi pemilik/hewan yang sudah ada tidak diubah RPC. Karena itu dibandingkan dengan snapshot identitas
+     tertinjau, dan selisih ditandai/TAHAN **sebelum** apply. Tidak menimpa dan tidak mengklaim "sudah dinormalisasi".
+   - Kunjungan dan MR dicocokkan persis, termasuk `keluhan = note` (atau anamnesis bila note kosong).
+4. **Tanggal.**
+   - Batas 1990 hanya kebijakan karantina advisori yang bisa diatur, bukan constraint DB.
+   - Tanggal mustahil, tanggal di masa depan (WIB), sistem tanggal 1904, sel rumus (cache bisa basi), dan tanggal yang
+     memuat jam → karantina atau tolak.
+   - Tanggal tab ≠ tanggal sel → **karantina** sampai ada kolom resolusi tertinjau eksplisit di kontrak berikutnya.
+     Tanggal tab tidak dipilih otomatis.
+5. **Commit tidak pasti.**
+   - Kirim ulang payload, urutan, dan jejak yang **sama**, dengan sidik rencana sama.
+   - Seluruh bentuk jawaban RPC divalidasi **sebelum** diakui: tipe, jumlah, urutan kunci, status, dan kesesuaian UUID.
+     Jawaban rusak atau parsial → tidak pasti.
+   - Penanda "dikirim" ditulis tahan-crash **sebelum** jaringan, di bawah kunci eksklusif. Pemulihan crash dites.
+   - `lanjutkan` menolak berkas, rencana, atau konteks yang berubah.
+6. **Default baca-saja: NOL panggilan jaringan/mutasi.**
+   - Mode identitas baca-saja tidak pernah memanggil simpan massal.
+   - Bukti harness `psql` hanya berlaku untuk DB sintetis, bukan bukti PostgREST/auth/jaringan hosted.
+   - Foto dikecualikan, tanpa OCR. Teks klinis dipertahankan, tanpa ekstraksi satuan/stok/tagihan.
+   - Tiga kandidat bentuk + 2 yang ditahan saat ini **0 yang disetujui/terbukti di DB**.
