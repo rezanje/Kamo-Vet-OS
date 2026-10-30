@@ -69,9 +69,24 @@ revoke all on function clinic_private.inpatient_cashier_snapshot(jsonb,jsonb)fro
 create function public.clinic_read_inpatient_cashier(p_record_id uuid,p_visit_id uuid)returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare quote jsonb;rows jsonb;history jsonb;receipts jsonb;applications jsonb;
+ v public.visits%rowtype;me public.profiles%rowtype;
 begin
- quote:=clinic_private.inpatient_payment_quote(p_record_id,p_visit_id,'[]');
- rows:=clinic_private.pending_cashier_rows(p_visit_id);
+ -- Same authorization as the original quote, before either history or shift state.
+ -- Only money/editing needs an OWN open shift; historical documents do not.
+ perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));
+ select * into me from public.profiles where id=auth.uid() and is_active;
+ select * into v from public.visits where id=p_visit_id;
+ if auth.uid() is null or coalesce(auth.role(),current_setting('role',true)) <> 'authenticated'
+   or me.id is null or v.id is null or not public.user_can_access_branch(v.branch_id)
+   or not (me.role='OWNER' or exists(select 1 from public.role_modules m where m.role=me.role and m.module_id='klinik')
+     or (not exists(select 1 from public.role_modules m where m.role=me.role) and me.role in ('ADMIN','DOCTOR','STAFF')))
+   or not exists(select 1 from public.inpatient_records r where r.id=p_record_id and r.visit_id=v.id and r.branch_id=v.branch_id) then
+   raise exception 'ACCESS_DENIED: rawat inap atau akses tidak valid';
+ end if;
+ if exists(select 1 from public.cashier_shifts where opened_by=me.id and branch_id=v.branch_id and shift_type='klinik' and status='open')then
+  quote:=clinic_private.inpatient_payment_quote(p_record_id,p_visit_id,'[]');
+  rows:=clinic_private.pending_cashier_rows(p_visit_id);
+ end if;
  select coalesce(jsonb_agg(jsonb_build_object('id',i.id,'invoice_no',i.invoice_no,'total',i.total,'paid_status',i.paid_status,
  'received',clinic_private.invoice_received(i.id),'dp_amount',i.dp_amount,'correction_pending',i.correction_pending,
  'lines',(select coalesce(jsonb_agg(to_jsonb(l) order by l.created_at,l.id),'[]') from public.invoice_items l where l.invoice_id=i.id)) order by i.created_at,i.id),'[]')
@@ -79,7 +94,8 @@ begin
  select coalesce(jsonb_agg(to_jsonb(r)||jsonb_build_object('parts',(select coalesce(jsonb_agg(to_jsonb(p) order by p.urutan),'[]') from public.clinic_payment_receipt_parts p where p.receipt_id=r.id)) order by r.created_at,r.id),'[]') into receipts
  from public.clinic_payment_receipts r where r.visit_id=p_visit_id;
  select coalesce(jsonb_agg(to_jsonb(a) order by a.id),'[]') into applications from public.clinic_advance_applications a join public.invoices i on i.id=a.invoice_id where i.visit_id=p_visit_id and i.voided_at is null and a.released_at is null;
- return jsonb_build_object('snapshot',clinic_private.inpatient_cashier_snapshot(rows,quote),'rows',rows,'quote',quote-'lines'-'shift_id','history',history,'receipts',receipts,'applications',applications,
+ return jsonb_build_object('state',case when quote is null then 'SHIFT_REQUIRED' else 'EDITABLE' end,
+  'snapshot',case when quote is not null then clinic_private.inpatient_cashier_snapshot(rows,quote) end,'rows',rows,'quote',quote-'lines'-'shift_id','history',history,'receipts',receipts,'applications',applications,
   'tax_settings',(select jsonb_build_object('mode_pkp',s.mode_pkp,'ppn_rate',s.ppn_rate) from public.company_settings s where s.id=true),
   'compound_pending',exists(select 1 from public.compounding_recipes c join public.medical_records m on m.id=c.medical_record_id where m.visit_id=p_visit_id and c.status='pending'));
 end$$;

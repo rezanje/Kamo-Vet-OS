@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 spec=importlib.util.spec_from_file_location('medical',ROOT/'scripts/test-rekam-full-edit-postgres.py');assert spec and spec.loader
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 x,r,q,j=m.x,m.r,m.q,m.j
-CANDIDATE='20261104090000_inpatient_cashier_pending_cart.sql'
+CANDIDATE='20261104130000_inpatient_cashier_pending_cart.sql'
 RESULTS=[]
 def check(name,ok,detail):
  RESULTS.append(dict(case=name,status='PASS' if ok else 'FAIL',detail=detail));print(RESULTS[-1],flush=True)
