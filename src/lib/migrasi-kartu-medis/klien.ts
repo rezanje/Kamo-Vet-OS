@@ -27,6 +27,8 @@ export interface KlienMigrasi {
    * Jawaban: `{ id }` (atau larik satu baris) kartu yang dibuat.
    */
   buatPemilik(kartu: KartuPemilikBaru): Promise<JawabanKlien>;
+  /** SELECT biasa kunjungan per hewan (RLS pemanggil): id, pet_id, created_at, branch_id, legacy_source_key. Opsional. */
+  kunjunganHewan?(petIds: string[]): Promise<JawabanKlien>;
 }
 
 export type KartuPemilikBaru = { name: string; phone: string; address: string | null; imported_at: string };

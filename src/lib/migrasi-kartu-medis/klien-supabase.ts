@@ -90,6 +90,7 @@ export async function masukOwner(opsi: OpsiLogin): Promise<KlienMigrasi & { kelu
     rpc: async (nama, args) => jawab(await supabase.rpc(nama, args)),
     pilih: async (tabel, kolom, ids) => jawab(await supabase.from(tabel).select(kolom).in("id", ids)),
     buatPemilik: async (kartu) => jawab(await supabase.from("customers").insert(kartu).select("id")),
+    kunjunganHewan: async (petIds) => jawab(await supabase.from("visits").select("id,pet_id,created_at,branch_id,legacy_source_key").in("pet_id", petIds)),
     keluar: async () => { await supabase.auth.signOut().catch(() => undefined); },
   };
 }
