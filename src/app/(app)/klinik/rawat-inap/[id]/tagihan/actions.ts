@@ -164,3 +164,31 @@ export async function batalkanKwitansi(formData: FormData) {
   revalidatePath(back);
   redirect(`${back}?success=batal${transactionDraftAck(formData)}`);
 }
+
+/**
+ * Lepas pemakaian uang muka yang sudah menempel di tagihan (FIN-03).
+ *
+ * Ini SATU-SATUNYA jalan keluar yang sah untuk kwitansi ber-uang-muka yang salah:
+ * peran keuangan, shift klinik aktif, alasan wajib, jurnal pembalik, dan jejaknya
+ * dicatat database. Setelah ini kwitansinya baru bisa dibatalkan seperti biasa —
+ * tanpa memulangkan pasien palsu dan tanpa menghapus baris resep.
+ */
+export async function lepaskanUangMuka(formData: FormData) {
+  const supabase = await createClient();
+  const recordId = String(formData.get("recordId") ?? "");
+  const advanceId = String(formData.get("advanceId") ?? "");
+  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!recordId) redirect("/klinik/rawat-inap?error=Rawat%20inap%20tidak%20valid");
+  const back = kembali(recordId);
+  if (!advanceId || !requestKey || !reason) {
+    redirect(`${back}?error=${encodeURIComponent("Isi alasan melepas pemakaian uang muka lalu coba lagi.")}`);
+  }
+  await shiftKlinik(supabase);
+  const { error } = await supabase.rpc("clinic_release_advance_application", {
+    p_advance_id: advanceId, p_request_key: requestKey, p_reason: reason,
+  });
+  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error, tidakPasti))}`);
+  revalidatePath(back);
+  redirect(`${back}?success=lepas${transactionDraftAck(formData)}`);
+}

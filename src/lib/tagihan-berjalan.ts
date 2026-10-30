@@ -9,6 +9,8 @@
 // (clinic_post_inpatient_stage_invoice, clinic_receive_visit_payment): kalau layar
 // menghitung berbeda, kasir menyebut angka yang tidak pernah tercetak di kwitansi.
 
+import { TANPA_BAYAR, bayarPerTagihan, sisaTagihan, uangDiterimaTagihan } from "./uang-tagihan";
+
 export const AKUN_UANG_MUKA_JUAL = "2103";
 export const AKUN_PIUTANG_USAHA = "1201";
 export const METODE_UANG_MUKA = "Uang Muka";
@@ -35,6 +37,7 @@ export type TagihanTahap = {
   paid_status: string;
   voided_at: string | null;
   correction_pending?: boolean | null;
+  reissued_from?: string | null;
 };
 export type BarisBayar = { invoice_id: string; amount: number };
 
@@ -71,17 +74,14 @@ export function ringkasTahap(
   invoices: readonly TagihanTahap[],
   pembayaran: readonly BarisBayar[],
 ): RingkasTahap[] {
-  const masuk = new Map<string, number>();
-  for (const p of pembayaran) {
-    masuk.set(p.invoice_id, (masuk.get(p.invoice_id) ?? 0) + (Number(p.amount) || 0));
-  }
+  const masuk = bayarPerTagihan(pembayaran);
   return invoices
     .filter((i) => !i.voided_at)
     .slice()
     .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
     .map((i) => {
-      const dibayar = (Number(i.dp_amount) || 0) + (masuk.get(i.id) ?? 0);
-      return { ...i, dibayar, sisa: Math.max(0, (Number(i.total) || 0) - dibayar) };
+      const bayar = masuk.get(i.id) ?? TANPA_BAYAR;
+      return { ...i, dibayar: uangDiterimaTagihan(i, bayar), sisa: sisaTagihan(i, bayar) };
     });
 }
 

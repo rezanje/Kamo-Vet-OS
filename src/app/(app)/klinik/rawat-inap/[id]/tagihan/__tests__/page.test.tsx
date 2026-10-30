@@ -41,6 +41,7 @@ const dasar = () => ({
   }],
   uangMuka: [{ id: "um-1", no_uang_muka: "UMK-202610-0001", tanggal: "2026-10-27", amount: 50_000, applied: 0, status: "aktif" }],
   saldoUangMuka: 50_000,
+  riwayatUangTerpasang: true,
 });
 
 const render = async () => renderToStaticMarkup(
@@ -104,6 +105,36 @@ describe("layar tagihan rawat inap berjalan", () => {
     const html = await render();
     expect(html).toContain("sudah pulang");
     expect(html).toContain("TERIMA PEMBAYARAN");
+  });
+
+  it("form terima pembayaran dan tagih sekarang tersedia saat shift terbuka", async () => {
+    const html = await render();
+    expect(html).toContain('name="parts"');
+    expect(html).toContain("Batalkan");
+  });
+
+  // FIN-09/UF-09: riwayat uang yang belum terbaca tidak boleh tampak seperti "belum ada
+  // pembayaran"; selama itu, menerima uang dan membatalkan kwitansi dikunci.
+  it("riwayat uang yang belum tersedia mengunci aksi uang dan menjelaskan sebabnya", async () => {
+    state.data = { ...dasar(), riwayatUangTerpasang: false, kwitansi: [], uangMuka: [], saldoUangMuka: 0 };
+    const html = await render();
+    expect(html).toContain("Riwayat pembayaran dan uang muka belum tersedia");
+    expect(html).toContain("BUKAN berarti belum ada uang masuk");
+    expect(html).not.toContain('name="parts"');
+    // Tagihannya sendiri tetap terbaca supaya staf tidak kehilangan konteks.
+    expect(html).toContain("INV-1");
+  });
+
+  // FIN-03: jalan keluar untuk kwitansi yang uang mukanya terlanjur dipakai.
+  it("uang muka yang sudah terpakai menawarkan pelepasan hanya untuk peran keuangan", async () => {
+    const data = dasar();
+    data.uangMuka[0] = { ...data.uangMuka[0], applied: 50_000 };
+    state.data = data;
+    expect(await render()).not.toContain("Lepas pemakaian");
+    state.role = "FINANCE";
+    const html = await render();
+    expect(html).toContain("Lepas pemakaian");
+    expect(html).toContain("terpakai Rp 50.000");
   });
 
   it("kwitansi yang dibatalkan ditandai beserta alasannya, bukan dihapus", async () => {

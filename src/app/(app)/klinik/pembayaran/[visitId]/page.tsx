@@ -15,6 +15,7 @@ import { PembayaranForm } from "./PembayaranForm";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
+import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -108,10 +109,16 @@ export default async function PembayaranPage({
   const invoiceAktif = invoiceRows ?? [];
   const invoice = invoiceAktif.length ? invoiceAktif[invoiceAktif.length - 1] : null;
   const tagihanBertahap = invoiceAktif.length > 1;
-  const [demoPolicy, demoStaffResult, demoSnapshotResult] = await Promise.all([
+  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
     invoice ? supabase.from("clinic_demo_invoice_snapshots").select("fee_bearer,fee_amount,payments,incentive_pool").eq("invoice_id",invoice.id).maybeSingle() : Promise.resolve({data:null,error:null}),
+    // Boleh-tidaknya tagihan ini dikoreksi DIPUTUSKAN DI BASIS DATA, bukan ditebak
+    // di layar: aturannya sama persis dengan penjaga tulis (peran, uang di baris
+    // pembayaran MAUPUN di kepala tagihan, riwayat yang sudah dibalik seluruhnya,
+    // cabang, DEMO, tagihan batal). Tebakan lama di layar ini menolak keadaan yang
+    // justru diterima RPC-nya, sehingga koreksi sesudah pembatalan kwitansi mentok.
+    invoice ? supabase.rpc("clinic_invoice_correction_eligible", {p_invoice_id:invoice.id}) : Promise.resolve({data:false,error:null}),
   ]);
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
@@ -122,13 +129,15 @@ export default async function PembayaranPage({
     ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
     : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
   if (itemsError || paymentsError) throw unverifiedBilling();
-  const hasPayments = (paymentRows ?? []).some((p) => !p.transferred_from);
   const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const paidAmount = Number(invoice?.dp_amount ?? 0) + (paymentRows ?? [])
     .reduce((sum, p) => sum + Number(p.amount), 0);
-  const canEdit = invoice && !demoSnapshot && !hasPayments
-    && (invoice.correction_pending || ((paymentRows ?? []).length === 0 && invoice.paid_status !== "Lunas"));
+  // Gagal membaca kelayakan = form koreksi tidak ditawarkan (bukan layar mati):
+  // kasir tetap bisa menerima pembayaran, dan tidak ada koreksi yang dijanjikan
+  // lalu ditolak server. Nilai ini BUKAN otorisasi — RPC koreksinya memeriksa
+  // ulang peran dan mengunci barisnya sendiri sebelum menyentuh uang.
+  const canEdit = Boolean(invoice) && !demoSnapshot && koreksiBolehResult.data === true;
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
   const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
@@ -183,6 +192,9 @@ export default async function PembayaranPage({
     draftUser ? supabase.from("profiles").select("role").eq("id", draftUser.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
   const bolehTerobosDp = bolehMenerobosDp((profilKasir as { role?: string } | null)?.role);
+  // Batalkan + terbitkan ulang adalah pekerjaan keuangan (ditegakkan di database);
+  // layar tidak menawarkannya ke peran lain supaya tidak menabrak penolakan.
+  const bolehTerbitUlang = bolehSiklusTagihan((profilKasir as { role?: string } | null)?.role);
 
   const lunas = invoice?.paid_status === "Lunas";
   const refundData = invoice && lunas && !invoice.correction_pending ? await loadClinicRefundData(supabase, invoice.id) : null;
@@ -284,7 +296,9 @@ export default async function PembayaranPage({
         <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "var(--posb-dk)", justifyContent: "space-between" }}>
           <span>
             <i className="ti ti-stack-2" /> Kunjungan ini ditagih bertahap ({invoiceAktif.length} tagihan aktif).
-            Layar ini menampilkan tagihan terakhir; seluruh tahap, riwayat pembayaran, dan sisa piutang ada di layar tagihan rawat inap.
+            Panel di bawah — termasuk koreksi, terbit ulang, dan refund — bekerja pada tagihan
+            <b> {invoice?.invoice_no ?? "terakhir"}</b> saja, bukan tahap yang lain.
+            Seluruh tahap, riwayat pembayaran, dan sisa piutang ada di layar tagihan rawat inap.
           </span>
           {inpat && (
             <Link href={`/klinik/rawat-inap/${inpat.id}/tagihan`} className="btn-acc"
@@ -560,7 +574,7 @@ export default async function PembayaranPage({
           )}
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
-          {(lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
+          {bolehTerbitUlang && (lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG

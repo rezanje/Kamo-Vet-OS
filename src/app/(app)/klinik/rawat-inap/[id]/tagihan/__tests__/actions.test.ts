@@ -44,7 +44,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-import { batalkanKwitansi, tagihSekarang, terimaPembayaran } from "../actions";
+import { batalkanKwitansi, lepaskanUangMuka, tagihSekarang, terimaPembayaran } from "../actions";
 
 const RECORD = "11111111-1111-4111-8111-111111111111";
 const VISIT = "22222222-2222-4222-8222-222222222222";
@@ -220,14 +220,58 @@ describe("batalkan kwitansi", () => {
     expect(state.calls).toHaveLength(1);
   });
 
-  it("uang muka yang sudah menempel di tagihan tidak bisa dibatalkan dari layar kwitansi", async () => {
-    state.rpcError = { code: "P0001", message: "ADVANCE_USED: uang muka dari kwitansi ini sudah dipakai; batalkan tagihannya lebih dulu" };
-    await expect(batalkanKwitansi(formBatal())).rejects.toThrow(/Batalkan%20tagihannya%20lebih%20dulu/);
+  it("uang muka yang sudah menempel di tagihan menunjuk jalan keluarnya, bukan jalan buntu", async () => {
+    // Instruksi lama ("batalkan tagihannya lebih dulu") tidak bisa diselesaikan selama
+    // pasien masih dirawat; sekarang pesannya menunjuk tombol Lepas pemakaian.
+    state.rpcError = { code: "P0001", message: "ADVANCE_USED: lepas dulu pemakaian uang muka kwitansi ini, baru batalkan" };
+    await expect(batalkanKwitansi(formBatal())).rejects.toThrow(/Lepas%20pemakaian/);
   });
 
   it("tanpa shift klinik terbuka, kwitansi tidak bisa dibatalkan", async () => {
     state.shift = null;
     await expect(batalkanKwitansi(formBatal())).rejects.toThrow("REDIRECT:/klinik/shift?error=");
     expect(state.calls).toEqual([]);
+  });
+});
+
+// FIN-03: satu-satunya jalan keluar sah untuk kwitansi ber-uang-muka yang salah.
+describe("lepas pemakaian uang muka", () => {
+  const formLepas = (patch: Record<string, string> = {}) => {
+    const f = new FormData();
+    f.set("recordId", RECORD); f.set("advanceId", "umk-1");
+    f.set("requestKey", "key-4"); f.set("reason", "Salah metode pembayaran");
+    for (const [k, v] of Object.entries(patch)) f.set(k, v);
+    return f;
+  };
+
+  it("meneruskan uang muka, kunci, dan alasannya ke RPC pelepasan", async () => {
+    await expect(lepaskanUangMuka(formLepas())).rejects.toThrow(`REDIRECT:${BACK}?success=lepas`);
+    expect(state.calls[0]).toMatchObject({
+      name: "clinic_release_advance_application",
+      params: { p_advance_id: "umk-1", p_request_key: "key-4", p_reason: "Salah metode pembayaran" },
+    });
+  });
+
+  it.each([["tanpa alasan", { reason: "" }], ["tanpa uang muka", { advanceId: "" }], ["tanpa kunci", { requestKey: "" }]])
+    ("menolak %s tanpa melepas apa pun", async (_label, patch) => {
+      await expect(lepaskanUangMuka(formLepas(patch))).rejects.toThrow("?error=");
+      expect(state.calls).toEqual([]);
+    });
+
+  it("tanpa shift klinik terbuka, pelepasan tidak dijalankan", async () => {
+    state.shift = null;
+    await expect(lepaskanUangMuka(formLepas())).rejects.toThrow("REDIRECT:/klinik/shift?error=");
+    expect(state.calls).toEqual([]);
+  });
+
+  it("peran di luar keuangan ditolak database", async () => {
+    state.rpcError = { code: "P0001", message: "ACCESS_DENIED: hanya OWNER, ADMIN, atau FINANCE boleh melepas uang muka" };
+    await expect(lepaskanUangMuka(formLepas())).rejects.toThrow(/Akses%20cabang%20atau%20kunjungan%20tidak%20diizinkan/);
+    expect(state.calls).toHaveLength(1);
+  });
+
+  it("pelepasan kedua dengan kunci berbeda ditolak dan dijelaskan", async () => {
+    state.rpcError = { code: "P0001", message: "ADVANCE_RELEASED: uang muka ini sudah pernah dilepas" };
+    await expect(lepaskanUangMuka(formLepas())).rejects.toThrow(/sudah%20pernah%20dilepas/);
   });
 });

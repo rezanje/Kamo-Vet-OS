@@ -15,8 +15,11 @@ type Row = {
   /** Kosong hanya pada faktur saldo awal yang di Accurate tidak punya tanggal faktur (M05). */
   id: string; invoice_no: string | null; tanggal: string | null; customer: string;
   total: number; dibayar: number; sisa: number; days: number | null; bucket: AgingBucketFaktur;
-  /** klinik = tagihan kunjungan (dilunasi di layar ini) · reseller = faktur penjualan B2B. */
-  sumber: "klinik" | "reseller";
+  /** klinik = tagihan kunjungan (dilunasi di layar ini) · reseller = faktur penjualan B2B
+   *  · ranap = tagihan rawat inap (dilunasi di layar Tagihan rawat inap supaya jadi kwitansi). */
+  sumber: "klinik" | "reseller" | "ranap";
+  /** id rawat inap untuk baris `ranap`. */
+  recordId?: string | null;
   /** Faktur saldo awal impor Accurate (M05): nomor faktur Accurate ada di catatan. */
   saldoAwal?: string | null;
 };
@@ -35,7 +38,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
   const [{ data: invs }, { data: fjs }, { data: rcs }] = await Promise.all([
     supabase
       .from("invoices")
-      .select("id, invoice_no, total, dp_amount, paid_status, created_at, visits(customers(name))")
+      .select("id, invoice_no, total, dp_amount, paid_status, created_at, visits(customers(name), inpatient_records(id))")
       .is("voided_at", null)
       .neq("paid_status", "Lunas")
       .order("created_at"),
@@ -86,12 +89,17 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
       const tanggal = String(i.created_at).slice(0, 10);
       const dibayar = Number(i.dp_amount) + (paidMap.get(i.id) ?? 0);
       const sisa = Math.max(0, Number(i.total) - dibayar);
+      // Tagihan rawat inap tidak dilunasi di layar ini: uangnya harus jadi kwitansi
+      // kunjungan di dalam shift klinik (riwayat DP + rekonsiliasi laci kasir).
+      const ranapRel = visit && (visit as { inpatient_records?: { id: string }[] | { id: string } | null }).inpatient_records;
+      const record = Array.isArray(ranapRel) ? ranapRel[0] : ranapRel;
       return {
         id: i.id, invoice_no: i.invoice_no, tanggal,
         customer: cust?.name ?? "—",
         total: Number(i.total), dibayar, sisa,
         ...agingFaktur(tanggal, today),
-        sumber: "klinik",
+        sumber: record?.id ? "ranap" : "klinik",
+        recordId: record?.id ?? null,
       };
     })
     .filter((r) => r.sisa > 0);
@@ -157,8 +165,8 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
           num="02" title="DAFTAR PIUTANG & PELUNASAN"
           desc={
             sisaReseller > 0
-              ? `Terima pembayaran sisa tagihan — jurnal kas & piutang otomatis. Termasuk ${rp(sisaReseller)} piutang reseller (dilunasi di layar Faktur Penjualan).`
-              : "Terima pembayaran sisa tagihan — jurnal kas & piutang otomatis."
+              ? `Terima pembayaran sisa tagihan — jurnal kas & piutang otomatis. Termasuk ${rp(sisaReseller)} piutang reseller (dilunasi di layar Faktur Penjualan). Tagihan rawat inap dilunasi di layar Tagihan rawat inap.`
+              : "Terima pembayaran sisa tagihan — jurnal kas & piutang otomatis. Tagihan rawat inap dilunasi di layar Tagihan rawat inap."
           }
         />
         <div style={{ overflowX: "auto" }}>
@@ -170,7 +178,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
               {rows.map((r) => (
                 <tr key={r.id}>
                   <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{r.invoice_no ?? "—"}{r.saldoAwal && <div style={{ fontFamily: "inherit", fontSize: 9.5, color: "var(--td)" }}>{r.saldoAwal}</div>}</td>
-                  <td><span className={`bge ${r.sumber === "reseller" ? "b" : ""}`}>{r.saldoAwal ? "Saldo awal" : r.sumber === "reseller" ? "Reseller" : "Klinik"}</span></td>
+                  <td><span className={`bge ${r.sumber === "reseller" ? "b" : ""}`}>{r.saldoAwal ? "Saldo awal" : r.sumber === "reseller" ? "Reseller" : r.sumber === "ranap" ? "Rawat inap" : "Klinik"}</span></td>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.tanggal ? fmtDate(r.tanggal) : "Tidak ada"}</td>
                   <td style={{ fontSize: 12 }}>{r.customer}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.total)}</td>
@@ -185,6 +193,12 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                     {r.sumber === "reseller" ? (
                       <Link href="/penjualan/faktur" className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, display: "inline-block" }}>
                         Terima bayar <i className="ti ti-arrow-right" />
+                      </Link>
+                    ) : r.sumber === "ranap" ? (
+                      <Link href={`/klinik/rawat-inap/${r.recordId}/tagihan`} className="btn-def"
+                        title="Uang rawat inap diterima sebagai kwitansi kunjungan di dalam shift klinik."
+                        style={{ padding: "3px 9px", fontSize: 10.5, display: "inline-block" }}>
+                        Bayar tagihan <i className="ti ti-arrow-right" />
                       </Link>
                     ) : (
                     <details>
