@@ -12,18 +12,21 @@ export type PromoMasterExisting = {
   id: string; name: string; promo_type: string;
   discount_type: "percent" | "nominal" | null; discount_value: number | null;
   auto_apply: boolean; branch_ids: string[] | null;
+  is_active: boolean;
   valid_from: string | null; valid_until: string | null;
   min_qty: number | null; max_qty: number | null; kelipatan: boolean;
   min_subtotal: number | null; suggest: string | null;
   item_ids: string[];
   /** Promo hasil impor per-SKU lama: target & satuannya dikunci trigger database. */
   locked: boolean;
+  version?: string;
   /** Hanya per_unit yang didukung format daftar ini. */
   discount_mode?: string;
 };
 
 export type PromoMasterPlan = {
   name: string;
+  expected: { id: string; version: string | null } | null;
   discount_type: "percent" | "nominal";
   discount_value: number;
   auto_apply: boolean;
@@ -47,6 +50,7 @@ export type PromoMasterDiff = {
   itemsAdded: string[];
   itemsRemoved: string[];
   changes: PromoMasterChange[];
+  activationNote?: string;
 };
 
 export type PromoMasterReviewRow = PromoMasterExcelRow & { item_name: string | null; error: string | null };
@@ -251,6 +255,7 @@ export function reviewPromoMaster(
       ? first.branch_codes.map(code => branchByCode.get(code.toLowerCase())!.id).sort()
       : null;
     const plan: PromoMasterPlan = {
+      expected: existing ? { id: existing.id, version: existing.version ?? null } : null,
       name: first.nama, discount_type: first.discount_type!, discount_value: first.discount_value,
       auto_apply: !!first.auto_apply, branch_ids, branch_codes: first.branch_codes,
       valid_from: first.valid_from, valid_until: first.valid_until,
@@ -302,5 +307,7 @@ function bandingkan(
   const itemsAdded = plan.item_ids.filter(id => !lama.has(id)).map(label);
   const itemsRemoved = existing.item_ids.filter(id => !baru.has(id)).map(label);
   const status = changes.length || itemsAdded.length || itemsRemoved.length ? "ubah" : "sama";
-  return { name: plan.name, promoId: existing.id, status, itemsAdded, itemsRemoved, changes };
+  return { name: plan.name, promoId: existing.id, status, itemsAdded, itemsRemoved, changes,
+    activationNote: existing.is_active ? "Status aktif tidak diubah." : "Tetap nonaktif — status tidak diubah. Aktifkan melalui Edit promo bila diperlukan.",
+  };
 }

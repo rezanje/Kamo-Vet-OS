@@ -45,7 +45,7 @@ export function PromoMasterWorkspace() {
     if (!hasil.valid || sibuk || tersimpan) return;
     setSibuk(true); setPesan("");
     try {
-      const result = await simpanPromoMaster(hasil.rows);
+      const result = await simpanPromoMaster(hasil.rows, hasil.plans.map(({ name, expected }) => ({ name, expected })));
       setPesan(result.message);
       setTersimpan(result.ok);
       if (!result.ok) setHasil(current => ({ ...current, valid: false }));
@@ -82,6 +82,7 @@ export function PromoMasterWorkspace() {
               {diff.status === "baru" ? "PROMO BARU" : diff.status === "ubah" ? "DIPERBARUI" : "TIDAK ADA PERUBAHAN"}
             </span>
           </div>
+          {diff.activationNote && <p style={{ fontSize: 11, margin: "6px 0 0" }}>{diff.activationNote}</p>}
           {diff.changes.length > 0 && <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 11 }}>
             {diff.changes.map(change => <li key={change.label}>{change.label}: {change.dari} → <b>{change.ke}</b></li>)}
           </ul>}

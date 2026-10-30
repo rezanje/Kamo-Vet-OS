@@ -8,6 +8,7 @@
     "src/lib/promo-master-import.ts",
     "src/lib/__tests__/promo-master-import.test.ts",
     "src/lib/__tests__/promo-master-actions.test.ts",
+    "src/lib/__tests__/promo-master-native-actions.test.ts",
     "src/lib/__tests__/promo-master-checkpoint.test.ts",
     "src/components/__tests__/promo-master-workspace.test.tsx",
     "src/app/(app)/crm/promo/page.tsx",

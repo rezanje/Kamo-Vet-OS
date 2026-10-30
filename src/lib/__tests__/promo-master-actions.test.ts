@@ -27,13 +27,14 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     const rows = () => {
       if (table === "items") return kolom === "code" ? ITEMS.filter(i => nilai.includes(i.code)) : ITEMS.filter(i => nilai.includes(i.id));
       if (table === "branches") return BRANCHES;
-      return [];                                   // promos, promo_items, promo_import_targets
+      return [];
     };
     const q = {
       select: () => q, eq: () => q, order: () => q, range: () => q,
       in: (col: string, values: string[]) => { kolom = col; nilai = values; return q; },
       maybeSingle: async () => ({ data: table === "profiles" ? state.profile : null, error: null }),
       then: (resolve: (value: unknown) => unknown) => {
+        if (table === "promo_import_targets") return Promise.resolve({ data: null, error: { message: "permission denied for table promo_import_targets" } }).then(resolve);
         const data = rows();
         return Promise.resolve({ data, count: data.length, error: null }).then(resolve);
       },
@@ -41,6 +42,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     return q;
   },
   rpc: async (name: string, params: Record<string, unknown>) => {
+    if (name === "read_promo_import_context") return { data: [], error: null };
     state.calls.push({ name, params });
     return { data: { created: 1, updated: 0 }, error: null };
   },
@@ -115,17 +117,26 @@ it("menolak file lebih dari 1 MB sebelum membacanya ke memori", async () => {
 });
 
 it("menyimpan hasil pemeriksaan ulang server, bukan angka dari layar", async () => {
-  const hasil = await simpanPromoMaster([baris(), baris({ "Kode SKU": "SKU-2" }, 3)]);
+  const rows = [baris(), baris({ "Kode SKU": "SKU-2" }, 3)];
+  const preview = await periksaPromoMaster(rows);
+  const hasil = await simpanPromoMaster(rows, preview.plans.map(({ name, expected }) => ({ name, expected })));
   expect(hasil).toMatchObject({ ok: true });
   expect(hasil.message).toContain("1 promo baru");
   expect(state.calls).toHaveLength(1);
   expect(state.calls[0].name).toBe("import_promo_master");
   expect(state.calls[0].params.p_promos).toEqual([{
-    name: "PROMO NOVEMBER", discount_type: "percent", discount_value: 10, auto_apply: true,
+    expected: null, name: "PROMO NOVEMBER", discount_type: "percent", discount_value: 10, auto_apply: true,
     branch_ids: ["branch-bdg"], valid_from: "2026-11-01", valid_until: "2026-11-30",
     min_qty: null, max_qty: null, kelipatan: false, min_subtotal: null,
     suggest: "Diskon awal bulan", item_ids: ["item-1", "item-2"],
   }]);
+});
+
+it("refuses save without the displayed preview snapshot", async () => {
+  const saved = await simpanPromoMaster([baris()]);
+  expect(saved.ok).toBe(false);
+  expect(saved.message).toContain("Periksa ulang");
+  expect(state.calls).toEqual([]);
 });
 
 it("tidak menyimpan apa pun selama masih ada baris merah", async () => {

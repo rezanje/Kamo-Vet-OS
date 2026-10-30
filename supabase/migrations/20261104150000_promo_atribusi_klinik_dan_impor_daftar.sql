@@ -6,6 +6,21 @@
 -- Deferred full reporting candidate + its acceptance cases are preserved under
 -- docs/deferred/promo-reporting and at immutable source cb1135bad7f67405074705fe70f1fdef6d85b936.
 
+create or replace function public.read_promo_import_context(p_names jsonb)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+begin
+  perform public.assert_promo_manager();
+  if jsonb_typeof(p_names) is distinct from 'array' or jsonb_array_length(p_names) > 50 then
+    raise exception 'Daftar promo tidak valid' using errcode = '22023';
+  end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('promo_id', p.id,
+    'locked', exists(select 1 from public.promo_import_targets t where t.promo_id=p.id),
+    'snapshot', public.promo_edit_snapshot(p.id)) order by p.id)
+    from public.promos p where lower(btrim(p.name)) in (select lower(btrim(value)) from jsonb_array_elements_text(p_names))), '[]'::jsonb);
+end $$;
+revoke all on function public.read_promo_import_context(jsonb) from public, anon, service_role;
+grant execute on function public.read_promo_import_context(jsonb) to authenticated;
+
 create or replace function public.import_promo_master(p_promos jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -28,6 +43,7 @@ declare
   v_created integer := 0;
   v_updated integer := 0;
   v_seen text[] := '{}';
+  v_snapshot jsonb;
 begin
   perform public.assert_promo_manager();
   if jsonb_typeof(p_promos) is distinct from 'array' then
@@ -45,11 +61,37 @@ begin
     perform pg_advisory_xact_lock(hashtextextended('vetos:promo-master:' || v_key, 0));
   end loop;
 
+  -- Follow the existing edit/child-guard order: parent rows BEFORE catalogue.
+  -- Hold the whole batch parent set in UUID order, never take a global table lock.
+  perform p.id from public.promos p where lower(btrim(p.name)) in
+    (select lower(btrim(value ->> 'name')) from jsonb_array_elements(p_promos))
+    order by p.id for update;
+
+  -- Check EVERY reviewed state before the first write. Parent locks remain held
+  -- across later catalogue waits; recheck below immediately before each write.
+  for v_entry in select value from jsonb_array_elements(p_promos) loop
+    v_name := btrim(v_entry ->> 'name');
+    select count(*) into v_duplicates from public.promos p where lower(btrim(p.name))=lower(v_name);
+    if v_duplicates > 1 then
+      raise exception 'Nama % dipakai lebih dari satu promo; rapikan dulu di layar promo', v_name using errcode='22023';
+    end if;
+    v_existing := null;
+    select * into v_existing from public.promos p where lower(btrim(p.name))=lower(v_name) for update;
+    v_snapshot := public.promo_edit_snapshot(v_existing.id);
+    if not (v_entry ? 'expected')
+       or (v_existing.id is null and v_entry -> 'expected' is distinct from 'null'::jsonb)
+       or (v_existing.id is not null and (jsonb_typeof(v_entry -> 'expected') is distinct from 'object'
+           or v_entry #>> '{expected,id}' is distinct from v_existing.id::text
+           or v_entry #>> '{expected,version}' is distinct from v_snapshot ->> 'version')) then
+      raise exception 'PROMO_IMPORT_CONFLICT: Promo sudah berubah. Periksa ulang dan tinjau perubahan sebelum menyimpan lagi.' using errcode='40001';
+    end if;
+  end loop;
+
   for v_entry in select value from jsonb_array_elements(p_promos) loop
     if jsonb_typeof(v_entry) is distinct from 'object'
        or (select count(*) from jsonb_object_keys(v_entry) k where k not in
            ('name','discount_type','discount_value','auto_apply','branch_ids','valid_from','valid_until',
-            'min_qty','max_qty','kelipatan','min_subtotal','suggest','item_ids')) > 0 then
+            'min_qty','max_qty','kelipatan','min_subtotal','suggest','item_ids','expected')) > 0 then
       raise exception 'Kolom promo tidak lengkap atau tidak diizinkan' using errcode = '22023';
     end if;
     v_name := btrim(v_entry ->> 'name');
@@ -137,6 +179,18 @@ begin
     v_existing := null;
     select * into v_existing from public.promos p where lower(btrim(p.name)) = lower(v_name) for update;
 
+    -- Re-read the canonical header (including activation and the entire rule)
+    -- plus sorted FULL target set after all waits. Child writers already lock
+    -- this same parent via promo_configuration_guard. Missing expected is unsafe.
+    v_snapshot := public.promo_edit_snapshot(v_existing.id);
+    if not (v_entry ? 'expected')
+       or (v_existing.id is null and v_entry -> 'expected' is distinct from 'null'::jsonb)
+       or (v_existing.id is not null and (jsonb_typeof(v_entry -> 'expected') is distinct from 'object'
+           or v_entry #>> '{expected,id}' is distinct from v_existing.id::text
+           or v_entry #>> '{expected,version}' is distinct from v_snapshot ->> 'version')) then
+      raise exception 'PROMO_IMPORT_CONFLICT: Promo sudah berubah. Periksa ulang dan tinjau perubahan sebelum menyimpan lagi.' using errcode = '40001';
+    end if;
+
     v_rule := jsonb_build_object('suggest', v_suggest);
     if v_min_subtotal is not null then v_rule := v_rule || jsonb_build_object('min_subtotal', v_min_subtotal); end if;
 
@@ -161,7 +215,7 @@ begin
         branch_ids = v_branch_ids,
         valid_from = (v_entry ->> 'valid_from')::date,
         valid_until = (v_entry ->> 'valid_until')::date,
-        is_active = true
+        is_active = v_existing.is_active
       where id = v_existing.id;
       delete from public.promo_items pi where pi.promo_id = v_existing.id and not (pi.item_id = any(v_item_ids));
       insert into public.promo_items(promo_id, item_id)

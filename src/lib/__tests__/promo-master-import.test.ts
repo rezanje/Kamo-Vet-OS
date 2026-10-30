@@ -214,7 +214,7 @@ describe("preview perubahan promo lama", () => {
     discount_type: "percent", discount_value: 5, auto_apply: true, branch_ids: ["branch-jkt"],
     valid_from: "2026-11-01", valid_until: "2026-11-30", min_qty: null, max_qty: null,
     kelipatan: false, min_subtotal: null, suggest: "Saran lama",
-    item_ids: ["item-1", "item-9"], locked: false,
+    item_ids: ["item-1", "item-9"], locked: false, is_active: true, version: "canonical-version",
   };
 
   it("memperlihatkan nilai yang berubah serta barang yang masuk dan keluar", () => {

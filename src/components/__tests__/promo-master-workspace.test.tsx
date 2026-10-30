@@ -15,7 +15,10 @@ let host: HTMLDivElement;
 let root: Root;
 const button = (label: string) => [...host.querySelectorAll("button")].find(b => b.textContent === label)!;
 const result = (error: string | null = null): PromoMasterReview => ({
-  valid: !error, error: null, plans: [],
+  valid: !error, error: null, plans: [{ name: "Promo example", expected: { id: "existing-promo", version: "displayed-version" },
+    discount_type: "percent", discount_value: 10, auto_apply: true, branch_ids: null, branch_codes: [],
+    valid_from: "2026-01-01", valid_until: "2099-12-31", min_qty: null, max_qty: null, kelipatan: false,
+    min_subtotal: null, suggest: "Promo example", item_ids: ["item-1"], item_codes: ["SKU-001"] }],
   rows: [{ line: 2, ...Object.fromEntries(PROMO_MASTER_HEADERS.map(h => [h, ""])),
     "Nama Promo": "Promo example", "Kode SKU": "SKU-001", item_name: "Example item", error,
   } as PromoMasterReview["rows"][number]],
@@ -61,9 +64,16 @@ it("shows same-name update diff and saves the reviewed rows once", async () => {
   expect(host.textContent).toContain("Barang dikeluarkan: SKU-002");
   calls.save.mockResolvedValue({ ok: true, message: "0 promo baru dan 1 promo diperbarui." });
   await act(async () => button("Simpan seluruh daftar").click());
-  expect(calls.save).toHaveBeenCalledExactlyOnceWith(reviewed.rows);
+  expect(calls.save).toHaveBeenCalledExactlyOnceWith(reviewed.rows, [{ name: "Promo example", expected: { id: "existing-promo", version: "displayed-version" } }]);
   expect(host.textContent).toContain("0 promo baru dan 1 promo diperbarui.");
   expect(button("Simpan seluruh daftar").disabled).toBe(true);
+});
+
+it("shows inactive status is preserved, not an activation promise", async () => {
+  const reviewed = result();
+  reviewed.diffs[0] = { ...reviewed.diffs[0], activationNote: "Tetap nonaktif — status tidak diubah. Aktifkan melalui Edit promo bila diperlukan." };
+  await upload(reviewed);
+  expect(host.textContent).toContain("Tetap nonaktif — status tidak diubah");
 });
 
 it("clears the old valid preview when another file is selected", async () => {
