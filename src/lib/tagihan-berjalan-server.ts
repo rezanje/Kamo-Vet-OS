@@ -85,7 +85,7 @@ export async function muatTagihanBerjalan(db: Db, recordId: string): Promise<Tag
   const [resepRes, lineRes, bayarRes] = await Promise.all([
     mrIds.length
       ? db.from("prescription_items")
-          .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id")
+          .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, billing_withdrawn_at")
           .in("medical_record_id", mrIds).order("created_at")
       : Promise.resolve({ data: [] as BarisResep[], error: null }),
     invoiceIds.length
@@ -170,7 +170,7 @@ export async function ringkasBelumDitagih(db: Db, visitId: string): Promise<Ring
   const [resepRes, lineRes] = await Promise.all([
     mrIds.length
       ? db.from("prescription_items")
-          .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id")
+          .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, billing_withdrawn_at")
           .in("medical_record_id", mrIds)
       : Promise.resolve({ data: [] as BarisResep[], error: null }),
     invoiceIds.length

@@ -220,7 +220,7 @@ export default async function RawatInapPage({
                         menagih tahap berikutnya atau menerima uang (Andri, 29 Oktober). */}
                     <td>
                       <div style={{ marginBottom: 5 }}><span className={`bge ${billing.badge}`}>{billing.label}</span></div>
-                      <Link href={`/klinik/rawat-inap/${r.id}/tagihan`} className="btn-acc"
+                      <Link href={`/klinik/pembayaran/${r.visit_id}`} className="btn-acc"
                         style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
                         <i className="ti ti-cash" /> {billing.action}
                       </Link>

@@ -189,7 +189,7 @@ def run_owner(h,setup=True):
  check('OWNER direct Rx cannot bypass invoice state',bool(err) and rows(h,mp)==paidrows,dict(error=err))
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('--baseline',action='store_true');p.add_argument('--include-cashier',action='store_true');p.add_argument('--live-owner-only',action='store_true',help='0408 + OWNER hotfix without unapplied 0409/0410');p.add_argument('--json',type=Path,required=True);a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--baseline',action='store_true');p.add_argument('--include-cashier',action='store_true');p.add_argument('--live-owner-only',action='store_true',help='0408 + OWNER hotfix without cashier 0413/ordering 0410');p.add_argument('--json',type=Path,required=True);a=p.parse_args()
  # Bootstrap the entire original chain first, then the candidate (never fingerprint bypass).
  candidates=list((ROOT/'supabase/migrations').glob('*.sql'))
  import tempfile
@@ -197,8 +197,8 @@ def main():
   root=Path(d);target=root/'supabase/migrations';target.mkdir(parents=True)
   excluded=set()
   if a.baseline:excluded.add(CANDIDATE)
-  if a.live_owner_only:excluded.update(['20261104090000_inpatient_cashier_pending_cart.sql','20261104100000_queued_record_ordering_attribution.sql'])
-  elif not a.include_cashier:excluded.add('20261104090000_inpatient_cashier_pending_cart.sql')
+  if a.live_owner_only:excluded.update(['20261104130000_inpatient_cashier_pending_cart.sql','20261104100000_queued_record_ordering_attribution.sql'])
+  elif not a.include_cashier:excluded.add('20261104130000_inpatient_cashier_pending_cart.sql')
   selected=[s for s in candidates if s.name not in excluded]
   for s in selected:(target/s.name).symlink_to(s)
   r.fixture.ROOT=root
