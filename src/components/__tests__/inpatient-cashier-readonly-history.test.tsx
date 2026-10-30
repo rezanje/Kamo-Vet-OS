@@ -12,7 +12,7 @@ function client() {
   tax_settings:state.readOnly ? null : {mode_pkp:false,ppn_rate:0}, quote:state.readOnly ? null : {accounts:[],remaining:0,pending:0} };
  return {rpc:async()=>({data:state.malformed?{state:'SHIFT_REQUIRED'}:data,error:state.error}),from:()=>{const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:{role:'FINANCE'},error:null})};return q;}};
 }
-async function render() {return renderToStaticMarkup(await InpatientPaymentPage({db:client() as never,visitId:'visit',recordId:'stay',branchId:'branch',userId:'staff',query:{success:'transaksi',invoice:'exact-invoice'},patientLabel:'Pasien Fiktif · Sudah pulang'}));}
+async function render() {return renderToStaticMarkup(await InpatientPaymentPage({db:client() as never,visitId:'visit',recordId:'stay',branchId:'branch',userId:'staff',query:{success:'transaksi',invoice:'exact-invoice'},patient:{photo:null,name:'Pasien Fiktif',species:'Kucing',owner:'Pemilik Fiktif',phone:'080000000000',address:'Alamat fiktif',dokter:'Dokter Fiktif',jenisLayanan:'Rawat Inap',noInvoice:'(baru)',tanggal:'01/11/2026'},stayStatus:'Sudah pulang'}));}
 beforeEach(()=>{state.error=null;state.readOnly=true;state.malformed=false;});
 it('renders issued invoice and receipt history without a shift, editable cart, zero quote or success claim',async()=>{
  const html=await render();expect(html).toContain('VET_FIKTIF-001');expect(html).toContain('Obat historis');expect(html).toContain('KW-FIKTIF');expect(html).toContain('DP awal tersimpan');expect(html).toContain('invoice?invoice_id=exact-invoice');expect(html).toContain('Buka shift');expect(html).not.toContain('data-editable-cashier');expect(html).not.toContain('Pembayaran lunas');expect(html).not.toContain('Sisa pembayaran Rp 0');
