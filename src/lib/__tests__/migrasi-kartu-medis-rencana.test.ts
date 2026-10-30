@@ -31,10 +31,23 @@ describe("rencana dry-run offline", () => {
     expect(baris(r, "R1").sidikPayload).toMatch(/^[0-9a-f]{64}$/);
     expect(r.sidikRencana).toMatch(/^[0-9a-f]{64}$/);
   });
-  it("is deterministic: same file and options give the same plan fingerprint; a content change changes it", async () => {
-    expect((await rencana(masterDasar())).sidikRencana).toBe((await rencana(masterDasar())).sidikRencana);
+  it("is deterministic: the same file bytes and options give the same plan fingerprint; a content change changes it", async () => {
+    // Satu berkas, dibaca dua kali. (Dua kali menulis fixture menghasilkan byte berbeda: ExcelJS menyematkan waktu
+    // pembuatan, jadi SHA-256 berkas — dan sidik rencana — memang berbeda; itu disengaja.)
+    const bytes = await buatMaster(masterDasar());
+    const dariBytes = async () => {
+      const h = await bacaMaster(bytes);
+      if (!h.ok) throw new Error(h.galat.join("; "));
+      return buatRencana(h.versi, h.sha256, h.blok, OPSI, h.peringatan);
+    };
+    const [a, b] = [await dariBytes(), await dariBytes()];
+    expect(a.sidikRencana).toBe(b.sidikRencana);
+    // Payload tidak bergantung pada byte berkas: dua tulisan fixture yang sama -> sidik payload sama.
+    expect((await rencana(masterDasar())).baris.map((r) => r.sidikPayload)).toEqual(a.baris.map((r) => r.sidikPayload));
     const f = masterDasar(); f.riwayat[1].therapy = "UJI TERAPI BERUBAH";
-    expect((await rencana(f)).sidikRencana).not.toBe((await rencana(masterDasar())).sidikRencana);
+    const berubah = await rencana(f);
+    expect(berubah.sidikRencana).not.toBe(a.sidikRencana);
+    expect(berubah.baris[1].sidikPayload).not.toBe(a.baris[1].sidikPayload);
   });
   it("treats SETUJU as review eligibility at all three levels only; empty/formula/freeform is not approval", async () => {
     const f = masterDasar(4);
