@@ -20,7 +20,7 @@ declare
   lines jsonb; invoices jsonb; advances jsonb; accounts jsonb := '[]';
   settings public.company_settings%rowtype; part jsonb; method text; code text;
   account public.cash_accounts%rowtype; amount numeric; paid numeric:=0;
-  subtotal numeric; tax numeric; debt numeric; credit numeric; snapshot jsonb;
+  subtotal numeric; tax numeric; debt numeric; credit numeric; eligible_debt numeric; snapshot jsonb;
 begin
   perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));
   select * into me from public.profiles where id=auth.uid() and is_active;
@@ -69,18 +69,33 @@ begin
   select coalesce(jsonb_agg(to_jsonb(a) order by a.created_at,a.id),'[]'),coalesce(sum(a.amount-a.applied),0)
   into advances,credit from public.clinic_customer_advances a where a.customer_id=v.customer_id and a.branch_id=v.branch_id
     and a.status='aktif' and a.released_at is null and a.amount>a.applied;
+  select coalesce(sum(greatest(0,i.total-clinic_private.invoice_received(i.id))),0) into eligible_debt
+    from public.invoices i where i.visit_id=p_visit_id and i.voided_at is null
+      and i.invoice_no is not null and i.request_key is not null and not i.correction_pending;
   -- These are the SAME method->branch/default destinations used by original receipt
   -- RPC, not a decorative bank selector and never caller-provided COA.
   foreach method in array array['Tunai','Transfer','Debit','Kredit','QRIS','E-Wallet'] loop
-    code:=clinic_private.kas_code(method,v.branch_id);
-    select * into strict account from public.cash_accounts where coa_code=code and is_active;
-    accounts:=accounts||jsonb_build_array(jsonb_build_object('method',method,'code',code,'name',account.nama,'bank',account.bank_nama,'number',account.no_rekening));
+    begin
+      code:=clinic_private.kas_code(method,v.branch_id);
+      select * into strict account from public.cash_accounts where coa_code=code and is_active;
+      accounts:=accounts||jsonb_build_array(jsonb_build_object('method',method,'code',code,'name',account.nama,'bank',account.bank_nama,'number',account.no_rekening));
+    exception
+      when no_data_found then null; -- This method has no active destination.
+      when raise_exception then
+        if sqlerrm <> 'ACCOUNT_INVALID: rekening pembayaran tidak aktif'
+          and sqlerrm !~ '^ACCOUNT_INVALID: akun penerimaan [0-9A-Za-z._-]+ tidak tersedia$' then raise; end if;
+    end;
   end loop;
+  if exists(select 1 from jsonb_array_elements(p_parts) p where not exists(
+    select 1 from jsonb_array_elements(accounts) a where a->>'method'=p->>'method')) then
+    raise exception 'ACCOUNT_INVALID: rekening metode terpilih tidak tersedia';
+  end if;
   snapshot:=jsonb_build_object('record',p_record_id,'visit',p_visit_id,'branch',v.branch_id,'shift',s,'lines',lines,
     'invoices',invoices,'advances',advances,'tax_settings',to_jsonb(settings),'accounts',accounts,'parts',p_parts);
   return jsonb_build_object('token',md5(snapshot::text),'lines',lines,'subtotal',subtotal,'tax',tax,'pending',subtotal+tax,
-    'debt',debt,'credit',credit,'remaining',greatest(0,debt+subtotal+tax-credit),'amount',paid,
-    'excess',greatest(0,paid-greatest(0,debt+subtotal+tax-credit)),'accounts',accounts,'shift_id',s);
+    'debt',debt,'credit',credit,'apply_credit',least(credit,eligible_debt),
+    'remaining',greatest(0,debt+subtotal+tax-least(credit,eligible_debt+subtotal+tax)),'amount',paid,
+    'excess',greatest(0,paid-greatest(0,debt+subtotal+tax-least(credit,eligible_debt+subtotal+tax))),'accounts',accounts,'shift_id',s);
 end $$;
 revoke all on function clinic_private.inpatient_payment_quote(uuid,uuid,jsonb) from public,anon,authenticated,service_role;
 
@@ -182,8 +197,23 @@ create function public.clinic_bill_and_pay_inpatient(
 declare
   quote jsonb; fingerprint text; cached clinic_private.inpatient_bill_pay_requests%rowtype;
   receipt uuid; invoice uuid; old_invoice record; result jsonb; key text:=nullif(btrim(p_request_key),'');
+  initial_accounts jsonb; locked_shift uuid; prior_applications uuid[]; applications jsonb;
 begin
   quote:=clinic_private.inpatient_payment_quote(p_record_id,p_visit_id,p_parts);
+  -- Coordinator -> validated own branch shift -> invoice/advance -> journal.
+  -- Original receipt/release/posting take the shift before journal numbering.
+  -- Never hold a monthly journal advisory lock while waiting on that shift.
+  initial_accounts:=quote->'accounts';
+  locked_shift:=(quote->>'shift_id')::uuid;
+  perform 1 from public.cashier_shifts where id=locked_shift for update;
+  -- A shift wait can outlive active-role/module/branch and monetary settings.
+  quote:=clinic_private.inpatient_payment_quote(p_record_id,p_visit_id,p_parts);
+  if locked_shift is distinct from (quote->>'shift_id')::uuid then
+    raise exception 'SHIFT_INVALID: shift berubah saat menyimpan; muat ulang';
+  end if;
+  if initial_accounts is distinct from quote->'accounts' then
+    raise exception 'ACCOUNT_INVALID: rekening berubah saat menyimpan; muat ulang dan periksa rekening';
+  end if;
   if key is null or length(key)>80 or p_tanggal is null or p_add_owner_credit is null then raise exception 'PAYMENT_INVALID: kunci atau tanggal tidak valid'; end if;
   perform pg_advisory_xact_lock(hashtextextended('clinic-bill-pay:'||key,0));
   fingerprint:=md5(jsonb_build_object('record',p_record_id,'visit',p_visit_id,'date',p_tanggal,'parts',p_parts,
@@ -202,7 +232,11 @@ begin
   if (quote->>'debt')::numeric=0 and jsonb_array_length(quote->'lines')=0 and not p_add_owner_credit then
     raise exception 'PAYMENT_SETTLED: tidak ada tagihan baru; gunakan Tambah saldo pemilik secara eksplisit';
   end if;
-  if (quote->>'amount')::numeric=0 and jsonb_array_length(quote->'lines')=0 then raise exception 'PAYMENT_INVALID: tidak ada transaksi untuk disimpan'; end if;
+  if (quote->>'amount')::numeric=0 and jsonb_array_length(quote->'lines')=0 and (quote->>'apply_credit')::numeric<=0 then
+    raise exception 'PAYMENT_INVALID: tidak ada transaksi untuk disimpan';
+  end if;
+  select coalesce(array_agg(a.id),'{}'::uuid[]) into prior_applications
+    from public.clinic_advance_applications a join public.invoices i on i.id=a.invoice_id where i.visit_id=p_visit_id;
   -- Apply only AVAILABLE credit, never rewrite an old allocation/header.
   -- Same primitive as stage posting, same coordinator; older AR first.
   for old_invoice in select i.id from public.invoices i where i.visit_id=p_visit_id and i.voided_at is null
@@ -231,7 +265,13 @@ begin
         'paid_status','Belum Lunas','metode_bayar','Tunai','shift_id',quote->>'shift_id','voucher_code',null,
         'salesperson_id',null,'dp_override_reason',p_dp_override_reason),quote->'lines');
   end if;
-  result:=jsonb_build_object('status','SAVED','receipt_id',receipt,'invoice_id',invoice,'visit_id',p_visit_id,'record_id',p_record_id);
+  select coalesce(jsonb_agg(a.id order by a.id),'[]'::jsonb) into applications
+    from public.clinic_advance_applications a join public.invoices i on i.id=a.invoice_id
+    where i.visit_id=p_visit_id and not(a.id=any(prior_applications));
+  if receipt is null and invoice is null and jsonb_array_length(applications)=0 then
+    raise exception 'PAYMENT_INVALID: tidak ada saldo yang diterapkan';
+  end if;
+  result:=jsonb_build_object('status','SAVED','receipt_id',receipt,'invoice_id',invoice,'application_ids',applications,'visit_id',p_visit_id,'record_id',p_record_id);
   insert into clinic_private.inpatient_bill_pay_requests(request_key,visit_id,record_id,request_hash,result,created_by)
     values(key,p_visit_id,p_record_id,fingerprint,result,auth.uid());
   return result;

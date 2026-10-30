@@ -37,6 +37,14 @@ it("no compatibility fallback on missing/internal function", async () => {
   s.rpc.mockResolvedValue({ data: null, error: { code: "42883", message: "internal missing" } });
   expect((await simpanBayar(form())).status).toBe("ERROR"); expect(s.rpc).toHaveBeenCalledTimes(1);
 });
+it("credit-only success requires real application IDs and binds navigation to them", async () => {
+  const id = "fa900000-0000-4000-8000-000000000001";
+  s.rpc.mockResolvedValue({ data: { status: "SAVED", receipt_id: null, invoice_id: null, application_ids: [id], record_id: "record", visit_id: "visit" }, error: null });
+  const f = form(); f.set("parts", "[]");
+  expect(await simpanBayar(f)).toEqual({ status: "SAVED", href: `/klinik/rawat-inap/record/tagihan?success=transaksi&applications=${id}` });
+  s.rpc.mockResolvedValue({ data: { status: "SAVED", application_ids: [], record_id: "record", visit_id: "visit" }, error: null });
+  expect((await simpanBayar(f)).status).toBe("ERROR");
+});
 it("wrong returned visit/record cannot produce success feedback", async () => {
   s.rpc.mockResolvedValue({ data: { status: "SAVED", receipt_id: "receipt", visit_id: "other", record_id: "record" }, error: null });
   expect((await simpanBayar(form())).status).toBe("ERROR");

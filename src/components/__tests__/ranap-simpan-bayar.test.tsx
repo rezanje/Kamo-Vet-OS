@@ -58,6 +58,18 @@ it("saved real-document URL navigates without swallowing a Next redirect in loca
   save.mockResolvedValue({ status: "SAVED", href });
   await submit(); expect(navigate.push).toHaveBeenCalledWith(href); expect(navigate.refresh).toHaveBeenCalledTimes(1);
 });
+it("explicit credit-only applies eligible old debt without collecting money or writing on load", async () => {
+  await act(async () => root.render(<SimpanBayarForm recordId="r" visitId="v" requestKey="k" remaining={0} pendingCount={0} accounts={accounts} applyCredit={165000} />));
+  expect(save).not.toHaveBeenCalled();
+  expect(button("Terapkan saldo pemilik Rp 165.000").disabled).toBe(false);
+  save.mockResolvedValue({ status: "ERROR", error: "fixture" });
+  await submit(); expect(save.mock.calls[0][0].get("parts")).toBe("[]");
+});
+it("unavailable non-selected methods are disabled without blocking cash", async () => {
+  await act(async () => root.render(<SimpanBayarForm recordId="r" visitId="v" requestKey="k" remaining={100000} pendingCount={1} accounts={accounts.slice(0, 1)} />));
+  expect(button("Transfer").disabled).toBe(true); expect(button("Tunai").disabled).toBe(false);
+  await type(amount(), "100000"); expect(host.querySelector<HTMLButtonElement>('[type="submit"]')!.disabled).toBe(false);
+});
 it("zero new money has explicit save later path; settled primary is disabled", async () => {
   await render(); expect(button("Simpan transaksi · Bayar nanti").disabled).toBe(false);
   await act(async () => root.render(<SimpanBayarForm recordId="r" visitId="v" requestKey="k" remaining={0} pendingCount={0} accounts={accounts} />));

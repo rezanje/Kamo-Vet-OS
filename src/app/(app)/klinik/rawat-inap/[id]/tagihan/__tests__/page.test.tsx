@@ -9,6 +9,8 @@ const state = vi.hoisted(() => ({
   role: "STAFF" as string,
   quoteError: null as { message: string } | null,
   quoteTax: 0,
+  applications: [] as { id: string; invoice_id: string; amount: number; released_at: string | null }[],
+  applicationError: false,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -30,7 +32,10 @@ vi.mock("@/lib/supabase/server", () => ({
       return { error: null, data: { token: "quote", remaining: Math.max(0, debt + pending - d.saldoUangMuka), credit: d.saldoUangMuka, pending, debt, amount: 0, excess: 0, accounts: [{ method: "Transfer", code: "1102", name: "Bank Fiktif", bank: "Bank Fiktif", number: "123456" }] } };
     },
     from: () => ({
-      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { role: state.role, min_dp_percent: 50 } }) }) }),
+      select: () => ({
+        in: async () => ({ data: state.applications, error: state.applicationError ? { message: "failed proof" } : null }),
+        eq: () => ({ maybeSingle: async () => ({ data: { role: state.role, min_dp_percent: 50 } }) }),
+      }),
     }),
   }),
 }));
@@ -55,11 +60,25 @@ const dasar = () => ({
   riwayatUangTerpasang: true,
 });
 
-const render = async (query: { success?: string; error?: string; receipt?: string; invoice?: string } = {}) => renderToStaticMarkup(
+const render = async (query: { success?: string; error?: string; receipt?: string; invoice?: string; applications?: string } = {}) => renderToStaticMarkup(
   await TagihanRawatInapPage({ params: Promise.resolve({ id: "rec-1" }), searchParams: Promise.resolve(query) }),
 );
 
-beforeEach(() => { state.data = dasar(); state.shift = { id: "shift-1" }; state.role = "STAFF"; state.quoteError = null; state.quoteTax = 0; });
+beforeEach(() => { state.data = dasar(); state.shift = { id: "shift-1" }; state.role = "STAFF"; state.quoteError = null; state.quoteTax = 0; state.applications = []; state.applicationError = false; });
+
+it("credit-only success requires actual active same-visit allocation, not wallet balance or URL", async () => {
+  const id = "fa900000-0000-4000-8000-000000000001";
+  const query = { success: "transaksi", applications: id };
+  expect(await render(query)).not.toContain("Saldo pemilik diterapkan");
+  state.applications = [{ id, invoice_id: "inv-1", amount: 165000, released_at: null }];
+  expect(await render(query)).toContain("Saldo pemilik diterapkan");
+  state.applications[0].invoice_id = "foreign-visit-invoice";
+  expect(await render(query)).not.toContain("Saldo pemilik diterapkan");
+  state.applications[0].invoice_id = "inv-1"; state.applications[0].released_at = "2026-11-03";
+  expect(await render(query)).not.toContain("Saldo pemilik diterapkan");
+  state.applications[0].released_at = null; state.applicationError = true;
+  expect(await render(query)).not.toContain("Saldo pemilik diterapkan");
+});
 
 it("display totals use validated DB pending tax instead of an OFF fallback from UI tax read", async () => {
   state.quoteTax = 11000;

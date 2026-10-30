@@ -86,7 +86,7 @@ def run(t,h,db,version):
         if kind=='record':rec=r.uid(7,n)
         if kind=='tax':h.sql('delete from company_settings')
         if kind=='account':h.sql("update coa_accounts set is_active=false where code='1102'")
-        rejected(kind+' failure rolls back BOTH receipt and invoice/advance/stock/GL',pay(v,rec,n,[dict(method='Tunai',amount=330000)]),user,code)
+        rejected(kind+' failure rolls back BOTH receipt and invoice/advance/stock/GL',pay(v,rec,n,[dict(method='Transfer' if kind=='account' else 'Tunai',amount=330000)]),user,code)
         if kind=='stock':h.sql(f'update stock set qty=180 where item_id={q(r.ITEM)}')
         if kind=='period':h.sql('update accounting_locks set closed_until=null where id')
         if kind=='shift':h.sql(f"update cashier_shifts set status='open' where id={q(r.SHIFT[r.STAFF])}")

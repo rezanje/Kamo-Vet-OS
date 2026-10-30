@@ -175,12 +175,15 @@ export async function simpanBayar(formData: FormData): Promise<RanapPaymentState
   });
   if (error) return { status: "ERROR", error: parseClinicPostingError(error, tidakPasti) };
   if (data?.status === "OVERPAYMENT_CONFIRM_REQUIRED" && data.quote) return { status: "OVERPAYMENT_CONFIRM_REQUIRED", quote: data.quote };
-  if (data?.status !== "SAVED" || data.visit_id !== visitId || data.record_id !== recordId || (!data.receipt_id && !data.invoice_id)) {
+  const applicationIds: string[] = Array.isArray(data?.application_ids) && data.application_ids.every((id: unknown) =>
+    typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) ? data.application_ids : [];
+  if (data?.status !== "SAVED" || data.visit_id !== visitId || data.record_id !== recordId || (!data.receipt_id && !data.invoice_id && !applicationIds.length)) {
     return { status: "ERROR", error: tidakPasti };
   }
   const query = new URLSearchParams({ success: "transaksi" });
   if (data.receipt_id) query.set("receipt", data.receipt_id);
   if (data.invoice_id) query.set("invoice", data.invoice_id);
+  if (applicationIds.length) query.set("applications", applicationIds.join(","));
   const back = kembali(recordId);
   revalidatePath(back);
   return { status: "SAVED", href: `${back}?${query}${transactionDraftAck(formData)}` };

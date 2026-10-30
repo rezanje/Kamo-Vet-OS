@@ -8,12 +8,12 @@ import { simpanBayar } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const colors = ["#15803d", "#1d4ed8", "#7c3aed", "#be185d", "#0369a1", "#b45309"];
-export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pendingCount, accounts, dpOpsional, bolehTerobos = false }: {
+export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pendingCount, accounts, applyCredit = 0, dpOpsional, bolehTerobos = false }: {
   recordId: string; visitId: string; requestKey: string; remaining: number; pendingCount: number;
-  accounts: RanapPaymentAccount[]; dpOpsional?: number; bolehTerobos?: boolean;
+  accounts: RanapPaymentAccount[]; applyCredit?: number; dpOpsional?: number; bolehTerobos?: boolean;
 }) {
   const router = useRouter();
-  const [parts, setParts] = useState([{ method: "Tunai", amount: "" }]);
+  const [parts, setParts] = useState([{ method: accounts.find(a => a.method === "Tunai")?.method ?? accounts[0]?.method ?? "", amount: "" }]);
   const [creditMode, setCreditMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
@@ -22,7 +22,9 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
   const total = parts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const excess = Math.max(0, total - remaining);
   const typed = parts.some(p => p.amount.trim() !== "" && Number(p.amount) !== 0);
-  const blocked = busy || (!creditMode && remaining === 0 && pendingCount === 0) || (total === 0 && pendingCount === 0);
+  const blocked = busy || (!creditMode && remaining === 0 && pendingCount === 0 && applyCredit <= 0)
+    || (total === 0 && pendingCount === 0 && applyCredit <= 0)
+    || parts.some(p => Number(p.amount) > 0 && !accounts.some(a => a.method === p.method));
   function change(index: number, patch: Partial<typeof parts[number]>) {
     setConfirmation(null);
     setParts(prev => prev.map((p, i) => i === index ? { ...p, ...patch } : p));
@@ -52,6 +54,7 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
         return <div key={index} style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
             {METODE_BAYAR.map((method, i) => <button type="button" key={method} aria-pressed={part.method === method}
+              disabled={!accounts.some(a => a.method === method)}
               aria-label={parts.length > 1 ? `${method} bagian ${index + 1}` : method}
               onClick={() => change(index, { method, ...(method !== "Tunai" && !typed ? { amount: String(remaining) } : {}) })}
               style={{ padding: "12px 16px", borderRadius: 8, fontSize: 15, fontWeight: 800,
@@ -69,7 +72,7 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
         </div>;
       })}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-        <button type="button" className="btn-def" disabled={parts.length >= 6} onClick={() => setParts(prev => [...prev, { method: "Transfer", amount: "" }])}>Tambah metode</button>
+        <button type="button" className="btn-def" disabled={parts.length >= 6 || !accounts.length} onClick={() => setParts(prev => [...prev, { method: accounts.find(a => a.method === "Transfer")?.method ?? accounts[0].method, amount: "" }])}>Tambah metode</button>
         {dpOpsional !== undefined && <button type="button" className="btn-def" disabled={typed || dpOpsional <= 0}
           onClick={() => change(0, { amount: String(dpOpsional) })}>Isi DP 50% sisa total</button>}
       </div>
@@ -83,7 +86,7 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
     {excess > 0 && <div role="alert" style={{ background: "#fff7ed", border: "2px solid #ea580c", borderRadius: 8, padding: 14, fontSize: 19, fontWeight: 800, color: "#9a3412", marginBottom: 12 }}>Lebih {rp(excess)} disimpan sebagai saldo pemilik</div>}
     {error && <div role="alert" style={{ color: "#b91c1c", padding: 10 }}>{error}</div>}
     <button className="btn-acc" type="submit" disabled={blocked || !!confirmation} style={{ fontSize: 19, fontWeight: 800, padding: "14px 22px" }}>
-      {busy ? "Menyimpan…" : total > 0 ? `Simpan / Bayar ${rp(total)}` : "Simpan transaksi · Bayar nanti"}
+      {busy ? "Menyimpan…" : total > 0 ? `Simpan / Bayar ${rp(total)}` : pendingCount === 0 && applyCredit > 0 ? `Terapkan saldo pemilik ${rp(applyCredit)}` : "Simpan transaksi · Bayar nanti"}
     </button>
     {confirmation && <div role="dialog" aria-modal="true" aria-label="Konfirmasi kelebihan bayar" style={{ position: "fixed", inset: 0, zIndex: 100, display: "grid", placeItems: "center", background: "#0008", padding: 20 }}>
       <div style={{ background: "white", border: "3px solid #ea580c", borderRadius: 12, padding: 24, maxWidth: 520 }}>

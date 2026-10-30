@@ -33,10 +33,10 @@ export default async function TagihanRawatInapPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; success?: string; receipt?: string; invoice?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; receipt?: string; invoice?: string; applications?: string }>;
 }) {
   const { id } = await params;
-  const { error, success, receipt, invoice } = await searchParams;
+  const { error, success, receipt, invoice, applications } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -73,7 +73,17 @@ export default async function TagihanRawatInapPage({
   const applied = data.tahap.reduce((sum, t) => sum + t.dibayar, 0);
   const savedReceipt = receipt ? data.kwitansi.find(k => k.id === receipt && k.status === "aktif") : null;
   const savedInvoice = invoice ? data.tahap.find(t => t.id === invoice && !t.correction_pending) : null;
-  const successBound = success === "transaksi" && (!receipt || !!savedReceipt) && (!invoice || !!savedInvoice) && (!!savedReceipt || !!savedInvoice);
+  const applicationIds = applications?.split(",") ?? [];
+  let savedApplications = false;
+  if (applicationIds.length > 0 && applicationIds.length <= 200 && new Set(applicationIds).size === applicationIds.length
+    && applicationIds.every(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {
+    const proof = await supabase.from("clinic_advance_applications")
+      .select("id, invoice_id, amount, released_at").in("id", applicationIds);
+    savedApplications = !proof.error && proof.data?.length === applicationIds.length
+      && proof.data.every(a => applicationIds.includes(a.id) && Number(a.amount) > 0 && !a.released_at && data.tahap.some(t => t.id === a.invoice_id && !t.correction_pending));
+  }
+  const successBound = success === "transaksi" && (!receipt || !!savedReceipt) && (!invoice || !!savedInvoice)
+    && (!applications || savedApplications) && (!!savedReceipt || !!savedInvoice || savedApplications);
   // Status tampilan dari rekap server, bukan bukti penerimaan baru dari query URL.
   // Piutang invoice nol saja belum lunas bila masih ada biaya pending/koreksi.
   const pembayaranLunas = data.riwayatUangTerpasang && rekap.total > 0 && rekap.sisa === 0
@@ -102,7 +112,7 @@ export default async function TagihanRawatInapPage({
         <Popup tone="success" title={pembayaranLunas ? "Pembayaran lunas" : "Pembayaran diterima"}
           message={`Total dibayar: ${rp(rekap.dibayar)} · Sisa pembayaran: ${rp(rekap.sisa)}`} />
       )}
-      {!error && successBound && <Popup tone="success" title={savedReceipt ? (pembayaranLunas ? "Pembayaran lunas" : "Pembayaran diterima") : "Transaksi tersimpan"}
+      {!error && successBound && <Popup tone="success" title={savedReceipt ? (pembayaranLunas ? "Pembayaran lunas" : "Pembayaran diterima") : savedApplications ? "Saldo pemilik diterapkan" : "Transaksi tersimpan"}
         message={`${savedReceipt ? `${savedReceipt.no_kwitansi}: ${rp(savedReceipt.total)} · ` : ""}${savedInvoice?.invoice_no ?? ""} · Sisa pembayaran: ${rp(quote?.remaining ?? rekap.sisa)}`} />}
       {!error && success && Object.hasOwn(SUKSES, success) && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
@@ -135,7 +145,7 @@ export default async function TagihanRawatInapPage({
         {quote && dpLanjutanOpsional && <div style={{ fontSize: 14, marginBottom: 8 }}>DP lanjutan opsional: {rp(Math.round(quote.remaining / 2))}</div>}
         {bolehProsesUang && quote ? <SimpanBayarForm key={`bayar:${data.kwitansi.length}:${data.tahap.length}:${quote.token}`}
           recordId={data.record.id} visitId={data.visit.id} requestKey={randomUUID()} remaining={quote.remaining}
-          pendingCount={data.belumDitagih.length} accounts={quote.accounts} bolehTerobos={bolehTerobos}
+          pendingCount={data.belumDitagih.length} accounts={quote.accounts} applyCredit={quote.apply_credit} bolehTerobos={bolehTerobos}
           dpOpsional={dpLanjutanOpsional ? Math.round(quote.remaining / 2) : undefined} />
           : <div>{shift ? "Rekening atau tagihan terkini belum terbaca — muat ulang sebelum memproses uang." : "Buka shift klinik untuk menerima uang."}</div>}
       </section>
