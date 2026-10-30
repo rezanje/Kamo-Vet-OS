@@ -52,6 +52,7 @@ vi.mock("../../app/(app)/klinik/rekam-medis/[visitId]/RacikanInline", () => ({ R
 vi.mock("../../app/(app)/klinik/rawat-inap/actions", () => ({ admitInpatient: vi.fn() }));
 import ExamPage from "../../app/(app)/klinik/rekam-medis/[visitId]/page";
 import InpatientPage from "../../app/(app)/klinik/rawat-inap/[id]/catatan/page";
+import InpatientMedicinePage from "../../app/(app)/klinik/rawat-inap/[id]/obat-khusus/page";
 
 function formProps(node: React.ReactNode): Record<string, unknown> | undefined {
   if (!React.isValidElement<Record<string, unknown>>(node)) return;
@@ -83,6 +84,12 @@ beforeEach(() => {
 const exam = () => ExamPage({ params: Promise.resolve({ visitId: "visit" }), searchParams: Promise.resolve({}) });
 const inpatient = () => InpatientPage({ params: Promise.resolve({ id: "inpatient" }) });
 describe("compound master SKUs reach clinic POS", () => {
+  it('actual OBAT KHUSUS route supplies billable mode and same stay/stock/catalogue while daily route supplies clinical mode',async()=>{
+    const props=formProps(await InpatientMedicinePage({params:Promise.resolve({id:'inpatient'})}));
+    expect(props).toMatchObject({mode:'billables',recordId:'inpatient',backHref:'/klinik/rawat-inap/inpatient'});
+    expect(props?.racikanItems).toEqual(expect.arrayContaining([expect.objectContaining({id:'racik',stok:8,sell_price:25000})]));
+    expect(formProps(await inpatient())?.mode).toBe('clinical');
+  });
   it('opens an in-progress medical visit using the real staff reader against assignment columns without a synthetic id',async()=>{
     fixture.realStaff=true;
     fixture.tables.employees=[{id:'own',nama:'Fictional doctor',jabatan:'Dokter',status:'Aktif',branch_id:'branch'},{id:'assigned',nama:'Fictional nurse',jabatan:'Paramedis',status:'Aktif',branch_id:'other'}];

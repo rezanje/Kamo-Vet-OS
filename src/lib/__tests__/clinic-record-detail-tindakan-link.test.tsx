@@ -72,10 +72,10 @@ it("renames the compound card so the doctor sees tindakan belongs there too", as
   expect(texts(await page())).toContain("Tindakan & Racikan");
 });
 
-it("sends an inpatient still admitted to the inpatient note, opened on the tindakan tab", async () => {
+it("sends an inpatient still admitted to OBAT KHUSUS, opened on the tindakan tab", async () => {
   state.tables.inpatient_records = [{ id: "inap", visit_id: "visit", condition_status: "stabil", discharged_at: null }];
   const nodes = await page();
-  expect(tombol(nodes)).toBe("/klinik/rawat-inap/inap/catatan?tab=tindakan");
+  expect(tombol(nodes)).toBe("/klinik/rawat-inap/inap/obat-khusus?tab=tindakan");
   expect(texts(nodes)).not.toContain("Rawat jalan: tindakan / obat susulan");
 });
 

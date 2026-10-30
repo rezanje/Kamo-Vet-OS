@@ -226,7 +226,7 @@ export default async function RekamMedisPage({
   // formnya memang tidak punya pemilih obat/jasa, jadi tombol ke sana akan buntu.
   const inpatientAktif = inpatient && !inpatient.discharged_at ? inpatient : null;
   const tambahItemHref = inpatientAktif
-    ? `/klinik/rawat-inap/${inpatientAktif.id}/catatan?tab=tindakan`
+    ? `/klinik/rawat-inap/${inpatientAktif.id}/obat-khusus?tab=tindakan`
     : canCorrect && mrId
       ? `/klinik/pembayaran/${visit.id}`
       : null;
