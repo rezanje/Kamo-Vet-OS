@@ -7,6 +7,8 @@ import subprocess
 import time
 
 ROOT=Path(__file__).resolve().parents[1]
+# Single source of the exact hosted auth.uid() (fingerprinted by migration 20261101120000).
+HOSTED_AUTH_UID = (ROOT / 'supabase/tests/fixtures/hosted_auth_uid.sql').read_text()
 DB=f'vetos_sale_cancellation_{os.getpid()}_{int(time.time())}'
 PSQL=['psql','-X','-q','-At','-h127.0.0.1','-p5432','-v','ON_ERROR_STOP=1','-d',DB]
 ENV={**os.environ,'PGOPTIONS':'-c client_min_messages=warning'}
@@ -105,7 +107,7 @@ do $$ begin create role authenticated; exception when duplicate_object then null
 do $$ begin create role service_role bypassrls; exception when duplicate_object then alter role service_role bypassrls;end $$;
 create schema auth;create schema storage;
 create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}');
-create function auth.uid() returns uuid language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid$$;
+''' + HOSTED_AUTH_UID + '''
 create function auth.role() returns text language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'role')$$;
 create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
 create table storage.buckets(id text primary key,name text,public boolean);

@@ -3,10 +3,13 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { FolderDropZone } from "@/components/FolderDropZone";
 import {
+  periksaHasilImporRekamMedis,
   prosesPotonganImporRekamMedis,
+  type HasilPeriksaImporRekamMedis,
   type HasilPotonganImporRekamMedis,
   type RekamMedisIdentityDecision,
 } from "./actions";
+import { catatKunciTersimpan, ringkasIsiKlinis } from "@/lib/impor-rekam-medis-hasil";
 import type {
   RekamMedisIdentityClarification,
   RekamMedisImporHeld,
@@ -120,6 +123,9 @@ export function RekamMedisImportForm() {
   const [error, setError] = useState("");
   const [menyimpanKeputusan, setMenyimpanKeputusan] = useState(false);
   const [membacaFolder, setMembacaFolder] = useState(false);
+  const [kunciTersimpan, setKunciTersimpan] = useState<string[]>([]);
+  const [hasilPeriksa, setHasilPeriksa] = useState<HasilPeriksaImporRekamMedis | null>(null);
+  const [memeriksa, setMemeriksa] = useState(false);
 
   const antrianRef = useRef<Antrian | null>(null);
   const sumberRef = useRef<SumberImporRekamMedis | null>(null);
@@ -167,6 +173,8 @@ export function RekamMedisImportForm() {
     setDitahan([]);
     setPertanyaan([]);
     setKeputusan({});
+    setKunciTersimpan([]);
+    setHasilPeriksa(null);
     setPesan("");
     setError(daftar.length ? "" : "Folder tidak berisi kartu medis .xlsx.");
   };
@@ -240,6 +248,7 @@ export function RekamMedisImportForm() {
         sudahAda: current.sudahAda + jawaban.sudah_ada,
         perluKeputusan: current.perluKeputusan + barisPertanyaan.length,
       }));
+      if (jawaban.kunci_tersimpan.length) setKunciTersimpan((current) => catatKunciTersimpan(current, jawaban.kunci_tersimpan));
       // Kiriman ini sudah dijawab server: Coba lagi tidak mengirimnya lagi.
       berjalan.berikut = index + 1;
     }
@@ -375,6 +384,7 @@ export function RekamMedisImportForm() {
           sudahAda += jawaban.sudah_ada;
           dilewati += jawaban.dilewati;
           if (jawaban.ditahan.length) catatDitahan(jawaban.ditahan);
+          if (jawaban.kunci_tersimpan.length) setKunciTersimpan((current) => catatKunciTersimpan(current, jawaban.kunci_tersimpan));
         }
         for (const row of rows) tertundaRef.current.delete(row.source_key);
         setPertanyaan([]);
@@ -391,6 +401,20 @@ export function RekamMedisImportForm() {
         setError(cause instanceof Error ? cause.message : "Keputusan identitas gagal disimpan.");
       } finally {
         setMenyimpanKeputusan(false);
+      }
+    })();
+  };
+
+  const periksaHasil = () => {
+    if (!kunciTersimpan.length || memeriksa) return;
+    setMemeriksa(true);
+    void (async () => {
+      try {
+        setHasilPeriksa(await periksaHasilImporRekamMedis(kunciTersimpan));
+      } catch (cause) {
+        setHasilPeriksa({ ok: false, message: cause instanceof Error ? cause.message : "Hasil impor gagal diperiksa.", diminta: 0, rows: [] });
+      } finally {
+        setMemeriksa(false);
       }
     })();
   };
@@ -506,6 +530,42 @@ export function RekamMedisImportForm() {
           <button type="button" className="btn-acc" disabled={menyimpanKeputusan || !pertanyaanTerjawab} onClick={simpanKeputusan} style={{ marginTop: 10, background: "#15803d" }}>
             {menyimpanKeputusan ? <span className="btn-spin" /> : <i className="ti ti-check" />} Simpan keputusan identitas
           </button>
+        </div>
+      )}
+
+      {kunciTersimpan.length > 0 && (
+        <div style={{ marginTop: 12, padding: 11, borderRadius: 8, background: "#f8fafc", border: ".5px solid #cbd5e1" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: "#334155" }}><i className="ti ti-list-details" /> Periksa hasil impor</div>
+            <button type="button" className="btn-def" disabled={memeriksa} onClick={periksaHasil}>
+              {memeriksa ? <span className="btn-spin" /> : <i className="ti ti-eye" />} Periksa {kunciTersimpan.length.toLocaleString("id-ID")} riwayat terakhir
+            </button>
+          </div>
+          <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 4 }}>
+            Riwayat impor adalah histori bersama semua cabang, jadi tidak muncul di halaman pasien saat satu cabang dipilih. Periksa di sini; isinya terkunci dari ubah langsung.
+          </div>
+          {hasilPeriksa && !hasilPeriksa.ok && <div style={{ fontSize: 10.5, color: "#b91c1c", marginTop: 6 }}><i className="ti ti-alert-circle" /> {hasilPeriksa.message}</div>}
+          {hasilPeriksa?.ok && (
+            <>
+              <div style={{ fontSize: 10.5, color: "#166534", marginTop: 6 }}><i className="ti ti-check" /> {hasilPeriksa.message}</div>
+              {hasilPeriksa.rows.length > 0 && <div style={{ marginTop: 6, maxHeight: 320, overflow: "auto", border: ".5px solid var(--bd)", borderRadius: 8 }}>
+                <table className="dt" style={{ width: "100%", minWidth: 620 }}>
+                  <thead><tr><th>Tanggal</th><th>Pemilik</th><th>Anabul</th><th>Isi klinis</th></tr></thead>
+                  <tbody>
+                    {hasilPeriksa.rows.slice(0, MAKS_BARIS_TAMPIL).map((row) => (
+                      <tr key={`${row.kunci}-${row.visit_id}`}>
+                        <td>{row.tanggal ? new Date(row.tanggal).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" }) : "—"}</td>
+                        <td>{row.pemilik ?? "—"}</td>
+                        <td>{row.hewan ?? "—"}</td>
+                        <td>{ringkasIsiKlinis(row)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>}
+              {hasilPeriksa.rows.length > MAKS_BARIS_TAMPIL && <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 6 }}>Menampilkan {MAKS_BARIS_TAMPIL} baris pertama.</div>}
+            </>
+          )}
         </div>
       )}
 
