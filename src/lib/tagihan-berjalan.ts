@@ -34,6 +34,10 @@ export type TagihanTahap = {
   created_at: string;
   total: number;
   dp_amount: number;
+  subtotal?: number;
+  discount?: number;
+  tax?: number;
+  metode_bayar?: string | null;
   paid_status: string;
   voided_at: string | null;
   correction_pending?: boolean | null;
@@ -87,6 +91,17 @@ export function ringkasTahap(
 
 export function totalPiutang(tahap: readonly RingkasTahap[]): number {
   return tahap.reduce((sum, t) => sum + t.sisa, 0);
+}
+
+/** Rekap satu kunjungan. Nilai pending adalah estimasi termasuk PPN, BUKAN AR.
+ * Pembayaran aktif sudah memuat aplikasi advance dan salinan reissue: jangan
+ * menjumlah lagi total kwitansi / advance.amount. Hanya sisa advance ditambahkan. */
+export function ringkasRekap(tahap: readonly RingkasTahap[], pending: number, saldo: number) {
+  const tertagih = tahap.reduce((sum, t) => sum + Number(t.total), 0);
+  const dibayar = tahap.reduce((sum, t) => sum + t.dibayar, 0) + saldo;
+  const total = tertagih + pending;
+  const sisa = Math.max(0, total - dibayar);
+  return { tertagih, pending, total, dibayar, sisa, dpOpsional: Math.ceil(sisa / 2) };
 }
 
 export type SaldoUangMuka = { amount: number; applied: number; status: string };
