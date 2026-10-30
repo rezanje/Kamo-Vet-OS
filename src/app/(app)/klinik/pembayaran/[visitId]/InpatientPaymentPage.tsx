@@ -7,16 +7,17 @@ import { loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import type { InpatientCashierData, InpatientCashierReadOnly } from "@/lib/inpatient-cashier";
+import { PaymentPageHeading, PaymentPatientHeader, type PaymentPatient } from "./PaymentPresentation";
 import { InpatientCashier } from "./InpatientCashier";
 const rp=(n:number)=>`Rp ${Math.round(n).toLocaleString("id-ID")}`;
 type Query={error?:string;success?:string;invoice?:string;receipt?:string;applications?:string};
-export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,query,patientLabel}: {
+export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,query,patient,catatanResep = null,stayStatus}: {
  db:Awaited<ReturnType<typeof createClient>>;visitId:string;recordId:string;branchId:string|null;userId:string;query:Query;
- patientLabel:string;
+ patient:PaymentPatient;catatanResep?:string|null;stayStatus?:string;
 }) {
  const [read,master,minDpPercent,profile]=await Promise.all([
   db.rpc("clinic_read_inpatient_cashier",{p_record_id:recordId,p_visit_id:visitId}),loadClinicPaymentMaster(db,branchId),getDpMinimalPercent(db),
-  db.from("profiles").select("role").eq("id",userId).maybeSingle(),
+  db.from("profiles").select("role,full_name").eq("id",userId).maybeSingle(),
  ]);
  const data=read.data as InpatientCashierData|InpatientCashierReadOnly|null;
  const editable=data?.state==="SHIFT_REQUIRED"?null:data;
@@ -30,12 +31,12 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
  const settled=editable&&editable.quote.remaining===0&&editable.rows.length===0&&!data.history.some(i=>i.correction_pending);
  return <>
   <Link className="back-btn" href="/klinik/rawat-inap">Status Rawat Inap</Link>
-  <h1 style={{fontSize:21}}>PEMBAYARAN RAWAT INAP</h1>
-  <p style={{fontWeight:700}}>{patientLabel}</p>
+  <PaymentPageHeading />
+  {stayStatus&&<div style={{fontSize:11,color:"var(--tm)",marginBottom:12}}>{stayStatus}</div>}
   <Popup message={query.error}/>
   {editable&&!query.error&&saved&&<Popup tone="success" title={settled&&data.history.length?"Pembayaran lunas":savedApplications?"Saldo pemilik diterapkan":savedReceipt?"Pembayaran diterima":"Transaksi tersimpan"} message={`${savedInvoice?.invoice_no??savedReceipt?.no_kwitansi??"Pemakaian saldo pemilik"} · Sisa pembayaran ${rp(editable.quote.remaining)}`}/>}
-  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} masterObat={master.obat} masterJasa={master.jasa}
-   ppnRate={editable.tax_settings.mode_pkp?Number(editable.tax_settings.ppn_rate):0} minDpPercent={minDpPercent} bolehTerobos={bolehMenerobosDp(profile.data?.role??null)}/>:<section className="card" role="status">Riwayat tetap dapat dibaca. Buka shift klinik milik Anda sebelum mengubah keranjang atau memproses pembayaran. <Link href="/klinik/shift">Buka shift</Link></section>}
+  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} patient={patient} catatanResep={catatanResep} cashierName={profile.data?.full_name??"Akun kasir"} masterObat={master.obat} masterJasa={master.jasa}
+   ppnRate={editable.tax_settings.mode_pkp?Number(editable.tax_settings.ppn_rate):0} minDpPercent={minDpPercent} bolehTerobos={bolehMenerobosDp(profile.data?.role??null)}/>:<><PaymentPatientHeader patient={patient}/><section className="card" role="status">Riwayat tetap dapat dibaca. Buka shift klinik milik Anda sebelum mengubah keranjang atau memproses pembayaran. <Link href="/klinik/shift">Buka shift</Link></section></>}
   <section className="card" style={{marginTop:12}}><h2 style={{fontSize:16}}>INVOICE / RIWAYAT TAHAP · BACA SAJA</h2>
    <p>Setiap pilihan membuka invoice yang benar-benar diterbitkan, bukan nomor invoice gabungan baru.</p>
    {data.history.map(invoice=><details key={invoice.id} style={{marginBottom:10}}><summary><b>{invoice.invoice_no}</b> · {invoice.paid_status} · Total {rp(invoice.total)} · Dibayar {rp(invoice.received)} · Sisa {rp(Math.max(0,invoice.total-invoice.received))} <Link href={`/klinik/pembayaran/${visitId}/invoice?invoice_id=${invoice.id}`} className="btn-acc">Cetak Invoice {invoice.invoice_no}</Link></summary>

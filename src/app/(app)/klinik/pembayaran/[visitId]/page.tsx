@@ -15,6 +15,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
+import { PaymentPageHeading } from "./PaymentPresentation";
 import { PembayaranForm } from "./PembayaranForm";
 import { InpatientPaymentPage } from "./InpatientPaymentPage";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
@@ -83,12 +84,24 @@ export default async function PembayaranPage({
     const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
     if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
   }
-  if (inpat && !query.invoice_id) return InpatientPaymentPage({db:supabase,visitId,recordId:inpat.id,branchId:visit.branch_id,userId:draftUser?.id??"",query,
-    patientLabel:`${one(visit.pets)?.name??"Pasien"} · ${one(visit.customers)?.name??"Pemilik"}${visit.dokter?` · Dokter PJ: ${visit.dokter}`:""}${inpat.discharged_at?" · Sudah pulang":" · Masih dirawat"}`});
   const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
-
   const pet = one(visit.pets);
   const cust = one(visit.customers);
+  const patient = {
+    photo: pet?.photo_url ?? null,
+    name: pet?.name ?? "—",
+    species: pet?.species ?? "—",
+    owner: cust?.name ?? "—",
+    phone: cust?.phone ?? "—",
+    address: cust?.address ?? "—",
+    dokter: visit.dokter ?? "—",
+    jenisLayanan,
+    noInvoice: "(baru)",
+    tanggal: new Date(visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+  };
+  if (inpat && !query.invoice_id) return InpatientPaymentPage({db:supabase,visitId,recordId:inpat.id,branchId:visit.branch_id,userId:draftUser?.id??"",query,
+    patient,catatanResep:mr?.catatan_resep??null,stayStatus:inpat.discharged_at?"Sudah pulang":"Masih dirawat"});
+
   // Status ulasan pemilik ditaruh di atas layar bayar: kalau dia pernah kasih
   // bintang 1, kasir klinik tahu sebelum bicara soal uang.
   const ulasanPemilik = one((cust as { customer_review_statuses?: Rel<StatusUlasan> } | null)?.customer_review_statuses ?? null);
@@ -261,16 +274,7 @@ export default async function PembayaranPage({
     supabase, visit.branch_id ?? null, visit.customer_id ?? null, master.map((it) => it.id),
   );
 
-  const patient = {
-    photo: pet?.photo_url ?? null,
-    name: pet?.name ?? "—",
-    species: pet?.species ?? "—",
-    owner: cust?.name ?? "—",
-    phone: cust?.phone ?? "—",
-    address: cust?.address ?? "—",
-    dokter: visit.dokter ?? "—",
-    jenisLayanan,
-    noInvoice: invoice?.invoice_no ?? "(baru)",
+  const invoicePatient = { ...patient, noInvoice: invoice?.invoice_no ?? "(baru)",
     tanggal: new Date((invoice?.created_at as string) ?? visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
   };
 
@@ -286,15 +290,7 @@ export default async function PembayaranPage({
       <div style={{ marginBottom: 4 }}>
         <Link href="/klinik/antrian" className="back-btn"><i className="ti ti-arrow-left" /> Antrian</Link>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 11, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <i className="ti ti-file-invoice" style={{ fontSize: 22, color: "var(--posb)" }} />
-        </div>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>INVOICE / PEMBAYARAN</div>
-          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Detail tagihan dan metode pembayaran</div>
-        </div>
-      </div>
+      <PaymentPageHeading />
 
       <Popup message={error} />
       <Popup tone="success" title="Pembayaran berhasil"
@@ -498,7 +494,7 @@ export default async function PembayaranPage({
           draftUserId={draftUser?.id ?? ""}
           sourceVersion={sourceVersion}
           draftScope={`payment:${visit.id}:${invoice?.id ?? "new"}`}
-          patient={patient}
+          patient={invoicePatient}
           ppnRate={ppnRate}
           initialObat={initialObat}
           initialJasa={initialJasa}
@@ -614,7 +610,7 @@ export default async function PembayaranPage({
           draftUserId={draftUser?.id ?? ""}
           sourceVersion={sourceVersion}
           draftScope={`payment:${visit.id}:new`}
-          patient={patient}
+          patient={invoicePatient}
           ppnRate={ppnRate}
           initialObat={initialObat}
           initialJasa={initialJasa}

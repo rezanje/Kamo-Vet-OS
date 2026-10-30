@@ -6,7 +6,7 @@ const state=vi.hoisted(()=>({mode:'draft',fail:'',inpatientOpen:false,discharged
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:'cashier'}}})},rpc:async(name:string)=>({data:name==='clinic_read_inpatient_cashier'?{tax_settings:{mode_pkp:false,ppn_rate:0},snapshot:'current',rows:[{id:'pending',nama_obat:'Pending Fiktif',qty:1,harga:100,jenis:'obat',item_id:'sku'}],history:[],receipts:[],applications:[],quote:{accounts:[{method:'Tunai',code:'1101',name:'Kas Fiktif'}],remaining:100,pending:100,debt:0,credit:0}}:false,error:null}),from(table:string){
  let single=false;let selected='';let range:number[]|undefined;let ids:string[]|undefined;const filters:Record<string,unknown>={};const q:Record<string,unknown>={then:(resolve:(v:unknown)=>void)=>{
  let data:unknown=[];const error=state.fail===table?{message:'PRIVATE database problem'}:null;
- if(table==='visits')data={id:state.mode==='old'?'old-visit':'new-visit',status:state.visitStatus,poli:'Umum',created_at:'2026-10-22T00:00:00Z',branch_id:'branch',pets:{name:state.mode==='old'?'Old patient':'New patient'},customers:{name:'Fictional owner'}};
+ if(table==='visits')data={id:state.mode==='old'?'old-visit':'new-visit',status:state.visitStatus,poli:'Umum',created_at:'2026-10-22T00:00:00Z',branch_id:'branch',pets:{name:state.mode==='old'?'Old patient':'New patient',species:'Kucing fiktif',photo_url:'/fictional-pet.png'},customers:{name:'Fictional owner',phone:'080000000000',address:'Alamat fiktif'}};
  if(table==='medical_records')data={id:'mr-new'};
  if(table==='inpatient_records')data=state.inpatientOpen?{id:'inpatient',discharged_at:state.discharged?'2026-10-30T00:00:00Z':null,consent_id:null}:null;
  // Rawat inap ditagih bertahap: layar pembayaran membaca DAFTAR invoice aktif, bukan satu baris.
@@ -60,10 +60,10 @@ it.each(['invoice_items','invoice_payments'])('does not allow an invoice correct
  state.mode='dp';state.fail=table;await expect(render()).rejects.toThrow('belum dapat diverifikasi');
 });
 
-it('opens inpatient pending cart in main cashier instead of a read-only detour',async()=>{state.inpatientOpen=true;const html=renderToStaticMarkup(await render());expect(html).toContain('KERANJANG BELUM DITAGIH');expect(html).toContain('name="pending_snapshot"');expect(html).toContain('New patient');expect(html).toContain('Fictional owner');});
+it('opens inpatient pending cart in main cashier instead of a read-only detour',async()=>{state.inpatientOpen=true;const html=renderToStaticMarkup(await render());expect(html).toContain('INVOICE / PEMBAYARAN');expect(html).toContain('RINCIAN TAGIHAN');expect(html).toContain('name="pending_snapshot"');expect(html).toContain('New patient');expect(html).toContain('Fictional owner');for(const value of ['Kucing fiktif','/fictional-pet.png','080000000000','Alamat fiktif','Rawat Inap'])expect(html).toContain(value);expect(state.calls.filter(call=>call[0]==='visits'&&call[1]==='select')).toHaveLength(1);});
 it.each([false,true])('routes inpatient pending charges through actual main cashier even after discharge=%s',async discharged=>{
  state.inpatientOpen=true;state.discharged=discharged;const html=renderToStaticMarkup(await render());
- expect(html).toContain('KERANJANG BELUM DITAGIH');expect(html).toContain('name="pending_snapshot"');expect(html).toContain('href="/klinik/rawat-inap/inpatient/tagihan"');expect(html).not.toContain('data-draft');expect(html).toContain(discharged?'Sudah pulang':'Masih dirawat');
+ expect(html).toContain('RINCIAN TAGIHAN');expect(html).toContain('name="pending_snapshot"');expect(html).toContain('href="/klinik/rawat-inap/inpatient/tagihan"');expect(html).not.toContain('data-draft');expect(html).toContain(discharged?'Sudah pulang':'Masih dirawat');
 });
 it('offers an explicit money-free admit form for a previously recorded DP',async()=>{
  state.mode="dp";const html=renderToStaticMarkup(await render());
