@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL } from "@/lib/inpatient";
 import { readStayTypes, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
+import { BILLING_UNREAD, readInpatientBillingStatuses } from "@/lib/inpatient-billing-status";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -56,7 +57,7 @@ export default async function RawatInapPage({
 
   let query = supabase
     .from("inpatient_records")
-    .select("id, condition_status, admitted_at, discharged_at, doctor_name, treatment_plan, branches(name), visits(pets(name, species, breed, dob, photo_url), customers(name, phone))")
+    .select("id, visit_id, branch_id, condition_status, admitted_at, discharged_at, doctor_name, treatment_plan, branches(name), visits(pets(name, species, breed, dob, photo_url), customers(name, phone))")
     .in("branch_id", branchIds)
     .order("admitted_at", { ascending: false });
   if (branch) query = query.eq("branch_id", branch);
@@ -71,7 +72,10 @@ export default async function RawatInapPage({
 
   const [{ data: records }, { data: allRecs }] = await Promise.all([query, counterQ]);
   // K14: tipe dibaca terpisah supaya daftar tetap tampil sebelum migrasinya terpasang.
-  const stayTypes = await readStayTypes(supabase, (records ?? []).map((r) => r.id as string));
+  const [stayTypes, billingStatuses] = await Promise.all([
+    readStayTypes(supabase, (records ?? []).map((r) => r.id as string)),
+    readInpatientBillingStatuses(supabase, records ?? []),
+  ]);
 
   const counts = {
     total: (allRecs ?? []).filter((r) => !r.discharged_at).length,
@@ -172,6 +176,7 @@ export default async function RawatInapPage({
                 const cust = one(visit?.customers ?? null);
                 const br = one(r.branches as Rel<{ name: string }>);
                 const age = petAge(pet?.dob);
+                const billing = billingStatuses.get(r.visit_id) ?? BILLING_UNREAD;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{idx + 1}</td>
@@ -214,9 +219,10 @@ export default async function RawatInapPage({
                     {/* Tagihan berjalan: kasir tidak perlu membuka rekam medis dulu untuk
                         menagih tahap berikutnya atau menerima uang (Andri, 29 Oktober). */}
                     <td>
+                      <div style={{ marginBottom: 5 }}><span className={`bge ${billing.badge}`}>{billing.label}</span></div>
                       <Link href={`/klinik/rawat-inap/${r.id}/tagihan`} className="btn-acc"
                         style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
-                        <i className="ti ti-cash" /> Bayar tagihan
+                        <i className="ti ti-cash" /> {billing.action}
                       </Link>
                     </td>
                   </tr>
