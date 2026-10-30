@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeKode } from "@/lib/voucher";
+import { pesanAktivasiKadaluarsa } from "@/lib/promo";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/crm/voucher";
 
@@ -47,6 +49,11 @@ export async function simpanVoucher(formData: FormData) {
   // Rentang terbalik lolos diam-diam = voucher yang tidak pernah bisa dipakai.
   if (validFrom && validUntil && validUntil < validFrom) {
     redirect(`${BACK}?error=${encodeURIComponent("Tanggal berakhir lebih awal dari tanggal mulai")}`);
+  }
+  // Voucher baru yang tanggal akhirnya sudah lewat lahir dalam keadaan mati —
+  // penyapu kedaluwarsa (dan pagar database) akan menonaktifkannya lagi.
+  if (!id && validUntil && validUntil < hariIniWIB()) {
+    redirect(`${BACK}?error=${encodeURIComponent("Tanggal berakhir sudah lewat. Isi tanggal hari ini atau sesudahnya.")}`);
   }
   if (maxPotongan !== null && (!Number.isFinite(maxPotongan) || maxPotongan <= 0)) {
     redirect(`${BACK}?error=${encodeURIComponent("Maks. potongan harus lebih dari 0, atau kosongkan kalau tanpa batas")}`);
@@ -93,6 +100,13 @@ export async function toggleVoucher(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const aktif = String(formData.get("aktif") ?? "") === "1";
   if (!id) redirect(`${BACK}?error=${encodeURIComponent("Voucher tidak valid")}`);
+
+  // Sama seperti promo: perpanjang masa berlakunya dulu, baru boleh dihidupkan.
+  if (!aktif) {
+    const { data: voucher } = await supabase.from("vouchers").select("code, valid_until").eq("id", id).maybeSingle();
+    const pesan = voucher && pesanAktivasiKadaluarsa(`Voucher ${voucher.code}`, voucher.valid_until, hariIniWIB());
+    if (pesan) redirect(`${BACK}?error=${encodeURIComponent(pesan)}`);
+  }
 
   const { error } = await supabase.from("vouchers").update({ is_active: !aktif }).eq("id", id);
   revalidatePath(BACK);

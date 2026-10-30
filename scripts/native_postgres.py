@@ -19,13 +19,13 @@ class NativePostgres:
         assert self.psql, "psql not found"
 
     def __enter__(self):
-        self.root = Path(tempfile.mkdtemp(prefix="pgk.", dir="/tmp"))
+        self.root = Path(tempfile.mkdtemp(prefix="pgk.", dir="/opt/data"))
         self.as_user = ["runuser", "-u", "postgres", "--"] if os.geteuid() == 0 else []
         if self.as_user:
             shutil.chown(self.root, "postgres")
         self.run(self.bin / "initdb", "-D", self.root / "data", "-U", "postgres", "-E", "UTF8", "--locale=C.UTF-8", "-A", "trust")
         self.run(self.bin / "pg_ctl", "-D", self.root / "data", "-l", self.root / "log", "-w", "start",
-                 "-o", f"-c listen_addresses='' -k {self.root} -c timezone=Etc/UTC")
+                 "-o", f"-c listen_addresses='' -k {self.root} -c timezone=Etc/UTC -c shared_buffers=128MB -c max_connections=20")
         return self
 
     def __exit__(self, *_):

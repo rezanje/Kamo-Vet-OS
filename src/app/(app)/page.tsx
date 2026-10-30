@@ -278,8 +278,14 @@ async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | nu
   // Marketing
   const [{ count: promo }, { count: voucher }, { count: pelangganBaru }, { data: poin }, { data: laku }] =
     await Promise.all([
-      supabase.from("promos").select("*", { count: "exact", head: true }).eq("is_active", true),
-      supabase.from("vouchers").select("*", { count: "exact", head: true }).eq("is_active", true),
+      // "Aktif" harus berarti aktif HARI INI. Kolom is_active sendiri belum cukup:
+      // di antara dua jalannya penyapu kedaluwarsa (lib/promo-kadaluarsa.ts) baris
+      // yang sudah lewat tanggal masih tersimpan aktif, dan KPI ini tidak boleh
+      // menjanjikan promo yang di kasir sudah tidak memotong apa pun.
+      supabase.from("promos").select("*", { count: "exact", head: true }).eq("is_active", true)
+        .or(`valid_until.is.null,valid_until.gte.${hariIni}`),
+      supabase.from("vouchers").select("*", { count: "exact", head: true }).eq("is_active", true)
+        .or(`valid_until.is.null,valid_until.gte.${hariIni}`),
       supabase.from("customers").select("*", { count: "exact", head: true }).gte("created_at", `${awalBulan}T00:00:00+07:00`),
       supabase.from("customers").select("points").gt("points", 0),
       supabase.from("sale_items").select("nama, qty, sales!inner(created_at, payment_plan, payments_finalized_at, voided_at)")

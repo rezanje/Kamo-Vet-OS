@@ -5,6 +5,8 @@ import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { simpanKodeKampanye, aturStatusKodeKampanye } from "./actions";
+import { nonaktifkanPromoKadaluarsa } from "@/lib/promo-kadaluarsa";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Kode = {
   id: string; code: string; voucher_id: string | null; promo_id: string | null;
@@ -20,22 +22,33 @@ export default async function KodeKampanyePage({
 }) {
   const { error, success, edit } = await searchParams;
   const supabase = await createClient();
+  // Kode kampanye cuma nama lain untuk promo/voucher tujuannya — kalau tujuannya
+  // sudah lewat tanggal, kodenya ikut dimatikan sebelum daftar ini dibaca.
+  await nonaktifkanPromoKadaluarsa(supabase);
   const bolehKelola = await bolehKelolaMaster();
 
   const [{ data: kodeData }, { data: vData }, { data: pData }, pemakaian] = await Promise.all([
     supabase.from("campaign_codes").select("id, code, voucher_id, promo_id, max_uses, is_active, note").order("code"),
-    supabase.from("vouchers").select("id, code, is_active").order("code"),
-    supabase.from("promos").select("id, name, is_active, auto_apply").order("name"),
+    supabase.from("vouchers").select("id, code, is_active, valid_until").order("code"),
+    supabase.from("promos").select("id, name, is_active, auto_apply, valid_until").order("name"),
     bolehKelola ? supabase.rpc("campaign_code_usage") : Promise.resolve({ data: [] }),
   ]);
   const kode = (kodeData ?? []) as Kode[];
-  const vouchers = (vData ?? []) as { id: string; code: string; is_active: boolean }[];
-  const promos = (pData ?? []) as { id: string; name: string; is_active: boolean; auto_apply: boolean }[];
+  const vouchers = (vData ?? []) as { id: string; code: string; is_active: boolean; valid_until: string | null }[];
+  const promos = (pData ?? []) as { id: string; name: string; is_active: boolean; auto_apply: boolean; valid_until: string | null }[];
   const terpakai = new Map(((pemakaian.data ?? []) as { code: string; used: number }[]).map((u) => [u.code, Number(u.used)]));
   const editing = edit ? kode.find((k) => k.id === edit) ?? null : null;
   const tujuan = (k: Kode) => k.voucher_id
     ? `Voucher ${vouchers.find((v) => v.id === k.voucher_id)?.code ?? "?"}`
     : `Promo ${promos.find((p) => p.id === k.promo_id)?.name ?? "?"}`;
+  // Status dihitung ulang dari tanggal tujuannya, tidak cuma dari kolom
+  // is_active. Penyapu di atas biasanya sudah mematikannya, tapi kalau
+  // panggilannya gagal daftar ini tetap tidak boleh menjanjikan "Aktif" untuk
+  // kode yang di kasir sudah tidak memotong apa pun.
+  const berakhir = (k: Kode) => (k.voucher_id
+    ? vouchers.find((v) => v.id === k.voucher_id)?.valid_until
+    : promos.find((p) => p.id === k.promo_id)?.valid_until) ?? null;
+  const kadaluarsa = (k: Kode) => { const akhir = berakhir(k); return !!akhir && akhir < hariIniWIB(); };
 
   return (
     <>
@@ -122,11 +135,13 @@ export default async function KodeKampanyePage({
           <thead><tr><th>Kode</th><th>Ditautkan ke</th><th>Terpakai</th><th>Status</th><th>Catatan</th>{bolehKelola && <th />}</tr></thead>
           <tbody>
             {kode.map((k) => (
-              <tr key={k.id} style={{ opacity: k.is_active ? 1 : 0.55 }}>
+              <tr key={k.id} style={{ opacity: k.is_active && !kadaluarsa(k) ? 1 : 0.55 }}>
                 <td style={{ fontWeight: 600 }}>{k.code}</td>
                 <td>{tujuan(k)}</td>
                 <td>{bolehKelola ? `${terpakai.get(k.code) ?? 0}${k.max_uses ? ` / ${k.max_uses}` : " (tanpa batas)"}` : k.max_uses ? `maks ${k.max_uses}` : "tanpa batas"}</td>
-                <td><span className={`bge ${k.is_active ? "g" : "r"}`}>{k.is_active ? "Aktif" : "Nonaktif"}</span></td>
+                <td>{kadaluarsa(k)
+                  ? <span className="bge x" title={`Masa berlaku tujuannya berakhir ${berakhir(k)}`}>Kadaluarsa</span>
+                  : <span className={`bge ${k.is_active ? "g" : "r"}`}>{k.is_active ? "Aktif" : "Nonaktif"}</span>}</td>
                 <td style={{ fontSize: 11 }}>{k.note ?? ""}</td>
                 {bolehKelola && (
                   <td style={{ whiteSpace: "nowrap" }}>

@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { pesanGagalKampanye } from "@/lib/kode-kampanye";
 import { normalizeKode } from "@/lib/voucher";
+import { pesanAktivasiKadaluarsa } from "@/lib/promo";
+import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/crm/kampanye";
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -42,6 +44,22 @@ export async function aturStatusKodeKampanye(form: FormData) {
   const db = await assertMasterAdmin(BACK, "kode kampanye");
   const id = String(form.get("id") ?? "");
   if (!UUID.test(id)) gagal("Kode kampanye tidak valid.");
+  // Kode kampanye tidak punya masa berlaku sendiri — yang kedaluwarsa adalah
+  // promo/voucher tujuannya. Menghidupkan kodenya tanpa memperpanjang tujuannya
+  // menghasilkan kode yang diterima kasir lalu ditolak saat dihitung.
+  if (String(form.get("is_active")) === "1") {
+    const { data: kode } = await db.from("campaign_codes").select("code, promo_id, voucher_id").eq("id", id).maybeSingle();
+    const hariIni = hariIniWIB();
+    let pesan: string | null = null;
+    if (kode?.promo_id) {
+      const { data: promo } = await db.from("promos").select("name, valid_until").eq("id", kode.promo_id).maybeSingle();
+      if (promo) pesan = pesanAktivasiKadaluarsa(`Promo tujuan kode ${kode.code} ("${promo.name}")`, promo.valid_until, hariIni);
+    } else if (kode?.voucher_id) {
+      const { data: voucher } = await db.from("vouchers").select("code, valid_until").eq("id", kode.voucher_id).maybeSingle();
+      if (voucher) pesan = pesanAktivasiKadaluarsa(`Voucher tujuan kode ${kode.code} (${voucher.code})`, voucher.valid_until, hariIni);
+    }
+    if (pesan) gagal(pesan);
+  }
   const { error } = await db.from("campaign_codes")
     .update({ is_active: String(form.get("is_active")) === "1", updated_at: new Date().toISOString() }).eq("id", id);
   if (error) gagal("Status kode gagal diubah. Coba lagi.");
