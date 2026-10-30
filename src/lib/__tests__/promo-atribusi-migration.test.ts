@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 // Atribusi promo klinik + impor daftar promo hidup di satu migrasi maju. Tanpa
 // database di CI, invariannya diperiksa dari teks migrasinya: jangkar eksak,
 // kolom yang ditulis, pengaman nilai, dan hak akses RPC impor.
-const NAMA = "20261031170000_promo_atribusi_klinik_dan_impor_daftar.sql";
+const NAMA = "20261104150000_promo_atribusi_klinik_dan_impor_daftar.sql";
 const SQL = readFileSync(`supabase/migrations/${NAMA}`, "utf8");
 const potong = (awal: string, akhir: string) => SQL.slice(SQL.indexOf(awal), SQL.indexOf(akhir));
 
@@ -91,6 +91,11 @@ describe("RPC impor daftar promo", () => {
     expect(rpc).toContain("security definer set search_path = ''");
     expect(SQL).toContain("revoke all on function public.import_promo_master(jsonb) from public, anon, service_role;");
     expect(SQL).toContain("grant execute on function public.import_promo_master(jsonb) to authenticated;");
+  });
+  it("mengubah JSON null cabang menjadi array kosong sebelum ekspansi", () => {
+    // Payload aplikasi memakai null untuk semua cabang. COALESCE saja tidak
+    // mengubah JSON null menjadi SQL NULL; jsonb_array_elements_text menolak scalar.
+    expect(rpc).toContain("coalesce(nullif(v_entry -> 'branch_ids', 'null'::jsonb), '[]'::jsonb)");
   });
   it("memperbarui promo bernama sama beserta daftar barangnya, bukan menggandakan", () => {
     expect(rpc).toContain("select * into v_existing from public.promos p where lower(btrim(p.name)) = lower(v_name) for update;");

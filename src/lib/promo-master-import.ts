@@ -17,6 +17,8 @@ export type PromoMasterExisting = {
   item_ids: string[];
   /** Promo hasil impor per-SKU lama: target & satuannya dikunci trigger database. */
   locked: boolean;
+  /** Hanya per_unit yang didukung format daftar ini. */
+  discount_mode?: string;
 };
 
 export type PromoMasterPlan = {
@@ -133,6 +135,13 @@ export function reviewPromoMaster(
   const byCode = new Map(master.items.map(item => [item.code.toLowerCase(), item]));
   const branchByCode = new Map(master.branches.flatMap(branch => (branch.code ? [[branch.code.toLowerCase(), branch] as const] : [])));
   const existingByName = new Map(master.existing.map(promo => [promo.name.trim().toLowerCase(), promo]));
+  const ambiguousNames = new Set<string>();
+  const seenNames = new Set<string>();
+  for (const promo of master.existing) {
+    const key = promo.name.trim().toLowerCase();
+    if (seenNames.has(key)) ambiguousNames.add(key);
+    seenNames.add(key);
+  }
   const label = (id: string) => master.itemLabels?.[id] ?? id;
 
   const errors = new Map<number, string>();
@@ -224,8 +233,12 @@ export function reviewPromoMaster(
     }
 
     const existing = existingByName.get(key) ?? null;
-    if (existing && existing.promo_type !== "diskon_produk") {
+    if (ambiguousNames.has(key)) {
+      setError(indexes[0], "Nama ini dipakai lebih dari satu promo; rapikan dulu di layar promo");
+    } else if (existing && existing.promo_type !== "diskon_produk") {
       setError(indexes[0], `Nama ini sudah dipakai promo jenis ${existing.promo_type}; ganti nama promo`);
+    } else if (existing?.discount_mode && existing.discount_mode !== "per_unit") {
+      setError(indexes[0], "Promo ini memakai perhitungan total per paket; ubah lewat layar promo");
     } else if (existing?.locked) {
       setError(indexes[0], "Promo ini dibuat lewat impor per-SKU dan targetnya dikunci; buat nama baru");
     }

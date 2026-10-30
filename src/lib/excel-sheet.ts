@@ -14,7 +14,7 @@ export type TemplateColumn = {
   numFmt?: string;
 };
 
-const MAX_BYTES = 1_000_000;
+export const EXCEL_SHEET_MAX_BYTES = 1_000_000;
 
 function excelDate(value: Date): string {
   return value.toISOString().slice(0, 10);
@@ -45,7 +45,7 @@ export async function readSheetRows(bytes: Uint8Array, opts: {
   /** Kolom yang boleh tidak ada di berkas lama; dibaca sebagai string kosong. */
   optional?: readonly string[];
 }): Promise<SheetRow[]> {
-  if (bytes.length === 0 || bytes.length > MAX_BYTES) throw new Error("File Excel harus 1 byte sampai 1 MB");
+  if (bytes.length === 0 || bytes.length > EXCEL_SHEET_MAX_BYTES) throw new Error("File Excel harus 1 byte sampai 1 MB");
   const book = new ExcelJS.Workbook();
   await book.xlsx.load(Buffer.from(bytes) as never);
   const sheet = book.getWorksheet(opts.sheet);

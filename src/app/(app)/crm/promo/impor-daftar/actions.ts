@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { readCompleteList } from "@/lib/checked-list";
+import { EXCEL_SHEET_MAX_BYTES } from "@/lib/excel-sheet";
 import { PROMO_MASTER_MAX_ROWS, readPromoMasterExcel, type PromoMasterExcelRow } from "@/lib/promo-master-excel";
 import {
   reviewPromoMaster,
@@ -29,7 +30,7 @@ type Db = Awaited<ReturnType<typeof managerClient>>;
 
 type PromoRow = {
   id: string; name: string; promo_type: string;
-  rule: { suggest?: unknown; min_subtotal?: unknown } | null;
+  rule: { suggest?: unknown; min_subtotal?: unknown; discount_mode?: string } | null;
   discount_type: "percent" | "nominal" | null; discount_value: number | null;
   auto_apply: boolean; branch_ids: string[] | null;
   valid_from: string | null; valid_until: string | null;
@@ -113,6 +114,7 @@ async function review(db: Db, rows: PromoMasterExcelRow[]): Promise<PromoMasterR
     min_subtotal: angka(promo.rule?.min_subtotal), suggest: promo.rule?.suggest == null ? null : String(promo.rule.suggest),
     item_ids: perPromo.get(promo.id) ?? [],
     locked: terkunci.has(promo.id),
+    discount_mode: promo.rule?.discount_mode ?? "per_unit",
   }));
 
   return reviewPromoMaster(rows, { items, branches, existing, itemLabels });
@@ -124,6 +126,9 @@ export async function previewPromoMaster(formData: FormData): Promise<PromoMaste
     const file = formData.get("file");
     if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".xlsx")) {
       throw new Error("Pilih file Excel .xlsx dari format daftar promo.");
+    }
+    if (file.size < 1 || file.size > EXCEL_SHEET_MAX_BYTES) {
+      throw new Error("File Excel harus 1 byte sampai 1 MB");
     }
     const rows = await readPromoMasterExcel(new Uint8Array(await file.arrayBuffer()));
     return await review(db, rows);

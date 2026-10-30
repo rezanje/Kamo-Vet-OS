@@ -243,7 +243,7 @@ begin
       raise exception 'Daftar cabang promo % tidak valid', v_name using errcode = '22023';
     end if;
     select array_agg(distinct x::uuid order by x::uuid) into v_branch_ids
-    from jsonb_array_elements_text(coalesce(v_entry -> 'branch_ids', '[]'::jsonb)) x;
+    from jsonb_array_elements_text(coalesce(nullif(v_entry -> 'branch_ids', 'null'::jsonb), '[]'::jsonb)) x;
     if v_branch_ids is not null then
       perform id from public.branches where id = any(v_branch_ids) order by id for share;
       if (select count(*) from public.branches b where b.id = any(v_branch_ids) and b.is_active

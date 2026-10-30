@@ -199,6 +199,25 @@ describe("preview perubahan promo lama", () => {
     expect(hasil.diffs[0]).toMatchObject({ status: "sama", itemsAdded: [], itemsRemoved: [], changes: [] });
   });
 
+  it("menolak nama master yang ambigu sebelum menampilkan diff atau mengizinkan simpan", () => {
+    const hasil = reviewPromoMaster([baris()], {
+      ...MASTER, existing: [lama, { ...lama, id: "promo-2", name: " PROMO NOVEMBER " }],
+    });
+    expect(hasil.valid).toBe(false);
+    expect(hasil.plans).toEqual([]);
+    expect(hasil.diffs).toEqual([]);
+    expect(hasil.rows[0].error).toContain("lebih dari satu promo");
+  });
+
+  it("menolak promo total per paket di preview, sama seperti RPC simpan", () => {
+    const hasil = reviewPromoMaster([baris()], {
+      ...MASTER, existing: [{ ...lama, discount_mode: "package_total" }],
+    });
+    expect(hasil.valid).toBe(false);
+    expect(hasil.plans).toEqual([]);
+    expect(hasil.rows[0].error).toContain("total per paket");
+  });
+
   it("menolak menimpa promo jenis lain dan promo hasil impor per-SKU", () => {
     const bundling = reviewPromoMaster([baris()], { ...MASTER, existing: [{ ...lama, promo_type: "bundling" }] });
     expect(bundling.rows[0].error).toContain("sudah dipakai promo jenis bundling");

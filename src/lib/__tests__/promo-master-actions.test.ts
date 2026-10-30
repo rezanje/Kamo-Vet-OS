@@ -84,7 +84,9 @@ it("menolak berkas yang bukan .xlsx tanpa menyentuh master", async () => {
 });
 
 it.each([
-  ["kasir", { role: "KASIR", is_active: true }],
+  ["staff", { role: "STAFF", is_active: true }],
+  ["doctor", { role: "DOCTOR", is_active: true }],
+  ["finance", { role: "FINANCE", is_active: true }],
   ["admin nonaktif", { role: "ADMIN", is_active: false }],
 ])("menolak unggahan dari %s", async (_label, profile) => {
   state.profile = profile;
@@ -98,6 +100,17 @@ it.each([
 it("menolak unggahan tanpa sesi", async () => {
   state.user = null;
   expect((await simpanPromoMaster([baris()])).message).toContain("Sesi berakhir");
+  expect(state.calls).toEqual([]);
+});
+
+it("menolak file lebih dari 1 MB sebelum membacanya ke memori", async () => {
+  const file = new File([new Uint8Array(1024 * 1024 + 1)], "besar.xlsx");
+  const form = new FormData();
+  form.set("file", file);
+  const read = vi.spyOn(file, "arrayBuffer");
+  const hasil = await previewPromoMaster(form);
+  expect(hasil.error).toContain("1 MB");
+  expect(read).not.toHaveBeenCalled();
   expect(state.calls).toEqual([]);
 });
 
