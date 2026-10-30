@@ -38,6 +38,9 @@ base = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(base)
 
 NEW_MIGRATION = '20261101120000_impor_penulis_riwayat_bersama.sql'
+# Later migrations that build on kamo_import: left out of the bootstrap here (they need this migration first)
+# and covered by their own harness (scripts/test-riwayat-bersama-hewan-postgres.py).
+DEPENDENT_MIGRATIONS = {'20261104010000_rs2_riwayat_bersama_hewan.sql'}
 MIGRATION_FILE = ROOT / 'supabase/migrations' / NEW_MIGRATION   # --migration overrides (mutation checks)
 WRITER_ROLE = 'kamo_legacy_import_writer'
 OWNER, STAFF, BR_A = base.OWNER, base.STAFF, base.BRANCH
@@ -596,7 +599,7 @@ def concurrency(d, header):
 
 
 def fresh_without_new(pg_bin, raw):
-    """Bootstrap every repo migration except the new one (the caller applies it under test conditions)."""
+    """Bootstrap every repo migration except the new one and its dependents (the caller applies it under test)."""
     import tempfile
     raw.sql("create role authenticator login noinherit;")
     # The repo tree is never touched: the bootstrap reads a temp root holding links to every other migration.
@@ -604,7 +607,7 @@ def fresh_without_new(pg_bin, raw):
         mig = Path(tmp) / 'supabase/migrations'
         mig.mkdir(parents=True)
         for f in (ROOT / 'supabase/migrations').glob('*.sql'):
-            if f.name != NEW_MIGRATION:
+            if f.name != NEW_MIGRATION and f.name not in DEPENDENT_MIGRATIONS:
                 (mig / f.name).symlink_to(f)
         saved, base.fixture.ROOT = base.fixture.ROOT, Path(tmp)
         try:
@@ -690,12 +693,13 @@ def gate_rollback(pg_bin):
                    not ok and left == 'true/true/true' and role_state == role_expect, f'failed={not ok} left={left} role={role_state} {msg[:110]}')
 
 
-def hosted_emulation(pg_bin):
+def hosted_emulation(pg_bin, after=None):
     """Runner like Supabase `postgres`: NOT superuser, CREATEROLE + BYPASSRLS, owns the tables it changes.
 
     Proves the ownership transfer + post-check work for a non-superuser runner (SET membership, temporary
     CREATE, revoke granted-by-runner, the creator's leftover ADMIN-only membership). It does NOT prove hosted
     Supabase specifics (supautils, real grants on auth, default privileges); those stay an operational gate.
+    `after(raw)` (optional) runs on the same cluster afterwards, for harnesses of migrations built on this one.
     """
     from native_postgres import NativePostgres
     with NativePostgres(pg_bin) as raw:
@@ -736,6 +740,8 @@ def hosted_emulation(pg_bin):
         r = subprocess.run(raw.as_user + [raw.psql, '-X', '-qAt', '-h', str(raw.root), '-U', 'mig_emul', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
                            input=f"set role {WRITER_ROLE};", text=True, capture_output=True, env={**os.environ, 'PSQLRC': '/dev/null'})
         record('Emulasi hosted: runner tidak bisa SET ROLE ke role penulis sesudah migrasi', r.returncode != 0, (r.stderr.strip().splitlines() or [''])[0][:120])
+        if after:
+            after(raw)   # later migrations' harnesses continue on the same non-superuser runner
 
 
 def main():
