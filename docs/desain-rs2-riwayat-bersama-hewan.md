@@ -1,7 +1,11 @@
-# RS-2 — Riwayat bersama terlihat di jalur normal pasien (checkpoint desain)
+# RS-2 — Riwayat bersama terlihat di jalur normal pasien
 
-Status: **USULAN, belum diimplementasi.** Menunggu review independen sebelum kode keamanan/migrasi ditulis.
-Tidak ada apply produksi, merge, atau deploy dalam izin saat ini.
+Status:
+- **Kode dan tes draft** sudah ada (§8). Pengerjaannya mengikuti review desain atas checkpoint 1f4b4dc: batas
+  OWNER-only diterima, dan tiga koreksi sudah diterapkan di §4.3.
+- **SQL final** ada di `supabase/migrations/20261104010000_rs2_riwayat_bersama_hewan.sql`. Teks §4.1 adalah ringkasan;
+  bila berbeda, file migrasi yang berlaku. SQL final masih menunggu review independen.
+- Tidak ada apply produksi, merge, atau deploy dalam izin saat ini. Semuanya butuh izin terpisah.
 Basis: `main` 847fd9d (PR345 DP→Ranap, berisi PR342 9b7c47d).
 
 ## 1. Gejala (UAT 30 Okt 2026)
@@ -230,34 +234,73 @@ terbaca OWNER.
   tidak punya EXECUTE pada kelima fungsi. Pada validator, hanya pemiliknya yang punya EXECUTE.
 - Role penulis tetap `NOLOGIN NOBYPASSRLS`, tanpa anggota setelah transaksi, dan tanpa CREATE pada `kamo_import`.
 - Fungsi `kamo_import` lama (pemilik, ACL, dan definisi) identik dengan sebelum migrasi.
-- Daftar hak tabel/kolom serta kebijakan `kamo_import_*` identik dengan keadaan sebelum migrasi
-  (snapshot dihitung di awal transaksi dan dibandingkan di akhir).
-- Sidik `auth.uid` dan `kamo_import.uid_permintaan` tidak berubah (gerbang yang sama dengan PR342).
-- Definisi `user_can_access_branch`, `operational_branch_isolation`, dan `visits_select` tidak berubah.
+- Jepretan diambil di awal transaksi (fungsi sementara sesi `pg_temp.rs2_jepret`) dan dibandingkan di akhir.
+  Isinya harus identik:
+  - hak tabel/kolom role penulis;
+  - **semua** kebijakan RLS skema `public` (nama, perintah, jenis, role, USING, WITH CHECK);
+  - fungsi `kamo_import` lama ditambah `user_can_access_branch`, `can_read_legacy_medical_history`,
+    `has_role_capability`, `is_admin`, `hasil_impor_rekam_medis`, dan `auth.uid` (definisi, pemilik, ACL);
+  - keanggotaan dan atribut role penulis;
+  - ACL skema `kamo_import`.
+- Prasyarat menolak bila salah satu kondisi ini tidak terpenuhi:
+  - keadaan pasca-PR342 tepat (14 fungsi `kamo_import`, role sempit);
+  - sidik `auth.uid` dan kesetaraan `uid_permintaan`;
+  - kebijakan `kamo_import_baca` yang diandalkan ada;
+  - hak kolom yang dibaca sudah ada.
 
-### 4.3 Aplikasi
+  Migrasi ini tidak memberi hak apa pun yang kurang.
+- Isi fungsi diperiksa:
+  - validator memuat cek OWNER aktif dan header;
+  - pembaca memvalidasi sebelum `return query`;
+  - pembaca hanya memuat `branch_id is null and legacy_source_key is not null`, join konsistensi pelanggan↔hewan,
+    dan `limit 1` rekam medis;
+  - pembaca tidak memuat DML maupun `auth.uid`;
+  - batas halaman 0–10000 / 1–200;
+  - pembungkus memanggil pembaca yang benar.
+- Skema sementara sesi migrasi itu sendiri dikecualikan dari cek CREATE skema. Postgres melaporkan CREATE di sana
+  untuk setiap role yang punya hak TEMP, padahal itu bukan hak yang diberikan, dan skema tersebut hilang di akhir sesi.
 
-- **Daftar** (`/klinik/rekam-medis?pet=…`): RPC dipanggil hanya bila tiga syarat terpenuhi:
-  - ada `pet`;
-  - cabang aktif spesifik (header ada dan bukan `all`);
-  - profil pemanggil OWNER aktif.
+### 4.3 Aplikasi (setelah koreksi review 1–3)
 
-  RPC dibaca per 200 baris sampai habis, dengan batas 1.000 baris (lima halaman). Batas ini sama dengan
-  pola `readCompleteList`. Baris RPC digabung dengan baris normal dan **dideduplikasi per `visit_id`**, lalu
-  diurutkan seperti sekarang. Label cabangnya "Riwayat lama · semua cabang".
+**Koreksi 1 — batas 1.000 eksplisit, gabung tanpa duplikat, paginasi konsisten.**
+- `bacaRiwayatBersamaHewan` (`src/lib/riwayat-bersama.ts`) membaca per 200 baris sampai halaman pendek.
+- Setelah lima halaman penuh, baris ke-1.001 dicek eksplisit (`dari=1000, jumlah=1`). Bila ada, halaman gagal
+  dengan pesan "melebihi 1.000 baris dan belum dapat ditampilkan lengkap". Data tidak pernah dipotong diam-diam
+  dan tidak pernah diklaim lengkap. Ini sejalan dengan `readCompleteList`, yang gagal bila melebihi 10.000.
+- Daftar biasa (`readCompleteList`) dan riwayat bersama digabung per `visit_id`. Baris riwayat bersama dari SELECT
+  biasa (mode "Semua cabang") **diganti** baris pembaca, bukan digandakan.
+- Hasil gabungan diurutkan seperti query biasa (terbaru dulu, lalu id). Pencarian dan paginasi tetap berjalan
+  di atas hasil gabungan, jadi totalnya konsisten.
 
-  Penanganan galat:
-  - galat 42501 berarti bukan OWNER atau header tidak sah, dan RPC dilewati diam-diam;
-  - galat lain memunculkan pemberitahuan kecil "Riwayat lama bersama gagal dimuat" tanpa menggagalkan riwayat cabang.
+**Koreksi 2 — kosong ≠ gagal.**
+- Galat apa pun dianggap "gagal", termasuk 42501, galat koneksi, bentuk jawaban aneh, atau jumlah baris melebihi
+  permintaan. Untuk daftar, akibatnya `ListLoadFailure` dengan pesan generik, tanpa tabel dan tanpa "Belum ada riwayat".
+- Daftar juga gagal bila:
+  - profil atau hewan tidak terbaca;
+  - ada baris yang `pet_id`/`customer_id`-nya tidak cocok;
+  - ada ID ganda;
+  - SELECT biasa melihat riwayat bersama yang ditolak pembaca (relasi tidak konsisten).
+- Detail hanya `notFound()` bila pembaca menjawab **kosong** dan bacaan biasa tidak menemukan apa-apa tanpa galat.
+  Selain itu `RekamMedisGagalDimuat` ("Rekam medis belum dapat dimuat. Coba muat ulang."), tanpa detail database.
+  Galat bacaan biasa untuk kunjungan non-bersama juga menjadi pesan gagal, bukan 404.
 
-  Tanpa `pet`, daftar umum tidak berubah. Ini disengaja agar cakupannya per hewan saja.
-- **Detail** (`/klinik/rekam-medis/[visitId]`): bila select normal kosong dan pemanggil OWNER, aplikasi memanggil
-  `detail_riwayat_bersama`.
-  - Jika ada hasil, halaman merender tampilan **baca-saja** "Riwayat lama (hasil impor)". Isinya tanggal, dokter,
-    keluhan, anamnesis, gejala klinis, diagnosis, terapi, serta hewan/pemilik dari jalur normal.
-  - Tidak ada form, tombol simpan, adendum, invoice, atau rawat inap. D2 tetap menolak tulisan di database.
-  - Hasil kosong atau galat apa pun berujung `notFound()`, sama seperti sekarang.
-- **Mode "Semua cabang"**: tidak memanggil RPC. Jalur normal sudah menampilkan riwayat, jadi tidak ada duplikasi.
+**Koreksi 3 — renderer baca-saja yang sama di kedua mode.**
+- OWNER aktif yang membuka kunjungan riwayat bersama selalu mendapat `RiwayatBersamaDetail`, baik di cabang aktif
+  (SELECT biasa kosong) maupun "Semua cabang" sungguhan (SELECT biasa melihatnya). Kunjungan riwayat bersama di sini
+  berarti kunjungan tanpa cabang dan berjejak impor.
+- Isinya: tanggal (WIB), dokter, keluhan, anamnesis, gejala klinis, diagnosis, **terapi dari
+  `medical_records.catatan_resep`** (bukan `record.therapy`), serta hewan dan pemilik dari `pets`.
+  `pets.customer_id` wajib sama dengan `customer_id` pembaca.
+- Halaman ini tidak punya form, tombol, tagihan, persetujuan, adendum, maupun rawat inap. Satu-satunya tautan
+  kembali ke riwayat hewan.
+- Daftar per hewan untuk OWNER selalu memakai pembaca, di kedua mode.
+
+**Tidak berubah:**
+- ADMIN, DOCTOR, STAFF, FINANCE, dan OWNER nonaktif (tidak ada panggilan RPC; perilaku lama);
+- daftar umum tanpa `pet`;
+- kunjungan bercabang;
+- header (tetap dari middleware);
+- tidak ada service-role, tidak ada pindah cabang, tidak ada relink.
 
 ### 4.4 Prototipe lokal (bukan tes final, bukan produksi)
 
@@ -294,7 +337,7 @@ dan pemindahan pemilik ala §10 PR342.
 - **Hanya OWNER.** ADMIN, DOCTOR, STAFF, FINANCE, OWNER nonaktif, dan anon ditolak. Perluasan ke ADMIN atau
   dokter adalah keputusan terpisah (D3).
 
-## 6. Rencana tes (setelah desain disetujui)
+## 6. Rencana tes (terlaksana, lihat §8)
 
 **Harness SQL** (PG16 dan PG17, data fiktif): harness baru, atau perluasan `test-impor-rekam-medis-rls-postgres.py`.
 

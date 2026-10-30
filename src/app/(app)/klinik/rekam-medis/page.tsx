@@ -1,4 +1,4 @@
-import { readCompleteList, TABLE_PAGE_SIZE } from "@/lib/checked-list";
+import { ListLoadError, readCompleteList, TABLE_PAGE_SIZE } from "@/lib/checked-list";
 import { infoHalaman } from "@/lib/pagination";
 import { ListPagination, ListLoadFailure } from "@/components/ListPagination";
 import Link from "next/link";
@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { saringDaftarRekamMedis, type BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
 import { hasActiveInpatient, statusPasienRekamMedis, type CatatanStatusRawatInap } from "@/lib/status-pasien-rekam-medis";
+import { adalahRiwayatBersama, bacaRiwayatBersamaHewan, ownerAktif, PESAN_GAGAL_RIWAYAT_BERSAMA, type RiwayatBersama } from "@/lib/riwayat-bersama";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 
 type Rel<T> = T | T[] | null;
@@ -45,6 +46,7 @@ export default async function DaftarRekamMedisPage({
     id: string;
     created_at: string;
     pet_id: string | null;
+    branch_id: string | null;
     dokter: string | null;
     keluhan: string | null;
     legacy_source_key: string | null;
@@ -59,7 +61,7 @@ export default async function DaftarRekamMedisPage({
   try {
     data = await readCompleteList<SourceRow>(async (from, to) => {
       let query = supabase.from("visits")
-        .select("id, pet_id, created_at, dokter, keluhan, legacy_source_key, pets(name, species, breed), customers(name, phone), branches(code), medical_records!inner(diagnosis, anamnesis), inpatient_records(created_at, discharged_at, condition_status)", { count: "exact" })
+        .select("id, pet_id, branch_id, created_at, dokter, keluhan, legacy_source_key, pets(name, species, breed), customers(name, phone), branches(code), medical_records!inner(diagnosis, anamnesis), inpatient_records(created_at, discharged_at, condition_status)", { count: "exact" })
         .order("created_at", { ascending: false }).order("id");
       if (petId) query = query.eq("pet_id", petId);
       const result = await query.range(from, to);
@@ -67,7 +69,57 @@ export default async function DaftarRekamMedisPage({
     }, "Rekam medis");
   } catch (error) { return <ListLoadFailure error={error} label="Rekam medis" />; }
 
-  const rows: RekamRow[] = data.map((visit) => {
+  // RS-2: riwayat bersama hasil impor (tanpa cabang) satu hewan untuk OWNER aktif. Dibaca lewat RPC baca-saja
+  // di cabang aktif maupun "Semua cabang", jadi tampilannya sama; baris yang sama dari SELECT biasa diganti,
+  // bukan digandakan. Gagal/terlalu banyak = halaman gagal, tidak pernah dianggap kosong atau lengkap.
+  type PetRow = { id: string; customer_id: string | null; name: string | null; species: string | null; breed: string | null; customers: Rel<{ name: string; phone: string | null }> };
+  let shared: RiwayatBersama[] = [];
+  let sharedPet: PetRow | null = null;
+  const replaced = new Set<string>();
+  if (petId) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (await ownerAktif(supabase, user?.id)) {
+        const { data: pet, error } = await supabase.from("pets")
+          .select("id, customer_id, name, species, breed, customers(name, phone)").eq("id", petId).maybeSingle();
+        if (error) throw new ListLoadError(PESAN_GAGAL_RIWAYAT_BERSAMA);
+        if (pet) {
+          if (typeof pet.customer_id !== "string") throw new ListLoadError(PESAN_GAGAL_RIWAYAT_BERSAMA);
+          sharedPet = pet as PetRow;
+          shared = await bacaRiwayatBersamaHewan(supabase, petId, pet.customer_id);
+        }
+        const sharedIds = new Set(shared.map((row) => row.visit_id));
+        for (const visit of data) {
+          if (!adalahRiwayatBersama(visit)) continue;
+          // Riwayat bersama yang terlihat di SELECT biasa tapi ditolak pembaca (relasi tidak konsisten) = gagal.
+          if (!sharedIds.has(visit.id)) throw new ListLoadError(PESAN_GAGAL_RIWAYAT_BERSAMA);
+          replaced.add(visit.id);
+        }
+      }
+    } catch (error) { return <ListLoadFailure error={error} label="Rekam medis" />; }
+  }
+
+  const sharedOwner = one(sharedPet?.customers ?? null);
+  const sharedOwnerInvalid = isPlaceholderOwnerName(sharedOwner?.name);
+  const sharedRows: RekamRow[] = shared.map((row) => ({
+    id: row.visit_id,
+    date: row.tanggal,
+    petId: row.pet_id,
+    ownerName: sharedOwnerInvalid ? "Pemilik perlu verifikasi" : sharedOwner?.name ?? "—",
+    petName: sharedPet?.name ?? "—",
+    phone: sharedOwnerInvalid ? "" : sharedOwner?.phone ?? "",
+    species: sharedPet?.species ?? null,
+    breed: sharedPet?.breed ?? null,
+    doctor: row.dokter,
+    branch: null,
+    note: row.anamnesis ?? row.keluhan,
+    diagnosis: row.diagnosis,
+    isImported: true,
+    activeInpatient: false,
+    patientStatus: statusPasienRekamMedis(null, true),
+  }));
+
+  const normalRows: RekamRow[] = data.filter((visit) => !replaced.has(visit.id)).map((visit) => {
     const pet = one(visit.pets);
     const owner = one(visit.customers);
     const branch = one(visit.branches);
@@ -91,6 +143,10 @@ export default async function DaftarRekamMedisPage({
       patientStatus: statusPasienRekamMedis(visit.inpatient_records, Boolean(visit.legacy_source_key)),
     };
   });
+  // Urutan sama dengan query biasa: terbaru dulu, lalu id.
+  const rows = sharedRows.length
+    ? [...normalRows, ...sharedRows].sort((a, b) => Date.parse(b.date) - Date.parse(a.date) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    : normalRows;
   const fullHistory = tampilan === "semua" || !!petId;
   const displayMode = fullHistory ? "semua" : "rawat-jalan";
   const filtered = saringDaftarRekamMedis(fullHistory ? rows : rows.filter(row => !row.activeInpatient), q);
