@@ -170,9 +170,14 @@ export default async function DaftarRekamMedisPage({
             {selectedPet ? `Riwayat ${selectedPet.petName} · ${selectedPet.ownerName}` : "Riwayat pemeriksaan seluruh cabang klinik"}
           </div>
         </div>
-        <Link href="/klinik/rekam-medis/impor" className="btn-acc" style={{ textDecoration: "none", background: "var(--posb)" }}>
-          <i className="ti ti-file-import" /> Import rekam medis
-        </Link>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Link href="/klinik/rekam-medis/perlu-dilengkapi" className="btn-def" style={{ textDecoration: "none" }}>
+            <i className="ti ti-clipboard-list" /> Perlu dilengkapi
+          </Link>
+          <Link href="/klinik/rekam-medis/impor" className="btn-acc" style={{ textDecoration: "none", background: "var(--posb)" }}>
+            <i className="ti ti-file-import" /> Import rekam medis
+          </Link>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(150px, 1fr))", gap: 12, marginBottom: 14 }}>
