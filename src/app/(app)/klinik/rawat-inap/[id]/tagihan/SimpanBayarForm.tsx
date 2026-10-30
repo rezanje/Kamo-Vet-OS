@@ -28,7 +28,7 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
   const submitting = useRef(false);
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState<{ quote: RanapPaymentQuote; draft: FormData; draftVersion:string } | null>(null);
-  const displayedParts = presentation && parts.length === 1 && parts[0].method !== "Tunai" && !singleManual
+  const displayedParts = presentation && parts.length === 1 && accounts.some(account => account.method === parts[0].method) && parts[0].method !== "Tunai" && !singleManual
     ? [{ ...parts[0], amount: String(remaining) }] : parts;
   const total = displayedParts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const excess = Math.max(0, total - remaining);

@@ -63,6 +63,15 @@ it("cancelling and changing a method cannot reuse the prior owner-credit acknowl
   await submit();await click("Batal");await click("Transfer");await submit();
   expect(boundary.rpc.mock.calls[1][1].p_overpayment_ack).toBeNull();expect(boundary.rpc.mock.calls[1][1].p_parts).toEqual([{method:"Transfer",amount:335000}]);
 });
+it("keeps save-without-payment available when the authoritative quote has no mapped accounts",async()=>{
+  await render({...data,quote:{...data.quote,accounts:[]}});
+  expect(host.querySelector<HTMLInputElement>('[aria-label="Jumlah Bayar"]')!.value).toBe("");
+  boundary.rpc.mockResolvedValue(saved);await submit();
+  expect(boundary.rpc).toHaveBeenCalledTimes(1);
+  expect(boundary.rpc.mock.calls[0][1].p_parts).toEqual([]);
+  expect(boundary.rpc.mock.calls[0][1].p_rows).toEqual([expect.objectContaining({id:"source-rx",qty:1,harga:150000})]);
+  expect(boundary.push).toHaveBeenCalledTimes(1);
+});
 it("preserves save-later and compound warning while a database refusal never reports success",async()=>{
   await render({...data,compound_pending:true});await submit();expect(boundary.rpc).not.toHaveBeenCalled();
   await act(async()=>host.querySelector<HTMLInputElement>('[aria-label="Konfirmasi racikan belum siap"]')!.click());
