@@ -211,7 +211,8 @@ export default async function RekamMedisPage({
   const providerOpsi = recorded ? [] : performersForService(dokterOpsi, visit.poli);
 
   // Koreksi hanya bila resep & racikan juga terbaca (syarat lama tetap berlaku).
-  const canCorrect = !correctionDataFailed && correctionCheck.data === true && !correctionCheck.error;
+  const canCorrect = !correctionDataFailed && correctionCheck.data === true && !correctionCheck.error
+    && !latestInvoice.error && !latestInvoice.data;
   const invoiceCheck = menungguBayar && mrId ? latestInvoice : { data: null, error: null };
   const canAddRacikan = !!(menungguBayar && !visit.checked_out_at && mrId && !mrLoadFailed
     && !correctionDataFailed && !invoiceCheck.error && !invoiceCheck.data);
