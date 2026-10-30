@@ -1,0 +1,70 @@
+Applied 329 repository migrations to isolated PostgreSQL 17.11 (Debian 17.11-0+deb13u1) with fictional auth/storage shims.
+PASS  initial-STAFF-header-DP-preserved: {'total': 1000000, 'header_DP': 500000.0, 'wallet': 0}
+PASS  STAFF-repeat-zero-DP-no-override: 300000 new AR, no money required
+PASS  repeat-posts-real-revenue-AR-not-money: {'total': 1300000, 'received': 500000, 'remaining': 800000, 'optional_50_percent': 400000}
+PASS  repeat-stage-idempotent-no-duplicates: {'invoices': 2.0, 'stays': 1.0, 'journals': 2.0, 'moves': 0.0, 'stock': 200.0, 'records': 1.0, 'prescriptions': 5.0}
+PASS  combined-remaining-not-added-items-or-cumulative-target: {'formula': '(1000000 + 300000 + 200000 - 500000) * 0.5', 'remaining': 1000000, 'optional_DP': 500000}
+PASS  later-mixed-receipt-oldest-initial-first: {'initial_received': 1000000.0, 'next_stage_received': 0.0}
+PASS  cancellation-restores-header-net-and-method-accounts: {'received': 500000.0, 'cash': 500000.0, 'bank': 0.0}
+PASS  outpatient-minimum: ERROR:  DP_MINIMAL: minimal 50% = Rp 50000, baru diterima Rp 10000
+CONTEXT:  PL/pgSQL function clinic_private.enforce_min_dp(uuid,text) line 21 at RAISE
+SQL statement "SELECT clinic_private.enforce_min_dp(v_invoice_id, p_invoice ->> 'dp_override_reason')"
+PL/pgSQL function public.clinic_post_invoice(uuid,text,jsonb,jsonb) line 498 at PERFORM
+authenticated
+fa100000-0000-4000-8000-000000000004
+
+PASS  first-stage-minimum: ERROR:  DP_MINIMAL: minimal 50% = Rp 50000, baru diterima Rp 0
+CONTEXT:  PL/pgSQL function clinic_private.enforce_min_dp(uuid,text) line 21 at RAISE
+SQL statement "SELECT clinic_private.enforce_min_dp(v_invoice_id, p_invoice ->> 'dp_override_reason')"
+PL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 83 at PERFORM
+authenticated
+fa100000-0000-4000-8000-000000000004
+
+PASS  all-journals-balanced: Real revenue/AR/cash/bank values checked, not only aggregate balance
+PASS  repeat-zero-DP-stock-FIFO-HPP-once: {'stock_before': 200.0, 'stock_after': 198.0, 'revenue': -50000.0, 'HPP': 4000.0, 'state': {'invoices': 2.0, 'stays': 1.0, 'journals': 10.0, 'moves': 1.0, 'stock': 198.0, 'records': 1.0, 'prescriptions': 4.0}}
+PASS  cross-branch-repeat-denied-no-effects: ERROR:  ACCESS_DENIED: kunjungan tidak ditemukan atau cabang tidak diizinkan
+CONTEXT:  PL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 27 at RAISE
+authenticated
+fa100000-0000-4000-8000-000000000007
+
+PASS  inactive-repeat-denied-no-effects: ERROR:  ACCESS_DENIED: kunjungan tidak ditemukan atau cabang tidak diizinkan
+CONTEXT:  PL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 27 at RAISE
+authenticated
+fa100000-0000-4000-8000-000000000006
+
+PASS  client-defer-still-rejected: ERROR:  STAGE_INVALID: uang tagihan tahap hanya lewat kwitansi kunjungan
+CONTEXT:  PL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 45 at RAISE
+authenticated
+fa100000-0000-4000-8000-000000000004
+
+PASS  initial-stage-advance-minimum-preserved: {'total': 100000.0, 'dp': 0.0, 'status': 'DP', 'baris': 1.0, 'bayar': 1.0, 'jurnal': 13.0, 'stok': 198.0}
+PASS  cancelled-initial-receipt-active-invoice-still-qualifies: Initial minimum was met at issue; later release/cancellation preserves audit and active invoice, no mandatory recollection
+PASS  void-original-plus-pending-replacement-not-qualifying: ERROR:  DP_MINIMAL: minimal 50% = Rp 100000, baru diterima Rp 0
+CONTEXT:  PL/pgSQL function clinic_private.enforce_min_dp(uuid,text) line 21 at RAISE
+SQL statement "SELECT clinic_private.enforce_min_dp(v_invoice_id, p_invoice ->> 'dp_override_reason')"
+PL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 83 at PERFORM
+authenticated
+fa100000-0000-4000-8000-000000000004
+
+PASS  completed-reissue-qualifies-header-money-counted-once: {'active_total': 1200000, 'active_received': 500000.0, 'remaining': 700000, 'optional_DP': 350000}
+PASS  concurrent-zero-DP-double-submit-once: {'lock_barriers': [{'pid': 649903, 'blockers': [649901], 'wait_event_type': 'Lock', 'wait_event': 'advisory', 'query': 'select public.clinic_post_inpatient_stage_invoice(\'fa600000-0000-4000-8000-000000000323\',\'parallel-repeat\',\'{"tanggal": "2026-11-03", "subtotal": 50000, "discount": 0, "tax": 0, "total": 50000, "dp_amount": 0, "dp_date": null, "paid_status": "Belum Lunas", "metode_bayar": "Tunai", "shift_id": "fab00000-0000-4000-8000-000000000004", "voucher_code": null, "salesperson_id": null}\'::jsonb,\'[{"description": "Obat Fiktif", "qty": 2, "price": 25000, "kind": "obat", "item_id": "fa800000-0000-4000-8000-000000000001", "unit": "pcs", "prescription_item_id": "fa900000-0000-4000-8000-000000003233", "recipe_id": null, "discount_percent": 0}]\'::jsonb);'}], 'outcome': {'ok': True, 'result': ['97186278-cbe8-41e4-bb30-3ceacb89eb10'], 'rpc_seconds': 0.0141}}
+PASS  repeat-role-rechecked-after-coordinator-wait: {'lock_barriers': [{'pid': 649947, 'blockers': [649945], 'wait_event_type': 'Lock', 'wait_event': 'advisory', 'query': 'select public.clinic_post_inpatient_stage_invoice(\'fa600000-0000-4000-8000-000000000324\',\'parallel-role-revoked\',\'{"tanggal": "2026-11-03", "subtotal": 50000, "discount": 0, "tax": 0, "total": 50000, "dp_amount": 0, "dp_date": null, "paid_status": "Belum Lunas", "metode_bayar": "Tunai", "shift_id": "fab00000-0000-4000-8000-000000000004", "voucher_code": null, "salesperson_id": null}\'::jsonb,\'[{"description": "Obat Fiktif", "qty": 2, "price": 25000, "kind": "obat", "item_id": "fa800000-0000-4000-8000-000000000001", "unit": "pcs", "prescription_item_id": "fa900000-0000-4000-8000-000000003243", "recipe_id": null, "discount_percent": 0}]\'::jsonb);'}], 'outcome': {'ok': False, 'error': 'ERROR:  P0001: ACCESS_DENIED: kunjungan tidak ditemukan atau cabang tidak diizinkan\nCONTEXT:  PL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 53 at RAISE\nLOCATION:  exec_stmt_raise, pl_exec.c:3897\n', 'seconds_to_error': 0.0208}}
+PASS  zero-value-document-not-an-initial-DP-bypass: ERROR:  DP_MINIMAL: minimal 50% = Rp 60000, baru diterima Rp 0
+CONTEXT:  PL/pgSQL function clinic_private.enforce_min_dp(uuid,text) line 21 at RAISE
+SQL statement "SELECT clinic_private.enforce_min_dp(v_invoice_id, p_invoice ->> 'dp_override_reason')"
+PL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 83 at PERFORM
+authenticated
+fa100000-0000-4000-8000-000000000004
+
+PASS  stored-price-tax-discount-not-repriced-from-clinical: {'stored_invoice': {'subtotal': 900000.0, 'discount': 100000.0, 'tax': 88000.0, 'total': 888000.0, 'paid': 500000.0}, 'stored_line': {'harga': 1000000.0, 'diskon_persen': 10.0, 'qty': 1}, 'clinical_price_now': 42, 'remaining': 388000, 'optional_50_percent': 194000}
+PASS  closed-period-repeat-atomic: ERROR:  Periode akuntansi sampai 2026-11-03 sudah ditutup.
+CONTEXT:  PL/pgSQL function public.inventory_assert_open_date(date) line 7 at RAISE
+SQL statement "SELECT public.inventory_assert_open_date(nullif(p_invoice ->> 'tanggal', '')::date)"
+PL/pgSQL function public.clinic_post_invoice(uuid,text,jsonb,jsonb) line 65 at PERFORM
+PL/pgSQL function public.clinic_post_inpatient_stage_invoice(uuid,text,jsonb,jsonb) line 63 at assignment
+authenticated
+fa100000-0000-4000-8000-000000000004
+
+PASS  all-extended-journals-balanced: Per-entry journal balances after all extended scenarios
+Stopped and removed the throwaway PostgreSQL cluster.
+TOTAL {"PASS": 24, "FAIL": 0}

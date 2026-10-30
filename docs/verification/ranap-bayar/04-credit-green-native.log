@@ -1,0 +1,7 @@
+Applied 329 repository migrations to isolated PostgreSQL 17.11 (Debian 17.11-0+deb13u1) with fictional auth/storage shims.
+PASS one action pending medicine and services posts invoice stock revenue AR actual split receipt {"error": null}
+PASS real invoice and journal amounts {"invoice": "f9e167de-86ce-4741-b911-e3bde8073c74", "revenue": -330000.0, "hpp": 4000.0, "ar": 0.0, "stock": 198.0}
+PASS exact replay invoice receipt stock GL once {"unchanged": true}
+PASS available owner advance offsets existing and pending debt without collecting twice {"error": null, "debt": 0.0}
+Stopped and removed the throwaway PostgreSQL cluster.
+TOTAL {'PASS': 4, 'FAIL': 0}
