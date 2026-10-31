@@ -4,10 +4,11 @@ import { useState } from "react";
 import { NumberInput } from "@/components/NumberInput";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
+import { labelStok } from "@/lib/stok-klinik";
 import { ubahKomposisiRacikan, kembalikanBahanRacikan } from "../actions";
 
 export type BahanRacikanBaris = { item_id: string; nama: string; qty: number; satuan: string };
-export type BahanPilihan = { id: string; name: string; unit: string; stok: number };
+export type BahanPilihan = { id: string; name: string; unit: string; stok: number | null };
 
 /** Mengganti tombol "Void" lama: koreksi komposisi (hanya selisihnya yang menggerakkan stok)
  * dan pengembalian seluruh bahan. Keduanya wajib beralasan; syarat racikan belum diserahkan
@@ -40,7 +41,7 @@ export function RacikanAksi({ recipeId, visitId, ingredients, materials }: {
           onClick={() => setRows(list => list.filter(item => item.item_id !== row.item_id))}>×</button>
       </div>)}
       {rows.length === 0 && <p role="alert" style={{ fontSize: 10.5, color: "#b91c1c" }}>Racikan harus memiliki minimal satu bahan.</p>}
-      <SearchableItemPicker items={tersedia.map(item => ({ id: item.id, code: "", name: `${item.name} (stok ${item.stok} ${item.unit})` }))}
+      <SearchableItemPicker items={tersedia.map(item => ({ id: item.id, code: "", name: labelStok(item) }))}
         value="" ariaLabel="Tambah bahan racikan" placeholder="Tambah bahan racikan"
         onChange={id => { const item = materials.find(row => row.id === id); if (item) setRows(list => [...list, { item_id: item.id, nama: item.name, qty: 1, satuan: item.unit }]); }} />
       <label className="flab" htmlFor="alasan-komposisi" style={{ marginTop: 8 }}>Alasan perubahan komposisi *</label>

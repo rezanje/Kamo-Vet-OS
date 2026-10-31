@@ -9,13 +9,16 @@ import type { KatalogRacikan } from "@/lib/katalog-racikan";
 import type { ItemUnit } from "@/lib/satuan";
 import { kategoriWajibConsent } from "@/lib/tindakan";
 import { alasanRacikanBelumLengkap } from "@/lib/racikan";
+import { faktorSatuanKlinik, keadaanStok, labelStok, teksStok } from "@/lib/stok-klinik";
 
 /** Satu form untuk tindakan dan racikan (permintaan Andri 29 Okt): satu pemilih item dan
  * satu daftar "Bahan / BMHP". Komponen ini murni lapisan tampilan — bentuk data yang
  * dikirim ke server tetap draf tindakan (`bmhp`) dan `CompoundDraft` seperti sebelumnya. */
 type UnitLite = Omit<ItemUnit, "buy_price">;
 export type FormItem = {
-  id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number;
+  id: string; code?: string | null; name: string; unit: string; sell_price: number;
+  /** Stok satuan dasar gudang klinik transaksi; null = belum terbaca. */
+  stok: number | null;
   item_type?: string; tindakan_kategori?: string | null; units?: UnitLite[];
 };
 export type TindakanDraft<T extends FormItem = FormItem> = { item: T; bmhp: BmhpRow[]; editKey: string | null };
@@ -84,9 +87,10 @@ export function TindakanRacikanForm<T extends FormItem>({
     setSearch(""); setPage(1);
     if (jenis === "Tindakan") onPilihTindakan?.(item); else onPilihRacikan(item);
   };
-  const stokTeks = (id: string, cadangan: string) => {
+  // Stok bahan/BMHP dalam satuan barisnya (pak isi 10 → stok dibagi 10), bersama kekurangannya.
+  const stokTeks = (id: string, satuan: string, qty: number) => {
     const item = (tindakan ? bmhpItems : bahanItems).find(row => row.id === id);
-    return item ? `stok ${item.stok} ${item.unit}` : cadangan;
+    return item ? teksStok(keadaanStok({ stok: item.stok, satuanDasar: item.unit, satuan, faktor: faktorSatuanKlinik(item, satuan), butuh: qty })) : satuan;
   };
   const satuanPilihan = (id: string) => {
     const item = bmhpItems.find(row => row.id === id);
@@ -165,7 +169,7 @@ export function TindakanRacikanForm<T extends FormItem>({
         <legend style={{ fontSize: 11, fontWeight: 600 }}>{hanyaRacikan ? "Bahan racikan" : "Bahan / BMHP"} · {terpilih.name}</legend>
 
         {tindakan && <>
-          {tindakan.bmhp.map(row => <BahanBaris key={row.item_id} nama={row.nama} keterangan={stokTeks(row.item_id, row.unit)}
+          {tindakan.bmhp.map(row => <BahanBaris key={row.item_id} nama={row.nama} keterangan={stokTeks(row.item_id, row.unit, row.qty)}
             qtyLabel={`Jumlah BMHP ${row.nama}`} qty={row.qty}
             onQty={qty => onUbahBmhp?.(tindakan.bmhp.map(item => item.item_id === row.item_id ? { ...item, qty } : item))}
             satuan={row.unit} satuanPilihan={satuanPilihan(row.item_id)} satuanLabel={`Satuan BMHP ${row.nama}`}
@@ -174,7 +178,7 @@ export function TindakanRacikanForm<T extends FormItem>({
             onHapus={() => onUbahBmhp?.(tindakan.bmhp.filter(item => item.item_id !== row.item_id))} />)}
           {tindakan.bmhp.length < BMHP_MAX_COMPONENTS && <SearchableItemPicker
             items={bmhpItems.filter(item => !tindakan.bmhp.some(row => row.item_id === item.id))
-              .map(item => ({ id: item.id, code: item.code ?? "", name: `${item.name} (stok ${item.stok} ${item.unit})` }))}
+              .map(item => ({ id: item.id, code: item.code ?? "", name: labelStok(item) }))}
             value="" ariaLabel={`Tambah BMHP ${terpilih.name}`} placeholder="Tambah BMHP dipakai (opsional)"
             onChange={id => {
               const item = bmhpItems.find(row => row.id === id);
@@ -202,14 +206,14 @@ export function TindakanRacikanForm<T extends FormItem>({
         </>}
 
         {isRacikan && !formula && (bolehManual ? <>
-          {racikan.ingredients.map(row => <BahanBaris key={row.item_id} nama={row.nama} keterangan={stokTeks(row.item_id, row.satuan)}
+          {racikan.ingredients.map(row => <BahanBaris key={row.item_id} nama={row.nama} keterangan={stokTeks(row.item_id, row.satuan, row.qty)}
             qtyLabel={`Jumlah bahan ${row.nama}`} qty={row.qty}
             onQty={qty => onUbahRacikan({ ...racikan, ingredients: racikan.ingredients.map(item => item.item_id === row.item_id ? { ...item, qty } : item) })}
             satuan={row.satuan} hapusLabel={`Hapus bahan ${row.nama}`}
             onHapus={() => onUbahRacikan({ ...racikan, ingredients: racikan.ingredients.filter(item => item.item_id !== row.item_id) })} />)}
           <SearchableItemPicker
             items={bahanItems.filter(item => !racikan.ingredients.some(row => row.item_id === item.id))
-              .map(item => ({ id: item.id, code: item.code ?? "", name: `${item.name} (stok ${item.stok} ${item.unit})` }))}
+              .map(item => ({ id: item.id, code: item.code ?? "", name: labelStok(item) }))}
             value="" ariaLabel={`Tambah bahan ${terpilih.name}`} placeholder="Tambah bahan racikan"
             onChange={id => {
               const item = bahanItems.find(row => row.id === id);

@@ -33,9 +33,11 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
 
   // Tempel ke shift klinik berjalan biar pengeluaran tunai ikut ngurangin kas seharusnya saat tutup shift.
+  // Hanya laci milik sendiri di cabang pengeluaran ini — basis data menolak laci cabang lain.
   const { data: shift } = await supabase
     .from("cashier_shifts").select("id")
-    .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "klinik").maybeSingle();
+    .eq("opened_by", user?.id ?? "").eq("status", "open").eq("shift_type", "klinik")
+    .eq("branch_id", branchId).maybeSingle();
 
   const { data: expense, error } = await supabase.from("expenses").insert({
     branch_id: branchId, tanggal, kategori,

@@ -87,6 +87,24 @@ const tagihan = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => { state.tables = {}; });
 
 describe("cetak rekam medis — rincian pembayaran", () => {
+  it("menggabungkan label susulan PR341 dengan rincian tagihan bertahap PR343", async () => {
+    dasar(
+      [tagihan({ id: "inv-1", total: 100_000 }),
+       tagihan({ id: "inv-2", invoice_no: "INV-202611-0002", total: 200_000, paid_status: "DP" })],
+      [{ invoice_id: "inv-1", amount: 100_000 }, { invoice_id: "inv-2", amount: 50_000 }],
+    );
+    state.tables.prescription_items = { data: [{ nama_obat: "Obat susulan UJI", qty: 1, satuan: "pcs",
+      aturan_pakai: "Instruksi UJI", jenis: "obat", susulan_at: "2026-10-30T01:00:00Z",
+      susulan_by_name: "Dokter UJI", susulan_source: "dokter" }], error: null };
+    const html = await render();
+    expect(html).toContain("Obat susulan UJI");
+    expect(html).toContain("Susulan · Dokter UJI");
+    expect(nilai(html, "Total Tagihan")).toBe("Rp 300.000");
+    expect(nilai(html, "Sudah Dibayar")).toBe("Rp 150.000");
+    expect(nilai(html, "Sisa Tagihan")).toBe("Rp 150.000");
+    expect(html).toContain("Mencakup 2 tagihan tahap");
+  });
+
   it("tagihan biasa satu metode yang lunas di meja tercetak lunas, bukan berutang", async () => {
     dasar([tagihan()]);
     const html = await render();

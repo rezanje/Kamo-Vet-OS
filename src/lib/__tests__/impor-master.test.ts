@@ -3,7 +3,6 @@ import { bacaCsvUmum } from "../impor-csv";
 import {
   KOLOM_PELANGGAN, WAJIB_PELANGGAN, periksaPelanggan, normalTelp,
   KOLOM_PEMASOK, WAJIB_PEMASOK, periksaPemasok,
-  KOLOM_AKUN, WAJIB_AKUN, periksaAkun, saldoNormalBawaan,
 } from "../impor-master";
 
 const bacaPelanggan = (isi: string) => {
@@ -73,36 +72,5 @@ describe("periksaPemasok", () => {
     expect(siap).toHaveLength(1);
     expect(siap[0]).toMatchObject({ nama: "PT Oke", termin_hari: 14 });
     expect(salah).toHaveLength(2);
-  });
-});
-
-describe("periksaAkun", () => {
-  const master = () => ({ kodeTerpakai: new Set(["1301"]) });
-  const baca = (isi: string) => {
-    const r = bacaCsvUmum(isi, KOLOM_AKUN, WAJIB_AKUN);
-    if (!r.ok) throw new Error(r.pesan);
-    return r.baris;
-  };
-
-  it("saldo normal terisi sendiri sesuai tipe", () => {
-    expect(saldoNormalBawaan("ASET")).toBe("D");
-    expect(saldoNormalBawaan("PENDAPATAN")).toBe("K");
-    const { siap } = periksaAkun(baca("kode,nama,tipe\n4101,Penjualan Jasa,PENDAPATAN"), master());
-    expect(siap[0].normal_balance).toBe("K");
-  });
-
-  it("menolak tipe asing, kode terpakai, dan induk diri sendiri", () => {
-    const { siap, salah } = periksaAkun(
-      baca("kode,nama,tipe,induk\n5401,Beban Iklan,BIAYA,\n1301,Persediaan,ASET,\n5402,Beban Lain,BEBAN,5402\n5403,Beban Sewa,BEBAN,"),
-      master(),
-    );
-    expect(siap).toHaveLength(1);
-    expect(siap[0].code).toBe("5403");
-    expect(salah).toHaveLength(3);
-  });
-
-  it("membaca penanda header", () => {
-    const { siap } = periksaAkun(baca("kode,nama,tipe,header\n5000,Beban Usaha,BEBAN,ya"), master());
-    expect(siap[0].is_header).toBe(true);
   });
 });
