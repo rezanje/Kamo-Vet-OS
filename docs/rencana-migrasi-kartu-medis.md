@@ -948,3 +948,21 @@ Catatan operasional:
 - `keluar()` pada klien skrip kini `signOut({ scope: "local" })`. Bawaan `signOut()` (global) mencabut semua sesi
   OWNER, termasuk sesi app dan run lain. Ini menyebabkan satu kegagalan "Pemanggil belum terautentikasi" di tengah
   readback.
+
+### 15.1 Izin khusus 71 kartu Ket (2026-10-31)
+
+Cakupan: hanya 71 kartu yang alasan tahannya semata `riwayat.ket_tanpa_kolom`. Tidak ada yang tergerbang atau berkoreksi
+nomor. Label sumber pada semua 71 adalah "Ket"; teks ditambahkan sebagai baris `Ket: <asli>` setelah catatan dokter.
+
+Pengecekan ulang terhadap DB terkini sebelum simpan:
+- Simulasi paket penuh: 3 kartu punya pemilik + tanggal + isi klinis sama dengan hewan beda, sesama kartu Ket = tertahan.
+- Hewan sama + tanggal sama (21):
+  - 20 isinya identik dengan riwayat lama tanpa Ket = `sudah_ada`. Ket tidak ditambahkan, karena menambahkannya
+    berarti mengubah riwayat lama dan itu di luar izin.
+  - 1 isinya beda = tertahan.
+- Jejak `gdrive:` / nama berkas: 0 di DB.
+
+Hasil: 47 baru, 20 sudah ada (tanpa Ket), 4 tertahan, 0 gagal.
+- Readback runner dan readback independen 47/47 cocok; baris Ket tepat sekali.
+- 4 pemilik baru bertanda impor. Hitungan 139 tabel keuangan/stok/quest tidak berubah.
+- Total batch 13–17: 2.136 baru, 399 sudah ada, 1.510 tertahan, 508 kosong, 0 gagal.
