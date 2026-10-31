@@ -797,7 +797,7 @@ Login memakai OWNER biasa: email + kata sandi lewat Supabase Auth dengan kunci p
   Hanya kunci `anon`/publishable yang dipakai.
 - Laporan dan ledger wajib di luar repo.
 
-**Gerbang:** sesi ini tidak punya kredensial OWNER, jadi validasi DB dan apply belum dijalankan. Belum ada satu baris pun
+**Gerbang (status awal, sudah terbuka — lihat §13.8):** sesi ini tidak punya kredensial OWNER, jadi validasi DB dan apply belum dijalankan. Belum ada satu baris pun
 yang ditulis ke produksi. Environment cloud hanya membaca variabel baru pada sesi berikutnya. Langkah setelah pemilik
 mengisi dua variabel login di atas:
 
@@ -810,6 +810,33 @@ node scripts/migrasi-kartu-medis-produksi.mjs terapkan  (opsi sama) --ledger <di
 
 `--hari-ini` harus sama pada setiap lanjutan karena ikut sidik rencana. Kalau koneksi putus, jalankan perintah yang sama lagi.
 Ledger membuktikan dulu apa yang sudah tersimpan sebelum mengirim ulang.
+
+### 13.8 Eksekusi produksi batch `ac6d0afb` (2026-10-30)
+
+Gerbang 1 terbuka: sesi baru membawa `KAMO_OWNER_EMAIL`/`KAMO_OWNER_PASSWORD`; kunci anon diambil otomatis. Kode yang
+dijalankan = head PR 69961d7a tanpa perubahan. Berkas yang diunggah OWNER diverifikasi `sha256sum` = SHA yang disetujui.
+Proyek `koaglxcyjqfmgfzxszkj`, `--hari-ini 2026-10-30`.
+
+| Langkah | Hasil |
+|---|---|
+| `validasi-db` (nol tulis) | siap masuk 8, sudah ada 0, ditahan 0, pemilik baru 0 |
+| `terapkan` | `selesai`: 1 batch diakui, tersimpan 8, ditahan 0, belum dikirim 0 |
+| readback (bagian `terapkan`) | `terverifikasi`: diperiksa 8, siap 8, dengan kunjungan 8, selisih 0 |
+| `validasi-db` ulang (idempotensi) | siap masuk 0, **sudah ada 8**, ditahan 0 |
+
+Disposisi identitas (diperiksa ulang offline lewat hash, tanpa mencetak nama/HP):
+- Kedelapan baris siap memakai satu HP yang sama. LOCAL-OWNER-001 dan LOCAL-OWNER-003 (nama berbeda) jatuh ke **satu
+  kartu pemilik lama** di DB, sesuai aturan §13.3. Tidak ada kartu pemilik baru; nama (8 baris) dan alamat (4 baris:
+  007–010) lama dipertahankan dan perbedaannya hanya dicatat (`demografi.pemilik.*_dipertahankan`).
+- Hewan: LOCAL-PET-001 → 1 hewan (RM-001, 002, 005). LOCAL-PET-003 dan LOCAL-PET-004 bernama sama tanpa demografi
+  bertentangan (hanya 004 yang mengisi kelamin) → **1 hewan** (RM-007–011). Total 2 hewan, 8 kunjungan + rekam medis.
+- 12 karantina dan 1 dikecualikan (§13.6) **tidak dikirim**.
+
+Laporan/ledger disimpan di scratchpad sesi (di luar repo, ephemeral); isinya hanya ID lokal + UUID. Status DB dapat
+dibuktikan ulang kapan saja dengan `validasi-db` (hasil yang benar: sudah ada 8).
+
+Belum diuji: tampilan di `/klinik/rekam-medis` lewat browser oleh pengguna klinik. Sisa batch (12 karantina) menunggu
+perbaikan sumber dari OWNER: HP pemilik, tanggal tab vs sel, HP numerik yang nol awalnya hilang, baris tanpa pemilik/pasien.
 
 ---
 
@@ -918,3 +945,108 @@ Akses dokter belum dibuka (konsisten dengan riwayat bersama RS-2 yang hanya untu
 2. Deploy aplikasi.
 3. Jalankan ulang `terapkan` untuk batch `ac6d0afb…`: 8 riwayat tetap `sudah_ada`, 12 kartu masuk "Perlu dilengkapi".
 4. Cek tampilan.
+
+## 15. Batch 13–17 PhoneV1 (2026-10-31, eksekusi produksi)
+
+Paket `KAMO_Medical_Batches13-17_PhoneV1` (ZIP SHA-256 `404c99b0…`), input tunggal `cards13-17-current.json`
+(4.553 kartu unik / 1.983 berkas sumber). Lima fragmen teks non-standar dipisah, tetap ditahan, di luar hitungan.
+
+Checkpoint 08–12 sebelum mulai: 656 jejak `gdrive:` tercatat tepat satu kali dengan visit ID sama seperti di
+log, 202 ID "Perlu Dilengkapi" ada; tidak ada impor lain berjalan.
+
+Rekonsiliasi tambahan (baca-saja) sebelum membekukan rencana:
+- Hewan yang sama + tanggal sama dengan riwayat lama dari master (402): isi dibandingkan lewat `detail_riwayat_bersama`.
+  - Isi identik, atau hanya beda spasi/baris (379) = `sudah_ada`, tidak ditulis.
+  - Isi beda (23) = tertahan.
+- Pemilik (digit HP) + tanggal + isi klinis sama tapi hewan beda (40 di DB, 11 di dalam paket) = tertahan, karena
+  kemungkinan ejaan nama hewan beda. Isi beda dengan hewan beda di hari yang sama (multi-hewan) tetap boleh.
+- Draf "Perlu Dilengkapi" yang isinya + salah satu tanggal kandidatnya sudah ada di riwayat lama (154) tidak dikirim
+  ke ruang tunggu, supaya petugas tidak membuat duplikat.
+
+Hasil: 2.089 baru, 379 sudah ada, 1.577 tertahan, 508 kosong, 0 gagal (= 4.553).
+- Readback 2.089/2.089 tanpa selisih; 853 kartu masuk "Perlu Dilengkapi"; 429 pemilik baru, semua `imported_at`.
+- Semua 224 gerbang dan 244 koreksi nomor tetap tidak masuk; 71 Ket baru ditahan (tanpa persetujuan per kartu).
+- Tidak ada tagihan, resep, pembayaran, poin, atau klaim quest yang tertaut ke kunjungan/pemilik hasil impor. Selisih
+  hitungan tabel keuangan berasal dari satu transaksi kasir cabang biasa di pelanggan non-impor.
+
+Catatan operasional:
+- Runner sempat dihentikan oleh batas waktu shell setelah semua batch diakui (ledger utuh). Lanjutan dari ledger yang
+  sama hanya melakukan readback dan simpan kartu tertunda; tidak ada baris yang terkirim ulang.
+- `keluar()` pada klien skrip kini `signOut({ scope: "local" })`. Bawaan `signOut()` (global) mencabut semua sesi
+  OWNER, termasuk sesi app dan run lain. Ini menyebabkan satu kegagalan "Pemanggil belum terautentikasi" di tengah
+  readback.
+
+### 15.1 Izin khusus 71 kartu Ket (2026-10-31)
+
+Cakupan: hanya 71 kartu yang alasan tahannya semata `riwayat.ket_tanpa_kolom`. Tidak ada yang tergerbang atau berkoreksi
+nomor. Label sumber pada semua 71 adalah "Ket"; teks ditambahkan sebagai baris `Ket: <asli>` setelah catatan dokter.
+
+Pengecekan ulang terhadap DB terkini sebelum simpan:
+- Simulasi paket penuh: 3 kartu punya pemilik + tanggal + isi klinis sama dengan hewan beda, sesama kartu Ket = tertahan.
+- Hewan sama + tanggal sama (21):
+  - 20 isinya identik dengan riwayat lama tanpa Ket = `sudah_ada`. Ket tidak ditambahkan, karena menambahkannya
+    berarti mengubah riwayat lama dan itu di luar izin.
+  - 1 isinya beda = tertahan.
+- Jejak `gdrive:` / nama berkas: 0 di DB.
+
+Hasil: 47 baru, 20 sudah ada (tanpa Ket), 4 tertahan, 0 gagal.
+- Readback runner dan readback independen 47/47 cocok; baris Ket tepat sekali.
+- 4 pemilik baru bertanda impor. Hitungan 139 tabel keuangan/stok/quest tidak berubah.
+- Total batch 13–17: 2.136 baru, 399 sudah ada, 1.510 tertahan, 508 kosong, 0 gagal.
+
+### 15.2 Izin khusus 17 kartu: rapikan spasi tanggal (2026-10-31)
+
+Cakupan: 17 kartu yang sebelumnya hanya tertahan `CARD_DATE_MISSING_OR_INVALID`. Sel tanggalnya berbentuk
+`: 17 / 11 / 2024` (spasi di sekitar garis miring).
+
+Validasi terhadap paket asli:
+- `stable_key`, fileID, SHA sumber, sheet, dan isi sel C9 cocok persis dengan bukti izin.
+- Angka hari/bulan/tahun setelah spasi dibuang = `date_tab` = nama sheet.
+- Tidak ada yang tergerbang, berkoreksi nomor, atau ber-Ket.
+
+Turunan kartu hanya mengubah `status`, `hold_reasons`, `record_date`, dan `date_card`. Teks sumber (`date_raw` dan sel)
+tidak diubah.
+
+Pengecekan ulang terhadap DB terkini:
+- Simulasi paket penuh: tidak ada kembar.
+- 2 kartu sama persis dengan riwayat lama (hewan + tanggal + isi) = `sudah_ada`.
+- 3 kartu ditahan runner karena ras berbeda dengan data hewan di app.
+- Jejak `gdrive:` 0 di DB.
+
+Hasil: 12 baru, 2 sudah ada, 3 tertahan, 0 gagal.
+- Readback runner dan readback independen 12/12 cocok, dengan tanggal hasil rapikan.
+- 2 pemilik baru bertanda impor; hitungan tabel keuangan tidak berubah karena impor.
+
+Draf "Perlu Dilengkapi" lama untuk 12 kartu baru tidak dihapus atau diubah (di luar izin). Mengisinya akan mengenai
+jejak yang sama (`cari_jejak`), jadi tidak membuat kunjungan kedua.
+
+Audit: satu penjualan kasir cabang (14:04 WIB, di luar jendela run) memakai pemilik hasil impor 13–17. Ini aktivitas app
+normal, bukan hasil impor, dan tidak ada klaim quest pelanggan baru.
+
+Total batch 13–17: 2.148 baru, 401 sudah ada, 1.496 tertahan, 508 kosong, 0 gagal.
+
+### 15.3 Izin pola tanggal tab vs kartu (2026-10-31, opsi A)
+
+Analisis baca-saja atas 621 kartu tertahan `DATE_TAB_CARD_CONFLICT`:
+- **Pola 1, tab template (220):** sheet bernama `20022024` adalah nama bawaan template.
+  - Tidak ada kartu di tab ini yang tanggal kartunya sama dengan tab. Tanggal kartu berkisar 2024-03-02 s.d. 2026, dan
+    selalu sebelum tab berikutnya di berkas yang sama.
+  - Aturan: pakai `date_card`.
+- **Pola 2, kartu disalin (109):** `date_card` sama dengan tanggal tab lain yang lebih awal di berkas yang sama, dan
+  kartu tab asal itu bertanggal sama. Isi klinisnya selalu beda dengan tab asal, jadi ini kunjungan baru.
+  - Aturan: pakai `date_tab`.
+- **Sisanya** tanpa pola yang aman, ditahan untuk petugas.
+
+Hanya kartu yang satu-satunya alasan tahannya konflik tanggal yang ikut (277). 9 di antaranya punya Ket baru, jadi
+ditahan menunggu izin Ket per kartu. Turunan kartu hanya mengubah `status`, `hold_reasons`, dan `record_date`.
+
+Hasil (268 diproses): 233 baru, 8 sudah ada, 27 tertahan, 0 gagal.
+- Yang tertahan: 14 isi ganda sesama kelompok; 5 tanggal sama tapi isi beda; 6 isi + tanggal sama di hewan lain;
+  2 jenis hewan beda.
+- Readback runner dan readback independen 233/233 cocok; 51 pemilik baru bertanda impor.
+- Tidak ada tagihan, resep, poin, atau quest yang tertaut ke kunjungan/pemilik hasil impor. Selisih tabel keuangan
+  berasal dari satu kunjungan cabang biasa.
+
+Draf "Perlu Dilengkapi" lama untuk kartu yang sudah masuk tetap ada (203 dari kelompok ini + 12 dari 15.2).
+
+Total batch 13–17: 2.381 baru, 409 sudah ada, 1.255 tertahan, 508 kosong, 0 gagal.
