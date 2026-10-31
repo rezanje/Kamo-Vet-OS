@@ -18,6 +18,12 @@
 - Do not assign generic cash accounts `110001–110003` or invent a LOJI account.
 - No physical warehouse deletion in this change.
 
+## Migration order (draft)
+
+- `20261105020000_quantity_pool_pricing.sql` is already on main from PR #382.
+- `20261105030000_opening_invoice_finance_posting.sql` is reserved by open PR #380.
+- PR #381 uses `20261105040000_branch_tunai_routing.sql`, then `20261105041000_branch_cash_access_scope.sql`. Both remain unapplied pending the branch cash and access decisions.
+
 ## Review Focus
 
 - An unmapped branch cannot silently post Tunai to central cash.
