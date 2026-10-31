@@ -12,7 +12,7 @@ type Bmhp = { item_id: string; nama: string; qty: number; unit: string };
 // catatan rawat inap, dan racikan memakai bentuk yang sama dengan proses stok lain.
 export function kekuranganStok(
   rows: { item_id: string | null; nama_obat: string; qty: number; faktor: number; jenis: string; bmhp?: Bmhp[] }[],
-  stok: Map<string, { stok: number; unit: string }>,
+  stok: Map<string, { stok: number | null; unit: string }>,
   faktorSatuan: (itemId: string, unit: string) => number = () => 1,
 ): BarisKurangStok[] {
   const butuh = new Map<string, { nama: string; qty: number }>();
@@ -30,7 +30,11 @@ export function kekuranganStok(
   const kurang: BarisKurangStok[] = [];
   for (const [id, { nama, qty }] of butuh) {
     const s = stok.get(id);
-    if (s && qty > s.stok) kurang.push({ kunci: id, item_id: id, nama, butuh: qty, tersedia: s.stok, satuan: s.unit });
+    if (!s) continue;
+    // Stok belum terbaca (null) bukan nol, tapi juga bukan "cukup": penjagaannya tetap menahan
+    // simpan seperti sebelumnya, dengan jumlah tersedia "—" alih-alih angka 0 karangan.
+    if (s.stok == null) kurang.push({ kunci: id, item_id: id, nama, butuh: qty, tersedia: null, satuan: s.unit });
+    else if (qty > s.stok) kurang.push({ kunci: id, item_id: id, nama, butuh: qty, tersedia: s.stok, satuan: s.unit });
   }
   return kurang;
 }

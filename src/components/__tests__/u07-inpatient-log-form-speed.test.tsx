@@ -27,7 +27,7 @@ vi.mock("@/lib/clinic-compound-skus", () => ({
   loadClinicCompoundSkus: async () => { s.started.push("compoundSkus"); return [{ id: "mix", code: "MX", name: "Mix", unit: "btl", sell_price: 5, is_compound_material: false, item_type: "Persediaan", tindakan_kategori: null, category_id: null }]; },
   loadClinicSkuDetails: async (_: unknown, ids: string[], branchId: string | null) => {
     s.started.push(`skuDetails:${branchId}:${ids.length}`);
-    return { stock: new Map([["drug", 7]]), units: new Map([["drug", [{ unit: "box", factor: 10, sell_price: 90, buy_price: 55 }]]]), prices: new Map() };
+    return { stock: new Map([["drug", 7]]), units: new Map([["drug", [{ unit: "box", factor: 10, sell_price: 90, buy_price: 55 }]]]), prices: new Map(), warehouseId: "wh-vet" };
   },
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
