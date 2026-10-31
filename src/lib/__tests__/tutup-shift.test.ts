@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { hitungShift, pemasukanShift, tutupShift, type ShiftTutup } from "../tutup-shift";
+import {
+  BATAS_SELISIH_KAS, PESAN_KAS_FISIK_TIDAK_WAJAR, cekKasFisikWajar, hitungShift, pemasukanShift, tutupShift, type ShiftTutup,
+} from "../tutup-shift";
 
 // Supabase palsu seadanya: cukup untuk rantai yang dipakai tutup-shift.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -287,6 +289,40 @@ describe("tutupShift", () => {
     const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: null });
     expect(hasil).toMatchObject({ ok: true, selisih: 0, expected: 350_000 });
     expect(db.journal).toHaveLength(0);
+  });
+
+  // 31 Okt 2026: "8098098980809" diketik sebagai uang fisik → Rp 8.113 M masuk
+  // Pendapatan Lain-lain dan dashboard menampilkan laba triliunan.
+  it("menolak uang fisik salah ketik yang membuat kas lebih tidak wajar — tanpa jurnal, shift tetap terbuka", async () => {
+    const db: Db = { sales: [], expenses: [] };
+    for (const closing of [8_098_098_980_809, 1_000_000_000, 100_000 + 5_000_000.01]) {
+      const hasil = await tutupShift(makeClient(db), { shift: shift(), closing });
+      expect(hasil).toEqual({ ok: false, error: PESAN_KAS_FISIK_TIDAK_WAJAR });
+    }
+    expect(db.journal).toHaveLength(0);
+  });
+
+  it("menolak kas kurang tidak wajar supaya kasir tidak dibebani kasbon dari salah ketik", async () => {
+    const db: Db = { sales: [{ total: 7_053_500, metode_bayar: "Tunai" }], expenses: [], employees: [{ id: "E1", nama: "Siti" }] };
+    const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 100_000 });
+    expect(hasil).toEqual({ ok: false, error: PESAN_KAS_FISIK_TIDAK_WAJAR });
+    expect(db.cash_advances_inserted ?? []).toHaveLength(0);
+    expect(db.journal).toHaveLength(0);
+  });
+
+  it("selisih tepat di batas masih boleh ditutup dan dijurnal", async () => {
+    const db: Db = { sales: [], expenses: [] };
+    const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 100_000 + BATAS_SELISIH_KAS });
+    expect(hasil).toMatchObject({ ok: true, selisih: BATAS_SELISIH_KAS });
+    expect(db.journal).toHaveLength(1);
+  });
+
+  it("pesan penolakan tidak membocorkan target kas (kasir buta)", () => {
+    expect(cekKasFisikWajar(9_999_999, 1_234_567)).toBe(PESAN_KAS_FISIK_TIDAK_WAJAR);
+    expect(PESAN_KAS_FISIK_TIDAK_WAJAR).not.toMatch(/\d/);
+    expect(cekKasFisikWajar(Number.NaN, 0)).toBe(PESAN_KAS_FISIK_TIDAK_WAJAR);
+    expect(cekKasFisikWajar(-1, 0)).toBe(PESAN_KAS_FISIK_TIDAK_WAJAR);
+    expect(cekKasFisikWajar(1_300_000, 1_234_567)).toBeNull();
   });
 
   it("kas kurang menghasilkan selisih negatif", async () => {
