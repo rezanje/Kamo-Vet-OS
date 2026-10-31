@@ -181,6 +181,16 @@ export default async function PembayaranPage({
   const invItemsP = invoice ? mulai(supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name").eq("invoice_id", invoice.id).order("created_at")) : null;
   const paymentRowsP = invoice ? mulai(supabase.from("invoice_payments").select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id)) : null;
   const refundDataP = invoice && invoice.paid_status === "Lunas" && !invoice.correction_pending ? mulai(loadClinicRefundData(supabase, invoice.id)) : null;
+  // J02: peran pembaca + riwayat koreksi metode ikut berangkat bersama bacaan invoice
+  // (bukan putaran tersendiri); riwayat hanya dipakai bila perannya OWNER/FINANCE.
+  const viewerProfileP = invoice && draftUser
+    ? mulai(supabase.from("profiles").select("role,is_active").eq("id", draftUser.id).maybeSingle())
+    : null;
+  const correctionRowsP = invoice && draftUser && !invoice.correction_pending && !invoice.reissued_from
+    ? mulai(supabase.from("clinic_payment_corrections")
+      .select("id, revision, amount, from_method, to_method, reason, created_at")
+      .eq("invoice_id", invoice.id).order("revision", { ascending: false }))
+    : null;
   const invoiceSalespersonP = invoice?.salesperson_id ? mulai(supabase.from("employees").select("nama").eq("id",invoice.salesperson_id).maybeSingle()) : null;
   const clinicPackagesP = invoice ? null : mulai(loadClinicPackages(supabase));
   const cashierP = !invoice && draftUser ? mulai(loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null)) : null;
@@ -292,15 +302,14 @@ export default async function PembayaranPage({
   const refundData = refundDataP ? await refundDataP : null;
 
   // J02: Owner/Finance boleh mengoreksi Tunai <-> Transfer, juga sesudah shift ditutup.
-  const { data: viewerProfile } = invoice && draftUser
-    ? await supabase.from("profiles").select("role,is_active").eq("id", draftUser.id).maybeSingle()
-    : { data: null };
+  const [{ data: viewerProfile }, correctionRead] = await Promise.all([
+    viewerProfileP ?? Promise.resolve({ data: null }),
+    correctionRowsP ?? Promise.resolve({ data: [], error: null }),
+  ]);
   const canCorrectMethod = !!invoice && !invoice.correction_pending && !invoice.reissued_from && viewerProfile?.is_active === true
     && (viewerProfile.role === "OWNER" || viewerProfile.role === "FINANCE");
-  const { data: correctionData, error: correctionError } = canCorrectMethod && invoice
-    ? await supabase.from("clinic_payment_corrections")
-      .select("id, revision, amount, from_method, to_method, reason, created_at")
-      .eq("invoice_id", invoice.id).order("revision", { ascending: false })
+  const { data: correctionData, error: correctionError } = canCorrectMethod
+    ? correctionRead
     : { data: [], error: null };
   const correctionParts = invoice ? clinicCorrectableParts(invoice, paymentRows ?? []) : [];
   const correctionBlocked = refundData && (refundData.refunds.length > 0

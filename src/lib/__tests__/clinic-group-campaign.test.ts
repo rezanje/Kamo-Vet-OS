@@ -50,7 +50,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     return q;
   },
   rpc: async (name: string, params: { p_visit_id: string; p_invoice: Record<string, unknown> }) => {
-    if (name !== "clinic_post_invoice") throw Error(`Unexpected RPC ${name}`);
+    // Pengaman keranjang basi (Klinik-D): versi dibaca server sebelum baris tagihan.
+    if (name === "clinic_outpatient_cart_version") return { data: `v1:${"0".repeat(32)}`, error: null };
+    if (name !== "clinic_post_invoice" && name !== "clinic_post_invoice_with_record") throw Error(`Unexpected RPC ${name}`);
     if (state.capReached && params.p_invoice.campaign_code) {
       return { data: null, error: { code: "P0001", message: `KODE_KAMPANYE: Kode ${params.p_invoice.campaign_code} sudah mencapai batas pemakaian (1 kali)` } };
     }
