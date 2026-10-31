@@ -19,6 +19,8 @@ import { PaymentPageHeading } from "./PaymentPresentation";
 import { PembayaranForm } from "./PembayaranForm";
 import { InpatientPaymentPage } from "./InpatientPaymentPage";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
+import { PelunasanTagihanForm } from "./PelunasanTagihanForm";
+import { sisaTagihan } from "@/lib/pelunasan-klinik";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
@@ -219,6 +221,9 @@ export default async function PembayaranPage({
   const bolehTerbitUlang = bolehSiklusTagihan((profilKasir as { role?: string } | null)?.role);
 
   const lunas = invoice?.paid_status === "Lunas";
+  // Pelunasan DP/Belum Lunas rawat jalan oleh kasir klinik: invoice sama, laci shift sendiri.
+  const sisaPelunasan = invoice ? sisaTagihan(Number(invoice.total), paidAmount) : 0;
+  const pelunasanTerbuka = !inpat && !!invoice && !lunas && !invoice.correction_pending && sisaPelunasan > 0;
   const refundData = invoice && lunas && !invoice.correction_pending ? await loadClinicRefundData(supabase, invoice.id) : null;
 
   // Kasir menyebut angka ke pemilik SEBELUM memilih metode bayar. Kunjungan yang
@@ -486,6 +491,10 @@ export default async function PembayaranPage({
           <SubmitButton className="btn-acc" pendingText="Memproses…">Masukkan Rawat Inap (tanpa pembayaran ulang)</SubmitButton>
         </TransactionForm>
       </div>}
+      {bolehTagih && pelunasanTerbuka && invoice && (
+        <PelunasanTagihanForm key={`${invoice.id}:${sisaPelunasan}`} visitId={visit.id} invoiceId={invoice.id}
+          invoiceNo={invoice.invoice_no ?? ""} total={Number(invoice.total)} diterima={paidAmount} sisa={sisaPelunasan} requestKey={randomUUID()} />
+      )}
       {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
           key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
@@ -522,7 +531,7 @@ export default async function PembayaranPage({
           {demoSnapshot && <div className="p2ban">DEMO: admin {demoSnapshot.fee_bearer === "customer" ? "pelanggan" : "perusahaan"} {rp(Number(demoSnapshot.fee_amount))} · satu pool insentif {rp(Number(demoSnapshot.incentive_pool))}. Snapshot uang terkunci; terbit ulang mempertahankan nominal dan penerima.</div>}
           <div className="p2ban" style={{ background: lunas ? "#e8f5ee" : "#fffbeb", border: `.5px solid ${lunas ? "#86efac" : "#fcd34d"}`, color: lunas ? "#15803d" : "#92400e" }}>
             <i className={`ti ti-${lunas ? "circle-check" : "clock-dollar"}`} /> Status: {invoice.paid_status}
-            {invoice.paid_status === "DP" && ` — diterima ${rp(paidAmount)}, sisa ${rp(Number(invoice.total) - paidAmount)}`}
+            {invoice.paid_status === "DP" && !pelunasanTerbuka && ` — diterima ${rp(paidAmount)}, sisa ${rp(Number(invoice.total) - paidAmount)}`}
             {(editLog ?? []).length > 0 && (
               <span className="bge o" style={{ marginLeft: 8 }}><i className="ti ti-pencil" /> Diedit</span>
             )}

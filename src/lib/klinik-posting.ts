@@ -174,6 +174,8 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       JOURNAL_UNBALANCED: "Jurnal invoice tidak seimbang; tidak ada perubahan yang disimpan.",
       JOURNAL_DUPLICATE: "Nomor atau jurnal invoice sudah digunakan. Coba simpan kembali.",
       SHIFT_INVALID: "Shift klinik sudah tidak aktif. Periksa shift lalu coba lagi.",
+      // Ditegakkan writer asli clinic_post_invoice (migrasi 20261104310000).
+      PRODUCT_ONLY_FULL_PAYMENT: "Pembelian produk saja wajib dibayar lunas. Terima pembayaran penuh (boleh campuran Tunai/Transfer); DP atau sisa piutang tidak bisa disimpan untuk transaksi ini.",
     };
     const match = /^([A-Z_]+)(?::\s*([^\r\n]{1,100}))?$/.exec(error.message);
     if (match && fixedMessages[match[1]]) return fixedMessages[match[1]];
