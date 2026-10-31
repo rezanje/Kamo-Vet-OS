@@ -16,6 +16,9 @@ import { pemetaanAkun } from "@/lib/impor-akun-pemetaan";
 import { KONFIG, isJenisImpor, type JenisImpor } from "@/lib/impor-jenis";
 import { kunciNama, kunciTarget, periksaKomisi, periksaTarget } from "@/lib/impor-komisi";
 import { pesanSimpanGagal } from "@/lib/barang";
+import { ListLoadError, readCompleteList } from "@/lib/checked-list";
+
+const POTONGAN_PELANGGAN = 500;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -36,10 +39,19 @@ async function simpan(supabase: Db, jenis: JenisImpor, baris: ReturnType<typeof 
   if (!baris.ok) return { masuk: 0, salah: [] as BarisSalah[], pesanGagal: baris.pesan };
 
   if (jenis === "pelanggan") {
-    const [{ data: kat }, { data: cust }] = await Promise.all([
-      supabase.from("customer_categories").select("id, nama").eq("is_active", true),
-      supabase.from("customers").select("phone"),
-    ]);
+    // Nomor terdaftar dibaca LENGKAP per halaman: satu select polos dipotong API di 1.000 baris,
+    // sehingga pelanggan ke-1.001 dst. lolos cek kembar dan tercatat dua kali.
+    let cust: { id: string; phone: string | null }[];
+    let kat: { id: string; nama: string }[] | null;
+    try {
+      [{ data: kat }, cust] = await Promise.all([
+        supabase.from("customer_categories").select("id, nama").eq("is_active", true),
+        readCompleteList<{ id: string; phone: string | null }>((from, to) => supabase.from("customers")
+          .select("id, phone", { count: "exact" }).order("id").range(from, to), "Data pelanggan", { maxRows: null }),
+      ]);
+    } catch (e) {
+      return { masuk: 0, salah: [] as BarisSalah[], pesanGagal: e instanceof ListLoadError ? e.message : "Data pelanggan belum dapat dicek. Coba lagi." };
+    }
     const { normalTelp } = await import("@/lib/impor-master");
     const { siap, salah } = periksaPelanggan(baris.baris, {
       kategori: new Map(((kat ?? []) as { id: string; nama: string }[]).map((k) => [k.nama.toLowerCase(), k.id])),
@@ -49,11 +61,30 @@ async function simpan(supabase: Db, jenis: JenisImpor, baris: ReturnType<typeof 
     if (siap.length === 0) return { masuk: 0, salah, pesanGagal: null };
     // Kartu hasil impor = pelanggan lama, tidak pernah dihitung "customer baru" di quest staf (Q01).
     const importedAt = new Date().toISOString();
-    let { error } = await supabase.from("customers").insert(siap.map((row) => ({ ...row, imported_at: importedAt })));
-    // Sebelum langkah database Q01 kolomnya belum ada: impor tetap jalan tanpa penanda.
-    if (error && /imported_at/.test(error.message)) ({ error } = await supabase.from("customers").insert(siap));
-    if (error) return { masuk: 0, salah, pesanGagal: pesanSimpanGagal(error.message) };
-    return { masuk: siap.length, salah, pesanGagal: null };
+    // File besar (ribuan kartu) disimpan per potongan supaya tiap kiriman tidak kena batas waktu database.
+    let masuk = 0;
+    let pakaiPenanda = true;
+    for (let i = 0; i < siap.length; i += POTONGAN_PELANGGAN) {
+      const potongan = siap.slice(i, i + POTONGAN_PELANGGAN);
+      let { error } = await supabase.from("customers").insert(
+        pakaiPenanda ? potongan.map((row) => ({ ...row, imported_at: importedAt })) : potongan);
+      // Sebelum langkah database Q01 kolomnya belum ada: impor tetap jalan tanpa penanda.
+      if (error && pakaiPenanda && /imported_at/.test(error.message)) {
+        pakaiPenanda = false;
+        ({ error } = await supabase.from("customers").insert(potongan));
+      }
+      if (error) {
+        const pesan = pesanSimpanGagal(error.message);
+        return {
+          masuk, salah,
+          pesanGagal: masuk
+            ? `${masuk} pelanggan sudah masuk, ${siap.length - masuk} belum: ${pesan} Impor ulang file yang sama — yang sudah masuk otomatis dilewati.`
+            : pesan,
+        };
+      }
+      masuk += potongan.length;
+    }
+    return { masuk, salah, pesanGagal: null };
   }
 
   if (jenis === "pemasok") {
