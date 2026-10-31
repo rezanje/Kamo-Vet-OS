@@ -18,10 +18,10 @@ Pulang Paksa dan staf tidak bisa membuatnya.
 - Daftar template di Form persetujuan menampilkan label jenis (mis. Pulang Paksa).
 
 ## Bukti
-- PostgreSQL 16 lokal, semua 338 migrasi repo: template terpasang 1×, jalankan ulang tetap 1×,
+- PostgreSQL 16 lokal, semua 344 migrasi repo (sesudah digabung dengan main 8375f3f): template terpasang 1×, jalankan ulang tetap 1×,
   placeholder valid; `supabase/tests/inpatient_consent.sql` lulus; skenario staf membuat form
   dari template bawaan → tanda tangan → status Pulang Paksa tersimpan: lulus.
-- `npm run lint` (0 error), `npm test` (668 file / 5468 tes lulus), `tsc --noEmit`, `npm run build`: lulus.
+- `npm run lint` (0 error), `npm test` (696 file / 5708 tes lulus), `tsc --noEmit`, `npm run build`: lulus.
 
 ## Belum diuji
 - Belum dicoba di Production; perlu migrasi diterapkan lalu uji langsung oleh staf klinik.
