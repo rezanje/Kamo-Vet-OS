@@ -56,6 +56,15 @@ type KwitansiShift = {
   clinic_payment_receipt_parts?: { metode: string; amount: number }[] | null;
 };
 
+/** Laci hanya ditutup pemiliknya; laci nyangkut > 24 jam lewat tutup paksa supervisor. */
+export const PESAN_LACI_ORANG_LAIN =
+  "Laci ini milik kasir lain. Hanya pemilik laci yang bisa menghitung dan menutupnya; laci yang nyangkut lebih dari 24 jam ditutup paksa Owner/Admin dengan alasan.";
+
+/** Pesan penjaga laci dari basis data tanpa kode teknis di depannya. */
+export function pesanPenjagaLaci(message: string): string {
+  return message.replace(/^[A-Z_]+:\s*/, "");
+}
+
 /** Pesan tunggal untuk semua sumber uang shift yang tidak terbaca. */
 export const UANG_SHIFT_TIDAK_TERBACA =
   "Uang shift belum dapat dibaca lengkap. Muat ulang dan coba lagi — shift tidak ditutup supaya penerimaan yang nyata tidak terhitung sebagai kas lebih.";
@@ -199,7 +208,7 @@ export async function tutupShift(
     })
     .eq("id", shift.id).eq("status", "open")
     .select("id");
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: pesanPenjagaLaci(error.message) };
   if (!terupdate || terupdate.length === 0) {
     return { ok: false, error: "Shift sudah ditutup barusan — tidak ditutup dua kali." };
   }
