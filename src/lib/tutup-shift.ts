@@ -35,6 +35,32 @@ export const AKUN_SELISIH_KAS = "5901";
 // asalnya. Kas KURANG tetap beban/piutang kasir; itu memang kerugian perusahaan.
 export const AKUN_KAS_LEBIH = "4303";
 
+/**
+ * Batas selisih kas fisik vs target per shift. Di atas ini hampir pasti salah ketik
+ * (nol kebanyakan / kurang), bukan uang sungguhan — dan kalau diloloskan:
+ * - kas LEBIH langsung jadi Pendapatan Lain-lain; satu ketikan "8098098980809"
+ *   membuat dashboard melaporkan pendapatan Rp 8.113 M (31 Okt 2026);
+ * - kas KURANG langsung jadi kasbon atas nama kasir dan dipotong dari gajinya.
+ * Laci petshop/klinik tidak pernah selisih sebesar ini dalam satu shift; kejadian nyata
+ * sebesar itu harus ditangani Owner/Keuangan, bukan dijurnal otomatis.
+ */
+export const BATAS_SELISIH_KAS = 5_000_000;
+
+export const PESAN_KAS_FISIK_TIDAK_WAJAR =
+  "Jumlah uang fisik yang diketik terlalu jauh dari wajar untuk satu laci — kemungkinan salah ketik "
+  + "(nol kebanyakan atau kurang). Hitung ulang uangnya lalu ketik lagi. Shift belum ditutup. "
+  + "Kalau angkanya memang benar, hubungi Owner/Keuangan.";
+
+/**
+ * Tolak angka kas fisik yang mustahil sebelum shift dikunci. Pesannya sengaja tidak
+ * menyebut target kas, supaya aturan kasir buta tetap berlaku.
+ */
+export function cekKasFisikWajar(closing: number, expected: number): string | null {
+  if (!Number.isFinite(closing) || closing < 0) return PESAN_KAS_FISIK_TIDAK_WAJAR;
+  if (Math.abs(cashVariance(closing, expected)) > BATAS_SELISIH_KAS) return PESAN_KAS_FISIK_TIDAK_WAJAR;
+  return null;
+}
+
 export type ShiftTutup = {
   id: string;
   shift_type: string | null;
@@ -191,6 +217,10 @@ export async function tutupShift(
     return { ok: false, error: error instanceof Error ? error.message : UANG_SHIFT_TIDAK_TERBACA };
   }
   const { breakdown, expected } = calculation;
+  if (closing !== null) {
+    const tolak = cekKasFisikWajar(closing, expected);
+    if (tolak) return { ok: false, error: tolak };
+  }
   const selisih = closing === null ? 0 : cashVariance(closing, expected);
 
   // Syarat `status = open` ikut di UPDATE, bukan cuma dicek di baris terpisah:
