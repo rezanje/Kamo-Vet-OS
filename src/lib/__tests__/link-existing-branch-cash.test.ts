@@ -1,13 +1,13 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ inserted: [] as { table: string; value: Record<string, unknown> }[], accountType: "ASET" as "ASET" | "LIABILITAS" }));
+const state = vi.hoisted(() => ({ inserted: [] as { table: string; value: Record<string, unknown> }[], accountType: "ASET" as "ASET" | "LIABILITAS", branchCode: "CMS" }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/master-guard", () => ({ assertMasterAdmin: async () => ({
   from(table: string) {
     const query = {
       select() { return query; }, eq() { return query; },
       async maybeSingle() {
-        if (table === "branches") return { data: { id: "cms", type: "PETSHOP", is_active: true }, error: null };
+        if (table === "branches") return { data: { id: "cms", code: state.branchCode, type: "PETSHOP", is_active: true }, error: null };
         if (table === "coa_accounts") return { data: { code: "110006", name: "Kas Toko CMS", type: state.accountType, is_active: true, is_header: false }, error: null };
         throw Error(`Unexpected lookup: ${table}`);
       },
@@ -18,7 +18,7 @@ vi.mock("@/lib/master-guard", () => ({ assertMasterAdmin: async () => ({
 }) }));
 import { hubungkanKasCabang } from "@/app/(app)/kas-bank/rekening/actions";
 
-beforeEach(() => { state.inserted = []; state.accountType = "ASET"; });
+beforeEach(() => { state.inserted = []; state.accountType = "ASET"; state.branchCode = "CMS"; });
 
 function form() {
   const value = new FormData();
@@ -36,5 +36,11 @@ it("links an existing COA cash detail without creating an account or posting an 
 it("does not link a non-asset account", async () => {
   state.accountType = "LIABILITAS";
   await expect(hubungkanKasCabang(form())).rejects.toThrow("Akun%20kas");
+  expect(state.inserted).toEqual([]);
+});
+
+it("rejects an account from another branch of the same type", async () => {
+  state.branchCode = "TKI";
+  await expect(hubungkanKasCabang(form())).rejects.toThrow("tidak%20sesuai%20cabang");
   expect(state.inserted).toEqual([]);
 });

@@ -2,6 +2,55 @@
 -- mappings have been linked to existing COA accounts in the same release window.
 -- No account, journal, or payment history is rewritten here.
 
+-- Candidate pairs are intentionally explicit: branch type/name similarity is
+-- insufficient to prevent posting one shop's money to another shop's cash.
+create function public.branch_cash_matches(p_code text, p_branch uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.branches b
+    join (values
+      ('110004','BTKM'),('110005','CIAW'),('110006','CMS'),('110007','CMGG'),
+      ('110008','MUAR'),('110009','TKI'),('110010','GRND'),('110011','SRKN'),
+      ('110012','PDRY'),('110013','VET_CMS'),('110014','VET_CMGG'),
+      ('110015','VET_CIAW'),('110016','VET_PDRY'),('110017','VET_TKI'),
+      ('110018','VET_GRDA'),('110019','VET_GRLG'),('110020','VET_SRKN'),
+      ('110021','VET_GRND')
+    ) approved(coa_code,branch_code) on approved.coa_code = p_code and approved.branch_code = b.code
+    where b.id = p_branch and b.is_active
+  );
+$$;
+revoke all on function public.branch_cash_matches(text, uuid) from public, anon, authenticated, service_role;
+
+do $$begin
+  if exists (
+    select 1 from public.cash_accounts a join public.coa_accounts c on c.code = a.coa_code
+    where c.name ~* '^kas toko( |$)' and
+      (a.jenis is distinct from 'Kas' or not public.branch_cash_matches(a.coa_code, a.branch_id))
+  ) or exists (
+    select 1 from public.payment_account_map m join public.cash_accounts a on a.id = m.cash_account_id
+    where m.metode = 'Tunai' and m.branch_id is not null
+      and not public.branch_cash_matches(a.coa_code, m.branch_id)
+  ) then
+    raise exception 'BRANCH_CASH_MISMATCH: perbaiki pasangan kas cabang yang sudah ada sebelum migrasi'
+      using errcode = '23514';
+  end if;
+end$$;
+
+create function public.guard_branch_cash_account() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if exists (select 1 from public.coa_accounts c where c.code = new.coa_code and c.name ~* '^kas toko( |$)')
+    and (new.jenis is distinct from 'Kas' or not public.branch_cash_matches(new.coa_code, new.branch_id)) then
+    raise exception 'BRANCH_CASH_MISMATCH: akun Kas Toko tidak sesuai cabang' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.guard_branch_cash_account() from public, anon, authenticated, service_role;
+create trigger cash_accounts_branch_cash_guard
+before insert or update of coa_code, branch_id, jenis on public.cash_accounts
+for each row execute function public.guard_branch_cash_account();
+
 create or replace function public.unit_posting_cash(p_method text, p_branch uuid) returns text
 language plpgsql stable security definer set search_path = '' as $$
 declare v_code text;
@@ -13,6 +62,7 @@ begin
     join public.coa_accounts c on c.code = a.coa_code
     where m.metode = 'Tunai' and m.branch_id = p_branch
       and a.branch_id = p_branch and a.jenis = 'Kas' and a.is_active
+      and public.branch_cash_matches(a.coa_code, p_branch)
       and c.type = 'ASET' and c.is_active and not c.is_header;
     if v_code is null then
       raise exception 'BRANCH_CASH_UNMAPPED: kas Tunai cabang belum dipetakan ke akun aktif' using errcode = '23514';
@@ -42,6 +92,7 @@ begin
     join public.coa_accounts coa on coa.code = ca.coa_code
     where pam.metode = 'Tunai' and pam.branch_id = p_branch_id
       and ca.branch_id = p_branch_id and ca.jenis = 'Kas' and ca.is_active
+      and public.branch_cash_matches(ca.coa_code, p_branch_id)
       and coa.type = 'ASET' and coa.is_active and not coa.is_header;
     if v_code is null then
       raise exception using errcode = '23514', message = 'BRANCH_CASH_UNMAPPED: kas Tunai klinik belum dipetakan ke akun aktif';
@@ -75,6 +126,7 @@ begin
     select 1 from public.cash_accounts a join public.coa_accounts c on c.code = a.coa_code
     where a.id = new.cash_account_id and a.branch_id = new.branch_id
       and a.jenis = 'Kas' and a.is_active and c.type = 'ASET' and c.is_active and not c.is_header
+      and public.branch_cash_matches(a.coa_code, new.branch_id)
   ) then
     raise exception 'Rekening Tunai harus kas aktif milik cabang yang dipilih' using errcode = '23514';
   end if;
@@ -101,6 +153,7 @@ begin
     where m.metode = 'Tunai' and m.branch_id = p_branch
       and c.branch_id = p_branch and c.coa_code = p_code
       and c.jenis = 'Kas' and c.is_active
+      and public.branch_cash_matches(c.coa_code, p_branch)
       and a.type = 'ASET' and a.is_active and not a.is_header
   ) then
     raise exception 'BRANCH_CASH_UNMAPPED: kas Tunai cabang belum dipetakan ke akun aktif'

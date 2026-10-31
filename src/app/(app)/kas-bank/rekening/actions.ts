@@ -5,6 +5,7 @@ import { assertMasterAdmin } from "@/lib/master-guard";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { kodeAkunBerikutnya } from "@/lib/transfer-kas";
 import { KODE_REKENING } from "@/lib/coa-sistem";
+import { isApprovedBranchCashPair } from "@/lib/branch-cash-config";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/kas-bank/rekening";
@@ -85,13 +86,14 @@ export async function hubungkanKasCabang(formData: FormData) {
     gagal("Akun kas cabang dan cabang wajib dipilih");
   }
   const [{ data: branch, error: branchError }, { data: account, error: accountError }] = await Promise.all([
-    supabase.from("branches").select("id,type,is_active").eq("id", branchId).eq("is_active", true).maybeSingle(),
+    supabase.from("branches").select("id,code,type,is_active").eq("id", branchId).eq("is_active", true).maybeSingle(),
     supabase.from("coa_accounts").select("code,name,type,is_active,is_header").eq("code", code).maybeSingle(),
   ]);
   if (branchError || !branch || !["PETSHOP", "KLINIK"].includes(branch.type)) gagal("Cabang kas tidak tersedia");
   if (accountError || !account || account.type !== "ASET" || !account.is_active || account.is_header
     || !/^Kas Toko\b/i.test(account.name)) gagal("Akun kas rincian aktif tidak tersedia");
   if ((branch.type === "KLINIK") !== /^Kas Toko Vet\b/i.test(account.name)) gagal("Jenis akun kas tidak sesuai jenis cabang");
+  if (!isApprovedBranchCashPair(code, branch.code)) gagal("Akun kas toko tidak sesuai cabang yang disetujui");
 
   const { error } = await supabase.from("cash_accounts").insert({
     nama: account.name, jenis: "Kas", coa_code: code, branch_id: branchId, is_active: true,

@@ -17,6 +17,7 @@ type Db = {
   payment_account_map?: Any[];
   /** Shift yang boleh ditutup — dikosongkan untuk mensimulasikan "sudah ditutup duluan". */
   shiftTerbuka?: boolean;
+  shiftUpdates?: number;
   journal?: Any[];
   employees?: Any[];
   cash_advances_inserted?: Any[];
@@ -62,7 +63,7 @@ function makeClient(db: Db) {
           if (table === "journal_lines") (db.journalLines ??= []).push(...(Array.isArray(v) ? v : [v]));
           return { select: () => ({ single: async () => ({ data: { id: `X${db.journal!.length}` }, error: null }) }) };
         },
-        update: () => ((mode = "update"), self),
+        update: () => { if (table === "cashier_shifts") db.shiftUpdates = (db.shiftUpdates ?? 0) + 1; mode = "update"; return self; },
         eq: (k: string, v: Any) => ((f[k] = v), self),
         in: () => self,
         is: () => self,
@@ -280,6 +281,14 @@ describe("tutupShift", () => {
     const db: Db = { sales: [], expenses: [] };
     const hasil = await tutupShift(makeClient(db), { shift: shift(), closing: 100_000 });
     expect(hasil).toMatchObject({ ok: true, selisih: 0 });
+    expect(db.journal).toHaveLength(0);
+  });
+
+  it("keeps an unmapped branch shift open when cash differs", async () => {
+    const db: Db = { sales: [], expenses: [], payment_account_map: [] };
+    const hasil = await tutupShift(makeClient(db), { shift: shift({ branch_id: "LOJI" }), closing: 100_001 });
+    expect(hasil).toMatchObject({ ok: false, error: expect.stringMatching(/kas tunai cabang/i) });
+    expect(db.shiftUpdates ?? 0).toBe(0);
     expect(db.journal).toHaveLength(0);
   });
 

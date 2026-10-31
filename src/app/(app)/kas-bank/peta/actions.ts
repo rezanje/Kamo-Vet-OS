@@ -42,14 +42,23 @@ export async function simpanPetaCabang(formData: FormData) {
   if (!accountId) gagal("Pilih rekening");
 
   if (metode === "Tunai") {
-    const { data: account, error: accountError } = await supabase.from("cash_accounts")
-      .select("coa_code, branch_id, jenis, is_active").eq("id", accountId).maybeSingle();
-    if (accountError || !isBranchCashAccount(account, branchId)) gagal("Rekening Tunai harus kas aktif milik cabang terpilih");
+    const [{ data: account, error: accountError }, { data: branch, error: branchError }] = await Promise.all([
+      supabase.from("cash_accounts").select("coa_code, branch_id, jenis, is_active").eq("id", accountId).maybeSingle(),
+      supabase.from("branches").select("code").eq("id", branchId).eq("is_active", true).maybeSingle(),
+    ]);
+    if (accountError || branchError || !branch || !isBranchCashAccount(account, branchId, branch.code)) {
+      gagal("Rekening Tunai harus kas aktif yang tepat untuk cabang terpilih");
+    }
   }
 
-  await supabase.from("payment_account_map").delete().eq("metode", metode).eq("branch_id", branchId);
-  const { error } = await supabase
-    .from("payment_account_map").insert({ metode, branch_id: branchId, cash_account_id: accountId });
+  // Keep the old mapping until the replacement passes the database guard.
+  // The partial unique index cannot be used as a normal upsert conflict target.
+  const { data: existing, error: readError } = await supabase.from("payment_account_map")
+    .select("id").eq("metode", metode).eq("branch_id", branchId).maybeSingle();
+  if (readError) gagal(readError.message);
+  const { error } = existing
+    ? await supabase.from("payment_account_map").update({ cash_account_id: accountId }).eq("id", existing.id)
+    : await supabase.from("payment_account_map").insert({ metode, branch_id: branchId, cash_account_id: accountId });
   if (error) gagal(error.message);
 
   redirect(`${BACK}?success=cabang`);
