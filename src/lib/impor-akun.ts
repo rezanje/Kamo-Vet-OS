@@ -11,13 +11,15 @@
 //   - kolom saldo dipisahkan dan TIDAK diimpor — impor master tidak membuat saldo/jurnal.
 // Validator akun & pohon memakai yang sudah ada (coa-sistem, coa-pohon), tidak disalin.
 
-import { bacaCsvUmum } from "./impor-csv";
+import { bacaCsvUmum, pecahBaris, tebakPemisah } from "./impor-csv";
 import {
   DIGIT_TIPE, KODE_SISTEM, SISI_WAJAR, TIPE_AKUN, akunSistem, alasanTakBolehNonaktif,
   validasiAkunBaru, validasiSisiSaldo, validasiUbahAkun, type PemakaiAkun, type TipeAkun,
 } from "./coa-sistem";
 import { validasiIndukAkun, type AkunPohon } from "./coa-pohon";
-import { KOLOM_AKUN_WAJIB, type KolomAkun, type PemetaanSumberAkun } from "./impor-akun-pemetaan";
+import {
+  KOLOM_AKUN_WAJIB, type KolomAkun, type PemetaanTemplateAkun, type PemetaanTerblokirAkun,
+} from "./impor-akun-pemetaan";
 
 export const MAKS_BARIS_AKUN = 1000;
 
@@ -74,7 +76,7 @@ export type FileAkun =
 /** Judul kolom yang memuat angka saldo/nilai. Dipisahkan, tidak pernah dibukukan dari sini. */
 const KOLOM_BERNILAI = /saldo|balance|debit|debet|kredit|credit|nominal|amount|jumlah|nilai/;
 
-export function bacaFileAkun(isi: string, pemetaan: PemetaanSumberAkun): FileAkun {
+export function bacaFileAkun(isi: string, pemetaan: PemetaanTemplateAkun): FileAkun {
   const mentah = bacaCsvUmum(isi, [], []);
   if (!mentah.ok) return mentah;
   if (mentah.baris.length > MAKS_BARIS_AKUN) {
@@ -363,5 +365,158 @@ export function rencanakanImporAkun(file: Extract<FileAkun, { ok: true }>, ctx: 
     bolehSimpan: jumlah.ditolak === 0 && jumlah.konflik === 0 && jumlah.baru + jumlah.berubah > 0,
     perluKonfirmasi: jumlah.berubah > 0,
     versi: ctx.versi,
+  };
+}
+
+// ── File COA pengguna (struktur ditinjau, simpan dimatikan) ───────────────────────
+//
+// Kolomnya hanya Kode | Nama Akun | Normal. Tipe/kelompok, induk dan header/posting TIDAK ada,
+// jadi tidak ada yang bisa disimpan: semua baris dipratinjau dengan asal sheet+barisnya, kode kembar
+// ditahan, dan usulan kelompok dari digit pertama hanya ditampilkan (tidak pernah dipakai).
+
+export const MAKS_BARIS_TABEL = 5000;
+export type BarisTabel = { no: number; sel: string[] };
+/** Isi mentah satu sheet/CSV: SEMUA baris dari baris 1, termasuk yang kosong, dengan nomor aslinya. */
+export type TabelSumber = { sheet: string; baris: BarisTabel[] };
+
+export function bacaTabelCsv(isi: string): TabelSumber {
+  const bersih = isi.replace(/^﻿/, "").replace(/\r\n?/g, "\n").replace(/\n$/, "");
+  const pemisah = tebakPemisah(bersih);
+  const baris = bersih.split("\n").slice(0, MAKS_BARIS_TABEL + 1)
+    .map((teks, i) => ({ no: i + 1, sel: teks.trim() ? pecahBaris(teks, pemisah) : [] }));
+  return { sheet: "CSV", baris };
+}
+
+export type StatusCoaPengguna = "menunggu_pemetaan" | "sudah_ada" | "ditahan" | "konflik" | "ditolak";
+export type BarisCoaPengguna = {
+  sumber: { sheet: string; baris: number };
+  kode: string; nama: string;
+  /** nilai Normal persis dari file — belum ditinjau Finance */
+  normalSumber: string;
+  status: StatusCoaPengguna; alasan: string[]; solusi: string | null;
+  /** kelompok yang DIUSULKAN aturan kode KAMO (digit pertama). Bukan keputusan; tidak dipakai menyimpan. */
+  usulanKelompok: TipeAkun | null;
+  catatanNormal: string | null;
+  perubahan: PerubahanKolom[];
+};
+export type JumlahCoaPengguna = Record<StatusCoaPengguna, number> & { totalData: number };
+export type RencanaCoaPenggunaOk = {
+  ok: true; profil: string; sheet: string; barisJudul: number;
+  pembuka: { baris: number; alasan: string }[];
+  kosong: { baris: number; alasan: string }[];
+  kolomDipetakan: { sumber: string; tujuan: KolomAkun }[];
+  kolomDiabaikan: string[]; kolomSaldo: string[];
+  baris: BarisCoaPengguna[];
+  jumlah: JumlahCoaPengguna;
+  kodeUnik: number;
+  normalSumber: Record<string, number>;
+  catatanUsulan: string;
+  terblokir: string[];
+  bolehSimpan: false;
+  versi: string;
+};
+export type RencanaCoaPengguna = { ok: false; pesan: string } | RencanaCoaPenggunaOk;
+
+export function rencanakanCoaPengguna(tabel: TabelSumber, p: PemetaanTerblokirAkun, ctx: KonteksImporAkun): RencanaCoaPengguna {
+  if (tabel.baris.length > MAKS_BARIS_TABEL) return { ok: false, pesan: `File lebih dari ${MAKS_BARIS_TABEL} baris.` };
+
+  // Baris judul dicari dengan teks PERSIS, bukan ditebak dari posisinya.
+  let judul = -1;
+  let posisi: number[] = [];
+  for (let i = 0; i < Math.min(p.cariJudulSampai, tabel.baris.length) && judul < 0; i++) {
+    const sel = tabel.baris[i].sel.map((x) => x.trim());
+    const idx = p.judul.map((j) => sel.indexOf(j.teks));
+    if (p.judul.every((j, k) => idx[k] >= 0 && sel.lastIndexOf(j.teks) === idx[k])) { judul = i; posisi = idx; }
+  }
+  if (judul < 0) {
+    return {
+      ok: false,
+      pesan: `Judul kolom persis "${p.judul.map((j) => j.teks).join(" | ")}" tidak ditemukan di ${p.cariJudulSampai} baris teratas` +
+        `${tabel.sheet === "CSV" ? "" : ` sheet ${tabel.sheet}`}. File ini tidak sesuai format ${p.label}.`,
+    };
+  }
+  const barisJudul = tabel.baris[judul].no;
+  const kolomDipetakan = p.judul.map((j) => ({ sumber: j.teks, tujuan: j.ke }));
+  const kolomDiabaikan: string[] = [];
+  const kolomSaldo: string[] = [];
+  tabel.baris[judul].sel.map((x) => x.trim()).forEach((h, i) => {
+    if (!h || posisi.includes(i)) return;
+    (KOLOM_BERNILAI.test(h.toLowerCase()) ? kolomSaldo : kolomDiabaikan).push(h);
+  });
+  const ke = (kolom: KolomAkun) => posisi[p.judul.findIndex((j) => j.ke === kolom)];
+
+  const pembuka = tabel.baris.slice(0, judul)
+    .map((b) => ({ baris: b.no, alasan: `Baris pembuka sebelum judul kolom (baris ${barisJudul}) — dilewati.` }));
+  const kosong: { baris: number; alasan: string }[] = [];
+  const data: { no: number; kode: string; nama: string; normal: string }[] = [];
+  for (const b of tabel.baris.slice(judul + 1)) {
+    if (b.sel.every((x) => !x.trim())) { kosong.push({ baris: b.no, alasan: "Baris kosong dilewati." }); continue; }
+    const ambil = (k: KolomAkun) => (b.sel[ke(k)] ?? "").trim();
+    data.push({ no: b.no, kode: ambil("kode"), nama: ambil("nama"), normal: ambil("saldo_normal") });
+  }
+  // Baris kosong di ujung file (sesudah data terakhir) bukan baris data yang hilang.
+  const terakhir = data.at(-1)?.no ?? barisJudul;
+  while (kosong.length && kosong[kosong.length - 1].baris > terakhir) kosong.pop();
+
+  const perKode = new Map<string, typeof data>();
+  for (const d of data) if (d.kode) perKode.set(d.kode, [...(perKode.get(d.kode) ?? []), d]);
+  const adaPerKode = new Map(ctx.akun.map((a) => [a.code, a]));
+  const punya = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+
+  const baris: BarisCoaPengguna[] = data.map((d) => {
+    const usulan = /^[1-5]/.test(d.kode) ? DIGIT_TIPE[d.kode[0]] : null;
+    const sisi = punya(p.normal, d.normal) ? p.normal[d.normal] : null;
+    const b: BarisCoaPengguna = {
+      sumber: { sheet: tabel.sheet, baris: d.no }, kode: d.kode, nama: d.nama, normalSumber: d.normal,
+      status: "menunggu_pemetaan", alasan: [], solusi: null, usulanKelompok: usulan, perubahan: [],
+      catatanNormal: usulan && sisi && sisi !== SISI_WAJAR[usulan]
+        ? `Normal sumber ${d.normal} berbeda dari sisi wajar kelompok usulan ${usulan} (${SISI_WAJAR[usulan] === "D" ? "Debit" : "Kredit"}) — perlu tinjauan Finance (bisa akun kontra).`
+        : null,
+    };
+    const kembar = d.kode ? perKode.get(d.kode)! : [];
+    if (kembar.length > 1) {
+      const namaBeda = new Set(kembar.map((k) => k.nama)).size;
+      const daftar = kembar.slice(0, 8).map((k) => k.no).join(", ") + (kembar.length > 8 ? ", …" : "");
+      b.status = "ditahan";
+      b.alasan = [`Kode ${d.kode} muncul di ${kembar.length} baris (baris ${daftar}) dengan ${namaBeda} nama berbeda. ` +
+        "Ditahan: tidak digabung, tidak ditimpa, dan tidak diberi nomor baru otomatis."];
+      b.solusi = "Finance/pemilik menentukan kode yang benar untuk tiap nama, lalu perbaiki di file.";
+      return b;
+    }
+    const tolak = (alasan: string) => { b.status = "ditolak"; b.alasan = [alasan]; return b; };
+    if (!d.kode) return tolak("Kode akun kosong.");
+    if (!d.nama) return tolak("Nama akun kosong.");
+    if (d.nama.length > 80) return tolak(`Nama akun ${d.nama.length} huruf — maksimal 80.`);
+    if (!sisi) return tolak(`Normal "${d.normal || "(kosong)"}" tidak dikenal (isi: ${Object.keys(p.normal).join(" / ")}).`);
+    if (!/^\d{4,6}$/.test(d.kode) || !usulan) {
+      b.status = "konflik";
+      b.alasan = [`Kode ${d.kode} tidak cocok kontrak kode KAMO (4–6 angka, digit pertama 1–5 = kelompok).`];
+      b.solusi = `Ubah kode di file, atau putuskan aturan padanan kode yang ditinjau. ${TETAP_KODE}`;
+      return b;
+    }
+    const lama = adaPerKode.get(d.kode);
+    if (lama) {
+      b.status = "sudah_ada";
+      if (d.nama !== lama.name) b.perubahan.push({ kolom: "nama", lama: lama.name, baru: d.nama });
+      if (sisi !== lama.normal_balance) b.perubahan.push({ kolom: "saldo_normal", lama: lama.normal_balance, baru: sisi });
+      b.alasan = [b.perubahan.length
+        ? "Kode sudah ada di bagan akun KAMO; perbedaannya hanya ditampilkan, tidak diterapkan."
+        : "Kode sudah ada di bagan akun KAMO dengan nama & Normal sama."];
+      return b;
+    }
+    b.alasan = ["Menunggu keputusan kelompok, induk dan header/posting — belum bisa disimpan."];
+    return b;
+  });
+
+  const jumlah: JumlahCoaPengguna = { totalData: baris.length, menunggu_pemetaan: 0, sudah_ada: 0, ditahan: 0, konflik: 0, ditolak: 0 };
+  for (const b of baris) jumlah[b.status]++;
+  const normalSumber: Record<string, number> = Object.fromEntries([...Object.keys(p.normal), "lain"].map((k) => [k, 0]));
+  for (const d of data) normalSumber[punya(p.normal, d.normal) ? d.normal : "lain"]++;
+
+  return {
+    ok: true, profil: p.label, sheet: tabel.sheet, barisJudul, pembuka, kosong, kolomDipetakan, kolomDiabaikan, kolomSaldo,
+    baris, jumlah, kodeUnik: perKode.size, normalSumber,
+    catatanUsulan: "Kolom kelompok berisi usulan dari digit pertama kode menurut aturan KAMO — belum disetujui dan tidak dipakai untuk menyimpan.",
+    terblokir: p.terblokir, bolehSimpan: false, versi: ctx.versi,
   };
 }

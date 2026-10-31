@@ -6,11 +6,11 @@
 import { useActionState, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import type { KonfigImpor } from "@/lib/impor-jenis";
-import type { StatusBaris } from "@/lib/impor-akun";
+import type { StatusBaris, StatusCoaPengguna, RencanaCoaPenggunaOk } from "@/lib/impor-akun";
 import { PEMETAAN_AKUN } from "@/lib/impor-akun-pemetaan";
 import { prosesImporAkun, type HasilImporAkun } from "../actions";
 
-const AWAL: HasilImporAkun = { langkah: "awal", pesan: null, rencana: null, sha: null, versi: null };
+const AWAL: HasilImporAkun = { langkah: "awal", pesan: null, rencana: null, coaPengguna: null, sha: null, versi: null };
 
 const LABEL: Record<StatusBaris, { teks: string; warna: string; latar: string }> = {
   baru: { teks: "Baru", warna: "#15803d", latar: "#f0fdf4" },
@@ -26,6 +26,7 @@ export function ImporAkunForm({ konfig }: { konfig: KonfigImpor }) {
   const [csv, setCsv] = useState("");
   const [namaFile, setNamaFile] = useState("");
   const [diperiksa, setDiperiksa] = useState<string | null>(null);
+  const [sumber, setSumber] = useState("kamo");
   const wajib = new Set<string>(konfig.wajib);
   const r = state.rencana;
   const masihSama = diperiksa !== null && diperiksa === csv;
@@ -33,7 +34,8 @@ export function ImporAkunForm({ konfig }: { konfig: KonfigImpor }) {
   const ambilFile = async (f: File | undefined) => {
     if (!f) return;
     setNamaFile(f.name);
-    setCsv(await f.text());
+    // .xlsx dikirim apa adanya sebagai berkas; CSV dibaca jadi teks supaya bisa ditinjau/diedit.
+    setCsv(/\.xlsx$/i.test(f.name) ? "" : await f.text());
   };
 
   const unduhContoh = () => {
@@ -56,12 +58,14 @@ export function ImporAkunForm({ konfig }: { konfig: KonfigImpor }) {
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 12 }}>
         <label className="flab" htmlFor="sumber-akun" style={{ margin: 0 }}>Format file</label>
-        <select id="sumber-akun" name="sumber" className="fi" style={{ width: "auto" }} defaultValue="kamo">
+        <select id="sumber-akun" name="sumber" className="fi" style={{ width: "auto" }} value={sumber}
+          onChange={(e) => setSumber(e.target.value)}>
           {Object.entries(PEMETAAN_AKUN).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}
         </select>
         <label className="btn-def" style={{ cursor: "pointer" }}>
-          <i className="ti ti-file-upload" /> Pilih file CSV
-          <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => ambilFile(e.target.files?.[0])} />
+          <i className="ti ti-file-upload" /> Pilih file {sumber === "kamo" ? "CSV" : "CSV/XLSX"}
+          <input type="file" name="berkas" accept={sumber === "kamo" ? ".csv,text/csv" : ".csv,.xlsx,text/csv"} style={{ display: "none" }}
+            onChange={(e) => ambilFile(e.target.files?.[0])} />
         </label>
         <button type="button" className="btn-def" onClick={unduhContoh}>
           <i className="ti ti-download" /> Unduh contoh
@@ -69,8 +73,9 @@ export function ImporAkunForm({ konfig }: { konfig: KonfigImpor }) {
         {namaFile && <span style={{ fontSize: 11, color: "var(--tm)" }}><i className="ti ti-paperclip" /> {namaFile}</span>}
       </div>
       <div style={{ fontSize: 10.5, color: "var(--td)", marginBottom: 10 }}>
-        Ekspor Accurate belum bisa dibaca langsung — pemetaan kolomnya menunggu contoh file asli. Untuk sekarang
-        salin isinya ke format contoh KAMO (unduh contoh di atas).
+        {sumber === "kamo"
+          ? "Ekspor Accurate belum bisa dibaca langsung — pemetaan kolomnya menunggu contoh file asli. Untuk sekarang salin isinya ke format contoh KAMO (unduh contoh di atas)."
+          : "Format file COA pengguna (Kode/Nama Akun/Normal) hanya bisa DIPRATINJAU. Menyimpan dimatikan sampai keputusan kelompok, induk dan header/posting disetujui. Untuk memeriksa ulang file .xlsx, pilih filenya lagi."}
       </div>
 
       <label className="flab">Isi file (boleh ditempel langsung dari Excel)</label>
@@ -103,6 +108,8 @@ export function ImporAkunForm({ konfig }: { konfig: KonfigImpor }) {
           <i className={`ti ${state.langkah === "tersimpan" ? "ti-circle-check" : "ti-alert-circle"}`} /> {state.pesan}
         </div>
       )}
+
+      {state.coaPengguna && <PratinjauCoaPengguna r={state.coaPengguna} />}
 
       {r && state.langkah !== "tersimpan" && (
         <div style={{ marginTop: 14 }}>
@@ -181,5 +188,67 @@ export function ImporAkunForm({ konfig }: { konfig: KonfigImpor }) {
         </div>
       )}
     </form>
+  );
+}
+
+const LABEL_PENGGUNA: Record<StatusCoaPengguna, { teks: string; warna: string; latar: string }> = {
+  menunggu_pemetaan: { teks: "Menunggu keputusan pemetaan", warna: "#1e40af", latar: "#eff6ff" },
+  sudah_ada: { teks: "Sudah ada di KAMO", warna: "#475569", latar: "#f8fafc" },
+  ditahan: { teks: "Ditahan (kode kembar)", warna: "#b45309", latar: "#fffbeb" },
+  konflik: { teks: "Konflik", warna: "#7c3aed", latar: "#f5f3ff" },
+  ditolak: { teks: "Ditolak", warna: "#b91c1c", latar: "#fef2f2" },
+};
+const URUT_PENGGUNA: StatusCoaPengguna[] = ["ditolak", "konflik", "ditahan", "sudah_ada", "menunggu_pemetaan"];
+
+function PratinjauCoaPengguna({ r }: { r: RencanaCoaPenggunaOk }) {
+  const { totalData, ...kategori } = r.jumlah;
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+        Pratinjau {r.profil} — {r.sheet === "CSV" ? "CSV" : `sheet ${r.sheet}`}, judul kolom di baris {r.barisJudul}
+      </div>
+      <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+        <i className="ti ti-lock" /> <b>Belum bisa disimpan.</b> Keputusan yang dibutuhkan:
+        <ul style={{ margin: "4px 0 0 18px" }}>{r.terblokir.map((t) => <li key={t}>{t}</li>)}</ul>
+      </div>
+      <div style={{ fontSize: 11.5, margin: "8px 0" }}>
+        {totalData} baris data = {URUT_PENGGUNA.map((s) => `${kategori[s]} ${LABEL_PENGGUNA[s].teks.toLowerCase()}`).join(" + ")}.
+        {" "}{r.kodeUnik} kode unik. Normal di file (nilai sumber, belum ditinjau Finance):{" "}
+        {Object.entries(r.normalSumber).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(" / ")}.
+      </div>
+      <div style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.7, marginBottom: 8 }}>
+        Kolom dipetakan: {r.kolomDipetakan.map((k) => `${k.sumber} → ${k.tujuan}`).join(", ")}
+        {r.kolomDiabaikan.length > 0 && <><br />Kolom diabaikan: {r.kolomDiabaikan.join(", ")}</>}
+        {r.kolomSaldo.length > 0 && <><br /><b style={{ color: "#b45309" }}>Kolom saldo tidak diimpor</b>: {r.kolomSaldo.join(", ")}</>}
+        {[...r.pembuka, ...r.kosong].map((p) => <div key={p.baris}>Baris {p.baris}: {p.alasan}</div>)}
+        <div>{r.catatanUsulan}</div>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="tbl" style={{ width: "100%", fontSize: 11 }}>
+          <thead><tr><th>Asal</th><th>Kode</th><th>Nama Akun</th><th>Normal (sumber)</th><th>Kelompok (usulan, belum disetujui)</th><th>Status</th><th>Keterangan</th></tr></thead>
+          <tbody>
+            {[...r.baris].sort((a, b) => URUT_PENGGUNA.indexOf(a.status) - URUT_PENGGUNA.indexOf(b.status) || a.sumber.baris - b.sumber.baris)
+              .map((b) => (
+                <tr key={b.sumber.baris} style={{ background: LABEL_PENGGUNA[b.status].latar }}>
+                  <td>{b.sumber.sheet === "CSV" ? "" : `${b.sumber.sheet}!`}baris {b.sumber.baris}</td>
+                  <td><code>{b.kode || "—"}</code></td>
+                  <td>{b.nama}</td>
+                  <td>{b.normalSumber}</td>
+                  <td style={{ color: "var(--tm)", fontStyle: "italic" }}>{b.usulanKelompok ?? "—"}</td>
+                  <td style={{ color: LABEL_PENGGUNA[b.status].warna, fontWeight: 700 }}>{LABEL_PENGGUNA[b.status].teks}</td>
+                  <td>
+                    {b.alasan.map((a, i) => <div key={i}>{a}</div>)}
+                    {b.solusi && <div style={{ color: "#1e40af" }}>Solusi: {b.solusi}</div>}
+                    {b.catatanNormal && <div style={{ color: "#b45309" }}>{b.catatanNormal}</div>}
+                    {b.perubahan.map((p) => (
+                      <div key={p.kolom}>{p.kolom}: <s>{p.lama || "(kosong)"}</s> → <b>{p.baru || "(kosong)"}</b></div>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

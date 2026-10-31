@@ -7,7 +7,11 @@ import { createClient } from "@/lib/supabase/server";
 import { klienMasterAdmin } from "@/lib/master-guard";
 import { bacaCsvUmum, ringkasSalah, type BarisSalah } from "@/lib/impor-csv";
 import { periksaPelanggan, periksaPemasok } from "@/lib/impor-master";
-import { bacaFileAkun, rencanakanImporAkun, type KonteksImporAkun, type RencanaImporAkun } from "@/lib/impor-akun";
+import {
+  bacaFileAkun, bacaTabelCsv, rencanakanCoaPengguna, rencanakanImporAkun,
+  type KonteksImporAkun, type RencanaCoaPenggunaOk, type RencanaImporAkun, type TabelSumber,
+} from "@/lib/impor-akun";
+import { BATAS_XLSX_AKUN, bacaTabelXlsx } from "@/lib/impor-akun-xlsx";
 import { pemetaanAkun } from "@/lib/impor-akun-pemetaan";
 import { KONFIG, isJenisImpor, type JenisImpor } from "@/lib/impor-jenis";
 import { kunciNama, kunciTarget, periksaKomisi, periksaTarget } from "@/lib/impor-komisi";
@@ -165,6 +169,8 @@ export type HasilImporAkun = {
   langkah: "awal" | "pratinjau" | "tersimpan" | "gagal";
   pesan: string | null;
   rencana: Omit<RencanaImporAkun, "kirim"> | null;
+  /** Pratinjau format file COA pengguna (Kode/Nama Akun/Normal) — tidak pernah bisa disimpan. */
+  coaPengguna: RencanaCoaPenggunaOk | null;
   /** SHA-256 isi file yang dipratinjau; simpan ditolak bila isinya sudah lain. */
   sha: string | null;
   /** Sidik jari bagan akun saat pratinjau; simpan ditolak bila sudah berubah. */
@@ -172,7 +178,8 @@ export type HasilImporAkun = {
 };
 
 const TANPA_HAK_AKUN = "Hanya OWNER/ADMIN aktif yang boleh mengimpor bagan akun.";
-const sha256 = (isi: string) => createHash("sha256").update(isi).digest("hex");
+const sha256 = (isi: string | Uint8Array) => createHash("sha256").update(isi).digest("hex");
+const GAGAL_BACA_AKUN = "Daftar akun KAMO gagal dibaca, jadi pratinjau belum bisa dibuat (bukan berarti bagan akun kosong). Coba lagi sebentar lagi.";
 
 function bacaKonteksAkun(data: unknown): KonteksImporAkun | null {
   const d = data as Partial<KonteksImporAkun> | null;
@@ -191,29 +198,67 @@ function pesanTolakAkun(error: { message?: string } | null): string | null {
  * server dari isi file yang sama (tidak ada data/flag klien yang dipercaya), lalu memanggil RPC.
  */
 export async function prosesImporAkun(_prev: HasilImporAkun, formData: FormData): Promise<HasilImporAkun> {
-  const tanpaRencana = { rencana: null, sha: null, versi: null };
+  const tanpaRencana = { rencana: null, coaPengguna: null, sha: null, versi: null };
   const supabase = await klienMasterAdmin();
   if (!supabase) return { langkah: "gagal", pesan: TANPA_HAK_AKUN, ...tanpaRencana };
 
-  const csv = String(formData.get("csv") ?? "");
-  if (!csv.trim()) return { langkah: "gagal", pesan: "Belum ada file atau isian CSV.", ...tanpaRencana };
   const pemetaan = pemetaanAkun(String(formData.get("sumber") ?? "kamo"));
   if (!pemetaan) return { langkah: "gagal", pesan: "Format file belum didukung.", ...tanpaRencana };
-  const file = bacaFileAkun(csv, pemetaan);
-  if (!file.ok) return { langkah: "gagal", pesan: file.pesan, ...tanpaRencana };
+  const csv = String(formData.get("csv") ?? "");
+  const berkas = formData.get("berkas");
+  const xlsx = berkas instanceof File && berkas.size > 0 && /\.xlsx$/i.test(berkas.name) ? berkas : null;
 
-  const { data, error } = await supabase.rpc("read_coa_import_context");
-  const ctx = error ? null : bacaKonteksAkun(data);
-  if (!ctx) {
+  const bacaKonteks = async () => {
+    const { data, error } = await supabase.rpc("read_coa_import_context");
+    return error ? null : bacaKonteksAkun(data);
+  };
+
+  // Format yang strukturnya sudah ditinjau tetapi belum lengkap: pratinjau saja, simpan dimatikan di
+  // server (apa pun yang dikirim klien), tidak ada RPC tulis yang pernah dipanggil.
+  if (pemetaan.jenis === "terblokir") {
+    let tabel: TabelSumber;
+    let sha: string;
+    if (xlsx) {
+      if (xlsx.size > BATAS_XLSX_AKUN) return { langkah: "gagal", pesan: "File Excel lebih dari 2 MB.", ...tanpaRencana };
+      const bytes = new Uint8Array(await xlsx.arrayBuffer());
+      const t = await bacaTabelXlsx(bytes, pemetaan);
+      if (!t.ok) return { langkah: "gagal", pesan: t.pesan, ...tanpaRencana };
+      tabel = t.tabel; sha = sha256(bytes);
+    } else if (csv.trim()) {
+      tabel = bacaTabelCsv(csv); sha = sha256(csv);
+    } else {
+      return { langkah: "gagal", pesan: "Belum ada file .xlsx atau isian CSV.", ...tanpaRencana };
+    }
+    const ctx = await bacaKonteks();
+    if (!ctx) return { langkah: "gagal", pesan: GAGAL_BACA_AKUN, ...tanpaRencana };
+    const r = rencanakanCoaPengguna(tabel, pemetaan, ctx);
+    if (!r.ok) return { langkah: "gagal", pesan: r.pesan, ...tanpaRencana };
+    const hasil: HasilImporAkun = { langkah: "pratinjau", pesan: null, rencana: null, coaPengguna: r, sha, versi: ctx.versi };
+    if (formData.get("langkah") !== "simpan") return hasil;
     return {
-      langkah: "gagal", ...tanpaRencana,
-      pesan: "Daftar akun KAMO gagal dibaca, jadi pratinjau belum bisa dibuat (bukan berarti bagan akun kosong). Coba lagi sebentar lagi.",
+      ...hasil,
+      pesan: `Format ${pemetaan.label} belum bisa disimpan: kelompok, induk dan header/posting belum punya keputusan ` +
+        `pemetaan yang disetujui, dan ${r.jumlah.ditahan} baris kode kembar ditahan. Tidak ada yang disimpan.`,
     };
   }
 
+  if (xlsx) {
+    return {
+      langkah: "gagal", ...tanpaRencana,
+      pesan: "Template KAMO dibaca dari CSV (Excel → Save As → CSV). File .xlsx hanya didukung untuk format file COA pengguna.",
+    };
+  }
+  if (!csv.trim()) return { langkah: "gagal", pesan: "Belum ada file atau isian CSV.", ...tanpaRencana };
+  const file = bacaFileAkun(csv, pemetaan);
+  if (!file.ok) return { langkah: "gagal", pesan: file.pesan, ...tanpaRencana };
+
+  const ctx = await bacaKonteks();
+  if (!ctx) return { langkah: "gagal", pesan: GAGAL_BACA_AKUN, ...tanpaRencana };
+
   const { kirim, ...rencana } = rencanakanImporAkun(file, ctx);
   const sha = sha256(csv);
-  const pratinjau = (pesan: string | null): HasilImporAkun => ({ langkah: "pratinjau", pesan, rencana, sha, versi: ctx.versi });
+  const pratinjau = (pesan: string | null): HasilImporAkun =>
+    ({ langkah: "pratinjau", pesan, rencana, coaPengguna: null, sha, versi: ctx.versi });
   if (formData.get("langkah") !== "simpan") return pratinjau(null);
 
   if (String(formData.get("sha") ?? "") !== sha) {
@@ -234,14 +279,14 @@ export async function prosesImporAkun(_prev: HasilImporAkun, formData: FormData)
   const { data: hasil, error: gagal } = await supabase.rpc("import_coa_accounts", { p_rows: kirim, p_version: ctx.versi });
   if (gagal) {
     return {
-      langkah: "gagal", rencana, sha, versi: ctx.versi,
+      langkah: "gagal", rencana, coaPengguna: null, sha, versi: ctx.versi,
       pesan: `Impor gagal — tidak ada akun yang tersimpan. ${pesanTolakAkun(gagal) ?? "Coba lagi; bila berulang, laporkan ke admin sistem."}`,
     };
   }
   revalidatePath("/keuangan/coa");
   const jumlah = (hasil ?? {}) as { dibuat?: number; diubah?: number };
   return {
-    langkah: "tersimpan", rencana, sha, versi: null,
+    langkah: "tersimpan", rencana, coaPengguna: null, sha, versi: null,
     pesan: `${jumlah.dibuat ?? 0} akun baru dibuat, ${jumlah.diubah ?? 0} akun diubah. Tidak ada saldo atau jurnal yang dibuat.`,
   };
 }

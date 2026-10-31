@@ -61,6 +61,38 @@ KAMO, dan bila perlu nilai tipe sumber → tipe KAMO) dengan `ditinjau` terisi, 
 Pemetaan hanya mengganti nama kolom; kode akun tetap apa adanya. Jika kode Accurate memakai pemisah (mis. titik),
 hasilnya konflik sampai ada keputusan kontrak kode (lihat §7).
 
+## 5b. File COA pengguna (Kode | Nama Akun | Normal) — pratinjau saja, simpan TERBLOKIR
+
+Dasar: inspeksi read-only Reza atas COA.xlsx pengguna (file asli tidak diunggah; 6 nama akun memuat petunjuk
+nomor rekening). Ini daftar COA milik pengguna, **belum terbukti** ekspor asli Accurate, jadi profilnya bernama
+`file COA pengguna (Kode/Nama Akun/Normal)`.
+
+- Profil `pengguna-kode-nama-normal` di `impor-akun-pemetaan.ts`: sheet `Sheet1`, judul dicari dengan teks persis
+  `Kode | Nama Akun | Normal` di 20 baris teratas (bukan posisi), baris sebelumnya dihitung & ditampilkan sebagai
+  pembuka yang dilewati. `.xlsx` dibaca langsung dengan `exceljs` yang sudah ada (tanpa dependensi baru); CSV juga bisa.
+- Setiap baris data tampil dengan asal sheet+baris. Kategori: menunggu keputusan pemetaan / sudah ada di KAMO (diff
+  ditampilkan saja) / ditahan (kode kembar, semua barisnya) / konflik (kode di luar kontrak) / ditolak. Jumlahnya
+  selalu sama dengan total baris data.
+- Kelompok dari digit pertama kode hanya **usulan**, tidak dipakai. Nilai Normal tampil sebagai nilai sumber;
+  bila berbeda dari sisi wajar usulan, diberi catatan "perlu tinjauan Finance".
+- **Simpan dimatikan di server** untuk profil ini (apa pun yang dikirim klien); RPC tulis tidak pernah dipanggil.
+- File contoh **sintetis** berbentuk sama: `supabase/tests/fixtures/coa-pengguna-sintetis.xlsx`
+  (SHA-256 `cc7d84f77dbd40693f60d5b04ba4f47f4baf3736e9d50822dbd6a4144ee703ff`) dan `.csv`
+  (`a98181310f7bfbe9b605aaa673aadf04afdc97d8dce224e29ece531be1e6e469`), dibuat `scripts/buat-fixture-coa-pengguna.mjs`:
+  3 baris pembuka, judul baris 4, 204 baris data, 179 kode unik 6 angka, 110001 ×21 + 120001 ×6 dengan nama berbeda,
+  Debit 150 / Kredit 54, nama fiktif tanpa nomor rekening. Hasil pratinjau: 177 menunggu pemetaan + 27 ditahan = 204.
+
+Keputusan yang dibutuhkan sebelum profil ini bisa menyimpan (lalu dipasang sebagai langkah tinjauan eksplisit di layar):
+1. **Kelompok/tipe** tiap akun: (A) setujui aturan digit pertama (1 Aset … 5 Beban) untuk semua, (B) daftar kelompok per
+   akun dari Finance.
+2. **Induk/hierarki**: (A) tanpa induk (datar), (B) aturan dari pola kode (mis. 6 angka → induk 4 angka) yang ditinjau,
+   (C) kolom induk diisi Finance.
+3. **Header vs posting**: akun mana yang hanya penjumlah (tidak bisa dijurnal).
+4. **27 baris kode kembar** (110001 ×21, 120001 ×6): kode benar untuk tiap nama (mis. nomor baru dari Finance).
+5. **Normal**: Finance meninjau nilai Debit/Kredit, terutama yang berbeda dari sisi wajar kelompoknya.
+6. Benturan dengan akun sistem KAMO (4 angka, mis. 1101 Kas): akun 6 angka pengguna menjadi akun baru di samping akun
+   sistem, atau dipetakan ke akun sistem — perlu keputusan supaya transaksi otomatis tetap masuk ke akun yang benar.
+
 ## 6. Bukti uji
 
 Lihat deskripsi PR (`/opt/data/pr-body-claude-coa-impor-accurate.md`) dan `/opt/data/coa-impor-evidence/`.

@@ -53,7 +53,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 import { prosesImporAkun, type HasilImporAkun } from "@/app/(app)/pengaturan/impor/actions";
 
 const FIXTURE = readFileSync(new URL("../../../supabase/tests/fixtures/coa-impor-kamo-fiktif.csv", import.meta.url), "utf8");
-const AWAL: HasilImporAkun = { langkah: "awal", pesan: null, rencana: null, sha: null, versi: null };
+const AWAL: HasilImporAkun = { langkah: "awal", pesan: null, rencana: null, coaPengguna: null, sha: null, versi: null };
 
 function form(csv: string, langkah: "periksa" | "simpan", extra: Record<string, string> = {}) {
   const f = new FormData();
@@ -182,6 +182,31 @@ describe.skipIf(!live)("COA import: parser → preview → real action → real 
     expect(stale.langkah).not.toBe("tersimpan");
     expect(stale.pesan).toMatch(/berubah/);
     expect(ada("5895")).toBe(false);
+  });
+
+  it("user COA file (Kode/Nama Akun/Normal, synthetic .xlsx): full preview from the real chart, save refused, nothing written", async () => {
+    native.user = env.KAMO_TEST_OWNER!;
+    const xlsx = readFileSync(new URL("../../../supabase/tests/fixtures/coa-pengguna-sintetis.xlsx", import.meta.url));
+    expect(createHash("sha256").update(xlsx).digest("hex")).toBe("cc7d84f77dbd40693f60d5b04ba4f47f4baf3736e9d50822dbd6a4144ee703ff");
+    const f = (langkah: string, extra: Record<string, string> = {}) => {
+      const d = new FormData();
+      d.set("sumber", "pengguna-kode-nama-normal"); d.set("langkah", langkah); d.set("csv", "");
+      d.set("berkas", new File([new Uint8Array(xlsx)], "COA.xlsx"));
+      for (const [k, v] of Object.entries(extra)) d.set(k, v);
+      return d;
+    };
+    const before = jumlahAkun(); const money = uang();
+    const p = await prosesImporAkun(AWAL, f("periksa"));
+    expect(p.pesan).toBeNull();
+    expect(p.coaPengguna!.jumlah).toEqual({ totalData: 204, menunggu_pemetaan: 177, sudah_ada: 0, ditahan: 27, konflik: 0, ditolak: 0 });
+    expect(p.coaPengguna!.kodeUnik).toBe(179);
+    expect(p.coaPengguna!.barisJudul).toBe(4);
+    const s = await prosesImporAkun(p, f("simpan", { konfirmasi: "1", sha: p.sha!, versi: p.versi! }));
+    expect(s.langkah).not.toBe("tersimpan");
+    expect(s.pesan).toMatch(/belum bisa disimpan/);
+    expect(jumlahAkun()).toBe(before);
+    expect(uang()).toBe(money);
+    expect(admin("select count(*) from public.coa_accounts where code in ('110001','120001','110101','510101');")).toBe("0");
   });
 
   it("a failure at the final parent-linking stage leaves nothing behind and is reported as failed", async () => {

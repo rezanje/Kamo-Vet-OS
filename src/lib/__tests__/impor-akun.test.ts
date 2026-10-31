@@ -245,11 +245,12 @@ describe("file reading and mapping hook", () => {
     expect(r.ok).toBe(false);
   });
 
-  it("only ships reviewed mappings: KAMO template only, no guessed Accurate headers", () => {
-    expect(Object.keys(PEMETAAN_AKUN)).toEqual(["kamo"]);
-    for (const p of Object.values(PEMETAAN_AKUN)) {
-      expect(new Set(Object.values(p.kolom)).size).toBe(Object.values(p.kolom).length);
-    }
+  it("only ships reviewed mappings; the only savable one is the KAMO template; no guessed Accurate headers", () => {
+    const bisaSimpan = Object.entries(PEMETAAN_AKUN).filter(([, p]) => p.jenis === "template").map(([id]) => id);
+    expect(bisaSimpan).toEqual(["kamo"]);
+    const k = PEMETAAN_AKUN.kamo.kolom;
+    expect(new Set(Object.values(k)).size).toBe(Object.values(k).length);
+    expect(JSON.stringify(PEMETAAN_AKUN)).not.toMatch(/accurate/i);
   });
 });
 
