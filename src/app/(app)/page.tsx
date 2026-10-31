@@ -6,6 +6,7 @@ import { bacaSudut, LABEL_SUDUT, SUDUT, type Sudut } from "@/lib/dashboard-peran
 import { hariIniWIB } from "@/lib/tanggal";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 import { queueDayBounds } from "@/lib/queue";
+import { hitungGroomingKasir } from "@/lib/grooming-kasir";
 import { loadPendingWork } from "@/lib/pending-work";
 import { PendingWorkAlerts } from "@/components/PendingWorkAlerts";
 
@@ -134,12 +135,13 @@ export default async function Dashboard({
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: string; tone: "g" | "r" | "b" | "o" }) {
+function Kpi({ label, value, tone, sub }: { label: string; value: string; tone: "g" | "r" | "b" | "o"; sub?: string }) {
   const col = { g: "#16a34a", r: "#dc2626", b: "#2563eb", o: "#d97706" }[tone];
   return (
     <div className="kcard">
       <div className="klab">{label}</div>
       <div className="kval" style={{ color: col }}>{value}</div>
+      {sub && <div className="ksub" style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -216,7 +218,7 @@ async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | nu
     const [
       { count: kunjungan, error: kunjunganError },
       { count: grooming, error: groomingError },
-      { count: menunggu }, { data: sales }, { data: stok },
+      { count: menunggu }, { data: sales }, { data: stok }, groomingKasir,
     ] = await Promise.all([
       supabase.from("visits").select("id", { count: "exact", head: true })
         .gte("created_at", hari.from).lt("created_at", hari.until),
@@ -226,7 +228,12 @@ async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | nu
         .eq("status", "Menunggu").gte("created_at", hari.from).lt("created_at", hari.until),
       supabase.from("sales").select("total, payment_plan, payments_finalized_at, voided_at").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("stock").select("qty, items!inner(name, min_stock)").gt("items.min_stock", 0),
+      // R06: grooming jasa sold at the POS cashier counts too (units, voided sales excluded).
+      hitungGroomingKasir(supabase, hari.from, hari.until).then((value) => value, () => null),
     ]);
+    const groomingKlinik = groomingError || grooming == null ? null : grooming;
+    const groomingTotal = groomingKlinik == null || groomingKasir == null ? null : groomingKlinik + groomingKasir;
+    const angka = (n: number | null) => n == null ? "—" : `${Math.round(n * 100) / 100}`;
 
     const struk = (sales ?? []).filter(isCompletedSale) as { total: number }[];
     const omzet = struk.reduce((a, s) => a + Number(s.total), 0);
@@ -245,13 +252,15 @@ async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | nu
 
         <div className="kgrid">
           <Kpi label="Kunjungan klinik hari ini" value={kunjunganError || kunjungan == null ? "—" : `${kunjungan}`} tone="b" />
-          <Kpi label="Grooming hari ini" value={groomingError || grooming == null ? "—" : `${grooming}`} tone="g" />
+          <Kpi label="Grooming hari ini" value={angka(groomingTotal)} tone="g"
+            sub={`Klinik ${angka(groomingKlinik)} · Kasir ${angka(groomingKasir)}`} />
           <Kpi label="Sedang menunggu antrian" value={`${menunggu ?? 0}`} tone={(menunggu ?? 0) > 0 ? "o" : "g"} />
           <Kpi label="Transaksi kasir hari ini" value={`${struk.length}`} tone="b" />
         </div>
         <div style={{ fontSize: 10.5, color: "var(--tm)", margin: "-5px 0 13px" }}>
-          Grooming menghitung kunjungan terdaftar hari ini, semua status, sesuai cabang yang boleh diakses.
+          Grooming = kunjungan klinik terdaftar hari ini (semua status) + jumlah layanan grooming yang dijual lewat kasir (struk batal tidak dihitung), sesuai cabang yang boleh diakses.
           {(kunjunganError || groomingError) && " Sebagian angka klinik belum dapat dibaca."}
+          {groomingKasir == null && " Angka grooming kasir belum dapat dibaca."}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11, marginBottom: 13 }}>

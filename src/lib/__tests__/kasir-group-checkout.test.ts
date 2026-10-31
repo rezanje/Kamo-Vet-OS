@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ snapshots: [] as Record<string, unknown>[], issues: [] as Record<string, unknown>[], lines: [] as Record<string, unknown>[], stockComponents: false, failPage: -1, failServiceInsert:false }));
+const state = vi.hoisted(() => ({ snapshots: [] as Record<string, unknown>[], issues: [] as Record<string, unknown>[], lines: [] as Record<string, unknown>[], stockComponents: false, failPage: -1, failServiceInsert:false, layerCost: 100 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
@@ -31,14 +31,16 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     let rows: Record<string, unknown>[] = table === "items" ? [group, {id:"service",nama:"Jasa",unit:"pcs",item_type:"Jasa",sell_price:1000,is_active:true,min_sell_qty:1}, ...components]
       : table === "item_group_components" ? components.map((component, index) => ({
         id: `recipe-${index}`, group_item_id: "group", component_item_id: component.id, qty: state.stockComponents ? 0.111 : 1, unit: "pcs", factor: 1, sort_order: index, component,
-      })) : [];
+      }))
+      : table === "stock_layers" ? components.map(component => ({ id: `layer-${component.id}`, item_id: component.id, qty_left: 10,
+        unit_cost: state.layerCost, exp_date: null, tanggal: "2026-01-01", created_at: "2026-01-01T00:00:00Z" })) : [];
     let from = 0; let to = 999; let count = false;
     const single = () => ({ data: table === "sales" && lookup ? null : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" }
       : table === "customers" ? { points: 0, category_id: null, customer_categories: null }
         : table === "warehouses" ? (state.stockComponents ? { id: "warehouse" } : null) : { id: table === "sales" ? "sale" : (state.lines.at(-1)?.id ?? "sale-item") }, error: insertError ? {message:"service performer changed before insert"} : null });
     const query = {
       select: (_fields: string, options?: { count: string }) => { lookup = _fields.includes("checkout_fingerprint"); count = options?.count === "exact"; return query; },
-      eq: (key:string,value:string) => { if(key==="id") targetId=value; return query; }, lte:()=>query, order: () => query, limit: () => query,
+      eq: (key:string,value:string) => { if(key==="id") targetId=value; return query; }, lte:()=>query, gt:()=>query, not:()=>query, order: () => query, limit: () => query,
       in: (column: string, ids: string[]) => { rows = rows.filter(row => ids.includes(row[column] as string)); return query; },
       range: (start: number, end: number) => { from = start; to = end; return query; },
       insert: (values: Record<string, unknown>[] | Record<string, unknown>) => { if (table === "sale_item_group_components" && Array.isArray(values)) state.snapshots.push(...values); if (table === "sale_items" && !Array.isArray(values)) { insertError=state.failServiceInsert&&values.item_id==="service";if(!insertError)state.lines.push(values); } return query; },
@@ -52,7 +54,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 }) }));
 import { checkoutKasir } from "@/app/kasir/checkout";
 
-beforeEach(() => { state.snapshots = []; state.issues = []; state.lines = []; state.stockComponents = false; state.failPage = -1; state.failServiceInsert=false; });
+beforeEach(() => { state.snapshots = []; state.issues = []; state.lines = []; state.stockComponents = false; state.failPage = -1; state.failServiceInsert=false; state.layerCost = 100; });
 function form() {
   const data = new FormData();
   Object.entries({ customerId: "customer", salespersonId: "seller", metode: "Debit", operationalShiftId: "shift", checkout_key: "checkout-identity",
@@ -96,4 +98,10 @@ it("preflights a missing later service performer before any header or line stock
  const data=form();const rows=JSON.parse(String(data.get("cart")));rows.push({item_id:"service",nama:"Jasa",qty:1,harga:1000,satuan:"pcs",service_performers:{doctor_id:"other-branch",staff_id:null}});data.set("cart",JSON.stringify(rows));
  const outcome=await checkoutKasir(data).catch(error=>error.message);
  expect(outcome).not.toContain("/struk/");expect(state.issues).toEqual([]);expect(state.lines).toEqual([]);
+});
+it("rejects a stock package below the summed FIFO cost of its components before any sale or stock issue (P03)",async()=>{
+ state.stockComponents=true;state.layerCost=5000;
+ const outcome=await checkoutKasir(form()).catch(error=>error.message);
+ expect(decodeURIComponent(outcome)).toContain("Harga neto paket Paket di bawah total HPP FIFO komponennya");
+ expect(state.issues).toEqual([]);expect(state.lines).toEqual([]);expect(state.snapshots).toEqual([]);
 });

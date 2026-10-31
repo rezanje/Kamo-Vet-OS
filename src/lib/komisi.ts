@@ -37,6 +37,13 @@ export type BarisJual = {
   paketAsal?: { itemId: string; qty: number; kategoriIds: string[] };
   /** H05 evidence on a folded package row: number of component lines it replaced. */
   paketKomponen?: number;
+  /**
+   * H05 (keputusan 29 Okt): one package sale sold by several distinct sellers. Each seller's
+   * folded row carries this slot: `qtyPaket` is the signed package qty of the whole sale,
+   * `ke` the seller's position (0 = first seller) and `dari` the number of distinct sellers.
+   * A nominal rule pays round(qtyPaket x nominal) split evenly in rupiah, remainder to `ke` 0.
+   */
+  paketBagi?: { qtyPaket: number; ke: number; dari: number };
   /** H06 evidence: visit date (Asia/Jakarta) and inpatient stay of a counted doctor visit. */
   visitTanggal?: string;
   visitRawatInapId?: string;
@@ -192,7 +199,7 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[], groupPe
       if (a.tipe === "nominal") {
         // Rupiah tetap per unit — tidak butuh HPP, jadi basisnya tidak dipakai.
         dasar = kena.reduce((s, b) => s + b.qty, 0);
-        komisi = dasar * a.nominal;
+        komisi = kena.reduce((s, b) => s + nominalBaris(b, a.nominal), 0);
       } else if (a.basis === "laba") {
         // Baris tanpa HPP dilewati, bukan dianggap laba penuh — itu akan melebihkan komisi.
         const berHpp = kena.filter((b) => b.laba !== null);
@@ -231,6 +238,31 @@ export function hitungKomisi(baris: BarisJual[], aturan: AturanKomisi[], groupPe
   return hasil;
 }
 
+/**
+ * H05: split a whole-rupiah amount evenly over `dari` sellers; the remainder goes to the
+ * first seller (`ke` 0) so the parts always add up to the amount exactly.
+ */
+export function bagiRupiahRata(jumlah: number, dari: number, ke: number): number {
+  if (dari <= 1) return jumlah;
+  const sign = jumlah < 0 ? -1 : 1;
+  const utuh = Math.abs(jumlah);
+  const dasar = Math.floor(utuh / dari);
+  return sign * (ke === 0 ? utuh - dasar * (dari - 1) : dasar);
+}
+
+/** Nominal (rupiah per unit) for one row; a shared package slot is split in whole rupiah. */
+function nominalBaris(b: BarisJual, nominal: number): number {
+  const slot = b.paketBagi;
+  if (!slot || slot.dari <= 1) return b.qty * nominal;
+  const qtySlot = slot.qtyPaket / slot.dari;
+  if (qtySlot === 0) return 0;
+  const sign = slot.qtyPaket < 0 ? -1 : 1;
+  const total = sign * Math.round(Math.abs(slot.qtyPaket * nominal));
+  // A two-performer service slot may be re-split later (S04): the actor keeps its qty share
+  // of the slot, so "both full" keeps the full slot and "split" keeps its percentage.
+  return bagiRupiahRata(total, slot.dari, slot.ke) * (b.qty / qtySlot);
+}
+
 export type SharedIncentive = {employeeId: string;invoiceId: string;amount: number;basis: number};
 export function mergeSharedIncentives(hasil: HasilKomisi[], allocations: readonly SharedIncentive[]): HasilKomisi[] {
   const rows = new Map(hasil.map(row=>[row.employeeId,{...row,rincian:[...row.rincian]}]));
@@ -256,7 +288,8 @@ export function mergeSharedIncentives(hasil: HasilKomisi[], allocations: readonl
 export function ringkasPaket(rows: readonly BarisJual[]): BarisJual[] {
   const out: BarisJual[] = [];
   const groups = new Map<string, BarisJual>();
-  const qtyCounted = new Set<string>();
+  // Folded rows per package sale, in source order, with the package qty of that sale.
+  const perPaket = new Map<string, { qtyPaket: number; rows: BarisJual[] }>();
   for (const row of rows) {
     const { paketAsal: asal, ...rest } = row;
     if (!asal) { out.push(row); continue; }
@@ -268,19 +301,35 @@ export function ringkasPaket(rows: readonly BarisJual[]): BarisJual[] {
     const key = `${paketKey}|${actorKey}`;
     const existing = groups.get(key);
     if (!existing) {
-      // The package qty is counted once per package sale, on its first attribution group;
-      // further groups carry their omzet share with qty 0 so a per-package rule never doubles.
-      const first = !qtyCounted.has(paketKey);
-      qtyCounted.add(paketKey);
-      const folded: BarisJual = { ...rest, itemId: asal.itemId, kategoriIds: asal.kategoriIds,
-        qty: first ? sign * asal.qty : 0, paketKomponen: 1 };
+      const folded: BarisJual = { ...rest, itemId: asal.itemId, kategoriIds: asal.kategoriIds, qty: 0, paketKomponen: 1 };
       groups.set(key, folded);
       out.push(folded);
+      const sale = perPaket.get(paketKey);
+      if (sale) sale.rows.push(folded);
+      else perPaket.set(paketKey, { qtyPaket: sign * asal.qty, rows: [folded] });
       continue;
     }
     existing.omzet += row.omzet;
     existing.laba = existing.laba === null || row.laba === null ? null : existing.laba + row.laba;
     existing.paketKomponen = (existing.paketKomponen ?? 0) + 1;
+  }
+  // Keputusan pemilik 29 Okt: the package qty (and so a per-package nominal) is split evenly
+  // among the distinct sellers of that package's lines, first seller first. A seller is a
+  // named employee, or one unresolved two-performer service (resolved later by S04). Lines
+  // with nobody attached are not a seller; with no seller at all the qty stays on the first row.
+  for (const { qtyPaket, rows: folded } of perPaket.values()) {
+    const slots = new Map<string, BarisJual>();
+    for (const row of folded) {
+      if (!row.employeeId && !row.commissionPending) continue;
+      const slotKey = row.employeeId && !row.commissionPending ? `emp:${row.employeeId}` : `pending:${JSON.stringify(row.servicePerformers ?? null)}`;
+      if (!slots.has(slotKey)) slots.set(slotKey, row);
+    }
+    const sellers = [...slots.values()];
+    if (sellers.length <= 1) { (sellers[0] ?? folded[0]).qty = qtyPaket; continue; }
+    sellers.forEach((row, ke) => {
+      row.qty = qtyPaket / sellers.length;
+      row.paketBagi = { qtyPaket, ke, dari: sellers.length };
+    });
   }
   return out;
 }
