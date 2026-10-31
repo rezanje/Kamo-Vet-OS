@@ -222,6 +222,14 @@ export async function tutupShift(
     if (tolak) return { ok: false, error: tolak };
   }
   const selisih = closing === null ? 0 : cashVariance(closing, expected);
+  let kasSelisih: string | null = null;
+  if (selisih !== 0) {
+    try {
+      kasSelisih = await kodeAkunBayar(supabase, "Tunai", shift.branch_id ?? null);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Kas Tunai cabang belum dipetakan." };
+    }
+  }
 
   // Syarat `status = open` ikut di UPDATE, bukan cuma dicek di baris terpisah:
   // dua submit yang berbarengan sama-sama lolos pengecekan lalu sama-sama menutup,
@@ -246,7 +254,7 @@ export async function tutupShift(
   let dibebankanKe: string | null = null;
   if (selisih !== 0) {
     // Kas cabang bisa dipetakan ke rekening lain; jangan paksa ke 110003 pusat.
-    const kas = await kodeAkunBayar(supabase, "Tunai", shift.branch_id ?? null);
+    const kas = kasSelisih!;
     const abs = Math.abs(selisih);
 
     // KAS KURANG → jadi piutang kasir kalau kasirnya bisa dikenali sebagai karyawan.

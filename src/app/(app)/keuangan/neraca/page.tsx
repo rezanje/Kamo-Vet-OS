@@ -14,7 +14,7 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
   const supabase = await createClient();
   const { data: branches } = await completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).order("name"));
   // Neraca = posisi kumulatif s/d tanggal (bukan rentang) — laba berjalan ikut terpotong otomatis.
-  const balances = await getAccountBalances(supabase as never, { to: sampai || undefined, branchId: cabang || undefined });
+  const balances = await getAccountBalances(supabase as never, { to: sampai || undefined, branchId: cabang || undefined }, true);
 
   // nilaiSeksi: akun kontra (mis. Akumulasi Penyusutan) otomatis jadi PENGURANG
   // kelompoknya, bukan penambah.

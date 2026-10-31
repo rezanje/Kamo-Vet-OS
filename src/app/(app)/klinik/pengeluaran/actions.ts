@@ -30,6 +30,16 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
   const pesanPeriode = await cekPeriode(supabase, tanggal);
   if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
 
+  // Validate the destination before creating the expense. An unmapped branch
+  // must not leave an unposted expense behind.
+  let kasCode: string;
+  try {
+    kasCode = await kodeAkunBayar(supabase, metode, branchId);
+  } catch (error) {
+    const pesan = error instanceof Error ? error.message : "Rekening pembayaran cabang belum dipetakan";
+    redirect(`${back}?error=${encodeURIComponent(pesan)}`);
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
 
   // Tempel ke shift klinik berjalan biar pengeluaran tunai ikut ngurangin kas seharusnya saat tutup shift.
@@ -47,7 +57,6 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
   if (error || !expense) redirect(`${back}?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
 
   const bebanCode = kategoriToCode[kategori] ?? "760003";
-  const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   await postJournal(supabase, {
     tanggal,
     deskripsi: `Pengeluaran klinik: ${deskripsi || kategori}`, source: "expense", sourceRef: expense!.id, branchId,

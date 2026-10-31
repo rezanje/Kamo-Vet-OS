@@ -30,7 +30,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
     branchId: unitTypes ? undefined : cabang || undefined,
     branchIds,
   };
-  const balances = await getAccountBalances(supabase as never, filter);
+  const balances = await getAccountBalances(supabase as never, filter, true);
 
   const totalDebit = balances.reduce((a, b) => a + b.debit, 0);
   const totalKredit = balances.reduce((a, b) => a + b.credit, 0);

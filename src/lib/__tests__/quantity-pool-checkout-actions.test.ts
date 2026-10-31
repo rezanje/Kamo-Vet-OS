@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ calls: [] as string[], headers: [] as Record<string, unknown>[], items: [] as Record<string, unknown>[], finalized: [] as string[], removed: false, finalizationError: "", confirmation: true, stock: false, stockCost: 34567, pointsWrites: 0, prior: null as null | Record<string, unknown>, lostResponse: false, tierUnavailable: false, strongerLegacy: false, poolAbsent: false }));
+const state = vi.hoisted(() => ({ calls: [] as string[], rpcWarehouseIds: [] as string[], headers: [] as Record<string, unknown>[], items: [] as Record<string, unknown>[], finalized: [] as string[], removed: false, finalizationError: "", confirmation: true, stock: false, stockCost: 34567, pointsWrites: 0, prior: null as null | Record<string, unknown>, lostResponse: false, tierUnavailable: false, strongerLegacy: false, poolAbsent: false }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
@@ -13,8 +13,9 @@ vi.mock("@/lib/promo-hitung", async original => ({ ...await original<typeof impo
 vi.mock("@/lib/satuan", async original => ({ ...await original<typeof import("@/lib/satuan")>(), loadUnitOptions: async () => new Map(["item","other"].map(id=>[id,[{unit:"PCS",factor:1,sell_price:20000,buy_price:0}]])) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
-  rpc: async (name: string, values: { p_sale_id: string }) => {
+  rpc: async (name: string, values: { p_sale_id: string; p_warehouse_id?: string }) => {
     state.calls.push(name);
+    if (name === "quantity_pool_post_backoffice_atomic") state.rpcWarehouseIds.push(values.p_warehouse_id ?? "");
     if (name === "refresh_customer_spending") { if(state.tierUnavailable) throw Error("derived statistics unavailable"); return {data:true,error:null}; }
     if (name !== "finalize_pos_sale" && name !== "cashier_post_stock_atomic" && name !== "quantity_pool_post_backoffice_atomic") throw Error(`Unexpected RPC ${name}`);
     if (state.lostResponse) {
@@ -49,7 +50,7 @@ import { checkoutKasir } from "@/app/kasir/checkout";
 import { checkoutSale } from "@/app/(app)/pos/transaksi/actions";
 import { stockOut } from "@/lib/inventory";
 
-beforeEach(() => { vi.clearAllMocks(); state.calls=[]; state.headers = []; state.items = []; state.finalized = []; state.removed = false; state.finalizationError = ""; state.confirmation = true; state.stock = false; state.stockCost = 34567; state.pointsWrites = 0; state.prior = null; state.lostResponse = false; state.tierUnavailable = false; state.strongerLegacy = false; state.poolAbsent = false; });
+beforeEach(() => { vi.clearAllMocks(); state.calls=[]; state.rpcWarehouseIds=[]; state.headers = []; state.items = []; state.finalized = []; state.removed = false; state.finalizationError = ""; state.confirmation = true; state.stock = false; state.stockCost = 34567; state.pointsWrites = 0; state.prior = null; state.lostResponse = false; state.tierUnavailable = false; state.strongerLegacy = false; state.poolAbsent = false; });
 
 function form(qty:number, quantities=[qty-1,1]) {
  const data=new FormData();
@@ -76,6 +77,7 @@ it.each([["cashier",checkoutKasir],["backoffice",checkoutSale]] as const)('%s re
  expect(state.items.map(i=>i.quantity_pool_claim)).toEqual([true,true]);
  if(_name==='backoffice') {
   expect(state.calls.filter(n=>n==='quantity_pool_post_backoffice_atomic'||n==='finalize_pos_sale')).toEqual(['quantity_pool_post_backoffice_atomic']);
+  expect(state.rpcWarehouseIds).toEqual(['warehouse']);
   expect(stockOut).not.toHaveBeenCalled();
  }
 });

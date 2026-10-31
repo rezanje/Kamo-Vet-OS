@@ -24,12 +24,12 @@ describe("purchase server action boundaries",()=>{
  });
  it("propagates the original key to a cash asset purchase without stale category/period reads",async()=>{
   state.from.mockImplementation((table:string)=>{
-   if(table!=="cash_accounts")throw new Error("Unexpected purchase/category read");
-   const query={select:()=>query,eq:()=>query,then:(resolve:(value:unknown)=>unknown)=>Promise.resolve({data:[{coa_code:"110003"}],error:null}).then(resolve)};return query;
+   if(table!=="payment_account_map")throw new Error("Unexpected purchase/category read");
+   const query={select:()=>query,then:(resolve:(value:unknown)=>unknown)=>Promise.resolve({data:[{metode:"Tunai",branch_id:"branch-1",cash_accounts:{coa_code:"110006",branch_id:"branch-1",jenis:"Kas",is_active:true}}],error:null}).then(resolve)};return query;
   });
   state.rpc.mockResolvedValue({data:"asset-1",error:null});
   await expect(tambahPembelianAset(form({nama:"Fiction machine",category_id:"category-1",tanggal:"2026-10-04",harga:"1000",nilai_sisa:"0",umur_bulan:"48",branch_id:"branch-1",sumber:"Tunai",account_id:"cash-1",request_key:"asset-key"}))).rejects.toThrow("REDIRECT:/keuangan/aset?success=pembelian");
-  expect(state.rpc).toHaveBeenCalledWith("create_fixed_asset_purchase",expect.objectContaining({p_request_key:"asset-key",p_harga:1000,p_credit_code:"110003",p_funding:"Tunai"}));
+  expect(state.rpc).toHaveBeenCalledWith("create_fixed_asset_purchase",expect.objectContaining({p_request_key:"asset-key",p_harga:1000,p_credit_code:"110006",p_funding:"Tunai"}));
  });
  it("does not claim a saved asset when the atomic RPC fails",async()=>{
   state.from.mockImplementation(()=>{const query={select:()=>query,eq:()=>query,then:(resolve:(value:unknown)=>unknown)=>Promise.resolve({data:[{coa_code:"120002"}],error:null}).then(resolve)};return query;});

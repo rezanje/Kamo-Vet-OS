@@ -26,6 +26,7 @@ import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } 
 import { bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak, promoDenganKode } from "@/lib/kode-kampanye";
 import { priceFloorFindings } from "@/lib/cashier-price-floor";
 import { quoteSaleLineCosts } from "@/lib/sale-fifo-quote";
+import { requirePosRetailWarehouse } from "@/lib/pos-retail-warehouse";
 import { hppWarningConfirmed, hppWarningQuery, hppWarningsFrom, type HppWarning } from "@/lib/hpp-warning";
 
 type CartLine = {
@@ -203,18 +204,20 @@ export async function checkoutSale(formData: FormData) {
     redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
   }
 
-  // HPP disimpan per baris agar finalisasi database membukukan biaya FIFO riil.
-  const { data: wh } = await supabase
-    .from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
+  const hppGoods = rows.filter(row => row.item_id && row.item_type === "Persediaan");
+  let warehouseId: string | null = null;
+  if (hppGoods.length > 0 || quantityPoolRequiresAtomic) {
+    try { warehouseId = await requirePosRetailWarehouse(supabase, branchId); }
+    catch (error) { redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Gudang retail cabang tidak tersedia")}`); }
+  }
 
   // P03: back office boleh menjual di bawah HPP, tetapi hanya setelah peringatan yang
   // menyebut barangnya dikonfirmasi. Perkiraan HPP = FIFO gudang saat ini.
-  const hppGoods = rows.filter(row => row.item_id && row.item_type === "Persediaan");
-  if (wh && hppGoods.length > 0) {
+  if (warehouseId && hppGoods.length > 0) {
     let warnings: HppWarning[] = [];
     try {
       const lines = rows.map((row, index) => ({ ...row, promo_discount: row.item_id ? (promoPerLine.get(index)?.potongan ?? 0) : 0 }));
-      const costs = await quoteSaleLineCosts(supabase, wh.id, rows.map(row => ({
+      const costs = await quoteSaleLineCosts(supabase, warehouseId, rows.map(row => ({
         item_id: row.item_id, item_type: row.item_type, qty: Number(row.qty), faktor: row.faktor,
       })));
       warnings = hppWarningsFrom(priceFloorFindings(lines, total, costs));
@@ -294,22 +297,21 @@ export async function checkoutSale(formData: FormData) {
       pendingLines.push({ id: insertedLine.id, line: l });
     }
     if (quantityPoolRequiresAtomic) {
-      if (!wh) throw new Error("Cabang belum punya gudang aktif untuk memotong stok");
+      if (!warehouseId) throw new Error("Gudang retail cabang tidak tersedia untuk memotong stok");
       // New-rule validation may reject a stale master at finalization. Keep
       // original stock writers and finalizer in ONE transaction so that such
       // rejection cannot leave separate backoffice HTTP stock issues behind.
       const { data: posted, error: postErr } = await supabase.rpc("quantity_pool_post_backoffice_atomic", {
-        p_sale_id: sale.id, p_warehouse_id: wh.id,
+        p_sale_id: sale.id, p_warehouse_id: warehouseId,
       });
       if (postErr || posted?.sale_id !== sale.id || posted?.finalized !== true || posted?.checked !== true) {
         throw new Error(postErr?.message ?? "Stok dan harga neto promo belum berhasil difinalkan");
       }
       quantityPoolFinalized = true;
     } else for (const { id, line } of pendingLines) {
-      if (!wh || !line.item_id) continue;
+      if (!warehouseId || !line.item_id) continue;
       const { cost } = await stockOut(supabase, {
-        warehouseId: wh.id, itemId: line.item_id, qty: toBaseQty(line.qty, line.faktor), source: "sale", ref: noStruk,
-
+        warehouseId, itemId: line.item_id, qty: toBaseQty(line.qty, line.faktor), source: "sale", ref: noStruk,
       });
       const { error: costError } = await supabase.from("sale_items").update({ hpp: cost })
         .eq("id", id).eq("sale_id", sale.id).select("id").single();
