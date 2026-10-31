@@ -797,7 +797,7 @@ Login memakai OWNER biasa: email + kata sandi lewat Supabase Auth dengan kunci p
   Hanya kunci `anon`/publishable yang dipakai.
 - Laporan dan ledger wajib di luar repo.
 
-**Gerbang:** sesi ini tidak punya kredensial OWNER, jadi validasi DB dan apply belum dijalankan. Belum ada satu baris pun
+**Gerbang (status awal, sudah terbuka — lihat §13.8):** sesi ini tidak punya kredensial OWNER, jadi validasi DB dan apply belum dijalankan. Belum ada satu baris pun
 yang ditulis ke produksi. Environment cloud hanya membaca variabel baru pada sesi berikutnya. Langkah setelah pemilik
 mengisi dua variabel login di atas:
 
@@ -810,6 +810,33 @@ node scripts/migrasi-kartu-medis-produksi.mjs terapkan  (opsi sama) --ledger <di
 
 `--hari-ini` harus sama pada setiap lanjutan karena ikut sidik rencana. Kalau koneksi putus, jalankan perintah yang sama lagi.
 Ledger membuktikan dulu apa yang sudah tersimpan sebelum mengirim ulang.
+
+### 13.8 Eksekusi produksi batch `ac6d0afb` (2026-10-30)
+
+Gerbang 1 terbuka: sesi baru membawa `KAMO_OWNER_EMAIL`/`KAMO_OWNER_PASSWORD`; kunci anon diambil otomatis. Kode yang
+dijalankan = head PR 69961d7a tanpa perubahan. Berkas yang diunggah OWNER diverifikasi `sha256sum` = SHA yang disetujui.
+Proyek `koaglxcyjqfmgfzxszkj`, `--hari-ini 2026-10-30`.
+
+| Langkah | Hasil |
+|---|---|
+| `validasi-db` (nol tulis) | siap masuk 8, sudah ada 0, ditahan 0, pemilik baru 0 |
+| `terapkan` | `selesai`: 1 batch diakui, tersimpan 8, ditahan 0, belum dikirim 0 |
+| readback (bagian `terapkan`) | `terverifikasi`: diperiksa 8, siap 8, dengan kunjungan 8, selisih 0 |
+| `validasi-db` ulang (idempotensi) | siap masuk 0, **sudah ada 8**, ditahan 0 |
+
+Disposisi identitas (diperiksa ulang offline lewat hash, tanpa mencetak nama/HP):
+- Kedelapan baris siap memakai satu HP yang sama. LOCAL-OWNER-001 dan LOCAL-OWNER-003 (nama berbeda) jatuh ke **satu
+  kartu pemilik lama** di DB, sesuai aturan §13.3. Tidak ada kartu pemilik baru; nama (8 baris) dan alamat (4 baris:
+  007–010) lama dipertahankan dan perbedaannya hanya dicatat (`demografi.pemilik.*_dipertahankan`).
+- Hewan: LOCAL-PET-001 → 1 hewan (RM-001, 002, 005). LOCAL-PET-003 dan LOCAL-PET-004 bernama sama tanpa demografi
+  bertentangan (hanya 004 yang mengisi kelamin) → **1 hewan** (RM-007–011). Total 2 hewan, 8 kunjungan + rekam medis.
+- 12 karantina dan 1 dikecualikan (§13.6) **tidak dikirim**.
+
+Laporan/ledger disimpan di scratchpad sesi (di luar repo, ephemeral); isinya hanya ID lokal + UUID. Status DB dapat
+dibuktikan ulang kapan saja dengan `validasi-db` (hasil yang benar: sudah ada 8).
+
+Belum diuji: tampilan di `/klinik/rekam-medis` lewat browser oleh pengguna klinik. Sisa batch (12 karantina) menunggu
+perbaikan sumber dari OWNER: HP pemilik, tanggal tab vs sel, HP numerik yang nol awalnya hilang, baris tanpa pemilik/pasien.
 
 ---
 
