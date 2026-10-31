@@ -69,6 +69,42 @@ describe("getAccountBalances — filter branchIds", () => {
   });
 });
 
+describe("getAccountBalances — nama kas cabang pada laporan", () => {
+  const cashAccounts = [
+    { id: "kas-a", code: "110004", name: "Kas Toko BTKM", type: "ASET", normal_balance: "D" },
+    { id: "kas-b", code: "110005", name: "Kas Toko CIAWI", type: "ASET", normal_balance: "D" },
+    { id: "kas-pusat", code: "110003", name: "Kas Kecil", type: "ASET", normal_balance: "D" },
+  ];
+
+  function viewer(global: boolean) {
+    const original = makeClient(cashAccounts, []);
+    return {
+      rpc: async () => ({ data: global, error: null }),
+      from(table: string) {
+        if (table === "cash_accounts") {
+          return { select() { return { not: async () => ({ data: [{ coa_code: "110004" }], error: null }) }; } };
+        }
+        return original.from(table);
+      },
+    };
+  }
+
+  it("staf hanya mendapat nama kas tokonya; kas umum menunggu keputusan pemilik", async () => {
+    const balances = await getAccountBalances(viewer(false), {}, true);
+    expect(balances.map((b) => b.code)).toEqual(["110003", "110004"]);
+  });
+
+  it("peran global tetap melihat semua akun kas toko", async () => {
+    const balances = await getAccountBalances(viewer(true), {}, true);
+    expect(balances.map((b) => b.code)).toEqual(["110003", "110004", "110005"]);
+  });
+
+  it("laporan berhenti jika pengecekan kemampuan global gagal", async () => {
+    const client = { ...viewer(false), rpc: async () => ({ data: null, error: { message: "failed" } }) };
+    await expect(getAccountBalances(client, {}, true)).rejects.toThrow("Akses akun kas laporan belum dapat diverifikasi");
+  });
+});
+
 describe("getAccountLedger — asal cabang", () => {
   it("membawa nama cabang di rincian akun", async () => {
     const source = [{ ...lines[0], journal_entries: { ...lines[0].journal_entries, source_ref: "INV-1", branches: { name: "Klinik A" } } }];

@@ -18,6 +18,22 @@ export type AccountBalance = {
   parent_id: string | null; is_header: boolean;
 };
 
+function isBranchCashCoa(a: { code: string; name: string }): boolean {
+  return /^110[0-9]{3}$/.test(a.code) && /^kas toko(?: |$)/i.test(a.name);
+}
+
+// The report also filters on the server. The matching SQL RLS policy protects
+// direct Data API reads; this keeps report links/exports from listing other
+// branches' cash accounts even if a wider COA query is introduced later.
+async function visibleBranchCashCodes(supabase: AnyClient): Promise<Set<string> | null> {
+  const { data: global, error: capabilityError } = await supabase.rpc("has_role_capability", { capability: "all_branches" });
+  if (capabilityError) throw new Error("Akses akun kas laporan belum dapat diverifikasi");
+  if (global === true) return null;
+  const { data, error } = await supabase.from("cash_accounts").select("coa_code").not("branch_id", "is", null);
+  if (error) throw new Error("Daftar kas cabang laporan belum dapat diverifikasi");
+  return new Set(((data ?? []) as { coa_code: string }[]).map((r) => r.coa_code));
+}
+
 const TYPE_ORDER = ["ASET", "LIABILITAS", "EKUITAS", "PENDAPATAN", "BEBAN"];
 
 // Sisi normal "alami" tiap kelompok akun di neraca/laba rugi.
@@ -63,10 +79,11 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLin
   }));
 }
 
-export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter): Promise<AccountBalance[]> {
-  const [{ data: accs }, lines] = await Promise.all([
+export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter, scopeBranchCash = false): Promise<AccountBalance[]> {
+  const [{ data: accs }, lines, allowedCash] = await Promise.all([
     completeReportQuery(supabase.from("coa_accounts").select("id, code, name, type, normal_balance, parent_id, is_header", { count: "exact" })) as Promise<{ data: { id: string; code: string; name: string; type: string; normal_balance: string; parent_id: string | null; is_header: boolean }[] | null }>,
     fetchLines(supabase, f),
+    scopeBranchCash ? visibleBranchCashCodes(supabase) : Promise.resolve(null),
   ]);
 
   const agg = new Map<string, { debit: number; credit: number }>();
@@ -78,6 +95,7 @@ export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter):
   }
 
   return (accs ?? [])
+    .filter((a) => allowedCash === null || !isBranchCashCoa(a) || allowedCash.has(a.code))
     .map((a) => {
       const m = agg.get(a.id) ?? { debit: 0, credit: 0 };
       const saldo = a.normal_balance === "D" ? m.debit - m.credit : m.credit - m.debit;

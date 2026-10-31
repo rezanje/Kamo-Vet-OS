@@ -18,7 +18,7 @@ export default async function NeracaSaldoPage({
   const supabase = await createClient();
 
   const [balances, { data: branches }] = await Promise.all([
-    getAccountBalances(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined }),
+    getAccountBalances(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined }, true),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).order("name")),
   ]);
 

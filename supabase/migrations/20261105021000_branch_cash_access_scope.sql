@@ -20,6 +20,21 @@ create policy cash_accounts_owner_delete on public.cash_accounts for delete to a
   exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_active and p.role in ('OWNER','ADMIN'))
 );
 
+-- The existing coa_read/coa_write policies are permissive. A restrictive
+-- SELECT policy hides other branches' Kas Toko names and IDs from the Data API,
+-- including direct Buku Besar requests. Central/general cash (110001-110003)
+-- remains visible until its ownership policy is explicitly decided.
+create policy coa_branch_cash_scope on public.coa_accounts as restrictive
+for select to authenticated using (
+  not (code ~ '^110[0-9]{3}$' and name ~* '^kas toko( |$)')
+  or public.has_role_capability('all_branches')
+  or exists (
+    select 1 from public.cash_accounts c
+    where c.coa_code = coa_accounts.code and c.branch_id is not null
+      and public.user_can_access_branch(c.branch_id)
+  )
+);
+
 drop policy if exists payment_account_map_all on public.payment_account_map;
 create policy payment_account_map_scoped_read on public.payment_account_map for select to authenticated using (
   public.has_role_capability('all_branches')
