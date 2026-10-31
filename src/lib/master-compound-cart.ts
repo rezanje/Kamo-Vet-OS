@@ -1,6 +1,6 @@
 import type { RacikanIngredient } from "./racikan";
 export type CompoundDraft = { saleItemId: string; formulaId: string; dosageForm: string; instruction: string; ingredients: RacikanIngredient[] };
-export type CompoundSaleSku = { id: string; name: string; unit: string; sell_price: number; stok: number; code?: string | null };
+export type CompoundSaleSku = { id: string; name: string; unit: string; sell_price: number; stok: number | null; code?: string | null };
 export type CompoundFormula = { version_id: string; name: string; dosage_form: string; dosage_instruction: string | null; ingredients: { item_id: string; name: string; quantity: number; unit: string; unit_price: number }[] };
 export function masterCompoundCartRow(sku: CompoundSaleSku | null, formula: CompoundFormula | null, draft: CompoundDraft, key: string, allowCustom: boolean) {
   if (!sku || sku.id !== draft.saleItemId || !Number.isFinite(sku.sell_price) || sku.sell_price < 0) throw new Error("Pilih obat racik dari master");

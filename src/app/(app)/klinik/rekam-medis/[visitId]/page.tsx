@@ -23,6 +23,7 @@ import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
 import { ReferralPanel } from "./ReferralPanel";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
+import { stokGudangKlinik } from "@/lib/stok-klinik";
 import { readCompleteList } from "@/lib/checked-list";
 import { Popup } from "@/components/Popup";
 import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
@@ -288,7 +289,7 @@ export default async function RekamMedisPage({
   // Daftar obat (form pemeriksaan) + bahan baku (racikan inline, dipakai juga di recorded view)
   // + jasa. Jasa wajib dari master SKU — dokter tidak boleh mengetik jasa bebas.
   type ItemLiteFull = {
-    id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number;
+    id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number | null;
     is_compound_material: boolean; item_type?: string; tindakan_kategori?: string | null;
     units?: ItemUnit[];
   };
@@ -304,11 +305,12 @@ export default async function RekamMedisPage({
     const itemRows = [...new Map([...masterRows, ...compoundRows].map(item => [item.id, item])).values()];
     const ids = (itemRows ?? []).map((i) => i.id);
 
-    const { stock: stokByItem, units: unitMap, prices: hargaMap } = await loadClinicSkuDetails(supabase, ids, visit.branch_id);
+    const skuDetails = await loadClinicSkuDetails(supabase, ids, visit.branch_id);
+    const { units: unitMap, prices: hargaMap } = skuDetails;
     const all = (itemRows ?? []).map((i) => ({
       id: i.id as string, code: "code" in i ? i.code as string | null : null, upc: "upc" in i ? i.upc as string | null : null, name: i.name as string, unit: (i.unit as string) ?? "pcs",
       sell_price: hargaCabang(hargaMap, i.id as string, i.unit as string, Number(i.sell_price)),
-      stok: stokByItem.get(i.id as string) ?? 0,
+      stok: stokGudangKlinik(skuDetails, i.id as string),
       units: applyHargaCabang(
         unitOptions(
           { unit: (i.unit as string) ?? "pcs", sell_price: Number(i.sell_price) },

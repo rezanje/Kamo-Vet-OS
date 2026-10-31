@@ -3,9 +3,12 @@ import { loadClinicSkuDetails } from "./clinic-compound-skus";
 import { applyHargaCabang, hargaCabang } from "./harga-cabang";
 import { unitOptions, type ItemUnit } from "./satuan";
 import { penjualValid } from "./penjual";
+import { stokGudangKlinik } from "./stok-klinik";
 
 export type ClinicPaymentMasterItem = {
   id: string; code: string; name: string; unit: string; harga: number; units: ItemUnit[]; tindakan_kategori: string | null;
+  /** Barang saja: stok satuan dasar gudang klinik cabang kunjungan; null = belum terbaca. */
+  stokGudang?: number | null;
 };
 type MasterRow = { id: string; code: string | null; name: string; unit: string | null; sell_price: number; item_type: string; tindakan_kategori: string | null };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,6 +22,7 @@ export async function loadClinicPaymentMaster(client: any, branchId: string | nu
     harga:hargaCabang(details.prices,row.id,row.unit||"pcs",Number(row.sell_price)),
     units:applyHargaCabang(unitOptions({unit:row.unit,sell_price:Number(row.sell_price)},details.units.get(row.id)??[]),row.id,details.prices),
     jasa:row.item_type==="Jasa",
+    ...(row.item_type==="Jasa" ? {} : {stokGudang:stokGudangKlinik(details,row.id)}),
   }));
   return { obat:master.filter(row=>!row.jasa),jasa:master.filter(row=>row.jasa),all:master };
 }
