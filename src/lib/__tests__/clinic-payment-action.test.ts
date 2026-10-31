@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+// Versi keranjang yang dibaca server untuk pembayaran rombongan (bukan dari layar).
+const keranjang=vi.hoisted(()=>({order:[] as string[],error:null as {code?:string;message:string}|null}));
 const state=vi.hoisted(()=>({version:null as 1|null,savedSalesperson:"groomer" as string|null,existing:false,retry:false,customer:false,balance:100,stockError:false,transportError:false,activeReadError:false,postReadError:false,checkoutError:false,lostResponse:false,paidExisting:false,inpatientOpen:false,correctionPending:false,shift:"open" as "open"|"none"|"throw",pajakThrow:false,periodeError:false,failTable:"",errorTable:"",tierAfterPoints:-1,visitWrites:[] as unknown[],pointWrites:[] as {delta:number}[],calls:[] as {name:string;params:Record<string,unknown>}[],wrapper:true,wrapperError:null as {code:string;message:string}|null,attempted:[] as string[],wrapped:[] as {name:string;params:Record<string,unknown>}[]}));
 vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
 vi.mock("next/navigation",()=>({redirect:(url:string)=>{throw new Error(`REDIRECT:${url}`);}}));
@@ -13,6 +15,7 @@ vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({
    then:(resolve:(v:unknown)=>unknown,reject?:(e:unknown)=>unknown)=>(table===state.failTable?Promise.reject(Error(`read failed: ${table}`)):Promise.resolve(table===state.errorTable?{data:null,error:{message:`${table} unavailable`}}:{data:[],error:null})).then(resolve,reject)};return q;
  },
  rpc:async(name:string,params:Record<string,unknown>)=>{
+  if(name==="clinic_outpatient_cart_version"){keranjang.order.push(`versi:${params.p_visit_id}`);return keranjang.error?{data:null,error:keranjang.error}:{data:`v1:${String(params.p_visit_id).length.toString(16).padStart(32,"c")}`,error:null};}
   state.attempted.push(name);
   // Pembungkus "item susulan" (migrasi 20261101000000) memanggil RPC posting/koreksi
   // yang sama, dengan muatan yang sama, di dalam satu transaksi. Tiruan ini meneruskan
@@ -338,6 +341,25 @@ describe("versi keranjang rawat jalan (dokter menambah item sesudah keranjang di
   expect(galat).toContain("Muat tagihan terbaru");
   expect(state.attempted).toEqual(["clinic_post_invoice_with_record"]);
   expect(state.calls).toEqual([]);expect(state.pointWrites).toEqual([]);expect(state.visitWrites).toEqual([]);
+ });
+ it("pembayaran rombongan membaca versi tiap hewan SEBELUM barisnya, lalu mengirimnya ke posting",async()=>{
+  keranjang.order=[];keranjang.error=null;state.customer=true;
+  vi.mocked(bacaRombongan).mockResolvedValue({customerId:"customer",customerName:"Owner",baris:[{visitId:"pet-a",hewan:"Alpha",invoiceNo:null},{visitId:"pet-b",hewan:"Beta",invoiceNo:null}]} as never);
+  vi.mocked(bagiPotongan).mockImplementation(((dasar:number[])=>dasar.map(()=>0)) as never);
+  vi.mocked(barisTagihanVisit).mockImplementation((async(_s:unknown,visitId:string)=>{keranjang.order.push(`baris:${visitId}`);return [{deskripsi:`Service ${visitId}`,qty:1,harga:100,jenis:"obat",item_id:"item",satuan:"pcs"}];}) as never);
+  const f=new FormData();f.set("visitId","visit");f.set("requestKey","group");
+  await expect(bayarRombongan(f)).rejects.toThrow("success=rombongan&lunas=2");
+  for(const pet of ["pet-a","pet-b"])expect(keranjang.order.indexOf(`versi:${pet}`)).toBeLessThan(keranjang.order.indexOf(`baris:${pet}`));
+  expect(state.wrapped.map(c=>c.params.p_cart_version)).toEqual([`v1:${"5".padStart(32,"c")}`,`v1:${"5".padStart(32,"c")}`]);
+ });
+ it("pembayaran rombongan gagal tertutup bila versi keranjang tidak terbaca",async()=>{
+  keranjang.order=[];keranjang.error={code:"57014",message:"timeout"};state.customer=true;
+  vi.mocked(bacaRombongan).mockResolvedValue({customerId:"customer",customerName:"Owner",baris:[{visitId:"pet-a",hewan:"Alpha",invoiceNo:null},{visitId:"pet-b",hewan:"Beta",invoiceNo:null}]} as never);
+  vi.mocked(barisTagihanVisit).mockImplementation((async()=>[{deskripsi:"A",qty:1,harga:100,jenis:"obat",item_id:"item",satuan:"pcs"}]) as never);
+  const f=new FormData();f.set("visitId","visit");f.set("requestKey","group");
+  await expect(bayarRombongan(f)).rejects.toThrow("?error=");
+  expect(state.calls.filter(c=>c.name.startsWith("clinic_post"))).toEqual([]);expect(state.pointWrites).toEqual([]);
+  keranjang.error=null;
  });
  it("koreksi tagihan yang sudah terbit tidak membawa versi keranjang",async()=>{
   state.existing=true;const data=form("groomer");data.set("source_version",VERSI);

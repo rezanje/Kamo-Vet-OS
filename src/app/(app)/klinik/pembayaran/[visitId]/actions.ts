@@ -122,6 +122,14 @@ function cartVersionDari(formData: FormData): string | undefined {
   return /^v1:[0-9a-f]{32}$/.test(versi) ? versi : undefined;
 }
 
+/** Versi keranjang dibaca server (pembayaran rombongan); null = database belum dimigrasi. */
+async function versiKeranjangServer(supabase: Awaited<ReturnType<typeof createClient>>, visitId: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc("clinic_outpatient_cart_version", { p_visit_id: visitId });
+  if (error?.code === "PGRST202" && error.message?.includes("clinic_outpatient_cart_version")) return null;
+  if (error || typeof data !== "string" || !/^v1:[0-9a-f]{32}$/.test(data)) throw new Error("versi keranjang tidak terbaca");
+  return data;
+}
+
 async function postInvoiceAtomik(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: ClinicPostInvoiceParams,
@@ -573,6 +581,7 @@ export async function bayarRombongan(formData: FormData) {
     b: typeof belum[number];
     salespersonId: string | null;
     rows: Awaited<ReturnType<typeof barisTagihanVisit>>;
+    cartVersion: string | null;
     subtotal: number;
     potonganNonVoucher: number;
   };
@@ -603,6 +612,10 @@ export async function bayarRombongan(formData: FormData) {
       )) return null;
 
       const salespersonP = mulai(resolveClinicSalesperson(supabase, v.branch_id ?? null, v.doctor_id ?? null, v.service_provider_id ?? null));
+      // Versi dibaca SEBELUM baris: item dokter yang masuk di antaranya ditolak CART_STALE,
+      // bukan terlewat dari nota hewan ini.
+      const cartVersion = await versiKeranjangServer(supabase, b.visitId)
+        .catch(() => redirect(`${back}?error=${encodeURIComponent(`${b.hewan}: Tagihan belum dapat diverifikasi. Muat ulang tanpa membayar ulang.`)}`));
       const rows = await barisTagihanVisit(supabase, b.visitId, String(v.poli ?? "Poli Umum"));
       const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
       const potonganPet = await hitungPotonganKlinik(supabase, {
@@ -610,7 +623,7 @@ export async function bayarRombongan(formData: FormData) {
         rows:rows.map(line=>({item_id:line.item_id,qty:line.qty,harga:hargaNetto(line),jenis:line.jenis,satuan:line.satuan})),
       });
       const salespersonId = await salespersonP;
-      return { b, salespersonId, rows, subtotal, potonganNonVoucher: potonganPet.total };
+      return { b, salespersonId, rows, cartVersion, subtotal, potonganNonVoucher: potonganPet.total };
     })());
   };
   const persiapan = belum.map(siapkan);
@@ -660,7 +673,7 @@ export async function bayarRombongan(formData: FormData) {
   // TAHAP 2 — terbitkan notanya satu per satu.
   const notaPoin: NotaPoin[] = [];
   for (const [idx, s] of siap.entries()) {
-    const { b, rows, subtotal, salespersonId } = s;
+    const { b, rows, subtotal, salespersonId, cartVersion } = s;
     const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx]);
     const dpp = Math.max(0, subtotal - discount);
     const { tax, total } = tambahPpn(dpp, pajakSettings);
@@ -675,7 +688,7 @@ export async function bayarRombongan(formData: FormData) {
         service_pricing_version:1,
       },
       p_lines: barisUntukPosting(rows),
-    });
+    }, undefined, undefined, undefined, cartVersion ?? undefined);
     if (posted.error || !posted.invoiceNo) {
       dilewati.push(`${b.hewan}: ${posted.invoiceId ? "invoice sudah tersimpan; periksa status tanpa membayar ulang" : parseClinicPostingError(posted.error, uncertainPayment)}`);
       continue;
