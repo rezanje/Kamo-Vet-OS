@@ -75,6 +75,31 @@ export async function tambahRekening(formData: FormData) {
   redirect(`${BACK}?success=1`);
 }
 
+// Links a posted COA cash detail to the operational cash menu. Its existing
+// journal balance stays on the same COA ID; no opening journal is created.
+export async function hubungkanKasCabang(formData: FormData) {
+  const supabase = await assertMasterAdmin(BACK, "hubungkan kas cabang");
+  const branchId = String(formData.get("branch_id") ?? "").trim();
+  const code = String(formData.get("coa_code") ?? "").trim();
+  if (!branchId || !/^110[0-9]{3}$/.test(code) || ["110001", "110002", "110003"].includes(code)) {
+    gagal("Akun kas cabang dan cabang wajib dipilih");
+  }
+  const [{ data: branch, error: branchError }, { data: account, error: accountError }] = await Promise.all([
+    supabase.from("branches").select("id,type,is_active").eq("id", branchId).eq("is_active", true).maybeSingle(),
+    supabase.from("coa_accounts").select("code,name,type,is_active,is_header").eq("code", code).maybeSingle(),
+  ]);
+  if (branchError || !branch || !["PETSHOP", "KLINIK"].includes(branch.type)) gagal("Cabang kas tidak tersedia");
+  if (accountError || !account || account.type !== "ASET" || !account.is_active || account.is_header
+    || !/^Kas Toko\b/i.test(account.name)) gagal("Akun kas rincian aktif tidak tersedia");
+  if ((branch.type === "KLINIK") !== /^Kas Toko Vet\b/i.test(account.name)) gagal("Jenis akun kas tidak sesuai jenis cabang");
+
+  const { error } = await supabase.from("cash_accounts").insert({
+    nama: account.name, jenis: "Kas", coa_code: code, branch_id: branchId, is_active: true,
+  });
+  if (error) gagal(error.code === "23505" ? "Akun kas ini sudah menjadi rekening" : "Akun kas belum dapat dihubungkan");
+  redirect(`${BACK}?success=kas-cabang`);
+}
+
 // Rekening tidak dihapus: akun COA-nya sudah dipakai jurnal. Nonaktif = tidak
 // muncul di dropdown transfer, saldonya tetap tampil (uangnya masih ada).
 // Akun COA-nya SENGAJA dibiarkan aktif supaya buku besar & neraca tetap membacanya.

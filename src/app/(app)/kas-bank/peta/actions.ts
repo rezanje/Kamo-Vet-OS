@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { METODE_BAYAR } from "@/lib/kas-akun";
+import { isBranchCashAccount } from "@/lib/branch-cash-config";
 
 const BACK = "/kas-bank/peta";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
@@ -39,6 +40,12 @@ export async function simpanPetaCabang(formData: FormData) {
   if (!branchId) gagal("Pilih cabang");
   if (!METODE_BAYAR.includes(metode as (typeof METODE_BAYAR)[number])) gagal("Metode bayar tidak dikenal");
   if (!accountId) gagal("Pilih rekening");
+
+  if (metode === "Tunai") {
+    const { data: account, error: accountError } = await supabase.from("cash_accounts")
+      .select("coa_code, branch_id, jenis, is_active").eq("id", accountId).maybeSingle();
+    if (accountError || !isBranchCashAccount(account, branchId)) gagal("Rekening Tunai harus kas aktif milik cabang terpilih");
+  }
 
   await supabase.from("payment_account_map").delete().eq("metode", metode).eq("branch_id", branchId);
   const { error } = await supabase

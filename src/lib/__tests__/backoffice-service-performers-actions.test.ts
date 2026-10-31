@@ -58,12 +58,14 @@ it("allows an authenticated cashier without an employee mapping", async () => {
 });
 it("saves ID-only attribution on a physical product too, ignoring forged names and types", async () => {
   state.itemType = "Persediaan";
+  state.stock = true;
   expect(await checkoutSale(form()).catch(error => error.message)).toContain("/struk/sale");
   expect(state.lines.map(line => line.service_performers)).toEqual([{ doctor_id: "doctor", staff_id: "staff" }, { doctor_id: null, staff_id: "different" }]);
   expect(JSON.stringify(state.lines)).not.toContain("Forged name");
 });
 it("stores physical products with null performers when both role slots are blank", async () => {
   state.itemType = "Persediaan";
+  state.stock = true;
   const input = form(null);
   const rows = JSON.parse(String(input.get("cart"))).map((row: Record<string, unknown>) => ({ ...row, service_performers: { doctor_id: null, staff_id: null } }));
   input.set("cart", JSON.stringify(rows));

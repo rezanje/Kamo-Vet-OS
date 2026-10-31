@@ -5,7 +5,7 @@ import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { getAccountBalances } from "@/lib/ledger";
-import { tambahRekening, toggleRekening } from "./actions";
+import { hubungkanKasCabang, tambahRekening, toggleRekening } from "./actions";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -29,17 +29,23 @@ export default async function RekeningPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data }, { data: branches }, saldoAkun] = await Promise.all([
+  const [{ data }, { data: branches }, saldoAkun, { data: cashCoa }] = await Promise.all([
     supabase
       .from("cash_accounts")
       .select("id, nama, jenis, coa_code, bank_nama, no_rekening, is_active, branches(name)")
       .order("jenis").order("nama"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     getAccountBalances(supabase),
+    supabase.from("coa_accounts").select("code,name,type,is_active,is_header").like("code", "110%")
+      .eq("type", "ASET").eq("is_active", true).eq("is_header", false).order("code"),
   ]);
 
   const rekening = (data ?? []) as unknown as Rekening[];
   const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
+  const linkedCodes = new Set(rekening.map((r) => r.coa_code));
+  const unlinkedCash = (cashCoa ?? []).filter(a => /^110[0-9]{3}$/.test(a.code)
+    && !["110001", "110002", "110003"].includes(a.code)
+    && /^Kas Toko\b/i.test(a.name) && !linkedCodes.has(a.code));
   const total = rekening.reduce((a, r) => a + (saldoPerKode.get(r.coa_code) ?? 0), 0);
 
   return (
@@ -50,6 +56,23 @@ export default async function RekeningPage({
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah daftar rekening."
     >
+      {bolehKelola && unlinkedCash.length > 0 && (
+        <form action={hubungkanKasCabang} className="crm-sec" style={{ marginBottom: 14 }}>
+          <strong>Hubungkan kas toko yang sudah ada di COA</strong>
+          <p style={{ fontSize: 11, color: "var(--tm)" }}>Memakai akun dan saldo jurnal yang sudah ada. Tidak membuat akun atau saldo awal baru.</p>
+          <div className="frow">
+            <div><label className="flab">Akun kas *</label><select className="fi" name="coa_code" required defaultValue="">
+              <option value="" disabled>Pilih akun COA</option>
+              {unlinkedCash.map(a => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
+            </select></div>
+            <div><label className="flab">Cabang *</label><select className="fi" name="branch_id" required defaultValue="">
+              <option value="" disabled>Pilih cabang</option>
+              {(branches ?? []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select></div>
+          </div>
+          <SubmitButton className="btn-acc" pendingText="Menghubungkan…">Hubungkan kas cabang</SubmitButton>
+        </form>
+      )}
       {bolehKelola && (
         <form action={tambahRekening} className="crm-sec" style={{ marginBottom: 14 }}>
           <div className="frow">

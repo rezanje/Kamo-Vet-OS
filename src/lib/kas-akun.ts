@@ -13,7 +13,10 @@ export const METODE_BAYAR = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-
 export const KODE_KAS_BAWAAN = "110003";
 export const KODE_BANK_BAWAAN = "120002";
 
-export type PetaBaris = { metode: string; branch_id: string | null; coa_code: string };
+export type PetaBaris = {
+  metode: string; branch_id: string | null; coa_code: string;
+  account_branch_id?: string | null; account_kind?: string; account_active?: boolean;
+};
 
 // Bawaan lama dipertahankan supaya selama peta belum diisi, angka persis sama
 // dengan sebelum fitur ini ada.
@@ -25,25 +28,31 @@ export function kodeBawaan(metode: string): string {
 export function pilihKodeAkun(peta: PetaBaris[], metode: string, branchId: string | null): string {
   const cocok = peta.filter((p) => p.metode === metode);
   const cabang = branchId ? cocok.find((p) => p.branch_id === branchId) : undefined;
+  if (metode === "Tunai" && branchId) {
+    if (cabang?.account_branch_id !== branchId || cabang.account_kind !== "Kas" || cabang.account_active !== true) {
+      throw new Error("Kas Tunai cabang belum terhubung ke rekening aktif yang benar");
+    }
+    return cabang.coa_code;
+  }
   if (cabang) return cabang.coa_code;
   const pusat = cocok.find((p) => p.branch_id === null);
   if (pusat) return pusat.coa_code;
   return kodeBawaan(metode);
 }
 
-type PetaRow = { metode: string; branch_id: string | null; cash_accounts: { coa_code: string } | { coa_code: string }[] | null };
+type PetaRow = { metode: string; branch_id: string | null; cash_accounts: { coa_code: string; branch_id: string | null; jenis: string; is_active: boolean } | { coa_code: string; branch_id: string | null; jenis: string; is_active: boolean }[] | null };
 
 function ratakan(rows: PetaRow[]): PetaBaris[] {
   return rows.flatMap((r) => {
     const rek = Array.isArray(r.cash_accounts) ? r.cash_accounts[0] : r.cash_accounts;
-    return rek ? [{ metode: r.metode, branch_id: r.branch_id, coa_code: rek.coa_code }] : [];
+    return rek ? [{ metode: r.metode, branch_id: r.branch_id, coa_code: rek.coa_code, account_branch_id: rek.branch_id, account_kind: rek.jenis, account_active: rek.is_active }] : [];
   });
 }
 
 export async function bacaPeta(supabase: AnyClient): Promise<PetaBaris[]> {
   const { data } = await supabase
     .from("payment_account_map")
-    .select("metode, branch_id, cash_accounts(coa_code)");
+    .select("metode, branch_id, cash_accounts(coa_code, branch_id, jenis, is_active)");
   return ratakan((data ?? []) as PetaRow[]);
 }
 
@@ -55,6 +64,8 @@ export async function kodeAkunBayar(
   branchId: string | null,
   accountId?: string | null,
 ): Promise<string> {
+  // Branch cash is fixed by its own active mapping; a submitted account ID cannot override it.
+  if (metode === "Tunai" && branchId) return pilihKodeAkun(await bacaPeta(supabase), metode, branchId);
   if (accountId) {
     const { data } = await supabase
       .from("cash_accounts").select("coa_code").eq("id", accountId).eq("is_active", true);
