@@ -2,10 +2,18 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failedTable: "", calls: [] as { table: string; orders: string[]; filters: [string, unknown][]; range?: [number, number] }[] }));
+const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failedTable: "", calls: [] as { table: string; orders: string[]; filters: [string, unknown][]; range?: [number, number] }[],
+  rpcCalls: [] as { name: string; args: Record<string, unknown> }[], jumlahOverride: undefined as number | undefined }));
 vi.stubGlobal("React", React);
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
+  async rpc(name: string, args: Record<string, unknown>) {
+    fixture.rpcCalls.push({ name, args });
+    if (name !== "daftar_rekam_medis") return { data: false, error: null };
+    if (fixture.failedTable === "visits") return { data: null, error: { message: "private DB detail" } };
+    const baris = (fixture.tables.visits ?? []).filter((r) => !args.p_pet || r.pet_id === args.p_pet);
+    return { data: { jumlah: fixture.jumlahOverride ?? baris.length, baris }, error: null };
+  },
   from(table: string) {
     const call = { table, orders: [] as string[], filters: [] as [string, unknown][], range: undefined as [number, number] | undefined };
     fixture.calls.push(call);
@@ -43,6 +51,8 @@ const tableRows = (html: string) => (html.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0]
 
 beforeEach(() => {
   fixture.calls = [];
+  fixture.rpcCalls = [];
+  fixture.jumlahOverride = undefined;
   fixture.failedTable = "";
   fixture.tables = {
     customers: Array.from({ length: 1200 }, (_, i) => ({ id: `customer-${i}`, name: `Owner ${i}`, phone: `08${i}`, pets: [] })),
@@ -82,7 +92,20 @@ describe("complete operational page sources", () => {
     expect(html).toContain("Pet 349");
     expect(html).toContain("350");
     expect(tableRows(html)).toBe(1);
-    expect(fixture.calls.filter((c) => c.table === "visits").every((c) => c.filters.some(([k, v]) => k === "pet_id" && v === "pet-a") && c.orders.at(-1) === "id")).toBe(true);
+    expect(fixture.calls.filter((c) => c.table === "visits")).toHaveLength(0);
+    expect(fixture.rpcCalls).toEqual([{ name: "daftar_rekam_medis", args: { p_pet: "pet-a" } }]);
+  });
+  it("reads the medical list in one snapshot and fails closed on a short or over-cap answer", async () => {
+    await MedicalPage({ searchParams: Promise.resolve({}) });
+    expect(fixture.rpcCalls).toEqual([{ name: "daftar_rekam_medis", args: { p_pet: null } }]);
+    fixture.jumlahOverride = 351;
+    const short = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
+    expect(short).toContain("Rekam medis belum dapat dimuat lengkap");
+    expect(short).not.toContain("<table");
+    fixture.jumlahOverride = 10_001;
+    const cap = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
+    expect(cap).toContain("melebihi batas 10.000 baris");
+    expect(cap).not.toContain("<table");
   });
   it("counts distinct animal IDs rather than treating every visit name as another animal", async () => {
     const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));

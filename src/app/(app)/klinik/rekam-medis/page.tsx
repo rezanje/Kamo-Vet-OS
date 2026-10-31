@@ -1,9 +1,9 @@
-import { ListLoadError, readCompleteList, TABLE_PAGE_SIZE } from "@/lib/checked-list";
+import { ListLoadError, TABLE_PAGE_SIZE } from "@/lib/checked-list";
 import { infoHalaman } from "@/lib/pagination";
 import { ListPagination, ListLoadFailure } from "@/components/ListPagination";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { saringDaftarRekamMedis, type BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
+import { bacaHasilDaftarRekamMedis, saringDaftarRekamMedis, type BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
 import { hasActiveInpatient, statusPasienRekamMedis, type CatatanStatusRawatInap } from "@/lib/status-pasien-rekam-medis";
 import { adalahRiwayatBersama, bacaRiwayatBersamaHewan, ownerAktif, PESAN_GAGAL_RIWAYAT_BERSAMA, type RiwayatBersama } from "@/lib/riwayat-bersama";
@@ -59,14 +59,10 @@ export default async function DaftarRekamMedisPage({
 
   let data: SourceRow[];
   try {
-    data = await readCompleteList<SourceRow>(async (from, to) => {
-      let query = supabase.from("visits")
-        .select("id, pet_id, branch_id, created_at, dokter, keluhan, legacy_source_key, pets(name, species, breed), customers(name, phone), branches(code), medical_records!inner(diagnosis, anamnesis), inpatient_records(created_at, discharged_at, condition_status)", { count: "exact" })
-        .order("created_at", { ascending: false }).order("id");
-      if (petId) query = query.eq("pet_id", petId);
-      const result = await query.range(from, to);
-      return { ...result, data: result.data as unknown as SourceRow[] | null };
-    }, "Rekam medis");
+    // Satu RPC SECURITY INVOKER (RLS pemanggil) = satu snapshot. Dulu 8 halaman PostgREST paralel yang masing-masing
+    // mengevaluasi RLS seluruh tabel dua kali; dengan ~3.800 riwayat impor itu melewati batas 8 detik di Production.
+    const result = await supabase.rpc("daftar_rekam_medis", { p_pet: petId || null });
+    data = bacaHasilDaftarRekamMedis<SourceRow>(result, (pesan) => new ListLoadError(pesan));
   } catch (error) { return <ListLoadFailure error={error} label="Rekam medis" />; }
 
   // RS-2: riwayat bersama hasil impor (tanpa cabang) satu hewan untuk OWNER aktif. Dibaca lewat RPC baca-saja

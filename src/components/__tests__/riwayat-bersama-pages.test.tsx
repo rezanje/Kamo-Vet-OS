@@ -49,6 +49,11 @@ vi.mock("@/lib/supabase/server", () => ({
     auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
     rpc: async (name: string, args: Record<string, unknown>) => {
       s.rpcCalls.push({ name, args });
+      if (name === "daftar_rekam_medis") {
+        if (s.visitError) return { data: null, error: { message: "PRIVATE visits failure" } };
+        const baris = visibleVisits().filter(r => !args.p_pet || r.pet_id === args.p_pet);
+        return { data: { jumlah: baris.length, baris }, error: null };
+      }
       if (name === "riwayat_bersama_hewan") {
         if (s.rpcError === "list") return { data: null, error: { code: "42501", message: "PRIVATE backend detail" } };
         const all = s.shared.filter(r => r.pet_id === args.p_pet);
@@ -142,7 +147,7 @@ describe("pet history list (customer → pet → history)", () => {
   });
   it("does not touch the general list (no pet)", async () => {
     await listHtml({});
-    expect(s.rpcCalls).toHaveLength(0);
+    expect(s.rpcCalls).toEqual([{ name: "daftar_rekam_medis", args: { p_pet: null } }]);
   });
   it.each([
     ["the reader is refused", () => { s.rpcError = "list"; }],
