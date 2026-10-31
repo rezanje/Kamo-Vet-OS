@@ -43,13 +43,13 @@ export default async function SaldoAwalFakturPage() {
         <li>Unduh <a href="/keuangan/saldo-awal-faktur/template">{TEMPLATE_SALDO_AWAL_FAKTUR}</a>, isi satu baris per faktur terbuka dengan <strong>sisa tagihan</strong> (bukan total faktur). Tanggal faktur dan jatuh tempo diisi bila tersedia; yang kosong disimpan kosong.</li>
         <li>Pastikan semua pemasok dan pelanggan sudah ada di master VetOS. Nama yang belum ada ditolak, tidak dibuat otomatis.</li>
         <li>Unggah, isi total kontrol dari laporan umur hutang/piutang Accurate, lalu periksa. Semua baris salah ditandai sebelum ada yang tersimpan.</li>
-        <li>OWNER memposting sekali. Hasilnya satu jurnal saldo awal; tidak ada stok, HPP, PPN, pembelian, atau pendapatan periode berjalan.</li>
+        <li>OWNER atau FINANCE memposting sekali. Hasilnya satu jurnal saldo awal; tidak ada stok, HPP, PPN, pembelian, atau pendapatan periode berjalan.</li>
       </ol>
       <p style={{ fontSize: 11, color: "var(--tm)" }}>
         Hutang Usaha (311001) dan Piutang Usaha (150001) diisi di sini, <strong>bukan</strong> di Saldo Awal per akun. Kalau salah satu akun itu sudah punya saldo awal satu total, impor jenis tersebut ditolak supaya tidak tercatat ganda.
       </p>
       {error ? <div className="p2ban" role="alert">Gagal memuat data: {error}</div>
-        : <SaldoAwalFakturForm branches={(branchResult.data ?? []) as { id: string; name: string }[]} defaultAsOf={TANGGAL_CUTOVER_DEFAULT} isOwner={profile.role === "OWNER"} />}
+        : <SaldoAwalFakturForm branches={(branchResult.data ?? []) as { id: string; name: string }[]} defaultAsOf={TANGGAL_CUTOVER_DEFAULT} canPost={profile.role === "OWNER" || profile.role === "FINANCE"} />}
     </section>
     <section className="crm-sec">
       <SecHeader num="02" title="BATCH TERPOSTING" desc="Riwayat impor saldo awal per faktur. Batch tidak dapat dihapus; file yang sama tidak bisa terposting dua kali." />

@@ -244,7 +244,7 @@ export async function buatTemplateSaldoAwalFaktur(): Promise<Uint8Array> {
     ["Total Faktur Asli", "Opsional, untuk referensi. Tidak boleh lebih kecil dari sisa."],
     ["Total kontrol", "Di layar impor, isi total hutang dan total piutang dari laporan umur hutang/piutang Accurate. Posting ditolak kalau jumlah file tidak sama persis."],
     ["Alternatif", "Boleh juga dua sheet bernama Hutang dan Piutang dengan kolom yang sama tanpa kolom Jenis."],
-    ["Posting", "Hanya OWNER. Satu jurnal: Modal (410001) ke Hutang Usaha (311001) dan Piutang Usaha (150001) ke Modal. Tidak ada stok, HPP, PPN, atau pendapatan. File yang sama tidak bisa terposting dua kali."],
+    ["Posting", "Hanya OWNER atau FINANCE. Satu jurnal: Modal (410001) ke Hutang Usaha (311001) dan Piutang Usaha (150001) ke Modal. Tidak ada stok, HPP, PPN, atau pendapatan. File yang sama tidak bisa terposting dua kali."],
   ].forEach(([label, detail]) => guide.addRow([label, detail]));
   guide.getColumn(2).alignment = { wrapText: true, vertical: "top" };
   return new Uint8Array(await book.xlsx.writeBuffer());
