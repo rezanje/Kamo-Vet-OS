@@ -11,7 +11,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
 import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
-import { bacaKode, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
+import { bacaKode, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
 import { type PromoHitung } from "@/lib/promo-hitung";
 import type { ItemUnit } from "@/lib/satuan";
 import { hargaTingkat, type Tingkat } from "@/lib/harga-tingkat";
@@ -365,7 +365,7 @@ export function KasirClient({
     promoEfektif.some((p) => p.id === promoKodeId), potonganPromo.some((h) => h.promoId === promoKodeId)) : null;
   // Syarat keranjang diperiksa di layar juga supaya kasir tahu SEBELUM menekan
   // bayar — kalau hanya di server, pelanggan sudah terlanjur diberi tahu totalnya.
-  const tolakVoucher = voucher.trim() === "" ? null : tolakKampanye ?? (kampanye && !kampanye.voucher_code ? null : pesanVoucherDitolak(v ?? null, hariIni, {
+  const tolakVoucher = voucher.trim() === "" ? null : tolakKampanye ?? pesanVoucherLewatKampanye(kodeTerbaca, kodeKampanye) ?? (kampanye && !kampanye.voucher_code ? null : pesanVoucherDitolak(v ?? null, hariIni, {
     dasar: afterItems,
     adaPromoOtomatis: potonganPromo.length > 0,
     customerId: cust?.id ?? null,
@@ -729,7 +729,7 @@ export function KasirClient({
                 catat selisihnya lewat Stok Opname.
               </div>
             )}
-            {cart.some(line => line.item_type === "Persediaan") && <div className="p2ban" role="status">Harga neto barang Persediaan nol atau di bawah HPP FIFO aktif akan ditolak saat bayar. Jasa gratis tetap diperbolehkan.</div>}
+            {cart.some(line => line.item_type === "Persediaan" || line.item_type === "Grup") && <div className="p2ban" role="status">Harga neto barang Persediaan nol atau di bawah HPP FIFO aktif akan ditolak saat bayar. Paket Grup berisi barang dibandingkan dengan total HPP komponennya. Jasa gratis tetap diperbolehkan.</div>}
             {zeroPriceIssue && <div role="alert" style={{ color: "#b91c1c" }}>{zeroPriceIssue}</div>}
             <Row k={`Total item`} v={`${cart.reduce((a, l) => a + l.qty, 0)}`} />
             <Row k="Subtotal" v={rp(subtotal)} />

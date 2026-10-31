@@ -14,7 +14,8 @@ import { useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bayarRombongan } from "./actions";
 import { METODE_BAYAR } from "@/lib/metode-bayar";
-import { normalizeKode, pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
+import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
+import { bacaKode, pesanVoucherLewatKampanye } from "@/lib/kode-kampanye";
 import type { BekalPotongan } from "@/lib/tagihan-klinik";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -40,11 +41,21 @@ export function LunasiRombonganForm({ visitId, requestKey, contextKey, jumlahPas
 
   // Angka di layar memakai rumus yang sama dengan server, tapi server tetap
   // menghitung ulang saat tombol ditekan — layar tidak menentukan uang.
-  const voucherRow = bekal.vouchers.find((v) => v.code === normalizeKode(voucher));
-  const tolakVoucher = voucher.trim() === "" ? null : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
-    dasar: total, adaPromoOtomatis: promoTotal > 0,
-    customerId: bekal.customerId, categoryId: bekal.categoryId,
-  });
+  // Kode kampanye (C05) diterjemahkan ke voucher/promo tujuannya; dipakai sekali untuk
+  // satu kedatangan. Potongan promo kode dihitung server per hewan saat bayar.
+  const kode = bacaKode(voucher, bekal.kodeKampanye ?? []);
+  const kampanye = kode.kampanye;
+  const voucherRow = kode.voucherCode ? bekal.vouchers.find((v) => v.code === kode.voucherCode) : undefined;
+  // Voucher milik kampanye aktif hanya berlaku lewat kode kampanyenya (server & database ikut menolak).
+  const lewatKampanye = pesanVoucherLewatKampanye(kode, bekal.kodeKampanye ?? []);
+  const tolakVoucher = voucher.trim() === "" ? null
+    : kampanye && !kampanye.is_active ? `Kode ${kampanye.code} sedang dinonaktifkan`
+    : lewatKampanye ? lewatKampanye
+    : kampanye?.promo_id ? null
+    : pesanVoucherDitolak(voucherRow ?? null, bekal.hariIni, {
+      dasar: total, adaPromoOtomatis: promoTotal > 0,
+      customerId: bekal.customerId, categoryId: bekal.categoryId,
+    });
   const voucherVal = voucherRow && !tolakVoucher ? potonganVoucher(total, voucherRow) : 0;
 
   const setelahVoucher = Math.max(0, total - voucherVal);
@@ -128,11 +139,15 @@ export function LunasiRombonganForm({ visitId, requestKey, contextKey, jumlahPas
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Kode voucher</span>
+        <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Kode voucher / kampanye</span>
         <input className="fi" value={voucher} placeholder="opsional" onChange={(e) => setVoucher(e.target.value)}
           style={{ width: 150, textTransform: "uppercase", borderColor: tolakVoucher ? "#fca5a5" : undefined }} />
         {tolakVoucher
           ? <span style={{ fontSize: 10, color: "#b91c1c" }}>{tolakVoucher}</span>
+          : kampanye?.promo_id
+          ? <span style={{ fontSize: 10, color: "var(--td)" }}>
+              Promo kode {kampanye.code} dihitung saat bayar untuk hewan yang memenuhi syarat — dipakai sekali untuk kedatangan ini.
+            </span>
           : <span style={{ fontSize: 10, color: "var(--td)" }}>
               Berlaku sekali untuk satu kedatangan — potongannya dibagi ke nota tiap hewan.
             </span>}

@@ -64,6 +64,15 @@ describe("parseClinicPostingError", () => {
     expect(parseClinicPostingError({ code: "P0001", message: "JOURNAL_UNBALANCED: invoice" }))
       .toMatch(/tidak seimbang/);
   });
+
+  it("shows why goods were rejected below HPP or at zero (P03)", () => {
+    expect(parseClinicPostingError({ code: "P0001",
+      message: "PRICE_BELOW_HPP: Harga neto Obat A Rp900 di bawah HPP Rp1.000. Naikkan harga atau kurangi diskon." }))
+      .toBe("Penjualan ditolak. Harga neto Obat A Rp900 di bawah HPP Rp1.000. Naikkan harga atau kurangi diskon.");
+    expect(parseClinicPostingError({ code: "P0001",
+      message: "PRICE_ZERO: Harga neto paket Paket Steril Rp0. Paket yang berisi obat/barang tidak boleh gratis." }))
+      .toBe("Penjualan ditolak. Harga neto paket Paket Steril Rp0. Paket yang berisi obat/barang tidak boleh gratis.");
+  });
 });
 
 describe("parseClinicRecordError", () => {

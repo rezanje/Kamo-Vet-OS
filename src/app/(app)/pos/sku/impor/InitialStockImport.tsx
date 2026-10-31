@@ -4,6 +4,8 @@ import { useEffect,useRef,useState, useTransition } from "react";
 import Link from "next/link";
 import {formatImportDecimal} from '@/lib/initial-stock-decimal';
 import {InitialStockDecimalPreview} from './InitialStockDecimalPreview';
+import {ValuationPolicyChoice} from './ValuationPolicyChoice';
+import {DEFAULT_VALUATION_POLICY,type InitialStockValuationPolicy} from '@/lib/initial-stock-valuation-policy';
 import {
   previewSaldoAwalAccurate,
   type InitialStockState,
@@ -36,7 +38,7 @@ export function InitialStockImport({
   const reasons = [...new Map(rejectedRows.map((row) => [row.reason ?? "Perlu klarifikasi", 0]))]
     .map(([reason]) => ({ reason, count: rejectedRows.filter((row) => row.reason === reason).length }));
   const showManualControls = !presetState;
-  const [normalizeMoney,setNormalizeMoney]=useState(false);
+  const [policy,setPolicy]=useState<InitialStockValuationPolicy>(DEFAULT_VALUATION_POLICY);
   const [asOf,setAsOf]=useState('');
   const generation=useRef(0),request=useRef<number|null>(null);
   const invalidate=()=>{generation.current++;request.current=null;setSaved(null);setLocalError('');};
@@ -56,7 +58,7 @@ export function InitialStockImport({
       data.append("initial_stock_file", sourceFile);
       data.append("master_run_id", masterRunId);
       data.set('initial_stock_as_of',asOf);
-      data.set('valuation_policy',normalizeMoney?'HALF_UP_BATCH_V1':'STRICT');
+      data.set('valuation_policy',policy);
       const result = await previewSaldoAwalAccurate(data);
       if(token!==generation.current)return;
       setRowFilter(result.rows.some(row=>row.status==='rejected') ? "rejected" : "all");
@@ -84,7 +86,7 @@ export function InitialStockImport({
           </button>
         </div>
         <label>Tanggal posisi saldo awal <input type="date" required value={asOf} onChange={e=>{invalidate();setAsOf(e.target.value);}}/></label>
-        <label style={{display:'block'}}><input type="checkbox" aria-label="Bulatkan nilai uang ke 2 desimal" checked={normalizeMoney} onChange={e=>{invalidate();setNormalizeMoney(e.target.checked);}}/> Bulatkan total nilai uang ke 2 desimal (HALF_UP). Jumlah stok tetap presisi; file tidak perlu diedit.</label>
+        <ValuationPolicyChoice value={policy} onChange={next=>{invalidate();setPolicy(next);}}/>
       </>}
 
       {localError && (
@@ -102,7 +104,7 @@ export function InitialStockImport({
             <span className="badge b">Qty dasar {formatImportDecimal(displayedState.decimal_preview?.quantity??displayedState.source_qty)}</span>
             <span className="badge y">Nilai Rp {formatImportDecimal(displayedState.decimal_preview?.source_value??displayedState.source_value)}</span>
           </div>
-          <InitialStockDecimalPreview preview={displayedState.decimal_preview}/>
+          <InitialStockDecimalPreview preview={displayedState.decimal_preview} policy={displayedState.valuation?.policy??policy}/>
           {rejectedCount > 0 ? (
             <div className="p2ban" style={{ marginTop: 10, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#854d0e" }}>
               <b>{rejectedCount} baris tidak masuk — {validCount} saldo aman tetap bisa diposting.</b>
@@ -128,7 +130,7 @@ export function InitialStockImport({
             <table className="data-table" style={{ fontSize: 10.5 }}>
               <thead><tr><th>Baris</th><th>Barang</th><th>Satuan</th><th>Qty dasar</th><th>Status</th><th>Catatan</th></tr></thead>
               <tbody>{visibleRows.map((row) => (
-                <tr key={`${row.row}-${row.itemCode}`}>
+                <tr key={`${row.row}-${row.itemCode}-${row.linePart??0}`}>
                   <td>{row.sourceRows?.join(", ") ?? row.row}</td><td>{row.itemCode}{row.itemName ? ` — ${row.itemName}` : ""}</td><td>{row.unit}</td>
                   <td>{formatImportDecimal(row.baseQtyExact??row.baseQty)}</td>
                   <td><span className={`badge ${row.status === "valid" ? "g" : row.status === "skipped" ? "y" : "r"}`}>{row.status === "valid" ? "Siap" : row.status === "skipped" ? "Dilewati" : "Klarifikasi"}</span></td>

@@ -167,7 +167,9 @@ export type InitialStockCheck = {
 
 export type InitialStockRow = ResolvedSaldoAwal & { itemName: string | null };
 
-export type InitialStockValuation = { policy: string; source_value: string; posted_value: string; residual: string; allocated_source_row: number | null; rate_adjustment: string; control: string };
+export type InitialStockValuation = { policy: string; source_value: string; posted_value: string; residual: string; allocated_source_row: number | null; rate_adjustment: string; control: string;
+  /** Batch disiapkan sejak 20261104379000. */
+  rounding_difference?: string; source_lines?: number; line_rounding?: { unit: string; mode: string; split_lines: number } | null };
 
 export type InitialStockState = {
   decimal_preview?:StockDecimalPreview;
@@ -1227,6 +1229,7 @@ export async function recoverInitialStock(runId: string): Promise<InitialStockSt
         baseQty: Number(p.base_qty ?? 0), baseQtyExact:String(p.base_qty??0),baseUnitCost: Number(p.base_unit_cost ?? 0), value: Number(p.base_qty ?? 0)*Number(p.base_unit_cost ?? 0),
         valueExact:new StockDecimal(String(p.base_qty??0)).times(String(p.base_unit_cost??0)).toFixed(),
         sourceValues:Array.isArray((p as unknown as {source_values?:unknown}).source_values)?(p as unknown as {source_values:ResolvedSaldoAwal['sourceValues']}).source_values:undefined,
+        linePart: p.line_part === undefined || p.line_part === null ? undefined : Number(p.line_part) as 1 | 2,
         status: record.status === "posted" ? "valid" : record.status, reason: record.reason ?? null,
       } as InitialStockRow;
     });
@@ -1337,7 +1340,7 @@ export async function previewSaldoAwalAccurate(formData: FormData): Promise<Init
     });
     if(prepared.error?.message.startsWith('Nilai sumber belum tepat dua desimal.')){
       const summary=initialStockSummary(resolved);
-      return {...initialStockStateError('Nilai uang memiliki pecahan di bawah 0,01. Pilih pembulatan total nilai uang ke 2 desimal untuk menyiapkan batch tanpa mengedit file. Jumlah stok tidak dibulatkan; stok dan jurnal belum diposting.'),rows:initialStockRowsState(resolved,new Map([...master.values()].map(item=>[item.id,item.code]))),source_qty:summary.source_qty,source_value:summary.source_value,decimal_preview:summary.decimal_preview};
+      return {...initialStockStateError('Nilai uang memiliki pecahan sen. Pilih "Bulatkan nilai tiap baris ke rupiah penuh" (keputusan pemilik) untuk menyiapkan batch tanpa mengedit file. Jumlah stok tidak dibulatkan; stok dan jurnal belum diposting.'),rows:initialStockRowsState(resolved,new Map([...master.values()].map(item=>[item.id,item.code]))),source_qty:summary.source_qty,source_value:summary.source_value,decimal_preview:summary.decimal_preview};
     }
     if (prepared.error) throw new Error(prepared.error.message);
     if (!prepared.data) throw new Error("Hasil persiapan belum diterima. Periksa batch tersimpan sebelum mencoba ulang.");

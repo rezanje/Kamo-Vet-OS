@@ -14,7 +14,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   from(table: string) {
     const data = table === "branches" ? [{ id: "branch", name: "Cabang", code: "BR" }, { id: "other", name: "Lain", code: "B2" }]
       : table === "items" ? [{ id: "service", name: "Jasa", item_type: "Jasa", unit: "pcs", sell_price: 100, target_species: "Universal" }] : [];
-    const query = { select: (fields: string) => { if (table === "items") state.itemSelections.push(fields); return query; }, eq: () => query, in: () => query, order: () => query, range: () => query,
+    const query = { select: (fields: string) => { if (table === "items") state.itemSelections.push(fields); return query; }, eq: () => query, in: () => query, order: () => query, range: () => query, limit: () => query,
       maybeSingle: async () => ({ data: null }), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, count: data.length, error: null }).then(resolve),
     }; return query;
   },

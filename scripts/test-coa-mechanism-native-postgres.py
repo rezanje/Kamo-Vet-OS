@@ -7,7 +7,9 @@ and the same fictional auth/storage shims as scripts/test-accurate-inventory-acc
   i02_inventory_adjustment_atomic.sql  atomic adjustment: stock+document+journal, retry, guards
   stock_document_corrections.sql       official stock corrections still accept documents
   opname_posting_atomic.sql            opname posting unchanged; its journals now locked too
-  pos_payment_method_corrections.sql   J02 reversal/replacement journals cannot be tampered
+  pos_payment_method_corrections.sql   J02 reversal/replacement journals cannot be tampered;
+                                       correction after shift close, OWNER/FINANCE only
+  clinic_payment_method_corrections.sql J02 clinic Tunai<->Transfer correction journal + safeguards
   goods_receipt_cancellation.sql       P02 receipt lines only change through official RPCs
 
 Usage: python3 scripts/test-coa-mechanism-native-postgres.py [/usr/lib/postgresql/16/bin]
@@ -31,6 +33,7 @@ SUITES = [
     "stock_document_corrections.sql",
     "opname_posting_atomic.sql",
     "pos_payment_method_corrections.sql",
+    "clinic_payment_method_corrections.sql",
     "goods_receipt_cancellation.sql",
 ]
 

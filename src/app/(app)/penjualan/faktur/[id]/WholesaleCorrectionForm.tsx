@@ -46,7 +46,7 @@ export function WholesaleCorrectionForm({ userId, invoiceId, revision, today, du
         <option value="replace">Koreksi harga / tempo / catatan dengan faktur pengganti</option>
         <option value="cancel">Batalkan pencatatan tagihan</option>
       </select>
-      <p>Pembayaran tetap tersimpan: {rp(paid)}. Perubahan stok: 0. Barang yang sudah dikirim tetap tercatat keluar. Perubahan barang, satuan atau qty perlu rekonsiliasi pengiriman atau retur fisik.</p>
+      <p>Pembayaran tetap tersimpan: {rp(paid)}. Perubahan stok: 0. Barang yang sudah dikirim tetap tercatat keluar. Barang yang dikembalikan pelanggan dicatat lewat Aksi → Retur barang (stok kembali, piutang atau kredit pelanggan ikut dikoreksi).</p>
       <div className="frow">
         <div><label className="flab">Tanggal koreksi</label><input className="fi" type="date" name="tanggal" required defaultValue={today} max={today} /></div>
         <div><label className="flab">Jatuh tempo pengganti</label><input className="fi" type="date" name="jatuh_tempo" required={action === "replace"} defaultValue={due < today ? today : due} /></div>

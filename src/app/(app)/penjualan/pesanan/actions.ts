@@ -6,6 +6,8 @@ import { assertRole } from "@/lib/master-guard";
 import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
 import { validasiSatuanJual } from "@/lib/penjualan-satuan";
 import { hariIniWIB } from "@/lib/tanggal";
+import { hppWarningConfirmed, hppWarningQuery } from "@/lib/hpp-warning";
+import { grosirHppWarnings } from "@/lib/hpp-warning-server";
 
 const LIST = "/penjualan/pesanan";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE", "STAFF"];
@@ -27,6 +29,9 @@ export async function buatPesanan(formData: FormData) {
   if (satuanError) gagal(satuanError);
   if (!customerId) gagal("Pilih pelanggan dulu");
   if (baris.length === 0) gagal("Isi minimal satu baris barang atau jasa");
+  // P03: harga grosir di bawah perkiraan HPP gudang pengirim boleh, setelah dikonfirmasi.
+  const hppWarnings = await grosirHppWarnings(supabase, warehouseId, baris);
+  if (!hppWarningConfirmed(formData, hppWarnings)) redirect(`${LIST}?${hppWarningQuery(hppWarnings)}`);
 
   const { data: { user } } = await supabase.auth.getUser();
   const no = await nextNoDokumen(supabase, "SO");
