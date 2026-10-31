@@ -64,6 +64,16 @@ it.each([["cashier", checkoutKasir], ["backoffice", checkoutSale]] as const)("%s
   expect(state.finalized).toEqual(["sale"]);
 });
 
+it.each([["cashier", checkoutKasir], ["backoffice", checkoutSale]] as const)("%s zeros forged caller promo values before pricing", async (_label, action) => {
+  const input = form();
+  input.set("cart", JSON.stringify([{ item_id: "item", nama: "Pakan", qty: 1, harga: 1, satuan: "pcs", promo_discount: 99999, promo_id: "forged", pricing_snapshot: { net: 1 } }]));
+  const outcome = await action(input).then(() => "unexpected success", error => error.message);
+  expect(outcome).toContain("/struk/sale");
+  expect(state.headers[0]).toMatchObject({ total: 100000 });
+  expect(state.items[0]).toMatchObject({ promo_id: null, promo_discount: 0, source_position: 0 });
+  expect(state.items[0]).not.toHaveProperty("pricing_snapshot");
+});
+
 it.each([["cashier", checkoutKasir], ["backoffice", checkoutSale]] as const)("%s rejects a short split before creating a sale", async (_label, action) => {
   const outcome = await action(form([{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 70000 }])).then(() => "unexpected success", error => error.message);
   expect(outcome).not.toContain("/struk/");

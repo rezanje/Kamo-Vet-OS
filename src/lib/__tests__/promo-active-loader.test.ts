@@ -25,6 +25,19 @@ describe('active promo source completeness',()=>{
  it('verified empty target list still means all products; no active promo avoids target reads',async()=>{const db=database([promo('p')],[]);expect((await loadPromoAktif(db,'own'))[0].itemIds).toEqual([]);const empty=database([],[]);expect(await loadPromoAktif(empty,'own')).toEqual([]);expect(empty.calls.some(c=>c.table==='promo_items')).toBe(false);});
 });
 
+it('loads exact quantity-pool rules for mixed variants and refuses partial rule or empty scope',async()=>{
+ const quantity_pool={version:1,unit:'PCS',normal_price:20000,tiers:[{qty:6,total:110000},{qty:2,total:38000}]};
+ const p=promo('pool',{rule:{discount_mode:'quantity_pool',quantity_pool},discount_type:null,discount_value:null});
+ const targets=[{promo_id:'pool',item_id:'a'},{promo_id:'pool',item_id:'b'}];
+ const rules=await loadPromoAktif(database([p],targets),'own');
+ expect(rules[0]).toMatchObject({discountMode:'quantity_pool',quantityPool:quantity_pool});
+ const cart=['a','b'].map(item_id=>({item_id,qty:1,harga:20000,satuan:'PCS',faktor:1,officialPrice:20000}));
+ expect(hitungPromoKeranjang(rules,cart).reduce((sum,r)=>sum+r.potongan,0)).toBe(2000);
+ await expect(loadPromoAktif(database([p],[]),'own')).rejects.toThrow(/pool/i);
+ for(const rule of [{discount_mode:'quantity_pool'},{discount_mode:'quantity_pool',quantity_pool:{...quantity_pool,tiers:[]}},{quantity_pool}]) {
+  await expect(loadPromoAktif(database([{...p,rule}],targets),'own')).rejects.toThrow(/pool/i);
+ }
+});
 // Existing nominal contract: amount is per eligible unit, not a campaign total.
 it('preserves the requested4/5/6 quantity boundary without inventing package totals',async()=>{
  const db=database([promo('p',{min_qty:5,max_qty:5})],[]);const rules=await loadPromoAktif(db,'own');

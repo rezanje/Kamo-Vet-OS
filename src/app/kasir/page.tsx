@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
 import { voucherBerlaku, type VoucherRow as VoucherFull } from "@/lib/voucher";
-import { promoDiscountMode, validatePackageDiscount, type PromoHitung } from "@/lib/promo-hitung";
+import { promoPricingRule, validatePackageDiscount, type PromoHitung } from "@/lib/promo-hitung";
 import { type AturanDiskon } from "@/lib/harga-golongan";
 import { hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions } from "@/lib/satuan";
@@ -100,8 +100,8 @@ export default async function KasirPage({
   }
   const promoHitung: PromoHitung[] = promosActive.map((p) => {
     const itemIds=itemsPerPromo.get(p.id) ?? [];
-    const discountMode=promoDiscountMode(p.rule?.discount_mode);
-    validatePackageDiscount(discountMode,p.discount_type,p.min_qty,itemIds);
+    const pricing=promoPricingRule(p.rule,itemIds);
+    validatePackageDiscount(pricing.discountMode,p.discount_type,p.min_qty,itemIds);
     return ({
     id: p.id, name: p.name,
     itemIds,
@@ -112,7 +112,7 @@ export default async function KasirPage({
     autoApply: !!p.auto_apply,
     discountType: p.discount_type,
     discountValue: p.discount_value == null ? null : Number(p.discount_value),
-    discountMode,
+    ...pricing,
     minSubtotal: p.rule?.min_subtotal ?? null,
   });
   });
@@ -208,9 +208,9 @@ export default async function KasirPage({
       diskonDefault: Number(i.default_discount) || 0,
       substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
       tiers: tierMap.get(i.id) ?? [],
-      // Hanya kirim kalau benar-benar berjenjang — barang bersatuan tunggal tidak
-      // perlu dropdown yang isinya satu pilihan.
-      satuan: i.item_type !== "Grup" && satuan.length > 1 ? satuan : undefined,
+      // Single-unit products still need their official unit/factor for pool
+      // eligibility. The client only shows a dropdown when length > 1.
+      satuan: i.item_type !== "Grup" && satuan.length > 0 ? satuan : undefined,
     };
   });
 

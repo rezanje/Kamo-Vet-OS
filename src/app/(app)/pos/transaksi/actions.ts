@@ -65,7 +65,8 @@ export async function checkoutSale(formData: FormData) {
   } catch {
     cart = [];
   }
-  const rawRows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
+  const rawRows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0)
+    .map(l => ({ ...l, promo_discount: 0 }));
   if (rawRows.length === 0) redirect(`/pos/transaksi?error=${encodeURIComponent("Keranjang kosong")}`);
 
   // Periode terkunci = struk tersimpan tapi jurnal pendapatannya hilang diam-diam.
@@ -78,8 +79,8 @@ export async function checkoutSale(formData: FormData) {
   const [unitOpts, hargaMap, catalogue] = await Promise.all([
     loadUnitOptions(supabase, cartIds),
     loadHargaCabang(supabase, branchId, cartIds),
-    cartIds.length ? readCompleteList<{ id: string; item_type: string; tindakan_kategori: string | null }>((from, to) => supabase.from("items")
-      .select("id, item_type, tindakan_kategori", { count: "exact" }).in("id", [...new Set(cartIds)]).order("id").range(from, to), "Jenis barang POS", { maxRows: null }) : [],
+    cartIds.length ? readCompleteList<{ id: string; code: string; item_type: string; tindakan_kategori: string | null }>((from, to) => supabase.from("items")
+      .select("id, code, item_type, tindakan_kategori", { count: "exact" }).in("id", [...new Set(cartIds)]).order("id").range(from, to), "Jenis barang POS", { maxRows: null }) : [],
   ]);
   const itemTypes = new Map(catalogue.map(item => [item.id, item]));
   let performerRows: CartLine[];
@@ -118,7 +119,7 @@ export async function checkoutSale(formData: FormData) {
   const promoKodeId = kampanye?.promo_id ?? null;
   const promoAktif = promoDenganKode(await loadPromoAktif(supabase, branchId, promoKodeId ? [promoKodeId] : []), promoKodeId);
   const rincianPromo = serviceLinePromos(
-    promoAktif, rows.map((l) => ({ ...l, item_id: l.item_id ?? "" })),
+    promoAktif, rows.map((l) => ({ ...l, item_id: l.item_id ?? "", officialPrice: l.harga, manualOverride: false })),
   );
   if (kampanye) {
     const tolak = pesanKampanyeDitolak(kampanye,
@@ -129,6 +130,16 @@ export async function checkoutSale(formData: FormData) {
   // Rinciannya ikut disimpan ke baris struk (migrasi 0127) supaya laporan promo
   // bisa menyebut program mana yang menghabiskan uang, bukan cuma totalnya.
   const promoPerLine = new Map(rincianPromo.map((h) => [h.lineIndex, h]));
+  // Boundary follows potential DB coverage, not the winning quote. A reviewed
+  // pool may activate, or a stronger legacy winner may change, after this read.
+  const reviewedPoolCodes = new Set([
+    "DRC8993374326970", "DRC8993374326987", "DRC8993374326994",
+    "DRC8994125000118", "DRC8994125000064",
+  ]);
+  const quantityPoolRequiresAtomic = rows.some(l => l.item_id && (
+    reviewedPoolCodes.has(itemTypes.get(l.item_id)?.code ?? "") ||
+    promoAktif.some(p => p.discountMode === "quantity_pool" && p.itemIds.includes(l.item_id!))
+  ));
 
   // Diskon golongan diambil dari master lewat customer_id — BUKAN dari form.
   // Kalau dibaca dari form, kasir bisa mengarang diskon golongan sesukanya.
@@ -261,6 +272,7 @@ export async function checkoutSale(formData: FormData) {
   }
 
   let checkoutFailure: string | null = null;
+  let quantityPoolFinalized = false;
   try {
     const pendingLines: { id: string; line: typeof rows[number] }[] = [];
     // Semua pelaksana dinormalisasi database sebelum ada pengeluaran stok.
@@ -269,6 +281,9 @@ export async function checkoutSale(formData: FormData) {
     for (const [index, l] of rows.entries()) {
       const { data: insertedLine, error: itemErr } = await supabase.from("sale_items").insert({
         sale_id: sale.id, item_id: l.item_id, nama: l.nama, qty: l.qty, harga: l.harga,
+        source_position: index,
+        quantity_pool_claim: promoAktif.some(p =>
+          p.id === promoPerLine.get(index)?.promoId && p.discountMode === "quantity_pool"),
         target_species: l.target_species, satuan: l.satuan, faktor: l.faktor,
         service_performers: l.service_performers,
         promo_id: l.item_id ? (promoPerLine.get(index)?.promoId ?? null) : null,
@@ -278,10 +293,23 @@ export async function checkoutSale(formData: FormData) {
       if (itemErr || !insertedLine) throw new Error(itemErr?.message ?? "Gagal menyimpan rincian transaksi");
       pendingLines.push({ id: insertedLine.id, line: l });
     }
-    for (const { id, line } of pendingLines) {
+    if (quantityPoolRequiresAtomic) {
+      if (!wh) throw new Error("Cabang belum punya gudang aktif untuk memotong stok");
+      // New-rule validation may reject a stale master at finalization. Keep
+      // original stock writers and finalizer in ONE transaction so that such
+      // rejection cannot leave separate backoffice HTTP stock issues behind.
+      const { data: posted, error: postErr } = await supabase.rpc("quantity_pool_post_backoffice_atomic", {
+        p_sale_id: sale.id, p_warehouse_id: wh.id,
+      });
+      if (postErr || posted?.sale_id !== sale.id || posted?.finalized !== true || posted?.checked !== true) {
+        throw new Error(postErr?.message ?? "Stok dan harga neto promo belum berhasil difinalkan");
+      }
+      quantityPoolFinalized = true;
+    } else for (const { id, line } of pendingLines) {
       if (!wh || !line.item_id) continue;
       const { cost } = await stockOut(supabase, {
         warehouseId: wh.id, itemId: line.item_id, qty: toBaseQty(line.qty, line.faktor), source: "sale", ref: noStruk,
+
       });
       const { error: costError } = await supabase.from("sale_items").update({ hpp: cost })
         .eq("id", id).eq("sale_id", sale.id).select("id").single();
@@ -291,12 +319,15 @@ export async function checkoutSale(formData: FormData) {
     checkoutFailure = error instanceof Error ? error.message : "Gagal memproses stok atau rincian transaksi";
   }
   if (checkoutFailure) {
+    if (quantityPoolRequiresAtomic) await resumePosCheckout(supabase, user.id, checkout, "backoffice", sale.id);
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
     if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
     redirect(`/pos/transaksi?error=${encodeURIComponent(checkoutFailure)}`);
   }
 
-  const { data: finalized, error: finalizationErr } = await supabase.rpc("finalize_pos_sale", { p_sale_id: sale.id });
+  const { data: finalized, error: finalizationErr } = quantityPoolFinalized
+    ? { data: { sale_id: sale.id, finalized: true }, error: null }
+    : await supabase.rpc("finalize_pos_sale", { p_sale_id: sale.id });
   if (finalizationErr || finalized?.sale_id !== sale.id || finalized?.finalized !== true) {
     await resumePosCheckout(supabase, user.id, checkout, "backoffice", sale.id);
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
