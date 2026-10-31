@@ -306,3 +306,33 @@ describe("unduhan", () => {
       .rejects.toThrow(/persempit/i);
   });
 });
+
+describe("status Belum lunas mengabaikan rentang tanggal", () => {
+  it("piutang lama (saldo awal per faktur) tetap tampil walau di luar bulan berjalan", async () => {
+    const filter = bacaFilterFaktur({ status: "belum" }, "2026-11-01");
+    expect([filter.dari, filter.sampai]).toEqual(["2026-11-01", "2026-11-01"]);
+    const hasil = await bacaFakturGabungan(db({
+      ...DASAR,
+      sales: [struk({ id: "s1", created_at: "2026-11-01T03:00:00+00:00" })],
+      invoices: [
+        tagihan({ id: "k1", invoice_no: "INV-LAMA", created_at: "2026-08-03T05:00:00+00:00", paid_status: "Belum Lunas" }),
+        tagihan({ id: "k2", invoice_no: "INV-LUNAS", created_at: "2026-08-04T05:00:00+00:00" }),
+      ],
+      sales_invoices: [
+        faktur({ id: "g1", no_faktur: "FJ.SALDO.1", tanggal: "2025-12-20", opening_batch_id: "batch", catatan: "Migrasi Accurate" }),
+        faktur({ id: "g2", no_faktur: "FJ.LUNAS", tanggal: "2026-09-01", status: "lunas" }),
+        faktur({ id: "g3", no_faktur: "FJ.BATAL", tanggal: "2026-09-02", status: "batal" }),
+      ],
+    }, jejak), "user-1", filter, "1");
+    expect(hasil.rows.map((r) => r.nomor).sort()).toEqual(["FJ.SALDO.1", "INV-LAMA"]);
+    expect(hasil.rows.find((r) => r.nomor === "FJ.SALDO.1")?.keterangan).toMatch(/Saldo awal/);
+    // Struk kasir selalu lunas: sumbernya tidak dibaca sama sekali untuk status ini.
+    expect(opsTabel("sales")).toEqual([]);
+    expect(opsTabel("sales_invoices").some((op) => op.startsWith("gte:tanggal"))).toBe(false);
+  });
+
+  it("status lain tetap memakai rentang tanggal", async () => {
+    await bacaFakturGabungan(db({ ...DASAR, sales: [], invoices: [], sales_invoices: [] }, jejak), "user-1", FILTER, "1");
+    expect(opsTabel("sales_invoices")).toContain("gte:tanggal");
+  });
+});

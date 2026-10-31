@@ -137,7 +137,13 @@ async function idDigantikan(db: AnyClient): Promise<Set<string>> {
 async function kunciJendela(db: AnyClient, f: FilterFaktur, cabang: string[] | null): Promise<KunciFaktur[][]> {
   if (cabang !== null && cabang.length === 0) return [[], [], []];
   const { mulai, akhir } = batasTanggalWIB(f.dari, f.sampai);
-  const pakai = (s: SumberFaktur) => !f.sumber || f.sumber === s;
+  // "Belum lunas" adalah daftar tagihan yang masih harus ditagih: piutang lama (mis. saldo
+  // awal per faktur dari Accurate) tidak boleh hilang hanya karena tanggalnya di luar
+  // rentang bawaan bulan berjalan. Rentang tanggal diabaikan untuk status ini.
+  const semuaTanggal = f.status === "belum";
+  const pakai = (s: SumberFaktur) => (!f.sumber || f.sumber === s)
+    // Struk kasir selalu lunas saat itu juga — tidak pernah muncul di "Belum lunas".
+    && !(semuaTanggal && s === "petshop");
   const batas = { maxRows: BATAS_JENDELA };
 
   const petshop = !pakai("petshop") ? Promise.resolve([] as KunciStruk[]) : readCompleteList<KunciStruk>((from, to) => {
@@ -154,8 +160,8 @@ async function kunciJendela(db: AnyClient, f: FilterFaktur, cabang: string[] | n
 
   const klinik = !pakai("klinik") ? Promise.resolve([] as KunciKlinik[]) : readCompleteList<KunciKlinik>((from, to) => {
     let q = db.from("invoices")
-      .select("id,invoice_no,created_at,total,paid_status,voided_at,visits!inner(branch_id,customer_id)", { count: "exact" })
-      .gte("created_at", mulai).lte("created_at", akhir);
+      .select("id,invoice_no,created_at,total,paid_status,voided_at,visits!inner(branch_id,customer_id)", { count: "exact" });
+    q = semuaTanggal ? q.neq("paid_status", "Lunas") : q.gte("created_at", mulai).lte("created_at", akhir);
     if (!f.batal) q = q.is("voided_at", null);
     if (cabang) q = q.in("visits.branch_id", cabang);
     return q.order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, to);
@@ -166,8 +172,8 @@ async function kunciJendela(db: AnyClient, f: FilterFaktur, cabang: string[] | n
     : Promise.all([
       readCompleteList<KunciGrosir>((from, to) => {
         let q = db.from("sales_invoices")
-          .select("id,no_faktur,tanggal,total,status,voided_on,branch_id,customer_id", { count: "exact" })
-          .gte("tanggal", f.dari).lte("tanggal", f.sampai);
+          .select("id,no_faktur,tanggal,total,status,voided_on,branch_id,customer_id", { count: "exact" });
+        q = semuaTanggal ? q.neq("status", "lunas") : q.gte("tanggal", f.dari).lte("tanggal", f.sampai);
         if (!f.batal) q = q.is("voided_on", null).neq("status", "batal");
         if (cabang) q = q.in("branch_id", cabang);
         return q.order("tanggal", { ascending: false }).order("id", { ascending: false }).range(from, to);
