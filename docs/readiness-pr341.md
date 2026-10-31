@@ -37,21 +37,26 @@ dokter/owner 0408/0411). Namun integrasi runtime-nya bermasalah, sehingga file d
 Tidak ada RPC uang/stok asli yang ditulis ulang (`S1` + pemeriksaan akhir migrasi).
 
 **Bukti (PG16 native, semua migrasi, aktor JWT fiktif, tanpa stub bisnis):**
-- `scripts/test-item-susulan-keranjang-postgres.py` RED kandidat b02ee287: 3 PASS / 13 FAIL
-  (termasuk deadlock 40P01 nyata); GREEN: **16 PASS / 0 FAIL / 0 BLOCKED**.
+- `scripts/test-item-susulan-keranjang-postgres.py` RED kandidat b02ee287: 4 PASS / 13 FAIL
+  (termasuk deadlock 40P01 nyata); GREEN: **17 PASS / 0 FAIL / 0 BLOCKED** (termasuk campuran, DEMO, DP & rawat inap, racikan, dua balapan).
 - `scripts/test-item-susulan-full-schema-postgres.py` (regresi PR341: idempotensi, posting,
   koreksi, guard riwayat bersama, dua jadwal konkurensi, fault-injection): **18 / 0 / 0**.
 - Harness mini berstub `test-item-susulan-rekam-medis-postgres.py` dihapus: tidak bisa
   memasang migrasi hasil komposisi tanpa menambah stub bisnis (`billing_withdrawn_at`, 0408).
-- Layar/aksi: RED 3 aksi + 6 layar gagal → GREEN; tes baru
+- Layar/aksi: RED 3 aksi + 6 layar + 2 rombongan gagal → GREEN; tes baru
   `clinic-payment-cart-version.test.tsx` (halaman) dan `clinic-payment-cart-stale.test.tsx`
-  (form dipasang ulang, draf diblokir, muat ulang membawa item dokter).
+  (form dipasang ulang, draf diblokir, muat ulang membawa item dokter). Pembayaran rombongan
+  membaca versi per hewan di server SEBELUM barisnya.
 - Log mentah: `/opt/data/klinik-d-susulan-evidence/` (mesin agen).
+
+**Catatan integrasi.** Versi keranjang WAJIB dibaca sebelum (bukan bersamaan/sesudah) baris
+resep. Paket A (#366) memindahkan bacaan resep ke awal halaman; saat digabung, bacaan resep
+harus menunggu bacaan versi (mis. `resepP = versiP.then(() => …)`), kalau tidak item dokter
+yang masuk di antaranya bisa lolos dengan versi baru.
 
 **Batas.** Hanya PG16 (PG17 tidak terpasang). Tidak ada lingkungan browser/Auth/PostgREST UAT —
 tidak dibuat dan tidak memakai Production; tes layar memakai render React dengan sumber data
-tiruan. DEMO tidak dijalankan ulang di database (routing pembungkus tidak berubah selain
-parameter versi). Aplikasi lama (sebelum deploy kode ini) masih memanggil RPC posting asli
+tiruan. Aplikasi lama (sebelum deploy kode ini) masih memanggil RPC posting asli
 tanpa pemeriksaan versi selama jendela deploy. Baris tambahan kasir di keranjang ranap 0413
 belum diberi penanda susulan (di luar rawat jalan).
 
