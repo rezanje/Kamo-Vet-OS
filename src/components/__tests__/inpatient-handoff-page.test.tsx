@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { handoffSourceStatus, type InpatientHandoff } from '@/lib/inpatient-handoff';
-const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,forcedConsent:false,paidStay:'' as ''|'Lunas'|'DP',secondStay:false,broken:'',dailyLogs:false,authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
+const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,forcedConsent:false,paksaTemplate:'all' as 'all'|'other'|'none',role:'DOCTOR',paidStay:'' as ''|'Lunas'|'DP',secondStay:false,broken:'',dailyLogs:false,authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
 vi.mock('@/lib/branch-access',()=>({allowedBranchIds:async()=>s.allowed,canUseBranch:(allowed:string[]|null,id:string)=>allowed===null||allowed.includes(id)}));
 vi.mock('@/app/(app)/klinik/rawat-inap/[id]/PapanPemantauan',()=>({PapanPemantauan:()=> <div>DAILY MONITORING</div>}));
@@ -14,7 +14,8 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
   if(table==='inpatient_records')data={id:'inpat',branch_id:s.branch,visit_id:'visit-a',admitted_at:'2026-10-22T10:00:00Z',condition_status:'stabil',discharged_at:null,treatment_plan:'Fictional care',doctor_name:'Drh Inap',branches:{name:'Branch A'},visits:{id:'visit-a',poli:'Umum',keluhan:'Fictional complaint',created_at:'2026-10-22T08:00:00Z',pets:{name:'Fictional pet'},customers:{name:'Fictional owner'}}};
   if(table==='inpatient_records'&&request.eq.visit_id)data=s.secondStay?[{id:'inpat'},{id:'inpat-old'}]:[{id:'inpat'}];
   if(table==='inpatient_daily_logs'&&s.dailyLogs)data=[{id:'log-am',log_date:'2026-10-22',created_at:'2026-10-22T02:00:00Z',condition_note:'Pengamatan fiktif pagi',berat:3,suhu:38.5},{id:'log-pm',log_date:'2026-10-22',created_at:'2026-10-22T09:00:00Z',condition_note:'Pengamatan fiktif sore',berat:3.1,suhu:38.6}];
-  if(table==='profiles')data={role:'DOCTOR'};
+  if(table==='profiles')data={role:s.role};
+  if(table==='consent_templates')data=s.paksaTemplate==='none'?[]:[{id:'tpl-paksa',branch_id:s.paksaTemplate==='all'?null:'branch-b',is_active:true}];
   if(table==='consents'&&s.forcedConsent)data=[{status:'sudah_ttd',kategori:'Pulang Paksa',signed_at:'2026-10-22T12:00:00Z'}];
   if(table==='visits')data={id:'visit-a',branch_id:s.branch,dokter:'Drh Konsultasi',keluhan:'Fictional complaint',created_at:'2026-10-22T08:00:00Z',status:'Pembayaran'};
   if(table==='medical_records')data=[{id:'mr-a',visit_id:'visit-a',created_at:'2026-10-22T09:00:00Z',anamnesis:'Fictional consultation note',diagnosis:'Fictional finding',catatan_resep:'Global prescription note'}];
@@ -32,7 +33,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
  }};return q;}})}));
 import Page from '@/app/(app)/klinik/rawat-inap/[id]/page';
 const render=async()=>renderToStaticMarkup(await Page({params:Promise.resolve({id:'inpat'}),searchParams:Promise.resolve({})}));
-beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.forcedConsent=false;s.paidStay='';s.secondStay=false;s.broken='';s.dailyLogs=false;s.authReads=0;s.reads=[]});
+beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.forcedConsent=false;s.paksaTemplate='all';s.role='DOCTOR';s.paidStay='';s.secondStay=false;s.broken='';s.dailyLogs=false;s.authReads=0;s.reads=[]});
 it('removes the monitoring board while retaining both same-day notes and detail links',async()=>{
  s.dailyLogs=true;const html=await render();
  expect(html).not.toContain('DAILY MONITORING');
@@ -131,7 +132,8 @@ it('offers forced discharge with a separate signed form step and keeps cross-bra
  const unsigned=await render();
  expect(unsigned).toContain('value="pulang_paksa"');
  expect(unsigned).toContain('buat dan tandatangani form khusus kategori Pulang Paksa');
- expect(unsigned).toContain('/klinik/rekam-medis/visit-a');
+ expect(unsigned).toContain('/klinik/rekam-medis/visit-a#persetujuan-rawat-inap');
+ expect(unsigned).not.toContain('Template form Pulang Paksa belum tersedia');
  s.forcedConsent=true;
  const signed=await render();
  expect(signed).not.toContain('buat dan tandatangani form khusus kategori Pulang Paksa');
@@ -152,4 +154,21 @@ it('keeps a linked compound available in its recipe card without counting one mi
  expect(status.rows.map(row=>row.key)).toEqual(['rx:rx','recipe:recipe']);
  expect(status.rows[1].handover).toBe('Diserahkan oleh farmasi');
  expect(status.gaps.filter(gap=>gap.includes('baris resep/racikan belum punya tautan'))).toEqual(['1 baris resep/racikan belum punya tautan tagihan per baris dan tidak dipasangkan berdasarkan nama.']);
+});
+it('explains a missing forced discharge template instead of sending staff to an empty form picker',async()=>{
+ s.paksaTemplate='other';
+ const staff=await render();
+ expect(staff).toContain('Template form Pulang Paksa belum tersedia untuk cabang ini');
+ expect(staff).toContain('Minta Owner/Admin');
+ expect(staff).not.toContain('href="/klinik/persetujuan"');
+ expect(staff).not.toContain('buat dan tandatangani form khusus kategori Pulang Paksa');
+ const templateRead=s.reads.find(r=>r.table==='consent_templates');
+ expect(templateRead?.eq).toEqual({kategori:'Pulang Paksa',is_active:true});
+ s.paksaTemplate='none';s.role='ADMIN';
+ const admin=await render();
+ expect(admin).toContain('href="/klinik/persetujuan"');
+ s.broken='consent_templates';
+ const unreadable=await render();
+ expect(unreadable).not.toContain('Template form Pulang Paksa belum tersedia');
+ expect(unreadable).toContain('buat dan tandatangani form khusus kategori Pulang Paksa');
 });
