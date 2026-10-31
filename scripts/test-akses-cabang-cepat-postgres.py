@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Uji migrasi 20261105010000 (percepatan user_can_access_branch) di PostgreSQL sungguhan, data fiktif.
+"""Uji migrasi 20261031082216 (dulu 20261105010000) (percepatan user_can_access_branch) di PostgreSQL sungguhan, data fiktif.
 
 Babak:
   A. SKEMA PENUH — seluruh migrasi repo (kecuali migrasi ini) diputar dari nol. Sidik isi fungsi lama
@@ -32,7 +32,7 @@ hris = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hris)
 
 MIGRATIONS = ROOT / "supabase/migrations"
-MIGRASI = MIGRATIONS / "20261105010000_akses_cabang_cepat.sql"
+MIGRASI = MIGRATIONS / "20261031082216_akses_cabang_cepat.sql"
 SIDIK_LAMA = {"public.user_can_access_branch(uuid)": "732c83442a975e7725c94de592e2b836",
               "public.has_role_capability(text)": "c5f1cee77a8984555bfcafaacb7b226e"}
 

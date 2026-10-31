@@ -1,4 +1,6 @@
 -- Percepatan pengecekan akses cabang (public.user_can_access_branch) — perilaku TIDAK berubah.
+-- Versi riwayat Production: 20261031082216 (dipasang 31 Okt 2026 lewat Management API). Teks fungsi masih
+-- menyebut 20261105010000 = nomor draf; sengaja tidak diubah agar isi repo = isi Production.
 --
 -- Masalah (Production 31 Okt 2026): setelah ~3.800 riwayat kartu medis lama masuk, Klinik > Rekam medis
 -- menampilkan "Rekam medis belum dapat dimuat lengkap". Satu halaman daftar (500 baris) butuh ~9,6 detik,
