@@ -32,6 +32,7 @@ import { adalahKekuranganStok } from "@/lib/stok-kurang";
 import { adalahRiwayatBersama, bacaDetailRiwayatBersama, ownerAktif } from "@/lib/riwayat-bersama";
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
 import { RekamMedisGagalDimuat, RiwayatBersamaDetail } from "./RiwayatBersamaDetail";
+import { mulai } from "@/lib/u07-waktu";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -65,6 +66,10 @@ export default async function RekamMedisPage({
   // U07: semua bacaan yang cuma butuh visitId jalan bareng dalam satu putaran.
   // Dulu halaman ini antre ±12 perjalanan ke database satu per satu, dan halaman
   // ini ikut dirender ulang tiap kali rekam medis disimpan.
+  // Klinik-A: tab saudara (2 bacaan berantai) dan izin racik khusus (3 bacaan berantai)
+  // tidak menahan tahap 2; keduanya baru ditunggu saat dirender.
+  const saudaraP = mulai(bacaSaudaraKunjungan(supabase, visitId));
+  const bolehManualP = mulai(bolehRacikKhusus());
   const [
     { data: { user } },
     { data: visit, error: visitError },
@@ -73,8 +78,6 @@ export default async function RekamMedisPage({
     [{ data: inpatient, error: inpatientError }, { data: referralRows }],
     [{ data: consentRows, error: consentsError }, { data: tplRows, error: templatesError }],
     { data: inpatientConsentRule, error: ruleError },
-    saudara,
-    bolehManual,
   ] = await Promise.all([
     supabase.auth.getUser(),
     supabase
@@ -112,10 +115,6 @@ export default async function RekamMedisPage({
       supabase.from("consent_templates").select("id, nama, kategori, branch_id, is_active"),
     ]),
     supabase.from("consent_rules").select("wajib,template_id").eq("kategori", "Rawat Inap").maybeSingle(),
-    // Satu pemilik yang datang membawa beberapa hewan: tiap hewan punya rekam medis
-    // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
-    bacaSaudaraKunjungan(supabase, visitId),
-    bolehRacikKhusus(),
   ]);
   const draftUserId = user?.id ?? "";
 
@@ -170,7 +169,17 @@ export default async function RekamMedisPage({
     id: string; code: string | null; upc: string | null; name: string; unit: string; sell_price: number; is_compound_material: boolean;
     item_type: string; tindakan_kategori: string | null; category_id: string | null;
   };
-  const [recordedData, examData] = await Promise.all([
+  // K01: once billing is posted the original form stays locked; doctors append
+  // a diagnosis/therapy addendum instead (no invoice, stock or payment change).
+  const addendumScope = recorded && mrId && !mrLoadFailed;
+  const examForm = !recorded || (edit === mrId && menungguBayar && !visit.checked_out_at && !latestInvoice.data && !latestInvoice.error);
+  // Klinik-A: obat racik jadi hanya butuh kategori, jadi dibaca begitu kategori ada —
+  // tidak menunggu seluruh katalog barang selesai dulu.
+  const categoriesP = examForm ? mulai(loadClinicItemCategories(supabase)) : null;
+  const compoundP = categoriesP ? mulai(categoriesP.then((categories) => loadClinicCompoundSkus(supabase, categories))) : null;
+  // Klinik-A: adendum, cek invoice aktif, dan kunjungan lanjutan hanya butuh id yang
+  // sudah ada sesudah tahap 1, jadi ikut tahap 2 (dulu tiga putaran tersendiri).
+  const [recordedData, examData, addenda, activeInvoiceCheck, continuation] = await Promise.all([
     recorded && mrId ? Promise.all([
       supabase
         .from("prescription_items")
@@ -187,16 +196,24 @@ export default async function RekamMedisPage({
         ? supabase.rpc("clinic_can_correct_record", { p_record_id: mrId })
         : Promise.resolve({ data: false, error: null }),
     ]) : null,
-    !recorded || (edit === mrId && menungguBayar && !visit.checked_out_at && !latestInvoice.data && !latestInvoice.error) ? Promise.all([
+    examForm && categoriesP && compoundP ? Promise.all([
       loadServiceStaff(supabase, visit.branch_id ?? null),
       daftarDokter(supabase, { branchId: visit.branch_id }),
       loadKatalogRacikan(),
       readCompleteList<MasterRow>((from, to) => supabase
         .from("items").select("id, code, upc, name, unit, sell_price, is_compound_material, item_type, tindakan_kategori, category_id", { count: "exact" })
         .eq("is_active", true).order("name").order("id").range(from, to), "Barang klinik"),
-      loadClinicItemCategories(supabase),
+      categoriesP,
       visit.branch_id ? loadBranchGroomingPolicy(supabase, visit.branch_id) : Promise.resolve(null),
+      compoundP,
     ]) : null,
+    addendumScope && mrId ? loadRecordAddenda(supabase, mrId) : Promise.resolve<AddendaLoad>({ state: "ok", rows: [] }),
+    // K06: kunjungan yang tagihannya sudah Lunas dianggap tutup — rawat inap lewat
+    // kunjungan lanjutan. Tagihan yang belum lunas tetap memakai jalur langsung seperti dulu.
+    !inpatient && menungguBayar
+      ? supabase.from("invoices").select("id, voided_at, paid_status").eq("visit_id", visitId)
+      : Promise.resolve({ data: [] as { id: string; voided_at: string | null; paid_status: string }[], error: null }),
+    readVisitContinuation(supabase, visitId),
   ]);
   let correctionCheck: { data: unknown; error: unknown } = { data: false, error: null };
   if (recordedData) {
@@ -243,14 +260,10 @@ export default async function RekamMedisPage({
     penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
     prescriptions: resep, compounds: racikanList,
   } : undefined;
-  // K01: once billing is posted the original form stays locked; doctors append
-  // a diagnosis/therapy addendum instead (no invoice, stock or payment change).
-  const addendumScope = recorded && mrId && !mrLoadFailed;
   // Any invoice, active or voided: unpaid Edit closes as soon as one ever existed.
-  const anyInvoice = addendumScope
-    ? await supabase.from("invoices").select("id").eq("visit_id", visitId).limit(1).maybeSingle()
-    : { data: null, error: null };
-  const addenda: AddendaLoad = addendumScope && mrId ? await loadRecordAddenda(supabase, mrId) : { state: "ok", rows: [] };
+  // Klinik-A: bacaan tahap 1 sudah persis query ini (invoice apa pun untuk kunjungan ini),
+  // jadi dipakai ulang, bukan dibaca kedua kali.
+  const anyInvoice = addendumScope ? latestInvoice : { data: null, error: null };
   const addendumCheck = addendumScope && mrId && anyInvoice.data && !anyInvoice.error && addenda.state === "ok"
     ? await supabase.rpc("clinic_can_add_record_addendum", { p_record_id: mrId }) : { data: false, error: null };
   const canAddAddendum = addendumCheck.data === true && !addendumCheck.error;
@@ -285,8 +298,7 @@ export default async function RekamMedisPage({
   let racikanItems: ItemLiteFull[] = [];
   const katalogRacikan = examData?.[2] ?? [];
   if (examData) {
-    const [, , , masterRows, categories] = examData;
-    const compoundRows = await loadClinicCompoundSkus(supabase, categories);
+    const [, , , masterRows, categories, , compoundRows] = examData;
     const compoundIds = new Set(compoundRows.map(item => item.id));
     const itemRows = [...new Map([...masterRows, ...compoundRows].map(item => [item.id, item])).values()];
     const ids = (itemRows ?? []).map((i) => i.id);
@@ -322,14 +334,6 @@ export default async function RekamMedisPage({
     (tplRows ?? []) as { id: string; nama: string; kategori?: string; branch_id: string | null; is_active: boolean }[],
     (visit.branch_id as string) ?? null,
   );
-  // K06: kunjungan yang tagihannya sudah Lunas dianggap tutup — rawat inap lewat
-  // kunjungan lanjutan. Tagihan yang belum lunas tetap memakai jalur langsung seperti dulu.
-  const [activeInvoiceCheck, continuation] = await Promise.all([
-    !inpatient && menungguBayar
-      ? supabase.from("invoices").select("id, voided_at, paid_status").eq("visit_id", visitId)
-      : Promise.resolve({ data: [] as { id: string; voided_at: string | null; paid_status: string }[], error: null }),
-    readVisitContinuation(supabase, visitId),
-  ]);
   const hasPaidInvoice = Array.isArray(activeInvoiceCheck.data)
     && (activeInvoiceCheck.data as { voided_at: string | null; paid_status?: string }[])
       .some((row) => !row.voided_at && row.paid_status === "Lunas");
@@ -347,6 +351,9 @@ export default async function RekamMedisPage({
 
   const groomingPolicy = examData?.[5] ?? null;
   const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
+  // Satu pemilik yang datang membawa beberapa hewan: tiap hewan punya rekam medis
+  // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
+  const [saudara, bolehManual] = await Promise.all([saudaraP, bolehManualP]);
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>

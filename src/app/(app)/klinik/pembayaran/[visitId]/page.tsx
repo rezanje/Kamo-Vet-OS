@@ -28,6 +28,7 @@ import { bacaRombongan } from "@/lib/rombongan-server";
 import { perkiraanTagihan, bekalPotonganKlinik, nilaiBaris } from "@/lib/tagihan-klinik";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
+import { mulai } from "@/lib/u07-waktu";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -52,36 +53,68 @@ export default async function PembayaranPage({
   const invoiceRequestKey = randomUUID();
   const groupRequestKey = randomUUID();
   const supabase = await createClient();
-  const { data: { user: draftUser } } = await supabase.auth.getUser();
-
-  const { data: visit } = await supabase
+  // Klinik-A: bacaan yang cuma butuh visitId dimulai bersamaan. Tiap hasil tetap
+  // ditunggu & diperiksa di posisi lamanya (helper `mulai`), jadi urutan validasi,
+  // notFound, dan pesan galat tidak berubah.
+  const userP = mulai(supabase.auth.getUser());
+  const visitP = mulai(supabase
     .from("visits")
     .select("id, status, poli, dokter, created_at, branch_id, customer_id, doctor_id, service_provider_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
     .eq("id", visitId)
-    .maybeSingle();
-  if (!visit) notFound();
-
+    .maybeSingle());
   // Rekam medis opsional: transaksi walk-in tanpa dokter (grooming, beli obat,
   // retail) masuk lewat "Simpan & pembayaran" di registrasi — langsung ke invoice.
-  const { data: mr, error: mrError } = await supabase
+  const mrP = mulai(supabase
     .from("medical_records").select("id, catatan_resep").eq("visit_id", visitId)
-    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    .order("created_at", { ascending: false }).limit(1).maybeSingle());
+  // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
+  const inpatP = mulai(supabase.from("inpatient_records").select("id,consent_id,discharged_at").eq("visit_id", visitId).order("created_at", { ascending: false }).limit(1).maybeSingle());
+  const { data: { user: draftUser } } = await userP;
+
+  const { data: visit } = await visitP;
+  if (!visit) notFound();
+
+  const { data: mr, error: mrError } = await mrP;
 
   if (mrError) throw unverifiedBilling();
 
   // G: racikan yang masih "Menunggu diracik" tidak menghalangi pembayaran, tapi kasir
   // harus mengkonfirmasi dulu supaya obatnya tidak ikut tertinggal saat pemilik pulang.
-  const { data: racikanPendingRows, error: racikanPendingError } = mr
-    ? await supabase.from("compounding_recipes").select("id").eq("medical_record_id", mr.id).eq("status", "pending").limit(1)
-    : { data: [] as { id: string }[], error: null };
+  const racikanPendingP = mulai(mr
+    ? supabase.from("compounding_recipes").select("id").eq("medical_record_id", mr.id).eq("status", "pending").limit(1)
+    : Promise.resolve({ data: [] as { id: string }[], error: null }));
+  const { data: inpat, error: inpatientError } = await inpatP;
+  const linkedP = !inpatientError && inpat?.consent_id ? mulai(supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId})) : null;
+  // Klinik-A: bacaan khusus rawat jalan dimulai sekarang (pasien rawat inap pindah ke
+  // layar kasir rawat inap di bawah dan tidak memakainya).
+  const outpatient = !inpatientError && !(inpat && !query.invoice_id);
+  const rombonganP = outpatient ? mulai(bacaRombongan(supabase, visitId)) : null;
+  const invoiceRowsP = outpatient ? mulai(supabase
+    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id, cashier_name, service_pricing_version")
+    .eq("visit_id", visitId).is("voided_at", null)
+    .order("created_at", { ascending: true }).order("id", { ascending: true })) : null;
+  const allInvIdsP = outpatient ? mulai(supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId)) : null;
+  // Satu bacaan resep untuk baris tagihan DAN kategori consent (dulu dibaca dua kali).
+  const resepP = outpatient && mr ? mulai(supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, service_performers, salesperson_id, salesperson_name").eq("medical_record_id", mr.id).order("created_at")) : null;
+  const consentRowsP = outpatient ? mulai(supabase.from("consents").select("status").eq("visit_id", visitId)) : null;
+  const aturanConsentP = outpatient ? mulai(bacaAturanConsent(supabase)) : null;
+  const pajakP = outpatient ? mulai(getPajakSettings(supabase)) : null;
+  const dpP = outpatient ? mulai(Promise.all([
+    getDpMinimalPercent(supabase),
+    draftUser ? supabase.from("profiles").select("role").eq("id", draftUser.id).maybeSingle() : Promise.resolve({ data: null }),
+  ])) : null;
+  const unitCapabilityP = outpatient ? mulai(supabase.rpc("clinic_manual_invoice_units_supported")) : null;
+  const groomingPolicyP = outpatient && visit.branch_id ? mulai(loadBranchGroomingPolicy(supabase, visit.branch_id)) : null;
+  // Gerbang shift tetap diperiksa di posisi lamanya (hanya bila belum lunas); di sini cuma dibaca lebih awal.
+  const shiftP = outpatient && draftUser ? mulai(getOpenShift(supabase as never, draftUser.id, "klinik")) : null;
+
+  const { data: racikanPendingRows, error: racikanPendingError } = await racikanPendingP;
   if (racikanPendingError) throw unverifiedBilling();
   const racikanPending = (racikanPendingRows ?? []).length > 0;
 
-  // jenis layanan: rawat inap kalau ada record inpatient, selain itu poli.
-  const { data: inpat, error: inpatientError } = await supabase.from("inpatient_records").select("id,consent_id,discharged_at").eq("visit_id", visitId).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (inpatientError) throw unverifiedBilling();
-  if (inpat?.consent_id) {
-    const linked = await supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId});
+  if (linkedP) {
+    const linked = await linkedP;
     if (linked.error || linked.data !== true) throw new Error("Persetujuan khusus rawat inap tidak valid. Periksa rekam medis sebelum membayar.");
   }
   const jenisLayanan = inpat ? "Rawat Inap" : visit.poli;
@@ -107,30 +140,40 @@ export default async function PembayaranPage({
   const ulasanPemilik = one((cust as { customer_review_statuses?: Rel<StatusUlasan> } | null)?.customer_review_statuses ?? null);
   const activeStep = STEP_BY_STATUS[visit.status] ?? 3;
 
-  // Satu pemilik bisa datang membawa beberapa hewan; tagihannya tetap terpisah per
-  // kunjungan, tapi kasir perlu melihat semuanya sekaligus supaya tidak ada yang
-  // tertinggal dan pemiliknya tidak dipanggil dua kali.
-  const rombongan = await bacaRombongan(supabase, visitId);
-  const adaRombongan = (rombongan?.baris.length ?? 0) > 1;
-  const ringkasan = rombongan ? ringkasTagihanRombongan(rombongan.baris) : null;
-  const berikutnya = rombongan ? berikutnyaBelumSelesai(rombongan.baris, visitId) : null;
-  const belumDitagih = (rombongan?.baris ?? []).filter((b) => b.invoiceNo === null);
-
   // invoice AKTIF (belum di-void) — voided tetap tersimpan utk riwayat (Addendum §7).
   //
   // Rawat inap ditagih BERTAHAP sejak 29 Oktober 2026, jadi satu kunjungan bisa punya
   // beberapa invoice aktif. `maybeSingle()` dulu berubah jadi galat begitu tahap kedua
   // terbit, dan seluruh layar pembayaran mati. Layar ini menangani tagihan TERBARU;
   // pengelolaan tahapnya ada di layar Tagihan rawat inap berjalan.
-  const { data: invoiceRows, error: invoiceError } = await supabase
-    .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id, cashier_name, service_pricing_version")
-    .eq("visit_id", visitId).is("voided_at", null)
-    .order("created_at", { ascending: true }).order("id", { ascending: true });
+  const { data: invoiceRows, error: invoiceError } = await invoiceRowsP!;
   if (invoiceError) throw unverifiedBilling();
   const invoiceAktif = invoiceRows ?? [];
   const invoice = query.invoice_id ? invoiceAktif.find(row=>row.id===query.invoice_id) ?? null : invoiceAktif.length ? invoiceAktif[invoiceAktif.length - 1] : null;
   if (query.invoice_id && !invoice) notFound();
   const tagihanBertahap = invoiceAktif.length > 1;
+  // Klinik-A: katalog Barang & Jasa (±3.600 SKU + stok/satuan/harga) dan bekal promo
+  // hanya dipakai keranjang yang bisa diubah (tagihan baru / koreksi) dan panel bayar
+  // rombongan. Tagihan baru pasti memakainya, jadi langsung dimuat; tagihan tersimpan
+  // menunggu hasil cek koreksi & rombongan di bawah. Tampilan tagihan terkunci —
+  // termasuk layar sesudah "Bayar & Selesai" — tidak memuatnya.
+  const startMaster = () => mulai(loadClinicPaymentMaster(supabase, visit.branch_id ?? null));
+  let masterP = invoice ? null : startMaster();
+  let serviceStaffP = invoice ? null : mulai(loadServiceStaff(supabase, visit.branch_id ?? null));
+  // Klinik-A: bacaan yang hanya butuh invoice terpilih ikut berangkat bersama cek DEMO/koreksi.
+  const invItemsP = invoice ? mulai(supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name").eq("invoice_id", invoice.id).order("created_at")) : null;
+  const paymentRowsP = invoice ? mulai(supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)) : null;
+  const refundDataP = invoice && invoice.paid_status === "Lunas" && !invoice.correction_pending ? mulai(loadClinicRefundData(supabase, invoice.id)) : null;
+  const invoiceSalespersonP = invoice?.salesperson_id ? mulai(supabase.from("employees").select("nama").eq("id",invoice.salesperson_id).maybeSingle()) : null;
+  const clinicPackagesP = invoice ? null : mulai(loadClinicPackages(supabase));
+  const cashierP = !invoice && draftUser ? mulai(loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null)) : null;
+  const editLogP = mulai(allInvIdsP!.then(({ data: allInvIds }) => (allInvIds ?? []).length
+    ? supabase
+        .from("invoice_edit_log")
+        .select("field_changed, old_value, new_value, reason, edited_at, invoice_id, profiles(full_name)")
+        .in("invoice_id", (allInvIds ?? []).map((x) => x.id))
+        .order("edited_at", { ascending: false })
+    : { data: [] }));
   const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
@@ -144,11 +187,11 @@ export default async function PembayaranPage({
   ]);
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
-  const { data: invItems, error: itemsError } = invoice
-    ? await supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name").eq("invoice_id", invoice.id).order("created_at")
+  const { data: invItems, error: itemsError } = invItemsP
+    ? await invItemsP
     : { error: null, data: [] as { id?: string; deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
-  const { data: paymentRows, error: paymentsError } = invoice
-    ? await supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)
+  const { data: paymentRows, error: paymentsError } = paymentRowsP
+    ? await paymentRowsP
     : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
   if (itemsError || paymentsError) throw unverifiedBilling();
   const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
@@ -160,22 +203,32 @@ export default async function PembayaranPage({
   // lalu ditolak server. Nilai ini BUKAN otorisasi — RPC koreksinya memeriksa
   // ulang peran dan mengunci barisnya sendiri sebelum menyentuh uang.
   const canEdit = Boolean(invoice) && !demoSnapshot && koreksiBolehResult.data === true;
+  if (canEdit) serviceStaffP ??= mulai(loadServiceStaff(supabase, visit.branch_id ?? null));
+
+  // Satu pemilik bisa datang membawa beberapa hewan; tagihannya tetap terpisah per
+  // kunjungan, tapi kasir perlu melihat semuanya sekaligus supaya tidak ada yang
+  // tertinggal dan pemiliknya tidak dipanggil dua kali.
+  const rombongan = await rombonganP!;
+  const adaRombongan = (rombongan?.baris.length ?? 0) > 1;
+  const ringkasan = rombongan ? ringkasTagihanRombongan(rombongan.baris) : null;
+  const berikutnya = rombongan ? berikutnyaBelumSelesai(rombongan.baris, visitId) : null;
+  const belumDitagih = (rombongan?.baris ?? []).filter((b) => b.invoiceNo === null);
+
+  // Perkiraan tagihan hewan lain hanya tampil di panel rombongan (≥2 hewan).
+  const perkiraanP = adaRombongan ? mulai(pajakP!.then((pajak) => perkiraanTagihan(supabase, belumDitagih.map((b) => b.visitId), pajak))) : null;
+  if (canEdit || belumDitagih.length >= 2) masterP ??= startMaster();
+  const bekalP = masterP ? mulai(masterP.then((m) => bekalPotonganKlinik(
+    supabase, visit.branch_id ?? null, visit.customer_id ?? null, m.all.map((it) => it.id),
+  ))) : null;
 
   // riwayat audit: log invoice aktif + log invoice lama (voided) utk visit ini.
-  const { data: allInvIds } = await supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId);
-  const { data: editLog } = (allInvIds ?? []).length
-    ? await supabase
-        .from("invoice_edit_log")
-        .select("field_changed, old_value, new_value, reason, edited_at, invoice_id, profiles(full_name)")
-        .in("invoice_id", (allInvIds ?? []).map((x) => x.id))
-        .order("edited_at", { ascending: false })
-    : { data: [] };
+  const { data: editLog } = await editLogP;
 
   // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
   // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
-  const { data: resep, error: prescriptionError } = mr
-    ? await supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers, salesperson_id, salesperson_name").eq("medical_record_id", mr.id).order("created_at")
-    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
+  const { data: resep, error: prescriptionError } = resepP
+    ? await resepP
+    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; kategori: string | null; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
   if (prescriptionError) throw unverifiedBilling();
   // item_id ikut dibawa (migrasi 0084): tanpa itu stok obat tidak bisa dipotong
   // saat pasien menebus, dan modalnya tidak pernah tercatat.
@@ -188,15 +241,14 @@ export default async function PembayaranPage({
   }));
 
   // §6.3: tindakan berisiko wajib punya consent bertanda tangan sebelum boleh ditagih.
-  const { data: kategoriRows } = mr
-    ? await supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mr.id)
-    : { data: [] as { jenis: string; kategori: string | null }[] };
-  const { data: consentRows } = await supabase.from("consents").select("status").eq("visit_id", visitId);
-  const jasaKategori = (kategoriRows ?? []) as { jenis: string; kategori: string | null }[];
+  // Klinik-A: baris resep yang sama (sudah dibaca di atas), bukan bacaan kedua.
+  const kategoriRows = (resep ?? []).map((r) => ({ jenis: r.jenis, kategori: r.kategori }));
+  const { data: consentRows } = await consentRowsP!;
+  const jasaKategori = kategoriRows as { jenis: string; kategori: string | null }[];
   const consentList = (consentRows ?? []) as { status: string }[];
   // Aturan tindakan mana yang wajib berformulir diatur klinik sendiri di layar
   // Form Persetujuan, bukan dikunci di kode.
-  const aturanConsent = await bacaAturanConsent(supabase);
+  const aturanConsent = await aturanConsentP!;
   const bolehTagih = bolehBayar(jasaKategori, !!inpat, consentList, aturanConsent);
   const katBerisiko = kategoriBerisiko(jasaKategori, !!inpat, aturanConsent);
   const prefill = resepRows.length
@@ -206,25 +258,22 @@ export default async function PembayaranPage({
   // Tarif PPN yang dipakai LAYAR harus sama dengan yang dipakai server saat
   // menyimpan. Mode PKP OFF → 0%, jadi kasir tidak menagih pajak yang tidak
   // pernah tercatat di invoice.
-  const pajak = await getPajakSettings(supabase);
+  const pajak = await pajakP!;
   const ppnRate = pajak.mode_pkp ? Number(pajak.ppn_rate) : 0;
   // Uang muka minimal berlaku untuk SEMUA tagihan klinik (Andri, 29 Oktober 2026).
-  const [minDpPercent, { data: profilKasir }] = await Promise.all([
-    getDpMinimalPercent(supabase),
-    draftUser ? supabase.from("profiles").select("role").eq("id", draftUser.id).maybeSingle() : Promise.resolve({ data: null }),
-  ]);
+  const [minDpPercent, { data: profilKasir }] = await dpP!;
   const bolehTerobosDp = bolehMenerobosDp((profilKasir as { role?: string } | null)?.role);
   // Batalkan + terbitkan ulang adalah pekerjaan keuangan (ditegakkan di database);
   // layar tidak menawarkannya ke peran lain supaya tidak menabrak penolakan.
   const bolehTerbitUlang = bolehSiklusTagihan((profilKasir as { role?: string } | null)?.role);
 
   const lunas = invoice?.paid_status === "Lunas";
-  const refundData = invoice && lunas && !invoice.correction_pending ? await loadClinicRefundData(supabase, invoice.id) : null;
+  const refundData = refundDataP ? await refundDataP : null;
 
   // Kasir menyebut angka ke pemilik SEBELUM memilih metode bayar. Kunjungan yang
   // invoicenya belum dibuat tidak punya total tersimpan, jadi dihitung di sini
   // dengan rumus yang sama persis dengan aksi bayar rombongan.
-  const perkiraan = await perkiraanTagihan(supabase, belumDitagih.map((b) => b.visitId), pajak);
+  const perkiraan: Awaited<ReturnType<typeof perkiraanTagihan>> = perkiraanP ? await perkiraanP : new Map();
   const totalAkanDitagih = belumDitagih
     .filter((b) => perkiraan.get(b.visitId)?.bisaDibayar)
     .reduce((a, b) => a + (perkiraan.get(b.visitId)?.total ?? 0), 0);
@@ -254,25 +303,25 @@ export default async function PembayaranPage({
   // Baris tambahan di kasir klinik wajib bisa dipilih dari master, bukan diketik
   // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat
   // terjual tapi persediaan tidak pernah berkurang.
-  const { obat: masterObat, jasa: masterJasa, all: master } = await loadClinicPaymentMaster(supabase, visit.branch_id ?? null);
-  const clinicPackages = invoice ? [] : await loadClinicPackages(supabase);
-  const serviceStaff = invoice && !canEdit ? [] : await loadServiceStaff(supabase, visit.branch_id ?? null);
-  const groomingPolicy = visit.branch_id ? await loadBranchGroomingPolicy(supabase, visit.branch_id) : null;
+  const { obat: masterObat, jasa: masterJasa } = masterP ? await masterP : { obat: [], jasa: [] };
+  const clinicPackages = clinicPackagesP ? await clinicPackagesP : [];
+  const serviceStaff = serviceStaffP ? await serviceStaffP : [];
+  const groomingPolicy = groomingPolicyP ? await groomingPolicyP : null;
   const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
-  const cashier = invoice ? {name:invoice.cashier_name ?? "Kasir belum tercatat"} : draftUser ? await loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null) : {name:"Akun kasir"};
+  const cashier = invoice ? {name:invoice.cashier_name ?? "Kasir belum tercatat"} : cashierP ? await cashierP : {name:"Akun kasir"};
   // Older databases retain their base-unit-only invoice posting contract.
-  const unitCapability = await supabase.rpc("clinic_manual_invoice_units_supported");
+  const unitCapability = await unitCapabilityP!;
   const manualUnitsEnabled = !unitCapability.error && unitCapability.data === true;
-  const { data: invoiceSalesperson } = invoice?.salesperson_id
-    ? await supabase.from("employees").select("nama").eq("id",invoice.salesperson_id).maybeSingle()
+  const { data: invoiceSalesperson } = invoiceSalespersonP
+    ? await invoiceSalespersonP
     : { data: null };
   const sealedSalespersonName = invoiceSalesperson?.nama ?? "Tanpa penjual";
 
   // Bahan promo/voucher/diskon golongan untuk layar. Servernya tetap menghitung
   // ulang saat menyimpan — ini supaya kasir melihat angkanya lebih dulu.
-  const bekal = await bekalPotonganKlinik(
-    supabase, visit.branch_id ?? null, visit.customer_id ?? null, master.map((it) => it.id),
-  );
+  const bekal = bekalP ? await bekalP : null;
+  // Semua tempat yang merender `bekal` (keranjang baru/koreksi, bayar rombongan) masuk `perluKatalog`.
+  const bekalForm = () => { if (!bekal) throw unverifiedBilling(); return bekal; };
 
   const invoicePatient = { ...patient, noInvoice: invoice?.invoice_no ?? "(baru)",
     tanggal: new Date((invoice?.created_at as string) ?? visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
@@ -280,8 +329,8 @@ export default async function PembayaranPage({
 
   // Addendum §1: pembayaran klinik hanya bisa saat shift klinik terbuka (gate server-side).
   if (!lunas) {
-    const { data: { user } } = await supabase.auth.getUser();
-    const shift = user ? await getOpenShift(supabase as never, user.id, "klinik") : null;
+    // Akun yang sama dengan bacaan sesi di atas (dulu dibaca ulang ke server Auth).
+    const shift = shiftP ? await shiftP : null;
     if (!shift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
   }
 
@@ -438,7 +487,7 @@ export default async function PembayaranPage({
               jumlahPasien={belumDitagih.length - tertahanConsent.length}
               total={totalAkanDitagih}
               tertahan={tertahanConsent.map((b) => b.hewan)}
-              bekal={bekal}
+              bekal={bekalForm()}
             />
           )}
 
@@ -501,7 +550,7 @@ export default async function PembayaranPage({
           manualUnitsEnabled={manualUnitsEnabled}
           masterObat={masterObat}
           masterJasa={masterJasa}
-          bekal={bekal}
+          bekal={bekalForm()}
           catatanResep={mr?.catatan_resep ?? null}
           initialDiscount={Number(invoice.discount)}
           initialDpAmount={Number(invoice.dp_amount)}
@@ -617,7 +666,7 @@ export default async function PembayaranPage({
           manualUnitsEnabled={manualUnitsEnabled}
           masterObat={masterObat}
           masterJasa={masterJasa}
-          bekal={bekal}
+          bekal={bekalForm()}
           packages={clinicPackages}
           demoPolicy={demoPolicy}
           demoStaff={demoStaffResult.data ?? []}

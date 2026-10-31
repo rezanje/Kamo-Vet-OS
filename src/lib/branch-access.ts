@@ -1,4 +1,5 @@
 import { loadRoleCapabilities } from "./role-capabilities";
+import { mulai } from "./u07-waktu";
 
 // Account grants remain distinct from HRIS work assignments.
 
@@ -15,11 +16,14 @@ export function canUseBranch(allowed: AllowedBranches, branchId: string): boolea
 }
 
 export async function allowedBranchIds(supabase: AnyClient, userId: string): Promise<AllowedBranches> {
+  // Klinik-A: penempatan cabang dibaca bersamaan dengan profil (dulu 3 putaran berurutan).
+  // Hasilnya tetap hanya dipakai bila peran tidak bebas cabang; urutan keputusan sama.
+  const placements = mulai(supabase.from("user_branches").select("branch_id").eq("user_id", userId));
   const { data: prof, error: profileError } = await supabase.from("profiles").select("role, is_active").eq("id", userId).maybeSingle();
   if (profileError || !prof || prof.is_active === false) return [];
   if ((await loadRoleCapabilities(supabase, prof.role)).all_branches) return null;
 
-  const { data, error } = await supabase.from("user_branches").select("branch_id").eq("user_id", userId);
+  const { data, error } = await placements;
   if (error) return [];
   return (data ?? []).map((r: { branch_id: string }) => String(r.branch_id));
 }
