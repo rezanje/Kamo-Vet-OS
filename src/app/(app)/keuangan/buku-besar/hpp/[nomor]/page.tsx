@@ -97,7 +97,7 @@ export default async function RincianHppPage({ params }: { params: Promise<{ nom
   return <div data-report-page id="laporan-isi">
     <UnduhLaporan judul={`Rincian HPP ${nomor}`} />
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-      <Link href="/keuangan/buku-besar?akun=5101" className="back-btn"><i className="ti ti-arrow-left" /> Buku Besar HPP</Link>
+      <Link href="/keuangan/buku-besar?akun=600001" className="back-btn"><i className="ti ti-arrow-left" /> Buku Besar HPP</Link>
       <Link href={sourceHref} className="back-btn">Buka transaksi</Link>
     </div>
     <div className="crm-sec">

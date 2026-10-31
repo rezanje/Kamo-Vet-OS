@@ -44,7 +44,7 @@ update profiles set role='OWNER',is_active=true where id='{OWNER}';
 alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,code,name,type) values('{identity('branch')}','AR-A','Race fiction branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values('{identity('wh')}','{identity('branch')}','AR-W','Race fiction warehouse','RETAIL');
-insert into coa_accounts(code,name,type,normal_balance,is_header) values('1301','Fiction inventory','ASET','D',false),('3101','Fiction equity','EKUITAS','K',false) on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('170001','Fiction inventory','ASET','D',false),('410001','Fiction equity','EKUITAS','K',false) on conflict(code) do update set is_active=true,is_header=false;
 """)
     for name in ["global-first", "bridge-first", "same-batch", "inversion", "revoked"]:
         database.sql(f"""insert into items(id,code,name,unit,item_type) values('{identity('item-'+name)}','AR-{name}','Fiction race {name}','pcs','Persediaan');
@@ -55,11 +55,11 @@ insert into import_run_rows(run_id,source_row,status,payload) values('{identity(
 
 
 def preview(database, name):
-    return json.loads(database.sql(AUTH + f"select preview_accurate_inventory_accounting('{identity('run-'+name)}',(select id from coa_accounts where code='3101'));"))
+    return json.loads(database.sql(AUTH + f"select preview_accurate_inventory_accounting('{identity('run-'+name)}',(select id from coa_accounts where code='410001'));"))
 
 
 def post(name, reviewed):
-    return f"select post_accurate_inventory_accounting('{identity('run-'+name)}',(select id from coa_accounts where code='3101'),{quote(json.dumps(reviewed))}::jsonb,{quote(REASON)});"
+    return f"select post_accurate_inventory_accounting('{identity('run-'+name)}',(select id from coa_accounts where code='410001'),{quote(json.dumps(reviewed))}::jsonb,{quote(REASON)});"
 
 
 def start(database, name, command, authenticated=True):

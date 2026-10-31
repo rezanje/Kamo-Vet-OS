@@ -117,11 +117,11 @@ def concurrency_tests():
         wait("state='idle in transaction' and query like '%invoice-coa-numbergate%'")
         second = start('/* invoice-coa-waiter */' + po_create.replace("'race-po'", "'race-po-inactive-coa'"))
         wait("wait_event_type='Lock' and wait_event='advisory' and query like '%invoice-coa-waiter%'")
-        sql("update coa_accounts set is_active=false where code='2101';")
+        sql("update coa_accounts set is_active=false where code='311001';")
         gate.stdin.write('commit;\n'); gate.stdin.close()
         finish(gate); finish(second, 'Akun sumber')
         assert sql(snapshot_query) == before_account_race, 'Account deactivation race leaked invoice, repricing, journal, proof or durable result'
-        sql("update coa_accounts set is_active=true where code='2101';")
+        sql("update coa_accounts set is_active=true where code='311001';")
         print('PO account deactivation after journal-counter wait rejected with exact full rollback.', flush=True)
         print('Concurrent same-key create/cancel and both consume/cancel orderings passed.', flush=True)
     finally:
@@ -145,7 +145,7 @@ def main():
 alter table profiles disable trigger guard_profile_privileges;
 alter table profiles disable trigger profiles_prevent_self_role_change;
 insert into suppliers(id,nama) values('dc900000-0000-4000-8000-000000000001','Legacy fiction supplier');
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Legacy stock','ASET','D'),('2101','Legacy payable','LIABILITAS','K'),('1105','Legacy VAT','ASET','D'),('1501','Legacy asset','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Legacy stock','ASET','D'),('311001','Legacy payable','LIABILITAS','K'),('182004','Legacy VAT','ASET','D'),('200008','Legacy asset','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
 update company_settings set mode_pkp=false;
 """, 1)
         legacy = legacy.replace('insert into purchase_order_items', "update purchase_orders set supplier_id='dc900000-0000-4000-8000-000000000001';\ninsert into purchase_order_items", 1)

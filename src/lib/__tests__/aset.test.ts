@@ -60,60 +60,60 @@ describe("nilaiBuku", () => {
 
 describe("jurnalPelepasan", () => {
   it("dijual di atas nilai buku → laba", () => {
-    const l = jurnalPelepasan(10_000_000, 6_000_000, 5_000_000, "1102");
+    const l = jurnalPelepasan(10_000_000, 6_000_000, 5_000_000, "120002");
     expect(l).toEqual([
-      { code: "1509", debit: 6_000_000, credit: 0 },
-      { code: "1102", debit: 5_000_000, credit: 0 },
-      { code: "1501", debit: 0, credit: 10_000_000 },
-      { code: "4302", debit: 0, credit: 1_000_000 },
+      { code: "200015", debit: 6_000_000, credit: 0 },
+      { code: "120002", debit: 5_000_000, credit: 0 },
+      { code: "200008", debit: 0, credit: 10_000_000 },
+      { code: "810003", debit: 0, credit: 1_000_000 },
     ]);
     expect(seimbang(l)).toBe(true);
   });
 
   it("dijual di bawah nilai buku → rugi", () => {
-    const l = jurnalPelepasan(10_000_000, 6_000_000, 3_000_000, "1102");
-    expect(l.find((x) => x.code === "5602")?.debit).toBe(1_000_000);
+    const l = jurnalPelepasan(10_000_000, 6_000_000, 3_000_000, "120002");
+    expect(l.find((x) => x.code === "820004")?.debit).toBe(1_000_000);
     expect(seimbang(l)).toBe(true);
   });
 
   it("dihapus tanpa hasil penjualan → rugi sebesar nilai buku", () => {
-    const l = jurnalPelepasan(10_000_000, 4_000_000, 0, "1102");
-    expect(l.some((x) => x.code === "1102")).toBe(false);
-    expect(l.find((x) => x.code === "5602")?.debit).toBe(6_000_000);
+    const l = jurnalPelepasan(10_000_000, 4_000_000, 0, "120002");
+    expect(l.some((x) => x.code === "120002")).toBe(false);
+    expect(l.find((x) => x.code === "820004")?.debit).toBe(6_000_000);
     expect(seimbang(l)).toBe(true);
   });
 
   it("aset yang sudah habis disusutkan: seluruh harga perolehan dihapus lewat akumulasi", () => {
-    const l = jurnalPelepasan(10_000_000, 10_000_000, 0, "1102");
+    const l = jurnalPelepasan(10_000_000, 10_000_000, 0, "120002");
     expect(l).toEqual([
-      { code: "1509", debit: 10_000_000, credit: 0 },
-      { code: "1501", debit: 0, credit: 10_000_000 },
+      { code: "200015", debit: 10_000_000, credit: 0 },
+      { code: "200008", debit: 0, credit: 10_000_000 },
     ]);
     expect(seimbang(l)).toBe(true);
   });
 
   it("akumulasi yang kelebihan dibatasi harga perolehan supaya jurnal tetap seimbang", () => {
-    const l = jurnalPelepasan(10_000_000, 99_000_000, 0, "1102");
+    const l = jurnalPelepasan(10_000_000, 99_000_000, 0, "120002");
     expect(seimbang(l)).toBe(true);
   });
 
   it("harga perolehan nol tidak menghasilkan jurnal", () => {
-    expect(jurnalPelepasan(0, 0, 0, "1102")).toEqual([]);
+    expect(jurnalPelepasan(0, 0, 0, "120002")).toEqual([]);
   });
 });
 
 describe("jurnalTambahNilai", () => {
   it("perbaikan besar menambah nilai aset, bukan jadi beban", () => {
-    const l = jurnalTambahNilai(2_500_000, "1101");
+    const l = jurnalTambahNilai(2_500_000, "110003");
     expect(l).toEqual([
-      { code: "1501", debit: 2_500_000, credit: 0 },
-      { code: "1101", debit: 0, credit: 2_500_000 },
+      { code: "200008", debit: 2_500_000, credit: 0 },
+      { code: "110003", debit: 0, credit: 2_500_000 },
     ]);
     expect(seimbang(l)).toBe(true);
   });
 
   it("nol atau negatif tidak menghasilkan jurnal", () => {
-    expect(jurnalTambahNilai(0, "1101")).toEqual([]);
-    expect(jurnalTambahNilai(-100, "1101")).toEqual([]);
+    expect(jurnalTambahNilai(0, "110003")).toEqual([]);
+    expect(jurnalTambahNilai(-100, "110003")).toEqual([]);
   });
 });

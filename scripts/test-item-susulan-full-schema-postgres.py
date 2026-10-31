@@ -106,11 +106,11 @@ insert into public.medical_records(id,visit_id,submission_key,diagnosis)
         after = money_stock()
         balance = h.angka(f'select coalesce(sum(l.debit-l.credit),0) from public.journal_lines l join public.journal_entries e on e.id=l.entry_id where e.source_ref=(select invoice_no from public.invoices where id={q(inv)})')
         per_entry_bad = h.angka('select count(*) from (select entry_id from public.journal_lines group by entry_id having sum(debit-credit) <> 0) j')
-        accounts = {code: h.saldo(code) for code in ('4201', '5101', '1301')}
+        accounts = {code: h.saldo(code) for code in ('510002', '600001', '170001')}
         check('P2 original posting deducts two units with real revenue/HPP entries and unpaid status',
               after[2] == before[2] - 2 and after[0] == before[0] + 1 and after[1] > before[1]
               and balance == 0 and per_entry_bad == 0
-              and accounts == {'4201': -60000, '5101': 4000, '1301': -4000}
+              and accounts == {'510002': -60000, '600001': 4000, '170001': -4000}
               and h.status_bayar(inv) == 'Belum Lunas' and h.diterima(inv) == 0,
               dict(before=before, after=after, journal_balance=balance, unbalanced_entries=per_entry_bad,
                    accounts=accounts, status=h.status_bayar(inv)))
@@ -265,7 +265,7 @@ def edit_race(db, h, visit, concurrent):
                   prescription_item_id=prescription_id, discount_percent=0)]
     payload = dict(subtotal=10000, discount=0, tax=0, total=10000, dp_amount=0, paid_status='Belum Lunas',
                    metode_bayar='Tunai', reason='Koreksi UJI concurrency', dp_override_reason='Uji dummy PR341')
-    balances_before = {c: h.saldo(c) for c in ('1101', '1201', '4201', '5101', '1301')}
+    balances_before = {c: h.saldo(c) for c in ('110003', '150001', '510002', '600001', '170001')}
     evidence = []
     with concurrent.Session(db, 'pr341-edit-gate') as gate, concurrent.Session(db, 'pr341-edit-observer') as observer, \
          concurrent.Session(db, 'pr341-edit-wrapper', real.FINANCE) as wrapper, concurrent.Session(db, 'pr341-edit-original', real.FINANCE) as original:

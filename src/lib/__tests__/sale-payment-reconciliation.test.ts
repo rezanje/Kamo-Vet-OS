@@ -27,7 +27,7 @@ it("repairs one split sale with separate original-account debits and one revenue
   await expect(perbaikiDrift()).rejects.toThrow("redirect");
   expect(fixture.journal).toEqual([expect.objectContaining({ source: "sale", sourceRef: "POS-split", lines: [
     { code: "cash-original", debit: 20000, credit: 0 }, { code: "bank-original", debit: 80000, credit: 0 },
-    { code: "4101", debit: 0, credit: 100000 },
+    { code: "510001", debit: 0, credit: 100000 },
   ] })]);
 });
 
@@ -35,7 +35,7 @@ it("preserves legacy payment mapping for sales with no allocation rows", async (
   fixture.sales = [{ no_struk: "POS-old", total: 100000, metode_bayar: "Tunai", created_at: "2026-10-15", branch_id: "b" }];
   await expect(perbaikiDrift()).rejects.toThrow("redirect");
   expect(fixture.journal[0].lines).toEqual([
-    { code: "cash-now", debit: 100000, credit: 0 }, { code: "4101", debit: 0, credit: 100000 },
+    { code: "cash-now", debit: 100000, credit: 0 }, { code: "510001", debit: 0, credit: 100000 },
   ]);
 });
 

@@ -185,19 +185,19 @@ def bagian_produk(h):
     inv = h.aktif(v)
     catat("product-only-full-cash-allowed", not err and h.status_bayar(inv) == "Lunas"
           and h.angka(f"select qty from public.stock where item_id={q(ITEM)} and warehouse_id={q(r.WH)}") == stock - 2
-          and h.saldo_ref("1101", h.no_tagihan(inv)) == 50000
+          and h.saldo_ref("110003", h.no_tagihan(inv)) == 50000
           and h.nilai(f"select status from public.visits where id={q(v)}") == "Selesai", err or "Lunas 50000 tunai")
 
     v = kunjungan(h, 406)
-    parts = [{"method": "Tunai", "amount": 20000, "kas_code": "1101"},
-             {"method": "Transfer", "amount": 30000, "kas_code": "1102"}]
+    parts = [{"method": "Tunai", "amount": 20000, "kas_code": "110003"},
+             {"method": "Transfer", "amount": 30000, "kas_code": "120002"}]
     err = h.gagal(split_sql(v, "g-406", [produk()], STAFF, parts), STAFF)
     inv = h.aktif(v)
     no = h.no_tagihan(inv) if inv else ""
     catat("product-only-full-split-cash-transfer-allowed", not err and h.status_bayar(inv) == "Lunas"
-          and h.saldo_ref("1101", no) == 20000 and h.saldo_ref("1102", no) == 30000 and h.saldo_ref("1201", no) == 0
+          and h.saldo_ref("110003", no) == 20000 and h.saldo_ref("120002", no) == 30000 and h.saldo_ref("150001", no) == 0
           and h.angka(f"select count(*) from public.invoice_payments where invoice_id={q(inv)} and checkout_payment") == 2,
-          (err or f"Lunas; 1101={h.saldo_ref('1101', no)} 1102={h.saldo_ref('1102', no)}").strip().splitlines()[0])
+          (err or f"Lunas; 1101={h.saldo_ref('110003', no)} 1102={h.saldo_ref('120002', no)}").strip().splitlines()[0])
 
     for n, label, lines, kw in [
         (407, "product-plus-service-DP-still-allowed", [produk(), JASA], {"dp": 40000}),
@@ -273,7 +273,7 @@ def bagian_pelunasan(h, db):
     stock = h.angka(f"select qty from public.stock where item_id={q(ITEM)} and warehouse_id={q(r.WH)}")
     moves = h.angka("select count(*) from public.stock_moves")
     hpp = h.angka(f"select count(*) from public.journal_entries where source='klinik-hpp' and source_ref={q(no)}")
-    rev = h.saldo_ref("4201", no)
+    rev = h.saldo_ref("510002", no)
     parts = [{"method": "Tunai", "amount": 5000}, {"method": "Transfer", "amount": 15000}]
     err = h.gagal(lunasi_sql(v, inv, "lunas-301", parts, 20000), STAFF)
     rc = h.nilai(f"select id from public.clinic_payment_receipts where visit_id={q(v)}")
@@ -282,15 +282,15 @@ def bagian_pelunasan(h, db):
           and h.nilai(f"select shift_id from public.clinic_payment_receipts where id={q(rc)}") == r.SHIFT[STAFF]
           and h.nilai(f"select created_by from public.clinic_payment_receipts where id={q(rc)}") == STAFF
           and h.angka(f"select count(*) from public.invoice_payments where invoice_id={q(inv)} and receipt_id={q(rc)}") == 2
-          and h.saldo_ref("1101", no) == 35000 and h.saldo_ref("1102", no) == 15000 and h.saldo_ref("1201", no) == 0
-          and h.saldo_ref("4201", no) == rev
+          and h.saldo_ref("110003", no) == 35000 and h.saldo_ref("120002", no) == 15000 and h.saldo_ref("150001", no) == 0
+          and h.saldo_ref("510002", no) == rev
           and h.angka(f"select qty from public.stock where item_id={q(ITEM)} and warehouse_id={q(r.WH)}") == stock
           and h.angka("select count(*) from public.stock_moves") == moves
           and h.angka(f"select count(*) from public.journal_entries where source='klinik-hpp' and source_ref={q(no)}") == hpp
           and h.angka(f"select count(*) from public.clinic_customer_advances where visit_id={q(v)}") == 0
           and h.nilai(f"select status from public.visits where id={q(v)}") == "Selesai")
     catat("settle-old-DP-split-same-invoice-drawer-accounts-no-stock-repeat", ok,
-          (err or f"Lunas; kas 1101={h.saldo_ref('1101', no)} bank 1102={h.saldo_ref('1102', no)} AR={h.saldo_ref('1201', no)}").strip().splitlines()[0])
+          (err or f"Lunas; kas 1101={h.saldo_ref('110003', no)} bank 1102={h.saldo_ref('120002', no)} AR={h.saldo_ref('150001', no)}").strip().splitlines()[0])
     before = potret(h, v)
     out = h.nilai(lunasi_sql(v, inv, "lunas-301", parts, 20000), STAFF) if not err else ""
     catat("settle-replay-same-key-no-new-money", not err and out == rc and potret(h, v) == before, out or err)
@@ -346,14 +346,14 @@ def bagian_pelunasan(h, db):
     h.sql("update public.accounting_locks set closed_until=null where id;")
     catat("settle-rejected-closed-period-atomic", bool(err and ("ditutup" in err or "PERIOD" in err)) and potret(h, v) == before,
           (err or "DITERIMA").strip().splitlines()[0])
-    h.sql("update public.cash_accounts set is_active=false where coa_code='1102';"
+    h.sql("update public.cash_accounts set is_active=false where coa_code='120002';"
           "insert into public.payment_account_map(metode,branch_id,cash_account_id) "
-          "select 'Transfer',null,id from public.cash_accounts where coa_code='1102' "
+          "select 'Transfer',null,id from public.cash_accounts where coa_code='120002' "
           "on conflict do nothing;")
     before = potret(h, v)
     err = h.gagal(lunasi_sql(v, inv, "neg-account", [{"method": "Tunai", "amount": 5000},
                                                       {"method": "Transfer", "amount": 15000}], 20000), STAFF)
-    h.sql("update public.cash_accounts set is_active=true where coa_code='1102';")
+    h.sql("update public.cash_accounts set is_active=true where coa_code='120002';")
     catat("settle-rejected-inactive-account-atomic", bool(err and "ACCOUNT_INVALID" in err) and potret(h, v) == before,
           (err or "DITERIMA").strip().splitlines()[0])
     err = h.gagal(lunasi_sql(v, inv, "pos-307", [{"method": "Transfer", "amount": 20000}], 20000), ADMIN)

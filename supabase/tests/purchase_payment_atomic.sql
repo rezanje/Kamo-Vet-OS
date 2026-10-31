@@ -3,7 +3,7 @@ begin;
 insert into suppliers(id,nama) values('fb100000-0000-4000-8000-000000000001','Fiction payment supplier');
 insert into purchase_invoices(id,no_faktur,po_id,tanggal,jatuh_tempo,total)
 values('fa000000-0000-4000-8000-000000000001','FB.PAYMENT.TEST','f6000000-0000-4000-8000-000000000010',current_date,current_date,220);
-insert into coa_accounts(code,name,type,normal_balance) values('1303','Advance','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance) values('160001','Advance','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
 update purchase_invoices set supplier_id='fb100000-0000-4000-8000-000000000001' where id='fa000000-0000-4000-8000-000000000001';
 set role authenticated;
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
@@ -50,7 +50,7 @@ do $$ declare r jsonb; begin
  r:=pay_purchase_invoice_atomic('pay-advance','fa000000-0000-4000-8000-000000000001',current_date,5,'Transfer',null,null,'fb000000-0000-4000-8000-000000000001');
  if (select terpakai from purchase_advances where id='fb000000-0000-4000-8000-000000000001')<>5 then raise exception 'Advance not applied';end if;
  if (select status from approval_requests where id='fc000000-0000-4000-8000-000000000001')<>'terpakai' then raise exception 'Approval not consumed';end if;
- if not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(r->>'journal_id')::uuid and a.code='1303' and l.credit=5) then raise exception 'Advance account policy changed';end if;
+ if not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(r->>'journal_id')::uuid and a.code='160001' and l.credit=5) then raise exception 'Advance account policy changed';end if;
  r:=pay_purchase_invoice_atomic('pay-advance','fa000000-0000-4000-8000-000000000001',current_date,5,'Transfer',null,null,'fb000000-0000-4000-8000-000000000001');
  if (select terpakai from purchase_advances where id='fb000000-0000-4000-8000-000000000001')<>5 then raise exception 'Replay applied advance twice';end if;
 end $$;

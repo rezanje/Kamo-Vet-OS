@@ -27,7 +27,7 @@ const SISI_SEKSI: Record<string, "D" | "K"> = {
 
 // Nilai sebuah akun DILIHAT DARI kelompoknya, bukan dari sisi normal akunnya sendiri.
 //
-// Perlu karena ada akun kontra: Akumulasi Penyusutan (1509) bertipe ASET tapi bersaldo
+// Perlu karena ada akun kontra: Akumulasi Penyusutan (200015) bertipe ASET tapi bersaldo
 // normal Kredit. Kalau saldonya dijumlahkan apa adanya, akumulasi penyusutan malah
 // MENAMBAH total aktiva. Aturan ini membuatnya otomatis jadi pengurang, tanpa perlu
 // daftar kode akun kontra yang harus dirawat manual.
@@ -150,13 +150,13 @@ export async function getAccountLedger(supabase: AnyClient, code: string, f?: Le
   return rows;
 }
 
-// Arus kas metode langsung: mutasi jurnal yang menyentuh akun kas/bank (1101,1102),
+// Arus kas metode langsung: mutasi jurnal yang menyentuh akun kas/bank (110003,120002),
 // dikelompokkan per source. masuk = debit ke kas, keluar = credit dari kas.
 // saldoAwal = posisi kas sebelum `from` (supaya laporan per periode tetap nyambung).
 export type CashMove = { source: string; masuk: number; keluar: number };
 
 async function cashAccountIds(supabase: AnyClient): Promise<Set<string>> {
-  // Daftar rekening dibaca dari master, bukan kode mati ["1101","1102"] — rekening
+  // Daftar rekening dibaca dari master, bukan kode mati ["110003","120002"] — rekening
   // yang ditambah belakangan (Mandiri, QRIS, e-wallet) harus ikut terhitung sebagai kas.
   const kode = await kodeSemuaRekening(supabase);
   const { data } = (await completeReportQuery(supabase.from("coa_accounts").select("id, code", { count: "exact" }).in("code", kode))) as { data: { id: string }[] | null };

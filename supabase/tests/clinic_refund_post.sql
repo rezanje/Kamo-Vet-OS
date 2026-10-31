@@ -1,12 +1,12 @@
 -- J03 clinic refund posting. Appended to the clinic_invoice_post.sql prelude; everything rolls back.
 -- Invoice: 2 strip medicine @100 (stock 20 pcs, FIFO cost 50) + 1 service @100, discount 10, tax 20, total 310.
 insert into public.coa_accounts(code,name,type,normal_balance,is_active,is_header)
-values('1102','Bank','ASET','D',true,false),('5902','Beban kerusakan','BEBAN','D',true,false)
+values('120002','Bank','ASET','D',true,false),('720010','Beban kerusakan','BEBAN','D',true,false)
 on conflict(code) do update set is_active=true,is_header=false;
-insert into public.cash_accounts(id,nama,jenis,coa_code)values('dc000000-0000-4000-8000-000000000002','Bank Uji Klinik','Bank','1102')
+insert into public.cash_accounts(id,nama,jenis,coa_code)values('dc000000-0000-4000-8000-000000000002','Bank Uji Klinik','Bank','120002')
 on conflict(coa_code) do update set is_active=true,jenis='Bank',branch_id=null;
 insert into public.payment_account_map(metode,branch_id,cash_account_id)
-select 'Tunai','d2000000-0000-4000-8000-000000000001',id from public.cash_accounts where coa_code='1101';
+select 'Tunai','d2000000-0000-4000-8000-000000000001',id from public.cash_accounts where coa_code='110003';
 insert into auth.users(id,raw_user_meta_data)values('d1000000-0000-4000-8000-000000000004','{"full_name":"Finance Test"}'),('d1000000-0000-4000-8000-000000000005','{"full_name":"Staf tanpa shift"}');
 update public.profiles set role='FINANCE' where id='d1000000-0000-4000-8000-000000000004';
 update public.profiles set role='STAFF' where id='d1000000-0000-4000-8000-000000000005';
@@ -26,7 +26,7 @@ create temp table inv as
  select public.clinic_post_invoice('d6000000-0000-4000-8000-000000000001','j03-refund-post',
  jsonb_build_object('tanggal',(now()at time zone'Asia/Jakarta')::date,'subtotal',300,'discount',10,'tax',20,'total',310,'dp_amount',0,'paid_status','Belum Lunas','metode_bayar','Tunai','shift_id','da000000-0000-4000-8000-000000000001'),
  '[{"description":"Obat Unit","qty":2,"price":100,"kind":"obat","item_id":"d8000000-0000-4000-8000-000000000001","unit":"strip","prescription_item_id":"d9000000-0000-4000-8000-000000000001","discount_percent":0},{"description":"Konsultasi fiktif","qty":1,"price":100,"kind":"jasa","discount_percent":0}]')id;
-select clinic_receive_invoice_payment((select id from inv),(now()at time zone'Asia/Jakarta')::date,310,'Tunai','1101','Fictional full receipt','j03-refund-payment');
+select clinic_receive_invoice_payment((select id from inv),(now()at time zone'Asia/Jakarta')::date,310,'Tunai','110003','Fictional full receipt','j03-refund-payment');
 reset role;
 -- Points written by the payment screen with ref = invoice number: 9 redeemed, 31 earned.
 update customers set points=22 where id='d4000000-0000-4000-8000-000000000001';
@@ -59,8 +59,8 @@ reset role;
 select pg_temp.ok((select count(*)=1 from clinic_refunds),'one refund document');
 select pg_temp.ok((select qty=20 from stock where warehouse_id='d3000000-0000-4000-8000-000000000001' and item_id='d8000000-0000-4000-8000-000000000001'),'one strip (10 pcs) back in stock');
 select pg_temp.ok((select count(*)=1 and sum(qty)=10 from stock_moves where source='retur-klinik'),'stock move recorded');
-select pg_temp.ok(pg_temp.bal('klinik-refund','4201')=99.99 and pg_temp.bal('klinik-refund','4102')=-3.33 and pg_temp.bal('klinik-refund','2201')=6.67 and pg_temp.bal('klinik-refund','1101')=-103.33,'revenue/discount/tax/cash reversed pro rata');
-select pg_temp.ok(pg_temp.bal('klinik-refund-hpp','1301')=25 and pg_temp.bal('klinik-refund-hpp','5101')=-25,'returned stock reverses HPP at original cost');
+select pg_temp.ok(pg_temp.bal('klinik-refund','510002')=99.99 and pg_temp.bal('klinik-refund','520002')=-3.33 and pg_temp.bal('klinik-refund','312005')=6.67 and pg_temp.bal('klinik-refund','110003')=-103.33,'revenue/discount/tax/cash reversed pro rata');
+select pg_temp.ok(pg_temp.bal('klinik-refund-hpp','170001')=25 and pg_temp.bal('klinik-refund-hpp','600001')=-25,'returned stock reverses HPP at original cost');
 select pg_temp.ok((select jumlah=103.33 and metode_bayar='Tunai' and shift_id='da000000-0000-4000-8000-000000000001' from expenses where id=(select expense_id from clinic_refunds)),'cash payout reduces the clinic shift');
 select pg_temp.ok((select points=14 from customers where id='d4000000-0000-4000-8000-000000000001'),'points: 22 + 2 restored - 10 deducted');
 select pg_temp.ok((select total_spending=206.67 from customers where id='d4000000-0000-4000-8000-000000000001'),'customer spending is net of refund');
@@ -102,19 +102,19 @@ select pg_temp.reject($q$select post_clinic_refund((select id from inv),'j03-rac
 insert into r select 'cash2',post_clinic_refund((select id from inv),'j03-c2',pg_temp.hdr('Tunai'),pg_temp.items(1,'rusak',0));
 select pg_temp.ok((select (result->>'total')::numeric=103.33 from r where name='cash2'),'other refund leaves the reserved amount untouched');
 select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000004',true);
-select pg_temp.reject($q$select complete_clinic_refund_request((select (result->>'refund_request_id')::uuid from r where name='pending'),(now() at time zone 'Asia/Jakarta')::date,(select id from cash_accounts where coa_code='1101'),'FICT')$q$,'transfer cannot use a cash account');
+select pg_temp.reject($q$select complete_clinic_refund_request((select (result->>'refund_request_id')::uuid from r where name='pending'),(now() at time zone 'Asia/Jakarta')::date,(select id from cash_accounts where coa_code='110003'),'FICT')$q$,'transfer cannot use a cash account');
 reset role;
 update customers set points=5 where id='d4000000-0000-4000-8000-000000000001';
 set local role authenticated;
 select set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000004',true);
-insert into r select 'done',complete_clinic_refund_request((select (result->>'refund_request_id')::uuid from r where name='pending'),(now() at time zone 'Asia/Jakarta')::date,(select id from cash_accounts where coa_code='1102'),'FICT-TRF-1');
-insert into r select 'done-retry',complete_clinic_refund_request((select (result->>'refund_request_id')::uuid from r where name='pending'),(now() at time zone 'Asia/Jakarta')::date,(select id from cash_accounts where coa_code='1102'),'FICT-TRF-1');
+insert into r select 'done',complete_clinic_refund_request((select (result->>'refund_request_id')::uuid from r where name='pending'),(now() at time zone 'Asia/Jakarta')::date,(select id from cash_accounts where coa_code='120002'),'FICT-TRF-1');
+insert into r select 'done-retry',complete_clinic_refund_request((select (result->>'refund_request_id')::uuid from r where name='pending'),(now() at time zone 'Asia/Jakarta')::date,(select id from cash_accounts where coa_code='120002'),'FICT-TRF-1');
 select pg_temp.ok((select (select result->>'document_id' from r where name='done')=(select result->>'document_id' from r where name='done-retry')),'completion retry is idempotent');
 reset role;
 select pg_temp.ok((select (result->>'total')::numeric=103.34 from r where name='done'),'completion posts the quoted (transferred) amount');
 select pg_temp.ok((select count(*)=3 and sum(total)=310 from clinic_refunds),'invoice fully refunded exactly once');
-select pg_temp.ok(pg_temp.bal('klinik-refund','4201')=300 and pg_temp.bal('klinik-refund','4102')=-10 and pg_temp.bal('klinik-refund','2201')=20 and pg_temp.bal('klinik-refund','1102')=-103.34 and pg_temp.bal('klinik-refund','1101')=-206.66,'cumulative reversal equals the source invoice');
-select pg_temp.ok(pg_temp.bal('klinik-refund-hpp','5902')=25 and pg_temp.bal('klinik-refund-hpp','5101')=-50,'unsellable medicine cost to loss, not stock');
+select pg_temp.ok(pg_temp.bal('klinik-refund','510002')=300 and pg_temp.bal('klinik-refund','520002')=-10 and pg_temp.bal('klinik-refund','312005')=20 and pg_temp.bal('klinik-refund','120002')=-103.34 and pg_temp.bal('klinik-refund','110003')=-206.66,'cumulative reversal equals the source invoice');
+select pg_temp.ok(pg_temp.bal('klinik-refund-hpp','720010')=25 and pg_temp.bal('klinik-refund-hpp','600001')=-50,'unsellable medicine cost to loss, not stock');
 select pg_temp.ok((select qty=20 from stock where warehouse_id='d3000000-0000-4000-8000-000000000001' and item_id='d8000000-0000-4000-8000-000000000001'),'unsellable strip and service do not return stock');
 select pg_temp.ok((select points=0 from customers where id='d4000000-0000-4000-8000-000000000001') and (select sum(point_delta)=-29 and sum(point_restored)=9 from clinic_refunds),'all 9 redeemed points restored; earned points deducted to zero, never below');
 select pg_temp.ok((select total_spending=0 from customers where id='d4000000-0000-4000-8000-000000000001'),'fully refunded invoice adds no spending');

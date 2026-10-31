@@ -6,7 +6,7 @@ update profiles set role='OWNER',is_active=true where id='fa810000-0000-4000-800
 update profiles set role='ADMIN',is_active=true where id='fa810000-0000-4000-8000-000000000002';
 alter table profiles enable trigger guard_profile_privileges;
 insert into coa_accounts(code,name,type,normal_balance) values
- ('3101','Equity','EKUITAS','K'),('119801','Opening bank','ASET','D'),('119802','Zero cash','ASET','D'),('139801','Noncash asset','ASET','D') on conflict(code) do nothing;
+ ('410001','Equity','EKUITAS','K'),('119801','Opening bank','ASET','D'),('119802','Zero cash','ASET','D'),('139801','Noncash asset','ASET','D') on conflict(code) do nothing;
 insert into cash_accounts(id,nama,jenis,coa_code,created_at) values
  ('fa820000-0000-4000-8000-000000000001','Opening bank','Bank','119801',now()-interval '10 days'),
  ('fa820000-0000-4000-8000-000000000002','Zero cash','Kas','119802',now()-interval '10 days');
@@ -16,7 +16,7 @@ insert into journal_entries(id,no_jurnal,tanggal,source,source_ref) values
 insert into journal_lines(entry_id,account_id,debit,credit)
  select 'fa830000-0000-4000-8000-000000000001'::uuid,id,50000000,0 from coa_accounts where code='119801'
  union all select 'fa830000-0000-4000-8000-000000000001',id,125000,0 from coa_accounts where code='139801'
- union all select 'fa830000-0000-4000-8000-000000000001',id,0,50125000 from coa_accounts where code='3101'
+ union all select 'fa830000-0000-4000-8000-000000000001',id,0,50125000 from coa_accounts where code='410001'
  union all select 'fa830000-0000-4000-8000-000000000002',id,0,1000000 from coa_accounts where code='119801'
  union all select 'fa830000-0000-4000-8000-000000000002',id,1000000,0 from coa_accounts where code='139801';
 update accounting_locks set closed_until=null where id;

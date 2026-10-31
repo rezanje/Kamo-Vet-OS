@@ -13,7 +13,7 @@ import { InpatientCashier } from "@/app/(app)/klinik/pembayaran/[visitId]/Inpati
 import type { InpatientCashierData } from "@/lib/inpatient-cashier";
 const patient = { photo: null, name: "Pasien Fiktif", species: "Kucing", owner: "Pemilik Fiktif", phone: "080000000000", address: "Alamat fiktif", dokter: "Dokter Fiktif", jenisLayanan: "Rawat Inap", noInvoice: "(baru)", tanggal: "01/11/2026" };
 const performers = { doctor_id:"doctor", doctor_name:"Dokter Fiktif", staff_id:null, staff_name:null };
-const accounts = [ {method:"Tunai",code:"1101",name:"Kas Fiktif",bank:null,number:null}, {method:"Transfer",code:"1102",name:"Rekening Transfer Fiktif",bank:"Bank A Fiktif",number:"000111"}, {method:"Debit",code:"1103",name:"Rekening Debit Fiktif",bank:"Bank B Fiktif",number:"000222"} ];
+const accounts = [ {method:"Tunai",code:"110003",name:"Kas Fiktif",bank:null,number:null}, {method:"Transfer",code:"120002",name:"Rekening Transfer Fiktif",bank:"Bank A Fiktif",number:"000111"}, {method:"Debit",code:"1103",name:"Rekening Debit Fiktif",bank:"Bank B Fiktif",number:"000222"} ];
 const data: InpatientCashierData = { tax_settings:{mode_pkp:true,ppn_rate:10}, snapshot:"strict-source-snapshot", rows:[{id:"source-rx",item_id:"sku",nama_obat:"Jasa Fiktif",qty:1,harga:150000,satuan:"pcs",jenis:"jasa",service_performers:performers}],
   history:[{id:"issued",invoice_no:"VET_FIKTIF-001",total:330000,received:60000,dp_amount:60000,paid_status:"DP",correction_pending:false,lines:[]}], receipts:[], applications:[],
   quote:{token:"read-quote",remaining:335000,pending:165000,debt:270000,credit:100000,subtotal:150000,tax:15000,amount:0,excess:0,accounts} };

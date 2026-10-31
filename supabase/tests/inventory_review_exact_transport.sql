@@ -7,13 +7,13 @@ update profiles set role='OWNER',is_active=true where id=md5('xt-owner')::uuid;
 alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,code,name,type) values(md5('xt-branch')::uuid,'XT-B','Fiction exact branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('xt-wh')::uuid,md5('xt-branch')::uuid,'XT-W','Fiction exact warehouse','RETAIL');
-insert into coa_accounts(code,name,type,normal_balance,is_header) values('1301','Fiction inventory','ASET','D',false),('3101','Fiction equity','EKUITAS','K',false)
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('170001','Fiction inventory','ASET','D',false),('410001','Fiction equity','EKUITAS','K',false)
 on conflict(code) do update set is_active=true,is_header=false;
 insert into items(id,code,name,unit,item_type) values(md5('xt-item')::uuid,'XT-I','Fiction exact item','PCS','Persediaan'),(md5('xt-paid')::uuid,'XT-P','Fiction valued item','PCS','Persediaan');
 set local role authenticated;
 select set_config('request.jwt.claim.sub',md5('xt-owner')::uuid::text,true);
 do $$ declare run uuid; eq uuid; exact text; rounded jsonb; receipt jsonb; begin
- select id into eq from coa_accounts where code='3101';
+ select id into eq from coa_accounts where code='410001';
  run:=prepare_accurate_initial_stock('xt-exact-qty','fiction.xlsx',md5('xt-branch')::uuid,md5('xt-wh')::uuid,'2026-01-01',
   jsonb_build_array(jsonb_build_object('source_row',2,'source_code','XT-I','status','valid','reason',null,
   'payload',jsonb_build_object('item_id',md5('xt-item')::uuid,'warehouse_id',md5('xt-wh')::uuid,'base_qty','2.0000000000000000001','base_unit_cost','0','as_of','2026-01-01',

@@ -53,7 +53,7 @@ insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,
 insert into sales_orders(id,no_pesanan,customer_id,branch_id,warehouse_id,tanggal,total)values(${q(ids.order)},'SO.FSALE.${token}',${q(ids.customer)},${q(ids.branch)},${q(ids.warehouse)},'2035-01-10',200);
 insert into sales_order_items(id,order_id,item_id,nama,satuan,faktor,qty,harga)values(${q(ids.line)},${q(ids.order)},${q(ids.item)},'Fiction sales pcs','pcs',1,20,10);
 insert into coa_accounts(code,name,type,normal_balance,is_active,is_header)values
-('1201','Piutang','ASET','D',true,false),('1301','Persediaan','ASET','D',true,false),('4101','Penjualan','PENDAPATAN','K',true,false),('5101','HPP','BEBAN','D',true,false),('2201','PPN Keluaran','LIABILITAS','K',true,false)on conflict(code)do nothing;`);
+('150001','Piutang','ASET','D',true,false),('170001','Persediaan','ASET','D',true,false),('510001','Penjualan','PENDAPATAN','K',true,false),('600001','HPP','BEBAN','D',true,false),('312005','PPN Keluaran','LIABILITAS','K',true,false)on conflict(code)do nothing;`);
   // Test a still-valid real JWT against the disabled actor gate before UI login.
   value(await admin.from('profiles').update({is_active:false}).eq('id',user.id),'Disable fictional actor');
   const denied=await actor.rpc('sales_create_delivery',{p_order_id:ids.order,p_request_key:'disabled',p_header:{tanggal:'2035-01-10'},p_items:[{order_item_id:ids.line,qty:1}]});

@@ -195,13 +195,13 @@ def dasar_sql():
         for u in [OWNER, ADMIN, FINANCE, STAFF, DOCTOR, FIN_NONAKTIF, FIN_LUAR])
     return f"""
 insert into public.coa_accounts (code,name,type,normal_balance,is_active,is_header) values
- ('1101','Kas Fiktif','ASET','D',true,false),('1102','Bank Fiktif','ASET','D',true,false),
- ('1201','Piutang Fiktif','ASET','D',true,false),('1301','Persediaan Fiktif','ASET','D',true,false),
- ('2103','Uang Muka Penjualan Fiktif','LIABILITAS','K',true,false),
- ('2201','PPN Keluaran Fiktif','LIABILITAS','K',true,false),
- ('4102','Diskon Penjualan Fiktif','PENDAPATAN','D',true,false),
- ('4201','Pendapatan Klinik Fiktif','PENDAPATAN','K',true,false),
- ('5101','HPP Fiktif','BEBAN','D',true,false)
+ ('110003','Kas Fiktif','ASET','D',true,false),('120002','Bank Fiktif','ASET','D',true,false),
+ ('150001','Piutang Fiktif','ASET','D',true,false),('170001','Persediaan Fiktif','ASET','D',true,false),
+ ('314001','Uang Muka Penjualan Fiktif','LIABILITAS','K',true,false),
+ ('312005','PPN Keluaran Fiktif','LIABILITAS','K',true,false),
+ ('520002','Diskon Penjualan Fiktif','PENDAPATAN','D',true,false),
+ ('510002','Pendapatan Klinik Fiktif','PENDAPATAN','K',true,false),
+ ('600001','HPP Fiktif','BEBAN','D',true,false)
 on conflict (code) do update set is_active=true, is_header=false;
 insert into auth.users (id, raw_user_meta_data) values {users};
 {peran}
@@ -223,7 +223,7 @@ insert into public.stock (warehouse_id,item_id,qty) values ({q(WH)},{q(ITEM)},20
 insert into public.stock_layers (warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source)
  values ({q(WH)},{q(ITEM)},current_date,200,200,2000,'purchase');
 insert into public.cash_accounts (nama,jenis,coa_code) values
- ('Kas Klinik Fiktif','Kas','1101'),('Bank Klinik Fiktif','Bank','1102')
+ ('Kas Klinik Fiktif','Kas','110003'),('Bank Klinik Fiktif','Bank','120002')
  on conflict (coa_code) do update set is_active=true;
 insert into public.cashier_shifts (id,branch_id,opened_by,shift_type,status) values {shifts};
 insert into public.consent_templates (id,nama,isi,kategori,is_active)
@@ -389,20 +389,20 @@ def ind01(h, n, cust, reissues, parts, label):
         aktif = h.aktif(visit)
         h.sql(koreksi_sql(h, aktif, f"k{n}-koreksi{r}", lines), FINANCE)
 
-    sebelum = h.saldo_semua("1101", "1102", "1201", "2103")
+    sebelum = h.saldo_semua("110003", "120002", "150001", "314001")
     galat = h.gagal(batal_kwitansi_sql(receipt, f"k{n}-batal"), FINANCE)
     if galat:
         return catat(f"IND01-{label}", False, f"pembatalan kwitansi ditolak: {galat.strip().splitlines()[0]}", "IND-01")
-    sesudah = h.saldo_semua("1101", "1102", "1201", "2103")
+    sesudah = h.saldo_semua("110003", "120002", "150001", "314001")
 
     total_kwitansi = sum(p["amount"] for p in parts)
     per_akun = {}
     for p in parts:
-        kode = "1101" if p["method"] == "Tunai" else "1102"
+        kode = "110003" if p["method"] == "Tunai" else "120002"
         per_akun[kode] = per_akun.get(kode, 0) + p["amount"]
     kas_ok = all(round(sebelum[k] - sesudah[k], 2) == v for k, v in per_akun.items())
-    piutang = round(sesudah["1201"] - sebelum["1201"], 2)
-    muka = round(sesudah["2103"] - sebelum["2103"], 2)
+    piutang = round(sesudah["150001"] - sebelum["150001"], 2)
+    muka = round(sesudah["314001"] - sebelum["314001"], 2)
     aktif_id = h.aktif(visit)
     terima = h.diterima(aktif_id)
     status = h.status_bayar(aktif_id)
@@ -463,15 +463,15 @@ def ind02(h, n, cust):
     catat("IND02-kunjungan-lain", dipakai4 == 0, f"applied={dipakai4}", "IND-02")
 
     # Jalan keluarnya tetap ada: kwitansinya bisa dibatalkan, uang pemilik kembali.
-    sebelum = h.saldo_semua("1101", "2103")
+    sebelum = h.saldo_semua("110003", "314001")
     galat = h.gagal(batal_kwitansi_sql(receipt, f"k{n}-batal"), FINANCE)
-    sesudah = h.saldo_semua("1101", "2103")
-    ok = (galat is None and round(sebelum["1101"] - sesudah["1101"], 2) == 150000
-          and round(sesudah["2103"] - sebelum["2103"], 2) == 150000)
+    sesudah = h.saldo_semua("110003", "314001")
+    ok = (galat is None and round(sebelum["110003"] - sesudah["110003"], 2) == 150000
+          and round(sesudah["314001"] - sebelum["314001"], 2) == 150000)
     catat("IND02-batal-setelah-lepas", ok,
           f"galat={None if galat is None else galat.strip().splitlines()[0]} "
-          f"kas kredit {round(sebelum['1101']-sesudah['1101'],2)} "
-          f"uang muka debit {round(sesudah['2103']-sebelum['2103'],2)}",
+          f"kas kredit {round(sebelum['110003']-sesudah['110003'],2)} "
+          f"uang muka debit {round(sesudah['314001']-sebelum['314001'],2)}",
           "IND-02")
 
 
@@ -513,7 +513,7 @@ def ind03(h, n, cust, pulang, label):
     hpp = h.angka("select coalesce(sum(l.debit-l.credit),0) from public.journal_lines l "
                   "join public.journal_entries e on e.id=l.entry_id "
                   "join public.coa_accounts a on a.id=l.account_id "
-                  f"where a.code='5101' and e.source_ref=(select invoice_no from public.invoices where id={q(inv)})")
+                  f"where a.code='600001' and e.source_ref=(select invoice_no from public.invoices where id={q(inv)})")
     riwayat2 = h.angka(f"select count(*) from public.invoice_payments where invoice_id={q(inv)}")
     total = h.angka(f"select total from public.invoices where id={q(inv)}")
     # Idempoten: kunci yang sama mengembalikan hasil yang sama tanpa menggandakan apa pun.
@@ -580,8 +580,8 @@ def r2_kepala_dp(h, n, cust):
     stok0 = h.angka(f"select qty from public.stock where warehouse_id={q(WH)} and item_id={q(ITEM)}")
     galat = h.gagal(koreksi_sql(h, inv, f"k{n}2-koreksi", baris(n + 2, 1, 3)), FINANCE)
     sesudah = h.potret_tagihan(inv)
-    kas, piutang = h.saldo_ref("1101", no), h.saldo_ref("1201", no)
-    pendapatan, hpp = h.saldo_ref("4201", no), h.saldo_ref("5101", no)
+    kas, piutang = h.saldo_ref("110003", no), h.saldo_ref("150001", no)
+    pendapatan, hpp = h.saldo_ref("510002", no), h.saldo_ref("600001", no)
     catat("R2-02-kepala-dp-keuangan-boleh",
           galat is None and sesudah["dp"] == 60000 and sesudah["total"] == 150000
           and sesudah["status"] == "DP" and sesudah["baris"] == 2 and sesudah["bayar"] == 0
@@ -722,12 +722,12 @@ def ind04(h, n, cust):
         # Tiap muatan memakai kunjungannya sendiri supaya "tidak ada tagihan tersimpan"
         # benar-benar diuji, bukan tertolak gara-gara baris resep yang sudah tertagih.
         visit = buat_kunjungan(h, n + i, cust)
-        kas = h.saldo("1101")
+        kas = h.saldo("110003")
         stok = h.angka(f"select qty from public.stock where warehouse_id={q(WH)} and item_id={q(ITEM)}")
         galat = h.gagal(tagih_sql(visit, f"k{n}-{label}", baris(n + i, 1), user, ganti=ganti), user)
         tagihan = h.angka(f"select count(*) from public.invoices where visit_id={q(visit)}")
         kwitansi = h.angka(f"select count(*) from public.clinic_payment_receipts where visit_id={q(visit)}")
-        kas2 = h.saldo("1101")
+        kas2 = h.saldo("110003")
         stok2 = h.angka(f"select qty from public.stock where warehouse_id={q(WH)} and item_id={q(ITEM)}")
         catat(f"IND04-{label}", bool(galat) and "STAGE_INVALID" in str(galat)
               and tagihan == 0 and kwitansi == 0 and kas == kas2 and stok == stok2,
@@ -792,8 +792,8 @@ def split_checkout(h, n, cust):
     """Checkout campuran ASLI: dua rekening, satu tagihan lunas, jurnal per rekening."""
     visit = buat_kunjungan(h, n, cust, admitted=False)
     lines = baris(n, 1)
-    bagian = [{"method": "Tunai", "amount": 60000, "kas_code": "1101"},
-              {"method": "QRIS", "amount": 40000, "kas_code": "1102"}]
+    bagian = [{"method": "Tunai", "amount": 60000, "kas_code": "110003"},
+              {"method": "QRIS", "amount": 40000, "kas_code": "120002"}]
     muatan = {"tanggal": TGL, "subtotal": 100000, "discount": 0, "tax": 0, "total": 100000,
               "dp_amount": 0, "dp_date": None, "paid_status": "Lunas", "metode_bayar": "Tunai",
               "shift_id": SHIFT[STAFF], "voucher_code": None, "salesperson_id": None}
@@ -801,7 +801,7 @@ def split_checkout(h, n, cust):
                     f"{j(muatan)},{j(lines)},{j(bagian)});", STAFF)
     inv = h.aktif(visit)
     no = h.no_tagihan(inv) if inv else ""
-    kas, bank = h.saldo_ref("1101", no), h.saldo_ref("1102", no)
+    kas, bank = h.saldo_ref("110003", no), h.saldo_ref("120002", no)
     bayar = h.angka(f"select count(*) from public.invoice_payments where invoice_id={q(inv)}") if inv else 0
     catat("LENGKAP-split-checkout", galat is None and kas == 60000 and bank == 40000
           and bayar == 2 and h.status_bayar(inv) == "Lunas" and h.diterima(inv) == 100000,
@@ -819,7 +819,7 @@ def demo_checkout(h, n, cust):
     h.sistem(f"""
 insert into public.clinic_demo_policies
  (id,name,incentive_percent,fee_bearer,fee_rates,admin_revenue_code,admin_expense_code,is_active)
- values ({q(kebijakan)},'DEMO Fiktif',5,'company','{{"Tunai":0}}'::jsonb,'4201','5101',true)
+ values ({q(kebijakan)},'DEMO Fiktif',5,'company','{{"Tunai":0}}'::jsonb,'510002','600001',true)
  on conflict (id) do nothing;""")
     visit = buat_kunjungan(h, n, cust)
     # Checkout DEMO terjadi saat pasien PULANG; rawat inap yang masih terbuka
@@ -828,7 +828,7 @@ insert into public.clinic_demo_policies
     muatan = {"tanggal": TGL, "subtotal": 100000, "discount": 0, "tax": 0, "total": 100000,
               "dp_amount": 0, "dp_date": None, "paid_status": "Lunas", "metode_bayar": "Tunai",
               "shift_id": SHIFT[STAFF], "voucher_code": None, "salesperson_id": None}
-    bagian = [{"method": "Tunai", "amount": 100000, "kas_code": "1101"}]
+    bagian = [{"method": "Tunai", "amount": 100000, "kas_code": "110003"}]
     galat = h.gagal(
         f"select public.clinic_post_demo_invoice({q(visit)},{q(f'k{n}-demo')},{j(muatan)},"
         f"{j(baris(n, 1))},{q(kebijakan)},{j(bagian)},array[{q(DOKTER_PEGAWAI)}]::uuid[]);", STAFF)

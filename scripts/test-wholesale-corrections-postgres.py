@@ -130,9 +130,9 @@ def concurrency_tests():
             adv_id = 'fb500000-0000-4000-8000-00000000000' + suffix
             ref = 'UJ.SOURCE.RACE.' + suffix
             sql("insert into sales_advances(id,no_um,customer_id,order_id,tanggal,jumlah) values('" + adv_id + "','" + ref + "','f4000000-0000-4000-8000-000000000001','fb200000-0000-4000-8000-000000000001',current_date,20);")
-            sql("select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sales-advance','" + ref + "','Fiction advance race',jsonb_build_array(jsonb_build_object('code','1102','debit',20,'credit',0),jsonb_build_object('code','2103','debit',0,'credit',20)));")
+            sql("select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sales-advance','" + ref + "','Fiction advance race',jsonb_build_array(jsonb_build_object('code','120002','debit',20,'credit',0),jsonb_build_object('code','314001','debit',0,'credit',20)));")
             payment = "select receive_wholesale_payment('advance-source-race-" + suffix + "','" + service_id + "',current_date,10,'Transfer',null,'" + adv_id + "',null);"
-            extra = "insert into journal_lines(id,entry_id,account_id,debit,credit) values('fb600000-0000-4000-8000-00000000000" + suffix + "',(select id from journal_entries where source='sales-advance' and source_ref='" + ref + "'),(select id from coa_accounts where code='1102'),1,0);"
+            extra = "insert into journal_lines(id,entry_id,account_id,debit,credit) values('fb600000-0000-4000-8000-00000000000" + suffix + "',(select id from journal_entries where source='sales-advance' and source_ref='" + ref + "'),(select id from coa_accounts where code='120002'),1,0);"
             if suffix == '2':
                 race(payment, extra, 'Jurnal grosir')
                 assert sql("select terpakai from sales_advances where id='" + adv_id + "';").stdout.strip() == '10.00'

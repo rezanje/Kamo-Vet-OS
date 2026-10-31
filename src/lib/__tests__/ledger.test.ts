@@ -41,7 +41,7 @@ function makeClient(accounts: { id: string; code: string; name: string; type: st
 }
 
 const accounts = [
-  { id: "acc-4101", code: "4101", name: "Penjualan", type: "PENDAPATAN", normal_balance: "K" },
+  { id: "acc-4101", code: "510001", name: "Penjualan", type: "PENDAPATAN", normal_balance: "K" },
 ];
 
 const lines: Line[] = [
@@ -53,26 +53,26 @@ describe("getAccountBalances — filter branchIds", () => {
   it("branchIds undefined = tanpa filter cabang (semua baris ikut)", async () => {
     const c = makeClient(accounts, lines);
     const bal = await getAccountBalances(c, {});
-    expect(bal.find((b) => b.code === "4101")?.saldo).toBe(300_000);
+    expect(bal.find((b) => b.code === "510001")?.saldo).toBe(300_000);
   });
 
   it("branchIds [] (allow-list eksplisit kosong) = tidak ada baris, BUKAN semua cabang", async () => {
     const c = makeClient(accounts, lines);
     const bal = await getAccountBalances(c, { branchIds: [] });
-    expect(bal.find((b) => b.code === "4101")?.saldo).toBe(0);
+    expect(bal.find((b) => b.code === "510001")?.saldo).toBe(0);
   });
 
   it("branchIds terisi = filter seperti biasa", async () => {
     const c = makeClient(accounts, lines);
     const bal = await getAccountBalances(c, { branchIds: ["b1"] });
-    expect(bal.find((b) => b.code === "4101")?.saldo).toBe(100_000);
+    expect(bal.find((b) => b.code === "510001")?.saldo).toBe(100_000);
   });
 });
 
 describe("getAccountLedger — asal cabang", () => {
   it("membawa nama cabang di rincian akun", async () => {
     const source = [{ ...lines[0], journal_entries: { ...lines[0].journal_entries, source_ref: "INV-1", branches: { name: "Klinik A" } } }];
-    const ledger = await getAccountLedger(makeClient(accounts, source), "4101");
+    const ledger = await getAccountLedger(makeClient(accounts, source), "510001");
     expect(ledger[0]).toMatchObject({ no_jurnal: "J1", source_ref: "INV-1", branch_id: "b1", branch_name: "Klinik A" });
   });
 });
@@ -110,5 +110,5 @@ it("includes every journal line beyond the API row cap in financial totals and a
   const manyLines = Array.from({ length: 1201 }, () => ({ ...lines[0], credit: 100 }));
   const balances = await getAccountBalances(makeClient(accounts, manyLines));
   expect(balances[0].saldo).toBe(120_100);
-  expect(await getAccountLedger(makeClient(accounts, manyLines), "4101")).toHaveLength(1201);
+  expect(await getAccountLedger(makeClient(accounts, manyLines), "510001")).toHaveLength(1201);
 });

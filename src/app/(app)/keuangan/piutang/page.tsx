@@ -34,7 +34,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
 
   // Invoice aktif yang belum lunas + pembayaran yang sudah masuk.
   // Faktur penjualan reseller (rantai dokumen, migrasi 0098) ikut ditarik: piutangnya
-  // masuk akun 1201 yang sama, jadi kalau tidak dijumlah di sini umur piutang perusahaan
+  // masuk akun 150001 yang sama, jadi kalau tidak dijumlah di sini umur piutang perusahaan
   // terbaca lebih kecil dari yang sebenarnya.
   const [{ data: invs }, { data: fjs }, { data: rcs }] = await Promise.all([
     supabase

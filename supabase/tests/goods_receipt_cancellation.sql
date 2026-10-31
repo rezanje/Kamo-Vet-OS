@@ -26,8 +26,8 @@ insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,fak
  ('f8600000-0000-4000-8000-000000000002','f8500000-0000-4000-8000-000000000002','f8400000-0000-4000-8000-000000000002','P08 invoiced goods',2,100,'box',10),
  ('f8600000-0000-4000-8000-000000000003','f8500000-0000-4000-8000-000000000003','f8400000-0000-4000-8000-000000000003','P08 consumed goods',2,100,'box',10),
  ('f8600000-0000-4000-8000-000000000005','f8500000-0000-4000-8000-000000000005','f8400000-0000-4000-8000-000000000005','P08 cost evidence goods',1,500,'box',10);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fiction stock','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
-update coa_accounts set is_active=true,is_header=false where code in('1301','2102');
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction stock','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
+update coa_accounts set is_active=true,is_header=false where code in('170001','311003');
 update accounting_locks set closed_until=null;
 create table p08_results(name text primary key,result jsonb);
 grant all on p08_results to authenticated;
@@ -92,10 +92,10 @@ do $$declare rid uuid:=(select (result->>'receipt_id')::uuid from p08_results wh
  perform pg_temp.ok((select method from inventory_costing_settings where id)<>'moving_average'
   or (select value_delta=-200 and value_after=0 from inventory_cost_events where source='purchase-receipt-void' and item_id='f8400000-0000-4000-8000-000000000001'),'average value removed at original cost');
  perform pg_temp.ok((select count(*) from journal_entries where source='purchase-receipt-void')=1,'one reversal journal');
- perform pg_temp.ok((select sum(l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(res->>'reversal_journal_id')::uuid and a.code='1301')=250
-  and (select sum(l.debit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(res->>'reversal_journal_id')::uuid and a.code='2102')=250,'reversal credits inventory and debits GRNI 250');
+ perform pg_temp.ok((select sum(l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(res->>'reversal_journal_id')::uuid and a.code='170001')=250
+  and (select sum(l.debit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(res->>'reversal_journal_id')::uuid and a.code='311003')=250,'reversal credits inventory and debits GRNI 250');
  perform pg_temp.ok((select sum(l.debit-l.credit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id
-  where a.code in('1301','2102') and e.source_ref=(res->>'no_terima'))=0,'receipt and reversal net to zero');
+  where a.code in('170001','311003') and e.source_ref=(res->>'no_terima'))=0,'receipt and reversal net to zero');
  perform pg_temp.ok((select coalesce(qty_terima,0)=0 and qty_rusak=0 from purchase_order_items where id='f8600000-0000-4000-8000-000000000001'),'PO goods qty reopened');
  perform pg_temp.ok((select coalesce(qty_terima,0)=0 from purchase_order_items where id='f8600000-0000-4000-8000-000000000004'),'PO service qty reopened');
  perform pg_temp.ok((select status::text from purchase_orders where id='f8500000-0000-4000-8000-000000000001')='Dipesan','PO back to ordered');

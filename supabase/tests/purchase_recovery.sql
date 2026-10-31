@@ -96,18 +96,18 @@ end$$;
 -- Fixed assets preserve the existing Tunai/Bank funding and active mapped account rules.
 do $$declare category uuid;first uuid;retry uuid;failed boolean;begin
  select id into category from asset_categories where nama='Peralatan';
- failed:=false;begin perform create_fixed_asset_purchase('Fiction nonfinite',category,current_date,'NaN',0,48,null,'Tunai','1101','nonfinite-asset');exception when sqlstate 'P0001'then failed:=true;end;
+ failed:=false;begin perform create_fixed_asset_purchase('Fiction nonfinite',category,current_date,'NaN',0,48,null,'Tunai','110003','nonfinite-asset');exception when sqlstate 'P0001'then failed:=true;end;
  if not failed then raise exception 'nonfinite asset price accepted';end if;
  perform set_config('purchase.test_failure','journal',true);
- failed:=false;begin perform create_fixed_asset_purchase('Fiction asset',category,current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','1101','asset-one');exception when others then failed:=true;end;
+ failed:=false;begin perform create_fixed_asset_purchase('Fiction asset',category,current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','110003','asset-one');exception when others then failed:=true;end;
  if not failed or exists(select 1 from fixed_assets)then raise exception 'asset journal failure left partial asset';end if;
  perform set_config('purchase.test_failure','',true);
- first:=create_fixed_asset_purchase('Fiction asset',category,current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','1101','asset-one');
- retry:=create_fixed_asset_purchase('Fiction asset',category,current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','1101','asset-one');
+ first:=create_fixed_asset_purchase('Fiction asset',category,current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','110003','asset-one');
+ retry:=create_fixed_asset_purchase('Fiction asset',category,current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','110003','asset-one');
  if first<>retry or(select count(*)from fixed_assets)<>1 or(select count(*)from journal_entries where source='asset-purchase')<>1 then raise exception 'asset identical retry duplicated purchase';end if;
- failed:=false;begin perform create_fixed_asset_purchase('Changed asset',category,current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','1101','asset-one');exception when sqlstate 'P0001'then failed:=true;end;
+ failed:=false;begin perform create_fixed_asset_purchase('Changed asset',category,current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','110003','asset-one');exception when sqlstate 'P0001'then failed:=true;end;
  if not failed then raise exception 'changed asset payload accepted';end if;
- failed:=false;begin perform create_fixed_asset_purchase('Fiction debt',category,current_date,1000,0,48,null,'Hutang','1101','asset-bad');exception when sqlstate 'P0001'then failed:=true;end;
+ failed:=false;begin perform create_fixed_asset_purchase('Fiction debt',category,current_date,1000,0,48,null,'Hutang','110003','asset-bad');exception when sqlstate 'P0001'then failed:=true;end;
  if not failed then raise exception 'unsupported asset funding accepted';end if;
 end$$;
 
@@ -122,7 +122,7 @@ do $$declare failed boolean:=false;begin
  if not failed then raise exception 'wrong role read a receipt result';end if;
  failed:=false;begin perform receive_purchase_order('dc400000-0000-4000-8000-000000000001','wrong-role','TB.FIC.',5,current_date,null,null,'[{"id":"dc500000-0000-4000-8000-000000000001","qty_terima":1}]');exception when insufficient_privilege then failed:=true;end;
  if not failed then raise exception 'wrong role posted a receipt';end if;
- failed:=false;begin perform create_fixed_asset_purchase('Unauthorized asset',(select id from asset_categories where nama='Peralatan'),current_date,1000,0,48,null,'Tunai','1101','wrong-role');exception when insufficient_privilege then failed:=true;end;
+ failed:=false;begin perform create_fixed_asset_purchase('Unauthorized asset',(select id from asset_categories where nama='Peralatan'),current_date,1000,0,48,null,'Tunai','110003','wrong-role');exception when insufficient_privilege then failed:=true;end;
  if not failed then raise exception 'wrong role posted an asset';end if;
 end$$;
 reset role;
@@ -149,7 +149,7 @@ set local role authenticated;
 do $$declare failed boolean:=false;begin
  begin perform get_purchase_operation_result('asset','asset-one');exception when insufficient_privilege then failed:=true;end;
  if not failed then raise exception 'asset result recovery ignored its current branch';end if;
- failed:=false;begin perform create_fixed_asset_purchase('Fiction asset',(select id from asset_categories where nama='Peralatan'),current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','1101','asset-one');exception when insufficient_privilege then failed:=true;end;
+ failed:=false;begin perform create_fixed_asset_purchase('Fiction asset',(select id from asset_categories where nama='Peralatan'),current_date,1000,0,48,'dc100000-0000-4000-8000-000000000001','Tunai','110003','asset-one');exception when insufficient_privilege then failed:=true;end;
  if not failed then raise exception 'asset retry ignored its current branch';end if;
 end$$;
 reset role;
@@ -163,7 +163,7 @@ do $$declare actor_role text;failed boolean;message text;before_assets integer;b
   execute 'set local role authenticated';
   failed:=false;begin perform get_purchase_operation_result('asset','asset-one');exception when insufficient_privilege then get stacked diagnostics message=message_text;failed:=message='Akun pengguna tidak aktif.';end;
   if not failed then raise exception 'disabled % recovered a prior asset',actor_role;end if;
-  failed:=false;begin perform create_fixed_asset_purchase('Fiction disabled',(select id from asset_categories where nama='Peralatan'),current_date,1000,0,48,null,'Tunai','1101','disabled-actor');exception when insufficient_privilege then get stacked diagnostics message=message_text;failed:=message='Akun pengguna tidak aktif.';end;
+  failed:=false;begin perform create_fixed_asset_purchase('Fiction disabled',(select id from asset_categories where nama='Peralatan'),current_date,1000,0,48,null,'Tunai','110003','disabled-actor');exception when insufficient_privilege then get stacked diagnostics message=message_text;failed:=message='Akun pengguna tidak aktif.';end;
   if not failed then raise exception 'disabled % posted an asset',actor_role;end if;
   failed:=false;begin perform receive_purchase_order('dc400000-0000-4000-8000-000000000001','disabled-actor','TB.FIC.',5,current_date,null,null,'[{"id":"dc500000-0000-4000-8000-000000000001","qty_terima":1}]');exception when insufficient_privilege then get stacked diagnostics message=message_text;failed:=message='Akun pengguna tidak aktif.';end;
   if not failed then raise exception 'disabled % reached receipt mutation',actor_role;end if;

@@ -25,9 +25,9 @@ def run(t,h,db,version):
     extra(v,910,10000);before=snapshot()
     out=call(pay(v,rec,910,parts,ack=token))
     check('added prescription invalidates acknowledged quote',out['status']=='OVERPAYMENT_CONFIRM_REQUIRED' and out['quote']['excess']==60000 and snapshot()==before,out)
-    token=out['quote']['token'];cash=h.saldo('1101');bank=h.saldo('1102');moves=count('stock_moves')
+    token=out['quote']['token'];cash=h.saldo('110003');bank=h.saldo('120002');moves=count('stock_moves')
     sql=pay(v,rec,910,parts,ack=token);out=call(sql);receipt=out['receipt_id'];invoice=out['invoice_id'];no=h.no_tagihan(invoice)
-    check('acknowledged surplus kept once as real owner liability not revenue',out['status']=='SAVED' and h.diterima(invoice)==340000 and h.status_bayar(invoice)=='Lunas' and h.angka(f"select sum(amount-applied) from clinic_customer_advances where receipt_id={q(receipt)}")==60000 and h.saldo('1101')-cash==100000 and h.saldo('1102')-bank==300000 and h.saldo_ref('4201',no)==-340000 and count('stock_moves')==moves+1,dict(result=out,cash_delta=h.saldo('1101')-cash,bank_delta=h.saldo('1102')-bank,invoice_received=h.diterima(invoice),revenue=h.saldo_ref('4201',no),unused=60000))
+    check('acknowledged surplus kept once as real owner liability not revenue',out['status']=='SAVED' and h.diterima(invoice)==340000 and h.status_bayar(invoice)=='Lunas' and h.angka(f"select sum(amount-applied) from clinic_customer_advances where receipt_id={q(receipt)}")==60000 and h.saldo('110003')-cash==100000 and h.saldo('120002')-bank==300000 and h.saldo_ref('510002',no)==-340000 and count('stock_moves')==moves+1,dict(result=out,cash_delta=h.saldo('110003')-cash,bank_delta=h.saldo('120002')-bank,invoice_received=h.diterima(invoice),revenue=h.saldo_ref('510002',no),unused=60000))
     before=snapshot();call(sql)
     check('acknowledged double-submit idempotent including surplus',snapshot()==before,dict(unchanged=snapshot()==before))
     rejected('cached replay wrong branch denied',sql,r.FIN_LUAR,'ACCESS_DENIED')
@@ -54,7 +54,7 @@ def run(t,h,db,version):
     result=call(pay(v,rec,920,[dict(method='Tunai',amount=165000)]));first=result['invoice_id']
     old=h.nilai(f'select to_jsonb(i) from invoices i where id={q(first)}');extra(v,920,100000)
     receipts=count('clinic_payment_receipts');result=call(pay(v,rec,921,[],key='optional-zero'))
-    check('followup zero money posts revenue AR without fake zero receipt or changing old invoice',result['receipt_id'] is None and count('clinic_payment_receipts')==receipts and h.saldo_ref('4201',h.no_tagihan(result['invoice_id']))==-100000 and h.saldo_ref('1201',h.no_tagihan(result['invoice_id']))==100000 and h.nilai(f'select to_jsonb(i) from invoices i where id={q(first)}')==old,result)
+    check('followup zero money posts revenue AR without fake zero receipt or changing old invoice',result['receipt_id'] is None and count('clinic_payment_receipts')==receipts and h.saldo_ref('510002',h.no_tagihan(result['invoice_id']))==-100000 and h.saldo_ref('150001',h.no_tagihan(result['invoice_id']))==100000 and h.nilai(f'select to_jsonb(i) from invoices i where id={q(first)}')==old,result)
     result=call(pay(v,rec,922,[dict(method='Tunai',amount=100000)],key='oldest-first'))
     check('new receipt allocates existing debt oldest-first not new-stage-first',h.diterima(first)==265000 and h.angka(f"select sum(amount) from invoice_payments where receipt_id={q(result['receipt_id'])} and invoice_id={q(first)}")==100000,result)
     v0,rec0=fresh(923);result=call(pay(v0,rec0,923,[],reason='Fiktif authorized initial zero'),r.FINANCE)
@@ -85,13 +85,13 @@ def run(t,h,db,version):
         if kind=='shift':h.sql(f"update cashier_shifts set status='closed' where id={q(r.SHIFT[r.STAFF])}")
         if kind=='record':rec=r.uid(7,n)
         if kind=='tax':h.sql('delete from company_settings')
-        if kind=='account':h.sql("update coa_accounts set is_active=false where code='1102'")
+        if kind=='account':h.sql("update coa_accounts set is_active=false where code='120002'")
         rejected(kind+' failure rolls back BOTH receipt and invoice/advance/stock/GL',pay(v,rec,n,[dict(method='Transfer' if kind=='account' else 'Tunai',amount=330000)]),user,code)
         if kind=='stock':h.sql(f'update stock set qty=180 where item_id={q(r.ITEM)}')
         if kind=='period':h.sql('update accounting_locks set closed_until=null where id')
         if kind=='shift':h.sql(f"update cashier_shifts set status='open' where id={q(r.SHIFT[r.STAFF])}")
         if kind=='tax':h.sql('insert into company_settings(id) values(true)')
-        if kind=='account':h.sql("update coa_accounts set is_active=true where code='1102'")
+        if kind=='account':h.sql("update coa_accounts set is_active=true where code='120002'")
 
     # Original public clinical-note issue, then unified stage must not issue again.
     v,m=x.visit(h,940);rec=h.nilai(f'select id from inpatient_records where visit_id={q(v)}')
@@ -99,7 +99,7 @@ def run(t,h,db,version):
     h.sql(x.note(h,v,m,'unified-racik-note',x.payload(version,'unified-racik')),r.DOCTOR)
     issued=h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}');moves=count('stock_moves')
     result=call(pay(v,rec,940,[],key='unified-compound'));no=h.no_tagihan(result['invoice_id'])
-    check('original Catatan racikan billed HPP once without ingredient stock double-issue',issued==before-2 and h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}')==issued and count('stock_moves')==moves and h.saldo_ref('4201',no)==-20000 and h.saldo_ref('5101',no)==2000 and h.saldo_ref('1201',no)==20000,dict(result=result,material_before=before,after_issue=issued,after_bill=h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}'),hpp=h.saldo_ref('5101',no)))
+    check('original Catatan racikan billed HPP once without ingredient stock double-issue',issued==before-2 and h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}')==issued and count('stock_moves')==moves and h.saldo_ref('510002',no)==-20000 and h.saldo_ref('600001',no)==2000 and h.saldo_ref('150001',no)==20000,dict(result=result,material_before=before,after_issue=issued,after_bill=h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}'),hpp=h.saldo_ref('600001',no)))
     # Actual BMHP saved through original public Catatan, then billed once.
     v,m=x.visit(h,948);rec=h.nilai(f'select id from inpatient_records where visit_id={q(v)}')
     service=r.uid('e',948)
@@ -107,7 +107,7 @@ def run(t,h,db,version):
     rx=[dict(nama_obat='Tindakan BMHP Fiktif',item_id=service,qty=1,satuan='kali',faktor=1,harga=60000,jenis='jasa',kategori='Tindakan',bmhp_components=[dict(item_id=x.MATERIAL,qty=3,unit='gram')])]
     h.sql(f"select clinic_save_inpatient_log_with_status({q(rec)},{q(m)},{j(dict(condition_note='BMHP Fiktif',log_kind='monitoring'))},{j(rx)},'[]'::jsonb,'unified-bmhp-note',null)",r.DOCTOR)
     before=h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}');result=call(pay(v,rec,948,[],key='unified-bmhp'));no=h.no_tagihan(result['invoice_id'])
-    check('original Catatan BMHP posts real material stock HPP revenue AR once',h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}')==before-3 and h.saldo_ref('4201',no)==-60000 and h.saldo_ref('5101',no)==3000 and h.saldo_ref('1201',no)==60000,dict(result=result,before=before,stock=h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}'),hpp=h.saldo_ref('5101',no)))
+    check('original Catatan BMHP posts real material stock HPP revenue AR once',h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}')==before-3 and h.saldo_ref('510002',no)==-60000 and h.saldo_ref('600001',no)==3000 and h.saldo_ref('150001',no)==60000,dict(result=result,before=before,stock=h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}'),hpp=h.saldo_ref('600001',no)))
     before=snapshot();call(pay(v,rec,948,[],key='unified-bmhp'))
     check('BMHP unified replay has no second material issue or HPP',snapshot()==before,dict(unchanged=snapshot()==before))
     rejected('STAFF manual compound remains denied through original Catatan',x.note(h,v,m,'unified-manual-deny',x.payload(version,'unified-manual-deny',True)),r.STAFF,'ACCESS_DENIED')
@@ -145,7 +145,7 @@ def run(t,h,db,version):
     with x.c.Session(db,'doctor-bill-observer') as obs,x.session(db,'doctor-adds',r.DOCTOR) as one,x.session(db,'cashier-bills',r.STAFF) as two:
         one.sql('begin;'+note);two.send('begin;'+sql);x.c.wait_block(obs,two,one,barriers);one.sql('commit;');out=x.c.attempt(two)
     inv=h.nilai("select id from invoices where request_key='bill:concurrent-doctor-bill'")
-    check('doctor addition before waiting bill/pay included without deadlock',out['ok'] and barriers[0]['wait_event']=='advisory' and h.saldo_ref('4201',h.no_tagihan(inv))==-20000 and h.saldo_ref('5101',h.no_tagihan(inv))==2000,dict(outcome=out,barriers=barriers))
+    check('doctor addition before waiting bill/pay included without deadlock',out['ok'] and barriers[0]['wait_event']=='advisory' and h.saldo_ref('510002',h.no_tagihan(inv))==-20000 and h.saldo_ref('600001',h.no_tagihan(inv))==2000,dict(outcome=out,barriers=barriers))
     v,rec=fresh(952);barriers=[];before=snapshot()
     with x.c.Session(db,'revoke-obs') as obs,x.c.Session(db,'revoke-gate') as gate,x.session(db,'revoke-wait',r.STAFF) as waiter:
         gate.sql(f'begin;select clinic_private.billing_lock(clinic_private.billing_keys_visit({q(v)}));')

@@ -15,7 +15,7 @@ function finiteMoney(value: number | string): Decimal {
 }
 
 async function inventoryLedgerAtClose(client: SupabaseClient, close: Close, branchIds: string[]) {
-  const { data: account, error } = await client.from("coa_accounts").select("id").eq("code", "1301").maybeSingle();
+  const { data: account, error } = await client.from("coa_accounts").select("id").eq("code", "170001").maybeSingle();
   if (error) throw new Error(`Akun persediaan gagal dibaca: ${error.message}`);
   if (!account) return null;
   const lines = await readReportRows<InventoryJournalLine>(async (from, to) => client.from("journal_lines")

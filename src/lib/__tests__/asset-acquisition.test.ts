@@ -4,7 +4,7 @@ import { assetPurchaseJournal, assertNewAssetFunding } from "../asset-acquisitio
 describe("asset purchase accounting", () => {
   it("posts the purchase value to fixed assets and the selected funding account", () => {
     expect(assetPurchaseJournal(1250000.5, "Bank", "1108")).toEqual([
-      { code: "1501", debit: 1250000.5, credit: 0 },
+      { code: "200008", debit: 1250000.5, credit: 0 },
       { code: "1108", debit: 0, credit: 1250000.5 },
     ]);
   });
@@ -17,8 +17,8 @@ describe("asset purchase accounting", () => {
   });
 
   it("rejects non-positive or non-finite purchase values", () => {
-    expect(() => assetPurchaseJournal(0, "Tunai", "1101")).toThrow("Nilai pembelian aset harus lebih dari nol");
-    expect(() => assetPurchaseJournal(Number.NaN, "Tunai", "1101")).toThrow("Nilai pembelian aset harus lebih dari nol");
+    expect(() => assetPurchaseJournal(0, "Tunai", "110003")).toThrow("Nilai pembelian aset harus lebih dari nol");
+    expect(() => assetPurchaseJournal(Number.NaN, "Tunai", "110003")).toThrow("Nilai pembelian aset harus lebih dari nol");
   });
 
   it("requires an active mapped cash or bank account", () => {

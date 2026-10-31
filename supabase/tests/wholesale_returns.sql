@@ -46,9 +46,9 @@ insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,
  (md5('wr-wh')::uuid,md5('wr-good')::uuid,current_date-2,10,10,2,'purchase'),
  (md5('wr-wh')::uuid,md5('wr-good')::uuid,current_date-1,50,50,3,'purchase');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1201','Receivable','ASET','D',false),('1301','Inventory','ASET','D',false),('4101','Sales','PENDAPATAN','K',false),
- ('4102','Sales discount','PENDAPATAN','D',false),('5101','COGS','BEBAN','D',false),('2201','VAT','LIABILITAS','K',false),
- ('2103','Customer advance','LIABILITAS','K',false)
+ ('150001','Receivable','ASET','D',false),('170001','Inventory','ASET','D',false),('510001','Sales','PENDAPATAN','K',false),
+ ('520002','Sales discount','PENDAPATAN','D',false),('600001','COGS','BEBAN','D',false),('312005','VAT','LIABILITAS','K',false),
+ ('314001','Customer advance','LIABILITAS','K',false)
  on conflict(code) do update set is_active=true,is_header=false;
 update accounting_locks set closed_until=null;
 update company_settings set mode_pkp=true,ppn_rate=11;
@@ -141,9 +141,9 @@ do $$declare r jsonb;again jsonb;ret wholesale_returns%rowtype;begin
  -- 110 gross; PPN round(35×110/320)=12; total 122 all against the unpaid receivable.
  perform pg_temp.wr_assert(ret.gross=110 and ret.ppn=12 and ret.total=122 and ret.ar_reduction=122 and ret.customer_credit=0 and ret.hpp=31,'partial return values '||to_jsonb(ret)::text);
  perform pg_temp.wr_assert(pg_temp.wr_balanced(ret.journal_id),'return journal balanced');
- perform pg_temp.wr_assert(pg_temp.wr_amount(ret.journal_id,'4101')=110 and pg_temp.wr_amount(ret.journal_id,'2201')=12
-  and pg_temp.wr_amount(ret.journal_id,'1201')=-122 and pg_temp.wr_amount(ret.journal_id,'1301')=31 and pg_temp.wr_amount(ret.journal_id,'5101')=-31
-  and pg_temp.wr_amount(ret.journal_id,'2103')=0,'return journal accounts');
+ perform pg_temp.wr_assert(pg_temp.wr_amount(ret.journal_id,'510001')=110 and pg_temp.wr_amount(ret.journal_id,'312005')=12
+  and pg_temp.wr_amount(ret.journal_id,'150001')=-122 and pg_temp.wr_amount(ret.journal_id,'170001')=31 and pg_temp.wr_amount(ret.journal_id,'600001')=-31
+  and pg_temp.wr_amount(ret.journal_id,'314001')=0,'return journal accounts');
  perform pg_temp.wr_assert(pg_temp.wr_stock('wr-wh-return')=12 and pg_temp.wr_stock('wr-wh')=24,'stock returned to the chosen warehouse only');
  perform pg_temp.wr_assert((select qty_in=12 and qty_left=12 and round(unit_cost*12,2)=31 from stock_layers where source='wholesale-return' and source_ref=ret.no_retur),'layer at original cost');
  perform pg_temp.wr_assert((select returned_ar=122 and status='berjalan' and revision=1 from sales_invoices where id=pg_temp.wr_inv('wr-order-a')),'receivable reduced');
@@ -189,7 +189,7 @@ do $$declare r jsonb;ret wholesale_returns%rowtype;begin
    jsonb_build_object('invoice_item_id',pg_temp.wr_line('wr-a-svc'),'qty',1)));
  select * into ret from wholesale_returns where id=(r->>'return_id')::uuid;
  perform pg_temp.wr_assert(ret.gross=210 and ret.ppn=23 and ret.total=233 and ret.ar_reduction=33 and ret.customer_credit=200 and ret.hpp=46,'paid return split '||to_jsonb(ret)::text);
- perform pg_temp.wr_assert(pg_temp.wr_balanced(ret.journal_id) and pg_temp.wr_amount(ret.journal_id,'2103')=-200 and pg_temp.wr_amount(ret.journal_id,'1201')=-33,'credit journal');
+ perform pg_temp.wr_assert(pg_temp.wr_balanced(ret.journal_id) and pg_temp.wr_amount(ret.journal_id,'314001')=-200 and pg_temp.wr_amount(ret.journal_id,'150001')=-33,'credit journal');
  -- Two returns together reverse the invoice journal exactly: revenue, VAT and receivable+credit.
  perform pg_temp.wr_assert((select sum(gross)=320 and sum(ppn)=35 and sum(total)=355 and sum(hpp)=77 from wholesale_returns where invoice_id=pg_temp.wr_inv('wr-order-a') and status='posted'),'full return equals invoice');
  perform pg_temp.wr_assert((select returned_ar=155 and status='lunas' from sales_invoices where id=pg_temp.wr_inv('wr-order-a')),'fully settled by payment + returns');
@@ -215,9 +215,9 @@ do $$declare r jsonb;again jsonb;ret wholesale_returns%rowtype;moves numeric;beg
  perform pg_temp.wr_assert(r=again and get_wholesale_operation(pg_temp.wr_inv('wr-order-a'),'return-void','void-2')=r,'void retry/recovery');
  select * into ret from wholesale_returns where id=ret.id;
  perform pg_temp.wr_assert(ret.status='batal' and ret.voided_on=current_date and ret.reversal_journal_id is not null and ret.revision=1,'void recorded');
- perform pg_temp.wr_assert(pg_temp.wr_balanced(ret.reversal_journal_id) and pg_temp.wr_amount(ret.reversal_journal_id,'2103')=200
-  and pg_temp.wr_amount(ret.reversal_journal_id,'1201')=33 and pg_temp.wr_amount(ret.reversal_journal_id,'4101')=-210
-  and pg_temp.wr_amount(ret.reversal_journal_id,'1301')=-46,'void journal is the exact mirror');
+ perform pg_temp.wr_assert(pg_temp.wr_balanced(ret.reversal_journal_id) and pg_temp.wr_amount(ret.reversal_journal_id,'314001')=200
+  and pg_temp.wr_amount(ret.reversal_journal_id,'150001')=33 and pg_temp.wr_amount(ret.reversal_journal_id,'510001')=-210
+  and pg_temp.wr_amount(ret.reversal_journal_id,'170001')=-46,'void journal is the exact mirror');
  perform pg_temp.wr_assert(pg_temp.wr_stock('wr-wh')=24,'returned units left the warehouse again');
  perform pg_temp.wr_assert((select bool_and(qty_left=0) from stock_layers where source='wholesale-return' and source_ref=ret.no_retur),'return layers zeroed');
  select sum(qty*unit_cost) into moves from stock_moves where source_ref=ret.no_retur and source in ('wholesale-return','wholesale-return-void');
@@ -252,7 +252,7 @@ do $$declare r jsonb;ret wholesale_returns%rowtype;begin
  -- Invoice B: DPP 40, PPN round(4.4)=4, total 44. One pcs: gross 10, PPN round(4×10/40)=1.
  perform pg_temp.wr_assert(ret.total=11 and ret.ar_reduction=0 and ret.customer_credit=11,'paid invoice → credit '||to_jsonb(ret)::text);
  perform pg_temp.wr_assert((select returned_ar=0 and status='lunas' from sales_invoices where id=pg_temp.wr_inv('wr-order-b')),'paid invoice stays settled');
- perform pg_temp.wr_assert(pg_temp.wr_balanced(ret.journal_id) and pg_temp.wr_amount(ret.journal_id,'2103')=-11,'credit to customer balance');
+ perform pg_temp.wr_assert(pg_temp.wr_balanced(ret.journal_id) and pg_temp.wr_amount(ret.journal_id,'314001')=-11,'credit to customer balance');
 end$$;
 
 -- 7. Journals of every return/void balance; activity log captured the documents.

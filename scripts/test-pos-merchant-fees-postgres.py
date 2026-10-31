@@ -133,7 +133,7 @@ where id='e4400000-0000-4000-8000-000000000001';""")
     assert 'Qty melebihi sisa' in error, error
     assert Decimal(sql(f"select sum(total) from sales_returns where sale_id='{SALE}'", tuples=True).stdout.strip()) == Decimal('101600')
     assert Decimal(sql(f"select sum(r.amount) from sale_payment_refunds r join sale_payments p on p.id=r.sale_payment_id where p.sale_id='{SALE}'", tuples=True).stdout.strip()) == Decimal('101600')
-    assert Decimal(sql("select sum(l.debit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='4303' and e.source='sales-return'", tuples=True).stdout.strip()) == Decimal('1600')
+    assert Decimal(sql("select sum(l.debit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='810004' and e.source='sales-return'", tuples=True).stdout.strip()) == Decimal('1600')
     print('Concurrent full fee refunds serialize and cannot exceed original payment caps.', flush=True)
 
 

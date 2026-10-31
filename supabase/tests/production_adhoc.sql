@@ -22,7 +22,7 @@ do $$declare a jsonb;b jsonb;oid uuid;n int;begin
  b:=post_production_atomic('finish','adhoc-finish',jsonb_build_object('id',oid,'qty_jadi',5,'tanggal_selesai',current_date));
  perform post_production_atomic('finish','adhoc-finish-again',jsonb_build_object('id',oid,'qty_jadi',5,'tanggal_selesai',current_date));
  if (select sum(qty*unit_cost) from stock_moves where source_ref=a->>'no_produksi' and qty>0)<>14.375 or (select sum(qty) from stock_moves where source_ref=a->>'no_produksi' and qty>0)<>5 then raise exception 'Ad hoc output reconciliation';end if;
- if (select sum(l.debit-l.credit) from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='1302' and j.source_ref=a->>'no_produksi')<>0 then raise exception 'Ad hoc WIP remains';end if;
+ if (select sum(l.debit-l.credit) from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='170003' and j.source_ref=a->>'no_produksi')<>0 then raise exception 'Ad hoc WIP remains';end if;
  perform pg_temp.reject(format('update production_order_items set warehouse_id=%L where order_id=%L',md5('i08-wh')::uuid,oid),'produksi');
 end$$;
 rollback;

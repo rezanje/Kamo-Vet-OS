@@ -1,7 +1,7 @@
 // Peta metode bayar → rekening kas/bank (migrasi 0085).
 //
 // Satu-satunya tempat yang boleh memutuskan "uang ini masuk akun mana". Sebelumnya
-// ±15 server action menulis sendiri `metode === "Tunai" ? "1101" : "1102"`, sehingga
+// ±15 server action menulis sendiri `metode === "Tunai" ? "110003" : "120002"`, sehingga
 // semua pembayaran non-tunai menumpuk di satu rekening.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -10,8 +10,8 @@ type AnyClient = any;
 // Metode di kasir (shift-calc) + "Transfer" yang cuma dipakai layar keuangan.
 export const METODE_BAYAR = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"] as const;
 
-export const KODE_KAS_BAWAAN = "1101";
-export const KODE_BANK_BAWAAN = "1102";
+export const KODE_KAS_BAWAAN = "110003";
+export const KODE_BANK_BAWAAN = "120002";
 
 export type PetaBaris = { metode: string; branch_id: string | null; coa_code: string };
 
@@ -89,7 +89,7 @@ export async function kodeKasJurnalAsal(
 }
 
 // Kode akun semua rekening kas/bank — dipakai laporan arus kas & kartu kas dashboard,
-// yang dulu memakai daftar mati ["1101","1102"] sehingga rekening baru tidak terhitung.
+// yang dulu memakai daftar mati ["110003","120002"] sehingga rekening baru tidak terhitung.
 export async function kodeSemuaRekening(supabase: AnyClient): Promise<string[]> {
   const { data } = await supabase.from("cash_accounts").select("coa_code");
   const kode = ((data ?? []) as { coa_code: string }[]).map((r) => r.coa_code);

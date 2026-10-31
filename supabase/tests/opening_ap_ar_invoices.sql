@@ -7,8 +7,8 @@ insert into profiles(id,full_name,role,is_active)values
 on conflict(id)do update set full_name=excluded.full_name,role=excluded.role,is_active=excluded.is_active;
 insert into branches(id,code,name,type)values(md5('m05-branch')::uuid,'M05-A','Fiction M05 branch','PETSHOP');
 insert into user_branches(user_id,branch_id,role)values(md5('m05-staff')::uuid,md5('m05-branch')::uuid,'PRIMARY');
-insert into coa_accounts(code,name,type,normal_balance)values('2101','Fiction trade payables','LIABILITAS','K'),
- ('1201','Fiction trade receivables','ASET','D'),('3101','Fiction owner equity','EKUITAS','K') on conflict do nothing;
+insert into coa_accounts(code,name,type,normal_balance)values('311001','Fiction trade payables','LIABILITAS','K'),
+ ('150001','Fiction trade receivables','ASET','D'),('410001','Fiction owner equity','EKUITAS','K') on conflict do nothing;
 insert into suppliers(id,nama)values(md5('m05-sup-1')::uuid,'PT Fiksi Satu'),(md5('m05-sup-2')::uuid,'PT Fiksi Dua'),
  (md5('m05-twin-1')::uuid,'CV Kembar'),(md5('m05-twin-2')::uuid,'cv  kembar');
 insert into customers(id,name,phone)values(md5('m05-cus-1')::uuid,'Toko Fiksi Sejahtera','0800000005');
@@ -72,9 +72,9 @@ begin
 
  -- Fail closed on double counting when the account-level opening already carries 1201 (scenario rolled back).
  begin
-  perform create_opening_balance_atomic('m05-saldo-1',((now() at time zone 'Asia/Jakarta')::date-30),jsonb_build_array(jsonb_build_object('code','1201','nilai',5000,'sisi','D')));
+  perform create_opening_balance_atomic('m05-saldo-1',((now() at time zone 'Asia/Jakarta')::date-30),jsonb_build_array(jsonb_build_object('code','150001','nilai',5000,'sisi','D')));
   report:=preview_opening_invoices(p);
-  if (report->>'can_post')::boolean or not exists(select 1 from jsonb_array_elements_text(report->'blockers') b where b like 'Piutang Usaha (1201) sudah diisi%') then raise exception 'Double count not blocked: %',report->'blockers';end if;
+  if (report->>'can_post')::boolean or not exists(select 1 from jsonb_array_elements_text(report->'blockers') b where b like 'Piutang Usaha (150001) sudah diisi%') then raise exception 'Double count not blocked: %',report->'blockers';end if;
   report:=preview_opening_invoices(jsonb_set(jsonb_set(p,'{rows}',jsonb_path_query_array(p->'rows','$[*] ? (@.jenis != "PIUTANG")')),'{control,piutang}','null'));
   if not (report->>'can_post')::boolean then raise exception 'AP-only batch wrongly blocked by AR opening: %',report->'blockers';end if;
   raise exception 'M05_ROLLBACK_SCENARIO';
@@ -96,9 +96,9 @@ begin
   or (select tanggal from purchase_invoices where opening_batch_id is not null and total=200000)<>'2026-09-01'
   or (select catatan from sales_invoices where opening_batch_id is not null) not like 'Saldo awal Accurate · No. FJ-OLD-77%' then raise exception 'Invoice identity wrong';end if;
  if (select sum(debit) from journal_lines where entry_id=j)<>(select sum(credit) from journal_lines where entry_id=j)
-  or (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='2101')<>600000
-  or (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='1201')<>250000
-  or (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='3101')<>-350000
+  or (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='311001')<>600000
+  or (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='150001')<>250000
+  or (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='410001')<>-350000
   or (select count(*) from journal_lines where entry_id=j)<>4
   or (select tanggal::text from journal_entries where id=j)<>p->>'as_of' or (select source from journal_entries where id=j)<>'opening-invoice'
   then raise exception 'Opening journal not balanced as expected';end if;
@@ -115,8 +115,8 @@ begin
  if (report->>'error_rows')::int<>4 or not exists(select 1 from jsonb_array_elements(report->'rows') x where (x->'errors')::text like '%sudah tercatat di VetOS%') then raise exception 'DB duplicates not caught: %',report->'rows';end if;
 
  -- Account-level opening may no longer carry 2101/1201; other accounts are still fine.
- blocked:=false;begin perform create_opening_balance_atomic('m05-saldo-2',((now() at time zone 'Asia/Jakarta')::date-30),jsonb_build_array(jsonb_build_object('code','2101','nilai',5000,'sisi','K'),jsonb_build_object('code','1101','nilai',5000,'sisi','D')));
- exception when others then blocked:=sqlerrm like 'Akun 2101 sudah diisi per faktur%';end;
+ blocked:=false;begin perform create_opening_balance_atomic('m05-saldo-2',((now() at time zone 'Asia/Jakarta')::date-30),jsonb_build_array(jsonb_build_object('code','311001','nilai',5000,'sisi','K'),jsonb_build_object('code','110003','nilai',5000,'sisi','D')));
+ exception when others then blocked:=sqlerrm like 'Akun 311001 sudah diisi per faktur%';end;
  if not blocked then raise exception 'Account-level 2101 opening accepted after per-invoice import';end if;
 
  -- Existing payment flows allocate against a specific opening invoice and reduce only its outstanding.
@@ -125,14 +125,14 @@ begin
  select total-(select coalesce(sum(amount),0) from purchase_invoice_payments where invoice_id=inv2) into remaining from purchase_invoices where id=inv2;
  if remaining<>125000 or exists(select 1 from purchase_invoice_payments pp join purchase_invoices pi on pi.id=pp.invoice_id where pi.opening_batch_id is not null and pi.id<>inv2)
   then raise exception 'Payment not allocated to the chosen opening invoice';end if;
- if (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(pay->>'journal_id')::uuid and a.code='2101')<>75000 then raise exception 'Payment journal does not reduce 2101';end if;
+ if (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(pay->>'journal_id')::uuid and a.code='311001')<>75000 then raise exception 'Payment journal does not reduce 2101';end if;
  blocked:=false;begin perform pay_purchase_invoice_atomic('m05-pay-2',inv2,(now() at time zone 'Asia/Jakarta')::date,125001,'Tunai',null,null,null);exception when others then blocked:=sqlerrm like 'Nominal melebihi%';end;
  if not blocked then raise exception 'Overpayment of opening invoice accepted';end if;
- if (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='2101')<>525000 then raise exception '2101 balance does not match open invoices';end if;
+ if (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='311001')<>525000 then raise exception '2101 balance does not match open invoices';end if;
  select id into ar from sales_invoices where opening_batch_id is not null;
  rc:=receive_wholesale_payment('m05-rc-1',ar,(now() at time zone 'Asia/Jakarta')::date,250000,'Transfer',null,null,'Pelunasan faktur lama');
  if (select status from sales_invoices where id=ar)<>'lunas' or (select sum(jumlah) from sales_receipts where invoice_id=ar)<>250000
-  or (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1201')<>0 then raise exception 'Receipt not applied to opening receivable';end if;
+  or (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='150001')<>0 then raise exception 'Receipt not applied to opening receivable';end if;
 
  -- Opening invoices cannot be voided, edited, deleted or given lines; their journal is protected.
  blocked:=false;begin perform cancel_purchase_invoice(inv2,(select revision from purchase_invoices where id=inv2),'m05-cancel','Coba batalkan faktur saldo awal',(now() at time zone 'Asia/Jakarta')::date);

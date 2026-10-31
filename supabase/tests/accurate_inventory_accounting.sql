@@ -6,14 +6,14 @@ update profiles set role=case when id=md5('ai-owner')::uuid then 'OWNER'::user_r
 alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,code,name,type) values(md5('ai-branch')::uuid,'AI-A','Fiction A','PETSHOP'),(md5('ai-other')::uuid,'AI-B','Fiction B','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('ai-wh')::uuid,md5('ai-branch')::uuid,'AI-W','Fiction W','RETAIL');
-insert into coa_accounts(code,name,type,normal_balance,is_header) values('1301','Fiction inventory','ASET','D',false),('3101','Fiction equity','EKUITAS','K',false) on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('170001','Fiction inventory','ASET','D',false),('410001','Fiction equity','EKUITAS','K',false) on conflict(code) do update set is_active=true,is_header=false;
 insert into items(id,code,name,unit,item_type) values(md5('ai-item')::uuid,'AI-I','Fiction item','pcs','Persediaan');
 insert into import_runs(id,kind,source_name,source_hash,branch_id,warehouse_id,as_of_date,created_by,summary) values(md5('ai-run')::uuid,'initial_stock','fiction.xlsx','fiction-hash',md5('ai-branch')::uuid,md5('ai-wh')::uuid,'2026-01-01',md5('ai-owner')::uuid,'{"valid":1}');
 insert into import_run_rows(run_id,source_row,status,payload) values(md5('ai-run')::uuid,1,'valid',jsonb_build_object('item_id',md5('ai-item')::uuid,'warehouse_id',md5('ai-wh')::uuid,'base_qty',10,'base_unit_cost',12.5,'as_of','2026-01-01')),(md5('ai-run')::uuid,2,'rejected','{"base_qty":999,"base_unit_cost":999}');
 set local role authenticated;
 select set_config('request.jwt.claim.sub',md5('ai-owner')::uuid::text,true);
 do $$ declare p jsonb; r jsonb; eq uuid; begin
- select id into eq from coa_accounts where code='3101';
+ select id into eq from coa_accounts where code='410001';
  p:=preview_accurate_inventory_accounting(md5('ai-run')::uuid,eq);
  if not (p->>'can_post')::boolean or (p->>'original_value')::numeric<>125 or (p->>'selected_rows')::int<>1 or (p->>'excluded_rows')::int<>1 then raise exception 'Partial preview incorrect: %',p;end if;
  if exists(select 1 from stock_moves where source_ref=md5('ai-run')::uuid::text) then raise exception 'Preview wrote stock';end if;

@@ -188,26 +188,26 @@ insert into stock_request_items(request_id,nama,qty_diminta)
 
 -- Keuangan: Chart of Accounts standar (ASET 1xxx, LIABILITAS 2xxx, EKUITAS 3xxx, PENDAPATAN 4xxx, BEBAN 5xxx).
 insert into coa_accounts (code, name, type, normal_balance) values
-  ('1101','Kas','ASET','D'),
-  ('1102','Bank BCA','ASET','D'),
-  ('1201','Piutang Usaha','ASET','D'),
-  ('1301','Persediaan Obat & Produk','ASET','D'),
-  ('1401','Perlengkapan Klinik','ASET','D'),
-  ('2101','Hutang Usaha','LIABILITAS','K'),
-  ('2201','PPN Keluaran','LIABILITAS','K'),
-  ('2301','Hutang Gaji','LIABILITAS','K'),
-  ('3101','Modal Pemilik','EKUITAS','K'),
-  ('3201','Laba Ditahan','EKUITAS','K'),
-  ('4101','Pendapatan Penjualan Produk','PENDAPATAN','K'),
-  ('4201','Pendapatan Jasa Klinik','PENDAPATAN','K'),
-  ('5101','Beban Pokok Penjualan','BEBAN','D'),
-  ('5201','Beban Gaji & Tunjangan','BEBAN','D'),
-  ('5301','Beban Listrik & Air','BEBAN','D'),
-  ('5302','Beban Perlengkapan','BEBAN','D'),
-  ('5303','Beban Transportasi','BEBAN','D'),
-  ('5304','Beban Perawatan Aset','BEBAN','D'),
-  ('5401','Beban Operasional Lain-lain','BEBAN','D'),
-  ('5901','Selisih Kas','BEBAN','D')
+  ('110003','Kas','ASET','D'),
+  ('120002','Bank BCA','ASET','D'),
+  ('150001','Piutang Usaha','ASET','D'),
+  ('170001','Persediaan Obat & Produk','ASET','D'),
+  ('181001','Perlengkapan Klinik','ASET','D'),
+  ('311001','Hutang Usaha','LIABILITAS','K'),
+  ('312005','PPN Keluaran','LIABILITAS','K'),
+  ('312001','Hutang Gaji','LIABILITAS','K'),
+  ('410001','Modal Pemilik','EKUITAS','K'),
+  ('420001','Laba Ditahan','EKUITAS','K'),
+  ('510001','Pendapatan Penjualan Produk','PENDAPATAN','K'),
+  ('510002','Pendapatan Jasa Klinik','PENDAPATAN','K'),
+  ('600001','Beban Pokok Penjualan','BEBAN','D'),
+  ('710001','Beban Gaji & Tunjangan','BEBAN','D'),
+  ('720002','Beban Listrik & Air','BEBAN','D'),
+  ('740001','Beban Perlengkapan','BEBAN','D'),
+  ('740003','Beban Transportasi','BEBAN','D'),
+  ('740007','Beban Perawatan Aset','BEBAN','D'),
+  ('760003','Beban Operasional Lain-lain','BEBAN','D'),
+  ('760002','Selisih Kas','BEBAN','D')
 on conflict (code) do nothing;
 
 -- Jurnal demo: setoran modal awal (Dr Kas / Cr Modal), balanced.
@@ -220,7 +220,7 @@ with e as (
 insert into journal_lines(entry_id, account_id, debit, credit)
 select e.id, a.id, v.d, v.k
 from e
-join (values ('1101',10000000,0),('3101',0,10000000)) as v(code,d,k) on true
+join (values ('110003',10000000,0),('410001',0,10000000)) as v(code,d,k) on true
 join coa_accounts a on a.code=v.code;
 
 -- Saldo awal persediaan = nilai stok (qty × buy_price). Dr Persediaan / Cr Modal.
@@ -235,9 +235,9 @@ with e as (
 )
 insert into journal_lines(entry_id,account_id,debit,credit)
 select e.id, a.id,
-  case when a.code='1301' then val.total else 0 end,
-  case when a.code='3101' then val.total else 0 end
-from e, val, coa_accounts a where a.code in ('1301','3101');
+  case when a.code='170001' then val.total else 0 end,
+  case when a.code='410001' then val.total else 0 end
+from e, val, coa_accounts a where a.code in ('170001','410001');
 
 -- Jurnal demo aktivitas: 3 pengeluaran + 4 penjualan (revenue PPN-split + HPP) — reconcile dgn seed POS.
 insert into journal_entries(no_jurnal,tanggal,deskripsi,source) values
@@ -256,17 +256,17 @@ on conflict (no_jurnal) do nothing;
 
 insert into journal_lines(entry_id,account_id,debit,credit)
 select e.id,a.id,v.d,v.k from (values
- ('JRN-202607-0003','5301',350000,0),('JRN-202607-0003','1101',0,350000),
- ('JRN-202607-0004','5302',120000,0),('JRN-202607-0004','1101',0,120000),
- ('JRN-202607-0005','5401',85000,0),('JRN-202607-0005','1101',0,85000),
- ('JRN-202607-0006','1101',370000,0),('JRN-202607-0006','4101',0,333333),('JRN-202607-0006','2201',0,36667),
- ('JRN-202607-0007','5101',270000,0),('JRN-202607-0007','1301',0,270000),
- ('JRN-202607-0008','1101',120000,0),('JRN-202607-0008','4101',0,108108),('JRN-202607-0008','2201',0,11892),
- ('JRN-202607-0009','5101',85000,0),('JRN-202607-0009','1301',0,85000),
- ('JRN-202607-0010','1101',140000,0),('JRN-202607-0010','4101',0,126126),('JRN-202607-0010','2201',0,13874),
- ('JRN-202607-0011','5101',104000,0),('JRN-202607-0011','1301',0,104000),
- ('JRN-202607-0012','1101',195000,0),('JRN-202607-0012','4101',0,175676),('JRN-202607-0012','2201',0,19324),
- ('JRN-202607-0013','5101',140000,0),('JRN-202607-0013','1301',0,140000)
+ ('JRN-202607-0003','720002',350000,0),('JRN-202607-0003','110003',0,350000),
+ ('JRN-202607-0004','740001',120000,0),('JRN-202607-0004','110003',0,120000),
+ ('JRN-202607-0005','760003',85000,0),('JRN-202607-0005','110003',0,85000),
+ ('JRN-202607-0006','110003',370000,0),('JRN-202607-0006','510001',0,333333),('JRN-202607-0006','312005',0,36667),
+ ('JRN-202607-0007','600001',270000,0),('JRN-202607-0007','170001',0,270000),
+ ('JRN-202607-0008','110003',120000,0),('JRN-202607-0008','510001',0,108108),('JRN-202607-0008','312005',0,11892),
+ ('JRN-202607-0009','600001',85000,0),('JRN-202607-0009','170001',0,85000),
+ ('JRN-202607-0010','110003',140000,0),('JRN-202607-0010','510001',0,126126),('JRN-202607-0010','312005',0,13874),
+ ('JRN-202607-0011','600001',104000,0),('JRN-202607-0011','170001',0,104000),
+ ('JRN-202607-0012','110003',195000,0),('JRN-202607-0012','510001',0,175676),('JRN-202607-0012','312005',0,19324),
+ ('JRN-202607-0013','600001',140000,0),('JRN-202607-0013','170001',0,140000)
 ) v(no,code,d,k)
 join journal_entries e on e.no_jurnal=v.no
 join coa_accounts a on a.code=v.code
@@ -332,8 +332,8 @@ on conflict do nothing;
 
 -- Keuangan: akun penyesuaian bank + setoran kas ke bank (biar akun Bank 1102 ada saldo utk rekonsiliasi).
 insert into coa_accounts (code, name, type, normal_balance) values
-  ('5501','Beban Administrasi Bank','BEBAN','D'),
-  ('4301','Pendapatan Bunga Bank','PENDAPATAN','K')
+  ('740010','Beban Administrasi Bank','BEBAN','D'),
+  ('810001','Pendapatan Bunga Bank','PENDAPATAN','K')
 on conflict (code) do nothing;
 
 with e as (
@@ -343,5 +343,5 @@ with e as (
   returning id
 )
 insert into journal_lines(entry_id,account_id,debit,credit)
-select e.id,a.id, case when a.code='1102' then 5000000 else 0 end, case when a.code='1101' then 5000000 else 0 end
-from e cross join coa_accounts a where a.code in ('1102','1101');
+select e.id,a.id, case when a.code='120002' then 5000000 else 0 end, case when a.code='110003' then 5000000 else 0 end
+from e cross join coa_accounts a where a.code in ('120002','110003');

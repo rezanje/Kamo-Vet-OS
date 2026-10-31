@@ -50,8 +50,8 @@ describe("I05 posted price report", () => {
 
   it("reconciles original gain and shortage against source journal 1301, independent of report filter", async () => {
     const journals = [
-      journal("gain", [{ debit: 100, credit: 0, code: "1301" }, { debit: 0, credit: 100, code: "5902" }]),
-      journal("loss", [{ debit: 200, credit: 0, code: "5902" }, { debit: 0, credit: 200, code: "1301" }]),
+      journal("gain", [{ debit: 100, credit: 0, code: "170001" }, { debit: 0, credit: 100, code: "720010" }]),
+      journal("loss", [{ debit: 200, credit: 0, code: "720010" }, { debit: 0, credit: 200, code: "170001" }]),
     ];
     const { client, records } = fixture({ journals });
     const report = await loadOpnamePriceReport(client, { ...period, arah: "lebih", dasar: "jual" });
@@ -63,10 +63,10 @@ describe("I05 posted price report", () => {
 
   it("marks absent, wrong-branch, unbalanced and incomplete source journals for review", async () => {
     expect((await loadOpnamePriceReport(fixture().client, period)).journalReview?.status).toBe("perlu-periksa");
-    const wrongBranch = journal("wrong", [{ debit: 100, credit: 0, code: "1301" }, { debit: 0, credit: 100, code: "5902" }]);
+    const wrongBranch = journal("wrong", [{ debit: 100, credit: 0, code: "170001" }, { debit: 0, credit: 100, code: "720010" }]);
     wrongBranch.branch_id = "b2";
     expect((await loadOpnamePriceReport(fixture({ journals: [wrongBranch] }).client, period)).journalReview?.status).toBe("perlu-periksa");
-    const unbalanced = journal("broken", [{ debit: 100, credit: 0, code: "1301" }]);
+    const unbalanced = journal("broken", [{ debit: 100, credit: 0, code: "170001" }]);
     expect((await loadOpnamePriceReport(fixture({ journals: [unbalanced] }).client, period)).journalReview?.status).toBe("perlu-periksa");
     await expect(loadOpnamePriceReport(fixture({ errorTable: "journal_entries" }).client, period)).rejects.toThrow("Data laporan gagal dibaca");
   });

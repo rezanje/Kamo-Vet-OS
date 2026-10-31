@@ -35,9 +35,9 @@ insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,
  ('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000001',(now() at time zone 'Asia/Jakarta')::date,20,20,10,'purchase'),
  ('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000003',(now() at time zone 'Asia/Jakarta')::date,20,20,20,'purchase');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1111','Test cash','ASET','D',false),('4101','Sales','PENDAPATAN','K',false),
- ('4102','Discount','PENDAPATAN','D',false),('2201','VAT','LIABILITAS','K',false),
- ('5101','COGS','BEBAN','D',false),('1301','Inventory','ASET','D',false)
+ ('1111','Test cash','ASET','D',false),('510001','Sales','PENDAPATAN','K',false),
+ ('520002','Discount','PENDAPATAN','D',false),('312005','VAT','LIABILITAS','K',false),
+ ('600001','COGS','BEBAN','D',false),('170001','Inventory','ASET','D',false)
  on conflict(code) do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code) values
  ('e6600000-0000-4000-8000-000000000001','Atomic cash','Kas','1111');
@@ -96,14 +96,14 @@ select pg_temp.ok((select count(*)=0 from stock_moves where source_ref='ATOMIC.D
 -- A later account/posting failure must roll back the successful FIFO issue too.
 select pg_temp.line(pg_temp.sale('ATOMIC.POSTING',20,20),'e5500000-0000-4000-8000-000000000001',1,20);
 reset role;
-update coa_accounts set is_active=false where code='4101';
+update coa_accounts set is_active=false where code='510001';
 set local role authenticated;
 select pg_temp.reject($q$select cashier_post_stock_atomic((select id from sales where no_struk='ATOMIC.POSTING'),
  'e3300000-0000-4000-8000-000000000001')$q$,'posting failure after FIFO');
 select pg_temp.ok((select count(*)=0 from stock_moves where source_ref='ATOMIC.POSTING'),'posting failure rolls stock back');
 select pg_temp.ok((select payments_finalized_at is null from sales where no_struk='ATOMIC.POSTING'),'posting failure leaves pending sale');
 reset role;
-update coa_accounts set is_active=true where code='4101';
+update coa_accounts set is_active=true where code='510001';
 set local role authenticated;
 
 -- A zero-price service is allowed alongside a properly priced stock line.

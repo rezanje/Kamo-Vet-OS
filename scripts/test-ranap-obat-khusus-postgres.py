@@ -123,7 +123,7 @@ def matrix(h,db,version,v,m,stay,row,sql):
     no=h.no_tagihan(invoice)
     # BMHP quantities are the original engine's TOTAL for the procedure line,
     # not multiplied by the procedure count (3g total on the 2-unit procedure).
-    check('original bill-and-pay collects same pending medicines BMHP compounds: revenue 280k AR 280k HPP 9k once',not err and h.saldo_ref('4201',no)==-280000 and h.saldo_ref('1201',no)==280000 and h.saldo_ref('5101',no)==9000 and h.angka(f'select qty from stock where item_id={q(r.ITEM)}')==stock-2 and x.state(h)['stock']==before['stock']-3 and h.diterima(invoice)==0,dict(error=err,revenue=h.saldo_ref('4201',no),ar=h.saldo_ref('1201',no),hpp=h.saldo_ref('5101',no),before=before,after=x.state(h)))
+    check('original bill-and-pay collects same pending medicines BMHP compounds: revenue 280k AR 280k HPP 9k once',not err and h.saldo_ref('510002',no)==-280000 and h.saldo_ref('150001',no)==280000 and h.saldo_ref('600001',no)==9000 and h.angka(f'select qty from stock where item_id={q(r.ITEM)}')==stock-2 and x.state(h)['stock']==before['stock']-3 and h.diterima(invoice)==0,dict(error=err,revenue=h.saldo_ref('510002',no),ar=h.saldo_ref('150001',no),hpp=h.saldo_ref('600001',no),before=before,after=x.state(h)))
     before=snapshot(h);h.sql(bill,r.OWNER)
     h.sql(save(ss,'bmhp-and-official',[row,bmhp],[x.payload(version,'standalone-official')]),r.DOCTOR)
     check('post-billing exact entry/billing replay effect-free',snapshot(h)==before,dict(unchanged=snapshot(h)==before))
@@ -171,7 +171,7 @@ def races(h,db,version,row):
         if kind=='normal':
             invoice=h.nilai(f'select id from invoices where visit_id={q(v)} order by created_at desc,id desc limit 1');no=h.no_tagihan(invoice)
             pending=h.angka(f'select count(*) from prescription_items p where medical_record_id={q(m)} and not exists(select 1 from invoice_items i where i.prescription_item_id=p.id)')
-            check('simultaneous actual bill/pay then new entry: billed seed once, new medicine remains pending SAME visit',h.saldo_ref('4201',no)==-100000 and h.saldo_ref('1201',no)==100000 and h.saldo_ref('5101',no)==4000 and pending==1,dict(revenue=h.saldo_ref('4201',no),ar=h.saldo_ref('1201',no),hpp=h.saldo_ref('5101',no),pending=pending))
+            check('simultaneous actual bill/pay then new entry: billed seed once, new medicine remains pending SAME visit',h.saldo_ref('510002',no)==-100000 and h.saldo_ref('150001',no)==100000 and h.saldo_ref('600001',no)==4000 and pending==1,dict(revenue=h.saldo_ref('510002',no),ar=h.saldo_ref('150001',no),hpp=h.saldo_ref('600001',no),pending=pending))
         h.sql(f"update profiles set is_active=true,role='DOCTOR' where id={q(r.DOCTOR)};insert into user_branches(user_id,branch_id) values({q(r.DOCTOR)},{q(r.BRANCH)}) on conflict do nothing")
     # Branch eligibility must survive the final MR/request wait without relying
     # on the optional operational-branch header, for fresh AND cached requests.

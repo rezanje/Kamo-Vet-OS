@@ -9,7 +9,7 @@
 //
 // Logika murni di sini; pembacaan DB & posting ada di layar Saldo Awal.
 
-export const AKUN_MODAL_PEMILIK = "3101";
+export const AKUN_MODAL_PEMILIK = "410001";
 
 export type BarisSaldoAwal = { code: string; nilai: number; sisi: "D" | "K" };
 export type JurnalBaris = { code: string; debit: number; credit: number };

@@ -17,8 +17,8 @@ insert into items(id,code,name,unit,item_type) values
 insert into item_units(item_id,unit,factor) values('f2400000-0000-4000-8000-000000000002','box',10);
 insert into purchase_orders(id,no_po,supplier_id,branch_id,to_warehouse_id,status) values('f2500000-0000-4000-8000-000000000001','PO.P02.FIC','f2300000-0000-4000-8000-000000000001','f2100000-0000-4000-8000-000000000001','f2200000-0000-4000-8000-000000000001','Dipesan');
 insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,faktor) values('f2600000-0000-4000-8000-000000000001','f2500000-0000-4000-8000-000000000001','f2400000-0000-4000-8000-000000000002','PO goods',4,111,'box',10);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fiction stock','ASET','D'),('2101','Fiction AP','LIABILITAS','K'),('1105','Fiction VAT','ASET','D'),('5101','Fiction HPP','BEBAN','D'),('110219','Fiction bank','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
-update coa_accounts set is_active=true,is_header=false where code in('1301','1303','2102','1101','1102','2101','1105','5101');
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction stock','ASET','D'),('311001','Fiction AP','LIABILITAS','K'),('182004','Fiction VAT','ASET','D'),('600001','Fiction HPP','BEBAN','D'),('110219','Fiction bank','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
+update coa_accounts set is_active=true,is_header=false where code in('170001','160001','311003','110003','120002','311001','182004','600001');
 update accounting_locks set closed_until=null;
 update company_settings set mode_pkp=false,ppn_rate=11;
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id) values('f2700000-0000-4000-8000-000000000001','P02 bank','Bank','110219','f2100000-0000-4000-8000-000000000001');
@@ -84,7 +84,7 @@ do $$declare inv jsonb;line uuid;pv jsonb;res jsonb;retry jsonb;jcount int;rev i
 
  res:=correct_purchase_invoice_line('p02-commit-key',line,0,100,1200,current_date,'Harga pemasok naik',pg_temp.expected(pv));
  perform pg_temp.ok((res->>'inventory_delta')::numeric=6000 and (res->>'hpp_delta')::numeric=14000,'commit values');
- perform pg_temp.ok(pg_temp.lines(inv->>'no_faktur','purchase-inv-correction')='{"1301":6000,"5101":14000,"2101":-20000}'::jsonb,'journal '||pg_temp.lines(inv->>'no_faktur','purchase-inv-correction')::text);
+ perform pg_temp.ok(pg_temp.lines(inv->>'no_faktur','purchase-inv-correction')='{"170001":6000,"600001":14000,"311001":-20000}'::jsonb,'journal '||pg_temp.lines(inv->>'no_faktur','purchase-inv-correction')::text);
  perform pg_temp.ok(pg_temp.stock_value('f2400000-0000-4000-8000-000000000001')=36000,'stock value 30 x 1200');
  perform pg_temp.ok((select qty from stock where item_id='f2400000-0000-4000-8000-000000000001')=30,'qty unchanged');
  select revision into rev from purchase_invoices where id=(inv->>'invoice_id')::uuid;
@@ -136,7 +136,7 @@ do $$declare inv record;line uuid;pv jsonb;res jsonb;begin
  perform pg_temp.ok((pv->>'remaining_qty_base')::numeric=15 and (pv->>'sold_qty_base')::numeric=25,'PO split '||pv::text);
  perform pg_temp.ok((pv->>'ap_delta')::numeric=444 and (pv->>'ppn_delta')::numeric=44 and (pv->>'inventory_delta')::numeric=150 and (pv->>'hpp_delta')::numeric=250,'PO values '||pv::text);
  res:=correct_purchase_invoice_line('p02-po-key',line,0,4,222,current_date,'Harga PO salah',pg_temp.expected(pv));
- perform pg_temp.ok(pg_temp.lines(inv.no_faktur,'purchase-inv-correction')='{"1105":44,"1301":150,"5101":250,"2101":-444}'::jsonb,'PO journal '||pg_temp.lines(inv.no_faktur,'purchase-inv-correction')::text);
+ perform pg_temp.ok(pg_temp.lines(inv.no_faktur,'purchase-inv-correction')='{"182004":44,"170001":150,"600001":250,"311001":-444}'::jsonb,'PO journal '||pg_temp.lines(inv.no_faktur,'purchase-inv-correction')::text);
  perform pg_temp.ok(pg_temp.stock_value('f2400000-0000-4000-8000-000000000002')=300,'PO stock 15 x 20');
  -- Koreksi kedua memakai lapisan hasil koreksi pertama.
  pv:=preview_purchase_invoice_line_correction(line,4,166.5,current_date);
@@ -201,7 +201,7 @@ do $$declare line uuid:=(select id from p02_ids where name='void-line');pv jsonb
  perform pg_temp.ok((pv->>'inventory_delta')::numeric=80 and (pv->>'hpp_delta')::numeric=20,'restored units revalued '||pv::text);
  perform correct_purchase_invoice_line('p02-void-2',line,1,10,120,current_date,'Harga naik lagi',pg_temp.expected(pv));
  perform pg_temp.ok(pg_temp.stock_value('f2400000-0000-4000-8000-000000000004')=720,'void item value 6 x 120');
- perform pg_temp.ok(pg_temp.lines((select no_faktur from purchase_invoices i join purchase_invoice_items ii on ii.invoice_id=i.id where ii.id=line),'purchase-inv-correction')='{"1301":120,"5101":80,"2101":-200}'::jsonb,'void journals sum');
+ perform pg_temp.ok(pg_temp.lines((select no_faktur from purchase_invoices i join purchase_invoice_items ii on ii.invoice_id=i.id where ii.id=line),'purchase-inv-correction')='{"170001":120,"600001":80,"311001":-200}'::jsonb,'void journals sum');
 end$$;
 
 -- ===== Average: rata-rata gudang (75) beda dari harga faktur (100) dan qty turun mengosongkan stok =====

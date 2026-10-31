@@ -99,7 +99,7 @@ describe.skipIf(!live)("COA import: parser → preview → real action → real 
   });
 
   it("OWNER imports the pinned fictional KAMO-template file atomically and reads it back exactly", async () => {
-    expect(createHash("sha256").update(FIXTURE).digest("hex")).toBe("a3d5d694a68bd0f57fe46690bfc670b19ab7c2d7fc8bde0d36cecaf3aadb6365");
+    expect(createHash("sha256").update(FIXTURE).digest("hex")).toBe("0157ac9570bed5208e4c36c2326c8086d88393ccddfbf28398885da5e2dff663");
     native.user = env.KAMO_TEST_OWNER!;
     const before = jumlahAkun(); const money = uang();
     const p = await periksa(FIXTURE);
@@ -113,11 +113,11 @@ describe.skipIf(!live)("COA import: parser → preview → real action → real 
     expect(uang()).toBe(money); // master import never creates journals/balances
     const rows = admin(`select string_agg(c.code||':'||coalesce(p.code,'-')||':'||c.is_header::text||':'||c.normal_balance, ',' order by c.code)
       from public.coa_accounts c left join public.coa_accounts p on p.id=c.parent_id
-      where c.code in ('1600','1610','1611','2300','2301','4400','4401','4402','5700','5701','5702','570301');`);
+      where c.code in ('190000','191000','191100','330000','330100','540000','540100','540200','770000','770100','770200','770301');`);
     expect(rows).toBe([
-      "1600:-:true:D", "1610:1600:false:D", "1611:1600:false:D", "2300:-:true:K", "2301:2300:false:K",
-      "4400:-:true:K", "4401:4400:false:K", "4402:4400:false:K", "5700:-:true:D", "5701:5700:false:D",
-      "5702:5700:false:D", "570301:5700:false:D",
+      "190000:-:true:D", "191000:190000:false:D", "191100:190000:false:D", "330000:-:true:K", "330100:330000:false:K",
+      "540000:-:true:K", "540100:540000:false:K", "540200:540000:false:K", "770000:-:true:D", "770100:770000:false:D",
+      "770200:770000:false:D", "770301:770000:false:D",
     ].join(","));
   });
 
@@ -134,16 +134,16 @@ describe.skipIf(!live)("COA import: parser → preview → real action → real 
 
   it("changes are shown as a diff and only applied after explicit confirmation", async () => {
     native.user = env.KAMO_TEST_OWNER!;
-    const csv = "kode,nama,tipe,induk\n5701,Beban Laundry Kandang Fiktif Baru,BEBAN,5700";
+    const csv = "kode,nama,tipe,induk\n770100,Beban Laundry Kandang Fiktif Baru,BEBAN,770000";
     const p = await periksa(csv);
     expect(p.rencana!.baris[0]).toMatchObject({ status: "berubah", perubahan: [{ kolom: "nama", lama: "Beban Laundry Kandang Fiktif", baru: "Beban Laundry Kandang Fiktif Baru" }] });
     const tanpa = await simpan(csv, p);
     expect(tanpa.langkah).not.toBe("tersimpan");
     expect(tanpa.pesan).toMatch(/konfirmasi/i);
-    expect(admin("select name from public.coa_accounts where code='5701';")).toBe("Beban Laundry Kandang Fiktif");
+    expect(admin("select name from public.coa_accounts where code='770100';")).toBe("Beban Laundry Kandang Fiktif");
     const ok = await simpan(csv, p, { konfirmasi: "1" });
     expect(ok.langkah).toBe("tersimpan");
-    expect(admin("select name from public.coa_accounts where code='5701';")).toBe("Beban Laundry Kandang Fiktif Baru");
+    expect(admin("select name from public.coa_accounts where code='770100';")).toBe("Beban Laundry Kandang Fiktif Baru");
   });
 
   it("conflicting and wrong rows block the whole file; codes are never rewritten", async () => {
@@ -152,36 +152,36 @@ describe.skipIf(!live)("COA import: parser → preview → real action → real 
     const csv = [
       "kode,nama,tipe,induk,header",
       "01101,Kas Nol Depan Fiktif,ASET,,",
-      "1101.01,Kas Titik Fiktif,ASET,,",
-      "5801,Beban Kelompok Salah,ASET,,",
-      "5810,Anak Tanpa Induk,BEBAN,5899,",
-      "5821,Beban Di Bawah Pendapatan,BEBAN,4400,",
-      "5891,Akun Baik,BEBAN,,",
+      "110003.01,Kas Titik Fiktif,ASET,,",
+      "780100,Beban Kelompok Salah,ASET,,",
+      "781000,Anak Tanpa Induk,BEBAN,789900,",
+      "782100,Beban Di Bawah Pendapatan,BEBAN,540000,",
+      "789100,Akun Baik,BEBAN,,",
     ].join("\n");
     const p = await periksa(csv);
     expect(p.rencana!.jumlah).toMatchObject({ total: 6, konflik: 3, ditolak: 2, baru: 1 });
-    expect(p.rencana!.baris.map((b) => b.kode)).toEqual(["01101", "1101.01", "5801", "5810", "5821", "5891"]);
+    expect(p.rencana!.baris.map((b) => b.kode)).toEqual(["01101", "110003.01", "780100", "781000", "782100", "789100"]);
     const s = await simpan(csv, p);
     expect(s.langkah).not.toBe("tersimpan");
     expect(jumlahAkun()).toBe(before);
     expect(ada("01101")).toBe(false);
-    expect(ada("1101.01")).toBe(false);
-    expect(ada("5891")).toBe(false);
+    expect(ada("110003.01")).toBe(false);
+    expect(ada("789100")).toBe(false);
   });
 
   it("a stale preview or an edited file after preview is refused", async () => {
     native.user = env.KAMO_TEST_OWNER!;
-    const csv = "kode,nama,tipe\n5895,Beban Pratinjau Basi,BEBAN";
+    const csv = "kode,nama,tipe\n789500,Beban Pratinjau Basi,BEBAN";
     const p = await periksa(csv);
     expect(p.rencana!.bolehSimpan).toBe(true);
-    const edited = await simpan(csv + "\n5896,Beban Selundupan,BEBAN", p);
+    const edited = await simpan(csv + "\n789600,Beban Selundupan,BEBAN", p);
     expect(edited.langkah).not.toBe("tersimpan");
-    expect(ada("5896")).toBe(false);
-    admin("insert into public.coa_accounts(code,name,type,normal_balance) values('5897','Beban Sesi Lain','BEBAN','D');");
+    expect(ada("789600")).toBe(false);
+    admin("insert into public.coa_accounts(code,name,type,normal_balance) values('789700','Beban Sesi Lain','BEBAN','D');");
     const stale = await simpan(csv, p);
     expect(stale.langkah).not.toBe("tersimpan");
     expect(stale.pesan).toMatch(/berubah/);
-    expect(ada("5895")).toBe(false);
+    expect(ada("789500")).toBe(false);
   });
 
   it("user COA file (Kode/Nama Akun/Normal, synthetic .xlsx): full preview from the real chart, save refused, nothing written", async () => {
@@ -206,18 +206,19 @@ describe.skipIf(!live)("COA import: parser → preview → real action → real 
     expect(s.pesan).toMatch(/belum bisa disimpan/);
     expect(jumlahAkun()).toBe(before);
     expect(uang()).toBe(money);
-    expect(admin("select count(*) from public.coa_accounts where code in ('110001','120001','110101','510101');")).toBe("0");
+    // 110001/120001 are part of the new chart of accounts (20261105010000); the file's own rows were not written.
+    expect(admin("select count(*) from public.coa_accounts where code in ('110101','510101');")).toBe("0");
   });
 
   it("a failure at the final parent-linking stage leaves nothing behind and is reported as failed", async () => {
     native.user = env.KAMO_TEST_OWNER!;
-    const csv = "kode,nama,tipe,induk,header\n5790,Induk Gagal Akhir,BEBAN,,ya\n5791,Anak Gagal Akhir,BEBAN,5790,";
+    const csv = "kode,nama,tipe,induk,header\n779000,Induk Gagal Akhir,BEBAN,,ya\n779100,Anak Gagal Akhir,BEBAN,779000,";
     const before = jumlahAkun();
     const p = await periksa(csv);
     expect(p.rencana!.bolehSimpan).toBe(true);
     // Fault injection only (not a business rule): the last write step fails.
     admin(`create function public.uji_gagal_tautan_induk() returns trigger language plpgsql as $$begin
-      if new.code='5791' and new.parent_id is not null then raise exception 'injected parent-link failure'; end if; return new; end$$;
+      if new.code='779100' and new.parent_id is not null then raise exception 'injected parent-link failure'; end if; return new; end$$;
       create trigger uji_gagal_tautan_induk before update on public.coa_accounts for each row execute function public.uji_gagal_tautan_induk();`);
     try {
       const s = await simpan(csv, p);
@@ -227,6 +228,6 @@ describe.skipIf(!live)("COA import: parser → preview → real action → real 
       admin("drop trigger uji_gagal_tautan_induk on public.coa_accounts; drop function public.uji_gagal_tautan_induk();");
     }
     expect(jumlahAkun()).toBe(before);
-    expect(ada("5790")).toBe(false);
+    expect(ada("779000")).toBe(false);
   });
 });

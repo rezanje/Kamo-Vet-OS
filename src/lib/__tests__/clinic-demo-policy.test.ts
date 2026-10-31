@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { allocateDemoIncentive, quoteDemoPayments } from "../clinic-demo-policy";
 
 const policy = { id: "demo-v1", name: "DEMO", incentivePercent: 5, feeBearer: "customer" as const,
-  feeRates: { Tunai: 0, Transfer: 100, QRIS: 0 }, adminRevenueCode: "4303", adminExpenseCode: "5501" };
+  feeRates: { Tunai: 0, Transfer: 100, QRIS: 0 }, adminRevenueCode: "810004", adminExpenseCode: "740010" };
 
 describe("DEMO payment quote", () => {
   it("adds 1 percent to only the transfer portion without recursive fees", () => {

@@ -392,12 +392,12 @@ values ('c3a80000-0000-4000-8000-000000000001', 'c3a10000-0000-4000-8000-0000000
 insert into cashier_shifts (id, branch_id, opened_by, shift_type, status)
 values ('c3ab0000-0000-4000-8000-000000000001', 'c3a10000-0000-4000-8000-000000000001', 'c3a00000-0000-4000-8000-000000000001', 'klinik', 'open');
 insert into coa_accounts (code, name, type, normal_balance, is_active, is_header) values
-  ('1101','Kas','ASET','D',true,false), ('1201','Piutang','ASET','D',true,false),
-  ('1301','Persediaan','ASET','D',true,false), ('2201','PPN Keluaran','LIABILITAS','K',true,false),
-  ('4102','Diskon','PENDAPATAN','D',true,false), ('4201','Pendapatan Klinik','PENDAPATAN','K',true,false),
-  ('5101','HPP','BEBAN','D',true,false)
+  ('110003','Kas','ASET','D',true,false), ('150001','Piutang','ASET','D',true,false),
+  ('170001','Persediaan','ASET','D',true,false), ('312005','PPN Keluaran','LIABILITAS','K',true,false),
+  ('520002','Diskon','PENDAPATAN','D',true,false), ('510002','Pendapatan Klinik','PENDAPATAN','K',true,false),
+  ('600001','HPP','BEBAN','D',true,false)
 on conflict (code) do update set is_active = true, is_header = false;
-insert into cash_accounts (nama, jenis, coa_code) values ('Kas Uji K03', 'Kas', '1101') on conflict (coa_code) do update set is_active = true;
+insert into cash_accounts (nama, jenis, coa_code) values ('Kas Uji K03', 'Kas', '110003') on conflict (coa_code) do update set is_active = true;
 -- A legacy racikan-SKU prescription row that predates K03 (production has one such row).
 alter table prescription_items disable trigger zz_racikan_recipe_required;
 insert into prescription_items (id, medical_record_id, nama_obat, qty, harga, satuan, faktor, jenis, item_id)

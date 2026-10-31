@@ -7,13 +7,13 @@ alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,code,name,type) values(md5('source-precision-branch')::uuid,'SRC-PREC','Fiction precision branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('source-precision-wh')::uuid,md5('source-precision-branch')::uuid,'SRC-PREC-W','Fiction precision warehouse','RETAIL');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1301','Fiction inventory','ASET','D',false),('3101','Fiction equity','EKUITAS','K',false)
+ ('170001','Fiction inventory','ASET','D',false),('410001','Fiction equity','EKUITAS','K',false)
 on conflict(code) do update set is_active=true,is_header=false;
 insert into items(id,code,name,unit,item_type) values(md5('source-precision-item')::uuid,'SRC-PREC-I','Fiction precision item','PCS','Persediaan');
 set local role authenticated;
 select set_config('request.jwt.claim.sub',md5('source-precision-owner')::uuid::text,true);
 do $$ declare run uuid; again uuid; eq uuid; p jsonb; receipt jsonb; rows jsonb; begin
- select id into eq from coa_accounts where code='3101';
+ select id into eq from coa_accounts where code='410001';
  rows:=jsonb_build_array(jsonb_build_object('source_row',2,'source_code','SRC-PREC-I','status','valid','reason',null,
  'payload',jsonb_build_object('item_id',md5('source-precision-item')::uuid,'warehouse_id',md5('source-precision-wh')::uuid,
  'base_qty','1','base_unit_cost','0.333333','as_of','2026-01-01','source_values',jsonb_build_array(jsonb_build_object('qty','1','unit_cost','0.333333','factor','1','unit','PCS')))));

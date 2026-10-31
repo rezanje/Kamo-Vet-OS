@@ -4,6 +4,7 @@ import { getAccountBalances, nilaiSeksi } from "./ledger";
 import { kodeSemuaRekening } from "./kas-akun";
 import { sisaFakturablePerBaris, type ItemFakturPoTersimpan } from "./faktur-beli";
 import { isCompletedSale, type SaleCompletion } from "./sale-payment-reporting";
+import { akunHpp } from "./coa-sistem";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -69,13 +70,13 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   // ── Laba/Rugi ──
   const bal = balances as { code: string; name: string; type: string; normal: string; saldo: number }[];
   const pendapatan = bal.filter((b) => b.type === "PENDAPATAN").reduce((a, b) => a + nilaiSeksi(b), 0);
-  const hpp = bal.filter((b) => b.code === "5101").reduce((a, b) => a + nilaiSeksi(b), 0);
-  const pengeluaran = bal.filter((b) => b.type === "BEBAN" && b.code !== "5101").reduce((a, b) => a + nilaiSeksi(b), 0);
+  const hpp = bal.filter((b) => akunHpp(b.code)).reduce((a, b) => a + nilaiSeksi(b), 0);
+  const pengeluaran = bal.filter((b) => b.type === "BEBAN" && !akunHpp(b.code)).reduce((a, b) => a + nilaiSeksi(b), 0);
   const laba = pendapatan - hpp - pengeluaran;
 
   // ── Beban breakdown (opex, top 5 + lainnya) ──
   const bebanAll = bal
-    .filter((b) => b.type === "BEBAN" && b.code !== "5101" && nilaiSeksi(b) > 0)
+    .filter((b) => b.type === "BEBAN" && !akunHpp(b.code) && nilaiSeksi(b) > 0)
     .map((b) => ({ name: b.name, amount: nilaiSeksi(b) }))
     .sort((a, b) => b.amount - a.amount);
   const beban = bebanAll.slice(0, 5);
@@ -112,7 +113,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     invBelum += Math.max(0, Number(i.total) - dibayar);
   }
   // POS dianggap lunas (bayar tunai/QRIS di kasir). Order online marketplace TIDAK —
-  // dana ditahan platform di akun 1202 Piutang Marketplace sampai "Tandai cair" dijalankan,
+  // dana ditahan platform di akun 130009 Piutang Marketplace sampai "Tandai cair" dijalankan,
   // jadi ikut dihitung belum lunas selama marketplace_status masih 'piutang'.
   const salesBelumLunas = salesRowsThisYear
     .filter((s: { marketplace_status: string | null }) => s.marketplace_status === "piutang")
@@ -195,7 +196,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   }
   const trenPenjualan = hari7.map((t) => ({ tanggal: t, total: trenMap.get(t)! }));
 
-  // Semua rekening kas/bank dari master — bukan daftar mati 1101/1102, supaya kartu ini
+  // Semua rekening kas/bank dari master — bukan daftar mati 110003/120002, supaya kartu ini
   // sama angkanya dengan laporan Arus Kas ketika ada rekening QRIS/e-wallet/bank baru.
   const setRekening = new Set(kodeRekening);
   const saldoKas = bal.filter((b) => setRekening.has(b.code)).reduce((a, b) => a + b.saldo, 0);

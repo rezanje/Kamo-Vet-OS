@@ -4,14 +4,14 @@ import { buildClosingLines } from "../tutup-buku";
 describe("buildClosingLines", () => {
   it("tutup pendapatan (Dr) & beban (Cr), laba ke 3201 (Cr)", () => {
     const { lines, laba } = buildClosingLines([
-      { code: "4101", type: "PENDAPATAN", saldo: 1000 },
-      { code: "5101", type: "BEBAN", saldo: 400 },
-      { code: "1101", type: "ASET", saldo: 999 }, // diabaikan
+      { code: "510001", type: "PENDAPATAN", saldo: 1000 },
+      { code: "600001", type: "BEBAN", saldo: 400 },
+      { code: "110003", type: "ASET", saldo: 999 }, // diabaikan
     ]);
     expect(laba).toBe(600);
-    expect(lines).toContainEqual({ code: "4101", debit: 1000, credit: 0 });
-    expect(lines).toContainEqual({ code: "5101", debit: 0, credit: 400 });
-    expect(lines).toContainEqual({ code: "3201", debit: 0, credit: 600 });
+    expect(lines).toContainEqual({ code: "510001", debit: 1000, credit: 0 });
+    expect(lines).toContainEqual({ code: "600001", debit: 0, credit: 400 });
+    expect(lines).toContainEqual({ code: "420001", debit: 0, credit: 600 });
     // jurnal seimbang
     const d = lines.reduce((a, l) => a + l.debit, 0);
     const k = lines.reduce((a, l) => a + l.credit, 0);
@@ -20,26 +20,26 @@ describe("buildClosingLines", () => {
 
   it("rugi -> 3201 di Debit; saldo negatif dibalik arah", () => {
     const { lines, laba } = buildClosingLines([
-      { code: "4101", type: "PENDAPATAN", saldo: 100 },
-      { code: "5901", type: "BEBAN", saldo: -50 },  // beban negatif (koreksi) → Debit
-      { code: "5101", type: "BEBAN", saldo: 400 },
+      { code: "510001", type: "PENDAPATAN", saldo: 100 },
+      { code: "760002", type: "BEBAN", saldo: -50 },  // beban negatif (koreksi) → Debit
+      { code: "600001", type: "BEBAN", saldo: 400 },
     ]);
     expect(laba).toBe(-250);
-    expect(lines).toContainEqual({ code: "5901", debit: 50, credit: 0 });
-    expect(lines).toContainEqual({ code: "3201", debit: 250, credit: 0 });
+    expect(lines).toContainEqual({ code: "760002", debit: 50, credit: 0 });
+    expect(lines).toContainEqual({ code: "420001", debit: 250, credit: 0 });
   });
 
   it("semua nol -> tidak ada baris", () => {
-    expect(buildClosingLines([{ code: "4101", type: "PENDAPATAN", saldo: 0 }]).lines).toHaveLength(0);
+    expect(buildClosingLines([{ code: "510001", type: "PENDAPATAN", saldo: 0 }]).lines).toHaveLength(0);
   });
 
   it("akun diskon kontra pendapatan mengurangi laba dan ditutup ke kredit", () => {
     const { lines, laba } = buildClosingLines([
-      { code: "4101", type: "PENDAPATAN", normal: "K", saldo: 1_000 },
-      { code: "4102", type: "PENDAPATAN", normal: "D", saldo: 100 },
+      { code: "510001", type: "PENDAPATAN", normal: "K", saldo: 1_000 },
+      { code: "520002", type: "PENDAPATAN", normal: "D", saldo: 100 },
     ]);
     expect(laba).toBe(900);
-    expect(lines).toContainEqual({ code: "4102", debit: 0, credit: 100 });
-    expect(lines).toContainEqual({ code: "3201", debit: 0, credit: 900 });
+    expect(lines).toContainEqual({ code: "520002", debit: 0, credit: 100 });
+    expect(lines).toContainEqual({ code: "420001", debit: 0, credit: 900 });
   });
 });

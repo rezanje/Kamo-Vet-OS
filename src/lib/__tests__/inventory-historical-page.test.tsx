@@ -18,7 +18,7 @@ it("renders saved-event details and reconciles branch subtotal to complete detai
     inventory_costing_settings: [{ id: true, method: "moving_average", activated_at: "2026-10-22T03:00:00Z" }],
     warehouses: [{ id: "w1", branch_id: "b1", name: "Gudang A", code: "A" }],
     inventory_cost_events: [{ id: 1, warehouse_id: "w1", item_id: "i", tanggal: "2026-10-22", source: "average-activation", source_ref: null, qty_delta: "2", value_delta: "20.125", qty_after: "2", value_after: "20.125", average_after: "10.0625" }],
-    coa_accounts: [{ id: "a1301", code: "1301" }],
+    coa_accounts: [{ id: "a1301", code: "170001" }],
     journal_lines: [
       { id: "l1", account_id: "a1301", debit: "20", credit: "0", journal_entries: { tanggal: "2026-10-22", branch_id: "b1" } },
       { id: "l2", account_id: "a1301", debit: "5", credit: "0", journal_entries: { tanggal: "2026-10-22", branch_id: null } },
@@ -30,12 +30,12 @@ it("renders saved-event details and reconciles branch subtotal to complete detai
   expect(html).toContain("Rp 20,125");
   expect(html).toContain("RINCIAN EVENT TERAKHIR");
   expect(html).toContain("gudang–cabang saat laporan dibaca");
-  expect(html).toContain("GL 1301 as-of");
+  expect(html).toContain("GL 170001 as-of");
   expect(html).toContain("Rp 0,125");
   expect(html).toContain("belum membuktikan rekonsiliasi historis cabang");
-  expect(html).toContain("akun=1301&amp;sampai=2026-10-22&amp;cabang=b1");
+  expect(html).toContain("akun=170001&amp;sampai=2026-10-22&amp;cabang=b1");
   const allHtml = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22" }) }));
-  expect(allHtml).toContain("Jurnal 1301 tanpa cabang: Rp 5");
+  expect(allHtml).toContain("Jurnal 170001 tanpa cabang: Rp 5");
 });
 
 it("explains unavailable FIFO history without presenting a fabricated total", async () => {
@@ -57,7 +57,7 @@ it("keeps the cutoff and every selected branch in paging and per-branch ledger l
       { id: "late", warehouse_id: "w1", item_id: "i000", tanggal: "2026-10-24", source: "pos", source_ref: "LATE", qty_delta: "1", value_delta: "2", qty_after: "2", value_after: "4", average_after: "2" },
     ],
     items,
-    coa_accounts: [{ id: "a1301", code: "1301" }],
+    coa_accounts: [{ id: "a1301", code: "170001" }],
     journal_lines: [
       { id: "l1", account_id: "a1301", debit: "100", credit: "0", journal_entries: { tanggal: "2026-10-22", branch_id: "b1" } },
       { id: "l2", account_id: "a1301", debit: "120", credit: "0", journal_entries: { tanggal: "2026-10-22", branch_id: "b2" } },
@@ -68,14 +68,14 @@ it("keeps the cutoff and every selected branch in paging and per-branch ledger l
   const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22", cabang: ["b1", "b2"], halaman: "2" }) }));
   expect(html).toContain("Halaman 2 dari 2 · 120 baris");
   expect(html).toContain("tanggal=2026-10-22&amp;halaman=1&amp;cabang=b1&amp;cabang=b2");
-  expect(html).toContain("akun=1301&amp;sampai=2026-10-22&amp;cabang=b1");
-  expect(html).toContain("akun=1301&amp;sampai=2026-10-22&amp;cabang=b2");
+  expect(html).toContain("akun=170001&amp;sampai=2026-10-22&amp;cabang=b1");
+  expect(html).toContain("akun=170001&amp;sampai=2026-10-22&amp;cabang=b2");
   // Event and GL cutoffs match: later moves and journals stay out of the 2026-10-22 position.
   expect(html).not.toContain("Rp 242");
   expect(html).not.toContain("Rp 1.219");
   expect(html).toContain("Rp 240");
   expect(html).toContain("Rp 220");
-  expect(html).toContain("Jurnal 1301 tanpa cabang: Rp 7");
+  expect(html).toContain("Jurnal 170001 tanpa cabang: Rp 7");
 });
 
 it("R04: shows a minus position valued at the last known average with a visible estimate flag", async () => {
@@ -87,7 +87,7 @@ it("R04: shows a minus position valued at the last known average with a visible 
       { id: 2, warehouse_id: "w1", item_id: "i", tanggal: "2026-10-22", source: "sale", source_ref: "SALE-1", qty_delta: "-4", value_delta: null, qty_after: "-3", value_after: null, average_after: null },
     ],
     items: [{ id: "i", code: "K1", name: "Barang minus fiktif", unit: "PCS" }],
-    coa_accounts: [{ id: "a1301", code: "1301" }],
+    coa_accounts: [{ id: "a1301", code: "170001" }],
     journal_lines: [],
   } }).client;
   const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22", cabang: ["b1"] }) }));
@@ -105,11 +105,11 @@ it("M01: shows today's FIFO layer value against GL 1301 per branch without a bal
     warehouses: [{ id: "w1", branch_id: "b1", code: "W1", name: "Gudang satu" }],
     stock_layers: [{ id: "l1", warehouse_id: "w1", item_id: "i", qty_left: "3", unit_cost: "50" }],
     stock: [],
-    coa_accounts: [{ id: "a1301", code: "1301" }],
+    coa_accounts: [{ id: "a1301", code: "170001" }],
     journal_lines: [{ id: "g1", account_id: "a1301", debit: "100", credit: "0", journal_entries: { tanggal: hariIniWIB(), branch_id: "b1" } }],
   } }).client;
   const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: hariIniWIB(), cabang: "b1" }) }));
-  expect(html).toContain("POSISI FIFO HARI INI vs GL 1301");
+  expect(html).toContain("POSISI FIFO HARI INI vs GL 170001");
   expect(html).toContain("Rp 150");
   expect(html).toContain("Rp 100");
   expect(html).toContain("Rp 50");

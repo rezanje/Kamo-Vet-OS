@@ -126,7 +126,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                     {!cabang && <td style={{ fontSize: 10.5 }}>{l.branch_name}</td>}
                     <td style={{ fontSize: 10.5 }}>
                       <NoDok nomor={l.source_ref} source={l.source} />
-                      {selected.code === "5101" && l.source_ref && (
+                      {selected.code === "600001" && l.source_ref && (
                         <Link href={`/keuangan/buku-besar/hpp/${encodeURIComponent(l.source_ref)}`} style={{ display: "block", fontSize: 9.5, color: "#2563eb", marginTop: 2 }}>Rincian HPP</Link>
                       )}
                     </td>

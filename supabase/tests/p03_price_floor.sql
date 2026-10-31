@@ -55,10 +55,10 @@ select ('f0370000-0000-4000-8000-00000000000'||n)::uuid,'f0310000-0000-4000-8000
 insert into medical_records(id,visit_id)
 select ('f0380000-0000-4000-8000-00000000000'||n)::uuid,('f0370000-0000-4000-8000-00000000000'||n)::uuid from generate_series(1,9) n;
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1101','Kas','ASET','D',false),('1111','Test cash','ASET','D',false),('1201','Piutang','ASET','D',false),
- ('4101','Sales','PENDAPATAN','K',false),('4102','Discount','PENDAPATAN','D',false),
- ('4201','Pendapatan klinik','PENDAPATAN','K',false),('2201','VAT','LIABILITAS','K',false),
- ('5101','COGS','BEBAN','D',false),('1301','Inventory','ASET','D',false)
+ ('110003','Kas','ASET','D',false),('1111','Test cash','ASET','D',false),('150001','Piutang','ASET','D',false),
+ ('510001','Sales','PENDAPATAN','K',false),('520002','Discount','PENDAPATAN','D',false),
+ ('510002','Pendapatan klinik','PENDAPATAN','K',false),('312005','VAT','LIABILITAS','K',false),
+ ('600001','COGS','BEBAN','D',false),('170001','Inventory','ASET','D',false)
  on conflict(code) do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code) values('f0390000-0000-4000-8000-000000000001','P03 cash','Kas','1111')
  on conflict do nothing;

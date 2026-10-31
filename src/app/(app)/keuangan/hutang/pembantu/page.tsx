@@ -23,8 +23,8 @@ export default async function PembantuHutangPage({
   const supabase = await createClient();
   const [mutasi, opening, lines] = await Promise.all([
     mutasiHutang(supabase, sampai),
-    getAccountOpening(supabase, "2101", { from: dari }),
-    getAccountLedger(supabase, "2101", { from: dari, to: sampai }),
+    getAccountOpening(supabase, "311001", { from: dari }),
+    getAccountLedger(supabase, "311001", { from: dari, to: sampai }),
   ]);
   // Hutang bersaldo normal kredit — arah saldonya dibalik supaya sejajar dengan
   // buku pembantu yang menghitung hutang sebagai angka positif.
@@ -56,7 +56,7 @@ export default async function PembantuHutangPage({
       }
       baris={baris}
       labelPihak="Pemasok" labelNaik="Faktur masuk" labelTurun="Dibayar & retur"
-      kodeAkun="2101" namaAkun="Hutang Usaha" saldoBukuBesar={saldoBukuBesar}
+      kodeAkun="311001" namaAkun="Hutang Usaha" saldoBukuBesar={saldoBukuBesar}
       dari={dari} sampai={sampai}
       catatan={
         <>
@@ -64,7 +64,7 @@ export default async function PembantuHutangPage({
           diterima tapi belum difakturkan berdiri di akun terpisah dan tidak muncul di sini.
           Pembayaran yang diambil dari uang muka ditandai tersendiri supaya tidak terbaca sebagai
           uang keluar dua kali.<br />
-          Pembandingan dengan akun 2101 di atas memakai saldo se-perusahaan, tanpa filter cabang.
+          Pembandingan dengan akun 311001 di atas memakai saldo se-perusahaan, tanpa filter cabang.
         </>
       }
     />

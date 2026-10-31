@@ -87,13 +87,13 @@ values ('da000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-0000000
 
 insert into public.coa_accounts (code, name, type, normal_balance, is_active, is_header)
 values
-  ('1101','Kas','ASET','D',true,false), ('1201','Piutang','ASET','D',true,false),
-  ('1301','Persediaan','ASET','D',true,false), ('2201','PPN Keluaran','LIABILITAS','K',true,false),
-  ('4102','Diskon','PENDAPATAN','D',true,false), ('4201','Pendapatan Klinik','PENDAPATAN','K',true,false),
-  ('5101','HPP','BEBAN','D',true,false)
+  ('110003','Kas','ASET','D',true,false), ('150001','Piutang','ASET','D',true,false),
+  ('170001','Persediaan','ASET','D',true,false), ('312005','PPN Keluaran','LIABILITAS','K',true,false),
+  ('520002','Diskon','PENDAPATAN','D',true,false), ('510002','Pendapatan Klinik','PENDAPATAN','K',true,false),
+  ('600001','HPP','BEBAN','D',true,false)
 on conflict (code) do update set is_active = true, is_header = false;
 insert into public.cash_accounts (nama, jenis, coa_code)
-values ('Kas Uji Klinik', 'Kas', '1101') on conflict (coa_code) do update set is_active = true;
+values ('Kas Uji Klinik', 'Kas', '110003') on conflict (coa_code) do update set is_active = true;
 
 do $$
 begin

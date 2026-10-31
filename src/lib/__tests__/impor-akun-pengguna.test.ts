@@ -75,7 +75,10 @@ describe("synthetic user COA file (Kode | Nama Akun | Normal)", () => {
     const kontra = r.baris.find((b) => b.kode === "150901")!;
     expect(kontra).toMatchObject({ normalSumber: "Kredit", usulanKelompok: "ASET" });
     expect(kontra.catatanNormal).toMatch(/tinjauan Finance/);
-    expect(r.baris.find((b) => b.kode === "510101")).toMatchObject({ usulanKelompok: "BEBAN", catatanNormal: null });
+    // Bagan akun 6 digit: 5xxxxx = pendapatan; fixture lama berisi "beban" Debit → diberi catatan tinjauan.
+    expect(r.baris.find((b) => b.kode === "510101")).toMatchObject({ usulanKelompok: "PENDAPATAN" });
+    expect(r.baris.find((b) => b.kode === "510101")!.catatanNormal).toMatch(/tinjauan Finance/);
+    expect(r.baris.find((b) => b.kode === "110101")).toMatchObject({ usulanKelompok: "ASET", catatanNormal: null });
     expect(r.catatanUsulan).toMatch(/usulan.*belum disetujui/i);
   });
 

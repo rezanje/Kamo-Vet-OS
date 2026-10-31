@@ -9,7 +9,7 @@ import { tanggalIndo } from "@/lib/followup";
 // Laba Ditahan — permintaan Kamo Group 24 Agu 2026.
 //
 // Isinya dua angka yang sering tertukar: laba yang SUDAH ditutup ke ekuitas
-// (saldo akun 3201) dan laba periode berjalan yang BELUM ditutup. Keduanya
+// (saldo akun 420001) dan laba periode berjalan yang BELUM ditutup. Keduanya
 // dipisah di sini supaya tidak ada yang mengira labanya dobel.
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -73,7 +73,7 @@ export default async function LabaDitahanPage({
       ringkasan={
         <KartuAngka items={[
           { label: `Saldo awal ${tanggalIndo(dari)}`, nilai: rpTanda(saldoAwal) },
-          { label: "Laba ditahan (akun 3201)", nilai: rpTanda(saldoAkhir), warna: saldoAkhir >= 0 ? "#15803d" : "#b91c1c" },
+          { label: "Laba ditahan (akun 420001)", nilai: rpTanda(saldoAkhir), warna: saldoAkhir >= 0 ? "#15803d" : "#b91c1c" },
           {
             label: labaBelumDitutup >= 0 ? "Laba berjalan belum ditutup" : "Rugi berjalan belum ditutup",
             nilai: rpTanda(labaBelumDitutup), warna: labaBelumDitutup >= 0 ? "#15803d" : "#b91c1c",
@@ -128,12 +128,12 @@ export default async function LabaDitahanPage({
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
           Angka ini dihitung sampai tanggal akhir yang dipilih, dari seluruh akun pendapatan dan
           beban yang masih bersaldo. Begitu tutup buku dijalankan, akun-akun itu dinolkan dan
-          selisihnya pindah ke akun 3201 — angka di kotak ini otomatis jadi nol.
+          selisihnya pindah ke akun 420001 — angka di kotak ini otomatis jadi nol.
         </div>
       </div>
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
-        <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>02 · MUTASI AKUN LABA DITAHAN (3201)</div>
+        <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>02 · MUTASI AKUN LABA DITAHAN (420001)</div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
             <thead>

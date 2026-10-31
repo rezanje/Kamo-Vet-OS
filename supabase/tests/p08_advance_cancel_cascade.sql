@@ -14,9 +14,9 @@ insert into purchase_orders(id,no_po,supplier_id,branch_id,to_warehouse_id,statu
 insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,faktor) values
  ('f2600000-0000-4000-8000-000000000001','f2500000-0000-4000-8000-000000000001','f2400000-0000-4000-8000-000000000001','P08 cascade goods',10,100,'pcs',1),
  ('f2600000-0000-4000-8000-000000000002','f2500000-0000-4000-8000-000000000002','f2400000-0000-4000-8000-000000000001','P08 cascade goods',5,100,'pcs',1);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fiction inventory','ASET','D'),('2101','Fiction payable','LIABILITAS','K'),('110219','Fiction cascade bank','ASET','D')
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction inventory','ASET','D'),('311001','Fiction payable','LIABILITAS','K'),('110219','Fiction cascade bank','ASET','D')
  on conflict(code) do update set is_active=true,is_header=false;
-update coa_accounts set is_active=true,is_header=false where code in('1301','1303','2101','2102');
+update coa_accounts set is_active=true,is_header=false where code in('170001','160001','311001','311003');
 update accounting_locks set closed_until=null;
 update company_settings set mode_pkp=false;
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id) values('f2700000-0000-4000-8000-000000000001','Fiction cascade bank','Bank','110219','f2100000-0000-4000-8000-000000000001');
@@ -113,7 +113,7 @@ do $$declare res jsonb:=pg_temp.r('cascade');adv uuid:=(pg_temp.r('UM1')->>'adva
   and (select voided_at is null from purchase_invoice_payments where id=(pg_temp.r('P3')->>'payment_id')::uuid),'P1/P2 voided, P3 kept');
  perform pg_temp.ok((select sum(amount) from purchase_invoice_payments where invoice_id=inv)=50,'invoice net paid back to 50');
  perform pg_temp.ok((select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id
-  where a.code='1303' and j.source_ref in((select no_um from purchase_advances where id=adv)) )=0,'advance account nets to zero for this DP');
+  where a.code='160001' and j.source_ref in((select no_um from purchase_advances where id=adv)) )=0,'advance account nets to zero for this DP');
 end$$;
 -- Replay and key reuse.
 select pg_temp.ok(cancel_purchase_advance_cascade((pg_temp.r('UM1')->>'advance_id')::uuid,'Salah pemasok','p08c-ok',pg_temp.r('preview')->>'fingerprint')=pg_temp.r('cascade'),'same key returns recorded result');

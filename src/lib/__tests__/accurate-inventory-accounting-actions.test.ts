@@ -20,8 +20,8 @@ const report = {
   run_id: "11111111-1111-4111-8111-111111111111", status: "previewed", source_name: "initial.xlsx", source_hash: "hash",
   branch_id: "branch", branch_name: "PDRY", warehouse_id: "warehouse", warehouse_name: "Gudang PDRY", as_of: "2026-09-01",
   selected_rows: 2, excluded_rows: 1, original_qty: 3, original_value: 150000, remaining_value: 0,
-  inventory_account: { id: "inventory", code: "1301", name: "Persediaan" },
-  equity_account: { id: "22222222-2222-4222-8222-222222222222", code: "3101", name: "Modal" },
+  inventory_account: { id: "inventory", code: "170001", name: "Persediaan" },
+  equity_account: { id: "22222222-2222-4222-8222-222222222222", code: "410001", name: "Modal" },
   blockers: [], can_post: true, receipt: null,
 } satisfies InventoryAccountingReport;
 

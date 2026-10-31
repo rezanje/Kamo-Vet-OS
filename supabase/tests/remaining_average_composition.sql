@@ -20,12 +20,12 @@ update profiles set role='OWNER',is_active=true where id=md5('remaining-average-
 alter table profiles enable trigger guard_profile_privileges;
 update accounting_locks set closed_until=null where id;
 insert into coa_accounts(code,name,type,normal_balance)
-values('119950','Fictional monetary opening','ASET','D'),('3101','Owner equity','EKUITAS','K') on conflict do nothing;
+values('119950','Fictional monetary opening','ASET','D'),('410001','Owner equity','EKUITAS','K') on conflict do nothing;
 select set_config('request.jwt.claim.sub',md5('remaining-average-owner')::uuid::text,true);
 set local role authenticated;
 do $$begin
  begin
-  perform create_opening_balance_atomic('avg-inventory-opening',current_date,'[{"code":"1301","nilai":100,"sisi":"D"}]');
+  perform create_opening_balance_atomic('avg-inventory-opening',current_date,'[{"code":"170001","nilai":100,"sisi":"D"}]');
   raise exception 'Expected inventory opening rejection';
  exception when others then
   if sqlerrm not like '%Saldo awal persediaan average harus melalui impor resmi%' then raise;end if;

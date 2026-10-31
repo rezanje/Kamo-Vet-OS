@@ -17,7 +17,7 @@ async function fill(name: string, value: string) {
 }
 const save = () => [...host.querySelectorAll("button")].find(b => b.textContent === "Simpan koreksi saldo awal")!;
 const preview = () => [...host.querySelectorAll("button")].find(b => b.textContent === "Preview dampak")!;
-const evidence = { account_id: "bank", account_code: "1102", tanggal: "2026-10-01", old_amount: 50000000, new_amount: 5000000, delta: -45000000, balance_before: 49000000, balance_after: 4000000, reason: "Wrong amount", revision: 0, reversal: [{ code: "1102", debit: 0, credit: 50000000 }, { code: "3101", debit: 50000000, credit: 0 }], replacement: [{ code: "1102", debit: 5000000, credit: 0 }, { code: "3101", debit: 0, credit: 5000000 }] };
+const evidence = { account_id: "bank", account_code: "120002", tanggal: "2026-10-01", old_amount: 50000000, new_amount: 5000000, delta: -45000000, balance_before: 49000000, balance_after: 4000000, reason: "Wrong amount", revision: 0, reversal: [{ code: "120002", debit: 0, credit: 50000000 }, { code: "410001", debit: 50000000, credit: 0 }], replacement: [{ code: "120002", debit: 5000000, credit: 0 }, { code: "410001", debit: 0, credit: 5000000 }] };
 it("requires preview and invalidates it when the amount or reason changes", async () => {
   expect(save().disabled).toBe(true);
   await fill("amount", "5000000"); await fill("reason", "Wrong amount");

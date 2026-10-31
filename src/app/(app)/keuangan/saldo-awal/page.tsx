@@ -23,7 +23,7 @@ export default async function SaldoAwalPage({
   // (database juga menolaknya). Akunnya disembunyikan dari pilihan supaya tidak tercatat ganda.
   const hutangPerFaktur = (batchPerFaktur ?? []).some((b) => Number(b.ap_total) > 0);
   const piutangPerFaktur = (batchPerFaktur ?? []).some((b) => Number(b.ar_total) > 0);
-  const akunForm = akun.filter((a) => !(a.code === "2101" && hutangPerFaktur) && !(a.code === "1201" && piutangPerFaktur));
+  const akunForm = akun.filter((a) => !(a.code === "311001" && hutangPerFaktur) && !(a.code === "150001" && piutangPerFaktur));
 
   return (
     <>
@@ -91,10 +91,10 @@ export default async function SaldoAwalPage({
           desc="Baris di bawah sudah terisi dari hitungan di atas. Tambahkan sendiri kas, piutang, dan utang yang sudah ada sebelum sistem dipakai."
         />
         <div className="p2ban" style={{ background: hutangPerFaktur || piutangPerFaktur ? "#fffbeb" : "#eff6ff", border: ".5px solid #93c5fd", color: "#1e3a8a", fontSize: 11.5 }}>
-          <i className="ti ti-info-circle" /> Hutang Usaha (2101) dan Piutang Usaha (1201) dari Accurate diisi <strong>per faktur</strong> di{" "}
+          <i className="ti ti-info-circle" /> Hutang Usaha (311001) dan Piutang Usaha (150001) dari Accurate diisi <strong>per faktur</strong> di{" "}
           <Link href="/keuangan/saldo-awal-faktur">Saldo Awal per Faktur</Link>, supaya pembayaran nanti bisa dialokasikan ke faktur lama.
           {hutangPerFaktur || piutangPerFaktur
-            ? ` Sudah diimpor per faktur: ${[hutangPerFaktur && "hutang (2101)", piutangPerFaktur && "piutang (1201)"].filter(Boolean).join(" dan ")} — akun itu tidak bisa diisi lagi di sini agar tidak tercatat ganda.`
+            ? ` Sudah diimpor per faktur: ${[hutangPerFaktur && "hutang (311001)", piutangPerFaktur && "piutang (150001)"].filter(Boolean).join(" dan ")} — akun itu tidak bisa diisi lagi di sini agar tidak tercatat ganda.`
             : " Jangan isi kedua akun itu di sini kalau akan memakai impor per faktur; impor akan ditolak supaya tidak tercatat ganda."}
         </div>
         {!sudahAda && <SaldoAwalForm key={user?.id} userId={user?.id ?? ""} akun={akunForm} usulan={usulan} />}

@@ -38,17 +38,17 @@ insert into visits(id,branch_id,customer_id,pet_id)
 insert into cashier_shifts(id,branch_id,opened_by,shift_type,status)
  values('fa000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000001','klinik','open');
 insert into coa_accounts(code,name,type,normal_balance,is_active,is_header) values
- ('1101','Kas','ASET','D',true,false),('1102','Bank','ASET','D',true,false),('1201','Piutang','ASET','D',true,false),
- ('1301','Persediaan','ASET','D',true,false),('2201','PPN Keluaran','LIABILITAS','K',true,false),
- ('4102','Diskon','PENDAPATAN','D',true,false),('4201','Pendapatan Klinik','PENDAPATAN','K',true,false),
- ('5101','HPP','BEBAN','D',true,false)
+ ('110003','Kas','ASET','D',true,false),('120002','Bank','ASET','D',true,false),('150001','Piutang','ASET','D',true,false),
+ ('170001','Persediaan','ASET','D',true,false),('312005','PPN Keluaran','LIABILITAS','K',true,false),
+ ('520002','Diskon','PENDAPATAN','D',true,false),('510002','Pendapatan Klinik','PENDAPATAN','K',true,false),
+ ('600001','HPP','BEBAN','D',true,false)
  on conflict(code) do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code) values
- ('f8000000-0000-4000-8000-000000000001','Kas J02','Kas','1101'),('f8000000-0000-4000-8000-000000000002','Bank J02','Bank','1102')
+ ('f8000000-0000-4000-8000-000000000001','Kas J02','Kas','110003'),('f8000000-0000-4000-8000-000000000002','Bank J02','Bank','120002')
  on conflict(coa_code) do update set is_active=true,branch_id=null;
 insert into payment_account_map(metode,branch_id,cash_account_id)
- select 'Tunai','f2000000-0000-4000-8000-000000000001'::uuid,id from cash_accounts where coa_code='1101'
- union all select 'Transfer','f2000000-0000-4000-8000-000000000001'::uuid,id from cash_accounts where coa_code='1102';
+ select 'Tunai','f2000000-0000-4000-8000-000000000001'::uuid,id from cash_accounts where coa_code='110003'
+ union all select 'Transfer','f2000000-0000-4000-8000-000000000001'::uuid,id from cash_accounts where coa_code='120002';
 update accounting_locks set closed_until=null where id;
 create temp table inv(name text primary key,id uuid);
 grant all on inv to authenticated;
@@ -67,13 +67,13 @@ insert into inv select 'split',public.clinic_post_split_invoice('f6000000-0000-4
  jsonb_build_object('tanggal',pg_temp.today(),'subtotal',100000,'discount',0,'tax',0,'total',100000,'dp_amount',0,
   'paid_status','Lunas','metode_bayar','Tunai','shift_id','fa000000-0000-4000-8000-000000000001'),
  '[{"description":"Tindakan fiktif","qty":1,"price":100000,"kind":"jasa","discount_percent":0}]',
- '[{"method":"Tunai","amount":30000,"kas_code":"1101"},{"method":"Transfer","amount":70000,"kas_code":"1102"}]');
+ '[{"method":"Tunai","amount":30000,"kas_code":"110003"},{"method":"Transfer","amount":70000,"kas_code":"120002"}]');
 -- C. DP Tunai 40.000 dari 100.000.
 insert into inv select 'dp',public.clinic_post_invoice('f6000000-0000-4000-8000-000000000003','j02-kln-dp',
  jsonb_build_object('tanggal',pg_temp.today(),'subtotal',100000,'discount',0,'tax',0,'total',100000,'dp_amount',40000,
   'dp_date',pg_temp.today(),'paid_status','DP','metode_bayar','Tunai','shift_id','fa000000-0000-4000-8000-000000000001'),
  '[{"description":"Rawat fiktif","qty":1,"price":100000,"kind":"jasa","discount_percent":0}]');
-select pg_temp.ok(pg_temp.bal((select id from inv where name='direct'),'1101')=100000,'fixture: direct cash posted');
+select pg_temp.ok(pg_temp.bal((select id from inv where name='direct'),'110003')=100000,'fixture: direct cash posted');
 
 -- Tutup shift klinik: koreksi sesudahnya tetap boleh, angka penutupan tidak berubah.
 reset role;
@@ -93,14 +93,14 @@ select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002'
 create temp table r as select 'direct-1'::text name,correct_clinic_invoice_payment((select id from inv where name='direct'),null,0,'kln-fin-1','Kasir salah pilih metode','Transfer') result;
 select pg_temp.ok((select metode_bayar='Transfer' and total=100000 and voided_at is null from invoices where id=(select id from inv where name='direct')),
  'same invoice identity/total with corrected method');
-select pg_temp.ok(pg_temp.bal((select id from inv where name='direct'),'1101')=0
- and pg_temp.bal((select id from inv where name='direct'),'1102')=100000
- and pg_temp.bal((select id from inv where name='direct'),'4201')=-100000,'cash moved to mapped bank, revenue unchanged');
+select pg_temp.ok(pg_temp.bal((select id from inv where name='direct'),'110003')=0
+ and pg_temp.bal((select id from inv where name='direct'),'120002')=100000
+ and pg_temp.bal((select id from inv where name='direct'),'510002')=-100000,'cash moved to mapped bank, revenue unchanged');
 select pg_temp.ok((select count(*)=1 and bool_and(e.tanggal=pg_temp.today() and e.source='klinik-koreksi-bayar')
  from journal_entries e where e.id=(select journal_id from clinic_payment_corrections where invoice_id=(select id from inv where name='direct'))),
  'one correction journal dated on the correction day');
 select pg_temp.ok((select count(*)=1 and bool_and(revision=1 and invoice_payment_id is null and from_method='Tunai' and to_method='Transfer'
- and from_code='1101' and to_code='1102' and source_shift_status='closed' and reason='Kasir salah pilih metode'
+ and from_code='110003' and to_code='120002' and source_shift_status='closed' and reason='Kasir salah pilih metode'
  and created_by='f1000000-0000-4000-8000-000000000002') from clinic_payment_corrections where invoice_id=(select id from inv where name='direct')),
  'audit row with before/after, closed shift and finance actor');
 select pg_temp.ok((select count(*)=0 from invoice_payments where invoice_id=(select id from inv where name='direct')),'no payment row/receipt created');
@@ -128,8 +128,8 @@ select pg_temp.reject($q$select clinic_void_reissue_invoice((select id from inv 
  'void/reissue after correction fails closed','PAYMENT_CORRECTED');
 -- OWNER mengembalikan (revisi 1): rekening asal dibaca dari koreksi terakhir.
 insert into r select 'direct-2',correct_clinic_invoice_payment((select id from inv where name='direct'),null,1,'kln-owner-2','Ternyata memang tunai','Tunai');
-select pg_temp.ok(pg_temp.bal((select id from inv where name='direct'),'1101')=100000
- and pg_temp.bal((select id from inv where name='direct'),'1102')=0
+select pg_temp.ok(pg_temp.bal((select id from inv where name='direct'),'110003')=100000
+ and pg_temp.bal((select id from inv where name='direct'),'120002')=0
  and (select metode_bayar='Tunai' from invoices where id=(select id from inv where name='direct'))
  and (select count(*)=2 from clinic_payment_corrections where invoice_id=(select id from inv where name='direct')),
  'second correction reverses through the latest account');
@@ -148,14 +148,14 @@ select pg_temp.reject($q$select correct_clinic_invoice_payment((select id from i
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
 insert into r select 'split-1',correct_clinic_invoice_payment((select id from inv where name='split'),
  (select id from invoice_payments where invoice_id=(select id from inv where name='split') and metode='Tunai'),0,'kln-split-1','Kasir salah pilih metode','Transfer');
-select pg_temp.ok((select count(*)=2 and bool_and(p.metode='Transfer' and p.kas_code='1102') from invoice_payments p
+select pg_temp.ok((select count(*)=2 and bool_and(p.metode='Transfer' and p.kas_code='120002') from invoice_payments p
  where p.invoice_id=(select id from inv where name='split')),'both parts now transfer to the mapped bank');
 select pg_temp.ok((select count(*)=2 from invoice_payments p join split_before b on b.id=p.id and b.invoice_id=p.invoice_id and b.amount=p.amount
  and b.checkout_payment and p.checkout_payment and b.request_key=p.request_key and b.request_hash=p.request_hash),
  'split rows keep identity, invoice link, amount, checkout flag and receipt idempotency');
-select pg_temp.ok(pg_temp.bal((select id from inv where name='split'),'1101')=0
- and pg_temp.bal((select id from inv where name='split'),'1102')=100000
- and pg_temp.bal((select id from inv where name='split'),'1201')=0
+select pg_temp.ok(pg_temp.bal((select id from inv where name='split'),'110003')=0
+ and pg_temp.bal((select id from inv where name='split'),'120002')=100000
+ and pg_temp.bal((select id from inv where name='split'),'150001')=0
  and (select count(*)=2 from journal_entries where source='klinik-ar' and source_ref=(select invoice_no from invoices where id=(select id from inv where name='split'))),
  'ledger corrected without a duplicate receipt journal');
 select pg_temp.ok((select paid_status='Lunas' and metode_bayar='Tunai' from invoices where id=(select id from inv where name='split')),
@@ -163,18 +163,18 @@ select pg_temp.ok((select paid_status='Lunas' and metode_bayar='Tunai' from invo
 
 -- C. DP Tunai -> Transfer, lalu pelunasan piutang tetap bisa diterima.
 insert into r select 'dp-1',correct_clinic_invoice_payment((select id from inv where name='dp'),null,0,'kln-dp-1','DP sebenarnya transfer','Transfer');
-select pg_temp.ok(pg_temp.bal((select id from inv where name='dp'),'1101')=0 and pg_temp.bal((select id from inv where name='dp'),'1102')=40000
- and pg_temp.bal((select id from inv where name='dp'),'1201')=60000,'DP moved to bank, receivable unchanged');
+select pg_temp.ok(pg_temp.bal((select id from inv where name='dp'),'110003')=0 and pg_temp.bal((select id from inv where name='dp'),'120002')=40000
+ and pg_temp.bal((select id from inv where name='dp'),'150001')=60000,'DP moved to bank, receivable unchanged');
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
-select clinic_receive_invoice_payment((select id from inv where name='dp'),pg_temp.today(),60000,'Tunai','1101',null,'kln-dp-settle');
+select clinic_receive_invoice_payment((select id from inv where name='dp'),pg_temp.today(),60000,'Tunai','110003',null,'kln-dp-settle');
 select pg_temp.ok((select paid_status='Lunas' from invoices where id=(select id from inv where name='dp'))
- and pg_temp.bal((select id from inv where name='dp'),'1101')=60000 and pg_temp.bal((select id from inv where name='dp'),'1201')=0,
+ and pg_temp.bal((select id from inv where name='dp'),'110003')=60000 and pg_temp.bal((select id from inv where name='dp'),'150001')=0,
  'receivable settlement still works after a DP correction');
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
 -- Pelunasan yang baru juga dapat dikoreksi; total kas/bank invoice tetap 100.000.
 insert into r select 'dp-2',correct_clinic_invoice_payment((select id from inv where name='dp'),
  (select id from invoice_payments where invoice_id=(select id from inv where name='dp')),1,'kln-dp-2','Pelunasan via transfer','Transfer');
-select pg_temp.ok(pg_temp.bal((select id from inv where name='dp'),'1101')=0 and pg_temp.bal((select id from inv where name='dp'),'1102')=100000,
+select pg_temp.ok(pg_temp.bal((select id from inv where name='dp'),'110003')=0 and pg_temp.bal((select id from inv where name='dp'),'120002')=100000,
  'settlement part corrected');
 
 -- D. Periode tertutup, rekening terekonsiliasi dan kegagalan tengah jalan ditolak tanpa sisa.
@@ -186,21 +186,21 @@ select pg_temp.reject($q$select correct_clinic_invoice_payment((select id from i
  'closed accounting period','Periode');
 reset role;
 update accounting_locks set closed_until=null where id;
-insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) select pg_temp.today(),id,'1102' from cash_accounts where coa_code='1102';
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) select pg_temp.today(),id,'120002' from cash_accounts where coa_code='120002';
 set local role authenticated;
 select pg_temp.reject($q$select correct_clinic_invoice_payment((select id from inv where name='split'),
  (select min(id::text)::uuid from invoice_payments where invoice_id=(select id from inv where name='split')),1,'kln-recon','Kasir salah pilih metode','Tunai')$q$,
  'reconciled bank account','Rekonsiliasi bank');
 reset role;
-delete from bank_reconciliations where bank_coa_code='1102';
+delete from bank_reconciliations where bank_coa_code='120002';
 -- Rekening tujuan yang dipetakan tidak aktif ditolak.
-update cash_accounts set is_active=false where coa_code='1101';
+update cash_accounts set is_active=false where coa_code='110003';
 set local role authenticated;
 select pg_temp.reject($q$select correct_clinic_invoice_payment((select id from inv where name='split'),
  (select min(id::text)::uuid from invoice_payments where invoice_id=(select id from inv where name='split')),1,'kln-unmapped','Kasir salah pilih metode','Tunai')$q$,
  'inactive mapped destination account','belum dipetakan atau tidak aktif');
 reset role;
-update cash_accounts set is_active=true where coa_code='1101';
+update cash_accounts set is_active=true where coa_code='110003';
 create function pg_temp.force_rollback() returns trigger language plpgsql as $$begin raise exception 'Injected audit storage failure';end$$;
 create trigger kln_force_rollback before insert on clinic_payment_corrections for each row execute function pg_temp.force_rollback();
 set local role authenticated;

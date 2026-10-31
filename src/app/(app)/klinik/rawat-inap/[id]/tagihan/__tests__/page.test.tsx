@@ -29,7 +29,7 @@ vi.mock("@/lib/supabase/server", () => ({
       if (state.quoteError || d.tahap.some(t => t.correction_pending)) return { data: null, error: state.quoteError ?? { message: "pending correction" } };
       const pending = d.belumDitagih.reduce((sum, b) => sum + b.qty * b.harga, 0) + state.quoteTax;
       const debt = d.tahap.reduce((sum, t) => sum + t.sisa, 0);
-      return { error: null, data: { token: "quote", remaining: Math.max(0, debt + pending - d.saldoUangMuka), credit: d.saldoUangMuka, pending, debt, amount: 0, excess: 0, accounts: [{ method: "Transfer", code: "1102", name: "Bank Fiktif", bank: "Bank Fiktif", number: "123456" }] } };
+      return { error: null, data: { token: "quote", remaining: Math.max(0, debt + pending - d.saldoUangMuka), credit: d.saldoUangMuka, pending, debt, amount: 0, excess: 0, accounts: [{ method: "Transfer", code: "120002", name: "Bank Fiktif", bank: "Bank Fiktif", number: "123456" }] } };
     },
     from: () => ({
       select: () => ({
@@ -53,7 +53,7 @@ const dasar = () => ({
   kwitansi: [{
     id: "kwt-1", no_kwitansi: "KWT-202610-0001", tanggal: "2026-10-27", total: 100_000, status: "aktif",
     catatan: null as string | null, void_reason: null as string | null, created_at: "2026-10-27T02:00:00Z", kasir: "Wowo",
-    bagian: [{ urutan: 1, metode: "Tunai", amount: 60_000, kas_code: "1101" }, { urutan: 2, metode: "QRIS", amount: 40_000, kas_code: "1102" }],
+    bagian: [{ urutan: 1, metode: "Tunai", amount: 60_000, kas_code: "110003" }, { urutan: 2, metode: "QRIS", amount: 40_000, kas_code: "120002" }],
   }],
   uangMuka: [{ id: "um-1", no_uang_muka: "UMK-202610-0001", tanggal: "2026-10-27", amount: 50_000, applied: 0, status: "aktif" }],
   saldoUangMuka: 50_000,

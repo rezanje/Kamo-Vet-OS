@@ -1,4 +1,4 @@
-export const AKUN_DISKON_PENJUALAN = "4102";
+export const AKUN_DISKON_PENJUALAN = "520002";
 
 export type BarisJurnalPenjualan = { code: string; debit: number; credit: number };
 
@@ -19,8 +19,8 @@ export function jurnalPenjualanInklusif(o: {
   return [
     { code: o.kasCode, debit: total, credit: 0 },
     ...(diskonDpp > 0 ? [{ code: AKUN_DISKON_PENJUALAN, debit: diskonDpp, credit: 0 }] : []),
-    { code: "4101", debit: 0, credit: bruto.dpp },
-    ...(netto.ppn > 0 ? [{ code: "2201", debit: 0, credit: netto.ppn }] : []),
+    { code: "510001", debit: 0, credit: bruto.dpp },
+    ...(netto.ppn > 0 ? [{ code: "312005", debit: 0, credit: netto.ppn }] : []),
   ];
 }
 
@@ -41,10 +41,10 @@ export function jurnalPenjualanKlinik(o: {
 
   return [
     ...(cashReceived > 0 ? [{ code: o.kasCode, debit: cashReceived, credit: 0 }] : []),
-    ...(piutang > 0 ? [{ code: "1201", debit: piutang, credit: 0 }] : []),
+    ...(piutang > 0 ? [{ code: "150001", debit: piutang, credit: 0 }] : []),
     ...(discount > 0 ? [{ code: AKUN_DISKON_PENJUALAN, debit: discount, credit: 0 }] : []),
-    { code: "4201", debit: 0, credit: subtotal },
-    ...(tax > 0 ? [{ code: "2201", debit: 0, credit: tax }] : []),
+    { code: "510002", debit: 0, credit: subtotal },
+    ...(tax > 0 ? [{ code: "312005", debit: 0, credit: tax }] : []),
   ];
 }
 

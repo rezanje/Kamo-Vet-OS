@@ -43,7 +43,7 @@ const SOURCE = "f4000000-0000-4000-8000-000000000002";
 const ENTRY = "f4000000-0000-4000-8000-000000000003";
 const snapshot = { entry_id: SOURCE, no_jurnal: "JU-FIKTIF-1", tanggal: "2025-12-31", branch_id: null, deskripsi: "Fixture", lines: [
   { line_id: "line-1", account_id: "account-1", code: "6001", debit: 1200, credit: 0 },
-  { line_id: "line-2", account_id: "account-2", code: "2101", debit: 0, credit: 1200 },
+  { line_id: "line-2", account_id: "account-2", code: "311001", debit: 0, credit: 1200 },
 ] };
 
 beforeEach(() => {

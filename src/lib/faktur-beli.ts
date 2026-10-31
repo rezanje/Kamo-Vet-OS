@@ -7,37 +7,37 @@ export function formatNoFaktur(date: Date, seq: number): string {
   return `FB.${y}.${m}.${String(seq).padStart(5, "0")}`;
 }
 
-// Jurnal faktur: Dr 2102 (nilai PO porsi difakturkan) / Cr 2101 (nilai faktur);
-// ppn (Mode PKP): Dr 1105 PPN Masukan; sisa selisih → 1301 (koreksi nilai persediaan).
+// Jurnal faktur: Dr 311003 (nilai PO porsi difakturkan) / Cr 311001 (nilai faktur);
+// ppn (Mode PKP): Dr 182004 PPN Masukan; sisa selisih → 170001 (koreksi nilai persediaan).
 export type JurnalLine = { code: string; debit: number; credit: number };
 
 export function buildFakturLines(nilaiPO: number, nilaiFaktur: number, ppn = 0): JurnalLine[] {
   if (nilaiPO <= 0 && nilaiFaktur <= 0) return [];
   const lines: JurnalLine[] = [
-    { code: "2102", debit: nilaiPO, credit: 0 },
-    { code: "2101", debit: 0, credit: nilaiFaktur },
+    { code: "311003", debit: nilaiPO, credit: 0 },
+    { code: "311001", debit: 0, credit: nilaiFaktur },
   ];
-  if (ppn > 0) lines.push({ code: "1105", debit: ppn, credit: 0 });
+  if (ppn > 0) lines.push({ code: "182004", debit: ppn, credit: 0 });
   const selisih = nilaiFaktur - ppn - nilaiPO;
-  if (selisih > 0) lines.push({ code: "1301", debit: selisih, credit: 0 });
-  else if (selisih < 0) lines.push({ code: "1301", debit: 0, credit: -selisih });
+  if (selisih > 0) lines.push({ code: "170001", debit: selisih, credit: 0 });
+  else if (selisih < 0) lines.push({ code: "170001", debit: 0, credit: -selisih });
   return lines.filter((l) => l.debit > 0 || l.credit > 0);
 }
 
 /**
  * Jurnal faktur pembelian LANGSUNG (tanpa PO, barang masuk di dokumen yang sama).
  *
- * Barangnya belum pernah lewat 2102 Hutang Belum Difakturkan — tidak ada
+ * Barangnya belum pernah lewat 311003 Hutang Belum Difakturkan — tidak ada
  * penerimaan terpisah — jadi tidak ada saldo GRNI untuk dilawan. Satu dokumen
  * menggabungkan "barang masuk" dan "utang timbul":
  *
- *   Dr 1301 Persediaan   = DPP
- *   Dr 1105 PPN Masukan  = PPN (kalau mode PKP aktif)
- *   Cr 2101 Hutang Usaha = total faktur
+ *   Dr 170001 Persediaan   = DPP
+ *   Dr 182004 PPN Masukan  = PPN (kalau mode PKP aktif)
+ *   Cr 311001 Hutang Usaha = total faktur
  *
  * Persediaan dinilai sebesar DPP, bukan total: PPN Masukan bisa dikreditkan, jadi
  * ia bukan bagian dari harga pokok barang. Nilai lapisan stok WAJIB memakai dasar
- * yang sama — kalau tidak, saldo 1301 di buku besar dan nilai stok berpisah sejak
+ * yang sama — kalau tidak, saldo 170001 di buku besar dan nilai stok berpisah sejak
  * faktur pertama. Saat mode PKP mati, dpp = total sehingga tidak ada bedanya.
  */
 export function buildFakturLangsungLines(total: number, ppn = 0): JurnalLine[] {
@@ -46,9 +46,9 @@ export function buildFakturLangsungLines(total: number, ppn = 0): JurnalLine[] {
   const pajak = Math.max(0, Math.min(Number(ppn) || 0, nilai));
   const dpp = nilai - pajak;
   return [
-    ...(dpp > 0 ? [{ code: "1301", debit: dpp, credit: 0 }] : []),
-    ...(pajak > 0 ? [{ code: "1105", debit: pajak, credit: 0 }] : []),
-    { code: "2101", debit: 0, credit: nilai },
+    ...(dpp > 0 ? [{ code: "170001", debit: dpp, credit: 0 }] : []),
+    ...(pajak > 0 ? [{ code: "182004", debit: pajak, credit: 0 }] : []),
+    { code: "311001", debit: 0, credit: nilai },
   ];
 }
 

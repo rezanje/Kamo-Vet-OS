@@ -40,7 +40,7 @@ try:
     import uuid
     owner = str(uuid.UUID(hashlib.md5(b'ai-owner').hexdigest()))
     auth = "set role authenticated;set request.jwt.claim.role='authenticated';set request.jwt.claim.sub='" + owner + "';"
-    reviewed = json.loads(sales.sql(auth + "select preview_accurate_inventory_accounting(md5('ai-run')::uuid,(select id from coa_accounts where code='3101'));").stdout)
+    reviewed = json.loads(sales.sql(auth + "select preview_accurate_inventory_accounting(md5('ai-run')::uuid,(select id from coa_accounts where code='410001'));").stdout)
     assert reviewed['can_post'], reviewed
     processes = []
     def start(name, source):
@@ -60,7 +60,7 @@ try:
         activation = start('reviewed-import-activation', 'begin;select pg_advisory_xact_lock(1962072401::bigint);select pg_sleep(1);select activate_moving_average();commit;')
         wait('reviewed-import-activation', "wait_event='PgSleep'")
         payload = json.dumps(reviewed).replace("'", "''")
-        post = start('reviewed-import-waiter', "select post_accurate_inventory_accounting(md5('ai-run')::uuid,(select id from coa_accounts where code='3101'),'" + payload + "'::jsonb,'Owner reviewed activation race');")
+        post = start('reviewed-import-waiter', "select post_accurate_inventory_accounting(md5('ai-run')::uuid,(select id from coa_accounts where code='410001'),'" + payload + "'::jsonb,'Owner reviewed activation race');")
         wait('reviewed-import-waiter', "wait_event_type='Lock' and wait_event='advisory'")
         assert sales.sql("select not exists(select 1 from pg_locks l join pg_stat_activity a on a.pid=l.pid where a.application_name='reviewed-import-waiter' and l.relation='public.stock'::regclass and l.mode='ShareRowExclusiveLock' and l.granted);").stdout.strip() == 't', 'Waiting import held stock before global inventory lock'
         for proc in [activation, post]:

@@ -49,45 +49,45 @@ describe("validasiTransfer", () => {
 
 describe("jurnalTransfer", () => {
   it("biaya admin dibebankan ke rekening sumber", () => {
-    const lines = jurnalTransfer("1101", "1102", 1000000, 6500);
+    const lines = jurnalTransfer("110003", "120002", 1000000, 6500);
     expect(lines).toEqual([
-      { code: "1102", debit: 1000000, credit: 0 },
-      { code: "5501", debit: 6500, credit: 0 },
-      { code: "1101", debit: 0, credit: 1006500 },
+      { code: "120002", debit: 1000000, credit: 0 },
+      { code: "740010", debit: 6500, credit: 0 },
+      { code: "110003", debit: 0, credit: 1006500 },
     ]);
     expect(totalDebit(lines)).toBe(totalKredit(lines));
   });
 
   it("tanpa biaya admin, baris beban tidak dibuat", () => {
-    const lines = jurnalTransfer("1101", "1102", 250000, 0);
+    const lines = jurnalTransfer("110003", "120002", 250000, 0);
     expect(lines).toEqual([
-      { code: "1102", debit: 250000, credit: 0 },
-      { code: "1101", debit: 0, credit: 250000 },
+      { code: "120002", debit: 250000, credit: 0 },
+      { code: "110003", debit: 0, credit: 250000 },
     ]);
     expect(totalDebit(lines)).toBe(totalKredit(lines));
   });
 
   it("biaya negatif dari data kotor diperlakukan nol, bukan mengurangi kredit sumber", () => {
-    const lines = jurnalTransfer("1101", "1102", 100000, -50000);
+    const lines = jurnalTransfer("110003", "120002", 100000, -50000);
     expect(lines).toHaveLength(2);
-    expect(lines[1]).toEqual({ code: "1101", debit: 0, credit: 100000 });
+    expect(lines[1]).toEqual({ code: "110003", debit: 0, credit: 100000 });
   });
 });
 
 describe("jurnalBalik", () => {
   it("debit & kredit ditukar, tetap seimbang", () => {
-    const asli = jurnalTransfer("1101", "1102", 1000000, 6500);
+    const asli = jurnalTransfer("110003", "120002", 1000000, 6500);
     const balik = jurnalBalik(asli);
     expect(balik).toEqual([
-      { code: "1102", debit: 0, credit: 1000000 },
-      { code: "5501", debit: 0, credit: 6500 },
-      { code: "1101", debit: 1006500, credit: 0 },
+      { code: "120002", debit: 0, credit: 1000000 },
+      { code: "740010", debit: 0, credit: 6500 },
+      { code: "110003", debit: 1006500, credit: 0 },
     ]);
     expect(totalDebit(balik)).toBe(totalKredit(balik));
   });
 
   it("dibalik dua kali kembali ke asal", () => {
-    const asli = jurnalTransfer("1101", "1102", 77000, 0);
+    const asli = jurnalTransfer("110003", "120002", 77000, 0);
     expect(jurnalBalik(jurnalBalik(asli))).toEqual(asli);
   });
 });
@@ -104,17 +104,21 @@ describe("nomorTransfer", () => {
 });
 
 describe("kodeAkunBerikutnya", () => {
-  it("melompati kode yang sudah terpakai (1105 = PPN Masukan)", () => {
-    expect(kodeAkunBerikutnya(["1101", "1102", "1105"])).toBe("1103");
-    expect(kodeAkunBerikutnya(["1101", "1102", "1103", "1104", "1105"])).toBe("1106");
+  it("kas melanjutkan bagan akun 110001–110022 dan melompati kode terpakai", () => {
+    expect(kodeAkunBerikutnya(["110003", "120002", "182004"])).toBe("110023");
+    expect(kodeAkunBerikutnya(["110003", "110023", "110024"], "Kas")).toBe("110025");
+  });
+
+  it("bank memakai rentangnya sendiri, melanjutkan 120001–120006", () => {
+    expect(kodeAkunBerikutnya(["120002", "120007"], "Bank")).toBe("120008");
   });
 
   it("mengabaikan kode di luar rentang kas/bank", () => {
-    expect(kodeAkunBerikutnya(["1301", "4101", "5601"])).toBe("1103");
+    expect(kodeAkunBerikutnya(["170001", "510001", "750004"])).toBe("110023");
   });
 
   it("rentang penuh mengembalikan null, bukan kode ngawur", () => {
-    const penuh = Array.from({ length: 97 }, (_, i) => String(1103 + i)); // 1103..1199
-    expect(kodeAkunBerikutnya(penuh)).toBeNull();
+    const penuh = Array.from({ length: 129999 - 120007 + 1 }, (_, i) => String(120007 + i));
+    expect(kodeAkunBerikutnya(penuh, "Bank")).toBeNull();
   });
 });

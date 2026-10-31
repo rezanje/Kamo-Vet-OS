@@ -20,12 +20,12 @@ def concurrency(source):
  alter table profiles disable trigger guard_profile_privileges;
  update profiles set role='OWNER',is_active=true where id in('fab10000-0000-4000-8000-000000000001','fab10000-0000-4000-8000-000000000002');
  alter table profiles enable trigger guard_profile_privileges;
- insert into coa_accounts(code,name,type,normal_balance) values('3101','Equity','EKUITAS','K'),('119701','Race bank','ASET','D'),('139701','Race noncash','ASET','D') on conflict(code) do nothing;
+ insert into coa_accounts(code,name,type,normal_balance) values('410001','Equity','EKUITAS','K'),('119701','Race bank','ASET','D'),('139701','Race noncash','ASET','D') on conflict(code) do nothing;
  insert into cash_accounts(id,nama,jenis,coa_code,created_at) values('fab20000-0000-4000-8000-000000000001','Race bank','Bank','119701',now()-interval '10 days');
  insert into journal_entries(id,no_jurnal,tanggal,source,source_ref) values('fab30000-0000-4000-8000-000000000001','RACE.OPEN',current_date-10,'cash-account-opening','119701');
  insert into journal_lines(entry_id,account_id,debit,credit)
  select 'fab30000-0000-4000-8000-000000000001'::uuid,id,500,0 from coa_accounts where code='119701'
- union all select 'fab30000-0000-4000-8000-000000000001',id,0,500 from coa_accounts where code='3101';
+ union all select 'fab30000-0000-4000-8000-000000000001',id,0,500 from coa_accounts where code='410001';
  update accounting_locks set closed_until=null where id;
  """)
  active=[]

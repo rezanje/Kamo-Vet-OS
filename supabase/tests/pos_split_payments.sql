@@ -16,7 +16,7 @@ insert into warehouses(id,branch_id,code,name,type) values('e3300000-0000-4000-8
 insert into cashier_shifts(id,branch_id,opened_by,shift_type) values('e4400000-0000-4000-8000-000000000001','e2200000-0000-4000-8000-000000000001','e1100000-0000-4000-8000-000000000001','petshop');
 insert into items(id,code,name,unit,item_type) values('e5500000-0000-4000-8000-000000000001','SPLITSERVICE','Split service','pcs','Jasa'),('e5500000-0000-4000-8000-000000000002','SPLITSTOCK','Split stock','pcs','Persediaan');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
-('1111','Split cash','ASET','D',false),('1112','Split bank','ASET','D',false),('1113','Other bank','ASET','D',false),('1114','Changed bank','ASET','D',false),('4101','Sales','PENDAPATAN','K',false),('4102','Discount','PENDAPATAN','D',false),('2201','VAT','LIABILITAS','K',false),('5101','COGS','BEBAN','D',false),('1301','Inventory','ASET','D',false),('5902','Loss','BEBAN','D',false)
+('1111','Split cash','ASET','D',false),('1112','Split bank','ASET','D',false),('1113','Other bank','ASET','D',false),('1114','Changed bank','ASET','D',false),('510001','Sales','PENDAPATAN','K',false),('520002','Discount','PENDAPATAN','D',false),('312005','VAT','LIABILITAS','K',false),('600001','COGS','BEBAN','D',false),('170001','Inventory','ASET','D',false),('720010','Loss','BEBAN','D',false)
 on conflict(code) do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code) values('e6600000-0000-4000-8000-000000000001','Split cash','Kas','1111'),('e6600000-0000-4000-8000-000000000002','Split bank','Bank','1112'),('e6600000-0000-4000-8000-000000000003','Global bank','Bank','1113'),('e6600000-0000-4000-8000-000000000004','Changed bank','Bank','1114');
 insert into payment_account_map(metode,branch_id,cash_account_id) values('Tunai','e2200000-0000-4000-8000-000000000001','e6600000-0000-4000-8000-000000000001'),('Transfer','e2200000-0000-4000-8000-000000000001','e6600000-0000-4000-8000-000000000002'),('Transfer',null,'e6600000-0000-4000-8000-000000000003') on conflict do nothing;
@@ -41,7 +41,7 @@ select finalize_pos_sale((select id from sales where no_struk='SPLIT.ACCEPT'));
 select finalize_pos_sale((select id from sales where no_struk='SPLIT.ACCEPT'));
 select pg_temp.assert_ok((select payments_finalized_at is not null from sales where no_struk='SPLIT.ACCEPT'),'finalization metadata');
 select pg_temp.assert_ok((select count(*)=1 from journal_entries where source='sale' and source_ref='SPLIT.ACCEPT'),'idempotent finalization, no duplicate revenue');
-select pg_temp.assert_ok(pg_temp.balance('SPLIT.ACCEPT','sale','4101')=-100000,'one revenue total');
+select pg_temp.assert_ok(pg_temp.balance('SPLIT.ACCEPT','sale','510001')=-100000,'one revenue total');
 -- A close read before finalization must not save an outdated target or omit
 -- noncash parts; legacy NULL-plan header money participates in the same sum.
 select pg_temp.sale('CLOSE.LEGACY.CASH',null,2500,2500,2500,0,'Tunai');
@@ -96,7 +96,7 @@ select pg_temp.reject($q$select finalize_pos_sale((select id from sales where no
 update sale_items set harga=50000 where sale_id=(select id from sales where no_struk='SPLIT.HPP');
 select finalize_pos_sale((select id from sales where no_struk='SPLIT.HPP'));
 select finalize_pos_sale((select id from sales where no_struk='SPLIT.HPP'));
-select pg_temp.assert_ok(pg_temp.balance('SPLIT.HPP','sale-hpp','5101')=40000 and pg_temp.balance('SPLIT.HPP','sale-hpp','1301')=-40000,'FIFO HPP posted once');
+select pg_temp.assert_ok(pg_temp.balance('SPLIT.HPP','sale-hpp','600001')=40000 and pg_temp.balance('SPLIT.HPP','sale-hpp','170001')=-40000,'FIFO HPP posted once');
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000002',true);
 select pg_temp.assert_ok((select count(*)=0 from sale_payments),'allocation RLS');
 select pg_temp.reject($q$select finalize_pos_sale((select id from sales where no_struk='SPLIT.ACCEPT'))$q$,'foreign finalization');
@@ -128,7 +128,7 @@ set local role authenticated;
 select pg_temp.sale('SPLIT.TAX',gross=>111000);
 select pg_temp.lines((select id from sales where no_struk='SPLIT.TAX'),111000);
 select finalize_pos_sale((select id from sales where no_struk='SPLIT.TAX'));
-select pg_temp.assert_ok(pg_temp.balance('SPLIT.TAX','sale','4101')=-100000 and pg_temp.balance('SPLIT.TAX','sale','4102')=9909.91 and pg_temp.balance('SPLIT.TAX','sale','2201')=-9909.91,'gross revenue, discount DPP, net VAT');
+select pg_temp.assert_ok(pg_temp.balance('SPLIT.TAX','sale','510001')=-100000 and pg_temp.balance('SPLIT.TAX','sale','520002')=9909.91 and pg_temp.balance('SPLIT.TAX','sale','312005')=-9909.91,'gross revenue, discount DPP, net VAT');
 reset role;
 update payment_account_map set cash_account_id='e6600000-0000-4000-8000-000000000004' where metode='Transfer' and branch_id='e2200000-0000-4000-8000-000000000001';
 update company_settings set mode_pkp=false,ppn_rate=12;
@@ -141,14 +141,14 @@ select pg_temp.assert_ok((select bool_and(refunded=amount) from(select p.id,p.am
 select pg_temp.assert_ok((select sum(l.credit) filter(where a.code='1112')=80000 and coalesce(sum(l.credit) filter(where a.code='1114'),0)=0 from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where e.source='sales-return' and e.source_ref in(select no_retur from sales_returns where sale_id=(select id from sales where no_struk='SPLIT.ACCEPT'))),'original bank survives changed mapping');
 select pg_temp.reject($q$select pg_temp.refund('SPLIT.ACCEPT','split-return-over',1)$q$,'source refund ceiling');
 select pg_temp.refund('SPLIT.TAX','split-tax-return',2);
-select pg_temp.assert_ok((select sum(l.debit) filter(where a.code='4101')=100000 and sum(l.credit) filter(where a.code='4102')=9909.91 and sum(l.debit) filter(where a.code='2201')=9909.91 from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where e.source='sales-return' and e.source_ref in(select no_retur from sales_returns where sale_id=(select id from sales where no_struk='SPLIT.TAX'))),'original VAT and discount reverse exactly');
+select pg_temp.assert_ok((select sum(l.debit) filter(where a.code='510001')=100000 and sum(l.credit) filter(where a.code='520002')=9909.91 and sum(l.debit) filter(where a.code='312005')=9909.91 from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where e.source='sales-return' and e.source_ref in(select no_retur from sales_returns where sale_id=(select id from sales where no_struk='SPLIT.TAX'))),'original VAT and discount reverse exactly');
 -- Sealed zero-total sales retain stock cost, and their source details freeze.
 select pg_temp.sale('FREE.NEW','[]',0,100000,10000,10000,'Tunai');
 select pg_temp.lines((select id from sales where no_struk='FREE.NEW'),100000,40000,'e5500000-0000-4000-8000-000000000002');
 select pg_temp.assert_ok((finalize_pos_sale((select id from sales where no_struk='FREE.NEW'))->>'finalized')::boolean,'free sale finalizes');
 select pg_temp.assert_ok((select count(*)=0 from sale_payments where sale_id=(select id from sales where no_struk='FREE.NEW')),'free sale has no payment allocations');
 select pg_temp.assert_ok((select count(*)=0 from journal_entries where source='sale' and source_ref='FREE.NEW'),'free sale has no money journal');
-select pg_temp.assert_ok(pg_temp.balance('FREE.NEW','sale-hpp','5101')=40000,'free stock retains FIFO HPP');
+select pg_temp.assert_ok(pg_temp.balance('FREE.NEW','sale-hpp','600001')=40000,'free stock retains FIFO HPP');
 select pg_temp.reject($q$update sale_items set harga=1 where sale_id=(select id from sales where no_struk='FREE.NEW')$q$,'free finalized source immutable');
 select pg_temp.reject($q$select pg_temp.sale('BAD.FREE','[]',0,100000,0,0,'Split')$q$,'free split forbidden');
 select pg_temp.sale('SPLIT.ONE','[{"method":"Tunai","amount":100000}]');
@@ -169,14 +169,14 @@ select pg_temp.reject($q$update sale_payment_refunds set amount=1$q$,'refund sna
 select pg_temp.sale('SPLIT.LATEFAIL');
 select pg_temp.lines((select id from sales where no_struk='SPLIT.LATEFAIL'));
 reset role;
-update coa_accounts set is_active=false where code='4101';
+update coa_accounts set is_active=false where code='510001';
 set local role authenticated;
 select pg_temp.reject($q$select finalize_pos_sale((select id from sales where no_struk='SPLIT.LATEFAIL'))$q$,'late account failure');
 select pg_temp.assert_ok((select payments_finalized_at is null from sales where no_struk='SPLIT.LATEFAIL'),'late failure does not seal');
 select pg_temp.assert_ok((select count(*)=0 from journal_entries where source_ref='SPLIT.LATEFAIL'),'late failure leaves no journal');
 delete from sales where no_struk='SPLIT.LATEFAIL';
 reset role;
-update coa_accounts set is_active=true where code='4101';
+update coa_accounts set is_active=true where code='510001';
 set local role authenticated;
 -- Small cent amounts never produce a negative VAT or over-refund a method.
 reset role;
@@ -185,7 +185,7 @@ set local role authenticated;
 select pg_temp.sale('TINY.TAX','[{"method":"Tunai","amount":0.56}]',0.56,0.56,0.56,0,'Tunai');
 select pg_temp.lines((select id from sales where no_struk='TINY.TAX'),0.56);
 select finalize_pos_sale((select id from sales where no_struk='TINY.TAX'));
-select pg_temp.assert_ok(pg_temp.balance('TINY.TAX','sale','4101')=-0.50 and pg_temp.balance('TINY.TAX','sale','2201')=-0.06,'tiny VAT remains positive and balances');
+select pg_temp.assert_ok(pg_temp.balance('TINY.TAX','sale','510001')=-0.50 and pg_temp.balance('TINY.TAX','sale','312005')=-0.06,'tiny VAT remains positive and balances');
 select pg_temp.refund('TINY.TAX','tiny-return-1',1);
 select pg_temp.refund('TINY.TAX','tiny-return-2',1);
 reset role;
@@ -230,8 +230,8 @@ reset role;
 set local role service_role;
 insert into journal_entries(id,no_jurnal,tanggal,branch_id,source,source_ref,deskripsi)
  values('e8800000-0000-4000-8000-000000000001','SPLIT-SERVICE-LEGACY',(now() at time zone 'Asia/Jakarta')::date,'e2200000-0000-4000-8000-000000000001','depreciation','fictional-service-test','Fictional legacy service journal');
-insert into journal_lines(entry_id,account_id,debit,credit) select 'e8800000-0000-4000-8000-000000000001',id,10,0 from coa_accounts where code='5101';
-insert into journal_lines(entry_id,account_id,debit,credit) select 'e8800000-0000-4000-8000-000000000001',id,0,10 from coa_accounts where code='1301';
+insert into journal_lines(entry_id,account_id,debit,credit) select 'e8800000-0000-4000-8000-000000000001',id,10,0 from coa_accounts where code='600001';
+insert into journal_lines(entry_id,account_id,debit,credit) select 'e8800000-0000-4000-8000-000000000001',id,0,10 from coa_accounts where code='170001';
 select pg_temp.assert_ok((select sum(debit)=10 and sum(credit)=10 from journal_lines where entry_id='e8800000-0000-4000-8000-000000000001'),'legacy service-role journal still posts');
 select pg_temp.reject($q$update journal_entries set deskripsi='tampered' where source='sale' and source_ref='SPLIT.ACCEPT'$q$,'service API cannot rewrite protected POS');
 delete from journal_entries where id='e8800000-0000-4000-8000-000000000001';

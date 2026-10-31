@@ -34,5 +34,5 @@ select pg_temp.assert_ok((select count(*) from expenses where voided_at is null)
 insert into planned_results values('new-full',pg_temp.refund('CORRECT.SPLIT.FEE','return-full-after-cancel',2));
 select pg_temp.assert_ok((select sum(total) from sales_returns where voided_at is null)=101600,'full return ceiling reopens after cancellation');
 select pg_temp.assert_ok((select sum(jumlah) from expenses where voided_at is null)=101600,'new full refund exactly matches gross paid bill including fee');
-select pg_temp.assert_ok((select sum(l.credit-l.debit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='4303' and e.source in('sales-return','return-record-void'))=-1600,'merchant fee reversed once');
+select pg_temp.assert_ok((select sum(l.credit-l.debit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='810004' and e.source in('sales-return','return-record-void'))=-1600,'merchant fee reversed once');
 rollback;

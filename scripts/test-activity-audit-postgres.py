@@ -91,7 +91,7 @@ with (NativeDisposablePostgres(args.pg_bin) if args.pg_bin else fixture.Disposab
         print('Wrote schema metadata only: ' + str(destination.relative_to(ROOT)), flush=True)
     # Same accounting reference code as supabase/seed.sql, with fictional label.
     # The legacy manual-journal suite assumes it exists but does not seed it.
-    database.sql("insert into coa_accounts(code,name,type,normal_balance) values('4101','Fictional A01 revenue prerequisite','PENDAPATAN','K') on conflict(code) do nothing;")
+    database.sql("insert into coa_accounts(code,name,type,normal_balance) values('510001','Fictional A01 revenue prerequisite','PENDAPATAN','K') on conflict(code) do nothing;")
     print('Fictional prerequisite: COA 4101 (legacy manual-journal fixture).', flush=True)
     for index, test in enumerate(tests):
         name = 'a01_suite_' + str(index)

@@ -5,7 +5,7 @@ update profiles set role='STAFF',is_active=true where id=md5('i02-cashier')::uui
 insert into branches(id,code,name,type) values(md5('i02-vet-branch')::uuid,'I02V','Fictional clinic','KLINIK'),(md5('i02-retail-branch')::uuid,'I02R','Fictional retail','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('i02-vet-wh')::uuid,md5('i02-vet-branch')::uuid,'I02V','Fictional clinic warehouse','VET'),(md5('i02-retail-wh')::uuid,md5('i02-retail-branch')::uuid,'I02R','Fictional retail warehouse','RETAIL');
 insert into items(id,code,name,unit,item_type,buy_price,sell_price) values(md5('i02-a')::uuid,'I02A','Fictional item A','PCS','Persediaan',100,150),(md5('i02-b')::uuid,'I02B','Fictional item B','PCS','Persediaan',50,100);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fiction inventory','ASET','D'),('5902','Fiction variance','BEBAN','D'),('5101','Fiction COGS','BEBAN','D'),('1201','Fiction receivable','ASET','D'),('4101','Fiction revenue','PENDAPATAN','K') on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction inventory','ASET','D'),('720010','Fiction variance','BEBAN','D'),('600001','Fiction COGS','BEBAN','D'),('150001','Fiction receivable','ASET','D'),('510001','Fiction revenue','PENDAPATAN','K') on conflict(code) do update set is_active=true,is_header=false;
 create function pg_temp.assert_ok(ok boolean,label text) returns void language plpgsql as $$begin if ok is distinct from true then raise exception 'ASSERT: %',label;end if;end$$;
 create function pg_temp.order_doc(label text,wh text default 'i02-vet-wh') returns uuid language plpgsql as $$declare id uuid:=md5(label)::uuid;begin insert into opname_orders(id,no_opname,warehouse_id,penanggung_jawab) values(id,'OPO.'||left(md5(label),12),md5(wh)::uuid,'Fictional counter');return id;end$$;
 
@@ -17,7 +17,7 @@ select set_config('request.jwt.claim.role','authenticated',true);
 select post_opname_atomic(md5('i02-gain')::uuid,current_date-1,jsonb_build_object(md5('i02-a')::uuid::text,2));
 select pg_temp.assert_ok((select qty=2 from stock where warehouse_id=md5('i02-vet-wh')::uuid and item_id=md5('i02-a')::uuid),'positive stock');
 select pg_temp.assert_ok((select count(*)=1 and min(tanggal)=current_date-1 from stock_moves where source='opname'),'positive move date matches selected date');
-select pg_temp.assert_ok((select sum(l.debit-l.credit)=200 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='1301' and j.source='opname'),'inventory gain journal');
+select pg_temp.assert_ok((select sum(l.debit-l.credit)=200 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='170001' and j.source='opname'),'inventory gain journal');
 select pg_temp.assert_ok((select status::text='Selesai' from opname_orders where id=md5('i02-gain')::uuid),'completed after journal');
 select post_opname_atomic(md5('i02-gain')::uuid,current_date-1,jsonb_build_object(md5('i02-a')::uuid::text,2));
 select pg_temp.assert_ok((select count(*)=1 from opname_results where order_id=md5('i02-gain')::uuid),'retry one result');
@@ -53,7 +53,7 @@ select set_config('request.jwt.claim.sub',md5('i02-owner')::uuid::text,true);
 select set_config('request.jwt.claim.role','authenticated',true);
 select post_opname_atomic(md5('i02-mixed')::uuid,current_date,jsonb_build_object(md5('i02-a')::uuid::text,8,md5('i02-b')::uuid::text,2));
 select pg_temp.assert_ok((select count(*)=2 from opname_result_items),'mixed two counted lines');
-select pg_temp.assert_ok((select sum(l.debit-l.credit)=-100 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='1301' and j.source='opname'),'mixed gain/loss exact inventory journal delta');
+select pg_temp.assert_ok((select sum(l.debit-l.credit)=-100 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='170001' and j.source='opname'),'mixed gain/loss exact inventory journal delta');
 select pg_temp.assert_ok((select count(*)=2 from journal_entries where source='opname'),'mixed two distinct balanced journals');
 select pg_temp.assert_ok(not exists(select j.id from journal_entries j join journal_lines l on l.entry_id=j.id where j.source='opname' group by j.id having sum(l.debit)<>sum(l.credit)),'each journal balanced');
 select pg_temp.assert_ok((select sum(qty_left*unit_cost)=900 from stock_layers),'mixed layer cost delta equals GL');
@@ -73,7 +73,7 @@ select post_opname_atomic(md5('i02-after-sale')::uuid,current_date,jsonb_build_o
 select pg_temp.assert_ok((select qty=0 from stock where warehouse_id=md5('i02-vet-wh')::uuid and item_id=md5('i02-a')::uuid),'post-lock sale preserved, not absolute set');
 select pg_temp.assert_ok((select qty_sistem=-5 and qty_fisik=1 and selisih=6 from opname_result_items),'negative snapshot preserved');
 select pg_temp.assert_ok(not exists(select 1 from stock_layers),'negative coverage created no phantom layer');
-select pg_temp.assert_ok((select sum(l.debit-l.credit)=600 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1301'),'negative gain journal exact');
+select pg_temp.assert_ok((select sum(l.debit-l.credit)=600 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='170001'),'negative gain journal exact');
 rollback;
 
 begin;
@@ -97,7 +97,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub',md5('i02-owner')::uuid::text,true);
 select set_config('request.jwt.claim.role','authenticated',true);
 select post_opname_atomic(md5('i02-fraction')::uuid,current_date,jsonb_build_object(md5('i02-a')::uuid::text,0.875));
-select pg_temp.assert_ok((select sum(l.credit)=0.3125 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1301'),'sub-cent FIFO cost preserved exactly');
+select pg_temp.assert_ok((select sum(l.credit)=0.3125 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='170001'),'sub-cent FIFO cost preserved exactly');
 select pg_temp.assert_ok((select sum(qty_left*unit_cost)=2.1875 from stock_layers),'sub-cent layer value reconciles');
 rollback;
 
@@ -108,13 +108,13 @@ create function pg_temp.assert_uniform_opname(label text,wh text,expected_invent
 declare v_ref text;
 begin
  select r.no_hasil into strict v_ref from opname_results r where r.order_id=md5(label)::uuid;
- perform pg_temp.assert_ok((select sum(l.debit-l.credit)=expected_inventory from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='1301' and j.source='opname' and j.source_ref=v_ref),label||': inventory delta');
- perform pg_temp.assert_ok((select sum(l.debit-l.credit)=-expected_inventory from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='5902' and j.source='opname' and j.source_ref=v_ref),label||': same variance expense account both directions');
- perform pg_temp.assert_ok(not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where j.source in('opname','opname-selisih') and j.source_ref=v_ref and a.code not in('1301','5902')),label||': no COGS/receivable/revenue line');
+ perform pg_temp.assert_ok((select sum(l.debit-l.credit)=expected_inventory from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='170001' and j.source='opname' and j.source_ref=v_ref),label||': inventory delta');
+ perform pg_temp.assert_ok((select sum(l.debit-l.credit)=-expected_inventory from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='720010' and j.source='opname' and j.source_ref=v_ref),label||': same variance expense account both directions');
+ perform pg_temp.assert_ok(not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where j.source in('opname','opname-selisih') and j.source_ref=v_ref and a.code not in('170001','720010')),label||': no COGS/receivable/revenue line');
  perform pg_temp.assert_ok(not exists(select j.id from journal_entries j join journal_lines l on l.entry_id=j.id where j.source='opname' and j.source_ref=v_ref group by j.id having sum(l.debit)<>sum(l.credit)),label||': balanced');
  perform pg_temp.assert_ok(not exists(select 1 from sales_invoices where kategori='selisih_stok') and not exists(select 1 from journal_entries where source='opname-selisih'),label||': no head-store receivable invoice');
  perform pg_temp.assert_ok((select invoice_id is null from opname_results where order_id=md5(label)::uuid),label||': result has no invoice');
- perform pg_temp.assert_ok((select source_snapshot->>'warehouse_policy'='uniform-variance-expense' and source_snapshot->>'variance_account'='5902' and receipt->>'no_faktur' is null from opname_posting_receipts where order_id=md5(label)::uuid),label||': receipt records uniform policy');
+ perform pg_temp.assert_ok((select source_snapshot->>'warehouse_policy'='uniform-variance-expense' and source_snapshot->>'variance_account'='720010' and receipt->>'no_faktur' is null from opname_posting_receipts where order_id=md5(label)::uuid),label||': receipt records uniform policy');
  perform pg_temp.assert_ok((select sum(qty_left*unit_cost) from stock_layers where warehouse_id=md5(wh)::uuid)=1000+expected_inventory,label||': layer value equals GL');
 end$$;
 

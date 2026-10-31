@@ -88,8 +88,8 @@ export function SaldoAwalFakturForm({ branches, defaultAsOf, isOwner }: { branch
 
     {report && <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8 }}>
-        <Kartu judul="HUTANG (2101)" t={report.totals.hutang} />
-        <Kartu judul="PIUTANG (1201)" t={report.totals.piutang} />
+        <Kartu judul="HUTANG (311001)" t={report.totals.hutang} />
+        <Kartu judul="PIUTANG (150001)" t={report.totals.piutang} />
         <div className="card" style={{ background: "var(--sf1)" }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: "var(--tm)" }}>FILE</div>
           <div style={{ fontSize: 12, fontWeight: 600 }}>{report.source_name}</div>

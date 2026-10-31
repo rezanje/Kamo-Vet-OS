@@ -21,7 +21,7 @@ do $$declare doc uuid;line uuid:=gen_random_uuid();issued record;result jsonb;be
  perform pg_temp.assert_ok(result=cancel_posted_sale(doc,0,'average-regular-cancel','Wrong stock quantity'),'regular cancellation retry retains its durable result');
  perform pg_temp.assert_ok((select qty=24 and abs(average_cost-175)<0.00000001 from stock where item_id='e5500000-0000-4000-8000-000000000002'),'regular cancellation restores original 600 value while preserving later 1200 receipt');
  perform pg_temp.assert_ok((select qty_left=10 and unit_cost=100 from stock_layers where source_ref='AVG.VOID.FIRST'),'original physical layer and price restored');
- perform pg_temp.assert_ok((select sum(l.debit-l.credit)=0 from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='1301' and (e.source_ref='AVG.VOID.REGULAR' or e.source_ref=result->>'audit_id')),'inventory journal reverses exact original average HPP');
+ perform pg_temp.assert_ok((select sum(l.debit-l.credit)=0 from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='170001' and (e.source_ref='AVG.VOID.REGULAR' or e.source_ref=result->>'audit_id')),'inventory journal reverses exact original average HPP');
 end$$;
 do $$declare doc uuid;line uuid:=gen_random_uuid();issued record;begin
  doc:=pg_temp.fee_sale('AVG.VOID.GROUP');

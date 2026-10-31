@@ -185,9 +185,9 @@ export async function perbaikiDrift() {
       branchId: i.branch_id,
       lines: [
         ...(i.cashReceived > 0 ? [{ code: kasCode, debit: i.cashReceived, credit: 0 }] : []),
-        ...(i.piutang > 0 ? [{ code: "1201", debit: i.piutang, credit: 0 }] : []),
-        { code: "4201", debit: 0, credit: i.dpp },
-        ...(i.tax > 0 ? [{ code: "2201", debit: 0, credit: i.tax }] : []),
+        ...(i.piutang > 0 ? [{ code: "150001", debit: i.piutang, credit: 0 }] : []),
+        { code: "510002", debit: 0, credit: i.dpp },
+        ...(i.tax > 0 ? [{ code: "312005", debit: 0, credit: i.tax }] : []),
       ],
     });
     n += 1;
@@ -207,17 +207,17 @@ export async function perbaikiDrift() {
       branchId: s.branch_id,
       lines: [
         ...paymentLines,
-        { code: "4101", debit: 0, credit: dpp },
-        ...(ppn > 0 ? [{ code: "2201", debit: 0, credit: ppn }] : []),
+        { code: "510001", debit: 0, credit: dpp },
+        ...(ppn > 0 ? [{ code: "312005", debit: 0, credit: ppn }] : []),
       ],
     });
     n += 1;
   }
 
   for (const s of salesOnline) {
-    // Marketplace ditahan platform → piutang (1202); WA langsung ke bank (1102) — sama seperti
+    // Marketplace ditahan platform → piutang (130009); WA langsung ke bank (120002) — sama seperti
     // jurnal asli di penjualan/online/actions.ts.
-    const debitCode = isMarketplace(s.channel) ? "1202" : await kodeAkunBayar(supabase, "Transfer", s.branch_id);
+    const debitCode = isMarketplace(s.channel) ? "130009" : await kodeAkunBayar(supabase, "Transfer", s.branch_id);
     const { dpp, ppn } = splitPpnInklusif(Number(s.total), pajak);
     await postJournal(supabase, {
       tanggal: s.tanggal,
@@ -227,8 +227,8 @@ export async function perbaikiDrift() {
       branchId: s.branch_id,
       lines: [
         { code: debitCode, debit: s.total, credit: 0 },
-        { code: "4101", debit: 0, credit: dpp },
-        ...(ppn > 0 ? [{ code: "2201", debit: 0, credit: ppn }] : []),
+        { code: "510001", debit: 0, credit: dpp },
+        ...(ppn > 0 ? [{ code: "312005", debit: 0, credit: ppn }] : []),
       ],
     });
     n += 1;

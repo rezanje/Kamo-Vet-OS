@@ -1,6 +1,6 @@
 // Penarikan data berkas pajak satu masa (S10).
 //
-// Sumbernya JURNAL (akun 2201 PPN Keluaran & 1105 PPN Masukan), bukan tabel dokumen
+// Sumbernya JURNAL (akun 312005 PPN Keluaran & 182004 PPN Masukan), bukan tabel dokumen
 // satu per satu. Alasannya: berkas pajak harus cocok dengan pembukuan. Kalau ditarik
 // dari tabel dokumen, angkanya bisa berbeda dari Rekap PPN dan Neraca — dan waktu
 // itu terjadi, tidak ada yang tahu mana yang benar.
@@ -14,8 +14,8 @@ import type { BarisPajak } from "@/lib/faktur-pajak";
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
 
-const AKUN_KELUARAN = "2201";
-const AKUN_MASUKAN = "1105";
+const AKUN_KELUARAN = "312005";
+const AKUN_MASUKAN = "182004";
 
 export type Perusahaan = { nama: string | null; npwp: string | null; alamat: string | null };
 

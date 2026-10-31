@@ -109,7 +109,7 @@ commit;
         raise AssertionError('Missing real session barrier: ' + name)
 
     def journal(ref, inventory=True):
-        code = '1301' if inventory else '1101'
+        code = '170001' if inventory else '110003'
         return "select sales_write_journal(current_date,md5('ag-branch')::uuid,'manual','" + ref + "','Fiction concurrent journal','[{\"code\":\"" + code + "\",\"debit\":1,\"credit\":0},{\"code\":\"3101\",\"debit\":0,\"credit\":1}]');"
 
     try:

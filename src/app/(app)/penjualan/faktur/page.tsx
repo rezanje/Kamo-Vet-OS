@@ -63,7 +63,7 @@ export default async function FakturJualPage({
     readCompleteList<Credit>((from, to) => supabase.from("wholesale_invoice_corrections")
       .select("id,tanggal,customer_credit,sales_invoices!invoice_id(id,no_faktur,customers(name))", { count: "exact" })
       .gt("customer_credit", 0).order("tanggal").order("id").range(from, to), "Kredit pelanggan", { maxRows: null }),
-    // Retur faktur grosir atas faktur yang sudah dibayar juga menjadi kredit pelanggan (2103).
+    // Retur faktur grosir atas faktur yang sudah dibayar juga menjadi kredit pelanggan (314001).
     readCompleteList<Credit>((from, to) => supabase.from("wholesale_returns")
       .select("id,tanggal,customer_credit,no_retur,sales_invoices!invoice_id(id,no_faktur,customers(name))", { count: "exact" })
       .eq("status", "posted").gt("customer_credit", 0).order("tanggal").order("id").range(from, to), "Kredit pelanggan dari retur", { maxRows: null }),
@@ -259,7 +259,7 @@ export default async function FakturJualPage({
       </>}
 
       {credits.length > 0 && <div className="crm-sec" style={{ marginBottom: 0 }}>
-        <SecHeader num="02" title="KREDIT PELANGGAN DARI KOREKSI & RETUR GROSIR" desc="Kewajiban pelanggan pada akun 2103; perlu tinjauan keuangan untuk penyelesaian. Tidak ada refund/transfer otomatis." />
+        <SecHeader num="02" title="KREDIT PELANGGAN DARI KOREKSI & RETUR GROSIR" desc="Kewajiban pelanggan pada akun 314001; perlu tinjauan keuangan untuk penyelesaian. Tidak ada refund/transfer otomatis." />
         <table className="tbl"><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>Faktur asal</th><th>Retur</th><th>Kredit</th></tr></thead><tbody>
           {credits.map(c => { const f = one(c.sales_invoices); return <tr key={c.id}><td>{c.tanggal}</td><td>{one(f?.customers ?? null)?.name ?? "—"}</td><td><Link href={`/penjualan/faktur/${f?.id}`}>{f?.no_faktur}</Link></td><td>{c.no_retur ? <Link href={`/penjualan/retur-grosir/${c.id}`}>{c.no_retur}</Link> : "—"}</td><td>{rp(Number(c.customer_credit))}</td></tr>; })}
         </tbody></table>

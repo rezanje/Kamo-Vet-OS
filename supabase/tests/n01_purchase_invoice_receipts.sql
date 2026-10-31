@@ -20,9 +20,9 @@ insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,fak
  ('f1600000-0000-4000-8000-000000000001','f1500000-0000-4000-8000-000000000001','f1400000-0000-4000-8000-000000000001','N01 goods A',4,100,'box',10),
  ('f1600000-0000-4000-8000-000000000002','f1500000-0000-4000-8000-000000000002','f1400000-0000-4000-8000-000000000002','N01 goods B',2,100,'box',10),
  ('f1600000-0000-4000-8000-000000000003','f1500000-0000-4000-8000-000000000003','f1400000-0000-4000-8000-000000000003','N01 goods C',4,100,'box',10);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fiction stock','ASET','D'),('2101','Fiction payable','LIABILITAS','K')
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction stock','ASET','D'),('311001','Fiction payable','LIABILITAS','K')
  on conflict(code) do update set is_active=true,is_header=false;
-update coa_accounts set is_active=true,is_header=false where code in('1301','2101','2102');
+update coa_accounts set is_active=true,is_header=false where code in('170001','311001','311003');
 update accounting_locks set closed_until=null;
 update company_settings set mode_pkp=false;
 create table n01_results(name text primary key,result jsonb);

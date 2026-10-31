@@ -8,7 +8,7 @@ alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,code,name,type) values(md5('line-round-branch')::uuid,'LINE-RND','Fiction rounding branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('line-round-wh')::uuid,md5('line-round-branch')::uuid,'LINE-RND-W','Fiction rounding warehouse','RETAIL');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1301','Fiction inventory','ASET','D',false),('3101','Fiction equity','EKUITAS','K',false)
+ ('170001','Fiction inventory','ASET','D',false),('410001','Fiction equity','EKUITAS','K',false)
 on conflict(code) do update set is_active=true,is_header=false;
 -- 40 fictional items; every 5th is stocked in BOX(12) to exercise conversion.
 insert into items(id,code,name,unit,item_type)
@@ -27,7 +27,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub',md5('line-round-owner')::uuid::text,true);
 do $$ declare run uuid; again uuid; eq uuid; p jsonb; receipt jsonb; rows jsonb; v jsonb;
  expected_source numeric; expected_posted numeric; parts int; begin
- select id into eq from coa_accounts where code='3101';
+ select id into eq from coa_accounts where code='410001';
  select jsonb_agg(jsonb_build_object('source_row',source_row+1,'source_code','LR-'||source_row,'status','valid','reason',null,
   'payload',jsonb_build_object('item_id',item_id,'warehouse_id',md5('line-round-wh')::uuid,'base_qty',(qty*factor)::text,
   'base_unit_cost',(unit_cost/factor)::text,'as_of','2026-01-01',

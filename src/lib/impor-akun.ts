@@ -13,7 +13,7 @@
 
 import { bacaCsvUmum, pecahBaris, tebakPemisah } from "./impor-csv";
 import {
-  DIGIT_TIPE, KODE_SISTEM, SISI_WAJAR, TIPE_AKUN, akunSistem, alasanTakBolehNonaktif,
+  KODE_SISTEM, SISI_WAJAR, TIPE_AKUN, akunSistem, alasanTakBolehNonaktif, tipeDariKode,
   validasiAkunBaru, validasiSisiSaldo, validasiUbahAkun, type PemakaiAkun, type TipeAkun,
 } from "./coa-sistem";
 import { validasiIndukAkun, type AkunPohon } from "./coa-pohon";
@@ -143,15 +143,15 @@ function bacaSaldo(v: string): "D" | "K" | null | "salah" {
 
 /** Kode baru vs kontrak kode KAMO → konflik + solusi, atau null kalau cocok. */
 function konflikKodeBaru(kode: string, nama: string, tipe: TipeAkun, normal: "D" | "K"): { alasan: string; solusi: string } | null {
-  const solusiFormat = `Ubah kode di file sesuai kontrak KAMO (4–6 angka, digit pertama = kelompok: 1 Aset, 2 Liabilitas, 3 Ekuitas, 4 Pendapatan, 5 Beban), atau tunggu pemetaan kode yang sudah ditinjau. ${TETAP_KODE}`;
-  if (/^\d{4,6}$/.test(kode) && !DIGIT_TIPE[kode[0]]) {
-    return { alasan: `Kode ${kode} berawalan ${kode[0]} — di KAMO digit pertama kode menentukan kelompok akun.`, solusi: solusiFormat };
+  const solusiFormat = `Ubah kode di file sesuai bagan akun KAMO (6 angka: 1–2 Aset, 3 Liabilitas, 4 Ekuitas, 5 Pendapatan, 6–7 Beban, 81 Pendapatan / 82 Beban di luar operasional), atau tunggu pemetaan kode yang sudah ditinjau. ${TETAP_KODE}`;
+  if (/^\d{6}$/.test(kode) && !tipeDariKode(kode)) {
+    return { alasan: `Kode ${kode} tidak termasuk kelompok mana pun di bagan akun KAMO.`, solusi: solusiFormat };
   }
   const pesan = validasiAkunBaru({ code: kode, name: nama, type: tipe, normal_balance: normal });
   if (!pesan) return null;
-  if (!/^\d{4,6}$/.test(kode)) return { alasan: pesan, solusi: solusiFormat };
-  if (DIGIT_TIPE[kode[0]] !== tipe) {
-    return { alasan: pesan, solusi: `Samakan tipe dengan digit pertama kode, atau ubah kode di file. ${TETAP_KODE}` };
+  if (!/^\d{6}$/.test(kode)) return { alasan: pesan, solusi: solusiFormat };
+  if (tipeDariKode(kode) !== tipe) {
+    return { alasan: pesan, solusi: `Samakan tipe dengan kelompok kode, atau ubah kode di file. ${TETAP_KODE}` };
   }
   if (akunSistem(kode)) return { alasan: pesan, solusi: `Pakai kode lain untuk akun ini. ${TETAP_KODE}` };
   return { alasan: pesan, solusi: `Rekening kas/bank dibuat dari menu Kas & Bank → Rekening; untuk akun biasa pakai kode lain. ${TETAP_KODE}` };
@@ -226,7 +226,7 @@ export function rencanakanImporAkun(file: Extract<FileAkun, { ok: true }>, ctx: 
     if (!lama) {
       const normal = (saldo as "D" | "K" | null) ?? SISI_WAJAR[tipe];
       w.akhir = { name: nama, type: tipe, normal, is_header: (header as boolean | null) ?? false, parent: induk || null };
-      const sisi = validasiSisiSaldo(tipe, normal);
+      const sisi = validasiSisiSaldo(tipe, normal, kode);
       if (sisi) { w.tolak.push(sisi); continue; }
       const k = konflikKodeBaru(kode, nama, tipe, normal);
       if (k) w.konflik.push(k);
@@ -251,7 +251,7 @@ export function rencanakanImporAkun(file: Extract<FileAkun, { ok: true }>, ctx: 
 
     const kelompokBerubah = tipe !== lama.type || normal !== lama.normal_balance;
     if (kelompokBerubah) {
-      const sisi = validasiSisiSaldo(tipe, normal);
+      const sisi = validasiSisiSaldo(tipe, normal, kode);
       if (sisi) { w.tolak.push(sisi); continue; }
       const pesan = validasiUbahAkun({ code: kode, name: nama, type: tipe, normal_balance: normal }, lama, p.jurnal > 0);
       const terlindung = alasanTerlindung(kode, p);
@@ -464,7 +464,7 @@ export function rencanakanCoaPengguna(tabel: TabelSumber, p: PemetaanTerblokirAk
   const punya = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 
   const baris: BarisCoaPengguna[] = data.map((d) => {
-    const usulan = /^[1-5]/.test(d.kode) ? DIGIT_TIPE[d.kode[0]] : null;
+    const usulan = tipeDariKode(d.kode);
     const sisi = punya(p.normal, d.normal) ? p.normal[d.normal] : null;
     const b: BarisCoaPengguna = {
       sumber: { sheet: tabel.sheet, baris: d.no }, kode: d.kode, nama: d.nama, normalSumber: d.normal,
@@ -490,7 +490,7 @@ export function rencanakanCoaPengguna(tabel: TabelSumber, p: PemetaanTerblokirAk
     if (!sisi) return tolak(`Normal "${d.normal || "(kosong)"}" tidak dikenal (isi: ${Object.keys(p.normal).join(" / ")}).`);
     if (!/^\d{4,6}$/.test(d.kode) || !usulan) {
       b.status = "konflik";
-      b.alasan = [`Kode ${d.kode} tidak cocok kontrak kode KAMO (4–6 angka, digit pertama 1–5 = kelompok).`];
+      b.alasan = [`Kode ${d.kode} tidak cocok bagan akun KAMO (6 angka; kode lama 4–5 angka berawalan 1–5).`];
       b.solusi = `Ubah kode di file, atau putuskan aturan padanan kode yang ditinjau. ${TETAP_KODE}`;
       return b;
     }

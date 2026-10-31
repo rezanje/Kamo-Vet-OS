@@ -64,7 +64,7 @@ export function ReturGrosirForm({ userId, invoiceId, revision, today, minDate, f
           <div>Mengurangi piutang faktur: {rp(hasil.piutang)} · Menjadi kredit pelanggan: {rp(hasil.kredit)}</div>
           <div>Modal barang kembali ke gudang: {rp(hasil.hpp)} (HPP asal pengiriman).</div>
         </> : "Isi qty retur yang tidak melebihi sisa per baris."}
-        <div style={{ fontSize: 11, marginTop: 4 }}>Kredit pelanggan dicatat sebagai kewajiban (akun 2103) — tidak ada uang keluar otomatis. Angka akhir dihitung ulang server.</div>
+        <div style={{ fontSize: 11, marginTop: 4 }}>Kredit pelanggan dicatat sebagai kewajiban (akun 314001) — tidak ada uang keluar otomatis. Angka akhir dihitung ulang server.</div>
       </div>
       <label className="flab" htmlFor="retur-alasan">Alasan retur (wajib)</label>
       <input className="fi" id="retur-alasan" name="alasan" required minLength={3} maxLength={1000} />

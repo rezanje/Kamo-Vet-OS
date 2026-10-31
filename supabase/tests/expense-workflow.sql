@@ -20,7 +20,7 @@ insert into public.user_branches(user_id,branch_id) values('ee100000-0000-4000-8
 insert into public.cashier_shifts(id,branch_id,opened_by,shift_type) values
  ('ee300000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000001','ee100000-0000-4000-8000-000000000001','petshop');
 insert into public.coa_accounts(code,name,type,normal_balance,is_header,is_active) values
- ('5401','Expense acceptance','BEBAN','D',false,true),('1101','Cash acceptance','ASET','D',false,true),
+ ('760003','Expense acceptance','BEBAN','D',false,true),('110003','Cash acceptance','ASET','D',false,true),
  ('1103','Branch A cash acceptance','ASET','D',false,true),('1104','Branch B cash acceptance','ASET','D',false,true)
  on conflict(code) do update set is_active=true,is_header=false;
 insert into public.cash_accounts(id,nama,jenis,coa_code,branch_id,is_active) values
@@ -78,13 +78,13 @@ select pg_temp.expect_error(format('select public.revise_expense_atomic(%L,%L::u
 select pg_temp.expect_error(format('delete from public.expenses where id=%L::uuid',(select result->>'expense_id' from expense_test_results where name='first')),'permission denied');
 
 reset role;
-update public.coa_accounts set is_active=false where code='5401';
+update public.coa_accounts set is_active=false where code='760003';
 set local role authenticated;
 select pg_temp.expect_error($q$select pg_temp.save_expense('expense-account-failure')$q$,'Akun');
 select pg_temp.assert_true((select count(*)=2 from public.expenses where created_by=auth.uid()),'journal failure rolls back expense');
 reset role;
 select pg_temp.assert_true(not exists(select 1 from public.expense_posting_requests where request_key='expense-account-failure'),'journal failure rolls back replay record');
-update public.coa_accounts set is_active=true where code='5401';
+update public.coa_accounts set is_active=true where code='760003';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','ee100000-0000-4000-8000-000000000002',true);
@@ -99,7 +99,7 @@ select pg_temp.assert_true(public.revise_expense_atomic('finance-void',(select (
 select pg_temp.assert_true((select jumlah=0 and voided_at is not null and revision=2 from public.expenses where id=(select (result->>'expense_id')::uuid from expense_test_results where name='first')),'void removes effective outflow and retains document');
 select pg_temp.assert_true((select count(*)=2 from public.expense_revisions where expense_id=(select (result->>'expense_id')::uuid from expense_test_results where name='first')),'void retry does not duplicate audit or reversal');
 select pg_temp.assert_true((select sum(jumlah)=25000 from public.expenses where shift_id='ee300000-0000-4000-8000-000000000001'),'shift excludes voided outflow');
-select pg_temp.assert_true((select sum(l.debit-l.credit)=50000 from public.journal_lines l join public.coa_accounts a on a.id=l.account_id join public.journal_entries j on j.id=l.entry_id where j.branch_id='ee200000-0000-4000-8000-000000000001' and a.code='5401'),'journal net expense includes active backoffice and shift expenses');
+select pg_temp.assert_true((select sum(l.debit-l.credit)=50000 from public.journal_lines l join public.coa_accounts a on a.id=l.account_id join public.journal_entries j on j.id=l.entry_id where j.branch_id='ee200000-0000-4000-8000-000000000001' and a.code='760003'),'journal net expense includes active backoffice and shift expenses');
 
 reset role;
 update public.cashier_shifts set status='closed' where id='ee300000-0000-4000-8000-000000000001';

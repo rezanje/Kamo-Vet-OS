@@ -1,6 +1,6 @@
 -- Only the owned local runner prepends the original clinic_invoice_post fixture.
 -- All patient, invoice, stock and payment data below are fictional and rolled back.
-insert into cash_accounts(nama,jenis,coa_code) values('Fictional K08 bank','Bank','1102') on conflict(coa_code) do update set is_active=true;
+insert into cash_accounts(nama,jenis,coa_code) values('Fictional K08 bank','Bank','120002') on conflict(coa_code) do update set is_active=true;
 insert into prescription_items(id,medical_record_id,nama_obat,qty,harga,jenis,item_id,satuan)
 values('db000000-0000-4000-8000-000000000001','d7000000-0000-4000-8000-000000000002','Fictional base care',1,305000,'jasa',null,'kali'),
 ('db000000-0000-4000-8000-000000000002','d7000000-0000-4000-8000-000000000002','Fictional added medicine',2,47500,'obat','d8000000-0000-4000-8000-000000000005','pcs');
@@ -64,7 +64,7 @@ set local role authenticated;
 do $$declare new_id uuid;replayed uuid;snapshot jsonb;events bigint;bad boolean:=false;split_id uuid;payments bigint;
  plan jsonb:=jsonb_build_object('tanggal',current_date,'subtotal',400000,'discount',0,'tax',0,'total',400000,'dp_amount',0,'paid_status','Lunas','metode_bayar','Tunai','shift_id','da000000-0000-4000-8000-000000000001');
  lines jsonb:='[{"description":"Base care","qty":1,"price":305000,"kind":"jasa","item_id":null,"discount_percent":0},{"description":"Added medicine","qty":2,"price":47500,"kind":"obat","item_id":"d8000000-0000-4000-8000-000000000005","unit":"pcs","discount_percent":0}]';
- parts jsonb:='[{"method":"Tunai","amount":150000,"kas_code":"1101"},{"method":"Transfer","amount":250000,"kas_code":"1102"}]';
+ parts jsonb:='[{"method":"Tunai","amount":150000,"kas_code":"110003"},{"method":"Transfer","amount":250000,"kas_code":"120002"}]';
 begin
  new_id:=clinic_post_invoice('d6000000-0000-4000-8000-000000000002','k08-new-400',plan,lines);
  if (select status from visits where id='d6000000-0000-4000-8000-000000000002')<>'Selesai' then raise exception 'Paid invoice committed before checkout';end if;

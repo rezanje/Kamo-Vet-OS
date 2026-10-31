@@ -126,7 +126,7 @@ export function hitungGaji(i: InputGaji): RincianGaji {
   };
 }
 
-export const AKUN_BEBAN_GAJI = "5201";
+export const AKUN_BEBAN_GAJI = "710001";
 
 // Baris jurnal penggajian satu periode (semua karyawan digabung).
 //   Dr Beban Gaji  = gaji bersih + cicilan kasbon yang dipotong

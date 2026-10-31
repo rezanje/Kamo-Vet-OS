@@ -108,7 +108,7 @@ export function SaldoAwalForm({ userId, akun, usulan }: { userId: string; akun: 
         <Row label="Total harta (debit)" value={totalD} />
         <Row label="Total utang (kredit)" value={totalK} />
         <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, fontSize: 13, fontWeight: 800 }}>
-          <span>{modal >= 0 ? "Modal Pemilik (3101)" : "Defisit modal (3101)"}</span>
+          <span>{modal >= 0 ? "Modal Pemilik (410001)" : "Defisit modal (410001)"}</span>
           <span style={{ color: "var(--acc)" }}>{rp(Math.abs(modal))}</span>
         </div>
         <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 4 }}>

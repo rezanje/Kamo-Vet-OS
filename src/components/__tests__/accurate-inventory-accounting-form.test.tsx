@@ -10,12 +10,12 @@ import { InventoryAccountingForm } from "@/app/(app)/keuangan/persediaan-awal/In
 const runId = "11111111-1111-4111-8111-111111111111";
 const equityId = "22222222-2222-4222-8222-222222222222";
 const batches = [{ id: runId, source_name: "initial.xlsx", status: "previewed", as_of_date: "2026-09-01", branch_id: "branch", created_at: "2026-09-01" }];
-const accounts = [{ id: equityId, code: "3101", name: "Modal" }, { id: "other", code: "3102", name: "Ekuitas lain" }];
+const accounts = [{ id: equityId, code: "410001", name: "Modal" }, { id: "other", code: "3102", name: "Ekuitas lain" }];
 const report = {
   run_id: runId, status: "previewed", source_name: "initial.xlsx", source_hash: "sha256-source",
   branch_id: "branch", branch_name: "PDRY", warehouse_id: "warehouse", warehouse_name: "Gudang PDRY", as_of: "2026-09-01",
   selected_rows: 2, excluded_rows: 1, original_qty: 3, original_value: 150000, remaining_value: 50000,
-  inventory_account: { id: "inventory", code: "1301", name: "Persediaan" }, equity_account: accounts[0],
+  inventory_account: { id: "inventory", code: "170001", name: "Persediaan" }, equity_account: accounts[0],
   blockers: [] as string[], can_post: true, receipt: null, evidence: { rows: ["original evidence"] },
 };
 let root: Root, container: HTMLDivElement;

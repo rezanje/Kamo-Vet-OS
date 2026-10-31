@@ -364,7 +364,7 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
 
   // ── Reseller: faktur penjualan dari rantai dokumen (migrasi 0098) ─────────────
   // Dipatok pada tanggal faktur, bukan tanggal pelunasan seperti klinik: di sini
-  // pendapatan diakui saat faktur terbit (Dr 1201 / Cr 4101), jadi omzet komisi,
+  // pendapatan diakui saat faktur terbit (Dr 150001 / Cr 510001), jadi omzet komisi,
   // realisasi target, dan omzet dashboard menunjuk angka yang sama. Faktur batal
   // tidak ikut. Yang dianggap penjualnya = pembuat faktur.
   const { data: fjData } = await completeReportQuery(supabase

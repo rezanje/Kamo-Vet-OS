@@ -31,7 +31,7 @@ spec.loader.exec_module(f)
 from native_postgres import NativePostgres  # noqa: E402
 
 TIMEOUT = 12
-CODES = ("1101", "1102", "1201", "2103", "4201")
+CODES = ("110003", "120002", "150001", "314001", "510002")
 RESULTS = []
 DIAGNOSTICS = {}
 
@@ -251,12 +251,12 @@ def stage_race(h, db, n, first, hazard=False, other_visit=False):
     DIAGNOSTICS.update({"before_retry_state":initial,"before_retry_balance_delta":initial_delta})
     verify_clean(initial)
     if not attempts["stage"]["ok"] and attempts["release"]["ok"]:
-        assert_equal(initial_delta,{"1101":60000,"1102":90000,"1201":100000,"2103":-150000,"4201":-100000})
+        assert_equal(initial_delta,{"110003":60000,"120002":90000,"150001":100000,"314001":-150000,"510002":-100000})
         assert_equal(len(initial["invoices"]),1)
         assert_equal(initial["advance"]["applied"],0)
         assert_equal(initial["applications"],{"count":1,"active":0,"released_amount":100000,"reversals":1})
     elif not attempts["release"]["ok"] and attempts["stage"]["ok"]:
-        assert_equal(initial_delta,{"1101":60000,"1102":90000,"1201":70000,"2103":0,"4201":-220000})
+        assert_equal(initial_delta,{"110003":60000,"120002":90000,"150001":70000,"314001":0,"510002":-220000})
         assert_equal(initial["advance"]["applied"],150000)
         assert_equal(initial["advance"]["released"],False)
         assert_equal(initial["applications"],{"count":2,"active":2,"released_amount":0,"reversals":0})
@@ -282,7 +282,7 @@ def stage_race(h, db, n, first, hazard=False, other_visit=False):
               "state": snap, "other_visit_state": extra if other_visit else None,
               "balance_delta": delta, "expected_applications": expected_apps}
     DIAGNOSTICS.update(detail)
-    assert_equal(delta, {"1101":60000,"1102":90000,"1201":220000,"2103":-150000,"4201":-220000})
+    assert_equal(delta, {"110003":60000,"120002":90000,"150001":220000,"314001":-150000,"510002":-220000})
     assert_equal(snap["advance"], {"amount":150000,"applied":0,"status":"aktif","released":True})
     assert_equal(snap["applications"], {"count":expected_apps,"active":0,
         "released_amount":expected_amount,"reversals":expected_apps})
@@ -360,7 +360,7 @@ def cancel_race(h, db, n, cancellation_first=False, hazard=False):
               "expected_ADVANCE_USED": expected_rejection, "state": snap, "balance_delta": delta,
               "explicit_retries":retries,"before_retry_state":initial,"before_retry_balance_delta":initial_delta}
     DIAGNOSTICS.update(detail)
-    assert_equal(delta, {"1101":0,"1102":0,"1201":100000,"2103":0,"4201":-100000})
+    assert_equal(delta, {"110003":0,"120002":0,"150001":100000,"314001":0,"510002":-100000})
     assert_equal(snap["advance"], {"amount":150000,"applied":0,"status":"batal","released":True})
     assert_equal(snap["applications"], {"count":1,"active":0,"released_amount":100000,"reversals":1})
     assert_equal(snap["receipts"], 1)
@@ -415,8 +415,8 @@ def correction_authorization_race(h, db, n, actor, with_history=True):
         assert_equal(after["total"], f.nilai_baris(corrected_lines))
         assert_equal(after["baris"], len(corrected_lines))
         delta = f.nilai_baris(corrected_lines) - f.nilai_baris(initial_lines)
-        expected_accounts = {**accounts_before, "1201":accounts_before["1201"] + delta,
-                             "4201":accounts_before["4201"] - delta}
+        expected_accounts = {**accounts_before, "150001":accounts_before["150001"] + delta,
+                             "510002":accounts_before["510002"] - delta}
         assert_equal(accounts_after, expected_accounts)
     else:
         assert_equal(outcome["ok"], False)
@@ -497,8 +497,8 @@ def duplicate_race(h, db, n, invoice_first):
     delta = {c:after[c]-before[c] for c in CODES}
     counts = json.loads(h.nilai("select json_build_object('receipts',count(*),'amount',sum(total)) "
         f"from public.clinic_payment_receipts where request_key={f.q(key)}"))
-    parts = json.loads(h.nilai("select json_build_object('count',count(*),'cash',sum(amount) filter(where kas_code='1101'),"
-        f"'bank',sum(amount) filter(where kas_code='1102')) from public.clinic_payment_receipt_parts where receipt_id={f.q(first)}"))
+    parts = json.loads(h.nilai("select json_build_object('count',count(*),'cash',sum(amount) filter(where kas_code='110003'),"
+        f"'bank',sum(amount) filter(where kas_code='120002')) from public.clinic_payment_receipt_parts where receipt_id={f.q(first)}"))
     allocations = json.loads(h.nilai("select json_build_object('count',count(*),'amount',coalesce(sum(amount),0)) "
         f"from public.invoice_payments where receipt_id={f.q(first)}"))
     detail = {"barriers":evidence,"first_receipt":first,"second_attempt":second,"state":snap,
@@ -511,7 +511,7 @@ def duplicate_race(h, db, n, invoice_first):
     assert_equal(allocations, {"count":2 if invoice_first else 0,"amount":100000 if invoice_first else 0})
     assert_equal(snap["advance"]["amount"], 50000 if invoice_first else 150000)
     assert_equal(snap["advance"]["applied"], 0)
-    assert_equal(delta, {"1101":60000,"1102":90000,"1201":0,"2103":-50000 if invoice_first else -150000,"4201":-100000 if invoice_first else 0})
+    assert_equal(delta, {"110003":60000,"120002":90000,"150001":0,"314001":-50000 if invoice_first else -150000,"510002":-100000 if invoice_first else 0})
     if invoice_first:
         assert_equal([(x["received"], x["paid_status"]) for x in snap["invoices"]], [(100000,"Lunas")])
     verify_clean(snap)

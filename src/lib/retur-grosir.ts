@@ -74,7 +74,7 @@ const round2 = (d: Decimal) => d.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
 /**
  * Pratinjau nilai satu retur baru. `faktur.dpp/ppn` = nilai faktur; `sisaPiutang` = sebelum retur ini.
- * Bagian yang melebihi sisa piutang menjadi kredit pelanggan (akun 2103), bukan uang keluar.
+ * Bagian yang melebihi sisa piutang menjadi kredit pelanggan (akun 314001), bukan uang keluar.
  */
 export function pratinjauRetur(input: {
   faktur: { dpp: number; ppn: number };

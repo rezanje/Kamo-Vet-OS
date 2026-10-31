@@ -82,7 +82,7 @@ function Journal({ title, lines }: { title: string; lines: MonetaryOpeningLine[]
   return <div style={{ overflowX: "auto", margin: "12px 0" }}>
     <p><strong>{title}</strong></p>
     <table className="tbl"><thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th></tr></thead>
-      <tbody>{lines.map(line => <tr key={line.code}><td>{line.code === "3101" ? "3101 · Modal Pemilik" : line.code}</td><td>{rp(line.debit)}</td><td>{rp(line.credit)}</td></tr>)}</tbody>
+      <tbody>{lines.map(line => <tr key={line.code}><td>{line.code === "410001" ? "410001 · Modal Pemilik" : line.code}</td><td>{rp(line.debit)}</td><td>{rp(line.credit)}</td></tr>)}</tbody>
     </table>
   </div>;
 }

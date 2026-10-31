@@ -13,8 +13,8 @@ function makeClient() {
           const chain = {
             in: async () => ({
               data: [
-                { id: "acc-1101", code: "1101" },
-                { id: "acc-4101", code: "4101" },
+                { id: "acc-1101", code: "110003" },
+                { id: "acc-4101", code: "510001" },
               ].filter(() => table === "coa_accounts"),
               error: null,
             }),
@@ -43,8 +43,8 @@ describe("postJournal guards", () => {
     await postJournal(c, {
       tanggal: "2026-07-15", deskripsi: "x", source: "manual",
       lines: [
-        { code: "1101", debit: 1000, credit: 0 },
-        { code: "4101", debit: 0, credit: 900 },
+        { code: "110003", debit: 1000, credit: 0 },
+        { code: "510001", debit: 0, credit: 900 },
       ],
     });
     expect(c.inserted.length).toBe(0);
@@ -54,7 +54,7 @@ describe("postJournal guards", () => {
     const c = makeClient();
     await postJournal(c, {
       tanggal: "2026-07-15", deskripsi: "x", source: "manual",
-      lines: [{ code: "1101", debit: 0, credit: 0 }],
+      lines: [{ code: "110003", debit: 0, credit: 0 }],
     });
     expect(c.inserted.length).toBe(0);
   });
@@ -65,7 +65,7 @@ describe("postJournal guards", () => {
       tanggal: "2026-07-15", deskripsi: "x", source: "manual",
       lines: [
         { code: "9999", debit: 1000, credit: 0 },
-        { code: "4101", debit: 0, credit: 1000 },
+        { code: "510001", debit: 0, credit: 1000 },
       ],
     });
     expect(c.inserted.length).toBe(0);
@@ -76,8 +76,8 @@ describe("postJournal guards", () => {
     await postJournal(c, {
       tanggal: "2026-07-15", deskripsi: "jual", source: "sale",
       lines: [
-        { code: "1101", debit: 1000, credit: 0 },
-        { code: "4101", debit: 0, credit: 1000 },
+        { code: "110003", debit: 1000, credit: 0 },
+        { code: "510001", debit: 0, credit: 1000 },
       ],
     });
     const tables = c.inserted.map((i) => i.table);
@@ -90,8 +90,8 @@ describe("postJournal guards", () => {
     await expect(postJournal(broken, {
       tanggal: "2026-07-15", deskripsi: "x", source: "manual",
       lines: [
-        { code: "1101", debit: 1, credit: 0 },
-        { code: "4101", debit: 0, credit: 1 },
+        { code: "110003", debit: 1, credit: 0 },
+        { code: "510001", debit: 0, credit: 1 },
       ],
     })).resolves.toBeUndefined();
   });

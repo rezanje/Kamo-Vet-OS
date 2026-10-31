@@ -64,8 +64,8 @@ insert into items(id,code,name,unit,item_type,buy_price) values
 insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source) values
 {','.join(f"('{WAREHOUSE}','{ITEM[k]}',(now() at time zone 'Asia/Jakarta')::date,20,20,10,'purchase')" for k in ITEM)};
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1111','Test cash','ASET','D',false),('4101','Sales','PENDAPATAN','K',false),('4102','Discount','PENDAPATAN','D',false),
- ('2201','VAT','LIABILITAS','K',false),('5101','COGS','BEBAN','D',false),('1301','Inventory','ASET','D',false)
+ ('1111','Test cash','ASET','D',false),('510001','Sales','PENDAPATAN','K',false),('520002','Discount','PENDAPATAN','D',false),
+ ('312005','VAT','LIABILITAS','K',false),('600001','COGS','BEBAN','D',false),('170001','Inventory','ASET','D',false)
  on conflict(code) do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code) values('{CASH}','Fiction C04 cash','Kas','1111');
 insert into payment_account_map(metode,branch_id,cash_account_id) values('Tunai','{BRANCH}','{CASH}') on conflict do nothing;

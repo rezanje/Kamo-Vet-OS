@@ -87,13 +87,13 @@ values ('da000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-0000000
 
 insert into public.coa_accounts (code, name, type, normal_balance, is_active, is_header)
 values
-  ('1101','Kas','ASET','D',true,false), ('1201','Piutang','ASET','D',true,false),
-  ('1301','Persediaan','ASET','D',true,false), ('2201','PPN Keluaran','LIABILITAS','K',true,false),
-  ('4102','Diskon','PENDAPATAN','D',true,false), ('4201','Pendapatan Klinik','PENDAPATAN','K',true,false),
-  ('5101','HPP','BEBAN','D',true,false)
+  ('110003','Kas','ASET','D',true,false), ('150001','Piutang','ASET','D',true,false),
+  ('170001','Persediaan','ASET','D',true,false), ('312005','PPN Keluaran','LIABILITAS','K',true,false),
+  ('520002','Diskon','PENDAPATAN','D',true,false), ('510002','Pendapatan Klinik','PENDAPATAN','K',true,false),
+  ('600001','HPP','BEBAN','D',true,false)
 on conflict (code) do update set is_active = true, is_header = false;
 insert into public.cash_accounts (nama, jenis, coa_code)
-values ('Kas Uji Klinik', 'Kas', '1101') on conflict (coa_code) do update set is_active = true;
+values ('Kas Uji Klinik', 'Kas', '110003') on conflict (coa_code) do update set is_active = true;
 
 do $$
 begin
@@ -213,10 +213,10 @@ begin
   if (select count(*) from public.journal_entries where source = 'klinik-hpp' and source_ref = (select invoice_no from public.invoices where id = inv_id)) <> 1 then raise exception 'HPP journal missing or duplicated'; end if;
   if (select sum(jl.debit) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik' and je.source_ref = (select invoice_no from public.invoices where id = inv_id))
      <> (select sum(jl.credit) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik' and je.source_ref = (select invoice_no from public.invoices where id = inv_id)) then raise exception 'revenue journal is not balanced'; end if;
-  if (select sum(jl.debit) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik-hpp' and je.source_ref = (select invoice_no from public.invoices where id = inv_id) and jl.account_id = (select id from public.coa_accounts where code = '5101')) <> 66 then raise exception 'HPP journal debit is not the exact invoice HPP total'; end if;
-  if (select sum(jl.credit) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik-hpp' and je.source_ref = (select invoice_no from public.invoices where id = inv_id) and jl.account_id = (select id from public.coa_accounts where code = '1301')) <> 66 then raise exception 'HPP journal credit is not balanced'; end if;
-  if (select count(*) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik-hpp' and je.source_ref = (select invoice_no from public.invoices where id = inv_id) and jl.account_id = (select id from public.coa_accounts where code = '5101') and jl.debit > 0) <> 1
-     or (select count(*) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik-hpp' and je.source_ref = (select invoice_no from public.invoices where id = inv_id) and jl.account_id = (select id from public.coa_accounts where code = '1301') and jl.credit > 0) <> 1 then raise exception 'HPP journal must contain one 5101 debit and one 1301 credit'; end if;
+  if (select sum(jl.debit) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik-hpp' and je.source_ref = (select invoice_no from public.invoices where id = inv_id) and jl.account_id = (select id from public.coa_accounts where code = '600001')) <> 66 then raise exception 'HPP journal debit is not the exact invoice HPP total'; end if;
+  if (select sum(jl.credit) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik-hpp' and je.source_ref = (select invoice_no from public.invoices where id = inv_id) and jl.account_id = (select id from public.coa_accounts where code = '170001')) <> 66 then raise exception 'HPP journal credit is not balanced'; end if;
+  if (select count(*) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik-hpp' and je.source_ref = (select invoice_no from public.invoices where id = inv_id) and jl.account_id = (select id from public.coa_accounts where code = '600001') and jl.debit > 0) <> 1
+     or (select count(*) from public.journal_lines jl join public.journal_entries je on je.id = jl.entry_id where je.source = 'klinik-hpp' and je.source_ref = (select invoice_no from public.invoices where id = inv_id) and jl.account_id = (select id from public.coa_accounts where code = '170001') and jl.credit > 0) <> 1 then raise exception 'HPP journal must contain one 5101 debit and one 1301 credit'; end if;
   if public.test_clinic_invoice_state() = state_before then raise exception 'valid invoice made no changes'; end if;
 
   failed := false;
@@ -248,7 +248,7 @@ begin
   -- Missing accounts also roll back after stock allocation attempts.
   state_before := public.test_clinic_invoice_state();
   perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000002', true);
-  update public.coa_accounts set is_active = false where code = '5101';
+  update public.coa_accounts set is_active = false where code = '600001';
   perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000001', true);
   failed := false;
   begin
@@ -257,7 +257,7 @@ begin
       jsonb_build_array(jsonb_build_object('description','Obat Unit','qty',1,'price',100,'kind','obat','item_id','d8000000-0000-4000-8000-000000000001','unit','pcs','discount_percent',0)));
   exception when sqlstate 'P0001' then failed := position('ACCOUNT_INVALID:' in sqlerrm) = 1; end;
   perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000002', true);
-  update public.coa_accounts set is_active = true where code = '5101';
+  update public.coa_accounts set is_active = true where code = '600001';
   perform set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000001', true);
   if not failed or public.test_clinic_invoice_state() <> state_before then raise exception 'missing HPP account did not roll back invoice posting'; end if;
 

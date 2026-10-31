@@ -50,14 +50,14 @@ update import_run_rows set payload='{"secret":"PRIVATE NEW SECRET"}' where run_i
 delete from import_runs where id=md5('a01-rest-import')::uuid;
 select pg_temp.a01_check(exists(select 1 from activity_log where row_entity='import_run_rows' and action='delete' and row_id~'^\d+$' and branch_ids=array[md5('a01-rest-a')::uuid]),'Bigint import cascade identity/scope missing');
 -- Global account + branch-B mapping must never appear in branch-A log.
-insert into cash_accounts(id,nama,jenis,coa_code) values(md5('a01-rest-global-account')::uuid,'PRIVATE BANK','Bank','4101');
+insert into cash_accounts(id,nama,jenis,coa_code) values(md5('a01-rest-global-account')::uuid,'PRIVATE BANK','Bank','510001');
 insert into payment_account_map(id,metode,branch_id,cash_account_id) values(md5('a01-rest-map')::uuid,'Transfer',md5('a01-rest-b')::uuid,md5('a01-rest-global-account')::uuid);
 update payment_account_map set metode='PRIVATE METHOD' where id=md5('a01-rest-map')::uuid;
 select pg_temp.a01_check(exists(select 1 from activity_log where row_entity='payment_account_map' and branch_ids=array[md5('a01-rest-b')::uuid]),'Payment map dropped own branch');
 -- Polymorphic attachment source keeps known-parent history after source deletion
 -- without copying filename, storage path or uploaded_by as audit actor.
 insert into cash_entries(id,no_bukti,jenis,tanggal,account_id,lawan_code,jumlah,branch_id)
- values(md5('a01-rest-cash')::uuid,'A01-REST-CASH','Masuk',current_date,md5('a01-rest-global-account')::uuid,'4101',1,md5('a01-rest-b')::uuid);
+ values(md5('a01-rest-cash')::uuid,'A01-REST-CASH','Masuk',current_date,md5('a01-rest-global-account')::uuid,'510001',1,md5('a01-rest-b')::uuid);
 insert into document_attachments(id,modul,ref_id,nama,path,uploaded_by)
  values(md5('a01-rest-attachment')::uuid,'pengeluaran',md5('a01-rest-cash')::uuid,'PRIVATE FILE','PRIVATE STORAGE',md5('a01-rest-admin')::uuid);
 update document_attachments set nama='PRIVATE NEW FILE' where id=md5('a01-rest-attachment')::uuid;

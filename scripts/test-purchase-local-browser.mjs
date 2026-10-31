@@ -40,7 +40,7 @@ const protectedHRIS = () => sql(`select md5(jsonb_build_object(
 assert.equal(sql("select count(*)from auth.users where email='owner@hris-fiction.local'"), '1', 'Requires the known fictional local auth fixture');
 const hrisBefore = protectedHRIS();
 sql(`begin;
- insert into coa_accounts(code,name,type,normal_balance)values('1301','Fiction purchase inventory','ASET','D'),('2101','Fiction purchase AP','LIABILITAS','K')on conflict(code)do nothing;
+ insert into coa_accounts(code,name,type,normal_balance)values('170001','Fiction purchase inventory','ASET','D'),('311001','Fiction purchase AP','LIABILITAS','K')on conflict(code)do nothing;
  insert into branches(id,code,name,type)values(${q(ids.branch)},${q('PUR-'+token)},'Fiction purchase acceptance','KLINIK');
  insert into warehouses(id,branch_id,code,name,type)values(${q(ids.warehouse)},${q(ids.branch)},${q('PW-'+token)},'Fiction purchase warehouse','VET');
  insert into items(id,code,name,unit,item_type,buy_price,is_active)values(${q(ids.item)},${q('PI-'+token)},'Fiction staged medicine','pcs','Persediaan',10,true);
@@ -147,7 +147,7 @@ try {
  assert.equal(sql(`select sum(qty*faktor)=10 from purchase_invoice_items where po_item_id=${q(ids.line)}`),'t');
  assert.equal(sql(`select sum(qty_left)=10 from stock_layers where item_id=${q(ids.item)}and unit_cost=12`),'t');
  assert.equal(sql(`select qty=40 from stock where item_id=${q(ids.item)}`),'t');
- assert.equal(sql(`select sum(case when a.code='2102'then l.debit else 0 end)=100 and sum(case when a.code='2101'then l.credit else 0 end)=120 and sum(l.debit)=sum(l.credit)from journal_entries j join journal_lines l on l.entry_id=j.id join coa_accounts a on a.id=l.account_id where j.branch_id=${q(ids.branch)}and j.source='purchase-invoice'`),'t');
+ assert.equal(sql(`select sum(case when a.code='311003'then l.debit else 0 end)=100 and sum(case when a.code='311001'then l.credit else 0 end)=120 and sum(l.debit)=sum(l.credit)from journal_entries j join journal_lines l on l.entry_id=j.id join coa_accounts a on a.id=l.account_id where j.branch_id=${q(ids.branch)}and j.source='purchase-invoice'`),'t');
  pass('actual partial invoice form → real PostgREST atomically splits/reprices 10 received base units');
 
  await page.goto(APP+'/keuangan/aset');
@@ -166,7 +166,7 @@ try {
  const assetId=sql(`select id from fixed_assets where nama=${q(assetName)}`);
  assert.equal(sql(`select count(*)from journal_entries where source='asset-purchase'and source_ref=${q(assetId)}`),'1');
  assert.equal(sql(`select l.credit=1250 from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='asset-purchase'and j.source_ref=${q(assetId)}and a.code=${q(bankCode)}`),'t');
- assert.equal(sql(`select sum(l.debit)=1250 and sum(l.credit)=1250 and sum(case when a.code='1501'then l.debit else 0 end)=1250 from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='asset-purchase'and j.source_ref=${q(assetId)}`),'t');
+ assert.equal(sql(`select sum(l.debit)=1250 and sum(l.credit)=1250 and sum(case when a.code='200008'then l.debit else 0 end)=1250 from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='asset-purchase'and j.source_ref=${q(assetId)}`),'t');
  await page.waitForFunction(old=>document.querySelector('form input[name=request_scope][value=asset]')?.parentElement.querySelector('input[name=request_key]')?.value!==old,assetKey);
  await page.screenshot({path:RUNTIME+'/asset-purchased.png',fullPage:true});
  pass('actual bank asset form saves one asset, balanced mapped-bank journal and rotates same-page request key');

@@ -23,7 +23,7 @@ insert into public.items(id,code,name,unit,item_type,buy_price,sell_price) value
 insert into public.item_branch_prices(item_id,branch_id,unit,sell_price)
  values(md5('i05-item-a')::uuid,md5('i05-branch-a')::uuid,'PCS',0);
 insert into public.coa_accounts(code,name,type,normal_balance) values
- ('1301','Fictional inventory','ASET','D'),('5902','Fictional variance','BEBAN','D')
+ ('170001','Fictional inventory','ASET','D'),('720010','Fictional variance','BEBAN','D')
  on conflict(code) do update set is_active=true,is_header=false;
 create function pg_temp.i05_check(p_ok boolean,p_label text) returns void
  language plpgsql as $$begin if p_ok is distinct from true then raise exception 'I05: %',p_label;end if;end$$;

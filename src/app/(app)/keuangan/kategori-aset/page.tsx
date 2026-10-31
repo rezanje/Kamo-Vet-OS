@@ -62,13 +62,13 @@ export default async function KategoriAsetPage({
           <div className="frow" style={{ marginTop: 10 }}>
             <div>
               <label className="flab">Akun beban penyusutan *</label>
-              <select className="fi" name="akun_beban" defaultValue={editing?.akun_beban ?? "5601"} required>
+              <select className="fi" name="akun_beban" defaultValue={editing?.akun_beban ?? "750004"} required>
                 {akun.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
               </select>
             </div>
             <div>
               <label className="flab">Akun akumulasi penyusutan *</label>
-              <select className="fi" name="akun_akumulasi" defaultValue={editing?.akun_akumulasi ?? "1509"} required>
+              <select className="fi" name="akun_akumulasi" defaultValue={editing?.akun_akumulasi ?? "200015"} required>
                 {akun.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
               </select>
             </div>

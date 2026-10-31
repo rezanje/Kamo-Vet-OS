@@ -43,12 +43,12 @@ insert into public.cashier_shifts (id, branch_id, opened_by, shift_type, status)
   ('c5700000-0000-4000-8000-000000000001', 'c5100000-0000-4000-8000-000000000001', 'c5000000-0000-4000-8000-000000000003', 'petshop', 'open'),
   ('c5700000-0000-4000-8000-000000000002', 'c5100000-0000-4000-8000-000000000002', 'c5000000-0000-4000-8000-000000000004', 'klinik', 'open');
 insert into public.coa_accounts (code, name, type, normal_balance, is_active, is_header) values
-  ('1101','Kas','ASET','D',true,false), ('1201','Piutang','ASET','D',true,false),
-  ('1301','Persediaan','ASET','D',true,false), ('2201','PPN Keluaran','LIABILITAS','K',true,false),
-  ('4102','Diskon','PENDAPATAN','D',true,false), ('4201','Pendapatan Klinik','PENDAPATAN','K',true,false),
-  ('5101','HPP','BEBAN','D',true,false)
+  ('110003','Kas','ASET','D',true,false), ('150001','Piutang','ASET','D',true,false),
+  ('170001','Persediaan','ASET','D',true,false), ('312005','PPN Keluaran','LIABILITAS','K',true,false),
+  ('520002','Diskon','PENDAPATAN','D',true,false), ('510002','Pendapatan Klinik','PENDAPATAN','K',true,false),
+  ('600001','HPP','BEBAN','D',true,false)
 on conflict (code) do update set is_active = true, is_header = false;
-insert into public.cash_accounts (nama, jenis, coa_code) values ('Kas Uji C05', 'Kas', '1101')
+insert into public.cash_accounts (nama, jenis, coa_code) values ('Kas Uji C05', 'Kas', '110003')
   on conflict (coa_code) do update set is_active = true;
 insert into public.vouchers (id, code, tipe, nilai) values
   ('c5800000-0000-4000-8000-000000000001', 'HEMAT10', 'persen', 10),

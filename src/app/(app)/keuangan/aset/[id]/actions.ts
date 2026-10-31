@@ -47,7 +47,7 @@ export async function setGolonganPajak(formData: FormData) {
 
 /**
  * Perbaikan besar yang menambah nilai perolehan.
- * Bedanya dengan beban perawatan (5304): ini menambah manfaat aset, jadi ikut
+ * Bedanya dengan beban perawatan (740007): ini menambah manfaat aset, jadi ikut
  * disusutkan, bukan langsung dibebankan habis di bulan itu.
  */
 export async function tambahNilaiAset(formData: FormData) {

@@ -121,10 +121,10 @@ def run(h, db):
     no = h.no_tagihan(inv)
     state = h.nilai(f"select status||'|'||(checked_out_at is null)::text from public.visits where id={r.q(v)}")
     r.catat('DP370-200-admit-atomic', h.status_bayar(inv)=='DP' and h.diterima(inv)==200000
-        and h.saldo_ref('1201',no)==170000 and h.saldo_ref('1101',no)==200000
-        and h.saldo_ref('4201',no)==-370000 and state=='Pembayaran|true'
+        and h.saldo_ref('150001',no)==170000 and h.saldo_ref('110003',no)==200000
+        and h.saldo_ref('510002',no)==-370000 and state=='Pembayaran|true'
         and h.angka(f"select count(*) from public.inpatient_records where visit_id={r.q(v)}")==1,
-        f"paid={h.status_bayar(inv)} received={h.diterima(inv)} AR={h.saldo_ref('1201',no)} visit={state}")
+        f"paid={h.status_bayar(inv)} received={h.diterima(inv)} AR={h.saldo_ref('150001',no)} visit={state}")
     r.catat('STAFF-operational-and-history-RLS-visible',
         h.angka(f"select count(*) from public.inpatient_records where visit_id={r.q(v)} and discharged_at is null",r.STAFF)==1
         and h.angka(f"select count(*) from public.medical_records where visit_id={r.q(v)}",r.STAFF)==1,

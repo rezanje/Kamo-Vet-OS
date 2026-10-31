@@ -9,7 +9,7 @@
 //    hampir seluruh kas klinik hari itu.
 // 2. Tutup shift klinik ikut menghitung invoice yang sudah DIBATALKAN — void
 //    hanya mengisi voided_at, status bayarnya tetap "Lunas".
-// 3. Akun kas di-hardcode "1101", tidak lewat peta rekening, jadi cabang yang
+// 3. Akun kas di-hardcode "110003", tidak lewat peta rekening, jadi cabang yang
 //    rekeningnya dipetakan ulang tetap dijurnal ke kas pusat.
 // 4. Status di-update tanpa syarat masih "open", jadi submit dobel bisa memposting
 //    jurnal selisih dua kali.
@@ -28,12 +28,12 @@ import { gagalBacaUang } from "./baca-uang";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
-export const AKUN_SELISIH_KAS = "5901";
-// Kas LEBIH bukan penghematan beban. Kalau dikreditkan ke 5901 (akun BEBAN), Laba
+export const AKUN_SELISIH_KAS = "760002";
+// Kas LEBIH bukan penghematan beban. Kalau dikreditkan ke 760002 (akun BEBAN), Laba
 // Rugi menampilkannya sebagai beban minus dan laba bersih bisa melebihi laba kotor
 // — pembacanya mengira toko untung besar padahal itu kas lebih yang belum jelas
 // asalnya. Kas KURANG tetap beban/piutang kasir; itu memang kerugian perusahaan.
-export const AKUN_KAS_LEBIH = "4303";
+export const AKUN_KAS_LEBIH = "810004";
 
 /**
  * Batas selisih kas fisik vs target per shift. Di atas ini hampir pasti salah ketik
@@ -245,13 +245,13 @@ export async function tutupShift(
 
   let dibebankanKe: string | null = null;
   if (selisih !== 0) {
-    // Kas cabang bisa dipetakan ke rekening lain; jangan paksa ke 1101 pusat.
+    // Kas cabang bisa dipetakan ke rekening lain; jangan paksa ke 110003 pusat.
     const kas = await kodeAkunBayar(supabase, "Tunai", shift.branch_id ?? null);
     const abs = Math.abs(selisih);
 
     // KAS KURANG → jadi piutang kasir kalau kasirnya bisa dikenali sebagai karyawan.
     // Utangnya ditulis sebagai kasbon berstatus Disetujui supaya ikut terpotong
-    // otomatis dari gaji berikutnya — kalau cuma dijurnal ke 1203 tanpa dokumen,
+    // otomatis dari gaji berikutnya — kalau cuma dijurnal ke 182001 tanpa dokumen,
     // tagihannya jadi hantu yang tidak pernah bisa ditagih sistem.
     // Kasbon dibuat lewat fungsi database yang memeriksa shift ini memang baru ditutup
     // dengan kas kurang — akun kasir tidak lagi boleh menulis kasbon langsung.

@@ -9,7 +9,7 @@ vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Object.as
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/posting", () => ({ postJournal: fixture.postJournal }));
-vi.mock("@/lib/kas-akun", () => ({ kodeAkunBayar: async () => "1101" }));
+vi.mock("@/lib/kas-akun", () => ({ kodeAkunBayar: async () => "110003" }));
 vi.mock("@/lib/transaction-draft-ack", async importOriginal => ({
   ...await importOriginal<object>(), assertDraftJournal: async () => undefined,
 }));

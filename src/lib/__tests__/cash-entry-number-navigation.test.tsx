@@ -5,7 +5,7 @@ const state=vi.hoisted(()=>({lookups:0,jenis:'Masuk',idValue:'',proofValue:''}))
 vi.mock('@/lib/master-guard',()=>({bolehTransaksiKas:async()=>false}));
 vi.mock('@/lib/ledger',()=>({getAccountBalances:async()=>[]}));
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:null}})},from:()=>{
- let jenis='';const row={id:'10000000-0000-4000-8000-000000000001',no_bukti:`${state.jenis==='Masuk'?'KM':'KK'}.2026.10.00001`,tanggal:'2026-10-24',jumlah:100,lawan_code:'4101',account_id:'20000000-0000-4000-8000-000000000002',revision:0,keterangan:null,voided_at:null,rekening:null,branches:null};
+ let jenis='';const row={id:'10000000-0000-4000-8000-000000000001',no_bukti:`${state.jenis==='Masuk'?'KM':'KK'}.2026.10.00001`,tanggal:'2026-10-24',jumlah:100,lawan_code:'510001',account_id:'20000000-0000-4000-8000-000000000002',revision:0,keterangan:null,voided_at:null,rekening:null,branches:null};
  const q={select:()=>q,eq:(field:string,value:string)=>{if(field==='jenis')jenis=value;if(field==='id'){state.lookups++;state.idValue=value;}if(field==='no_bukti'){state.lookups++;state.proofValue=value;}return q;},order:()=>q,limit:()=>q,maybeSingle:async()=>({data:jenis===state.jenis&&(state.idValue===row.id||state.proofValue===row.no_bukti)?row:null,error:null}),then:(resolve:(v:unknown)=>void)=>resolve({data:[],error:null})};return q;
 }})}));
 import { KasEntryScreen } from '@/app/(app)/kas-bank/kas/KasEntryScreen';

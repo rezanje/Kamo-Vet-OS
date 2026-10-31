@@ -13,7 +13,7 @@ def load(name,path):
 
 def concurrency(source):
  auth="set role authenticated;set request.jwt.claim.sub='e1100000-0000-4000-8000-000000000001';set request.jwt.claims='{\"role\":\"authenticated\"}';"
- source.sql("insert into coa_accounts(code,name,type,normal_balance,is_header) values('5501','Fictional bank fee','BEBAN','D',false),('4301','Fictional interest','PENDAPATAN','K',false) on conflict(code) do update set is_active=true,is_header=false;")
+ source.sql("insert into coa_accounts(code,name,type,normal_balance,is_header) values('740010','Fictional bank fee','BEBAN','D',false),('810001','Fictional interest','PENDAPATAN','K',false) on conflict(code) do update set is_active=true,is_header=false;")
  day=source.sql("select (now() at time zone 'Asia/Jakarta')::date;").stdout.strip()
  header=json.dumps(dict(account_id='e6600000-0000-4000-8000-000000000002',tanggal=day,saldo_bank=0,biaya_adm=10,bunga=2))
  create=f"select public.mutate_bank_reconciliation('race-reconciliation','create',null,null,'{header}'::jsonb,null);"
@@ -45,7 +45,7 @@ def concurrency(source):
  assert json.loads(finish(winner).splitlines()[0])==json.loads(finish(retry))
  assert source.sql('select count(*) from bank_reconciliation_revisions;').stdout.strip()=='1'
  # A concurrent ledger writer must finish before the book snapshot is captured.
- writer=start("begin;insert into journal_entries(id,no_jurnal,tanggal,deskripsi,source) values('efa30000-0000-4000-8000-000000000001','RACE.BANK.WRITER','"+day+"','Fictional concurrent journal','fixture');insert into journal_lines(entry_id,account_id,debit,credit) select 'efa30000-0000-4000-8000-000000000001',id,777,0 from coa_accounts where code='1112';insert into journal_lines(entry_id,account_id,debit,credit) select 'efa30000-0000-4000-8000-000000000001',id,0,777 from coa_accounts where code='4101';select pg_sleep(1) /* bank-ledger-holder */;commit;")
+ writer=start("begin;insert into journal_entries(id,no_jurnal,tanggal,deskripsi,source) values('efa30000-0000-4000-8000-000000000001','RACE.BANK.WRITER','"+day+"','Fictional concurrent journal','fixture');insert into journal_lines(entry_id,account_id,debit,credit) select 'efa30000-0000-4000-8000-000000000001',id,777,0 from coa_accounts where code='1112';insert into journal_lines(entry_id,account_id,debit,credit) select 'efa30000-0000-4000-8000-000000000001',id,0,777 from coa_accounts where code='510001';select pg_sleep(1) /* bank-ledger-holder */;commit;")
  barrier("wait_event='PgSleep' and query like '%bank-ledger-holder%'")
  baseline=Decimal(source.sql("select coalesce(sum(l.debit-l.credit),0) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='1112' and e.tanggal<='"+day+"';").stdout.strip())
  waiter=start(auth+create.replace('race-reconciliation','race-after-ledger').replace('select public','select /* bank-ledger-waiter */ public'))

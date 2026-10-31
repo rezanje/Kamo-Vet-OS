@@ -16,7 +16,7 @@ alter table profiles disable trigger guard_profile_privileges;
 update profiles set role=case id when 'f7100000-0000-4000-8000-000000000001' then 'OWNER'::user_role when 'f7100000-0000-4000-8000-000000000002' then 'ADMIN'::user_role else 'FINANCE'::user_role end,is_active=true where id::text like 'f710%';
 alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,name,code,type) values('f7200000-0000-4000-8000-000000000001','Transfer test','TFTEST','OFFICE');
-insert into coa_accounts(code,name,type,normal_balance) values('1171','Test source','ASET','D'),('1172','Test destination','ASET','D'),('1173','Test alternate','ASET','D'),('5501','Bank fee','BEBAN','D') on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance) values('1171','Test source','ASET','D'),('1172','Test destination','ASET','D'),('1173','Test alternate','ASET','D'),('740010','Bank fee','BEBAN','D') on conflict(code) do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code) values('f7300000-0000-4000-8000-000000000001','Test source','Bank','1171'),('f7300000-0000-4000-8000-000000000002','Test destination','Bank','1172'),('f7300000-0000-4000-8000-000000000003','Test alternate','Bank','1173');
 create table transfer_input as select jsonb_build_object('tanggal',current_date,'from_account_id','f7300000-0000-4000-8000-000000000001','to_account_id','f7300000-0000-4000-8000-000000000002','jumlah',1000,'biaya_admin',2.50,'branch_id','f7200000-0000-4000-8000-000000000001','keterangan','Fictional transfer') header;
 create table transfer_results(name text primary key,value jsonb);
@@ -106,7 +106,7 @@ set role authenticated;
 select transfer_reject($q$select mutate_cash_transfer('invalid-legacy','void',(select(value->>'transfer_id')::uuid from transfer_results where name='rollback'),0,'{}','Nonfinite legacy')$q$,'Jurnal');
 reset role;
 update cash_transfers set jumlah=1000 where id=(select(value->>'transfer_id')::uuid from transfer_results where name='rollback');
-update journal_lines l set debit=case when a.code='1172' then 1000 when a.code='5501' then 2.5 else 0 end,credit=case when a.code='1171' then 1002.5 else 0 end from coa_accounts a
+update journal_lines l set debit=case when a.code='1172' then 1000 when a.code='740010' then 2.5 else 0 end,credit=case when a.code='1171' then 1002.5 else 0 end from coa_accounts a
 where a.id=l.account_id and l.entry_id=(select(value->>'journal_entry_id')::uuid from transfer_results where name='rollback');
 -- Active-account, module and branch visibility still apply to read-only recovery.
 update profiles set is_active=false where id='f7100000-0000-4000-8000-000000000001';
@@ -139,7 +139,7 @@ update cash_accounts set is_active=false where id='f7300000-0000-4000-8000-00000
 set role authenticated;
 select transfer_reject($q$select mutate_cash_transfer('inactive-destination','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='rollback'),0,jsonb_set((select header from transfer_input),'{to_account_id}','"f7300000-0000-4000-8000-000000000003"'),'Inactive destination')$q$,'tidak aktif');
 reset role;
-update cash_accounts set is_active=true,coa_code='4301' where id='f7300000-0000-4000-8000-000000000003';
+update cash_accounts set is_active=true,coa_code='810001' where id='f7300000-0000-4000-8000-000000000003';
 set role authenticated;
 select transfer_reject($q$select mutate_cash_transfer('income-destination','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='rollback'),0,jsonb_set((select header from transfer_input),'{to_account_id}','"f7300000-0000-4000-8000-000000000003"'),'Income destination')$q$,'akun aset');
 reset role;

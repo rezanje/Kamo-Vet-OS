@@ -47,7 +47,7 @@ def tracer(h):
     check('one action pending medicine and services posts invoice stock revenue AR actual split receipt',not error,dict(error=error))
     if error:return False
     inv=h.aktif(v);no=h.no_tagihan(inv)
-    check('real invoice and journal amounts',h.angka(f'select total from invoices where id={q(inv)}')==330000 and h.diterima(inv)==330000 and h.status_bayar(inv)=='Lunas' and h.angka(f'select qty from stock where item_id={q(r.ITEM)}')==before-2 and h.saldo_ref('4201',no)==-330000 and h.saldo_ref('5101',no)==4000 and h.saldo_ref('1301',no)==-4000 and h.saldo_ref('1201',no)==0,dict(invoice=inv,revenue=h.saldo_ref('4201',no),hpp=h.saldo_ref('5101',no),ar=h.saldo_ref('1201',no),stock=h.angka(f'select qty from stock where item_id={q(r.ITEM)}')))
+    check('real invoice and journal amounts',h.angka(f'select total from invoices where id={q(inv)}')==330000 and h.diterima(inv)==330000 and h.status_bayar(inv)=='Lunas' and h.angka(f'select qty from stock where item_id={q(r.ITEM)}')==before-2 and h.saldo_ref('510002',no)==-330000 and h.saldo_ref('600001',no)==4000 and h.saldo_ref('170001',no)==-4000 and h.saldo_ref('150001',no)==0,dict(invoice=inv,revenue=h.saldo_ref('510002',no),hpp=h.saldo_ref('600001',no),ar=h.saldo_ref('150001',no),stock=h.angka(f'select qty from stock where item_id={q(r.ITEM)}')))
     snap=state(h);h.sql(sql,r.STAFF)
     check('exact replay invoice receipt stock GL once',state(h)==snap,dict(unchanged=state(h)==snap))
     return True

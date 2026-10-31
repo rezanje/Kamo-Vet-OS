@@ -22,7 +22,7 @@ def run(h):
  rows=cart['rows'];drug=next(row for row in rows if row['item_id']==r.ITEM);drug['qty']=3;sql=save(v,stay,cart['snapshot'],rows,[dict(method='Tunai',amount=355000)])
  err=h.gagal(sql,r.STAFF)
  inv=h.aktif(v);no=h.no_tagihan(inv)
- check('STAFF edits pending cart then atomic352 stock revenue receipt AR',not err and h.angka(f'select total from invoices where id={q(inv)}')==355000 and h.saldo_ref('4201',no)==-355000 and h.saldo_ref('5101',no)==6000 and h.saldo_ref('1201',no)==0 and h.angka(f'select qty from prescription_items where id={q(drug["id"])}')==3,dict(error=err,invoice=inv,total=h.angka(f'select total from invoices where id={q(inv)}')))
+ check('STAFF edits pending cart then atomic352 stock revenue receipt AR',not err and h.angka(f'select total from invoices where id={q(inv)}')==355000 and h.saldo_ref('510002',no)==-355000 and h.saldo_ref('600001',no)==6000 and h.saldo_ref('150001',no)==0 and h.angka(f'select qty from prescription_items where id={q(drug["id"])}')==3,dict(error=err,invoice=inv,total=h.angka(f'select total from invoices where id={q(inv)}')))
  snap=h.nilai('select count(*) from journal_entries');err=h.gagal(sql,r.STAFF)
  check('exact cashier replay once after pending became issued',not err and h.nilai('select count(*) from journal_entries')==snap,dict(error=err))
  v2,mr2=m.visit(h,1951);stay2=h.nilai(f'select id from inpatient_records where visit_id={q(v2)}');cart2=read(h,v2,stay2)
@@ -85,7 +85,7 @@ def run(h):
  h.sql(x.issue(v7,mr7,x.payload(h.nilai('select id from compound_formula_versions limit 1'),'cashier-existing-compound')),r.DOCTOR)
  cart7=read(h,v7,stay7);material_stock=h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}');amount=sum(row['qty']*row['harga'] for row in cart7['rows'])
  err=h.gagal(save(v7,stay7,cart7['snapshot'],cart7['rows'],[dict(method='Tunai',amount=amount)],key='cashier-issued-compound'),r.STAFF)
- check('new cashier bills actual issued compound without second ingredient deduction',not err and cart7.get('compound_pending') is True and h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}')==material_stock and h.saldo_ref('5101',h.no_tagihan(h.aktif(v7)))==6000,dict(error=err))
+ check('new cashier bills actual issued compound without second ingredient deduction',not err and cart7.get('compound_pending') is True and h.angka(f'select qty from stock where item_id={q(x.MATERIAL)}')==material_stock and h.saldo_ref('600001',h.no_tagihan(h.aktif(v7)))==6000,dict(error=err))
  # Outer editable wrapper must not hide an account-map change during its OWN
  # shift wait from the original engine (which later reacquires the same shift).
  v6,mr6=m.visit(h,1956);stay6=h.nilai(f'select id from inpatient_records where visit_id={q(v6)}');cart6=read(h,v6,stay6);barriers=[]
@@ -93,7 +93,7 @@ def run(h):
   observer=stack.enter_context(x.c.Session(h.db,'account-observer'));gate=stack.enter_context(x.c.Session(h.db,'account-gate'));waiter=stack.enter_context(x.c.Session(h.db,'account-waiter'));waiter.sql(x.claims(r.STAFF))
   gate.sql(f'begin;select id from cashier_shifts where id={q(r.SHIFT[r.STAFF])} for update;')
   waiter.send('begin;'+save(v6,stay6,cart6['snapshot'],cart6['rows'],[dict(method='Transfer',amount=330000)],key='account-wait-cart'))
-  x.c.wait_block(observer,waiter,gate,barriers);gate.sql("update cash_accounts set no_rekening='FIKTIF-BERUBAH' where coa_code='1102';commit;");out=x.c.attempt(waiter)
+  x.c.wait_block(observer,waiter,gate,barriers);gate.sql("update cash_accounts set no_rekening='FIKTIF-BERUBAH' where coa_code='120002';commit;");out=x.c.attempt(waiter)
  check('account mapping rechecked across outer cashier shift wait no silent new destination',not out['ok'] and ('ACCOUNT_INVALID' in out.get('error','') or 'CART_STALE' in out.get('error','')) and h.angka(f'select count(*) from invoices where visit_id={q(v6)}')==0,dict(outcome=out,barriers=barriers))
 
 def main():

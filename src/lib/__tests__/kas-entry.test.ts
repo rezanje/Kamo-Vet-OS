@@ -6,7 +6,7 @@ const dasar = {
   jenis: "Keluar" as const,
   tanggal: "2026-07-30",
   accountId: "rek-1",
-  lawanCode: "5401",
+  lawanCode: "760003",
   jumlah: 50000,
   hariIni: "2026-07-30",
 };
@@ -30,22 +30,22 @@ describe("validasiKasEntry", () => {
 
 describe("jurnalKasEntry", () => {
   it("kas keluar: beban didebit, kas dikredit", () => {
-    expect(jurnalKasEntry("Keluar", "1101", "5401", 50000)).toEqual([
-      { code: "5401", debit: 50000, credit: 0 },
-      { code: "1101", debit: 0, credit: 50000 },
+    expect(jurnalKasEntry("Keluar", "110003", "760003", 50000)).toEqual([
+      { code: "760003", debit: 50000, credit: 0 },
+      { code: "110003", debit: 0, credit: 50000 },
     ]);
   });
 
   it("kas masuk: kas didebit, akun lawan dikredit", () => {
-    expect(jurnalKasEntry("Masuk", "1101", "4901", 75000)).toEqual([
-      { code: "1101", debit: 75000, credit: 0 },
+    expect(jurnalKasEntry("Masuk", "110003", "4901", 75000)).toEqual([
+      { code: "110003", debit: 75000, credit: 0 },
       { code: "4901", debit: 0, credit: 75000 },
     ]);
   });
 
   it("selalu seimbang", () => {
     for (const j of ["Masuk", "Keluar"] as const) {
-      const lines = jurnalKasEntry(j, "1102", "5301", 12345);
+      const lines = jurnalKasEntry(j, "120002", "720002", 12345);
       const d = lines.reduce((a, l) => a + l.debit, 0);
       const k = lines.reduce((a, l) => a + l.credit, 0);
       expect(d).toBe(k);
@@ -53,10 +53,10 @@ describe("jurnalKasEntry", () => {
   });
 
   it("jurnal balik membatalkan efeknya", () => {
-    const asli = jurnalKasEntry("Keluar", "1101", "5401", 50000);
+    const asli = jurnalKasEntry("Keluar", "110003", "760003", 50000);
     expect(jurnalBalik(asli)).toEqual([
-      { code: "5401", debit: 0, credit: 50000 },
-      { code: "1101", debit: 50000, credit: 0 },
+      { code: "760003", debit: 0, credit: 50000 },
+      { code: "110003", debit: 50000, credit: 0 },
     ]);
   });
 });
@@ -70,9 +70,9 @@ describe("nomorKasEntry", () => {
 
 describe("akunLawanTerlarang", () => {
   it("rekening kas/bank tidak boleh jadi akun lawan", () => {
-    const larangan = akunLawanTerlarang(["1101", " 1102 "]);
-    expect(larangan.has("1101")).toBe(true);
-    expect(larangan.has("1102")).toBe(true);
-    expect(larangan.has("5401")).toBe(false);
+    const larangan = akunLawanTerlarang(["110003", " 120002 "]);
+    expect(larangan.has("110003")).toBe(true);
+    expect(larangan.has("120002")).toBe(true);
+    expect(larangan.has("760003")).toBe(false);
   });
 });

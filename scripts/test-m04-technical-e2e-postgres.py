@@ -67,7 +67,7 @@ alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,code,name,type) values({branch},'M04-BR','Fictional branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values({warehouse},{branch},'M04-WH','Fictional warehouse','RETAIL');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1301','Fictional inventory','ASET','D',false),('3101','Fictional equity','EKUITAS','K',false)
+ ('170001','Fictional inventory','ASET','D',false),('410001','Fictional equity','EKUITAS','K',false)
  on conflict(code) do update set is_active=true,is_header=false;
 insert into items(id,code,name,unit,item_type,is_active,track_expiry)
  select x.id::uuid,x.code,x.name,x.unit,x.item_type,x.is_active,x.track_expiry
@@ -113,10 +113,10 @@ from import_runs r where r.id={literal(run_id)}::uuid;"""))
         assert [(row["source_row"], row["status"]) for row in saved["rows"]] == [(2,"valid"),(3,"valid"),(4,"rejected")], saved
         assert "tidak ditemukan" in saved["rows"][2]["reason"], saved
         assert db.sql(prepare).strip() == run_id, "Preparation retry duplicated the run"
-        preview = json.loads(db.sql(f"{auth} select preview_accurate_inventory_accounting({literal(run_id)}::uuid,(select id from coa_accounts where code='3101'));"))
+        preview = json.loads(db.sql(f"{auth} select preview_accurate_inventory_accounting({literal(run_id)}::uuid,(select id from coa_accounts where code='410001'));"))
         assert preview["can_post"] and float(preview["original_value"]) == 2.33, preview
         reason = "Fictional M04 end-to-end reviewed opening"
-        post = f"{auth} select post_accurate_inventory_accounting({literal(run_id)}::uuid,(select id from coa_accounts where code='3101'),{json_sql(preview)},{literal(reason)});"
+        post = f"{auth} select post_accurate_inventory_accounting({literal(run_id)}::uuid,(select id from coa_accounts where code='410001'),{json_sql(preview)},{literal(reason)});"
         receipt = json.loads(db.sql(post))
         assert json.loads(db.sql(post)) == receipt, "Posting retry changed receipt"
         # Verify every persisted output, by SKU and warehouse, rather than only

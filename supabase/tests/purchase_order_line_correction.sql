@@ -25,8 +25,8 @@ insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,fak
 update purchase_orders set total=480 where id='f9500000-0000-4000-8000-000000000003';
 update purchase_orders set total=500 where id='f9500000-0000-4000-8000-000000000001';
 update purchase_orders set total=300 where id='f9500000-0000-4000-8000-000000000002';
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fiction stock','ASET','D'),('2101','Fiction AP','LIABILITAS','K'),('1105','Fiction VAT','ASET','D'),('5101','Fiction HPP','BEBAN','D'),('110219','Fiction bank','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
-update coa_accounts set is_active=true,is_header=false where code in('1301','1303','2102','1101','1102','2101','1105','5101');
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction stock','ASET','D'),('311001','Fiction AP','LIABILITAS','K'),('182004','Fiction VAT','ASET','D'),('600001','Fiction HPP','BEBAN','D'),('110219','Fiction bank','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
+update coa_accounts set is_active=true,is_header=false where code in('170001','160001','311003','110003','120002','311001','182004','600001');
 update accounting_locks set closed_until=null;
 update company_settings set mode_pkp=false,ppn_rate=11;
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id) values('f9700000-0000-4000-8000-000000000001','POL bank','Bank','110219','f9100000-0000-4000-8000-000000000001');

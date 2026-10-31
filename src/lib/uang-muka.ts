@@ -1,6 +1,6 @@
 // Logika murni Uang Muka Pembelian (migrasi 0094) — dites di __tests__/uang-muka.test.ts
 
-export const AKUN_UANG_MUKA = "1303";
+export const AKUN_UANG_MUKA = "160001";
 
 // Nomor dokumen: UM.YYYY.MM.NNNNN, seq per bulan — pola sama dgn FB/TB/RB/RJ.
 export function formatNoUangMuka(date: Date, seq: number): string {
@@ -35,7 +35,7 @@ export function jurnalBayarHutang(kasCode: string, total: number, dariUangMuka: 
   const um = Math.min(Math.max(0, Math.round(Number(dariUangMuka) || 0)), n);
   const kas = n - um;
 
-  const lines: JurnalLine[] = [{ code: "2101", debit: n, credit: 0 }];
+  const lines: JurnalLine[] = [{ code: "311001", debit: n, credit: 0 }];
   if (um > 0) lines.push({ code: AKUN_UANG_MUKA, debit: 0, credit: um });
   if (kas > 0) lines.push({ code: kasCode, debit: 0, credit: kas });
   return lines;
