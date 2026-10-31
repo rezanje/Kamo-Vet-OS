@@ -177,7 +177,7 @@ export default async function HargaJualPage({
           </table>
         </div>
 
-        <ListPagination path="/pos/harga" query={{ cabang: branchId, q }} total={count} pageInfo={pageInfo} />
+        <ListPagination path="/pos/harga" query={{ cabang: branchId, q }} total={count} pageInfo={pageInfo} lompat={false} />
 
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
           Harga beli & HPP tidak diatur di sini: HPP tetap dihitung rata-rata dari pembelian yang benar-benar masuk.
