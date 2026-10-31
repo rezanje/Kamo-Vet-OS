@@ -3,7 +3,7 @@
 -- Satu kedatangan rombongan = satu pemakaian kode kampanye. Kodenya menempel di SATU nota
 -- ("nota pembawa", invoices.campaign_code terisi, dihitung database), sedangkan nota hewan lain
 -- ikut menikmati voucher kampanyenya tanpa kode supaya pemakaian tidak terhitung ganda.
--- Aturan 20261101150000 menolak voucher tertaut kampanye aktif tanpa kode kampanye, sehingga
+-- Aturan 20261104376000 menolak voucher tertaut kampanye aktif tanpa kode kampanye, sehingga
 -- nota hewan lain itu ikut tertolak.
 --
 -- Perbaikan yang bisa diverifikasi database (bukan percaya pada klien):

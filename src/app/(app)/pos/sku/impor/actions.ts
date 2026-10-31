@@ -168,7 +168,7 @@ export type InitialStockCheck = {
 export type InitialStockRow = ResolvedSaldoAwal & { itemName: string | null };
 
 export type InitialStockValuation = { policy: string; source_value: string; posted_value: string; residual: string; allocated_source_row: number | null; rate_adjustment: string; control: string;
-  /** Batch disiapkan sejak 20261101160000. */
+  /** Batch disiapkan sejak 20261104379000. */
   rounding_difference?: string; source_lines?: number; line_rounding?: { unit: string; mode: string; split_lines: number } | null };
 
 export type InitialStockState = {

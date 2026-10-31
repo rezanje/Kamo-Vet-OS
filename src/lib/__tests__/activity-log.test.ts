@@ -22,7 +22,7 @@ describe('activity viewer navigation', () => {
 });
 
 it('matches every explicitly registered source and module with localized labels', () => {
- const files=['20261022070000_activity_audit.sql','20261022081000_activity_audit_financial.sql','20261022082000_activity_audit_inventory.sql','20261022083000_activity_audit_people_settings.sql','20261022084000_activity_audit_remaining_modules.sql','20261023193000_sales_refund_payout.sql','20261027153000_purchase_correction_requests.sql','20261028110100_clinic_patient_history_rpc.sql','20261028140000_j03_clinic_refund.sql','20261030111000_a01_activity_audit_new_sources.sql','20261101130000_n01_retur_faktur_grosir.sql'];
+ const files=['20261022070000_activity_audit.sql','20261022081000_activity_audit_financial.sql','20261022082000_activity_audit_inventory.sql','20261022083000_activity_audit_people_settings.sql','20261022084000_activity_audit_remaining_modules.sql','20261023193000_sales_refund_payout.sql','20261027153000_purchase_correction_requests.sql','20261028110100_clinic_patient_history_rpc.sql','20261028140000_j03_clinic_refund.sql','20261104370000_a01_activity_audit_new_sources.sql','20261104375000_n01_retur_faktur_grosir.sql'];
  const sources=files.flatMap(file=>[...readFileSync(`supabase/migrations/${file}`,'utf8').matchAll(/(?:^\s*|values\s*)\('([^']+)'\s*,\s*'([^']+)'/gm)].map(match=>({entity:match[1],module:match[2]})));
  expect(sources.length).toBe(203);
  expect(Object.keys(ACTIVITY_ENTITIES).sort()).toEqual(sources.map(s=>s.entity).sort());

@@ -5,7 +5,7 @@ faktur grosir terposting. Retur struk kasir (`sales_returns`) tidak berubah.
 
 ## Dokumen dan alur
 
-- Migrasi `supabase/migrations/20261101130000_n01_retur_faktur_grosir.sql`.
+- Migrasi `supabase/migrations/20261104375000_n01_retur_faktur_grosir.sql`.
 - Tabel `wholesale_returns` (+ `wholesale_return_items`), nomor `RJG.{YYYY}.{MM}.#####` (bisa diatur di
   Pengaturan → Penomoran Dokumen, jenis `RJG`). Kolom baru `sales_invoices.returned_ar`.
 - RPC `post_wholesale_return(request_key, invoice_id, tanggal, warehouse_id, alasan, items)`:

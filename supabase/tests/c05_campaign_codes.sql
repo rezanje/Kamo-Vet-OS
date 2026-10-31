@@ -149,7 +149,7 @@ select pg_temp.rejects($$select pg_temp.sale('C05-USE-3', 'PROMO10', 'HEMAT10')$
 -- The pending receipt cannot be finalized past the cap either (authoritative check at payment).
 select pg_temp.rejects($$select public.test_c05_finalize((select id from public.sales where no_struk = 'C05-PENDING'))$$,
   'sudah mencapai batas pemakaian', 'finalizing a pending receipt re-checks the cap');
--- Keputusan pemilik 29 Okt (migrasi 20261101150000): voucher yang tertaut ke kampanye aktif
+-- Keputusan pemilik 29 Okt (migrasi 20261104376000): voucher yang tertaut ke kampanye aktif
 -- tidak bisa diketik langsung, jadi batas kampanye tidak bisa dilewati lewat kode vouchernya.
 -- Voucher yang hanya tertaut ke kampanye nonaktif (LAIN5K -> MATI) tetap berlaku langsung.
 select pg_temp.rejects($$select pg_temp.sale('C05-PLAIN', null, 'HEMAT10')$$,

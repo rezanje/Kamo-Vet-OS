@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HOSTED_AUTH_UID = (ROOT / 'supabase/tests/fixtures/hosted_auth_uid.sql').read_text()
 CONTAINER = 'vetos-c05-q01-test-' + uuid.uuid4().hex[:8]
 NEW = ['20261028180000_q01_new_customer_quest.sql', '20261028181000_c05_campaign_codes.sql',
-       '20261030112000_q01_staff_effects_recovery.sql', '20261101150000_c05_voucher_hanya_lewat_kampanye.sql',
-       '20261101151000_i09_riwayat_induk_racikan.sql', '20261101152000_c05_rombongan_nota_pendamping.sql']
+       '20261104371000_q01_staff_effects_recovery.sql', '20261104376000_c05_voucher_hanya_lewat_kampanye.sql',
+       '20261104377000_i09_riwayat_induk_racikan.sql', '20261104378000_c05_rombongan_nota_pendamping.sql']
 SUITES = ['c05_campaign_codes.sql', 'q01_new_customer_quest.sql', 'c05_q01_followup.sql',
           'c05_voucher_lewat_kampanye.sql', 'i09_riwayat_induk_racikan.sql']
 REGRESSIONS = ['clinic_invoice_post.sql', 'clinic_billing_lifecycle.sql', 'clinic_demo_financial_policy.sql',

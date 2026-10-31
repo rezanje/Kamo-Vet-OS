@@ -63,7 +63,7 @@ insert into public.visits (id, branch_id, customer_id, pet_id) values
 insert into public.invoices (id, visit_id, invoice_no, subtotal, discount, tax, total, paid_status, voucher_code, campaign_code)
   values ('d0700000-0000-4000-8000-000000000001', 'd0600000-0000-4000-8000-000000000001', 'INV-FUP-A', 60000, 6000, 0, 54000, 'Lunas', 'FUPV', 'ROMBONGAN');
 -- FUPV is linked to an active campaign: a sibling invoice WITHOUT the carrier marker is a raw voucher
--- and stays blocked (20261101150000); with the marker it is accepted (20261101152000).
+-- and stays blocked (20261104376000); with the marker it is accepted (20261104378000).
 select pg_temp.rejects($$insert into public.invoices (visit_id, invoice_no, subtotal, discount, tax, total, paid_status, voucher_code)
   values ('d0600000-0000-4000-8000-000000000002', 'INV-FUP-B', 40000, 4000, 0, 36000, 'Lunas', 'FUPV')$$,
   'Voucher ini hanya bisa dipakai lewat kode kampanye', 'sibling without carrier marker is a raw voucher');

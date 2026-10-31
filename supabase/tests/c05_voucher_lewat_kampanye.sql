@@ -140,7 +140,7 @@ select pg_temp.ok((select count(*) from public.invoices where visit_id in ('c5a5
   'clinic: campaign code, unlinked voucher, and inactive-campaign voucher all still post');
 select pg_temp.ok((select campaign_code = 'KAMPTAUT' and voucher_code = 'TAUT10' from public.invoices
   where visit_id = 'c5a50000-0000-4000-8000-000000000001'), 'clinic invoice via campaign keeps both codes');
--- Group payment with the campaign code (20261101152000): the sibling pet's invoice carries the voucher
+-- Group payment with the campaign code (20261104378000): the sibling pet's invoice carries the voucher
 -- plus the carrier marker through clinic_post_invoice, and the arrival still counts as ONE use.
 reset role;
 create temp table c5a_used as select public.campaign_code_used('KAMPTAUT') n;
