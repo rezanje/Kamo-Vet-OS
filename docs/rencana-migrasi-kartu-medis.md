@@ -1023,3 +1023,14 @@ Hasil (268 diproses): 233 baru, 8 sudah ada, 27 tertahan, 0 gagal.
 Draf "Perlu Dilengkapi" lama untuk kartu yang sudah masuk tetap ada (203 dari kelompok ini + 12 dari 15.2).
 
 Total batch 13–17: 2.381 baru, 409 sudah ada, 1.255 tertahan, 508 kosong, 0 gagal.
+
+### 15.4 Penutupan draf "Perlu Dilengkapi" yang kartunya sudah masuk (2026-10-31, izin OWNER opsi A)
+
+Ada 215 draf (12 dari 15.2 dan 203 dari 15.3) yang kartunya sudah tersimpan sebagai riwayat. Sebelum ditutup, setiap draf
+dicek: status masih `perlu_dilengkapi`, dan visit hasil impor punya `legacy_source_key` yang sama dengan jejak draf.
+
+Draf ditutup lewat RPC publik `batalkan_kartu_tertunda` (OWNER), dengan alasan "Sudah masuk lewat impor migrasi
+(riwayat <visit_id>)". Isi draf tidak dihapus.
+
+Hasil: 215 berstatus `dibatalkan`, isi utuh. Total `perlu_dilengkapi` 1.116 → 901. Tidak ada perubahan pada riwayat
+atau tabel keuangan.
