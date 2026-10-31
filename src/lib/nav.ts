@@ -169,8 +169,10 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Uang Muka Penjualan", icon: "ti-coin", ...G, href: "/penjualan/uang-muka" },
     { label: "Faktur Penjualan", icon: "ti-receipt-2", ...G, href: "/penjualan/faktur" },
     // Penerimaan dicatat dari baris fakturnya — satu layar, tidak perlu cari-cari
-    // fakturnya dua kali.
-    { label: "Penerimaan Penjualan", icon: "ti-cash-banknote", ...G, href: "/penjualan/faktur" },
+    // fakturnya dua kali. Dibuka langsung pada status "Belum lunas" (semua tanggal) supaya
+    // tagihan lama — termasuk saldo awal per faktur — langsung terlihat, tidak tersaring
+    // rentang bawaan bulan berjalan (di tanggal 1 rentang itu hanya satu hari).
+    { label: "Penerimaan Penjualan", icon: "ti-cash-banknote", ...G, href: "/penjualan/faktur?status=belum" },
     { label: "Retur Penjualan", icon: "ti-arrow-back-up", ...G, href: "/penjualan/retur" },
     // Retur atas Faktur Penjualan grosir (N01/J01): barang kembali, piutang/kredit pelanggan dikoreksi.
     { label: "Retur Faktur Penjualan", icon: "ti-receipt-refund", ...G, href: "/penjualan/retur-grosir" },
