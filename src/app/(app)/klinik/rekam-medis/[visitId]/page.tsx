@@ -28,6 +28,7 @@ import { Popup } from "@/components/Popup";
 import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
 import { tambahAdendumRekamMedis } from "./actions";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
+import { labelSusulan, type SusulanFields } from "@/lib/rekam-medis-susulan";
 import { adalahKekuranganStok } from "@/lib/stok-kurang";
 import { adalahRiwayatBersama, bacaDetailRiwayatBersama, ownerAktif } from "@/lib/riwayat-bersama";
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
@@ -156,7 +157,7 @@ export default async function RekamMedisPage({
   let mrId: string | null = null;
   let mrLoadFailed = false;
   let correctionDataFailed = false;
-  let resep: ClinicalCorrection["prescriptions"] = [];
+  let resep: (ClinicalCorrection["prescriptions"][number] & SusulanFields)[] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
     mrLoadFailed = !!latestRecord.error;
@@ -174,7 +175,7 @@ export default async function RekamMedisPage({
     recorded && mrId ? Promise.all([
       supabase
         .from("prescription_items")
-        .select("id, item_id, nama_obat, qty, harga, satuan, faktor, aturan_pakai, jenis, kategori, service_performers, compound_recipe_id, bmhp_components")
+        .select("id, item_id, nama_obat, qty, harga, satuan, faktor, aturan_pakai, jenis, kategori, service_performers, compound_recipe_id, bmhp_components, susulan_at, susulan_by_name, susulan_source")
         .eq("medical_record_id", mrId)
         .order("created_at"),
       // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
@@ -228,14 +229,14 @@ export default async function RekamMedisPage({
   const tambahItemHref = inpatientAktif
     ? `/klinik/rawat-inap/${inpatientAktif.id}/obat-khusus?tab=tindakan`
     : canCorrect && mrId
-      ? `/klinik/pembayaran/${visit.id}`
+      ? `/klinik/rekam-medis/${visit.id}/tambah-item`
       : null;
   const tambahItemNota = !tambahItemHref
     ? selesai || visit.checked_out_at ? "Kunjungan sudah selesai — tindakan baru dicatat di kunjungan berikutnya."
       : latestInvoice.data ? "Tagihan sudah dibuat — tambah item lewat koreksi tagihan di Pembayaran."
       : "Tambah tindakan belum bisa dibuka dari sini. Muat ulang halaman, lalu lanjutkan lewat Pembayaran."
     : inpatientAktif ? ""
-    : "Rawat jalan: tindakan / obat susulan ditambahkan di layar Pembayaran supaya ikut tagihan.";
+    : "Rawat jalan: item susulan dicatat di rekam medis dulu, lalu otomatis ikut tagihan di layar Pembayaran.";
   const correction: ClinicalCorrection | undefined = editing && record && mrId ? {
     fullEdit: true, recordId: mrId, revision: record.clinical_revision ?? 0,
     anamnesis: record.anamnesis, diagnosis: record.diagnosis, therapy: record.therapy,
@@ -383,6 +384,7 @@ export default async function RekamMedisPage({
       <StokKurangDariPesan pesan={error} />
       <Popup message={adalahKekuranganStok(error) ? null : error} />
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
+      {success === "susulan" && <div className="p2ban" role="status" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Item susulan tersimpan di rekam medis dan otomatis ikut tagihan di layar Pembayaran.</div>}
       {success === "addendum" && <div className="p2ban" role="status">Adendum rekam medis tersimpan; catatan asli, tagihan, dan stok tidak berubah.</div>}
       {success === "lanjutan" && (
         <div className="p2ban" role="status" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
@@ -535,7 +537,8 @@ export default async function RekamMedisPage({
                   <tbody>
                     {resep.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontWeight: 500 }}>{r.nama_obat}{(r.jenis === "jasa" || r.service_performers != null) && <div style={{fontSize:10}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>}</td>
+                        <td style={{ fontWeight: 500 }}>{r.nama_obat}{(r.jenis === "jasa" || r.service_performers != null) && <div style={{fontSize:10}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>}
+                          {labelSusulan(r) && <div style={{ fontSize: 10, color: "#b45309" }}>{labelSusulan(r)}</div>}</td>
                         <td style={{ textAlign: "center" }}>{r.qty}</td>
                         <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.aturan_pakai ?? "—"}</td>
                       </tr>

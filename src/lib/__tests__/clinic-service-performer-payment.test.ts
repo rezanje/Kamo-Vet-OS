@@ -13,7 +13,12 @@ vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({
    maybeSingle:async()=>({data:table==="clinic_demo_policies"?{id:"policy",name:"DEMO",incentive_percent:5,fee_bearer:"customer",fee_rates:{Transfer:100},admin_revenue_code:"4303",admin_expense_code:"5501"}:table==="customers"?{points:state.balance,customer_categories:{is_active:true,rupiah_per_poin:10,diskon_persen:state.categoryPercent}}:table==="visits"?{branch_id:"branch",customer_id:state.customer?"customer":null,doctor_id:null,service_provider_id:"groomer"}:table==="employees"?(id==="groomer"&&state.defaultEligible?{id,branch_id:"branch"}:id==="foreign"?{id,branch_id:"other"}:null):table==="inpatient_records"&&state.inpatientOpen?{id:"active-inpatient"}:table==="invoices"?(state.existing||id==="invoice"?invoice:null):null,error:table==="invoices"&&((id==="invoice"&&state.postReadError)||(id!=="invoice"&&state.activeReadError))?{message:"Invoice read unavailable"}:null}),
    then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data:[],error:null}).then(resolve)};return q;
  },
- rpc:async(name:string,params:Record<string,unknown>)=>{state.calls.push({name,params});const posting=["clinic_post_invoice","clinic_post_split_invoice","clinic_post_demo_invoice"].includes(name);
+ rpc:async(name:string,params:Record<string,unknown>)=>{
+  // Pembungkus "item susulan" (migrasi 20261101000000) meneruskan muatan yang sama ke
+  // RPC posting/koreksi yang dibungkusnya; pemeriksaan di bawah tetap menguji muatan itu.
+  if(name==="clinic_post_invoice_with_record")name=params.p_policy_id?"clinic_post_demo_invoice":params.p_payments?"clinic_post_split_invoice":"clinic_post_invoice";
+  else if(name==="clinic_edit_invoice_with_record")name="clinic_edit_invoice";
+  state.calls.push({name,params});const posting=["clinic_post_invoice","clinic_post_split_invoice","clinic_post_demo_invoice"].includes(name);
   if(posting&&state.lostResponse){state.version=(params.p_invoice as {service_pricing_version?:1}).service_pricing_version??null;state.savedSalesperson=(params.p_invoice as {salesperson_id:string|null}).salesperson_id;state.lostResponse=false;state.existing=true;state.retry=true;throw Error("Response lost after commit")}
   return {data:posting&&!state.stockError?"invoice":null,error:posting&&state.transportError?{message:"Fetch failed"}:posting&&state.stockError?{code:"P0001",message:"STOCK_SHORT: Fiction medicine"}:name==="set_visit_service_state"&&state.checkoutError?{message:"Checkout response not confirmed"}:null};},
 })}));

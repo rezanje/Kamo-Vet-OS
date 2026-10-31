@@ -483,6 +483,8 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
       <input type="hidden" name="visitId" value={visitId} />
       {editMode && targetInvoiceId && <input type="hidden" name="target_invoice_id" value={targetInvoiceId}/>}
       <input type="hidden" name="requestKey" value={submissionKey} />
+      {/* Versi keranjang dasar isian ini; server menolak bila rekam medis sudah berubah. */}
+      {!editMode && <input type="hidden" name="source_version" value={draftSourceVersion} />}
       {demoEnabled && !editMode && <>
         <input type="hidden" name="demo_policy_id" value={demoPolicyId}/>
         <input type="hidden" name="demo_employee_ids" value={JSON.stringify(demoEmployees)}/>

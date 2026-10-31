@@ -36,6 +36,13 @@ function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 const unverifiedBilling = () => new Error("Tagihan belum dapat diverifikasi. Muat ulang sebelum memproses pembayaran.");
+/** Versi keranjang dari database; null hanya bila database belum punya fungsinya (sebelum migrasi). */
+function versiKeranjang(baru: boolean, { data, error }: { data: unknown; error: { code?: string; message?: string } | null }): string | null {
+  if (!baru) return null;
+  if (error?.code === "PGRST202" && error.message?.includes("clinic_outpatient_cart_version")) return null;
+  if (error || typeof data !== "string" || !/^v1:[0-9a-f]{32}$/.test(data)) throw unverifiedBilling();
+  return data;
+}
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 const STEPS = ["Pendaftaran", "Antrian", "Rekam Medis", "Pembayaran"];
@@ -133,7 +140,7 @@ export default async function PembayaranPage({
   const invoice = query.invoice_id ? invoiceAktif.find(row=>row.id===query.invoice_id) ?? null : invoiceAktif.length ? invoiceAktif[invoiceAktif.length - 1] : null;
   if (query.invoice_id && !invoice) notFound();
   const tagihanBertahap = invoiceAktif.length > 1;
-  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
+  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult, cartVersionResult] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
     invoice ? supabase.from("clinic_demo_invoice_snapshots").select("fee_bearer,fee_amount,payments,incentive_pool").eq("invoice_id",invoice.id).maybeSingle() : Promise.resolve({data:null,error:null}),
@@ -143,7 +150,11 @@ export default async function PembayaranPage({
     // cabang, DEMO, tagihan batal). Tebakan lama di layar ini menolak keadaan yang
     // justru diterima RPC-nya, sehingga koreksi sesudah pembatalan kwitansi mentok.
     invoice ? supabase.rpc("clinic_invoice_correction_eligible", {p_invoice_id:invoice.id}) : Promise.resolve({data:false,error:null}),
+    // Versi keranjang rawat jalan dibaca SEBELUM baris resep: kalau dokter menambah item
+    // di antaranya, server menolak (CART_STALE) alih-alih menerima keranjang tanpa item itu.
+    !invoice ? supabase.rpc("clinic_outpatient_cart_version", {p_visit_id:visitId}) : Promise.resolve({data:null,error:null}),
   ]);
+  const cartVersion = versiKeranjang(!invoice, cartVersionResult);
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
   const { data: invItems, error: itemsError } = invoice
@@ -252,7 +263,7 @@ export default async function PembayaranPage({
   // Kunci qty otomatis dari lama inap (keputusan Aldi, 19 Agustus) dicabut — sistem tidak
   // lagi menghitung hari sendiri. Dukungan `terkunci` di form sengaja dibiarkan supaya
   // draf lama yang tersimpan di peramban tetap terbuka tanpa error.
-  const sourceVersion = createHash("sha256").update(JSON.stringify(sourceItems)).digest("hex");
+  const sourceVersion = cartVersion ?? createHash("sha256").update(JSON.stringify(sourceItems)).digest("hex");
   const initialObat = sourceItems.filter((r) => r.jenis !== "jasa");
   const initialJasa = sourceItems.filter((r) => r.jenis === "jasa");
 
