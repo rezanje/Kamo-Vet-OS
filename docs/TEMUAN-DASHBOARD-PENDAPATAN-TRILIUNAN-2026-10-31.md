@@ -53,7 +53,28 @@ lewat layar koreksi jurnal biasa — pembersihan perlu jalur khusus (pembalik de
 - Tes: `src/lib/__tests__/tutup-shift.test.ts` (+4 kasus: kas lebih triliunan/miliaran, kas kurang 7 jt,
   tepat di batas, pesan tanpa angka). Suite penuh vitest 5708 lulus, tsc & eslint bersih.
 
-## Belum dikerjakan (menunggu keputusan pemilik)
+## Pembersihan data (Reza pilih opsi A, 31 Okt 2026)
 
-Pembersihan data: membuat jurnal pembalik untuk 5 jurnal di atas (dan opsional selisih uji yang
-kecil) supaya dashboard kembali ke angka sebenarnya. Mengubah buku besar produksi → perlu persetujuan.
+Script terbatas `scripts/repair-shift-kas-lebih-salah-ketik.sql` (meniru `revise_manual_journal` void:
+pembalik bertanggal sama, `source='manual-reversal'`, jejak `journal_revisions`, asal ditandai voided,
+pelaku = profil Owner). Uji kering di produksi lulus (semua guard/period lock), lalu dijalankan:
+
+| Asal (voided) | Pembalik |
+|---|---|
+| JRN-202610-0314 | JRN-202610-0321 |
+| JRN-202610-0099 | JRN-202610-0322 |
+| JRN-202610-0166-J6YM | JRN-202610-0323 |
+| JRN-202610-0096 | JRN-202610-0324 |
+| JRN-202610-0001-3OJ7 | JRN-202610-0325 |
+
+Pendapatan tahun berjalan setelahnya: 4101 Rp 14.660.000 · 4102 −Rp 153.000 · 4201 Rp 22.464.000 ·
+4303 Rp 10.394.234 (sisa selisih uji kecil, opsi B belum diputuskan) → ±Rp 47,4 jt.
+
+Baris `cashier_shifts` sengaja tidak diubah: halaman detail shift masih menampilkan angka yang diketik
+(bukti). Catatan lain: saldo buku 1101 Kas keseluruhan −Rp 33,2 jt — sudah begitu sebelum perbaikan,
+terkait selisih kurang uji & pemetaan rekening cabang; perlu ditinjau Keuangan terpisah.
+
+## Belum dikerjakan
+
+- Opsi B: selisih uji kecil (kas lebih ±Rp 10,4 jt di 4303, kas kurang/kasbon "Owner") — tunggu konfirmasi Keuangan.
+- Pengaman tutup shift baru aktif setelah PR digabung & dideploy.
