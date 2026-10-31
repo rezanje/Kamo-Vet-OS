@@ -1,0 +1,8 @@
+select json_agg(json_build_array(k,h) order by k) from (
+ select 'col:'||c.table_schema||'.'||c.table_name||'.'||c.column_name k, md5(c.data_type||'|'||c.udt_name||'|'||c.is_nullable||'|'||coalesce(c.column_default,'')) h from information_schema.columns c where c.table_schema in ('public','clinic_private','kamo_import','private')
+ union all select 'con:'||n.nspname||'.'||t.relname||'.'||x.conname, md5(pg_get_constraintdef(x.oid)) from pg_constraint x join pg_class t on t.oid=x.conrelid join pg_namespace n on n.oid=t.relnamespace where n.nspname in ('public','clinic_private','kamo_import','private')
+ union all select 'trg:'||n.nspname||'.'||t.relname||'.'||g.tgname, md5(pg_get_triggerdef(g.oid)||g.tgenabled::text) from pg_trigger g join pg_class t on t.oid=g.tgrelid join pg_namespace n on n.oid=t.relnamespace where not g.tgisinternal and n.nspname in ('public','clinic_private','kamo_import','private')
+ union all select 'fn:'||p.oid::regprocedure::text, md5(pg_get_functiondef(p.oid)) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','clinic_private','kamo_import','private') and p.prokind in ('f','p')
+ union all select 'rls:'||n.nspname||'.'||t.relname, md5(t.relrowsecurity::text||t.relforcerowsecurity::text) from pg_class t join pg_namespace n on n.oid=t.relnamespace where t.relkind='r' and n.nspname in ('public','clinic_private','kamo_import','private')
+ union all select 'pol:'||schemaname||'.'||tablename||'.'||policyname, md5(coalesce(qual,'')||coalesce(with_check,'')||cmd||array_to_string(roles,',')) from pg_policies where schemaname in ('public','clinic_private','kamo_import','private')
+) s
