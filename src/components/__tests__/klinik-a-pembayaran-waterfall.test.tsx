@@ -20,6 +20,8 @@ const visit = { id: "visit-a", status: "Pembayaran", poli: "Poli Umum", dokter: 
 function respond(call: Call) {
   if (call.kind === "auth") return {};
   if (call.kind === "rpc") {
+    // Integrasi D: versi keranjang rawat jalan (sidik baris resep tertunda).
+    if (call.name === "clinic_outpatient_cart_version") return { data: `v1:${"0".repeat(32)}` };
     if (call.name === "clinic_invoice_correction_eligible") return { data: s.correctable };
     if (call.name === "clinic_manual_invoice_units_supported") return { data: true };
     if (call.name === "clinic_demo_care_staff") return { data: [] };

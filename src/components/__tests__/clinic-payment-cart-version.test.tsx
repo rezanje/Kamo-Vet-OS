@@ -63,6 +63,9 @@ it('database lama tanpa fungsi versi tetap memakai sidik layar (kompatibel sebel
  state.versionError={code:'PGRST202',message:'Could not find the function public.clinic_outpatient_cart_version(p_visit_id) in the schema cache'};
  const html=await render();expect(html).toMatch(/data-source="[0-9a-f]{64}"/);
 });
-it('koreksi tagihan yang sudah terbit tidak membaca versi keranjang',async()=>{
- state.mode='unpaid';await render();expect(state.rpcs).not.toContain('clinic_outpatient_cart_version');
+it('koreksi tagihan yang sudah terbit tidak memakai versi keranjang (galat versi diabaikan)',async()=>{
+ // Integrasi A+D: versi berangkat bersama bacaan awal sebelum invoice diketahui; untuk
+ // invoice tersimpan hasilnya diabaikan, jadi galatnya tidak boleh memblokir layar.
+ state.mode='unpaid';state.versionError={code:'57014',message:'timeout'};
+ const html=await render();expect(html).toContain('INV-FIK');expect(html).not.toContain('data-source="v1:');
 });

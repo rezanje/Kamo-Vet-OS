@@ -103,8 +103,14 @@ export default async function PembayaranPage({
     .eq("visit_id", visitId).is("voided_at", null)
     .order("created_at", { ascending: true }).order("id", { ascending: true })) : null;
   const allInvIdsP = outpatient ? mulai(supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId)) : null;
+  // Integrasi A+D: versi keranjang (paket D) berangkat bersama bacaan awal, dan baris resep
+  // baru dibaca SETELAH versinya dijawab. Dengan begitu versi yang dikirim form sama dengan
+  // baris yang tampil atau lebih lama (server menolak CART_STALE) — item dokter yang masuk
+  // di antara dua bacaan tidak pernah tampil hilang sekaligus "segar". Halaman invoice
+  // tersimpan mengabaikan hasil versi ini.
+  const cartVersionP = outpatient ? mulai(supabase.rpc("clinic_outpatient_cart_version", {p_visit_id:visitId})) : null;
   // Satu bacaan resep untuk baris tagihan DAN kategori consent (dulu dibaca dua kali).
-  const resepP = outpatient && mr ? mulai(supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, service_performers, salesperson_id, salesperson_name").eq("medical_record_id", mr.id).order("created_at")) : null;
+  const resepP = outpatient && mr ? mulai(cartVersionP!.then(() => supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, service_performers, salesperson_id, salesperson_name").eq("medical_record_id", mr.id).order("created_at"))) : null;
   const consentRowsP = outpatient ? mulai(supabase.from("consents").select("status").eq("visit_id", visitId)) : null;
   const aturanConsentP = outpatient ? mulai(bacaAturanConsent(supabase)) : null;
   const pajakP = outpatient ? mulai(getPajakSettings(supabase)) : null;
@@ -183,7 +189,7 @@ export default async function PembayaranPage({
         .in("invoice_id", (allInvIds ?? []).map((x) => x.id))
         .order("edited_at", { ascending: false })
     : { data: [] }));
-  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult, cartVersionResult] = await Promise.all([
+  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
     invoice ? supabase.from("clinic_demo_invoice_snapshots").select("fee_bearer,fee_amount,payments,incentive_pool").eq("invoice_id",invoice.id).maybeSingle() : Promise.resolve({data:null,error:null}),
@@ -193,11 +199,8 @@ export default async function PembayaranPage({
     // cabang, DEMO, tagihan batal). Tebakan lama di layar ini menolak keadaan yang
     // justru diterima RPC-nya, sehingga koreksi sesudah pembatalan kwitansi mentok.
     invoice ? supabase.rpc("clinic_invoice_correction_eligible", {p_invoice_id:invoice.id}) : Promise.resolve({data:false,error:null}),
-    // Versi keranjang rawat jalan dibaca SEBELUM baris resep: kalau dokter menambah item
-    // di antaranya, server menolak (CART_STALE) alih-alih menerima keranjang tanpa item itu.
-    !invoice ? supabase.rpc("clinic_outpatient_cart_version", {p_visit_id:visitId}) : Promise.resolve({data:null,error:null}),
   ]);
-  const cartVersion = versiKeranjang(!invoice, cartVersionResult);
+  const cartVersion = versiKeranjang(!invoice, cartVersionP ? await cartVersionP : {data:null,error:null});
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
   const { data: invItems, error: itemsError } = invItemsP
