@@ -49,7 +49,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     // Retain prior-year/cancelled sources: their dated reversals may fall in
     // this year or the seven-day trend. Current settlement is computed separately.
     completeReportQuery(supabase.from("sales_invoices")
-      .select("id, total, tanggal, status, voided_on, carried_paid", { count: "exact" }).is("opening_batch_id", null).lte("tanggal", today)),
+      .select("id, total, tanggal, status, voided_on, carried_paid, returned_ar", { count: "exact" }).is("opening_batch_id", null).lte("tanggal", today)),
     completeReportQuery(supabase.from("sales_receipts")
       .select("id, invoice_id, tanggal, jumlah", { count: "exact" }).lte("tanggal", today)),
     supabase.from("purchase_orders").select("id, purchase_order_items(id,item_id,qty,qty_terima,harga_beli,faktor)").eq("status", "Diterima"),
@@ -123,7 +123,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   for (const r of (fjReceipts.data ?? []) as { invoice_id: string; jumlah: number }[]) {
     fjPaid.set(r.invoice_id, (fjPaid.get(r.invoice_id) ?? 0) + Number(r.jumlah));
   }
-  type ResellerInvoice = { id: string; total: number; tanggal: string; status: string; voided_on: string | null; carried_paid: number };
+  type ResellerInvoice = { id: string; total: number; tanggal: string; status: string; voided_on: string | null; carried_paid: number; returned_ar?: number | null };
   const fjMovements: { tanggal: string; total: number }[] = [];
   let fjLunas = 0, fjBelum = 0;
   for (const f of fjRows.data as ResellerInvoice[]) {
@@ -135,7 +135,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     else {
       // Carried applications replace the old invoice's receipts; they are not
       // additional cash or sales. Only the active invoice contributes settlement.
-      const paid = Math.min(total, Number(f.carried_paid ?? 0) + (fjPaid.get(f.id) ?? 0));
+      const paid = Math.min(total, Number(f.carried_paid ?? 0) + Number(f.returned_ar ?? 0) + (fjPaid.get(f.id) ?? 0));
       fjLunas += paid;
       fjBelum += Math.max(0, total - paid);
     }

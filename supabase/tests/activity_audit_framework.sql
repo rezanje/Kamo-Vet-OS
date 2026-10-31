@@ -8,7 +8,9 @@ end$$;
 do $$declare s public.activity_log_sources%rowtype;actual_keys text[];col text;ref jsonb;
  source_relation regclass;parent_relation regclass;local_type oid;parent_type oid;
 begin
- if (select count(*) from public.activity_log_sources)<>179 then raise exception 'Expected the reviewed 179-source capture boundary';end if;
+ -- 179 reviewed on 22 Oct, +6 later source migrations, +16 in 20261030110000.
+ -- activity_audit_coverage.sql proves every other public table is explicitly excluded.
+ if (select count(*) from public.activity_log_sources)<>203 then raise exception 'Expected the reviewed 203-source capture boundary';end if;
  for s in select * from public.activity_log_sources loop
   source_relation:=to_regclass('public.'||s.entity);
   if source_relation is null then raise exception 'Registered relation absent: %',s.entity;end if;
@@ -38,7 +40,10 @@ begin
   end if;
   -- Sources with no authenticated SELECT policy must not gain even metadata
   -- visibility through the security-definer audit writer.
-  if cardinality(s.reader_roles)>0 and (
+  -- Refund request queues are read through OWNER/ADMIN office RPCs (no table grant,
+  -- bank destination stays private); their metadata-only events were registered
+  -- with those readers on purpose by 20261023193000 and 20261028140000.
+  if cardinality(s.reader_roles)>0 and not (s.metadata_only and s.entity in ('sales_refund_requests','clinic_refund_requests')) and (
    exists(select 1 from unnest(s.identity_keys||s.value_keys||case when s.label_key is null then '{}'::text[] else array[s.label_key] end) k
     where not has_column_privilege('authenticated',source_relation,k,'SELECT')) or
    (select relrowsecurity from pg_class where oid=source_relation) and not exists(

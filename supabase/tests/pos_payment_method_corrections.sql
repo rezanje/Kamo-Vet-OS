@@ -180,4 +180,87 @@ select pg_temp.assert_ok((select revision=1 from sales where id='e8700000-0000-4
  and (select sum(amount) filter(where method='Tunai')=10000 from sale_payments
   where sale_id='e8700000-0000-4000-8000-000000000003'),
  'all rejected changes leave sale, allocation, audit and journals untouched');
+
+-- J02 lanjutan: koreksi sesudah shift ditutup, oleh OWNER dan FINANCE; STAFF ditolak.
+set local role postgres;
+drop trigger j02_force_rollback on sale_payment_corrections;
+insert into auth.users(id,raw_user_meta_data) values
+ ('e8100000-0000-4000-8000-000000000002','{"full_name":"Finance test"}'),
+ ('e8100000-0000-4000-8000-000000000003','{"full_name":"Staff test"}'),
+ ('e8100000-0000-4000-8000-000000000004','{"full_name":"Finance other branch"}');
+update profiles set role='FINANCE',is_active=true where id in('e8100000-0000-4000-8000-000000000002','e8100000-0000-4000-8000-000000000004');
+update profiles set role='STAFF',is_active=true where id='e8100000-0000-4000-8000-000000000003';
+insert into user_branches(user_id,branch_id) values
+ ('e8100000-0000-4000-8000-000000000002','e8200000-0000-4000-8000-000000000001'),
+ ('e8100000-0000-4000-8000-000000000003','e8200000-0000-4000-8000-000000000001');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e8100000-0000-4000-8000-000000000001',true);
+insert into sales(id,branch_id,no_struk,subtotal,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint)
+ values('e8700000-0000-4000-8000-000000000004','e8200000-0000-4000-8000-000000000001','J02.CLOSED',80000,80000,'Tunai',80000,
+ 'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":80000}]','j02-closed-shift',repeat('d',64));
+insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) values
+ ('e8800000-0000-4000-8000-000000000004','e8700000-0000-4000-8000-000000000004','e8500000-0000-4000-8000-000000000001','J02 service',1,80000,'pcs',1,0);
+select finalize_pos_sale('e8700000-0000-4000-8000-000000000004');
+set local role postgres;
+-- Tutup shift dengan angka yang sama persis dengan hitungan guard tutup shift.
+with t as(select p.method,sum(p.amount) amount from sale_payments p join sales s on s.id=p.sale_id
+  where s.voided_at is null and s.shift_id='e8400000-0000-4000-8000-000000000001' and s.payments_finalized_at is not null group by p.method),
+ b as(select jsonb_build_object('Tunai',0,'Transfer',0,'Debit',0,'Kredit',0,'QRIS',0,'E-Wallet',0)
+  ||coalesce((select jsonb_object_agg(method,round(amount,2)) from t),'{}'::jsonb) breakdown)
+update cashier_shifts set status='closed',closed_at=now(),closing_breakdown=b.breakdown,
+ expected_cash=round(opening_balance+(b.breakdown->>'Tunai')::numeric,2),
+ closing_balance=round(opening_balance+(b.breakdown->>'Tunai')::numeric,2),selisih=0
+ from b where id='e8400000-0000-4000-8000-000000000001';
+select pg_temp.assert_ok((select status='closed' and (closing_breakdown->>'Tunai')::numeric=90000 from cashier_shifts
+ where id='e8400000-0000-4000-8000-000000000001'),'fixture shift closed with 90000 cash (10000 + 80000)');
+create temp table j02_shift_before as select to_jsonb(s) snap from cashier_shifts s where id='e8400000-0000-4000-8000-000000000001';
+grant select on j02_shift_before to authenticated;
+-- STAFF dengan akses cabang tetap ditolak.
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e8100000-0000-4000-8000-000000000003',true);
+select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000004',0,'j02-staff','Kasir salah pilih metode',0,80000)$q$,
+ 'staff cannot correct','Hanya Owner atau Finance');
+-- FINANCE yang sedang bekerja di cabang operasional lain ditolak (FINANCE default semua cabang).
+select set_config('request.jwt.claim.sub','e8100000-0000-4000-8000-000000000004',true);
+select set_config('request.headers','{"x-kamo-operational-branch":"e8200000-0000-4000-8000-0000000000ff"}',true);
+select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000004',0,'j02-fin-other','Kasir salah pilih metode',0,80000)$q$,
+ 'finance outside the operational branch cannot correct','tidak dapat diakses');
+select set_config('request.headers','',true);
+-- FINANCE cabang: shift sudah ditutup tetap boleh, lewat jurnal koreksi.
+select set_config('request.jwt.claim.sub','e8100000-0000-4000-8000-000000000002',true);
+select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000004',0,'j02-fin-closed','Kasir salah pilih metode',0,80000);
+select pg_temp.assert_ok((select revision=1 and metode_bayar='Transfer' from sales where id='e8700000-0000-4000-8000-000000000004')
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000004','1141')=0
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000004','1142')=80000
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000004','510001')=-80000,
+ 'finance corrects a sale whose shift is closed');
+select pg_temp.assert_ok((select count(*)=1 and bool_and(source_shift_status='closed' and created_by='e8100000-0000-4000-8000-000000000002')
+ from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000004'),'audit records closed source shift and finance actor');
+select pg_temp.assert_ok((select count(*)=2 and bool_and(e.tanggal=(now() at time zone 'Asia/Jakarta')::date)
+ from journal_entries e where e.source_ref=(select id::text from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000004')),
+ 'reversal and replacement are dated on the correction day');
+select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000004',0,'j02-fin-closed','Kasir salah pilih metode',0,80000);
+select pg_temp.assert_ok((select count(*)=1 from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000004')
+ and (select count(*)=2 from journal_entries where source_ref in(select id::text from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000004')),
+ 'finance retry with the same key is idempotent');
+select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000004',0,'j02-fin-stale','Kasir salah pilih metode',80000,0)$q$,
+ 'stale revision after closed-shift correction','sudah berubah');
+select pg_temp.assert_ok((select count(*)>=1 from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000004'),
+ 'finance can read the correction trail');
+set local role postgres;
+select pg_temp.assert_ok((select to_jsonb(s)=(select snap from j02_shift_before) from cashier_shifts s where id='e8400000-0000-4000-8000-000000000001'),
+ 'closed shift is not reopened and its closing totals are untouched');
+-- Penolakan lama tetap: kembalian tunai.
+update cashier_shifts set status='open' where id='e8400000-0000-4000-8000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','e8100000-0000-4000-8000-000000000001',true);
+insert into sales(id,branch_id,no_struk,subtotal,total,metode_bayar,bayar,kembali,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint)
+ values('e8700000-0000-4000-8000-000000000005','e8200000-0000-4000-8000-000000000001','J02.CHANGE',50000,50000,'Tunai',60000,10000,
+ 'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":50000}]','j02-change',repeat('e',64));
+insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) values
+ ('e8800000-0000-4000-8000-000000000005','e8700000-0000-4000-8000-000000000005','e8500000-0000-4000-8000-000000000001','J02 service',1,50000,'pcs',1,0);
+select finalize_pos_sale('e8700000-0000-4000-8000-000000000005');
+select set_config('request.jwt.claim.sub','e8100000-0000-4000-8000-000000000002',true);
+select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000005',0,'j02-change','Kasir salah pilih metode',0,50000)$q$,
+ 'cash change still requires reconciliation','kembalian');
 rollback;

@@ -52,6 +52,33 @@ export function pesanKampanyeDitolak(k: KodeKampanye, promoTersedia: boolean, pr
   return null;
 }
 
+/**
+ * Keputusan pemilik 29 Okt: voucher yang tertaut ke kode kampanye AKTIF hanya boleh dipakai
+ * lewat kode kampanyenya. Database menolak hal yang sama (pesan yang sama), layar dan server
+ * aksi hanya memberi tahu lebih awal.
+ */
+export const PESAN_VOUCHER_LEWAT_KAMPANYE = "Voucher ini hanya bisa dipakai lewat kode kampanye";
+
+/** Layar: kode yang diketik adalah voucher mentah milik kampanye aktif di daftar. */
+export function pesanVoucherLewatKampanye(terbaca: KodeTerbaca, daftarAktif: KodeKampanye[]): string | null {
+  if (terbaca.kampanye || !terbaca.voucherCode) return null;
+  const kode = terbaca.voucherCode;
+  return daftarAktif.some((k) => k.is_active && k.voucher_code !== null && normalizeKode(k.voucher_code) === kode)
+    ? PESAN_VOUCHER_LEWAT_KAMPANYE : null;
+}
+
+/**
+ * Server: periksa langsung ke master apakah voucher mentah ini milik kampanye aktif.
+ * Gagal baca = tolak dengan pesan jelas (tidak diam-diam meloloskan; database juga menjaga).
+ */
+export async function cekVoucherLewatKampanye(supabase: AnyClient, voucherCode: string | null): Promise<string | null> {
+  if (!voucherCode) return null;
+  const { data, error } = await supabase.from("campaign_codes")
+    .select("code, vouchers!inner(code)").eq("is_active", true).eq("vouchers.code", voucherCode).limit(1);
+  if (error || !Array.isArray(data)) return "Kode voucher belum dapat diperiksa. Coba lagi.";
+  return data.length > 0 ? PESAN_VOUCHER_LEWAT_KAMPANYE : null;
+}
+
 /** Pesan database (batas pemakaian dll.) diteruskan apa adanya bila memang pesan kampanye. */
 export function pesanGagalKampanye(message: string | null | undefined): string | null {
   if (!message) return null;

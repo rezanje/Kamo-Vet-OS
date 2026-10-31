@@ -8,6 +8,8 @@ import { bacaBaris, nextNoDokumen, totalBaris } from "@/lib/penjualan-server";
 import { validasiSatuanJual } from "@/lib/penjualan-satuan";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { hariIniWIB } from "@/lib/tanggal";
+import { hppWarningConfirmed, hppWarningQuery } from "@/lib/hpp-warning";
+import { grosirHppWarnings } from "@/lib/hpp-warning-server";
 
 const FORM = "/penjualan/faktur/baru";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE", "STAFF"];
@@ -56,6 +58,10 @@ export async function buatFakturLangsung(formData: FormData) {
   const { rows: baris, error: satuanError } = await validasiSatuanJual(supabase, parsed);
   if (satuanError) gagal(satuanError);
   if (baris.length === 0) gagal("Isi minimal satu baris barang atau jasa.");
+
+  // P03: grosir boleh menjual di bawah HPP, tetapi hanya setelah peringatan dikonfirmasi.
+  const hppWarnings = await grosirHppWarnings(supabase, warehouseId, baris);
+  if (!hppWarningConfirmed(formData, hppWarnings)) redirect(`${FORM}?${hppWarningQuery(hppWarnings)}`);
 
   const noPesanan = await nextNoDokumen(supabase, "SO");
   const { data: order, error: orderError } = await supabase.from("sales_orders").insert({

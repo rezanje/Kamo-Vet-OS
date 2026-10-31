@@ -81,6 +81,7 @@ it("links stored selling parent, visit, and physical ingredient without inventin
   const trace = doc.querySelector('[aria-label="Jejak sumber racikan"]');
   expect(trace?.textContent).toContain("nonstok");
   expect(trace?.querySelector('a[href="/pos/sku/parent"]')?.textContent).toBe("Stored selling name");
+  expect(trace?.querySelector('a[href="/pos/sku/parent/riwayat-racikan"]')?.textContent).toBe("Riwayat racikan SKU ini");
   expect(trace?.querySelector('a[href="/klinik/rekam-medis/visit"]')).not.toBeNull();
   expect(doc.querySelector('a[href="/pos/kartu-stok?item=material"]')).not.toBeNull();
   expect(doc.querySelector('a[href*="kartu-stok?item=parent"]')).toBeNull();

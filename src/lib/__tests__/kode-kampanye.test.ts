@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bacaKode, pesanGagalKampanye, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "../kode-kampanye";
+import { bacaKode, cekVoucherLewatKampanye, pesanGagalKampanye, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganKode, PESAN_VOUCHER_LEWAT_KAMPANYE, type KodeKampanye } from "../kode-kampanye";
 import { hitungPromoKeranjang, type PromoHitung } from "../promo-hitung";
 import { potonganVoucher } from "../voucher";
 
@@ -81,5 +81,38 @@ describe("loadPromoAktif with campaign promos", () => {
     expect(all.map((p) => [p.id, p.autoApply])).toEqual([["auto", true], ["kode", false]]);
     const plain = await loadPromoAktif(db([row("auto", true), row("kode", false)]), "b");
     expect(plain.map((p) => p.id)).toEqual(["auto"]);
+  });
+});
+
+describe("voucher hanya lewat kode kampanye (keputusan 29 Okt)", () => {
+  const nonaktif: KodeKampanye = { code: "MATI", voucher_code: "LAMA7K", promo_id: null, is_active: false };
+  const daftar = [kodeVoucher, kodePromo, nonaktif];
+  it("blocks the raw voucher of an active campaign on screen", () => {
+    expect(pesanVoucherLewatKampanye(bacaKode(" hemat 10", daftar), daftar)).toBe(PESAN_VOUCHER_LEWAT_KAMPANYE);
+  });
+  it("lets the campaign code itself, unlinked vouchers and vouchers of inactive campaigns through", () => {
+    expect(pesanVoucherLewatKampanye(bacaKode("promo10", daftar), daftar)).toBeNull();
+    expect(pesanVoucherLewatKampanye(bacaKode("BEBAS5K", daftar), daftar)).toBeNull();
+    expect(pesanVoucherLewatKampanye(bacaKode("lama7k", daftar), daftar)).toBeNull();
+    expect(pesanVoucherLewatKampanye(bacaKode("", daftar), daftar)).toBeNull();
+  });
+  const client = (result: { data: unknown; error: unknown }) => {
+    const calls: unknown[][] = [];
+    const query = {
+      select: (...a: unknown[]) => { calls.push(["select", ...a]); return query; },
+      eq: (...a: unknown[]) => { calls.push(["eq", ...a]); return query; },
+      limit: async (...a: unknown[]) => { calls.push(["limit", ...a]); return result; },
+    };
+    return { calls, from: (t: string) => { calls.push(["from", t]); return query; } };
+  };
+  it("checks the master on the server: active campaign rows of this voucher", async () => {
+    const db = client({ data: [{ code: "PROMO10" }], error: null });
+    await expect(cekVoucherLewatKampanye(db, "HEMAT10")).resolves.toBe(PESAN_VOUCHER_LEWAT_KAMPANYE);
+    expect(db.calls).toEqual([["from", "campaign_codes"], ["select", "code, vouchers!inner(code)"], ["eq", "is_active", true], ["eq", "vouchers.code", "HEMAT10"], ["limit", 1]]);
+    await expect(cekVoucherLewatKampanye(client({ data: [], error: null }), "BEBAS5K")).resolves.toBeNull();
+    await expect(cekVoucherLewatKampanye(client({ data: [], error: null }), null)).resolves.toBeNull();
+  });
+  it("refuses with a clear message when the check cannot be read", async () => {
+    await expect(cekVoucherLewatKampanye(client({ data: null, error: { message: "down" } }), "HEMAT10")).resolves.toContain("belum dapat diperiksa");
   });
 });

@@ -53,9 +53,9 @@ export default async function FakturJualPage({
     .catch(error => ({ hasil: null, error }));
 
   type Advance = { id: string; no_um: string; customer_id: string | null; jumlah: number; terpakai: number };
-  type Credit = { id: string; tanggal: string; customer_credit: number; sales_invoices: Rel<{ id: string; no_faktur: string; customers: Rel<{ name: string }> }> };
+  type Credit = { id: string; tanggal: string; customer_credit: number; no_retur?: string; sales_invoices: Rel<{ id: string; no_faktur: string; customers: Rel<{ name: string }> }> };
   const idGrosir = (daftar.hasil?.rows ?? []).filter(row => row.sumber === "grosir").map(row => row.id);
-  const [sisaGrosir, umData, rekening, credits] = await Promise.all([
+  const [sisaGrosir, umData, rekening, correctionCredits, returnCredits] = await Promise.all([
     boleh ? muatSisaGrosir(supabase, idGrosir) : Promise.resolve(new Map<string, number>()),
     readCompleteList<Advance>((from, to) => supabase.from("sales_advances").select("id,no_um,customer_id,jumlah,terpakai", { count: "exact" })
       .eq("status", "aktif").order("id").range(from, to), "Uang muka pelanggan", { maxRows: null }),
@@ -63,7 +63,12 @@ export default async function FakturJualPage({
     readCompleteList<Credit>((from, to) => supabase.from("wholesale_invoice_corrections")
       .select("id,tanggal,customer_credit,sales_invoices!invoice_id(id,no_faktur,customers(name))", { count: "exact" })
       .gt("customer_credit", 0).order("tanggal").order("id").range(from, to), "Kredit pelanggan", { maxRows: null }),
+    // Retur faktur grosir atas faktur yang sudah dibayar juga menjadi kredit pelanggan (314001).
+    readCompleteList<Credit>((from, to) => supabase.from("wholesale_returns")
+      .select("id,tanggal,customer_credit,no_retur,sales_invoices!invoice_id(id,no_faktur,customers(name))", { count: "exact" })
+      .eq("status", "posted").gt("customer_credit", 0).order("tanggal").order("id").range(from, to), "Kredit pelanggan dari retur", { maxRows: null }),
   ]);
+  const credits = [...correctionCredits, ...returnCredits].sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.id.localeCompare(b.id));
 
   // Uang muka aktif per pelanggan, supaya DP yang sudah masuk tidak terlupa saat menagih.
   const umPerPelanggan = new Map<string, { id: string; no_um: string; sisa: number }[]>();
@@ -254,9 +259,9 @@ export default async function FakturJualPage({
       </>}
 
       {credits.length > 0 && <div className="crm-sec" style={{ marginBottom: 0 }}>
-        <SecHeader num="02" title="KREDIT PELANGGAN DARI KOREKSI GROSIR" desc="Kewajiban pelanggan pada akun 314001; perlu tinjauan keuangan untuk penyelesaian. Tidak ada refund/transfer otomatis." />
-        <table className="tbl"><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>Faktur asal</th><th>Kredit</th></tr></thead><tbody>
-          {credits.map(c => { const f = one(c.sales_invoices); return <tr key={c.id}><td>{c.tanggal}</td><td>{one(f?.customers ?? null)?.name ?? "—"}</td><td><Link href={`/penjualan/faktur/${f?.id}`}>{f?.no_faktur}</Link></td><td>{rp(Number(c.customer_credit))}</td></tr>; })}
+        <SecHeader num="02" title="KREDIT PELANGGAN DARI KOREKSI & RETUR GROSIR" desc="Kewajiban pelanggan pada akun 314001; perlu tinjauan keuangan untuk penyelesaian. Tidak ada refund/transfer otomatis." />
+        <table className="tbl"><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>Faktur asal</th><th>Retur</th><th>Kredit</th></tr></thead><tbody>
+          {credits.map(c => { const f = one(c.sales_invoices); return <tr key={c.id}><td>{c.tanggal}</td><td>{one(f?.customers ?? null)?.name ?? "—"}</td><td><Link href={`/penjualan/faktur/${f?.id}`}>{f?.no_faktur}</Link></td><td>{c.no_retur ? <Link href={`/penjualan/retur-grosir/${c.id}`}>{c.no_retur}</Link> : "—"}</td><td>{rp(Number(c.customer_credit))}</td></tr>; })}
         </tbody></table>
       </div>}
     </MasterPage>

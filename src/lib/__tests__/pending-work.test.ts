@@ -9,7 +9,14 @@ const approvals = [
 const orders = [{ id: "draft", status: "draft" }, { id: "paid", status: "dibayar" }];
 const corrections = [{ id: "c1", status: "pending" }, { id: "c2", status: "pending" }, { id: "c3", status: "selesai" }];
 
-function fixture(roleModules: { role: string; module_id: string }[] = [], rulesError: unknown = null) {
+type RefundRpc = "get_sales_refund_requests" | "get_clinic_refund_requests";
+const defaultRefunds: Record<RefundRpc, Record<string, unknown[]>> = {
+  get_sales_refund_requests: { pending: [{ id: "refund" }] },
+  get_clinic_refund_requests: {},
+};
+
+function fixture(roleModules: { role: string; module_id: string }[] = [], rulesError: unknown = null,
+  refunds: Record<RefundRpc, Record<string, unknown[]> | { error: unknown }> = defaultRefunds) {
   const db = {
     from: vi.fn((table: string) => {
       const filters: [string, unknown][] = [];
@@ -31,9 +38,11 @@ function fixture(roleModules: { role: string; module_id: string }[] = [], rulesE
       };
       return query;
     }),
-    rpc: vi.fn(async (_name: string, args: { p_status: string }) => ({
-      data: args.p_status === "pending" ? [{ id: "refund" }] : [], error: null,
-    })),
+    rpc: vi.fn(async (name: RefundRpc, args: { p_status: string }) => {
+      const queue = refunds[name];
+      if ("error" in queue) return { data: null, error: queue.error };
+      return { data: queue[args.p_status] ?? [], error: null };
+    }),
   };
   return db;
 }
@@ -113,5 +122,44 @@ describe("pending action alerts", () => {
       ? { select: () => ({ eq: () => Promise.resolve({ count: null, error: { message: "offline" } }) }) } as never
       : from(table));
     expect((await loadPendingWork(db, "OWNER")).find(item => item.href === "/pembelian/koreksi")?.count).toBeNull();
+  });
+
+  it("counts clinic transfer refunds (J03) that share the finance refund queue", async () => {
+    const db = fixture([], null, {
+      get_sales_refund_requests: {},
+      get_clinic_refund_requests: { pending: [{ id: "k1" }], diproses: [{ id: "k2" }] },
+    });
+    expect(await loadPendingWork(db, "FINANCE"))
+      .toEqual([{ label: "Refund transfer belum selesai", href: "/kas-bank/refund", count: 2, hasMore: false }]);
+    for (const status of ["pending", "diproses"]) {
+      expect(db.rpc).toHaveBeenCalledWith("get_clinic_refund_requests", { p_invoice: null, p_office: true, p_status: status, p_offset: 0 });
+      expect(db.rpc).toHaveBeenCalledWith("get_sales_refund_requests", { p_sale_id: null, p_office: true, p_status: status, p_offset: 0 });
+    }
+  });
+
+  it("adds petshop and clinic refunds together and flags a full clinic page", async () => {
+    const page = Array.from({ length: 100 }, (_, i) => ({ id: `k${i}` }));
+    const db = fixture([], null, { get_sales_refund_requests: { pending: [{ id: "p" }] }, get_clinic_refund_requests: { pending: page } });
+    expect((await loadPendingWork(db, "OWNER")).find(item => item.href === "/kas-bank/refund"))
+      .toEqual({ label: "Refund transfer belum selesai", href: "/kas-bank/refund", count: 101, hasMore: true });
+  });
+
+  it("does not query clinic refunds for roles or Akses Grup that cannot open the refund queue", async () => {
+    const staff = fixture();
+    await loadPendingWork(staff, "STAFF");
+    expect(staff.rpc).not.toHaveBeenCalled();
+    const admin = fixture([{ role: "ADMIN", module_id: "pembelian" }]);
+    await loadPendingWork(admin, "ADMIN");
+    expect(admin.rpc).not.toHaveBeenCalledWith("get_clinic_refund_requests", expect.anything());
+  });
+
+  it("shows the refund alert as unknown when the clinic queue read fails", async () => {
+    const db = fixture([], null, { get_sales_refund_requests: {}, get_clinic_refund_requests: { error: { code: "42501", message: "denied" } } });
+    expect((await loadPendingWork(db, "FINANCE")).find(item => item.href === "/kas-bank/refund")?.count).toBeNull();
+  });
+
+  it("keeps petshop refunds countable before the clinic refund database step exists, like the queue page", async () => {
+    const db = fixture([], null, { get_sales_refund_requests: { pending: [{ id: "p" }] }, get_clinic_refund_requests: { error: { code: "PGRST202", message: "missing" } } });
+    expect((await loadPendingWork(db, "FINANCE")).find(item => item.href === "/kas-bank/refund")?.count).toBe(1);
   });
 });

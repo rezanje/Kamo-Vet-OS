@@ -63,6 +63,8 @@ export default async function PenjualanDetailPage({
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
   const isOwner = profile?.role === "OWNER" && profile.is_active === true;
+  // J02: koreksi metode (juga sesudah shift ditutup) boleh Owner dan Finance; pembatalan tetap Owner.
+  const canCorrectRole = isOwner || (profile?.role === "FINANCE" && profile.is_active === true);
 
   const { data: returData } = await supabase
     .from("sales_returns")
@@ -70,7 +72,7 @@ export default async function PenjualanDetailPage({
     .eq("sale_id", id)
     .order("tanggal", { ascending: false });
   const returs = (returData ?? []) as unknown as ReturRow[];
-  const { data: correctionData, error: correctionError } = isOwner
+  const { data: correctionData, error: correctionError } = canCorrectRole
     ? await supabase.from("sale_payment_corrections")
       .select("id, revision, reason, created_at, before_payments, after_payments")
       .eq("sale_id", id).order("revision", { ascending: false })
@@ -78,7 +80,7 @@ export default async function PenjualanDetailPage({
   const corrections = (correctionData ?? []) as PaymentCorrection[];
   const cash = payments.find(part => part.method === "Tunai")?.amount ?? 0;
   const transfer = payments.find(part => part.method === "Transfer")?.amount ?? 0;
-  const canCorrectPayment = isOwner && !!user && !sale.voided_at && !sale.channel && !!sale.payment_plan
+  const canCorrectPayment = canCorrectRole && !!user && !sale.voided_at && !sale.channel && !!sale.payment_plan
     && !!sale.payments_finalized_at && Number(sale.kembali) === 0 && cash + transfer > 0
     && returs.length === 0 && !sale.sale_payments?.some(part => ["Tunai", "Transfer"].includes(part.method)
       && (Number(part.fee_amount) !== 0 || Number(part.fee_percent) !== 0));
@@ -194,7 +196,7 @@ export default async function PenjualanDetailPage({
         </div>
       )}
 
-      {isOwner && <div className="crm-sec">
+      {canCorrectRole && <div className="crm-sec">
         <SecHeader num="03" title="RIWAYAT KOREKSI METODE" desc="Perubahan pembayaran pada penjualan yang sama." />
         {correctionError ? <p role="alert">Riwayat koreksi belum dapat dibaca. Muat ulang sebelum mengoreksi kembali.</p>
           : corrections.length === 0 ? <p>Belum ada koreksi metode.</p>
@@ -206,12 +208,12 @@ export default async function PenjualanDetailPage({
           </div>)}
       </div>}
 
-      {isOwner && user && !sale.voided_at && <details className="crm-sec">
-        <summary>Koreksi atau batalkan penjualan</summary>
+      {canCorrectRole && user && !sale.voided_at && <details className="crm-sec">
+        <summary>{isOwner ? "Koreksi atau batalkan penjualan" : "Koreksi metode pembayaran"}</summary>
         {canCorrectPayment && !correctionError && <SalePaymentCorrectionForm userId={user.id} saleId={sale.id}
           revision={sale.revision} cash={cash} transfer={transfer}
           fixed={payments.filter(part => part.method !== "Tunai" && part.method !== "Transfer")} />}
-        {correctionError ? <p>Riwayat koreksi belum dapat dibaca. Muat ulang sebelum tindakan berikutnya.</p>
+        {!isOwner ? null : correctionError ? <p>Riwayat koreksi belum dapat dibaca. Muat ulang sebelum tindakan berikutnya.</p>
           : corrections.length > 0 ? <p>Pembatalan penjualan yang sudah dikoreksi memerlukan rekonsiliasi seluruh jurnal koreksi. Hubungi finance sebelum membatalkan.</p>
           : <SaleCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />}
       </details>}

@@ -22,9 +22,9 @@ describe('activity viewer navigation', () => {
 });
 
 it('matches every explicitly registered source and module with localized labels', () => {
- const files=['20261022070000_activity_audit.sql','20261022081000_activity_audit_financial.sql','20261022082000_activity_audit_inventory.sql','20261022083000_activity_audit_people_settings.sql','20261022084000_activity_audit_remaining_modules.sql','20261023193000_sales_refund_payout.sql','20261027153000_purchase_correction_requests.sql'];
+ const files=['20261022070000_activity_audit.sql','20261022081000_activity_audit_financial.sql','20261022082000_activity_audit_inventory.sql','20261022083000_activity_audit_people_settings.sql','20261022084000_activity_audit_remaining_modules.sql','20261023193000_sales_refund_payout.sql','20261027153000_purchase_correction_requests.sql','20261028110100_clinic_patient_history_rpc.sql','20261028140000_j03_clinic_refund.sql','20261104370000_a01_activity_audit_new_sources.sql','20261104375000_n01_retur_faktur_grosir.sql'];
  const sources=files.flatMap(file=>[...readFileSync(`supabase/migrations/${file}`,'utf8').matchAll(/(?:^\s*|values\s*)\('([^']+)'\s*,\s*'([^']+)'/gm)].map(match=>({entity:match[1],module:match[2]})));
- expect(sources.length).toBeGreaterThan(170);
+ expect(sources.length).toBe(203);
  expect(Object.keys(ACTIVITY_ENTITIES).sort()).toEqual(sources.map(s=>s.entity).sort());
  for(const source of sources){expect(ACTIVITY_ENTITIES[source.entity]).not.toContain('_');expect(ACTIVITY_MODULES[source.module]).toBeTruthy();}
 });
@@ -52,6 +52,7 @@ it.each([
  ['/penjualan/retur/example','sales_returns'],['/pembelian/retur/example','purchase_returns'],
  ['/pos/sku/varian','item_variant_families'],['/pos/sku/impor','import_runs'],
  ['/pengaturan/akses-grup','role_modules'],['/perusahaan/gudang','warehouses'],
+ ['/crm/kampanye','campaign_codes'],['/keuangan/saldo-awal-faktur','opening_invoice_batches'],
 ])('routes the registered menu %s to %s',(path,entity)=>{expect(activityMenuHref(path)).toBe(`/perusahaan/log-aktifitas?entity=${entity}`);});
 
 it.each([
@@ -62,6 +63,7 @@ it.each([
  ['/klinik/penerimaan/terima/request-id','stock_requests','request-id'],
  ['/klinik/rawat-inap/inpatient-id/catatan','inpatient_records','inpatient-id'],
  ['/hris/karyawan/employee-id','employees','employee-id'],
+ ['/keuangan/jurnal-berulang/schedule-id','recurring_journals','schedule-id'],
 ])('finds the actual stable object for %s',(path,entity,id)=>{expect(activityRouteObject(path)).toEqual({entity,id});});
 it('does not mistake static creation/import screens for object identities',()=>{
  for(const path of ['/pembelian/retur/baru','/hris/karyawan/impor','/pos/permintaan/baru','/klinik/rekam-medis/impor'])expect(activityRouteObject(path)).toBeNull();

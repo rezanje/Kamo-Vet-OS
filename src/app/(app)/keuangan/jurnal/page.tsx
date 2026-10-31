@@ -58,6 +58,8 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   "purchase-return": { label: "Retur Beli", cls: "o" },
   "sales-return": { label: "Retur Jual", cls: "o" },
   "sales-return-hpp": { label: "HPP Retur", cls: "o" },
+  "wholesale-return": { label: "Retur Faktur Jual", cls: "o" },
+  "wholesale-return-void": { label: "Batal Retur Faktur", cls: "r" },
 };
 
 export default async function JurnalPage({

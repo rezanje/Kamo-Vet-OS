@@ -9,6 +9,8 @@ import { Popup } from "@/components/Popup";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
+import { ClinicPaymentCorrectionPanel, type ClinicPaymentCorrectionRow } from "./ClinicPaymentCorrectionPanel";
+import { clinicCorrectableParts } from "@/lib/clinic-payment-correction";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { randomUUID, createHash } from "node:crypto";
 import Link from "next/link";
@@ -177,8 +179,18 @@ export default async function PembayaranPage({
   let serviceStaffP = invoice ? null : mulai(loadServiceStaff(supabase, visit.branch_id ?? null));
   // Klinik-A: bacaan yang hanya butuh invoice terpilih ikut berangkat bersama cek DEMO/koreksi.
   const invItemsP = invoice ? mulai(supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name").eq("invoice_id", invoice.id).order("created_at")) : null;
-  const paymentRowsP = invoice ? mulai(supabase.from("invoice_payments").select("amount, transferred_from").eq("invoice_id", invoice.id)) : null;
+  const paymentRowsP = invoice ? mulai(supabase.from("invoice_payments").select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id)) : null;
   const refundDataP = invoice && invoice.paid_status === "Lunas" && !invoice.correction_pending ? mulai(loadClinicRefundData(supabase, invoice.id)) : null;
+  // J02: peran pembaca + riwayat koreksi metode ikut berangkat bersama bacaan invoice
+  // (bukan putaran tersendiri); riwayat hanya dipakai bila perannya OWNER/FINANCE.
+  const viewerProfileP = invoice && draftUser
+    ? mulai(supabase.from("profiles").select("role,is_active").eq("id", draftUser.id).maybeSingle())
+    : null;
+  const correctionRowsP = invoice && draftUser && !invoice.correction_pending && !invoice.reissued_from
+    ? mulai(supabase.from("clinic_payment_corrections")
+      .select("id, revision, amount, from_method, to_method, reason, created_at")
+      .eq("invoice_id", invoice.id).order("revision", { ascending: false }))
+    : null;
   const invoiceSalespersonP = invoice?.salesperson_id ? mulai(supabase.from("employees").select("nama").eq("id",invoice.salesperson_id).maybeSingle()) : null;
   const clinicPackagesP = invoice ? null : mulai(loadClinicPackages(supabase));
   const cashierP = !invoice && draftUser ? mulai(loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null)) : null;
@@ -208,7 +220,7 @@ export default async function PembayaranPage({
     : { error: null, data: [] as { id?: string; deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
   const { data: paymentRows, error: paymentsError } = paymentRowsP
     ? await paymentRowsP
-    : { error: null, data: [] as { amount: number; transferred_from: string | null }[] };
+    : { error: null, data: [] as { id: string; amount: number; metode: string | null; transferred_from: string | null }[] };
   if (itemsError || paymentsError) throw unverifiedBilling();
   const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
@@ -288,6 +300,21 @@ export default async function PembayaranPage({
   const sisaPelunasan = invoice ? sisaTagihan(Number(invoice.total), paidAmount) : 0;
   const pelunasanTerbuka = !inpat && !!invoice && !lunas && !invoice.correction_pending && sisaPelunasan > 0;
   const refundData = refundDataP ? await refundDataP : null;
+
+  // J02: Owner/Finance boleh mengoreksi Tunai <-> Transfer, juga sesudah shift ditutup.
+  const [{ data: viewerProfile }, correctionRead] = await Promise.all([
+    viewerProfileP ?? Promise.resolve({ data: null }),
+    correctionRowsP ?? Promise.resolve({ data: [], error: null }),
+  ]);
+  const canCorrectMethod = !!invoice && !invoice.correction_pending && !invoice.reissued_from && viewerProfile?.is_active === true
+    && (viewerProfile.role === "OWNER" || viewerProfile.role === "FINANCE");
+  const { data: correctionData, error: correctionError } = canCorrectMethod
+    ? correctionRead
+    : { data: [], error: null };
+  const correctionParts = invoice ? clinicCorrectableParts(invoice, paymentRows ?? []) : [];
+  const correctionBlocked = refundData && (refundData.refunds.length > 0
+    || refundData.requests.some((r) => r.status === "pending" || r.status === "diproses"))
+    ? "Invoice sudah direfund atau sedang diproses refund; koreksi metode memerlukan rekonsiliasi finance." : null;
 
   // Kasir menyebut angka ke pemilik SEBELUM memilih metode bayar. Kunjungan yang
   // invoicenya belum dibuat tidak punya total tersimpan, jadi dihitung di sini
@@ -387,6 +414,11 @@ export default async function PembayaranPage({
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {lunasParam ?? ""} tagihan diselesaikan sekaligus — cetak struk gabungan di panel bawah.
           {dilewati && <b style={{ marginLeft: 6, color: "#b45309" }}>Belum termasuk: {dilewati} — selesaikan satu per satu.</b>}
+        </div>
+      )}
+      {!error && success === "koreksi-metode" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Metode pembayaran terkoreksi pada invoice ini. Jurnal koreksi dan alasannya tersimpan.
         </div>
       )}
       {!error && success === "reissue" && (
@@ -658,11 +690,18 @@ export default async function PembayaranPage({
               invoice={{ id: invoice.id, subtotal: Number(invoice.subtotal), total: Number(invoice.total) }}
               lines={(invItems ?? []).map((l) => ({ id: l.id, deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis, item_id: l.item_id,
                 diskon_persen: l.diskon_persen === null ? null : Number(l.diskon_persen), compound_recipe_id: l.compound_recipe_id, satuan: l.satuan }))}
-              message={success && !["bayar", "edit", "rombongan", "reissue"].includes(success) ? success : undefined} />
+              message={success && !["bayar", "edit", "rombongan", "reissue", "koreksi-metode"].includes(success) ? success : undefined} />
+          )}
+
+          {/* J02: koreksi Tunai <-> Transfer (Owner/Finance), jurnal koreksi; struk dan nominal tetap. */}
+          {canCorrectMethod && draftUser && (correctionParts.length > 0 || (correctionData ?? []).length > 0) && (
+            <ClinicPaymentCorrectionPanel userId={draftUser.id} visitId={visit.id} invoiceId={invoice.id}
+              parts={correctionParts} history={(correctionData ?? []) as ClinicPaymentCorrectionRow[]}
+              readError={!!correctionError} blocked={correctionBlocked} />
           )}
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
-          {bolehTerbitUlang && (lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (
+          {bolehTerbitUlang && (lunas || (paymentRows ?? []).length > 0) && !invoice.correction_pending && (correctionData ?? []).length === 0 && (
             <div className="card" style={{ marginTop: 12, borderColor: "#fca5a5" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG

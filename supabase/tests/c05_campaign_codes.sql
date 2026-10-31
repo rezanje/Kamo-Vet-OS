@@ -149,8 +149,12 @@ select pg_temp.rejects($$select pg_temp.sale('C05-USE-3', 'PROMO10', 'HEMAT10')$
 -- The pending receipt cannot be finalized past the cap either (authoritative check at payment).
 select pg_temp.rejects($$select public.test_c05_finalize((select id from public.sales where no_struk = 'C05-PENDING'))$$,
   'sudah mencapai batas pemakaian', 'finalizing a pending receipt re-checks the cap');
--- The underlying voucher itself is not capped by the campaign.
-select pg_temp.sale('C05-PLAIN', null, 'HEMAT10');
+-- Keputusan pemilik 29 Okt (migrasi 20261104376000): voucher yang tertaut ke kampanye aktif
+-- tidak bisa diketik langsung, jadi batas kampanye tidak bisa dilewati lewat kode vouchernya.
+-- Voucher yang hanya tertaut ke kampanye nonaktif (LAIN5K -> MATI) tetap berlaku langsung.
+select pg_temp.rejects($$select pg_temp.sale('C05-PLAIN', null, 'HEMAT10')$$,
+  'Voucher ini hanya bisa dipakai lewat kode kampanye', 'raw voucher of an active campaign is blocked');
+select pg_temp.sale('C05-PLAIN', null, 'LAIN5K');
 select set_config('request.jwt.claim.sub', 'c5000000-0000-4000-8000-000000000001', true);
 select pg_temp.ok((select used from public.campaign_code_usage() where code = 'PROMO10') = 2
   and (select used from public.campaign_code_usage() where code = 'DISKON20') = 1, 'usage report counts both channels');

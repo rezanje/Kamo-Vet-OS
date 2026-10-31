@@ -37,18 +37,22 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     let data: unknown = table === "items" ? [{ id: "item", nama: "Pakan", name: "Pakan", unit: "pcs", item_type: state.stock ? "Persediaan" : "Jasa", sell_price: 100000, buy_price: 30000, min_sell_qty: 1, is_active: true }]
       : table === "stock_layers" && state.stock ? [{ id: "layer", item_id: "item", qty_left: 1, unit_cost: state.stockCost, exp_date: null, tanggal: "2026-10-15", created_at: "2026-10-15T00:00:00Z" }] : [];
     const single = () => table === "campaign_codes" ? { data: KAMPANYE[codeQuery as string] ?? null, error: null }
-      : table === "vouchers" ? { data: codeQuery === "HEMAT10" ? VOUCHER : null, error: null }
+      : table === "vouchers" ? { data: codeQuery === "HEMAT10" ? VOUCHER : codeQuery === "BEBAS10" ? { ...VOUCHER, code: "BEBAS10" } : null, error: null }
       : table === "sales" && !lookup && state.saleError ? { data: null, error: { message: state.saleError } }
       : ({ data: table === "sales" && lookup ? state.prior : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" }
       : table === "customers" ? { points: 0, total_spending: 0, category_id: null, customer_categories: null }
         : table === "warehouses" ? (state.stock ? { id: "warehouse" } : null) : { id: table === "sales" ? "sale" : "line" }, error: null });
     let codeQuery: unknown = null;
+    let linkedVoucher: unknown = null;
+    let activeOnly = false;
     const query = {
-      select: (fields: string) => { lookup = fields.includes("checkout_fingerprint"); return query; }, eq: (key: string, value: unknown) => { if (key === "code") codeQuery = value; if (table === "sale_items" && key === "id" && lineUpdate) state.items.filter(item => item.id === value).forEach(item => Object.assign(item, lineUpdate)); return query; }, in: () => query, gt: () => query, lte: () => query, not: () => query, order: () => query, range: () => query, limit: () => query,
+      select: (fields: string) => { lookup = fields.includes("checkout_fingerprint"); return query; }, eq: (key: string, value: unknown) => { if (key === "code") codeQuery = value; if (key === "vouchers.code") linkedVoucher = value; if (table === "campaign_codes" && key === "is_active") activeOnly = value === true; if (table === "sale_items" && key === "id" && lineUpdate) state.items.filter(item => item.id === value).forEach(item => Object.assign(item, lineUpdate)); return query; }, in: () => query, gt: () => query, lte: () => query, not: () => query, order: () => query, range: () => query, limit: () => query,
       insert: (value: Record<string, unknown>) => { if (table === "sales" && !state.saleError) { state.headers.push(value); data = value; state.prior = { id: "sale", no_struk: "POS-SPLIT-TEST", checkout_fingerprint: value.checkout_fingerprint, payments_finalized_at: null }; } if (table === "sale_items") state.items.push({ id: "line", ...value }); if (table === "point_ledger") state.pointsWrites++; return query; },
       update: (value: Record<string, unknown>) => { lineUpdate = value; return query; }, delete: () => { if (table === "sales") { state.removed = true; state.prior = null; } return query; },
       single: async () => single(), maybeSingle: async () => single(),
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, count: Array.isArray(data) ? data.length : 0, error: null }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: table === "campaign_codes" && linkedVoucher !== null
+        ? Object.values(KAMPANYE).filter(k => { const row = k as { is_active: boolean; vouchers: { code: string } }; return (!activeOnly || row.is_active) && row.vouchers.code === linkedVoucher; })
+        : data, count: Array.isArray(data) ? data.length : 0, error: null }).then(resolve),
     };
     return query;
   },
@@ -72,9 +76,15 @@ it("redeems campaign code promo10 as voucher HEMAT10 and records both on the rec
 });
 
 it("plain voucher codes keep working without a campaign code", async () => {
-  await checkoutKasir(form("hemat10")).catch(() => undefined);
-  expect(state.headers[0]).toMatchObject({ total: 90000, voucher_code: "HEMAT10" });
+  await checkoutKasir(form("bebas10")).catch(() => undefined);
+  expect(state.headers[0]).toMatchObject({ total: 90000, voucher_code: "BEBAS10" });
   expect(state.headers[0]).not.toHaveProperty("campaign_code");   // old schema keeps working until the DB step
+});
+
+it("refuses a raw voucher that belongs to an active campaign before creating a receipt", async () => {
+  const outcome = await checkoutKasir(form("hemat10")).then(() => "unexpected success", error => error.message);
+  expect(decodeURIComponent(outcome)).toContain("error=Voucher ini hanya bisa dipakai lewat kode kampanye");
+  expect(state.headers).toHaveLength(0);
 });
 
 it("refuses an inactive campaign code before creating a receipt", async () => {

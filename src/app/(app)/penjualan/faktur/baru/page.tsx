@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
+import { HppConfirmField } from "@/components/HppConfirmField";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { BarisJualForm, type ItemJual } from "../../BarisJualForm";
@@ -19,7 +20,7 @@ type CatalogItem = { id: string; code: string; name: string; unit: string; sell_
  * Cabang yang bisa dipilih hanya cabang penempatan pengguna; database memeriksa ulang.
  */
 export default async function FakturJualBaruPage({ searchParams }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; hpp_warning?: string; hpp_sig?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
@@ -89,6 +90,7 @@ export default async function FakturJualBaruPage({ searchParams }: {
               Stok dipotong dari gudang yang dipilih dan HPP diakui saat barang keluar; piutang dan pendapatan diakui di faktur.
               Diskon per baris dan perubahan qty/harga setelah faktur terbit dilakukan lewat Aksi → Edit pada faktur.
             </p>
+            <HppConfirmField warning={sp.hpp_warning} signature={sp.hpp_sig} />
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
               <SubmitButton className="btn-acc" icon="ti-plus" pendingText="Menerbitkan…" style={{ background: "var(--posb)" }}>
                 Terbitkan faktur

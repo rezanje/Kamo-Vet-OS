@@ -100,6 +100,12 @@ it("shows full source value and deterministic residual before posting confirmati
  actions.previewInventoryAccounting.mockResolvedValue({ok:true,report:{...report,evidence:{summary:{valuation:{policy:'HALF_UP_BATCH_V1',source_value:'150000.003333',posted_value:'150000.00',residual:'-0.003333',allocated_source_row:2}}}}});
  await preview();expect(container.querySelector('[aria-label="Bukti normalisasi"]')?.textContent).toContain('150000.003333');expect(container.querySelector('[aria-label="Bukti normalisasi"]')?.textContent).toContain('-0.003333');
 });
+it("reconciles source total, posted total and per-line rupiah rounding difference",async()=>{
+ actions.previewInventoryAccounting.mockResolvedValue({ok:true,report:{...report,status:'posted',evidence:{summary:{valuation:{policy:'ROUND_LINE_RUPIAH_V1',source_value:'150000.4523',posted_value:'150000',residual:'-0.4523',rounding_difference:'-0.4523',source_lines:40,line_rounding:{unit:'1',mode:'HALF_UP',split_lines:7},allocated_source_row:null}}}}});
+ await preview();const text=container.querySelector('[aria-label="Rekonsiliasi total sumber dan posting"]')?.textContent??'';
+ expect(text).toContain('Total sumber (file Accurate)Rp 150000.4523');expect(text).toContain('Total dipostingRp 150000');expect(text).toContain('Selisih pembulatanRp -0.4523');expect(text).toContain('7 dari 40 baris sumber');
+ expect(container.querySelector('[aria-label="Bukti normalisasi"]')?.textContent).toContain('Bulatkan nilai tiap baris ke rupiah penuh');
+});
 it("shows source quantity and value by item and warehouse without claiming unposted stock matches", async () => {
   actions.previewInventoryAccounting.mockResolvedValue({ ok: true, report: { ...report, evidence: {
     rows: [{ status: "valid", code: "SKU-FIKTIF", payload: { item_id: "item-a", warehouse_id: "warehouse-a", base_qty: "2", base_unit_cost: "100" } }],
