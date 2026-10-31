@@ -151,7 +151,7 @@ export default async function FakturJualPage({
 
         <div className="crm-sec" style={{ marginBottom: 12 }}>
           <SecHeader num="01" title="SEMUA PENJUALAN"
-            desc={`${hasil.ringkasan.jumlah.toLocaleString("id-ID")} dokumen · ${rp(hasil.ringkasan.total)} · ${filter.dari} s/d ${filter.sampai}. ${CATATAN_TOTAL}`} />
+            desc={`${hasil.ringkasan.jumlah.toLocaleString("id-ID")} dokumen · ${rp(hasil.ringkasan.total)} · ${filter.status === "belum" ? "semua tanggal (status Belum lunas)" : `${filter.dari} s/d ${filter.sampai}`}. ${CATATAN_TOTAL}`} />
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 1250 }}>
               <thead>
