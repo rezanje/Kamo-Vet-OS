@@ -24,7 +24,7 @@ revoke all on function public.branch_cash_matches(text, uuid) from public, anon,
 do $$begin
   if exists (
     select 1 from public.cash_accounts a join public.coa_accounts c on c.code = a.coa_code
-    where c.code >= '110004' and c.code <= '110021' and
+    where c.code ~ '^110(00[4-9]|01[0-9]|02[01])$' and
       (a.jenis is distinct from 'Kas' or not public.branch_cash_matches(a.coa_code, a.branch_id))
   ) or exists (
     select 1 from public.payment_account_map m join public.cash_accounts a on a.id = m.cash_account_id
@@ -39,7 +39,7 @@ end$$;
 create function public.guard_branch_cash_account() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
-  if new.coa_code >= '110004' and new.coa_code <= '110021'
+  if new.coa_code ~ '^110(00[4-9]|01[0-9]|02[01])$'
     and (new.jenis is distinct from 'Kas' or not public.branch_cash_matches(new.coa_code, new.branch_id)) then
     raise exception 'BRANCH_CASH_MISMATCH: akun Kas Toko tidak sesuai cabang' using errcode = '23514';
   end if;
