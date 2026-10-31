@@ -124,7 +124,10 @@ export default async function PersetujuanPage({
                 return (
                   <tr key={t.id}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>{t.nama}</td>
+                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>
+                      {t.nama}
+                      {t.kategori && t.kategori !== "Umum" && <span className="bge b" style={{ marginLeft: 6, fontWeight: 500 }}>{t.kategori}</span>}
+                    </td>
                     <td style={{ fontSize: 11 }}>{br?.name ?? <span style={{ color: "var(--tm)" }}>Semua cabang</span>}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {t.isi.replace(/\s+/g, " ").slice(0, 70)}…

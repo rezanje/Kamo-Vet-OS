@@ -7,7 +7,7 @@ import { ObatKhusus } from "./ObatKhusus";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL, ripWaMessage, type Condition, hariRawatInap } from "@/lib/inpatient";
-import { hasSignedConsent } from "@/lib/consent";
+import { hasSignedConsent, templatesForBranch } from "@/lib/consent";
 import { changeCondition, sendRipWa } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readStayTypes, readVisitContinuation, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
@@ -75,11 +75,13 @@ export default async function RawatInapDetailPage({
   // Reads below depend only on the parent that already passed the branch guard, so they run together.
   // U07: tipe inap, asal kunjungan dan riwayat obat khusus ikut gelombang ini (dulu
   // menyusul berurutan, dan Obat Khusus membaca pengguna sekali lagi).
-  const [handoff, { data: consentRows }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih] = await Promise.all([
+  const [handoff, { data: consentRows }, { data: paksaTemplates, error: paksaTemplatesError }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih] = await Promise.all([
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
     supabase.from("consents").select("status, kategori, signed_at").eq("visit_id", rec.visit_id as string),
+    // Tanpa template Pulang Paksa staf tidak bisa membuat formnya; arahkan ke pengelola template.
+    supabase.from("consent_templates").select("id, branch_id, is_active").eq("kategori", "Pulang Paksa").eq("is_active", true),
     supabase.from("inpatient_daily_logs").select("id, log_date, condition_note, tindakan, keterangan, doctor_name, paramedic_name, created_at, updated_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
       .eq("inpatient_record_id", id).order("created_at", { ascending: false }),
     supabase.from("inpatient_status_log").select("previous_status, new_status, notes, changed_at, profiles(full_name)")
@@ -97,11 +99,15 @@ export default async function RawatInapDetailPage({
   waktu.tandai("anak");
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
   const paksaConsentSigned = (consentRows ?? []).some((c) => c.status === "sudah_ttd" && c.kategori === "Pulang Paksa" && !!c.signed_at && new Date(c.signed_at).getTime() >= new Date(rec.admitted_at).getTime());
+  // Gagal baca = jangan menuduh template hilang; banner biasa tetap tampil.
+  const paksaTemplateMissing = !paksaTemplatesError
+    && templatesForBranch((paksaTemplates ?? []) as { branch_id: string | null; is_active: boolean }[], String(rec.branch_id)).length === 0;
 
   waktu.selesai();
   const stayType = stayTypes.get(id) ?? "sakit";
   const cond = rec.condition_status as Condition;
   const isDoctor = me?.role === "DOCTOR";
+  const canManageTemplates = me?.role === "OWNER" || me?.role === "ADMIN";
   const active = !rec.discharged_at;
   const age = petAge(pet?.dob);
   const box = COND_BOX[cond] ?? COND_BOX.stabil;
@@ -267,10 +273,19 @@ export default async function RawatInapDetailPage({
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
           Transisi ke RIP hanya oleh dokter{isDoctor ? "" : " (akun ini bukan dokter)"} · Pulang Paksa memerlukan form khusus yang ditandatangani setelah pasien masuk · jasa dan jumlah hari rawat inap dicatat manual di rekam medis, lalu ditagih lewat layar Tagihan rawat inap.
         </div>
-        {!paksaConsentSigned && active && visit && (
+        {!paksaConsentSigned && active && visit && paksaTemplateMissing && (
+          <div className="p2ban" style={{ marginTop: 10, justifyContent: "space-between" }}>
+            <span>
+              Template form Pulang Paksa belum tersedia untuk cabang ini.
+              {canManageTemplates ? " Buat dulu di Form persetujuan dengan jenis Pulang Paksa." : " Minta Owner/Admin membuatnya di menu Form persetujuan (jenis Pulang Paksa)."}
+            </span>
+            {canManageTemplates && <Link href="/klinik/persetujuan" className="btn-acc" style={{ padding: "4px 12px", textDecoration: "none" }}>Buat Template</Link>}
+          </div>
+        )}
+        {!paksaConsentSigned && active && visit && !paksaTemplateMissing && (
           <div className="p2ban" style={{ marginTop: 10, justifyContent: "space-between" }}>
             <span>Untuk Pulang Paksa, buat dan tandatangani form khusus kategori Pulang Paksa lebih dulu.</span>
-            <Link href={`/klinik/rekam-medis/${visit.id}`} className="btn-acc" style={{ padding: "4px 12px", textDecoration: "none" }}>Buka Form</Link>
+            <Link href={`/klinik/rekam-medis/${visit.id}#persetujuan-rawat-inap`} className="btn-acc" style={{ padding: "4px 12px", textDecoration: "none" }}>Buka Form</Link>
           </div>
         )}
         {cond === "sembuh" && visit && (
