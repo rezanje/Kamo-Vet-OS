@@ -7,7 +7,7 @@ Belum pernah ada template kategori itu, jadi pilihan template di rekam medis tid
 Pulang Paksa dan staf tidak bisa membuatnya.
 
 ## Perubahan
-- `supabase/migrations/20261104150000_pulang_paksa_default_template.sql` — menambah satu template
+- `supabase/migrations/20261104360000_pulang_paksa_default_template.sql` — menambah satu template
   "Surat Pernyataan Pulang Paksa" (semua cabang, aktif) **hanya bila** belum ada template
   Pulang Paksa apa pun. Tidak mengubah template, dokumen, atau aturan lain. Bisa diedit /
   dinonaktifkan OWNER/ADMIN di Klinik → Form persetujuan.
