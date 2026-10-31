@@ -1,4 +1,4 @@
-# Integrasi semantik paket klinik A + C + D
+# Integrasi semantik paket klinik A + C + D (+ B, E, COA)
 
 Branch `claude/klinik-integrasi-acd`, dari `origin/main@291bb8c8`, hanya merge biasa (tanpa
 rebase/penulisan ulang). Cabang paket tidak diubah. Bukan izin rilis: tidak ada merge ke main,
@@ -76,3 +76,69 @@ sedangkan layar menampilkan rekam medis terbaru — untuk kunjungan rawat jalan 
 - Klasifikasi produk-saja C mensyaratkan kunjungan tanpa rekam medis. Pembungkus D tidak
   membuat baris resep bila rekam medis tidak ada, jadi klasifikasi tidak bergeser (E3a/E3b).
   Aturan C tidak diperluas atau dipersempit.
+
+## Lanjutan: B, E, COA (merge biasa di branch yang sama)
+
+| Paket | Head | Migrasi | Merge |
+|---|---|---|---|
+| B — stok terlihat di jalur input klinik | `0ca1ba3e` | — | `681d9bcb` |
+| E — laci kasir milik pemiliknya | `fe614f88` | `20261104320000` | `dc6c8a5c` |
+| COA — impor bagan akun atomik | `6f98cf92` | `20261104330000` | `42fe2d32` |
+
+Urutan B → E → COA: B tanpa migrasi tetapi beririsan dengan bacaan A (diperiksa lebih dulu
+selagi diff A segar); E dan COA mengikuti urutan versi migrasi. Ketiganya tanpa konflik teks.
+
+Pemeriksaan semantik:
+- B menambah `stokGudang` di `loadClinicPaymentMaster` dan `warehouseId` di `loadClinicSkuDetails`.
+  Di Pembayaran hasil master mengalir utuh lewat `masterP` paket A; katalog A dimuat untuk
+  keranjang baru dan koreksi, yaitu semua tempat `PembayaranForm` (dan baris stok B) dirender.
+  Tampilan invoice terkunci tidak merender keranjang, jadi tidak ada stok "0" palsu; nilai
+  "belum terbaca" (null) B tetap null. Rekam Medis memakai `skuDetails` B di atas bacaan A.
+- E hanya memasang pemicu pada `cashier_shifts`/`expenses` dan fungsi tutup paksa; tidak
+  menyentuh writer posting (C) maupun pembungkus (D). Pelunasan C tetap memakai laci kasir
+  sendiri (diuji ulang di harness C pada skema penuh).
+- COA hanya menyentuh `coa_accounts` (kebijakan `coa_write`) dan fungsi impor akun.
+
+Urutan pasang migrasi akhir: main …`20261104140000` → `0431` C → `0432` E → `0433` COA →
+`0434` D. Tidak ada berkas di rentang cadangan Wowo `0425`–`0429`. Dua prefiks ganda
+(`20261029140000`, `20261029150000`) sudah ada di main sebelum integrasi ini.
+
+## Catatan pemasangan migrasi (untuk sesi utama)
+
+Semua migrasi dijalankan sebagai satu transaksi; kunci di bawah ditahan sampai COMMIT.
+
+| Berkas | SHA-256 | DDL pada tabel yang sudah ada | Kunci |
+|---|---|---|---|
+| `20261104310000_produk_lunas_pelunasan_dp.sql` | `c20bdec1…2c7ac0` | tidak ada; `create or replace` `clinic_post_invoice` (tambal jangkar) + fungsi baru | katalog fungsi saja |
+| `20261104320000_shift_laci_milik_kasir.sql` | `966f0d6c…dc79df` | trigger di `cashier_shifts`, `expenses`; tabel baru ber-FK ke `cashier_shifts` | SHARE ROW EXCLUSIVE `cashier_shifts`, `expenses` (blok tulis) |
+| `20261104330000_coa_import_atomic.sql` | `24856c8a…916dd4` | drop/create policy `coa_write` di `coa_accounts` | ACCESS EXCLUSIVE `coa_accounts` (blok baca juga — posting menunggu sesaat) |
+| `20261104340000_item_susulan_rekam_medis.sql` | `299e76e1…cbc50a` | `prescription_items`: 4 kolom nullable, CHECK (dipindai), indeks parsial, trigger; tabel baru ber-FK ke `visits` & `medical_records`; tambal jangkar `clinic_edit_queued_record` | ACCESS EXCLUSIVE `prescription_items` (pindai CHECK + indeks); SHARE ROW EXCLUSIVE `visits`, `medical_records` (blok INSERT/UPDATE) |
+
+Paparan ke impor rekam medis yang sedang berjalan (menulis `customers`, `pets`, `visits`,
+`medical_records`): hanya `0434` yang mengunci `visits` dan `medical_records`. Saran: pasang
+`0434` di jeda antar-batch impor dengan `set lock_timeout = '5s'` (ulang bila timeout); jangan
+biarkan menunggu kunci sambil memegang `prescription_items`. `customers`/`pets` tidak disentuh.
+
+SECURITY DEFINER: semua fungsi baru dimiliki peran yang menjalankan migrasi (di hosted
+kemungkinan `postgres`, sama dengan fungsi klinik lain). Penjaga `guard_prescription_susulan`
+membedakan tulisan API (`current_user` = authenticated/anon/service_role) dari fungsi definer;
+penulis impor (`kamo_legacy_import_writer`) tidak memberi penanda. E mengandalkan pemilik fungsi
+yang memiliki/melewati RLS `cashier_shifts` seperti writer uang yang sudah ada.
+
+PostgreSQL: semua bukti di PG16.15; live 17.6 belum diuji di sini. Tambal jangkar (C, D) membaca
+teks `pg_get_functiondef` yang berasal dari `prosrc` (tidak bergantung versi); bila definisi live
+berbeda dari repo, migrasi gagal tertutup sebelum mengubah apa pun.
+
+Kompatibilitas dengan aplikasi live lama (migrasi dipasang beberapa menit sebelum deploy):
+- `0431` C: aturan produk-saja langsung berlaku di writer; aplikasi lama menampilkan pesan umum
+  "Transaksi belum tersimpan…" untuk penolakan ini sampai deploy (pesan khusus ada di kode baru).
+  Pelunasan baru belum terlihat sampai deploy.
+- `0432` E: tutup paksa laci orang lain dari aplikasi lama (update langsung) DITOLAK sampai deploy
+  (jalur baru lewat `cashier_shift_supervisor_close`); menutup laci orang lain juga ditolak
+  (memang tujuannya). Pengeluaran yang ditempel ke laci di cabang lain ditolak. Tutup laci sendiri
+  tetap jalan.
+- `0433` COA: tulis langsung `coa_accounts` kini butuh profil aktif OWNER/ADMIN — aplikasi lama
+  tetap jalan bagi pengguna itu.
+- `0434` D: hanya menambah; aplikasi lama tetap memanggil RPC posting asli (tanpa cek versi
+  keranjang sampai deploy). Koreksi penuh dokter di aplikasi lama tetap jalan dan kini memberi
+  penanda susulan.
