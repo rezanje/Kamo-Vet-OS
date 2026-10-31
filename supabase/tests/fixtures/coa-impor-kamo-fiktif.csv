@@ -1,0 +1,13 @@
+kode,nama,tipe,saldo_normal,induk,header
+1610,Deposito Klinik Fiktif,ASET,D,1600,
+1600,Investasi Jangka Pendek Fiktif,ASET,D,,ya
+1611,Deposito Cabang Fiktif,ASET,D,1600,
+2300,Hutang Lain-lain Fiktif,LIABILITAS,K,,ya
+2301,Hutang Titipan Pemilik Hewan Fiktif,LIABILITAS,K,2300,
+4400,Pendapatan Grooming Fiktif,PENDAPATAN,K,,ya
+4401,Pendapatan Grooming Kucing Fiktif,PENDAPATAN,K,4400,
+4402,Pendapatan Grooming Anjing Fiktif,PENDAPATAN,,4400,
+5700,Beban Klinik Lain Fiktif,BEBAN,D,,ya
+5701,Beban Laundry Kandang Fiktif,BEBAN,D,5700,
+5702,Beban Limbah Medis Fiktif,BEBAN,D,5700,
+570301,Beban Sterilisasi Alat Fiktif,BEBAN,D,5700,

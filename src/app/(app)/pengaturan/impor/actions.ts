@@ -1,11 +1,14 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { klienMasterAdmin } from "@/lib/master-guard";
 import { bacaCsvUmum, ringkasSalah, type BarisSalah } from "@/lib/impor-csv";
-import {
-  periksaPelanggan, periksaPemasok, periksaAkun, type AkunImpor,
-} from "@/lib/impor-master";
+import { periksaPelanggan, periksaPemasok } from "@/lib/impor-master";
+import { bacaFileAkun, rencanakanImporAkun, type KonteksImporAkun, type RencanaImporAkun } from "@/lib/impor-akun";
+import { pemetaanAkun } from "@/lib/impor-akun-pemetaan";
 import { KONFIG, isJenisImpor, type JenisImpor } from "@/lib/impor-jenis";
 import { kunciNama, kunciTarget, periksaKomisi, periksaTarget } from "@/lib/impor-komisi";
 import { pesanSimpanGagal } from "@/lib/barang";
@@ -119,43 +122,8 @@ async function simpan(supabase: Db, jenis: JenisImpor, baris: ReturnType<typeof 
     return { masuk: siap.length, salah, pesanGagal: null };
   }
 
-  // Bagan akun: induk baru bisa dipasang SETELAH semua akun ada, karena satu file
-  // boleh memuat induk beserta rinciannya sekaligus.
-  const { data: akunAda } = await supabase.from("coa_accounts").select("id, code");
-  const kodeKeId = new Map(((akunAda ?? []) as { id: string; code: string }[])
-    .map((a) => [a.code.toLowerCase(), a.id]));
-
-  const { siap, salah } = periksaAkun(baris.baris, { kodeTerpakai: new Set(kodeKeId.keys()) });
-  if (siap.length === 0) return { masuk: 0, salah, pesanGagal: null };
-
-  const { data: baru, error } = await supabase.from("coa_accounts").insert(
-    siap.map((a: AkunImpor) => ({
-      code: a.code, name: a.name, type: a.type,
-      normal_balance: a.normal_balance, is_header: a.is_header, is_active: true,
-    })),
-  ).select("id, code");
-  if (error) return { masuk: 0, salah, pesanGagal: pesanSimpanGagal(error.message) };
-
-  for (const a of ((baru ?? []) as { id: string; code: string }[])) {
-    kodeKeId.set(a.code.toLowerCase(), a.id);
-  }
-
-  const indukTakKetemu: string[] = [];
-  for (const a of siap) {
-    if (!a.induk) continue;
-    const parentId = kodeKeId.get(a.induk.toLowerCase());
-    if (!parentId) { indukTakKetemu.push(`${a.code} → ${a.induk}`); continue; }
-    await supabase.from("coa_accounts")
-      .update({ parent_id: parentId }).eq("id", kodeKeId.get(a.code.toLowerCase()));
-  }
-  if (indukTakKetemu.length > 0) {
-    salah.push({
-      no: 0, kode: "induk",
-      pesan: `akun masuk tapi induknya tidak ditemukan: ${indukTakKetemu.slice(0, 5).join(", ")}`,
-    });
-  }
-
-  return { masuk: siap.length, salah, pesanGagal: null };
+  // Bagan akun tidak pernah lewat jalur ini — lihat prosesImporAkun (pratinjau + RPC atomik).
+  return { masuk: 0, salah: [] as BarisSalah[], pesanGagal: "Impor bagan akun wajib lewat pratinjau. Muat ulang halaman impor akun." };
 }
 
 export async function imporMaster(formData: FormData) {
@@ -165,8 +133,10 @@ export async function imporMaster(formData: FormData) {
   const konfig = KONFIG[jenis];
   const back = `/pengaturan/impor/${jenis}`;
 
-  const supabase = await assertBoleh(back);
   const gagal = (pesan: string): never => redirect(`${back}?error=${encodeURIComponent(pesan)}`);
+  // Bagan akun hanya lewat pratinjau + simpan atomik (prosesImporAkun); jangan pernah tulis langsung.
+  if (jenis === "akun") gagal("Impor bagan akun wajib lewat pratinjau. Muat ulang halaman impor akun.");
+  const supabase = await assertBoleh(back);
 
   const isi = String(formData.get("csv") ?? "");
   if (!isi.trim()) gagal("Belum ada file atau isian CSV.");
@@ -187,4 +157,91 @@ export async function imporMaster(formData: FormData) {
     : `${masuk} ${label} diimpor, ${salah.length} baris dilewati — ${ringkasSalah(salah)}`;
 
   redirect(`${konfig.kembali}${konfig.kembali.includes("?") ? "&" : "?"}success=${encodeURIComponent(pesan)}`);
+}
+
+// ── Bagan akun: pratinjau lengkap, lalu simpan atomik lewat satu RPC ─────────────
+
+export type HasilImporAkun = {
+  langkah: "awal" | "pratinjau" | "tersimpan" | "gagal";
+  pesan: string | null;
+  rencana: Omit<RencanaImporAkun, "kirim"> | null;
+  /** SHA-256 isi file yang dipratinjau; simpan ditolak bila isinya sudah lain. */
+  sha: string | null;
+  /** Sidik jari bagan akun saat pratinjau; simpan ditolak bila sudah berubah. */
+  versi: string | null;
+};
+
+const TANPA_HAK_AKUN = "Hanya OWNER/ADMIN aktif yang boleh mengimpor bagan akun.";
+const sha256 = (isi: string) => createHash("sha256").update(isi).digest("hex");
+
+function bacaKonteksAkun(data: unknown): KonteksImporAkun | null {
+  const d = data as Partial<KonteksImporAkun> | null;
+  if (!d || typeof d.versi !== "string" || !Array.isArray(d.akun) || !d.pemakaian || typeof d.pemakaian !== "object") return null;
+  return d as KonteksImporAkun;
+}
+
+/** Pesan penolakan dari import_coa_accounts (COA_IMPORT_*: …); pesan teknis lain tidak ditampilkan. */
+function pesanTolakAkun(error: { message?: string } | null): string | null {
+  const m = /COA_IMPORT_[A-Z_]+: ([^\n]+)/.exec(String(error?.message ?? ""));
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * Satu aksi untuk dua langkah: "periksa" membuat pratinjau, "simpan" membuat ulang pratinjau di
+ * server dari isi file yang sama (tidak ada data/flag klien yang dipercaya), lalu memanggil RPC.
+ */
+export async function prosesImporAkun(_prev: HasilImporAkun, formData: FormData): Promise<HasilImporAkun> {
+  const tanpaRencana = { rencana: null, sha: null, versi: null };
+  const supabase = await klienMasterAdmin();
+  if (!supabase) return { langkah: "gagal", pesan: TANPA_HAK_AKUN, ...tanpaRencana };
+
+  const csv = String(formData.get("csv") ?? "");
+  if (!csv.trim()) return { langkah: "gagal", pesan: "Belum ada file atau isian CSV.", ...tanpaRencana };
+  const pemetaan = pemetaanAkun(String(formData.get("sumber") ?? "kamo"));
+  if (!pemetaan) return { langkah: "gagal", pesan: "Format file belum didukung.", ...tanpaRencana };
+  const file = bacaFileAkun(csv, pemetaan);
+  if (!file.ok) return { langkah: "gagal", pesan: file.pesan, ...tanpaRencana };
+
+  const { data, error } = await supabase.rpc("read_coa_import_context");
+  const ctx = error ? null : bacaKonteksAkun(data);
+  if (!ctx) {
+    return {
+      langkah: "gagal", ...tanpaRencana,
+      pesan: "Daftar akun KAMO gagal dibaca, jadi pratinjau belum bisa dibuat (bukan berarti bagan akun kosong). Coba lagi sebentar lagi.",
+    };
+  }
+
+  const { kirim, ...rencana } = rencanakanImporAkun(file, ctx);
+  const sha = sha256(csv);
+  const pratinjau = (pesan: string | null): HasilImporAkun => ({ langkah: "pratinjau", pesan, rencana, sha, versi: ctx.versi });
+  if (formData.get("langkah") !== "simpan") return pratinjau(null);
+
+  if (String(formData.get("sha") ?? "") !== sha) {
+    return pratinjau("Isi file berubah sejak pratinjau. Tinjau pratinjau terbaru di bawah, lalu simpan lagi.");
+  }
+  if (String(formData.get("versi") ?? "") !== ctx.versi) {
+    return pratinjau("Bagan akun sudah berubah sejak pratinjau dibuat. Tinjau pratinjau terbaru di bawah, lalu simpan lagi.");
+  }
+  if (!rencana.bolehSimpan) {
+    return pratinjau(rencana.jumlah.ditolak + rencana.jumlah.konflik > 0
+      ? "Masih ada baris ditolak atau konflik — tidak ada yang disimpan. Perbaiki file, lalu periksa ulang."
+      : "Tidak ada akun baru atau perubahan untuk disimpan.");
+  }
+  if (rencana.perluKonfirmasi && formData.get("konfirmasi") !== "1") {
+    return pratinjau(`Centang konfirmasi dulu untuk menerapkan ${rencana.jumlah.berubah} perubahan pada akun yang sudah ada.`);
+  }
+
+  const { data: hasil, error: gagal } = await supabase.rpc("import_coa_accounts", { p_rows: kirim, p_version: ctx.versi });
+  if (gagal) {
+    return {
+      langkah: "gagal", rencana, sha, versi: ctx.versi,
+      pesan: `Impor gagal — tidak ada akun yang tersimpan. ${pesanTolakAkun(gagal) ?? "Coba lagi; bila berulang, laporkan ke admin sistem."}`,
+    };
+  }
+  revalidatePath("/keuangan/coa");
+  const jumlah = (hasil ?? {}) as { dibuat?: number; diubah?: number };
+  return {
+    langkah: "tersimpan", rencana, sha, versi: null,
+    pesan: `${jumlah.dibuat ?? 0} akun baru dibuat, ${jumlah.diubah ?? 0} akun diubah. Tidak ada saldo atau jurnal yang dibuat.`,
+  };
 }
