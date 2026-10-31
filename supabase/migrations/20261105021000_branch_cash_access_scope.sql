@@ -9,13 +9,15 @@ create policy cash_accounts_scoped_read on public.cash_accounts for select to au
   or (jenis = 'Bank' and branch_id is null)
 );
 create policy cash_accounts_owner_insert on public.cash_accounts for insert to authenticated with check (
-  public.has_role_capability('create_accounts')
+  exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_active and p.role in ('OWNER','ADMIN'))
 );
 create policy cash_accounts_owner_update on public.cash_accounts for update to authenticated using (
-  public.has_role_capability('create_accounts')
-) with check (public.has_role_capability('create_accounts'));
+  exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_active and p.role in ('OWNER','ADMIN'))
+) with check (
+  exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_active and p.role in ('OWNER','ADMIN'))
+);
 create policy cash_accounts_owner_delete on public.cash_accounts for delete to authenticated using (
-  public.has_role_capability('create_accounts')
+  exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_active and p.role in ('OWNER','ADMIN'))
 );
 
 drop policy if exists payment_account_map_all on public.payment_account_map;
@@ -32,15 +34,15 @@ create policy payment_account_map_global_write on public.payment_account_map for
 -- cash. Branch users must not read its lines directly through the API.
 drop policy if exists je_all on public.journal_entries;
 create policy journal_entries_scoped_read on public.journal_entries for select to authenticated using (
-  (branch_id is not null and public.user_can_access_branch(branch_id))
-  or (branch_id is null and public.has_role_capability('all_branches'))
+  public.has_role_capability('all_branches')
+  or (branch_id is not null and public.user_can_access_branch(branch_id))
 );
 create policy journal_entries_scoped_write on public.journal_entries for all to authenticated using (
-  (branch_id is not null and public.user_can_access_branch(branch_id))
-  or (branch_id is null and public.has_role_capability('all_branches'))
+  public.has_role_capability('all_branches')
+  or (branch_id is not null and public.user_can_access_branch(branch_id))
 ) with check (
-  (branch_id is not null and public.user_can_access_branch(branch_id))
-  or (branch_id is null and public.has_role_capability('all_branches'))
+  public.has_role_capability('all_branches')
+  or (branch_id is not null and public.user_can_access_branch(branch_id))
 );
 
 drop policy if exists jl_all on public.journal_lines;
