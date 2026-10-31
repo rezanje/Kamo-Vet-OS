@@ -116,20 +116,31 @@ function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceL
  * Sebelum migrasinya terpasang, pembungkusnya belum ada di database. Pembayaran tidak
  * boleh ikut mati karenanya: jalur lama dipakai apa adanya (persis perilaku hari ini).
  */
+/** Hanya versi keranjang dari database ("v1:" + md5) yang diteruskan; sidik lain diabaikan. */
+function cartVersionDari(formData: FormData): string | undefined {
+  const versi = String(formData.get("source_version") ?? "").trim();
+  return /^v1:[0-9a-f]{32}$/.test(versi) ? versi : undefined;
+}
+
 async function postInvoiceAtomik(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: ClinicPostInvoiceParams,
   payments?: ClinicSplitPayment[],
   demo?: { policyId: string; employees: string[] },
   admission?: { plan: string; stayType: string },
+  cartVersion?: string,
 ): Promise<{ inpatientId?: string; invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
   const wrapper = admission ? "clinic_post_dp_and_admit_with_record" as const : "clinic_post_invoice_with_record" as const;
+  // Versi keranjang yang dibuka kasir; pembungkus menolak CART_STALE bila rekam medis
+  // berubah sesudahnya (mis. dokter menambah item) atau versinya tidak ada.
+  const cart = cartVersion ? { p_cart_version: cartVersion } : {};
   const wrappedParams = admission
-    ? { ...params, p_treatment_plan: admission.plan, p_stay_type: admission.stayType }
+    ? { ...params, p_treatment_plan: admission.plan, p_stay_type: admission.stayType, ...cart }
     : {
       ...params,
       ...(payments ? { p_payments: payments } : {}),
       ...(demo ? { p_policy_id: demo.policyId, p_payments: payments, p_employee_ids: demo.employees } : {}),
+      ...cart,
     };
   const terbungkus = await supabase.rpc(wrapper, wrappedParams);
   const { data: result, error } = isMissingRecordWrapper(terbungkus.error, wrapper, wrappedParams)
@@ -434,7 +445,7 @@ export async function bayarVisit(formData: FormData) {
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
     p_lines: barisUntukPosting(rows),
-  }, payments, demo, admission);
+  }, payments, demo, admission, cartVersionDari(formData));
   if (posted.error || !posted.invoiceNo) {
     redirect(`${back}?error=${encodeURIComponent(posted.invoiceId ? "Invoice sudah tersimpan, tetapi rinciannya belum dapat dibaca. Jangan menerima pembayaran ulang; muat ulang dan periksa invoice yang sama." : parseClinicPostingError(posted.error, uncertainPayment))}`);
   }

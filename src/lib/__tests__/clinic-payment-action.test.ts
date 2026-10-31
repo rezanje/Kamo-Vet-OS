@@ -246,7 +246,7 @@ describe("Fail closed on returned read errors (consent gate and visit)",()=>{
 
 // Andri 29 Okt (opsi B): baris yang ditambah kasir sendiri harus ikut tercatat di rekam
 // medis. Yang diuji di sini hanya lapisan server action — penautannya sendiri hidup di
-// RPC pembungkus (lihat scripts/test-item-susulan-rekam-medis-postgres.py).
+// RPC pembungkus (lihat scripts/test-item-susulan-full-schema-postgres.py).
 describe("tagihan klinik mencatat baris tambahan kasir ke rekam medis",()=>{
  const baris=()=>state.calls.filter(c=>c.name.startsWith("clinic_post")||c.name==="clinic_edit_invoice");
  it("menerbitkan tagihan lewat pembungkus rekam medis, dengan muatan yang sama",async()=>{
@@ -305,5 +305,44 @@ describe("tagihan klinik mencatat baris tambahan kasir ke rekam medis",()=>{
   await expect(bayarVisit(form("groomer"))).rejects.toThrow("Stok%20tidak%20cukup");
   expect(state.wrapped).toHaveLength(1);
   expect(baris()).toHaveLength(1);
+ });
+});
+
+// Item susulan sesudah kasir membuka keranjang: layar mengirim versi keranjang yang
+// dibacanya; pembungkus membandingkannya di bawah kunci (CART_STALE). Lapisan uangnya
+// dibuktikan di scripts/test-item-susulan-keranjang-postgres.py; di sini kontrak aksi.
+describe("versi keranjang rawat jalan (dokter menambah item sesudah keranjang dibuka)",()=>{
+ const VERSI="v1:0123456789abcdef0123456789abcdef";
+ it("mengirim versi keranjang yang dibuka kasir ke pembungkus posting",async()=>{
+  const data=form("groomer");data.set("source_version",VERSI);
+  await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});
+  expect(state.wrapped).toHaveLength(1);
+  expect(state.wrapped[0]).toMatchObject({name:"clinic_post_invoice_with_record",params:{p_cart_version:VERSI}});
+ });
+ it("DP & rawat inap lewat pembungkus rekam medis dengan versi yang sama",async()=>{
+  const data=form();data.set("paid_status","DP");data.set("dp_amount","60");data.set("source_version",VERSI);
+  data.set("admit_after_dp","1");data.set("treatment_plan","Monitoring fiktif");data.set("stay_type","sakit");
+  await expect(bayarVisit(data)).resolves.toEqual({saved:true,href:"/klinik/rawat-inap/stay?success=admit"});
+  expect(state.wrapped).toEqual([{name:"clinic_post_dp_and_admit_with_record",params:expect.objectContaining({p_cart_version:VERSI,p_treatment_plan:"Monitoring fiktif",p_stay_type:"sakit"})}]);
+ });
+ it("versi yang bukan dari database tidak dikirim sebagai versi (pembungkus menolak tertutup)",async()=>{
+  const data=form("groomer");data.set("source_version","f".repeat(64));
+  await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});
+  expect(state.wrapped[0].params).not.toHaveProperty("p_cart_version");
+ });
+ it("CART_STALE: pesan muat ulang, tanpa jalur lama, tanpa poin/status kunjungan",async()=>{
+  state.wrapperError={code:"P0001",message:"CART_STALE: rekam medis berubah setelah keranjang dibuka; muat ulang tagihan lalu periksa ulang"};
+  const data=form("groomer");data.set("finalize","1");data.set("source_version",VERSI);
+  const galat=await bayarVisit(data).then(()=>null,(e:Error)=>decodeURIComponent(e.message));
+  expect(galat).toContain("Rekam medis berubah setelah keranjang ini dibuka");
+  expect(galat).toContain("Muat tagihan terbaru");
+  expect(state.attempted).toEqual(["clinic_post_invoice_with_record"]);
+  expect(state.calls).toEqual([]);expect(state.pointWrites).toEqual([]);expect(state.visitWrites).toEqual([]);
+ });
+ it("koreksi tagihan yang sudah terbit tidak membawa versi keranjang",async()=>{
+  state.existing=true;const data=form("groomer");data.set("source_version",VERSI);
+  await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});
+  expect(state.wrapped.map(c=>c.name)).toEqual(["clinic_edit_invoice_with_record"]);
+  expect(state.wrapped[0].params).not.toHaveProperty("p_cart_version");
  });
 });

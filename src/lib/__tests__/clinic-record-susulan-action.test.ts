@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 // Item susulan rawat jalan (Andri 29 Okt, opsi B). Yang diuji di sini: muatan yang
 // dikirim server action ke RPC, gerbang BMHP, dan penerusan penolakan database.
 // Penautan baris & idempotensinya diuji di PostgreSQL sungguhan
-// (scripts/test-item-susulan-rekam-medis-postgres.py).
+// (scripts/test-item-susulan-full-schema-postgres.py dan scripts/test-item-susulan-keranjang-postgres.py).
 const fixture = vi.hoisted(() => ({
   supported: true as boolean,
   rpcError: null as { code?: string; message: string } | null,

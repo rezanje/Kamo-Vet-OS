@@ -6,7 +6,7 @@ import { labelSusulan, labelSusulanRingkas } from "../rekam-medis-susulan";
 // maju. Tanpa database di CI, invariannya diperiksa dari teks migrasi: penjaga peran,
 // cabang, keadaan kunjungan, kunci permintaan unik, ACL, dan — yang paling penting —
 // bahwa pembungkus MEMANGGIL RPC posting lama, bukan menulis ulang badannya.
-const NAMA = "20261101000000_item_susulan_rekam_medis.sql";
+const NAMA = "20261104340000_item_susulan_rekam_medis.sql";
 const SQL = readFileSync(`supabase/migrations/${NAMA}`, "utf8");
 const potong = (awal: string, akhir: string) => SQL.slice(SQL.indexOf(awal), SQL.indexOf(akhir));
 
@@ -159,7 +159,8 @@ describe("pembungkus posting & koreksi tagihan", () => {
     expect(edit).toContain("not public.user_can_access_branch(");
   });
   it("ACL-nya sama dengan RPC posting yang dibungkus", () => {
-    for (const sig of ["public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[])",
+    for (const sig of ["public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[],text)",
+      "public.clinic_post_dp_and_admit_with_record(uuid,text,jsonb,jsonb,text,text,text)",
       "public.clinic_edit_invoice_with_record(uuid,text,jsonb,jsonb)"]) {
       expect(SQL).toContain(`revoke all on function ${sig}`);
       expect(SQL).toContain(`grant execute on function ${sig}`);
@@ -170,6 +171,52 @@ describe("pembungkus posting & koreksi tagihan", () => {
     expect(SQL).toContain("Item susulan: RPC wajib tidak ada: %");
     expect(SQL).toContain("clinic_post_invoice tidak boleh ditulis ulang oleh migrasi ini");
     expect(SQL).toContain("Item susulan: pembungkus % tidak memanggil %");
+  });
+});
+
+describe("komposisi terhadap main terbaru (versi 20261104340000)", () => {
+  const rpc = potong("create function public.clinic_add_record_items", "revoke all on function public.clinic_add_record_items");
+  it("versi berada sesudah migrasi main terakhir, bukan di tengah rantai yang sudah terpasang", () => {
+    const semua = readdirSync("supabase/migrations").filter((f) => f.endsWith(".sql")).sort();
+    expect(semua).not.toContain("20261101000000_item_susulan_rekam_medis.sql");
+    expect(semua.indexOf(NAMA)).toBeGreaterThan(semua.indexOf("20261104140000_kartu_rekam_medis_tertunda.sql"));
+  });
+  it("dokter: koordinator tagihan diambil SEBELUM kunci kunjungan (racikan susulan vs posting kasir)", () => {
+    expect(rpc).toContain("perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));");
+    expect(rpc.indexOf("billing_lock(")).toBeLessThan(rpc.indexOf("for update;"));
+  });
+  it("dokter: gerbang owner/dokter dicek sebelum replay; item wajib dari master aktif", () => {
+    expect(rpc).toContain("role in ('OWNER','DOCTOR')");
+    expect(rpc.indexOf("role in ('OWNER','DOCTOR')")).toBeLessThan(rpc.indexOf("from public.clinic_record_item_additions"));
+    expect(rpc).toContain("RECORD_INVALID: item susulan harus dipilih dari master");
+    expect(rpc).toContain("from public.items where id = (v_row->>'item_id')::uuid and is_active");
+  });
+  it("versi keranjang: semua baris resep belum tertagih, dibandingkan di bawah kunci, gagal tertutup", () => {
+    const versi = potong("create function clinic_private.outpatient_cart_version", "revoke all on function clinic_private.outpatient_cart_version");
+    expect(versi).toContain("to_jsonb(p)");
+    expect(versi).toContain("p.billing_withdrawn_at is null");
+    expect(versi).toContain("i.voided_at is null");
+    const cek = potong("create function clinic_private.assert_outpatient_cart", "revoke all on function clinic_private.assert_outpatient_cart");
+    expect(cek).toContain("CART_STALE:");
+    expect(cek).toContain("nullif(btrim(p_cart_version), '') is null");
+    expect(cek).toContain("i.request_key = p_request_key");
+    for (const awal of ["create function public.clinic_post_invoice_with_record", "create function public.clinic_post_dp_and_admit_with_record"]) {
+      const badan = SQL.slice(SQL.indexOf(awal), SQL.indexOf("$function$;", SQL.indexOf(awal)));
+      expect(badan.indexOf("for update;")).toBeLessThan(badan.indexOf("assert_outpatient_cart("));
+      expect(badan.indexOf("assert_outpatient_cart(")).toBeLessThan(badan.indexOf("link_unrecorded_lines("));
+    }
+    expect(SQL).toContain("grant execute on function public.clinic_outpatient_cart_version(uuid) to authenticated;");
+  });
+  it("DP & rawat inap memanggil RPC asli 0302 tanpa menulis ulang badannya", () => {
+    const dp = potong("create function public.clinic_post_dp_and_admit_with_record", "revoke all on function public.clinic_post_dp_and_admit_with_record");
+    expect(dp).toContain("return public.clinic_post_dp_and_admit(p_visit_id, v_key, p_invoice, v_lines, p_treatment_plan, p_stay_type);");
+    expect(SQL).not.toMatch(/create or replace function public\.clinic_post_dp_and_admit\b/);
+  });
+  it("koreksi penuh 0408 ditambal lewat jangkar tepat-sekali, pemilik/ACL dipertahankan", () => {
+    const tambal = potong("-- 8. Koreksi penuh dokter/owner", "-- 9. Pemeriksaan akhir");
+    expect(tambal).toContain("Item susulan: jangkar koreksi penuh berubah");
+    expect(tambal).toContain("Item susulan: koreksi penuh berubah pemilik/ACL/security");
+    expect(tambal).toContain("''source'',''dokter''");
   });
 });
 

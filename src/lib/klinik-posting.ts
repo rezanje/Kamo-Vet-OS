@@ -155,6 +155,8 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       RECIPE_LINKED: "Racikan sudah terhubung ke invoice dan tidak dapat dibatalkan di sini.",
       RECIPE_ID_MISSING: "Identitas racikan atau histori HPP belum tersedia. Minta bantuan keuangan sebelum menagih.",
       INVOICE_EXISTS: "Kunjungan sudah memiliki invoice aktif.",
+      // Item susulan: dokter mengubah rekam medis sesudah keranjang ini dibuka.
+      CART_STALE: "Rekam medis berubah setelah keranjang ini dibuka (misalnya dokter menambah item). Belum ada yang tersimpan. Tekan Muat tagihan terbaru, periksa ulang, lalu simpan lagi.",
       INVOICE_INVALID: "Nilai atau rincian invoice tidak konsisten.",
       PAYMENT_INVALID: "Pembayaran tidak cocok dengan sisa piutang.",
       JOURNAL_MISSING: "Catatan pembukuan lama belum lengkap. Minta keuangan meninjau tagihan.",

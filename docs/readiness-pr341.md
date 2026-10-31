@@ -1,5 +1,60 @@
 # PR341 — checkpoint readiness, bukan izin rilis
 
+## Lanjutan paket D (branch `claude/klinik-d-susulan`, base main `291bb8c8`)
+
+Kandidat `hermes/susulan-rekam-medis@b02ee287` dilanjutkan, bukan dibangun ulang: merge biasa
+main `291bb8c8` (337 migrasi, terakhir `20261104140000`), cabang Hermes tidak diubah.
+Dokumen `readiness-pr341-remaining-evidence.md` yang dirujuk brief tidak ada di branch mana pun
+(hanya `docs/readiness-pr341.md` ini), jadi gap diturunkan dari isi dokumen ini dan kode.
+
+**Keputusan versi migrasi.** Kandidat `20261101000000` belum pernah dipasang di hosted (asumsi
+brief; tidak ada akses hosted untuk memeriksa). Versinya lebih tua dari migrasi main yang sudah
+ada, jadi `db push` akan menganggapnya out-of-order. Dua klaster PG16 membuktikan komposisinya:
+memasang semua migrasi menurut nama (kandidat di tengah) BERHASIL, dan definisi fungsi main
+identik dengan atau tanpa kandidat — tidak ada yang saling menimpa, karena kandidat hanya
+membuat objek baru dan memanggil fungsi main saat runtime (jadi otomatis memakai gerbang
+dokter/owner 0408/0411). Namun integrasi runtime-nya bermasalah, sehingga file dipindah ke
+`20261104340000` dan disusun ulang:
+
+1. **Deadlock nyata** (RED R1, `40P01`): racikan susulan dokter mengunci kunjungan dulu lalu
+   koordinator tagihan (sejak 0403 fungsi racik mengambil koordinator), sedangkan posting kasir
+   koordinator → kunjungan. Kini `clinic_add_record_items` mengambil koordinator lebih dulu.
+2. Gerbang 0408/0411 dicek eksplisit (pesan `ACCESS_DENIED` jujur, bukan `RECORD_LOCKED`) dan
+   aturan 0408 "item baru wajib dari master aktif, qty/harga wajar, faktor dari master" berlaku
+   juga untuk item susulan dokter (RED: item ketik bebas diterima).
+3. Koreksi penuh dokter/owner (0408, jalur tambah item utama di main) kini menandai baris BARU
+   sebagai susulan dokter + nama (RED: tanpa penanda), lewat tambal-jangkar tepat-sekali.
+4. Jalur DP & rawat inap (0302) mendapat pembungkus rekam medis
+   `clinic_post_dp_and_admit_with_record` (sebelumnya baris kasir di jalur ini tidak tercatat).
+5. **Gap utama — keranjang basi.** `clinic_outpatient_cart_version` = sidik semua baris resep
+   kunjungan yang belum tertagih (seluruh kolom). Halaman Pembayaran membacanya SEBELUM baris
+   resep dan memakainya sebagai pembanding draf; form mengirimnya; pembungkus posting
+   membandingkannya di bawah koordinator + kunci kunjungan dan menolak `CART_STALE` bila beda
+   atau tidak ada. Replay kiriman yang sudah tersimpan dilewati (invoice sama). Setelah
+   penolakan, halaman dirender ulang (form dipasang ulang), draf lama diblokir dengan tombol
+   "Muat tagihan terbaru" yang memuat item dokter.
+
+Tidak ada RPC uang/stok asli yang ditulis ulang (`S1` + pemeriksaan akhir migrasi).
+
+**Bukti (PG16 native, semua migrasi, aktor JWT fiktif, tanpa stub bisnis):**
+- `scripts/test-item-susulan-keranjang-postgres.py` RED kandidat b02ee287: 3 PASS / 13 FAIL
+  (termasuk deadlock 40P01 nyata); GREEN: **16 PASS / 0 FAIL / 0 BLOCKED**.
+- `scripts/test-item-susulan-full-schema-postgres.py` (regresi PR341: idempotensi, posting,
+  koreksi, guard riwayat bersama, dua jadwal konkurensi, fault-injection): **18 / 0 / 0**.
+- Harness mini berstub `test-item-susulan-rekam-medis-postgres.py` dihapus: tidak bisa
+  memasang migrasi hasil komposisi tanpa menambah stub bisnis (`billing_withdrawn_at`, 0408).
+- Layar/aksi: RED 3 aksi + 6 layar gagal → GREEN; tes baru
+  `clinic-payment-cart-version.test.tsx` (halaman) dan `clinic-payment-cart-stale.test.tsx`
+  (form dipasang ulang, draf diblokir, muat ulang membawa item dokter).
+- Log mentah: `/opt/data/klinik-d-susulan-evidence/` (mesin agen).
+
+**Batas.** Hanya PG16 (PG17 tidak terpasang). Tidak ada lingkungan browser/Auth/PostgREST UAT —
+tidak dibuat dan tidak memakai Production; tes layar memakai render React dengan sumber data
+tiruan. DEMO tidak dijalankan ulang di database (routing pembungkus tidak berubah selain
+parameter versi). Aplikasi lama (sebelum deploy kode ini) masih memanggil RPC posting asli
+tanpa pemeriksaan versi selama jendela deploy. Baris tambahan kasir di keranjang ranap 0413
+belum diberi penanda susulan (di luar rawat jalan).
+
 ## Temuan review susulan: internal 42883 tidak boleh membuka jalur lama
 
 - **Temuan benar pada b68df9ff**, meskipun CI head tersebut sukses. Helper umum `isMissingRpc` menganggap semua 42883/PGRST202 sebagai wrapper tidak tersedia. Tes sebelumnya juga keliru menerima 42883 sebagai kompatibilitas aman; persetujuan review/CI sebelumnya bukan bukti batas ini aman.

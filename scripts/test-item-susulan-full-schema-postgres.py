@@ -16,7 +16,11 @@ import tempfile
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-CANDIDATE = '20261101000000_item_susulan_rekam_medis.sql'
+CANDIDATE = '20261104340000_item_susulan_rekam_medis.sql'
+LEGACY = '20261101000000_item_susulan_rekam_medis.sql'  # PR341 file name before the version move
+# Fresh-cart regression calls read the cart version at call time (not a stale-cart test;
+# those live in scripts/test-item-susulan-keranjang-postgres.py). Empty for --pre-coordinator.
+CART = ',p_cart_version=>public.clinic_outpatient_cart_version({})'
 sys.path.insert(0, str(ROOT / 'scripts'))
 from native_postgres import NativePostgres
 
@@ -89,7 +93,7 @@ insert into public.medical_records(id,visit_id,submission_key,diagnosis)
     invoice = dict(tanggal='2026-10-30', subtotal=60000, discount=0, tax=0, total=60000,
                    dp_amount=0, paid_status='Belum Lunas', metode_bayar='Tunai', shift_id=real.SHIFT[real.OWNER],
                    dp_override_reason='Uji dummy PR341 tanpa pembayaran')
-    post = f'select public.clinic_post_invoice_with_record({q(visit)},\'pr341-post\',{j(invoice)},{j(lines)});'
+    post = f'select public.clinic_post_invoice_with_record({q(visit)},\'pr341-post\',{j(invoice)},{j(lines)}{CART.format(q(visit))});'
     before = money_stock()
     try:
         inv = h.nilai(post, real.OWNER)
@@ -171,7 +175,7 @@ insert into public.medical_records(id,visit_id,submission_key) values({q(mr)},{q
     lines = [dict(description='Jasa UJI private helper', qty=1, price=10000, kind='jasa', unit='jasa', discount_percent=0)]
     h.sql('alter function clinic_private.link_unrecorded_lines(uuid,text,jsonb,text) rename to pr341_hidden_link_unrecorded_lines;')
     try:
-        broken = h.gagal('\\set VERBOSITY verbose\n' + f"select public.clinic_post_invoice_with_record({q(visit)},'pr341-fault-post',{j(invoice)},{j(lines)});", real.OWNER)
+        broken = h.gagal('\\set VERBOSITY verbose\n' + f"select public.clinic_post_invoice_with_record({q(visit)},'pr341-fault-post',{j(invoice)},{j(lines)}{CART.format(q(visit))});", real.OWNER)
         no_write = h.angka(f'select count(*) from public.invoices where visit_id={q(visit)}') == 0
         legacy = h.nilai(f"select public.clinic_post_invoice({q(visit)},'pr341-fault-legacy-post',{j(invoice)},{j(lines)});", real.OWNER)
         rows = h.angka(f'select count(*) from public.prescription_items where medical_record_id={q(mr)}')
@@ -221,7 +225,7 @@ insert into public.medical_records(id,visit_id,submission_key) values({q(mr)},{q
         with concurrent.Session(db, 'pr341-gate') as gate, concurrent.Session(db, 'pr341-observer') as observer, \
              concurrent.Session(db, 'pr341-wrapper', real.OWNER) as wrapper, concurrent.Session(db, 'pr341-original', real.OWNER) as original:
             gate.sql(f'begin; select id from public.visits where id={q(visit)} for update;')
-            wrapper.send(f"begin; select public.clinic_post_invoice_with_record({q(visit)},'pr341-race-wrapper',{j(invoice)},{j(lines)});")
+            wrapper.send(f"begin; select public.clinic_post_invoice_with_record({q(visit)},'pr341-race-wrapper',{j(invoice)},{j(lines)}{CART.format(q(visit))});")
             concurrent.wait_block(observer, wrapper, gate, evidence)
             original.send(f"begin; select public.clinic_post_invoice({q(visit)},'pr341-race-original',{j(invoice)},{j(lines)});")
             # On old SQL the original waits behind the wrapper's visit-lock queue;
@@ -297,14 +301,16 @@ def main():
     candidate_sql = (ROOT / 'supabase/migrations' / CANDIDATE).read_text()
     if args.pre_coordinator:
         import subprocess
-        candidate_sql = subprocess.check_output(['git', 'show', f'9ca46b8c1fdc20890c6568efe64f0f6d406f4963:supabase/migrations/{CANDIDATE}'], cwd=ROOT, text=True)
+        candidate_sql = subprocess.check_output(['git', 'show', f'9ca46b8c1fdc20890c6568efe64f0f6d406f4963:supabase/migrations/{LEGACY}'], cwd=ROOT, text=True)
+        global CART
+        CART = ''
     try:
         # Do not apply PR341 in filename order: hosted main already has later migrations.
         with tempfile.TemporaryDirectory(prefix='kamo-pr341-main-', dir='/opt/data') as root:
             migrations = Path(root) / 'supabase/migrations'
             migrations.mkdir(parents=True)
             for p in (ROOT / 'supabase/migrations').glob('*.sql'):
-                if p.name != CANDIDATE:
+                if p.name not in (CANDIDATE, LEGACY):
                     (migrations / p.name).symlink_to(p)
             fixture.ROOT = Path(root)
             with NativePostgres(args.pg_bin) as db:

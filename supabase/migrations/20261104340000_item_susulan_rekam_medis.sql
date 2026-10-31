@@ -1,5 +1,12 @@
 -- Item susulan masuk rekam medis (Andri 29 Okt, opsi B: "Semua harus masuk ke rekam medis juga").
 --
+-- Versi 20261104340000 (dulu kandidat PR341 20261101000000, BELUM pernah dipasang di hosted):
+-- dipindah ke depan supaya terpasang SESUDAH 20261104140000 dan disusun ulang terhadap
+-- definisi akhir main: gerbang dokter/owner 0408/0411, koordinator tagihan sebelum kunci
+-- kunjungan (0403/0408), DP & rawat inap 0302. Tambahan: versi keranjang rawat jalan
+-- (CART_STALE) agar item dokter yang masuk sesudah kasir membuka keranjang tidak diam-diam
+-- tertinggal tak tertagih atau tertimpa draf lama.
+--
 -- Dua lubang yang ditutup:
 --  1. Rawat jalan yang rekam medisnya sudah tersimpan tapi belum ditagih tidak punya
 --     jalur menambah obat/jasa/tindakan ke rekam medis. Koreksi rekam medis
@@ -139,6 +146,11 @@ declare
   v_row jsonb;
   v_id uuid;
   v_ids uuid[] := array[]::uuid[];
+  v_item public.items%rowtype;
+  v_qty numeric;
+  v_price numeric;
+  v_unit text;
+  v_factor numeric;
 begin
   if coalesce(auth.role(), '') <> 'authenticated' or v_user is null
      or not exists (select 1 from public.profiles where id = v_user and is_active = true) then
@@ -153,10 +165,18 @@ begin
   end if;
   v_hash := md5(jsonb_build_object('visit', p_visit_id, 'items', p_items, 'compounds', p_compounds)::text);
 
-  -- Urutan kunci sama dengan posting tagihan dan simpan pemeriksaan: kunjungan dulu.
+  -- Koordinator tagihan (PR343) SEBELUM kunci kunjungan, sama dengan pembungkus posting
+  -- dan koreksi penuh 0408. Racikan susulan memanggil fungsi peracikan yang sejak 0403
+  -- mengambil koordinator yang sama; dulu urutan kunjungan -> koordinator di sini
+  -- bertabrakan (40P01) dengan posting kasir koordinator -> kunjungan.
+  perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));
   select * into v_visit from public.visits where id = p_visit_id for update;
   if not found or not public.user_can_access_branch(v_visit.branch_id) then
     raise exception using errcode = 'P0001', message = 'ACCESS_DENIED: kunjungan tidak dapat diakses';
+  end if;
+  -- Gerbang klinis 0408/0411 dicek ulang SEBELUM replay, pesan jujur (bukan RECORD_LOCKED).
+  if not exists (select 1 from public.profiles where id = v_user and is_active and role in ('OWNER','DOCTOR')) then
+    raise exception using errcode = 'P0001', message = 'ACCESS_DENIED: hanya owner atau dokter dapat menambah item rekam medis';
   end if;
 
   select * into v_existing from public.clinic_record_item_additions where request_key = v_key for update;
@@ -182,13 +202,36 @@ begin
     'by', v_user, 'by_name', clinic_private.susulan_actor_name(v_user), 'source', 'dokter')::text, true);
 
   for v_row in select value from jsonb_array_elements(p_items) as r(value) loop
+    -- Penjaga koreksi penuh 0408 berlaku juga di sini: item baru wajib dari master aktif,
+    -- jumlah/harga wajar, dan faktor satuan dibaca dari master (bukan dari kiriman).
+    v_qty := (v_row->>'qty')::numeric;
+    v_price := (v_row->>'harga')::numeric;
+    if v_qty is null or v_qty <= 0 or v_qty > 100000 or v_qty <> trunc(v_qty)
+       or v_price is null or v_price < 0 or v_price > 1e12
+       or coalesce(v_row->>'jenis', '') not in ('obat', 'jasa') then
+      raise exception using errcode = 'P0001', message = 'RECORD_INVALID: jumlah/harga/jenis item susulan tidak valid';
+    end if;
+    if nullif(v_row->>'item_id', '') is null then
+      raise exception using errcode = 'P0001', message = 'RECORD_INVALID: item susulan harus dipilih dari master';
+    end if;
+    select * into v_item from public.items where id = (v_row->>'item_id')::uuid and is_active;
+    if not found then
+      raise exception using errcode = 'P0001', message = 'RECORD_INVALID: barang tidak aktif';
+    end if;
+    v_unit := coalesce(nullif(btrim(v_row->>'satuan'), ''), v_item.unit);
+    v_factor := 1;
+    if v_unit is distinct from v_item.unit then
+      select iu.factor into v_factor from public.item_units iu where iu.item_id = v_item.id and iu.unit = v_unit;
+      if v_factor is null or v_factor <= 0 then
+        raise exception using errcode = 'P0001', message = 'RECORD_INVALID: satuan tidak tersedia';
+      end if;
+    end if;
     insert into public.prescription_items(
       medical_record_id, nama_obat, item_id, qty, satuan, faktor,
       harga, aturan_pakai, jenis, kategori, service_performers, bmhp_components
     ) values (
-      v_record_id, v_row->>'nama_obat', nullif(v_row->>'item_id', '')::uuid,
-      (v_row->>'qty')::integer, v_row->>'satuan',
-      (v_row->>'faktor')::numeric, (v_row->>'harga')::numeric,
+      v_record_id, coalesce(nullif(btrim(v_row->>'nama_obat'), ''), v_item.name), v_item.id,
+      v_qty::integer, v_unit, v_factor, v_price,
       v_row->>'aturan_pakai', v_row->>'jenis', v_row->>'kategori',
       v_row->'service_performers', v_row->'bmhp_components'
     ) returning id into v_id;
@@ -360,11 +403,67 @@ revoke all on function clinic_private.link_unrecorded_lines(uuid,text,jsonb,text
   from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- 6. Pembungkus posting tagihan — satu transaksi, badan RPC lama tidak diubah.
+-- 6. Versi keranjang rawat jalan: deteksi "dokter menambah item sesudah kasir membuka".
 -- ---------------------------------------------------------------------------
+-- Sidik baris resep yang BELUM tertagih (tidak tertaut ke baris invoice aktif, tidak
+-- dibatalkan dari penagihan 0413) untuk satu kunjungan. Layar Pembayaran membacanya saat
+-- membuka keranjang; pembungkus posting membandingkannya lagi DI BAWAH koordinator
+-- tagihan + kunci kunjungan. Beda = CART_STALE, tidak ada uang/stok/jurnal yang ditulis.
+-- Seluruh kolom baris ikut (qty, harga, satuan, pelaksana, BMHP, penanda susulan, ...),
+-- jadi tambahan, perubahan maupun pembatalan oleh dokter sama-sama terdeteksi.
+create function clinic_private.outpatient_cart_version(p_visit_id uuid) returns text
+language sql stable set search_path = '' as $$
+  select 'v1:' || md5(coalesce(jsonb_agg(to_jsonb(p) order by p.created_at, p.id), '[]'::jsonb)::text)
+  from public.prescription_items p
+  join public.medical_records m on m.id = p.medical_record_id
+  where m.visit_id = p_visit_id and p.billing_withdrawn_at is null
+    and not exists (select 1 from public.invoice_items l join public.invoices i on i.id = l.invoice_id
+                    where l.prescription_item_id = p.id and i.voided_at is null);
+$$;
+revoke all on function clinic_private.outpatient_cart_version(uuid) from public, anon, authenticated, service_role;
+
+create function public.clinic_outpatient_cart_version(p_visit_id uuid) returns text
+language plpgsql stable security definer set search_path = '' as $function$
+begin
+  if coalesce(auth.role(), '') <> 'authenticated' or auth.uid() is null
+     or not exists (select 1 from public.profiles where id = auth.uid() and is_active)
+     or not exists (select 1 from public.visits v where v.id = p_visit_id and public.user_can_access_branch(v.branch_id)) then
+    raise exception using errcode = 'P0001', message = 'ACCESS_DENIED: kunjungan tidak dapat diakses';
+  end if;
+  return clinic_private.outpatient_cart_version(p_visit_id);
+end;
+$function$;
+revoke all on function public.clinic_outpatient_cart_version(uuid) from public, anon, service_role;
+grant execute on function public.clinic_outpatient_cart_version(uuid) to authenticated;
+
+-- Dipanggil pembungkus SESUDAH koordinator + kunci permintaan + kunci kunjungan.
+-- Replay kiriman yang sudah tersimpan (respons hilang) tidak diperiksa ulang: sesudah
+-- posting, baris resepnya memang sudah tertaut sehingga versinya pasti berbeda; RPC
+-- posting asli yang mengembalikan invoice yang sama dan menolak isi berbeda.
+create function clinic_private.assert_outpatient_cart(p_visit_id uuid, p_request_key text, p_cart_version text)
+returns void language plpgsql set search_path = '' as $function$
+begin
+  if exists (select 1 from public.invoices i where i.request_key = p_request_key and i.visit_id = p_visit_id) then
+    return;
+  end if;
+  if nullif(btrim(p_cart_version), '') is null
+     or p_cart_version is distinct from clinic_private.outpatient_cart_version(p_visit_id) then
+    raise exception using errcode = 'P0001',
+      message = 'CART_STALE: rekam medis berubah setelah keranjang dibuka; muat ulang tagihan lalu periksa ulang';
+  end if;
+end;
+$function$;
+revoke all on function clinic_private.assert_outpatient_cart(uuid,text,text) from public, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- 7. Pembungkus posting tagihan — satu transaksi, badan RPC lama tidak diubah.
+-- ---------------------------------------------------------------------------
+-- p_cart_version WAJIB (default null hanya agar urutan argumen lama tetap): aplikasi
+-- lama tidak memanggil pembungkus ini sama sekali, jadi tidak ada klien sah tanpa versi.
 create function public.clinic_post_invoice_with_record(
   p_visit_id uuid, p_request_key text, p_invoice jsonb, p_lines jsonb,
-  p_payments jsonb default null, p_policy_id uuid default null, p_employee_ids uuid[] default null
+  p_payments jsonb default null, p_policy_id uuid default null, p_employee_ids uuid[] default null,
+  p_cart_version text default null
 ) returns uuid language plpgsql security definer set search_path = '' as $function$
 declare v_key text := nullif(btrim(p_request_key), ''); v_lines jsonb;
 begin
@@ -383,6 +482,10 @@ begin
   perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));
   perform pg_advisory_xact_lock(hashtextextended('clinic-invoice-request:' || v_key, 0));
   perform 1 from public.visits where id = p_visit_id for update;
+  if not found or not public.user_can_access_branch((select v.branch_id from public.visits v where v.id = p_visit_id)) then
+    raise exception using errcode = 'P0001', message = 'ACCESS_DENIED: kunjungan tidak ditemukan atau cabang tidak diizinkan';
+  end if;
+  perform clinic_private.assert_outpatient_cart(p_visit_id, v_key, p_cart_version);
   v_lines := clinic_private.link_unrecorded_lines(p_visit_id, v_key, p_lines, 'kasir');
   if p_policy_id is not null then
     return public.clinic_post_demo_invoice(p_visit_id, v_key, p_invoice, v_lines, p_policy_id, p_payments, p_employee_ids);
@@ -392,9 +495,42 @@ begin
   return public.clinic_post_invoice(p_visit_id, v_key, p_invoice, v_lines);
 end;
 $function$;
-revoke all on function public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[])
+revoke all on function public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[],text)
   from public, anon, service_role;
-grant execute on function public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[])
+grant execute on function public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[],text)
+  to authenticated;
+
+-- DP & lanjut rawat inap (0302) adalah jalur posting rawat jalan juga: baris tambahan
+-- kasir ikut tercatat, dan keranjang lama ditolak sama seperti posting biasa.
+create function public.clinic_post_dp_and_admit_with_record(
+  p_visit_id uuid, p_request_key text, p_invoice jsonb, p_lines jsonb,
+  p_treatment_plan text, p_stay_type text, p_cart_version text default null
+) returns jsonb language plpgsql security definer set search_path = '' as $function$
+declare v_key text := nullif(btrim(p_request_key), ''); v_lines jsonb;
+begin
+  if coalesce(auth.role(), '') <> 'authenticated' or auth.uid() is null then
+    raise exception using errcode = 'P0001', message = 'ACCESS_DENIED: pengguna tidak terautentikasi';
+  end if;
+  if v_key is null or length(v_key) > 100
+     or jsonb_typeof(p_invoice) is distinct from 'object'
+     or jsonb_typeof(p_lines) is distinct from 'array'
+     or jsonb_array_length(p_lines) not between 1 and 200 then
+    raise exception using errcode = 'P0001', message = 'INVOICE_INVALID: data invoice tidak lengkap';
+  end if;
+  perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));
+  perform pg_advisory_xact_lock(hashtextextended('clinic-invoice-request:' || v_key, 0));
+  perform 1 from public.visits where id = p_visit_id for update;
+  if not found or not public.user_can_access_branch((select v.branch_id from public.visits v where v.id = p_visit_id)) then
+    raise exception using errcode = 'P0001', message = 'ACCESS_DENIED: kunjungan tidak ditemukan atau cabang tidak diizinkan';
+  end if;
+  perform clinic_private.assert_outpatient_cart(p_visit_id, v_key, p_cart_version);
+  v_lines := clinic_private.link_unrecorded_lines(p_visit_id, v_key, p_lines, 'kasir');
+  return public.clinic_post_dp_and_admit(p_visit_id, v_key, p_invoice, v_lines, p_treatment_plan, p_stay_type);
+end;
+$function$;
+revoke all on function public.clinic_post_dp_and_admit_with_record(uuid,text,jsonb,jsonb,text,text,text)
+  from public, anon, service_role;
+grant execute on function public.clinic_post_dp_and_admit_with_record(uuid,text,jsonb,jsonb,text,text,text)
   to authenticated;
 
 -- Koreksi tagihan: baris yang BARU ditambahkan kasir saat koreksi ikut tercatat.
@@ -433,7 +569,37 @@ revoke all on function public.clinic_edit_invoice_with_record(uuid,text,jsonb,js
 grant execute on function public.clinic_edit_invoice_with_record(uuid,text,jsonb,jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 7. Pemeriksaan akhir: RPC lama tetap seperti aslinya, pembungkus memanggilnya.
+-- 8. Koreksi penuh dokter/owner (0408/0411) juga menandai baris BARU sebagai susulan.
+-- ---------------------------------------------------------------------------
+-- Penanda hanya berlaku untuk INSERT (UPDATE baris lama tidak menyentuh kolom susulan,
+-- dan pemicu menolak perubahan penanda). Pola tambal-jangkar yang sama dengan 0410/0411:
+-- setiap jangkar wajib muncul tepat sekali, pemilik/ACL/SECURITY/SET tetap.
+do $patch$
+declare
+  d text;
+  sig regprocedure := 'public.clinic_edit_queued_record(uuid,uuid,integer,jsonb,jsonb,text,text)'::regprocedure;
+  open_anchor text := ' insert into clinic_private.record_edit_permits values(txid_current(),auth.uid(),p_visit_id);';
+  close_anchor text := ' delete from clinic_private.record_edit_permits where transaction_id=txid_current();';
+  v_owner oid; v_acl aclitem[]; v_security boolean; v_config text[];
+begin
+  select pg_get_functiondef(p.oid), proowner, proacl, prosecdef, proconfig
+    into d, v_owner, v_acl, v_security, v_config from pg_proc p where p.oid = sig;
+  if (length(d)-length(replace(d,open_anchor,'')))/length(open_anchor) <> 1
+     or (length(d)-length(replace(d,close_anchor,'')))/length(close_anchor) <> 1
+     or position('kamo.clinic_record_susulan' in d) > 0 then
+    raise exception 'Item susulan: jangkar koreksi penuh berubah';
+  end if;
+  d := replace(d, open_anchor, open_anchor || E'\n perform set_config(''kamo.clinic_record_susulan'',jsonb_build_object(''by'',auth.uid(),''by_name'',clinic_private.susulan_actor_name(auth.uid()),''source'',''dokter'')::text,true);');
+  d := replace(d, close_anchor, E' perform set_config(''kamo.clinic_record_susulan'','''',true);\n' || close_anchor);
+  execute d;
+  if not exists (select 1 from pg_proc p where p.oid = sig and p.proowner = v_owner and p.proacl is not distinct from v_acl
+                 and p.prosecdef = v_security and p.proconfig is not distinct from v_config) then
+    raise exception 'Item susulan: koreksi penuh berubah pemilik/ACL/security';
+  end if;
+end $patch$;
+
+-- ---------------------------------------------------------------------------
+-- 9. Pemeriksaan akhir: RPC lama tetap seperti aslinya, pembungkus memanggilnya.
 -- ---------------------------------------------------------------------------
 do $check$
 declare p record;
@@ -446,7 +612,11 @@ begin
     ('public.clinic_can_correct_record(uuid)'),
     ('public.clinic_issue_master_compound(uuid,uuid,uuid,jsonb,text,uuid,text)'),
     ('public.clinic_issue_official_compound(uuid,uuid,uuid,text,text)'),
-    ('public.clinic_issue_compound(uuid,uuid,jsonb,text)')
+    ('public.clinic_issue_compound(uuid,uuid,jsonb,text)'),
+    ('public.clinic_post_dp_and_admit(uuid,text,jsonb,jsonb,text,text)'),
+    ('public.clinic_edit_queued_record(uuid,uuid,integer,jsonb,jsonb,text,text)'),
+    ('clinic_private.billing_lock(text[])'),
+    ('clinic_private.billing_keys_visit(uuid)')
   ) as needed(sig) loop
     if to_regprocedure(p.sig) is null then
       raise exception 'Item susulan: RPC wajib tidak ada: %', p.sig;
@@ -456,7 +626,12 @@ begin
     raise exception 'Item susulan: clinic_post_invoice tidak boleh ditulis ulang oleh migrasi ini';
   end if;
   for p in select * from (values
-    ('public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[])', 'clinic_post_invoice('),
+    ('public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[],text)', 'clinic_post_invoice('),
+    ('public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[],text)', 'assert_outpatient_cart('),
+    ('public.clinic_post_dp_and_admit_with_record(uuid,text,jsonb,jsonb,text,text,text)', 'clinic_post_dp_and_admit('),
+    ('public.clinic_post_dp_and_admit_with_record(uuid,text,jsonb,jsonb,text,text,text)', 'assert_outpatient_cart('),
+    ('public.clinic_add_record_items(uuid,text,jsonb,jsonb)', 'billing_lock('),
+    ('public.clinic_edit_queued_record(uuid,uuid,integer,jsonb,jsonb,text,text)', 'kamo.clinic_record_susulan'),
     ('public.clinic_edit_invoice_with_record(uuid,text,jsonb,jsonb)', 'clinic_edit_invoice(')
   ) as wrappers(sig, call) loop
     if position(p.call in pg_get_functiondef(p.sig::regprocedure)) = 0 then
