@@ -155,6 +155,8 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       RECIPE_LINKED: "Racikan sudah terhubung ke invoice dan tidak dapat dibatalkan di sini.",
       RECIPE_ID_MISSING: "Identitas racikan atau histori HPP belum tersedia. Minta bantuan keuangan sebelum menagih.",
       INVOICE_EXISTS: "Kunjungan sudah memiliki invoice aktif.",
+      // Item susulan: dokter mengubah rekam medis sesudah keranjang ini dibuka.
+      CART_STALE: "Rekam medis berubah setelah keranjang ini dibuka (misalnya dokter menambah item). Belum ada yang tersimpan. Tekan Muat tagihan terbaru, periksa ulang, lalu simpan lagi.",
       INVOICE_INVALID: "Nilai atau rincian invoice tidak konsisten.",
       PAYMENT_INVALID: "Pembayaran tidak cocok dengan sisa piutang.",
       JOURNAL_MISSING: "Catatan pembukuan lama belum lengkap. Minta keuangan meninjau tagihan.",
@@ -174,6 +176,8 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       JOURNAL_UNBALANCED: "Jurnal invoice tidak seimbang; tidak ada perubahan yang disimpan.",
       JOURNAL_DUPLICATE: "Nomor atau jurnal invoice sudah digunakan. Coba simpan kembali.",
       SHIFT_INVALID: "Shift klinik sudah tidak aktif. Periksa shift lalu coba lagi.",
+      // Ditegakkan writer asli clinic_post_invoice (migrasi 20261104310000).
+      PRODUCT_ONLY_FULL_PAYMENT: "Pembelian produk saja wajib dibayar lunas. Terima pembayaran penuh (boleh campuran Tunai/Transfer); DP atau sisa piutang tidak bisa disimpan untuk transaksi ini.",
     };
     const match = /^([A-Z_]+)(?::\s*([^\r\n]{1,100}))?$/.exec(error.message);
     if (match && fixedMessages[match[1]]) return fixedMessages[match[1]];
@@ -188,6 +192,8 @@ export function parseClinicRecordError(error: { code?: string; message: string }
     if (error.message.startsWith("INPATIENT_CLOSED:")) return "Pasien sudah keluar dari rawat inap; kondisi kepulangan tidak dapat diubah di sini.";
     if (error.message.startsWith("INPATIENT_ATOMIC_REQUIRED:")) return "Ubah kondisi melalui aksi rawat inap agar formulir dan biaya diperiksa bersama.";
     if (error.message.startsWith("RECORD_INVALID:")) return "Kunjungan belum siap diselesaikan atau data pemeriksaan tidak lengkap.";
+    // Item susulan (Andri 29 Okt): jalur dokter tertutup begitu tagihan terbit.
+    if (error.message.startsWith("RECORD_LOCKED:")) return "Item susulan sudah tertutup untuk kunjungan ini: tagihan sudah terbit atau kunjungan sudah selesai. Tambahkan lewat koreksi tagihan di layar Pembayaran.";
     if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";
     if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "Form pemeriksaan ini sudah dipakai untuk data berbeda. Muat ulang kunjungan.";
     if (error.message.startsWith("RECIPE_REQUIRED:")) return recipeRequiredMessage(error.message);

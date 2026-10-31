@@ -1,3 +1,4 @@
+import { mulai } from "@/lib/u07-waktu";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -59,6 +60,22 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
     ? `PET-${new Date(pet.created_at as string).toISOString().slice(2, 10).replace(/-/g, "")}-${(pet.id as string).slice(0, 4).toUpperCase()}`
     : "—";
 
+  // Klinik-A: riwayat operasional, riwayat klinis lintas cabang, dan ringkasan transaksi
+  // pemilik hanya butuh id hewan/pemilik dari kunjungan ini, jadi dibaca bersamaan
+  // (dulu tiga putaran berurutan). Masing-masing tetap ditunggu di posisi lamanya.
+  const clinicalP = pet ? mulai(readPatientClinicalHistory(id, pet.id)) : null;
+  const trxP = cust?.id
+    ? mulai(Promise.all([
+        supabase.from("sales").select("total, payment_plan, payments_finalized_at, voided_at").eq("customer_id", cust.id),
+        supabase
+          .from("invoices")
+          .select("total, visits!inner(customer_id)")
+          .eq("paid_status", "Lunas")
+          .is("voided_at", null)
+          .eq("visits.customer_id", cust.id),
+      ]))
+    : null;
+
   // Original operational visit set for the existing finance/inpatient/compound tabs.
   const { data: history } = pet
     ? await supabase
@@ -71,7 +88,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
   // Clinical continuity is independent of operational selection, within existing
   // account branch grants. Financial/inpatient/compound actions below keep their
   // original operational client and visit IDs.
-  const clinical=pet?await readPatientClinicalHistory(id,pet.id):{available:false,visits:[]};
+  const clinical=clinicalP?await clinicalP:{available:false,visits:[]};
   const med: MedEntry[] = clinical.visits.map((v, i) => {
     const mr=v.records[0];
     const prescriptions=v.records.flatMap(record=>record.prescriptions);
@@ -113,16 +130,8 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
   }));
 
   // ===== Ringkasan transaksi customer (petshop + klinik, semua waktu) =====
-  const [{ data: salesAgg }, { data: invAgg }] = cust?.id
-    ? await Promise.all([
-        supabase.from("sales").select("total, payment_plan, payments_finalized_at, voided_at").eq("customer_id", cust.id),
-        supabase
-          .from("invoices")
-          .select("total, visits!inner(customer_id)")
-          .eq("paid_status", "Lunas")
-          .is("voided_at", null)
-          .eq("visits.customer_id", cust.id),
-      ])
+  const [{ data: salesAgg }, { data: invAgg }] = trxP
+    ? await trxP
     : [{ data: [] }, { data: [] }];
   const trxTotals = [
     ...((salesAgg ?? []).filter(isCompletedSale) as { total: number }[]).map((s) => Number(s.total || 0)),

@@ -1,5 +1,6 @@
 // Jalur kirim yang sebenarnya: form koreksi -> aksi `bayarVisit` -> RPC publik
-// `clinic_edit_invoice`. Yang diperiksa di sini adalah muatan yang dikirim aksi,
+// `clinic_edit_invoice_with_record` (atau RPC lama hanya bila wrapper belum tersedia).
+// Yang diperiksa di sini adalah muatan yang dikirim aksi,
 // bukan penolong terpisah: uang muka kepala diambil dari tagihan TERSIMPAN (bukan
 // dari isian pengirim), status pembayaran tidak berubah, dan riwayat pembayaran
 // yang sudah dibalik tidak ikut dikirim sebagai "uang baru".
@@ -14,6 +15,7 @@ const state = vi.hoisted(() => ({
   dp: 0,
   paidStatus: "Belum Lunas",
   correctionPending: false,
+  wrapperError: null as { code: string; message: string } | null,
   calls: [] as { name: string; params: Record<string, unknown> }[],
 }));
 
@@ -40,6 +42,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   },
   rpc: async (name: string, params: Record<string, unknown>) => {
     state.calls.push({ name, params });
+    if (name === "clinic_edit_invoice_with_record" && state.wrapperError) {
+      return { data: null, error: state.wrapperError };
+    }
     return { data: "tagihan", error: null };
   },
 }) }));
@@ -76,15 +81,31 @@ function form(patch: Record<string, string> = {}) {
   return f;
 }
 
-beforeEach(() => { state.dp = 0; state.paidStatus = "Belum Lunas"; state.correctionPending = false; state.calls = []; });
+beforeEach(() => { state.dp = 0; state.paidStatus = "Belum Lunas"; state.correctionPending = false; state.wrapperError = null; state.calls = []; });
 
-it("mengirim koreksi riwayat nol-bersih ke RPC koreksi yang sudah ada", async () => {
+it("mengirim koreksi riwayat nol-bersih lewat wrapper rekam medis tanpa uang baru", async () => {
   await expect(bayarVisit(form())).resolves.toMatchObject({ saved: true, href: "/klinik/pembayaran/visit?success=edit" });
-  expect(state.calls[0]).toMatchObject({ name: "clinic_edit_invoice", params: {
+  expect(state.calls).toHaveLength(1);
+  expect(state.calls[0]).toMatchObject({ name: "clinic_edit_invoice_with_record", params: {
     p_invoice_id: "tagihan",
     p_invoice: { dp_amount: 0, paid_status: "Belum Lunas", metode_bayar: "Tunai", total: 150000, reason: "Koreksi fiktif" },
   } });
   expect((state.calls[0].params.p_lines as unknown[])).toHaveLength(2);
+});
+
+it("memakai RPC lama hanya bila exact wrapper tidak ditemukan di schema cache, dengan muatan identik", async () => {
+  state.wrapperError = { code: "PGRST202", message: "Could not find the function public.clinic_edit_invoice_with_record(p_invoice, p_invoice_id, p_lines, p_request_key) in the schema cache" };
+  await expect(bayarVisit(form())).resolves.toMatchObject({ saved: true });
+  expect(state.calls.map((call) => call.name)).toEqual(["clinic_edit_invoice_with_record", "clinic_edit_invoice"]);
+  expect(state.calls[1].params).toEqual(state.calls[0].params);
+  expect(state.calls[1].params.p_invoice).toMatchObject({ dp_amount: 0, paid_status: "Belum Lunas", total: 150000 });
+  expect(state.calls[1].params.p_lines).toHaveLength(2);
+});
+
+it("penolakan wrapper menghentikan koreksi, tidak mencoba RPC lama", async () => {
+  state.wrapperError = { code: "P0001", message: "ACCESS_DENIED: pengguna tidak diizinkan" };
+  await expect(bayarVisit(form())).rejects.toThrow("?error=");
+  expect(state.calls.map((call) => call.name)).toEqual(["clinic_edit_invoice_with_record"]);
 });
 
 it("memakai uang muka kepala yang TERSIMPAN, bukan angka dari pengirim", async () => {

@@ -4,7 +4,7 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireOperationalBranch } from "@/lib/operational-branch-server";
-import { bacaShift, tutupShift } from "@/lib/tutup-shift";
+import { bacaShift, PESAN_LACI_ORANG_LAIN, tutupShift } from "@/lib/tutup-shift";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 
@@ -43,8 +43,16 @@ export async function tutupShiftKlinik(formData: FormData) {
   const closing = Number(formData.get("closing_balance")) || 0;
   if (!shiftId) redirect(`/klinik/shift?error=${encodeURIComponent("Shift tidak valid")}`);
 
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect(`/klinik/shift?error=${encodeURIComponent("Sesi kamu habis — masuk ulang.")}`);
+
   const shift = await bacaShift(supabase, shiftId, "klinik");
   if (!shift) redirect(`/klinik/shift?error=${encodeURIComponent("Shift klinik tidak ditemukan")}`);
+  // Akses halaman klinik bukan berarti memegang laci orang lain: hanya pemilik laci yang
+  // menghitung dan menutupnya. Basis data menolak hal yang sama; ini supaya pesannya jelas.
+  if (shift!.opened_by !== user.id) {
+    redirect(`/klinik/shift?error=${encodeURIComponent(PESAN_LACI_ORANG_LAIN)}`);
+  }
 
   // Selisih kas wajib punya jurnal — shift jangan ditutup kalau periodenya terkunci.
   const pesanPeriode = await cekPeriode(supabase, hariIniWIB());

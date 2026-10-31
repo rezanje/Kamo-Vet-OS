@@ -40,7 +40,9 @@ export async function loadClinicCompoundSkus(client: any, categories?: ClinicIte
 const SKU_BATCH_CONCURRENCY = 6;
 
 /** Match clinic posting's warehouse and check every lookup page. Small ID batches
- * keep request URLs bounded even when the compound catalogue exceeds 1,000. */
+ * keep request URLs bounded even when the compound catalogue exceeds 1,000.
+ * `warehouseId` null means the clinic warehouse was not found/visible: stock is then
+ * unread (shown "belum terbaca" via `stokGudangKlinik`), never zero. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadClinicSkuDetails(client: any, itemIds: string[], branchId: string | null) {
   const stock = new Map<string, number>();
@@ -79,5 +81,5 @@ export async function loadClinicSkuDetails(client: any, itemIds: string[], branc
     }
     for (const row of priceRows) prices.set(`${row.item_id}|${row.unit}`, Number(row.sell_price));
   }
-  return { stock, units, prices };
+  return { stock, units, prices, warehouseId: (warehouse?.id as string | undefined) ?? null };
 }

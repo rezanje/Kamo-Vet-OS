@@ -15,6 +15,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { UlasanBadge } from "@/components/UlasanBadge";
 import { serviceDurations } from "@/lib/operasional-klinik";
 import { branchDisplayName } from "@/lib/branch-display";
+import { mulai } from "@/lib/u07-waktu";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -57,6 +58,15 @@ export default async function AntrianPage({
 }) {
   const { filter = "aktif", success, tanggal = "", cabang = "" } = await searchParams;
   const supabase = await createClient();
+  // Klinik-A: label cabang & pengingat voucher tidak bergantung pada akun/cabang, jadi
+  // dibaca bersamaan dengan pemeriksaan sesi & cabang (dulu antre di belakangnya).
+  const labelCatalogP = mulai(supabase.from("branches").select("code,name,type").eq("is_active", true));
+  // Pengingat voucher untuk admin klinik (permintaan Pak Aldi, meeting 14
+  // Agustus): voucher hari-ini-saja tidak ada gunanya kalau petugas depan
+  // tidak tahu harus menawarkannya.
+  const voucherAktifP = mulai(supabase.from("vouchers")
+    .select("code, tipe, nilai, valid_from, valid_until, customer_id, category_id, customers(name), customer_categories(nama)")
+    .eq("is_active", true));
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const allMode = (await headers()).get(BRANCH_HEADER) === ALL_BRANCHES;
@@ -65,7 +75,7 @@ export default async function AntrianPage({
   const branches = allMode ? await availableOperationalBranches(supabase, user.id, "klinik") : [];
   const selected = branches.find(b => b.id === cabang);
   const branch = allAccess ? selected ?? allAccess : await requireOperationalBranch(supabase, user.id, "klinik");
-  const { data: labelCatalog } = await supabase.from("branches").select("code,name,type").eq("is_active", true);
+  const { data: labelCatalog } = await labelCatalogP;
   const branchLabel = branch.id === ALL_BRANCHES ? branch.name : branchDisplayName(branch, labelCatalog ?? []);
   const scopeIds = allAccess ? selected ? [selected.id] : branches.map(b => b.id) : [branch.id];
 
@@ -106,12 +116,7 @@ export default async function AntrianPage({
       query,
       qWaiting,
       qHari,
-      // Pengingat voucher untuk admin klinik (permintaan Pak Aldi, meeting 14
-      // Agustus): voucher hari-ini-saja tidak ada gunanya kalau petugas depan
-      // tidak tahu harus menawarkannya.
-      supabase.from("vouchers")
-        .select("code, tipe, nilai, valid_from, valid_until, customer_id, category_id, customers(name), customer_categories(nama)")
-        .eq("is_active", true),
+      voucherAktifP,
     ]);
   if (visitsResult.error || waitingResult.error || todayResult.error) {
     return <>

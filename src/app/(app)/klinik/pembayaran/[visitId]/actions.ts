@@ -25,6 +25,7 @@ import { bacaKodeKampanye } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
+import { isMissingRecordWrapper } from "@/lib/rekam-medis-susulan";
 
 type Line = {
   deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null;
@@ -106,20 +107,59 @@ function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceL
   }));
 }
 
+/**
+ * Andri 29 Okt (opsi B): baris yang ditambah kasir sendiri — yang tidak berasal dari
+ * resep dokter — harus ikut tercatat di rekam medis. Pembungkus `*_with_record`
+ * membuat baris resepnya lalu memanggil RPC posting/koreksi yang sama dalam SATU
+ * transaksi; badan RPC posting tidak berubah sama sekali.
+ *
+ * Sebelum migrasinya terpasang, pembungkusnya belum ada di database. Pembayaran tidak
+ * boleh ikut mati karenanya: jalur lama dipakai apa adanya (persis perilaku hari ini).
+ */
+/** Hanya versi keranjang dari database ("v1:" + md5) yang diteruskan; sidik lain diabaikan. */
+function cartVersionDari(formData: FormData): string | undefined {
+  const versi = String(formData.get("source_version") ?? "").trim();
+  return /^v1:[0-9a-f]{32}$/.test(versi) ? versi : undefined;
+}
+
+/** Versi keranjang dibaca server (pembayaran rombongan); null = database belum dimigrasi. */
+async function versiKeranjangServer(supabase: Awaited<ReturnType<typeof createClient>>, visitId: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc("clinic_outpatient_cart_version", { p_visit_id: visitId });
+  if (error?.code === "PGRST202" && error.message?.includes("clinic_outpatient_cart_version")) return null;
+  if (error || typeof data !== "string" || !/^v1:[0-9a-f]{32}$/.test(data)) throw new Error("versi keranjang tidak terbaca");
+  return data;
+}
+
 async function postInvoiceAtomik(
   supabase: Awaited<ReturnType<typeof createClient>>,
   params: ClinicPostInvoiceParams,
   payments?: ClinicSplitPayment[],
   demo?: { policyId: string; employees: string[] },
   admission?: { plan: string; stayType: string },
+  cartVersion?: string,
 ): Promise<{ inpatientId?: string; invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
-  const { data: result, error } = admission
-    ? await supabase.rpc("clinic_post_dp_and_admit", { ...params, p_treatment_plan: admission.plan, p_stay_type: admission.stayType })
-    : demo
-    ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
-    : payments
-    ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
-    : await supabase.rpc("clinic_post_invoice", params);
+  const wrapper = admission ? "clinic_post_dp_and_admit_with_record" as const : "clinic_post_invoice_with_record" as const;
+  // Versi keranjang yang dibuka kasir; pembungkus menolak CART_STALE bila rekam medis
+  // berubah sesudahnya (mis. dokter menambah item) atau versinya tidak ada.
+  const cart = cartVersion ? { p_cart_version: cartVersion } : {};
+  const wrappedParams = admission
+    ? { ...params, p_treatment_plan: admission.plan, p_stay_type: admission.stayType, ...cart }
+    : {
+      ...params,
+      ...(payments ? { p_payments: payments } : {}),
+      ...(demo ? { p_policy_id: demo.policyId, p_payments: payments, p_employee_ids: demo.employees } : {}),
+      ...cart,
+    };
+  const terbungkus = await supabase.rpc(wrapper, wrappedParams);
+  const { data: result, error } = isMissingRecordWrapper(terbungkus.error, wrapper, wrappedParams)
+    ? admission
+      ? await supabase.rpc("clinic_post_dp_and_admit", { ...params, p_treatment_plan: admission.plan, p_stay_type: admission.stayType })
+      : demo
+      ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
+      : payments
+      ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
+      : await supabase.rpc("clinic_post_invoice", params)
+    : terbungkus;
   const invoiceId = admission ? result?.invoice_id : result;
   const inpatientId = admission ? result?.inpatient_id : undefined;
   if (error || !invoiceId || (admission && !inpatientId)) return { invoiceId: null, invoiceNo: null, error: error ?? { message: "Hasil invoice/rawat inap belum terkonfirmasi" } };
@@ -348,13 +388,19 @@ export async function bayarVisit(formData: FormData) {
     if (!requestKey || !reason) {
       redirect(`${back}?error=${encodeURIComponent("Isi alasan koreksi dan muat ulang halaman bila perlu")}`);
     }
-    const { error } = await supabase.rpc("clinic_edit_invoice", {
+    const koreksi = {
       p_invoice_id: existing.id,
       p_request_key: requestKey,
       p_invoice: { subtotal, discount, tax, total, dp_amount: dpAmount,
         paid_status: paidStatus, metode_bayar: metode, voucher_code: voucherCode, reason },
       p_lines: barisUntukPosting(rows, true),
-    });
+    };
+    // Baris BARU yang ditambahkan kasir saat koreksi ikut tercatat di rekam medis;
+    // baris warisan tagihan lama dibiarkan apa adanya oleh pembungkusnya.
+    const terbungkus = await supabase.rpc("clinic_edit_invoice_with_record", koreksi);
+    const { error } = isMissingRecordWrapper(terbungkus.error, "clinic_edit_invoice_with_record", koreksi)
+      ? await supabase.rpc("clinic_edit_invoice", koreksi)
+      : terbungkus;
     if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
     waktu.tandai("koreksi");
     // U07: tier pelanggan = statistik turunan (best effort), dihitung setelah respons.
@@ -407,7 +453,7 @@ export async function bayarVisit(formData: FormData) {
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
     p_lines: barisUntukPosting(rows),
-  }, payments, demo, admission);
+  }, payments, demo, admission, cartVersionDari(formData));
   if (posted.error || !posted.invoiceNo) {
     redirect(`${back}?error=${encodeURIComponent(posted.invoiceId ? "Invoice sudah tersimpan, tetapi rinciannya belum dapat dibaca. Jangan menerima pembayaran ulang; muat ulang dan periksa invoice yang sama." : parseClinicPostingError(posted.error, uncertainPayment))}`);
   }
@@ -535,6 +581,7 @@ export async function bayarRombongan(formData: FormData) {
     b: typeof belum[number];
     salespersonId: string | null;
     rows: Awaited<ReturnType<typeof barisTagihanVisit>>;
+    cartVersion: string | null;
     subtotal: number;
     potonganNonVoucher: number;
   };
@@ -565,6 +612,10 @@ export async function bayarRombongan(formData: FormData) {
       )) return null;
 
       const salespersonP = mulai(resolveClinicSalesperson(supabase, v.branch_id ?? null, v.doctor_id ?? null, v.service_provider_id ?? null));
+      // Versi dibaca SEBELUM baris: item dokter yang masuk di antaranya ditolak CART_STALE,
+      // bukan terlewat dari nota hewan ini.
+      const cartVersion = await versiKeranjangServer(supabase, b.visitId)
+        .catch(() => redirect(`${back}?error=${encodeURIComponent(`${b.hewan}: Tagihan belum dapat diverifikasi. Muat ulang tanpa membayar ulang.`)}`));
       const rows = await barisTagihanVisit(supabase, b.visitId, String(v.poli ?? "Poli Umum"));
       const subtotal = rows.reduce((a, l) => a + nilaiBaris(l), 0);
       const potonganPet = await hitungPotonganKlinik(supabase, {
@@ -572,7 +623,7 @@ export async function bayarRombongan(formData: FormData) {
         rows:rows.map(line=>({item_id:line.item_id,qty:line.qty,harga:hargaNetto(line),jenis:line.jenis,satuan:line.satuan})),
       });
       const salespersonId = await salespersonP;
-      return { b, salespersonId, rows, subtotal, potonganNonVoucher: potonganPet.total };
+      return { b, salespersonId, rows, cartVersion, subtotal, potonganNonVoucher: potonganPet.total };
     })());
   };
   const persiapan = belum.map(siapkan);
@@ -622,7 +673,7 @@ export async function bayarRombongan(formData: FormData) {
   // TAHAP 2 — terbitkan notanya satu per satu.
   const notaPoin: NotaPoin[] = [];
   for (const [idx, s] of siap.entries()) {
-    const { b, rows, subtotal, salespersonId } = s;
+    const { b, rows, subtotal, salespersonId, cartVersion } = s;
     const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx]);
     const dpp = Math.max(0, subtotal - discount);
     const { tax, total } = tambahPpn(dpp, pajakSettings);
@@ -637,7 +688,7 @@ export async function bayarRombongan(formData: FormData) {
         service_pricing_version:1,
       },
       p_lines: barisUntukPosting(rows),
-    });
+    }, undefined, undefined, undefined, cartVersion ?? undefined);
     if (posted.error || !posted.invoiceNo) {
       dilewati.push(`${b.hewan}: ${posted.invoiceId ? "invoice sudah tersimpan; periksa status tanpa membayar ulang" : parseClinicPostingError(posted.error, uncertainPayment)}`);
       continue;

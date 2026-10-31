@@ -1,0 +1,46 @@
+{
+  "source_run": {
+    "url": "https://github.com/rezanje/Kamo-Vet-OS/actions/runs/40989157281",
+    "head_sha": "8af373a157e665b019e2bd77663021ab547d7902",
+    "status": "completed",
+    "conclusion": "failure",
+    "updated_at": "2026-10-30T02:07:25Z",
+    "attempt": 1
+  },
+  "ci_failure": {
+    "file": "src/app/(app)/klinik/pembayaran/[visitId]/__tests__/koreksi-aksi-nol-bersih.test.ts",
+    "test": "mengirim koreksi riwayat nol-bersih ke RPC koreksi yang sudah ada",
+    "expected": "clinic_edit_invoice",
+    "received": "clinic_edit_invoice_with_record",
+    "counts": {
+      "passed": 5040,
+      "failed": 1,
+      "skipped": 1
+    }
+  },
+  "isolated_red": {
+    "passed": 2,
+    "failed": 1
+  },
+  "isolated_green": {
+    "passed": 6,
+    "failed": 0
+  },
+  "local_full_node26": {
+    "numTotalTests": 5045,
+    "numPassedTests": 5030,
+    "numFailedTests": 14,
+    "numPendingTests": 1,
+    "success": false
+  },
+  "local_other_failure_files": [
+    "src/components/__tests__/cashier-stock-request-draft.test.tsx",
+    "src/components/__tests__/correction-transaction-form.test.tsx",
+    "src/components/__tests__/expense-form.test.tsx",
+    "src/components/__tests__/production-request-identity.test.tsx",
+    "src/components/__tests__/report-presets.test.tsx",
+    "src/components/__tests__/sales-request-form.test.tsx",
+    "src/components/__tests__/transaction-form-draft.test.tsx"
+  ],
+  "scope": "Test/fixture update only. Existing app code and migrations unchanged from 8af373a1; decision A preserved. No skips, weakened monetary assertions, CI rerun, production or deploy actions. Baseline snapshot execution was blocked by tool safety; do not claim comparison with current main was executed."
+}

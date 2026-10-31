@@ -1,0 +1,124 @@
+{
+  "base_head": "b68df9ffa68932c4fbd5f4d96d529fb417903edf",
+  "red_action_tests": {
+    "passed": 51,
+    "failed": 4,
+    "failures": [
+      "tagihan klinik mencatat baris tambahan kasir ke rekam medis dependency internal 42883 ditolak tanpa fallback (koreksi=false)",
+      "tagihan klinik mencatat baris tambahan kasir ke rekam medis dependency internal 42883 ditolak tanpa fallback (koreksi=true)",
+      "tagihan klinik mencatat baris tambahan kasir ke rekam medis PGRST202 untuk fungsi lain tidak membolehkan fallback (koreksi=false)",
+      "tagihan klinik mencatat baris tambahan kasir ke rekam medis PGRST202 untuk fungsi lain tidak membolehkan fallback (koreksi=true)"
+    ]
+  },
+  "green_regression": {
+    "files": 76,
+    "passed": 789,
+    "failed": 0,
+    "pending": 0,
+    "success": true
+  },
+  "full_schema_with_real_new_dependency_fault": {
+    "totals": {
+      "PASS": 18,
+      "FAIL": 0,
+      "BLOCKED": 0
+    },
+    "results": [
+      {
+        "case": "S1 PR341 applies AFTER main and leaves original business RPC definitions intact",
+        "status": "PASS",
+        "detail": "full main schema + PR341 last"
+      },
+      {
+        "case": "D1 real doctor RPC stores marked prescription without money/stock writes",
+        "status": "PASS",
+        "detail": "{'record': 'fa700000-0000-4000-8000-000000000091', 'rows': 1.0, 'before': [0.0, 0.0, 200.0], 'after': [0.0, 0.0, 200.0]}"
+      },
+      {
+        "case": "D2 exact replay does not add another prescription",
+        "status": "PASS",
+        "detail": "1.0"
+      },
+      {
+        "case": "D3 changed-content replay is rejected without data change",
+        "status": "PASS",
+        "detail": "ERROR:  IDEMPOTENCY_CONFLICT: kunci item susulan dipakai untuk data berbeda\nCONTEXT:  PL/pgSQL function public.clinic_add_record_items(uuid,text,jsonb,jsonb) line 37 at RAISE\nauthenticated\nfa100000-0000-4000-8000-000000000005\n"
+      },
+      {
+        "case": "D4 out-of-branch actor cannot replay cached result",
+        "status": "PASS",
+        "detail": "ERROR:  ACCESS_DENIED: kunjungan tidak dapat diakses\nCONTEXT:  PL/pgSQL function public.clinic_add_record_items(uuid,text,jsonb,jsonb) line 29 at RAISE\nauthenticated\nfa100000-0000-4000-8000-000000000007\n"
+      },
+      {
+        "case": "P1 real posting links doctor and cashier items, preserves decision A",
+        "status": "PASS",
+        "detail": "{'rows': 2.0, 'linked': 2.0, 'source': 'kasir', 'category': 'NULL'}"
+      },
+      {
+        "case": "P2 original posting deducts two units with real revenue/HPP entries and unpaid status",
+        "status": "PASS",
+        "detail": "{'before': [0.0, 0.0, 200.0], 'after': [1.0, 2.0, 198.0], 'journal_balance': 0.0, 'unbalanced_entries': 0.0, 'accounts': {'4201': -60000.0, '5101': 4000.0, '1301': -4000.0}, 'status': 'Belum Lunas'}"
+      },
+      {
+        "case": "P3 invoice replay returns same invoice with no repeated prescription/stock/journal",
+        "status": "PASS",
+        "detail": "{'invoice': '043013ec-4dd3-4f08-9589-bc2fa77e91db', 'rows': 2.0}"
+      },
+      {
+        "case": "P4 doctor addition after posting stays locked",
+        "status": "PASS",
+        "detail": "ERROR:  RECORD_LOCKED: tagihan sudah terbit atau kunjungan sudah ditutup; tambah item lewat koreksi tagihan\nCONTEXT:  PL/pgSQL function public.clinic_add_record_items(uuid,text,jsonb,jsonb) line 48 at RAISE\nauthenticated\nfa100000-0000-4000-8000-000000000005\n"
+      },
+      {
+        "case": "P5 real correction records only new cashier item",
+        "status": "PASS",
+        "detail": "3.0"
+      },
+      {
+        "case": "C1 original diagnosis remains intact",
+        "status": "PASS",
+        "detail": "readback"
+      },
+      {
+        "case": "G1 direct prescription writes on shared imported record remain refused",
+        "status": "PASS",
+        "detail": "ERROR:  CARE_INVALID: rekam medis tidak memiliki cabang\nCONTEXT:  PL/pgSQL function public.guard_clinic_record_seller() line 6 at RAISE\nauthenticated\nfa100000-0000-4000-8000-000000000001\n"
+      },
+      {
+        "case": "L1 wrapper and original public posting serialize without deadlock",
+        "status": "PASS",
+        "detail": "{'wrapper': {'ok': True, 'result': ['a759d29b-862b-47d8-8f3e-f3b28f4a3f7b'], 'rpc_seconds': 0.0799}, 'original': {'ok': False, 'error': 'ERROR:  P0001: INVOICE_EXISTS: kunjungan sudah memiliki invoice aktif\\nCONTEXT:  PL/pgSQL function public.clinic_post_invoice(uuid,text,jsonb,jsonb) line 105 at RAISE\\nLOCATION:  exec_stmt_raise, pl_exec.c:3897\\n', 'seconds_to_error': 0.0832}, 'barrier': [{'pid': 513500, 'blockers': [513496], 'wait_event_type': 'Lock', 'wait_event': 'transactionid', 'query': 'select public.clinic_post_invoice_with_record(\\'fa600000-0000-4000-8000-000000000092\\',\\'pr341-race-wrapper\\',\\'{\"tanggal\": \"2026-10-30\", \"subtotal\": 10000, \"discount\": 0, \"tax\": 0, \"total\": 10000, \"dp_amount\": 0, \"paid_status\": \"Belum Lunas\", \"metode_bayar\": \"Tunai\", \"shift_id\": \"fab00000-0000-4000-8000-000000000001\", \"dp_override_reason\": \"Uji dummy concurrency PR341\"}\\'::jsonb,\\'[{\"description\": \"Jasa UJI concurrency\", \"qty\": 1, \"price\": 10000, \"kind\": \"jasa\", \"unit\": \"jasa\", \"discount_percent\": 0}]\\'::jsonb);'}, {'pid': 513502, 'blockers': [513500], 'wait_event_type': 'Lock', 'wait_event': 'advisory', 'query': 'select public.clinic_post_invoice(\\'fa600000-0000-4000-8000-000000000092\\',\\'pr341-race-original\\',\\'{\"tanggal\": \"2026-10-30\", \"subtotal\": 10000, \"discount\": 0, \"tax\": 0, \"total\": 10000, \"dp_amount\": 0, \"paid_status\": \"Belum Lunas\", \"metode_bayar\": \"Tunai\", \"shift_id\": \"fab00000-0000-4000-8000-000000000001\", \"dp_override_reason\": \"Uji dummy concurrency PR341\"}\\'::jsonb,\\'[{\"description\": \"Jasa UJI concurrency\", \"qty\": 1, \"price\": 10000, \"kind\": \"jasa\", \"unit\": \"jasa\", \"discount_percent\": 0}]\\'::jsonb);'}]}"
+      },
+      {
+        "case": "L1b concurrent posting final readback has one linked prescription/invoice and no extra stock/money",
+        "status": "PASS",
+        "detail": "{'prescriptions': 1.0, 'invoices': 1.0, 'linked_lines': 1.0, 'stock': 198.0, 'invoice_total': 10000.0, 'money_received': 0.0}"
+      },
+      {
+        "case": "L2 wrapper and original public correction serialize without deadlock",
+        "status": "PASS",
+        "detail": "{'wrapper': {'ok': True, 'result': ['a759d29b-862b-47d8-8f3e-f3b28f4a3f7b'], 'rpc_seconds': 0.0758}, 'original': {'ok': True, 'result': ['a759d29b-862b-47d8-8f3e-f3b28f4a3f7b'], 'rpc_seconds': 0.1258}, 'barrier': [{'pid': 513538, 'blockers': [513534], 'wait_event_type': 'Lock', 'wait_event': 'transactionid', 'query': 'select public.clinic_edit_invoice_with_record(\\'a759d29b-862b-47d8-8f3e-f3b28f4a3f7b\\',\\'pr341-race-edit-wrapper\\',\\'{\"subtotal\": 10000, \"discount\": 0, \"tax\": 0, \"total\": 10000, \"dp_amount\": 0, \"paid_status\": \"Belum Lunas\", \"metode_bayar\": \"Tunai\", \"reason\": \"Koreksi UJI concurrency\", \"dp_override_reason\": \"Uji dummy PR341\"}\\'::jsonb,\\'[{\"description\": \"Jasa UJI concurrency\", \"qty\": 1, \"price\": 10000, \"kind\": \"jasa\", \"unit\": \"jasa\", \"prescription_item_id\": \"fc074b4d-12e2-49f7-bcfa-e4c5c1b05d36\", \"discount_percent\": 0}]\\'::jsonb);'}, {'pid': 513540, 'blockers': [513538], 'wait_event_type': 'Lock', 'wait_event': 'advisory', 'query': 'select public.clinic_edit_invoice(\\'a759d29b-862b-47d8-8f3e-f3b28f4a3f7b\\',\\'pr341-race-edit-original\\',\\'{\"subtotal\": 10000, \"discount\": 0, \"tax\": 0, \"total\": 10000, \"dp_amount\": 0, \"paid_status\": \"Belum Lunas\", \"metode_bayar\": \"Tunai\", \"reason\": \"Koreksi UJI concurrency\", \"dp_override_reason\": \"Uji dummy PR341\"}\\'::jsonb,\\'[{\"description\": \"Jasa UJI concurrency\", \"qty\": 1, \"price\": 10000, \"kind\": \"jasa\", \"unit\": \"jasa\", \"prescription_item_id\": \"fc074b4d-12e2-49f7-bcfa-e4c5c1b05d36\", \"discount_percent\": 0}]\\'::jsonb);'}]}"
+      },
+      {
+        "case": "L2b concurrent correction keeps prescription/invoice links, ledger balances and stock intact",
+        "status": "PASS",
+        "detail": "{'before': {'1101': 0.0, '1201': 75000.0, '4201': -75000.0, '5101': 4000.0, '1301': -4000.0}, 'after': {'1101': 0.0, '1201': 75000.0, '4201': -75000.0, '5101': 4000.0, '1301': -4000.0}, 'readback': {'invoice_total': 10000.0, 'linked_lines': 1.0, 'prescriptions': 1.0, 'stock': 198.0, 'unbalanced_entries': 0.0}}"
+      },
+      {
+        "case": "F1 actual missing new helper yields 42883; legacy posting alone is not a safe fallback",
+        "status": "PASS",
+        "detail": "{'wrapper_error': \"ERROR:  42883: function clinic_private.link_unrecorded_lines(uuid, text, jsonb, unknown) does not exist\\nLINE 1: v_lines := clinic_private.link_unrecorded_lines(p_visit_id, ...\\n                   ^\\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts.\\nQUERY:  v_lines := clinic_private.link_unrecorded_lines(p_visit_id, v_key, p_lines, 'kasir')\\nCONTEXT:  PL/pgSQL function public.clinic_post_invoice_with_record(uuid,text,jsonb,jsonb,jsonb,uuid,uuid[]) line 19 at assignment\\nLOCATION:  ParseFuncOrColumn, parse_func.c:629\\nauthenticated\\nfa100000-0000-4000-8000-000000000001\\n\", 'wrapper_rolled_back': True, 'legacy_invoice': '9a5feefa-ae81-4099-a372-4b4c37ed2be8', 'prescriptions': 0.0}"
+      },
+      {
+        "case": "F2 actual missing new helper yields 42883; legacy correction could omit the record too",
+        "status": "PASS",
+        "detail": "{'wrapper_error': \"ERROR:  42883: function clinic_private.link_unrecorded_lines(uuid, text, jsonb, unknown) does not exist\\nLINE 1: v_lines := clinic_private.link_unrecorded_lines(v_visit, v_k...\\n                   ^\\nHINT:  No function matches the given name and argument types. You might need to add explicit type casts.\\nQUERY:  v_lines := clinic_private.link_unrecorded_lines(v_visit, v_key, p_lines, 'kasir')\\nCONTEXT:  PL/pgSQL function public.clinic_edit_invoice_with_record(uuid,text,jsonb,jsonb) line 24 at assignment\\nLOCATION:  ParseFuncOrColumn, parse_func.c:629\\nauthenticated\\nfa100000-0000-4000-8000-000000000003\\n\", 'wrapper_rolled_back': True, 'legacy_invoice': '9a5feefa-ae81-4099-a372-4b4c37ed2be8', 'prescriptions': 0.0}"
+      }
+    ]
+  },
+  "limits": [
+    "F1/F2 prove wrapper internal42883 and legacy omission hazard, not that the DB forbids direct legacy calls. Server-action tests prove the narrow fail-closed dispatch fix.",
+    "PGRST202 exact-message compatibility checked with schema-cache-shaped fixtures, not a live PostgREST server/browser. Unknown message shapes fail closed.",
+    "No production, patient data, migrations/security installation or policy A changes."
+  ]
+}

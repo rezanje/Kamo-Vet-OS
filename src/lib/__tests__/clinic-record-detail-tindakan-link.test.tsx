@@ -79,16 +79,29 @@ it("sends an inpatient still admitted to OBAT KHUSUS, opened on the tindakan tab
   expect(texts(nodes)).not.toContain("Rawat jalan: tindakan / obat susulan");
 });
 
-it("sends an unbilled outpatient to Pembayaran, where extra items can still be added", async () => {
+it("opens the susulan form for an unbilled outpatient instead of sending it to Pembayaran", async () => {
   const nodes = await page();
   // Koreksi rekam medis hanya menerima catatan klinis, jadi tombol tidak pernah ke sana.
-  expect(tombol(nodes)).toBe("/klinik/pembayaran/visit");
-  expect(texts(nodes)).toContain("Rawat jalan: tindakan / obat susulan ditambahkan di layar Pembayaran");
+  // Sejak opsi B (Andri 29 Okt) item susulan dicatat di rekam medis dulu, bukan di kasir.
+  expect(tombol(nodes)).toBe("/klinik/rekam-medis/visit/tambah-item");
+  expect(texts(nodes)).toContain("Rawat jalan: item susulan dicatat di rekam medis dulu");
 });
 
 it("prefers the inpatient note while admitted, but falls back once the patient went home", async () => {
   state.tables.inpatient_records = [{ id: "inap", visit_id: "visit", condition_status: "sembuh", discharged_at: "2026-10-28T09:00:00Z" }];
-  expect(tombol(await page())).toBe("/klinik/pembayaran/visit");
+  expect(tombol(await page())).toBe("/klinik/rekam-medis/visit/tambah-item");
+});
+
+it("marks prescription rows that were added after the examination was saved", async () => {
+  state.tables.prescription_items = [
+    { medical_record_id: "record", nama_obat: "Amoxicillin", qty: 6, satuan: "tablet", aturan_pakai: "3x1", jenis: "obat" },
+    { medical_record_id: "record", nama_obat: "Nebulizer", qty: 1, satuan: "jasa", aturan_pakai: null, jenis: "jasa",
+      susulan_at: "2026-10-29T07:30:00Z", susulan_by_name: "Drh. Andri", susulan_source: "dokter" },
+  ];
+  const isi = texts(await page());
+  expect(isi).toContain("Ditambahkan setelah pemeriksaan oleh Drh. Andri (dokter)");
+  // Baris pemeriksaan asli tidak ikut diberi label.
+  expect(isi.match(/Ditambahkan setelah pemeriksaan/g)).toHaveLength(1);
 });
 
 it("explains the billing correction route instead once an invoice exists", async () => {

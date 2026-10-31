@@ -10,6 +10,7 @@ import { CatatanForm, type ItemLite } from "./catatan/CatatanForm";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails, type CompoundSkuRow } from "@/lib/clinic-compound-skus";
 import { readCompleteList } from "@/lib/checked-list";
+import { stokGudangKlinik } from "@/lib/stok-klinik";
 import { daftarDokter } from '@/lib/dokter';
 import { readStayTypesChecked } from "@/lib/inpatient-stay";
 import { catatWaktu, mulai } from "@/lib/u07-waktu";
@@ -28,7 +29,7 @@ type MasterRow = {
  * dikirim (form memperlakukan null & tidak ada sama); harga beli satuan tidak dipakai
  * form klinik, jadi tidak ada di tipe satuan untuk browser (`UnitLite`). */
 function itemUntukKlien(item: {
-  id: string; code: string | null; upc: string | null; name: string; unit: string; sell_price: number; stok: number;
+  id: string; code: string | null; upc: string | null; name: string; unit: string; sell_price: number; stok: number | null;
   item_type: string; tindakan_kategori: string | null; units: ItemUnit[];
 }): ItemLite {
   return {
@@ -89,11 +90,11 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
   ]);
   waktu.tandai("katalog");
   const petHotel = stay.types.get(id) === "pet_hotel";
-  const { stock: stok, units: unitMap, prices: hargaMap } = sku;
+  const { units: unitMap, prices: hargaMap } = sku;
   const items = itemRows.map((i) => ({
     id: i.id as string, code: "code" in i ? i.code as string | null : null, upc: "upc" in i ? i.upc as string | null : null, name: i.name as string, unit: (i.unit as string) ?? "pcs",
     sell_price: hargaCabang(hargaMap, i.id as string, i.unit as string, Number(i.sell_price)),
-    stok: stok.get(i.id as string) ?? 0,
+    stok: stokGudangKlinik(sku, i.id as string),
     is_compound_material: !!i.is_compound_material,
     item_type: i.item_type,
     category_id: i.category_id,
