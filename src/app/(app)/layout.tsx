@@ -16,6 +16,7 @@ import { NavigationFeedback } from "@/components/NavigationFeedback";
 import { ReleaseNotice } from "@/components/ReleaseNotice";
 import { ActiveBranch } from "@/components/ActiveBranch";
 import { branchDisplayName } from "@/lib/branch-display";
+import { mulai } from "@/lib/u07-waktu";
 
 export default async function AppLayout({
   children,
@@ -23,10 +24,20 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const supabase = await createClient();
+  // branches: master ref, readable by any authenticated user (RLS).
+  // Aturan Akses Grup dibaca sekali di sini supaya sidebar menampilkan modul yang
+  // benar-benar bisa dibuka — daftar yang sama dipakai middleware.
+  // Klinik-A: keduanya tidak bergantung pada akun, jadi dimulai bersama bacaan sesi
+  // (dulu menunggu sesi lalu profil: layout ini ikut dirender di tiap halaman klinik).
+  const branchesP = mulai(supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"));
+  const aksesModulP = mulai(supabase.from("role_modules").select("role, module_id"));
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  // Shift kasir klinik hanya dipakai akun STAFF; dibaca bersama profil dan hanya
+  // ditunggu (beserta galatnya) bila akunnya memang STAFF.
+  const staffShiftP = mulai(getOpenShift(supabase as never, user.id, "klinik"));
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -40,18 +51,12 @@ export default async function AppLayout({
     redirect("/login?error=" + encodeURIComponent("Akun Anda dinonaktifkan. Hubungi admin."));
   }
 
-  // branches: master ref, readable by any authenticated user (RLS).
-  // Aturan Akses Grup dibaca sekali di sini supaya sidebar menampilkan modul yang
-  // benar-benar bisa dibuka — daftar yang sama dipakai middleware.
-  const [{ data: branches }, { data: aksesModul }] = await Promise.all([
-    supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"),
-    supabase.from("role_modules").select("role, module_id"),
-  ]);
+  const [{ data: branches }, { data: aksesModul }] = await Promise.all([branchesP, aksesModulP]);
 
   // STAFF cuma masuk (app) lewat alur kasir klinik (/klinik/shift & seterusnya) —
   // sidebar admin (Keuangan, HRIS, Pengaturan, dst) bukan buat mereka.
   const isStaff = profile?.role === "STAFF";
-  const staffBranch = isStaff ? await getOpenShift(supabase as never, user.id, "klinik") : null;
+  const staffBranch = isStaff ? await staffShiftP : null;
   const activeBranch = await ActiveBranch({ catalog: branches ?? [] });
   const staffBranchMaster = branches?.find(branch => branch.id === staffBranch?.branch_id);
   const staffBranchName = staffBranchMaster ? branchDisplayName(staffBranchMaster, branches ?? []) : staffBranch?.branchName ?? "—";

@@ -1,6 +1,7 @@
 import { allowedBranchIds, canUseBranch } from "./branch-access";
 import { ALL_BRANCHES, branchTypeMatches } from "./operational-context";
 import type { ShiftType } from "./shift";
+import { mulai } from "./u07-waktu";
 // Supabase clients and the existing lightweight test clients share this surface.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Client = any;
@@ -18,13 +19,18 @@ export async function availableOperationalBranches(client: Client, userId: strin
 }
 
 export async function resolveOperationalBranch(client: Client, userId: string, mode: ShiftType, branchId: string): Promise<OperationalBranch | null> {
+  // Klinik-A: baris cabang (master yang boleh dibaca semua akun) dibaca bersamaan dengan
+  // hak cabang akun; hasilnya baru dipakai SETELAH hak cabang lolos, seperti dulu.
+  const branchRead = branchId && branchId !== ALL_BRANCHES
+    ? mulai<{ data: OperationalBranch | null; error: unknown }>(client.from("branches").select("id, name, code, type, is_active").eq("id", branchId).maybeSingle())
+    : null;
   const allowed = await allowedBranchIds(client, userId);
   if (branchId === ALL_BRANCHES) {
     return mode === "klinik" && allowed === null
       ? { id: ALL_BRANCHES, name: "Semua cabang", code: "ALL", type: "KLINIK", is_active: true } : null;
   }
-  if (!branchId || !canUseBranch(allowed, branchId)) return null;
-  const { data, error } = await client.from("branches").select("id, name, code, type, is_active").eq("id", branchId).maybeSingle();
+  if (!branchId || !branchRead || !canUseBranch(allowed, branchId)) return null;
+  const { data, error } = await branchRead;
   if (error || !data?.is_active || !branchTypeMatches(data.type, mode)) return null;
   return data;
 }

@@ -5,6 +5,7 @@ import { bolehBukaPath, tujuanSaatDiblokir } from "@/lib/akses";
 import { BRANCH_HEADER, MODE_HEADER, branchCookie, operationalMode, parseBranchContext } from "@/lib/operational-context";
 import { resolveOperationalBranch } from "@/lib/operational-branch";
 import { getOpenShift } from "@/lib/shift";
+import { mulai } from "@/lib/u07-waktu";
 
 function loginRedirect(request: NextRequest) {
   const url = request.nextUrl.clone();
@@ -69,6 +70,15 @@ export async function updateSession(request: NextRequest) {
     const isInternal = path.startsWith("/_next") || path.startsWith("/api");
     const isPublic = publik || path.startsWith("/login") || path.startsWith("/auth");
     if (!isInternal && !isPublic) {
+      // Klinik-A: cabang operasional & shift hanya butuh userId + cookie, jadi dibaca
+      // bersamaan dengan profil/aturan modul (dulu antre ±6 putaran tiap navigasi/Server
+      // Action klinik). Semua pemeriksaan di bawah tetap berjalan dengan urutan yang sama.
+      const mode = operationalMode(path);
+      const context = mode ? parseBranchContext(request.cookies.get(branchCookie(mode))?.value, userId) : null;
+      const branchP = mode && context ? mulai(resolveOperationalBranch(supabase, userId, mode, context.branchId)) : null;
+      // Read without operational scope so a stale/tampered cookie cannot hide
+      // another open shift and bypass the switching guard.
+      const shiftP = mode && context ? mulai(getOpenShift(supabase, userId, mode)) : null;
       const [{ data: profile, error: profileError }, { data: aturan, error: rulesError }] = await Promise.all([
         supabase.from("profiles").select("role, is_active").eq("id", userId).maybeSingle(),
         supabase.from("role_modules").select("role, module_id"),
@@ -86,13 +96,9 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url);
       }
 
-      const mode = operationalMode(path);
       if (mode) {
-        const context = parseBranchContext(request.cookies.get(branchCookie(mode))?.value, userId);
-        const branch = context ? await resolveOperationalBranch(supabase, userId, mode, context.branchId) : null;
-        // Read without operational scope so a stale/tampered cookie cannot hide
-        // another open shift and bypass the switching guard.
-        const shift = branch ? await getOpenShift(supabase, userId, mode) : null;
+        const branch = branchP ? await branchP : null;
+        const shift = branch && shiftP ? await shiftP : null;
         if (!branch || (shift && shift.branch_id !== branch.id)) {
           const url = request.nextUrl.clone();
           url.pathname = "/mulai/cabang";
