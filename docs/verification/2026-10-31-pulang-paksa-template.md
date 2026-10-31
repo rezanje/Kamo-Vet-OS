@@ -9,7 +9,8 @@ Pulang Paksa dan staf tidak bisa membuatnya.
 ## Perubahan
 - `supabase/migrations/20261104360000_pulang_paksa_default_template.sql` — menambah satu template
   "Surat Pernyataan Pulang Paksa" (semua cabang, aktif) **hanya bila** belum ada template
-  Pulang Paksa apa pun. Tidak mengubah template, dokumen, atau aturan lain. Bisa diedit /
+  Pulang Paksa yang aktif. (Production punya satu template Pulang Paksa demo yang nonaktif dari
+  simulasi 12 Okt; tanpa syarat "aktif" migrasi tidak akan menambah apa pun di Production.) Tidak mengubah template, dokumen, atau aturan lain. Bisa diedit /
   dinonaktifkan OWNER/ADMIN di Klinik → Form persetujuan.
 - Halaman detail rawat inap: bila template Pulang Paksa aktif untuk cabang pasien tidak ada,
   tampil penjelasan (OWNER/ADMIN mendapat tombol ke Form persetujuan). Bila ada, tombol

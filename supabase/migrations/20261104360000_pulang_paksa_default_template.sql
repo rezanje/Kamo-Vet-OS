@@ -2,7 +2,8 @@
 -- 'Pulang Paksa' yang ditandatangani (20261025180000), tetapi belum pernah ada
 -- template kategori itu, sehingga staf tidak bisa membuat formnya sama sekali.
 -- Hanya menambah satu template berlaku semua cabang bila klinik belum punya
--- template Pulang Paksa apa pun; template, dokumen dan aturan lain tidak disentuh.
+-- template Pulang Paksa yang AKTIF (template nonaktif, mis. sisa demo, tidak dihitung);
+-- template, dokumen dan aturan lain tidak disentuh.
 -- OWNER/ADMIN tetap bisa mengubah isi atau menonaktifkannya di Form persetujuan.
 insert into public.consent_templates(nama, isi, branch_id, kategori, is_active)
 select 'Surat Pernyataan Pulang Paksa', $isi$SURAT PERNYATAAN PULANG PAKSA
@@ -26,4 +27,7 @@ Saya menyatakan bahwa:
 Demikian pernyataan ini saya buat dengan sadar dan tanpa paksaan dari pihak mana pun.
 
 {cabang}, {tanggal}$isi$, null, 'Pulang Paksa', true
-where not exists (select 1 from public.consent_templates where kategori = 'Pulang Paksa');
+where not exists (
+  select 1 from public.consent_templates
+  where kategori = 'Pulang Paksa' and is_active
+);
