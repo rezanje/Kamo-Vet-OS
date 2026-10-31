@@ -75,7 +75,7 @@ export async function masukOwner(opsi: OpsiLogin): Promise<KlienMigrasi & { kelu
   if (error || !data.session) throw new GagalTertutup("Login OWNER gagal (periksa email/kata sandi di environment).");
   const iss = penerbitToken(data.session.access_token);
   if (iss !== `https://${opsi.proyek}.supabase.co/auth/v1`) {
-    await supabase.auth.signOut().catch(() => undefined);
+    await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
     throw new GagalTertutup("Token login bukan dari proyek target.");
   }
   const jawab = (r: { data: unknown; error: { message: string; code?: string } | null }) => ({
@@ -91,6 +91,7 @@ export async function masukOwner(opsi: OpsiLogin): Promise<KlienMigrasi & { kelu
     pilih: async (tabel, kolom, ids) => jawab(await supabase.from(tabel).select(kolom).in("id", ids)),
     buatPemilik: async (kartu) => jawab(await supabase.from("customers").insert(kartu).select("id")),
     kunjunganHewan: async (petIds) => jawab(await supabase.from("visits").select("id,pet_id,created_at,branch_id,legacy_source_key").in("pet_id", petIds)),
-    keluar: async () => { await supabase.auth.signOut().catch(() => undefined); },
+    // Hanya sesi skrip ini: signOut bawaan (global) ikut mencabut sesi OWNER lain (app, run paralel).
+    keluar: async () => { await supabase.auth.signOut({ scope: "local" }).catch(() => undefined); },
   };
 }

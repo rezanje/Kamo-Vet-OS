@@ -918,3 +918,33 @@ Akses dokter belum dibuka (konsisten dengan riwayat bersama RS-2 yang hanya untu
 2. Deploy aplikasi.
 3. Jalankan ulang `terapkan` untuk batch `ac6d0afb…`: 8 riwayat tetap `sudah_ada`, 12 kartu masuk "Perlu dilengkapi".
 4. Cek tampilan.
+
+## 15. Batch 13–17 PhoneV1 (2026-10-31, eksekusi produksi)
+
+Paket `KAMO_Medical_Batches13-17_PhoneV1` (ZIP SHA-256 `404c99b0…`), input tunggal `cards13-17-current.json`
+(4.553 kartu unik / 1.983 berkas sumber). Lima fragmen teks non-standar dipisah, tetap ditahan, di luar hitungan.
+
+Checkpoint 08–12 sebelum mulai: 656 jejak `gdrive:` tercatat tepat satu kali dengan visit ID sama seperti di
+log, 202 ID "Perlu Dilengkapi" ada; tidak ada impor lain berjalan.
+
+Rekonsiliasi tambahan (baca-saja) sebelum membekukan rencana:
+- Hewan yang sama + tanggal sama dengan riwayat lama dari master (402): isi dibandingkan lewat `detail_riwayat_bersama`.
+  - Isi identik, atau hanya beda spasi/baris (379) = `sudah_ada`, tidak ditulis.
+  - Isi beda (23) = tertahan.
+- Pemilik (digit HP) + tanggal + isi klinis sama tapi hewan beda (40 di DB, 11 di dalam paket) = tertahan, karena
+  kemungkinan ejaan nama hewan beda. Isi beda dengan hewan beda di hari yang sama (multi-hewan) tetap boleh.
+- Draf "Perlu Dilengkapi" yang isinya + salah satu tanggal kandidatnya sudah ada di riwayat lama (154) tidak dikirim
+  ke ruang tunggu, supaya petugas tidak membuat duplikat.
+
+Hasil: 2.089 baru, 379 sudah ada, 1.577 tertahan, 508 kosong, 0 gagal (= 4.553).
+- Readback 2.089/2.089 tanpa selisih; 853 kartu masuk "Perlu Dilengkapi"; 429 pemilik baru, semua `imported_at`.
+- Semua 224 gerbang dan 244 koreksi nomor tetap tidak masuk; 71 Ket baru ditahan (tanpa persetujuan per kartu).
+- Tidak ada tagihan, resep, pembayaran, poin, atau klaim quest yang tertaut ke kunjungan/pemilik hasil impor. Selisih
+  hitungan tabel keuangan berasal dari satu transaksi kasir cabang biasa di pelanggan non-impor.
+
+Catatan operasional:
+- Runner sempat dihentikan oleh batas waktu shell setelah semua batch diakui (ledger utuh). Lanjutan dari ledger yang
+  sama hanya melakukan readback dan simpan kartu tertunda; tidak ada baris yang terkirim ulang.
+- `keluar()` pada klien skrip kini `signOut({ scope: "local" })`. Bawaan `signOut()` (global) mencabut semua sesi
+  OWNER, termasuk sesi app dan run lain. Ini menyebabkan satu kegagalan "Pemanggil belum terautentikasi" di tengah
+  readback.
