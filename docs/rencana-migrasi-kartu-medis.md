@@ -997,3 +997,29 @@ Audit: satu penjualan kasir cabang (14:04 WIB, di luar jendela run) memakai pemi
 normal, bukan hasil impor, dan tidak ada klaim quest pelanggan baru.
 
 Total batch 13–17: 2.148 baru, 401 sudah ada, 1.496 tertahan, 508 kosong, 0 gagal.
+
+### 15.3 Izin pola tanggal tab vs kartu (2026-10-31, opsi A)
+
+Analisis baca-saja atas 621 kartu tertahan `DATE_TAB_CARD_CONFLICT`:
+- **Pola 1, tab template (220):** sheet bernama `20022024` adalah nama bawaan template.
+  - Tidak ada kartu di tab ini yang tanggal kartunya sama dengan tab. Tanggal kartu berkisar 2024-03-02 s.d. 2026, dan
+    selalu sebelum tab berikutnya di berkas yang sama.
+  - Aturan: pakai `date_card`.
+- **Pola 2, kartu disalin (109):** `date_card` sama dengan tanggal tab lain yang lebih awal di berkas yang sama, dan
+  kartu tab asal itu bertanggal sama. Isi klinisnya selalu beda dengan tab asal, jadi ini kunjungan baru.
+  - Aturan: pakai `date_tab`.
+- **Sisanya** tanpa pola yang aman, ditahan untuk petugas.
+
+Hanya kartu yang satu-satunya alasan tahannya konflik tanggal yang ikut (277). 9 di antaranya punya Ket baru, jadi
+ditahan menunggu izin Ket per kartu. Turunan kartu hanya mengubah `status`, `hold_reasons`, dan `record_date`.
+
+Hasil (268 diproses): 233 baru, 8 sudah ada, 27 tertahan, 0 gagal.
+- Yang tertahan: 14 isi ganda sesama kelompok; 5 tanggal sama tapi isi beda; 6 isi + tanggal sama di hewan lain;
+  2 jenis hewan beda.
+- Readback runner dan readback independen 233/233 cocok; 51 pemilik baru bertanda impor.
+- Tidak ada tagihan, resep, poin, atau quest yang tertaut ke kunjungan/pemilik hasil impor. Selisih tabel keuangan
+  berasal dari satu kunjungan cabang biasa.
+
+Draf "Perlu Dilengkapi" lama untuk kartu yang sudah masuk tetap ada (203 dari kelompok ini + 12 dari 15.2).
+
+Total batch 13–17: 2.381 baru, 409 sudah ada, 1.255 tertahan, 508 kosong, 0 gagal.
