@@ -1,0 +1,37 @@
+.controls { margin-bottom: 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.controls p { width: 100%; font-size: 12px; margin: 0; }
+.sheet { box-sizing: border-box; background: white; color: #111827; margin: 0 auto 24px; padding: 14mm; max-width: 210mm; border: 1px solid #d1d5db; font-family: Arial, sans-serif; font-size: 11px; line-height: 1.45; }
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 2px solid #111827; padding-bottom: 10px; }
+.header strong { font-size: 21px; letter-spacing: 2px; }
+.header h1 { margin: 2px 0 0; font-size: 14px; }
+.header span { font-size: 11px; font-weight: bold; white-space: nowrap; }
+.cancelled { border: 2px solid #991b1b; color: #991b1b; padding: 10px; margin-bottom: 12px; break-inside: avoid; }
+.cancelled p { margin: 4px 0 0; }
+.disclaimer { font-size: 10px; color: #4b5563; }
+.meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; margin: 16px 0; }
+.meta div { min-width: 0; }
+.meta dt { font-size: 10px; color: #4b5563; }
+.meta dd { margin: 0; font-weight: bold; overflow-wrap: anywhere; }
+.items { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.items th, .items td { border: 1px solid #9ca3af; padding: 6px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.items th { background: #f3f4f6; font-size: 10px; }
+.items th:first-child { width: 7%; }
+.items th:nth-child(2) { width: 19%; }
+.items th:nth-child(3) { width: 38%; }
+.items th:nth-child(4) { width: 20%; }
+.items th:nth-child(5) { width: 16%; }
+.items .quantity { text-align: right; }
+.quantity small { display: block; font-size: 9px; color: #4b5563; }
+.notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; text-align: center; gap: 18px; margin-top: 24px; break-inside: avoid; }
+.signatures div div { height: 42px; border-bottom: 1px solid #9ca3af; }
+.signatures p:last-child { font-size: 9px; }
+@page { size: A4 portrait; margin: 12mm; }
+@media print {
+  .controls { display: none !important; }
+  .sheet { max-width: none; border: 0; margin: 0; padding: 0; box-shadow: none; }
+  .sheet + .sheet { break-before: page; }
+  .header { break-inside: avoid; }
+  .items thead { display: table-header-group; }
+  .items tr { break-inside: avoid; }
+}
