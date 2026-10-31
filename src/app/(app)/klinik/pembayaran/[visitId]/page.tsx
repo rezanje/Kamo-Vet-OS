@@ -80,9 +80,9 @@ export default async function PembayaranPage({
 
   // G: racikan yang masih "Menunggu diracik" tidak menghalangi pembayaran, tapi kasir
   // harus mengkonfirmasi dulu supaya obatnya tidak ikut tertinggal saat pemilik pulang.
-  const racikanPendingP = mulai(mr
-    ? supabase.from("compounding_recipes").select("id").eq("medical_record_id", mr.id).eq("status", "pending").limit(1)
-    : Promise.resolve({ data: [] as { id: string }[], error: null }));
+  const racikanPendingP = mr
+    ? mulai(supabase.from("compounding_recipes").select("id").eq("medical_record_id", mr.id).eq("status", "pending").limit(1))
+    : Promise.resolve({ data: [] as { id: string }[], error: null });
   const { data: inpat, error: inpatientError } = await inpatP;
   const linkedP = !inpatientError && inpat?.consent_id ? mulai(supabase.rpc("clinic_inpatient_consent_valid", {p_visit_id:visitId})) : null;
   // Klinik-A: bacaan khusus rawat jalan dimulai sekarang (pasien rawat inap pindah ke
@@ -167,8 +167,8 @@ export default async function PembayaranPage({
   const invoiceSalespersonP = invoice?.salesperson_id ? mulai(supabase.from("employees").select("nama").eq("id",invoice.salesperson_id).maybeSingle()) : null;
   const clinicPackagesP = invoice ? null : mulai(loadClinicPackages(supabase));
   const cashierP = !invoice && draftUser ? mulai(loggedInCashier(supabase, draftUser.id, visit.branch_id ?? null)) : null;
-  const editLogP = mulai(allInvIdsP!.then(({ data: allInvIds }) => (allInvIds ?? []).length
-    ? supabase
+  const editLogP = mulai(allInvIdsP!.then(async ({ data: allInvIds }) => (allInvIds ?? []).length
+    ? await supabase
         .from("invoice_edit_log")
         .select("field_changed, old_value, new_value, reason, edited_at, invoice_id, profiles(full_name)")
         .in("invoice_id", (allInvIds ?? []).map((x) => x.id))

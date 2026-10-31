@@ -22,7 +22,7 @@ export async function resolveOperationalBranch(client: Client, userId: string, m
   // Klinik-A: baris cabang (master yang boleh dibaca semua akun) dibaca bersamaan dengan
   // hak cabang akun; hasilnya baru dipakai SETELAH hak cabang lolos, seperti dulu.
   const branchRead = branchId && branchId !== ALL_BRANCHES
-    ? mulai(client.from("branches").select("id, name, code, type, is_active").eq("id", branchId).maybeSingle())
+    ? mulai<{ data: OperationalBranch | null; error: unknown }>(client.from("branches").select("id, name, code, type, is_active").eq("id", branchId).maybeSingle())
     : null;
   const allowed = await allowedBranchIds(client, userId);
   if (branchId === ALL_BRANCHES) {
