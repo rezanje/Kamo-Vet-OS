@@ -7,6 +7,13 @@ import {editPromo} from '@/app/(app)/crm/promo/actions';
 import {promoEditInput} from '@/lib/promo-edit';
 const id='a0000000-0000-4000-8000-000000000001',item='a0000000-0000-4000-8000-000000000002',branch='a0000000-0000-4000-8000-000000000003';
 function form(){const f=new FormData();for(const [key,value] of Object.entries({id,version:'a'.repeat(32),name:'Fiction renamed',suggest:'Fiction reminder',promo_type:'diskon_produk',discount_type:'percent',discount_value:'25',min_qty:'2',max_qty:'10',min_subtotal:'1000',auto_apply:'1',kelipatan:'1',valid_from:'2026-10-01',valid_until:'2026-10-31',draft_key:'exact-key',draft_scope:'crm-promo-edit:fixture'}))f.set(key,value);f.append('item_ids',item);f.append('item_ids',item);f.append('branch_ids',branch);f.set('actor_id','spoof');return f;}
+it('refuses creating or downgrading quantity-pool through the legacy editor before RPC',async()=>{
+ for(const [mode,saved] of [['quantity_pool','per_unit'],['per_unit','quantity_pool'],['quantity_pool','quantity_pool']]) {
+  const f=form();f.set('discount_mode',mode);f.set('discount_mode_saved',saved);
+  expect(await editPromo(f)).toMatchObject({ok:false,message:expect.stringContaining('quantity pool')});
+  expect(db.calls).toEqual([]);
+ }
+});
 beforeEach(()=>{db.calls=[];db.error=null;db.role='OWNER';vi.stubEnv('PROMO_PACKAGE_TOTAL_ENABLED','1');});
 it('saves only explicit configuration in one RPC and acknowledges exactly the submitted draft',async()=>{await expect(editPromo(form())).rejects.toThrow('/crm/promo?success=edit&draft_done=exact-key&draft_scope=crm-promo-edit%3Afixture');expect(db.calls).toHaveLength(1);expect(db.calls[0]).toMatchObject({name:'edit_promo',args:{p_id:id,p_expected_version:'a'.repeat(32),p_item_ids:[item],p_values:{name:'Fiction renamed',discount_value:25,branch_ids:[branch],auto_apply:true}}});expect(db.calls[0].args.p_values).not.toHaveProperty('actor_id');expect(db.calls[0].args.p_values).not.toHaveProperty('discount_mode');});
 it('saves package-total mode explicitly and rejects incompatible mode changes before the RPC',async()=>{const f=form();f.set('discount_mode','package_total');f.set('discount_type','nominal');f.set('discount_value','10000');f.set('min_qty','5');await expect(editPromo(f)).rejects.toThrow('success=edit');expect(db.calls[0].args.p_values).toMatchObject({discount_mode:'package_total',discount_value:10000,min_qty:5});db.calls=[];f.set('discount_type','percent');f.set('discount_value','10');expect(await editPromo(f)).toMatchObject({ok:false,message:expect.stringContaining('nominal')});expect(db.calls).toEqual([]);});

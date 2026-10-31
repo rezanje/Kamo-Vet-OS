@@ -93,7 +93,8 @@ export async function checkoutKasir(formData: FormData) {
   } catch {
     cart = [];
   }
-  const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0);
+  const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0)
+    .map(l => ({ ...l, promo_discount: 0 }));
   if (rows.length === 0) redirect(`${failureUrl}${encodeURIComponent("Keranjang kosong")}`);
 
   // Struk boleh tersimpan hanya kalau jurnalnya juga bisa. Kalau periodenya terkunci,
@@ -271,7 +272,11 @@ export async function checkoutKasir(formData: FormData) {
   const campaignCode = kode.kampanye?.code ?? null;
   const promoMaster = await loadPromoAktif(supabase, branchId, kode.promoId ? [kode.promoId] : []);
   const promoAktif = promoDenganKode(promoMaster, kode.promoId);
-  const potonganPromo = serviceLinePromos(promoAktif, rows);
+  // Evidence is reconstructed after official unit/branch/tier pricing, never
+  // accepted from caller officialPrice/manualOverride/promo fields.
+  const potonganPromo = serviceLinePromos(promoAktif, rows.map(row => ({
+    ...row, officialPrice: row.harga, manualOverride: Number(row.item_discount_value) > 0,
+  })));
   if (kode.kampanye) {
     const tolakKampanye = pesanKampanyeDitolak(kode.kampanye,
       promoAktif.some((p) => p.id === kode.promoId), potonganPromo.some((h) => h.promoId === kode.promoId));
@@ -452,6 +457,9 @@ export async function checkoutKasir(formData: FormData) {
     for (const [lineIndex,{r,id:saleLineId}] of pendingRows.entries()) {
       const { data: saleItem, error: itemErr } = await supabase.from("sale_items").insert({
         id: saleLineId, sale_id: sale.id, item_id: r.item_id, nama: r.nama, qty: r.qty, harga: r.harga,
+        source_position: lineIndex,
+        quantity_pool_claim: linePromoApplied(r) > 0 && promoAktif.some(p =>
+          p.id === promoPerItem.get(lineIndex) && p.discountMode === "quantity_pool"),
         satuan: r.satuan ?? null, faktor: r.faktor ?? 1,
         target_species: r.target_species ?? "Universal",
         service_performers: r.service_performers,

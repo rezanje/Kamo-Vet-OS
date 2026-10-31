@@ -218,7 +218,10 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
   // C05: kode kampanye terikat promo → promo itu ikut dipotong; terikat voucher → rumus voucher itu.
   const kode = bacaKode(voucher, kodeKampanye);
   const promoCabang = promoDenganKode(promoPerCabang[branchId] ?? [], kode.promoId);
-  const rincianPromo = serviceLinePromos(promoCabang, cart);
+  const rincianPromo = serviceLinePromos(promoCabang, cart.map(line => {
+    const unit = katalog.find(item => item.id === line.item_id)?.units.find(unit => unit.unit === line.satuan);
+    return {...line, officialPrice: unit?.sell_price, faktor: unit?.factor, manualOverride: line.harga !== unit?.sell_price};
+  }));
   const promoDiscount = totalPotonganPromo(rincianPromo);
   const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
   const diskonKategori = diskonGolonganKeranjang(
