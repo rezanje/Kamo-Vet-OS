@@ -4,6 +4,7 @@ import { completeReportQuery } from "./report-query";
 // Semua fungsi menerima filter periode (from/to, inklusif) + cabang.
 
 import { kodeSemuaRekening } from "./kas-akun";
+import { BRANCH_CASH_CODES } from "./branch-cash-config";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -18,8 +19,8 @@ export type AccountBalance = {
   parent_id: string | null; is_header: boolean;
 };
 
-function isBranchCashCoa(a: { code: string; name: string }): boolean {
-  return /^110[0-9]{3}$/.test(a.code) && /^kas toko(?: |$)/i.test(a.name);
+function isBranchCashCoa(a: { code: string }): boolean {
+  return Object.prototype.hasOwnProperty.call(BRANCH_CASH_CODES, a.code);
 }
 
 // The report also filters on the server. The matching SQL RLS policy protects

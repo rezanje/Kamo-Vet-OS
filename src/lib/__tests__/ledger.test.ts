@@ -72,7 +72,7 @@ describe("getAccountBalances — filter branchIds", () => {
 describe("getAccountBalances — nama kas cabang pada laporan", () => {
   const cashAccounts = [
     { id: "kas-a", code: "110004", name: "Kas Toko BTKM", type: "ASET", normal_balance: "D" },
-    { id: "kas-b", code: "110005", name: "Kas Toko CIAWI", type: "ASET", normal_balance: "D" },
+    { id: "kas-b", code: "110005", name: "Kas Cabang CIAWI (nama diubah)", type: "ASET", normal_balance: "D" },
     { id: "kas-pusat", code: "110003", name: "Kas Kecil", type: "ASET", normal_balance: "D" },
   ];
 

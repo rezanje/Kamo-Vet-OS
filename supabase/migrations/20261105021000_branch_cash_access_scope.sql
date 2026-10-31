@@ -26,7 +26,7 @@ create policy cash_accounts_owner_delete on public.cash_accounts for delete to a
 -- remains visible until its ownership policy is explicitly decided.
 create policy coa_branch_cash_scope on public.coa_accounts as restrictive
 for select to authenticated using (
-  not (code ~ '^110[0-9]{3}$' and name ~* '^kas toko( |$)')
+  not (code >= '110004' and code <= '110021')
   or public.has_role_capability('all_branches')
   or exists (
     select 1 from public.cash_accounts c
