@@ -966,3 +966,34 @@ Hasil: 47 baru, 20 sudah ada (tanpa Ket), 4 tertahan, 0 gagal.
 - Readback runner dan readback independen 47/47 cocok; baris Ket tepat sekali.
 - 4 pemilik baru bertanda impor. Hitungan 139 tabel keuangan/stok/quest tidak berubah.
 - Total batch 13–17: 2.136 baru, 399 sudah ada, 1.510 tertahan, 508 kosong, 0 gagal.
+
+### 15.2 Izin khusus 17 kartu: rapikan spasi tanggal (2026-10-31)
+
+Cakupan: 17 kartu yang sebelumnya hanya tertahan `CARD_DATE_MISSING_OR_INVALID`. Sel tanggalnya berbentuk
+`: 17 / 11 / 2024` (spasi di sekitar garis miring).
+
+Validasi terhadap paket asli:
+- `stable_key`, fileID, SHA sumber, sheet, dan isi sel C9 cocok persis dengan bukti izin.
+- Angka hari/bulan/tahun setelah spasi dibuang = `date_tab` = nama sheet.
+- Tidak ada yang tergerbang, berkoreksi nomor, atau ber-Ket.
+
+Turunan kartu hanya mengubah `status`, `hold_reasons`, `record_date`, dan `date_card`. Teks sumber (`date_raw` dan sel)
+tidak diubah.
+
+Pengecekan ulang terhadap DB terkini:
+- Simulasi paket penuh: tidak ada kembar.
+- 2 kartu sama persis dengan riwayat lama (hewan + tanggal + isi) = `sudah_ada`.
+- 3 kartu ditahan runner karena ras berbeda dengan data hewan di app.
+- Jejak `gdrive:` 0 di DB.
+
+Hasil: 12 baru, 2 sudah ada, 3 tertahan, 0 gagal.
+- Readback runner dan readback independen 12/12 cocok, dengan tanggal hasil rapikan.
+- 2 pemilik baru bertanda impor; hitungan tabel keuangan tidak berubah karena impor.
+
+Draf "Perlu Dilengkapi" lama untuk 12 kartu baru tidak dihapus atau diubah (di luar izin). Mengisinya akan mengenai
+jejak yang sama (`cari_jejak`), jadi tidak membuat kunjungan kedua.
+
+Audit: satu penjualan kasir cabang (14:04 WIB, di luar jendela run) memakai pemilik hasil impor 13–17. Ini aktivitas app
+normal, bukan hasil impor, dan tidak ada klaim quest pelanggan baru.
+
+Total batch 13–17: 2.148 baru, 401 sudah ada, 1.496 tertahan, 508 kosong, 0 gagal.
