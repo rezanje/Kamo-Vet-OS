@@ -94,4 +94,21 @@ describe("adapter paket staging JSON", () => {
     expect(per(c)).toMatchObject({ status: "karantina", alasan: ["riwayat.ket_tanpa_kolom"] });
     expect(r.opsi).toMatchObject({ ketKeCatatan: [a.stable_key, b.stable_key].sort() });
   });
+  it("reads the cards[].{batch, card} envelope and holds every mandatory gate key (never staged, never 'kosong')", () => {
+    const a = kartu("F1", "A");
+    const b = kartu("F2", "B", { note: null, anamnesis: "catatan saja", clinical_findings: null, diagnosis: null, therapy: null }, "excluded_empty_clinical", ["EMPTY_CLINICAL_TABLE"]);
+    const c = kartu("F3", "C", { phone_raw: null, phone_canonical: null }, "held_review", ["PHONE_PREFIX_MISSING_OR_INVALID_NO_GUESS", "TAB_DATE_AMBIGUOUS"]);
+    const d = kartu("F4", "D", { owner_name: null }, "held_review", ["OWNER_NAME_MISSING"]);
+    const envelope = { schema_version: "staging-card-v1-envelope", cards: [{ batch: "08", card: a }, { batch: "09", card: b }, { batch: "10", card: c }, { batch: "11", card: d }] };
+    const p = bacaPaketStaging([envelope]);
+    expect(p.galat).toEqual([]);
+    expect(p.kartu.map((k) => k.batch).sort()).toEqual(["08", "09", "10", "11"]);
+    const r = rencanaDariStaging(p.kartu, { ...OPSI, gerbang: { [a.stable_key]: ["complete_folder_card_phone_conflict_hold_identity_resolution"], [b.stable_key]: ["notes_only_requires_contract_review_do_not_discard_or_assume_empty"] } });
+    const per = (x: { stable_key: string }) => r.baris.find((y) => y.local_record_id === x.stable_key)!;
+    expect(per(a)).toMatchObject({ status: "karantina", alasan: ["gerbang.complete_folder_card_phone_conflict_hold_identity_resolution"], payload: null, tertunda: null });
+    expect(per(b)).toMatchObject({ status: "karantina", tertunda: null });
+    expect(per(c).tertunda!.kekurangan).toEqual(["hp_kosong", "tanggal_kosong"]);
+    expect(per(d).tertunda!.kekurangan).toEqual(["nama_pemilik_kosong"]);
+    expect(r.opsi).toHaveProperty("gerbang");
+  });
 });

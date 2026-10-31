@@ -74,7 +74,19 @@ function kartuSah(c: unknown, batch: string, galat: string[]): KartuStaging | nu
   return { ...(o as unknown as KartuStaging), normalized_fields: nf as FieldStaging, batch };
 }
 
-/** Baca berkas batch (`batchNN-cards.json`) + delta (target + kartu revisi). Paket rusak = galat (gagal tertutup). */
+/** `staging-card-v1-envelope` (`cards[].{batch, card}`) -> satu berkas batch per asal batch; berkas lain apa adanya. */
+function bukaEnvelope(b: unknown): unknown[] {
+  const d = b as { schema_version?: unknown; cards?: unknown };
+  if (!d || d.schema_version !== "staging-card-v1-envelope" || !Array.isArray(d.cards)) return [b];
+  const per = new Map<string, unknown[]>();
+  for (const e of d.cards as { batch?: unknown; card?: unknown }[]) {
+    const batch = typeof e?.batch === "string" ? e.batch : "??";
+    per.set(batch, [...(per.get(batch) ?? []), e?.card]);
+  }
+  return [...per].map(([batch, cards]) => ({ schema_version: VERSI_STAGING, batch, cards }));
+}
+
+/** Baca berkas batch (`batchNN-cards.json` atau envelope) + delta (target + kartu revisi). Paket rusak = galat (gagal tertutup). */
 export function bacaPaketStaging(
   batches: unknown[],
   delta?: { targets: unknown; revisi: unknown[] },
@@ -82,7 +94,7 @@ export function bacaPaketStaging(
   const galat: string[] = [];
   const peringatan: string[] = [];
   const perKunci = new Map<string, KartuStaging>();
-  for (const b of batches) {
+  for (const b of batches.flatMap(bukaEnvelope)) {
     const d = b as { schema_version?: unknown; batch?: unknown; cards?: unknown };
     if (!d || d.schema_version !== VERSI_STAGING || typeof d.batch !== "string" || !Array.isArray(d.cards)) {
       galat.push("Berkas batch bukan staging-card-v1.");
@@ -153,6 +165,8 @@ const PETA_TAHAN: Record<string, KodeKekurangan | null> = {
   DATE_TAB_CARD_CONFLICT: "tanggal_bentrok",
   COPY_TAB_DATE_CARD_CONFLICT: "tanggal_bentrok",
   DATE_TAB_AMBIGUOUS_OR_UNPARSED: "tanggal_kosong",
+  TAB_DATE_AMBIGUOUS: "tanggal_kosong",
+  OWNER_NAME_MISSING: "nama_pemilik_kosong",
   CARD_DATE_MISSING_OR_INVALID: "tanggal_kosong",
   PATIENT_NAME_MISSING: "nama_hewan_kosong",
   CLINICAL_CELL_DATE_TYPED_REVIEW: null,
@@ -167,6 +181,11 @@ export type OpsiRencanaStaging = {
    * membebaskan alasan "Ket tanpa kolom"; alasan tahan lain tetap berlaku.
    */
   ketKeCatatan?: string[];
+  /**
+   * Gerbang eksekusi wajib (stable_key -> alasan) dari paket: kartu SELALU ditahan apa pun status sumbernya, dan tidak
+   * dimasukkan ke "Perlu Dilengkapi" (konflik identitas/duplikat berkas/catatan-saja butuh peninjauan, bukan isian petugas).
+   */
+  gerbang?: Record<string, string[]>;
 };
 
 /** Catatan dokter dipertahankan persis; "Ket: <teks asli>" ditambahkan sekali sebagai baris baru (tidak digandakan). */
@@ -185,6 +204,7 @@ export function rencanaDariStaging(kartu: KartuStaging[], opsi: OpsiRencanaStagi
   if (!isoSah(opsi.hariIni) || !isoSah(opsi.tanggalMinimum) || !HEX64.test(opsi.sha256Paket)) throw new Error("Opsi rencana staging tidak valid.");
   const urut = [...kartu].sort((a, b) => a.stable_key.localeCompare(b.stable_key));
   const ketDisetujui = new Set(opsi.ketKeCatatan ?? []);
+  const gerbang = opsi.gerbang ?? {};
   const baris: BarisRencana[] = urut.map((k) => {
     const f = k.normalized_fields;
     const alasan: string[] = [];
@@ -197,7 +217,8 @@ export function rencanaDariStaging(kartu: KartuStaging[], opsi: OpsiRencanaStagi
     if (sourceKey.length > BATAS_FIELD.source_key) alasan.push("mapping.source_key.terlalu_panjang");
     const klinisAda = KLINIS.some((c) => isi(f[c]) !== null);
 
-    if (k.status === "excluded_empty_clinical") alasan.push("tanpa_isi_klinis");
+    if (gerbang[k.stable_key]) for (const g of gerbang[k.stable_key]) alasan.push(`gerbang.${g}`);
+    else if (k.status === "excluded_empty_clinical") alasan.push("tanpa_isi_klinis");
     else if (k.status === "held_review") for (const h of k.hold_reasons.length ? k.hold_reasons : ["HELD_REVIEW"]) alasan.push(`staging.${h}`);
     else {
       if (!pemilik) alasan.push("pemilik.name.kosong");
@@ -247,7 +268,7 @@ export function rencanaDariStaging(kartu: KartuStaging[], opsi: OpsiRencanaStagi
 
     // "Perlu Dilengkapi": hanya bila SEMUA alasan bisa dilengkapi petugas dan ada isi klinis.
     let tertunda: KartuTertunda | null = null;
-    if (status !== "siap" && klinisAda && k.status === "held_review") {
+    if (status !== "siap" && klinisAda && k.status === "held_review" && !gerbang[k.stable_key]) {
       const kode = k.hold_reasons.map((h) => PETA_TAHAN[h]);
       if (kode.length && kode.every((x) => x)) {
         const kekurangan = [...new Set((kode as KodeKekurangan[]).map((x) => (x === "hp_tidak_valid" && !hp ? "hp_kosong" : x)))];
@@ -313,7 +334,11 @@ export function rencanaDariStaging(kartu: KartuStaging[], opsi: OpsiRencanaStagi
     mappingTakTerpakai: 0,
     tertunda: baris.filter((r) => r.tertunda).length,
   };
-  const opsiRencana = { hariIni: opsi.hariIni, tanggalMinimum: opsi.tanggalMinimum, ...(ketDisetujui.size ? { ketKeCatatan: [...ketDisetujui].sort() } : {}) };
+  const opsiRencana = {
+    hariIni: opsi.hariIni, tanggalMinimum: opsi.tanggalMinimum,
+    ...(ketDisetujui.size ? { ketKeCatatan: [...ketDisetujui].sort() } : {}),
+    ...(Object.keys(gerbang).length ? { gerbang: Object.fromEntries(Object.entries(gerbang).sort(([a], [b]) => a.localeCompare(b))) } : {}),
+  };
   const sidikRencana = sha256(kanonikJson({
     versi: VERSI_KONTRAK_STAGING, sha256Berkas: opsi.sha256Paket, opsi: opsiRencana,
     baris: baris.map((r) => [r.local_record_id, r.status, r.sidikPayload, r.customer_uuid, r.pet_uuid]),

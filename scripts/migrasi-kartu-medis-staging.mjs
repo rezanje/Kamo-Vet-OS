@@ -64,6 +64,12 @@ const sha = (b) => createHash("sha256").update(b).digest("hex");
 function bacaMasukan(opsi, staging) {
   const berkas = [];
   const batches = [];
+  // --kartu <file>: berkas kartu tunggal (mis. envelope cards08-12-current.json); hanya berkas ini yang menjadi kartu.
+  if (opsi.kartu) {
+    const bytes = readFileSync(opsi.kartu);
+    berkas.push({ nama: `kartu/${opsi.kartu.split("/").pop()}`, bytes });
+    batches.push(JSON.parse(bytes.toString("utf8")));
+  }
   for (const dir of opsi.paket) {
     for (const nama of readdirSync(dir).filter((n) => /^batch\d+-cards\.json$/.test(n)).sort()) {
       const bytes = readFileSync(join(dir, nama));
@@ -115,14 +121,24 @@ async function main() {
   const { staging, rekon, buku: modBuku, eks, supabase } = muat();
 
   if (perintah !== "terapkan") {
-    if (!opsi.paket.length || !opsi["hari-ini"] || !opsi.laporan) throw new Error("--paket, --hari-ini, --laporan wajib.");
+    if ((!opsi.paket.length && !opsi.kartu) || !opsi["hari-ini"] || !opsi.laporan) throw new Error("--paket/--kartu, --hari-ini, --laporan wajib.");
     const { paket, sha256 } = bacaMasukan(opsi, staging);
     // --ket-disetujui <json>: daftar stable_key persetujuan OWNER per kartu ("Ket" -> Catatan). Rencana DIBATASI ke kartu itu saja.
     const ketDisetujui = opsi["ket-disetujui"] ? JSON.parse(readFileSync(opsi["ket-disetujui"], "utf8")) : null;
     if (ketDisetujui && (!Array.isArray(ketDisetujui) || ketDisetujui.some((k) => !/^[0-9a-f]{64}$/.test(k)))) throw new Error("--ket-disetujui harus larik stable_key.");
     const kartu = ketDisetujui ? paket.kartu.filter((k) => ketDisetujui.includes(k.stable_key)) : paket.kartu;
     if (ketDisetujui && kartu.length !== new Set(ketDisetujui).size) throw new Error("Sebagian kartu yang disetujui tidak ada di paket.");
-    let rencana = staging.rencanaDariStaging(kartu, { hariIni: opsi["hari-ini"], tanggalMinimum: opsi["tanggal-minimum"] ?? "1990-01-01", sha256Paket: sha256, ...(ketDisetujui ? { ketKeCatatan: ketDisetujui } : {}) });
+    // --gerbang <mandatory-execution-gates.json>: kunci yang wajib ditahan (gates[].stable_key + execution_hold_reasons).
+    let gerbang;
+    if (opsi.gerbang) {
+      const g = JSON.parse(readFileSync(opsi.gerbang, "utf8"));
+      if (!Array.isArray(g.gates) || g.gates.some((x) => !/^[0-9a-f]{64}$/.test(x?.stable_key) || !Array.isArray(x.execution_hold_reasons) || !x.execution_hold_reasons.length)) throw new Error("--gerbang tidak sesuai skema.");
+      gerbang = Object.fromEntries(g.gates.map((x) => [x.stable_key, x.execution_hold_reasons]));
+      const ada = new Set(paket.kartu.map((k) => k.stable_key));
+      if (Object.keys(gerbang).some((k) => !ada.has(k))) throw new Error("Sebagian kunci gerbang tidak ada di paket kartu.");
+    }
+    let rencana = staging.rencanaDariStaging(kartu, { hariIni: opsi["hari-ini"], tanggalMinimum: opsi["tanggal-minimum"] ?? "1990-01-01", sha256Paket: sha256,
+      ...(ketDisetujui ? { ketKeCatatan: ketDisetujui } : {}), ...(gerbang ? { gerbang } : {}) });
     const laporan = { perintah, sha256Paket: sha256, kartu: paket.kartu.length, delta: { diterapkan: paket.deltaDiterapkan, diluarCakupan: paket.deltaDiluarCakupan, ditahanGerbang: paket.deltaDitahan.length }, rencana: ringkas(rencana) };
     if (perintah === "rencana") {
       if (!opsi["konfirmasi-proyek"] || !opsi.rencana) throw new Error("--konfirmasi-proyek dan --rencana wajib.");
