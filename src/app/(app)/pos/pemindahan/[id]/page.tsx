@@ -102,6 +102,7 @@ export default async function PemindahanDetailPage({
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>{doc.no_pemindahan}</span>
         {doc.status && <span className={`bge ${STATUS_BADGE[doc.status] ?? "x"}`}>{doc.status}</span>}
+        {isKirim && <Link href={`/pos/pemindahan/${doc.id}/cetak`} target="_blank" rel="noreferrer" className="btn-def" style={{ marginLeft: "auto", textDecoration: "none" }}>Cetak / Simpan PDF</Link>}
       </div>
 
       {success && (
