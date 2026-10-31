@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { KONFIG, isJenisImpor } from "@/lib/impor-jenis";
 import { ImporMasterForm } from "./ImporMasterForm";
+import { ImporAkunForm } from "./ImporAkunForm";
 
 // Satu layar untuk semua impor master data; jenisnya dari alamat halaman.
 // Tombol masuknya ditaruh di masing-masing menu datanya.
@@ -50,10 +51,12 @@ export default async function ImporMasterPage({
       ) : (
         <>
           <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "#1e40af" }}>
-            <i className="ti ti-bulb" /> Dari Excel: <b>File → Save As → CSV</b>, lalu pilih filenya di bawah.
-            Baris yang bermasalah dilewati dan dilaporkan — sisanya tetap masuk.
+            <i className="ti ti-bulb" /> Dari Excel: <b>File → Save As → CSV</b>, lalu pilih filenya di bawah.{" "}
+            {jenis === "akun"
+              ? "File diperiksa dulu (baru, sudah ada, berubah, konflik, ditolak) sebelum disimpan; satu baris bermasalah = tidak ada yang disimpan."
+              : "Baris yang bermasalah dilewati dan dilaporkan — sisanya tetap masuk."}
           </div>
-          <ImporMasterForm jenis={jenis} konfig={konfig} />
+          {jenis === "akun" ? <ImporAkunForm konfig={konfig} /> : <ImporMasterForm jenis={jenis} konfig={konfig} />}
         </>
       )}
     </>

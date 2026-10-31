@@ -69,8 +69,11 @@ export const KONFIG: Record<JenisImpor, KonfigImpor> = {
     contoh: CONTOH_AKUN,
     namaFile: "contoh-impor-akun.csv",
     catatan:
-      "Tipe diisi ASET / LIABILITAS / EKUITAS / PENDAPATAN / BEBAN. Saldo normal boleh dikosongkan — " +
-      "terisi sendiri sesuai tipenya. Kolom induk diisi KODE akun induknya, boleh akun yang ada di file ini juga.",
+      "Tipe diisi ASET / LIABILITAS / EKUITAS / PENDAPATAN / BEBAN. Kode 4–6 angka dengan digit pertama = kelompok " +
+      "(1 Aset, 2 Liabilitas, 3 Ekuitas, 4 Pendapatan, 5 Beban); kode tidak pernah diubah otomatis. Saldo normal boleh " +
+      "dikosongkan — terisi sendiri sesuai tipenya. Kolom induk diisi KODE akun induk (boleh di baris sesudahnya); " +
+      "header diisi ya untuk akun induk. Kode yang sudah ada tidak dibuat ulang — perbedaannya tampil di pratinjau. " +
+      "Kolom saldo tidak diimpor; saldo awal lewat menu Saldo Awal.",
   },
   komisi: {
     judul: "IMPOR ATURAN KOMISI",

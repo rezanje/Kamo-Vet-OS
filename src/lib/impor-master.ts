@@ -1,4 +1,4 @@
-// Impor massal master data: pelanggan, pemasok, dan bagan akun.
+// Impor massal master data: pelanggan dan pemasok (bagan akun: lihat impor-akun.ts).
 // Murni, dites di __tests__/impor-master.test.ts. Pembacaan CSV-nya di impor-csv.ts.
 //
 // Aturan yang sama dengan impor barang: baris bermasalah dilewati dan dilaporkan,
@@ -159,81 +159,15 @@ export function periksaPemasok(baris: BarisCsv[], master: MasterPemasok): Hasil<
 }
 
 // ── Bagan akun ────────────────────────────────────────────────────────────────
+// Pemeriksaan & penyimpanan bagan akun ada di impor-akun.ts (pratinjau lengkap + RPC atomik).
+// Di sini hanya kolom & contoh file yang ditampilkan di layar impor.
 
-export const TIPE_AKUN = ["ASET", "LIABILITAS", "EKUITAS", "PENDAPATAN", "BEBAN"] as const;
-export type TipeAkun = (typeof TIPE_AKUN)[number];
+export { KOLOM_AKUN_KAMO as KOLOM_AKUN, KOLOM_AKUN_WAJIB as WAJIB_AKUN } from "./impor-akun-pemetaan";
 
-export const KOLOM_AKUN = ["kode", "nama", "tipe", "saldo_normal", "induk", "header"] as const;
-export const WAJIB_AKUN = ["kode", "nama", "tipe"] as const;
-
+// Induk boleh ditulis sesudah anaknya. Kode contoh tidak memakai kode sistem / jatah rekening.
 export const CONTOH_AKUN = [
-  KOLOM_AKUN.join(","),
-  "1401,Perlengkapan Kantor,ASET,D,,",
-  "5401,Beban Iklan,BEBAN,D,,",
-  "5410,Beban Pemasaran,BEBAN,D,5401,",
+  "kode,nama,tipe,saldo_normal,induk,header,aktif",
+  "5701,Beban Laundry Kandang,BEBAN,D,5700,,",
+  "5700,Beban Klinik Lain,BEBAN,D,,ya,",
+  "1401,Perlengkapan Kantor,ASET,D,,,",
 ].join("\n");
-
-export type AkunImpor = {
-  code: string; name: string; type: TipeAkun; normal_balance: "D" | "K";
-  is_header: boolean;
-  /** kode induk apa adanya; id-nya baru dicari saat menyimpan. */
-  induk: string | null;
-};
-
-export type MasterAkun = {
-  /** kode akun yang sudah ada, huruf kecil */
-  kodeTerpakai: Set<string>;
-};
-
-/** Saldo normal bawaan per tipe — yang ditagih perusahaan naik di debit. */
-export const saldoNormalBawaan = (tipe: TipeAkun): "D" | "K" =>
-  tipe === "ASET" || tipe === "BEBAN" ? "D" : "K";
-
-export function periksaAkun(baris: BarisCsv[], master: MasterAkun): Hasil<AkunImpor> {
-  const siap: AkunImpor[] = [];
-  const salah: BarisSalah[] = [];
-  const kodeDiFile = new Set<string>();
-
-  for (const b of baris) {
-    const d = b.data;
-    const kode = teks(d.kode, 12);
-    const tolak = (pesan: string) => salah.push({ no: b.no, kode: kode || "—", pesan });
-
-    if (!kode) { tolak("Kode akun kosong"); continue; }
-    const kodeKecil = kode.toLowerCase();
-    if (kodeDiFile.has(kodeKecil)) { tolak("Kode kembar di dalam file ini"); continue; }
-    if (master.kodeTerpakai.has(kodeKecil)) { tolak("Kode akun sudah dipakai"); continue; }
-
-    const nama = teks(d.nama, 80);
-    if (!nama) { tolak("Nama akun kosong"); continue; }
-
-    const tipeTeks = teks(d.tipe, 12).toUpperCase();
-    if (!(TIPE_AKUN as readonly string[]).includes(tipeTeks)) {
-      tolak(`Tipe "${tipeTeks || "(kosong)"}" tidak dikenal (isi: ${TIPE_AKUN.join(" / ")})`);
-      continue;
-    }
-    const tipe = tipeTeks as TipeAkun;
-
-    const saldoTeks = teks(d.saldo_normal, 1).toUpperCase();
-    if (saldoTeks && saldoTeks !== "D" && saldoTeks !== "K") {
-      tolak(`Saldo normal "${saldoTeks}" harus D atau K`);
-      continue;
-    }
-    const saldo = (saldoTeks || saldoNormalBawaan(tipe)) as "D" | "K";
-
-    const headerTeks = teks(d.header, 10).toLowerCase();
-    const isHeader = ["ya", "y", "1", "true", "header"].includes(headerTeks);
-
-    // Akun tidak boleh jadi induknya sendiri — lingkaran yang bikin pohon akun buntu.
-    const induk = teks(d.induk, 12);
-    if (induk && induk.toLowerCase() === kodeKecil) { tolak("Induk tidak boleh kode akun itu sendiri"); continue; }
-
-    kodeDiFile.add(kodeKecil);
-    siap.push({
-      code: kode, name: nama, type: tipe, normal_balance: saldo,
-      is_header: isHeader, induk: kosongJadiNull(induk),
-    });
-  }
-
-  return { siap, salah };
-}

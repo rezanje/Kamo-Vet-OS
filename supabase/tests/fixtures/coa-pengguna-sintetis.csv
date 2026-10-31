@@ -1,0 +1,208 @@
+DAFTAR AKUN PERKIRAAN
+Perusahaan Fiktif Sejahtera — contoh sintetis
+
+Kode,Nama Akun,Normal
+110101,Kas Operasional Fiktif 01,Debit
+110102,Kas Operasional Fiktif 02,Debit
+110103,Kas Operasional Fiktif 03,Debit
+110001,Kas Gerai Fiktif A,Debit
+110104,Kas Operasional Fiktif 04,Debit
+110105,Kas Operasional Fiktif 05,Debit
+110106,Kas Operasional Fiktif 06,Debit
+110107,Kas Operasional Fiktif 07,Debit
+110108,Kas Operasional Fiktif 08,Debit
+110109,Kas Operasional Fiktif 09,Debit
+110001,Kas Gerai Fiktif B,Debit
+110110,Kas Operasional Fiktif 10,Debit
+110111,Kas Operasional Fiktif 11,Debit
+110112,Kas Operasional Fiktif 12,Debit
+110113,Kas Operasional Fiktif 13,Debit
+110114,Kas Operasional Fiktif 14,Debit
+110115,Kas Operasional Fiktif 15,Debit
+110001,Kas Gerai Fiktif C,Debit
+110116,Kas Operasional Fiktif 16,Debit
+110117,Kas Operasional Fiktif 17,Debit
+110118,Kas Operasional Fiktif 18,Debit
+110119,Kas Operasional Fiktif 19,Debit
+110120,Kas Operasional Fiktif 20,Debit
+120101,Piutang Pelanggan Fiktif 01,Debit
+110001,Kas Gerai Fiktif D,Debit
+120102,Piutang Pelanggan Fiktif 02,Debit
+120103,Piutang Pelanggan Fiktif 03,Debit
+120104,Piutang Pelanggan Fiktif 04,Debit
+120105,Piutang Pelanggan Fiktif 05,Debit
+120106,Piutang Pelanggan Fiktif 06,Debit
+120107,Piutang Pelanggan Fiktif 07,Debit
+110001,Kas Gerai Fiktif E,Debit
+120108,Piutang Pelanggan Fiktif 08,Debit
+120109,Piutang Pelanggan Fiktif 09,Debit
+120110,Piutang Pelanggan Fiktif 10,Debit
+120111,Piutang Pelanggan Fiktif 11,Debit
+120112,Piutang Pelanggan Fiktif 12,Debit
+120113,Piutang Pelanggan Fiktif 13,Debit
+110001,Kas Gerai Fiktif F,Debit
+120114,Piutang Pelanggan Fiktif 14,Debit
+120115,Piutang Pelanggan Fiktif 15,Debit
+130101,Persediaan Fiktif 01,Debit
+130102,Persediaan Fiktif 02,Debit
+130103,Persediaan Fiktif 03,Debit
+130104,Persediaan Fiktif 04,Debit
+110001,Kas Gerai Fiktif G,Debit
+130105,Persediaan Fiktif 05,Debit
+130106,Persediaan Fiktif 06,Debit
+130107,Persediaan Fiktif 07,Debit
+130108,Persediaan Fiktif 08,Debit
+130109,Persediaan Fiktif 09,Debit
+130110,Persediaan Fiktif 10,Debit
+110001,Kas Gerai Fiktif H,Debit
+130111,Persediaan Fiktif 11,Debit
+130112,Persediaan Fiktif 12,Debit
+130113,Persediaan Fiktif 13,Debit
+130114,Persediaan Fiktif 14,Debit
+130115,Persediaan Fiktif 15,Debit
+150101,Peralatan Klinik Fiktif 01,Debit
+110001,Kas Gerai Fiktif I,Debit
+150102,Peralatan Klinik Fiktif 02,Debit
+150103,Peralatan Klinik Fiktif 03,Debit
+150104,Peralatan Klinik Fiktif 04,Debit
+150105,Peralatan Klinik Fiktif 05,Debit
+150106,Peralatan Klinik Fiktif 06,Debit
+150107,Peralatan Klinik Fiktif 07,Debit
+110001,Kas Gerai Fiktif J,Debit
+150901,Akumulasi Penyusutan Fiktif 01,Kredit
+150902,Akumulasi Penyusutan Fiktif 02,Kredit
+150903,Akumulasi Penyusutan Fiktif 03,Kredit
+210101,Hutang Pemasok Fiktif 01,Kredit
+210102,Hutang Pemasok Fiktif 02,Kredit
+210103,Hutang Pemasok Fiktif 03,Kredit
+110001,Kas Gerai Fiktif K,Debit
+210104,Hutang Pemasok Fiktif 04,Kredit
+210105,Hutang Pemasok Fiktif 05,Kredit
+210106,Hutang Pemasok Fiktif 06,Kredit
+210107,Hutang Pemasok Fiktif 07,Kredit
+210108,Hutang Pemasok Fiktif 08,Kredit
+210109,Hutang Pemasok Fiktif 09,Kredit
+110001,Kas Gerai Fiktif L,Debit
+210110,Hutang Pemasok Fiktif 10,Kredit
+210111,Hutang Pemasok Fiktif 11,Kredit
+210112,Hutang Pemasok Fiktif 12,Kredit
+210113,Hutang Pemasok Fiktif 13,Kredit
+210114,Hutang Pemasok Fiktif 14,Kredit
+210115,Hutang Pemasok Fiktif 15,Kredit
+110001,Kas Gerai Fiktif M,Debit
+210116,Hutang Pemasok Fiktif 16,Kredit
+210117,Hutang Pemasok Fiktif 17,Kredit
+210118,Hutang Pemasok Fiktif 18,Kredit
+210119,Hutang Pemasok Fiktif 19,Kredit
+210120,Hutang Pemasok Fiktif 20,Kredit
+210121,Hutang Pemasok Fiktif 21,Kredit
+110001,Kas Gerai Fiktif N,Debit
+210122,Hutang Pemasok Fiktif 22,Kredit
+210123,Hutang Pemasok Fiktif 23,Kredit
+210124,Hutang Pemasok Fiktif 24,Kredit
+210125,Hutang Pemasok Fiktif 25,Kredit
+310101,Modal Fiktif 01,Kredit
+310102,Modal Fiktif 02,Kredit
+110001,Kas Gerai Fiktif O,Debit
+310103,Modal Fiktif 03,Kredit
+310104,Modal Fiktif 04,Kredit
+310105,Modal Fiktif 05,Kredit
+310106,Modal Fiktif 06,Kredit
+410101,Pendapatan Layanan Fiktif 01,Kredit
+410102,Pendapatan Layanan Fiktif 02,Kredit
+110001,Kas Gerai Fiktif P,Debit
+410103,Pendapatan Layanan Fiktif 03,Kredit
+410104,Pendapatan Layanan Fiktif 04,Kredit
+410105,Pendapatan Layanan Fiktif 05,Kredit
+410106,Pendapatan Layanan Fiktif 06,Kredit
+410107,Pendapatan Layanan Fiktif 07,Kredit
+410108,Pendapatan Layanan Fiktif 08,Kredit
+110001,Kas Gerai Fiktif Q,Debit
+410109,Pendapatan Layanan Fiktif 09,Kredit
+410110,Pendapatan Layanan Fiktif 10,Kredit
+410111,Pendapatan Layanan Fiktif 11,Kredit
+410112,Pendapatan Layanan Fiktif 12,Kredit
+410113,Pendapatan Layanan Fiktif 13,Kredit
+410114,Pendapatan Layanan Fiktif 14,Kredit
+110001,Kas Gerai Fiktif R,Debit
+410115,Pendapatan Layanan Fiktif 15,Kredit
+410116,Pendapatan Layanan Fiktif 16,Kredit
+410117,Pendapatan Layanan Fiktif 17,Kredit
+410118,Pendapatan Layanan Fiktif 18,Kredit
+410119,Pendapatan Layanan Fiktif 19,Kredit
+410120,Pendapatan Layanan Fiktif 20,Kredit
+110001,Kas Gerai Fiktif S,Debit
+510101,Beban Operasional Fiktif 01,Debit
+510102,Beban Operasional Fiktif 02,Debit
+510103,Beban Operasional Fiktif 03,Debit
+510104,Beban Operasional Fiktif 04,Debit
+510105,Beban Operasional Fiktif 05,Debit
+510106,Beban Operasional Fiktif 06,Debit
+110001,Kas Gerai Fiktif T,Debit
+510107,Beban Operasional Fiktif 07,Debit
+510108,Beban Operasional Fiktif 08,Debit
+510109,Beban Operasional Fiktif 09,Debit
+510110,Beban Operasional Fiktif 10,Debit
+510111,Beban Operasional Fiktif 11,Debit
+510112,Beban Operasional Fiktif 12,Debit
+110001,Kas Gerai Fiktif U,Debit
+510113,Beban Operasional Fiktif 13,Debit
+510114,Beban Operasional Fiktif 14,Debit
+510115,Beban Operasional Fiktif 15,Debit
+510116,Beban Operasional Fiktif 16,Debit
+510117,Beban Operasional Fiktif 17,Debit
+510118,Beban Operasional Fiktif 18,Debit
+120001,Piutang Mitra Fiktif P,Debit
+510119,Beban Operasional Fiktif 19,Debit
+510120,Beban Operasional Fiktif 20,Debit
+510121,Beban Operasional Fiktif 21,Debit
+510122,Beban Operasional Fiktif 22,Debit
+510123,Beban Operasional Fiktif 23,Debit
+510124,Beban Operasional Fiktif 24,Debit
+120001,Piutang Mitra Fiktif Q,Debit
+510125,Beban Operasional Fiktif 25,Debit
+510126,Beban Operasional Fiktif 26,Debit
+510127,Beban Operasional Fiktif 27,Debit
+510128,Beban Operasional Fiktif 28,Debit
+510129,Beban Operasional Fiktif 29,Debit
+510130,Beban Operasional Fiktif 30,Debit
+120001,Piutang Mitra Fiktif R,Debit
+510131,Beban Operasional Fiktif 31,Debit
+510132,Beban Operasional Fiktif 32,Debit
+510133,Beban Operasional Fiktif 33,Debit
+510134,Beban Operasional Fiktif 34,Debit
+510135,Beban Operasional Fiktif 35,Debit
+510136,Beban Operasional Fiktif 36,Debit
+120001,Piutang Mitra Fiktif S,Debit
+510137,Beban Operasional Fiktif 37,Debit
+510138,Beban Operasional Fiktif 38,Debit
+510139,Beban Operasional Fiktif 39,Debit
+510140,Beban Operasional Fiktif 40,Debit
+510141,Beban Operasional Fiktif 41,Debit
+510142,Beban Operasional Fiktif 42,Debit
+120001,Piutang Mitra Fiktif T,Debit
+510143,Beban Operasional Fiktif 43,Debit
+510144,Beban Operasional Fiktif 44,Debit
+510145,Beban Operasional Fiktif 45,Debit
+510146,Beban Operasional Fiktif 46,Debit
+510147,Beban Operasional Fiktif 47,Debit
+510148,Beban Operasional Fiktif 48,Debit
+120001,Piutang Mitra Fiktif U,Debit
+510149,Beban Operasional Fiktif 49,Debit
+510150,Beban Operasional Fiktif 50,Debit
+510151,Beban Operasional Fiktif 51,Debit
+510152,Beban Operasional Fiktif 52,Debit
+510153,Beban Operasional Fiktif 53,Debit
+510154,Beban Operasional Fiktif 54,Debit
+510155,Beban Operasional Fiktif 55,Debit
+510156,Beban Operasional Fiktif 56,Debit
+510157,Beban Operasional Fiktif 57,Debit
+510158,Beban Operasional Fiktif 58,Debit
+510159,Beban Operasional Fiktif 59,Debit
+510160,Beban Operasional Fiktif 60,Debit
+510161,Beban Operasional Fiktif 61,Debit
+510162,Beban Operasional Fiktif 62,Debit
+510163,Beban Operasional Fiktif 63,Debit
+510164,Beban Operasional Fiktif 64,Debit
+510165,Beban Operasional Fiktif 65,Debit
+510166,Beban Operasional Fiktif 66,Debit
