@@ -32,9 +32,11 @@ export function voucherBerlaku(v: VoucherRow, today: string): boolean {
   return true;
 }
 
+// Urutan sama dengan promoScheduleStatus: "Kadaluarsa" menang atas "Nonaktif"
+// supaya alasan matinya tetap terbaca setelah penyapu otomatis bekerja.
 export function voucherStatus(v: VoucherRow, today: string): "aktif" | "terjadwal" | "kadaluarsa" | "nonaktif" {
-  if (!v.is_active) return "nonaktif";
   if (v.valid_until && v.valid_until < today) return "kadaluarsa";
+  if (!v.is_active) return "nonaktif";
   if (v.valid_from && v.valid_from > today) return "terjadwal";
   return "aktif";
 }

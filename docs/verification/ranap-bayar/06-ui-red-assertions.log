@@ -1,0 +1,81 @@
+
+ RUN  v4.1.9 /opt/data/kamo-wt-ranap-bayar
+
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx (5 tests | 5 failed) 47ms
+   × has six colored methods and actual mapped bank; choosing noncash fills only empty draft 32ms
+   × split parts stay intact and optional DP cannot clobber typed money 4ms
+   × prominent excess warning before submit; cancel ack does not submit money 2ms
+   × explicit confirmation sends exact current token and original typed parts 3ms
+   × zero new money has explicit save later path; settled primary is disabled 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/__tests__/ranap-simpan-bayar.test.tsx > has six colored methods and actual mapped bank; choosing noncash fills only empty draft
+AssertionError: expected  to have a length of 6 but got +0
+
+- Expected
++ Received
+
+- 6
++ 0
+
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:21:51
+     19| it("has six colored methods and actual mapped bank; choosing noncash f…
+     20|   await render();
+     21|   expect(host.querySelectorAll('[aria-pressed]')).toHaveLength(6);
+       |                                                   ^
+     22|   await click(button("Transfer")); expect(amount().value).toBe("100000…
+     23|   expect(host.textContent).toContain("Bank Fiktif"); expect(host.textC…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  src/components/__tests__/ranap-simpan-bayar.test.tsx > split parts stay intact and optional DP cannot clobber typed money
+TypeError: 'set value' called on an object that is not a valid instance of HTMLInputElement.
+ ❯ set value ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/jsdom/lib/jsdom/living/generated/HTMLInputElement.js:1558:15
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:17:162
+
+ ❯ Proxy.process.env.NODE_ENV.exports.act ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/react/cjs/react.development.js:814:22
+ ❯ type src/components/__tests__/ranap-simpan-bayar.test.tsx:17:69
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:28:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  src/components/__tests__/ranap-simpan-bayar.test.tsx > prominent excess warning before submit; cancel ack does not submit money
+TypeError: 'set value' called on an object that is not a valid instance of HTMLInputElement.
+ ❯ set value ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/jsdom/lib/jsdom/living/generated/HTMLInputElement.js:1558:15
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:17:162
+
+ ❯ Proxy.process.env.NODE_ENV.exports.act ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/react/cjs/react.development.js:814:22
+ ❯ type src/components/__tests__/ranap-simpan-bayar.test.tsx:17:69
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:33:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  src/components/__tests__/ranap-simpan-bayar.test.tsx > explicit confirmation sends exact current token and original typed parts
+TypeError: 'set value' called on an object that is not a valid instance of HTMLInputElement.
+ ❯ set value ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/jsdom/lib/jsdom/living/generated/HTMLInputElement.js:1558:15
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:17:162
+
+ ❯ Proxy.process.env.NODE_ENV.exports.act ../Kamo-Vet-OS-baseline-feb3b62d/node_modules/react/cjs/react.development.js:814:22
+ ❯ type src/components/__tests__/ranap-simpan-bayar.test.tsx:17:69
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:41:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  src/components/__tests__/ranap-simpan-bayar.test.tsx > zero new money has explicit save later path; settled primary is disabled
+TypeError: Cannot read properties of undefined (reading 'disabled')
+ ❯ src/components/__tests__/ranap-simpan-bayar.test.tsx:47:66
+     45| });
+     46| it("zero new money has explicit save later path; settled primary is di…
+     47|   await render(); expect(button("Simpan transaksi · Bayar nanti").disa…
+       |                                                                  ^
+     48|   await act(async () => root.render(<SimpanBayarForm recordId="r" visi…
+     49|   expect(button("Simpan transaksi · Bayar nanti").disabled).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed (5)
+   Start at  08:36:01
+   Duration  1.04s (transform 73ms, setup 0ms, import 125ms, tests 47ms, environment 553ms)

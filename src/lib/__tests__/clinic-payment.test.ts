@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadClinicPaymentMaster, resolveClinicSalesperson } from "../clinic-payment";
+import { cocokOr } from "./helpers/postgrest-or";
 
 type Row = Record<string, unknown>;
 function database(tables: Record<string, Row[]>, failed = "") {
@@ -9,6 +10,8 @@ function database(tables: Record<string, Row[]>, failed = "") {
       select(_fields: string, opts?: { count: string }) { count=opts?.count==="exact"; return q; },
       eq(k: string,v: unknown) { filters.push(r=>r[k]===v);return q; },
       in(k: string,ids: string[]) { filters.push(r=>ids.includes(String(r[k])));return q; },
+      lte(k: string,v: string) { filters.push(r=>r[k]!=null&&String(r[k])<=v);return q; },
+      or(ekspresi: string) { filters.push(r=>cocokOr(r,ekspresi));return q; },
       order() { return q; }, limit(n: number) { end=n-1;return q; },
       range(a: number,b: number) { start=a;end=b;return q; },
       maybeSingle: async()=>({data:(tables[table]??[]).find(r=>filters.every(f=>f(r)))??null,error:null}),

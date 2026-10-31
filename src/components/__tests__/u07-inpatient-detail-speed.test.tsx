@@ -46,11 +46,11 @@ beforeEach(() => {
   vi.spyOn(console, "info").mockImplementation(() => {});
 });
 
-it("starts consents, logs, role, tariff, stay type, continuation and medication history while the handoff summary is still loading", async () => {
+it("starts consents, logs, role, stay type, continuation and medication history while the handoff summary is still loading", async () => {
   const openVisit = gate("visits");
   const page = render();
   await vi.waitFor(() => expect(s.started).toEqual(expect.arrayContaining(
-    ["consents", "inpatient_daily_logs", "inpatient_status_log", "profiles", "items", "inpatient_medications"])));
+    ["consents", "inpatient_daily_logs", "inpatient_status_log", "profiles", "inpatient_medications"])));
   // Ringkasan handoff membaca medical_records SESUDAH `visits`-nya selesai. Ringkasan
   // biaya belum ditagih (UF-03) membacanya langsung dari visit_id induk, jadi selama
   // gerbang `visits` masih tertutup hanya boleh ada SATU pembacaan medical_records —
@@ -89,6 +89,7 @@ it("still fails the handoff summary closed when invoice lines fail while prescri
   const html = await render();
   expect(html).toContain("Ringkasan belum dapat dimuat lengkap");
   expect(html).not.toContain("INV.A");
-  expect(html).toContain("DAILY MONITORING");
+  expect(html).toContain("LAPORAN RAWAT INAP HARIAN");
+  expect(s.started).not.toContain("items");
 });
 

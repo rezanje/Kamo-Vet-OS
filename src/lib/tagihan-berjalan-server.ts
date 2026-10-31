@@ -26,11 +26,16 @@ export type UangMuka = {
   id: string; no_uang_muka: string; tanggal: string; amount: number; applied: number; status: string;
 };
 
+export type RincianDitagih = BarisInvoice & {
+  id: string; deskripsi: string; qty: number; harga: number; diskon_persen: number;
+};
+
 export type TagihanBerjalan = {
   record: { id: string; visit_id: string; branch_id: string; admitted_at: string; discharged_at: string | null };
   visit: { id: string; status: string; poli: string | null; dokter: string | null; customer_id: string | null };
   pasien: string; pemilik: string; telepon: string | null;
   belumDitagih: BarisResep[];
+  rincianDitagih: RincianDitagih[];
   tahap: RingkasTahap[];
   piutang: number;
   kwitansi: Kwitansi[];
@@ -60,7 +65,7 @@ export async function muatTagihanBerjalan(db: Db, recordId: string): Promise<Tag
       .eq("id", visitId).maybeSingle(),
     db.from("medical_records").select("id").eq("visit_id", visitId).order("created_at"),
     db.from("invoices")
-      .select("id, invoice_no, created_at, total, dp_amount, paid_status, voided_at, correction_pending, reissued_from")
+      .select("id, invoice_no, created_at, subtotal, discount, tax, total, dp_amount, metode_bayar, paid_status, voided_at, correction_pending, reissued_from")
       .eq("visit_id", visitId).order("created_at"),
     db.from("clinic_payment_receipts")
       // created_by DAN voided_by sama-sama menunjuk profiles: embed tanpa `!nama_fk`
@@ -80,11 +85,11 @@ export async function muatTagihanBerjalan(db: Db, recordId: string): Promise<Tag
   const [resepRes, lineRes, bayarRes] = await Promise.all([
     mrIds.length
       ? db.from("prescription_items")
-          .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id")
+          .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, billing_withdrawn_at")
           .in("medical_record_id", mrIds).order("created_at")
       : Promise.resolve({ data: [] as BarisResep[], error: null }),
     invoiceIds.length
-      ? db.from("invoice_items").select("invoice_id, prescription_item_id").in("invoice_id", invoiceIds)
+      ? db.from("invoice_items").select("id, invoice_id, prescription_item_id, deskripsi, qty, harga, diskon_persen").in("invoice_id", invoiceIds).order("created_at").order("id")
       : Promise.resolve({ data: [] as BarisInvoice[], error: null }),
     invoiceIds.length
       ? db.from("invoice_payments").select("invoice_id, amount").in("invoice_id", invoiceIds)
@@ -116,6 +121,8 @@ export async function muatTagihanBerjalan(db: Db, recordId: string): Promise<Tag
     pemilik: cust?.name ?? "—",
     telepon: cust?.phone ?? null,
     belumDitagih: barisBelumDitagih(resep, (lineRes.data ?? []) as BarisInvoice[], invoices),
+    rincianDitagih: ((lineRes.data ?? []) as RincianDitagih[])
+      .filter((l) => tahap.some((t) => t.id === l.invoice_id)),
     tahap,
     piutang: totalPiutang(tahap),
     riwayatUangTerpasang,
@@ -163,7 +170,7 @@ export async function ringkasBelumDitagih(db: Db, visitId: string): Promise<Ring
   const [resepRes, lineRes] = await Promise.all([
     mrIds.length
       ? db.from("prescription_items")
-          .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id")
+          .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, billing_withdrawn_at")
           .in("medical_record_id", mrIds)
       : Promise.resolve({ data: [] as BarisResep[], error: null }),
     invoiceIds.length

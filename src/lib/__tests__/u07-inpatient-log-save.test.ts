@@ -52,7 +52,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     return q;
   },
 }) }));
-import { addDailyLogPos } from "../../app/(app)/klinik/rawat-inap/actions";
+import { addDailyLogPos, addInpatientBillables } from "../../app/(app)/klinik/rawat-inap/actions";
 
 function form(extra: Record<string, string> = {}) {
   const data = new FormData();
@@ -64,6 +64,13 @@ function form(extra: Record<string, string> = {}) {
   return data;
 }
 const run = async (p: Promise<unknown>) => { try { return { value: await p }; } catch (e) { return { error: (e as Error).message }; } };
+
+it("standalone billables need no clinical report and never call the daily-log writer", async () => {
+  const data=form({condition_note:"",new_status:"",entry_reason:"Penambahan obat Fiktif"});
+  await expect(addInpatientBillables(data)).resolves.toEqual({saved:true,href:"/klinik/rawat-inap/stay?success=billables#obat-khusus"});
+  expect(fx.rpcCalls).toContain("clinic_add_inpatient_billables");
+  expect(fx.rpcCalls).not.toContain("clinic_save_inpatient_log_with_status");
+});
 
 beforeEach(() => {
   fx.started = []; fx.rpcCalls = []; fx.stayGate = null; fx.errorOn = ""; fx.throwOn = "";

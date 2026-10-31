@@ -20,6 +20,7 @@ type Row = {
   sumber: "klinik" | "reseller" | "ranap";
   /** id rawat inap untuk baris `ranap`. */
   recordId?: string | null;
+  visitId?: string | null;
   /** Faktur saldo awal impor Accurate (M05): nomor faktur Accurate ada di catatan. */
   saldoAwal?: string | null;
 };
@@ -38,7 +39,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
   const [{ data: invs }, { data: fjs }, { data: rcs }] = await Promise.all([
     supabase
       .from("invoices")
-      .select("id, invoice_no, total, dp_amount, paid_status, created_at, visits(customers(name), inpatient_records(id))")
+      .select("id, visit_id, invoice_no, total, dp_amount, paid_status, created_at, visits(customers(name), inpatient_records(id))")
       .is("voided_at", null)
       .neq("paid_status", "Lunas")
       .order("created_at"),
@@ -100,6 +101,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
         ...agingFaktur(tanggal, today),
         sumber: record?.id ? "ranap" : "klinik",
         recordId: record?.id ?? null,
+        visitId: i.visit_id ?? null,
       };
     })
     .filter((r) => r.sisa > 0);
@@ -195,7 +197,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                         Terima bayar <i className="ti ti-arrow-right" />
                       </Link>
                     ) : r.sumber === "ranap" ? (
-                      <Link href={`/klinik/rawat-inap/${r.recordId}/tagihan`} className="btn-def"
+                      <Link href={`/klinik/pembayaran/${r.visitId}`} className="btn-def"
                         title="Uang rawat inap diterima sebagai kwitansi kunjungan di dalam shift klinik."
                         style={{ padding: "3px 9px", fontSize: 10.5, display: "inline-block" }}>
                         Bayar tagihan <i className="ti ti-arrow-right" />

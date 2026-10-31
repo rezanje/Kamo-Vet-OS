@@ -9,9 +9,11 @@ vi.mock("@/app/(app)/klinik/rawat-inap/[id]/tagihan/actions", () => ({
 import { TagihSekarangForm } from "@/app/(app)/klinik/rawat-inap/[id]/tagihan/TagihSekarangForm";
 import { TerimaPembayaranForm } from "@/app/(app)/klinik/rawat-inap/[id]/tagihan/TerimaPembayaranForm";
 import { ringkasTahap } from "@/lib/tagihan-berjalan";
+import { terimaPembayaran } from "@/app/(app)/klinik/rawat-inap/[id]/tagihan/actions";
 
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
+  vi.clearAllMocks();
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
@@ -73,9 +75,17 @@ describe("Tagih sekarang", () => {
     expect(host.textContent).toContain("Rp 222.000");
   });
 
-  it("tanpa baris tersisa, layar menjelaskan semuanya sudah ditagih", async () => {
+  it("tahap lanjutan tidak meminta minimum atau alasan ulang", async () => {
+    await render({ dpLanjutanOpsional: true });
+    expect(host.textContent).toContain("DP lanjutan opsional");
+    expect(host.textContent).not.toContain("Kurang Rp");
+    expect(host.querySelector('input[name="dp_override_reason"]')).toBeNull();
+    expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+  });
+
+  it("tanpa baris tersisa, form tidak menyisakan helper kosong", async () => {
     await render({ baris: [] });
-    expect(host.textContent).toContain("sudah masuk tagihan tahap");
+    expect(host.textContent).toBe("");
     expect(host.querySelector("form")).toBeNull();
   });
 });
@@ -85,8 +95,8 @@ describe("Terima pembayaran", () => {
     { id: "inv-1", invoice_no: "INV-1", created_at: "2026-10-01T00:00:00Z", total: 100_000, dp_amount: 0, paid_status: "Belum Lunas", voided_at: null },
     { id: "inv-2", invoice_no: "INV-2", created_at: "2026-10-02T00:00:00Z", total: 100_000, dp_amount: 0, paid_status: "Belum Lunas", voided_at: null },
   ], []);
-  const render = () => act(async () => root.render(
-    <TerimaPembayaranForm recordId="rec-1" visitId="vis-1" requestKey="key-2" tahap={tahap} />,
+  const render = (dpOpsional?: number) => act(async () => root.render(
+    <TerimaPembayaranForm recordId="rec-1" visitId="vis-1" requestKey="key-2" tahap={tahap} dpOpsional={dpOpsional} />,
   ));
   const isi = async (index: number, value: string) => act(async () => {
     setNilai(host.querySelectorAll<HTMLInputElement>('input[type="number"]')[index], value);
@@ -97,6 +107,34 @@ describe("Terima pembayaran", () => {
     expect(JSON.parse(nilai("parts"))).toEqual([]);
     await isi(0, "120000");
     expect(JSON.parse(nilai("parts"))).toEqual([{ method: "Tunai", amount: 120_000 }]);
+  });
+
+  it("saran 50% sisa gabungan hanya mengisi draft dan tetap bisa diedit, bukan menerima uang", async () => {
+    await render(500_000);
+    expect(JSON.parse(nilai("parts"))).toEqual([]);
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="Isi DP 50% sisa total"]')!;
+    expect(button).not.toBeNull();
+    expect(button.type).toBe("button");
+    await act(async () => button.click());
+    expect(JSON.parse(nilai("parts"))).toEqual([{ method: "Tunai", amount: 500_000 }]);
+    expect(terimaPembayaran).not.toHaveBeenCalled();
+    await isi(0, "450000");
+    expect(JSON.parse(nilai("parts"))).toEqual([{ method: "Tunai", amount: 450_000 }]);
+  });
+
+  it("saran tidak menimpa bagian pembayaran campuran yang sudah diketik", async () => {
+    await render(500_000);
+    await isi(0, "120000");
+    await act(async () => host.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
+      if (b.textContent?.includes("Tambah metode")) b.click();
+    }));
+    await isi(1, "130000");
+    const before = nilai("parts");
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="Isi DP 50% sisa total"]')!;
+    expect(button).not.toBeNull();
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    expect(nilai("parts")).toBe(before);
   });
 
   it("pembayaran campuran: tombol tambah metode menambah bagian kedua", async () => {

@@ -17,8 +17,8 @@ type Bagian = { method: string; amount: string };
  * ke pemilik tidak berbeda dari kwitansinya.
  */
 export function TerimaPembayaranForm({
-  recordId, visitId, requestKey, tahap,
-}: { recordId: string; visitId: string; requestKey: string; tahap: RingkasTahap[] }) {
+  recordId, visitId, requestKey, tahap, dpOpsional,
+}: { recordId: string; visitId: string; requestKey: string; tahap: RingkasTahap[]; dpOpsional?: number }) {
   const [bagian, setBagian] = useState<Bagian[]>([{ method: "Tunai", amount: "" }]);
   const [invoiceId, setInvoiceId] = useState("");
   const belumLunas = tahap.filter((t) => t.sisa > 0);
@@ -43,6 +43,19 @@ export function TerimaPembayaranForm({
       <input type="hidden" name="requestKey" value={requestKey} />
       <input type="hidden" name="parts" value={JSON.stringify(parts)} />
       <input type="hidden" name="invoice_id" value={invoiceId} />
+
+      {dpOpsional !== undefined && (
+        <div style={{ marginBottom: 12, fontSize: 11.5 }}>
+          <div>DP lanjutan opsional: <b>{rp(dpOpsional)}</b> (50% sisa total transaksi, termasuk seluruh estimasi pending dan setelah semua pembayaran).</div>
+          <div>Boleh bayar nanti atau ubah nominal. Ini hanya draft; uang baru diterima saat menekan Terima pembayaran.</div>
+          <button type="button" className="btn-def" aria-label="Isi DP 50% sisa total"
+            disabled={dpOpsional <= 0 || bagian.some((b) => b.amount.trim() !== "" && Number(b.amount) !== 0)}
+            onClick={() => setBagian((prev) => prev.map((b, i) => i === 0 ? { ...b, amount: String(dpOpsional) } : b))}>
+            Isi saran 50% sisa total
+          </button>
+          <div>Jika nominal sudah diisi, edit manual atau kosongkan dulu; bagian dan metode yang diketik tidak ditimpa.</div>
+        </div>
+      )}
 
       {bagian.map((b, i) => (
         <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 7 }}>

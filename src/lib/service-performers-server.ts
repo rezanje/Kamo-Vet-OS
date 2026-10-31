@@ -1,5 +1,6 @@
 import { readCompleteList } from "./checked-list";
 import { hariIniWIB } from "./tanggal";
+import { saringanPenugasanAktif } from "./employee-assignment";
 import { servicePerformerInput, serviceStaffSlots, type ServiceStaff } from "./service-performers";
 import { clinicalRoles } from "./clinical-staff";
 import { groomingDoctorRequired, isGroomingOutlet, isGroomingService } from "./grooming-requirements";
@@ -9,8 +10,12 @@ export async function loadServiceStaff(client: any, branchId: string | null): Pr
   if (!branchId) return [];
   // The assignment PK is (employee_id, branch_id), with no standalone id.
   // This query fixes one branch, so employee_id is a stable unique page identity.
+  // Ended assignments (T2) drop out here, so a finished secondary posting stops
+  // offering the person as a performer at that branch.
+  const hariIni = hariIniWIB();
   const assigned = await readCompleteList<{ id: string; employee_id: string }>((from, to) => client.from("employee_branch_assignments")
-    .select("id:employee_id,employee_id", { count: "exact" }).eq("branch_id", branchId).lte("effective_date", hariIniWIB()).order("employee_id").range(from, to), "Penugasan pelaksana jasa", { maxRows: null });
+    .select("id:employee_id,employee_id", { count: "exact" }).eq("branch_id", branchId).lte("effective_date", hariIni)
+    .or(saringanPenugasanAktif(hariIni)).order("employee_id").range(from, to), "Penugasan pelaksana jasa", { maxRows: null });
   const byId = new Map<string, ServiceStaff>();
   const own = await readCompleteList<ServiceStaff>((from, to) => client.from("employees")
     .select("id,nama,jabatan", { count: "exact" }).eq("status", "Aktif").eq("branch_id", branchId).order("id").range(from, to), "Pelaksana cabang", { maxRows: null });

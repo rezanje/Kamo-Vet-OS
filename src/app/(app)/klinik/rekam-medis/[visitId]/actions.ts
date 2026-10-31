@@ -224,7 +224,7 @@ export async function simpanRekamMedis(formData: FormData) {
 
   // Tujuan setelah simpan tergantung tombol yg dipencet.
   if (next === "resep") return { saved: true, href: `${back}/resep` };            // cetak resep
-  if (next === "rawatinap") return { saved: true, href: back };                   // form admit rawat inap ada di view recorded
+  if (next === "rawatinap") return { saved: true, href: `/klinik/pembayaran/${visitId}?rawatinap=1` };                   // DP dahulu; rencana/tipe dipilih eksplisit di Pembayaran
   return { saved: true, href: `/klinik/pembayaran/${visitId}` };                  // fallback
 }
 
@@ -391,6 +391,44 @@ export async function koreksiRekamMedis(formData: FormData) {
   for (const path of [back, `${back}/resep`, `${back}/dokumen`, "/klinik/rekam-medis", "/klinik/antrian",
     "/klinik/rawat-inap", "/klinik/racik", "/laporan/anamnesa"]) revalidatePath(path);
   return { saved: true, href: `${back}?success=correction` };
+}
+
+/** Full OWNER/DOCTOR edit; the database revalidates role, revision and billing state. */
+export async function koreksiRekamMedisLengkap(formData: FormData) {
+  const visitId = String(formData.get("visitId") ?? "");
+  const recordId = String(formData.get("medical_record_id") ?? "");
+  const back = `/klinik/rekam-medis/${encodeURIComponent(visitId)}`;
+  const fail = (message: string): never => redirect(`${back}?edit=${encodeURIComponent(recordId)}&error=${encodeURIComponent(message)}`);
+  const revisionRaw = String(formData.get("expected_revision") ?? "");
+  const reason = String(formData.get("correction_reason") ?? "").trim();
+  const requestKey = String(formData.get("request_key") ?? "");
+  const rawTemperature = String(formData.get("suhu") ?? "").trim();
+  const suhu = rawTemperature ? Number(rawTemperature) : null;
+  if (!visitId || !recordId || !/^\d+$/.test(revisionRaw) || !Number.isSafeInteger(Number(revisionRaw)) || !requestKey || requestKey.length > 100
+    || reason.length < 3 || reason.length > 1000 || (suhu !== null && (!Number.isFinite(suhu) || suhu < 0 || suhu > 60 || Math.round(suhu * 100) / 100 !== suhu))) fail("Identitas atau alasan koreksi tidak valid.");
+  let rows;
+  try {
+    const raw: unknown = JSON.parse(String(formData.get("resep") ?? "[]"));
+    if (!Array.isArray(raw) || raw.length > 200) throw Error("Keranjang tidak valid");
+    rows = raw.map((row) => ({
+      prescription_item_id: row.prescription_item_id ?? null, item_id: row.item_id ?? null,
+      nama_obat: row.nama_obat, qty: row.qty, harga: row.harga, satuan: row.satuan, jenis: row.jenis,
+      kategori: row.kategori ?? null, aturan_pakai: row.aturan_pakai ?? null,
+      compound_recipe_id: row.compound_recipe_id ?? null,
+      bmhp_components: bmhpInput(row.bmhp), service_performers: row.service_performers ?? null,
+    }));
+  } catch (error) { fail(error instanceof Error ? error.message : "Keranjang tidak valid"); }
+  const text = (name: string) => String(formData.get(name) ?? "") || null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("clinic_edit_queued_record", {
+    p_visit_id: visitId, p_record_id: recordId, p_expected_revision: Number(revisionRaw),
+    p_changes: {anamnesis: text("anamnesis"), diagnosis: text("diagnosis"), therapy: text("therapy"), suhu,
+      gejala_klinis: text("gejala_klinis"), hasil_penunjang: text("hasil_penunjang")},
+    p_rows: rows, p_reason: reason, p_request_key: requestKey,
+  });
+  if (error || data !== recordId) fail(error?.message ?? "Koreksi belum terkonfirmasi. Muat ulang sebelum mencoba lagi.");
+  for (const path of [back, `${back}/resep`, `${back}/dokumen`, `/klinik/pembayaran/${visitId}`, "/klinik/rekam-medis", "/klinik/antrian", "/klinik/racik"]) revalidatePath(path);
+  return {saved: true, href: `${back}?success=correction`};
 }
 
 export async function createReferral(formData: FormData) {

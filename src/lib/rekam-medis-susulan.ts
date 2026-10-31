@@ -20,7 +20,7 @@ export type SusulanFields = {
  */
 export function isMissingRecordWrapper(
   error: { code?: string; message?: string } | null | undefined,
-  wrapper: "clinic_post_invoice_with_record" | "clinic_edit_invoice_with_record",
+  wrapper: "clinic_post_invoice_with_record" | "clinic_post_dp_and_admit_with_record" | "clinic_edit_invoice_with_record",
   params: Record<string, unknown>,
 ): boolean {
   if (error?.code !== "PGRST202") return false;

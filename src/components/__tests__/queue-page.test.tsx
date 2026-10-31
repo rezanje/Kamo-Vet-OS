@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
-const fixture = vi.hoisted(() => ({ all: false, authorized: true, fail: false, payment: false, calls: [] as Array<[string, string, unknown]> }));
+const fixture = vi.hoisted(() => ({ all: false, authorized: true, fail: false, payment: false, inpatient: false, calls: [] as Array<[string, string, unknown]> }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers(fixture.all ? { "x-kamo-operational-branch": "all" } : {}) }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("@/lib/operational-branch", () => ({
@@ -21,13 +21,18 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       neq: () => q,
       gte: (key: string, value: unknown) => { fixture.calls.push(["gte", key, value]); return q; },
       lt: (key: string, value: unknown) => { fixture.calls.push(["lt", key, value]); return q; },
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: fixture.payment && table === "visits" && selection.includes("status") ? [{id:"visit-payment",status:"Pembayaran",created_at:"2026-10-14T01:00:00Z",poli:"Umum",pets:null,customers:null,branches:null}] : [], error: table === "visits" && fixture.fail ? { message: "private DB detail" } : null }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: fixture.payment && table === "visits" && selection.includes("status") ? [{id:"visit-payment",status:"Pembayaran",created_at:"2026-10-14T01:00:00Z",poli:"Umum",inpatient_records:fixture.inpatient?[{id:"stay",discharged_at:null}]:[],pets:null,customers:null,branches:null}] : [], error: table === "visits" && fixture.fail ? { message: "private DB detail" } : null }).then(resolve),
     }; return q;
   },
 }) }));
 import Page from "@/app/(app)/klinik/antrian/page";
-beforeEach(() => { fixture.calls = []; fixture.payment = false; fixture.fail = false; fixture.all = false; fixture.authorized = true; });
+beforeEach(() => { fixture.calls = []; fixture.inpatient = false; fixture.payment = false; fixture.fail = false; fixture.all = false; fixture.authorized = true; });
 async function render(params: Record<string, string> = {}) { return renderToStaticMarkup(await Page({ searchParams: Promise.resolve(params) })); }
+it("removes active inpatient from operational queue but preserves explicit all-history view", async () => {
+ fixture.payment=true;fixture.inpatient=true;
+ const active=await render();expect(active).not.toContain('href="/klinik/rekam-medis/visit-payment"');
+ const history=await render({filter:"semua"});expect(history).toContain('href="/klinik/rekam-medis/visit-payment"');
+});
 it("reads each queue/counter under the same active branch and WIB date", async () => {
   const html = await render({ tanggal: "2026-10-14" });
   expect(fixture.calls.filter(([method, key, value]) => method === "in" && key === "branch_id" && Array.isArray(value) && value[0] === "branch-a")).toHaveLength(3);

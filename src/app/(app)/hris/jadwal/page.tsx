@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { hariIniWIB } from "@/lib/tanggal";
+import { saringanPenugasanAktif } from "@/lib/employee-assignment";
 import { jamRingkas } from "@/lib/shift-master";
 import { JadwalBoard, type KaryawanBaris, type ShiftOpsi } from "./JadwalBoard";
 
@@ -29,7 +30,8 @@ export default async function JadwalPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const bulan = /^\d{4}-\d{2}$/.test(sp.bulan ?? "") ? sp.bulan! : hariIniWIB().slice(0, 7);
+  const hariIni = hariIniWIB();
+  const bulan = /^\d{4}-\d{2}$/.test(sp.bulan ?? "") ? sp.bulan! : hariIni.slice(0, 7);
   const { data: branchData } = await supabase
     .from("branches").select("id, name").eq("is_active", true).order("name");
   const branches = (branchData ?? []) as { id: string; name: string }[];
@@ -44,7 +46,8 @@ export default async function JadwalPage({
       .order("nama"),
     supabase.from("work_shifts").select("id, nama, warna, is_libur, jam_masuk, jam_pulang, branch_id")
       .eq("is_active", true).or(`branch_id.is.null,branch_id.eq.${cabang}`).order("is_libur").order("jam_masuk"),
-    supabase.from("employee_branch_assignments").select("employee_id, branch_id").eq("branch_id", cabang),
+    supabase.from("employee_branch_assignments").select("employee_id, branch_id").eq("branch_id", cabang)
+      .lte("effective_date", hariIni).or(saringanPenugasanAktif(hariIni)),
   ]);
 
   const assignedIds = new Set(((assignmentData ?? []) as { employee_id: string }[]).map((a) => a.employee_id));

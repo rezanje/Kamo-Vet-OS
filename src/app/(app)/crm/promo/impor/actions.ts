@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { readCompleteList } from "@/lib/checked-list";
 import { readPromoExcel, type PromoExcelRow } from "@/lib/promo-excel";
 import { validatePromoRows, type PromoCatalogItem, type PromoCatalogUnit, type PromoReviewedRow } from "@/lib/promo-bulk";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Review = { rows: PromoReviewedRow[]; valid: boolean; error?: string };
 export type PromoImportSubmission = {
@@ -67,6 +68,10 @@ export async function savePromoExcelBatch(input: PromoImportSubmission): Promise
     const dates=[input.validFrom,input.validUntil];
     if(!name || name.length>40 || dates.some(value=>!/^\d{4}-\d{2}-\d{2}$/.test(value)) || input.validUntil<input.validFrom)
       return {ok:false,message:"Nama batch (maks. 40 karakter) dan tanggal mulai/akhir yang berurutan wajib diisi."};
+    // Batch yang tanggal akhirnya sudah lewat akan ditolak database (trigger
+    // promo_kadaluarsa_otomatis); dijawab di sini supaya pesannya jelas.
+    if(input.validUntil<hariIniWIB())
+      return {ok:false,message:"Tanggal akhir batch sudah lewat. Isi tanggal hari ini atau sesudahnya."};
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.key))return {ok:false,message:"Identitas batch tidak valid. Muat ulang halaman."};
     const branches=[...new Set(input.branchIds??[])];
     if((input.allBranches&&branches.length>0)||(!input.allBranches&&branches.length===0))

@@ -43,6 +43,7 @@ export async function admitInpatient(formData: FormData) {
     }));
   }
   if (error || !recordId) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal masuk rawat inap")}`);
+  for (const path of ["/klinik/antrian", "/klinik/rekam-medis", "/klinik/rawat-inap", `/klinik/pembayaran/${visitId}`, back]) revalidatePath(path);
   redirect(`/klinik/rawat-inap/${recordId}?success=admit${transactionDraftAck(formData)}`);
 }
 
@@ -123,6 +124,15 @@ type ResepItem = {
 };
 const INPATIENT_STATUSES: string[] = ["stabil", "kritis", "sembuh", "rip", "pulang_paksa"];
 export async function addDailyLogPos(formData: FormData) {
+  return saveInpatientEntry(formData, false);
+}
+
+export async function addInpatientBillables(formData: FormData) {
+  return saveInpatientEntry(formData, true);
+}
+
+// Share the existing cart/unit/BMHP/compound payload normalizer, not a second composer.
+async function saveInpatientEntry(formData: FormData, billables: boolean) {
   const supabase = await createClient();
   const recordId = String(formData.get("recordId") ?? "");
   const conditionNote = String(formData.get("condition_note") ?? "").trim();
@@ -132,10 +142,18 @@ export async function addDailyLogPos(formData: FormData) {
   const logDate = String(formData.get("log_date") ?? "").trim();
   const logTime = String(formData.get("log_time") ?? "").trim();
   const requestKey = String(formData.get("request_key") ?? "").trim();
-  const newStatus = String(formData.get("new_status") ?? "").trim() as Condition | "";
+  const newStatus = (billables ? "" : String(formData.get("new_status") ?? "").trim()) as Condition | "";
   const cetak = String(formData.get("cetak") ?? "") === "1";
   const back = `/klinik/rawat-inap/${recordId}`;
-  if (!recordId || !conditionNote || !requestKey) redirect(`${back}/catatan?error=${encodeURIComponent("Isi kondisi pasien dan muat ulang formulir")}`);
+  const formHref = billables ? `${back}/obat-khusus` : `${back}/catatan`;
+  if (!recordId || (!billables && !conditionNote) || !requestKey) redirect(`${formHref}?error=${encodeURIComponent("Isi data dan muat ulang formulir")}`);
+  if (!billables && formData.has('visit_label')) {
+    const label = formData.get('visit_label');
+    if (label !== 'Visit 1' && label !== 'Visit 2') redirect(`${formHref}?error=${encodeURIComponent('Jenis Visit tidak valid')}`);
+    if (formData.get('log_kind') !== 'doctor_visit') redirect(`${formHref}?error=${encodeURIComponent('Visit 1 / Visit 2 harus berupa visit dokter')}`);
+    // Reuse existing doctor-ID validation; role/HRIS/branch authorization stays in the RPC.
+    bacaPetugas(formData, formHref);
+  }
   const waktu = catatWaktu("addDailyLogPos", recordId);
 
   // Keranjang obat/jasa & BMHP diurai dari form lebih dulu (tanpa database) supaya
@@ -176,18 +194,22 @@ export async function addDailyLogPos(formData: FormData) {
 
   await userP;
   const { data: rec } = await recP;
-  if (!rec) redirect(`${back}/catatan?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
+  if (!rec) redirect(`${formHref}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
   // K14: catatan harian pet hotel diisi paramedis; dokter/suhu tidak wajib.
   const stay = await stayP;
-  if (stay.failed) redirect(`${back}/catatan?error=${encodeURIComponent("Tipe rawat inap belum dapat diverifikasi. Muat ulang lalu simpan lagi.")}`);
-  if (stay.types.get(recordId) === "pet_hotel" && !String(formData.get("paramedic_id") ?? "").trim()) {
-    redirect(`${back}/catatan?error=${encodeURIComponent("Pilih paramedis yang mengisi catatan pet hotel")}`);
+  if (stay.failed) redirect(`${formHref}?error=${encodeURIComponent("Tipe rawat inap belum dapat diverifikasi. Muat ulang lalu simpan lagi.")}`);
+  if (!billables && stay.types.get(recordId) === "pet_hotel" && !String(formData.get("paramedic_id") ?? "").trim()) {
+    redirect(`${formHref}?error=${encodeURIComponent("Pilih paramedis yang mengisi catatan pet hotel")}`);
   }
 
   const stamp = waktuInputWIB(logDate, logTime);
   const log = {
-    condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
-    ...bacaPetugas(formData,`${back}/catatan`),
+    // A new clinical label lives in the existing visible note, not a new DB field.
+    // Keep legacy/no-label payloads byte-for-byte compatible with previous requests.
+    condition_note: !billables && formData.has('visit_label')
+      ? `${String(formData.get('visit_label'))}\n${String(formData.get('condition_note') ?? '')}` : conditionNote,
+    tindakan, keterangan, doctor_name: doctorName,
+    ...(!billables ? bacaPetugas(formData,formHref) : {}),
     ...bacaPemantauan(formData),
     log_date: logDate || null,
     created_at: stamp && !Number.isNaN(stamp.getTime()) ? stamp.toISOString() : null,
@@ -198,24 +220,24 @@ export async function addDailyLogPos(formData: FormData) {
   if (!mrId) {
     const mr = await mrP;
     // Fail closed: rekam medis yang gagal dibaca tidak boleh dianggap "belum ada".
-    if (mr?.error) redirect(`${back}/catatan?error=${encodeURIComponent("Rekam medis belum dapat dibaca. Muat ulang lalu simpan lagi.")}`);
+    if (mr?.error) redirect(`${formHref}?error=${encodeURIComponent("Rekam medis belum dapat dibaca. Muat ulang lalu simpan lagi.")}`);
     mrId = mr?.data?.id ?? null;
   }
   const racikan = resep.filter((r) => r.jenis === "racikan");
   if (racikan.some((r) => !r.official_version_id &&
     (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
-    redirect(`${back}/catatan?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
+    redirect(`${formHref}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
   if (resep.length && !mrId) {
-    redirect(`${back}/catatan?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
+    redirect(`${formHref}?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
   }
   let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string; kategori: string | null; service_performers?: ServicePerformersInput | null; bmhp_components?: BmhpInput[] }[] = [];
-  if (bmhpError) return redirect(`${back}/catatan?error=${encodeURIComponent(bmhpError)}`);
+  if (bmhpError) return redirect(`${formHref}?error=${encodeURIComponent(bmhpError)}`);
   if (needsBmhp) {
     // Fail closed: cek kontrak yang gagal dibaca = belum aktif (pesan lama tetap).
     const support = await bmhpSupportP!;
     if (support.error || support.data !== true) {
-      return redirect(`${back}/catatan?error=${encodeURIComponent("Pencatatan BMHP tindakan belum aktif di database. Hapus BMHP atau hubungi admin.")}`);
+      return redirect(`${formHref}?error=${encodeURIComponent("Pencatatan BMHP tindakan belum aktif di database. Hapus BMHP atau hubungi admin.")}`);
     }
   }
   if (mrId && resep.length) {
@@ -223,7 +245,7 @@ export async function addDailyLogPos(formData: FormData) {
     // bukan "periksa koneksi"; simpan tidak dijalankan.
     let unitOpts: Map<string, ItemUnit[]>;
     try { unitOpts = await unitsP!; }
-    catch (error) { return redirect(`${back}/catatan?error=${encodeURIComponent(error instanceof Error ? error.message : "Satuan barang belum dapat dibaca")}`); }
+    catch (error) { return redirect(`${formHref}?error=${encodeURIComponent(error instanceof Error ? error.message : "Satuan barang belum dapat dibaca")}`); }
     rows = resep.map((r, index) => ({ r, bmhp: bmhpRows[index] })).filter(({ r }) => r.nama_obat?.trim() && r.jenis !== "racikan").map(({ r, bmhp }) => ({
       nama_obat: r.nama_obat.trim(), item_id: r.item_id ?? null,
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
@@ -257,18 +279,24 @@ export async function addDailyLogPos(formData: FormData) {
     ...(r.service_performers != null ? {service_performers: servicePerformerInput(r.service_performers)} : {}),
   });
   if (newStatus && !INPATIENT_STATUSES.includes(newStatus)) {
-    redirect(`${back}/catatan?error=${encodeURIComponent("Status kondisi tidak valid")}`);
+    redirect(`${formHref}?error=${encodeURIComponent("Status kondisi tidak valid")}`);
   }
   if (newStatus && newStatus !== rec!.condition_status) {
     const role = await roleP!;
     // Fail closed: peran yang gagal dibaca tidak boleh diperlakukan sebagai STAFF biasa.
-    if (!role || role.error) redirect(`${back}/catatan?error=${encodeURIComponent("Peran pengguna belum dapat diverifikasi. Muat ulang lalu simpan lagi.")}`);
+    if (!role || role.error) redirect(`${formHref}?error=${encodeURIComponent("Peran pengguna belum dapat diverifikasi. Muat ulang lalu simpan lagi.")}`);
     if (!canTransition((role!.data?.role ?? "STAFF") as Role, newStatus)) {
-      redirect(`${back}/catatan?error=${encodeURIComponent("Transisi kondisi hanya boleh dilakukan dokter")}`);
+      redirect(`${formHref}?error=${encodeURIComponent("Transisi kondisi hanya boleh dilakukan dokter")}`);
     }
   }
   waktu.tandai("baca");
-  const { error: saveError } = await supabase.rpc("clinic_save_inpatient_log_with_status", {
+  const { error: saveError } = billables ? await supabase.rpc("clinic_add_inpatient_billables", {
+    p_inpatient_id: recordId,
+    p_rows: rows,
+    p_compounds: compounds,
+    p_reason: String(formData.get("entry_reason") ?? "").trim(),
+    p_request_key: requestKey,
+  }) : await supabase.rpc("clinic_save_inpatient_log_with_status", {
     p_inpatient_id: recordId,
     p_medical_record_id: mrId,
     p_log: log,
@@ -279,7 +307,7 @@ export async function addDailyLogPos(formData: FormData) {
   });
   waktu.tandai("simpan");
   waktu.selesai();
-  if (saveError) redirect(`${back}/catatan?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
+  if (saveError) redirect(`${formHref}?error=${encodeURIComponent(parseClinicRecordError(saveError))}`);
   // Kesegaran data di atas kecepatan: revalidasi membersihkan router cache klien, jadi
   // Back/Forward, sensus rawat inap, tagihan, antrean racik dan stok tidak menampilkan
   // data lama (risiko catatan / baris tagihan ganda). Form catatan sendiri tidak masuk
@@ -289,7 +317,7 @@ export async function addDailyLogPos(formData: FormData) {
   for (const path of [back, "/klinik/rawat-inap", `/klinik/rekam-medis/${rec!.visit_id}/resep`,
     `/klinik/pembayaran/${rec!.visit_id}`, "/klinik/racik", "/klinik/stok", "/pos/stok"]) revalidatePath(path);
 
-  return { saved: true, href: cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : `${back}?success=log` };
+  return { saved: true, href: cetak && mrId ? `/klinik/rekam-medis/${rec!.visit_id}/resep` : billables ? `${back}?success=billables#obat-khusus` : `${back}?success=log` };
 }
 
 // Ubah kondisi — perubahan status wajib tercatat di status log.

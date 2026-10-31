@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { hasActiveInpatient } from "@/lib/status-pasien-rekam-medis";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { headers } from "next/headers";
@@ -77,7 +78,7 @@ export default async function AntrianPage({
 
   let query = supabase
     .from("visits")
-    .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code)")
+    .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at)")
     .in("branch_id", scopeIds)
     .gte("created_at", mulaiHari).lt("created_at", akhirHari)
     .order("created_at", { ascending: true });
@@ -90,13 +91,13 @@ export default async function AntrianPage({
   // Counters and next-up use the same day/branch, independent of the status tab.
   const qWaiting = supabase
     .from("visits")
-    .select("id, poli, dokter, queue_number, pets(name, species, breed, dob, photo_url), customers(name, phone)")
+    .select("id, poli, dokter, queue_number, pets(name, species, breed, dob, photo_url), customers(name, phone), inpatient_records(discharged_at)")
     .eq("status", "Menunggu")
     .in("branch_id", scopeIds)
     .gte("created_at", mulaiHari).lt("created_at", akhirHari)
     .order("created_at", { ascending: true });
 
-  const qHari = supabase.from("visits").select("status")
+  const qHari = supabase.from("visits").select("status, inpatient_records(discharged_at)")
     .in("branch_id", scopeIds)
     .gte("created_at", mulaiHari).lt("created_at", akhirHari);
 
@@ -119,9 +120,10 @@ export default async function AntrianPage({
       <Link href={`/klinik/antrian?${new URLSearchParams({ filter, tanggal: hariDipilih, cabang: selected?.id ?? "" })}`} className="btn-def">Coba lagi</Link>
     </>;
   }
-  const visits = visitsResult.data;
-  const allWaiting = waitingResult.data;
-  const today = todayResult.data;
+  const operational = (row: { inpatient_records?: { discharged_at: string | null }[] | { discharged_at: string | null } | null }) => !hasActiveInpatient(row.inpatient_records);
+  const visits = filter === "semua" || filter === "selesai" ? visitsResult.data : visitsResult.data?.filter(operational);
+  const allWaiting = waitingResult.data?.filter(operational);
+  const today = todayResult.data?.filter(operational);
 
   type VoucherIngat = {
     code: string; tipe: string; nilai: number;

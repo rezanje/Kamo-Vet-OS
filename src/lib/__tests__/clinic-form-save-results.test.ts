@@ -42,6 +42,11 @@ it('preserves nonmedical grooming without a doctor',async()=>{
  fixture.doctorId=null;fixture.service='Grooming';const data=form();data.delete('keluhan');
  expect(await simpanRekamMedis(data)).toMatchObject({saved:true});
 });
+it('routes the explicit Rawat Inap button through ordinary payment before admission',async()=>{
+ const data=form();data.set("next","rawatinap");
+ expect(await simpanRekamMedis(data)).toEqual({saved:true,href:"/klinik/pembayaran/visit?rawatinap=1"});
+ expect(fixture.calls.map(c=>c.name)).toEqual(["clinic_save_initial_record"]);
+});
 it('returns confirmed initial save destination so the client can clear its draft',async()=>{
  expect(await simpanRekamMedis(form())).toEqual({saved:true,href:'/klinik/rekam-medis/visit/resep'});
  expect(fixture.revalidated).toContain('/klinik/rekam-medis/visit');
@@ -78,5 +83,34 @@ it('sends separate doctor/paramedic IDs with the entire inpatient transaction',a
  expect(fixture.calls.find(c=>c.name==='clinic_save_inpatient_log_with_status')?.args.p_log).toMatchObject({log_kind:'doctor_visit',visit_doctor_id:'dc000000-0000-4000-8000-000000000002',paramedic_id:'dc000000-0000-4000-8000-000000000003'});
 });
 
+it.each(['Visit 1','Visit 2'])('persists selected %s visibly in existing note without changing the doctor or billing payload',async label=>{
+ const data=form();const note='  Kondisi fiktif\nBaris asli  ';
+ data.set('condition_note',note);data.set('visit_label',label);data.set('log_kind','doctor_visit');data.set('visit_doctor_id','dc000000-0000-4000-8000-000000000002');
+ expect(await addDailyLogPos(data)).toMatchObject({saved:true});
+ expect(fixture.calls).toHaveLength(1);
+ expect(fixture.calls[0]).toMatchObject({name:'clinic_save_inpatient_log_with_status',args:{p_rows:[],p_compounds:[],p_log:{condition_note:`${label}\n${note}`,log_kind:'doctor_visit',visit_doctor_id:'dc000000-0000-4000-8000-000000000002'}}});
+ expect(fixture.calls[0].args.p_log).not.toHaveProperty('visit_label');
+});
+it.each([
+ ['unknown label',{visit_label:'Visit 3',log_kind:'doctor_visit',visit_doctor_id:'dc000000-0000-4000-8000-000000000002'}],
+ ['empty label',{visit_label:'',log_kind:'doctor_visit',visit_doctor_id:'dc000000-0000-4000-8000-000000000002'}],
+ ['padded label',{visit_label:' Visit 1 ',log_kind:'doctor_visit',visit_doctor_id:'dc000000-0000-4000-8000-000000000002'}],
+ ['monitoring combination',{visit_label:'Visit 1',log_kind:'monitoring',visit_doctor_id:'dc000000-0000-4000-8000-000000000002'}],
+ ['missing kind',{visit_label:'Visit 2',visit_doctor_id:'dc000000-0000-4000-8000-000000000002'}],
+ ['missing doctor',{visit_label:'Visit 2',log_kind:'doctor_visit'}],
+ ['invalid doctor',{visit_label:'Visit 1',log_kind:'doctor_visit',visit_doctor_id:'forged',role:'OWNER'}],
+])('rejects %s before calling the save RPC',async(_case,fields)=>{
+ const data=form();for(const [key,value] of Object.entries(fields))data.set(key,value);
+ await expect(addDailyLogPos(data)).rejects.toThrow(/^REDIRECT .*error=/);
+ expect(fixture.calls).toEqual([]);expect(fixture.revalidated).toEqual([]);
+});
+it.each([undefined,'monitoring','doctor_visit'])('keeps the exact old no-label p_log payload (%s)',async kind=>{
+ const data=form();data.set('condition_note','  Fictional clinical note  ');
+ if(kind){data.set('log_kind',kind);data.set('visit_doctor_id','dc000000-0000-4000-8000-000000000002');}
+ await addDailyLogPos(data);
+ expect(fixture.calls[0].args.p_log).toEqual({condition_note:'Fictional clinical note',tindakan:null,keterangan:null,doctor_name:null,
+  makan:null,minum:null,bab:null,pipis:null,berat:null,suhu:null,foto_url:null,komunikasi_owner:null,komunikasi_via:null,log_date:null,created_at:null,
+  ...(kind?{log_kind:kind,visit_doctor_id:'dc000000-0000-4000-8000-000000000002',paramedic_id:null}:{})});
+});
 it('persists optional therapy text in the existing atomic initial-record payload',async()=>{const data=form();data.set('therapy','Terapi fiktif\nObservasi');expect(await simpanRekamMedis(data)).toMatchObject({saved:true});expect(fixture.calls.find(c=>c.name==='clinic_save_initial_record')?.args.p_record).toMatchObject({therapy:'Terapi fiktif\nObservasi'});});
 it.each([undefined,'','   '])('keeps blank or absent therapy omitted so pre-deployment request hashes remain compatible (%s)',async(value)=>{const data=form();if(value!==undefined)data.set('therapy',value);expect(await simpanRekamMedis(data)).toMatchObject({saved:true});expect(fixture.calls.find(c=>c.name==='clinic_save_initial_record')?.args.p_record).not.toHaveProperty('therapy');});

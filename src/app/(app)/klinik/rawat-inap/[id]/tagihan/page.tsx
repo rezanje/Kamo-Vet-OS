@@ -7,9 +7,9 @@ import { getOpenShift } from "@/lib/shift";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { muatTagihanBerjalan } from "@/lib/tagihan-berjalan-server";
-import { nilaiBarisResep } from "@/lib/tagihan-berjalan";
-import { TagihSekarangForm } from "./TagihSekarangForm";
-import { TerimaPembayaranForm } from "./TerimaPembayaranForm";
+import { nilaiBarisResep, ringkasRekap } from "@/lib/tagihan-berjalan";
+import type { RanapPaymentQuote } from "@/lib/ranap-payment";
+import { SimpanBayarForm } from "./SimpanBayarForm";
 import { BatalKwitansiForm } from "./BatalKwitansiForm";
 import { LepasUangMukaForm } from "./LepasUangMukaForm";
 
@@ -19,7 +19,6 @@ const tgl = (iso: string) =>
 
 const SUKSES: Record<string, string> = {
   tagih: "Tagihan tahap terbit. Obat dan jasa yang baru ditagih sudah tercatat sebagai omzet.",
-  bayar: "Pembayaran tersimpan. Cetak kwitansinya untuk pemilik.",
   batal: "Kwitansi dibatalkan. Jurnal pembaliknya sudah tercatat.",
   lepas: "Pemakaian uang muka dilepas. Saldo pemilik kembali utuh dan kwitansinya sekarang bisa dibatalkan.",
 };
@@ -34,10 +33,10 @@ export default async function TagihanRawatInapPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; receipt?: string; invoice?: string; applications?: string }>;
 }) {
   const { id } = await params;
-  const { error, success } = await searchParams;
+  const { error, success, receipt, invoice, applications } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -54,10 +53,41 @@ export default async function TagihanRawatInapPage({
   const ppnRate = pajak.mode_pkp ? Number(pajak.ppn_rate) : 0;
   const bolehTerobos = bolehMenerobosDp(profil.data?.role as string | null);
   const estimasi = data.belumDitagih.reduce((sum, b) => sum + nilaiBarisResep(b), 0);
+  const estimasiPpn = ppnRate > 0 && estimasi > 0 ? Math.round(estimasi * ppnRate / 100) : 0;
+  const rekap = ringkasRekap(data.tahap, estimasi + estimasiPpn, data.saldoUangMuka);
+  // Hanya pratinjau; DB memeriksa lagi invoice aktif lain di pembungkus tahap.
+  const dpLanjutanOpsional = data.tahap.some((t) => Number(t.total) > 0 && !t.correction_pending);
+  const dpAwal = data.tahap.filter((t) => !t.reissued_from && Number(t.dp_amount) > 0);
   // Riwayat kwitansi/uang muka belum tersedia = saldo yang tampil belum bisa dipercaya.
   // Menerima uang atau membatalkan kwitansi di atas angka yang belum lengkap berisiko
   // penerimaan dobel, jadi aksinya dikunci sampai datanya terbaca.
-  const bolehProsesUang = !!shift && data.riwayatUangTerpasang;
+  let quote: RanapPaymentQuote | null = null;
+  if (shift && data.riwayatUangTerpasang) {
+    try {
+      const result = await supabase.rpc("clinic_quote_inpatient_payment", { p_record_id: data.record.id, p_visit_id: data.visit.id, p_parts: [] });
+      if (!result.error && result.data) quote = result.data as RanapPaymentQuote;
+    } catch { /* No guessed account destination or zero-credit fallback. */ }
+  }
+  const bolehProsesUang = !!shift && data.riwayatUangTerpasang && !!quote;
+  const totalTransaksi = quote ? data.tahap.reduce((sum, t) => sum + Number(t.total), 0) + quote.pending : rekap.total;
+  const applied = data.tahap.reduce((sum, t) => sum + t.dibayar, 0);
+  const savedReceipt = receipt ? data.kwitansi.find(k => k.id === receipt && k.status === "aktif") : null;
+  const savedInvoice = invoice ? data.tahap.find(t => t.id === invoice && !t.correction_pending) : null;
+  const applicationIds = applications?.split(",") ?? [];
+  let savedApplications = false;
+  if (applicationIds.length > 0 && applicationIds.length <= 200 && new Set(applicationIds).size === applicationIds.length
+    && applicationIds.every(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {
+    const proof = await supabase.from("clinic_advance_applications")
+      .select("id, invoice_id, amount, released_at").in("id", applicationIds);
+    savedApplications = !proof.error && proof.data?.length === applicationIds.length
+      && proof.data.every(a => applicationIds.includes(a.id) && Number(a.amount) > 0 && !a.released_at && data.tahap.some(t => t.id === a.invoice_id && !t.correction_pending));
+  }
+  const successBound = success === "transaksi" && (!receipt || !!savedReceipt) && (!invoice || !!savedInvoice)
+    && (!applications || savedApplications) && (!!savedReceipt || !!savedInvoice || savedApplications);
+  // Status tampilan dari rekap server, bukan bukti penerimaan baru dari query URL.
+  // Piutang invoice nol saja belum lunas bila masih ada biaya pending/koreksi.
+  const pembayaranLunas = data.riwayatUangTerpasang && rekap.total > 0 && rekap.sisa === 0
+    && data.belumDitagih.length === 0 && !data.tahap.some((t) => t.correction_pending);
 
   return (
     <>
@@ -78,7 +108,13 @@ export default async function TagihanRawatInapPage({
       </div>
 
       <Popup message={error} />
-      {!error && success && SUKSES[success] && (
+      {!error && success === "bayar" && data.riwayatUangTerpasang && rekap.dibayar > 0 && (
+        <Popup tone="success" title={pembayaranLunas ? "Pembayaran lunas" : "Pembayaran diterima"}
+          message={`Total dibayar: ${rp(rekap.dibayar)} · Sisa pembayaran: ${rp(rekap.sisa)}`} />
+      )}
+      {!error && successBound && <Popup tone="success" title={savedReceipt ? (pembayaranLunas ? "Pembayaran lunas" : "Pembayaran diterima") : savedApplications ? "Saldo pemilik diterapkan" : "Transaksi tersimpan"}
+        message={`${savedReceipt ? `${savedReceipt.no_kwitansi}: ${rp(savedReceipt.total)} · ` : ""}${savedInvoice?.invoice_no ?? ""} · Sisa pembayaran: ${rp(quote?.remaining ?? rekap.sisa)}`} />}
+      {!error && success && Object.hasOwn(SUKSES, success) && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {SUKSES[success]}
         </div>
@@ -96,32 +132,55 @@ export default async function TagihanRawatInapPage({
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 14 }}>
-        <Kartu label="BELUM DITAGIH" value={rp(estimasi)} sub={`${data.belumDitagih.length} baris`} color="#d97706" bg="#fffbeb" icon="ti-clipboard-list" />
-        <Kartu label="TOTAL PIUTANG" value={rp(data.piutang)} sub={`${data.tahap.length} tagihan tahap`} color="#b91c1c" bg="#fef2f2" icon="ti-clock-dollar" />
-        <Kartu label="UANG MUKA PEMILIK" value={rp(data.saldoUangMuka)} sub="otomatis memotong tahap berikutnya" color="var(--posb)" bg="#eff6ff" icon="ti-wallet" />
-        <Kartu label="UANG MUKA MINIMAL" value={`${minDpPercent}%`} sub="berlaku tiap tagihan tahap" color="#15803d" bg="#e8f5ee" icon="ti-percentage" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8, marginBottom: 10 }}>
+        <Kartu label="TOTAL TRANSAKSI" value={rp(totalTransaksi)} color="var(--posb)" bg="#eff6ff" icon="ti-file-invoice" />
+        <Kartu label="DP" value={data.riwayatUangTerpasang ? rp(applied) : "Belum terbaca"} color="#15803d" bg="#e8f5ee" icon="ti-cash" />
+        <Kartu label="SISA PEMBAYARAN" value={quote ? rp(quote.remaining) : "Belum terbaca"} color="#b91c1c" bg="#fef2f2" icon="ti-clock-dollar" />
       </div>
+
+      <section className="crm-sec" style={{ marginBottom: 14, border: "2px solid #bfdbfe" }}>
+        <h2 style={{ fontSize: 18, margin: "0 0 10px" }}>TERIMA PEMBAYARAN</h2>
+        {quote && <div style={{ fontSize: 17, marginBottom: 10 }}>Saldo pemilik: <b>{rp(quote.credit)}</b> · DP/pembayaran terpakai: <b>{rp(applied)}</b></div>}
+        {quote && !dpLanjutanOpsional && <div style={{ fontSize: 14, marginBottom: 8 }}>Uang muka minimal {minDpPercent}% · {rp(Math.ceil(quote.pending * minDpPercent / 100))}</div>}
+        {quote && dpLanjutanOpsional && <div style={{ fontSize: 14, marginBottom: 8 }}>DP lanjutan opsional: {rp(Math.round(quote.remaining / 2))}</div>}
+        {bolehProsesUang && quote ? <SimpanBayarForm key={`bayar:${data.kwitansi.length}:${data.tahap.length}:${quote.token}`}
+          recordId={data.record.id} visitId={data.visit.id} requestKey={randomUUID()} remaining={quote.remaining}
+          pendingCount={data.belumDitagih.length} accounts={quote.accounts} applyCredit={quote.apply_credit} bolehTerobos={bolehTerobos}
+          dpOpsional={dpLanjutanOpsional ? Math.round(quote.remaining / 2) : undefined} />
+          : <div>{shift ? "Rekening atau tagihan terkini belum terbaca — muat ulang sebelum memproses uang." : "Buka shift klinik untuk menerima uang."}</div>}
+      </section>
 
       <section className="crm-sec" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)", marginBottom: 9 }}>
-          <i className="ti ti-clipboard-list" /> BELUM DITAGIH
+          <i className="ti ti-clipboard-list" /> RINCIAN TAGIHAN
         </div>
-        {shift && data.riwayatUangTerpasang ? (
-          <TagihSekarangForm
-            key={`${data.record.id}:${data.belumDitagih.map((b) => b.id).join(",")}`}
-            recordId={data.record.id} visitId={data.visit.id} requestKey={randomUUID()}
-            baris={data.belumDitagih} ppnRate={ppnRate} minDpPercent={minDpPercent}
-            saldoUangMuka={data.saldoUangMuka} bolehTerobos={bolehTerobos}
-          />
-        ) : (
-          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
-            {data.belumDitagih.length} baris menunggu ditagih senilai {rp(estimasi)} (belum termasuk PPN).
-            {shift
-              ? " Saldo uang muka belum terbaca — muat ulang sebelum menagih."
-              : " Buka shift klinik untuk menagih."}
+        {data.tahap.map((t) => (
+          <div key={t.id} style={{ marginBottom: 12 }}>
+            <b>{t.invoice_no ?? "(tanpa nomor)"}</b> · {t.correction_pending ? "Koreksi belum selesai" : "Sudah diterbitkan"}
+            <table className="tbl" style={{ width: "100%" }}>
+              <thead><tr><th>Item</th><th>Qty</th><th>Harga</th><th>Diskon baris</th><th>Nilai baris</th></tr></thead>
+              <tbody>{data.rincianDitagih.filter((l) => l.invoice_id === t.id).map((l) => (
+                <tr key={l.id}><td>{l.deskripsi}</td><td>{l.qty}</td><td>{rp(Number(l.harga))}</td>
+                  <td>{Number(l.diskon_persen)}%</td>
+                  <td>{rp(Math.round(Number(l.qty) * Number(l.harga) * (1 - Number(l.diskon_persen) / 100)))}</td></tr>
+              ))}</tbody>
+            </table>
+            <div style={{ fontSize: 11, textAlign: "right" }}>
+              Subtotal tersimpan {rp(Number(t.subtotal) || 0)} · Diskon nota {rp(Number(t.discount) || 0)} · PPN {rp(Number(t.tax) || 0)} · <b>Total invoice {rp(Number(t.total))}</b>
+            </div>
           </div>
-        )}
+        ))}
+        {data.belumDitagih.length > 0 && <>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Belum ditagih</div>
+        <table className="tbl" style={{ width: "100%" }}><thead><tr><th>Item</th><th>Qty</th><th>Harga</th><th>Nilai</th></tr></thead>
+          <tbody>{data.belumDitagih.map(b => <tr key={b.id}><td>{b.nama_obat}</td><td>{b.qty}</td><td>{rp(Number(b.harga))}</td><td>{rp(nilaiBarisResep(b))}</td></tr>)}</tbody>
+        </table>
+        </>}
+        <div style={{ borderTop: "1px solid var(--bd)", marginTop: 12, paddingTop: 8, textAlign: "right", fontSize: 12 }}>
+          <div><b>Total transaksi: {rp(totalTransaksi)}</b></div>
+          <div>DP: {data.riwayatUangTerpasang ? rp(applied) : "Belum terbaca"}</div>
+          <div><b>Sisa pembayaran: {quote ? rp(quote.remaining) : "Belum terbaca"}</b></div>
+        </div>
       </section>
 
       <section className="crm-sec" style={{ marginBottom: 14 }}>
@@ -177,6 +236,13 @@ export default async function TagihanRawatInapPage({
               </tr>
             </thead>
             <tbody>
+              {dpAwal.map((t) => (
+                <tr key={`dp-awal:${t.id}`}>
+                  <td>DP awal</td><td>{t.invoice_no}</td><td>{tgl(t.created_at)}</td>
+                  <td>{t.metode_bayar ?? "Lihat invoice"}</td><td style={{ textAlign: "right" }}>{rp(Number(t.dp_amount))}</td>
+                  <td colSpan={3}>Tercatat di kepala invoice, bukan saldo wallet atau kwitansi baru.</td>
+                </tr>
+              ))}
               {data.kwitansi.map((k, i) => (
                 <tr key={k.id}>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>DP {i + 1}</td>
@@ -204,10 +270,10 @@ export default async function TagihanRawatInapPage({
                   </td>
                 </tr>
               ))}
-              {!data.kwitansi.length && (
+              {!data.kwitansi.length && !dpAwal.length && (
                 <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
                   {data.riwayatUangTerpasang
-                    ? "Belum ada pembayaran untuk kunjungan ini."
+                    ? rekap.dibayar > 0 ? "Pembayaran tercatat pada invoice / uang muka di atas; lihat dokumen asal untuk riwayatnya." : "Belum ada pembayaran untuk kunjungan ini."
                     : "Riwayat pembayaran belum dapat dibaca — ini BUKAN berarti belum ada uang masuk."}
                 </td></tr>
               )}
@@ -235,37 +301,22 @@ export default async function TagihanRawatInapPage({
         )}
       </section>
 
-      <section className="crm-sec">
-        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)", marginBottom: 9 }}>
-          <i className="ti ti-cash" /> TERIMA PEMBAYARAN
-        </div>
-        {bolehProsesUang ? (
-          <TerimaPembayaranForm key={`bayar:${data.kwitansi.length}:${data.tahap.length}`}
-            recordId={data.record.id} visitId={data.visit.id} requestKey={randomUUID()} tahap={data.tahap} />
-        ) : (
-          <div style={{ fontSize: 11.5, color: "var(--tm)" }}>
-            {shift
-              ? "Riwayat pembayaran belum terbaca — muat ulang halaman sebelum menerima uang."
-              : "Buka shift klinik untuk menerima uang."}
-          </div>
-        )}
-      </section>
+
     </>
   );
 }
 
-function Kartu({ label, value, sub, color, bg, icon }: {
-  label: string; value: string; sub: string; color: string; bg: string; icon: string;
+function Kartu({ label, value, color, bg, icon }: {
+  label: string; value: string; color: string; bg: string; icon: string;
 }) {
   return (
-    <div className="card" style={{ padding: 14, display: "flex", alignItems: "center", gap: 11 }}>
+    <div className="card" style={{ padding: 10, display: "flex", alignItems: "center", gap: 9 }}>
       <div style={{ width: 40, height: 40, borderRadius: 10, background: bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <i className={`ti ${icon}`} style={{ color, fontSize: 20 }} />
       </div>
       <div>
         <div style={{ fontSize: 9.5, color, fontWeight: 700, letterSpacing: ".03em" }}>{label}</div>
         <div style={{ fontSize: 18, fontWeight: 800, color: "#141413", lineHeight: 1.2 }}>{value}</div>
-        <div style={{ fontSize: 9.5, color: "var(--tm)" }}>{sub}</div>
       </div>
     </div>
   );

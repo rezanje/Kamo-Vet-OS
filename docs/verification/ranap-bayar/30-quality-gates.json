@@ -1,0 +1,61 @@
+[
+  {
+    "check": "ui-targeted",
+    "command": [
+      "node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__",
+      "src/components/__tests__/ranap-simpan-bayar.test.tsx",
+      "src/components/__tests__/ranap-payment-popup.test.tsx",
+      "src/lib/__tests__/tagihan-berjalan.test.ts",
+      "src/lib/__tests__/tagihan-berjalan-server.test.ts",
+      "src/lib/__tests__/tagihan-berjalan-sql.test.ts",
+      "src/lib/__tests__/uang-tagihan.test.ts",
+      "--maxWorkers=1",
+      "--reporter=default",
+      "--reporter=json",
+      "--outputFile=docs/verification/ranap-bayar/30-ui-final.json"
+    ],
+    "exit_code": 0,
+    "log": "docs/verification/ranap-bayar/30-ui-targeted.log"
+  },
+  {
+    "check": "targeted-typecheck",
+    "command": [
+      "node",
+      "node_modules/typescript/bin/tsc",
+      "-p",
+      "docs/verification/ranap-bayar/tsconfig.targeted.json"
+    ],
+    "exit_code": 0,
+    "log": "docs/verification/ranap-bayar/30-targeted-typecheck.log"
+  },
+  {
+    "check": "changed-file-eslint",
+    "command": [
+      "node",
+      "node_modules/eslint/bin/eslint.js",
+      "src/app/(app)/klinik/rawat-inap/[id]/tagihan/actions.ts",
+      "src/app/(app)/klinik/rawat-inap/[id]/tagihan/page.tsx",
+      "src/app/(app)/klinik/rawat-inap/[id]/tagihan/SimpanBayarForm.tsx",
+      "src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/page.test.tsx",
+      "src/app/(app)/klinik/rawat-inap/[id]/tagihan/__tests__/simpan-bayar-actions.test.ts",
+      "src/components/__tests__/ranap-simpan-bayar.test.tsx",
+      "src/components/__tests__/ranap-payment-popup.test.tsx",
+      "src/lib/ranap-payment.ts"
+    ],
+    "exit_code": 0,
+    "log": "docs/verification/ranap-bayar/30-changed-file-eslint.log"
+  },
+  {
+    "check": "diff-check",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0,
+    "log": "docs/verification/ranap-bayar/30-diff-check.log"
+  }
+]

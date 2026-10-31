@@ -1,4 +1,5 @@
 "use server";
+import { parseStayType } from "@/lib/inpatient-stay";
 import { quoteDemoPayments, type DemoFinancialPolicy } from "@/lib/clinic-demo-policy";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
@@ -120,27 +121,35 @@ async function postInvoiceAtomik(
   params: ClinicPostInvoiceParams,
   payments?: ClinicSplitPayment[],
   demo?: { policyId: string; employees: string[] },
-): Promise<{ invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
-  const wrappedParams = {
-    ...params,
-    ...(payments ? { p_payments: payments } : {}),
-    ...(demo ? { p_policy_id: demo.policyId, p_payments: payments, p_employee_ids: demo.employees } : {}),
-  };
-  const terbungkus = await supabase.rpc("clinic_post_invoice_with_record", wrappedParams);
-  const { data: invoiceId, error } = isMissingRecordWrapper(terbungkus.error, "clinic_post_invoice_with_record", wrappedParams)
-    ? demo
+  admission?: { plan: string; stayType: string },
+): Promise<{ inpatientId?: string; invoiceId: string | null; invoiceNo: string | null; error: { code?: string; message: string } | null }> {
+  const wrapper = admission ? "clinic_post_dp_and_admit_with_record" as const : "clinic_post_invoice_with_record" as const;
+  const wrappedParams = admission
+    ? { ...params, p_treatment_plan: admission.plan, p_stay_type: admission.stayType }
+    : {
+      ...params,
+      ...(payments ? { p_payments: payments } : {}),
+      ...(demo ? { p_policy_id: demo.policyId, p_payments: payments, p_employee_ids: demo.employees } : {}),
+    };
+  const terbungkus = await supabase.rpc(wrapper, wrappedParams);
+  const { data: result, error } = isMissingRecordWrapper(terbungkus.error, wrapper, wrappedParams)
+    ? admission
+      ? await supabase.rpc("clinic_post_dp_and_admit", { ...params, p_treatment_plan: admission.plan, p_stay_type: admission.stayType })
+      : demo
       ? await supabase.rpc("clinic_post_demo_invoice", {...params, p_policy_id:demo.policyId, p_payments:payments, p_employee_ids:demo.employees})
       : payments
       ? await supabase.rpc("clinic_post_split_invoice", { ...params, p_payments: payments })
       : await supabase.rpc("clinic_post_invoice", params)
     : terbungkus;
-  if (error || !invoiceId) return { invoiceId: null, invoiceNo: null, error: error ?? { message: "Invoice tidak terbentuk" } };
+  const invoiceId = admission ? result?.invoice_id : result;
+  const inpatientId = admission ? result?.inpatient_id : undefined;
+  if (error || !invoiceId || (admission && !inpatientId)) return { invoiceId: null, invoiceNo: null, error: error ?? { message: "Hasil invoice/rawat inap belum terkonfirmasi" } };
   const { data: invoice, error: readError } = await supabase
     .from("invoices").select("invoice_no").eq("id", invoiceId).maybeSingle();
   if (readError || !invoice?.invoice_no) {
     return { invoiceId, invoiceNo: null, error: readError ?? { message: "Nomor invoice tidak terbaca setelah tersimpan" } };
   }
-  return { invoiceId, invoiceNo: invoice.invoice_no, error: null };
+  return { invoiceId, inpatientId, invoiceNo: invoice.invoice_no, error: null };
 }
 
 export async function bayarVisit(formData: FormData) {
@@ -150,6 +159,7 @@ export async function bayarVisit(formData: FormData) {
   if (!visitId) redirect(`/klinik/antrian?error=${encodeURIComponent("Visit tidak valid")}`);
   const back = `/klinik/pembayaran/${visitId}`;
   const waktu = catatWaktu("bayarVisit", visitId);
+  const targetInvoiceId = String(formData.get("target_invoice_id") ?? "").trim();
 
   // U07 batch 1: every read that needs only the visit id starts together. Each is
   // still awaited (and validated) at its original place below.
@@ -165,10 +175,11 @@ export async function bayarVisit(formData: FormData) {
   // `maybeSingle()` di sini dulu berubah jadi galat "tagihan belum dapat diverifikasi"
   // begitu tahap kedua terbit, sehingga rawat jalan pun ikut macet. Yang dipakai jalur
   // koreksi adalah tagihan TERBARU; tahapnya dikelola di layar tagihan rawat inap.
-  const activeInvoiceP = mulai(supabase
+  const activeInvoiceQuery = supabase
     .from("invoices")
     .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, request_key, voucher_code, correction_pending, service_pricing_version, salesperson_id")
-    .eq("visit_id", visitId).is("voided_at", null)
+    .eq("visit_id", visitId).is("voided_at", null);
+  const activeInvoiceP = mulai((targetInvoiceId ? activeInvoiceQuery.eq("id",targetInvoiceId) : activeInvoiceQuery)
     .order("created_at", { ascending: false }).order("id", { ascending: false })
     .limit(1).maybeSingle());
   const periodeP = mulai(cekPeriode(supabase, todayIso()));
@@ -209,12 +220,22 @@ export async function bayarVisit(formData: FormData) {
   const { data: activeInvoice, error: activeInvoiceError } = await activeInvoiceP;
 
   if (activeInvoiceError) redirect(`${back}?error=${encodeURIComponent("Tagihan belum dapat diverifikasi. Muat ulang tanpa membuat pembayaran baru.")}`);
+  if (targetInvoiceId && !activeInvoice) redirect(`${back}?error=${encodeURIComponent("Invoice yang dipilih sudah berubah atau tidak sesuai kunjungan. Muat ulang; tidak ada transaksi yang disimpan.")}`);
 
   // A lost create response must replay its sealed request/hash instead of
   // becoming a correction. Different creation keys keep the normal edit path.
   const submittedRequestKey = String(formData.get("requestKey") ?? "").trim();
   const isCreationReplay = !!activeInvoice && activeInvoice.request_key === submittedRequestKey;
   const existing = isCreationReplay ? null : activeInvoice;
+  const intendsAdmission = formData.get("admit_after_dp") === "1";
+  const stayType = formData.has("stay_type") ? parseStayType(formData.get("stay_type")) : null;
+  const plan = String(formData.get("treatment_plan") ?? "").trim();
+  if (intendsAdmission && (existing || !stayType || !plan || plan.length > 4000
+      || formData.get("finalize") === "1" || formData.get("paid_status") !== "DP"
+      || formData.has("split_payments") || demoPolicyId)) {
+    redirect(`${back}?error=${encodeURIComponent("Untuk DP & Rawat Inap, isi rencana dan tipe rawat inap, bayar sebagian lalu pilih Simpan. Tagihan lama tidak diubah.")}`);
+  }
+  const admission = intendsAdmission && stayType ? { plan, stayType } : undefined;
   const groupedServicePricing = !isCreationReplay || activeInvoice?.service_pricing_version === 1;
 
   let items: Line[] = [];
@@ -413,7 +434,7 @@ export async function bayarVisit(formData: FormData) {
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
     p_lines: barisUntukPosting(rows),
-  }, payments, demo);
+  }, payments, demo, admission);
   if (posted.error || !posted.invoiceNo) {
     redirect(`${back}?error=${encodeURIComponent(posted.invoiceId ? "Invoice sudah tersimpan, tetapi rinciannya belum dapat dibaca. Jangan menerima pembayaran ulang; muat ulang dan periksa invoice yang sama." : parseClinicPostingError(posted.error, uncertainPayment))}`);
   }
@@ -422,7 +443,7 @@ export async function bayarVisit(formData: FormData) {
 
   // Paid creation and checkout commit atomically in the posting RPC. Do not
   // repeat checkout here: a retry may arrive after later inpatient admission.
-  if (visitStatus !== "Selesai") {
+  if (visitStatus !== "Selesai" && !admission) {
     const visitUpdated = await supabase.from("visits").update({ status: visitStatus }).eq("id", visitId);
     if (visitUpdated.error) redirect(`${back}?error=${encodeURIComponent("Invoice sudah tersimpan, tetapi status kunjungan belum terkonfirmasi. Jangan membuat invoice baru; muat ulang dan periksa tagihan yang sama.")}`);
   }
@@ -468,6 +489,10 @@ export async function bayarVisit(formData: FormData) {
   // tetap di halaman pembayaran (read-only) supaya tombol Struk/Invoice langsung terlihat.
   revalidatePath(back);
   waktu.selesai();
+  if (posted.inpatientId) {
+    for (const path of ["/klinik/rawat-inap", "/klinik/antrian", "/klinik/rekam-medis", `/klinik/rekam-medis/${visitId}`]) revalidatePath(path);
+    return { saved: true, href: `/klinik/rawat-inap/${posted.inpatientId}?success=admit` };
+  }
   return { saved: true, href: `/klinik/pembayaran/${visitId}?success=bayar` };
 }
 

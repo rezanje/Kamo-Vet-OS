@@ -103,7 +103,9 @@ beforeEach(() => {
   state.role = "FINANCE"; state.payments = []; state.dp = 0; state.paidStatus = "Belum Lunas";
   state.correctionPending = false; state.layak = true; state.rpc = [];
 });
-const render = () => Page({ params: Promise.resolve({ visitId: "visit" }), searchParams: Promise.resolve({}) });
+// Default inpatient cashier is pending-only. The existing financial correction
+// workflow is separate and MUST name its actual issued invoice explicitly.
+const render = () => Page({ params: Promise.resolve({ visitId: "visit" }), searchParams: Promise.resolve({invoice_id:"tagihan"}) });
 const formKoreksi = (html: string) => html.includes('data-form-koreksi="1"');
 
 it("menawarkan koreksi kepada keuangan untuk riwayat pembayaran yang sudah dibalik seluruhnya", async () => {
