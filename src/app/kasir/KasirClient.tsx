@@ -164,7 +164,9 @@ export function KasirClient({
       setCart(draft.cart.flatMap((line) => {
         const item = items.find((i) => i.id === line.item_id);
         if (!item) return [];
-        const unit = item.satuan?.find((u) => u.unit === line.satuan);
+        const unit = line.satuan
+          ? item.satuan?.find((u) => u.unit === line.satuan)
+          : item.satuan?.[0];
         return [{
           ...line,
           nama: item.name,
@@ -315,7 +317,10 @@ export function KasirClient({
   const kodeTerbaca = useMemo(() => bacaKode(voucher, kodeKampanye), [voucher, kodeKampanye]);
   const promoKodeId = kodeTerbaca.promoId;
   const promoEfektif = useMemo(() => promoDenganKode(promoHitung, kodeTerbaca.promoId), [promoHitung, kodeTerbaca]);
-  const potonganPromo = useMemo(() => serviceLinePromos(promoEfektif, cart), [promoEfektif, cart]);
+  const potonganPromo = useMemo(() => serviceLinePromos(promoEfektif, cart.map(line => {
+    const unit = items.find(item => item.id === line.item_id)?.satuan?.find(unit => unit.unit === line.satuan);
+    return {...line, officialPrice: unit?.sell_price, faktor: unit?.factor, manualOverride: line.harga !== unit?.sell_price};
+  })), [promoEfektif, cart, items]);
   const promoPerItem = useMemo(
     () => new Map(potonganPromo.map((p) => [p.lineIndex, p])),
     [potonganPromo],

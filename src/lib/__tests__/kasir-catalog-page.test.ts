@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { cocokOr } from "./helpers/postgrest-or";
 
-const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failItemsFrom: -1 }));
+const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failItemsFrom: -1, units: new Map<string,{unit:string;factor:number;sell_price:number;buy_price:number}[]>() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "cashier" } } }) },
   from(table: string) {
@@ -29,12 +29,13 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 }) }));
 vi.mock("@/lib/shift", () => ({ getOpenShift: async () => ({ id: "shift", branch_id: "branch", branchName: "Cabang Uji" }) }));
 vi.mock("@/lib/penjual", () => ({ daftarPenjual: async () => [] }));
-vi.mock("@/lib/satuan", () => ({ loadUnitOptions: async () => new Map() }));
+vi.mock("@/lib/satuan", () => ({ loadUnitOptions: async () => fixture.units }));
 vi.mock("@/app/kasir/KasirClient", () => ({ KasirClient: () => null }));
 import KasirPage from "@/app/kasir/page";
 
 beforeEach(() => {
   fixture.failItemsFrom = -1;
+  fixture.units = new Map();
   fixture.tables = {
     items: Array.from({ length: 1205 }, (_, index) => ({
       id: `item-${index}`, code: `SKU-${index}`, name: index === 1204 ? "Zebra Tuna" : `Pakan ${index}`,
@@ -51,6 +52,18 @@ beforeEach(() => {
     fixture.tables.item_price_tiers.push({ id: `tier-${index}`, item_id: `item-${index}`, min_qty: 5, harga: 16000 });
     fixture.tables.category_discounts.push({ id: `discount-${index}`, customer_category_id: "customer-category", item_id: `item-${index}`, item_category_id: null, diskon_persen: 5 });
   }
+});
+
+it('supplies complete quantity-pool JSON and even single official PCS units to cashier',async()=>{
+ const quantity_pool={version:1,unit:'PCS',normal_price:20000,tiers:[{qty:6,total:110000},{qty:2,total:38000}]};
+ fixture.tables.promos=[{id:'pool',name:'Bolt',rule:{discount_mode:'quantity_pool',quantity_pool},is_active:true,auto_apply:true,branch_ids:null,valid_from:null,valid_until:null,min_qty:null,max_qty:null,kelipatan:true,discount_type:null,discount_value:null}];
+ fixture.tables.promo_items=[{promo_id:'pool',item_id:'item-0'},{promo_id:'pool',item_id:'item-1'}];
+ fixture.units.set('item-0',[{unit:'PCS',factor:1,sell_price:20000,buy_price:10000}]);
+ const page=await KasirPage({searchParams:Promise.resolve({})});
+ expect(page.props.promoHitung[0]).toMatchObject({discountMode:'quantity_pool',quantityPool:quantity_pool,itemIds:['item-0','item-1']});
+ expect(page.props.items[0].satuan).toEqual([{unit:'PCS',factor:1,sell_price:20000,buy_price:10000}]);
+ fixture.tables.promos[0].rule={discount_mode:'quantity_pool'};
+ await expect(KasirPage({searchParams:Promise.resolve({})})).rejects.toThrow(/quantity pool/i);
 });
 
 it("makes products after the API's first 1,000 rows available to cashier search and pagination", async () => {

@@ -1,5 +1,6 @@
 import { hariIniWIB } from "./tanggal";
 import { readCompleteList } from "./checked-list";
+import { allocateQuantityPool, parseQuantityPoolRule, type QuantityPoolRule } from "./promo-quantity-pool";
 // Perhitungan potongan promo — pure, dipakai KLIEN (tampilan kasir) dan SERVER
 // (angka yang benar-benar disimpan). Dipisah dari lib/promo.ts karena file itu
 // hanya soal "promo ini aktif hari ini di cabang mana", bukan soal uang.
@@ -28,15 +29,28 @@ export type PromoHitung = {
   autoApply: boolean;
   discountType: "percent" | "nominal" | null;
   discountValue: number | null;
-  discountMode?: "per_unit" | "package_total";
+  discountMode?: "per_unit" | "package_total" | "quantity_pool";
+  quantityPool?: QuantityPoolRule;
   minSubtotal?: number | null;           // syarat nilai belanja (dari rule lama)
 };
 
-export type PromoDiscountMode = "per_unit" | "package_total";
+export type PromoDiscountMode = "per_unit" | "package_total" | "quantity_pool";
 export function promoDiscountMode(value: unknown): PromoDiscountMode {
   if (value == null || value === "" || value === "per_unit") return "per_unit";
-  if (value === "package_total") return value;
+  if (value === "package_total" || value === "quantity_pool") return value;
   throw new Error("Cara hitung diskon promo tidak valid");
+}
+
+/** Shared by server and kasir page; no client can silently drop pool JSON. */
+export function promoPricingRule(rule: {discount_mode?: unknown; quantity_pool?: unknown} | null | undefined, itemIds: string[]): {discountMode: PromoDiscountMode; quantityPool?: QuantityPoolRule} {
+  const discountMode = promoDiscountMode(rule?.discount_mode);
+  if (discountMode !== "quantity_pool") {
+    if (rule?.quantity_pool != null) throw new Error("Aturan quantity pool tidak lengkap. Muat ulang.");
+    return {discountMode};
+  }
+  const quantityPool = parseQuantityPoolRule(rule?.quantity_pool);
+  if (!quantityPool || itemIds.length === 0) throw new Error("Aturan quantity pool atau target barang tidak lengkap. Muat ulang.");
+  return {discountMode, quantityPool};
 }
 
 export function validatePackageDiscount(mode: PromoDiscountMode, discountType: string | null, minQty: number | null, itemIds: string[]): void {
@@ -46,7 +60,7 @@ export function validatePackageDiscount(mode: PromoDiscountMode, discountType: s
   if (itemIds.length !== 1) throw new Error("Total per paket memerlukan tepat satu barang target");
 }
 
-export type BarisKeranjang = { item_id: string; qty: number; harga: number; satuan?: string | null };
+export type BarisKeranjang = { item_id: string; qty: number; harga: number; satuan?: string | null; faktor?: number; officialPrice?: number; manualOverride?: boolean; item_discount_type?: string | null; item_discount_value?: number | null };
 
 export type PotonganBaris = {
   item_id: string;
@@ -76,6 +90,7 @@ export function qtyDapatPotongan(qty: number, p: PromoHitung): number {
 // Potongan rupiah untuk satu baris. Tidak pernah melebihi nilai barisnya —
 // potongan lebih besar dari harga bikin total transaksi minus dan jurnalnya ikut salah.
 export function potonganBaris(baris: BarisKeranjang, p: PromoHitung): number {
+  if (p.discountMode === "quantity_pool") throw new Error("Promo quantity pool harus dihitung untuk seluruh keranjang");
   if (!p.discountType || !p.discountValue || p.discountValue <= 0) return 0;
   const harga = Math.max(0, Number(baris.harga) || 0);
   const kena = qtyDapatPotongan(baris.qty, p);
@@ -116,14 +131,14 @@ export function hitungPromoKeranjang(promos: PromoHitung[], cart: BarisKeranjang
 
   const aktif = promos.filter((p) =>
     p.autoApply &&
-    !!p.discountType &&
+    (!!p.discountType || p.discountMode === "quantity_pool") &&
     (p.minSubtotal == null || subtotal >= p.minSubtotal),
   );
 
   const terbaik: (PotonganBaris | null)[] = cart.map((baris) => {
     let pilih: PotonganBaris | null = null;
     for (const p of aktif) {
-      if (p.discountMode === "package_total" || !kenaPromo(p, baris.item_id, baris.satuan)) continue;
+      if (p.discountMode === "package_total" || p.discountMode === "quantity_pool" || !kenaPromo(p, baris.item_id, baris.satuan)) continue;
       const potongan = potonganBaris(baris, p);
       if (potongan <= 0) continue;
       if (!pilih || potongan > pilih.potongan) {
@@ -173,6 +188,32 @@ export function hitungPromoKeranjang(promos: PromoHitung[], cart: BarisKeranjang
       };
     });
   }
+  for (const p of aktif) {
+    if (p.discountMode !== "quantity_pool") continue;
+    const rule = parseQuantityPoolRule(p.quantityPool);
+    if (!rule || p.itemIds.length === 0) throw new Error("Aturan quantity pool atau target barang tidak lengkap. Muat ulang.");
+    const indexes = cart.flatMap((baris, index) =>
+      kenaPromo(p, baris.item_id, baris.satuan) &&
+      baris.satuan === rule.unit && baris.faktor === 1 &&
+      Number.isSafeInteger(baris.qty) && baris.qty > 0 &&
+      baris.harga === rule.normal_price && baris.officialPrice === rule.normal_price &&
+      !baris.manualOverride && !(baris.item_discount_type && Number(baris.item_discount_value) > 0)
+        ? [index] : []);
+    const allocation = allocateQuantityPool(rule, indexes.map(index => ({id: String(index), qty: cart[index].qty})));
+    const total = indexes.reduce((sum, index) => sum + (allocation[String(index)] ?? 0), 0);
+    const existing = indexes.reduce((sum, index) => sum + (terbaik[index]?.potongan ?? 0), 0);
+    // A pool is one indivisible promotion decision, just like package_total.
+    // Keeping half a stronger old promo and half this pool would create a tier
+    // that was never bought. Exact ties retain the existing promo.
+    if (total <= existing) continue;
+    indexes.forEach(index => {
+      const potongan = allocation[String(index)] ?? 0;
+      terbaik[index] = {
+        item_id: cart[index].item_id, potongan, qtyKena: cart[index].qty,
+        promoId: p.id, promoName: p.name,
+      };
+    });
+  }
   return terbaik.filter((hasil): hasil is PotonganBaris => !!hasil && hasil.potongan > 0);
 }
 
@@ -192,7 +233,7 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string, prom
   const wibToday = hariIniWIB();
 
   type Row = {
-    id: string; name: string; rule: { min_subtotal?: number; unit?: string; discount_mode?: unknown } | null;
+    id: string; name: string; rule: { min_subtotal?: number; unit?: string; discount_mode?: unknown; quantity_pool?: unknown } | null;
     branch_ids: string[] | null; valid_from: string | null; valid_until: string | null;
     min_qty: number | null; max_qty: number | null; kelipatan: boolean; auto_apply: boolean;
     discount_type: "percent" | "nominal" | null; discount_value: number | null;
@@ -236,8 +277,8 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string, prom
 
   return aktif.map((p) => {
     const itemIds=perPromo.get(p.id) ?? [];
-    const mode=promoDiscountMode(p.rule?.discount_mode);
-    validatePackageDiscount(mode,p.discount_type,p.min_qty == null ? null : Number(p.min_qty),itemIds);
+    const pricing=promoPricingRule(p.rule,itemIds);
+    validatePackageDiscount(pricing.discountMode,p.discount_type,p.min_qty == null ? null : Number(p.min_qty),itemIds);
     return {
       id: p.id, name: p.name, itemIds,
       unit: typeof p.rule?.unit === "string" ? p.rule.unit : null,
@@ -246,7 +287,7 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string, prom
       kelipatan: !!p.kelipatan, autoApply: !!p.auto_apply,
       discountType: p.discount_type,
       discountValue: p.discount_value == null ? null : Number(p.discount_value),
-      discountMode: mode, minSubtotal: p.rule?.min_subtotal ?? null,
+      ...pricing, minSubtotal: p.rule?.min_subtotal ?? null,
     };
   });
 }
