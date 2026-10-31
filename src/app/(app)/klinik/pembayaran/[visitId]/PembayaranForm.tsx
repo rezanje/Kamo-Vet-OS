@@ -21,6 +21,7 @@ import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Popup } from "@/components/Popup";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
+import { StokBarisTagihan } from "@/components/StokKlinik";
 import { bayarVisit } from "./actions";
 import { DpAdmissionFields } from "./DpAdmissionFields";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -53,7 +54,9 @@ type Line = {
 };
 export type PackageOption = { id: string; name: string; componentIds: string[]; perPaket?: Record<string, number> };
 const NO_PACKAGES: PackageOption[] = [];
-export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number; units?: ItemUnit[]; tindakan_kategori?: string | null };
+export type MasterItem = { id: string; code: string; name: string; unit: string; harga: number; units?: ItemUnit[]; tindakan_kategori?: string | null;
+  /** Barang: stok satuan dasar gudang klinik cabang; null = belum terbaca. Jasa: tidak ada. */
+  stokGudang?: number | null };
 type Patient = PaymentPatient;
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -143,6 +146,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                     <i className="ti ti-alert-triangle" title="Bukan dari master — stok tidak akan berkurang" style={{ color: "#d97706", fontSize: 13, flexShrink: 0 }} />
                   )}
                 </div>
+                <StokBarisTagihan baris={r} item={master.find(it => it.id === r.item_id)} />
                 {sealedPerformers || performerLocked(r)
                   ? <div style={{fontSize:10,color:"var(--tm)"}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>
                   : <ServicePerformersField label={`Pelaksana ${r.deskripsi || `baris ${i+1}`}`} value={r.service_performers} staff={serviceStaff}
@@ -483,6 +487,8 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
       <input type="hidden" name="visitId" value={visitId} />
       {editMode && targetInvoiceId && <input type="hidden" name="target_invoice_id" value={targetInvoiceId}/>}
       <input type="hidden" name="requestKey" value={submissionKey} />
+      {/* Versi keranjang dasar isian ini; server menolak bila rekam medis sudah berubah. */}
+      {!editMode && <input type="hidden" name="source_version" value={draftSourceVersion} />}
       {demoEnabled && !editMode && <>
         <input type="hidden" name="demo_policy_id" value={demoPolicyId}/>
         <input type="hidden" name="demo_employee_ids" value={JSON.stringify(demoEmployees)}/>

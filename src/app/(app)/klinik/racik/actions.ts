@@ -9,10 +9,12 @@ import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compo
 import { nextStatus, type RecipeStatus } from "@/lib/compounding";
 
 import { hargaCabang } from "@/lib/harga-cabang";
+import { stokGudangKlinik } from "@/lib/stok-klinik";
 import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams } from "@/lib/klinik-posting";
 import { loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 
-export type BahanRacikan = { id: string; name: string; unit: string; sell_price: number; stok: number };
+/** `stok` null = gudang klinik cabang belum terbaca ("belum terbaca"), bukan nol. */
+export type BahanRacikan = { id: string; name: string; unit: string; sell_price: number; stok: number | null };
 
 export async function katalogRacikanUntukKunjungan(visitId: string) {
   const supabase = await createClient();
@@ -29,8 +31,8 @@ export async function bahanRacikanUntukKunjungan(visitId: string): Promise<Bahan
   const items = await readCompleteList<{id:string;name:string;unit:string;sell_price:number}>((from,to) => supabase.from("items")
     .select("id,name,unit,sell_price", {count:"exact"}).eq("is_active",true).eq("item_type","Persediaan").eq("is_compound_material",true)
     .order("name").order("id").range(from,to), "Bahan racikan");
-  const {stock,prices} = await loadClinicSkuDetails(supabase,items.map(item=>item.id),visit.branch_id);
-  return items.map(item=>({...item,sell_price:hargaCabang(prices,item.id,item.unit,Number(item.sell_price)),stok:stock.get(item.id)??0}));
+  const details = await loadClinicSkuDetails(supabase,items.map(item=>item.id),visit.branch_id);
+  return items.map(item=>({...item,sell_price:hargaCabang(details.prices,item.id,item.unit,Number(item.sell_price)),stok:stokGudangKlinik(details,item.id)}));
 }
 
 export async function obatRacikUntukKunjungan(visitId:string) {
@@ -38,8 +40,8 @@ export async function obatRacikUntukKunjungan(visitId:string) {
   const {data:visit,error}=await supabase.from("visits").select("branch_id").eq("id",visitId).maybeSingle();
   if(error||!visit)throw new Error("Kunjungan tidak tersedia.");
   const items=await loadClinicCompoundSkus(supabase);
-  const {stock,prices}=await loadClinicSkuDetails(supabase,items.map(item=>item.id),visit.branch_id);
-  return items.map(item=>({...item,sell_price:hargaCabang(prices,item.id,item.unit,Number(item.sell_price)),stok:stock.get(item.id)??0}));
+  const details=await loadClinicSkuDetails(supabase,items.map(item=>item.id),visit.branch_id);
+  return items.map(item=>({...item,sell_price:hargaCabang(details.prices,item.id,item.unit,Number(item.sell_price)),stok:stokGudangKlinik(details,item.id)}));
 }
 
 // Tambah racikan inline dari view rekam medis (recorded) — field ringkas sama seperti

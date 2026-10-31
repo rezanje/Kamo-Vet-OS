@@ -15,6 +15,8 @@ import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerName
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
 import { kekuranganStok } from "@/lib/stok-keranjang";
+import { petaStokKlinik } from "@/lib/stok-klinik";
+import { StokKlinik, StokKeranjangKlinik } from "@/components/StokKlinik";
 import { StokKurangPopup, StokKurangDariPesan } from "@/components/StokKurangPopup";
 import type { BarisKurangStok } from "@/lib/stok-kurang";
 import { simpanRekamMedis, koreksiRekamMedis, koreksiRekamMedisLengkap } from "./actions";
@@ -31,7 +33,9 @@ import { staffForService } from "@/lib/clinical-staff";
 import { isMedicalService } from "@/lib/clinic-required-fields";
 
 export type ItemLite = {
-  id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number;
+  id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number;
+  /** Stok satuan dasar gudang klinik transaksi; null = belum terbaca. */
+  stok: number | null;
   tindakan_kategori?: string | null; item_type?: string;
   units?: ItemUnit[];   // satuan berjenjang (pcs/box, ml/btl) — kosong = hanya satuan dasar
 };
@@ -235,7 +239,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const editProcedure = (row: CartRow) => {
     const item = tindakanItems.find(candidate => candidate.id === row.item_id) ?? {
       id: row.item_id!, name: row.nama_obat, unit: row.satuan, sell_price: row.harga,
-      stok: 0, item_type: row.jenis === "jasa" ? "Jasa" : "Persediaan", tindakan_kategori: row.kategori,
+      stok: null, item_type: row.jenis === "jasa" ? "Jasa" : "Persediaan", tindakan_kategori: row.kategori,
     };
     procedureCommitted.current = false;
     setProcedureError("");
@@ -293,7 +297,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   const ppn = 0; // ponytail: PPN 0% (display); tarif final ditentukan kasir saat pembayaran
   const total = Math.max(0, subtotal - discountVal + ppn);
 
-  const stokById = useMemo(() => new Map([...items, ...bahanItems, ...racikanItems].filter(it => it.item_type !== "Jasa").map(it => [it.id, { stok: it.stok, unit: it.unit }])), [items, bahanItems, racikanItems]);
+  // Peta stok gudang transaksi. Pemeriksaan sebelum simpan tetap memakai cakupan lama;
+  // tampilan keranjang juga mengenal tindakan persediaan (stok induk tanpa BMHP).
+  const stokById = useMemo(() => petaStokKlinik(items, bahanItems, racikanItems), [items, bahanItems, racikanItems]);
+  const stokTampil = useMemo(() => petaStokKlinik(items, bahanItems, racikanItems, tindakanItems), [items, bahanItems, racikanItems, tindakanItems]);
 
   return (<>
     {/* Di luar <form>: dialog punya form method="dialog" sendiri. */}
@@ -443,7 +450,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                         {filtered.map((it) => (
                           <tr key={it.id}>
                             <td style={{ fontSize: 11, fontWeight: 500 }}>{it.name}</td>
-                            <td style={{ textAlign: "center", fontSize: 10.5, color: it.stok <= 0 ? "#b91c1c" : "var(--tm)" }}>{it.stok} {it.unit}</td>
+                            <td style={{ textAlign: "center" }}><StokKlinik stok={it.stok} satuanDasar={it.unit} style={{ fontSize: 10.5 }} /></td>
                             <td style={{ textAlign: "right", fontSize: 11 }}>{rp(it.sell_price)}</td>
                             <td style={{ textAlign: "center" }}>
                               <button type="button" onClick={() => pickObat(it)} className="btn-acc" style={{ padding: "2px 7px", fontSize: 11, background: "#16a34a" }} title="Tambah"><i className="ti ti-plus" /></button>
@@ -511,6 +518,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                                 ) : <span>{r.satuan}</span>}
                               </span>
                             </div>
+                            <StokKeranjangKlinik baris={r} peta={stokTampil} />
                             {!r.prescription_item_id && <ServicePerformersField compact label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
                               grooming={groomingApplies && r.jenis === "jasa" && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}

@@ -20,6 +20,8 @@ import { addDailyLogPos, addInpatientBillables } from "../../actions";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
 import { ClinicServicePicker } from "@/components/ClinicServicePicker";
 import { kekuranganStok } from "@/lib/stok-keranjang";
+import { petaStokKlinik } from "@/lib/stok-klinik";
+import { StokKlinik, StokKeranjangKlinik } from "@/components/StokKlinik";
 import { StokKurangPopup, StokKurangDariPesan } from "@/components/StokKurangPopup";
 import type { BarisKurangStok } from "@/lib/stok-kurang";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
@@ -28,7 +30,7 @@ import type { ClinicalStaff, InpatientStaff } from '@/lib/clinical-staff';
 
 /** U07: satuan yang dikirim ke browser — tanpa harga beli (tidak dipakai form klinik). */
 export type UnitLite = Omit<ItemUnit, "buy_price">;
-export type ItemLite = { id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number; item_type?: string; tindakan_kategori?: string | null; units?: UnitLite[] };
+export type ItemLite = { id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number; stok: number | null; item_type?: string; tindakan_kategori?: string | null; units?: UnitLite[] };
 type CartRow = {
   key: string; item_id: string | null; nama_obat: string; qty: number; satuan: string; harga: number;
   faktor: number;
@@ -213,7 +215,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
   const editProcedure = (row: CartRow) => {
     const item = tindakanItems.find(candidate => candidate.id === row.item_id) ?? {
       id: row.item_id!, name: row.nama_obat, unit: row.satuan, sell_price: row.harga,
-      stok: 0, item_type: row.jenis === "jasa" ? "Jasa" : "Persediaan", tindakan_kategori: row.kategori,
+      stok: null, item_type: row.jenis === "jasa" ? "Jasa" : "Persediaan", tindakan_kategori: row.kategori,
     };
     procedureCommitted.current = false;
     setProcedureError("");
@@ -302,7 +304,8 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
   const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
   // Same pre-check as rekam medis: medicine lines and procedure BMHP (e.g. vaccine vials) against branch stock.
-  const stokById = new Map([...items, ...bahanItems, ...racikanItems].filter(it => it.item_type !== "Jasa").map(it => [it.id, { stok: it.stok, unit: it.unit }]));
+  const stokById = petaStokKlinik(items, bahanItems, racikanItems);
+  const stokTampil = petaStokKlinik(items, bahanItems, racikanItems, tindakanItems);
 
   return (<>
     <StokKurangPopup baris={stokKurang} onClose={() => setStokKurang([])}
@@ -558,7 +561,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
                         {filtered.map((it) => (
                           <tr key={it.id}>
                             <td style={{ fontSize: 11, fontWeight: 500 }}>{it.name}</td>
-                            <td style={{ textAlign: "center", fontSize: 10.5, color: it.stok <= 0 ? "#b91c1c" : "var(--tm)" }}>{it.stok} {it.unit}</td>
+                            <td style={{ textAlign: "center" }}><StokKlinik stok={it.stok} satuanDasar={it.unit} style={{ fontSize: 10.5 }} /></td>
                             <td style={{ textAlign: "right", fontSize: 11 }}>{rp(it.sell_price)}</td>
                             <td style={{ textAlign: "center" }}>
                               <button type="button" onClick={() => pickObat(it)} className="btn-acc" style={{ padding: "2px 7px", fontSize: 11, background: "#16a34a" }} title="Tambah"><i className="ti ti-plus" /></button>
@@ -621,6 +624,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
                                 ) : <span>{r.satuan}</span>}
                               </span>
                             </div>
+                            <StokKeranjangKlinik baris={r} peta={stokTampil} />
                             <ServicePerformersField compact label={`Pelaksana ${r.nama_obat}`} value={r.service_performers} staff={serviceStaff}
                               grooming={groomingApplies && r.jenis === "jasa" && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}

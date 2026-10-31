@@ -63,7 +63,7 @@ export default async function ShiftPage({
   const dayAgo = new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toISOString();
   const { data: stale } = await supabase
     .from("cashier_shifts")
-    .select("id, shift_type, opening_balance, opened_at, branches(name), profiles(full_name)")
+    .select("id, shift_type, opening_balance, opened_at, opened_by, branches(name), profiles(full_name)")
     .eq("status", "open")
     .lt("opened_at", dayAgo)
     .order("opened_at");
@@ -128,7 +128,7 @@ export default async function ShiftPage({
 
       {(stale ?? []).length > 0 && (
         <div className="crm-sec">
-          <SecHeader num="!" title="SHIFT NYANGKUT (>24 JAM)" desc="Staff lupa tutup shift — manajer cabang bisa tutup paksa (Addendum §1)." />
+          <SecHeader num="!" title="SHIFT NYANGKUT (>24 JAM)" desc="Staff lupa tutup shift — Owner/Admin cabang bisa tutup paksa dengan alasan; tercatat atas nama yang menutup (Addendum §1)." />
           <table className="tbl" style={{ minWidth: 560 }}>
             <thead><tr><th>Dibuka</th><th>Kasir</th><th>Cabang</th><th>Tipe</th><th style={{ textAlign: "right" }}>Modal</th><th /></tr></thead>
             <tbody>
@@ -143,9 +143,14 @@ export default async function ShiftPage({
                     <td style={{ fontSize: 11 }}><span className="bge o">{s.shift_type}</span></td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(s.opening_balance)}</td>
                     <td style={{ textAlign: "right" }}>
-                      {isManager ? (
-                        <form action={forceCloseShift} style={{ display: "inline" }}>
+                      {s.opened_by === user?.id ? (
+                        // Laci sendiri dihitung dan ditutup lewat Selesai Shift biasa, bukan tutup paksa.
+                        <span style={{ fontSize: 10, color: "var(--td)" }}>laci kamu — tutup lewat Selesai Shift</span>
+                      ) : isManager ? (
+                        <form action={forceCloseShift} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                           <input type="hidden" name="shiftId" value={s.id} />
+                          <input className="fi" name="alasan" required minLength={10} maxLength={500}
+                            placeholder="Alasan tutup paksa" aria-label="Alasan tutup paksa" style={{ width: 180, fontSize: 10.5 }} />
                           <button type="submit" className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5 }}>
                             <i className="ti ti-lock-x" /> Tutup Paksa
                           </button>

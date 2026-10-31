@@ -106,7 +106,7 @@ export default async function RacikDetailPage({
     .flatMap(row => row.item_id ? [{ item_id: row.item_id, nama: row.ingredient_name, qty: Number(row.quantity), satuan: row.unit }] : []);
   const bahanPilihan = visit
     ? await bahanRacikanUntukKunjungan(visit.id).then(rows => rows.map(row => ({ id: row.id, name: row.name, unit: row.unit, stok: row.stok })))
-      .catch(() => [] as { id: string; name: string; unit: string; stok: number }[])
+      .catch(() => [] as { id: string; name: string; unit: string; stok: number | null }[])
     : [];
 
   const tglResep = visit ? new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" }) : "—";

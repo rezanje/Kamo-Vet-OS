@@ -228,6 +228,111 @@ export async function simpanRekamMedis(formData: FormData) {
   return { saved: true, href: `/klinik/pembayaran/${visitId}` };                  // fallback
 }
 
+/**
+ * Item susulan rawat jalan (Andri 29 Okt, opsi B): obat / jasa / tindakan / racikan yang
+ * baru teringat SETELAH pemeriksaan disimpan tapi SEBELUM tagihan terbit. Muatannya
+ * sama persis dengan keranjang form pemeriksaan, dan RPC-nya yang memeriksa peran,
+ * cabang, keadaan kunjungan, dan kunci permintaan. Baris baru otomatis terbaca layar
+ * Pembayaran karena dibaca dari rekam medis yang sama.
+ */
+export async function tambahItemRekamMedis(formData: FormData) {
+  const supabase = await createClient();
+  const visitId = String(formData.get("visitId") ?? "").trim();
+  const requestKey = String(formData.get("request_key") ?? "").trim();
+  const back = `/klinik/rekam-medis/${encodeURIComponent(visitId)}`;
+  const form = `${back}/tambah-item`;
+  if (!visitId || !requestKey || requestKey.length > 100) {
+    redirect(`${form}?error=${encodeURIComponent("Muat ulang formulir lalu coba simpan lagi")}`);
+  }
+
+  let resep: ResepItem[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("resep") ?? "[]"));
+    resep = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    resep = [];
+  }
+  if (!resep.length) redirect(`${form}?error=${encodeURIComponent("Pilih minimal satu obat, jasa, tindakan, atau racikan")}`);
+
+  // K02: BMHP hanya dikirim bila kontraknya sudah ada di database (pola simpanRekamMedis).
+  let bmhpRows: (BmhpInput[] | null)[] = [];
+  let bmhpError: string | null = null;
+  try { bmhpRows = resep.map(r => r.item_id && r.jenis !== "racikan" ? bmhpInput(r.bmhp) : null); }
+  catch (error) { bmhpError = error instanceof Error ? error.message : "BMHP tidak valid"; }
+  const needsBmhp = !bmhpError && bmhpRows.some(row => row?.length);
+
+  const [unitResult, bmhpSupport] = await Promise.all([
+    // Faktor satuan dibaca ulang dari master; angka dari form hanya menandai pilihan satuan.
+    loadUnitOptions(supabase, resep.map((r) => r.item_id).filter((x): x is string => !!x))
+      .then((map) => ({ map, error: null as string | null }))
+      .catch((error: unknown) => ({ map: null, error: error instanceof Error ? error.message : "Satuan barang belum dapat dibaca" })),
+    needsBmhp
+      ? supabase.rpc("clinic_bmhp_supported").then(({ data }: { data: unknown }) => data === true)
+      : Promise.resolve(false),
+  ]);
+  if (bmhpError) redirect(`${form}?error=${encodeURIComponent(bmhpError)}`);
+  if (needsBmhp && !bmhpSupport) {
+    redirect(`${form}?error=${encodeURIComponent("Pencatatan BMHP tindakan belum aktif di database. Hapus BMHP atau hubungi admin.")}`);
+  }
+  if (unitResult.error || !unitResult.map) redirect(`${form}?error=${encodeURIComponent(unitResult.error ?? "Satuan barang belum dapat dibaca")}`);
+  const unitOpts = unitResult.map;
+  if (resep.some((r) => r.jenis === "racikan" && !r.official_version_id &&
+    (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
+    redirect(`${form}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
+  }
+
+  const items = resep
+    .map((r, index) => ({ r, bmhp: bmhpRows[index] }))
+    .filter(({ r }) => r.nama_obat?.trim() && r.jenis !== "racikan")
+    .map(({ r, bmhp }) => ({
+      nama_obat: r.nama_obat.trim(),
+      item_id: r.item_id ?? null,
+      qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
+      satuan: r.satuan?.trim() || "pcs",
+      faktor: !r.item_id ? 1 : (unitOpts.get(r.item_id) ? pickUnit(unitOpts.get(r.item_id)!, r.satuan).factor : 1),
+      harga: Number(r.harga) > 0 ? Number(r.harga) : 0,
+      aturan_pakai: r.aturan_pakai?.trim() || null,
+      jenis: r.jenis === "jasa" ? "jasa" : "obat",
+      ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
+      kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
+      ...(bmhp?.length ? { bmhp_components: bmhp } : {}),
+    }));
+  const compounds = resep.filter((r) => r.jenis === "racikan" &&
+    (r.official_version_id || (r.ingredients ?? []).length > 0)).map((r) => r.official_version_id
+      ? {
+          official_version_id: r.official_version_id,
+          ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
+          request_key: r.key ?? "",
+          dosage_instruction: r.aturan_pakai ?? null,
+          ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
+        }
+      : {
+          request_key: r.key ?? "",
+          ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
+          ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
+          recipe: toClinicCompoundRecipeInput({
+            recipeName: r.nama_obat,
+            dosageInstruction: r.aturan_pakai,
+            dosageForm: r.dosage_form,
+            ingredients: (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0),
+          }),
+        });
+
+  const { error } = await supabase.rpc("clinic_add_record_items", {
+    p_visit_id: visitId,
+    p_request_key: requestKey,
+    p_items: items,
+    p_compounds: compounds,
+  });
+  if (error) redirect(`${form}?error=${encodeURIComponent(parseClinicRecordError(error))}`);
+  revalidatePath(back);
+  revalidatePath(`${back}/resep`);
+  revalidatePath(`${back}/dokumen`);
+  revalidatePath(`/klinik/pembayaran/${visitId}`);
+  revalidatePath("/klinik/racik");
+  return { saved: true, href: `${back}?success=susulan` };
+}
+
 /** K01: billed records stay untouched; this only appends a diagnosis/therapy addendum. */
 export async function tambahAdendumRekamMedis(formData: FormData) {
   const visitId = String(formData.get("visitId") ?? "").trim();

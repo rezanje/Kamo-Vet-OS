@@ -274,3 +274,23 @@ describe("clinic item categories", () => {
     }));
   });
 });
+
+// Paket B: stok yang belum terbaca tidak boleh sampai ke layar sebagai angka 0.
+describe("clinic input paths keep unread stock distinct from zero", () => {
+  const obatKhusus = () => InpatientMedicinePage({ params: Promise.resolve({ id: "inpatient" }) });
+  it.each([["exam", exam], ["inpatient", inpatient], ["obat-khusus", obatKhusus]] as const)("%s: branch without an active clinic warehouse sends null stock, not 0 or another warehouse", async (_name, page) => {
+    fixture.tables.warehouses = fixture.tables.warehouses.filter(row => row.type !== "VET");
+    const props = formProps(await page());
+    const lists = ["items", "racikanItems", "bahanItems"].map(key => props?.[key] as { id: string; stok: unknown }[]);
+    expect(lists.flat().length).toBeGreaterThan(0);
+    for (const item of lists.flat()) expect(item.stok, item.id).toBeNull();
+  });
+  it("racikan susulan (Detail rekam medis / Ubah komposisi): material and compound readers keep unread stock as null", async () => {
+    const { bahanRacikanUntukKunjungan, obatRacikUntukKunjungan } = await import("../../app/(app)/klinik/racik/actions");
+    expect((await bahanRacikanUntukKunjungan("visit")).find(row => row.id === "material")).toMatchObject({ stok: 0 });
+    expect((await obatRacikUntukKunjungan("visit")).find(row => row.id === "racik")).toMatchObject({ stok: 8 });
+    fixture.tables.warehouses = fixture.tables.warehouses.filter(row => row.type !== "VET");
+    expect((await bahanRacikanUntukKunjungan("visit")).find(row => row.id === "material")).toMatchObject({ stok: null });
+    expect((await obatRacikUntukKunjungan("visit")).find(row => row.id === "racik")).toMatchObject({ stok: null });
+  });
+});

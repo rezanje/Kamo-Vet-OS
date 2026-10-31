@@ -10,8 +10,8 @@ import type { KatalogRacikan } from "@/lib/katalog-racikan";
 /** Racikan pada rekam medis yang dibuka ulang memakai form yang sama dengan pemeriksaan
  * (laporan Andri 29 Okt: editor lama menyembunyikan daftar bahan sampai dokter mengetik,
  * dan tombol simpannya mati tanpa alasan). Muatan `addRacikan` tidak berubah. */
-type ItemRacik = { id: string; code: string | null; name: string; unit: string; sell_price: number; stok: number };
-const toItem = (row: { id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number }): ItemRacik =>
+type ItemRacik = { id: string; code: string | null; name: string; unit: string; sell_price: number; stok: number | null };
+const toItem = (row: { id: string; code?: string | null; name: string; unit: string; sell_price: number; stok: number | null }): ItemRacik =>
   ({ id: row.id, code: row.code ?? null, name: row.name, unit: row.unit, sell_price: row.sell_price, stok: row.stok });
 const KOSONG: CompoundDraft = { saleItemId: "", formulaId: "", dosageForm: "sirup", instruction: "", ingredients: [] };
 
