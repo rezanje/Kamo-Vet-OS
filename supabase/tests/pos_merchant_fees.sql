@@ -16,7 +16,7 @@ insert into warehouses(id,branch_id,code,name,type) values('e3300000-0000-4000-8
 insert into cashier_shifts(id,branch_id,opened_by,shift_type) values('e4400000-0000-4000-8000-000000000001','e2200000-0000-4000-8000-000000000001','e1100000-0000-4000-8000-000000000001','petshop');
 insert into items(id,code,name,unit,item_type) values('e5500000-0000-4000-8000-000000000001','SPLITSERVICE','Split service','pcs','Jasa'),('e5500000-0000-4000-8000-000000000002','SPLITSTOCK','Split stock','pcs','Persediaan');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
-('1111','Split cash','ASET','D',false),('1112','Split bank','ASET','D',false),('1113','Other bank','ASET','D',false),('1114','Changed bank','ASET','D',false),('4101','Sales','PENDAPATAN','K',false),('4102','Discount','PENDAPATAN','D',false),('2201','VAT','LIABILITAS','K',false),('5101','COGS','BEBAN','D',false),('1301','Inventory','ASET','D',false),('5902','Loss','BEBAN','D',false)
+('1111','Split cash','ASET','D',false),('1112','Split bank','ASET','D',false),('1113','Other bank','ASET','D',false),('1114','Changed bank','ASET','D',false),('510001','Sales','PENDAPATAN','K',false),('520002','Discount','PENDAPATAN','D',false),('312005','VAT','LIABILITAS','K',false),('600001','COGS','BEBAN','D',false),('170001','Inventory','ASET','D',false),('720010','Loss','BEBAN','D',false)
 on conflict(code) do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code) values('e6600000-0000-4000-8000-000000000001','Split cash','Kas','1111'),('e6600000-0000-4000-8000-000000000002','Split bank','Bank','1112'),('e6600000-0000-4000-8000-000000000003','Global bank','Bank','1113'),('e6600000-0000-4000-8000-000000000004','Changed bank','Bank','1114');
 insert into payment_account_map(metode,branch_id,cash_account_id) values('Tunai','e2200000-0000-4000-8000-000000000001','e6600000-0000-4000-8000-000000000001'),('Transfer','e2200000-0000-4000-8000-000000000001','e6600000-0000-4000-8000-000000000002'),('Transfer',null,'e6600000-0000-4000-8000-000000000003') on conflict do nothing;
@@ -30,7 +30,7 @@ create function pg_temp.balance(ref text,source_kind text,code text) returns num
 create function pg_temp.refund(ref text,key text,qty numeric) returns jsonb language sql as $$select post_unit_return('sales',(select id from sales where no_struk=ref),key,jsonb_build_object('tanggal',(now() at time zone 'Asia/Jakarta')::date,'dari','kasir'),jsonb_build_array(jsonb_build_object('source_line_id',(select i.id from sale_items i join sales s on s.id=i.sale_id where s.no_struk=ref),'item_id','e5500000-0000-4000-8000-000000000001','qty',qty,'satuan','pcs','kondisi','baik')))$$;
 
 select pg_temp.assert_ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='sales' and column_name='merchant_fee_total'),'merchant fee header storage missing');
-insert into coa_accounts(code,name,type,normal_balance,is_header) values('4303','Customer merchant fee','PENDAPATAN','K',false) on conflict(code) do update set is_active=true,is_header=false,type='PENDAPATAN',normal_balance='K';
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('810004','Customer merchant fee','PENDAPATAN','K',false) on conflict(code) do update set is_active=true,is_header=false,type='PENDAPATAN',normal_balance='K';
 insert into payment_account_map(metode,branch_id,cash_account_id) select m,'e2200000-0000-4000-8000-000000000001'::uuid,'e6600000-0000-4000-8000-000000000002'::uuid from unnest(array['Debit','Kredit','QRIS','E-Wallet']) m on conflict do nothing;
 create function pg_temp.fee_sale(ref text,plan jsonb default '[{"method":"Tunai","amount":20000},{"method":"Debit","amount":81600,"fee_percent":2,"fee_amount":1600}]',fee numeric default 1600,goods numeric default 100000,gross numeric default 100000,method text default 'Split') returns uuid language plpgsql as $$declare doc uuid;begin
  insert into sales(branch_id,no_struk,subtotal,discount,total,merchant_fee_total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint) values('e2200000-0000-4000-8000-000000000001',ref,gross,gross-goods,goods+fee,fee,method,goods+fee,auth.uid(),'e4400000-0000-4000-8000-000000000001',plan,'fee:'||ref,repeat('f',64)) returning id into doc;return doc;end$$;
@@ -47,15 +47,15 @@ select pg_temp.reject($q$update sale_payments set fee_amount=0 where sale_id=(se
 select pg_temp.lines((select id from sales where no_struk='FEE.SPLIT'));
 select finalize_pos_sale((select id from sales where no_struk='FEE.SPLIT'));
 select finalize_pos_sale((select id from sales where no_struk='FEE.SPLIT'));
-select pg_temp.assert_ok(pg_temp.balance('FEE.SPLIT','sale','1111')=20000 and pg_temp.balance('FEE.SPLIT','sale','1112')=81600 and pg_temp.balance('FEE.SPLIT','sale','4101')=-100000 and pg_temp.balance('FEE.SPLIT','sale','4303')=-1600,'gross cash bank, goods revenue and separate fee income once');
+select pg_temp.assert_ok(pg_temp.balance('FEE.SPLIT','sale','1111')=20000 and pg_temp.balance('FEE.SPLIT','sale','1112')=81600 and pg_temp.balance('FEE.SPLIT','sale','510001')=-100000 and pg_temp.balance('FEE.SPLIT','sale','810004')=-1600,'gross cash bank, goods revenue and separate fee income once');
 select pg_temp.fee_sale('FEE.SINGLE','[{"method":"Debit","amount":102000,"fee_percent":2,"fee_amount":2000}]',2000,method=>'Debit');
 select pg_temp.lines((select id from sales where no_struk='FEE.SINGLE'),100000,40000,'e5500000-0000-4000-8000-000000000002');
 select finalize_pos_sale((select id from sales where no_struk='FEE.SINGLE'));
-select pg_temp.assert_ok(pg_temp.balance('FEE.SINGLE','sale','4303')=-2000 and pg_temp.balance('FEE.SINGLE','sale-hpp','5101')=40000,'single fee preserves HPP');
+select pg_temp.assert_ok(pg_temp.balance('FEE.SINGLE','sale','810004')=-2000 and pg_temp.balance('FEE.SINGLE','sale-hpp','600001')=40000,'single fee preserves HPP');
 select pg_temp.fee_sale('FEE.SIX','[{"method":"Tunai","amount":1},{"method":"Transfer","amount":1.01,"fee_percent":1,"fee_amount":0.01},{"method":"Debit","amount":1.02,"fee_percent":2,"fee_amount":0.02},{"method":"Kredit","amount":1.03,"fee_percent":3,"fee_amount":0.03},{"method":"QRIS","amount":1.04,"fee_percent":4,"fee_amount":0.04},{"method":"E-Wallet","amount":1.05,"fee_percent":5,"fee_amount":0.05}]',0.15,6,6);
 select pg_temp.lines((select id from sales where no_struk='FEE.SIX'),6);
 select finalize_pos_sale((select id from sales where no_struk='FEE.SIX'));
-select pg_temp.assert_ok(pg_temp.balance('FEE.SIX','sale','4303')=-0.15,'six methods independently assessed');
+select pg_temp.assert_ok(pg_temp.balance('FEE.SIX','sale','810004')=-0.15,'six methods independently assessed');
 select pg_temp.reject($q$select pg_temp.fee_sale('BAD.CASH','[{"method":"Tunai","amount":101600,"fee_percent":1.6,"fee_amount":1600}]')$q$,'cash fees forbidden');
 select pg_temp.reject($q$select pg_temp.fee_sale('BAD.CASHPCT','[{"method":"Tunai","amount":100000,"fee_percent":0.01}]',0)$q$,'cash nonzero rate forbidden even when round zero');
 select pg_temp.reject($q$select pg_temp.fee_sale('BAD.FORMULA','[{"method":"Debit","amount":101600,"fee_percent":2,"fee_amount":1600}]')$q$,'fee uses base receipt less fee');
@@ -68,7 +68,7 @@ select pg_temp.reject($q$select pg_temp.fee_sale('BAD.FEEZEROBASE','[{"method":"
 select pg_temp.reject($q$select pg_temp.fee_sale('BAD.FEENULL','[{"method":"Debit","amount":101600,"fee_percent":null,"fee_amount":1600}]')$q$,'explicit null fee invalid');
 select pg_temp.reject($q$select pg_temp.fee_sale('BAD.NOPLAN',null)$q$,'legacy cannot claim fee');
 reset role;
-update coa_accounts set is_active=false where code='4303';
+update coa_accounts set is_active=false where code='810004';
 set local role authenticated;
 select pg_temp.reject($q$select pg_temp.fee_sale('BAD.ACCOUNT')$q$,'missing active fee income before line stage');
 select pg_temp.fee_sale('FEE.ZERO','[{"method":"Debit","amount":1,"fee_percent":0.01,"fee_amount":0}]',0,1,1,'Debit');
@@ -76,21 +76,21 @@ select pg_temp.lines((select id from sales where no_struk='FEE.ZERO'),1);
 select finalize_pos_sale((select id from sales where no_struk='FEE.ZERO'));
 select pg_temp.assert_ok((select fee_percent=0.01 and fee_amount=0 from sale_payments where sale_id=(select id from sales where no_struk='FEE.ZERO')),'positive rate rounding to zero remains valid without fee account');
 reset role;
-update coa_accounts set is_active=true,type='ASET' where code='4303';
+update coa_accounts set is_active=true,type='ASET' where code='810004';
 set local role authenticated;
 select pg_temp.reject($q$select pg_temp.fee_sale('BAD.ACCOUNTTYPE')$q$,'fee account requires income normal credit');
 reset role;
-update coa_accounts set type='ASET',normal_balance='D' where code='4303';
+update coa_accounts set type='ASET',normal_balance='D' where code='810004';
 set local role authenticated;
 select pg_temp.reject($q$select pg_temp.fee_sale('BAD.ACCOUNTNORMAL')$q$,'fee account normal credit');
 reset role;
-update coa_accounts set type='PENDAPATAN',normal_balance='K' where code='4303';
+update coa_accounts set type='PENDAPATAN',normal_balance='K' where code='810004';
 update company_settings set mode_pkp=true,ppn_rate=11;
 set local role authenticated;
 select pg_temp.fee_sale('FEE.TAX',goods=>100000,gross=>111000);
 select pg_temp.lines((select id from sales where no_struk='FEE.TAX'),111000);
 select finalize_pos_sale((select id from sales where no_struk='FEE.TAX'));
-select pg_temp.assert_ok(pg_temp.balance('FEE.TAX','sale','4101')=-100000 and pg_temp.balance('FEE.TAX','sale','4102')=9909.91 and pg_temp.balance('FEE.TAX','sale','2201')=-9909.91 and pg_temp.balance('FEE.TAX','sale','4303')=-1600,'fee excluded from embedded merchandise tax and discount');
+select pg_temp.assert_ok(pg_temp.balance('FEE.TAX','sale','510001')=-100000 and pg_temp.balance('FEE.TAX','sale','520002')=9909.91 and pg_temp.balance('FEE.TAX','sale','312005')=-9909.91 and pg_temp.balance('FEE.TAX','sale','810004')=-1600,'fee excluded from embedded merchandise tax and discount');
 select pg_temp.fee_sale('FEE.FROZEN');
 select pg_temp.lines((select id from sales where no_struk='FEE.FROZEN'));
 reset role;
@@ -98,19 +98,19 @@ update company_settings set mode_pkp=false,ppn_rate=12;
 update payment_account_map set cash_account_id='e6600000-0000-4000-8000-000000000004' where metode='Debit' and branch_id='e2200000-0000-4000-8000-000000000001';
 set local role authenticated;
 select finalize_pos_sale((select id from sales where no_struk='FEE.FROZEN'));
-select pg_temp.assert_ok(pg_temp.balance('FEE.FROZEN','sale','1112')=81600 and pg_temp.balance('FEE.FROZEN','sale','1114')=0 and pg_temp.balance('FEE.FROZEN','sale','2201')=-9909.91 and pg_temp.balance('FEE.FROZEN','sale','4303')=-1600,'header freezes original mapping tax and fee before finalization');
+select pg_temp.assert_ok(pg_temp.balance('FEE.FROZEN','sale','1112')=81600 and pg_temp.balance('FEE.FROZEN','sale','1114')=0 and pg_temp.balance('FEE.FROZEN','sale','312005')=-9909.91 and pg_temp.balance('FEE.FROZEN','sale','810004')=-1600,'header freezes original mapping tax and fee before finalization');
 select pg_temp.refund('FEE.SPLIT','fee-half',1);
-select pg_temp.assert_ok(pg_temp.return_balance('FEE.SPLIT','4303')=800 and pg_temp.return_balance('FEE.SPLIT','4101')=50000 and pg_temp.return_balance('FEE.SPLIT','1111')=-10000 and pg_temp.return_balance('FEE.SPLIT','1112')=-40800,'half refund separates original fee and gross payment snapshots: '||jsonb_build_object('fee',pg_temp.return_balance('FEE.SPLIT','4303'),'goods',pg_temp.return_balance('FEE.SPLIT','4101'),'cash',pg_temp.return_balance('FEE.SPLIT','1111'),'bank',pg_temp.return_balance('FEE.SPLIT','1112'))::text);
+select pg_temp.assert_ok(pg_temp.return_balance('FEE.SPLIT','810004')=800 and pg_temp.return_balance('FEE.SPLIT','510001')=50000 and pg_temp.return_balance('FEE.SPLIT','1111')=-10000 and pg_temp.return_balance('FEE.SPLIT','1112')=-40800,'half refund separates original fee and gross payment snapshots: '||jsonb_build_object('fee',pg_temp.return_balance('FEE.SPLIT','810004'),'goods',pg_temp.return_balance('FEE.SPLIT','510001'),'cash',pg_temp.return_balance('FEE.SPLIT','1111'),'bank',pg_temp.return_balance('FEE.SPLIT','1112'))::text);
 select pg_temp.refund('FEE.SPLIT','fee-half',1);
-select pg_temp.assert_ok(pg_temp.return_balance('FEE.SPLIT','4303')=800,'repeated return key reverses fee once');
+select pg_temp.assert_ok(pg_temp.return_balance('FEE.SPLIT','810004')=800,'repeated return key reverses fee once');
 select pg_temp.refund('FEE.SPLIT','fee-rest',1);
-select pg_temp.assert_ok(pg_temp.return_balance('FEE.SPLIT','4303')=1600 and pg_temp.return_balance('FEE.SPLIT','4101')=100000,'full refund exhausts original fee');
+select pg_temp.assert_ok(pg_temp.return_balance('FEE.SPLIT','810004')=1600 and pg_temp.return_balance('FEE.SPLIT','510001')=100000,'full refund exhausts original fee');
 select pg_temp.refund('FEE.TAX','fee-tax-full',2);
-select pg_temp.assert_ok(pg_temp.return_balance('FEE.TAX','4303')=1600 and pg_temp.return_balance('FEE.TAX','2201')=9909.91 and pg_temp.return_balance('FEE.TAX','4102')=-9909.91,'tax setting changes preserve source fee VAT discount');
+select pg_temp.assert_ok(pg_temp.return_balance('FEE.TAX','810004')=1600 and pg_temp.return_balance('FEE.TAX','312005')=9909.91 and pg_temp.return_balance('FEE.TAX','520002')=-9909.91,'tax setting changes preserve source fee VAT discount');
 select pg_temp.refund('FEE.SIX','fee-cent-a',1);
-select pg_temp.assert_ok(pg_temp.return_balance('FEE.SIX','4303')=0.08,'cumulative half-cent fee rounds positive');
+select pg_temp.assert_ok(pg_temp.return_balance('FEE.SIX','810004')=0.08,'cumulative half-cent fee rounds positive');
 select pg_temp.refund('FEE.SIX','fee-cent-b',1);
-select pg_temp.assert_ok(pg_temp.return_balance('FEE.SIX','4303')=0.15,'cumulative cent refunds exhaust fee');
+select pg_temp.assert_ok(pg_temp.return_balance('FEE.SIX','810004')=0.15,'cumulative cent refunds exhaust fee');
 select pg_temp.assert_ok((select bool_and(refunded=amount) from(select p.id,p.amount,coalesce(sum(r.amount),0) refunded from sale_payments p left join sale_payment_refunds r on r.sale_payment_id=p.id where p.sale_id=(select id from sales where no_struk='FEE.SIX') group by p.id) q),'fee cents exhaust every gross payment');
 select pg_temp.assert_ok((select count(*)=0 from sales where no_struk like 'BAD.%'),'invalid fee inserts rolled back entirely');
 
@@ -123,7 +123,7 @@ select pg_temp.fee_sale('FEE.TINYVAT','[{"method":"Debit","amount":0.06,"fee_per
 insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) select id,'e5500000-0000-4000-8000-000000000001','Tiny fee VAT',6,0.04/6,'pcs',1,0 from sales where no_struk='FEE.TINYVAT';
 select finalize_pos_sale((select id from sales where no_struk='FEE.TINYVAT'));
 select pg_temp.refund('FEE.TINYVAT','tiny-fee-'||n,1) from generate_series(1,6) n;
-select pg_temp.assert_ok(pg_temp.return_balance('FEE.TINYVAT','4303')=0.02 and pg_temp.return_balance('FEE.TINYVAT','2201')=0.02 and pg_temp.return_balance('FEE.TINYVAT','4101')=0.02,'one-cent fee VAT refunds remain balanced and exhaust original income');
+select pg_temp.assert_ok(pg_temp.return_balance('FEE.TINYVAT','810004')=0.02 and pg_temp.return_balance('FEE.TINYVAT','312005')=0.02 and pg_temp.return_balance('FEE.TINYVAT','510001')=0.02,'one-cent fee VAT refunds remain balanced and exhaust original income');
 -- Finalization rolls fee/HPP/loyalty and the seal back together on late failure.
 reset role;
 update company_settings set mode_pkp=false,ppn_rate=11;
@@ -132,20 +132,20 @@ set local role authenticated;
 insert into sales(id,branch_id,customer_id,no_struk,subtotal,total,merchant_fee_total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint,poin_earned,poin_digunakan) values('e7700000-0000-4000-8000-000000000092','e2200000-0000-4000-8000-000000000001','e9900000-0000-4000-8000-000000000002','FEE.POINTS',100000,102000,2000,'Debit',102000,auth.uid(),'e4400000-0000-4000-8000-000000000001','[{"method":"Debit","amount":102000,"fee_percent":2,"fee_amount":2000}]','fee-points-key',repeat('a',64),100,20);
 select pg_temp.lines('e7700000-0000-4000-8000-000000000092',100000,40000,'e5500000-0000-4000-8000-000000000002');
 reset role;
-update coa_accounts set is_active=false where code='4303';
+update coa_accounts set is_active=false where code='810004';
 set local role authenticated;
 select pg_temp.reject($q$select finalize_pos_sale('e7700000-0000-4000-8000-000000000092')$q$,'late fee account failure rolls finalization back');
 select pg_temp.assert_ok((select points=50 from customers where id='e9900000-0000-4000-8000-000000000002'),'failed fee journal rolls loyalty back');
 select pg_temp.assert_ok((select count(*)=0 from journal_entries where source_ref='FEE.POINTS'),'failed fee journal leaves no money or HPP');
 select pg_temp.assert_ok((select payments_finalized_at is null from sales where no_struk='FEE.POINTS'),'failed fee journal leaves sale pending');
 reset role;
-update coa_accounts set is_active=true where code='4303';
+update coa_accounts set is_active=true where code='810004';
 set local role authenticated;
 select finalize_pos_sale('e7700000-0000-4000-8000-000000000092');
 select finalize_pos_sale('e7700000-0000-4000-8000-000000000092');
 select pg_temp.assert_ok((select points=130 from customers where id='e9900000-0000-4000-8000-000000000002'),'fee loyalty earns merchandise amount once');
 select pg_temp.assert_ok((select count(*)=2 and sum(delta)=80 from point_ledger where ref='FEE.POINTS'),'fee loyalty ledger once');
-select pg_temp.assert_ok(pg_temp.balance('FEE.POINTS','sale','4303')=-2000 and pg_temp.balance('FEE.POINTS','sale-hpp','5101')=40000,'fee money and HPP once');
+select pg_temp.assert_ok(pg_temp.balance('FEE.POINTS','sale','810004')=-2000 and pg_temp.balance('FEE.POINTS','sale-hpp','600001')=40000,'fee money and HPP once');
 -- A later linked WA order must not put fee income or pending POS plans back
 -- into the customer's merchandise spending and tier qualification.
 reset role;

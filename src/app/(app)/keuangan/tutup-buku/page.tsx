@@ -186,7 +186,7 @@ export default async function TutupBukuPage({
         <SecHeader
           num="03"
           title="TUTUP BUKU"
-          desc="Jurnal penutup: seluruh saldo pendapatan & beban s/d tanggal tutup dipindah ke Laba Ditahan (3201), lalu periode otomatis dikunci."
+          desc="Jurnal penutup: seluruh saldo pendapatan & beban s/d tanggal tutup dipindah ke Laba Ditahan (420001), lalu periode otomatis dikunci."
         />
         <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div>

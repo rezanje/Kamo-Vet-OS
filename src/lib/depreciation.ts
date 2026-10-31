@@ -12,8 +12,8 @@ type AnyClient = any;
 
 export type DepreciationRun = { periode: string; total: number; jumlahAset: number };
 
-export const AKUN_BEBAN_DEFAULT = "5601";
-export const AKUN_AKUM_DEFAULT = "1509";
+export const AKUN_BEBAN_DEFAULT = "750004";
+export const AKUN_AKUM_DEFAULT = "200015";
 
 export type DepEntry = { amount: number; akunBeban: string | null; akunAkumulasi: string | null };
 

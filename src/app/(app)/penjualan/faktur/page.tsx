@@ -254,7 +254,7 @@ export default async function FakturJualPage({
       </>}
 
       {credits.length > 0 && <div className="crm-sec" style={{ marginBottom: 0 }}>
-        <SecHeader num="02" title="KREDIT PELANGGAN DARI KOREKSI GROSIR" desc="Kewajiban pelanggan pada akun 2103; perlu tinjauan keuangan untuk penyelesaian. Tidak ada refund/transfer otomatis." />
+        <SecHeader num="02" title="KREDIT PELANGGAN DARI KOREKSI GROSIR" desc="Kewajiban pelanggan pada akun 314001; perlu tinjauan keuangan untuk penyelesaian. Tidak ada refund/transfer otomatis." />
         <table className="tbl"><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>Faktur asal</th><th>Kredit</th></tr></thead><tbody>
           {credits.map(c => { const f = one(c.sales_invoices); return <tr key={c.id}><td>{c.tanggal}</td><td>{one(f?.customers ?? null)?.name ?? "—"}</td><td><Link href={`/penjualan/faktur/${f?.id}`}>{f?.no_faktur}</Link></td><td>{rp(Number(c.customer_credit))}</td></tr>; })}
         </tbody></table>

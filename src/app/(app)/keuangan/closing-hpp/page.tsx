@@ -36,7 +36,7 @@ export default async function InventoryClosingPage({ searchParams }: { searchPar
   };
   const pageHref = (page: number) => snapshotHref(report?.activeClose?.id ?? "",page);
   const ledgerHref = (branch?: string) => {
-    const query = new URLSearchParams({ akun: "1301", sampai: report?.activeClose?.closed_through ?? "" });
+    const query = new URLSearchParams({ akun: "170001", sampai: report?.activeClose?.closed_through ?? "" });
     if (branch) query.set("cabang", branch);
     return `/keuangan/buku-besar?${query}`;
   };
@@ -49,7 +49,7 @@ export default async function InventoryClosingPage({ searchParams }: { searchPar
         <SecHeader num="01" title="METODE HARGA POKOK" desc="Metode penilaian persediaan dan HPP transaksi baru." />
         <p style={{ fontSize: 14, fontWeight: 700 }}>{average ? "Rata-rata bergerak" : "FIFO"}{report.activatedAt ? ` · aktif sejak ${reportWIB(report.activatedAt)} WIB` : ""}</p>
         <p style={{ fontSize: 12, color: "var(--tm)", lineHeight: 1.7 }}>Setiap barang masuk memperbarui HPP rata-rata per barang dan gudang. Pengeluaran memakai HPP saat transaksi. Batch dan tanggal kadaluarsa tetap mengikuti barang fisik.</p>
-        {!average && <><p style={{ fontSize: 12, color: "var(--tm)", lineHeight: 1.7 }}>Aktivasi memakai nilai lapisan stok yang tersedia sebagai saldo awal. Qty dan lapisan stok harus lengkap, dan nilainya harus cocok dengan GL persediaan 1301 per cabang. Jika belum cocok, termasuk jurnal historis yang belum tercatat, selesaikan rekonsiliasi terlebih dahulu. Aktivasi tidak membuat jurnal penyesuaian. HPP transaksi lama tetap tersimpan. Metode ini tidak dapat dikembalikan ke FIFO melalui halaman ini.</p><ActivationForm disabled={!report.allBranches} /></>}
+        {!average && <><p style={{ fontSize: 12, color: "var(--tm)", lineHeight: 1.7 }}>Aktivasi memakai nilai lapisan stok yang tersedia sebagai saldo awal. Qty dan lapisan stok harus lengkap, dan nilainya harus cocok dengan GL persediaan 170001 per cabang. Jika belum cocok, termasuk jurnal historis yang belum tercatat, selesaikan rekonsiliasi terlebih dahulu. Aktivasi tidak membuat jurnal penyesuaian. HPP transaksi lama tetap tersimpan. Metode ini tidak dapat dikembalikan ke FIFO melalui halaman ini.</p><ActivationForm disabled={!report.allBranches} /></>}
         {!report.allBranches && <p style={{ fontSize: 12, color: "#b45309" }}>Aktivasi dan closing berlaku untuk seluruh cabang dan memerlukan akses seluruh cabang. Riwayat di bawah hanya menampilkan nilai cabang yang dapat Anda akses.</p>}
         <Link href="/laporan/nilai-persediaan" className="back-btn" style={{ display: "inline-block", marginTop: 12 }}>Lihat nilai persediaan saat ini →</Link>
       </div>
@@ -71,12 +71,12 @@ export default async function InventoryClosingPage({ searchParams }: { searchPar
       {report.activeClose && <div className="crm-sec">
         <SecHeader num="04" title={`RINCIAN ${labelBulan(report.activeClose.period.slice(0, 7)).toUpperCase()}`} desc="Qty dalam satuan dasar. HPP dan nilai berasal dari snapshot tersimpan." />
         <h3 style={{fontSize:13}}>RINGKASAN PER CABANG</h3>
-        <p style={{fontSize:12}}>Kolom GL 1301 adalah saldo jurnal bertanggal sampai {report.activeClose.closed_through} yang terbaca sekarang. Jurnal yang ditambahkan atau dikoreksi sesudah closing dapat mengubah kolom GL, tetapi tidak mengubah snapshot. Selisih = snapshot dikurangi GL; periksa dokumen sumber sebelum membukukan koreksi.</p>
-        <div style={{overflowX:"auto",marginBottom:14}}><table className="tbl"><thead><tr><th>Cabang</th><th>Barang / gudang</th><th>Nilai snapshot</th><th>GL 1301 as-of</th><th>Selisih</th><th>Buku besar</th></tr></thead><tbody>
+        <p style={{fontSize:12}}>Kolom GL 170001 adalah saldo jurnal bertanggal sampai {report.activeClose.closed_through} yang terbaca sekarang. Jurnal yang ditambahkan atau dikoreksi sesudah closing dapat mengubah kolom GL, tetapi tidak mengubah snapshot. Selisih = snapshot dikurangi GL; periksa dokumen sumber sebelum membukukan koreksi.</p>
+        <div style={{overflowX:"auto",marginBottom:14}}><table className="tbl"><thead><tr><th>Cabang</th><th>Barang / gudang</th><th>Nilai snapshot</th><th>GL 170001 as-of</th><th>Selisih</th><th>Buku besar</th></tr></thead><tbody>
           {report.branchSummary.map(branch=><tr key={branch.id}><td>{branch.name}</td><td>{branch.count}</td><td>{money(branch.value)}</td><td>{money(branch.ledgerValue)}</td><td>{differenceMoney(branch.difference)}</td><td><Link href={ledgerHref(branch.id)}>Lihat jurnal</Link></td></tr>)}
           <tr><th>Total cabang terpilih</th><td>{report.activeClose.scopedCount}</td><td>{money(report.activeClose.scopedValue)}</td><td>{money(report.scopedLedgerValue)}</td><td>{differenceMoney(report.scopedDifference)}</td><td /></tr>
         </tbody></table></div>
-        {report.allBranches && report.selectedBranchIds.length === 0 && report.unallocatedLedger !== null && report.unallocatedLedger !== 0 && <p style={{fontSize:12,color:"#b45309"}}>Jurnal 1301 tanpa cabang: {money(report.unallocatedLedger)}. Nilai ini tidak dialokasikan ke cabang dan tidak termasuk total GL cabang di atas. <Link href={ledgerHref()}>Periksa buku besar</Link>.</p>}
+        {report.allBranches && report.selectedBranchIds.length === 0 && report.unallocatedLedger !== null && report.unallocatedLedger !== 0 && <p style={{fontSize:12,color:"#b45309"}}>Jurnal 170001 tanpa cabang: {money(report.unallocatedLedger)}. Nilai ini tidak dialokasikan ke cabang dan tidak termasuk total GL cabang di atas. <Link href={ledgerHref()}>Periksa buku besar</Link>.</p>}
         <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 850, width: "100%" }}><thead><tr><th>Cabang</th><th>Gudang</th><th>Kode</th><th>Barang</th><th>Satuan</th><th>Qty</th><th>HPP rata-rata</th><th>Nilai</th></tr></thead><tbody>
           {pagination.rows.map(value => <tr key={`${value.warehouse_id}:${value.item_id}`}><td>{value.branch}</td><td>{value.warehouse}</td><td>{value.code}</td><td>{value.item}</td><td>{value.unit}</td><td>{qty(value.qty)}</td><td>{money(value.average_cost)}</td><td>{money(value.value)}</td></tr>)}
           {!pagination.rows.length && <tr><td colSpan={8}>Tidak ada saldo snapshot pada cabang yang dapat Anda akses.</td></tr>}

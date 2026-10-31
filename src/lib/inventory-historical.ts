@@ -72,7 +72,7 @@ function eventPositions(events: CostEvent[]) {
 }
 
 async function inventoryLedgerAtDate(client: SupabaseClient, asOf: string, branchIds: string[], includeUnallocated: boolean) {
-  const { data: account, error } = await client.from("coa_accounts").select("id").eq("code", "1301").maybeSingle();
+  const { data: account, error } = await client.from("coa_accounts").select("id").eq("code", "170001").maybeSingle();
   if (error) throw new Error(`Akun persediaan gagal dibaca: ${error.message}`);
   if (!account) return null;
   const lines: InventoryJournalLine[] = [];
@@ -94,8 +94,8 @@ async function inventoryLedgerAtDate(client: SupabaseClient, asOf: string, branc
   for (const line of lines) {
     const entry = Array.isArray(line.journal_entries) ? line.journal_entries[0] : line.journal_entries;
     if (!entry || (entry.branch_id !== null && typeof entry.branch_id !== "string")) throw new ReportInputError("Cabang jurnal persediaan tidak lengkap.");
-    const debit = amount(line.debit, "Debit GL 1301");
-    const credit = amount(line.credit, "Kredit GL 1301");
+    const debit = amount(line.debit, "Debit GL 170001");
+    const credit = amount(line.credit, "Kredit GL 170001");
     if (debit.isNegative() || credit.isNegative()) throw new ReportInputError("Nilai jurnal persediaan negatif; rekonsiliasi sumber diperlukan.");
     const value = debit.minus(credit);
     if (entry.branch_id === null) unallocated = unallocated.plus(value);
@@ -240,7 +240,7 @@ async function warehousesOf(client: SupabaseClient, selected: Branch[]) {
 
 /**
  * M01 FIFO reconciliation, read-only: remaining FIFO layer value per branch
- * (sum qty_left × unit_cost, all warehouses incl. inactive) against GL 1301.
+ * (sum qty_left × unit_cost, all warehouses incl. inactive) against GL 170001.
  * Negative stock has no layer and therefore no value here; it is counted, never
  * estimated. A difference is shown for review only — nothing is journaled.
  */

@@ -4,7 +4,7 @@ alter table profiles disable trigger guard_profile_privileges;
 update profiles set role='OWNER',is_active=true where id='fa910000-0000-4000-8000-000000000001';
 update profiles set role='ADMIN',is_active=true where id='fa910000-0000-4000-8000-000000000002';
 alter table profiles enable trigger guard_profile_privileges;
-insert into coa_accounts(code,name,type,normal_balance) values('3101','Owner equity','EKUITAS','K'),('119901','Cash creation','ASET','D'),('119902','General creation','ASET','D') on conflict(code) do nothing;
+insert into coa_accounts(code,name,type,normal_balance) values('410001','Owner equity','EKUITAS','K'),('119901','Cash creation','ASET','D'),('119902','General creation','ASET','D') on conflict(code) do nothing;
 insert into cash_accounts(id,nama,jenis,coa_code) values('fa920000-0000-4000-8000-000000000001','New cash','Kas','119901'),('fa920000-0000-4000-8000-000000000002','General cash','Kas','119902');
 update accounting_locks set closed_until=null where id;
 create function pg_temp.ok(v boolean,label text) returns void language plpgsql as $$begin if v is distinct from true then raise exception 'ASSERT: %',label;end if;end$$;
@@ -24,7 +24,7 @@ reset role;
 insert into journal_entries(id,no_jurnal,tanggal,source) values('fa930000-0000-4000-8000-000000000002','FUTURE.LATER',current_date+2,'fixture');
 insert into journal_lines(entry_id,account_id,debit,credit)
  select 'fa930000-0000-4000-8000-000000000002'::uuid,id,5,0 from coa_accounts where code='119901'
- union all select 'fa930000-0000-4000-8000-000000000002',id,0,5 from coa_accounts where code='3101';
+ union all select 'fa930000-0000-4000-8000-000000000002',id,0,5 from coa_accounts where code='410001';
 set local role authenticated;
 select pg_temp.ok((preview_monetary_opening('fa920000-0000-4000-8000-000000000001',100.20,'Include posted future ledger')->>'balance_before')::numeric=105.25,'preview matches unfiltered ledger including future posted entries');
 select pg_temp.fails($q$select create_opening_balance_atomic('duplicate-cash-row',current_date,'[{"code":"119902","nilai":100,"sisi":"D"},{"code":"119902","nilai":200,"sisi":"D"}]')$q$,'Akun saldo awal tidak boleh berulang');
@@ -38,7 +38,7 @@ reset role;
 insert into journal_entries(id,no_jurnal,tanggal,source,source_ref) values('fa930000-0000-4000-8000-000000000001','DUPLICATE.OPEN',current_date,'saldo-awal','ambiguous');
 insert into journal_lines(entry_id,account_id,debit,credit)
  select 'fa930000-0000-4000-8000-000000000001'::uuid,id,100,0 from coa_accounts where code='119901'
- union all select 'fa930000-0000-4000-8000-000000000001',id,0,100 from coa_accounts where code='3101';
+ union all select 'fa930000-0000-4000-8000-000000000001',id,0,100 from coa_accounts where code='410001';
 set local role authenticated;
 select pg_temp.fails($q$select preview_monetary_opening('fa920000-0000-4000-8000-000000000001',200,'Ambiguous source')$q$,'ganda atau ambigu');
 reset role;

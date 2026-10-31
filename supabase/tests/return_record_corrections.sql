@@ -70,13 +70,13 @@ select pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,
 select set_config('request.headers','{}',false);
 reset role;
 begin;
-insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) select current_date,id,'1101' from cash_accounts where coa_code='1101';
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) select current_date,id,'110003' from cash_accounts where coa_code='110003';
 set local role authenticated;
 select pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''reconciled'',''Wrong qty'',''TEST receipt zero'',''[]'')',result->>'replacement_id'),'Rekonsiliasi bank') from return_results where name='corrected';
 rollback;
 begin;
 -- bank_coa_code-only legacy statements must not disappear behind a cash-account JOIN.
-insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,'1101');
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,'110003');
 set local role authenticated;
 select pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''legacy-bank-code'',''Wrong qty'',''TEST receipt zero'',''[]'')',result->>'replacement_id'),'Rekonsiliasi bank') from return_results where name='corrected';
 rollback;
@@ -94,7 +94,7 @@ begin;
 -- An existing revenue, inventory or header COA is not a proven cash/bank mapping.
 insert into coa_accounts(code,name,type,normal_balance,is_header) values('TESTHEADER','Test asset header','ASET','D',true);
 do $$declare code text;begin
- for code in select unnest(array['4101','1301','TESTHEADER']) loop
+ for code in select unnest(array['510001','170001','TESTHEADER']) loop
   insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,code);
   perform pg_temp.expect_error(format('select correct_return_record(''sales'',%L,0,''legacy-bank-noncash'',''Wrong qty'',''TEST receipt zero'',''[]'')',(select result->>'replacement_id' from return_results where name='corrected')),'Rekonsiliasi bank');
   delete from bank_reconciliations where bank_coa_code=code;
@@ -129,8 +129,8 @@ select correct_return_record('sales',(result->>'replacement_id')::uuid,0,'bank-b
 rollback;
 begin;
 -- A proven unrelated bank account does not cover a cash 1101 refund.
-insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) select current_date,id,'1102' from cash_accounts where coa_code='1102';
-insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,'1102');
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) select current_date,id,'120002' from cash_accounts where coa_code='120002';
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,null,'120002');
 set local role authenticated;
 select correct_return_record('sales',(result->>'replacement_id')::uuid,0,'bank-unrelated','Wrong qty','TEST receipt zero','[]') from return_results where name='corrected';
 rollback;
@@ -159,7 +159,7 @@ insert into return_results select 'cancelled',correct_return_record('sales',(res
 do $$begin
  if (select qty from stock where warehouse_id='f3000000-0000-4000-8000-000000000001' and item_id='f5000000-0000-4000-8000-000000000001')<>30
   or exists(select 1 from sales_returns where voided_at is null) or exists(select 1 from expenses where voided_at is null) then raise exception 'Cancellation stock/refund incorrect';end if;
- if (select sum(l.debit-l.credit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='1301' and e.source in('sales-return-hpp','return-record-void'))<>0 then raise exception 'Cancellation HPP not exactly reversed';end if;
+ if (select sum(l.debit-l.credit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='170001' and e.source in('sales-return-hpp','return-record-void'))<>0 then raise exception 'Cancellation HPP not exactly reversed';end if;
 end$$;
 -- Unpaid supplier return: reduce four incorrectly recorded units to two.
 insert into return_results values('purchase',post_unit_return('purchase','f6000000-0000-4000-8000-000000000010','purchase-four',jsonb_build_object('tanggal',current_date),'[{"source_line_id":"f7000000-0000-4000-8000-000000000010","item_id":"f5000000-0000-4000-8000-000000000001","qty":4,"satuan":"pcs"}]'));
@@ -167,7 +167,7 @@ insert into return_results select 'purchase-corrected',correct_return_record('pu
 do $$begin
  if (select qty from stock where warehouse_id='f3000000-0000-4000-8000-000000000001' and item_id='f5000000-0000-4000-8000-000000000001')<>28 or (select sum(total) from purchase_returns where voided_at is null)<>20 then raise exception 'Unpaid purchase correction incorrect';end if;
  if (select sum(-qty) from return_record_effective_stock_moves where source='retur-beli')<>2 or exists(select 1 from return_record_effective_stock_moves where source='return-record-void') then raise exception 'Usage counts paperwork reversals or superseded returns';end if;
- if (select sum(l.debit-l.credit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='2101' and e.source in('purchase-return','return-record-void'))<>20 then raise exception 'AP ledger differs from active return';end if;
+ if (select sum(l.debit-l.credit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='311001' and e.source in('purchase-return','return-record-void'))<>20 then raise exception 'AP ledger differs from active return';end if;
 end$$;
 reset role;
 -- Partpaid before return is supported, but later payments block correction.

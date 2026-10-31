@@ -61,7 +61,7 @@ it('reads more than 1000 historical rows and keeps exact decimal branch/total su
 });
 
 it('compares saved branch values with the currently visible GL 1301 as of the saved close date', async () => {
- const tables = { ...historicalTables(), coa_accounts:[{id:'a1301',code:'1301'}], journal_lines:[
+ const tables = { ...historicalTables(), coa_accounts:[{id:'a1301',code:'170001'}], journal_lines:[
   {id:'j1',account_id:'a1301',debit:'160.00',credit:'0',journal_entries:{tanggal:'2026-09-01',branch_id:'b1'}},
   {id:'j2',account_id:'a1301',debit:'30.00',credit:'0',journal_entries:{tanggal:'2026-09-30',branch_id:'b2'}},
   {id:'j3',account_id:'a1301',debit:'0',credit:'5.00',journal_entries:{tanggal:'2026-10-01',branch_id:'b2'}},
@@ -79,7 +79,7 @@ it('compares saved branch values with the currently visible GL 1301 as of the sa
 
 it('does not include a denied branch or branchless journal in an accessible branch comparison', async () => {
  const report = await loadInventoryClosing(clientFixture({deniedBranch:'b2',tables:{...historicalTables(),
-  coa_accounts:[{id:'a1301',code:'1301'}],journal_lines:[
+  coa_accounts:[{id:'a1301',code:'170001'}],journal_lines:[
    {id:'j1',account_id:'a1301',debit:160,credit:0,journal_entries:{tanggal:'2026-09-30',branch_id:'b1'}},
    {id:'j2',account_id:'a1301',debit:999,credit:0,journal_entries:{tanggal:'2026-09-30',branch_id:'b2'}},
    {id:'j3',account_id:'a1301',debit:7,credit:0,journal_entries:{tanggal:'2026-09-30',branch_id:null}},
@@ -101,7 +101,7 @@ it('keeps missing GL account and incomplete snapshot values unavailable instead 
 });
 
 it('fails closed when a GL 1301 read is incomplete or has invalid money or missing document', async () => {
- const base = { ...historicalTables(), coa_accounts:[{id:'a1301',code:'1301'}], journal_lines:[
+ const base = { ...historicalTables(), coa_accounts:[{id:'a1301',code:'170001'}], journal_lines:[
   {id:'j1',account_id:'a1301',debit:'1',credit:'0',journal_entries:{tanggal:'2026-09-30',branch_id:'b1'}},
  ] };
  await expect(loadInventoryClosing(clientFixture({tables:base,errorTable:'journal_lines'}).client,'c1')).rejects.toThrow('read failed');

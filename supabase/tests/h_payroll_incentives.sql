@@ -58,7 +58,7 @@ begin
    into edit_lines from public.invoice_items where invoice_id=inv and package_item_id is not null;
  perform public.clinic_edit_invoice(inv,'h05.package.edit',header||jsonb_build_object('subtotal',60,'total',60,'reason','Fictional correction keeps package'),edit_lines);
  perform pg_temp.assert_h((select count(*)=1 and min(package_qty)=3 from public.invoice_items where invoice_id=inv and package_item_id is not null),'correction inherits package origin');
- perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','1101',null,'h05.package.payment');
+ perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','110003',null,'h05.package.payment');
  reissued:=public.clinic_void_reissue_invoice(inv,'h05.package.reissue','Fictional reissue keeps package');
  perform pg_temp.assert_h((select count(*)=1 and min(package_qty)=3 from public.invoice_items where invoice_id=reissued and package_item_id is not null),'reissue inherits package origin');
 end $$;

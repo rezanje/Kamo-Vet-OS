@@ -30,7 +30,7 @@ do $$declare r jsonb;again jsonb;begin
  select correct_fixed_asset_purchase((value#>>'{}')::uuid,0,current_date,10000000,'Wrong amount','correct-once') into again from asset_test_result where name='asset';
  if r is distinct from again then raise exception 'Retry changed result';end if;
  if (select harga_perolehan from fixed_assets where id=(r->>'asset_id')::uuid)<>10000000 then raise exception 'Asset value not corrected';end if;
- if (select sum(l.debit-l.credit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='1501')<>10000000 then raise exception 'Asset ledger inconsistent';end if;
+ if (select sum(l.debit-l.credit) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='200008')<>10000000 then raise exception 'Asset ledger inconsistent';end if;
  if (select count(*) from journal_entries where source='asset-purchase')<>1 or (select count(*) from fixed_asset_corrections)<>1 then raise exception 'History overwritten or retry duplicated';end if;
  if exists(select 1 from journal_lines group by entry_id having sum(debit)<>sum(credit)) then raise exception 'Unbalanced journal';end if;
 end$$;
@@ -57,7 +57,7 @@ rollback to date_correction;
 savepoint fractional_acquisition;
 select correct_fixed_asset_purchase((value#>>'{}')::uuid,1,current_date,10000000.125,'Exact acquisition nominal','fractional') from asset_test_result where name='asset';
 do $$begin
- if (select harga_perolehan from fixed_assets)<>10000000.125 or (select sum(l.debit-l.credit) from journal_lines l join coa_accounts c on c.id=l.account_id where c.code='1501')<>10000000.125 then raise exception 'Correction introduced silent rounding';end if;
+ if (select harga_perolehan from fixed_assets)<>10000000.125 or (select sum(l.debit-l.credit) from journal_lines l join coa_accounts c on c.id=l.account_id where c.code='200008')<>10000000.125 then raise exception 'Correction introduced silent rounding';end if;
 end$$;
 rollback to fractional_acquisition;
 

@@ -89,7 +89,7 @@ describe("labelJenis", () => {
 });
 
 describe("kunciKasKeluar", () => {
-  const dasar = { tanggal: "2026-08-25", accountId: "acc-1", lawanCode: "5201", jumlah: 5_000_000 };
+  const dasar = { tanggal: "2026-08-25", accountId: "acc-1", lawanCode: "710001", jumlah: 5_000_000 };
 
   it("isi yang sama menghasilkan kunci yang sama", () => {
     expect(kunciKasKeluar(dasar)).toBe(kunciKasKeluar({ ...dasar }));

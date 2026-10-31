@@ -8,7 +8,7 @@ const save = vi.hoisted(() => vi.fn());
 vi.mock("@/app/(app)/klinik/rawat-inap/[id]/tagihan/actions", () => ({ simpanBayar: save }));
 import { SimpanBayarForm } from "@/app/(app)/klinik/rawat-inap/[id]/tagihan/SimpanBayarForm";
 let host: HTMLDivElement, root: Root;
-const accounts = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"].map(method => ({ method, code: method === "Tunai" ? "1101" : "1102", name: "Rekening Fiktif", bank: "Bank Fiktif", number: "123456" }));
+const accounts = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"].map(method => ({ method, code: method === "Tunai" ? "110003" : "120002", name: "Rekening Fiktif", bank: "Bank Fiktif", number: "123456" }));
 const quote = { token: "current-quote", remaining: 100000, amount: 150000, excess: 50000, credit: 0, pending: 100000, debt: 0, subtotal: 100000, tax: 0, accounts };
 beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); host = document.createElement("div"); document.body.append(host); root = createRoot(host); save.mockReset(); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });

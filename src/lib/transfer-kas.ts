@@ -1,14 +1,13 @@
 // Transfer antar rekening kas/bank (migrasi 0068) — logika murni, tanpa DB.
 // Semua aturan uang ada di sini supaya bisa dites tanpa server.
+import { KODE_REKENING } from "./coa-sistem";
 
-export const AKUN_BIAYA_ADMIN = "5501"; // Beban Administrasi Bank
-export const AKUN_MODAL = "3101";       // Modal Pemilik — lawan saldo awal rekening
+export const AKUN_BIAYA_ADMIN = "740010"; // Beban Administrasi Bank
+export const AKUN_MODAL = "410001";       // Modal Pemilik — lawan saldo awal rekening
 
-// Rentang kode akun untuk rekening kas/bank baru. 1101/1102 sudah dipakai,
-// 1105 sudah dipakai PPN Masukan — makanya alokasi harus melompati yang terpakai,
-// bukan sekadar "kode terakhir + 1".
-const KODE_MIN = 1103;
-const KODE_MAX = 1199;
+// Rentang kode akun untuk rekening kas/bank baru ada di coa-sistem (KODE_REKENING):
+// kas melanjutkan 110001–110022, bank melanjutkan 120001–120006 dari bagan akun.
+// Alokasi melompati kode yang sudah terpakai, bukan sekadar "kode terakhir + 1".
 
 export type JurnalBaris = { code: string; debit: number; credit: number };
 
@@ -54,9 +53,10 @@ export function nomorTransfer(tanggal: string, jumlahBulanIni: number): string {
   return `TF.${y}.${m}.${String(jumlahBulanIni + 1).padStart(5, "0")}`;
 }
 
-export function kodeAkunBerikutnya(kodeTerpakai: string[]): string | null {
+export function kodeAkunBerikutnya(kodeTerpakai: string[], jenis: "Kas" | "Bank" = "Kas"): string | null {
   const dipakai = new Set(kodeTerpakai.map((k) => String(k).trim()));
-  for (let n = KODE_MIN; n <= KODE_MAX; n++) {
+  const { min, max } = KODE_REKENING[jenis];
+  for (let n = min; n <= max; n++) {
     const kode = String(n);
     if (!dipakai.has(kode)) return kode;
   }

@@ -30,8 +30,8 @@ insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,
 ('f3000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001',current_date-1,10,10,2,'purchase'),
 ('f3000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001',current_date,20,20,3,'purchase');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
-('1201','Receivable','ASET','D',false),('1301','Inventory','ASET','D',false),
-('4101','Sales','PENDAPATAN','K',false),('5101','COGS','BEBAN','D',false),('2201','VAT','LIABILITAS','K',false)
+('150001','Receivable','ASET','D',false),('170001','Inventory','ASET','D',false),
+('510001','Sales','PENDAPATAN','K',false),('600001','COGS','BEBAN','D',false),('312005','VAT','LIABILITAS','K',false)
 on conflict(code) do update set is_active=true,is_header=false;
 insert into sales_orders(id,no_pesanan,customer_id,branch_id,warehouse_id) values
 ('f6000000-0000-4000-8000-000000000001','SO.SALES.TEST','f4000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000001','f3000000-0000-4000-8000-000000000001'),
@@ -48,8 +48,8 @@ insert into customers(id,name,phone,points) values ('f4000000-0000-4000-8000-000
 insert into warehouses(id,branch_id,code,name,type) values ('f3000000-0000-4000-8000-000000000002','f2000000-0000-4000-8000-000000000001','ONLINETEST','Online test','ONLINE');
 insert into stock(warehouse_id,item_id,qty) values ('f3000000-0000-4000-8000-000000000002','f5000000-0000-4000-8000-000000000001',30);
 insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source) values ('f3000000-0000-4000-8000-000000000002','f5000000-0000-4000-8000-000000000001',current_date,30,30,3,'purchase');
-insert into coa_accounts(code,name,type,normal_balance,is_header) values ('2101','Payable','LIABILITAS','K',false),('5902','Loss','BEBAN','D',false) on conflict(code) do update set is_active=true,is_header=false;
-update coa_accounts set is_active=true,is_header=false where code in ('1101','1102','1202');
+insert into coa_accounts(code,name,type,normal_balance,is_header) values ('311001','Payable','LIABILITAS','K',false),('720010','Loss','BEBAN','D',false) on conflict(code) do update set is_active=true,is_header=false;
+update coa_accounts set is_active=true,is_header=false where code in ('110003','120002','130009');
 insert into purchase_orders(id,no_po,to_warehouse_id,branch_id,status,total) values ('f6000000-0000-4000-8000-000000000010','PO.UNIT.TEST','f3000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000001','Diterima',220);
 insert into purchase_order_items(id,po_id,item_id,nama,qty,qty_terima,harga_beli,satuan,faktor) values
 ('f7000000-0000-4000-8000-000000000010','f6000000-0000-4000-8000-000000000010','f5000000-0000-4000-8000-000000000001','Box',1,1,120,'box',12),
@@ -64,9 +64,9 @@ insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) valu
 insert into sale_item_group_components(sale_item_id,component_item_id,component_name,item_type,qty_per_group,unit,factor,total_base_qty,hpp) values ('f7000000-0000-4000-8000-000000000022','f5000000-0000-4000-8000-000000000001','Component','Persediaan',2,'pcs',1,4,12);
 insert into sales(id,no_struk,branch_id,subtotal,total,metode_bayar) values ('f6000000-0000-4000-8000-000000000013','SALE.TINY.HPP','f2000000-0000-4000-8000-000000000001',40,40,'Tunai');
 insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) values ('f7000000-0000-4000-8000-000000000023','f6000000-0000-4000-8000-000000000013','f5000000-0000-4000-8000-000000000001','Tiny cost',4,10,'pcs',1,0.02);
-select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sale','SALE.UNIT.TEST','Original source','[{"code":"1101","debit":198,"credit":0},{"code":"4101","debit":0,"credit":178},{"code":"2201","debit":0,"credit":20}]');
-select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sale','SALE.GROUP.UNIT','Original group source','[{"code":"1101","debit":100,"credit":0},{"code":"4101","debit":0,"credit":90},{"code":"2201","debit":0,"credit":10}]');
-select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sale','SALE.TINY.HPP','Original tiny source','[{"code":"1101","debit":40,"credit":0},{"code":"4101","debit":0,"credit":36},{"code":"2201","debit":0,"credit":4}]');
+select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sale','SALE.UNIT.TEST','Original source','[{"code":"110003","debit":198,"credit":0},{"code":"510001","debit":0,"credit":178},{"code":"312005","debit":0,"credit":20}]');
+select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sale','SALE.GROUP.UNIT','Original group source','[{"code":"110003","debit":100,"credit":0},{"code":"510001","debit":0,"credit":90},{"code":"312005","debit":0,"credit":10}]');
+select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sale','SALE.TINY.HPP','Original tiny source','[{"code":"110003","debit":40,"credit":0},{"code":"510001","debit":0,"credit":36},{"code":"312005","debit":0,"credit":4}]');
 insert into sales(id,no_struk,branch_id) values ('f6000000-0000-4000-8000-000000000014','UNPOSTED.DRAFT','f2000000-0000-4000-8000-000000000001');
 insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) values ('f7000000-0000-4000-8000-000000000024','f6000000-0000-4000-8000-000000000014','f5000000-0000-4000-8000-000000000001','Draft',1,10,'pcs',1,1);
 insert into purchase_orders(id,no_po,to_warehouse_id,branch_id,status) values ('f6000000-0000-4000-8000-000000000015','PO.UNPOSTED.DRAFT','f3000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000001','Draft');
@@ -89,8 +89,8 @@ do $$ declare r jsonb; retry jsonb; header jsonb:=jsonb_build_object('tanggal',c
  retry:=post_unit_return('purchase','f6000000-0000-4000-8000-000000000010','purchase-half',header,items);
  if r<>retry then raise exception 'Purchase retry identity differs';end if;
  if (select total from purchase_returns where id=(r->>'document_id')::uuid)<>60 then raise exception 'Purchase used last-line price instead of exact source cost';end if;
- if (select sum(l.credit) from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='purchase-return' and j.source_ref=r->>'document_no' and a.code='1301')<>12 then raise exception 'Purchase inventory credit must equal actual FIFO cost, not PO debt';end if;
- if (select sum(l.credit) from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='purchase-return' and j.source_ref=r->>'document_no' and a.code='5902')<>48 then raise exception 'Purchase positive variance missing';end if;
+ if (select sum(l.credit) from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='purchase-return' and j.source_ref=r->>'document_no' and a.code='170001')<>12 then raise exception 'Purchase inventory credit must equal actual FIFO cost, not PO debt';end if;
+ if (select sum(l.credit) from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='purchase-return' and j.source_ref=r->>'document_no' and a.code='720010')<>48 then raise exception 'Purchase positive variance missing';end if;
 
  if not exists(select 1 from purchase_return_items where return_id=(r->>'document_id')::uuid and qty=6 and selected_qty=0.5 and faktor=12 and harga=10) then raise exception 'Purchase lost selectable snapshot';end if;
  if (select qty from stock where warehouse_id='f3000000-0000-4000-8000-000000000001' and item_id='f5000000-0000-4000-8000-000000000001')<>24 then raise exception 'Purchase retry consumed stock twice';end if;
@@ -104,7 +104,7 @@ do $$ declare r jsonb; retry jsonb; header jsonb:=jsonb_build_object('tanggal',c
  update stock_layers set unit_cost=30 where warehouse_id='f3000000-0000-4000-8000-000000000001' and unit_cost=2;
  r:=post_unit_return('purchase','f6000000-0000-4000-8000-000000000010','purchase-negative-variance',header,'[{"item_id":"f5000000-0000-4000-8000-000000000001","source_line_id":"f7000000-0000-4000-8000-000000000011","qty":1,"satuan":"pcs"}]');
  if (select total from purchase_returns where id=(r->>'document_id')::uuid)<>20 or not exists(select 1 from purchase_return_items where return_id=(r->>'document_id')::uuid and hpp=30) then raise exception 'Negative variance lost debt or actual cost';end if;
- if (select sum(l.debit) from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='purchase-return' and j.source_ref=r->>'document_no' and a.code='5902')<>10 then raise exception 'Negative purchase variance not debited';end if;
+ if (select sum(l.debit) from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='purchase-return' and j.source_ref=r->>'document_no' and a.code='720010')<>10 then raise exception 'Negative purchase variance not debited';end if;
  update stock_layers set unit_cost=2 where warehouse_id='f3000000-0000-4000-8000-000000000001' and unit_cost=30;
 
  begin

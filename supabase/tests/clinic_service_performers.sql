@@ -65,7 +65,7 @@ begin
  perform pg_temp.assert_ok((select count(*)=2 and bool_or(service_performers->>'doctor_name'='Original doctor') and bool_or(service_performers->>'staff_name'='Original nurse') from invoice_items where invoice_id=inv),'manual line snapshots survive retirement/name/price correction');
  perform pg_temp.assert_ok((select bool_and(service_source_line_id=any(old_ids)) from invoice_items where invoice_id=inv),'correction binds exact original line IDs');
  perform pg_temp.assert_ok(not exists(select 1 from invoice_items where id=any(old_ids)),'old lines deleted only after replacement validation');
- perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','1101',null,'S01.clinic.partial-payment');
+ perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','110003',null,'S01.clinic.partial-payment');
  new_inv:=public.clinic_void_reissue_invoice(inv,'S01.clinic.reissue','Fictional snapshot reissue');
  perform pg_temp.assert_ok((select service_pricing_version=1 from invoices where id=new_inv),'reissue preserves pricing contract version');
  perform pg_temp.assert_ok((select count(*)=2 and bool_or(service_performers->>'doctor_name'='Original doctor') and bool_or(service_performers->>'staff_name'='Original nurse') from invoice_items where invoice_id=new_inv),'reissue snapshots survive inactive staff without reconstruction');

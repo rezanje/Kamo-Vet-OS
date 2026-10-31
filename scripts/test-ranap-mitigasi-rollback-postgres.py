@@ -123,14 +123,14 @@ def alur_uang_lama(h, n, cust, awalan):
     sisa_muka = h.angka("select amount-applied from public.clinic_customer_advances "
                         f"where receipt_id={penuh.q(kwt)}")
 
-    sebelum = h.saldo_semua("1101", "1201", "2103")
+    sebelum = h.saldo_semua("110003", "150001", "314001")
     galat = h.gagal(penuh.batal_kwitansi_sql(kwt, f"{awalan}-batal"), penuh.OWNER)
     if galat:
         return False, "pembatalan kwitansi ditolak: " + galat.strip().splitlines()[0]
-    sesudah = h.saldo_semua("1101", "1201", "2103")
-    kas = round(sebelum["1101"] - sesudah["1101"], 2)
-    muka = round(sesudah["2103"] - sebelum["2103"], 2)
-    piutang = round(sesudah["1201"] - sebelum["1201"], 2)
+    sesudah = h.saldo_semua("110003", "150001", "314001")
+    kas = round(sebelum["110003"] - sesudah["110003"], 2)
+    muka = round(sesudah["314001"] - sebelum["314001"], 2)
+    piutang = round(sesudah["150001"] - sebelum["150001"], 2)
     status_kwt = h.nilai(f"select status from public.clinic_payment_receipts where id={penuh.q(kwt)}")
     terima2 = h.diterima(inv)
     status_inv = h.status_bayar(inv)

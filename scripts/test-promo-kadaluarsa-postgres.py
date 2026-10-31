@@ -54,7 +54,7 @@ def main():
         for migration in migrations:
             if migration.name.startswith("0068"):
                 db.sql("insert into coa_accounts(code,name,type,normal_balance) "
-                       "values('1101','Test cash','ASET','D'),('1102','Test bank','ASET','D') on conflict do nothing")
+                       "values('110003','Test cash','ASET','D'),('120002','Test bank','ASET','D') on conflict do nothing")
             try:
                 db.sql("begin;\n" + migration.read_text() + "\ncommit;")
             except RuntimeError as error:

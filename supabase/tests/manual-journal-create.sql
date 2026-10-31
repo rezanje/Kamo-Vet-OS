@@ -28,8 +28,8 @@ select set_config('request.jwt.claim.role','authenticated',true);
 select set_config('request.headers','{}',true);
 create temp table create_input(lines jsonb);
 insert into create_input select jsonb_build_array(
- jsonb_build_object('account_id',(select id from public.coa_accounts where code='1101'),'debit',100.25,'credit',0),
- jsonb_build_object('account_id',(select id from public.coa_accounts where code='4101'),'debit',0,'credit',100.25));
+ jsonb_build_object('account_id',(select id from public.coa_accounts where code='110003'),'debit',100.25,'credit',0),
+ jsonb_build_object('account_id',(select id from public.coa_accounts where code='510001'),'debit',0,'credit',100.25));
 create temp table create_result(result jsonb);
 insert into create_result select public.create_manual_journal_atomic('create-ok',current_date-1,'Atomic create','ee620000-0000-4000-8000-000000000001',(select lines from create_input));
 select pg_temp.assert_true((select result->>'entry_id' is not null from create_result),'created journal result confirmed');
@@ -47,15 +47,15 @@ select pg_temp.assert_true((select count(*)=1 from public.journal_entries where 
 select pg_temp.assert_true((select count(*)=2 from public.journal_lines),'mid-insert failure rolls back all newly inserted lines');
 reset role;
 select pg_temp.assert_true((select count(*)=1 from public.manual_journal_create_requests),'failed save leaves no orphan request');
-update public.coa_accounts set is_active=false where code='4101';
+update public.coa_accounts set is_active=false where code='510001';
 set local role authenticated;
 select pg_temp.expect_error($q$select public.create_manual_journal_atomic('inactive-account',current_date-1,'Inactive account',null,(select lines from create_input))$q$,'Akun baris');
 reset role;
-update public.coa_accounts set is_active=true,is_header=true where code='4101';
+update public.coa_accounts set is_active=true,is_header=true where code='510001';
 set local role authenticated;
 select pg_temp.expect_error($q$select public.create_manual_journal_atomic('header-account',current_date-1,'Header account',null,(select lines from create_input))$q$,'Akun baris');
 reset role;
-update public.coa_accounts set is_header=false where code='4101';
+update public.coa_accounts set is_header=false where code='510001';
 update public.branches set is_active=false where id='ee620000-0000-4000-8000-000000000001';
 set local role authenticated;
 select pg_temp.expect_error($q$select public.create_manual_journal_atomic('inactive-branch',current_date-1,'Inactive branch','ee620000-0000-4000-8000-000000000001',(select lines from create_input))$q$,'Cabang jurnal');

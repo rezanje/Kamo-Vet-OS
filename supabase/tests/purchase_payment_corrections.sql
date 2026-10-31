@@ -9,8 +9,8 @@ insert into suppliers(id,nama) values('ed300000-0000-4000-8000-000000000001','Fi
 insert into items(id,code,name,unit,item_type) values('ed400000-0000-4000-8000-000000000001','PAY-SKU','Fiction goods','pcs','Persediaan');
 insert into purchase_orders(id,no_po,supplier_id,branch_id,to_warehouse_id,status) values('ed500000-0000-4000-8000-000000000001','PO.PAY.FIC','ed300000-0000-4000-8000-000000000001','ed100000-0000-4000-8000-000000000001','ed200000-0000-4000-8000-000000000001','Dipesan');
 insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,faktor) values('ed600000-0000-4000-8000-000000000001','ed500000-0000-4000-8000-000000000001','ed400000-0000-4000-8000-000000000001','Fiction goods',10,100,'pcs',1);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fiction inventory','ASET','D'),('2101','Fiction payable','LIABILITAS','K'),('1202','Fiction VAT input','ASET','D'),('110209','Fiction bank account','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
-update coa_accounts set is_active=true,is_header=false where code in('1301','1303','2102','1101','1102');
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction inventory','ASET','D'),('311001','Fiction payable','LIABILITAS','K'),('130009','Fiction VAT input','ASET','D'),('110209','Fiction bank account','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
+update coa_accounts set is_active=true,is_header=false where code in('170001','160001','311003','110003','120002');
 update accounting_locks set closed_until=null;
 update company_settings set mode_pkp=false;
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id) values('ed700000-0000-4000-8000-000000000001','Fiction bank','Bank','110209','ed100000-0000-4000-8000-000000000001');
@@ -71,7 +71,7 @@ reset role;
 drop trigger payment_test_final_failure on purchase_payment_cancellation_requests;
 -- Direct-invoice source uses the same journal and payment shape as its existing form.
 insert into purchase_invoices(id,no_faktur,po_id,supplier_id,branch_id,warehouse_id,tanggal,jatuh_tempo,total) values('eda00000-0000-4000-8000-000000000001','FB.PAY.VAT',null,'ed300000-0000-4000-8000-000000000001','ed100000-0000-4000-8000-000000000001','ed200000-0000-4000-8000-000000000001',current_date,current_date,111);
-select clinic_write_journal(current_date,'Fiction taxable invoice','purchase-invoice','FB.PAY.VAT','ed100000-0000-4000-8000-000000000001','[{"code":"1301","debit":100,"credit":0},{"code":"1202","debit":11,"credit":0},{"code":"2101","debit":0,"credit":111}]');
+select clinic_write_journal(current_date,'Fiction taxable invoice','purchase-invoice','FB.PAY.VAT','ed100000-0000-4000-8000-000000000001','[{"code":"170001","debit":100,"credit":0},{"code":"130009","debit":11,"credit":0},{"code":"311001","debit":0,"credit":111}]');
 -- Order create, approve, pay, complete-group reversal, replacement and stale guards.
 set local role authenticated;
 insert into payment_test_results select 'order',mutate_purchase_payment_order('order-create','create',null,null,jsonb_build_object('supplier_id','ed300000-0000-4000-8000-000000000001'),jsonb_build_array(jsonb_build_object('invoice_id',result->>'invoice_id','jumlah',200),jsonb_build_object('invoice_id','eda00000-0000-4000-8000-000000000001','jumlah',50))) from payment_test_results where name='invoice';
@@ -90,7 +90,7 @@ do $$declare p uuid;o uuid;r jsonb;begin
 end$$;
 reset role;
 do $$begin
- if (select sum(l.debit-l.credit) from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='purchase-invoice' and j.source_ref='FB.PAY.VAT' and a.code='1202')<>11 then raise exception 'Payment correction modified input VAT';end if;
+ if (select sum(l.debit-l.credit) from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='purchase-invoice' and j.source_ref='FB.PAY.VAT' and a.code='130009')<>11 then raise exception 'Payment correction modified input VAT';end if;
 end$$;
 -- Source account checks precede first cancellation, cancellation replay and read-only recovery.
 insert into payment_test_results select 'partial-payload',payload from purchase_payment_requests where request_key='partial-pay';

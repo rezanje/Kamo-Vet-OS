@@ -7,8 +7,8 @@ insert into warehouses(id,branch_id,code,name,type)values(md5('p07-wh')::uuid,md
 insert into suppliers(id,nama)values(md5('p07-supplier')::uuid,'Fiction P07 supplier');
 insert into items(id,code,name,unit,item_type)values(md5('p07-item')::uuid,'P07-I','Fiction P07 item','pcs','Persediaan');
 insert into coa_accounts(code,name,type,normal_balance)values('1196','Fiction P07 bank','ASET','D')on conflict(code)do nothing;
-insert into coa_accounts(code,name,type,normal_balance)values('1301','Fiction inventory','ASET','D'),('2101','Fiction payables','LIABILITAS','K'),('2102','Fiction GRNI','LIABILITAS','K')on conflict(code)do nothing;
-update coa_accounts set is_active=true,is_header=false where code in('1196','1301','2101','2102');
+insert into coa_accounts(code,name,type,normal_balance)values('170001','Fiction inventory','ASET','D'),('311001','Fiction payables','LIABILITAS','K'),('311003','Fiction GRNI','LIABILITAS','K')on conflict(code)do nothing;
+update coa_accounts set is_active=true,is_header=false where code in('1196','170001','311001','311003');
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id)values(md5('p07-bank')::uuid,'Fiction P07 bank','Bank','1196',md5('p07-branch')::uuid);
 insert into purchase_orders(id,no_po,branch_id,to_warehouse_id,supplier_id,status,total)values(md5('p07-po')::uuid,'PO.P07',md5('p07-branch')::uuid,md5('p07-wh')::uuid,md5('p07-supplier')::uuid,'Dipesan',1000);
 insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,faktor)values(md5('p07-line')::uuid,md5('p07-po')::uuid,md5('p07-item')::uuid,'Fiction P07 item',10,100,'pcs',1);

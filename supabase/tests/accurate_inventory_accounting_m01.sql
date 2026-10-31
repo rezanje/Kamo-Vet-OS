@@ -7,7 +7,7 @@ alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,code,name,type) values(md5('m01-branch')::uuid,'M01-A','Fiction M01 A','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('m01-wh')::uuid,md5('m01-branch')::uuid,'M01-W','Fiction M01 warehouse','RETAIL');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1301','Fiction inventory','ASET','D',false),('3101','Fiction equity','EKUITAS','K',false)
+ ('170001','Fiction inventory','ASET','D',false),('410001','Fiction equity','EKUITAS','K',false)
  on conflict(code) do update set is_active=true,is_header=false;
 insert into items(id,code,name,unit,item_type) values
  (md5('m01-item-a')::uuid,'M01-A','Fiction item A','TAB','Persediaan'),
@@ -24,7 +24,7 @@ select set_config('request.jwt.claim.sub',md5('m01-owner')::uuid::text,true);
 do $$
 declare p jsonb; receipt jsonb; eq uuid;
 begin
- select id into eq from coa_accounts where code='3101';
+ select id into eq from coa_accounts where code='410001';
  p:=preview_accurate_inventory_accounting(md5('m01-run')::uuid,eq);
  if not (p->>'can_post')::boolean or (p->>'original_qty')::numeric<>59 or (p->>'original_value')::numeric<>590000 then
   raise exception 'Multi-unit preview diverged: %',p;
@@ -75,8 +75,8 @@ begin
  if not exists(
   select 1 from journal_entries j join journal_lines l on l.entry_id=j.id join coa_accounts a on a.id=l.account_id
   where j.id=(receipt->>'entry_id')::uuid
-  group by j.id having count(*) filter(where a.code='1301' and l.debit=590000 and l.credit=0)=1
-    and count(*) filter(where a.code='3101' and l.credit=590000 and l.debit=0)=1
+  group by j.id having count(*) filter(where a.code='170001' and l.debit=590000 and l.credit=0)=1
+    and count(*) filter(where a.code='410001' and l.credit=590000 and l.debit=0)=1
  ) then raise exception 'Inventory/equity account mapping differs from source';end if;
 end $$;
 rollback;

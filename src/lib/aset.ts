@@ -5,10 +5,10 @@
 //   2. Jurnal pelepasan aset — bagian yang paling gampang salah karena melibatkan
 //      penghapusan akumulasi penyusutan, bukan cuma mengeluarkan harga perolehan.
 
-export const AKUN_ASET = "1501";
-export const AKUN_AKUM_PENYUSUTAN = "1509";
-export const AKUN_LABA_PELEPASAN = "4302";
-export const AKUN_RUGI_PELEPASAN = "5602";
+export const AKUN_ASET = "200008";
+export const AKUN_AKUM_PENYUSUTAN = "200015";
+export const AKUN_LABA_PELEPASAN = "810003";
+export const AKUN_RUGI_PELEPASAN = "820004";
 
 export type MetodeFiskal = "garis_lurus" | "saldo_menurun";
 

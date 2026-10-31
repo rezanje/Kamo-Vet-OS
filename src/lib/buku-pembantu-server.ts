@@ -14,7 +14,7 @@ const tgl = (s: string | null | undefined) => (s ? String(s).slice(0, 10) : "");
 export type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
 // Faktur saldo awal (M05) boleh tanpa tanggal faktur. Di buku pembantu barisnya ditaruh pada
-// tanggal saldo awal batch-nya — tanggal jurnal 2101/1201-nya — supaya saldonya sejalan dengan
+// tanggal saldo awal batch-nya — tanggal jurnal 311001/150001-nya — supaya saldonya sejalan dengan
 // buku besar. Tanggal faktur itu sendiri tetap kosong; tidak ada tanggal yang dikarang.
 // Batch hanya terbaca keuangan di cabangnya; kalau tidak terbaca, baris tetap ikut tanpa tanggal
 // (masuk saldo awal setiap periode) — tidak dibuang dan tidak ditebak.
@@ -124,7 +124,7 @@ export async function mutasiPiutang(supabase: SupabaseServer, sampai: string): P
     const invoice = one(credit.sales_invoices);
     if (!invoice || Number(credit.customer_credit) <= 0) continue;
     out.push({ tanggal: credit.tanggal, pihakId: invoice.customer_id ?? "—", pihak: one(invoice.customers)?.name ?? "(tanpa pelanggan)",
-      nomor: invoice.no_faktur, jenis: "Faktur", keterangan: "Reklasifikasi ke kredit pelanggan (2103)",
+      nomor: invoice.no_faktur, jenis: "Faktur", keterangan: "Reklasifikasi ke kredit pelanggan (314001)",
       naik: Number(credit.customer_credit), turun: 0, href: `/penjualan/faktur/${invoice.id}` });
   }
 

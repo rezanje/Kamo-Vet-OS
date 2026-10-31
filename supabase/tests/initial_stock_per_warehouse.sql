@@ -10,7 +10,7 @@ insert into branches(id,code,name,type) values(md5('pw-branch')::uuid,'PW-B','Fi
 insert into warehouses(id,branch_id,code,name,type) values(md5('pw-wh')::uuid,md5('pw-branch')::uuid,'PW-W','Fiction opening warehouse','RETAIL'),
  (md5('pw-other-wh')::uuid,md5('pw-other')::uuid,'PW-OW','Fiction trading warehouse','RETAIL');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1301','Fiction inventory','ASET','D',false),('2101','Fiction payable','LIABILITAS','K',false),('3101','Fiction equity','EKUITAS','K',false)
+ ('170001','Fiction inventory','ASET','D',false),('311001','Fiction payable','LIABILITAS','K',false),('410001','Fiction equity','EKUITAS','K',false)
 on conflict(code) do update set is_active=true,is_header=false;
 insert into items(id,code,name,unit,item_type) values
  (md5('pw-fresh')::uuid,'PW-FRESH','Fiction fresh item','PCS','Persediaan'),
@@ -18,7 +18,7 @@ insert into items(id,code,name,unit,item_type) values
  (md5('pw-late')::uuid,'PW-LATE','Fiction late item','PCS','Persediaan');
 -- Normal trading elsewhere touches 1301; it must not block this warehouse's opening.
 insert into journal_entries(id,no_jurnal,tanggal,source,source_ref,branch_id) values(md5('pw-purchase')::uuid,'PW.PURCHASE','2026-01-02','purchase','PW-PO',md5('pw-other')::uuid);
-insert into journal_lines(entry_id,account_id,debit,credit) select md5('pw-purchase')::uuid,id,case when code='1301' then 50 else 0 end,case when code='2101' then 50 else 0 end from coa_accounts where code in('1301','2101');
+insert into journal_lines(entry_id,account_id,debit,credit) select md5('pw-purchase')::uuid,id,case when code='170001' then 50 else 0 end,case when code='311001' then 50 else 0 end from coa_accounts where code in('170001','311001');
 -- One imported item already moved in the target warehouse.
 insert into stock_moves(tanggal,warehouse_id,item_id,qty,unit_cost,source,source_ref) values('2026-01-02',md5('pw-wh')::uuid,md5('pw-used')::uuid,1,10,'purchase','PW-PO');
 set local role authenticated;
@@ -28,7 +28,7 @@ do $$ declare run uuid; eq uuid; p jsonb; rows jsonb;
   'payload',jsonb_build_object('item_id',md5('pw-fresh')::uuid,'warehouse_id',md5('pw-wh')::uuid,'base_qty','2','base_unit_cost','10','as_of','2026-01-01',
   'source_values',jsonb_build_array(jsonb_build_object('qty','2','unit_cost','10','factor','1','unit','PCS'))));
 begin
- select id into eq from coa_accounts where code='3101';
+ select id into eq from coa_accounts where code='410001';
  rows:=jsonb_build_array(function_row,
   jsonb_set(jsonb_set(jsonb_set(function_row,'{source_row}','3'),'{source_code}','"PW-USED"'),'{payload,item_id}',to_jsonb(md5('pw-used')::uuid)));
  run:=prepare_accurate_initial_stock('pw-first','fiction.xlsx',md5('pw-branch')::uuid,md5('pw-wh')::uuid,'2026-01-01',rows,'STRICT');

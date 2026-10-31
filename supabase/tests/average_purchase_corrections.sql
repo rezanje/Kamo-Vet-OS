@@ -1,5 +1,5 @@
 -- The runner prepends fictional invoice fixtures. Everything rolls back.
-insert into coa_accounts(code,name,type,normal_balance,is_header) values('5101','Fictional inventory HPP','BEBAN','D',false) on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('600001','Fictional inventory HPP','BEBAN','D',false) on conflict(code) do update set is_active=true,is_header=false;
 create function pg_temp.assert_ok(ok boolean,message text) returns void language plpgsql as $$begin
  if ok is distinct from true then raise exception 'Assertion failed: %',message;end if;end$$;
 create function pg_temp.average_correction_fault() returns trigger language plpgsql as $$begin

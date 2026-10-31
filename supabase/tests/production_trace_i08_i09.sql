@@ -23,8 +23,8 @@ do $$declare a jsonb;b jsonb;src jsonb;oid uuid;ref text;begin
  perform pg_temp.ok((select qty=5 from stock where warehouse_id=md5('i08-wh')::uuid and item_id=md5('i08-output')::uuid),'5 output units received');
  perform pg_temp.ok((select sum(qty)=5 and sum(qty*unit_cost)=11 from stock_moves where source='produksi' and source_ref=ref and item_id=md5('i08-output')::uuid and qty>0),'output movement value equals material cost');
  perform pg_temp.ok((select sum(-qty*unit_cost)=11 from stock_moves where source='produksi' and source_ref=ref and qty<0),'material movement value equals job cost');
- perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='1302' and j.source='produksi' and j.source_ref=ref),'WIP closes to zero');
- perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='1301' and j.source='produksi' and j.source_ref=ref),'inventory value neither lost nor duplicated');
+ perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='170003' and j.source='produksi' and j.source_ref=ref),'WIP closes to zero');
+ perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='170001' and j.source='produksi' and j.source_ref=ref),'inventory value neither lost nor duplicated');
  src:=read_production_atomic_sources(array[oid])->(oid::text);
  perform pg_temp.ok(src->>'start_journal' is not null and src#>>'{completion,journal}' is not null and src->>'start_journal'<>src#>>'{completion,journal}','job and completion journals are both linked');
  perform pg_temp.ok((src#>>'{completion,qty}')::numeric=5 and (src#>>'{completion,received_qty}')::numeric=5 and (src#>>'{completion,received_value}')::numeric=11,'completion receipt readable from the job');

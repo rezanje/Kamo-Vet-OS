@@ -8,22 +8,22 @@ const akun = (id: string, code: string, opts: Partial<AkunPohon> = {}): AkunPoho
 describe("susunPohon", () => {
   it("menaruh akun rincian di bawah induknya, urut kode", () => {
     const rows = [
-      akun("b", "5302", { parent_id: "a" }),
+      akun("b", "740001", { parent_id: "a" }),
       akun("a", "5300", { is_header: true }),
-      akun("c", "5301", { parent_id: "a" }),
+      akun("c", "720002", { parent_id: "a" }),
     ];
     const pohon = susunPohon(rows);
     expect(pohon).toHaveLength(1);
     expect(pohon[0].akun.code).toBe("5300");
-    expect(pohon[0].anak.map((s) => s.akun.code)).toEqual(["5301", "5302"]);
+    expect(pohon[0].anak.map((s) => s.akun.code)).toEqual(["720002", "740001"]);
     expect(pohon[0].anak[0].level).toBe(1);
   });
 
   // Akun yang induknya hilang tetap harus terlihat — kalau disembunyikan, orang
   // tidak pernah tahu ada akun yang perlu diperbaiki.
   it("akun dengan induk tidak dikenal tetap tampil sebagai tingkat atas", () => {
-    const pohon = susunPohon([akun("x", "5401", { parent_id: "entah" })]);
-    expect(pohon.map((s) => s.akun.code)).toEqual(["5401"]);
+    const pohon = susunPohon([akun("x", "760003", { parent_id: "entah" })]);
+    expect(pohon.map((s) => s.akun.code)).toEqual(["760003"]);
   });
 
   it("induk melingkar tidak membuat akunnya hilang", () => {
@@ -46,8 +46,8 @@ describe("saldoDenganRollup", () => {
   it("saldo induk = jumlah rinciannya, bukan angka simpanannya sendiri", () => {
     const rows = [
       akun("a", "5300", { is_header: true }),
-      akun("b", "5301", { parent_id: "a" }),
-      akun("c", "5302", { parent_id: "a" }),
+      akun("b", "720002", { parent_id: "a" }),
+      akun("c", "740001", { parent_id: "a" }),
     ];
     const saldo = saldoDenganRollup(susunPohon(rows), new Map([["b", 100], ["c", 250], ["a", 999]]));
     expect(saldo.get("a")).toBe(350);
@@ -70,7 +70,7 @@ describe("validasiIndukAkun", () => {
   const semua = [
     akun("h", "5300", { is_header: true }),
     akun("hAset", "1300", { type: "ASET", is_header: true }),
-    akun("d", "5301", { parent_id: "h" }),
+    akun("d", "720002", { parent_id: "h" }),
   ];
   const bersih = { punyaJurnal: false, punyaAnak: false };
 

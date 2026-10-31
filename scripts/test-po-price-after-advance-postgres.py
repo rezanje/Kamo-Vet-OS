@@ -9,7 +9,7 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);m.IMAGE='post
 PRELUDE=(ROOT/'supabase/tests/purchase_advance_atomic.sql').read_text().split('set local role authenticated;')[0]+"""
 insert into warehouses(id,branch_id,code,name,type)values('d6200000-0000-4000-8000-000000000001','d6100000-0000-4000-8000-000000000001','P05-WH','Fictional P05 warehouse','VET');
 update purchase_orders set to_warehouse_id='d6200000-0000-4000-8000-000000000001'where id='d6400000-0000-4000-8000-000000000001';
-insert into coa_accounts(code,name,type,normal_balance,is_header,is_active)values('1301','Fiction P05 inventory','ASET','D',false,true),('2102','Fiction P05 GRNI','LIABILITAS','K',false,true)on conflict(code)do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance,is_header,is_active)values('170001','Fiction P05 inventory','ASET','D',false,true),('311003','Fiction P05 GRNI','LIABILITAS','K',false,true)on conflict(code)do update set is_active=true,is_header=false;
 insert into items(id,code,name,unit,item_type)values('d6800000-0000-4000-8000-000000000001','P05-STOCK','Fiction P05 stock','pcs','Persediaan');
 insert into purchase_order_items(id,po_id,nama,qty,harga_beli,satuan,faktor)values('d6500000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-000000000001','Fictional PO line',2,300000,'pcs',1);
 """

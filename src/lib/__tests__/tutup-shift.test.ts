@@ -30,7 +30,7 @@ function makeClient(db: Db) {
   db.journal ??= [];
   // postJournal mencari akun lewat kodenya; tanpa daftar ini ia berhenti diam-diam.
   db.coa_accounts ??= [
-    { id: "a1101", code: "1101" }, { id: "a1203", code: "1203" }, { id: "a5901", code: "5901" }, { id: "a4303", code: "4303" },
+    { id: "a1101", code: "110003" }, { id: "a1203", code: "182001" }, { id: "a5901", code: "760002" }, { id: "a4303", code: "810004" },
   ];
   return {
     // Kasbon selisih kas dibuat fungsi database (record_shift_cash_shortage) yang
@@ -151,7 +151,7 @@ describe("pemasukanShift", () => {
   it("does not treat an applied customer advance as cash received", async () => {
     const db: Db = {
       invoices: [{ id: "tahap-2", total: 50000, dp_amount: 0, paid_status: "Lunas", metode_bayar: "Tunai" }],
-      invoice_payments: [{ invoice_id: "tahap-2", amount: 50000, metode: "Uang Muka", kas_code: "2103", transferred_from: null }],
+      invoice_payments: [{ invoice_id: "tahap-2", amount: 50000, metode: "Uang Muka", kas_code: "314001", transferred_from: null }],
       clinic_payment_receipts: [],
     };
     const result = await hitungShift(makeClient(db), shift({ shift_type: "klinik" }));

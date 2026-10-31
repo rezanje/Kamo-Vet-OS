@@ -29,8 +29,8 @@ create temp table journal_results(name text primary key,result jsonb);
 insert into public.journal_entries(id,no_jurnal,tanggal,deskripsi,source,branch_id) values
  ('ee430000-0000-4000-8000-000000000001','JRN-TEST-001',current_date-1,'Manual acceptance','manual','ee420000-0000-4000-8000-000000000001');
 insert into public.journal_lines(entry_id,account_id,debit,credit)
-select 'ee430000-0000-4000-8000-000000000001',a.id,case when a.code='1101' then 100 else 0 end,case when a.code='4101' then 100 else 0 end
-from public.coa_accounts a where a.code in ('1101','4101');
+select 'ee430000-0000-4000-8000-000000000001',a.id,case when a.code='110003' then 100 else 0 end,case when a.code='510001' then 100 else 0 end
+from public.coa_accounts a where a.code in ('110003','510001');
 select pg_temp.expect_error($q$update public.journal_entries set revision=9 where id='ee430000-0000-4000-8000-000000000001'$q$,'Metadata koreksi');
 select pg_temp.expect_error($q$select public.revise_manual_journal('null-action','ee430000-0000-4000-8000-000000000001',0,null,'{}','[]','reason')$q$,'tidak valid');
 select set_config('request.jwt.claim.sub','ee410000-0000-4000-8000-000000000002',true);
@@ -40,13 +40,13 @@ select pg_temp.expect_error(format('select public.revise_manual_journal(%L,%L,0,
 select set_config('request.jwt.claim.sub','ee410000-0000-4000-8000-000000000001',true);
 insert into journal_results
 select 'edit',public.revise_manual_journal('edit-ok','ee430000-0000-4000-8000-000000000001',0,'edit',jsonb_build_object('deskripsi','Corrected'),jsonb_build_array(
-  jsonb_build_object('account_id',(select id from public.coa_accounts where code='1101'),'debit',125,'credit',0),
-  jsonb_build_object('account_id',(select id from public.coa_accounts where code='4101'),'debit',0,'credit',125)),'Correction');
+  jsonb_build_object('account_id',(select id from public.coa_accounts where code='110003'),'debit',125,'credit',0),
+  jsonb_build_object('account_id',(select id from public.coa_accounts where code='510001'),'debit',0,'credit',125)),'Correction');
 select pg_temp.assert_true((select count(*)=1 from public.journal_entries where source='manual-correction' and voided_at is null),'successful edit creates active replacement');
 select pg_temp.assert_true((select count(*)=1 from public.journal_entries where id='ee430000-0000-4000-8000-000000000001' and voided_at is not null),'original is retained and superseded');
 select pg_temp.assert_true(public.revise_manual_journal('edit-ok','ee430000-0000-4000-8000-000000000001',0,'edit',jsonb_build_object('deskripsi','Corrected'),jsonb_build_array(
-  jsonb_build_object('account_id',(select id from public.coa_accounts where code='1101'),'debit',125,'credit',0),
-  jsonb_build_object('account_id',(select id from public.coa_accounts where code='4101'),'debit',0,'credit',125)),'Correction')=(select result from journal_results where name='edit'),'retry returns exact correction');
+  jsonb_build_object('account_id',(select id from public.coa_accounts where code='110003'),'debit',125,'credit',0),
+  jsonb_build_object('account_id',(select id from public.coa_accounts where code='510001'),'debit',0,'credit',125)),'Correction')=(select result from journal_results where name='edit'),'retry returns exact correction');
 reset role;
 update public.profiles set is_active=false where id='ee410000-0000-4000-8000-000000000001';
 set local role authenticated;
@@ -67,8 +67,8 @@ select pg_temp.expect_error(format('select public.revise_manual_journal(%L,%L,0,
 insert into public.journal_entries(id,no_jurnal,tanggal,deskripsi,source,branch_id) values
  ('ee430000-0000-4000-8000-000000000003','JRN-TEST-003',current_date-1,'Closed acceptance','manual','ee420000-0000-4000-8000-000000000001');
 insert into public.journal_lines(entry_id,account_id,debit,credit)
-select 'ee430000-0000-4000-8000-000000000003',a.id,case when a.code='1101' then 100 else 0 end,case when a.code='4101' then 100 else 0 end
-from public.coa_accounts a where a.code in ('1101','4101');
+select 'ee430000-0000-4000-8000-000000000003',a.id,case when a.code='110003' then 100 else 0 end,case when a.code='510001' then 100 else 0 end
+from public.coa_accounts a where a.code in ('110003','510001');
 update public.accounting_locks set closed_until=current_date where id;
 select pg_temp.expect_error(format('select public.revise_manual_journal(%L,%L,0,%L,%L,%L,%L)', 'closed','ee430000-0000-4000-8000-000000000003','void','{}','[]','reason'),'ditutup');
 rollback;

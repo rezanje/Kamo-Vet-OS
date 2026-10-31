@@ -87,13 +87,13 @@ values ('ea000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-0000000
 
 insert into public.coa_accounts (code, name, type, normal_balance, is_active, is_header)
 values
-  ('1101','Kas','ASET','D',true,false), ('1201','Piutang','ASET','D',true,false),
-  ('1301','Persediaan','ASET','D',true,false), ('2201','PPN Keluaran','LIABILITAS','K',true,false),
-  ('4102','Diskon','PENDAPATAN','D',true,false), ('4201','Pendapatan Klinik','PENDAPATAN','K',true,false),
-  ('5101','HPP','BEBAN','D',true,false)
+  ('110003','Kas','ASET','D',true,false), ('150001','Piutang','ASET','D',true,false),
+  ('170001','Persediaan','ASET','D',true,false), ('312005','PPN Keluaran','LIABILITAS','K',true,false),
+  ('520002','Diskon','PENDAPATAN','D',true,false), ('510002','Pendapatan Klinik','PENDAPATAN','K',true,false),
+  ('600001','HPP','BEBAN','D',true,false)
 on conflict (code) do update set is_active = true, is_header = false;
 insert into public.cash_accounts (nama, jenis, coa_code)
-values ('Kas Uji Klinik', 'Kas', '1101') on conflict (coa_code) do update set is_active = true;
+values ('Kas Uji Klinik', 'Kas', '110003') on conflict (coa_code) do update set is_active = true;
 
 
 set local role authenticated;
@@ -150,7 +150,7 @@ begin
   update public.accounting_locks set closed_until=current_date where id=true;
   failed:=false;
   begin
-    perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','1101',null,'lifecycle-ledger-fail');
+    perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','110003',null,'lifecycle-ledger-fail');
   exception when others then failed:=position('Periode' in sqlerrm)=1; end;
   update public.accounting_locks set closed_until=null where id=true;
   if not failed or exists(select 1 from public.invoice_payments where invoice_id=inv) then
@@ -165,7 +165,7 @@ begin
     raise exception 'cross-branch invoice data was visible'; end if;
   failed:=false;
   begin
-    perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','1101',null,'lifecycle-cross-branch');
+    perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','110003',null,'lifecycle-cross-branch');
   exception when sqlstate 'P0001' then failed:=position('ACCESS_DENIED:' in sqlerrm)=1; end;
   perform set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000001',true);
   if not failed then raise exception 'cross-branch payment was allowed'; end if;
@@ -182,8 +182,8 @@ begin
   perform set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000001',true);
   if not failed then raise exception 'cross-branch void was allowed'; end if;
 
-  payment := public.clinic_receive_invoice_payment(inv,current_date,50,'Tunai','1101',null,'lifecycle-pay1');
-  if public.clinic_receive_invoice_payment(inv,current_date,50,'Tunai','1101',null,'lifecycle-pay1')<>payment
+  payment := public.clinic_receive_invoice_payment(inv,current_date,50,'Tunai','110003',null,'lifecycle-pay1');
+  if public.clinic_receive_invoice_payment(inv,current_date,50,'Tunai','110003',null,'lifecycle-pay1')<>payment
      or (select count(*) from public.invoice_payments where invoice_id=inv)<>1 then
     raise exception 'payment retry duplicated cash'; end if;
   perform set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000002',true);
@@ -195,10 +195,10 @@ begin
     perform public.clinic_edit_invoice(inv,'lifecycle-edit-late',edit,new_lines);
   exception when sqlstate 'P0001' then failed:=position('INVOICE_INVALID:' in sqlerrm)=1; end;
   if not failed then raise exception 'partially paid invoice accepted direct edit'; end if;
-  perform public.clinic_receive_invoice_payment(inv,current_date,25,'Tunai','1101',null,'lifecycle-pay1b');
+  perform public.clinic_receive_invoice_payment(inv,current_date,25,'Tunai','110003',null,'lifecycle-pay1b');
   failed:=false;
   begin
-    perform public.clinic_receive_invoice_payment(inv,current_date,251,'Tunai','1101',null,'lifecycle-overpay');
+    perform public.clinic_receive_invoice_payment(inv,current_date,251,'Tunai','110003',null,'lifecycle-overpay');
   exception when sqlstate 'P0001' then failed:=position('PAYMENT_INVALID:' in sqlerrm)=1; end;
   if not failed or (select count(*) from public.invoice_payments where invoice_id=inv)<>2 then
     raise exception 'overpayment was saved'; end if;
@@ -223,11 +223,11 @@ begin
   if exists(select 1 from public.journal_entries e join public.journal_lines l on l.entry_id=e.id
     where e.source_ref=original_no and e.source in ('klinik','klinik-edit','klinik-ar','klinik-void')
     group by l.account_id having sum(l.debit-l.credit)<>0
-      and (select code from public.coa_accounts where id=l.account_id) not in ('1101','1201')) then
+      and (select code from public.coa_accounts where id=l.account_id) not in ('110003','150001')) then
     raise exception 'old sale revenue was not reversed'; end if;
   if exists(select 1 from public.journal_entries e join public.journal_lines l on l.entry_id=e.id
     join public.coa_accounts a on a.id=l.account_id
-    where e.source='klinik-void' and e.source_ref=original_no and a.code='1101') then
+    where e.source='klinik-void' and e.source_ref=original_no and a.code='110003') then
     raise exception 'void moved received cash'; end if;
   if exists(select 1 from public.journal_entries e join public.journal_lines l on l.entry_id=e.id
     where e.source_ref=original_no and e.source in ('klinik-hpp','klinik-hpp-edit','klinik-hpp-void')
@@ -236,7 +236,7 @@ begin
   -- Correct the replacement while the original 75 remains credited.
   failed:=false;
   begin
-    perform public.clinic_receive_invoice_payment(replacement,current_date,10,'Tunai','1101',null,'lifecycle-pay-early');
+    perform public.clinic_receive_invoice_payment(replacement,current_date,10,'Tunai','110003',null,'lifecycle-pay-early');
   exception when sqlstate 'P0001' then failed:=position('PAYMENT_INVALID:' in sqlerrm)=1; end;
   if not failed then raise exception 'replacement accepted money before correction'; end if;
   failed:=false;
@@ -253,7 +253,7 @@ begin
      or (select correction_pending from public.invoices where id=replacement)
      or (select coalesce(sum(amount),0) from public.invoice_payments where invoice_id=replacement)<>75 then
     raise exception 'credit did not survive correction'; end if;
-  perform public.clinic_receive_invoice_payment(replacement,current_date,175,'Tunai','1101',null,'lifecycle-pay2');
+  perform public.clinic_receive_invoice_payment(replacement,current_date,175,'Tunai','110003',null,'lifecycle-pay2');
   if (select paid_status from public.invoices where id=replacement)<>'Lunas' then
     raise exception 'replacement did not close after full payment'; end if;
   replacement_again := public.clinic_void_reissue_invoice(replacement,
@@ -308,7 +308,7 @@ begin
   if (select coalesce(sum(l.debit-l.credit),0) from public.journal_entries e
        join public.journal_lines l on l.entry_id=e.id
        join public.coa_accounts a on a.id=l.account_id
-       where a.code='1101' and e.source_ref in (
+       where a.code='110003' and e.source_ref in (
          select invoice_no from public.invoices where id in (fully_paid_invoice,replacement)))<>100 then
     raise exception 'fully paid reissue doubled or refunded cash'; end if;
   perform public.clinic_edit_invoice(replacement,'lifecycle-full-edit',

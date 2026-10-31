@@ -46,7 +46,7 @@ export default async function SaldoAwalFakturPage() {
         <li>OWNER memposting sekali. Hasilnya satu jurnal saldo awal; tidak ada stok, HPP, PPN, pembelian, atau pendapatan periode berjalan.</li>
       </ol>
       <p style={{ fontSize: 11, color: "var(--tm)" }}>
-        Hutang Usaha (2101) dan Piutang Usaha (1201) diisi di sini, <strong>bukan</strong> di Saldo Awal per akun. Kalau salah satu akun itu sudah punya saldo awal satu total, impor jenis tersebut ditolak supaya tidak tercatat ganda.
+        Hutang Usaha (311001) dan Piutang Usaha (150001) diisi di sini, <strong>bukan</strong> di Saldo Awal per akun. Kalau salah satu akun itu sudah punya saldo awal satu total, impor jenis tersebut ditolak supaya tidak tercatat ganda.
       </p>
       {error ? <div className="p2ban" role="alert">Gagal memuat data: {error}</div>
         : <SaldoAwalFakturForm branches={(branchResult.data ?? []) as { id: string; name: string }[]} defaultAsOf={TANGGAL_CUTOVER_DEFAULT} isOwner={profile.role === "OWNER"} />}

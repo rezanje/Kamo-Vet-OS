@@ -122,27 +122,27 @@ describe("uang muka pemilik", () => {
 
 describe("bayangan jurnal", () => {
   it.each([
-    ["terima pembayaran", jurnalTerimaPembayaran("1101", 250_000)],
-    ["uang muka masuk campuran", jurnalUangMukaMasuk([{ kasCode: "1101", amount: 20_000 }, { kasCode: "1102", amount: 30_000 }])],
+    ["terima pembayaran", jurnalTerimaPembayaran("110003", 250_000)],
+    ["uang muka masuk campuran", jurnalUangMukaMasuk([{ kasCode: "110003", amount: 20_000 }, { kasCode: "120002", amount: 30_000 }])],
     ["pemakaian uang muka", jurnalPakaiUangMuka(50_000)],
-    ["pembatalan kwitansi", jurnalBatalPembayaran("1101", 40_000)],
+    ["pembatalan kwitansi", jurnalBatalPembayaran("110003", 40_000)],
   ])("%s selalu seimbang", (_label, lines) => {
     expect(jurnalSeimbang(lines)).toBe(true);
   });
 
   it("uang masuk sebelum ada tagihan masuk akun Uang Muka Penjualan 2103, bukan pendapatan", () => {
-    expect(jurnalUangMukaMasuk([{ kasCode: "1101", amount: 50_000 }])).toEqual([
-      { code: "1101", debit: 50_000, credit: 0 },
-      { code: "2103", debit: 0, credit: 50_000 },
+    expect(jurnalUangMukaMasuk([{ kasCode: "110003", amount: 50_000 }])).toEqual([
+      { code: "110003", debit: 50_000, credit: 0 },
+      { code: "314001", debit: 0, credit: 50_000 },
     ]);
   });
 
   it("pemakaian uang muka menurunkan utang ke pemilik dan melunasi piutang, tanpa kas", () => {
     const lines = jurnalPakaiUangMuka(50_000);
     expect(lines).toEqual([
-      { code: "2103", debit: 50_000, credit: 0 },
-      { code: "1201", debit: 0, credit: 50_000 },
+      { code: "314001", debit: 50_000, credit: 0 },
+      { code: "150001", debit: 0, credit: 50_000 },
     ]);
-    expect(lines.some((l) => l.code === "1101")).toBe(false);
+    expect(lines.some((l) => l.code === "110003")).toBe(false);
   });
 });

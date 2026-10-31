@@ -64,7 +64,7 @@ do $$declare inv uuid;line uuid; r jsonb;again jsonb;payload jsonb;begin
  inv:=(r->>'replacement_id')::uuid;
  perform wholesale_test_assert((select total=89 and carried_paid=40 and status='berjalan' from sales_invoices where id=inv),'part-paid carried balance');
  perform wholesale_test_assert((select count(*)=1 and sum(jumlah)=40 from sales_receipts),'original receipt preserved exactly');
- perform wholesale_test_assert((select sum(l.debit-l.credit)=49 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1201'),'AR ledger after part-paid replacement');
+ perform wholesale_test_assert((select sum(l.debit-l.credit)=49 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='150001'),'AR ledger after part-paid replacement');
  perform receive_wholesale_payment('part-pay-again',inv,current_date,35,'Transfer',null,null,null);
  select id into line from sales_invoice_items where invoice_id=inv;
  payload:=jsonb_build_object('tanggal',current_date,'jatuh_tempo',current_date+20,'items',jsonb_build_array(jsonb_build_object('id',line,'harga',50)));
@@ -72,16 +72,16 @@ do $$declare inv uuid;line uuid; r jsonb;again jsonb;payload jsonb;begin
  inv:=(r->>'replacement_id')::uuid;
  perform wholesale_test_assert((r->>'customer_credit')::numeric=19,'overpayment credit');
  perform wholesale_test_assert((select total=56 and carried_paid=56 and status='lunas' from sales_invoices where id=inv),'fully paid replacement');
- perform wholesale_test_assert((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1201'),'AR not negative after credit');
- perform wholesale_test_assert((select sum(l.credit-l.debit)=19 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='2103'),'credit liability 19');
- perform wholesale_test_assert((select sum(l.debit-l.credit)=75 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1102'),'cash retained 75');
+ perform wholesale_test_assert((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='150001'),'AR not negative after credit');
+ perform wholesale_test_assert((select sum(l.credit-l.debit)=19 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='314001'),'credit liability 19');
+ perform wholesale_test_assert((select sum(l.debit-l.credit)=75 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='120002'),'cash retained 75');
  perform wholesale_test_reject(format('select receive_wholesale_payment(''already-paid'',%L,current_date,1,''Transfer'',null,null,null)',inv),'melebihi sisa');
  r:=correct_wholesale_invoice(inv,0,'cancel-with-paid','cancel','Tagihan tercatat ganda',jsonb_build_object('tanggal',current_date));
  perform wholesale_test_assert((r->>'customer_credit')::numeric=56,'cancellation preserves paid credit');
  perform wholesale_test_assert((select count(*)=2 and sum(jumlah)=75 from sales_receipts),'all original payments retained');
  perform wholesale_test_assert((select sum(customer_credit)=75 from wholesale_invoice_corrections),'credits total match cash');
  perform wholesale_test_assert((select qty_kirim=1 and qty_faktur=0 from sales_order_items where id='f7000000-0000-4000-8000-000000000001'),'cancel opens billing only');
- perform wholesale_test_assert((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1201'),'cancelled AR zero');
+ perform wholesale_test_assert((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='150001'),'cancelled AR zero');
  perform wholesale_test_reject(format('select receive_wholesale_payment(''cancelled'',%L,current_date,1,''Transfer'',null,null,null)',inv),'dibatalkan');
 end$$;
 -- Retained cancelled allocations must not block legitimate re-invoicing.
@@ -146,7 +146,7 @@ set role authenticated;
 select wholesale_test_reject(format('select correct_wholesale_invoice(%L,1,''bad-source-journal'',''cancel'',''Salah pencatatan'',jsonb_build_object(''tanggal'',current_date))',invoice_id),'nilai jurnal') from wholesale_test_state;
 reset role;
 update journal_lines set debit=debit-1 where entry_id=(select journal_id from sales_receipts where no_terima=(select result->>'document_no' from wholesale_operation_requests where request_key='dependency-payment')) and debit>0;
-insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,(select id from cash_accounts where coa_code='1102'),'1102');
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,(select id from cash_accounts where coa_code='120002'),'120002');
 set role authenticated;
 select wholesale_test_reject(format('select correct_wholesale_invoice(%L,1,''bank-dependency'',''cancel'',''Salah pencatatan'',jsonb_build_object(''tanggal'',current_date))',invoice_id),'direkonsiliasi bank') from wholesale_test_state;
 select wholesale_test_reject(format('select receive_wholesale_payment(''frozen-bank-date'',%L,current_date,1,''Transfer'',null,null,null)',invoice_id),'membekukan') from wholesale_test_state;
@@ -163,7 +163,7 @@ insert into sales_advances(id,no_um,customer_id,order_id,tanggal,jumlah) values
 set role authenticated;
 select wholesale_test_reject(format('select receive_wholesale_payment(''unproved-advance'',%L,current_date,10,''Transfer'',null,''fb100000-0000-4000-8000-000000000001'',null)',invoice_id),'Jurnal uang muka belum lengkap') from wholesale_test_state;
 reset role;
-select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sales-advance','UJ.B2B.TEST','Fiction advance deposit','[{"code":"1102","debit":20,"credit":0},{"code":"2103","debit":0,"credit":20}]');
+select sales_write_journal(current_date,'f2000000-0000-4000-8000-000000000001','sales-advance','UJ.B2B.TEST','Fiction advance deposit','[{"code":"120002","debit":20,"credit":0},{"code":"314001","debit":0,"credit":20}]');
 set role authenticated;
 select receive_wholesale_payment('advance-payment',invoice_id,current_date,10,'Transfer',null,'fb100000-0000-4000-8000-000000000001',null) from wholesale_test_state;
 select wholesale_test_assert((select terpakai=10 from sales_advances where id='fb100000-0000-4000-8000-000000000001'),'advance allocation');
@@ -191,7 +191,7 @@ end$$;
 
 reset role;
 update wholesale_test_state set invoice_id=si.id,line_id=ii.id from sales_invoices si join sales_invoice_items ii on ii.invoice_id=si.id where si.status<>'batal';
-insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,(select id from cash_accounts where coa_code='1102'),'1102');
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values(current_date,(select id from cash_accounts where coa_code='120002'),'120002');
 set role authenticated;
 select wholesale_test_reject(format('select correct_wholesale_invoice(%L,0,''ancestor-bank-dependency'',''cancel'',''Salah pencatatan'',jsonb_build_object(''tanggal'',current_date))',invoice_id),'direkonsiliasi bank') from wholesale_test_state;
 reset role;

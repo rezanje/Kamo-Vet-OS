@@ -34,7 +34,7 @@ const SCHEDULE = "f5000000-0000-4000-8000-000000000003";
 function journal(id: string, source = "manual", source_ref: string | null = null, voided_at: string | null = null) {
   return { id, no_jurnal: `JU-${id.slice(-1)}`, tanggal: "2026-10-20", deskripsi: "Fixture journal", source, source_ref, branch_id: null,
     branches: null, revision: 0, voided_at, journal_lines: [{ debit: 100, credit: 0, coa_accounts: { id: "fiction-account", code: "6001", name: "Fixture" } },
-      { debit: 0, credit: 100, coa_accounts: { id: "fiction-account-2", code: "2101", name: "Fixture credit" } }] };
+      { debit: 0, credit: 100, coa_accounts: { id: "fiction-account-2", code: "311001", name: "Fixture credit" } }] };
 }
 
 beforeEach(() => {

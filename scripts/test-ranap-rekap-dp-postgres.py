@@ -50,10 +50,10 @@ def edges(h, db):
     r.catat('repeat-zero-DP-stock-FIFO-HPP-once', dp.snapshot(h, v) == before
             and h.angka(f"select qty from public.stock where item_id={r.q(r.ITEM)} and warehouse_id={r.q(r.WH)}") == before_stock - 2
             and h.angka(f"select count(*) from public.stock_moves where source_ref={r.q(no)}") == 1
-            and h.saldo_ref('4201', no) == -50000 and h.saldo_ref('1201', no) == 50000
-            and h.saldo_ref('5101', no) == 4000 and h.saldo_ref('1301', no) == -4000
+            and h.saldo_ref('510002', no) == -50000 and h.saldo_ref('150001', no) == 50000
+            and h.saldo_ref('600001', no) == 4000 and h.saldo_ref('170001', no) == -4000
             and h.angka(f"select sum(qty_left) from public.stock_layers where item_id={r.q(r.ITEM)} and warehouse_id={r.q(r.WH)}") == before_stock - 2,
-            {'stock_before': before_stock, 'stock_after': before['stock'], 'revenue': h.saldo_ref('4201', no), 'HPP': h.saldo_ref('5101', no), 'state': before})
+            {'stock_before': before_stock, 'stock_after': before['stock'], 'revenue': h.saldo_ref('510002', no), 'HPP': h.saldo_ref('600001', no), 'state': before})
     rows = extra(h, v, 320, 200000)
     for user, label in [(r.FIN_LUAR, 'cross-branch'), (r.FIN_NONAKTIF, 'inactive')]:
         before = dp.snapshot(h, v)
@@ -162,8 +162,8 @@ def edges(h, db):
     line = json.loads(h.nilai(f"select json_build_object('harga',harga,'diskon_persen',diskon_persen,'qty',qty) from public.invoice_items where invoice_id={r.q(inv)}"))
     r.catat('stored-price-tax-discount-not-repriced-from-clinical', stored == {'subtotal':900000,'discount':100000,'tax':88000,'total':888000,'paid':500000}
             and line == {'harga':1000000,'diskon_persen':10,'qty':1}
-            and h.saldo_ref('1201',h.no_tagihan(inv)) == 388000
-            and h.saldo_ref('2201',h.no_tagihan(inv)) == -88000, {'stored_invoice':stored,'stored_line':line,'clinical_price_now':42,'remaining':388000,'optional_50_percent':194000})
+            and h.saldo_ref('150001',h.no_tagihan(inv)) == 388000
+            and h.saldo_ref('312005',h.no_tagihan(inv)) == -88000, {'stored_invoice':stored,'stored_line':line,'clinical_price_now':42,'remaining':388000,'optional_50_percent':194000})
     v, first = initial(h, 325)
     rows = extra(h, v, 325, 100000)
     before = dp.snapshot(h, v)
@@ -179,7 +179,7 @@ def run(h, db):
     no = h.no_tagihan(inv)
     r.catat('initial-STAFF-header-DP-preserved', h.diterima(inv) == 500000
             and h.angka(f"select count(*) from public.invoice_payments where invoice_id={r.q(inv)}") == 0
-            and h.saldo_ref('4201', no) == -1000000 and h.saldo_ref('1201', no) == 500000,
+            and h.saldo_ref('510002', no) == -1000000 and h.saldo_ref('150001', no) == 500000,
             {'total': 1000000, 'header_DP': h.diterima(inv), 'wallet': 0})
     rows = extra(h, v, 300, 300000)
     before = dp.snapshot(h, v)
@@ -189,8 +189,8 @@ def run(h, db):
         r.catat('failed-stage-atomic-no-effects', dp.snapshot(h, v) == before, dp.snapshot(h, v))
         return
     stage = h.nilai(f"select id from public.invoices where visit_id={r.q(v)} and id<>{r.q(inv)} and voided_at is null")
-    r.catat('repeat-posts-real-revenue-AR-not-money', h.saldo_ref('4201', h.no_tagihan(stage)) == -300000
-            and h.saldo_ref('1201', h.no_tagihan(stage)) == 300000 and h.diterima(stage) == 0
+    r.catat('repeat-posts-real-revenue-AR-not-money', h.saldo_ref('510002', h.no_tagihan(stage)) == -300000
+            and h.saldo_ref('150001', h.no_tagihan(stage)) == 300000 and h.diterima(stage) == 0
             and h.status_bayar(stage) == 'Belum Lunas' and h.diterima(inv) == 500000,
             {'total': 1300000, 'received': 500000, 'remaining': 800000, 'optional_50_percent': 400000})
     before = dp.snapshot(h, v)
@@ -209,8 +209,8 @@ def run(h, db):
             {'initial_received': h.diterima(inv), 'next_stage_received': h.diterima(stage)})
     h.sql(r.batal_kwitansi_sql(receipt, 'cancel-optional'), r.FINANCE)
     r.catat('cancellation-restores-header-net-and-method-accounts', h.diterima(inv) == 500000
-            and h.status_bayar(inv) == 'DP' and h.saldo_ref('1101', no) == 500000
-            and h.saldo_ref('1102', no) == 0, {'received': h.diterima(inv), 'cash': h.saldo_ref('1101', no), 'bank': h.saldo_ref('1102', no)})
+            and h.status_bayar(inv) == 'DP' and h.saldo_ref('110003', no) == 500000
+            and h.saldo_ref('120002', no) == 0, {'received': h.diterima(inv), 'cash': h.saldo_ref('110003', no), 'bank': h.saldo_ref('120002', no)})
     for n, admitted in [(310, False), (311, True)]:
         vv = dp.visit(h, n)
         if admitted:

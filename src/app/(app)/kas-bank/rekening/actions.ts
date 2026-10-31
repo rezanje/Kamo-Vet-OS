@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { kodeAkunBerikutnya } from "@/lib/transfer-kas";
+import { KODE_REKENING } from "@/lib/coa-sistem";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/kas-bank/rekening";
@@ -36,11 +37,14 @@ export async function tambahRekening(formData: FormData) {
   }
 
   const { data: akunAda } = await supabase.from("coa_accounts").select("code");
-  const kode = kodeAkunBerikutnya((akunAda ?? []).map((a: { code: string }) => a.code));
-  if (!kode) gagal("Nomor akun kas/bank sudah penuh (1103–1199) — hubungi developer");
+  const kode = kodeAkunBerikutnya((akunAda ?? []).map((a: { code: string }) => a.code), jenis as "Kas" | "Bank");
+  if (!kode) gagal(`Nomor akun ${jenis.toLowerCase()} sudah penuh (${KODE_REKENING[jenis as "Kas" | "Bank"].min}–${KODE_REKENING[jenis as "Kas" | "Bank"].max}) — hubungi developer`);
 
+  // Rekening baru masuk di bawah induk Kas (110000) / Bank (120000) bagan akun bila ada.
+  const { data: induk } = await supabase.from("coa_accounts").select("id")
+    .eq("code", jenis === "Bank" ? "120000" : "110000").eq("is_header", true).maybeSingle();
   const { error: akunErr } = await supabase.from("coa_accounts").insert({
-    code: kode, name: nama, type: "ASET", normal_balance: "D", is_active: true,
+    code: kode, name: nama, type: "ASET", normal_balance: "D", is_active: true, parent_id: induk?.id ?? null,
   });
   if (akunErr) gagal("Gagal membuat akun untuk rekening ini, coba lagi");
 

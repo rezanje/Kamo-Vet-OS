@@ -7,7 +7,7 @@ alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,code,name,type) values(md5('ag-branch')::uuid,'AG-B','Fiction first branch','PETSHOP'),(md5('ag-branch2')::uuid,'AG-C','Fiction second branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('ag-wh')::uuid,md5('ag-branch')::uuid,'AG-W','Fiction first warehouse','RETAIL'),(md5('ag-wh2')::uuid,md5('ag-branch2')::uuid,'AG-X','Fiction second warehouse','RETAIL');
 insert into items(id,code,name,unit,item_type,buy_price) values(md5('ag-item')::uuid,'AG-I','Fiction mixed-price item','pcs','Persediaan',999999),(md5('ag-orphan')::uuid,'AG-O','Fiction orphan item','pcs','Persediaan',777777);
-insert into coa_accounts(code,name,type,normal_balance,is_header) values('1301','Fiction inventory','ASET','D',false),('3101','Fiction explicitly designated test equity','EKUITAS','K',false) on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('170001','Fiction inventory','ASET','D',false),('410001','Fiction explicitly designated test equity','EKUITAS','K',false) on conflict(code) do update set is_active=true,is_header=false;
 select set_config('request.jwt.claim.sub',md5('ag-owner')::uuid::text,true);
 select set_config('request.jwt.claim.role','authenticated',true);
 create function pg_temp.activation_state() returns jsonb language sql as $$select jsonb_build_object(
@@ -27,7 +27,7 @@ declare before_state jsonb:=pg_temp.activation_state();failed boolean:=false;beg
  if pg_temp.activation_state() is distinct from before_state then raise exception 'Denied activation changed stock, valuation, history or GL';end if;
 end$$;
 create function pg_temp.activation_gl(branch uuid,amount numeric,ref text) returns void language plpgsql as $$begin
- perform sales_write_journal(current_date,branch,'manual',ref,'Fiction explicitly audited opening',jsonb_build_array(jsonb_build_object('code','1301','debit',greatest(amount,0),'credit',greatest(-amount,0)),jsonb_build_object('code','3101','debit',greatest(-amount,0),'credit',greatest(amount,0))));
+ perform sales_write_journal(current_date,branch,'manual',ref,'Fiction explicitly audited opening',jsonb_build_array(jsonb_build_object('code','170001','debit',greatest(amount,0),'credit',greatest(-amount,0)),jsonb_build_object('code','410001','debit',greatest(-amount,0),'credit',greatest(amount,0))));
 end$$;
 -- FUNCTIONAL CASES
 -- Empty inventory/GL is a valid prospective starting point.
@@ -98,13 +98,13 @@ select pg_temp.activation_denied('masa depan');
 reset role;
 rollback to invalid_evidence;
 insert into journal_entries(id,tanggal,source,source_ref,branch_id) values(md5('ag-invalid')::uuid,current_date,'manual','ag-invalid',md5('ag-branch')::uuid);
-insert into journal_lines(entry_id,account_id,debit,credit) select md5('ag-invalid')::uuid,id,1,0 from coa_accounts where code='1301';
+insert into journal_lines(entry_id,account_id,debit,credit) select md5('ag-invalid')::uuid,id,1,0 from coa_accounts where code='170001';
 set local role authenticated;
 select pg_temp.activation_denied('seimbang');
 reset role;
 rollback to invalid_evidence;
 insert into journal_entries(id,tanggal,source,source_ref,branch_id) values(md5('ag-invalid')::uuid,current_date,'manual','ag-invalid',md5('ag-branch')::uuid);
-insert into journal_lines(entry_id,account_id,debit,credit) select md5('ag-invalid')::uuid,id,'NaN',0 from coa_accounts where code='1301';
+insert into journal_lines(entry_id,account_id,debit,credit) select md5('ag-invalid')::uuid,id,'NaN',0 from coa_accounts where code='170001';
 set local role authenticated;
 select pg_temp.activation_denied('sah');
 reset role;

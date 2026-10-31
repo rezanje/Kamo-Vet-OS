@@ -96,8 +96,8 @@ def e1_doctor_cashier_print(h, sku_version):
           dict(printed=len(printed), marked=marked))
     no = h.no_tagihan(inv)
     check('E1e invoice journals balanced, invoice status unpaid, stock moved only by the original posting/compound engines',
-          unbalanced(h) == 0 and h.saldo_ref('4201', no) < 0 and h.status_bayar(inv) == 'Belum Lunas',
-          dict(unbalanced=unbalanced(h), revenue=h.saldo_ref('4201', no), status=h.status_bayar(inv)))
+          unbalanced(h) == 0 and h.saldo_ref('510002', no) < 0 and h.status_bayar(inv) == 'Belum Lunas',
+          dict(unbalanced=unbalanced(h), revenue=h.saldo_ref('510002', no), status=h.status_bayar(inv)))
 
 
 def race(h, db, sku_version, n, doctor_first):
@@ -194,8 +194,8 @@ def e4_old_dp_settlement(h):
         check('E4b C settlement on same invoice: Lunas, prior DP counted once, AR cleared, journals balanced',
               bool(receipt) and h.status_bayar(inv) == 'Lunas' and h.diterima(inv) == total
               and h.angka(f'select count(*) from public.invoices where visit_id={q(v)}') == 1
-              and h.saldo_ref('1201', no) == 0 and unbalanced(h) == 0,
-              dict(status=h.status_bayar(inv), received=h.diterima(inv), total=total, ar=h.saldo_ref('1201', no)))
+              and h.saldo_ref('150001', no) == 0 and unbalanced(h) == 0,
+              dict(status=h.status_bayar(inv), received=h.diterima(inv), total=total, ar=h.saldo_ref('150001', no)))
     except RuntimeError as e:
         check('E4b C settlement on same invoice: Lunas, prior DP counted once, AR cleared, journals balanced', False, str(e)[:300])
 

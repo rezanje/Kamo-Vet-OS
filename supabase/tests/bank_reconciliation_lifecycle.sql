@@ -10,13 +10,13 @@ declare relation text; rows jsonb; snapshot jsonb:='{}';begin
 end$$;
 create function pg_temp.rec_assert(ok boolean,message text) returns void language plpgsql as $$begin if ok is distinct from true then raise exception 'Assertion: %',message;end if;end$$;
 create function pg_temp.rec_reject(statement text,message text) returns void language plpgsql as $$declare rejected boolean:=false;begin begin execute statement;exception when others then if position(message in sqlerrm)>0 then rejected:=true;else raise;end if;end;if not rejected then raise exception 'Expected rejection: %',message;end if;end$$;
-insert into coa_accounts(code,name,type,normal_balance,is_header) values('5501','Fictional bank fee','BEBAN','D',false),('4301','Fictional bank interest','PENDAPATAN','K',false) on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('740010','Fictional bank fee','BEBAN','D',false),('810001','Fictional bank interest','PENDAPATAN','K',false) on conflict(code) do update set is_active=true,is_header=false;
 create temp table rec_input as select jsonb_build_object('account_id','e6600000-0000-4000-8000-000000000002','tanggal',(now() at time zone 'Asia/Jakarta')::date,'saldo_bank',0,'biaya_adm',25.25,'bunga',3.10,'catatan','Fictional bank reconciliation') header,
  (select coalesce(sum(l.debit-l.credit),0) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where a.code='1112' and e.tanggal<=(now() at time zone 'Asia/Jakarta')::date) baseline;
 update rec_input set header=jsonb_set(header,'{saldo_bank}',to_jsonb(baseline+3.10-25.25));
 insert into journal_entries(id,no_jurnal,tanggal,deskripsi,source) values('efa10000-0000-4000-8000-000000000001','FUTURE.BANK.FIXTURE',(now() at time zone 'Asia/Jakarta')::date+1,'Fictional future transaction','fixture');
 insert into journal_lines(entry_id,account_id,debit,credit) select 'efa10000-0000-4000-8000-000000000001',id,1000000,0 from coa_accounts where code='1112';
-insert into journal_lines(entry_id,account_id,debit,credit) select 'efa10000-0000-4000-8000-000000000001',id,0,1000000 from coa_accounts where code='4101';
+insert into journal_lines(entry_id,account_id,debit,credit) select 'efa10000-0000-4000-8000-000000000001',id,0,1000000 from coa_accounts where code='510001';
 grant select on rec_input to authenticated;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','e1100000-0000-4000-8000-000000000001',true);

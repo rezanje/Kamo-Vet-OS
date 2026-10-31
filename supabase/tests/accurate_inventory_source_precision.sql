@@ -7,7 +7,7 @@ alter table profiles enable trigger guard_profile_privileges;
 insert into branches(id,code,name,type) values(md5('source-precision-branch')::uuid,'SRC-PREC','Fiction precision branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('source-precision-wh')::uuid,md5('source-precision-branch')::uuid,'SRC-PREC-W','Fiction precision warehouse','RETAIL');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
- ('1301','Fiction inventory','ASET','D',false),('3101','Fiction equity','EKUITAS','K',false)
+ ('170001','Fiction inventory','ASET','D',false),('410001','Fiction equity','EKUITAS','K',false)
 on conflict(code) do update set is_active=true,is_header=false;
 insert into items(id,code,name,unit,item_type) values(md5('source-precision-item')::uuid,'SRC-PREC-I','Fiction precision item','PCS','Persediaan');
 insert into import_runs(id,kind,source_name,source_hash,branch_id,warehouse_id,as_of_date,created_by,summary)
@@ -17,7 +17,7 @@ insert into import_run_rows(run_id,source_row,status,payload) values(md5('source
 set local role authenticated;
 select set_config('request.jwt.claim.sub',md5('source-precision-owner')::uuid::text,true);
 do $$ declare p jsonb; receipt jsonb; equity uuid; begin
- select id into equity from coa_accounts where code='3101';
+ select id into equity from coa_accounts where code='410001';
  p:=preview_accurate_inventory_accounting(md5('source-fraction-run')::uuid,equity);
  if (p->>'can_post')::boolean or not (p->'blockers' @> '["Jumlah/nilai sumber harus positif dan tepat dua desimal; tinjau pembulatan"]'::jsonb) then
   raise exception 'Fractional-cent source unexpectedly became postable';

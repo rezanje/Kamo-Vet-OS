@@ -77,7 +77,7 @@ def visit(h, n, admitted=True, paid=False):
         h.sql(dp.post(v, n), r.OWNER)
         if paid:
             inv=h.aktif(v)
-            h.sql(f"select public.clinic_receive_invoice_payment({q(inv)},'2026-11-03',170000,'Tunai','1101','Fiktif',{q('settle-'+str(n))});",r.OWNER)
+            h.sql(f"select public.clinic_receive_invoice_payment({q(inv)},'2026-11-03',170000,'Tunai','110003','Fiktif',{q('settle-'+str(n))});",r.OWNER)
             # Complete chain guards payment status from closing active care.
             # Selesai compatibility is exercised separately as a labelled fixture.
     return v, r.uid(7, n)
@@ -174,10 +174,10 @@ def matrix(h, db, version):
     cost=h.angka(f'select sum(qty*unit_cost) from public.compound_issues where recipe_id={q(recipe)} and posted_invoice_item_id is not null')
     check('later stage posts revenue AR HPP without second ingredient issue',
           state(h)['stock']==stock['stock'] and state(h)['moves']==stock['moves']
-          and cost==2000 and h.saldo_ref('4201',no)==-20000 and h.saldo_ref('5101',no)==2000
-          and h.saldo_ref('1201',no)==20000 and h.diterima(inv)==0
+          and cost==2000 and h.saldo_ref('510002',no)==-20000 and h.saldo_ref('600001',no)==2000
+          and h.saldo_ref('150001',no)==20000 and h.diterima(inv)==0
           and h.angka(f'select count(*) from public.invoice_items where compound_recipe_id={q(recipe)}')==1,
-          dict(stock_before=stock,stock_after=state(h),posted_cost=cost,revenue=h.saldo_ref('4201',no),hpp=h.saldo_ref('5101',no),ar=h.saldo_ref('1201',no)))
+          dict(stock_before=stock,stock_after=state(h),posted_cost=cost,revenue=h.saldo_ref('510002',no),hpp=h.saldo_ref('600001',no),ar=h.saldo_ref('150001',no)))
     # Original DP invoice, its lines and money stay untouched after new stage.
     check('original DP retained',h.nilai(old_sql)==old and h.diterima(first)==200000 and h.status_bayar(first)=='DP'
           and h.angka(f'select total from public.invoices where id={q(first)}')==370000
@@ -288,8 +288,8 @@ def reverse_race(h,db,version):
     invoice=h.nilai(f"select id from public.invoices where request_key='stage-second'")
     check('new issue first concurrent stage second both commit once',result['ok'] and evidence[0]['wait_event']=='advisory'
           and state(h)['stock']==before['stock']-2 and state(h)['recipes']==before['recipes']+1
-          and state(h)['invoices']==before['invoices']+1 and h.saldo_ref('4201',h.no_tagihan(invoice))==-60000
-          and h.saldo_ref('1201',h.no_tagihan(invoice))==60000,
+          and state(h)['invoices']==before['invoices']+1 and h.saldo_ref('510002',h.no_tagihan(invoice))==-60000
+          and h.saldo_ref('150001',h.no_tagihan(invoice))==60000,
           dict(result=result,barriers=evidence,before=before,after=state(h)))
 
 

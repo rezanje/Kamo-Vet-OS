@@ -36,7 +36,12 @@ if __name__ == "__main__":
         db.bootstrap()
         # Re-applying the I02 migration must be a no-op (idempotent create or replace).
         db.sql("begin;\n" + (ROOT / "supabase/migrations/20261028150000_i02_opname_uniform_variance.sql").read_text() + "\ncommit;")
-        print("PASS I02 migration re-applied idempotently", flush=True)
+        # That older file still names the old account codes; the chart-of-accounts migration
+        # rewrites any such function again, so re-applying it restores the new codes.
+        db.sql("begin;\n" + (ROOT / "supabase/migrations/20261105010000_coa_bagan_baru.sql").read_text() + "\ncommit;")
+        if db.last("select public.stock_opname_account('inventory')||'/'||public.stock_opname_account('variance');") != "170001/720010":
+            raise AssertionError("chart-of-accounts migration did not restore the opname accounts")
+        print("PASS I02 migration re-applied idempotently (chart of accounts re-applied after it)", flush=True)
         for name in ["opname_posting_atomic.sql", "opname_price_report.sql", "stock_document_corrections.sql"]:
             db.sql((ROOT / "supabase/tests" / name).read_text())
             print("PASS " + name, flush=True)

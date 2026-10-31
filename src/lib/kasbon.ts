@@ -1,6 +1,6 @@
 // Kasbon karyawan (migrasi 0089) — logika murni, dites di __tests__/kasbon.test.ts.
 
-export const AKUN_PIUTANG_KARYAWAN = "1203";
+export const AKUN_PIUTANG_KARYAWAN = "182001";
 
 /** Penanda kasbon yang LAHIR OTOMATIS dari selisih kas, bukan diajukan karyawan.
  *  Dipakai supaya utang ini tidak memblokir hak karyawan mengajukan kasbon sendiri. */

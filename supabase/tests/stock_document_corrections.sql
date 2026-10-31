@@ -10,7 +10,7 @@ alter table profiles enable trigger profiles_prevent_self_role_change;
 insert into branches(id,code,name,type) values('ef200000-0000-4000-8000-000000000001','SC','Stock correction fiction','KLINIK');
 insert into warehouses(id,branch_id,code,name,type) values('ef300000-0000-4000-8000-000000000001','ef200000-0000-4000-8000-000000000001','SC','Fictional warehouse','VET');
 insert into items(id,code,name,unit,item_type,buy_price) values('ef400000-0000-4000-8000-000000000001','SC','Fictional goods','pcs','Persediaan',100);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Inventory','ASET','D'),('5902','Variance','BEBAN','D') on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Inventory','ASET','D'),('720010','Variance','BEBAN','D') on conflict(code) do update set is_active=true,is_header=false;
 
 create function test_stock_source(kind text, ref text, qty numeric, baseline numeric default 0) returns uuid language plpgsql security definer as $$
 declare doc uuid:=gen_random_uuid();ord uuid:=gen_random_uuid();je uuid:=gen_random_uuid();begin
@@ -26,7 +26,7 @@ declare doc uuid:=gen_random_uuid();ord uuid:=gen_random_uuid();je uuid:=gen_ran
  if qty>0 then perform stock_in_fifo('ef300000-0000-4000-8000-000000000001','ef400000-0000-4000-8000-000000000001',qty,100,case kind when 'adjustment' then 'penyesuaian' else 'opname' end,ref,current_date);
  elsif qty<0 then perform stock_out_fifo('ef300000-0000-4000-8000-000000000001','ef400000-0000-4000-8000-000000000001',-qty,case kind when 'adjustment' then 'penyesuaian' else 'opname' end,ref,current_date);end if;
  insert into journal_entries(id,no_jurnal,tanggal,source,source_ref,branch_id,deskripsi) values(je,'SC.'||ref,current_date,case kind when 'adjustment' then 'penyesuaian' else 'opname' end,ref,'ef200000-0000-4000-8000-000000000001','Fictional stock source');
- insert into journal_lines(entry_id,account_id,debit,credit) select je,id,case code when '1301' then greatest(qty*100,0) else greatest(-qty*100,0) end,case code when '5902' then greatest(qty*100,0) else greatest(-qty*100,0) end from coa_accounts where code in('1301','5902');
+ insert into journal_lines(entry_id,account_id,debit,credit) select je,id,case code when '170001' then greatest(qty*100,0) else greatest(-qty*100,0) end,case code when '720010' then greatest(qty*100,0) else greatest(-qty*100,0) end from coa_accounts where code in('170001','720010');
  return doc;
 end $$;
 
@@ -54,7 +54,7 @@ do $$declare doc uuid;plan jsonb;result jsonb;retry jsonb;rows jsonb:='[{"item_i
  perform pg_temp.assert_true((select sum(qty*unit_cost) from stock_moves)=300,'Stock card value mismatch');
  perform pg_temp.assert_true((select sum(qty_left*unit_cost) from stock_layers)=300,'FIFO value mismatch');
  perform pg_temp.assert_true((select exp_date from stock_layers where source='stock-correction')=current_date+30,'Incoming replacement lost source expiry');
- perform pg_temp.assert_true((select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1301')=300,'Inventory journal mismatch');
+ perform pg_temp.assert_true((select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='170001')=300,'Inventory journal mismatch');
  begin perform correct_stock_document('adjustment',doc,rows,'Different reason','success-key',plan->>'token');raise exception 'expected key conflict';exception when others then if sqlerrm='expected key conflict' or sqlerrm not like '%Identitas%' then raise;end if;end;
  reset role;
 end$$;
@@ -71,7 +71,7 @@ do $$declare doc uuid:=gen_random_uuid();ord uuid:=gen_random_uuid();je uuid:=ge
  perform issue_stock_document_recorded('opname',doc,'ef400000-0000-4000-8000-000000000001');
  reset role;
  insert into journal_entries(id,no_jurnal,tanggal,deskripsi,source,source_ref,branch_id) values(je,'OPR.NEW-NEG',current_date,'Fiction','opname','OPR.NEW-NEG','ef200000-0000-4000-8000-000000000001');
- insert into journal_lines(entry_id,account_id,debit,credit) select je,id,case code when '5902' then 200 else 0 end,case code when '1301' then 200 else 0 end from coa_accounts where code in('1301','5902');
+ insert into journal_lines(entry_id,account_id,debit,credit) select je,id,case code when '720010' then 200 else 0 end,case code when '170001' then 200 else 0 end from coa_accounts where code in('170001','720010');
  set local role authenticated;
  plan:=preview_stock_document_correction('opname',doc,rows);
  perform correct_stock_document('opname',doc,rows,'Correct recorded opname shortage','op-negative-proof',plan->>'token');
@@ -106,7 +106,7 @@ do $$declare doc uuid:=gen_random_uuid();je uuid:=gen_random_uuid();issue jsonb;
  if issue is distinct from issue_stock_document_recorded('adjustment',doc,'ef400000-0000-4000-8000-000000000001') then raise exception 'Issuance retry changed';end if;
  reset role;
  insert into journal_entries(id,no_jurnal,tanggal,deskripsi,source,source_ref,branch_id) values(je,'NEW-NEGATIVE',current_date,'Fiction','penyesuaian','NEW-NEGATIVE','ef200000-0000-4000-8000-000000000001');
- insert into journal_lines(entry_id,account_id,debit,credit) select je,id,case code when '5902' then 1000 else 0 end,case code when '1301' then 1000 else 0 end from coa_accounts where code in('1301','5902');
+ insert into journal_lines(entry_id,account_id,debit,credit) select je,id,case code when '720010' then 1000 else 0 end,case code when '170001' then 1000 else 0 end from coa_accounts where code in('170001','720010');
  set local role authenticated;
  plan:=preview_stock_document_correction('adjustment',doc,rows);
  perform correct_stock_document('adjustment',doc,rows,'Correct recorded shortage','mixed-proof',plan->>'token');
@@ -166,7 +166,7 @@ do $$declare doc uuid;plan jsonb;result jsonb;rows jsonb;begin
  plan:=preview_stock_document_correction('adjustment',doc,rows);
  perform correct_stock_document('adjustment',doc,rows,'Cancel original stock effect','sign-cancel',plan->>'token');
  if (select sum(qty_left*unit_cost) from stock_layers)<>1000 then raise exception 'Cancellation did not restore original layers';end if;
- if (select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1301')<>0 then raise exception 'Cancellation journal net is not zero';end if;
+ if (select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='170001')<>0 then raise exception 'Cancellation journal net is not zero';end if;
  rows:='[{"item_id":"ef400000-0000-4000-8000-000000000001","qty":11}]';
  plan:=preview_stock_document_correction('adjustment',doc,rows);
  perform correct_stock_document('adjustment',doc,rows,'Correct after zero-effect cancellation','after-zero',plan->>'token');

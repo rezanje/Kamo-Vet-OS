@@ -167,7 +167,7 @@ export { KOLOM_AKUN_KAMO as KOLOM_AKUN, KOLOM_AKUN_WAJIB as WAJIB_AKUN } from ".
 // Induk boleh ditulis sesudah anaknya. Kode contoh tidak memakai kode sistem / jatah rekening.
 export const CONTOH_AKUN = [
   "kode,nama,tipe,saldo_normal,induk,header,aktif",
-  "5701,Beban Laundry Kandang,BEBAN,D,5700,,",
-  "5700,Beban Klinik Lain,BEBAN,D,,ya,",
-  "1401,Perlengkapan Kantor,ASET,D,,,",
+  "770100,Beban Laundry Kandang,BEBAN,D,770000,,",
+  "770000,Beban Klinik Lain,BEBAN,D,,ya,",
+  "189001,Perlengkapan Klinik,ASET,D,,,",
 ].join("\n");

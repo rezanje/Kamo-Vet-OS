@@ -53,7 +53,7 @@ def run(h):
     h.sql(f"select set_config('request.jwt.claims',{q(json.dumps(dict(sub=r.OWNER,role='authenticated')))},false);update inpatient_records set discharged_at=now() where id={q(stay2)}")
     cart = t.read(h, v2, stay2)
     err = h.gagal(t.save(v2, stay2, cart['snapshot'], cart['rows'], [dict(method='Tunai',amount=330000)], key='discharged-pending'), r.STAFF)
-    check('discharged pending cart posts original stock revenue and money atomically', not err and h.angka(f'select total from invoices where visit_id={q(v2)}') == 330000 and h.saldo_ref('4201', h.no_tagihan(h.aktif(v2))) == -330000, err)
+    check('discharged pending cart posts original stock revenue and money atomically', not err and h.angka(f'select total from invoices where visit_id={q(v2)}') == 330000 and h.saldo_ref('510002', h.no_tagihan(h.aktif(v2))) == -330000, err)
     # The OUTER wrapper has its own shift/settings waits before original352.
     # Re-check persisted access, account destination and tax AFTER those waits.
     import contextlib
@@ -63,7 +63,7 @@ def run(h):
         (1983, 'role across shift', f'select id from cashier_shifts where id={q(r.SHIFT[r.STAFF])} for update', "insert into role_modules(role,module_id) values('STAFF','laporan') on conflict do nothing", "delete from role_modules where role='STAFF'", 'ACCESS_DENIED'),
         (1984, 'role across settings', 'select id from company_settings where id=true for update', "insert into role_modules(role,module_id) values('STAFF','laporan') on conflict do nothing", "delete from role_modules where role='STAFF'", 'ACCESS_DENIED'),
         (1985, 'tax across settings', 'select id from company_settings where id=true for update', 'update company_settings set mode_pkp=true,ppn_rate=12 where id=true', 'update company_settings set mode_pkp=false,ppn_rate=11 where id=true', 'CART_STALE'),
-        (1986, 'account across settings', 'select id from company_settings where id=true for update', "update cash_accounts set no_rekening='FIKTIF-GANTI' where coa_code='1102'", "update cash_accounts set no_rekening=null where coa_code='1102'", 'ACCOUNT_INVALID'),
+        (1986, 'account across settings', 'select id from company_settings where id=true for update', "update cash_accounts set no_rekening='FIKTIF-GANTI' where coa_code='120002'", "update cash_accounts set no_rekening=null where coa_code='120002'", 'ACCOUNT_INVALID'),
     ]:
         visit, _ = t.m.visit(h, n)
         record = h.nilai(f'select id from inpatient_records where visit_id={q(visit)}')

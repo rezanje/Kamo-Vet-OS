@@ -24,7 +24,7 @@ const journalLines = [
   { id: "l5", account_id: "other", debit: "1000", credit: "0", journal_entries: { tanggal: "2026-10-22", branch_id: "b1" } },
 ];
 const tables = () => ({ inventory_costing_settings: settings, warehouses, inventory_cost_events: events,
-  coa_accounts: [{ id: "a1301", code: "1301" }], journal_lines: journalLines });
+  coa_accounts: [{ id: "a1301", code: "170001" }], journal_lines: journalLines });
 
 it("uses dated average events for an exact branch/detail as-of total and ignores later moves", async () => {
   const { client, records } = clientFixture({ tables: tables() });
@@ -319,7 +319,7 @@ it("M01: reconciles today's FIFO layer value per branch against GL 1301 without 
       { id: "l4", warehouse_id: "w2", item_id: "j", qty_left: "0", unit_cost: "999" },
     ],
     stock: [{ id: "s1", warehouse_id: "w2", item_id: "k", qty: -2 }, { id: "s2", warehouse_id: "w1", item_id: "i", qty: 3 }],
-    coa_accounts: [{ id: "a1301", code: "1301" }],
+    coa_accounts: [{ id: "a1301", code: "170001" }],
     journal_lines: [
       { id: "g1", account_id: "a1301", debit: "171", credit: "0", journal_entries: { tanggal: today, branch_id: "b1" } },
       { id: "g2", account_id: "a1301", debit: "150", credit: "30", journal_entries: { tanggal: today, branch_id: "b2" } },

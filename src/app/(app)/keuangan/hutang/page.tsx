@@ -33,7 +33,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   const today = hariIniWIB();
   const rekening = await loadRekeningAktif(supabase);
 
-  // Hutang usaha (2101) lahir dari Faktur Pembelian; umur dihitung dari JATUH TEMPO (ala Accurate).
+  // Hutang usaha (311001) lahir dari Faktur Pembelian; umur dihitung dari JATUH TEMPO (ala Accurate).
   const [{ data: invs }, { data: pos }, { data: rets }] = await Promise.all([
     supabase
       .from("purchase_invoices")
@@ -109,7 +109,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   const tanpaJatuhTempo = rows.filter((r) => r.bucket === TANPA_TANGGAL);
   const sisaTanpaJatuhTempo = tanpaJatuhTempo.reduce((a, r) => a + r.sisa, 0);
 
-  // PO Diterima yang belum difakturkan penuh (saldo 2102 berjalan, nilai ~ sisa qty x harga PO)
+  // PO Diterima yang belum difakturkan penuh (saldo 311003 berjalan, nilai ~ sisa qty x harga PO)
   const invoicedByPo = new Map<string, { po_item_id: string | null; item_id: string | null; qty: number; faktor: number | null }[]>();
   let invoiceLineReadFailed = false;
   {
@@ -272,7 +272,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
         <SecHeader
           num="03"
           title="BARANG DITERIMA BELUM DIFAKTURKAN"
-          desc={`Saldo akun 2102 berjalan — PO Diterima yang belum dibuatkan faktur pemasok. Total terhitung ± ${rp(totalBelumFaktur)}.${poPerluTinjau ? ` ${poPerluTinjau} PO lama perlu ditinjau karena satuan/baris faktur tidak dapat dipetakan.` : ""}`}
+          desc={`Saldo akun 311003 berjalan — PO Diterima yang belum dibuatkan faktur pemasok. Total terhitung ± ${rp(totalBelumFaktur)}.${poPerluTinjau ? ` ${poPerluTinjau} PO lama perlu ditinjau karena satuan/baris faktur tidak dapat dipetakan.` : ""}`}
           action={
             <Link href="/pembelian/faktur/baru" className="btn-def" style={{ textDecoration: "none", fontSize: 10.5 }}>
               + Buat faktur

@@ -20,7 +20,7 @@ function todayJakarta(): string {
 
 
 // Order online: TANPA shift kasir (shift_id null) — settlement bukan tunai fisik.
-// Marketplace → Dr 1202 Piutang Marketplace; WA → Dr 1102 Bank (lunas seketika).
+// Marketplace → Dr 130009 Piutang Marketplace; WA → Dr 120002 Bank (lunas seketika).
 export async function buatPenjualanOnline(formData: FormData) {
   const db = await createClient();
   const key = String(formData.get("request_key") ?? "");
@@ -103,8 +103,8 @@ export async function tandaiCair(formData: FormData) {
     source: "sale-online-cair", sourceRef: sale!.no_struk, branchId: sale!.branch_id,
     lines: [
       { code: await kodeAkunBayar(supabase, "Transfer", sale!.branch_id), debit: Math.min(nominal, total), credit: 0 },
-      ...(komisi > 0 ? [{ code: "5305", debit: komisi, credit: 0 }] : []),
-      { code: "1202", debit: 0, credit: total },
+      ...(komisi > 0 ? [{ code: "740020", debit: komisi, credit: 0 }] : []),
+      { code: "130009", debit: 0, credit: total },
     ],
   });
 

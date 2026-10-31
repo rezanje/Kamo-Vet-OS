@@ -4,7 +4,7 @@ update profiles set role='OWNER',is_active=true where id=md5('i08-avg-owner')::u
 insert into branches(id,code,name,type) values(md5('i08-avg-branch')::uuid,'I08AV','Fictional branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('i08-avg-a')::uuid,md5('i08-avg-branch')::uuid,'I08AVA','Source A','RETAIL'),(md5('i08-avg-b')::uuid,md5('i08-avg-branch')::uuid,'I08AVB','Source B','RETAIL');
 insert into items(id,code,name,unit,item_type,buy_price,sell_price) values(md5('i08-avg-material')::uuid,'I08AVM','Fictional material','PCS','Persediaan',2.5,5),(md5('i08-avg-output')::uuid,'I08AVO','Fictional output','PCS','Persediaan',7,10);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fictional inventory','ASET','D'),('1302','Fictional WIP','ASET','D'),('5101','Fictional HPP','BEBAN','D') on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fictional inventory','ASET','D'),('170003','Fictional WIP','ASET','D'),('600001','Fictional HPP','BEBAN','D') on conflict(code) do update set is_active=true,is_header=false;
 insert into production_recipes(id,item_id,nama,output_qty) values(md5('i08-avg-recipe')::uuid,md5('i08-avg-output')::uuid,'Fictional recipe',1);
 insert into production_recipe_items(recipe_id,item_id,qty) values(md5('i08-avg-recipe')::uuid,md5('i08-avg-material')::uuid,0.125);
 create function pg_temp.ok(v boolean,label text) returns void language plpgsql as $$begin if v is distinct from true then raise exception 'ASSERT %',label;end if;end$$;
@@ -35,7 +35,7 @@ do $$declare a jsonb;b jsonb;oid uuid;ref text;begin
  perform pg_temp.ok((select sum(qty*unit_cost)=0.359375 from stock_moves where source='produksi' and source_ref=ref and item_id=md5('i08-avg-output')::uuid and qty>0),'output movement cost conserved');
  perform pg_temp.ok((select qty=9 and average_cost=1.595486111111 from stock where warehouse_id=md5('i08-avg-a')::uuid and item_id=md5('i08-avg-output')::uuid),'output weighted average rounded by existing engine');
  perform pg_temp.ok((select abs(sum(variance))<0.005 from inventory_cost_events where source_ref=ref and item_id=md5('i08-avg-output')::uuid),'output rounding variance below cent');
- perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='1302' and j.source='produksi' and j.source_ref=ref),'WIP ledger closes');
+ perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='170003' and j.source='produksi' and j.source_ref=ref),'WIP ledger closes');
 end$$;
 reset role;
 select pg_temp.ok((select count(*)=2 from production_atomic_postings),'two and only two stage receipts');
@@ -77,7 +77,7 @@ do $$declare a jsonb;b jsonb;oid uuid;ref text;payload jsonb;begin
  perform pg_temp.ok((b->>'already_posted')::boolean and b->>'order_id'=oid::text,'ad hoc retry exact once');
  perform post_production_atomic('finish','avg-adhoc-finish',jsonb_build_object('id',oid,'qty_jadi',2,'tanggal_selesai',current_date));
  perform pg_temp.ok((select sum(qty*unit_cost)=8.075 from stock_moves where source='produksi' and source_ref=ref and item_id=md5('i08-avg-output')::uuid and qty>0),'ad hoc output inherits cost');
- perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='1302' and j.source='produksi' and j.source_ref=ref),'ad hoc WIP clears');
+ perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code='170003' and j.source='produksi' and j.source_ref=ref),'ad hoc WIP clears');
 end$$;
 rollback;
 
@@ -194,7 +194,7 @@ do $$declare a jsonb;b jsonb;oid uuid;ref text;src jsonb;begin
  perform pg_temp.ok((select qty=5 and average_cost=2.2 from stock where warehouse_id=md5('i08-avg-b')::uuid and item_id=md5('i08-avg-output')::uuid),'output warehouse holds 5 at average 2.2');
  perform pg_temp.ok((select qty=0 from stock where warehouse_id=md5('i08-avg-a')::uuid and item_id=md5('i08-avg-material')::uuid),'source warehouse issued 5');
  perform pg_temp.ok((select sum(value_delta)=11 from inventory_cost_events where source='produksi' and source_ref=ref and qty_delta>0) and (select sum(value_delta)=-11 from inventory_cost_events where source='produksi' and source_ref=ref and qty_delta<0),'valuation events in = out = 11');
- perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code in('1301','1302') and j.source='produksi' and j.source_ref=ref),'inventory and WIP net to zero');
+ perform pg_temp.ok((select sum(l.debit-l.credit)=0 from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries j on j.id=l.entry_id where c.code in('170001','170003') and j.source='produksi' and j.source_ref=ref),'inventory and WIP net to zero');
  src:=read_production_atomic_sources(array[oid])->(oid::text);
  perform pg_temp.ok((src#>>'{completion,received_qty}')::numeric=5 and (src#>>'{completion,received_value}')::numeric=11 and src#>>'{completion,journal}' is not null,'job links to its completion');
 end$$;

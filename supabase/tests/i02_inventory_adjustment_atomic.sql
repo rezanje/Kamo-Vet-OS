@@ -14,7 +14,7 @@ insert into items(id,code,name,unit,item_type,buy_price) values
  ('e1400000-0000-4000-8000-00000000000a','ADJ-A','Barang A fiksi','pcs','Persediaan',100),
  ('e1400000-0000-4000-8000-00000000000b','ADJ-B','Barang B fiksi','pcs','Persediaan',250.5),
  ('e1400000-0000-4000-8000-00000000000c','ADJ-C','Barang C fiksi','pcs','Persediaan',40);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Persediaan','ASET','D'),('5902','Selisih persediaan','BEBAN','D')
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Persediaan','ASET','D'),('720010','Selisih persediaan','BEBAN','D')
  on conflict(code) do update set is_active=true,is_header=false;
 update accounting_locks set closed_until=null;
 -- Opening layers: A = 10 @ 80 then 5 @ 120 (FIFO), B = 4 @ 250.5. C has no stock row.
@@ -50,8 +50,8 @@ do $$declare r jsonb;again jsonb;doc uuid;je uuid;before text;begin
  perform pg_temp.ok((select string_agg(selisih::text||':'||nilai::text,',' order by item_id) from inventory_adjustment_items where adjustment_id=doc)='-12:1040.00,2:501.00','line snapshots and values');
  perform pg_temp.ok((select count(*)=1 from journal_entries where source='penyesuaian' and source_ref=r->>'no_adj' and id=je and branch_id='e1200000-0000-4000-8000-000000000001'),'one journal, traceable to document and branch');
  perform pg_temp.ok((select sum(debit)=sum(credit) and sum(debit)=1541 from journal_lines where entry_id=je),'journal balanced');
- perform pg_temp.ok((select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=je and a.code='1301')=-539
-  and (select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=je and a.code='5902')=539,'1301 net = in - out; 5902 is the only counter account');
+ perform pg_temp.ok((select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=je and a.code='170001')=-539
+  and (select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=je and a.code='720010')=539,'1301 net = in - out; 5902 is the only counter account');
  perform pg_temp.ok((select sum(qty_left*unit_cost) from stock_layers where warehouse_id='e1300000-0000-4000-8000-000000000001')=(0*80+3*120+6*250.5),'layers after FIFO issue and receipt');
  reset role;
  perform pg_temp.ok(exists(select 1 from stock_document_issue_proofs where kind='adjustment' and document_id=doc),'FIFO issue proof kept for later correction');
@@ -67,7 +67,7 @@ do $$declare r jsonb;again jsonb;doc uuid;je uuid;before text;begin
  perform pg_temp.reject(format('delete from journal_lines where entry_id=%L',je),'sudah tetap');
  perform pg_temp.reject(format('update journal_lines set debit=debit+1 where entry_id=%L and debit>0',je),'sudah tetap');
  perform pg_temp.reject(format('update journal_entries set tanggal=tanggal-1 where id=%L',je),'sudah tetap');
- perform pg_temp.reject(format('insert into journal_lines(entry_id,account_id,debit,credit) select %L,id,1,0 from coa_accounts where code=''1301''',je),'sudah tetap');
+ perform pg_temp.reject(format('insert into journal_lines(entry_id,account_id,debit,credit) select %L,id,1,0 from coa_accounts where code=''170001''',je),'sudah tetap');
  perform pg_temp.reject(format('update inventory_adjustments set nilai_keluar=0 where id=%L',doc),'permission denied');
  perform pg_temp.reject(format('delete from inventory_adjustment_items where adjustment_id=%L',doc),'permission denied');
  perform pg_temp.reject($q$insert into inventory_adjustments(no_adj,warehouse_id,alasan) values('PS-DIRECT','e1300000-0000-4000-8000-000000000001','hilang')$q$,'permission denied');
@@ -109,7 +109,7 @@ do $$declare before text;begin
  perform pg_temp.reject($q$select pg_temp.post('adj-closed','[{"item_id":"e1400000-0000-4000-8000-00000000000a","qty_baru":1}]')$q$,'ditutup');
  reset role;
  update accounting_locks set closed_until=null;
- update coa_accounts set is_active=false where code='5902';
+ update coa_accounts set is_active=false where code='720010';
  set local role authenticated;
  perform pg_temp.reject($q$select pg_temp.post('adj-noaccount','[{"item_id":"e1400000-0000-4000-8000-00000000000a","qty_baru":1}]')$q$,'belum tersedia atau tidak aktif');
  reset role;

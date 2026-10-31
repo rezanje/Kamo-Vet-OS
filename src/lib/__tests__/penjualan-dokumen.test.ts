@@ -61,10 +61,10 @@ describe("jurnalPengiriman", () => {
   it("modal diakui saat barang keluar, pendapatan belum", () => {
     const l = jurnalPengiriman(1_200_000);
     expect(l).toEqual([
-      { code: "5101", debit: 1_200_000, credit: 0 },
-      { code: "1301", debit: 0, credit: 1_200_000 },
+      { code: "600001", debit: 1_200_000, credit: 0 },
+      { code: "170001", debit: 0, credit: 1_200_000 },
     ]);
-    expect(l.some((x) => x.code === "4101")).toBe(false);
+    expect(l.some((x) => x.code === "510001")).toBe(false);
     expect(seimbang(l)).toBe(true);
   });
 
@@ -77,16 +77,16 @@ describe("jurnalFakturJual", () => {
   it("non-PKP: seluruh nilai jadi pendapatan", () => {
     const l = jurnalFakturJual(2_000_000, 0);
     expect(l).toEqual([
-      { code: "1201", debit: 2_000_000, credit: 0 },
-      { code: "4101", debit: 0, credit: 2_000_000 },
+      { code: "150001", debit: 2_000_000, credit: 0 },
+      { code: "510001", debit: 0, credit: 2_000_000 },
     ]);
     expect(seimbang(l)).toBe(true);
   });
 
   it("PKP: piutang sebesar DPP + PPN, PPN keluaran dipisah", () => {
     const l = jurnalFakturJual(2_000_000, 220_000);
-    expect(l.find((x) => x.code === "1201")?.debit).toBe(2_220_000);
-    expect(l.find((x) => x.code === "2201")?.credit).toBe(220_000);
+    expect(l.find((x) => x.code === "150001")?.debit).toBe(2_220_000);
+    expect(l.find((x) => x.code === "312005")?.credit).toBe(220_000);
     expect(seimbang(l)).toBe(true);
   });
 
@@ -97,42 +97,42 @@ describe("jurnalFakturJual", () => {
 
 describe("jurnalPenerimaan", () => {
   it("tanpa uang muka: kas masuk, piutang berkurang", () => {
-    const l = jurnalPenerimaan("1102", 1_000_000, 0);
+    const l = jurnalPenerimaan("120002", 1_000_000, 0);
     expect(l).toEqual([
-      { code: "1102", debit: 1_000_000, credit: 0 },
-      { code: "1201", debit: 0, credit: 1_000_000 },
+      { code: "120002", debit: 1_000_000, credit: 0 },
+      { code: "150001", debit: 0, credit: 1_000_000 },
     ]);
     expect(seimbang(l)).toBe(true);
   });
 
   it("sebagian dari uang muka: kas cuma bertambah sisanya", () => {
-    const l = jurnalPenerimaan("1102", 1_000_000, 400_000);
-    expect(l.find((x) => x.code === "1102")?.debit).toBe(600_000);
-    expect(l.find((x) => x.code === "2103")?.debit).toBe(400_000);
+    const l = jurnalPenerimaan("120002", 1_000_000, 400_000);
+    expect(l.find((x) => x.code === "120002")?.debit).toBe(600_000);
+    expect(l.find((x) => x.code === "314001")?.debit).toBe(400_000);
     expect(seimbang(l)).toBe(true);
   });
 
   it("lunas penuh dari uang muka: kas tidak tersentuh", () => {
-    const l = jurnalPenerimaan("1102", 500_000, 500_000);
-    expect(l.some((x) => x.code === "1102")).toBe(false);
+    const l = jurnalPenerimaan("120002", 500_000, 500_000);
+    expect(l.some((x) => x.code === "120002")).toBe(false);
     expect(seimbang(l)).toBe(true);
   });
 
   it("uang muka melebihi tagihan tetap dibatasi nominal tagihannya", () => {
-    const l = jurnalPenerimaan("1102", 300_000, 900_000);
-    expect(l.find((x) => x.code === "2103")?.debit).toBe(300_000);
+    const l = jurnalPenerimaan("120002", 300_000, 900_000);
+    expect(l.find((x) => x.code === "314001")?.debit).toBe(300_000);
     expect(seimbang(l)).toBe(true);
   });
 });
 
 describe("jurnalUangMukaJual", () => {
   it("DP pelanggan jadi kewajiban, bukan pendapatan", () => {
-    const l = jurnalUangMukaJual("1101", 750_000);
+    const l = jurnalUangMukaJual("110003", 750_000);
     expect(l).toEqual([
-      { code: "1101", debit: 750_000, credit: 0 },
-      { code: "2103", debit: 0, credit: 750_000 },
+      { code: "110003", debit: 750_000, credit: 0 },
+      { code: "314001", debit: 0, credit: 750_000 },
     ]);
-    expect(l.some((x) => x.code === "4101")).toBe(false);
+    expect(l.some((x) => x.code === "510001")).toBe(false);
     expect(seimbang(l)).toBe(true);
   });
 });

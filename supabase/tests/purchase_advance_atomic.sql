@@ -7,7 +7,7 @@ insert into profiles(id,role,is_active) values
  on conflict(id)do update set role=excluded.role,is_active=excluded.is_active;
 insert into branches(id,code,name,type,is_active) values('d6100000-0000-4000-8000-000000000001','QA-DP','Fiction DP branch','KLINIK',true);
 insert into suppliers(id,nama) values('d6300000-0000-4000-8000-000000000001','Fiction DP supplier'),('d6300000-0000-4000-8000-000000000002','Fiction other supplier');
-insert into coa_accounts(code,name,type,normal_balance) values('1196','Fiction DP cash','ASET','D'),('2101','Fiction DP payable','LIABILITAS','K') on conflict(code)do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance) values('1196','Fiction DP cash','ASET','D'),('311001','Fiction DP payable','LIABILITAS','K') on conflict(code)do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code,is_active) values('d6700000-0000-4000-8000-000000000001','Fiction DP bank','Bank','1196',true);
 insert into purchase_orders(id,no_po,supplier_id,branch_id,status,total) values
  ('d6400000-0000-4000-8000-000000000001','PO.QA.CAP','d6300000-0000-4000-8000-000000000001','d6100000-0000-4000-8000-000000000001','Draft',600000),
@@ -107,7 +107,7 @@ do $$declare a jsonb;b jsonb;begin
  b:=cancel_purchase_advance_atomic((a->>'advance_id')::uuid);
  if b is distinct from cancel_purchase_advance_atomic((a->>'advance_id')::uuid) then raise exception 'full cancellation retry changed receipt';end if;
  if (select status from purchase_advances where id=(a->>'advance_id')::uuid)<>'batal' then raise exception 'full cancellation not recorded';end if;
- if (select sum(l.debit-l.credit) from journal_lines l where l.entry_id in((a->>'journal_id')::uuid,(b->>'journal_id')::uuid) and l.account_id=(select id from coa_accounts where code='1303'))<>0 then raise exception 'original and refund do not reconcile';end if;
+ if (select sum(l.debit-l.credit) from journal_lines l where l.entry_id in((a->>'journal_id')::uuid,(b->>'journal_id')::uuid) and l.account_id=(select id from coa_accounts where code='160001'))<>0 then raise exception 'original and refund do not reconcile';end if;
  perform pay_purchase_advance_atomic('after-refund','UM.QA.',5,'d6300000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-000000000003',current_date,600000,'Transfer','d6700000-0000-4000-8000-000000000001',null);
 end$$;
 reset role;
@@ -130,9 +130,9 @@ end$$;
 reset role;
 -- A provable legacy full refund releases capacity without rewriting its source.
 select clinic_write_journal(current_date,'Fiction legacy source','purchase-advance','UM.LEGACY.UNPROVEN','d6100000-0000-4000-8000-000000000001',
- '[{"code":"1303","debit":100,"credit":0},{"code":"1196","debit":0,"credit":100}]');
+ '[{"code":"160001","debit":100,"credit":0},{"code":"1196","debit":0,"credit":100}]');
 select clinic_write_journal(current_date,'Fiction legacy reversal','purchase-advance-void','UM.LEGACY.UNPROVEN','d6100000-0000-4000-8000-000000000001',
- '[{"code":"1196","debit":100,"credit":0},{"code":"1303","debit":0,"credit":100}]');
+ '[{"code":"1196","debit":100,"credit":0},{"code":"160001","debit":0,"credit":100}]');
 set local role authenticated;
 select pay_purchase_advance_atomic('proven-legacy','UM.QA.',5,'d6300000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-000000000004',current_date,100,'Transfer','d6700000-0000-4000-8000-000000000001',null);
 reset role;

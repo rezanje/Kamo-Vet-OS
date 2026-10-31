@@ -115,7 +115,7 @@ export default async function CoaPage({
               title={sedangEdit ? `UBAH AKUN ${sedangEdit.code}` : "TAMBAH AKUN"}
               desc={sedangEdit
                 ? "Kode akun tidak bisa diubah — seluruh pencatatan mencarinya lewat kode itu."
-                : "Kode 4–6 angka. Angka pertama menentukan kelompoknya: 1 aset, 2 liabilitas, 3 ekuitas, 4 pendapatan, 5 beban."}
+                : "Kode 6 angka sesuai bagan akun: 1–2 aset, 3 liabilitas, 4 ekuitas, 5 pendapatan (52 retur/diskon), 6 HPP, 7 beban, 81 pendapatan / 82 beban di luar operasional."}
               action={sedangEdit
                 ? <Link href="/keuangan/coa" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>Batal</Link>
                 : undefined}
@@ -124,7 +124,7 @@ export default async function CoaPage({
               <div className="fg">
                 <label className="flab">Kode akun *</label>
                 <input className="fi" name="code" required minLength={4} maxLength={6} inputMode="numeric" pattern="[0-9]{4,6}"
-                  placeholder="5403" defaultValue={sedangEdit?.code ?? ""}
+                  placeholder="740021" defaultValue={sedangEdit?.code ?? ""}
                   readOnly={!!sedangEdit}
                   style={sedangEdit ? { background: "var(--bg2, #f3f4f6)", color: "var(--tm)" } : undefined} />
               </div>
@@ -169,7 +169,7 @@ export default async function CoaPage({
               Induk harus sekelompok dengan rinciannya.
             </div>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
-              Kode 1103–1199 dipesan untuk rekening kas/bank yang dibuat otomatis dari
+              Kode 110023–119999 (kas) dan 120007–129999 (bank) dipesan untuk rekening yang dibuat otomatis dari
               Kas &amp; Bank → Rekening. Menambah akun aset di sini <b>tidak</b> membuatnya
               dihitung sebagai kas di Arus Kas — untuk itu buat rekeningnya di menu tersebut.
             </div>

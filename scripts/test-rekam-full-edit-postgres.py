@@ -123,7 +123,7 @@ def run(h):
  parts=[dict(method='Tunai',amount=int(quote['remaining']))]
  err=h.gagal(f"select clinic_bill_and_pay_inpatient({q(stay)},{q(v)},'post-full-bmhp','2026-11-03',{j(parts)},null,false,null);",r.STAFF)
  inv=h.aktif(v);no=h.no_tagihan(inv)
- check('saved procedure BMHP posts original stock HPP once with issued compound preserved',not err and h.angka(f'select qty from stock where item_id={q(material)}')==stock-4 and h.angka(f'select total from invoices where id={q(inv)}')==quote['pending'] and h.saldo_ref('5101',no)==6000 and h.saldo_ref('1201',no)==0,dict(error=err,quote=quote,stock_before=stock,stock_after=h.angka(f'select qty from stock where item_id={q(material)}'),hpp=h.saldo_ref('5101',no)))
+ check('saved procedure BMHP posts original stock HPP once with issued compound preserved',not err and h.angka(f'select qty from stock where item_id={q(material)}')==stock-4 and h.angka(f'select total from invoices where id={q(inv)}')==quote['pending'] and h.saldo_ref('600001',no)==6000 and h.saldo_ref('150001',no)==0,dict(error=err,quote=quote,stock_before=stock,stock_after=h.angka(f'select qty from stock where item_id={q(material)}'),hpp=h.saldo_ref('600001',no)))
  # Original INITIAL creation is SECURITY INVOKER. Exercise it as both valid
  # clinic roles, with actual BMHP and an official compound, not a hand-built
  # submitted record. The new direct-write guard must not break creation.

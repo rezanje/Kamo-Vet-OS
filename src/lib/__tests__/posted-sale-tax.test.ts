@@ -3,8 +3,8 @@ const source = vi.hoisted(() => ({ reversalDate: "2026-10-21" }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from(table: string) {
   let lower = "", upper = "";
   const lines = [
-    { debit: 0, credit: 11000, coa_accounts: { code: "2201" }, journal_entries: { tanggal: "2026-10-20", source: "sale", source_ref: "original-sale", deskripsi: "Penjualan" } },
-    { debit: 11000, credit: 0, coa_accounts: { code: "2201" }, journal_entries: { tanggal: source.reversalDate, source: "sale-void", source_ref: "cancellation-audit", deskripsi: "Pembatalan original-sale" } },
+    { debit: 0, credit: 11000, coa_accounts: { code: "312005" }, journal_entries: { tanggal: "2026-10-20", source: "sale", source_ref: "original-sale", deskripsi: "Penjualan" } },
+    { debit: 11000, credit: 0, coa_accounts: { code: "312005" }, journal_entries: { tanggal: source.reversalDate, source: "sale-void", source_ref: "cancellation-audit", deskripsi: "Pembatalan original-sale" } },
   ];
   const q = { select: () => q, in: () => q, eq: () => q, gte: (_key: string, v: string) => { lower = v; return q; }, lte: (_key: string, v: string) => { upper = v; return q; }, maybeSingle: async () => ({ data: { mode_pkp: true } }), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: table === "journal_lines" ? lines.filter(x => x.journal_entries.tanggal >= lower && x.journal_entries.tanggal <= upper) : [] }).then(resolve) };
   return q;

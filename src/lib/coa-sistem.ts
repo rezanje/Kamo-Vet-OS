@@ -9,11 +9,44 @@
 export const TIPE_AKUN = ["ASET", "LIABILITAS", "EKUITAS", "PENDAPATAN", "BEBAN"] as const;
 export type TipeAkun = (typeof TIPE_AKUN)[number];
 
-/** Digit pertama kode menentukan kelompoknya — semua laporan mengelompokkan lewat `type`,
- *  jadi kode dan tipe yang tidak sejalan bikin akun muncul di tempat yang salah. */
-export const DIGIT_TIPE: Record<string, TipeAkun> = {
-  "1": "ASET", "2": "LIABILITAS", "3": "EKUITAS", "4": "PENDAPATAN", "5": "BEBAN",
+/**
+ * Kelompok akun dari kodenya — semua laporan mengelompokkan lewat `type`, jadi kode
+ * dan tipe yang tidak sejalan bikin akun muncul di tempat yang salah.
+ *
+ * Bagan akun baru (31 Okt 2026, 6 digit): 1 kas/bank & aset lancar, 2 aset tetap,
+ * 3 liabilitas, 4 ekuitas, 5 pendapatan, 6 HPP, 7 beban, 80/81 pendapatan di luar
+ * operasional, 82 beban di luar operasional. Kode lama 4–5 digit yang masih tersisa
+ * tetap dibaca dengan pola lama (1 aset … 5 beban). Sama dengan
+ * public.coa_type_for_code() di database.
+ */
+export function tipeDariKode(code: string): TipeAkun | null {
+  const c = String(code ?? "").trim();
+  if (/^\d{6}$/.test(c)) {
+    if (/^[12]/.test(c)) return "ASET";
+    if (c[0] === "3") return "LIABILITAS";
+    if (c[0] === "4") return "EKUITAS";
+    if (c[0] === "5") return "PENDAPATAN";
+    if (/^[67]/.test(c)) return "BEBAN";
+    if (/^8[01]/.test(c)) return "PENDAPATAN";
+    if (c.startsWith("82")) return "BEBAN";
+    return null;
+  }
+  if (/^[1-5]\d{3,4}$/.test(c)) {
+    return ({ "1": "ASET", "2": "LIABILITAS", "3": "EKUITAS", "4": "PENDAPATAN", "5": "BEBAN" } as const)[c[0] as "1"];
+  }
+  return null;
+}
+
+/** Contoh awalan kode baru untuk tiap kelompok — dipakai pesan error. */
+export const AWALAN_TIPE: Record<TipeAkun, string> = {
+  ASET: "1 atau 2", LIABILITAS: "3", EKUITAS: "4", PENDAPATAN: "5 atau 81", BEBAN: "6, 7 atau 82",
 };
+
+/** Kelompok Harga Pokok Penjualan (6xxxxx): dipisah dari beban operasional di Laba Rugi & dashboard. */
+export const akunHpp = (code: string) => /^6\d{5}$/.test(String(code ?? "").trim());
+
+/** Retur/diskon/potongan penjualan (52xxxx) adalah pengurang pendapatan: sah bersaldo Debit. */
+export const kontraPendapatan = (code: string) => /^52\d{4}$/.test(String(code ?? "").trim());
 
 /** Sisi saldo yang wajar untuk tiap kelompok. */
 export const SISI_WAJAR: Record<TipeAkun, "D" | "K"> = {
@@ -21,16 +54,23 @@ export const SISI_WAJAR: Record<TipeAkun, "D" | "K"> = {
 };
 
 /**
- * Akun kontra buatan pengguna dibatasi ke neraca. Akun sistem 4102 adalah
- * pengecualian terkontrol untuk diskon penjualan; laporan dan tutup buku sudah
- * menghitung sisi Debit-nya sebagai pengurang pendapatan.
+ * Akun kontra dibatasi ke neraca, ditambah kelompok retur/diskon penjualan 52xxxx
+ * (lihat kontraPendapatan); laporan dan tutup buku menghitung sisi Debit-nya sebagai
+ * pengurang pendapatan.
  */
 export const BOLEH_KONTRA: TipeAkun[] = ["ASET", "LIABILITAS", "EKUITAS"];
 
 /** Jatah kode yang dialokasikan otomatis saat menambah rekening kas/bank
- *  (lib/transfer-kas → kodeAkunBerikutnya). Form manual tidak boleh menyerobot. */
-export const KODE_REKENING_MIN = 1103;
-export const KODE_REKENING_MAX = 1199;
+ *  (lib/transfer-kas → kodeAkunBerikutnya). Form manual tidak boleh menyerobot.
+ *  Kas melanjutkan 110001–110022 dari bagan akun, bank melanjutkan 120001–120006. */
+export const KODE_REKENING = {
+  Kas: { min: 110023, max: 119999 },
+  Bank: { min: 120007, max: 129999 },
+} as const;
+export const jatahRekening = (code: string) => {
+  const n = Number(code);
+  return Object.values(KODE_REKENING).some((r) => n >= r.min && n <= r.max);
+};
 
 /**
  * Kode yang dipakai KERAS di dalam kode program. Menonaktifkan atau menimpanya
@@ -39,41 +79,41 @@ export const KODE_REKENING_MAX = 1199;
  * Satu sumber kebenaran; jangan disalin ke tempat lain.
  */
 export const KODE_SISTEM: Record<string, string> = {
-  "1101": "kas bawaan & selisih kas tutup shift",
-  "1102": "bank bawaan untuk semua pembayaran non-tunai",
-  "1105": "PPN Masukan (faktur pembelian & rekap PPN)",
-  "1201": "piutang usaha klinik & faktur penjualan",
-  "1202": "piutang marketplace",
-  "1203": "piutang karyawan (kasbon)",
-  "1301": "persediaan — dipakai hampir semua jalur stok",
-  "1303": "uang muka pembelian",
-  "1501": "aset tetap",
-  "1509": "akumulasi penyusutan",
-  "2101": "hutang usaha",
-  "2102": "hutang belum difakturkan (penerimaan barang)",
-  "2103": "uang muka penjualan",
-  "2201": "PPN Keluaran",
-  "3101": "modal pemilik (saldo awal & saldo awal rekening)",
-  "3201": "laba ditahan (target jurnal penutup)",
-  "4101": "pendapatan penjualan produk",
-  "4102": "diskon penjualan — pengurang pendapatan bruto",
-  "4201": "pendapatan jasa klinik",
-  "4301": "pendapatan bunga bank (rekonsiliasi)",
-  "4302": "laba pelepasan aset tetap",
-  "4303": "pendapatan lain-lain (kelebihan kas tutup shift)",
-  "5101": "beban pokok penjualan — juga penanda HPP di Laba Rugi & dashboard",
-  "5201": "beban gaji",
-  "5301": "beban listrik & air (kategori pengeluaran)",
-  "5302": "beban perlengkapan (kategori pengeluaran)",
-  "5303": "beban transportasi (kategori pengeluaran)",
-  "5304": "beban perawatan aset (kategori pengeluaran)",
-  "5305": "beban komisi marketplace",
-  "5401": "beban operasional lain-lain (kategori pengeluaran)",
-  "5501": "beban administrasi bank (transfer & rekonsiliasi)",
-  "5601": "beban penyusutan",
-  "5602": "rugi pelepasan aset tetap",
-  "5901": "selisih kas tutup shift",
-  "5902": "selisih persediaan (opname, penyesuaian & retur barang rusak)",
+  "110003": "kas bawaan & selisih kas tutup shift",
+  "120002": "bank bawaan untuk semua pembayaran non-tunai",
+  "182004": "PPN Masukan (faktur pembelian & rekap PPN)",
+  "150001": "piutang usaha klinik & faktur penjualan",
+  "130009": "piutang marketplace",
+  "182001": "piutang karyawan (kasbon)",
+  "170001": "persediaan — dipakai hampir semua jalur stok",
+  "160001": "uang muka pembelian",
+  "200008": "aset tetap",
+  "200015": "akumulasi penyusutan",
+  "311001": "hutang usaha",
+  "311003": "hutang belum difakturkan (penerimaan barang)",
+  "314001": "uang muka penjualan",
+  "312005": "PPN Keluaran",
+  "410001": "modal pemilik (saldo awal & saldo awal rekening)",
+  "420001": "laba ditahan (target jurnal penutup)",
+  "510001": "pendapatan penjualan produk",
+  "520002": "diskon penjualan — pengurang pendapatan bruto",
+  "510002": "pendapatan jasa klinik",
+  "810001": "pendapatan bunga bank (rekonsiliasi)",
+  "810003": "laba pelepasan aset tetap",
+  "810004": "pendapatan lain-lain (kelebihan kas tutup shift)",
+  "600001": "beban pokok penjualan — juga penanda HPP di Laba Rugi & dashboard",
+  "710001": "beban gaji",
+  "720002": "beban listrik & air (kategori pengeluaran)",
+  "740001": "beban perlengkapan (kategori pengeluaran)",
+  "740003": "beban transportasi (kategori pengeluaran)",
+  "740007": "beban perawatan aset (kategori pengeluaran)",
+  "740020": "beban komisi marketplace",
+  "760003": "beban operasional lain-lain (kategori pengeluaran)",
+  "740010": "beban administrasi bank (transfer & rekonsiliasi)",
+  "750004": "beban penyusutan",
+  "820004": "rugi pelepasan aset tetap",
+  "760002": "selisih kas tutup shift",
+  "720010": "selisih persediaan (opname, penyesuaian & retur barang rusak)",
 };
 
 export const akunSistem = (code: string) => code in KODE_SISTEM;
@@ -88,19 +128,18 @@ export type DraftAkun = {
 /** Validasi akun BARU. Mengembalikan pesan error, atau null kalau lolos. */
 export function validasiAkunBaru(d: DraftAkun): string | null {
   const code = d.code.trim();
-  if (!/^\d{4,6}$/.test(code)) return "Kode akun harus 4–6 angka, contoh 5403 atau 540301.";
+  if (!/^[1-8]\d{5}$/.test(code)) return "Kode akun baru harus 6 angka sesuai bagan akun, contoh 740021.";
 
   const tipe = d.type as TipeAkun;
   if (!TIPE_AKUN.includes(tipe)) return "Kelompok akun tidak dikenal.";
 
-  const harusnya = DIGIT_TIPE[code[0]];
+  const harusnya = tipeDariKode(code);
   if (harusnya !== tipe) {
-    return `Kode ${code} berawalan ${code[0]}, yang berarti kelompok ${harusnya}. Gunakan awalan ${Object.keys(DIGIT_TIPE).find((k) => DIGIT_TIPE[k] === tipe)}, atau ganti kelompoknya.`;
+    return `Kode ${code} termasuk kelompok ${harusnya ?? "yang tidak dikenal"}. Kelompok ${tipe} memakai awalan ${AWALAN_TIPE[tipe]}, atau ganti kelompoknya.`;
   }
 
-  const angka = Number(code);
-  if (angka >= KODE_REKENING_MIN && angka <= KODE_REKENING_MAX) {
-    return `Kode ${KODE_REKENING_MIN}–${KODE_REKENING_MAX} adalah jatah rekening kas/bank yang dibuat otomatis dari menu Kas & Bank → Rekening. Pakai kode lain.`;
+  if (jatahRekening(code)) {
+    return `Kode ${KODE_REKENING.Kas.min}–${KODE_REKENING.Kas.max} dan ${KODE_REKENING.Bank.min}–${KODE_REKENING.Bank.max} adalah jatah rekening kas/bank yang dibuat otomatis dari menu Kas & Bank → Rekening. Pakai kode lain.`;
   }
 
   if (akunSistem(code)) {
@@ -110,18 +149,19 @@ export function validasiAkunBaru(d: DraftAkun): string | null {
   if (!d.name.trim()) return "Nama akun wajib diisi.";
   if (d.name.trim().length > 80) return "Nama akun maksimal 80 huruf.";
 
-  return validasiSisiSaldo(tipe, d.normal_balance);
+  return validasiSisiSaldo(tipe, d.normal_balance, code);
 }
 
-/** Saldo normal boleh berlawanan HANYA untuk kelompok neraca (akun kontra). */
-export function validasiSisiSaldo(tipe: TipeAkun, normal: string): string | null {
+/** Saldo normal boleh berlawanan HANYA untuk kelompok neraca (akun kontra) dan retur/diskon penjualan 52xxxx. */
+export function validasiSisiSaldo(tipe: TipeAkun, normal: string, code = ""): string | null {
   if (normal !== "D" && normal !== "K") return "Saldo normal harus Debit atau Kredit.";
   const wajar = SISI_WAJAR[tipe];
   if (normal === wajar) return null;
+  if (tipe === "PENDAPATAN" && kontraPendapatan(code)) return null;
   if (!BOLEH_KONTRA.includes(tipe)) {
     return `Akun ${tipe} harus bersaldo normal ${wajar === "D" ? "Debit" : "Kredit"}. Saldo terbalik di kelompok ini membuat angkanya berlipat saat tutup buku.`;
   }
-  return null; // akun kontra neraca — sah, mis. 1509 Akumulasi Penyusutan
+  return null; // akun kontra neraca — sah, mis. 200015 Akumulasi Penyusutan
 }
 
 /**
@@ -147,10 +187,10 @@ export function validasiUbahAkun(
   if (berubah && punyaJurnal) {
     return "Akun ini sudah punya jurnal — kelompok & saldo normalnya tidak bisa diubah lagi, karena itu akan mengubah seluruh riwayat laporan.";
   }
-  if (berubah && DIGIT_TIPE[lama.code[0]] !== tipe) {
-    return `Kode ${lama.code} berawalan ${lama.code[0]} yang berarti kelompok ${DIGIT_TIPE[lama.code[0]]}. Kelompoknya tidak boleh berbeda dari kodenya.`;
+  if (berubah && tipeDariKode(lama.code) !== tipe) {
+    return `Kode ${lama.code} termasuk kelompok ${tipeDariKode(lama.code) ?? "yang tidak dikenal"}. Kelompoknya tidak boleh berbeda dari kodenya.`;
   }
-  return validasiSisiSaldo(tipe, d.normal_balance);
+  return validasiSisiSaldo(tipe, d.normal_balance, lama.code);
 }
 
 export type PemakaiAkun = {

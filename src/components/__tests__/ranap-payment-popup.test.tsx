@@ -24,7 +24,7 @@ vi.mock("@/lib/supabase/server", () => ({
       const pending = d.belumDitagih.reduce((sum, b) => sum + Number(b.qty) * Number(b.harga), 0);
       const debt = d.tahap.reduce((sum, t) => sum + t.sisa, 0);
       return { error: null, data: { token: "fixture-quote", amount: 0, excess: 0, pending, debt, remaining: Math.max(0, debt + pending - d.saldoUangMuka), credit: d.saldoUangMuka,
-        accounts: ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"].map(method => ({ method, code: method === "Tunai" ? "1101" : "1102", name: "Rekening Fiktif", bank: null, number: null })) } };
+        accounts: ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"].map(method => ({ method, code: method === "Tunai" ? "110003" : "120002", name: "Rekening Fiktif", bank: null, number: null })) } };
     },
     from: (table: string) => ({
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data:

@@ -164,7 +164,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
             : <span style={{ fontSize: 10.5, color: "var(--td)" }}>—</span>}</td>}
         </tr>}))}
       </tbody></table></div>
-      <p>Kredit pelanggan dari rangkaian ini: <strong>{rp(credits)}</strong>. Tercatat sebagai kewajiban pada akun 2103, terpisah dari uang muka yang dapat dipakai. Penyelesaian atau usulan pengembalian perlu ditinjau keuangan; tidak ada refund/transfer otomatis.</p>
+      <p>Kredit pelanggan dari rangkaian ini: <strong>{rp(credits)}</strong>. Tercatat sebagai kewajiban pada akun 314001, terpisah dari uang muka yang dapat dipakai. Penyelesaian atau usulan pengembalian perlu ditinjau keuangan; tidak ada refund/transfer otomatis.</p>
       {invoice.status === "batal" && !successor && <Link href="/penjualan/faktur">Buka daftar penerimaan dan kredit</Link>}
     </div>
     <div className="crm-sec">

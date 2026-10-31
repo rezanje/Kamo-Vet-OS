@@ -150,11 +150,11 @@ export function bolehMasukStok(kondisi: string | null | undefined): boolean {
 /**
  * Modal barang yang kembali, dipecah menurut nasibnya.
  *
- * - `baik`  → nilainya masuk lagi ke Persediaan (1301)
- * - `rusak` → barangnya tidak bisa dijual lagi, nilainya jadi kerugian (5902),
+ * - `baik`  → nilainya masuk lagi ke Persediaan (170001)
+ * - `rusak` → barangnya tidak bisa dijual lagi, nilainya jadi kerugian (720010),
  *   bukan menambah persediaan
  *
- * Dua-duanya sama-sama membalik HPP (5101), karena beban pokok penjualan hanya
+ * Dua-duanya sama-sama membalik HPP (600001), karena beban pokok penjualan hanya
  * boleh menempel pada barang yang benar-benar terjual dan tidak kembali.
  */
 export function pisahModalRetur(

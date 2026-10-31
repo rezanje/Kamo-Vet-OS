@@ -16,21 +16,21 @@ describe("buildFakturLines", () => {
   it("faktur = PO: 2102 lawan 2101, tanpa selisih", () => {
     const lines = buildFakturLines(100, 100);
     expect(lines).toEqual([
-      { code: "2102", debit: 100, credit: 0 },
-      { code: "2101", debit: 0, credit: 100 },
+      { code: "311003", debit: 100, credit: 0 },
+      { code: "311001", debit: 0, credit: 100 },
     ]);
   });
 
   it("faktur lebih mahal: selisih Dr 1301, seimbang", () => {
     const lines = buildFakturLines(100, 120);
-    expect(lines).toContainEqual({ code: "1301", debit: 20, credit: 0 });
+    expect(lines).toContainEqual({ code: "170001", debit: 20, credit: 0 });
     const { d, k } = sum(lines);
     expect(d).toBe(k);
   });
 
   it("faktur lebih murah: selisih Cr 1301, seimbang", () => {
     const lines = buildFakturLines(100, 90);
-    expect(lines).toContainEqual({ code: "1301", debit: 0, credit: 10 });
+    expect(lines).toContainEqual({ code: "170001", debit: 0, credit: 10 });
     const { d, k } = sum(lines);
     expect(d).toBe(k);
   });
@@ -42,8 +42,8 @@ describe("buildFakturLines", () => {
   it("Mode PKP: PPN masukan Dr 1105, tetap seimbang", () => {
     // faktur 111 (inkl PPN 11), nilai PO 100 → Dr 2102 100, Dr 1105 11, Cr 2101 111
     const lines = buildFakturLines(100, 111, 11);
-    expect(lines).toContainEqual({ code: "1105", debit: 11, credit: 0 });
-    expect(lines.find((l) => l.code === "1301")).toBeUndefined(); // selisih 0
+    expect(lines).toContainEqual({ code: "182004", debit: 11, credit: 0 });
+    expect(lines.find((l) => l.code === "170001")).toBeUndefined(); // selisih 0
     const { d, k } = sum(lines);
     expect(d).toBe(k);
   });
@@ -153,17 +153,17 @@ describe("rencanakanRepriceLapisan", () => {
 describe("buildFakturLangsungLines", () => {
   it("tanpa PPN: persediaan bertambah sebesar total, utang sebesar total", () => {
     expect(buildFakturLangsungLines(1_000_000, 0)).toEqual([
-      { code: "1301", debit: 1_000_000, credit: 0 },
-      { code: "2101", debit: 0, credit: 1_000_000 },
+      { code: "170001", debit: 1_000_000, credit: 0 },
+      { code: "311001", debit: 0, credit: 1_000_000 },
     ]);
   });
 
   it("mode PKP: persediaan dinilai DPP, PPN masuk 1105, utang tetap total", () => {
     // PPN bisa dikreditkan, jadi ia bukan bagian harga pokok barang.
     expect(buildFakturLangsungLines(1_110_000, 110_000)).toEqual([
-      { code: "1301", debit: 1_000_000, credit: 0 },
-      { code: "1105", debit: 110_000, credit: 0 },
-      { code: "2101", debit: 0, credit: 1_110_000 },
+      { code: "170001", debit: 1_000_000, credit: 0 },
+      { code: "182004", debit: 110_000, credit: 0 },
+      { code: "311001", debit: 0, credit: 1_110_000 },
     ]);
   });
 
@@ -177,7 +177,7 @@ describe("buildFakturLangsungLines", () => {
   });
 
   it("tidak pernah memakai 2102 — barangnya belum pernah lewat GRNI", () => {
-    expect(buildFakturLangsungLines(1_000_000, 0).some((l) => l.code === "2102")).toBe(false);
+    expect(buildFakturLangsungLines(1_000_000, 0).some((l) => l.code === "311003")).toBe(false);
   });
 
   it("nilai nol/negatif tidak menghasilkan jurnal", () => {

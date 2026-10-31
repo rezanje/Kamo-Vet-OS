@@ -28,8 +28,8 @@ insert into cashier_shifts(id,branch_id,opened_by,shift_type) values('e8400000-0
 insert into items(id,code,name,unit,item_type) values('e8500000-0000-4000-8000-000000000001','J02SERVICE','J02 service','pcs','Jasa');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
  ('1141','J02 cash','ASET','D',false),('1142','J02 bank','ASET','D',false),
- ('4101','Sales','PENDAPATAN','K',false),('4102','Discount','PENDAPATAN','D',false),
- ('2201','VAT','LIABILITAS','K',false),('5101','COGS','BEBAN','D',false),('1301','Inventory','ASET','D',false)
+ ('510001','Sales','PENDAPATAN','K',false),('520002','Discount','PENDAPATAN','D',false),
+ ('312005','VAT','LIABILITAS','K',false),('600001','COGS','BEBAN','D',false),('170001','Inventory','ASET','D',false)
  on conflict(code) do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code) values
  ('e8600000-0000-4000-8000-000000000001','J02 cash','Kas','1141'),
@@ -56,7 +56,7 @@ select pg_temp.assert_ok((select count(*)=1 and min(method)='Transfer' and sum(a
  where sale_id='e8700000-0000-4000-8000-000000000001'),'effective allocation changed once');
 select pg_temp.assert_ok(pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000001','1141')=0
  and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000001','1142')=100000
- and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000001','4101')=-100000,
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000001','510001')=-100000,
  'same sale has corrected cash/bank ledger with unchanged revenue');
 select pg_temp.assert_ok((select count(*)=1 and bool_and(reason='Kasir salah pilih metode') from sale_payment_corrections
  where sale_id='e8700000-0000-4000-8000-000000000001'),'one required audit row');
@@ -77,7 +77,7 @@ select pg_temp.reject($q$update journal_entries set voided_at=now() where id=(se
 select pg_temp.reject($q$insert into journal_lines(entry_id,account_id,debit,credit) select c.replacement_journal_id,a.id,1,0 from sale_payment_corrections c,coa_accounts a where c.sale_id='e8700000-0000-4000-8000-000000000001' and a.code='1141'$q$,
  'no extra line on the replacement journal','Jurnal pembayaran POS sudah tetap');
 select pg_temp.assert_ok(pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000001','1142')=100000
- and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000001','4101')=-100000,'ledger unchanged after tamper attempts');
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000001','510001')=-100000,'ledger unchanged after tamper attempts');
 select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000001',0,'j02-correct-one','Kasir salah pilih metode',0,100000);
 select pg_temp.assert_ok((select count(*)=1 from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000001'),
  'same retry key does not create a second correction');
@@ -109,8 +109,8 @@ insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) valu
  ('e8800000-0000-4000-8000-000000000002','e8700000-0000-4000-8000-000000000002','e8500000-0000-4000-8000-000000000001','J02 service',1,120000,'pcs',1,0);
 select finalize_pos_sale('e8700000-0000-4000-8000-000000000002');
 select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000002',0,'j02-discount-correct','Kasir salah pilih metode',0,100000);
-select pg_temp.assert_ok(pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000002','4101')=-120000
- and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000002','4102')=20000,
+select pg_temp.assert_ok(pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000002','510001')=-120000
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000002','520002')=20000,
  'discount and revenue remain unchanged');
 
 -- A split with a third method must retain that allocation and its journal line.
@@ -134,7 +134,7 @@ select pg_temp.assert_ok((select count(*)=3 and sum(amount)=100000
  and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000003','1141')=10000
  and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000003','1142')=35000
  and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000003','1143')=55000
- and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000003','4303')=-5000,
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000003','810004')=-5000,
  'split correction preserves unrelated QRIS fee and its ledger');
 select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000003',1,'j02-invalid-sum','Jumlah salah',1,1)$q$,
  'cash plus transfer must remain constant');

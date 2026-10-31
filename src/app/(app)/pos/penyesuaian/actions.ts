@@ -56,7 +56,7 @@ export async function simpanPenyesuaian(formData: FormData) {
   const pesanPeriode = await cekPeriode(supabase, tanggal);
   if (pesanPeriode) gagal(pesanPeriode);
 
-  // I02: dokumen, mutasi stok, dan jurnal 1301/5902 ditulis dalam SATU transaksi
+  // I02: dokumen, mutasi stok, dan jurnal 170001/720010 ditulis dalam SATU transaksi
   // database. Qty sistem dibaca ulang di bawah kunci stok (bukan dari layar), dan
   // kunci permintaan yang sama tidak pernah memposting dua kali.
   const { data, error } = await supabase.rpc("post_inventory_adjustment_atomic", {

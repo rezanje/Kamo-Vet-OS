@@ -18,7 +18,7 @@ const forms=[
  ["journal",(userId:string)=> <JurnalForm userId={userId} accounts={[]} branches={[]}/>],
  ["recurring",(userId:string)=> <RecurringForm userId={userId} accounts={[]} branches={[]}/>],
  ["opening",(userId:string)=> <SaldoAwalForm userId={userId} akun={[]} usulan={[]}/>],
- ["reconciliation",(userId:string)=> <RekonForm userId={userId} rekening={[{id:"bank",nama:"Bank",coa_code:"1102",saldo:0}]} hariIni="2026-10-07"/>],
+ ["reconciliation",(userId:string)=> <RekonForm userId={userId} rekening={[{id:"bank",nama:"Bank",coa_code:"120002",saldo:0}]} hariIni="2026-10-07"/>],
 ] as const;
 async function edit(input:HTMLInputElement,value:string){await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));});}
 it.each(forms)("%s preserves controlled amounts across reset/reload and isolates account",async(_label,form)=>{
@@ -48,7 +48,7 @@ it.each(forms)("%s retains its real controlled amount after transport rejection 
 });
 
 it("manual journal rejects a one-cent imbalance before posting",async()=>{
- await act(async()=>root.render(<JurnalForm userId="cent-owner" accounts={[{id:"cash",code:"1101",name:"Cash"},{id:"income",code:"4101",name:"Income"}]} branches={[]}/>));
+ await act(async()=>root.render(<JurnalForm userId="cent-owner" accounts={[{id:"cash",code:"110003",name:"Cash"},{id:"income",code:"510001",name:"Income"}]} branches={[]}/>));
  const selects=host.querySelectorAll<HTMLSelectElement>("tbody select");
  await act(async()=>{for(const [index,value] of ["cash","income"].entries()){selects[index].value=value;selects[index].dispatchEvent(new Event("change",{bubbles:true}));}});
  await edit(host.querySelector<HTMLInputElement>('input[type="text"]')!,"Cent check");

@@ -1,6 +1,6 @@
 // Logika murni Tutup Buku — dites di __tests__/tutup-buku.test.ts
 
-export const AKUN_LABA_DITAHAN = "3201";
+export const AKUN_LABA_DITAHAN = "420001";
 
 type Balance = { code: string; type: string; saldo: number; normal?: string };
 export type ClosingLine = { code: string; debit: number; credit: number };

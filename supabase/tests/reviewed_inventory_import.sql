@@ -30,9 +30,9 @@ do $$declare preview jsonb;result jsonb;equity uuid;begin
  perform pg_temp.assert_import((preview->>'original_value')::numeric=800,'preview source value is 2*100 + 3*200');
  result:=post_accurate_inventory_accounting(md5('ai-run')::uuid,equity,preview,'Owner reviewed explicit equity choice');
  perform pg_temp.assert_import((select count(*)=1 from journal_entries where source_ref=md5('ai-run')::uuid::text),'exactly one opening journal across every source');
- perform pg_temp.assert_import((select sum(l.debit)=800 and sum(l.credit)=0 from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(result->>'entry_id')::uuid and a.code='1301'),'source value reaches inventory ledger once');
+ perform pg_temp.assert_import((select sum(l.debit)=800 and sum(l.credit)=0 from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(result->>'entry_id')::uuid and a.code='170001'),'source value reaches inventory ledger once');
  perform pg_temp.assert_import((select credit=800 and debit=0 from journal_lines where entry_id=(result->>'entry_id')::uuid and account_id=equity),'reviewed selected equity is preserved');
- perform pg_temp.assert_import(not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(result->>'entry_id')::uuid and a.code='3101'),'no automatic replacement of selected equity');
+ perform pg_temp.assert_import(not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=(result->>'entry_id')::uuid and a.code='410001'),'no automatic replacement of selected equity');
  perform pg_temp.assert_import(result=post_accurate_inventory_accounting(md5('ai-run')::uuid,equity,preview,'Owner reviewed explicit equity choice'),'exact reviewed retry returns receipt');
  perform pg_temp.assert_import((select qty=5 and (case when public.inventory_is_average() then average_cost=160 else average_cost is null end) from stock where item_id=md5('ai-item')::uuid),'mixed lots initialize the correct carrying value in the active method');
  perform pg_temp.assert_import((select sum(qty_left*unit_cost)=800 and sum(qty_left)=5 from stock_layers where source_ref=md5('ai-run')::uuid::text),'physical original costs remain unchanged');

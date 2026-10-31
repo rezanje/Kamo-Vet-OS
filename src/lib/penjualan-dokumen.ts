@@ -3,12 +3,12 @@
 // Penawaran → Pesanan → Pengiriman → Faktur → Penerimaan.
 // Yang dikunci di sini: penomoran, sisa qty tiap tahap, dan jurnalnya.
 
-export const AKUN_PIUTANG = "1201";
-export const AKUN_PENDAPATAN = "4101";
-export const AKUN_PPN_KELUARAN = "2201";
-export const AKUN_HPP = "5101";
-export const AKUN_PERSEDIAAN = "1301";
-export const AKUN_UANG_MUKA_JUAL = "2103";
+export const AKUN_PIUTANG = "150001";
+export const AKUN_PENDAPATAN = "510001";
+export const AKUN_PPN_KELUARAN = "312005";
+export const AKUN_HPP = "600001";
+export const AKUN_PERSEDIAAN = "170001";
+export const AKUN_UANG_MUKA_JUAL = "314001";
 
 // FJS = faktur selisih stok opname. Serinya sengaja dipisah dari FJ supaya tagihan
 // ke kepala toko tidak tercampur nomornya dengan penjualan ke pelanggan.

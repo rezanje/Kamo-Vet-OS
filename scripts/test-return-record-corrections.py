@@ -70,7 +70,7 @@ def race_tests():
     assert sql(f"select voided_at is null from sales_returns where id='{doc}';").strip()=='t'
     print('Concurrent downstream stock issue commits first; waiting correction rechecks and rejects without reversal.',flush=True)
     doc=post('bank-race-source')
-    first=start("reset role;begin;lock table journal_entries,journal_lines in share row exclusive mode;insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code,catatan) select current_date,id,'1101','RETURN.RACE.BANK' from cash_accounts where coa_code='1101';select pg_sleep(2) /* bank-holder */;commit;")
+    first=start("reset role;begin;lock table journal_entries,journal_lines in share row exclusive mode;insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code,catatan) select current_date,id,'110003','RETURN.RACE.BANK' from cash_accounts where coa_code='110003';select pg_sleep(2) /* bank-holder */;commit;")
     barrier('bank-holder',"wait_event='PgSleep'")
     second=start('/* bank-correction-waiter */'+correct(doc,'bank-race-correction'))
     barrier('bank-correction-waiter',"wait_event_type='Lock'")
@@ -78,7 +78,7 @@ def race_tests():
     assert 'Rekonsiliasi bank' in error,error
     sql("delete from bank_reconciliations where catatan='RETURN.RACE.BANK';")
     doc=post('correction-first-bank-source')
-    balance="select coalesce(sum(l.debit-l.credit),0) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1101';"
+    balance="select coalesce(sum(l.debit-l.credit),0) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='110003';"
     before=float(sql(balance).strip())
     first=start('begin;'+correct(doc,'correction-before-bank')+'select pg_sleep(2) /* correction-before-bank-holder */;commit;')
     barrier('correction-before-bank-holder',"wait_event='PgSleep'")

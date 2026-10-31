@@ -6,7 +6,7 @@ update profiles set role='ADMIN',is_active=true where id=md5('i08-admin')::uuid;
 insert into branches(id,code,name,type) values(md5('i08-branch')::uuid,'I08A','Fictional branch','PETSHOP'),(md5('i08-other')::uuid,'I08B','Other fictional branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('i08-wh')::uuid,md5('i08-branch')::uuid,'I08A','Fictional warehouse','RETAIL'),(md5('i08-other-wh')::uuid,md5('i08-other')::uuid,'I08B','Other fictional warehouse','RETAIL');
 insert into items(id,code,name,unit,item_type,buy_price,sell_price) values(md5('i08-material')::uuid,'I08A','Fictional material','PCS','Persediaan',2.5,5),(md5('i08-output')::uuid,'I08B','Fictional output','PCS','Persediaan',3,6);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fictional inventory','ASET','D'),('1302','Fictional WIP','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fictional inventory','ASET','D'),('170003','Fictional WIP','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
 insert into production_recipes(id,item_id,nama,output_qty) values(md5('i08-recipe')::uuid,md5('i08-output')::uuid,'Fictional recipe',1);
 insert into production_recipe_items(recipe_id,item_id,qty) values(md5('i08-recipe')::uuid,md5('i08-material')::uuid,0.125);
 create function pg_temp.ok(v boolean,label text) returns void language plpgsql as $$begin if v is distinct from true then raise exception 'ASSERT %',label;end if;end$$;
@@ -39,7 +39,7 @@ do $$declare a jsonb;b jsonb;c jsonb;oid uuid;begin
  if (c->>'already_posted')::boolean is distinct from true then raise exception 'Finish retry not replayed';end if;
  if (select qty from stock where warehouse_id=md5('i08-wh')::uuid and item_id=md5('i08-output')::uuid)<>3 then raise exception 'Output duplicated';end if;
  if (select sum(qty_in*unit_cost) from stock_layers where source='produksi' and source_ref=a->>'no_produksi' and item_id=md5('i08-output')::uuid)<>0.3125 then raise exception 'Output residual allocation lost WIP';end if;
- if (select sum(l.debit-l.credit) from journal_lines l join coa_accounts ac on ac.id=l.account_id join journal_entries j on j.id=l.entry_id where ac.code='1302' and j.source='produksi' and j.source_ref=a->>'no_produksi')<>0 then raise exception 'WIP not cleared';end if;
+ if (select sum(l.debit-l.credit) from journal_lines l join coa_accounts ac on ac.id=l.account_id join journal_entries j on j.id=l.entry_id where ac.code='170003' and j.source='produksi' and j.source_ref=a->>'no_produksi')<>0 then raise exception 'WIP not cleared';end if;
  if (select count(*) from journal_entries where source='produksi' and source_ref=a->>'no_produksi')<>2 then raise exception 'Journals duplicated';end if;
  if (select min(tanggal) from stock_moves where source='produksi' and qty<0)<>current_date-1 then raise exception 'Material date mismatch';end if;
  perform pg_temp.reject(format('update production_orders set qty_jadi=9 where id=%L',oid),'late source mutation');

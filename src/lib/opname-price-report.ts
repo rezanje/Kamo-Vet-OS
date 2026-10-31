@@ -90,7 +90,7 @@ export async function loadOpnameJournalReview(client: SupabaseClient, selected: 
       if (!dr.isFinite() || !cr.isFinite() || dr.lt(0) || cr.lt(0) || !line.coa_accounts?.code) throw new ReportInputError("Rincian jurnal opname tidak valid");
       debit = debit.plus(dr); credit = credit.plus(cr);
       accounts.add(`${line.coa_accounts.code} ${line.coa_accounts.name}`);
-      if (line.coa_accounts.code === "1301") { ledgerGain = ledgerGain.plus(dr); ledgerLoss = ledgerLoss.plus(cr); }
+      if (line.coa_accounts.code === "170001") { ledgerGain = ledgerGain.plus(dr); ledgerLoss = ledgerLoss.plus(cr); }
     }
     return { id: entry.id, number: entry.no_jurnal ?? entry.id, debit: debit.toFixed(), credit: credit.toFixed(), accounts: [...accounts],
       valid: entry.tanggal === selected.date && entry.branch_id === selected.branchId && !entry.voided_at && entry.journal_lines.length > 0 && debit.eq(credit) };

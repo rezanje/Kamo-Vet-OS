@@ -10,8 +10,8 @@ insert into items(id,code,name,unit,item_type,track_expiry) values('ee400000-000
 insert into item_units(item_id,unit,factor) values('ee400000-0000-4000-8000-000000000001','box',10);
 insert into purchase_orders(id,no_po,supplier_id,branch_id,to_warehouse_id,status) values('ee500000-0000-4000-8000-000000000001','PO.INV.FIC','ee300000-0000-4000-8000-000000000001','ee100000-0000-4000-8000-000000000001','ee200000-0000-4000-8000-000000000001','Dipesan');
 insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,faktor) values('ee600000-0000-4000-8000-000000000001','ee500000-0000-4000-8000-000000000001','ee400000-0000-4000-8000-000000000001','Invoice goods',4,100,'box',10);
-insert into coa_accounts(code,name,type,normal_balance) values('1301','Fiction stock','ASET','D'),('2101','Fiction AP','LIABILITAS','K'),('1105','Fiction VAT','ASET','D'),('110219','Fiction bank','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
-update coa_accounts set is_active=true,is_header=false where code in('1301','1303','2102','1101','1102');
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction stock','ASET','D'),('311001','Fiction AP','LIABILITAS','K'),('182004','Fiction VAT','ASET','D'),('110219','Fiction bank','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
+update coa_accounts set is_active=true,is_header=false where code in('170001','160001','311003','110003','120002');
 update accounting_locks set closed_until=null;
 update company_settings set mode_pkp=true,ppn_rate=11;
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id) values('ee700000-0000-4000-8000-000000000001','Invoice bank','Bank','110219','ee100000-0000-4000-8000-000000000001');
@@ -149,11 +149,11 @@ set local role authenticated;
 select pg_temp.expect_error('select create_direct_purchase_invoice(''direct-first'',pg_temp.direct_payload())','Barang sumber');
 reset role;
 select change_master_data_lifecycle('items','ee400000-0000-4000-8000-000000000001','activate',1,'Fictional active-source restoration');
-update coa_accounts set is_active=false where code='2101';
+update coa_accounts set is_active=false where code='311001';
 set local role authenticated;
 select pg_temp.expect_error('select get_purchase_operation_result(''invoice-direct'',''direct-first'')','Akun sumber');
 reset role;
-update coa_accounts set is_active=true where code='2101';
+update coa_accounts set is_active=true where code='311001';
 update profiles set is_active=false where id='ee000000-0000-4000-8000-000000000001';
 set local role authenticated;
 select pg_temp.expect_error('select get_purchase_operation_result(''invoice-direct'',''direct-first'')','tidak aktif');
@@ -197,9 +197,9 @@ do $$declare account record;begin
  if (select qty from stock where warehouse_id='ee200000-0000-4000-8000-000000000002' and item_id='ee400000-0000-4000-8000-000000000003')<>3 or (select sum(qty_left*unit_cost) from stock_layers where source_ref='PO.INV.RETURN')<>300 then raise exception 'Gross invoice after return changed stock quantity or cost';end if;
  if (select total from purchase_invoices where id=(select (result->>'invoice_id')::uuid from invoice_test_results where name='gross-after-return'))<>400 then raise exception 'Gross received quantity not invoiced';end if;
  for account in select a.code,sum(l.debit-l.credit) balance from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where e.branch_id='ee100000-0000-4000-8000-000000000002' group by a.code loop
-  if account.balance<>(case account.code when '1301' then 300 when '2101' then -300 else 0 end) then raise exception 'Receipt/return/gross invoice ledger failed for %: %',account.code,account.balance;end if;
+  if account.balance<>(case account.code when '170001' then 300 when '311001' then -300 else 0 end) then raise exception 'Receipt/return/gross invoice ledger failed for %: %',account.code,account.balance;end if;
  end loop;
- if (select coalesce(sum(l.debit-l.credit),0) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where e.branch_id='ee100000-0000-4000-8000-000000000002' and a.code='2102')<>0 then raise exception 'Gross invoice left unbilled received debt';end if;
+ if (select coalesce(sum(l.debit-l.credit),0) from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where e.branch_id='ee100000-0000-4000-8000-000000000002' and a.code='311003')<>0 then raise exception 'Gross invoice left unbilled received debt';end if;
 end$$;
 update company_settings set mode_pkp=true;
 commit;

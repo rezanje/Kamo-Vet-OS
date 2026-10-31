@@ -23,7 +23,7 @@ begin
    entry_ids:=entry_ids||(select reversal_journal_ids from return_record_corrections where id=audit);
    if exists(select 1 from journal_entries where id=any(entry_ids) and tanggal<>event_date) then raise exception 'Journal restatement crossed date/year bucket';end if;
    select coalesce(sum(l.debit-l.credit),0) into net from journal_entries e join journal_lines l on l.entry_id=e.id join coa_accounts a on a.id=l.account_id
-    where e.id=any(entry_ids) and e.tanggal<=event_date and a.code=case when return_kind='sales' then '1101' else '2101' end;
+    where e.id=any(entry_ids) and e.tanggal<=event_date and a.code=case when return_kind='sales' then '110003' else '311001' end;
    if net<>(case when return_kind='sales' then -expected else expected end) then raise exception 'Dated financial net % differs from replacement %',net,expected;end if;
    if exists(select 1 from journal_entries where id=any(entry_ids) and tanggal>event_date) then raise exception 'Artificial correction-day financial movement';end if;
    select coalesce(sum(qty),0) into net from stock_moves where source_ref in(original->>'document_no',new_no,audit::text) and tanggal<=event_date;
@@ -35,7 +35,7 @@ begin
    cancelled:=correct_return_record(return_kind,(changed->>'replacement_id')::uuid,0,'date-void:'||return_kind||':'||event_date,'No actual return occurred','TEST evidence confirms zero physical returned units','[]');
    entry_ids:=entry_ids||(select reversal_journal_ids from return_record_corrections where id=(cancelled->>'audit_id')::uuid);
    select coalesce(sum(l.debit-l.credit),0) into net from journal_entries e join journal_lines l on l.entry_id=e.id join coa_accounts a on a.id=l.account_id
-    where e.id=any(entry_ids) and e.tanggal<=event_date and a.code=case when return_kind='sales' then '1101' else '2101' end;
+    where e.id=any(entry_ids) and e.tanggal<=event_date and a.code=case when return_kind='sales' then '110003' else '311001' end;
    if net<>0 then raise exception 'Cancellation did not net original date/year to zero';end if;
   end loop;
  end loop;

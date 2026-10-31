@@ -36,11 +36,11 @@ insert into public.stock_layers (warehouse_id, item_id, tanggal, qty_in, qty_lef
 insert into public.cashier_shifts (id, branch_id, opened_by, shift_type, status) values
   ('ea000000-0000-4000-8000-000000000001', 'e2000000-0000-4000-8000-000000000001', 'e1000000-0000-4000-8000-000000000001', 'klinik', 'open');
 insert into public.coa_accounts (code, name, type, normal_balance, is_active, is_header) values
-  ('1101','Kas','ASET','D',true,false), ('1201','Piutang','ASET','D',true,false), ('1301','Persediaan','ASET','D',true,false),
-  ('2201','PPN Keluaran','LIABILITAS','K',true,false), ('4102','Diskon','PENDAPATAN','D',true,false),
-  ('4201','Pendapatan Klinik','PENDAPATAN','K',true,false), ('5101','HPP','BEBAN','D',true,false)
+  ('110003','Kas','ASET','D',true,false), ('150001','Piutang','ASET','D',true,false), ('170001','Persediaan','ASET','D',true,false),
+  ('312005','PPN Keluaran','LIABILITAS','K',true,false), ('520002','Diskon','PENDAPATAN','D',true,false),
+  ('510002','Pendapatan Klinik','PENDAPATAN','K',true,false), ('600001','HPP','BEBAN','D',true,false)
 on conflict (code) do update set is_active = true, is_header = false;
-insert into public.cash_accounts (nama, jenis, coa_code) values ('Kas Uji K02', 'Kas', '1101') on conflict (coa_code) do update set is_active = true;
+insert into public.cash_accounts (nama, jenis, coa_code) values ('Kas Uji K02', 'Kas', '110003') on conflict (coa_code) do update set is_active = true;
 
 -- Normalisation and validation of the doctor's actual usage (clinical save rows).
 insert into public.prescription_items (id, medical_record_id, nama_obat, qty, harga, satuan, faktor, jenis, item_id, bmhp_components) values
@@ -138,12 +138,12 @@ begin
      or (select round(-sum(qty * unit_cost), 2) from public.stock_moves where source = 'klinik-bmhp' and source_ref = no) is distinct from 5500 then
     raise exception 'BMHP stock moves missing, duplicated or mis-valued: %', (select jsonb_agg(jsonb_build_object('src',source,'ref',source_ref,'qty',qty,'cost',unit_cost)) from public.stock_moves where item_id in (syr,kasa)); end if;
   if (select sum(l.debit) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id join public.coa_accounts a on a.id = l.account_id
-      where e.source = 'klinik-hpp' and e.source_ref = no and a.code = '5101') is distinct from 5500
+      where e.source = 'klinik-hpp' and e.source_ref = no and a.code = '600001') is distinct from 5500
      or (select sum(l.credit) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id join public.coa_accounts a on a.id = l.account_id
-      where e.source = 'klinik-hpp' and e.source_ref = no and a.code = '1301') is distinct from 5500 then
+      where e.source = 'klinik-hpp' and e.source_ref = no and a.code = '170001') is distinct from 5500 then
     raise exception 'BMHP cost not journaled 5101/1301'; end if;
   if (select sum(l.credit) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id join public.coa_accounts a on a.id = l.account_id
-      where e.source = 'klinik' and e.source_ref = no and a.code = '4201') is distinct from 100000
+      where e.source = 'klinik' and e.source_ref = no and a.code = '510002') is distinct from 100000
      or (select count(*) from public.invoice_items where invoice_id = inv) is distinct from 1 then
     raise exception 'revenue changed or BMHP became a billed line'; end if;
 
@@ -188,7 +188,7 @@ begin
   if (select qty from public.stock where warehouse_id = wh and item_id = syr) is distinct from 2 then
     raise exception 'reissue moved BMHP stock'; end if;
   if (select coalesce(sum(l.credit),0) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id join public.coa_accounts a on a.id = l.account_id
-      where e.source = 'klinik-hpp-void' and e.source_ref = no and a.code = '5101') is distinct from 5500 then
+      where e.source = 'klinik-hpp-void' and e.source_ref = no and a.code = '600001') is distinct from 5500 then
     raise exception 'void did not reverse BMHP HPP'; end if;
 
   -- 6) correction: unpaid invoice; removing the procedure row returns BMHP at historical cost
@@ -209,7 +209,7 @@ begin
      or (select qty from public.stock where warehouse_id = wh and item_id = kasa) is distinct from 18 then
     raise exception 'correction did not retain BMHP of a kept procedure'; end if;
   if (select sum(l.debit) - sum(l.credit) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id join public.coa_accounts a on a.id = l.account_id
-      where e.source in ('klinik-hpp','klinik-hpp-edit') and e.source_ref = no and a.code = '5101') is distinct from 450 then
+      where e.source in ('klinik-hpp','klinik-hpp-edit') and e.source_ref = no and a.code = '600001') is distinct from 450 then
     raise exception 'net HPP after keep-correction is not medicine 50 + BMHP 400'; end if;
   -- remove the procedure: BMHP returns to stock, net HPP = medicine only
   perform public.clinic_edit_invoice(inv2, 'k02-edit-remove',
@@ -218,7 +218,7 @@ begin
   if (select qty from public.stock where warehouse_id = wh and item_id = kasa) is distinct from 20 then
     raise exception 'removed procedure BMHP was not returned to stock'; end if;
   if (select sum(l.debit) - sum(l.credit) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id join public.coa_accounts a on a.id = l.account_id
-      where e.source in ('klinik-hpp','klinik-hpp-edit') and e.source_ref = no and a.code = '5101') is distinct from 50 then
+      where e.source in ('klinik-hpp','klinik-hpp-edit') and e.source_ref = no and a.code = '600001') is distinct from 50 then
     raise exception 'net HPP after removal still includes BMHP'; end if;
   -- the removed procedure cannot come back through correction (would skip issue)
   failed := false;

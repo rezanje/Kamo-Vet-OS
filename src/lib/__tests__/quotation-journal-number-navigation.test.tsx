@@ -11,7 +11,7 @@ vi.mock('@/app/(app)/keuangan/jurnal/JurnalCorrectionForm',()=>({JurnalCorrectio
 vi.mock('@/components/NoDok',()=>({NoDok:()=>null}));
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>({data:{user:{id:'actor'}}})},from:(table:string)=>{
  const quote={id:'10000000-0000-4000-8000-000000000001',no_penawaran:'SQ.2026.10.00001',tanggal:'2026-10-24',total:100,status:'dikirim',sales_orders:[],customers:null};
- const journal={id:'10000000-0000-4000-8000-000000000001',no_jurnal:'JRN.2026.10.00001',tanggal:'2026-10-24',deskripsi:'Fiksi',source:'sale',source_ref:null,journal_lines:[{debit:100,credit:0,coa_accounts:{code:'1101',name:'Kas'}},{debit:0,credit:100,coa_accounts:{code:'4101',name:'Pendapatan'}}]};
+ const journal={id:'10000000-0000-4000-8000-000000000001',no_jurnal:'JRN.2026.10.00001',tanggal:'2026-10-24',deskripsi:'Fiksi',source:'sale',source_ref:null,journal_lines:[{debit:100,credit:0,coa_accounts:{code:'110003',name:'Kas'}},{debit:0,credit:100,coa_accounts:{code:'510001',name:'Pendapatan'}}]};
  const q={select:()=>q,eq:(field:string,value:string)=>{if(table==='sales_quotations'&&field==='id')state.quoteLookups++;if(table==='journal_entries'&&field==='id')state.journalId=value;if(table==='journal_entries'&&field==='no_jurnal')state.journalNo=value;return q;},order:()=>q,limit:()=>q,maybeSingle:async()=>({data:quote,error:null}),then:(resolve:(value:unknown)=>void)=>resolve({data:table==='sales_quotations'?state.focused?[]:[quote]:table==='journal_entries'&&(state.journalId===journal.id||state.journalNo===journal.no_jurnal)?[journal]:[],error:null})};return q;
 }})}));
 import QuotationPage from '@/app/(app)/penjualan/penawaran/page';

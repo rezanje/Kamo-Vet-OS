@@ -11,14 +11,14 @@ type LineRow = {
   journal_entries: { tanggal: string } | null;
 };
 
-// Rekap PPN per bulan: Keluaran (2201) vs Masukan (1105) → netto kurang/lebih bayar.
+// Rekap PPN per bulan: Keluaran (312005) vs Masukan (182004) → netto kurang/lebih bayar.
 export default async function RekapPpnPage() {
   const supabase = await createClient();
 
   const { data } = await supabase
     .from("journal_lines")
     .select("debit, credit, coa_accounts!inner(code), journal_entries!inner(tanggal)")
-    .in("coa_accounts.code", ["2201", "1105"]);
+    .in("coa_accounts.code", ["312005", "182004"]);
 
   const perBulan = new Map<string, { keluaran: number; masukan: number }>();
   for (const raw of (data ?? []) as unknown as LineRow[]) {
@@ -26,7 +26,7 @@ export default async function RekapPpnPage() {
     const bulan = raw.journal_entries?.tanggal?.slice(0, 7);
     if (!code || !bulan) continue;
     const cur = perBulan.get(bulan) ?? { keluaran: 0, masukan: 0 };
-    if (code === "2201") cur.keluaran += Number(raw.credit) - Number(raw.debit);
+    if (code === "312005") cur.keluaran += Number(raw.credit) - Number(raw.debit);
     else cur.masukan += Number(raw.debit) - Number(raw.credit);
     perBulan.set(bulan, cur);
   }

@@ -19,8 +19,8 @@ begin
  insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp)
  values(line,doc,'e5500000-0000-4000-8000-000000000002','HPP stock',qty,1000000/qty,'pcs',1,issued.cost);
  perform public.finalize_pos_sale(doc);
- perform pg_temp.assert_ok(pg_temp.balance(ref,'sale-hpp','5101')=expected,ref||': profit/loss HPP debit');
- perform pg_temp.assert_ok(pg_temp.balance(ref,'sale-hpp','1301')=-expected,ref||': inventory credit');
+ perform pg_temp.assert_ok(pg_temp.balance(ref,'sale-hpp','600001')=expected,ref||': profit/loss HPP debit');
+ perform pg_temp.assert_ok(pg_temp.balance(ref,'sale-hpp','170001')=-expected,ref||': inventory credit');
  perform pg_temp.assert_ok((select -m.qty*m.unit_cost=expected from public.stock_moves m where m.source_ref=ref and m.source='sale'),ref||': stock card agrees with journal');
 end $$;
 
@@ -95,7 +95,7 @@ do $$ declare issued record; doc uuid; begin
  insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp)
  values(doc,'eb500000-0000-4000-8000-000000000001','Previously unpriced',1,1000000,'pcs',1,issued.cost);
  perform finalize_pos_sale(doc);
- perform pg_temp.assert_ok(pg_temp.balance('HPP.UNKNOWN','sale-hpp','5101')=13000,'previously unpriced stock posts known HPP');
+ perform pg_temp.assert_ok(pg_temp.balance('HPP.UNKNOWN','sale-hpp','600001')=13000,'previously unpriced stock posts known HPP');
 end $$;
 
 -- Receipt entirely used to cover a deficit: price survives without a FIFO layer.

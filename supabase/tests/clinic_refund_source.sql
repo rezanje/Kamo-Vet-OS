@@ -9,7 +9,7 @@ create temp table j03_clinic_invoice as
 do $$declare preview jsonb;before_state jsonb;begin
  preview:=preview_clinic_refund_source((select id from j03_clinic_invoice));
  if preview->>'eligible'<>'false' or preview->>'reason' not ilike '%lunas%' then raise exception 'Unpaid clinic invoice was offered for payout';end if;
- perform clinic_receive_invoice_payment((select id from j03_clinic_invoice),(now()at time zone'Asia/Jakarta')::date,310,'Tunai','1101','Fictional full receipt','j03-clinic-payment');
+ perform clinic_receive_invoice_payment((select id from j03_clinic_invoice),(now()at time zone'Asia/Jakarta')::date,310,'Tunai','110003','Fictional full receipt','j03-clinic-payment');
  before_state:=public.test_clinic_invoice_state();preview:=preview_clinic_refund_source((select id from j03_clinic_invoice));
  if preview->>'eligible'<>'true' or (preview->>'paid_total')::numeric<>310 or (preview->>'total')::numeric<>310 or jsonb_array_length(preview->'lines')<>2 then raise exception 'Paid source/line/payment proof not loaded: %',preview;end if;
  if preview->>'invoice_id'<>(select id::text from j03_clinic_invoice) or length(preview->>'source_hash')<>32 then raise exception 'Missing exact immutable source identity';end if;

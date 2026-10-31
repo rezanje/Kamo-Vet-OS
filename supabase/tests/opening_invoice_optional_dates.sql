@@ -10,8 +10,8 @@ insert into profiles(id,full_name,role,is_active)values
 on conflict(id)do update set full_name=excluded.full_name,role=excluded.role,is_active=excluded.is_active;
 insert into branches(id,code,name,type)values(md5('m05d-branch')::uuid,'M05D-A','Fiction M05 dates branch','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type)values(md5('m05d-wh')::uuid,md5('m05d-branch')::uuid,'M05D-WH','Fiction M05 dates warehouse','VET');
-insert into coa_accounts(code,name,type,normal_balance)values('2101','Fiction trade payables','LIABILITAS','K'),
- ('1201','Fiction trade receivables','ASET','D'),('3101','Fiction owner equity','EKUITAS','K'),('110299','Fiction bank M05D','ASET','D')
+insert into coa_accounts(code,name,type,normal_balance)values('311001','Fiction trade payables','LIABILITAS','K'),
+ ('150001','Fiction trade receivables','ASET','D'),('410001','Fiction owner equity','EKUITAS','K'),('110299','Fiction bank M05D','ASET','D')
  on conflict(code) do update set is_active=true,is_header=false;
 update accounting_locks set closed_until=null;
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id)values(md5('m05d-bank')::uuid,'Fiction bank M05D','Bank','110299',md5('m05d-branch')::uuid);
@@ -74,7 +74,7 @@ begin
  -- Post (OWNER): one invoice per row, empty dates stay empty on the invoice and the batch line.
  perform set_config('request.jwt.claim.sub',md5('m05d-owner')::uuid::text,true);
  -- 2101/1201 balances before this batch, read as OWNER (journal RLS), so later checks are deltas.
- select coalesce(sum(credit-debit) filter (where a.code='2101'),0),coalesce(sum(debit-credit) filter (where a.code='1201'),0) into ap0,ar0
+ select coalesce(sum(credit-debit) filter (where a.code='311001'),0),coalesce(sum(debit-credit) filter (where a.code='150001'),0) into ap0,ar0
   from journal_lines l join coa_accounts a on a.id=l.account_id;
  report:=preview_opening_invoices(p);
  res:=post_opening_invoices(p,report->>'source_hash','Cutover Accurate tanpa tanggal fiksi');
@@ -102,8 +102,8 @@ begin
   then raise exception 'Invoice identity wrong';end if;
  j:=(res->>'journal_id')::uuid;
  if (select tanggal from journal_entries where id=j)<>v_as_of
-  or (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='2101')<>1000000
-  or (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='1201')<>300000
+  or (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='311001')<>1000000
+  or (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=j and a.code='150001')<>300000
   or (select sum(debit) from journal_lines where entry_id=j)<>(select sum(credit) from journal_lines where entry_id=j)
   then raise exception 'Opening journal wrong';end if;
 
@@ -129,10 +129,10 @@ begin
  perform mutate_purchase_payment_order('m05d-po-approve','approve',(ord->>'order_id')::uuid,0,'{}','[]');
  perform pay_purchase_payment_order_atomic('m05d-po-pay',(ord->>'order_id')::uuid,(now() at time zone 'Asia/Jakarta')::date,'Transfer',md5('m05d-bank')::uuid,1);
  if (select coalesce(sum(amount),0) from purchase_invoice_payments where invoice_id=a3)<>300000 then raise exception 'Payment order did not settle the undated invoice';end if;
- if (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='2101')-ap0<>550000 then raise exception '2101 does not match open invoices';end if;
+ if (select sum(credit-debit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='311001')-ap0<>550000 then raise exception '2101 does not match open invoices';end if;
  select id into ar from sales_invoices where opening_batch_id=(res->>'batch_id')::uuid and tanggal is null;
  perform receive_wholesale_payment('m05d-rc-1',ar,(now() at time zone 'Asia/Jakarta')::date,120000,'Transfer',null,null,'Pelunasan faktur tanpa tanggal');
- if (select status from sales_invoices where id=ar)<>'lunas' or (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='1201')-ar0<>180000
+ if (select status from sales_invoices where id=ar)<>'lunas' or (select sum(debit-credit) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='150001')-ar0<>180000
   then raise exception 'Receipt not applied to the undated receivable';end if;
 
  -- Undated opening invoices stay protected: no void, no date added later, no forged undated invoice.

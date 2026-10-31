@@ -218,7 +218,7 @@ def scenarios(h, db, sku_version):
     lines = cart_lines(h, m) + [dict(description='Jasa kasir Fiktif', qty=1, price=10000, kind='jasa', unit='jasa', discount_percent=0)]
     total = r.nilai_baris(lines)
     body = {k: val for k, val in dict(invoice(lines), paid_status='Lunas').items() if k != 'dp_override_reason'}
-    payments = [dict(method='Tunai', amount=total - 100000, kas_code='1101'), dict(method='Transfer', amount=100000, kas_code='1102')]
+    payments = [dict(method='Tunai', amount=total - 100000, kas_code='110003'), dict(method='Transfer', amount=100000, kas_code='120002')]
     try:
         cart = version(h, v) if has_version else None
         inv_id = h.nilai(post_sql(v, 'k9-split', lines, cart, payments=payments, inv=body), r.OWNER)
@@ -254,15 +254,15 @@ def demo(h, has_version):
     case = 'K11 DEMO checkout through wrapper: Lunas + DEMO snapshot, cashier line recorded (kasir), all lines linked'
     v, m = outpatient(h, 3406)
     h.sql("insert into public.coa_accounts(code,name,type,normal_balance,is_active,is_header) values "
-          "('4303','Pendapatan admin DEMO Fiktif','PENDAPATAN','K',true,false),('5501','Beban admin DEMO Fiktif','BEBAN','D',true,false) "
+          "('810004','Pendapatan admin DEMO Fiktif','PENDAPATAN','K',true,false),('740010','Beban admin DEMO Fiktif','BEBAN','D',true,false) "
           "on conflict(code) do update set is_active=true,is_header=false;"
           f"update public.customers set name='DEMO Pemilik Fiktif' where id=(select customer_id from public.visits where id={q(v)});")
     try:
-        policy = h.nilai("select public.save_clinic_demo_policy('DEMO Fiktif',5,'customer','{\"Tunai\":0,\"Transfer\":100}','4303','5501');", r.OWNER)
+        policy = h.nilai("select public.save_clinic_demo_policy('DEMO Fiktif',5,'customer','{\"Tunai\":0,\"Transfer\":100}','810004','740010');", r.OWNER)
         lines = cart_lines(h, m) + [dict(description='Jasa kasir DEMO Fiktif', qty=1, price=10000, kind='jasa', unit='jasa', discount_percent=0)]
         total = r.nilai_baris(lines)
         body = {k: val for k, val in dict(invoice(lines), paid_status='Lunas').items() if k != 'dp_override_reason'}
-        parts = [dict(method='Tunai', amount=total - 100000, kas_code='1101'), dict(method='Transfer', amount=100000, kas_code='1102')]
+        parts = [dict(method='Tunai', amount=total - 100000, kas_code='110003'), dict(method='Transfer', amount=100000, kas_code='120002')]
         cart = f",p_cart_version=>{q(version(h, v))}" if has_version else ''
         inv_id = h.nilai(f"select public.clinic_post_invoice_with_record(p_visit_id=>{q(v)},p_request_key=>'k11-demo',p_invoice=>{j(body)},"
                          f"p_lines=>{j(lines)},p_payments=>{j(parts)},p_policy_id=>{q(policy)},p_employee_ids=>array[{q(r.DOKTER_PEGAWAI)}]::uuid[]{cart});", r.OWNER)

@@ -31,8 +31,8 @@ insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,
 ('f3000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001',current_date-1,10,10,2,'purchase'),
 ('f3000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001',current_date,20,20,3,'purchase');
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
-('1201','Receivable','ASET','D',false),('1301','Inventory','ASET','D',false),
-('4101','Sales','PENDAPATAN','K',false),('5101','COGS','BEBAN','D',false),('2201','VAT','LIABILITAS','K',false)
+('150001','Receivable','ASET','D',false),('170001','Inventory','ASET','D',false),
+('510001','Sales','PENDAPATAN','K',false),('600001','COGS','BEBAN','D',false),('312005','VAT','LIABILITAS','K',false)
 on conflict(code) do update set is_active=true,is_header=false;
 insert into sales_orders(id,no_pesanan,customer_id,branch_id,warehouse_id) values
 ('f6000000-0000-4000-8000-000000000001','SO.SALES.TEST','f4000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000001','f3000000-0000-4000-8000-000000000001'),
@@ -254,17 +254,17 @@ do $$ begin
 end $$;
 reset role;
 update stock_layers set qty_left=13 where warehouse_id='f3000000-0000-4000-8000-000000000001' and qty_left>0;
-update coa_accounts set is_active=false where code='5101';
+update coa_accounts set is_active=false where code='600001';
 set local role authenticated;
 do $$ begin
   begin
     perform sales_create_delivery('f6000000-0000-4000-8000-000000000001','missing-account',jsonb_build_object('tanggal',current_date),
       '[{"order_item_id":"f7000000-0000-4000-8000-000000000001","qty":1}]');
     raise exception 'Missing account accepted';
-  exception when raise_exception then if sqlerrm not like 'Akun 5101%' then raise; end if; end;
+  exception when raise_exception then if sqlerrm not like 'Akun 600001%' then raise; end if; end;
 end $$;
 reset role;
-update coa_accounts set is_active=true where code='5101';
+update coa_accounts set is_active=true where code='600001';
 update accounting_locks set closed_until=current_date;
 set local role authenticated;
 do $$ begin

@@ -91,11 +91,11 @@ def seed(db):
         real = "ADMIN" if role == "ADMIN_NONAKTIF" else role
         db.sql(f"update public.profiles set role={q(real)},is_active={str(role != 'ADMIN_NONAKTIF').lower()},full_name={q(role + ' fiktif')} where id={q(uid)};")
     # One fictional detail account with a posted journal, to prove "used in journals" protection.
-    db.sql("""insert into public.coa_accounts(code,name,type,normal_balance) values('5798','Beban Berjurnal Fiktif','BEBAN','D');
+    db.sql("""insert into public.coa_accounts(code,name,type,normal_balance) values('779800','Beban Berjurnal Fiktif','BEBAN','D');
     insert into public.journal_entries(id,no_jurnal,tanggal,deskripsi,source) values('c0a00000-0000-4000-8000-0000000000e1','JF-COA-1','2026-10-01','Jurnal fiktif','manual');
     insert into public.journal_lines(entry_id,account_id,debit,credit)
-      select 'c0a00000-0000-4000-8000-0000000000e1'::uuid,id,1000,0 from public.coa_accounts where code='5798'
-      union all select 'c0a00000-0000-4000-8000-0000000000e1'::uuid,id,0,1000 from public.coa_accounts where code='1101';""")
+      select 'c0a00000-0000-4000-8000-0000000000e1'::uuid,id,1000,0 from public.coa_accounts where code='779800'
+      union all select 'c0a00000-0000-4000-8000-0000000000e1'::uuid,id,0,1000 from public.coa_accounts where code='110003';""")
 
 
 def denied(out):
@@ -115,7 +115,7 @@ def run(db):
     # ── access ───────────────────────────────────────────────────────────────
     before = snapshot(db)
     ver = version(db, owner)
-    good = rows({"code": "5781", "name": "Beban Akses Fiktif"})
+    good = rows({"code": "778100", "name": "Beban Akses Fiktif"})
     for role in ("STAFF", "DOCTOR", "FINANCE", "ADMIN_NONAKTIF"):
         ok1, out1 = attempt(db, "select public.read_coa_import_context()", USERS[role])
         ok2, out2 = attempt(db, call(good, ver), USERS[role])
@@ -126,10 +126,10 @@ def run(db):
         record("anon-denied", False, "anon executed writer")
     except RuntimeError as error:
         record("anon-denied", "permission denied" in str(error) and snapshot(db) == before, str(error)[-160:])
-    ok, out = attempt(db, "insert into public.coa_accounts(code,name,type,normal_balance) values('5782','Langsung Nonaktif','BEBAN','D')",
+    ok, out = attempt(db, "insert into public.coa_accounts(code,name,type,normal_balance) values('778200','Langsung Nonaktif','BEBAN','D')",
                       USERS["ADMIN_NONAKTIF"])
     record("inactive-ADMIN-direct-table-write-denied", not ok and snapshot(db) == before, out[-160:])
-    ok, out = attempt(db, "insert into public.coa_accounts(code,name,type,normal_balance) values('5783','Langsung Admin Aktif','BEBAN','D')", admin)
+    ok, out = attempt(db, "insert into public.coa_accounts(code,name,type,normal_balance) values('778300','Langsung Admin Aktif','BEBAN','D')", admin)
     record("active-ADMIN-manual-COA-screen-path-still-allowed", ok, out[-160:])
 
     # ── backstop validation: client checks are never trusted ────────────────
@@ -137,51 +137,51 @@ def run(db):
     base = snapshot(db)
     cases = [
         ("leading-zero-code", rows({"code": "01101", "name": "Kas Nol", "type": "ASET"}), "COA_IMPORT_CODE"),
-        ("dotted-code", rows({"code": "1101.01", "name": "Kas Titik", "type": "ASET"}), "COA_IMPORT_CODE"),
-        ("code-group-mismatch", rows({"code": "5784", "name": "Salah", "type": "ASET"}), "COA_IMPORT_CODE"),
-        ("cash-bank-range", rows({"code": "1150", "name": "Bank", "type": "ASET"}), "COA_IMPORT_CODE"),
-        ("untrimmed-code", rows({"code": " 5785", "name": "Spasi"}), "COA_IMPORT_INVALID"),
-        ("name-too-long", rows({"code": "5786", "name": "N" * 81}), "COA_IMPORT_INVALID"),
-        ("pl-contra-side", rows({"code": "5787", "name": "Kontra", "normal_balance": "K"}), "COA_IMPORT_INVALID"),
-        ("duplicate-code", rows({"code": "5788", "name": "A"}, {"code": "5788", "name": "B"}), "COA_IMPORT_DUPLICATE"),
-        ("missing-parent", rows({"code": "5789", "name": "Yatim", "set_parent": True, "parent_code": "5999"}), "COA_IMPORT_PARENT"),
-        ("parent-not-header", rows({"code": "5771", "name": "Anak", "set_parent": True, "parent_code": "5798"}), "COA_IMPORT_PARENT"),
-        ("group-mismatch", rows({"code": "4771", "name": "Induk P", "type": "PENDAPATAN", "normal_balance": "K", "is_header": True},
-                                {"code": "5772", "name": "Anak B", "set_parent": True, "parent_code": "4771"}), "COA_IMPORT_PARENT"),
-        ("cycle", rows({"code": "5773", "name": "A", "is_header": True, "set_parent": True, "parent_code": "5774"},
-                       {"code": "5774", "name": "B", "is_header": True, "set_parent": True, "parent_code": "5773"}), "COA_IMPORT_CYCLE"),
-        ("journaled-type-change", rows({"code": "5798", "name": "Beban Berjurnal Fiktif", "normal_balance": "D", "type": "ASET"}), "COA_IMPORT_PROTECTED"),
-        ("system-normal-change", rows({"code": "1509", "name": "Akumulasi Penyusutan", "type": "ASET", "normal_balance": "D"}), "COA_IMPORT_PROTECTED"),
-        ("cash-mapped-rename", rows({"code": "1102", "name": "Bank Ganti Nama", "type": "ASET"}), "COA_IMPORT_PROTECTED"),
-        ("system-deactivate", rows({"code": "5101", "name": None, "is_active": False}), "COA_IMPORT_"),
-        ("journaled-becomes-header", rows({"code": "5798", "name": "Beban Berjurnal Fiktif", "is_header": True}), "COA_IMPORT_PARENT"),
+        ("dotted-code", rows({"code": "110003.01", "name": "Kas Titik", "type": "ASET"}), "COA_IMPORT_CODE"),
+        ("code-group-mismatch", rows({"code": "778400", "name": "Salah", "type": "ASET"}), "COA_IMPORT_CODE"),
+        ("cash-bank-range", rows({"code": "115000", "name": "Bank", "type": "ASET"}), "COA_IMPORT_CODE"),
+        ("untrimmed-code", rows({"code": " 778500", "name": "Spasi"}), "COA_IMPORT_INVALID"),
+        ("name-too-long", rows({"code": "778600", "name": "N" * 81}), "COA_IMPORT_INVALID"),
+        ("pl-contra-side", rows({"code": "778700", "name": "Kontra", "normal_balance": "K"}), "COA_IMPORT_INVALID"),
+        ("duplicate-code", rows({"code": "778800", "name": "A"}, {"code": "778800", "name": "B"}), "COA_IMPORT_DUPLICATE"),
+        ("missing-parent", rows({"code": "778900", "name": "Yatim", "set_parent": True, "parent_code": "799900"}), "COA_IMPORT_PARENT"),
+        ("parent-not-header", rows({"code": "777100", "name": "Anak", "set_parent": True, "parent_code": "779800"}), "COA_IMPORT_PARENT"),
+        ("group-mismatch", rows({"code": "577100", "name": "Induk P", "type": "PENDAPATAN", "normal_balance": "K", "is_header": True},
+                                {"code": "777200", "name": "Anak B", "set_parent": True, "parent_code": "577100"}), "COA_IMPORT_PARENT"),
+        ("cycle", rows({"code": "777300", "name": "A", "is_header": True, "set_parent": True, "parent_code": "777400"},
+                       {"code": "777400", "name": "B", "is_header": True, "set_parent": True, "parent_code": "777300"}), "COA_IMPORT_CYCLE"),
+        ("journaled-type-change", rows({"code": "779800", "name": "Beban Berjurnal Fiktif", "normal_balance": "D", "type": "ASET"}), "COA_IMPORT_PROTECTED"),
+        ("system-normal-change", rows({"code": "200015", "name": "Akumulasi Penyusutan", "type": "ASET", "normal_balance": "D"}), "COA_IMPORT_PROTECTED"),
+        ("cash-mapped-rename", rows({"code": "120002", "name": "Bank Ganti Nama", "type": "ASET"}), "COA_IMPORT_PROTECTED"),
+        ("system-deactivate", rows({"code": "600001", "name": None, "is_active": False}), "COA_IMPORT_"),
+        ("journaled-becomes-header", rows({"code": "779800", "name": "Beban Berjurnal Fiktif", "is_header": True}), "COA_IMPORT_PARENT"),
         ("header-with-children-becomes-detail", None, "COA_IMPORT_PARENT"),
-        ("stale-version", rows({"code": "5775", "name": "Basi"}), "COA_IMPORT_STALE"),
+        ("stale-version", rows({"code": "777500", "name": "Basi"}), "COA_IMPORT_STALE"),
         ("empty-payload", "[]", "COA_IMPORT_INVALID"),
     ]
     # existing header with a child, for the header→detail case
-    db.sql("""insert into public.coa_accounts(code,name,type,normal_balance,is_header) values('5760','Induk Ada','BEBAN','D',true);
-    insert into public.coa_accounts(code,name,type,normal_balance,parent_id) select '5761','Anak Ada','BEBAN','D',id from public.coa_accounts where code='5760';""")
+    db.sql("""insert into public.coa_accounts(code,name,type,normal_balance,is_header) values('776000','Induk Ada','BEBAN','D',true);
+    insert into public.coa_accounts(code,name,type,normal_balance,parent_id) select '776100','Anak Ada','BEBAN','D',id from public.coa_accounts where code='776000';""")
     ver = version(db, owner)
     base = snapshot(db)
-    name_5101 = db.sql("select name from public.coa_accounts where code='5101';")
+    name_5101 = db.sql("select name from public.coa_accounts where code='600001';")
     for name, payload, expected in cases:
         if name == "header-with-children-becomes-detail":
-            payload = rows({"code": "5760", "name": "Induk Ada", "is_header": False})
+            payload = rows({"code": "776000", "name": "Induk Ada", "is_header": False})
         if name == "system-deactivate":
-            payload = rows({"code": "5101", "name": name_5101, "is_active": False})
+            payload = rows({"code": "600001", "name": name_5101, "is_active": False})
         ok, out = attempt(db, call(payload, "basi" if name == "stale-version" else ver), owner)
         record(f"backstop-{name}", not ok and expected in out and snapshot(db) == base, out[-200:])
 
     # ── happy path through the writer as ADMIN: child before parent, exact codes ──
     m0 = money(db)
-    payload = rows({"code": "5751", "name": "Anak Dulu", "set_parent": True, "parent_code": "5750"},
-                   {"code": "5750", "name": "Induk Belakangan", "is_header": True},
-                   {"code": "575201", "name": "Cucu Enam Digit", "set_parent": True, "parent_code": "5750"})
+    payload = rows({"code": "775100", "name": "Anak Dulu", "set_parent": True, "parent_code": "775000"},
+                   {"code": "775000", "name": "Induk Belakangan", "is_header": True},
+                   {"code": "775201", "name": "Cucu Enam Digit", "set_parent": True, "parent_code": "775000"})
     ok, out = attempt(db, call(payload, version(db, admin)), admin)
     linked = db.sql("select string_agg(c.code||'>'||coalesce(p.code,'-'),',' order by c.code) from public.coa_accounts c "
-                    "left join public.coa_accounts p on p.id=c.parent_id where c.code in ('5750','5751','575201');")
-    record("ADMIN-atomic-create-child-before-parent", ok and linked == "5750>-,5751>5750,575201>5750" and money(db) == m0,
+                    "left join public.coa_accounts p on p.id=c.parent_id where c.code in ('775000','775100','775201');")
+    record("ADMIN-atomic-create-child-before-parent", ok and linked == "775000>-,775100>775000,775201>775000" and money(db) == m0,
            "linked=" + str(linked) + " " + out[-120:])
     result = json.loads(out.splitlines()[-1]) if ok else {}
     record("writer-returns-counts", result.get("dibuat") == 3 and result.get("diubah") == 0, json.dumps(result))
@@ -195,15 +195,15 @@ def run(db):
 
     # ── final-stage failure: injected at parent linking, nothing persists ──
     db.sql("""create function public.uji_gagal_akhir() returns trigger language plpgsql as $$begin
-      if new.code='5741' and new.parent_id is not null then raise exception 'injected final-stage failure'; end if; return new; end$$;
+      if new.code='774100' and new.parent_id is not null then raise exception 'injected final-stage failure'; end if; return new; end$$;
       create trigger uji_gagal_akhir before update on public.coa_accounts for each row execute function public.uji_gagal_akhir();""")
     base = snapshot(db)
-    payload = rows({"code": "5740", "name": "Induk Gagal", "is_header": True},
-                   {"code": "5741", "name": "Anak Gagal", "set_parent": True, "parent_code": "5740"})
+    payload = rows({"code": "774000", "name": "Induk Gagal", "is_header": True},
+                   {"code": "774100", "name": "Anak Gagal", "set_parent": True, "parent_code": "774000"})
     ok, out = attempt(db, call(payload, version(db, owner)), owner)
     db.sql("drop trigger uji_gagal_akhir on public.coa_accounts; drop function public.uji_gagal_akhir();")
     record("final-stage-failure-rolls-back-everything", not ok and "injected final-stage failure" in out and snapshot(db) == base
-           and db.sql("select count(*) from public.coa_accounts where code in ('5740','5741');") == "0", out[-200:])
+           and db.sql("select count(*) from public.coa_accounts where code in ('774000','774100');") == "0", out[-200:])
 
     # ── no money side-effects at all ──
     record("no-journal-or-balance-created", money(db) == m0, money(db) + " vs " + m0)

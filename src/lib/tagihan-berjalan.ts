@@ -11,8 +11,8 @@
 
 import { TANPA_BAYAR, bayarPerTagihan, sisaTagihan, uangDiterimaTagihan } from "./uang-tagihan";
 
-export const AKUN_UANG_MUKA_JUAL = "2103";
-export const AKUN_PIUTANG_USAHA = "1201";
+export const AKUN_UANG_MUKA_JUAL = "314001";
+export const AKUN_PIUTANG_USAHA = "150001";
 export const METODE_UANG_MUKA = "Uang Muka";
 
 export type BarisResep = {

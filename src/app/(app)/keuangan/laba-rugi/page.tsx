@@ -3,6 +3,7 @@ import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
+import { akunHpp } from "@/lib/coa-sistem";
 import { getAccountBalances, nilaiSeksi } from "@/lib/ledger";
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
@@ -40,8 +41,9 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
   const beban = isi("BEBAN");
 
   const totalPendapatan = totalDetail(pendapatan);
-  // HPP dikenali dari akun 5101 beserta rinciannya kalau nanti dipecah jadi sub-akun.
-  const idHpp = new Set(balances.filter((b) => b.code === "5101").map((b) => b.id));
+  // HPP = seluruh kelompok 6xxxxx bagan akun (600001 HPP barang, 600002 biaya angkut pembelian, …)
+  // beserta rinciannya kalau nanti dipecah jadi sub-akun.
+  const idHpp = new Set(balances.filter((b) => akunHpp(b.code)).map((b) => b.id));
   const keturunanHpp = (b: (typeof balances)[number]) =>
     idHpp.has(b.id) || (!!b.parent_id && idHpp.has(b.parent_id));
   const barisHpp = beban.filter(keturunanHpp);

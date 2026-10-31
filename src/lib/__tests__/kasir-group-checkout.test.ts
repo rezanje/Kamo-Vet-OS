@@ -9,7 +9,7 @@ vi.mock("@/lib/inventory", () => ({ stockOut: async (_db: unknown, values: Recor
 vi.mock("@/lib/quest-hook", () => ({ processQuestProgress: async () => {} }));
 vi.mock("@/lib/customer-tier", () => ({ recomputeCustomerTier: async () => {} }));
 vi.mock("@/lib/posting", () => ({ postJournal: async () => {} }));
-vi.mock("@/lib/kas-akun", () => ({ kodeAkunBayar: async () => "1101" }));
+vi.mock("@/lib/kas-akun", () => ({ kodeAkunBayar: async () => "110003" }));
 vi.mock("@/lib/pajak", () => ({ getPajakSettings: async () => ({}), splitPpnInklusif: () => ({}) }));
 vi.mock("@/lib/penjualan-jurnal", () => ({ jurnalPenjualanInklusif: () => [] }));
 vi.mock("@/lib/promo-hitung", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/promo-hitung")>(), loadPromoAktif: async () => [] }));

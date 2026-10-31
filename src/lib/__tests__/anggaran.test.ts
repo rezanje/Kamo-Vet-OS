@@ -4,24 +4,24 @@ import {
 } from "../anggaran";
 
 describe("anggaranEfektif", () => {
-  const dasar = [{ coaCode: "5301", jumlah: 5_000_000 }, { coaCode: "5303", jumlah: 2_000_000 }];
+  const dasar = [{ coaCode: "720002", jumlah: 5_000_000 }, { coaCode: "740003", jumlah: 2_000_000 }];
 
   it("tanpa transfer = angka aslinya", () => {
     const e = anggaranEfektif(dasar, []);
-    expect(e.get("5301")).toBe(5_000_000);
-    expect(e.get("5303")).toBe(2_000_000);
+    expect(e.get("720002")).toBe(5_000_000);
+    expect(e.get("740003")).toBe(2_000_000);
   });
 
   it("transfer memindahkan jatah tanpa mengubah totalnya", () => {
-    const e = anggaranEfektif(dasar, [{ dariCoa: "5301", keCoa: "5303", jumlah: 1_500_000 }]);
-    expect(e.get("5301")).toBe(3_500_000);
-    expect(e.get("5303")).toBe(3_500_000);
+    const e = anggaranEfektif(dasar, [{ dariCoa: "720002", keCoa: "740003", jumlah: 1_500_000 }]);
+    expect(e.get("720002")).toBe(3_500_000);
+    expect(e.get("740003")).toBe(3_500_000);
     expect([...e.values()].reduce((a, b) => a + b, 0)).toBe(7_000_000);
   });
 
   it("pos tujuan yang belum dianggarkan ikut muncul", () => {
-    const e = anggaranEfektif(dasar, [{ dariCoa: "5301", keCoa: "5401", jumlah: 1_000_000 }]);
-    expect(e.get("5401")).toBe(1_000_000);
+    const e = anggaranEfektif(dasar, [{ dariCoa: "720002", keCoa: "760003", jumlah: 1_000_000 }]);
+    expect(e.get("760003")).toBe(1_000_000);
   });
 });
 
@@ -56,15 +56,15 @@ describe("statusSerapan", () => {
 describe("ringkasSerapan", () => {
   it("hitung sisa & persen, urut dari belanja terbesar", () => {
     const r = ringkasSerapan(
-      new Map([["5301", 1_000_000], ["5303", 2_000_000]]),
-      new Map([["5301", 900_000], ["5303", 500_000]]),
+      new Map([["720002", 1_000_000], ["740003", 2_000_000]]),
+      new Map([["720002", 900_000], ["740003", 500_000]]),
     );
-    expect(r[0]).toMatchObject({ coaCode: "5301", sisa: 100_000, persen: 90, status: "waspada" });
-    expect(r[1]).toMatchObject({ coaCode: "5303", sisa: 1_500_000, persen: 25, status: "aman" });
+    expect(r[0]).toMatchObject({ coaCode: "720002", sisa: 100_000, persen: 90, status: "waspada" });
+    expect(r[1]).toMatchObject({ coaCode: "740003", sisa: 1_500_000, persen: 25, status: "aman" });
   });
 
   it("pengeluaran di luar rencana tetap muncul", () => {
-    const r = ringkasSerapan(new Map(), new Map([["5401", 300_000]]));
+    const r = ringkasSerapan(new Map(), new Map([["760003", 300_000]]));
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ anggaran: 0, realisasi: 300_000, sisa: -300_000, status: "lewat" });
   });

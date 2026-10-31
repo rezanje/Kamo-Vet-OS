@@ -24,8 +24,8 @@ export default async function PembantuPiutangPage({
   const supabase = await createClient();
   const [mutasi, opening, lines] = await Promise.all([
     mutasiPiutang(supabase, sampai),
-    getAccountOpening(supabase, "1201", { from: dari }),
-    getAccountLedger(supabase, "1201", { from: dari, to: sampai }),
+    getAccountOpening(supabase, "150001", { from: dari }),
+    getAccountLedger(supabase, "150001", { from: dari, to: sampai }),
   ]);
   const saldoBukuBesar = lines.reduce((a, l) => a + l.debit - l.credit, opening);
 
@@ -55,7 +55,7 @@ export default async function PembantuPiutangPage({
       }
       baris={baris}
       labelPihak="Pelanggan" labelNaik="Tagihan terbit" labelTurun="Pembayaran masuk"
-      kodeAkun="1201" namaAkun="Piutang Usaha" saldoBukuBesar={saldoBukuBesar}
+      kodeAkun="150001" namaAkun="Piutang Usaha" saldoBukuBesar={saldoBukuBesar}
       dari={dari} sampai={sampai}
       catatan={
         <>
@@ -63,7 +63,7 @@ export default async function PembantuPiutangPage({
           piutang yang sama. Tagihan yang dibayar langsung di kasir klinik tidak meninggalkan
           catatan pembayaran tersendiri, jadi dicatat di sini sebagai &quot;dibayar di kasir klinik&quot;
           pada tanggal lunasnya supaya sisanya tidak menggantung.<br />
-          Pembandingan dengan akun 1201 di atas memakai saldo se-perusahaan, tanpa filter cabang.
+          Pembandingan dengan akun 150001 di atas memakai saldo se-perusahaan, tanpa filter cabang.
           Kalau ada selisih, telusuri dari jurnal manual yang menyentuh piutang tapi tidak berasal
           dari faktur mana pun.
         </>

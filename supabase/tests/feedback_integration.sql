@@ -9,7 +9,7 @@ update profiles set role='OWNER',is_active=true where id in(md5('integration-own
 insert into branches(id,code,name,type)values(md5('integration-branch')::uuid,'INT-A','Fiction integration A','PETSHOP'),(md5('integration-other')::uuid,'INT-B','Fiction integration B','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type)values(md5('integration-wh')::uuid,md5('integration-branch')::uuid,'INT-W','Fiction integration warehouse','RETAIL');
 insert into suppliers(id,nama)values(md5('integration-supplier')::uuid,'Fiction integration supplier');
-insert into coa_accounts(code,name,type,normal_balance)values('1196','Fiction integration bank','ASET','D'),('1301','Fiction integration inventory','ASET','D'),('3101','Fiction integration equity','EKUITAS','K')on conflict(code)do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance)values('1196','Fiction integration bank','ASET','D'),('170001','Fiction integration inventory','ASET','D'),('410001','Fiction integration equity','EKUITAS','K')on conflict(code)do update set is_active=true,is_header=false;
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id)values(md5('integration-bank')::uuid,'Fiction integration bank','Bank','1196',md5('integration-branch')::uuid);
 insert into purchase_orders(id,no_po,supplier_id,branch_id,status,total)values(md5('integration-po')::uuid,'PO.INTEGRATION',md5('integration-supplier')::uuid,md5('integration-branch')::uuid,'Draft',1000),
 (md5('integration-other-po')::uuid,'PO.INTEGRATION.OTHER',md5('integration-supplier')::uuid,md5('integration-other')::uuid,'Draft',1000);
@@ -52,7 +52,7 @@ do $$declare rows jsonb;run uuid;p jsonb;r jsonb;n bigint;eq uuid;begin
  run:=prepare_accurate_initial_stock('integration-stock','fiction.csv',md5('integration-branch')::uuid,md5('integration-wh')::uuid,'2026-01-01',rows,'STRICT');
  if not exists(select 1 from activity_log where row_entity='import_runs'and row_id=run::text and action='create')then raise exception 'Prepared import missing metadata audit';end if;
  if exists(select 1 from activity_log where row_entity in('import_runs','import_run_rows')and (after_state::text like '%source_values%'or after_state::text like '%fiction.csv%'))then raise exception 'Import audit leaked source payload';end if;
- select count(*)into n from activity_log;select id into eq from coa_accounts where code='3101';p:=preview_accurate_inventory_accounting(run,eq);
+ select count(*)into n from activity_log;select id into eq from coa_accounts where code='410001';p:=preview_accurate_inventory_accounting(run,eq);
  if not(p->>'can_post')::boolean or(select count(*)from activity_log)<>n then raise exception 'Review blocked or wrote audit';end if;
  r:=post_accurate_inventory_accounting(run,eq,p,'Fiction integration review');select count(*)into n from activity_log;
  if r is distinct from post_accurate_inventory_accounting(run,eq,p,'Fiction integration review')or(select count(*)from activity_log)<>n then raise exception 'Import retry duplicated audited financial effects';end if;

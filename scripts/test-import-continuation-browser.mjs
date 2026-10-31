@@ -25,7 +25,7 @@ const runId='11111111-1111-4111-8111-111111111111';
 const review=location.pathname==='/keuangan/persediaan-awal';
 createRoot(document.getElementById('root')).render(<main style={{maxWidth:960,margin:'auto',padding:16}}>
 <h1>{review?'Tinjauan persediaan awal':'Impor Barang'}</h1><p>Fixture fiktif — tanpa database atau transaksi pelanggan.</p>
-{review?<InventoryAccountingForm initialRunId={new URLSearchParams(location.search).get('run_id')||''} batches={[{id:runId,source_name:'fiction.xlsx',status:'previewed',as_of_date:'2026-01-01',branch_id:'fiction',created_at:''}]} accounts={[{id:'22222222-2222-4222-8222-222222222222',code:'3101',name:'Ekuitas fiktif'}]}/>:<AccurateImportForm/>}</main>);
+{review?<InventoryAccountingForm initialRunId={new URLSearchParams(location.search).get('run_id')||''} batches={[{id:runId,source_name:'fiction.xlsx',status:'previewed',as_of_date:'2026-01-01',branch_id:'fiction',created_at:''}]} accounts={[{id:'22222222-2222-4222-8222-222222222222',code:'410001',name:'Ekuitas fiktif'}]}/>:<AccurateImportForm/>}</main>);
 `);
 const importActions = `
 const master={ok:true,phase:'preview',message:'Master fiktif siap',run_id:'fiction-master',source_hash:'fiction',source_fingerprint:'fiction',rows:[],total_rows:1,hierarchy_count:0,summary:{Baru:1,Update:0,Sama:0,Dilewati:0,Ditolak:0},new_masters:{categories:[],brands:[],units:[],suppliers:[]}};
@@ -37,7 +37,7 @@ export async function konfirmasiImporAccurate(){count('masterConfirm');return{..
 export async function previewSaldoAwalAccurate(){count('stockPreview');return{...stock,run_id:'11111111-1111-4111-8111-111111111111',master_run_id:'fiction-master',branch_id:'fiction',warehouse_id:'fiction',source_hash:'fiction'};}
 `;
 const accountingActions = `
-export async function previewInventoryAccounting(runId){return{ok:true,report:{run_id:runId,status:'previewed',source_name:'fiction.xlsx',source_hash:'fiction',branch_name:'Cabang fiktif',warehouse_name:'Gudang fiktif',as_of:'2026-01-01',selected_rows:1,excluded_rows:0,original_qty:10,original_value:125,remaining_value:125,inventory_account:{code:'1301',name:'Persediaan'},equity_account:{id:'22222222-2222-4222-8222-222222222222',code:'3101',name:'Ekuitas fiktif'},blockers:[],can_post:true,receipt:null}};}
+export async function previewInventoryAccounting(runId){return{ok:true,report:{run_id:runId,status:'previewed',source_name:'fiction.xlsx',source_hash:'fiction',branch_name:'Cabang fiktif',warehouse_name:'Gudang fiktif',as_of:'2026-01-01',selected_rows:1,excluded_rows:0,original_qty:10,original_value:125,remaining_value:125,inventory_account:{code:'170001',name:'Persediaan'},equity_account:{id:'22222222-2222-4222-8222-222222222222',code:'410001',name:'Ekuitas fiktif'},blockers:[],can_post:true,receipt:null}};}
 export async function postInventoryAccounting(){throw new Error('Fixture must stop before posting');}
 `;
 const server = await createServer({ root: runtime, configFile: false, logLevel: 'error', oxc: { jsx: { runtime: 'automatic' } },

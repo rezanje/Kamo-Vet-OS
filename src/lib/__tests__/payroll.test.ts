@@ -109,19 +109,19 @@ describe("hitungGaji", () => {
 
 describe("jurnalPenggajian", () => {
   it("seimbang tanpa kasbon", () => {
-    const l = jurnalPenggajian("1102", AKUN_PIUTANG_KARYAWAN, 4_200_000, 0);
+    const l = jurnalPenggajian("120002", AKUN_PIUTANG_KARYAWAN, 4_200_000, 0);
     expect(l).toEqual([
-      { code: "5201", debit: 4_200_000, credit: 0 },
-      { code: "1102", debit: 0, credit: 4_200_000 },
+      { code: "710001", debit: 4_200_000, credit: 0 },
+      { code: "120002", debit: 0, credit: 4_200_000 },
     ]);
   });
 
   it("cicilan kasbon mengurangi piutang karyawan, bukan menambah beban kas", () => {
-    const l = jurnalPenggajian("1101", AKUN_PIUTANG_KARYAWAN, 3_200_000, 1_000_000);
+    const l = jurnalPenggajian("110003", AKUN_PIUTANG_KARYAWAN, 3_200_000, 1_000_000);
     const debit = l.reduce((a, x) => a + x.debit, 0);
     const credit = l.reduce((a, x) => a + x.credit, 0);
     expect(debit).toBe(credit);
     expect(l.find((x) => x.code === AKUN_PIUTANG_KARYAWAN)?.credit).toBe(1_000_000);
-    expect(l.find((x) => x.code === "1101")?.credit).toBe(3_200_000);
+    expect(l.find((x) => x.code === "110003")?.credit).toBe(3_200_000);
   });
 });

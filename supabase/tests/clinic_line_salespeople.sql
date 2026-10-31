@@ -66,7 +66,7 @@ begin
  perform public.clinic_edit_invoice(inv,'seller.lines.edit',header,lines);
  perform pg_temp.assert_line_seller((select count(*)=2 and bool_or(salesperson_name='Fictional assistant') from public.invoice_items where invoice_id=inv),'correction keeps original name after rename and retirement');
  perform pg_temp.assert_line_seller((select bool_and(service_source_line_id is not null) from public.invoice_items where invoice_id=inv),'correction links exact prior line');
- perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','1101',null,'seller.lines.payment');
+ perform public.clinic_receive_invoice_payment(inv,current_date,10,'Tunai','110003',null,'seller.lines.payment');
  reissued:=public.clinic_void_reissue_invoice(inv,'seller.lines.reissue','Fictional snapshot reissue');
  perform pg_temp.assert_line_seller((select count(*)=2 and bool_or(salesperson_name='Fictional assistant') from public.invoice_items where invoice_id=reissued),'reissue retains inactive seller snapshot');
 end $$;

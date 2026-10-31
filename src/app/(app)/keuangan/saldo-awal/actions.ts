@@ -61,22 +61,22 @@ export async function bacaSaldoAwal(supabase: Awaited<ReturnType<typeof createCl
 
   const usulan: Usulan[] = ([
     {
-      code: "1301", nama: "Persediaan Obat & Produk", sisi: "D",
-      nyata: persediaanNyata, buku: saldo("1301"),
-      selisih: selisihSaldoAwal(persediaanNyata, saldo("1301")),
+      code: "170001", nama: "Persediaan Obat & Produk", sisi: "D",
+      nyata: persediaanNyata, buku: saldo("170001"),
+      selisih: selisihSaldoAwal(persediaanNyata, saldo("170001")),
       sumber: inventory.source,
     },
     {
-      code: "1501", nama: "Aset Tetap", sisi: "D",
-      nyata: asetNyata, buku: saldo("1501"),
-      selisih: selisihSaldoAwal(asetNyata, saldo("1501")),
+      code: "200008", nama: "Aset Tetap", sisi: "D",
+      nyata: asetNyata, buku: saldo("200008"),
+      selisih: selisihSaldoAwal(asetNyata, saldo("200008")),
       sumber: "Total harga perolehan aset aktif",
     },
     {
-      // 1509 kontra-aset: saldo normalnya kredit, jadi 'nyata' dibandingkan apa adanya.
-      code: "1509", nama: "Akumulasi Penyusutan", sisi: "K",
-      nyata: akumNyata, buku: saldo("1509"),
-      selisih: selisihSaldoAwal(akumNyata, saldo("1509")),
+      // 200015 kontra-aset: saldo normalnya kredit, jadi 'nyata' dibandingkan apa adanya.
+      code: "200015", nama: "Akumulasi Penyusutan", sisi: "K",
+      nyata: akumNyata, buku: saldo("200015"),
+      selisih: selisihSaldoAwal(akumNyata, saldo("200015")),
       sumber: "Total penyusutan yang sudah dijalankan",
     },
   ] as Usulan[]).filter((u) => u.selisih !== 0);

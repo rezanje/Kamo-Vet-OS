@@ -19,7 +19,7 @@ export function assetPurchaseJournal(
   const code = String(creditCode ?? "").trim();
   if (!code) throw new Error("Rekening Kas/Bank wajib dipilih");
   return [
-    { code: "1501", debit: amount, credit: 0 },
+    { code: "200008", debit: amount, credit: 0 },
     { code, debit: 0, credit: amount },
   ];
 }

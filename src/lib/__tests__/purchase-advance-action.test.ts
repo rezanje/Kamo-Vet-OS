@@ -4,7 +4,7 @@ const db={rpc:fixture.rpc,auth:{getUser:async()=>({data:{user:{id:'fiction-owner
 vi.mock('@/lib/master-guard',()=>({assertRole:async()=>db}));
 vi.mock('@/lib/no-dokumen',()=>({formatDokumen:async()=>({prefix:'UM.QA.',digit:5}),nomorBerikutnya:async()=>({nomor:'UM.QA.00001'})}));
 vi.mock('@/lib/jurnal-guard',()=>({cekPeriode:async()=>null}));
-vi.mock('@/lib/kas-akun',()=>({kodeAkunBayar:async()=> '1102'}));
+vi.mock('@/lib/kas-akun',()=>({kodeAkunBayar:async()=> '120002'}));
 vi.mock('@/lib/posting',()=>({postJournal:async()=>{}}));
 vi.mock('@/lib/transaction-draft-ack',async()=>({...await import('../transaction-draft-ack'),assertDraftJournal:async()=>{}}));
 vi.mock('next/navigation',()=>({redirect:(url:string)=>{throw Object.assign(Error(url),{digest:'NEXT_REDIRECT'})}}));vi.mock('next/cache',()=>({revalidatePath:vi.fn()}));

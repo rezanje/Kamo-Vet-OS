@@ -14,7 +14,7 @@ import { SourceRecurringForm } from "./SourceRecurringForm";
 const source = { entry_id: "f6000000-0000-4000-8000-000000000001", no_jurnal: "JU-FIKTIF-1", tanggal: "2025-12-15", branch_id: null,
   revision: 0, source: "manual", deskripsi: "Fixture description", version: "fiction-hash", lines: [
     { line_id: "line-1", account_id: "account-1", code: "6001", debit: 100, credit: 0 },
-    { line_id: "line-2", account_id: "account-2", code: "2101", debit: 0, credit: 100 },
+    { line_id: "line-2", account_id: "account-2", code: "311001", debit: 0, credit: 100 },
   ] };
 let root: Root | null = null;
 

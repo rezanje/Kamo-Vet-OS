@@ -39,7 +39,7 @@ const dasar = () => ({
     id: "kwt-1", no_kwitansi: "KWT-1", tanggal: "2026-10-27", total: 40_000, status: "aktif",
     catatan: null, void_reason: null, created_at: "2026-10-27T02:00:00Z",
     profiles: { full_name: "Wowo" },
-    clinic_payment_receipt_parts: [{ urutan: 2, metode: "QRIS", amount: 10_000, kas_code: "1102" }, { urutan: 1, metode: "Tunai", amount: 30_000, kas_code: "1101" }],
+    clinic_payment_receipt_parts: [{ urutan: 2, metode: "QRIS", amount: 10_000, kas_code: "120002" }, { urutan: 1, metode: "Tunai", amount: 30_000, kas_code: "110003" }],
   }],
   clinic_customer_advances: [{ id: "um-1", no_uang_muka: "UMK-1", tanggal: "2026-10-27", amount: 50_000, applied: 20_000, status: "aktif" }],
 });

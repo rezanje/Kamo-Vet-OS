@@ -9,8 +9,8 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 
 const kategoriToCode: Record<string, string> = {
-  "Listrik & Air": "5301", "Perlengkapan": "5302", "Transportasi": "5303",
-  "Perawatan": "5304", "Operasional": "5401", "Lain-lain": "5401",
+  "Listrik & Air": "720002", "Perlengkapan": "740001", "Transportasi": "740003",
+  "Perawatan": "740007", "Operasional": "760003", "Lain-lain": "760003",
 };
 
 export async function simpanPengeluaranKlinik(formData: FormData) {
@@ -46,7 +46,7 @@ export async function simpanPengeluaranKlinik(formData: FormData) {
   }).select("id").single();
   if (error || !expense) redirect(`${back}?error=${encodeURIComponent("Gagal menyimpan pengeluaran")}`);
 
-  const bebanCode = kategoriToCode[kategori] ?? "5401";
+  const bebanCode = kategoriToCode[kategori] ?? "760003";
   const kasCode = await kodeAkunBayar(supabase, metode, branchId);
   await postJournal(supabase, {
     tanggal,

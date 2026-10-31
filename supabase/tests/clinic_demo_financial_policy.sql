@@ -14,10 +14,10 @@ select ('cb600000-0000-4000-8000-00000000000'||n)::uuid,'cb200000-0000-4000-8000
 insert into public.cashier_shifts(id,branch_id,opened_by,shift_type,status) values
  ('cb700000-0000-4000-8000-000000000001','cb200000-0000-4000-8000-000000000001','cb100000-0000-4000-8000-000000000001','klinik','open');
 insert into public.coa_accounts(code,name,type,normal_balance,is_active,is_header) values
- ('1101','Test cash','ASET','D',true,false),('1102','Test bank','ASET','D',true,false),('1201','Test AR','ASET','D',true,false),
- ('4102','Test discount','PENDAPATAN','D',true,false),('4201','Test revenue','PENDAPATAN','K',true,false),('2201','Test tax','LIABILITAS','K',true,false),
- ('5501','Test fee expense','BEBAN','D',true,false) on conflict(code) do update set is_active=true,is_header=false;
-insert into public.cash_accounts(nama,jenis,coa_code) values ('Test cash','Kas','1101'),('Test bank','Bank','1102') on conflict(coa_code) do update set is_active=true;
+ ('110003','Test cash','ASET','D',true,false),('120002','Test bank','ASET','D',true,false),('150001','Test AR','ASET','D',true,false),
+ ('520002','Test discount','PENDAPATAN','D',true,false),('510002','Test revenue','PENDAPATAN','K',true,false),('312005','Test tax','LIABILITAS','K',true,false),
+ ('740010','Test fee expense','BEBAN','D',true,false) on conflict(code) do update set is_active=true,is_header=false;
+insert into public.cash_accounts(nama,jenis,coa_code) values ('Test cash','Kas','110003'),('Test bank','Bank','120002') on conflict(coa_code) do update set is_active=true;
 create function public.test_age_demo_invoice(p_id uuid) returns void language sql security definer set search_path='' as $$
  update public.clinic_demo_invoice_snapshots set earned_at='2026-08-15T10:00:00+07:00' where invoice_id=p_id;
 $$;
@@ -31,10 +31,10 @@ do $$
 declare policy uuid;company uuid;inv uuid;retry uuid;replacement uuid;before_count int;row_count int;
   head jsonb:=jsonb_build_object('tanggal',current_date,'subtotal',50000,'discount',0,'tax',0,'total',50000,'paid_status','Lunas','dp_amount',0,'shift_id','cb700000-0000-4000-8000-000000000001','metode_bayar','Tunai');
   lines jsonb:='[{"description":"DEMO consultation","qty":1,"price":50000,"kind":"jasa"}]';
-  parts jsonb:='[{"method":"Tunai","amount":25000,"kas_code":"1101"},{"method":"Transfer","amount":25000,"kas_code":"1102"}]';
+  parts jsonb:='[{"method":"Tunai","amount":25000,"kas_code":"110003"},{"method":"Transfer","amount":25000,"kas_code":"120002"}]';
   staff uuid[]:=array['cb500000-0000-4000-8000-000000000001'::uuid,'cb500000-0000-4000-8000-000000000002'::uuid];
 begin
-  policy:=public.save_clinic_demo_policy('DEMO customer',5,'customer','{"Tunai":0,"Transfer":100}','4303','5501');
+  policy:=public.save_clinic_demo_policy('DEMO customer',5,'customer','{"Tunai":0,"Transfer":100}','810004','740010');
   inv:=public.clinic_post_demo_invoice('cb600000-0000-4000-8000-000000000001','demo-fee',head,lines,policy,parts,staff);
   retry:=public.clinic_post_demo_invoice('cb600000-0000-4000-8000-000000000001','demo-fee',head,lines,policy,parts,staff);
   if inv is distinct from retry or (select total from public.invoices where id=inv)<>50250
@@ -47,13 +47,13 @@ begin
     perform public.clinic_post_demo_invoice('cb600000-0000-4000-8000-000000000001','demo-fee',head,lines,policy,parts,array[staff[1]]);
     raise exception 'Changed replay accepted';
   exception when raise_exception then if sqlerrm not like 'IDEMPOTENCY_CONFLICT:%' then raise;end if;end;
-  company:=public.save_clinic_demo_policy('DEMO company',10,'company','{"Transfer":100}','4303','5501');
+  company:=public.save_clinic_demo_policy('DEMO company',10,'company','{"Transfer":100}','810004','740010');
   retry:=public.clinic_post_demo_invoice('cb600000-0000-4000-8000-000000000001','demo-fee',head,lines,policy,parts,staff);
   if retry<>inv then raise exception 'New policy changed posted replay';end if;
   before_count:=(select count(*) from public.invoices);
   begin
     perform public.clinic_post_demo_invoice('cb600000-0000-4000-8000-000000000002','demo-rollback',head,lines,company,
-      '[{"method":"Tunai","amount":25000,"kas_code":"1101"},{"method":"Transfer","amount":25000,"kas_code":"4201"}]',staff);
+      '[{"method":"Tunai","amount":25000,"kas_code":"110003"},{"method":"Transfer","amount":25000,"kas_code":"510002"}]',staff);
     raise exception 'Invalid part accepted';
   exception when raise_exception then if sqlerrm not like 'PAYMENT_INVALID:%' then raise;end if;end;
   if (select count(*) from public.invoices)<>before_count then raise exception 'Failed part left invoice';end if;
@@ -64,7 +64,7 @@ begin
   if (select count(*) from public.invoices)<>before_count or (select count(*) from public.invoice_payments)<>2
     or exists(select 1 from public.clinic_demo_invoice_snapshots where request_key='demo-forced-rollback') then raise exception 'Second payment failure left partial effects';end if;
   retry:=public.clinic_post_demo_invoice('cb600000-0000-4000-8000-000000000002','demo-company' ,head,lines,company,
-    '[{"method":"Transfer","amount":50000,"kas_code":"1102"}]',staff);
+    '[{"method":"Transfer","amount":50000,"kas_code":"120002"}]',staff);
   if (select total from public.invoices where id=retry)<>50000 or (select fee_amount from public.clinic_demo_invoice_snapshots where invoice_id=retry)<>500
     or (select incentive_pool from public.clinic_demo_invoice_snapshots where invoice_id=retry)<>5000 then raise exception 'Company policy snapshot incorrect';end if;
   perform public.test_age_demo_invoice(inv);
@@ -79,12 +79,12 @@ begin
   if exists(select 1 from public.journal_entries e join public.journal_lines l on l.entry_id=e.id
     where e.branch_id='cb200000-0000-4000-8000-000000000001' group by e.id having sum(l.debit)<>sum(l.credit)) then raise exception 'Unbalanced fee journal';end if;
   if (select sum(l.credit-l.debit) from public.journal_lines l join public.journal_entries e on e.id=l.entry_id join public.coa_accounts a on a.id=l.account_id
-    where e.branch_id='cb200000-0000-4000-8000-000000000001' and a.code='4303')<>250 then raise exception 'Admin reclassification wrong';end if;
+    where e.branch_id='cb200000-0000-4000-8000-000000000001' and a.code='810004')<>250 then raise exception 'Admin reclassification wrong';end if;
   if (select sum(l.debit-l.credit) from public.journal_lines l join public.journal_entries e on e.id=l.entry_id join public.coa_accounts a on a.id=l.account_id
-    where e.branch_id='cb200000-0000-4000-8000-000000000001' and a.code='5501')<>500 then raise exception 'Company expense wrong';end if;
+    where e.branch_id='cb200000-0000-4000-8000-000000000001' and a.code='740010')<>500 then raise exception 'Company expense wrong';end if;
   head:=head||jsonb_build_object('discount',10000,'tax',4400,'total',44400);
   retry:=public.clinic_post_demo_invoice('cb600000-0000-4000-8000-000000000003','demo-tax-discount',head,lines,company,
-    '[{"method":"Transfer","amount":44400,"kas_code":"1102"}]',array[staff[1],staff[2],staff[1]]);
+    '[{"method":"Transfer","amount":44400,"kas_code":"120002"}]',array[staff[1],staff[2],staff[1]]);
   if (select service_basis from public.clinic_demo_invoice_snapshots where invoice_id=retry)<>40000
     or (select incentive_pool from public.clinic_demo_invoice_snapshots where invoice_id=retry)<>4000
     or (select fee_amount from public.clinic_demo_invoice_snapshots where invoice_id=retry)<>444
