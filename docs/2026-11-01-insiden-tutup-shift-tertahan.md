@@ -38,7 +38,27 @@ Penghapusan juga hanya boleh oleh kasir pemilik struk (`pos_sale_cancel_pending`
 - `resumePosCheckout`: draf yang sama dengan percobaan terputus ≥ 10 menit membuang struk lama lalu
   melanjutkan, tidak lagi terkunci "masih diproses".
 
+## Pembersihan manual produksi (1 Nov 2026 ±22.20 WIB, atas persetujuan Reza)
+- Cadangan lengkap sebelum hapus: `docs/evidence/2026-11-01-tutup-shift-tertahan/backup-sebelum-hapus.json`
+  (3 sales, 6 sale_items, 3 sale_payments, 3 pos_sale_postings; stock_moves & journal_entries kosong;
+  semua anak RESTRICT = 0).
+- Uji kering dulu (`begin … rollback`), lalu tiap struk dihapus dalam transaksinya sendiri lewat
+  Management API dengan `set local role authenticated` + `request.jwt.claims.sub` = kasir pemilik struk,
+  supaya RLS dan pemicu `pos_sale_cancel_pending` / `unit_posted_sale_source_immutable` tetap berlaku
+  persis seperti pembersihan checkout. Syarat hapus: belum final, `payment_plan` terisi, kasir cocok,
+  tanpa jurnal, tanpa stock_moves.
+- Hasil: 0 sisa baris; 0 penjualan belum-final di seluruh produksi. Shift Surken, Granada,
+  Bantarkemang tetap `open` dan bisa ditutup kasirnya.
+- **Catatan audit:** di Riwayat Aktivitas, penghapusan tercatat atas nama kasir masing-masing
+  (Raidika 22:20:04, Dimas 22:20:05, Subhan 22:20:07) karena identitas kasir dipakai untuk melewati
+  pemicu. Yang menjalankan adalah agen (Claude) atas instruksi pemilik, bukan kasirnya.
+
+| Struk | Barang tercatat |
+|---|---|
+| POS-20261101-0004-8GZC (Surken) | Catto 50gr Tuna 1 × 10.000; Delijoy Pouch Tuna 1 × 10.000; **sisa 85.000 tidak tersimpan** |
+| POS-20261101-0009 (Granada) | Cat Choize Kitten 1 × 30.000; Cat Choize Tuna adult 2 × 20.000 (promo −2.000); Bolt Ikan 800gr 1 × 20.000 |
+| POS-20261101-0004-VKDX (Bantarkemang) | ANC Cat Litter 5,5L Coffee 1 × 35.000 (sudah diulang: POS-20261101-0022-9GIK) |
+
 ## Sisa
-- Ketiga struk di atas akan terbuang otomatis saat kasirnya menekan Tutup Shift sesudah rilis.
 - Surken (105.000 tunai, "diana") dan Granada (88.000 QRIS) perlu dicek manual oleh toko: kalau
-  uangnya diterima tapi transaksi tidak diulang, laci akan selisih lebih — transaksi perlu diinput ulang.
+  barang/uangnya diterima tapi transaksi tidak diulang, stok dan laci selisih — transaksi perlu diinput ulang.
