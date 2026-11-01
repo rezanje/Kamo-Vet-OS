@@ -1034,3 +1034,27 @@ Draf ditutup lewat RPC publik `batalkan_kartu_tertunda` (OWNER), dengan alasan "
 
 Hasil: 215 berstatus `dibatalkan`, isi utuh. Total `perlu_dilengkapi` 1.116 → 901. Tidak ada perubahan pada riwayat
 atau tabel keuangan.
+
+## 16. Batch 18 (2026-11-01, eksekusi produksi)
+
+Input: `batch18-cards.json` (`staging-card-v1`, folder 1690–1840, SHA-256 `d9b7519d…`, cocok dengan overlay), 774 kartu dari
+343 berkas. Overlay keselamatan memuat 46 kunci tahan wajib, dipakai sebagai gerbang.
+
+Sebelum menulis: 0 tumpang tindih kunci/fileID dengan batch 03–17, dengan DB, dan dengan "Perlu Dilengkapi"; tidak ada
+impor lain berjalan. Kode tahan baru `SOURCE_CELL_ERROR_REVIEW` ditahan tanpa draf.
+
+Rekonsiliasi:
+- 0 bentrok hewan + tanggal, dan 0 isi sama di hewan/pemilik lain di DB.
+- 5 kartu isi + tanggal sama dengan hewan beda di dalam paket = tertahan.
+- 0 draf yang isinya sudah ada.
+
+Hasil: 356 baru, 0 sudah ada, 341 tertahan, 77 kosong, 0 gagal (= 774).
+- Readback runner dan readback independen 356/356 cocok.
+- 203 draf "Perlu Dilengkapi"; 77 pemilik baru, semua `imported_at`. Semua 46 gerbang tertahan.
+
+Audit efek samping: tidak ada tagihan, resep, atau klaim quest yang tertaut ke kunjungan/pemilik hasil impor.
+- Selama run ada aktivitas app normal: 2 penjualan kasir; 2 klaim quest untuk pelanggan walk-in baru, bukan hasil impor;
+  1 invoice klinik cabang.
+- Ada juga impor pelanggan massal pihak lain: ±9.060 pelanggan ber-`imported_at` pada 01:19–01:20 UTC.
+- Data transaksi/stok tampak di-reset sejak 2026-10-31 15:15 UTC oleh proses lain.
+- Dicek: tidak ada pemilik hasil impor rekam medis (1.141) yang punya kembaran nomor HP akibat impor pelanggan itu.
