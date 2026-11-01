@@ -132,3 +132,43 @@ export async function simpanEditPengguna(form: FormData): Promise<{ ok: false; m
   revalidatePath(`${BACK}/${profileId}/edit`);
   redirect(`${BACK}?success=${encodeURIComponent("Perubahan akun berhasil disimpan.")}`);
 }
+
+export type ResetLoginResult = { ok: boolean; message: string };
+
+const PESAN_RESET: Record<string, string> = {
+  LOGIN_RESET_DENIED: "Hanya Super Admin yang boleh mengganti email atau password akun.",
+  LOGIN_RESET_NOT_FOUND: "Akun tidak ditemukan. Muat ulang halaman.",
+  LOGIN_RESET_EMAIL_INVALID: "Format email tidak valid.",
+  LOGIN_RESET_EMAIL_TAKEN: "Email ini sudah dipakai akun lain.",
+  LOGIN_RESET_PASSWORD_INVALID: "Password baru harus 8–72 karakter.",
+  LOGIN_RESET_NOTHING: "Tidak ada perubahan: isi email baru atau password baru.",
+};
+
+// U13: Super Admin mengganti email login dan/atau mengatur ulang password karyawan.
+// Pemeriksaan hak & perubahan terjadi di satu fungsi database; di sini hanya validasi awal.
+export async function resetLoginPengguna(form: FormData): Promise<ResetLoginResult> {
+  const client = await assertMasterAdmin(BACK, "login akun karyawan");
+  const profileId = String(form.get("profile_id") ?? "");
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const password = String(form.get("password") ?? "");
+  const konfirmasi = String(form.get("password_konfirmasi") ?? "");
+  if (!isAccountEditId(profileId)) return { ok: false, message: "Akun tidak valid. Muat ulang halaman." };
+  if (password && (password.length < 8 || password.length > 72)) return { ok: false, message: PESAN_RESET.LOGIN_RESET_PASSWORD_INVALID };
+  if (password !== konfirmasi) return { ok: false, message: "Konfirmasi password tidak sama." };
+  if (!email && !password) return { ok: false, message: PESAN_RESET.LOGIN_RESET_NOTHING };
+  try {
+    const { data, error } = await client.rpc("owner_reset_akun_login", {
+      p_profile_id: profileId, p_email: email || null, p_password: password || null,
+    });
+    if (error) {
+      const kode = Object.keys(PESAN_RESET).find((k) => String(error.message).startsWith(`${k}:`));
+      return { ok: false, message: kode ? PESAN_RESET[kode] : "Reset login gagal disimpan. Coba lagi." };
+    }
+    const hasil = data as { email_changed?: boolean; password_changed?: boolean } | null;
+    revalidatePath(`${BACK}/${profileId}/edit`);
+    const bagian = [hasil?.email_changed && `email login diganti ke ${email}`, hasil?.password_changed && "password baru aktif"].filter(Boolean);
+    return { ok: true, message: `Berhasil: ${bagian.join(" dan ")}. Karyawan perlu masuk ulang dengan data baru.` };
+  } catch {
+    return { ok: false, message: "Hasil reset belum dapat dipastikan. Muat ulang halaman sebelum mengulang." };
+  }
+}
