@@ -30,8 +30,9 @@ it("subscribes to the active branch and catches changes during subscription setu
   change(); change(); await tick(250); expect(mock.refresh).toHaveBeenCalledTimes(2);
 });
 it("refreshes on a bounded interval even if realtime never connects", async () => {
-  await render(); status("CHANNEL_ERROR"); await tick(15_250); expect(mock.refresh).toHaveBeenCalledOnce();
-  await tick(15_000); expect(mock.refresh).toHaveBeenCalledTimes(2);
+  await render(); status("CHANNEL_ERROR"); await tick(15_250); expect(mock.refresh).not.toHaveBeenCalled();
+  await tick(45_000); expect(mock.refresh).toHaveBeenCalledOnce();
+  await tick(60_000); expect(mock.refresh).toHaveBeenCalledTimes(2);
 });
 it("resumes on focus, reconnect and visibility without refreshing a hidden or offline page", async () => {
   await render(); Object.defineProperty(document, "visibilityState", { value: "hidden" });

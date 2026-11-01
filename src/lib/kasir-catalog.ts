@@ -1,4 +1,5 @@
 import { readCompleteList } from "./checked-list";
+import { cacheSebentar, KATALOG_KASIR_UMUR_MS } from "./cache-memori";
 import type { ItemType } from "./barang";
 import type { AturanDiskon } from "./harga-golongan";
 
@@ -23,6 +24,9 @@ export async function loadKasirItems(client: any): Promise<KasirCatalogItem[]> {
  * branch price and discounts, not defaults caused by the API row limit. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadKasirCatalogDetails(client: any, branchId: string, warehouseId: string | null) {
+  // Stok & harga cabang tetap dibaca langsung (berubah tiap transaksi / per cabang).
+  // Harga bertingkat & diskon golongan adalah master yang sama untuk semua kasir:
+  // dibaca sekali per KATALOG_KASIR_UMUR_MS per server, bukan tiap layar kasir dibuka.
   const [stock, prices, tiers, discounts] = await Promise.all([
     warehouseId ? readCompleteList<{ id: string; item_id: string; qty: number }>((from, to) => client.from("stock")
       .select("id,item_id,qty", { count: "exact" }).eq("warehouse_id", warehouseId)
@@ -30,12 +34,12 @@ export async function loadKasirCatalogDetails(client: any, branchId: string, war
     readCompleteList<{ id: string; item_id: string; unit: string; sell_price: number }>((from, to) => client.from("item_branch_prices")
       .select("id,item_id,unit,sell_price", { count: "exact" }).eq("branch_id", branchId)
       .order("id").range(from, to), "Harga cabang kasir", { maxRows: null }),
-    readCompleteList<{ id: string; item_id: string; min_qty: number; harga: number }>((from, to) => client.from("item_price_tiers")
+    cacheSebentar("kasir:harga-bertingkat", KATALOG_KASIR_UMUR_MS, () => readCompleteList<{ id: string; item_id: string; min_qty: number; harga: number }>((from, to) => client.from("item_price_tiers")
       .select("id,item_id,min_qty,harga", { count: "exact" }).order("min_qty").order("id")
-      .range(from, to), "Harga bertingkat kasir", { maxRows: null }),
-    readCompleteList<AturanDiskon & { id: string; customer_category_id: string }>((from, to) => client.from("category_discounts")
+      .range(from, to), "Harga bertingkat kasir", { maxRows: null })),
+    cacheSebentar("kasir:diskon-golongan", KATALOG_KASIR_UMUR_MS, () => readCompleteList<AturanDiskon & { id: string; customer_category_id: string }>((from, to) => client.from("category_discounts")
       .select("id,customer_category_id,item_id,item_category_id,diskon_persen", { count: "exact" })
-      .order("id").range(from, to), "Diskon golongan kasir", { maxRows: null }),
+      .order("id").range(from, to), "Diskon golongan kasir", { maxRows: null })),
   ]);
   return { stock, prices, tiers, discounts };
 }

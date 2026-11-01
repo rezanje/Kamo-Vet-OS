@@ -14,6 +14,7 @@ import { KasirClient, type ItemRow, type VoucherRow, type PromoRow } from "./Kas
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { loadKasirItems, loadKasirCatalogDetails, loadKasirGroupComponents } from "@/lib/kasir-catalog";
+import { cacheSebentar, KATALOG_KASIR_UMUR_MS } from "@/lib/cache-memori";
 import { loadBranchGroomingPolicy } from "@/lib/service-performers-server";
 import { isGroomingService } from "@/lib/grooming-requirements";
 import { readCompleteList } from "@/lib/checked-list";
@@ -48,13 +49,26 @@ export default async function KasirPage({
   }
   const replacementDraft = replacement ? saleReplacementDraft(replacement) : undefined;
 
-  const [, itemsRaw, vouchers, promos, kodeKampanye] = await Promise.all([
+  const [, master, vouchers, promos, kodeKampanye] = await Promise.all([
     // Penyapu promo/voucher kedaluwarsa ikut dijalankan dari sini karena kasir
     // adalah layar yang paling sering dibuka; fungsinya berhenti lebih awal
     // lewat indeks kalau memang tidak ada yang lewat tanggal. Hasil bacaan di
     // bawah tetap disaring tanggal, jadi urutannya tidak perlu dijamin.
-    nonaktifkanPromoKadaluarsa(supabase),
-    loadKasirItems(supabase),
+    // Penyapu ini MENULIS ke database; cukup sekali per 5 menit per server — tampilan
+    // promo/voucher di bawah tetap disaring tanggal saat dibaca.
+    cacheSebentar("kasir:sapu-promo", 5 * 60_000, () => nonaktifkanPromoKadaluarsa(supabase)),
+    // Katalog master (barang + satuan + komponen paket) sama untuk semua kasir dan
+    // disimpan sementara sebagai SATU paket supaya ketiganya selalu cocok. Dulu dibaca
+    // ulang (±60 permintaan) tiap layar kasir dibuka — ikut membuat database Micro
+    // tumbang 1 Nov 2026.
+    cacheSebentar("kasir:katalog-master", KATALOG_KASIR_UMUR_MS, async () => {
+      const items = await loadKasirItems(supabase);
+      const [units, groups] = await Promise.all([
+        loadUnitOptions(supabase, items.map((i) => i.id)),
+        loadKasirGroupComponents(supabase, items.filter((i) => i.item_type === "Grup").map((i) => i.id)),
+      ]);
+      return { items, units, groups };
+    }),
     // Pelanggan TIDAK lagi dimuat di sini. Dulu seluruh 10.000+ pelanggan plus semua
     // penjualan & invoice dibaca tiap kasir dibuka (±20 permintaan, sampai 7 detik) —
     // kasir lambat & sempat gagal dibuka (1 Nov 2026). Sekarang layar mencari lewat
@@ -66,6 +80,7 @@ export default async function KasirPage({
       .eq("is_active", true).order("id").range(from,to),"Promo aktif kasir",{maxRows:null}),
     loadKodeKampanyeAktif(supabase),
   ]);
+  const itemsRaw = master.items;
   const groomingPolicy = itemsRaw.some(item => isGroomingService(item.item_type, item.tindakan_kategori))
     ? await loadBranchGroomingPolicy(supabase, shift.branch_id) : { applies: false, doctorRequired: false };
 
@@ -131,12 +146,11 @@ export default async function KasirPage({
   // Satuan berjenjang (dus/renteng/pcs) ikut dikirim ke layar. Sebelum ini layar
   // kasir sama sekali tidak membaca item_units, jadi satuan yang sudah dibuat di
   // master tidak bisa dipilih saat jualan (dilaporkan tim 2026-08-11).
-  const unitMap = await loadUnitOptions(supabase, itemsRaw.map((i) => i.id));
+  const unitMap = master.units;
+  const groupComponentRows = master.groups;
 
   // Grup tidak punya stok sendiri. Stok jualnya = jumlah paket paling kecil yang
   // masih bisa dirakit dari seluruh komponen Persediaan di gudang shift.
-  const groupIds = itemsRaw.filter((i) => i.item_type === "Grup").map((i) => i.id);
-  const groupComponentRows = await loadKasirGroupComponents(supabase, groupIds);
   const groupMap = new Map<string, ItemRow["groupComponents"]>();
   for (const row of groupComponentRows) {
     const component = one(row.component);
