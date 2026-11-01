@@ -1,4 +1,5 @@
 import { ListLoadError, readCompleteList } from "./checked-list";
+import { cacheSebentar, KATALOG_KASIR_UMUR_MS } from "./cache-memori";
 import type { ItemUnit } from "./satuan";
 import type { HargaCabang } from "./harga-cabang";
 import { loadClinicItemCategories, type ClinicItemCategory } from "./clinic-item-categories";
@@ -38,6 +39,8 @@ export async function loadClinicCompoundSkus(client: any, categories?: ClinicIte
 }
 
 const SKU_BATCH_CONCURRENCY = 6;
+/** Di atas jumlah barang ini, baca per gudang/cabang sekali saja (bukan per 200 id). */
+const DAFTAR_BESAR = 400;
 
 /** Match clinic posting's warehouse and check every lookup page. Small ID batches
  * keep request URLs bounded even when the compound catalogue exceeds 1,000.
@@ -53,6 +56,33 @@ export async function loadClinicSkuDetails(client: any, itemIds: string[], branc
     .order("created_at").order("id").limit(1).maybeSingle() : { data: null, error: null };
   if (error) throw new ListLoadError("Gudang klinik belum dapat dimuat. Coba muat ulang.");
   const ids = [...new Set(itemIds)];
+  // Katalog penuh (form Rekam Medis, pembayaran, rawat inap, ±3.600 barang): dulu ±19 batch
+  // x 3 permintaan `in(item_id, 200 id)` per layar — salah satu beban terbesar database
+  // Micro yang tumbang 1 Nov 2026. Untuk daftar besar, baca per gudang/cabang sekali saja
+  // lalu saring di sini; satuan (master, sama untuk semua) disimpan sementara.
+  if (ids.length > DAFTAR_BESAR) {
+    const ingin = new Set(ids);
+    const [stockRows, unitRows, priceRows] = await Promise.all([
+      warehouse ? readCompleteList<{ id: string; item_id: string; qty: number }>((from, to) => client.from("stock")
+        .select("id,item_id,qty", { count: "exact" }).eq("warehouse_id", warehouse.id)
+        .order("id").range(from, to), "Stok gudang klinik", { maxRows: null }) : [],
+      cacheSebentar("klinik:semua-satuan", KATALOG_KASIR_UMUR_MS, () => readCompleteList<{ id: string; item_id: string } & ItemUnit>((from, to) => client.from("item_units")
+        .select("id,item_id,unit,factor,sell_price,buy_price", { count: "exact" })
+        .order("id").range(from, to), "Satuan barang klinik", { maxRows: null })),
+      branchId ? readCompleteList<{ id: string; item_id: string; unit: string; sell_price: number }>((from, to) => client.from("item_branch_prices")
+        .select("id,item_id,unit,sell_price", { count: "exact" }).eq("branch_id", branchId)
+        .order("id").range(from, to), "Harga barang cabang", { maxRows: null }) : [],
+    ]);
+    for (const row of stockRows) if (ingin.has(row.item_id)) stock.set(row.item_id, (stock.get(row.item_id) ?? 0) + Number(row.qty));
+    for (const row of unitRows) {
+      if (!ingin.has(row.item_id)) continue;
+      const list = units.get(row.item_id) ?? [];
+      list.push({ unit: row.unit, factor: Number(row.factor), sell_price: Number(row.sell_price), buy_price: Number(row.buy_price) });
+      units.set(row.item_id, list);
+    }
+    for (const row of priceRows) if (ingin.has(row.item_id)) prices.set(`${row.item_id}|${row.unit}`, Number(row.sell_price));
+    return { stock, units, prices, warehouseId: (warehouse?.id as string | undefined) ?? null };
+  }
   const batches: string[][] = [];
   for (let start = 0; start < ids.length; start += 200) batches.push(ids.slice(start, start + 200));
   // U07: batches used to run one after another (±19 sequential trips for the full

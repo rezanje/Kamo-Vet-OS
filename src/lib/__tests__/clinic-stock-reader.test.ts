@@ -73,6 +73,30 @@ describe("loadClinicSkuDetails — gudang transaksi klinik", () => {
   });
 });
 
+describe("loadClinicSkuDetails — katalog besar dibaca per gudang/cabang sekali", () => {
+  const banyak = Array.from({ length: 450 }, (_, i) => `item-${String(i).padStart(3, "0")}`);
+  const tables = {
+    warehouses,
+    stock: [...stock, { id: "s7", warehouse_id: "vet-a-old", item_id: "item-007", qty: 5 }, { id: "s8", warehouse_id: "vet-b", item_id: "item-007", qty: 99 }],
+    item_units: [{ id: "u1", item_id: "item-007", unit: "box", factor: 10, sell_price: 90, buy_price: 50 }, { id: "u2", item_id: "bukan-diminta", unit: "box", factor: 2, sell_price: 1, buy_price: 1 }],
+    item_branch_prices: [{ id: "p1", item_id: "item-007", unit: "pcs", sell_price: 12, branch_id: "a" }, { id: "p2", item_id: "item-007", unit: "pcs", sell_price: 77, branch_id: "b" }],
+  };
+  it("hasilnya sama: gudang transaksi, satuan & harga cabang hanya untuk barang yang diminta", async () => {
+    const db = database(tables); const inCalls: string[] = [];
+    const spy = { from(table: string) { const q = db.from(table) as unknown as Record<string, (...a: unknown[]) => unknown>; const asli = q.in; q.in = (...a: unknown[]) => { inCalls.push(table); return asli(...a); }; return q; } };
+    const details = await loadClinicSkuDetails(spy, ["obat", ...banyak], "a");
+    expect(details.warehouseId).toBe("vet-a-old");
+    expect(stokGudangKlinik(details, "item-007")).toBe(5);
+    expect(stokGudangKlinik(details, "obat")).toBe(12);
+    expect(stokGudangKlinik(details, "lain")).toBe(0);
+    expect(details.units.get("item-007")).toEqual([{ unit: "box", factor: 10, sell_price: 90, buy_price: 50 }]);
+    expect(details.units.has("bukan-diminta")).toBe(false);
+    expect(details.prices.get("item-007|pcs")).toBe(12);
+    // Tidak ada lagi permintaan per 200 id.
+    expect(inCalls).toEqual([]);
+  });
+});
+
 describe("loadClinicPaymentMaster — stok untuk baris tambahan Pembayaran", () => {
   const items = [
     { id: "obat", code: "O1", name: "Obat", unit: "pcs", sell_price: 1000, item_type: "Persediaan", tindakan_kategori: null, is_active: true },
