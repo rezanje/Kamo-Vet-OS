@@ -31,44 +31,110 @@ async function assertBoleh(back: string): Promise<Db> {
   return supabase;
 }
 
+/** Batas baris per halaman baca PostgREST (max-rows Supabase = 1000). */
+const HALAMAN_BACA = 1000;
+/**
+ * Baris per INSERT. Tiap baris pelanggan/pemasok memicu trigger riwayat aktivitas, dan role
+ * pemakai dibatasi 8 detik per statement — file 10 ribu baris dalam satu INSERT pasti timeout.
+ */
+const POTONGAN_SIMPAN = 500;
+
+/**
+ * Baca seluruh baris, bukan cuma 1000 pertama. Dipakai untuk cek data kembar: kalau terpotong,
+ * nomor/nama yang sudah terdaftar di luar 1000 baris pertama lolos jadi data dobel.
+ */
+async function bacaSemua<T>(query: () => Db): Promise<{ data: T[]; error: string | null }> {
+  const data: T[] = [];
+  for (let dari = 0; ; dari += HALAMAN_BACA) {
+    const { data: halaman, error } = await query().order("id").range(dari, dari + HALAMAN_BACA - 1);
+    if (error) return { data, error: String(error.message ?? error) };
+    const baris = (halaman ?? []) as T[];
+    data.push(...baris);
+    if (baris.length < HALAMAN_BACA) return { data, error: null };
+  }
+}
+
+/** Pesan gagal simpan; timeout database diterjemahkan, bukan ditampilkan mentah. */
+function pesanGagalImpor(raw: string): string {
+  if (/statement timeout/i.test(raw)) {
+    return "Database terlalu lama memproses file ini. Coba lagi, atau pecah file jadi beberapa bagian.";
+  }
+  return pesanSimpanGagal(raw);
+}
+
+/**
+ * Simpan bertahap per POTONGAN_SIMPAN baris. Kalau satu potongan gagal, potongan sebelumnya
+ * sudah tersimpan — pesannya menyebut jumlahnya, dan unggah ulang file yang sama aman karena
+ * baris yang sudah terdaftar dilewati oleh pengecekan kembar.
+ */
+async function simpanBertahap<T>(
+  baris: T[],
+  tulis: (potongan: T[]) => Promise<{ message: string } | null>,
+): Promise<{ masuk: number; pesanGagal: string | null }> {
+  let masuk = 0;
+  for (let i = 0; i < baris.length; i += POTONGAN_SIMPAN) {
+    const potongan = baris.slice(i, i + POTONGAN_SIMPAN);
+    const error = await tulis(potongan);
+    if (error) {
+      const pesan = pesanGagalImpor(error.message);
+      return {
+        masuk,
+        pesanGagal: masuk === 0 ? pesan
+          : `${masuk} baris sudah tersimpan, sisanya gagal: ${pesan} Unggah ulang file yang sama aman — yang sudah tersimpan akan dilewati.`,
+      };
+    }
+    masuk += potongan.length;
+  }
+  return { masuk, pesanGagal: null };
+}
+
 /** Simpan hasil impor per jenis. Mengembalikan jumlah baris yang masuk. */
 async function simpan(supabase: Db, jenis: JenisImpor, baris: ReturnType<typeof bacaCsvUmum>) {
   if (!baris.ok) return { masuk: 0, salah: [] as BarisSalah[], pesanGagal: baris.pesan };
 
   if (jenis === "pelanggan") {
-    const [{ data: kat }, { data: cust }] = await Promise.all([
+    const [{ data: kat }, cust] = await Promise.all([
       supabase.from("customer_categories").select("id, nama").eq("is_active", true),
-      supabase.from("customers").select("phone"),
+      bacaSemua<{ phone: string | null }>(() => supabase.from("customers").select("phone")),
     ]);
+    // Daftar nomor tidak terbaca utuh = cek kembar tidak bisa dipercaya; jangan simpan apa pun.
+    if (cust.error) return { masuk: 0, salah: [] as BarisSalah[], pesanGagal: "Daftar pelanggan lama gagal dibaca, jadi cek nomor kembar belum bisa dilakukan. Coba lagi sebentar lagi." };
     const { normalTelp } = await import("@/lib/impor-master");
     const { siap, salah } = periksaPelanggan(baris.baris, {
       kategori: new Map(((kat ?? []) as { id: string; nama: string }[]).map((k) => [k.nama.toLowerCase(), k.id])),
-      telpTerpakai: new Set(((cust ?? []) as { phone: string | null }[])
-        .map((c) => normalTelp(c.phone ?? "")).filter(Boolean)),
+      telpTerpakai: new Set(cust.data.map((c) => normalTelp(c.phone ?? "")).filter(Boolean)),
     });
     if (siap.length === 0) return { masuk: 0, salah, pesanGagal: null };
     // Kartu hasil impor = pelanggan lama, tidak pernah dihitung "customer baru" di quest staf (Q01).
     const importedAt = new Date().toISOString();
-    let { error } = await supabase.from("customers").insert(siap.map((row) => ({ ...row, imported_at: importedAt })));
-    // Sebelum langkah database Q01 kolomnya belum ada: impor tetap jalan tanpa penanda.
-    if (error && /imported_at/.test(error.message)) ({ error } = await supabase.from("customers").insert(siap));
-    if (error) return { masuk: 0, salah, pesanGagal: pesanSimpanGagal(error.message) };
-    return { masuk: siap.length, salah, pesanGagal: null };
+    let pakaiPenanda = true;
+    const hasil = await simpanBertahap(siap, async (potongan) => {
+      if (pakaiPenanda) {
+        const { error } = await supabase.from("customers").insert(potongan.map((row) => ({ ...row, imported_at: importedAt })));
+        if (!error || !/imported_at/.test(error.message)) return error;
+        // Sebelum langkah database Q01 kolomnya belum ada: impor tetap jalan tanpa penanda.
+        pakaiPenanda = false;
+      }
+      const { error } = await supabase.from("customers").insert(potongan);
+      return error;
+    });
+    return { ...hasil, salah };
   }
 
   if (jenis === "pemasok") {
-    const [{ data: kat }, { data: sup }] = await Promise.all([
+    const [{ data: kat }, sup] = await Promise.all([
       supabase.from("supplier_categories").select("id, nama").eq("is_active", true),
-      supabase.from("suppliers").select("nama"),
+      bacaSemua<{ nama: string }>(() => supabase.from("suppliers").select("nama")),
     ]);
+    if (sup.error) return { masuk: 0, salah: [] as BarisSalah[], pesanGagal: "Daftar pemasok lama gagal dibaca, jadi cek nama kembar belum bisa dilakukan. Coba lagi sebentar lagi." };
     const { siap, salah } = periksaPemasok(baris.baris, {
       kategori: new Map(((kat ?? []) as { id: string; nama: string }[]).map((k) => [k.nama.toLowerCase(), k.id])),
-      namaTerpakai: new Set(((sup ?? []) as { nama: string }[]).map((s) => s.nama.toLowerCase())),
+      namaTerpakai: new Set(sup.data.map((s) => s.nama.toLowerCase())),
     });
     if (siap.length === 0) return { masuk: 0, salah, pesanGagal: null };
-    const { error } = await supabase.from("suppliers").insert(siap);
-    if (error) return { masuk: 0, salah, pesanGagal: pesanSimpanGagal(error.message) };
-    return { masuk: siap.length, salah, pesanGagal: null };
+    const hasil = await simpanBertahap(siap, async (potongan) =>
+      (await supabase.from("suppliers").insert(potongan)).error);
+    return { ...hasil, salah };
   }
 
   if (jenis === "komisi" || jenis === "target") {
