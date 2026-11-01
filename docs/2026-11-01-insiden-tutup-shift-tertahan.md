@@ -55,12 +55,10 @@ draf yang diubah tetap terkunci (2), pesan tutup paksa/Owner (3, sebagian — li
 pemilik laci di /kasir/tutup (1).
 
 ## Lanjutan (belum dikerjakan, perlu migrasi / di luar insiden)
-1. **Tutup paksa supervisor** tetap tertahan bila kasir pemilik laci tidak bisa masuk lagi (resign,
-   akun nonaktif): `cashier_shift_supervisor_close` tidak membersihkan, dan `pos_sale_cancel_pending`
-   hanya mengizinkan kasir pemilik. Usulan: migrasi yang membuat fungsi supervisor membuang struk
-   terputus (≥10 menit, tanpa jurnal, tanpa stock_moves, tanpa anak RESTRICT) memakai penanda
-   transaksi-lokal (`set_config(..., true)`) yang diterima `pos_sale_cancel_pending`, dan mencatat
-   struk yang dibuang di jejak audit tutup paksa.
+1. ~~**Tutup paksa supervisor** tetap tertahan bila kasir pemilik laci tidak bisa masuk lagi~~ —
+   dikerjakan di migrasi `20261106030000_tutup_paksa_buang_transaksi_terputus.sql` (lihat bagian
+   "Tutup paksa membersihkan transaksi terputus" di bawah). Berlaku di Production setelah migrasi
+   itu dipasang.
 2. **Backoffice /pos/transaksi non-atomik**: pindahkan potong stok + finalisasi ke satu RPC seperti
    `cashier_post_stock_atomic`. Ini juga menutup kebocoran lama di jalur gagal eksplisit
    (hapus kepala struk sesudah sebagian stok keluar).
@@ -91,3 +89,39 @@ pemilik laci di /kasir/tutup (1).
 ## Sisa
 - Surken (105.000 tunai, "diana") dan Granada (88.000 QRIS) perlu dicek manual oleh toko: kalau
   barang/uangnya diterima tapi transaksi tidak diulang, stok dan laci selisih — transaksi perlu diinput ulang.
+
+## Tutup paksa membersihkan transaksi terputus (migrasi 20261106030000)
+Tujuan: laci yang kasirnya tidak bisa masuk lagi tidak pernah terkunci permanen, tanpa perlu
+menyamar sebagai kasir seperti pembersihan manual 1 Nov.
+
+- `cashier_shift_supervisor_close` — sesudah semua pemeriksaan lama (Owner/Admin aktif, cabang,
+  laci > 24 jam, bukan laci sendiri, alasan) dan kunci baris laci, setiap penjualan
+  `payment_plan` terisi + `payments_finalized_at` kosong di laci itu dikunci lalu dipilah:
+  - **berumur < 10 menit** → ditolak: "transaksi … masih diproses (belum 10 menit). Tunggu 10 menit
+    lalu tutup paksa lagi";
+  - **punya jejak efek** → ditolak: "… stok atau pembukuannya sudah sempat tercatat … laporkan nomor
+    struk ini ke tim teknis KAMO". Jejak = `journal_entries.source_ref` = no_struk (sumber apa pun),
+    jurnal di `pos_sale_postings`, `stock_moves.source_ref` = no_struk (sumber apa pun) atau
+    `stock_moves.sale_line_id` milik barisnya, atau anak RESTRICT/NO ACTION (`sale_line_pricing`,
+    `sale_staff_effects`, `sale_cancellations`, `sale_cancellation_requests`, `sales_returns`,
+    `sales_return_items`, `sales_refund_requests`, `sales_refund_payouts`, `sale_payment_refunds`,
+    `sale_payment_correction_gate/_requests`, `sale_payment_corrections`). Tanpa no_struk juga ditolak
+    (gagal-tertutup). Lebih ketat dari pembersihan aplikasi (yang hanya melihat stok `sale`/`sale-group`);
+  - **sisanya** dibuang. Penolakan bersifat **utuh**: bila satu struk saja ditolak, tidak ada yang
+    dibuang dan laci tetap terbuka.
+- Penghapusan memakai penanda transaksi-lokal `kamo.supervisor_pending_cleanup` = id laci
+  (`set_config(..., true)`, dipulihkan sesudahnya — pola sama dengan `kamo.opname_cancel`).
+  `pos_sale_cancel_pending` menerima penghapusan bukan-kasir hanya bila penanda itu = `shift_id`
+  struk **dan** pelakunya Owner/Admin aktif yang memegang cabangnya. Penolakan jurnal tetap. RLS
+  tidak diubah. Klien PostgREST tidak bisa memasang GUC bebas, dan tidak ada fungsi publik yang
+  memasang GUC dengan nama dari masukan pengguna.
+- Jejak: kolom baru `cashier_shift_supervisor_closures.removed_pending_sales` (id, no_struk,
+  created_at, kasir, total, metode, rencana bayar, barang). Riwayat Aktivitas mencatat penghapusan
+  atas nama **supervisor**, bukan kasir. Hasil RPC memuat `removed_pending_sales` (nomor struk);
+  layar Shift Kasir menampilkannya dan meminta toko mengecek apakah perlu input ulang.
+- Penguncian: kepala struk baru dan finalisasi mengunci baris laci (`pos_sale_assert_actor`), jadi
+  selama tutup paksa memegang kunci itu tidak ada struk belum-final baru dan tidak ada yang mendadak
+  final.
+- Uji: `scripts/test-tutup-paksa-transaksi-terputus-postgres.py` (skema asli penuh, peran
+  `authenticated`): 27/27 lulus dengan migrasi; tanpa migrasi (`--tanpa-perbaikan`) 10 gagal —
+  tutup paksa ditolak "Pembayaran masih diproses", persis insiden.

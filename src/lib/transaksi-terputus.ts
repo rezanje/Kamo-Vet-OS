@@ -23,6 +23,11 @@
 // Penghapusan lewat jalur yang sama dengan pembersihan checkout biasa — pemicu
 // database hanya mengizinkan kasir pemilik struk, dan menolak struk yang jurnalnya
 // sudah ada.
+//
+// Laci yang kasirnya tidak bisa masuk lagi dibersihkan oleh tutup paksa supervisor
+// (cashier_shift_supervisor_close, migrasi 20261106030000) di dalam basis data: aturan
+// yang sama (≥ 10 menit, tanpa mutasi stok, tanpa jurnal, tanpa dokumen turunan), ditolak
+// utuh bila ada yang tidak memenuhi, dan struk yang dibuang dicatat di jejak tutup paksa.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -136,11 +141,15 @@ export const PESAN_MASIH_DIPROSES =
   + "transaksi yang terputus akan dibersihkan otomatis. Kalau setelah itu masih muncul, laporkan ke tim teknis KAMO "
   + "(sebut nama cabang dan jam transaksi terakhir).";
 
-/** Versi tutup paksa: hanya kasir pemilik laci yang bisa membersihkan transaksinya. */
+/**
+ * Versi tutup paksa. Sejak migrasi 20261106030000 tutup paksa membersihkan sendiri transaksi
+ * terputus dan menolak dengan pesannya sendiri (nomor struk + langkahnya), jadi pesan penjaga
+ * umum ini hanya muncul bila basis data belum memasang migrasi itu.
+ */
 export const PESAN_MASIH_DIPROSES_TUTUP_PAKSA =
-  "Laci ini masih punya transaksi kasir yang terputus, jadi belum bisa ditutup paksa. Minta kasir pemilik laci "
-  + "masuk lalu tekan Tutup Shift — transaksi yang terputus dibersihkan otomatis. Kalau kasirnya tidak bisa masuk, "
-  + "laporkan ke tim teknis KAMO.";
+  "Laci ini masih punya transaksi kasir yang terputus, jadi belum bisa ditutup paksa. Tunggu 10 menit lalu "
+  + "tutup paksa lagi. Kalau masih muncul, minta kasir pemilik laci masuk lalu tekan Tutup Shift, atau "
+  + "laporkan ke tim teknis KAMO (sebut nama cabang dan kasirnya).";
 
 const POLA_MASIH_DIPROSES = /pembayaran masih diproses/i;
 
@@ -150,4 +159,25 @@ export function pesanTutupShift(message: string): string {
 
 export function pesanTutupPaksa(message: string): string {
   return POLA_MASIH_DIPROSES.test(message) ? PESAN_MASIH_DIPROSES_TUTUP_PAKSA : message;
+}
+
+const MAKS_STRUK_DIBUANG = 20;
+
+/** Nomor struk terputus yang dibuang tutup paksa, dari hasil RPC cashier_shift_supervisor_close. */
+export function strukDibuangTutupPaksa(hasil: unknown): string[] {
+  const daftar = (hasil as { removed_pending_sales?: unknown } | null)?.removed_pending_sales;
+  if (!Array.isArray(daftar)) return [];
+  return daftar.filter((x): x is string => typeof x === "string" && x.trim() !== "").slice(0, MAKS_STRUK_DIBUANG);
+}
+
+/**
+ * Catatan sesudah tutup paksa berhasil membuang transaksi terputus. `dibuang` datang dari
+ * URL, jadi dipangkas; React menampilkannya sebagai teks biasa.
+ */
+export function pesanStrukDibuang(dibuang: string | undefined | null): string | null {
+  const nomor = (dibuang ?? "").split(",").map(x => x.trim()).filter(Boolean).slice(0, MAKS_STRUK_DIBUANG)
+    .map(x => x.slice(0, 40));
+  if (nomor.length === 0) return null;
+  return `${nomor.length} transaksi kasir yang terputus ikut dibuang (${nomor.join(", ")}). Transaksi itu tidak pernah `
+    + "tersimpan sebagai penjualan — cek ke toko apakah barang atau uangnya sudah diterima dan perlu diinput ulang.";
 }

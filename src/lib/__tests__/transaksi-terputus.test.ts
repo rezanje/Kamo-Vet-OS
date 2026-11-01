@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BATAS_TERPUTUS_MS, PESAN_MASIH_DIPROSES, PESAN_MASIH_DIPROSES_TUTUP_PAKSA, buangStrukTerputus, buangTransaksiTerputus,
-  pesanTutupPaksa, pesanTutupShift, strukSudahPotongStok, strukTerputus,
+  pesanStrukDibuang, pesanTutupPaksa, pesanTutupShift, strukDibuangTutupPaksa, strukSudahPotongStok, strukTerputus,
 } from "../transaksi-terputus";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -149,6 +149,11 @@ describe("pesan penjaga", () => {
     expect(PESAN_MASIH_DIPROSES_TUTUP_PAKSA).toMatch(/kasir pemilik laci/);
     expect(pesanTutupPaksa("Laci belum 24 jam")).toBe("Laci belum 24 jam");
   });
+  it("tutup paksa (basis data belum dimigrasi): tunggu lalu coba lagi, baru kasir / tim teknis", () => {
+    expect(PESAN_MASIH_DIPROSES_TUTUP_PAKSA).toMatch(/10 menit/);
+    expect(PESAN_MASIH_DIPROSES_TUTUP_PAKSA).toMatch(/tim teknis KAMO/);
+    expect(PESAN_MASIH_DIPROSES_TUTUP_PAKSA).not.toMatch(/Selesaikan transaksi/);
+  });
   it("pesan kasir tidak lagi menjanjikan Owner/Admin bisa membereskannya", () => {
     expect(PESAN_MASIH_DIPROSES).not.toMatch(/Owner\/Admin/);
   });
@@ -201,5 +206,31 @@ describe("resumePosCheckout — percobaan terputus dengan draft yang sama", () =
     const r = await jalankan({ ...base, payments_finalized_at: tuaMenit(29), created_at: tuaMenit(30) });
     expect(r.deleted).toEqual([]);
     expect(r.redirects[0]).toMatch(/\/kasir\/struk\/P1/);
+  });
+});
+
+describe("struk yang dibuang tutup paksa", () => {
+  it("membaca nomor struk dari hasil fungsi supervisor", () => {
+    expect(strukDibuangTutupPaksa({ removed_pending_sales: ["POS-1", "POS-2"] })).toEqual(["POS-1", "POS-2"]);
+    expect(strukDibuangTutupPaksa({ removed_pending_sales: [] })).toEqual([]);
+  });
+  it("hasil lama / kosong / aneh tidak dianggap membuang apa pun", () => {
+    expect(strukDibuangTutupPaksa(null)).toEqual([]);
+    expect(strukDibuangTutupPaksa({ shift_id: "x", status: "closed" })).toEqual([]);
+    expect(strukDibuangTutupPaksa({ removed_pending_sales: "POS-1" })).toEqual([]);
+    expect(strukDibuangTutupPaksa({ removed_pending_sales: ["POS-1", 2, null, " "] })).toEqual(["POS-1"]);
+  });
+  it("catatan layar menyebut jumlah, nomor, dan meminta toko mengecek input ulang", () => {
+    const teks = pesanStrukDibuang("POS-20261101-0004-8GZC,POS-20261101-0009");
+    expect(teks).toMatch(/^2 transaksi kasir yang terputus ikut dibuang/);
+    expect(teks).toContain("POS-20261101-0004-8GZC, POS-20261101-0009");
+    expect(teks).toMatch(/diinput ulang/);
+  });
+  it("tanpa nomor tidak ada catatan; isi URL dipangkas", () => {
+    expect(pesanStrukDibuang(undefined)).toBeNull();
+    expect(pesanStrukDibuang(" , ")).toBeNull();
+    const panjang = pesanStrukDibuang(Array.from({ length: 50 }, (_, i) => `POS-${i}`.padEnd(80, "x")).join(","))!;
+    expect(panjang).toMatch(/^20 transaksi/);
+    expect(panjang).not.toMatch(/x{41}/);
   });
 });

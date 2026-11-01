@@ -11,6 +11,7 @@ const fx = vi.hoisted(() => ({
   tutup: [] as unknown[],
   rpc: [] as { fn: string; args: Record<string, unknown> }[],
   rpcError: null as null | { message: string },
+  rpcData: null as unknown,
   updates: 0,
 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); } }));
@@ -27,7 +28,7 @@ vi.mock("@/lib/tutup-shift", async (importOriginal) => {
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: fx.user ? { id: fx.user } : null } }) },
   from: () => ({ update: () => { fx.updates += 1; throw new Error("aksi tidak boleh menulis tabel laci langsung"); } }),
-  rpc: async (fn: string, args: Record<string, unknown>) => { fx.rpc.push({ fn, args }); return { data: null, error: fx.rpcError }; },
+  rpc: async (fn: string, args: Record<string, unknown>) => { fx.rpc.push({ fn, args }); return { data: fx.rpcData, error: fx.rpcError }; },
 }) }));
 
 import { tutupShiftKlinik } from "@/app/(app)/klinik/shift/actions";
@@ -40,7 +41,7 @@ const laci = (opened_by: string, shift_type = "klinik") =>
 const form = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 
 beforeEach(() => {
-  fx.user = "kasir-a"; fx.shift = laci("kasir-a"); fx.periode = null; fx.tutup = []; fx.rpc = []; fx.rpcError = null; fx.updates = 0;
+  fx.user = "kasir-a"; fx.shift = laci("kasir-a"); fx.periode = null; fx.tutup = []; fx.rpc = []; fx.rpcError = null; fx.rpcData = null; fx.updates = 0;
 });
 
 it("menutup laci klinik milik sendiri seperti biasa", async () => {
@@ -99,6 +100,30 @@ it("tutup paksa yang tertahan transaksi kasir terputus menyuruh kasir pemilik la
   fx.rpcError = { message: "Pembayaran masih diproses. Selesaikan transaksi sebelum menutup shift." };
   await expect(forceCloseShift(form({ shiftId: "laci-1", alasan: "Kasir lupa menutup laci kemarin" })))
     .rejects.toThrow(`REDIRECT:/pos/shift?error=${encodeURIComponent(PESAN_MASIH_DIPROSES_TUTUP_PAKSA)}`);
+});
+
+it("tutup paksa yang membuang transaksi terputus membawa nomor struknya ke layar", async () => {
+  fx.user = "admin-cabang"; fx.shift = laci("kasir-b", "petshop");
+  fx.rpcData = { shift_id: "laci-1", status: "closed", expected_cash: 275000, removed_pending_sales: ["POS-20261101-0004-8GZC", "POS-20261101-0009"] };
+  await expect(forceCloseShift(form({ shiftId: "laci-1", alasan: "Kasir sudah resign, laci nyangkut" })))
+    .rejects.toThrow(`REDIRECT:/pos/shift?success=force&dibuang=${encodeURIComponent("POS-20261101-0004-8GZC,POS-20261101-0009")}`);
+  expect(fx.updates).toBe(0);
+});
+
+it("tutup paksa tanpa transaksi terputus tetap ke pesan sukses biasa", async () => {
+  fx.user = "admin-cabang"; fx.shift = laci("kasir-b", "petshop");
+  fx.rpcData = { shift_id: "laci-1", status: "closed", expected_cash: 275000, removed_pending_sales: [] };
+  await expect(forceCloseShift(form({ shiftId: "laci-1", alasan: "Kasir sudah resign, laci nyangkut" })))
+    .rejects.toThrow(/^REDIRECT:\/pos\/shift\?success=force$/);
+});
+
+it("penolakan karena struk sudah memotong stok tampil apa adanya dengan nomor struk, tanpa kode teknis", async () => {
+  fx.user = "owner"; fx.shift = laci("kasir-b", "petshop");
+  const pesan = "transaksi POS-1 terputus sebelum selesai, tetapi stok atau pembukuannya sudah sempat tercatat, jadi tidak dibuang otomatis. "
+    + "Laporkan nomor struk ini ke tim teknis KAMO untuk dicocokkan dulu, baru laci bisa ditutup paksa";
+  fx.rpcError = { message: `SHIFT_SUPERVISOR_DENIED: ${pesan}` };
+  await expect(forceCloseShift(form({ shiftId: "laci-1", alasan: "Kasir sudah resign, laci nyangkut" })))
+    .rejects.toThrow(`REDIRECT:/pos/shift?error=${encodeURIComponent(pesan)}`);
 });
 
 it("layar kasir menutup laci petshop milik sendiri seperti biasa", async () => {
