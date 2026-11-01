@@ -12,11 +12,12 @@ function form(){
 it.each(['OWNER','DOCTOR'])('%s positive public RPC response saves IDs BMHP and original attribution without initial-save fallback',async(role)=>{
  const f=form();f.set('role',role); // Client role is deliberately ignored; DB session authorizes.
  expect(await koreksiRekamMedisLengkap(f)).toEqual({saved:true,href:'/klinik/rekam-medis/visit?success=correction'});
- expect(s.calls).toEqual([{name:'clinic_edit_queued_record',args:expect.objectContaining({p_record_id:'record',p_expected_revision:2,p_rows:[expect.objectContaining({prescription_item_id:'rx',service_performers:{doctor_id:'original-doctor',staff_id:null},bmhp_components:[{item_id:'mat',qty:3,unit:'ml'}]})]})}]);
+ // Every full edit goes through the atomic wrapper (empty p_compounds = ordinary edit).
+ expect(s.calls).toEqual([{name:'clinic_edit_queued_record_with_compounds',args:expect.objectContaining({p_record_id:'record',p_expected_revision:2,p_compounds:[],p_rows:[expect.objectContaining({prescription_item_id:'rx',service_performers:{doctor_id:'original-doctor',staff_id:null},bmhp_components:[{item_id:'mat',qty:3,unit:'ml'}]})]})}]);
  expect(s.calls[0].args).not.toHaveProperty('role');
 });
 it.each(['ACCESS_DENIED','RECORD_POSTED','COMPOUND_LOCKED'])('fails closed on %s without legacy or initial-save fallback',async(message)=>{
  s.error={message};const f=form();f.set('role','OWNER');
  await expect(koreksiRekamMedisLengkap(f)).rejects.toThrow(message);
- expect(s.calls.map(x=>x.name)).toEqual(['clinic_edit_queued_record']);
+ expect(s.calls.map(x=>x.name)).toEqual(['clinic_edit_queued_record_with_compounds']);
 });

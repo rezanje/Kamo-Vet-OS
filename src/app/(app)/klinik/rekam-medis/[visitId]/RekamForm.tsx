@@ -320,7 +320,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
       {draftRecovered && <div role="status" className="p2ban">Draf dipulihkan <button type="button" className="btn-def" onClick={draftDiscard}>Buang draf</button></div>}
       {procedureError && <div role="alert" className="p2ban">{procedureError}</div>}
       {(draftStorageError || draftSaveError) && <div role="alert" className="p2ban">{draftSaveError || draftStorageError}</div>}
-      {correction && <div className="p2ban">{correction.fullEdit ? "Edit owner / dokter sebelum tagihan terbit: obat, jasa, tindakan dan BMHP. Baris tersimpan tidak dihapus. Racikan yang sudah dibuat dikoreksi melalui Aksi racikan; bahan tidak dikeluarkan ulang. Data pasien dan tindak lanjut tetap mengikuti pemeriksaan tersimpan." : "Koreksi catatan klinis. Resep, racikan, tindak lanjut, dan data pasien tetap mengikuti pemeriksaan tersimpan."}</div>}
+      {correction && <div className="p2ban">{correction.fullEdit ? "Edit owner / dokter sebelum tagihan terbit: obat, jasa, tindakan, BMHP dan racikan baru. Baris tersimpan tidak dihapus. Racikan baru diracik saat disimpan (stok bahan langsung keluar); racikan yang sudah dibuat dikoreksi melalui Aksi racikan, bahannya tidak dikeluarkan ulang. Data pasien dan tindak lanjut tetap mengikuti pemeriksaan tersimpan." : "Koreksi catatan klinis. Resep, racikan, tindak lanjut, dan data pasien tetap mengikuti pemeriksaan tersimpan."}</div>}
       {correction && <><input type="hidden" name="medical_record_id" value={correction.recordId} /><input type="hidden" name="expected_revision" value={correction.revision} /></>}
       <input type="hidden" name="visitId" value={visitId} />
       <input type="hidden" name="petId" value={petId} />
@@ -472,9 +472,11 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
               {tab === "Jasa" && (
                 <ClinicServicePicker key={tab} kind="Jasa" items={jasaItems} onAdd={addObat} />
               )}
-              {/* K03: racikan rawat jalan tetap harus lewat komposisi; tidak ada jalan pintas stok obat jadi. */}
+              {/* K03: racikan rawat jalan tetap harus lewat komposisi; tidak ada jalan pintas stok obat jadi.
+                  Edit sebelum tagihan juga menampilkan racikan (Anisa 1 Nov): racikan baru diracik
+                  lewat RPC pembungkus saat disimpan; racikan lama tetap terkunci. */}
               {tab === TINDAKAN && (
-                <TindakanRacikanForm tindakanItems={tindakanItems} racikanItems={correction?.fullEdit ? [] : racikanItems} bmhpItems={items} bahanItems={bahanItems}
+                <TindakanRacikanForm tindakanItems={tindakanItems} racikanItems={racikanItems} bmhpItems={items} bahanItems={bahanItems}
                   katalogRacikan={katalogRacikan} bolehManual={bolehManual}
                   tindakan={procedureDraft} racikan={compoundDraft} editing={!!formEditKey} harga={formHarga}
                   onPilihTindakan={selectProcedure} onPilihRacikan={selectRacikan}
@@ -504,7 +506,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                             {/* Item utama ditebalkan; pelaksana & bahan jadi rincian kecil di bawahnya. */}
                             <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                               <strong data-cart-item style={{ fontSize: 12.5, fontWeight: 700, color: "var(--tx)" }}>{r.nama_obat}</strong>
-                              {correction?.fullEdit && !r.compound_recipe_id && <select className="fi" aria-label={`Ganti item ${r.nama_obat}`} value={r.item_id ?? ""} onChange={event => {
+                              {correction?.fullEdit && !r.compound_recipe_id && r.jenis !== "racikan" && <select className="fi" aria-label={`Ganti item ${r.nama_obat}`} value={r.item_id ?? ""} onChange={event => {
                                 const item = [...items, ...jasaItems, ...tindakanItems].find(item => item.id === event.target.value);
                                 if (item) setCart(rows => rows.map(row => row.key === r.key ? {...row,item_id:item.id,nama_obat:item.name,satuan:item.unit,faktor:1,harga:item.sell_price,jenis:item.item_type === "Jasa" ? "jasa" : "obat",kategori:item.tindakan_kategori ?? undefined,bmhp:[]} : row));
                               }}><option value={r.item_id ?? ""}>{r.nama_obat}</option>{[...items,...jasaItems,...tindakanItems].filter(item=>item.id!==r.item_id).map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>}
@@ -560,7 +562,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 )}
               </div>
 
-              {hasRacikan && (
+              {/* Koreksi tidak menyimpan catatan resep umum; aturan pakai tiap racikan ikut barisnya. */}
+              {hasRacikan && !correction && (
                 <div style={{ marginTop: 10 }}>
                   <label className="flab">Catatan resep (aturan pakai) · racikan</label>
                   <textarea className="fi" rows={2} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="mis. Puyer 3x sehari 1 bungkus…" style={{ resize: "vertical" }} />
