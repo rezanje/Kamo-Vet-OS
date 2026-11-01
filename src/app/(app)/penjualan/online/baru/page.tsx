@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
 import { OnlineForm } from "./OnlineForm";
 import { readCompleteList } from "@/lib/checked-list";
-import { semuaPelanggan } from "@/lib/pelanggan-semua";
 
 type WhRow = { branch_id: string; id: string; name: string; branches: { name: string } | { name: string }[] | null };
 
@@ -19,12 +18,15 @@ export default async function OnlineBaruPage({
   if (replacement && !replacement.channel) throw new Error("Gunakan kasir untuk pengganti penjualan toko.");
   const {data:{user}} = await supabase.auth.getUser();
 
-  const [{ data: whRaw, error: whErr }, items, { data: customers }] = await Promise.all([
+  const [{ data: whRaw, error: whErr }, items, { data: initialCustomer }] = await Promise.all([
     supabase
       .from("warehouses").select("id, branch_id, name, branches(name)")
       .eq("type", "ONLINE").eq("is_active", true).order("name"),
     readCompleteList<{ id: string; code: string; name: string; sell_price: number }>((from, to) => supabase.from("items").select("id, code, name, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang order online", { maxRows: null }),
-    semuaPelanggan(supabase, "id, name, phone"),
+    // Hanya pelanggan order sumber; pelanggan lain dicari di server sambil mengetik.
+    replacement?.customer_id
+      ? supabase.from("customers").select("id, name, phone").eq("id", replacement.customer_id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
   // `data` juga null kalau query gagal (RLS/jaringan) — bedakan dari "memang belum ada
   // gudang ONLINE" (M6), supaya operator tidak disuruh minta admin buat sesuatu yang sudah ada.
@@ -70,7 +72,7 @@ export default async function OnlineBaruPage({
           userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done}
           warehouses={warehouses}
           items={items.map(it => ({...it, units: units.get(it.id) ?? []}))}
-          customers={(customers ?? []) as { id: string; name: string; phone: string | null }[]}
+          initialCustomer={(initialCustomer ?? null) as { id: string; name: string; phone: string | null } | null}
         />
       )}
     </>

@@ -31,12 +31,12 @@ it('sales rows choose duplicate names by ID and preserve selected units/prices a
  await edit(host.querySelector<HTMLInputElement>('[role=combobox]')!,'');await edit(host.querySelector<HTMLInputElement>('[role=combobox]')!,'Nama sama');expect(payload()[0]).toMatchObject({item_id:null,nama:'Nama sama',harga:120});
 });
 it('online explicit selection keeps bare names and legacy exact labels; ambiguous text is not a SKU',async()=>{
- await act(async()=>root.render(<OnlineForm items={items} warehouses={[]} customers={[]}/>));await pick('Barang online 1','SKU-B');expect(payload()[0]).toMatchObject({item_id:'b',nama:'Nama sama',harga:20});
+ await act(async()=>root.render(<OnlineForm items={items} warehouses={[]}/>));await pick('Barang online 1','SKU-B');expect(payload()[0]).toMatchObject({item_id:'b',nama:'Nama sama',harga:20});
  const input=host.querySelector<HTMLInputElement>('[role=combobox]')!;await edit(input,'SKU-A — Nama sama');expect(input.value).toBe('Nama sama');expect(payload()[0].item_id).toBe('a');await edit(input,'');await edit(input,'Nama sama');expect(payload()).toEqual([]);expect(host.textContent).toContain('Belum cocok');
 });
 it('online replacement display does not reprice original rows or alter request identity on reload',async()=>{
  const replacement={id:'original',no_struk:'FIKTIF',branch_id:'branch',channel:'Shopee',customer_id:null,salesperson_id:null,buyer_name:null,external_ref:null,sale_items:[{item_id:'b',nama:'Nama historis',qty:3,harga:91,satuan:'box',faktor:12}]};
- const render=async()=>act(async()=>root.render(<OnlineForm userId="actor" replacement={replacement} items={items} warehouses={[]} customers={[]}/>));await render();expect(host.querySelector<HTMLInputElement>('[role=combobox]')?.value).toBe('Nama sama');expect(payload()[0]).toEqual({item_id:'b',nama:'Nama historis',qty:3,harga:91,satuan:'box'});const key=host.querySelector<HTMLInputElement>('[name=request_key]')!.value;
+ const render=async()=>act(async()=>root.render(<OnlineForm userId="actor" replacement={replacement} items={items} warehouses={[]}/>));await render();expect(host.querySelector<HTMLInputElement>('[role=combobox]')?.value).toBe('Nama sama');expect(payload()[0]).toEqual({item_id:'b',nama:'Nama historis',qty:3,harga:91,satuan:'box'});const key=host.querySelector<HTMLInputElement>('[name=request_key]')!.value;
  await act(async()=>root.unmount());root=createRoot(host);await render();expect(payload()[0].harga).toBe(91);expect(host.querySelector<HTMLInputElement>('[name=request_key]')!.value).toBe(key);
 });
 it('production selects output/ingredients by ID with separate codes, retains quantities and blocks missing output',async()=>{

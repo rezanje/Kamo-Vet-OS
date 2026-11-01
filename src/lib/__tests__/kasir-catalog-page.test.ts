@@ -1,10 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { cocokOr } from "./helpers/postgrest-or";
 
-const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failItemsFrom: -1, units: new Map<string,{unit:string;factor:number;sell_price:number;buy_price:number}[]>() }));
+const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, tablesRead: [] as string[], failItemsFrom: -1, units: new Map<string,{unit:string;factor:number;sell_price:number;buy_price:number}[]>() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "cashier" } } }) },
   from(table: string) {
+    fixture.tablesRead.push(table);
     let rows = fixture.tables[table] ?? [];
     let counted = false;
     let start = 0;
@@ -72,12 +73,17 @@ it("makes products after the API's first 1,000 rows available to cashier search 
   expect(page.props.items.at(-1)?.name).toBe("Zebra Tuna");
 });
 
-it("does not include an unfinished sale in customer purchase history", async () => {
+it("opens without reading every customer, sale, or invoice (customers are searched on demand)", async () => {
+  // 1 Nov 2026: memuat 10.000+ pelanggan + seluruh penjualan/invoice tiap kasir dibuka
+  // membuat kasir lambat sampai gagal dibuka. Ringkasan transaksi kini dihitung per
+  // pelanggan terpilih (lib/pelanggan-server, diuji di pelanggan-cari.test.ts).
+  fixture.tablesRead = [];
   fixture.tables.customers = [{ id: "customer", name: "Customer", phone: "", points: 0, tier: "New" }];
-  fixture.tables.sales = [{ total: 100000, customer_id: "customer" },
-    { total: 100000, customer_id: "customer", payment_plan: [{ method: "Tunai", amount: 100000 }], payments_finalized_at: null }];
   const page = await KasirPage({ searchParams: Promise.resolve({}) });
-  expect(page.props.customers[0]).toMatchObject({ trx: 1, belanja: 100000 });
+  expect(page.props.customers).toBeUndefined();
+  expect(fixture.tablesRead).not.toContain("customers");
+  expect(fixture.tablesRead).not.toContain("sales");
+  expect(fixture.tablesRead).not.toContain("invoices");
 });
 
 it("loads stock, branch prices, quantity prices and category discounts for the final product", async () => {

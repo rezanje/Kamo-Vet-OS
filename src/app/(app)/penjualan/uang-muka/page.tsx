@@ -15,7 +15,7 @@ import { METODE_BAYAR } from "@/lib/kas-akun";
 import { readCompleteList, ListLoadError } from "@/lib/checked-list";
 import { batalkanUangMukaJual, terimaUangMukaJual } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
-import { semuaPelanggan } from "@/lib/pelanggan-semua";
+import { PelangganPicker } from "@/components/PelangganPicker";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -40,7 +40,7 @@ export default async function UangMukaJualPage({
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
-  const [umResult, { data: custData }, { data: soData }, rekening] = await Promise.all([
+  const [umResult, { data: soData }, rekening] = await Promise.all([
     readCompleteList<UM>((from, to) => supabase.from("sales_advances")
       .select("id, order_id, no_um, tanggal, jumlah, terpakai, catatan, status, customers(name), sales_orders(no_pesanan)", { count: "exact" })
       .order("tanggal", { ascending: false }).order("id").range(from, to),
@@ -50,7 +50,6 @@ export default async function UangMukaJualPage({
         if (!(error instanceof ListLoadError)) throw error;
         return { rows: [] as UM[], error: error.message };
       }),
-    semuaPelanggan(supabase, "id, name, phone"),
     supabase.from("sales_orders").select("id, no_pesanan, customer_id").in("status", ["draft", "diproses"]).order("tanggal", { ascending: false }),
     loadRekeningAktif(supabase),
   ]);
@@ -60,7 +59,6 @@ export default async function UangMukaJualPage({
     ? await loadSalesAdvanceUsage(supabase, daftar.map(u => u.id))
       .then(usage => ({ usage, usageError: false }), () => ({ usage: new Map<string, AdvanceUsage[]>(), usageError: true }))
     : { usage: new Map<string, AdvanceUsage[]>(), usageError: false };
-  const pelanggan = (custData ?? []) as { id: string; name: string; phone: string }[];
   const pesanan = (soData ?? []) as { id: string; no_pesanan: string }[];
 
   const aktif = daftar.filter((u) => u.status === "aktif");
@@ -86,10 +84,7 @@ export default async function UangMukaJualPage({
             <div className="frow">
               <div>
                 <label className="flab">Pelanggan *</label>
-                <select className="fi" name="customer_id" defaultValue="" required>
-                  <option value="">— pilih pelanggan —</option>
-                  {pelanggan.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}
-                </select>
+                <PelangganPicker required />
               </div>
               <div>
                 <label className="flab">Untuk pesanan (opsional)</label>

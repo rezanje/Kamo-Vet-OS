@@ -1,6 +1,7 @@
 "use client";
 
 import { NumberInput } from "@/components/NumberInput";
+import { PelangganPicker } from "@/components/PelangganPicker";
 
 // ponytail: baris item dinamis diserialisasi ke hidden JSON — pola sama dengan POForm.
 import type { SaleReplacement } from "@/lib/sale-replacement";
@@ -25,27 +26,24 @@ type Row = { item_id: string; nama: string; label: string; satuan: string; qty: 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const blank: Row = { item_id: "", nama: "", label: "", satuan: "", qty: 1, harga: 0 };
 const itemLabel = (it: Item) => `${it.code} — ${it.name}`;
-const custLabel = (c: Customer) => (c.phone ? `${c.name} (${c.phone})` : c.name);
 
 export function OnlineForm({
   warehouses, userId, confirmedScope, confirmedKey, replacement,
   items,
-  customers,
+  initialCustomer = null,
 }: {
   replacement?: SaleReplacement;
   confirmedScope?:string; confirmedKey?:string; userId?: string; warehouses: Warehouse[];
   items: Item[];
-  customers: Customer[];
+  /** Pelanggan order sumber (saat membuat pengganti). Pelanggan lain dicari di server. */
+  initialCustomer?: Customer | null;
 }) {
   const {save,failure} = usePreservedAction(buatPenjualanOnline);
   const [rows, setRows] = useState<Row[]>(replacement?.sale_items.map(row => ({ ...row, qty: Number(row.qty), harga: Number(row.harga), label: items.find(item => item.id === row.item_id) ? items.find(item => item.id === row.item_id)!.name : row.nama })) ?? [{ ...blank }]);
   const [channel, setChannel] = useState<string>(replacement?.channel ?? "Shopee");
-  const [custText, setCustText] = useState(replacement?.customer_id ? custLabel(customers.find(c => c.id === replacement.customer_id) ?? { id: "", name: "", phone: null }) : "");
 
-  // 2000 item/pelanggan tiap render kalau dibangun ulang tiap keystroke — cukup saat items/customers berubah.
+  // Ribuan item tiap render kalau dibangun ulang tiap keystroke — cukup saat items berubah.
   const byLabel = useMemo(() => new Map(items.map((it) => [itemLabel(it), it])), [items]);
-  const custByLabel = useMemo(() => new Map(customers.map((c) => [custLabel(c), c])), [customers]);
-  const customerId = custByLabel.get(custText)?.id ?? "";
 
   const set = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -89,15 +87,14 @@ export function OnlineForm({
     <form action={save}>
       {replacement && <div className="p2ban">Pengganti {replacement.no_struk}. Pilih gudang cabang sumber, lalu periksa barang, harga, dan pembayaran sebelum menyimpan.</div>}
       {failure && <div role="alert" className="p2ban">{failure}</div>}
-      <PostingRequestIdentity scope={replacement ? `online-replacement:${replacement.id}` : "online"} userId={userId} confirmedScope={confirmedScope} confirmedKey={confirmedKey} state={{snapshot:{rows,channel,custText},reset:()=>{setRows([{...blank}]);setChannel("Shopee");setCustText("");},restore:value=>{
-        if(!Array.isArray(value.rows)||value.rows.length>100||!value.rows.every(r=>r&&typeof r==="object"&&typeof r.item_id==="string"&&typeof r.nama==="string"&&typeof r.label==="string"&&typeof r.satuan==="string"&&Number.isFinite(r.qty)&&Number.isFinite(r.harga))||typeof value.channel!=="string"||typeof value.custText!=="string")return false;
-        setRows(value.rows as Row[]);setChannel(value.channel);setCustText(value.custText);return true;
+      <PostingRequestIdentity scope={replacement ? `online-replacement:${replacement.id}` : "online"} userId={userId} confirmedScope={confirmedScope} confirmedKey={confirmedKey} state={{snapshot:{rows,channel},reset:()=>{setRows([{...blank}]);setChannel("Shopee");},restore:value=>{
+        if(!Array.isArray(value.rows)||value.rows.length>100||!value.rows.every(r=>r&&typeof r==="object"&&typeof r.item_id==="string"&&typeof r.nama==="string"&&typeof r.label==="string"&&typeof r.satuan==="string"&&Number.isFinite(r.qty)&&Number.isFinite(r.harga))||typeof value.channel!=="string")return false;
+        // Pelanggan terpilih dipulihkan lewat field customer_id (PelangganPicker).
+        setRows(value.rows as Row[]);setChannel(value.channel);return true;
       }}} />
       <input type="hidden" name="items" value={JSON.stringify(itemsToSubmit)} />
-      <input type="hidden" name="customer_id" value={customerId} />
-      <datalist id="onl-customers">
-        {customers.map((c) => <option key={c.id} value={custLabel(c)} />)}
-      </datalist>
+      {/* Channel selain WA tidak boleh link pelanggan (invarian marketplace): customer_id selalu kosong. */}
+      {channel !== "WA" && <input type="hidden" name="customer_id" value="" />}
 
       <div className="grid2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))" }}>
         <div className="crm-sec" style={{ marginBottom: 0, minWidth: 0 }}>
@@ -113,9 +110,8 @@ export function OnlineForm({
               onChange={(e) => {
                 const v = e.target.value;
                 setChannel(v);
-                // Channel selain WA tidak boleh link pelanggan (invarian marketplace) — kosongkan
-                // state supaya customer_id tersembunyi tidak diam-diam ikut submit (M5).
-                if (v !== "WA") setCustText("");
+                // Channel selain WA tidak boleh link pelanggan (invarian marketplace): pemilih
+                // pelanggan ikut hilang sehingga customer_id terkirim kosong (M5).
               }}
             >
               {CHANNELS.map((c) => (
@@ -147,13 +143,8 @@ export function OnlineForm({
           {channel === "WA" && (
             <div className="fg" style={{ marginBottom: 10 }}>
               <label className="flab">Link pelanggan (opsional)</label>
-              <input
-                className="fi"
-                list="onl-customers"
-                value={custText}
-                onChange={(e) => setCustText(e.target.value)}
-                placeholder="Cari nama / no HP pelanggan"
-              />
+              <PelangganPicker initial={initialCustomer ? { ...initialCustomer, phone: initialCustomer.phone ?? "" } : null}
+                placeholder="Cari nama / no HP pelanggan" />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 Kalau dilink, order ini menambah poin &amp; tier pelanggan. Order marketplace tidak masuk CRM.
               </div>

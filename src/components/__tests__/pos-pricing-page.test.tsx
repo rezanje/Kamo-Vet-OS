@@ -19,10 +19,8 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   from(table: string) {
     const rows: Record<string, unknown[]> = {
       items: [{ id: "item", name: "Pakan", unit: "pcs", sell_price: 100_000, target_species: "Kucing" }],
-      customers: [
-        { id: "active", name: "Member", phone: "08123", points: 0, category_id: "member", pets: [], customer_categories: [{ nama: "Member", diskon_persen: 10, rupiah_per_poin: 500, is_active: true }] },
-        { id: "inactive", name: "Lama", phone: "08456", points: 0, category_id: "old", pets: [], customer_categories: { nama: "Old", diskon_persen: 80, rupiah_per_poin: 5, is_active: false } },
-      ],
+      // Hanya golongan aktif (filter is_active di query); pelanggan tidak lagi dimuat semua.
+      customer_categories: [{ id: "member" }],
       branches: [{ id: "branch", code: "BR", name: "Cabang" }, { id: "other", code: "OTHER", name: "Lain" }],
       item_branch_prices: [],
     };
@@ -43,8 +41,6 @@ it("supplies each branch's active promos and active customer discount exceptions
   expect(state.loadAturanDiskon).toHaveBeenCalledWith(expect.anything(), "member");
   expect(state.props.aturanDiskon).toEqual({ member: [{ item_id: "item", item_category_id: null, diskon_persen: 25 }] });
   expect(state.props.infoBarang).toEqual({ item: { item_id: "item", category_id: "food", parent_category_id: "goods" } });
-  expect(state.props.customers).toMatchObject([
-    { id: "active", golonganId: "member", golongan: { diskon_persen: 10, rupiah_per_poin: 500 } },
-    { id: "inactive", golonganId: null, golongan: null },
-  ]);
+  // Daftar pelanggan tidak lagi dikirim ke layar POS — dicari di server sambil mengetik.
+  expect(state.props.customers).toBeUndefined();
 });
