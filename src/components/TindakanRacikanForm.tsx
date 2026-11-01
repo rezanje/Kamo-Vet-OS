@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { NumberInput } from "@/components/NumberInput";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
-import { BMHP_MAX_COMPONENTS, bmhpInput, type BmhpRow } from "@/lib/procedure-bmhp";
+import { BMHP_MAX_COMPONENTS, bmhpInput, vaccinationOf, type BmhpRow } from "@/lib/procedure-bmhp";
 import type { CompoundDraft } from "@/lib/master-compound-cart";
 import type { KatalogRacikan } from "@/lib/katalog-racikan";
 import type { ItemUnit } from "@/lib/satuan";
@@ -53,12 +53,22 @@ export function TindakanRacikanForm<T extends FormItem>({
   const hanyaRacikan = !tindakanItems.length;
   const judul = hanyaRacikan ? "racikan" : "tindakan / racikan";
 
+  // Vial vaksin yang tercatat di TINDAKAN selalu dibuka sebagai jasa vaksinasinya, jadi daftar
+  // menampilkan jasa itu (nama & harga yang akan masuk keranjang), bukan harga vial. Nama/kode
+  // vial tetap bisa dicari (Anisa 1 Nov: "Vaccine F4" tampil 250rb, masuk keranjang 235rb).
+  const tindakanTampil = new Map<string, { item: T; vial: T[] }>();
+  for (const item of tindakanItems) {
+    const target = item.item_type !== "Jasa" ? vaccinationOf(item, tindakanItems) ?? item : item;
+    const row = tindakanTampil.get(target.id) ?? { item: target, vial: [] };
+    if (target !== item) row.vial.push(item);
+    tindakanTampil.set(target.id, row);
+  }
   const daftar = [
-    ...tindakanItems.map(item => ({ item, jenis: "Tindakan" as const })),
-    ...racikanItems.map(item => ({ item, jenis: "Racikan" as const })),
+    ...[...tindakanTampil.values()].map(({ item, vial }) => ({ item, vial, jenis: "Tindakan" as const })),
+    ...racikanItems.map(item => ({ item, vial: [] as T[], jenis: "Racikan" as const })),
   ];
   const term = search.trim().toLowerCase();
-  const cocok = term ? daftar.filter(row => `${row.item.name} ${row.item.code ?? ""}`.toLowerCase().includes(term)) : daftar;
+  const cocok = term ? daftar.filter(row => [row.item, ...row.vial].some(item => `${item.name} ${item.code ?? ""}`.toLowerCase().includes(term))) : daftar;
   const halaman = Math.max(1, Math.ceil(cocok.length / PER_HALAMAN));
   const halamanKini = Math.min(page, halaman);
   const jumlahResep = (id: string) => katalogRacikan.filter(row => row.active && row.sale_item_id === id).length;
@@ -106,7 +116,7 @@ export function TindakanRacikanForm<T extends FormItem>({
         {hanyaRacikan ? "Belum ada obat racik aktif." : "Belum ada tindakan atau obat racik aktif."} Tambahkan di Barang &amp; Jasa.
       </div>}
       {!!daftar.length && !cocok.length && <div style={{ fontSize: 10.5, color: "var(--td)", padding: 10 }}>Tidak ada {judul} cocok.</div>}
-      {cocok.slice((halamanKini - 1) * PER_HALAMAN, halamanKini * PER_HALAMAN).map(({ item, jenis }) => <div key={`${jenis}-${item.id}`}
+      {cocok.slice((halamanKini - 1) * PER_HALAMAN, halamanKini * PER_HALAMAN).map(({ item, vial, jenis }) => <div key={`${jenis}-${item.id}`}
         style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", borderBottom: ".5px solid var(--bd)" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}>
@@ -117,6 +127,7 @@ export function TindakanRacikanForm<T extends FormItem>({
             {rp(item.sell_price)}
             {jenis === "Tindakan" && item.tindakan_kategori
               && <span className={`bge ${kategoriWajibConsent(item.tindakan_kategori) ? "r" : "b"}`} style={{ fontSize: 8 }}>{item.tindakan_kategori}</span>}
+            {!!vial.length && <span>vial: {vial.map(row => row.name).join(", ")}</span>}
             {jenis === "Racikan" && <span>{jumlahResep(item.id) ? `${jumlahResep(item.id)} resep resmi` : bolehManual ? "Racikan khusus pasien" : "Belum ada resep resmi"}</span>}
           </div>
         </div>

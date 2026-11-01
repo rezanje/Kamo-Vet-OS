@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { TindakanRacikanForm } from "@/components/TindakanRacikanForm";
+import { VaksinasiDariVial } from "@/components/VaksinasiDariVial";
 import { KeranjangBahan } from "@/components/KeranjangBahan";
 import { ClinicServicePicker } from "@/components/ClinicServicePicker";
 import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bmhp";
@@ -284,7 +285,7 @@ export function TambahItemForm({
                     <tbody>
                       {filtered.map((it) => (
                         <tr key={it.id}>
-                          <td style={{ fontSize: 11, fontWeight: 500 }}>{it.name}</td>
+                          <td style={{ fontSize: 11, fontWeight: 500 }}>{it.name}<VaksinasiDariVial item={it} services={tindakanItems} /></td>
                           <td style={{ textAlign: "center", fontSize: 10.5, color: it.stok <= 0 ? "#b91c1c" : "var(--tm)" }}>{it.stok} {it.unit}</td>
                           <td style={{ textAlign: "right", fontSize: 11 }}>{rp(it.sell_price)}</td>
                           <td style={{ textAlign: "center" }}>
