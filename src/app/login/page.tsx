@@ -1,5 +1,6 @@
 import { login } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default async function LoginPage({
   searchParams,
@@ -40,7 +41,7 @@ export default async function LoginPage({
 
           <div className="fg">
             <label className="flab">Password</label>
-            <input className="fi" name="password" type="password" required placeholder="••••••••" />
+            <PasswordInput name="password" required placeholder="••••••••" autoComplete="current-password" />
           </div>
 
           <SubmitButton className="btn-acc" style={{ width: "100%", justifyContent: "center", background: "var(--posb)", padding: "10px 0", fontSize: 13 }} pendingText="Masuk…">
