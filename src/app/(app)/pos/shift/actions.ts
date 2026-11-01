@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { bacaShift, hitungShift, PESAN_LACI_ORANG_LAIN, pesanPenjagaLaci, tutupShift } from "@/lib/tutup-shift";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
+import { pesanTutupPaksa, strukDibuangTutupPaksa } from "@/lib/transaksi-terputus";
 
 export async function openShift(formData: FormData) {
   const supabase = await createClient();
@@ -79,10 +80,16 @@ export async function forceCloseShift(formData: FormData) {
   } catch (error) {
     redirect(`/pos/shift?error=${encodeURIComponent(error instanceof Error ? error.message : "Uang shift belum dapat dibaca.")}`);
   }
-  const { error } = await supabase.rpc("cashier_shift_supervisor_close", {
+  const { data, error } = await supabase.rpc("cashier_shift_supervisor_close", {
     p_shift_id: shiftId, p_reason: alasan, p_expected: target.expected, p_breakdown: target.breakdown,
   });
-  if (error) redirect(`/pos/shift?error=${encodeURIComponent(pesanPenjagaLaci(error.message))}`);
+  // Fungsi supervisor membuang sendiri transaksi kasir yang terputus (≥ 10 menit, tanpa stok
+  // dan jurnal) dan menolak dengan pesannya sendiri bila ada yang tidak boleh dibuang. Pesan
+  // penjaga umum hanya tersisa bila basis data belum memasang migrasinya.
+  if (error) redirect(`/pos/shift?error=${encodeURIComponent(pesanTutupPaksa(pesanPenjagaLaci(error.message)))}`);
 
-  redirect(`/pos/shift?success=force`);
+  const dibuang = strukDibuangTutupPaksa(data);
+  redirect(dibuang.length > 0
+    ? `/pos/shift?success=force&dibuang=${encodeURIComponent(dibuang.join(","))}`
+    : `/pos/shift?success=force`);
 }

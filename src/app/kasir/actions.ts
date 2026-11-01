@@ -4,7 +4,7 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireOperationalBranch } from "@/lib/operational-branch-server";
-import { bacaShift, tutupShift } from "@/lib/tutup-shift";
+import { bacaShift, PESAN_LACI_ORANG_LAIN, tutupShift } from "@/lib/tutup-shift";
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -91,9 +91,14 @@ export async function tutupShiftKasir(formData: FormData) {
   const closing = Number(formData.get("closing_balance")) || 0;
   if (!shiftId) redirect(`/kasir/tutup?error=${encodeURIComponent("Shift tidak valid")}`);
 
-  // Layar kasir hanya boleh menutup shift petshop miliknya sendiri.
+  // Layar kasir hanya boleh menutup shift petshop miliknya sendiri. Pemilik laci juga
+  // satu-satunya yang boleh membersihkan transaksinya yang terputus (lib/transaksi-terputus),
+  // dan kas kurang dibebankan ke pemilik laci — jadi laci rekan kerja tidak boleh ditutup dari sini.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
   const shift = await bacaShift(supabase, shiftId, "petshop");
   if (!shift) redirect(`/kasir/mulai?error=${encodeURIComponent("Shift tidak ditemukan")}`);
+  if (shift!.opened_by !== user!.id) redirect(`/kasir/tutup?error=${encodeURIComponent(PESAN_LACI_ORANG_LAIN)}`);
 
   // Selisih kas wajib punya jurnal — shift jangan ditutup kalau periodenya terkunci.
   const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
