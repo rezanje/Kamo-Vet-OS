@@ -6,7 +6,7 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klinik-posting";
+import { parseClinicPostingError, parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klinik-posting";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
 import { FOLLOWUP_JENIS } from "@/lib/followup";
 import { resolveDokter } from "@/lib/dokter";
@@ -25,6 +25,45 @@ type ResepItem = {
 };
 
 type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
+
+/** Muatan `p_compounds` satu racikan baru — bentuk yang sama untuk item susulan dan Edit
+ * rekam medis (keduanya berakhir di clinic_add_record_items). */
+function compoundPayload(r: ResepItem) {
+  return r.official_version_id
+    ? {
+        official_version_id: r.official_version_id,
+        ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
+        request_key: r.key ?? "",
+        dosage_instruction: r.aturan_pakai ?? null,
+        ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
+      }
+    : {
+        request_key: r.key ?? "",
+        ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
+        ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
+        recipe: toClinicCompoundRecipeInput({
+          recipeName: r.nama_obat,
+          dosageInstruction: r.aturan_pakai,
+          dosageForm: r.dosage_form,
+          ingredients: (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0),
+        }),
+      };
+}
+const racikanTanpaBahan = (r: ResepItem) => !r.official_version_id &&
+  (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0;
+
+/** Penolakan dari peracikan (stok/bahan/HPP) diterjemahkan seperti form pemeriksaan supaya
+ * popup "Stok tidak cukup" tetap muncul; penolakan Edit sendiri tetap apa adanya. */
+const KODE_PERACIKAN = /^(STOCK_SHORT|LAYER_SHORT|INGREDIENT_INVALID|COST_MISSING|RECIPE_[A-Z_]+|UNIT_INVALID|ITEM_INVALID|WAREHOUSE_MISSING):/;
+function pesanGagalEditLengkap(error: { code?: string; message: string }, adaRacikanBaru: boolean): string {
+  if (!adaRacikanBaru) return error.message;
+  // Aplikasi sudah terpasang tapi fungsi database-nya belum: jangan tampilkan galat mentah.
+  if (error.code === "PGRST202" || error.code === "42883") {
+    return "Menambah racikan dari layar Edit belum aktif. Simpan dulu tanpa racikan, lalu tambahkan lewat tombol Tambah tindakan / obat.";
+  }
+  if (error.code === "P0001" && KODE_PERACIKAN.test(error.message)) return parseClinicPostingError(error, error.message);
+  return error.message;
+}
 
 // Baris follow up datang sbg JSON dari klien. Tanggal & jenis divalidasi di sini —
 // jangan percaya nilai dari form, kolom `jenis` punya CHECK constraint di DB.
@@ -276,8 +315,7 @@ export async function tambahItemRekamMedis(formData: FormData) {
   }
   if (unitResult.error || !unitResult.map) redirect(`${form}?error=${encodeURIComponent(unitResult.error ?? "Satuan barang belum dapat dibaca")}`);
   const unitOpts = unitResult.map;
-  if (resep.some((r) => r.jenis === "racikan" && !r.official_version_id &&
-    (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) {
+  if (resep.some((r) => r.jenis === "racikan" && racikanTanpaBahan(r))) {
     redirect(`${form}?error=${encodeURIComponent("Setiap racikan harus memiliki minimal satu bahan")}`);
   }
 
@@ -298,25 +336,7 @@ export async function tambahItemRekamMedis(formData: FormData) {
       ...(bmhp?.length ? { bmhp_components: bmhp } : {}),
     }));
   const compounds = resep.filter((r) => r.jenis === "racikan" &&
-    (r.official_version_id || (r.ingredients ?? []).length > 0)).map((r) => r.official_version_id
-      ? {
-          official_version_id: r.official_version_id,
-          ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
-          request_key: r.key ?? "",
-          dosage_instruction: r.aturan_pakai ?? null,
-          ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
-        }
-      : {
-          request_key: r.key ?? "",
-          ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
-          ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
-          recipe: toClinicCompoundRecipeInput({
-            recipeName: r.nama_obat,
-            dosageInstruction: r.aturan_pakai,
-            dosageForm: r.dosage_form,
-            ingredients: (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0),
-          }),
-        });
+    (r.official_version_id || (r.ingredients ?? []).length > 0)).map(compoundPayload);
 
   const { error } = await supabase.rpc("clinic_add_record_items", {
     p_visit_id: visitId,
@@ -407,10 +427,20 @@ export async function koreksiRekamMedisLengkap(formData: FormData) {
   if (!visitId || !recordId || !/^\d+$/.test(revisionRaw) || !Number.isSafeInteger(Number(revisionRaw)) || !requestKey || requestKey.length > 100
     || reason.length < 3 || reason.length > 1000 || (suhu !== null && (!Number.isFinite(suhu) || suhu < 0 || suhu > 60 || Math.round(suhu * 100) / 100 !== suhu))) fail("Identitas atau alasan koreksi tidak valid.");
   let rows;
+  let compounds: ReturnType<typeof compoundPayload>[] = [];
   try {
     const raw: unknown = JSON.parse(String(formData.get("resep") ?? "[]"));
     if (!Array.isArray(raw) || raw.length > 200) throw Error("Keranjang tidak valid");
-    rows = raw.map((row) => ({
+    // Racikan BARU (belum punya baris resep tersimpan) diracik lewat alur racik berjejak di
+    // RPC pembungkus — bahan keluar saat itu juga. Racikan yang sudah dibuat tetap baris
+    // tersimpan yang dikunci; koreksinya lewat Aksi racikan.
+    const racikanBaru = (row: ResepItem & { prescription_item_id?: string | null; compound_recipe_id?: string | null }) =>
+      row?.jenis === "racikan" && !row.prescription_item_id && !row.compound_recipe_id;
+    const baru = raw.filter(racikanBaru);
+    if (baru.length > 50) throw Error("Maksimal 50 racikan baru per simpan");
+    if (baru.some(racikanTanpaBahan)) throw Error("Setiap racikan harus memiliki minimal satu bahan");
+    compounds = baru.map(compoundPayload);
+    rows = raw.filter((row) => !racikanBaru(row)).map((row) => ({
       prescription_item_id: row.prescription_item_id ?? null, item_id: row.item_id ?? null,
       nama_obat: row.nama_obat, qty: row.qty, harga: row.harga, satuan: row.satuan, jenis: row.jenis,
       kategori: row.kategori ?? null, aturan_pakai: row.aturan_pakai ?? null,
@@ -420,13 +450,18 @@ export async function koreksiRekamMedisLengkap(formData: FormData) {
   } catch (error) { fail(error instanceof Error ? error.message : "Keranjang tidak valid"); }
   const text = (name: string) => String(formData.get(name) ?? "") || null;
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("clinic_edit_queued_record", {
+  const args = {
     p_visit_id: visitId, p_record_id: recordId, p_expected_revision: Number(revisionRaw),
     p_changes: {anamnesis: text("anamnesis"), diagnosis: text("diagnosis"), therapy: text("therapy"), suhu,
       gejala_klinis: text("gejala_klinis"), hasil_penunjang: text("hasil_penunjang")},
     p_rows: rows, p_reason: reason, p_request_key: requestKey,
-  });
-  if (error || data !== recordId) fail(error?.message ?? "Koreksi belum terkonfirmasi. Muat ulang sebelum mencoba lagi.");
+  };
+  // Tanpa racikan baru: jalur lama persis. Dengan racikan baru: edit + peracikan dalam satu
+  // transaksi database — stok bahan kurang membatalkan seluruh simpanan, bukan separuhnya.
+  const { data, error } = compounds.length
+    ? await supabase.rpc("clinic_edit_queued_record_with_compounds", { ...args, p_compounds: compounds })
+    : await supabase.rpc("clinic_edit_queued_record", args);
+  if (error || data !== recordId) fail(error ? pesanGagalEditLengkap(error, compounds.length > 0) : "Koreksi belum terkonfirmasi. Muat ulang sebelum mencoba lagi.");
   for (const path of [back, `${back}/resep`, `${back}/dokumen`, `/klinik/pembayaran/${visitId}`, "/klinik/rekam-medis", "/klinik/antrian", "/klinik/racik"]) revalidatePath(path);
   return {saved: true, href: `${back}?success=correction`};
 }
