@@ -26,6 +26,32 @@ type ResepItem = {
 
 type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
 
+/** Muatan p_compounds untuk racikan di keranjang: resep resmi (versi formula) atau komposisi
+ * khusus pasien. Dipakai item susulan dan edit lengkap rekam medis, keduanya lewat
+ * clinic_add_record_items, jadi bentuknya harus sama persis. */
+function racikanCompounds(resep: ResepItem[]) {
+  return resep.filter((r) => r.jenis === "racikan" &&
+    (r.official_version_id || (r.ingredients ?? []).length > 0)).map((r) => r.official_version_id
+      ? {
+          official_version_id: r.official_version_id,
+          ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
+          request_key: r.key ?? "",
+          dosage_instruction: r.aturan_pakai ?? null,
+          ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
+        }
+      : {
+          request_key: r.key ?? "",
+          ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
+          ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
+          recipe: toClinicCompoundRecipeInput({
+            recipeName: r.nama_obat,
+            dosageInstruction: r.aturan_pakai,
+            dosageForm: r.dosage_form,
+            ingredients: (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0),
+          }),
+        });
+}
+
 // Baris follow up datang sbg JSON dari klien. Tanggal & jenis divalidasi di sini —
 // jangan percaya nilai dari form, kolom `jenis` punya CHECK constraint di DB.
 function parseFollowUps(raw: FormDataEntryValue | null): FollowUpDraft[] {
@@ -297,26 +323,7 @@ export async function tambahItemRekamMedis(formData: FormData) {
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
       ...(bmhp?.length ? { bmhp_components: bmhp } : {}),
     }));
-  const compounds = resep.filter((r) => r.jenis === "racikan" &&
-    (r.official_version_id || (r.ingredients ?? []).length > 0)).map((r) => r.official_version_id
-      ? {
-          official_version_id: r.official_version_id,
-          ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
-          request_key: r.key ?? "",
-          dosage_instruction: r.aturan_pakai ?? null,
-          ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
-        }
-      : {
-          request_key: r.key ?? "",
-          ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
-          ...(r.sale_item_id ? { sale_item_id: r.sale_item_id } : {}),
-          recipe: toClinicCompoundRecipeInput({
-            recipeName: r.nama_obat,
-            dosageInstruction: r.aturan_pakai,
-            dosageForm: r.dosage_form,
-            ingredients: (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0),
-          }),
-        });
+  const compounds = racikanCompounds(resep);
 
   const { error } = await supabase.rpc("clinic_add_record_items", {
     p_visit_id: visitId,
@@ -407,10 +414,25 @@ export async function koreksiRekamMedisLengkap(formData: FormData) {
   if (!visitId || !recordId || !/^\d+$/.test(revisionRaw) || !Number.isSafeInteger(Number(revisionRaw)) || !requestKey || requestKey.length > 100
     || reason.length < 3 || reason.length > 1000 || (suhu !== null && (!Number.isFinite(suhu) || suhu < 0 || suhu > 60 || Math.round(suhu * 100) / 100 !== suhu))) fail("Identitas atau alasan koreksi tidak valid.");
   let rows;
+  // Racikan yang baru ditambahkan di layar ini (belum punya baris tersimpan maupun resep racik).
+  // clinic_edit_queued_record menolak racikan baru (COMPOUND_LOCKED), jadi racikan ini dibuat
+  // sesudahnya lewat clinic_add_record_items — jalur racikan item susulan yang sama.
+  let compounds: ReturnType<typeof racikanCompounds> = [];
+  const racikanKey = `${requestKey}:racikan`;
   try {
     const raw: unknown = JSON.parse(String(formData.get("resep") ?? "[]"));
     if (!Array.isArray(raw) || raw.length > 200) throw Error("Keranjang tidak valid");
-    rows = raw.map((row) => ({
+    const baru = (row: { jenis?: unknown; compound_recipe_id?: unknown; prescription_item_id?: unknown }) =>
+      row?.jenis === "racikan" && !row.compound_recipe_id && !row.prescription_item_id;
+    const racikanBaru: ResepItem[] = raw.filter(baru);
+    if (racikanBaru.length > 50) throw Error("Racikan baru paling banyak 50 per penyimpanan.");
+    if (racikanBaru.some((r) => !r.official_version_id &&
+      (r.ingredients ?? []).filter((b) => b.item_id && Number(b.qty) > 0).length === 0)) throw Error("Setiap racikan harus memiliki minimal satu bahan");
+    if (racikanBaru.length && racikanKey.length > 100) throw Error("Muat ulang formulir lalu coba simpan lagi.");
+    // Muatan racikan dibentuk (dan pelaksana/resepnya divalidasi) SEBELUM koreksi disimpan, supaya
+    // isian racikan yang tidak valid gagal tanpa ada yang tersimpan.
+    compounds = racikanCompounds(racikanBaru);
+    rows = raw.filter((row) => !baru(row)).map((row) => ({
       prescription_item_id: row.prescription_item_id ?? null, item_id: row.item_id ?? null,
       nama_obat: row.nama_obat, qty: row.qty, harga: row.harga, satuan: row.satuan, jenis: row.jenis,
       kategori: row.kategori ?? null, aturan_pakai: row.aturan_pakai ?? null,
@@ -427,7 +449,24 @@ export async function koreksiRekamMedisLengkap(formData: FormData) {
     p_rows: rows, p_reason: reason, p_request_key: requestKey,
   });
   if (error || data !== recordId) fail(error?.message ?? "Koreksi belum terkonfirmasi. Muat ulang sebelum mencoba lagi.");
+  // Racikan baru dibuat SESUDAH koreksi tersimpan: pengeluaran bahan racikan adalah satu-satunya
+  // langkah yang tidak bisa dibatalkan, jadi baru jalan setelah cek revisi lolos.
+  const racik = compounds.length
+    ? await supabase.rpc("clinic_add_record_items", { p_visit_id: visitId, p_request_key: racikanKey, p_items: [], p_compounds: compounds })
+    : null;
   for (const path of [back, `${back}/resep`, `${back}/dokumen`, `/klinik/pembayaran/${visitId}`, "/klinik/rekam-medis", "/klinik/antrian", "/klinik/racik"]) revalidatePath(path);
+  if (racik?.error) {
+    // Koreksi sudah tersimpan, jadi jangan kembali ke ?edit= (alasan & revisi akan diminta lagi).
+    const kode = racik.error.code === "P0001" ? /^([A-Z_]+):/.exec(racik.error.message)?.[1] : undefined;
+    const sebab = parseClinicRecordError(racik.error);
+    const pasti = !!kode && !sebab.startsWith("Rekam medis belum tersimpan");
+    // Tagihan terbit / kunjungan tertutup / tanpa akses juga menutup tombol Tambah tindakan / obat.
+    const buntu = kode === "RECORD_LOCKED" || kode === "RECIPE_POSTED" || kode === "ACCESS_DENIED";
+    const pesan = !pasti
+      ? "Perubahan rekam medis sudah tersimpan, tetapi racikan baru belum dapat dipastikan tersimpan. Periksa daftar racikan dulu; bila belum ada, tambahkan lewat tombol Tambah tindakan / obat."
+      : `Perubahan rekam medis sudah tersimpan, tetapi racikan baru belum tersimpan (${sebab}).${buntu ? "" : " Periksa daftar racikan; bila belum ada, tambahkan lewat tombol Tambah tindakan / obat."}`;
+    redirect(`${back}?success=correction&error=${encodeURIComponent(pesan)}`);
+  }
   return {saved: true, href: `${back}?success=correction`};
 }
 
