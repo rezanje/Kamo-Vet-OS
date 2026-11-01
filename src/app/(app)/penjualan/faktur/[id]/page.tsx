@@ -1,3 +1,4 @@
+import { printBranchHeading } from "@/components/print-branch-heading";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { DocumentBackLink, DocumentLink } from "@/components/RelatedDocuments";
 import { documentAnchor } from "@/lib/related-document-routes";
@@ -35,7 +36,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   const db = await createClient();
   const { data: { user } } = await db.auth.getUser();
   const { data: invoice, error } = await db.from("sales_invoices")
-    .select("id,no_faktur,order_id,tanggal,jatuh_tempo,total,dpp,ppn,carried_paid,returned_ar,revision,status,voided_on,void_reason,replaces_invoice_id,catatan,kategori,opening_batch_id,customers(name)")
+    .select("id,no_faktur,order_id,tanggal,jatuh_tempo,total,dpp,ppn,carried_paid,returned_ar,revision,status,voided_on,void_reason,replaces_invoice_id,catatan,kategori,opening_batch_id,customers(name),branches(name, code)")
     .eq("id", id).maybeSingle();
   if (error) throw new Error("Rincian faktur belum dapat dibaca: " + error.message);
   if (!invoice) notFound();
@@ -125,6 +126,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
     <ActivityHistoryLink entity="sales_invoices" id={id} />
     <Link className="back-btn" href="/penjualan/faktur">← Faktur & penerimaan</Link>
     <div className="crm-sec">
+      <div style={{ fontSize: 20, fontWeight: 900 }}>{printBranchHeading(Array.isArray(invoice.branches) ? invoice.branches[0] : invoice.branches)}</div>
       <h1 style={{ fontSize: 18 }}>{invoice.no_faktur}</h1>
       {sp.error && <div className="p2ban" role="alert">{sp.error}</div>}
       {sp.success && <div className="p2ban" role="status">{sp.success}</div>}
