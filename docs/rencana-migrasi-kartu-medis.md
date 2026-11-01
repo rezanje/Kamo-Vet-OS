@@ -1084,3 +1084,36 @@ Catatan operasional: percobaan pertama berhenti sebelum menulis apa pun, karena 
 baris perintah shell-nya sendiri. Pengaman diperbaiki menjadi `^node …`.
 
 Total: 08–12 = 791 baru / 201 tertahan / 183 kosong; 13–17 = 2.434 / 411 sudah ada / 1.200 / 508; 18 = 471 / 226 / 77.
+
+## 18. Batch 19–31 (2026-11-01, eksekusi produksi)
+
+Paket `KAMO_Staging_Batches19-31_KnownScope_20261101.zip` (SHA-256 `60be7acd…`):
+- 13 batch, 5.163 kartu, 3.117 fileID.
+- Hash manifest 50/50 cocok; SHA payload per batch cocok dengan ringkasan dan overlay.
+- 907 kunci tahan wajib (overlay) dipakai sebagai gerbang.
+- Inventory Drive dalam paket bukan bukti seluruh Drive (`complete=false`).
+
+Sebelum menulis:
+- DB dicek ulang: 4.696 riwayat lama, 3.889 jejak `gdrive:`.
+- 0 tumpang tindih kunci/fileID dengan batch 03–18 / DB / "Perlu Dilengkapi"; tidak ada impor lain berjalan.
+- Kode tahan baru (`NONSTANDARD_HEADING_IDENTITY_LAYOUT_REVIEW`, varian notes-only) ditahan tanpa draf.
+
+Persiapan baca-saja per batch: rencana + rekonsiliasi, banding tanggal sama, cek silang hewan lain, cek draf,
+finalisasi, preflight.
+- 0 bentrok tanggal sama dengan DB.
+- 6 kartu isi sama dengan hewan beda di dalam batch; 1 isi sama di hewan lain di DB; 1 draf tidak dikirim.
+- 7 kartu ditahan identitas hewan oleh runner.
+- Cek tambahan lintas batch 19–31 (isi/tanggal/hewan/jejak): 0 temuan.
+
+Eksekusi: satu antrean, batch 19→30 berurutan, ledger per batch. Batch 31 tidak punya kartu siap (7 tergerbang), jadi
+tidak dijalankan.
+
+Hasil: 1.614 baru, 0 sudah ada, 3.490 tertahan, 59 kosong, 0 gagal (= 5.163).
+- Readback runner dan readback independen 1.614/1.614 cocok; setiap jejak tepat sekali.
+- 30 pemilik baru, semua `imported_at`. 1.715 draf "Perlu Dilengkapi" baru (total aktif 2.516). Semua 907 gerbang
+  tertahan.
+- DB sesudah: 6.310 riwayat lama (`legacy_source_key` unik), 5.503 jejak `gdrive:`.
+
+Audit efek samping: aktivitas kasir normal selama run (13 penjualan, 7 klaim quest pelanggan walk-in baru). Tidak ada
+yang tertaut ke kunjungan/pemilik hasil impor (0 invoice/resep/pembayaran ke kunjungan impor, 0 transaksi pemilik baru
+impor).
