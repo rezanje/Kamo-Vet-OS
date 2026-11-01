@@ -52,10 +52,10 @@ export async function periksaSaldoAwalFaktur(form: FormData): Promise<OpeningInv
   }
 }
 
-/** OWNER only. The RPC re-validates the same payload, binds it to the previewed hash and is idempotent. */
+/** OWNER or FINANCE. The RPC re-validates the same payload, binds it to the previewed hash and is idempotent. */
 export async function postingSaldoAwalFaktur(input: { payload: OpeningInvoicePayload; expectedHash: string; reason: string; confirmed: boolean }): Promise<OpeningInvoicePostResult> {
   try {
-    const supabase = await actor(["OWNER"], "Hanya OWNER aktif yang dapat memposting saldo awal per faktur.");
+    const supabase = await actor(["OWNER", "FINANCE"], "Hanya OWNER/FINANCE aktif yang dapat memposting saldo awal per faktur.");
     const reason = String(input.reason ?? "").trim();
     if (!input.confirmed || reason.length < 10 || reason.length > 1000) throw new Error("Centang konfirmasi dan isi alasan audit 10–1.000 karakter.");
     if (!/^[0-9a-f]{64}$/.test(String(input.expectedHash ?? "")) || !input.payload || !Array.isArray(input.payload.rows)) throw new Error("Periksa file sebelum memposting.");
