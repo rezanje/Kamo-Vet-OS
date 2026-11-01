@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { aturCacheSebentarUntukTes, cacheSebentar } from '../cache-memori';
+import { aturCacheSebentarUntukTes, cacheSebentar, segarkanCacheSebentar } from '../cache-memori';
 
 beforeEach(() => aturCacheSebentarUntukTes(true));
 afterEach(() => { aturCacheSebentarUntukTes(false); vi.useRealTimers(); });
@@ -35,4 +35,11 @@ it('di tes biasa tidak menyimpan apa-apa', async () => {
   await cacheSebentar('t', 1000, muat);
   await cacheSebentar('t', 1000, muat);
   expect(muat).toHaveBeenCalledTimes(2);
+});
+
+it('segarkan membaca ulang walau belum kedaluwarsa', async () => {
+  const muat = vi.fn().mockResolvedValueOnce(1).mockResolvedValueOnce(2);
+  await expect(cacheSebentar('s', 60_000, muat)).resolves.toBe(1);
+  await expect(segarkanCacheSebentar('s', 60_000, muat)).resolves.toBe(2);
+  await expect(cacheSebentar('s', 60_000, muat)).resolves.toBe(2);
 });

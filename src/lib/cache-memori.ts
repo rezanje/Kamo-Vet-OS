@@ -34,6 +34,12 @@ export function cacheSebentar<T>(kunci: string, umurMs: number, muat: () => Prom
   return nilai;
 }
 
+/** Buang simpanan lalu baca ulang sekarang (mis. data master baru saja berubah). */
+export function segarkanCacheSebentar<T>(kunci: string, umurMs: number, muat: () => Promise<T>): Promise<T> {
+  simpanan.delete(kunci);
+  return cacheSebentar(kunci, umurMs, muat);
+}
+
 let aktifDiTes = false;
 /** Untuk tes helper ini sendiri. */
 export function aturCacheSebentarUntukTes(aktif: boolean) {
