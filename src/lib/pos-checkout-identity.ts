@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import type { createClient } from "@/lib/supabase/server";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
+import { strukTerputus } from "@/lib/transaksi-terputus";
 
 type Client = Awaited<ReturnType<typeof createClient>>;
 export type PosCheckoutIdentity = { key: string; fingerprint: string };
@@ -52,7 +53,7 @@ export async function resumePosCheckout(supabase: Client, cashierId: string, ide
   const context = kind === "cashier" && replacementSaleId && /^[0-9a-f-]{36}$/i.test(replacementSaleId)
     ? `replace_sale=${encodeURIComponent(replacementSaleId)}&` : "";
   const { data: prior, error } = await supabase.from("sales")
-    .select("id, no_struk, customer_id, checkout_fingerprint, payments_finalized_at, voided_at")
+    .select("id, no_struk, customer_id, checkout_fingerprint, payment_plan, payments_finalized_at, voided_at, created_at")
     .eq("cashier_id", cashierId).eq("checkout_key", identity.key).maybeSingle();
   if (error) redirect(`${back}?${context}error=${encodeURIComponent("Hasil transaksi sebelumnya belum dapat diperiksa. Coba lagi sebelum membayar.")}`);
   if (!prior) return;
@@ -62,6 +63,14 @@ export async function resumePosCheckout(supabase: Client, cashierId: string, ide
   }
   if (!prior.payments_finalized_at) {
     if (prior.id === failedSaleId) return;
+    // Percobaan sebelumnya terputus sebelum final (stok/jurnal/pembayaran belum
+    // tercatat) dan pembersihannya tidak sempat jalan. Buang lalu lanjutkan,
+    // supaya draft yang sama tidak terkunci "masih diproses" selamanya.
+    if (strukTerputus(prior)) {
+      const { data: dibuang, error: buangErr } = await supabase.from("sales").delete()
+        .eq("id", prior.id).is("payments_finalized_at", null).select("id");
+      if (!buangErr && Array.isArray(dibuang) && dibuang.length > 0) return;
+    }
     redirect(`${back}?${context}error=${encodeURIComponent("Transaksi ini masih diproses. Tunggu sebentar, lalu coba lagi untuk memeriksa hasilnya.")}`);
   }
   if (prior.customer_id) await recomputeCustomerTier(supabase, prior.customer_id);
