@@ -1,3 +1,4 @@
+import { printBranchHeading } from "@/components/print-branch-heading";
 import { bacaNamaDokter, namaDokterPJ } from "@/lib/dokter-pj";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
@@ -25,7 +26,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   // `maybeSingle()` dulu menggagalkan cetak. Tanpa pilihan eksplisit dicetak yang TERBARU.
   const { data: invoice } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, paid_at, created_at, cashier_name")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, paid_at, created_at, cashier_name, visits(branches(name, code))")
     .eq("visit_id", visitId).is("voided_at", null)
     .order("created_at", { ascending: false }).order("id", { ascending: false })
     .limit(1).maybeSingle();
@@ -47,7 +48,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
-  const branch = one(visit.branches);
+  const branch = one(one(invoice.visits)?.branches ?? null);
   const tgl = new Date(invoice.paid_at ?? invoice.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta",
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
@@ -64,8 +65,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
       {/* Struk thermal 80mm */}
       <div style={{ width: "74mm", margin: "0 auto", background: "#fff", padding: "10px 8px", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5 }}>
         <div style={{ textAlign: "center", marginBottom: 6 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>KAMO PET CARE</div>
-          <div style={{ fontSize: 9.5 }}>{branch?.name ?? "Klinik Hewan"}</div>
+          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>{printBranchHeading(branch)}</div>
         </div>
         <Hr />
         <Kv k="No" v={invoice.invoice_no ?? "-"} />

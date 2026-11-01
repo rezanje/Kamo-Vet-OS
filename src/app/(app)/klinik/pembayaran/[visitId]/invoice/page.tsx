@@ -1,3 +1,4 @@
+import { printBranchHeading } from "@/components/print-branch-heading";
 import { bacaNamaDokter, namaDokterPJ } from "@/lib/dokter-pj";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
@@ -26,7 +27,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   if (!visit) notFound();
 
   let invoiceQuery=supabase.from("invoices")
-    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name", {count:"exact"})
+    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name,visits(branches(name, code))", {count:"exact"})
     .eq("visit_id",visitId).is("voided_at",null);
   if(requested)invoiceQuery=invoiceQuery.eq("id",requested);
   const{data:invoice,error:invoiceError,count:invoiceCount}=await invoiceQuery
@@ -61,7 +62,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   const dokterPJ = namaDokterPJ(visit, await bacaNamaDokter(supabase, [visit.doctor_id]));
   const pet = one(visit.pets);
   const cust = one(visit.customers);
-  const branch = one(visit.branches);
+  const branch = one(one(invoice.visits)?.branches ?? null);
   const tgl = new Date(invoice.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
   const lunas = invoice.paid_status === "Lunas";
   const credit = (payments ?? []).filter((p) => p.transferred_from)
@@ -88,8 +89,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
         {/* Kop */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #16213e", paddingBottom: 14, marginBottom: 18 }}>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 900 }}>KAMO<i className="ti ti-paw" style={{ fontSize: 16, verticalAlign: -1 }} /> PET CARE</div>
-            <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3 }}>{branch?.name ?? "Klinik Hewan"}</div>
+            <div style={{ fontSize: 20, fontWeight: 900 }}>{printBranchHeading(branch)}</div>
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: ".04em" }}>INVOICE</div>

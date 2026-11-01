@@ -1,3 +1,4 @@
+import { printBranchHeading } from "@/components/print-branch-heading";
 import { formatPosMoney } from "@/lib/pos-money";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -30,7 +31,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
   const { data: sale } = await supabase
     .from("sales")
-    .select("id, no_struk, cashier_name, cashier_id, branch_id, shift_id, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name)")
+    .select("id, no_struk, cashier_name, cashier_id, branch_id, shift_id, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, poin_digunakan, voucher_code, created_at, customers(name), branches(name, code)")
     .eq("id", saleId).is("channel", null).maybeSingle();
   if (!sale) notFound();
   const paymentRows = receiptPaymentRows(sale);
@@ -69,8 +70,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
 
       <div className="kasir-receipt" style={{ width: "48mm", maxWidth: "100%", boxSizing: "border-box", margin: "0 auto", background: "#fff", padding: "10px 0", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5, borderRadius: 6, overflowWrap: "anywhere" }}>
         <div style={{ textAlign: "center", marginBottom: 6 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>KAMO PETSHOP</div>
-          <div style={{ fontSize: 9.5 }}>{branch?.name ?? "Petshop"}</div>
+          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>{printBranchHeading(branch)}</div>
         </div>
         <Hr />
         <Row k="No" v={sale.no_struk ?? "-"} />

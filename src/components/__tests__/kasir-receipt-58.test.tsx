@@ -65,7 +65,7 @@ async function render(print = "") {
 
 it("fits the 48 mm printable area of a POS58 receipt", async () => {
   const doc = await render();
-  const receipt = [...doc.querySelectorAll<HTMLDivElement>('div[style*="mm"]')].find(div => div.textContent?.includes("KAMO PETSHOP"))!;
+  const receipt = [...doc.querySelectorAll<HTMLDivElement>('div[style*="mm"]')].find(div => div.textContent?.includes("Cabang Uji Struk"))!;
   expect(receipt).toBeDefined();
   expect(parseFloat(receipt.style.width)).toBeLessThanOrEqual(48);
 });
