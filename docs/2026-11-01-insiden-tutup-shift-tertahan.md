@@ -30,13 +30,42 @@ Penghapusan juga hanya boleh oleh kasir pemilik struk (`pos_sale_cancel_pending`
 
 ## Perbaikan (kode)
 - `src/lib/transaksi-terputus.ts`: struk berencana-bayar yang belum final dan berumur ≥ 10 menit
-  dianggap terputus. Aman dibuang karena finalisasi atomik — belum ada stok/jurnal/poin/pembayaran.
+  dianggap terputus. Jurnal/poin/pembayaran hanya ditulis finalisasi, jadi belum ada. **Stok belum
+  tentu:** kasir (/kasir) dan backoffice berpromo kuantitas memotong stok di dalam finalisasi atomik,
+  tetapi backoffice biasa (/pos/transaksi) memotong stok per baris *sebelum* finalisasi. Karena itu
+  struk terputus hanya dibuang bila **tidak ada** `stock_moves` (source `sale`/`sale-group`,
+  `source_ref` = no_struk); gagal baca = dianggap ada (gagal-tertutup). Struk yang sudah memotong stok
+  dibiarkan supaya penjaga tetap menahan dan manusia merekonsiliasi dengan bukti utuh.
 - `tutupShift` (satu pintu tutup shift petshop/backoffice) membuang struk terputus milik shift itu
   sebelum menghitung. Penghapusan lewat jalur yang sama dengan pembersihan checkout (pemicu DB tetap
-  memeriksa kasir pemilik & tidak adanya jurnal). Yang gagal dibuang tetap ditahan penjaga DB.
-- Pesan penjaga diterjemahkan: minta tunggu ±10 menit lalu coba lagi.
-- `resumePosCheckout`: draf yang sama dengan percobaan terputus ≥ 10 menit membuang struk lama lalu
-  melanjutkan, tidak lagi terkunci "masih diproses".
+  memeriksa kasir pemilik & tidak adanya jurnal). Yang gagal/tidak boleh dibuang tetap ditahan penjaga DB.
+- Pesan penjaga diterjemahkan: kasir diminta tunggu ±10 menit lalu coba lagi, lalu lapor tim teknis
+  (bukan Owner/Admin — mereka tidak punya jalan membersihkannya). Tutup paksa supervisor mendapat
+  pesan sendiri: minta kasir pemilik laci menekan Tutup Shift.
+- `resumePosCheckout`: percobaan terputus ≥ 10 menit dengan checkout key yang sama dibuang lalu
+  checkout lanjut — **sebelum** pembandingan sidik draf, karena kasir sering mengganti metode bayar /
+  uang diterima sebelum mencoba ulang (dulu tetap terkunci "Draft ini sudah digunakan…").
+- `tutupShiftKasir` (/kasir/tutup) sekarang memeriksa pemilik laci seperti layar backoffice & klinik.
+  Sebelumnya rekan satu cabang bisa menutup laci petshop orang lain lewat aksi ini, dan kas kurangnya
+  menjadi kasbon pemilik laci.
+
+## Hasil uji silang (5 sudut, tiap temuan diverifikasi pembantah)
+12 dari 13 temuan bertahan; yang ditangani di PR ini: stok backoffice non-atomik (4 temuan sama),
+draf yang diubah tetap terkunci (2), pesan tutup paksa/Owner (3, sebagian — lihat lanjutan),
+pemilik laci di /kasir/tutup (1).
+
+## Lanjutan (belum dikerjakan, perlu migrasi / di luar insiden)
+1. **Tutup paksa supervisor** tetap tertahan bila kasir pemilik laci tidak bisa masuk lagi (resign,
+   akun nonaktif): `cashier_shift_supervisor_close` tidak membersihkan, dan `pos_sale_cancel_pending`
+   hanya mengizinkan kasir pemilik. Usulan: migrasi yang membuat fungsi supervisor membuang struk
+   terputus (≥10 menit, tanpa jurnal, tanpa stock_moves, tanpa anak RESTRICT) memakai penanda
+   transaksi-lokal (`set_config(..., true)`) yang diterima `pos_sale_cancel_pending`, dan mencatat
+   struk yang dibuang di jejak audit tutup paksa.
+2. **Backoffice /pos/transaksi non-atomik**: pindahkan potong stok + finalisasi ke satu RPC seperti
+   `cashier_post_stock_atomic`. Ini juga menutup kebocoran lama di jalur gagal eksplisit
+   (hapus kepala struk sesudah sebagian stok keluar).
+3. KPI dasbor "Grooming hari ini – Kasir" (`src/lib/grooming-kasir.ts`) ikut menghitung struk yang
+   belum final; samakan dengan pembaca lain (`isCompletedSale`).
 
 ## Pembersihan manual produksi (1 Nov 2026 ±22.20 WIB, atas persetujuan Reza)
 - Cadangan lengkap sebelum hapus: `docs/evidence/2026-11-01-tutup-shift-tertahan/backup-sebelum-hapus.json`

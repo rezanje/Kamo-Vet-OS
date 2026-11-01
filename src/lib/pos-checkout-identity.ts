@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import type { createClient } from "@/lib/supabase/server";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
-import { strukTerputus } from "@/lib/transaksi-terputus";
+import { buangStrukTerputus } from "@/lib/transaksi-terputus";
 
 type Client = Awaited<ReturnType<typeof createClient>>;
 export type PosCheckoutIdentity = { key: string; fingerprint: string };
@@ -57,20 +57,18 @@ export async function resumePosCheckout(supabase: Client, cashierId: string, ide
     .eq("cashier_id", cashierId).eq("checkout_key", identity.key).maybeSingle();
   if (error) redirect(`${back}?${context}error=${encodeURIComponent("Hasil transaksi sebelumnya belum dapat diperiksa. Coba lagi sebelum membayar.")}`);
   if (!prior) return;
+  // Percobaan sebelumnya terputus sebelum final dan pembersihannya tidak sempat jalan.
+  // Buang lalu lanjutkan — apa pun isi draft sekarang (kasir sering ganti metode bayar
+  // sebelum mencoba lagi) — supaya draft tidak terkunci selamanya. Struk yang sudah
+  // memotong stok tidak dibuang (lib/transaksi-terputus); penolakan di bawah tetap jalan.
+  if (!prior.payments_finalized_at && prior.id !== failedSaleId
+    && await buangStrukTerputus(supabase, prior, Date.now(), "checkout")) return;
   if (prior.checkout_fingerprint !== identity.fingerprint) {
     const recovery = prior.payments_finalized_at ? `&completed_sale_id=${encodeURIComponent(prior.id)}&draft_used=${encodeURIComponent(identity.key)}` : "";
     redirect(`${back}?${context}error=${encodeURIComponent(`Draft ini sudah digunakan untuk transaksi ${prior.no_struk ?? "sebelumnya"}. Periksa transaksi tersebut sebelum membuat pembayaran baru.`)}${recovery}`);
   }
   if (!prior.payments_finalized_at) {
     if (prior.id === failedSaleId) return;
-    // Percobaan sebelumnya terputus sebelum final (stok/jurnal/pembayaran belum
-    // tercatat) dan pembersihannya tidak sempat jalan. Buang lalu lanjutkan,
-    // supaya draft yang sama tidak terkunci "masih diproses" selamanya.
-    if (strukTerputus(prior)) {
-      const { data: dibuang, error: buangErr } = await supabase.from("sales").delete()
-        .eq("id", prior.id).is("payments_finalized_at", null).select("id");
-      if (!buangErr && Array.isArray(dibuang) && dibuang.length > 0) return;
-    }
     redirect(`${back}?${context}error=${encodeURIComponent("Transaksi ini masih diproses. Tunggu sebentar, lalu coba lagi untuk memeriksa hasilnya.")}`);
   }
   if (prior.customer_id) await recomputeCustomerTier(supabase, prior.customer_id);

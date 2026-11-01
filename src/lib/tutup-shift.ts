@@ -211,8 +211,8 @@ export async function tutupShift(
   const { shift, closing } = o;
   if (shift.status !== "open") return { ok: false, error: "Shift sudah ditutup." };
 
-  // Struk kasir yang terputus sebelum final (tidak pernah memotong stok/membukukan)
-  // menahan tutup shift selamanya kalau tidak dibuang. Lihat lib/transaksi-terputus.
+  // Struk kasir yang terputus sebelum final menahan tutup shift selamanya kalau tidak
+  // dibuang. Hanya yang belum memotong stok yang dibuang — lihat lib/transaksi-terputus.
   if (shift.shift_type !== "klinik") await buangTransaksiTerputus(supabase, shift.id);
 
   let calculation: Awaited<ReturnType<typeof hitungShift>>;

@@ -1,19 +1,28 @@
 // Transaksi kasir yang terputus di tengah jalan.
 //
-// Checkout kasir menyimpan kepala struk + barisnya dulu, lalu satu fungsi database
-// memotong stok, membukukan jurnal dan memfinalkan pembayaran SEKALIGUS (atomik).
-// Kalau gagal, checkout menghapus kepala struknya lagi. Tapi kalau prosesnya mati
-// di antara dua langkah itu (database lambat/hang, koneksi putus, fungsi server
-// kehabisan waktu), penghapusannya tidak pernah jalan. Struk itu tertinggal dengan
-// status "pembayaran diproses" selamanya, dan penjaga tutup shift menolak menutup
-// laci sampai tidak ada struk seperti itu — kasir terkunci tanpa jalan keluar
-// (insiden 1 Nov 2026: tiga cabang petshop tidak bisa tutup shift).
+// Checkout menyimpan kepala struk + barisnya dulu, lalu memotong stok, membukukan
+// jurnal dan memfinalkan pembayaran. Kalau gagal, checkout menghapus kepala struknya
+// lagi. Tapi kalau prosesnya mati di antara dua langkah itu (database lambat/hang,
+// koneksi putus, fungsi server kehabisan waktu), penghapusannya tidak pernah jalan.
+// Struk itu tertinggal dengan status "pembayaran diproses" selamanya, dan penjaga
+// tutup shift menolak menutup laci sampai tidak ada struk seperti itu — kasir
+// terkunci tanpa jalan keluar (insiden 1 Nov 2026: tiga cabang petshop tidak bisa
+// tutup shift).
 //
-// Struk seperti itu aman dibuang: finalisasi bersifat atomik, jadi selama
-// payments_finalized_at masih kosong belum ada stok keluar, jurnal, poin, maupun
-// pembayaran yang tercatat. Penghapusan tetap lewat jalur yang sama dengan
-// pembersihan checkout biasa — pemicu database hanya mengizinkan kasir pemilik
-// struk, dan menolak struk yang jurnalnya sudah ada.
+// Kapan aman dibuang otomatis:
+// - Jurnal, poin dan pembayaran hanya ditulis oleh finalisasi, jadi selama
+//   payments_finalized_at kosong semuanya belum tercatat.
+// - STOK belum tentu. Kasir (/kasir) dan backoffice berpromo kuantitas memotong stok
+//   di dalam finalisasi atomik, tetapi backoffice biasa (/pos/transaksi) memotong stok
+//   per baris SEBELUM finalisasi. Struk terputus yang sudah punya mutasi stok TIDAK
+//   boleh dibuang otomatis: stoknya akan tetap berkurang tanpa dokumen dan tanpa HPP,
+//   dan percobaan ulang akan memotong stok yang sama dua kali. Struk seperti itu
+//   dibiarkan (penjaga tetap menahan) supaya diperbaiki manusia dengan buktinya utuh.
+// - Bila mutasi stok tidak bisa dibaca, dianggap ADA (gagal-tertutup).
+//
+// Penghapusan lewat jalur yang sama dengan pembersihan checkout biasa — pemicu
+// database hanya mengizinkan kasir pemilik struk, dan menolak struk yang jurnalnya
+// sudah ada.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -25,8 +34,12 @@ type AnyClient = any;
  */
 export const BATAS_TERPUTUS_MS = 10 * 60 * 1000;
 
+/** Sumber mutasi stok penjualan kasir/backoffice (lib/inventory → sale_stock_out_fifo). */
+export const SUMBER_STOK_PENJUALAN = ["sale", "sale-group"] as const;
+
 export type StrukBelumFinal = {
   id: string;
+  no_struk?: string | null;
   created_at?: string | null;
   payment_plan?: unknown;
   payments_finalized_at?: string | null;
@@ -40,10 +53,60 @@ export function strukTerputus(row: StrukBelumFinal, sekarang = Date.now()): bool
   return sekarang - dibuat >= BATAS_TERPUTUS_MS;
 }
 
+/** Apakah struk ini sudah memotong stok? Gagal baca / tanpa nomor = dianggap sudah. */
+export async function strukSudahPotongStok(supabase: AnyClient, noStruk: string | null | undefined): Promise<boolean> {
+  if (!noStruk) return true;
+  try {
+    const { data, error } = await supabase
+      .from("stock_moves").select("id")
+      .eq("source_ref", noStruk)
+      .in("source", [...SUMBER_STOK_PENJUALAN])
+      .limit(1);
+    if (error || !Array.isArray(data)) return true;
+    return data.length > 0;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Buang SATU struk bila benar-benar terputus dan belum memotong stok.
+ * Tidak pernah melempar error; `true` hanya bila barisnya memang terhapus.
+ */
+export async function buangStrukTerputus(
+  supabase: AnyClient, row: StrukBelumFinal, sekarang = Date.now(), konteks = "tutup-shift",
+): Promise<boolean> {
+  if (!strukTerputus(row, sekarang)) return false;
+  const label = row.no_struk ?? row.id;
+  try {
+    if (await strukSudahPotongStok(supabase, row.no_struk)) {
+      console.error(`[${konteks}] struk terputus ${label} sudah memotong stok — tidak dibuang otomatis, perlu rekonsiliasi manual`);
+      return false;
+    }
+    const { data: hapus, error: hapusErr } = await supabase
+      .from("sales").delete()
+      .eq("id", row.id)
+      .is("payments_finalized_at", null)
+      .select("id");
+    if (hapusErr) {
+      console.error(`[${konteks}] struk terputus ${label} gagal dibuang:`, hapusErr.message);
+      return false;
+    }
+    if (Array.isArray(hapus) && hapus.length > 0) {
+      console.warn(`[${konteks}] struk terputus ${label} dibuang (tidak pernah final, tanpa mutasi stok)`);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error(`[${konteks}] gagal membuang struk terputus ${label}:`, error);
+    return false;
+  }
+}
+
 /**
  * Buang struk terputus milik shift ini. Tidak pernah melempar error: kalau ada yang
- * gagal dibuang, penjaga tutup shift di database tetap menolak seperti sebelumnya.
- * Mengembalikan id struk yang berhasil dibuang.
+ * gagal/tidak boleh dibuang, penjaga tutup shift di database tetap menolak seperti
+ * sebelumnya. Mengembalikan id struk yang berhasil dibuang.
  */
 export async function buangTransaksiTerputus(
   supabase: AnyClient, shiftId: string, sekarang = Date.now(),
@@ -57,21 +120,8 @@ export async function buangTransaksiTerputus(
       .is("payments_finalized_at", null);
     if (error || !Array.isArray(data)) return [];
     const dibuang: string[] = [];
-    for (const row of data as (StrukBelumFinal & { no_struk?: string | null })[]) {
-      if (!strukTerputus(row, sekarang)) continue;
-      const { data: hapus, error: hapusErr } = await supabase
-        .from("sales").delete()
-        .eq("id", row.id)
-        .is("payments_finalized_at", null)
-        .select("id");
-      if (hapusErr) {
-        console.error(`[tutup-shift] struk terputus ${row.no_struk ?? row.id} gagal dibuang:`, hapusErr.message);
-        continue;
-      }
-      if (Array.isArray(hapus) && hapus.length > 0) {
-        console.warn(`[tutup-shift] struk terputus ${row.no_struk ?? row.id} dibuang (tidak pernah final)`);
-        dibuang.push(row.id);
-      }
+    for (const row of data as StrukBelumFinal[]) {
+      if (await buangStrukTerputus(supabase, row, sekarang)) dibuang.push(row.id);
     }
     return dibuang;
   } catch (error) {
@@ -82,9 +132,22 @@ export async function buangTransaksiTerputus(
 
 /** Pesan penjaga database "pembayaran masih diproses" dalam bahasa kasir. */
 export const PESAN_MASIH_DIPROSES =
-  "Masih ada transaksi yang sedang diproses di shift ini. Tunggu sekitar 10 menit lalu tekan Tutup Shift lagi — "
-  + "transaksi yang terputus akan dibersihkan otomatis. Kalau masih muncul, hubungi Owner/Admin.";
+  "Masih ada transaksi yang belum selesai diproses di shift ini. Tunggu sekitar 10 menit lalu tekan Tutup Shift lagi — "
+  + "transaksi yang terputus akan dibersihkan otomatis. Kalau setelah itu masih muncul, laporkan ke tim teknis KAMO "
+  + "(sebut nama cabang dan jam transaksi terakhir).";
+
+/** Versi tutup paksa: hanya kasir pemilik laci yang bisa membersihkan transaksinya. */
+export const PESAN_MASIH_DIPROSES_TUTUP_PAKSA =
+  "Laci ini masih punya transaksi kasir yang terputus, jadi belum bisa ditutup paksa. Minta kasir pemilik laci "
+  + "masuk lalu tekan Tutup Shift — transaksi yang terputus dibersihkan otomatis. Kalau kasirnya tidak bisa masuk, "
+  + "laporkan ke tim teknis KAMO.";
+
+const POLA_MASIH_DIPROSES = /pembayaran masih diproses/i;
 
 export function pesanTutupShift(message: string): string {
-  return /pembayaran masih diproses/i.test(message) ? PESAN_MASIH_DIPROSES : message;
+  return POLA_MASIH_DIPROSES.test(message) ? PESAN_MASIH_DIPROSES : message;
+}
+
+export function pesanTutupPaksa(message: string): string {
+  return POLA_MASIH_DIPROSES.test(message) ? PESAN_MASIH_DIPROSES_TUTUP_PAKSA : message;
 }
