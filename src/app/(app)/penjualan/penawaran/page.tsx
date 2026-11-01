@@ -10,6 +10,7 @@ import { loadItemUnits } from "@/lib/satuan";
 import { buatPenawaran, jadikanPesanan, ubahStatusPenawaran } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { readCompleteList } from "@/lib/checked-list";
+import { PelangganPicker } from "@/components/PelangganPicker";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number };
@@ -40,11 +41,10 @@ export default async function PenawaranPage({
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
 
-  const [{ data: docData }, { data: custData }, { data: cabData }, itemData] = await Promise.all([
+  const [{ data: docData }, { data: cabData }, itemData] = await Promise.all([
     supabase.from("sales_quotations")
       .select(QUOTATION_SELECT)
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(200),
-    supabase.from("customers").select("id, name, phone").order("name").limit(500),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, unit, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang penawaran", { maxRows: null }),
   ]);
@@ -56,7 +56,6 @@ export default async function PenawaranPage({
     if (selected.error) throw new Error("Penawaran terpilih belum dapat dibaca.");
     if (selected.data) dok = [selected.data as unknown as Penawaran, ...dok];
   }
-  const pelanggan = (custData ?? []) as { id: string; name: string; phone: string }[];
   const cabang = (cabData ?? []) as { id: string; name: string }[];
   // Satuan turunan ikut dikirim supaya baris pesanan bisa memilih dus/box, bukan
   // cuma satuan dasar (permintaan Bu Nisa, meeting 14 Agustus).
@@ -78,10 +77,7 @@ export default async function PenawaranPage({
             <div className="frow">
               <div>
                 <label className="flab">Pelanggan *</label>
-                <select className="fi" name="customer_id" defaultValue="" required>
-                  <option value="">— pilih pelanggan —</option>
-                  {pelanggan.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}
-                </select>
+                <PelangganPicker required />
               </div>
               <div>
                 <label className="flab">Cabang</label>

@@ -8,6 +8,7 @@ import { ringkasSyarat, voucherStatus, type VoucherRow } from "@/lib/voucher";
 import { simpanVoucher, toggleVoucher } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { nonaktifkanPromoKadaluarsa } from "@/lib/promo-kadaluarsa";
+import { PelangganPicker } from "@/components/PelangganPicker";
 
 const STATUS_BADGE: Record<string, string> = { aktif: "g", terjadwal: "b", kadaluarsa: "x", nonaktif: "r" };
 const STATUS_LABEL: Record<string, string> = {
@@ -39,15 +40,13 @@ export default async function VoucherPage({
   // Voucher yang sudah lewat tanggal dimatikan dulu supaya daftarnya jujur.
   await nonaktifkanPromoKadaluarsa(supabase);
 
-  const [{ data }, { data: custData }, { data: golData }] = await Promise.all([
+  const [{ data }, { data: golData }] = await Promise.all([
     supabase
     .from("vouchers")
     .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id, created_at, customers(name), customer_categories(nama)")
     .order("created_at", { ascending: false }),
-    supabase.from("customers").select("id, name").order("name").limit(500),
     supabase.from("customer_categories").select("id, nama").eq("is_active", true).order("nama"),
   ]);
-  const pelanggan = (custData ?? []) as { id: string; name: string }[];
   const golongan = (golData ?? []) as { id: string; nama: string }[];
 
   const rows = ((data ?? []) as unknown as Row[]).map((v) => ({
@@ -154,10 +153,9 @@ export default async function VoucherPage({
                 yang menempel di orangnya tidak bisa ditiru seperti voucher kertas. */}
             <div>
               <label className="flab">Khusus pelanggan</label>
-              <select className="fi" name="customer_id" defaultValue={editing?.customer_id ?? ""}>
-                <option value="">— siapa pun —</option>
-                {pelanggan.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              {/* Dicari di server — dulu <select> berisi semua 10.000+ pelanggan. */}
+              <PelangganPicker key={editing?.id ?? "baru"} kosongLabel="Kosongkan = siapa pun"
+                initial={editing?.customer_id ? { id: editing.customer_id, name: satu(editing.customers)?.name ?? "Pelanggan", phone: "" } : null} />
             </div>
             <div>
               <label className="flab">Khusus golongan</label>

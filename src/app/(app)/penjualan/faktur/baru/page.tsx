@@ -12,6 +12,7 @@ import { loadItemUnits } from "@/lib/satuan";
 import { readCompleteList } from "@/lib/checked-list";
 import { buatFakturLangsung } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { PelangganPicker } from "@/components/PelangganPicker";
 
 type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number };
 
@@ -28,8 +29,7 @@ export default async function FakturJualBaruPage({ searchParams }: {
   const boleh = await bolehTransaksiKas();
   const today = hariIniWIB();
 
-  const [{ data: custData }, { data: cabData }, { data: gudangData }, itemData, allowed] = await Promise.all([
-    supabase.from("customers").select("id, name, phone").order("name").limit(500),
+  const [{ data: cabData }, { data: gudangData }, itemData, allowed] = await Promise.all([
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     supabase.from("warehouses").select("id, name, branch_id").eq("is_active", true).order("name"),
     readCompleteList<CatalogItem>((from, to) => supabase.from("items")
@@ -38,7 +38,6 @@ export default async function FakturJualBaruPage({ searchParams }: {
     user ? allowedBranchIds(supabase, user.id) : Promise.resolve([] as string[]),
   ]);
 
-  const pelanggan = (custData ?? []) as { id: string; name: string; phone: string }[];
   const cabang = ((cabData ?? []) as CabangOpsi[]).filter((b) => canUseBranch(allowed, b.id));
   const gudang = ((gudangData ?? []) as GudangOpsi[]).filter((g) => !!g.branch_id && canUseBranch(allowed, g.branch_id));
   const unitMap = await loadItemUnits(supabase);
@@ -64,10 +63,7 @@ export default async function FakturJualBaruPage({ searchParams }: {
             <div className="frow">
               <div>
                 <label className="flab" htmlFor="faktur-customer">Pelanggan *</label>
-                <select className="fi" id="faktur-customer" name="customer_id" defaultValue="" required>
-                  <option value="">— pilih pelanggan —</option>
-                  {pelanggan.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}
-                </select>
+                <PelangganPicker id="faktur-customer" required />
               </div>
               <CabangGudang cabang={cabang} gudang={gudang} />
               <div>

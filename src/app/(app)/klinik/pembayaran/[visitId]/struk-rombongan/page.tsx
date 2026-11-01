@@ -1,3 +1,4 @@
+import { printBranchHeading } from "@/components/print-branch-heading";
 import { bacaNamaDokter, namaDokterPJ, type VisitDokter } from "@/lib/dokter-pj";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -25,23 +26,33 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   const ringkasan = ringkasTagihanRombongan(rombongan.baris);
 
   const { data: acuan } = await supabase
-    .from("visits").select("branches(name)").eq("id", visitId).maybeSingle();
-  const branch = one(acuan?.branches as Rel<{ name: string }>);
+    .from("visits").select("branches(name, code)").eq("id", visitId).maybeSingle();
+  const branch = one(acuan?.branches as Rel<{ name: string; code: string | null }>);
 
   // Rincian tiap tagihan. Kunjungan yang belum ditagih sengaja tetap tampil sebagai
   // baris kosong — pemilik berhak tahu ada pemeriksaan yang tagihannya belum keluar.
   // Rawat inap bertahap: satu kunjungan bisa punya beberapa nomor tagihan aktif.
-  const invoiceIds = rombongan.baris
+  const invoiceIds = [...new Set(rombongan.baris
     .flatMap((b) => b.invoiceNos ?? (b.invoiceNo ? [b.invoiceNo] : []))
-    .filter(Boolean) as string[];
-  const { data: invs } = invoiceIds.length
+    .filter(Boolean) as string[])];
+  const { data: invs, error: invoiceError } = invoiceIds.length
     ? await supabase
         .from("invoices")
-        .select("id, invoice_no, subtotal, discount, tax, total, metode_bayar, paid_status, dp_amount, cashier_name")
+        .select("id, invoice_no, subtotal, discount, tax, total, metode_bayar, paid_status, dp_amount, cashier_name, visits(branches(name, code))")
         .in("invoice_no", invoiceIds)
-    : { data: [] as Record<string, unknown>[] };
+    : { data: [] as Record<string, unknown>[], error: null };
+
+  // A failed or truncated read is not an unbilled group: withhold the receipt.
+  const requestedInvoiceNos = new Set(invoiceIds);
+  if (invoiceIds.length && (invoiceError || !Array.isArray(invs)
+    || invs.length !== invoiceIds.length
+    || new Set(invs.map(inv => inv?.invoice_no)).size !== invoiceIds.length
+    || invs.some(inv => typeof inv?.invoice_no !== "string" || !requestedInvoiceNos.has(inv.invoice_no)))) {
+    throw new Error("Verifikasi rincian tagihan gagal. Struk gabungan tidak dapat dicetak.");
+  }
 
   type Inv = {
+    visits: Rel<{ branches: Rel<{ name: string; code: string | null }> }>;
     id: string; invoice_no: string; subtotal: number; discount: number; tax: number;
     total: number; metode_bayar: string | null; paid_status: string; dp_amount: number; cashier_name: string | null;
   };
@@ -89,8 +100,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
 
       <div style={{ width: "74mm", margin: "0 auto", background: "#fff", padding: "10px 8px", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5 }}>
         <div style={{ textAlign: "center", marginBottom: 6 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>KAMO PET CARE</div>
-          <div style={{ fontSize: 9.5 }}>{branch?.name ?? "Klinik Hewan"}</div>
+          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>{invoiceIds.length ? [...new Set(invRows.map(inv => printBranchHeading(one(one(inv.visits)?.branches ?? null))))].join(" · ") : printBranchHeading(branch)}</div>
         </div>
         <Hr />
         <Kv k="Tgl" v={tgl} />

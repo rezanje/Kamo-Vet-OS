@@ -1,3 +1,4 @@
+import { printBranchHeading } from "@/components/print-branch-heading";
 import { formatPosMoney } from "@/lib/pos-money";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -52,8 +53,7 @@ export default async function PosStrukPage({ params, searchParams }: {
 
       <div style={{ width: "74mm", margin: "0 auto", background: "#fff", padding: "10px 8px", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5 }}>
         <div style={{ textAlign: "center", marginBottom: 6 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>KAMO PET CARE</div>
-          <div style={{ fontSize: 9.5 }}>{branch?.name ?? "Petshop"}</div>
+          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>{printBranchHeading(branch)}</div>
         </div>
         <Hr />
         <Row k="No" v={sale.no_struk ?? "-"} />

@@ -19,6 +19,7 @@ import { aggregateServiceLines, serviceLinePromos } from "@/lib/service-line-pro
 import { posNetTotal, posSubtotal } from "@/lib/pos-money";
 import { bacaKode, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
 import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
+import { muatPelanggan, useCariPelanggan } from "@/components/useCariPelanggan";
 
 export type Item = { id: string; code?: string; name: string; item_type?: string; tindakan_kategori?: string | null; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
@@ -44,9 +45,12 @@ const sameProductUnit = (a: Line, b: Line) => a.item_id === b.item_id && a.satua
 // HANYA pengecualiannya — jumlahnya sedikit — jadi ganti cabang cukup dihitung
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
+const TANPA_PELANGGAN: Cust[] = [];
 
-export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
-  items: Item[]; customers: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
+export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
+  items: Item[];
+  /** Pelanggan yang sudah diketahui (opsional). Daftar lengkap tidak lagi dikirim — dicari di server. */
+  customers?: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
   /** P03: peringatan jual di bawah HPP dari simpan sebelumnya; wajib dikonfirmasi sebelum simpan ulang. */
   hppWarning?: string | null; hppSignature?: string | null;
   promoPerCabang?: Record<string, PromoHitung[]>;
@@ -62,6 +66,9 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
   const [cart, setCart] = useState<Line[]>([]);
   const [custQ, setCustQ] = useState("");
   const [cust, setCust] = useState<Cust | null>(null);
+  const [custMemuat, setCustMemuat] = useState<{ id: string; name: string } | null>(null);
+  const [custErr, setCustErr] = useState<string | null>(null);
+  const custReq = useRef(0);
   const [petId, setPetId] = useState<string>("");
   const [metode, setMetode] = useState("Tunai");
   const [discount, setDiscount] = useState(0);
@@ -102,6 +109,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
         setCust(customer);
         setCustQ(customer?.name ?? "");
         setPetId(customer?.pets.some((pet) => pet.id === draft.petId) ? draft.petId : "");
+        if (!customer && draft.customerId) pickCust({ id: draft.customerId, name: "" }, draft.petId);
         setLegacySalespersonId(draft.salespersonId);
         setMetode(draft.metode || "Tunai");
         setMerchantFeePercent(draft.merchantFeePercent ?? 0);
@@ -128,7 +136,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
       savedAt: Date.now(),
       checkoutKey,
       branchId,
-      customerId: cust?.id ?? "",
+      customerId: cust?.id ?? custMemuat?.id ?? "",
       petId,
       salespersonId: legacySalespersonId,
       metode,
@@ -141,7 +149,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
       cart,
     };
     sessionStorage.setItem(POS_DRAFT_KEY, JSON.stringify(draft));
-  }, [branchId, bayar, cart, cust?.id, discount, voucher, metode, split, payments, merchantFeePercent, petId, legacySalespersonId, checkoutKey]);
+  }, [branchId, bayar, cart, cust?.id, custMemuat?.id, discount, voucher, metode, split, payments, merchantFeePercent, petId, legacySalespersonId, checkoutKey]);
 
   // Katalog dengan harga cabang terpasang — dasar untuk tampilan & keranjang.
   const katalog = useMemo(() => {
@@ -158,11 +166,9 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
     return s ? katalog.filter((i) => `${i.code ?? ""} ${i.name}`.toLowerCase().includes(s)) : katalog;
   }, [katalog, q]);
 
-  const custHits = useMemo(() => {
-    const s = custQ.trim().toLowerCase();
-    if (!s) return [];
-    return customers.filter((c) => c.name.toLowerCase().includes(s) || c.phone.includes(s)).slice(0, 5);
-  }, [customers, custQ]);
+  // Dicari di server sambil mengetik — daftar 10.000+ pelanggan tidak lagi dikirim ke layar.
+  const cariCust = useCariPelanggan(custQ, !cust && !custMemuat);
+  const custHits = cariCust.hits;
 
   const unitsOf = (itemId: string) => katalog.find((i) => i.id === itemId)?.units ?? [];
 
@@ -218,7 +224,10 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
   // C05: kode kampanye terikat promo → promo itu ikut dipotong; terikat voucher → rumus voucher itu.
   const kode = bacaKode(voucher, kodeKampanye);
   const promoCabang = promoDenganKode(promoPerCabang[branchId] ?? [], kode.promoId);
-  const rincianPromo = serviceLinePromos(promoCabang, cart);
+  const rincianPromo = serviceLinePromos(promoCabang, cart.map(line => {
+    const unit = katalog.find(item => item.id === line.item_id)?.units.find(unit => unit.unit === line.satuan);
+    return {...line, officialPrice: unit?.sell_price, faktor: unit?.factor, manualOverride: line.harga !== unit?.sell_price};
+  }));
   const promoDiscount = totalPotonganPromo(rincianPromo);
   const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
   const diskonKategori = diskonGolonganKeranjang(
@@ -256,8 +265,24 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
   } catch { paymentValid = false; }
   const canPay = checkoutKey && branchId && cart.length > 0 && paymentValid && !tolakKode;
 
-  const pickCust = (c: Cust) => { setCust(c); setCustQ(c.name); setPetId(""); };
-  const clearCust = () => { setCust(null); setCustQ(""); setPetId(""); };
+  function pickCust(hit: { id: string; name: string }, petAwal = "") {
+    const req = ++custReq.current;
+    setCust(null); setPetId(""); setCustErr(null);
+    setCustMemuat(hit);
+    if (hit.name) setCustQ(hit.name);
+    muatPelanggan<Cust>(hit.id, "pos").then((row) => {
+      if (req !== custReq.current) return;
+      setCustMemuat(null);
+      if (!row) { setCustQ(""); setCustErr("Pelanggan tidak ditemukan lagi. Cari ulang."); return; }
+      setCust(row); setCustQ(row.name);
+      if (petAwal && row.pets.some((pet) => pet.id === petAwal)) setPetId(petAwal);
+    }).catch(() => {
+      if (req !== custReq.current) return;
+      setCustMemuat(null);
+      setCustErr("Data pelanggan gagal dimuat. Pilih ulang dari hasil cari.");
+    });
+  }
+  const clearCust = (q = "") => { custReq.current++; setCustMemuat(null); setCustErr(null); setCust(null); setCustQ(q); setPetId(""); };
 
   return (
     <form action={checkoutSale}>
@@ -309,8 +334,19 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
           {/* Pelanggan */}
           <div style={{ position: "relative" }}>
             <input className="fi" placeholder="Cari pelanggan / member..." value={custQ}
-              onChange={(e) => { setCustQ(e.target.value); setCust(null); }} />
-            {cust && <i className="ti ti-x" onClick={clearCust} style={{ position: "absolute", right: 8, top: 8, cursor: "pointer", color: "var(--td)", fontSize: 13 }} />}
+              onChange={(e) => clearCust(e.target.value)} />
+            {(cust || custMemuat) && <i className="ti ti-x" onClick={() => clearCust()} style={{ position: "absolute", right: 8, top: 8, cursor: "pointer", color: "var(--td)", fontSize: 13 }} />}
+            {!cust && !custMemuat && cariCust.memuat && custHits.length === 0 && (
+              <div role="status" style={{ fontSize: 10, color: "var(--td)", marginTop: 3 }}>Mencari…</div>
+            )}
+            {!cust && !custMemuat && !cariCust.memuat && cariCust.gagal && (
+              <div role="alert" style={{ fontSize: 10, color: "#b91c1c", marginTop: 3 }}>{cariCust.gagal}</div>
+            )}
+            {!cust && !custMemuat && !cariCust.memuat && !cariCust.gagal && !cariCust.terlaluPendek && custQ.trim() && custHits.length === 0 && (
+              <div role="status" style={{ fontSize: 10, color: "var(--td)", marginTop: 3 }}>Pelanggan tidak ditemukan.</div>
+            )}
+            {custMemuat && <div role="status" style={{ fontSize: 10, color: "var(--td)", marginTop: 3 }}>Memuat data pelanggan…</div>}
+            {!custMemuat && custErr && <div role="alert" style={{ fontSize: 10, color: "#b91c1c", marginTop: 3 }}>{custErr}</div>}
             {!cust && custHits.length > 0 && (
               <div style={{ position: "absolute", zIndex: 5, top: "100%", left: 0, right: 0, background: "#fff", border: ".5px solid var(--bd)", borderRadius: 6, marginTop: 2, boxShadow: "0 2px 8px rgba(0,0,0,.1)" }}>
                 {custHits.map((c) => (

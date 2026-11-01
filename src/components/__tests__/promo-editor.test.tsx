@@ -11,6 +11,12 @@ let host:HTMLDivElement,root:Root;
 async function render(value=snapshot){await act(async()=>root.render(<PromoEditor key={`${value.promo.id}:${value.version}`} userId="owner" snapshot={value} items={items} branches={branches} categories={[{id:'food',label:'Makanan',includes:['food']}]}/>));}
 const payload=()=>new FormData(host.querySelector('form')!);
 async function input(name:string,value:string){const el=host.querySelector<HTMLInputElement>(`[name="${name}"]`)!;await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));});}
+it('fails closed instead of presenting a quantity-pool promo as editable legacy discount',async()=>{
+ await render({...snapshot,version:'c'.repeat(32),promo:{...snapshot.promo,rule:{discount_mode:'quantity_pool',quantity_pool:{version:1,unit:'PCS',normal_price:20000,tiers:[{qty:6,total:110000},{qty:2,total:38000}]}}}});
+ expect(host.textContent).toContain('quantity pool');
+ expect(host.querySelector('form')).toBeNull();
+ expect(host.querySelector('button[type=submit]')).toBeNull();
+});
 beforeEach(async()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});sessionStorage.clear();action.edit.mockReset();action.edit.mockResolvedValue({ok:false,message:'Promo sudah berubah'});host=document.createElement('div');document.body.append(host);root=createRoot(host);await render();});
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();});
 it('prefills all saved rules including a truly open start date and retains inactive item/branch IDs',()=>{const f=payload();expect(f.get('name')).toBe('Fiction name');expect(f.get('suggest')).toBe('Fiction reminder');expect(f.get('valid_from')).toBe('');expect(f.get('discount_value')).toBe('25');expect(f.get('min_subtotal')).toBe('2000');expect(f.get('kelipatan')).toBe('1');expect(f.get('auto_apply')).toBe('1');expect(f.getAll('item_ids')).toEqual(['old']);expect(f.getAll('branch_ids')).toEqual(['branch-old']);expect(host.textContent).toContain('Fiction nonaktif');});

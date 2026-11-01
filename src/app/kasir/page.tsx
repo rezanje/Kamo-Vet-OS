@@ -5,18 +5,17 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
 import { voucherBerlaku, type VoucherRow as VoucherFull } from "@/lib/voucher";
-import { promoDiscountMode, validatePackageDiscount, type PromoHitung } from "@/lib/promo-hitung";
+import { promoPricingRule, validatePackageDiscount, type PromoHitung } from "@/lib/promo-hitung";
 import { type AturanDiskon } from "@/lib/harga-golongan";
 import { hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions } from "@/lib/satuan";
 import { stokEfektifGrup } from "@/lib/grup-barang";
-import { KasirClient, type ItemRow, type CustRow, type VoucherRow, type PromoRow } from "./KasirClient";
+import { KasirClient, type ItemRow, type VoucherRow, type PromoRow } from "./KasirClient";
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { loadKasirItems, loadKasirCatalogDetails, loadKasirGroupComponents } from "@/lib/kasir-catalog";
 import { loadBranchGroomingPolicy } from "@/lib/service-performers-server";
 import { isGroomingService } from "@/lib/grooming-requirements";
-import { isCompletedSale } from "@/lib/sale-payment-reporting";
 import { readCompleteList } from "@/lib/checked-list";
 import { loadActiveVouchers } from "@/lib/voucher-loader";
 import { loadKodeKampanyeAktif } from "@/lib/kode-kampanye";
@@ -49,24 +48,18 @@ export default async function KasirPage({
   }
   const replacementDraft = replacement ? saleReplacementDraft(replacement) : undefined;
 
-  const [, itemsRaw, { data: customers }, { data: salesAgg }, { data: invAgg }, vouchers, promos, kodeKampanye] = await Promise.all([
+  const [, itemsRaw, vouchers, promos, kodeKampanye] = await Promise.all([
     // Penyapu promo/voucher kedaluwarsa ikut dijalankan dari sini karena kasir
     // adalah layar yang paling sering dibuka; fungsinya berhenti lebih awal
     // lewat indeks kalau memang tidak ada yang lewat tanggal. Hasil bacaan di
     // bawah tetap disaring tanggal, jadi urutannya tidak perlu dijamin.
     nonaktifkanPromoKadaluarsa(supabase),
     loadKasirItems(supabase),
-    // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
-    // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
-    supabase.from("customers")
-      .select("id, name, phone, points, tier, kategori, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), customer_review_statuses(nama, warna, nada)")
-      .order("name"),
-    supabase.from("sales").select("customer_id, total, payment_plan, payments_finalized_at, voided_at"),
-    supabase
-      .from("invoices")
-      .select("total, visits!inner(customer_id)")
-      .eq("paid_status", "Lunas")
-      .is("voided_at", null),
+    // Pelanggan TIDAK lagi dimuat di sini. Dulu seluruh 10.000+ pelanggan plus semua
+    // penjualan & invoice dibaca tiap kasir dibuka (±20 permintaan, sampai 7 detik) —
+    // kasir lambat & sempat gagal dibuka (1 Nov 2026). Sekarang layar mencari lewat
+    // /api/pelanggan sambil mengetik, dan ringkasan transaksi dihitung per pelanggan
+    // terpilih (lib/pelanggan-server).
     loadActiveVouchers(supabase),
     readCompleteList<PromoFull>((from,to)=>supabase.from("promos")
       .select("id, name, promo_type, rule, is_active, branch_ids, valid_from, valid_until, min_qty, max_qty, kelipatan, auto_apply, discount_type, discount_value",{count:"exact"})
@@ -100,8 +93,8 @@ export default async function KasirPage({
   }
   const promoHitung: PromoHitung[] = promosActive.map((p) => {
     const itemIds=itemsPerPromo.get(p.id) ?? [];
-    const discountMode=promoDiscountMode(p.rule?.discount_mode);
-    validatePackageDiscount(discountMode,p.discount_type,p.min_qty,itemIds);
+    const pricing=promoPricingRule(p.rule,itemIds);
+    validatePackageDiscount(pricing.discountMode,p.discount_type,p.min_qty,itemIds);
     return ({
     id: p.id, name: p.name,
     itemIds,
@@ -112,7 +105,7 @@ export default async function KasirPage({
     autoApply: !!p.auto_apply,
     discountType: p.discount_type,
     discountValue: p.discount_value == null ? null : Number(p.discount_value),
-    discountMode,
+    ...pricing,
     minSubtotal: p.rule?.min_subtotal ?? null,
   });
   });
@@ -129,21 +122,6 @@ export default async function KasirPage({
   const stockMap: Record<string, number> = {};
   for (const row of details.stock) stockMap[row.item_id] = Number(row.qty);
 
-  // Ringkasan transaksi per pelanggan (petshop sales + klinik invoices lunas,
-  // semua waktu) — sama pola dengan header detail owner di antrian.
-  const trxCount: Record<string, number> = {};
-  const trxSum: Record<string, number> = {};
-  for (const s of (salesAgg ?? []).filter(isCompletedSale) as { customer_id: string | null; total: number }[]) {
-    if (!s.customer_id) continue;
-    trxCount[s.customer_id] = (trxCount[s.customer_id] ?? 0) + 1;
-    trxSum[s.customer_id] = (trxSum[s.customer_id] ?? 0) + Number(s.total || 0);
-  }
-  for (const iv of (invAgg ?? []) as { total: number; visits: Rel<{ customer_id: string | null }> }[]) {
-    const custId = one(iv.visits)?.customer_id;
-    if (!custId) continue;
-    trxCount[custId] = (trxCount[custId] ?? 0) + 1;
-    trxSum[custId] = (trxSum[custId] ?? 0) + Number(iv.total || 0);
-  }
 
   // Harga jual bisa beda per cabang (migrasi 0073) — dipakai harga cabang shift ini.
   const harga = new Map(details.prices.map(row => [`${row.item_id}|${row.unit}`, Number(row.sell_price)]));
@@ -208,36 +186,14 @@ export default async function KasirPage({
       diskonDefault: Number(i.default_discount) || 0,
       substitusi: i.substitute_item_id ? namaById.get(i.substitute_item_id) ?? null : null,
       tiers: tierMap.get(i.id) ?? [],
-      // Hanya kirim kalau benar-benar berjenjang — barang bersatuan tunggal tidak
-      // perlu dropdown yang isinya satu pilihan.
-      satuan: i.item_type !== "Grup" && satuan.length > 1 ? satuan : undefined,
+      // Single-unit products still need their official unit/factor for pool
+      // eligibility. The client only shows a dropdown when length > 1.
+      satuan: i.item_type !== "Grup" && satuan.length > 0 ? satuan : undefined,
     };
   });
 
   const salespeople = await loadServiceStaff(supabase, shift.branch_id);
 
-  type CustRaw = {
-    id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
-    category_id: string | null;
-    customer_categories: Rel<{ nama: string; diskon_persen: number; rupiah_per_poin: number; is_active: boolean }>;
-    customer_review_statuses: Rel<{ nama: string; warna: string; nada: string }>;
-  };
-  const custRows: CustRow[] = ((customers ?? []) as unknown as CustRaw[]).map((c) => {
-    const gol = one(c.customer_categories);
-    return {
-      id: c.id, name: c.name, phone: c.phone, points: c.points, tier: c.tier,
-      // Nama golongan dari master; kolom teks lama dipakai kalau belum dipetakan.
-      kategori: gol?.nama ?? c.kategori,
-      // Golongan nonaktif tidak memberi diskon — sama aturannya dengan server.
-      diskonPersen: gol?.is_active ? Number(gol.diskon_persen) : 0,
-      rupiahPerPoin: gol?.is_active ? Number(gol.rupiah_per_poin) : undefined,
-      golonganId: gol?.is_active ? c.category_id : null,
-      trx: trxCount[c.id] ?? 0, belanja: trxSum[c.id] ?? 0,
-      // Status ulasan ikut dibawa supaya kasir tahu siapa yang dia layani —
-      // yang bernada negatif ditandai jelas begitu pelanggannya dipilih.
-      ulasan: one(c.customer_review_statuses) ?? null,
-    };
-  });
 
   // Pengecualian diskon per produk/kategori (0082) + kategori tiap barang.
   // Dikirim ke layar supaya angka yang dilihat kasir sama dengan yang nanti
@@ -264,7 +220,6 @@ export default async function KasirPage({
       shiftId={shift.id}
       branchName={shift.branchName}
       items={itemRows}
-      customers={custRows}
       vouchers={vouchersAktif as unknown as VoucherRow[]}
       kodeKampanye={kodeKampanye}
       hariIni={wibToday}

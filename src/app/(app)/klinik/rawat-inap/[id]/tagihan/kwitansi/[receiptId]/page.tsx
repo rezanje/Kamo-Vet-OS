@@ -1,3 +1,4 @@
+import { printBranchHeading } from "@/components/print-branch-heading";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -14,7 +15,7 @@ export default async function KwitansiPage({ params }: { params: Promise<{ id: s
 
   const { data: receipt, error } = await supabase
     .from("clinic_payment_receipts")
-    .select("id, no_kwitansi, tanggal, total, status, catatan, void_reason, created_at, visit_id, branch_id, profiles!clinic_payment_receipts_created_by_fkey(full_name), clinic_payment_receipt_parts(urutan, metode, amount), branches(name)")
+    .select("id, no_kwitansi, tanggal, total, status, catatan, void_reason, created_at, visit_id, branch_id, profiles!clinic_payment_receipts_created_by_fkey(full_name), clinic_payment_receipt_parts(urutan, metode, amount), branches(name, code)")
     .eq("id", receiptId).maybeSingle();
   if (error) throw new Error("Kwitansi belum dapat diverifikasi. Muat ulang sebelum mencetak.");
   if (!receipt) notFound();
@@ -29,7 +30,7 @@ export default async function KwitansiPage({ params }: { params: Promise<{ id: s
   ]);
   const pet = one(visit?.pets as Rel<{ name: string; species: string | null }>);
   const cust = one(visit?.customers as Rel<{ name: string }>);
-  const branch = one(receipt.branches as Rel<{ name: string }>);
+  const branch = one(receipt.branches as Rel<{ name: string; code: string | null }>);
   const kasir = one(receipt.profiles as Rel<{ full_name: string | null }>);
   const bagian = ((receipt.clinic_payment_receipt_parts ?? []) as { urutan: number; metode: string; amount: number }[])
     .slice().sort((a, b) => a.urutan - b.urutan);
@@ -49,8 +50,7 @@ export default async function KwitansiPage({ params }: { params: Promise<{ id: s
 
       <div style={{ width: "74mm", margin: "0 auto", background: "#fff", padding: "10px 8px", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5 }}>
         <div style={{ textAlign: "center", marginBottom: 6 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>KAMO PET CARE</div>
-          <div style={{ fontSize: 9.5 }}>{branch?.name ?? "Klinik Hewan"}</div>
+          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>{printBranchHeading(branch)}</div>
           <div style={{ fontSize: 10, fontWeight: 700, marginTop: 3 }}>KWITANSI PEMBAYARAN</div>
         </div>
         <Hr />

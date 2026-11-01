@@ -6,6 +6,7 @@ export type PromoEditValues={name:string;promo_type:string;suggest:string;min_su
 // and sets this flag, the mode stays hidden and is refused, so the app can ship first.
 export function packageTotalReleased(flag=process.env.PROMO_PACKAGE_TOTAL_ENABLED):boolean{return flag==='1'||flag==='true';}
 export function assertPackageTotalReleased(mode:PromoDiscountMode,savedMode:PromoDiscountMode='per_unit',released=packageTotalReleased()):void{
+ if(mode==='quantity_pool'||savedMode==='quantity_pool')throw new Error('Promo quantity pool tidak dapat dibuat atau diubah melalui editor lama. Hubungi admin rilis.');
  if(mode==='package_total'&&savedMode!=='package_total'&&!released)throw new Error('Promo total per paket belum bisa dipakai: menunggu pembaruan database');
 }
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
