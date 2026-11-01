@@ -11,6 +11,13 @@ Format tiap balasan:
 2. **Ringkasan** — 2-4 bullet pendek, satu ide per bullet.
 3. **Pilihan** — A/B/C + saran, **hanya kalau ada keputusan bisnis nyata**. Kalau tidak ada, jangan dikarang.
 
+Format **setiap kali satu pekerjaan selesai** (permintaan Reza, 1 Nov) — wajib tiga poin ini:
+1. **Udah live belum?** — sudah aktif di Production atau belum; kalau belum bisa dipastikan, bilang jujur
+   dan sebut cara ngeceknya.
+2. **Tindak lanjut** — apa lagi yang perlu dikerjakan / diputuskan / ditunggu.
+3. **Chat buat user** — draf pesan siap kirim ke pelapor (mis. Anisa di grup klinik), bahasa santai,
+   tanpa istilah teknis, berisi apa yang berubah dan cara pakainya.
+
 Aturan keras:
 - Tanpa jargon. Istilah teknis diterjemahkan jadi dampak bisnis.
 - Jangan tempel kode, log, error mentah, nama file/tabel/kolom, atau jalan pikiran teknis ke chat.
