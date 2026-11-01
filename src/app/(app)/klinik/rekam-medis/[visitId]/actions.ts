@@ -56,6 +56,9 @@ const racikanTanpaBahan = (r: ResepItem) => !r.official_version_id &&
  * popup "Stok tidak cukup" tetap muncul; penolakan Edit sendiri tetap apa adanya. */
 const KODE_PERACIKAN = /^(STOCK_SHORT|LAYER_SHORT|INGREDIENT_INVALID|COST_MISSING|RECIPE_[A-Z_]+|UNIT_INVALID|ITEM_INVALID|WAREHOUSE_MISSING):/;
 function pesanGagalEditLengkap(error: { code?: string; message: string }, adaRacikanBaru: boolean): string {
+  if (error.message.startsWith("IDEMPOTENCY_CONFLICT: kunci edit rekam medis")) {
+    return "Simpanan sebelumnya dengan isi berbeda sudah tercatat. Muat ulang halaman rekam medis untuk melihat data terbaru sebelum mengedit lagi.";
+  }
   if (!adaRacikanBaru) return error.message;
   // Aplikasi sudah terpasang tapi fungsi database-nya belum: jangan tampilkan galat mentah.
   if (error.code === "PGRST202" || error.code === "42883") {
@@ -456,13 +459,13 @@ export async function koreksiRekamMedisLengkap(formData: FormData) {
       gejala_klinis: text("gejala_klinis"), hasil_penunjang: text("hasil_penunjang")},
     p_rows: rows, p_reason: reason, p_request_key: requestKey,
   };
-  // Tanpa racikan baru: jalur lama persis. Dengan racikan baru: edit + peracikan dalam satu
-  // transaksi database — stok bahan kurang membatalkan seluruh simpanan, bukan separuhnya.
-  const { data, error } = compounds.length
-    ? await supabase.rpc("clinic_edit_queued_record_with_compounds", { ...args, p_compounds: compounds })
-    : await supabase.rpc("clinic_edit_queued_record", args);
-  if (error || data !== recordId) fail(error ? pesanGagalEditLengkap(error, compounds.length > 0) : "Koreksi belum terkonfirmasi. Muat ulang sebelum mencoba lagi.");
-  for (const path of [back, `${back}/resep`, `${back}/dokumen`, `/klinik/pembayaran/${visitId}`, "/klinik/rekam-medis", "/klinik/antrian", "/klinik/racik"]) revalidatePath(path);
+  // Edit + racikan baru dalam satu transaksi database: stok bahan kurang membatalkan seluruh
+  // simpanan. Pembungkus juga menyimpan sidik seluruh kiriman per kunci, jadi kiriman ulang
+  // dengan isi berbeda (racikan dihapus sesudah respons hilang) ditolak, bukan "tersimpan".
+  let { data, error } = await supabase.rpc("clinic_edit_queued_record_with_compounds", { ...args, p_compounds: compounds });
+  // Fungsi baru belum terpasang di database: tanpa racikan baru, jalur lama persis masih aman.
+  if (error?.code === "PGRST202" && !compounds.length) ({ data, error } = await supabase.rpc("clinic_edit_queued_record", args));
+  if (error || data !== recordId) fail(error ? pesanGagalEditLengkap(error, compounds.length > 0) : "Koreksi belum terkonfirmasi. Muat ulang sebelum mencoba lagi.");  for (const path of [back, `${back}/resep`, `${back}/dokumen`, `/klinik/pembayaran/${visitId}`, "/klinik/rekam-medis", "/klinik/antrian", "/klinik/racik"]) revalidatePath(path);
   return {saved: true, href: `${back}?success=correction`};
 }
 

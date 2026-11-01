@@ -138,8 +138,8 @@ def run(h):
         check('C1 peran ditolak ' + r.PERAN[user] + ' ' + user[-2:], bool(err and 'ACCESS_DENIED' in err) and snapshot(h, v, m) == before, dict(error=err))
     err = h.gagal(f"set role anon; {wrapper(v, m, 0, cart, [official('anon')], 'anon')}")
     check('C2 anon tidak bisa memanggil pembungkus', bool(err and 'permission denied' in err) and snapshot(h, v, m) == before, dict(error=err))
-    err = h.gagal(wrapper(v, m, 0, cart, [], 'kosong'), r.OWNER)
-    check('C3 tanpa racikan baru ditolak (aplikasi memakai Edit lama)', bool(err and 'RECORD_INVALID' in err) and snapshot(h, v, m) == before, dict(error=err))
+    err = h.gagal(wrapper(v, m, 0, cart, [dict(request_key=f'banyak-{i}') for i in range(51)], 'terlalu-banyak'), r.OWNER)
+    check('C3 lebih dari 50 racikan baru ditolak sebelum apa pun berubah', bool(err and 'RECORD_INVALID' in err) and snapshot(h, v, m) == before, dict(error=err))
     err = h.gagal(wrapper(v, m, 0, cart[:-1], [official('hapus-baris')], 'hapus-baris'), r.OWNER)
     check('C4 baris tersimpan tetap tidak boleh hilang', bool(err and 'tidak boleh dihapus' in err) and snapshot(h, v, m) == before, dict(error=err))
     h.sql(f"update visits set checked_out_at=now() where id={q(v)};")
@@ -157,6 +157,48 @@ def run(h):
     check('D1 racikan dengan kunci yang sama tidak diracik ulang oleh edit lain',
           not err and second['stock'] == first['stock'] and second['recipes'] == first['recipes'] == 1 and second['rx'] == first['rx'],
           dict(first_error=err, second_error=err2, first=first, second=second))
+
+    # --- F. Edit TANPA racikan baru lewat pembungkus = Edit lama, plus buku kunci seluruh kiriman ---
+    v, m = visit(h, 2105)
+    cart = rows(h, m)
+    obat = next(i for i, row in enumerate(cart) if row['item_id'] == r.ITEM)
+    cart[obat]['qty'] = 5
+    before = snapshot(h, v, m)
+    plain = wrapper(v, m, 0, cart, [], 'biasa')
+    err = h.gagal(plain, r.DOCTOR)
+    after = snapshot(h, v, m)
+    check('F1 edit biasa (p_compounds kosong) tersimpan seperti Edit lama, tanpa racikan/stok',
+          not err and after['revision'] == 1 and after['audits'] == 1 and after['recipes'] == 0 and after['additions'] == 0
+          and after['stock'] == before['stock'] and next(row for row in rows(h, m) if row['id'] == cart[obat]['id'])['qty'] == 5,
+          dict(error=err, before=before, after=after))
+    err = h.gagal(plain, r.DOCTOR)
+    check('F2 kiriman ulang edit biasa dibaca ulang tanpa revisi baru', not err and snapshot(h, v, m) == after, dict(error=err))
+    # Respons hilang sesudah simpan BERRACIKAN, pengguna menghapus racikan lalu simpan lagi dengan kunci yang sama.
+    v, m = visit(h, 2106)
+    cart = rows(h, m)
+    err = h.gagal(wrapper(v, m, 0, cart, [official('hilang-racik')], 'respons-hilang'), r.OWNER)
+    saved = snapshot(h, v, m)
+    err2 = h.gagal(wrapper(v, m, 0, cart, [], 'respons-hilang'), r.OWNER)
+    check('F3 kunci sama tanpa racikan sesudah simpan berracikan: IDEMPOTENCY_CONFLICT, bukan "tersimpan"',
+          not err and bool(err2 and 'IDEMPOTENCY_CONFLICT: kunci edit rekam medis' in err2) and snapshot(h, v, m) == saved,
+          dict(first=err, second=err2, saved=saved))
+    err2 = h.gagal(wrapper(v, m, 0, [dict(row, qty=row['qty'] + (1 if row['item_id'] == r.ITEM else 0)) for row in cart], [official('hilang-racik')], 'respons-hilang'), r.OWNER)
+    check('F4 kunci sama dengan baris resep berbeda: IDEMPOTENCY_CONFLICT tanpa perubahan',
+          bool(err2 and 'IDEMPOTENCY_CONFLICT' in err2) and snapshot(h, v, m) == saved, dict(error=err2))
+    # Peran dicabut: kiriman ulang yang persis sama pun tidak mendapat hasil tersimpan.
+    h.sql(f"update profiles set role='STAFF' where id={q(r.OWNER)};")
+    err2 = h.gagal(wrapper(v, m, 0, cart, [official('hilang-racik')], 'respons-hilang'), r.OWNER)
+    h.sql(f"update profiles set role='OWNER' where id={q(r.OWNER)};")
+    check('F5 peran dicabut: replay ditolak ACCESS_DENIED sebelum buku kunci dibaca',
+          bool(err2 and 'ACCESS_DENIED' in err2) and snapshot(h, v, m) == saved, dict(error=err2))
+    # Kunci yang dulu dipakai Edit LAMA (sebelum aplikasi baru terpasang) tetap dibaca ulang dengan aman.
+    v, m = visit(h, 2107)
+    cart = rows(h, m)
+    err = h.gagal(plain_edit(v, m, 0, cart, 'kunci-lama'), r.OWNER)
+    legacy = snapshot(h, v, m)
+    err2 = h.gagal(f"select public.clinic_edit_queued_record_with_compounds({q(v)},{q(m)},0,{j(FIELDS)},{j(cart)},'[]'::jsonb,'Koreksi fiktif','kunci-lama');", r.OWNER)
+    check('F6 kunci dari Edit lama dibaca ulang lewat pembungkus tanpa revisi ganda',
+          not err and not err2 and snapshot(h, v, m) == legacy and legacy['revision'] == 1, dict(first=err, second=err2, legacy=legacy))
 
     # --- E. Urutan kunci vs kasir: tidak deadlock, kasir melihat keranjang basi --------------
     v, m = visit(h, 2104)

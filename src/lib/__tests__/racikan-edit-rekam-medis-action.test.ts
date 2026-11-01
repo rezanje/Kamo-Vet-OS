@@ -1,14 +1,17 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 // Edit rekam medis sebelum tagihan terbit + racikan baru (laporan Anisa 1 Nov 2026).
-const s = vi.hoisted(() => ({ calls: [] as { name: string; args: Record<string, unknown> }[], error: null as null | { code?: string; message: string } }));
+type Galat = { code?: string; message: string };
+const s = vi.hoisted(() => ({ calls: [] as { name: string; args: Record<string, unknown> }[], error: null as null | Galat, errors: [] as Galat[] }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (p: string) => { throw Error(p); } }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: async (name: string, args: Record<string, unknown>) => {
-  s.calls.push({ name, args }); return { data: s.error ? null : "record", error: s.error };
+  s.calls.push({ name, args });
+  const error = s.errors.shift() ?? s.error; // satu galat sekali pakai (urut), lalu galat tetap
+  return { data: error ? null : "record", error };
 } }) }));
 import { koreksiRekamMedisLengkap } from "@/app/(app)/klinik/rekam-medis/[visitId]/actions";
-beforeEach(() => { s.calls = []; s.error = null; });
+beforeEach(() => { s.calls = []; s.error = null; s.errors = []; });
 
 const tersimpan = { prescription_item_id: "rx", nama_obat: "Vaksinasi F4", item_id: "vaksin", jenis: "jasa", qty: 1, harga: 235000, satuan: "PCS" };
 const racikanLama = { prescription_item_id: "rx-lama", nama_obat: "Racikan Lama", item_id: null, jenis: "racikan", qty: 1, harga: 20000, satuan: "racikan", compound_recipe_id: "recipe-lama" };
@@ -25,11 +28,25 @@ function form(resep: unknown[]) {
   return f;
 }
 
-it("tanpa racikan baru tetap memakai RPC edit lama persis (tidak ada perubahan perilaku)", async () => {
+it("tanpa racikan baru: pembungkus dengan p_compounds kosong, baris tersimpan apa adanya", async () => {
   expect(await koreksiRekamMedisLengkap(form([tersimpan, racikanLama]))).toEqual({ saved: true, href: "/klinik/rekam-medis/visit?success=correction" });
-  expect(s.calls.map(c => c.name)).toEqual(["clinic_edit_queued_record"]);
-  expect(s.calls[0].args).not.toHaveProperty("p_compounds");
+  expect(s.calls.map(c => c.name)).toEqual(["clinic_edit_queued_record_with_compounds"]);
+  expect(s.calls[0].args.p_compounds).toEqual([]);
   expect(s.calls[0].args.p_rows).toMatchObject([{ prescription_item_id: "rx" }, { prescription_item_id: "rx-lama", compound_recipe_id: "recipe-lama" }]);
+});
+
+it("fungsi baru belum terpasang dan tanpa racikan baru: jatuh ke RPC edit lama persis", async () => {
+  s.errors = [{ code: "PGRST202", message: "Could not find the function" }];
+  expect(await koreksiRekamMedisLengkap(form([tersimpan]))).toEqual({ saved: true, href: "/klinik/rekam-medis/visit?success=correction" });
+  expect(s.calls.map(c => c.name)).toEqual(["clinic_edit_queued_record_with_compounds", "clinic_edit_queued_record"]);
+  expect(s.calls[1].args).not.toHaveProperty("p_compounds");
+  expect(s.calls[1].args).toEqual(Object.fromEntries(Object.entries(s.calls[0].args).filter(([k]) => k !== "p_compounds")));
+});
+
+it("kunci sama dengan isi berbeda (respons hilang lalu racikan dihapus): pesan muat ulang, tanpa jalur lain", async () => {
+  s.error = { code: "P0001", message: "IDEMPOTENCY_CONFLICT: kunci edit rekam medis dipakai untuk data berbeda" };
+  await expect(koreksiRekamMedisLengkap(form([tersimpan]))).rejects.toThrow(encodeURIComponent("Muat ulang halaman rekam medis"));
+  expect(s.calls.map(c => c.name)).toEqual(["clinic_edit_queued_record_with_compounds"]);
 });
 
 it("racikan baru dikirim ke RPC pembungkus satu transaksi, bukan sebagai baris resep", async () => {
