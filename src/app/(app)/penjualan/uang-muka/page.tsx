@@ -15,6 +15,7 @@ import { METODE_BAYAR } from "@/lib/kas-akun";
 import { readCompleteList, ListLoadError } from "@/lib/checked-list";
 import { batalkanUangMukaJual, terimaUangMukaJual } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { semuaPelanggan } from "@/lib/pelanggan-semua";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -49,7 +50,7 @@ export default async function UangMukaJualPage({
         if (!(error instanceof ListLoadError)) throw error;
         return { rows: [] as UM[], error: error.message };
       }),
-    supabase.from("customers").select("id, name, phone").order("name").limit(500),
+    semuaPelanggan(supabase, "id, name, phone"),
     supabase.from("sales_orders").select("id, no_pesanan, customer_id").in("status", ["draft", "diproses"]).order("tanggal", { ascending: false }),
     loadRekeningAktif(supabase),
   ]);

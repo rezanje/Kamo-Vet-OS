@@ -12,6 +12,7 @@ import { loadActiveVouchers } from "@/lib/voucher-loader";
 import { voucherBerlaku, type VoucherRow } from "@/lib/voucher";
 import { hariIniWIB } from "@/lib/tanggal";
 import { groomingDoctorRequired, isGroomingOutlet, isGroomingService } from "@/lib/grooming-requirements";
+import { semuaPelanggan } from "@/lib/pelanggan-semua";
 
 type CatalogItem = { id: string; code: string; name: string; item_type: string; tindakan_kategori: string | null; unit: string; sell_price: number; target_species: string };
 
@@ -26,7 +27,7 @@ export default async function TransaksiPage({
   const { data: { user } } = await supabase.auth.getUser();
   const [items, { data: customers }, { data: branches }, allowedBranches] = await Promise.all([
     readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, item_type, tindakan_kategori, unit, sell_price, target_species", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang POS", { maxRows: null }),
-    supabase.from("customers").select("id, name, phone, points, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), pets(id, name, species)").order("name"),
+    semuaPelanggan<{ id: string }>(supabase, "id, name, phone, points, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), pets(id, name, species)", "Daftar pelanggan POS"),
     supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"),
     user ? allowedBranchIds(supabase, user.id) : [],
   ]);

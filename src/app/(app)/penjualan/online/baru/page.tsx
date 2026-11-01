@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
 import { OnlineForm } from "./OnlineForm";
 import { readCompleteList } from "@/lib/checked-list";
+import { semuaPelanggan } from "@/lib/pelanggan-semua";
 
 type WhRow = { branch_id: string; id: string; name: string; branches: { name: string } | { name: string }[] | null };
 
@@ -23,7 +24,7 @@ export default async function OnlineBaruPage({
       .from("warehouses").select("id, branch_id, name, branches(name)")
       .eq("type", "ONLINE").eq("is_active", true).order("name"),
     readCompleteList<{ id: string; code: string; name: string; sell_price: number }>((from, to) => supabase.from("items").select("id, code, name, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang order online", { maxRows: null }),
-    supabase.from("customers").select("id, name, phone").order("name").limit(2000),
+    semuaPelanggan(supabase, "id, name, phone"),
   ]);
   // `data` juga null kalau query gagal (RLS/jaringan) — bedakan dari "memang belum ada
   // gudang ONLINE" (M6), supaya operator tidak disuruh minta admin buat sesuatu yang sudah ada.

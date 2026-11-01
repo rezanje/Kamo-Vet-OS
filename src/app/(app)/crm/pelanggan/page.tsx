@@ -24,7 +24,7 @@ export default async function PelangganPage({ searchParams }: {
         )
         .order("total_spending", { ascending: false }).order("id").range(from, to);
       return { ...result, data: result.data as unknown as CustomerRow[] | null };
-    }, "Pelanggan");
+    }, "Pelanggan", { maxRows: null }); // >10.000 pelanggan: baca per halaman sampai habis.
   } catch (error) { return <ListLoadFailure error={error} label="Pelanggan" />; }
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();

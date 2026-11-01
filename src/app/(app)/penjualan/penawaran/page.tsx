@@ -10,6 +10,7 @@ import { loadItemUnits } from "@/lib/satuan";
 import { buatPenawaran, jadikanPesanan, ubahStatusPenawaran } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { readCompleteList } from "@/lib/checked-list";
+import { semuaPelanggan } from "@/lib/pelanggan-semua";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number };
@@ -44,7 +45,7 @@ export default async function PenawaranPage({
     supabase.from("sales_quotations")
       .select(QUOTATION_SELECT)
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(200),
-    supabase.from("customers").select("id, name, phone").order("name").limit(500),
+    semuaPelanggan(supabase, "id, name, phone"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, unit, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang penawaran", { maxRows: null }),
   ]);
