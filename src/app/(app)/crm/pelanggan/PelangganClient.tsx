@@ -1,11 +1,9 @@
 "use client";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 
-import { infoHalaman } from "@/lib/pagination";
-import { TABLE_PAGE_SIZE } from "@/lib/checked-list";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { detailPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 
@@ -140,8 +138,14 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers, isAdmin, categories, statusUlasan, cariAwal = "" }: {
+export function PelangganClient({ customers, isAdmin, categories, statusUlasan, cariAwal = "", total, stats, halaman }: {
+  /** Satu halaman pelanggan (50 baris) hasil pencarian di server — bukan seluruh pelanggan. */
   customers: CustomerRow[];
+  /** Jumlah pelanggan yang cocok dengan pencarian. */
+  total: number;
+  /** Ringkasan seluruh pelanggan, dihitung database. */
+  stats: { total: number; member: number; tierCounts: Record<string, number> };
+  halaman: { page: number; from: number; totalPages: number };
   isAdmin: boolean;
   categories: { id: string; nama: string; diskon_persen: number }[];
   statusUlasan: (StatusUlasan & { id: string })[];
@@ -149,19 +153,50 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   cariAwal?: string;
 }) {
   const router = useRouter();
-  const awal = cariAwal.trim().toLowerCase();
-  const [selId, setSelId] = useState<string | null>(
-    (awal ? customers.find((c) => c.name.toLowerCase().includes(awal)) : null)?.id
-      ?? customers[0]?.id ?? null,
-  );
+  const pathname = usePathname() ?? "/crm/pelanggan";
+  const [memuat, startMemuat] = useTransition();
+  // Pelanggan terpilih disimpan utuh supaya detailnya tetap tampil walau halaman/pencarian
+  // daftar berganti; bila ada di daftar terbaru, data terbarunya yang dipakai.
+  const [selSimpan, setSelSimpan] = useState<CustomerRow | null>(customers[0] ?? null);
+  const selId = selSimpan?.id ?? null;
   const [tab, setTab] = useState<DetailTab>("pembelian");
   const [q, setQ] = useState(cariAwal);
-  const [page, setPage] = useState(1);
+  const [cariTerkirim, setCariTerkirim] = useState(cariAwal);
   const [detailByCustomer, setDetailByCustomer] = useState<Record<string, DetailPelanggan>>({});
   const detailRef = useRef<HTMLDivElement>(null);
 
+  // Pencarian global di topbar bisa mengganti ?cari= saat halaman ini sudah terbuka.
+  // Perubahan hasil ketikan sendiri (cariAwal == cariTerkirim) tidak menimpa kotak cari.
+  const [cariProp, setCariProp] = useState(cariAwal);
+  if (cariAwal !== cariProp) {
+    setCariProp(cariAwal);
+    if (cariAwal !== cariTerkirim) {
+      setCariTerkirim(cariAwal);
+      setQ(cariAwal);
+      if (customers[0]) setSelSimpan(customers[0]);
+    }
+  }
+
+  const buka = (cari: string, hal = 1) => {
+    const params = new URLSearchParams();
+    if (cari.trim()) params.set("cari", cari.trim());
+    if (hal > 1) params.set("hal", String(hal));
+    const qs = params.toString();
+    setCariTerkirim(cari.trim());
+    startMemuat(() => router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false }));
+  };
+
+  // Ketikan dikirim ke server setelah jeda singkat (pencarian dijalankan database).
+  useEffect(() => {
+    if (q.trim() === cariTerkirim.trim()) return;
+    const jeda = setTimeout(() => buka(q), 350);
+    return () => clearTimeout(jeda);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `buka` dibuat ulang tiap render.
+  }, [q, cariTerkirim]);
+
   const pilihPelanggan = (id: string) => {
-    setSelId(id);
+    const row = customers.find((c) => c.id === id);
+    if (row) setSelSimpan(row);
     requestAnimationFrame(() => {
       detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -171,24 +206,10 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
     router.push(`/klinik/rekam-medis?pet=${encodeURIComponent(petId)}`);
   };
 
-  const agg = useMemo(() => {
-    const total = customers.length;
-    const member = customers.filter((c) => namaGolongan(c) === "Member").length;
-    const tierCounts: Record<string, number> = {};
-    for (const k of TIER_ORDER) tierCounts[k] = customers.filter((c) => c.tier === k).length;
-    return { total, member, nonMember: total - member, tierCounts };
-  }, [customers]);
+  const agg = { ...stats, nonMember: stats.total - stats.member, tierCounts: Object.fromEntries(TIER_ORDER.map((k) => [k, stats.tierCounts[k] ?? 0])) };
+  const visibleCustomers = customers;
 
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return customers;
-    return customers.filter((c) => c.name.toLowerCase().includes(s) || c.phone.includes(s));
-  }, [customers, q]);
-
-  const pageInfo = infoHalaman(page, filtered.length, TABLE_PAGE_SIZE);
-  const visibleCustomers = filtered.slice(pageInfo.from, pageInfo.to + 1);
-
-  const sel = customers.find((c) => c.id === selId) ?? null;
+  const sel = customers.find((c) => c.id === selId) ?? selSimpan;
   const detail = sel ? detailByCustomer[sel.id] ?? null : null;
 
   useEffect(() => {
@@ -289,8 +310,8 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
               )}
             </div>
             <div style={{ position: "relative", width: 220 }}>
-              <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} style={{ fontSize: 11, paddingRight: 26 }} />
-              <i className="ti ti-search" style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 11, pointerEvents: "none" }} />
+              <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => setQ(e.target.value)} style={{ fontSize: 11, paddingRight: 26 }} />
+              <i className={memuat ? "ti ti-loader-2" : "ti ti-search"} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 11, pointerEvents: "none" }} />
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -306,7 +327,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
               <tbody>
                 {visibleCustomers.map((c, i) => (
                   <tr key={c.id} style={{ cursor: "pointer", background: selId === c.id ? "rgba(217,119,87,.06)" : undefined, transition: "background .1s" }} onClick={() => pilihPelanggan(c.id)}>
-                    <td style={{ color: "var(--td)", fontSize: 11 }}>{pageInfo.from + i + 1}</td>
+                    <td style={{ color: "var(--td)", fontSize: 11 }}>{halaman.from + i + 1}</td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                         <Av initials={initials(c.name)} color={colorFor(c.id)} size={25} />
@@ -326,16 +347,16 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
+                {customers.length === 0 && (
                   <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Tidak ada pelanggan.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
           <nav aria-label="Halaman pelanggan" style={{ marginTop: 10, fontSize: 11, color: "var(--tm)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span>Menampilkan {filtered.length ? pageInfo.from + 1 : 0}–{Math.min(filtered.length, pageInfo.to + 1)} dari {filtered.length} hasil · {customers.length} pelanggan · Halaman {pageInfo.page}/{pageInfo.totalPages}</span>
-            <button type="button" className="btn-def" disabled={pageInfo.page === 1} onClick={() => setPage(pageInfo.page - 1)}>Sebelumnya</button>
-            <button type="button" className="btn-def" disabled={pageInfo.page === pageInfo.totalPages} onClick={() => setPage(pageInfo.page + 1)}>Berikutnya</button>
+            <span>Menampilkan {total ? halaman.from + 1 : 0}–{halaman.from + customers.length} dari {fmt(total)} hasil · {fmt(stats.total)} pelanggan · Halaman {halaman.page}/{halaman.totalPages}</span>
+            <button type="button" className="btn-def" disabled={memuat || halaman.page === 1} onClick={() => buka(cariTerkirim, halaman.page - 1)}>Sebelumnya</button>
+            <button type="button" className="btn-def" disabled={memuat || halaman.page === halaman.totalPages} onClick={() => buka(cariTerkirim, halaman.page + 1)}>Berikutnya</button>
           </nav>
         </div>
       </div>
