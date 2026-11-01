@@ -228,7 +228,7 @@ async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | nu
         .eq("status", "Menunggu").gte("created_at", hari.from).lt("created_at", hari.until),
       supabase.from("sales").select("total, payment_plan, payments_finalized_at, voided_at").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("stock").select("qty, items!inner(name, min_stock)").gt("items.min_stock", 0),
-      // R06: grooming jasa sold at the POS cashier counts too (units, voided sales excluded).
+      // R06: grooming jasa sold at the POS cashier counts too (units, completed sales only).
       hitungGroomingKasir(supabase, hari.from, hari.until).then((value) => value, () => null),
     ]);
     const groomingKlinik = groomingError || grooming == null ? null : grooming;
@@ -258,7 +258,7 @@ async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | nu
           <Kpi label="Transaksi kasir hari ini" value={`${struk.length}`} tone="b" />
         </div>
         <div style={{ fontSize: 10.5, color: "var(--tm)", margin: "-5px 0 13px" }}>
-          Grooming = kunjungan klinik terdaftar hari ini (semua status) + jumlah layanan grooming yang dijual lewat kasir (struk batal tidak dihitung), sesuai cabang yang boleh diakses.
+          Grooming = kunjungan klinik terdaftar hari ini (semua status) + jumlah layanan grooming yang dijual lewat kasir (struk batal dan transaksi yang pembayarannya belum selesai tidak dihitung), sesuai cabang yang boleh diakses.
           {(kunjunganError || groomingError) && " Sebagian angka klinik belum dapat dibaca."}
           {groomingKasir == null && " Angka grooming kasir belum dapat dibaca."}
         </div>
