@@ -39,8 +39,8 @@ const gauze = { ...base, id: "gauze", name: "Kasa sintetis", item_type: "Persedi
 const vial = { ...base, id: "vial", code: "VKS-1", name: "Vaccine Sintetis", sell_price: 235000, item_type: "Persediaan", category_id: null, unit: "VIAL" };
 const vaccination = { ...base, id: "vaksinasi", code: "JV-VKS-1", name: "Vaksinasi Sintetis", sell_price: 235000, item_type: "Jasa", category_id: "bedah", tindakan_kategori: "Konsultasi", unit: "PCS" };
 // A vial left (or moved back) under TINDAKAN still opens its vaccination instead of joining as stock.
-const strayVial = { ...vial, id: "vial2", code: "VKS-2", name: "Vaccine Nyasar", category_id: "bedah" };
-const strayVaccination = { ...vaccination, id: "vaksinasi2", code: "JV-VKS-2", name: "Vaksinasi Nyasar" };
+const strayVial = { ...vial, id: "vial2", code: "VKS-2", name: "Vaccine Nyasar", category_id: "bedah", sell_price: 250000 };
+const strayVaccination = { ...vaccination, id: "vaksinasi2", code: "JV-VKS-2", name: "Vaksinasi Nyasar", sell_price: 180000 };
 const groups = splitClinicItems([procedure, vaccine, vaccination, strayVial, strayVaccination, grooming, pickup, gauze, vial], categories, new Set());
 const common = {
   requestKey: "request", draftUserId: "owner", items: groups.obat, jasaItems: groups.jasa, tindakanItems: groups.tindakan,
@@ -171,6 +171,8 @@ it.each(["exam", "inpatient"])("%s merges procedures and compounding into one fo
 it.each(["exam", "inpatient"])("%s vaccine vial picked from the medicine list opens its vaccination with the vial as BMHP", async kind => {
   await render(kind);
   const row = [...host.querySelectorAll("tr")].find(tr => tr.textContent?.includes("Vaccine Sintetis"))!;
+  // The medicine row names the vaccination and its price, so the vial price is not mistaken for the bill.
+  expect(row.textContent).toContain("Masuk sebagai Vaksinasi Sintetis · Rp 235.000");
   await act(async () => row.querySelector<HTMLButtonElement>('button[title="Tambah"]')!.click());
   expect(host.textContent).toContain("Bahan / BMHP");
   expect(cart()).toHaveLength(0);
@@ -186,11 +188,24 @@ it.each(["exam", "inpatient"])("%s vaccination picked from the procedure tab sta
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah BMHP Vaccine Sintetis"]')?.value).toBe("1");
 });
 
-it.each(["exam", "inpatient"])("%s vaccine vial listed under TINDAKAN still opens its vaccination", async kind => {
+it.each(["exam", "inpatient"])("%s vaccine vial listed under TINDAKAN shows and opens its vaccination at the vaccination price", async kind => {
   await render(kind); await tab(TINDAKAN);
-  await click('button[aria-label="Pilih Vaccine Nyasar"]');
+  // Searching the vial name finds one row: the vaccination with the price that will be billed, not the vial price.
+  const search = host.querySelector<HTMLInputElement>('input[aria-label="Cari tindakan / racikan"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "vaccine nyasar");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const rows = [...host.querySelectorAll('section[aria-label="Pilih tindakan / racikan"] button[aria-label^="Pilih "]')];
+  expect(rows.map(button => button.getAttribute("aria-label"))).toEqual(["Pilih Vaksinasi Nyasar"]);
+  const row = rows[0].parentElement!;
+  expect(row.textContent).toContain("Rp 180.000");
+  expect(row.textContent).toContain("vial: Vaccine Nyasar");
+  expect(row.textContent).not.toContain("Rp 250.000");
+  await click('button[aria-label="Pilih Vaksinasi Nyasar"]');
+  expect(host.textContent).toContain("Rp 180.000");
   expect(host.textContent).toContain("Bahan / BMHP");
   await click('button[aria-label="Tambah Vaksinasi Nyasar ke keranjang"]');
   expect(cart()).toHaveLength(1);
-  expect(cart()[0]).toMatchObject({ item_id: "vaksinasi2", jenis: "jasa", bmhp: [{ item_id: "vial2", qty: 1, unit: "VIAL" }] });
+  expect(cart()[0]).toMatchObject({ item_id: "vaksinasi2", jenis: "jasa", harga: 180000, bmhp: [{ item_id: "vial2", qty: 1, unit: "VIAL" }] });
 });

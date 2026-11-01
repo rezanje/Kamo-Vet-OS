@@ -6,6 +6,7 @@ import { QtyInput } from "@/components/QtyInput";
 import { useMemo, useRef, useState } from "react";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { TindakanRacikanForm } from "@/components/TindakanRacikanForm";
+import { VaksinasiDariVial } from "@/components/VaksinasiDariVial";
 import { KeranjangBahan } from "@/components/KeranjangBahan";
 import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bmhp";
 import { bulkFillServicePerformers, emptyServicePerformers, visitDefaultPerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
@@ -560,7 +561,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
                       <tbody>
                         {filtered.map((it) => (
                           <tr key={it.id}>
-                            <td style={{ fontSize: 11, fontWeight: 500 }}>{it.name}</td>
+                            <td style={{ fontSize: 11, fontWeight: 500 }}>{it.name}<VaksinasiDariVial item={it} services={tindakanItems} /></td>
                             <td style={{ textAlign: "center" }}><StokKlinik stok={it.stok} satuanDasar={it.unit} style={{ fontSize: 10.5 }} /></td>
                             <td style={{ textAlign: "right", fontSize: 11 }}>{rp(it.sell_price)}</td>
                             <td style={{ textAlign: "center" }}>
