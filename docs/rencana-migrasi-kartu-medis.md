@@ -1058,3 +1058,29 @@ Audit efek samping: tidak ada tagihan, resep, atau klaim quest yang tertaut ke k
 - Ada juga impor pelanggan massal pihak lain: ±9.060 pelanggan ber-`imported_at` pada 01:19–01:20 UTC.
 - Data transaksi/stok tampak di-reset sejak 2026-10-31 15:15 UTC oleh proses lain.
 - Dicek: tidak ada pemilik hasil impor rekam medis (1.141) yang punya kembaran nomor HP akibat impor pelanggan itu.
+
+## 17. Pola tanggal lintas batch (2026-11-01, izin OWNER opsi A)
+
+Aturan:
+- R1 (tab template → tanggal kartu) dan R2 (kartu salinan → tanggal tab), sama seperti 15.3.
+- P3 (baru): kartu yang satu-satunya alasan tahannya `TAB_DATE_AMBIGUOUS` / `DATE_TAB_AMBIGUOUS_OR_UNPARSED`. Nama tab
+  berupa digit tanpa pemisah (mis. `1022024`). `date_card` dipakai bila sama dengan salah satu bacaan sah digit tab
+  (D/M/Y, hari/bulan 1–2 digit), dalam rentang 1990–hari ini, dan tidak sama dengan tanggal tab/kartu lain di berkas yang
+  sama.
+
+Pengecualian: kartu ber-Ket baru, tergerbang, atau berkoreksi nomor.
+
+Terpilih 307 kartu: 08–12 = 136, 13–17 = 56, 18 = 115. Turunan hanya mengubah `status`, `hold_reasons`, dan
+`record_date`. Setiap batch direncanakan, direkonsiliasi, dan dijalankan berurutan dengan ledger sendiri.
+
+Hasil: 303 baru, 2 sudah ada, 2 tertahan, 0 gagal.
+- Yang tertahan: 1 isi sama di hewan lain; 1 tanggal sama tapi isi beda.
+- Readback runner dan independen 303/303 cocok; 6 pemilik baru bertanda impor.
+- 303 draf "Perlu Dilengkapi" untuk kartu yang masuk ditutup ("sudah masuk lewat impor"); total aktif kini 801.
+- Tidak ada tagihan, quest, atau penjualan yang tertaut ke hasil impor. Satu penjualan + klaim quest pelanggan walk-in
+  baru terjadi setelah run.
+
+Catatan operasional: percobaan pertama berhenti sebelum menulis apa pun, karena pengaman `pgrep -f` cocok dengan
+baris perintah shell-nya sendiri. Pengaman diperbaiki menjadi `^node …`.
+
+Total: 08–12 = 791 baru / 201 tertahan / 183 kosong; 13–17 = 2.434 / 411 sudah ada / 1.200 / 508; 18 = 471 / 226 / 77.
