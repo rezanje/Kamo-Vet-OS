@@ -4,8 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
-import { stockOut } from "@/lib/inventory";
-import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
+import { loadUnitOptions, resolveSubmittedUnit } from "@/lib/satuan";
 import { loadHargaCabang, hargaCabang } from "@/lib/harga-cabang";
 import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
@@ -242,7 +241,7 @@ export async function checkoutSale(formData: FormData) {
   // Nomor yang sama bisa terbaca dua orang sekaligus; yang kalah mengulang kepala
   // struk dengan nomor baru (lib/simpan-bernomor) — belum ada baris atau stok
   // yang tersentuh pada titik ini.
-  const { data: sale, error: saleErr, nomor: noStruk, bentrok } = await simpanBernomor<{ id: string }>(
+  const { data: sale, error: saleErr, bentrok } = await simpanBernomor<{ id: string }>(
     supabase,
     { jenis: "POS", tanggal: hariIniWIB(), table: "sales", column: "no_struk" },
     (no_struk) => supabase
@@ -272,9 +271,8 @@ export async function checkoutSale(formData: FormData) {
   }
 
   let checkoutFailure: string | null = null;
-  let quantityPoolFinalized = false;
+  let postingAttempted = false;
   try {
-    const pendingLines: { id: string; line: typeof rows[number] }[] = [];
     // Semua pelaksana dinormalisasi database sebelum ada pengeluaran stok.
     // Jika petugas berubah status setelah preflight, baris ditolak tanpa stok
     // barang lain dalam keranjang ikut terpotong.
@@ -291,48 +289,33 @@ export async function checkoutSale(formData: FormData) {
         hpp: l.item_id ? 0 : null,
       }).select("id").single();
       if (itemErr || !insertedLine) throw new Error(itemErr?.message ?? "Gagal menyimpan rincian transaksi");
-      pendingLines.push({ id: insertedLine.id, line: l });
     }
-    if (quantityPoolRequiresAtomic) {
-      if (!wh) throw new Error("Cabang belum punya gudang aktif untuk memotong stok");
-      // New-rule validation may reject a stale master at finalization. Keep
-      // original stock writers and finalizer in ONE transaction so that such
-      // rejection cannot leave separate backoffice HTTP stock issues behind.
-      const { data: posted, error: postErr } = await supabase.rpc("quantity_pool_post_backoffice_atomic", {
-        p_sale_id: sale.id, p_warehouse_id: wh.id,
-      });
-      if (postErr || posted?.sale_id !== sale.id || posted?.finalized !== true || posted?.checked !== true) {
-        throw new Error(postErr?.message ?? "Stok dan harga neto promo belum berhasil difinalkan");
-      }
-      quantityPoolFinalized = true;
-    } else for (const { id, line } of pendingLines) {
-      if (!wh || !line.item_id) continue;
-      const { cost } = await stockOut(supabase, {
-        warehouseId: wh.id, itemId: line.item_id, qty: toBaseQty(line.qty, line.faktor), source: "sale", ref: noStruk,
-
-      });
-      const { error: costError } = await supabase.from("sale_items").update({ hpp: cost })
-        .eq("id", id).eq("sale_id", sale.id).select("id").single();
-      if (costError) throw new Error(costError.message);
+    if (quantityPoolRequiresAtomic && !wh) throw new Error("Cabang belum punya gudang aktif untuk memotong stok");
+    // Stok FIFO per baris, HPP per baris, pembayaran, poin dan kedua jurnal
+    // dibukukan dalam SATU transaksi database. Gagal di baris mana pun (atau di
+    // finalisasi) membatalkan semuanya: tidak ada lagi stok yang sudah keluar
+    // sementara struknya belum final. Pool kuantitas memakai pemeriksa barunya;
+    // cabang tanpa gudang aktif memang tidak pernah memotong stok di layar ini.
+    postingAttempted = true;
+    const { data: posted, error: postErr } = wh
+      ? await supabase.rpc(quantityPoolRequiresAtomic ? "quantity_pool_post_backoffice_atomic" : "pos_backoffice_post_atomic",
+        { p_sale_id: sale.id, p_warehouse_id: wh.id })
+      : await supabase.rpc("finalize_pos_sale", { p_sale_id: sale.id });
+    if (postErr || posted?.sale_id !== sale.id || posted?.finalized !== true || (wh && posted?.checked !== true)) {
+      throw new Error(pesanGagalKampanye(postErr?.message) ?? postErr?.message ?? (quantityPoolRequiresAtomic
+        ? "Stok dan harga neto promo belum berhasil difinalkan" : "Pembukuan transaksi belum selesai. Coba kembali."));
     }
   } catch (error) {
     checkoutFailure = error instanceof Error ? error.message : "Gagal memproses stok atau rincian transaksi";
   }
   if (checkoutFailure) {
-    if (quantityPoolRequiresAtomic) await resumePosCheckout(supabase, user.id, checkout, "backoffice", sale.id);
+    // Jawaban database bisa hilang setelah transaksi tersimpan: struk final
+    // diarahkan ke struknya, bukan dihapus. Yang belum final tidak memotong
+    // stok apa pun (rollback atomik), jadi aman dihapus.
+    if (postingAttempted) await resumePosCheckout(supabase, user.id, checkout, "backoffice", sale.id);
     const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
     if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
     redirect(`/pos/transaksi?error=${encodeURIComponent(checkoutFailure)}`);
-  }
-
-  const { data: finalized, error: finalizationErr } = quantityPoolFinalized
-    ? { data: { sale_id: sale.id, finalized: true }, error: null }
-    : await supabase.rpc("finalize_pos_sale", { p_sale_id: sale.id });
-  if (finalizationErr || finalized?.sale_id !== sale.id || finalized?.finalized !== true) {
-    await resumePosCheckout(supabase, user.id, checkout, "backoffice", sale.id);
-    const { error: cleanupErr } = await supabase.from("sales").delete().eq("id", sale.id);
-    if (cleanupErr) console.error(`[checkout] gagal bersihkan sales ${sale.id}:`, cleanupErr.message);
-    redirect(`/pos/transaksi?error=${encodeURIComponent(pesanGagalKampanye(finalizationErr?.message) ?? finalizationErr?.message ?? "Pembukuan transaksi belum selesai. Coba kembali.")}`);
   }
 
   if (customerId) await recomputeCustomerTier(supabase, customerId);

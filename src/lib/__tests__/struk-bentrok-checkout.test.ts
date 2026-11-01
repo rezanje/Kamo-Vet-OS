@@ -22,7 +22,9 @@ vi.mock("@/lib/no-dokumen", async original => ({ ...await original<typeof import
   nomorBerikutnya: async () => { const seq = state.attempts.length + 1; return { nomor: `POS-2026-${String(seq).padStart(4, "0")}`, prefix: "POS-2026-", digit: 4, seq }; } }));
 vi.mock("@/lib/posting", () => ({ postJournal: async () => {} }));
 vi.mock("@/lib/quest-hook", () => ({ processQuestProgress: async () => {} }));
-vi.mock("@/lib/inventory", () => ({ stockOut: async () => { state.stockCalls++; return { cost: 30000 }; } }));
+vi.mock("@/lib/inventory", () => ({ stockOut: async () => { throw Error("per-line stockOut is not allowed in POS checkout"); } }));
+// Stock is issued only by the atomic posting of either POS screen.
+const ATOMIC = ["cashier_post_stock_atomic", "pos_backoffice_post_atomic"];
 vi.mock("@/lib/harga-cabang", () => ({ loadHargaCabang: async () => new Map(), hargaCabang: (_map: unknown, _id: string, _unit: string, price: number) => price, applyHargaCabang: (options: unknown) => options }));
 vi.mock("@/lib/promo-hitung", async original => ({ ...await original<typeof import("@/lib/promo-hitung")>(), loadPromoAktif: async () => [] }));
 vi.mock("@/lib/satuan", async original => ({ ...await original<typeof import("@/lib/satuan")>(), loadUnitOptions: async () => new Map([["item", [{ unit: "pcs", factor: 1, sell_price: 100000, buy_price: 0 }]]]) }));
@@ -30,9 +32,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
   rpc: async (name: string, values: { p_sale_id: string }) => {
     if (name === "refresh_customer_spending") return { data: true, error: null };
-    if (name === "cashier_post_stock_atomic") state.stockCalls++;
+    if (ATOMIC.includes(name)) state.stockCalls++;
     state.finalized.push(values.p_sale_id);
-    return { data: { sale_id: values.p_sale_id, finalized: true, ...(name === "cashier_post_stock_atomic" ? { checked: true } : {}) }, error: null };
+    return { data: { sale_id: values.p_sale_id, finalized: true, ...(ATOMIC.includes(name) ? { checked: true } : {}) }, error: null };
   },
   from(table: string) {
     let lookup = false;
