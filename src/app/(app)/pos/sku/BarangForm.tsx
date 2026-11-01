@@ -194,10 +194,15 @@ export function BarangForm({
               {/* Satuan lama yang sudah dinonaktifkan tetap ditawarkan saat mengedit
                   barang yang memakainya — kalau tidak, nilainya hilang diam-diam. */}
               {editing && baseUnit && !satuanMaster.some((u) => u.nama === baseUnit) && (
-                <option value={baseUnit}>{baseUnit} (nonaktif)</option>
+                <option value={baseUnit}>
+                  {/* Ejaan beda huruf besar/kecil (impor "PCS" vs daftar "pcs") = satuan yang sama, bukan nonaktif. */}
+                  {satuanMaster.some((u) => u.nama.toLowerCase() === baseUnit.toLowerCase()) ? baseUnit : `${baseUnit} (nonaktif)`}
+                </option>
               )}
               {!baseUnit && <option value="">— pilih satuan dasar —</option>}
-              {satuanMaster.map((u) => <option key={u.id} value={u.nama}>{u.nama}</option>)}
+              {/* Ejaan lain dari satuan tersimpan (mis. "pcs" untuk "PCS") tidak ditawarkan dua kali. */}
+              {satuanMaster.filter((u) => !(editing?.unit && u.nama !== editing.unit && u.nama.toLowerCase() === editing.unit.toLowerCase()))
+                .map((u) => <option key={u.id} value={u.nama}>{u.nama}</option>)}
             </select>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
               Satuan terkecil — stok selalu dihitung di sini. Daftarnya diatur di{" "}

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { pesanSimpanGagal } from "@/lib/barang";
+import { bersihkanCacheSebentar } from "@/lib/cache-memori";
 
 const BACK = "/pos/harga";
 
@@ -53,8 +54,10 @@ export async function simpanHargaJual(formData: FormData) {
       const { error } = satuanDasar.get(r.itemId) === r.unit
         ? await supabase.from("items").update({ sell_price: r.harga }).eq("id", r.itemId)
         : await supabase.from("item_units").update({ sell_price: r.harga }).eq("item_id", r.itemId).eq("unit", r.unit);
-      if (error) kembali({ error: pesanSimpanGagal(error.message) });
+      if (error) { bersihkanCacheSebentar(); kembali({ error: pesanSimpanGagal(error.message) }); }
     }
+    // Harga pusat ada di katalog kasir/klinik yang disimpan sementara di memori instance ini.
+    bersihkanCacheSebentar();
     kembali({ success: "1" });
   }
 

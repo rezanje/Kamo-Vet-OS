@@ -40,6 +40,14 @@ export function segarkanCacheSebentar<T>(kunci: string, umurMs: number, muat: ()
   return cacheSebentar(kunci, umurMs, muat);
 }
 
+/**
+ * Buang SEMUA simpanan di instance ini (dipanggil sesudah harga/master barang disimpan).
+ * Instance server lain tetap memakai simpanannya sampai kedaluwarsa (paling lama umurnya).
+ */
+export function bersihkanCacheSebentar() {
+  simpanan.clear();
+}
+
 let aktifDiTes = false;
 /** Untuk tes helper ini sendiri. */
 export function aturCacheSebentarUntukTes(aktif: boolean) {
