@@ -28,6 +28,27 @@ database hang, fungsi server kehabisan waktu), tidak ada jalur yang membuang str
 Struknya menahan tutup shift selamanya, dan kasir tidak punya tombol apa pun untuk membereskannya.
 Penghapusan juga hanya boleh oleh kasir pemilik struk (`pos_sale_cancel_pending`).
 
+## Tutup shift dari pusat (1 Nov 2026 23.10 WIB, atas instruksi Reza)
+Reza sudah menjanjikan ke toko bahwa shift ditutup dari pusat. Tutup paksa aplikasi belum bisa dipakai
+(hanya untuk laci > 24 jam), jadi langkahnya meniru persis `cashier_shift_supervisor_close`:
+- Kas dihitung = target, selisih 0, **tanpa jurnal selisih**, karena tidak ada kas fisik yang dihitung
+  dan tidak ada selisih yang dibebankan ke kasir.
+- Baris jejak di `cashier_shift_supervisor_closures` dengan actor = akun **"Owner"**
+  (`f34a14f2-…`, role OWNER). Akun Reza sendiri tidak ditemukan dari email-nya. Alasan tertulis:
+  "Ditutup dari pusat atas instruksi Reza (pemilik) … Dijalankan agen Claude."
+- Uji kering (`begin … rollback`) dulu, lalu satu transaksi. Penjaga `pos_shift_pending_checkout_guard`
+  lolos (rincian = hitungan penjaga sendiri).
+
+| Cabang | Kasir | Target kas (tunai) | Rincian masuk |
+|---|---|---|---|
+| Surken | Muhamad Subhan Shabiri | 712.500 | Tunai 916.000 · Debit 1.751.000 · Transfer 74.000 |
+| Granada | Dimas Cahyana | 2.293.000 | Tunai 2.293.000 · QRIS 2.763.500 · Debit 1.056.000 |
+| Bantarkemang | Muhammad Raidika Hasya | 873.600 | Tunai 1.140.000 · Debit 656.700 · Transfer 170.000 |
+
+Sesudahnya tidak ada shift petshop yang terbuka. Karena selisih dipaksa 0, bila uang fisik di laci
+berbeda dari target (mis. Surken menerima 105.000 tunai dari transaksi "diana" yang tidak diinput
+ulang), selisih itu **tidak tercatat** dan harus ditangani Keuangan secara manual.
+
 ## Perbaikan (kode)
 - `src/lib/transaksi-terputus.ts`: struk berencana-bayar yang belum final dan berumur ≥ 10 menit
   dianggap terputus. Jurnal/poin/pembayaran hanya ditulis finalisasi, jadi belum ada. **Stok belum
