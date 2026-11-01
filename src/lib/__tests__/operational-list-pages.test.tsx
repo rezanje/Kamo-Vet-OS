@@ -18,18 +18,26 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     const call = { table, orders: [] as string[], filters: [] as [string, unknown][], range: undefined as [number, number] | undefined };
     fixture.calls.push(call);
     let counted = false;
+    let head = false;
+    let orFilter = "";
     let limit = 1000;
     const query = {
-      select(_fields: string, opts?: { count: string }) { counted = opts?.count === "exact"; return query; },
+      select(_fields: string, opts?: { count: string; head?: boolean }) { counted = opts?.count === "exact"; head = !!opts?.head; return query; },
+      // Cukup untuk filter nama dari filterCariPelanggan: name.ilike."*kata*".
+      or(filter: string) { orFilter = filter; return query; },
+      in(field: string, values: unknown[]) { call.filters.push([field, { in: values }]); return query; },
       order(field: string) { call.orders.push(field); return query; },
       eq(field: string, value: unknown) { call.filters.push([field, value]); return query; },
       limit(value: number) { limit = value; return query; },
       range(from: number, to: number) { call.range = [from, to]; return query; },
       maybeSingle: async () => ({ data: { role: "OWNER" }, error: null }),
       then(resolve: (v: unknown) => void) {
-        const source = (fixture.tables[table] ?? []).filter((r) => call.filters.every(([key, value]) => r[key] === value));
+        const kata = /name\.ilike\."\*(.*?)\*"/.exec(orFilter)?.[1]?.toLowerCase();
+        const source = (fixture.tables[table] ?? []).filter((r) => call.filters.every(([key, value]) =>
+          value && typeof value === "object" && "in" in value ? (value.in as unknown[]).includes(r[key]) : r[key] === value)
+          && (!kata || String(r.name ?? "").toLowerCase().includes(kata)));
         const [from, to] = call.range ?? [0, limit - 1];
-        return Promise.resolve({ data: fixture.failedTable === table ? null : source.slice(from, to + 1), count: counted ? source.length : null, error: fixture.failedTable === table ? { message: "private DB detail" } : null }).then(resolve);
+        return Promise.resolve({ data: fixture.failedTable === table ? null : head ? null : source.slice(from, to + 1), count: counted ? source.length : null, error: fixture.failedTable === table ? { message: "private DB detail" } : null }).then(resolve);
       },
     };
     return query;
@@ -43,7 +51,7 @@ import StockPage from "../../app/(app)/pos/stok/page";
 
 function customerProps(node: React.ReactNode): { customers: { id: string }[] } | null {
   if (!React.isValidElement<{ customers?: { id: string }[]; children?: React.ReactNode }>(node)) return null;
-  if (node.props.customers) return { customers: node.props.customers };
+  if (node.props.customers) return node.props as { customers: { id: string }[] };
   for (const child of React.Children.toArray(node.props.children)) { const found = customerProps(child); if (found) return found; }
   return null;
 }
@@ -82,10 +90,24 @@ describe("complete operational page sources", () => {
     const patient=renderToStaticMarkup(await MedicalPage({searchParams:Promise.resolve({pet:"pet-a"})}));
     expect(patient).toContain('href="/klinik/rekam-medis/visit-0"');
   });
-  it("loads all 1200 customers for full summaries and client search", async () => {
+  it("loads one 50-row page of customers with database-wide totals instead of every customer", async () => {
     const page = await CustomersPage({ searchParams: Promise.resolve({}) });
-    expect(customerProps(page)?.customers).toHaveLength(1200);
-    expect(fixture.calls.filter((c) => c.table === "customers").every((c) => c.orders.at(-1) === "id")).toBe(true);
+    const props = customerProps(page) as unknown as { customers: { id: string }[]; total: number; stats: { total: number }; halaman: { page: number; totalPages: number } };
+    expect(props.customers).toHaveLength(50);
+    expect(props.total).toBe(1200);
+    expect(props.stats.total).toBe(1200);
+    expect(props.halaman).toMatchObject({ page: 1, totalPages: 24 });
+    const listCalls = fixture.calls.filter((c) => c.table === "customers" && c.range);
+    expect(listCalls.every((c) => c.orders.at(-1) === "id" && c.range![1] - c.range![0] < 50)).toBe(true);
+  });
+  it("pages and searches customers on the server", async () => {
+    const third = customerProps(await CustomersPage({ searchParams: Promise.resolve({ hal: "3" }) })) as unknown as { customers: { id: string }[]; halaman: { from: number } };
+    expect(third.halaman.from).toBe(100);
+    expect(third.customers[0].id).toBe("customer-100");
+    const found = customerProps(await CustomersPage({ searchParams: Promise.resolve({ cari: "Owner 1199" }) })) as unknown as { customers: { id: string }[]; total: number; stats: { total: number } };
+    expect(found.customers.map((c) => c.id)).toEqual(["customer-1199"]);
+    expect(found.total).toBe(1);
+    expect(found.stats.total).toBe(1200);
   });
   it("searches medical history beyond the former 300-row cap and preserves pet scope", async () => {
     const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ q: "Pet 349", pet: "pet-a" }) }));

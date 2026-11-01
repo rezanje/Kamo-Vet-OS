@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
-import { PosClient, type Item, type Cust } from "./PosClient";
+import { PosClient, type Item } from "./PosClient";
 import { loadServiceStaff } from "@/lib/service-performers-server";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
@@ -12,7 +12,6 @@ import { loadActiveVouchers } from "@/lib/voucher-loader";
 import { voucherBerlaku, type VoucherRow } from "@/lib/voucher";
 import { hariIniWIB } from "@/lib/tanggal";
 import { groomingDoctorRequired, isGroomingOutlet, isGroomingService } from "@/lib/grooming-requirements";
-import { semuaPelanggan } from "@/lib/pelanggan-semua";
 
 type CatalogItem = { id: string; code: string; name: string; item_type: string; tindakan_kategori: string | null; unit: string; sell_price: number; target_species: string };
 
@@ -25,9 +24,11 @@ export default async function TransaksiPage({
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
-  const [items, { data: customers }, { data: branches }, allowedBranches] = await Promise.all([
+  const [items, { data: golonganAktif }, { data: branches }, allowedBranches] = await Promise.all([
     readCompleteList<CatalogItem>((from, to) => supabase.from("items").select("id, code, name, item_type, tindakan_kategori, unit, sell_price, target_species", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang POS", { maxRows: null }),
-    semuaPelanggan<{ id: string }>(supabase, "id, name, phone, points, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), pets(id, name, species)", "Daftar pelanggan POS"),
+    // Pelanggan tidak lagi dimuat semua (10.000+): layar mencarinya di server sambil
+    // mengetik. Aturan diskon disiapkan untuk semua golongan aktif (jumlahnya sedikit).
+    supabase.from("customer_categories").select("id").eq("is_active", true),
     supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"),
     user ? allowedBranchIds(supabase, user.id) : [],
   ]);
@@ -58,22 +59,7 @@ export default async function TransaksiPage({
     (hargaPerCabang[o.branch_id] ??= {})[`${o.item_id}|${o.unit}`] = Number(o.sell_price);
   }
 
-  // Relasi Supabase bisa datang sebagai objek ATAU array — dinormalkan sekali di sini
-  // supaya kasir cukup baca satu bentuk (`golongan`).
-  type CustomerCategory = { nama: string; diskon_persen: number; rupiah_per_poin: number | null; is_active: boolean };
-  const pelanggan = ((customers ?? []) as unknown as (Omit<Cust, "golongan"> & {
-    category_id: string | null;
-    customer_categories: CustomerCategory | CustomerCategory[] | null;
-  })[]).map((c) => {
-    const k = Array.isArray(c.customer_categories) ? c.customer_categories[0] : c.customer_categories;
-    return {
-      ...c,
-      golonganId: k?.is_active ? c.category_id : null,
-      golongan: k?.is_active ? { nama: k.nama, diskon_persen: Number(k.diskon_persen), rupiah_per_poin: k.rupiah_per_poin == null ? null : Number(k.rupiah_per_poin) } : null,
-    };
-  });
-
-  const categoryIds = [...new Set(pelanggan.flatMap(customer => customer.golonganId ? [customer.golonganId] : []))];
+  const categoryIds = [...new Set(((golonganAktif ?? []) as { id: string }[]).map(category => category.id))];
   // C05: kode kampanye aktif (hanya tampilan; server memeriksa ulang saat bayar).
   const hariIni = hariIniWIB();
   const kodeKampanye = await loadKodeKampanyeAktif(supabase);
@@ -125,7 +111,6 @@ export default async function TransaksiPage({
 
       <PosClient
         items={katalog}
-        customers={pelanggan}
         branches={branches ?? []}
         serviceStaffByBranch={Object.fromEntries(serviceStaffEntries)}
         groomingDoctorByBranch={Object.fromEntries((branches ?? []).map(branch => [branch.id, groomingDoctorRequired(branch.type, ruleByBranch.get(branch.id))]))}

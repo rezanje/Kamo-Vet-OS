@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { STATUS_REPRODUKSI } from "@/lib/anabul";
 import { SecHeader } from "@/components/SecHeader";
 import { simpanAnabul } from "./actions";
-import { readCompleteList } from "@/lib/checked-list";
+import { PelangganPicker } from "@/components/PelangganPicker";
 
 export default async function TambahAnabulPage({
   searchParams,
@@ -14,10 +14,9 @@ export default async function TambahAnabulPage({
   const { customer: customerId, error } = await searchParams;
   const supabase = await createClient();
 
-  // ponytail: if customer id provided, load that customer for context header.
-  // Otherwise load all customers for the dropdown select.
+  // Kalau id pelanggan dikirim, muat pelanggan itu untuk judul. Kalau tidak, pemilik
+  // dicari di server sambil mengetik (dulu semua 10.000+ pelanggan dimuat ke <select>).
   let customerName: string | null = null;
-  let customers: { id: string; name: string; phone: string }[] = [];
 
   if (customerId) {
     const { data } = await supabase
@@ -26,12 +25,6 @@ export default async function TambahAnabulPage({
       .eq("id", customerId)
       .maybeSingle();
     customerName = data?.name ?? null;
-  } else {
-    // Semua pelanggan, per halaman: satu permintaan dibatasi 10.000 baris oleh server.
-    customers = await readCompleteList((from, to) => supabase
-      .from("customers")
-      .select("id, name, phone", { count: "exact" })
-      .order("name").order("id").range(from, to), "Daftar pelanggan", { maxRows: null });
   }
 
   return (
@@ -79,14 +72,7 @@ export default async function TambahAnabulPage({
                 <label className="flab">
                   Pelanggan / Pemilik <span style={{ color: "#dc2626" }}>*</span>
                 </label>
-                <select className="fi" name="customer_id" required>
-                  <option value="">— Pilih pelanggan —</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.phone})
-                    </option>
-                  ))}
-                </select>
+                <PelangganPicker required />
               </div>
             )}
 
