@@ -6,8 +6,8 @@ import {kasirDraftKey,POS_DRAFT_KEY} from '@/lib/pos-draft';
 import type {PromoHitung} from '@/lib/promo-hitung';
 vi.mock('next/navigation',()=>({useRouter:()=>({refresh:vi.fn()})}));
 vi.mock('@/app/kasir/checkout',()=>({checkoutKasir:vi.fn()}));
-vi.mock('@/app/kasir/actions',()=>({tambahCustomerKasir:vi.fn()}));
-vi.mock('@/app/(app)/pos/transaksi/actions',()=>({checkoutSale:vi.fn()}));
+vi.mock("@/app/kasir/actions", async () => (await import("./helpers/kasir-actions-mock")).kasirActionsMock);
+vi.mock("@/app/(app)/pos/transaksi/actions", async () => (await import("./helpers/pos-actions-mock")).posActionsMock);
 import {KasirClient} from '@/app/kasir/KasirClient';
 import {PosClient} from '@/app/(app)/pos/transaksi/PosClient';
 const context='pool:branch:shift';
@@ -23,7 +23,7 @@ async function render(kind:'kasir'|'backoffice',qty=2,legacyUnits=false){
  if(legacyUnits)cart.forEach(line=>{Reflect.deleteProperty(line,'satuan');Reflect.deleteProperty(line,'faktor');});
  const common={version:1,savedAt:Date.now(),checkoutKey:'pool-draft',customerId:'',salespersonId:'',metode:'Transfer',bayar:0,cart};
  sessionStorage.setItem(kind==='kasir'?kasirDraftKey(context):POS_DRAFT_KEY,JSON.stringify(kind==='kasir'?{...common,diskon:0,diskonPct:false,poin:0,voucher:''}:{...common,branchId:'branch',petId:'',discount:0}));
- await act(async()=>root.render(kind==='kasir'?<KasirClient branchName="Uji" items={catalog} customers={[]} vouchers={[]} hariIni="2026-11-01" draftContext={context} shiftId="shift" promoHitung={[pool]}/>:<PosClient items={catalog.map(i=>({id:i.id,code:i.code,name:i.name,item_type:i.itemType,sell_price:i.harga,units:i.satuan,target_species:'Kucing'}))} customers={[]} branches={[{id:'branch',code:'BR',name:'Uji'}]} promoPerCabang={{branch:[pool]}}/>));
+ await act(async()=>root.render(kind==='kasir'?<KasirClient branchName="Uji" items={catalog} vouchers={[]} hariIni="2026-11-01" draftContext={context} shiftId="shift" promoHitung={[pool]}/>:<PosClient items={catalog.map(i=>({id:i.id,code:i.code,name:i.name,item_type:i.itemType,sell_price:i.harga,units:i.satuan,target_species:'Kucing'}))} branches={[{id:'branch',code:'BR',name:'Uji'}]} promoPerCabang={{branch:[pool]}}/>));
  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,5));});
 }
 it('kasir restores old single-unit drafts using the official base PCS rather than silently missing the pool',async()=>{

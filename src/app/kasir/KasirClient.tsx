@@ -3,10 +3,10 @@
 import { NumberInput } from "@/components/NumberInput";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { checkoutKasir } from "./checkout";
 import { cashierPriceFloorIssue } from "@/lib/cashier-price-floor";
-import { tambahCustomerKasir } from "./actions";
+import { ambilCustomerKasir, cariCustomerKasir, tambahCustomerKasir } from "./actions";
+import type { CustRow } from "@/lib/kasir-pelanggan";
 import { SubmitButton } from "@/components/SubmitButton";
 import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
 import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
@@ -15,13 +15,11 @@ import { bacaKode, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganK
 import { type PromoHitung } from "@/lib/promo-hitung";
 import type { ItemUnit } from "@/lib/satuan";
 import { hargaTingkat, type Tingkat } from "@/lib/harga-tingkat";
-import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
+import { UlasanBadge } from "@/components/UlasanBadge";
 import type { ItemType } from "@/lib/barang";
 import { bacaDraftKasir, kasirDraftKey, type KasirDraft } from "@/lib/pos-draft";
 import type { PilihanPenjual } from "@/lib/penjual";
 import { nomorHalamanKasirTerlihat } from "@/lib/kasir-halaman";
-import { digitHp } from "@/lib/kontak";
-import { normalPhone } from "@/lib/booking";
 import { PosPaymentFields } from "@/components/pos/PosPaymentFields";
 import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
@@ -51,14 +49,7 @@ export type ItemRow = {
   /** Resep tetap Grup; harga tetap hanya berada di baris induk. */
   groupComponents?: GroupComponentRow[];
 };
-export type CustRow = {
-  id: string; name: string; phone: string; points: number; tier: string | null; kategori: string;
-  trx: number; belanja: number;
-  diskonPersen?: number;      // diskon DASAR golongan (customer_categories)
-  rupiahPerPoin?: number;     // belanja sebesar ini = 1 poin
-  golonganId?: string | null; // kunci ke pengecualian diskon per produk (0082)
-  ulasan?: StatusUlasan | null; // status ulasan terkini (mis. "Bintang 1 Google")
-};
+export type { CustRow } from "@/lib/kasir-pelanggan";
 // Bentuknya sama persis dengan lib/voucher — layar kasir perlu syarat lengkapnya
 // (plafon, minimal belanja, boleh gabung promo) untuk menolak SEBELUM bayar.
 export type { VoucherRow } from "@/lib/voucher";
@@ -96,12 +87,12 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 };
 
 export function KasirClient({
-  branchName, items, customers, vouchers, kodeKampanye = [], hariIni, draftContext, shiftId, promos = [], promoHitung = [],
+  branchName, items, vouchers, kodeKampanye = [], hariIni, draftContext, shiftId, promos = [], promoHitung = [],
   aturanDiskon = {}, infoBarang = {}, salespeople = [], cashierName = "Akun login", error, replacementDraft, replacementId,
   groomingDoctorRequired = false, groomingApplies = true,
 }: {
   draftContext?: string; shiftId?: string; replacementDraft?: KasirDraft; replacementId?: string;
-  branchName: string; items: ItemRow[]; customers: CustRow[]; vouchers: VoucherRow[]; kodeKampanye?: KodeKampanye[]; hariIni: string;
+  branchName: string; items: ItemRow[]; vouchers: VoucherRow[]; kodeKampanye?: KodeKampanye[]; hariIni: string;
   promos?: PromoRow[]; promoHitung?: PromoHitung[];
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
@@ -117,6 +108,14 @@ export function KasirClient({
   const [cartRaw, setCart] = useState<CartLine[]>([]);
   const [custQ, setCustQ] = useState("");
   const [cust, setCust] = useState<CustRow | null>(null);
+  // Draf hanya menyimpan ID customer; datanya diminta ulang ke server. Selama belum
+  // termuat (atau gagal), ID-nya tetap ikut tersimpan supaya customer tidak hilang diam-diam.
+  const [custIdDraf, setCustIdDrafState] = useState("");
+  const custIdDrafRef = useRef("");
+  const setCustIdDraf = (id: string) => { custIdDrafRef.current = id; setCustIdDrafState(id); };
+  const [custHits, setCustHits] = useState<CustRow[]>([]);
+  const [custCari, setCustCari] = useState<"idle" | "mencari" | "selesai" | "gagal">("idle");
+  const cariKe = useRef(0);
   const [legacySalespersonId, setLegacySalespersonId] = useState("");
   const [bulkPerformers, setBulkPerformers] = useState<ServicePerformersInput>(emptyServicePerformers);
   const [diskon, setDiskon] = useState(0);
@@ -131,7 +130,6 @@ export function KasirClient({
   const [showAddCust, setShowAddCust] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
   const [addPending, startAdd] = useTransition();
-  const router = useRouter();
   const [checkoutKey, setCheckoutKey] = useState("");
   const draftSiap = useRef(false);
   const restoredDraftKey = useRef("");
@@ -148,9 +146,19 @@ export function KasirClient({
         draftSiap.current = true;
         return;
       }
-      const customer = customers.find((c) => c.id === draft.customerId) ?? null;
-      setCust(customer);
-      setCustQ(customer?.name ?? "");
+      setCust(null);
+      setCustQ("");
+      setCustIdDraf(draft.customerId ?? "");
+      if (draft.customerId) {
+        const id = draft.customerId;
+        void ambilCustomerKasir(id).then((customer) => {
+          // Kasir sudah memilih/menghapus customer lain selagi menunggu: jangan ditimpa.
+          if (!customer || custIdDrafRef.current !== id) return;
+          setCust(customer);
+          setCustQ(customer.name);
+          setCustIdDraf("");
+        }).catch(() => undefined);
+      }
       setMetode(draft.metode);
       setMerchantFeePercent(draft.merchantFeePercent ?? 0);
       setSplit(draft.split ?? draft.metode === "Split");
@@ -188,7 +196,7 @@ export function KasirClient({
       draftSiap.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [customers, items, salespeople, draftKey, replacementDraft]);
+  }, [items, salespeople, draftKey, replacementDraft]);
 
   useEffect(() => {
     if (!draftSiap.current) return;
@@ -197,11 +205,11 @@ export function KasirClient({
       return;
     }
     const draft: KasirDraft = {
-      version: 1, savedAt: Date.now(), checkoutKey, customerId: cust?.id ?? "", salespersonId: legacySalespersonId,
+      version: 1, savedAt: Date.now(), checkoutKey, customerId: cust?.id ?? custIdDraf, salespersonId: legacySalespersonId,
       metode, split, payments, ...(merchantFeePercent ? { merchantFeePercent } : {}), diskon, diskonPct, poin, voucher, bayar, cart: cartRaw,
     };
     window.sessionStorage.setItem(draftKey, JSON.stringify(draft));
-  }, [cartRaw, cust?.id, legacySalespersonId, metode, split, payments, merchantFeePercent, diskon, diskonPct, poin, voucher, bayar, draftKey, checkoutKey]);
+  }, [cartRaw, cust?.id, custIdDraf, legacySalespersonId, metode, split, payments, merchantFeePercent, diskon, diskonPct, poin, voucher, bayar, draftKey, checkoutKey]);
 
   const submitNewCust = (fd: FormData) => {
     setAddErr(null);
@@ -209,10 +217,10 @@ export function KasirClient({
       const res = await tambahCustomerKasir(fd);
       if (!res.ok) { setAddErr(res.error); return; }
       setCust(res.customer);
+      setCustIdDraf("");
       setCustQ(res.customer.name);
       setPoin(0);
       setShowAddCust(false);
-      router.refresh(); // masukkan customer baru ke daftar cari; state cart client tetap.
     });
   };
 
@@ -232,18 +240,29 @@ export function KasirClient({
   const pageRows = shown.slice(pageStart, pageStart + PAGE_SIZE);
   const pageNumbers = nomorHalamanKasirTerlihat(totalPages, safePage);
 
-  const custHits = useMemo(() => {
-    const s = custQ.trim().toLowerCase();
-    if (!s || cust) return [];
-    const digits = digitHp(s);
-    const localDigits = normalPhone(digits);
-    const phoneQuery = /^[\d\s()+.-]+$/.test(s);
-    return customers.filter((c) => {
-      const phone = digitHp(c.phone);
-      return (digits && (phone.includes(digits) || (phoneQuery && normalPhone(phone).includes(localDigits))))
-        || c.name.toLowerCase().includes(s);
-    }).slice(0, 5);
-  }, [customers, custQ, cust]);
+  // Cari customer ke server (bukan memuat seluruh pelanggan ke tablet). Ditunda
+  // sebentar selagi kasir mengetik; jawaban lama yang telat datang diabaikan.
+  useEffect(() => {
+    const s = custQ.trim();
+    const ke = ++cariKe.current;
+    if (!s || cust) {
+      const reset = window.setTimeout(() => { setCustHits([]); setCustCari("idle"); }, 0);
+      return () => window.clearTimeout(reset);
+    }
+    const timer = window.setTimeout(() => {
+      setCustCari("mencari");
+      cariCustomerKasir(s).then((res) => {
+        if (ke !== cariKe.current) return;
+        setCustHits(res.ok ? res.customers : []);
+        setCustCari(res.ok ? "selesai" : "gagal");
+      }).catch(() => {
+        if (ke !== cariKe.current) return;
+        setCustHits([]);
+        setCustCari("gagal");
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [custQ, cust]);
 
   // Barang masuk keranjang langsung memakai aturan masternya: qty mulai dari
   // minimum jual, dan diskon default terpasang sebagai persen (0 = tanpa diskon).
@@ -450,24 +469,35 @@ export function KasirClient({
           <div style={{ fontSize: 9, fontWeight: 700, color: "var(--posb)", letterSpacing: ".05em", marginBottom: 4 }}>DATA CUSTOMER</div>
           <div style={{ position: "relative" }}>
             <input className="fi" placeholder="Masukkan nomor HP / nama..." value={custQ}
-              onChange={(e) => { setCustQ(e.target.value); setCust(null); setPoin(0); }} />
-            {cust && <i className="ti ti-x" onClick={() => { setCust(null); setCustQ(""); setPoin(0); }}
+              onChange={(e) => { setCustQ(e.target.value); setCust(null); setCustIdDraf(""); setPoin(0); }} />
+            {cust && <i className="ti ti-x" onClick={() => { setCust(null); setCustIdDraf(""); setCustQ(""); setPoin(0); }}
               style={{ position: "absolute", right: 8, top: 8, cursor: "pointer", color: "var(--td)" }} />}
           </div>
           {custHits.length > 0 && (
             <div style={{ position: "absolute", zIndex: 20, top: "100%", left: 0, right: 0, background: "#fff", border: ".5px solid var(--bd)", borderRadius: 7, marginTop: 3, boxShadow: "0 4px 12px rgba(0,0,0,.12)" }}>
               {custHits.map((c) => (
-                <div key={c.id} onClick={() => { setCust(c); setCustQ(c.name); }}
+                <div key={c.id} onClick={() => { setCust(c); setCustIdDraf(""); setCustQ(c.name); setCustHits([]); }}
                   style={{ padding: "7px 10px", cursor: "pointer", fontSize: 11.5, borderBottom: ".5px solid var(--bd)" }}>
                   {c.name} <span style={{ color: "var(--td)" }}>· {c.phone}</span>
                 </div>
               ))}
             </div>
           )}
-          {!cust && custQ.trim() && custHits.length === 0 && (
+          {!cust && custQ.trim() && custCari === "mencari" && custHits.length === 0 && (
+            <div style={{ fontSize: 11, color: "var(--td)", marginTop: 5 }}>Mencari customer…</div>
+          )}
+          {!cust && custQ.trim() && custCari === "selesai" && custHits.length === 0 && (
             <div role="status" style={{ fontSize: 11, color: "var(--td)", marginTop: 5 }}>
               Customer tidak ditemukan. Coba nama atau nomor HP lain.
             </div>
+          )}
+          {!cust && custQ.trim() && custCari === "gagal" && (
+            <div role="status" style={{ fontSize: 11, color: "var(--danger, #b91c1c)", marginTop: 5 }}>
+              Pencarian customer gagal. Coba ketik ulang.
+            </div>
+          )}
+          {!cust && custIdDraf && (
+            <div style={{ fontSize: 11, color: "var(--td)", marginTop: 5 }}>Memuat customer dari transaksi tersimpan…</div>
           )}
         </div>
         <button type="button" onClick={() => { setAddErr(null); setShowAddCust(true); }}
@@ -613,7 +643,7 @@ export function KasirClient({
           <input type="hidden" name="checkout_diskon_requested" value={diskon} />
           <input type="hidden" name="checkout_diskon_pct" value={diskonPct ? "1" : "0"} />
           <input type="hidden" name="replacementSaleId" value={replacementId ?? ""} />
-          <input type="hidden" name="customerId" value={cust?.id ?? ""} />
+          <input type="hidden" name="customerId" value={cust?.id ?? custIdDraf} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />
           <input type="hidden" name="diskon" value={diskonVal} />
           <input type="hidden" name="poinDigunakan" value={poinUsed} />

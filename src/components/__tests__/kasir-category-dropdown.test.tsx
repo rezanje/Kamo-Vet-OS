@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/kasir/checkout", () => ({ checkoutKasir: vi.fn() }));
-vi.mock("@/app/kasir/actions", () => ({ tambahCustomerKasir: vi.fn() }));
+vi.mock("@/app/kasir/actions", async () => (await import("./helpers/kasir-actions-mock")).kasirActionsMock);
 import { KasirClient, type ItemRow } from "@/app/kasir/KasirClient";
 let host: HTMLDivElement;
 let root: Root;
@@ -26,7 +26,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 async function render(items = rows) {
-  await act(async () => root.render(<KasirClient branchName="Kamo Petshop Bantarkemang — data contoh" items={items} customers={[]} vouchers={[]} hariIni="2026-10-14" />));
+  await act(async () => root.render(<KasirClient branchName="Kamo Petshop Bantarkemang — data contoh" items={items} vouchers={[]} hariIni="2026-10-14" />));
 }
 const category = () => host.querySelector<HTMLSelectElement>("#kasir-category-filter")!;
 const productRows = () => [...host.querySelectorAll<HTMLTableRowElement>(".kpos-workspace > .card:first-child tbody tr")];

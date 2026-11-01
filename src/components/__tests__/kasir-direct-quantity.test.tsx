@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { KASIR_DRAFT_KEY } from "@/lib/pos-draft";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/kasir/checkout", () => ({ checkoutKasir: vi.fn() }));
-vi.mock("@/app/kasir/actions", () => ({ tambahCustomerKasir: vi.fn() }));
+vi.mock("@/app/kasir/actions", async () => (await import("./helpers/kasir-actions-mock")).kasirActionsMock);
 import { KasirClient, type ItemRow } from "@/app/kasir/KasirClient";
 
 let host: HTMLDivElement, root: Root;
@@ -30,7 +30,7 @@ beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   sessionStorage.clear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  await act(async () => root.render(<KasirClient branchName="PDRY fiktif" items={[item]} customers={[]} vouchers={[]} hariIni="2026-10-21" draftContext="qty-test" />));
+  await act(async () => root.render(<KasirClient branchName="PDRY fiktif" items={[item]} vouchers={[]} hariIni="2026-10-21" draftContext="qty-test" />));
   await act(async () => new Promise(resolve => setTimeout(resolve, 5)));
   await act(async () => host.querySelector<HTMLButtonElement>('button[title="Tambah"]')!.click());
 });

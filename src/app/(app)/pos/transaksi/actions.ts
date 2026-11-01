@@ -27,6 +27,7 @@ import { bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak, promoDengan
 import { priceFloorFindings } from "@/lib/cashier-price-floor";
 import { quoteSaleLineCosts } from "@/lib/sale-fifo-quote";
 import { hppWarningConfirmed, hppWarningQuery, hppWarningsFrom, type HppWarning } from "@/lib/hpp-warning";
+import { ambilPelangganPos, cariPelangganPos, type Cust } from "@/lib/pos-pelanggan";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -342,4 +343,26 @@ export async function checkoutSale(formData: FormData) {
   await processQuestProgress(supabase, { saleId: sale.id });
 
   redirect(`/pos/struk/${sale!.id}?draft_done=${encodeURIComponent(checkout.key)}`);
+}
+
+export type CariPelangganPosResult = { ok: true; customers: Cust[] } | { ok: false; error: string };
+
+// Kolom cari pelanggan POS: hanya baris yang cocok yang dikirim ke layar (bukan seluruh pelanggan).
+export async function cariPelangganPosAction(query: string): Promise<CariPelangganPosResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Sesi kamu habis — masuk ulang." };
+  try {
+    return { ok: true, customers: await cariPelangganPos(supabase, String(query ?? "")) };
+  } catch {
+    return { ok: false, error: "Pencarian pelanggan gagal. Coba ketik ulang." };
+  }
+}
+
+// Pulihkan pelanggan di draf POS (draf hanya menyimpan ID-nya).
+export async function ambilPelangganPosAction(id: string): Promise<Cust | null> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  return ambilPelangganPos(supabase, String(id ?? "")).catch(() => null);
 }

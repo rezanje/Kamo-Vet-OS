@@ -5,8 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { POS_DRAFT_KEY } from "@/lib/pos-draft";
 import { posCheckoutIdentity } from "@/lib/pos-checkout-identity";
 
-vi.mock("@/app/(app)/pos/transaksi/actions", () => ({ checkoutSale: vi.fn() }));
+vi.mock("@/app/(app)/pos/transaksi/actions", async () => (await import("./helpers/pos-actions-mock")).posActionsMock);
 import { PosClient } from "@/app/(app)/pos/transaksi/PosClient";
+import { pelangganPosUji } from "./helpers/pos-actions-mock";
 
 const staff = [{ id: "doctor", nama: "Dokter Uji", jabatan: "Dokter Hewan" }, { id: "staff", nama: "Groomer Uji", jabatan: "Groomer" }];
 const units = [{ unit: "pcs", factor: 1, buy_price: 10, sell_price: 100 }];
@@ -14,7 +15,7 @@ const items = [
   { id: "service", name: "Grooming", item_type: "Jasa", sell_price: 100, target_species: "Universal", units },
   { id: "food", name: "Pakan", item_type: "Persediaan", sell_price: 100, target_species: "Universal", units },
 ];
-const props = { items, customers: [], branches: [{ id: "branch", code: "BR", name: "Cabang Uji" }, { id: "other", code: "B2", name: "Cabang Lain" }], salespeople: staff,
+const props = { items, branches: [{ id: "branch", code: "BR", name: "Cabang Uji" }, { id: "other", code: "B2", name: "Cabang Lain" }], salespeople: staff,
   serviceStaffByBranch: { branch: staff, other: [{ id: "other-staff", nama: "Staf cabang lain", jabatan: "Groomer" }] } };
 let root: Root;
 let host: HTMLDivElement;
@@ -115,7 +116,8 @@ it.each([
 it("preserves customer category discount rounding when identical services are separate", async () => {
   const service = { ...items[0], sell_price: 99, units: [{ ...units[0], sell_price: 99 }] };
   sessionStorage.setItem(POS_DRAFT_KEY, JSON.stringify({ version: 1, savedAt: Date.now(), branchId: "branch", customerId: "customer", metode: "Transfer", cart: [1, 2].map(() => ({ item_id: "service", nama: "Grooming", qty: 1, harga: 99, target_species: "Universal", satuan: "pcs", faktor: 1 })) }));
-  await act(async () => root.render(<PosClient {...props} items={[service]} customers={[{ id: "customer", name: "Member", phone: "", points: 0, pets: [], golonganId: "category", golongan: { nama: "Member", diskon_persen: 33 } }]} />));
+  pelangganPosUji.rows = [{ id: "customer", name: "Member", phone: "", points: 0, pets: [], golonganId: "category", golongan: { nama: "Member", diskon_persen: 33 } }];
+  await act(async () => root.render(<PosClient {...props} items={[service]} />));
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
   expect(cart()).toHaveLength(2); expect(host.querySelector(".pay-btn")!.textContent).toContain("Rp 133");
 });

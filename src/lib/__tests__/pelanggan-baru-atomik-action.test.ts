@@ -24,13 +24,17 @@ vi.mock("@/lib/supabase/server", () => ({
       s.tabel.push(table);
       const q: Record<string, unknown> = {};
       const chain = () => q;
+      const baris = async () => s.muatError ? { data: null, error: { message: s.muatError } } : ({
+        data: { id: "pelanggan-baru", name: "Pelanggan Fiktif", phone: "+62 800-0000-001", points: 0, tier: "New", kategori: null,
+          category_id: null, customer_categories: null, customer_review_statuses: null },
+        error: null,
+      });
       Object.assign(q, {
-        select: chain, eq: chain,
+        select: chain, eq: chain, in: chain, is: chain,
         insert: () => { throw new Error("insert langsung ke customers tidak boleh lagi"); },
-        single: async () => s.muatError ? { data: null, error: { message: s.muatError } } : ({
-          data: { id: "pelanggan-baru", name: "Pelanggan Fiktif", phone: "+62 800-0000-001", points: 0, tier: "New", kategori: null },
-          error: null,
-        }),
+        single: baris, maybeSingle: baris,
+        // Ringkasan transaksi pelanggan baru (sales/invoices): belum ada.
+        then: (ok: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(ok),
       });
       return q;
     },
@@ -80,6 +84,7 @@ describe("Kasir: tambahCustomerKasir", () => {
     } }]);
     expect(hasil).toEqual({ ok: true, customer: {
       id: "pelanggan-baru", name: "Pelanggan Fiktif", phone: "+62 800-0000-001", points: 0, tier: "New", kategori: null, trx: 0, belanja: 0,
+      diskonPersen: 0, golonganId: null, ulasan: null,
     } });
   });
 

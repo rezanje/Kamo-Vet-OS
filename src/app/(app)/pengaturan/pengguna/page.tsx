@@ -1,6 +1,7 @@
 import { roleCapabilities, type RoleCapabilities } from "@/lib/role-capabilities";
 import { branchDisplayName } from "@/lib/branch-display";
 import { allowedBranchIds } from "@/lib/branch-access";
+import { PasswordInput } from "@/components/PasswordInput";
 import Link from "next/link";
 import { SecHeader } from "@/components/SecHeader";
 import { assertAccountCreator } from "@/lib/master-guard";
@@ -165,7 +166,7 @@ export default async function PenggunaPage({
             </div>
             <div className="fg" style={{ marginBottom: 0 }}>
               <label className="flab">Password awal * (min. 8)</label>
-              <input className="fi" name="password" type="password" required minLength={8} placeholder="Password sementara" />
+              <PasswordInput name="password" required minLength={8} placeholder="Password sementara" autoComplete="new-password" />
             </div>
             <div className="fg" style={{ marginBottom: 0 }}>
               <label className="flab">Role *</label>

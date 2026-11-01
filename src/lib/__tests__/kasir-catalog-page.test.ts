@@ -1,10 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { cocokOr } from "./helpers/postgrest-or";
 
-const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failItemsFrom: -1, units: new Map<string,{unit:string;factor:number;sell_price:number;buy_price:number}[]>() }));
+const fixture = vi.hoisted(() => ({ dibaca: [] as string[], tables: {} as Record<string, Record<string, unknown>[]>, failItemsFrom: -1, units: new Map<string,{unit:string;factor:number;sell_price:number;buy_price:number}[]>() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "cashier" } } }) },
   from(table: string) {
+    fixture.dibaca.push(table);
     let rows = fixture.tables[table] ?? [];
     let counted = false;
     let start = 0;
@@ -34,6 +35,7 @@ vi.mock("@/app/kasir/KasirClient", () => ({ KasirClient: () => null }));
 import KasirPage from "@/app/kasir/page";
 
 beforeEach(() => {
+  fixture.dibaca = [];
   fixture.failItemsFrom = -1;
   fixture.units = new Map();
   fixture.tables = {
@@ -72,12 +74,15 @@ it("makes products after the API's first 1,000 rows available to cashier search 
   expect(page.props.items.at(-1)?.name).toBe("Zebra Tuna");
 });
 
-it("does not include an unfinished sale in customer purchase history", async () => {
+it("does not load the whole customer list or all-time sales/invoices when the cashier opens", async () => {
+  // 2026-11-01: >10.000 pelanggan dimuat utuh tiap buka kasir (±1,7 MB) dan tablet toko macet.
+  // Pelanggan kini dicari lewat server action (lihat lib/__tests__/kasir-pelanggan.test.ts).
   fixture.tables.customers = [{ id: "customer", name: "Customer", phone: "", points: 0, tier: "New" }];
-  fixture.tables.sales = [{ total: 100000, customer_id: "customer" },
-    { total: 100000, customer_id: "customer", payment_plan: [{ method: "Tunai", amount: 100000 }], payments_finalized_at: null }];
   const page = await KasirPage({ searchParams: Promise.resolve({}) });
-  expect(page.props.customers[0]).toMatchObject({ trx: 1, belanja: 100000 });
+  expect(fixture.dibaca).not.toContain("customers");
+  expect(fixture.dibaca).not.toContain("sales");
+  expect(fixture.dibaca).not.toContain("invoices");
+  expect(page.props.customers).toBeUndefined();
 });
 
 it("loads stock, branch prices, quantity prices and category discounts for the final product", async () => {

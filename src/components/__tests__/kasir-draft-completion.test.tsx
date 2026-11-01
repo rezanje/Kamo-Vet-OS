@@ -6,8 +6,9 @@ import { KASIR_DRAFT_KEY, type KasirDraft } from "@/lib/pos-draft";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/kasir/checkout", () => ({ checkoutKasir: vi.fn() }));
-vi.mock("@/app/kasir/actions", () => ({ tambahCustomerKasir: vi.fn() }));
+vi.mock("@/app/kasir/actions", async () => (await import("./helpers/kasir-actions-mock")).kasirActionsMock);
 import { KasirClient } from "@/app/kasir/KasirClient";
+import { pelangganUji } from "./helpers/kasir-actions-mock";
 import { ClearKasirDraft } from "@/components/ClearKasirDraft";
 
 let host: HTMLDivElement;
@@ -22,12 +23,12 @@ const saved = () => ({
 const props = {
   branchName: "Cabang Uji", draftContext: context, shiftId: "shift", hariIni: "2026-10-15", vouchers: [],
   items: [{ id: "item", code: "SKU", name: "Pakan", itemType: "Persediaan" as const, harga: 15000, kategori: "Pakan", stok: 10 }],
-  customers: [{ id: "customer", name: "Alfi", phone: "08123456789", points: 15, tier: null, kategori: "Umum", trx: 1, belanja: 15000 }],
   salespeople: [{ id: "seller", nama: "Andri", jabatan: "Kasir" }],
 };
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   sessionStorage.clear();
+  pelangganUji.rows = [{ id: "customer", name: "Alfi", phone: "08123456789", points: 15, tier: null, kategori: "Umum", trx: 1, belanja: 15000 }];
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
@@ -92,6 +93,6 @@ it("creates a fresh checkout identity for a new transaction and stores it with t
 it("keeps the active checkout identity when the server refreshes the catalogue or customer choices", async () => {
   await render(<KasirClient {...props} />);
   const key = hidden("checkout_key");
-  await render(<KasirClient {...props} customers={[...props.customers]} items={[...props.items]} />);
+  await render(<KasirClient {...props} items={[...props.items]} />);
   expect(hidden("checkout_key")).toBe(key);
 });

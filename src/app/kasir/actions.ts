@@ -8,9 +8,10 @@ import { bacaShift, tutupShift } from "@/lib/tutup-shift";
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
+import { ambilPelangganKasir, cariPelangganKasir, type CustRow } from "@/lib/kasir-pelanggan";
 
 export type NewCustResult =
-  | { ok: true; customer: { id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; trx: number; belanja: number } }
+  | { ok: true; customer: CustRow }
   | { ok: false; error: string };
 
 // File "use server" hanya boleh mengekspor fungsi async; pesan ini tetap lokal.
@@ -45,17 +46,34 @@ export async function tambahCustomerKasir(formData: FormData): Promise<NewCustRe
   if (tambah?.status === "terdaftar") return { ok: false, error: "No HP sudah terdaftar" };
   if (typeof tambah?.customer_id !== "string") return { ok: false, error: "Gagal simpan customer" };
 
-  const { data, error } = await supabase
-    .from("customers")
-    .select("id, name, phone, points, tier, kategori")
-    .eq("id", tambah.customer_id)
-    .single();
-
   // Pelanggan SUDAH tersimpan (RPC sudah commit); yang gagal hanya memuat datanya. Jangan bilang
   // "gagal simpan" -- kasir akan menambah ulang dan ditolak "No HP sudah terdaftar".
-  if (error || !data) return { ok: false, error: PESAN_TERSIMPAN_GAGAL_MUAT };
+  const customer = await ambilPelangganKasir(supabase, tambah.customer_id).catch(() => null);
+  if (!customer) return { ok: false, error: PESAN_TERSIMPAN_GAGAL_MUAT };
 
-  return { ok: true, customer: { ...data, trx: 0, belanja: 0 } };
+  return { ok: true, customer };
+}
+
+export type CariCustomerResult = { ok: true; customers: CustRow[] } | { ok: false; error: string };
+
+// Kolom cari customer kasir: hanya baris yang cocok yang dikirim ke tablet (bukan seluruh pelanggan).
+export async function cariCustomerKasir(query: string): Promise<CariCustomerResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Sesi kamu habis — masuk ulang." };
+  try {
+    return { ok: true, customers: await cariPelangganKasir(supabase, String(query ?? "")) };
+  } catch {
+    return { ok: false, error: "Pencarian customer gagal. Coba ketik ulang." };
+  }
+}
+
+// Pulihkan customer di draf kasir (draf hanya menyimpan ID-nya).
+export async function ambilCustomerKasir(id: string): Promise<CustRow | null> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  return ambilPelangganKasir(supabase, String(id ?? "")).catch(() => null);
 }
 
 // Shift gate POS kasir — logika sama dgn /pos/shift, redirect ke dunia kasir.

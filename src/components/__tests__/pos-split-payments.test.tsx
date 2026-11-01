@@ -6,9 +6,11 @@ import { kasirDraftKey, POS_DRAFT_KEY } from "@/lib/pos-draft";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/kasir/checkout", () => ({ checkoutKasir: vi.fn() }));
-vi.mock("@/app/kasir/actions", () => ({ tambahCustomerKasir: vi.fn() }));
-vi.mock("@/app/(app)/pos/transaksi/actions", () => ({ checkoutSale: vi.fn() }));
+vi.mock("@/app/kasir/actions", async () => (await import("./helpers/kasir-actions-mock")).kasirActionsMock);
+vi.mock("@/app/(app)/pos/transaksi/actions", async () => (await import("./helpers/pos-actions-mock")).posActionsMock);
 import { KasirClient } from "@/app/kasir/KasirClient";
+import { pelangganUji } from "./helpers/kasir-actions-mock";
+import { pelangganPosUji } from "./helpers/pos-actions-mock";
 import { PosClient } from "@/app/(app)/pos/transaksi/PosClient";
 import { ClearKasirDraft } from "@/components/ClearKasirDraft";
 import { ClearPosDraft } from "@/components/ClearPosDraft";
@@ -17,15 +19,15 @@ let host: HTMLDivElement;
 let root: Root;
 const context = "split-cashier:branch:shift";
 const customer = { id: "customer", name: "Alfi", phone: "08123456789", points: 0 };
+const posCustomer = { ...customer, pets: [], golongan: null };
+const kasirCustomer = { ...customer, tier: null, kategori: "Umum", trx: 1, belanja: 100_000 };
 const kasirProps = {
   branchName: "Cabang Uji", draftContext: context, shiftId: "shift", hariIni: "2026-10-15", vouchers: [],
   items: [{ id: "item", code: "SKU", name: "Pakan", itemType: "Persediaan" as const, harga: 100_000, kategori: "Pakan", stok: 10 }],
-  customers: [{ ...customer, tier: null, kategori: "Umum", trx: 1, belanja: 100_000 }],
   salespeople: [{ id: "seller", nama: "Andri", jabatan: "Kasir" }],
 };
 const posProps = {
   items: [{ id: "item", name: "Pakan", sell_price: 100_000, target_species: "Kucing", units: [{ unit: "pcs", factor: 1, sell_price: 100_000, buy_price: 50_000 }] }],
-  customers: [{ ...customer, pets: [], golongan: null }],
   branches: [{ id: "branch", code: "BR", name: "Cabang Uji" }],
   salespeople: kasirProps.salespeople,
 };
@@ -38,6 +40,8 @@ function seed(kind: "cashier" | "backoffice", extras: Record<string, unknown> = 
 }
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  pelangganUji.rows = [kasirCustomer];
+  pelangganPosUji.rows = [posCustomer];
   sessionStorage.clear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
@@ -136,9 +140,9 @@ it.each([
 ])("cashier redeems only whole loyalty points from a $price sale", async ({ price, requested, used, remaining, transfer }) => {
   seed("cashier", { split: true, payments: [{ method: "Tunai", amount: 0.1 }, { method: "Transfer", amount: transfer }], bayar: 0.1, poin: requested,
     cart: [{ item_id: "item", nama: "Pakan", qty: 1, harga: price }] });
+  pelangganUji.rows = [{ ...kasirCustomer, points: 10 }];
   await act(async () => root.render(<KasirClient {...kasirProps}
     items={kasirProps.items.map(item => ({ ...item, harga: price }))}
-    customers={kasirProps.customers.map(customer => ({ ...customer, points: 10 }))}
   />));
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
   expect(hidden("poinDigunakan")).toBe(String(used));
@@ -150,8 +154,8 @@ it.each([
 it("cashier keeps raw point and percentage discount intent stable when loyalty balance changes after a saved payment", async () => {
   seed("cashier", { diskon: 10, diskonPct: true, poin: 50 });
   const renderWithPoints = async (points: number) => {
-    await act(async () => root.render(<KasirClient {...kasirProps}
-      customers={kasirProps.customers.map(customer => ({ ...customer, points }))} />));
+    pelangganUji.rows = [{ ...kasirCustomer, points }];
+    await act(async () => root.render(<KasirClient {...kasirProps} />));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
   };
   await renderWithPoints(100);
@@ -188,9 +192,9 @@ it.each(["cashier", "backoffice"] as const)("%s adds distinct payment methods an
 
 it("backoffice allocates the net total after branch promo and product-specific customer discount", async () => {
   seed("backoffice", { split: true, payments: [{ method: "Tunai", amount: 20_000 }, { method: "Transfer", amount: 45_000 }], bayar: 20_000 });
+  pelangganPosUji.rows = [{ ...posCustomer, golonganId: "member", golongan: { nama: "Member", diskon_persen: 10, rupiah_per_poin: 500 } }];
   await act(async () => root.render(<PosClient {...posProps}
     branches={[...posProps.branches, { id: "other-branch", code: "OTHER", name: "Cabang Lain" }]}
-    customers={[{ ...posProps.customers[0], golonganId: "member", golongan: { nama: "Member", diskon_persen: 10, rupiah_per_poin: 500 } }]}
     promoPerCabang={{ branch: [{ id: "promo", name: "Promo Pakan", itemIds: ["item"], minQty: 1, maxQty: null, kelipatan: false, autoApply: true, discountType: "nominal", discountValue: 10_000 }] }}
     aturanDiskon={{ member: [{ item_id: "item", item_category_id: null, diskon_persen: 25 }] }}
     infoBarang={{ item: { item_id: "item", category_id: "food", parent_category_id: null } }}
@@ -217,7 +221,7 @@ it("backoffice retains its posting identity across pending draft reload and cata
   expect(JSON.parse(sessionStorage.getItem(POS_DRAFT_KEY)!)).toMatchObject({ checkoutKey: "stable-backoffice-checkout", bayar: 50_000 });
   await act(async () => root.unmount()); root = createRoot(host); await render("backoffice");
   expect(hidden("checkout_key")).toBe("stable-backoffice-checkout");
-  await act(async () => root.render(<PosClient {...posProps} items={[...posProps.items]} customers={[...posProps.customers]} />));
+  await act(async () => root.render(<PosClient {...posProps} items={[...posProps.items]} />));
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
   expect(hidden("checkout_key")).toBe("stable-backoffice-checkout");
 });

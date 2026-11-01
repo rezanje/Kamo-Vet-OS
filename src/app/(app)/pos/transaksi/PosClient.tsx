@@ -3,7 +3,7 @@
 import { NumberInput } from "@/components/NumberInput";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { checkoutSale } from "./actions";
+import { ambilPelangganPosAction, cariPelangganPosAction, checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { HppConfirmField } from "@/components/HppConfirmField";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
@@ -21,12 +21,8 @@ import { bacaKode, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } fr
 import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 
 export type Item = { id: string; code?: string; name: string; item_type?: string; tindakan_kategori?: string | null; sell_price: number; target_species: string; units: ItemUnit[] };
-export type Pet = { id: string; name: string; species: string | null };
-export type Cust = {
-  id: string; name: string; phone: string; points: number; pets: Pet[];
-  golonganId?: string | null;
-  golongan: { nama: string; diskon_persen: number; rupiah_per_poin?: number | null } | null;
-};
+import type { Cust } from "@/lib/pos-pelanggan";
+export type { Pet, Cust } from "@/lib/pos-pelanggan";
 type Branch = { id: string; code: string; name: string };
 type Line = {
   row_key: string; item_type?: string; tindakan_kategori?: string | null; service_performers: ServicePerformersInput | null;
@@ -45,8 +41,8 @@ const sameProductUnit = (a: Line, b: Line) => a.item_id === b.item_id && a.satua
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
 
-export function PosClient({ items, customers, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
-  items: Item[]; customers: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
+export function PosClient({ items, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
+  items: Item[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
   /** P03: peringatan jual di bawah HPP dari simpan sebelumnya; wajib dikonfirmasi sebelum simpan ulang. */
   hppWarning?: string | null; hppSignature?: string | null;
   promoPerCabang?: Record<string, PromoHitung[]>;
@@ -63,6 +59,14 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
   const [custQ, setCustQ] = useState("");
   const [cust, setCust] = useState<Cust | null>(null);
   const [petId, setPetId] = useState<string>("");
+  // Draf hanya menyimpan ID pelanggan; datanya diminta ulang ke server. Selama belum
+  // termuat (atau gagal), ID & hewannya tetap ikut tersimpan supaya tidak hilang diam-diam.
+  const [custDraf, setCustDrafState] = useState<{ id: string; petId: string } | null>(null);
+  const custDrafRef = useRef<string>("");
+  const setCustDraf = (v: { id: string; petId: string } | null) => { custDrafRef.current = v?.id ?? ""; setCustDrafState(v); };
+  const [custHits, setCustHits] = useState<Cust[]>([]);
+  const [custCari, setCustCari] = useState<"idle" | "mencari" | "selesai" | "gagal">("idle");
+  const cariKe = useRef(0);
   const [metode, setMetode] = useState("Tunai");
   const [discount, setDiscount] = useState(0);
   const [voucher, setVoucher] = useState("");
@@ -85,7 +89,6 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
       if (draft) {
         const branchExists = branches.some((branch) => branch.id === draft.branchId);
         const branch = branchExists ? draft.branchId : "";
-        const customer = customers.find((candidate) => candidate.id === draft.customerId) ?? null;
         const rowKeys = new Set<string>();
         const restoredCart = draft.cart.flatMap((line): Line[] => {
           const item = items.find((candidate) => candidate.id === line.item_id);
@@ -99,9 +102,21 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
             nama: item.name, target_species: item.target_species, harga: price, faktor: unit.factor }];
         });
         setBranchId(branch);
-        setCust(customer);
-        setCustQ(customer?.name ?? "");
-        setPetId(customer?.pets.some((pet) => pet.id === draft.petId) ? draft.petId : "");
+        setCust(null);
+        setCustQ("");
+        setPetId("");
+        setCustDraf(draft.customerId ? { id: draft.customerId, petId: draft.petId ?? "" } : null);
+        if (draft.customerId) {
+          const id = draft.customerId;
+          void ambilPelangganPosAction(id).then((customer) => {
+            // Kasir sudah memilih/menghapus pelanggan lain selagi menunggu: jangan ditimpa.
+            if (!customer || custDrafRef.current !== id) return;
+            setCust(customer);
+            setCustQ(customer.name);
+            setPetId(customer.pets.some((pet) => pet.id === draft.petId) ? draft.petId : "");
+            setCustDraf(null);
+          }).catch(() => undefined);
+        }
         setLegacySalespersonId(draft.salespersonId);
         setMetode(draft.metode || "Tunai");
         setMerchantFeePercent(draft.merchantFeePercent ?? 0);
@@ -115,7 +130,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
       draftReady.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [branches, customers, hargaPerCabang, items]);
+  }, [branches, hargaPerCabang, items]);
 
   useEffect(() => {
     if (!draftReady.current) return;
@@ -128,8 +143,8 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
       savedAt: Date.now(),
       checkoutKey,
       branchId,
-      customerId: cust?.id ?? "",
-      petId,
+      customerId: cust?.id ?? custDraf?.id ?? "",
+      petId: cust ? petId : (custDraf?.petId ?? ""),
       salespersonId: legacySalespersonId,
       metode,
       split,
@@ -141,7 +156,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
       cart,
     };
     sessionStorage.setItem(POS_DRAFT_KEY, JSON.stringify(draft));
-  }, [branchId, bayar, cart, cust?.id, discount, voucher, metode, split, payments, merchantFeePercent, petId, legacySalespersonId, checkoutKey]);
+  }, [branchId, bayar, cart, cust, custDraf, discount, voucher, metode, split, payments, merchantFeePercent, petId, legacySalespersonId, checkoutKey]);
 
   // Katalog dengan harga cabang terpasang — dasar untuk tampilan & keranjang.
   const katalog = useMemo(() => {
@@ -158,11 +173,29 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
     return s ? katalog.filter((i) => `${i.code ?? ""} ${i.name}`.toLowerCase().includes(s)) : katalog;
   }, [katalog, q]);
 
-  const custHits = useMemo(() => {
-    const s = custQ.trim().toLowerCase();
-    if (!s) return [];
-    return customers.filter((c) => c.name.toLowerCase().includes(s) || c.phone.includes(s)).slice(0, 5);
-  }, [customers, custQ]);
+  // Cari pelanggan ke server (bukan memuat seluruh pelanggan ke layar). Ditunda
+  // sebentar selagi kasir mengetik; jawaban lama yang telat datang diabaikan.
+  useEffect(() => {
+    const s = custQ.trim();
+    const ke = ++cariKe.current;
+    if (!s || cust) {
+      const reset = window.setTimeout(() => { setCustHits([]); setCustCari("idle"); }, 0);
+      return () => window.clearTimeout(reset);
+    }
+    const timer = window.setTimeout(() => {
+      setCustCari("mencari");
+      cariPelangganPosAction(s).then((res) => {
+        if (ke !== cariKe.current) return;
+        setCustHits(res.ok ? res.customers : []);
+        setCustCari(res.ok ? "selesai" : "gagal");
+      }).catch(() => {
+        if (ke !== cariKe.current) return;
+        setCustHits([]);
+        setCustCari("gagal");
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [custQ, cust]);
 
   const unitsOf = (itemId: string) => katalog.find((i) => i.id === itemId)?.units ?? [];
 
@@ -259,15 +292,15 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
   } catch { paymentValid = false; }
   const canPay = checkoutKey && branchId && cart.length > 0 && paymentValid && !tolakKode;
 
-  const pickCust = (c: Cust) => { setCust(c); setCustQ(c.name); setPetId(""); };
-  const clearCust = () => { setCust(null); setCustQ(""); setPetId(""); };
+  const pickCust = (c: Cust) => { setCust(c); setCustDraf(null); setCustQ(c.name); setPetId(""); setCustHits([]); };
+  const clearCust = () => { setCust(null); setCustDraf(null); setCustQ(""); setPetId(""); };
 
   return (
     <form action={checkoutSale}>
       <input type="hidden" name="checkout_key" value={checkoutKey} />
       <input type="hidden" name="branchId" value={branchId} />
-      <input type="hidden" name="customerId" value={cust?.id ?? ""} />
-      <input type="hidden" name="petId" value={petId} />
+      <input type="hidden" name="customerId" value={cust?.id ?? custDraf?.id ?? ""} />
+      <input type="hidden" name="petId" value={cust ? petId : (custDraf?.petId ?? "")} />
       <input type="hidden" name="salespersonId" value={legacySalespersonId} />
       <input type="hidden" name="metode" value={split ? "Split" : metode} />
       <input type="hidden" name="split_payments" value={JSON.stringify(split ? payments : [])} />
@@ -312,7 +345,7 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
           {/* Pelanggan */}
           <div style={{ position: "relative" }}>
             <input className="fi" placeholder="Cari pelanggan / member..." value={custQ}
-              onChange={(e) => { setCustQ(e.target.value); setCust(null); }} />
+              onChange={(e) => { setCustQ(e.target.value); setCust(null); setCustDraf(null); }} />
             {cust && <i className="ti ti-x" onClick={clearCust} style={{ position: "absolute", right: 8, top: 8, cursor: "pointer", color: "var(--td)", fontSize: 13 }} />}
             {!cust && custHits.length > 0 && (
               <div style={{ position: "absolute", zIndex: 5, top: "100%", left: 0, right: 0, background: "#fff", border: ".5px solid var(--bd)", borderRadius: 6, marginTop: 2, boxShadow: "0 2px 8px rgba(0,0,0,.1)" }}>
@@ -324,6 +357,18 @@ export function PosClient({ items, customers, branches, serviceStaffByBranch = {
               </div>
             )}
           </div>
+          {!cust && custQ.trim() && custCari === "mencari" && custHits.length === 0 && (
+            <div style={{ fontSize: 10, color: "var(--td)" }}>Mencari pelanggan…</div>
+          )}
+          {!cust && custQ.trim() && custCari === "selesai" && custHits.length === 0 && (
+            <div role="status" style={{ fontSize: 10, color: "var(--td)" }}>Pelanggan tidak ditemukan. Coba nama atau nomor HP lain.</div>
+          )}
+          {!cust && custQ.trim() && custCari === "gagal" && (
+            <div role="status" style={{ fontSize: 10, color: "#b91c1c" }}>Pencarian pelanggan gagal. Coba ketik ulang.</div>
+          )}
+          {!cust && custDraf && (
+            <div style={{ fontSize: 10, color: "var(--td)" }}>Memuat pelanggan dari transaksi tersimpan…</div>
+          )}
           {cust && (
             <div style={{ fontSize: 10, color: "var(--tm)" }}>
               {cust.points.toLocaleString("id-ID")} poin
