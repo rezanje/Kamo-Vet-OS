@@ -12,6 +12,7 @@ import { loadItemUnits } from "@/lib/satuan";
 import { readCompleteList } from "@/lib/checked-list";
 import { buatFakturLangsung } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { semuaPelanggan } from "@/lib/pelanggan-semua";
 
 type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number };
 
@@ -29,7 +30,7 @@ export default async function FakturJualBaruPage({ searchParams }: {
   const today = hariIniWIB();
 
   const [{ data: custData }, { data: cabData }, { data: gudangData }, itemData, allowed] = await Promise.all([
-    supabase.from("customers").select("id, name, phone").order("name").limit(500),
+    semuaPelanggan(supabase, "id, name, phone"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     supabase.from("warehouses").select("id, name, branch_id").eq("is_active", true).order("name"),
     readCompleteList<CatalogItem>((from, to) => supabase.from("items")

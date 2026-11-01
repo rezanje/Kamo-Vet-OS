@@ -30,3 +30,12 @@ Laporan grup "Kamo Group - ERP Dev" (Andri, 01/11/26).
 - Migrasi: `supabase/migrations/20261106010000_owner_reset_akun_login.sql`.
 - Tes: `scripts/test-owner-reset-akun-postgres.py` (PostgreSQL sekali-pakai, skema auth tiruan, 20 cek),
   `src/lib/__tests__/owner-reset-login-action.test.ts`.
+
+## 4. Lanjutan (PR kedua) — CRM Pelanggan "melebihi batas 10.000 baris"
+- Laporan Andri 09.40: CRM → Pelanggan menampilkan "Pelanggan melebihi batas 10.000 baris". Halaman itu
+  memakai `readCompleteList` dengan batas bawaan 10.000 → sekarang `maxRows: null`.
+- Helper baru `src/lib/pelanggan-semua.ts` (`semuaPelanggan`) membaca semua pelanggan per halaman; dipakai
+  di POS transaksi (klinik), voucher CRM, faktur jual baru, pesanan, penawaran, uang muka, order online
+  (sebelumnya terpotong 500/2.000/10.000 nama pertama).
+- Catatan kinerja: halaman-halaman ini mengirim seluruh daftar pelanggan ke browser. Aman untuk ~10–20 ribu,
+  tapi jangka panjang perlu diganti pencarian di server.

@@ -15,7 +15,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       limit: () => query,
       range: (from: number, to: number) => { start = from; end = to; fixture.requested.push(`${table}:${from}-${to}`); return query; },
       then: (resolve: (result: unknown) => void) => {
-        if (table !== "sales_advances") return resolve({ data: [], error: null });
+        if (table !== "sales_advances") return resolve({ data: [], count: 0, error: null });
         if (fixture.failSecondPage && start > 0) return resolve({ data: null, count: 501, error: { message: "fictional read error" } });
         const rows = Array.from({ length: 501 }, (_, index) => ({
           id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`, no_um: `UJ.FICTION.${index}`, tanggal: "2026-10-24",

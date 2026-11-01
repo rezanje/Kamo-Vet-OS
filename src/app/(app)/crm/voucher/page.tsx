@@ -8,6 +8,7 @@ import { ringkasSyarat, voucherStatus, type VoucherRow } from "@/lib/voucher";
 import { simpanVoucher, toggleVoucher } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { nonaktifkanPromoKadaluarsa } from "@/lib/promo-kadaluarsa";
+import { semuaPelanggan } from "@/lib/pelanggan-semua";
 
 const STATUS_BADGE: Record<string, string> = { aktif: "g", terjadwal: "b", kadaluarsa: "x", nonaktif: "r" };
 const STATUS_LABEL: Record<string, string> = {
@@ -44,7 +45,7 @@ export default async function VoucherPage({
     .from("vouchers")
     .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id, created_at, customers(name), customer_categories(nama)")
     .order("created_at", { ascending: false }),
-    supabase.from("customers").select("id, name").order("name").limit(500),
+    semuaPelanggan<{ id: string; name: string }>(supabase, "id, name"),
     supabase.from("customer_categories").select("id, nama").eq("is_active", true).order("nama"),
   ]);
   const pelanggan = (custData ?? []) as { id: string; name: string }[];
