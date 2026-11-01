@@ -1,13 +1,15 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ headers: [] as Record<string, unknown>[], items: [] as Record<string, unknown>[], finalized: [] as string[], removed: false, finalizationError: "", confirmation: true, stock: false, stockCost: 34567, pointsWrites: 0, prior: null as null | Record<string, unknown>, lostResponse: false, tierUnavailable: false }));
+const state = vi.hoisted(() => ({ calls: [] as string[], headers: [] as Record<string, unknown>[], items: [] as Record<string, unknown>[], finalized: [] as string[], removed: false, finalizationError: "", confirmation: true, stock: false, stockCost: 34567, pointsWrites: 0, prior: null as null | Record<string, unknown>, lostResponse: false, tierUnavailable: false }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "POS-SPLIT-TEST" }) }));
 vi.mock("@/lib/posting", () => ({ postJournal: async () => {} }));
 vi.mock("@/lib/quest-hook", () => ({ processQuestProgress: async () => {} }));
-vi.mock("@/lib/inventory", () => ({ stockOut: async () => ({ cost: 34567 }) }));
+vi.mock("@/lib/inventory", () => ({ stockOut: async () => { throw Error("per-line stockOut is not allowed in POS checkout"); } }));
+// Both POS screens post stock, FIFO cost and payment through one atomic database call.
+const ATOMIC = ["cashier_post_stock_atomic", "pos_backoffice_post_atomic"];
 vi.mock("@/lib/harga-cabang", () => ({ loadHargaCabang: async () => new Map(), hargaCabang: (_map: unknown, _id: string, _unit: string, price: number) => price, applyHargaCabang: (options: unknown) => options }));
 vi.mock("@/lib/promo-hitung", async original => ({ ...await original<typeof import("@/lib/promo-hitung")>(), loadPromoAktif: async () => [] }));
 vi.mock("@/lib/satuan", async original => ({ ...await original<typeof import("@/lib/satuan")>(), loadUnitOptions: async () => new Map([["item", [{ unit: "pcs", factor: 1, sell_price: 100000, buy_price: 0 }]]]) }));
@@ -15,16 +17,17 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
   rpc: async (name: string, values: { p_sale_id: string }) => {
     if (name === "refresh_customer_spending") { if(state.tierUnavailable) throw Error("derived statistics unavailable"); return {data:true,error:null}; }
-    if (name !== "finalize_pos_sale" && name !== "cashier_post_stock_atomic") throw Error(`Unexpected RPC ${name}`);
+    if (name !== "finalize_pos_sale" && !ATOMIC.includes(name)) throw Error(`Unexpected RPC ${name}`);
+    state.calls.push(name);
     if (state.lostResponse) {
       state.prior = { id: "sale", no_struk: "POS-SPLIT-TEST", checkout_fingerprint: state.headers[0]?.checkout_fingerprint, payments_finalized_at: "2026-10-15T08:00:00Z" };
       return { data: null, error: { message: "Connection lost after commit" } };
     }
     if (state.finalizationError) return { data: null, error: { message: state.finalizationError } };
     state.finalized.push(values.p_sale_id);
-    if (name === "cashier_post_stock_atomic") state.items.forEach(item => { item.hpp = state.stockCost; });
+    if (ATOMIC.includes(name)) state.items.forEach(item => { item.hpp = state.stockCost; });
     if(state.confirmation && state.prior)state.prior.payments_finalized_at="2026-10-15T08:00:00Z";
-    return { data: state.confirmation ? { sale_id: values.p_sale_id, journal_id: "journal", finalized: true, ...(name === "cashier_post_stock_atomic" ? { checked: true } : {}) } : null, error: null };
+    return { data: state.confirmation ? { sale_id: values.p_sale_id, journal_id: "journal", finalized: true, ...(ATOMIC.includes(name) ? { checked: true } : {}) } : null, error: null };
   },
   from(table: string) {
     let lookup = false;
@@ -47,7 +50,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 import { checkoutKasir } from "@/app/kasir/checkout";
 import { checkoutSale } from "@/app/(app)/pos/transaksi/actions";
 
-beforeEach(() => { state.headers = []; state.items = []; state.finalized = []; state.removed = false; state.finalizationError = ""; state.confirmation = true; state.stock = false; state.stockCost = 34567; state.pointsWrites = 0; state.prior = null; state.lostResponse = false; state.tierUnavailable = false; });
+beforeEach(() => { state.calls = []; state.headers = []; state.items = []; state.finalized = []; state.removed = false; state.finalizationError = ""; state.confirmation = true; state.stock = false; state.stockCost = 34567; state.pointsWrites = 0; state.prior = null; state.lostResponse = false; state.tierUnavailable = false; });
 function form(parts = [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }]) {
   const data = new FormData();
   Object.entries({ branchId: "branch", customerId: "customer", salespersonId: "seller", metode: "Split", bayar: "20000", split_payments: JSON.stringify(parts), operationalShiftId: "shift", checkout_key: "checkout-draft",
@@ -97,6 +100,27 @@ it.each([["cashier", checkoutKasir], ["backoffice", checkoutSale]] as const)("%s
   expect(state.headers[0]).toMatchObject({ total: 100000, bayar: 130000, kembali: 30000 });
   expect(state.items).toHaveLength(1);
   expect(state.items[0]).toMatchObject({ sale_id: "sale", hpp: 34567 });
+  // Stock, FIFO cost and payment commit together; no separate finalizer call follows.
+  expect(state.calls).toEqual([_label === "cashier" ? "cashier_post_stock_atomic" : "pos_backoffice_post_atomic"]);
+});
+
+it.each(["error", "unconfirmed"] as const)("backoffice %s atomic posting removes the pending receipt without a separate finalizer", async kind => {
+  state.stock = true;
+  if (kind === "error") state.finalizationError = "Harga pokok barang Pakan belum tersedia. Isi harga beli barang sebelum penjualan.";
+  else state.confirmation = false;
+  const outcome = await checkoutSale(form()).then(() => "unexpected success", error => error.message);
+  expect(outcome).not.toContain("/struk/");
+  if (kind === "error") expect(decodeURIComponent(outcome)).toContain("Harga pokok barang Pakan belum tersedia");
+  expect(state.removed).toBe(true);
+  expect(state.calls).toEqual(["pos_backoffice_post_atomic"]);
+});
+
+it("backoffice lost atomic response resumes the committed receipt instead of deleting it", async () => {
+  state.stock = true; state.lostResponse = true;
+  const outcome = await checkoutSale(form()).then(() => "unexpected success", error => error.message);
+  expect(outcome).toContain("/pos/struk/sale");
+  expect(state.removed).toBe(false);
+  expect(state.headers).toHaveLength(1);
 });
 
 it("cashier rejects a sale below the active FIFO layer before creating a sale", async () => {
