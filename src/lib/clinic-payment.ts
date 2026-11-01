@@ -1,4 +1,5 @@
 import { readCompleteList } from "./checked-list";
+import { cacheSebentar, KATALOG_KASIR_UMUR_MS } from "./cache-memori";
 import { loadClinicSkuDetails } from "./clinic-compound-skus";
 import { applyHargaCabang, hargaCabang } from "./harga-cabang";
 import { unitOptions, type ItemUnit } from "./satuan";
@@ -13,9 +14,11 @@ export type ClinicPaymentMasterItem = {
 type MasterRow = { id: string; code: string | null; name: string; unit: string | null; sell_price: number; item_type: string; tindakan_kategori: string | null };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadClinicPaymentMaster(client: any, branchId: string | null) {
-  const rows = await readCompleteList<MasterRow>((from,to)=>client.from("items")
+  // Daftar barang aktif = master yang sama untuk semua pengguna (RLS select true);
+  // disimpan sementara seperti katalog kasir (beban database 1 Nov 2026).
+  const rows = await cacheSebentar("klinik:pembayaran-barang", KATALOG_KASIR_UMUR_MS, () => readCompleteList<MasterRow>((from,to)=>client.from("items")
     .select("id,code,name,unit,sell_price,item_type,tindakan_kategori",{count:"exact"})
-    .eq("is_active",true).order("name").order("id").range(from,to),"Barang & Jasa untuk pembayaran klinik");
+    .eq("is_active",true).order("name").order("id").range(from,to),"Barang & Jasa untuk pembayaran klinik"));
   const details = await loadClinicSkuDetails(client,rows.map(row=>row.id),branchId);
   const master = rows.map(row=>({
     id:row.id,code:row.code??"",name:row.name,unit:row.unit||"pcs",tindakan_kategori:row.tindakan_kategori,
