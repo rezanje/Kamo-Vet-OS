@@ -26,7 +26,10 @@ export function LiveRefresh({ branchId }: { branchId: string }) {
         // Catch a registration committed between the initial read and subscribe.
         if (status === "SUBSCRIBED") refresh();
       });
-    const interval = setInterval(refresh, 15_000);
+    // Cadangan kalau event realtime terlewat. Tiap putaran me-render ulang halaman antrian
+    // (± belasan bacaan database) untuk SETIAP layar antrian yang terbuka — 15 detik terlalu
+    // boros untuk database kelas Micro (1 Nov 2026). Realtime tetap jalur cepatnya.
+    const interval = setInterval(refresh, 60_000);
     window.addEventListener("focus", refresh);
     window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", refresh);

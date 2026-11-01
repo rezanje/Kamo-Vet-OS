@@ -142,7 +142,14 @@ export default async function FakturJualPage({
               <span style={{ fontSize: 11, fontWeight: 500 }}>· nilai {rp(hasil.ringkasan.totalBelum)}</span></div>
             {/* Nilai dokumen, bukan sisa tagihan: faktur yang sudah dibayar sebagian
                 tetap dihitung penuh di sini. Sisa sebenarnya ada di dokumennya. */}
-            <div style={{ fontSize: 9, color: "var(--td)" }}>Nilai dokumen, bukan sisa tagihan.</div></div>
+            <div style={{ fontSize: 9, color: "var(--td)" }}>Nilai dokumen, bukan sisa tagihan.</div>
+            {/* Rentang tanggal menyaring tagihan lama (mis. saldo awal per faktur). Jalan pintas
+                ke daftar tagihan yang masih harus ditagih, tanpa batas tanggal. */}
+            {filter.status !== "belum" && (
+              <Link href={`/penjualan/faktur?${new URLSearchParams({ ...param, status: "belum", batal: "" })}`} style={{ fontSize: 10.5, fontWeight: 600 }}>
+                Lihat semua yang belum lunas (semua tanggal) →
+              </Link>
+            )}</div>
         </div>
 
         {hasil.pelangganTerpotong && <div className="p2ban" role="status">
