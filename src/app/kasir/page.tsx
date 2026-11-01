@@ -58,9 +58,13 @@ export default async function KasirPage({
     loadKasirItems(supabase),
     // Golongan ikut dibawa: diskon & rumus poinnya dipakai layar kasir untuk
     // MENAMPILKAN total yang sama dengan yang nanti dihitung server saat bayar.
-    supabase.from("customers")
-      .select("id, name, phone, points, tier, kategori, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), customer_review_statuses(nama, warna, nada)")
-      .order("name"),
+    // Dibaca per halaman sampai habis: server database membatasi 10.000 baris per
+    // permintaan, dan pelanggan di luar batas itu dulu tidak bisa dicari di kasir
+    // (padahal sudah terdaftar -> tambah baru ditolak "No HP sudah terdaftar").
+    readCompleteList<{ id: string }>((from, to) => supabase.from("customers")
+      .select("id, name, phone, points, tier, kategori, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), customer_review_statuses(nama, warna, nada)", { count: "exact" })
+      .order("name").order("id").range(from, to), "Daftar pelanggan kasir", { maxRows: null })
+      .then((data) => ({ data })),
     supabase.from("sales").select("customer_id, total, payment_plan, payments_finalized_at, voided_at"),
     supabase
       .from("invoices")

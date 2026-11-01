@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { STATUS_REPRODUKSI } from "@/lib/anabul";
 import { SecHeader } from "@/components/SecHeader";
 import { simpanAnabul } from "./actions";
+import { readCompleteList } from "@/lib/checked-list";
 
 export default async function TambahAnabulPage({
   searchParams,
@@ -26,11 +27,11 @@ export default async function TambahAnabulPage({
       .maybeSingle();
     customerName = data?.name ?? null;
   } else {
-    const { data } = await supabase
+    // Semua pelanggan, per halaman: satu permintaan dibatasi 10.000 baris oleh server.
+    customers = await readCompleteList((from, to) => supabase
       .from("customers")
-      .select("id, name, phone")
-      .order("name");
-    customers = data ?? [];
+      .select("id, name, phone", { count: "exact" })
+      .order("name").order("id").range(from, to), "Daftar pelanggan", { maxRows: null });
   }
 
   return (

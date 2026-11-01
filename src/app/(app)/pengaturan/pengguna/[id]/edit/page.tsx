@@ -7,6 +7,7 @@ import { allowedBranchIds } from "@/lib/branch-access";
 import { readCompleteList } from "@/lib/checked-list";
 import { isAccountEditId, isUserAccountEditSnapshot, type UserAccountEditBranch, type UserAccountEditSnapshot } from "@/lib/user-account-edit";
 import { UserAccountEditForm } from "./UserAccountEditForm";
+import { ResetLoginForm } from "./ResetLoginForm";
 
 const BACK = "/pengaturan/pengguna";
 const back = <Link href={BACK} className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke daftar pengguna</Link>;
@@ -54,10 +55,24 @@ export default async function EditPenggunaPage({ params }: { params: Promise<{ i
   } catch { /* Read failures must not produce an empty edit form. */ }
   if (!snapshot) return <>{back}<p role="alert">Akun tidak ditemukan, tidak dapat diakses, atau belum dapat dimuat. Kembali ke daftar atau muat ulang sebelum mengedit.</p></>;
   let branches: UserAccountEditBranch[] | null = null;
+  let superAdmin = false;
   try {
     const { data: { user } } = await client.auth.getUser();
-    if (user) branches = await branchOptions(client, user.id, snapshot);
+    if (user) {
+      branches = await branchOptions(client, user.id, snapshot);
+      const { data: actor } = await client.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
+      superAdmin = actor?.role === "OWNER" && actor.is_active === true;
+    }
   } catch { /* A partial or unavailable catalog must not produce an editor. */ }
+  // U13: email login hanya terbaca oleh Super Admin (fungsi database menolak role lain).
+  let emailLogin: string | null = null;
+  let emailGagal = false;
+  if (superAdmin) {
+    try {
+      const { data, error } = await client.rpc("get_user_login_email", { p_profile_id: id });
+      if (error) emailGagal = true; else emailLogin = typeof data === "string" ? data : null;
+    } catch { emailGagal = true; }
+  }
   if (!branches) return <>{back}<p role="alert">Pilihan cabang akun belum dapat dimuat lengkap. Muat ulang sebelum mengedit; perubahan belum disimpan.</p></>;
   const edits = await history(client, id);
   const branchNames = (ids: string[]) => ids.map((branchId) => branches.find((branch) => branch.id === branchId)?.name ?? `Cabang tidak tersedia · ${branchId}`).join(", ") || "Tanpa penugasan";
@@ -65,8 +80,14 @@ export default async function EditPenggunaPage({ params }: { params: Promise<{ i
     <div style={{ marginBottom: 12 }}>{back}</div>
     <SecHeader num="01" title="EDIT AKUN PENGGUNA" desc="Perbarui nama akun, role, dan penugasan cabang akun login." />
     <UserAccountEditForm key={`${id}:${snapshot.version}`} snapshot={snapshot} branches={branches} requestId={randomUUID()} />
+    {superAdmin && <section>
+      <SecHeader num="02" title="RESET LOGIN (SUPER ADMIN)" desc="Ganti email login dan/atau atur password baru untuk karyawan yang lupa password atau ganti email. Riwayat mencatat pelaku dan waktu, tanpa menyimpan password." />
+      {emailGagal
+        ? <p role="alert">Data login belum dapat dimuat. Muat ulang halaman sebelum mereset.</p>
+        : <ResetLoginForm profileId={id} emailSekarang={emailLogin} />}
+    </section>}
     <section className="crm-sec">
-      <SecHeader num="02" title="RIWAYAT PERUBAHAN AKUN" desc="10 perubahan terakhir: pelaku, waktu, role, penugasan cabang, dan penanda perubahan nama. Isi nama lama/baru tidak disalin ke riwayat ini." />
+      <SecHeader num={superAdmin ? "03" : "02"} title="RIWAYAT PERUBAHAN AKUN" desc="10 perubahan terakhir: pelaku, waktu, role, penugasan cabang, dan penanda perubahan nama. Isi nama lama/baru tidak disalin ke riwayat ini." />
       {edits === null ? <p role="alert">Riwayat perubahan belum dapat dimuat. Muat ulang untuk memeriksa riwayat.</p> : edits.length === 0 ? <p>Belum ada perubahan akun melalui fitur edit ini.</p> : <div style={{ overflowX: "auto" }}>
         <table className="tbl"><thead><tr><th>Waktu</th><th>Pelaku</th><th>Nama akun</th><th>Role</th><th>Cabang</th></tr></thead><tbody>
           {edits.map((edit) => <tr key={edit.id}>
