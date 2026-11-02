@@ -4,6 +4,7 @@ import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { metodeBayarTagihanBertahap } from "@/lib/metode-bayar-tagihan";
 import { PrintButton } from "../PrintButton";
 
 type Rel<T> = T | T[] | null;
@@ -26,7 +27,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   // `maybeSingle()` dulu menggagalkan cetak. Tanpa pilihan eksplisit dicetak yang TERBARU.
   const { data: invoice } = await supabase
     .from("invoices")
-    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, paid_at, created_at, cashier_name, visits(branches(name, code))")
+    .select("id, invoice_no, subtotal, discount, tax, total, dp_amount, paid_status, metode_bayar, stage_billing, paid_at, created_at, cashier_name, visits(branches(name, code))")
     .eq("visit_id", visitId).is("voided_at", null)
     .order("created_at", { ascending: false }).order("id", { ascending: false })
     .limit(1).maybeSingle();
@@ -41,6 +42,12 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
     .select("fee_bearer,fee_amount,payments").eq("invoice_id",invoice.id).maybeSingle();
   if (demoError) throw new Error("Rincian biaya admin tidak terbaca. Muat ulang sebelum mencetak.");
+  // Tagihan rawat inap bertahap: label kepala selalu "Tunai" (pengisi). Cara bayar
+  // sebenarnya ditelusuri dari kwitansinya.
+  const metodeBertahap = invoice.stage_billing
+    ? (await metodeBayarTagihanBertahap(supabase, [invoice.id])).get(invoice.id) ?? null : null;
+  const metodeKepala = metodeBertahap
+    ?? ((payments ?? []).filter(p => !p.transferred_from).length > 1 ? "Campuran" : invoice.metode_bayar ?? "-");
   const credit = (payments ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const received = Number(invoice.dp_amount) + (payments ?? [])
@@ -92,7 +99,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
           <span>TOTAL</span><span>{rp(invoice.total)}</span>
         </div>
         <Hr />
-        <Row k="Metode" v={(payments ?? []).filter(p => !p.transferred_from).length > 1 ? "Campuran" : invoice.metode_bayar ?? "-"} />
+        <Row k="Metode" v={metodeKepala} />
         {(payments ?? []).filter(p => !p.transferred_from).map(payment => <Row key={payment.id} k={payment.metode ?? "Pembayaran"} v={rp(Number(payment.amount))} />)}
         <ClinicDemoFees snapshot={demoSnapshot}/>
         <Row k="Status" v={invoice.paid_status} />

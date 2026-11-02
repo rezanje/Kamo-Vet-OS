@@ -2,6 +2,7 @@ import Link from "next/link";
 import { labelSusulanRingkas, type SusulanFields } from "@/lib/rekam-medis-susulan";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { metodeBayarTagihanBertahap, metodeTampil } from "@/lib/metode-bayar-tagihan";
 import { PrintButton } from "@/components/PrintButton";
 import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
 import { TANPA_BAYAR, bayarPerTagihan, sisaTagihan, statusUangTagihan, uangDiterimaTagihan } from "@/lib/uang-tagihan";
@@ -67,7 +68,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   // benar-benar diterima ada di invoice_payments + dp_amount — bukan di invoice.total.
   // Menyebut total tagihan sebagai "Total Dibayarkan" membuat DP terbaca seolah lunas.
   const { data: invoiceRows, error: invoiceError } = await supabase
-    .from("invoices").select("id, invoice_no, created_at, metode_bayar, total, dp_amount, paid_status, reissued_from")
+    .from("invoices").select("id, invoice_no, created_at, metode_bayar, stage_billing, total, dp_amount, paid_status, reissued_from")
     .eq("visit_id", visitId).is("voided_at", null)
     .order("created_at", { ascending: true }).order("id", { ascending: true });
   const invoiceIds = ((invoiceRows ?? []) as { id: string }[]).map((i) => i.id);
@@ -77,7 +78,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   const tagihanTerbaca = !invoiceError && !invoicePayError;
   const masukPerInvoice = bayarPerTagihan((invoicePays ?? []) as { invoice_id: string; amount: number }[]);
   const tagihan = ((invoiceRows ?? []) as {
-    id: string; invoice_no: string | null; metode_bayar: string | null; total: number;
+    id: string; invoice_no: string | null; metode_bayar: string | null; stage_billing?: boolean | null; total: number;
     dp_amount: number; paid_status: string; reissued_from: string | null;
   }[]).map((i) => {
     const bayar = masukPerInvoice.get(i.id) ?? TANPA_BAYAR;
@@ -86,7 +87,10 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   const totalTagihan = tagihan.reduce((s, i) => s + (Number(i.total) || 0), 0);
   const totalDibayar = tagihan.reduce((s, i) => s + i.dibayar, 0);
   const totalSisa = tagihan.reduce((s, i) => s + i.sisa, 0);
-  const metodeTagihan = Array.from(new Set(tagihan.map((i) => i.metode_bayar).filter(Boolean))).join(" + ");
+  // Tagihan rawat inap bertahap berlabel kepala "Tunai" (pengisi); cara bayar sebenarnya
+  // ditelusuri dari kwitansinya.
+  const telusurMetode = await metodeBayarTagihanBertahap(supabase, tagihan.filter((i) => i.stage_billing).map((i) => i.id));
+  const metodeTagihan = Array.from(new Set(tagihan.map((i) => metodeTampil(i, telusurMetode)).filter(Boolean))).join(" + ");
   const statusTagihan = !tagihan.length ? "Belum ditagih"
     : statusUangTagihan(totalTagihan, totalDibayar);
 
