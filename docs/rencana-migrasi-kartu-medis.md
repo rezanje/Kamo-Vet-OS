@@ -1181,3 +1181,19 @@ Hasil: 108 baru, 36 sudah ada, 9 tertahan, 0 gagal.
 - 0 tautan tagihan/quest ke hasil impor.
 
 DB: 7.771 riwayat lama, 6.964 jejak `gdrive:`.
+
+### 19.1 Nomor HP folder + pola tanggal (2026-11-02, izin OWNER opsi A)
+
+Cakupan: kartu tertahan yang alasannya hanya HP + satu alasan tanggal, tanpa Ket, dengan syarat:
+- nomor HP lolos aturan §19;
+- tanggal cocok pola R1/R2/P3 (§17).
+
+Terpilih 140 kartu (13–17 = 26, 18 = 5, 19–31 = 109). Turunan mengubah `status`, `hold_reasons`, `record_date`, dan
+`phone_canonical`.
+
+Hasil: 135 baru, 5 tertahan (batch 20: 4 isi sama dengan hewan beda dalam paket, 1 tanggal sama tapi isi beda), 0 gagal.
+- Readback runner dan independen 135/135 cocok; nomor pemilik di app = nomor folder (135/135).
+- 6 pemilik baru bertanda impor. 128 draf ditutup; aktif kini 1.168.
+- 0 tautan tagihan/quest ke hasil impor.
+
+DB: 7.906 riwayat lama, 7.099 jejak `gdrive:`.
