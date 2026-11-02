@@ -97,7 +97,7 @@ Grup klinik, 2 Nov 09.07–09.23 WIB.
 - Kunjungan lama yang memang tidak jadi (Menunggu) bisa dibatalkan dari bagian tertinggal. Untuk yang sudah
   Diperiksa atau Pembayaran tetapi tidak jadi bayar, belum ada tombol tutup tanpa bayar; perlu keputusan bisnis bila
   ingin dibuat.
-- Terpisah: laporan Operasional Penjualan (`src/lib/operation-sales-server.ts`) hanya menghitung tagihan klinik bila
-  kunjungannya juga terdaftar di periode yang sama. Pembayaran lintas hari, seperti kasus ini, hilang dari laporan
-  harian kedua hari itu. Dicatat sebagai tugas terpisah.
+- Terpisah, dan sudah diperbaiki di PR #400 (`44be1e5`): laporan Operasional Penjualan dulu hanya menghitung
+  tagihan klinik bila kunjungannya juga terdaftar di periode yang sama, sehingga pembayaran lintas hari seperti
+  kasus ini hilang dari laporan harian. Sekarang laporan itu ikut tanggal tagihan.
 - Isian rekam medis yang belum disimpan tetap per browser dan per akun (sessionStorage), sesuai desain yang ada.
