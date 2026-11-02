@@ -171,8 +171,8 @@ function applyChannel(query: AnyClient, channel: Channel): AnyClient {
 type SaleItem = { item_id: string | null; qty: number; hpp: number | null; harga: number; items?: { item_type: string | null; tindakan_kategori: string | null } | { item_type: string | null; tindakan_kategori: string | null }[] | null };
 type SaleRow = SaleCompletion & SaleMerchantTotal & { id: string; branch_id: string; customer_id: string | null; total: number; channel: string | null; created_at: string; sale_items: SaleItem[] | null };
 type InvoiceItem = { item_id: string | null; qty: number; hpp: number | null; harga: number; jenis: string | null };
-type VisitRow = { id: string; branch_id: string; customer_id: string | null };
-type InvoiceRow = { id: string; visit_id: string; total: number; created_at: string; voided_at: string | null; invoice_items: InvoiceItem[] | null };
+type InvoiceVisit = { branch_id: string; customer_id: string | null };
+type InvoiceRow = { id: string; visit_id: string; total: number; created_at: string; voided_at: string | null; visits: InvoiceVisit | InvoiceVisit[] | null; invoice_items: InvoiceItem[] | null };
 type ResellerItem = { item_id: string | null; qty: number; harga: number };
 type ResellerRow = { id: string; branch_id: string | null; customer_id: string | null; dpp: number; tanggal: string; status: string; sales_invoice_items: ResellerItem[] | null };
 
@@ -249,23 +249,23 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
     }
   }
 
-  let visits: VisitRow[] = [];
   if (filter.channel !== "pos" && filter.channel !== "online" && filter.channel !== "reseller") {
-    const visitsResult = await read(supabase.from("visits")
-      .select("id,branch_id,customer_id")
-      .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end));
-    queryError(visitsResult);
-    visits = (visitsResult.data ?? []) as VisitRow[];
+    // Omzet klinik milik tanggal tagihannya, bukan tanggal kunjungannya: antrean membawa
+    // kunjungan yang belum dibayar ke hari berikutnya, jadi kunjungan tgl D sering
+    // ditagih tgl D+1. Cabang tetap diambil dari kunjungan (invoices tidak punya
+    // branch_id); `!inner` membuang tagihan yang kunjungannya di luar cabang scope.
+    // Jumlah kunjungan (blok klinik) tetap dihitung dari tanggal daftar kunjungan.
     const invoiceQuery = supabase.from("invoices")
-      .select("id,visit_id,total,created_at,voided_at,invoice_items(item_id,qty,hpp,harga,jenis)")
-      .in("visit_id", visits.map((visit) => visit.id)).is("voided_at", null)
+      .select("id,visit_id,total,created_at,voided_at,visits!inner(branch_id,customer_id),invoice_items(item_id,qty,hpp,harga,jenis)")
+      .in("visits.branch_id", scope.branchIds).is("voided_at", null)
       .gte("created_at", start).lte("created_at", end);
     const invoiceResult = await read(invoiceQuery);
     queryError(invoiceResult);
-    const visitMap = new Map(visits.map((visit) => [visit.id, visit]));
+    const seen = new Set<string>();
     for (const invoice of (invoiceResult.data ?? []) as InvoiceRow[]) {
-      const visit = visitMap.get(invoice.visit_id);
-      if (!visit) continue;
+      const visit = one(invoice.visits);
+      if (!visit || !scope.branchIds.includes(visit.branch_id) || seen.has(invoice.id)) continue;
+      seen.add(invoice.id);
       documents.push(itemNetRows(
         invoice.id,
         visit.branch_id,
@@ -294,7 +294,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
       ));
     }
   }
-  return { documents, visits };
+  return { documents };
 }
 
 function salesBlockFromDocuments(scope: DashboardScope, documents: ReturnType<typeof itemNetRows>[], targetRows: any[]): SalesBlock {
