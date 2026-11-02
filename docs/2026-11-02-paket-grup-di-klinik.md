@@ -87,3 +87,16 @@ Obat kasir rawat inap menawarkan barang `Grup` utuh (sudah begitu sejak sebelum 
   tidak menyimpannya), jadi batas harga per baris yang berlaku.
 - Tes: `inpatient-cashier.test.tsx` — paket dipilih, keranjang menampilkan satu baris paket, `pending_rows` berisi isi
   paket (bukan barang Grup) dengan total = harga paket.
+
+## Lanjutan 2 Nov malam — racikan batal di tagihan rawat inap (Anisa 22.23)
+
+"Di transaksi ini ada void racik juga." Dicek: membatalkan racikan lewat Aksi → pengembalian bahan (`clinic_return_compound`)
+mengembalikan bahan dan menandai racikan `void`, tetapi baris resepnya tetap ikut `inpatient_payment_quote`; posting lalu
+menolak racikan void, dan keranjang rawat inap melarang menghapus baris racikan (`COMPOUND_LOCKED`). Tagihan macet permanen.
+
+- Migrasi `20261106070000_racikan_batal_keluar_tagihan_ranap.sql` (aditif): trigger `zz_void_compound_withdraw_billing` pada
+  `compounding_recipes` — saat status menjadi `void`, baris resep racikan itu pada kunjungan rawat inap yang belum ditagih ditarik
+  dari tagihan (`billing_withdrawn_at`, alasan "Racikan dibatalkan; bahan dikembalikan ke stok"). Sudah ditagih → tidak disentuh.
+- **Sudah diterapkan ke Production** 2 Nov malam. Uji di Production dalam transaksi yang dibatalkan (pasien Tatam, CMGG):
+  racikan Salep Luka di-void → baris tertunda 7 → 6, satu baris tertarik dengan alasan di atas; tidak ada sisa sesudah uji.
+- Diputar ulang dari nol bersama seluruh migrasi (364) di PostgreSQL 16 lokal: lulus.
