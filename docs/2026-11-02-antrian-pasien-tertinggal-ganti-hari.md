@@ -52,13 +52,42 @@ Grup klinik, 2 Nov 09.07–09.23 WIB.
 4. Melihat tanggal lampau tetap menampilkan persis hari itu, tanpa bacaan tertinggal.
 5. Dashboard: KPI "Sedang menunggu antrian" kini tanpa batas awal hari (`status = Menunggu`, `created_at < akhir hari
    ini`).
+6. Bila hanya bacaan pasien tertinggal yang gagal, antrian hari ini tetap tampil dengan peringatan
+   "gagal dimuat, muat ulang". Bacaan itu tidak diam-diam dianggap kosong. Kalau bacaan hari ini sendiri yang
+   gagal, layar tetap menampilkan "Antrian gagal dimuat" seperti sebelumnya.
+7. Spanduk menyesuaikan tab yang sedang dibuka. Di tab Menunggu, Sedang Diperiksa dan Selesai, spanduk menyebut
+   berapa yang tampil di tab itu, lalu memberi tautan "Lihat semua di tab Aktif". Spanduk tidak mengklaim pasien
+   yang belum dibayar ada "di bawah" padahal tab itu menyembunyikannya.
+
+## Beban basis data (temuan review)
+- `visits.status` bertipe enum. Operator `enum_ne`/`enum_eq` tidak leakproof, jadi di bawah RLS saringan status
+  baru dijalankan sesudah kebijakan `visits_select`/`visits_write`. Akibatnya
+  `user_can_access_branch(branch_id)` (±33 µs per baris di Production) terpanggil untuk setiap kunjungan lampau
+  cabang, bukan hanya yang belum selesai. `limit 200` tidak membatasi kerja ini.
+- Production 2 Nov: 172 kunjungan bercabang (paling banyak 55 per cabang), jadi saat ini masih ringan. Namun beban
+  ini tumbuh setiap hari, dan setiap layar antrian memperbaruinya tiap 20 detik.
+- Migrasi `20261106030000_antrian_belum_selesai_index.sql` menambah indeks parsial
+  `visits_belum_selesai_idx on visits (branch_id, created_at desc) where status <> 'Selesai'`. Indeks ini
+  aditif dan hanya berisi ±60 baris. Dengan indeks ini RLS hanya diperiksa untuk baris yang belum selesai; uji
+  lokal PG16 oleh reviewer: 75–175 ms turun ke 0,4–4 ms. Kueri sengaja tetap memakai `.neq("status","Selesai")`
+  supaya sama persis dengan predikat indeks. `.in(status, …)` tidak menolong, karena operator enum tetap tidak
+  leakproof.
 
 ## Uji
 - Baru: `src/components/__tests__/queue-carry-over.test.tsx`. Fixture-nya menerapkan saringan kueri sungguhan
-  (cabang, tanggal, status, urutan, batas). Ada 7 kasus: pasien shift malam tampil beserta tombol dan tanggalnya;
-  angka dan panggilan berikutnya tetap hari ini; bacaan tertinggal satu kali, paralel, dalam cabang aktif, tanpa batas
-  awal; tanggal lampau tidak tercampur; tab status; batas 200 diberi tahu; bacaan gagal berarti antrian gagal.
-  Di kode lama 6 dari 7 kasus merah.
+  (cabang, tanggal, status, urutan, batas). Ada 8 kasus:
+  - pasien shift malam tampil beserta tombol dan tanggalnya;
+  - angka dan panggilan berikutnya tetap hari ini;
+  - bacaan tertinggal satu kali, paralel, dalam cabang aktif, tanpa batas awal;
+  - tanggal lampau tidak tercampur;
+  - tab Menunggu / Diperiksa / Selesai beserta teks spanduknya;
+  - batas 200 diberi tahu;
+  - bacaan tertinggal yang gagal tidak mematikan antrian hari ini;
+  - bacaan hari ini yang gagal tetap membuat layar gagal.
+
+  Versi pertama perbaikan sudah diuji balik ke kode lama: 6 dari 7 kasusnya merah.
+- `src/app/(app)/page.test.tsx`: KPI "Sedang menunggu antrian" wajib tanpa `gte created_at`. Uji mutasi oleh
+  reviewer: bila batas awal hari dikembalikan, tes merah.
 - Disesuaikan: `queue-page.test.tsx`. Ada 2 bacaan berbatas hari dan 1 bacaan sebelum awal hari; bacaan tertinggal
   kosong di fixture lama.
 - `npm test`: 724 file / 6019 tes hijau. `npm run lint`: 0 error, peringatan `<img>` yang memang sudah ada.

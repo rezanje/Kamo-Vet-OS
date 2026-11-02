@@ -35,8 +35,9 @@ function petAge(dob: string | null | undefined): string | null {
 
 const KOLOM_ANTRIAN = "id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at)";
 
-// Batas baca pasien belum selesai dari hari-hari sebelumnya (terbaru dulu), supaya
-// satu layar antrian yang diperbarui tiap 20 detik tidak membaca tanpa batas.
+// Batas jumlah baris pasien belum selesai dari hari-hari sebelumnya (terbaru dulu) yang dikirim ke layar.
+// Beban basis datanya (layar diperbarui tiap 20 detik) dijaga oleh indeks parsial
+// visits_belum_selesai_idx (migrasi 20261106030000), bukan oleh batas ini.
 const BATAS_SISA = 200;
 
 // warna aksen per status (kartu, border baris, pill)
@@ -137,7 +138,9 @@ export default async function AntrianPage({
       qSisa,
       voucherAktifP,
     ]);
-  if (visitsResult.error || todayResult.error || sisaResult?.error) {
+  // Antrian hari ini tetap tampil bila hanya bacaan "belum selesai" yang gagal; kegagalannya
+  // diberitahukan di layar (bukan dianggap "tidak ada pasien tertinggal").
+  if (visitsResult.error || todayResult.error) {
     return <>
       <LiveRefresh branchId={branch.id} />
       <div role="alert" className="p2ban">Antrian gagal dimuat. Periksa koneksi dan coba lagi. Data pasien belum dapat ditampilkan.</div>
@@ -149,8 +152,9 @@ export default async function AntrianPage({
   const today = todayResult.data?.filter(operational);
   const allWaiting = today?.filter((v) => v.status === "Menunggu");
   // Rawat inap aktif tetap diurus dari Rawat Inap; sisanya ikut saringan tab status.
-  const sisaSemua = (sisaResult?.data ?? []).filter(operational);
-  const sisaTerpotong = (sisaResult?.data?.length ?? 0) >= BATAS_SISA;
+  const sisaGagal = !!sisaResult?.error;
+  const sisaSemua = (sisaGagal ? [] : sisaResult?.data ?? []).filter(operational);
+  const sisaTerpotong = !sisaGagal && (sisaResult?.data?.length ?? 0) >= BATAS_SISA;
   const sisa = sisaSemua.filter((v) =>
     filter === "menunggu" ? v.status === "Menunggu"
       : filter === "diperiksa" ? v.status === "Diperiksa"
@@ -367,13 +371,22 @@ export default async function AntrianPage({
         </div>
       )}
 
+      {lihatHariIni && sisaGagal && (
+        <div role="alert" className="p2ban">
+          <i className="ti ti-alert-triangle" /> Pasien dari hari sebelumnya yang belum selesai gagal dimuat. Antrian hari ini tetap bisa dipakai; muat ulang halaman untuk mencoba lagi.
+        </div>
+      )}
+
       {lihatHariIni && sisaSemua.length > 0 && (
         <div role="status" className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fde68a", color: "#92400e" }}>
           <i className="ti ti-history" /> Ada {sisaSemua.length} pasien dari hari sebelumnya yang belum selesai
           {rincianSisa ? ` (${rincianSisa})` : ""}.{" "}
-          {sisa.length > 0
-            ? "Daftarnya ada di bagian “Belum selesai dari hari sebelumnya” di bawah; lanjutkan pemeriksaan atau pembayarannya dari sana."
-            : <Link href={`/klinik/antrian?${new URLSearchParams({ filter: "aktif", cabang: selected?.id ?? "" })}`} style={{ color: "inherit", fontWeight: 700 }}>Lihat di tab Aktif</Link>}
+          {sisa.length === sisaSemua.length
+            ? "Daftarnya ada di bagian \u201CBelum selesai dari hari sebelumnya\u201D di bawah; lanjutkan pemeriksaan atau pembayarannya dari sana."
+            : <>
+              {sisa.length > 0 ? `${sisa.length} di antaranya tampil di bawah untuk tab ini. ` : "Tab ini tidak menampilkannya. "}
+              <Link href={`/klinik/antrian?${new URLSearchParams({ filter: "aktif", cabang: selected?.id ?? "" })}`} style={{ color: "inherit", fontWeight: 700 }}>Lihat semua di tab Aktif</Link>
+            </>}
         </div>
       )}
 

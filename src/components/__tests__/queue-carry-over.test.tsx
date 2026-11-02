@@ -78,6 +78,7 @@ it("keeps last night's unfinished patients on this morning's default queue with 
   const html = await render();
   expect(html).toContain("BELUM SELESAI DARI HARI SEBELUMNYA · 3 PASIEN");
   expect(html).toContain("Ada 3 pasien dari hari sebelumnya yang belum selesai (1 belum dibayar · 1 sedang diperiksa · 1 belum dipanggil)");
+  expect(html).toContain("lanjutkan pemeriksaan atau pembayarannya dari sana");
   // Diperiksa → lanjut rekam medis; Pembayaran → Bayar; Menunggu → Panggil/Batal.
   expect(html).toContain('href="/klinik/rekam-medis/malam-periksa"');
   expect(html).toContain('href="/klinik/pembayaran/malam-bayar"');
@@ -126,16 +127,30 @@ it("does not mix leftovers into a past date's history view", async () => {
   expect(html).toContain("Sedang melihat antrian 2026-11-01, bukan hari ini.");
 });
 
-it("follows the status tab and still points to the leftovers from the Selesai tab", async () => {
+it("follows the status tab and points to the Aktif tab for the leftovers the tab hides", async () => {
   const waiting = await render({ filter: "menunggu" });
   expect(waiting).toContain("BELUM SELESAI DARI HARI SEBELUMNYA · 1 PASIEN");
   expect(waiting).toContain('name="id" value="lama-tunggu"');
   expect(waiting).not.toContain('href="/klinik/rekam-medis/malam-periksa"');
+  expect(waiting).not.toContain('href="/klinik/pembayaran/malam-bayar"');
+  // The banner counts all 3 but must not claim the unpaid one is listed below on this tab.
+  expect(waiting).toContain("Ada 3 pasien dari hari sebelumnya yang belum selesai");
+  expect(waiting).toContain("1 di antaranya tampil di bawah untuk tab ini.");
+  expect(waiting).toContain("Lihat semua di tab Aktif");
+  expect(waiting).not.toContain("lanjutkan pemeriksaan atau pembayarannya dari sana");
+
+  const examining = await render({ filter: "diperiksa" });
+  expect(examining).toContain("BELUM SELESAI DARI HARI SEBELUMNYA · 1 PASIEN");
+  expect(examining).toContain('href="/klinik/rekam-medis/malam-periksa"');
+  expect(examining).not.toContain('href="/klinik/pembayaran/malam-bayar"');
+  expect(examining).not.toContain('name="id" value="lama-tunggu"');
+  expect(examining).toContain("Lihat semua di tab Aktif");
 
   const done = await render({ filter: "selesai" });
   expect(done).not.toContain("BELUM SELESAI DARI HARI SEBELUMNYA");
   expect(done).toContain("Ada 3 pasien dari hari sebelumnya yang belum selesai");
-  expect(done).toContain("Lihat di tab Aktif");
+  expect(done).toContain("Tab ini tidak menampilkannya.");
+  expect(done).toContain('href="/klinik/antrian?filter=aktif&amp;cabang="');
 });
 
 it("says so when the leftover list is capped instead of silently dropping older patients", async () => {
@@ -146,10 +161,27 @@ it("says so when the leftover list is capped instead of silently dropping older 
   expect(html).toContain("Menampilkan 200 pasien terbaru");
 });
 
-it("treats a failed leftover read as a failed queue, not as 'nothing left over'", async () => {
+it("keeps today's queue usable when only the leftover read fails, and says so instead of showing 'nothing left over'", async () => {
   s.failCarryOver = true;
   const html = await render();
-  expect(html).toContain("Antrian gagal dimuat");
+  expect(html).toContain("Pasien dari hari sebelumnya yang belum selesai gagal dimuat");
+  expect(html).toContain('role="alert"');
   expect(html).not.toContain("private DB detail");
+  expect(html).not.toContain("BELUM SELESAI DARI HARI SEBELUMNYA");
+  expect(html).not.toContain("pasien dari hari sebelumnya yang belum selesai (");
+  // Today's queue still works.
+  expect(html).toContain("TOTAL ANTRIAN");
+  expect(html).toContain('href="/klinik/antrian/pagi"');
+  expect(html).not.toContain("Antrian gagal dimuat");
+});
+
+it("still fails the whole screen when today's own reads fail", async () => {
+  s.rt = null;
+  const failing = (call: Call): Reply => call.name === "visits" && !call.ops.some(([op]) => op === "limit")
+    ? { error: { message: "private DB detail" } } : apply(call);
+  s.rt = roundTripClient(failing, { userId: "staff-pagi" });
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+  expect(html).toContain("Antrian gagal dimuat");
   expect(html).not.toContain("TOTAL ANTRIAN");
+  expect(html).not.toContain("private DB detail");
 });
