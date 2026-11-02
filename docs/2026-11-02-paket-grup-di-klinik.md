@@ -73,3 +73,17 @@ Hematologi Rp193.728, Kimia Darah Rp602.701, Tabung EDTA Rp1.377 = Rp800.000).
   Total tidak berubah; tagihan tanpa paket tercetak persis seperti sebelumnya.
 - Dipakai di struk (`pembayaran/[visitId]/struk`), invoice A4 (`…/invoice`), struk rombongan (per invoice), dan struk WhatsApp
   (nama paket dibaca dari master saat kirim; tetap sesudah respons).
+
+## Lanjutan 2 Nov malam — kasir rawat inap (Anisa 22.20)
+
+Laporan: tagihan rawat inap kucing CMGG berisi "Kimia Darah Lengkap" gagal disimpan ("hasil penyimpanan belum dapat
+dipastikan"). Log Production: `clinic_save_inpatient_cashier` ditolak 7× (22.09–22.20 WIB) dengan
+`CART_INVALID: pilih item master aktif` — RPC rawat inap hanya menerima barang `Jasa`/`Persediaan`, sedangkan daftar
+Obat kasir rawat inap menawarkan barang `Grup` utuh (sudah begitu sejak sebelum fitur paket; kini lebih mudah dipilih).
+
+- `InpatientPaymentPage` membaca resep paket; paket tanpa resep utuh tidak ditawarkan.
+- `InpatientCashier`: paket yang dipilih dipecah jadi isinya (`pecahPaket`, harga paket dibagi ke isinya) dan tampil satu
+  baris paket seperti pembayaran rawat jalan. Yang dikirim ke RPC tetap baris isi (tanpa asal paket — tagihan rawat inap
+  tidak menyimpannya), jadi batas harga per baris yang berlaku.
+- Tes: `inpatient-cashier.test.tsx` — paket dipilih, keranjang menampilkan satu baris paket, `pending_rows` berisi isi
+  paket (bukan barang Grup) dengan total = harga paket.
