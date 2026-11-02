@@ -1155,3 +1155,29 @@ Hasil: 241 baru, 4 tertahan (isi + tanggal sama dengan hewan beda dalam batch), 
 - Hitungan tabel keuangan hanya berubah karena 1 shift kasir dibuka; 0 tautan ke hasil impor.
 
 Batch 19–31 kini: 2.967 baru, 1 sudah ada, 2.136 tertahan, 59 kosong, 0 gagal. DB: 7.663 riwayat lama.
+
+## 19. Nomor HP dari nama folder Drive (2026-11-02, izin OWNER opsi A)
+
+Nama folder kartu di Drive berformat `<no> / <nama pemilik> / <nomor HP>` (3.514 dari 3.734 folder memuat nomor `08…`).
+
+Cakupan: kartu tertahan yang satu-satunya alasannya `PHONE_PREFIX_MISSING_OR_INVALID_NO_GUESS` (tanpa Ket, tanggal sah),
+dengan syarat:
+- nomor folder sah (`08` + 8–11 digit);
+- HP kartu kosong, atau sama dengan nomor folder kecuali awalan;
+- `phone_canonical` sumber (bila ada) tidak bertentangan;
+- nama pemilik kartu cocok dengan nama di folder;
+- tidak ada kartu lain di folder yang sama dengan nomor berbeda.
+
+Konflik nomor tetap tertahan, baik yang tergerbang maupun yang baru terdeteksi.
+
+Terpilih 153 kartu: 66 kurang awalan, 87 HP kartu kosong. Rinciannya: 08–12 = 8, 13–17 = 102, 18 = 7, 19–31 = 36.
+Turunan hanya mengubah `status`, `hold_reasons`, dan `phone_canonical` (nomor folder); `phone_raw` asli tetap jadi bukti.
+
+Hasil: 108 baru, 36 sudah ada, 9 tertahan, 0 gagal.
+- Yang sudah ada berasal dari master 13–17: hewan + tanggal + isi sama, dan nomor pemilik di app sama dengan nomor folder.
+- Yang tertahan: 4 isi sama di hewan lain, 4 isi ganda, 1 tanggal sama tapi isi beda.
+- Readback runner dan independen 108/108 cocok. Nomor pemilik di app = nomor folder untuk semua 108 + 36.
+- 2 pemilik baru bertanda impor. 108 draf "Perlu Dilengkapi" ditutup; aktif kini 1.296.
+- 0 tautan tagihan/quest ke hasil impor.
+
+DB: 7.771 riwayat lama, 6.964 jejak `gdrive:`.
