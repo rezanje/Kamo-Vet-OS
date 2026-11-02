@@ -123,6 +123,7 @@ function recipeRequiredMessage(message: string): string {
 }
 
 export function parseClinicPostingError(error: { code?: string; message: string } | null, uncertainFallback?: string): string {
+  if (error?.code === "55P03") return "Data sedang dipakai proses lain. Muat ulang tagihan, periksa hasil sebelumnya, lalu coba lagi.";
   const kampanye = pesanGagalKampanye(error?.message);
   if (kampanye) return kampanye;
   if (error?.code === "P0001") {
@@ -148,11 +149,15 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       DP_MINIMAL: "Uang muka belum cukup",
       LINE_BILLED: "Baris resep sudah ditagih",
       STAGE_INVALID: "Tagihan bertahap ditolak",
+      CART_INVALID: "Keranjang rawat inap ditolak",
+      COMPOUND_LOCKED: "Racikan tersimpan terkunci",
+      BMHP_LOCKED: "BMHP tersimpan terkunci",
       RECEIPT_INVALID: "Kwitansi ditolak",
       DOC_NO_INVALID: "Nomor dokumen ditolak",
       RELEASE_INVALID: "Pelepasan uang muka ditolak",
     };
     const fixedMessages: Record<string, string> = {
+      PACKAGE_INVALID: "Isi atau asal paket tidak sesuai resep yang berlaku. Muat ulang tagihan lalu pilih kembali paket; jangan ubah harga bahan untuk melewati pengaman.",
       POLICY_INVALID: "Versi aturan DEMO berubah atau tidak valid. Muat ulang halaman dan periksa aturan.",
       INCENTIVE_INVALID: "Pilih petugas aktif yang tercatat menangani pasien di cabang ini.",
       CONSENT_REQUIRED: "Tandatangani persetujuan khusus rawat inap yang berlaku sebelum melanjutkan.",

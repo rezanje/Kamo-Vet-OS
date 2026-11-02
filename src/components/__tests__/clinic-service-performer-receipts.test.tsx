@@ -8,10 +8,10 @@ vi.mock('@/lib/rombongan-server',()=>({bacaRombongan:async()=>({tanggal:'2026-10
 vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from(table:string){
  const invoice={id:'invoice',invoice_no:'INV-1',subtotal:100,discount:0,tax:0,total:100,dp_amount:0,paid_status:'Lunas',metode_bayar:'Tunai',created_at:'2026-10-23T10:00:00Z',cashier_name:state.legacy?null:'Kasir Saat Transaksi'};
  const visit={id:'visit',poli:'Klinik',doctor_id:state.legacy||state.tanpaDokter?null:'dokter-pj',dokter:state.tanpaDokter?null:'PIC Kasus',pets:{name:'Milo',species:'Kucing'},customers:{name:'Pemilik'},branches:{name:'Cabang'}};
- const rows=table==='invoice_items'?[{invoice_id:'invoice',deskripsi:'Jasa tersimpan',jenis:'jasa',qty:1,harga:100,service_performers:state.legacy?null:{version:1,doctor_id:'doctor',doctor_name:'Dokter Saat Transaksi',staff_id:'staff',staff_name:'Perawat Saat Transaksi'}}]
+ const rows=table==='invoice_items'?[{id:'line',invoice_id:'invoice',deskripsi:'Jasa tersimpan',jenis:'jasa',qty:1,harga:100,service_performers:state.legacy?null:{version:1,doctor_id:'doctor',doctor_name:'Dokter Saat Transaksi',staff_id:'staff',staff_name:'Perawat Saat Transaksi'}}]
   :table==='invoices'?[invoice]:table==='visits'?[visit]:table==='employees'?[{id:'dokter-pj',nama:'Dokter PJ Tersimpan'}]:[];
- const result={data:rows,error:null};
- const q={select:()=>q,eq:()=>q,is:()=>q,in:()=>q,order:()=>q,limit:()=>q,maybeSingle:async()=>({data:table==='visits'?visit:table==='invoices'?invoice:null,error:null,count:1}),then:(resolve:(value:unknown)=>void)=>Promise.resolve(result).then(resolve)};return q;
+ let from=0,to=Number.MAX_SAFE_INTEGER,exact=false;
+ const q={select:(_columns:string,options?:{count?:string})=>{exact=options?.count==='exact';return q;},range:(start:number,end:number)=>{from=start;to=end;return q;},eq:()=>q,is:()=>q,in:()=>q,order:()=>q,limit:()=>q,maybeSingle:async()=>({data:table==='visits'?visit:table==='invoices'?invoice:null,error:null,count:1}),then:(resolve:(value:unknown)=>void)=>Promise.resolve({data:rows.slice(from,to+1),error:null,count:exact?rows.length:null}).then(resolve)};return q;
 }})}));
 import {HandoffPanel} from '@/app/(app)/klinik/rawat-inap/[id]/HandoffPanel';
 import Struk from '@/app/(app)/klinik/pembayaran/[visitId]/struk/page';

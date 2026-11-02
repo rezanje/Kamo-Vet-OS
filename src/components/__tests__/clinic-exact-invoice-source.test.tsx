@@ -2,10 +2,10 @@ import{renderToStaticMarkup}from 'react-dom/server';import{beforeEach,expect,it,
 const s=vi.hoisted(()=>({missing:false,fail:'',total:1 as number|undefined,calls:[]as unknown[][]}));
 const old='a0000000-0000-4000-8000-000000000001',current='a0000000-0000-4000-8000-000000000002';
 vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from(table:string){const filters:Record<string,unknown>={};const q={select:()=>q,eq:(key:string,value:unknown)=>{filters[key]=value;s.calls.push([table,key,value]);return q;},is:()=>q,order:()=>q,limit:()=>q,maybeSingle:()=>q,
- then(resolve:(r:unknown)=>unknown){const id=filters.id??current;const invoice={id,invoice_no:id===old?'INV-REQUESTED':'INV-CURRENT',total:100,subtotal:100,discount:0,tax:0,dp_amount:0,paid_status:'Lunas',created_at:'2026-10-23T00:00:00Z'};
- const data=table==='visits'?{id:'visit',poli:'Clinic',created_at:'2026-10-23T00:00:00Z'}:table==='invoices'?(s.missing&&filters.id?null:invoice):table==='clinic_demo_invoice_snapshots'?null:[];
- return Promise.resolve({data:s.fail===table?null:data,error:s.fail===table?{message:'Private failure'}:null,count:table==='invoices'?s.total:undefined}).then(resolve);
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({from(table:string){const filters:Record<string,unknown>={};let from=0,to=Number.MAX_SAFE_INTEGER,exact=false;const q={select:(_columns:string,options?:{count?:string})=>{exact=options?.count==='exact';return q;},range:(start:number,end:number)=>{from=start;to=end;return q;},eq:(key:string,value:unknown)=>{filters[key]=value;s.calls.push([table,key,value]);return q;},is:()=>q,order:()=>q,limit:()=>q,maybeSingle:()=>q,
+ then(resolve:(r:unknown)=>unknown){const id=filters.invoice_id??filters.id??current;const invoice={id,invoice_no:id===old?'INV-REQUESTED':'INV-CURRENT',total:100,subtotal:100,discount:0,tax:0,dp_amount:0,paid_status:'Lunas',created_at:'2026-10-23T00:00:00Z'};
+ const data=table==='visits'?{id:'visit',poli:'Clinic',created_at:'2026-10-23T00:00:00Z'}:table==='invoices'?(s.missing&&filters.id?null:invoice):table==='clinic_demo_invoice_snapshots'?null:table==='invoice_items'?[{id:'line',invoice_id:id,deskripsi:'Saved source line',qty:1,harga:100}]:[];
+ return Promise.resolve({data:s.fail===table?null:Array.isArray(data)?data.slice(from,to+1):data,error:s.fail===table?{message:'Private failure'}:null,count:table==='invoices'?s.total:exact&&Array.isArray(data)?data.length:null}).then(resolve);
  }};return q;}})}));
 import Page from '@/app/(app)/klinik/pembayaran/[visitId]/invoice/page';
 const render=async(invoice_id?:string)=>renderToStaticMarkup(await Page({params:Promise.resolve({visitId:'visit'}),searchParams:Promise.resolve({invoice_id})}));

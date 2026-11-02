@@ -1,11 +1,11 @@
-import { gabungPaketCetak } from "@/lib/paket-klinik";
+import { readCompleteList } from "@/lib/checked-list";
+import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { printBranchHeading } from "@/components/print-branch-heading";
 import { bacaNamaDokter, namaDokterPJ } from "@/lib/dokter-pj";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { nilaiBaris } from "@/lib/tagihan-klinik";
 import { PrintButton } from "../PrintButton";
 
 type Rel<T> = T | T[] | null;
@@ -43,13 +43,12 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
     <p><Link href={`/klinik/pembayaran/${visitId}`}>Pilih invoice lain dari riwayat pembayaran</Link></p>
   </section>;
 
-  const { data: barisInvoice,error:itemsError } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen, jenis, compound_recipe_id, compounding_recipes(id, medical_records(visit_id)), package_item_id, package_qty, paket:items!invoice_items_package_item_id_fkey(name)").eq("invoice_id", invoice.id).order("created_at");
-  // Isi paket tidak dicetak ke pelanggan: satu baris nama paket.
-  const items = barisInvoice ? gabungPaketCetak(barisInvoice) : barisInvoice;
+  const items = await readCompleteList<PackagePrintSource & { id: string; compound_recipe_id: string | null; compounding_recipes: Rel<{ id: string; medical_records: Rel<{ visit_id: string }> }> }>((from, to) => supabase
+    .from("invoice_items").select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), compound_recipe_id, compounding_recipes(id, medical_records(visit_id))", { count: "exact" })
+    .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian invoice", { maxRows: null });
   const { data: payments,error:paymentsError } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
-  if(itemsError||paymentsError)throw new Error("Rincian invoice atau pembayaran belum dapat diverifikasi. Muat ulang sebelum mencetak.");
+  if(paymentsError)throw new Error("Rincian invoice atau pembayaran belum dapat diverifikasi. Muat ulang sebelum mencetak.");
 
   type RecipeRelation = { id: string; medical_records: Rel<{ visit_id: string }> };
   const relatedRecipes = Array.from(new Map((items ?? []).flatMap(line => {
@@ -132,14 +131,14 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
             </tr>
           </thead>
           <tbody>
-            {(items ?? []).map((it, i) => (
+            {customerPackageLines(items, { subtotal: invoice.subtotal }).map((it, i) => (
               <tr key={i}>
                 <td style={{ color: "var(--td)" }}>{i + 1}</td>
                 <td style={{ fontWeight: 500 }}>{it.deskripsi}</td>
                 <td style={{ textAlign: "center" }}>{it.qty}</td>
                 <td style={{ textAlign: "right" }}>{rp(it.harga)}</td>
-                <td style={{ textAlign: "center" }}>{Number(it.diskon_persen) > 0 ? `${Number(it.diskon_persen)}%` : "—"}</td>
-                <td style={{ textAlign: "right" }}>{rp(nilaiBaris(it))}</td>
+                <td style={{ textAlign: "center" }}>{it.diskon_persen === null ? rp(it.diskon) : Number(it.diskon_persen) > 0 ? `${Number(it.diskon_persen)}%` : "—"}</td>
+                <td style={{ textAlign: "right" }}>{rp(it.jumlah)}</td>
               </tr>
             ))}
           </tbody>

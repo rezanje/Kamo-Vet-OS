@@ -1,4 +1,5 @@
-import { gabungPaketCetak } from "@/lib/paket-klinik";
+import { readCompleteList } from "@/lib/checked-list";
+import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { printBranchHeading } from "@/components/print-branch-heading";
 import { bacaNamaDokter, namaDokterPJ } from "@/lib/dokter-pj";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
@@ -33,10 +34,9 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
     .limit(1).maybeSingle();
   if (!invoice) notFound();
 
-  const { data: barisInvoice } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga, jenis, package_item_id, package_qty, paket:items!invoice_items_package_item_id_fkey(name)").eq("invoice_id", invoice.id).order("created_at");
-  // Isi paket tidak dicetak ke pelanggan: satu baris nama paket.
-  const items = gabungPaketCetak(barisInvoice ?? []);
+  const items = await readCompleteList<PackagePrintSource & { id: string }>((from, to) => supabase
+    .from("invoice_items").select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name)", { count: "exact" })
+    .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian struk", { maxRows: null });
   // Struk hanya menyebut satu nama: dokter PJ kunjungan. Pelaksana per baris tidak dicetak.
   const dokterPJ = namaDokterPJ(visit, await bacaNamaDokter(supabase, [visit.doctor_id]));
   const { data: payments } = await supabase.from("invoice_payments")
@@ -78,12 +78,12 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
         <Kv k="Pasien" v={`${pet?.name ?? "-"} (${pet?.species ?? "-"})`} />
         <Kv k="Pemilik" v={cust?.name ?? "-"} />
         <Hr />
-        {(items ?? []).map((it, i) => (
+        {customerPackageLines(items, { subtotal: invoice.subtotal }).map((it, i) => (
           <div key={i} style={{ marginBottom: 3 }}>
             <div>{it.deskripsi}</div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>{it.qty} x {rp(it.harga)}</span>
-              <span>{rp(it.qty * it.harga)}</span>
+              <span>{rp(it.jumlah)}</span>
             </div>
           </div>
         ))}

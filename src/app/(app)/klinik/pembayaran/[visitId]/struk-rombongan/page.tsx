@@ -1,4 +1,5 @@
-import { gabungPaketCetak } from "@/lib/paket-klinik";
+import { readCompleteList } from "@/lib/checked-list";
+import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { printBranchHeading } from "@/components/print-branch-heading";
 import { bacaNamaDokter, namaDokterPJ, type VisitDokter } from "@/lib/dokter-pj";
 import Link from "next/link";
@@ -59,15 +60,14 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   };
   const invRows = (invs ?? []) as unknown as Inv[];
 
-  const { data: allItems } = invRows.length
-    ? await supabase.from("invoice_items").select("invoice_id, deskripsi, qty, harga, jenis, package_item_id, package_qty, paket:items!invoice_items_package_item_id_fkey(name)")
-        .in("invoice_id", invRows.map((i) => i.id)).order("created_at")
-    : { data: [] as { invoice_id: string; deskripsi: string; qty: number; harga: number; jenis?: string }[] };
+  const allItems = invRows.length
+    ? await readCompleteList<PackagePrintSource & { id: string; invoice_id: string }>((from, to) => supabase.from("invoice_items")
+        .select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name)", { count: "exact" })
+        .in("invoice_id", invRows.map((i) => i.id)).order("created_at").order("id").range(from, to), "Rincian struk gabungan", { maxRows: null })
+    : [];
 
-  const itemsPerInv = new Map<string, { deskripsi: string; qty: number; harga: number; jenis?: string }[]>();
-  // Isi paket tidak dicetak ke pelanggan: satu baris nama paket per invoice.
-  for (const it of gabungPaketCetak((allItems ?? []) as ({ invoice_id: string; deskripsi: string; qty: number; harga: number; jenis?: string }
-    & Parameters<typeof gabungPaketCetak>[0][number])[])) {
+  const itemsPerInv = new Map<string, PackagePrintSource[]>();
+  for (const it of (allItems ?? []) as (PackagePrintSource & { invoice_id: string })[]) {
     itemsPerInv.set(it.invoice_id, [...(itemsPerInv.get(it.invoice_id) ?? []), it]);
   }
   const invPerNo = new Map(invRows.map((i) => [i.invoice_no, i]));
@@ -124,12 +124,12 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
               {daftar[0] && <Kv k="Kasir" v={daftar[0].cashier_name ?? "Kasir belum tercatat"} />}
               {dokterPJ && <Kv k="Dokter PJ" v={dokterPJ} />}
               {!daftar.length && <div style={{ fontSize: 9.5 }}>(tagihan belum dibuat)</div>}
-              {daftar.flatMap((inv) => itemsPerInv.get(inv.id) ?? []).map((it, i) => (
+              {daftar.flatMap((inv) => customerPackageLines(itemsPerInv.get(inv.id) ?? [], { subtotal: inv.subtotal })).map((it, i) => (
                 <div key={i}>
                   <div>{it.deskripsi}</div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>{it.qty} x {rp(it.harga)}</span>
-                    <span>{rp(it.qty * it.harga)}</span>
+                    <span>{rp(it.jumlah)}</span>
                   </div>
                 </div>
               ))}

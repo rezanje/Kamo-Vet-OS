@@ -16,6 +16,7 @@ import { METODE_BAYAR } from "@/lib/kas-akun";
 import { nilaiBarisResep, type BarisResep } from "@/lib/tagihan-berjalan";
 import type { RanapPaymentState } from "@/lib/ranap-payment";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
+import { clinicPackageOriginInput } from "@/lib/clinic-package-origin";
 
 const tidakPasti = "Hasil penyimpanan belum dapat dipastikan. Muat ulang dan periksa tagihan yang sudah tersimpan sebelum mencoba lagi.";
 
@@ -43,10 +44,10 @@ async function barisTerpilih(
   if (!mrIds.length) return [];
   const { data, error } = await supabase
     .from("prescription_items")
-    .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id")
+    .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, package_item_id, package_qty")
     .in("medical_record_id", mrIds).in("id", ids).order("created_at");
   if (error) throw new Error("gagal-baca");
-  return (data ?? []) as BarisResep[];
+  return ((data ?? []) as BarisResep[]).map((row) => ({ ...row, ...clinicPackageOriginInput(row) }));
 }
 
 export async function tagihSekarang(formData: FormData) {
@@ -100,6 +101,7 @@ export async function tagihSekarang(formData: FormData) {
       item_id: r.item_id ?? null, unit: r.satuan ?? null,
       prescription_item_id: r.id, recipe_id: r.compound_recipe_id ?? null,
       discount_percent: 0,
+      ...clinicPackageOriginInput(r),
     })),
   });
   if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error, tidakPasti))}`);

@@ -119,9 +119,28 @@ it("pembayaran: package contents from the medical record are recognised and tagg
       { deskripsi: "Benang", qty: 1, harga: 36364, item_id: "benang", satuan: "pcs", prescription_item_id: "p3" },
     ],
     initialJasa: [{ deskripsi: "Steril", qty: 1, harga: 254546, item_id: "steril", satuan: "x", prescription_item_id: "p1" }] }));
-  // Satu baris paket (termasuk isi jasanya) di tabel Obat, harga paket, isi tanpa harga.
+  // Ordinary rows matching a recipe are NOT proof that a package was selected.
+  const ordinary = document.createElement("div"); ordinary.innerHTML = html;
+  expect(ordinary.querySelectorAll('tr[data-paket]')).toHaveLength(0);
+});
+
+it("pembayaran: explicit persisted medical-record package origin groups without exposing materials", () => {
+  const props = { visitId: "visit", requestKey: "explicit-request", catatanResep: null, masterObat, masterJasa, packages,
+    patient: { photo: null, name: "Milo", species: "Kucing", owner: "Owner", phone: "", address: "", dokter: "Doctor", jenisLayanan: "Klinik", noInvoice: "(baru)", tanggal: "2026-11-02" },
+    bekal: { promos: [], aturanDiskon: [], golonganPersen: 0, infoBarang: {}, vouchers: [], hariIni: "2026-11-02", customerId: null, categoryId: null, poinSaldo: 0, rupiahPerPoin: 1 } };
+  const html = renderToStaticMarkup(React.createElement(PembayaranForm, { ...props,
+    initialObat: [
+      { deskripsi: "Spuit", qty: 2, harga: 4545, item_id: "spuit", satuan: "pcs", prescription_item_id: "p2", package_item_id:resep.id,package_qty:1 },
+      { deskripsi: "Benang", qty: 1, harga: 36364, item_id: "benang", satuan: "pcs", prescription_item_id: "p3", package_item_id:resep.id,package_qty:1 },
+    ],
+    initialJasa: [{ deskripsi: "Steril", qty: 1, harga: 254546, item_id: "steril", satuan: "x", prescription_item_id: "p1",package_item_id:resep.id,package_qty:1 }] }));
+  // Andri: pembayaran hanya nama/harga paket; rincian BMHP tetap di payload internal.
   expect(html.match(/data-paket="paket-steril"/g)).toHaveLength(1);
-  expect(html).toContain("ISI PAKET");
+  const visible = document.createElement("div"); visible.innerHTML = html;
+  const packageText = visible.querySelector('tr[data-paket="paket-steril"]')!.textContent;
+  expect(packageText).not.toContain("ISI PAKET");
+  expect(packageText).not.toContain("Spuit");
+  expect(packageText).not.toContain("Benang");
   expect(html).toContain("Rp 300.000");
   expect(html).not.toContain("Rp 4.545");
   expect(html).toContain('aria-label="Jumlah paket Paket Steril"');
@@ -133,4 +152,22 @@ it("pembayaran: package contents from the medical record are recognised and tagg
   const biasa = renderToStaticMarkup(React.createElement(PembayaranForm, { ...props,
     initialObat: [{ deskripsi: "Spuit", qty: 2, harga: 5000, item_id: "spuit", satuan: "pcs", prescription_item_id: "p2" }], initialJasa: [] }));
   expect(biasa).not.toContain('data-paket="paket-steril"');
+});
+
+it("saved package correction keeps the package grouped without exposing materials or changing source kinds/amounts", () => {
+  const html = renderToStaticMarkup(<PembayaranForm visitId="visit" requestKey="edit" targetInvoiceId="invoice" editMode
+    catatanResep={null} masterObat={masterObat} masterJasa={masterJasa} packages={packages}
+    patient={{ photo:null,name:"Milo",species:"Kucing",owner:"Owner",phone:"",address:"",dokter:"Doctor",jenisLayanan:"Klinik",noInvoice:"INV",tanggal:"2026-11-02" }}
+    bekal={{ promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:"2026-11-02",customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1 }}
+    initialObat={[{deskripsi:"Spuit",item_id:"spuit",qty:2,harga:5000,satuan:"pcs",source_invoice_item_id:"line-spuit",package_item_id:resep.id,package_qty:1}]}
+    initialJasa={[{deskripsi:"Steril",item_id:"steril",qty:1,harga:290000,satuan:"x",source_invoice_item_id:"line-jasa",package_item_id:resep.id,package_qty:1}]} />);
+  const visible = document.createElement("div"); visible.innerHTML=html;
+  const rows = visible.querySelectorAll(`tr[data-paket="${resep.id}"]`);
+  expect(rows).toHaveLength(1);
+  expect(rows[0].textContent).toContain("Paket Steril");
+  expect(rows[0].textContent).not.toContain("Spuit");
+  expect(rows[0].textContent).not.toContain("ISI PAKET");
+  const payload = JSON.parse(visible.querySelector<HTMLInputElement>('input[name="items"]')!.value);
+  expect(payload.map((r: { source_invoice_item_id:string; jenis:string }) => [r.source_invoice_item_id,r.jenis])).toEqual([["line-spuit","obat"],["line-jasa","jasa"]]);
+  expect(payload.reduce((sum:number,r:{qty:number;harga:number})=>sum+r.qty*r.harga,0)).toBe(300000);
 });

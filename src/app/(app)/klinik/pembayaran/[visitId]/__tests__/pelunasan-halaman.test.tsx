@@ -21,6 +21,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   },
   from(table: string) {
     let single = false; let selected = "";
+    let exactCount = false;
+    let range: [number, number] | null = null;
+    const orders: { column: string; ascending: boolean }[] = [];
     const q: Record<string, unknown> = { then: (resolve: (v: unknown) => void) => {
       let data: unknown = [];
       let error: unknown = null;
@@ -36,12 +39,28 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       if (table === "clinic_demo_invoice_snapshots") data = null;
       if (table === "consents") data = [];
       if (table === "invoice_edit_log") data = [];
+      const count = exactCount && Array.isArray(data) ? data.length : null;
+      if (table === "invoice_items" && Array.isArray(data)) {
+        data = [...data].sort((a, b) => {
+          for (const { column, ascending } of orders) {
+            const comparison = String(a[column] ?? "").localeCompare(String(b[column] ?? ""));
+            if (comparison) return ascending ? comparison : -comparison;
+          }
+          return 0;
+        });
+      }
+      if (range && Array.isArray(data)) data = data.slice(range[0], range[1] + 1);
       if (single && Array.isArray(data)) data = (data as unknown[])[0] ?? null;
-      resolve({ data, error });
+      resolve({ data, error, count });
     } };
     for (const method of ["select", "eq", "gt", "is", "in", "order", "limit", "range", "maybeSingle"]) {
       q[method] = (...args: unknown[]) => {
-        if (method === "select") selected = String(args[0]);
+        if (method === "select") {
+          selected = String(args[0]);
+          exactCount = (args[1] as { count?: string } | undefined)?.count === "exact";
+        }
+        if (method === "range") range = [Number(args[0]), Number(args[1])];
+        if (method === "order") orders.push({ column: String(args[0]), ascending: (args[1] as { ascending?: boolean } | undefined)?.ascending !== false });
         if (method === "maybeSingle") single = true;
         return q;
       };

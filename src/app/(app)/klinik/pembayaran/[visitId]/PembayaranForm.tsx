@@ -30,11 +30,12 @@ import { diskonGolonganKeranjang } from "@/lib/harga-golongan";
 import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
 import { bacaKode, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganKode } from "@/lib/kode-kampanye";
 import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
-import { isiDitagihPerPaket, kenaliPaket, pecahPaket, type ResepPaket } from "@/lib/paket-klinik";
-import { KeranjangBahan } from "@/components/KeranjangBahan";
+import { pecahPaket, type ResepPaket } from "@/lib/paket-klinik";
 
 type Line = {
   key?: string;
+  /** Ephemeral view identity; never enters state, drafts or submission. */
+  __viewKey?: string;
   salesperson_id?: string | null;
   salesperson_name?: string | null;
   source_invoice_item_id?: string | null;
@@ -82,10 +83,10 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, onPickPackage, onPackageQty, onRemovePackage }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, packageQuantityLocked = sealedPerformers, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, onPickPackage, onPackageQty, onRemovePackage }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
-  serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; groomingDoctorRequired?: boolean;
+  serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; packageQuantityLocked?: boolean; groomingDoctorRequired?: boolean;
   /** Dokter PJ kunjungan — isian awal kolom Dokter pada baris baru. */
   defaultDoctorId?: string | null;
   groomingApplies?: boolean;
@@ -159,7 +160,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
             rows.findIndex(row => row.package_item_id === r.package_item_id) === i
               ? <PaketTagihan key={`paket-${r.package_item_id}`} nomor={i + 1} nama={packages.find(option => option.id === r.package_item_id)!.name}
                   isi={rows.filter(row => row.package_item_id === r.package_item_id)} allowUnits={allowUnits} discountsDisabled={discountsDisabled}
-                  staff={serviceStaff} performerLocked={sealedPerformers || performerLocked(r)}
+                  staff={serviceStaff} performerLocked={sealedPerformers || performerLocked(r)} quantityLocked={packageQuantityLocked} allowDetach={!sealedPerformers}
                   onJumlah={jumlah => onPackageQty ? onPackageQty(r.package_item_id!, jumlah) : undefined}
                   onDiskon={diskon => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, diskon_persen: diskon } : row))}
                   onPelaksana={value => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, service_performers: value } : row))}
@@ -185,7 +186,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                 {/* Penjual SKU lama hanya ditampilkan untuk dokumen sebelum atribusi per baris; tidak ada lagi isiannya. */}
                 {!!r.salesperson_name && <div style={{fontSize:10,color:'var(--tm)'}}>Penjual (data lama): {r.salesperson_name}</div>}
                 {(() => {
-                  const choices = r.item_id && !r.recipe_id && !r.terkunci ? packages.filter(option => option.componentIds.includes(r.item_id!)) : [];
+                  const choices = !sealedPerformers && r.item_id && !r.recipe_id && !r.terkunci ? packages.filter(option => option.componentIds.includes(r.item_id!)) : [];
                   if (choices.length === 0) return null;
                   // Line qty follows the recipe: packages x component qty per package (in the line's unit).
                   const qtyUntuk = (packageId: string, jumlah: number) => {
@@ -277,8 +278,8 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
 }
 
 /** Satu paket di tagihan: nama & harga paket, jumlah paket, diskon untuk seluruh isi, isi tanpa harga. */
-function PaketTagihan({ nomor, nama, isi, allowUnits, discountsDisabled, staff, performerLocked, onJumlah, onDiskon, onPelaksana, onHapus, onLepas }: {
-  nomor: number; nama: string; isi: Line[]; allowUnits: boolean; discountsDisabled: boolean; staff: ServiceStaff[]; performerLocked: boolean;
+function PaketTagihan({ nomor, nama, isi, allowUnits, discountsDisabled, staff, performerLocked, quantityLocked = false, allowDetach = true, onJumlah, onDiskon, onPelaksana, onHapus, onLepas }: {
+  nomor: number; nama: string; isi: Line[]; allowUnits: boolean; discountsDisabled: boolean; staff: ServiceStaff[]; performerLocked: boolean; quantityLocked?: boolean; allowDetach?: boolean;
   onJumlah: (jumlah: number) => void; onDiskon: (diskon: number) => void; onPelaksana: (value: ServicePerformersSnapshot) => void; onHapus: () => void;
   /** Kenali-ulang yang keliru: isi dikembalikan jadi baris penjualan biasa. */
   onLepas: () => void;
@@ -288,6 +289,7 @@ function PaketTagihan({ nomor, nama, isi, allowUnits, discountsDisabled, staff, 
   const kotor = isi.reduce((sum, row) => sum + row.qty * row.harga, 0);
   const bersih = isi.reduce((sum, row) => sum + nilaiBaris(row), 0);
   const diskon = utama.diskon_persen ?? 0;
+  const mixedDiscount = new Set(isi.map(row => Number(row.diskon_persen) || 0)).size > 1;
   const sumber = isi.find(row => row.prescription_item_id) ?? utama;
   return <tr data-paket={utama.package_item_id}>
     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{nomor}</td>
@@ -298,23 +300,22 @@ function PaketTagihan({ nomor, nama, isi, allowUnits, discountsDisabled, staff, 
       {performerLocked
         ? <div style={{ fontSize: 10, color: "var(--tm)" }}>{servicePerformerNames(utama.service_performers).join(" · ")}</div>
         : <ServicePerformersField label={`Pelaksana ${nama}`} value={utama.service_performers} staff={staff} onChange={value => onPelaksana(value as ServicePerformersSnapshot)} />}
-      <KeranjangBahan nada="bmhp" judul="ISI PAKET" baris={isi.map(row => `${row.deskripsi} × ${row.qty} ${row.satuan ?? ""}`.trim())}>
-        <button type="button" className="btn-def" aria-label={`Lepas paket ${nama}`} title="Tampilkan isinya sebagai baris biasa (bukan paket)"
-          style={{ marginTop: 3, padding: "1px 7px", fontSize: 9.5 }} onClick={onLepas}>Bukan paket</button>
-      </KeranjangBahan>
+      {/* Bahan tetap di payload untuk stok/HPP; tidak ditampilkan pada pembayaran. */}
+      {allowDetach && <button type="button" className="btn-def" aria-label={`Lepas paket ${nama}`} title="Tampilkan isinya sebagai baris biasa (bukan paket)"
+        style={{ marginTop: 3, padding: "1px 7px", fontSize: 9.5 }} onClick={onLepas}>Bukan paket</button>}
     </td>
     <td>
-      <QtyInput className="fi" min={1} step="1" aria-label={`Jumlah paket ${nama}`} value={jumlah} onValue={onJumlah} style={{ textAlign: "center" }} />
+      {quantityLocked ? <span title="Jumlah paket tersimpan">{jumlah}</span> : <QtyInput className="fi" min={1} step="1" aria-label={`Jumlah paket ${nama}`} value={jumlah} onValue={onJumlah} style={{ textAlign: "center" }} />}
     </td>
     {allowUnits && <td><span>paket</span></td>}
     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(kotor / jumlah)}</td>
     <td>
-      <NumberInput className="fi" type="number" min={0} max={100} step="any" aria-label={`Diskon ${nama}`} readOnly={discountsDisabled}
-        value={diskon} onChange={(e) => onDiskon(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} style={{ textAlign: "center" }} />
+      {mixedDiscount ? <span style={{ fontSize: 10 }}>Diskon campuran {rp(kotor - bersih)}</span> : <NumberInput className="fi" type="number" min={0} max={100} step="any" aria-label={`Diskon ${nama}`} readOnly={discountsDisabled}
+        value={diskon} onChange={(e) => onDiskon(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} style={{ textAlign: "center" }} />}
     </td>
     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>
       {rp(bersih)}
-      {diskon > 0 && <div style={{ fontSize: 9, color: "var(--td)", textDecoration: "line-through" }}>{rp(kotor)}</div>}
+      {kotor > bersih && <div style={{ fontSize: 9, color: "var(--td)", textDecoration: "line-through" }}>{rp(kotor)}</div>}
     </td>
     <td style={{ textAlign: "center" }}><HapusBaris row={sumber} label={`Hapus paket ${nama}`} onHapus={onHapus} /></td>
   </tr>;
@@ -392,26 +393,54 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
     || (!!row.prescription_item_id && !openSourceIds.has(row.prescription_item_id))
     || row.service_performers?.doctor_id || row.service_performers?.staff_id
     ? row : { ...row, service_performers: visitDefaultPerformers(visitDoctorId) });
-  // Paket yang dipilih dokter di rekam medis tersimpan sebagai baris isinya; di sini
-  // dikenali lagi supaya batas harga, komisi dan omzet dihitung per paket (H05).
-  const [awal] = useState(() => {
-    const obat0 = berikanDefault(initialObat), jasa0 = berikanDefault(initialJasa);
-    const siap = editMode ? [] : packages.filter(option => option.resep);
-    if (!siap.length) return { obat: obat0, jasa: jasa0 };
-    const faktor = (itemId: string, satuan: string | null | undefined) => {
-      const item = masterObat.find(row => row.id === itemId);
-      if (item) return !satuan || satuan === item.unit ? 1 : item.units?.find(unit => unit.unit === satuan)?.factor ?? null;
-      return masterJasa.some(row => row.id === itemId) ? 1 : null;
-    };
-    const semua = kenaliPaket([...obat0, ...jasa0], siap.map(option => ({
-      id: option.id, harga: masterObat.find(row => row.id === option.id)?.harga ?? null, perPaket: isiDitagihPerPaket(option.resep!),
-    })), faktor);
-    // Isi paket berjenis jasa dipindah ke tabel Obat: satu paket = satu baris tampilan.
-    const jasaPaket = semua.slice(obat0.length).filter(row => row.package_item_id).map(row => ({ ...row, jenis: "jasa" }));
-    return { obat: [...semua.slice(0, obat0.length), ...jasaPaket], jasa: semua.slice(obat0.length).filter(row => !row.package_item_id) };
-  });
-  const [obat, setObat] = useState<Line[]>(awal.obat);
-  const [jasa, setJasa] = useState<Line[]>(awal.jasa);
+  // Group only explicit persisted origin or a deliberate package pick. Matching
+  // a current recipe/price is NOT evidence that ordinary goods were a package.
+  const [obat, setObat] = useState<Line[]>(() => berikanDefault(initialObat));
+  const [jasa, setJasa] = useState<Line[]>(() => berikanDefault(initialJasa));
+  // Project fresh and restored state through the SAME package view. Recovered
+  // uncertain payloads are NOT rewritten: authoritative source IDs supply display
+  // origin only; the original state/draft/submission retains its exact old fields.
+  const originKey = (row: Line) => row.source_invoice_item_id ? `invoice:${row.source_invoice_item_id}` : row.prescription_item_id ? `rx:${row.prescription_item_id}` : undefined;
+  const sourceOrigin = new Map([...initialObat, ...initialJasa]
+    .filter(row => originKey(row) && row.package_item_id)
+    .map(row => [originKey(row)!, row]));
+  const originOf = (row: Line) => {
+    const key = originKey(row);
+    return key && sourceOrigin.has(key) ? sourceOrigin.get(key) : row.package_item_id ? row : undefined;
+  };
+  const packageOf = (row: Line) => originOf(row)?.package_item_id;
+  const viewSources = new Map<string, { row: Line; kind: "obat" | "jasa" }>();
+  const project = (row: Line, kind: "obat" | "jasa", index: number): Line => {
+    const key = `${kind}:${index}`;
+    viewSources.set(key, { row, kind });
+    const origin = originOf(row);
+    return { ...row, __viewKey: key, jenis: row.jenis ?? kind,
+      ...(origin?.package_item_id ? { package_item_id: origin.package_item_id, package_qty: origin.package_qty } : {}) };
+  };
+  const projectedObat = obat.map((row, index) => project(row, "obat", index));
+  const projectedJasa = jasa.map((row, index) => project(row, "jasa", index));
+  const displayObat = [...projectedObat, ...projectedJasa.filter(row => row.package_item_id)];
+  const displayJasa = projectedJasa.filter(row => !row.package_item_id);
+  const unproject = (row: Line): Line => {
+    const source = row.__viewKey ? viewSources.get(row.__viewKey)?.row : undefined;
+    const clean = { ...row }; delete clean.__viewKey;
+    if (source) {
+      if (source.jenis === undefined) delete clean.jenis;
+      const key = originKey(source);
+      if (!source.package_item_id && key && sourceOrigin.has(key)) {
+        if (source.package_item_id === undefined) delete clean.package_item_id; else clean.package_item_id = source.package_item_id;
+        if (source.package_qty === undefined) delete clean.package_qty; else clean.package_qty = source.package_qty;
+      }
+    }
+    return clean;
+  };
+  const setDisplayObat = (next: Line[]) => {
+    const fromJasa = next.filter(row => row.__viewKey && viewSources.get(row.__viewKey)?.kind === "jasa");
+    const updates = new Map(fromJasa.map(row => [viewSources.get(row.__viewKey!)!.row, unproject(row)]));
+    setObat(next.filter(row => !row.__viewKey || viewSources.get(row.__viewKey)?.kind !== "jasa").map(unproject));
+    setJasa(current => current.flatMap(row => packageOf(row) ? updates.has(row) ? [updates.get(row)!] : [] : [row]));
+  };
+  const setDisplayJasa = (next: Line[]) => setJasa([...jasa.filter(row => packageOf(row)), ...next.map(unproject)]);
   const [pesanPaket, setPesanPaket] = useState<string | null>(null);
   /** Harga normal per satuan isi paket — bobot pembagian harga paket. */
   const hargaNormal = (itemId: string, satuan: string, faktor: number) => {
@@ -427,8 +456,8 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
     setObat(skala); setJasa(skala);
   };
   const hapusPaket = (packageId: string) => {
-    setObat(rows => rows.filter(row => row.package_item_id !== packageId));
-    setJasa(rows => rows.filter(row => row.package_item_id !== packageId));
+    setObat(rows => rows.filter(row => packageOf(row) !== packageId));
+    setJasa(rows => rows.filter(row => packageOf(row) !== packageId));
   };
   /** Paket dipilih di baris obat `i`: baris itu diganti isi paket (jasa masuk tabel Jasa). */
   const pilihPaket = (i: number, packageId: string) => {
@@ -666,9 +695,9 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
       <PaymentCashierHeader name={cashierName} historical={editMode} historicalName={sealedSalespersonName} />
 
       <PaymentLayout catatanResep={catatanResep} cart={<>
-          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} packages={editMode ? NO_PACKAGES : packages}
-            onPickPackage={editMode ? undefined : pilihPaket} onPackageQty={editMode ? undefined : aturJumlahPaket} onRemovePackage={editMode ? undefined : hapusPaket} />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} packages={editMode ? NO_PACKAGES : packages} onPackageQty={editMode ? undefined : aturJumlahPaket} onRemovePackage={editMode ? undefined : hapusPaket} />
+          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={displayObat} setRows={setDisplayObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} packages={packages}
+            onPickPackage={editMode ? undefined : pilihPaket} onPackageQty={editMode ? undefined : aturJumlahPaket} onRemovePackage={hapusPaket} />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={displayJasa} setRows={setDisplayJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} packages={packages} onPackageQty={editMode ? undefined : aturJumlahPaket} onRemovePackage={hapusPaket} />
 
         </>} chargeSummary={<>
               {customerFee > 0 && <SumRow label="Admin pembayaran DEMO" value={rp(customerFee)}/>}
