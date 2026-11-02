@@ -2,78 +2,60 @@
 import { useState, type ComponentProps } from "react";
 import Link from "next/link";
 import { ItemTable, type MasterItem, type PackageOption } from "./PembayaranForm";
-import { Popup } from "@/components/Popup";
-import { isiDitagihPerPaket, kenaliPaket, pecahPaket } from "@/lib/paket-klinik";
 import { PaymentChargeTotal, PaymentSummary, SumRow, type PaymentPatient } from "./PaymentPresentation";
 import { SimpanBayarForm } from "../../rawat-inap/[id]/tagihan/SimpanBayarForm";
-import type { InpatientCashierData } from "@/lib/inpatient-cashier";
+import { inpatientPackageOptionError, inpatientPackageRowsError, resizeInpatientPackage, type InpatientCashierData } from "@/lib/inpatient-cashier";
+import { pecahPaket } from "@/lib/paket-klinik";
 
 type Line = ComponentProps<typeof ItemTable>["rows"][number];
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, ppnRate, minDpPercent, bolehTerobos, packages = [] }: {
+export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, packages = [], ppnRate, minDpPercent, bolehTerobos }: {
   data: InpatientCashierData; patient: PaymentPatient; catatanResep?: string | null; cashierName?: string;
-  visitId: string; recordId: string; requestKey: string; masterObat: MasterItem[]; masterJasa: MasterItem[]; ppnRate: number; minDpPercent: number; bolehTerobos: boolean;
-  /** Paket (Grup) dengan resep utuh: dipilih dari daftar Obat lalu dipecah jadi isinya (Anisa 2 Nov). */
-  packages?: PackageOption[];
+  visitId: string; recordId: string; requestKey: string; masterObat: MasterItem[]; masterJasa: MasterItem[]; packages?: PackageOption[]; ppnRate: number; minDpPercent: number; bolehTerobos: boolean;
 }) {
   // Only the authoritative pending set enters this cart. No outpatient draft hook,
   // historical invoice prefill or visit-default performer rewrite belongs here.
-  const initial = (kind: string): Line[] => data.rows.filter(row => (row.jenis === "jasa" ? "jasa" : "obat") === kind).map(row => ({
+  const [rows, setRows] = useState<Line[]>(() => data.rows.map(row => ({
     key: row.id, prescription_item_id: row.id, item_id: row.item_id, deskripsi: row.nama_obat, qty: Number(row.qty), harga: Number(row.harga), satuan: row.satuan,
     recipe_id: row.compound_recipe_id, service_performers: row.service_performers, terkunci: !!row.compound_recipe_id, diskon_persen: 0,
-  }));
-  // Penanda paket di keranjang rawat inap hanya untuk tampilan (satu baris per paket); yang
-  // dikirim tetap baris isinya, karena tagihan rawat inap tidak menyimpan asal paket.
-  const [awal] = useState(() => {
-    const obat0 = initial("obat"), jasa0 = initial("jasa");
-    const siap = packages.filter(option => option.resep);
-    if (!siap.length) return { obat: obat0, jasa: jasa0 };
-    const faktor = (itemId: string, satuan: string | null | undefined) => {
-      const item = masterObat.find(row => row.id === itemId);
-      if (item) return !satuan || satuan === item.unit ? 1 : item.units?.find(unit => unit.unit === satuan)?.factor ?? null;
-      return masterJasa.some(row => row.id === itemId) ? 1 : null;
-    };
-    const semua = kenaliPaket([...obat0, ...jasa0], siap.map(option => ({
-      id: option.id, harga: masterObat.find(row => row.id === option.id)?.harga ?? null, perPaket: isiDitagihPerPaket(option.resep!),
-    })), faktor);
-    const jasaPaket = semua.slice(obat0.length).filter(row => row.package_item_id).map(row => ({ ...row, jenis: "jasa" }));
-    return { obat: [...semua.slice(0, obat0.length), ...jasaPaket], jasa: semua.slice(obat0.length).filter(row => !row.package_item_id) };
-  });
-  const [obat, setObat] = useState<Line[]>(awal.obat);
-  const [jasa, setJasa] = useState<Line[]>(awal.jasa);
-  const [pesanPaket, setPesanPaket] = useState<string | null>(null);
-  const hargaNormal = (itemId: string, satuan: string, faktor: number) => {
-    const item = masterObat.find(row => row.id === itemId) ?? masterJasa.find(row => row.id === itemId);
-    if (!item) return 0;
-    return item.units?.find(unit => unit.unit === satuan)?.sell_price ?? item.harga * faktor;
-  };
-  const aturJumlahPaket = (packageId: string, jumlah: number) => {
-    if (!Number.isInteger(jumlah) || jumlah < 1) return;
-    const skala = (list: Line[]) => list.map(row => row.package_item_id === packageId && Number(row.package_qty) > 0
-      ? { ...row, qty: Math.round((row.qty / Number(row.package_qty)) * jumlah), package_qty: jumlah } : row);
-    setObat(skala); setJasa(skala);
-  };
-  const hapusPaket = (packageId: string) => {
-    setObat(list => list.filter(row => row.package_item_id !== packageId));
-    setJasa(list => list.filter(row => row.package_item_id !== packageId));
-  };
-  /** Paket dipilih di baris obat `i`: diganti isi paket (harga paket dibagi ke isinya). */
-  const pilihPaket = (i: number, packageId: string) => {
-    const option = packages.find(row => row.id === packageId);
-    const item = masterObat.find(row => row.id === packageId);
-    if (!option?.resep || !item) { setPesanPaket("Isi paket ini belum terbaca. Muat ulang halaman lalu coba lagi."); return; }
-    const sudah = [...obat, ...jasa].find(row => row.package_item_id === packageId);
-    if (sudah) { setObat(list => list.filter((_, j) => j !== i)); aturJumlahPaket(packageId, Number(sudah.package_qty ?? 1) + 1); return; }
-    const hasil = pecahPaket(option.resep, item.harga, 1, hargaNormal);
-    if (hasil.error !== null) { setPesanPaket(hasil.error); return; }
-    const baru = hasil.baris.map((row): Line => ({
-      key: crypto.randomUUID(), deskripsi: row.nama, qty: row.qty, harga: row.harga, item_id: row.item_id, satuan: row.satuan,
-      kategori: row.kategori, diskon_persen: 0, package_item_id: packageId, package_qty: 1, jenis: row.jenis,
-    }));
-    setObat(list => [...list.slice(0, i), ...baru, ...list.slice(i + 1)]);
-  };
+    jenis: row.jenis === "jasa" ? "jasa" : "obat", package_item_id: row.package_item_id, package_qty: row.package_qty,
+  })));
   const [reason, setReason] = useState("Konfirmasi keranjang rawat inap");
-  const rows = [...obat, ...jasa];
+  const [packageError, setPackageError] = useState<string | null>(null);
+  // One cart owns the source rows. The medicine table is only a projection: mixed
+  // package services appear on its single card without changing their source kind.
+  const inObat = (row: Line) => !!row.package_item_id || row.jenis !== "jasa";
+  const obat = rows.filter(inObat);
+  const jasa = rows.filter(row => !inObat(row));
+  const setTable = (kind: "obat" | "jasa", next: Line[]) => setRows(current => [
+    ...current.filter(row => kind === "obat" ? !inObat(row) : inObat(row)),
+    ...next.map(row => ({ ...row, jenis: row.jenis ?? kind })),
+  ]);
+  const packageQty = (id: string, count: number) => setRows(current => resizeInpatientPackage(current, id, count));
+  const removePackage = (id: string) => setRows(current => current.filter(row => row.package_item_id !== id));
+  const pickPackage = (table: Line[], index: number, id: string) => {
+    const option = packages.find(option => option.id === id);
+    const item = masterObat.find(item => item.id === id && item.paket);
+    const metadataError = inpatientPackageOptionError(option, masterObat, masterJasa);
+    if (metadataError || !option?.resep || !item || !Number.isFinite(item.harga) || item.harga < 0) { setPackageError(metadataError ?? "Resep paket belum dapat diverifikasi. Muat ulang sebelum memproses uang."); return; }
+    const master = [...masterObat, ...masterJasa];
+    const result = pecahPaket(option.resep, item.harga, 1, (itemId, unit, factor) => {
+      const component = master.find(row => row.id === itemId);
+      return component?.units?.find(row => row.unit === unit)?.sell_price ?? (component?.harga ?? 0) * factor;
+    });
+    if (result.error) { setPackageError(result.error); return; }
+    const selected = table[index];
+    const existing = rows.filter(row => row.package_item_id === id);
+    if (existing.length) {
+      const count = Number(existing[0].package_qty) + 1;
+      setRows(current => resizeInpatientPackage(current.filter(row => row !== selected), id, count));
+    } else {
+      const added: Line[] = result.baris.map(row => ({ key: crypto.randomUUID(), item_id: row.item_id, deskripsi: row.nama,
+        qty: row.qty, harga: row.harga, satuan: row.satuan, jenis: row.jenis, kategori: row.kategori,
+        package_item_id: id, package_qty: 1, diskon_persen: 0 }));
+      setRows(current => [...current.filter(row => row !== selected), ...added]);
+    }
+  };
   const subtotal = rows.reduce((sum, row) => sum + row.qty * row.harga, 0);
   const tax = Math.round(subtotal * ppnRate / 100);
   const pending = subtotal + tax;
@@ -83,16 +65,16 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
   const billed = data.history.reduce((sum, invoice) => sum + Number(invoice.total), 0);
   const hasPrior = data.history.some(invoice => invoice.total > 0 && !invoice.correction_pending);
   const payload = rows.map(row => ({ id: row.key ?? row.prescription_item_id, item_id: row.item_id ?? null, nama_obat: row.deskripsi, qty: row.qty, harga: row.harga, satuan: row.satuan ?? null,
-    jenis: jasa.includes(row) || row.jenis === "jasa" ? "jasa" : "obat", compound_recipe_id: row.recipe_id ?? null, service_performers: row.service_performers ?? null, diskon_persen: row.diskon_persen ?? 0 }));
+    jenis: row.jenis === "jasa" ? "jasa" : "obat", package_item_id: row.package_item_id ?? null, package_qty: row.package_qty ?? null, compound_recipe_id: row.recipe_id ?? null, service_performers: row.service_performers ?? null, diskon_persen: row.diskon_persen ?? 0 }));
+  const originError = inpatientPackageRowsError(rows, packages, masterObat, masterJasa);
+  if (packageError || originError) return <section className="card" role="alert">{packageError ?? originError}</section>;
   return <SimpanBayarForm recordId={recordId} visitId={visitId} requestKey={requestKey} remaining={remaining} pendingCount={rows.length} accounts={data.quote.accounts}
     compoundPending={data.compound_pending} applyCredit={Math.min(data.quote.credit, data.quote.debt)} bolehTerobos={bolehTerobos} dpOpsional={hasPrior ? Math.round(remaining / 2) : undefined}
     extraFields={{ pending_snapshot: data.snapshot, pending_rows: JSON.stringify(payload), cart_reason: reason }}
     presentation={{ patient, cashierName, catatanResep,
       cart: <>
-        <Popup message={pesanPaket} title="Paket belum bisa dipakai" onClose={() => setPesanPaket(null)} />
-        <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="ranap-obat" allowUnits sealedPerformers discountsDisabled
-          packages={packages} onPickPackage={pilihPaket} onPackageQty={aturJumlahPaket} onRemovePackage={hapusPaket} />
-        <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="ranap-jasa" allowUnits sealedPerformers discountsDisabled />
+        <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={next => setTable("obat", next)} master={masterObat} listId="ranap-obat" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled packages={packages} onPickPackage={(index, id) => pickPackage(obat, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
+        <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={next => setTable("jasa", next)} master={masterJasa} listId="ranap-jasa" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled packages={packages} onPickPackage={(index, id) => pickPackage(jasa, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
         {data.rows.filter(row => row.compound_recipe_id).map(row => <p key={row.id}>Racikan {row.nama_obat}: <Link href={`/klinik/racik/${row.compound_recipe_id}`}>Aksi koreksi / pengembalian bahan</Link> (tidak dikeluarkan ulang saat bayar).</p>)}
         <label className="flab">Alasan / catatan revisi keranjang<input className="fi" aria-label="Alasan revisi keranjang" value={reason} onChange={event => setReason(event.target.value)} minLength={3} maxLength={1000} /></label>
       </>,

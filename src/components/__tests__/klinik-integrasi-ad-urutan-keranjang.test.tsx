@@ -23,6 +23,8 @@ vi.mock("@/app/(app)/klinik/rawat-inap/actions", () => ({ admitInpatient: vi.fn(
 import Page from "@/app/(app)/klinik/pembayaran/[visitId]/page";
 
 const catalogue = fictionalCatalogue(50);
+// The issued invoice in the timeout case is independent of the pending cart.
+const invoiceItems = [{ id: "line-a", deskripsi: "Obat terbit", qty: 1, harga: 1000, jenis: "obat", item_id: catalogue[1].id, diskon_persen: 0, compound_recipe_id: null, prescription_item_id: null, satuan: "pcs" }];
 const visit = { id: "visit-a", status: "Pembayaran", poli: "Poli Umum", dokter: "Drh Fiksi", created_at: "2026-10-31T02:00:00Z", branch_id: "branch-a", customer_id: "cust-a", doctor_id: "doc-a", service_provider_id: null, pets: { name: "Milo", species: "Kucing", weight: 4, photo_url: null }, customers: { name: "Pemilik Fiksi", phone: "0800", address: null, review_catatan: null, customer_review_statuses: null } };
 const awal = { id: "rx-a", nama_obat: "Jasa periksa", qty: 1, harga: 100000, jenis: "jasa", kategori: null, item_id: catalogue[0].id, satuan: "jasa", compound_recipe_id: null };
 const susulan = { id: "rx-susulan", nama_obat: "Obat susulan dokter", qty: 1, harga: 25000, jenis: "obat", kategori: null, item_id: catalogue[1].id, satuan: "pcs", compound_recipe_id: null };
@@ -55,6 +57,7 @@ function respond(call: Call) {
     case "medical_records": return { data: { id: "record-a", catatan_resep: null } };
     case "inpatient_records": return { data: null };
     case "invoices": return { data: [] };
+    case "invoice_items": return paged(call, invoiceItems);
     case "prescription_items": {
       const reply = { data: db.rows.map((r) => ({ ...r })) };
       doctorInsertsAfterFirstOf("baris");

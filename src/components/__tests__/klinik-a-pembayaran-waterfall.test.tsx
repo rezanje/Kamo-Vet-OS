@@ -16,6 +16,8 @@ vi.mock("@/app/(app)/klinik/rawat-inap/actions", () => ({ admitInpatient: vi.fn(
 import Page from "@/app/(app)/klinik/pembayaran/[visitId]/page";
 
 const catalogue = fictionalCatalogue();
+// A saved 1.000 invoice has its persisted source line, not an empty detail read.
+const invoiceItems = [{ id: "line-a", deskripsi: "Amoxicillin", qty: 1, harga: 1000, jenis: "obat", item_id: catalogue[1].id, diskon_persen: 0, compound_recipe_id: null, prescription_item_id: "rx-a", satuan: "pcs" }];
 const visit = { id: "visit-a", status: "Pembayaran", poli: "Poli Umum", dokter: "Drh Fiksi", created_at: "2026-10-30T02:00:00Z", branch_id: "branch-a", customer_id: "cust-a", doctor_id: "doc-a", service_provider_id: null, pets: { name: "Milo", species: "Kucing", weight: 4, photo_url: null }, customers: { name: "Pemilik Fiksi", phone: "0800", address: null, review_catatan: null, customer_review_statuses: null } };
 function respond(call: Call) {
   if (call.kind === "auth") return {};
@@ -35,6 +37,7 @@ function respond(call: Call) {
     case "medical_records": return { data: { id: "record-a", catatan_resep: null } };
     case "inpatient_records": return { data: s.inpatient ? { id: "inpat-a", consent_id: null, discharged_at: null } : null };
     case "invoices": return { data: s.invoice ? [s.invoice] : [] };
+    case "invoice_items": return paged(call, invoiceItems);
     case "prescription_items": return { data: [{ id: "rx-a", nama_obat: "Amoxicillin", qty: 1, harga: 1000, jenis: "obat", kategori: null, item_id: catalogue[1].id, satuan: "pcs", compound_recipe_id: null }] };
     case "pajak_settings": return { data: { mode_pkp: false, ppn_rate: 11 } };
     case "profiles": return { data: { role: "ADMIN", full_name: "Kasir Fiksi", is_active: true } };

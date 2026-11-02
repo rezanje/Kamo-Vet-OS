@@ -16,7 +16,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
  if(table==='inpatient_records')data=null;
  const inv={id:'inv',invoice_no:'INV-FIK',paid_status:'Belum Lunas',total:100,subtotal:100,discount:0,tax:0,dp_amount:0,created_at:'2026-10-31T00:00:00Z',metode_bayar:'Tunai',correction_pending:false};
  if(table==='invoices')data=single?(state.mode==='unpaid'?inv:null):selected.includes('reissued_from')?(state.mode==='unpaid'?[inv]:[]):[];
- if(table==='invoice_items')data=[{deskripsi:'Tersimpan',qty:1,harga:100,jenis:'jasa'}];
+ if(table==='invoice_items')data=[{id:'saved-line',deskripsi:'Tersimpan',qty:1,harga:100,jenis:'jasa'}];
  if(table==='prescription_items')data=selected.includes('nama_obat')?[{id:'rx-a',nama_obat:'Jasa periksa',qty:1,harga:100000,jenis:'jasa',item_id:'svc'},{id:'rx-b',nama_obat:'Obat susulan dokter',qty:1,harga:25000,jenis:'obat',item_id:'med'}]:[];
  if(table==='items')data=single?null:[];
  if(table==='clinic_demo_invoice_snapshots')data=null;

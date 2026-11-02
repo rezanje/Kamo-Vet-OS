@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Popup } from "@/components/Popup";
 import type { createClient } from "@/lib/supabase/server";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
+import { customerPackageLines } from "@/lib/clinic-package-print";
 
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
@@ -15,25 +16,38 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
  db:Awaited<ReturnType<typeof createClient>>;visitId:string;recordId:string;branchId:string|null;userId:string;query:Query;
  patient:PaymentPatient;catatanResep?:string|null;stayStatus?:string;
 }) {
- const [read,master,minDpPercent,profile,packages]=await Promise.all([
+ const [read,master,minDpPercent,profile]=await Promise.all([
   db.rpc("clinic_read_inpatient_cashier",{p_record_id:recordId,p_visit_id:visitId}),loadClinicPaymentMaster(db,branchId),getDpMinimalPercent(db),
   db.from("profiles").select("role,full_name").eq("id",userId).maybeSingle(),
-  // Paket gagal dibaca = paket tidak ditawarkan; kasir tetap jalan.
-  loadClinicPackages(db).catch(()=>[]),
  ]);
- // Anisa 2 Nov: paket (Grup) yang dipilih utuh ditolak database rawat inap. Paket hanya ditawarkan bila
- // resepnya utuh, dan saat dipilih dipecah jadi isinya.
- const paketSiap=new Set(packages.filter(option=>option.resep).map(option=>option.id));
- const masterObat=master.obat.filter(item=>!item.paket||paketSiap.has(item.id));
  const data=read.data as InpatientCashierData|InpatientCashierReadOnly|null;
  const editable=data?.state==="SHIFT_REQUIRED"?null:data;
  if(read.error||!data||!Array.isArray(data.history)||!Array.isArray(data.receipts)||!Array.isArray(data.applications)||
   (editable ? typeof editable.snapshot!=="string"||!Array.isArray(editable.rows)||!editable.quote||!Array.isArray(editable.quote.accounts)||!editable.tax_settings||typeof editable.tax_settings.mode_pkp!=="boolean"||!Number.isFinite(Number(editable.tax_settings.ppn_rate))||Number(editable.tax_settings.ppn_rate)<0||Number(editable.tax_settings.ppn_rate)>100 : data.quote!==null||data.snapshot!==null))return <section className="card" role="alert">Tagihan rawat inap belum dapat diverifikasi. Muat ulang sebelum memproses uang.</section>;
+ // Package recipes use the existing counted, paginated reader. A partial/error
+ // must never degrade a Grup pick to an ordinary SKU. Read-only history needs no recipes.
+ let packages: Awaited<ReturnType<typeof loadClinicPackages>> = [];
+ if(editable) {
+  try { packages = await loadClinicPackages(db); }
+  catch { return <section className="card" role="alert">Resep paket rawat inap belum dapat diverifikasi. Muat ulang sebelum memproses uang.</section>; }
+ }
  const savedInvoice=query.invoice?data.history.find(i=>i.id===query.invoice&&!i.correction_pending):null;
  const savedReceipt=query.receipt?data.receipts.find(r=>r.id===query.receipt&&r.status==="aktif"):null;
  const ids=query.applications?.split(",")??[];
  const savedApplications=ids.length>0&&ids.length<=200&&new Set(ids).size===ids.length&&ids.every(id=>data.applications.some(a=>a.id===id&&Number(a.amount)>0&&!a.released_at&&data.history.some(i=>i.id===a.invoice_id&&!i.correction_pending)));
  const saved=query.success==="transaksi"&&(!query.invoice||!!savedInvoice)&&(!query.receipt||!!savedReceipt)&&(!query.applications||savedApplications)&&!!(savedInvoice||savedReceipt||savedApplications);
+ // Display-only grouping uses saved invoice origin, not today's recipe. Issued
+ // totals/DP/receipts and every underlying source row remain untouched.
+ const historyDisplay = new Map(data.history.map(invoice => {
+  try {
+   if(invoice.lines.some(line => (line.package_item_id != null) !== (line.package_qty != null))) throw new Error("Incomplete saved origin");
+   // Native history binds this flat name to the saved package ID. Adapt only
+   // the display projection; never infer membership or mutate issued source rows.
+   const sourceLines = invoice.lines.map(line => line.package_item_id && line.package_name !== undefined
+    ? { ...line, package: line.package_name === null ? null : { name: line.package_name } } : line);
+   return [invoice.id, customerPackageLines(sourceLines).map(line => ({ ...line, sourceIds: line.sources.map(source => sourceLines.find(original => original === source)!.id) }))] as const;
+  } catch { return [invoice.id, null] as const; }
+ }));
  const settled=editable&&editable.quote.remaining===0&&editable.rows.length===0&&!data.history.some(i=>i.correction_pending);
  return <>
   <Link className="back-btn" href="/klinik/rawat-inap">Status Rawat Inap</Link>
@@ -41,14 +55,14 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
   {stayStatus&&<div style={{fontSize:11,color:"var(--tm)",marginBottom:12}}>{stayStatus}</div>}
   <Popup message={query.error}/>
   {editable&&!query.error&&saved&&<Popup tone="success" title={settled&&data.history.length?"Pembayaran lunas":savedApplications?"Saldo pemilik diterapkan":savedReceipt?"Pembayaran diterima":"Transaksi tersimpan"} message={`${savedInvoice?.invoice_no??savedReceipt?.no_kwitansi??"Pemakaian saldo pemilik"} · Sisa pembayaran ${rp(editable.quote.remaining)}`}/>}
-  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} patient={patient} catatanResep={catatanResep} cashierName={profile.data?.full_name??"Akun kasir"} masterObat={masterObat} packages={packages} masterJasa={master.jasa}
+  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} patient={patient} catatanResep={catatanResep} cashierName={profile.data?.full_name??"Akun kasir"} masterObat={master.obat} masterJasa={master.jasa} packages={packages}
    ppnRate={editable.tax_settings.mode_pkp?Number(editable.tax_settings.ppn_rate):0} minDpPercent={minDpPercent} bolehTerobos={bolehMenerobosDp(profile.data?.role??null)}/>:<><PaymentPatientHeader patient={patient}/><section className="card" role="status">Riwayat tetap dapat dibaca. Buka shift klinik milik Anda sebelum mengubah keranjang atau memproses pembayaran. <Link href="/klinik/shift">Buka shift</Link></section></>}
   <section className="card" style={{marginTop:12}}><h2 style={{fontSize:16}}>INVOICE / RIWAYAT TAHAP · BACA SAJA</h2>
    <p>Setiap pilihan membuka invoice yang benar-benar diterbitkan, bukan nomor invoice gabungan baru.</p>
    {data.history.map(invoice=><details key={invoice.id} style={{marginBottom:10}}><summary><b>{invoice.invoice_no}</b> · {invoice.paid_status} · Total {rp(invoice.total)} · Dibayar {rp(invoice.received)} · Sisa {rp(Math.max(0,invoice.total-invoice.received))} <Link href={`/klinik/pembayaran/${visitId}/invoice?invoice_id=${invoice.id}`} className="btn-acc">Cetak Invoice {invoice.invoice_no}</Link></summary>
     {editable&&bolehSiklusTagihan(profile.data?.role??null)&&<Link href={`/klinik/pembayaran/${visitId}?invoice_id=${invoice.id}`}>Kelola dokumen ini (alur koreksi terpisah)</Link>}
     {Number(invoice.dp_amount)>0&&<p>DP awal tersimpan: {rp(Number(invoice.dp_amount))} (bukan penerimaan baru)</p>}
-    <table className="tbl"><thead><tr><th>Item</th><th>Qty</th><th>Harga</th></tr></thead><tbody>{invoice.lines.map(line=><tr key={line.id}><td>{line.deskripsi}</td><td>{line.qty}</td><td>{rp(Number(line.harga))}</td></tr>)}</tbody></table>
+    {historyDisplay.get(invoice.id) ? <table className="tbl"><thead><tr><th>Item</th><th>Qty</th><th>Harga</th><th>Subtotal</th></tr></thead><tbody>{historyDisplay.get(invoice.id)!.map(line=><tr key={line.sourceIds.join(",")} data-history-source-ids={line.sourceIds.join(",")}><td>{line.deskripsi}</td><td>{line.qty}</td><td>{rp(line.harga)}</td><td>{rp(line.jumlah)}</td></tr>)}</tbody></table> : <p role="alert">Rincian paket invoice belum dapat diverifikasi. Muat ulang; nilai invoice tersimpan tidak diubah.</p>}
    </details>)}
    {!data.history.length&&<p>Belum ada invoice terbit. Saldo pemilik saja bukan invoice penjualan.</p>}
   </section>

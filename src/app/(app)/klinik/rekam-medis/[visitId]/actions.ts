@@ -1,6 +1,7 @@
 "use server";
 import { servicePerformerInput, type ServicePerformersInput } from "@/lib/service-performers";
 import { bmhpInput, type BmhpInput } from "@/lib/procedure-bmhp";
+import { clinicPackageOriginInput, type ClinicPackageOrigin } from "@/lib/clinic-package-origin";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 
 import { redirect } from "next/navigation";
@@ -132,6 +133,11 @@ export async function simpanRekamMedis(formData: FormData) {
   // older databases keep the exact previous payload instead of failing saves.
   let bmhpRows: (BmhpInput[] | null)[] = [];
   let bmhpError: string | null = null;
+  let packageOrigins: ClinicPackageOrigin[] = [];
+  let packageError: string | null = null;
+  try { packageOrigins = resep.map(clinicPackageOriginInput); }
+  catch (error) { packageError = error instanceof Error ? error.message : "Asal paket tidak valid"; }
+  if (packageError) return redirect(`${back}?error=${encodeURIComponent(packageError)}`);
   // Tindakan jasa maupun persediaan (pekerjaan pesanan) sama-sama boleh membawa BMHP.
   try { bmhpRows = resep.map(r => r.item_id && r.jenis !== "racikan" ? bmhpInput(r.bmhp) : null); }
   catch (error) { bmhpError = error instanceof Error ? error.message : "BMHP tidak valid"; }
@@ -200,9 +206,9 @@ export async function simpanRekamMedis(formData: FormData) {
     return redirect(`${back}?error=${encodeURIComponent("Pencatatan BMHP tindakan belum aktif di database. Hapus BMHP atau hubungi admin.")}`);
   }
   const rows = resep
-    .map((r, index) => ({ r, bmhp: bmhpRows[index] }))
+    .map((r, index) => ({ r, bmhp: bmhpRows[index], origin: packageOrigins[index] }))
     .filter(({ r }) => r.nama_obat?.trim() && r.jenis !== "racikan")
-    .map(({ r, bmhp }) => ({
+    .map(({ r, bmhp, origin }) => ({
       nama_obat: r.nama_obat.trim(),
       // Tautan ke master barang (migrasi 0084) — tanpa ini stok obat klinik
       // tidak bisa dipotong dan modalnya tidak pernah tercatat.
@@ -219,6 +225,7 @@ export async function simpanRekamMedis(formData: FormData) {
       // Kategori tindakan (§6.3) — dasar penentuan wajib/tidaknya form persetujuan.
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
       ...(bmhp?.length ? { bmhp_components: bmhp } : {}),
+      ...origin,
     }));
   // Satu RPC untuk seluruh pemeriksaan. Gagal pada formula, stok, follow-up,
   // atau status kunjungan akan me-rollback semua baris, termasuk rekam medis.
@@ -299,6 +306,11 @@ export async function tambahItemRekamMedis(formData: FormData) {
   // K02: BMHP hanya dikirim bila kontraknya sudah ada di database (pola simpanRekamMedis).
   let bmhpRows: (BmhpInput[] | null)[] = [];
   let bmhpError: string | null = null;
+  let packageOrigins: ClinicPackageOrigin[] = [];
+  let packageError: string | null = null;
+  try { packageOrigins = resep.map(clinicPackageOriginInput); }
+  catch (error) { packageError = error instanceof Error ? error.message : "Asal paket tidak valid"; }
+  if (packageError) return redirect(`${form}?error=${encodeURIComponent(packageError)}`);
   try { bmhpRows = resep.map(r => r.item_id && r.jenis !== "racikan" ? bmhpInput(r.bmhp) : null); }
   catch (error) { bmhpError = error instanceof Error ? error.message : "BMHP tidak valid"; }
   const needsBmhp = !bmhpError && bmhpRows.some(row => row?.length);
@@ -323,9 +335,9 @@ export async function tambahItemRekamMedis(formData: FormData) {
   }
 
   const items = resep
-    .map((r, index) => ({ r, bmhp: bmhpRows[index] }))
+    .map((r, index) => ({ r, bmhp: bmhpRows[index], origin: packageOrigins[index] }))
     .filter(({ r }) => r.nama_obat?.trim() && r.jenis !== "racikan")
-    .map(({ r, bmhp }) => ({
+    .map(({ r, bmhp, origin }) => ({
       nama_obat: r.nama_obat.trim(),
       item_id: r.item_id ?? null,
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
@@ -337,6 +349,7 @@ export async function tambahItemRekamMedis(formData: FormData) {
       ...(r.service_performers != null ? { service_performers: servicePerformerInput(r.service_performers) } : {}),
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
       ...(bmhp?.length ? { bmhp_components: bmhp } : {}),
+      ...origin,
     }));
   const compounds = resep.filter((r) => r.jenis === "racikan" &&
     (r.official_version_id || (r.ingredients ?? []).length > 0)).map(compoundPayload);
@@ -434,6 +447,7 @@ export async function koreksiRekamMedisLengkap(formData: FormData) {
   try {
     const raw: unknown = JSON.parse(String(formData.get("resep") ?? "[]"));
     if (!Array.isArray(raw) || raw.length > 200) throw Error("Keranjang tidak valid");
+    const packageOrigins = new Map(raw.map(row => [row, clinicPackageOriginInput(row)]));
     // Racikan BARU (belum punya baris resep tersimpan) diracik lewat alur racik berjejak di
     // RPC pembungkus — bahan keluar saat itu juga. Racikan yang sudah dibuat tetap baris
     // tersimpan yang dikunci; koreksinya lewat Aksi racikan.
@@ -449,6 +463,7 @@ export async function koreksiRekamMedisLengkap(formData: FormData) {
       kategori: row.kategori ?? null, aturan_pakai: row.aturan_pakai ?? null,
       compound_recipe_id: row.compound_recipe_id ?? null,
       bmhp_components: bmhpInput(row.bmhp), service_performers: row.service_performers ?? null,
+      ...packageOrigins.get(row),
     }));
   } catch (error) { fail(error instanceof Error ? error.message : "Keranjang tidak valid"); }
   const text = (name: string) => String(formData.get(name) ?? "") || null;

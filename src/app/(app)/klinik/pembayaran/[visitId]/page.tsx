@@ -12,6 +12,7 @@ import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
 import { ClinicPaymentCorrectionPanel, type ClinicPaymentCorrectionRow } from "./ClinicPaymentCorrectionPanel";
 import { clinicCorrectableParts } from "@/lib/clinic-payment-correction";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
+import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { randomUUID, createHash } from "node:crypto";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -33,7 +34,18 @@ import { perkiraanTagihan, bekalPotonganKlinik, nilaiBaris } from "@/lib/tagihan
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 import { mulai } from "@/lib/u07-waktu";
+import { readCompleteList } from "@/lib/checked-list";
 
+type SavedPrescriptionSource = Omit<PackagePrintSource, "deskripsi"> & {
+  id: string; nama_obat: string; jenis: string | null; kategori: string | null;
+  item_id: string | null; satuan: string | null; compound_recipe_id: string | null;
+  salesperson_id?: string | null;
+};
+type SavedInvoiceSource = PackagePrintSource & {
+  id: string; jenis: string; item_id: string | null; diskon_persen: number;
+  compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null;
+  salesperson_id?: string | null;
+};
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
@@ -112,7 +124,10 @@ export default async function PembayaranPage({
   // tersimpan mengabaikan hasil versi ini.
   const cartVersionP = outpatient ? mulai(supabase.rpc("clinic_outpatient_cart_version", {p_visit_id:visitId})) : null;
   // Satu bacaan resep untuk baris tagihan DAN kategori consent (dulu dibaca dua kali).
-  const resepP = outpatient && mr ? mulai(cartVersionP!.then(() => supabase.from("prescription_items").select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, service_performers, salesperson_id, salesperson_name").eq("medical_record_id", mr.id).order("created_at"))) : null;
+  const resepP = outpatient && mr ? mulai(cartVersionP!.then(() => readCompleteList<SavedPrescriptionSource>((from, to) => supabase.from("prescription_items")
+    .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, service_performers, salesperson_id, salesperson_name, package_item_id, package_qty, package:items!prescription_items_package_item_id_fkey(name)", { count: "exact" })
+    .eq("medical_record_id", mr.id).order("created_at").order("id").range(from, to), "Rincian resep tagihan", { maxRows: null }))
+    .catch(() => { throw unverifiedBilling(); })) : null;
   const consentRowsP = outpatient ? mulai(supabase.from("consents").select("status").eq("visit_id", visitId)) : null;
   const aturanConsentP = outpatient ? mulai(bacaAturanConsent(supabase)) : null;
   const pajakP = outpatient ? mulai(getPajakSettings(supabase)) : null;
@@ -178,7 +193,10 @@ export default async function PembayaranPage({
   let masterP = invoice ? null : startMaster();
   let serviceStaffP = invoice ? null : mulai(loadServiceStaff(supabase, visit.branch_id ?? null));
   // Klinik-A: bacaan yang hanya butuh invoice terpilih ikut berangkat bersama cek DEMO/koreksi.
-  const invItemsP = invoice ? mulai(supabase.from("invoice_items").select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name").eq("invoice_id", invoice.id).order("created_at")) : null;
+  const invItemsP = invoice ? mulai(readCompleteList<SavedInvoiceSource>((from, to) => supabase.from("invoice_items")
+    .select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name)", { count: "exact" })
+    .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian tagihan tersimpan", { maxRows: null })
+    .catch(() => { throw unverifiedBilling(); })) : null;
   const paymentRowsP = invoice ? mulai(supabase.from("invoice_payments").select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id)) : null;
   const refundDataP = invoice && invoice.paid_status === "Lunas" && !invoice.correction_pending ? mulai(loadClinicRefundData(supabase, invoice.id)) : null;
   // J02: peran pembaca + riwayat koreksi metode ikut berangkat bersama bacaan invoice
@@ -215,13 +233,11 @@ export default async function PembayaranPage({
   const cartVersion = versiKeranjang(!invoice, cartVersionP ? await cartVersionP : {data:null,error:null});
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
   const demoSnapshot = demoSnapshotResult.data;
-  const { data: invItems, error: itemsError } = invItemsP
-    ? await invItemsP
-    : { error: null, data: [] as { id?: string; deskripsi: string; qty: number; harga: number; jenis: string; item_id: string | null; diskon_persen: number; compound_recipe_id: string | null; prescription_item_id: string | null; satuan: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
+  const invItems: SavedInvoiceSource[] = invItemsP ? await invItemsP : [];
   const { data: paymentRows, error: paymentsError } = paymentRowsP
     ? await paymentRowsP
     : { error: null, data: [] as { id: string; amount: number; metode: string | null; transferred_from: string | null }[] };
-  if (itemsError || paymentsError) throw unverifiedBilling();
+  if (paymentsError) throw unverifiedBilling();
   const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const paidAmount = Number(invoice?.dp_amount ?? 0) + (paymentRows ?? [])
@@ -254,16 +270,15 @@ export default async function PembayaranPage({
 
   // prefill item dari resep saat belum bayar: harga sudah diisi dokter di POS rekam medis
   // (kasir tetap boleh edit). Fallback jasa konsultasi kalau dokter tak input item apa pun.
-  const { data: resep, error: prescriptionError } = resepP
-    ? await resepP
-    : { error: null, data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; kategori: string | null; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null; salesperson_id?: string | null; salesperson_name?: string | null }[] };
-  if (prescriptionError) throw unverifiedBilling();
+  const resep: SavedPrescriptionSource[] = resepP ? await resepP : [];
+  if (resep.some(row => row.package_item_id && (!one(row.package ?? null)?.name?.trim() || !Number.isInteger(Number(row.package_qty)) || Number(row.package_qty) <= 0))) throw unverifiedBilling();
   // item_id ikut dibawa (migrasi 0084): tanpa itu stok obat tidak bisa dipotong
   // saat pasien menebus, dan modalnya tidak pernah tercatat.
   const resepRows = (resep ?? []).map((r) => ({
     deskripsi: r.nama_obat, qty: r.qty, harga: Number(r.harga) || 0,
     jenis: r.jenis ?? "obat", item_id: r.item_id ?? null, satuan: r.satuan ?? null,
     prescription_item_id: r.id, recipe_id: r.compound_recipe_id ?? null,
+    ...(r.package_item_id ? {package_item_id:r.package_item_id,package_qty:Number(r.package_qty)} : {}),
     ...(r.salesperson_id ? {salesperson_id:r.salesperson_id, salesperson_name:r.salesperson_name ?? null} : {}),
     ...(r.service_performers != null ? {service_performers:r.service_performers} : {}),
   }));
@@ -325,6 +340,11 @@ export default async function PembayaranPage({
     .reduce((a, b) => a + (perkiraan.get(b.visitId)?.total ?? 0), 0);
   const tertahanConsent = belumDitagih.filter((b) => perkiraan.get(b.visitId)?.bisaDibayar === false);
 
+  const savedDisplay = invoice ? customerPackageLines(invItems, { subtotal: invoice.subtotal }) : [];
+  const savedPackages = [...new Map((invItems ?? []).filter(l => l.package_item_id).map(l => {
+    const relation = Array.isArray(l.package) ? l.package[0] : l.package;
+    return [l.package_item_id!, { id: l.package_item_id!, name: relation!.name!, componentIds: [] as string[] }] as const;
+  })).values()];
   // Split obat vs jasa dari kolom `jenis` (2 tabel gaya referensi).
   const sourceItems = invoice
     ? (invItems ?? []).map((l) => ({
@@ -334,6 +354,7 @@ export default async function PembayaranPage({
         ...(l.id ? {source_invoice_item_id:l.id} : {}),
         salesperson_id:l.salesperson_id ?? null, salesperson_name:l.salesperson_name ?? null,
         diskon_persen: Number(l.diskon_persen) || 0,
+        ...(l.package_item_id ? {package_item_id:l.package_item_id,package_qty:Number(l.package_qty)} : {}),
         ...(l.service_performers != null ? {service_performers:l.service_performers} : {}),
       }))
     : prefill;
@@ -351,6 +372,10 @@ export default async function PembayaranPage({
   // terjual tapi persediaan tidak pernah berkurang.
   const { obat: masterObatSemua, jasa: masterJasa } = masterP ? await masterP : { obat: [], jasa: [] };
   const clinicPackages = clinicPackagesP ? await clinicPackagesP : [];
+  const recordedPackages = [...new Map(resep.filter(row => row.package_item_id).map(row => [row.package_item_id!, {
+    id: row.package_item_id!, name: one(row.package ?? null)!.name!, componentIds: [] as string[],
+  }] as const)).values()];
+  const packagesForPayment = [...clinicPackages, ...recordedPackages.filter(row => !clinicPackages.some(option => option.id === row.id))];
   // Paket (Grup) hanya ditawarkan bila resepnya terbaca utuh — saat dipilih, paket dipecah
   // jadi isinya. Paket tanpa resep (atau koreksi tagihan) tidak bisa ditagih langsung.
   const paketSiap = new Set(clinicPackages.filter(option => option.resep).map(option => option.id));
@@ -624,6 +649,7 @@ export default async function PembayaranPage({
           bolehTerobosDp={bolehTerobosDp}
           editMode
           targetInvoiceId={invoice.id}
+          packages={savedPackages}
         />
       ) : invoice ? (
         <>
@@ -666,13 +692,13 @@ export default async function PembayaranPage({
             <table className="tbl">
               <thead><tr><th>Item</th><th style={{ textAlign: "center" }}>Qty</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "center" }}>Disk %</th><th style={{ textAlign: "right" }}>Subtotal</th></tr></thead>
               <tbody>
-                {(invItems ?? []).map((l, i) => (
+                {savedDisplay.map((l, i) => (
                   <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{l.deskripsi}{l.salesperson_name && <div style={{fontSize:10}}>Penjual (data lama): {l.salesperson_name}</div>}<div style={{fontSize:10}}>{servicePerformerNames(l.service_performers).join(" · ")}</div></td>
+                    <td style={{ fontWeight: 500 }}>{l.deskripsi}{l.sources.some(s => s.salesperson_name) && <div style={{fontSize:10}}>Penjual (data lama): {[...new Set(l.sources.map(s => s.salesperson_name).filter(Boolean))].join(" · ")}</div>}<div style={{fontSize:10}}>{[...new Set(l.sources.flatMap(s => servicePerformerNames(s.service_performers)))].join(" · ")}</div></td>
                     <td style={{ textAlign: "center" }}>{l.qty}</td>
                     <td style={{ textAlign: "right" }}>{rp(l.harga)}</td>
-                    <td style={{ textAlign: "center" }}>{Number(l.diskon_persen) > 0 ? `${Number(l.diskon_persen)}%` : "—"}</td>
-                    <td style={{ textAlign: "right" }}>{rp(nilaiBaris(l))}</td>
+                    <td style={{ textAlign: "center" }}>{l.diskon_persen === null ? rp(l.diskon) : Number(l.diskon_persen) > 0 ? `${Number(l.diskon_persen)}%` : "—"}</td>
+                    <td style={{ textAlign: "right" }}>{rp(l.jumlah)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -733,7 +759,7 @@ export default async function PembayaranPage({
           masterObat={masterObat}
           masterJasa={masterJasa}
           bekal={bekalForm()}
-          packages={clinicPackages}
+          packages={packagesForPayment}
           demoPolicy={demoPolicy}
           demoStaff={demoStaffResult.data ?? []}
           serviceStaff={serviceStaff}

@@ -9,15 +9,17 @@ const recipeId = '30000000-0000-4000-8000-000000000003';
 const state = vi.hoisted(() => ({ recipe: null as Recipe, selected: [] as string[] }));
 vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND'); } }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ from(table: string) {
+  let from = 0, to = Number.MAX_SAFE_INTEGER, exact = false;
   const query = {
-    select(columns: string) { if (table === 'invoice_items') state.selected.push(columns); return query; },
+    select(columns: string, options?: { count?: string }) { exact = options?.count === 'exact'; if (table === 'invoice_items') state.selected.push(columns); return query; },
     eq() { return query; }, is() { return query; }, order() { return query; }, limit() { return query; },
+    range(start: number, end: number) { from = start; to = end; return query; },
     maybeSingle: async () => ({ data: table === 'visits' ? { id: visitId, poli: 'Umum', created_at: '2026-10-24T00:00:00Z' } : table === 'invoices' ? {
       id: invoiceId, invoice_no: 'INV-FICTION', subtotal: 100, discount: 0, tax: 0, total: 100, dp_amount: 0, paid_status: 'Lunas', created_at: '2026-10-24T00:00:00Z',
     } : null, error: null }),
-    then(resolve: (result: unknown) => unknown) { return Promise.resolve({ data: table === 'invoice_items' ? [{
-      deskripsi: 'Racikan fiktif', qty: 1, harga: 100, diskon_persen: 0, jenis: 'obat', compound_recipe_id: recipeId, compounding_recipes: state.recipe,
-    }] : [], error: null }).then(resolve); },
+    then(resolve: (result: unknown) => unknown) { const rows = table === 'invoice_items' ? [{
+      id: 'line', invoice_id: invoiceId, deskripsi: 'Racikan fiktif', qty: 1, harga: 100, diskon_persen: 0, jenis: 'obat', compound_recipe_id: recipeId, compounding_recipes: state.recipe,
+    }] : []; return Promise.resolve({ data: rows.slice(from, to + 1), error: null, count: exact ? rows.length : null }).then(resolve); },
   };
   return query;
 } }) }));

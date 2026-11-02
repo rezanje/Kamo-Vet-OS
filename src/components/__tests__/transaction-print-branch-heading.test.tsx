@@ -31,9 +31,15 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       : table === "visits" ? { id: "visit", pets: { name: "Pasien Uji" }, customers: { name: "Pelanggan Uji" }, branches: { name: "Cabang Kunjungan Salah", code: "WRONG" } }
       : table === "company_settings" ? { ppn_rate: 11, nama_perusahaan: "Perusahaan Bukan Cabang" }
       : table === "clinic_demo_invoice_snapshots" ? null : [];
-    const q = { select: (s: string) => { state.selects.push(`${table}:${s}`); return q; }, eq: () => q, is: () => q,
-      in: () => q, order: () => q, limit: () => q, range: () => q, maybeSingle: async () => ({ data, error: null, count: 1 }),
-      then: (resolve: (r: unknown) => unknown) => Promise.resolve({ data: table === "invoices" && state.invoiceResult !== undefined ? state.invoiceResult?.map(invoice_no => ({ ...invoice, id: invoice_no, invoice_no })) ?? null : table === "sales_invoices" || table === "invoices" ? [invoice] : table === "visits" ? [] : data, error: table === "invoices" && state.invoiceError ? { message: "read failed" } : null, count: table === "sales_invoices" ? 1 : 0 }).then(resolve) };
+    const invoiceRows = state.invoiceResult !== undefined ? state.invoiceResult?.map(invoice_no => ({ ...invoice, id: invoice_no, invoice_no })) ?? null : [invoice];
+    const clinicItems = (invoiceRows ?? []).map(inv => ({ id: `line-${inv.id}`, invoice_id: inv.id, deskripsi: "Saved clinic service", qty: 1, harga: 100000, diskon_persen: 0 }));
+    let from = 0, to = Number.MAX_SAFE_INTEGER, exact = false;
+    const q = { select: (s: string, options?: { count?: string }) => { exact = options?.count === "exact"; state.selects.push(`${table}:${s}`); return q; }, eq: () => q, is: () => q,
+      in: () => q, order: () => q, limit: () => q, range: (start: number, end: number) => { from = start; to = end; return q; }, maybeSingle: async () => ({ data, error: null, count: 1 }),
+      then: (resolve: (r: unknown) => unknown) => {
+        const rows = table === "invoice_items" ? clinicItems : table === "invoices" ? invoiceRows : table === "sales_invoices" ? [invoice] : table === "visits" ? [] : data;
+        return Promise.resolve({ data: Array.isArray(rows) ? rows.slice(from, to + 1) : rows, error: table === "invoices" && state.invoiceError ? { message: "read failed" } : null, count: exact && Array.isArray(rows) ? rows.length : null }).then(resolve);
+      } };
     return q;
   },
 }) }));

@@ -3,13 +3,14 @@ import { beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ name: "Vitamin B12", code: "SKU-REF" }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND"); } }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from(table: string) {
+  let from = 0, to = Number.MAX_SAFE_INTEGER, exact = false;
   const query = {
-    select() { return query; }, eq() { return query; }, is() { return query; }, order() { return query; }, limit() { return query; },
+    select(_columns: string, options?: { count?: string }) { exact = options?.count === "exact"; return query; }, range(start: number, end: number) { from = start; to = end; return query; }, eq() { return query; }, is() { return query; }, order() { return query; }, limit() { return query; },
     maybeSingle: async () => ({ data: table === "visits" ? { id: "visit", created_at: "2026-10-23T00:00:00Z", poli: "Umum", dokter: "Fictional doctor", pets: { name: "Fictional pet", species: "Kucing" }, customers: { name: "Fictional owner" }, branches: { name: "Fictional branch" } }
       : table === "medical_records" ? { id: "record", diagnosis: "Fictional finding" }
       : table === "invoices" ? { id: "invoice", invoice_no: "INV-FICTION", created_at: "2026-10-23T00:00:00Z", subtotal: 200, discount: 0, tax: 0, total: 200, dp_amount: 0, paid_status: "Belum Lunas" } : null, error: null, count: 1 }),
-    then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: table === "prescription_items" ? [{ nama_obat: state.name, code: state.code, qty: 2, satuan: "btl", aturan_pakai: "Fictional instructions" }]
-      : table === "invoice_items" ? [{ deskripsi: state.name, code: state.code, qty: 2, harga: 100, diskon_persen: 0 }] : [], error: null }).then(resolve),
+    then: (resolve: (value: unknown) => unknown) => { const rows = table === "prescription_items" ? [{ nama_obat: state.name, code: state.code, qty: 2, satuan: "btl", aturan_pakai: "Fictional instructions" }]
+      : table === "invoice_items" ? [{ id: "line", invoice_id: "invoice", deskripsi: state.name, code: state.code, qty: 2, harga: 100, diskon_persen: 0 }] : []; return Promise.resolve({ data: rows.slice(from, to + 1), count: exact ? rows.length : null, error: null }).then(resolve); },
   };
   return query;
 } }) }));
