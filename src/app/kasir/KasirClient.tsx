@@ -64,7 +64,7 @@ export type PromoRow = Promo & {
   valid_from?: string | null; valid_until?: string | null;
   auto_apply?: boolean;
 };
-type CartLine = {
+export type CartLine = {
   row_key?: string; item_type?: ItemType; tindakanKategori?: string | null; service_performers?: ServicePerformersInput | null;
   item_id: string; nama: string; qty: number; harga: number;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
@@ -198,6 +198,23 @@ export function KasirClient({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [customers, items, salespeople, draftKey, replacementDraft]);
+
+  // Katalog baru dari server (mis. sesudah checkout ditolak, atau layar dimuat ulang tanpa
+  // ganti tab) = harga master terbaru. Baris keranjang yang sudah ada ikut harga itu supaya
+  // total di layar sama dengan yang ditagih server (checkout selalu memakai harga master).
+  const [hargaBerubah, setHargaBerubah] = useState<string[]>([]);
+  const katalogTerakhir = useRef(items);
+  const cartTerakhir = useRef(cartRaw);
+  cartTerakhir.current = cartRaw;
+  useEffect(() => {
+    if (katalogTerakhir.current === items) return;
+    katalogTerakhir.current = items;
+    if (!draftSiap.current) return;
+    const { cart: baru, berubah } = sesuaikanHargaKeranjang(cartTerakhir.current, items);
+    if (!berubah.length) return;
+    setCart(baru);
+    setHargaBerubah(berubah);
+  }, [items]);
 
   useEffect(() => {
     if (!draftSiap.current) return;
@@ -671,6 +688,13 @@ export function KasirClient({
             )}
           </div>
 
+          {hargaBerubah.length > 0 && (
+            <div role="status" style={{ fontSize: 11, color: "#92400e", background: "#fef3c7", borderRadius: 6, padding: "5px 8px", marginBottom: 8, display: "flex", gap: 6, alignItems: "flex-start" }}>
+              <span style={{ flex: 1 }}>Harga diperbarui mengikuti master: {hargaBerubah.join("; ")}. Cek lagi totalnya.</span>
+              <button type="button" className="back-btn" aria-label="Tutup info harga" style={{ fontSize: 11 }} onClick={() => setHargaBerubah([])}>×</button>
+            </div>
+          )}
+
           <div style={{ maxHeight: 230, overflowY: "auto", marginBottom: 8 }}>
             {cart.length === 0 ? (
               <div style={{ fontSize: 10.5, color: "var(--td)", textAlign: "center", padding: "16px 0" }}>Klik baris produk untuk menambah.</div>
@@ -1000,4 +1024,31 @@ function Row({ k, v, red }: { k: string; v: string; red?: boolean }) {
       <span>{k}</span><span>{v}</span>
     </div>
   );
+}
+
+const rpSingkat = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+
+/** Samakan harga baris keranjang dengan katalog terbaru (satuan yang sama, atau satuan dasar). */
+export function sesuaikanHargaKeranjang(cart: CartLine[], items: ItemRow[]): { cart: CartLine[]; berubah: string[] } {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const berubah: string[] = [];
+  const baru = cart.map((line) => {
+    const item = line.item_id ? byId.get(line.item_id) : undefined;
+    if (!item) return line;
+    const unit = (line.satuan ? item.satuan?.find((u) => u.unit === line.satuan) : undefined) ?? item.satuan?.[0];
+    const harga = unit?.sell_price ?? item.harga;
+    const lama = line.hargaNormal ?? line.harga;
+    if (lama !== harga) berubah.push(`${item.name} ${rpSingkat(lama)} → ${rpSingkat(harga)}`);
+    return {
+      ...line,
+      harga, hargaNormal: harga,
+      satuan: unit?.unit ?? line.satuan,
+      faktor: unit?.factor ?? line.faktor,
+      opsiSatuan: item.satuan,
+      tiers: item.tiers ?? [],
+      stok: item.stok,
+      groupComponents: item.groupComponents,
+    };
+  });
+  return { cart: berubah.length ? baru : cart, berubah };
 }
