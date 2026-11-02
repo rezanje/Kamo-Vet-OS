@@ -37,7 +37,7 @@ export type RincianTutupShiftData = {
   pengeluaranTunaiRincian: { keterangan: string; jumlah: number }[];
   /** Pengeluaran dibayar dari rekening — dicatat di shift, tapi tidak mengurangi laci. */
   pengeluaranNonTunai: number;
-  /** Hanya shift petshop yang sudah ditutup. `error` = data penjualan bulan ini gagal dibaca. */
+  /** Shift yang sudah ditutup (petshop: struk toko; klinik: tagihan klinik). `error` = data bulan ini gagal dibaca. */
   target: RingkasanTarget | { error: string } | null;
 };
 
@@ -71,6 +71,30 @@ async function omsetCabang(
   return { bulan, hari };
 }
 
+/**
+ * Klinik (Reza 2 Nov malam: "tinggal buat klinik sama"): omset = total tagihan klinik
+ * cabang ini yang tidak dibatalkan, dari awal bulan sampai jam shift ditutup — dipatok
+ * tanggal tagihan dibuat, sama seperti struk toko dipatok tanggal struk.
+ */
+async function omsetKlinikCabang(
+  supabase: AnyClient, branchId: string, tanggal: string, sampaiIso: string,
+): Promise<{ bulan: number; hari: number }> {
+  const { dari } = batasPeriode(tanggal.slice(0, 7));
+  const { data } = await completeReportQuery<{ id: string; total: number | string; created_at: string }>(supabase.from("invoices")
+    .select("id, total, created_at, visits!inner(branch_id)", { count: "exact" })
+    .eq("visits.branch_id", branchId)
+    .is("voided_at", null)
+    .gte("created_at", dari)
+    .lte("created_at", sampaiIso));
+  let bulan = 0, hari = 0;
+  for (const inv of data) {
+    const nilai = Number(inv.total) || 0;
+    bulan += nilai;
+    if (tanggalBaris(inv.created_at) === tanggal) hari += nilai;
+  }
+  return { bulan, hari };
+}
+
 export async function muatRincianTutupShift(supabase: AnyClient, shiftId: string): Promise<RincianTutupShiftData | null> {
   const { data: shift } = await supabase
     .from("cashier_shifts")
@@ -92,11 +116,11 @@ export async function muatRincianTutupShift(supabase: AnyClient, shiftId: string
   const tanggal = tanggalBaris(shift.closed_at ?? shift.opened_at);
 
   let target: RincianTutupShiftData["target"] = null;
-  if (jenis === "petshop" && shift.status === "closed" && shift.closed_at) {
+  if (shift.status === "closed" && shift.closed_at) {
     const periode = tanggal.slice(0, 7);
     try {
       const [omset, { data: targetRows, error: targetError }] = await Promise.all([
-        omsetCabang(supabase, shift.branch_id, tanggal, shift.closed_at),
+        (jenis === "klinik" ? omsetKlinikCabang : omsetCabang)(supabase, shift.branch_id, tanggal, shift.closed_at),
         supabase.from("sales_targets")
           .select("periode, target, basis, branch_id, employee_id, category_id")
           .eq("periode", periode).eq("branch_id", shift.branch_id),
