@@ -1137,3 +1137,21 @@ Hasil: 1.112 baru, 1 sudah ada (hewan + tanggal + isi sama), 15 tertahan, 0 gaga
 
 Batch 19–31 kini: 2.726 baru, 1 sudah ada, 2.377 tertahan, 59 kosong, 0 gagal. DB: 7.422 riwayat lama, 6.615 jejak
 `gdrive:`.
+
+### 18.2 Ket per kartu untuk batch 19–31 (2026-11-02, izin OWNER opsi A)
+
+Cakupan: 245 kartu tertahan non-gerbang yang memuat Ket.
+- 173 kartu satu-satunya alasannya `riwayat.ket_tanpa_kolom`.
+- 72 kartu konflik/ambigu tanggal yang cocok pola R1/P3 (§17).
+
+Label sumber pada semua kartu adalah "Ket". Teks Ket sama dengan sel asli; pada 13 kartu bedanya hanya spasi di ujung
+baris. Ket ditambahkan sebagai baris `Ket: <asli>` setelah catatan dokter (`gabungKet`).
+
+Alur sama dengan §18.1: simulasi, rencana terbatas + rekonsiliasi, cek silang, finalisasi, preflight, cek lintas batch.
+
+Hasil: 241 baru, 4 tertahan (isi + tanggal sama dengan hewan beda dalam batch), 0 gagal.
+- Readback runner dan independen 241/241 cocok, termasuk baris Ket tepat sekali; 6 pemilik baru bertanda impor.
+- Kartu Ket tidak punya draf "Perlu Dilengkapi", jadi tidak ada yang ditutup.
+- Hitungan tabel keuangan hanya berubah karena 1 shift kasir dibuka; 0 tautan ke hasil impor.
+
+Batch 19–31 kini: 2.967 baru, 1 sudah ada, 2.136 tertahan, 59 kosong, 0 gagal. DB: 7.663 riwayat lama.
