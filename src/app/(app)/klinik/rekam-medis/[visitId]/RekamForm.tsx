@@ -538,7 +538,15 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                       <tr><th>Nama</th><th style={{ textAlign: "center", width: 48 }}>Qty</th><th style={{ textAlign: "right" }}>Subtotal</th><th style={{ width: 26 }} /></tr>
                     </thead>
                     <tbody>
-                      {cart.map((r) => (
+                      {cart.map((r) => r.paket_id ? (
+                        // Anisa 2 Nov: paket tampil satu baris seperti tindakan — harga paket, jumlah paket,
+                        // isinya kecil di bawah tanpa harga. Baris isi tetap yang dikirim ke server.
+                        cart.find(row => row.paket_id === r.paket_id) === r
+                          ? <BarisPaket key={`paket-${r.paket_id}`} isi={cart.filter(row => row.paket_id === r.paket_id)} staff={serviceStaff}
+                              onJumlah={jumlah => setJumlahPaket(r.paket_id!, jumlah)} onHapus={() => del(r.key)}
+                              onPelaksana={value => setCart(rows => rows.map(row => row.paket_id === r.paket_id ? { ...row, service_performers: value } : row))} />
+                          : null
+                      ) : (
                         <tr key={r.key}>
                           <td style={{ fontSize: 10.5 }}>
                             {/* Item utama ditebalkan; pelaksana & bahan jadi rincian kecil di bawahnya. */}
@@ -652,6 +660,35 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
       </div>}
     </form>
   </>);
+}
+
+/** Satu paket di keranjang: nama & harga paket, jumlah paket, pelaksana, isi paket tanpa harga. */
+function BarisPaket({ isi, staff, onJumlah, onHapus, onPelaksana }: {
+  isi: CartRow[]; staff: ServiceStaff[]; onJumlah: (jumlah: number) => void; onHapus: () => void;
+  onPelaksana: (value: ServicePerformersInput) => void;
+}) {
+  const utama = isi[0];
+  const jumlah = Math.max(1, Number(utama.paket_qty) || 1);
+  const total = isi.reduce((sum, row) => sum + row.qty * row.harga, 0);
+  return <tr data-paket={utama.paket_id}>
+    <td style={{ fontSize: 10.5 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+        <strong data-cart-item style={{ fontSize: 12.5, fontWeight: 700, color: "var(--tx)" }}>{utama.paket_nama}</strong>
+        <span className="bge g" style={{ fontSize: 8 }}>paket</span>
+      </div>
+      <div style={{ fontSize: 9, color: "var(--tm)" }}>{rp(total / jumlah)} / paket</div>
+      <ServicePerformersField compact label={`Pelaksana ${utama.paket_nama}`} value={utama.service_performers} staff={staff} onChange={onPelaksana} />
+      <KeranjangBahan nada="bmhp" judul="ISI PAKET" baris={isi.map(row => `${row.nama_obat} × ${row.qty} ${row.satuan}`)} />
+    </td>
+    <td style={{ textAlign: "center" }}>
+      <QtyInput className="fi" min={1} aria-label={`Jumlah paket ${utama.paket_nama}`} value={jumlah} onValue={onJumlah}
+        style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />
+    </td>
+    <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(total)}</td>
+    <td style={{ textAlign: "center" }}>
+      <i className="ti ti-x" role="button" aria-label={`Hapus paket ${utama.paket_nama}`} onClick={onHapus} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />
+    </td>
+  </tr>;
 }
 
 function MiniKV({ k, v }: { k: string; v: string }) {

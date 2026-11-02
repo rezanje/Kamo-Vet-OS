@@ -58,15 +58,29 @@ it("rekam medis: a package picked from Obat fills the cart with its contents at 
   await tambah();
   expect(cart().map(row => [row.item_id, row.jenis, row.qty])).toEqual([["steril", "jasa", 1], ["spuit", "obat", 2], ["benang", "obat", 1]]);
   expect(cart().reduce((sum, row) => sum + row.qty * row.harga, 0)).toBe(300000);
-  expect(host.textContent).toContain("paket Paket Steril");
+  // Anisa 2 Nov: satu baris seperti tindakan — nama & harga paket, isinya kecil tanpa harga.
+  const paketRows = host.querySelectorAll('tr[data-paket="paket-steril"]');
+  expect(paketRows).toHaveLength(1);
+  expect(paketRows[0].textContent).toContain("Rp 300.000 / paket");
+  expect(paketRows[0].textContent).toContain("ISI PAKET");
+  expect(paketRows[0].textContent).toContain("Spuit × 2 pcs");
+  expect(paketRows[0].textContent).not.toContain("Rp 5.000");
+  expect([...host.querySelectorAll("strong[data-cart-item]")].map(node => node.textContent)).toEqual(["Paket Steril"]);
   // Tindakan di dalam paket tidak meminta isian BMHP lagi.
   expect(host.querySelector('button[aria-label="Ubah BMHP Steril"]')).toBeNull();
   // Dipilih lagi = dua paket, bukan baris dobel.
   await tambah();
   expect(cart().map(row => row.qty)).toEqual([2, 4, 2]);
   expect(cart().reduce((sum, row) => sum + row.qty * row.harga, 0)).toBe(600000);
-  // Menghapus satu isi menghapus seluruh paket.
-  await act(async () => host.querySelector<HTMLElement>('i[title="Hapus"]')!.click());
+  // Jumlah paket diketik langsung.
+  const jumlah = host.querySelector<HTMLInputElement>('input[aria-label="Jumlah paket Paket Steril"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(jumlah, "3");
+    jumlah.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(cart().map(row => row.qty)).toEqual([3, 6, 3]);
+  // Menghapus paket menghapus seluruh isinya.
+  await act(async () => host.querySelector<HTMLElement>('i[aria-label="Hapus paket Paket Steril"]')!.click());
   expect(cart()).toEqual([]);
 });
 
@@ -105,9 +119,18 @@ it("pembayaran: package contents from the medical record are recognised and tagg
       { deskripsi: "Benang", qty: 1, harga: 36364, item_id: "benang", satuan: "pcs", prescription_item_id: "p3" },
     ],
     initialJasa: [{ deskripsi: "Steril", qty: 1, harga: 254546, item_id: "steril", satuan: "x", prescription_item_id: "p1" }] }));
-  expect(html.match(/<option value="paket-steril" selected="">/g)).toHaveLength(3);
+  // Satu baris paket (termasuk isi jasanya) di tabel Obat, harga paket, isi tanpa harga.
+  expect(html.match(/data-paket="paket-steril"/g)).toHaveLength(1);
+  expect(html).toContain("ISI PAKET");
+  expect(html).toContain("Rp 300.000");
+  expect(html).not.toContain("Rp 4.545");
+  expect(html).toContain('aria-label="Jumlah paket Paket Steril"');
+  // Yang dikirim tetap baris isinya, jasa tetap berjenis jasa, semuanya bertanda paket.
+  const items = JSON.parse(html.match(/name="items" value="([^"]*)"/)![1].replace(/&quot;/g, '"')) as { item_id: string; jenis: string; package_item_id: string; package_qty: number }[];
+  expect(items.map(row => [row.item_id, row.jenis, row.package_item_id, row.package_qty])).toEqual([
+    ["spuit", "obat", "paket-steril", 1], ["benang", "obat", "paket-steril", 1], ["steril", "jasa", "paket-steril", 1]]);
   // Tanpa kecocokan harga, baris tetap penjualan biasa.
   const biasa = renderToStaticMarkup(React.createElement(PembayaranForm, { ...props,
     initialObat: [{ deskripsi: "Spuit", qty: 2, harga: 5000, item_id: "spuit", satuan: "pcs", prescription_item_id: "p2" }], initialJasa: [] }));
-  expect(biasa).not.toContain('<option value="paket-steril" selected="">');
+  expect(biasa).not.toContain('data-paket="paket-steril"');
 });
