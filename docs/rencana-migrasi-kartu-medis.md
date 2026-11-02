@@ -1117,3 +1117,23 @@ Hasil: 1.614 baru, 0 sudah ada, 3.490 tertahan, 59 kosong, 0 gagal (= 5.163).
 Audit efek samping: aktivitas kasir normal selama run (13 penjualan, 7 klaim quest pelanggan walk-in baru). Tidak ada
 yang tertaut ke kunjungan/pemilik hasil impor (0 invoice/resep/pembayaran ke kunjungan impor, 0 transaksi pemilik baru
 impor).
+
+### 18.1 Pola tanggal untuk batch 19–31 (2026-11-02, izin OWNER opsi A)
+
+Aturan R1/R2/P3 sama dengan §17, hanya untuk kartu tertahan non-gerbang yang satu-satunya alasannya konflik/ambigu
+tanggal dan tidak ber-Ket. Terpilih 1.128 kartu: P3 900, R1 214, R2 14; batch 31 tidak ada.
+
+Alur per batch:
+- Turunan paket (hanya `status`, `hold_reasons`, `record_date`), simulasi paket penuh.
+- Rencana terbatas pada kunci terpilih + rekonsiliasi DB, banding tanggal sama, cek silang, finalisasi, preflight.
+- Cek lintas batch: 0 temuan.
+
+Hasil: 1.112 baru, 1 sudah ada (hewan + tanggal + isi sama), 15 tertahan, 0 gagal.
+- Yang tertahan: 4 isi ganda sesama terpilih, 7 isi sama dengan hewan beda dalam batch, 4 ras beda dengan data hewan.
+- Readback runner dan independen 1.112/1.112 cocok; 51 pemilik baru bertanda impor.
+- 1.112 draf "Perlu Dilengkapi" untuk kartu yang masuk ditutup; aktif kini 1.404 (seluruh batch).
+- Tidak ada tagihan, quest, atau penjualan yang tertaut ke hasil impor. Selama run: 4 klaim quest dan 7 penjualan
+  pelanggan non-impor.
+
+Batch 19–31 kini: 2.726 baru, 1 sudah ada, 2.377 tertahan, 59 kosong, 0 gagal. DB: 7.422 riwayat lama, 6.615 jejak
+`gdrive:`.
