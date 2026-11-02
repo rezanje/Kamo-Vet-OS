@@ -9,6 +9,7 @@ import { siapkanKirim, type BarisPermintaan } from "@/lib/permintaan-kirim";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { BatalKirimPermintaanForm } from "./BatalKirimPermintaanForm";
+import { bisaCetakSuratJalan } from "@/lib/surat-jalan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -101,6 +102,11 @@ export default async function PermintaanDetailPage({
         </Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>{req.no_request ?? "Permintaan Barang"}</span>
+        {bisaCetakSuratJalan(req.status) && (
+          <Link href={`/pos/permintaan/${req.id}/surat-jalan`} className="btn-acc" style={{ marginLeft: "auto", textDecoration: "none" }}>
+            <i className="ti ti-printer" /> Cetak surat jalan
+          </Link>
+        )}
       </div>
 
       {success && (
@@ -109,7 +115,8 @@ export default async function PermintaanDetailPage({
           {success === "terima"
             ? `Barang diterima${trm ? ` (${trm})` : ""} — stok cabang sudah bertambah.`
             : success === "kirim"
-              ? "Barang dikirim — stok gudang pengirim sudah berkurang dan menunggu diterima cabang."
+              ? <>Barang dikirim — stok gudang pengirim sudah berkurang dan menunggu diterima cabang.{" "}
+                  <Link href={`/pos/permintaan/${req.id}/surat-jalan`} style={{ color: "inherit", fontWeight: 700 }}>Cetak surat jalan</Link></>
               : success === "batal-kirim"
                 ? "Pengiriman dibatalkan — barang sudah kembali ke stok gudang pengirim dan permintaan ini bisa dikirim ulang."
                 : "Permintaan disetujui dengan jumlah yang kamu tetapkan."}
