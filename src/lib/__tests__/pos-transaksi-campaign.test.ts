@@ -8,7 +8,7 @@ vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`RE
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "POS-BO-C05" }) }));
 vi.mock("@/lib/quest-hook", () => ({ processQuestProgress: async (_s: unknown, opts: { saleId: string }) => { state.quest.push(opts.saleId); } }));
-vi.mock("@/lib/inventory", () => ({ stockOut: async () => ({ cost: 1 }) }));
+vi.mock("@/lib/inventory", () => ({ stockOut: async () => { throw Error("per-line stockOut is not allowed in backoffice checkout"); } }));
 vi.mock("@/lib/customer-tier", () => ({ recomputeCustomerTier: async () => true }));
 vi.mock("@/lib/harga-cabang", () => ({ loadHargaCabang: async () => new Map(), hargaCabang: (_map: unknown, _id: string, _unit: string, price: number) => price }));
 vi.mock("@/lib/promo-hitung", async original => ({ ...await original<typeof import("@/lib/promo-hitung")>(),
@@ -23,11 +23,13 @@ const { KAMPANYE, VOUCHER } = vi.hoisted(() => ({ KAMPANYE: {
 VOUCHER: { code: "HEMAT10", tipe: "persen", nilai: 10, is_active: true, valid_from: null, valid_until: null, max_potongan: null, min_belanja: 0, boleh_gabung_promo: true, customer_id: null, category_id: null } }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
-  rpc: async (name: string, values: { p_sale_id: string }) => {
-    if (name !== "finalize_pos_sale") throw Error(`Unexpected RPC ${name}`);
+  // The branch has an active warehouse, so stock, cost and the original finalizer
+  // (with its campaign quota check) run inside one atomic posting call.
+  rpc: async (name: string, values: { p_sale_id: string; p_warehouse_id: string }) => {
+    if (name !== "pos_backoffice_post_atomic" || values.p_warehouse_id !== "warehouse") throw Error(`Unexpected RPC ${name}`);
     if (state.finalizationError) return { data: null, error: { message: state.finalizationError } };
     state.finalized.push(values.p_sale_id);
-    return { data: { sale_id: values.p_sale_id, finalized: true }, error: null };
+    return { data: { sale_id: values.p_sale_id, finalized: true, checked: true, stock_events: 0 }, error: null };
   },
   from(table: string) {
     let codeQuery: unknown = null;
@@ -37,7 +39,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       : table === "vouchers" ? { data: codeQuery === "HEMAT10" ? VOUCHER : null, error: null }
       : table === "sales" && lookup ? { data: null, error: null }
       : table === "sales" && state.saleError ? { data: null, error: { message: state.saleError } }
-      : { data: table === "sales" ? { id: "sale" } : table === "sale_items" ? { id: "line" } : table === "customers" ? { category_id: null, customer_categories: null } : null, error: null };
+      : { data: table === "sales" ? { id: "sale" } : table === "sale_items" ? { id: "line" } : table === "customers" ? { category_id: null, customer_categories: null } : table === "warehouses" ? { id: "warehouse" } : null, error: null };
     const query = {
       select: (fields?: string) => { lookup = String(fields ?? "").includes("checkout_fingerprint"); return query; }, eq: (key: string, value: unknown) => { if (key === "code") codeQuery = value; return query; },
       in: () => query, order: () => query, range: () => query, limit: () => query, is: () => query,

@@ -3,7 +3,8 @@ import type { PromoHitung } from "@/lib/promo-hitung";
 import { HPP_CONFIRM_FIELD } from "@/lib/hpp-warning";
 
 const state = vi.hoisted(() => ({ headers: [] as Record<string, unknown>[], lines: [] as Record<string, unknown>[], itemType: "Jasa", employeeId: "login-employee" as string | null, promos: [] as PromoHitung[], price: 100, categoryPercent: 0,
-  stock: false, stockCalls: 0, rejectedItem: "", events: [] as string[], hppUpdates: [] as { id: string; hpp: unknown }[], layerCost: 0 }));
+  stock: false, rpcCalls: [] as { name: string; args: Record<string, unknown> }[], rejectedItem: "", events: [] as string[], hppUpdates: [] as { id: string; hpp: unknown }[], layerCost: 0 }));
+const POSTING = ["pos_backoffice_post_atomic", "finalize_pos_sale", "quantity_pool_post_backoffice_atomic", "sale_stock_out_fifo"];
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
@@ -11,13 +12,17 @@ vi.mock("@/lib/service-performers-server", async original => ({ ...await origina
 vi.mock("@/lib/pos-checkout-identity", () => ({ posCheckoutIdentity: () => ({ key: "draft", fingerprint: "fingerprint" }), resumePosCheckout: async () => {} }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "POS-TEST" }) }));
 vi.mock("@/lib/customer-tier", () => ({ recomputeCustomerTier: async () => {} }));
-vi.mock("@/lib/inventory", () => ({ stockOut: async () => { state.stockCalls++; state.events.push("stock"); return { cost: 25 }; } }));
+// Backoffice must never issue stock over separate per-line HTTP calls again.
+vi.mock("@/lib/inventory", () => ({ stockOut: async () => { throw Error("per-line stockOut is not allowed in backoffice checkout"); } }));
 vi.mock("@/lib/harga-cabang", () => ({ loadHargaCabang: async () => new Map(), hargaCabang: (_map: unknown, _id: string, _unit: string, price: number) => price }));
 vi.mock("@/lib/promo-hitung", async original => ({ ...await original<typeof import("@/lib/promo-hitung")>(), loadPromoAktif: async () => state.promos }));
 vi.mock("@/lib/satuan", async original => ({ ...await original<typeof import("@/lib/satuan")>(), loadUnitOptions: async () => new Map(["item", "physical"].map(id => [id, [{ unit: "pcs", factor: 1, sell_price: state.price, buy_price: 0 }]])) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
-  rpc: async () => ({ data: { sale_id: "sale", finalized: true }, error: null }),
+  rpc: async (name: string, args: Record<string, unknown>) => {
+    if (POSTING.includes(name)) { state.rpcCalls.push({ name, args }); state.events.push(`rpc:${name}`); }
+    return { data: { sale_id: "sale", finalized: true, ...(name === "pos_backoffice_post_atomic" ? { checked: true, stock_events: 1 } : {}) }, error: null };
+  },
   from(table: string) {
     const data = table === "items" ? [{ id: "item", item_type: state.itemType }, { id: "physical", item_type: "Persediaan" }]
       : table === "employees" ? [{ id: "doctor", nama: "Dokter", jabatan: "Dokter Hewan" }, { id: "staff", nama: "Staf", jabatan: "Groomer" }, { id: "different", nama: "Staf lain", jabatan: "Groomer" }]
@@ -37,7 +42,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 }) }));
 import { checkoutSale } from "@/app/(app)/pos/transaksi/actions";
 beforeEach(() => { state.headers = []; state.lines = []; state.itemType = "Jasa"; state.employeeId = "login-employee"; state.promos = []; state.price = 100; state.categoryPercent = 0;
-  state.stock = false; state.stockCalls = 0; state.rejectedItem = ""; state.events = []; state.hppUpdates = []; state.layerCost = 0; });
+  state.stock = false; state.rpcCalls = []; state.rejectedItem = ""; state.events = []; state.hppUpdates = []; state.layerCost = 0; });
 function form(performers: unknown = { doctor_id: "doctor", staff_id: "staff", doctor_name: "Forged name", branch_id: "forged" }) {
   const data = new FormData();
   Object.entries({ branchId: "branch", salespersonId: "forged-seller", metode: "Transfer", cart: JSON.stringify([
@@ -50,6 +55,8 @@ it("saves independent service rows with ID-only performers and derives cashier f
   expect(await checkoutSale(form()).catch(error => error.message)).toContain("/struk/sale");
   expect(state.headers[0]).toMatchObject({ cashier_id: "actor", cashier_name: "Kasir masuk", salesperson_id: "login-employee", total: 200 });
   expect(state.lines.map(line => line.service_performers)).toEqual([{ doctor_id: "doctor", staff_id: "staff" }, { doctor_id: null, staff_id: "different" }]);
+  // A branch without an active warehouse never issued stock here; it finalizes directly as before.
+  expect(state.rpcCalls.map(call => call.name)).toEqual(["finalize_pos_sale"]);
 });
 it("allows an authenticated cashier without an employee mapping", async () => {
   state.employeeId = null;
@@ -99,27 +106,30 @@ function mixedForm(staffId = "staff") {
 it("validates a later service actor against real branch staff before creating a mixed-cart sale or issuing stock", async () => {
   state.stock = true;
   expect(await checkoutSale(mixedForm("outside-branch")).catch(error => error.message)).not.toContain("/struk/");
-  expect(state.stockCalls).toBe(0); expect(state.headers).toHaveLength(0); expect(state.lines).toHaveLength(0);
+  expect(state.rpcCalls).toEqual([]); expect(state.headers).toHaveLength(0); expect(state.lines).toHaveLength(0);
 });
 it("validates all pending source rows before any stock issue if the later service is rejected at database insertion", async () => {
   state.stock = true; state.rejectedItem = "item";
   expect(await checkoutSale(mixedForm()).catch(error => error.message)).not.toContain("/struk/");
-  expect(state.stockCalls).toBe(0); expect(state.lines).toHaveLength(1);
+  expect(state.rpcCalls).toEqual([]); expect(state.lines).toHaveLength(1);
 });
-it("issues mixed-cart stock only after all source rows exist and writes cost to those exact line IDs", async () => {
+it("posts mixed-cart stock, per-line HPP and payment in ONE database call after all source rows exist", async () => {
   state.stock = true;
   expect(await checkoutSale(mixedForm()).catch(error => error.message)).toContain("/struk/sale");
-  expect(state.events.slice(0, 2)).toEqual(["line:physical", "line:item"]);
-  expect(state.hppUpdates).toEqual([{ id: "line-1", hpp: 25 }, { id: "line-2", hpp: 25 }]);
+  expect(state.events).toEqual(["line:physical", "line:item", "rpc:pos_backoffice_post_atomic"]);
+  expect(state.rpcCalls).toEqual([{ name: "pos_backoffice_post_atomic", args: { p_sale_id: "sale", p_warehouse_id: "warehouse" } }]);
+  // FIFO cost is written by the database inside that same transaction, never by a separate client update.
+  expect(state.hppUpdates).toEqual([]);
 });
 it("warns before saving goods below the FIFO cost and saves once that exact warning is confirmed (P03)", async () => {
   state.stock = true; state.layerCost = 150;
   const outcome = decodeURIComponent(await checkoutSale(mixedForm()).catch(error => error.message));
   expect(outcome).toContain("REDIRECT:/pos/transaksi?hpp_warning=");
   expect(outcome).toContain("Jasa (neto Rp100, HPP Rp150)");
-  expect(state.headers).toHaveLength(0); expect(state.stockCalls).toBe(0);
+  expect(state.headers).toHaveLength(0); expect(state.rpcCalls).toEqual([]);
   const signature = new URLSearchParams(outcome.slice(outcome.indexOf("?") + 1)).get("hpp_sig") ?? "";
   const confirmed = mixedForm(); confirmed.set(HPP_CONFIRM_FIELD, signature);
   expect(await checkoutSale(confirmed).catch(error => error.message)).toContain("/struk/sale");
   expect(state.headers).toHaveLength(1);
+  expect(state.rpcCalls.map(call => call.name)).toEqual(["pos_backoffice_post_atomic"]);
 });
