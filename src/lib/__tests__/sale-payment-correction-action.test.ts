@@ -24,10 +24,20 @@ it("corrects the same sale with the durable key and exact decimal amounts", asyn
   });
   expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
 });
-it.each(["", "-1", "1.001", "NaN", "Infinity", "1e5", "1000000000001"])("rejects invalid money %s before RPC", async value => {
+it.each(["-1", "1.001", "NaN", "Infinity", "1e5", "1000000000001"])("rejects invalid money %s before RPC", async value => {
   const data = form(); data.set("tunai", value);
   await expect(koreksiMetodePembayaran(data)).rejects.toThrow(/tidak valid/);
   expect(fixture.rpc).not.toHaveBeenCalled();
+});
+it("rejects a missing amount field before RPC", async () => {
+  const data = form(); data.delete("tunai");
+  await expect(koreksiMetodePembayaran(data)).rejects.toThrow(/tidak valid/);
+  expect(fixture.rpc).not.toHaveBeenCalled();
+});
+it("sends a blank Tunai box as zero when the whole bill moves to Transfer", async () => {
+  const data = form(); data.set("tunai", " "); data.set("transfer", "100000");
+  await expect(koreksiMetodePembayaran(data)).rejects.toThrow(`/penjualan/${id}?success=payment-corrected`);
+  expect(fixture.rpc).toHaveBeenCalledWith("correct_pos_sale_payment", expect.objectContaining({ p_cash_amount: 0, p_transfer_amount: 100000 }));
 });
 it("does not acknowledge an uncertain response or change the retry key", async () => {
   fixture.rpc.mockResolvedValue({ data: null, error: null });

@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 function correctionMoney(value: FormDataEntryValue | null): number {
-  const text = typeof value === "string" ? value.trim() : "";
+  // A blank Tunai/Transfer box means nothing was paid that way.
+  // A missing field is still rejected; the RPC re-checks that the split equals the bill.
+  const text = typeof value === "string" ? value.trim() || "0" : "";
   if (!/^(?:0|[1-9]\d{0,12})(?:\.\d{1,2})?$/.test(text)) throw new Error("Jumlah koreksi tidak valid. Isi angka Rupiah dengan maksimal dua desimal.");
   const amount = Number(text);
   if (!Number.isFinite(amount) || amount > 1_000_000_000_000 || !Number.isSafeInteger(Math.round(amount * 100))) {
