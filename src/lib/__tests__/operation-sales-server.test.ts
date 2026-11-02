@@ -18,12 +18,14 @@ function applyFilters(rows: Row[], calls: QueryRecord["calls"]): Row[] {
   const select = String(calls.find((call) => call.method === "select")?.args[0] ?? "");
   let out = rows.map((row) => ({ ...row }));
   for (const { method, args } of calls) {
-    if (!["eq", "in", "is", "gte", "lte"].includes(method)) continue;
+    if (!["eq", "in", "is", "gte", "lte", "gt", "lt"].includes(method)) continue;
     const [column, value] = args as [string, unknown];
     const test = (cell: unknown) => method === "in" ? (value as unknown[]).includes(cell)
       : method === "is" ? (cell ?? null) === value
       : method === "eq" ? cell === value
       : method === "gte" ? compareCell(cell, value) >= 0
+      : method === "gt" ? compareCell(cell, value) > 0
+      : method === "lt" ? compareCell(cell, value) < 0
       : compareCell(cell, value) <= 0;
     const dot = column.indexOf(".");
     if (dot < 0) {
@@ -44,6 +46,28 @@ function applyFilters(rows: Row[], calls: QueryRecord["calls"]): Row[] {
   return out;
 }
 
+// Response shaping like PostgREST: `.order()` sorts, `.range()` picks the window, every
+// response stops at `maxRows` (Supabase default 1000) even without a range, and `count`
+// is only filled when the select asked for `{ count: "exact" }`.
+function respond(rows: Row[], calls: QueryRecord["calls"], maxRows: number) {
+  const options = calls.find((call) => call.method === "select")?.args[1] as { count?: string } | undefined;
+  const orders = calls.filter((call) => call.method === "order")
+    .map((call) => ({ column: String(call.args[0]), ascending: (call.args[1] as { ascending?: boolean } | undefined)?.ascending !== false }));
+  const sorted = orders.length === 0 ? rows : [...rows].sort((a, b) => {
+    for (const { column, ascending } of orders) {
+      const diff = compareCell(a[column], b[column]);
+      if (diff !== 0) return ascending ? diff : -diff;
+    }
+    return 0;
+  });
+  const range = calls.filter((call) => call.method === "range").at(-1)?.args as [number, number] | undefined;
+  const [first, last] = range ?? [0, Number.MAX_SAFE_INTEGER];
+  return {
+    data: sorted.slice(first, Math.min(last + 1, first + maxRows)),
+    count: options?.count === "exact" ? rows.length : null,
+  };
+}
+
 function fakeSupabase(options: {
   role?: string;
   assignments?: string[];
@@ -54,13 +78,16 @@ function fakeSupabase(options: {
   returns?: Record<string, unknown>[];
   /** Fixture rows whose recorded filters are actually applied (see applyFilters). */
   tables?: Record<string, Row[]>;
+  /** Server row cap per response (PostgREST max-rows). */
+  maxRows?: number;
 }) {
   const records: QueryRecord[] = [];
   const errors = options.errors ?? {};
+  const maxRows = options.maxRows ?? 1000;
   const from = (table: string) => {
     const record: QueryRecord = { table, calls: [] };
     records.push(record);
-    const result = options.tables?.[table] ? null : { data: table === "profiles"
+    const fixed = options.tables?.[table] ? null : table === "profiles"
       ? [{ role: options.role ?? "OWNER" }]
       : table === "user_branches"
         ? (options.assignments ?? []).map((branch_id) => ({ branch_id }))
@@ -70,17 +97,19 @@ function fakeSupabase(options: {
             ? [{ id: "w1", branch_id: "b1" }]
           : table === "stock_layers"
             ? options.layers ?? []
-          : table === "sales" ? options.sales ?? [] : table === "sales_returns" ? options.returns ?? [] : [], error: errors[table] ?? null };
+          : table === "sales" ? options.sales ?? [] : table === "sales_returns" ? options.returns ?? [] : [];
     const query: Record<string, unknown> = {};
-    for (const method of ["select", "eq", "in", "gte", "lte", "lt", "gt", "is", "not", "neq", "order", "limit", "maybeSingle"]) {
+    for (const method of ["select", "eq", "in", "gte", "lte", "lt", "gt", "is", "not", "neq", "order", "range", "limit", "maybeSingle"]) {
       query[method] = (...args: unknown[]) => {
         record.calls.push({ method, args });
         return query;
       };
     }
-    query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(
-      result ?? { data: applyFilters(options.tables![table], record.calls), error: errors[table] ?? null },
-    ).then(resolve);
+    query.then = (resolve: (value: unknown) => unknown) => {
+      const error = errors[table] ?? null;
+      const rows = fixed ?? applyFilters(options.tables![table], record.calls);
+      return Promise.resolve(error ? { data: null, error, count: null } : { ...respond(rows, record.calls, maxRows), error: null }).then(resolve);
+    };
     return query;
   };
   const supabase = {
@@ -100,7 +129,7 @@ describe("operation sales server collector", () => {
     const result = await collectDashboard(fakeSupabase({
       sales: [{ id: "sale", total: 101600.01, merchant_fee_total: 1600.01, branch_id: "b1", customer_id: "c1", channel: null, created_at: "2026-08-15T05:00:00Z",
         sale_items: [{ item_id: "item", qty: 1, harga: 100000, hpp: 50000 }] }],
-      returns: [{ sale_id: "sale", total: 50800 }],
+      returns: [{ id: "ret", sale_id: "sale", total: 50800 }],
     }), { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" });
     expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 50000, transactions: 1 } } });
   });
@@ -258,6 +287,179 @@ describe("omzet klinik mengikuti tanggal tagihan, bukan tanggal kunjungan", () =
   });
 });
 
+describe("laporan membaca seluruh baris walau melebihi batas 1.000 baris per respons", () => {
+  const pad = (n: number) => String(n).padStart(5, "0");
+  const period = { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" as const };
+  const sale = (i: number) => ({
+    id: `sale-${pad(i)}`, branch_id: "b1", customer_id: `cust-${pad(i)}`, total: 1000, merchant_fee_total: 0, channel: null,
+    created_at: "2026-08-15T05:00:00Z", payment_plan: null, payments_finalized_at: null, voided_at: null,
+    sale_items: [{ item_id: "item", qty: 1, harga: 1000, hpp: 400 }],
+  });
+  const inSizes = (supabase: ReturnType<typeof fakeSupabase>, table: string, column: string) => supabase.records
+    .filter((record) => record.table === table).flatMap((record) => record.calls)
+    .filter((call) => call.method === "in" && call.args[0] === column).map((call) => (call.args[1] as unknown[]).length);
+
+  it("menghitung semua penjualan, retur, tagihan klinik, pelanggan, stok dan pembelian di atas 1.000 baris", async () => {
+    const SALES = 1250, RETURNS = 1050, INVOICES = 1100, ITEMS = 1200, ORDERS = 1100;
+    const sales = Array.from({ length: SALES }, (_, i) => sale(i));
+    const returns = Array.from({ length: RETURNS }, (_, i) => ({ id: `ret-${pad(i)}`, sale_id: `sale-${pad(i)}`, total: 100, tanggal: "2026-08-20", voided_at: null }));
+    const invoices = Array.from({ length: INVOICES }, (_, i) => ({
+      id: `inv-${pad(i)}`, visit_id: `visit-${pad(i)}`, total: 2000, created_at: "2026-08-16T05:00:00Z", voided_at: null,
+      visits: { branch_id: "b1", customer_id: `pasien-${pad(i)}` }, invoice_items: [{ item_id: "jasa", qty: 1, harga: 2000, hpp: 0, jenis: "Jasa" }],
+    }));
+    const items = Array.from({ length: ITEMS }, (_, i) => ({ id: `item-${pad(i)}`, min_stock: 5, is_active: true }));
+    const stock = items.map((item, i) => ({ id: `stock-${pad(i)}`, warehouse_id: "w1", item_id: item.id, qty: 1, updated_at: "2026-08-10T00:00:00Z" }));
+    const orders = Array.from({ length: ORDERS }, (_, i) => ({
+      id: `po-${pad(i)}`, branch_id: "b1", tanggal: "2026-08-05", total: 10, status: "Selesai",
+      purchase_order_items: [{ item_id: "item", qty: 2, harga_beli: 5 }],
+    }));
+    const purchaseInvoices = orders.map((order, i) => ({
+      id: `pi-${pad(i)}`, po_id: order.id, total: 10, tanggal: "2026-08-06", voided_at: null, supplier_id: "sup",
+      suppliers: { nama: "Pemasok" }, purchase_invoice_items: [{ item_id: "item", qty: 1, harga: 10 }],
+    }));
+    const supabase = fakeSupabase({ tables: {
+      sales, sales_returns: returns, invoices, items, stock, purchase_orders: orders, purchase_invoices: purchaseInvoices,
+    } });
+
+    const result = await collectDashboard(supabase, period);
+
+    const product = SALES * 1000 - RETURNS * 100;
+    expect(result.sales).toMatchObject({ status: "ready", data: {
+      metrics: { sales: product + INVOICES * 2000, transactions: SALES + INVOICES },
+      split: { product, service: 0, clinic: INVOICES * 2000 },
+    } });
+    expect(result.branch).toMatchObject({ status: "ready", data: [{ branchId: "b1", sales: product + INVOICES * 2000, uniqueCustomers: SALES + INVOICES }] });
+    expect(result.customer).toMatchObject({ status: "ready", data: { totalCustomers: SALES } });
+    expect(result.stock).toMatchObject({ status: "ready", data: { lowStock: ITEMS } });
+    expect(result.purchase).toMatchObject({ status: "ready", data: { purchase: ORDERS * 10, outstandingPoQty: ORDERS } });
+
+    // Id lists stay short enough for the proxy: returns and purchase invoices are read per batch.
+    expect(inSizes(supabase, "sales_returns", "sale_id").length).toBeGreaterThan(1);
+    expect(Math.max(...inSizes(supabase, "sales_returns", "sale_id"))).toBeLessThanOrEqual(100);
+    expect(Math.max(...inSizes(supabase, "purchase_invoices", "po_id"))).toBeLessThanOrEqual(100);
+  });
+
+  it("halaman yang dipotong server menjadikan blok error, bukan angka yang lebih kecil", async () => {
+    // Server cap below the requested page: 450 rows exist, a page only ever returns 400.
+    const supabase = fakeSupabase({ tables: { sales: Array.from({ length: 450 }, (_, i) => sale(i)) }, maxRows: 400 });
+
+    const result = await collectDashboard(supabase, period);
+
+    expect(result.sales.status).toBe("error");
+    expect(result.branch.status).toBe("error");
+    expect(result.customer.status).toBe("error");
+    if (result.sales.status === "error") expect(result.sales.correlationId).toBeTruthy();
+    expect(result.stock.status).toBe("ready");
+    expect(result.purchase.status).toBe("ready");
+  });
+
+  it("tabel/kolom yang belum ada tetap jadi blok 'missing' lewat pembacaan berhalaman", async () => {
+    const supabase = fakeSupabase({ errors: {
+      // PGRST204's message has no "does not exist": only the preserved code identifies it.
+      items: { code: "PGRST204", message: "Could not find the 'min_stock' column of 'items' in the schema cache" },
+      sales: { code: "42703", message: "column sales.merchant_fee_total does not exist" },
+      purchase_orders: { code: "500", message: "query gagal" },
+    } });
+
+    const result = await collectDashboard(supabase, period);
+
+    expect(result.stock).toEqual({ status: "missing", reason: "Data sumber belum tersedia" });
+    expect(result.sales).toEqual({ status: "missing", reason: "Data sumber belum tersedia" });
+    expect(result.customer).toEqual({ status: "missing", reason: "Data sumber belum tersedia" });
+    expect(result.purchase.status).toBe("error");
+    expect(result.clinic.status).toBe("ready");
+  });
+});
+
+describe("blok klinik membaca seluruh baris walau melebihi batas 1.000 baris per respons", () => {
+  const pad = (n: number) => String(n).padStart(5, "0");
+  const twoBranches = [{ id: "b1", name: "Cabang Satu" }, { id: "b2", name: "Cabang Dua" }];
+  const perBranch = (count: number, make: (branchId: string, i: number) => Row) =>
+    twoBranches.flatMap((branch) => Array.from({ length: count }, (_, i) => make(branch.id, i)));
+  const pagedTables = (supabase: ReturnType<typeof fakeSupabase>) => new Set(supabase.records
+    .filter((record) => record.calls.some((call) => call.method === "range" && Number(call.args[0]) > 0))
+    .map((record) => record.table));
+
+  it("laporan bulanan semua cabang menghitung semua booking, kunjungan, follow-up, rujukan dan rawat inap", async () => {
+    // Tiap cabang di bawah 1.000 baris, gabungan semua cabang di atasnya. Follow-up dan rawat
+    // inap tidak punya batas tanggal bawah, jadi riwayat lama ikut terbaca.
+    const tables: Record<string, Row[]> = {
+      bookings: [
+        ...perBranch(600, (b, i) => ({ id: `booking-${b}-${pad(i)}`, branch_id: b, status: "dikonfirmasi",
+          attendance_outcome: ["hadir", "no_show", null][i % 3], tanggal: "2026-08-10" })),
+        // Di luar periode: tidak dihitung.
+        ...perBranch(10, (b, i) => ({ id: `booking-old-${b}-${pad(i)}`, branch_id: b, status: "dikonfirmasi", attendance_outcome: "hadir", tanggal: "2026-07-31" })),
+      ],
+      visits: perBranch(650, (b, i) => ({ id: `visit-${b}-${pad(i)}`, branch_id: b, status: i % 2 === 0 ? "Selesai" : "Dalam Pemeriksaan",
+        created_at: "2026-08-12T03:00:00Z", checked_in_at: "2026-08-12T03:00:00Z", service_started_at: "2026-08-12T03:10:00Z",
+        service_finished_at: "2026-08-12T03:30:00Z", checked_out_at: null })),
+      follow_ups: [
+        ...perBranch(700, (b, i) => {
+          const tanggal = i < 400 ? "2025-03-15" : "2026-08-20";
+          const done = i % 2 === 0;
+          return { id: `fu-${b}-${pad(i)}`, branch_id: b, tanggal, status: done ? "Selesai" : "Terjadwal", completed_at: done ? `${tanggal}T02:00:00Z` : null };
+        }),
+        // Jatuh tempo setelah periode: tidak dihitung.
+        ...perBranch(20, (b, i) => ({ id: `fu-next-${b}-${pad(i)}`, branch_id: b, tanggal: "2026-09-05", status: "Terjadwal", completed_at: null })),
+      ],
+      visit_referrals: perBranch(550, (b, i) => ({ id: `ref-${b}-${pad(i)}`, branch_id: b, direction: i % 2 === 0 ? "masuk" : "keluar", referred_at: "2026-08-14T04:00:00Z" })),
+      inpatient_records: perBranch(700, (b, i) => i < 400
+        // Riwayat lama, sudah pulang sebelum periode: terbaca tapi tidak mengisi kandang.
+        ? { id: `ip-${b}-${pad(i)}`, branch_id: b, admitted_at: "2025-05-01T02:00:00Z", discharged_at: "2025-05-03T02:00:00Z" }
+        // Masuk 31 Jul 17:00 WIB, pulang 1 Agu 17:00 WIB: satu hari-kandang di periode.
+        : { id: `ip-${b}-${pad(i)}`, branch_id: b, admitted_at: "2026-07-31T10:00:00Z", discharged_at: "2026-08-01T10:00:00Z" }),
+      branch_capacity_periods: twoBranches.map((branch) => ({ id: `cap-${branch.id}`, branch_id: branch.id, capacity: 400, valid_from: "2026-01-01", valid_until: null })),
+    };
+    const supabase = fakeSupabase({ branches: twoBranches, tables });
+
+    const result = await collectDashboard(supabase, { from: "2026-08-01", to: "2026-08-31", branchIds: [], channel: "all" });
+
+    const branch = (branchId: string) => ({
+      branchId,
+      bookings: { total: 600, hadir: 200, noShow: 200, pending: 200 },
+      visits: { total: 650, selesai: 325, avgWaitMinutes: 10, avgServiceMinutes: 20 },
+      followUps: { due: 700, completed: 350, rate: 0.5 },
+      occupancy: { status: "ok", occupiedBedDays: 300, availableBedDays: 400 * 31, rate: 300 / (400 * 31) },
+      referrals: { masuk: 275, keluar: 275, total: 550 },
+    });
+    expect(result.clinic).toEqual({ status: "ready", data: { from: "2026-08-01", to: "2026-08-31", branches: [branch("b1"), branch("b2")] } });
+    // Sumber di atas 1.000 baris memang dibaca berhalaman, bukan satu respons terpotong.
+    for (const table of ["bookings", "visits", "follow_ups", "visit_referrals", "inpatient_records"]) {
+      expect(pagedTables(supabase).has(table), table).toBe(true);
+    }
+  });
+
+  it("halaman klinik yang dipotong server menjadikan blok klinik error, bukan angka yang lebih kecil", async () => {
+    // Server cap below the requested page: 450 follow-ups exist, a page only ever returns 400.
+    const followUps = Array.from({ length: 450 }, (_, i) => ({
+      id: `fu-b1-${pad(i)}`, branch_id: "b1", tanggal: "2026-08-20", status: "Selesai", completed_at: "2026-08-20T02:00:00Z",
+    }));
+    const supabase = fakeSupabase({ tables: { follow_ups: followUps }, maxRows: 400 });
+
+    const result = await collectDashboard(supabase, { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" });
+
+    expect(result.clinic.status).toBe("error");
+    if (result.clinic.status === "error") expect(result.clinic.correlationId).toBeTruthy();
+    expect(result.sales.status).toBe("ready");
+    expect(result.stock.status).toBe("ready");
+  });
+
+  it.each([
+    // PGRST204's message has no "does not exist": only the preserved code identifies it.
+    ["branch_capacity_periods", "missing", { code: "PGRST204", message: "Could not find the 'capacity' column of 'branch_capacity_periods' in the schema cache" }],
+    ["visit_referrals", "missing", { code: "42P01", message: "relation \"public.visit_referrals\" does not exist" }],
+    ["follow_ups", "error", { code: "500", message: "query gagal" }],
+  ] as const)("sumber klinik %s yang gagal dibaca menjadi blok %s", async (table, status, error) => {
+    const supabase = fakeSupabase({ errors: { [table]: error } });
+
+    const result = await collectDashboard(supabase, { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" });
+
+    expect(result.clinic.status).toBe(status);
+    if (status === "missing") expect(result.clinic).toEqual({ status: "missing", reason: "Data sumber belum tersedia" });
+    expect(result.sales.status).toBe("ready");
+  });
+});
+
 describe("retur struk petshop mengurangi omzet struk asalnya (sama dengan Laporan Transaksi)", () => {
   const sale = (id: string, createdAt: string, extra: Row = {}) => ({
     id, branch_id: "b1", customer_id: `cust-${id}`, total: 100000, merchant_fee_total: 0, channel: null,
@@ -317,13 +519,15 @@ describe("retur struk petshop mengurangi omzet struk asalnya (sama dengan Lapora
 
     const inLists = supabase.records.filter((record) => record.table === "sales_returns")
       .map((record) => record.calls.find((call) => call.method === "in")?.args[1] as string[]);
-    // Blok penjualan dan blok cabang masing-masing memuat dokumen sendiri: 2 muatan × 2 potongan.
-    expect(inLists).toHaveLength(4);
+    // Blok cabang memakai muatan dokumen blok penjualan (satu muatan), dipecah jadi 2 potongan:
+    // tiap id struk muncul tepat sekali.
+    expect(inLists).toHaveLength(2);
     expect(inLists.every((ids) => ids.length <= 100)).toBe(true);
     const seen = new Map<string, number>();
     for (const id of inLists.flat()) seen.set(id, (seen.get(id) ?? 0) + 1);
     expect(seen.size).toBe(150);
-    expect([...seen.values()].every((count) => count === 2)).toBe(true);
+    expect([...seen.values()].every((count) => count === 1)).toBe(true);
+    expect(result.branch).toMatchObject({ status: "ready", data: [{ branchId: "b1", sales: 150 * 99000, transactions: 150 }] });
   });
 });
 
@@ -426,13 +630,23 @@ describe("refund klinik mengurangi omzet tagihan asalnya (sama dengan Laporan Tr
 
     const inLists = supabase.records.filter((record) => record.table === "clinic_refunds")
       .map((record) => record.calls.find((call) => call.method === "in")?.args[1] as string[]);
-    // Blok penjualan dan blok cabang masing-masing memuat dokumen sendiri: 2 muatan × 2 potongan,
-    // jadi tiap id tagihan muncul tepat dua kali (sekali per muatan).
-    expect(inLists).toHaveLength(4);
+    // Blok cabang memakai muatan dokumen blok penjualan (satu muatan), dipecah jadi 2 potongan:
+    // tiap id tagihan muncul tepat sekali.
+    expect(inLists).toHaveLength(2);
     expect(inLists.every((ids) => ids.length <= 100)).toBe(true);
     const seen = new Map<string, number>();
     for (const id of inLists.flat()) seen.set(id, (seen.get(id) ?? 0) + 1);
     expect(seen.size).toBe(150);
-    expect([...seen.values()].every((count) => count === 2)).toBe(true);
+    expect([...seen.values()].every((count) => count === 1)).toBe(true);
+    expect(result.branch).toMatchObject({ status: "ready", data: [{ branchId: "b1", sales: 150 * (150000 - 1000), transactions: 150 }] });
+  });
+
+  it("refund di atas 1.000 baris dalam satu potongan id tetap terhitung semua", async () => {
+    // 100 tagihan (satu potongan id) × 11 refund = 1.100 baris: lewat max-rows satu respons.
+    const invoices = Array.from({ length: 100 }, (_, index) => invoice(`inv-${String(index).padStart(3, "0")}`, "2026-11-02T03:00:00Z"));
+    const refunds = invoices.flatMap((row) => Array.from({ length: 11 }, (_, n) => refund(`rf-${row.id}-${String(n).padStart(2, "0")}`, row.id, 100, "2026-11-02")));
+    const supabase = fakeSupabase({ tables: { invoices, clinic_refunds: refunds } });
+    const result = await collectDashboard(supabase, { from: "2026-11-02", to: "2026-11-02", branchIds: ["b1"], channel: "klinik" });
+    expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 100 * (150000 - 1100), transactions: 100 } } });
   });
 });
