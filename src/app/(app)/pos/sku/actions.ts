@@ -3,6 +3,7 @@
 import { changeMasterLifecycle } from "@/app/(app)/master-data/actions";
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
+import { bersihkanCacheSebentar } from "@/lib/cache-memori";
 import { loadUnitOptions, parseUnitDrafts, resolveSubmittedUnit, replaceItemUnitConfiguration, unitOptions } from "@/lib/satuan";
 import { rapikanTingkat } from "@/lib/harga-tingkat";
 import { pickItemType, validasiBarang, validasiSatuanDasar, pesanSimpanGagal } from "@/lib/barang";
@@ -44,17 +45,19 @@ export async function simpanBarang(formData: FormData) {
   const unit = String(formData.get("unit") ?? "").trim();
   const unitError = validasiSatuanDasar(unit);
   if (unitError) gagal(unitError);
+  // Daftar satuan boleh memuat ejaan berbeda huruf besar/kecil (mis. "pcs" dan "PCS"):
+  // ambil semuanya dan utamakan yang persis sama, jangan maybeSingle (dobel = gagal simpan).
   const { data: unitMaster, error: unitMasterError } = await supabase
     .from("units")
     .select("nama")
     .eq("is_active", true)
-    .ilike("nama", unit)
-    .maybeSingle();
+    .ilike("nama", unit);
   if (unitMasterError) gagal(pesanSimpanGagal(unitMasterError.message));
-  let unitResmi = String(unitMaster?.nama ?? "").trim();
-  if (!unitResmi && id) {
-    // Barang lama boleh tetap dibuka/disimpan walau satuannya sudah dinonaktifkan.
-    // Barang baru atau perubahan ke satuan nonaktif tetap ditolak.
+  // ilike memperlakukan "%" dan "_" sebagai pola; yang dipakai hanya nama yang benar-benar sama.
+  const ejaanMaster = ((unitMaster ?? []) as { nama: string | null }[]).map((row) => String(row.nama ?? "").trim())
+    .filter((nama) => nama && nama.toLowerCase() === unit.toLowerCase());
+  let unitResmi = ejaanMaster.find((nama) => nama === unit) ?? ejaanMaster[0] ?? "";
+  if (id) {
     const { data: lama, error: lamaError } = await supabase
       .from("items")
       .select("unit")
@@ -62,10 +65,17 @@ export async function simpanBarang(formData: FormData) {
       .maybeSingle();
     if (lamaError) gagal(pesanSimpanGagal(lamaError.message));
     const unitLama = String(lama?.unit ?? "").trim();
-    if (unitLama.toLowerCase() !== unit.toLowerCase()) {
+    if (unitLama && unitLama.toLowerCase() === unit.toLowerCase()) {
+      // Satuan dasar tidak berubah, hanya ejaannya beda dengan daftar satuan (barang impor
+      // "PCS" vs daftar "pcs"). Pertahankan ejaan tersimpan: mengganti ejaan = mengubah satuan
+      // dasar, yang ditolak database untuk SKU yang sudah pernah terjual, dan seluruh simpan
+      // (termasuk perubahan harga) ikut gagal. Ini juga menjaga barang lama yang satuannya
+      // sudah dinonaktifkan tetap bisa disimpan.
+      unitResmi = unitLama;
+    } else if (!ejaanMaster.length) {
+      // Barang baru atau perubahan ke satuan nonaktif tetap ditolak.
       gagal("Satuan dasar belum terdaftar atau sudah nonaktif");
     }
-    unitResmi = unitLama;
   }
   if (!unitResmi) gagal("Satuan dasar belum terdaftar atau sudah nonaktif");
   const upc = String(formData.get("upc") ?? "").trim();
@@ -151,8 +161,27 @@ export async function simpanBarang(formData: FormData) {
   // Reject sold conversion changes before unrelated master writes. Base and
   // alternate units change in one database transaction, including price-only edits.
   if (id) {
+    let pesan = "";
     try { await replaceItemUnitConfiguration(supabase, id, unitResmi, units); }
-    catch (error) { gagal(pesanSimpanGagal(error instanceof Error ? error.message : "Satuan tidak dapat disimpan")); }
+    catch (error) { pesan = error instanceof Error ? error.message : "Satuan tidak dapat disimpan"; }
+    if (pesan && (isJasa || isGroup)) {
+      // Jasa/grup biasanya membuang baris kemasan sisa. Database menolaknya bila SKU sudah
+      // pernah terjual (bukti historis), dan seluruh simpan — termasuk harga — ikut gagal.
+      // Panggilan pertama satu transaksi utuh (tidak ada yang tertulis), jadi ulangi dengan
+      // baris lama dibiarkan apa adanya. Perubahan satuan dasar yang sungguhan tetap ditolak.
+      const { data: lamaUnits, error: lamaUnitsError } = await supabase
+        .from("item_units")
+        .select("unit, factor, sell_price, buy_price")
+        .eq("item_id", id);
+      if (lamaUnitsError) gagal(pesanSimpanGagal(lamaUnitsError.message));
+      const tetap = ((lamaUnits ?? []) as { unit: string; factor: number; sell_price: number; buy_price: number | null }[])
+        .filter((row) => row.unit && row.unit.toLowerCase() !== unitResmi.toLowerCase())
+        .map((row) => ({ unit: row.unit, factor: Number(row.factor), sell_price: Number(row.sell_price) || 0, buy_price: Number(row.buy_price) || 0 }));
+      pesan = "";
+      try { await replaceItemUnitConfiguration(supabase, id, unitResmi, tetap); }
+      catch (error) { pesan = error instanceof Error ? error.message : "Satuan tidak dapat disimpan"; }
+    }
+    if (pesan) gagal(pesanSimpanGagal(pesan));
   }
 
   const { data: saved, error } = id
@@ -205,6 +234,9 @@ export async function simpanBarang(formData: FormData) {
     }
   }
 
+  // Katalog kasir/klinik disimpan sementara di memori (±2 menit); instance yang menyimpan
+  // langsung membuang simpanannya supaya harga baru tidak menunggu kedaluwarsa di sini.
+  bersihkanCacheSebentar();
   redirect(`${LIST}?success=1`);
 }
 
