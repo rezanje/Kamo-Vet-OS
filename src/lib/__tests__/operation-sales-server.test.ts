@@ -258,6 +258,75 @@ describe("omzet klinik mengikuti tanggal tagihan, bukan tanggal kunjungan", () =
   });
 });
 
+describe("retur struk petshop mengurangi omzet struk asalnya (sama dengan Laporan Transaksi)", () => {
+  const sale = (id: string, createdAt: string, extra: Row = {}) => ({
+    id, branch_id: "b1", customer_id: `cust-${id}`, total: 100000, merchant_fee_total: 0, channel: null,
+    created_at: createdAt, payment_plan: null, payments_finalized_at: null, voided_at: null,
+    sale_items: [{ item_id: "barang", qty: 1, harga: 100000, hpp: 60000, items: { item_type: "Barang", tindakan_kategori: null } }],
+    ...extra,
+  });
+  const salesReturn = (id: string, saleId: string, total: number, tanggal: string, extra: Row = {}) => ({
+    id, sale_id: saleId, total, tanggal, voided_at: null, ...extra,
+  });
+  const dashboard = (tables: Record<string, Row[]>, from: string, to: string) =>
+    collectDashboard(fakeSupabase({ tables }), { from, to, branchIds: ["b1"], channel: "pos" });
+
+  it("retur yang diposting setelah periode tetap memotong periode struk, bukan periode retur", async () => {
+    // Struk 15 Okt, diretur 5 Nov: yang turun omzet Oktober (dulu baru ikut kalau retur ≤ akhir periode).
+    const tables = {
+      sales: [sale("s-oct", "2026-10-15T05:00:00Z")],
+      sales_returns: [salesReturn("r-nov", "s-oct", 40000, "2026-11-05")],
+    };
+    const october = await dashboard(tables, "2026-10-01", "2026-10-31");
+    expect(october.sales).toMatchObject({ status: "ready", data: {
+      metrics: { sales: 60000, transactions: 1 }, split: { product: 60000 },
+      branches: [{ branchId: "b1", sales: 60000 }],
+    } });
+
+    const november = await dashboard(tables, "2026-11-01", "2026-11-30");
+    expect(november.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 0, transactions: 0 } } });
+
+    const span = await dashboard(tables, "2026-10-01", "2026-11-30");
+    expect(span.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 60000, transactions: 1 } } });
+  });
+
+  it("retur dalam periode tetap terpotong, retur void diabaikan, struk tanpa retur tetap", async () => {
+    const supabase = fakeSupabase({ tables: {
+      sales: [sale("s-ret", "2026-11-02T03:00:00Z"), sale("s-plain", "2026-11-02T04:00:00Z")],
+      sales_returns: [
+        salesReturn("r-a", "s-ret", 30000, "2026-11-02"),
+        salesReturn("r-b", "s-ret", 10000, "2026-11-20"),
+        salesReturn("r-void", "s-ret", 50000, "2026-11-02", { voided_at: "2026-11-03T01:00:00Z" }),
+      ],
+    } });
+    const result = await collectDashboard(supabase, { from: "2026-11-02", to: "2026-11-02", branchIds: ["b1"], channel: "pos" });
+    // s-ret: 100.000 − 30.000 − 10.000 = 60.000; s-plain: 100.000.
+    expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 160000, transactions: 2 } } });
+
+    const returnCalls = supabase.records.filter((record) => record.table === "sales_returns").flatMap((record) => record.calls);
+    expect(returnCalls).toContainEqual({ method: "is", args: ["voided_at", null] });
+    expect(returnCalls.some((call) => call.method === "gte" || call.method === "lte")).toBe(false);
+  });
+
+  it("daftar struk panjang dibaca returnya per 100 id tanpa ada yang terlewat atau dobel", async () => {
+    const sales = Array.from({ length: 150 }, (_, index) => sale(`s-${index}`, "2026-11-02T03:00:00Z"));
+    const returns = sales.map((row, index) => salesReturn(`r-${index}`, row.id, 1000, "2026-11-02"));
+    const supabase = fakeSupabase({ tables: { sales, sales_returns: returns } });
+    const result = await collectDashboard(supabase, { from: "2026-11-02", to: "2026-11-02", branchIds: ["b1"], channel: "pos" });
+    expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 150 * 99000, transactions: 150 } } });
+
+    const inLists = supabase.records.filter((record) => record.table === "sales_returns")
+      .map((record) => record.calls.find((call) => call.method === "in")?.args[1] as string[]);
+    // Blok penjualan dan blok cabang masing-masing memuat dokumen sendiri: 2 muatan × 2 potongan.
+    expect(inLists).toHaveLength(4);
+    expect(inLists.every((ids) => ids.length <= 100)).toBe(true);
+    const seen = new Map<string, number>();
+    for (const id of inLists.flat()) seen.set(id, (seen.get(id) ?? 0) + 1);
+    expect(seen.size).toBe(150);
+    expect([...seen.values()].every((count) => count === 2)).toBe(true);
+  });
+});
+
 describe("refund klinik mengurangi omzet tagihan asalnya (sama dengan Laporan Transaksi)", () => {
   const items = [{ item_id: "jasa", qty: 1, harga: 150000, hpp: 40000, jenis: "Jasa" }];
   const invoice = (id: string, createdAt: string, extra: Row = {}, branchId = "b1") => ({
