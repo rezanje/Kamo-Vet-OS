@@ -159,6 +159,15 @@ dialog::backdrop { background: rgba(15, 23, 42, .45); }
 .pshop-hero { text-align: center; position: relative; z-index: 1; }
 .pshop-welcome { font-size: 32px; font-weight: 800; color: var(--posb); line-height: 1.15; }
 .pshop-card { position: relative; z-index: 1; }
+/* Rincian Tutup Shift (contoh pemilik toko, 2 Nov 2026) — 2/3 kolom, menumpuk di HP. */
+.rts-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.rts-grid3 { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 12px; align-items: start; }
+@media (max-width: 520px) {
+  .rts-grid2, .rts-grid3 { grid-template-columns: 1fr; }
+}
+@media print {
+  .rts-card { max-width: none !important; box-shadow: none !important; }
+}
 .pshop-rp { display: flex; align-items: stretch; }
 .pshop-rp span { background: var(--sf1); border: .5px solid var(--bd); border-right: none; border-radius: 6px 0 0 6px; padding: 6px 10px; font-size: 12px; color: var(--tm); display: flex; align-items: center; }
 .pshop-rp input { border-radius: 0 6px 6px 0 !important; }

@@ -168,7 +168,14 @@ export default async function ShiftPage({
       )}
 
       <div className="crm-sec">
-        <SecHeader num="02" title="RIWAYAT SHIFT" desc="Shift yang sudah ditutup & selisih kasnya." />
+        <SecHeader
+          num="02" title="RIWAYAT SHIFT" desc="10 shift terakhir yang sudah ditutup & selisih kasnya."
+          action={
+            <Link href="/pos/shift/riwayat" className="btn-def" style={{ fontSize: 11, textDecoration: "none" }}>
+              <i className="ti ti-history" /> Lihat semua riwayat
+            </Link>
+          }
+        />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 640 }}>
             <thead>
