@@ -18,12 +18,14 @@ function applyFilters(rows: Row[], calls: QueryRecord["calls"]): Row[] {
   const select = String(calls.find((call) => call.method === "select")?.args[0] ?? "");
   let out = rows.map((row) => ({ ...row }));
   for (const { method, args } of calls) {
-    if (!["eq", "in", "is", "gte", "lte"].includes(method)) continue;
+    if (!["eq", "in", "is", "gte", "lte", "gt", "lt"].includes(method)) continue;
     const [column, value] = args as [string, unknown];
     const test = (cell: unknown) => method === "in" ? (value as unknown[]).includes(cell)
       : method === "is" ? (cell ?? null) === value
       : method === "eq" ? cell === value
       : method === "gte" ? compareCell(cell, value) >= 0
+      : method === "gt" ? compareCell(cell, value) > 0
+      : method === "lt" ? compareCell(cell, value) < 0
       : compareCell(cell, value) <= 0;
     const dot = column.indexOf(".");
     if (dot < 0) {
@@ -366,5 +368,94 @@ describe("laporan membaca seluruh baris walau melebihi batas 1.000 baris per res
     expect(result.customer).toEqual({ status: "missing", reason: "Data sumber belum tersedia" });
     expect(result.purchase.status).toBe("error");
     expect(result.clinic.status).toBe("ready");
+  });
+});
+
+describe("blok klinik membaca seluruh baris walau melebihi batas 1.000 baris per respons", () => {
+  const pad = (n: number) => String(n).padStart(5, "0");
+  const twoBranches = [{ id: "b1", name: "Cabang Satu" }, { id: "b2", name: "Cabang Dua" }];
+  const perBranch = (count: number, make: (branchId: string, i: number) => Row) =>
+    twoBranches.flatMap((branch) => Array.from({ length: count }, (_, i) => make(branch.id, i)));
+  const pagedTables = (supabase: ReturnType<typeof fakeSupabase>) => new Set(supabase.records
+    .filter((record) => record.calls.some((call) => call.method === "range" && Number(call.args[0]) > 0))
+    .map((record) => record.table));
+
+  it("laporan bulanan semua cabang menghitung semua booking, kunjungan, follow-up, rujukan dan rawat inap", async () => {
+    // Tiap cabang di bawah 1.000 baris, gabungan semua cabang di atasnya. Follow-up dan rawat
+    // inap tidak punya batas tanggal bawah, jadi riwayat lama ikut terbaca.
+    const tables: Record<string, Row[]> = {
+      bookings: [
+        ...perBranch(600, (b, i) => ({ id: `booking-${b}-${pad(i)}`, branch_id: b, status: "dikonfirmasi",
+          attendance_outcome: ["hadir", "no_show", null][i % 3], tanggal: "2026-08-10" })),
+        // Di luar periode: tidak dihitung.
+        ...perBranch(10, (b, i) => ({ id: `booking-old-${b}-${pad(i)}`, branch_id: b, status: "dikonfirmasi", attendance_outcome: "hadir", tanggal: "2026-07-31" })),
+      ],
+      visits: perBranch(650, (b, i) => ({ id: `visit-${b}-${pad(i)}`, branch_id: b, status: i % 2 === 0 ? "Selesai" : "Dalam Pemeriksaan",
+        created_at: "2026-08-12T03:00:00Z", checked_in_at: "2026-08-12T03:00:00Z", service_started_at: "2026-08-12T03:10:00Z",
+        service_finished_at: "2026-08-12T03:30:00Z", checked_out_at: null })),
+      follow_ups: [
+        ...perBranch(700, (b, i) => {
+          const tanggal = i < 400 ? "2025-03-15" : "2026-08-20";
+          const done = i % 2 === 0;
+          return { id: `fu-${b}-${pad(i)}`, branch_id: b, tanggal, status: done ? "Selesai" : "Terjadwal", completed_at: done ? `${tanggal}T02:00:00Z` : null };
+        }),
+        // Jatuh tempo setelah periode: tidak dihitung.
+        ...perBranch(20, (b, i) => ({ id: `fu-next-${b}-${pad(i)}`, branch_id: b, tanggal: "2026-09-05", status: "Terjadwal", completed_at: null })),
+      ],
+      visit_referrals: perBranch(550, (b, i) => ({ id: `ref-${b}-${pad(i)}`, branch_id: b, direction: i % 2 === 0 ? "masuk" : "keluar", referred_at: "2026-08-14T04:00:00Z" })),
+      inpatient_records: perBranch(700, (b, i) => i < 400
+        // Riwayat lama, sudah pulang sebelum periode: terbaca tapi tidak mengisi kandang.
+        ? { id: `ip-${b}-${pad(i)}`, branch_id: b, admitted_at: "2025-05-01T02:00:00Z", discharged_at: "2025-05-03T02:00:00Z" }
+        // Masuk 31 Jul 17:00 WIB, pulang 1 Agu 17:00 WIB: satu hari-kandang di periode.
+        : { id: `ip-${b}-${pad(i)}`, branch_id: b, admitted_at: "2026-07-31T10:00:00Z", discharged_at: "2026-08-01T10:00:00Z" }),
+      branch_capacity_periods: twoBranches.map((branch) => ({ id: `cap-${branch.id}`, branch_id: branch.id, capacity: 400, valid_from: "2026-01-01", valid_until: null })),
+    };
+    const supabase = fakeSupabase({ branches: twoBranches, tables });
+
+    const result = await collectDashboard(supabase, { from: "2026-08-01", to: "2026-08-31", branchIds: [], channel: "all" });
+
+    const branch = (branchId: string) => ({
+      branchId,
+      bookings: { total: 600, hadir: 200, noShow: 200, pending: 200 },
+      visits: { total: 650, selesai: 325, avgWaitMinutes: 10, avgServiceMinutes: 20 },
+      followUps: { due: 700, completed: 350, rate: 0.5 },
+      occupancy: { status: "ok", occupiedBedDays: 300, availableBedDays: 400 * 31, rate: 300 / (400 * 31) },
+      referrals: { masuk: 275, keluar: 275, total: 550 },
+    });
+    expect(result.clinic).toEqual({ status: "ready", data: { from: "2026-08-01", to: "2026-08-31", branches: [branch("b1"), branch("b2")] } });
+    // Sumber di atas 1.000 baris memang dibaca berhalaman, bukan satu respons terpotong.
+    for (const table of ["bookings", "visits", "follow_ups", "visit_referrals", "inpatient_records"]) {
+      expect(pagedTables(supabase).has(table), table).toBe(true);
+    }
+  });
+
+  it("halaman klinik yang dipotong server menjadikan blok klinik error, bukan angka yang lebih kecil", async () => {
+    // Server cap below the requested page: 450 follow-ups exist, a page only ever returns 400.
+    const followUps = Array.from({ length: 450 }, (_, i) => ({
+      id: `fu-b1-${pad(i)}`, branch_id: "b1", tanggal: "2026-08-20", status: "Selesai", completed_at: "2026-08-20T02:00:00Z",
+    }));
+    const supabase = fakeSupabase({ tables: { follow_ups: followUps }, maxRows: 400 });
+
+    const result = await collectDashboard(supabase, { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" });
+
+    expect(result.clinic.status).toBe("error");
+    if (result.clinic.status === "error") expect(result.clinic.correlationId).toBeTruthy();
+    expect(result.sales.status).toBe("ready");
+    expect(result.stock.status).toBe("ready");
+  });
+
+  it.each([
+    // PGRST204's message has no "does not exist": only the preserved code identifies it.
+    ["branch_capacity_periods", "missing", { code: "PGRST204", message: "Could not find the 'capacity' column of 'branch_capacity_periods' in the schema cache" }],
+    ["visit_referrals", "missing", { code: "42P01", message: "relation \"public.visit_referrals\" does not exist" }],
+    ["follow_ups", "error", { code: "500", message: "query gagal" }],
+  ] as const)("sumber klinik %s yang gagal dibaca menjadi blok %s", async (table, status, error) => {
+    const supabase = fakeSupabase({ errors: { [table]: error } });
+
+    const result = await collectDashboard(supabase, { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" });
+
+    expect(result.clinic.status).toBe(status);
+    if (status === "missing") expect(result.clinic).toEqual({ status: "missing", reason: "Data sumber belum tersedia" });
+    expect(result.sales.status).toBe("ready");
   });
 });
