@@ -18,8 +18,10 @@ function cents(value: string): number | null {
 
 const money = (amountCents: number) => String(amountCents / 100);
 
-export function SalePaymentCorrectionForm({ userId, saleId, revision, cash, transfer, fixed }: {
+export function SalePaymentCorrectionForm({ userId, saleId, revision, cash, transfer, change = 0, fixed }: {
   userId: string; saleId: string; revision: number; cash: number; transfer: number;
+  /** Kembalian tunai yang tercatat saat checkout. */
+  change?: number;
   fixed: { method: string; amount: number }[];
 }) {
   const [cashText, setCashText] = useState(String(cash));
@@ -70,6 +72,9 @@ export function SalePaymentCorrectionForm({ userId, saleId, revision, cash, tran
           <NumberInput ref={transferInput} id="sale-correction-transfer" className="fi" name="transfer" type="number" min="0" max="1000000000000" step="0.01" inputMode="decimal" placeholder="0"
             value={transferText} onInput={event => edit(event.currentTarget.value, setTransferText, setCashText)} /></div>
       </div>
+      {change > 0 && <p>Kembalian tercatat {formatPosMoney(change)}. {newCash === 0
+        ? "Karena Tunai dikosongkan, kembalian dihapus dan nilai Dibayar disamakan dengan total."
+        : "Bila Tunai dikosongkan, kembalian ikut dihapus dan nilai Dibayar disamakan dengan total."}</p>}
       {hint && <p role="status">{hint}</p>}
       <label className="flab" htmlFor="sale-correction-reason">Alasan koreksi *</label>
       <input id="sale-correction-reason" className="fi" name="alasan" minLength={3} maxLength={1000} required placeholder="Contoh: pembayaran diterima via transfer, kasir memilih tunai" />
