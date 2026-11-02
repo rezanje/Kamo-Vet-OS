@@ -28,6 +28,11 @@ export function bmhpInput(value: unknown): BmhpInput[] {
 // the vial is their default BMHP, and a vial picked from the medicine list opens its vaccination.
 type Coded = { id: string; code?: string | null; name: string; unit: string };
 const VACCINATION = "JV-";
+/** Kode jasa vaksinasi untuk sebuah vial; null bila kode kosong atau sudah kode jasa. */
+export const kodeJasaVaksinasi = (vialCode: string | null | undefined) => {
+  const code = (vialCode ?? "").trim();
+  return code && !code.startsWith(VACCINATION) ? VACCINATION + code : null;
+};
 export const vaccinationOf = <T extends Coded>(vial: Coded, services: T[]) =>
   vial.code ? services.find(service => service.code === VACCINATION + vial.code) : undefined;
 export function vaccinationBmhp(service: Coded, items: Coded[]): BmhpRow[] {
