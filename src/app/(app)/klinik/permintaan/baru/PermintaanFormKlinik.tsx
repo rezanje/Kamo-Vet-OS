@@ -16,8 +16,10 @@ type Warehouse = { id: string; name: string };
 type Row = { item_id: string; qty_diminta: number; satuan: string; catatan: string; cari: string };
 const blank: Row = { item_id: "", qty_diminta: 1, satuan: "", catatan: "", cari: "" };
 
-export function PermintaanFormKlinik({ userId, branchName, shiftId, warehouses, items }: {
+export function PermintaanFormKlinik({ userId, branchName, shiftId, warehouses, items, requestKey }: {
   userId: string; branchName: string; shiftId?: string; warehouses: Warehouse[]; items: KatalogItem[];
+  /** Identitas satu kali kirim: percobaan ulang yang sama tidak membuat permintaan dobel. */
+  requestKey?: string;
 }) {
   const { save, failure } = usePreservedAction(buatPermintaanKlinik);
   const [rows, setRows] = useState<Row[]>([{ ...blank }]);
@@ -36,6 +38,7 @@ export function PermintaanFormKlinik({ userId, branchName, shiftId, warehouses, 
       }, reset: () => { setRows([{ ...blank }]); } }} />
       {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
+      {requestKey && <input type="hidden" name="request_key" value={requestKey} />}
       <div className="grid2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,320px),1fr))",minWidth:0}}>
         <div className="crm-sec" style={{ marginBottom: 0, minWidth:0 }}>
           <SecHeader num="01" title="DETAIL PERMINTAAN" desc="Cabang peminta & gudang tujuan." />
@@ -55,7 +58,6 @@ export function PermintaanFormKlinik({ userId, branchName, shiftId, warehouses, 
             <select className="fi" name="priority" defaultValue="normal">
               <option value="normal">Normal</option>
               <option value="tinggi">Tinggi</option>
-              <option value="rendah">Rendah</option>
             </select>
           </div>
           <div className="fg">
