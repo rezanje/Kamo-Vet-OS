@@ -44,6 +44,28 @@ function applyFilters(rows: Row[], calls: QueryRecord["calls"]): Row[] {
   return out;
 }
 
+// Response shaping like PostgREST: `.order()` sorts, `.range()` picks the window, every
+// response stops at `maxRows` (Supabase default 1000) even without a range, and `count`
+// is only filled when the select asked for `{ count: "exact" }`.
+function respond(rows: Row[], calls: QueryRecord["calls"], maxRows: number) {
+  const options = calls.find((call) => call.method === "select")?.args[1] as { count?: string } | undefined;
+  const orders = calls.filter((call) => call.method === "order")
+    .map((call) => ({ column: String(call.args[0]), ascending: (call.args[1] as { ascending?: boolean } | undefined)?.ascending !== false }));
+  const sorted = orders.length === 0 ? rows : [...rows].sort((a, b) => {
+    for (const { column, ascending } of orders) {
+      const diff = compareCell(a[column], b[column]);
+      if (diff !== 0) return ascending ? diff : -diff;
+    }
+    return 0;
+  });
+  const range = calls.filter((call) => call.method === "range").at(-1)?.args as [number, number] | undefined;
+  const [first, last] = range ?? [0, Number.MAX_SAFE_INTEGER];
+  return {
+    data: sorted.slice(first, Math.min(last + 1, first + maxRows)),
+    count: options?.count === "exact" ? rows.length : null,
+  };
+}
+
 function fakeSupabase(options: {
   role?: string;
   assignments?: string[];
@@ -54,13 +76,16 @@ function fakeSupabase(options: {
   returns?: Record<string, unknown>[];
   /** Fixture rows whose recorded filters are actually applied (see applyFilters). */
   tables?: Record<string, Row[]>;
+  /** Server row cap per response (PostgREST max-rows). */
+  maxRows?: number;
 }) {
   const records: QueryRecord[] = [];
   const errors = options.errors ?? {};
+  const maxRows = options.maxRows ?? 1000;
   const from = (table: string) => {
     const record: QueryRecord = { table, calls: [] };
     records.push(record);
-    const result = options.tables?.[table] ? null : { data: table === "profiles"
+    const fixed = options.tables?.[table] ? null : table === "profiles"
       ? [{ role: options.role ?? "OWNER" }]
       : table === "user_branches"
         ? (options.assignments ?? []).map((branch_id) => ({ branch_id }))
@@ -70,17 +95,19 @@ function fakeSupabase(options: {
             ? [{ id: "w1", branch_id: "b1" }]
           : table === "stock_layers"
             ? options.layers ?? []
-          : table === "sales" ? options.sales ?? [] : table === "sales_returns" ? options.returns ?? [] : [], error: errors[table] ?? null };
+          : table === "sales" ? options.sales ?? [] : table === "sales_returns" ? options.returns ?? [] : [];
     const query: Record<string, unknown> = {};
-    for (const method of ["select", "eq", "in", "gte", "lte", "lt", "gt", "is", "not", "neq", "order", "limit", "maybeSingle"]) {
+    for (const method of ["select", "eq", "in", "gte", "lte", "lt", "gt", "is", "not", "neq", "order", "range", "limit", "maybeSingle"]) {
       query[method] = (...args: unknown[]) => {
         record.calls.push({ method, args });
         return query;
       };
     }
-    query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(
-      result ?? { data: applyFilters(options.tables![table], record.calls), error: errors[table] ?? null },
-    ).then(resolve);
+    query.then = (resolve: (value: unknown) => unknown) => {
+      const error = errors[table] ?? null;
+      const rows = fixed ?? applyFilters(options.tables![table], record.calls);
+      return Promise.resolve(error ? { data: null, error, count: null } : { ...respond(rows, record.calls, maxRows), error: null }).then(resolve);
+    };
     return query;
   };
   const supabase = {
@@ -100,7 +127,7 @@ describe("operation sales server collector", () => {
     const result = await collectDashboard(fakeSupabase({
       sales: [{ id: "sale", total: 101600.01, merchant_fee_total: 1600.01, branch_id: "b1", customer_id: "c1", channel: null, created_at: "2026-08-15T05:00:00Z",
         sale_items: [{ item_id: "item", qty: 1, harga: 100000, hpp: 50000 }] }],
-      returns: [{ sale_id: "sale", total: 50800 }],
+      returns: [{ id: "ret", sale_id: "sale", total: 50800 }],
     }), { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" });
     expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 50000, transactions: 1 } } });
   });
@@ -255,5 +282,89 @@ describe("omzet klinik mengikuti tanggal tagihan, bukan tanggal kunjungan", () =
     expect(invoiceCalls).toContainEqual({ method: "gte", args: ["created_at", "2026-11-02T00:00:00+07:00"] });
     expect(invoiceCalls).toContainEqual({ method: "lte", args: ["created_at", "2026-11-02T23:59:59.999999+07:00"] });
     expect(String(invoiceCalls.find((call) => call.method === "select")?.args[0])).toContain("visits!inner(branch_id,customer_id)");
+  });
+});
+
+describe("laporan membaca seluruh baris walau melebihi batas 1.000 baris per respons", () => {
+  const pad = (n: number) => String(n).padStart(5, "0");
+  const period = { from: "2026-08-01", to: "2026-08-31", branchIds: ["b1"], channel: "all" as const };
+  const sale = (i: number) => ({
+    id: `sale-${pad(i)}`, branch_id: "b1", customer_id: `cust-${pad(i)}`, total: 1000, merchant_fee_total: 0, channel: null,
+    created_at: "2026-08-15T05:00:00Z", payment_plan: null, payments_finalized_at: null, voided_at: null,
+    sale_items: [{ item_id: "item", qty: 1, harga: 1000, hpp: 400 }],
+  });
+  const inSizes = (supabase: ReturnType<typeof fakeSupabase>, table: string, column: string) => supabase.records
+    .filter((record) => record.table === table).flatMap((record) => record.calls)
+    .filter((call) => call.method === "in" && call.args[0] === column).map((call) => (call.args[1] as unknown[]).length);
+
+  it("menghitung semua penjualan, retur, tagihan klinik, pelanggan, stok dan pembelian di atas 1.000 baris", async () => {
+    const SALES = 1250, RETURNS = 1050, INVOICES = 1100, ITEMS = 1200, ORDERS = 1100;
+    const sales = Array.from({ length: SALES }, (_, i) => sale(i));
+    const returns = Array.from({ length: RETURNS }, (_, i) => ({ id: `ret-${pad(i)}`, sale_id: `sale-${pad(i)}`, total: 100, tanggal: "2026-08-20", voided_at: null }));
+    const invoices = Array.from({ length: INVOICES }, (_, i) => ({
+      id: `inv-${pad(i)}`, visit_id: `visit-${pad(i)}`, total: 2000, created_at: "2026-08-16T05:00:00Z", voided_at: null,
+      visits: { branch_id: "b1", customer_id: `pasien-${pad(i)}` }, invoice_items: [{ item_id: "jasa", qty: 1, harga: 2000, hpp: 0, jenis: "Jasa" }],
+    }));
+    const items = Array.from({ length: ITEMS }, (_, i) => ({ id: `item-${pad(i)}`, min_stock: 5, is_active: true }));
+    const stock = items.map((item, i) => ({ id: `stock-${pad(i)}`, warehouse_id: "w1", item_id: item.id, qty: 1, updated_at: "2026-08-10T00:00:00Z" }));
+    const orders = Array.from({ length: ORDERS }, (_, i) => ({
+      id: `po-${pad(i)}`, branch_id: "b1", tanggal: "2026-08-05", total: 10, status: "Selesai",
+      purchase_order_items: [{ item_id: "item", qty: 2, harga_beli: 5 }],
+    }));
+    const purchaseInvoices = orders.map((order, i) => ({
+      id: `pi-${pad(i)}`, po_id: order.id, total: 10, tanggal: "2026-08-06", voided_at: null, supplier_id: "sup",
+      suppliers: { nama: "Pemasok" }, purchase_invoice_items: [{ item_id: "item", qty: 1, harga: 10 }],
+    }));
+    const supabase = fakeSupabase({ tables: {
+      sales, sales_returns: returns, invoices, items, stock, purchase_orders: orders, purchase_invoices: purchaseInvoices,
+    } });
+
+    const result = await collectDashboard(supabase, period);
+
+    const product = SALES * 1000 - RETURNS * 100;
+    expect(result.sales).toMatchObject({ status: "ready", data: {
+      metrics: { sales: product + INVOICES * 2000, transactions: SALES + INVOICES },
+      split: { product, service: 0, clinic: INVOICES * 2000 },
+    } });
+    expect(result.branch).toMatchObject({ status: "ready", data: [{ branchId: "b1", sales: product + INVOICES * 2000, uniqueCustomers: SALES + INVOICES }] });
+    expect(result.customer).toMatchObject({ status: "ready", data: { totalCustomers: SALES } });
+    expect(result.stock).toMatchObject({ status: "ready", data: { lowStock: ITEMS } });
+    expect(result.purchase).toMatchObject({ status: "ready", data: { purchase: ORDERS * 10, outstandingPoQty: ORDERS } });
+
+    // Id lists stay short enough for the proxy: returns and purchase invoices are read per batch.
+    expect(inSizes(supabase, "sales_returns", "sale_id").length).toBeGreaterThan(1);
+    expect(Math.max(...inSizes(supabase, "sales_returns", "sale_id"))).toBeLessThanOrEqual(100);
+    expect(Math.max(...inSizes(supabase, "purchase_invoices", "po_id"))).toBeLessThanOrEqual(100);
+  });
+
+  it("halaman yang dipotong server menjadikan blok error, bukan angka yang lebih kecil", async () => {
+    // Server cap below the requested page: 450 rows exist, a page only ever returns 400.
+    const supabase = fakeSupabase({ tables: { sales: Array.from({ length: 450 }, (_, i) => sale(i)) }, maxRows: 400 });
+
+    const result = await collectDashboard(supabase, period);
+
+    expect(result.sales.status).toBe("error");
+    expect(result.branch.status).toBe("error");
+    expect(result.customer.status).toBe("error");
+    if (result.sales.status === "error") expect(result.sales.correlationId).toBeTruthy();
+    expect(result.stock.status).toBe("ready");
+    expect(result.purchase.status).toBe("ready");
+  });
+
+  it("tabel/kolom yang belum ada tetap jadi blok 'missing' lewat pembacaan berhalaman", async () => {
+    const supabase = fakeSupabase({ errors: {
+      // PGRST204's message has no "does not exist": only the preserved code identifies it.
+      items: { code: "PGRST204", message: "Could not find the 'min_stock' column of 'items' in the schema cache" },
+      sales: { code: "42703", message: "column sales.merchant_fee_total does not exist" },
+      purchase_orders: { code: "500", message: "query gagal" },
+    } });
+
+    const result = await collectDashboard(supabase, period);
+
+    expect(result.stock).toEqual({ status: "missing", reason: "Data sumber belum tersedia" });
+    expect(result.sales).toEqual({ status: "missing", reason: "Data sumber belum tersedia" });
+    expect(result.customer).toEqual({ status: "missing", reason: "Data sumber belum tersedia" });
+    expect(result.purchase.status).toBe("error");
+    expect(result.clinic.status).toBe("ready");
   });
 });

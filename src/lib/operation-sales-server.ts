@@ -17,6 +17,7 @@ import {
 } from "./operation-sales";
 import { collectOperationalClinic } from "./operasional-klinik-server";
 import { batasTanggalWIB } from "./laporan-transaksi";
+import { completeReportQuery } from "./report-query";
 import { isCompletedSale, saleMerchandiseTotal, saleRefundMerchantFee, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
 
 type AnyClient = any;
@@ -97,6 +98,31 @@ function queryError(result: QueryResult): void {
 
 async function read(query: AnyClient): Promise<QueryResult> {
   return await query;
+}
+
+// Report rows are read page by page with an exact count (completeReportQuery). A plain
+// select stops silently at PostgREST's max-rows (1000 on Supabase), so a busy month
+// across all branches would under-count. An incomplete read throws, and safeBlock turns
+// it into an error block instead of a smaller number. Every query passed here must
+// select `id` and ask for `{ count: "exact" }`.
+async function readAll<T>(query: AnyClient): Promise<T[]> {
+  return (await completeReportQuery<T>(query)).data;
+}
+
+/** Ids per `.in()` filter: a long id list in the URL is rejected by the proxy (same limit as faktur-gabungan). */
+const ID_BATCH = 100;
+const BATCH_CONCURRENCY = 6;
+
+async function readAllByIds<T>(ids: string[], query: (batch: string[]) => AnyClient): Promise<T[]> {
+  const unique = [...new Set(ids)];
+  const batches: string[][] = [];
+  for (let start = 0; start < unique.length; start += ID_BATCH) batches.push(unique.slice(start, start + ID_BATCH));
+  const rows: T[] = [];
+  for (let index = 0; index < batches.length; index += BATCH_CONCURRENCY) {
+    const pages = await Promise.all(batches.slice(index, index + BATCH_CONCURRENCY).map((batch) => readAll<T>(query(batch))));
+    for (const page of pages) rows.push(...page);
+  }
+  return rows;
 }
 
 function isMissingSchema(error: unknown): boolean {
@@ -209,21 +235,15 @@ function itemNetRows(
 async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, filter: DashboardFilter) {
   const { start, end } = dateBounds(filter);
   const documents: ReturnType<typeof itemNetRows>[] = [];
-  let returns: { sale_id: string; total: number }[] = [];
 
   if (filter.channel !== "klinik" && filter.channel !== "reseller") {
     let query = supabase.from("sales")
-      .select("id,branch_id,customer_id,total,merchant_fee_total,channel,created_at,payment_plan,payments_finalized_at, voided_at,sale_items(item_id,qty,hpp,harga,items(item_type,tindakan_kategori))")
+      .select("id,branch_id,customer_id,total,merchant_fee_total,channel,created_at,payment_plan,payments_finalized_at, voided_at,sale_items(item_id,qty,hpp,harga,items(item_type,tindakan_kategori))", { count: "exact" })
       .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end);
     query = applyChannel(query, filter.channel);
-    const salesResult = await read(query);
-    queryError(salesResult);
-    const sales = ((salesResult.data ?? []) as SaleRow[]).filter(isCompletedSale);
-    if (sales.length > 0) {
-      const returnResult = await read(supabase.from("sales_returns").select("sale_id,total").is("voided_at", null).in("sale_id", sales.map((sale) => sale.id)).lte("tanggal", filter.to));
-      queryError(returnResult);
-      returns = (returnResult.data ?? []) as { sale_id: string; total: number }[];
-    }
+    const sales = (await readAll<SaleRow>(query)).filter(isCompletedSale);
+    const returns = await readAllByIds<{ id: string; sale_id: string; total: number }>(sales.map((sale) => sale.id), (batch) =>
+      supabase.from("sales_returns").select("id,sale_id,total", { count: "exact" }).is("voided_at", null).in("sale_id", batch).lte("tanggal", filter.to));
     const returnMap = new Map<string, number>();
     for (const row of returns) returnMap.set(row.sale_id, (returnMap.get(row.sale_id) ?? 0) + (Number(row.total) || 0));
     for (const sale of sales) {
@@ -255,14 +275,12 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
     // ditagih tgl D+1. Cabang tetap diambil dari kunjungan (invoices tidak punya
     // branch_id); `!inner` membuang tagihan yang kunjungannya di luar cabang scope.
     // Jumlah kunjungan (blok klinik) tetap dihitung dari tanggal daftar kunjungan.
-    const invoiceQuery = supabase.from("invoices")
-      .select("id,visit_id,total,created_at,voided_at,visits!inner(branch_id,customer_id),invoice_items(item_id,qty,hpp,harga,jenis)")
+    const invoices = await readAll<InvoiceRow>(supabase.from("invoices")
+      .select("id,visit_id,total,created_at,voided_at,visits!inner(branch_id,customer_id),invoice_items(item_id,qty,hpp,harga,jenis)", { count: "exact" })
       .in("visits.branch_id", scope.branchIds).is("voided_at", null)
-      .gte("created_at", start).lte("created_at", end);
-    const invoiceResult = await read(invoiceQuery);
-    queryError(invoiceResult);
+      .gte("created_at", start).lte("created_at", end));
     const seen = new Set<string>();
-    for (const invoice of (invoiceResult.data ?? []) as InvoiceRow[]) {
+    for (const invoice of invoices) {
       const visit = one(invoice.visits);
       if (!visit || !scope.branchIds.includes(visit.branch_id) || seen.has(invoice.id)) continue;
       seen.add(invoice.id);
@@ -278,12 +296,11 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
   }
 
   if (filter.channel === "all" || filter.channel === "reseller") {
-    const resellerResult = await read(supabase.from("sales_invoices")
-      .select("id,branch_id,customer_id,dpp,tanggal,status,sales_invoice_items(item_id,qty,harga)")
+    const resellerInvoices = await readAll<ResellerRow>(supabase.from("sales_invoices")
+      .select("id,branch_id,customer_id,dpp,tanggal,status,sales_invoice_items(item_id,qty,harga)", { count: "exact" })
       .in("branch_id", scope.branchIds).neq("status", "batal").is("opening_batch_id", null)
       .gte("tanggal", filter.from).lte("tanggal", filter.to));
-    queryError(resellerResult);
-    for (const invoice of (resellerResult.data ?? []) as ResellerRow[]) {
+    for (const invoice of resellerInvoices) {
       documents.push(itemNetRows(
         invoice.id,
         invoice.branch_id ?? "",
@@ -355,16 +372,14 @@ export async function collectBranchBlock(scope: DashboardScope, filter: Dashboar
 }
 
 export async function collectCustomerBlock(scope: DashboardScope, filter: DashboardFilter, supabase: AnyClient): Promise<CustomerBlock> {
-  const { start, end } = dateBounds(filter);
-  const currentResult = await read(supabase.from("sales")
-    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at, voided_at")
-    .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end));
-  queryError(currentResult);
-  const historyResult = await read(supabase.from("sales")
-    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at, voided_at")
+  const { end } = dateBounds(filter);
+  // All sales up to the end of the period: new/repeat/dormant need each customer's
+  // earlier purchases. This set already contains the period itself, so no separate
+  // period read is needed. It grows over the years, hence the complete paged read.
+  const history = await readAll<any>(supabase.from("sales")
+    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at, voided_at", { count: "exact" })
     .in("branch_id", scope.branchIds).lte("created_at", end));
-  queryError(historyResult);
-  const rows = [...(historyResult.data ?? []) as any[]].filter(isCompletedSale).map((row) => ({
+  const rows = history.filter(isCompletedSale).map((row) => ({
     customerId: row.customer_id ?? null,
     saleId: row.id,
     date: String(row.created_at).slice(0, 10),
@@ -385,14 +400,11 @@ export async function collectStockBlock(scope: DashboardScope, filter: Dashboard
   queryError(warehouseResult);
   const warehouses = warehouseResult.data ?? [];
   const warehouseIds = warehouses.map((row: any) => row.id);
-  const [stockResult, moveResult, itemResult] = await Promise.all([
-    read(supabase.from("stock").select("warehouse_id,item_id,qty").in("warehouse_id", warehouseIds).lte("updated_at", end)),
-    read(supabase.from("return_record_effective_stock_moves").select("warehouse_id,item_id,qty,tanggal").in("warehouse_id", warehouseIds).gte("tanggal", start.slice(0, 10)).lte("tanggal", filter.to)),
-    read(supabase.from("items").select("id,min_stock").eq("is_active", true)),
+  const [stockRows, moves, itemRows] = await Promise.all([
+    readAll<any>(supabase.from("stock").select("id,warehouse_id,item_id,qty", { count: "exact" }).in("warehouse_id", warehouseIds).lte("updated_at", end)),
+    readAll<any>(supabase.from("return_record_effective_stock_moves").select("id,warehouse_id,item_id,qty,tanggal", { count: "exact" }).in("warehouse_id", warehouseIds).gte("tanggal", start.slice(0, 10)).lte("tanggal", filter.to)),
+    readAll<any>(supabase.from("items").select("id,min_stock", { count: "exact" }).eq("is_active", true)),
   ]);
-  for (const result of [stockResult, moveResult, itemResult]) queryError(result);
-  const stockRows = stockResult.data ?? [];
-  const moves = moveResult.data ?? [];
   const usage = new Map<string, number>();
   for (const row of moves) if (Number(row.qty) < 0) usage.set(row.item_id, (usage.get(row.item_id) ?? 0) + Math.abs(Number(row.qty)));
   const movementRows: MovementRow[] = stockRows.map((row: any) => {
@@ -401,7 +413,7 @@ export async function collectStockBlock(scope: DashboardScope, filter: Dashboard
   });
   const totalAvailable = stockRows.reduce((total: number, row: any) => total + Math.max(0, Number(row.qty) || 0), 0);
   const totalUsage = [...usage.values()].reduce((total, value) => total + value, 0);
-  const minimumByItem = new Map<string, number>((itemResult.data ?? []).map((row: any) => [String(row.id), Number(row.min_stock) || 0]));
+  const minimumByItem = new Map<string, number>(itemRows.map((row: any) => [String(row.id), Number(row.min_stock) || 0]));
   return {
     coverageDays: stockCoverage(totalAvailable, totalUsage),
     lowStock: stockRows.filter((row: any) => (Number(row.qty) || 0) < (minimumByItem.get(String(row.item_id)) ?? 0)).length,
@@ -411,21 +423,17 @@ export async function collectStockBlock(scope: DashboardScope, filter: Dashboard
 }
 
 export async function collectPurchaseBlock(scope: DashboardScope, filter: DashboardFilter, supabase: AnyClient): Promise<PurchaseBlock> {
-  const poResult = await read(supabase.from("purchase_orders")
-    .select("id,branch_id,tanggal,total,status,purchase_order_items(item_id,qty,harga_beli)")
+  const orders = await readAll<any>(supabase.from("purchase_orders")
+    .select("id,branch_id,tanggal,total,status,purchase_order_items(item_id,qty,harga_beli)", { count: "exact" })
     .in("branch_id", scope.branchIds).gte("tanggal", filter.from).lte("tanggal", filter.to));
-  queryError(poResult);
-  const orders = poResult.data ?? [];
-  const poIds = orders.map((row: any) => row.id);
-  const invoiceResult = await read(supabase.from("purchase_invoices")
-    .select("id,po_id,total,tanggal,supplier_id,suppliers(nama),purchase_invoice_items(item_id,qty,harga)").is("voided_at", null)
-    .in("po_id", poIds).gte("tanggal", filter.from).lte("tanggal", filter.to));
-  queryError(invoiceResult);
-  const returnsResult = await read(supabase.from("purchase_returns")
-    .select("total,tanggal,po_id").is("voided_at", null).in("po_id", poIds).gte("tanggal", filter.from).lte("tanggal", filter.to));
-  queryError(returnsResult);
+  const poIds = orders.map((row: any) => String(row.id));
+  // Purchase returns are not read: no figure in this block uses them yet
+  // (supplier `returned` is still 0). Add them back with readAllByIds when it does.
+  const invoices = await readAllByIds<any>(poIds, (batch) => supabase.from("purchase_invoices")
+    .select("id,po_id,total,tanggal,supplier_id,suppliers(nama),purchase_invoice_items(item_id,qty,harga)", { count: "exact" }).is("voided_at", null)
+    .in("po_id", batch).gte("tanggal", filter.from).lte("tanggal", filter.to));
   const receivedByKey = new Map<string, number>();
-  for (const invoice of (invoiceResult.data ?? []) as any[]) {
+  for (const invoice of invoices) {
     for (const item of invoice.purchase_invoice_items ?? []) {
       const key = `${invoice.po_id}:${item.item_id ?? item.nama}`;
       receivedByKey.set(key, (receivedByKey.get(key) ?? 0) + (Number(item.qty) || 0));
@@ -435,7 +443,7 @@ export async function collectPurchaseBlock(scope: DashboardScope, filter: Dashbo
     orderedQty: Number(item.qty) || 0,
     receivedQty: receivedByKey.get(`${order.id}:${item.item_id ?? item.nama}`) ?? 0,
   })));
-  const supplierRows = (invoiceResult.data ?? []).flatMap((invoice: any) => {
+  const supplierRows = invoices.flatMap((invoice: any) => {
     const supplier = one(invoice.suppliers);
     return [{
       supplierId: invoice.supplier_id ?? "unknown",
@@ -449,7 +457,7 @@ export async function collectPurchaseBlock(scope: DashboardScope, filter: Dashbo
     }];
   });
   return {
-    purchase: (invoiceResult.data ?? []).reduce((total: number, row: any) => total + (Number(row.total) || 0), 0),
+    purchase: invoices.reduce((total: number, row: any) => total + (Number(row.total) || 0), 0),
     outstandingPoQty: outstandingPoQty(outstandingRows),
     supplierPerformance: supplierPerformance(supplierRows),
     promisedDeliveryAvailable: false,
@@ -464,9 +472,12 @@ export async function collectDashboard(supabase: AnyClient, filter: DashboardFil
   ensureDate(filter.from);
   ensureDate(filter.to);
   const scope = await resolveDashboardScope(supabase, filter.branchIds);
+  // The branch block is the sales block's per-branch view: read the (paged) sales
+  // sources once and let both blocks share the result.
+  const salesBlock = collectSalesBlock(scope, filter, supabase);
   const [sales, branch, customer, stock, purchase, clinic] = await Promise.all([
-    safeBlock(() => collectSalesBlock(scope, filter, supabase)),
-    safeBlock(() => collectBranchBlock(scope, filter, supabase)),
+    safeBlock(() => salesBlock),
+    safeBlock(async () => (await salesBlock).branches),
     safeBlock(() => collectCustomerBlock(scope, filter, supabase)),
     safeBlock(() => collectStockBlock(scope, filter, supabase)),
     safeBlock(() => collectPurchaseBlock(scope, filter, supabase)),
