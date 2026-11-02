@@ -61,3 +61,13 @@ it("validates the numbers shown after a restored draft", async () => {
   expect(field("transfer").value).toBe("11000");
   expect(button().disabled).toBe(false);
 });
+
+it("lets a cash sale with change be corrected and explains what happens to the change", async () => {
+  await act(async () => root.render(
+    <SalePaymentCorrectionForm userId="kasir" saleId={saleId} revision={0} cash={19000} transfer={0} change={31000} fixed={[]} />));
+  expect(host.textContent).toContain("Kembalian tercatat Rp 31.000");
+  await type("transfer", "19000");
+  expect(field("tunai").value).toBe("0");
+  expect(host.textContent).toContain("kembalian dihapus");
+  expect(button().disabled).toBe(false);
+});

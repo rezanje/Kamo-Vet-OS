@@ -250,7 +250,7 @@ select pg_temp.assert_ok((select count(*)>=1 from sale_payment_corrections where
 set local role postgres;
 select pg_temp.assert_ok((select to_jsonb(s)=(select snap from j02_shift_before) from cashier_shifts s where id='e8400000-0000-4000-8000-000000000001'),
  'closed shift is not reopened and its closing totals are untouched');
--- Penolakan lama tetap: kembalian tunai.
+-- Kembalian tunai (laporan 2 Nov): koreksi kini diterima; jurnal/laci memakai angka bersih.
 update cashier_shifts set status='open' where id='e8400000-0000-4000-8000-000000000001';
 set local role authenticated;
 select set_config('request.jwt.claim.sub','e8100000-0000-4000-8000-000000000001',true);
@@ -261,6 +261,30 @@ insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) valu
  ('e8800000-0000-4000-8000-000000000005','e8700000-0000-4000-8000-000000000005','e8500000-0000-4000-8000-000000000001','J02 service',1,50000,'pcs',1,0);
 select finalize_pos_sale('e8700000-0000-4000-8000-000000000005');
 select set_config('request.jwt.claim.sub','e8100000-0000-4000-8000-000000000002',true);
-select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000005',0,'j02-change','Kasir salah pilih metode',0,50000)$q$,
- 'cash change still requires reconciliation','kembalian');
+select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000005',0,'j02-change','Kasir salah pilih metode',0,50000);
+select pg_temp.assert_ok((select revision=1 and metode_bayar='Transfer' and bayar=50000 and kembali=0 and total=50000
+  from sales where id='e8700000-0000-4000-8000-000000000005')
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000005','1141')=0
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000005','1142')=50000
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000005','510001')=-50000,
+ 'cash sale with change moves fully to Transfer; change cleared and paid equals total');
+select pg_temp.assert_ok((select before_sale->>'bayar'='60000' and (before_sale->>'kembali')::numeric=10000
+  from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-000000000005'),
+ 'original tendered cash and change stay in the correction trail');
+-- Bagian Tunai tetap ada: bayar/kembali tidak berubah.
+select set_config('request.jwt.claim.sub','e8100000-0000-4000-8000-000000000001',true);
+insert into sales(id,branch_id,no_struk,subtotal,total,metode_bayar,bayar,kembali,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint)
+ values('e8700000-0000-4000-8000-000000000006','e8200000-0000-4000-8000-000000000001','J02.CHANGE.SPLIT',50000,50000,'Tunai',60000,10000,
+ 'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":50000}]','j02-change-split',repeat('f',64));
+insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) values
+ ('e8800000-0000-4000-8000-000000000006','e8700000-0000-4000-8000-000000000006','e8500000-0000-4000-8000-000000000001','J02 service',1,50000,'pcs',1,0);
+select finalize_pos_sale('e8700000-0000-4000-8000-000000000006');
+select pg_temp.reject($q$update sales set bayar=50000,kembali=0 where id='e8700000-0000-4000-8000-000000000006'$q$,
+ 'tendered cash and change stay immutable outside the official correction');
+select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000006',0,'j02-change-split','Sebagian dibayar transfer',30000,20000);
+select pg_temp.assert_ok((select revision=1 and metode_bayar='Split' and bayar=60000 and kembali=10000
+  from sales where id='e8700000-0000-4000-8000-000000000006')
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000006','1141')=30000
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000006','1142')=20000,
+ 'split correction keeps tendered cash and change when a cash part remains');
 rollback;

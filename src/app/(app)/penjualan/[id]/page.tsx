@@ -81,7 +81,7 @@ export default async function PenjualanDetailPage({
   const cash = payments.find(part => part.method === "Tunai")?.amount ?? 0;
   const transfer = payments.find(part => part.method === "Transfer")?.amount ?? 0;
   const canCorrectPayment = canCorrectRole && !!user && !sale.voided_at && !sale.channel && !!sale.payment_plan
-    && !!sale.payments_finalized_at && Number(sale.kembali) === 0 && cash + transfer > 0
+    && !!sale.payments_finalized_at && cash + transfer > 0
     && returs.length === 0 && !sale.sale_payments?.some(part => ["Tunai", "Transfer"].includes(part.method)
       && (Number(part.fee_amount) !== 0 || Number(part.fee_percent) !== 0));
 
@@ -211,7 +211,7 @@ export default async function PenjualanDetailPage({
       {canCorrectRole && user && !sale.voided_at && <details className="crm-sec">
         <summary>{isOwner ? "Koreksi atau batalkan penjualan" : "Koreksi metode pembayaran"}</summary>
         {canCorrectPayment && !correctionError && <SalePaymentCorrectionForm userId={user.id} saleId={sale.id}
-          revision={sale.revision} cash={cash} transfer={transfer}
+          revision={sale.revision} cash={cash} transfer={transfer} change={Number(sale.kembali)}
           fixed={payments.filter(part => part.method !== "Tunai" && part.method !== "Transfer")} />}
         {!isOwner ? null : correctionError ? <p>Riwayat koreksi belum dapat dibaca. Muat ulang sebelum tindakan berikutnya.</p>
           : corrections.length > 0 ? <p>Pembatalan penjualan yang sudah dikoreksi memerlukan rekonsiliasi seluruh jurnal koreksi. Hubungi finance sebelum membatalkan.</p>
