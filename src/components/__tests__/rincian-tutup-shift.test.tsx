@@ -13,6 +13,7 @@ const fx = vi.hoisted(() => ({
   shift: null as Row | null,
   expenses: [] as Row[],
   sales: [] as Row[],
+  invoices: [] as Row[],
   targets: [] as Row[],
   history: [] as Row[],
   calls: [] as { table: string; filters: [string, string, unknown][] }[],
@@ -39,6 +40,14 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
         return fx.sales.filter((s) => s.branch_id === branch
           && Date.parse(String(s.created_at)) >= Date.parse(gte) && Date.parse(String(s.created_at)) <= Date.parse(lte));
       }
+      if (table === "invoices") {
+        const gte = call.filters.find(([op, col]) => op === "gte" && col === "created_at")?.[2] as string;
+        const lte = call.filters.find(([op, col]) => op === "lte" && col === "created_at")?.[2] as string;
+        const branch = call.filters.find(([op, col]) => op === "eq" && col === "visits.branch_id")?.[2];
+        const tanpaBatal = call.filters.some(([op, col, v]) => op === "is" && col === "voided_at" && v === null);
+        return fx.invoices.filter((i) => i.branch_id === branch && (!tanpaBatal || !i.voided_at)
+          && Date.parse(String(i.created_at)) >= Date.parse(gte) && Date.parse(String(i.created_at)) <= Date.parse(lte));
+      }
       if (table === "cashier_shifts") return fx.history;
       return [];
     };
@@ -49,6 +58,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       gte: (c: string, v: unknown) => { call.filters.push(["gte", c, v]); return q; },
       lte: (c: string, v: unknown) => { call.filters.push(["lte", c, v]); return q; },
       lt: (c: string, v: unknown) => { call.filters.push(["lt", c, v]); return q; },
+      is: (c: string, v: unknown) => { call.filters.push(["is", c, v]); return q; },
       order: () => q,
       range: async (from: number, to: number) => { const all = rows(); return { data: all.slice(from, to + 1), error: null, count: all.length }; },
       maybeSingle: async () => ({ data: table === "cashier_shifts" ? fx.shift : null, error: null }),
@@ -61,6 +71,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 import KasirRingkasan from "@/app/kasir/tutup/[shiftId]/page";
 import LaporanShift from "@/app/(app)/pos/shift/[id]/page";
 import Riwayat from "@/app/(app)/pos/shift/riwayat/page";
+import KlinikRingkasan from "@/app/(app)/klinik/shift/[shiftId]/page";
 
 const shiftContoh = (): Row => ({
   id: "shift-1", shift_type: "petshop", status: "closed", branch_id: "cab-a", opened_by: "kasir-a",
@@ -86,6 +97,12 @@ beforeEach(() => {
     jual("belum-lunas", 777, "2026-11-01T06:00:00Z", { payment_plan: {}, payments_finalized_at: null }),
     jual("sesudah-tutup", 888, "2026-11-01T15:00:00Z"),
     jual("cabang-lain", 555, "2026-11-01T05:00:00Z", { branch_id: "cab-b" }),
+  ];
+  fx.invoices = [
+    { id: "i1", total: 3_000_000, created_at: "2026-11-01T04:00:00Z", branch_id: "cab-a", voided_at: null },
+    { id: "i-batal", total: 444, created_at: "2026-11-01T04:00:00Z", branch_id: "cab-a", voided_at: "2026-11-01T05:00:00Z" },
+    { id: "i-sesudah", total: 333, created_at: "2026-11-01T15:00:00Z", branch_id: "cab-a", voided_at: null },
+    { id: "i-lain", total: 222, created_at: "2026-11-01T04:00:00Z", branch_id: "cab-b", voided_at: null },
   ];
   fx.targets = [{ periode: "2026-11", target: 50_000_000, basis: "omzet", branch_id: "cab-a", employee_id: null, category_id: null }];
   fx.history = [];
@@ -138,7 +155,7 @@ it("kasir lain tidak bisa membuka layar sesudah tutup shift milik orang lain", a
   await expect(KasirRingkasan({ params: Promise.resolve({ shiftId: "shift-1" }) })).rejects.toThrow("REDIRECT:/mulai");
 });
 
-it("laporan dari riwayat menampilkan kartu yang sama, shift klinik tanpa bagian target", async () => {
+it("laporan dari riwayat menampilkan kartu yang sama untuk petshop dan klinik", async () => {
   fx.user = "owner";
   const petshop = teks(renderToStaticMarkup(await LaporanShift({ params: Promise.resolve({ id: "shift-1" }) })));
   expect(petshop).toContain("RINCIAN TUTUP SHIFT");
@@ -149,8 +166,32 @@ it("laporan dari riwayat menampilkan kartu yang sama, shift klinik tanpa bagian 
   fx.calls = [];
   const klinik = teks(renderToStaticMarkup(await LaporanShift({ params: Promise.resolve({ id: "shift-1" }) })));
   expect(klinik).toContain("UANG MASUK SHIFT INI");
-  expect(klinik).not.toContain("RINGKASAN OMSET BULAN");
+  // Reza 2 Nov malam: klinik sama dengan petshop — omset bulan dari tagihan klinik cabang ini.
+  expect(klinik).toContain("RINGKASAN OMSET BULAN");
+  expect(klinik).toContain("Rp 3.000.000");
+  expect(klinik).toContain("semua tagihan klinik di cabang ini");
   expect(fx.calls.some((c) => c.table === "sales")).toBe(false);
+});
+
+it("layar kasir klinik sesudah tutup shift memakai kartu yang sama dengan petshop", async () => {
+  fx.shift = { ...shiftContoh(), shift_type: "klinik" };
+  const t = teks(renderToStaticMarkup(await KlinikRingkasan({ params: Promise.resolve({ shiftId: "shift-1" }) })));
+  expect(t).toContain("Shift Klinik Ditutup");
+  expect(t).toContain("RINCIAN TUTUP SHIFT");
+  expect(t).toContain("PEMBAYARAN TUNAI");
+  expect(t).toContain("PEMBAYARAN NON TUNAI");
+  expect(t).toContain("PENGELUARAN");
+  expect(t).toContain("RINGKASAN OMSET BULAN");
+  // Tagihan batal, sesudah jam tutup, dan cabang lain tidak dihitung.
+  expect(t).toContain("Rp 3.000.000");
+  expect(t).not.toContain("Rp 3.000.444");
+  expect(t).not.toContain("Rp 3.000.333");
+  expect(t).toContain("SELESAI");
+  fx.user = "kasir-b";
+  await expect(KlinikRingkasan({ params: Promise.resolve({ shiftId: "shift-1" }) })).rejects.toThrow("REDIRECT:/mulai");
+  fx.user = "kasir-a";
+  fx.shift = { ...shiftContoh(), shift_type: "klinik", status: "open", closed_at: null };
+  await expect(KlinikRingkasan({ params: Promise.resolve({ shiftId: "shift-1" }) })).rejects.toThrow("REDIRECT:/klinik/shift");
 });
 
 it("riwayat hanya membaca cabang yang boleh dilihat dan membuka laporan per shift", async () => {

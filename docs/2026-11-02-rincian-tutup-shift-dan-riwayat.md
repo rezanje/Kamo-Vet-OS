@@ -60,3 +60,19 @@ klinik), jadi persennya bisa sedikit berbeda dari kartu ini yang memakai total s
   1.666.667/hari, 300%), target cabang saja, tanpa target, bulan 28/29/30 hari.
 - `src/components/__tests__/rincian-tutup-shift.test.tsx` — layar kasir, laporan backoffice (petshop & klinik),
   struk batal / belum final / sesudah jam tutup / cabang lain tidak dihitung, riwayat dibatasi cabang.
+
+## Lanjutan 2 Nov malam — klinik disamakan (Reza 21.42)
+
+Laporan Anisa (21.41): layar sesudah tutup shift **klinik** masih kartu lama (Kas dari invoice / QRIS "tidak masuk laci"),
+petshop sudah kartu baru. Diminta klinik sama.
+
+- `src/app/(app)/klinik/shift/[shiftId]/page.tsx` sekarang memakai `muatRincianTutupShift` + `RincianTutupShift` — kartu
+  yang sama dengan `/kasir/tutup/[shiftId]` (uang masuk shift, modal awal, tunai, non-tunai per metode, pengeluaran, kas
+  seharusnya, kas fisik, selisih). Hak lihat sama: hanya pemilik laci; atasan lewat Riwayat Tutup Shift.
+- Bagian omset bulan vs target kini juga untuk shift klinik yang sudah ditutup. **Omset klinik** = total tagihan klinik
+  (`invoices`, tidak dibatalkan) kunjungan di cabang itu, dari awal bulan sampai jam tutup shift, dipatok tanggal tagihan
+  dibuat; "penjualan hari ini" = bagiannya di tanggal tutup shift. Target = baris Target Penjualan cabang itu (sama seperti
+  petshop). Catatan kecil di kartu menjelaskan sumber angkanya.
+- Catatan: untuk cabang BOTH, kartu petshop menghitung struk toko saja dan kartu klinik tagihan klinik saja.
+- Tes: `src/components/__tests__/rincian-tutup-shift.test.tsx` — layar kasir klinik (kartu sama, tagihan batal / sesudah
+  jam tutup / cabang lain tidak dihitung, hak lihat) dan laporan riwayat klinik dengan ringkasan omset.

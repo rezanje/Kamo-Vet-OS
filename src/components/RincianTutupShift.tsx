@@ -83,14 +83,14 @@ export function RincianTutupShift({ data, footer }: { data: RincianTutupShiftDat
         <span style={{ fontSize: 16, fontWeight: 800, color: warnaSelisih }}>{selisih > 0 ? "+ " : ""}{rp(selisih)}</span>
       </div>
 
-      {data.target && <BagianTarget target={data.target} />}
+      {data.target && <BagianTarget target={data.target} jenis={data.jenis} />}
 
       {footer}
     </div>
   );
 }
 
-function BagianTarget({ target }: { target: RingkasanTarget | { error: string } }) {
+function BagianTarget({ target, jenis }: { target: RingkasanTarget | { error: string }; jenis: "petshop" | "klinik" }) {
   if ("error" in target) {
     return (
       <div style={{ marginTop: 16, fontSize: 11.5, color: "var(--tm)", background: "#f8fafc", border: "1px solid var(--bd)", borderRadius: 8, padding: "10px 12px" }}>
@@ -175,7 +175,9 @@ function BagianTarget({ target }: { target: RingkasanTarget | { error: string } 
       <div style={{ marginTop: 10, fontSize: 10.5, color: "#1e3a8a", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "8px 10px" }}>
         <i className="ti ti-info-circle" style={{ marginRight: 4 }} />
         {t.target !== null && <>Target harian = target bulan ini dibagi jumlah hari di bulan {bulan} ({t.jumlahHari} hari). </>}
-        Omset bulan &amp; penjualan hari ini = semua penjualan toko di cabang ini (semua kasir) sampai jam shift ini ditutup.
+        {jenis === "klinik"
+          ? <>Omset bulan &amp; penjualan hari ini = semua tagihan klinik di cabang ini (tidak dibatalkan, semua kasir) sampai jam shift ini ditutup.</>
+          : <>Omset bulan &amp; penjualan hari ini = semua penjualan toko di cabang ini (semua kasir) sampai jam shift ini ditutup.</>}
       </div>
     </div>
   );
