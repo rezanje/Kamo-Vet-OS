@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bagiHargaPaket, isiDitagihPerPaket, kenaliPaket, pecahPaket, stokPaket, type ResepPaket } from "../paket-klinik";
+import { bagiHargaPaket, gabungPaketCetak, isiDitagihPerPaket, kenaliPaket, pecahPaket, stokPaket, type ResepPaket } from "../paket-klinik";
 
 const resep: ResepPaket = {
   id: "paket-vaksin", name: "Paket Vaksin F4",
@@ -98,5 +98,42 @@ describe("kenaliPaket", () => {
     const baris = pecahPaket(resep, 230000, 1, harga).baris.map((b): Baris => ({ item_id: b.item_id, qty: b.qty, harga: b.harga, satuan: b.satuan }));
     expect(kenaliPaket(baris.map((b, i) => i === 1 ? { ...b, harga: b.harga + 1000 } : b), paket, faktor).some(r => r.package_item_id)).toBe(false);
     expect(kenaliPaket(baris.map((b, i) => i === 2 ? { ...b, qty: 3 } : b), paket, faktor).some(r => r.package_item_id)).toBe(false);
+  });
+});
+
+describe("gabungPaketCetak (struk & invoice)", () => {
+  // Bentuk tagihan nyata 2 Nov: lima isi paket Rp800.000 di antara baris biasa; angka dari database bertipe teks.
+  const p = { package_item_id: "kdl", package_qty: "1.0000", paket: { name: "Kimia Darah Lengkap" } };
+  const rows = [
+    { deskripsi: "RC Recovery", qty: 1, harga: "60000.00", diskon_persen: "0.00", jenis: "obat", package_item_id: null, package_qty: null, paket: null },
+    { deskripsi: "Syringe", qty: 1, harga: "645.00", diskon_persen: "0.00", jenis: "obat", ...p },
+    { deskripsi: "Tabung Heparin", qty: 1, harga: "1549.00", diskon_persen: "0.00", jenis: "obat", ...p },
+    { deskripsi: "Biaya Admin", qty: 1, harga: "5000.00", diskon_persen: "0.00", jenis: "jasa", package_item_id: null, package_qty: null, paket: null },
+    { deskripsi: "Hematologi", qty: 1, harga: "193728.00", diskon_persen: "0.00", jenis: "obat", ...p },
+    { deskripsi: "Kimia Darah", qty: 1, harga: "602701.00", diskon_persen: "0.00", jenis: "obat", ...p },
+    { deskripsi: "Tabung EDTA", qty: 1, harga: "1377.00", diskon_persen: "0.00", jenis: "obat", ...p },
+  ];
+  const nilai = (r: { qty: number | string; harga: number | string; diskon_persen?: number | string | null }) =>
+    Number(r.qty) * Number(r.harga) * (1 - (Number(r.diskon_persen) || 0) / 100);
+  it("mencetak paket satu baris (nama, jumlah, harga paket) di posisi isi pertama; total tidak berubah", () => {
+    const out = gabungPaketCetak(rows);
+    expect(out.map(r => [r.deskripsi, Number(r.qty), Number(r.harga)])).toEqual([
+      ["RC Recovery", 1, 60000], ["Kimia Darah Lengkap", 1, 800000], ["Biaya Admin", 1, 5000]]);
+    expect(out.reduce((a, r) => a + nilai(r), 0)).toBeCloseTo(rows.reduce((a, r) => a + nilai(r), 0), 6);
+  });
+  it("dua paket dan diskon isi menghasilkan harga per paket dan diskon setara", () => {
+    const dua = rows.map(r => r.package_item_id ? { ...r, qty: 2, package_qty: "2.0000", diskon_persen: "10" } : r);
+    const paket = gabungPaketCetak(dua).find(r => r.deskripsi === "Kimia Darah Lengkap")!;
+    expect([Number(paket.qty), Number(paket.harga), Number(paket.diskon_persen)]).toEqual([2, 800000, 10]);
+  });
+  it("paket yang sama di invoice berbeda (struk rombongan) tidak digabung lintas invoice", () => {
+    const a = rows.filter(r => r.package_item_id).map(r => ({ ...r, invoice_id: "inv-a" }));
+    const b = rows.filter(r => r.package_item_id).map(r => ({ ...r, invoice_id: "inv-b" }));
+    expect(gabungPaketCetak([...a, ...b]).map(r => [r.invoice_id, r.deskripsi])).toEqual([
+      ["inv-a", "Kimia Darah Lengkap"], ["inv-b", "Kimia Darah Lengkap"]]);
+  });
+  it("tagihan tanpa paket tercetak persis seperti sebelumnya", () => {
+    const biasa = rows.filter(r => !r.package_item_id);
+    expect(gabungPaketCetak(biasa)).toEqual(biasa);
   });
 });

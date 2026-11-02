@@ -60,4 +60,16 @@ Masukan Anisa setelah mencoba "Kimia Darah Lengkap": keranjang menampilkan tiap 
   semua isi), diskon % berlaku untuk semua isi, pelaksana sekali, kotak "ISI PAKET", tombol "Bukan paket" untuk melepas
   penandaan yang keliru, hapus paket. Isi berjenis jasa ikut tabel Obat (jenisnya tetap `jasa` saat dikirim) supaya paket
   tidak tampil dua kali.
-- Belum berubah: struk/invoice cetak dan detail rekam medis tersimpan masih menampilkan baris isi.
+- Belum berubah: detail rekam medis tersimpan masih menampilkan baris isi.
+
+## Lanjutan 2 Nov malam — cetakan ke pelanggan (Reza)
+
+Permintaan: printout "seperti biasa", isi/BMHP paket tidak terlihat pelanggan. Dicek di Production: tagihan
+`00b00eac…` (2 Nov) mencetak lima isi paket Kimia Darah Lengkap satu per satu (Syringe Rp645, Tabung Heparin Rp1.549,
+Hematologi Rp193.728, Kimia Darah Rp602.701, Tabung EDTA Rp1.377 = Rp800.000).
+
+- `gabungPaketCetak` (`src/lib/paket-klinik.ts`): baris isi satu paket per invoice digabung jadi satu baris di posisi isi
+  pertama — nama paket (`items` lewat `invoice_items_package_item_id_fkey`), jumlah paket, harga per paket, diskon setara.
+  Total tidak berubah; tagihan tanpa paket tercetak persis seperti sebelumnya.
+- Dipakai di struk (`pembayaran/[visitId]/struk`), invoice A4 (`…/invoice`), struk rombongan (per invoice), dan struk WhatsApp
+  (nama paket dibaca dari master saat kirim; tetap sesudah respons).

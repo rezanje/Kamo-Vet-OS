@@ -1,3 +1,4 @@
+import { gabungPaketCetak } from "@/lib/paket-klinik";
 import { printBranchHeading } from "@/components/print-branch-heading";
 import { bacaNamaDokter, namaDokterPJ } from "@/lib/dokter-pj";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
@@ -42,8 +43,10 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
     <p><Link href={`/klinik/pembayaran/${visitId}`}>Pilih invoice lain dari riwayat pembayaran</Link></p>
   </section>;
 
-  const { data: items,error:itemsError } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen, jenis, compound_recipe_id, compounding_recipes(id, medical_records(visit_id))").eq("invoice_id", invoice.id).order("created_at");
+  const { data: barisInvoice,error:itemsError } = await supabase
+    .from("invoice_items").select("deskripsi, qty, harga, diskon_persen, jenis, compound_recipe_id, compounding_recipes(id, medical_records(visit_id)), package_item_id, package_qty, paket:items!invoice_items_package_item_id_fkey(name)").eq("invoice_id", invoice.id).order("created_at");
+  // Isi paket tidak dicetak ke pelanggan: satu baris nama paket.
+  const items = barisInvoice ? gabungPaketCetak(barisInvoice) : barisInvoice;
   const { data: payments,error:paymentsError } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
   if(itemsError||paymentsError)throw new Error("Rincian invoice atau pembayaran belum dapat diverifikasi. Muat ulang sebelum mencetak.");
