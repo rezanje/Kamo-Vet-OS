@@ -206,6 +206,21 @@ function one<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] ?? null : value ?? null;
 }
 
+// Jumlah `total` retur/refund per dokumen sumber, dibaca hanya untuk id dokumen yang termuat.
+// readAllByIds membuat id unik lalu memecahnya per 100 (URL filter `in` tetap pendek), jadi
+// tiap id ada di tepat satu potongan, dan tiap potongan dibaca lengkap berhalaman: tiap baris
+// retur/refund terbaca tepat sekali, tidak terpotong di max-rows. `load` harus memilih `id`
+// dan meminta `{ count: "exact" }`.
+async function sumTotalsBySource(ids: string[], key: string, load: (ids: string[]) => AnyClient): Promise<Map<string, number>> {
+  const rows = await readAllByIds<Record<string, unknown>>(ids, load);
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    const id = String(row[key]);
+    totals.set(id, (totals.get(id) ?? 0) + (Number(row.total) || 0));
+  }
+  return totals;
+}
+
 function itemNetRows(
   documentId: string,
   branchId: string,
@@ -242,10 +257,12 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
       .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end);
     query = applyChannel(query, filter.channel);
     const sales = (await readAll<SaleRow>(query)).filter(isCompletedSale);
-    const returns = await readAllByIds<{ id: string; sale_id: string; total: number }>(sales.map((sale) => sale.id), (batch) =>
-      supabase.from("sales_returns").select("id,sale_id,total", { count: "exact" }).is("voided_at", null).in("sale_id", batch).lte("tanggal", filter.to));
-    const returnMap = new Map<string, number>();
-    for (const row of returns) returnMap.set(row.sale_id, (returnMap.get(row.sale_id) ?? 0) + (Number(row.total) || 0));
+    // Retur struk mengikuti aturan Laporan Transaksi (laporan-transaksi-server.ts): dibaca
+    // TANPA batas tanggal retur dan tetap dibukukan pada tanggal & cabang struk asal. Retur
+    // bulan ini atas struk bulan lalu ikut menurunkan omzet bulan lalu, sehingga angka kedua
+    // laporan sama untuk periode apa pun. Retur yang di-void tidak dihitung.
+    const returnMap = await sumTotalsBySource(sales.map((sale) => sale.id), "sale_id", (ids) =>
+      supabase.from("sales_returns").select("id,sale_id,total", { count: "exact" }).is("voided_at", null).in("sale_id", ids));
     for (const sale of sales) {
       const items = sale.sale_items ?? [];
       documents.push(itemNetRows(
@@ -275,15 +292,26 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
     // ditagih tgl D+1. Cabang tetap diambil dari kunjungan (invoices tidak punya
     // branch_id); `!inner` membuang tagihan yang kunjungannya di luar cabang scope.
     // Jumlah kunjungan (blok klinik) tetap dihitung dari tanggal daftar kunjungan.
-    const invoices = await readAll<InvoiceRow>(supabase.from("invoices")
+    const invoiceRows = await readAll<InvoiceRow>(supabase.from("invoices")
       .select("id,visit_id,total,created_at,voided_at,visits!inner(branch_id,customer_id),invoice_items(item_id,qty,hpp,harga,jenis)", { count: "exact" })
       .in("visits.branch_id", scope.branchIds).is("voided_at", null)
       .gte("created_at", start).lte("created_at", end));
-    const seen = new Set<string>();
-    for (const invoice of invoices) {
+    const invoices = new Map<string, { invoice: InvoiceRow; visit: InvoiceVisit }>();
+    for (const invoice of invoiceRows) {
       const visit = one(invoice.visits);
-      if (!visit || !scope.branchIds.includes(visit.branch_id) || seen.has(invoice.id)) continue;
-      seen.add(invoice.id);
+      if (!visit || !scope.branchIds.includes(visit.branch_id) || invoices.has(invoice.id)) continue;
+      invoices.set(invoice.id, { invoice, visit });
+    }
+    // Refund klinik (J03) mengurangi omzet tagihan asalnya, aturannya sama dengan Laporan
+    // Transaksi (laporan-transaksi-server.ts): dibaca TANPA batas tanggal refund, dan tetap
+    // dibukukan pada tanggal & cabang tagihan. Jadi refund bulan ini atas tagihan bulan lalu
+    // ikut menurunkan omzet bulan lalu, dan angka klinik kedua laporan sama untuk periode
+    // apa pun. Refund klinik hanya ada setelah diposting dan tidak bisa di-void, jadi tidak
+    // ada filter voided_at. Dibaca per tagihan yang termuat (dipecah per 100 id), sehingga
+    // tiap baris refund terbaca tepat sekali dan tagihan batal/di luar scope tidak tersentuh.
+    const refundMap = await sumTotalsBySource([...invoices.keys()], "invoice_id", (ids) =>
+      supabase.from("clinic_refunds").select("id,invoice_id,total", { count: "exact" }).in("invoice_id", ids));
+    for (const { invoice, visit } of invoices.values()) {
       documents.push(itemNetRows(
         invoice.id,
         visit.branch_id,
@@ -291,6 +319,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
         invoice.created_at,
         Number(invoice.total) || 0,
         (invoice.invoice_items ?? []).map((item) => ({ qty: item.qty, hpp: item.hpp, harga: item.harga, itemId: item.item_id, kind: "clinic" as const })),
+        refundMap.get(invoice.id) ?? 0,
       ));
     }
   }

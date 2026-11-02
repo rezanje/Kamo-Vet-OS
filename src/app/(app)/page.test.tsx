@@ -72,7 +72,11 @@ it("shows the full all-branch grooming count when visit rows exceed the API page
   expect(new Date(String(until)).getTime() - new Date(String(from)).getTime()).toBe(86_400_000);
   expect(new Date(String(from)).getUTCHours()).toBe(17); // WIB midnight
   const waitingQuery = calls.find((call) => call.table === "visits" && call.filters.some(([op, field, value]) => op === "eq" && field === "status" && value === "Menunggu"));
+  expect(waitingQuery).toBeDefined();
   expect(waitingQuery?.filters.some(([op, field]) => op === "lt" && field === "created_at")).toBe(true);
+  // Laporan klinik 2 Nov 2026: yang masih menunggu sejak kemarin malam tetap dihitung (tanpa batas awal hari).
+  expect(waitingQuery?.filters.some(([op, field]) => op === "gte" && field === "created_at")).toBe(false);
+  expect(waitingQuery?.filters.find(([op, field]) => op === "lt" && field === "created_at")?.[2]).toBe(until);
 });
 
 it("renders the branch-scoped count returned by the authenticated client", async () => {
