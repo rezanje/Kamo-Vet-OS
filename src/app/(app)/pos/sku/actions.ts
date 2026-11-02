@@ -4,6 +4,7 @@ import { changeMasterLifecycle } from "@/app/(app)/master-data/actions";
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { bersihkanCacheSebentar } from "@/lib/cache-memori";
+import { samakanHargaVaksinasi } from "@/lib/harga-vaksinasi";
 import { loadUnitOptions, parseUnitDrafts, resolveSubmittedUnit, replaceItemUnitConfiguration, unitOptions } from "@/lib/satuan";
 import { rapikanTingkat } from "@/lib/harga-tingkat";
 import { pickItemType, validasiBarang, validasiSatuanDasar, pesanSimpanGagal } from "@/lib/barang";
@@ -189,6 +190,11 @@ export async function simpanBarang(formData: FormData) {
     : await supabase.from("items").insert({ ...patch, is_active: true }).select("id").maybeSingle();
 
   if (error) gagal(pesanSimpanGagal(error.message));
+  if (!isJasa && !isGroup) {
+    // Vial vaksin: jasa "Vaksinasi …" yang ditagih klinik ikut harga vial yang baru.
+    const vaksinError = await samakanHargaVaksinasi(supabase, [{ code: draft.code, harga: draft.sellPrice }]);
+    if (vaksinError) gagal(pesanSimpanGagal(vaksinError));
+  }
 
   // Replace-all: baris yang dihapus di form harus benar-benar hilang, kalau tidak
   // satuan lama tetap bisa dipilih di POS dgn faktor yang sudah tidak berlaku.

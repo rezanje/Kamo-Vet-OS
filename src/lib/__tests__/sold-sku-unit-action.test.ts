@@ -1,6 +1,7 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 const s=vi.hoisted(()=>({blocked:true,soldUnits:false,writes:[] as string[],calls:[] as {name:string;params:unknown}[],
- master:['pcs'] as string[],itemUnit:'pcs',itemUnits:[] as {unit:string;factor:number;sell_price:number;buy_price:number}[],cleared:0}));
+ master:['pcs'] as string[],itemUnit:'pcs',itemUnits:[] as {unit:string;factor:number;sell_price:number;buy_price:number}[],cleared:0,
+ vaccination:[] as {code:unknown;patch:unknown}[]}));
 vi.mock('next/navigation',()=>({redirect:(url:string)=>{throw Error(decodeURIComponent(url))}}));
 vi.mock('@/lib/cache-memori',()=>({bersihkanCacheSebentar:()=>{s.cleared++}}));
 vi.mock('@/lib/master-guard',()=>({assertMasterAdmin:async()=>({rpc:async(name:string,params:unknown)=>{s.calls.push({name,params});const p=params as {p_units?:unknown[]};
@@ -8,13 +9,14 @@ vi.mock('@/lib/master-guard',()=>({assertMasterAdmin:async()=>({rpc:async(name:s
  const refused=name==='replace_item_unit_configuration'&&(s.blocked||(s.soldUnits&&s.itemUnits.length>0&&(p.p_units??[]).length===0));
  return {error:refused?{message:s.blocked?'Konversi SKU sudah memiliki penjualan; buat SKU baru':'SKU sudah memiliki penjualan. Konversi satuan historis tidak boleh diubah atau dihapus'}:null}},from(table:string){
  const rows=()=>table==='units'?s.master.map(nama=>({nama})):table==='item_units'?s.itemUnits:[];
- const q={select:()=>q,eq:()=>q,ilike:()=>q,in:()=>q,insert:()=>{s.writes.push(table);return q},update:()=>{s.writes.push(table);return q},delete:()=>{s.writes.push(table);return q},
+ let patch:unknown;
+ const q={select:()=>q,eq:(column:string,value:unknown)=>{if(table==='items'&&column==='code')s.vaccination.push({code:value,patch});return q},neq:()=>q,ilike:()=>q,in:()=>q,insert:()=>{s.writes.push(table);return q},update:(value:unknown)=>{patch=value;s.writes.push(table);return q},delete:()=>{s.writes.push(table);return q},
   maybeSingle:async()=>({data:table==='items'?{id:'item',unit:s.itemUnit}:null,error:null}),
   then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data:rows(),error:null}).then(resolve)};return q}})}));
 import {simpanBarang} from '@/app/(app)/pos/sku/actions';
 const form=(extra:Record<string,string>={})=>{const f=new FormData();for(const [k,v] of Object.entries({id:'item',name:'Fictional SKU',code:'I07',category_id:'cat',item_type:'Persediaan',unit:'pcs',sell_price:'150000',units:JSON.stringify([{unit:'box',factor:28,sell_price:28000,buy_price:14000}]),...extra}))f.set(k,v);return f};
 const unitCall=()=>s.calls.find(call=>call.name==='replace_item_unit_configuration')?.params as {p_base_unit:string;p_units:unknown[]};
-beforeEach(()=>{s.blocked=true;s.soldUnits=false;s.writes=[];s.calls=[];s.master=['pcs'];s.itemUnit='pcs';s.itemUnits=[];s.cleared=0});
+beforeEach(()=>{s.blocked=true;s.soldUnits=false;s.vaccination=[];s.writes=[];s.calls=[];s.master=['pcs'];s.itemUnit='pcs';s.itemUnits=[];s.cleared=0});
 it('rejects a sold conversion before other master changes and explains new SKU',async()=>{await expect(simpanBarang(form())).rejects.toThrow('buat SKU baru');expect(s.writes).toEqual([])});
 it('routes successful edits through the atomic base/unit configuration without destructive replacement',async()=>{s.blocked=false;await expect(simpanBarang(form())).rejects.toThrow('success=1');expect(s.calls).toContainEqual({name:'replace_item_unit_configuration',params:{p_item_id:'item',p_base_unit:'pcs',p_units:[{unit:'box',factor:28,sell_price:28000,buy_price:14000}]}});expect(s.writes).not.toContain('item_units')});
 
@@ -59,4 +61,16 @@ it('still cleans leftover packaging off an unsold service',async()=>{
 it('does not retry a refused unit change for stock items',async()=>{
  await expect(simpanBarang(form())).rejects.toThrow('buat SKU baru');
  expect(unitCalls()).toHaveLength(1);
+});
+
+// 1 Nov: 8 vaccine vials got new prices but the clinic kept billing the old "Vaksinasi …" service price.
+it('carries a vial price to its vaccination service (JV-<code>)',async()=>{
+ s.blocked=false;
+ await expect(simpanBarang(form({code:'OBT-1',sell_price:'250000'}))).rejects.toThrow('success=1');
+ expect(s.vaccination).toEqual([{code:'JV-OBT-1',patch:{sell_price:250000}}]);
+});
+it('does not push a service price onto another vaccination service',async()=>{
+ s.blocked=false;
+ await expect(simpanBarang(form({code:'JV-OBT-1',item_type:'Jasa',tindakan_kategori:'Konsultasi',unit:'pcs',units:'[]'}))).rejects.toThrow('success=1');
+ expect(s.vaccination).toEqual([]);
 });

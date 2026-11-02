@@ -149,13 +149,17 @@ export default async function HargaJualPage({
                     {branchId ? (
                       <span style={{ fontSize: 11 }}>{rp(r.hargaPusat)}</span>
                     ) : (
-                      <NumberInput className="fi" name={`h|${r.item.id}|${r.unit}`} type="number" min={0} step="any"
-                        defaultValue={r.hargaPusat} disabled={!bolehKelola}
-                        style={{ textAlign: "right", height: 26, fontSize: 11 }} />
+                      <>
+                        <input type="hidden" name={`o|${r.item.id}|${r.unit}`} value={String(r.hargaPusat)} />
+                        <NumberInput className="fi" name={`h|${r.item.id}|${r.unit}`} type="number" min={0} step="any"
+                          defaultValue={r.hargaPusat} disabled={!bolehKelola}
+                          style={{ textAlign: "right", height: 26, fontSize: 11 }} />
+                      </>
                     )}
                   </td>
                   {branchId && (
                     <td style={{ textAlign: "right" }}>
+                      <input type="hidden" name={`o|${r.item.id}|${r.unit}`} value={r.override === undefined ? "" : String(r.override)} />
                       <NumberInput className="fi" name={`h|${r.item.id}|${r.unit}`} type="number" min={0} step="any"
                         defaultValue={r.override ?? ""} placeholder="ikut pusat" disabled={!bolehKelola}
                         style={{ textAlign: "right", height: 26, fontSize: 11 }} />
