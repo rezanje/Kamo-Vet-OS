@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
@@ -31,7 +32,7 @@ export default async function KlinikPermintaanBaruPage({
         <span style={{ fontSize: 13, fontWeight: 500 }}>Permintaan Baru</span>
       </div>
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      <PermintaanFormKlinik userId={user.id} branchName={shift.branchName} shiftId={shift.id} warehouses={warehouses ?? []} items={items} />
+      <PermintaanFormKlinik userId={user.id} branchName={shift.branchName} shiftId={shift.id} warehouses={warehouses ?? []} items={items} requestKey={randomUUID()} />
     </>
   );
 }
