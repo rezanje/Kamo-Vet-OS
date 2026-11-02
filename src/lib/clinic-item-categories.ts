@@ -27,8 +27,10 @@ export function splitClinicItems<T extends { id: string; category_id?: string | 
     }
     return item.item_type === "Jasa" ? "Jasa" : "Obat";
   };
-  const classified = items.filter(item => !compoundIds.has(item.id)).map(item => ({ item, category: categoryOf(item) }));
+  // Paket (Grup) tidak pernah jadi baris jasa/tindakan/obat biasa: dipilih utuh lalu dipecah jadi isinya.
+  const classified = items.filter(item => !compoundIds.has(item.id) && item.item_type !== "Grup").map(item => ({ item, category: categoryOf(item) }));
   return {
+    paket: items.filter(item => !compoundIds.has(item.id) && item.item_type === "Grup"),
     jasa: classified.filter(row => row.category === "Jasa").map(row => row.item),
     tindakan: classified.filter(row => row.category === "Tindakan").map(row => row.item),
     obat: classified.filter(row => row.category === "Obat" && row.item.item_type === "Persediaan").map(row => row.item),

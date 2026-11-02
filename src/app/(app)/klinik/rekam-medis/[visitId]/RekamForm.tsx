@@ -32,6 +32,7 @@ import { type KatalogRacikan } from "@/lib/katalog-racikan";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
 import { staffForService } from "@/lib/clinical-staff";
 import { isMedicalService } from "@/lib/clinic-required-fields";
+import { pecahPaket, type ResepPaket } from "@/lib/paket-klinik";
 
 export type ItemLite = {
   id: string; code?: string | null; upc?: string | null; name: string; unit: string; sell_price: number;
@@ -54,6 +55,8 @@ type CartRow = {
   bmhp?: BmhpRow[];
   /** Diisi hanya bila racikan sudah pernah diracik (stok bahan sudah keluar). */
   compound_recipe_id?: string;
+  /** Baris isi paket (Grup) yang dipilih dari daftar Obat — hanya untuk tampilan keranjang. */
+  paket_id?: string; paket_nama?: string; paket_qty?: number;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -76,7 +79,9 @@ function ExamField({ icon, color, label, children }: { icon: string; color: stri
   );
 }
 
-export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, correction, tabAwal }: {
+export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, currentWeight, dokterOpsi, providerOpsi, service, serviceStaff = [], groomingDoctorRequired = false, groomingApplies = true, correction, tabAwal, paketResep = {} }: {
+  /** Resep paket (Grup) yang tampil di daftar Obat; dipilih utuh lalu dipecah jadi isinya. */
+  paketResep?: Record<string, ResepPaket>;
   correction?: ClinicalCorrection;
   /** `?tab=tindakan` membuka form langsung di tab "Tindakan & Racikan" — dipakai tombol
    * "Tambah tindakan / obat" di Detail rekam medis. Nilai lain tetap mulai dari "Obat". */
@@ -187,6 +192,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     setProcedureError("");
   };
 
+  // Paket (Grup) hanya dipilih dari daftar Obat; tidak pernah jadi BMHP atau pengganti item.
+  const barangSaja = useMemo(() => items.filter(item => item.item_type !== "Grup"), [items]);
   const obatMatches = useMemo(() => {
     const term = search.trim().toLowerCase();
     return items.filter(it => [it.name, it.code, it.upc].some(value => value?.toLowerCase().includes(term)));
@@ -199,11 +206,11 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     setCart((c) => {
       const isService = it.item_type === "Jasa";
       // Tiap tindakan ber-BMHP berdiri sendiri: komposisinya bisa berbeda per baris.
-      const ex = isService || bmhp ? undefined : c.find((r) => r.item_id === it.id && r.jenis !== "jasa");
-      if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
+      const ex = isService || bmhp ? undefined : c.find((r) => r.item_id === it.id && r.jenis !== "jasa" && !r.paket_id);
+      if (ex) return c.map((r) => (r.key === ex.key ? { ...r, qty: r.qty + 1 } : r));
       const u = isService ? undefined : (it.units ?? [])[0];
       return [...c, {
-        key: isService || bmhp ? crypto.randomUUID() : it.id, item_id: it.id, nama_obat: it.name, qty: 1,
+        key: isService || bmhp || c.some(r => r.key === it.id) ? crypto.randomUUID() : it.id, item_id: it.id, nama_obat: it.name, qty: 1,
         satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
         kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
         service_performers: barisDefault(),
@@ -233,7 +240,36 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     setSaleItemId(item.id); setRacikNama(item.name);
     setOfficialVersionId(""); setRacikForm("sirup"); setRacikAturan(""); setRacikBahan([]);
   };
+  /** Harga normal per satuan isi paket — bobot pembagian harga paket. */
+  const hargaNormal = (itemId: string, satuan: string, faktor: number) => {
+    const item = [...items, ...jasaItems, ...tindakanItems, ...bahanItems, ...racikanItems].find(row => row.id === itemId);
+    if (!item) return 0;
+    return item.units?.find(unit => unit.unit === satuan)?.sell_price ?? item.sell_price * faktor;
+  };
+  /** Ubah jumlah paket: qty tiap baris isinya mengikuti (qty per paket x jumlah). */
+  const setJumlahPaket = (paketId: string, jumlah: number) => {
+    if (!Number.isInteger(jumlah)) return;
+    if (jumlah < 1) { setCart(rows => rows.filter(row => row.paket_id !== paketId)); return; }
+    setCart(rows => rows.map(row => row.paket_id === paketId && Number(row.paket_qty) > 0
+      ? { ...row, qty: Math.round((row.qty / Number(row.paket_qty)) * jumlah), paket_qty: jumlah } : row));
+  };
+  /** Paket (Grup) dari daftar Obat: isinya masuk keranjang sekaligus, tanpa isian BMHP. */
+  const tambahPaket = (it: ItemLite): void => {
+    const resep = paketResep[it.id];
+    if (!resep) { setProcedureError(`Isi paket ${it.name} belum terbaca. Muat ulang halaman lalu coba lagi.`); return; }
+    const ada = cart.find(row => row.paket_id === it.id);
+    if (ada) { setJumlahPaket(it.id, Number(ada.paket_qty ?? 1) + 1); return; }
+    const hasil = pecahPaket(resep, it.sell_price, 1, hargaNormal);
+    if (hasil.error !== null) { setProcedureError(hasil.error); return; }
+    setProcedureError("");
+    setCart(rows => [...rows, ...hasil.baris.map((row): CartRow => ({
+      key: crypto.randomUUID(), item_id: row.item_id, nama_obat: row.nama, qty: row.qty, satuan: row.satuan,
+      harga: row.harga, faktor: row.faktor, jenis: row.jenis, kategori: row.kategori ?? undefined,
+      service_performers: barisDefault(), paket_id: it.id, paket_nama: it.name, paket_qty: 1,
+    }))]);
+  };
   const pickObat = (it: ItemLite): void => {
+    if (it.item_type === "Grup") return tambahPaket(it);
     const vaccination = vaccinationOf(it, tindakanItems);
     return vaccination ? selectProcedure(vaccination) : addObat(it);
   };
@@ -278,7 +314,9 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
       return u ? { ...r, satuan: u.unit, harga: u.sell_price, faktor: u.factor } : r;
     }));
   const del = (key: string) => {
-    setCart((c) => c.filter((r) => r.key !== key));
+    // Isi paket dihapus bersama-sama: paket tidak boleh tertagih setengah.
+    const paketId = cart.find(r => r.key === key)?.paket_id;
+    setCart((c) => c.filter((r) => r.key !== key && (!paketId || r.paket_id !== paketId)));
     if (procedureDraft?.editKey === key) setProcedureDraft(null);
     if (racikanEditKey === key) resetRacikan();
   };
@@ -476,7 +514,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                   Edit sebelum tagihan juga menampilkan racikan (Anisa 1 Nov): racikan baru diracik
                   lewat RPC pembungkus saat disimpan; racikan lama tetap terkunci. */}
               {tab === TINDAKAN && (
-                <TindakanRacikanForm tindakanItems={tindakanItems} racikanItems={racikanItems} bmhpItems={items} bahanItems={bahanItems}
+                <TindakanRacikanForm tindakanItems={tindakanItems} racikanItems={racikanItems} bmhpItems={barangSaja} bahanItems={bahanItems}
                   katalogRacikan={katalogRacikan} bolehManual={bolehManual}
                   tindakan={procedureDraft} racikan={compoundDraft} editing={!!formEditKey} harga={formHarga}
                   onPilihTindakan={selectProcedure} onPilihRacikan={selectRacikan}
@@ -507,13 +545,14 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                             <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                               <strong data-cart-item style={{ fontSize: 12.5, fontWeight: 700, color: "var(--tx)" }}>{r.nama_obat}</strong>
                               {correction?.fullEdit && !r.compound_recipe_id && r.jenis !== "racikan" && <select className="fi" aria-label={`Ganti item ${r.nama_obat}`} value={r.item_id ?? ""} onChange={event => {
-                                const item = [...items, ...jasaItems, ...tindakanItems].find(item => item.id === event.target.value);
+                                const item = [...barangSaja, ...jasaItems, ...tindakanItems].find(item => item.id === event.target.value);
                                 if (item) setCart(rows => rows.map(row => row.key === r.key ? {...row,item_id:item.id,nama_obat:item.name,satuan:item.unit,faktor:1,harga:item.sell_price,jenis:item.item_type === "Jasa" ? "jasa" : "obat",kategori:item.tindakan_kategori ?? undefined,bmhp:[]} : row));
-                              }}><option value={r.item_id ?? ""}>{r.nama_obat}</option>{[...items,...jasaItems,...tindakanItems].filter(item=>item.id!==r.item_id).map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>}
+                              }}><option value={r.item_id ?? ""}>{r.nama_obat}</option>{[...barangSaja,...jasaItems,...tindakanItems].filter(item=>item.id!==r.item_id).map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>}
                               {r.jenis === "racikan" && <span className="bge b" style={{ fontSize: 8 }}>racikan</span>}
+                              {r.paket_id && <span className="bge g" style={{ fontSize: 8 }} title="Isi paket — BMHP sudah termasuk resep paket. Pilih paketnya lagi untuk menambah jumlah.">paket {r.paket_nama}{Number(r.paket_qty) > 1 ? ` ×${r.paket_qty}` : ""}</span>}
                               <span style={{ fontSize: 9, color: "var(--tm)", display: "flex", alignItems: "center", gap: 4 }}>
                                 {rp(r.harga)} /
-                                {unitsOf(r.item_id).length > 1 && r.jenis === "obat" ? (
+                                {unitsOf(r.item_id).length > 1 && r.jenis === "obat" && !r.paket_id ? (
                                   <select className="fi" value={r.satuan} onChange={(e) => setSatuan(r.key, r.item_id, e.target.value)}
                                     style={{ width: 62, padding: "1px 3px", fontSize: 9.5 }} title="Satuan">
                                     {unitsOf(r.item_id).map((u) => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
@@ -526,7 +565,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                               grooming={groomingApplies && r.jenis === "jasa" && (r.kategori === "Grooming" || [...jasaItems, ...tindakanItems].some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
                               doctorRequired={groomingDoctorRequired}
                               onChange={value => setCart(rows => rows.map(row => row.key === r.key ? {...row, service_performers:value} : row))} />}
-                            {r.jenis !== "racikan" && r.item_id && tindakanItems.some(item => item.id === r.item_id) &&
+                            {r.jenis !== "racikan" && r.item_id && !r.paket_id && tindakanItems.some(item => item.id === r.item_id) &&
                               <KeranjangBahan nada="bmhp" judul="BMHP" kosong="belum diisi"
                                 baris={(r.bmhp ?? []).map(material => `${material.nama} × ${material.qty} ${material.unit}`)}>
                                 <button type="button" className="btn-def" aria-label={`Ubah BMHP ${r.nama_obat}`}
@@ -549,6 +588,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                           <td style={{ textAlign: "center" }}>
                             {r.jenis === "racikan"
                               ? <span style={{ fontSize: 10.5 }}>1</span>
+                              : r.paket_id
+                              ? <span style={{ fontSize: 10.5 }} title="Jumlah mengikuti jumlah paket">{r.qty}</span>
                               : <QtyInput className="fi" min={1} aria-label={`Jumlah ${r.nama_obat}`} value={r.qty} onValue={(n) => setQty(r.key, n)} style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />}
                           </td>
                           <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(r.qty * r.harga)}</td>
