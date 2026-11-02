@@ -6,7 +6,7 @@ import { roundTripClient, filterOf, paged, fictionalCatalogue, reportWaterfall a
 // no editable cart is shown. Evidence = round-trip depth on a mocked client, not live timing.
 const s = vi.hoisted(() => ({
   rt: null as null | ReturnType<typeof import("@/lib/__tests__/helpers/round-trip-client").roundTripClient>,
-  invoice: null as null | Record<string, unknown>, inpatient: false, shift: true, correctable: false,
+  invoice: null as null | Record<string, unknown>, inpatient: false, shift: true, correctable: false, role: "ADMIN",
 }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND"); }, redirect: (to: string) => { throw new Error(`REDIRECT ${to}`); } }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => s.rt!.client }));
@@ -37,7 +37,7 @@ function respond(call: Call) {
     case "invoices": return { data: s.invoice ? [s.invoice] : [] };
     case "prescription_items": return { data: [{ id: "rx-a", nama_obat: "Amoxicillin", qty: 1, harga: 1000, jenis: "obat", kategori: null, item_id: catalogue[1].id, satuan: "pcs", compound_recipe_id: null }] };
     case "pajak_settings": return { data: { mode_pkp: false, ppn_rate: 11 } };
-    case "profiles": return { data: { role: "ADMIN", full_name: "Kasir Fiksi", is_active: true } };
+    case "profiles": return { data: { role: s.role, full_name: "Kasir Fiksi", is_active: true } };
     case "cashier_shifts": return { data: s.shift ? { id: "shift-a", branch_id: "branch-a", opening_balance: 0, opened_at: "2026-10-30T00:00:00Z", branches: { name: "Cabang A", code: "A" } } : null };
     case "items": return paged(call, catalogue);
     case "warehouses": return { data: { id: "wh-a" } };
@@ -52,7 +52,7 @@ const open = async (query: Record<string, string> = {}) => {
 };
 const paid = { id: "inv-a", invoice_no: "INV/1", subtotal: 1000, discount: 0, tax: 0, total: 1000, dp_amount: 0, dp_date: null, paid_status: "Lunas", metode_bayar: "Tunai", paid_at: "2026-10-30T03:00:00Z", reissued_from: null, correction_pending: false, created_at: "2026-10-30T03:00:00Z", request_key: "k", salesperson_id: null, cashier_name: "Kasir Fiksi", service_pricing_version: 1 };
 
-beforeEach(() => { s.invoice = null; s.inpatient = false; s.shift = true; s.correctable = false; });
+beforeEach(() => { s.invoice = null; s.inpatient = false; s.shift = true; s.correctable = false; s.role = "ADMIN"; });
 
 it("opening an unpaid outpatient payment starts its independent reads together", async () => {
   const rt = await open();
@@ -88,7 +88,13 @@ it("inpatient payment reaches the inpatient cashier reader within 3 round trips"
   expect(reader.wave).toBeLessThanOrEqual(3);
 });
 
-it("still sends an unpaid payment without an open shift to the shift page", async () => {
-  s.shift = false;
+it.each(["STAFF", "DOCTOR", "FINANCE"])("still sends %s to the shift page for an unpaid payment without an open shift", async (role) => {
+  s.shift = false; s.role = role;
   await expect(open()).rejects.toThrow(/^REDIRECT \/klinik\/shift/);
+});
+
+it.each(["OWNER", "ADMIN"])("lets %s open an unpaid payment without a shift (view only) without extra round trips", async (role) => {
+  s.shift = false; s.role = role;
+  const rt = await open();
+  expect(rt.depth()).toBeLessThanOrEqual(11);
 });

@@ -87,3 +87,16 @@ export const PERAN_SIKLUS_TAGIHAN = ["OWNER", "ADMIN", "FINANCE"] as const;
 export function bolehSiklusTagihan(role: string | null | undefined): boolean {
   return !!role && (PERAN_SIKLUS_TAGIHAN as readonly string[]).includes(role);
 }
+
+/**
+ * Peran yang boleh MEMBUKA layar pembayaran rawat jalan yang belum lunas tanpa shift
+ * kasir klinik milik sendiri — hanya untuk melihat tagihan (Reza, 2 November 2026:
+ * owner ingin mengecek tagihan cabang tanpa membuka laci). Peran lain tetap diarahkan
+ * ke layar Mulai Shift. Menerima uang (bayar, pelunasan, bayar rombongan, koreksi
+ * keranjang) tetap wajib shift milik sendiri: aksi servernya menolak tanpa shift.
+ */
+export const PERAN_LIHAT_TAGIHAN_TANPA_SHIFT = ["OWNER", "ADMIN"] as const;
+
+export function bolehLihatTagihanTanpaShift(role: string | null | undefined): boolean {
+  return !!role && (PERAN_LIHAT_TAGIHAN_TANPA_SHIFT as readonly string[]).includes(role);
+}

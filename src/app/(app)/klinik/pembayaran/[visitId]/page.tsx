@@ -17,7 +17,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
-import { PaymentPageHeading } from "./PaymentPresentation";
+import { PaymentPageHeading, PaymentPatientHeader } from "./PaymentPresentation";
 import { PembayaranForm } from "./PembayaranForm";
 import { InpatientPaymentPage } from "./InpatientPaymentPage";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
@@ -25,7 +25,7 @@ import { PelunasanTagihanForm } from "./PelunasanTagihanForm";
 import { sisaTagihan } from "@/lib/pelunasan-klinik";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
-import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
+import { bolehLihatTagihanTanpaShift, bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -374,11 +374,25 @@ export default async function PembayaranPage({
   };
 
   // Addendum §1: pembayaran klinik hanya bisa saat shift klinik terbuka (gate server-side).
+  // Owner/Admin tanpa shift tetap boleh MELIHAT tagihan (Reza, 2 November 2026): layar
+  // tampil "lihat saja" — semua form penerima uang disembunyikan, dan aksi servernya
+  // tetap menolak tanpa shift. Peran lain tetap diarahkan ke Mulai Shift.
+  let lihatSaja = false;
   if (!lunas) {
     // Akun yang sama dengan bacaan sesi di atas (dulu dibaca ulang ke server Auth).
     const shift = shiftP ? await shiftP : null;
-    if (!shift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
+    if (!shift) {
+      if (!bolehLihatTagihanTanpaShift((profilKasir as { role?: string } | null)?.role)) {
+        redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
+      }
+      lihatSaja = true;
+    }
   }
+  const bolehUbahTagihan = canEdit && !lihatSaja;
+  // Draf tagihan (belum jadi invoice) untuk mode lihat saja: angka mentah dari resep +
+  // PPN, sebelum promo/voucher/diskon kasir — potongan itu baru dihitung saat dibayar.
+  const subtotalDraf = sourceItems.reduce((a, l) => a + nilaiBaris(l), 0);
+  const ppnDraf = ppnRate > 0 && subtotalDraf > 0 ? Math.round((subtotalDraf * ppnRate) / 100) : 0;
 
   return (
     <>
@@ -388,6 +402,17 @@ export default async function PembayaranPage({
       <PaymentPageHeading />
 
       <Popup message={error} />
+      {lihatSaja && (
+        <div className="p2ban" role="status" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "var(--posb-dk)", justifyContent: "space-between" }}>
+          <span>
+            <i className="ti ti-eye" /> <b>Mode lihat saja</b> — Anda belum membuka shift kasir klinik. Tagihan bisa dicek,
+            tapi untuk menerima pembayaran Anda perlu mulai shift sendiri dulu.
+          </span>
+          <Link href="/klinik/shift" className="btn-acc" style={{ padding: "4px 12px", fontSize: 11, textDecoration: "none" }}>
+            <i className="ti ti-player-play" /> Mulai shift
+          </Link>
+        </div>
+      )}
       <Popup tone="success" title="Pembayaran berhasil"
         message={!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" ? `Invoice ${invoice.invoice_no ?? ""} lunas. Cetak invoice untuk pelanggan.` : null}
         action={invoice ? { href: `/klinik/pembayaran/${visit.id}/invoice?invoice_id=${invoice.id}`, label: "Cetak Invoice", icon: "ti-printer" } : undefined} />
@@ -464,8 +489,8 @@ export default async function PembayaranPage({
         </div>
       </div>
 
-      {/* Pasien (hanya di tampilan read-only invoice lunas; form editable punya header sendiri) */}
-      {invoice && lunas && (
+      {/* Pasien (hanya di tampilan read-only invoice lunas / mode lihat saja; form editable punya header sendiri) */}
+      {invoice && (lunas || lihatSaja) && (
         <div className="card" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 28px" }}>
             <Field label="Pasien" value={`${pet?.name ?? "—"} · ${pet?.species ?? ""}`} />
@@ -530,7 +555,7 @@ export default async function PembayaranPage({
           {/* Sekali bayar untuk semua hewan: pemilik tidak dipanggil berkali-kali.
               Hanya untuk kunjungan yang tagihannya belum dibuat — yang sudah punya
               invoice (DP/sebagian bayar) punya jalur pelunasan sendiri. */}
-          {belumDitagih.length >= 2 && (
+          {belumDitagih.length >= 2 && !lihatSaja && (
             <LunasiRombonganForm key={`${visitId}:${rombongan.customerId ?? ""}:${rombongan.baris.map(b=>b.visitId).sort().join(",")}`}
               contextKey={createHash("sha256").update(`${rombongan.customerId ?? ""}:${rombongan.baris.map(b=>b.visitId).sort().join(",")}`).digest("hex")}
               visitId={visitId}
@@ -574,7 +599,7 @@ export default async function PembayaranPage({
       )}
 
 
-      {!inpat && invoice?.paid_status === "DP" && !invoice.correction_pending && <div className="card">
+      {!inpat && !lihatSaja && invoice?.paid_status === "DP" && !invoice.correction_pending && <div className="card">
         <h3>DP tercatat — lanjutkan Rawat Inap</h3>
         <p>Hanya untuk pasien yang diputuskan Rawat Inap. Tagihan dan DP lama tidak diubah atau diterima ulang. Dokter PIC dan persetujuan khusus tetap diperiksa.</p>
         <TransactionForm userId={draftUser?.id ?? ""} scope={`inpatient-admit:${visitId}`} action={admitInpatient}>
@@ -586,11 +611,11 @@ export default async function PembayaranPage({
           <SubmitButton className="btn-acc" pendingText="Memproses…">Masukkan Rawat Inap (tanpa pembayaran ulang)</SubmitButton>
         </TransactionForm>
       </div>}
-      {bolehTagih && pelunasanTerbuka && invoice && (
+      {bolehTagih && pelunasanTerbuka && invoice && !lihatSaja && (
         <PelunasanTagihanForm key={`${invoice.id}:${sisaPelunasan}`} visitId={visit.id} invoiceId={invoice.id}
           invoiceNo={invoice.invoice_no ?? ""} total={Number(invoice.total)} diterima={paidAmount} sisa={sisaPelunasan} requestKey={randomUUID()} />
       )}
-      {!bolehTagih ? null : invoice && canEdit ? (
+      {!bolehTagih ? null : invoice && bolehUbahTagihan ? (
         <PembayaranForm
           key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
           visitId={visit.id}
@@ -626,7 +651,7 @@ export default async function PembayaranPage({
           {demoSnapshot && <div className="p2ban">DEMO: admin {demoSnapshot.fee_bearer === "customer" ? "pelanggan" : "perusahaan"} {rp(Number(demoSnapshot.fee_amount))} · satu pool insentif {rp(Number(demoSnapshot.incentive_pool))}. Snapshot uang terkunci; terbit ulang mempertahankan nominal dan penerima.</div>}
           <div className="p2ban" style={{ background: lunas ? "#e8f5ee" : "#fffbeb", border: `.5px solid ${lunas ? "#86efac" : "#fcd34d"}`, color: lunas ? "#15803d" : "#92400e" }}>
             <i className={`ti ti-${lunas ? "circle-check" : "clock-dollar"}`} /> Status: {invoice.paid_status}
-            {invoice.paid_status === "DP" && !pelunasanTerbuka && ` — diterima ${rp(paidAmount)}, sisa ${rp(Number(invoice.total) - paidAmount)}`}
+            {invoice.paid_status === "DP" && (!pelunasanTerbuka || lihatSaja) && ` — diterima ${rp(paidAmount)}, sisa ${rp(Number(invoice.total) - paidAmount)}`}
             {(editLog ?? []).length > 0 && (
               <span className="bge o" style={{ marginLeft: 8 }}><i className="ti ti-pencil" /> Diedit</span>
             )}
@@ -641,7 +666,7 @@ export default async function PembayaranPage({
                 <span style={{ fontSize: 10, fontWeight: 400, color: "var(--tm)" }}>· {invoice.metode_bayar ?? "—"}</span>
               </span>
               <span style={{ display: "flex", gap: 5 }}>
-                {canEdit && (
+                {bolehUbahTagihan && (
                   <Link href={`/klinik/pembayaran/${visit.id}?edit=1&invoice_id=${invoice.id}`} className="btn-def"
                     style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <i className="ti ti-pencil" /> Edit Invoice
@@ -712,6 +737,44 @@ export default async function PembayaranPage({
               <VoidReissueForm key={invoice.id} visitId={visit.id} invoiceId={invoice.id} requestKey={randomUUID()}/>
             </div>
           )}
+        </>
+      ) : lihatSaja ? (
+        <>
+          <PaymentPatientHeader patient={invoicePatient} />
+          <div className="card">
+            <div className="card-hd">
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <i className="ti ti-clipboard-list" style={{ color: "var(--acc)" }} /> Draf tagihan · baca saja
+              </span>
+            </div>
+            <table className="tbl">
+              <thead><tr><th>Item</th><th style={{ textAlign: "center" }}>Qty</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "right" }}>Subtotal</th></tr></thead>
+              <tbody>
+                {sourceItems.map((l, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 500 }}>{l.deskripsi}</td>
+                    <td style={{ textAlign: "center" }}>{l.qty}</td>
+                    <td style={{ textAlign: "right" }}>{rp(l.harga)}</td>
+                    <td style={{ textAlign: "right" }}>{rp(nilaiBaris(l))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 10, marginLeft: "auto", width: 240 }}>
+              <SumRow label="Subtotal" value={rp(subtotalDraf)} />
+              {ppnDraf > 0 && <SumRow label={`PPN ${ppnRate}%`} value={rp(ppnDraf)} />}
+              <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, borderTop: "1px solid var(--bd)" }}>
+                <span style={{ fontWeight: 600 }}>Perkiraan total</span>
+                <span style={{ fontWeight: 700, color: "var(--acc)" }}>{rp(subtotalDraf + ppnDraf)}</span>
+              </div>
+              <div style={{ fontSize: 10, color: "var(--td)", marginTop: 4 }}>
+                Belum termasuk promo, voucher, dan diskon kasir — dihitung saat pembayaran diproses.
+              </div>
+            </div>
+            {mr?.catatan_resep && (
+              <div style={{ marginTop: 10, fontSize: 11, color: "var(--tm)" }}><b>Catatan resep:</b> {mr.catatan_resep}</div>
+            )}
+          </div>
         </>
       ) : (
         <PembayaranForm
