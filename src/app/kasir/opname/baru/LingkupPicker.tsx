@@ -17,8 +17,8 @@ type Mode = "auto" | "penuh" | "parsial";
 const TERLARIS = 20;
 const ACAK = 10;
 
-export function LingkupPicker({ items, scope }: { items: ItemPilihan[]; scope:string }) {
-  const [mode, setMode] = useState<Mode>("auto");
+export function LingkupPicker({ items, scope, defaultMode = "auto" }: { items: ItemPilihan[]; scope:string; defaultMode?: Mode }) {
+  const [mode, setMode] = useState<Mode>(defaultMode);
   const parsial = mode === "parsial";
   const [pilih, setPilih] = useState<Set<string>>(new Set());
   const [cari, setCari] = useState("");
@@ -52,7 +52,7 @@ export function LingkupPicker({ items, scope }: { items: ItemPilihan[]; scope:st
 
   return (
     <div className="fg" style={{ marginBottom: 10 }}>
-      <LocalTransactionDraft scope={scope} state={{snapshot:{mode,pilih:[...pilih],cari,kategori},restore:s=>{if(!["auto","penuh","parsial"].includes(String(s.mode))||!Array.isArray(s.pilih)||!s.pilih.every(id=>typeof id==="string"&&items.some(i=>i.id===id))||typeof s.cari!=="string"||typeof s.kategori!=="string")return false;setMode(s.mode as Mode);setPilih(new Set(s.pilih));setCari(s.cari);setKategori(s.kategori);return true;},reset:()=>{setMode("auto");setPilih(new Set());}}}/>
+      <LocalTransactionDraft scope={scope} state={{snapshot:{mode,pilih:[...pilih],cari,kategori},restore:s=>{if(!["auto","penuh","parsial"].includes(String(s.mode))||!Array.isArray(s.pilih)||!s.pilih.every(id=>typeof id==="string"&&items.some(i=>i.id===id))||typeof s.cari!=="string"||typeof s.kategori!=="string")return false;setMode(s.mode as Mode);setPilih(new Set(s.pilih));setCari(s.cari);setKategori(s.kategori);return true;},reset:()=>{setMode(defaultMode);setPilih(new Set());}}}/>
       <label className="flab">Lingkup hitung</label>
       {/* Kosong = seluruh gudang; server memperlakukan daftar kosong sebagai opname penuh.
           Mode "auto" membiarkan server yang menyusun daftarnya. */}

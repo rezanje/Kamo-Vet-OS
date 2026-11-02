@@ -167,11 +167,19 @@ it("riwayat hanya membaca cabang yang boleh dilihat dan membuka laporan per shif
   expect(shiftCall.filters).toContainEqual(["gte", "closed_at", "2026-11-01T00:00:00+07:00"]);
   expect(shiftCall.filters).toContainEqual(["lt", "closed_at", "2026-11-03T00:00:00+07:00"]);
   expect([...doc.querySelectorAll("select[name=cabang] option")].map((o) => o.textContent)).toEqual(["Semua cabang", "Toko A"]);
-  const row = doc.querySelector("tbody tr")!;
+  const row = doc.querySelector('table[aria-label="Daftar tutup shift"] tbody tr')!;
   expect(row.textContent).toContain("Kasir A");
   expect(row.textContent).toContain("Rp 5.000.000");
   expect(row.textContent).toContain("− Rp 20.000");
   expect(row.querySelector("a")?.getAttribute("href")).toBe("/pos/shift/shift-9");
+  // Rekap per cabang menjumlah seluruh rentang dengan filter cabang yang sama.
+  const rekap = doc.querySelector('table[aria-label="Rekap closing per cabang"]')!;
+  expect(rekap.textContent).toContain("Toko A");
+  expect(rekap.textContent).toContain("Total semua cabang");
+  expect(rekap.textContent).toContain("Rp 5.000.000");
+  const rekapCalls = fx.calls.filter((c) => c.table === "cashier_shifts");
+  expect(rekapCalls.length).toBeGreaterThanOrEqual(2);
+  expect(rekapCalls.every((c) => c.filters.some((f) => f[0] === "in" && f[1] === "branch_id"))).toBe(true);
 });
 
 it("riwayat kosong kalau akun tidak punya cabang sama sekali", async () => {

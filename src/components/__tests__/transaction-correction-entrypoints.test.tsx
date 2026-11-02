@@ -10,11 +10,13 @@ vi.mock("@/app/(app)/klinik/pengeluaran/TambahPengeluaran", () => ({ TambahPenge
 vi.mock("@/app/(app)/penjualan/online/actions", () => ({ tandaiCair: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
+  storage: { from: () => ({ createSignedUrls: async (paths: string[]) => ({ data: paths.map((path) => ({ path, signedUrl: `https://signed/${path}` })) }) }) },
   from: (table: string) => {
     const data = table === "profiles" ? { role: fixture.role, is_active: fixture.active }
       : table === "expenses" ? [{ id: "expense", tanggal: "2026-10-21", created_at: "2026-10-21T03:00:00Z", kategori: "Operasional", deskripsi: "Bukti klinik", jumlah: 0, metode_bayar: "Tunai", voided_at: "2026-10-21T04:00:00Z" }]
+        : table === "document_attachments" ? [{ ref_id: "expense", path: "pengeluaran/nota.jpg", nama: "nota.jpg" }]
         : [{ id: "sale", no_struk: "WA-001", created_at: "2026-10-21T03:00:00Z", channel: "WA", total: 100, komisi: 0, marketplace_status: "lunas" }];
-    const query = { select: () => query, eq: () => query, gte: () => query, lte: () => query, ilike: () => query, order: () => query, limit: () => query, not: () => query, is: () => query,
+    const query = { select: () => query, eq: () => query, in: () => query, gte: () => query, lte: () => query, ilike: () => query, order: () => query, limit: () => query, not: () => query, is: () => query,
       single: async () => ({ data }), then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data }).then(resolve) };
     return query;
   },
@@ -27,6 +29,8 @@ it("opens the existing expense correction from the clinic list and labels cancel
   const html = renderToStaticMarkup(await KlinikPengeluaranPage({ searchParams: Promise.resolve({}) }));
   expect(html).toContain('href="/buku-besar/beban/expense"');
   expect(html).toContain("Detail / koreksi"); expect(html).toContain("Dibatalkan");
+  // Bukti transaksi (lampiran) bisa dibuka langsung dari daftar pengeluaran klinik.
+  expect(html).toContain('href="https://signed/pengeluaran/nota.jpg"');
 });
 it.each(["STAFF", "inactive"])("hides clinic correction entry for %s", async role => {
   if (role === "inactive") fixture.active = false; else fixture.role = role;

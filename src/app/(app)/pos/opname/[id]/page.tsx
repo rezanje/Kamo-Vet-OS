@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { HasilView } from "./HasilView";
+import { DaftarHitung } from "@/app/kasir/opname/[id]/DaftarHitung";
 
 type Order = OpnameCancellation & {
   id: string;
@@ -17,7 +18,7 @@ type Order = OpnameCancellation & {
   keterangan: string | null;
   status: string;
   warehouse_id: string;
-  warehouses: { name: string } | null;
+  warehouses: { name: string; type: string } | null;
 };
 
 const fmtD = (d: string) =>
@@ -39,7 +40,7 @@ export default async function OpnameDetailPage({
   const allowedWarehouses = await opnameWarehouseIds(supabase,user.id);
   const { data: orderRaw } = await supabase
     .from("opname_orders")
-    .select("id, no_opname, tanggal_mulai, penanggung_jawab, dikerjakan_oleh, keterangan, status, cancelled_at, cancelled_by, cancelled_by_name, cancel_reason, warehouse_id, warehouses(name)")
+    .select("id, no_opname, tanggal_mulai, penanggung_jawab, dikerjakan_oleh, keterangan, status, cancelled_at, cancelled_by, cancelled_by_name, cancel_reason, warehouse_id, warehouses(name, type)")
     .eq("id", id).in("warehouse_id",allowedWarehouses).maybeSingle();
   if (!orderRaw) notFound();
   const order = orderRaw as unknown as Order;
@@ -53,6 +54,7 @@ export default async function OpnameDetailPage({
   catch (loadError) { return <ListLoadFailure error={loadError} label="Hasil opname" />; }
 
   const blockedReason = order.status === "Terbuka" ? await opnameCancellationBlock(supabase,id) : null;
+  const hitungDiSini = (order.warehouses?.type ?? "RETAIL") !== "RETAIL";
 
   return (
     <>
@@ -108,12 +110,15 @@ export default async function OpnameDetailPage({
 
       <OpnameCancellationPanel order={order} blockedReason={blockedReason} cashier={false}/>
 
-      {/* Menghitung stok hanya dari layar kasir (keputusan meeting 14 Agustus) —
-          satu pintu, supaya tidak ada dua cara menghitung barang yang sama. */}
+      {/* Gudang toko (RETAIL) dihitung hanya dari layar kasir (keputusan meeting 14 Agustus) —
+          satu pintu, supaya tidak ada dua cara menghitung barang yang sama. Gudang klinik (VET),
+          DC dan gudang lain tidak punya layar kasir petshop, jadi pintunya di sini. */}
       {partialResult ? <>
         <div className="p2ban" role="alert">Sudah ada hasil tersimpan tetapi perintah belum selesai. Stok dan jurnal mungkin belum lengkap. Periksa hasil asal bersama back office; jangan posting ulang.</div>
         <HasilView orderId={order!.id} />
-      </> : order.status === "Terbuka" ? (
+      </> : order.status === "Terbuka" && hitungDiSini ? (
+        <DaftarHitung orderId={order.id} warehouseId={order.warehouse_id} kembali="pos" />
+      ) : order.status === "Terbuka" ? (
         <div className="crm-sec">
           <SecHeader num="02" title="HITUNGAN BELUM MASUK" desc="Perintah ini masih menunggu hitungan fisik." />
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>

@@ -76,7 +76,9 @@ export async function buatPerintah(formData: FormData) {
   const keterangan = String(formData.get("keterangan") ?? "").trim() || null;
 
   const basis = basisKembali(formData);
-  const fail = (msg: string) => redirect(`${basis}/baru?error=` + encodeURIComponent(msg));
+  // Layar backoffice memilih gudang lewat ?gudang= — pertahankan pilihannya saat gagal.
+  const pilihanGudang = basis === "/pos/opname" && warehouse_id ? `gudang=${encodeURIComponent(warehouse_id)}&` : "";
+  const fail = (msg: string) => redirect(`${basis}/baru?${pilihanGudang}error=` + encodeURIComponent(msg));
 
   if (!warehouse_id || !penanggung_jawab) fail("Gudang dan penanggung jawab wajib diisi.");
   if (!(await bolehGudang(supabase, warehouse_id))) fail("Kamu tidak berhak menghitung stok gudang ini.");
@@ -187,6 +189,7 @@ export async function kunciBaris(orderId: string, itemId: string, qtyFisik: numb
     return { ok: false, pesan: "Kunci belum dapat dipastikan. Muat ulang; jangan anggap hitungan sudah tersimpan." };
   }
   revalidatePath(`/kasir/opname/${orderId}`);
+  revalidatePath(`/pos/opname/${orderId}`);
   return { ok: true, qtyFisik: Number(confirmed.qty_fisik) };
 }
 
@@ -202,6 +205,7 @@ export async function bukaKunci(orderId: string, itemId: string) {
   if (error) return { ok: false, pesan: "Gagal membuka kunci barang ini." };
 
   revalidatePath(`/kasir/opname/${orderId}`);
+  revalidatePath(`/pos/opname/${orderId}`);
   return { ok: true };
 }
 

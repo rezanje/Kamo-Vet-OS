@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { allowedBranchIds } from "@/lib/branch-access";
 import { rincianPembayaran } from "@/lib/rincian-tutup-shift";
 import { geserHari, hariIniWIB } from "@/lib/tanggal";
+import { readCompleteList } from "@/lib/checked-list";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -64,6 +65,42 @@ export default async function RiwayatTutupShiftPage({
     total = count ?? rows.length;
   }
 
+  // Rekap closing per cabang untuk SELURUH rentang (bukan hanya halaman ini) — permintaan Anisa
+  // 2 Nov: "menampilkan hasil closing semua cabang klinik dan petshop" dalam satu layar.
+  type BarisRekap = { cabang: string; jenis: string; shift: number; omset: number; tunai: number; nonTunai: number; selisih: number };
+  let rekap: BarisRekap[] = [];
+  let rekapGagal = false;
+  if (total > 0) {
+    try {
+      type Src = { id: string; shift_type: string; selisih: number | null; closing_breakdown: Record<string, number> | null; branch_id: string };
+      const semua = await readCompleteList<Src>((from, to) => {
+        let q = supabase.from("cashier_shifts")
+          .select("id, shift_type, selisih, closing_breakdown, branch_id", { count: "exact" })
+          .eq("status", "closed")
+          .gte("closed_at", `${dari}T00:00:00+07:00`)
+          .lt("closed_at", `${geserHari(sampai, 1)}T00:00:00+07:00`);
+        if (cabangDicari) q = q.in("branch_id", cabangDicari);
+        if (jenis) q = q.eq("shift_type", jenis);
+        return q.order("id").range(from, to);
+      }, "Rekap tutup shift");
+      const namaCabang = new Map(semuaCabang.map((c) => [c.id, c.name]));
+      const peta = new Map<string, BarisRekap>();
+      for (const h of semua) {
+        const kunci = `${h.branch_id}|${h.shift_type}`;
+        const b = peta.get(kunci) ?? { cabang: namaCabang.get(h.branch_id) ?? "—", jenis: h.shift_type, shift: 0, omset: 0, tunai: 0, nonTunai: 0, selisih: 0 };
+        const r = rincianPembayaran(h.closing_breakdown);
+        b.shift += 1; b.omset += r.omset; b.tunai += r.tunai; b.nonTunai += r.nonTunai; b.selisih += Number(h.selisih ?? 0);
+        peta.set(kunci, b);
+      }
+      rekap = [...peta.values()].sort((a, b) => a.jenis.localeCompare(b.jenis) || a.cabang.localeCompare(b.cabang));
+    } catch {
+      rekapGagal = true;
+    }
+  }
+  const totalRekap = rekap.reduce((a, r) => ({ shift: a.shift + r.shift, omset: a.omset + r.omset, tunai: a.tunai + r.tunai, nonTunai: a.nonTunai + r.nonTunai, selisih: a.selisih + r.selisih }),
+    { shift: 0, omset: 0, tunai: 0, nonTunai: 0, selisih: 0 });
+  const warnaSelisih = (n: number) => (Math.round(n) === 0 ? "#15803d" : n > 0 ? "#1d4ed8" : "#b91c1c");
+
   const jumlahHal = Math.max(1, Math.ceil(total / PER_HALAMAN));
   const urlHal = (n: number) => {
     const p = new URLSearchParams();
@@ -113,8 +150,52 @@ export default async function RiwayatTutupShiftPage({
           <button type="submit" className="btn-acc"><i className="ti ti-search" /> Tampilkan</button>
         </form>
 
+        {rekapGagal && (
+          <div className="p2ban" role="alert">Rekap per cabang belum dapat dihitung lengkap. Daftar shift di bawah tetap bisa dibuka; muat ulang untuk mencoba lagi.</div>
+        )}
+        {rekap.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--posb)", marginBottom: 6 }}>
+              REKAP CLOSING PER CABANG · {dari === sampai ? dari : `${dari} s/d ${sampai}`}
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="tbl" aria-label="Rekap closing per cabang" style={{ minWidth: 700 }}>
+                <thead>
+                  <tr>
+                    <th>Cabang</th><th>Jenis</th><th style={{ textAlign: "right" }}>Shift</th>
+                    <th style={{ textAlign: "right" }}>Omset</th><th style={{ textAlign: "right" }}>Tunai</th>
+                    <th style={{ textAlign: "right" }}>Non-tunai</th><th style={{ textAlign: "right" }}>Selisih kas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rekap.map((r) => (
+                    <tr key={`${r.cabang}|${r.jenis}`}>
+                      <td style={{ fontSize: 11 }}>{r.cabang}</td>
+                      <td style={{ fontSize: 11 }}><span className={`bge ${r.jenis === "klinik" ? "b" : "g"}`}>{r.jenis}</span></td>
+                      <td style={{ textAlign: "right", fontSize: 11 }}>{r.shift}</td>
+                      <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(r.omset)}</td>
+                      <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.tunai)}</td>
+                      <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.nonTunai)}</td>
+                      <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600, color: warnaSelisih(r.selisih) }}>{r.selisih > 0 ? "+ " : ""}{rp(r.selisih)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 800 }}>
+                    <td style={{ fontSize: 11 }} colSpan={2}>Total semua cabang</td>
+                    <td style={{ textAlign: "right", fontSize: 11 }}>{totalRekap.shift}</td>
+                    <td style={{ textAlign: "right", fontSize: 11 }}>{rp(totalRekap.omset)}</td>
+                    <td style={{ textAlign: "right", fontSize: 11 }}>{rp(totalRekap.tunai)}</td>
+                    <td style={{ textAlign: "right", fontSize: 11 }}>{rp(totalRekap.nonTunai)}</td>
+                    <td style={{ textAlign: "right", fontSize: 11, color: warnaSelisih(totalRekap.selisih) }}>{totalRekap.selisih > 0 ? "+ " : ""}{rp(totalRekap.selisih)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 10.5, color: "var(--td)", marginTop: 4 }}>Omset = rekap metode bayar yang dikunci saat shift ditutup (sama dengan laporan tutup shift). Rincian per shift ada di daftar bawah.</div>
+          </div>
+        )}
+
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 760 }}>
+          <table className="tbl" aria-label="Daftar tutup shift" style={{ minWidth: 760 }}>
             <thead>
               <tr>
                 <th>Ditutup</th><th>Cabang</th><th>Kasir</th><th>Jenis</th>

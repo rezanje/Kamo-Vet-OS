@@ -15,6 +15,7 @@ vi.mock("@/lib/transaction-draft-ack", async importOriginal => ({
 }));
 
 import { simpanPengeluaranKasir } from "@/app/kasir/pengeluaran/actions";
+import { simpanPengeluaranKlinik } from "@/app/(app)/klinik/pengeluaran/actions";
 import { simpanExpense } from "@/app/(app)/pos/expense/actions";
 import { catatBeban } from "@/app/(app)/buku-besar/beban/actions";
 
@@ -52,6 +53,23 @@ it("saves cashier expense, attachments and journal atomically under one retry id
     p_expense: expect.objectContaining({ jumlah: 25000 }), p_attachments: expect.arrayContaining([expect.objectContaining({ path: "pengeluaran/proof.jpg" })]),
   }));
   expect(fixture.from).not.toHaveBeenCalledWith("expenses");
+});
+
+it("saves clinic expense through the atomic workflow with mandatory proof and the clinic shift (no client branch)", async () => {
+  const data = form(); data.set("draft_scope", "clinic-expense:shift");
+  await expect(simpanPengeluaranKlinik(data)).rejects.toThrow("/klinik/pengeluaran?success=1");
+  expect(fixture.rpc).toHaveBeenCalledWith("post_expense_atomic", expect.objectContaining({
+    p_request_key: "retry-identity", p_context: "clinic", p_branch_id: null,
+    p_attachments: expect.arrayContaining([expect.objectContaining({ path: "pengeluaran/proof.jpg" })]),
+  }));
+  expect(fixture.from).not.toHaveBeenCalledWith("expenses");
+  expect(fixture.postJournal).not.toHaveBeenCalled();
+});
+
+it("rejects a clinic expense without proof before touching the database", async () => {
+  const data = form(); data.set("lampiran", "[]");
+  await expect(simpanPengeluaranKlinik(data)).rejects.toThrow("Lampiran bukti wajib");
+  expect(fixture.rpc).not.toHaveBeenCalled();
 });
 
 it("makes backoffice entry use the same atomic expense workflow", async () => {

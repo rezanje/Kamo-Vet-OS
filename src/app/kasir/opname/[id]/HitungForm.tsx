@@ -33,10 +33,13 @@ export function HitungForm({
   orderId,
   rows,
   terkunci,
+  kembali = "kasir",
 }: {
   orderId: string;
   rows: BarisHitung[];
   terkunci: Record<string, number>;
+  /** Layar asal: kasir petshop, atau modul Persediaan (gudang klinik / DC). */
+  kembali?: "kasir" | "pos";
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -121,7 +124,7 @@ export function HitungForm({
     <PreservedForm action={simpanHasil}>
       <LocalTransactionDraft scope={`opname-count:${orderId}`} state={{snapshot:{isian,cari,kategori,urut,sisaSaja},restore:s=>{if(!draftRecord(s.isian,draftString)||!Object.keys(s.isian).every(id=>rows.some(r=>r.item_id===id))||typeof s.cari!=="string"||typeof s.kategori!=="string"||!["nama","kategori","harga"].includes(String(s.urut))||typeof s.sisaSaja!=="boolean")return false;setIsian(Object.fromEntries(Object.entries(s.isian).filter(([id])=>terkunci[id]===undefined)));setCari(s.cari);setKategori(s.kategori);setUrut(s.urut as Urut);setSisaSaja(s.sisaSaja);return true;},reset:()=>setIsian({})}}/>
       <input type="hidden" name="order_id" value={orderId} />
-      <input type="hidden" name="kembali" value="kasir" />
+      <input type="hidden" name="kembali" value={kembali} />
       <input type="hidden" name="fisik" value={JSON.stringify(dikirim)} />
 
       <div className="crm-sec">
