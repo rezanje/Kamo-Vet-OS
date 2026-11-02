@@ -14,14 +14,18 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "staff-a" } } }) },
   from(table: string) {
     let selection = "";
+    // Bacaan "belum selesai dari hari sebelumnya" (satu-satunya yang memakai .limit) kosong di
+    // fixture ini; perilakunya diuji dengan saringan sungguhan di queue-carry-over.test.tsx.
+    let carryOver = false;
     const q = {
       select: (columns: string) => { selection = columns; return q; }, order: () => q,
+      limit: () => { carryOver = true; return q; },
       eq: (key: string, value: unknown) => { if (table === "visits") fixture.calls.push(["eq", key, value]); return q; },
       in: (key: string, value: unknown) => { fixture.calls.push(["in", key, value]); return q; },
       neq: () => q,
       gte: (key: string, value: unknown) => { fixture.calls.push(["gte", key, value]); return q; },
       lt: (key: string, value: unknown) => { fixture.calls.push(["lt", key, value]); return q; },
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: fixture.payment && table === "visits" && selection.includes("status") ? [{id:"visit-payment",status:"Pembayaran",created_at:"2026-10-14T01:00:00Z",poli:"Umum",inpatient_records:fixture.inpatient?[{id:"stay",discharged_at:null}]:[],pets:null,customers:null,branches:null}] : [], error: table === "visits" && fixture.fail ? { message: "private DB detail" } : null }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: fixture.payment && table === "visits" && !carryOver && selection.includes("status") ? [{id:"visit-payment",status:"Pembayaran",created_at:"2026-10-14T01:00:00Z",poli:"Umum",inpatient_records:fixture.inpatient?[{id:"stay",discharged_at:null}]:[],pets:null,customers:null,branches:null}] : [], error: table === "visits" && fixture.fail ? { message: "private DB detail" } : null }).then(resolve),
     }; return q;
   },
 }) }));
@@ -36,7 +40,9 @@ it("removes active inpatient from operational queue but preserves explicit all-h
 it("reads each queue/counter under the same active branch and WIB date", async () => {
   const html = await render({ tanggal: "2026-10-14" });
   expect(fixture.calls.filter(([method, key, value]) => method === "in" && key === "branch_id" && Array.isArray(value) && value[0] === "branch-a")).toHaveLength(3);
-  expect(fixture.calls.filter(([method, , value]) => method === "lt" && value === "2026-10-14T17:00:00.000Z")).toHaveLength(3);
+  // Daftar + penghitung dibatasi hari itu; pasien belum selesai dibaca dari sebelum awal hari itu.
+  expect(fixture.calls.filter(([method, , value]) => method === "lt" && value === "2026-10-14T17:00:00.000Z")).toHaveLength(2);
+  expect(fixture.calls.filter(([method, , value]) => method === "lt" && value === "2026-10-13T17:00:00.000Z")).toHaveLength(1);
   expect(html).toContain('aria-label="Cabang aktif"'); expect(html).not.toContain("Semua cabang");
 });
 it("explains completed-filter emptiness and does not change status behind the user's back", async () => {

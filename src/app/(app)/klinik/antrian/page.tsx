@@ -33,6 +33,12 @@ function petAge(dob: string | null | undefined): string | null {
   return y >= 1 ? `${y} Tahun` : `${m} Bulan`;
 }
 
+const KOLOM_ANTRIAN = "id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at)";
+
+// Batas baca pasien belum selesai dari hari-hari sebelumnya (terbaru dulu), supaya
+// satu layar antrian yang diperbarui tiap 20 detik tidak membaca tanpa batas.
+const BATAS_SISA = 200;
+
 // warna aksen per status (kartu, border baris, pill)
 const STATUS_META: Record<string, { badge: string; border: string; label: string }> = {
   Menunggu: { badge: "b", border: "var(--posb)", label: "Menunggu" },
@@ -80,15 +86,17 @@ export default async function AntrianPage({
   const scopeIds = allAccess ? selected ? [selected.id] : branches.map(b => b.id) : [branch.id];
 
   // Keep historical views within the authenticated operational branch.
-  const requestedDay = queueDayBounds(tanggal || hariIniWIB());
-  const day = requestedDay ?? queueDayBounds(hariIniWIB())!;
+  const hariIni = hariIniWIB();
+  const requestedDay = queueDayBounds(tanggal || hariIni);
+  const day = requestedDay ?? queueDayBounds(hariIni)!;
   const hariDipilih = day.date;
   const mulaiHari = day.from;
   const akhirHari = day.until;
+  const lihatHariIni = hariDipilih === hariIni;
 
   let query = supabase
     .from("visits")
-    .select("id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at)")
+    .select(KOLOM_ANTRIAN)
     .in("branch_id", scopeIds)
     .gte("created_at", mulaiHari).lt("created_at", akhirHari)
     .order("created_at", { ascending: true });
@@ -99,26 +107,37 @@ export default async function AntrianPage({
   if (filter === "selesai") query = query.eq("status", "Selesai");
 
   // Counters and next-up use the same day/branch, independent of the status tab.
-  const qWaiting = supabase
+  // One read serves both: next-up is the day's Menunggu rows in arrival order.
+  const qHari = supabase
     .from("visits")
-    .select("id, poli, dokter, queue_number, pets(name, species, breed, dob, photo_url), customers(name, phone), inpatient_records(discharged_at)")
-    .eq("status", "Menunggu")
+    .select("id, poli, dokter, status, queue_number, pets(name, species, breed, dob, photo_url), customers(name, phone), inpatient_records(discharged_at)")
     .in("branch_id", scopeIds)
     .gte("created_at", mulaiHari).lt("created_at", akhirHari)
     .order("created_at", { ascending: true });
 
-  const qHari = supabase.from("visits").select("status, inpatient_records(discharged_at)")
-    .in("branch_id", scopeIds)
-    .gte("created_at", mulaiHari).lt("created_at", akhirHari);
+  // Pasien hari sebelumnya yang belum selesai (belum diperiksa / belum dibayar) tetap
+  // tampil di antrian hari ini. Tanpa ini, lewat 00:00 WIB pasien shift malam yang
+  // belum lunas "hilang" dari layar walau datanya utuh (laporan klinik 2 Nov 2026).
+  // Hanya untuk tampilan hari ini; melihat tanggal lampau tetap persis hari itu.
+  const qSisa = lihatHariIni
+    ? supabase
+      .from("visits")
+      .select(KOLOM_ANTRIAN)
+      .in("branch_id", scopeIds)
+      .neq("status", "Selesai")
+      .lt("created_at", mulaiHari)
+      .order("created_at", { ascending: false })
+      .limit(BATAS_SISA)
+    : null;
 
-  const [visitsResult, waitingResult, todayResult, { data: voucherAktif }] =
+  const [visitsResult, todayResult, sisaResult, { data: voucherAktif }] =
     await Promise.all([
       query,
-      qWaiting,
       qHari,
+      qSisa,
       voucherAktifP,
     ]);
-  if (visitsResult.error || waitingResult.error || todayResult.error) {
+  if (visitsResult.error || todayResult.error || sisaResult?.error) {
     return <>
       <LiveRefresh branchId={branch.id} />
       <div role="alert" className="p2ban">Antrian gagal dimuat. Periksa koneksi dan coba lagi. Data pasien belum dapat ditampilkan.</div>
@@ -127,8 +146,17 @@ export default async function AntrianPage({
   }
   const operational = (row: { inpatient_records?: { discharged_at: string | null }[] | { discharged_at: string | null } | null }) => !hasActiveInpatient(row.inpatient_records);
   const visits = filter === "semua" || filter === "selesai" ? visitsResult.data : visitsResult.data?.filter(operational);
-  const allWaiting = waitingResult.data?.filter(operational);
   const today = todayResult.data?.filter(operational);
+  const allWaiting = today?.filter((v) => v.status === "Menunggu");
+  // Rawat inap aktif tetap diurus dari Rawat Inap; sisanya ikut saringan tab status.
+  const sisaSemua = (sisaResult?.data ?? []).filter(operational);
+  const sisaTerpotong = (sisaResult?.data?.length ?? 0) >= BATAS_SISA;
+  const sisa = sisaSemua.filter((v) =>
+    filter === "menunggu" ? v.status === "Menunggu"
+      : filter === "diperiksa" ? v.status === "Diperiksa"
+        : filter !== "selesai");
+  const sisaHitung = { Menunggu: 0, Diperiksa: 0, Pembayaran: 0 };
+  for (const v of sisaSemua) if (v.status in sisaHitung) sisaHitung[v.status as keyof typeof sisaHitung]++;
 
   type VoucherIngat = {
     code: string; tipe: string; nilai: number;
@@ -136,7 +164,6 @@ export default async function AntrianPage({
     customer_id: string | null; category_id: string | null;
     customers: Rel<{ name: string }>; customer_categories: Rel<{ nama: string }>;
   };
-  const hariIni = hariIniWIB();
   // Yang diingatkan: voucher yang MULAI hari ini (perlu ditawarkan) dan yang
   // BERAKHIR hari ini (kesempatan terakhir). Sisanya tidak perlu mengganggu layar.
   const ingatVoucher = ((voucherAktif ?? []) as unknown as VoucherIngat[]).filter(
@@ -158,8 +185,135 @@ export default async function AntrianPage({
   const fmtTime = (iso: string) =>
     new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
   const fmtOptional = (iso: string | null | undefined) => iso ? fmtTime(iso) : "—";
+  // Nomor antrian berulang tiap hari, jadi baris dari hari lain wajib membawa tanggalnya.
+  const fmtTgl = (iso: string) =>
+    new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", timeZone: "Asia/Jakarta" });
 
   const nextPet = nextUp ? one(nextUp.pets) : null;
+
+  const kepalaTabel = (
+    <thead>
+      <tr>
+        <th>No. Antri</th><th>Pasien</th><th>Pemilik</th><th>Cabang</th>
+        <th>Poli / Dokter</th><th>Jadwal</th><th>Estimasi</th><th>Status</th><th>Aksi</th>
+      </tr>
+    </thead>
+  );
+
+  type BarisAntrian = NonNullable<typeof visitsResult.data>[number];
+  const barisAntrian = (v: BarisAntrian, dariHariLalu = false) => {
+    const pet = one(v.pets);
+    const cust = one(v.customers);
+    const branch = one(v.branches);
+    const pos = dariHariLalu ? undefined : waitPos.get(v.id);
+    const meta = STATUS_META[v.status] ?? STATUS_META.Menunggu;
+    const age = petAge(pet?.dob);
+    const durations = serviceDurations({
+      checkedInAt: v.checked_in_at ?? null,
+      serviceStartedAt: v.service_started_at ?? null,
+      serviceFinishedAt: v.service_finished_at ?? null,
+      checkedOutAt: v.checked_out_at ?? null,
+    });
+    return (
+      <tr key={v.id} style={{ boxShadow: `inset 3px 0 0 ${meta.border}` }}>
+        <td style={{ fontFamily: "ui-monospace, monospace", fontWeight: 700, fontSize: 12, color: meta.border, paddingLeft: 14 }}>
+          {v.queue_number ?? "—"}
+          {dariHariLalu && (
+            <div style={{ fontFamily: "inherit", fontSize: 9.5, fontWeight: 600, color: "#b45309", marginTop: 2 }}>
+              <i className="ti ti-history" /> {fmtTgl(v.created_at)}
+            </div>
+          )}
+        </td>
+        <td>
+          <Link href={`/klinik/antrian/${v.id}`} style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: "inherit" }}>
+            <PetPhoto url={pet?.photo_url} />
+            <div>
+              <div style={{ fontWeight: 600, color: "var(--posb)" }}>{pet?.name ?? "—"}</div>
+              <div style={{ fontSize: 10, color: "var(--tm)" }}>
+                {pet?.species}{pet?.breed ? ` / ${pet.breed}` : ""}{age ? ` · ${age}` : ""}
+              </div>
+            </div>
+          </Link>
+        </td>
+        <td>
+          <div style={{ fontSize: 11.5 }}>{cust?.name ?? "—"}</div>
+          <div style={{ fontSize: 10, color: "var(--tm)" }}>{cust?.phone}</div>
+          {one(cust?.customer_review_statuses ?? null) && (
+            <div style={{ marginTop: 3 }}><UlasanBadge s={one(cust!.customer_review_statuses)!} size={9.5} /></div>
+          )}
+        </td>
+        <td style={{ fontSize: 11, color: "var(--tm)" }}>{branch?.code ?? "—"}</td>
+        <td>
+          <div style={{ fontSize: 11.5 }}>{v.poli}</div>
+          {v.dokter && <div style={{ fontSize: 10, color: "var(--tm)" }}>{v.dokter}</div>}
+        </td>
+        <td style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.55 }}>
+          <div>Daftar {dariHariLalu ? `${fmtTgl(v.created_at)} ` : ""}{fmtTime(v.created_at)}</div>
+          <div>Check-in {fmtOptional(v.checked_in_at)}</div>
+          <div>Mulai {fmtOptional(v.service_started_at)} · Selesai {fmtOptional(v.service_finished_at)}</div>
+          <div style={{ color: "var(--td)" }}>Tunggu {durations.waitMinutes == null ? "Belum tercatat" : `${durations.waitMinutes} mnt`} · Layanan {durations.serviceMinutes == null ? "Belum tercatat" : `${durations.serviceMinutes} mnt`}</div>
+        </td>
+        <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
+          {v.status === "Menunggu" && pos !== undefined ? `± ${estimatedWaitMinutes(pos)} mnt` : "—"}
+        </td>
+        <td><span className={`bge ${meta.badge}`}>{meta.label}</span></td>
+        <td>
+          <div style={{ display: "flex", gap: 5 }}>
+            <Link href={`/klinik/antrian/${v.id}`} className="btn-def"
+              style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <i className="ti ti-eye" /> Detail
+            </Link>
+            {v.status === "Menunggu" && (
+              <>
+                <form action={updateVisitStatus}>
+                  <input type="hidden" name="id" value={v.id} />
+                  <input type="hidden" name="status" value="Diperiksa" />
+                  <SubmitButton className="btn-acc" icon="ti-bell" style={{ padding: "4px 10px", fontSize: 10.5, background: "var(--posb)" }} pendingText="…">Panggil</SubmitButton>
+                </form>
+                <CancelButton id={v.id} />
+              </>
+            )}
+            {v.status === "Diperiksa" && (
+              <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-acc"
+                style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                <i className="ti ti-stethoscope" /> Rekam medis
+              </Link>
+            )}
+            {v.status === "Pembayaran" && (
+              <>
+              <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-def"
+                style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                <i className="ti ti-stethoscope" /> Buka rekam medis
+              </Link>
+              <Link href={`/klinik/pembayaran/${v.id}`} className="btn-acc"
+                style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                <i className="ti ti-cash" /> Bayar
+              </Link>
+              </>
+            )}
+            {v.status === "Selesai" && (
+              <>
+                <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-def"
+                  style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <i className="ti ti-eye" /> Lihat
+                </Link>
+                <Link href={`/klinik/pembayaran/${v.id}`} className="btn-def"
+                  style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <i className="ti ti-file-invoice" /> Tagihan
+                </Link>
+              </>
+            )}
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
+  const rincianSisa = [
+    sisaHitung.Pembayaran ? `${sisaHitung.Pembayaran} belum dibayar` : "",
+    sisaHitung.Diperiksa ? `${sisaHitung.Diperiksa} sedang diperiksa` : "",
+    sisaHitung.Menunggu ? `${sisaHitung.Menunggu} belum dipanggil` : "",
+  ].filter(Boolean).join(" · ");
 
   return (
     <>
@@ -210,6 +364,16 @@ export default async function AntrianPage({
             const akhir = v.valid_until === hariIni ? " · terakhir hari ini" : "";
             return `${v.code} (${nilai}${sasaran ? ` · khusus ${sasaran}` : ""}${akhir})`;
           }).join(", ")}.
+        </div>
+      )}
+
+      {lihatHariIni && sisaSemua.length > 0 && (
+        <div role="status" className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fde68a", color: "#92400e" }}>
+          <i className="ti ti-history" /> Ada {sisaSemua.length} pasien dari hari sebelumnya yang belum selesai
+          {rincianSisa ? ` (${rincianSisa})` : ""}.{" "}
+          {sisa.length > 0
+            ? "Daftarnya ada di bagian “Belum selesai dari hari sebelumnya” di bawah; lanjutkan pemeriksaan atau pembayarannya dari sana."
+            : <Link href={`/klinik/antrian?${new URLSearchParams({ filter: "aktif", cabang: selected?.id ?? "" })}`} style={{ color: "inherit", fontWeight: 700 }}>Lihat di tab Aktif</Link>}
         </div>
       )}
 
@@ -272,7 +436,7 @@ export default async function AntrianPage({
             <input type="hidden" name="filter" value={filter} />
             <div style={{ width: 150 }}>
               <label className="flab">Tanggal</label>
-              <input className="fi" type="date" name="tanggal" defaultValue={hariDipilih} max={hariIniWIB()} />
+              <input className="fi" type="date" name="tanggal" defaultValue={hariDipilih} max={hariIni} />
             </div>
             <div style={{ minWidth: 190 }}>
               <label className="flab">Cabang</label>
@@ -282,122 +446,45 @@ export default async function AntrianPage({
               </select> : <input className="fi" value={branchLabel} readOnly aria-label="Cabang aktif" />}
             </div>
             <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
-            {hariDipilih !== hariIniWIB() && (
+            {!lihatHariIni && (
               <span style={{ fontSize: 10.5, color: "#b45309" }}>
                 <i className="ti ti-history" /> Sedang melihat antrian {hariDipilih}, bukan hari ini.
               </span>
             )}
           </form>
 
+          {lihatHariIni && sisa.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "#b45309", letterSpacing: ".04em", marginBottom: 4 }}>
+                <i className="ti ti-history" /> BELUM SELESAI DARI HARI SEBELUMNYA · {sisa.length} PASIEN
+              </div>
+              <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 6 }}>
+                Pasien yang didaftarkan sebelum hari ini dan belum diperiksa atau belum dibayar. Nomor antrian berlaku pada tanggal daftarnya.
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table className="tbl" style={{ minWidth: 780 }}>
+                  {kepalaTabel}
+                  <tbody>{sisa.map((v) => barisAntrian(v, true))}</tbody>
+                </table>
+              </div>
+              {sisaTerpotong && (
+                <div style={{ fontSize: 10.5, color: "#b45309", marginTop: 6 }}>
+                  Menampilkan {BATAS_SISA} pasien terbaru. Yang lebih lama bisa dilihat lewat filter Tanggal.
+                </div>
+              )}
+            </div>
+          )}
+
+          {lihatHariIni && sisa.length > 0 && (
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--posb)", letterSpacing: ".04em", marginBottom: 6 }}>
+              <i className="ti ti-calendar" /> ANTRIAN HARI INI
+            </div>
+          )}
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 780 }}>
-              <thead>
-                <tr>
-                  <th>No. Antri</th><th>Pasien</th><th>Pemilik</th><th>Cabang</th>
-                  <th>Poli / Dokter</th><th>Jadwal</th><th>Estimasi</th><th>Status</th><th>Aksi</th>
-                </tr>
-              </thead>
+              {kepalaTabel}
               <tbody>
-                {(visits ?? []).map((v) => {
-                  const pet = one(v.pets);
-                  const cust = one(v.customers);
-                  const branch = one(v.branches);
-                  const pos = waitPos.get(v.id);
-                  const meta = STATUS_META[v.status] ?? STATUS_META.Menunggu;
-                  const age = petAge(pet?.dob);
-                  const durations = serviceDurations({
-                    checkedInAt: v.checked_in_at ?? null,
-                    serviceStartedAt: v.service_started_at ?? null,
-                    serviceFinishedAt: v.service_finished_at ?? null,
-                    checkedOutAt: v.checked_out_at ?? null,
-                  });
-                  return (
-                    <tr key={v.id} style={{ boxShadow: `inset 3px 0 0 ${meta.border}` }}>
-                      <td style={{ fontFamily: "ui-monospace, monospace", fontWeight: 700, fontSize: 12, color: meta.border, paddingLeft: 14 }}>{v.queue_number ?? "—"}</td>
-                      <td>
-                        <Link href={`/klinik/antrian/${v.id}`} style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: "inherit" }}>
-                          <PetPhoto url={pet?.photo_url} />
-                          <div>
-                            <div style={{ fontWeight: 600, color: "var(--posb)" }}>{pet?.name ?? "—"}</div>
-                            <div style={{ fontSize: 10, color: "var(--tm)" }}>
-                              {pet?.species}{pet?.breed ? ` / ${pet.breed}` : ""}{age ? ` · ${age}` : ""}
-                            </div>
-                          </div>
-                        </Link>
-                      </td>
-                      <td>
-                        <div style={{ fontSize: 11.5 }}>{cust?.name ?? "—"}</div>
-                        <div style={{ fontSize: 10, color: "var(--tm)" }}>{cust?.phone}</div>
-                        {one(cust?.customer_review_statuses ?? null) && (
-                          <div style={{ marginTop: 3 }}><UlasanBadge s={one(cust!.customer_review_statuses)!} size={9.5} /></div>
-                        )}
-                      </td>
-                      <td style={{ fontSize: 11, color: "var(--tm)" }}>{branch?.code ?? "—"}</td>
-                      <td>
-                        <div style={{ fontSize: 11.5 }}>{v.poli}</div>
-                        {v.dokter && <div style={{ fontSize: 10, color: "var(--tm)" }}>{v.dokter}</div>}
-                      </td>
-                      <td style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.55 }}>
-                        <div>Daftar {fmtTime(v.created_at)}</div>
-                        <div>Check-in {fmtOptional(v.checked_in_at)}</div>
-                        <div>Mulai {fmtOptional(v.service_started_at)} · Selesai {fmtOptional(v.service_finished_at)}</div>
-                        <div style={{ color: "var(--td)" }}>Tunggu {durations.waitMinutes == null ? "Belum tercatat" : `${durations.waitMinutes} mnt`} · Layanan {durations.serviceMinutes == null ? "Belum tercatat" : `${durations.serviceMinutes} mnt`}</div>
-                      </td>
-                      <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
-                        {v.status === "Menunggu" && pos !== undefined ? `± ${estimatedWaitMinutes(pos)} mnt` : "—"}
-                      </td>
-                      <td><span className={`bge ${meta.badge}`}>{meta.label}</span></td>
-                      <td>
-                        <div style={{ display: "flex", gap: 5 }}>
-                          <Link href={`/klinik/antrian/${v.id}`} className="btn-def"
-                            style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <i className="ti ti-eye" /> Detail
-                          </Link>
-                          {v.status === "Menunggu" && (
-                            <>
-                              <form action={updateVisitStatus}>
-                                <input type="hidden" name="id" value={v.id} />
-                                <input type="hidden" name="status" value="Diperiksa" />
-                                <SubmitButton className="btn-acc" icon="ti-bell" style={{ padding: "4px 10px", fontSize: 10.5, background: "var(--posb)" }} pendingText="…">Panggil</SubmitButton>
-                              </form>
-                              <CancelButton id={v.id} />
-                            </>
-                          )}
-                          {v.status === "Diperiksa" && (
-                            <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-acc"
-                              style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
-                              <i className="ti ti-stethoscope" /> Rekam medis
-                            </Link>
-                          )}
-                          {v.status === "Pembayaran" && (
-                            <>
-                            <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-def"
-                              style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
-                              <i className="ti ti-stethoscope" /> Buka rekam medis
-                            </Link>
-                            <Link href={`/klinik/pembayaran/${v.id}`} className="btn-acc"
-                              style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
-                              <i className="ti ti-cash" /> Bayar
-                            </Link>
-                            </>
-                          )}
-                          {v.status === "Selesai" && (
-                            <>
-                              <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-def"
-                                style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                <i className="ti ti-eye" /> Lihat
-                              </Link>
-                              <Link href={`/klinik/pembayaran/${v.id}`} className="btn-def"
-                                style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                <i className="ti ti-file-invoice" /> Tagihan
-                              </Link>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {(visits ?? []).map((v) => barisAntrian(v))}
                 {(visits ?? []).length === 0 && (
                   <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                     Tidak ada pasien untuk filter ini di {branchLabel}, tanggal {hariDipilih}.
