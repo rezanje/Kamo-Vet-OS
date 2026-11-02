@@ -8,39 +8,47 @@ import { koreksiMetodePembayaran } from "@/app/(app)/penjualan/[id]/actions";
 import { revalidatePath } from "next/cache";
 
 const id = "e8700000-0000-4000-8000-000000000001";
-function form() {
+// Form shows one box per correctable method; a blank box means "not paid that way".
+function form(boxes: Record<string, string> = { Tunai: "20000.50", Transfer: "", Debit: "", Kredit: "", QRIS: "79999.50", "E-Wallet": "" }) {
   const data = new FormData();
-  Object.entries({ id, revision: "2", requestKey: "stable-key", alasan: "Kasir salah pilih metode", tunai: "20000.50", transfer: "79999.50" })
-    .forEach(([key, value]) => data.set(key, value));
+  Object.entries({ id, revision: "2", requestKey: "stable-key", alasan: "Kasir salah pilih metode" }).forEach(([key, value]) => data.set(key, value));
+  Object.entries(boxes).forEach(([method, value]) => data.set(`bayar_${method}`, value));
   return data;
 }
 beforeEach(() => { vi.clearAllMocks(); fixture.rpc.mockResolvedValue({ data: { sale_id: id, revision: 3, audit_id: "audit" }, error: null }); });
 
-it("corrects the same sale with the durable key and exact decimal amounts", async () => {
+it("sends every filled method with exact decimal amounts and the durable key", async () => {
   await expect(koreksiMetodePembayaran(form())).rejects.toThrow(`/penjualan/${id}?success=payment-corrected`);
-  expect(fixture.rpc).toHaveBeenCalledWith("correct_pos_sale_payment", {
+  expect(fixture.rpc).toHaveBeenCalledWith("correct_pos_sale_payment_methods", {
     p_sale_id: id, p_expected_revision: 2, p_request_key: "stable-key", p_reason: "Kasir salah pilih metode",
-    p_cash_amount: 20000.5, p_transfer_amount: 79999.5,
+    p_payments: [{ method: "Tunai", amount: 20000.5 }, { method: "QRIS", amount: 79999.5 }],
   });
   expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
 });
+it("moves a whole cash bill to Debit", async () => {
+  await expect(koreksiMetodePembayaran(form({ Tunai: " ", Debit: "100000", QRIS: "" }))).rejects.toThrow("payment-corrected");
+  expect(fixture.rpc).toHaveBeenCalledWith("correct_pos_sale_payment_methods",
+    expect.objectContaining({ p_payments: [{ method: "Debit", amount: 100000 }] }));
+});
+it("ignores methods without a box (fee-bearing parts stay fixed server-side)", async () => {
+  await expect(koreksiMetodePembayaran(form({ Tunai: "45000" }))).rejects.toThrow("payment-corrected");
+  expect(fixture.rpc).toHaveBeenCalledWith("correct_pos_sale_payment_methods",
+    expect.objectContaining({ p_payments: [{ method: "Tunai", amount: 45000 }] }));
+});
 it.each(["-1", "1.001", "NaN", "Infinity", "1e5", "1000000000001"])("rejects invalid money %s before RPC", async value => {
-  const data = form(); data.set("tunai", value);
-  await expect(koreksiMetodePembayaran(data)).rejects.toThrow(/tidak valid/);
+  await expect(koreksiMetodePembayaran(form({ Tunai: value, QRIS: "1" }))).rejects.toThrow(/tidak valid/);
   expect(fixture.rpc).not.toHaveBeenCalled();
 });
-it("rejects a missing amount field before RPC", async () => {
-  const data = form(); data.delete("tunai");
-  await expect(koreksiMetodePembayaran(data)).rejects.toThrow(/tidak valid/);
+it("rejects an all-empty allocation before RPC", async () => {
+  await expect(koreksiMetodePembayaran(form({ Tunai: "", QRIS: "0" }))).rejects.toThrow(/minimal satu metode/);
   expect(fixture.rpc).not.toHaveBeenCalled();
-});
-it("sends a blank Tunai box as zero when the whole bill moves to Transfer", async () => {
-  const data = form(); data.set("tunai", " "); data.set("transfer", "100000");
-  await expect(koreksiMetodePembayaran(data)).rejects.toThrow(`/penjualan/${id}?success=payment-corrected`);
-  expect(fixture.rpc).toHaveBeenCalledWith("correct_pos_sale_payment", expect.objectContaining({ p_cash_amount: 0, p_transfer_amount: 100000 }));
 });
 it("does not acknowledge an uncertain response or change the retry key", async () => {
   fixture.rpc.mockResolvedValue({ data: null, error: null });
   await expect(koreksiMetodePembayaran(form())).rejects.toThrow(/belum terkonfirmasi/);
   expect(revalidatePath).not.toHaveBeenCalled();
+});
+it("shows the database reason when the correction is refused", async () => {
+  fixture.rpc.mockResolvedValue({ data: null, error: { message: "Metode yang memakai fee merchant tidak bisa dipakai lagi" } });
+  await expect(koreksiMetodePembayaran(form())).rejects.toThrow(/fee merchant/);
 });

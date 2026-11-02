@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { SALE_PAYMENT_METHODS } from "@/lib/sale-payment-reporting";
 
 function correctionMoney(value: FormDataEntryValue | null): number {
-  // A blank Tunai/Transfer box means nothing was paid that way.
+  // A blank method box means nothing was paid that way.
   // A missing field is still rejected; the RPC re-checks that the split equals the bill.
   const text = typeof value === "string" ? value.trim() || "0" : "";
   if (!/^(?:0|[1-9]\d{0,12})(?:\.\d{1,2})?$/.test(text)) throw new Error("Jumlah koreksi tidak valid. Isi angka Rupiah dengan maksimal dua desimal.");
@@ -22,16 +23,20 @@ export async function koreksiMetodePembayaran(form: FormData) {
   const revision = Number(revisionText);
   const key = String(form.get("requestKey") ?? "");
   const reason = String(form.get("alasan") ?? "").trim();
-  const cash = correctionMoney(form.get("tunai"));
-  const transfer = correctionMoney(form.get("transfer"));
   if (!/^[0-9a-f-]{36}$/i.test(id) || !revisionText.trim() || !Number.isSafeInteger(revision) || revision < 0
     || !key.trim() || key.length > 120 || reason.length < 3 || reason.length > 1000) {
     throw new Error("Identitas atau alasan koreksi tidak valid. Muat ulang lalu coba lagi.");
   }
+  // Satu kotak per metode yang boleh dipakai; kotak kosong = tidak dibayar dengan metode itu.
+  // Metode ber-fee merchant tidak punya kotak dan tetap utuh; RPC memeriksa ulang jumlahnya.
+  const payments = SALE_PAYMENT_METHODS
+    .filter((method) => form.has(`bayar_${method}`))
+    .map((method) => ({ method, amount: correctionMoney(form.get(`bayar_${method}`)) }))
+    .filter((part) => part.amount > 0);
+  if (payments.length === 0) throw new Error("Isi minimal satu metode pembayaran dengan nominal lebih dari nol.");
   const db = await createClient();
-  const { data, error } = await db.rpc("correct_pos_sale_payment", {
-    p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason,
-    p_cash_amount: cash, p_transfer_amount: transfer,
+  const { data, error } = await db.rpc("correct_pos_sale_payment_methods", {
+    p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason, p_payments: payments,
   });
   if (error || data?.sale_id !== id || data?.revision !== revision + 1 || !data?.audit_id) {
     throw new Error(error?.message ?? "Hasil koreksi belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
