@@ -73,3 +73,30 @@ Hematologi Rp193.728, Kimia Darah Rp602.701, Tabung EDTA Rp1.377 = Rp800.000).
   Total tidak berubah; tagihan tanpa paket tercetak persis seperti sebelumnya.
 - Dipakai di struk (`pembayaran/[visitId]/struk`), invoice A4 (`…/invoice`), struk rombongan (per invoice), dan struk WhatsApp
   (nama paket dibaca dari master saat kirim; tetap sesudah respons).
+
+## Lanjutan 2 Nov malam — kasir rawat inap (Anisa 22.20)
+
+Laporan: tagihan rawat inap kucing CMGG berisi "Kimia Darah Lengkap" gagal disimpan ("hasil penyimpanan belum dapat
+dipastikan"). Log Production: `clinic_save_inpatient_cashier` ditolak 7× (22.09–22.20 WIB) dengan
+`CART_INVALID: pilih item master aktif` — RPC rawat inap hanya menerima barang `Jasa`/`Persediaan`, sedangkan daftar
+Obat kasir rawat inap menawarkan barang `Grup` utuh (sudah begitu sejak sebelum fitur paket; kini lebih mudah dipilih).
+
+- `InpatientPaymentPage` membaca resep paket; paket tanpa resep utuh tidak ditawarkan.
+- `InpatientCashier`: paket yang dipilih dipecah jadi isinya (`pecahPaket`, harga paket dibagi ke isinya) dan tampil satu
+  baris paket seperti pembayaran rawat jalan. Yang dikirim ke RPC tetap baris isi (tanpa asal paket — tagihan rawat inap
+  tidak menyimpannya), jadi batas harga per baris yang berlaku.
+- Tes: `inpatient-cashier.test.tsx` — paket dipilih, keranjang menampilkan satu baris paket, `pending_rows` berisi isi
+  paket (bukan barang Grup) dengan total = harga paket.
+
+## Lanjutan 2 Nov malam — racikan batal di tagihan rawat inap (Anisa 22.23)
+
+"Di transaksi ini ada void racik juga." Dicek: membatalkan racikan lewat Aksi → pengembalian bahan (`clinic_return_compound`)
+mengembalikan bahan dan menandai racikan `void`, tetapi baris resepnya tetap ikut `inpatient_payment_quote`; posting lalu
+menolak racikan void, dan keranjang rawat inap melarang menghapus baris racikan (`COMPOUND_LOCKED`). Tagihan macet permanen.
+
+- Migrasi `20261106070000_racikan_batal_keluar_tagihan_ranap.sql` (aditif): trigger `zz_void_compound_withdraw_billing` pada
+  `compounding_recipes` — saat status menjadi `void`, baris resep racikan itu pada kunjungan rawat inap yang belum ditagih ditarik
+  dari tagihan (`billing_withdrawn_at`, alasan "Racikan dibatalkan; bahan dikembalikan ke stok"). Sudah ditagih → tidak disentuh.
+- **Sudah diterapkan ke Production** 2 Nov malam. Uji di Production dalam transaksi yang dibatalkan (pasien Tatam, CMGG):
+  racikan Salep Luka di-void → baris tertunda 7 → 6, satu baris tertarik dengan alasan di atas; tidak ada sisa sesudah uji.
+- Diputar ulang dari nol bersama seluruh migrasi (364) di PostgreSQL 16 lokal: lulus.

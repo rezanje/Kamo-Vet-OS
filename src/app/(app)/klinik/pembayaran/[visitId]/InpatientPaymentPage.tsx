@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { Popup } from "@/components/Popup";
 import type { createClient } from "@/lib/supabase/server";
-import { loadClinicPaymentMaster } from "@/lib/clinic-payment";
+import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
 
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
@@ -15,10 +15,16 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
  db:Awaited<ReturnType<typeof createClient>>;visitId:string;recordId:string;branchId:string|null;userId:string;query:Query;
  patient:PaymentPatient;catatanResep?:string|null;stayStatus?:string;
 }) {
- const [read,master,minDpPercent,profile]=await Promise.all([
+ const [read,master,minDpPercent,profile,packages]=await Promise.all([
   db.rpc("clinic_read_inpatient_cashier",{p_record_id:recordId,p_visit_id:visitId}),loadClinicPaymentMaster(db,branchId),getDpMinimalPercent(db),
   db.from("profiles").select("role,full_name").eq("id",userId).maybeSingle(),
+  // Paket gagal dibaca = paket tidak ditawarkan; kasir tetap jalan.
+  loadClinicPackages(db).catch(()=>[]),
  ]);
+ // Anisa 2 Nov: paket (Grup) yang dipilih utuh ditolak database rawat inap. Paket hanya ditawarkan bila
+ // resepnya utuh, dan saat dipilih dipecah jadi isinya.
+ const paketSiap=new Set(packages.filter(option=>option.resep).map(option=>option.id));
+ const masterObat=master.obat.filter(item=>!item.paket||paketSiap.has(item.id));
  const data=read.data as InpatientCashierData|InpatientCashierReadOnly|null;
  const editable=data?.state==="SHIFT_REQUIRED"?null:data;
  if(read.error||!data||!Array.isArray(data.history)||!Array.isArray(data.receipts)||!Array.isArray(data.applications)||
@@ -35,7 +41,7 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
   {stayStatus&&<div style={{fontSize:11,color:"var(--tm)",marginBottom:12}}>{stayStatus}</div>}
   <Popup message={query.error}/>
   {editable&&!query.error&&saved&&<Popup tone="success" title={settled&&data.history.length?"Pembayaran lunas":savedApplications?"Saldo pemilik diterapkan":savedReceipt?"Pembayaran diterima":"Transaksi tersimpan"} message={`${savedInvoice?.invoice_no??savedReceipt?.no_kwitansi??"Pemakaian saldo pemilik"} · Sisa pembayaran ${rp(editable.quote.remaining)}`}/>}
-  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} patient={patient} catatanResep={catatanResep} cashierName={profile.data?.full_name??"Akun kasir"} masterObat={master.obat} masterJasa={master.jasa}
+  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} patient={patient} catatanResep={catatanResep} cashierName={profile.data?.full_name??"Akun kasir"} masterObat={masterObat} packages={packages} masterJasa={master.jasa}
    ppnRate={editable.tax_settings.mode_pkp?Number(editable.tax_settings.ppn_rate):0} minDpPercent={minDpPercent} bolehTerobos={bolehMenerobosDp(profile.data?.role??null)}/>:<><PaymentPatientHeader patient={patient}/><section className="card" role="status">Riwayat tetap dapat dibaca. Buka shift klinik milik Anda sebelum mengubah keranjang atau memproses pembayaran. <Link href="/klinik/shift">Buka shift</Link></section></>}
   <section className="card" style={{marginTop:12}}><h2 style={{fontSize:16}}>INVOICE / RIWAYAT TAHAP · BACA SAJA</h2>
    <p>Setiap pilihan membuka invoice yang benar-benar diterbitkan, bukan nomor invoice gabungan baru.</p>

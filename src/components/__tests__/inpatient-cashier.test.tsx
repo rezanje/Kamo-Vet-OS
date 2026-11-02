@@ -29,3 +29,26 @@ it('requires a fresh overpayment confirmation after any pending cart change',asy
  await act(async()=>{[...host.querySelectorAll('button')].find(button=>button.textContent==='Setuju, simpan saldo pemilik')!.click()});
  expect(s.save).toHaveBeenCalledTimes(1);expect(host.textContent).toContain('Keranjang berubah');
 });
+it('expands a package picked in the inpatient cart into its contents instead of sending the Grup item (Anisa 2 Nov)',async()=>{
+ const resep={id:'paket',name:'Paket Darah Fiktif',komponen:[
+  {item_id:'tabung',name:'Tabung Fiktif',item_type:'Persediaan',base_unit:'pcs',qty:1,unit:'pcs',factor:1},
+  {item_id:'reagen',name:'Reagen Fiktif',item_type:'Persediaan',base_unit:'pcs',qty:2,unit:'pcs',factor:1}]};
+ const unit=(p:number)=>[{unit:'pcs',factor:1,sell_price:p,buy_price:0}];
+ const masterObat=[{id:'sku',code:'F',name:'Obat Fiktif',unit:'pcs',harga:1000,units:unit(1000)},{id:'tabung',code:'T',name:'Tabung Fiktif',unit:'pcs',harga:2000,units:unit(2000)},
+  {id:'reagen',code:'R',name:'Reagen Fiktif',unit:'pcs',harga:9000,units:unit(9000)},{id:'paket',code:'P',name:'Paket Darah Fiktif',unit:'pcs',harga:80000,units:unit(80000),paket:true}];
+ await act(async()=>root.render(<InpatientCashier patient={{photo:null,name:'Pasien Fiktif',species:'Kucing',owner:'Pemilik Fiktif',phone:'080000000000',address:'Alamat fiktif',dokter:'Dokter Fiktif',jenisLayanan:'Rawat Inap',noInvoice:'(baru)',tanggal:'01/11/2026'}}
+  data={data} visitId="visit" recordId="stay" requestKey="cashier-key" masterObat={masterObat} masterJasa={[]} ppnRate={0} minDpPercent={50} bolehTerobos={false}
+  packages={[{id:'paket',name:'Paket Darah Fiktif',componentIds:['tabung','reagen'],perPaket:{tabung:1,reagen:2},resep}]}/>));
+ await act(async()=>{[...host.querySelectorAll('button')].find(button=>button.textContent?.includes('Tambah'))!.click()});
+ const picker=host.querySelector<HTMLInputElement>('input[aria-label="Nama obat baris 2"]')!;
+ await act(async()=>{picker.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(picker,'Paket Darah');picker.dispatchEvent(new Event('input',{bubbles:true}))});
+ await act(async()=>{picker.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))});
+ await act(async()=>{picker.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))});
+ expect(host.querySelectorAll('tr[data-paket="paket"]')).toHaveLength(1);
+ await change('Jumlah Bayar','90000');
+ s.save.mockResolvedValue({status:'SAVED',href:'/klinik/pembayaran/visit'});await submit();
+ const rows=JSON.parse(String((s.save.mock.calls[0][0] as FormData).get('pending_rows'))) as {id:string;item_id:string;qty:number;harga:number}[];
+ expect(rows.map(row=>row.item_id)).toEqual(['sku','tabung','reagen']);
+ expect(rows.slice(1).reduce((sum,row)=>sum+row.qty*row.harga,0)).toBe(80000);
+ expect(rows.every(row=>row.id&&row.item_id!=='paket')).toBe(true);
+});
