@@ -47,3 +47,17 @@ komisi dan omzet paket mengikuti aturan H05 yang sudah ada.
 - `src/lib/__tests__/paket-klinik.test.ts` — pemecahan, pembagian harga, stok paket, pengenalan paket.
 - `src/components/__tests__/clinic-paket-obat.test.tsx` — rekam medis (pilih paket, tanpa BMHP, tambah jumlah,
   hapus), pembayaran (pemilih menyerahkan paket, penandaan otomatis dari rekam medis).
+
+## Lanjutan 2 Nov malam — paket tampil satu baris (Anisa 20.29–20.30)
+
+Masukan Anisa setelah mencoba "Kimia Darah Lengkap": keranjang menampilkan tiap isi paket dengan harga hasil pembagian
+(terbaca seperti HPP). Diminta tampil seperti tindakan: satu baris harga paket (mis. Rp800.000), isi kecil dengan qty saja.
+
+- Rekam medis (`RekamForm`, komponen `BarisPaket`): satu baris per paket — nama, label "paket", "Rp … / paket", pelaksana
+  (diisi sekali untuk semua isi), kotak "ISI PAKET" berisi `nama × qty satuan` tanpa harga, input jumlah paket, subtotal,
+  hapus paket. Baris isi yang dikirim ke server tidak berubah.
+- Pembayaran (`PembayaranForm`, komponen `PaketTagihan`): satu baris per paket — harga per paket, jumlah paket (menyesuaikan
+  semua isi), diskon % berlaku untuk semua isi, pelaksana sekali, kotak "ISI PAKET", tombol "Bukan paket" untuk melepas
+  penandaan yang keliru, hapus paket. Isi berjenis jasa ikut tabel Obat (jenisnya tetap `jasa` saat dikirim) supaya paket
+  tidak tampil dua kali.
+- Belum berubah: struk/invoice cetak dan detail rekam medis tersimpan masih menampilkan baris isi.

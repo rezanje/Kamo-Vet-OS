@@ -31,6 +31,7 @@ import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
 import { bacaKode, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganKode } from "@/lib/kode-kampanye";
 import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
 import { isiDitagihPerPaket, kenaliPaket, pecahPaket, type ResepPaket } from "@/lib/paket-klinik";
+import { KeranjangBahan } from "@/components/KeranjangBahan";
 
 type Line = {
   key?: string;
@@ -52,6 +53,8 @@ type Line = {
   /** H05: package (Grup) this component line was sold in, and how many packages. */
   package_item_id?: string | null;
   package_qty?: number | null;
+  /** Jenis baris. Isi paket berjenis jasa ikut tabel Obat supaya paket tampil satu baris. */
+  jenis?: string | null;
 };
 export type PackageOption = { id: string; name: string; componentIds: string[]; perPaket?: Record<string, number>;
   /** Resep lengkap: paket bisa dipilih utuh dari daftar Obat lalu dipecah jadi isinya. */
@@ -79,7 +82,7 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, onPickPackage, onPackageQty }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, onPickPackage, onPackageQty, onRemovePackage }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; groomingDoctorRequired?: boolean;
@@ -95,6 +98,8 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   onPickPackage?: (rowIndex: number, packageId: string) => void;
   /** Jumlah paket diubah: semua baris isi paket yang sama (obat & jasa) ikut menyesuaikan. */
   onPackageQty?: (packageId: string, jumlah: number) => void;
+  /** Paket dihapus: semua isinya (obat & jasa) ikut terhapus. */
+  onRemovePackage?: (packageId: string) => void;
 }) {
   const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id));
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -149,7 +154,19 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
       <table className="tbl" style={{ minWidth: 520 }}>
         <thead><tr><th style={{ width: 26 }}>No.</th><th style={{ minWidth: 180 }}>Nama</th><th style={{ width: 54, textAlign: "center" }}>Qty</th>{allowUnits && <th style={{ width: 100 }}>Satuan</th>}<th style={{ width: 110, textAlign: "right" }}>Harga Satuan</th><th style={{ width: 66, textAlign: "center" }}>Disk %</th><th style={{ width: 100, textAlign: "right" }}>Subtotal</th><th style={{ width: 24 }} /></tr></thead>
         <tbody>
-          {rows.map((r, i) => (
+          {rows.map((r, i) => r.package_item_id && packages.some(option => option.id === r.package_item_id) ? (
+            // Anisa 2 Nov: paket tampil satu baris — harga & jumlah paket; isinya kecil tanpa harga.
+            rows.findIndex(row => row.package_item_id === r.package_item_id) === i
+              ? <PaketTagihan key={`paket-${r.package_item_id}`} nomor={i + 1} nama={packages.find(option => option.id === r.package_item_id)!.name}
+                  isi={rows.filter(row => row.package_item_id === r.package_item_id)} allowUnits={allowUnits} discountsDisabled={discountsDisabled}
+                  staff={serviceStaff} performerLocked={sealedPerformers || performerLocked(r)}
+                  onJumlah={jumlah => onPackageQty ? onPackageQty(r.package_item_id!, jumlah) : undefined}
+                  onDiskon={diskon => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, diskon_persen: diskon } : row))}
+                  onPelaksana={value => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, service_performers: value } : row))}
+                  onHapus={() => onRemovePackage ? onRemovePackage(r.package_item_id!) : setRows(rows.filter(row => row.package_item_id !== r.package_item_id))}
+                  onLepas={() => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, package_item_id: null, package_qty: null } : row))} />
+              : null
+          ) : (
             <tr key={r.key ?? r.source_invoice_item_id ?? r.prescription_item_id ?? i}>
               <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
               <td>
@@ -259,6 +276,50 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   );
 }
 
+/** Satu paket di tagihan: nama & harga paket, jumlah paket, diskon untuk seluruh isi, isi tanpa harga. */
+function PaketTagihan({ nomor, nama, isi, allowUnits, discountsDisabled, staff, performerLocked, onJumlah, onDiskon, onPelaksana, onHapus, onLepas }: {
+  nomor: number; nama: string; isi: Line[]; allowUnits: boolean; discountsDisabled: boolean; staff: ServiceStaff[]; performerLocked: boolean;
+  onJumlah: (jumlah: number) => void; onDiskon: (diskon: number) => void; onPelaksana: (value: ServicePerformersSnapshot) => void; onHapus: () => void;
+  /** Kenali-ulang yang keliru: isi dikembalikan jadi baris penjualan biasa. */
+  onLepas: () => void;
+}) {
+  const utama = isi[0];
+  const jumlah = Math.max(1, Number(utama.package_qty) || 1);
+  const kotor = isi.reduce((sum, row) => sum + row.qty * row.harga, 0);
+  const bersih = isi.reduce((sum, row) => sum + nilaiBaris(row), 0);
+  const diskon = utama.diskon_persen ?? 0;
+  const sumber = isi.find(row => row.prescription_item_id) ?? utama;
+  return <tr data-paket={utama.package_item_id}>
+    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{nomor}</td>
+    <td>
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <strong style={{ fontSize: 12 }}>{nama}</strong><span className="bge g" style={{ fontSize: 8 }}>paket</span>
+      </div>
+      {performerLocked
+        ? <div style={{ fontSize: 10, color: "var(--tm)" }}>{servicePerformerNames(utama.service_performers).join(" · ")}</div>
+        : <ServicePerformersField label={`Pelaksana ${nama}`} value={utama.service_performers} staff={staff} onChange={value => onPelaksana(value as ServicePerformersSnapshot)} />}
+      <KeranjangBahan nada="bmhp" judul="ISI PAKET" baris={isi.map(row => `${row.deskripsi} × ${row.qty} ${row.satuan ?? ""}`.trim())}>
+        <button type="button" className="btn-def" aria-label={`Lepas paket ${nama}`} title="Tampilkan isinya sebagai baris biasa (bukan paket)"
+          style={{ marginTop: 3, padding: "1px 7px", fontSize: 9.5 }} onClick={onLepas}>Bukan paket</button>
+      </KeranjangBahan>
+    </td>
+    <td>
+      <QtyInput className="fi" min={1} step="1" aria-label={`Jumlah paket ${nama}`} value={jumlah} onValue={onJumlah} style={{ textAlign: "center" }} />
+    </td>
+    {allowUnits && <td><span>paket</span></td>}
+    <td style={{ textAlign: "right", fontSize: 11 }}>{rp(kotor / jumlah)}</td>
+    <td>
+      <NumberInput className="fi" type="number" min={0} max={100} step="any" aria-label={`Diskon ${nama}`} readOnly={discountsDisabled}
+        value={diskon} onChange={(e) => onDiskon(Math.min(100, Math.max(0, Number(e.target.value) || 0)))} style={{ textAlign: "center" }} />
+    </td>
+    <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>
+      {rp(bersih)}
+      {diskon > 0 && <div style={{ fontSize: 9, color: "var(--td)", textDecoration: "line-through" }}>{rp(kotor)}</div>}
+    </td>
+    <td style={{ textAlign: "center" }}><HapusBaris row={sumber} label={`Hapus paket ${nama}`} onHapus={onHapus} /></td>
+  </tr>;
+}
+
 function HapusBaris({ row, label, onHapus }: { row: Line; label: string; onHapus: () => void }) {
   const [tanya, setTanya] = useState(false);
   const perluTanya = !!row.prescription_item_id || !!row.recipe_id;
@@ -345,7 +406,9 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
     const semua = kenaliPaket([...obat0, ...jasa0], siap.map(option => ({
       id: option.id, harga: masterObat.find(row => row.id === option.id)?.harga ?? null, perPaket: isiDitagihPerPaket(option.resep!),
     })), faktor);
-    return { obat: semua.slice(0, obat0.length), jasa: semua.slice(obat0.length) };
+    // Isi paket berjenis jasa dipindah ke tabel Obat: satu paket = satu baris tampilan.
+    const jasaPaket = semua.slice(obat0.length).filter(row => row.package_item_id).map(row => ({ ...row, jenis: "jasa" }));
+    return { obat: [...semua.slice(0, obat0.length), ...jasaPaket], jasa: semua.slice(obat0.length).filter(row => !row.package_item_id) };
   });
   const [obat, setObat] = useState<Line[]>(awal.obat);
   const [jasa, setJasa] = useState<Line[]>(awal.jasa);
@@ -363,6 +426,10 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
       ? { ...row, qty: Math.round((row.qty / Number(row.package_qty)) * jumlah * 1e6) / 1e6, package_qty: jumlah } : row);
     setObat(skala); setJasa(skala);
   };
+  const hapusPaket = (packageId: string) => {
+    setObat(rows => rows.filter(row => row.package_item_id !== packageId));
+    setJasa(rows => rows.filter(row => row.package_item_id !== packageId));
+  };
   /** Paket dipilih di baris obat `i`: baris itu diganti isi paket (jasa masuk tabel Jasa). */
   const pilihPaket = (i: number, packageId: string) => {
     const option = packages.find(row => row.id === packageId);
@@ -377,14 +444,13 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
     }
     const hasil = pecahPaket(option.resep, item.harga, 1, hargaNormal, { satuanDasarSaja: !manualUnitsEnabled });
     if (hasil.error !== null) { setPesanPaket(hasil.error); return; }
-    const baris = (jenis: "obat" | "jasa") => hasil.baris.filter(row => row.jenis === jenis).map((row): Line => ({
+    // Semua isi (obat & jasa) di tabel Obat sebagai satu paket; jenis tiap baris tetap dibawa.
+    const baru = hasil.baris.map((row): Line => ({
       key: crypto.randomUUID(), deskripsi: row.nama, qty: row.qty, harga: row.harga, item_id: row.item_id, satuan: row.satuan,
-      kategori: row.kategori, diskon_persen: 0, package_item_id: packageId, package_qty: 1,
+      kategori: row.kategori, diskon_persen: 0, package_item_id: packageId, package_qty: 1, jenis: row.jenis,
       service_performers: visitDefaultPerformers(visitDoctorId),
     }));
-    const obatBaru = baris("obat"), jasaBaru = baris("jasa");
-    setObat(rows => [...rows.slice(0, i), ...obatBaru, ...rows.slice(i + 1)]);
-    if (jasaBaru.length) setJasa(rows => [...rows, ...jasaBaru]);
+    setObat(rows => [...rows.slice(0, i), ...baru, ...rows.slice(i + 1)]);
   };
   const [discount, setDiscount] = useState(initialDiscount);
   const [metode, setMetode] = useState(initialMetode);
@@ -408,7 +474,7 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
   // ke pemilik SEBELUM menekan bayar, bukan supaya layar menentukan uang.
   // Only pricing groups equivalent services; saved rows retain their separate performers.
   const barisPotongan = aggregateServiceLines([
-    ...obat.map(row => ({...row, item_type:"Persediaan"})),
+    ...obat.map(row => ({...row, item_type:row.jenis === "jasa" ? "Jasa" : "Persediaan"})),
     ...jasa.map(row => ({...row, item_type:row.item_id ? "Jasa" : "Persediaan"})),
   ].filter(row => row.deskripsi.trim() && row.qty > 0).map(row => ({
     item_id:row.item_id ?? "", qty:row.qty, harga:hargaNetto(row), satuan:row.satuan, item_type:row.item_type,
@@ -522,7 +588,7 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
   });
 
   const items = JSON.stringify([
-    ...obat.map((r) => ({ ...r, jenis: "obat" })),
+    ...obat.map((r) => ({ ...r, jenis: r.jenis === "jasa" ? "jasa" : "obat" })),
     ...jasa.map((r) => ({ ...r, jenis: "jasa" })),
   ].filter((r) => r.deskripsi.trim()));
   const today = hariIniWIB();
@@ -601,8 +667,8 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
 
       <PaymentLayout catatanResep={catatanResep} cart={<>
           <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={setObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} packages={editMode ? NO_PACKAGES : packages}
-            onPickPackage={editMode ? undefined : pilihPaket} onPackageQty={editMode ? undefined : aturJumlahPaket} />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} packages={editMode ? NO_PACKAGES : packages} onPackageQty={editMode ? undefined : aturJumlahPaket} />
+            onPickPackage={editMode ? undefined : pilihPaket} onPackageQty={editMode ? undefined : aturJumlahPaket} onRemovePackage={editMode ? undefined : hapusPaket} />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={setJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} packages={editMode ? NO_PACKAGES : packages} onPackageQty={editMode ? undefined : aturJumlahPaket} onRemovePackage={editMode ? undefined : hapusPaket} />
 
         </>} chargeSummary={<>
               {customerFee > 0 && <SumRow label="Admin pembayaran DEMO" value={rp(customerFee)}/>}
