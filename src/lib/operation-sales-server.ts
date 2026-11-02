@@ -180,6 +180,13 @@ function one<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] ?? null : value ?? null;
 }
 
+// Daftar id yang panjang dipecah supaya URL filter `in` tetap pendek (pola laporan lain: 100).
+function chunks<T>(items: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let index = 0; index < items.length; index += size) out.push(items.slice(index, index + size));
+  return out;
+}
+
 function itemNetRows(
   documentId: string,
   branchId: string,
@@ -261,11 +268,29 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
       .gte("created_at", start).lte("created_at", end);
     const invoiceResult = await read(invoiceQuery);
     queryError(invoiceResult);
-    const seen = new Set<string>();
+    const invoices = new Map<string, { invoice: InvoiceRow; visit: InvoiceVisit }>();
     for (const invoice of (invoiceResult.data ?? []) as InvoiceRow[]) {
       const visit = one(invoice.visits);
-      if (!visit || !scope.branchIds.includes(visit.branch_id) || seen.has(invoice.id)) continue;
-      seen.add(invoice.id);
+      if (!visit || !scope.branchIds.includes(visit.branch_id) || invoices.has(invoice.id)) continue;
+      invoices.set(invoice.id, { invoice, visit });
+    }
+    // Refund klinik (J03) mengurangi omzet tagihan asalnya, aturannya sama dengan Laporan
+    // Transaksi (laporan-transaksi-server.ts): dibaca TANPA batas tanggal refund, dan tetap
+    // dibukukan pada tanggal & cabang tagihan. Jadi refund bulan ini atas tagihan bulan lalu
+    // ikut menurunkan omzet bulan lalu, dan angka klinik kedua laporan sama untuk periode
+    // apa pun. Refund klinik hanya ada setelah diposting dan tidak bisa di-void, jadi tidak
+    // ada filter voided_at. Dibaca per tagihan yang termuat (dipecah per 100 id), sehingga
+    // tiap baris refund terbaca tepat sekali dan tagihan batal/di luar scope tidak tersentuh.
+    const refundResults = await Promise.all(chunks([...invoices.keys()]).map((ids) =>
+      read(supabase.from("clinic_refunds").select("invoice_id,total").in("invoice_id", ids))));
+    const refundMap = new Map<string, number>();
+    for (const refundResult of refundResults) {
+      queryError(refundResult);
+      for (const row of (refundResult.data ?? []) as { invoice_id: string; total: number }[]) {
+        refundMap.set(row.invoice_id, (refundMap.get(row.invoice_id) ?? 0) + (Number(row.total) || 0));
+      }
+    }
+    for (const { invoice, visit } of invoices.values()) {
       documents.push(itemNetRows(
         invoice.id,
         visit.branch_id,
@@ -273,6 +298,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
         invoice.created_at,
         Number(invoice.total) || 0,
         (invoice.invoice_items ?? []).map((item) => ({ qty: item.qty, hpp: item.hpp, harga: item.harga, itemId: item.item_id, kind: "clinic" as const })),
+        refundMap.get(invoice.id) ?? 0,
       ));
     }
   }

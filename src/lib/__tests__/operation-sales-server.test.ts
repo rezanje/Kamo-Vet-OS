@@ -257,3 +257,113 @@ describe("omzet klinik mengikuti tanggal tagihan, bukan tanggal kunjungan", () =
     expect(String(invoiceCalls.find((call) => call.method === "select")?.args[0])).toContain("visits!inner(branch_id,customer_id)");
   });
 });
+
+describe("refund klinik mengurangi omzet tagihan asalnya (sama dengan Laporan Transaksi)", () => {
+  const items = [{ item_id: "jasa", qty: 1, harga: 150000, hpp: 40000, jenis: "Jasa" }];
+  const invoice = (id: string, createdAt: string, extra: Row = {}, branchId = "b1") => ({
+    id, visit_id: `v-${id}`, total: 150000, created_at: createdAt, voided_at: null,
+    visits: { branch_id: branchId, customer_id: `cust-${id}` }, invoice_items: items, ...extra,
+  });
+  const refund = (id: string, invoiceId: string, total: number, tanggal: string, branchId = "b1") => ({
+    id, invoice_id: invoiceId, total, tanggal, branch_id: branchId,
+  });
+  const dashboard = (tables: Record<string, Row[]>, from: string, to: string, channel: "all" | "klinik" = "all") =>
+    collectDashboard(fakeSupabase({ tables }), { from, to, branchIds: ["b1"], channel });
+
+  it("tagihan 150.000 dengan refund 50.000 jadi 100.000; tagihan tanpa refund tetap", async () => {
+    const tables = {
+      invoices: [invoice("inv-refund", "2026-11-02T03:00:00Z"), invoice("inv-plain", "2026-11-02T04:00:00Z")],
+      clinic_refunds: [refund("rf-1", "inv-refund", 50000, "2026-11-02")],
+    };
+    const both = await dashboard(tables, "2026-11-02", "2026-11-02");
+    expect(both.sales).toMatchObject({ status: "ready", data: {
+      metrics: { sales: 250000, transactions: 2 },
+      split: { clinic: 250000 },
+      branches: [{ branchId: "b1", sales: 250000, transactions: 2 }],
+    } });
+
+    const refundedOnly = await dashboard({ ...tables, invoices: [tables.invoices[0]] }, "2026-11-02", "2026-11-02", "klinik");
+    expect(refundedOnly.sales).toMatchObject({ status: "ready", data: {
+      metrics: { sales: 100000, transactions: 1 }, split: { clinic: 100000 },
+    } });
+
+    const plainOnly = await dashboard({ ...tables, invoices: [tables.invoices[1]] }, "2026-11-02", "2026-11-02", "klinik");
+    expect(plainOnly.sales).toMatchObject({ status: "ready", data: {
+      metrics: { sales: 150000, transactions: 1, grossMargin: 110000 }, split: { clinic: 150000 },
+    } });
+  });
+
+  it("refund yang diposting setelah periode tetap memotong periode tagihan, bukan periode refund", async () => {
+    // Tagihan 31 Okt, refund 5 Nov: sama seperti Laporan Transaksi, yang turun omzet Oktober.
+    const tables = {
+      invoices: [invoice("inv-oct", "2026-10-31T05:00:00Z")],
+      clinic_refunds: [refund("rf-nov", "inv-oct", 50000, "2026-11-05")],
+    };
+    const october = await dashboard(tables, "2026-10-01", "2026-10-31");
+    expect(october.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 100000, transactions: 1 } } });
+
+    const november = await dashboard(tables, "2026-11-01", "2026-11-30");
+    expect(november.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 0, transactions: 0 } } });
+
+    const span = await dashboard(tables, "2026-10-01", "2026-11-30");
+    expect(span.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 100000, transactions: 1 } } });
+  });
+
+  it("beberapa refund dijumlah sekali; refund tagihan batal atau cabang lain tidak memotong apa pun", async () => {
+    const supabase = fakeSupabase({ tables: {
+      invoices: [
+        invoice("inv-two", "2026-11-02T03:00:00Z"),
+        invoice("inv-void", "2026-11-02T04:00:00Z", { voided_at: "2026-11-02T05:00:00Z" }),
+        invoice("inv-other", "2026-11-02T06:00:00Z", {}, "b2"),
+      ],
+      clinic_refunds: [
+        refund("rf-a", "inv-two", 30000, "2026-11-02"),
+        refund("rf-b", "inv-two", 20000, "2026-11-03"),
+        refund("rf-void", "inv-void", 150000, "2026-11-02"),
+        refund("rf-other", "inv-other", 150000, "2026-11-02", "b2"),
+      ],
+    } });
+    const result = await collectDashboard(supabase, { from: "2026-11-02", to: "2026-11-02", branchIds: ["b1"], channel: "all" });
+    expect(result.sales).toMatchObject({ status: "ready", data: {
+      metrics: { sales: 100000, transactions: 1 }, split: { clinic: 100000 },
+    } });
+
+    // Refund hanya dibaca untuk tagihan yang termuat; tanpa batas tanggal refund.
+    const refundCalls = supabase.records.filter((record) => record.table === "clinic_refunds").flatMap((record) => record.calls);
+    expect(refundCalls).toContainEqual({ method: "in", args: ["invoice_id", ["inv-two"]] });
+    expect(refundCalls.some((call) => call.method === "gte" || call.method === "lte")).toBe(false);
+  });
+
+  it("tidak membaca refund kalau tidak ada tagihan, dan kanal non-klinik tidak menyentuh refund klinik", async () => {
+    const empty = fakeSupabase({ tables: { invoices: [], clinic_refunds: [refund("rf", "inv-x", 50000, "2026-11-02")] } });
+    await collectDashboard(empty, { from: "2026-11-02", to: "2026-11-02", branchIds: ["b1"], channel: "klinik" });
+    expect(empty.records.some((record) => record.table === "clinic_refunds")).toBe(false);
+
+    const pos = fakeSupabase({ tables: {
+      invoices: [invoice("inv-1", "2026-11-02T03:00:00Z")],
+      clinic_refunds: [refund("rf", "inv-1", 50000, "2026-11-02")],
+    } });
+    const result = await collectDashboard(pos, { from: "2026-11-02", to: "2026-11-02", branchIds: ["b1"], channel: "pos" });
+    expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 0, transactions: 0 } } });
+    expect(pos.records.some((record) => record.table === "clinic_refunds")).toBe(false);
+  });
+
+  it("daftar tagihan panjang dibaca refund-nya per 100 id tanpa ada yang terlewat atau dobel", async () => {
+    const invoices = Array.from({ length: 150 }, (_, index) => invoice(`inv-${index}`, "2026-11-02T03:00:00Z"));
+    const refunds = invoices.map((row, index) => refund(`rf-${index}`, row.id, 1000, "2026-11-02"));
+    const supabase = fakeSupabase({ tables: { invoices, clinic_refunds: refunds } });
+    const result = await collectDashboard(supabase, { from: "2026-11-02", to: "2026-11-02", branchIds: ["b1"], channel: "klinik" });
+    expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 150 * (150000 - 1000), transactions: 150 } } });
+
+    const inLists = supabase.records.filter((record) => record.table === "clinic_refunds")
+      .map((record) => record.calls.find((call) => call.method === "in")?.args[1] as string[]);
+    // Blok penjualan dan blok cabang masing-masing memuat dokumen sendiri: 2 muatan × 2 potongan,
+    // jadi tiap id tagihan muncul tepat dua kali (sekali per muatan).
+    expect(inLists).toHaveLength(4);
+    expect(inLists.every((ids) => ids.length <= 100)).toBe(true);
+    const seen = new Map<string, number>();
+    for (const id of inLists.flat()) seen.set(id, (seen.get(id) ?? 0) + 1);
+    expect(seen.size).toBe(150);
+    expect([...seen.values()].every((count) => count === 2)).toBe(true);
+  });
+});
