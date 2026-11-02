@@ -1,0 +1,92 @@
+{
+  "mode": "baseline",
+  "migration_count": 363,
+  "cases": [
+    {
+      "case": "baseline chain public.clinic_change_inpatient_condition identical to production text",
+      "status": "PASS",
+      "detail": {
+        "local_len": 6211,
+        "live_len": 6211
+      }
+    },
+    {
+      "case": "baseline chain public.clinic_bill_and_pay_inpatient identical to production text",
+      "status": "PASS",
+      "detail": {
+        "local_len": 6197,
+        "live_len": 6197
+      }
+    },
+    {
+      "case": "pay-first: invoice Lunas, visit still open while patient admitted",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "pay-first then discharge sembuh closes the visit (Chloe order)",
+      "status": "FAIL",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "pay-first then RIP discharge also closes the visit",
+      "status": "FAIL",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "discharge without any invoice keeps visit open for billing",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "discharge with unbilled new charge keeps visit open",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "discharge first then pay remaining via inpatient cashier closes the visit",
+      "status": "FAIL",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "discharge with an unpaid active invoice keeps visit open",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "error2": null,
+        "unpaid": 1.0,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "non-discharge condition change leaves visit open",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    }
+  ],
+  "totals": {
+    "PASS": 7,
+    "FAIL": 3
+  }
+}

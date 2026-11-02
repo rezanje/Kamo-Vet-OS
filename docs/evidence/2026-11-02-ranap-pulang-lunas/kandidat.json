@@ -1,0 +1,106 @@
+{
+  "mode": "candidate",
+  "migration_count": 364,
+  "cases": [
+    {
+      "case": "candidate public.clinic_change_inpatient_condition = production text + closing call only",
+      "status": "PASS",
+      "detail": {
+        "found": true
+      }
+    },
+    {
+      "case": "candidate public.clinic_bill_and_pay_inpatient = production text + closing call only",
+      "status": "PASS",
+      "detail": {
+        "found": true
+      }
+    },
+    {
+      "case": "pay-first: invoice Lunas, visit still open while patient admitted",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "pay-first then discharge sembuh closes the visit (Chloe order)",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Selesai"
+      }
+    },
+    {
+      "case": "pay-first then RIP discharge also closes the visit",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Selesai"
+      }
+    },
+    {
+      "case": "discharge without any invoice keeps visit open for billing",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "discharge with unbilled new charge keeps visit open",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "discharge first then pay remaining via inpatient cashier closes the visit",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Selesai"
+      }
+    },
+    {
+      "case": "discharge with an unpaid active invoice keeps visit open",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "error2": null,
+        "unpaid": 1.0,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "non-discharge condition change leaves visit open",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "status": "Pembayaran"
+      }
+    },
+    {
+      "case": "backfill closes previously stuck paid+discharged visit",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "before": "Pembayaran",
+        "after": "Selesai"
+      }
+    },
+    {
+      "case": "backfill never closes a visit whose patient is still admitted",
+      "status": "PASS",
+      "detail": {
+        "count": 0.0
+      }
+    }
+  ],
+  "totals": {
+    "PASS": 12,
+    "FAIL": 0
+  }
+}

@@ -4,6 +4,7 @@ import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { metodeBayarTagihanBertahap } from "@/lib/metode-bayar-tagihan";
 import { nilaiBaris } from "@/lib/tagihan-klinik";
 import { PrintButton } from "../PrintButton";
 
@@ -27,7 +28,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   if (!visit) notFound();
 
   let invoiceQuery=supabase.from("invoices")
-    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name,visits(branches(name, code))", {count:"exact"})
+    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,stage_billing,paid_at,created_at,cashier_name,visits(branches(name, code))", {count:"exact"})
     .eq("visit_id",visitId).is("voided_at",null);
   if(requested)invoiceQuery=invoiceQuery.eq("id",requested);
   const{data:invoice,error:invoiceError,count:invoiceCount}=await invoiceQuery
@@ -58,6 +59,12 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
     .select("fee_bearer,fee_amount,payments").eq("invoice_id",invoice.id).maybeSingle();
   if (demoError) throw new Error("Rincian biaya admin tidak terbaca. Muat ulang sebelum mencetak.");
+  // Tagihan rawat inap bertahap: label kepala selalu "Tunai" (pengisi). Cara bayar
+  // sebenarnya ditelusuri dari kwitansinya.
+  const metodeBertahap = invoice.stage_billing
+    ? (await metodeBayarTagihanBertahap(supabase, [invoice.id])).get(invoice.id) ?? null : null;
+  const metodeKepala = metodeBertahap
+    ?? ((payments ?? []).filter(p => !p.transferred_from).length > 1 ? "Campuran" : invoice.metode_bayar ?? "-");
   // Invoice hanya menyebut satu nama: dokter PJ kunjungan, bukan pelaksana per baris.
   const dokterPJ = namaDokterPJ(visit, await bacaNamaDokter(supabase, [visit.doctor_id]));
   const pet = one(visit.pets);
@@ -164,7 +171,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
         </div>
 
         <div style={{ marginTop: 24, fontSize: 11, color: "var(--tm)", borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
-          Metode pembayaran: <b style={{ color: "#141413" }}>{(payments ?? []).filter(p => !p.transferred_from).length > 1 ? "Campuran" : invoice.metode_bayar ?? "-"}</b>
+          Metode pembayaran: <b style={{ color: "#141413" }}>{metodeKepala}</b>
           {(payments ?? []).filter(p => !p.transferred_from).map(payment => <div key={payment.id} style={{ marginTop: 4 }}>{payment.metode}: {rp(Number(payment.amount))}</div>)}
           {invoice.paid_at && ` · Lunas pada ${new Date(invoice.paid_at).toLocaleDateString("id-ID")}`}
           <div style={{ marginTop: 4, fontSize: 9.5, color: "var(--td)" }}>Invoice ini sah tanpa tanda tangan & cap. PPN 11% dihitung dari DPP (subtotal − diskon).</div>
