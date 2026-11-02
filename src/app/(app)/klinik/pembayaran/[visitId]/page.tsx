@@ -349,8 +349,12 @@ export default async function PembayaranPage({
   // Baris tambahan di kasir klinik wajib bisa dipilih dari master, bukan diketik
   // bebas: baris tanpa item_id tidak memotong stok dan HPP-nya nol, jadi obat
   // terjual tapi persediaan tidak pernah berkurang.
-  const { obat: masterObat, jasa: masterJasa } = masterP ? await masterP : { obat: [], jasa: [] };
+  const { obat: masterObatSemua, jasa: masterJasa } = masterP ? await masterP : { obat: [], jasa: [] };
   const clinicPackages = clinicPackagesP ? await clinicPackagesP : [];
+  // Paket (Grup) hanya ditawarkan bila resepnya terbaca utuh — saat dipilih, paket dipecah
+  // jadi isinya. Paket tanpa resep (atau koreksi tagihan) tidak bisa ditagih langsung.
+  const paketSiap = new Set(clinicPackages.filter(option => option.resep).map(option => option.id));
+  const masterObat = masterObatSemua.filter(item => !item.paket || paketSiap.has(item.id));
   const serviceStaff = serviceStaffP ? await serviceStaffP : [];
   const groomingPolicy = groomingPolicyP ? await groomingPolicyP : null;
   const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;

@@ -2,6 +2,8 @@ import type { ClinicalCorrection } from "@/lib/clinical-correction";
 import { servicePerformerNames } from "@/lib/service-performers";
 import { loadBranchGroomingPolicy, loadServiceStaff } from "@/lib/service-performers-server";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
+import { loadClinicPackages } from "@/lib/clinic-payment";
+import { stokPaket, type ResepPaket } from "@/lib/paket-klinik";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
@@ -208,6 +210,8 @@ export default async function RekamMedisPage({
       categoriesP,
       visit.branch_id ? loadBranchGroomingPolicy(supabase, visit.branch_id) : Promise.resolve(null),
       compoundP,
+      // Paket (Grup) di daftar Obat. Gagal dibaca = paket tidak ditawarkan; form tetap jalan.
+      loadClinicPackages(supabase).catch(() => []),
     ]) : null,
     addendumScope && mrId ? loadRecordAddenda(supabase, mrId) : Promise.resolve<AddendaLoad>({ state: "ok", rows: [] }),
     // K06: kunjungan yang tagihannya sudah Lunas dianggap tutup — rawat inap lewat
@@ -298,9 +302,10 @@ export default async function RekamMedisPage({
   let jasaItems: ItemLiteFull[] = [];
   let tindakanItems: ItemLiteFull[] = [];
   let racikanItems: ItemLiteFull[] = [];
+  const paketResep: Record<string, ResepPaket> = {};
   const katalogRacikan = examData?.[2] ?? [];
   if (examData) {
-    const [, , , masterRows, categories, , compoundRows] = examData;
+    const [, , , masterRows, categories, , compoundRows, packageRows] = examData;
     const compoundIds = new Set(compoundRows.map(item => item.id));
     const itemRows = [...new Map([...masterRows, ...compoundRows].map(item => [item.id, item])).values()];
     const ids = (itemRows ?? []).map((i) => i.id);
@@ -327,7 +332,17 @@ export default async function RekamMedisPage({
     const groups = splitClinicItems(all, categories, compoundIds);
     jasaItems = groups.jasa;
     tindakanItems = groups.tindakan;
-    obatItems = groups.obat;
+    // Paket tampil di daftar Obat (Anisa, 2 Nov): stoknya = berapa paket yang bisa dibuat
+    // dari stok isinya. Paket yang resepnya tidak utuh tidak ditawarkan.
+    const stokPer = new Map(all.map(item => [item.id, item.stok]));
+    for (const option of packageRows) if (option.resep) paketResep[option.id] = option.resep;
+    const paketItems = groups.paket.filter(item => paketResep[item.id]).map(item => ({
+      ...item, units: [], stok: stokPaket(paketResep[item.id], id => stokPer.get(id) ?? null),
+    }));
+    // Urutan daftar tetap urutan master (nama); paket disisipkan di tempatnya.
+    const paketById = new Map(paketItems.map(item => [item.id, item]));
+    const obatIds = new Set(groups.obat.map(item => item.id));
+    obatItems = all.filter(item => obatIds.has(item.id) || paketById.has(item.id)).map(item => paketById.get(item.id) ?? item);
     racikanItems = groups.racikan;
     bahanItems = groups.bahan;
   }
@@ -707,6 +722,7 @@ export default async function RekamMedisPage({
           groomingDoctorRequired={groomingDoctorRequired}
           groomingApplies={groomingPolicy?.applies ?? false}
           dokterOpsi={dokterOpsi}
+          paketResep={paketResep}
           currentWeight={pet?.weight ?? null}
           items={obatItems}
           racikanItems={racikanItems}
