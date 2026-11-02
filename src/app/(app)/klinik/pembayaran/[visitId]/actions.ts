@@ -26,6 +26,7 @@ import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
 import { isMissingRecordWrapper } from "@/lib/rekam-medis-susulan";
+import { gabungPaketCetak } from "@/lib/paket-klinik";
 
 type Line = {
   deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null;
@@ -484,13 +485,24 @@ export async function bayarVisit(formData: FormData) {
   if (paidStatus === "Lunas" && v?.customer_id && cust?.phone) {
     const struk = {
       invoiceNo, customerId: v.customer_id, phone: cust.phone, customerName: cust.name ?? "Kak", petName: patient?.name,
-      total: total + demoCustomerFee, items: [...rows.map((r) => ({ deskripsi: r.deskripsi, qty: r.qty, harga: r.harga })),
-        ...(demoCustomerFee > 0 ? [{deskripsi:"Admin pembayaran DEMO",qty:1,harga:demoCustomerFee}] : [])],
+      total: total + demoCustomerFee, items: [...rows.map((r) => ({ deskripsi: r.deskripsi, qty: r.qty, harga: r.harga, diskon_persen: r.diskon_persen ?? 0,
+          package_item_id: r.package_item_id ?? null, package_qty: r.package_qty ?? null, paket: null as { name: string | null } | null })),
+        ...(demoCustomerFee > 0 ? [{deskripsi:"Admin pembayaran DEMO",qty:1,harga:demoCustomerFee,diskon_persen:0,package_item_id:null,package_qty:null,paket:null}] : [])],
+    };
+    // Isi paket tidak dikirim ke pelanggan (Reza 2 Nov): satu baris nama paket, harga paket.
+    const paketIds = [...new Set(struk.items.map((r) => r.package_item_id).filter((id): id is string => !!id))];
+    const siapkanStruk = async () => {
+      if (!paketIds.length) return struk;
+      const { data: namaPaket } = await supabase.from("items").select("id, name").in("id", paketIds);
+      const nama = new Map(((namaPaket ?? []) as { id: string; name: string }[]).map((row) => [row.id, row.name]));
+      const items = gabungPaketCetak(struk.items.map((r) => ({ ...r, paket: r.package_item_id ? { name: nama.get(r.package_item_id) ?? null } : null })))
+        .map((r) => ({ deskripsi: r.deskripsi, qty: Number(r.qty), harga: Number(r.harga) }));
+      return { ...struk, items };
     };
     // U07: struk WA (3 bacaan/tulisan log + panggilan ke penyedia WA) tidak lagi
     // menahan kasir. Hasilnya memang tidak dipakai layar; idempotensi tetap dijaga
     // oleh log `receipt:<no invoice>`. Di luar konteks request (tes) jalan langsung.
-    const kirim = () => kirimStrukWa(supabase, struk).then(
+    const kirim = () => siapkanStruk().then((isi) => kirimStrukWa(supabase, isi)).then(
       () => undefined,
       // Hasil ok:false (mis. WA belum diaktifkan) sudah tercatat di log WA; yang
       // dicatat di sini hanya kegagalan tak terduga agar tidak hilang diam-diam.

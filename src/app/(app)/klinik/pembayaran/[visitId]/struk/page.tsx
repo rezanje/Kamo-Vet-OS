@@ -1,3 +1,4 @@
+import { gabungPaketCetak } from "@/lib/paket-klinik";
 import { printBranchHeading } from "@/components/print-branch-heading";
 import { bacaNamaDokter, namaDokterPJ } from "@/lib/dokter-pj";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
@@ -32,8 +33,10 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
     .limit(1).maybeSingle();
   if (!invoice) notFound();
 
-  const { data: items } = await supabase
-    .from("invoice_items").select("deskripsi, qty, harga, jenis").eq("invoice_id", invoice.id).order("created_at");
+  const { data: barisInvoice } = await supabase
+    .from("invoice_items").select("deskripsi, qty, harga, jenis, package_item_id, package_qty, paket:items!invoice_items_package_item_id_fkey(name)").eq("invoice_id", invoice.id).order("created_at");
+  // Isi paket tidak dicetak ke pelanggan: satu baris nama paket.
+  const items = gabungPaketCetak(barisInvoice ?? []);
   // Struk hanya menyebut satu nama: dokter PJ kunjungan. Pelaksana per baris tidak dicetak.
   const dokterPJ = namaDokterPJ(visit, await bacaNamaDokter(supabase, [visit.doctor_id]));
   const { data: payments } = await supabase.from("invoice_payments")

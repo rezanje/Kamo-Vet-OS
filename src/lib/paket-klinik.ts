@@ -192,3 +192,44 @@ export function kenaliPaket<L extends BarisTagihan>(
   }
   return out;
 }
+
+type BarisCetak = {
+  deskripsi: string; qty: number | string; harga: number | string; diskon_persen?: number | string | null;
+  jenis?: string | null; invoice_id?: string | null;
+  package_item_id?: string | null; package_qty?: number | string | null;
+  paket?: { name: string | null } | { name: string | null }[] | null;
+};
+
+/**
+ * Struk & invoice cetak (Reza 2 Nov malam): isi paket tidak dicetak ke pelanggan. Baris isi
+ * satu paket (per invoice) digabung jadi satu baris di posisi isi pertamanya: nama paket,
+ * jumlah paket, harga per paket, diskon setara. Total tidak berubah. Baris lain apa adanya.
+ */
+export function gabungPaketCetak<T extends BarisCetak>(rows: T[]): T[] {
+  const kunci = (row: T) => row.package_item_id && Number(row.package_qty) > 0 ? `${row.invoice_id ?? ""}:${row.package_item_id}` : null;
+  const grup = new Map<string, T[]>();
+  for (const row of rows) {
+    const k = kunci(row);
+    if (k) grup.set(k, [...(grup.get(k) ?? []), row]);
+  }
+  const out: T[] = [];
+  for (const row of rows) {
+    const k = kunci(row);
+    if (!k) { out.push(row); continue; }
+    const isi = grup.get(k)!;
+    if (isi[0] !== row) continue;
+    const jumlah = Number(row.package_qty);
+    const kotor = isi.reduce((a, r) => a + Number(r.qty) * Number(r.harga), 0);
+    const bersih = isi.reduce((a, r) => a + Number(r.qty) * Number(r.harga) * (1 - (Number(r.diskon_persen) || 0) / 100), 0);
+    const paket = Array.isArray(row.paket) ? row.paket[0] ?? null : row.paket;
+    out.push({
+      ...row,
+      deskripsi: paket?.name?.trim() || row.deskripsi,
+      qty: jumlah,
+      harga: Math.round((kotor / jumlah) * 100) / 100,
+      diskon_persen: kotor > 0 ? Math.round((1 - bersih / kotor) * 10000) / 100 : 0,
+      jenis: isi.some(r => r.jenis !== "jasa") ? "obat" : "jasa",
+    });
+  }
+  return out;
+}
