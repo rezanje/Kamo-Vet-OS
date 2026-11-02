@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { updateRequestStatus } from "./actions";
+import { bisaCetakSuratJalan } from "@/lib/surat-jalan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -137,11 +138,17 @@ export default async function PermintaanPage({
                             di cabang penerima — di situ qty yang benar-benar sampai dicatat
                             dan stoknya baru berpindah. */}
                         {r.status === "Dikirim" && (
-                          <span style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                          <span style={{ fontSize: 10.5, color: "var(--tm)", alignSelf: "center" }}>
                             <i className="ti ti-clock" /> Menunggu cabang menerima
                           </span>
                         )}
-                        {(r.status === "Selesai" || r.status === "Ditolak") && (
+                        {/* Surat jalan gudang → toko: hanya setelah stok benar-benar keluar. */}
+                        {bisaCetakSuratJalan(r.status) && (
+                          <Link href={`/pos/permintaan/${r.id}/surat-jalan`} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                            <i className="ti ti-printer" /> Surat jalan
+                          </Link>
+                        )}
+                        {r.status === "Ditolak" && (
                           <span style={{ fontSize: 10.5, color: "var(--td)" }}>—</span>
                         )}
                       </div>
