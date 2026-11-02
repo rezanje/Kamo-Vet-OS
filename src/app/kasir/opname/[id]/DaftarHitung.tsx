@@ -5,7 +5,7 @@ import { HitungForm, type BarisHitung } from "./HitungForm";
 // Penyedia data layar hitung. Yang dikirim ke peramban hanya identitas barang dan
 // harga jualnya — angka stok sistem TIDAK ikut, supaya petugas hitung tidak bisa
 // menyesuaikan hitungannya dengan angka sistem (keputusan meeting 14 Agustus).
-export async function DaftarHitung({ orderId, warehouseId }: { orderId: string; warehouseId: string }) {
+export async function DaftarHitung({ orderId, warehouseId, kembali = "kasir" }: { orderId: string; warehouseId: string; kembali?: "kasir" | "pos" }) {
   const supabase = await createClient();
 
   type CountItem = {
@@ -49,5 +49,5 @@ export async function DaftarHitung({ orderId, warehouseId }: { orderId: string; 
     kunciRows.map((r) => [r.item_id, Number(r.qty_fisik)]),
   );
 
-  return <HitungForm key={orderId} orderId={orderId} rows={rows} terkunci={terkunci} />;
+  return <HitungForm key={orderId} orderId={orderId} rows={rows} terkunci={terkunci} kembali={kembali} />;
 }

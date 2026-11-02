@@ -70,11 +70,16 @@ export default async function OpnamePage({
       )}
 
       <div className="crm-sec">
-        <SecHeader
-          num="01"
-          title="PERINTAH STOK OPNAME"
-          desc="Riwayat hitung stok cabang yang dapat kamu akses. Menghitungnya dikerjakan dari layar kasir; halaman ini untuk memantau hasil & selisihnya."
-        />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+          <SecHeader
+            num="01"
+            title="PERINTAH STOK OPNAME"
+            desc="Gudang klinik & gudang DC: buat perintah lalu hitung langsung di sini. Gudang toko dihitung dari layar kasir cabangnya; halaman ini memantau hasil & selisihnya."
+          />
+          <Link href="/pos/opname/baru" className="btn-acc" style={{ textDecoration: "none", whiteSpace: "nowrap" }}>
+            <i className="ti ti-plus" /> Buat Perintah
+          </Link>
+        </div>
 
         <form method="get" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           <select className="fi" name="status" defaultValue={status ?? ""} style={{ width: 160 }}>

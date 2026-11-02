@@ -3,7 +3,7 @@ import { parseLampiran } from "@/lib/dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
 /** The database commits the document, proof and journal together, including retries. */
-export async function saveExpense(formData: FormData, context: "cashier" | "backoffice") {
+export async function saveExpense(formData: FormData, context: "cashier" | "clinic" | "backoffice") {
   const requestKey = String(formData.get("request_key") ?? "").trim();
   const jumlah = Number(formData.get("jumlah"));
   const kategori = String(formData.get("kategori") ?? "").trim();
@@ -17,8 +17,8 @@ export async function saveExpense(formData: FormData, context: "cashier" | "back
   const { data, error } = await supabase.rpc("post_expense_atomic", {
     p_request_key: requestKey,
     p_context: context,
-    // A cashier cannot choose a branch; the RPC locks and reads their open shift.
-    p_branch_id: context === "cashier" ? null : String(formData.get("branchId") ?? "") || null,
+    // A cashier (petshop or clinic) cannot choose a branch; the RPC locks and reads their open shift.
+    p_branch_id: context !== "backoffice" ? null : String(formData.get("branchId") ?? "") || null,
     p_expense: {
       tanggal: String(formData.get("tanggal") ?? "") || hariIniWIB(), kategori,
       deskripsi: String(formData.get("deskripsi") ?? "").trim() || null,
