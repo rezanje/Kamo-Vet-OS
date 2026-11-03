@@ -57,6 +57,10 @@ export function PosNav({ branchName, userName, hasShift, notifications }: { bran
           {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
         </span>
         {hasShift && <NotifBell notifications={notifications} />}
+        {/* Tes printer tanpa harus membuat penjualan (laporan Kamo Petshop Muara, 3 Nov 2026). */}
+        <Link href="/kasir/printer" className={`pos-tab ${pathname.startsWith("/kasir/printer") ? "on" : ""}`} title="Tes printer & cetak ulang struk">
+          <i className="ti ti-printer" style={{ fontSize: 13 }} /> Printer
+        </Link>
         {hasShift && (
           <Link href="/kasir/tutup" className="pos-tab" style={{ border: "1px solid rgba(255,255,255,.35)" }}>
             <i className="ti ti-power" style={{ fontSize: 13 }} /> Selesai Shift
