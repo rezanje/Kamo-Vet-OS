@@ -5,11 +5,12 @@ import { createClient } from "@/lib/supabase/server";
 import { readCompleteList } from "@/lib/checked-list";
 import { readPromoExcel, type PromoExcelRow } from "@/lib/promo-excel";
 import { validatePromoRows, type PromoCatalogItem, type PromoCatalogUnit, type PromoPricing, type PromoReviewedRow, type PromoSaveRow } from "@/lib/promo-bulk";
-import type { FinalPriceBranch, FinalPriceBranchPrice } from "@/lib/promo-final-price";
+import { COST_FLOOR_SCOPE_NOTE, type FinalPriceBranch, type FinalPriceBranchPrice } from "@/lib/promo-final-price";
 import { hariIniWIB } from "@/lib/tanggal";
 
-type Review = { rows: PromoReviewedRow[]; valid: boolean; error?: string };
-/** Rows sent back by the client may carry the normal price shown in the preview (Harga Akhir rows). */
+type Review = { rows: PromoReviewedRow[]; valid: boolean; error?: string; warningCount?: number };
+/** Rows sent back by the client may carry the normal price shown in the preview (Harga Akhir rows); any
+ * warning/flag they carry is ignored: warnings are always re-derived from the master here. */
 export type PromoImportRow = PromoExcelRow & { normal_price?: number | null };
 export type PromoBranchScope = { allBranches: boolean; branchIds: string[] };
 export type PromoImportSubmission = {
@@ -67,7 +68,7 @@ async function review(db: Db, rows: PromoImportRow[], scope?: PromoBranchScope):
   const units: (PromoCatalogUnit & {id:string})[]=[];
   for(let offset=0;offset<ids.length;offset+=CHUNK) {
     units.push(...await readCompleteList<PromoCatalogUnit & {id:string}>((from,to)=>db.from("item_units")
-      .select("id,item_id,unit,sell_price,buy_price",{count:"exact"}).in("item_id",ids.slice(offset,offset+CHUNK)).order("id").range(from,to),
+      .select("id,item_id,unit,sell_price,buy_price,factor",{count:"exact"}).in("item_id",ids.slice(offset,offset+CHUNK)).order("id").range(from,to),
     "Satuan SKU promo",{maxRows:null}));
   }
   // Price context is only read when a Harga Akhir row exists; Persen/Nominal files behave exactly as before.
@@ -94,7 +95,8 @@ async function review(db: Db, rows: PromoImportRow[], scope?: PromoBranchScope):
     pricing={scope:branches,branchPrices,tierItemIds:[...tierIds]};
   }
   const result=validatePromoRows(rows,items,units,pricing);
-  return {rows:result.reviewed,valid:result.reviewed.every(row=>!row.error),saveRows:result.valid};
+  const valid=result.reviewed.every(row=>!row.error);
+  return {rows:result.reviewed,valid,warningCount:result.reviewed.filter(row=>!row.error&&!!row.warning).length,saveRows:result.valid};
 }
 
 export async function previewPromoExcel(formData: FormData): Promise<Review> {
@@ -104,17 +106,17 @@ export async function previewPromoExcel(formData: FormData): Promise<Review> {
     if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".xlsx")) throw new Error("Pilih file Excel .xlsx dari format promo.");
     const rows=await readPromoExcel(new Uint8Array(await file.arrayBuffer()));
     const scope: PromoBranchScope={allBranches:["1","true"].includes(String(formData.get("allBranches")??"")),branchIds:formData.getAll("branchId").map(String)};
-    const {rows:reviewed,valid}=await review(db,rows,scope);
-    return {rows:reviewed,valid};
+    const {rows:reviewed,valid,warningCount}=await review(db,rows,scope);
+    return {rows:reviewed,valid,warningCount};
   } catch(error) {return {rows:[],valid:false,error:error instanceof Error?error.message:"File promo tidak dapat dibaca"};}
 }
 
 export async function validatePromoDraft(rows: PromoImportRow[], scope?: PromoBranchScope): Promise<Review> {
-  try {const {rows:reviewed,valid}=await review(await managerClient(),rows,scope);return {rows:reviewed,valid};}
+  try {const {rows:reviewed,valid,warningCount}=await review(await managerClient(),rows,scope);return {rows:reviewed,valid,warningCount};}
   catch(error) {return {rows:Array.isArray(rows)?rows.map(row=>({...row,item_name:null,error:null})):[],valid:false,error:error instanceof Error?error.message:"Baris promo tidak dapat diperiksa"};}
 }
 
-export async function savePromoExcelBatch(input: PromoImportSubmission): Promise<{ok:boolean;message:string;repeat?:boolean}> {
+export async function savePromoExcelBatch(input: PromoImportSubmission): Promise<{ok:boolean;message:string;repeat?:boolean;warningCount?:number}> {
   try {
     const db=await managerClient();
     const result=await review(db,input.rows,{allBranches:!!input.allBranches,branchIds:input.branchIds??[]});
@@ -155,6 +157,9 @@ export async function savePromoExcelBatch(input: PromoImportSubmission): Promise
     });
     if(error)return {ok:false,message:error.message};
     revalidatePath("/crm/promo");
-    return {ok:true,message:`${Number(data?.imported??0)} promo ${data?.repeat?"sudah ada, tidak digandakan":"berhasil disimpan"}.`,repeat:!!data?.repeat};
+    // Count comes from the server-side review above, never from the submitted rows.
+    const warningCount=result.warningCount??0;
+    const note=warningCount>0?` ${warningCount} baris tanpa HPP master (${COST_FLOOR_SCOPE_NOTE}).`:"";
+    return {ok:true,message:`${Number(data?.imported??0)} promo ${data?.repeat?"sudah ada, tidak digandakan":"berhasil disimpan"}.${note}`,repeat:!!data?.repeat,warningCount};
   } catch(error) {return {ok:false,message:error instanceof Error?error.message:"Batch promo gagal disimpan"};}
 }

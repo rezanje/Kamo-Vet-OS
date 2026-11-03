@@ -215,3 +215,103 @@ it("previewPromoExcel reads the Excel file and the branch scope from the form", 
   expect(result.error).toBeUndefined();
   expect(result.rows[0]).toMatchObject({ normal_price: 38000, potongan: 2000, error: null });
 });
+
+const WARNING = "HPP master belum terisi; harga akhir belum bisa dicek terhadap modal. Kasir petshop dan klinik menolak penjualan di bawah HPP FIFO; transaksi back office (/pos/transaksi) hanya memberi peringatan yang bisa dikonfirmasi (tanpa peringatan bila HPP FIFO tidak terbaca).";
+const zeroCostItems = () => [
+  { id: "z1", code: "100656", name: "Accesoris Bazar", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "10000.00", buy_price: "0.00" },
+  { id: "z2", code: "APL0001", name: "Apolo House", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "10000.00", buy_price: "0.00" },
+  { id: "z3", code: "100860", name: "Botol Minum 125ml", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "20000.00", buy_price: "0.00" },
+  { id: "z4", code: "CRACC0005", name: "Chiro Plate 11", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "25000.00", buy_price: "0.00" },
+  { id: "z5", code: "COSTED-1", name: "Barang Bermodal", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "10000.00", buy_price: "8000.00" },
+];
+const zeroRows = () => [r(2, "100656", "PCS", "Harga Akhir", "7000"), r(3, "APL0001", "PCS", "Harga Akhir", "7000"), r(4, "100860", "PCS", "Harga Akhir", "14000"), r(5, "CRACC0005", "PCS", "Harga Akhir", "18000")];
+
+it("zero master cost: preview rows are valid with the warning and the response counts them", async () => {
+  db.tables.items = zeroCostItems(); db.tables.item_units = [];
+  const result = await validatePromoDraft(zeroRows() as never, scope);
+  expect(result.valid).toBe(true);
+  expect(result.rows.map(row => row.error)).toEqual([null, null, null, null]);
+  expect(result.rows.map(row => row.warning)).toEqual(Array(4).fill(WARNING));
+  expect(result.warningCount).toBe(4);
+});
+
+it("save is allowed for a warning-only batch, the RPC gets plain nominal rows, and the result reports the warning count", async () => {
+  db.tables.items = zeroCostItems(); db.tables.item_units = [];
+  const reviewed = await validatePromoDraft(zeroRows() as never, scope);
+  const result = await savePromoExcelBatch(submission(reviewed.rows));
+  expect(result).toMatchObject({ ok: true, warningCount: 4 });
+  expect(result.message).toContain("4 baris tanpa HPP master");
+  expect(result.message).toContain("Kasir petshop dan klinik menolak penjualan di bawah HPP FIFO");
+  expect(result.message).not.toMatch(/kasir tetap menolak/i);
+  expect(db.rpc).toHaveLength(1);
+  expect(db.rpc[0].args.p_rows).toEqual([
+    { code: "100656", unit: "PCS", discount_type: "nominal", discount_value: 3000 },
+    { code: "APL0001", unit: "PCS", discount_type: "nominal", discount_value: 3000 },
+    { code: "100860", unit: "PCS", discount_type: "nominal", discount_value: 6000 },
+    { code: "CRACC0005", unit: "PCS", discount_type: "nominal", discount_value: 7000 },
+  ]);
+});
+
+it("save never trusts a client-provided warning: it is re-derived from the master (forged/absent/extra flags)", async () => {
+  db.tables.items = zeroCostItems(); db.tables.item_units = [];
+  const reviewed = await validatePromoDraft([...zeroRows(), r(6, "COSTED-1", "PCS", "Harga Akhir", "9000")] as never, scope);
+  // client strips every warning and invents one on the costed row
+  const forged = reviewed.rows.map((row, index) => ({ ...row, warning: index === 4 ? WARNING : null, warningCount: 99 }));
+  const result = await savePromoExcelBatch(submission(forged));
+  expect(result).toMatchObject({ ok: true, warningCount: 4 });
+  expect(result.message).toContain("4 baris tanpa HPP master");
+  expect(result.message).not.toContain("99");
+});
+
+it("a client cannot turn a below-cost row (buy 8000, final 7000) into a warning: still rejected, RPC not called", async () => {
+  db.tables.items = zeroCostItems(); db.tables.item_units = [];
+  const rows = [r(2, "COSTED-1", "PCS", "Harga Akhir", "7000", { normal_price: 10000, warning: WARNING, error: null })];
+  const review = await validatePromoDraft(rows as never, scope);
+  expect(review.valid).toBe(false);
+  expect(review.rows[0].error).toMatch(/di bawah.*HPP/i);
+  expect(review.rows[0].warning || null).toBeNull();
+  expect(await savePromoExcelBatch(submission(rows))).toMatchObject({ ok: false });
+  expect(db.rpc).toEqual([]);
+});
+
+it("Grup and unknown item type stay rejected even with zero cost", async () => {
+  db.tables.items = [
+    { id: "g", code: "GRP", name: "Paket", unit: "PCS", is_active: true, item_type: "Grup", sell_price: "10000.00", buy_price: "0.00" },
+    { id: "n", code: "NOTYPE", name: "Tanpa Jenis", unit: "PCS", is_active: true, item_type: null, sell_price: "10000.00", buy_price: "0.00" },
+  ];
+  db.tables.item_units = [];
+  const result = await validatePromoDraft([r(2, "GRP", "PCS", "Harga Akhir", "9000"), r(3, "NOTYPE", "PCS", "Harga Akhir", "9000")] as never, scope);
+  expect(result.valid).toBe(false);
+  expect(result.rows[0].error).toMatch(/paket/i);
+  expect(result.rows[1].error).toMatch(/tidak terbaca/i);
+  expect(result.warningCount).toBe(0);
+});
+
+it("a save without warnings keeps the original message", async () => {
+  const reviewed = await validatePromoDraft([r(2, "FIKTIF-1", "KG", "Harga Akhir", "36000")] as never, scope);
+  const result = await savePromoExcelBatch(submission(reviewed.rows));
+  expect(result.message).toBe("1 promo berhasil disimpan.");
+  expect(result.warningCount || 0).toBe(0);
+});
+
+const derivedItems = () => [
+  { id: "d1", code: "DER-1", name: "Barang Turunan", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "20000.00", buy_price: "5000.00" },
+  { id: "d3", code: "DER-2", name: "Barang Turunan Dua", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "20000.00", buy_price: "5000.00" },
+  { id: "d2", code: "DER-0", name: "Barang Tanpa Modal", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "20000.00", buy_price: "0.00" },
+];
+const derivedUnits = () => [
+  { id: "du1", item_id: "d1", unit: "DUS", sell_price: "240000.00", buy_price: "0.00", factor: "12.0000" },
+  { id: "du3", item_id: "d3", unit: "DUS", sell_price: "240000.00", buy_price: "0.00", factor: "12.0000" },
+  { id: "du2", item_id: "d2", unit: "DUS", sell_price: "240000.00", buy_price: "0.00", factor: "12.0000" },
+];
+
+it("derived unit with own buy 0 but base buy 5000 x factor 12: reads the factor and rejects final below 60000, warns only when nothing is known", async () => {
+  db.tables.items = derivedItems(); db.tables.item_units = derivedUnits();
+  const result = await validatePromoDraft([r(2, "DER-1", "DUS", "Harga Akhir", "1000"), r(3, "DER-2", "DUS", "Harga Akhir", "60000"), r(4, "DER-0", "DUS", "Harga Akhir", "1000")] as never, scope);
+  expect(result.rows[0].error).toMatch(/di bawah.*HPP/i);
+  expect(result.rows[1]).toMatchObject({ error: null, warning: null });
+  expect(result.rows[2]).toMatchObject({ error: null, warning: WARNING });
+  const unitReads = db.reads.filter(read => read.table === "item_units");
+  expect(unitReads.length).toBeGreaterThan(0);
+  for (const read of unitReads) expect(read.select).toMatch(/\bfactor\b/);
+});

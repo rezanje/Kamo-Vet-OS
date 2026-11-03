@@ -14,7 +14,7 @@ export type FinalPriceMoney = number | string | null | undefined;
 export type FinalPriceItem = {
   id: string; unit: string; item_type?: string | null; sell_price?: FinalPriceMoney; buy_price?: FinalPriceMoney;
 };
-export type FinalPriceUnitRow = { sell_price?: FinalPriceMoney; buy_price?: FinalPriceMoney } | null;
+export type FinalPriceUnitRow = { sell_price?: FinalPriceMoney; buy_price?: FinalPriceMoney; /** item_units.factor: base units per this unit (numeric > 0). */ factor?: FinalPriceMoney } | null;
 export type FinalPriceBranchPrice = { item_id: string; branch_id: string; unit: string; sell_price: FinalPriceMoney };
 export type FinalPriceInput = {
   raw: string;
@@ -28,8 +28,18 @@ export type FinalPriceInput = {
   hasQuantityTiers: boolean;
 };
 export type FinalPriceResult =
-  | { ok: true; normalPrice: number; finalPrice: number; potongan: number; percentOff: number }
+  | { ok: true; normalPrice: number; finalPrice: number; potongan: number; percentOff: number; warning?: string }
   | { ok: false; error: string; normalPrice?: number | null };
+
+/**
+ * What actually enforces the HPP floor after import (verified in code): kasir petshop (kasir/checkout.ts + cashier_post_stock_atomic)
+ * and clinic billing (assert_invoice_price_floor) reject a sale below FIFO HPP; back office /pos/transaksi only shows a warning the user
+ * can confirm (finalize_pos_sale has no DB floor) and shows none at all when the FIFO cost cannot be read.
+ */
+export const COST_FLOOR_SCOPE_NOTE = "Kasir petshop dan klinik menolak penjualan di bawah HPP FIFO; transaksi back office (/pos/transaksi) hanya memberi peringatan yang bisa dikonfirmasi (tanpa peringatan bila HPP FIFO tidak terbaca).";
+/** Persediaan whose master cost is unknown (base buy price and, for a derived unit, its own buy price both empty/0): most stock items today. Not an error. */
+export const MISSING_COST_WARNING = `HPP master belum terisi; harga akhir belum bisa dicek terhadap modal. ${COST_FLOOR_SCOPE_NOTE}`;
+export const INVALID_COST_ERROR = "Harga beli master tidak valid";
 
 export const rupiah = (value: number) => `Rp${value.toLocaleString("id-ID", { maximumFractionDigits: 2 })}`;
 const AMBIGUOUS = "Tulis angka polos tanpa titik, koma, atau Rp pemisah ribuan (contoh: 18500).";
@@ -61,8 +71,45 @@ function toCents(value: FinalPriceMoney): number | null {
 function centralPrice(item: FinalPriceItem, unit: string, unitRow: FinalPriceUnitRow): FinalPriceMoney {
   return unit === item.unit ? item.sell_price : unitRow?.sell_price;
 }
-function costOf(item: FinalPriceItem, unit: string, unitRow: FinalPriceUnitRow): FinalPriceMoney {
-  return unit === item.unit ? item.buy_price : unitRow?.buy_price;
+/** missing = null/undefined/blank/NaN/0; invalid = present but negative, non-numeric, non-finite or more than 2 decimals. */
+type MasterCost = { kind: "missing" } | { kind: "invalid" } | { kind: "known"; cents: number };
+function parseCost(value: FinalPriceMoney): MasterCost {
+  if (value === null || value === undefined) return { kind: "missing" };
+  if (typeof value === "number" && Number.isNaN(value)) return { kind: "missing" };
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return { kind: "missing" };
+    if (!/^\d+(\.\d+)?$/.test(text)) return { kind: "invalid" };
+  }
+  const cents = toCents(value);
+  if (cents === null) return { kind: "invalid" };
+  return cents > 0 ? { kind: "known", cents } : { kind: "missing" };
+}
+/** Conversion factor of a derived unit (base units per unit); null when absent/non-positive. */
+function factorOf(unitRow: FinalPriceUnitRow): number | null {
+  const raw = unitRow?.factor;
+  if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) return null;
+  const factor = Number(raw);
+  return Number.isFinite(factor) && factor > 0 ? factor : null;
+}
+/**
+ * Cost per sold unit in cents (fractional allowed), mirroring the cashier floor EXACTLY. The cashier never reads
+ * item_units.buy_price: checkout.ts hands only items.buy_price (base) to quoteSaleLineCosts and prices a derived line as
+ * qty x factor base units at base cost. So for a derived unit the implied cost is base buy price x factor whenever the base
+ * buy price is a known positive value (the unit's own buy price is ignored, not max'ed). Only when the base buy price is
+ * missing/0 (or the factor cannot be read) may the unit's own positive buy price serve as a best-effort known cost.
+ */
+function costOf(item: FinalPriceItem, unit: string, unitRow: FinalPriceUnitRow): { cents: number } | "missing" | "invalid" {
+  const derived = unit !== item.unit;
+  const base = parseCost(item.buy_price);
+  if (base.kind === "invalid") return "invalid";
+  if (!derived) return base.kind === "known" ? { cents: base.cents } : "missing";
+  // A malformed own buy price is still a data error even though the cashier would ignore it.
+  const own = parseCost(unitRow?.buy_price);
+  if (own.kind === "invalid") return "invalid";
+  const factor = factorOf(unitRow);
+  if (base.kind === "known" && factor !== null) return { cents: base.cents * factor };
+  return own.kind === "known" ? { cents: own.cents } : "missing";
 }
 
 export function convertFinalPrice(input: FinalPriceInput): FinalPriceResult {
@@ -98,22 +145,26 @@ export function convertFinalPrice(input: FinalPriceInput): FinalPriceResult {
     return { ok: false, error: `Harga akhir ${rupiah(finalCents / 100)} ditolak: selisih harus rupiah bulat. Harga normal ${rupiah(normalPrice)} dikurangi harga akhir ${rupiah(finalCents / 100)} = potongan ${rupiah((normalCents - finalCents) / 100)} per satuan, sedangkan kasir hanya bisa memotong rupiah bulat (kasir akan menagih harga yang berbeda dari harga akhir). Ubah harga akhir agar selisih dengan harga normal rupiah bulat`, normalPrice };
   }
 
-  // Mirror cashier price floor (cashier-price-floor.ts): goods are rejected below HPP, never allowed with
-  // unknown cost. Here the only cost visible at import time is the master buy price of that unit; the
-  // cashier still checks the real FIFO HPP at sale time.
+  // Mirror cashier price floor (cashier-price-floor.ts): goods are rejected below a KNOWN cost. The real cost
+  // is the FIFO HPP, enforced at sale time by the cashier; at import time the only visible cost is the master
+  // buy price of that unit. When that is missing/0 (3326 of 3332 active Persediaan) the row stays valid and
+  // carries a warning instead of being rejected.
   if (item.item_type === "Grup") return { ok: false, error: "Harga akhir belum didukung untuk paket (Grup): HPP paket dari komponennya tidak dapat dipastikan saat impor. Pakai Nominal atau Persen", normalPrice };
   // Jasa and Non-Persediaan have no cashier price floor (isPriceFloorGoods = Persediaan / Grup only): no buy price needed.
   if (!item.item_type) return { ok: false, error: "Jenis barang tidak terbaca (kosong); harga akhir tidak dapat diperiksa terhadap HPP", normalPrice };
   if (item.item_type !== "Persediaan" && item.item_type !== "Jasa" && item.item_type !== "Non-Persediaan") return { ok: false, error: `Jenis barang "${item.item_type}" tidak dikenal; harga akhir tidak dapat diperiksa terhadap HPP`, normalPrice };
+  let warning: string | undefined;
   if (item.item_type === "Persediaan") {
-    const cost = toCents(costOf(item, unit, input.unitRow));
-    if (cost === null || cost <= 0) return { ok: false, error: `HPP/harga beli satuan ${unit} belum terisi; harga akhir tidak dapat diperiksa terhadap HPP`, normalPrice };
-    if (finalCents < cost) return { ok: false, error: `Harga akhir ${rupiah(finalCents / 100)} di bawah HPP/harga beli master ${rupiah(cost / 100)}`, normalPrice };
+    const cost = costOf(item, unit, input.unitRow);
+    if (cost === "invalid") return { ok: false, error: INVALID_COST_ERROR, normalPrice };
+    if (cost === "missing") warning = MISSING_COST_WARNING;
+    else if (finalCents < cost.cents - 1e-6) return { ok: false, error: `Harga akhir ${rupiah(finalCents / 100)} di bawah HPP/harga beli master ${rupiah(Math.round(cost.cents) / 100)}`, normalPrice };
   }
 
   const potonganCents = normalCents - finalCents;
   return {
     ok: true, normalPrice, finalPrice: finalCents / 100, potongan: potonganCents / 100,
     percentOff: Math.round((potonganCents * 10000) / normalCents) / 100,
+    ...(warning ? { warning } : {}),
   };
 }

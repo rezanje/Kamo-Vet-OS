@@ -5,7 +5,7 @@ export type PromoCatalogItem = {
   id: string; code: string; name: string; unit: string; is_active: boolean;
   item_type?: string | null; sell_price?: FinalPriceMoney; buy_price?: FinalPriceMoney;
 };
-export type PromoCatalogUnit = { item_id: string; unit: string; sell_price?: FinalPriceMoney; buy_price?: FinalPriceMoney };
+export type PromoCatalogUnit = { item_id: string; unit: string; sell_price?: FinalPriceMoney; buy_price?: FinalPriceMoney; factor?: FinalPriceMoney };
 /** Price context for "Harga Akhir" rows; without it such rows are rejected (never guessed). */
 export type PromoPricing = { scope: FinalPriceBranch[] | null; branchPrices: FinalPriceBranchPrice[]; tierItemIds: string[] };
 export type PromoReviewedRow = PromoExcelRow & {
@@ -18,6 +18,8 @@ export type PromoReviewedRow = PromoExcelRow & {
   percent_off?: number | null;
   /** The registered unit spelling that matched exactly (never normalized). */
   matched_unit?: string | null;
+  /** Non-blocking note (e.g. master HPP not filled in). Always derived server side; the row stays valid. */
+  warning?: string | null;
 };
 export type PromoSaveRow = { code: string; unit: string; discount_type: "percent" | "nominal"; discount_value: number };
 
@@ -41,8 +43,8 @@ export function validatePromoRows(
     const amount = rawValue && /^\d+(?:\.\d{1,2})?$/.test(rawValue) ? Number(rawValue) : NaN;
     const item = byCode.get(code);
     const key = `${code}\u001f${unit}`;
-    const extra: Pick<PromoReviewedRow, "normal_price" | "final_price" | "potongan" | "percent_off" | "matched_unit"> =
-      { normal_price: null, final_price: null, potongan: null, percent_off: null, matched_unit: null };
+    const extra: Pick<PromoReviewedRow, "normal_price" | "final_price" | "potongan" | "percent_off" | "matched_unit" | "warning"> =
+      { normal_price: null, final_price: null, potongan: null, percent_off: null, matched_unit: null, warning: null };
     let nominal = amount;
     let error: string | null = null;
     if (!code || !unit) error = "Kode barang dan satuan wajib diisi";
@@ -67,7 +69,7 @@ export function validatePromoRows(
         else if (!converted.ok) { error = converted.error; extra.normal_price = converted.normalPrice ?? null; }
         else {
           nominal = converted.potongan;
-          Object.assign(extra, { normal_price: converted.normalPrice, final_price: converted.finalPrice, potongan: converted.potongan, percent_off: converted.percentOff });
+          Object.assign(extra, { normal_price: converted.normalPrice, final_price: converted.finalPrice, potongan: converted.potongan, percent_off: converted.percentOff, warning: converted.warning ?? null });
         }
       } else if (!Number.isFinite(amount) || amount <= 0 || (kind === "percent" && amount > 100)) error = "Nilai diskon harus positif, maksimal 100 untuk Persen, dan maksimal dua desimal";
     }
