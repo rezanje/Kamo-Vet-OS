@@ -1,4 +1,7 @@
 .form { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap:8px 12px; align-items:start; }
 .form > * { min-width:0; }
+/* Pembungkus pemberitahuan draf (TransactionDraft) bukan kolom isian: kosong = tak ada, berisi = selebar formulir. */
+.form > span:empty { display:none; }
+.form > span { grid-column:1 / -1; }
 .form input:not([type=checkbox]), .form select { width:100%; min-width:0; }
 @media (max-width:640px) { .form { grid-template-columns:minmax(0,1fr); } .form > * { grid-column:1 / -1 !important; } }

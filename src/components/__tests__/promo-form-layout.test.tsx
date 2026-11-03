@@ -36,3 +36,8 @@ it("barang terkunci (impor Excel): catatan 2 kolom, Cabang tetap berdampingan", 
   expect(h).toMatch(/grid-column:1 \/ span 2[^>]*><p[^>]*>SKU dan satuan dari impor Excel tetap/);
   expect(h).toMatch(/grid-column:3 \/ span 2[^>]*><label[^>]*>Cabang \(kosongkan/);
 });
+
+it("pembungkus pemberitahuan draf selebar formulir dan tidak memakai sel kosong", () => {
+  expect(css).toMatch(/\.form\s*>\s*span:empty\s*{[^}]*display:\s*none/);
+  expect(css).toMatch(/\.form\s*>\s*span\s*{[^}]*grid-column:\s*1\s*\/\s*-1/);
+});
