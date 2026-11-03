@@ -78,12 +78,14 @@ export default async function PenjualanDetailPage({
       .eq("sale_id", id).order("revision", { ascending: false })
     : { data: null, error: null };
   const corrections = (correctionData ?? []) as PaymentCorrection[];
-  const cash = payments.find(part => part.method === "Tunai")?.amount ?? 0;
-  const transfer = payments.find(part => part.method === "Transfer")?.amount ?? 0;
+  // Semua metode kasir bisa dikoreksi; bagian yang kena fee merchant tetap utuh.
+  const berFee = (method: string) => (sale.sale_payments ?? []).some(part => part.method === method
+    && (Number(part.fee_amount) !== 0 || Number(part.fee_percent) !== 0));
+  const movable = payments.filter(part => !berFee(part.method)).map(part => ({ method: part.method, amount: part.amount }));
+  const fixedParts = payments.filter(part => berFee(part.method)).map(part => ({ method: part.method, amount: part.amount }));
   const canCorrectPayment = canCorrectRole && !!user && !sale.voided_at && !sale.channel && !!sale.payment_plan
-    && !!sale.payments_finalized_at && cash + transfer > 0
-    && returs.length === 0 && !sale.sale_payments?.some(part => ["Tunai", "Transfer"].includes(part.method)
-      && (Number(part.fee_amount) !== 0 || Number(part.fee_percent) !== 0));
+    && !!sale.payments_finalized_at && movable.reduce((sum, part) => sum + part.amount, 0) > 0
+    && returs.length === 0;
 
   const items = sale.sale_items ?? [];
   const cust = one(sale.customers);
@@ -211,8 +213,7 @@ export default async function PenjualanDetailPage({
       {canCorrectRole && user && !sale.voided_at && <details className="crm-sec">
         <summary>{isOwner ? "Koreksi atau batalkan penjualan" : "Koreksi metode pembayaran"}</summary>
         {canCorrectPayment && !correctionError && <SalePaymentCorrectionForm userId={user.id} saleId={sale.id}
-          revision={sale.revision} cash={cash} transfer={transfer} change={Number(sale.kembali)}
-          fixed={payments.filter(part => part.method !== "Tunai" && part.method !== "Transfer")} />}
+          revision={sale.revision} movable={movable} fixed={fixedParts} change={Number(sale.kembali)} />}
         {!isOwner ? null : correctionError ? <p>Riwayat koreksi belum dapat dibaca. Muat ulang sebelum tindakan berikutnya.</p>
           : corrections.length > 0 ? <p>Pembatalan penjualan yang sudah dikoreksi memerlukan rekonsiliasi seluruh jurnal koreksi. Hubungi finance sebelum membatalkan.</p>
           : <SaleCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />}

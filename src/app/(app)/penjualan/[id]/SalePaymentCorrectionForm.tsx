@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { NumberInput } from "@/components/NumberInput";
 import { formatPosMoney } from "@/lib/pos-money";
+import { SALE_PAYMENT_METHODS } from "@/lib/sale-payment-reporting";
 import { koreksiMetodePembayaran } from "./actions";
 
-/** Blank counts as zero: a cashier who clears Tunai means "nothing in cash". */
+/** Blank counts as zero: clearing a box means "nothing paid this way". */
 function cents(value: string): number | null {
   const text = value.trim();
   if (!text) return 0;
@@ -16,68 +17,87 @@ function cents(value: string): number | null {
   return Number.isSafeInteger(result) ? result : null;
 }
 
-const money = (amountCents: number) => String(amountCents / 100);
+type Part = { method: string; amount: number };
 
-export function SalePaymentCorrectionForm({ userId, saleId, revision, cash, transfer, change = 0, fixed }: {
-  userId: string; saleId: string; revision: number; cash: number; transfer: number;
+/**
+ * Koreksi metode bayar penjualan POS ke semua metode kasir (Tunai, Transfer, Debit,
+ * Kredit, QRIS, E-Wallet). Bagian yang kena fee merchant tetap dan tidak bisa diubah.
+ */
+export function SalePaymentCorrectionForm({ userId, saleId, revision, movable, fixed, change = 0 }: {
+  userId: string; saleId: string; revision: number;
+  /** Bagian tanpa fee merchant — inilah yang dibagi ulang. */
+  movable: Part[];
+  /** Bagian ber-fee merchant: tetap, metodenya tidak bisa dipakai di pembagian baru. */
+  fixed: Part[];
   /** Kembalian tunai yang tercatat saat checkout. */
   change?: number;
-  fixed: { method: string; amount: number }[];
 }) {
-  const [cashText, setCashText] = useState(String(cash));
-  const [transferText, setTransferText] = useState(String(transfer));
-  const cashInput = useRef<HTMLInputElement>(null);
-  const transferInput = useRef<HTMLInputElement>(null);
-  const oldTotal = Math.round((cash + transfer) * 100);
-  const newCash = cents(cashText);
-  const newTransfer = cents(transferText);
-  const balanced = newCash !== null && newTransfer !== null && newCash + newTransfer === oldTotal;
-  const changed = newCash !== Math.round(cash * 100) || newTransfer !== Math.round(transfer * 100);
-  const valid = balanced && changed;
+  const methods = SALE_PAYMENT_METHODS.filter(m => !fixed.some(part => part.method === m));
+  const initial = Object.fromEntries(methods.map(m => {
+    const amount = movable.find(part => part.method === m)?.amount ?? 0;
+    return [m, amount ? String(amount) : ""];
+  })) as Record<string, string>;
+  const [texts, setTexts] = useState<Record<string, string>>(initial);
+  const inputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const pool = Math.round(movable.reduce((sum, part) => sum + part.amount, 0) * 100);
 
   // A restored draft writes the DOM directly; mirror it so validation sees the same numbers.
   useEffect(() => {
-    const pairs = [[cashInput.current, setCashText], [transferInput.current, setTransferText]] as const;
-    const cleanups = pairs.map(([control, set]) => {
-      const sync = () => set(control?.value ?? "");
+    const cleanups = methods.map(m => {
+      const control = inputs.current[m];
+      const sync = () => setTexts(prev => ({ ...prev, [m]: control?.value ?? "" }));
       control?.addEventListener("vetos:numeric-sync", sync);
       return () => control?.removeEventListener("vetos:numeric-sync", sync);
     });
     return () => cleanups.forEach(cleanup => cleanup());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Editing one side fills the other so the split always adds up to the bill.
-  const edit = (text: string, setSelf: (value: string) => void, setOther: (value: string) => void) => {
-    setSelf(text);
-    const amount = cents(text);
-    if (amount !== null && amount <= oldTotal) setOther(money(oldTotal - amount));
-  };
+  const parsed = methods.map(m => ({ method: m, cents: cents(texts[m] ?? "") }));
+  const invalid = parsed.some(p => p.cents === null);
+  const sum = parsed.reduce((total, p) => total + (p.cents ?? 0), 0);
+  const balanced = !invalid && sum === pool;
+  const changed = parsed.some(p => p.cents !== Math.round((movable.find(part => part.method === p.method)?.amount ?? 0) * 100));
+  const valid = balanced && changed;
+  const newCash = parsed.find(p => p.method === "Tunai")?.cents ?? 0;
 
-  const hint = newCash === null || newTransfer === null
-    ? "Isi angka Rupiah tanpa titik pemisah ribuan."
-    : !balanced ? `Tunai + Transfer sekarang ${formatPosMoney((newCash + newTransfer) / 100)}, harus ${formatPosMoney(cash + transfer)}.`
-      : !changed ? "Pembagian masih sama dengan semula. Ubah angka Tunai atau Transfer dulu." : "";
+  const semuaKe = (target: string) => setTexts(Object.fromEntries(methods.map(m => [m, m === target ? String(pool / 100) : ""])));
+
+  const hint = invalid ? "Isi angka Rupiah tanpa titik pemisah ribuan."
+    : !balanced ? (sum < pool
+      ? `Masih kurang ${formatPosMoney((pool - sum) / 100)} — jumlah semua metode harus ${formatPosMoney(pool / 100)}.`
+      : `Kelebihan ${formatPosMoney((sum - pool) / 100)} — jumlah semua metode harus ${formatPosMoney(pool / 100)}.`)
+      : !changed ? "Pembagian masih sama dengan semula. Pilih metode yang benar dulu." : "";
 
   return <CorrectionTransactionForm userId={userId} scope={`sale-payment:${saleId}:${revision}`} action={koreksiMetodePembayaran}>
     {({ ready }) => <>
       <input type="hidden" name="id" value={saleId} /><input type="hidden" name="revision" value={revision} />
-      <p>Ubah pembagian Tunai dan Transfer pada penjualan ini. Total tagihan dan metode pembayaran lain tetap. Jurnal lama dibalik dan jurnal baru dicatat dengan alasan koreksi.</p>
-      {fixed.length > 0 && <p>Metode tetap: {fixed.map(part => `${part.method} ${formatPosMoney(part.amount)}`).join(" · ")}</p>}
-      <p>Total yang dibagi: <strong>{formatPosMoney(cash + transfer)}</strong> — isi salah satu, kolom lainnya menyesuaikan otomatis.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-        <div><label className="flab" htmlFor="sale-correction-cash">Tunai</label>
-          <NumberInput ref={cashInput} id="sale-correction-cash" className="fi" name="tunai" type="number" min="0" max="1000000000000" step="0.01" inputMode="decimal" placeholder="0"
-            value={cashText} onInput={event => edit(event.currentTarget.value, setCashText, setTransferText)} /></div>
-        <div><label className="flab" htmlFor="sale-correction-transfer">Transfer</label>
-          <NumberInput ref={transferInput} id="sale-correction-transfer" className="fi" name="transfer" type="number" min="0" max="1000000000000" step="0.01" inputMode="decimal" placeholder="0"
-            value={transferText} onInput={event => edit(event.currentTarget.value, setTransferText, setCashText)} /></div>
+      <p>Ganti metode pembayaran penjualan ini kalau kasir salah pilih (misalnya pelanggan bayar QRIS tapi tercatat Tunai). Total tagihan tidak berubah. Jurnal lama dibalik dan jurnal baru dicatat dengan alasan koreksi.</p>
+      {fixed.length > 0 && <p>Tetap (kena fee merchant, tidak bisa diubah): {fixed.map(part => `${part.method} ${formatPosMoney(part.amount)}`).join(" · ")}</p>}
+      <p>Total yang dibagi: <strong>{formatPosMoney(pool / 100)}</strong></p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+        {methods.map(m => (
+          <button key={m} type="button" className="btn-def" style={{ fontSize: 11 }} onClick={() => semuaKe(m)}>
+            Semua ke {m}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+        {methods.map(m => (
+          <div key={m}>
+            <label className="flab" htmlFor={`sale-correction-${m}`}>{m}</label>
+            <NumberInput ref={el => { inputs.current[m] = el; }} id={`sale-correction-${m}`} className="fi" name={`bayar_${m}`}
+              type="number" min="0" max="1000000000000" step="0.01" inputMode="decimal" placeholder="0"
+              value={texts[m] ?? ""} onInput={event => { const value = event.currentTarget.value; setTexts(prev => ({ ...prev, [m]: value })); }} />
+          </div>
+        ))}
       </div>
       {change > 0 && <p>Kembalian tercatat {formatPosMoney(change)}. {newCash === 0
-        ? "Karena Tunai dikosongkan, kembalian dihapus dan nilai Dibayar disamakan dengan total."
-        : "Bila Tunai dikosongkan, kembalian ikut dihapus dan nilai Dibayar disamakan dengan total."}</p>}
+        ? "Karena tidak ada lagi bagian Tunai, kembalian dihapus dan nilai Dibayar disamakan dengan total."
+        : "Bila bagian Tunai dikosongkan, kembalian ikut dihapus dan nilai Dibayar disamakan dengan total."}</p>}
       {hint && <p role="status">{hint}</p>}
       <label className="flab" htmlFor="sale-correction-reason">Alasan koreksi *</label>
-      <input id="sale-correction-reason" className="fi" name="alasan" minLength={3} maxLength={1000} required placeholder="Contoh: pembayaran diterima via transfer, kasir memilih tunai" />
+      <input id="sale-correction-reason" className="fi" name="alasan" minLength={3} maxLength={1000} required placeholder="Contoh: pelanggan bayar QRIS, kasir memilih tunai" />
       <button className="btn-acc" type="submit" disabled={!ready || !valid} style={{ marginTop: 10 }}>Simpan koreksi metode</button>
     </>}
   </CorrectionTransactionForm>;
