@@ -5,6 +5,7 @@ import { buildPeriod, canAccessOperationSales, type Channel, type PeriodPreset }
 import { collectDashboard } from "@/lib/operation-sales-server";
 import { collectOperationalAlertBlock } from "@/lib/operational-alerts-server";
 import { OperationSalesDashboard } from "./OperationSalesDashboard";
+import { PeriodPresetSync } from "./PeriodPresetSync";
 
 const CHANNELS: Channel[] = ["all", "pos", "online", "reseller", "klinik"];
 const PRESETS: PeriodPreset[] = ["today", "mtd", "custom"];
@@ -26,7 +27,8 @@ export default async function OperationSalesPage({
 }) {
   const sp = await searchParams;
   const today = hariIniWIB();
-  const rawPreset = one(sp.preset) ?? "mtd";
+  // Link lama/eksternal yang hanya membawa tanggal tanpa preset = rentang custom.
+  const rawPreset = one(sp.preset) ?? (one(sp.from) && one(sp.to) ? "custom" : "mtd");
   const preset = PRESETS.includes(rawPreset as PeriodPreset) ? rawPreset as PeriodPreset : "mtd";
   const period = buildPeriod({
     preset,
@@ -83,6 +85,7 @@ export default async function OperationSalesPage({
               <option value="custom">Rentang custom</option>
             </select>
           </div>
+          <PeriodPresetSync today={today} />
           <div><label className="flab">Dari tanggal</label><input className="fi" type="date" name="from" defaultValue={from} /></div>
           <div><label className="flab">Sampai tanggal</label><input className="fi" type="date" name="to" defaultValue={to} /></div>
           <div style={{ minWidth: 190 }}>
