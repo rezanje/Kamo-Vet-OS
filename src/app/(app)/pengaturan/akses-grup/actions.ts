@@ -1,100 +1,91 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { MODULES } from "@/lib/nav";
-import { modulBawaan, SEMUA_PERAN } from "@/lib/akses";
+import type { ActionRejection } from "@/components/LocalTransactionDraft";
+import { roleRpcFailure } from "@/lib/role-action-access";
+import { editableRole, parseRoleAccessConfig, ROLE_ACCESS_CATALOG, roleAccessScope, validRequestKey, validRevision } from "@/lib/role-access-catalog";
 
 const BASE = "/pengaturan/akses-grup";
-const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
+
+const refuse = (message: string, outcome: "rejected" | "retry" = "rejected"): ActionRejection => ({ ok: false, outcome, message });
+const UNCONFIRMED = "Hasil simpan belum terkonfirmasi. Draf dan kunci tetap tersedia; muat ulang pengaturan dan periksa kembali dengan permintaan yang sama.";
 
 /**
- * Mengubah hak akses HANYA boleh oleh OWNER — keputusan boss 2026-08-03.
- * Dijaga juga oleh RLS di migrasi 0101; ini lapis kedua supaya pesannya jelas
- * dan bukan sekadar error database.
+ * Full atomic policy replacement; database remains authoritative for authorization and replay.
+ * Deterministic refusals (nothing written) are RETURNED as structured Indonesian results because a thrown
+ * server-action error is masked in production. Only genuinely unknown outcomes throw (= unconfirmed).
  */
-async function assertOwner() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "OWNER" || !profile.is_active) gagal("Hanya pemilik yang boleh mengubah hak akses");
-  return supabase;
-}
-
-function peranValid(role: string): boolean {
-  return (SEMUA_PERAN as readonly string[]).includes(role) && role !== "OWNER";
-}
-
-/** Simpan centang modul satu peran. Tanpa satu pun modul = peran itu tidak bisa masuk ke mana-mana. */
-export async function simpanAksesPeran(formData: FormData) {
-  const supabase = await assertOwner();
-
-  const role = String(formData.get("role") ?? "").trim();
-  // OWNER sengaja ditolak: dia selalu penuh, dan mengizinkan pembatasan di sini
-  // berarti pemilik bisa mengunci dirinya sendiri keluar tanpa jalan kembali.
-  if (!peranValid(role)) gagal("Peran tidak dikenal, atau memang tidak bisa dibatasi");
-
-  const idModulSah = new Set(MODULES.map((m) => m.id));
-  const dipilih = [...formData.keys()]
-    .filter((k) => k.startsWith("mod_") && String(formData.get(k)) === "on")
-    .map((k) => k.slice("mod_".length))
-    .filter((id) => idModulSah.has(id));
-
-  if (dipilih.length === 0) {
-    gagal("Pilih minimal satu modul — peran tanpa modul sama sekali tidak bisa membuka apa pun");
+export async function saveRoleSettings(role: string, revision: string, form: FormData): Promise<ActionRejection> {
+  const client = await createClient();
+  const { data: { user }, error: authError } = await client.auth.getUser();
+  if (authError || !user) return refuse("Sesi tidak tersedia. Muat ulang dan masuk kembali.");
+  const { data: profile, error: profileError } = await client.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
+  if (profileError) return refuse("Status akun Anda belum dapat diperiksa. Tidak ada yang disimpan; coba lagi.", "retry");
+  if (profile?.role !== "OWNER" || profile.is_active !== true) return refuse("Hanya pemilik aktif yang boleh mengubah hak akses.");
+  const key = String(form.get("requestKey") ?? "");
+  const scope = roleAccessScope(role, revision);
+  if (!editableRole(role) || !validRevision(revision) || form.get("role") !== role || form.get("expected_revision") !== revision
+    || form.get("draft_scope") !== scope || form.get("draft_key") !== key || !validRequestKey(key)) return refuse("Identitas draf atau revisi tidak cocok. Muat ulang pengaturan; draf lama tidak diterapkan.");
+  const mode = String(form.get("mode") ?? "custom");
+  const reason = String(form.get("reason") ?? "").trim();
+  if (!["custom", "reset"].includes(mode) || reason.length < 3 || reason.length > 1000) return refuse("Isi alasan 3–1000 karakter dan pilih jenis penyimpanan.");
+  if (mode === "reset" && form.get("confirm_reset") !== "on") return refuse("Konfirmasi reset SEMUA pengaturan menu, tindakan, cabang, dan akun terlebih dahulu.");
+  const modules: string[] = [];
+  for (const [name, value] of form.entries()) {
+    if (!name.startsWith("mod_")) continue;
+    const id = name.slice(4);
+    if (!ROLE_ACCESS_CATALOG.some(m => m.id === id) || value !== "on" || modules.includes(id)) return refuse("Pilihan menu tidak dikenal atau ganda. Muat ulang.");
+    modules.push(id);
   }
-
-  // Ganti seluruh baris peran itu: centang yang dilepas harus benar-benar hilang,
-  // bukan menumpuk dengan yang lama.
-  const { error: hapusErr } = await supabase.from("role_modules").delete().eq("role", role);
-  if (hapusErr) gagal(hapusErr.message);
-
-  const { error } = await supabase.from("role_modules")
-    .insert(dipilih.map((module_id) => ({ role, module_id })));
-  if (error) gagal(error.message);
-
-  redirect(`${BASE}?success=${encodeURIComponent(`Hak akses ${role} disimpan.`)}&peran=${role}`);
+  // A fresh server-side catalogue, never hidden client metadata. Do not compare its
+  // revision here: the backend must decide stale vs exact-request replay atomically.
+  let snapshot;
+  try {
+    const { data, error: readError } = await client.rpc("get_role_access_config", { p_role: role });
+    snapshot = readError ? null : parseRoleAccessConfig(data, role);
+  } catch { snapshot = null; }
+  if (!snapshot) return refuse("Konfigurasi tindakan gagal dibaca. Tidak ada yang disimpan; draf dan kunci tetap tersedia. Muat ulang atau coba lagi.", "retry");
+  const actions: string[] = [];
+  for (const [name, value] of form.entries()) {
+    if (!name.startsWith("act_")) continue;
+    const id = name.slice(4);
+    if (value !== "on" || actions.includes(id) || !snapshot.action_catalog.some(a => a.id === id && a.enforced)) {
+      return refuse("Pilihan tindakan tidak didukung atau ganda. Muat ulang; draf tetap tersedia.");
+    }
+    actions.push(id);
+  }
+  // A role with NO saved action policy ("legacy") already allows every enforced action. The editor shows
+  // those as checked; if the Owner left them exactly so, do not create a policy row at all, so a menu-only
+  // save can never turn the implicit allow-all into an explicit (or empty) list.
+  const enforced = snapshot.action_catalog.filter(a => a.enforced).map(a => a.id);
+  const untouchedLegacy = snapshot.actions.source === "legacy" && actions.length === enforced.length && enforced.every(id => actions.includes(id));
+  const { data: result, error } = await client.rpc("save_role_access_config", {
+    p_role: role, p_expected_revision: revision, p_request_key: key, p_mode: mode,
+    p_modules: mode === "reset" ? [] : modules,
+    p_capabilities: mode === "reset" ? null : { all_branches: form.get("all_branches") === "on", create_accounts: form.get("create_accounts") === "on" },
+    p_reason: reason, p_actions: mode === "reset" || untouchedLegacy ? null : actions,
+  });
+  if (error) {
+    const known = roleRpcFailure(error);
+    if (known) return refuse(known.message, known.outcome);
+    throw new Error(UNCONFIRMED);
+  }
+  if (!result || Array.isArray(result) || result.role !== role || result.request_key !== key || !validRevision(result.revision)
+    || !validRequestKey(result.audit_id) || typeof result.already_applied !== "boolean"
+    || (!result.already_applied && result.revision === revision)) throw new Error(UNCONFIRMED);
+  revalidatePath("/", "layout");
+  const params = new URLSearchParams({ peran: role, success: result.already_applied
+    ? "Permintaan sebelumnya sudah tercatat. Tampilan dimuat ulang dari konfigurasi terkini, bukan hasil lama."
+    : mode === "reset" ? "Semua pengaturan menu, tindakan, cabang, dan akun dikembalikan ke bawaan." : `Hak buka menu, tindakan, dan cabang/akun ${role} tersimpan.`, draft_scope: scope, draft_done: key });
+  redirect(`${BASE}?${params}`);
 }
 
-/** Kembalikan satu peran ke aturan bawaan (hapus seluruh barisnya). */
-export async function kembalikanBawaan(formData: FormData) {
-  const supabase = await assertOwner();
-
-  const role = String(formData.get("role") ?? "").trim();
-  if (!peranValid(role)) gagal("Peran tidak dikenal");
-
-  const { error } = await supabase.from("role_modules").delete().eq("role", role);
-  if (error) gagal(error.message);
-
-  redirect(`${BASE}?success=${encodeURIComponent(`${role} kembali ke aturan bawaan.`)}&peran=${role}`);
-}
-
-/** Mulai mengatur sendiri: seed baris dari aturan bawaan supaya tidak mulai dari kosong. */
-export async function mulaiAturSendiri(formData: FormData) {
-  const supabase = await assertOwner();
-
-  const role = String(formData.get("role") ?? "").trim();
-  if (!peranValid(role)) gagal("Peran tidak dikenal");
-
-  const bawaan = modulBawaan(role) ?? MODULES.map((m) => m.id);
-  const { error } = await supabase.from("role_modules")
-    .upsert(bawaan.map((module_id) => ({ role, module_id })), { onConflict: "role,module_id" });
-  if (error) gagal(error.message);
-
-  redirect(`${BASE}?success=${encodeURIComponent(`${role} sekarang diatur sendiri — silakan sesuaikan centangnya.`)}&peran=${role}`);
-}
-
-/** Hanya Super Admin yang dapat mendelegasikan kemampuan peran. */
-export async function simpanKemampuanPeran(form: FormData) {
-  const client = await assertOwner();
-  const role = String(form.get("role") ?? "");
-  if (!peranValid(role)) gagal("Peran tidak dikenal");
-  const { error } = await client.from("role_capabilities").upsert({
-    role, all_branches: form.get("all_branches") === "on",
-    create_accounts: form.get("create_accounts") === "on",
-  }, { onConflict: "role" });
-  if (error) gagal("Hak akses gagal disimpan.");
-  redirect(`${BASE}?success=${encodeURIComponent(`Hak cabang dan akun ${role} disimpan.`)}&peran=${role}`);
-}
+// Legacy forms did not carry a complete configuration or revision. Never guess/merge
+// their partial payload into an atomic full replacement; force the new editor.
+async function reloadLegacy(): Promise<never> { redirect(`${BASE}?error=${encodeURIComponent("Formulir lama tidak lagi didukung. Muat ulang dan simpan seluruh pengaturan dengan revisi terbaru.")}`); }
+export async function simpanAksesPeran(form: FormData) { void form; return reloadLegacy(); }
+export async function kembalikanBawaan(form: FormData) { void form; return reloadLegacy(); }
+export async function mulaiAturSendiri(form: FormData) { void form; return reloadLegacy(); }
+export async function simpanKemampuanPeran(form: FormData) { void form; return reloadLegacy(); }
