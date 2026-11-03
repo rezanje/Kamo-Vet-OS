@@ -1,0 +1,18 @@
+/* Daftar promo ringkas: satu baris tabel = dua baris teks kecil, tanggal satu baris,
+   teks panjang dipotong (isi penuh di atribut title), header menempel saat digulir. */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.chip { display: inline-flex; align-items: center; padding: 3px 10px; border: .5px solid var(--bd); border-radius: 999px; font-size: 11px; color: var(--tm); text-decoration: none; background: #fff; }
+.chip[aria-current="page"] { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; font-weight: 700; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.search { display: flex; gap: 6px; align-items: center; }
+.search input { width: 220px; max-width: 100%; }
+.count { font-size: 11px; color: var(--tm); }
+.wrap { overflow: auto; max-height: 72vh; border: .5px solid var(--bd); border-radius: 8px; }
+.wrap :global(.tbl) { min-width: 900px; }
+.wrap :global(.tbl) thead th { position: sticky; top: 0; z-index: 1; padding: 6px 8px; }
+.wrap :global(.tbl) td { padding: 4px 8px; vertical-align: middle; line-height: 1.25; }
+.cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.sub { display: block; font-size: 9.5px; color: var(--td); }
+.actions { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.actions form { margin: 0; }

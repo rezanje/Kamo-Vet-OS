@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { promoCategoryOptions, promoCategoryItem, promoCategorySummary, promoMatchesCategory, type PromoCategoryItem } from "@/lib/promo-categories";
+import { promoCategoryOptions, promoCategoryItem, promoMatchesCategory, type PromoCategoryItem } from "@/lib/promo-categories";
 import type { KategoriRow } from "@/lib/kategori";
 import {readCompleteList} from "@/lib/checked-list";
 import {PreservedForm,TransactionDraftComplete} from "@/components/LocalTransactionDraft";
@@ -8,50 +8,19 @@ import {PromoFields} from "./PromoFields";
 import {packageTotalReleased} from "@/lib/promo-edit";
 import styles from "./PromoForm.module.css";
 import { SecHeader } from "@/components/SecHeader";
-import { promoScheduleStatus, type PromoRow } from "@/lib/promo";
-import { createPromo, togglePromo } from "./actions";
+import type { PromoRow } from "@/lib/promo";
+import { filterPromosByStatus, parseStatusFilter, promoMatchesBranch, promoMatchesQuery, promoStatusCounts, sortPromosByStatus } from "@/lib/promo-list";
+import { PromoList } from "./PromoList";
+import { createPromo } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { nonaktifkanPromoKadaluarsa } from "@/lib/promo-kadaluarsa";
-
-const STATUS_BADGE: Record<string, string> = { aktif: "g", terjadwal: "b", kadaluarsa: "x", nonaktif: "r" };
-
-// Dua kelas promo yang paling sering disalahpahami pemilik toko. Warnanya
-// sengaja beda jauh: hijau = uang benar-benar berkurang sendiri di kasir,
-// oranye = tidak ada potongan sampai kodenya diketik.
-const POTONG_BADGE: Record<string, string> = { ya: "g", tidak: "o" };
-const POTONG_LABEL: Record<string, string> = { ya: "Potong otomatis", tidak: "Pengingat saja — tidak memotong" };
-
-const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-
-// Daftar barang dipotong supaya satu baris tabel tidak melebar tak terkendali.
-function ringkasBarang(nama: string[] | undefined): string {
-  if (!nama || nama.length === 0) return "Semua barang";
-  if (nama.length <= 2) return nama.join(", ");
-  return `${nama.slice(0, 2).join(", ")} +${nama.length - 2} lagi`;
-}
-
-// Aturan promo dalam satu kalimat pendek — supaya pemilik toko bisa baca sekilas
-// tanpa membuka formulirnya.
-function ringkasAturan(p: PromoRow): string {
-  const bagian: string[] = [];
-  if (p.discount_type && p.discount_value) {
-    bagian.push(p.discount_type === "percent" ? `${p.discount_value}%` : p.rule?.discount_mode === "package_total" ? `${rp(p.discount_value)}/paket min ${p.min_qty}` : `${rp(p.discount_value)}/${p.rule?.unit ?? "satuan"}`);
-  }
-  if (p.rule?.unit) bagian.push(`satuan ${p.rule.unit}`);
-  if (p.min_qty) bagian.push(`min ${p.min_qty}`);
-  if (p.max_qty) bagian.push(`maks ${p.max_qty}`);
-  if (p.kelipatan) bagian.push("kelipatan");
-  if (p.rule?.min_subtotal) bagian.push(`belanja ${rp(p.rule.min_subtotal)}`);
-  return bagian.length ? bagian.join(" · ") : "—";
-}
-const STATUS_LABEL: Record<string, string> = { aktif: "Aktif hari ini", terjadwal: "Terjadwal", kadaluarsa: "Kadaluarsa", nonaktif: "Nonaktif" };
 
 export default async function PromoAdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; kategori?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; kategori?: string; status?: string; q?: string; cabang?: string }>;
 }) {
-  const { error, success, kategori = "" } = await searchParams;
+  const { error, success, kategori = "", status: statusParam, q: qParam, cabang: cabangParam } = await searchParams;
   const supabase = await createClient();
   const today = hariIniWIB();
   // Promo yang sudah lewat tanggal dimatikan dulu, baru daftarnya dibaca, supaya
@@ -94,6 +63,15 @@ export default async function PromoAdminPage({
   const category = categories.find(c=>c.id===kategori);
   const invalidCategory = !!kategori&&!category;
   const rows = invalidCategory ? [] : kategori&&category ? promos.filter(p=>promoMatchesCategory(targetsByPromo.get(p.id)??[],itemById,category)) : promos;
+
+  const statusFilter = parseStatusFilter(statusParam);
+  const q = (typeof qParam === "string" ? qParam : "").trim().slice(0, 100);
+  // Hitungan chip memakai SELURUH daftar (sudah dibaca lengkap) pada kategori + pencarian yang sama.
+  // Cabang tak dikenal diabaikan (tampil semua), tidak pernah menyembunyikan baris diam-diam.
+  const cabang = typeof cabangParam === "string" && branches.some(b => b.id === cabangParam) ? cabangParam : "";
+  const scoped = rows.filter(p => promoMatchesBranch(p, cabang) && promoMatchesQuery(p.name, (targetsByPromo.get(p.id) ?? []).map(id => itemById.get(id)?.name ?? ""), q));
+  const counts = promoStatusCounts(scoped, today);
+  const shown = sortPromosByStatus(filterPromosByStatus(scoped, statusFilter, today), today);
 
   return (
     <>
@@ -140,6 +118,13 @@ export default async function PromoAdminPage({
           <span className="bge x">Kadaluarsa</span> = masa berlakunya sudah lewat dan promonya dinonaktifkan otomatis; perpanjang tanggal &quot;Berlaku s/d&quot; lewat Edit promo kalau mau dipakai lagi.
         </p>
         <form method="get" style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"end",marginBottom:12}}>
+          <input type="hidden" name="status" value={statusFilter} />{q&&<input type="hidden" name="q" value={q} />}
+          <label className="flab" style={{minWidth:0,maxWidth:"100%"}}>Cabang
+            <select className="fi" aria-label="Cabang daftar promo" name="cabang" defaultValue={cabang} style={{display:"block",width:200,maxWidth:"100%"}}>
+              <option value="">Semua cabang</option>
+              {branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </label>
           <label className="flab" style={{minWidth:0,maxWidth:"100%"}}>Kategori daftar promo
             <select className="fi" aria-label="Kategori daftar promo" name="kategori" defaultValue={kategori} style={{display:"block",width:280,maxWidth:"100%"}}>
               <option value="">Semua kategori</option>{invalidCategory&&<option value={kategori}>Filter kategori tidak tersedia</option>}
@@ -147,57 +132,13 @@ export default async function PromoAdminPage({
             </select>
           </label>
           <button type="submit" className="btn-def">Filter promo</button>
-          {kategori&&<Link className="back-btn" href="/crm/promo">Bersihkan filter</Link>}
+          {(kategori||cabang)&&<Link className="back-btn" href={q?`/crm/promo?status=${statusFilter}&q=${encodeURIComponent(q)}`:`/crm/promo?status=${statusFilter}`}>Bersihkan filter</Link>}
         </form>
         <p style={{fontSize:11,color:"var(--tm)"}}>Kategori mengikuti master barang saat ini. Promo semua barang ikut setiap kategori; filter ini tidak mengubah aturan promo.</p>
         {invalidCategory&&<p role="alert">Filter kategori tidak tersedia. Bersihkan filter atau pilih kategori yang tersedia.</p>}
-        <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 900 }}>
-            <thead>
-              <tr>
-                <th>Nama</th><th>Cara potong</th><th>Berlaku untuk</th><th>Kategori</th><th>Aturan</th><th>Cabang</th>
-                <th>Tanggal</th><th>Status</th><th /></tr>
-            </thead>
-            <tbody>
-              {rows.map((p) => {
-                const st = promoScheduleStatus(p, today);
-                const targets=targetsByPromo.get(p.id)??[];
-                const categoryLabels=promoCategorySummary(targets,itemById);
-                const cabang = !p.branch_ids || p.branch_ids.length === 0
-                  ? "Semua cabang"
-                  : p.branch_ids.map((id) => branchName.get(id) ?? "—").join(", ");
-                return (
-                  <tr key={p.id} style={{ opacity: p.is_active ? 1 : 0.55 }}>
-                    <td style={{ fontWeight: 500 }}>
-                      {p.name}
-                      <div style={{ fontSize: 9.5, color: "var(--td)", textTransform: "capitalize" }}>
-                        {p.promo_type.replace("_", " ")}
-                      </div>
-                    </td>
-                    <td><span className={`bge ${POTONG_BADGE[p.auto_apply ? "ya" : "tidak"]}`}>{POTONG_LABEL[p.auto_apply ? "ya" : "tidak"]}</span></td>
-                    <td style={{ fontSize: 11 }}>{ringkasBarang(targets.length?targets.map(id=>itemById.get(id)?.name??"Barang tidak tersedia"):undefined)}</td>
-                    <td style={{fontSize:11,minWidth:160,maxWidth:260,overflowWrap:"anywhere"}}>{categoryLabels.join(", ")}</td>
-                    <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{ringkasAturan(p)}</td>
-                    <td style={{ fontSize: 11 }}>{cabang}</td>
-                    <td style={{ fontSize: 11 }}>{p.valid_from ?? "—"} s/d {p.valid_until ?? "∞"}</td>
-                    <td><span className={`bge ${STATUS_BADGE[st]}`}>{STATUS_LABEL[st]}</span></td>
-                    <td>
-                      {canEdit&&<Link className="back-btn" href={`/crm/promo/${p.id}/edit`}>Edit promo</Link>}
-                      <form action={togglePromo}>
-                        <input type="hidden" name="id" value={p.id} />
-                        <input type="hidden" name="active" value={p.is_active ? "0" : "1"} />
-                        <button type="submit" className="btn-def" style={{ padding: "3px 10px", fontSize: 10 }}>
-                          {p.is_active ? "Nonaktifkan" : "Aktifkan"}
-                        </button>
-                      </form>
-                    </td>
-                  </tr>
-                );
-              })}
-              {rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>{kategori ? "Tidak ada promo pada filter ini." : "Belum ada promo."}</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        <PromoList rows={shown} total={promos.length} counts={counts} status={statusFilter} q={q} kategori={kategori} cabang={cabang} today={today} canEdit={canEdit}
+          targetsByPromo={targetsByPromo} itemById={itemById} branchName={branchName}
+          emptyMessage={promos.length === 0 ? "Belum ada promo." : "Tidak ada promo pada filter ini."} />
       </div>
     </>
   );
