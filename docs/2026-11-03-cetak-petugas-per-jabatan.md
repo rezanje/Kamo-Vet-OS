@@ -53,3 +53,5 @@ masih tanpa nama petugas sesuai keputusan 29 Okt.
 - Belum dicek di Production dengan data nyata.
 - Registrasi poli Grooming masih menyimpan groomer sebagai PJ. Andri: "setiap poli wajib ke dokter";
   Babibu setuju alternatif "grooming tetap pilih poli umum dulu". Cetakan sudah benar untuk kedua cara.
+  **Keputusan Reza 3 Nov 2026: opsi A — registrasi tidak diubah**, petugas boleh pakai poli Grooming
+  atau Poli Umum.
