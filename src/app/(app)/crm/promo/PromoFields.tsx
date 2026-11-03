@@ -8,11 +8,11 @@ export function PromoFields({userId,items,branches,categories,today,promo,itemId
  // Without the C04 database release only the legacy per-unit meaning is offered.
  const showMode=packageTotal || savedMode==="package_total";
  return <>
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ gridColumn: "span 2" }}>
             <label className="flab">Nama promo *</label>
             <input className="fi" maxLength={120} name="name" defaultValue={promo?.name ?? ""} required placeholder="mis. Diskon Lebaran Royal Canin" />
           </div>
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ gridColumn: "span 2" }}>
             <label className="flab">Teks saran untuk kasir *</label>
             <input className="fi" name="suggest" defaultValue={promo?.rule?.suggest ?? ""} required placeholder="mis. Beli 2 Royal Canin diskon 10% item kedua" />
           </div>
@@ -33,14 +33,6 @@ export function PromoFields({userId,items,branches,categories,today,promo,itemId
             </select>
           </div>
           {promo&&<input type="hidden" name="discount_mode_saved" value={savedMode}/>}
-          {showMode&&<div>
-            <label className="flab">Cara hitung diskon nominal</label>
-            <select className="fi" name="discount_mode" defaultValue={savedMode}>
-              <option value="per_unit">Per satuan (aturan lama)</option>
-              <option value="package_total">Total per paket minimum</option>
-            </select>
-            <div style={{fontSize:9.5,color:"var(--td)",marginTop:3}}>Total per paket: pilih tepat satu barang, isi min. qty dan nominal. Potongan sekali; centang kelipatan untuk tiap paket lengkap. Maks. qty membatasi jumlah yang dihitung.</div>
-          </div>}
           <div>
             <label className="flab">Nilai diskon</label>
             <NumberInput className="fi" name="discount_value" defaultValue={promo?.discount_value ?? ""} type="number" min={0} step="any" placeholder="0" />
@@ -50,6 +42,15 @@ export function PromoFields({userId,items,branches,categories,today,promo,itemId
             <label className="flab">Min. subtotal</label>
             <NumberInput className="fi" name="min_subtotal" defaultValue={promo?.rule?.min_subtotal ?? ""} type="number" min={0} step="any" placeholder="0" />
           </div>
+
+          {showMode&&<div style={{ gridColumn: "span 2" }}>
+            <label className="flab">Cara hitung diskon nominal</label>
+            <select className="fi" name="discount_mode" defaultValue={savedMode}>
+              <option value="per_unit">Per satuan (aturan lama)</option>
+              <option value="package_total">Total per paket minimum</option>
+            </select>
+            <div style={{fontSize:9.5,color:"var(--td)",marginTop:3}}>Total per paket: pilih tepat satu barang, isi min. qty dan nominal. Potongan sekali; centang kelipatan untuk tiap paket lengkap. Maks. qty membatasi jumlah yang dihitung.</div>
+          </div>}
 
           {/* ── Aturan qty ──────────────────────────────────────────────── */}
           <div style={{ gridColumn: "1 / -1", borderTop: ".5px solid var(--bd)", paddingTop: 10, marginTop: 2 }}>
