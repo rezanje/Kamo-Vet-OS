@@ -2,6 +2,7 @@ import { readCompleteList } from "@/lib/checked-list";
 import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { printBranchHeading } from "@/components/print-branch-heading";
 import { bacaNamaDokter, namaDokterPJ } from "@/lib/dokter-pj";
+import { petugasCetak, type BarisPetugas } from "@/lib/petugas-cetak";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -34,11 +35,12 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
     .limit(1).maybeSingle();
   if (!invoice) notFound();
 
-  const items = await readCompleteList<PackagePrintSource & { id: string }>((from, to) => supabase
-    .from("invoice_items").select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name)", { count: "exact" })
+  const items = await readCompleteList<PackagePrintSource & BarisPetugas & { id: string }>((from, to) => supabase
+    .from("invoice_items").select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers, item:items!invoice_items_item_id_fkey(tindakan_kategori), resep:prescription_items!invoice_items_prescription_item_id_fkey(kategori)", { count: "exact" })
     .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian struk", { maxRows: null });
-  // Struk hanya menyebut satu nama: dokter PJ kunjungan. Pelaksana per baris tidak dicetak.
+  // Kepala struk: dokter PJ — atau untuk grooming: dokter pemeriksa + groomer. Pelaksana per baris tidak dicetak.
   const dokterPJ = namaDokterPJ(visit, await bacaNamaDokter(supabase, [visit.doctor_id]));
+  const petugas = petugasCetak(visit.poli, dokterPJ, items);
   const { data: payments } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
@@ -73,8 +75,8 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
         <Hr />
         <Kv k="No" v={invoice.invoice_no ?? "-"} />
         <Kv k="Tgl" v={tgl} />
+        {petugas.map((p) => <Kv key={p.label} k={p.label} v={p.nama} />)}
         <Kv k="Kasir" v={invoice.cashier_name ?? "Kasir belum tercatat"} />
-        {dokterPJ && <Kv k="Dokter PJ" v={dokterPJ} />}
         <Kv k="Pasien" v={`${pet?.name ?? "-"} (${pet?.species ?? "-"})`} />
         <Kv k="Pemilik" v={cust?.name ?? "-"} />
         <Hr />
