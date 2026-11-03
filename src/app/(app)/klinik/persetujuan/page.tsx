@@ -46,7 +46,7 @@ export default async function PersetujuanPage({
           <i className="ti ti-file-check" style={{ fontSize: 22, color: "var(--posb)" }} />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>FORM PERSETUJUAN</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>FORM PERSETUJUAN RAWAT INAP</div>
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Template yang dipakai saat meminta persetujuan tindakan</div>
         </div>
         {bolehKelola && <TemplateForm branches={branches ?? []} editing={editing} />}
