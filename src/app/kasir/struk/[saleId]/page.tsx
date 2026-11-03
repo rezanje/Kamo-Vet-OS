@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PrintButton, AutoPrint } from "@/components/PrintButton";
 import { lineDiscount, linePromoApplied, type CartLine } from "@/lib/pos-calc";
 import { ClearKasirDraft } from "@/components/ClearKasirDraft";
+import { KasirReceiptPaper, ReceiptHr as Hr, ReceiptRow as Row } from "@/components/KasirReceiptPaper";
 import { receiptPaymentRows, saleMerchandiseTotal } from "@/lib/sale-payment-reporting";
 
 type Rel<T> = T | T[] | null;
@@ -48,15 +49,6 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
   return (
     <>
       {sale.voided_at && <div role="status" className="p2ban">STRUK DIBATALKAN — hanya untuk riwayat</div>}
-      <style>{`@media print {
-        /* The Windows driver supplies the 58 mm roll size and page length. */
-        @page { size: auto; margin: 0; }
-        html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-        .pos-topbar, .no-print { display: none !important; }
-        .kasir-shell { display: block !important; min-height: 0 !important; height: auto !important; background: #fff !important; }
-        .kasir-content { padding: 0 !important; overflow: visible !important; }
-        .kasir-receipt { padding: 0 !important; border-radius: 0 !important; }
-      }`}</style>
       <ClearKasirDraft
         draftContext={sale.cashier_id && sale.branch_id && sale.shift_id ? `${sale.cashier_id}:${sale.branch_id}:${sale.shift_id}` : undefined}
         checkoutKey={draft_done}
@@ -68,7 +60,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
         <PrintButton label="Cetak Struk" />
       </div>
 
-      <div className="kasir-receipt" style={{ width: "48mm", maxWidth: "100%", boxSizing: "border-box", margin: "0 auto", background: "#fff", padding: "10px 0", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5, borderRadius: 6, overflowWrap: "anywhere" }}>
+      <KasirReceiptPaper>
         <div style={{ textAlign: "center", marginBottom: 6 }}>
           <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>{printBranchHeading(branch)}</div>
         </div>
@@ -135,16 +127,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
         {sale.poin_earned > 0 && <Row k="Poin didapat" v={`+${sale.poin_earned}`} />}
         <Hr />
         <div style={{ textAlign: "center", fontSize: 10, marginTop: 6 }}>Terima kasih 🐾<br />Barang dibeli tidak dapat dikembalikan</div>
-      </div>
+      </KasirReceiptPaper>
     </>
   );
-}
-
-function Hr() { return <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />; }
-function Row({ k, v }: { k: string; v: string }) {
-  const money = /^-?Rp /.test(v);
-  return <div style={{ display: "flex", justifyContent: "space-between", gap: 4, alignItems: "start" }}>
-    <span style={{ minWidth: 0, ...(money ? { flex: "1 1 0" } : { flexShrink: 0, maxWidth: "40%" }) }}>{k}</span>
-    <span style={{ minWidth: 0, textAlign: "right", ...(money ? { flexShrink: 0, whiteSpace: "nowrap" as const } : {}) }}>{v}</span>
-  </div>;
 }
