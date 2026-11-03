@@ -45,3 +45,9 @@ Pelaksana per baris item tetap **tidak** dicetak (keputusan Andri tetap berlaku)
 
 - Cetak nyata di Production dengan data Ciomas (perlu dicek setelah deploy: buka struk gabungan
   kunjungan grooming, pastikan tiga nama tampil).
+
+---
+
+**Diganti 3 Nov 2026** oleh `docs/2026-11-03-cetak-petugas-per-jabatan.md`: format final yang disepakati
+di grup (Aldi, disetujui Reza) adalah Dokter / Groomer / Staff per jabatan untuk **semua** kunjungan,
+bukan hanya grooming. Label "Dokter Pemeriksa" dan "Dokter PJ" tidak dipakai lagi; baris Kasir tetap.
