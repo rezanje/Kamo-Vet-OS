@@ -62,14 +62,27 @@ export async function makePromoExcelTemplate(): Promise<Uint8Array> {
   sheet.getColumn(1).numFmt = "@";
   sheet.getColumn(4).numFmt = "#,##0.00";
   sheet.autoFilter = "A1:D1";
+  // Hint list only (warning style): typing another spelling such as "persen" or "Harga Akhir Promo" stays possible;
+  // the app re-validates every row on upload.
+  for (let row = 2; row <= 501; row++) {
+    sheet.getCell(`C${row}`).dataValidation = {
+      type: "list", allowBlank: true, formulae: ['"Persen,Nominal,Harga Akhir"'],
+      showErrorMessage: true, errorStyle: "warning", errorTitle: "Jenis Diskon",
+      error: "Gunakan Persen, Nominal, atau Harga Akhir.",
+      showInputMessage: true, promptTitle: "Jenis Diskon", prompt: "Persen, Nominal, atau Harga Akhir (harga jual akhir promo per satuan).",
+    };
+  }
   const guide = book.addWorksheet("Petunjuk");
   guide.columns = [{ width: 26 }, { width: 90 }];
   [
     ["Satu baris", "Satu SKU + satuan + diskon. Boleh ada SKU sama untuk satuan berbeda; jangan ulang kombinasi SKU+satuan."],
     ["Kode Barang", "Isi kode SKU tepat seperti di master VetOS. Simpan kode yang berawalan nol sebagai teks."],
-    ["Satuan", "Isi satuan yang terdaftar untuk SKU tersebut, misalnya PCS atau DUS."],
-    ["Jenis Diskon", "Isi Persen atau Nominal."],
-    ["Nilai Diskon", "Isi angka positif; Persen maksimal 100. Nominal adalah potongan rupiah per satuan yang dipilih."],
+    ["Satuan", "Tulis satuan persis seperti yang terdaftar untuk SKU tersebut (contoh: PCS, DUS, 1/2KG, 400gr, 800GR, KG). Huruf besar/kecil dan karakter harus sama; salah ketik seperti 400g4 ditolak, tidak diperbaiki otomatis."],
+    ["Jenis Diskon", "Isi Persen, Nominal, atau Harga Akhir (Harga Akhir Promo juga dikenali)."],
+    ["Nilai Diskon", "Isi angka positif. Persen maksimal 100. Nominal adalah potongan rupiah per satuan yang dipilih. Harga Akhir adalah harga jual akhir promo per barang dan satuan, dalam rupiah. Tulis angka polos tanpa titik, koma, atau Rp pemisah ribuan (contoh: 18500); angka berformat seperti 18.500 atau Rp 18.500 ditolak karena ambigu."],
+    ["Harga Akhir", "Harga akhir promo per barang dan satuan (Rp), mis. harga normal 20000 dan Nilai Diskon 18500 berarti potongan 1500 per satuan. Harus lebih rendah dari harga normal satuan itu (sama atau lebih tinggi ditolak), selisihnya dengan harga normal harus rupiah bulat (kasir hanya memotong rupiah bulat; mis. harga normal 10.50 dan harga akhir 10 ditolak, harga akhir 9.50 diterima), dan tidak di bawah HPP/harga beli master. Barang dengan harga bertingkat per jumlah dan paket (Grup) ditolak untuk Harga Akhir."],
+    ["Harga normal dan cabang", "Harga normal dibaca dari master (termasuk harga per cabang). Bila harga normal satuan itu berbeda antar cabang yang dipilih di batch, baris ditolak; pisahkan batch per cabang. Preview menampilkan harga normal, harga akhir, potongan, dan persen diskon."],
+    ["Batas Harga Akhir", "Promo disimpan sebagai potongan nominal (harga normal − harga akhir) per satuan. Jika harga normal diubah SETELAH promo disimpan, harga akhir ikut bergeser. Simpan hanya setelah preview diperiksa; saat simpan, harga normal dicek ulang dan batch ditolak bila berubah. Diskon golongan pelanggan, diskon manual, voucher, dan poin dihitung tambahan di luar promo ini, jadi harga di kasir masih bisa berakhir lebih rendah dari Harga Akhir. Selain itu setiap baris hanya mendapat satu promo, yaitu yang potongannya terbesar (promo lain di barang yang sama dengan potongan lebih besar dipakai menggantikan promo Harga Akhir)."],
     ["Waktu dan cabang", "Isi nama batch, tanggal mulai/akhir, dan cabang di layar impor. Semua baris berbagi periode dan cabang tersebut."],
     ["Sebelum simpan", "Periksa preview; baris dapat diedit. Seluruh batch disimpan sekaligus atau dibatalkan seluruhnya."],
   ].forEach(([label, detail]) => guide.addRow([label, detail]));
