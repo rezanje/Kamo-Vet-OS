@@ -39,15 +39,16 @@ function ringkasAturan(p: PromoRow): string {
   return bagian.length ? bagian.join(" · ") : "—";
 }
 
-export function promoListHref(status: PromoStatusFilter, q: string, kategori: string): string {
+export function promoListHref(status: PromoStatusFilter, q: string, kategori: string, cabang = ""): string {
   const p = new URLSearchParams({ status });
   if (q) p.set("q", q);
   if (kategori) p.set("kategori", kategori);
+  if (cabang) p.set("cabang", cabang);
   return `/crm/promo?${p.toString()}`;
 }
 
-export function PromoList({ rows, total, counts, status, q, kategori, today, canEdit, targetsByPromo, itemById, branchName, emptyMessage }: {
-  rows: PromoRow[]; total: number; counts: Record<PromoStatusFilter, number>; status: PromoStatusFilter; q: string; kategori: string; today: string;
+export function PromoList({ rows, total, counts, status, q, kategori, cabang, today, canEdit, targetsByPromo, itemById, branchName, emptyMessage }: {
+  rows: PromoRow[]; total: number; counts: Record<PromoStatusFilter, number>; status: PromoStatusFilter; q: string; kategori: string; cabang: string; today: string;
   canEdit: boolean; targetsByPromo: Map<string, string[]>; itemById: Map<string, MultiSelectItem>; branchName: Map<string, string>; emptyMessage: string;
 }) {
   return (
@@ -55,15 +56,16 @@ export function PromoList({ rows, total, counts, status, q, kategori, today, can
       <div className={s.bar}>
         <nav aria-label="Filter status promo" className={s.chips}>
           {PROMO_STATUS_FILTERS.map(f => (
-            <Link key={f.key} href={promoListHref(f.key, q, kategori)} className={s.chip} aria-current={status === f.key ? "page" : undefined}>{f.label} ({counts[f.key]})</Link>
+            <Link key={f.key} href={promoListHref(f.key, q, kategori, cabang)} className={s.chip} aria-current={status === f.key ? "page" : undefined}>{f.label} ({counts[f.key]})</Link>
           ))}
         </nav>
         <form method="get" role="search" className={s.search}>
           <input type="hidden" name="status" value={status} />
           {kategori && <input type="hidden" name="kategori" value={kategori} />}
+          {cabang && <input type="hidden" name="cabang" value={cabang} />}
           <input className="fi" type="search" name="q" defaultValue={q} aria-label="Cari promo" placeholder="Cari nama promo / barang" maxLength={100} />
           <button type="submit" className="btn-def">Cari</button>
-          {q && <Link className="back-btn" href={promoListHref(status, "", kategori)}>Hapus pencarian</Link>}
+          {q && <Link className="back-btn" href={promoListHref(status, "", kategori, cabang)}>Hapus pencarian</Link>}
         </form>
       </div>
       <p className={s.count} aria-live="polite">Menampilkan {rows.length} dari {total} promo</p>

@@ -42,6 +42,12 @@ export function sortPromosByStatus(rows: PromoRow[], today: string): PromoRow[] 
     .sort((a, b) => a.o - b.o || a.i - b.i).map(x => x.p);
 }
 
+/** Promo berlaku di cabang itu: promo semua cabang (null / kosong) selalu ikut; tanpa pilihan cabang = semua. */
+export function promoMatchesBranch(p: Pick<PromoRow, "branch_ids">, branchId: string): boolean {
+  if (!branchId) return true;
+  return !p.branch_ids || p.branch_ids.length === 0 || p.branch_ids.includes(branchId);
+}
+
 /** Cocok bila nama promo atau salah satu nama barang targetnya memuat kata kunci. Kosong = cocok semua. */
 export function promoMatchesQuery(name: string, itemNames: string[], query: string): boolean {
   const q = query.trim().toLowerCase();

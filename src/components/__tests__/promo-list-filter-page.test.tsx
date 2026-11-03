@@ -19,6 +19,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
       then(resolve: (v: unknown) => unknown) {
         let rows: Record<string, unknown>[] = [];
         if (table === 'promos') rows = db.promos;
+        if (table === 'branches') rows = [{ id: 'b1', code: 'B1', name: 'Cabang Satu', is_active: true }, { id: 'b2', code: 'B2', name: 'Cabang Dua', is_active: true }];
         if (table === 'items') rows = ['A', 'B', 'C', 'D'].map(c => ({ id: `i${c}`, code: c, name: `Barang ${c} panjang sekali`, category_id: null, is_active: true }));
         if (table === 'promo_items') rows = [{ promo_id: 'aktif1', item_id: 'iA' }, { promo_id: 'aktif1', item_id: 'iB' }, { promo_id: 'aktif1', item_id: 'iC' }, { promo_id: 'aktif1', item_id: 'iD' }];
         if (req.active !== undefined) rows = rows.filter(r => r.is_active === req.active);
@@ -127,4 +128,27 @@ it('tidak ada kontrol hapus (belum ada jalur hapus yang aman di database)', asyn
 it('non-manajer tidak melihat Edit promo', async () => {
   db.role = 'STAFF'; await render();
   expect(host.querySelector('a[href$="/edit"]')).toBeNull();
+});
+
+it('filter cabang: promo cabang itu + promo semua cabang; cabang lain tersembunyi; hitungan chip ikut', async () => {
+  db.promos = [row('semua1'), row('b1only', { branch_ids: ['b1'] }), row('b2only', { branch_ids: ['b2'] }), row('b1mati', { branch_ids: ['b1'], is_active: false })];
+  await render({ cabang: 'b1' });
+  expect(ids()).toEqual(['semua1', 'b1only', 'b1mati']);
+  expect(host.textContent).toContain('Menampilkan 3 dari 4 promo');
+  expect(chip('Aktif').textContent).toBe('Aktif (2)');
+  expect(chip('Nonaktif').textContent).toBe('Nonaktif (1)');
+  expect(chip('Aktif').getAttribute('href')).toBe('/crm/promo?status=aktif&cabang=b1');
+  await render({ cabang: 'b2', status: 'aktif' });
+  expect(ids()).toEqual(['semua1', 'b2only']);
+});
+
+it('pilihan cabang tersedia, terpilih sesuai ?cabang, dan terbawa di pencarian; cabang tak dikenal diabaikan', async () => {
+  db.promos = [row('semua1'), row('b1only', { branch_ids: ['b1'] }), row('b2only', { branch_ids: ['b2'] })];
+  await render({ cabang: 'b2' });
+  const sel = host.querySelector('select[name="cabang"]') as HTMLSelectElement;
+  expect([...sel.options].map(o => o.textContent)).toEqual(['Semua cabang', 'Cabang Satu', 'Cabang Dua']);
+  expect(sel.value).toBe('b2');
+  expect(host.querySelector('form[role="search"] input[name="cabang"]')!.getAttribute('value')).toBe('b2');
+  await render({ cabang: 'tidak-ada' });
+  expect(ids()).toEqual(['semua1', 'b1only', 'b2only']);
 });

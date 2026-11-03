@@ -6,7 +6,7 @@ import { promoScheduleStatus } from "../promo";
 import { hariIniWIB } from "../tanggal";
 import {
   filterPromosByStatus, formatRentangTanggal, parseStatusFilter, promoMatchesQuery,
-  promoStatusCounts, sortPromosByStatus,
+  promoMatchesBranch, promoStatusCounts, sortPromosByStatus,
 } from "../promo-list";
 
 const base: PromoRow = {
@@ -117,4 +117,16 @@ describe("formatRentangTanggal", () => {
     expect(formatRentangTanggal(null, null)).toBe("Tanpa batas");
   });
   it("format tak dikenal ditampilkan apa adanya, bukan dibuang", () => expect(formatRentangTanggal("aneh", null)).toBe("mulai aneh"));
+});
+
+describe("promoMatchesBranch", () => {
+  it("tanpa pilihan cabang = semua cocok", () => expect(promoMatchesBranch({ ...base, branch_ids: ["b1"] }, "")).toBe(true));
+  it("promo semua cabang (null / kosong) cocok di cabang mana pun", () => {
+    expect(promoMatchesBranch({ ...base, branch_ids: null }, "b9")).toBe(true);
+    expect(promoMatchesBranch({ ...base, branch_ids: [] }, "b9")).toBe(true);
+  });
+  it("promo cabang tertentu hanya cocok di cabang itu", () => {
+    expect(promoMatchesBranch({ ...base, branch_ids: ["b1", "b2"] }, "b2")).toBe(true);
+    expect(promoMatchesBranch({ ...base, branch_ids: ["b1"] }, "b2")).toBe(false);
+  });
 });

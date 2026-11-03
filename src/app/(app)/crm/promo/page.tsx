@@ -9,7 +9,7 @@ import {packageTotalReleased} from "@/lib/promo-edit";
 import styles from "./PromoForm.module.css";
 import { SecHeader } from "@/components/SecHeader";
 import type { PromoRow } from "@/lib/promo";
-import { filterPromosByStatus, parseStatusFilter, promoMatchesQuery, promoStatusCounts, sortPromosByStatus } from "@/lib/promo-list";
+import { filterPromosByStatus, parseStatusFilter, promoMatchesBranch, promoMatchesQuery, promoStatusCounts, sortPromosByStatus } from "@/lib/promo-list";
 import { PromoList } from "./PromoList";
 import { createPromo } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -18,9 +18,9 @@ import { nonaktifkanPromoKadaluarsa } from "@/lib/promo-kadaluarsa";
 export default async function PromoAdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; kategori?: string; status?: string; q?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; kategori?: string; status?: string; q?: string; cabang?: string }>;
 }) {
-  const { error, success, kategori = "", status: statusParam, q: qParam } = await searchParams;
+  const { error, success, kategori = "", status: statusParam, q: qParam, cabang: cabangParam } = await searchParams;
   const supabase = await createClient();
   const today = hariIniWIB();
   // Promo yang sudah lewat tanggal dimatikan dulu, baru daftarnya dibaca, supaya
@@ -67,7 +67,9 @@ export default async function PromoAdminPage({
   const statusFilter = parseStatusFilter(statusParam);
   const q = (typeof qParam === "string" ? qParam : "").trim().slice(0, 100);
   // Hitungan chip memakai SELURUH daftar (sudah dibaca lengkap) pada kategori + pencarian yang sama.
-  const scoped = rows.filter(p => promoMatchesQuery(p.name, (targetsByPromo.get(p.id) ?? []).map(id => itemById.get(id)?.name ?? ""), q));
+  // Cabang tak dikenal diabaikan (tampil semua), tidak pernah menyembunyikan baris diam-diam.
+  const cabang = typeof cabangParam === "string" && branches.some(b => b.id === cabangParam) ? cabangParam : "";
+  const scoped = rows.filter(p => promoMatchesBranch(p, cabang) && promoMatchesQuery(p.name, (targetsByPromo.get(p.id) ?? []).map(id => itemById.get(id)?.name ?? ""), q));
   const counts = promoStatusCounts(scoped, today);
   const shown = sortPromosByStatus(filterPromosByStatus(scoped, statusFilter, today), today);
 
@@ -117,6 +119,12 @@ export default async function PromoAdminPage({
         </p>
         <form method="get" style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"end",marginBottom:12}}>
           <input type="hidden" name="status" value={statusFilter} />{q&&<input type="hidden" name="q" value={q} />}
+          <label className="flab" style={{minWidth:0,maxWidth:"100%"}}>Cabang
+            <select className="fi" aria-label="Cabang daftar promo" name="cabang" defaultValue={cabang} style={{display:"block",width:200,maxWidth:"100%"}}>
+              <option value="">Semua cabang</option>
+              {branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </label>
           <label className="flab" style={{minWidth:0,maxWidth:"100%"}}>Kategori daftar promo
             <select className="fi" aria-label="Kategori daftar promo" name="kategori" defaultValue={kategori} style={{display:"block",width:280,maxWidth:"100%"}}>
               <option value="">Semua kategori</option>{invalidCategory&&<option value={kategori}>Filter kategori tidak tersedia</option>}
@@ -124,11 +132,11 @@ export default async function PromoAdminPage({
             </select>
           </label>
           <button type="submit" className="btn-def">Filter promo</button>
-          {kategori&&<Link className="back-btn" href={`/crm/promo?status=${statusFilter}`}>Bersihkan filter</Link>}
+          {(kategori||cabang)&&<Link className="back-btn" href={q?`/crm/promo?status=${statusFilter}&q=${encodeURIComponent(q)}`:`/crm/promo?status=${statusFilter}`}>Bersihkan filter</Link>}
         </form>
         <p style={{fontSize:11,color:"var(--tm)"}}>Kategori mengikuti master barang saat ini. Promo semua barang ikut setiap kategori; filter ini tidak mengubah aturan promo.</p>
         {invalidCategory&&<p role="alert">Filter kategori tidak tersedia. Bersihkan filter atau pilih kategori yang tersedia.</p>}
-        <PromoList rows={shown} total={promos.length} counts={counts} status={statusFilter} q={q} kategori={kategori} today={today} canEdit={canEdit}
+        <PromoList rows={shown} total={promos.length} counts={counts} status={statusFilter} q={q} kategori={kategori} cabang={cabang} today={today} canEdit={canEdit}
           targetsByPromo={targetsByPromo} itemById={itemById} branchName={branchName}
           emptyMessage={promos.length === 0 ? "Belum ada promo." : "Tidak ada promo pada filter ini."} />
       </div>
