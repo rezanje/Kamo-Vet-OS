@@ -47,6 +47,18 @@ it("documents Harga Akhir, exact units and the nominal-storage limitation in the
   expect(text).toMatch(/cabang[\s\S]*harga normal[\s\S]*berbeda/i);
 });
 
+it("Petunjuk says missing master HPP is a warning, not a rejection, and below a known buy price is still rejected", async () => {
+  const text = guideText(await templateBook());
+  expect(text).toMatch(/HPP master belum terisi/);
+  expect(text).toMatch(/peringatan/i);
+  expect(text).toContain("Kasir petshop dan klinik menolak penjualan di bawah HPP FIFO");
+  expect(text).toContain("transaksi back office (/pos/transaksi) hanya memberi peringatan yang bisa dikonfirmasi");
+  expect(text).not.toMatch(/[Kk]asir tetap menolak/);
+  expect(text).toMatch(/di bawah harga beli master[^.]*ditolak|ditolak[^.]*di bawah harga beli master/);
+  expect(text).not.toMatch(/dan tidak di bawah HPP\/harga beli master\./);  expect(text).toContain("Modal satuan turunan = harga beli barang dasar × faktor satuan, seperti kasir");
+  expect(text).not.toContain("Satuan turunan tanpa harga beli sendiri");
+});
+
 it("does not contain real-looking SKUs: only the four header cells in Promo", async () => {
   const sheet = (await templateBook()).getWorksheet("Promo")!;
   const values: unknown[] = [];

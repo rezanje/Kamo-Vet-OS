@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertFinalPrice, parseFinalPrice, type FinalPriceInput } from "../promo-final-price";
+import { convertFinalPrice, parseFinalPrice, MISSING_COST_WARNING, type FinalPriceInput } from "../promo-final-price";
 import { validatePromoRows, type PromoPricing } from "../promo-bulk";
 
 const A = { id: "branch-a", name: "Cabang A" };
@@ -107,16 +107,102 @@ describe("convertFinalPrice", () => {
       expect(fail(base({ raw: "11999" })).error).toMatch(/di bawah.*HPP/i);
       expect(convertFinalPrice(base({ raw: "12000" }))).toMatchObject({ ok: true });
     });
-    it("rejects when cost is unknown instead of silently allowing", () => {
-      expect(fail(base({ item: { ...base().item, buy_price: 0 } })).error).toMatch(/HPP.*belum.*(terisi|dapat)/i);
-      expect(fail(base({ item: { ...base().item, buy_price: null } })).error).toMatch(/HPP/i);
+    it("warns (valid, not an error) when the master cost is missing/0, with the exact warning text", () => {
+      expect(MISSING_COST_WARNING).toBe("HPP master belum terisi; harga akhir belum bisa dicek terhadap modal. Kasir petshop dan klinik menolak penjualan di bawah HPP FIFO; transaksi back office (/pos/transaksi) hanya memberi peringatan yang bisa dikonfirmasi (tanpa peringatan bila HPP FIFO tidak terbaca).");
+      for (const buy_price of [0, "0.00", "0", null, undefined, ""]) {
+        const result = convertFinalPrice(base({ raw: "14000", item: { ...base().item, buy_price } }));
+        expect(result).toEqual({ ok: true, normalPrice: 20000, finalPrice: 14000, potongan: 6000, percentOff: 30, warning: MISSING_COST_WARNING });
+      }
+      // a derived unit without its own buy price warns too
+      expect(convertFinalPrice(base({ unit: "DUS", raw: "200000", unitRow: { sell_price: 240000, buy_price: "0.00" } }))).toMatchObject({ ok: true, warning: MISSING_COST_WARNING });
+    });
+    it("gives no warning when cost is known (below -> error, equal/above -> ok without warning)", () => {
+      expect("warning" in (convertFinalPrice(base({ raw: "12000" })) as object)).toBe(false);
+      expect("warning" in (convertFinalPrice(base({ raw: "18500" })) as object)).toBe(false);
+      expect(fail(base({ raw: "7000", item: { ...base().item, buy_price: 8000 } })).error).toMatch(/di bawah.*HPP/i);
+    });
+    it("other rules still run first when cost is missing: not-lower, fractional, tiers, branch price, ambiguity", () => {
+      const noCost = { ...base().item, buy_price: 0 };
+      expect(fail(base({ raw: "20000", item: noCost })).error).toMatch(/tidak ada potongan/);
+      expect(fail(base({ raw: "21000", item: noCost })).error).toMatch(/lebih tinggi/);
+      expect(fail(base({ raw: "18500.5", item: noCost })).error).toMatch(/selisih harus rupiah bulat/);
+      expect(fail(base({ raw: "18500", item: noCost, hasQuantityTiers: true })).error).toMatch(/bertingkat/);
+      expect(fail(base({ raw: "18.500", item: noCost })).error).toMatch(/angka polos/);
+      expect(fail(base({ raw: "18500", item: noCost, branchPrices: [{ item_id: "item-1", branch_id: "branch-b", unit: "PCS", sell_price: 21000 }] })).error).toMatch(/berbeda antar cabang/);
+      expect(fail(base({ raw: "18500", item: noCost, scope: null })).error).toMatch(/Pilih cabang/);
     });
     it("uses the derived unit's buy price", () => {
       expect(fail(base({ unit: "DUS", raw: "149999", unitRow: { sell_price: 240000, buy_price: 150000 } })).error).toMatch(/di bawah.*HPP/i);
     });
+    it("derived unit with own buy 0 uses base buy x factor: base 5000 x 12 = 60000 -> final 1000 is an ERROR, exactly 60000 is ok without warning", () => {
+      const item = { ...base().item, buy_price: 5000 };
+      const unitRow = { sell_price: 240000, buy_price: 0, factor: 12 };
+      const err = fail(base({ unit: "DUS", raw: "1000", item, unitRow })).error;
+      expect(err).toMatch(/di bawah.*HPP/i);
+      expect(err).toMatch(/60\.000/);
+      expect(fail(base({ unit: "DUS", raw: "59999", item, unitRow })).error).toMatch(/di bawah.*HPP/i);
+      const ok = convertFinalPrice(base({ unit: "DUS", raw: "60000", item, unitRow: { ...unitRow, buy_price: "0.00", factor: "12.0000" } }));
+      expect(ok).toMatchObject({ ok: true });
+      expect("warning" in (ok as object)).toBe(false);
+      // missing unit buy_price (undefined/null/"") behaves like 0
+      for (const buy_price of [undefined, null, ""]) expect(fail(base({ unit: "DUS", raw: "1000", item, unitRow: { sell_price: 240000, buy_price, factor: 12 } })).error).toMatch(/di bawah.*HPP/i);
+    });
+    it("derived unit warns only when NEITHER its own buy price NOR base buy x factor is known", () => {
+      const unitRow = { sell_price: 240000, buy_price: 0, factor: 12 };
+      expect(convertFinalPrice(base({ unit: "DUS", raw: "1000", item: { ...base().item, buy_price: 0 }, unitRow }))).toMatchObject({ ok: true, warning: MISSING_COST_WARNING });
+      // base cost known but conversion factor missing/invalid: cost cannot be derived -> warning
+      for (const factor of [undefined, null, 0, "0.0000"]) {
+        expect(convertFinalPrice(base({ unit: "DUS", raw: "1000", item: { ...base().item, buy_price: 5000 }, unitRow: { ...unitRow, factor } }))).toMatchObject({ ok: true, warning: MISSING_COST_WARNING });
+      }
+    });
+    it("derived unit: base x factor is the cost whenever base buy is known; own item_units.buy_price is IGNORED (cashier never reads it)", () => {
+      const item = { ...base().item, buy_price: 5000 };
+      // own 3000 < base x factor 60000: base 5000, DUS x12, final 4000 -> ERROR naming 60.000 (review v4 L1 probe)
+      const low = fail(base({ unit: "DUS", raw: "4000", item, unitRow: { sell_price: 240000, buy_price: 3000, factor: 12 } }));
+      expect(low.error).toMatch(/di bawah.*HPP/i);
+      expect(low.error).toMatch(/60\.000/);
+      expect(fail(base({ unit: "DUS", raw: "59999", item, unitRow: { sell_price: 240000, buy_price: 3000, factor: 12 } })).error).toMatch(/di bawah.*HPP/i);
+      const okLow = convertFinalPrice(base({ unit: "DUS", raw: "60000", item, unitRow: { sell_price: 240000, buy_price: 3000, factor: 12 } }));
+      expect(okLow).toMatchObject({ ok: true });
+      expect("warning" in (okLow as object)).toBe(false);
+      // own 150000 > base x factor 60000: follows base x factor, so a final between them (100000) is ACCEPTED and below 60000 is rejected
+      const high = { sell_price: 240000, buy_price: 150000, factor: 12 };
+      const okHigh = convertFinalPrice(base({ unit: "DUS", raw: "100000", item, unitRow: high }));
+      expect(okHigh).toMatchObject({ ok: true });
+      expect("warning" in (okHigh as object)).toBe(false);
+      expect(fail(base({ unit: "DUS", raw: "59999", item, unitRow: high })).error).toMatch(/60\.000/);
+    });
+    it("derived unit: base buy missing/0 + own buy > 0 uses the own buy as best-effort known cost", () => {
+      const unitRow = { sell_price: 240000, buy_price: 50000, factor: 12 };
+      for (const buy_price of [0, "0.00", null, undefined, ""]) {
+        const item = { ...base().item, buy_price };
+        expect(fail(base({ unit: "DUS", raw: "49999", item, unitRow })).error).toMatch(/50\.000/);
+        const ok = convertFinalPrice(base({ unit: "DUS", raw: "55000", item, unitRow }));
+        expect(ok).toMatchObject({ ok: true });
+        expect("warning" in (ok as object)).toBe(false);
+      }
+    });
+    it("derived unit: base buy known but factor missing/invalid falls back to own buy (unchanged), else warns", () => {
+      const item = { ...base().item, buy_price: 5000 };
+      for (const factor of [undefined, null, 0, "0.0000", -2]) {
+        expect(fail(base({ unit: "DUS", raw: "1000", item, unitRow: { sell_price: 240000, buy_price: 150000, factor } })).error).toMatch(/150\.000/);
+      }
+    });
+    it.each([[-5], ["abc"], ["5000abc"], [1500.005], ["1,5"], [Infinity]])("a malformed non-empty master cost %j is an ERROR, never a warning", bad => {
+      expect(fail(base({ raw: "100", item: { ...base().item, buy_price: bad as never } })).error).toBe("Harga beli master tidak valid");
+      expect(fail(base({ unit: "DUS", raw: "1000", unitRow: { sell_price: 240000, buy_price: bad as never, factor: 12 } })).error).toBe("Harga beli master tidak valid");
+      expect(fail(base({ unit: "DUS", raw: "1000", item: { ...base().item, buy_price: bad as never }, unitRow: { sell_price: 240000, buy_price: 0, factor: 12 } })).error).toBe("Harga beli master tidak valid");
+    });
+    it("empty-ish costs (0, '0.00', null, undefined, '', whitespace) are still just missing -> warning", () => {
+      for (const buy_price of [0, "0.00", null, undefined, "", "  "]) {
+        expect(convertFinalPrice(base({ raw: "100", item: { ...base().item, buy_price } }))).toMatchObject({ ok: true, warning: MISSING_COST_WARNING });
+      }
+    });
     it("does not apply to services, but refuses packages (cost cannot be determined here)", () => {
       expect(convertFinalPrice(base({ raw: "100", item: { ...base().item, item_type: "Jasa", buy_price: 0 } }))).toMatchObject({ ok: true });
       expect(fail(base({ item: { ...base().item, item_type: "Grup" } })).error).toMatch(/paket/i);
+      expect(fail(base({ item: { ...base().item, item_type: "Grup", buy_price: 0 } })).error).toMatch(/paket/i);
+      expect(fail(base({ item: { ...base().item, item_type: "", buy_price: 0 } })).error).toMatch(/jenis barang tidak terbaca/i);
       expect(fail(base({ item: { ...base().item, item_type: null } })).error).toMatch(/jenis barang tidak terbaca/i);
     });
     it("Non-Persediaan has no cashier price floor (isPriceFloorGoods = Persediaan/Grup only): no buy price needed", () => {
@@ -124,7 +210,10 @@ describe("convertFinalPrice", () => {
       expect(convertFinalPrice(base({ raw: "100", item: nonStock }))).toMatchObject({ ok: true, potongan: 19900 });
       expect(convertFinalPrice(base({ raw: "100", item: { ...nonStock, buy_price: null } }))).toMatchObject({ ok: true });
       // a Persediaan item with the same missing cost is still rejected
-      expect(fail(base({ raw: "100", item: { ...nonStock, item_type: "Persediaan" } })).error).toMatch(/HPP/);
+      expect(convertFinalPrice(base({ raw: "100", item: { ...nonStock, item_type: "Persediaan" } }))).toMatchObject({ ok: true, warning: MISSING_COST_WARNING });
+      // Jasa / Non-Persediaan never carry the cost warning
+      expect("warning" in (convertFinalPrice(base({ raw: "100", item: nonStock })) as object)).toBe(false);
+      expect("warning" in (convertFinalPrice(base({ raw: "100", item: { ...nonStock, item_type: "Jasa" } })) as object)).toBe(false);
     });
     it("an unknown item type message does not blame Non-Persediaan", () => {
       expect(fail(base({ item: { ...base().item, item_type: "Aneh" } })).error).toMatch(/Jenis barang "Aneh" tidak dikenal/);
@@ -202,6 +291,44 @@ describe("validatePromoRows with Harga Akhir", () => {
     expect(result.reviewed[0].error).toMatch(/angka polos/);
     expect(result.reviewed[1].error).toMatch(/bertingkat/);
     expect(result.reviewed[2].error).toMatch(/duplikat/);
+  });
+  it("real screenshot fixture: Persediaan rows with buy_price '0.00' are valid with a warning, in file order", () => {
+    const shot = [
+      ["100656", "Accesoris Bazar", "10000", "7000"], ["APL0001", "Apolo House", "10000", "7000"], ["100860", "Botol Minum 125ml", "20000", "14000"],
+      ["CRACC0005", "Chiro Plate 11", "25000", "18000"], ["100999", "Barang Contoh Lima", "12000", "9000"],
+    ];
+    const catalog = shot.map(([code, name, sell], index) => ({ id: `s${index}`, code, name, unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: `${sell}.00`, buy_price: "0.00" }));
+    const rows = shot.map(([code, , , final], index) => r(index + 2, code, "PCS", "Harga Akhir", final));
+    const result = validatePromoRows(rows, catalog, [], pricing());
+    expect(result.reviewed.map(row => row.error)).toEqual([null, null, null, null, null]);
+    expect(result.reviewed.map(row => row.warning)).toEqual(Array(5).fill(MISSING_COST_WARNING));
+    expect(result.valid).toEqual([
+      { code: "100656", unit: "PCS", discount_type: "nominal", discount_value: 3000 },
+      { code: "APL0001", unit: "PCS", discount_type: "nominal", discount_value: 3000 },
+      { code: "100860", unit: "PCS", discount_type: "nominal", discount_value: 6000 },
+      { code: "CRACC0005", unit: "PCS", discount_type: "nominal", discount_value: 7000 },
+      { code: "100999", unit: "PCS", discount_type: "nominal", discount_value: 3000 },
+    ]);
+  });
+  it("buy price 8000 and final 7000 is still an error, equal to buy price is still fine, no warning on rows without the gap", () => {
+    const one = (buy_price: string) => [{ id: "z", code: "Z-1", name: "Z", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "10000.00", buy_price }];
+    const below = validatePromoRows([r(2, "Z-1", "PCS", "Harga Akhir", "7000")], one("8000.00"), [], pricing());
+    expect(below.reviewed[0].error).toMatch(/di bawah.*HPP/i);
+    expect(below.reviewed[0].warning || null).toBeNull();
+    expect(below.valid).toEqual([]);
+    const equal = validatePromoRows([r(2, "Z-1", "PCS", "Harga Akhir", "8000")], one("8000.00"), [], pricing());
+    expect(equal.reviewed[0]).toMatchObject({ error: null });
+    expect(equal.reviewed[0].warning || null).toBeNull();
+  });
+  it("a Persen/Nominal row and a rejected row never carry the cost warning", () => {
+    const catalog = [{ id: "z", code: "Z-1", name: "Z", unit: "PCS", is_active: true, item_type: "Persediaan", sell_price: "10000.00", buy_price: "0.00" }];
+    const result = validatePromoRows([r(2, "Z-1", "PCS", "Persen", "10"), r(3, "Z-1", "PCS", "Harga Akhir", "9000")], catalog, [], pricing());
+    expect(result.reviewed[0].warning || null).toBeNull();
+    expect(result.reviewed[1].error).toMatch(/duplikat/);
+    expect(result.reviewed[1].warning || null).toBeNull();
+    const grup = validatePromoRows([r(2, "G-1", "PCS", "Harga Akhir", "9000")], [{ ...catalog[0], id: "g", code: "G-1", item_type: "Grup" }], [], pricing());
+    expect(grup.reviewed[0].error).toMatch(/paket/i);
+    expect(grup.reviewed[0].warning || null).toBeNull();
   });
   it("lists the supported kinds when the kind is unknown", () => {
     const result = validatePromoRows([r(2, "FIKTIF-2", "400gr", "Gratis", "1")], items, units, pricing());

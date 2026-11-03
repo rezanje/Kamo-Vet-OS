@@ -24,10 +24,11 @@ export function PromoImportWorkspace({branches,today}:{branches:Branch[];today:s
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
   const [saved,setSaved]=useState(false);
+  const warningCount=valid?rows.filter(row=>!row.error&&!!row.warning).length:0;
   const [key,setKey]=useState(()=>crypto.randomUUID());
 
   function edit(index:number,field:keyof PromoExcelRow,value:string) {
-    setRows(current=>current.map((row,i)=>i===index?{...row,[field]:value,error:null,item_name:null,normal_price:null,final_price:null,potongan:null,percent_off:null,matched_unit:null}:row));
+    setRows(current=>current.map((row,i)=>i===index?{...row,[field]:value,error:null,item_name:null,normal_price:null,final_price:null,potongan:null,percent_off:null,matched_unit:null,warning:null}:row));
     setValid(false);setSaved(false);setMessage("Baris berubah. Klik Validasi ulang sebelum menyimpan.");
   }
   // Harga normal depends on the chosen branches: a reviewed Harga Akhir batch must be re-validated when they change.
@@ -67,7 +68,7 @@ export function PromoImportWorkspace({branches,today}:{branches:Branch[];today:s
   }
   return <div style={{display:"grid",gap:14}}>
     <p style={{fontSize:12,color:"var(--tm)"}}>Gunakan <Link href="/crm/promo/impor/template">Format-Impor-Promo-VetOS.xlsx</Link>. Kolom wajib: Kode Barang, Satuan, Jenis Diskon (Persen/Nominal/Harga Akhir), Nilai Diskon. Maksimal 500 baris dan 1 MB; rumus Excel ditolak.</p>
-    <p style={{fontSize:12,color:"var(--tm)"}}><b>Harga Akhir</b>: Nilai Diskon diisi <b>Harga akhir promo per barang dan satuan</b> (Rp, angka polos tanpa titik/koma/Rp, mis. 18500). Satuan ditulis persis seperti terdaftar (mis. 1/2KG, 400gr, 800GR, KG); salah ketik seperti 400g4 ditolak. Harga normal dibaca dari master pada cabang yang dipilih di bawah (pilih cabang sebelum preview); baris ditolak bila harga akhir sama/lebih tinggi dari harga normal, di bawah HPP, harga normal berbeda antar cabang, atau selisih harga normal dan harga akhir bukan rupiah bulat (kasir hanya memotong rupiah bulat). <b>Perhatian:</b> promo disimpan sebagai potongan nominal (harga normal − harga akhir) per satuan, jadi bila harga normal diubah SESUDAH promo disimpan, harga akhir ikut bergeser. Saat simpan, harga normal dicek ulang; bila berubah Anda diminta validasi ulang. Diskon golongan pelanggan, diskon manual, voucher, dan poin dihitung tambahan di luar promo ini, jadi <b>harga di kasir masih bisa berakhir lebih rendah dari Harga Akhir</b>. Selain itu setiap baris hanya mendapat satu promo, yaitu yang potongannya terbesar. Promo lain yang aktif di barang yang sama (mis. persen toko) dengan potongan lebih besar dipakai menggantikan promo Harga Akhir ini.</p>
+    <p style={{fontSize:12,color:"var(--tm)"}}><b>Harga Akhir</b>: Nilai Diskon diisi <b>Harga akhir promo per barang dan satuan</b> (Rp, angka polos tanpa titik/koma/Rp, mis. 18500). Satuan ditulis persis seperti terdaftar (mis. 1/2KG, 400gr, 800GR, KG); salah ketik seperti 400g4 ditolak. Harga normal dibaca dari master pada cabang yang dipilih di bawah (pilih cabang sebelum preview); baris ditolak bila harga akhir sama/lebih tinggi dari harga normal, di bawah harga beli master (bila terisi), harga normal berbeda antar cabang, atau selisih harga normal dan harga akhir bukan rupiah bulat (kasir hanya memotong rupiah bulat). Barang Persediaan yang harga beli masternya belum terisi (kosong/0) tetap valid dengan <b>peringatan</b> kuning &quot;HPP master belum terisi&quot;: harga akhir belum bisa dicek terhadap modal, tetapi kasir petshop dan klinik menolak penjualan di bawah HPP FIFO; transaksi back office (/pos/transaksi) hanya memberi peringatan yang bisa dikonfirmasi (tanpa peringatan bila HPP FIFO tidak terbaca). Modal satuan turunan = harga beli barang dasar × faktor satuan, seperti kasir (harga beli yang diisi pada satuan itu tidak dipakai kasir; hanya dipakai bila harga beli barang dasar kosong/0). <b>Perhatian:</b> promo disimpan sebagai potongan nominal (harga normal − harga akhir) per satuan, jadi bila harga normal diubah SESUDAH promo disimpan, harga akhir ikut bergeser. Saat simpan, harga normal dicek ulang; bila berubah Anda diminta validasi ulang. Diskon golongan pelanggan, diskon manual, voucher, dan poin dihitung tambahan di luar promo ini, jadi <b>harga di kasir masih bisa berakhir lebih rendah dari Harga Akhir</b>. Selain itu setiap baris hanya mendapat satu promo, yaitu yang potongannya terbesar. Promo lain yang aktif di barang yang sama (mis. persen toko) dengan potongan lebih besar dipakai menggantikan promo Harga Akhir ini.</p>
     <div style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap"}}>
       <label className="flab">File Excel (.xlsx)
         <input className="fi" type="file" disabled={busy||saved} accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={event=>{setFile(event.target.files?.[0]??null);setRows([]);setValid(false);setSaved(false);}} />
@@ -103,9 +104,10 @@ export function PromoImportWorkspace({branches,today}:{branches:Branch[];today:s
           <td>{isFinalPrice(row)?rupiah(row.final_price):"—"}</td>
           <td>{isFinalPrice(row)?rupiah(row.potongan):"—"}</td>
           <td>{isFinalPrice(row)?persen(row.percent_off):"—"}</td>
-          <td style={{color:row.error?"#b91c1c":"#15803d"}}>{row.error??(valid?"Valid":"Perlu validasi ulang")}</td>
+          <td style={{color:row.error?"#b91c1c":row.warning&&valid?"#b45309":"#15803d"}}>{row.error??(valid?(row.warning?<><div>Valid</div><div style={{fontSize:11}}>{row.warning}</div></>:"Valid"):"Perlu validasi ulang")}</td>
         </tr>)}</tbody>
       </table></div>
+      {warningCount>0&&<p data-testid="promo-warning-count" role="status" style={{fontSize:12,color:"#b45309"}}><b>{warningCount} baris tanpa HPP master</b>: harga akhir belum bisa dicek terhadap modal. Tetap bisa disimpan. Kasir petshop dan klinik menolak penjualan di bawah HPP FIFO; transaksi back office (/pos/transaksi) hanya memberi peringatan yang bisa dikonfirmasi (tanpa peringatan bila HPP FIFO tidak terbaca).</p>}
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <button type="button" className="btn-def" disabled={busy||saved} onClick={validate}>Validasi ulang</button>
         <button type="button" className="btn-acc" disabled={busy||!valid||saved} onClick={save}>{busy?"Memproses…":"Simpan seluruh batch"}</button>
