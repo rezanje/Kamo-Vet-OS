@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { assertAccountCreator, assertMasterAdmin } from "@/lib/master-guard";
 import { isAccountEditId } from "@/lib/user-account-edit";
+import { roleRpcFailure } from "@/lib/role-action-access";
 
 const BACK = "/pengaturan/pengguna";
 
@@ -43,6 +44,13 @@ export async function buatPengguna(formData: FormData) {
     if (error || valid?.length !== new Set(branchIds).size) fail("Penugasan cabang tidak valid.");
   }
 
+  // Authoritative composite policy/ceiling refusal MUST precede Auth signup.
+  // Configuration repeats this check atomically; preflight is not a grant.
+  const { error: preflightError } = await supabase.rpc("preflight_employee_account", {
+    p_employee_id: employee_id, p_role: role, p_branch_ids: [...new Set(branchIds)],
+  });
+  if (preflightError) fail(roleRpcFailure(preflightError)?.message ?? "Pembuatan akun ditolak. Periksa izin, role, dan penugasan cabang.");
+
   // klien terpisah tanpa cookie — sesi admin di browser tidak tertimpa.
   const anon = createSbClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -63,7 +71,14 @@ export async function buatPengguna(formData: FormData) {
     p_profile_id: newId, p_employee_id: employee_id, p_full_name: full_name,
     p_role: role, p_branch_ids: [...new Set(branchIds)],
   });
-  if (configureError) fail("Akun terbentuk tetapi penautan HRIS belum selesai. Admin perlu meninjau akun sebelum digunakan; jangan membuat ulang akun.");
+  if (configureError) {
+    // Auth signup is irreversible here and ran before the configuration gate: the login now exists
+    // without role/branch/HRIS link. Say so plainly, never suggest creating it again.
+    const busy = roleRpcFailure(configureError)?.outcome === "retry";
+    fail(`Akun login ${email} sudah terbentuk tetapi pengaturan peran, cabang, dan tautan karyawan HRIS belum selesai (akun belum dapat dipakai). Jangan mendaftarkan ulang email ini. ${busy
+      ? "Sistem sedang sibuk: tunggu beberapa detik, lalu buka daftar pengguna, cari akun ini, dan selesaikan lewat Edit akun serta Tautkan HRIS."
+      : "Buka daftar pengguna, cari akun ini, lalu selesaikan lewat Edit akun serta Tautkan HRIS, atau minta Super Admin meninjaunya."}`);
+  }
 
   revalidatePath(BACK);
   redirect(`${BACK}?success=${encodeURIComponent(`Akun ${email} dibuat. Sampaikan password awal ke karyawan ybs.`)}`);
@@ -78,8 +93,8 @@ export async function togglePengguna(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (user?.id === id) redirect(`${BACK}?error=${encodeURIComponent("Tidak bisa menonaktifkan akun sendiri.")}`);
 
-  const { error } = await supabase.from("profiles").update({ is_active: aktif }).eq("id", id);
-  if (error) redirect(`${BACK}?error=${encodeURIComponent("Status akun gagal disimpan.")}`);
+  const { error } = await supabase.rpc("set_user_account_active", { p_profile_id: id, p_active: aktif });
+  if (error) redirect(`${BACK}?error=${encodeURIComponent(roleRpcFailure(error)?.message ?? "Status akun gagal disimpan.")}`);
   revalidatePath(BACK);
   redirect(BACK);
 }
@@ -91,7 +106,7 @@ export async function tautkanPengguna(form: FormData) {
   const employeeId = String(form.get("employee_id") ?? "");
   if (!profileId || !employeeId) redirect(`${BACK}?error=${encodeURIComponent("Pilih akun dan karyawan HRIS.")}`);
   const { error } = await client.rpc("link_employee_account", { p_profile_id: profileId, p_employee_id: employeeId });
-  if (error) redirect(`${BACK}?error=${encodeURIComponent("Tautan tidak tersedia atau berubah. Muat ulang dan periksa HRIS.")}`);
+  if (error) redirect(`${BACK}?error=${encodeURIComponent(roleRpcFailure(error)?.message ?? "Tautan tidak tersedia atau berubah. Muat ulang dan periksa HRIS.")}`);
   revalidatePath(BACK);
   revalidatePath("/hris/karyawan");
   redirect(`${BACK}?success=${encodeURIComponent("Akun sudah tertaut ke karyawan HRIS.")}`);
@@ -118,6 +133,8 @@ export async function simpanEditPengguna(form: FormData): Promise<{ ok: false; m
       p_branch_ids: [...new Set(branchIds)], p_expected_version: version, p_request_id: requestId,
     });
     if (error) {
+      const mapped = roleRpcFailure(error);
+      if (mapped) return { ok: false, message: mapped.message };
       return { ok: false, message: error.code === "40001" || String(error.message).startsWith("ACCOUNT_EDIT_CONFLICT:")
         ? "Akun sudah berubah sejak halaman dibuka. Isian tetap tersimpan di halaman ini; muat ulang untuk meninjau data terbaru sebelum mengulang."
         : "Perubahan akun ditolak. Periksa hak akses, role, dan penugasan cabang; isian tetap ada." };

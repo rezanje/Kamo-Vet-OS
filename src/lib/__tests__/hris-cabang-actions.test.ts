@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   assertMasterAdmin: vi.fn(),
   bolehKelolaPayroll: vi.fn(),
   simpanGajiPokok: vi.fn(),
+  requireRoleAction: vi.fn(), // stands in for roleActionRefusal (null = allowed)
   update: vi.fn(),
 }));
 vi.mock("@/lib/master-guard", () => ({
@@ -17,6 +18,9 @@ vi.mock("@/lib/master-guard", () => ({
   bolehKelolaPayroll: mocks.bolehKelolaPayroll,
 }));
 vi.mock("@/lib/employee-salary", () => ({ simpanGajiPokok: mocks.simpanGajiPokok }));
+// Policy denials have dedicated employee-action tests. This file isolates the
+// original branch mutation, validation and error-handling contracts.
+vi.mock("@/lib/role-action-access", async importOriginal => ({ ...(await importOriginal<typeof import("@/lib/role-action-access")>()), roleActionRefusal: mocks.requireRoleAction }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/tanggal", () => ({ hariIniWIB: () => "2026-10-29" }));
@@ -38,6 +42,7 @@ const klienPalsu = () => ({
 
 beforeEach(() => {
   mocks.rpc.mockReset().mockResolvedValue({ data: 1, error: null });
+  mocks.requireRoleAction.mockReset().mockResolvedValue(null);
   mocks.update.mockReset();
   mocks.simpanGajiPokok.mockReset().mockResolvedValue(true);
   mocks.bolehKelolaPayroll.mockReset().mockResolvedValue(false);

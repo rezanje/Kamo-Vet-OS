@@ -1,6 +1,7 @@
 import { ActivityNavigationProvider } from "@/components/ActivityHistoryLink";
 import { ActivityMenuLink } from "@/components/ActivityMenuLink";
-import { bolehBukaPath } from "@/lib/akses";
+import { bolehBukaPath, roleUsesLegacyStaffShell } from "@/lib/akses";
+import { RoleMenuProvider } from "@/components/RoleMenuContext";
 import { Suspense } from "react";
 import { DraftUserProvider, TransactionDraftComplete } from "@/components/LocalTransactionDraft";
 import { redirect } from "next/navigation";
@@ -56,6 +57,7 @@ export default async function AppLayout({
   // STAFF cuma masuk (app) lewat alur kasir klinik (/klinik/shift & seterusnya) —
   // sidebar admin (Keuangan, HRIS, Pengaturan, dst) bukan buat mereka.
   const isStaff = profile?.role === "STAFF";
+  const legacyStaffShell = roleUsesLegacyStaffShell(profile?.role ?? "STAFF", aksesModul ?? []);
   const staffBranch = isStaff ? await staffShiftP : null;
   const activeBranch = await ActiveBranch({ catalog: branches ?? [] });
   const staffBranchMaster = branches?.find(branch => branch.id === staffBranch?.branch_id);
@@ -65,10 +67,10 @@ export default async function AppLayout({
     && bolehBukaPath(profile.role, "/perusahaan/log-aktifitas", aksesModul ?? []);
 
   return (
-    <ActivityNavigationProvider allowed={canReadActivity}><DraftUserProvider userId={user.id}><div className="shell">
+    <ActivityNavigationProvider allowed={canReadActivity}><RoleMenuProvider role={profile?.role ?? "STAFF"} rules={aksesModul ?? []}><DraftUserProvider userId={user.id}><div className="shell">
       <NavigationFeedback />
       <Suspense fallback={null}><TransactionDraftComplete userId={user.id} /></Suspense>
-      {!isStaff && (
+      {!legacyStaffShell && (
         <Sidebar
           branches={branches ?? []}
           fullName={profile?.full_name ?? user.email ?? "Pengguna"}
@@ -78,7 +80,7 @@ export default async function AppLayout({
       )}
       <div className="main">
         <ReleaseNotice version={process.env.VERCEL_GIT_COMMIT_SHA ?? "local"} />
-        {isStaff ? (
+        {legacyStaffShell ? (
           <KlinikTopbar fullName={profile?.full_name ?? "Staff"} branchName={staffBranchName} />
         ) : (
           <>
@@ -95,6 +97,6 @@ export default async function AppLayout({
         {activeBranch}
         <div className="ct"><ActivityMenuLink />{children}</div>
       </div>
-    </div></DraftUserProvider></ActivityNavigationProvider>
+    </div></DraftUserProvider></RoleMenuProvider></ActivityNavigationProvider>
   );
 }

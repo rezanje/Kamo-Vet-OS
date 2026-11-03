@@ -38,17 +38,27 @@ export function TransactionDraftComplete({userId}:{userId:string}) {
     window.dispatchEvent(new CustomEvent("vetos:transaction-confirmed",{detail:{scope,key}}));},[userId,scope,key]);
   return null;
 }
+/** A server action may RETURN a deterministic refusal (nothing was written). `rejected` = fix/reload first,
+ * `retry` = safe to repeat unchanged shortly. Thrown/returned-nothing results stay UNCONFIRMED (masked in production). */
+export type ActionRejection={ok:false;outcome:"rejected"|"retry";message:string};
+const isRejection=(value:unknown):value is ActionRejection=>typeof value==="object"&&value!==null
+  &&(value as ActionRejection).ok===false&&["rejected","retry"].includes((value as ActionRejection).outcome)
+  &&typeof (value as ActionRejection).message==="string"&&(value as ActionRejection).message.length>0;
 /** Keep the page and draft on transport failure; require a human to verify uncertain commit. */
-export function usePreservedAction(action:(data:FormData)=>void|Promise<void>) {
+export function usePreservedAction(action:(data:FormData)=>void|ActionRejection|Promise<void|ActionRejection>,options?:{uncertain?:string}) {
   const [failure,setFailure]=useState("");
-  const save=async(data:FormData)=>{setFailure("");let detail="";try{await action(data);}catch(error){
+  const [outcome,setOutcome]=useState<ActionRejection["outcome"]|"">("");
+  const save=async(data:FormData)=>{setFailure("");setOutcome("");let detail="";try{
+    const result=await action(data);
+    if(isRejection(result)){setFailure(result.message);setOutcome(result.outcome);return;}
+  }catch(error){
     if(typeof error==="object"&&error!==null&&"digest" in error&&String(error.digest).startsWith("NEXT_REDIRECT"))throw error;
     detail = error instanceof Error && error.message ? ` ${error.message}` : "";
   }
     // These actions confirm completion by redirecting; a plain return is uncertain.
-    setFailure(`Respons simpan belum terkonfirmasi.${detail} Isian tetap tersedia. Periksa daftar transaksi sebelum menyimpan ulang agar tidak menggandakan transaksi.`);
+    setFailure(options?.uncertain??`Respons simpan belum terkonfirmasi.${detail} Isian tetap tersedia. Periksa daftar transaksi sebelum menyimpan ulang agar tidak menggandakan transaksi.`);
   };
-  return {save,failure};
+  return {save,failure,outcome};
 }
 export function TransactionForm({userId: explicitUserId,scope,action,children,...props}:{userId?:string;scope:string;action:(data:FormData)=>void|Promise<void>;children:ReactNode}&Omit<React.FormHTMLAttributes<HTMLFormElement>,"action">) {
   const userId = useDraftUserId(explicitUserId);

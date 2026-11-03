@@ -3,12 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { roleRpcFailure } from "@/lib/role-action-access";
 
 const PATH = "/perusahaan/cabang";
+// Never show the raw database message: known role/people codes map to Indonesian, the rest is generic.
+const pesanPenugasan = (error: unknown) => roleRpcFailure(error)?.message ?? "Penugasan cabang gagal disimpan. Tidak ada perubahan yang dipastikan tersimpan; muat ulang halaman lalu coba lagi.";
 
-// Admin gate mirrors the RLS user_branches_admin_write policy (OWNER/ADMIN).
-// RLS is the real enforcement; this just yields a friendly message instead of a
-// silent no-op when a non-admin submits.
+// Friendly early manager gate only. The bounded RPC is authoritative, retains
+// the original account target/branch ceilings and writes the account audit.
+// Direct authenticated user_branches writes are deliberately rejected.
 async function requireAdmin() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -29,10 +32,10 @@ export async function assignUser(formData: FormData) {
     redirect(`${PATH}?error=${encodeURIComponent("Pilih pengguna dulu")}`);
   }
 
-  const { error } = await supabase
-    .from("user_branches")
-    .upsert({ user_id, branch_id, role }, { onConflict: "user_id,branch_id" });
-  if (error) redirect(`${PATH}?error=${encodeURIComponent(error.message)}`);
+  const { error } = await supabase.rpc("set_user_branch_assignment", {
+    p_profile_id: user_id, p_branch_id: branch_id, p_assignment_role: role, p_remove: false,
+  });
+  if (error) redirect(`${PATH}?error=${encodeURIComponent(pesanPenugasan(error))}`);
 
   revalidatePath(PATH);
   redirect(`${PATH}?success=1`);
@@ -43,9 +46,10 @@ export async function unassignUser(formData: FormData) {
   const user_id = String(formData.get("user_id") ?? "");
   const branch_id = String(formData.get("branch_id") ?? "");
 
-  const { error } = await supabase
-    .from("user_branches").delete().eq("user_id", user_id).eq("branch_id", branch_id);
-  if (error) redirect(`${PATH}?error=${encodeURIComponent(error.message)}`);
+  const { error } = await supabase.rpc("set_user_branch_assignment", {
+    p_profile_id: user_id, p_branch_id: branch_id, p_assignment_role: "PRIMARY", p_remove: true,
+  });
+  if (error) redirect(`${PATH}?error=${encodeURIComponent(pesanPenugasan(error))}`);
 
   revalidatePath(PATH);
   redirect(`${PATH}?success=1`);
