@@ -7,10 +7,10 @@ export function PromoTargets({userId,items,branches,categories,initialItemIds=[]
  const [itemIds,setItemIds]=useState<string[]>(initialItemIds),[branchIds,setBranchIds]=useState<string[]>(initialBranchIds);
  return <>
   <LocalTransactionDraft userId={userId} scope={scope} state={{snapshot:{itemIds:lockItems?initialItemIds:itemIds,branchIds},restore:v=>{if(!ids(v.itemIds)||!ids(v.branchIds))return false;setItemIds(lockItems?initialItemIds:v.itemIds);setBranchIds(v.branchIds);return true;},reset:()=>{setItemIds(initialItemIds);setBranchIds(initialBranchIds);}}}/>
-  {lockItems?<div style={{gridColumn:"1 / -1",minWidth:0}}>
+  {lockItems?<div style={{gridColumn:"1 / span 2",minWidth:0}}>
     <p style={{fontSize:11,color:"var(--tm)"}}>SKU dan satuan dari impor Excel tetap. Diskon, masa berlaku, dan cabang masih dapat diedit.</p>
     {initialItemIds.map(id=><input key={id} type="hidden" name="item_ids" value={id}/>)}
-  </div>:<div style={{gridColumn:"1 / -1",minWidth:0}}><label className="flab">Barang yang kena promo (kosongkan = semua barang)</label><SearchableMultiSelect name="item_ids" label="barang promo" options={items} categories={categories} value={itemIds} onChange={setItemIds}/></div>}
-  <div style={{gridColumn:"1 / -1",minWidth:0}}><label className="flab">Cabang (kosongkan = semua cabang)</label><SearchableMultiSelect name="branch_ids" label="cabang promo" options={branches} value={branchIds} onChange={setBranchIds}/></div>
+  </div>:<div style={{gridColumn:"1 / span 2",minWidth:0}}><label className="flab">Barang yang kena promo (kosongkan = semua barang)</label><SearchableMultiSelect name="item_ids" label="barang promo" options={items} categories={categories} value={itemIds} onChange={setItemIds}/></div>}
+  <div style={{gridColumn:"3 / span 2",minWidth:0}}><label className="flab">Cabang (kosongkan = semua cabang)</label><SearchableMultiSelect name="branch_ids" label="cabang promo" options={branches} value={branchIds} onChange={setBranchIds}/></div>
  </>;
 }
