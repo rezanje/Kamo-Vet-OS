@@ -113,3 +113,60 @@ it("still shows rejected Harga Akhir rows with their message and blocks saving",
   expect(text()).toContain("tidak ada potongan");
   expect(button("Simpan seluruh batch").disabled).toBe(true);
 });
+
+const WARNING = "HPP master belum terisi; harga akhir belum bisa dicek terhadap modal. Kasir petshop dan klinik menolak penjualan di bawah HPP FIFO; transaksi back office (/pos/transaksi) hanya memberi peringatan yang bisa dikonfirmasi (tanpa peringatan bila HPP FIFO tidak terbaca).";
+const warnRow = (line: number, code: string) => ({ ...finalRow, line, code, item_name: `Barang ${code}`, warning: WARNING });
+
+it("help text says missing master HPP is a warning and the cashier still enforces FIFO", () => {
+  expect(text()).toMatch(/belum terisi[^.]*peringatan/);
+  expect(text()).toMatch(/[Kk]asir petshop dan klinik menolak penjualan di bawah HPP FIFO/);
+  expect(text()).toContain("transaksi back office (/pos/transaksi) hanya memberi peringatan yang bisa dikonfirmasi");
+  expect(text()).not.toMatch(/[Kk]asir tetap menolak/);
+  expect(text()).not.toMatch(/ditolak bila[^.]*HPP[^.]*belum terisi/);
+  expect(text()).toContain("Modal satuan turunan = harga beli barang dasar × faktor satuan, seperti kasir");
+  expect(text()).not.toContain("Satuan turunan tanpa harga beli sendiri");
+});
+
+it("shows an amber warning (not red, not an error) on warning rows, a count above Save, and keeps Save enabled", async () => {
+  actions.preview.mockResolvedValue({ rows: [warnRow(2, "A-1"), warnRow(3, "A-2"), percentRow], valid: true, warningCount: 2 });
+  await chooseFile(); await click("Baca dan preview");
+  const cell = [...host.querySelectorAll("tbody tr")[0].querySelectorAll("td")].pop() as HTMLElement;
+  expect(cell.textContent).toContain(WARNING);
+  expect(cell.textContent).not.toMatch(/^Valid$/);
+  expect(cell.style.color).not.toBe("rgb(185, 28, 28)");
+  expect(cell.style.color).not.toBe("rgb(21, 128, 61)");
+  expect(cell.style.color).toBe("rgb(180, 83, 9)");
+  const last = [...host.querySelectorAll("tbody tr")[2].querySelectorAll("td")].pop() as HTMLElement;
+  expect(last.textContent).toBe("Valid");
+  const notice = host.querySelector('[data-testid="promo-warning-count"]') as HTMLElement;
+  expect(notice.textContent).toContain("2 baris tanpa HPP master");
+  expect(notice.compareDocumentPosition(button("Simpan seluruh batch")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(button("Simpan seluruh batch").disabled).toBe(false);
+  expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(2); // only the branch checkboxes: no confirmation checkbox
+});
+
+it("shows no warning count when no row has a warning, and error rows stay red and block Save", async () => {
+  await chooseFile(); await click("Baca dan preview");
+  expect(host.querySelector('[data-testid="promo-warning-count"]')).toBeNull();
+  actions.preview.mockResolvedValue({ rows: [warnRow(2, "A-1"), { ...finalRow, line: 3, error: "Harga akhir Rp7.000 di bawah HPP/harga beli master Rp8.000" }], valid: false });
+  await click("Baca dan preview");
+  const cells = [...host.querySelectorAll("tbody tr")].map(tr => [...tr.querySelectorAll("td")].pop() as HTMLElement);
+  expect(cells[1].style.color).toBe("rgb(185, 28, 28)");
+  expect(button("Simpan seluruh batch").disabled).toBe(true);
+});
+
+it("editing a warning row clears its warning until it is validated again; saving reports the server message", async () => {
+  actions.preview.mockResolvedValue({ rows: [warnRow(2, "A-1")], valid: true, warningCount: 1 });
+  actions.save.mockResolvedValue({ ok: true, message: "1 promo berhasil disimpan. 1 baris tanpa HPP master.", warningCount: 1 });
+  await chooseFile(); await click("Baca dan preview");
+  await fill(host.querySelector<HTMLInputElement>('input[maxlength="40"]')!, "Promo test");
+  await fill(host.querySelectorAll<HTMLInputElement>('input[type="date"]')[1], "2099-01-31");
+  await click("Simpan seluruh batch");
+  expect(text()).toContain("1 baris tanpa HPP master.");
+  actions.preview.mockResolvedValue({ rows: [warnRow(2, "A-1")], valid: true, warningCount: 1 });
+  await click("Baca dan preview");
+  await fill(host.querySelector<HTMLInputElement>('[aria-label="Nilai diskon baris 2"]')!, "35000");
+  expect(text()).not.toContain(WARNING);
+  expect(host.querySelector('[data-testid="promo-warning-count"]')).toBeNull();
+  expect(button("Simpan seluruh batch").disabled).toBe(true);
+});
