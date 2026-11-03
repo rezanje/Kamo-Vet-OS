@@ -1,7 +1,7 @@
 import { readCompleteList } from "@/lib/checked-list";
 import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { printBranchHeading } from "@/components/print-branch-heading";
-import { bacaNamaDokter, namaDokterPJ, type VisitDokter } from "@/lib/dokter-pj";
+import { bacaKartuPetugas, idPetugas, petugasCetak, type BarisTagihanPetugas, type KunjunganPetugas } from "@/lib/petugas-cetak";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -61,23 +61,23 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   const invRows = (invs ?? []) as unknown as Inv[];
 
   const allItems = invRows.length
-    ? await readCompleteList<PackagePrintSource & { id: string; invoice_id: string }>((from, to) => supabase.from("invoice_items")
-        .select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name)", { count: "exact" })
+    ? await readCompleteList<PackagePrintSource & BarisTagihanPetugas & { id: string; invoice_id: string }>((from, to) => supabase.from("invoice_items")
+        .select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers", { count: "exact" })
         .in("invoice_id", invRows.map((i) => i.id)).order("created_at").order("id").range(from, to), "Rincian struk gabungan", { maxRows: null })
     : [];
 
-  const itemsPerInv = new Map<string, PackagePrintSource[]>();
-  for (const it of (allItems ?? []) as (PackagePrintSource & { invoice_id: string })[]) {
+  const itemsPerInv = new Map<string, (PackagePrintSource & BarisTagihanPetugas)[]>();
+  for (const it of allItems ?? []) {
     itemsPerInv.set(it.invoice_id, [...(itemsPerInv.get(it.invoice_id) ?? []), it]);
   }
   const invPerNo = new Map(invRows.map((i) => [i.invoice_no, i]));
 
-  // Tiap hewan punya kunjungannya sendiri, jadi dokter PJ-nya juga sendiri-sendiri.
-  // Yang dicetak hanya dokter PJ; pelaksana per baris tidak ikut (permintaan Andri).
+  // Tiap hewan punya kunjungannya sendiri, jadi petugasnya juga sendiri-sendiri.
+  // Dicetak per jabatan (Dokter / Groomer / Staff), bukan per baris — lihat petugas-cetak.ts.
   const { data: visitRows } = await supabase
-    .from("visits").select("id, doctor_id, dokter").in("id", rombongan.baris.map((b) => b.visitId));
-  const kunjunganPer = new Map(((visitRows ?? []) as (VisitDokter & { id: string })[]).map((v) => [v.id, v]));
-  const namaDokter = await bacaNamaDokter(supabase, [...kunjunganPer.values()].map((v) => v.doctor_id));
+    .from("visits").select("id, poli, doctor_id, dokter").in("id", rombongan.baris.map((b) => b.visitId));
+  const kunjunganPer = new Map(((visitRows ?? []) as (KunjunganPetugas & { id: string })[]).map((v) => [v.id, v]));
+  const kartuPetugas = await bacaKartuPetugas(supabase, idPetugas([...kunjunganPer.values()], allItems ?? []));
 
   const totalDiskon = invRows.reduce((a, i) => a + (Number(i.discount) || 0), 0);
   const totalPpn = invRows.reduce((a, i) => a + (Number(i.tax) || 0), 0);
@@ -114,7 +114,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
         {rombongan.baris.map((b) => {
           const nomor = b.invoiceNos ?? (b.invoiceNo ? [b.invoiceNo] : []);
           const daftar = nomor.map((no) => invPerNo.get(no)).filter(Boolean) as Inv[];
-          const dokterPJ = namaDokterPJ(kunjunganPer.get(b.visitId), namaDokter);
+          const petugas = petugasCetak(kunjunganPer.get(b.visitId), daftar.flatMap((inv) => itemsPerInv.get(inv.id) ?? []), kartuPetugas);
           return (
             <div key={b.visitId} style={{ marginBottom: 6 }}>
               <div style={{ fontWeight: 700 }}>
@@ -122,7 +122,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
                 {daftar.length ? <span style={{ fontWeight: 400, fontSize: 9.5 }}> · {daftar.map((i) => i.invoice_no).join(", ")}</span> : null}
               </div>
               {daftar[0] && <Kv k="Kasir" v={daftar[0].cashier_name ?? "Kasir belum tercatat"} />}
-              {dokterPJ && <Kv k="Dokter PJ" v={dokterPJ} />}
+              {petugas.map((p) => <Kv key={p.label} k={p.label} v={p.nama} />)}
               {!daftar.length && <div style={{ fontSize: 9.5 }}>(tagihan belum dibuat)</div>}
               {daftar.flatMap((inv) => customerPackageLines(itemsPerInv.get(inv.id) ?? [], { subtotal: inv.subtotal })).map((it, i) => (
                 <div key={i}>

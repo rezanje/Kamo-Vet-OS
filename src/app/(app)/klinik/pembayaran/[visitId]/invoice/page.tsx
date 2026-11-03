@@ -1,7 +1,7 @@
 import { readCompleteList } from "@/lib/checked-list";
 import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { printBranchHeading } from "@/components/print-branch-heading";
-import { bacaNamaDokter, namaDokterPJ } from "@/lib/dokter-pj";
+import { bacaKartuPetugas, idPetugas, petugasCetak, type BarisTagihanPetugas } from "@/lib/petugas-cetak";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -43,8 +43,8 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
     <p><Link href={`/klinik/pembayaran/${visitId}`}>Pilih invoice lain dari riwayat pembayaran</Link></p>
   </section>;
 
-  const items = await readCompleteList<PackagePrintSource & { id: string; compound_recipe_id: string | null; compounding_recipes: Rel<{ id: string; medical_records: Rel<{ visit_id: string }> }> }>((from, to) => supabase
-    .from("invoice_items").select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), compound_recipe_id, compounding_recipes(id, medical_records(visit_id))", { count: "exact" })
+  const items = await readCompleteList<PackagePrintSource & BarisTagihanPetugas & { id: string; compound_recipe_id: string | null; compounding_recipes: Rel<{ id: string; medical_records: Rel<{ visit_id: string }> }> }>((from, to) => supabase
+    .from("invoice_items").select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers, compound_recipe_id, compounding_recipes(id, medical_records(visit_id))", { count: "exact" })
     .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian invoice", { maxRows: null });
   const { data: payments,error:paymentsError } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
@@ -60,8 +60,8 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
     .select("fee_bearer,fee_amount,payments").eq("invoice_id",invoice.id).maybeSingle();
   if (demoError) throw new Error("Rincian biaya admin tidak terbaca. Muat ulang sebelum mencetak.");
-  // Invoice hanya menyebut satu nama: dokter PJ kunjungan, bukan pelaksana per baris.
-  const dokterPJ = namaDokterPJ(visit, await bacaNamaDokter(supabase, [visit.doctor_id]));
+  // Petugas dicetak per jabatan (Dokter / Groomer / Staff), bukan per baris — lihat petugas-cetak.ts.
+  const petugas = petugasCetak(visit, items, await bacaKartuPetugas(supabase, idPetugas([visit], items)));
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const branch = one(one(invoice.visits)?.branches ?? null);
@@ -114,7 +114,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
           <div style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>
             <div>Pasien: <b style={{ color: "#141413" }}>{pet?.name ?? "-"}</b> ({pet?.species ?? "-"}{pet?.breed ? " / " + pet.breed : ""})</div>
             <div>Poli: {visit.poli}</div>
-            {dokterPJ && <div>Dokter PJ: {dokterPJ}</div>}
+            {petugas.map((p) => <div key={p.label}>{p.label}: {p.nama}</div>)}
             <div>Kasir: {invoice.cashier_name ?? "Kasir belum tercatat"}</div>
           </div>
         </div>
