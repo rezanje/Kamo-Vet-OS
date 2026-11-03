@@ -39,12 +39,34 @@ it.each(["profile_id", "branch_ids", "request_id"])("rejects invalid %s without 
   const data = form(); data.set(field, "invalid");
   expect(await actions.simpanEditPengguna(data)).toMatchObject({ ok: false }); expect(db.rpc).not.toHaveBeenCalled();
 });
-it.each([{ code: "40001", message: "PRIVATE_CONFLICT_DETAIL" }, { code: "P0001", message: "ACCOUNT_EDIT_CONFLICT: akun berubah; muat ulang sebelum menyimpan" }])("returns stale and rejected saves without redirect or invalidating the form (%s)", async (error) => {
+const CHANGED = /sudah berubah/;
+const RETRY = /Sistem sedang memproses perubahan akun atau hak akses lain\. Tidak ada perubahan yang tersimpan\. Tunggu beberapa detik lalu coba lagi\./;
+const UNKNOWN = /ditolak|belum dapat dipastikan/;
+it.each([
+  [{ code: "P0001", message: "ACCOUNT_EDIT_CONFLICT: akun berubah; muat ulang sebelum menyimpan" }],
+  [{ code: "40001", message: "PEOPLE_ACCOUNT_LINK_CHANGED: retry with current employee links" }],
+])("returns a stale edit conflict without redirect or invalidating the form (%j)", async (error) => {
   db.rpc.mockResolvedValue({ error });
-  expect(await actions.simpanEditPengguna(form())).toMatchObject({ ok: false, message: expect.stringContaining("berubah") });
+  const result = await actions.simpanEditPengguna(form());
+  expect(result).toMatchObject({ ok: false, message: expect.stringContaining("sudah berubah") });
+  expect(result.message).not.toMatch(RETRY); expect(result.message).not.toMatch(UNKNOWN);
   expect(revalidatePath).not.toHaveBeenCalled();
   db.rpc.mockResolvedValue({ error: { code: "42501", message: "PRIVATE_AUTH_DETAIL" } });
-  expect(await actions.simpanEditPengguna(form())).toMatchObject({ ok: false, message: expect.not.stringContaining("PRIVATE") });
+  const rejected = await actions.simpanEditPengguna(form());
+  expect(rejected).toMatchObject({ ok: false, message: expect.not.stringContaining("PRIVATE") });
+  expect(rejected.message).toMatch(UNKNOWN); expect(rejected.message).not.toMatch(CHANGED); expect(rejected.message).not.toMatch(RETRY);
+  expect(revalidatePath).not.toHaveBeenCalled();
+});
+it.each([
+  [{ code: "40001", message: "PRIVATE_CONFLICT_DETAIL" }],
+  [{ code: "40001", message: "PEOPLE_ACCOUNT_BUSY: akun sedang dipakai proses lain, ulangi" }],
+])("shows a bare serialization failure as a safe retry (nothing saved), not a stale conflict or unknown, without redirect or invalidating the form (%j)", async (error) => {
+  db.rpc.mockResolvedValue({ error });
+  const result = await actions.simpanEditPengguna(form());
+  expect(result).toMatchObject({ ok: false, message: expect.stringMatching(RETRY) });
+  expect(result.message).not.toMatch(CHANGED); expect(result.message).not.toMatch(UNKNOWN);
+  expect(result.message).not.toMatch(/PRIVATE|PEOPLE_ACCOUNT|40001/);
+  expect(db.rpc).toHaveBeenCalledOnce(); expect(revalidatePath).not.toHaveBeenCalled();
 });
 it("retries the identical request ID after a lost response without creating another identity", async () => {
   db.rpc.mockRejectedValueOnce(new Error("connection lost"));

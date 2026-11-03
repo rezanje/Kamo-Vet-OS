@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { usePreservedAction } from "./LocalTransactionDraft";
+import { usePreservedAction, type ActionRejection } from "./LocalTransactionDraft";
 import { TransactionDraft, clearTransactionDraft, transactionDraftName, type DraftSnapshot } from "./TransactionDraft";
 
 const ERROR = "__storage_error__";
@@ -36,17 +36,19 @@ function useDurableKey(userId: string, scope: string) {
   return { key: key === ERROR ? "" : key, storageError: key === ERROR, name };
 }
 
-export function CorrectionTransactionForm({ userId, scope, action, state, children, className, style }: {
+export function CorrectionTransactionForm({ userId, scope, action, state, children, className, style, uncertainNotice }: {
   userId: string;
   scope: string;
-  action: (formData: FormData) => void | Promise<void>;
+  action: (formData: FormData) => void | ActionRejection | Promise<void | ActionRejection>;
+  /** Wording for an UNCONFIRMED result (thrown/empty); deterministic refusals show their own message. */
+  uncertainNotice?: string;
   state?: DraftSnapshot;
   children: (status: { ready: boolean; storageError: boolean }) => ReactNode;
   className?: string;
   style?: React.CSSProperties;
 }) {
   const { key, storageError, name } = useDurableKey(userId, scope);
-  const { save, failure } = usePreservedAction(action);
+  const { save, failure, outcome } = usePreservedAction(action, uncertainNotice ? { uncertain: uncertainNotice } : undefined);
   const params = useSearchParams();
   const ready = !!userId && !!key && !storageError;
   const inFlight = useRef(false);
@@ -68,7 +70,7 @@ export function CorrectionTransactionForm({ userId, scope, action, state, childr
       <input type="hidden" name="requestKey" value={key} />
       <TransactionDraft userId={userId} domain="transaction" scope={scope} requestKey={key} state={state} />
       {storageError && <div role="alert" className="p2ban">Penyimpanan browser tidak tersedia. Muat ulang sebelum mengoreksi transaksi.</div>}
-      {failure && <div role="alert" className="p2ban">{failure}</div>}
+      {failure && <div role="alert" className="p2ban" data-outcome={outcome || undefined}>{failure}</div>}
       {children({ ready, storageError })}
     </form>
   );

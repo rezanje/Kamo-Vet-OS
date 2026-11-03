@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
+import { roleActionRefusal, roleRpcFailure } from "@/lib/role-action-access";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { validasiTransfer } from "@/lib/transfer-kas";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -19,6 +20,8 @@ async function simpan(formData: FormData, action: "create" | "edit" | "void") {
   const reason = String(formData.get("reason") ?? "").trim();
   const fail = (message: string): never => redirect(`${BACK}?${action === "create" ? "" : `${action === "edit" ? "koreksi" : "batal"}=${encodeURIComponent(id)}&`}error=${encodeURIComponent(message)}`);
   const recovery = formData.get("tindakan") === "periksa";
+  const refusal = await roleActionRefusal(supabase, `bank.cash_transfer.${recovery ? "recover" : action}`);
+  if (refusal) fail(refusal.message);
   if (!key || key.length > 120) fail("Identitas simpan belum tersedia. Muat ulang formulir.");
   if (!recovery && action !== "create" && (!id || !/^\d+$/.test(revisionText) || !Number.isSafeInteger(revision) || reason.length < 3 || reason.length > 1000)) fail("Identitas atau alasan koreksi tidak valid.");
   const header = action === "void" ? {} : {
@@ -41,7 +44,7 @@ async function simpan(formData: FormData, action: "create" | "edit" | "void") {
       p_expected_revision: action === "create" ? null : revision, p_header: header,
       p_reason: action === "create" ? null : reason,
     });
-  if (error) fail(["55P03", "40P01", "40001"].includes(error.code) ? "Catatan sedang diproses atau berubah bersamaan. Periksa hasil terakhir lalu muat ulang sebelum mencoba lagi." : error.message);
+  if (error) fail(["55P03", "40P01", "40001"].includes(error.code) ? "Catatan sedang diproses atau berubah bersamaan. Periksa hasil terakhir lalu muat ulang sebelum mencoba lagi." : roleRpcFailure(error)?.message ?? error.message);
   if (!data?.transfer_id || !data?.journal_entry_id || (action !== "create" && (!data?.reversal_journal_id || data.transfer_id !== id)) || (action === "edit" && (!data?.replacement_transfer_id || !data?.replacement_journal_id))) {
     fail("Hasil transfer belum terkonfirmasi lengkap. Isian tetap tersedia; periksa hasil terakhir sebelum mengirim ulang.");
   }
@@ -54,10 +57,12 @@ export async function batalkanTransfer(formData: FormData) { return simpan(formD
 
 export async function pulihkanTransfer(formData: FormData) {
   const supabase = await assertRole(BACK, "catatan transfer", ["OWNER", "ADMIN", "FINANCE"]);
+  const refusal = await roleActionRefusal(supabase, "bank.cash_transfer.recover");
+  if (refusal) gagal(refusal.message);
   const key = String(formData.get("draft_key") ?? "").trim();
   if (!key || key.length > 120) gagal("Identitas simpan tidak valid.");
   const { data, error } = await supabase.rpc("get_cash_transfer_result", { p_request_key: key });
-  if (error) gagal(error.message);
+  if (error) gagal(roleRpcFailure(error)?.message ?? error.message);
   if (!data?.transfer_id || !data?.journal_entry_id || !["create", "edit", "void"].includes(data.action)
     || (data.action !== "create" && !data.reversal_journal_id)
     || (data.action === "edit" && (!data.replacement_transfer_id || !data.replacement_journal_id))) {

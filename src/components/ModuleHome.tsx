@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { MODULE_LABEL, TILES, type Tile } from "@/lib/nav";
+import { bolehBukaPath, ROLE_V2_MARKER } from "@/lib/akses";
+import { useRoleMenu } from "./RoleMenuContext";
 
 function TileCard({ tile }: { tile: Tile }) {
   const inner = (
@@ -41,7 +43,9 @@ function TileCard({ tile }: { tile: Tile }) {
 // root-nya sudah punya konten sendiri (Penjualan, Pembelian) supaya submenunya
 // tetap punya pintu masuk.
 export function TileGrid({ moduleId }: { moduleId: string }) {
-  const tiles = TILES[moduleId] ?? [];
+  const access = useRoleMenu();
+  const v2 = access?.rules.some(r => r.role === access.role && r.module_id === ROLE_V2_MARKER);
+  const tiles = (TILES[moduleId] ?? []).filter(t => !v2 || !t.href || bolehBukaPath(access!.role, t.href, access!.rules));
   return (
     <div className="tile-grid">
       {tiles.map((t) => (

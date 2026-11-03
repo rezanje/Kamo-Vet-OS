@@ -1,5 +1,6 @@
 "use server";
 
+import { roleActionRefusal, roleRpcFailure } from "@/lib/role-action-access";
 import { revalidatePath } from "next/cache";
 import { parseEmployeeBranches } from "@/lib/employee-branch-input";
 import { bacaAkhiriPenugasan, bacaCabangUtamaMassal } from "@/lib/employee-assignment";
@@ -160,13 +161,15 @@ export async function editKaryawan(formData: FormData) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) redirect("/hris/karyawan?error=Karyawan%20tidak%20valid");
   const back = `/hris/karyawan/${id}`;
   const supabase = await assertMasterAdmin(back, "data karyawan");
+  const refusal = await roleActionRefusal(supabase, "people.editKaryawan");
+  if (refusal) redirect(`${back}?edit=1&error=${encodeURIComponent(refusal.message)}`);
   let row;
   try { row = bacaEditKaryawan(formData); }
   catch (error) { redirect(`${back}?edit=1&error=${encodeURIComponent(error instanceof Error ? error.message : "Data tidak valid")}`); }
   const { status: _status, gaji_pokok, branch_id, alasan_cabang, ...fields } = row;
   void _status; // Status uses the separate audited lifecycle action.
   const { data, error } = await supabase.from("employees").update(fields).eq("id", id).select("id").maybeSingle();
-  if (error || !data) redirect(`${back}?edit=1&error=${encodeURIComponent(error?.code === "23505" ? "NIK sudah terdaftar" : "Data karyawan gagal diperbarui")}`);
+  if (error || !data) redirect(`${back}?edit=1&error=${encodeURIComponent(error?.code === "23505" ? "NIK sudah terdaftar" : (error && roleRpcFailure(error)?.message) || "Data karyawan gagal diperbarui")}`);
   // Cabang utama lewat RPC: baris penugasan ikut dirapikan dan perubahannya tercatat.
   // RPC tidak melakukan apa pun bila cabangnya memang sudah sama.
   if (branch_id) {

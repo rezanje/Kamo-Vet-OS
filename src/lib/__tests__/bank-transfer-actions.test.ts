@@ -1,11 +1,33 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const { rpc, guard, redirect } = vi.hoisted(() => ({ rpc: vi.fn(), guard: vi.fn(), redirect: vi.fn((url: string): never => { throw new Error(url); }) }));
+const { rpc, guard, actionGuard, redirect } = vi.hoisted(() => ({ rpc: vi.fn(), guard: vi.fn(), actionGuard: vi.fn(), redirect: vi.fn((url: string): never => { throw new Error(url); }) }));
 vi.mock("@/lib/master-guard", () => ({ assertRole: guard }));
+vi.mock("@/lib/role-action-access", async importOriginal => ({ ...(await importOriginal<typeof import("@/lib/role-action-access")>()), roleActionRefusal: actionGuard }));
 vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 import { buatTransfer, batalkanTransfer, koreksiTransfer } from "@/app/(app)/kas-bank/transfer/actions";
-beforeEach(() => { vi.clearAllMocks(); guard.mockResolvedValue({ rpc }); rpc.mockResolvedValue({ data: { transfer_id: "transfer", no_transfer: "TF.1", revision: 0, journal_entry_id: "journal", reversal_journal_id: "reversal", replacement_transfer_id: "replacement", replacement_journal_id: "replacement-journal" }, error: null }); });
+beforeEach(() => { vi.clearAllMocks(); actionGuard.mockReset(); actionGuard.mockResolvedValue(null); guard.mockResolvedValue({ rpc }); rpc.mockResolvedValue({ data: { transfer_id: "transfer", no_transfer: "TF.1", revision: 0, journal_entry_id: "journal", reversal_journal_id: "reversal", replacement_transfer_id: "replacement", replacement_journal_id: "replacement-journal" }, error: null }); });
 function form() { const data = new FormData(); for (const [key, value] of Object.entries({ tanggal: "2026-10-20", from_account_id: "cash", to_account_id: "bank", jumlah: "100.25", biaya_admin: "1.25", branch_id: "branch", keterangan: "Transfer test", draft_key: "transfer-key", draft_scope: "bank-transfer-create", id: "transfer", revision: "0", reason: "Koreksi simulasi" })) data.set(key, value); return data; }
+it.each([[buatTransfer, "create"], [koreksiTransfer, "edit"], [batalkanTransfer, "void"]] as const)("checks the exact transfer action before any posting", async (action, key) => {
+  actionGuard.mockResolvedValueOnce({ ok: false, outcome: "rejected", code: "ROLE_ACTION_DENIED", message: "Tindakan ini tidak diizinkan" });
+  await expect(action(form())).rejects.toThrow(encodeURIComponent("Tindakan ini tidak diizinkan"));
+  expect(actionGuard).toHaveBeenCalledWith({ rpc }, `bank.cash_transfer.${key}`);
+  expect(rpc).not.toHaveBeenCalled();
+  expect(redirect).toHaveBeenCalledOnce();
+});
+it("requires recovery permission for the dedicated uncertain-result path", async () => {
+  const { pulihkanTransfer } = await import("@/app/(app)/kas-bank/transfer/actions");
+  actionGuard.mockResolvedValueOnce({ ok: false, outcome: "rejected", code: "ROLE_ACTION_DENIED", message: "Tindakan ini tidak diizinkan" });
+  await expect(pulihkanTransfer(form())).rejects.toThrow(encodeURIComponent("Tindakan ini tidak diizinkan"));
+  expect(actionGuard).toHaveBeenCalledWith({ rpc }, "bank.cash_transfer.recover");
+  expect(rpc).not.toHaveBeenCalled();
+});
+it("requires recovery permission for inline periksa instead of create permission", async () => {
+  const data = form(); data.set("tindakan", "periksa");
+  actionGuard.mockResolvedValueOnce({ ok: false, outcome: "rejected", code: "ROLE_ACTION_DENIED", message: "Tindakan ini tidak diizinkan" });
+  await expect(buatTransfer(data)).rejects.toThrow(encodeURIComponent("Tindakan ini tidak diizinkan"));
+  expect(actionGuard).toHaveBeenCalledExactlyOnceWith({ rpc }, "bank.cash_transfer.recover");
+  expect(rpc).not.toHaveBeenCalled();
+});
 it("creates both ledger sides with a single durable atomic RPC", async () => {
   await expect(buatTransfer(form())).rejects.toThrow("success=1");
   expect(rpc).toHaveBeenCalledWith("mutate_cash_transfer", expect.objectContaining({ p_request_key: "transfer-key", p_action: "create", p_transfer_id: null }));
