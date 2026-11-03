@@ -49,7 +49,7 @@ export default async function PersetujuanPage({
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--sb)", lineHeight: 1.1 }}>FORM PERSETUJUAN RAWAT INAP</div>
           <div style={{ fontSize: 11.5, color: "var(--tm)" }}>Template yang dipakai saat meminta persetujuan tindakan</div>
         </div>
-        {bolehKelola && <TemplateForm branches={branches ?? []} editing={editing} />}
+        {bolehKelola && <TemplateForm key={editing?.id ?? "baru"} branches={branches ?? []} editing={editing} />}
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}

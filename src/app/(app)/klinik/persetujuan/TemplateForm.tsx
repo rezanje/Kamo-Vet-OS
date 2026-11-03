@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PLACEHOLDERS, TEMPLATE_CATEGORIES } from "@/lib/consent";
 import { simpanTemplate } from "./actions";
@@ -21,6 +21,9 @@ export function TemplateForm({ branches, editing }: {
 }) {
   const [open, setOpen] = useState(!!editing);
   const [isi, setIsi] = useState(editing?.isi ?? "");
+  const formRef = useRef<HTMLFormElement>(null);
+  // Tombol Edit ada di daftar (jauh di bawah); formulir ada di atas. Setelah dibuka, bawa ke layar.
+  useEffect(() => { if (editing) formRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" }); }, [editing]);
 
   if (!open) {
     return (
@@ -33,7 +36,7 @@ export function TemplateForm({ branches, editing }: {
   const sisip = (p: string) => setIsi((v) => `${v}{${p}}`);
 
   return (
-    <form action={simpanTemplate} className="crm-sec" style={{ marginBottom: 14 }}>
+    <form ref={formRef} action={simpanTemplate} className="crm-sec" style={{ marginBottom: 14 }}>
       <input type="hidden" name="id" value={editing?.id ?? ""} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em" }}>
