@@ -20,3 +20,7 @@ it("retains uncertainty for transport and unknown failures, never claims a faile
   expect(parseClinicPostingError({ code:"504",message:"Gateway timeout" },uncertain)).toBe(uncertain);
   expect(parseClinicPostingError({ code:"P0001",message:"UNRECOGNIZED_INTERNAL_ERROR" },uncertain)).toBe(uncertain);
 });
+it("shows the cashier the specific sealed-performer rejection (row, reason, what to do) instead of the uncertain-save text", () => {
+  const message = 'CARE_INVALID: pelaksana baris "Jasa Fiktif" tidak dapat diganti: baris ini pernah masuk invoice yang dibatalkan atau diterbitkan ulang. Muat ulang halaman; pelaksana baris ini hanya dapat diubah lewat koreksi dokumen invoice.';
+  expect(parseClinicPostingError({ code: "P0001", message }, uncertain)).toBe(message.slice("CARE_INVALID:".length).trim());
+});

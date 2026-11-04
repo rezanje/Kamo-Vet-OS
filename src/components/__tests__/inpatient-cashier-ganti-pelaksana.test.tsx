@@ -95,3 +95,38 @@ it("peran tanpa hak mengganti pelaksana (DOKTER): baris pending tetap tersegel t
   expect(selects().length).toBe(0);
   expect(payload()[0].service_performers).toEqual(stored);
 });
+
+const legends = () => [...host.querySelectorAll("legend")].map(el => el.textContent);
+
+it("kosongkan pilihan (Belum ditetapkan) pada dokter tersimpan mengirim pasangan kosong; database membacanya sebagai TIDAK berubah, bukan penghapusan", async () => {
+  await render([medicine()]);
+  await selectValue(withOption("drh. Kedua Fiktif")[0], "");
+  // Kontrak dengan RPC: pasangan null/null = tidak berubah (atribusi tersimpan tidak pernah dikosongkan dari kasir).
+  expect(payload()[0].service_performers).toMatchObject({ doctor_id: null, staff_id: null });
+});
+
+it("baris pending yang masih menunjuk invoice dibatalkan (performers_sealed) tetap tersegel: tanpa pemilih, nama tersimpan tampil, payload apa adanya", async () => {
+  await render([medicine({ id: "void-1", nama_obat: "Obat Segel", performers_sealed: true }), medicine({ id: "ok-1", nama_obat: "Obat Lain" })]);
+  expect(legends()).toContain("Pelaksana Obat Lain");
+  expect(legends()).not.toContain("Pelaksana Obat Segel");
+  expect(host.textContent).toContain("drh. Fiktif");
+  // Pemilih massal ("Isi baris kosong") tidak menyentuh baris tersegel.
+  expect(payload().map(row => row.service_performers)).toEqual([stored, stored]);
+});
+
+it("semua baris pending tersegel: tidak ada pemilih sama sekali (juga tidak ada pengisi massal)", async () => {
+  await render([medicine({ id: "void-1", performers_sealed: true }), medicine({ id: "void-2", nama_obat: "Obat Segel Dua", performers_sealed: true })]);
+  expect(selects().length).toBe(0);
+  expect(payload().map(row => row.id)).toEqual(["void-1", "void-2"]);
+});
+
+it.each([[0], [1]])("kartu paket pending dengan SATU komponen tersegel (indeks %i): seluruh kartu tersegel, tidak menyamakan pelaksana sebagian", async (sealedIndex) => {
+  const lines = [
+    medicine({ id: "pk-1", package_item_id: group, package_qty: 1, qty: 2 }),
+    medicine({ id: "pk-2", item_id: service, nama_obat: "Jasa Isi", qty: 1, harga: 40000, satuan: "x", jenis: "jasa", package_item_id: group, package_qty: 1 }),
+  ];
+  lines[sealedIndex].performers_sealed = true;
+  await render(lines);
+  expect(legends()).not.toContain("Pelaksana Paket Fiktif");
+  expect(payload().map(row => row.service_performers?.doctor_id)).toEqual([doctor, doctor]);
+});

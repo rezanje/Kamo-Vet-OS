@@ -40,6 +40,8 @@ type Line = {
   salesperson_name?: string | null;
   source_invoice_item_id?: string | null;
   service_performers?: ServicePerformersSnapshot | null;
+  /** Rawat inap: baris pending yang masih menunjuk invoice dibatalkan — pelaksana tersegel, pemilih tidak dibuka. */
+  performers_sealed?: boolean;
   kategori?: string | null;
   deskripsi: string; qty: number; harga: number; item_id?: string | null; satuan?: string | null;
   prescription_item_id?: string | null; recipe_id?: string | null;
@@ -109,7 +111,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   /** Paket dihapus: semua isinya (obat & jasa) ikut terhapus. */
   onRemovePackage?: (packageId: string) => void;
 }) {
-  const pendingEditable = (r: Line) => performersForPendingRows && !!r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id;
+  const pendingEditable = (r: Line) => performersForPendingRows && !!r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id && !r.performers_sealed;
   const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id) && !pendingEditable(r));
   const rowSealed = (r: Line) => sealedPerformers && !(performersForNewRows && !r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id) && !pendingEditable(r);
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -169,7 +171,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
             rows.findIndex(row => row.package_item_id === r.package_item_id) === i
               ? <PaketTagihan key={`paket-${r.package_item_id}`} nomor={i + 1} nama={packages.find(option => option.id === r.package_item_id)!.name}
                   isi={rows.filter(row => row.package_item_id === r.package_item_id)} allowUnits={allowUnits} discountsDisabled={discountsDisabled}
-                  staff={serviceStaff} performerLocked={rowSealed(r) || performerLocked(r)} quantityLocked={packageQuantityLocked} allowDetach={!sealedPerformers}
+                  staff={serviceStaff} performerLocked={rows.filter(row => row.package_item_id === r.package_item_id).some(row => rowSealed(row) || performerLocked(row))} quantityLocked={packageQuantityLocked} allowDetach={!sealedPerformers}
                   onJumlah={jumlah => onPackageQty ? onPackageQty(r.package_item_id!, jumlah) : undefined}
                   onDiskon={diskon => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, diskon_persen: diskon } : row))}
                   onPelaksana={value => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, service_performers: value } : row))}

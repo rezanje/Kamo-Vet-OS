@@ -22,7 +22,7 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
   // historical invoice prefill or visit-default performer rewrite belongs here.
   const [rows, setRows] = useState<Line[]>(() => data.rows.map(row => ({
     key: row.id, prescription_item_id: row.id, item_id: row.item_id, deskripsi: row.nama_obat, qty: Number(row.qty), harga: Number(row.harga), satuan: row.satuan,
-    recipe_id: row.compound_recipe_id, service_performers: row.service_performers, terkunci: !!row.compound_recipe_id, diskon_persen: 0,
+    recipe_id: row.compound_recipe_id, service_performers: row.service_performers, performers_sealed: !!row.performers_sealed, terkunci: !!row.compound_recipe_id, diskon_persen: 0,
     jenis: row.jenis === "jasa" ? "jasa" : "obat", package_item_id: row.package_item_id, package_qty: row.package_qty,
   })));
   const [reason, setReason] = useState("Konfirmasi keranjang rawat inap");

@@ -34,12 +34,25 @@ def line_perf(h, rid): return json.loads(h.nilai(f"select coalesce(jsonb_agg(ser
 def ids(p): return None if p is None else (p.get('doctor_id'), p.get('staff_id'))
 def audits(h, v): return h.angka(f'select count(*) from clinic_pending_cart_edits where visit_id={q(v)}')
 def invoices(h, v): return h.angka(f'select count(*) from invoices where visit_id={q(v)}')
-def pending_visit(h, n, extra_performers=None):
+def pending_visit(h, n, extra_performers=None, jenis='jasa'):
     v, mr = m.visit(h, n); stay = stay_of(h, v); extra = None
     if extra_performers is not None:
         extra = r.uid('e', n)
-        h.sql(f"insert into prescription_items(id,medical_record_id,nama_obat,qty,harga,satuan,jenis,kategori,faktor,service_performers) values({q(extra)},{q(mr)},'Jasa Pelaksana Lama Fiktif',1,30000,'kali','jasa','Tindakan',1,{q(json.dumps(extra_performers))}::jsonb);")
+        nama, kategori = ('Jasa Pelaksana Lama Fiktif', "'Tindakan'") if jenis == 'jasa' else ('Obat Khusus Lama Fiktif', 'null')
+        h.sql(f"insert into prescription_items(id,medical_record_id,nama_obat,qty,harga,satuan,jenis,kategori,faktor,service_performers) values({q(extra)},{q(mr)},'{nama}',1,30000,'kali','{jenis}',{kategori},1,{q(json.dumps(extra_performers))}::jsonb);")
     return v, mr, stay, extra
+def pay_all(h, v, stay, rows_, cart, key, user=r.STAFF): return h.gagal(save(v, stay, cart['snapshot'], rows_, [dict(method='Tunai', amount=total(cart))], key), user)
+def with_perf(cart, row_id, value):
+    rows_ = json.loads(json.dumps(cart['rows'])); next(row for row in rows_ if row['id'] == row_id)['service_performers'] = value; return rows_
+def update_perf(row_id, value): return f"update prescription_items set service_performers={q(json.dumps(value))}::jsonb where id={q(row_id)};"
+def jwt(user): return "select set_config('request.jwt.claims'," + q(json.dumps(dict(sub=user, role='authenticated'))) + ',false);\n'
+def direct(h, user, permit_actor, permit_row, body, end='commit'):
+    """One transaction in the SECURITY DEFINER context the cashier RPC runs in (superuser session, signed-in claims) so the
+    TRIGGER-level conditions are tested without the RPC's own pre-checks in front of them. A client role would be stopped even
+    earlier by guard_full_record_prescription (finished visits), which says nothing about this guard. The permit row is planted by
+    hand first, i.e. the RPC's own job."""
+    plant = f"insert into clinic_private.performer_change_permits values(txid_current(),{q(permit_actor)},{q(permit_row)});" if permit_row else ''
+    return h.gagal('begin;' + plant + jwt(user) + body + end + ';')
 def total(cart): return sum(row['qty'] * row['harga'] for row in cart['rows'])
 def row_named(cart, name): return next(row for row in cart['rows'] if row['nama_obat'] == name)
 
@@ -163,6 +176,92 @@ def run(h):
         x.c.wait_block(observer, waiter, gate, barriers); gate.sql(f"update employees set jabatan='Perawat' where id={q(D3)};commit;"); out = x.c.attempt(waiter)
     check('employee row lock order is the same as for new rows: a job change during the wait refuses the change, nothing invoiced',
           (not out['ok']) and 'CARE_INVALID' in out.get('error', '') and ids(stored(h, extra)) == (D1, None) and invoices(h, v) == 0, dict(outcome=out, barriers=len(barriers)))
+
+    # ================= review fixes (F1-F4) =================
+    # F1. Kosong = TIDAK berubah: {} / pasangan null / string kosong tidak pernah menghapus atribusi tersimpan.
+    for label, n, value in [('empty object {}', 2120, {}), ('null/null pair', 2121, perf(None, None)), ('blank-string pair', 2122, dict(doctor_id='', staff_id=''))]:
+        v, mr, stay, extra = pending_visit(h, n, perf(D1, N1)); cart = read(h, v, stay); before = stored(h, extra)
+        err = pay_all(h, v, stay, with_perf(cart, extra, value), cart, f'perf-empty-{n}')
+        check(f'payload {label} over a stored Dokter+Non-dokter is UNCHANGED (never clears attribution); invoice carries the stored people',
+              not err and stored(h, extra) == before and [ids(p) for p in line_perf(h, extra)] == [(D1, N1)] and audits(h, v) == 0, dict(error=err, stored=stored(h, extra)))
+    v, mr, stay, extra = pending_visit(h, 2123, perf(D1), jenis='obat'); cart = read(h, v, stay); before = stored(h, extra)
+    err = pay_all(h, v, stay, with_perf(cart, extra, {}), cart, 'perf-empty-obat')
+    check('goods (Obat Khusus) row: {} payload over a stored Dokter is UNCHANGED, not cleared to NULL', not err and stored(h, extra) == before and [ids(p) for p in line_perf(h, extra)] == [(D1, None)], dict(error=err, stored=stored(h, extra)))
+    for label, n, jenis, value in [('string over goods row', 2124, 'obat', 'bukan-objek'), ('array over service row', 2125, 'jasa', []), ('number over goods row', 2126, 'obat', 7)]:
+        v, mr, stay, extra = pending_visit(h, n, perf(D1), jenis=jenis); cart = read(h, v, stay); before = stored(h, extra)
+        err = pay_all(h, v, stay, with_perf(cart, extra, value), cart, f'perf-nonobj-{n}')
+        check(f'non-object performers payload refused ({label}): CARE_INVALID, stored attribution kept, nothing invoiced', bool(err and 'CARE_INVALID' in err) and stored(h, extra) == before and invoices(h, v) == 0, dict(error=(err or '')[:160]))
+    v, mr, stay, extra = pending_visit(h, 2127, perf(D1)); cart = read(h, v, stay)
+    check('control: explicit change to another valid pair still counts as a change', not pay_all(h, v, stay, with_perf(cart, extra, perf(D2, N2)), cart, 'perf-explicit-change') and ids(stored(h, extra)) == (D2, N2), {})
+
+    # F2. Baris pending yang masih punya invoice_items ke invoice yang DIBATALKAN: tersegel, jelas, tertutup.
+    v, mr, stay, extra = pending_visit(h, 2130, perf(D1)); cart = read(h, v, stay)
+    err = pay_all(h, v, stay, cart['rows'], cart, 'perf-void-pay'); voided_row, voided_visit = extra, v
+    h.sql(f"update invoices set voided_at=now() where visit_id={q(v)};")
+    fresh_row = r.uid('f', 2130)
+    h.sql(f"insert into prescription_items(id,medical_record_id,nama_obat,qty,harga,satuan,jenis,faktor) values({q(fresh_row)},{q(mr)},'Obat Baru Setelah Void Fiktif',1,10000,'kali','obat',1);")
+    cart = read(h, v, stay); flags = {row['id']: row.get('performers_sealed') for row in cart['rows']}
+    check('read RPC marks rows that still reference an invoice (voided) as performers_sealed=true and clean pending rows false',
+          not err and flags.get(voided_row) is True and flags.get(fresh_row) is False and all(isinstance(f, bool) for f in flags.values()), dict(error=err, flags=flags))
+    a0, i0 = audits(h, v), invoices(h, v)
+    err = h.gagal(save(v, stay, cart['snapshot'], with_perf(cart, voided_row, perf(D2, N1)), [dict(method='Tunai', amount=total(cart))], 'perf-void-change'), r.STAFF)
+    check('changing performers of a voided-invoice row is refused with a SPECIFIC message (row name, reason, what to do), not the generic guard text; nothing written',
+          bool(err and 'CARE_INVALID' in err and 'Jasa Pelaksana Lama Fiktif' in err and 'koreksi dokumen invoice' in err and 'ditulis ulang' not in err)
+          and ids(stored(h, voided_row)) == (D1, None) and audits(h, v) == a0 and invoices(h, v) == i0 and stored(h, fresh_row) is None, dict(error=(err or '')[:400]))
+    err = h.gagal(save(v, stay, cart['snapshot'], with_perf(cart, voided_row, perf(D1, None)), [dict(method='Tunai', amount=total(cart))], 'perf-void-same'), r.STAFF)
+    check('sealed row with its STORED performers sent back unchanged still saves (no silent regression for stale values)', not err and ids(stored(h, voided_row)) == (D1, None), dict(error=(err or '')[:300]))
+
+    # F3. Pelindung tingkat-trigger, dicoba lewat jalur langsung (izin ditanam manual) agar pra-cek RPC tidak menutupi.
+    check('no permit row survives any earlier RPC run (success, refusal, P0409)', h.angka('select count(*) from clinic_private.performer_change_permits') == 0, {})
+    v, mr, stay, extra = pending_visit(h, 2140, perf(D1)); target = perf(D2, N1)
+    err = direct(h, r.STAFF, r.STAFF, extra, update_perf(extra, target)); now = stored(h, extra)
+    check('control: a valid permit for THIS row, THIS txn, THIS user lets the trigger write normalized performers', not err and ids(now) == (D2, N1) and now.get('doctor_name') == 'Dokter Dua Fiktif', dict(error=(err or '')[:200]))
+    h.sql('delete from clinic_private.performer_change_permits;')
+    v, mr, stay, extra = pending_visit(h, 2139, perf(D1))
+    err = direct(h, r.STAFF, None, None, update_perf(extra, target))
+    check('control: the same trigger-level UPDATE WITHOUT any permit is refused (attribution cannot be rewritten)', bool(err and 'ditulis ulang' in err) and ids(stored(h, extra)) == (D1, None), dict(error=(err or '')[:200]))
+    v, mr, stay, extra = pending_visit(h, 2138, perf(D1))
+    h.sql(f"insert into clinic_private.performer_change_permits values(1,{q(r.STAFF)},{q(extra)});")  # leftover of some OTHER transaction
+    err = direct(h, r.STAFF, None, None, update_perf(extra, target)); h.sql('delete from clinic_private.performer_change_permits;')
+    check('a permit row left by ANOTHER transaction (right user, right row) is not usable (permit is bound to txid_current())', bool(err and 'ditulis ulang' in err) and ids(stored(h, extra)) == (D1, None), dict(error=(err or '')[:200]))
+    v, mr, stay, extra = pending_visit(h, 2141, perf(D1))
+    err = direct(h, r.STAFF, r.ADMIN, extra, update_perf(extra, target))
+    check("another user's permit cannot be used (permit actor must equal auth.uid())", bool(err and 'ditulis ulang' in err) and ids(stored(h, extra)) == (D1, None), dict(error=(err or '')[:200]))
+    v, mr, stay, extra = pending_visit(h, 2142, perf(D1)); cart = read(h, v, stay); other = next(row['id'] for row in cart['rows'] if row['id'] != extra); other_before = stored(h, other)
+    err = direct(h, r.STAFF, r.STAFF, extra, update_perf(other, target))
+    err2 = direct(h, r.STAFF, r.STAFF, extra, update_perf(extra, target) + update_perf(other, target))
+    check('a permit for row A cannot be used for row B (same transaction, same user)', bool(err and 'ditulis ulang' in err) and bool(err2) and ids(stored(h, extra)) == (D1, None) and stored(h, other) == other_before, dict(error=(err or '')[:160], error2=(err2 or '')[:160]))
+    err = direct(h, r.STAFF, r.STAFF, voided_row, update_perf(voided_row, target))
+    check('trigger itself refuses a row that still references an invoice (voided) even with a valid permit', bool(err and 'ditulis ulang' in err) and ids(stored(h, voided_row)) == (D1, None), dict(error=(err or '')[:200]))
+    v, mr, stay, extra = pending_visit(h, 2143, perf(D1)); cart = read(h, v, stay)
+    err = h.gagal(save(v, stay, cart['snapshot'], [row for row in cart['rows'] if row['id'] != extra], [dict(method='Tunai', amount=total(cart) - 30000)], 'perf-withdraw-direct'), r.STAFF)
+    err2 = direct(h, r.STAFF, r.STAFF, extra, update_perf(extra, target))
+    check('trigger itself refuses a withdrawn (billing_withdrawn_at) row even with a valid permit', not err and bool(err2 and 'ditulis ulang' in err2) and ids(stored(h, extra)) == (D1, None), dict(error=err, error2=(err2 or '')[:200]))
+    # official_prescription_snapshot (RECIPE_LINKED) fires first on official racikan rows; switch it off inside a rolled-back
+    # transaction so THIS guard's own compound condition is what is being tested.
+    err = direct(h, r.STAFF, r.STAFF, comp['id'], 'alter table public.prescription_items disable trigger official_prescription_snapshot;' + update_perf(comp['id'], target), end='rollback')
+    check('trigger itself refuses a compound (racikan) row even with a valid permit (other racikan trigger disabled in a rolled-back txn)', bool(err and 'ditulis ulang' in err) and ids(stored(h, comp['id'])) != (D2, N1), dict(error=(err or '')[:200]))
+    v, mr, stay, extra = pending_visit(h, 2144, perf(D1))
+    err = direct(h, r.STAFF, r.STAFF, extra, update_perf(extra, {}))
+    err2 = direct(h, r.STAFF, r.STAFF, extra, update_perf(extra, perf(None, None)))
+    err3 = direct(h, r.STAFF, r.STAFF, extra, f"update prescription_items set service_performers=null where id={q(extra)};")
+    check('trigger itself refuses to CLEAR stored attribution ({} / null pair / SQL NULL) even with a valid permit',
+          all(bool(e and 'dikosongkan' in e) for e in (err, err2, err3)) and ids(stored(h, extra)) == (D1, None), dict(error=(err or '')[:200], error2=(err2 or '')[:200], error3=(err3 or '')[:200]))
+    v, mr, stay, extra = pending_visit(h, 2145, perf(D1)); cart = read(h, v, stay)
+    script = 'begin;' + x.claims(r.STAFF) + save(v, stay, cart['snapshot'], with_perf(cart, extra, perf(D2, N1)), [dict(method='Tunai', amount=total(cart))], 'perf-permit-consumed') \
+        + 'reset role; select count(*) from clinic_private.performer_change_permits; commit;'
+    left = h.nilai(script)
+    check('RPC deletes the per-row permit right after the UPDATE (zero permit rows inside the same transaction, and after commit)',
+          left == '0' and ids(stored(h, extra)) == (D2, N1) and h.angka('select count(*) from clinic_private.performer_change_permits') == 0, dict(left=left))
+    v, mr, stay, extra = pending_visit(h, 2146, perf(D1)); cart = read(h, v, stay)
+    err = h.gagal('begin;' + x.claims(r.STAFF) + save(v, stay, cart['snapshot'], with_perf(cart, extra, perf(D2, N1)), [dict(method='Tunai', amount=total(cart))], 'perf-reuse-after') + 'reset role;' + update_perf(extra, perf(D3, N2)) + 'commit;')
+    check('after the RPC wrote the row, a second UPDATE of it in the same transaction is refused (permit not reusable)', bool(err and 'ditulis ulang' in err) and ids(stored(h, extra)) == (D1, None), dict(error=(err or '')[:200]))
+
+    # F4. Kasir cabang lain tidak dapat mengganti pelaksana kunjungan cabang ini.
+    v, mr, stay, extra = pending_visit(h, 2150, perf(D1)); cart = read(h, v, stay); a0 = audits(h, v)
+    err = h.gagal(save(v, stay, cart['snapshot'], with_perf(cart, extra, perf(D2, N1)), [dict(method='Tunai', amount=total(cart))], 'perf-other-branch'), r.FIN_LUAR)
+    check('FINANCE cashier of ANOTHER branch cannot change performers of this branch visit (ACCESS_DENIED); nothing written/invoiced/audited',
+          bool(err and 'ACCESS_DENIED' in err) and ids(stored(h, extra)) == (D1, None) and invoices(h, v) == 0 and audits(h, v) == a0, dict(error=(err or '')[:200]))
 
 
 def main():
