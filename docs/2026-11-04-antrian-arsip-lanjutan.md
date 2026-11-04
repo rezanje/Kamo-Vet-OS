@@ -28,10 +28,17 @@ Penanda yang dipakai (semua jalur impor rekam medis mengisinya; dijaga tes cakup
 | `visits.legacy_source_hash` | impor sejak 1101 (sidik isi) |
 | bukti ERP: `visits.checked_in_at` | registrasi klinik (`registrasi/actions.ts`) dan lanjutan rawat inap (`clinic_continue_visit_to_inpatient`); TIDAK diisi impor |
 
-Aturan (`clinic_private.visit_archive_origin`): penanda impor terisi → `impor` (ditolak, juga saat dipaksa); `checked_in_at` terisi → `erp` (boleh, mengikuti syarat biasa: tanpa invoice/pembayaran dst.); selain itu `tidak_pasti` → **ditolak (gagal tertutup)**.
+Aturan (`clinic_private.visit_archive_origin`): penanda impor terisi → `impor` (ditolak, juga saat dipaksa, **untuk status apa pun**: membalik status Selesai → Diperiksa tidak meloloskan); `checked_in_at` terisi → `erp` (boleh, mengikuti syarat biasa: tanpa invoice/pembayaran dst.); selain itu `tidak_pasti` → **ditolak (gagal tertutup)** bila kunjungan sudah selesai.
+
+### Bukti asal tidak bisa dipalsukan (syarat review independen)
+Trigger `a1_guard_visit_origin_evidence` (BEFORE UPDATE OF empat kolom itu, hanya jalan bila salah satunya berubah):
+- `legacy_source_key` / `legacy_record_no` / `legacy_source_hash` / `checked_in_at` yang **sudah terisi** tidak bisa diubah atau dikosongkan oleh peran apa pun (STAFF, DOKTER, ADMIN, OWNER, bahkan `postgres`) lewat UPDATE biasa → `ORIGIN_LOCKED`.
+- Yang **masih kosong** tidak bisa diisi belakangan oleh peran API (`authenticated`/`anon`/`service_role`); penanda hanya lahir saat INSERT (registrasi mengisi `checked_in_at`, semua jalur impor mengisi penanda impor saat INSERT — tidak berubah). DB admin (postgres di SQL editor) tetap boleh mengisi penanda yang masih kosong: itulah jalur klasifikasi oleh Reza (di bawah).
+- Mengubah bukti yang sudah terisi butuh langkah sengaja (`alter table public.visits disable trigger a1_guard_visit_origin_evidence`), tidak bisa lewat aplikasi.
+- Tidak dicakup: hapus-lalu-buat-ulang kunjungan (DELETE oleh STAFF/OWNER, temuan L4 PR #438) — itu menghapus isi klinisnya, bukan memalsukan asal baris yang ada.
 
 ### Celah yang tidak bisa dibuktikan dari kode (butuh Reza)
-Kunjungan Selesai yang dibuat SEBELUM kolom `checked_in_at` ada (31 Agt 2026) atau yang dimasukkan lewat SQL/CSV di luar fungsi impor tidak punya penanda apa pun. Itu yang jatuh ke `tidak_pasti`. Kami **tidak menebak**. Usulan penanda minimal bila dibutuhkan: kolom `visits.origin text check (origin in ('erp','impor'))` (null = belum diklasifikasi; diisi 'erp' otomatis oleh registrasi), diisi satu kali oleh Reza dari daftar di bawah, lalu aturan origin memakai kolom itu lebih dulu. SQL baca-saja untuk klasifikasi:
+Kunjungan Selesai yang dibuat SEBELUM kolom `checked_in_at` ada (31 Agt 2026) atau yang dimasukkan lewat SQL/CSV di luar fungsi impor tidak punya penanda apa pun. Itu yang jatuh ke `tidak_pasti`. Kami **tidak menebak**. Klasifikasi oleh Reza (postgres, SQL editor, satu per satu setelah daftar dibaca): kunjungan yang jelas dari ERP diberi `checked_in_at` (hanya bila masih kosong; trigger mengizinkan DB admin, menolak peran API). Tidak ada kolom `origin` baru: penanda yang sudah ada + trigger tahan-ubah dipakai. SQL baca-saja untuk klasifikasi (dua pernyataan terpisah):
 
 ```sql
 -- Ringkasan asal kunjungan Selesai (BACA SAJA)
@@ -42,7 +49,9 @@ select case when legacy_source_key is not null or legacy_record_no is not null o
        count(*) filter (where branch_id is null) as tanpa_cabang,
        count(*) filter (where queue_number is not null) as punya_no_antri
 from public.visits v where status::text = 'Selesai' or checked_out_at is not null group by 1 order by 1;
+```
 
+```sql
 -- Daftar yang perlu diklasifikasi Reza (tidak_pasti), terbaru dulu
 select v.id, v.created_at::date as tanggal, v.queue_number, v.branch_id, v.source,
        exists(select 1 from public.invoices i where i.visit_id = v.id) as punya_invoice,
@@ -58,8 +67,9 @@ order by v.created_at desc limit 500;
 - Baris Selesai kini boleh diarsipkan (tombol tampil) kecuali yang `legacy_source_key`-nya terisi; keputusan akhir tetap di database.
 - Pesan `lock timeout` dijelaskan dalam bahasa biasa.
 
-## 4. Arsip massal sebelum 1 Nov 2026
-`scripts/sql/bulk-arsip-antrian-pratinjau.sql` (baca-saja) dan `scripts/sql/bulk-arsip-antrian-jalankan.sql` (simulasi secara bawaan; **belum dijalankan di database mana pun**, hanya diuji pada fixture fiktif). Rencana dan langkah: `bulk-arsip-plan.md` di folder bukti.
+## 4. Arsip massal sebelum 1 Nov 2026 (versi setelah review)
+Lihat `scripts/sql/bulk-archive-plan.md` untuk urutan aman: simulasi (`p_jalankan` NULL/false = simulasi, `p_batas` NULL = 50, maksimum 500) → baca daftar baris demi baris (baris Pembayaran/Selesai yang AKAN_DIARSIPKAN dengan isi klinis akan **dipaksa arsip**) → bagian terpisah **PERLU_MANUAL** (Pembayaran dengan invoice draft/belum lunas tidak pernah diarsipkan skrip) → jalankan per batch sampai `remaining_archivable = 0`.
+`scripts/sql/bulk-arsip-antrian-pratinjau.sql` (baca-saja) dan `scripts/sql/bulk-arsip-antrian-jalankan.sql` (simulasi secara bawaan; **belum dijalankan di database mana pun**, hanya diuji pada fixture fiktif). Rencana dan langkah: `scripts/sql/bulk-archive-plan.md`.
 
 ## 5. Yang sengaja tidak diubah
 `refuse_archived_visit`, `guard_visit_archive`, permit per transaksi, daftar tabel penjaga INSERT, patch `daftar_rekam_medis`, tanda tangan publik `clinic_archive_visit/clinic_unarchive_visit`. Saran review L2/L3/L4 (TOCTOU penulis tanpa kunci visit, UPDATE visit_id, DELETE arsip) tidak dikerjakan di sini.

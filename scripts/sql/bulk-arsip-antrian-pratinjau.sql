@@ -3,13 +3,16 @@
 -- 20261106840000 aktif. Tidak bergantung pada fungsi arsip: bendera uang/stok dihitung langsung dari tabel.
 -- Ubah HANYA tanggal batas di baris "cutoff".
 --
--- Hasil 3 tabel (jalankan satu per satu bila editor hanya menampilkan hasil terakhir):
+-- Hasil 6 tabel (jalankan satu per satu bila editor hanya menampilkan hasil terakhir):
 --   [1] jumlah per status x kategori   [2] daftar baris yang DILEWATI karena uang/stok/rawat inap   [3] Selesai impor / asal tidak pasti
+--   [4] PERLU DITANGANI MANUAL: kunjungan masih di antrean (mis. Pembayaran + invoice draft/belum lunas) yang TIDAK akan diarsipkan
+--   [5] Pembayaran/Selesai yang berisi data klinis dan AKAN DIPAKSA arsip (Owner wajib membaca baris demi baris)
+--   [6] cek impor bercabang (branch_id terisi + penanda impor) di seluruh tabel kunjungan, sebelum arsip massal dijalankan
 -- Kategori:
 --   ARSIP_BIASA        tidak ada isi klinis/item/persetujuan, tidak ada uang/stok -> lolos arsip biasa
 --   ARSIP_PERLU_PAKSA  ada isi klinis/item tertunda/persetujuan/tindak lanjut tapi TIDAK ada uang/stok -> diarsipkan dengan mode paksa OWNER
 --   DILEWATI_UANG_STOK ada invoice/pembayaran/DP/refund/racikan terjual/pergerakan stok/tagihan rawat inap/rawat inap
---   DILEWATI_IMPOR     Selesai + penanda impor (legacy_source_key / legacy_record_no / legacy_source_hash)
+--   DILEWATI_IMPOR     penanda impor terisi (legacy_source_key / legacy_record_no / legacy_source_hash), status apa pun
 --   DILEWATI_ASAL_TIDAK_PASTI  Selesai tanpa penanda impor tetapi tanpa bukti ERP (checked_in_at kosong)
 
 drop table if exists pg_temp.bulk_arsip_pratinjau;
@@ -47,7 +50,7 @@ f as (
 select f.*,
  case
   when f.ada_invoice or f.ada_pembayaran or f.ada_dp or f.ada_refund or f.ada_racikan_terjual or f.ada_pergerakan_stok or f.ada_tagihan_ranap or f.ada_ranap then 'DILEWATI_UANG_STOK'
-  when (f.status='Selesai' or f.checked_out_at is not null) and f.impor then 'DILEWATI_IMPOR'
+  when f.impor then 'DILEWATI_IMPOR'
   when (f.status='Selesai' or f.checked_out_at is not null) and not f.bukti_erp then 'DILEWATI_ASAL_TIDAK_PASTI'
   when f.ada_item_resep or f.ada_persetujuan_ttd or f.ada_isi_klinis or f.ada_tindak_lanjut_dll then 'ARSIP_PERLU_PAKSA'
   else 'ARSIP_BIASA' end as kategori
@@ -67,3 +70,27 @@ where b.kategori='DILEWATI_UANG_STOK' order by b.created_at, b.id;
 -- [3] Selesai yang bukan jelas dari ERP (klasifikasi untuk Reza)
 select b.id as visit_id, b.status, b.created_at::date as tanggal, b.impor, b.bukti_erp, b.kategori
 from bulk_arsip_pratinjau b where b.kategori in ('DILEWATI_IMPOR','DILEWATI_ASAL_TIDAK_PASTI') order by b.kategori, b.created_at limit 500;
+
+-- [4] perlu ditangani manual: masih di antrean aktif (bukan Selesai) tetapi ada penghalang uang/stok/rawat inap -> skrip TIDAK akan mengarsipkannya
+-- (invoice draft/belum lunas/dibatalkan pun menghalangi). Selesaikan atau batalkan lewat alur kasir/rawat inap, atau minta Reza menanganinya.
+select b.id as visit_id, b.status, b.created_at::date as tanggal, b.queue_number, pt.name as pasien, c.name as pemilik,
+ (select string_agg(distinct i.paid_status::text||case when i.voided_at is not null then ' (dibatalkan)' else '' end, ', ') from public.invoices i where i.visit_id=b.id) as status_invoice,
+ b.ada_pembayaran, b.ada_dp, b.ada_refund, b.ada_racikan_terjual, b.ada_tagihan_ranap, b.ada_ranap, 'perlu ditangani manual' as keterangan
+from bulk_arsip_pratinjau b
+left join public.visits v on v.id=b.id left join public.pets pt on pt.id=v.pet_id left join public.customers c on c.id=v.customer_id
+where b.kategori in ('DILEWATI_UANG_STOK','DILEWATI_IMPOR') and b.status<>'Selesai' and b.checked_out_at is null
+order by b.status, b.created_at, b.id;
+
+-- [5] BC3: Pembayaran / Selesai dengan isi klinis atau item/persetujuan -> AKAN DIPAKSA arsip dan hilang dari daftar Rekam Medis (riwayat per hewan tetap
+-- menampilkannya). Baca baris demi baris; yang masih dibutuhkan jangan diarsipkan (biarkan di luar skrip dengan menyesuaikan batas tanggal atau tangani dulu).
+select b.id as visit_id, b.status, b.created_at::date as tanggal, b.queue_number, pt.name as pasien, c.name as pemilik,
+ b.ada_isi_klinis, b.ada_item_resep, b.ada_persetujuan_ttd, b.ada_tindak_lanjut_dll
+from bulk_arsip_pratinjau b
+left join public.visits v on v.id=b.id left join public.pets pt on pt.id=v.pet_id left join public.customers c on c.id=v.customer_id
+where b.kategori='ARSIP_PERLU_PAKSA' and b.status in ('Pembayaran','Selesai') order by b.status, b.created_at, b.id;
+
+-- [6] cek impor bercabang (seluruh tabel, bukan hanya sebelum batas): kunjungan impor dengan branch_id terisi. Penanda impor tidak bisa lagi dihapus
+-- oleh staf (trigger), jadi ini hanya hitungan informasi; semua baris ini DIKECUALIKAN dari arsip (DILEWATI_IMPOR).
+select count(*) as impor_bercabang, min(created_at)::date as tertua, max(created_at)::date as terbaru
+from public.visits where branch_id is not null
+ and (legacy_source_key is not null or legacy_record_no is not null or legacy_source_hash is not null);

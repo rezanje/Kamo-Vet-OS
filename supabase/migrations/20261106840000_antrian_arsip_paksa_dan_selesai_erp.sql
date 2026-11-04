@@ -15,8 +15,24 @@
 --  3. Pengaman PR #438 dipertahankan: kunci FOR UPDATE, pemeriksaan ulang di bawah kunci, permit per transaksi,
 --     refuse_archived_visit, guard_visit_archive. Ditambah lock_timeout pada RPC arsip (saran review S1).
 --
+--  4. Bukti asal kunjungan TIDAK bisa dipalsukan (syarat review independen): trigger a1_guard_visit_origin_evidence melarang
+--     legacy_source_key / legacy_record_no / legacy_source_hash / checked_in_at diubah atau dikosongkan setelah terisi (peran apa pun,
+--     termasuk OWNER dan postgres lewat UPDATE biasa) dan melarang peran API (authenticated/anon/service_role) mengisinya SESUDAH
+--     kunjungan dibuat (penanda hanya lahir saat INSERT: jalur impor dan registrasi tidak berubah). DB admin (postgres/SQL editor)
+--     tetap boleh mengisi penanda yang MASIH KOSONG (klasifikasi oleh Reza). Penanda impor berlaku untuk SEMUA status (staf tidak bisa
+--     lolos dengan membalik status Selesai -> Diperiksa). Mengubah bukti itu butuh `alter table ... disable trigger` yang disengaja.
+--
 -- Tidak ada backfill, tidak ada perubahan uang/stok/jurnal, RLS tidak berubah. Tanda tangan publik lama
 -- (clinic_archive_visit/clinic_unarchive_visit) tidak berubah.
+--
+-- DEPLOY: terapkan file ini sebagai SATU TRANSAKSI / apply as ONE TRANSACTION (supabase db push, atau psql -1; alat penerap
+-- membungkusnya sendiri). File ini sengaja TANPA begin/commit sendiri: commit di tingkat file akan menggagalkan rollback pembungkus.
+-- Penerapan per-pernyataan (autocommit) TIDAK didukung: kegagalan di tengah meninggalkan sebagian objek dan penerapan ulang akan
+-- berhenti di penjaga "objek sudah ada" (gagal tertutup, tetapi perlu dibersihkan manual).
+-- Pengulangan pada database yang sudah memilikinya: GAGAL TERTUTUP (penjaga di bawah), tidak mengubah apa pun.
+-- ALTER TABLE visit_archive_events dan CREATE TRIGGER pada visits meminta kunci tabel: menyerah setelah 5 detik (seluruh file
+-- dibatalkan) lalu ulangi di luar jam klinik.
+set local lock_timeout = '5s';
 
 do $guard$
 declare d text;
@@ -30,7 +46,9 @@ begin
  if exists(select 1 from information_schema.columns where table_schema='public' and table_name='visit_archive_events' and column_name in ('forced','overridden'))
   or to_regprocedure('clinic_private.change_visit_archive(uuid,text,text,boolean,boolean,text)') is not null
   or to_regprocedure('public.clinic_force_archive_visit(uuid,text,text,text)') is not null
-  or to_regprocedure('clinic_private.visit_archive_classify(uuid)') is not null then
+  or to_regprocedure('clinic_private.visit_archive_classify(uuid)') is not null
+  or to_regprocedure('clinic_private.visit_archive_origin(uuid)') is not null
+  or to_regprocedure('clinic_private.guard_visit_origin_evidence()') is not null then
   raise exception 'Arsip lanjutan: objek sudah ada; periksa urutan migrasi';
  end if;
  -- definisi yang akan diganti harus persis bentuk PR #438 (gagal tertutup bila sudah berubah)
@@ -72,11 +90,10 @@ begin
  if not found then return jsonb_build_object('hard',jsonb_build_array('kunjungan tidak ditemukan'),'soft','[]'::jsonb); end if;
  if v.status::text not in ('Menunggu','Diperiksa','Pembayaran','Selesai') then
   hard:=hard||'status kunjungan tidak dikenal'::text; end if;
- if v.status::text='Selesai' or v.checked_out_at is not null then
-  o:=clinic_private.visit_archive_origin(p_visit);
-  if o='impor' then hard:=hard||'kunjungan sudah selesai dan berasal dari impor riwayat lama (riwayat tidak diarsipkan)'::text;
-  elsif o<>'erp' then hard:=hard||'kunjungan sudah selesai dan asalnya tidak dapat dipastikan berasal dari ERP (belum diklasifikasi)'::text; end if;
- end if;
+ -- Penanda impor berlaku untuk SEMUA status (riwayat impor tetap riwayat walau statusnya dibalik); asal ERP hanya dituntut untuk yang sudah selesai.
+ o:=clinic_private.visit_archive_origin(p_visit);
+ if o='impor' then hard:=hard||case when v.status::text='Selesai' or v.checked_out_at is not null then 'kunjungan sudah selesai dan berasal dari impor riwayat lama (riwayat tidak diarsipkan)' else 'kunjungan berasal dari impor riwayat lama (riwayat tidak diarsipkan)' end::text;
+ elsif (v.status::text='Selesai' or v.checked_out_at is not null) and o<>'erp' then hard:=hard||'kunjungan sudah selesai dan asalnya tidak dapat dipastikan berasal dari ERP (belum diklasifikasi)'::text; end if;
  -- HARD: uang / stok / rawat inap
  if exists(select 1 from public.invoices i where i.visit_id=p_visit) then hard:=hard||'sudah ada tagihan/invoice (termasuk yang dibatalkan)'::text; end if;
  if exists(select 1 from public.invoice_payments ip join public.invoices i on i.id=ip.invoice_id where i.visit_id=p_visit)
@@ -212,3 +229,34 @@ language sql security definer set search_path='' as $$ select clinic_private.cha
 revoke all on function public.clinic_force_archive_visit(uuid,text,text,text) from public,anon,service_role;
 grant execute on function public.clinic_force_archive_visit(uuid,text,text,text) to authenticated;
 comment on function public.clinic_force_archive_visit(uuid,text,text,text) is 'Arsip PAKSA kunjungan (hanya OWNER; alasan + kata PAKSA wajib). Tidak melewati invoice/pembayaran/DP/refund/racikan terjual/rawat inap/riwayat impor.';
+
+-- Bukti asal tidak bisa dipalsukan. Dipicu hanya bila salah satu dari empat kolom berubah (UPDATE lain tidak terbebani).
+--  * sudah terisi  -> tidak boleh diubah/dikosongkan oleh peran apa pun (OWNER, ADMIN, STAFF, DOKTER, postgres);
+--  * masih kosong  -> peran API (authenticated/anon/service_role) tidak boleh mengisinya sesudah INSERT; DB admin boleh (klasifikasi Reza).
+-- SECURITY DEFINER (gerbang migrasi 20261101120000 menolak trigger invoker pada visits: berjalan sebagai role penulis impor dan bisa
+-- menganggapnya "sistem"). Peran pemanggil dibaca dari GUC `role` (diset PostgREST/SET ROLE per permintaan; tetap 'authenticated' di dalam
+-- RPC SECURITY DEFINER, jadi RPC pun tidak bisa mengisi penanda belakangan) bukan dari current_user (= pemilik fungsi di sini).
+create function clinic_private.guard_visit_origin_evidence() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+ if (old.legacy_source_key is not null and new.legacy_source_key is distinct from old.legacy_source_key)
+  or (old.legacy_record_no is not null and new.legacy_record_no is distinct from old.legacy_record_no)
+  or (old.legacy_source_hash is not null and new.legacy_source_hash is distinct from old.legacy_source_hash)
+  or (old.checked_in_at is not null and new.checked_in_at is distinct from old.checked_in_at) then
+  raise exception using errcode='42501',message='ORIGIN_LOCKED: penanda asal kunjungan (legacy_source_key, legacy_record_no, legacy_source_hash, checked_in_at) tidak boleh diubah atau dikosongkan setelah terisi';
+ end if;
+ if coalesce(current_setting('role',true),'none') in ('authenticated','anon','service_role')
+  and ((old.legacy_source_key is null and new.legacy_source_key is not null)
+    or (old.legacy_record_no is null and new.legacy_record_no is not null)
+    or (old.legacy_source_hash is null and new.legacy_source_hash is not null)
+    or (old.checked_in_at is null and new.checked_in_at is not null)) then
+  raise exception using errcode='42501',message='ORIGIN_LOCKED: penanda asal kunjungan hanya dapat diisi saat kunjungan dibuat, bukan sesudahnya';
+ end if;
+ return new;
+end $$;
+revoke all on function clinic_private.guard_visit_origin_evidence() from public,anon,authenticated,service_role;
+create trigger a1_guard_visit_origin_evidence
+ before update of legacy_source_key,legacy_record_no,legacy_source_hash,checked_in_at on public.visits
+ for each row when (old.legacy_source_key is distinct from new.legacy_source_key or old.legacy_record_no is distinct from new.legacy_record_no
+  or old.legacy_source_hash is distinct from new.legacy_source_hash or old.checked_in_at is distinct from new.checked_in_at)
+ execute function clinic_private.guard_visit_origin_evidence();
