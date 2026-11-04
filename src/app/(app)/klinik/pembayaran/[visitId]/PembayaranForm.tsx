@@ -31,6 +31,7 @@ import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
 import { bacaKode, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganKode } from "@/lib/kode-kampanye";
 import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
 import { pecahPaket, type ResepPaket } from "@/lib/paket-klinik";
+import { pulihkanMetodeDraf } from "@/lib/metode-bayar";
 
 type Line = {
   key?: string;
@@ -494,6 +495,7 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
   };
   const [discount, setDiscount] = useState(initialDiscount);
   const [metode, setMetode] = useState(initialMetode);
+  const [pesanMetodeDraf, setPesanMetodeDraf] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [voucher, setVoucher] = useState("");
   const [salesperson, setSalesperson] = useState(initialSalespersonId);
@@ -617,8 +619,8 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
           && !restored.some(row => row.item_id === source.item_id))];
       };
       setObat(restoreRows(value.obat, initialObat)); setJasa(restoreRows(value.jasa, initialJasa));
-      setDiscount(value.discount); setMetode(value.metode); setReason(value.reason);
-      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setBayarManual(value.metode !== "Tunai" && Number(value.bayar) > 0); setSalesperson(value.salesperson);
+      setDiscount(value.discount); const metodeDraf = pulihkanMetodeDraf(value.metode, value.bayar); setMetode(metodeDraf.metode); setPesanMetodeDraf(metodeDraf.pesan); setReason(value.reason);
+      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(metodeDraf.bayar); setBayarManual(metodeDraf.bayarManual); setSalesperson(value.salesperson);
       setDemoEnabled(!editMode && !!demoPolicy && value.demoEnabled === true);
       setDemoPolicyId(typeof value.demoPolicyId === "string" ? value.demoPolicyId : demoPolicy?.id ?? "");
       setDemoEmployees(Array.isArray(value.demoEmployees) ? value.demoEmployees.filter(id => demoStaff.some(person => person.id === id)) : demoStaff.map(person => person.id));
@@ -682,6 +684,7 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
       {recovered && <div className="p2ban">Draf dipulihkan. Periksa isian sebelum menyimpan.
         <button type="button" className="btn-def" onClick={discard}>Buang draf</button>
       </div>}
+      {pesanMetodeDraf && !metode && <div className="p2ban" role="alert">{pesanMetodeDraf}</div>}
       {sourceChanged && <div className="p2ban" role="alert">
         <div>Data tagihan sumber berubah atau draf lama belum memiliki pembanding. Draf pembayaran lama belum dapat disimpan.
           <br />Subtotal rekam medis terbaru: <b>{rp(latestSourceSubtotal)}</b> sebelum diskon dan pajak.
@@ -757,7 +760,7 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
           )} paymentPanel={<>
           <PaymentSummary total={total} totalDiterima={totalDiterima} remaining={Math.max(0, total - totalDiterima)} paidStatus={paidStatus} initialCreditAmount={initialCreditAmount} dpPaid={dpPaid} initialDpDate={initialDpDate} sisa={sisa} />
           <PaymentMethodControls mixed={mixed} onMixed={setMixed} splitPayments={splitPayments} onSplit={setSplitPayments} metode={metode}
-            onMethod={method => { setMetode(method); setBayarManual(false); if (method !== "Tunai") setBayar(0); }}
+            onMethod={method => { setMetode(method); setPesanMetodeDraf(null); setBayarManual(false); if (method !== "Tunai") setBayar(0); }}
             bayar={bayar} onAmount={amount => { setBayarManual(true); setBayar(amount); }} bayarManual={bayarManual} editMode={editMode} splitError={splitError} kembalian={kembalian} />
 
           {kurangDp > 0 && (

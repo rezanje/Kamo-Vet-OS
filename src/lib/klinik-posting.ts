@@ -192,6 +192,11 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       // Ditegakkan writer asli clinic_post_invoice (migrasi 20261104310000).
       PRODUCT_ONLY_FULL_PAYMENT: "Pembelian produk saja wajib dibayar lunas. Terima pembayaran penuh (boleh campuran Tunai/Transfer); DP atau sisa piutang tidak bisa disimpan untuk transaksi ini.",
     };
+    // Penjaga nilai di writer: metode bayar di luar daftar, diskon negatif/melebihi subtotal, atau total tidak sama
+    // dengan subtotal-diskon+pajak semuanya berbunyi sama. Beri kasir langkah yang benar-benar bisa dilakukan.
+    if (error.message === "INVOICE_INVALID: nilai invoice tidak konsisten") {
+      return "Nilai invoice ditolak karena tidak konsisten. Periksa metode pembayaran, diskon, dan jumlah bayar, lalu pilih ulang metode atau muat ulang tagihan (belum ada yang tersimpan).";
+    }
     const match = /^([A-Z_]+)(?::\s*([^\r\n]{1,100}))?$/.exec(error.message);
     if (match && fixedMessages[match[1]]) return fixedMessages[match[1]];
     if (match && match[2] && detailMessages[match[1]]) return `${detailMessages[match[1]]}: ${match[2]}`;
