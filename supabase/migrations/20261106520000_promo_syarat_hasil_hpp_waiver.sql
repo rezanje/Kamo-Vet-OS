@@ -1,5 +1,5 @@
 -- Promo "Syarat -> Hasil", stage 2c: the below-HPP waiver inside the ORIGINAL cashier price floor (P03).
--- Requires 20261106310000 (sale_items.promo_floor_waiver) and 20261104372000 (P03_GRUP_FLOOR).
+-- Requires 20261106510000 (sale_items.promo_floor_waiver) and 20261104372000 (P03_GRUP_FLOOR).
 --
 -- Rule (Andri 4 Nov, Q5): only a promo the OWNER explicitly allowed below HPP may sell a reward line below HPP, net must stay > 0 and the
 -- line must not be pushed lower by voucher/points/total discount. For a line flagged promo_floor_waiver (the claim trigger and
@@ -12,7 +12,7 @@
 -- Every line without the flag keeps the exact original expression. Two anchors (floor condition + its raise message), fail closed on drift.
 --
 -- SCOPE OF THE WAIVER (stage-2 review L1): the relaxed floor applies to the WHOLE flagged line, so the line may contain reward units
--- ONLY. Migration 20261106310000 enforces it (readable trigger message PROMO_SH_CLAIM + CHECK sale_items_promo_claim_shape): a waiver
+-- ONLY. Migration 20261106510000 enforces it (readable trigger message PROMO_SH_CLAIM + CHECK sale_items_promo_claim_shape): a waiver
 -- line needs promo_hasil_units = qty and promo_syarat_units = 0. The app must therefore SPLIT a cart line into a plain/syarat line and a
 -- pure reward line (the same contract as the Bolt pool: a claimed line is excluded from the pool as a whole, L2). The non-reward units
 -- keep the ordinary HPP floor.
@@ -26,7 +26,7 @@
 -- sale_stock_out_fifo and calls finalize_pos_sale directly skips the floor entirely (SH claim verification still runs there, but the
 -- waiver / no-stacking rule is not enforced). Closing that is a follow-up outside this migration (finalize_pos_sale is untouched).
 -- R1 (stage-2 re-review): a waiver promo with a nilai syarat can no longer be unlocked by value the customer does not pay. Migration
--- 20261106310000 counts every line toward nilai at the LESSER of qty x official price and what the customer is actually charged (a fake
+-- 20261106510000 counts every line toward nilai at the LESSER of qty x official price and what the customer is actually charged (a fake
 -- Rp1 / 100%-discounted / qty-1,000,000-at-harga-0 Jasa line counts ~0), and this floor already forces net_total = after_items on a waiver
 -- sale, so the money counted for the threshold is the money charged for the lines. Documented refinement of Andri's "nilai = whole cart";
 -- residual: a receipt-level discount on a NON-waiver sale is not subtracted (bounded by the reward line's own HPP floor).

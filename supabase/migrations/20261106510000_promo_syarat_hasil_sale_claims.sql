@@ -1,5 +1,5 @@
 -- Promo "Syarat -> Hasil", stage 2b: PER-SALE persistence and the DB-side verification at finalization.
--- Requires 20261106300000 (definition, release flags) and the installed quantity_pool migration (20261105020000).
+-- Requires 20261106500000 (definition, release flags) and the installed quantity_pool migration (20261105020000).
 --
 -- Nothing recomputes the optimum: the application (stage 1 engine) proposes a witness assignment per sale line
 -- (which units were consumed as syarat, which units got the reward, how many sets) and the database independently re-checks that

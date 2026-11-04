@@ -50,7 +50,7 @@ grant execute on function public.promo_release_enabled(text) to authenticated;
 -- 2. Strict definition validator (shape only; masters are checked by the target guard).
 --    rule = {discount_mode:'syarat_hasil', suggest?:text<=200, syarat_hasil:{version:1,repeat,syarat[1..8],hasil,below_hpp}}
 --    syarat row  = {kind:'qty',min:1..99999,items:[{item_id,unit}..1..50]} | {kind:'nilai',min:1..99999999} (whole cart, no items)
---      (R1: how a sale's nilai is measured - each line at the lesser of qty x official price and what is actually charged - is defined and enforced in 20261106310000)
+--      (R1: how a sale's nilai is measured - each line at the lesser of qty x official price and what is actually charged - is defined and enforced in 20261106510000)
 --    hasil       = {kind:'barang',items:[..1..20],reward_qty?:1..999,discount:{type:'nominal',value}|{type:'percent',value<=100,max_amount?}}
 --    below_hpp   = {allowed:false} | {allowed:true,reason>=10 chars,ack_by:uuid,ack_at:iso} (ack_* stamped by the database)
 -- ---------------------------------------------------------------------------------------------

@@ -10,7 +10,7 @@
  * promo that saves the customer MORE (ties keep the existing promo); promos that do not conflict run together automatically; the
  * cashier can switch everything off ("tanpa promo", needs the promo_picker flag); nilai belanja = whole cart; petshop only.
  *
- * How a cart becomes claims the database verifies (see migrations 20261106310000/320000, "APP CONTRACT"):
+ * How a cart becomes claims the database verifies (see migrations 20261106510000/320000, "APP CONTRACT"):
  *  - every cart line the engine claims is SPLIT into a claimed line (syarat/hasil units only; promo_claim_id, promo_sets,
  *    promo_syarat_units, promo_hasil_units) and a plain remainder line, because a claimed line leaves the Bolt pool as a whole;
  *  - a below-HPP waiver reward goes on a PURE reward line (promo_hasil_units = qty), separate from syarat units of the same line;
