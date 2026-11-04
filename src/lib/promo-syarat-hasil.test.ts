@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SH_MAX_FORCED_CANDIDATES,
+  SH_NILAI_MAX_LINE_QTY,
   SyaratHasilError,
   assertValidSyaratHasilDef,
   calculateSyaratHasil,
@@ -653,46 +654,133 @@ describe("G1: best-of 'each applicable promo forced first' beats pure greedy", (
   });
 });
 
-describe("S2: nilai-belanja = whole cart at the OFFICIAL (normal) price, before any discount", () => {
+describe("R1: nilai-belanja counts each line at the LESSER of qty x official price and what the customer is actually charged", () => {
   const nilaiPromo: SyaratHasilDef = { id: "N", repeat: false, syarat: [{ kind: "nilai", min: 60000 }], hasil: { items: [ref(ANC)], discount: nominal(1000) } };
+  const row = (item_id: string, qty: number, harga: number, officialPrice: number, extra: Record<string, unknown> = {}) =>
+    ({ item_id, qty, harga, satuan: "PCS", faktor: 1, officialPrice, ...extra });
+  const anc = row(ANC, 1, 15000, 15000);
+  const discountOf = (rows: ReturnType<typeof row>[], def: SyaratHasilDef = nilaiPromo) => calc(syaratHasilLinesFromCart(rows), [def]).discount_total;
 
-  it("adapter: a manual-override line counts at officialPrice, not at the overridden harga", () => {
-    const rows = [
-      { item_id: WHISKAS, qty: 1, harga: 1000, satuan: "PCS", faktor: 1, officialPrice: 50000, manualOverride: true }, // cashier typed Rp1.000
-      { item_id: ANC, qty: 1, harga: 15000, satuan: "PCS", faktor: 1, officialPrice: 15000 },
-    ];
-    const lines = syaratHasilLinesFromCart(rows);
-    expect(lines[0]).toMatchObject({ unit_price: 50000, manual_discount: true });
-    const r = calc(lines, [nilaiPromo]);
-    expect(lineAt(r, 0).gross).toBe(50000); // counted at gross normal price
-    expect(r.discount_total).toBe(1000);    // 50000 + 15000 >= 60000
-    expect(lineAt(r, 0).discount).toBe(0);  // the manual line itself never takes a promo
+  describe("engine (charged)", () => {
+    it("a line counts at min(gross, charged): a fake-cheap or free line cannot carry the threshold", () => {
+      const cheap = calc([line(0, WHISKAS, 1, 600000, { charged: 1 }), line(1, ANC, 1, 15000)], [nilaiPromo]);
+      expect(cheap.discount_total).toBe(0); // 1 + 15000 < 60000 although the master price is 600000
+      expect(calc([line(0, WHISKAS, 1, 600000, { charged: 0 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(0);
+      expect(calc([line(0, WHISKAS, 1, 600000, { charged: 45000 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(1000); // 45000 + 15000 = exactly 60000
+      expect(calc([line(0, WHISKAS, 1, 600000, { charged: 44999 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(0);
+    });
+    it("charged above the official gross never counts more than the gross (overcharge adds nothing)", () => {
+      expect(calc([line(0, KOPI, 1, 50000, { charged: 90000 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(1000); // 65000
+      const at70 = { ...nilaiPromo, syarat: [{ kind: "nilai" as const, min: 70000 }] };
+      expect(calc([line(0, KOPI, 1, 50000, { charged: 90000 }), line(1, ANC, 1, 15000)], [at70]).discount_total).toBe(0);
+    });
+    it("charged absent = the line counts at qty x unit_price (direct engine callers vouch for unit_price; the adapter always sets charged)", () => {
+      expect(calc([line(0, KOPI, 1, 50000), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(1000);
+    });
+    it("an invalid charged (negative, fractional, NaN, Infinity, beyond 2^53) counts 0: fail closed", () => {
+      for (const bad of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 2]) {
+        expect(calc([line(0, KOPI, 1, 50000, { charged: bad }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total, String(bad)).toBe(0);
+      }
+    });
+    it("per-line quantity bound: a line of SH_NILAI_MAX_LINE_QTY (1,000,000) units or more counts 0, 999,999 still counts", () => {
+      expect(SH_NILAI_MAX_LINE_QTY).toBe(1_000_000);
+      expect(calc([line(0, WHISKAS, 1_000_000, 1, { charged: 1_000_000 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(0);
+      expect(calc([line(0, WHISKAS, 1_000_000, 600000), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(0);
+      expect(calc([line(0, WHISKAS, 999_999, 1, { charged: 999_999 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(1000);
+    });
+    it("manual-discount / no-evidence / claimed-elsewhere lines still count, at their charged amount", () => {
+      const r = calc([
+        line(1, KOPI, 1, 30000, { manual_discount: true, charged: 20000 }),
+        line(2, WHISKAS, 1, 30000, { evidence_ok: false, charged: 30000 }),
+        line(3, BOLT_IKAN, 2, 20000, { units_claimed_elsewhere: 2, charged: 36000 }),
+        line(4, ANC, 1, 15000),
+      ], [nilaiPromo]);
+      expect(r.discount_total).toBe(1000); // 20000 + 30000 + 36000 + 15000 = 101000 >= 60000
+      const short = calc([
+        line(1, KOPI, 1, 30000, { manual_discount: true, charged: 0 }),
+        line(2, WHISKAS, 1, 30000, { evidence_ok: false, charged: 10000 }),
+        line(3, BOLT_IKAN, 2, 20000, { units_claimed_elsewhere: 2, charged: 34999 }),
+        line(4, ANC, 1, 15000),
+      ], [nilaiPromo]);
+      expect(short.discount_total).toBe(0); // 0 + 10000 + 34999 + 15000 = 59999
+      expect(lineAt(r, 1).gross).toBe(30000); // display gross is untouched
+    });
+    it("nilai kelipatan uses the charged sum (sets = floor(counted / min))", () => {
+      const def = boltAnc({ syarat: [{ kind: "nilai", min: 100000 }] });
+      const r = calc([line(1, KOPI, 1, 235000, { charged: 200000 }), line(2, ANC, 5, 15000)], [def]); // 200000 + 75000 = 275000 -> 2 sets
+      expect(r.claims[0]).toMatchObject({ sets_available: 2, sets_consumed: 2, grants: 2 });
+    });
+    it("R1 attack (X1): a fake free service line cannot inflate the sets of a nilai-only waiver promo (below-HPP reward units)", () => {
+      const waiver: SyaratHasilDef = { id: "W", repeat: true, allow_below_hpp: true, syarat: [{ kind: "nilai", min: 500000 }], hasil: { items: [ref(ANC)], discount: nominal(5000) } };
+      const reward = line(1, ANC, 50, 15000); // 750000 of genuinely charged reward-item units = 1 set, whatever the fake lines say
+      for (const charged of [0, 1]) {
+        const attack = calc([line(0, "jasa", 1_000_000, 600000, { charged }), reward], [waiver]);
+        expect(attack.claims[0], `qty 1e6 charged ${charged}`).toMatchObject({ sets_available: 1, sets_consumed: 1, grants: 1, discount_total: 5000 });
+      }
+      expect(calc([line(0, "jasa", 1, 600000, { charged: 1 }), reward], [waiver]).claims[0]).toMatchObject({ sets_available: 1, grants: 1 });
+      const real = calc([line(0, "jasa", 1, 600000, { charged: 600000 }), reward], [waiver]); // a genuinely paid service: 1,350,000 -> 2 sets
+      expect(real.claims[0]).toMatchObject({ sets_available: 2, sets_consumed: 2, grants: 2, below_hpp_waiver: true });
+      const unbounded = calc([line(0, "jasa", 1_000_000, 600000), reward], [waiver]); // charged absent: still capped by the quantity bound
+      expect(unbounded.claims[0]).toMatchObject({ sets_available: 1 });
+    });
   });
-  it("adapter: tier/negotiated price and item-discount lines also count at officialPrice; no officialPrice (clinic) falls back to harga", () => {
-    const lines = syaratHasilLinesFromCart([
-      { item_id: WHISKAS, qty: 2, harga: 20000, satuan: "PCS", faktor: 1, officialPrice: 25000 },
-      { item_id: KOPI, qty: 1, harga: 9000, satuan: "PCS", faktor: 1, officialPrice: 10000, item_discount_type: "percent", item_discount_value: 10 },
-      { item_id: "klinik", qty: 1, harga: 7000, satuan: "PCS" },
-    ]);
-    expect(lines.map((l) => l.unit_price)).toEqual([25000, 10000, 7000]);
-    expect(lines.map((l) => l.evidence_ok)).toEqual([false, false, false]);
-    expect(calc(lines, [{ ...nilaiPromo, hasil: { items: [ref("klinik")], discount: nominal(1000) } }]).discount_total).toBe(0); // clinic line is never a reward
-    const at75: SyaratHasilDef = { ...nilaiPromo, syarat: [{ kind: "nilai", min: 75000 }] };
-    expect(calc([...lines, line(9, ANC, 1, 15000)], [at75]).discount_total).toBe(1000); // official: 50000+10000+7000+15000 = 82000 (at harga it would be 71000 < 75000)
-  });
-  it("manual-discount lines and units_claimed_elsewhere lines count at GROSS in the nilai syarat (engine)", () => {
-    const r = calc([line(0, WHISKAS, 1, 50000, { manual_discount: true }), line(1, KOPI, 1, 9999, { units_claimed_elsewhere: 1 }), line(2, ANC, 1, 15000)], [nilaiPromo]);
-    expect(r.discount_total).toBe(1000); // 50000 + 9999 + 15000 = 74999 >= 60000
-    expect(lineAt(r, 0).gross).toBe(50000);
-    expect(lineAt(r, 1).gross).toBe(9999);
-    const short = calc([line(0, WHISKAS, 1, 40000, { manual_discount: true }), line(1, KOPI, 1, 4999, { units_claimed_elsewhere: 1 }), line(2, ANC, 1, 15000)], [nilaiPromo]);
-    expect(short.discount_total).toBe(0); // 59999 < 60000
-  });
-  it("adapter passes unitsClaimedElsewhere through (server-derived, per-unit count)", () => {
-    const [l] = syaratHasilLinesFromCart([{ item_id: BOLT_IKAN, qty: 3, harga: 20000, satuan: "PCS", faktor: 1, officialPrice: 20000, unitsClaimedElsewhere: 2 }]);
-    expect(l.units_claimed_elsewhere).toBe(2);
-    const [m] = syaratHasilLinesFromCart([{ item_id: BOLT_IKAN, qty: 3, harga: 20000, satuan: "PCS", faktor: 1, officialPrice: 20000 }]);
-    expect("units_claimed_elsewhere" in m).toBe(false);
+
+  describe("adapter (syaratHasilLinesFromCart)", () => {
+    it("charged = qty x harga minus the manual / item discount, never negative; unit_price stays the official price", () => {
+      const [manual, pct, nom, tier] = syaratHasilLinesFromCart([
+        row(WHISKAS, 1, 1000, 50000, { manualOverride: true }), // cashier typed Rp1.000
+        row(KOPI, 1, 9000, 10000, { item_discount_type: "percent", item_discount_value: 10 }),
+        row(KOPI, 3, 10000, 10000, { item_discount_type: "nominal", item_discount_value: 40000 }),
+        row(WHISKAS, 2, 20000, 25000),
+      ]);
+      expect(manual).toMatchObject({ unit_price: 50000, charged: 1000, manual_discount: true });
+      expect(pct).toMatchObject({ unit_price: 10000, charged: 8100 }); // 9000 - round(9000 x 10%)
+      expect(nom).toMatchObject({ unit_price: 10000, charged: 0 }); // 30000 - least(40000, 30000)
+      expect(tier).toMatchObject({ unit_price: 25000, charged: 40000 });
+    });
+    it("percent rounds half-up like the database (round(gross x pct / 100)) and a non-percent type is nominal", () => {
+      const [a, b] = syaratHasilLinesFromCart([
+        row(KOPI, 1, 1005, 1005, { item_discount_type: "percent", item_discount_value: 10 }), // 100.5 -> 101
+        row(KOPI, 1, 1000, 1000, { item_discount_type: "amount", item_discount_value: 300 }),
+      ]);
+      expect(a.charged).toBe(1005 - 101);
+      expect(b.charged).toBe(700);
+    });
+    it("a manual discount wins over promoDiscount; otherwise a server-derived promoDiscount (Bolt pool etc.) is subtracted", () => {
+      const [p, m] = syaratHasilLinesFromCart([
+        row(BOLT_IKAN, 2, 20000, 20000, { promoDiscount: 5000 }),
+        row(BOLT_IKAN, 2, 20000, 20000, { promoDiscount: 5000, item_discount_type: "nominal", item_discount_value: 1000 }),
+      ]);
+      expect(p.charged).toBe(35000);
+      expect(m.charged).toBe(39000);
+    });
+    it("rows without an official price (clinic, free text) count 0 toward nilai, not harga", () => {
+      const lines = syaratHasilLinesFromCart([{ item_id: "klinik", qty: 1, harga: 70000, satuan: "PCS" }, anc]);
+      expect(lines[0]).toMatchObject({ unit_price: 70000, charged: 0 });
+      expect(calc(lines, [nilaiPromo]).discount_total).toBe(0); // 15000 only
+    });
+    it("a charged amount beyond 2^53 or a non-finite discount maps to charged 0 (fail closed)", () => {
+      const [big, nan] = syaratHasilLinesFromCart([
+        row(KOPI, 4_000_000_000, 4_000_000_000, 4_000_000_000),
+        row(KOPI, 1, 5000, 5000, { item_discount_type: "percent", item_discount_value: Number.NaN }),
+      ]);
+      expect(big.charged).toBe(0);
+      expect(nan.charged).toBe(0);
+    });
+    it("end to end: the reviewed attacks do not satisfy a nilai syarat", () => {
+      expect(discountOf([row("jasa", 1, 1, 600000), anc])).toBe(0);                                          // harga 1
+      expect(discountOf([row("jasa", 1, 600000, 600000, { item_discount_type: "percent", item_discount_value: 100 }), anc])).toBe(0); // 100% discount
+      expect(discountOf([row("jasa", 1_000_000, 0, 600000), anc])).toBe(0);                                   // qty 1e6 at harga 0
+      expect(discountOf([row("jasa", 1, 600000, 600000, { manualOverride: true, harga: 1 }), anc])).toBe(0);  // manual override
+    });
+    it("end to end: legit carts are not falsely refused (branch/tier price, derived unit, genuinely discounted line)", () => {
+      expect(discountOf([row(KOPI, 5, 100000, 100000), anc])).toBe(1000);                                    // branch price counted at official
+      expect(discountOf([row(KOPI, 1, 500000, 500000, { satuan: "SAK", faktor: 25 }), anc])).toBe(1000);       // derived unit at its own price
+      expect(discountOf([row(KOPI, 1, 50000, 50000, { item_discount_type: "percent", item_discount_value: 10 }), anc])).toBe(1000); // 45000 + 15000 = 60000
+      expect(discountOf([row(KOPI, 1, 50000, 50000, { item_discount_type: "percent", item_discount_value: 11 }), anc])).toBe(0);     // 44500 + 15000 < 60000: documented refinement
+      expect(discountOf([row(KOPI, 1, 80000, 100000), anc])).toBe(1000);                                     // tier price below official counts at what is paid (80000 + 15000)
+      expect(discountOf([row(KOPI, 1, 120000, 100000), anc])).toBe(1000);                                    // overcharge counts at official only
+    });
   });
 });
 

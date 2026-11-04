@@ -40,11 +40,24 @@
  * Semantics (approved Andri decisions, 4 Nov 2026, supersede the design defaults):
  *  - A promo = 1..8 syarat rows (AND-ed) + exactly one hasil.
  *      syarat `qty`   : minimum quantity over a POOL of (item, unit) entries (variants count together).
- *      syarat `nilai` : minimum subtotal of the WHOLE CART at the OFFICIAL/NORMAL price, before any discount
- *                       (Q3, Andri); every computable line counts at qty * unit_price, including manual-discount /
- *                       no-evidence lines and units claimed elsewhere (counted at GROSS). The engine takes unit_price
- *                       as given: the adapter `syaratHasilLinesFromCart` passes the row's officialPrice (NOT an
- *                       overridden harga; harga only when there is no official price, e.g. clinic rows). It reserves no units.
+ *      syarat `nilai` : minimum subtotal of the WHOLE CART (Q3, Andri: "nilai belanja = seluruh keranjang").
+ *                       R1 REFINEMENT (stage-2 re-review, decision of the parent agent, NOT yet confirmed by Andri - Andri/Reza
+ *                       may overrule): Andri did not say "before discount"; the earlier reading "official price before any
+ *                       discount" made the threshold a cashier-controlled number, because harga, manual discount and qty are
+ *                       client-written and lines without an HPP floor (Jasa / Non-Persediaan) can be priced at Rp1, 100%
+ *                       discounted or sold in qty 1,000,000 at harga 0. Therefore every line counts at
+ *                           LESSER( qty * unit_price (official master price), charged )
+ *                       where `charged` is what the customer is actually charged for the line: qty * harga minus the line's
+ *                       manual / item discount (or the server-derived discount of another mechanism, e.g. the Bolt pool), before
+ *                       cart-level voucher / points / total discount and before THIS promo's own reward discount. So a line
+ *                       never counts more than the real money in the cart nor more than the official price (a tier price
+ *                       counts at what is paid; an overcharge adds nothing). Manual-discount / no-evidence lines and units
+ *                       claimed elsewhere still count (at their charged amount). A line with qty >= SH_NILAI_MAX_LINE_QTY
+ *                       (1,000,000) counts 0 (defence in depth against absurd quantities), a line without an official price
+ *                       (free text, clinic, inactive item) counts 0, an invalid `charged` counts 0. When `charged` is ABSENT the
+ *                       engine counts qty * unit_price (direct callers vouch for unit_price; the adapter
+ *                       `syaratHasilLinesFromCart` ALWAYS derives `charged`). `unit_price` stays the official price (reward
+ *                       discounts are computed on it). The DB (promo_sh_verify_claims) applies the same rule. nilai reserves no units.
  *      hasil          : nominal Rp off the reward item's NORMAL price per reward unit, or percent
  *                       (integer 1..100, half-up rounding per unit) with an optional Rp cap that applies
  *                       PER REWARD UNIT (Q4). `reward_qty` reward units per syarat set (default 1).
@@ -99,6 +112,8 @@ export const SH_MAX_REWARD_QTY = 999;
 /** Caller-contract caps: the greedy conflict resolution is O(promos^2) plans per run. */
 export const SH_MAX_PROMOS = 64;
 export const SH_MAX_LINES = 2_000;
+/** R1: a single line of this many units or more counts 0 toward a `nilai` syarat (absurd-quantity defence; the DB uses the same bound). */
+export const SH_NILAI_MAX_LINE_QTY = 1_000_000;
 /**
  * Best-of conflict search (G1) tries "this promo claims first, then greedy" for at most this many
  * promos (the ones with the biggest standalone savings, ties -> smaller id). Deterministic, independent of the
@@ -160,6 +175,12 @@ export type SyaratHasilCartLine = {
   qty: number;
   /** Official normal price per unit (integer rupiah). */
   unit_price: number;
+  /**
+   * R1: what the customer is actually charged for the WHOLE line (integer rupiah >= 0): qty x harga minus the line's manual/item
+   * discount, before cart-level voucher/points and before this promo's own reward discount. The `nilai` syarat counts the line at
+   * min(qty x unit_price, charged). Absent -> qty x unit_price; invalid (negative, fractional, NaN, beyond 2^53) -> 0.
+   */
+  charged?: number;
   /** Caller proves official price/faktor/stock evidence. Absent or false -> the line never takes part (fail closed, e.g. clinic). */
   evidence_ok?: boolean;
   manual_discount?: boolean;
@@ -381,6 +402,8 @@ type Line = {
   /** Units a promo may use at the start: qty - claimed elsewhere, 0 when the line is excluded. */
   base: bigint;
   gross: bigint | null;
+  /** R1: the amount this line contributes to a `nilai` syarat: min(gross, charged), 0 for absurd qty / no price / invalid charged. */
+  nilai: bigint;
 };
 
 function prepareLines(lines: unknown, strict: boolean): { lines: Line[]; skippedLines: SyaratHasilResult["skipped_lines"] } {
@@ -419,8 +442,12 @@ function prepareLines(lines: unknown, strict: boolean): { lines: Line[]; skipped
     const qty = computable ? BigInt(src.qty) : ZERO, price = computable ? BigInt(src.unit_price) : ZERO;
     const gross = computable ? qty * price : null;
     const claimed = reason === null && src.units_claimed_elsewhere !== undefined ? BigInt(src.units_claimed_elsewhere) : ZERO;
+    // R1: nilai counts min(qty x official price, actually charged); absurd quantities and invalid charged amounts count 0
+    const nilai = !computable || qty >= BigInt(SH_NILAI_MAX_LINE_QTY) ? ZERO
+      : src.charged === undefined ? (gross as bigint)
+        : isInt(src.charged, 0, Number.MAX_SAFE_INTEGER) ? minBig(gross as bigint, BigInt(src.charged)) : ZERO;
     out.push({
-      pos, src, reason, computable, qty, price, gross, key: keyOf(String(src.item_id), String(src.unit)),
+      pos, src, reason, computable, qty, price, gross, nilai, key: keyOf(String(src.item_id), String(src.unit)),
       base: reason === null ? qty - claimed : ZERO,
     });
   });
@@ -798,7 +825,7 @@ function calculate(rawLines: unknown, rawDefs: unknown, rawOptions: unknown, str
     valid.push(d as SyaratHasilDef);
   }
 
-  const cartSub = lines.reduce((s, l) => s + (l.gross ?? ZERO), ZERO);
+  const cartSub = lines.reduce((s, l) => s + l.nilai, ZERO); // R1: nilai basis = sum of min(official gross, actually charged)
   const preps = valid.map((d) => prepare(d, lines));
 
   // Standalone plan of every promo on the untouched cart: savings for the UI, and the first filter.
@@ -965,7 +992,32 @@ export type SyaratHasilCartRow = {
   manualOverride?: boolean; item_discount_type?: string | null; item_discount_value?: number | null;
   /** Units of this row another mechanism (Bolt pool, legacy per_unit/package) already claimed. Server-derived; see header wiring notes. */
   unitsClaimedElsewhere?: number;
+  /**
+   * R1: Rupiah discount (whole line) that another mechanism already granted to this row (e.g. the Bolt pool), server-derived.
+   * Like the database it only applies when the row has no manual/item discount. Never pass THIS promo's reward discount here.
+   */
+  promoDiscount?: number;
 };
+
+/**
+ * What the customer is charged for the whole row before cart-level voucher/points: qty x harga minus the line discount, with the
+ * database formulas (cashier_post_stock_atomic / promo_sh_verify_claims): manual = round(gross x value / 100) for 'percent', the value
+ * itself for any other type; discount = least(greatest(manual > 0 ? manual : promoDiscount, 0), gross). Not representable / not finite -> 0.
+ */
+function chargedOfRow(b: SyaratHasilCartRow): number {
+  const qty = b.qty, harga = b.harga;
+  if (typeof qty !== "number" || typeof harga !== "number" || !Number.isFinite(qty) || !Number.isFinite(harga)) return 0;
+  const gross = qty * harga;
+  if (!Number.isSafeInteger(qty) || !Number.isSafeInteger(harga) || qty < 1 || harga < 0 || !Number.isSafeInteger(gross)) return 0;
+  const value = b.item_discount_value === undefined || b.item_discount_value === null ? 0 : Number(b.item_discount_value);
+  if (!Number.isFinite(value)) return 0;
+  const manual = b.item_discount_type === "percent" ? Math.floor((gross * value) / 100 + 0.5) : value;
+  const pd = b.promoDiscount === undefined ? 0 : Number(b.promoDiscount);
+  if (!Number.isFinite(pd) || !Number.isFinite(manual)) return 0;
+  const discount = Math.min(Math.max(manual > 0 ? manual : pd, 0), gross);
+  const charged = gross - discount;
+  return Number.isSafeInteger(charged) && charged >= 0 ? Math.floor(charged) : 0;
+}
 
 /**
  * BarisKeranjang[] -> engine lines (source_position = array index). Evidence = the line carries a
@@ -973,8 +1025,10 @@ export type SyaratHasilCartRow = {
  * faktor/officialPrice (clinic) therefore never take part. The server still verifies the official
  * faktor/price against the master at finalisation (these fields are client-supplied). Manual override or an
  * item discount marks the line manual (excluded from promos). unit_price = officialPrice (normal price) whenever the row has
- * one, so nilai-belanja counts manual / tier / discounted rows at their normal gross; only rows without an official price
- * (clinic) fall back to harga.
+ * one (reward discounts are computed on it; a row without an official price falls back to harga for display only).
+ * R1: `charged` = what the row is actually charged (see chargedOfRow); a row WITHOUT an official price (clinic, free text)
+ * gets charged 0 so it never counts toward a nilai syarat (the database cannot verify it either). A manual override
+ * (harga typed by the cashier) therefore counts at the typed harga, never at the official price.
  */
 export function syaratHasilLinesFromCart(cart: readonly SyaratHasilCartRow[]): SyaratHasilCartLine[] {
   if (!Array.isArray(cart)) throw badInput("cart harus berupa array");
@@ -983,12 +1037,10 @@ export function syaratHasilLinesFromCart(cart: readonly SyaratHasilCartRow[]): S
     const b = raw as unknown as SyaratHasilCartRow;
     const evidence = typeof b.faktor === "number" && Number.isFinite(b.faktor) && b.faktor > 0 &&
       Number.isSafeInteger(b.officialPrice) && (b.officialPrice as number) >= 0 && b.harga === b.officialPrice && isText(b.satuan);
-    // nilai-belanja (Andri): the WHOLE cart at the official/normal price, before any discount -> a row counts at its
-    // officialPrice even when the cashier overrode harga, a tier price or an item discount applies. Only a row without an
-    // official price (clinic) falls back to harga. Reward discounts are also computed on this normal price.
     const hasOfficial = Number.isSafeInteger(b.officialPrice) && (b.officialPrice as number) >= 0;
     const line: SyaratHasilCartLine = {
       source_position: index, item_id: b.item_id, unit: typeof b.satuan === "string" ? b.satuan : "", qty: b.qty, unit_price: hasOfficial ? (b.officialPrice as number) : b.harga,
+      charged: hasOfficial ? chargedOfRow(b) : 0,
       evidence_ok: evidence, manual_discount: b.manualOverride === true || (!!b.item_discount_type && Number(b.item_discount_value) > 0),
     };
     if (b.unitsClaimedElsewhere !== undefined) line.units_claimed_elsewhere = b.unitsClaimedElsewhere;

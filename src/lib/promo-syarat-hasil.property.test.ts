@@ -45,6 +45,10 @@ function genCase(seed: number, index: number): Case {
       unit_price: r.chance(0.02) ? r.pick([-1, 2.5]) : r.pick(PRICES), evidence_ok: !r.chance(0.08),
     };
     if (r.chance(0.08)) base.manual_discount = true;
+    if (r.chance(0.45)) { // R1: what the customer is actually charged: free, cheap, exact, overcharged or garbage
+      const gross = Number.isSafeInteger(qty) && Number.isSafeInteger(base.unit_price) ? qty * base.unit_price : 1000;
+      base.charged = r.chance(0.05) ? r.pick([-1, 1.5, Number.NaN]) : r.pick([0, 1, Math.max(0, Math.floor(gross / 2)), gross, gross + 1000]);
+    }
     if (r.chance(0.15) && Number.isSafeInteger(qty) && qty > 0) base.units_claimed_elsewhere = r.int(0, qty);
     return base;
   });
@@ -91,7 +95,12 @@ function checkInvariants(c: Case, res: SyaratHasilResult, tag: string) {
       expect(l.claims).toEqual([]);
       continue;
     }
-    cartSub += src.qty * src.unit_price;
+    // R1 restated independently of the engine: min(official gross, charged) (gross when charged is absent), 0 for qty >= 1,000,000 or bad charged
+    const chargedOk = src.charged === undefined || (Number.isSafeInteger(src.charged) && src.charged >= 0);
+    const counted = src.qty >= 1_000_000 || !chargedOk ? 0 : Math.min(src.qty * src.unit_price, src.charged ?? Infinity);
+    expect(counted, at("a line never counts more than its official gross")).toBeLessThanOrEqual(src.qty * src.unit_price);
+    if (src.charged !== undefined && chargedOk) expect(counted, at("a line never counts more than what is charged")).toBeLessThanOrEqual(src.charged);
+    cartSub += counted;
     expect(l.gross, at("gross")).toBe(src.qty * src.unit_price);
     expect(l.net, at("net = gross - discount")).toBe(l.gross! - l.discount);
     expect(l.discount, at("discount >= 0")).toBeGreaterThanOrEqual(0);
@@ -157,7 +166,7 @@ function checkInvariants(c: Case, res: SyaratHasilResult, tag: string) {
     const allSyaratKeys = new Set<string>();
     for (const row of def.syarat) {
       if (row.kind === "nilai") {
-        expect(cartSub, at("nilai row holds on the WHOLE cart subtotal")).toBeGreaterThanOrEqual(cl.sets_consumed * row.min);
+        expect(cartSub, at("nilai row holds on the sum of min(official gross, charged) over the WHOLE cart")).toBeGreaterThanOrEqual(cl.sets_consumed * row.min);
         continue;
       }
       row.items.forEach((i) => allSyaratKeys.add(key(i)));

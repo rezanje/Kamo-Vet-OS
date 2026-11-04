@@ -16,7 +16,21 @@
 --    SPLIT a cart line into a claimed line (syarat/hasil units only) and a plain line for the rest, exactly like the Bolt pool does.
 --  * A below-HPP waiver line (promo_floor_waiver) must be a PURE reward line: promo_hasil_units = qty, promo_syarat_units = 0
 --    (readable trigger refusal + CHECK). The relaxed HPP floor therefore never covers non-reward units.
---  * nilai syarat counts only lines that join an active item master at its OFFICIAL price (never the client-written harga).
+--  * nilai syarat (R1, stage-2 re-review): each line counts at LESSER( qty x OFFICIAL master price, what the customer is ACTUALLY charged for
+--    the line ), never more than the real money in the cart. REFINEMENT of Andri's "nilai belanja = seluruh keranjang" (he did not say
+--    "before discount"; that was our earlier assumption) - decision of the parent agent, NOT yet confirmed by Andri/Reza, who may overrule:
+--    the earlier reading made the threshold cashier-controlled, because harga, manual discount and qty are client-written and lines without
+--    an HPP floor (Jasa / Non-Persediaan) can be priced at Rp1, discounted 100% or sold in qty 1,000,000 at harga 0.
+--    Actually charged = qty*harga - least(greatest(d,0), qty*harga) with d = the manual line discount (percent: round(gross*value/100); any
+--    other type: the value) when it is > 0, else promo_discount (another mechanism such as the Bolt pool) - exactly the formula the finalize
+--    guard and the P03 floor use for the line net - BEFORE cart-level voucher/points/total discount. The reward discount of a line that
+--    carries a claim is NOT subtracted (it is the promo's own output, re-derived exactly by the claim verification; the engine plans the
+--    threshold before it as well). A line of qty >= 1,000,000 counts 0 (absurd-quantity bound, the engine uses the same bound), a line without
+--    an active item / official price (free text, inactive item, unknown unit) counts 0. Consequences the app must know: a manual discount, a tier
+--    price below the official price or a Persediaan line sold at HPP counts at the discounted amount; an overcharge counts at the official price.
+--    Why this is provable without a new HPP rule: the counted value of every line is bounded by what the sale charges for it, and a below-HPP
+--    waiver sale additionally needs total = sum of line nets (P03 waiver floor), so the waiver reward units cannot be unlocked with value the
+--    customer does not pay. Residual (documented, by decision): cart-level voucher/points/total discount are not subtracted.
 --  * promo_selection is display-only text, bounded to 8192 bytes; it never influences pricing.
 --  * The P03 HPP floor lives only in cashier_post_stock_atomic (pre-existing): a caller that uses sale_stock_out_fifo + finalize_pos_sale
 --    directly skips it (claim verification still runs). See also the waiver migration header.
@@ -201,7 +215,7 @@ begin
   if grants<1 or grants>a*rq or grants<=(a-1)*rq then
    raise exception 'PROMO_SH_GRANTS: hasil units % do not match % set(s) of reward_qty %',grants,a,rq;
   end if;
-  -- syarat rows: qty rows need a*min consumed units inside the pool; nilai rows need a*min of whole-cart official value
+  -- syarat rows: qty rows need a*min consumed units inside the pool; nilai rows need a*min of whole-cart value = sum of lesser(official value, actually charged) per line (R1)
   for row_json in select x from jsonb_array_elements(sh->'syarat') x loop
    cur_row:=cur_row+1;
    if row_json->>'kind'='qty' then
@@ -211,15 +225,18 @@ begin
      raise exception 'PROMO_SH_SYARAT: row % needs % units, claim supplies %',cur_row,a*(row_json->>'min')::numeric,supplied;
     end if;
    else
-    -- S1: ONLY lines that join an active item master count, at the OFFICIAL master price (branch price, else unit/base price).
-    -- A free-text line (item_id null) or a line without an official price contributes 0: the client-written harga is never trusted.
-    select coalesce(sum(i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,0)),0) into cart
+    -- S1 + R1: ONLY lines that join an active item master count, each at the LESSER of qty x OFFICIAL price (branch price, else unit/base price)
+    -- and the amount actually charged for the line (same net formula as the finalize guard / P03 floor; a claim line keeps its own verified reward
+    -- discount added back). Free text / no official price -> 0; qty >= 1,000,000 on one line -> 0. harga/discount/qty are client-written: they can only LOWER the count.
+    select coalesce(sum(case when i.qty>=1000000 then 0 else least(i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,0),
+      i.qty*i.harga-least(greatest(case when d.manual>0 then d.manual else case when i.promo_claim_id is not null then 0 else coalesce(i.promo_discount,0) end end,0),i.qty*i.harga)) end),0) into cart
      from public.sale_items i join public.items it on it.id=i.item_id and it.is_active
+     cross join lateral(select case when i.item_discount_type='percent' then round(i.qty*i.harga*coalesce(i.item_discount_value,0)/100,0) else coalesce(i.item_discount_value,0) end manual) d
      left join public.item_units u on u.item_id=it.id and u.unit=i.satuan and i.satuan<>it.unit
      left join public.item_branch_prices b on b.item_id=it.id and b.unit=i.satuan and b.branch_id=s.branch_id
      where i.sale_id=p_sale;
     if cart<a*(row_json->>'min')::numeric then
-     raise exception 'PROMO_SH_NILAI: whole-cart value % is below % x %',cart,a,row_json->>'min';
+     raise exception 'PROMO_SH_NILAI: whole-cart value % (each line at the lesser of official price and actual charge) is below % x %',cart,a,row_json->>'min';
     end if;
    end if;
   end loop;

@@ -1,8 +1,14 @@
 // Differential generator for scripts/test-promo-syarat-hasil-postgres.py: runs the REAL stage-1 engine on seeded random carts and
 // prints one JSON scenario per line (promos as DB rules + cart + the engine's claims). The native test then loads every scenario into the
 // database and finalizes it through the original cashier RPC: whatever the engine claims, the database verification must accept.
+// R1: carts now contain lines the cashier overrode (harga below the official price, manual nominal discounts); the engine sees them through
+// the REAL adapter (syaratHasilLinesFromCart -> charged), so nilai rows are measured with the new rule "min(official gross, actually charged)".
+// Boundary variants: a promo's nilai minimum is often set to exactly the nilai value of the cart (TS restatement of the rule). The base
+// scenario (engine claims, nilai == need) must be ACCEPTED; the SHAVED variant (same claims, one rupiah of manual discount added to a
+// counted non-claimed line, so nilai == need - 1) must be REFUSED with PROMO_SH_NILAI (expect REFUSE_NILAI): the database is neither
+// looser nor stricter than the engine's rule at the boundary.
 // Usage: node --no-warnings scripts/promo-syarat-hasil-diff-gen.mts <seed> <count>
-import { calculateSyaratHasilSafe, type SyaratHasilDef } from "../src/lib/promo-syarat-hasil.ts";
+import { calculateSyaratHasilSafe, syaratHasilLinesFromCart, type SyaratHasilDef } from "../src/lib/promo-syarat-hasil.ts";
 
 const seed = Number(process.argv[2] ?? 1), count = Number(process.argv[3] ?? 100);
 let a = seed >>> 0;
@@ -17,12 +23,12 @@ const ITEMS = [
 ];
 const subset = (maxN: number) => { const xs = [...ITEMS].sort(() => rnd() - 0.5); return xs.slice(0, int(1, maxN)).map((x) => ({ item_id: x.id, unit: "PCS" })); };
 
-function promo(id: string): SyaratHasilDef {
+function promo(id: string, cartNilai: number): SyaratHasilDef {
   const rows: SyaratHasilDef["syarat"] = [];
   const nRows = int(1, 3);
   let nilai = false;
   for (let i = 0; i < nRows; i++) {
-    if (!nilai && rnd() < 0.25) { rows.push({ kind: "nilai", min: pick([5000, 12000, 20000, 40000, 60000]) }); nilai = true; }
+    if (!nilai && rnd() < 0.4) { rows.push({ kind: "nilai", min: rnd() < 0.5 ? Math.max(1, Math.floor(cartNilai / pick([1, 1, 2, 3]))) : pick([5000, 12000, 20000, 40000, 60000]) }); nilai = true; }
     else rows.push({ kind: "qty", min: int(1, 3), items: subset(3) });
   }
   if (!rows.some((r) => r.kind === "qty")) rows.push({ kind: "qty", min: int(1, 2), items: subset(3) });
@@ -39,11 +45,22 @@ const ruleOf = (d: SyaratHasilDef) => ({
     hasil: { kind: "barang", items: d.hasil.items, ...(d.hasil.reward_qty ? { reward_qty: d.hasil.reward_qty } : {}), discount: d.hasil.discount }, below_hpp: { allowed: false } },
 });
 
+type Ln = { pos: number; item: string; price: number; qty: number; harga: number; manual: number };
+const rowsOf = (ls: Ln[]) => ls.map((l) => ({ item_id: l.item, qty: l.qty, harga: l.harga, satuan: "PCS", faktor: 1, officialPrice: l.price, manualOverride: l.harga !== l.price,
+  item_discount_type: l.manual > 0 ? "nominal" : null, item_discount_value: l.manual }));
+// independent TS restatement of the nilai rule for the expectation: min(official gross, qty x harga - manual), qty bound 1e6
+const nilaiOf = (ls: Ln[]) => ls.reduce((s, l) => s + (l.qty >= 1_000_000 ? 0 : Math.min(l.qty * l.price, l.qty * l.harga - Math.min(l.manual, l.qty * l.harga))), 0);
+
 for (let idx = 0; idx < count; idx++) {
-  const defs = Array.from({ length: int(1, 2) }, (_, k) => promo(`f4000000-0000-4000-8000-${String(idx * 2 + k).padStart(12, "0")}`));
-  const lines = Array.from({ length: int(1, 5) }, (_, pos) => { const it = pick(ITEMS); return { pos, item: it.id, price: it.price, qty: int(1, 6) }; });
-  const r = calculateSyaratHasilSafe(lines.map((l) => ({ source_position: l.pos, item_id: l.item, unit: "PCS", qty: l.qty, unit_price: l.price, evidence_ok: true })), defs,
-    { one_promo_per_line: true, alternatives: false });
+  const lines: Ln[] = Array.from({ length: int(1, 5) }, (_, pos) => {
+    const it = pick(ITEMS), qty = int(1, 6);
+    let harga = it.price, manual = 0;
+    if (rnd() < 0.2) harga = Math.round(it.price * pick([0.6, 0.8, 0.95])); // tier / negotiated price below the official price
+    if (rnd() < 0.2) manual = int(1, Math.floor((qty * harga * 4) / 10)); // genuine manual nominal discount (<= 40% of the line)
+    return { pos, item: it.id, price: it.price, qty, harga, manual };
+  });
+  const defs = Array.from({ length: int(1, 2) }, (_, k) => promo(`f4000000-0000-4000-8000-${String(idx * 2 + k).padStart(12, "0")}`, nilaiOf(lines)));
+  const r = calculateSyaratHasilSafe(syaratHasilLinesFromCart(rowsOf(lines)), defs, { one_promo_per_line: true, alternatives: false });
   const claims: object[] = [];
   let multi = false;
   for (const l of r.lines) {
@@ -52,4 +69,16 @@ for (let idx = 0; idx < count; idx++) {
   }
   if (multi) continue;
   console.log(JSON.stringify({ idx, promos: defs.map((d) => ({ id: d.id, rule: ruleOf(d) })), lines, claims, total_discount: r.discount_total }));
+  // boundary variant: nilai == need exactly -> shave 1 Rp off a counted, non-claimed line
+  const need = r.claims.reduce((m, c) => {
+    const d = defs.find((x) => x.id === c.promo_id) as SyaratHasilDef;
+    return d.syarat.reduce((mm, row) => (row.kind === "nilai" ? Math.max(mm, c.sets_consumed * row.min) : mm), m);
+  }, 0);
+  const claimedPos = new Set((claims as { pos: number }[]).map((x) => x.pos));
+  const victim = lines.find((l) => !claimedPos.has(l.pos) && l.qty * l.harga - l.manual >= 2 && l.harga <= l.price);
+  if (need > 0 && nilaiOf(lines) === need && victim) {
+    const shaved = lines.map((l) => (l === victim ? { ...l, manual: l.manual + 1 } : l));
+    if (nilaiOf(shaved) !== need - 1) throw new Error("generator bug: boundary arithmetic");
+    console.log(JSON.stringify({ idx, expect: "REFUSE_NILAI", promos: defs.map((d) => ({ id: d.id, rule: ruleOf(d) })), lines: shaved, claims, total_discount: r.discount_total }));
+  }
 }

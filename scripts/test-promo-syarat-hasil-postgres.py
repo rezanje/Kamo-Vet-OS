@@ -11,6 +11,8 @@ Options:
   --baseline      apply NO candidate migration (RED proof: the suites must fail on the original schema)
   --upto N        apply only the first N candidate migrations and run only their suites (TDD stepping)
   --no-regression skip the existing suites that touch the patched functions
+  --soft          RED-report mode: every `select pg_temp.refused/ok/must_reject(...)` of the sales suite runs in a sub-transaction and prints
+                  GREEN or RED-FAIL instead of aborting at the first failure (used to log ALL red assertions of a TDD step)
   --mutate NAME   apply a named mutation of a candidate migration (mutation verification, see MUTATIONS) and run the suites
 """
 import argparse
@@ -93,15 +95,42 @@ MUTATIONS = {
     'floor_no_stacking': ('20261106320000_promo_syarat_hasil_hpp_waiver.sql', "then least(line.hpp,gross-item_discount) else", "then 0 else"),
     'floor_waiver_flag_ignored': ('20261106320000_promo_syarat_hasil_hpp_waiver.sql', "when coalesce(line.promo_floor_waiver,false) and manual<=0 then", "when manual<=0 then"),
     # stage-2 review fixes
-    's1_harga_fallback': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else u.sell_price end,0)),0) into cart", "else u.sell_price end,i.harga)),0) into cart"),
-    's1_original_bug': [('20261106310000_promo_syarat_hasil_sale_claims.sql', "else u.sell_price end,0)),0) into cart", "else u.sell_price end,i.harga)),0) into cart"), ('20261106310000_promo_syarat_hasil_sale_claims.sql', "from public.sale_items i join public.items it on it.id=i.item_id and it.is_active\n     left join public.item_units u", "from public.sale_items i left join public.items it on it.id=i.item_id\n     left join public.item_units u")],
+    's1_harga_fallback': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else u.sell_price end,0),\n      i.qty*i.harga-least(", "else u.sell_price end,i.harga),\n      i.qty*i.harga-least("),
+    's1_original_bug': [('20261106310000_promo_syarat_hasil_sale_claims.sql', "else u.sell_price end,0),\n      i.qty*i.harga-least(", "else u.sell_price end,i.harga),\n      i.qty*i.harga-least("), ('20261106310000_promo_syarat_hasil_sale_claims.sql', "from public.sale_items i join public.items it on it.id=i.item_id and it.is_active\n     cross join lateral", "from public.sale_items i left join public.items it on it.id=i.item_id\n     cross join lateral")],
     's2_update_guard': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "if new.promo_id is distinct from old.promo_id and new.promo_id is not null and new.promo_claim_id", "if false and new.promo_id is not null and new.promo_claim_id"),
     's3_selection_bound': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "octet_length(promo_selection::text)<=8192", "true"),
     'l1_trigger': ('20261106310000_promo_syarat_hasil_sale_claims.sql', ' if new.promo_floor_waiver and (new.promo_hasil_units is distinct from new.qty or new.promo_syarat_units<>0) then', " if false then"),
     'l1_check': ('20261106310000_promo_syarat_hasil_sale_claims.sql', '(promo_hasil_units=qty and promo_syarat_units=0)', "promo_hasil_units>0"),
     'l1_both': [('20261106310000_promo_syarat_hasil_sale_claims.sql', ' if new.promo_floor_waiver and (new.promo_hasil_units is distinct from new.qty or new.promo_syarat_units<>0) then', " if false then"), ('20261106310000_promo_syarat_hasil_sale_claims.sql', '(promo_hasil_units=qty and promo_syarat_units=0)', "promo_hasil_units>0")],
+    # stage-2 re-review R1 (nilai = lesser of official value and actual charge)
+    'r1_official_only': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else least(i.qty*coalesce(b.sell_price", "else greatest(i.qty*coalesce(b.sell_price"),
+    'r1_charged_only': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else least(i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,0),\n      i.qty*i.harga-least(", "else least(1e30,\n      i.qty*i.harga-least("),
+    'r1_qty_bound': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "case when i.qty>=1000000 then 0 else least(", "case when false then 0 else least("),
+    'r1_claim_addback_off': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else case when i.promo_claim_id is not null then 0 else coalesce(i.promo_discount,0) end end,0)", "else coalesce(i.promo_discount,0) end,0)"),
+    'r1_other_promo_discount_ignored': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else case when i.promo_claim_id is not null then 0 else coalesce(i.promo_discount,0) end end,0)", "else 0 end,0)"),
+    'r1_manual_discount_ignored': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "case when d.manual>0 then d.manual else", "case when false then d.manual else"),
+    'r1_percent_ignored': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "case when i.item_discount_type='percent' then round(i.qty*i.harga*coalesce(i.item_discount_value,0)/100,0) else", "case when false then 0 else"),
+    'r1_harga_not_used': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "i.qty*i.harga-least(greatest(case when d.manual>0", "i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,0)-least(greatest(case when d.manual>0"),
     'l3_hint': ('20261106320000_promo_syarat_hasil_hpp_waiver.sql', "case when coalesce(line.promo_floor_waiver,false) then ' (baris promo", "case when false then ' (baris promo"),
 }
+
+
+SOFT_PRELUDE = '''create function pg_temp.soft(stmt text, lbl text) returns text language plpgsql as $$
+declare m text;begin execute stmt;return 'GREEN '||lbl;exception when others then get stacked diagnostics m=message_text;return 'RED-FAIL '||lbl||' => '||left(m,140);end$$;
+'''
+
+
+def soften(body):
+    """Wrap every top-level assertion statement (a line that starts with select pg_temp.refused/ok/must_reject and ends with ';') in pg_temp.soft."""
+    out = []
+    for line in body.split('\n'):
+        m = re.match(r"^(select pg_temp\.(?:refused|ok|must_reject)\(.*\));$", line)
+        if m and '$q$' not in line:
+            lbl = re.findall(r"'((?:[^']|'')*)'\)+;$", line)
+            out.append("select pg_temp.soft($soft$%s$soft$,%s);" % (m.group(1), "$lbl$" + (lbl[0] if lbl else line[:60]) + "$lbl$"))
+        else:
+            out.append(line)
+    return '\n'.join(out)
 
 
 def sha(p):
@@ -117,8 +146,9 @@ def main():
     ap.add_argument('--only', type=int, help='run only the suites of candidate K (1-based)')
     ap.add_argument('--no-regression', action='store_true')
     ap.add_argument('--no-concurrency', action='store_true')
-    ap.add_argument('--diff', type=int, default=300, help='TS-engine differential: scenarios to generate (0 = skip)')
+    ap.add_argument('--diff', type=int, default=400, help='TS-engine differential: scenarios to generate (0 = skip)')
     ap.add_argument('--diff-seed', type=int, default=20261104)
+    ap.add_argument('--soft', action='store_true')
     ap.add_argument('--mutate', choices=sorted(MUTATIONS))
     args = ap.parse_args()
     cands = [] if args.baseline else CANDIDATES[:(args.apply if args.apply is not None else args.upto)]
@@ -207,6 +237,8 @@ def main():
                 for suite in suites:
                     body = (ROOT / 'supabase/tests' / suite).read_text()
                     helpers = '' if suite.endswith('definition.sql') else (ROOT / 'supabase/tests/promo_syarat_hasil_helpers.sql').read_text()
+                    if args.soft:
+                        body = SOFT_PRELUDE + soften(body)
                     print(db.sql('begin;\n' + fixture_sql + '\n' + helpers + '\n' + body + '\nrollback;'), flush=True)
                     print('PASS suite', suite, flush=True)
             left = db.sql("select (select count(*) from promos where name like 'Direct %')+(select count(*) from promo_release_flags where enabled)")
@@ -217,7 +249,7 @@ def main():
                 for name, before_result in reg_before.items():
                     assert reg_after[name] == before_result, 'REGRESSION: %s changed from %r to %r' % (name, before_result, reg_after[name])
                     print('PASS original regression', name, '(unchanged: %s)' % ('passes' if before_result[0] else 'fails identically on the unmodified schema'), flush=True)
-            if cands and len(cands) >= 2 and args.diff and not args.mutate:
+            if cands and len(cands) >= 2 and args.diff:
                 differential(db, fixture_sql, args.diff, args.diff_seed)
             if cands and len(cands) >= 2 and not args.no_concurrency and not args.mutate:
                 concurrency(db, fixture_sql)  # commits its fixture: keep it LAST
@@ -347,21 +379,30 @@ def differential(db, fixture_sql, count, seed):
     assert gen.returncode == 0, 'generator failed: ' + gen.stderr[-500:]
     scenarios = [json.loads(line) for line in gen.stdout.splitlines() if line.strip()]
     with_claims = [x for x in scenarios if x['claims']]
-    assert len(with_claims) >= 50, 'too few claim scenarios: %d' % len(with_claims)
-    calls = []
+    assert len([x for x in with_claims if not x.get('expect')]) >= 50, 'too few claim scenarios: %d' % len(with_claims)
+    calls, kinds = [], []
     for x in with_claims:
         body = '$j$' + json.dumps(x) + '$j$::jsonb'
         calls.append("select 'A'||pg_temp.diff_scenario(%s,false);" % body)
-        calls.append("select 'F'||pg_temp.diff_scenario(%s,true);" % body)
+        kinds.append('boundary' if x.get('expect') else 'engine')
+        if not x.get('expect'):  # forged +1 Rp only for the engine's own scenarios
+            calls.append("select 'F'||pg_temp.diff_scenario(%s,true);" % body)
+            kinds.append('forged')
     out = db.sql('begin;\n' + fixture_sql + '\n' + (ROOT / 'supabase/tests/promo_syarat_hasil_diff_prelude.sql').read_text() + '\n' + '\n'.join(calls) + '\nrollback;').splitlines()
     results = [l for l in out if l.startswith(('AACCEPTED', 'AREFUSED', 'ASKIP', 'FACCEPTED', 'FREFUSED', 'FSKIP'))]
     assert len(results) == len(calls), 'unexpected result count %d != %d' % (len(results), len(calls))
-    bad_a = [l for l in results if l.startswith('A') and not l.startswith('AACCEPTED')]
-    bad_f = [l for l in results if l.startswith('F') and not l.startswith(('FREFUSED: PROMO_SH_TOTAL', 'FSKIP'))]
+    bad_a = [l for l, k in zip(results, kinds) if k == 'engine' and not l.startswith('AACCEPTED')]
+    # R1 boundary: nilai == sets x min (+ the engine's own claims) is accepted above; one rupiah less must be refused by the nilai check only
+    bad_b = [l for l, k in zip(results, kinds) if k == 'boundary' and not l.startswith('AREFUSED: PROMO_SH_NILAI')]
+    bad_f = [l for l, k in zip(results, kinds) if k == 'forged' and not l.startswith(('FREFUSED: PROMO_SH_TOTAL', 'FSKIP'))]
     assert not bad_a, 'DB refused %d engine claims, e.g. %s' % (len(bad_a), bad_a[:3])
+    assert not bad_b, 'nilai boundary (value = need - 1) not refused with PROMO_SH_NILAI: %s' % bad_b[:3]
     assert not bad_f, 'forged claims not refused with PROMO_SH_TOTAL: %s' % bad_f[:3]
-    n_forged = sum(1 for l in results if l.startswith('FREFUSED'))
-    print('PASS differential: %d/%d scenarios carried claims; all %d engine claim sets ACCEPTED by the DB; %d forged (+1 Rp) variants all REFUSED (PROMO_SH_TOTAL)' % (len(with_claims), len(scenarios), len(with_claims), n_forged), flush=True)
+    n_forged = sum(1 for k in kinds if k == 'forged')
+    n_boundary = sum(1 for k in kinds if k == 'boundary')
+    assert n_boundary >= 5, 'too few nilai boundary scenarios: %d' % n_boundary
+    n_engine = sum(1 for k in kinds if k == 'engine')
+    print('PASS differential: %d/%d scenarios carried claims (carts with tier-price and manually discounted lines through the real adapter); all %d engine claim sets ACCEPTED by the DB; %d forged (+1 Rp) variants all REFUSED (PROMO_SH_TOTAL); %d nilai-boundary variants (value = need - 1) all REFUSED (PROMO_SH_NILAI)' % (n_engine, len(scenarios), n_engine, n_forged, n_boundary), flush=True)
 
 
 if __name__ == '__main__':

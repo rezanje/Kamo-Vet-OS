@@ -23,7 +23,8 @@ begin
   end loop;
   set constraints all immediate;
   for l in select * from jsonb_array_elements(j->'lines') loop
-   gross:=gross+(l->>'qty')::numeric*(l->>'price')::numeric;
+   gross:=gross+(l->>'qty')::numeric*coalesce((l->>'harga')::numeric,(l->>'price')::numeric);
+   disc:=disc+least(coalesce((l->>'manual')::numeric,0),(l->>'qty')::numeric*coalesce((l->>'harga')::numeric,(l->>'price')::numeric));
   end loop;
   for c in select * from jsonb_array_elements(j->'claims') loop
    disc:=disc+(c->>'disc')::numeric;
@@ -39,11 +40,12 @@ begin
    select x into c from jsonb_array_elements(j->'claims') x where (x->>'pos')::int=(l->>'pos')::int;
    add:=0;
    if c is not null and forge and not forged and (c->>'hasil')::numeric>0 then add:=1;forged:=true;end if;
-   insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,source_position,promo_id,promo_discount,promo_claim_id,promo_sets,promo_syarat_units,promo_hasil_units)
-   values(sid,(l->>'item')::uuid,'diff',(l->>'qty')::numeric,(l->>'price')::numeric,'PCS',1,0,(l->>'pos')::int,
+   insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,source_position,promo_id,promo_discount,promo_claim_id,promo_sets,promo_syarat_units,promo_hasil_units,item_discount_type,item_discount_value)
+   values(sid,(l->>'item')::uuid,'diff',(l->>'qty')::numeric,coalesce((l->>'harga')::numeric,(l->>'price')::numeric),'PCS',1,0,(l->>'pos')::int,
     case when c is not null and (c->>'hasil')::numeric>0 then (c->>'promo')::uuid end,
     case when c is not null and (c->>'hasil')::numeric>0 then (c->>'disc')::numeric+add else 0 end,
-    (c->>'promo')::uuid,coalesce((c->>'sets')::int,0),coalesce((c->>'syarat')::numeric,0),coalesce((c->>'hasil')::numeric,0));
+    (c->>'promo')::uuid,coalesce((c->>'sets')::int,0),coalesce((c->>'syarat')::numeric,0),coalesce((c->>'hasil')::numeric,0),
+    case when coalesce((l->>'manual')::numeric,0)>0 then 'nominal' end,coalesce((l->>'manual')::numeric,0));
   end loop;
   res:=cashier_post_stock_atomic(sid,'e3300000-0000-4000-8000-000000000001');
   if res->>'finalized'<>'true' then raise exception 'NOT FINALIZED';end if;

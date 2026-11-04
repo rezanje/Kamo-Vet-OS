@@ -25,6 +25,11 @@
 -- Known limitation (pre-existing, review S4): the P03 floor exists only in cashier_post_stock_atomic. A caller that issues stock with
 -- sale_stock_out_fifo and calls finalize_pos_sale directly skips the floor entirely (SH claim verification still runs there, but the
 -- waiver / no-stacking rule is not enforced). Closing that is a follow-up outside this migration (finalize_pos_sale is untouched).
+-- R1 (stage-2 re-review): a waiver promo with a nilai syarat can no longer be unlocked by value the customer does not pay. Migration
+-- 20261106310000 counts every line toward nilai at the LESSER of qty x official price and what the customer is actually charged (a fake
+-- Rp1 / 100%-discounted / qty-1,000,000-at-harga-0 Jasa line counts ~0), and this floor already forces net_total = after_items on a waiver
+-- sale, so the money counted for the threshold is the money charged for the lines. Documented refinement of Andri's "nilai = whole cart";
+-- residual: a receipt-level discount on a NON-waiver sale is not subtracted (bounded by the reward line's own HPP floor).
 -- (The CASE is parenthesised on purpose: PL/pgSQL ends an IF condition at the first THEN token it meets.)
 begin;
 do $$

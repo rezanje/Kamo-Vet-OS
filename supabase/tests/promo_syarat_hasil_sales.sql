@@ -276,3 +276,129 @@ select pg_temp.must_reject($q$select pg_temp.sale_sel('SH.S3.MANY',jsonb_build_o
 select pg_temp.must_reject($q$select pg_temp.sale_sel('SH.S3.SHAPE','[1]'::jsonb)$q$,'sales_promo_pick_shape','S3: a non-object promo_selection is refused (shape CHECK)');
 select pg_temp.sale_sel('SH.S3.OK',jsonb_build_object('version',1,'note','ok'));
 select pg_temp.ok((select promo_selection->>'note'='ok' from sales where no_struk='SH.S3.OK'),'S3: a normal small promo_selection is accepted');
+
+-- ============================================================ 8. stage-2 re-review R1: nilai counts min(qty x official price, what the customer is ACTUALLY charged)
+-- Attack surface: harga, manual discount and qty are client-written, and lines without an HPP floor (Jasa / Non-Persediaan) are not
+-- bounded by anything. Authoritative columns at verify time: items/item_units/item_branch_prices (official price, locked FOR SHARE by the
+-- finalize guard) and the line's qty, harga, item_discount_*, promo_discount (the SAME columns cashier_post_stock_atomic / the finalize guard
+-- use for the line net; promo_discount of a claim line is re-derived exactly by the claim verification, so its own reward discount is added back).
+reset role;select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claims','',true);
+insert into items(id,code,name,unit,item_type,sell_price,buy_price,is_active) values
+ ('e5500000-0000-4000-8000-0000000000b1','SVC600','Fictional paid service','PCS','Jasa',600000,0,true),
+ ('e5500000-0000-4000-8000-0000000000b2','SVCOLD','Fictional INACTIVE service','PCS','Jasa',600000,0,false);
+update items set sell_price=15000 where code='EXP-REJECT';
+insert into item_branch_prices(item_id,branch_id,unit,sell_price) select id,'e2200000-0000-4000-8000-000000000001','PCS',100000 from items where code='KOPI';
+select pg_temp.mk('pnw',pg_temp.rule_of('[{"kind":"nilai","min":500000}]'::jsonb,pg_temp.hasil_of('EXP-REJECT','{"type":"nominal","value":5000}'),true,
+ '{"allowed":true,"reason":"barang mendekati expired","ack_by":"e1100000-0000-4000-8000-000000000003","ack_at":"2026-11-04T01:02:03Z"}'));
+set constraints all immediate;set constraints all deferred;
+select pg_temp.set_user('e1100000-0000-4000-8000-000000000001');
+set local role authenticated;
+-- line with item code, optional manual discount (nominal/percent) and promo_discount (a mechanism other than this promo)
+create function pg_temp.li(ref text,code text,q numeric,price numeric,pos integer,disc numeric default 0,dtype text default 'nominal',pdisc numeric default 0,unit text default 'PCS',factor numeric default 1) returns uuid language plpgsql as $$
+#variable_conflict use_variable
+declare id uuid;begin
+ insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,source_position,item_discount_type,item_discount_value,promo_discount)
+ select s.id,i.id,i.name,q,price,unit,factor,0,pos,case when disc>0 then dtype end,disc,pdisc from sales s cross join items i where s.no_struk=ref and i.code=code returning sale_items.id into id;
+ return id;
+end$$;
+-- the reward claim every nilai-only scenario carries (ANC Creamy 15000, -1000, exactly 1 set)
+create function pg_temp.reward(ref text,pos integer default 0) returns uuid language sql as $$ select pg_temp.cl(ref,'ANC-CREAMY',1,15000,pos,pg_temp.pid('pnil'),1,0,1,1000) $$;
+
+-- R1 attacks (the reviewer's exact vectors): every one MUST be refused with PROMO_SH_NILAI and roll back stock/snapshot
+select pg_temp.sale('R1.A3',1+15000,1+14000);
+select pg_temp.li('R1.A3','SVC600',1,1,1);select pg_temp.reward('R1.A3');
+select pg_temp.refused('R1.A3','PROMO_SH_NILAI','R1 A3: Jasa (master 600000) at harga 1 counts 1, not 600000');
+select pg_temp.sale('R1.A3b',600000+15000,14000);
+select pg_temp.li('R1.A3b','SVC600',1,600000,1,600000);select pg_temp.reward('R1.A3b');
+select pg_temp.refused('R1.A3b','PROMO_SH_NILAI','R1 A3b: Jasa at harga 600000 with a 600000 nominal manual discount counts 0');
+select pg_temp.sale('R1.A3c',600000+15000,14000);
+select pg_temp.li('R1.A3c','SVC600',1,600000,1,100,'percent');select pg_temp.reward('R1.A3c');
+select pg_temp.refused('R1.A3c','PROMO_SH_NILAI','R1 A3c: Jasa with a 100% manual discount counts 0');
+select pg_temp.sale('R1.A7d',15000,14000);
+select pg_temp.li('R1.A7d','SVC600',1000000,0,1);select pg_temp.reward('R1.A7d');
+select pg_temp.refused('R1.A7d','PROMO_SH_NILAI','R1 A7d: Jasa qty 1,000,000 at harga 0 counts 0');
+-- defence in depth: an absurd quantity counts 0 even when it is genuinely "paid" (qty >= 1,000,000 on one line)
+select pg_temp.sale('R1.A7e',600000::numeric*1000000+15000,600000::numeric*1000000+14000);
+select pg_temp.li('R1.A7e','SVC600',1000000,600000,1);select pg_temp.reward('R1.A7e');
+select pg_temp.refused('R1.A7e','PROMO_SH_NILAI','R1 A7e: a single line of 1,000,000 units counts 0 (quantity bound) even at the full price');
+select pg_temp.sale('R1.A7f',999999+15000,999999+14000);
+select pg_temp.li('R1.A7f','SVC600',999999,1,1);select pg_temp.reward('R1.A7f');
+select pg_temp.ok((pg_temp.post('R1.A7f')->>'finalized')::boolean,'R1 A7f control: 999,999 units really charged Rp1 each (999,999) still count under the bound');
+-- a Persediaan line bounded only by the HPP floor counts at what is paid, not at the master price (R3 of the review)
+select pg_temp.sale('R1.A4c',350000+15000,350000+14000);
+select pg_temp.li('R1.A4c','KOPI',7,50000,1);select pg_temp.reward('R1.A4c');
+select pg_temp.refused('R1.A4c','PROMO_SH_NILAI','R1 A4c: KOPI x7 sold at HPP 50000 (master 80000) counts 350000, not 560000');
+select pg_temp.sale('R1.A4d',500000+15000,500000+14000);
+select pg_temp.li('R1.A4d','KOPI',10,50000,1);select pg_temp.reward('R1.A4d');
+select pg_temp.ok((pg_temp.post('R1.A4d')->>'finalized')::boolean,'R1 A4d control: KOPI x10 really paid 50000 each = 500000 satisfies the syarat');
+select pg_temp.sale('R1.A5b',400000+15000,400000+14000);
+select pg_temp.li('R1.A5b','KOPI',5,80000,1);select pg_temp.reward('R1.A5b');
+select pg_temp.refused('R1.A5b','PROMO_SH_NILAI','R1 A5b: KOPI x5 charged 80000 while the branch price is 100000 counts what is paid (400000)');
+-- a non-claim promo_discount (another mechanism) reduces the counted value too
+select pg_temp.sale('R1.PD1',560000+15000,560000-75000+14000);
+select pg_temp.li('R1.PD1','KOPI',7,80000,1,0,'nominal',75000);select pg_temp.reward('R1.PD1');
+select pg_temp.ok((pg_temp.post('R1.PD1')->>'finalized')::boolean,'R1 PD1 boundary: KOPI x7 net 485000 (promo_discount 75000) + reward 15000 = exactly 500000 is accepted');
+select pg_temp.sale('R1.PD2',560000+15000,560000-75001+14000);
+select pg_temp.li('R1.PD2','KOPI',7,80000,1,0,'nominal',75001);select pg_temp.reward('R1.PD2');
+select pg_temp.refused('R1.PD2','PROMO_SH_NILAI','R1 PD2 boundary: one rupiah more promo_discount -> 499999 < 500000 refused');
+-- nilai-only WAIVER promo (review X1): fake free Jasa line + 50 below-HPP reward units
+select pg_temp.sale('R1.X1',750000,500000);
+select pg_temp.li('R1.X1','SVC600',1000000,0,1);
+select pg_temp.cl('R1.X1','EXP-REJECT',50,15000,0,pg_temp.pid('pnw'),50,0,50,250000,true);
+select pg_temp.refused('R1.X1','PROMO_SH_NILAI','R1 X1: a fake Jasa qty 1e6 @ harga 0 cannot inflate the sets of a nilai-only waiver promo (50 below-HPP units refused)');
+select pg_temp.sale('R1.X1b',750001,500001);
+select pg_temp.li('R1.X1b','SVC600',1,1,1);
+select pg_temp.cl('R1.X1b','EXP-REJECT',50,15000,0,pg_temp.pid('pnw'),50,0,50,250000,true);
+select pg_temp.refused('R1.X1b','PROMO_SH_NILAI','R1 X1b: same with a Jasa line at harga 1');
+-- legit carts must NOT be refused
+select pg_temp.sale('R1.X1d',615000,610000);
+select pg_temp.li('R1.X1d','SVC600',1,600000,1);
+select pg_temp.cl('R1.X1d','EXP-REJECT',1,15000,0,pg_temp.pid('pnw'),1,0,1,5000,true);
+select pg_temp.ok((pg_temp.post('R1.X1d')->>'finalized')::boolean,'R1 X1d control: a GENUINELY paid Jasa 600000 + one waiver reward unit below HPP is accepted (customer pays 610000)');
+select pg_temp.ok((select net_paid from sale_line_pricing v join sales s on s.id=v.sale_id where s.no_struk='R1.X1d' and v.source_position=0)=10000,'R1 X1d: the waiver reward line is net 10000 (below HPP 17040), nothing stacked');
+select pg_temp.sale('R1.OK1',600000+15000,600000+14000);
+select pg_temp.li('R1.OK1','SVC600',1,600000,1);select pg_temp.reward('R1.OK1');
+select pg_temp.ok((pg_temp.post('R1.OK1')->>'finalized')::boolean,'R1 OK1: a genuinely paid Jasa 600000 satisfies the syarat');
+select pg_temp.sale('R1.OK2',600000+15000,485000+14000);
+select pg_temp.li('R1.OK2','SVC600',1,600000,1,115000);select pg_temp.reward('R1.OK2');
+select pg_temp.ok((pg_temp.post('R1.OK2')->>'finalized')::boolean,'R1 OK2 boundary: Jasa 600000 with a genuine 115000 discount (485000) + reward 15000 = 500000 is accepted');
+select pg_temp.sale('R1.NO2',600000+15000,484999+14000);
+select pg_temp.li('R1.NO2','SVC600',1,600000,1,115001);select pg_temp.reward('R1.NO2');
+select pg_temp.refused('R1.NO2','PROMO_SH_NILAI','R1 NO2 boundary: discount 115001 -> 499999 refused (the documented refinement: discounted value counts)');
+select pg_temp.sale('R1.OK3',600000+15000,540000+14000);
+select pg_temp.li('R1.OK3','SVC600',1,600000,1,10,'percent');select pg_temp.reward('R1.OK3');
+select pg_temp.ok((pg_temp.post('R1.OK3')->>'finalized')::boolean,'R1 OK3: Jasa with a genuine 10% discount (540000) is accepted');
+select pg_temp.sale('R1.OK4',500000+15000,500000+14000);
+select pg_temp.li('R1.OK4','KOPI',5,100000,1);select pg_temp.reward('R1.OK4');
+select pg_temp.ok((pg_temp.post('R1.OK4')->>'finalized')::boolean,'R1 OK4: branch-price carts (KOPI x5 at the branch price 100000) are not falsely refused');
+select pg_temp.sale('R1.OK5',500000+15000,500000+14000);
+select pg_temp.li('R1.OK5','DRC8993374326970',1,500000,1,0,'nominal',0,'SAK',25);select pg_temp.reward('R1.OK5');
+select pg_temp.ok((pg_temp.post('R1.OK5')->>'finalized')::boolean,'R1 OK5: a derived unit (1 SAK = 25 PCS at its own price 500000) counts at that price');
+select pg_temp.sale('R1.NO5',20000+15000,20000+14000);
+select pg_temp.li('R1.NO5','DRC8993374326970',1,20000,1,0,'nominal',0,'SAK',25);select pg_temp.reward('R1.NO5');
+select pg_temp.refused('R1.NO5','PROMO_SH_NILAI|Konversi|HPP','R1 NO5: a derived unit sold at the base price still refused');
+select pg_temp.sale('R1.OK6',560000+15000,504000+14000);
+select pg_temp.li('R1.OK6','KOPI',7,80000,1,10,'percent');select pg_temp.reward('R1.OK6');
+select pg_temp.ok((pg_temp.post('R1.OK6')->>'finalized')::boolean,'R1 OK6: a genuinely discounted stock line (KOPI x7 -10% = 504000) is accepted');
+select pg_temp.sale('R1.OK7',700000+15000,700000+14000);
+select pg_temp.li('R1.OK7','KOPI',7,100000,1);select pg_temp.reward('R1.OK7');
+select pg_temp.ok((pg_temp.post('R1.OK7')->>'finalized')::boolean,'R1 OK7: an overcharged line (above the official price) is accepted and counts at the official price only');
+select pg_temp.sale('R1.OV',800000+15000,800000+14000);
+select pg_temp.li('R1.OV','KOPI',4,200000,1);select pg_temp.reward('R1.OV');
+select pg_temp.refused('R1.OV','PROMO_SH_NILAI','R1 OV: KOPI x4 charged 200000 (above the branch price 100000) counts at the OFFICIAL price only (400000 + 15000 < 500000): lesser-of, an overcharge adds nothing');
+-- a line whose unit is unknown to the master has no official price. The ORIGINAL trigger guard_pos_finalization_units already refuses it on every
+-- finalization path (faktor must equal the master factor), so the coalesce(official,0) default in the nilai count is defence in depth only
+-- (mutant s1_harga_fallback is therefore equivalent/unreachable natively).
+select pg_temp.sale('R1.UN',600000+15000,600000+14000);
+select pg_temp.li('R1.UN','SVC600',1,600000,1,0,'nominal',0,'XYZ');select pg_temp.reward('R1.UN');
+select pg_temp.refused('R1.UN','Konversi satuan','R1 UN: an active Jasa line in a unit the master does not define is refused by the original unit guard before nilai is evaluated');
+-- KNOWN RESIDUAL (by decision: nilai is measured BEFORE cart-level voucher/points/total discount): a receipt-level discount typed on the sale header
+-- still counts the full line values. It is bounded by the existing P03 floor of the reward line (here ANC: HPP 10000 of net 14000 -> total >= ~71.5% of
+-- the lines), so the sale below cannot go lower; flip this assertion if a later decision subtracts cart-level discounts too.
+select pg_temp.sale('R1.TD1',615000,50000);
+select pg_temp.li('R1.TD1','SVC600',1,600000,1);select pg_temp.reward('R1.TD1');
+select pg_temp.refused('R1.TD1','Harga neto Persediaan di bawah HPP','R1 TD1: a receipt discount down to 50000 is stopped by the reward line HPP floor (not by nilai)');
+select pg_temp.sale('R1.TD2',615000,440000);
+select pg_temp.li('R1.TD2','SVC600',1,600000,1);select pg_temp.reward('R1.TD2');
+select pg_temp.ok((pg_temp.post('R1.TD2')->>'finalized')::boolean,'R1 TD2 KNOWN RESIDUAL: a receipt-level discount to 440000 (HPP floor allows it) still counts the 600000 Jasa line (customer pays 440000 < 500000)');
+select pg_temp.ok((select count(*)=0 from stock_moves where source_ref like 'R1.A3%' or source_ref like 'R1.A7d%' or source_ref like 'R1.X1' or source_ref='R1.X1b'),'R1: no stock leaked by any refused attack');

@@ -28,7 +28,8 @@ function unitDiscount(d: Def["hasil"]["discount"], price: number): number {
 
 export function oracle(lines: OLine[], def: Def): { grants: number; money: number; absMax: number } {
   const key = (l: { item_id: string; unit: string }) => `${l.item_id}\u0000${l.unit}`;
-  const cartSub = lines.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  // R1: each line counts at min(qty x official price, charged); charged absent -> official gross; qty >= 1,000,000 -> 0
+  const cartSub = lines.reduce((s, l) => s + (l.qty >= 1_000_000 ? 0 : Math.min(l.qty * l.unit_price, l.charged ?? Infinity)), 0);
   const units: { line: number; dpu: number }[] = [];
   const hasilKeys = new Set(def.hasil.items.map(key));
   lines.forEach((l, i) => {
@@ -107,6 +108,7 @@ export const ref = (item_id: string) => ({ item_id, unit: "u" });
 
 export function genOracleCase(seed: number, index: number, maxRows = 3): { lines: OLine[]; def: Def } {
   const r = rng(seed * 7919 + index);
+  const rc = rng(seed * 104_729 + index * 31 + 7); // R1: separate stream so the pre-existing cases (and their greedy-vs-oracle sweep) stay byte-identical
   for (;;) {
     const nLines = r.int(1, 4);
     const lines: OLine[] = Array.from({ length: nLines }, (_, i) => {
@@ -117,6 +119,7 @@ export function genOracleCase(seed: number, index: number, maxRows = 3): { lines
       };
       if (r.chance(0.07)) l.manual_discount = true;
       if (r.chance(0.12)) l.units_claimed_elsewhere = r.int(0, qty);
+      if (rc.chance(0.4)) { const g = l.qty * l.unit_price; l.charged = [0, 1, Math.floor(g / 2), g, g + 500][rc.int(0, 4)]; }
       return l;
     });
     const positions = new Set(lines.map((l) => l.source_position));
