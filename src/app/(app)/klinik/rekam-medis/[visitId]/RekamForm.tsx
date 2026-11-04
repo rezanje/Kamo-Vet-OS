@@ -664,7 +664,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                   onChange={e => setTarikAlasan(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void konfirmasiTarik(); } }}
                   style={{ width: "100%", marginTop: 4 }} />
                 {tarikMenghabiskan(cart, tarikTarget.ids) && <div role="alert" data-tarik-peringatan-terakhir style={{ color: "#b45309", marginTop: 4, fontWeight: 600 }}>
-                  Ini baris terakhir di rekam medis: minimal satu baris harus tersisa. Jika ditarik, tagihan belum bisa diterbitkan sampai ada item lagi (tambah lewat Tambah item lalu Simpan). Untuk membatalkan seluruh kunjungan, minta pemilik/admin mengarsipkannya dari Antrian.
+                  Ini baris terakhir di rekam medis. Kunjungan tanpa baris tidak dapat ditagih. Jika ditarik, baris dapat ditambahkan lagi lewat Edit (Tambah item lalu Simpan).
                 </div>}
                 {tarikError && <div role="alert" data-tarik-error style={{ color: "#b91c1c", marginTop: 4 }}>{tarikError}</div>}
                 <div style={{ display: "flex", gap: 6, marginTop: 6 }}>

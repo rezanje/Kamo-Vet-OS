@@ -161,13 +161,17 @@ it("Tarik: alasan hanya tanda baca / zero-width / spasi tidak membuka tombol kon
   expect(tarik).not.toHaveBeenCalled();
 });
 
-it("Tarik baris TERAKHIR: peringatan 'minimal satu baris harus tersisa' + tombol berlabel khusus; tetap bisa dilanjutkan (database mengizinkan, tagihan pulih setelah item ditambah)", async () => {
+it("Tarik baris TERAKHIR: peringatan 'tidak dapat ditagih tanpa baris, bisa ditambah lagi lewat Edit' (bukan janji arsip: arsip diblokir) + tombol berlabel khusus; tetap bisa dilanjutkan (database mengizinkan, tagihan pulih setelah item ditambah)", async () => {
   tarik.mockResolvedValue({ ok: true, withdrawn: ["rx-satu"] });
   await render1([satu]);
   await klik(host.querySelector("[data-tarik-baris]"));
   const warn = host.querySelector("[data-tarik-peringatan-terakhir]");
-  expect(warn?.textContent).toContain("minimal satu baris harus tersisa");
-  expect(warn?.textContent).toContain("arsip");
+  expect(warn?.textContent).toContain("baris terakhir");
+  expect(warn?.textContent).toContain("tidak dapat ditagih");
+  expect(warn?.textContent).toContain("Edit");
+  expect(warn?.textContent).toContain("Tambah item");
+  // archive is ARCHIVE_BLOCKED for visits that have record rows: the warning must never point the doctor there
+  expect(warn?.textContent).not.toMatch(/arsip|admin|pemilik/i);
   const confirm = host.querySelector<HTMLButtonElement>("[data-tarik-konfirmasi]")!;
   expect(confirm.textContent).toContain("baris terakhir");
   await isi(host.querySelector<HTMLInputElement>('input[aria-label="Alasan penarikan"]')!, "Salah input kunjungan");

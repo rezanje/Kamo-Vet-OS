@@ -16,6 +16,16 @@
 -- Re-runnable: add column if not exists, create or replace, drop/create trigger, patches skip when already applied;
 -- every patch still fails closed when the live function drifted from the expected text.
 
+-- DEPLOY: apply this file as ONE TRANSACTION, BEFORE the app that reads record_withdrawn_at (the apply tooling / supabase db push /
+-- psql -1 wraps the file; the file deliberately has no begin/commit of its own, a file-level commit would defeat the wrapper's rollback
+-- probe). A partial apply (column + RPC created, patch block aborted on anchor drift) would leave Tarik callable while the Edit guard
+-- and the history filter are unpatched. Applying it statement by statement (autocommit) is NOT supported.
+-- ALTER TABLE below takes ACCESS EXCLUSIVE on prescription_items (metadata-only: no default, no rewrite, no index) and would queue every
+-- clinic read/write behind any long transaction touching the table: give up after 5s (whole file rolls back) and retry off-peak instead.
+-- Adding the column changes the cart/snapshot version of every visit with pending rows: open kasir carts get ONE CART_STALE and must reload.
+-- Do NOT drop record_withdrawn_at after rows were withdrawn (they would reappear in history/prints while still unbillable): revert the app only.
+set local lock_timeout = '5s';
+
 alter table public.prescription_items add column if not exists record_withdrawn_at timestamptz;
 
 create or replace function public.guard_record_withdrawn_marker()returns trigger language plpgsql security invoker set search_path='' as $$

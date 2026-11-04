@@ -8,7 +8,7 @@ row would be billed / counted. Fictional fixtures, throwaway local cluster, no n
   --baseline   omit only the candidate migration (RED)
   --mutations  one chain, then each guard removed from the candidate in a cloned database; every mutant must be KILLED
 """
-import argparse, contextlib, importlib.util, json, os, sys, tempfile
+import argparse, contextlib, importlib.util, json, os, re, subprocess, sys, tempfile, time
 from pathlib import Path
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / 'scripts'))
@@ -413,15 +413,104 @@ def run_clone(db, name, text):
     os.environ.pop('PGDATABASE', None); return RESULTS[start:]
 
 
+PATCHED = ['public.clinic_edit_queued_record(uuid,uuid,integer,jsonb,jsonb,text,text)', 'public.clinic_patient_clinical_history(uuid,uuid)']
+NEW_FNS = ['public.clinic_withdraw_record_items(uuid,uuid,uuid[],text,text)', 'public.clinic_record_withdrawn_items(uuid)', 'public.guard_record_withdrawn_marker()']
+
+
+def footprint(db):
+    """Everything the migration may touch, as one comparable string (column, new functions, md5 of patched bodies, trigger, schema_migrations-free)."""
+    col = db.sql("select count(*) from information_schema.columns where table_schema='public' and table_name='prescription_items' and column_name='record_withdrawn_at'")
+    new = ','.join(db.sql(f"select (to_regprocedure('{f}') is not null)::text") for f in NEW_FNS)
+    bodies = ','.join(db.sql(f"select md5(pg_get_functiondef('{f}'::regprocedure))") for f in PATCHED)
+    trg = db.sql("select count(*) from pg_trigger where tgrelid='public.prescription_items'::regclass and tgname='aa_record_withdrawn_marker'")
+    return f'col={col}|new={new}|patched={bodies}|trigger={trg}'
+
+
+def psql_env(db, dbname): return {**os.environ, 'PSQLRC': '/dev/null', 'PGDATABASE': dbname}
+
+
+def psql_timed(db, dbname, source, timeout=60):
+    """Run SQL in an independent psql backend; returns (returncode, stderr, seconds). Never raises on SQL errors."""
+    t = time.monotonic()
+    try: res = subprocess.run(db.as_user + [db.psql, '-X', '-qAt', '-h', str(db.root), '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], input=source, text=True, capture_output=True, env=psql_env(db, dbname), timeout=timeout)
+    except subprocess.TimeoutExpired: return -1, f'BLOCKED: no result within {timeout}s (unbounded lock wait)', time.monotonic() - t
+    return res.returncode, res.stderr, time.monotonic() - t
+
+
+def atomic_checks(db, text):
+    """Deploy-safety of the migration FILE on a database that does not have it yet: one transaction (no partial apply), bounded wait for the
+    table lock (no unbounded lock queue on ALTER TABLE prescription_items), safe re-run. The apply tooling wraps the file in its own
+    begin/commit (+ rollback probe), so the file itself must not contain begin/commit."""
+    code = [l for l in text.splitlines() if l.strip() and not l.lstrip().startswith('--')]
+    check('static: first statement of the file is `set local lock_timeout` <= 10s (before any DDL on prescription_items)', bool(re.match(r"set\s+local\s+lock_timeout\s*=\s*'([1-9]|10)s'\s*;\s*$", code[0], re.I)), dict(first=code[0][:120]))
+    check('static: no top-level begin/commit/rollback in the file (a file-level commit would defeat a wrapping probe rollback / the wrapper transaction)', not any(re.match(r'(begin|start\s+transaction|commit|rollback|end)\s*;\s*$', l.strip(), re.I) for l in code), {})
+    check('static: the file declares that it must be applied as one transaction', 'ONE TRANSACTION' in text, {})
+    mk = lambda name: (db.sql(f'create database {name} template postgres;'), os.environ.__setitem__('PGDATABASE', name))
+    wrap = lambda body: 'begin;\n' + body + '\ncommit;'
+    try:
+        mk('atom_base'); base = footprint(db)
+        check('baseline cluster has no Tarik footprint (column absent, functions absent, trigger absent)', base.startswith('col=0|new=false,false,false|') and base.endswith('|trigger=0'), dict(base=base))
+        # (1) forced failure mid-file: after column + RPC + reader + guard are created, BEFORE the patch block
+        anchor = 'do $patch$'; assert text.count(anchor) == 1
+        mid = text.replace(anchor, 'select 1/0;\n' + anchor)
+        err = None
+        try: db.sql(wrap(mid))
+        except RuntimeError as e: err = str(e)
+        after = footprint(db)
+        check('forced failure mid-file (after column/RPC/reader created, before the patch block): NOTHING applied (no column, no new functions, patched functions byte-identical, no trigger)', has(err, 'division by zero') and after == base, dict(error=(err or '')[:160], after=after))
+        # (2) real-world partial: anchor drift in a patched function -> whole file aborts, column/RPC not left behind
+        mk('atom_drift')
+        db.sql("do $d$ declare d text; begin d:=pg_get_functiondef('public.clinic_patient_clinical_history(uuid,uuid)'::regprocedure); execute replace(d,'from public.prescription_items pi where pi.medical_record_id = m.id)','from public.prescription_items pi where pi.medical_record_id = m.id and true)'); end $d$;")
+        drift_base = footprint(db); err = None
+        try: db.sql(wrap(text))
+        except RuntimeError as e: err = str(e)
+        check('anchor drift in a live function aborts the migration and leaves NOTHING applied (no column/RPC without the patches)', has(err, 'anchor drift') and footprint(db) == drift_base and drift_base.startswith('col=0|'), dict(error=(err or '')[:200], after=footprint(db)))
+        # (3) bounded wait for the table lock: a long transaction holds the table, the migration must give up, not queue forever
+        mk('atom_lock'); holder = subprocess.Popen(db.as_user + [db.psql, '-X', '-qAt', '-h', str(db.root), '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=psql_env(db, 'atom_lock'))
+        try:
+            holder.stdin.write("begin;\nlock table public.prescription_items in access share mode;\nselect 'held';\nselect pg_sleep(60);\n"); holder.stdin.flush()
+            assert holder.stdout.readline().strip() == 'held'
+            rc, stderr, secs = psql_timed(db, 'atom_lock', wrap(text), timeout=40)
+        finally:
+            holder.kill(); holder.wait()
+        lock_base = footprint(db)
+        check('lock wait is bounded: with prescription_items held by another transaction the migration fails with lock timeout within ~5s (not blocked indefinitely), nothing applied',
+              rc != 0 and 'lock timeout' in stderr and 3.5 <= secs <= 12 and lock_base == base, dict(rc=rc, seconds=round(secs, 1), stderr=stderr[:160], footprint=lock_base))
+        # (4) clean apply in ONE transaction, then re-run is a no-op
+        mk('atom_ok'); db.sql(wrap(text)); applied = footprint(db)
+        check('applies in one transaction on a clean database: column, 3 functions, trigger present; both patched bodies changed', applied != base and applied.startswith('col=1|new=true,true,true|') and applied.endswith('|trigger=1') and applied.split('|')[2] != base.split('|')[2], dict(applied=applied))
+        err = None
+        try: db.sql(wrap(text))
+        except RuntimeError as e: err = str(e)
+        check('re-run on the migrated database changes nothing (footprint identical, no error)', err is None and footprint(db) == applied, dict(error=(err or '')[:200]))
+        # (5) plain `psql -1` (single-transaction flag) behaves the same as the wrapper for the failing file
+        mk('atom_1'); rc, stderr, _ = psql_timed(db, 'atom_1', mid)
+        # without a wrapper psql runs statements autocommit => this documents WHY the file must be applied as one transaction
+        partial = footprint(db)
+        res = subprocess.run(db.as_user + [db.psql, '-X', '-qAt', '-1', '-h', str(db.root), '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-d', 'atom_base'], input=mid, text=True, capture_output=True, env=psql_env(db, 'atom_base'))
+        check('psql -1 (single transaction) on the failing file leaves nothing applied', res.returncode != 0 and footprint_for(db, 'atom_base') == base, dict(rc=res.returncode, stderr=res.stderr[:120]))
+        check('control (documents the hazard): the same failing file WITHOUT a wrapping transaction leaves a partial apply (column + RPC created, patches missing)', rc != 0 and partial.startswith('col=1|') and partial != base, dict(partial=partial))
+    finally: os.environ.pop('PGDATABASE', None)
+
+
+def footprint_for(db, name):
+    old = os.environ.get('PGDATABASE'); os.environ['PGDATABASE'] = name
+    try: return footprint(db)
+    finally:
+        if old is None: os.environ.pop('PGDATABASE', None)
+        else: os.environ['PGDATABASE'] = old
+
+
 def main():
-    p = argparse.ArgumentParser(); p.add_argument('--baseline', action='store_true'); p.add_argument('--mutations', action='store_true'); p.add_argument('--pg-bin'); p.add_argument('--json', type=Path, required=True); a = p.parse_args()
+    p = argparse.ArgumentParser(); p.add_argument('--baseline', action='store_true'); p.add_argument('--mutations', action='store_true'); p.add_argument('--atomic-only', action='store_true'); p.add_argument('--migration', type=Path, help='override the candidate file text (RED evidence against an older revision)'); p.add_argument('--pg-bin'); p.add_argument('--json', type=Path, required=True); a = p.parse_args()
     if a.pg_bin: r.BIN = a.pg_bin
-    sources = sorted((ROOT / 'supabase/migrations').glob('*.sql')); text = (ROOT / 'supabase/migrations' / CANDIDATE).read_text(); extra = {}
-    selected = [s for s in sources if not ((a.baseline or a.mutations) and s.name == CANDIDATE)]
+    sources = sorted((ROOT / 'supabase/migrations').glob('*.sql')); text = (a.migration or ROOT / 'supabase/migrations' / CANDIDATE).read_text(); extra = {}
+    selected = [s for s in sources if not ((a.baseline or a.mutations or a.atomic_only) and s.name == CANDIDATE)]
     try:
         with contextlib.ExitStack() as stack:
             db = build_chain(stack, selected); r.fixture.DisposablePostgres.bootstrap(db)
-            if a.mutations:
+            if a.atomic_only: atomic_checks(db, text)
+            elif a.mutations:
                 x.setup(x.Harness(db)); setup_extra(x.Harness(db))
                 control = run_clone(db, 'mut_control', text); extra['control_fail'] = sum(c['status'] == 'FAIL' for c in control); extra['mutants'] = {}
                 for i, (name, pairs) in enumerate(MUTANTS.items()):
@@ -433,6 +522,13 @@ def main():
                     extra['mutants'][name] = dict(killed=bool(failed), failing_cases=failed); print('MUTANT', 'KILLED' if failed else 'SURVIVED', name, len(failed), flush=True)
             else: run(x.Harness(db))
     except Exception as e: check('HARNESS', False, str(e)[:600])
+    if not a.mutations and not a.atomic_only:
+        try:
+            with contextlib.ExitStack() as stack2:
+                base_sel = [s for s in sources if s.name != CANDIDATE]
+                db2 = build_chain(stack2, base_sel); r.fixture.DisposablePostgres.bootstrap(db2)
+                atomic_checks(db2, text)
+        except Exception as e: check('HARNESS atomic', False, str(e)[:600])
     totals = {s: sum(c['status'] == s for c in RESULTS) for s in ['PASS', 'FAIL']}
     a.json.write_text(json.dumps(dict(mode='MUTATIONS' if a.mutations else 'RED' if a.baseline else 'candidate', migration_count=len(selected), cases=RESULTS, totals=totals, **extra), indent=2, default=str)); print(totals, extra.get('mutants') and {k: v['killed'] for k, v in extra['mutants'].items()})
     if a.mutations: return int(extra.get('control_fail', 1) > 0 or not all(v['killed'] for v in extra.get('mutants', {}).values()))

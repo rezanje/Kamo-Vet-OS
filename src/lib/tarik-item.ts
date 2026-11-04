@@ -19,7 +19,9 @@ export function idTarik(cart: TarikBaris[], row: TarikBaris): string[] {
 }
 
 /** Karakter yang TIDAK dihitung sebagai isi alasan: spasi, tanda baca, simbol ASCII, kontrol, dan karakter tak terlihat
- * (zero-width, BOM, variation selector, filler Hangul). Aturan yang sama dipakai database (clinic_withdraw_record_items). */
+ * (zero-width, BOM, variation selector, filler Hangul). Sejajar dengan database (clinic_withdraw_record_items) tetapi tidak identik
+ * untuk karakter Unicode langka (tanda gabung, huruf atas, dll.): layar bisa meloloskan alasan yang lalu ditolak database (pesannya
+ * ditampilkan) atau sebaliknya. Keduanya aman (gagal tertutup); database yang berwenang. */
 const TIDAK_BERISI = /[\p{P}\p{S}\p{Z}\p{C}\s\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e\u00ad\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180e\u3164\ufe00-\ufe0f\uffa0]/gu;
 const panjang = (text: string): number => [...text].length;
 /** Jumlah huruf/angka bermakna dalam alasan. */
