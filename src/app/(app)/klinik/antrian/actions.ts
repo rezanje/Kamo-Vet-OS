@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { ALASAN_ARSIP_MAX, ALASAN_ARSIP_MIN, bolehArsip, pesanArsip } from "@/lib/antrian-arsip";
+import {
+  ALASAN_ARSIP_MAX, ALASAN_ARSIP_MIN, ALASAN_PAKSA_MIN_BERMAKNA, KATA_KONFIRMASI_PAKSA, PESAN_PAKSA_PERAN,
+  bolehArsip, bolehPaksaArsip, hurufBermakna, pesanArsip,
+} from "@/lib/antrian-arsip";
 
 export async function updateVisitStatus(formData: FormData) {
   const supabase = await createClient();
@@ -60,11 +63,14 @@ export async function cancelVisit(formData: FormData) {
 
 // Arsip / Pulihkan (Andri 4 Nov 2026): hanya OWNER dan ADMIN aktif. Peran dicek di sini sebelum memanggil RPC, dan RPC
 // (SECURITY DEFINER) mengulang pengecekan di database beserta syarat arsip di bawah kunci baris kunjungan.
-async function peranBolehArsip(supabase: Awaited<ReturnType<typeof createClient>>) {
+async function profilPengguna(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return false;
+  if (!user) return null;
   const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
-  return bolehArsip(profile);
+  return profile;
+}
+async function peranBolehArsip(supabase: Awaited<ReturnType<typeof createClient>>) {
+  return bolehArsip(await profilPengguna(supabase));
 }
 
 const galat = (pesan: string, filter?: string) =>
@@ -85,6 +91,27 @@ export async function archiveVisit(formData: FormData) {
   if (error) redirect(galat(pesanArsip(error.message)));
   revalidatePath("/klinik/antrian");
   redirect("/klinik/antrian?success=arsip");
+}
+
+// Arsip PAKSA (lanjutan PR #438, keputusan Andri 4 Nov 2026): hanya OWNER aktif; alasan >= 5 huruf/angka, kata PAKSA dan kotak
+// persetujuan wajib. Database mengulang semuanya dan tetap menolak yang punya invoice/pembayaran/DP/refund/racikan terjual/rawat inap.
+export async function forceArchiveVisit(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const requestKey = String(formData.get("request_key") ?? "").trim();
+  const confirm = String(formData.get("confirm") ?? "").trim();
+  const ack = String(formData.get("ack") ?? "").trim();
+  if (!bolehPaksaArsip(await profilPengguna(supabase))) redirect(galat(PESAN_PAKSA_PERAN));
+  if (reason.length > ALASAN_ARSIP_MAX || hurufBermakna(reason) < ALASAN_PAKSA_MIN_BERMAKNA) {
+    redirect(galat(`Isi alasan arsip paksa: minimal ${ALASAN_PAKSA_MIN_BERMAKNA} huruf/angka (bukan hanya tanda baca) dan maksimal ${ALASAN_ARSIP_MAX} karakter.`));
+  }
+  if (confirm !== KATA_KONFIRMASI_PAKSA || !ack) redirect(galat(`Untuk memaksa arsip, centang persetujuan dan ketik ${KATA_KONFIRMASI_PAKSA}.`));
+  if (!id || requestKey.length < 8) redirect(galat("Muat ulang halaman lalu coba paksa arsip lagi."));
+  const { error } = await supabase.rpc("clinic_force_archive_visit", { p_visit_id: id, p_reason: reason, p_request_key: requestKey, p_confirm: KATA_KONFIRMASI_PAKSA });
+  if (error) redirect(galat(pesanArsip(error.message)));
+  revalidatePath("/klinik/antrian");
+  redirect("/klinik/antrian?success=arsip-paksa");
 }
 
 export async function unarchiveVisit(formData: FormData) {

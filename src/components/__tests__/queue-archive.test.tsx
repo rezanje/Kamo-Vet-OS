@@ -173,15 +173,59 @@ it("Diarsipkan tab (OWNER/ADMIN): lists archived visits of any day with reason, 
   expect(archived!.ops.some(([op]) => op === "limit")).toBe(true);
 });
 
-it("the Arsipkan control is absent on Selesai rows and on rows in the Diarsipkan tab", async () => {
+it("Selesai rows: Arsipkan is offered only for visits created by the ERP flow; IMPORTED history (legacy_source_key) never gets it; nothing in the Diarsipkan tab", async () => {
   s.role = "OWNER";
-  s.rows = [visit("tuntas", "Selesai", "2026-11-02T02:00:00Z"), visit("arsip-x", "Diperiksa", "2026-11-02T02:10:00Z", archivedFields)];
+  s.rows = [visit("tuntas-erp", "Selesai", "2026-11-02T02:00:00Z"), visit("tuntas-impor", "Selesai", "2026-11-02T02:05:00Z", { legacy_source_key: "fiktif::0800::pasien::01012026" }),
+    visit("arsip-x", "Diperiksa", "2026-11-02T02:10:00Z", archivedFields)];
   const done = await render({ filter: "selesai" });
-  expect(done).toContain("tuntas");
-  expect(done).not.toContain("Arsipkan");
+  expect(done).toContain("tuntas-erp");
+  expect(done).toContain("tuntas-impor");
+  expect(done).toContain('name="id" value="tuntas-erp"');
+  const impor = done.slice(done.indexOf("Pet tuntas-impor"));
+  expect(impor).not.toContain('name="id" value="tuntas-impor"');   // no archive/force form for the imported row
+  expect(done.match(/action="[^"]*"[^>]*>/g)?.length ?? 0).toBeGreaterThan(0);
   const tab = await render({ filter: "diarsipkan" });
-  expect(tab).not.toContain('action="Arsipkan"');
   expect(tab.match(/Arsipkan/g) ?? []).toHaveLength(0);
+  expect(tab).not.toContain("Paksa arsip");
+});
+
+it("OWNER sees the 'Paksa arsip' dialog with the warning text, a required reason (min 5), the PAKSA confirmation word, an acknowledgement box and its own request key", async () => {
+  s.role = "OWNER";
+  const html = await render();
+  expect(html).toContain("Paksa arsip");
+  expect(html).toContain("TIDAK dihapus");
+  expect(html).toContain("tetap tidak dapat diarsipkan");
+  expect(html).toMatch(/name="confirm"[^>]*required|required[^>]*name="confirm"/);
+  expect(html).toMatch(/type="checkbox"[^>]*name="ack"[^>]*required|name="ack"[^>]*type="checkbox"[^>]*required|required[^>]*name="ack"/);
+  expect(html).toContain('placeholder="ketik PAKSA"');
+  expect(html.match(/name="request_key"/g)!.length).toBeGreaterThanOrEqual(2 * 2);   // plain + force form per working row
+});
+
+it("ADMIN does not get the 'Paksa arsip' control (plain Arsipkan only)", async () => {
+  s.role = "ADMIN";
+  const html = await render();
+  expect(html).toContain("Arsipkan");
+  expect(html).not.toContain("Paksa arsip");
+  expect(html).not.toContain('name="confirm"');
+});
+
+for (const role of ["STAFF", "DOCTOR", "FINANCE", null]) {
+  it(`${role ?? "unknown"} never sees the force control either`, async () => {
+    s.role = role;
+    const html = await render();
+    expect(html).not.toContain("Paksa arsip");
+    expect(html).not.toContain('name="confirm"');
+  });
+}
+
+it("an inactive OWNER does not get the force control", async () => {
+  s.role = "OWNER"; s.active = false;
+  expect(await render()).not.toContain("Paksa arsip");
+});
+
+it("shows the force-archive success message", async () => {
+  s.role = "OWNER";
+  expect(await render({ success: "arsip-paksa" })).toContain("secara paksa");
 });
 
 it("shows the action error and the archive success messages (redirect target of the actions)", async () => {

@@ -19,6 +19,7 @@ m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 x, r, q, j = m.x, m.r, m.q, m.j
 dp = x.dp
 CANDIDATE = '20261106400000_antrian_arsip_kunjungan.sql'
+FOLLOWUP = '20261106840000_antrian_arsip_paksa_dan_selesai_erp.sql'   # follow-up (Andri 4 Nov 2026): owner force-archive + Selesai only when ERP-origin
 RESULTS = []
 ADMIN2, ADMIN_OFF, OWNER_OFF = r.uid('a', 50), r.uid('a', 51), r.uid('a', 52)   # admin of another branch / inactive admin / inactive owner
 REASON = 'Percobaan batal fiktif'
@@ -139,8 +140,8 @@ insert into public.user_branches(user_id,branch_id) values({q(ADMIN2)},{q(r.BRAN
     h.sql(f"insert into public.consents(id,visit_id,template_id,tindakan,isi_snapshot) values({q(cid)},{q(v)},{q(r.TEMPLATE_CONSENT)},'Fiktif','Fiktif');", r.OWNER)
     h.sql(f"update public.consents set status='sudah_ttd',signer_name='Fiktif',signature_data='data:image/png;base64,ZmlrdGlm',signed_at=now() where id={q(cid)};", r.OWNER)
     refused('signed consent', v, 'persetujuan yang sudah ditandatangani')
-    v, mr = bare(h, 3035, 'Selesai'); h.sql(f"update public.visits set checked_out_at=now() where id={q(v)};")
-    refused('visit already Selesai (history)', v, 'sudah selesai')
+    v, mr = bare(h, 3035, 'Selesai'); h.sql(f"update public.visits set checked_out_at=now(),legacy_source_key='fiktif::0800::pasien::01012026' where id={q(v)};")
+    refused('visit already Selesai that was IMPORTED (legacy_source_key set) = history, not archivable (follow-up rule: Selesai only when ERP-origin)', v, 'sudah selesai')
     v, mr = bare(h, 3036, 'Diperiksa'); h.sql(f"insert into public.invoices(visit_id,subtotal,total,paid_status,shift_id) values({q(v)},0,0,'Belum Lunas',{q(r.SHIFT[r.STAFF])});")
     refused('invoice bound to a cashier shift (even an empty one)', v, 'tagihan/invoice')
     v, mr = bare(h, 3037, 'Diperiksa'); h.sql(f"insert into public.invoices(visit_id,subtotal,total,paid_status,voided_at) values({q(v)},0,0,'Belum Lunas',now());")
@@ -297,10 +298,10 @@ insert into public.user_branches(user_id,branch_id) values({q(ADMIN2)},{q(r.BRAN
     # ---------------------------------------------------------------- 9. shape: SECURITY DEFINER, search_path, ACL, coverage of every visit_id table
     meta = json.loads(h.nilai("""select json_agg(json_build_object('f',p.pronamespace::regnamespace::text||'.'||p.proname,'def',p.prosecdef,'cfg',p.proconfig,'anon',has_function_privilege('anon',p.oid,'execute'),
  'auth',has_function_privilege('authenticated',p.oid,'execute'),'pub',has_function_privilege('public',p.oid,'execute'),'svc',has_function_privilege('service_role',p.oid,'execute')) order by p.proname)
- from pg_proc p where p.proname in ('clinic_archive_visit','clinic_unarchive_visit','change_visit_archive','visit_archive_blockers','guard_visit_archive','refuse_archived_visit') and p.pronamespace in ('public'::regnamespace,'clinic_private'::regnamespace)"""))
+ from pg_proc p where p.proname in ('clinic_archive_visit','clinic_unarchive_visit','clinic_force_archive_visit','change_visit_archive','visit_archive_blockers','visit_archive_classify','visit_archive_origin','guard_visit_archive','refuse_archived_visit') and p.pronamespace in ('public'::regnamespace,'clinic_private'::regnamespace)"""))
     pubs = [e for e in meta if e['f'].startswith('public.')]; priv = [e for e in meta if e['f'].startswith('clinic_private.')]
-    check('public RPCs: SECURITY DEFINER, search_path empty, EXECUTE for authenticated only (not anon/public/service_role)', len(pubs) == 2 and all(e['def'] and e['cfg'] == ['search_path=""'] and e['auth'] and not (e['anon'] or e['pub'] or e['svc']) for e in pubs), pubs)
-    check('private helpers/guards: SECURITY DEFINER, search_path empty, executable by nobody client-side', len(priv) == 4 and all(e['def'] and e['cfg'] == ['search_path=""'] and not (e['anon'] or e['pub'] or e['svc'] or e['auth']) for e in priv), priv)
+    check('public RPCs (archive, unarchive, force-archive): SECURITY DEFINER, search_path empty, EXECUTE for authenticated only (not anon/public/service_role)', len(pubs) == 3 and all(e['def'] and e['cfg'] == ['search_path=""'] and e['auth'] and not (e['anon'] or e['pub'] or e['svc']) for e in pubs), pubs)
+    check('private helpers/guards: SECURITY DEFINER, search_path empty, executable by nobody client-side', len(priv) == 7 and all(e['def'] and e['cfg'] in (['search_path=""'], ['search_path=""', 'lock_timeout=5s']) and not (e['anon'] or e['pub'] or e['svc'] or e['auth']) for e in priv), priv)
     check('RLS stays on for the new event table; the visits policy set is exactly the pre-existing one (RLS unchanged)', h.nilai("select relrowsecurity from pg_class where oid='public.visit_archive_events'::regclass") == 't'
           and sorted(h.nilai("select string_agg(polname,',' order by polname) from pg_policy where polrelid='public.visits'::regclass").split(',')) == sorted(['kamo_import_baca', 'kamo_import_tulis', 'operational_branch_isolation', 'riwayat_bersama_terkunci_delete', 'riwayat_bersama_terkunci_insert', 'riwayat_bersama_terkunci_update', 'visits_select', 'visits_write']), {})
     known = {'public.invoices', 'public.clinic_payment_receipts', 'public.clinic_customer_advances', 'public.clinic_refunds', 'public.clinic_compound_sales', 'public.clinic_inpatient_billable_entries',
@@ -313,25 +314,291 @@ insert into public.user_branches(user_id,branch_id) values({q(ADMIN2)},{q(r.BRAN
     trg = set(json.loads(h.nilai("select coalesce(json_agg(c.relnamespace::regnamespace::text||'.'||c.relname),'[]') from pg_trigger t join pg_class c on c.oid=t.tgrelid where t.tgname='a0_refuse_archived_visit' and not t.tgisinternal")))
     check('entry guard installed (BEFORE INSERT) on every guarded working table', trg == guarded, dict(missing=sorted(guarded - trg), extra=sorted(trg - guarded)))
 
+    # ---------------------------------------------------------------- follow-up: owner force-archive, Selesai only when ERP-origin, bulk plan
+    followup_preflight(h)
+    for part in (followup, followup_selesai, followup_events, bulk):   # each part reports on its own; a baseline (RED) run shows every part failing, not just the first
+        try: part(h, key)
+        except Exception as e: check(f'HARNESS follow-up {part.__name__}', False, str(e)[:500])
+
+
+# ====================================================================================================== follow-up (Andri 4 Nov 2026)
+FREASON = 'Percobaan paksa fiktif'
+BULK_REASON = 'data percobaan sebelum 1 Nov 2026'
+BULK_DIR = ROOT / 'scripts/sql'
+BULK_OVERRIDE = {}   # mutation runs: mutated text of the bulk script
+
+
+def force(v, key, reason=FREASON, confirm='PAKSA'):
+    return f"select public.clinic_force_archive_visit({q(v)},{q(reason) if reason is not None else 'null'},{q(key)},{q(confirm) if confirm is not None else 'null'});"
+def last_event(h, v, action='archive'):
+    t = h.nilai(f"select to_jsonb(e) from (select action,reason,visit_status,forced,overridden,created_by,request_key from public.visit_archive_events where visit_id={q(v)} and action='{action}' order by created_at desc limit 1) e")
+    return json.loads(t) if t else None
+def money_snapshot(h): return [h.angka(f'select count(*) from public.{t}') for t in ('invoices', 'invoice_payments', 'stock_moves', 'journal_entries', 'clinic_payment_receipts')] + [h.angka('select coalesce(sum(qty),0) from public.stock')]
+def soft_visit(h, n, status='Pembayaran'):
+    """A visit stuck in Pembayaran/Diperiksa with saved clinical content + a pending (unbilled) cart row + a signed consent: refused by the plain RPC, forceable by the owner."""
+    v, mr = bare(h, n, status); cid = r.uid('d', n)
+    h.sql(f"update public.medical_records set diagnosis='Diagnosis Fiktif',anamnesis='Anamnesis Fiktif' where id={q(mr)};"
+          f"insert into public.prescription_items(medical_record_id,nama_obat,qty,harga,satuan,jenis,kategori,faktor) values({q(mr)},'Jasa Pending Fiktif',1,50000,'kali','jasa','Tindakan',1);"
+          f"insert into public.consents(id,visit_id,template_id,tindakan,isi_snapshot) values({q(cid)},{q(v)},{q(r.TEMPLATE_CONSENT)},'Fiktif','Fiktif');", r.OWNER)
+    h.sql(f"update public.consents set status='sudah_ttd',signer_name='Fiktif',signature_data='data:image/png;base64,ZmlrdGlm',signed_at=now() where id={q(cid)};", r.OWNER)
+    return v, mr
+
+
+def followup_preflight(h):
+    have = dict(force_rpc=h.angka("select count(*) from pg_proc where proname='clinic_force_archive_visit' and pronamespace='public'::regnamespace") == 1,
+                classify=h.angka("select count(*) from pg_proc where proname='visit_archive_classify' and pronamespace='clinic_private'::regnamespace") == 1,
+                origin=h.angka("select count(*) from pg_proc where proname='visit_archive_origin' and pronamespace='clinic_private'::regnamespace") == 1,
+                forced_col=h.angka("select count(*) from information_schema.columns where table_schema='public' and table_name='visit_archive_events' and column_name in ('forced','overridden')") == 2)
+    for k, ok in have.items(): check(f'follow-up preflight: {k} exists', ok, {})
+    return all(have.values())
+
+
+def followup(h, key):
+    # ---------------------------------------------------------------- 10. OWNER force-archive
+    v, mr = soft_visit(h, 3100, 'Pembayaran'); k = key('force')
+    e0 = h.gagal(arch(v, key()), r.OWNER)
+    check('plain archive of a Pembayaran visit with record content/pending item/signed consent is refused for OWNER, message says only the owner can force', bool(e0 and 'ARCHIVE_BLOCKED' in e0 and 'data klinis' in e0 and 'Pemilik dapat memaksa' in e0) and not is_archived(h, v), dict(error=(e0 or '')[:300]))
+    e0 = h.gagal(arch(v, key()), r.ADMIN)
+    check('plain archive is refused for ADMIN too (same blockers)', bool(e0 and 'ARCHIVE_BLOCKED' in e0) and not is_archived(h, v), dict(error=(e0 or '')[:200]))
+    snap = money_snapshot(h); mr_n = h.angka(f"select count(*) from public.medical_records where visit_id={q(v)}"); items_n = h.angka(f"select count(*) from public.prescription_items where medical_record_id={q(mr)}")
+    err = h.gagal(force(v, k), r.OWNER); after = row(h, v) if not err else None; ev = last_event(h, v) if not err else None
+    check('OWNER FORCE-archives the Pembayaran visit with record content + pending item + signed consent: archived, status untouched, record/items/consent all still there',
+          not err and bool(after) and after['archived_at'] and after['archived_by'] == r.OWNER and after['archive_reason'] == FREASON and after['status'] == 'Pembayaran'
+          and h.angka(f"select count(*) from public.medical_records where visit_id={q(v)}") == mr_n and h.angka(f"select count(*) from public.prescription_items where medical_record_id={q(mr)}") == items_n == 1
+          and h.angka(f"select count(*) from public.consents where visit_id={q(v)} and status='sudah_ttd'") == 1, dict(error=err, after=after))
+    check('forced event is append-only audited: forced=true, reason, actor, status at the time and the list of overridden blockers (clinical data, pending items, signed consent)',
+          bool(ev) and ev['forced'] is True and ev['reason'] == FREASON and ev['created_by'] == r.OWNER and ev['visit_status'] == 'Pembayaran'
+          and any('data klinis' in o for o in ev['overridden']) and any('tagihan tertunda' in o for o in ev['overridden']) and any('ditandatangani' in o for o in ev['overridden']), dict(event=ev))
+    check('force changes NO money/stock: invoices, payments, stock_moves, journal entries, receipts and stock quantity unchanged', money_snapshot(h) == snap, dict(before=snap, after=money_snapshot(h)))
+    check('forced visit stays frozen (VISIT_ARCHIVED on checkout) like any archived visit', 'VISIT_ARCHIVED' in (h.gagal(f"update public.visits set checked_out_at=now() where id={q(v)};", r.STAFF) or ''), {})
+    out = json.loads(h.nilai(force(v, k), r.OWNER))
+    check('exact replay of the force request answers replay=true/forced=true and writes nothing (one archive event)', out['replay'] is True and out['forced'] is True and events(h, v) == 1, dict(out=out))
+    err = h.gagal(arch(v, k), r.OWNER)
+    check('the force key cannot be replayed through the plain archive RPC (forced mismatch -> key reuse refused)', bool(err and 'ARCHIVE_INVALID' in err) and events(h, v) == 1, dict(error=(err or '')[:160]))
+    err = h.gagal(force(v, key()), r.OWNER)
+    check('force on an already archived visit -> ARCHIVE_STALE', bool(err and 'ARCHIVE_STALE' in err) and events(h, v) == 1, dict(error=(err or '')[:160]))
+    kun = key('unf'); err = h.gagal(unarch(v, kun, 'Salah arsip fiktif'), r.ADMIN); ue = last_event(h, v, 'unarchive') if not err else None
+    check('ADMIN can restore a force-archived visit; the unarchive event is not forced and carries no override list', not err and not is_archived(h, v) and bool(ue) and ue['forced'] is False and ue['overridden'] == [] and row(h, v)['status'] == 'Pembayaran', dict(error=err, event=ue))
+    vd, _ = soft_visit(h, 3101, 'Diperiksa'); err = h.gagal(force(vd, key()), r.OWNER)
+    check('OWNER force also works on a stuck Diperiksa visit with record content', not err and is_archived(h, vd) and row(h, vd)['status'] == 'Diperiksa', dict(error=err))
+    vn, _ = bare(h, 3102, 'Diperiksa'); err = h.gagal(force(vn, key()), r.OWNER); evn = last_event(h, vn) if not err else None
+    check('force on a visit that has nothing to override works and records an empty override list', not err and is_archived(h, vn) and bool(evn) and evn['forced'] is True and evn['overridden'] == [], dict(error=err, event=evn))
+
+    # ---------------------------------------------------------------- roles for force
+    vv, _ = soft_visit(h, 3103, 'Pembayaran'); e1 = events(h)
+    err = h.gagal(force(vv, key()), r.ADMIN)
+    check('ADMIN may NOT force: FORCE_DENIED inside the DB, nothing archived, no event', bool(err and 'FORCE_DENIED' in err) and not is_archived(h, vv) and events(h) == e1, dict(error=(err or '')[:160]))
+    for who, label in [(r.STAFF, 'STAFF'), (r.DOCTOR, 'DOCTOR'), (r.FINANCE, 'FINANCE'), (OWNER_OFF, 'inactive OWNER'), (ADMIN_OFF, 'inactive ADMIN')]:
+        err = h.gagal(force(vv, key()), who)
+        check(f'{label} cannot force-archive (ACCESS_DENIED)', bool(err and 'ACCESS_DENIED' in err) and not is_archived(h, vv) and events(h) == e1, dict(error=(err or '')[:160]))
+    err = h.gagal("set role anon;\n" + force(vv, key()))
+    check('anon cannot call the force RPC (ACL)', bool(err and 'permission denied' in err) and not is_archived(h, vv), dict(error=(err or '')[:160]))
+    err = h.gagal(force(r.uid(6, 99998), key()), r.OWNER)
+    check('force on an unknown visit -> ARCHIVE_NOT_FOUND', bool(err and 'ARCHIVE_NOT_FOUND' in err), dict(error=(err or '')[:160]))
+    for label, kw in [('no confirmation (null)', dict(confirm=None)), ('empty confirmation', dict(confirm='')), ('wrong word', dict(confirm='YA')), ('lowercase paksa', dict(confirm='paksa')), ('padded PAKSA ', dict(confirm='PAKSA '))]:
+        err = h.gagal(force(vv, key(), **kw), r.OWNER)
+        check(f'force refused without the exact confirmation word: {label} (FORCE_CONFIRM), nothing written', bool(err and 'FORCE_CONFIRM' in err) and not is_archived(h, vv) and events(h) == e1, dict(error=(err or '')[:140]))
+    for label, reason in [('null', None), ('empty', ''), ('blank', '      '), ('4 characters', 'abcd'), ('only punctuation (5 dots)', '.....'), ('4 letters padded with symbols', 'a-b-c-d---'), ('501 characters', 'x' * 501)]:
+        err = h.gagal(force(vv, key(), reason), r.OWNER)
+        check(f'force reason {label} refused (ARCHIVE_INVALID), nothing written', bool(err and 'ARCHIVE_INVALID' in err) and not is_archived(h, vv) and events(h) == e1, dict(error=(err or '')[:160]))
+    err = h.gagal(force(vv, key(), '  ab cde  '), r.OWNER)
+    check('force reason with exactly 5 significant characters (letters/digits) passes and is stored trimmed', not err and row(h, vv)['archive_reason'] == 'ab cde', dict(error=err))
+
+    # ---------------------------------------------------------------- hard blockers: never forceable
+    def hard(label, vv_, phrase):
+        e2 = events(h); err = h.gagal(force(vv_, key()), r.OWNER)
+        check(f'force refused (not overridable): {label}', bool(err and 'ARCHIVE_BLOCKED' in err and 'walau dipaksa' in err and phrase in err) and not is_archived(h, vv_) and events(h) == e2, dict(error=(err or '')[:300]))
+    vh, _ = soft_visit(h, 3110, 'Pembayaran'); h.sql(f"insert into public.invoices(visit_id,subtotal,total,paid_status,voided_at) values({q(vh)},0,0,'Belum Lunas',now());")
+    hard('voided invoice', vh, 'tagihan/invoice')
+    vh = dp.visit(h, 3111); h.sql(r.tagih_biasa_sql(vh, 'inv-3111', pay_lines(3111), r.OWNER, dp=0, alasan='Uji fiktif'), r.OWNER)
+    hard('real invoice posted through clinic_post_invoice (stock + HPP booked)', vh, 'tagihan/invoice')
+    inv = h.aktif(vh); h.sql(f"select public.clinic_receive_invoice_payment({q(inv)},'2026-11-03',{int(r.nilai_baris(pay_lines(3111)))},'Tunai','110003','Fiktif','settle-3111');", r.OWNER)
+    hard('real payment received', vh, 'sudah ada pembayaran')
+    vh, _ = bare(h, 3112, 'Pembayaran'); h.sql(f"insert into public.clinic_customer_advances(no_uang_muka,customer_id,branch_id,visit_id,tanggal,amount) select 'DP-F-3112',customer_id,branch_id,id,current_date,1000 from public.visits where id={q(vh)};")
+    hard('advance payment (DP)', vh, 'uang muka')
+    vh, mrh = bare(h, 3113, 'Pembayaran')
+    h.sql(f"set session_replication_role=replica; insert into public.clinic_refunds(no_refund,invoice_id,visit_id,branch_id,tanggal,total,method,cash_account_id,account_snapshot,expense_id,request_id,created_by) values('RF-F-3113',gen_random_uuid(),{q(vh)},{q(r.BRANCH)},current_date,1000,'Tunai',gen_random_uuid(),'{{}}',gen_random_uuid(),gen_random_uuid(),{q(r.OWNER)}); reset session_replication_role;")
+    hard('refund', vh, 'refund')
+    vh, mrh = bare(h, 3114, 'Pembayaran')
+    h.sql(f"set session_replication_role=replica; insert into public.clinic_compound_sales(request_key,request_hash,visit_id,medical_record_id,actor_id,sale_item_id,sale_name,sale_price,sale_unit) values('cs-f-3114','h',{q(vh)},{q(mrh)},{q(r.OWNER)},gen_random_uuid(),'Racik Fiktif',1000,'pcs'); reset session_replication_role;")
+    hard('sold compound (stock consumed)', vh, 'penjualan racikan')
+    cust = r.buat_pelanggan(h, 3115); vh = r.buat_kunjungan(h, 3115, cust, admitted=True)
+    hard('open inpatient admission (+ signed consent + pending items)', vh, 'rawat inap masih berjalan')
+    h.sql(jwt(r.OWNER) + f"update public.inpatient_records set discharged_at=now() where visit_id={q(vh)};")
+    err = h.gagal(force(vh, key()), r.OWNER)
+    check('force refused: discharged inpatient history is also not overridable', bool(err and 'riwayat rawat inap' in err and 'walau dipaksa' in err) and not is_archived(h, vh), dict(error=(err or '')[:300]))
+    vr, _ = soft_visit(h, 3116, 'Pembayaran'); barriers = []
+    with contextlib.ExitStack() as stack:
+        obs = stack.enter_context(x.c.Session(h.db, 'fa-observer')); holder = stack.enter_context(x.c.Session(h.db, 'fa-holder')); waiter = stack.enter_context(x.c.Session(h.db, 'fa-waiter'))
+        waiter.sql(x.claims(r.OWNER)); holder.sql(f"begin; select id from public.visits where id={q(vr)} for update;")
+        waiter.send('begin;' + force(vr, key('lock'))); x.c.wait_block(obs, waiter, holder, barriers)
+        holder.sql(f"insert into public.invoices(visit_id,subtotal,total,paid_status) values({q(vr)},100,100,'Belum Lunas'); commit;"); out = x.c.attempt(waiter, commit=False)
+    check('force waits on the visit row lock and RE-CHECKS under it: an invoice committed meanwhile makes it ARCHIVE_BLOCKED (not archived)', (not out['ok']) and 'ARCHIVE_BLOCKED' in out.get('error', '') and not is_archived(h, vr) and events(h, vr) == 0 and len(barriers) == 1, dict(outcome=str(out)[:240]))
+    # lock_timeout (review S1): a visit locked longer than 5s makes the RPC fail fast instead of hanging behind a long transaction
+    vt, _ = bare(h, 3117, 'Diperiksa'); barriers = []
+    cfg = h.nilai("select p.proconfig::text from pg_proc p where p.proname='change_visit_archive' and p.pronargs=6 and p.pronamespace='clinic_private'::regnamespace")
+    with contextlib.ExitStack() as stack:
+        obs = stack.enter_context(x.c.Session(h.db, 'lt-observer')); holder = stack.enter_context(x.c.Session(h.db, 'lt-holder')); waiter = stack.enter_context(x.c.Session(h.db, 'lt-waiter'))
+        waiter.sql(x.claims(r.OWNER)); holder.sql(f"begin; select id from public.visits where id={q(vt)} for update;")
+        t0 = time.time(); waiter.send('begin;' + arch(vt, key('lt'))); x.c.wait_block(obs, waiter, holder, barriers); out = x.c.attempt(waiter, commit=False); waited = time.time() - t0; holder.sql('rollback;')
+    check('archive RPC carries lock_timeout=5s: a visit row locked by another transaction makes it fail with lock_not_available after ~5s (not hang; the 6s session timeout of the harness is NOT what fires), nothing archived', 'lock_timeout=5s' in cfg and (not out['ok']) and ('lock timeout' in out.get('error', '').lower() or '55P03' in out.get('error', '')) and 4.3 <= waited < 5.8 and not is_archived(h, vt), dict(cfg=cfg, waited=round(waited, 1), outcome=str(out)[:200]))
+
+
+def followup_selesai(h, key):
+    # ---------------------------------------------------------------- 10b. Selesai only when ERP-origin
+    def selesai(n, **extra):
+        vv_, mm_ = bare(h, n, 'Selesai'); sets = ["checked_out_at=now()"] + [f"{c}={q(val) if isinstance(val, str) else 'null'}" for c, val in extra.items()]
+        h.sql(f"update public.visits set {','.join(sets)} where id={q(vv_)};"); return vv_, mm_
+    vs, _ = selesai(3120); err = h.gagal(arch(vs, key()), r.OWNER); ev3 = last_event(h, vs) if not err else None
+    check('Selesai visit created by the ERP flow (no import marker, checked_in_at set, nothing financial) CAN be archived by OWNER; status/checkout untouched', not err and is_archived(h, vs) and row(h, vs)['status'] == 'Selesai' and row(h, vs)['checked_out_at'] is not None and ev3['visit_status'] == 'Selesai' and ev3['forced'] is False, dict(error=err))
+    vs, _ = selesai(3121); err = h.gagal(arch(vs, key()), r.ADMIN)
+    check('...and by ADMIN (plain archive, no force)', not err and is_archived(h, vs), dict(error=err))
+    vs, mrs = selesai(3122); h.sql(f"update public.medical_records set diagnosis='Diagnosis Fiktif' where id={q(mrs)};"); err = h.gagal(arch(vs, key()), r.OWNER)
+    check('ERP Selesai visit with saved clinical content: plain archive refused (data klinis), force by OWNER allowed', bool(err and 'data klinis' in err) and not is_archived(h, vs) and not h.gagal(force(vs, key()), r.OWNER) and is_archived(h, vs), dict(error=(err or '')[:200]))
+    vs, _ = selesai(3123); h.sql(f"insert into public.invoices(visit_id,subtotal,total,paid_status) values({q(vs)},0,0,'Lunas');")
+    err = h.gagal(arch(vs, key()), r.OWNER); err2 = h.gagal(force(vs, key()), r.OWNER)
+    check('ERP Selesai visit WITH an invoice stays unarchivable, even forced', bool(err and 'tagihan/invoice' in err) and bool(err2 and 'walau dipaksa' in err2) and not is_archived(h, vs), dict(e1=(err or '')[:120], e2=(err2 or '')[:120]))
+    for n, marker, val in [(3124, 'legacy_source_key', 'fiktif::0800::pasien-3124::01012026'), (3125, 'legacy_record_no', 'RM-FIKTIF-3125'), (3126, 'legacy_source_hash', 'abcdef0123456789')]:
+        vs, _ = selesai(n, **{marker: val}); e1_, e2_ = h.gagal(arch(vs, key()), r.OWNER), h.gagal(force(vs, key()), r.OWNER)
+        check(f'imported Selesai visit (only {marker} set) is NOT archivable: plain and forced both refused, "impor" named', bool(e1_ and 'impor' in e1_ and 'sudah selesai' in e1_) and bool(e2_ and 'impor' in e2_ and 'walau dipaksa' in e2_) and not is_archived(h, vs), dict(e1=(e1_ or '')[:140], e2=(e2_ or '')[:140]))
+    vs, _ = selesai(3127, legacy_source_key='fiktif::0800::bersama::01012026', checked_in_at=None)
+    e1_ = h.gagal(arch(vs, key()), r.OWNER)
+    check('imported Selesai with NO checked_in_at (shape of the real import writers) is refused', bool(e1_ and 'impor' in e1_) and not is_archived(h, vs), dict(error=(e1_ or '')[:160]))
+    vs, _ = selesai(3128, checked_in_at=None); e1_, e2_ = h.gagal(arch(vs, key()), r.OWNER), h.gagal(force(vs, key()), r.OWNER)
+    check('Selesai with NO import marker but ALSO no ERP evidence (checked_in_at empty) = origin uncertain -> refused fail-closed, even forced', bool(e1_ and 'tidak dapat dipastikan' in e1_) and bool(e2_ and 'walau dipaksa' in e2_) and not is_archived(h, vs), dict(e1=(e1_ or '')[:160]))
+    vs, _ = selesai(3129, legacy_source_key='fiktif::0800::tanpa-cabang::01012026'); h.sql(f"update public.visits set branch_id=null where id={q(vs)};")
+    e1_ = h.gagal(arch(vs, key()), r.OWNER); e2_ = h.gagal(force(vs, key()), r.OWNER)
+    check('imported visit with NO branch (shared history) is refused too', bool(e1_ and 'ARCHIVE_' in e1_) and bool(e2_ and 'ARCHIVE_' in e2_) and not is_archived(h, vs), dict(e1=(e1_ or '')[:100]))
+    origin = lambda vid: h.nilai(f"select clinic_private.visit_archive_origin({q(vid)})")
+    vs, _ = selesai(3130); vi, _ = selesai(3131, legacy_record_no='RM-3131'); vu, _ = selesai(3132, checked_in_at=None)
+    check('origin classifier: erp / impor / tidak_pasti', (origin(vs), origin(vi), origin(vu)) == ('erp', 'impor', 'tidak_pasti'), dict(got=(origin(vs), origin(vi), origin(vu))))
+    vs, _ = bare(h, 3133, 'Diperiksa'); h.sql(f"update public.visits set legacy_source_key='fiktif::x::y::z' where id={q(vs)};")
+    check('the import marker only matters for finished visits: a non-Selesai visit is judged by the normal rules', not h.gagal(arch(vs, key()), r.OWNER) and is_archived(h, vs), {})
+    bad = h.nilai("select coalesce(string_agg(p.pronamespace::regnamespace::text||'.'||p.proname,','),'') from pg_proc p where p.prosrc ~* 'insert[[:space:]]+into[[:space:]]+(public[.])?visits[[:space:]]*[(][^;]*''Selesai''' and p.prosrc !~* 'legacy_source_key'")
+    check("coverage: EVERY function that inserts a finished ('Selesai') visit sets legacy_source_key (all import writers carry the marker; a future importer without it fails here)", bad == '', dict(unmarked=bad))
+
+
+def followup_events(h, key):
+    # ---------------------------------------------------------------- event table shape
+    v, _ = bare(h, 3139, 'Diperiksa')
+    e = h.gagal(f"insert into public.visit_archive_events(visit_id,action,reason,visit_status,request_key,created_by,created_by_name,forced,overridden) values({q(v)},'archive','Palsu fiktif','Diperiksa','palsu-key-0002',{q(r.OWNER)},'x',false,array['x']);")
+    check('event check: a non-forced event cannot carry an override list', bool(e and 'forced_consistent' in e), dict(error=(e or '')[:140]))
+    n_forced = h.angka("select count(*) from public.visit_archive_events where forced"); n_other = h.angka("select count(*) from public.visit_archive_events where forced and created_by<>" + q(r.OWNER))
+    check('every forced event in the whole run was written by the OWNER', n_forced > 0 and n_other == 0, dict(forced=n_forced, other=n_other))
+    check('plain archive of an ordinary bare visit is unchanged and records forced=false', not h.gagal(arch(bare(h, 3140, 'Diperiksa')[0], key()), r.OWNER) and h.angka("select count(*) from public.visit_archive_events where not forced and action='archive'") > 0, {})
+    fn = h.nilai("select (select count(*) from pg_proc where proname='change_visit_archive' and pronamespace='clinic_private'::regnamespace)||'/'||(select count(*) from pg_proc where proname in ('clinic_archive_visit','clinic_unarchive_visit') and pronamespace='public'::regnamespace)")
+    check('backward compatible: public clinic_archive_visit/clinic_unarchive_visit unchanged and the 4-arg private entry still exists next to the 6-arg one', fn == '2/2', dict(fn=fn))
+
+
+def bulk(h, key):
+    """Bulk plan (scripts/sql/bulk-arsip-antrian-*.sql): tested here on fictional fixtures only; never run on a real database."""
+    run_sql = BULK_OVERRIDE.get('run') or (BULK_DIR / 'bulk-arsip-antrian-jalankan.sql').read_text(); preview = (BULK_DIR / 'bulk-arsip-antrian-pratinjau.sql').read_text()
+    marker = 'select * from pg_temp.bulk_arsip_antrian('
+    assert run_sql.count(marker) == 1; defn = run_sql.split(marker)[0]
+    def call(owner, execute, batas=500, cutoff="timestamptz '2026-11-01 00:00:00+07'", reason=BULK_REASON):
+        return defn + f"select visit_id,status,hasil,detail from pg_temp.bulk_arsip_antrian({q(owner)}::uuid,{cutoff},{q(reason)},{'true' if execute else 'false'},{batas});"
+    def result(sql_): return [l.split('|') for l in h.sql(sql_).splitlines() if '|' in l]
+    old = "'2026-10-15 03:00:00+07'"
+    def old_visit(n, status='Diperiksa', record=True):
+        vv, mm = bare(h, n, status, record); h.sql(f"update public.visits set created_at={old} where id={q(vv)};"); return vv, mm
+    plain = [old_visit(3200 + i, st)[0] for i, st in enumerate(['Menunggu', 'Diperiksa', 'Pembayaran'])]
+    soft_v, _ = soft_visit(h, 3210, 'Pembayaran'); h.sql(f"update public.visits set created_at={old} where id={q(soft_v)};")
+    erp_sel, _ = old_visit(3211, 'Selesai'); h.sql(f"update public.visits set checked_out_at=now() where id={q(erp_sel)};")
+    imp_sel, _ = old_visit(3212, 'Selesai'); h.sql(f"update public.visits set checked_out_at=now(),legacy_source_key='fiktif::bulk::3212' where id={q(imp_sel)};")
+    unc_sel, _ = old_visit(3213, 'Selesai'); h.sql(f"update public.visits set checked_out_at=now(),checked_in_at=null where id={q(unc_sel)};")
+    inv_v, _ = old_visit(3214, 'Pembayaran'); h.sql(f"insert into public.invoices(visit_id,subtotal,total,paid_status) values({q(inv_v)},0,0,'Belum Lunas');")
+    pay_v = dp.visit(h, 3215); h.sql(r.tagih_biasa_sql(pay_v, 'inv-3215', pay_lines(3215), r.OWNER, dp=0, alasan='Uji fiktif'), r.OWNER)
+    h.sql(f"select public.clinic_receive_invoice_payment({q(h.aktif(pay_v))},'2026-11-03',{int(r.nilai_baris(pay_lines(3215)))},'Tunai','110003','Fiktif','settle-3215');", r.OWNER); h.sql(f"update public.visits set created_at={old} where id={q(pay_v)};")
+    dp_v, _ = old_visit(3216, 'Pembayaran'); h.sql(f"insert into public.clinic_customer_advances(no_uang_muka,customer_id,branch_id,visit_id,tanggal,amount) select 'DP-F-3216',customer_id,branch_id,id,current_date,1000 from public.visits where id={q(dp_v)};")
+    ranap_v = r.buat_kunjungan(h, 3217, r.buat_pelanggan(h, 3217), admitted=True); h.sql(f"update public.visits set created_at={old} where id={q(ranap_v)};")
+    new_v, _ = bare(h, 3218, 'Diperiksa'); h.sql(f"update public.visits set created_at='2026-11-02 08:00:00+07' where id={q(new_v)};")
+    pre_arch, _ = old_visit(3219, 'Diperiksa'); h.sql(arch(pre_arch, key()), r.OWNER); pre_events = events(h, pre_arch)
+    should = set(plain + [soft_v, erp_sel]); skipped = {inv_v, pay_v, dp_v, ranap_v, imp_sel, unc_sel}
+    def digest(): return h.nilai("select md5(coalesce((select string_agg(v::text,'|' order by id) from public.visits v),'')||(select count(*)::text from public.visit_archive_events)||(select count(*)::text from public.invoices)||(select count(*)::text from public.stock_moves))")
+    # (0) the read-only preview
+    d0 = digest(); cut = preview.index('-- [1] jumlah per status'); pre = preview[:cut]
+    cats = json.loads(h.nilai(pre + "select json_object_agg(id,kategori) from bulk_arsip_pratinjau;"))
+    check('preview SQL (read-only): classifies each fixture (bare->ARSIP_BIASA, content->ARSIP_PERLU_PAKSA, invoice/payment/DP/ranap->DILEWATI_UANG_STOK, imported->DILEWATI_IMPOR, uncertain->DILEWATI_ASAL_TIDAK_PASTI); already-archived and post-cutoff visits excluded',
+          all(cats.get(i) == 'ARSIP_BIASA' for i in plain + [erp_sel]) and cats.get(soft_v) == 'ARSIP_PERLU_PAKSA' and all(cats.get(i) == 'DILEWATI_UANG_STOK' for i in (inv_v, pay_v, dp_v, ranap_v))
+          and cats.get(imp_sel) == 'DILEWATI_IMPOR' and cats.get(unc_sel) == 'DILEWATI_ASAL_TIDAK_PASTI' and new_v not in cats and pre_arch not in cats, dict(cats={k[-6:]: c for k, c in cats.items()}))
+    out_all = h.sql(preview)
+    check('the full preview script (all three result sets) runs on the live schema and writes nothing (digest of visits/events/invoices/stock_moves unchanged)', d0 == digest() and 'DILEWATI_UANG_STOK' in out_all, {})
+    # (1) dry run
+    d0 = digest(); rows_ = result(call(r.OWNER, False)); by = {rw[0]: rw[2] for rw in rows_}
+    check('dry run (p_jalankan=false): AKAN_DIARSIPKAN for archivable, DILEWATI for invoices/payments/DP/inpatient/imported/uncertain, and NOTHING is written',
+          all(by.get(i) == 'AKAN_DIARSIPKAN' for i in should) and all(by.get(i) == 'DILEWATI' for i in skipped) and new_v not in by and pre_arch not in by and d0 == digest(), dict(by={k[-6:]: c for k, c in by.items()}))
+    # (2) refusals before anything runs
+    for label, owner, kw in [('ADMIN uuid (not OWNER)', r.ADMIN, {}), ('inactive OWNER', OWNER_OFF, {}), ('STAFF uuid', r.STAFF, {}), ('unknown uuid', r.uid('9', 1), {}),
+                             ('cutoff after 1 Nov 2026', r.OWNER, dict(cutoff="timestamptz '2026-11-03 00:00:00+07'")), ('reason without 5 significant characters', r.OWNER, dict(reason='....'))]:
+        err = h.gagal(call(owner, True, **kw)); check(f'bulk script refuses to run: {label}; nothing archived', bool(err) and d0 == digest(), dict(error=(err or '')[:120]))
+    # (3) real run
+    snap = money_snapshot(h); rows_ = result(call(r.OWNER, True)); by = {rw[0]: rw[2] for rw in rows_}
+    arch_ok = [i for i in should if is_archived(h, i)]
+    check('bulk run archives every archivable test visit (Pembayaran with content via the forced path, ERP Selesai, plain ones) with the fixed reason and OWNER as actor',
+          len(arch_ok) == len(should) and all(by.get(i) == 'DIARSIPKAN' for i in should) and all(row(h, i)['archive_reason'] == BULK_REASON and row(h, i)['archived_by'] == r.OWNER for i in should), dict(archived=len(arch_ok), expected=len(should)))
+    check('bulk run SKIPS (and lists) invoices, payments, DP, inpatient, imported Selesai, uncertain Selesai: untouched', all(not is_archived(h, i) and by.get(i) == 'DILEWATI' for i in skipped), dict(by={k[-6:]: c for k, c in by.items() if k in skipped}))
+    check('post-cutoff visit and the already-archived visit are untouched (no new event for the latter)', not is_archived(h, new_v) and events(h, pre_arch) == pre_events and pre_arch not in by, {})
+    evs = [last_event(h, i) for i in should]
+    check('same audit path: every bulk archive wrote an append-only forced event with reason and request key bulk-arsip-20261101-<id>; the stuck Pembayaran one lists its overridden blockers',
+          all(e_ and e_['reason'] == BULK_REASON and e_['forced'] and e_['created_by'] == r.OWNER and e_['request_key'].startswith('bulk-arsip-20261101-') for e_ in evs) and any(o for e_ in evs for o in e_['overridden'])
+          and h.angka(f"select count(*) from public.visit_archive_events where reason={q(BULK_REASON)}") == len(should), {})
+    check('bulk run changed no money/stock (invoices/payments/stock_moves/journal entries/receipts/stock quantity identical before and after)', money_snapshot(h) == snap, dict(before=snap, after=money_snapshot(h)))
+    # (4) idempotent + manual restore respected
+    d1 = digest(); by2 = {rw[0]: rw[2] for rw in result(call(r.OWNER, True))}
+    check('re-running the bulk script is idempotent: nothing new archived, no new event', d1 == digest() and not any(c in ('DIARSIPKAN', 'AKAN_DIARSIPKAN') for c in by2.values()), dict(by={k[-6:]: c for k, c in by2.items()}))
+    h.sql(unarch(plain[0], key('bulk-un')), r.ADMIN); d2 = digest(); by3 = {rw[0]: rw[2] for rw in result(call(r.OWNER, True))}
+    check('a visit restored by hand after the bulk run is NOT re-archived by a re-run (reported SUDAH_PERNAH)', not is_archived(h, plain[0]) and by3.get(plain[0]) == 'SUDAH_PERNAH' and d2 == digest(), dict(by=by3.get(plain[0])))
+    # (5) batch limit
+    b1, _ = old_visit(3220, 'Diperiksa'); b2, _ = old_visit(3221, 'Diperiksa'); b3, _ = old_visit(3222, 'Diperiksa')
+    n0 = h.angka("select count(*) from public.visits where archived_at is not null"); result(call(r.OWNER, True, batas=2)); n1 = h.angka("select count(*) from public.visits where archived_at is not null")
+    result(call(r.OWNER, True, batas=2))
+    check('batch limit p_batas=2 archives exactly two per run; the next run continues with the rest', n1 - n0 == 2 and all(is_archived(h, i) for i in (b1, b2, b3)), dict(delta=n1 - n0))
+
 
 def apply_candidate(db, text): db.sql('begin;\n' + text + '\ncommit;')
 
 
-MUTANTS = {  # name -> (anchor, replacement): each guard removed from the migration; the suite must FAIL for every one
-    'role check lets STAFF/DOCTOR/FINANCE through': ("p.is_active and p.role in ('OWNER','ADMIN')) then\n  raise exception using errcode='P0001',message='ACCESS_DENIED", "p.is_active and p.role in ('OWNER','ADMIN','STAFF','DOCTOR','FINANCE')) then\n  raise exception using errcode='P0001',message='ACCESS_DENIED"),
-    'visit row is not locked (no FOR UPDATE)': ("select * into v from public.visits where id=p_visit_id for update;", "select * into v from public.visits where id=p_visit_id;"),
-    'invoice no longer blocks archiving': ("if exists(select 1 from public.invoices i where i.visit_id=p_visit) then b:=b||", "if false then b:=b||"),
-    'pending billing cart no longer blocks': ("and not exists(select 1 from public.invoice_items ii where ii.prescription_item_id=pi.id)) then\n  b:=b||'ada tagihan tertunda (item/layanan belum ditagih)'::text;\n elsif exists(select 1 from public.prescription_items pi join public.medical_records mr on mr.id=pi.medical_record_id where mr.visit_id=p_visit) then\n  b:=b||'ada item resep/layanan pada rekam medis'::text;\n end if;", "and false) then null;\n end if;"),
-    'open inpatient no longer blocks': ("if exists(select 1 from public.inpatient_records s where s.visit_id=p_visit and s.discharged_at is null) then b:=b||'rawat inap masih berjalan'::text;\n elsif", "if false then null;\n elsif"),
-    'reason no longer mandatory': ("if p_archive and (v_reason is null or length(v_reason)<5 or length(v_reason)>500) then", "if false then"),
-    'replay is not recognised (double write)': ("if v_event.visit_id=p_visit_id and v_event.action=v_action and v_event.created_by=v_actor then", "if false then"),
-    'stale already-archived check removed': ("  if v.archived_at is not null then\n   raise exception using errcode='P0001',message='ARCHIVE_STALE: kunjungan ini sudah diarsipkan", "  if false then\n   raise exception using errcode='P0001',message='ARCHIVE_STALE: kunjungan ini sudah diarsipkan"),
-    'direct archive-column writes are no longer guarded': ("if not exists(select 1 from clinic_private.visit_archive_permits p\n   where p.transaction_id=txid_current() and p.visit_id=old.id and p.actor=auth.uid()) then", "if false then"),
-    'archived visit lifecycle is no longer frozen (start/finish/checkout)': ("if old.archived_at is not null and (new.status,", "if false and (new.status,"),
-    'no entry guard on invoices/records (payment on an archived visit)': ("foreach t in array array['medical_records','prescription_items','invoices',", "foreach t in array array['prescription_items',"),
-    'signed consent no longer blocks': ("c.status='sudah_ttd') then b:=b||", "c.status='sudah_ttd' and false) then b:=b||"),
-    'archived visits are no longer excluded from the Rekam Medis list': ("\n       and (p_pet is not null or v.archived_at is null)$new$;", "$new$;"),
-    'clinical content no longer blocks': ("or mr.submission_key is not null or mr.submitted_by is not null or mr.clinical_revision>0 or mr.continued_from_record_id is not null)) then", "or false)) then"),
+MUTANTS = {  # name -> (target, anchor, replacement): each guard removed; 'old' = PR #438 migration text, 'new' = follow-up migration text. Every mutant must be KILLED by the suite
+    # --- guards that live in the PR #438 migration and survive the follow-up unchanged
+    'direct archive-column writes are no longer guarded': ('old', "if not exists(select 1 from clinic_private.visit_archive_permits p\n   where p.transaction_id=txid_current() and p.visit_id=old.id and p.actor=auth.uid()) then", "if false then"),
+    'archived visit lifecycle is no longer frozen (start/finish/checkout)': ('old', "if old.archived_at is not null and (new.status,", "if false and (new.status,"),
+    'no entry guard on invoices/records (payment on an archived visit)': ('old', "foreach t in array array['medical_records','prescription_items','invoices',", "foreach t in array array['prescription_items',"),
+    'archived visits are no longer excluded from the Rekam Medis list': ('old', "\n       and (p_pet is not null or v.archived_at is null)$new$;", "$new$;"),
+    # --- the archive/unarchive entry point and blockers (redefined by the follow-up)
+    'role check lets STAFF/DOCTOR/FINANCE through': ('new', "p.is_active and p.role in ('OWNER','ADMIN')) then\n  raise exception using errcode='P0001',message='ACCESS_DENIED", "p.is_active and p.role in ('OWNER','ADMIN','STAFF','DOCTOR','FINANCE')) then\n  raise exception using errcode='P0001',message='ACCESS_DENIED"),
+    'visit row is not locked (no FOR UPDATE)': ('new', "select * into v from public.visits where id=p_visit_id for update;", "select * into v from public.visits where id=p_visit_id;"),
+    'invoice no longer blocks archiving': ('new', "if exists(select 1 from public.invoices i where i.visit_id=p_visit) then hard:=hard||", "if false then hard:=hard||"),
+    'pending billing cart no longer blocks': ('new', "and not exists(select 1 from public.invoice_items ii where ii.prescription_item_id=pi.id)) then\n  soft:=soft||'ada tagihan tertunda (item/layanan belum ditagih)'::text;\n elsif exists(select 1 from public.prescription_items pi join public.medical_records mr on mr.id=pi.medical_record_id where mr.visit_id=p_visit) then\n  soft:=soft||'ada item resep/layanan pada rekam medis'::text;\n end if;", "and false) then null;\n end if;"),
+    'open inpatient no longer blocks': ('new', "then hard:=hard||'rawat inap masih berjalan'::text;\n elsif", "then null;\n elsif"),
+    'reason no longer mandatory': ('new', "if p_archive and (v_reason is null or length(v_reason)<5 or length(v_reason)>500) then", "if false then"),
+    'replay is not recognised (double write)': ('new', "if v_event.visit_id=p_visit_id and v_event.action=v_action and v_event.created_by=v_actor and v_event.forced=p_force then", "if false then"),
+    'stale already-archived check removed': ('new', "  if v.archived_at is not null then\n   raise exception using errcode='P0001',message='ARCHIVE_STALE: kunjungan ini sudah diarsipkan", "  if false then\n   raise exception using errcode='P0001',message='ARCHIVE_STALE: kunjungan ini sudah diarsipkan"),
+    'signed consent no longer blocks': ('new', "c.status='sudah_ttd') then soft:=soft||", "c.status='sudah_ttd' and false) then soft:=soft||"),
+    'clinical content no longer blocks': ('new', "or mr.submission_key is not null or mr.submitted_by is not null or mr.clinical_revision>0 or mr.continued_from_record_id is not null)) then", "or false)) then"),
+    # --- follow-up: force-archive
+    'ADMIN may force (owner-only check removed)': ('new', "if p_force and not exists(select 1 from public.profiles p where p.id=v_actor and p.is_active and p.role='OWNER') then", "if false then"),
+    'force without the confirmation word': ('new', "if p_force and p_confirm is distinct from 'PAKSA' then", "if false then"),
+    'force reason may be punctuation only': ('new', "if p_force and length(regexp_replace(v_reason,'[^[:alnum:]]','','g'))<5 then", "if false then"),
+    'hard blockers (money/stock/inpatient) can be forced': ('new', "if cardinality(v_hard)>0 then", "if false then"),
+    'soft blockers no longer need force (plain archive passes)': ('new', "   if not p_force then\n    raise exception using errcode='P0001',message='ARCHIVE_BLOCKED: kunjungan tidak dapat diarsipkan karena '||array_to_string(v_soft,'; ')", "   if false then\n    raise exception using errcode='P0001',message='ARCHIVE_BLOCKED: kunjungan tidak dapat diarsipkan karena '||array_to_string(v_soft,'; ')"),
+    'overridden blockers are not recorded in the audit event': ('new', "v_now,p_force,v_over) returning * into v_event;", "v_now,p_force,'{}') returning * into v_event;"),
+    'replay ignores the forced flag (plain call can replay a force key)': ('new', " and v_event.created_by=v_actor and v_event.forced=p_force then", " and v_event.created_by=v_actor then"),
+    'lock_timeout removed from the archive RPC': ('new', "returns jsonb language plpgsql security definer set search_path='' set lock_timeout='5s' as $$", "returns jsonb language plpgsql security definer set search_path='' as $$"),
+    # --- follow-up: Selesai only when ERP-origin
+    'imported Selesai visits can be archived': ('new', "if o='impor' then hard:=hard||", "if false then hard:=hard||"),
+    'Selesai of uncertain origin can be archived': ('new', "elsif o<>'erp' then hard:=hard||", "elsif false then hard:=hard||"),
+    'ERP-origin Selesai is never archivable (old rule)': ('new', "elsif o<>'erp' then hard:=hard||", "elsif true then hard:=hard||"),
+    'legacy_record_no is not an import marker': ('new', " or v.legacy_record_no is not null or v.legacy_source_hash is not null then 'impor'", " or v.legacy_source_hash is not null then 'impor'"),
+    'legacy_source_hash is not an import marker': ('new', " or v.legacy_record_no is not null or v.legacy_source_hash is not null then 'impor'", " or v.legacy_record_no is not null then 'impor'"),
+    'legacy_source_key is not an import marker': ('new', "when v.legacy_source_key is not null or v.legacy_record_no is not null", "when v.legacy_record_no is not null"),
+    'checked_in_at no longer needed as ERP evidence': ('new', "when v.checked_in_at is not null then 'erp'", "when true then 'erp'"),
+    # --- follow-up: bulk plan (script text, not a migration)
+    'bulk script archives hard-blocked visits (skip removed)': ('bulk', "if jsonb_array_length(c->'hard')>0 then", "if false then"),
+    'bulk script does not check the OWNER profile': ('bulk', "not exists(select 1 from public.profiles pr where pr.id=p_owner and pr.is_active and pr.role='OWNER')", "false"),
+    'bulk script ignores the batch limit': ('bulk', "if n>=p_batas then exit; end if;", ""),
+    'bulk script has no dry-run mode': ('bulk', "if not p_jalankan then", "if false then"),
+    'bulk script keys are not stable (re-run archives restored visits again)': ('bulk', "k:='bulk-arsip-20261101-'||r.vid::text;", "k:='bulk-arsip-20261101-'||gen_random_uuid()::text;"),
+    'bulk script allows a cutoff after 1 Nov 2026': ('bulk', "if p_cutoff is null or p_cutoff > timestamptz '2026-11-01 00:00:00+07' then", "if false then"),
 }
 
 
@@ -349,9 +616,9 @@ class Attached(r.NativePostgres):
     def __exit__(self, *_): return None
 
 
-def run_in_clone(db, name, template, setup, variant_text=None):
+def run_in_clone(db, name, template, setup, variant_texts=None):
     db.sql(f'create database {name} template {template};'); os.environ['PGDATABASE'] = name
-    if variant_text is not None: apply_candidate(db, variant_text)
+    for text in variant_texts or []: apply_candidate(db, text)
     start = len(RESULTS)
     try: run(x.Harness(db), setup=setup)
     except Exception as e: check('HARNESS', False, str(e)[:400])
@@ -362,7 +629,7 @@ def main():
     p = argparse.ArgumentParser(); p.add_argument('--baseline', action='store_true'); p.add_argument('--mutations', action='store_true'); p.add_argument('--attach'); p.add_argument('--pg-bin')
     p.add_argument('--json', type=Path, required=True); a = p.parse_args()
     if a.pg_bin: r.BIN = a.pg_bin
-    sources = sorted((ROOT / 'supabase/migrations').glob('*.sql')); candidate_text = (ROOT / 'supabase/migrations' / CANDIDATE).read_text()
+    sources = sorted((ROOT / 'supabase/migrations').glob('*.sql')); candidate_text = (ROOT / 'supabase/migrations' / CANDIDATE).read_text(); followup_text = (ROOT / 'supabase/migrations' / FOLLOWUP).read_text(); bulk_text = (BULK_DIR / 'bulk-arsip-antrian-jalankan.sql').read_text()
     extra = {}
     try:
         if a.attach:
@@ -370,18 +637,25 @@ def main():
                 run_in_clone(db, 'arsip_run_%d' % int(time.time()), 'postgres', False)
             selected = sources
         elif a.mutations:
-            selected = [s for s in sources if s.name != CANDIDATE]
+            selected = [s for s in sources if s.name not in (CANDIDATE, FOLLOWUP)]
+            only = os.environ.get('MUTANT_FILTER')   # development: comma-separated name fragments
             with contextlib.ExitStack() as stack:
                 db = build_chain(stack, selected, r.NativePostgres); r.fixture.DisposablePostgres.bootstrap(db); x.setup(x.Harness(db))
-                control = run_in_clone(db, 'mut_control', 'postgres', False, candidate_text); extra['control_fail'] = sum(c['status'] == 'FAIL' for c in control)
+                control = run_in_clone(db, 'mut_control', 'postgres', False, [candidate_text, followup_text]); extra['control_fail'] = sum(c['status'] == 'FAIL' for c in control)
                 extra['mutants'] = {}
-                for i, (name, (anchor, repl)) in enumerate(MUTANTS.items()):
-                    assert candidate_text.count(anchor) == 1, f'mutant anchor not unique/stale: {name}'
-                    res = run_in_clone(db, f'mut_{i}', 'postgres', False, candidate_text.replace(anchor, repl))
+                for i, (name, (target, anchor, repl)) in enumerate(MUTANTS.items()):
+                    if only and not any(f in name for f in only.split(',')): continue
+                    texts = dict(old=candidate_text, new=followup_text, bulk=bulk_text)
+                    assert texts[target].count(anchor) == 1, f'mutant anchor not unique/stale: {name}'
+                    mutated = texts[target].replace(anchor, repl)
+                    BULK_OVERRIDE.clear()
+                    if target == 'bulk': BULK_OVERRIDE['run'] = mutated
+                    res = run_in_clone(db, f'mut_{i}', 'postgres', False, [mutated if target == 'old' else candidate_text, mutated if target == 'new' else followup_text])
+                    BULK_OVERRIDE.clear()
                     failed = [c['case'] for c in res if c['status'] == 'FAIL']; extra['mutants'][name] = dict(killed=bool(failed), failing_cases=failed)
                     print('MUTANT', 'KILLED' if failed else 'SURVIVED', name, len(failed), flush=True)
         else:
-            selected = [s for s in sources if not (a.baseline and s.name == CANDIDATE)]
+            selected = [s for s in sources if not (a.baseline and s.name == FOLLOWUP)]
             with contextlib.ExitStack() as stack:
                 db = build_chain(stack, selected, r.NativePostgres); r.fixture.DisposablePostgres.bootstrap(db); run(x.Harness(db))
     except Exception as e: check('HARNESS', False, str(e)[:600])
