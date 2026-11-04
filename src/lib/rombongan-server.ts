@@ -64,6 +64,7 @@ export async function bacaSaudaraKunjungan(supabase: AnyClient, visitId: string)
     .select("id, status, pets(name)")
     .eq("customer_id", acuan.customer_id)
     .eq("branch_id", acuan.branch_id)
+    .is("archived_at", null) // kunjungan yang diarsipkan (percobaan/batal) bukan bagian dari rombongan
     .gte("created_at", dari).lt("created_at", sampai)
     .order("created_at");
 
@@ -92,6 +93,7 @@ export async function bacaRombongan(supabase: AnyClient, visitId: string): Promi
     .select("id, created_at, pets(name)")
     .eq("customer_id", acuan.customer_id)
     .eq("branch_id", acuan.branch_id)
+    .is("archived_at", null) // kunjungan yang diarsipkan (percobaan/batal) bukan bagian dari rombongan
     .gte("created_at", dari).lt("created_at", sampai)
     .order("created_at");
 
