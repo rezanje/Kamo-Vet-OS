@@ -23,9 +23,24 @@ export function metodeBayarSah(nilai: unknown): nilai is MetodeBayar {
   return typeof nilai === "string" && METODE_BAYAR.some(option => option.m === nilai);
 }
 
-/** Metode dari draf peramban: draf lama (mis. "Kartu") tidak boleh menghidupkan lagi metode yang ditolak database. */
-export function metodeDariDraf(nilai: unknown): MetodeBayar {
-  return metodeBayarSah(nilai) ? nilai : "Tunai";
+/**
+ * Metode dari draf peramban. Draf lama (mis. "Kartu") TIDAK boleh menghidupkan lagi metode yang ditolak
+ * database, dan TIDAK boleh diam-diam diganti Tunai: tujuan uangnya berbeda (kas laci vs bank). Metode tak sah
+ * dikembalikan kosong supaya kasir memilih ulang; jumlah bayar ikut direset agar satu klik tidak
+ * membukukan penerimaan tunai penuh.
+ */
+export function pulihkanMetodeDraf(metode: unknown, bayar: unknown): {
+  metode: MetodeBayar | ""; bayar: number; bayarManual: boolean; pesan: string | null;
+} {
+  if (metodeBayarSah(metode)) {
+    const jumlah = Number(bayar);
+    return { metode, bayar: Number.isFinite(jumlah) ? jumlah : 0, bayarManual: metode !== "Tunai" && jumlah > 0, pesan: null };
+  }
+  const lama = typeof metode === "string" && metode.trim() ? `"${metode.trim().slice(0, 30)}" ` : "";
+  return {
+    metode: "", bayar: 0, bayarManual: false,
+    pesan: `Metode pembayaran ${lama}di draf ini sudah tidak dipakai. Pilih ulang metode bayar (Debit, Kredit, QRIS, Transfer, Tunai, atau E-Wallet); jumlah bayar dikosongkan.`,
+  };
 }
 
 /** Pesan kasir bila metode bayar tidak dikenal; dipakai server action SEBELUM RPC uang apa pun. */
