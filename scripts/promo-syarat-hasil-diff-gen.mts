@@ -1,3 +1,4 @@
+// @ts-nocheck -- standalone node script (run with ts-register); .ts import extensions are intentional and not part of the app type-check
 // Differential generator for scripts/test-promo-syarat-hasil-postgres.py: runs the REAL stage-1 engine on seeded random carts and
 // prints one JSON scenario per line (promos as DB rules + cart + the engine's claims). The native test then loads every scenario into the
 // database and finalizes it through the original cashier RPC: whatever the engine claims, the database verification must accept.
