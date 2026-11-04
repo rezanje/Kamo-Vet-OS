@@ -210,3 +210,8 @@ select pg_temp.must_reject($q$delete from promo_sh_audit$q$,'append-only','audit
 select pg_temp.ok((select not has_function_privilege('anon','public.save_promo_syarat_hasil(uuid,text,jsonb)','execute') and not has_function_privilege('service_role','public.set_promo_syarat_hasil_active(uuid,text,boolean)','execute')
   and has_function_privilege('authenticated','public.save_promo_syarat_hasil(uuid,text,jsonb)','execute')),'ACL: RPCs executable by authenticated only (anon/service_role denied)');
 select pg_temp.ok((select not has_function_privilege('authenticated','public.promo_sh_targets_problem(jsonb)','execute') and not has_function_privilege('authenticated','public.promo_sh_definition_guard()','execute')),'ACL: internal guards are not callable by clients');
+
+-- 8. The existing expiry sweep may still switch an expired promo off (system path, no user): the edit freeze does not block it.
+select pg_temp.set_user('');
+update promos set valid_until=(now() at time zone 'Asia/Jakarta')::date-1 where id=(select id from sh_ids where k='p1');
+select pg_temp.ok((select not is_active from promos where id=(select id from sh_ids where k='p1')),'backdating valid_until on an active promo switches it off in place (existing expiry guard), no ACTIVE_EDIT trap');

@@ -66,16 +66,32 @@ def regression_outcomes(db):
 
 # name -> (candidate file, exact text, replacement). Each must break at least one named suite assertion.
 MUTATIONS = {
-    'flag_gate': ('20261106300000_promo_syarat_hasil_definition.sql',
-                  "if not public.promo_release_enabled('syarat_hasil') then\n   raise exception 'PROMO_SH_RELEASE: promo Syarat-Hasil belum dirilis; aplikasi harus live dan flag rilis dinyalakan dulu' using errcode='55000';\n  end if;\n  if new_allowed",
-                  "if false then\n   raise exception 'PROMO_SH_RELEASE';\n  end if;\n  if new_allowed"),
+    # name: (candidate file, exact text, replacement, suite assertion that must catch it)
+    'flag_gate_trigger': ('20261106300000_promo_syarat_hasil_definition.sql',
+        "if not public.promo_release_enabled('syarat_hasil') then\n   raise exception 'PROMO_SH_RELEASE: promo Syarat-Hasil belum dirilis; aplikasi harus live dan flag rilis dinyalakan dulu' using errcode='55000';\n  end if;\n  if new_allowed",
+        "if false then\n   raise exception 'x';\n  end if;\n  if new_allowed"),
     'owner_only_waiver': ('20261106300000_promo_syarat_hasil_definition.sql',
-                          "if not public.promo_sh_actor_is_owner() then\n    raise exception 'PROMO_SH_OWNER_ONLY: izin penjualan di bawah HPP hanya boleh diatur oleh Owner' using errcode='42501';\n   end if;\n  end if;\n  if new_allowed and (not old_allowed",
-                          "if false then\n    raise exception 'PROMO_SH_OWNER_ONLY';\n   end if;\n  end if;\n  if new_allowed and (not old_allowed"),
-    'stale_token': ('20261106300000_promo_syarat_hasil_definition.sql',
-                    "if p_expected_version is null or public.promo_edit_snapshot(pid)->>'version' is distinct from p_expected_version then",
-                    "if false then"),
-    'discount_formula': ('20261106310000_promo_syarat_hasil_sale_claims.sql', 'FORMULA_ANCHOR', 'FORMULA_MUTANT'),
+        "if not public.promo_sh_actor_is_owner() then\n    raise exception 'PROMO_SH_OWNER_ONLY: izin penjualan di bawah HPP hanya boleh diatur oleh Owner' using errcode='42501';\n   end if;\n  end if;\n  if new_allowed and (not old_allowed",
+        "if false then\n    raise exception 'x';\n   end if;\n  end if;\n  if new_allowed and (not old_allowed", ),
+    'stale_token_save': ('20261106300000_promo_syarat_hasil_definition.sql',
+        "if p_expected_version is null or public.promo_edit_snapshot(pid)->>'version' is distinct from p_expected_version then", "if false then"),
+    'waiver_ack_stamp': ('20261106300000_promo_syarat_hasil_definition.sql',
+        "if new_allowed and (not old_allowed or new_sh->'below_hpp' is distinct from old_sh->'below_hpp') then", "if false then"),
+    'discount_formula': ('20261106310000_promo_syarat_hasil_sale_claims.sql',
+        "if l.promo_discount is distinct from l.promo_hasil_units*public.promo_sh_unit_discount(p.rule,l.harga) then", "if false then"),
+    'syarat_units': ('20261106310000_promo_syarat_hasil_sale_claims.sql',
+        "if supplied<a*(row_json->>'min')::numeric then", "if false then"),
+    'sets_agree': ('20261106310000_promo_syarat_hasil_sale_claims.sql',
+        "if (select count(distinct promo_sets) from public.sale_items where sale_id=p_sale and promo_claim_id=p.id)<>1 then", "if false then"),
+    'stock_provenance': ('20261106310000_promo_syarat_hasil_sale_claims.sql',
+        "if not exists(select 1 from public.stock_moves mv join", "if false and not exists(select 1 from public.stock_moves mv join"),
+    'claim_immutable': ('20261106310000_promo_syarat_hasil_sale_claims.sql',
+        "raise exception 'PROMO_SH_SNAPSHOT: promo claim is immutable';", "null;"),
+    'pool_member_exclusion': ('20261106310000_promo_syarat_hasil_sale_claims.sql', " and l.promo_claim_id is null -- SH_POOL_MEMBERS$b$", "$b$"),
+    'pool_pick': ('20261106310000_promo_syarat_hasil_sale_claims.sql',
+        "when new.promo_pick_mode in('pilih','tanpa') then false else", "when new.promo_pick_mode in('pilih','tanpa') then true else"),
+    'floor_no_stacking': ('20261106320000_promo_syarat_hasil_hpp_waiver.sql', "then least(line.hpp,gross-item_discount) else", "then 0 else"),
+    'floor_waiver_flag_ignored': ('20261106320000_promo_syarat_hasil_hpp_waiver.sql', "when coalesce(line.promo_floor_waiver,false) and manual<=0 then", "when manual<=0 then"),
 }
 
 
@@ -92,6 +108,8 @@ def main():
     ap.add_argument('--only', type=int, help='run only the suites of candidate K (1-based)')
     ap.add_argument('--no-regression', action='store_true')
     ap.add_argument('--no-concurrency', action='store_true')
+    ap.add_argument('--diff', type=int, default=300, help='TS-engine differential: scenarios to generate (0 = skip)')
+    ap.add_argument('--diff-seed', type=int, default=20261104)
     ap.add_argument('--mutate', choices=sorted(MUTATIONS))
     args = ap.parse_args()
     cands = [] if args.baseline else CANDIDATES[:(args.apply if args.apply is not None else args.upto)]
@@ -140,20 +158,22 @@ def main():
                 assert before == json.loads(db.last(sql)), 'Original money/stock/finalization/refund function definition drift'
                 print('PASS original finalize_pos_sale, sale_stock_out_fifo, refund cores, competing_discount etc. are byte-identical', flush=True)
                 after = {s: meta(s) for s in patched}
+                structural = not args.mutate
                 # edit_promo: only the SYARAT_HASIL_READONLY guard inserted
                 e = 'public.edit_promo(uuid,text,jsonb,uuid[])'
+                structural = not args.mutate
                 d0, d1 = meta_before[e]['definition'], after[e]['definition']
                 anchor = "if jsonb_typeof(p_values) is distinct from 'object' or not p_values ?& fields"
                 inserted = d1.replace(d0.split(anchor)[0], '', 1) if d1.startswith(d0.split(anchor)[0]) else None
                 assert inserted is not None and inserted.endswith(anchor + d0.split(anchor)[1]) and 'SYARAT_HASIL_READONLY' in inserted.split(anchor)[0], 'edit_promo changed outside the readonly guard'
                 assert {k: v for k, v in meta_before[e].items() if k != 'definition'} == {k: v for k, v in after[e].items() if k != 'definition'}, 'edit_promo ACL/config drift'
                 print('PASS edit_promo differs only by the SYARAT_HASIL_READONLY guard; ACL/definer/search_path unchanged', flush=True)
-                if len(cands) >= 2:
+                if structural and len(cands) >= 2:
                     g = 'public.quantity_pool_finalize_guard()'
                     assert after[g]['definition'] != meta_before[g]['definition'] and 'SH_POOL' in after[g]['definition']
                     assert {k: v for k, v in meta_before[g].items() if k != 'definition'} == {k: v for k, v in after[g].items() if k != 'definition'}, 'pool guard ACL/config drift'
                     print('PASS quantity_pool_finalize_guard patched (SH_POOL markers present), ACL/definer/search_path unchanged', flush=True)
-                if len(cands) >= 3:
+                if structural and len(cands) >= 3:
                     c = 'public.cashier_post_stock_atomic(uuid,uuid)'
                     old_floor = "if line.hpp is null or (gross-item_discount)*net_total/after_items < line.hpp then"
                     assert meta_before[c]['definition'].count(old_floor) == 1
@@ -182,8 +202,10 @@ def main():
                 for name, before_result in reg_before.items():
                     assert reg_after[name] == before_result, 'REGRESSION: %s changed from %r to %r' % (name, before_result, reg_after[name])
                     print('PASS original regression', name, '(unchanged: %s)' % ('passes' if before_result[0] else 'fails identically on the unmodified schema'), flush=True)
+            if cands and len(cands) >= 2 and args.diff and not args.mutate:
+                differential(db, fixture_sql, args.diff, args.diff_seed)
             if cands and len(cands) >= 2 and not args.no_concurrency and not args.mutate:
-                concurrency(db, fixture_sql)
+                concurrency(db, fixture_sql)  # commits its fixture: keep it LAST
     return 0
 
 
@@ -301,6 +323,30 @@ def concurrency(db, fixture_sql):
     assert db.last("select count(*) from promos where id in('%s','%s') and is_active" % (P[2], P[3])) == '1'
     print('PASS concurrency C4: racing activation of identical definitions: exactly one active (PROMO_SH_DUPLICATE for the loser)', flush=True)
     print('PASS concurrency suite', flush=True)
+
+
+def differential(db, fixture_sql, count, seed):
+    """Real stage-1 engine -> claims -> original cashier RPC. Every engine claim must be ACCEPTED by the DB verification; a +1 Rp forged
+    reward discount must be REFUSED with PROMO_SH_TOTAL."""
+    gen = subprocess.run(['node', '--no-warnings', str(ROOT / 'scripts/promo-syarat-hasil-diff-gen.mts'), str(seed), str(count)], capture_output=True, text=True, cwd=ROOT, timeout=120)
+    assert gen.returncode == 0, 'generator failed: ' + gen.stderr[-500:]
+    scenarios = [json.loads(line) for line in gen.stdout.splitlines() if line.strip()]
+    with_claims = [x for x in scenarios if x['claims']]
+    assert len(with_claims) >= 50, 'too few claim scenarios: %d' % len(with_claims)
+    calls = []
+    for x in with_claims:
+        body = '$j$' + json.dumps(x) + '$j$::jsonb'
+        calls.append("select 'A'||pg_temp.diff_scenario(%s,false);" % body)
+        calls.append("select 'F'||pg_temp.diff_scenario(%s,true);" % body)
+    out = db.sql('begin;\n' + fixture_sql + '\n' + (ROOT / 'supabase/tests/promo_syarat_hasil_diff_prelude.sql').read_text() + '\n' + '\n'.join(calls) + '\nrollback;').splitlines()
+    results = [l for l in out if l.startswith(('AACCEPTED', 'AREFUSED', 'ASKIP', 'FACCEPTED', 'FREFUSED', 'FSKIP'))]
+    assert len(results) == len(calls), 'unexpected result count %d != %d' % (len(results), len(calls))
+    bad_a = [l for l in results if l.startswith('A') and not l.startswith('AACCEPTED')]
+    bad_f = [l for l in results if l.startswith('F') and not l.startswith(('FREFUSED: PROMO_SH_TOTAL', 'FSKIP'))]
+    assert not bad_a, 'DB refused %d engine claims, e.g. %s' % (len(bad_a), bad_a[:3])
+    assert not bad_f, 'forged claims not refused with PROMO_SH_TOTAL: %s' % bad_f[:3]
+    n_forged = sum(1 for l in results if l.startswith('FREFUSED'))
+    print('PASS differential: %d/%d scenarios carried claims; all %d engine claim sets ACCEPTED by the DB; %d forged (+1 Rp) variants all REFUSED (PROMO_SH_TOTAL)' % (len(with_claims), len(scenarios), len(with_claims), n_forged), flush=True)
 
 
 if __name__ == '__main__':
