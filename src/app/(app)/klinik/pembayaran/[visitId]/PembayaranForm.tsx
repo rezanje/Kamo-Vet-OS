@@ -31,6 +31,7 @@ import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
 import { bacaKode, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganKode } from "@/lib/kode-kampanye";
 import { hargaNetto, nilaiBaris, type BekalPotongan } from "@/lib/tagihan-klinik";
 import { pecahPaket, type ResepPaket } from "@/lib/paket-klinik";
+import { metodeDariDraf } from "@/lib/metode-bayar";
 
 type Line = {
   key?: string;
@@ -617,8 +618,8 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, patient, 
           && !restored.some(row => row.item_id === source.item_id))];
       };
       setObat(restoreRows(value.obat, initialObat)); setJasa(restoreRows(value.jasa, initialJasa));
-      setDiscount(value.discount); setMetode(value.metode); setReason(value.reason);
-      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setBayarManual(value.metode !== "Tunai" && Number(value.bayar) > 0); setSalesperson(value.salesperson);
+      setDiscount(value.discount); setMetode(metodeDariDraf(value.metode)); setReason(value.reason);
+      setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(value.bayar); setBayarManual(metodeDariDraf(value.metode) !== "Tunai" && Number(value.bayar) > 0); setSalesperson(value.salesperson);
       setDemoEnabled(!editMode && !!demoPolicy && value.demoEnabled === true);
       setDemoPolicyId(typeof value.demoPolicyId === "string" ? value.demoPolicyId : demoPolicy?.id ?? "");
       setDemoEmployees(Array.isArray(value.demoEmployees) ? value.demoEmployees.filter(id => demoStaff.some(person => person.id === id)) : demoStaff.map(person => person.id));

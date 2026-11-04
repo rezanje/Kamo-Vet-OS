@@ -24,6 +24,7 @@ import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } 
 import { bacaKodeKampanye, cekVoucherLewatKampanye, pesanGagalKampanye, pesanKampanyeDitolak } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
+import { metodeBayarSah, pesanMetodeBayarTidakSah } from "@/lib/metode-bayar";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
 import { isMissingRecordWrapper } from "@/lib/rekam-medis-susulan";
 import { gabungPaketCetak } from "@/lib/paket-klinik";
@@ -369,6 +370,9 @@ export async function bayarVisit(formData: FormData) {
     } catch (error) { redirect(`${back}?error=${encodeURIComponent(error instanceof Error ? error.message : "Pembayaran campuran tidak valid.")}`); }
   }
   const metode = split?.[0].method ?? String(formData.get("metode_bayar") ?? "Tunai");
+  // Database hanya menerima kosakata metode di kas-akun; nama lain (mis. "Kartu" dari draf lama) akan ditolak
+  // writer dengan pesan "nilai invoice tidak konsisten". Tolak di sini dengan alasan yang benar, sebelum RPC.
+  if (!split && !metodeBayarSah(metode)) redirect(`${back}?error=${encodeURIComponent(pesanMetodeBayarTidakSah(metode))}`);
   const dpAmount = existing ? Number(existing.dp_amount)
     : paidStatus === "DP" ? Number(formData.get("dp_amount")) || 0 : 0;
   const dpDate = paidStatus === "DP" ? String(formData.get("dp_date") ?? "") || null : null;
@@ -547,6 +551,7 @@ export async function bayarRombongan(formData: FormData) {
   const requestKey = String(formData.get("requestKey") ?? "").trim();
   if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang halaman lalu coba lagi.")}`);
   const metode = String(formData.get("metode_bayar") ?? "Tunai");
+  if (!metodeBayarSah(metode)) redirect(`${back}?error=${encodeURIComponent(pesanMetodeBayarTidakSah(metode))}`);
   const kodeDiketik = normalizeKode(formData.get("voucherCode")) || null;
   const poinDiminta = Number(formData.get("poinDigunakan")) || 0;
   const waktu = catatWaktu("bayarRombongan", visitId);

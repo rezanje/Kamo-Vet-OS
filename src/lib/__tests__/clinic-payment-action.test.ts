@@ -368,3 +368,29 @@ describe("versi keranjang rawat jalan (dokter menambah item sesudah keranjang di
   expect(state.wrapped[0].params).not.toHaveProperty("p_cart_version");
  });
 });
+
+// Laporan Andri 4 Nov 2026 (kunjungan 20a1cfaa, total Rp158.000): layar bayar klinik menawarkan
+// metode "Kartu", tetapi RPC posting hanya menerima Tunai/Transfer/Debit/Kredit/QRIS/E-Wallet, jadi
+// database menolak dengan "INVOICE_INVALID: nilai invoice tidak konsisten" padahal angkanya benar.
+describe("metode bayar yang tidak dikenal database ditolak SEBELUM RPC, dengan pesan yang menunjuk metodenya",()=>{
+ it.each(["Kartu","kartu","Cash",""])("bayarVisit menolak %j tanpa memanggil RPC apa pun",async(metode)=>{
+  const data=form("groomer");data.set("finalize","1");data.set("metode_bayar",metode);
+  const galat=await bayarVisit(data).then(()=>"",e=>decodeURIComponent((e as Error).message));
+  expect(galat).toContain("?error=");expect(galat).toContain("Metode pembayaran");expect(galat).toContain("Debit");
+  expect(state.attempted).toEqual([]);expect(state.calls).toEqual([]);expect(state.visitWrites).toEqual([]);
+ });
+ it.each(["Tunai","Transfer","Debit","Kredit","QRIS","E-Wallet"])("bayarVisit tetap meneruskan metode sah %s apa adanya",async(metode)=>{
+  const data=form("groomer");data.set("finalize","1");data.set("metode_bayar",metode);
+  await expect(bayarVisit(data)).resolves.toMatchObject({saved:true});
+  expect(state.calls[0]).toMatchObject({name:"clinic_post_invoice",params:{p_invoice:{metode_bayar:metode}}});
+ });
+ it("bayarRombongan menolak Kartu sebelum membaca tagihan atau memanggil RPC",async()=>{
+  state.customer=true;
+  vi.mocked(bacaRombongan).mockResolvedValue({customerId:"customer",customerName:"Owner",baris:[{visitId:"pet-a",hewan:"Alpha",invoiceNo:null}]} as never);
+  vi.mocked(barisTagihanVisit).mockImplementation((async()=>[{deskripsi:"A",qty:1,harga:100,jenis:"obat",item_id:"item",satuan:"pcs"}]) as never);
+  const f=new FormData();f.set("visitId","visit");f.set("requestKey","group");f.set("metode_bayar","Kartu");
+  const galat=await bayarRombongan(f).then(()=>"",e=>decodeURIComponent((e as Error).message));
+  expect(galat).toContain("Metode pembayaran");
+  expect(state.calls.filter(c=>c.name.startsWith("clinic_post"))).toEqual([]);expect(state.attempted).toEqual([]);
+ });
+});
