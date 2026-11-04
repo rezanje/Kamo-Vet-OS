@@ -68,11 +68,13 @@ def main():
     ap.add_argument('--pg-bin', default='/opt/data/kamo-pg-harness/bin')
     ap.add_argument('--baseline', action='store_true')
     ap.add_argument('--upto', type=int, default=len(CANDIDATES))
+    ap.add_argument('--apply', type=int, help='apply only the first N candidates (default: --upto); suites still run for --upto')
+    ap.add_argument('--only', type=int, help='run only the suites of candidate K (1-based)')
     ap.add_argument('--no-regression', action='store_true')
     ap.add_argument('--no-concurrency', action='store_true')
     ap.add_argument('--mutate', choices=sorted(MUTATIONS))
     args = ap.parse_args()
-    cands = [] if args.baseline else CANDIDATES[:args.upto]
+    cands = [] if args.baseline else CANDIDATES[:(args.apply if args.apply is not None else args.upto)]
     cand_names = {n for n, _ in CANDIDATES}
     with tempfile.TemporaryDirectory(prefix='psh-main-', dir='/opt/data') as tmp:
         migrations = Path(tmp) / 'supabase/migrations'
@@ -141,7 +143,9 @@ def main():
                     assert pol_before[t] == pol_after[t], 'ACL/RLS drift on ' + t
                 print('PASS original ACL/RLS/policies on promos, promo_items, sales, sale_items, stock*, payments unchanged', flush=True)
             fixture_sql = (ROOT / 'supabase/tests/promo_syarat_hasil_fixture.sql').read_text()
-            for name, suites in CANDIDATES[:args.upto]:
+            for idx, (name, suites) in enumerate(CANDIDATES[:args.upto], 1):
+                if args.only and idx != args.only:
+                    continue
                 for suite in suites:
                     body = (ROOT / 'supabase/tests' / suite).read_text()
                     print(db.sql('begin;\n' + fixture_sql + '\n' + body + '\nrollback;'), flush=True)
