@@ -83,7 +83,7 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, packageQuantityLocked = sealedPerformers, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, onPickPackage, onPackageQty, onRemovePackage }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, packageQuantityLocked = sealedPerformers, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, performersForNewRows = false, onPickPackage, onPackageQty, onRemovePackage }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; packageQuantityLocked?: boolean; groomingDoctorRequired?: boolean;
@@ -95,6 +95,9 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   /** H05: packages offered for tagging a component line (new invoices only). */
   packages?: PackageOption[];
   discountsDisabled?: boolean;
+  /** Rawat inap: baris sumber/pending tetap tersegel (database tidak mengubah pelaksananya), tetapi baris BARU
+   * yang ditambah kasir (manual atau isi paket) boleh diberi Dokter / Non-dokter seperti pembayaran rawat jalan. */
+  performersForNewRows?: boolean;
   /** Paket dipilih dari daftar: baris ini diganti isi paketnya (obat di sini, jasa di tabel Jasa). */
   onPickPackage?: (rowIndex: number, packageId: string) => void;
   /** Jumlah paket diubah: semua baris isi paket yang sama (obat & jasa) ikut menyesuaikan. */
@@ -103,6 +106,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   onRemovePackage?: (packageId: string) => void;
 }) {
   const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id));
+  const rowSealed = (r: Line) => sealedPerformers && !(performersForNewRows && !r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id);
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => setRows([...rows, { key: crypto.randomUUID(), deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0, service_performers: visitDefaultPerformers(defaultDoctorId) }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
@@ -160,7 +164,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
             rows.findIndex(row => row.package_item_id === r.package_item_id) === i
               ? <PaketTagihan key={`paket-${r.package_item_id}`} nomor={i + 1} nama={packages.find(option => option.id === r.package_item_id)!.name}
                   isi={rows.filter(row => row.package_item_id === r.package_item_id)} allowUnits={allowUnits} discountsDisabled={discountsDisabled}
-                  staff={serviceStaff} performerLocked={sealedPerformers || performerLocked(r)} quantityLocked={packageQuantityLocked} allowDetach={!sealedPerformers}
+                  staff={serviceStaff} performerLocked={rowSealed(r) || performerLocked(r)} quantityLocked={packageQuantityLocked} allowDetach={!sealedPerformers}
                   onJumlah={jumlah => onPackageQty ? onPackageQty(r.package_item_id!, jumlah) : undefined}
                   onDiskon={diskon => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, diskon_persen: diskon } : row))}
                   onPelaksana={value => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, service_performers: value } : row))}
@@ -178,7 +182,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
                   )}
                 </div>
                 <StokBarisTagihan baris={r} item={master.find(it => it.id === r.item_id)} />
-                {sealedPerformers || performerLocked(r)
+                {rowSealed(r) || performerLocked(r)
                   ? <div style={{fontSize:10,color:"var(--tm)"}}>{servicePerformerNames(r.service_performers).join(" · ")}</div>
                   : <ServicePerformersField label={`Pelaksana ${r.deskripsi || `baris ${i+1}`}`} value={r.service_performers} staff={serviceStaff}
                     grooming={groomingApplies && serviceRows && (r.kategori === "Grooming" || master.some(item => item.id === r.item_id && item.tindakan_kategori === "Grooming"))}
@@ -267,7 +271,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
         </tbody>
       </table>
       </div>
-      {!sealedPerformers && rows.some(row=>!performerLocked(row)) && <ServicePerformersBulk rows={rows} setRows={setRows} staff={serviceStaff} locked={performerLocked} />}
+      {rows.some(row=>!rowSealed(row) && !performerLocked(row)) && <ServicePerformersBulk rows={rows} setRows={setRows} staff={serviceStaff} locked={row=>rowSealed(row) || performerLocked(row)} />}
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 6, fontSize: 11.5 }}>
         <span style={{ fontWeight: 600, color: "var(--tm)" }}>Subtotal {title.split(" ")[0]}</span>

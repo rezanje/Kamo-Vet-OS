@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ClinicPackageOption } from "@/lib/clinic-payment";
 const state = vi.hoisted(() => ({ readOnly: false, fail: false, partial: false, ranges: [] as number[] }));
+vi.mock("@/lib/service-performers-server", () => ({ loadServiceStaff: async () => [], loadBranchGroomingPolicy: async () => ({ applies: false, doctorRequired: false }) }));
 vi.mock("@/lib/clinic-payment", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/clinic-payment")>(), loadClinicPaymentMaster: async () => ({ obat: [], jasa: [] }) }));
 vi.mock("@/lib/dp-minimal", () => ({ getDpMinimalPercent: async () => 50, bolehMenerobosDp: () => false }));
 vi.mock("@/app/(app)/klinik/pembayaran/[visitId]/InpatientCashier", () => ({ InpatientCashier: ({ packages = [] }: { packages?: ClinicPackageOption[] }) => <div data-cashier>{packages[0]?.resep?.komponen.length ?? 0} full components</div> }));
