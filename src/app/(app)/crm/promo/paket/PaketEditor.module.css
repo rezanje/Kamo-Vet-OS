@@ -1,6 +1,7 @@
 /* Editor Promo Paket: rapat, satu halaman, tanpa dialog bertingkat. Mengikuti gaya PromoForm.module.css. */
 .root { display: grid; gap: 10px; max-width: 980px; }
-.head { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)) minmax(0, 1.4fr); gap: 8px 12px; align-items: start; }
+.root input, .root select { box-sizing: border-box; }
+.head { display: grid; grid-template-columns: minmax(0, 2fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(0, 1.2fr); gap: 8px 12px; align-items: start; }
 .head > * { min-width: 0; }
 .head input:not([type=checkbox]), .head select { width: 100%; min-width: 0; }
 .sec { border: .5px solid var(--bd); border-radius: 8px; padding: 8px 10px; background: #fff; }
