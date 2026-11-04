@@ -4,6 +4,8 @@ import { promoCategorySummary } from "@/lib/promo-categories";
 import { promoScheduleStatus, type PromoRow } from "@/lib/promo";
 import { formatRentangTanggal, PROMO_STATUS_FILTERS, type PromoStatusFilter } from "@/lib/promo-list";
 import { togglePromo } from "./actions";
+import { ubahStatusPaketDariDaftar } from "./paket/actions";
+import { ringkasAturanPaket } from "@/lib/promo-paket";
 import s from "./PromoList.module.css";
 
 const STATUS_BADGE: Record<string, string> = { aktif: "g", terjadwal: "b", kadaluarsa: "x", nonaktif: "r" };
@@ -26,7 +28,9 @@ function ringkasBarang(nama: string[] | undefined): string {
 
 // Aturan promo dalam satu kalimat pendek — supaya pemilik toko bisa baca sekilas
 // tanpa membuka formulirnya.
-function ringkasAturan(p: PromoRow): string {
+function ringkasAturan(p: PromoRow, nameOf: (id: string) => string): string {
+  // Promo Paket (Syarat → Hasil) tidak memakai kolom diskon lama; ringkasannya dibaca dari aturan tersimpan.
+  if (p.rule?.discount_mode === "syarat_hasil") return ringkasAturanPaket(p.rule, nameOf);
   const bagian: string[] = [];
   if (p.discount_type && p.discount_value) {
     bagian.push(p.discount_type === "percent" ? `${p.discount_value}%` : p.rule?.discount_mode === "package_total" ? `${rp(p.discount_value)}/paket min ${p.min_qty}` : `${rp(p.discount_value)}/${p.rule?.unit ?? "satuan"}`);
@@ -86,13 +90,14 @@ export function PromoList({ rows, total, counts, status, q, kategori, cabang, to
               const barangPenuh = targets.length ? namaBarang.join(", ") : "Semua barang";
               const kategoriTeks = promoCategorySummary(targets, itemById).join(", ");
               const cabang = !p.branch_ids || p.branch_ids.length === 0 ? "Semua cabang" : p.branch_ids.map((id) => branchName.get(id) ?? "—").join(", ");
-              const aturan = ringkasAturan(p);
+              const paket = p.rule?.discount_mode === "syarat_hasil";
+              const aturan = ringkasAturan(p, (id) => itemById.get(id)?.name ?? "Barang tidak tersedia");
               const potong = p.auto_apply ? "ya" : "tidak";
               return (
                 <tr key={p.id} style={{ opacity: p.is_active ? 1 : 0.55 }}>
                   <td style={{ fontWeight: 500 }}>
                     <span className={`${s.cell} ${s.nowrap}`} style={{ display: "block" }} title={p.name}>{p.name}</span>
-                    <span className={s.sub} style={{ textTransform: "capitalize" }}>{p.promo_type.replace("_", " ")}</span>
+                    <span className={s.sub} style={{ textTransform: "capitalize" }}>{paket ? "Promo Paket" : p.promo_type.replace("_", " ")}</span>
                   </td>
                   <td className={s.nowrap}><span className={`bge ${POTONG_BADGE[potong]}`}>{POTONG_LABEL[potong]}</span></td>
                   <td style={{ fontSize: 11 }}>
@@ -105,9 +110,10 @@ export function PromoList({ rows, total, counts, status, q, kategori, cabang, to
                   <td className={s.nowrap}><span className={`bge ${STATUS_BADGE[st]}`}>{STATUS_LABEL[st]}</span></td>
                   <td>
                     <div className={s.actions}>
-                      {canEdit && <Link className="back-btn" href={`/crm/promo/${p.id}/edit`}>Edit promo</Link>}
-                      <form action={togglePromo}>
+                      {canEdit && <Link className="back-btn" href={paket ? `/crm/promo/paket/${p.id}` : `/crm/promo/${p.id}/edit`}>Edit promo</Link>}
+                      <form action={paket ? ubahStatusPaketDariDaftar : togglePromo}>
                         <input type="hidden" name="id" value={p.id} />
+                        {paket && <input type="hidden" name="was" value={p.is_active ? "1" : "0"} />}
                         <input type="hidden" name="active" value={p.is_active ? "0" : "1"} />
                         <button type="submit" className="btn-def" style={{ padding: "3px 10px", fontSize: 10 }}>
                           {p.is_active ? "Nonaktifkan" : "Aktifkan"}

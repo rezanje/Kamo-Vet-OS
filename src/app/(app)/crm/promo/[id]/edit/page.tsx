@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import {redirect} from 'next/navigation';
 import {createClient} from '@/lib/supabase/server';
 import {readCompleteList} from '@/lib/checked-list';
 import {promoCategoryOptions,promoCategoryItem,type PromoCategoryItem} from '@/lib/promo-categories';
@@ -38,6 +39,8 @@ export default async function EditPromoPage({params}:{params:Promise<{id:string}
  const {data,error}=await db.rpc('read_promo_edit',{p_id:id});
  if(error||!data)return <>{back}<p role="alert">Data promo belum dapat dimuat. Muat ulang atau kembali ke daftar; perubahan belum disimpan.</p></>;
  const snapshot=data as PromoEditSnapshot;
+ // Promo Syarat-Hasil selalu dibuka di editor Promo Paket; editor lama tidak menyentuhnya.
+ if(snapshot.promo.rule?.discount_mode==='syarat_hasil')redirect(`/crm/promo/paket/${id}`);
  let options:Awaited<ReturnType<typeof loadOptions>>|null=null;
  try {options=await loadOptions(db,snapshot);}catch { /* Incomplete source reads must not expose a partial editor. */ }
  if(!options)return <>{back}<p role="alert">Pilihan barang/cabang/kategori belum dapat dimuat lengkap. Muat ulang sebelum mengedit; target promo tidak diubah.</p></>;
