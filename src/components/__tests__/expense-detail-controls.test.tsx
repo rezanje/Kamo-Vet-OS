@@ -30,5 +30,13 @@ it("lets finance edit or cancel a POS cashier expense from its shared detail", a
   expect(host.textContent).toContain("POS cashier"); expect(host.querySelectorAll('input[name="revision"]')).toHaveLength(2);
 });
 it("does not offer expense corrections to cashier staff", async () => { fixture.role = "STAFF"; await render(); expect(host.textContent).not.toContain("Simpan Perubahan"); expect(host.textContent).not.toContain("Batalkan Pengeluaran"); });
-it("explains why a closed shift cannot be changed", async () => { fixture.shift = "closed"; await render(); expect(host.textContent).toContain("Shift sudah ditutup"); expect(host.textContent).not.toContain("Simpan Perubahan"); });
+it("lets finance and owner correct an expense after its shift is closed", async () => {
+  for (const role of ["FINANCE", "OWNER"]) {
+    fixture.role = role; fixture.shift = "closed"; await render();
+    expect(host.textContent).toContain("Simpan Perubahan"); expect(host.textContent).toContain("Batalkan Pengeluaran");
+    expect(host.textContent).toContain("angka tutup shift");
+  }
+});
+it("explains why admin cannot change an expense from a closed shift", async () => { fixture.role = "ADMIN"; fixture.shift = "closed"; await render(); expect(host.textContent).toContain("hanya dapat dilakukan Owner atau Finance"); expect(host.textContent).not.toContain("Simpan Perubahan"); });
+it("lets admin correct an expense while the shift is open", async () => { fixture.role = "ADMIN"; await render(); expect(host.textContent).toContain("Simpan Perubahan"); expect(host.textContent).not.toContain("angka tutup shift"); });
 it("explains the accounting period lock before offering a correction", async () => { fixture.closed = "2026-10-15"; await render(); expect(host.textContent).toContain("Periode akuntansi"); expect(host.textContent).not.toContain("Simpan Perubahan"); });
