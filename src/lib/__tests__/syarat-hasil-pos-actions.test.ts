@@ -175,6 +175,18 @@ it("the cashier picker is not available on the back office yet: any promoPick ot
   expect(state.headers).toHaveLength(0);
 });
 
+it("L1: a forged non-auto promoPick is refused (not ignored) when there are NO syarat-hasil definitions - flags OFF, flags ON with only an unparsable row - nothing is written; auto/empty are untouched", async () => {
+  for (const [rows, flags] of [[[], {}], [[{ id: "broken", name: "Rusak", rule: { discount_mode: "syarat_hasil", syarat_hasil: { version: 1 } }, branch_ids: null, valid_from: null, valid_until: null }], ON]] as const) {
+    Object.assign(state, { shRows: rows, flags, headers: [], items: [], prior: null, calls: [] });
+    for (const pick of ["none", "sh1", "ghost"]) {
+      expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick })), pick).toContain("belum tersedia");
+      expect(state.headers).toHaveLength(0);
+      expect(state.calls.filter(c => c.name !== "promo_release_enabled")).toEqual([]);
+    }
+    for (const pick of ["auto", ""]) { state.headers = []; state.items = []; state.prior = null; state.calls = []; expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick }))).toContain("/pos/struk/sale"); expect(state.headers).toHaveLength(1); }
+  }
+});
+
 // ---------------------------------------------------------------------------------------------------- below-HPP
 it("HPP guard: a reward below FIFO cost without an Owner waiver is dropped (note kept in promo_selection) and the pool prices the cart", async () => {
   state.shRows = [shPromo(6000)];

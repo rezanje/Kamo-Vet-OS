@@ -300,6 +300,11 @@ export async function checkoutKasir(formData: FormData) {
     redirect(`${failureUrl}${encodeURIComponent("Pilihan promo tidak bisa dipakai bersama kode kampanye yang memaksa promo tertentu. Hapus kode kampanye atau pilih Otomatis.")}`);
   }
   const shDefs = kode.promoId ? [] : syaratHasil.defs;
+  // Pilihan eksplisit kasir (Tanpa promo / promo tertentu) tidak boleh diam-diam diabaikan: tanpa definisi syarat-hasil tidak ada yang bisa dipilih
+  // (mis. satu-satunya baris promo aktif aturannya tidak terbaca) - tolak, jangan jatuh ke harga legacy/Bolt.
+  if (promoMode !== "auto" && shDefs.length === 0) {
+    redirect(`${failureUrl}${encodeURIComponent("Pilihan promo tidak dapat dipakai: tidak ada promo yang bisa dipilih untuk transaksi ini. Muat ulang kasir.")}`);
+  }
   const composeFor = (excludedIds: string[]) => composeSyaratHasilCart({
     rows: rows.map(row => ({ ...row, officialPrice: row.official_price, minSellBase: row.item_id ? minSellBase.get(row.item_id) : undefined })),
     defs: shDefs, legacy: (list, only) => legacyPromos(list as unknown as typeof rows, only), mode: promoMode, pickId, excludedIds,
@@ -327,6 +332,8 @@ export async function checkoutKasir(formData: FormData) {
         ? `Promo "${dropped.name ?? "pilihan"}" tidak bisa dipakai: hadiah di bawah modal (HPP). Pilih Otomatis atau Tanpa promo.`
         : "Promo pilihan tidak lagi berlaku. Muat ulang kasir.")}`);
     }
+    // promoExpect sengaja OPSIONAL (kosong/tidak ada = tidak dicek): harga yang dipakai tetap hasil hitung server, pengecekan ini hanya
+    // perlindungan UX agar kasir tidak menagih angka yang berbeda dari layarnya. KasirClient selalu mengirimnya bila ada komposisi.
     const expectedRaw = formData.get("promoExpect");
     if (expectedRaw !== null && String(expectedRaw) !== "") {
       const expected = Number(expectedRaw), actual = composed.savings.total;

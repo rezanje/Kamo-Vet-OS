@@ -132,7 +132,9 @@ export async function checkoutSale(formData: FormData) {
   catch (error) { redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Promo belum dapat dibaca. Muat ulang halaman.")}`); }
   const shDefs = promoKodeId ? [] : syaratHasil.defs;
   const pickRaw = String(formData.get("promoPick") ?? "").trim();
-  if (shDefs.length > 0 && pickRaw !== "" && pickRaw !== "auto") {
+  // Pilihan promo dari layar kasir tidak ada di POS belakang: nilai selain kosong/auto ditolak, bukan diabaikan - juga bila tidak ada definisi syarat-hasil
+  // (tanpa itu pilihan "Tanpa promo"/id basi akan diam-diam jatuh ke harga Bolt/legacy).
+  if (pickRaw !== "" && pickRaw !== "auto") {
     redirect(`/pos/transaksi?error=${encodeURIComponent("Fitur ganti promo belum tersedia di POS belakang. Pakai pilihan otomatis.")}`);
   }
   const composeFor = (excludedIds: string[]) => composeSyaratHasilCart({

@@ -27,7 +27,7 @@ const sh = (value: number): SyaratHasilDef => ({
 });
 let host: HTMLDivElement, root: Root;
 beforeEach(() => { quote.fn.mockReset(); quote.fn.mockResolvedValue({ excluded: [], notes: [], waiverPromoIds: [] }); Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); sessionStorage.clear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); sessionStorage.clear(); });
+afterEach(async () => { vi.useRealTimers(); await act(async () => root.unmount()); host.remove(); sessionStorage.clear(); });
 
 type Props = { syaratHasil?: { defs: SyaratHasilDef[]; pickerReleased: boolean }; promoHitung?: PromoHitung[]; customer?: boolean; diskon?: number };
 const CUSTOMER = { id: "cust", name: "Budi", phone: "", points: 0, tier: null, kategori: "", trx: 0, belanja: 0 };
@@ -38,8 +38,10 @@ async function render(lines: [string, number][], props: Props) {
   });
   sessionStorage.setItem(kasirDraftKey(context), JSON.stringify({ version: 1, savedAt: Date.now(), checkoutKey: "sh-draft", customerId: props.customer ? "cust" : "", salespersonId: "", metode: "Transfer", bayar: 0, cart, diskon: props.diskon ?? 0, diskonPct: false, poin: 0, voucher: "" }));
   await act(async () => root.render(<KasirClient branchName="Uji" items={items} customers={props.customer ? [CUSTOMER] : []} vouchers={[]} hariIni="2026-11-04" draftContext={context} shiftId="shift" promoHitung={props.promoHitung ?? [pool]} syaratHasil={props.syaratHasil} />));
-  await act(async () => { await new Promise((r) => setTimeout(r, 5)); });
+  await wait();
 }
+// Works with real and fake timers (the HPP-check timeout / retry tests use fake ones).
+const wait = (ms = 5) => act(async () => { if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(ms); else await new Promise((r) => setTimeout(r, ms)); });
 const pay = () => host.querySelector("button.kpos-bayar")!.textContent?.trim();
 const field = (name: string) => host.querySelector<HTMLInputElement>(`input[name="${name}"]`)?.value;
 
@@ -86,7 +88,7 @@ it("'Tanpa promo' choice (picker released) removes every promo and posts promoPi
 
 // ---------------------------------------------------------------------------------------------------- STAGE 3b: picker, payment info, HPP guard
 const radios = () => [...host.querySelectorAll<HTMLInputElement>("[data-testid='promo-pemilih'] input[type='radio']")];
-const settle = async () => { await act(async () => { await new Promise((r) => setTimeout(r, 5)); }); };
+const settle = () => wait();
 
 it("picker released: Otomatis, every promo that would save (with its saving) and Tanpa promo; the one in use is marked", async () => {
   await render([["a", 2], ["c", 1]], { syaratHasil: { defs: [sh(1000)], pickerReleased: true } });
@@ -137,14 +139,71 @@ it("HPP guard: a planned claim is checked by the server; while it runs paying is
   expect(field("promoExpect")).toBe("2000");
   expect(quote.fn).toHaveBeenCalledTimes(1);
 });
-it("HPP guard: if the server check fails the claim cannot be paid (fail closed) and the cashier is told what to do", async () => {
+const payBtn = () => host.querySelector<HTMLButtonElement>("button.kpos-bayar")!;
+const gagal = () => host.querySelector("[data-testid='promo-gagal']");
+it("L3: picker OFF - if the advisory HPP check fails the cashier is NOT stuck: automatic retry once, then paying stays possible and the message is correct (no 'Tanpa promo' that is not offered)", async () => {
+  vi.useFakeTimers();
+  quote.fn.mockRejectedValue(new Error("boom"));
+  await render([["a", 2], ["c", 1]], { syaratHasil: { defs: [sh(6000)], pickerReleased: false }, customer: true });
+  await wait(10);
+  expect(radios()).toHaveLength(0);
+  expect(gagal()!.textContent).toContain("Cek harga promo gagal, coba lagi atau muat ulang kasir");
+  expect(gagal()!.textContent).not.toContain("Tanpa promo");
+  expect(payBtn().disabled).toBe(false);
+  await wait(5000); // automatic retry fires (still failing)
+  expect(quote.fn).toHaveBeenCalledTimes(2);
+  await wait(20000); // ... and only once
+  expect(quote.fn).toHaveBeenCalledTimes(2);
+  expect(gagal()!.textContent).not.toContain("Tanpa promo");
+  expect(payBtn().disabled).toBe(false);
+});
+it("L3: the automatic retry succeeds -> the message disappears and the server's drop/note is applied", async () => {
+  vi.useFakeTimers();
+  quote.fn.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ excluded: [{ promo_id: "sh1", name: "Beli 2 Bolt, ANC -Rp6000", reason: "below_hpp" }], notes: ["Promo di bawah modal."], waiverPromoIds: [] });
+  await render([["a", 2], ["c", 1]], { syaratHasil: { defs: [sh(6000)], pickerReleased: false }, customer: true });
+  await wait(10);
+  expect(gagal()).not.toBeNull();
+  await wait(5000);
+  expect(gagal()).toBeNull();
+  expect(quote.fn).toHaveBeenCalledTimes(2);
+  expect(pay()).toBe("Bayar Rp 53.000");
+  expect(host.querySelector("[data-testid='promo-catatan']")!.textContent).toContain("di bawah modal");
+});
+it("L3: a manual 'Coba lagi' button re-runs the check after the automatic retry gave up", async () => {
+  vi.useFakeTimers();
+  quote.fn.mockRejectedValue(new Error("boom"));
+  await render([["a", 2], ["c", 1]], { syaratHasil: { defs: [sh(6000)], pickerReleased: false }, customer: true });
+  await wait(30000);
+  expect(quote.fn).toHaveBeenCalledTimes(2);
+  quote.fn.mockResolvedValue({ excluded: [], notes: [], waiverPromoIds: [] });
+  await act(async () => { host.querySelector<HTMLButtonElement>("[data-testid='promo-coba-lagi']")!.click(); });
+  await wait(10);
+  expect(quote.fn).toHaveBeenCalledTimes(3);
+  expect(gagal()).toBeNull();
+  expect(pay()).toBe("Bayar Rp 49.000");
+});
+it("L3: a check that never answers blocks paying only for a very short time, then times out into the same non-blocking failure state", async () => {
+  vi.useFakeTimers();
+  quote.fn.mockImplementation(() => new Promise(() => {}));
+  await render([["a", 2], ["c", 1]], { syaratHasil: { defs: [sh(6000)], pickerReleased: false }, customer: true });
+  expect(host.querySelector("[data-testid='promo-memeriksa']")).not.toBeNull();
+  expect(payBtn().disabled).toBe(true);
+  await wait(1500);
+  expect(payBtn().disabled).toBe(true); // still genuinely pending
+  await wait(2500);
+  expect(host.querySelector("[data-testid='promo-memeriksa']")).toBeNull();
+  expect(gagal()!.textContent).toContain("Cek harga promo gagal");
+  expect(payBtn().disabled).toBe(false);
+});
+it("L3: picker ON - same: a failed advisory check never blocks paying (the server drops below-cost promos itself)", async () => {
+  vi.useFakeTimers();
   quote.fn.mockRejectedValue(new Error("boom"));
   await render([["a", 2], ["c", 1]], { syaratHasil: { defs: [sh(1000)], pickerReleased: true }, customer: true });
-  await settle();
+  await wait(10);
   await act(async () => { host.querySelector<HTMLInputElement>("[data-testid='promo-pilih-sh1'] input")!.click(); });
-  await settle();
-  expect(host.querySelector("[data-testid='promo-gagal']")!.textContent).toContain("Tanpa promo");
-  expect(host.querySelector<HTMLButtonElement>("button.kpos-bayar")!.disabled).toBe(true);
+  await wait(10);
+  expect(gagal()!.textContent).toContain("Cek harga promo gagal");
+  expect(payBtn().disabled).toBe(false);
 });
 it("HPP guard: no claim planned (pool wins) -> the server check is never called", async () => {
   await render([["a", 2], ["c", 1]], { syaratHasil: { defs: [sh(1000)], pickerReleased: true } });

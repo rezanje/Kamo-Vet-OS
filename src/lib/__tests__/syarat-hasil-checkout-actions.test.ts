@@ -199,6 +199,36 @@ it("a malformed promoPick value is refused", async () => {
   expect(state.headers).toHaveLength(0);
 });
 
+// ---------------------------------------------------------------------------------------------------- L1: a pick with nothing to apply it to is refused
+const BROKEN_ROW = { id: "broken", name: "Rusak", rule: { discount_mode: "syarat_hasil", syarat_hasil: { version: 1 } }, branch_ids: null, valid_from: null, valid_until: null };
+it("L1: flags + picker released but the only syarat-hasil row is unparsable (no defs): 'Tanpa promo' / a stale or forged pick id is refused, nothing written - never a silent fallback to Bolt/legacy pricing", async () => {
+  state.shRows = [BROKEN_ROW];
+  state.flags = ON;
+  for (const pick of ["none", "sh1", "ghost", "pool"]) {
+    const outcome = await run(form([["item", 2], ["anc", 1]], { promoPick: pick }));
+    expect(outcome, pick).toContain("Pilihan promo tidak dapat dipakai");
+    expect(state.headers, pick).toHaveLength(0);
+    expect(state.items, pick).toHaveLength(0);
+  }
+  expect(state.calls.filter(c => c.name !== "promo_release_enabled")).toEqual([]);
+});
+it("L1: the same cart with pick auto / empty still prices through the legacy path (no regression for the normal case)", async () => {
+  state.shRows = [BROKEN_ROW];
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "auto" }))).toContain("/struk/sale");
+  expect(state.headers[0]).toMatchObject({ subtotal: 55000, total: 53000 });
+  state.headers = []; state.items = []; state.prior = null;
+  expect(await run(form([["item", 2], ["anc", 1]]))).toContain("/struk/sale");
+  expect(state.headers[0]).not.toHaveProperty("promo_pick_mode");
+});
+it("L1: flags OFF (no syarat-hasil promo at all): a forged non-auto pick stays refused with the existing message and nothing is written; auto/empty are untouched", async () => {
+  for (const pick of ["none", "sh1", "ghost"]) {
+    expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick })), pick).toContain("Fitur ganti promo belum aktif");
+    expect(state.headers).toHaveLength(0);
+  }
+  for (const pick of ["auto", ""]) { state.headers = []; state.items = []; state.prior = null; expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick }))).toContain("/struk/sale"); }
+});
+
 // ---------------------------------------------------------------------------------------------------- DB refusal
 it("a database refusal (PROMO_SH_*) rolls the sale back and tells the cashier in Indonesian", async () => {
   state.shRows = [shPromo(3000)];

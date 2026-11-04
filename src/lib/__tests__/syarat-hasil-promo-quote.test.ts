@@ -81,3 +81,11 @@ it("requires a logged-in cashier with an open shift (otherwise a clear error, no
   state.user = true; state.shift = false;
   await expect(quotePromoGuard({ cart: [line("item", 2)], pick: "auto" })).rejects.toThrow(/shift/i);
 });
+it("a cart longer than 200 lines is refused with a message before anything is read (advisory action is capped); exactly 200 is allowed", async () => {
+  state.flags = ON; state.shRows = [promo(6000)];
+  const many = (n: number) => Array.from({ length: n }, () => line("item", 1));
+  await expect(quotePromoGuard({ cart: many(201), pick: "auto" })).rejects.toThrow(/200 baris/);
+  expect(state.tables).toEqual([]);
+  expect(state.rpcs).toEqual([]);
+  await expect(quotePromoGuard({ cart: many(200), pick: "auto" })).resolves.toBeDefined();
+});

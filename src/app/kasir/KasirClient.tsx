@@ -86,6 +86,9 @@ export type CartLine = {
 const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 const TANPA_PELANGGAN: CustRow[] = [];
 const NO_SH_DEFS: SyaratHasilDef[] = [];
+/** Advisory HPP check: how long paying may wait for the answer, and the pause before the single automatic retry. */
+const GUARD_TIMEOUT_MS = 3000;
+const GUARD_RETRY_MS = 1000;
 
 // Kunci baris keranjang: barang + satuan.
 const kunciBaris = (l: { item_id: string; satuan?: string; row_key?: string }) => l.row_key || `${l.item_id}|${l.satuan ?? ""}`;
@@ -388,19 +391,32 @@ export function KasirClient({
     excludedIds: dikecualikan, legacyPromos: legacyDaftar, withAlternatives: true,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [shDefs, cart, items, legacyPromoRows, modePromo, pilihan, legacyDaftar, guardIni]);
-  // Hadiah di bawah modal (HPP) tidak diketahui layar: server yang memeriksa, selama itu pembayaran ditahan.
+  // Hadiah di bawah modal (HPP) tidak diketahui layar: server dimintai pendapat (hanya penasihat). Pembayaran ditahan HANYA selama jawaban
+  // benar-benar ditunggu (paling lama GUARD_TIMEOUT_MS). Bila cek gagal / lewat batas waktu, kasir tidak dikunci: dicoba ulang otomatis sekali,
+  // ada tombol "Coba lagi", dan server tetap penentu (melepas promo di bawah modal sendiri dengan catatan, menolak angka layar yang basi).
   const perluGuard = !!komposisi && komposisi.strategy === "syarat_hasil";
   const guardMenunggu = perluGuard && !guardIni;
   const guardGagal = perluGuard && !!guardIni?.error;
+  const guardOk = !!guardIni && !guardIni.error;
+  const [guardUlang, setGuardUlang] = useState(0);
+  const guardCoba = useRef({ sig: "", otomatis: 0 });
   useEffect(() => {
-    if (!perluGuard || guardIni) return;
+    if (!perluGuard || guardOk) return;
     let batal = false;
-    quotePromoGuard({ cart: cart.map((l) => ({ item_id: l.item_id, satuan: l.satuan, qty: l.qty, harga: l.harga, item_discount_type: l.item_discount_type ?? null, item_discount_value: l.item_discount_value ?? null })), pick: pilihan })
+    let batas: ReturnType<typeof setTimeout> | undefined, ulang: ReturnType<typeof setTimeout> | undefined;
+    if (guardCoba.current.sig !== guardSig) guardCoba.current = { sig: guardSig, otomatis: 0 };
+    const habis = new Promise<never>((_, tolak) => { batas = setTimeout(() => tolak(new Error("timeout")), GUARD_TIMEOUT_MS); });
+    Promise.race([quotePromoGuard({ cart: cart.map((l) => ({ item_id: l.item_id, satuan: l.satuan, qty: l.qty, harga: l.harga, item_discount_type: l.item_discount_type ?? null, item_discount_value: l.item_discount_value ?? null })), pick: pilihan }), habis])
       .then((r) => { if (!batal) setGuard({ ...r, sig: guardSig, error: false }); })
-      .catch(() => { if (!batal) setGuard({ excluded: [], notes: [], waiverPromoIds: [], sig: guardSig, error: true }); });
-    return () => { batal = true; };
+      .catch(() => {
+        if (batal) return;
+        setGuard({ excluded: [], notes: [], waiverPromoIds: [], sig: guardSig, error: true });
+        if (guardCoba.current.otomatis < 1) { guardCoba.current.otomatis += 1; ulang = setTimeout(() => { if (!batal) setGuardUlang((n) => n + 1); }, GUARD_RETRY_MS); }
+      })
+      .finally(() => clearTimeout(batas));
+    return () => { batal = true; clearTimeout(batas); clearTimeout(ulang); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perluGuard, guardSig, !!guardIni]);
+  }, [perluGuard, guardSig, guardOk, guardUlang]);
   // Pilihan yang tidak berlaku lagi (isi keranjang berubah / hadiah di bawah modal): kembali otomatis dengan penjelasan (tidak diam-diam).
   const pilihanHilang = !!komposisi && modePromo === "pilih" && !komposisi.pick.ok;
   if (pilihanHilang) { // "adjust state while rendering": settles immediately because the pick becomes "auto"
@@ -493,7 +509,7 @@ export function KasirClient({
   // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
   const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty * (l.faktor ?? 1) < (l.minJual ?? 0));
   const canPay = cart.length > 0 && (split || !!metode) && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0 && !zeroPriceIssue
-    && !guardMenunggu && !guardGagal && !waiverGabung && !pilihanHilang;
+    && !guardMenunggu && !waiverGabung && !pilihanHilang;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   // Promo yang sudah dipotong otomatis tidak perlu diingatkan lagi — kasir sudah
@@ -875,7 +891,12 @@ export function KasirClient({
               </div>
             )}
             {guardMenunggu && !guardGagal && <div data-testid="promo-memeriksa" role="status" style={{ fontSize: 10.5, color: "#92400e", margin: "2px 0 6px" }}>Memeriksa promo terhadap HPP…</div>}
-            {guardGagal && <div data-testid="promo-gagal" role="alert" style={{ fontSize: 10.5, color: "#b91c1c", margin: "2px 0 6px" }}>Promo belum dapat diperiksa terhadap HPP. Pilih Tanpa promo atau muat ulang kasir.</div>}
+            {guardGagal && (
+              <div data-testid="promo-gagal" role="alert" style={{ fontSize: 10.5, color: "#b91c1c", margin: "2px 0 6px" }}>
+                Cek harga promo gagal, coba lagi atau muat ulang kasir. Pembayaran tetap bisa dilanjutkan; server memeriksa ulang saat bayar.{" "}
+                <button type="button" data-testid="promo-coba-lagi" onClick={() => setGuardUlang((n) => n + 1)} style={{ fontSize: 10.5, textDecoration: "underline", background: "none", border: 0, padding: 0, cursor: "pointer", color: "inherit" }}>Coba lagi</button>
+              </div>
+            )}
             {guardIni && guardIni.notes.length > 0 && (
               <div data-testid="promo-catatan" role="status" style={{ fontSize: 10.5, color: "#92400e", margin: "2px 0 6px" }}>{guardIni.notes.map((n) => <div key={n}>{n}</div>)}</div>
             )}

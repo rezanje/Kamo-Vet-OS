@@ -19,6 +19,8 @@ export type PromoGuardInput = {
   cart: { item_id: string; satuan?: string; qty: number; harga?: number; item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null }[];
   pick: string;
 };
+/** Cart cap for the advisory action (a cashier cart is far below this). */
+const MAX_GUARD_LINES = 200;
 const NONE: PromoGuardResult = { excluded: [], notes: [], waiverPromoIds: [] };
 
 /**
@@ -30,6 +32,8 @@ export async function quotePromoGuard(input: PromoGuardInput): Promise<PromoGuar
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Sesi berakhir. Masuk ulang.");
+  // Server action yang bisa dipanggil klien: batasi ukuran keranjang sebelum membaca apa pun (kasir normal jauh di bawah ini).
+  if (Array.isArray(input.cart) && input.cart.length > MAX_GUARD_LINES) throw new Error(`Keranjang terlalu besar untuk dicek (maksimal ${MAX_GUARD_LINES} baris).`);
   const { data: shift } = await supabase.from("cashier_shifts").select("id, branch_id")
     .eq("opened_by", user.id).eq("status", "open").eq("shift_type", "petshop").maybeSingle();
   if (!shift) throw new Error("Buka shift kasir dulu.");
