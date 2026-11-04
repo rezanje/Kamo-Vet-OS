@@ -10,6 +10,9 @@ import { WholesaleCorrectionForm } from "./WholesaleCorrectionForm";
 import { FakturLineEdit } from "./FakturLineEdit";
 import { ReceiptDeleteForm } from "./ReceiptDeleteForm";
 import { readCompleteList } from "@/lib/checked-list";
+import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
+import { bolehLihatRiwayat, fakturHistory } from "@/lib/transaction-history";
+import { loadActorNames } from "@/lib/transaction-history-server";
 import { bisaKoreksiGrosir } from "@/lib/wholesale-correction-access";
 import { alasanTidakBisaEdit, penerimaanAktif, subtotalBaris, type BarisFakturEdit } from "@/lib/faktur-jual-edit";
 import { alasanTidakBisaRetur, bisaReturGrosir, sisaPiutangGrosir } from "@/lib/retur-grosir";
@@ -17,7 +20,7 @@ import { alasanTidakBisaRetur, bisaReturGrosir, sisaPiutangGrosir } from "@/lib/
 const rp = (n: number) => `Rp ${Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 })}`;
 type Receipt = { advance_id: string | null; advance: {id: string;no_um: string;status: string} | {id: string;no_um: string;status: string}[] | null; id: string; no_terima: string; tanggal: string; jumlah: number; dari_uang_muka: number; metode: string; journal_id: string | null; voided_at: string | null; void_reason: string | null; reversal_of: string | null; revision: number };
 type InvoiceReceipt = Receipt & { invoice_id: string };
-type Invoice = { status: string; id: string; no_faktur: string; total: number; carried_paid: number; replaces_invoice_id: string | null; sales_receipts: Receipt[] };
+type Invoice = { status: string; id: string; no_faktur: string; total: number; carried_paid: number; replaces_invoice_id: string | null; voided_on: string | null; void_reason: string | null; sales_receipts: Receipt[] };
 type InvoiceSummary = Omit<Invoice, "sales_receipts">;
 type Correction = { id: string; created_at: string; tanggal: string; reason: string; created_by: string | null;
   paid_preserved: number; customer_credit: number; original_journal_id: string | null;
@@ -25,7 +28,7 @@ type Correction = { id: string; created_at: string; tanggal: string; reason: str
 type InvoiceCorrection = Correction & { invoice_id: string };
 type OrderLine = { id: string; qty_kirim: number; qty_faktur: number };
 type WholesaleReturn = { id: string; no_retur: string; tanggal: string; total: number; ar_reduction: number; customer_credit: number; status: string; voided_on: string | null };
-type ReceiptCancellation = { id: string; invoice_id: string; tanggal: string; reason: string; created_by: string | null;
+type ReceiptCancellation = { id: string; receipt_id: string | null; invoice_id: string; tanggal: string; reason: string; created_by: string | null;
   created_at: string; advance_restored: number; original_journal_id: string; reversal_journal_id: string };
 
 export default async function WholesaleInvoicePage({ params, searchParams }: {
@@ -44,7 +47,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
     db.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
     db.from("sales_invoice_items").select("id,nama,qty,harga,diskon,satuan,hpp,order_item_id").eq("invoice_id", id).order("id"),
     readCompleteList<InvoiceSummary>((from, to) => db.from("sales_invoices")
-      .select("id,no_faktur,total,status,carried_paid,replaces_invoice_id", { count: "exact" })
+      .select("id,no_faktur,total,status,carried_paid,replaces_invoice_id,voided_on,void_reason", { count: "exact" })
       .eq(invoice.order_id ? "order_id" : "id", invoice.order_id ?? id).order("id").range(from, to),
     "Faktur dalam pesanan", { maxRows: null }),
     db.from("company_settings").select("ppn_rate").eq("id", true).maybeSingle(),
@@ -89,10 +92,23 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   "Riwayat koreksi", { maxRows: null })));
   const corrections = correctionLists.flat().sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
   const cancellationLists = await Promise.all(invoiceGroups.map((ids) => readCompleteList<ReceiptCancellation>((from, to) => db.from("sales_receipt_cancellations")
-    .select("id,invoice_id,tanggal,reason,created_by,created_at,advance_restored,original_journal_id,reversal_journal_id", { count: "exact" })
+    .select("id,receipt_id,invoice_id,tanggal,reason,created_by,created_at,advance_restored,original_journal_id,reversal_journal_id", { count: "exact" })
     .in("invoice_id", ids).order("created_at").order("id").range(from, to),
   "Riwayat hapus penerimaan", { maxRows: null })));
   const cancellations = cancellationLists.flat().sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  // Riwayat perubahan terpadu (hanya baca): sumbernya tabel koreksi/penerimaan yang sudah ada, dibaca lewat RLS masing-masing.
+  const tampilRiwayat = bolehLihatRiwayat(profile);
+  const actors = tampilRiwayat
+    ? await loadActorNames(db, [...corrections.map((c) => c.created_by), ...cancellations.map((c) => c.created_by)])
+    : { names: new Map<string, string>(), error: false };
+  const riwayat = tampilRiwayat ? fakturHistory({
+    viewerId: user?.id ?? null, names: actors.names,
+    invoices: ancestors.map((i) => ({ id: i.id, no_faktur: i.no_faktur, status: i.status, replaces_invoice_id: i.replaces_invoice_id, voided_on: i.voided_on, void_reason: i.void_reason })),
+    related: documents.filter((d) => !ancestors.some((a) => a.id === d.id))
+      .map((d) => ({ id: d.id, no_faktur: d.no_faktur, status: d.status, replaces_invoice_id: d.replaces_invoice_id, voided_on: d.voided_on, void_reason: d.void_reason })),
+    corrections, cancellations,
+    receipts: ancestors.flatMap((i) => (i.sales_receipts ?? []).map((r) => ({ ...r, invoice_id: i.id }))),
+  }) : [];
   const activeReturns = returnRows.filter((r) => r.status === "posted");
   const returnCredits = activeReturns.reduce((sum, r) => sum + Number(r.customer_credit), 0);
   const credits = corrections.reduce((sum, c) => sum + Number(c.customer_credit), 0) + returnCredits;
@@ -193,6 +209,10 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
       <p>Kredit pelanggan dari rangkaian ini: <strong>{rp(credits)}</strong>. Tercatat sebagai kewajiban pada akun 314001, terpisah dari uang muka yang dapat dipakai. Penyelesaian atau usulan pengembalian perlu ditinjau keuangan; tidak ada refund/transfer otomatis.</p>
       {invoice.status === "batal" && !successor && <Link href="/penjualan/faktur">Buka daftar penerimaan dan kredit</Link>}
     </div>
+    {tampilRiwayat
+      ? <TransactionHistoryPanel title="RIWAYAT PERUBAHAN FAKTUR" events={riwayat}
+          hint="Koreksi faktur, penerimaan yang dihapus dan faktur batal pada rangkaian faktur ini: siapa, kapan, apa, alasan, serta nomor lama → baru." />
+      : (
     <div className="crm-sec">
       <h2 style={{ fontSize: 14 }}>Audit koreksi</h2>
       {corrections.map(c => <div key={c.id} style={{ paddingBottom: 10 }}>
@@ -209,6 +229,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
       </div>)}
       {!cancellations.length && <p>Belum ada penerimaan yang dihapus.</p>}
     </div>
+      )}
     {bisaKoreksiGrosir(profile) && invoice.order_id && invoice.status !== "batal" && adaReturAktif && <div className="crm-sec">
       <h2 style={{ fontSize: 14 }}>Koreksi pencatatan grosir — OWNER/FINANCE</h2>
       <p role="status">{BLOKIR_RETUR}</p>
