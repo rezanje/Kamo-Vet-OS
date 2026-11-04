@@ -1,4 +1,3 @@
-// @ts-nocheck -- standalone node script (run with ts-register); .ts import extensions are intentional and not part of the app type-check
 // Differential generator for scripts/test-promo-syarat-hasil-postgres.py: runs the REAL stage-1 engine on seeded random carts and
 // prints one JSON scenario per line (promos as DB rules + cart + the engine's claims). The native test then loads every scenario into the
 // database and finalizes it through the original cashier RPC: whatever the engine claims, the database verification must accept.
@@ -13,7 +12,9 @@
 // Stage 3: every scenario with claims is ALSO produced through the cashier composer (src/lib/promo-syarat-hasil-checkout.ts: the exact claim lines
 // kasir/checkout.ts writes - split into claimed units and plain remainder, source positions renumbered), tagged src:"composer"; the database must accept them too.
 // Usage: node --no-warnings --import ./scripts/ts-register.mjs scripts/promo-syarat-hasil-diff-gen.mts <seed> <count>
+// @ts-expect-error -- standalone node script run via ts-register: the .ts import extension is intentional
 import { calculateSyaratHasilSafe, syaratHasilLinesFromCart, type SyaratHasilDef } from "../src/lib/promo-syarat-hasil.ts";
+// @ts-expect-error -- standalone node script run via ts-register: the .ts import extension is intentional
 import { composeSyaratHasilCart, type ShRow } from "../src/lib/promo-syarat-hasil-checkout.ts";
 
 const seed = Number(process.argv[2] ?? 1), count = Number(process.argv[3] ?? 100);
