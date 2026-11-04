@@ -103,8 +103,17 @@ select pg_temp.assert_true((select sum(l.debit-l.credit)=50000 from public.journ
 
 reset role;
 update public.cashier_shifts set status='closed' where id='ee300000-0000-4000-8000-000000000001';
+-- Sesudah shift ditutup hanya OWNER/FINANCE yang boleh mengoreksi; ADMIN tetap ditolak.
+-- Kasus OWNER/FINANCE ada di expense_correction_after_shift.sql.
+alter table public.profiles disable trigger all;
+update public.profiles set role='ADMIN'::public.user_role where id='ee100000-0000-4000-8000-000000000002';
+alter table public.profiles enable trigger all;
 set local role authenticated;
-select pg_temp.expect_error(format('select public.revise_expense_atomic(%L,%L::uuid,0,%L,%L::jsonb,%L)','closed-void',(select result->>'expense_id' from expense_test_results where name='second'),'void','{}','Correction'),'Shift sudah ditutup');
+select pg_temp.expect_error(format('select public.revise_expense_atomic(%L,%L::uuid,0,%L,%L::jsonb,%L)','closed-void',(select result->>'expense_id' from expense_test_results where name='second'),'void','{}','Correction'),'Hanya Owner atau Finance');
+reset role;
+alter table public.profiles disable trigger all;
+update public.profiles set role='FINANCE'::public.user_role where id='ee100000-0000-4000-8000-000000000002';
+alter table public.profiles enable trigger all;
 reset role;
 update public.cashier_shifts set status='open' where id='ee300000-0000-4000-8000-000000000001';
 update public.accounting_locks set closed_until=(now() at time zone 'Asia/Jakarta')::date where id;
