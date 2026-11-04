@@ -93,10 +93,13 @@ export default async function PromoAdminPage({
         <Link href="/crm/kampanye" className="back-btn" style={tabAktif(false)}>
           <i className="ti ti-tag" /> Kode Kampanye
         </Link>
+        {canEdit && <Link href="/crm/promo/paket/baru" className="back-btn" style={{ marginLeft: "auto" }}>
+          <i className="ti ti-packages" /> + Promo Paket
+        </Link>}
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : "Promo baru dibuat."}</div>}
+      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : success === "paket-aktif" ? "Promo paket diaktifkan." : success === "paket-nonaktif" ? "Promo paket dinonaktifkan." : "Promo baru dibuat."}</div>}
 
       {canEdit&&<div style={{marginBottom:12}}><Link className="btn-def" href="/crm/promo/impor"><i className="ti ti-file-import" /> Impor promo dari Excel</Link></div>}
 
