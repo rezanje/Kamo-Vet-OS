@@ -23,6 +23,14 @@ export async function paketReleased(db: Db): Promise<boolean> {
   return !error && data === true;
 }
 
+/** Saklar rilis 'below_hpp' (izin Owner menjual di bawah modal). Mati / fungsi belum ada / gagal dibaca = izin BELUM tersedia. */
+export async function belowHppReleased(db: Db): Promise<boolean> {
+  try {
+    const { data, error } = await db.rpc("promo_release_enabled", { p_flag: "below_hpp" });
+    return !error && data === true;
+  } catch { return false; }
+}
+
 type ItemRow = { id: string; code: string; name: string; unit: string; is_active: boolean; item_type: string };
 
 export async function loadPaketOptions(db: Db, usedItemIds: string[] = [], usedBranchIds: string[] = []): Promise<{ items: PaketItemInfo[]; branches: { id: string; name: string }[] } | null> {

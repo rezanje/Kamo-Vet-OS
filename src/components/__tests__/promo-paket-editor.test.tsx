@@ -6,12 +6,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const m = vi.hoisted(() => ({
-  simpan: vi.fn(), status: vi.fn(), taksir: vi.fn(),
+  simpan: vi.fn(), status: vi.fn(), taksir: vi.fn(), salin: vi.fn(),
   router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => m.router, useSearchParams: () => new URLSearchParams() }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...p }: { href: string; children: React.ReactNode }) => <a href={href} {...p}>{children}</a> }));
-vi.mock("@/app/(app)/crm/promo/paket/actions", () => ({ simpanPromoPaket: m.simpan, ubahStatusPromoPaket: m.status, taksirHppPaket: m.taksir }));
+vi.mock("@/app/(app)/crm/promo/paket/actions", () => ({ simpanPromoPaket: m.simpan, ubahStatusPromoPaket: m.status, taksirHppPaket: m.taksir, salinPromoPaket: m.salin }));
 import { PaketEditor } from "@/app/(app)/crm/promo/paket/PaketEditor";
 import { emptyPaketForm, type PaketForm, type PaketItemInfo } from "@/lib/promo-paket";
 
@@ -50,7 +50,7 @@ const alertText = () => [...host.querySelectorAll("[role=alert]")].map((e) => e.
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   sessionStorage.clear();
-  m.simpan.mockReset(); m.status.mockReset(); m.taksir.mockReset(); Object.values(m.router).forEach((f) => f.mockReset());
+  m.simpan.mockReset(); m.status.mockReset(); m.taksir.mockReset(); m.salin.mockReset(); Object.values(m.router).forEach((f) => f.mockReset());
   m.taksir.mockResolvedValue({ ok: true, rows: [] });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
@@ -80,11 +80,11 @@ it("builds the Andri example by picking items (Enter adds the first hit) and the
   await set(byLabel("Cari barang syarat 1")!, "donat");
   await click(host.querySelector("[role=listbox] [role=option]"));
   expect(host.textContent).toContain("2 barang dipilih");
-  expect(preview()).toContain("Beli 2 Bolt Ikan 800gr / Bolt Donat 800gr (campur varian)");
+  expect(preview()).toContain("Beli 2 PCS Bolt Ikan 800gr / Bolt Donat 800gr (campur varian)");
   await set(byLabel("Cari barang hasil")!, "anc");
   await click(host.querySelector("[role=listbox] [role=option]"));
   await set(q("input[name=hasil-nilai]")!, "1000");
-  expect(preview()).toBe("Pratinjau: Beli 2 Bolt Ikan 800gr / Bolt Donat 800gr (campur varian) → ANC Creamy Stick potongan Rp1.000/unit, berlaku kelipatan");
+  expect(preview()).toBe("Pratinjau: Beli 2 PCS Bolt Ikan 800gr / Bolt Donat 800gr (campur varian) → potongan Rp1.000 per PCS ANC Creamy Stick, berlaku kelipatan");
 });
 
 it("'Tambah semua hasil' adds every variant found, and each item keeps its own unit dropdown (mixing variants/units)", async () => {
@@ -95,7 +95,8 @@ it("'Tambah semua hasil' adds every variant found, and each item keeps its own u
   const sel = byLabel("Satuan Bolt Ikan 800gr") as HTMLSelectElement;
   expect([...sel.options].map((o) => o.value)).toEqual(["PCS", "BOX"]);
   await set(sel, "BOX");
-  expect(preview()).toContain("Bolt Ikan 800gr");
+  expect(preview()).toContain("Bolt Ikan 800gr (BOX)");
+  expect(preview()).toContain("(campur varian, campur satuan)");
   await click(byLabel("Buang Bolt Donat 800gr"));
   expect(host.textContent).toContain("1 barang dipilih");
 });
@@ -122,7 +123,7 @@ it("hasil: maksimum diskon only exists for percent; kelipatan toggles the senten
   await set(byLabel("Jenis potongan")!, "percent");
   await set(q("input[name=hasil-nilai]")!, "50");
   await set(q("input[name=hasil-maks]")!, "5000");
-  expect(preview()).toContain("potongan 50% (maks. Rp5.000/unit)");
+  expect(preview()).toContain("potongan 50% per PCS ANC Creamy Stick, maks. diskon Rp5.000 per PCS");
   await click(q("input[name=kelipatan]"));
   expect(preview()).toContain("sekali saja");
   await set(byLabel("Jenis potongan")!, "nominal");
@@ -170,11 +171,65 @@ it("stale version: the edit stays on screen with a reload prompt; reloading refr
   await click(btn("Muat ulang data terbaru"));
   expect(m.router.refresh).toHaveBeenCalled();
   expect(sessionStorage.getItem("vetos:paket-draft:v1:owner1:" + PID)).toContain("Edit saya");
-  // after the reload the page re-mounts with the new version: the draft is restored with a clear notice
+  // after the reload the page re-mounts with the NEW version: the old draft is NOT applied silently — the user chooses
   await act(async () => root.unmount()); root = createRoot(host);
-  await mount({ mode: "ubah", promoId: PID, version: V2, initialForm: filled() });
+  await mount({ mode: "ubah", promoId: PID, version: V2, initialForm: filled({ name: "Versi server" }) });
+  expect((q("input[name=nama]") as HTMLInputElement).value).toBe("Versi server");
+  expect(btn("Pakai draf saya")).toBeTruthy();
+  expect(btn("Buang draf")).toBeTruthy();
+  expect(host.textContent).toContain("Data promo sudah berubah di server");
+  expect(sessionStorage.getItem("vetos:paket-draft:v1:owner1:" + PID)).toContain("Edit saya");
+});
+
+it("stale refresh: 'Pakai draf saya' applies the old draft on the new version token (explicit choice), 'Buang draf' drops it", async () => {
+  const key = "vetos:paket-draft:v1:owner1:" + PID;
+  const stored = () => sessionStorage.setItem(key, JSON.stringify({ baseVersion: V1, form: filled({ name: "Edit saya" }), at: 1 }));
+  stored();
+  await mount({ mode: "ubah", promoId: PID, version: V2, initialForm: filled({ name: "Versi server" }) });
+  await click(btn("Pakai draf saya"));
   expect((q("input[name=nama]") as HTMLInputElement).value).toBe("Edit saya");
-  expect(host.textContent).toContain("Draf Anda dipulihkan");
+  expect(btn("Pakai draf saya")).toBeUndefined();
+  expect(JSON.parse(sessionStorage.getItem(key)!).baseVersion).toBe(V2);
+  await act(async () => root.unmount()); root = createRoot(host); sessionStorage.clear(); stored();
+  await mount({ mode: "ubah", promoId: PID, version: V2, initialForm: filled({ name: "Versi server" }) });
+  await click(btn("Buang draf"));
+  expect((q("input[name=nama]") as HTMLInputElement).value).toBe("Versi server");
+  expect(btn("Buang draf")).toBeUndefined();
+  expect(sessionStorage.getItem(key)).toBeNull();
+});
+
+it("a draft saved for the SAME version is restored directly (with the plain notice), no choice banner", async () => {
+  const key = "vetos:paket-draft:v1:owner1:" + PID;
+  sessionStorage.setItem(key, JSON.stringify({ baseVersion: V1, form: filled({ name: "Edit saya" }), at: 1 }));
+  await mount({ mode: "ubah", promoId: PID, version: V1, initialForm: filled() });
+  expect((q("input[name=nama]") as HTMLInputElement).value).toBe("Edit saya");
+  expect(host.textContent).toContain("Draf Anda dipulihkan dari browser ini");
+  expect(btn("Pakai draf saya")).toBeUndefined();
+});
+
+it("a draft is never restored over an ACTIVE (locked) promo, nor over a waiver-locked one for ADMIN; the stale draft is cleared", async () => {
+  const key = "vetos:paket-draft:v1:owner1:" + PID;
+  sessionStorage.setItem(key, JSON.stringify({ baseVersion: V1, form: filled({ name: "Draf lama" }), at: 1 }));
+  await mount({ mode: "ubah", promoId: PID, version: V1, initialForm: filled({ name: "Yang aktif" }), active: true });
+  expect((q("input[name=nama]") as HTMLInputElement).value).toBe("Yang aktif");
+  expect(preview()).not.toContain("Draf lama");
+  expect(host.textContent).not.toContain("Draf Anda dipulihkan");
+  expect(btn("Pakai draf saya")).toBeUndefined();
+  expect(sessionStorage.getItem(key)).toBeNull();
+  await act(async () => root.unmount()); root = createRoot(host);
+  sessionStorage.setItem(key, JSON.stringify({ baseVersion: V1, form: filled({ name: "Draf lama" }), at: 1 }));
+  await mount({ role: "ADMIN", mode: "ubah", promoId: PID, version: V1, initialForm: filled({ name: "Berizin Owner", belowHpp: { allowed: true, reason: "barang reject sisa gudang" } }) });
+  expect((q("input[name=nama]") as HTMLInputElement).value).toBe("Berizin Owner");
+  expect(sessionStorage.getItem(key)).toBeNull();
+});
+
+it("after a successful save, later drafts carry the NEW version as base (a reload does not show a misleading 'server changed' notice)", async () => {
+  m.simpan.mockResolvedValue({ ok: true, id: PID, version: V2, active: false });
+  await mount({ mode: "ubah", promoId: PID, version: V1, initialForm: filled() });
+  await set(q("input[name=nama]")!, "Satu");
+  await click(btn(/Simpan sebagai draf/));
+  await set(q("input[name=nama]")!, "Dua");
+  expect(JSON.parse(sessionStorage.getItem("vetos:paket-draft:v1:owner1:" + PID)!).baseVersion).toBe(V2);
 });
 
 it("a successful save clears the saved browser draft", async () => {
@@ -227,8 +282,8 @@ it("OWNER sees the below-HPP block: estimated loss per unit from HPP, an explici
   m.simpan.mockResolvedValue({ ok: true, id: PID, version: V1, active: false });
   await mount({ initialForm: filled() });
   expect(m.taksir).toHaveBeenCalledWith([{ item_id: ANC, unit: "PCS" }], []);
-  expect(host.textContent).toContain("rugi Rp500/unit");
-  expect(host.textContent).toContain("di BAWAH HPP");
+  expect(host.textContent).toContain("rugi sekitar Rp500/unit");
+  expect(host.textContent).toContain("Perkiraan di bawah modal");
   const box = q("input[name=izin-hpp]") as HTMLInputElement;
   expect(host.textContent).toContain("Saya mengerti dan mengizinkan penjualan di bawah HPP untuk promo ini");
   expect(box.checked).toBe(false);
@@ -241,12 +296,42 @@ it("OWNER sees the below-HPP block: estimated loss per unit from HPP, an explici
   expect(m.simpan.mock.calls[0][0].form.belowHpp).toEqual({ allowed: true, reason: "barang mendekati expired" });
 });
 
+const BELUM = "Izin di bawah modal belum tersedia (fitur belum dirilis). Naikkan harga/diskon hadiah di atas modal, atau tunggu fitur dirilis.";
+it("below-HPP estimate from REAL stock layers (hard tier): says activation is blocked — never 'tetap bisa diaktifkan' / 'kasir mau menjual'; waiver flag OFF → 'belum tersedia' wording", async () => {
+  m.taksir.mockResolvedValue(belowHpp);
+  await mount({ initialForm: filled() });
+  const t = host.textContent!;
+  expect(t).toContain("tidak bisa diaktifkan");
+  expect(t).toContain(BELUM);
+  expect(t).not.toContain("tetap bisa disimpan dan diaktifkan");
+  expect(t).not.toContain("tetap bisa diaktifkan");
+  expect(t).not.toContain("kasir mau menjual");
+});
+it("hard tier with the below_hpp flag ON: blocked unless the Owner waiver exists (Owner is told to tick it, Admin to ask the Owner)", async () => {
+  m.taksir.mockResolvedValue(belowHpp);
+  await mount({ initialForm: filled(), belowHppReleased: true });
+  expect(host.textContent).toContain("tidak bisa diaktifkan tanpa izin Owner");
+  expect(host.textContent).not.toContain("belum tersedia (fitur belum dirilis)");
+  await mount({ initialForm: filled(), belowHppReleased: true, role: "ADMIN" });
+  expect(host.textContent).toContain("tidak bisa diaktifkan tanpa izin Owner");
+  expect(host.textContent).toContain("Minta Owner mengizinkan");
+});
+it("soft tier (estimate only from master buy price): can be activated, but the cashier may refuse selling the reward", async () => {
+  m.taksir.mockResolvedValue({ ok: true, rows: [{ item_id: ANC, unit: "PCS", price: 15000, hpp: 14500, source: "harga_beli" }] });
+  await mount({ initialForm: filled() });
+  const t = host.textContent!;
+  expect(t).toContain("bisa disimpan dan diaktifkan");
+  expect(t).toContain("kasir bisa menolak penjualan barang hadiah");
+  expect(t).not.toContain("tidak bisa diaktifkan");
+  expect(t).not.toContain(BELUM);
+});
+
 it("ADMIN never gets the waiver checkbox; the estimate is shown with an 'ask the Owner' explanation", async () => {
   m.taksir.mockResolvedValue(belowHpp);
   await mount({ role: "ADMIN", initialForm: filled() });
   expect(q("input[name=izin-hpp]")).toBeNull();
   expect(host.textContent).toContain("hanya dapat diizinkan oleh Owner");
-  expect(host.textContent).toContain("rugi Rp500/unit");
+  expect(host.textContent).toContain("rugi sekitar Rp500/unit");
 });
 
 it("ADMIN opening a promo that already carries the Owner's waiver cannot edit it (only deactivate)", async () => {
@@ -278,4 +363,125 @@ it("branch picker: default 'Semua cabang', choosing branches is reflected in the
   await click(q("input[name=cabang-" + CAB2 + "]"));
   await click(btn(/Simpan sebagai draf/));
   expect(m.simpan.mock.calls[0][0].form.branchIds).toEqual([CAB2]);
+});
+
+it("activation that succeeds with a below-HPP estimate shows the warning (not an error)", async () => {
+  m.status.mockResolvedValue({ ok: true, id: PID, version: V2, active: true, warning: "Peringatan: perkiraan di bawah modal; perlu izin Owner. Dengan promo ini harga jual barang hasil (Rp14.000) di bawah perkiraan HPP (Rp14.500)." });
+  await mount({ mode: "ubah", promoId: PID, version: V1, initialForm: filled() });
+  await click(btn(/Aktifkan/));
+  expect(host.textContent).toContain("Promo aktif");
+  expect(host.textContent).toContain("perkiraan di bawah modal; perlu izin Owner");
+  expect(alertText()).not.toContain("perkiraan di bawah modal");
+});
+
+it("several branches with different price/HPP: one estimate row per distinct combination, named by branch", async () => {
+  m.taksir.mockResolvedValue({ ok: true, rows: [
+    { item_id: ANC, unit: "PCS", price: 15000, hpp: 13000, source: "lapisan", branch_ids: [CAB1] },
+    { item_id: ANC, unit: "PCS", price: 13500, hpp: 14000, source: "lapisan", branch_ids: [CAB2] },
+  ] });
+  await mount({ initialForm: filled() });
+  const rows = [...host.querySelectorAll("table[aria-label='Taksiran HPP barang hasil'] tbody tr")].map((r) => r.textContent);
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toContain("Cabang Satu");
+  expect(rows[1]).toContain("Cabang Dua");
+  expect(host.textContent).toContain("rugi sekitar Rp1.500/unit"); // CAB2: 13.500 - 1.000 = 12.500 < 14.000
+});
+
+it("with the Owner's waiver ticked the below-HPP note is neutral ('diizinkan Owner'), not a warning that asks for permission", async () => {
+  m.taksir.mockResolvedValue(belowHpp);
+  await mount({ initialForm: filled({ belowHpp: { allowed: true, reason: "barang mendekati expired" } }) });
+  expect(host.textContent).toContain("diizinkan Owner");
+  expect(host.textContent).not.toContain("perlu izin Owner");
+});
+
+// ───────────── accessibility ─────────────
+it("every form control has an accessible name (label association or aria-label): numeric inputs, selects, reason, picker", async () => {
+  m.taksir.mockResolvedValue(belowHpp);
+  await mount({ initialForm: filled(), role: "OWNER" });
+  await set(byLabel("Jenis potongan")!, "percent");
+  await click(q("input[name=izin-hpp]"));
+  const controls = [...host.querySelectorAll("input,select,textarea")].filter((e) => (e as HTMLInputElement).type !== "hidden") as (HTMLInputElement | HTMLSelectElement)[];
+  expect(controls.length).toBeGreaterThan(12);
+  const nameless = controls.filter((e) => !(e.getAttribute("aria-label")?.trim() || e.getAttribute("aria-labelledby") || (e.labels && e.labels.length > 0 && [...e.labels].some((l) => l.textContent?.trim()))));
+  expect(nameless.map((e) => e.outerHTML.slice(0, 90))).toEqual([]);
+  const ids = controls.map((e) => e.id).filter(Boolean);
+  expect(new Set(ids).size).toBe(ids.length);
+  // the visible label text is what names the numeric inputs
+  expect((q("input[name=syarat-min-0]") as HTMLInputElement).labels![0].textContent).toContain("Kuantitas minimum");
+  expect((q("input[name=hasil-nilai]") as HTMLInputElement).labels![0].textContent).toContain("Persen potongan");
+  expect((q("input[name=hasil-maks]") as HTMLInputElement).labels![0].textContent).toContain("Maksimum diskon");
+  expect((q("input[name=hasil-jumlah]") as HTMLInputElement).labels![0].textContent).toContain("Unit hasil");
+});
+
+it("ids stay unique with several syarat rows", async () => {
+  await mount({ initialForm: filled() });
+  await click(btn("+ Syarat Promo")); await click(btn("+ Syarat Promo"));
+  const ids = [...host.querySelectorAll("[id]")].map((e) => e.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect((q("input[name=syarat-min-2]") as HTMLInputElement).labels![0].textContent).toContain("Kuantitas minimum");
+});
+
+const key = (el: HTMLElement, k: string) => act(async () => { el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true })); });
+it("item picker: combobox/listbox roles, ArrowDown/ArrowUp move aria-activedescendant, Enter adds the highlighted item, Escape closes", async () => {
+  await mount();
+  const search = byLabel("Cari barang syarat 1") as HTMLInputElement;
+  expect(search.getAttribute("role")).toBe("combobox");
+  expect(search.getAttribute("aria-autocomplete")).toBe("list");
+  await set(search, "bolt");
+  const opts = () => [...host.querySelectorAll("[role=listbox] [role=option]")] as HTMLElement[];
+  expect(opts()).toHaveLength(2);
+  expect(opts().every((o) => !!o.id)).toBe(true);
+  expect(new Set(opts().map((o) => o.id)).size).toBe(2);
+  expect(search.getAttribute("aria-activedescendant")).toBeNull();
+  expect(opts().map((o) => o.getAttribute("aria-selected"))).toEqual(["false", "false"]);
+  await key(search, "ArrowDown");
+  expect(search.getAttribute("aria-activedescendant")).toBe(opts()[0].id);
+  expect(opts().map((o) => o.getAttribute("aria-selected"))).toEqual(["true", "false"]);
+  await key(search, "ArrowDown");
+  expect(search.getAttribute("aria-activedescendant")).toBe(opts()[1].id);
+  await key(search, "ArrowDown"); // wraps
+  expect(search.getAttribute("aria-activedescendant")).toBe(opts()[0].id);
+  await key(search, "ArrowUp"); // wraps backwards
+  expect(search.getAttribute("aria-activedescendant")).toBe(opts()[1].id);
+  await key(search, "Enter");
+  expect(host.textContent).toContain("1 barang dipilih");
+  expect(host.querySelector("table[aria-label='Barang terpilih syarat 1']")!.textContent).toContain("Bolt Donat 800gr"); // the 2nd hit, not the first
+  expect((byLabel("Cari barang syarat 1") as HTMLInputElement).value).toBe("");
+  await set(byLabel("Cari barang syarat 1")!, "bolt");
+  await key(byLabel("Cari barang syarat 1")!, "Escape");
+  expect(host.querySelectorAll("[role=listbox]").length).toBe(0);
+  expect((byLabel("Cari barang syarat 1") as HTMLInputElement).value).toBe("");
+});
+
+it("item picker: Enter with nothing highlighted still adds the first hit; the highlight resets when the query changes", async () => {
+  await mount();
+  const search = byLabel("Cari barang hasil") as HTMLInputElement;
+  await set(search, "bolt");
+  await key(search, "ArrowDown"); await key(search, "ArrowDown");
+  await set(search, "bolt i");
+  expect(search.getAttribute("aria-activedescendant")).toBeNull();
+  await key(search, "Enter");
+  expect(host.querySelector("table[aria-label='Barang terpilih hasil']")!.textContent).toContain("Bolt Ikan 800gr");
+});
+
+// ───────────── Salin promo (Andri 5.2) ─────────────
+it("'Salin promo' on a saved promo (also an ACTIVE one, without deactivating) creates the copy server-side and opens it in the editor", async () => {
+  m.salin.mockResolvedValue({ ok: true, id: "77777777-7777-4777-8777-777777777777", version: V2, active: false });
+  await mount({ mode: "ubah", promoId: PID, version: V1, initialForm: filled(), active: true });
+  await click(btn("Salin promo"));
+  expect(m.salin).toHaveBeenCalledWith({ id: PID });
+  expect(m.router.push).toHaveBeenCalledWith("/crm/promo/paket/77777777-7777-4777-8777-777777777777?salinan=1");
+});
+
+it("'Salin promo' failure stays on the page with the Indonesian message; unsaved edits disable it; a brand-new promo has none", async () => {
+  m.salin.mockResolvedValue({ ok: false, message: "Salinan gagal: x" });
+  await mount({ mode: "ubah", promoId: PID, version: V1, initialForm: filled() });
+  await click(btn("Salin promo"));
+  expect(alertText()).toContain("Salinan gagal: x");
+  expect(m.router.push).not.toHaveBeenCalled();
+  await set(q("input[name=nama]")!, "Diubah");
+  expect(btn("Salin promo")!.disabled).toBe(true);
+  await act(async () => root.unmount()); root = createRoot(host);
+  await mount();
+  expect(btn("Salin promo")).toBeUndefined();
 });
