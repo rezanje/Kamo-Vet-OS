@@ -2,7 +2,7 @@ import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { voucherStatus, type VoucherRow } from "@/lib/voucher";
-import { lineDiscount } from "@/lib/pos-calc";
+import { diskonSale, muatKampanye, ringkasKampanye } from "@/lib/laporan-kampanye";
 import { rentangBulan } from "@/lib/pertumbuhan";
 import { hariIniWIB, tanggalWIB } from "@/lib/tanggal";
 import { tanggalIndo } from "@/lib/followup";
@@ -37,7 +37,7 @@ export default async function PromoPage({
   const akhir = `${sampai}T23:59:59+07:00`;
 
   const supabase = await createClient();
-  const [{ data: salesData }, { data: invData }, { data: voucherData }, { data: promoData }, { data: targetData }] =
+  const [{ data: salesData }, { data: invData }, { data: voucherData }, { data: promoData }, { data: targetData }, kampanyeData] =
     await Promise.all([
       completeReportQuery(supabase.from("sales")
         .select("id, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, created_at, branch_id, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)", { count: "exact" })
@@ -47,13 +47,15 @@ export default async function PromoPage({
         .is("voided_at", null).gte("created_at", mulai).lte("created_at", akhir)),
       completeReportQuery(supabase.from("vouchers")
         .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id", { count: "exact" })),
-      completeReportQuery(supabase.from("promos").select("id, name, promo_type", { count: "exact" })),
+      completeReportQuery(supabase.from("promos").select("id, name, promo_type, valid_until", { count: "exact" })),
       // Hanya target murni cabang / perusahaan. Target per karyawan atau per kategori
       // sengaja tidak dijumlah di sini — kalau digabung, satu omzet bisa terhitung
       // memenuhi beberapa target sekaligus dan rasionya jadi mengarang.
       completeReportQuery(supabase.from("sales_targets")
         .select("id, periode, branch_id, basis, target", { count: "exact" })
         .is("employee_id", null).is("category_id", null)),
+      // Kode kampanye (C05) dibaca seumur hidup supaya sisa kuota benar; rentang disaring di ringkasKampanye.
+      muatKampanye(supabase as never),
     ]);
 
   type SaleItem = {
@@ -91,17 +93,7 @@ export default async function PromoPage({
     const cabang = one(s.branches)?.name ?? "—";
     const row = perCabang.get(cabang) ?? kosong(cabang, s.branch_id);
     const items = s.sale_items ?? [];
-    const diskonItem = items.reduce((a, l) => a + lineDiscount({
-      qty: Number(l.qty) || 0, harga: Number(l.harga) || 0,
-      item_discount_type: (l.item_discount_type as "nominal" | "percent" | null) ?? null,
-      item_discount_value: Number(l.item_discount_value) || 0,
-      promo_discount: Number(l.promo_discount) || 0,
-    }), 0);
-    const golongan = Number(s.diskon_kategori) || 0;
-    const poin = Number(s.poin_digunakan) || 0;
-    // `discount` menyimpan seluruh potongan selain diskon golongan; sisanya setelah
-    // diskon item dan poin dikeluarkan = diskon manual kasir + voucher.
-    const lain = Math.max(0, (Number(s.discount) || 0) - diskonItem - poin);
+    const { item: diskonItem, golongan, poin, lain } = diskonSale(s);
 
     row.kotor += Number(s.subtotal) || 0;
     row.item += diskonItem;
@@ -143,6 +135,15 @@ export default async function PromoPage({
     kotor: a.kotor + r.kotor, item: a.item + r.item, golongan: a.golongan + r.golongan,
     poin: a.poin + r.poin, lain: a.lain + r.lain, total: a.total + r.total, omzet: a.omzet + r.omzet,
   }), { kotor: 0, item: 0, golongan: 0, poin: 0, lain: 0, total: 0, omzet: 0 });
+
+  // ── Kampanye / kode kampanye ───────────────────────────────────────────────
+  const kampanyeRows = ringkasKampanye({
+    kode: kampanyeData.kode,
+    vouchers: (voucherData ?? []) as unknown as { id: string; code: string; valid_until: string | null }[],
+    promos: (promoData ?? []) as unknown as { id: string; name: string; valid_until: string | null }[],
+    sales: kampanyeData.sales, invoices: kampanyeData.invoices,
+    mulai, akhir, hariIni: hariIniWIB(),
+  });
 
   // ── Target penjualan ───────────────────────────────────────────────────────
   const bulan = new Set(rentangBulan(dari, sampai));
@@ -345,7 +346,7 @@ export default async function PromoPage({
         </div>
       </div>
 
-      <div className="crm-sec" style={{ marginBottom: 0 }}>
+      <div className="crm-sec" style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>03 · DISKON PER CABANG</div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 1020 }}>
@@ -415,6 +416,81 @@ export default async function PromoPage({
             ? "Kolom target masih kosong karena belum ada satu pun target penjualan yang disimpan. Isi dulu di layar Target Penjualan (Penjualan → Target), lalu kolom Capaian akan terisi sendiri."
             : "Target yang dipakai hanya target murni per cabang atau se-perusahaan. Target per karyawan dan per kategori sengaja tidak ikut dijumlah supaya satu omzet tidak terhitung memenuhi beberapa target sekaligus."}
         </div>
+      </div>
+
+      <div id="kampanye" className="crm-sec" style={{ marginBottom: 0 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>04 · KAMPANYE / KODE KAMPANYE</div>
+        {!kampanyeData.tersedia ? (
+          <div style={{ fontSize: 10.5, color: "#b45309", lineHeight: 1.6 }}>
+            Data kode kampanye belum dapat dibaca (tabel atau kolom kampanye belum ada di database ini).
+            Bagian lain laporan ini tidak terpengaruh.
+          </div>
+        ) : (
+          <>
+            <div style={{ overflowX: "auto" }}>
+              <table className="tbl" style={{ minWidth: 1180 }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 130 }}>Kode</th>
+                    <th style={{ width: 170 }}>Ditautkan ke</th>
+                    <th style={{ width: 90 }}>Status</th>
+                    <th style={{ width: 150 }}>Dipakai di rentang</th>
+                    <th style={{ width: 150 }}>Kuota (seumur hidup)</th>
+                    <th style={{ width: 160, textAlign: "right" }}>Potongan pasti</th>
+                    <th style={{ width: 140, textAlign: "right" }}>Total diskon dokumen (maks.)</th>
+                    <th style={{ width: 170, textAlign: "right" }}>Omzet transaksi</th>
+                    <th style={{ width: 170 }}>Cabang</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kampanyeRows.map((k) => (
+                    <tr key={k.code} style={k.pakai ? undefined : { opacity: .65 }}>
+                      <td style={{ fontSize: 11.5, fontWeight: 700 }}>{k.code}{k.note ? <div style={{ fontSize: 9.5, fontWeight: 400, color: "var(--td)" }}>{k.note}</div> : null}</td>
+                      <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{k.tujuan}</td>
+                      <td style={{ fontSize: 10.5, fontWeight: 600, color: k.status === "aktif" ? "#15803d" : k.status === "nonaktif" ? "var(--td)" : "#b45309" }}>{k.status}</td>
+                      <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: k.pakai ? "#15803d" : "var(--td)" }}>{`${k.pakai}x`}</span>
+                        <div>{`POS ${k.pakaiPos} · Klinik ${k.pakaiKlinik}`}</div>
+                        {k.tidakDihitung > 0 && <div style={{ color: "var(--td)" }}>{`${k.tidakDihitung} dokumen tidak dihitung (batal / belum final)`}</div>}
+                      </td>
+                      <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                        {k.maxUses == null
+                          ? `${k.terpakaiSemua}x terpakai · tanpa batas`
+                          : <>{`${k.terpakaiSemua} / ${k.maxUses} terpakai`}<div style={{ fontWeight: 700, color: k.sisa ? "var(--tm)" : "#b45309" }}>{`sisa ${k.sisa}`}</div></>}
+                      </td>
+                      <td style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>
+                        {k.potongan.pos == null
+                          ? "tidak terpisah"
+                          : <><span style={{ fontWeight: 700, color: "#b45309" }}>{rp(k.potongan.pos)}</span>{!k.potongan.eksak && <div style={{ fontSize: 9.5 }}>POS saja; klinik tidak terpisah</div>}</>}
+                      </td>
+                      <td style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>{k.diskonDokumen ? rp(k.diskonDokumen) : "—"}</td>
+                      <td style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>
+                        <span style={{ fontWeight: 700 }}>{k.omzet ? rp(k.omzet) : "—"}</span>
+                        {k.omzet > 0 && <div style={{ fontSize: 9.5 }}>{`POS ${rp(k.omzetPos)} · Klinik ${rp(k.omzetKlinik)}`}</div>}
+                      </td>
+                      <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{k.cabang.length ? k.cabang.map((c) => `${c.nama} (${c.n})`).join(", ") : "—"}</td>
+                    </tr>
+                  ))}
+                  {kampanyeRows.length === 0 && (
+                    <TabelKosong kolom={9} pesan="Belum ada kode kampanye. Kode dibuat di CRM → Kode Kampanye." />
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
+              Pemakaian menghitung hanya dokumen yang sudah final dan tidak dibatalkan: struk kasir yang pembayarannya
+              sudah selesai dan invoice klinik yang tidak batal — sama dengan hitungan database yang menjaga batas kode.
+              Struk batal atau belum final tidak dihitung; yang batal tidak memakan kuota. Invoice klinik yang diterbitkan
+              ulang dihitung satu kali (yang asli batal). Nota pendamping rombongan klinik tidak membawa kode sehingga
+              tidak dihitung sebagai pemakaian. Rentang tanggal mengikuti tanggal dokumen dibuat, sama dengan tabel lain; pilihan
+              promo otomatis di atas tidak memengaruhi tabel ini. Kuota dihitung seumur hidup kode, bukan hanya di rentang.<br />
+              &quot;Potongan pasti&quot; hanya terisi untuk kode terikat promo (nilai promo yang tercatat di struk, angka yang sama
+              dengan tabel 02). Potongan kode terikat voucher menyatu dengan diskon manual kasir di struk, dan potongan klinik
+              tidak disimpan per promo, jadi tidak ditebak. &quot;Total diskon dokumen&quot; adalah seluruh diskon pada struk/invoice
+              yang memakai kode — batas atas, bisa mencakup diskon manual atau golongan.
+            </div>
+          </>
+        )}
       </div>
     </LaporanPage>
   );
