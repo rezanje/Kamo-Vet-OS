@@ -529,6 +529,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 <span style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)" }}>KERANJANG ({cart.length})</span>
                 {cart.length > 0 && !correction?.fullEdit && <button type="button" onClick={clear} className="back-btn" style={{ fontSize: 10, color: "#b91c1c" }}>Hapus semua</button>}
               </div>
+              {correction?.fullEdit && cart.some(r => r.prescription_item_id) && <div data-hapus-petunjuk style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6 }}>
+                <i className="ti ti-lock" /> Baris bergembok sudah tersimpan di rekam medis dan tidak bisa dihapus dari Edit. BMHP: pakai Ubah BMHP lalu ×.
+                Supaya item tidak ditagih, hapus barisnya di layar Pembayaran. Racikan: lewat Aksi racikan.
+              </div>}
               <div style={{ minHeight: 60, overflowX: "auto" }}>
                 {cart.length === 0 ? (
                   <div style={{ fontSize: 10.5, color: "var(--td)", padding: "8px 0" }}>Belum ada item. Tambah obat/jasa dari kiri.</div>
@@ -602,7 +606,15 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                           </td>
                           <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(r.qty * r.harga)}</td>
                           <td style={{ textAlign: "center" }}>
-                            {!r.prescription_item_id && <i className="ti ti-x" onClick={() => del(r.key)} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />}
+                            {!r.prescription_item_id
+                              ? <i className="ti ti-x" onClick={() => del(r.key)} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />
+                              // Database menolak menghapus baris resep tersimpan dari Edit (RECORD_INVALID); tombol hapus
+                              // yang hilang tanpa tanda terbaca sebagai kerusakan (laporan Andri 4 Nov), jadi tampilkan gembok.
+                              : <i className="ti ti-lock" role="img" data-baris-terkunci aria-label={`${r.nama_obat} tersimpan, tidak bisa dihapus dari Edit`}
+                                title={r.compound_recipe_id
+                                  ? "Racikan sudah diracik (stok bahan sudah keluar) — koreksi lewat Aksi racikan."
+                                  : "Baris tersimpan tidak bisa dihapus dari Edit. Supaya tidak ditagih, hapus barisnya di layar Pembayaran."}
+                                style={{ color: "var(--td)", fontSize: 13 }} />}
                           </td>
                         </tr>
                       ))}
