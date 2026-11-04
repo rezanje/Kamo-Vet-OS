@@ -165,7 +165,7 @@ export default async function PembayaranPage({
     tanggal: new Date(visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
   };
   if (inpat && !query.invoice_id) return InpatientPaymentPage({db:supabase,visitId,recordId:inpat.id,branchId:visit.branch_id,userId:draftUser?.id??"",query,
-    patient,catatanResep:mr?.catatan_resep??null,stayStatus:inpat.discharged_at?"Sudah pulang":"Masih dirawat"});
+    patient,catatanResep:mr?.catatan_resep??null,stayStatus:inpat.discharged_at?"Sudah pulang":"Masih dirawat",visitDoctorId:visit.doctor_id??null});
 
   // Status ulasan pemilik ditaruh di atas layar bayar: kalau dia pernah kasih
   // bintang 1, kasir klinik tahu sebelum bicara soal uang.

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ error: null as null | {message:string}, readOnly: true, malformed: false }));
+vi.mock("@/lib/service-performers-server", () => ({ loadServiceStaff: async () => [], loadBranchGroomingPolicy: async () => ({ applies: false, doctorRequired: false }) }));
 vi.mock('@/lib/clinic-payment', () => ({ loadClinicPaymentMaster: async () => ({ obat: [], jasa: [] }), loadClinicPackages: async () => [] }));
 vi.mock('@/lib/dp-minimal', () => ({ getDpMinimalPercent: async () => 50, bolehMenerobosDp: () => false }));
 vi.mock('@/app/(app)/klinik/pembayaran/[visitId]/InpatientCashier', () => ({ InpatientCashier: () => <form data-editable-cashier>Editable payment</form> }));
