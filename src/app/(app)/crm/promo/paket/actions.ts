@@ -112,8 +112,22 @@ async function periksaDiBawahHpp(supabase: Awaited<ReturnType<typeof createClien
   const worstOf = (list: typeof bad) => list.reduce((a, b) => (b.e.lossPerUnit > a.e.lossPerUnit ? b : a));
   const hard = bad.filter((x) => x.r.source === "lapisan");
   const sentence = (w: (typeof bad)[number]) => `Dengan promo ini harga jual barang hasil (${rp(w.e.netPerUnit)}) di bawah perkiraan HPP (${rp(w.e.hpp ?? 0)}), rugi sekitar ${rp(w.e.lossPerUnit)}/unit.`;
-  if (hard.length) return { warning: null, block: `Aktivasi ditolak: perkiraan di bawah modal; perlu izin Owner. ${sentence(worstOf(hard))} Kasir akan menolak penjualannya. Minta Owner mencentang izin penjualan di bawah HPP di editor, atau naikkan harga hasil / kecilkan potongan.` };
-  return { block: null, warning: `Peringatan: perkiraan di bawah modal; perlu izin Owner. ${sentence(worstOf(bad))} Taksiran ini hanya dari harga beli (belum ada lapisan stok), jadi promo tetap diaktifkan; kasir menolak penjualan di bawah HPP sampai Owner mencentang izin di editor.` };
+  if (hard.length) {
+    // Izin di bawah modal hanya bisa disimpan (dan nanti dihormati kasir) setelah saklar 'below_hpp' dirilis; saklar mati / tak terbaca = belum tersedia.
+    const izinTersedia = await belowHppDirilis(supabase);
+    const saran = izinTersedia
+      ? "Minta Owner mencentang izin penjualan di bawah HPP di editor, atau naikkan harga hasil / kecilkan potongan."
+      : "Izin di bawah modal belum tersedia (fitur belum dirilis). Naikkan harga/diskon hadiah di atas modal, atau tunggu fitur dirilis.";
+    return { warning: null, block: `Aktivasi ditolak: perkiraan di bawah modal; perlu izin Owner. ${sentence(worstOf(hard))} Kasir akan menolak penjualannya. ${saran}` };
+  }
+  return { block: null, warning: `Peringatan: perkiraan di bawah modal; perlu izin Owner. ${sentence(worstOf(bad))} Taksiran ini hanya dari harga beli (belum ada lapisan stok), jadi promo tetap diaktifkan; jika benar di bawah modal, kasir bisa menolak penjualan barang hadiah ini.` };
+}
+
+async function belowHppDirilis(supabase: Awaited<ReturnType<typeof createClient>>): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc("promo_release_enabled", { p_flag: "below_hpp" });
+    return !error && data === true;
+  } catch { return false; }
 }
 
 async function terapkanStatus(supabase: Awaited<ReturnType<typeof createClient>>, input: { id: string; version: string; active: boolean }, known?: unknown): Promise<PaketSaveResult> {
@@ -166,7 +180,9 @@ async function bikinSalinan(supabase: Awaited<ReturnType<typeof createClient>>, 
   if (readError) return { ok: false, message: pesanGalatPaket(readError) };
   const source = paketFormFromSnapshot(snap as never);
   if (!source) return { ok: false, message: "Promo ini bukan promo paket, jadi tidak bisa disalin di sini." };
-  const form: PaketForm = { ...source, name: `Salinan dari ${source.name}`.slice(0, 120), validFrom: hariIniWIB(), validUntil: "", belowHpp: { allowed: false, reason: "" } };
+  // Menyalin salinan: jangan menumpuk "Salinan dari Salinan dari …".
+  const dasar = source.name.replace(/^(Salinan dari )+/, "") || source.name;
+  const form: PaketForm = { ...source, name: `Salinan dari ${dasar}`.trim().slice(0, 120), validFrom: hariIniWIB(), validUntil: "", belowHpp: { allowed: false, reason: "" } };
   const ukuran = cekUkuranPaket(form);
   if (ukuran.length) return { ok: false, message: ukuran.map((i) => i.message).join(" "), issues: ukuran };
   let items: Map<string, PaketItemInfo>;

@@ -15,12 +15,12 @@ import s from "./PaketEditor.module.css";
 type Role = "OWNER" | "ADMIN";
 type Props = {
   userId: string; mode: "baru" | "ubah"; promoId?: string; version?: string; initialForm: PaketForm; active: boolean;
-  items: PaketItemInfo[]; branches: { id: string; name: string }[]; role: Role; today: string; released: boolean;
+  items: PaketItemInfo[]; branches: { id: string; name: string }[]; role: Role; today: string; released: boolean; belowHppReleased?: boolean;
 };
 const draftKey = (userId: string, scope: string) => `vetos:paket-draft:v1:${userId}:${scope}`;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-export function PaketEditor({ userId, mode, promoId, version: initialVersion, initialForm, active: initialActive, items, branches, role, today, released }: Props) {
+export function PaketEditor({ userId, mode, promoId, version: initialVersion, initialForm, active: initialActive, items, branches, role, today, released, belowHppReleased = false }: Props) {
   const router = useRouter();
   const isOwner = role === "OWNER";
   const [form, setForm] = useState<PaketForm>(initialForm);
@@ -294,8 +294,19 @@ export function PaketEditor({ userId, mode, promoId, version: initialVersion, in
               </div>
             ) : (
               <div key={`${r.item_id}|${r.unit}|${idx}`} className={s.bannerRed} style={{ marginTop: 5 }} role="status">
-                Perkiraan di bawah modal: dengan promo ini harga jual {nameOf(r.item_id)} ({r.unit}){cabangLabel(r)} {rp(e.netPerUnit)} di bawah perkiraan HPP {rp(e.hpp ?? 0)} (rugi sekitar {rp(e.lossPerUnit)}/unit); perlu izin Owner agar kasir mau menjual. Promo tetap bisa disimpan dan diaktifkan.
-                {!isOwner && " Minta Owner mengizinkan, atau naikkan harga / kecilkan potongan."}
+                {r.source === "lapisan" ? (
+                  <>
+                    Perkiraan di bawah modal (dari lapisan stok): dengan promo ini harga jual {nameOf(r.item_id)} ({r.unit}){cabangLabel(r)} {rp(e.netPerUnit)} di bawah perkiraan HPP {rp(e.hpp ?? 0)} (rugi sekitar {rp(e.lossPerUnit)}/unit). Promo bisa disimpan sebagai draf, tetapi tidak bisa diaktifkan tanpa izin Owner.
+                    {belowHppReleased
+                      ? (isOwner ? " Centang izin Owner di bawah, atau naikkan harga / kecilkan potongan." : " Minta Owner mengizinkan, atau naikkan harga / kecilkan potongan.")
+                      : " Izin di bawah modal belum tersedia (fitur belum dirilis). Naikkan harga/diskon hadiah di atas modal, atau tunggu fitur dirilis."}
+                  </>
+                ) : (
+                  <>
+                    Perkiraan di bawah modal (hanya dari harga beli master): dengan promo ini harga jual {nameOf(r.item_id)} ({r.unit}){cabangLabel(r)} {rp(e.netPerUnit)} di bawah perkiraan HPP {rp(e.hpp ?? 0)} (rugi sekitar {rp(e.lossPerUnit)}/unit). Promo bisa disimpan dan diaktifkan, tetapi kasir bisa menolak penjualan barang hadiah ini.
+                    {!isOwner && " Minta Owner mengizinkan, atau naikkan harga / kecilkan potongan."}
+                  </>
+                )}
               </div>
             ))}
             {takDiketahui.length > 0 && <div className={s.bannerAmber} style={{ marginTop: 5 }} role="status">HPP tidak terbaca untuk: {takDiketahui.map(({ r }) => nameOf(r.item_id)).join(", ")}. Rugi tidak bisa ditaksir; kasir tetap menolak penjualan di bawah HPP tanpa izin Owner.</div>}

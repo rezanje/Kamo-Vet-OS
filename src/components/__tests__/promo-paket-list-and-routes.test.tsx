@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const m = vi.hoisted(() => ({
   toggleLegacy: vi.fn(), togglePaket: vi.fn(), salin: vi.fn(), editorProps: null as null | Record<string, unknown>,
-  role: "OWNER", active: true, snapshot: null as unknown, snapshotError: null as null | { message: string }, flag: true as boolean | null, flagError: null as null | { code: string; message: string },
+  role: "OWNER", active: true, snapshot: null as unknown, snapshotError: null as null | { message: string }, flag: true as boolean | null, belowFlag: false as boolean | null, flagError: null as null | { code: string; message: string },
   itemsError: false, promos: [] as Record<string, unknown>[], rpc: [] as { name: string; args: unknown }[],
 }));
 vi.mock("next/navigation", () => ({
@@ -24,7 +24,7 @@ vi.mock("@/lib/supabase/server", () => ({
     rpc: async (name: string, args: unknown) => {
       m.rpc.push({ name, args });
       if (name === "read_promo_edit") return { data: m.snapshot, error: m.snapshotError };
-      if (name === "promo_release_enabled") return { data: m.flag, error: m.flagError };
+      if (name === "promo_release_enabled") return { data: (args as { p_flag?: string })?.p_flag === "below_hpp" ? m.belowFlag : m.flag, error: m.flagError };
       return { data: null, error: null };
     },
     from(table: string) {
@@ -86,7 +86,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-04T03:00:00Z"));
   sessionStorage.clear(); m.toggleLegacy.mockReset(); m.togglePaket.mockReset(); m.salin.mockReset(); m.editorProps = null; m.rpc = [];
-  Object.assign(m, { role: "OWNER", active: true, snapshot: null, snapshotError: null, flag: true, flagError: null, itemsError: false, promos: [row("legacy1"), shRow("sh1"), shRow("sh2", { is_active: true, branch_ids: ["b1"] })] });
+  Object.assign(m, { role: "OWNER", active: true, snapshot: null, snapshotError: null, flag: true, belowFlag: false, flagError: null, itemsError: false, promos: [row("legacy1"), shRow("sh1"), shRow("sh2", { is_active: true, branch_ids: ["b1"] })] });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); });
@@ -163,8 +163,38 @@ it("shows the success/error banners of the paket toggle in Indonesian", async ()
   await list({ success: "paket-aktif-peringatan" });
   expect(host.textContent).toContain("Promo paket diaktifkan.");
   expect(host.textContent).toContain("di bawah modal");
+  expect(host.textContent).toContain("Peringatan");
+  expect(host.textContent).toContain("kasir bisa menolak penjualan barang hadiah");
+  expect(host.textContent).not.toContain("sampai Owner mengizinkan");
   await list({ error: "Fitur promo paket belum dirilis oleh Owner." });
   expect(host.textContent).toContain("Fitur promo paket belum dirilis oleh Owner.");
+});
+
+it("the warning success banner is a visibly different (amber, role=status) warning; the plain success banner stays green", async () => {
+  await list({ success: "paket-aktif" });
+  const ok = host.querySelector(".p2ban") as HTMLElement;
+  const okBg = ok.style.background, okIcon = ok.querySelector("i")!.className;
+  await list({ success: "paket-aktif-peringatan" });
+  const warn = host.querySelector(".p2ban") as HTMLElement;
+  expect(warn.style.background).not.toBe(okBg);
+  expect(warn.querySelector("i")!.className).toContain("alert-triangle");
+  expect(warn.querySelector("i")!.className).not.toBe(okIcon);
+  expect(warn.getAttribute("role")).toBe("status");
+});
+
+it("list-row 'Salin promo' button is disabled while the copy is pending (no double-click duplicates)", async () => {
+  let release!: () => void;
+  m.salin.mockImplementation(() => new Promise<void>((r) => { release = r; }));
+  await list();
+  const f = rowOf("sh1")!.querySelectorAll("form")[1];
+  const b = f.querySelector("button")!;
+  expect(b.disabled).toBe(false);
+  await act(async () => { f.requestSubmit(); });
+  expect(b.disabled).toBe(true);
+  await act(async () => { b.click(); });
+  expect(m.salin).toHaveBeenCalledTimes(1);
+  await act(async () => { release(); });
+  expect(b.disabled).toBe(false);
 });
 
 it("a 'Buat Promo Paket' entry is offered to managers only, next to the Promo/Voucher tabs (PR #362 import block untouched)", async () => {
@@ -192,7 +222,10 @@ it("a legacy promo still opens the legacy editor (no redirect)", async () => {
 it("/paket/baru: managers get an empty editor with active Persediaan items (units merged, Jasa/inactive excluded), branches, role and the release flag", async () => {
   await renderNode(await NewPaketPage());
   const p = m.editorProps!;
-  expect(p.mode).toBe("baru"); expect(p.role).toBe("OWNER"); expect(p.released).toBe(true);
+  expect(p.mode).toBe("baru"); expect(p.role).toBe("OWNER"); expect(p.released).toBe(true); expect(p.belowHppReleased).toBe(false);
+  m.belowFlag = true;
+  await renderNode(await NewPaketPage());
+  expect(m.editorProps!.belowHppReleased).toBe(true);
   const items = p.items as { id: string; units: string[]; active: boolean }[];
   expect(items.map((i) => i.id).sort()).toEqual(["iANC", "iDONAT", "iIKAN"]);
   expect(items.find((i) => i.id === "iIKAN")!.units).toEqual(["PCS", "BOX"]);
@@ -232,6 +265,11 @@ it("/paket/[id]: opens the stored promo with the page version token, the form bu
   expect(m.rpc.find((c) => c.name === "read_promo_edit")!.args).toEqual({ p_id: SH_ID });
   expect(p).toMatchObject({ mode: "ubah", promoId: SH_ID, version: "c".repeat(32), active: true });
   expect(p.initialForm).toMatchObject({ name: "Beli 2 Bolt", branchIds: ["b1"], belowHpp: { allowed: true, reason: "barang reject sisa" } });
+  expect(p.belowHppReleased).toBe(false);
+  m.belowFlag = true;
+  await renderNode(await PaketPage({ params: Promise.resolve({ id: SH_ID }) }));
+  expect(m.editorProps!.belowHppReleased).toBe(true);
+  expect(m.rpc.some((c) => c.name === "promo_release_enabled" && (c.args as { p_flag: string }).p_flag === "below_hpp")).toBe(true);
 });
 it("/paket/[id]: bad id, STAFF, unreadable promo → no editor; a LEGACY promo is sent to the legacy editor", async () => {
   await renderNode(await PaketPage({ params: Promise.resolve({ id: "not-a-uuid" }) }));

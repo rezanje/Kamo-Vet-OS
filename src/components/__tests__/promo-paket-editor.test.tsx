@@ -284,7 +284,6 @@ it("OWNER sees the below-HPP block: estimated loss per unit from HPP, an explici
   expect(m.taksir).toHaveBeenCalledWith([{ item_id: ANC, unit: "PCS" }], []);
   expect(host.textContent).toContain("rugi sekitar Rp500/unit");
   expect(host.textContent).toContain("Perkiraan di bawah modal");
-  expect(host.textContent).toContain("perlu izin Owner");
   const box = q("input[name=izin-hpp]") as HTMLInputElement;
   expect(host.textContent).toContain("Saya mengerti dan mengizinkan penjualan di bawah HPP untuk promo ini");
   expect(box.checked).toBe(false);
@@ -295,6 +294,36 @@ it("OWNER sees the below-HPP block: estimated loss per unit from HPP, an explici
   await set(q("input[name=izin-hpp-alasan]")!, "barang mendekati expired");
   await click(btn(/Simpan sebagai draf/));
   expect(m.simpan.mock.calls[0][0].form.belowHpp).toEqual({ allowed: true, reason: "barang mendekati expired" });
+});
+
+const BELUM = "Izin di bawah modal belum tersedia (fitur belum dirilis). Naikkan harga/diskon hadiah di atas modal, atau tunggu fitur dirilis.";
+it("below-HPP estimate from REAL stock layers (hard tier): says activation is blocked — never 'tetap bisa diaktifkan' / 'kasir mau menjual'; waiver flag OFF → 'belum tersedia' wording", async () => {
+  m.taksir.mockResolvedValue(belowHpp);
+  await mount({ initialForm: filled() });
+  const t = host.textContent!;
+  expect(t).toContain("tidak bisa diaktifkan");
+  expect(t).toContain(BELUM);
+  expect(t).not.toContain("tetap bisa disimpan dan diaktifkan");
+  expect(t).not.toContain("tetap bisa diaktifkan");
+  expect(t).not.toContain("kasir mau menjual");
+});
+it("hard tier with the below_hpp flag ON: blocked unless the Owner waiver exists (Owner is told to tick it, Admin to ask the Owner)", async () => {
+  m.taksir.mockResolvedValue(belowHpp);
+  await mount({ initialForm: filled(), belowHppReleased: true });
+  expect(host.textContent).toContain("tidak bisa diaktifkan tanpa izin Owner");
+  expect(host.textContent).not.toContain("belum tersedia (fitur belum dirilis)");
+  await mount({ initialForm: filled(), belowHppReleased: true, role: "ADMIN" });
+  expect(host.textContent).toContain("tidak bisa diaktifkan tanpa izin Owner");
+  expect(host.textContent).toContain("Minta Owner mengizinkan");
+});
+it("soft tier (estimate only from master buy price): can be activated, but the cashier may refuse selling the reward", async () => {
+  m.taksir.mockResolvedValue({ ok: true, rows: [{ item_id: ANC, unit: "PCS", price: 15000, hpp: 14500, source: "harga_beli" }] });
+  await mount({ initialForm: filled() });
+  const t = host.textContent!;
+  expect(t).toContain("bisa disimpan dan diaktifkan");
+  expect(t).toContain("kasir bisa menolak penjualan barang hadiah");
+  expect(t).not.toContain("tidak bisa diaktifkan");
+  expect(t).not.toContain(BELUM);
 });
 
 it("ADMIN never gets the waiver checkbox; the estimate is shown with an 'ask the Owner' explanation", async () => {
