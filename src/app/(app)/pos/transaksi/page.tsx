@@ -6,7 +6,7 @@ import { loadServiceStaff } from "@/lib/service-performers-server";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
-import { loadSyaratHasilPerCabang } from "@/lib/promo-syarat-hasil-checkout";
+import { loadSyaratHasilTampilanPerCabang, pisahTampilanSyaratHasil } from "@/lib/pos-promo-picker";
 import { readCompleteList } from "@/lib/checked-list";
 import { loadKodeKampanyeAktif } from "@/lib/kode-kampanye";
 import { loadActiveVouchers } from "@/lib/voucher-loader";
@@ -77,7 +77,8 @@ export default async function TransaksiPage({
       .map(async branch => [branch.id, await loadServiceStaff(supabase, branch.id)] as const)),
   ]);
 
-  const syaratHasilPerCabang = await loadSyaratHasilPerCabang(supabase, (branches ?? []).map(branch => branch.id));
+  // Promo syarat-hasil per cabang (tampilan) + cabang yang boleh memakai pemilih promo (flag promo_picker). Keduanya undefined bila tidak ada yang berlaku.
+  const { syaratHasilPerCabang, promoPickerPerCabang } = pisahTampilanSyaratHasil(await loadSyaratHasilTampilanPerCabang(supabase, (branches ?? []).map(branch => branch.id)));
 
   const { data: openShift } = await supabase
     .from("cashier_shifts").select("id").eq("opened_by", user?.id ?? "").eq("status", "open")
@@ -121,6 +122,7 @@ export default async function TransaksiPage({
         hargaPerCabang={hargaPerCabang}
         promoPerCabang={Object.fromEntries(promoEntries)}
         syaratHasilPerCabang={syaratHasilPerCabang}
+        promoPickerPerCabang={promoPickerPerCabang}
         aturanDiskon={Object.fromEntries(discountEntries)}
         infoBarang={Object.fromEntries(itemInfo)}
         kodeKampanye={kodeKampanye}

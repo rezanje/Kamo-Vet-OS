@@ -131,20 +131,31 @@ export async function checkoutSale(formData: FormData) {
   try { syaratHasil = await loadSyaratHasilKasir(supabase, branchId); }
   catch (error) { redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Promo belum dapat dibaca. Muat ulang halaman.")}`); }
   const shDefs = promoKodeId ? [] : syaratHasil.defs;
+  // Pemilih promo (flag promo_picker) - sama dengan kasir petshop: promoPick = "" | auto | none (Tanpa promo: SEMUA promo batal, termasuk Bolt) | <id promo> (HANYA promo itu, eksklusif).
+  // Nilai selain kosong/auto ditolak, bukan diabaikan: tanpa flag (atau tanpa definisi syarat-hasil) pilihan "Tanpa promo"/id basi akan diam-diam jatuh ke harga Bolt/legacy.
   const pickRaw = String(formData.get("promoPick") ?? "").trim();
-  // Pilihan promo dari layar kasir tidak ada di POS belakang: nilai selain kosong/auto ditolak, bukan diabaikan - juga bila tidak ada definisi syarat-hasil
-  // (tanpa itu pilihan "Tanpa promo"/id basi akan diam-diam jatuh ke harga Bolt/legacy).
-  if (pickRaw !== "" && pickRaw !== "auto") {
+  const promoMode: "auto" | "tanpa" | "pilih" = pickRaw === "none" ? "tanpa" : pickRaw === "" || pickRaw === "auto" ? "auto" : "pilih";
+  const pickId = promoMode === "pilih" ? pickRaw : null;
+  if (promoMode !== "auto" && !(syaratHasil.released && syaratHasil.pickerReleased)) {
     redirect(`/pos/transaksi?error=${encodeURIComponent("Fitur ganti promo belum tersedia di POS belakang. Pakai pilihan otomatis.")}`);
+  }
+  if (pickRaw !== "" && !/^[A-Za-z0-9_-]{1,64}$/.test(pickRaw)) redirect(`/pos/transaksi?error=${encodeURIComponent("Pilihan promo tidak dikenal. Muat ulang halaman.")}`);
+  if (promoMode !== "auto" && promoKodeId) {
+    redirect(`/pos/transaksi?error=${encodeURIComponent("Pilihan promo tidak bisa dipakai bersama kode kampanye yang memaksa promo tertentu. Hapus kode kampanye atau pilih Otomatis.")}`);
+  }
+  if (promoMode !== "auto" && shDefs.length === 0) {
+    redirect(`/pos/transaksi?error=${encodeURIComponent("Pilihan promo tidak dapat dipakai: tidak ada promo yang bisa dipilih untuk transaksi ini. Muat ulang halaman.")}`);
   }
   const composeFor = (excludedIds: string[]) => composeSyaratHasilCart({
     rows: rows.map((r) => ({ ...r, item_id: r.item_id ?? "", officialPrice: r.item_id ? r.harga : undefined })),
-    defs: shDefs, legacy: (list, only) => legacyRincian(list, only), mode: "auto", excludedIds,
+    defs: shDefs, legacy: (list, only) => legacyRincian(list, only), mode: promoMode, pickId, excludedIds,
   });
   let composed: ReturnType<typeof composeFor> | null = null;
   let hppDropped: { promo_id: string; name: string | null; reason: string }[] = [];
   if (shDefs.length > 0) {
     composed = composeFor([]);
+    // Angka yang tampil di layar POS (layar tidak tahu HPP): hasil hitung SEBELUM promo di bawah modal dilepas.
+    const savingOnScreen = composed.savings.total;
     if (composed.strategy === "syarat_hasil") {
       // Hadiah di bawah HPP FIFO tanpa izin Owner dilepas (dicatat), bukan dijual rugi diam-diam; butuh gudang untuk kuotasi dan posting atomik.
       const { data: whQuote } = await supabase.from("warehouses").select("id").eq("branch_id", branchId).eq("is_active", true).order("type").limit(1).maybeSingle();
@@ -156,12 +167,36 @@ export async function checkoutSale(formData: FormData) {
         redirect(`/pos/transaksi?error=${encodeURIComponent("HPP aktif belum dapat dibaca lengkap. Muat ulang halaman.")}`);
       }
     }
+    if (promoMode === "pilih" && !composed.pick.ok) {
+      const dropped = hppDropped.find((d) => d.promo_id === pickId);
+      redirect(`/pos/transaksi?error=${encodeURIComponent(dropped
+        ? `Promo "${dropped.name ?? "pilihan"}" tidak bisa dipakai: hadiah di bawah modal (HPP). Pilih Otomatis atau Tanpa promo.`
+        : "Promo pilihan tidak lagi berlaku. Muat ulang halaman.")}`);
+    }
+    // promoExpect sengaja OPSIONAL (kosong/tidak ada = tidak dicek): harga yang dipakai tetap hasil hitung server, pengecekan ini hanya
+    // perlindungan UX agar kasir tidak menagih angka yang berbeda dari layarnya. PosClient mengirimkannya bila pemilih promo aktif.
+    // Beda dengan kasir petshop: layar POS tidak tahu HPP, jadi bila server melepas promo di bawah modal, angka layar (sebelum dilepas) juga diterima.
+    const expectedRaw = formData.get("promoExpect");
+    if (expectedRaw !== null && String(expectedRaw) !== "") {
+      const expected = Number(expectedRaw), actual = composed.savings.total;
+      const matches = (n: number) => Math.round(expected) === Math.round(n);
+      if (!Number.isFinite(expected) || !(matches(actual) || (hppDropped.length > 0 && matches(savingOnScreen)))) {
+        const rp = (n: number) => `Rp${Math.round(n).toLocaleString("id-ID")}`;
+        redirect(`/pos/transaksi?error=${encodeURIComponent(`Potongan promo di layar (${rp(expected)}) berbeda dengan hitungan server (${rp(actual)}). Muat ulang halaman lalu coba lagi.`)}`);
+      }
+    }
     const origin = rows.slice();
     rows.splice(0, rows.length, ...composed.rows.map((r) => ({ ...(composedToLine(r, true) as unknown as (typeof rows)[number]), item_id: origin[r.origin_index].item_id })));
     rincianPromo = composed.rows.flatMap((r, lineIndex) => (r.promo_id && r.promo_discount > 0 ? [{ lineIndex, item_id: r.item_id ?? "", promoId: r.promo_id, potongan: r.promo_discount, qtyKena: r.qty, promoName: r.promo_name ?? "" }] : []));
   }
-  const promoHeader = composed && (composed.strategy === "syarat_hasil" || hppDropped.length > 0)
-    ? { promo_pick_mode: "auto", promo_selection: buildPromoSelection(composed, "auto", user.id, { dropped: hppDropped }) }
+  // Ringkasan promo (audit/tampilan saja; uangnya ada di baris): ditulis hanya bila promo syarat-hasil dipakai, ada promo yang dilepas HPP,
+  // atau kasir memilih Tanpa promo / satu promo. Selain itu kolom ini tidak ditulis sama sekali.
+  const promoHeader = composed && (composed.strategy === "syarat_hasil" || promoMode !== "auto" || hppDropped.length > 0)
+    ? {
+      promo_pick_mode: promoMode,
+      ...(promoMode === "pilih" ? { promo_pick_id: pickId, promo_pick_exclusive: true } : {}),
+      promo_selection: buildPromoSelection(composed, promoMode, user.id, { pickId, exclusive: true, dropped: hppDropped }),
+    }
     : null;
   if (kampanye) {
     const tolak = pesanKampanyeDitolak(kampanye,

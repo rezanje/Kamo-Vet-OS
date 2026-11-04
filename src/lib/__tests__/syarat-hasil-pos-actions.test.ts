@@ -6,10 +6,11 @@ const COST: Record<string, number> = { item: 17040, other: 17040, anc: 10000 };
 const state = vi.hoisted(() => ({
   calls: [] as { name: string; args: unknown }[], headers: [] as Record<string, unknown>[], items: [] as Record<string, unknown>[], removed: false,
   finalizationError: "", pool: true, shRows: [] as Record<string, unknown>[], flags: {} as Record<string, boolean>, prior: null as null | Record<string, unknown>,
-  insertError: null as null | { table: string; message: string }, stock: true,
+  insertError: null as null | { table: string; message: string }, stock: true, campaign: null as null | Record<string, unknown>,
 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
+vi.mock("@/lib/kode-kampanye", async original => ({ ...await original<typeof import("@/lib/kode-kampanye")>(), bacaKodeKampanye: async () => state.campaign }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "POS-SH-BO" }) }));
 vi.mock("@/lib/posting", () => ({ postJournal: async () => {} }));
@@ -71,7 +72,7 @@ const rpcNames = () => state.calls.map(c => c.name);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  Object.assign(state, { calls: [], headers: [], items: [], removed: false, finalizationError: "", pool: true, shRows: [], flags: {}, prior: null, insertError: null, stock: true });
+  Object.assign(state, { calls: [], headers: [], items: [], removed: false, finalizationError: "", pool: true, shRows: [], flags: {}, prior: null, insertError: null, stock: true, campaign: null });
 });
 
 function form(lines: [string | null, number][], extra: Record<string, string> = {}, forged: Record<string, unknown> = {}) {
@@ -168,23 +169,186 @@ it("a free-text line (no item) in the cart keeps its null item and is never a pr
   expect(await run(form([["item", 2], ["anc", 1], [null, 1]]))).toContain("/struk/sale");
   expect(state.items.map(i => [i.item_id, i.qty, i.promo_id])).toEqual([["item", 2, null], ["anc", 1, "sh1"], [null, 1, null]]);
 });
-it("the cashier picker is not available on the back office yet: any promoPick other than auto is refused (never silently ignored)", async () => {
+const PICKER_OFF = { syarat_hasil: true, promo_picker: false, below_hpp: false };
+const onlyKnownWrites = () => state.calls.filter(c => c.name !== "promo_release_enabled");
+
+// ---------------------------------------------------------------------------------------------------- picker flag OFF: forged picks stay refused
+it("promo_picker flag OFF (syarat_hasil ON): every promoPick other than ''/auto is refused with the existing message, nothing written, no posting RPC; auto/'' unchanged", async () => {
   state.shRows = [shPromo(3000)];
-  state.flags = ON;
-  for (const pick of ["none", "sh1"]) expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick }))).toContain("belum tersedia");
-  expect(state.headers).toHaveLength(0);
+  state.flags = PICKER_OFF;
+  for (const pick of ["none", "sh1", "pool", "ghost", "x;drop"]) {
+    expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick })), pick).toContain("Fitur ganti promo belum tersedia di POS belakang");
+    expect(state.headers, pick).toHaveLength(0);
+    expect(onlyKnownWrites(), pick).toEqual([]);
+  }
+  for (const pick of ["auto", ""]) { Object.assign(state, { headers: [], items: [], prior: null, calls: [] }); expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick }))).toContain("/pos/struk/sale"); expect(state.headers[0]).toMatchObject({ total: 52000, promo_pick_mode: "auto" }); }
 });
 
-it("L1: a forged non-auto promoPick is refused (not ignored) when there are NO syarat-hasil definitions - flags OFF, flags ON with only an unparsable row - nothing is written; auto/empty are untouched", async () => {
-  for (const [rows, flags] of [[[], {}], [[{ id: "broken", name: "Rusak", rule: { discount_mode: "syarat_hasil", syarat_hasil: { version: 1 } }, branch_ids: null, valid_from: null, valid_until: null }], ON]] as const) {
+// ---------------------------------------------------------------------------------------------------- picker flag ON: the picker (mirror of the cashier)
+it("picker ON, 'Tanpa promo' (none): ALL promos incl. the Bolt pool are cancelled, header records mode 'tanpa' (no pick id), lines carry no promo and no claim, pool posting path", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "none" }))).toContain("/pos/struk/sale");
+  expect(state.headers[0]).toMatchObject({ subtotal: 55000, total: 55000, discount: 0, promo_pick_mode: "tanpa" });
+  expect(state.headers[0]).not.toHaveProperty("promo_pick_id");
+  expect(state.headers[0]).not.toHaveProperty("promo_pick_exclusive");
+  expect(state.headers[0].promo_selection).toMatchObject({ version: 1, mode: "tanpa", pick: null, exclusive: false, strategy: "none", applied: [], by_user: "actor" });
+  expect(state.items.map(i => [i.item_id, i.qty, i.promo_id, i.promo_discount, i.quantity_pool_claim])).toEqual([["item", 2, null, 0, false], ["anc", 1, null, 0, false]]);
+  for (const i of state.items) for (const k of claimKeys) expect(i).not.toHaveProperty(k);
+  expect(rpcNames()).toContain("quantity_pool_post_backoffice_atomic");
+  expect(rpcNames()).not.toContain("pos_post_promo_atomic");
+});
+it("picker ON, 'Tanpa promo' on a cart with no Bolt item: plain finalize_pos_sale, mode 'tanpa' recorded, full price", async () => {
+  state.pool = false; state.shRows = [shPromo(3000)]; state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "none" }))).toContain("/pos/struk/sale");
+  expect(state.headers[0]).toMatchObject({ total: 55000, promo_pick_mode: "tanpa" });
+  expect(rpcNames()).toContain("finalize_pos_sale");
+});
+it("picker ON, exclusive pick of a syarat-hasil promo that LOSES the automatic comparison: that promo is applied alone, the Bolt pool is off, header says pilih + id + exclusive", async () => {
+  state.shRows = [shPromo(1000)];            // auto = pool (53000); the cashier insists on the bundle
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "sh1" }))).toContain("/pos/struk/sale");
+  expect(state.headers[0]).toMatchObject({ total: 54000, discount: 1000, promo_pick_mode: "pilih", promo_pick_id: "sh1", promo_pick_exclusive: true });
+  expect(state.headers[0].promo_selection).toMatchObject({ mode: "pilih", pick: "sh1", exclusive: true, strategy: "syarat_hasil", applied: [{ promo_id: "sh1", discount: 1000 }] });
+  expect(state.items.map(i => [i.item_id, i.qty, i.promo_id, i.promo_discount, i.quantity_pool_claim])).toEqual([["item", 2, null, 0, false], ["anc", 1, "sh1", 1000, false]]);
+  expect(rpcNames().filter(n => n === "pos_post_promo_atomic")).toHaveLength(1);
+});
+it("picker ON, exclusive pick of the Bolt pool while the bundle would win: pool alone, no claim columns, header pilih/pool/exclusive", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "pool" }))).toContain("/pos/struk/sale");
+  expect(state.headers[0]).toMatchObject({ total: 53000, promo_pick_mode: "pilih", promo_pick_id: "pool", promo_pick_exclusive: true });
+  expect(state.items.map(i => [i.item_id, i.promo_id, i.promo_discount, i.quantity_pool_claim])).toEqual([["item", "pool", 2000, true], ["anc", null, 0, false]]);
+  for (const i of state.items) for (const k of claimKeys) expect(i).not.toHaveProperty(k);
+  expect(rpcNames()).toContain("quantity_pool_post_backoffice_atomic");
+});
+it("picker ON, auto / empty: unchanged result (bundle wins, mode auto, no pick id)", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  for (const pick of ["auto", ""]) {
+    Object.assign(state, { headers: [], items: [], prior: null, calls: [] });
+    expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick }))).toContain("/pos/struk/sale");
+    expect(state.headers[0]).toMatchObject({ total: 52000, promo_pick_mode: "auto" });
+    expect(state.headers[0]).not.toHaveProperty("promo_pick_id");
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------- stale / forged picks are REFUSED (never a silent fallback)
+it("stale pick: the picked promo no longer applies to the cart -> refused with 'Promo pilihan tidak lagi berlaku', nothing written", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  const out = await run(form([["item", 1], ["other", 1]], { promoPick: "sh1" })); // no ANC reward in the cart: the bundle does not apply
+  expect(out).toContain("Promo pilihan tidak lagi berlaku");
+  expect(state.headers).toHaveLength(0);
+  expect(onlyKnownWrites()).toEqual([]);
+});
+it("forged pick ids (unknown, malformed, >64 chars, SQL-ish, expired, other-branch promo) are refused and nothing is written", async () => {
+  const other = { ...shPromo(3000), id: "sh2", branch_ids: ["elsewhere"] };
+  const expired = { ...shPromo(3000), id: "sh3", valid_until: "2026-10-01" };
+  state.shRows = [shPromo(3000), other, expired];
+  state.flags = ON;
+  for (const pick of ["ghost", "sh2", "sh3", "x;drop table sales", "a".repeat(65), "sh1'--", "../etc", "none "]) {
+    Object.assign(state, { headers: [], items: [], prior: null, calls: [] });
+    const out = await run(form([["item", 2], ["anc", 1]], { promoPick: pick }));
+    if (pick === "none ") { expect(out).toContain("/pos/struk/sale"); continue; } // trimmed like the cashier: this is 'none'
+    expect(out, pick).toMatch(/Pilihan promo tidak dikenal|Promo pilihan tidak lagi berlaku/);
+    expect(state.headers, pick).toHaveLength(0);
+    expect(state.items, pick).toHaveLength(0);
+    expect(onlyKnownWrites(), pick).toEqual([]);
+  }
+});
+it("a malformed id gets the 'tidak dikenal' message; an unknown but well-formed id gets 'tidak lagi berlaku'", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "x;drop" }))).toContain("Pilihan promo tidak dikenal. Muat ulang halaman.");
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "a".repeat(65) }))).toContain("Pilihan promo tidak dikenal. Muat ulang halaman.");
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "a".repeat(64) }))).toContain("Promo pilihan tidak lagi berlaku. Muat ulang halaman.");
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "ghost" }))).toContain("Promo pilihan tidak lagi berlaku. Muat ulang halaman.");
+});
+it("a pick of a promo whose reward would sell below FIFO cost (no waiver) is refused with the HPP message, not silently dropped to the pool", async () => {
+  state.shRows = [shPromo(6000)];
+  state.flags = ON;
+  const out = await run(form([["item", 2], ["anc", 1]], { promoPick: "sh1" }));
+  expect(out).toContain("hadiah di bawah modal (HPP). Pilih Otomatis atau Tanpa promo.");
+  expect(state.headers).toHaveLength(0);
+});
+it("a campaign code that forces a promo cannot be combined with a pick (picker ON): refused; with picker OFF the old refusal; auto still works", async () => {
+  state.shRows = [shPromo(3000)];
+  state.campaign = { code: "BOLT26", voucher_id: null, promo_id: "pool", is_active: true, max_uses: null, vouchers: null };
+  state.flags = ON;
+  for (const pick of ["none", "sh1", "pool"]) {
+    expect(await run(form([["item", 2], ["other", 1]], { promoPick: pick, voucherCode: "BOLT26" })), pick).toContain("Pilihan promo tidak bisa dipakai bersama kode kampanye yang memaksa promo tertentu");
+    expect(state.headers).toHaveLength(0);
+  }
+  state.flags = PICKER_OFF;
+  expect(await run(form([["item", 2], ["other", 1]], { promoPick: "none", voucherCode: "BOLT26" }))).toContain("belum tersedia");
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["other", 1]], { promoPick: "auto", voucherCode: "BOLT26" }))).toContain("/pos/struk/sale");
+});
+it("forged promo_pick_* / promo_selection form fields are never read: the header comes from the server's own composition", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  const forged = { promo_pick_mode: "pilih", promo_pick_id: "ghost", promo_pick_exclusive: "true", promo_selection: "x".repeat(9000) };
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "none", ...forged }))).toContain("/pos/struk/sale");
+  expect(state.headers[0]).toMatchObject({ promo_pick_mode: "tanpa" });
+  expect(state.headers[0]).not.toHaveProperty("promo_pick_id");
+  expect(Buffer.byteLength(JSON.stringify(state.headers[0].promo_selection))).toBeLessThan(8192);
+  expect(state.headers[0].promo_selection).toMatchObject({ mode: "tanpa", pick: null });
+});
+
+// ---------------------------------------------------------------------------------------------------- promoExpect (UX guard, same rule as the cashier)
+it("promoExpect: equal to the server saving passes; different / NaN / Infinity / negative are refused with the screen-vs-server message; empty or absent skips the check", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoExpect: "3000" }))).toContain("/pos/struk/sale");
+  for (const v of ["", undefined]) { Object.assign(state, { headers: [], items: [], prior: null, calls: [] }); expect(await run(form([["item", 2], ["anc", 1]], v === undefined ? {} : { promoExpect: v }))).toContain("/pos/struk/sale"); }
+  for (const v of ["2999", "3001", "99999", "abc", "NaN", "Infinity", "-3000", "0"]) {
+    Object.assign(state, { headers: [], items: [], prior: null, calls: [] });
+    expect(await run(form([["item", 2], ["anc", 1]], { promoExpect: v })), v).toContain("berbeda dengan hitungan server");
+    expect(state.headers, v).toHaveLength(0);
+  }
+});
+it("promoExpect with a pick: 'Tanpa promo' expects 0, the picked bundle expects its own saving; the automatic number is refused for a pick (stale screen)", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "none", promoExpect: "0" }))).toContain("/pos/struk/sale");
+  Object.assign(state, { headers: [], items: [], prior: null, calls: [] });
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "none", promoExpect: "3000" }))).toContain("berbeda dengan hitungan server");
+  Object.assign(state, { headers: [], items: [], prior: null, calls: [] });
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "pool", promoExpect: "2000" }))).toContain("/pos/struk/sale");
+  Object.assign(state, { headers: [], items: [], prior: null, calls: [] });
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "pool", promoExpect: "3000" }))).toContain("berbeda dengan hitungan server");
+});
+it("promoExpect when the server drops a below-cost reward (the POS screen has no cost): the screen's pre-drop number OR the server's number is accepted, anything else is refused", async () => {
+  state.shRows = [shPromo(6000)];            // screen shows 6000; the server drops the bundle (reward below FIFO cost) and the pool prices the cart (2000)
+  state.flags = ON;
+  for (const v of ["6000", "2000"]) { Object.assign(state, { headers: [], items: [], prior: null, calls: [] }); expect(await run(form([["item", 2], ["anc", 1]], { promoExpect: v })), v).toContain("/pos/struk/sale"); expect(state.headers[0]).toMatchObject({ total: 53000 }); }
+  Object.assign(state, { headers: [], items: [], prior: null, calls: [] });
+  expect(await run(form([["item", 2], ["anc", 1]], { promoExpect: "4000" }))).toContain("berbeda dengan hitungan server");
+  expect(state.headers).toHaveLength(0);
+});
+it("promoExpect with flags OFF is ignored exactly as on main (no definitions: nothing to compare)", async () => {
+  expect(await run(form([["item", 1], ["other", 1]], { promoExpect: "99999" }))).toContain("/pos/struk/sale");
+});
+
+it("L1: with NO syarat-hasil definitions a non-auto promoPick is refused (never ignored): flags OFF -> the existing message; flags ON with only an unparsable active row -> 'tidak dapat dipakai'; nothing is written; auto/empty are untouched", async () => {
+  const broken = { id: "broken", name: "Rusak", rule: { discount_mode: "syarat_hasil", syarat_hasil: { version: 1 } }, branch_ids: null, valid_from: null, valid_until: null };
+  for (const [rows, flags, message] of [[[], {}, "belum tersedia"], [[broken], ON, "Pilihan promo tidak dapat dipakai: tidak ada promo yang bisa dipilih untuk transaksi ini. Muat ulang halaman."], [[broken], PICKER_OFF, "belum tersedia"]] as const) {
     Object.assign(state, { shRows: rows, flags, headers: [], items: [], prior: null, calls: [] });
     for (const pick of ["none", "sh1", "ghost"]) {
-      expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick })), pick).toContain("belum tersedia");
+      expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick })), pick).toContain(message);
       expect(state.headers).toHaveLength(0);
       expect(state.calls.filter(c => c.name !== "promo_release_enabled")).toEqual([]);
     }
     for (const pick of ["auto", ""]) { state.headers = []; state.items = []; state.prior = null; state.calls = []; expect(await run(form([["item", 2], ["anc", 1]], { promoPick: pick }))).toContain("/pos/struk/sale"); expect(state.headers).toHaveLength(1); }
   }
+});
+it("DB refusal of a picked sale (PROMO_SH_PICK from the finalizer) rolls the sale back with an Indonesian message", async () => {
+  state.shRows = [shPromo(1000)]; state.flags = ON;
+  state.finalizationError = "PROMO_SH_PICK: exclusive pick but another promo is on a line";
+  const out = await run(form([["item", 2], ["anc", 1]], { promoPick: "sh1" }));
+  expect(out).toContain("Promo bundling ditolak"); expect(out).not.toContain("PROMO_SH_");
+  expect(state.removed).toBe(true);
 });
 
 // ---------------------------------------------------------------------------------------------------- below-HPP

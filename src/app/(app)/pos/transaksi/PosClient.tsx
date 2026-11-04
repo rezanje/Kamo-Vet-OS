@@ -17,6 +17,7 @@ import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { totalPotonganPromo, type PromoHitung } from "@/lib/promo-hitung";
 import { aggregateServiceLines, serviceLinePromos } from "@/lib/service-line-promos";
 import { composeSyaratHasilCart } from "@/lib/promo-syarat-hasil-checkout";
+import { CATATAN_PROMO_DIBATALKAN, pesanPilihanPromo } from "@/lib/promo-pick-note";
 import type { SyaratHasilDef } from "@/lib/promo-syarat-hasil";
 import { posNetTotal, posSubtotal } from "@/lib/pos-money";
 import { bacaKode, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
@@ -50,7 +51,7 @@ export type HargaPerCabang = Record<string, Record<string, number>>; // branchId
 const TANPA_PELANGGAN: Cust[] = [];
 const NO_SH_DEFS: SyaratHasilDef[] = [];
 
-export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, syaratHasilPerCabang, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
+export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, syaratHasilPerCabang, promoPickerPerCabang, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
   items: Item[];
   /** Pelanggan yang sudah diketahui (opsional). Daftar lengkap tidak lagi dikirim — dicari di server. */
   customers?: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
@@ -59,6 +60,8 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
   promoPerCabang?: Record<string, PromoHitung[]>;
   /** Promo "syarat -> hasil" aktif per cabang. Hanya diisi server bila flag rilis DB menyala; tanpa ini layar persis seperti sebelumnya (tahap 4). */
   syaratHasilPerCabang?: Record<string, SyaratHasilDef[]>;
+  /** Cabang yang boleh memakai pemilih promo (flag rilis DB promo_picker). Tanpa ini tidak ada pemilih dan tidak ada field promoPick/promoExpect. */
+  promoPickerPerCabang?: Record<string, boolean>;
   /** C05: kode kampanye aktif + voucher tujuannya — hanya untuk tampilan; server memeriksa ulang. */
   kodeKampanye?: KodeKampanye[];
   voucherKampanye?: VoucherRow[];
@@ -87,6 +90,9 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
   // berasal dari akun di server dan tidak dapat dipilih dari layar.
   const [legacySalespersonId, setLegacySalespersonId] = useState("");
   const [checkoutKey, setCheckoutKey] = useState("");
+  // Pemilih promo (flag promo_picker): "auto" | "none" (Tanpa promo: SEMUA promo batal) | <id promo> = HANYA promo itu. Server menghitung ulang dan menolak pilihan basi.
+  const [pilihan, setPilihan] = useState("auto");
+  const [catatanPilihan, setCatatanPilihan] = useState("");
   const draftReady = useRef(false);
 
   useEffect(() => {
@@ -181,6 +187,7 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
   // dengan harga cabang lain yang tampil di layar.
   const gantiCabang = (id: string) => {
     setBranchId(id);
+    setPilihan("auto"); setCatatanPilihan("");
     setBulkPerformers(emptyServicePerformers());
     const ov = hargaPerCabang[id];
     setCart((c) => c.map((l) => ({
@@ -234,13 +241,26 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
     return {...line, officialPrice: unit?.sell_price, faktor: unit?.factor, manualOverride: line.harga !== unit?.sell_price};
   }));
   const rincianPromo = legacyBaris(cart);
-  // Promo "syarat -> hasil": komposer yang sama dengan server (checkoutSale); tanpa pemilih di layar ini. Server menghitung ulang dan melepas
-  // promo yang hadiahnya akan terjual di bawah HPP (layar tidak tahu HPP).
+  // Promo "syarat -> hasil": komposer yang sama dengan server (checkoutSale). Pemilih (Otomatis / satu promo / Tanpa promo) hanya bila flag promo_picker
+  // menyala untuk cabang ini DAN ada promo syarat-hasil aktif (sama dengan kasir petshop). Server menghitung ulang, menolak pilihan/angka yang basi,
+  // dan melepas promo yang hadiahnya akan terjual di bawah HPP (layar tidak tahu HPP: tidak ada angka modal yang dikarang di sini).
   const shDefs = kode.promoId ? NO_SH_DEFS : (syaratHasilPerCabang?.[branchId] ?? NO_SH_DEFS);
+  const pemilihAktif = !!promoPickerPerCabang?.[branchId] && shDefs.length > 0;
+  const pilihanEfektif = pemilihAktif ? pilihan : "auto";
+  const modePromo: "auto" | "tanpa" | "pilih" = pilihanEfektif === "none" ? "tanpa" : pilihanEfektif === "auto" ? "auto" : "pilih";
   const komposisi = shDefs.length === 0 ? null : composeSyaratHasilCart({
     rows: cart.map(line => ({ ...line, officialPrice: katalog.find(item => item.id === line.item_id)?.units.find(unit => unit.unit === line.satuan)?.sell_price })),
-    defs: shDefs, legacy: (list, only) => legacyBaris(list as unknown as typeof cart, only), mode: "auto",
+    defs: shDefs, legacy: (list, only) => legacyBaris(list as unknown as typeof cart, only), mode: modePromo, pickId: modePromo === "pilih" ? pilihanEfektif : null,
+    ...(pemilihAktif ? { legacyPromos: promoCabang.map((p) => ({ id: p.id, name: p.name })), withAlternatives: true } : {}),
   });
+  // Pilihan yang tidak berlaku lagi (isi keranjang berubah / pemilih mati): kembali ke Otomatis dengan penjelasan, tidak diam-diam.
+  // "Adjust state while rendering": selesai seketika karena pilihan menjadi "auto".
+  if (pemilihAktif && modePromo === "pilih" && komposisi && !komposisi.pick.ok) {
+    setCatatanPilihan("Promo yang dipilih tidak berlaku lagi untuk isi keranjang. Kembali ke Otomatis.");
+    setPilihan("auto");
+  } else if (!pemilihAktif && pilihan !== "auto") {
+    setPilihan("auto");
+  }
   const promoDiscount = komposisi ? komposisi.savings.total : totalPotonganPromo(rincianPromo);
   const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
   const diskonKategori = diskonGolonganKeranjang(
@@ -311,6 +331,8 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
       <input type="hidden" name="voucherCode" value={voucher} />
       <input type="hidden" name="bayar" value={bayar} />
       <input type="hidden" name="cart" value={JSON.stringify(cart)} />
+      {pemilihAktif && komposisi && <input type="hidden" name="promoPick" value={pilihanEfektif} />}
+      {pemilihAktif && komposisi && <input type="hidden" name="promoExpect" value={komposisi.savings.total} />}
 
       <div style={{ marginBottom: 9, display: "flex", gap: 7 }}>
         <select className="fi" value={branchId} onChange={(e) => gantiCabang(e.target.value)} style={{ width: 220 }} required>
@@ -440,6 +462,40 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
                 {komposisi.applied.filter((a) => a.kind === "syarat_hasil").map((a) => <div key={a.promo_id}>{a.name ?? "Promo"} · hemat {rp(a.discount)}</div>)}
                 <div style={{ color: "var(--tm)" }}>Bila hadiahnya akan terjual di bawah modal (HPP) tanpa izin Owner, server melepas promo ini dan total menjadi lebih tinggi.</div>
               </div>
+            )}
+            {komposisi && komposisi.notApplied.length > 0 && (
+              <div data-testid="pos-promo-tidak-dipakai" style={{ fontSize: 10, color: "#92400e", margin: "-2px 0 6px", lineHeight: 1.45 }}>
+                Promo lain berlaku tetapi tidak dipakai (promo di atas lebih hemat):
+                {komposisi.notApplied.map((n) => <div key={n.promo_id}>{n.name ?? "Promo"} · hemat {rp(n.saving)}</div>)}
+              </div>
+            )}
+            {pemilihAktif && modePromo === "tanpa" && (
+              <div data-testid="pos-promo-dibatalkan" role="status" style={{ fontSize: 10.5, color: "#b91c1c", margin: "2px 0 6px", lineHeight: 1.45 }}>
+                <b>{CATATAN_PROMO_DIBATALKAN}.</b> Tidak ada potongan promo (termasuk Bolt) pada transaksi ini; struk akan mencatatnya.
+              </div>
+            )}
+            {pemilihAktif && modePromo === "pilih" && komposisi && (
+              <div data-testid="pos-promo-pilihan-kasir" role="status" style={{ fontSize: 10.5, color: "#92400e", margin: "2px 0 6px", lineHeight: 1.45 }}>
+                {pesanPilihanPromo("pilih", { applied: komposisi.applied })}. Promo lain tidak ikut.
+              </div>
+            )}
+            {catatanPilihan && pemilihAktif && <div data-testid="pos-promo-pilihan-hilang" role="status" style={{ fontSize: 10.5, color: "#92400e", margin: "2px 0 6px" }}>{catatanPilihan}</div>}
+            {pemilihAktif && komposisi && (
+              <fieldset data-testid="pos-promo-pemilih" style={{ border: "1px solid var(--bd, #e5e7eb)", borderRadius: 6, padding: "4px 8px", margin: "4px 0 8px", fontSize: 10.5 }}>
+                <legend style={{ fontSize: 10.5, padding: "0 4px" }}>Promo (kasir bisa memilih satu)</legend>
+                <label data-testid="pos-promo-pilih-auto" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="radio" name="promoPilihUi" value="auto" checked={pilihanEfektif === "auto"} onChange={() => { setPilihan("auto"); setCatatanPilihan(""); }} /> Otomatis (yang paling hemat)
+                </label>
+                {komposisi.alternatives.map((a) => (
+                  <label key={a.promo_id} data-testid={`pos-promo-pilih-${a.promo_id}`} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="radio" name="promoPilihUi" value={a.promo_id} checked={pilihanEfektif === a.promo_id} onChange={() => { setPilihan(a.promo_id); setCatatanPilihan(""); }} />
+                    <span>{a.name ?? "Promo"} · hemat {rp(a.saving)}{a.applied ? " (dipakai)" : ""}</span>
+                  </label>
+                ))}
+                <label data-testid="pos-promo-tanpa" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="radio" name="promoPilihUi" value="none" checked={pilihanEfektif === "none"} onChange={() => { setPilihan("none"); setCatatanPilihan(""); }} /> Tanpa promo (batalkan semua promo transaksi ini)
+                </label>
+              </fieldset>
             )}
             {diskonKategori > 0 && cust?.golongan && (
               <Row k={`Diskon ${cust.golongan.nama}`} v={`-${rp(diskonKategori)}`} />
