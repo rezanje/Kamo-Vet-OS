@@ -41,8 +41,28 @@ CANDIDATES = [
     ('20261106320000_promo_syarat_hasil_hpp_waiver.sql', ['promo_syarat_hasil_hpp.sql']),
 ]
 # Existing suites that exercise the functions patched here (every one rolls back its own data).
-REGRESSION = ['quantity_pool_pricing.sql', 'cashier_atomic_fifo_floor.sql', 'p03_price_floor.sql', 'pos_split_payments.sql',
-              'pos_merchant_fees.sql', 'promo_edit.sql', 'promo_package_total.sql', 'promo_kadaluarsa.sql', 'promo_excel_batch.sql']
+REGRESSION = ['quantity_pool_pricing.sql', 'cashier_atomic_fifo_floor.sql', 'pos_split_payments.sql', 'pos_merchant_fees.sql', 'refund_payout.sql',
+              'promo_edit.sql', 'promo_package_total.sql', 'promo_kadaluarsa.sql', 'p03_price_floor.sql', 'promo_excel_batch.sql']
+# Suites that only run behind a fixture prelude in their own runner scripts.
+PRELUDE = {'promo_edit.sql': 'pos_split_payments.sql', 'promo_package_total.sql': 'pos_split_payments.sql', 'refund_payout.sql': 'pos_merchant_fees.sql'}
+
+
+def regression_outcomes(db):
+    """Run each existing suite; (True,'') on success else (False, first error line). Every suite rolls back its own data."""
+    out = {}
+    for name in REGRESSION:
+        p = ROOT / 'supabase/tests' / name
+        if not p.exists():
+            continue
+        text = p.read_text()
+        if name in PRELUDE:
+            text = (ROOT / 'supabase/tests' / PRELUDE[name]).read_text().split('set local role authenticated;')[0] + text
+        try:
+            db.sql(text)
+            out[name] = (True, '')
+        except RuntimeError as e:
+            out[name] = (False, str(e).strip().splitlines()[0][:160])
+    return out
 
 # name -> (candidate file, exact text, replacement). Each must break at least one named suite assertion.
 MUTATIONS = {
@@ -102,6 +122,9 @@ def main():
                         "where n.nspname='public' and c.relname in('promos','promo_items','sale_items','sales','stock','stock_layers','stock_moves','sale_payments','sale_payment_refunds','sale_line_pricing')")
             policies_before = db.last(policies)
             print('ORIGINAL RPC HASHES', json.dumps(before, sort_keys=True), flush=True)
+            reg_before = {} if (args.no_regression or args.mutate or not cands) else regression_outcomes(db)
+            for k, v in reg_before.items():
+                print('BASELINE original suite', k, 'PASS' if v[0] else 'FAIL(pre-existing on the unmodified schema): ' + v[1], flush=True)
             applied = []
             for name, _ in cands:
                 text = (ROOT / 'supabase/migrations' / name).read_text()
@@ -154,20 +177,11 @@ def main():
             left = db.sql("select (select count(*) from promos where name like 'Direct %')+(select count(*) from promo_release_flags where enabled)")
             assert left == '0', 'suite fixtures leaked: ' + left
             print('PASS suites rolled back, release flags still OFF', flush=True)
-            if cands and not args.no_regression and not args.mutate:
-                for name in REGRESSION:
-                    p = ROOT / 'supabase/tests' / name
-                    if not p.exists():
-                        print('SKIP (absent)', name)
-                        continue
-                    text = p.read_text()
-                    if name == 'refund_payout.sql':
-                        text = (ROOT / 'supabase/tests/pos_merchant_fees.sql').read_text().split('set local role authenticated;')[0] + text
-                    db.sql(text)
-                    print('PASS original regression', name, flush=True)
-                prelude = (ROOT / 'supabase/tests/pos_merchant_fees.sql').read_text().split('set local role authenticated;')[0]
-                db.sql(prelude + (ROOT / 'supabase/tests/refund_payout.sql').read_text())
-                print('PASS original regression refund_payout.sql with the original merchant-fee fixture prelude', flush=True)
+            if reg_before:
+                reg_after = regression_outcomes(db)
+                for name, before_result in reg_before.items():
+                    assert reg_after[name] == before_result, 'REGRESSION: %s changed from %r to %r' % (name, before_result, reg_after[name])
+                    print('PASS original regression', name, '(unchanged: %s)' % ('passes' if before_result[0] else 'fails identically on the unmodified schema'), flush=True)
             if cands and len(cands) >= 2 and not args.no_concurrency and not args.mutate:
                 concurrency(db, fixture_sql)
     return 0
@@ -175,37 +189,117 @@ def main():
 
 def psql_async(db, sql, out):
     def run():
+        t0 = time.time()
         r = subprocess.run(db.as_user + [db.psql, '-X', '-qAt', '-h', str(db.root), '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'],
                            input=sql, text=True, capture_output=True, env={**__import__('os').environ, 'PSQLRC': '/dev/null'})
-        out.append((r.returncode, r.stdout, r.stderr))
+        out.append({'rc': r.returncode, 'out': r.stdout, 'err': r.stderr, 'elapsed': time.time() - t0, 't0': t0})
     t = threading.Thread(target=run)
     t.start()
     return t
 
 
+ADMIN = "e1100000-0000-4000-8000-000000000004"
+CASHIER = "e1100000-0000-4000-8000-000000000001"
+WH = "e3300000-0000-4000-8000-000000000001"
+IKAN, DONAT, ANC = ("e5500000-0000-4000-8000-000000000001", "e5500000-0000-4000-8000-000000000003", "e5500000-0000-4000-8000-000000000008")
+TODAY = "(now() at time zone 'Asia/Jakarta')::date"
+
+
+def as_user(uid):
+    return ("set role authenticated;select set_config('request.jwt.claim.sub','%s',false),set_config('request.jwt.claims','{\"role\":\"authenticated\"}',false);" % uid)
+
+
+SYARAT = '[{"kind":"qty","min":2,"items":[{"item_id":"%s","unit":"PCS"},{"item_id":"%s","unit":"PCS"}]}]' % (IKAN, DONAT)
+
+
+def hasil(discount):
+    return '{"kind":"barang","items":[{"item_id":"%s","unit":"PCS"}],"discount":{"type":"nominal","value":%d}}' % (ANC, discount)
+
+
+def values_json(name, discount):
+    return ("jsonb_build_object('name','%s','suggest','s','branch_ids','[]'::jsonb,'valid_from',%s,'valid_until',%s+30,'repeat',true,'syarat','%s'::jsonb,'hasil','%s'::jsonb,"
+            "'below_hpp','{\"allowed\":false}'::jsonb)" % (name, TODAY, TODAY, SYARAT, hasil(discount)))
+
+
+def rule_json(discount):
+    return ("jsonb_build_object('discount_mode','syarat_hasil','suggest','s','syarat_hasil',jsonb_build_object('version',1,'repeat',true,'syarat','%s'::jsonb,'hasil','%s'::jsonb,"
+            "'below_hpp','{\"allowed\":false}'::jsonb))" % (SYARAT, hasil(discount)))
+
+
+def run_pair(db, first, second, delay=0.7):
+    results = []
+    t1 = psql_async(db, first, results)
+    time.sleep(delay)
+    t2 = psql_async(db, second, results)
+    t1.join(90)
+    t2.join(90)
+    assert len(results) == 2, 'a session did not finish (deadlock?)'
+    # results are appended in completion order: return them in start order
+    return sorted(results, key=lambda r: r['t0'])
+
+
 def concurrency(db, fixture_sql):
-    """Two real sessions on a COMMITTED fixture: finalization vs deactivation, and two racing saves with one token."""
-    suite = (ROOT / 'supabase/tests/promo_syarat_hasil_concurrency.sql')
-    if not suite.exists():
-        print('SKIP concurrency suite absent')
-        return
-    parts = suite.read_text().split('-- @@SESSION')
-    setup, scenario = parts[0], parts[1:]
-    print(db.sql(fixture_sql + '\n' + setup), flush=True)
-    for chunk in scenario:
-        header, body = chunk.split('\n', 1)
-        sessions = [s for s in re.split(r'\n-- @@PARALLEL\n', body)]
-        results = []
-        threads = []
-        for i, s in enumerate(sessions):
-            threads.append(psql_async(db, s, results))
-            time.sleep(0.6 if i == 0 else 0)
-        for t in threads:
-            t.join(60)
-        print('CONCURRENCY', header.strip(), json.dumps([(rc, o.strip()[-300:], e.strip()[-300:]) for rc, o, e in results]), flush=True)
-        check = chunk.split('-- @@CHECK', 1)
-        if len(check) == 2:
-            print(db.sql(check[1]), flush=True)
+    """Real two-session races on COMMITTED fixture data: promo changes vs finalization, racing stale-token saves, racing identical activations."""
+    P = ['f3000000-0000-4000-8000-00000000000%d' % i for i in (1, 2, 3, 4)]
+    S = {1: 'c0000000-0000-4000-8000-000000000001', 2: 'c0000000-0000-4000-8000-000000000002'}
+
+    def promo(pid, discount, active):
+        return ("insert into promos(id,name,promo_type,rule,is_active,auto_apply,kelipatan,valid_from,valid_until) values('%s','CC %s','bundling',%s,%s,true,true,%s,%s+30);"
+                "insert into promo_items select '%s',x from unnest(array['%s','%s','%s']::uuid[]) x;\n") % (pid, pid[-3:], rule_json(discount), 'true' if active else 'false', TODAY, TODAY, pid, IKAN, DONAT, ANC)
+
+    def sale(n, pid):
+        ref, sid = 'CC.S%d' % n, S[n]
+        return ("insert into sales(id,branch_id,no_struk,subtotal,discount,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint) values"
+                "('%s','e2200000-0000-4000-8000-000000000001','%s',55000,1000,54000,'Tunai',54000,'%s','e4400000-0000-4000-8000-000000000001','[{\"method\":\"Tunai\",\"amount\":54000}]','sql:%s',repeat('a',64));"
+                "insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,source_position,promo_claim_id,promo_sets,promo_syarat_units,promo_hasil_units) values"
+                "('%s','%s','Ikan',2,20000,'PCS',1,0,0,'%s',1,2,0);"
+                "insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,source_position,promo_id,promo_discount,promo_claim_id,promo_sets,promo_syarat_units,promo_hasil_units) values"
+                "('%s','%s','ANC',1,15000,'PCS',1,0,1,'%s',1000,'%s',1,0,1);\n") % (sid, ref, CASHIER, ref, sid, IKAN, pid, sid, ANC, pid, pid)
+
+    setup = "begin;\n" + fixture_sql + "\nupdate promo_release_flags set enabled=true;\n"
+    setup += promo(P[0], 1000, True) + promo(P[1], 1000, True) + promo(P[2], 1500, False) + promo(P[3], 1500, False) + as_user(CASHIER).replace('false', 'true') + sale(1, P[0]) + sale(2, P[1]) + "reset role;commit;"
+    db.sql(setup)
+    assert db.last("select count(*) from promos where rule->>'discount_mode'='syarat_hasil' and is_active") == '2', 'concurrency setup failed'
+
+    # C1: finalization holds the promo FOR SHARE; a concurrent deactivation must WAIT and finalization still sees the promo active.
+    a = as_user(CASHIER) + "begin;select (cashier_post_stock_atomic((select id from sales where no_struk='CC.S1'),'%s')->>'finalized');select pg_sleep(2.5);commit;" % WH
+    b = "update promos set is_active=false where id='%s';" % P[0]
+    ra, rb = run_pair(db, a, b)
+    assert ra['rc'] == 0 and 'true' in ra['out'], 'C1 finalization failed: ' + ra['err']
+    assert rb['rc'] == 0 and rb['elapsed'] >= 1.4, 'C1 deactivation did not wait for the finalizing transaction: %.2fs' % rb['elapsed']
+    assert db.last("select (payments_finalized_at is not null)::text||(select count(*) from sale_line_pricing where sale_id=s.id)::text from sales s where no_struk='CC.S1'") == 'true2'
+    assert db.last("select is_active::text from promos where id='%s'" % P[0]) == 'false'
+    print('PASS concurrency C1: promo deactivation waits for an in-flight finalization (FOR SHARE); finalization completed with 2 snapshots (%.1fs wait)' % rb['elapsed'], flush=True)
+
+    # C2: deactivation commits first; a finalization that started meanwhile blocks, then is REFUSED and leaves no stock/snapshot.
+    a = "begin;update promos set is_active=false where id='%s';select pg_sleep(2.5);commit;" % P[1]
+    b = as_user(CASHIER) + "select cashier_post_stock_atomic((select id from sales where no_struk='CC.S2'),'%s');" % WH
+    ra, rb = run_pair(db, a, b)
+    assert ra['rc'] == 0
+    assert rb['rc'] != 0 and 'PROMO_SH_ELIGIBILITY' in rb['err'], 'C2 finalization should be refused: ' + rb['err'] + rb['out']
+    assert rb['elapsed'] >= 1.4, 'C2 finalization did not wait: %.2f' % rb['elapsed']
+    assert db.last("select (select count(*) from stock_moves where source_ref='CC.S2')::text||(select count(*) from sale_line_pricing where sale_id='%s')::text" % S[2]) == '00'
+    print('PASS concurrency C2: finalization blocked by a committing deactivation is refused (PROMO_SH_ELIGIBILITY), no stock/snapshot left', flush=True)
+
+    # C3: two admins save the same draft with the SAME token: exactly one wins, the other waits on the advisory lock then gets 40001.
+    tok = "(public.read_promo_edit('%s')->>'version')" % P[2]
+    a = as_user(ADMIN) + "begin;select save_promo_syarat_hasil('%s',%s,%s);select pg_sleep(2.2);commit;" % (P[2], tok, values_json('Race A', 2100))
+    b = as_user(ADMIN) + "select save_promo_syarat_hasil('%s',%s,%s);" % (P[2], tok, values_json('Race B', 2200))
+    ra, rb = run_pair(db, a, b, 0.6)
+    assert ra['rc'] == 0 and rb['rc'] != 0 and 'PROMO_EDIT_CONFLICT' in rb['err'] and rb['elapsed'] >= 1.2, 'C3: ' + ra['err'] + rb['err']
+    assert db.last("select name from promos where id='%s'" % P[2]) == 'Race A'
+    print('PASS concurrency C3: two racing saves with one token: the first wins, the second waits on the advisory lock then gets PROMO_EDIT_CONFLICT (no lost update)', flush=True)
+
+    # C4: two identical drafts activated at the same time: the advisory lock serialises them, the loser is refused as a duplicate.
+    db.sql("update promos set rule=(select rule from promos where id='%s'),name='CC dup' where id='%s'" % (P[2], P[3]))
+    ta = "(public.read_promo_edit('%s')->>'version')" % P[2]
+    tb = "(public.read_promo_edit('%s')->>'version')" % P[3]
+    a = as_user(ADMIN) + "begin;select set_promo_syarat_hasil_active('%s',%s,true);select pg_sleep(2.2);commit;" % (P[2], ta)
+    b = as_user(ADMIN) + "select set_promo_syarat_hasil_active('%s',%s,true);" % (P[3], tb)
+    ra, rb = run_pair(db, a, b, 0.6)
+    assert ra['rc'] == 0 and rb['rc'] != 0 and 'PROMO_SH_DUPLICATE' in rb['err'], 'C4: ' + ra['err'] + rb['err']
+    assert db.last("select count(*) from promos where id in('%s','%s') and is_active" % (P[2], P[3])) == '1'
+    print('PASS concurrency C4: racing activation of identical definitions: exactly one active (PROMO_SH_DUPLICATE for the loser)', flush=True)
     print('PASS concurrency suite', flush=True)
 
 
