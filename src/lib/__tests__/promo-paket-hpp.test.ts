@@ -114,6 +114,13 @@ describe("loadPaketHpp — read-only, retail (petshop) warehouses of the chosen 
     const tooMany = Array.from({ length: 4 }, (_, i) => `eeeeeeee-eeee-4eee-8eee-${String(i).padStart(12, "0")}`);
     await expect(loadPaketHpp(fakeDb(baseTables()), [{ item_id: ANC, unit: "PCS" }], tooMany)).rejects.toThrow(/cabang/i);
   });
+  it("an inactive branch is never part of the estimate, even with a retail warehouse and layers, and even when chosen explicitly", async () => {
+    const t = baseTables(); t.branches = [{ id: A, type: "PETSHOP", is_active: false }, { id: B, type: "PETSHOP", is_active: true }];
+    const all = await loadPaketHpp(fakeDb(t), [{ item_id: ANC, unit: "PCS" }], []);
+    expect(hppOf(all)).toEqual([{ price: 15000, hpp: 14000, branch_ids: [B] }]);
+    const chosen = await loadPaketHpp(fakeDb(t), [{ item_id: ANC, unit: "PCS" }], [A, B]);
+    expect(hppOf(chosen)).toEqual([{ price: 15000, hpp: 14000, branch_ids: [B] }]);
+  });
   it("a clinic-only selection has no retail warehouse: HPP falls back to the master buy price, never to clinic layers", async () => {
     const rows = await loadPaketHpp(fakeDb(baseTables()), [{ item_id: ANC, unit: "PCS" }], [C]);
     expect(rows[0]).toMatchObject({ hpp: 12000, source: "harga_beli" });

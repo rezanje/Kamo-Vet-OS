@@ -298,6 +298,13 @@ describe("salinPromoPaket / salinPromoPaketDariDaftar — 'Salin promo' (Andri 5
     expect(v.suggest).toContain("potongan Rp1.000 per PCS ANC Creamy Stick");
     expect(db.writes).toEqual([]);
   });
+  it("old dates of the source (even an already-expired end date) are never carried over to the copy", async () => {
+    const snap = snapOf(form()) as { promo: Record<string, unknown> };
+    snap.promo.valid_from = "2026-10-01"; snap.promo.valid_until = "2026-10-15";
+    db.snapshot = snap;
+    expect((await actions.salinPromoPaket({ id: PID })).ok).toBe(true);
+    expect(db.rpc[1].args.p_values).toMatchObject({ valid_from: "2026-11-04", valid_until: null });
+  });
   it("a long source name is cut so the copy name stays within 120 characters", async () => {
     db.snapshot = snapOf(form({ name: "N".repeat(120) }));
     await actions.salinPromoPaket({ id: PID });

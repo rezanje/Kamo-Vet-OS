@@ -47,5 +47,11 @@ fieldset.lock { border: 0; margin: 0; padding: 0; min-width: 0; }
 @media (max-width: 760px) {
   .head { grid-template-columns: minmax(0, 1fr); }
   .rowTop { grid-template-columns: 24px minmax(0, 1fr); }
+  .rowTop > :nth-child(n+3) { grid-column: 1 / -1; }
+  .rowTop > button { justify-self: end; }
+  .picked th:nth-child(1) { width: 64px; }
+  .picked th:nth-child(3) { width: 84px; }
+  .picked th:nth-child(4) { width: 34px; }
+  .hppTable { display: block; overflow-x: auto; }
   .hasilGrid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
