@@ -39,7 +39,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { g
         alternatives.push(row => clauses.some(matches => matches(row)));
         return q;
       },
-      is: () => q, in: () => q, order: () => q, limit: () => q, lt: () => q, gt: () => q, gte: () => q, lte: () => q, ilike: () => q,
+      is: () => q, not: () => q, in: () => q, order: () => q, limit: () => q, lt: () => q, gt: () => q, gte: () => q, lte: () => q, ilike: () => q,
       range: async () => result(), maybeSingle: async () => ({ data: table === "profiles" ? { role: "ADMIN" } : data()[0] ?? null, error: null }),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve) };
     return q;
