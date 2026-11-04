@@ -18,10 +18,30 @@ export function idTarik(cart: TarikBaris[], row: TarikBaris): string[] {
   return [...new Set(sama.map(r => r.prescription_item_id!))].sort();
 }
 
+/** Karakter yang TIDAK dihitung sebagai isi alasan: spasi, tanda baca, simbol ASCII, kontrol, dan karakter tak terlihat
+ * (zero-width, BOM, variation selector, filler Hangul). Aturan yang sama dipakai database (clinic_withdraw_record_items). */
+const TIDAK_BERISI = /[\p{P}\p{S}\p{Z}\p{C}\s\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e\u00ad\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180e\u3164\ufe00-\ufe0f\uffa0]/gu;
+const panjang = (text: string): number => [...text].length;
+/** Jumlah huruf/angka bermakna dalam alasan. */
+export const isiAlasanTarik = (reason: string): number => panjang(reason.replace(TIDAK_BERISI, ""));
+
+/** 5-200 karakter (code point, seperti database) DAN minimal 5 karakter bermakna: "....." atau zero-width tidak lolos. */
 export const alasanTarikValid = (reason: string): boolean => {
-  const n = reason.trim().length;
-  return n >= ALASAN_TARIK_MIN && n <= ALASAN_TARIK_MAX;
+  const trimmed = reason.trim();
+  const n = panjang(trimmed);
+  return n >= ALASAN_TARIK_MIN && n <= ALASAN_TARIK_MAX && isiAlasanTarik(trimmed) >= ALASAN_TARIK_MIN;
 };
+
+/** Penarikan akan menghabiskan SEMUA baris di form (baris baru yang belum disimpan dihitung sebagai sisa): tagihan baru bisa
+ * terbit lagi setelah ada item. Hanya untuk peringatan; database tidak melarang. */
+export const tarikMenghabiskan = (cart: readonly TarikBaris[], ids: readonly string[]): boolean =>
+  cart.length > 0 && cart.every(row => !!row.prescription_item_id && ids.includes(row.prescription_item_id));
+
+/** Sama dengan gerbang database: hanya OWNER atau DOCTOR aktif (akses klinik cabang diperiksa terpisah lewat RPC). */
+export const peranBolehTarik = (profile: { role?: string | null; is_active?: boolean | null } | null | undefined): boolean =>
+  !!profile && profile.is_active === true && (profile.role === "OWNER" || profile.role === "DOCTOR");
+export const PESAN_PERAN_TARIK = "Hanya pemilik atau dokter yang boleh menarik item dari rekam medis.";
+export const PESAN_AKSES_TARIK = "Anda tidak memiliki akses klinik ke kunjungan ini. Tidak ada yang ditarik.";
 
 /** Pesan database -> teks pengguna (kode di depan dibuang; pesan sudah berbahasa Indonesia). */
 export function pesanTarikGagal(message: string | null | undefined): string {

@@ -142,3 +142,43 @@ it("Edit rekam medis: baris tersimpan tetap terkirim apa adanya", async () => {
   await render();
   expect(cart().map((row: { prescription_item_id: string }) => row.prescription_item_id)).toEqual(["rx-vaksin", "rx-lama"]);
 });
+
+const render1 = async (prescriptions: ClinicalCorrection["prescriptions"]) => {
+  await act(async () => root.render(<RekamForm visitId="visit" petId="pet" requestKey="edit" draftUserId="owner" correction={{ ...correction, prescriptions, compounds: [] }}
+    items={[ingredient]} racikanItems={[compound]} bahanItems={[ingredient]} jasaItems={[]} tindakanItems={[vaksin]}
+    katalogRacikan={[formula]} bolehManual currentWeight={3} dokterOpsi={[]} providerOpsi={[]} patient={patient} />));
+};
+const satu = { id: "rx-satu", item_id: "vaksin", nama_obat: "Vaksinasi F4", qty: 1, harga: 235000, satuan: "PCS", jenis: "jasa", aturan_pakai: null };
+const dua = { id: "rx-dua", item_id: "ingredient", nama_obat: "Obat Dua", qty: 1, harga: 5000, satuan: "pcs", jenis: "obat", aturan_pakai: null };
+
+it("Tarik: alasan hanya tanda baca / zero-width / spasi tidak membuka tombol konfirmasi (aturan sama dengan database)", async () => {
+  await render();
+  await klik(host.querySelector("[data-tarik-baris]"));
+  const confirm = host.querySelector<HTMLButtonElement>("[data-tarik-konfirmasi]")!;
+  const alasan = host.querySelector<HTMLInputElement>('input[aria-label="Alasan penarikan"]')!;
+  for (const bad of [".....", "\u200b".repeat(5), "?! - ?!", "     "]) { await isi(alasan, bad); expect(confirm.disabled, JSON.stringify(bad)).toBe(true); }
+  await isi(alasan, "a b c d e"); expect(confirm.disabled).toBe(false);
+  expect(tarik).not.toHaveBeenCalled();
+});
+
+it("Tarik baris TERAKHIR: peringatan 'minimal satu baris harus tersisa' + tombol berlabel khusus; tetap bisa dilanjutkan (database mengizinkan, tagihan pulih setelah item ditambah)", async () => {
+  tarik.mockResolvedValue({ ok: true, withdrawn: ["rx-satu"] });
+  await render1([satu]);
+  await klik(host.querySelector("[data-tarik-baris]"));
+  const warn = host.querySelector("[data-tarik-peringatan-terakhir]");
+  expect(warn?.textContent).toContain("minimal satu baris harus tersisa");
+  expect(warn?.textContent).toContain("arsip");
+  const confirm = host.querySelector<HTMLButtonElement>("[data-tarik-konfirmasi]")!;
+  expect(confirm.textContent).toContain("baris terakhir");
+  await isi(host.querySelector<HTMLInputElement>('input[aria-label="Alasan penarikan"]')!, "Salah input kunjungan");
+  await klik(confirm);
+  expect(tarik).toHaveBeenCalledTimes(1);
+  expect(tarik.mock.calls[0][0]).toMatchObject({ itemIds: ["rx-satu"] });
+});
+
+it("Tarik bukan baris terakhir (masih ada baris lain, termasuk baris baru yang belum disimpan): tanpa peringatan", async () => {
+  await render1([satu, dua]);
+  await klik(host.querySelector("[data-tarik-baris]"));
+  expect(host.querySelector("[data-tarik-peringatan-terakhir]")).toBeNull();
+  expect(host.querySelector<HTMLButtonElement>("[data-tarik-konfirmasi]")!.textContent).toBe("Ya, tarik");
+});

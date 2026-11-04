@@ -39,6 +39,20 @@ def stock(h, item): return h.angka(f'select coalesce(sum(qty),0) from stock wher
 def moves(h): return h.angka('select count(*) from stock_moves')
 def journals(h): return h.angka('select count(*) from journal_entries')
 def is_withdrawn(h, rid): return prow(h, rid)['billing_withdrawn_at'] is not None
+def marker(h, rid): return h.nilai(f"select to_jsonb(p)->>'record_withdrawn_at' from prescription_items p where id={q(rid)}") or None   # None when column absent or not set
+def is_rec_withdrawn(h, rid): return marker(h, rid) is not None
+def history_names(h, pet, v, user=r.DOCTOR):
+    hist = json.loads(h.nilai(f"select public.clinic_patient_clinical_history({q(pet)},{q(v)});", user))
+    return sorted(p['nama_obat'] for vis in hist['visits'] for rec in vis['records'] for p in rec['prescriptions'])
+def cashier_read(h, v, stay, user=r.STAFF): return json.loads(h.nilai(f'select clinic_read_inpatient_cashier({q(stay)},{q(v)});', user))
+def cashier_save(v, stay, snapshot, rows_, parts, key, reason='Hapus item kasir ranap fiktif'):
+    return f"select clinic_save_inpatient_cashier({q(stay)},{q(v)},{q(key)},'2026-11-03',{q(snapshot)},{j(rows_)},{j(parts)},null,false,null,{q(reason)});"
+def ranap_withdraw(h, v, drop_id, key):
+    """The REAL rawat-inap cashier 'Hapus item': omit one pending row and pay the rest (stamps billing_withdrawn_*)."""
+    stay = h.nilai(f'select id from inpatient_records where visit_id={q(v)}'); cart = cashier_read(h, v, stay)
+    keep = [row for row in cart['rows'] if row['id'] != drop_id]
+    return h.gagal(cashier_save(v, stay, cart['snapshot'], keep, [dict(method='Tunai', amount=sum(row['qty'] * row['harga'] for row in keep))], key), r.STAFF), stay
+ZW = '\u200b'
 def snapshot(h): return [moves(h), journals(h), stock(h, ITEM_A), stock(h, ITEM_B), stock(h, x.MATERIAL), h.angka('select count(*) from invoices')]
 def cart_version(h, v, user=r.OWNER): return h.nilai(f'select public.clinic_outpatient_cart_version({q(v)});', user)
 
@@ -97,12 +111,15 @@ def rj(h, n, parts=('a', 'b', 'jasa', 'tindakan')):
     return v, mr, ids
 
 
-def run(h, setup=True):
+def run(h, setup=True, text=None):
+    text = text or (ROOT / 'supabase/migrations' / CANDIDATE).read_text()
     if setup:
         x.setup(h); setup_extra(h)
     pre = h.nilai("select (to_regprocedure('public.clinic_withdraw_record_items(uuid,uuid,uuid[],text,text)') is not null)::text||'|'||(to_regprocedure('public.clinic_record_withdrawn_items(uuid)') is not null)::text")
     check('preflight: Tarik RPC and withdrawn-history reader exist', pre == 'true|true', dict(found=pre))
     if pre != 'true|true': return
+    col = h.angka("select count(*) from information_schema.columns where table_schema='public' and table_name='prescription_items' and column_name='record_withdrawn_at'")
+    check('dedicated marker prescription_items.record_withdrawn_at exists (billing_withdrawn_* keeps its rawat-inap meaning)', col == 1, dict(columns=col))
     # ---- 1. role matrix (refusals change nothing) -------------------------------------------------------------
     v, mr, ids = rj(h, 3200); base = [rows_of(h, mr), audits(h)]
     for user, label in [(r.ADMIN, 'ADMIN'), (r.STAFF, 'STAFF'), (r.FINANCE, 'FINANCE'), (r.FIN_NONAKTIF, 'FINANCE inactive'), (r.FIN_LUAR, 'FINANCE other branch'), (DOC_LUAR, 'DOCTOR of another branch')]:
@@ -112,8 +129,8 @@ def run(h, setup=True):
     check('anon refused (no EXECUTE)', bool(err) and ('permission denied' in err or '42501' in err or 'ACCESS_DENIED' in err) and [rows_of(h, mr), audits(h)] == base, dict(error=(err or '')[:200]))
     snap0 = snapshot(h)
     err = h.gagal(tarik(v, mr, [ids['b']], 'doctor-ok'), r.DOCTOR); row = prow(h, ids['b'])
-    check('DOCTOR withdraws a saved obat row: stamped at/by/reason, row kept (soft), no stock/money/journal/invoice movement',
-          not err and row['billing_withdrawn_at'] and row['billing_withdrawn_by'] == r.DOCTOR and row['billing_withdrawal_reason'] == REASON and len(rows_of(h, mr)) == 4 and snapshot(h) == snap0, dict(error=err, row={k: row[k] for k in ('billing_withdrawn_at', 'billing_withdrawn_by', 'billing_withdrawal_reason')}))
+    check('DOCTOR withdraws a saved obat row: stamped at/by/reason (billing eligibility) AND record_withdrawn_at (clinical visibility), row kept (soft), no stock/money/journal/invoice movement',
+          not err and row['billing_withdrawn_at'] and row['billing_withdrawn_by'] == r.DOCTOR and row['billing_withdrawal_reason'] == REASON and marker(h, ids['b']) and len(rows_of(h, mr)) == 4 and snapshot(h) == snap0, dict(error=err, row={k: row[k] for k in ('billing_withdrawn_at', 'billing_withdrawn_by', 'billing_withdrawal_reason')}))
     au = json.loads(h.nilai(f"select to_jsonb(e) from clinic_full_record_edits e where medical_record_id={q(mr)} order by created_at desc limit 1") or 'null')
     other_same = all(a == b for a, b in zip([row_ for row_ in au['before_rows'] if row_['id'] != ids['b']], [row_ for row_ in au['after_rows'] if row_['id'] != ids['b']])) if au else False
     check('audit row: actor, reason, request key, BEFORE (not withdrawn) and AFTER (withdrawn) snapshots of the whole record',
@@ -144,6 +161,12 @@ def run(h, setup=True):
         ('row of ANOTHER visit', tarik(v, mr, [other_ids['a']], 'in-8'), ('WITHDRAW_INVALID',)),
         ('unknown row id', tarik(v, mr, [r.uid('f', 999999)], 'in-9'), ('WITHDRAW_INVALID',)),
         ('record of another visit', tarik(v, other_mr, [ids['a']], 'in-10'), ('ACCESS_DENIED',)),
+        ('reason of only punctuation (5 dots)', tarik(v, mr, [ids['a']], 'in-12', '.....'), ('WITHDRAW_INVALID', 'alasan')),
+        ('reason of only zero-width characters (U+200B x5)', tarik(v, mr, [ids['a']], 'in-13', ZW * 5), ('WITHDRAW_INVALID', 'alasan')),
+        ('reason of mixed punctuation/space/symbols', tarik(v, mr, [ids['a']], 'in-14', '?! - ?! - ?!'), ('WITHDRAW_INVALID', 'alasan')),
+        ('reason with only 4 significant chars padded by zero-width/dots', tarik(v, mr, [ids['a']], 'in-15', 'ab' + ZW + 'cd' + ZW * 3 + '...'), ('WITHDRAW_INVALID', 'alasan')),
+        ('reason of tabs/newlines/BOM/word-joiner only', tarik(v, mr, [ids['a']], 'in-16', '\t\n\ufeff\u2060\t\n\ufeff\u2060'), ('WITHDRAW_INVALID', 'alasan')),
+        ('reason of Hangul filler (invisible) x6', tarik(v, mr, [ids['a']], 'in-17', '\u3164' * 6), ('WITHDRAW_INVALID', 'alasan')),
         ('more than 50 ids', f"select public.clinic_withdraw_record_items({q(v)},{q(mr)},(select array_agg(gen_random_uuid()) from generate_series(1,51)),{q(REASON)},'in-11');", ('WITHDRAW_INVALID',)),
     ]:
         err = h.gagal(sql, r.DOCTOR)
@@ -151,6 +174,9 @@ def run(h, setup=True):
     err = h.gagal(tarik(v, mr, [ids['a']], 'in-reason-200', 'y' * 200), r.DOCTOR)
     check('reason of exactly 200 chars and (padded) 5 chars are accepted and trimmed', not err and prow(h, ids['a'])['billing_withdrawal_reason'] == 'y' * 200
           and not h.gagal(tarik(v, mr, [ids['b']], 'in-reason-5', '  abcde  '), r.DOCTOR) and prow(h, ids['b'])['billing_withdrawal_reason'] == 'abcde', dict(error=err))
+    v, mr, ids = rj(h, 3240); ok_reasons = [('a', 'a b c d e'), ('b', 'abc' + ZW + 'de'), ('jasa', '\u3042\u3044\u3046\u3048\u304a'), ('tindakan', ' 12345!! ')]
+    outs = {k: h.gagal(tarik(v, mr, [ids[k]], 'ok-' + k, text_), r.DOCTOR) for k, text_ in ok_reasons}
+    check('reasons with >= 5 significant chars are accepted (spaced letters, zero-width inside, Japanese letters, digits + punctuation)', not any(outs.values()) and all(is_withdrawn(h, ids[k]) for k, _ in ok_reasons), dict(errors={k: (e or '')[:120] for k, e in outs.items()}))
     # ---- 3. row types: jasa (with performers), tindakan with BMHP, obat ---------------------------------------------
     v, mr, ids = rj(h, 3203); s0 = snapshot(h); perf = prow(h, ids['jasa'])['service_performers']
     err = h.gagal(tarik(v, mr, [ids['jasa'], ids['tindakan']], 'types-1'), r.DOCTOR)
@@ -210,6 +236,12 @@ def run(h, setup=True):
     check('a stale tab that still sends the withdrawn row is refused (muat ulang), nothing written', has(err, 'RECORD_INVALID', 'ditarik') and is_withdrawn(h, ids['b']), dict(error=(err or '')[:200]))
     err = h.gagal(edit(v, mr, 1, [row for row in active(h, mr) if row['id'] != ids['a']], 'ed-remove'), r.DOCTOR)
     check('removing a NOT-withdrawn saved row through Edit is still refused (additive-only rule intact)', has(err, 'RECORD_INVALID', 'tidak boleh dihapus'), dict(error=(err or '')[:200]))
+    # ---- 7c. a row stamped ONLY by the rawat-inap cashier (billing_withdrawn_*) is NOT record-withdrawn: Edit behaves exactly as before
+    v, mr, ids = rj(h, 3241, ('a', 'b', 'jasa')); h.sistem(f"update prescription_items set billing_withdrawn_at=now(),billing_withdrawal_reason='kasir ranap fiktif' where id={q(ids['b'])};")
+    err = h.gagal(edit(v, mr, 0, [row for row in rows_of(h, mr) if row['id'] != ids['b']], 'bw-remove'), r.DOCTOR)
+    check('Edit: omitting a billing_withdrawn-only row is still refused as a removal (guard keys on the record marker, not billing_withdrawn)', has(err, 'RECORD_INVALID', 'tidak boleh dihapus'), dict(error=(err or '')[:200]))
+    err = h.gagal(edit(v, mr, 0, rows_of(h, mr), 'bw-keep'), r.DOCTOR)
+    check('Edit: sending a billing_withdrawn-only row back is accepted as before (not mistaken for a Tarik)', not err and marker(h, ids['b']) is None and is_withdrawn(h, ids['b']), dict(error=(err or '')[:200]))
     # ---- 7b. package origin round-trip through Edit save (the Edit form now carries package_item_id/qty of saved rows) ----
     v, mr, ids = rj(h, 3214, ('a', 'paket')); origin = lambda: [(row['package_item_id'], row['package_qty']) for row in rows_of(h, mr) if row['id'] in ids['paket']]
     carried = rows_of(h, mr); err = h.gagal(edit(v, mr, 0, carried, 'pkg-roundtrip'), r.DOCTOR)
@@ -241,8 +273,54 @@ def run(h, setup=True):
     check('withdrawn-items reader shows row, who (name) and why, struck-through source for the record page', len(wd) == 1 and wd[0]['id'] == ids['b'] and wd[0]['reason'] == 'Dobel input obat kutu' and wd[0]['withdrawn_by_name'] == 'Pengguna Fiktif 5' and wd[0]['withdrawn_at'], dict(wd=wd))
     err = h.gagal(f"select public.clinic_record_withdrawn_items({q(mr)});", r.FIN_LUAR)
     check('withdrawn-items reader refuses another branch', has(err, 'ACCESS_DENIED'), dict(error=(err or '')[:160]))
+    # ---- 9b. REVIEW BLOCKER: the rawat-inap cashier's own 'Hapus item' must not change clinical history retroactively --------
+    v, mr = m.visit(h, 3230); pet = r.uid(5, 3230); drop = r.uid(9, 3230 * 10 + 4); before = history_names(h, pet, v)
+    err, stay = ranap_withdraw(h, v, drop, 'ranap-w-1'); row = prow(h, drop); after = history_names(h, pet, v)
+    check('real rawat-inap cashier Hapus item stamps billing_withdrawn_* only (record_withdrawn_at stays NULL)', not err and row['billing_withdrawn_at'] and row['billing_withdrawal_reason'] and marker(h, drop) is None, dict(error=(err or '')[:240]))
+    check('ranap-cashier withdrawal leaves patient clinical history UNCHANGED: 4 rows before and after (review probe P3 was 4 -> 3)', len(before) == 4 and after == before and 'Jasa Tambahan Fiktif' in after, dict(before=before, after=after))
+    wd = json.loads(h.nilai(f"select public.clinic_record_withdrawn_items({q(mr)});", r.DOCTOR))
+    check('Tarik withdrawn-items reader does not list rows withdrawn by the rawat-inap cashier', wd == [], dict(wd=wd))
+    # outpatient visit withdrawn by Tarik and ADMITTED as rawat inap afterwards
+    v, mr, ids = rj(h, 3231, ('a', 'b')); pet = r.uid(5, 3231); h.sql(tarik(v, mr, [ids['b']], 'adm-1'), r.DOCTOR)
+    h.sql(f"""insert into public.consents (id,visit_id,template_id,tindakan,isi_snapshot) values ({q(r.uid('d', 3231))},{q(v)},{q(r.TEMPLATE_CONSENT)},'Rawat Inap Fiktif','Isi persetujuan fiktif');
+update public.consents set status='sudah_ttd', signer_name='Pemilik Fiktif', signature_data='data:image/png;base64,ZmlrdGlm', signed_at=now() where id={q(r.uid('d', 3231))};""", r.OWNER)
+    err = h.gagal(f"select public.clinic_admit_inpatient({q(v)},'Rencana rawat inap fiktif','masuk-3231');", r.OWNER)
+    stay = h.nilai(f'select id from inpatient_records where visit_id={q(v)}') if not err else None
+    check('fixture: visit with a Tarik is admitted as rawat inap afterwards (real RPC)', not err and bool(stay), dict(error=(err or '')[:240]))
+    if stay:
+        cart_ids = {row['id'] for row in cashier_read(h, v, stay)['rows']}
+        check('after admission the Tarik-withdrawn drug is NOT in the rawat-inap cashier cart (ranap billing readers ignore it via billing_withdrawn_at)', cart_ids == {ids['a']}, dict(cart=sorted(cart_ids)))
+        check('after admission clinical history still hides the withdrawn drug; marker and audit reader intact', history_names(h, pet, v) == ['Obat Tetes Kutu Teal 0.3'] and is_rec_withdrawn(h, ids['b'])
+              and [w['id'] for w in json.loads(h.nilai(f"select public.clinic_record_withdrawn_items({q(mr)});", r.DOCTOR))] == [ids['b']], dict(names=history_names(h, pet, v)))
+    # ---- 9c. marker invariants (the new column is as tamper-proof as billing_withdrawn_*) ------------------------------------
+    v, mr, ids = rj(h, 3232, ('a', 'b', 'jasa'))
+    e1 = h.gagal(f"update prescription_items set record_withdrawn_at=now() where id={q(ids['a'])};", r.DOCTOR)   # (stopped earlier by guard_full_record_prescription on a finished visit)
+    # Isolate THIS guard: a row already stamped billing_withdrawn (rawat-inap style) + a client role with the older finished-visit trigger lifted for the transaction.
+    h.sistem(f"update prescription_items set billing_withdrawn_at=now(),billing_withdrawal_reason='kasir ranap fiktif' where id={q(ids['jasa'])};")
+    trg = h.nilai("select tgname from pg_trigger where tgrelid='public.prescription_items'::regclass and tgfoid='public.guard_full_record_prescription'::regproc and not tgisinternal limit 1")
+    e1b = h.gagal(f"begin;alter table public.prescription_items disable trigger {trg};set role authenticated;select set_config('request.jwt.claims',{q(json.dumps(dict(sub=r.DOCTOR, role='authenticated')))},false);update prescription_items set record_withdrawn_at=now() where id={q(ids['jasa'])};rollback;")
+    e2 = h.gagal(f"insert into prescription_items(medical_record_id,nama_obat,qty,satuan,faktor,harga,jenis,billing_withdrawn_at,record_withdrawn_at) values ({q(mr)},'Sisipan Fiktif',1,'pcs',1,1000,'obat',now(),now());", r.DOCTOR)
+    check('client roles can neither set nor insert record_withdrawn_at directly (RPC only); the marker guard itself refuses even a row that already carries billing_withdrawn_*', has(e1, 'ACCESS_DENIED') and has(e1b, 'ACCESS_DENIED', 'Tarik item') and not is_rec_withdrawn(h, ids['jasa']) and bool(e2) and not is_rec_withdrawn(h, ids['a']) and h.angka(f"select count(*) from prescription_items where medical_record_id={q(mr)} and nama_obat='Sisipan Fiktif'") == 0, dict(e1=(e1 or '')[:160], e1b=(e1b or '')[:200], e2=(e2 or '')[:160]))
+    e3 = h.gagal(f"update prescription_items set record_withdrawn_at=now() where id={q(ids['a'])};")
+    check('even the table owner cannot set the record marker without billing_withdrawn_at (invariant: record-withdrawn implies not billable)', bool(e3) and not is_rec_withdrawn(h, ids['a']), dict(error=(e3 or '')[:200]))
+    h.sql(tarik(v, mr, [ids['b']], 'inv-1'), r.DOCTOR)
+    e4 = h.gagal(f"update prescription_items set record_withdrawn_at=null where id={q(ids['b'])};"); e5 = h.gagal(f"update prescription_items set billing_withdrawn_at=null where id={q(ids['b'])};")
+    check('a Tarik cannot be undone by clearing either marker, even by the table owner (no undo in v1; money stays blocked)', bool(e4) and bool(e5) and is_rec_withdrawn(h, ids['b']) and is_withdrawn(h, ids['b']), dict(e4=(e4 or '')[:120], e5=(e5 or '')[:120]))
+    e6 = h.gagal(f"update prescription_items set billing_withdrawn_at=now(),billing_withdrawal_reason='kasir ranap fiktif' where id={q(ids['a'])};")
+    check('rawat-inap style stamp (billing_withdrawn_* alone) is still allowed for the owner role and leaves the record marker NULL', not e6 and is_withdrawn(h, ids['a']) and not is_rec_withdrawn(h, ids['a']), dict(error=(e6 or '')[:160]))
     # ---- 10. races (real lock barriers) ---------------------------------------------------------------------------------
     race_checks(h)
+    rerun_checks(h, text)
+
+
+def rerun_checks(h, text):
+    # ---- 11. re-runnable + fails closed on drift ----------------------------------------------------------------------------------
+    err = h.gagal(text)
+    acl = h.nilai("select string_agg(r||'='||has_function_privilege(r,'public.clinic_withdraw_record_items(uuid,uuid,uuid[],text,text)','execute')::text,',' order by r) from unnest(array['anon','authenticated','service_role']) r")
+    check('migration is re-runnable on an already migrated database (no error, ACL unchanged: authenticated only)', not err and acl == 'anon=false,authenticated=true,service_role=false', dict(error=(err or '')[:300], acl=acl))
+    drift = f"begin;do $drift$ declare d text; begin d:=pg_get_functiondef('public.clinic_patient_clinical_history(uuid,uuid)'::regprocedure); execute replace(d,'pi.record_withdrawn_at is null','pi.id is not null'); end $drift$;\n{text}\nrollback;"
+    err = h.gagal(drift)
+    check('anchors still fail closed on drift (function body changed by someone else -> migration aborts)', has(err, 'anchor drift'), dict(error=(err or '')[:300]))
 
 
 def race_checks(h):
@@ -289,7 +367,7 @@ MUTANTS = {
     'no coordinator and no visit lock (race)': [("perform clinic_private.billing_lock(clinic_private.billing_keys_visit(p_visit_id));\n if auth.role() is distinct from 'authenticated' or auth.uid() is null", "if auth.role() is distinct from 'authenticated' or auth.uid() is null"), ("select * into v_visit from public.visits where id=p_visit_id for update;", "select * into v_visit from public.visits where id=p_visit_id;"), ("perform 1 from public.medical_records where id=p_record_id and visit_id=p_visit_id for update;", "perform 1 from public.medical_records where id=p_record_id and visit_id=p_visit_id;")],
     'racikan no longer refused': ("if rx.compound_recipe_id is not null or rx.jenis='racikan' or rx.satuan='racikan' then", "if false then"),
     'package partial no longer refused': ("if rx.package_item_id is not null and exists(", "if false and exists("),
-    'reason minimum removed': ("not between 5 and 200", "not between 0 and 200"),
+    'reason minimum removed (length bound AND significance check; each alone is redundant with the other)': [("not between 5 and 200", "not between 0 and 200"), ("'g'))<5 then", "'g'))<0 then")],
     'reason maximum removed': ("not between 5 and 200", "not between 5 and 100000"),
     'replay returns nothing special (idempotency removed)': ("select * into prev from public.clinic_full_record_edits where created_by=auth.uid() and request_key=v_key;", "select * into prev from public.clinic_full_record_edits where false;"),
     'replay hash ignores payload': ("v_hash:=md5(jsonb_build_array('tarik-item',p_visit_id,p_record_id,v_ids,v_reason)::text);", "v_hash:=md5('tarik-item');"),
@@ -300,10 +378,23 @@ MUTANTS = {
     'invoice gates removed (explicit check AND clinic_can_correct_record)': [("if exists(select 1 from public.invoices i where i.visit_id=p_visit_id) then", "if false then\n  null;\n elsif false then"), ("if not public.clinic_can_correct_record(p_record_id) then", "if false then")],
     'already-withdrawn row accepted again': ("if rx.billing_withdrawn_at is not null then raise exception 'WITHDRAW_ALREADY", "if false then raise exception 'WITHDRAW_ALREADY"),
     'only the first id is withdrawn': ("where id=any(v_ids);\n select coalesce", "where id=v_ids[1];\n select coalesce"),
-    'edit: withdrawn row accepted in save': ("if rx.billing_withdrawn_at is not null then raise exception ''RECORD_INVALID: baris sudah ditarik", "if false then raise exception ''RECORD_INVALID: baris sudah ditarik"),
-    'edit: removal guard counts withdrawn rows': ("'where medical_record_id=p_record_id and billing_withdrawn_at is null and not(id=any(v_seen))'", "'where medical_record_id=p_record_id and not(id=any(v_seen))'"),
-    'history reader shows withdrawn rows': ("'from public.prescription_items pi where pi.medical_record_id = m.id and pi.billing_withdrawn_at is null)'", "'from public.prescription_items pi where pi.medical_record_id = m.id)'"),
+    'edit: withdrawn row accepted in save': ("if rx.record_withdrawn_at is not null then raise exception ''RECORD_INVALID: baris sudah ditarik", "if false then raise exception ''RECORD_INVALID: baris sudah ditarik"),
+    'edit: removal guard counts withdrawn rows': ("'where medical_record_id=p_record_id and record_withdrawn_at is null and not(id=any(v_seen))'", "'where medical_record_id=p_record_id and not(id=any(v_seen))'"),
+    'edit: removal guard keyed on billing_withdrawn_at (ranap meaning leaks into Edit)': ("'where medical_record_id=p_record_id and record_withdrawn_at is null and not(id=any(v_seen))'", "'where medical_record_id=p_record_id and billing_withdrawn_at is null and not(id=any(v_seen))'"),
+    'history reader shows withdrawn rows': ("'from public.prescription_items pi where pi.medical_record_id = m.id and pi.record_withdrawn_at is null)'", "'from public.prescription_items pi where pi.medical_record_id = m.id)'"),
+    'history reader keyed on billing_withdrawn_at (review blocker: ranap rows vanish retroactively)': ("'from public.prescription_items pi where pi.medical_record_id = m.id and pi.record_withdrawn_at is null)'", "'from public.prescription_items pi where pi.medical_record_id = m.id and pi.billing_withdrawn_at is null)'"),
     'withdrawn reader open to other branches': ("or not public.clinic_record_correction_actor(v_visit) then", "then"),
+    'withdrawn reader lists rawat-inap cashier rows (keyed on billing_withdrawn_at)': ("where p.medical_record_id=p_record_id and p.record_withdrawn_at is not null and p.compound_recipe_id is null)", "where p.medical_record_id=p_record_id and p.billing_withdrawn_at is not null and p.compound_recipe_id is null)"),
+    'RPC does not stamp the record marker': (",record_withdrawn_at=v_now\n where id=any(v_ids);", "\n where id=any(v_ids);"),
+    'reason significance check removed (dots/zero-width accepted)': ("'g'))<5 then", "'g'))<0 then"),
+    'zero-width characters count as significant (explicit list is what makes the rule locale-independent)': [("[[:space:][:punct:][:cntrl:]", "[\\x01-\\x2f\\x3a-\\x40\\x5b-\\x60\\x7b-\\x7f"), ("\\u2000-\\u200f", "\\u2000-\\u200a")],
+    'marker trigger not installed': ("create trigger aa_record_withdrawn_marker before insert or update of record_withdrawn_at,billing_withdrawn_at on public.prescription_items\n for each row execute function public.guard_record_withdrawn_marker();", "select 1;"),
+    'client roles may write the marker directly': ("if current_user in ('authenticated','anon','service_role') and\n  ((tg_op='INSERT' and new.record_withdrawn_at", "if false and\n  ((tg_op='INSERT' and new.record_withdrawn_at"),
+    'marker without billing_withdrawn_at allowed': ("if new.record_withdrawn_at is not null and new.billing_withdrawn_at is null then", "if false then"),
+    'Tarik can be undone (no-undo guard removed)': ("if tg_op='UPDATE' and old.record_withdrawn_at is not null and (", "if false and ("),
+    'patch not re-runnable (already-applied skip removed)': ("if n_new=1 then continue;\n  elsif n_new=0 and n_old=1 then", "if false then continue;\n  elsif n_new=0 and n_old=1 then"),
+    'patch drift silently ignored (fail-closed removed)': ("else raise exception 'Tarik item anchor drift: % / %',p.signature,p.old_text;", "else null;"),
+    'RPC is create (not or replace): re-run fails': ("create or replace function public.clinic_withdraw_record_items(", "create function public.clinic_withdraw_record_items("),
 }
 
 
@@ -317,7 +408,7 @@ def build_chain(stack, selected):
 def run_clone(db, name, text):
     db.sql(f'create database {name} template postgres;'); os.environ['PGDATABASE'] = name
     db.sql('begin;\n' + text + '\ncommit;'); start = len(RESULTS)
-    try: run(x.Harness(db), setup=False)
+    try: run(x.Harness(db), setup=False, text=text)
     except Exception as e: check('HARNESS', False, str(e)[:400])
     os.environ.pop('PGDATABASE', None); return RESULTS[start:]
 

@@ -65,7 +65,7 @@ export async function barisTagihanVisit(
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   const { data: resep } = mr
     ? await supabase.from("prescription_items")
-        .select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers").eq("medical_record_id", mr.id).is("billing_withdrawn_at", null).order("created_at")
+        .select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers").eq("medical_record_id", mr.id).is("record_withdrawn_at", null).order("created_at")
     : { data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null }[] };
 
   const rows = ((resep ?? []) as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null }[])
@@ -373,7 +373,7 @@ async function gerbangConsent(supabase: AnyClient, visitId: string): Promise<boo
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   const [{ data: jasaRows }, { data: inpat }, { data: consents }, aturanConsent] = await Promise.all([
     mr
-      ? supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mr.id).is("billing_withdrawn_at", null)
+      ? supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mr.id).is("record_withdrawn_at", null)
       : Promise.resolve({ data: [] as { jenis: string; kategori: string | null }[] }),
     supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle(),
     supabase.from("consents").select("status").eq("visit_id", visitId),

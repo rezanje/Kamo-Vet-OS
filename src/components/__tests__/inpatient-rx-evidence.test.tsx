@@ -171,7 +171,7 @@ describe("prescriptions without a valid relation", () => {
 describe("loader and side effects", () => {
   it("reads evidence only for regular-drug ids of the same visit and keeps the summary when evidence fails", async () => {
     const reads: { table: string; in?: unknown }[] = [];
-    const db = { from(table: string) { const r: { table: string; in?: unknown } = { table }; reads.push(r); const q = { select: () => q, eq: () => q, order: () => q, in: (_: string, v: unknown) => { r.in = v; return q; }, range: () => q, maybeSingle: () => q,
+    const db = { from(table: string) { const r: { table: string; in?: unknown } = { table }; reads.push(r); const q = { select: () => q, eq: () => q, is: () => q, order: () => q, in: (_: string, v: unknown) => { r.in = v; return q; }, range: () => q, maybeSingle: () => q,
       then(done: (v: unknown) => unknown) {
         const rows: Record<string, unknown> = { visits: { id: "visit", dokter: null, keluhan: null }, medical_records: [{ id: "mr", visit_id: "visit", created_at: "2026-10-26" }],
           prescription_items: [rx(), rx({ id: "svc", jenis: "jasa" }), rx({ id: "cmp", compound_recipe_id: "recipe" })] };

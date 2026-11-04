@@ -90,7 +90,7 @@ async function readBranchScopedHistory(visitId:string,expectedPetId:string):Prom
   for(let start=0;start<recordIds.length;start+=200){
    const batch=recordIds.slice(start,start+200);
    const rows=await readCompleteList<PrescriptionRow>((from,to)=>history.from('prescription_items')
-    .select('id,medical_record_id,nama_obat,qty,satuan,jenis,aturan_pakai',{count:'exact'}).in('medical_record_id',batch).is('billing_withdrawn_at',null)
+    .select('id,medical_record_id,nama_obat,qty,satuan,jenis,aturan_pakai',{count:'exact'}).in('medical_record_id',batch).is('record_withdrawn_at',null)
     .order('id').range(from,to),'Resep pasien');
    if(rows.some(row=>!batch.includes(row.medical_record_id)))return unavailable;
    prescriptions.push(...rows);

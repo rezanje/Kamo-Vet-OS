@@ -55,7 +55,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   }
 
   const { data: presc, error: prescError } = mr
-    ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai, jenis, susulan_at, susulan_by_name, susulan_source").eq("medical_record_id", mr.id).is("billing_withdrawn_at", null).order("created_at")
+    ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai, jenis, susulan_at, susulan_by_name, susulan_source").eq("medical_record_id", mr.id).is("record_withdrawn_at", null).order("created_at")
     : { data: [] as (SusulanFields & { nama_obat: string; qty: number; satuan: string; aturan_pakai: string | null; jenis: string })[], error: null };
   const obat = (presc ?? []).filter((p) => p.jenis !== "jasa");
   const jasa = (presc ?? []).filter((p) => p.jenis === "jasa");

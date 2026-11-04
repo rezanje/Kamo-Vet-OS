@@ -3,7 +3,7 @@ import { servicePerformerInput, type ServicePerformersInput } from "@/lib/servic
 import { bmhpInput, type BmhpInput } from "@/lib/procedure-bmhp";
 import { clinicPackageOriginInput, type ClinicPackageOrigin } from "@/lib/clinic-package-origin";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
-import { alasanTarikValid, pesanTarikGagal } from "@/lib/tarik-item";
+import { alasanTarikValid, pesanTarikGagal, peranBolehTarik, PESAN_PERAN_TARIK, PESAN_AKSES_TARIK } from "@/lib/tarik-item";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -494,8 +494,16 @@ export async function tarikItemRekamMedis(input: { visitId: string; recordId: st
   if (!visitId || !recordId || !requestKey || requestKey.length > 100 || !Array.isArray(itemIds) || !itemIds.length || itemIds.length > 50) {
     return { ok: false, error: "Data penarikan tidak lengkap. Muat ulang halaman." };
   }
-  if (!alasanTarikValid(reason)) return { ok: false, error: "Alasan penarikan wajib diisi 5-200 karakter." };
+  if (!alasanTarikValid(reason)) return { ok: false, error: "Alasan penarikan wajib diisi 5-200 karakter dan minimal 5 huruf/angka (bukan hanya spasi atau tanda baca)." };
   const supabase = await createClient();
+  // Lapis kedua (defense in depth): peran OWNER/DOKTER aktif + akses klinik cabang kunjungan, sama dengan gerbang database.
+  // Database tetap pemutus akhir; pemeriksaan tak terbaca = ditolak.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Sesi berakhir. Masuk lagi lalu ulangi penarikan." };
+  const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
+  if (!peranBolehTarik(profile)) return { ok: false, error: PESAN_PERAN_TARIK };
+  const { data: akses, error: aksesError } = await supabase.rpc("clinic_record_correction_actor", { p_visit_id: visitId });
+  if (aksesError || akses !== true) return { ok: false, error: PESAN_AKSES_TARIK };
   const { data, error } = await supabase.rpc("clinic_withdraw_record_items", {
     p_visit_id: visitId, p_record_id: recordId, p_item_ids: itemIds, p_reason: reason, p_request_key: requestKey,
   });

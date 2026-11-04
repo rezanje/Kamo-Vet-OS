@@ -21,7 +21,7 @@ import { StokKlinik, StokKeranjangKlinik } from "@/components/StokKlinik";
 import { StokKurangPopup, StokKurangDariPesan } from "@/components/StokKurangPopup";
 import type { BarisKurangStok } from "@/lib/stok-kurang";
 import { simpanRekamMedis, koreksiRekamMedis, koreksiRekamMedisLengkap, tarikItemRekamMedis } from "./actions";
-import { alasanTarikValid, bisaDitarik, idTarik, ALASAN_TARIK_MAX, type WithdrawnItem } from "@/lib/tarik-item";
+import { alasanTarikValid, bisaDitarik, idTarik, tarikMenghabiskan, ALASAN_TARIK_MAX, type WithdrawnItem } from "@/lib/tarik-item";
 import { type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
 import { PetPhotoUpload } from "@/components/PetPhotoUpload";
@@ -660,12 +660,15 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
               </div>
               {correction?.fullEdit && tarikTarget && <div data-tarik-panel role="group" aria-label="Tarik item" style={{ border: ".5px solid #b45309", borderRadius: 6, padding: 8, marginTop: 8, fontSize: 10.5 }}>
                 <div><b>Tarik {tarikTarget.label}</b> dari rekam medis? Item ini tidak akan ditagih dan tidak ikut resep/cetak. Penarikan <b>langsung tersimpan</b> (tidak menunggu tombol Simpan) dan tercatat atas nama Anda; perubahan lain di form ini tetap perlu disimpan.</div>
-                <input className="fi" aria-label="Alasan penarikan" value={tarikAlasan} maxLength={ALASAN_TARIK_MAX} placeholder="Alasan (5-200 karakter), mis. salah input / diganti obat lain"
+                <input className="fi" aria-label="Alasan penarikan" value={tarikAlasan} maxLength={ALASAN_TARIK_MAX} placeholder="Alasan (min. 5 huruf/angka), mis. salah input / diganti obat lain"
                   onChange={e => setTarikAlasan(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void konfirmasiTarik(); } }}
                   style={{ width: "100%", marginTop: 4 }} />
+                {tarikMenghabiskan(cart, tarikTarget.ids) && <div role="alert" data-tarik-peringatan-terakhir style={{ color: "#b45309", marginTop: 4, fontWeight: 600 }}>
+                  Ini baris terakhir di rekam medis: minimal satu baris harus tersisa. Jika ditarik, tagihan belum bisa diterbitkan sampai ada item lagi (tambah lewat Tambah item lalu Simpan). Untuk membatalkan seluruh kunjungan, minta pemilik/admin mengarsipkannya dari Antrian.
+                </div>}
                 {tarikError && <div role="alert" data-tarik-error style={{ color: "#b91c1c", marginTop: 4 }}>{tarikError}</div>}
                 <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                  <button type="button" className="btn-def" data-tarik-konfirmasi disabled={tarikBusy || !alasanTarikValid(tarikAlasan)} onClick={() => void konfirmasiTarik()}>{tarikBusy ? "Menarik…" : "Ya, tarik"}</button>
+                  <button type="button" className="btn-def" data-tarik-konfirmasi disabled={tarikBusy || !alasanTarikValid(tarikAlasan)} onClick={() => void konfirmasiTarik()}>{tarikBusy ? "Menarik…" : tarikMenghabiskan(cart, tarikTarget.ids) ? "Tetap tarik baris terakhir" : "Ya, tarik"}</button>
                   <button type="button" className="btn-def" disabled={tarikBusy} onClick={() => { setTarikTarget(null); setTarikError(""); }}>Batal</button>
                 </div>
               </div>}

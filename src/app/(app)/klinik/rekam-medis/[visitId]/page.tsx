@@ -192,7 +192,7 @@ export default async function RekamMedisPage({
         .select("id, item_id, nama_obat, qty, harga, satuan, faktor, aturan_pakai, jenis, kategori, service_performers, compound_recipe_id, bmhp_components, susulan_at, susulan_by_name, susulan_source, package_item_id, package_qty")
         .eq("medical_record_id", mrId)
         // Baris yang ditarik (Tarik item) tidak lagi bagian resep/keranjang; tampil terpisah di bawah.
-        .is("billing_withdrawn_at", null)
+        .is("record_withdrawn_at", null)
         .order("created_at"),
       // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
       supabase
