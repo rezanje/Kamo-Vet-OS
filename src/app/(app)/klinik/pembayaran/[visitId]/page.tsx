@@ -82,7 +82,7 @@ export default async function PembayaranPage({
   const userP = mulai(supabase.auth.getUser());
   const visitP = mulai(supabase
     .from("visits")
-    .select("id, status, poli, dokter, created_at, branch_id, customer_id, doctor_id, service_provider_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
+    .select("id, status, poli, dokter, created_at, archived_at, archive_reason, branch_id, customer_id, doctor_id, service_provider_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
     .eq("id", visitId)
     .maybeSingle());
   // Rekam medis opsional: transaksi walk-in tanpa dokter (grooming, beli obat,
@@ -420,6 +420,7 @@ export default async function PembayaranPage({
       <Popup tone="success" title="Pembayaran berhasil"
         message={!error && success === "bayar" && invoice?.paid_status === "Lunas" && visit.status === "Selesai" ? `Invoice ${invoice.invoice_no ?? ""} lunas. Cetak invoice untuk pelanggan.` : null}
         action={invoice ? { href: `/klinik/pembayaran/${visit.id}/invoice?invoice_id=${invoice.id}`, label: "Cetak Invoice", icon: "ti-printer" } : undefined} />
+      {visit.archived_at && <div className="p2ban" role="alert"><i className="ti ti-archive" /> Kunjungan ini diarsipkan{visit.archive_reason ? ` (${visit.archive_reason})` : ""}. Tidak dapat diperiksa, dicatat atau dibayar sampai dipulihkan oleh pemilik/admin dari tab Diarsipkan di Antrian.</div>}
       {!invoice && <div className="p2ban" role="status">Draf tagihan kunjungan ini belum menjadi invoice tersimpan dan belum tercatat sebagai pembayaran atau penjualan.</div>}
       {tagihanBertahap && (
         <div className="p2ban" style={{ background: "#eff6ff", border: ".5px solid #bfdbfe", color: "var(--posb-dk)", justifyContent: "space-between" }}>

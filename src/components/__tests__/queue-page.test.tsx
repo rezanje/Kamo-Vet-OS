@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       limit: () => { carryOver = true; return q; },
       eq: (key: string, value: unknown) => { if (table === "visits") fixture.calls.push(["eq", key, value]); return q; },
       in: (key: string, value: unknown) => { fixture.calls.push(["in", key, value]); return q; },
-      neq: () => q,
+      neq: () => q, is: () => q, not: () => q, maybeSingle: async () => ({ data: null, error: null }),
       gte: (key: string, value: unknown) => { fixture.calls.push(["gte", key, value]); return q; },
       lt: (key: string, value: unknown) => { fixture.calls.push(["lt", key, value]); return q; },
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: fixture.payment && table === "visits" && !carryOver && selection.includes("status") ? [{id:"visit-payment",status:"Pembayaran",created_at:"2026-10-14T01:00:00Z",poli:"Umum",inpatient_records:fixture.inpatient?[{id:"stay",discharged_at:null}]:[],pets:null,customers:null,branches:null}] : [], error: table === "visits" && fixture.fail ? { message: "private DB detail" } : null }).then(resolve),
