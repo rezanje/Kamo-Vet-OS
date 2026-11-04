@@ -5,6 +5,9 @@ import { STAY_TYPES, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
+import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
+import { bolehLihatRiwayat, klinikHistory } from "@/lib/transaction-history";
+import { loadActorNames } from "@/lib/transaction-history-server";
 import { Popup } from "@/components/Popup";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
@@ -116,7 +119,7 @@ export default async function PembayaranPage({
     .from("invoices").select("id, invoice_no, subtotal, discount, tax, total, dp_amount, dp_date, paid_status, metode_bayar, paid_at, reissued_from, correction_pending, created_at, request_key, salesperson_id, cashier_name, service_pricing_version")
     .eq("visit_id", visitId).is("voided_at", null)
     .order("created_at", { ascending: true }).order("id", { ascending: true })) : null;
-  const allInvIdsP = outpatient ? mulai(supabase.from("invoices").select("id, invoice_no").eq("visit_id", visitId)) : null;
+  const allInvIdsP = outpatient ? mulai(supabase.from("invoices").select("id, invoice_no, reissued_from, created_at, voided_at").eq("visit_id", visitId)) : null;
   // Integrasi A+D: versi keranjang (paket D) berangkat bersama bacaan awal, dan baris resep
   // baru dibaca SETELAH versinya dijawab. Dengan begitu versi yang dikirim form sama dengan
   // baris yang tampil atau lebih lama (server menolak CART_STALE) — item dokter yang masuk
@@ -215,10 +218,43 @@ export default async function PembayaranPage({
   const editLogP = mulai(allInvIdsP!.then(async ({ data: allInvIds }) => (allInvIds ?? []).length
     ? await supabase
         .from("invoice_edit_log")
-        .select("field_changed, old_value, new_value, reason, edited_at, invoice_id, profiles(full_name)")
+        .select("id, field_changed, old_value, new_value, reason, edited_at, edited_by, invoice_id, profiles(full_name)")
         .in("invoice_id", (allInvIds ?? []).map((x) => x.id))
         .order("edited_at", { ascending: false })
     : { data: [] }));
+  // Riwayat perubahan terpadu (hanya baca): log edit, terbit ulang, koreksi metode, refund dan batal kwitansi.
+  // Berangkat bersama bacaan lain (tidak menambah putaran berurutan). Sumber tambahan dibaca hanya untuk
+  // OWNER/ADMIN/FINANCE dan tiap tabel tetap lewat RLS-nya sendiri (koreksi metode: OWNER/FINANCE).
+  const riwayatP = invoice && draftUser && viewerProfileP && allInvIdsP
+    ? mulai(Promise.all([viewerProfileP, allInvIdsP, editLogP]).then(async ([{ data: profile }, { data: invRows }, { data: log }]) => {
+      const viewer = profile as { role?: string; is_active?: boolean } | null;
+      if (!(viewer?.is_active === true && bolehLihatRiwayat(viewer))) return null;
+      const invoices = invRows ?? [];
+      const [corrections, refunds, receipts] = await Promise.all([
+        supabase.from("clinic_payment_corrections").select("id, invoice_id, revision, amount, from_method, to_method, reason, created_at, created_by")
+          .in("invoice_id", invoices.map((x) => x.id)).order("created_at", { ascending: false }),
+        supabase.from("clinic_refunds").select("id, no_refund, tanggal, total, method, keterangan, created_at, created_by").eq("visit_id", visitId).order("created_at", { ascending: false }),
+        supabase.from("clinic_payment_receipts").select("id, no_kwitansi, total, status, void_reason, voided_at, voided_by").eq("visit_id", visitId).eq("status", "batal").order("voided_at", { ascending: false }),
+      ]);
+      const logRows = (log ?? []) as { id: string; invoice_id: string; field_changed: string; old_value: string | null; new_value: string | null; reason: string | null;
+        edited_at: string; edited_by?: string | null; profiles?: Rel<{ full_name: string | null }> }[];
+      const correctionRows = (corrections.data ?? []) as { id: string; revision: number; amount: number; from_method: string; to_method: string; reason: string; created_at: string; created_by: string | null }[];
+      const refundRows = (refunds.data ?? []) as { id: string; no_refund: string; tanggal: string; total: number; method: string; keterangan: string | null; created_at: string; created_by: string | null }[];
+      const receiptRows = (receipts.data ?? []) as { id: string; no_kwitansi: string; total: number; status: string; void_reason: string | null; voided_at: string | null; voided_by: string | null }[];
+      const actors = await loadActorNames(supabase, [...logRows.map((l) => l.edited_by), ...correctionRows.map((c) => c.created_by),
+        ...refundRows.map((r) => r.created_by), ...receiptRows.map((r) => r.voided_by)]);
+      return {
+        role: viewer?.role,
+        error: !!(corrections.error || refunds.error || receipts.error),
+        events: klinikHistory({
+          viewerId: draftUser.id, names: actors.names,
+          editLog: logRows.map((l) => ({ ...l, editor_name: one(l.profiles ?? null)?.full_name ?? null })),
+          invoices: invoices.map((x) => ({ id: x.id, invoice_no: x.invoice_no, reissued_from: x.reissued_from ?? null, created_at: x.created_at ?? null, voided_at: x.voided_at ?? null })),
+          corrections: correctionRows, refunds: refundRows, receipts: receiptRows,
+        }),
+      };
+    }))
+    : null;
   const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
@@ -326,6 +362,8 @@ export default async function PembayaranPage({
   const { data: correctionData, error: correctionError } = canCorrectMethod
     ? correctionRead
     : { data: [], error: null };
+  const riwayatResult = riwayatP ? await riwayatP : null;
+  const tampilRiwayat = !!riwayatResult;
   const correctionParts = invoice ? clinicCorrectableParts(invoice, paymentRows ?? []) : [];
   const correctionBlocked = refundData && (refundData.refunds.length > 0
     || refundData.requests.some((r) => r.status === "pending" || r.status === "diproses"))
@@ -778,7 +816,13 @@ export default async function PembayaranPage({
       )}
 
       {invoice && <ActivityHistoryLink entity="invoices" id={invoice.id} />}
-      {/* Riwayat perubahan invoice (audit log §7). */}
+      {tampilRiwayat ? (
+        <TransactionHistoryPanel title="RIWAYAT PERUBAHAN TRANSAKSI" events={riwayatResult!.events} error={riwayatResult!.error}
+          hint={riwayatResult!.role === "ADMIN"
+            ? "Edit invoice, terbit ulang, refund dan batal kwitansi untuk kunjungan ini. Koreksi metode bayar hanya terlihat oleh Owner dan Finance."
+            : "Edit invoice, terbit ulang, koreksi metode bayar, refund dan batal kwitansi untuk kunjungan ini: siapa, kapan, apa, alasan."} />
+      ) : (
+      <>
       {(editLog ?? []).length > 0 && (
         <div className="crm-sec" style={{ marginTop: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
@@ -803,6 +847,8 @@ export default async function PembayaranPage({
             </tbody>
           </table>
         </div>
+      )}
+      </>
       )}
     </>
   );
