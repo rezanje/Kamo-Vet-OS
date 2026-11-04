@@ -2,7 +2,11 @@
 """Run feedback finance acceptance in an owned, disposable PostgreSQL database.
 
 Only unrelated sales/invoice dependency tables use minimal shapes. All finance
-functions, triggers and policies are loaded verbatim from production migrations.
+functions, triggers and policies are loaded verbatim from production migrations,
+ending with the production chart of accounts (20261105010000_coa_bagan_baru.sql),
+so posting helpers resolve the same 6-digit accounts as production (e.g. the
+Operasional expense category posts to 760003, cash to 110003).
+Each migration runs in one transaction, as the Supabase migrator does.
 Every migration and test error stops the run. No production connection is used.
 """
 from pathlib import Path
@@ -18,7 +22,7 @@ PG_ENV = {**os.environ, "PGOPTIONS": "-c client_min_messages=warning"}
 REQUIRED_MIGRATIONS = (
     "0001_core.sql", "0002_rls.sql", "0011_cashier_shifts.sql", "0012_expenses.sql",
     "0015_keuangan.sql", "0016_hris.sql", "0022_bank_rec.sql", "0026_shift_type_breakdown.sql",
-    "0046_expenses_shift.sql", "0055_tutup_buku.sql",
+    "0046_expenses_shift.sql", "0055_tutup_buku.sql", "0059_recurring_journals.sql",
     "0060_user_admin.sql", "0068_kas_bank.sql", "0071_dokumen_lampiran.sql",
     "0072_kas_masuk_keluar.sql", "0085_peta_rekening_pembayaran.sql", "0101_akses_grup.sql",
     "0113_coa_header_detail.sql", "0128_penomoran_dokumen.sql",
@@ -27,6 +31,8 @@ REQUIRED_MIGRATIONS = (
     "20261020130000_expense_backoffice_account.sql",
     "20261017090000_role_capabilities.sql",
     "20261020134639_atomic_manual_journal_create.sql",
+    # Production chart of accounts: the COA import contract it checks, then the recode itself.
+    "20261104330000_coa_import_atomic.sql", "20261105010000_coa_bagan_baru.sql",
 )
 
 
@@ -50,6 +56,13 @@ create table storage.objects(id uuid primary key default gen_random_uuid(), buck
 -- needs that dependency, so keep its smallest compatible shape here.
 create table public.sales(id uuid primary key default gen_random_uuid());
 create table public.invoices(id uuid primary key default gen_random_uuid());
+-- The new chart (20261105010000) recodes account codes stored as text/JSON in these
+-- sales/clinic tables; only that code-bearing column matters to the finance suites.
+create table public.sale_payments(id uuid primary key default gen_random_uuid(), account_snapshot jsonb);
+create table public.sales_refund_payouts(id uuid primary key default gen_random_uuid(), account_snapshot jsonb);
+create table public.clinic_refunds(id uuid primary key default gen_random_uuid(), account_snapshot jsonb);
+create table public.invoice_payments(id uuid primary key default gen_random_uuid(), kas_code text);
+create table public.clinic_payment_receipt_parts(id uuid primary key default gen_random_uuid(), kas_code text);
 grant usage on schema auth, storage to authenticated;
 grant execute on function auth.uid() to authenticated;
 grant execute on function auth.role() to authenticated;
@@ -75,7 +88,7 @@ try:
         path = ROOT / "supabase/migrations" / name
         if not path.is_file():
             raise RuntimeError(f"Required migration missing: {name}")
-        run(*PSQL, "-d", DB, "-f", str(path))
+        run(*PSQL, "-d", DB, "-1", "-f", str(path))
         if name == "0015_keuangan.sql":
             run(*PSQL, "-d", DB, input="""
 insert into public.coa_accounts(code,name,type,normal_balance) values
@@ -84,6 +97,11 @@ insert into public.coa_accounts(code,name,type,normal_balance) values
   ('5303','Transport','BEBAN','D'),('5304','Maintenance','BEBAN','D'),
   ('5401','Operations','BEBAN','D'),('4101','Income','PENDAPATAN','K') on conflict (code) do nothing;
 """)
+        if name == "0022_bank_rec.sql":
+            # Column from 20261020193103_atomic_bank_reconciliation.sql; the new chart recodes it.
+            run(*PSQL, "-d", DB, input="alter table public.bank_reconciliations add column bank_coa_code text;")
+        if name == "0060_user_admin.sql":
+            apply_section("0066_master_data_kategori.sql", "create table asset_categories (", "alter table fixed_assets")
         if name == "0016_hris.sql":
             apply_section("0034_employee_profile_link.sql", "alter table employees add column", "-- Demo:")
         if name == "0113_coa_header_detail.sql":
