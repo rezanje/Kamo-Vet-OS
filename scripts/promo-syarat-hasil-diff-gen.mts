@@ -101,6 +101,19 @@ for (let idx = 0; idx < count; idx++) {
       console.log(JSON.stringify({ idx, src: "composer", promos: defs.map((d) => ({ id: d.id, rule: ruleOf(d) })), lines: cLines, claims: cClaims, total_discount: comp.savings.total }));
     }
   }
+  if (claims.length > 0) {
+    // stage 3b: the same cart again with item minimum quantities (min_sell_qty): a split part below the minimum is MERGED back into one claim
+    // line (qty > syarat + hasil units). The database must accept that shape too.
+    const minRows: ShRow[] = lines.map((l) => ({ item_id: l.item, qty: l.qty, harga: l.harga, satuan: "PCS", faktor: 1, item_type: "Persediaan", officialPrice: l.price,
+      item_discount_type: l.manual > 0 ? "nominal" : null, item_discount_value: l.manual, minSellBase: rnd() < 0.7 ? int(2, 6) : 0 }));
+    const compM = composeSyaratHasilCart({ rows: minRows, defs, legacy: () => [] });
+    const mClaims = compM.rows.flatMap((row, pos) => (row.sh_claim ? [{ pos, promo: row.sh_claim.promo_id, sets: row.sh_claim.sets, syarat: row.sh_claim.syarat_units, hasil: row.sh_claim.hasil_units, disc: row.sh_claim.hasil_units > 0 ? row.promo_discount : 0 }] : []));
+    if (mClaims.length > 0) {
+      const merged = compM.rows.some((row) => row.sh_claim && row.qty > row.sh_claim.syarat_units + row.sh_claim.hasil_units);
+      const mLines = compM.rows.map((row, pos) => ({ pos, item: row.item_id, price: row.officialPrice as number, qty: row.qty, harga: row.harga, manual: row.item_discount_value ?? 0 }));
+      console.log(JSON.stringify({ idx, src: "composer-min", merged, promos: defs.map((d) => ({ id: d.id, rule: ruleOf(d) })), lines: mLines, claims: mClaims, total_discount: compM.savings.total }));
+    }
+  }
   // boundary variant: nilai == need exactly -> shave 1 Rp off a counted, non-claimed line
   const need = r.claims.reduce((m, c) => {
     const d = defs.find((x) => x.id === c.promo_id) as SyaratHasilDef;
