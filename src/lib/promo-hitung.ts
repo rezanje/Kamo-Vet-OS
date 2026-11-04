@@ -1,6 +1,7 @@
 import { hariIniWIB } from "./tanggal";
 import { readCompleteList } from "./checked-list";
 import { allocateQuantityPool, parseQuantityPoolRule, type QuantityPoolRule } from "./promo-quantity-pool";
+import { isSyaratHasilRule } from "./promo-syarat-hasil-checkout";
 // Perhitungan potongan promo — pure, dipakai KLIEN (tampilan kasir) dan SERVER
 // (angka yang benar-benar disimpan). Dipisah dari lib/promo.ts karena file itu
 // hanya soal "promo ini aktif hari ini di cabang mana", bukan soal uang.
@@ -251,6 +252,9 @@ export async function loadPromoAktif(supabase: AnyClient, branchId: string, prom
   }
 
   const aktif = ((data ?? []) as Row[]).filter((p) => {
+    // Promo "syarat -> hasil" punya mesin dan pemuatnya sendiri (lib/promo-syarat-hasil-checkout); bukan promo per-baris.
+    // Tanpa pengecualian ini satu promo bermode baru yang aktif membuat SEMUA checkout (kasir, POS, klinik) gagal.
+    if (isSyaratHasilRule(p.rule)) return false;
     if (p.branch_ids && p.branch_ids.length > 0 && !p.branch_ids.includes(branchId)) return false;
     if (p.valid_from && wibToday < p.valid_from) return false;
     if (p.valid_until && wibToday > p.valid_until) return false;

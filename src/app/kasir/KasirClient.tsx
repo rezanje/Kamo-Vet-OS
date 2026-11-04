@@ -2,7 +2,7 @@
 
 import { NumberInput } from "@/components/NumberInput";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { checkoutKasir } from "./checkout";
 import { cashierPriceFloorIssue } from "@/lib/cashier-price-floor";
 import { tambahCustomerKasir } from "./actions";
@@ -25,6 +25,8 @@ import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { roundPosMoney } from "@/lib/pos-money";
 import { serviceLinePromos, aggregateServiceLines } from "@/lib/service-line-promos";
+import { composedToLine, composeSyaratHasilCart } from "@/lib/promo-syarat-hasil-checkout";
+import type { SyaratHasilDef } from "@/lib/promo-syarat-hasil";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput } from "@/lib/service-performers";
 import { KasirQuantityInput } from "./KasirQuantityInput";
@@ -82,6 +84,7 @@ export type CartLine = {
 
 const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 const TANPA_PELANGGAN: CustRow[] = [];
+const NO_SH_DEFS: SyaratHasilDef[] = [];
 
 // Kunci baris keranjang: barang + satuan.
 const kunciBaris = (l: { item_id: string; satuan?: string; row_key?: string }) => l.row_key || `${l.item_id}|${l.satuan ?? ""}`;
@@ -95,7 +98,7 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 };
 
 export function KasirClient({
-  branchName, items, customers = TANPA_PELANGGAN, vouchers, kodeKampanye = [], hariIni, draftContext, shiftId, promos = [], promoHitung = [],
+  branchName, items, customers = TANPA_PELANGGAN, vouchers, kodeKampanye = [], hariIni, draftContext, shiftId, promos = [], promoHitung = [], syaratHasil,
   aturanDiskon = {}, infoBarang = {}, salespeople = [], cashierName = "Akun login", error, replacementDraft, replacementId,
   groomingDoctorRequired = false, groomingApplies = true,
 }: {
@@ -107,6 +110,8 @@ export function KasirClient({
    */
   customers?: CustRow[]; vouchers: VoucherRow[]; kodeKampanye?: KodeKampanye[]; hariIni: string;
   promos?: PromoRow[]; promoHitung?: PromoHitung[];
+  /** Promo "syarat -> hasil" aktif + status flag picker. Hanya diisi server bila flag rilis DB menyala; tanpa ini layar persis seperti sebelumnya. */
+  syaratHasil?: { defs: SyaratHasilDef[]; pickerReleased: boolean };
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
   salespeople?: PilihanPenjual[]; cashierName?: string;
@@ -358,31 +363,46 @@ export function KasirClient({
   const kodeTerbaca = useMemo(() => bacaKode(voucher, kodeKampanye), [voucher, kodeKampanye]);
   const promoKodeId = kodeTerbaca.promoId;
   const promoEfektif = useMemo(() => promoDenganKode(promoHitung, kodeTerbaca.promoId), [promoHitung, kodeTerbaca]);
-  const potonganPromo = useMemo(() => serviceLinePromos(promoEfektif, cart.map(line => {
+  const legacyPromoRows = useCallback((lines: CartLine[]) => serviceLinePromos(promoEfektif, lines.map(line => {
     const unit = items.find(item => item.id === line.item_id)?.satuan?.find(unit => unit.unit === line.satuan);
     return {...line, officialPrice: unit?.sell_price, faktor: unit?.factor, manualOverride: line.harga !== unit?.sell_price};
-  })), [promoEfektif, cart, items]);
+  })), [promoEfektif, items]);
+  const potonganLegacy = useMemo(() => legacyPromoRows(cart), [legacyPromoRows, cart]);
+  // Promo "syarat -> hasil" (bundling ala Accurate): hanya bila server mengirim definisinya (flag rilis DB menyala). Promo yang
+  // bentrok dimenangkan yang lebih hemat bagi pelanggan; kode kampanye yang memaksa satu promo mematikannya; kasir bisa "Tanpa promo".
+  // Angka di sini cuma untuk DITAMPILKAN, server menghitung ulang dan memecah baris yang diklaim.
+  const [tanpaPromo, setTanpaPromo] = useState(false);
+  const shDefs = kodeTerbaca.promoId ? NO_SH_DEFS : (syaratHasil?.defs ?? NO_SH_DEFS);
+  const komposisi = useMemo(() => shDefs.length === 0 ? null : composeSyaratHasilCart({
+    rows: cart.map(line => ({ ...line, officialPrice: line.hargaNormal ?? items.find(item => item.id === line.item_id)?.satuan?.find(unit => unit.unit === line.satuan)?.sell_price })),
+    defs: shDefs, legacy: (list) => legacyPromoRows(list as unknown as CartLine[]), mode: tanpaPromo ? "tanpa" : "auto",
+  }), [shDefs, cart, items, legacyPromoRows, tanpaPromo]);
+  const potonganPromo = useMemo(() => komposisi
+    ? komposisi.rows.flatMap((r, lineIndex) => (r.promo_id && r.promo_discount > 0 ? [{ lineIndex, potongan: r.promo_discount, promoId: r.promo_id, promoName: r.promo_name ?? "" }] : []))
+    : potonganLegacy, [komposisi, potonganLegacy]);
   const promoPerItem = useMemo(
-    () => new Map(potonganPromo.map((p) => [p.lineIndex, p])),
-    [potonganPromo],
+    () => new Map(potonganLegacy.map((p) => [p.lineIndex, p])),
+    [potonganLegacy],
   );
-  // Baris keranjang + potongan promonya, dipakai semua perhitungan di bawah.
+  // Baris keranjang + potongan promonya, dipakai semua perhitungan di bawah (bila ada klaim: baris yang sudah dipecah seperti di server).
   const cartHitung = useMemo(
-    () => cart.map((l,index) => ({ ...l, promo_discount: promoPerItem.get(index)?.potongan ?? 0 })),
-    [cart, promoPerItem],
+    () => komposisi
+      ? komposisi.rows.map((r) => composedToLine(r, false) as unknown as CartLine & { promo_discount: number })
+      : cart.map((l,index) => ({ ...l, promo_discount: promoPerItem.get(index)?.potongan ?? 0 })),
+    [cart, promoPerItem, komposisi],
   );
 
   // Stok sistem tetap ditampilkan sebagai peringatan operasional. Harga jual
   // diverifikasi terhadap HPP FIFO aktif oleh server saat kasir membayar.
   const peringatan = useMemo(() => {
-    const stokKurang = cartHitung.filter((l) => {
+    const stokKurang = cart.filter((l) => {
       if (l.stok == null) return false;
       const stok = Number(l.stok);
       if (!Number.isFinite(stok)) return false;
       return l.qty * (Number(l.faktor) || 1) > stok;
     });
     return { stokKurang };
-  }, [cartHitung]);
+  }, [cart]);
 
   // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lihat lib/pos-calc).
   const subtotal = cartHitung.reduce((a, l) => a + l.qty * l.harga, 0);
@@ -400,10 +420,10 @@ export function KasirClient({
   const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
   const diskonKategori = useMemo(
     () => diskonGolonganKeranjang(
-      aggregateServiceLines(cart), cust?.golonganId ? (aturanDiskon[cust.golonganId] ?? []) : [],
+      aggregateServiceLines(komposisi ? cartHitung : cart), cust?.golonganId ? (aturanDiskon[cust.golonganId] ?? []) : [],
       cust?.diskonPersen ?? 0, infoMap,
     ),
-    [cart, cust, aturanDiskon, infoMap],
+    [cart, cartHitung, komposisi, cust, aturanDiskon, infoMap],
   );
   const v = kodeTerbaca.voucherCode ? vouchers.find((x) => x.code === kodeTerbaca.voucherCode) : undefined;
   const kampanye = kodeTerbaca.kampanye;
@@ -671,6 +691,7 @@ export function KasirClient({
           <input type="hidden" name="replacementSaleId" value={replacementId ?? ""} />
           <input type="hidden" name="customerId" value={cust?.id ?? ""} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />
+          {komposisi && <input type="hidden" name="promoPick" value={tanpaPromo ? "none" : "auto"} />}
           <input type="hidden" name="diskon" value={diskonVal} />
           <input type="hidden" name="poinDigunakan" value={poinUsed} />
           <input type="hidden" name="voucherCode" value={kampanye ? kampanye.code : v ? v.code : ""} />
@@ -802,7 +823,28 @@ export function KasirClient({
             <Row k={`Total item`} v={`${cart.reduce((a, l) => a + l.qty, 0)}`} />
             <Row k="Subtotal" v={rp(subtotal)} />
             {itemDiscTotal > 0 && <Row k="Pot. per item" v={`- ${rp(itemDiscTotal)}`} red />}
-            {promoTerpakai > 0 && (
+            {komposisi && komposisi.applied.length > 0 && (
+              <div data-testid="promo-diterapkan" style={{ fontSize: 10.5, color: "#15803d", margin: "-2px 0 6px", lineHeight: 1.45 }}>
+                <b><i className="ti ti-discount-2" /> Promo diterapkan</b>
+                {komposisi.applied.map((a) => (
+                  <div key={a.promo_id}>{a.name ?? "Promo"} · hemat {rp(a.discount)}</div>
+                ))}
+              </div>
+            )}
+            {komposisi && komposisi.notApplied.length > 0 && (
+              <div data-testid="promo-tidak-dipakai" style={{ fontSize: 10, color: "#92400e", margin: "-2px 0 6px", lineHeight: 1.45 }}>
+                Promo lain berlaku tetapi tidak dipakai (promo di atas lebih hemat):
+                {komposisi.notApplied.map((n) => (
+                  <div key={n.promo_id}>{n.name ?? "Promo"} · hemat {rp(n.saving)}</div>
+                ))}
+              </div>
+            )}
+            {syaratHasil?.pickerReleased && shDefs.length > 0 && (
+              <label data-testid="promo-tanpa" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, margin: "2px 0 6px" }}>
+                <input type="checkbox" checked={tanpaPromo} onChange={(e) => setTanpaPromo(e.target.checked)} /> Tanpa promo (batalkan semua promo transaksi ini)
+              </label>
+            )}
+            {promoTerpakai > 0 && !komposisi && (
               <div style={{ fontSize: 9.5, color: "#15803d", margin: "-2px 0 4px" }}>
                 <i className="ti ti-discount-2" /> termasuk promo:{" "}
                 {[...new Set(potonganPromo.map((p) => p.promoName))].join(", ")}
