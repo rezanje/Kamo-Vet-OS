@@ -15,6 +15,7 @@ import { sendWA } from "@/lib/fonnte";
 import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
 import { inpatientStaffInput } from '@/lib/clinical-staff';
 import { isMissingRpc, parseStayType, readStayTypesChecked } from "@/lib/inpatient-stay";
+import { clinicPackageOriginInput, type ClinicPackageOrigin } from "@/lib/clinic-package-origin";
 
 function bacaPetugas(formData:FormData,back:string,allowLegacy=false) {
   try{return formData.has('log_kind')?inpatientStaffInput(formData,allowLegacy):{};}
@@ -167,6 +168,10 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
   // Tindakan jasa maupun persediaan (pekerjaan pesanan) sama-sama boleh membawa BMHP.
   try { bmhpRows = resepList.map(r => r.item_id && r.jenis !== "racikan" ? bmhpInput(r.bmhp) : null); }
   catch (error) { bmhpError = error instanceof Error ? error.message : "BMHP tidak valid"; }
+  // Paket (Grup): asal paket eksplisit dari keranjang diteruskan ke RPC; tidak pernah ditebak dari nama/harga.
+  let packageOrigins: ClinicPackageOrigin[] = [];
+  try { packageOrigins = resepList.map(clinicPackageOriginInput); }
+  catch (error) { return redirect(`${formHref}?error=${encodeURIComponent(error instanceof Error ? error.message : "Asal paket tidak valid")}`); }
   const needsBmhp = !bmhpError && bmhpRows.some(row => row?.length);
 
   // U07: dulu hingga 7 bacaan berurutan sebelum RPC simpan. Sekarang semua dimulai
@@ -231,7 +236,7 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
   if (resep.length && !mrId) {
     redirect(`${formHref}?error=${encodeURIComponent("Rekam medis belum tersedia untuk menautkan resep ke tagihan")}`);
   }
-  let rows: { nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string; kategori: string | null; service_performers?: ServicePerformersInput | null; bmhp_components?: BmhpInput[] }[] = [];
+  let rows: ({ nama_obat: string; item_id: string | null; qty: number; satuan: string; faktor: number; harga: number; aturan_pakai: string | null; jenis: string; kategori: string | null; service_performers?: ServicePerformersInput | null; bmhp_components?: BmhpInput[] } & ClinicPackageOrigin)[] = [];
   if (bmhpError) return redirect(`${formHref}?error=${encodeURIComponent(bmhpError)}`);
   if (needsBmhp) {
     // Fail closed: cek kontrak yang gagal dibaca = belum aktif (pesan lama tetap).
@@ -246,7 +251,7 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
     let unitOpts: Map<string, ItemUnit[]>;
     try { unitOpts = await unitsP!; }
     catch (error) { return redirect(`${formHref}?error=${encodeURIComponent(error instanceof Error ? error.message : "Satuan barang belum dapat dibaca")}`); }
-    rows = resep.map((r, index) => ({ r, bmhp: bmhpRows[index] })).filter(({ r }) => r.nama_obat?.trim() && r.jenis !== "racikan").map(({ r, bmhp }) => ({
+    rows = resep.map((r, index) => ({ r, bmhp: bmhpRows[index], origin: packageOrigins[index] })).filter(({ r }) => r.nama_obat?.trim() && r.jenis !== "racikan").map(({ r, bmhp, origin }) => ({
       nama_obat: r.nama_obat.trim(), item_id: r.item_id ?? null,
       qty: Number(r.qty) > 0 ? Number(r.qty) : 1,
       satuan: r.satuan?.trim() || "pcs",
@@ -258,6 +263,7 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
       ...(r.service_performers != null ? {service_performers: servicePerformerInput(r.service_performers)} : {}),
       kategori: r.jenis === "jasa" ? (r.kategori?.trim() || null) : null,
       ...(bmhp?.length ? { bmhp_components: bmhp } : {}),
+      ...origin,
     }));
   }
 

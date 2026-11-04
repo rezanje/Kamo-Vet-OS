@@ -28,6 +28,7 @@ import type { BarisKurangStok } from "@/lib/stok-kurang";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
 import { InpatientStaffFields } from '@/components/InpatientStaffFields';
 import type { ClinicalStaff, InpatientStaff } from '@/lib/clinical-staff';
+import { pecahPaket, type ResepPaket } from "@/lib/paket-klinik";
 
 /** U07: satuan yang dikirim ke browser — tanpa harga beli (tidak dipakai form klinik). */
 export type UnitLite = Omit<ItemUnit, "buy_price">;
@@ -45,6 +46,8 @@ type CartRow = {
   bmhp?: BmhpRow[];
   /** Diisi hanya bila racikan sudah pernah diracik (stok bahan sudah keluar). */
   compound_recipe_id?: string;
+  /** Baris isi paket (Grup) yang dipilih dari daftar Obat; dikirim ke server sebagai asal paket. */
+  paket_id?: string; paket_nama?: string; paket_qty?: number;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -57,7 +60,7 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, petHotel = false, tabAwal }: {
+export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, petHotel = false, tabAwal, paketResep = {} }: {
   mode?: "legacy" | "clinical" | "billables";
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
   /** `?tab=tindakan` membuka form langsung di tab "Tindakan & Racikan" — dipakai tombol
@@ -79,6 +82,8 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
   groomingApplies?: boolean;
   /** K14: pet hotel = catatan makan, kondisi, catatan bebas oleh paramedis; dokter/suhu tidak wajib. */
   petHotel?: boolean;
+  /** Resep paket (Grup) yang tampil di daftar Obat; dipilih utuh lalu dipecah jadi isinya. */
+  paketResep?: Record<string, ResepPaket>;
 }) {
   const clinicalVisit = mode === "clinical" && !petHotel;
   const [staff,setStaff]=useState<InpatientStaff>({log_kind:clinicalVisit?'doctor_visit':'monitoring',visit_doctor_id:null,paramedic_id:null});
@@ -164,6 +169,8 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
     },
   });
 
+  // Paket (Grup) hanya dipilih dari daftar Obat; tidak pernah jadi BMHP atau pengganti item.
+  const barangSaja = useMemo(() => items.filter(item => item.item_type !== "Grup"), [items]);
   const obatMatches = useMemo(() => {
     const term = search.trim().toLowerCase();
     return items.filter(it => [it.name, it.code, it.upc].some(value => value?.toLowerCase().includes(term)));
@@ -176,8 +183,8 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
   const addObat = (it: ItemLite, bmhp?: BmhpRow[]) => setCart((c) => {
     const isService = it.item_type === "Jasa";
     // Tiap tindakan ber-BMHP berdiri sendiri: komposisinya bisa berbeda per baris.
-    const ex = isService || bmhp ? undefined : c.find((r) => r.item_id === it.id && r.jenis !== "jasa");
-    if (ex) return c.map((r) => (r.item_id === it.id ? { ...r, qty: r.qty + 1 } : r));
+    const ex = isService || bmhp ? undefined : c.find((r) => r.item_id === it.id && r.jenis !== "jasa" && !r.paket_id);
+    if (ex) return c.map((r) => (r.key === ex.key ? { ...r, qty: r.qty + 1 } : r));
     const u = isService ? undefined : (it.units ?? [])[0];
     return [...c, {
       key: isService || bmhp ? crypto.randomUUID() : it.id, item_id: it.id, nama_obat: it.name, qty: 1,
@@ -209,7 +216,36 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
     setSaleItemId(item.id); setRacikNama(item.name);
     setOfficialVersionId(""); setRacikForm("sirup"); setRacikAturan(""); setRacikBahan([]);
   };
+  /** Harga normal per satuan isi paket — bobot pembagian harga paket. */
+  const hargaNormal = (itemId: string, satuan: string, faktor: number) => {
+    const item = [...items, ...jasaItems, ...tindakanItems, ...bahanItems, ...racikanItems].find(row => row.id === itemId);
+    if (!item) return 0;
+    return item.units?.find(unit => unit.unit === satuan)?.sell_price ?? item.sell_price * faktor;
+  };
+  /** Ubah jumlah paket: qty tiap baris isinya mengikuti (qty per paket x jumlah). */
+  const setJumlahPaket = (paketId: string, jumlah: number) => {
+    if (!Number.isInteger(jumlah)) return;
+    if (jumlah < 1) { setCart(rows => rows.filter(row => row.paket_id !== paketId)); return; }
+    setCart(rows => rows.map(row => row.paket_id === paketId && Number(row.paket_qty) > 0
+      ? { ...row, qty: Math.round((row.qty / Number(row.paket_qty)) * jumlah), paket_qty: jumlah } : row));
+  };
+  /** Paket (Grup) dari daftar Obat: isinya masuk keranjang sekaligus, tanpa isian BMHP. */
+  const tambahPaket = (it: ItemLite): void => {
+    const resep = paketResep[it.id];
+    if (!resep) { setProcedureError(`Isi paket ${it.name} belum terbaca. Muat ulang halaman lalu coba lagi.`); return; }
+    const ada = cart.find(row => row.paket_id === it.id);
+    if (ada) { setJumlahPaket(it.id, Number(ada.paket_qty ?? 1) + 1); return; }
+    const hasil = pecahPaket(resep, it.sell_price, 1, hargaNormal);
+    if (hasil.error !== null) { setProcedureError(hasil.error); return; }
+    setProcedureError("");
+    setCart(rows => [...rows, ...hasil.baris.map((row): CartRow => ({
+      key: crypto.randomUUID(), item_id: row.item_id, nama_obat: row.nama, qty: row.qty, satuan: row.satuan,
+      harga: row.harga, faktor: row.faktor, jenis: row.jenis, kategori: row.kategori ?? undefined,
+      service_performers: visitDefaultPerformers(visitDoctorId), paket_id: it.id, paket_nama: it.name, paket_qty: 1,
+    }))]);
+  };
   const pickObat = (it: ItemLite): void => {
+    if (it.item_type === "Grup") return tambahPaket(it);
     const vaccination = vaccinationOf(it, tindakanItems);
     return vaccination ? selectProcedure(vaccination) : addObat(it);
   };
@@ -278,7 +314,9 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
       return u ? { ...r, satuan: u.unit, harga: u.sell_price, faktor: u.factor } : r;
     }));
   const del = (key: string) => {
-    setCart((c) => c.filter((r) => r.key !== key));
+    // Isi paket dihapus bersama-sama: paket tidak boleh tertagih setengah.
+    const paketId = cart.find(r => r.key === key)?.paket_id;
+    setCart((c) => c.filter((r) => r.key !== key && (!paketId || r.paket_id !== paketId)));
     if (procedureDraft?.editKey === key) setProcedureDraft(null);
     if (racikanEditKey === key) resetRacikan();
   };
@@ -584,7 +622,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
                 <ClinicServicePicker key={tab} kind="Jasa" items={jasaItems} onAdd={addObat} />
               )}
               {tab === TINDAKAN && (
-                <TindakanRacikanForm tindakanItems={tindakanItems} racikanItems={racikanItems} bmhpItems={items} bahanItems={bahanItems}
+                <TindakanRacikanForm tindakanItems={tindakanItems} racikanItems={racikanItems} bmhpItems={barangSaja} bahanItems={bahanItems}
                   katalogRacikan={katalogRacikan} bolehManual={bolehManual}
                   tindakan={procedureDraft} racikan={compoundDraft} editing={!!formEditKey} harga={formHarga}
                   onPilihTindakan={selectProcedure} onPilihRacikan={selectRacikan}
@@ -608,7 +646,14 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
                       <tr><th>Nama</th><th style={{ textAlign: "center", width: 48 }}>Qty</th><th style={{ textAlign: "right" }}>Subtotal</th><th style={{ width: 26 }} /></tr>
                     </thead>
                     <tbody>
-                      {cart.map((r) => (
+                      {cart.map((r) => r.paket_id ? (
+                        // Paket tampil satu baris seperti tindakan: harga paket, jumlah paket, isi paket tanpa harga.
+                        cart.find(row => row.paket_id === r.paket_id) === r
+                          ? <BarisPaket key={`paket-${r.paket_id}`} isi={cart.filter(row => row.paket_id === r.paket_id)} staff={serviceStaff}
+                              onJumlah={jumlah => setJumlahPaket(r.paket_id!, jumlah)} onHapus={() => del(r.key)}
+                              onPelaksana={value => setCart(rows => rows.map(row => row.paket_id === r.paket_id ? { ...row, service_performers: value } : row))} />
+                          : null
+                      ) : (
                         <tr key={r.key}>
                           <td style={{ fontSize: 10.5 }}>
                             {/* Item utama ditebalkan; pelaksana & bahan jadi rincian kecil di bawahnya. */}
@@ -704,6 +749,35 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
       </div>
     </form>
   </>);
+}
+
+/** Satu paket di keranjang: nama & harga paket, jumlah paket, pelaksana, isi paket tanpa harga. */
+function BarisPaket({ isi, staff, onJumlah, onHapus, onPelaksana }: {
+  isi: CartRow[]; staff: ServiceStaff[]; onJumlah: (jumlah: number) => void; onHapus: () => void;
+  onPelaksana: (value: ServicePerformersInput) => void;
+}) {
+  const utama = isi[0];
+  const jumlah = Math.max(1, Number(utama.paket_qty) || 1);
+  const total = isi.reduce((sum, row) => sum + row.qty * row.harga, 0);
+  return <tr data-paket={utama.paket_id}>
+    <td style={{ fontSize: 10.5 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+        <strong data-cart-item style={{ fontSize: 12.5, fontWeight: 700, color: "var(--tx)" }}>{utama.paket_nama}</strong>
+        <span className="bge g" style={{ fontSize: 8 }}>paket</span>
+      </div>
+      <div style={{ fontSize: 9, color: "var(--tm)" }}>{rp(total / jumlah)} / paket</div>
+      <ServicePerformersField compact label={`Pelaksana ${utama.paket_nama}`} value={utama.service_performers} staff={staff} onChange={onPelaksana} />
+      <KeranjangBahan nada="bmhp" judul="ISI PAKET" baris={isi.map(row => `${row.nama_obat} × ${row.qty} ${row.satuan}`)} />
+    </td>
+    <td style={{ textAlign: "center" }}>
+      <QtyInput className="fi" min={1} aria-label={`Jumlah paket ${utama.paket_nama}`} value={jumlah} onValue={onJumlah}
+        style={{ width: 42, padding: "2px 4px", textAlign: "center", fontSize: 10.5 }} />
+    </td>
+    <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(total)}</td>
+    <td style={{ textAlign: "center" }}>
+      <i className="ti ti-x" role="button" aria-label={`Hapus paket ${utama.paket_nama}`} onClick={onHapus} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />
+    </td>
+  </tr>;
 }
 
 function MiniKV({ k, v }: { k: string; v: string }) {

@@ -14,6 +14,8 @@ import { stokGudangKlinik } from "@/lib/stok-klinik";
 import { daftarDokter } from '@/lib/dokter';
 import { readStayTypesChecked } from "@/lib/inpatient-stay";
 import { catatWaktu, mulai } from "@/lib/u07-waktu";
+import { loadClinicPackages } from "@/lib/clinic-payment";
+import { stokPaket, type ResepPaket } from "@/lib/paket-klinik";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -65,6 +67,8 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
   const compoundP = mulai(categoriesP.then((categories) => loadClinicCompoundSkus(supabase, categories)));
   const katalogP = mulai(loadKatalogRacikan());
   const bolehP = mulai(bolehRacikKhusus());
+  // Paket (Grup) di daftar Obat. Gagal dibaca = paket tidak ditawarkan; form tetap jalan.
+  const packagesP = mulai(loadClinicPackages(supabase).catch(() => []));
 
   const [{ data: { user } }, { data: rec }] = await Promise.all([userP, recP]);
   if (!rec) notFound();
@@ -74,7 +78,7 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
   const branchId = visit?.branch_id ?? null;
-  const [serviceStaff, stay, doctors, paramedics, categories, [itemRows, compoundIds, sku], katalogRacikan, bolehManual, groomingPolicy] = await Promise.all([
+  const [serviceStaff, stay, doctors, paramedics, categories, [itemRows, compoundIds, sku], katalogRacikan, bolehManual, groomingPolicy, packageRows] = await Promise.all([
     loadServiceStaff(supabase, branchId),
     stayP,
     daftarDokter(supabase,{branchId:visit?.branch_id,role:'doctor'}),
@@ -87,6 +91,7 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
     katalogP,
     bolehP,
     visit?.branch_id ? loadBranchGroomingPolicy(supabase, visit.branch_id) : Promise.resolve(null),
+    packagesP,
   ]);
   waktu.tandai("katalog");
   const petHotel = stay.types.get(id) === "pet_hotel";
@@ -113,7 +118,18 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
   // muncul di dua grup tetap dikirim sekali), tanpa kolom yang tidak dipakai form.
   const ringkas = new Map(items.map((item) => [item.id, itemUntukKlien(item)]));
   const keKlien = (list: typeof items) => list.map((item) => ringkas.get(item.id)!);
-  const groups = { obat: keKlien(split.obat), jasa: keKlien(split.jasa), tindakan: keKlien(split.tindakan), racikan: keKlien(split.racikan), bahan: keKlien(split.bahan) };
+  // Paket tampil di daftar Obat: stoknya = berapa paket yang bisa dibuat dari stok isinya
+  // (sama dengan Rekam Medis). Paket yang resepnya tidak utuh tidak ditawarkan.
+  const stokPer = new Map(items.map(item => [item.id, item.stok]));
+  const paketResep: Record<string, ResepPaket> = {};
+  for (const option of packageRows) if (option.resep) paketResep[option.id] = option.resep;
+  const paketItems = split.paket.filter(item => paketResep[item.id]).map(item => ({
+    ...item, units: [], stok: stokPaket(paketResep[item.id], id => stokPer.get(id) ?? null),
+  }));
+  const paketById = new Map(paketItems.map(item => [item.id, item]));
+  const obatIds = new Set(split.obat.map(item => item.id));
+  const obatDanPaket = items.filter(item => obatIds.has(item.id) || paketById.has(item.id)).map(item => paketById.get(item.id) ?? item);
+  const groups = { obat: obatDanPaket.map(item => paketById.has(item.id) ? itemUntukKlien(item) : ringkas.get(item.id)!), jasa: keKlien(split.jasa), tindakan: keKlien(split.tindakan), racikan: keKlien(split.racikan), bahan: keKlien(split.bahan) };
 
   const noRM = visit
     ? `R/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(rec.visit_id as string).slice(0, 3).toUpperCase()}`
@@ -154,6 +170,7 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
         draftUserId={user?.id ?? ""}
         backHref={`/klinik/rawat-inap/${id}`}
         items={groups.obat}
+        paketResep={paketResep}
         jasaItems={groups.jasa}
         tindakanItems={groups.tindakan}
         racikanItems={groups.racikan}
