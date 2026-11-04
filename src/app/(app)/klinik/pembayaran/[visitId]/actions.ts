@@ -65,7 +65,7 @@ async function bacaJasaGate(
   // Fail closed: an unreadable record must not look like "no risky service".
   if (mrError) return { data: null, error: mrError };
   if (!mrGate) return { data: [], error: null };
-  const { data, error } = await supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mrGate.id);
+  const { data, error } = await supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mrGate.id).is("billing_withdrawn_at", null);
   return { data: error ? null : data, error };
 }
 

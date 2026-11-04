@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
-vi.mock("@/app/(app)/klinik/rekam-medis/[visitId]/actions", () => ({ simpanRekamMedis: vi.fn(), koreksiRekamMedis: vi.fn(), koreksiRekamMedisLengkap: vi.fn() }));
+const tarik = vi.hoisted(() => vi.fn());
+vi.mock("@/app/(app)/klinik/rekam-medis/[visitId]/actions", () => ({ simpanRekamMedis: vi.fn(), koreksiRekamMedis: vi.fn(), koreksiRekamMedisLengkap: vi.fn(), tarikItemRekamMedis: tarik }));
 vi.mock("@/components/PetPhotoUpload", () => ({ PetPhotoUpload: () => null }));
 vi.mock("@/components/PenunjangUpload", () => ({ PenunjangUpload: () => null }));
 import { RekamForm } from "@/app/(app)/klinik/rekam-medis/[visitId]/RekamForm";
@@ -16,6 +17,7 @@ import type { ClinicalCorrection } from "@/lib/clinical-correction";
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
+  tarik.mockReset();
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   sessionStorage.clear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -50,19 +52,81 @@ async function render() {
 }
 const cart = () => JSON.parse(host.querySelector<HTMLInputElement>('input[name="resep"]')!.value);
 
-// Laporan Andri 4 Nov 2026: item di keranjang Edit rekam medis "ga bisa dihapus" dan tidak ada
-// penjelasan. Aturan database: baris resep tersimpan tidak boleh dihapus dari Edit (RECORD_INVALID);
-// layar harus menunjukkan itu — bukan sekadar menghilangkan tombol hapus.
-it("Edit rekam medis: baris tersimpan tampil gembok + petunjuk cara menghapus, tanpa tombol hapus", async () => {
+// Laporan Andri 4 Nov 2026: item di keranjang Edit rekam medis "ga bisa dihapus" dan tidak ada penjelasan.
+// Aturan database: baris resep tersimpan tidak dihapus dari Edit; yang belum ditagih bisa DITARIK (soft-withdraw,
+// alasan wajib, tercatat). Racikan yang sudah diracik tetap bergembok (stok bahan sudah keluar).
+it("Edit rekam medis: baris tersimpan non-racikan punya tombol Tarik, racikan tetap bergembok dengan petunjuk Aksi", async () => {
   await render();
   expect(host.querySelector('i.ti-x[title="Hapus"]')).toBeNull();
-  const kunci = [...host.querySelectorAll('[data-baris-terkunci]')];
-  expect(kunci).toHaveLength(2);
-  expect(kunci[0].getAttribute("title")).toContain("Pembayaran");
-  expect(kunci[1].getAttribute("title")).toContain("Aksi");
+  expect([...host.querySelectorAll("[data-tarik-baris]")].map(b => b.getAttribute("aria-label"))).toEqual(["Tarik Vaksinasi F4"]);
+  const kunci = [...host.querySelectorAll("[data-baris-terkunci]")];
+  expect(kunci).toHaveLength(1);
+  expect(kunci[0].getAttribute("title")).toContain("Aksi");
   const petunjuk = host.querySelector("[data-hapus-petunjuk]")?.textContent ?? "";
-  expect(petunjuk).toContain("Pembayaran");
+  expect(petunjuk).toContain("Tarik");
   expect(petunjuk).toContain("Ubah BMHP");
+});
+
+const klik = async (el: Element | null) => { await act(async () => { (el as HTMLElement).click(); }); };
+const isi = async (el: HTMLInputElement, value: string) => { await act(async () => {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value); el.dispatchEvent(new Event("input", { bubbles: true })); }); };
+
+it("Tarik: panel meminta alasan (5-200), tombol konfirmasi mati sebelum valid, lalu memanggil aksi dan memindahkan baris ke daftar dicoret", async () => {
+  tarik.mockResolvedValue({ ok: true, withdrawn: ["rx-vaksin"] });
+  await render();
+  expect(host.querySelector("[data-tarik-panel]")).toBeNull();
+  await klik(host.querySelector("[data-tarik-baris]"));
+  const panel = host.querySelector("[data-tarik-panel]")!;
+  expect(panel.textContent).toContain("Vaksinasi F4");
+  expect(panel.textContent).toContain("langsung tersimpan");
+  const confirm = host.querySelector<HTMLButtonElement>("[data-tarik-konfirmasi]")!;
+  expect(confirm.disabled).toBe(true);
+  const alasan = host.querySelector<HTMLInputElement>('input[aria-label="Alasan penarikan"]')!;
+  await isi(alasan, "abcd"); expect(confirm.disabled).toBe(true);
+  await isi(alasan, "  Salah input, dobel  "); expect(confirm.disabled).toBe(false);
+  await klik(confirm);
+  expect(tarik).toHaveBeenCalledTimes(1);
+  expect(tarik.mock.calls[0][0]).toMatchObject({ visitId: "visit", recordId: "record", itemIds: ["rx-vaksin"], reason: "Salah input, dobel" });
+  expect(String(tarik.mock.calls[0][0].requestKey).length).toBeGreaterThan(8);
+  expect(cart().map((row: { prescription_item_id: string }) => row.prescription_item_id)).toEqual(["rx-lama"]);
+  const ditarik = host.querySelector("[data-item-ditarik]")!;
+  expect(ditarik.textContent).toContain("Vaksinasi F4");
+  expect(ditarik.textContent).toContain("Salah input, dobel");
+  expect(ditarik.querySelector("s")?.textContent).toContain("Vaksinasi F4");
+  expect(host.querySelector("[data-tarik-panel]")).toBeNull();
+});
+
+it("Tarik ditolak server: baris tetap di keranjang, pesan galat tampil, tidak tercatat sebagai ditarik", async () => {
+  tarik.mockResolvedValue({ ok: false, error: "tagihan sudah terbit (termasuk yang dibatalkan); gunakan koreksi tagihan di Pembayaran" });
+  await render();
+  await klik(host.querySelector("[data-tarik-baris]"));
+  await isi(host.querySelector<HTMLInputElement>('input[aria-label="Alasan penarikan"]')!, "Salah input obat");
+  await klik(host.querySelector("[data-tarik-konfirmasi]"));
+  expect(host.querySelector("[data-tarik-error]")?.textContent).toContain("koreksi tagihan");
+  expect(cart().map((row: { prescription_item_id: string }) => row.prescription_item_id)).toEqual(["rx-vaksin", "rx-lama"]);
+  expect(host.querySelector("[data-item-ditarik]")).toBeNull();
+  await klik([...host.querySelectorAll("button")].find(b => b.textContent === "Batal") ?? null);
+  expect(host.querySelector("[data-tarik-panel]")).toBeNull();
+});
+
+it("Tarik paket: semua baris tersimpan dari paket yang sama ditarik sekaligus; asal paket ikut terkirim saat Simpan", async () => {
+  tarik.mockResolvedValue({ ok: true, withdrawn: ["rx-p1", "rx-p2"] });
+  const paket = { ...correction, prescriptions: [
+    { id: "rx-p1", item_id: "ingredient", nama_obat: "Jasa Paket", qty: 1, harga: 90000, satuan: "kali", jenis: "jasa", aturan_pakai: null, package_item_id: "11111111-1111-4111-8111-111111111111", package_qty: 1 },
+    { id: "rx-p2", item_id: "ingredient", nama_obat: "Bahan Paket", qty: 1, harga: 1000, satuan: "pcs", jenis: "obat", aturan_pakai: null, package_item_id: "11111111-1111-4111-8111-111111111111", package_qty: 1 },
+    { id: "rx-lain", item_id: "ingredient", nama_obat: "Obat Lain", qty: 1, harga: 5000, satuan: "pcs", jenis: "obat", aturan_pakai: null },
+  ] };
+  await act(async () => root.render(<RekamForm visitId="visit" petId="pet" requestKey="edit" draftUserId="owner" correction={paket}
+    items={[ingredient]} racikanItems={[compound]} bahanItems={[ingredient]} jasaItems={[]} tindakanItems={[vaksin]}
+    katalogRacikan={[formula]} bolehManual currentWeight={3} dokterOpsi={[]} providerOpsi={[]} patient={patient} />));
+  expect(cart().filter((row: { package_item_id?: string }) => row.package_item_id).map((row: { package_item_id: string; package_qty: number }) => [row.package_item_id, row.package_qty]))
+    .toEqual([["11111111-1111-4111-8111-111111111111", 1], ["11111111-1111-4111-8111-111111111111", 1]]);
+  await klik(host.querySelectorAll("[data-tarik-baris]")[0]);
+  expect(host.querySelector("[data-tarik-panel]")!.textContent).toContain("paket");
+  await isi(host.querySelector<HTMLInputElement>('input[aria-label="Alasan penarikan"]')!, "Paket salah pilih");
+  await klik(host.querySelector("[data-tarik-konfirmasi]"));
+  expect(tarik.mock.calls[0][0].itemIds).toEqual(["rx-p1", "rx-p2"]);
+  expect(cart().map((row: { prescription_item_id: string }) => row.prescription_item_id)).toEqual(["rx-lain"]);
 });
 
 it("Rekam medis baru (bukan Edit): tidak ada gembok maupun petunjuk", async () => {
@@ -70,6 +134,7 @@ it("Rekam medis baru (bukan Edit): tidak ada gembok maupun petunjuk", async () =
     items={[ingredient]} racikanItems={[compound]} bahanItems={[ingredient]} jasaItems={[]} tindakanItems={[vaksin]}
     katalogRacikan={[formula]} bolehManual currentWeight={3} dokterOpsi={[]} providerOpsi={[]} patient={patient} />));
   expect(host.querySelector("[data-baris-terkunci]")).toBeNull();
+  expect(host.querySelector("[data-tarik-baris]")).toBeNull();
   expect(host.querySelector("[data-hapus-petunjuk]")).toBeNull();
 });
 
