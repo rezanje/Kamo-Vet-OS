@@ -6,6 +6,7 @@ import { getOpenShift } from "@/lib/shift";
 import { promoActiveFor, type PromoRow as PromoFull } from "@/lib/promo";
 import { voucherBerlaku, type VoucherRow as VoucherFull } from "@/lib/voucher";
 import { promoPricingRule, validatePackageDiscount, type PromoHitung } from "@/lib/promo-hitung";
+import { isSyaratHasilRule, loadSyaratHasilKasir } from "@/lib/promo-syarat-hasil-checkout";
 import { type AturanDiskon } from "@/lib/harga-golongan";
 import { hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions } from "@/lib/satuan";
@@ -114,7 +115,9 @@ export default async function KasirPage({
   for (const r of promoItemRows) {
     itemsPerPromo.set(r.promo_id, [...(itemsPerPromo.get(r.promo_id) ?? []), r.item_id]);
   }
-  const promoHitung: PromoHitung[] = promosActive.map((p) => {
+  // Promo "syarat -> hasil" dihitung mesinnya sendiri; hanya terbaca kalau flag rilis DB menyala (selain itu kosong = layar tidak berubah).
+  const syaratHasilKasir = await loadSyaratHasilKasir(supabase, shift.branch_id, promosActive as unknown as Parameters<typeof loadSyaratHasilKasir>[2]);
+  const promoHitung: PromoHitung[] = promosActive.filter((p) => !isSyaratHasilRule(p.rule)).map((p) => {
     const itemIds=itemsPerPromo.get(p.id) ?? [];
     const pricing=promoPricingRule(p.rule,itemIds);
     validatePackageDiscount(pricing.discountMode,p.discount_type,p.min_qty,itemIds);
@@ -247,6 +250,7 @@ export default async function KasirPage({
       hariIni={wibToday}
       promos={promosActive as unknown as PromoRow[]}
       promoHitung={promoHitung}
+      syaratHasil={syaratHasilKasir.defs.length > 0 ? { defs: syaratHasilKasir.defs, pickerReleased: syaratHasilKasir.pickerReleased } : undefined}
       aturanDiskon={aturanPerGolongan}
       infoBarang={Object.fromEntries(infoBarang)}
       cashierName={(await loggedInCashier(supabase, user.id, shift.branch_id)).name}

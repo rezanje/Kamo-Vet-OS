@@ -1,0 +1,160 @@
+// TEST-ONLY helper (brute-force oracle + seeded generator) shared by promo-syarat-hasil.oracle.test.ts. Not production code.
+import type { SyaratHasilCartLine, SyaratHasilDef } from "./promo-syarat-hasil";
+
+/**
+ * Brute-force ORACLE for a SINGLE promo on a tiny cart (review finding B1: syarat units and reward
+ * units come from overlapping pools, so which units satisfy the syarat decides how many reward
+ * units remain).
+ *
+ * The oracle expands every line into individual units and enumerates EVERY subset of units that
+ * could be reserved as syarat units. For a subset m:
+ *   a      = sets the syarat allow with the units of m (min over rows; 1 without repeat); R5: nilai rows count the cart AFTER the reward discount, so
+ *            every set count a <= the bound is tried (largest first is not assumed)
+ *   g      = min(a * reward_qty, reward units NOT in m)          (partial last set allowed, as in the engine)
+ *   valid  = g >= 1 and m is MINIMAL for ceil(g / reward_qty) sets (no unit of m can be dropped)
+ *   money  = sum of the g LOWEST per-unit discounts among the free reward units (engine pick rule)
+ * Best = MAXIMUM g, then the LOWEST money among assignments with that g (margin-protecting tie-break, same stance as the
+ * approved "lowest discount first" reward pick). `absMax` = most money ANY valid assignment could give if
+ * the g reward units could be chosen freely (upper bound: the engine may never exceed it).
+ */
+export type OLine = SyaratHasilCartLine & { source_position: number };
+export type Def = SyaratHasilDef;
+
+function unitDiscount(d: Def["hasil"]["discount"], price: number): number {
+  if (price <= 1) return 0;
+  let raw = d.type === "nominal" ? d.value : Math.floor((price * d.value + 50) / 100);
+  if (d.type === "percent" && d.max_amount !== undefined) raw = Math.min(raw, d.max_amount);
+  return Math.min(raw, price - 1);
+}
+
+export function oracle(lines: OLine[], def: Def): { grants: number; money: number; absMax: number } {
+  const key = (l: { item_id: string; unit: string }) => `${l.item_id}\u0000${l.unit}`;
+  // R1: each line counts at min(qty x official price, charged); charged absent -> official gross; qty >= 1,000,000 -> 0.
+  // R5: ... and once the reward discount D sits on a line it counts min(gross, charged - D) (never below 0): the cart value is the money charged.
+  const gross = lines.map((l) => l.qty * l.unit_price);
+  const chg = lines.map((l, i) => l.charged ?? gross[i]);
+  const counted0 = lines.map((l, i) => (l.qty >= 1_000_000 ? 0 : Math.min(gross[i], chg[i])));
+  const nilaiAfter = (i: number, d: number): number => (counted0[i] === 0 ? 0 : Math.max(0, Math.min(gross[i], chg[i] - d)));
+  const cart0 = counted0.reduce((s, x) => s + x, 0);
+  const units: { line: number; dpu: number }[] = [];
+  const hasilKeys = new Set(def.hasil.items.map(key));
+  lines.forEach((l, i) => {
+    const eligible = l.evidence_ok === true && l.manual_discount !== true;
+    const avail = eligible ? l.qty - (l.units_claimed_elsewhere ?? 0) : 0;
+    const d = hasilKeys.has(key(l)) ? unitDiscount(def.hasil.discount, l.unit_price) : 0;
+    for (let k = 0; k < avail; k++) units.push({ line: i, dpu: d });
+  });
+  const U = units.length;
+  const rq = def.hasil.reward_qty ?? 1;
+  // row masks over units (qty rows only; nilai rows have no mask)
+  const rowMasks = def.syarat.map((r) => {
+    if (r.kind === "nilai") return null;
+    const keys = new Set(r.items.map(key));
+    let mask = 0;
+    units.forEach((u, idx) => { if (keys.has(key(lines[u.line]))) mask |= 1 << idx; });
+    return mask;
+  });
+  let rewardMask = 0;
+  units.forEach((u, idx) => { if (u.dpu > 0) rewardMask |= 1 << idx; });
+  const pop = (x: number) => { let c = 0; while (x) { x &= x - 1; c++; } return c; };
+  // upper bound of the sets: qty rows by the units of m, nilai rows by the PRE-discount cart (the discount is applied per candidate below)
+  const setsFor = (m: number): number => {
+    let a = Infinity;
+    def.syarat.forEach((r, j) => {
+      const met = r.kind === "nilai" ? cart0 : pop(m & (rowMasks[j] as number));
+      a = Math.min(a, Math.floor(met / r.min));
+    });
+    return a;
+  };
+  const holdsQty = (m: number, sets: number): boolean => def.syarat.every((r, j) => (r.kind === "nilai" ? true : pop(m & (rowMasks[j] as number)) >= sets * r.min));
+  const order = (x: { line: number; dpu: number }, y: { line: number; dpu: number }): number =>
+    x.dpu - y.dpu || lines[x.line].source_position - lines[y.line].source_position || (lines[x.line].item_id < lines[y.line].item_id ? -1 : lines[x.line].item_id > lines[y.line].item_id ? 1 : 0);
+  let bestG = 0, bestMoney = Infinity, absMax = 0;
+  for (let m = 0; m < 1 << U; m++) {
+    const aUp = setsFor(m);
+    if (aUp < 1) continue;
+    const free: { line: number; dpu: number }[] = [];
+    for (let idx = 0; idx < U; idx++) if (!(m >> idx & 1) && (rewardMask >> idx & 1)) free.push(units[idx]);
+    if (free.length < 1) continue;
+    free.sort(order);
+    const aTop = def.repeat ? Math.min(aUp, Math.ceil(free.length / rq)) : 1;
+    for (let a = 1; a <= aTop; a++) {
+      const g = Math.min(a * rq, free.length);
+      const s = Math.ceil(g / rq);
+      if (s !== a) continue; // a smaller set count already covers these grants
+      let minimal = true;
+      for (let idx = 0; idx < U && minimal; idx++) if ((m >> idx & 1) && holdsQty(m & ~(1 << idx), s)) minimal = false;
+      if (!minimal) continue;
+      const take = free.slice(0, g);
+      const disc = new Map<number, number>();
+      for (const u of take) disc.set(u.line, (disc.get(u.line) ?? 0) + u.dpu);
+      let net = cart0;
+      for (const [i, d] of disc) net += nilaiAfter(i, d) - counted0[i];
+      if (!def.syarat.every((r) => r.kind !== "nilai" || net >= s * r.min)) continue; // R5: the reward discount must leave the nilai syarat satisfied
+      const money = take.reduce((x, u) => x + u.dpu, 0);
+      const top = free.slice(free.length - g).reduce((x, u) => x + u.dpu, 0);
+      absMax = Math.max(absMax, top);
+      if (g > bestG || (g === bestG && money < bestMoney)) { bestG = g; bestMoney = money; }
+    }
+  }
+  return { grants: bestG, money: bestG === 0 ? 0 : bestMoney, absMax };
+}
+
+// ---- seeded PRNG ----
+function rng(seed: number) {
+  let a = seed >>> 0;
+  const next = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const int = (lo: number, hi: number) => lo + Math.floor(next() * (hi - lo + 1));
+  const chance = (p: number) => next() < p;
+  const subset = <T,>(xs: readonly T[], n: number): T[] => {
+    const pool = [...xs];
+    const out: T[] = [];
+    while (out.length < n && pool.length) out.push(pool.splice(int(0, pool.length - 1), 1)[0]);
+    return out;
+  };
+  return { next, int, chance, subset };
+}
+
+const ITEMS = ["A", "B", "C", "D"];
+export const ref = (item_id: string) => ({ item_id, unit: "u" });
+
+export function genOracleCase(seed: number, index: number, maxRows = 3): { lines: OLine[]; def: Def } {
+  const r = rng(seed * 7919 + index);
+  const rc = rng(seed * 104_729 + index * 31 + 7); // R1: separate stream so the pre-existing cases (and their greedy-vs-oracle sweep) stay byte-identical
+  for (;;) {
+    const nLines = r.int(1, 4);
+    const lines: OLine[] = Array.from({ length: nLines }, (_, i) => {
+      const qty = r.int(1, 6);
+      const l: OLine = {
+        source_position: i * 2 + r.int(0, 1), item_id: ITEMS[r.int(0, ITEMS.length - 1)], unit: "u", qty,
+        unit_price: r.chance(0.08) ? r.int(0, 1) : r.int(2, 30) * 500, evidence_ok: !r.chance(0.07),
+      };
+      if (r.chance(0.07)) l.manual_discount = true;
+      if (r.chance(0.12)) l.units_claimed_elsewhere = r.int(0, qty);
+      if (rc.chance(0.4)) { const g = l.qty * l.unit_price; l.charged = [0, 1, Math.floor(g / 2), g, g + 500][rc.int(0, 4)]; }
+      return l;
+    });
+    const positions = new Set(lines.map((l) => l.source_position));
+    if (positions.size !== lines.length) continue;
+    const units = lines.reduce((s, l) => s + l.qty, 0);
+    if (units > 11) continue; // 2^11 subsets per case
+    const rows = Array.from({ length: r.int(1, maxRows) }, () => r.chance(0.12)
+      ? { kind: "nilai" as const, min: r.int(1, 12) * 1000 }
+      : { kind: "qty" as const, min: r.int(1, 3), items: r.subset(ITEMS, r.int(1, 3)).map(ref) });
+    const d = r.chance(0.5)
+      ? { type: "nominal" as const, value: r.int(1, 8) * 500 }
+      : { type: "percent" as const, value: r.int(1, 100), ...(r.chance(0.5) ? { max_amount: r.int(1, 6) * 500 } : {}) };
+    const def: Def = {
+      id: "P", repeat: r.chance(0.6), syarat: rows,
+      hasil: { items: r.subset(ITEMS, r.int(1, 3)).map(ref), reward_qty: r.chance(0.5) ? undefined : r.int(1, 3), discount: d },
+    };
+    return { lines, def };
+  }
+}
+

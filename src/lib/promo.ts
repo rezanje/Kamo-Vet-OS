@@ -8,7 +8,7 @@ export type PromoRule = {
   discount_type?: string;
   discount_value?: number;
   unit?: string;
-  discount_mode?: "per_unit" | "package_total" | "quantity_pool";
+  discount_mode?: "per_unit" | "package_total" | "quantity_pool" | "syarat_hasil";
   quantity_pool?: import("./promo-quantity-pool").QuantityPoolRule;
 };
 

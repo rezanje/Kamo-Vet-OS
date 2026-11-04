@@ -14,6 +14,7 @@ import {
   diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang, poinDidapat,
 } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
+import { buildPromoSelection, composedToLine, composeSyaratHasilCart, loadSyaratHasilKasir, pesanPromoSyaratHasil, type ShClaimMeta } from "@/lib/promo-syarat-hasil-checkout";
 import { simpanBernomor } from "@/lib/simpan-bernomor";
 import { hariIniWIB } from "@/lib/tanggal";
 import { hargaTingkat } from "@/lib/harga-tingkat";
@@ -46,6 +47,8 @@ type CartLine = {
   item_type?: JenisKomponen;         // ditetapkan ulang dari master di bawah
   tindakan_kategori?: string | null; // ditetapkan ulang dari master untuk aturan Grooming
   group_components?: SnapshotKomponenGrup[];
+  official_price?: number;           // diisi server: harga master sebelum tingkat harga (bukti promo syarat-hasil)
+  sh_claim?: ShClaimMeta;            // diisi server: baris diklaim promo syarat-hasil (dibaca DB saat finalisasi)
 };
 
 // Earning sekarang ikut golongan pelanggan (lib/harga-golongan → poinDidapat).
@@ -94,7 +97,7 @@ export async function checkoutKasir(formData: FormData) {
     cart = [];
   }
   const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0)
-    .map(l => ({ ...l, promo_discount: 0 }));
+    .map((l): CartLine & { promo_discount: number } => ({ ...l, promo_discount: 0, official_price: undefined, sh_claim: undefined })); // bukti promo hanya dari master, bukan dari klien
   if (rows.length === 0) redirect(`${failureUrl}${encodeURIComponent("Keranjang kosong")}`);
 
   // Struk boleh tersimpan hanya kalau jurnalnya juga bisa. Kalau periodenya terkunci,
@@ -200,6 +203,7 @@ export async function checkoutKasir(formData: FormData) {
           { item_id: l.item_id, qty: Number(l.qty) },
           recipeByGroup.get(l.item_id) ?? [],
         );
+        l.official_price = l.harga;
         continue;
       }
       const opsi = applyHargaCabang(unitMap.get(l.item_id) ?? [], l.item_id, hargaMap);
@@ -215,6 +219,7 @@ export async function checkoutKasir(formData: FormData) {
         l.faktor = 1;
         l.harga = hargaCabang(hargaMap, l.item_id, p.unit, Number(p.sell_price));
       }
+      l.official_price = l.harga; // sebelum harga tingkat menurunkannya
     }
 
     // Minimum jual ditegakkan di server juga — kalau hanya di layar, kasir bisa
@@ -274,9 +279,35 @@ export async function checkoutKasir(formData: FormData) {
   const promoAktif = promoDenganKode(promoMaster, kode.promoId);
   // Evidence is reconstructed after official unit/branch/tier pricing, never
   // accepted from caller officialPrice/manualOverride/promo fields.
-  const potonganPromo = serviceLinePromos(promoAktif, rows.map(row => ({
+  const legacyPromos = (list: typeof rows) => serviceLinePromos(promoAktif, list.map(row => ({
     ...row, officialPrice: row.harga, manualOverride: Number(row.item_discount_value) > 0,
   })));
+  // Promo "syarat -> hasil" (bundling ala Accurate): hanya ada kalau flag rilis DB menyala DAN ada promo aktif; selain itu
+  // jalur di bawah persis sama dengan sebelumnya. Kode kampanye yang memaksa satu promo mematikannya (kode menang).
+  let syaratHasil: Awaited<ReturnType<typeof loadSyaratHasilKasir>>;
+  try { syaratHasil = await loadSyaratHasilKasir(supabase, branchId); }
+  catch (error) { redirect(`${failureUrl}${encodeURIComponent(error instanceof Error ? error.message : "Promo belum dapat dibaca. Muat ulang kasir.")}`); }
+  const submittedPick = String(formData.get("promoPick") ?? "");
+  const promoMode: "auto" | "tanpa" = submittedPick === "none" ? "tanpa" : "auto";
+  if (submittedPick !== "" && submittedPick !== "auto" && submittedPick !== "none") redirect(`${failureUrl}${encodeURIComponent("Pilihan promo tidak dikenal. Muat ulang kasir.")}`);
+  if (promoMode === "tanpa" && !(syaratHasil.released && syaratHasil.pickerReleased)) {
+    redirect(`${failureUrl}${encodeURIComponent("Fitur ganti promo belum aktif. Muat ulang kasir.")}`);
+  }
+  const shDefs = kode.promoId ? [] : syaratHasil.defs;
+  const composed = shDefs.length > 0
+    ? composeSyaratHasilCart({
+      rows: rows.map(row => ({ ...row, officialPrice: row.official_price })),
+      defs: shDefs, legacy: (list) => legacyPromos(list as unknown as typeof rows), mode: promoMode,
+    })
+    : null;
+  // `potonganPromo`: promo mana kena di baris mana (lineIndex menunjuk baris AKHIR; baris yang diklaim dipisah dari sisanya).
+  let potonganPromo: { lineIndex: number; promoId: string; potongan: number }[];
+  if (composed) {
+    rows.splice(0, rows.length, ...composed.rows.map((r) => composedToLine(r, true) as unknown as (typeof rows)[number]));
+    potonganPromo = composed.rows.flatMap((r, lineIndex) => (r.promo_id && r.promo_discount > 0 ? [{ lineIndex, promoId: r.promo_id, potongan: r.promo_discount }] : []));
+  } else {
+    potonganPromo = legacyPromos(rows);
+  }
   if (kode.kampanye) {
     const tolakKampanye = pesanKampanyeDitolak(kode.kampanye,
       promoAktif.some((p) => p.id === kode.promoId), potonganPromo.some((h) => h.promoId === kode.promoId));
@@ -294,6 +325,11 @@ export async function checkoutKasir(formData: FormData) {
     const baris = rows[h.lineIndex];
     if (baris) baris.promo_discount = h.potongan;
   }
+  // Ringkasan promo untuk struk (audit/tampilan saja; uangnya ada di baris). Hanya bila promo syarat-hasil benar-benar dipakai
+  // atau kasir memilih "tanpa promo" - selain itu kolom ini tidak ditulis sama sekali.
+  const promoHeader = composed && (composed.strategy === "syarat_hasil" || promoMode === "tanpa")
+    ? { promo_pick_mode: promoMode === "tanpa" ? "tanpa" : "auto", promo_selection: buildPromoSelection(composed, promoMode, user.id) }
+    : null;
 
   // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lib/pos-calc — jangan diubah).
   const subtotal = posSubtotal(rows);
@@ -431,6 +467,7 @@ export async function checkoutKasir(formData: FormData) {
         branch_id: branchId, customer_id: customerId, no_struk,
         subtotal: invoiceSubtotal, discount: posNetTotal(invoiceDiscount, invoiceCategoryDiscount),
         diskon_kategori: invoiceCategoryDiscount,
+        ...(promoHeader ?? {}),
         total: quote.total, merchant_fee_total: quote.feeTotal, metode_bayar: payment.method, bayar: payment.bayar, kembali: payment.kembali,
         payment_plan: quote.parts,
         checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
@@ -472,6 +509,10 @@ export async function checkoutKasir(formData: FormData) {
         // kasir dengan nama promo.
         promo_id: r.item_id && linePromoApplied(r) > 0 ? (promoPerItem.get(lineIndex) ?? null) : null,
         promo_discount: linePromoApplied(r),
+        ...(r.sh_claim ? {
+          promo_claim_id: r.sh_claim.promo_id, promo_sets: r.sh_claim.sets, promo_syarat_units: r.sh_claim.syarat_units,
+          promo_hasil_units: r.sh_claim.hasil_units, promo_floor_waiver: r.sh_claim.waiver,
+        } : {}),
         hpp: r.item_id ? 0 : null,
       }).select("id").single();
       if (itemErr || !saleItem) {
@@ -494,7 +535,7 @@ export async function checkoutKasir(formData: FormData) {
         p_sale_id: sale.id, p_warehouse_id: wh!.id,
       });
       if (postErr || posted?.sale_id !== sale.id || posted?.finalized !== true || posted?.checked !== true) {
-        throw new Error(postErr?.message ? cashierPriceFloorDbMessage(postErr.message) : "Stok dan harga neto kasir belum berhasil difinalkan");
+        throw new Error(postErr?.message ? pesanPromoSyaratHasil(postErr.message) ?? cashierPriceFloorDbMessage(postErr.message) : "Stok dan harga neto kasir belum berhasil difinalkan");
       }
     }
   } catch (error) {
