@@ -220,13 +220,13 @@ async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | nu
       { count: grooming, error: groomingError },
       { count: menunggu }, { data: sales }, { data: stok }, groomingKasir,
     ] = await Promise.all([
-      supabase.from("visits").select("id", { count: "exact", head: true })
+      supabase.from("visits").select("id", { count: "exact", head: true }).is("archived_at", null)
         .gte("created_at", hari.from).lt("created_at", hari.until),
-      supabase.from("visits").select("id", { count: "exact", head: true })
+      supabase.from("visits").select("id", { count: "exact", head: true }).is("archived_at", null)
         .ilike("poli", "%grooming%").gte("created_at", hari.from).lt("created_at", hari.until),
       // Yang masih menunggu dihitung tanpa batas awal hari: pasien yang didaftarkan
       // kemarin malam dan belum dipanggil tetap menunggu (sama dengan layar Antrian).
-      supabase.from("visits").select("id", { count: "exact", head: true })
+      supabase.from("visits").select("id", { count: "exact", head: true }).is("archived_at", null)
         .eq("status", "Menunggu").lt("created_at", hari.until),
       supabase.from("sales").select("total, payment_plan, payments_finalized_at, voided_at").gte("created_at", mulai).lte("created_at", akhir),
       supabase.from("stock").select("qty, items!inner(name, min_stock)").gt("items.min_stock", 0),

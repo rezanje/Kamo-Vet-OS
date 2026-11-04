@@ -86,7 +86,7 @@ export default async function RekamMedisPage({
     supabase.auth.getUser(),
     supabase
       .from("visits")
-      .select("id, pet_id, branch_id, legacy_source_key, poli, status, dokter, doctor_id, keluhan, created_at, source, checked_in_at, service_started_at, service_finished_at, checked_out_at, service_provider_id, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
+      .select("id, pet_id, branch_id, legacy_source_key, archived_at, archive_reason, poli, status, dokter, doctor_id, keluhan, created_at, source, checked_in_at, service_started_at, service_finished_at, checked_out_at, service_provider_id, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
       .eq("id", visitId)
       .maybeSingle(),
     // Rekam medis & invoice terakhir: dipakai hanya bila kunjungan sudah tersimpan,
@@ -407,6 +407,7 @@ export default async function RekamMedisPage({
           sisanya tetap dialog umum. Hanya satu dialog yang boleh terbuka. */}
       <StokKurangDariPesan pesan={error} />
       <Popup message={adalahKekuranganStok(error) ? null : error} />
+      {visit.archived_at && <div className="p2ban" role="alert"><i className="ti ti-archive" /> Kunjungan ini diarsipkan{visit.archive_reason ? ` (${visit.archive_reason})` : ""}. Tidak dapat diperiksa, dicatat atau dibayar sampai dipulihkan oleh pemilik/admin dari tab Diarsipkan di Antrian.</div>}
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
       {success === "susulan" && <div className="p2ban" role="status" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Item susulan tersimpan di rekam medis dan otomatis ikut tagihan di layar Pembayaran.</div>}
       {success === "addendum" && <div className="p2ban" role="status">Adendum rekam medis tersimpan; catatan asli, tagihan, dan stok tidak berubah.</div>}

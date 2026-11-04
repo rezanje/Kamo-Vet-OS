@@ -54,7 +54,7 @@ export async function collectOperationalClinic(supabase: SupabaseLike, filters: 
   const end = `${filters.to}T23:59:59.999+07:00`;
   const [bookings, visits, followUps, referrals, admissions, capacities] = await Promise.all([
     readAll<any>(supabase.from("bookings").select("id,branch_id,status,attendance_outcome,tanggal", { count: "exact" }).in("branch_id", allowedIds).gte("tanggal", filters.from).lte("tanggal", filters.to)),
-    readAll<any>(supabase.from("visits").select("id,branch_id,status,checked_in_at,service_started_at,service_finished_at,checked_out_at", { count: "exact" }).in("branch_id", allowedIds).gte("created_at", start).lte("created_at", end)),
+    readAll<any>(supabase.from("visits").select("id,branch_id,status,checked_in_at,service_started_at,service_finished_at,checked_out_at", { count: "exact" }).in("branch_id", allowedIds).is("archived_at", null).gte("created_at", start).lte("created_at", end)),
     readAll<any>(supabase.from("follow_ups").select("id,branch_id,status,tanggal,completed_at", { count: "exact" }).in("branch_id", allowedIds).lte("tanggal", filters.to)),
     readAll<any>(supabase.from("visit_referrals").select("id,branch_id,direction,referred_at", { count: "exact" }).in("branch_id", allowedIds).gte("referred_at", start).lte("referred_at", end)),
     readAll<any>(supabase.from("inpatient_records").select("id,branch_id,admitted_at,discharged_at", { count: "exact" }).in("branch_id", allowedIds).lt("admitted_at", end)),

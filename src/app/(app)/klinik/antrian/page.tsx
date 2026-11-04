@@ -6,7 +6,9 @@ import { headers } from "next/headers";
 import { ALL_BRANCHES, BRANCH_HEADER } from "@/lib/operational-context";
 import { availableOperationalBranches, resolveOperationalBranch } from "@/lib/operational-branch";
 import { requireOperationalBranch } from "@/lib/operational-branch-server";
-import { updateVisitStatus } from "./actions";
+import { randomUUID } from "node:crypto";
+import { archiveVisit, unarchiveVisit, updateVisitStatus } from "./actions";
+import { BATAS_DIARSIPKAN, ALASAN_ARSIP_MAX, ALASAN_ARSIP_MIN, bolehArsip } from "@/lib/antrian-arsip";
 import { CancelButton } from "./CancelButton";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LiveRefresh } from "./LiveRefresh";
@@ -33,7 +35,7 @@ function petAge(dob: string | null | undefined): string | null {
   return y >= 1 ? `${y} Tahun` : `${m} Bulan`;
 }
 
-const KOLOM_ANTRIAN = "id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at)";
+const KOLOM_ANTRIAN = "id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, archived_at, archived_by, archive_reason, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at)";
 
 // Batas jumlah baris pasien belum selesai dari hari-hari sebelumnya (terbaru dulu) yang dikirim ke layar.
 // Beban basis datanya (layar diperbarui tiap 20 detik) dijaga oleh indeks parsial
@@ -61,9 +63,9 @@ function PetPhoto({ url, size = 38 }: { url?: string | null; size?: number }) {
 export default async function AntrianPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string; success?: string; tanggal?: string; cabang?: string }>;
+  searchParams: Promise<{ filter?: string; success?: string; tanggal?: string; cabang?: string; error?: string }>;
 }) {
-  const { filter = "aktif", success, tanggal = "", cabang = "" } = await searchParams;
+  const { filter: filterMinta = "aktif", success, tanggal = "", cabang = "", error: galatAksi } = await searchParams;
   const supabase = await createClient();
   // Klinik-A: label cabang & pengingat voucher tidak bergantung pada akun/cabang, jadi
   // dibaca bersamaan dengan pemeriksaan sesi & cabang (dulu antre di belakangnya).
@@ -76,6 +78,9 @@ export default async function AntrianPage({
     .eq("is_active", true));
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  // Peran dibaca sejajar dengan pembacaan cabang di bawah (satu putaran, bukan tambahan). Tab dan tombol arsip hanya untuk
+  // OWNER/ADMIN aktif; peran lain tidak pernah membaca baris arsip (RLS visits tidak membedakan peran).
+  const profilP = mulai(supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle());
   const allMode = (await headers()).get(BRANCH_HEADER) === ALL_BRANCHES;
   const allAccess = allMode ? await resolveOperationalBranch(supabase, user.id, "klinik", ALL_BRANCHES) : null;
   if (allMode && !allAccess) redirect("/mulai/cabang?mode=klinik");
@@ -94,13 +99,29 @@ export default async function AntrianPage({
   const mulaiHari = day.from;
   const akhirHari = day.until;
   const lihatHariIni = hariDipilih === hariIni;
+  const { data: profilSaya } = await profilP;
+  const adminArsip = bolehArsip(profilSaya);
+  // Tab Diarsipkan hanya ada untuk OWNER/ADMIN; permintaan tab itu dari peran lain jatuh ke tab Aktif.
+  const filter = filterMinta === "diarsipkan" && !adminArsip ? "aktif" : filterMinta;
+  const tabArsip = filter === "diarsipkan";
 
-  let query = supabase
-    .from("visits")
-    .select(KOLOM_ANTRIAN)
-    .in("branch_id", scopeIds)
-    .gte("created_at", mulaiHari).lt("created_at", akhirHari)
-    .order("created_at", { ascending: true });
+  // Semua pembacaan daftar kerja menyingkirkan kunjungan yang diarsipkan di sisi server (termasuk "sisa" yang dibatasi
+  // 200 baris: arsip tidak boleh memakan jendela itu).
+  let query = tabArsip
+    ? supabase
+      .from("visits")
+      .select(KOLOM_ANTRIAN)
+      .in("branch_id", scopeIds)
+      .not("archived_at", "is", null)
+      .order("archived_at", { ascending: false })
+      .limit(BATAS_DIARSIPKAN)
+    : supabase
+      .from("visits")
+      .select(KOLOM_ANTRIAN)
+      .in("branch_id", scopeIds)
+      .is("archived_at", null)
+      .gte("created_at", mulaiHari).lt("created_at", akhirHari)
+      .order("created_at", { ascending: true });
 
   if (filter === "aktif") query = query.neq("status", "Selesai");
   if (filter === "menunggu") query = query.eq("status", "Menunggu");
@@ -113,6 +134,7 @@ export default async function AntrianPage({
     .from("visits")
     .select("id, poli, dokter, status, queue_number, pets(name, species, breed, dob, photo_url), customers(name, phone), inpatient_records(discharged_at)")
     .in("branch_id", scopeIds)
+    .is("archived_at", null)
     .gte("created_at", mulaiHari).lt("created_at", akhirHari)
     .order("created_at", { ascending: true });
 
@@ -125,6 +147,7 @@ export default async function AntrianPage({
       .from("visits")
       .select(KOLOM_ANTRIAN)
       .in("branch_id", scopeIds)
+      .is("archived_at", null)
       .neq("status", "Selesai")
       .lt("created_at", mulaiHari)
       .order("created_at", { ascending: false })
@@ -148,7 +171,14 @@ export default async function AntrianPage({
     </>;
   }
   const operational = (row: { inpatient_records?: { discharged_at: string | null }[] | { discharged_at: string | null } | null }) => !hasActiveInpatient(row.inpatient_records);
-  const visits = filter === "semua" || filter === "selesai" ? visitsResult.data : visitsResult.data?.filter(operational);
+  const visits = tabArsip || filter === "semua" || filter === "selesai" ? visitsResult.data : visitsResult.data?.filter(operational);
+  // Nama pengarsip untuk tab Diarsipkan (satu pembacaan tambahan, hanya di tab itu).
+  const idPengarsip = tabArsip ? [...new Set((visits ?? []).map((v) => v.archived_by).filter((id): id is string => typeof id === "string"))] : [];
+  const namaPengarsip = new Map<string, string>();
+  if (idPengarsip.length) {
+    const { data: orang } = await supabase.from("profiles").select("id, full_name").in("id", idPengarsip);
+    for (const o of (orang ?? []) as { id: string; full_name: string | null }[]) if (o.full_name) namaPengarsip.set(o.id, o.full_name);
+  }
   const today = todayResult.data?.filter(operational);
   const allWaiting = today?.filter((v) => v.status === "Menunggu");
   // Rawat inap aktif tetap diurus dari Rawat Inap; sisanya ikut saringan tab status.
@@ -174,6 +204,7 @@ export default async function AntrianPage({
     (v) => v.valid_from === hariIni || v.valid_until === hariIni,
   );
 
+  const tampilSisa = lihatHariIni && !tabArsip;
   const nextUp = (allWaiting ?? [])[0];
   const poliCounts = new Map<string, number>();
   for (const v of allWaiting ?? []) poliCounts.set(v.poli, (poliCounts.get(v.poli) ?? 0) + 1);
@@ -204,7 +235,64 @@ export default async function AntrianPage({
     </thead>
   );
 
+  const kepalaArsip = (
+    <thead>
+      <tr>
+        <th>No. Antri</th><th>Pasien</th><th>Pemilik</th><th>Cabang</th><th>Status saat diarsipkan</th><th>Diarsipkan</th><th>Aksi</th>
+      </tr>
+    </thead>
+  );
+
   type BarisAntrian = NonNullable<typeof visitsResult.data>[number];
+  // Tab Diarsipkan: tanpa Panggil / Rekam medis / Bayar. Hanya Detail dan Pulihkan.
+  const barisArsip = (v: BarisAntrian) => {
+    const pet = one(v.pets);
+    const cust = one(v.customers);
+    const cabangRow = one(v.branches);
+    const meta = STATUS_META[v.status] ?? STATUS_META.Menunggu;
+    const oleh = typeof v.archived_by === "string" ? namaPengarsip.get(v.archived_by) ?? "—" : "—";
+    return (
+      <tr key={v.id} style={{ boxShadow: `inset 3px 0 0 ${meta.border}` }}>
+        <td style={{ fontFamily: "ui-monospace, monospace", fontWeight: 700, fontSize: 12, color: meta.border, paddingLeft: 14 }}>
+          {v.queue_number ?? "—"}
+          <div style={{ fontFamily: "inherit", fontSize: 9.5, fontWeight: 600, color: "#b45309", marginTop: 2 }}>{fmtTgl(v.created_at)}</div>
+        </td>
+        <td>
+          <Link href={`/klinik/antrian/${v.id}`} style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: "inherit" }}>
+            <PetPhoto url={pet?.photo_url} />
+            <div>
+              <div style={{ fontWeight: 600, color: "var(--posb)" }}>{pet?.name ?? "—"}</div>
+              <div style={{ fontSize: 10, color: "var(--tm)" }}>{pet?.species}{pet?.breed ? ` / ${pet.breed}` : ""}</div>
+            </div>
+          </Link>
+        </td>
+        <td>
+          <div style={{ fontSize: 11.5 }}>{cust?.name ?? "—"}</div>
+          <div style={{ fontSize: 10, color: "var(--tm)" }}>{cust?.phone}</div>
+        </td>
+        <td style={{ fontSize: 11, color: "var(--tm)" }}>{cabangRow?.code ?? "—"}</td>
+        <td><span className={`bge ${meta.badge}`}>{meta.label}</span></td>
+        <td style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.55, maxWidth: 260 }}>
+          <div style={{ color: "var(--tx)", fontSize: 11.5 }}>{v.archive_reason ?? "—"}</div>
+          <div>Oleh {oleh}</div>
+          <div>{typeof v.archived_at === "string" ? `${fmtTgl(v.archived_at)} ${fmtTime(v.archived_at)}` : "—"}</div>
+        </td>
+        <td>
+          <div style={{ display: "flex", gap: 5 }}>
+            <Link href={`/klinik/antrian/${v.id}`} className="btn-def"
+              style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <i className="ti ti-eye" /> Detail
+            </Link>
+            <form action={unarchiveVisit}>
+              <input type="hidden" name="id" value={v.id} />
+              <input type="hidden" name="request_key" value={randomUUID()} />
+              <SubmitButton className="btn-acc" icon="ti-arrow-back-up" style={{ padding: "4px 10px", fontSize: 10.5, background: "var(--posb)" }} pendingText="Memulihkan…">Pulihkan</SubmitButton>
+            </form>
+          </div>
+        </td>
+      </tr>
+    );
+  };
   const barisAntrian = (v: BarisAntrian, dariHariLalu = false) => {
     const pet = one(v.pets);
     const cust = one(v.customers);
@@ -295,6 +383,20 @@ export default async function AntrianPage({
               </Link>
               </>
             )}
+            {adminArsip && !tabArsip && v.status !== "Selesai" && (
+              <details style={{ position: "relative" }}>
+                <summary className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, cursor: "pointer", listStyle: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <i className="ti ti-archive" /> Arsipkan
+                </summary>
+                <form action={archiveVisit} style={{ position: "absolute", right: 0, zIndex: 5, background: "#fff", border: ".5px solid var(--bd)", borderRadius: 8, padding: 8, width: 230, display: "flex", flexDirection: "column", gap: 6, boxShadow: "0 4px 14px rgba(0,0,0,.12)" }}>
+                  <input type="hidden" name="id" value={v.id} />
+                  <input type="hidden" name="request_key" value={randomUUID()} />
+                  <label className="flab" htmlFor={`alasan-${v.id}`}>Alasan arsip (wajib)</label>
+                  <input id={`alasan-${v.id}`} className="fi" name="reason" required minLength={ALASAN_ARSIP_MIN} maxLength={ALASAN_ARSIP_MAX} placeholder="mis. percobaan / batal" autoComplete="off" />
+                  <SubmitButton className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, color: "#b45309" }} pendingText="Mengarsipkan…">Arsipkan</SubmitButton>
+                </form>
+              </details>
+            )}
             {v.status === "Selesai" && (
               <>
                 <Link href={`/klinik/rekam-medis/${v.id}`} className="btn-def"
@@ -348,11 +450,21 @@ export default async function AntrianPage({
         </div>
       </div>
 
+      {galatAksi && (
+        <div role="alert" className="p2ban">
+          <i className="ti ti-alert-triangle" /> {galatAksi.slice(0, 400)}
+        </div>
+      )}
+
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" />{" "}
           {success === "bayar"
             ? "Pembayaran selesai, kunjungan ditutup."
+            : success === "arsip"
+              ? "Kunjungan diarsipkan: disembunyikan dari daftar kerja, bisa dipulihkan dari tab Diarsipkan."
+              : success === "pulih"
+                ? "Kunjungan dipulihkan ke daftar semula."
             : Number(success) > 1
               ? `${success} pasien berhasil didaftarkan, nomor antriannya berurutan.`
               : "Pasien berhasil didaftarkan, masuk antrian."}
@@ -371,13 +483,13 @@ export default async function AntrianPage({
         </div>
       )}
 
-      {lihatHariIni && sisaGagal && (
+      {tampilSisa && sisaGagal && (
         <div role="alert" className="p2ban">
           <i className="ti ti-alert-triangle" /> Pasien dari hari sebelumnya yang belum selesai gagal dimuat. Antrian hari ini tetap bisa dipakai; muat ulang halaman untuk mencoba lagi.
         </div>
       )}
 
-      {lihatHariIni && sisaSemua.length > 0 && (
+      {tampilSisa && sisaSemua.length > 0 && (
         <div role="status" className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fde68a", color: "#92400e" }}>
           <i className="ti ti-history" /> Ada {sisaSemua.length} pasien dari hari sebelumnya yang belum selesai
           {rincianSisa ? ` (${rincianSisa})` : ""}.{" "}
@@ -426,6 +538,7 @@ export default async function AntrianPage({
                 { key: "diperiksa", label: "Sedang Diperiksa" },
                 { key: "selesai", label: "Selesai" },
                 { key: "aktif", label: "Aktif" },
+                ...(adminArsip ? [{ key: "diarsipkan", label: "Diarsipkan" }] : []),
               ].map((t) => (
                 <Link key={t.key}
                   href={`/klinik/antrian?filter=${t.key}&tanggal=${hariDipilih}&cabang=${selected?.id ?? ""}`}
@@ -445,7 +558,7 @@ export default async function AntrianPage({
           </div>
 
           {/* Saringan tanggal & cabang — boleh mundur ke hari-hari sebelumnya. */}
-          <form method="get" style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap" }}>
+          {!tabArsip && <form method="get" style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap" }}>
             <input type="hidden" name="filter" value={filter} />
             <div style={{ width: 150 }}>
               <label className="flab">Tanggal</label>
@@ -464,9 +577,9 @@ export default async function AntrianPage({
                 <i className="ti ti-history" /> Sedang melihat antrian {hariDipilih}, bukan hari ini.
               </span>
             )}
-          </form>
+          </form>}
 
-          {lihatHariIni && sisa.length > 0 && (
+          {tampilSisa && sisa.length > 0 && (
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 10.5, fontWeight: 700, color: "#b45309", letterSpacing: ".04em", marginBottom: 4 }}>
                 <i className="ti ti-history" /> BELUM SELESAI DARI HARI SEBELUMNYA · {sisa.length} PASIEN
@@ -488,19 +601,26 @@ export default async function AntrianPage({
             </div>
           )}
 
-          {lihatHariIni && sisa.length > 0 && (
+          {tampilSisa && sisa.length > 0 && (
             <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--posb)", letterSpacing: ".04em", marginBottom: 6 }}>
               <i className="ti ti-calendar" /> ANTRIAN HARI INI
             </div>
           )}
+          {tabArsip && (
+            <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
+              Kunjungan yang disembunyikan dari daftar kerja (tidak dihapus). Tidak ikut dihitung di penghitung maupun giliran berikutnya.
+              Pulihkan untuk mengembalikannya ke daftar semula.
+              {(visits ?? []).length >= BATAS_DIARSIPKAN ? ` Menampilkan ${BATAS_DIARSIPKAN} arsip terbaru.` : ""}
+            </div>
+          )}
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 780 }}>
-              {kepalaTabel}
+              {tabArsip ? kepalaArsip : kepalaTabel}
               <tbody>
-                {(visits ?? []).map((v) => barisAntrian(v))}
+                {(visits ?? []).map((v) => tabArsip ? barisArsip(v) : barisAntrian(v))}
                 {(visits ?? []).length === 0 && (
-                  <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
-                    Tidak ada pasien untuk filter ini di {branchLabel}, tanggal {hariDipilih}.
+                  <tr><td colSpan={tabArsip ? 7 : 9} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                    {tabArsip ? `Tidak ada kunjungan yang diarsipkan di ${branchLabel}.` : `Tidak ada pasien untuk filter ini di ${branchLabel}, tanggal ${hariDipilih}.`}
                     {filter === "selesai" ? " Pasien baru ada di tab Menunggu atau Aktif." : ""}
                   </td></tr>
                 )}
