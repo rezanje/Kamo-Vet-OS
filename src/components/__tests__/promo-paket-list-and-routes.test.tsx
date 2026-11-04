@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const m = vi.hoisted(() => ({
-  toggleLegacy: vi.fn(), togglePaket: vi.fn(), editorProps: null as null | Record<string, unknown>,
+  toggleLegacy: vi.fn(), togglePaket: vi.fn(), salin: vi.fn(), editorProps: null as null | Record<string, unknown>,
   role: "OWNER", active: true, snapshot: null as unknown, snapshotError: null as null | { message: string }, flag: true as boolean | null, flagError: null as null | { code: string; message: string },
   itemsError: false, promos: [] as Record<string, unknown>[], rpc: [] as { name: string; args: unknown }[],
 }));
@@ -16,7 +16,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...p }: { href: string; children: React.ReactNode }) => <a href={href} {...p}>{children}</a> }));
 vi.mock("@/app/(app)/crm/promo/actions", () => ({ createPromo: vi.fn(), togglePromo: m.toggleLegacy, editPromo: vi.fn() }));
-vi.mock("@/app/(app)/crm/promo/paket/actions", () => ({ ubahStatusPaketDariDaftar: m.togglePaket, simpanPromoPaket: vi.fn(), ubahStatusPromoPaket: vi.fn(), taksirHppPaket: vi.fn(async () => ({ ok: true, rows: [] })) }));
+vi.mock("@/app/(app)/crm/promo/paket/actions", () => ({ ubahStatusPaketDariDaftar: m.togglePaket, salinPromoPaketDariDaftar: m.salin, simpanPromoPaket: vi.fn(), ubahStatusPromoPaket: vi.fn(), taksirHppPaket: vi.fn(async () => ({ ok: true, rows: [] })) }));
 vi.mock("@/app/(app)/crm/promo/paket/PaketEditor", () => ({ PaketEditor: (p: Record<string, unknown>) => { m.editorProps = p; return <div data-testid="editor-stub" />; } }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
@@ -85,7 +85,7 @@ const rowOf = (id: string) => [...host.querySelectorAll("tbody tr")].find((tr) =
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-04T03:00:00Z"));
-  sessionStorage.clear(); m.toggleLegacy.mockReset(); m.togglePaket.mockReset(); m.editorProps = null; m.rpc = [];
+  sessionStorage.clear(); m.toggleLegacy.mockReset(); m.togglePaket.mockReset(); m.salin.mockReset(); m.editorProps = null; m.rpc = [];
   Object.assign(m, { role: "OWNER", active: true, snapshot: null, snapshotError: null, flag: true, flagError: null, itemsError: false, promos: [row("legacy1"), shRow("sh1"), shRow("sh2", { is_active: true, branch_ids: ["b1"] })] });
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
@@ -98,10 +98,26 @@ it("a syarat_hasil promo shows as 'Promo Paket' with a readable rule summary; le
   expect(sh.textContent).toContain("Promo Paket");
   expect(sh.textContent).not.toContain("bundling");
   expect(sh.textContent).toContain("Bolt Ikan 800gr / Bolt Donat 800gr (campur varian)");
-  expect(sh.textContent).toContain("ANC Creamy Stick potongan Rp1.000/unit");
+  expect(sh.textContent).toContain("potongan Rp1.000 per PCS ANC Creamy Stick");
   const legacy = rowOf("legacy1")!;
   expect(legacy.textContent).toContain("diskon produk");
   expect(legacy.textContent).not.toContain("Promo Paket");
+});
+
+it("'Salin promo' on the list row of every Promo Paket (active or not) posts the id to the copy action; legacy rows have none", async () => {
+  await list();
+  for (const id of ["sh1", "sh2"]) {
+    const forms = [...rowOf(id)!.querySelectorAll("form")];
+    expect(forms).toHaveLength(2);
+    expect(forms[1].textContent).toContain("Salin promo");
+  }
+  const f = rowOf("sh2")!.querySelectorAll("form")[1];
+  await act(async () => { f.requestSubmit(); });
+  expect(m.salin).toHaveBeenCalledTimes(1);
+  expect((m.salin.mock.calls[0][0] as FormData).get("id")).toBe("sh2");
+  expect(m.togglePaket).not.toHaveBeenCalled();
+  expect(rowOf("legacy1")!.textContent).not.toContain("Salin promo");
+  expect(rowOf("legacy1")!.querySelectorAll("form")).toHaveLength(1);
 });
 
 it("Edit opens the new editor for Promo Paket and the old one for legacy promos", async () => {
@@ -144,6 +160,9 @@ it("shows the success/error banners of the paket toggle in Indonesian", async ()
   expect(host.textContent).toContain("Promo paket diaktifkan.");
   await list({ success: "paket-nonaktif" });
   expect(host.textContent).toContain("Promo paket dinonaktifkan.");
+  await list({ success: "paket-aktif-peringatan" });
+  expect(host.textContent).toContain("Promo paket diaktifkan.");
+  expect(host.textContent).toContain("di bawah modal");
   await list({ error: "Fitur promo paket belum dirilis oleh Owner." });
   expect(host.textContent).toContain("Fitur promo paket belum dirilis oleh Owner.");
 });

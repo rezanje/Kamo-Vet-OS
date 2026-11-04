@@ -4,7 +4,7 @@ import { promoCategorySummary } from "@/lib/promo-categories";
 import { promoScheduleStatus, type PromoRow } from "@/lib/promo";
 import { formatRentangTanggal, PROMO_STATUS_FILTERS, type PromoStatusFilter } from "@/lib/promo-list";
 import { togglePromo } from "./actions";
-import { ubahStatusPaketDariDaftar } from "./paket/actions";
+import { salinPromoPaketDariDaftar, ubahStatusPaketDariDaftar } from "./paket/actions";
 import { ringkasAturanPaket } from "@/lib/promo-paket";
 import s from "./PromoList.module.css";
 
@@ -119,6 +119,12 @@ export function PromoList({ rows, total, counts, status, q, kategori, cabang, to
                           {p.is_active ? "Nonaktifkan" : "Aktifkan"}
                         </button>
                       </form>
+                      {paket && canEdit && (
+                        <form action={salinPromoPaketDariDaftar}>
+                          <input type="hidden" name="id" value={p.id} />
+                          <button type="submit" className="btn-def" style={{ padding: "3px 10px", fontSize: 10 }} title="Buat salinan promo ini sebagai draf baru (nonaktif)">Salin promo</button>
+                        </form>
+                      )}
                     </div>
                   </td>
                 </tr>

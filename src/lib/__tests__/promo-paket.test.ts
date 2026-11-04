@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  emptyPaketForm, estimasiHasil, paketAkses, paketFormFromRule, paketFormFromSnapshot, paketValuesFromForm, parseBulat,
+  cekUkuranPaket, emptyPaketForm, estimasiHasil, angkaAmbigu, paketAkses, paketFormFromRule, paketFormFromSnapshot, paketValuesFromForm, parseAngka, parseBulat,
   pesanGalatPaket, ringkasAturanPaket, ringkasPaket, validatePaketForm, type PaketForm, type PaketItemInfo,
 } from "@/lib/promo-paket";
 import { syaratHasilDefFromRow } from "@/lib/promo-syarat-hasil-checkout";
@@ -26,8 +26,50 @@ const andri = (over: Partial<PaketForm> = {}): PaketForm => ({
 const msgs = (f: PaketForm, c = ctx()) => validatePaketForm(f, c).map((i) => i.message);
 
 describe("parseBulat", () => {
-  it.each([["2", 2], [" 15 ", 15], ["100.000", 100000], ["0", 0]])("%s -> %s", (s, n) => expect(parseBulat(s)).toBe(n));
-  it.each(["", "1.5", "1e3", "-1", "abc", "1,5", "1.00", "99999999999999999999", "٣"])("%s -> null", (s) => expect(parseBulat(s)).toBeNull());
+  it.each([["2", 2], [" 15 ", 15], ["100.000", 100000], ["0", 0], ["1.000", 1000], ["1.000.000", 1000000]])("%s -> %s", (s, n) => expect(parseBulat(s)).toBe(n));
+  it.each(["", "1.5", "1e3", "-1", "abc", "1,5", "1.00", "99999999999999999999", "٣", "0.001", "0.500", "00.100", "1.000,50", "1,000", "1.00.000", ".5", "1..000"])("%s -> null", (s) => expect(parseBulat(s)).toBeNull());
+});
+
+describe("parseAngka — id-ID (titik ribuan, koma desimal) dan en (titik desimal) tanpa salah baca", () => {
+  it.each([
+    ["1.000", 1000], ["12.500", 12500], ["1.000.000", 1000000], ["1,5", 1.5], ["0,001", 0.001], ["0.001", 0.001], ["0.500", 0.5], ["0,500", 0.5],
+    ["1.000,50", 1000.5], ["1,000.50", 1000.5], ["1,000,000", 1000000], ["1.5", 1.5], ["2", 2], [" 15 ", 15], ["0", 0], ["1.0000", 1],
+  ])("%s -> %s", (s, n) => expect(parseAngka(s)).toBe(n));
+  it.each(["abc", "", "-1", "1e3", "00.100", "1,000", "1.00.000", "1..000", ".5", "1,5,5", "1.000,5,5", "1 000", "99999999999999999999"])("%s -> null", (s) => expect(parseAngka(s)).toBeNull());
+  it("a lone '1,000' / '2,500' is ambiguous (1 or 1000?) and is flagged so the message can say so; '1.000' and '1,5' are not", () => {
+    expect(angkaAmbigu("1,000")).toBe(true);
+    expect(angkaAmbigu("2,500")).toBe(true);
+    expect(angkaAmbigu("1.000")).toBe(false);
+    expect(angkaAmbigu("1,5")).toBe(false);
+    expect(angkaAmbigu("abc")).toBe(false);
+  });
+  it("validatePaketForm reads '0.001' as the decimal it is (rejected as not whole), never silently as Rp1", () => {
+    const f = andri({ hasil: { ...andri().hasil, value: "0.001" } });
+    expect(msgs(f)).toContain("Hasil: potongan nominal harus bilangan bulat Rp1–99.999.999.");
+    const g = andri({ syarat: [{ kind: "nilai", min: "0.500" }] });
+    expect(msgs(g).join(" ")).toContain("nilai minimum harus bilangan bulat");
+  });
+  it("the validation message explains an ambiguous separator", () => {
+    const f = andri({ syarat: [{ kind: "qty", min: "1,000", items: [{ item_id: IKAN, unit: "PCS" }] }] });
+    expect(msgs(f).join(" ")).toMatch(/1,000.*(1 atau 1000|ambigu)/);
+  });
+});
+
+describe("cekUkuranPaket — cheap size/shape gate that runs BEFORE any master-data read", () => {
+  const manyRefs = (n: number) => Array.from({ length: n }, (_, i) => ({ item_id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`, unit: "PCS" }));
+  it("a normal form passes", () => expect(cekUkuranPaket(andri())).toEqual([]));
+  it("more than 8 syarat rows, more than 50 items in a row, more than 20 hasil items → friendly Indonesian messages", () => {
+    const rows = Array.from({ length: 9 }, () => ({ kind: "nilai" as const, min: "1000" }));
+    expect(cekUkuranPaket(andri({ syarat: rows })).map((i) => i.message)).toContain("Syarat promo maksimal 8 baris.");
+    expect(cekUkuranPaket(andri({ syarat: [{ kind: "qty", min: "1", items: manyRefs(51) }] })).map((i) => i.message)).toContain("Syarat 1: maksimal 50 barang.");
+    expect(cekUkuranPaket(andri({ hasil: { ...andri().hasil, items: manyRefs(21) } })).map((i) => i.message)).toContain("Hasil: maksimal 20 barang.");
+  });
+  it("branch ids must be UUIDs: a friendly Indonesian message, never the database's raw cast error", () => {
+    const m = cekUkuranPaket(andri({ branchIds: ["not-a-uuid", "x'--"] })).map((i) => i.message).join(" ");
+    expect(m).toContain("Cabang tidak valid");
+    expect(m).not.toMatch(/invalid input syntax|uuid/i);
+    expect(cekUkuranPaket(andri({ branchIds: [CAB] }))).toEqual([]);
+  });
 });
 
 describe("paketValuesFromForm (exact RPC p_values)", () => {
@@ -148,17 +190,37 @@ describe("validatePaketForm (Indonesian, client-side; the database stays the aut
   });
 });
 
-describe("ringkasPaket — live preview sentence", () => {
+describe("ringkasPaket — live preview sentence (unit chosen per item is always shown)", () => {
   it("Andri example", () => {
-    expect(ringkasPaket(andri(), nameOf)).toBe("Beli 2 Bolt Ikan 800gr / Bolt Donat 800gr (campur varian) → ANC Creamy Stick potongan Rp1.000/unit, berlaku kelipatan");
+    expect(ringkasPaket(andri(), nameOf)).toBe("Beli 2 PCS Bolt Ikan 800gr / Bolt Donat 800gr (campur varian) → potongan Rp1.000 per PCS ANC Creamy Stick, berlaku kelipatan");
   });
-  it("percent with cap, several rows, no repeat, reward qty, many variants", () => {
+  it("shows the chosen unit: 'Beli 2 DUS Bolt Ikan' and 'potongan Rp1.000 per PCS ANC Creamy Stick'", () => {
+    const f = andri({ syarat: [{ kind: "qty", min: "2", items: [{ item_id: IKAN, unit: "DUS" }] }] });
+    const s = ringkasPaket(f, nameOf);
+    expect(s).toContain("Beli 2 DUS Bolt Ikan 800gr");
+    expect(s).toContain("potongan Rp1.000 per PCS ANC Creamy Stick");
+    const g = andri({ hasil: { ...andri().hasil, items: [{ item_id: ANC, unit: "DUS" }] } });
+    expect(ringkasPaket(g, nameOf)).toContain("potongan Rp1.000 per DUS ANC Creamy Stick");
+  });
+  it("mixed units inside one row are summarised sensibly, not shown like a single-unit row", () => {
+    const f = andri({ syarat: [{ kind: "qty", min: "2", items: [{ item_id: IKAN, unit: "DUS" }, { item_id: DONAT, unit: "PCS" }] }] });
+    expect(ringkasPaket(f, nameOf)).toContain("Beli 2 unit Bolt Ikan 800gr (DUS) / Bolt Donat 800gr (PCS) (campur varian, campur satuan)");
+    const many = andri({ syarat: [{ kind: "qty", min: "2", items: [{ item_id: IKAN, unit: "DUS" }, { item_id: DONAT, unit: "PCS" }, { item_id: ANC, unit: "PCS" }, { item_id: IKAN, unit: "PCS" }] }] });
+    expect(ringkasPaket(many, nameOf)).toContain("Beli 2 unit Bolt Ikan 800gr (DUS) / Bolt Donat 800gr (PCS) +2 varian (campur varian, campur satuan: DUS, PCS)");
+    const h = andri({ hasil: { ...andri().hasil, items: [{ item_id: ANC, unit: "PCS" }, { item_id: IKAN, unit: "DUS" }] } });
+    expect(ringkasPaket(h, nameOf)).toContain("potongan Rp1.000 per unit ANC Creamy Stick (PCS) / Bolt Ikan 800gr (DUS) (campur satuan)");
+  });
+  it("percent with cap, several rows, no repeat, reward qty, many variants (single unit)", () => {
     const f = andri({
       repeat: false,
       syarat: [{ kind: "qty", min: "3", items: [{ item_id: IKAN, unit: "PCS" }] }, { kind: "nilai", min: "100000" }],
-      hasil: { items: [{ item_id: ANC, unit: "PCS" }, { item_id: DONAT, unit: "PCS" }, { item_id: IKAN, unit: "PCS" }, { item_id: IKAN, unit: "BOX" }], rewardQty: "2", discountType: "percent", value: "50", maxAmount: "5000" },
+      hasil: { items: [{ item_id: ANC, unit: "PCS" }, { item_id: DONAT, unit: "PCS" }, { item_id: IKAN, unit: "PCS" }, { item_id: ANC, unit: "PCS" }], rewardQty: "2", discountType: "percent", value: "50", maxAmount: "5000" },
     });
-    expect(ringkasPaket(f, nameOf)).toBe("Beli 3 Bolt Ikan 800gr DAN belanja minimal Rp100.000 → ANC Creamy Stick / Bolt Donat 800gr +2 varian potongan 50% (maks. Rp5.000/unit), maks. 2 unit per kelipatan, sekali saja");
+    expect(ringkasPaket(f, nameOf)).toBe("Beli 3 PCS Bolt Ikan 800gr DAN belanja minimal Rp100.000 → potongan 50% per PCS ANC Creamy Stick / Bolt Donat 800gr +2 varian, maks. diskon Rp5.000 per PCS, maks. 2 PCS per kelipatan, sekali saja");
+  });
+  it("percent with a mixed-unit reward group says 'unit', and lists the units", () => {
+    const f = andri({ repeat: false, hasil: { items: [{ item_id: ANC, unit: "PCS" }, { item_id: DONAT, unit: "PCS" }, { item_id: IKAN, unit: "PCS" }, { item_id: IKAN, unit: "BOX" }], rewardQty: "2", discountType: "percent", value: "50", maxAmount: "5000" } });
+    expect(ringkasPaket(f, nameOf)).toContain("→ potongan 50% per unit ANC Creamy Stick (PCS) / Bolt Donat 800gr (PCS) +2 varian (campur satuan: BOX, PCS), maks. diskon Rp5.000 per unit, maks. 2 unit per kelipatan, sekali saja");
   });
   it("incomplete forms still render something readable instead of throwing", () => {
     expect(ringkasPaket(emptyPaketForm("2026-11-04"), nameOf)).toContain("belum lengkap");
@@ -166,8 +228,13 @@ describe("ringkasPaket — live preview sentence", () => {
   it("list summary from a stored rule", () => {
     const v = paketValuesFromForm(andri(), "x");
     const rule = { discount_mode: "syarat_hasil", syarat_hasil: { version: 1, repeat: true, syarat: v.syarat, hasil: v.hasil, below_hpp: { allowed: false } } };
-    expect(ringkasAturanPaket(rule, nameOf)).toContain("ANC Creamy Stick potongan Rp1.000/unit");
+    expect(ringkasAturanPaket(rule, nameOf)).toContain("potongan Rp1.000 per PCS ANC Creamy Stick");
     expect(ringkasAturanPaket({}, nameOf)).toBe("—");
+  });
+  it("the generated suggest text is cut at 200 characters but still starts with the unit-aware sentence", () => {
+    const v = paketValuesFromForm(andri(), ringkasPaket(andri(), nameOf));
+    expect(v.suggest).toContain("Beli 2 PCS");
+    expect((v.suggest as string).length).toBeLessThanOrEqual(200);
   });
 });
 
@@ -197,6 +264,12 @@ describe("pesanGalatPaket — database refusals in Indonesian", () => {
     expect(e("23514", "PROMO_SH_TARGET: barang syarat/hasil harus ada, aktif, dan berjenis Persediaan")).toBe("Barang promo bermasalah: barang syarat/hasil harus ada, aktif, dan berjenis Persediaan");
     expect(e("42501", "Hanya owner/manajer aktif yang bisa mengatur promo")).toBe("Hanya Owner/Admin aktif yang bisa mengatur promo.");
     expect(e("23514", "PROMO_SH_NO_DELETE: x")).toBe("Promo paket tidak bisa dihapus. Nonaktifkan saja.");
+  });
+  it("expired promo activation: the database's KADALUARSA text is shown cleanly, without the raw 'Gagal menyimpan promo:' prefix", () => {
+    const msg = e("23514", 'KADALUARSA: Promo "Beli 2 Bolt" berakhir 2026-10-13 dan sudah lewat. Perpanjang dulu tanggal "Berlaku s/d" sebelum diaktifkan kembali.');
+    expect(msg).toBe('Promo "Beli 2 Bolt" berakhir 2026-10-13 dan sudah lewat. Perpanjang dulu tanggal "Berlaku s/d" sebelum diaktifkan kembali.');
+    expect(msg).not.toContain("Gagal menyimpan promo");
+    expect(e("P0001", "PROMO_KADALUARSA_GUARD_DRIFT: guard berubah")).toContain("Gagal menyimpan promo:");
   });
   it("rule problems keep the database's Indonesian detail; unknown errors never leak as success", () => {
     expect(e("22023", "PROMO_SH_RULE: SH_ROW_INVALID: kuantitas minimum harus bilangan bulat 1..99999")).toBe("Aturan promo ditolak: kuantitas minimum harus bilangan bulat 1..99999");
