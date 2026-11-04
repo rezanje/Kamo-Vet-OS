@@ -134,7 +134,7 @@ def main():
                     c = 'public.cashier_post_stock_atomic(uuid,uuid)'
                     old_floor = "if line.hpp is null or (gross-item_discount)*net_total/after_items < line.hpp then"
                     assert meta_before[c]['definition'].count(old_floor) == 1
-                    new_floor = "if line.hpp is null or (gross-item_discount)*net_total/after_items < case when coalesce(line.promo_floor_waiver,false) and manual<=0 then least(line.hpp,gross-item_discount) else line.hpp end then"
+                    new_floor = "if line.hpp is null or (gross-item_discount)*net_total/after_items < (case when coalesce(line.promo_floor_waiver,false) and manual<=0 then least(line.hpp,gross-item_discount) else line.hpp end) then -- P05_PROMO_WAIVER"
                     assert after[c]['definition'] == meta_before[c]['definition'].replace(old_floor, new_floor), 'cashier_post_stock_atomic differs outside the exact floor expression'
                     assert {k: v for k, v in meta_before[c].items() if k != 'definition'} == {k: v for k, v in after[c].items() if k != 'definition'}, 'cashier ACL/config drift'
                     print('PASS cashier_post_stock_atomic differs ONLY by the exact HPP-floor expression; ACL unchanged', flush=True)
@@ -148,7 +148,8 @@ def main():
                     continue
                 for suite in suites:
                     body = (ROOT / 'supabase/tests' / suite).read_text()
-                    print(db.sql('begin;\n' + fixture_sql + '\n' + body + '\nrollback;'), flush=True)
+                    helpers = '' if suite.endswith('definition.sql') else (ROOT / 'supabase/tests/promo_syarat_hasil_helpers.sql').read_text()
+                    print(db.sql('begin;\n' + fixture_sql + '\n' + helpers + '\n' + body + '\nrollback;'), flush=True)
                     print('PASS suite', suite, flush=True)
             left = db.sql("select (select count(*) from promos where name like 'Direct %')+(select count(*) from promo_release_flags where enabled)")
             assert left == '0', 'suite fixtures leaked: ' + left
