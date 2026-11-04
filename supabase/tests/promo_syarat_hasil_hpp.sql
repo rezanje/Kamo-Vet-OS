@@ -32,7 +32,7 @@ select pg_temp.ok((select (pg_temp.snap('HPP.WAIVE',1)->>'net_paid')::numeric=15
   and (select hpp from sale_items where sale_id=(select id from sales where no_struk='HPP.WAIVE') and source_position=1)=17040),'snapshot: net 15000, waiver=true, real FIFO HPP 17040 recorded');
 -- 3. no stacking with voucher/points/total discount on a waiver line
 select pg_temp.floor_sale('HPP.STACK',pg_temp.pid('pw'),5000,true,54000);
-select pg_temp.must_reject($q$select pg_temp.post('HPP.STACK')$q$,'di bawah HPP FIFO','a total/voucher discount on top of a below-HPP waiver line is refused');
+select pg_temp.must_reject($q$select pg_temp.post('HPP.STACK')$q$,'di bawah HPP FIFO.*total struk','a total/voucher discount on top of a below-HPP waiver line is refused WITH a readable hint (no receipt-level reduction incl. cash rounding)');
 select pg_temp.ok((select count(*)=0 from stock_moves where source_ref='HPP.STACK'),'stacking refusal rolled back stock');
 -- 4. promo alone at/above HPP: floor stays HPP (stacking allowed only down to HPP)
 select pg_temp.floor_sale('HPP.ABOVE.OK',pg_temp.pid('pw2'),2000,true,57000);
@@ -77,3 +77,36 @@ select pg_temp.sale('HPP.BO3',20000,20000);
 select pg_temp.pl('HPP.BO3','KOPI',1,80000,0);
 select pg_temp.must_reject($q$select pos_post_promo_atomic((select id from sales where no_struk='HPP.BO3'),'e3300000-0000-4000-8000-000000000001')$q$,'PROMO_SH_POST|Harga neto|tidak konsisten','atomic function refuses a receipt without syarat_hasil claims');
 select pg_temp.ok(not has_function_privilege('anon','public.pos_post_promo_atomic(uuid,uuid)','execute'),'ACL: anon cannot execute pos_post_promo_atomic');
+
+-- 8. stage-2 review L1: the relaxed floor covers ONLY reward units. A waiver line must consist of reward units alone (the app splits lines
+--    exactly like the Bolt pool); the non-reward units of the same item keep the ordinary HPP floor.
+reset role;select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claims','',true);
+update items set sell_price=15000 where code='EXP-REJECT';
+-- 'pw' had its waiver revoked in section 5: use a fresh waiver promo
+select pg_temp.mk('pw3',pg_temp.rule_of(pg_temp.bolt_syarat(),pg_temp.hasil_of('EXP-REJECT','{"type":"nominal","value":5000}'),true,
+ '{"allowed":true,"reason":"barang mendekati expired","ack_by":"e1100000-0000-4000-8000-000000000003","ack_at":"2026-11-04T01:02:03Z"}'));
+set constraints all immediate;set constraints all deferred;
+select pg_temp.set_user('e1100000-0000-4000-8000-000000000001');
+set local role authenticated;
+select pg_temp.sale('HPP.W10',40000+150000,40000+150000-5000);
+select pg_temp.cl('HPP.W10','DRC8993374326970',2,20000,0,pg_temp.pid('pw3'),1,2,0,0);
+select pg_temp.must_reject($q$select pg_temp.cl('HPP.W10','EXP-REJECT',10,15000,1,pg_temp.pid('pw3'),1,0,1,5000,true)$q$,'PROMO_SH_CLAIM: a below-HPP waiver line','L1: waiver line qty 10 with 1 reward unit is refused at insert (only pure reward lines may carry the waiver)');
+select pg_temp.must_reject($q$select pg_temp.cl('HPP.W10','EXP-REJECT',2,15000,1,pg_temp.pid('pw3'),1,1,1,5000,true)$q$,'PROMO_SH_CLAIM: a below-HPP waiver line','L1: waiver line mixing syarat and reward units is refused at insert');
+-- structural backstop (CHECK) even if the readable trigger were bypassed
+reset role;select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claims','',true);
+alter table sale_items disable trigger promo_sh_claim;
+select pg_temp.must_reject($q$select pg_temp.cl('HPP.W10','EXP-REJECT',10,15000,1,pg_temp.pid('pw3'),1,0,1,5000,true)$q$,'sale_items_promo_claim_shape','L1: CHECK constraint backstop (trigger disabled): waiver line must have hasil_units = qty and no syarat units');
+alter table sale_items enable trigger promo_sh_claim;
+select pg_temp.set_user('e1100000-0000-4000-8000-000000000001');
+set local role authenticated;
+-- the split form: 1 reward unit (waiver) + 9 plain units at the same below-HPP list price. The plain units keep the ordinary floor.
+select pg_temp.sale('HPP.SPLIT',40000+15000+135000,40000+15000+135000-5000);
+select pg_temp.cl('HPP.SPLIT','DRC8993374326970',2,20000,0,pg_temp.pid('pw3'),1,2,0,0);
+select pg_temp.cl('HPP.SPLIT','EXP-REJECT',1,15000,1,pg_temp.pid('pw3'),1,0,1,5000,true);
+select pg_temp.pl('HPP.SPLIT','EXP-REJECT',9,15000,2);
+select pg_temp.must_reject($q$select pg_temp.post('HPP.SPLIT')$q$,'di bawah HPP FIFO','L1: split form: the 9 non-reward units priced below HPP are still refused by the ordinary floor');
+select pg_temp.ok((select count(*)=0 from stock_moves where source_ref='HPP.SPLIT'),'L1: refusal rolled back the stock issue');
+select pg_temp.sale('HPP.SPLIT2',40000+15000,40000+15000-5000);
+select pg_temp.cl('HPP.SPLIT2','DRC8993374326970',2,20000,0,pg_temp.pid('pw3'),1,2,0,0);
+select pg_temp.cl('HPP.SPLIT2','EXP-REJECT',1,15000,1,pg_temp.pid('pw3'),1,0,1,5000,true);
+select pg_temp.ok((pg_temp.post('HPP.SPLIT2')->>'finalized')::boolean,'L1: a pure 1-unit reward line (waiver) still sells at 10000 < HPP 17040');

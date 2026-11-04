@@ -234,3 +234,45 @@ select pg_temp.must_reject($q$delete from sale_line_pricing$q$,'permission denie
 reset role;select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claims','',true);
 select pg_temp.ok((select not has_function_privilege('authenticated','public.promo_sh_claim_guard()','execute') and not has_function_privilege('authenticated','public.promo_sh_finalize_guard()','execute')
   and not has_function_privilege('authenticated','public.promo_sh_verify_claims(uuid)','execute')),'ACL: claim/finalize/verify helpers are not callable by clients');
+
+-- ============================================================ 7. stage-2 review fixes (S1 nilai forgery, S2 UPDATE bypass, S3 bounded selection)
+select pg_temp.mk('pnil',pg_temp.rule_of('[{"kind":"nilai","min":500000}]'::jsonb,pg_temp.hasil_of('ANC-CREAMY','{"type":"nominal","value":1000}')));
+set constraints all immediate;set constraints all deferred;
+select pg_temp.set_user('e1100000-0000-4000-8000-000000000001');
+set local role authenticated;
+-- S1: a free-text line (no item master) must never count towards the whole-cart value, whatever harga/discount the client writes
+select pg_temp.sale('SH.S1.FORGED',515000,14000);
+select pg_temp.cl('SH.S1.FORGED','ANC-CREAMY',1,15000,1,pg_temp.pid('pnil'),1,0,1,1000);
+insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,source_position,item_discount_type,item_discount_value)
+ select s.id,null,'Jasa bebas',1,500000,'PCS',1,0,0,'nominal',500000 from sales s where no_struk='SH.S1.FORGED';
+select pg_temp.refused('SH.S1.FORGED','PROMO_SH_NILAI','S1: free-text Rp500k line with a 100% manual discount cannot satisfy a nilai syarat (customer would pay 14000)');
+select pg_temp.sale('SH.S1.PLAIN',515000,515000-1000);
+select pg_temp.cl('SH.S1.PLAIN','ANC-CREAMY',1,15000,1,pg_temp.pid('pnil'),1,0,1,1000);
+insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,source_position)
+ select s.id,null,'Jasa bebas',1,500000,'PCS',1,0,0 from sales s where no_struk='SH.S1.PLAIN';
+select pg_temp.refused('SH.S1.PLAIN','PROMO_SH_NILAI','S1: a free-text line at client-chosen harga (no discount) does not count either: only the OFFICIAL master price counts');
+-- control: master items at the OFFICIAL price still satisfy the same nilai syarat (KOPI 7 x 80000 = 560000)
+select pg_temp.sale('SH.S1.REAL',15000+560000,15000+560000-1000);
+select pg_temp.cl('SH.S1.REAL','ANC-CREAMY',1,15000,1,pg_temp.pid('pnil'),1,0,1,1000);
+select pg_temp.pl('SH.S1.REAL','KOPI',7,80000,0);
+select pg_temp.ok((pg_temp.post('SH.S1.REAL')->>'finalized')::boolean,'S1 control: a cart of master items at official prices (560000 + 15000) still satisfies the nilai syarat');
+-- S2: promo_id cannot be repointed to a syarat_hasil promo after insert
+select pg_temp.sale('SH.S2.UPD',15000,10000);
+select pg_temp.pl('SH.S2.UPD','ANC-CREAMY',1,15000,0);
+select pg_temp.must_reject($q$update sale_items set promo_id=pg_temp.pid('p1'),promo_discount=5000 where sale_id=(select id from sales where no_struk='SH.S2.UPD')$q$,'PROMO_SH_CLAIM','S2: UPDATE promo_id -> syarat_hasil promo without a claim is refused');
+select pg_temp.must_reject($q$update sale_items set promo_claim_id=pg_temp.pid('p1'),promo_sets=1,promo_hasil_units=1,promo_id=pg_temp.pid('p1'),promo_discount=1000 where sale_id=(select id from sales where no_struk='SH.S2.UPD')$q$,'PROMO_SH_SNAPSHOT','S2: attaching a claim to an existing line by UPDATE is refused (claim columns immutable)');
+select pg_temp.ok((select promo_id is null and promo_discount=0 from sale_items where sale_id=(select id from sales where no_struk='SH.S2.UPD')),'S2: the line is untouched');
+select pg_temp.sale('SH.S2.LEGACY',15000,14000);
+select pg_temp.pl('SH.S2.LEGACY','ANC-CREAMY',1,15000,0);
+with u as(update sale_items set promo_id=null,promo_discount=0 where sale_id=(select id from sales where no_struk='SH.S2.LEGACY') returning 1) select pg_temp.ok(count(*)=1,'S2: ordinary updates of a line that does not target a syarat_hasil promo still work') from u;
+-- S3: promo_selection is display-only client text (never used for pricing): bounded size
+create function pg_temp.sale_sel(ref text,sel jsonb) returns void language sql as $$
+ insert into sales(branch_id,no_struk,subtotal,discount,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint,promo_selection)
+ values('e2200000-0000-4000-8000-000000000001',ref,15000,0,15000,'Tunai',15000,auth.uid(),'e4400000-0000-4000-8000-000000000001',
+  '[{"method":"Tunai","amount":15000}]','sql:'||ref,repeat('a',64),sel)
+$$;
+select pg_temp.must_reject($q$select pg_temp.sale_sel('SH.S3.BIG',jsonb_build_object('version',1,'pad',repeat('x',20000)))$q$,'sales_promo_selection_bound','S3: an oversized promo_selection is refused');
+select pg_temp.must_reject($q$select pg_temp.sale_sel('SH.S3.MANY',jsonb_build_object('version',1,'a',(select jsonb_agg(g) from generate_series(1,5000) g)))$q$,'sales_promo_selection_bound','S3: a many-element promo_selection is refused by the same bound');
+select pg_temp.must_reject($q$select pg_temp.sale_sel('SH.S3.SHAPE','[1]'::jsonb)$q$,'sales_promo_pick_shape','S3: a non-object promo_selection is refused (shape CHECK)');
+select pg_temp.sale_sel('SH.S3.OK',jsonb_build_object('version',1,'note','ok'));
+select pg_temp.ok((select promo_selection->>'note'='ok' from sales where no_struk='SH.S3.OK'),'S3: a normal small promo_selection is accepted');

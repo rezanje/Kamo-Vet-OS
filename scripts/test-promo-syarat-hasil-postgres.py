@@ -92,6 +92,15 @@ MUTATIONS = {
         "when new.promo_pick_mode in('pilih','tanpa') then false else", "when new.promo_pick_mode in('pilih','tanpa') then true else"),
     'floor_no_stacking': ('20261106320000_promo_syarat_hasil_hpp_waiver.sql', "then least(line.hpp,gross-item_discount) else", "then 0 else"),
     'floor_waiver_flag_ignored': ('20261106320000_promo_syarat_hasil_hpp_waiver.sql', "when coalesce(line.promo_floor_waiver,false) and manual<=0 then", "when manual<=0 then"),
+    # stage-2 review fixes
+    's1_harga_fallback': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else u.sell_price end,0)),0) into cart", "else u.sell_price end,i.harga)),0) into cart"),
+    's1_original_bug': [('20261106310000_promo_syarat_hasil_sale_claims.sql', "else u.sell_price end,0)),0) into cart", "else u.sell_price end,i.harga)),0) into cart"), ('20261106310000_promo_syarat_hasil_sale_claims.sql', "from public.sale_items i join public.items it on it.id=i.item_id and it.is_active\n     left join public.item_units u", "from public.sale_items i left join public.items it on it.id=i.item_id\n     left join public.item_units u")],
+    's2_update_guard': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "if new.promo_id is distinct from old.promo_id and new.promo_id is not null and new.promo_claim_id", "if false and new.promo_id is not null and new.promo_claim_id"),
+    's3_selection_bound': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "octet_length(promo_selection::text)<=8192", "true"),
+    'l1_trigger': ('20261106310000_promo_syarat_hasil_sale_claims.sql', ' if new.promo_floor_waiver and (new.promo_hasil_units is distinct from new.qty or new.promo_syarat_units<>0) then', " if false then"),
+    'l1_check': ('20261106310000_promo_syarat_hasil_sale_claims.sql', '(promo_hasil_units=qty and promo_syarat_units=0)', "promo_hasil_units>0"),
+    'l1_both': [('20261106310000_promo_syarat_hasil_sale_claims.sql', ' if new.promo_floor_waiver and (new.promo_hasil_units is distinct from new.qty or new.promo_syarat_units<>0) then', " if false then"), ('20261106310000_promo_syarat_hasil_sale_claims.sql', '(promo_hasil_units=qty and promo_syarat_units=0)', "promo_hasil_units>0")],
+    'l3_hint': ('20261106320000_promo_syarat_hasil_hpp_waiver.sql', "case when coalesce(line.promo_floor_waiver,false) then ' (baris promo", "case when false then ' (baris promo"),
 }
 
 
@@ -146,11 +155,14 @@ def main():
             applied = []
             for name, _ in cands:
                 text = (ROOT / 'supabase/migrations' / name).read_text()
-                if args.mutate and MUTATIONS[args.mutate][0] == name:
-                    _, old, new = MUTATIONS[args.mutate]
-                    assert text.count(old) == 1, 'mutation anchor not unique in ' + name
-                    text = text.replace(old, new)
-                    print('MUTANT', args.mutate, flush=True)
+                if args.mutate:
+                    muts = MUTATIONS[args.mutate]
+                    for mfile, old, new in (muts if isinstance(muts, list) else [muts]):
+                        if mfile != name:
+                            continue
+                        assert text.count(old) == 1, 'mutation anchor not unique in ' + name
+                        text = text.replace(old, new)
+                        print('MUTANT', args.mutate, flush=True)
                 db.sql(text)
                 applied.append(name)
                 print('FORWARD', name, 'sha256', sha(ROOT / 'supabase/migrations' / name), flush=True)
@@ -178,9 +190,12 @@ def main():
                     old_floor = "if line.hpp is null or (gross-item_discount)*net_total/after_items < line.hpp then"
                     assert meta_before[c]['definition'].count(old_floor) == 1
                     new_floor = "if line.hpp is null or (gross-item_discount)*net_total/after_items < (case when coalesce(line.promo_floor_waiver,false) and manual<=0 then least(line.hpp,gross-item_discount) else line.hpp end) then -- P05_PROMO_WAIVER"
-                    assert after[c]['definition'] == meta_before[c]['definition'].replace(old_floor, new_floor), 'cashier_post_stock_atomic differs outside the exact floor expression'
+                    old_raise = "raise exception 'Harga neto Persediaan di bawah HPP FIFO; penjualan ditolak: %', line.nama using errcode='55000';"
+                    new_raise = ("raise exception 'Harga neto Persediaan di bawah HPP FIFO; penjualan ditolak: %', line.nama||(case when coalesce(line.promo_floor_waiver,false) then ' (baris promo di bawah HPP: total struk tidak boleh lebih rendah dari subtotal setelah promo - tanpa voucher, poin, diskon total, atau pembulatan tunai ke bawah)' else '' end) using errcode='55000';")
+                    assert meta_before[c]['definition'].count(old_raise) == 1
+                    assert after[c]['definition'] == meta_before[c]['definition'].replace(old_floor, new_floor).replace(old_raise, new_raise), 'cashier_post_stock_atomic differs outside the exact floor expression and its raise message'
                     assert {k: v for k, v in meta_before[c].items() if k != 'definition'} == {k: v for k, v in after[c].items() if k != 'definition'}, 'cashier ACL/config drift'
-                    print('PASS cashier_post_stock_atomic differs ONLY by the exact HPP-floor expression; ACL unchanged', flush=True)
+                    print('PASS cashier_post_stock_atomic differs ONLY by the exact HPP-floor expression and its raise hint (waiver lines); ACL unchanged', flush=True)
                 pol_after = json.loads(db.last(policies)); pol_before = json.loads(policies_before)
                 for t in pol_before:  # existing tables: ACL/RLS/policies unchanged (new columns do not change them)
                     assert pol_before[t] == pol_after[t], 'ACL/RLS drift on ' + t

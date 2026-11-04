@@ -9,6 +9,17 @@
 --
 -- Untouched: finalize_pos_sale, sale_stock_out_fifo, quantity_pool_competing_discount, refund functions. Patched (anchored, fail closed):
 -- quantity_pool_finalize_guard (three exact anchors: members, snapshot keys, cashier pick). The HPP-floor patch is the next migration.
+--
+-- APP CONTRACT (stage-2 review):
+--  * A line carrying a claim (promo_claim_id) is excluded from the Bolt quantity pool AS A WHOLE LINE (SH_POOL_MEMBERS): units of the
+--    same line that are neither syarat nor hasil units get NO pool discount (safe direction: the customer pays more). The app must
+--    SPLIT a cart line into a claimed line (syarat/hasil units only) and a plain line for the rest, exactly like the Bolt pool does.
+--  * A below-HPP waiver line (promo_floor_waiver) must be a PURE reward line: promo_hasil_units = qty, promo_syarat_units = 0
+--    (readable trigger refusal + CHECK). The relaxed HPP floor therefore never covers non-reward units.
+--  * nilai syarat counts only lines that join an active item master at its OFFICIAL price (never the client-written harga).
+--  * promo_selection is display-only text, bounded to 8192 bytes; it never influences pricing.
+--  * The P03 HPP floor lives only in cashier_post_stock_atomic (pre-existing): a caller that uses sale_stock_out_fifo + finalize_pos_sale
+--    directly skips it (claim verification still runs). See also the waiver migration header.
 begin;
 
 -- ---------------------------------------------------------------------------------------------
@@ -26,7 +37,7 @@ alter table public.sale_items add constraint sale_items_promo_claim_shape check(
   and promo_syarat_units+promo_hasil_units>0 and promo_syarat_units=trunc(promo_syarat_units) and promo_hasil_units=trunc(promo_hasil_units)
   and promo_syarat_units+promo_hasil_units<=qty
   and ((promo_hasil_units>0 and promo_id=promo_claim_id and promo_discount>0) or (promo_hasil_units=0 and promo_id is null and promo_discount=0))
-  and (not promo_floor_waiver or promo_hasil_units>0))) not valid;
+  and (not promo_floor_waiver or (promo_hasil_units=qty and promo_syarat_units=0)))) not valid; -- L1: a waiver line is made of reward units ONLY
 alter table public.sale_items validate constraint sale_items_promo_claim_shape;
 
 alter table public.sales
@@ -40,6 +51,9 @@ alter table public.sales add constraint sales_promo_pick_shape check(
   or (promo_pick_mode='pilih' and promo_pick_id is not null))
  and (promo_selection is null or (jsonb_typeof(promo_selection)='object' and promo_selection->'version'='1'::jsonb))) not valid;
 alter table public.sales validate constraint sales_promo_pick_shape;
+-- S3: promo_selection is display-only client text (never used for pricing): bound its size so it cannot bloat sales rows.
+alter table public.sales add constraint sales_promo_selection_bound check(promo_selection is null or octet_length(promo_selection::text)<=8192) not valid;
+alter table public.sales validate constraint sales_promo_selection_bound;
 
 -- ---------------------------------------------------------------------------------------------
 -- 2. Insert-time guards (cheap, no pricing authority): claims must point at a real syarat_hasil promo and are immutable.
@@ -53,6 +67,11 @@ begin
    or new.promo_syarat_units is distinct from old.promo_syarat_units or new.promo_hasil_units is distinct from old.promo_hasil_units
    or new.promo_floor_waiver is distinct from old.promo_floor_waiver then
    raise exception 'PROMO_SH_SNAPSHOT: promo claim is immutable';
+  end if;
+  -- S2: the "syarat_hasil promo only through its claim" rule holds on UPDATE too (promo_id repointed after insert)
+  if new.promo_id is distinct from old.promo_id and new.promo_id is not null and new.promo_claim_id is distinct from new.promo_id
+   and exists(select 1 from public.promos x where x.id=new.promo_id and x.rule->>'discount_mode'='syarat_hasil') then
+   raise exception 'PROMO_SH_CLAIM: a syarat_hasil promo can only be attached to a line through its claim';
   end if;
   return new;
  end if;
@@ -68,6 +87,11 @@ begin
  if coalesce(new.item_discount_value,0)>0 then raise exception 'PROMO_SH_CLAIM: a manual line discount cannot take part in a promo claim';end if;
  if new.promo_floor_waiver and coalesce(p.rule#>>'{syarat_hasil,below_hpp,allowed}','false')<>'true' then
   raise exception 'PROMO_SH_CLAIM: the promo has no Owner below-HPP waiver';
+ end if;
+ -- L1: the relaxed HPP floor applies to a waiver line as a whole, so the line may contain reward units only. The app splits a
+ -- cart line into a plain/syarat line and a pure reward line (like the Bolt pool); the other units keep the ordinary HPP floor.
+ if new.promo_floor_waiver and (new.promo_hasil_units is distinct from new.qty or new.promo_syarat_units<>0) then
+  raise exception 'PROMO_SH_CLAIM: a below-HPP waiver line (promo_floor_waiver) may only contain reward units: promo_hasil_units must equal qty and promo_syarat_units 0; split the line';
  end if;
  return new;
 end$$;
@@ -187,8 +211,10 @@ begin
      raise exception 'PROMO_SH_SYARAT: row % needs % units, claim supplies %',cur_row,a*(row_json->>'min')::numeric,supplied;
     end if;
    else
-    select coalesce(sum(i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,i.harga)),0) into cart
-     from public.sale_items i left join public.items it on it.id=i.item_id
+    -- S1: ONLY lines that join an active item master count, at the OFFICIAL master price (branch price, else unit/base price).
+    -- A free-text line (item_id null) or a line without an official price contributes 0: the client-written harga is never trusted.
+    select coalesce(sum(i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,0)),0) into cart
+     from public.sale_items i join public.items it on it.id=i.item_id and it.is_active
      left join public.item_units u on u.item_id=it.id and u.unit=i.satuan and i.satuan<>it.unit
      left join public.item_branch_prices b on b.item_id=it.id and b.unit=i.satuan and b.branch_id=s.branch_id
      where i.sale_id=p_sale;
