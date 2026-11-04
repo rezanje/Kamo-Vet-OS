@@ -9,8 +9,11 @@
 // scenario (engine claims, nilai == need) must be ACCEPTED; the SHAVED variant (same claims, one rupiah of manual discount added to a
 // counted non-claimed line, so nilai == need - 1) must be REFUSED with PROMO_SH_NILAI (expect REFUSE_NILAI): the database is neither
 // looser nor stricter than the engine's rule at the boundary.
-// Usage: node --no-warnings scripts/promo-syarat-hasil-diff-gen.mts <seed> <count>
+// Stage 3: every scenario with claims is ALSO produced through the cashier composer (src/lib/promo-syarat-hasil-checkout.ts: the exact claim lines
+// kasir/checkout.ts writes - split into claimed units and plain remainder, source positions renumbered), tagged src:"composer"; the database must accept them too.
+// Usage: node --no-warnings --import ./scripts/ts-register.mjs scripts/promo-syarat-hasil-diff-gen.mts <seed> <count>
 import { calculateSyaratHasilSafe, syaratHasilLinesFromCart, type SyaratHasilDef } from "../src/lib/promo-syarat-hasil.ts";
+import { composeSyaratHasilCart, type ShRow } from "../src/lib/promo-syarat-hasil-checkout.ts";
 
 const seed = Number(process.argv[2] ?? 1), count = Number(process.argv[3] ?? 100);
 let a = seed >>> 0;
@@ -85,6 +88,17 @@ for (let idx = 0; idx < count; idx++) {
   }
   if (multi) continue;
   console.log(JSON.stringify({ idx, promos: defs.map((d) => ({ id: d.id, rule: ruleOf(d) })), lines, claims, total_discount: r.discount_total }));
+  if (claims.length > 0) {
+    // the same cart through the cashier composer (no legacy promos in this fixture's item set); its final rows become the sale lines
+    const shRows: ShRow[] = lines.map((l) => ({ item_id: l.item, qty: l.qty, harga: l.harga, satuan: "PCS", faktor: 1, item_type: "Persediaan", officialPrice: l.price,
+      item_discount_type: l.manual > 0 ? "nominal" : null, item_discount_value: l.manual }));
+    const comp = composeSyaratHasilCart({ rows: shRows, defs, legacy: () => [] });
+    const cClaims = comp.rows.flatMap((row, pos) => (row.sh_claim ? [{ pos, promo: row.sh_claim.promo_id, sets: row.sh_claim.sets, syarat: row.sh_claim.syarat_units, hasil: row.sh_claim.hasil_units, disc: row.sh_claim.hasil_units > 0 ? row.promo_discount : 0 }] : []));
+    if (cClaims.length > 0) {
+      const cLines = comp.rows.map((row, pos) => ({ pos, item: row.item_id, price: row.officialPrice as number, qty: row.qty, harga: row.harga, manual: row.item_discount_value ?? 0 }));
+      console.log(JSON.stringify({ idx, src: "composer", promos: defs.map((d) => ({ id: d.id, rule: ruleOf(d) })), lines: cLines, claims: cClaims, total_discount: comp.savings.total }));
+    }
+  }
   // boundary variant: nilai == need exactly -> shave 1 Rp off a counted, non-claimed line
   const need = r.claims.reduce((m, c) => {
     const d = defs.find((x) => x.id === c.promo_id) as SyaratHasilDef;

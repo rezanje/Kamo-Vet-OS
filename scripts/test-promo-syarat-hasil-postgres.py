@@ -378,7 +378,7 @@ def concurrency(db, fixture_sql):
 def differential(db, fixture_sql, count, seed):
     """Real stage-1 engine -> claims -> original cashier RPC. Every engine claim must be ACCEPTED by the DB verification; a +1 Rp forged
     reward discount must be REFUSED with PROMO_SH_TOTAL."""
-    gen = subprocess.run(['node', '--no-warnings', str(ROOT / 'scripts/promo-syarat-hasil-diff-gen.mts'), str(seed), str(count)], capture_output=True, text=True, cwd=ROOT, timeout=120)
+    gen = subprocess.run(['node', '--no-warnings', '--import', str(ROOT / 'scripts/ts-register.mjs'), str(ROOT / 'scripts/promo-syarat-hasil-diff-gen.mts'), str(seed), str(count)], capture_output=True, text=True, cwd=ROOT, timeout=120)
     assert gen.returncode == 0, 'generator failed: ' + gen.stderr[-500:]
     scenarios = [json.loads(line) for line in gen.stdout.splitlines() if line.strip()]
     with_claims = [x for x in scenarios if x['claims']]
@@ -405,7 +405,9 @@ def differential(db, fixture_sql, count, seed):
     n_boundary = sum(1 for k in kinds if k == 'boundary')
     assert n_boundary >= 5, 'too few nilai boundary scenarios: %d' % n_boundary
     n_engine = sum(1 for k in kinds if k == 'engine')
-    print('PASS differential: %d/%d scenarios carried claims (carts with tier-price and manually discounted lines through the real adapter); all %d engine claim sets ACCEPTED by the DB; %d forged (+1 Rp) variants all REFUSED (PROMO_SH_TOTAL); %d nilai-boundary variants (value = need - 1) all REFUSED (PROMO_SH_NILAI)' % (n_engine, len(scenarios), n_engine, n_forged, n_boundary), flush=True)
+    n_composer = sum(1 for x in with_claims if x.get('src') == 'composer' and not x.get('expect'))
+    assert n_composer >= 30, 'too few composer (split-line) scenarios: %d' % n_composer
+    print('PASS differential: %d/%d scenarios carried claims (carts with tier-price and manually discounted lines through the real adapter); all %d engine claim sets ACCEPTED by the DB (%d of them produced through the cashier composer: split claimed/plain lines); %d forged (+1 Rp) variants all REFUSED (PROMO_SH_TOTAL); %d nilai-boundary variants (value = need - 1) all REFUSED (PROMO_SH_NILAI)' % (n_engine, len(scenarios), n_engine, n_composer, n_forged, n_boundary), flush=True)
 
 
 if __name__ == '__main__':
