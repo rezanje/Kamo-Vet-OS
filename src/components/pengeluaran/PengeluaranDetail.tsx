@@ -60,8 +60,12 @@ export async function PengeluaranDetail({
     exp.shift_id ? supabase.from("cashier_shifts").select("status").eq("id", exp.shift_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
     supabase.from("expense_revisions").select("id, action, reason, before_value, after_value, created_at").eq("expense_id", exp.id).order("created_at", { ascending: false }),
   ]) : [{ data: null, error: null }, { data: null, error: null }, { data: [], error: null }];
+  // Sesudah shift ditutup, koreksi tetap boleh untuk Owner dan Finance (keputusan Owner 4 Nov);
+  // angka tutup shift tidak diubah. Admin hanya boleh selama shift masih buka.
+  const canCorrectAfterShift = !!profile?.is_active && ["OWNER", "FINANCE"].includes(profile.role);
+  const shiftClosed = !!exp.shift_id && shift.data?.status !== "open";
   const blocked = lock.error || shift.error ? "Status periode atau shift belum dapat diperiksa. Muat ulang sebelum mengoreksi."
-    : exp.shift_id && shift.data?.status !== "open" ? "Shift sudah ditutup. Koreksi memerlukan rekonsiliasi kas terlebih dahulu."
+    : shiftClosed && !canCorrectAfterShift ? "Shift sudah ditutup. Koreksi pengeluaran ini hanya dapat dilakukan Owner atau Finance."
       : lock.data?.closed_until && exp.tanggal <= lock.data.closed_until ? `Periode akuntansi s/d ${lock.data.closed_until} sudah ditutup.` : null;
   const revisions = (history.data ?? []) as { id: string; action: string; reason: string; before_value: { jumlah: number }; after_value: { jumlah: number }; created_at: string }[];
 
@@ -108,6 +112,7 @@ export async function PengeluaranDetail({
         <div className="crm-sec">
           <h2 style={{ fontSize: 13, marginTop: 0 }}>EDIT PENGELUARAN</h2>
           <p style={{ fontSize: 11, color: "var(--tm)" }}>Perubahan nominal, tanggal dan metode bayar dicatat dengan jurnal pembalik serta riwayat koreksi.</p>
+          {shiftClosed && <p role="status" style={{ fontSize: 11, color: "var(--tm)" }}>Shift kasir pengeluaran ini sudah ditutup. Koreksi tetap tercatat di laporan, tetapi angka tutup shift (kas seharusnya &amp; selisih) tidak berubah.</p>}
           <ExpenseForm userId={user.id} scope={`expense-edit:${exp.id}:${exp.revision}`} action={ubahExpense}>
             <input type="hidden" name="id" value={exp.id} /><input type="hidden" name="revision" value={exp.revision} /><input type="hidden" name="kembali" value={kembaliHref} />
             <div className="grid2">
