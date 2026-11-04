@@ -40,6 +40,29 @@ describe("parseClinicPostingError", () => {
       .toBe("HPP historis bahan tidak tersedia: Bahan A");
   });
 
+  it("explains BMHP COST_MISSING: material, clinic stock vs needed, the cause and the action (Andri 4 Nov)", () => {
+    const zeroCost = parseClinicPostingError({ code: "P0001",
+      message: "COST_MISSING: Revolution Dog Teal 2.0 Ml New [stok=12;butuh=6;satuan=0.1 ml;sebab=harga0]" });
+    expect(zeroCost).toContain("HPP historis bahan tidak tersedia: Revolution Dog Teal 2.0 Ml New.");
+    expect(zeroCost).toContain("Stok gudang klinik cabang ini 12 0.1 ml, dibutuhkan 6 0.1 ml");
+    expect(zeroCost).toContain("berharga modal Rp0");
+    expect(zeroCost).toContain("Penerimaan barang / Faktur pembelian yang berharga (bukan Penyesuaian Persediaan)");
+    expect(zeroCost).toContain("Menghapus satu baris tidak membantu");
+    expect(zeroCost).toContain("Belum ada yang tersimpan.");
+    const layers = parseClinicPostingError({ code: "P0001",
+      message: "COST_MISSING: Revolution Dog Teal 2.0 Ml New [stok=12;butuh=6;satuan=0.1 ml;sebab=lapisan]" });
+    expect(layers).toContain("Lapisan stok (FIFO)");
+    expect(layers).not.toContain("berharga modal Rp0");
+    // A malformed tail never becomes a half-rendered sentence: it keeps the plain COST_MISSING mapping.
+    expect(parseClinicPostingError({ code: "P0001", message: "COST_MISSING: Bahan A [stok=x;butuh=1;satuan=pcs;sebab=lain]" }))
+      .toMatch(/^HPP historis bahan tidak tersedia: Bahan A /);
+    expect(parseClinicPostingError({ code: "P0001", message: "COST_MISSING: Bahan A [stok=x;butuh=1;satuan=pcs;sebab=lain]" }))
+      .not.toContain("dibutuhkan");
+    // The older database text (before the detail migration) still maps as before.
+    expect(parseClinicPostingError({ code: "P0001", message: "COST_MISSING: Revolution Dog Teal 2.0 Ml New" }))
+      .toBe("HPP historis bahan tidak tersedia: Revolution Dog Teal 2.0 Ml New");
+  });
+
   it("explains request conflicts and unsupported recipe lifecycle transitions", () => {
     expect(parseClinicPostingError({ code: "P0001", message: "IDEMPOTENCY_CONFLICT: request key" }))
       .toBe("Permintaan racikan bertentangan dengan penyimpanan sebelumnya.");

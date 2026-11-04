@@ -122,6 +122,16 @@ function recipeRequiredMessage(message: string): string {
   return `Obat racik${name ? ` "${name}"` : ""} wajib diisi komposisinya. Hapus baris ini lalu tambahkan lewat tombol "Racikan baru" di rekam medis.`;
 }
 
+function costMissingBmhpMessage(name: string, stok: string, butuh: string, satuan: string, sebab: "harga0" | "lapisan"): string {
+  const sebabTeks = sebab === "harga0"
+    ? "Ada stok bahan ini yang tercatat berharga modal Rp0 (misalnya ditambah lewat Penyesuaian Persediaan saat Harga beli barang masih 0)."
+    : "Lapisan stok (FIFO) bahan ini tidak mencukupi jumlah yang dibutuhkan, walau saldo stoknya tercatat.";
+  return `HPP historis bahan tidak tersedia: ${name.trim()}. Stok gudang klinik cabang ini ${stok} ${satuan}, dibutuhkan ${butuh} ${satuan} `
+    + `(BMHP yang dicatat dokter pada tindakan yang masih ditagih). ${sebabTeks} `
+    + "Isi Harga beli barang ini di Barang & Jasa, lalu tambahkan stok lewat Penerimaan barang / Faktur pembelian yang berharga (bukan Penyesuaian Persediaan), "
+    + "atau minta owner memeriksa Kartu Stok barang ini. Menghapus satu baris tidak membantu selama baris tindakan lain masih memakai bahan ini. Belum ada yang tersimpan.";
+}
+
 export function parseClinicPostingError(error: { code?: string; message: string } | null, uncertainFallback?: string): string {
   if (error?.code === "55P03") return "Data sedang dipakai proses lain. Muat ulang tagihan, periksa hasil sebelumnya, lalu coba lagi.";
   const kampanye = pesanGagalKampanye(error?.message);
@@ -132,6 +142,10 @@ export function parseClinicPostingError(error: { code?: string; message: string 
     // P03: database names the line/package, its net price and HPP; the text is already for the cashier.
     const priceFloor = /^(PRICE_ZERO|PRICE_BELOW_HPP):\s*([^\r\n]{1,300})/.exec(error.message);
     if (priceFloor) return `Penjualan ditolak. ${priceFloor[2].trim()}`;
+    // BMHP posting (clinic_private.bmhp_issue) names the material, the clinic warehouse stock, the quantity the
+    // doctor recorded and why the cost could not be formed, so the cashier knows what to fix instead of retrying.
+    const bmhpCost = /^COST_MISSING:\s*([^\r\n[]{1,80}?)\s*\[stok=([0-9.]{1,24});butuh=([0-9.]{1,24});satuan=([^;\]\r\n]{1,20});sebab=(harga0|lapisan)\]\s*$/.exec(error.message);
+    if (bmhpCost) return costMissingBmhpMessage(bmhpCost[1], bmhpCost[2], bmhpCost[3], bmhpCost[4], bmhpCost[5] as "harga0" | "lapisan");
     const detailMessages: Record<string, string> = {
       STOCK_SHORT: "Stok tidak cukup",
       WAREHOUSE_MISSING: "Gudang aktif cabang belum tersedia",
