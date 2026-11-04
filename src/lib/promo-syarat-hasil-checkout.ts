@@ -21,6 +21,7 @@
  * rest); the largest total saving wins, ties keep the earlier one (legacy only first).
  */
 import { readCompleteList } from "./checked-list";
+import { PosDecimal } from "./pos-money";
 import { hariIniWIB } from "./tanggal";
 import {
   calculateSyaratHasilSafe, syaratHasilLinesFromCart, validateSyaratHasilDef, SH_NILAI_MAX_LINE_QTY,
@@ -106,8 +107,8 @@ export async function loadSyaratHasilKasir(supabase: AnyClient, branchId: string
   if (aktif.length === 0) return SYARAT_HASIL_OFF;
   if (!(await releaseFlag(supabase, "syarat_hasil"))) return SYARAT_HASIL_OFF;
   const [pickerReleased, belowHppReleased] = await Promise.all([releaseFlag(supabase, "promo_picker"), releaseFlag(supabase, "below_hpp")]);
-  // Stage 3 never plans a below-HPP waiver (the TS price floor has no waiver yet, stage 3b): the engine always sees allow_below_hpp = false.
-  const defs = aktif.flatMap((p) => { const d = syaratHasilDefFromRow(p, { belowHppReleased: false }); return d ? [d] : []; });
+  // Stage 3b: an Owner below-HPP waiver is planned only while the DB flag below_hpp is released (the TS floor honours it, see cashier-price-floor).
+  const defs = aktif.flatMap((p) => { const d = syaratHasilDefFromRow(p, { belowHppReleased }); return d ? [d] : []; });
   return { released: true, pickerReleased, belowHppReleased, defs };
 }
 
@@ -118,16 +119,29 @@ export async function loadSyaratHasilKasir(supabase: AnyClient, branchId: string
 export type ShRow = {
   item_id: string; nama?: string; qty: number; harga: number; satuan?: string | null; faktor?: number;
   item_type?: string;
+  /** items.min_sell_qty in BASE units (0/absent = no minimum). A split never leaves a plain/claimed part below it (the parts are merged back). */
+  minSellBase?: number;
   /** Master price per unit BEFORE tier/negotiated reductions (branch price, else unit/base price). Absent = free text / no master. */
   officialPrice?: number;
   item_discount_type?: "nominal" | "percent" | null; item_discount_value?: number | null;
 };
 export type LegacyHit = { lineIndex: number; potongan: number; promoId: string; promoName?: string };
+/** The legacy promo engine over rows; `only` = evaluate that ONE promo alone (cashier pick / alternatives). */
+export type LegacyFn<T> = (rows: T[], only?: string) => LegacyHit[];
 export type ShClaimMeta = { promo_id: string; sets: number; syarat_units: number; hasil_units: number; waiver: boolean };
 export type ComposedRow<T> = T & { promo_discount: number; promo_id: string | null; promo_name: string | null; sh_claim?: ShClaimMeta; origin_index: number };
 export type AppliedPromo = { promo_id: string; name: string | null; discount: number; kind: "syarat_hasil" | "legacy" };
+export type PromoAlternative = { promo_id: string; name: string | null; kind: "syarat_hasil" | "legacy"; saving: number; applied: boolean };
+export type PromoPickState = { mode: "auto" | "tanpa" | "pilih"; promo_id: string | null; ok: boolean };
 export type Composed<T> = {
   rows: ComposedRow<T>[];
+  /** Number of automatic promo hits (legacy hits incl. a hit of potongan 0, plus claimed syarat_hasil promos): the voucher gate `adaPromoOtomatis`. */
+  hitCount: number;
+  pick: PromoPickState;
+  /** Every promo that would save something when made the (only) main promo; empty unless asked for. */
+  alternatives: PromoAlternative[];
+  /** syarat_hasil promos the caller removed (HPP guard) - echoed. */
+  excluded: string[];
   strategy: "none" | "legacy" | "syarat_hasil";
   applied: AppliedPromo[];
   savings: { legacy: number; syarat_hasil: number; total: number };
@@ -137,31 +151,42 @@ export type Composed<T> = {
 };
 
 type Part<T> = { row: T; origin: number; claim?: ShClaimMeta; discount: number; promoId: string | null; promoName: string | null };
-type Candidate<T> = { parts: Part<T>[]; legacy: number; sh: number; claimed: { promo_id: string; name: string | null; discount: number }[]; skipped: Composed<T>["skipped"] };
+type Candidate<T> = { parts: Part<T>[]; legacy: number; sh: number; hits: number; claimed: { promo_id: string; name: string | null; discount: number }[]; skipped: Composed<T>["skipped"] };
 
 const numberOr0 = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
 export function composeSyaratHasilCart<T extends ShRow>(args: {
   rows: readonly T[];
   defs: readonly SyaratHasilDef[];
-  /** The existing promo engine over a set of rows (serviceLinePromos / hitungPromoKeranjang); hits refer to indexes of the rows it is given. */
-  legacy: (rows: T[]) => LegacyHit[];
-  /** "tanpa" = the cashier chose no promo at all. */
-  mode?: "auto" | "tanpa";
+  /** The existing promo engine over a set of rows (serviceLinePromos / hitungPromoKeranjang); hits refer to indexes of the rows it is given. `only` = that ONE promo alone. */
+  legacy: LegacyFn<T>;
+  /** "tanpa" = the cashier chose no promo at all; "pilih" = the cashier picked `pickId` as the ONLY promo (exclusive: the DB re-checks `promo_pick_exclusive`). */
+  mode?: "auto" | "tanpa" | "pilih";
+  pickId?: string | null;
+  /** syarat_hasil promos taken out before planning (below-HPP guard); echoed in `excluded`. */
+  excludedIds?: readonly string[];
+  /** Legacy promos known to the screen (alternatives list). */
+  legacyPromos?: readonly { id: string; name: string }[];
+  withAlternatives?: boolean;
 }): Composed<T> {
-  const { rows, defs, legacy, mode = "auto" } = args;
-  const nameOf = new Map(defs.map((d) => [d.id, d.name ?? null] as const));
+  const { rows, legacy, mode = "auto", pickId = null, legacyPromos = [], withAlternatives = false } = args;
+  const excludedIds = [...(args.excludedIds ?? [])];
+  const defs = args.defs.filter((d) => !excludedIds.includes(d.id));
+  const nameOf = new Map(args.defs.map((d) => [d.id, d.name ?? null] as const));
 
-  const legacyOver = (subset: T[]): { discount: number[]; id: (string | null)[]; name: (string | null)[]; total: number } => {
+  const legacyOver = (subset: T[], only?: string): { discount: number[]; id: (string | null)[]; name: (string | null)[]; total: number; hits: number } => {
     const discount = subset.map(() => 0), id = subset.map(() => null as string | null), name = subset.map(() => null as string | null);
-    for (const h of legacy(subset)) {
+    let hits = 0;
+    for (const h of legacy(subset, only)) {
+      if (only !== undefined && h.promoId !== only) continue;
+      hits++;
       if (!Number.isInteger(h.lineIndex) || h.lineIndex < 0 || h.lineIndex >= subset.length) continue;
       discount[h.lineIndex] = h.potongan; id[h.lineIndex] = h.promoId; name[h.lineIndex] = h.promoName ?? null; // last hit wins, like the original assignment
     }
-    return { discount, id, name, total: discount.reduce((s, x) => s + numberOr0(x), 0) };
+    return { discount, id, name, total: discount.reduce((s, x) => s + numberOr0(x), 0), hits };
   };
 
-  const finish = (cand: Candidate<T>, notApplied: Composed<T>["notApplied"]): Composed<T> => {
+  const finish = (cand: Candidate<T>, notApplied: Composed<T>["notApplied"], pick: PromoPickState, alternatives: PromoAlternative[] = []): Composed<T> => {
     const out: ComposedRow<T>[] = cand.parts.map((p) => ({
       ...p.row, promo_discount: p.discount, promo_id: p.promoId, promo_name: p.promoName, origin_index: p.origin,
       ...(p.claim ? { sh_claim: p.claim } : {}),
@@ -174,19 +199,20 @@ export function composeSyaratHasilCart<T extends ShRow>(args: {
     }
     const applied: AppliedPromo[] = [...cand.claimed.map((c) => ({ ...c, kind: "syarat_hasil" as const })), ...legacyApplied.values()];
     const strategy = cand.claimed.length > 0 ? "syarat_hasil" : cand.legacy > 0 ? "legacy" : "none";
-    return { rows: out, strategy, applied, savings: { legacy: cand.legacy, syarat_hasil: cand.sh, total: cand.legacy + cand.sh }, notApplied, skipped: cand.skipped };
+    return { rows: out, hitCount: cand.hits, pick, alternatives, excluded: excludedIds, strategy, applied, savings: { legacy: cand.legacy, syarat_hasil: cand.sh, total: cand.legacy + cand.sh }, notApplied, skipped: cand.skipped };
   };
 
-  const plainCandidate = (subset: T[], withLegacy: boolean): Candidate<T> => {
-    const lg = withLegacy ? legacyOver(subset) : null;
+  const plainCandidate = (subset: T[], withLegacy: boolean, only?: string): Candidate<T> => {
+    const lg = withLegacy ? legacyOver(subset, only) : null;
     return {
       parts: subset.map((row, i) => ({ row, origin: i, discount: lg ? lg.discount[i] : 0, promoId: lg ? lg.id[i] : null, promoName: lg ? lg.name[i] : null })),
-      legacy: lg ? lg.total : 0, sh: 0, claimed: [], skipped: [],
+      legacy: lg ? lg.total : 0, sh: 0, hits: lg ? lg.hits : 0, claimed: [], skipped: [],
     };
   };
 
-  const cand0 = plainCandidate([...rows], mode !== "tanpa");
-  if (mode === "tanpa" || defs.length === 0) return finish(cand0, []);
+  const autoPick: PromoPickState = { mode: "auto", promo_id: null, ok: true };
+  if (mode === "tanpa") return finish(plainCandidate([...rows], false), [], { mode: "tanpa", promo_id: null, ok: true });
+  const cand0 = plainCandidate([...rows], mode !== "pilih");
 
   // ---- engine lines for a set of rows (evidence: only Persediaan lines are syarat/reward units; every line still counts toward nilai)
   const engineLines = (subset: T[], disc: number[] | null): SyaratHasilCartLine[] =>
@@ -211,31 +237,53 @@ export function composeSyaratHasilCart<T extends ShRow>(args: {
     }, 0);
   };
 
-  const buildFromEngine = (res: SyaratHasilResult): Candidate<T> | null => {
+  /** min_sell_qty is in base units; a part of a split line must not fall below it. */
+  const belowMin = (r: T, qty: number): boolean => { const m = numberOr0(r.minSellBase); return m > 0 && qty * (numberOr0(r.faktor) || 1) < m; };
+
+  const buildFromEngine = (res: SyaratHasilResult, legacyOn: boolean): Candidate<T> | null => {
     const claimedPromos = new Map<string, { sets: number; discount: number }>();
     const parts: Part<T>[] = [];
+    let invalid = false;
     rows.forEach((row, i) => {
       const lr = res.lines[i];
       const c = lr?.claims[0];
       if (!lr || lr.source_position !== i) throw new Error("engine lines out of order");
       if (!c) { parts.push({ row, origin: i, discount: 0, promoId: null, promoName: null }); return; }
-      const S = c.syarat_units, H = c.hasil_units, rest = row.qty - S - H;
-      const waiver = lr.below_hpp_waiver;
+      const S = c.syarat_units, H = c.hasil_units;
+      const rest = new PosDecimal(row.qty).minus(S).minus(H).toNumber(); // decimal-safe (the engine only claims whole quantities, so this is an exact integer)
+      const waiver = lr.below_hpp_waiver && H > 0;
       const cur = claimedPromos.get(c.promo_id) ?? { sets: c.sets_consumed, discount: 0 };
       cur.discount += c.discount; claimedPromos.set(c.promo_id, cur);
       const claimLine = (qty: number, syarat: number, hasil: number, discount: number, wv: boolean) => parts.push({
         row: { ...row, qty }, origin: i, discount, promoId: hasil > 0 && discount > 0 ? c.promo_id : null, promoName: hasil > 0 && discount > 0 ? nameOf.get(c.promo_id) ?? null : null,
         claim: { promo_id: c.promo_id, sets: c.sets_consumed, syarat_units: syarat, hasil_units: hasil, waiver: wv },
       });
-      if (waiver && H > 0 && S > 0) { claimLine(S, S, 0, 0, false); claimLine(H, 0, H, c.discount, true); }
-      else claimLine(S + H, S, H, c.discount, waiver && H > 0 && S === 0);
-      if (rest > 0) parts.push({ row: { ...row, qty: rest }, origin: i, discount: 0, promoId: null, promoName: null });
+      const plainLine = (qty: number) => parts.push({ row: { ...row, qty }, origin: i, discount: 0, promoId: null, promoName: null });
+      if (waiver) {
+        // below-HPP waiver: the reward is a PURE reward line (it can never be merged with other units, so a minimum breach drops the candidate)
+        if (belowMin(row, H)) { invalid = true; return; }
+        if (S === 0 || !belowMin(row, S)) {
+          if (rest > 0 && belowMin(row, rest)) { invalid = true; return; }
+          if (S > 0) claimLine(S, S, 0, 0, false);
+          claimLine(H, 0, H, c.discount, true);
+          if (rest > 0) plainLine(rest);
+        } else {
+          // the syarat part alone is under the minimum: it travels together with the plain units on one claim line
+          if (belowMin(row, S + rest)) { invalid = true; return; }
+          claimLine(S + rest, S, 0, 0, false);
+          claimLine(H, 0, H, c.discount, true);
+        }
+        return;
+      }
+      if (rest > 0 && (belowMin(row, rest) || belowMin(row, S + H))) { claimLine(row.qty, S, H, c.discount, false); return; } // merged back: one claim line, units beyond S+H stay plain
+      claimLine(S + H, S, H, c.discount, false);
+      if (rest > 0) plainLine(rest);
     });
-    if (claimedPromos.size === 0) return null;
+    if (invalid || claimedPromos.size === 0) return null;
     // legacy promos over the PLAIN lines only (a claimed line is not a Bolt-pool member in the database)
     const plain = parts.filter((p) => !p.claim);
-    const lg = legacyOver(plain.map((p) => p.row));
-    plain.forEach((p, k) => { p.discount = lg.discount[k]; p.promoId = lg.id[k]; p.promoName = lg.name[k]; });
+    const lg = legacyOn ? legacyOver(plain.map((p) => p.row)) : null;
+    if (lg) plain.forEach((p, k) => { p.discount = lg.discount[k]; p.promoId = lg.id[k]; p.promoName = lg.name[k]; });
     // the nilai syarat must still hold on the FINAL charges
     const money = finalNilai(parts);
     for (const [promoId, info] of claimedPromos) {
@@ -245,32 +293,103 @@ export function composeSyaratHasilCart<T extends ShRow>(args: {
     }
     const sh = [...claimedPromos.values()].reduce((s, x) => s + x.discount, 0);
     return {
-      parts, legacy: lg.total, sh,
+      parts, legacy: lg ? lg.total : 0, sh, hits: (lg ? lg.hits : 0) + claimedPromos.size,
       claimed: [...claimedPromos].map(([promo_id, v]) => ({ promo_id, name: nameOf.get(promo_id) ?? null, discount: v.discount })),
       skipped: res.skipped.map((s) => ({ promo_id: s.promo_id, code: s.code })),
     };
   };
 
-  const attempt = (disc: number[] | null): { cand: Candidate<T> | null; skipped: Composed<T>["skipped"] } => {
+  const attempt = (disc: number[] | null, legacyOn: boolean, options: { forced_promo_id?: string; excluded_promo_ids?: string[] } = {}): { cand: Candidate<T> | null; skipped: Composed<T>["skipped"]; forcedApplied: boolean } => {
     try {
-      const res = calculateSyaratHasilSafe(engineLines([...rows], disc), defs, { one_promo_per_line: true, alternatives: false });
-      return { cand: buildFromEngine(res), skipped: res.skipped.map((s) => ({ promo_id: s.promo_id, code: s.code })) };
+      const res = calculateSyaratHasilSafe(engineLines([...rows], disc), defs, { one_promo_per_line: true, alternatives: false, ...options });
+      return { cand: buildFromEngine(res, legacyOn), skipped: res.skipped.map((s) => ({ promo_id: s.promo_id, code: s.code })), forcedApplied: res.forced?.applied === true };
     } catch {
-      return { cand: null, skipped: [] }; // fail closed: the legacy result stands
+      return { cand: null, skipped: [], forcedApplied: false }; // fail closed: the legacy result stands
     }
   };
+  /** "This promo alone" (exclusive pick): syarat_hasil promo `id` claims first, every other promo and the legacy engine are off. */
+  const aloneSh = (id: string) => {
+    const r = attempt(null, false, { forced_promo_id: id, excluded_promo_ids: defs.filter((d) => d.id !== id).map((d) => d.id) });
+    return r.forcedApplied && r.cand && r.cand.claimed.some((c) => c.promo_id === id) ? r.cand : null;
+  };
+  const aloneLegacy = (id: string) => { const c = plainCandidate([...rows], true, id); return c.parts.some((p) => p.promoId === id && p.discount > 0) ? c : null; };
+  const alternativesFor = (best: Candidate<T>): PromoAlternative[] => {
+    if (!withAlternatives) return [];
+    const out: PromoAlternative[] = [];
+    for (const d of defs) { const c = aloneSh(d.id); if (c && c.sh > 0) out.push({ promo_id: d.id, name: d.name ?? null, kind: "syarat_hasil", saving: c.sh, applied: best.claimed.some((x) => x.promo_id === d.id) }); }
+    for (const lp of legacyPromos) { const c = aloneLegacy(lp.id); if (c) out.push({ promo_id: lp.id, name: lp.name, kind: "legacy", saving: c.legacy, applied: best.parts.some((p) => !p.claim && p.promoId === lp.id && p.discount > 0) }); }
+    return out;
+  };
 
-  const legacyKnown = attempt(legacyOver([...rows]).discount); // syarat-hasil planned around the legacy discounts
-  const shFirst = attempt(null);                              // syarat-hasil first, legacy on what is left
+  if (mode === "pilih") {
+    const none = plainCandidate([...rows], false);
+    const fail = () => finish(none, [], { mode: "pilih", promo_id: pickId, ok: false }, alternativesFor(none));
+    if (!pickId) return fail();
+    const cand = defs.some((d) => d.id === pickId) ? aloneSh(pickId) : aloneLegacy(pickId);
+    return cand ? finish(cand, [], { mode: "pilih", promo_id: pickId, ok: true }, alternativesFor(cand)) : fail();
+  }
+  if (defs.length === 0) return finish(cand0, [], autoPick, alternativesFor(cand0));
+
+  const legacyKnown = attempt(legacyOver([...rows]).discount, true); // syarat-hasil planned around the legacy discounts
+  const shFirst = attempt(null, true);                              // syarat-hasil first, legacy on what is left
   const skipped = [...legacyKnown.skipped, ...shFirst.skipped].filter((s, i, all) => all.findIndex((o) => o.promo_id === s.promo_id && o.code === s.code) === i);
   const tried = [legacyKnown.cand, shFirst.cand].filter((c): c is Candidate<T> => c !== null);
   let best = cand0;
   for (const c of tried) if (c.legacy + c.sh > best.legacy + best.sh) best = c;
   const lost = tried.filter((c) => c !== best && c.claimed.length > 0).sort((a, b) => (b.legacy + b.sh) - (a.legacy + a.sh))[0];
   const notApplied = best.claimed.length > 0 || !lost ? [] : lost.claimed.map((c) => ({ promo_id: c.promo_id, name: c.name, saving: c.discount }));
-  const out = finish(best, notApplied);
+  const out = finish(best, notApplied, autoPick, alternativesFor(best));
   return { ...out, skipped };
 }
+
+// ---------------------------------------------------------------------------------------------
+// HPP guard: a reward that would sell below cost must never reach the P03 floor (which would refuse the WHOLE checkout)
+// ---------------------------------------------------------------------------------------------
+
+export type HppFinding = { promo_id: string; name: string | null };
+
+/**
+ * Per claimed reward line: net after the promo (qty x harga - discount) against the quoted cost of the line. Below cost without an Owner
+ * waiver -> `blocked`; below cost WITH the waiver -> `waiverNeeded` (the receipt must then carry no voucher/points/total discount).
+ * An unknown cost is not a promo problem (the existing "HPP unknown" refusal covers every goods line).
+ */
+export function hppFindingsForClaims<T extends ShRow>(composed: Pick<Composed<T>, "rows">, costs: readonly (number | null)[]): { blocked: HppFinding[]; waiverNeeded: HppFinding[] } {
+  const blocked = new Map<string, HppFinding>(), waiverNeeded = new Map<string, HppFinding>();
+  composed.rows.forEach((r, i) => {
+    const c = r.sh_claim;
+    const cost = costs[i];
+    if (!c || c.hasil_units <= 0 || !(r.promo_discount > 0) || cost === null || cost === undefined || !Number.isFinite(cost)) return;
+    const net = new PosDecimal(r.qty).times(r.harga).minus(r.promo_discount);
+    if (!net.lt(cost)) return;
+    const finding = { promo_id: c.promo_id, name: r.promo_name ?? null };
+    (c.waiver ? waiverNeeded : blocked).set(c.promo_id, finding);
+  });
+  return { blocked: [...blocked.values()], waiverNeeded: [...waiverNeeded.values()] };
+}
+
+/**
+ * compose -> quote the FIFO cost of the final rows -> drop every promo whose reward is below cost (no waiver) -> compose again, until stable.
+ * A cart without a claim never asks for costs. Never fails the sale: the dropped promos come back with a cashier-readable note.
+ */
+export async function composeHppSafe<T extends ShRow>(args: {
+  compose: (excludedIds: string[]) => Composed<T>;
+  quoteCosts: (rows: Composed<T>["rows"]) => Promise<(number | null)[]>;
+  maxRounds?: number;
+}): Promise<{ composed: Composed<T>; excluded: (HppFinding & { reason: "below_hpp" })[]; waiverNeeded: HppFinding[]; notes: string[] }> {
+  const excluded: (HppFinding & { reason: "below_hpp" })[] = [];
+  const maxRounds = args.maxRounds ?? 70;
+  for (let round = 0; ; round++) {
+    const composed = args.compose(excluded.map((e) => e.promo_id));
+    if (composed.strategy !== "syarat_hasil") return { composed, excluded, waiverNeeded: [], notes: notesFor(excluded) };
+    const { blocked, waiverNeeded } = hppFindingsForClaims(composed, await args.quoteCosts(composed.rows));
+    if (blocked.length === 0 || round >= maxRounds) {
+      if (blocked.length > 0) throw new Error("Promo bundling tidak stabil terhadap HPP. Muat ulang kasir.");
+      return { composed, excluded, waiverNeeded, notes: notesFor(excluded) };
+    }
+    for (const b of blocked) if (!excluded.some((e) => e.promo_id === b.promo_id)) excluded.push({ ...b, reason: "below_hpp" });
+  }
+}
+const notesFor = (excluded: { name: string | null }[]) => excluded.map((e) => `Promo "${e.name ?? "tanpa nama"}" tidak diterapkan: hadiah di bawah modal.`);
 
 /** A composed row as a plain cart line again: the composer-only bookkeeping (promo id/name, origin index) is dropped; `sh_claim` stays only when asked. */
 export function composedToLine<T extends object>(row: ComposedRow<T>, keepClaim: boolean): Omit<ComposedRow<T>, "promo_id" | "promo_name" | "origin_index"> {
@@ -280,28 +399,82 @@ export function composedToLine<T extends object>(row: ComposedRow<T>, keepClaim:
   return out as Omit<ComposedRow<T>, "promo_id" | "promo_name" | "origin_index">;
 }
 
-/** `sales.promo_selection` (display/audit only, never used for pricing): which promos were applied and what lost. */
-export function buildPromoSelection(composed: Pick<Composed<ShRow>, "applied" | "notApplied" | "strategy">, mode: "auto" | "tanpa", userId: string | null) {
-  return {
-    version: 1, mode, strategy: composed.strategy,
-    applied: composed.applied.map((a) => ({ promo_id: a.promo_id, name: a.name, discount: a.discount, kind: a.kind })),
-    not_applied: composed.notApplied,
+export type PromoSelectionInput = Pick<Composed<ShRow>, "applied" | "notApplied" | "strategy"> & Partial<Pick<Composed<ShRow>, "alternatives" | "pick">>;
+const SELECTION_MAX_BYTES = 8192; // sales_promo_selection_bound
+const cut = (v: string | null, n = 80) => (v === null ? null : v.length > n ? v.slice(0, n) : v);
+
+/**
+ * `sales.promo_selection` (display/audit only, never used for pricing): which promos were applied, what lost, what the cashier picked,
+ * which promo was dropped by the HPP guard. Always <= 8192 bytes (names cut; alternatives capped, then dropped, then not_applied dropped).
+ */
+export function buildPromoSelection(
+  composed: PromoSelectionInput, mode: "auto" | "tanpa" | "pilih", userId: string | null,
+  extra: { pickId?: string | null; exclusive?: boolean; dropped?: { promo_id: string; name: string | null; reason: string }[] } = {},
+) {
+  const base = {
+    version: 1, mode, pick: mode === "pilih" ? extra.pickId ?? null : null, exclusive: mode === "pilih" && extra.exclusive === true, strategy: composed.strategy,
+    applied: composed.applied.map((a) => ({ promo_id: a.promo_id, name: cut(a.name), discount: a.discount, kind: a.kind })),
+    not_applied: composed.notApplied.map((n) => ({ ...n, name: cut(n.name) })),
+    ...(composed.alternatives && composed.alternatives.length > 0 ? { alternatives: composed.alternatives.slice(0, 20).map((a) => ({ promo_id: a.promo_id, name: cut(a.name), kind: a.kind, saving: a.saving, applied: a.applied })) } : {}),
+    ...(extra.dropped && extra.dropped.length > 0 ? { dropped: extra.dropped.slice(0, 20).map((d) => ({ promo_id: d.promo_id, name: cut(d.name), reason: d.reason })) } : {}),
     by_user: userId,
-  };
+  } as Record<string, unknown> & { version: number };
+  const size = (o: unknown) => Buffer.byteLength(JSON.stringify(o), "utf8");
+  for (const key of ["alternatives", "dropped", "not_applied", "applied"]) {
+    if (size(base) <= SELECTION_MAX_BYTES - 256) break; // headroom: jsonb::text adds spaces after separators
+    if (key === "applied") base.applied = (base.applied as unknown[]).slice(0, 10); else delete base[key];
+  }
+  return base as typeof base & { alternatives?: unknown[]; dropped?: unknown[]; applied: unknown[]; not_applied: unknown[] };
 }
 
-/** Database refusals of a promo claim (PROMO_SH_*) -> a cashier-readable message; null for any other message. */
+const HINT_RELOAD = "Muat ulang kasir lalu coba lagi.";
+/** Database refusals of a promo claim, keyed by the PROMO_SH_<code>. detail = what happened (cashier language), hint = what to do. */
+const SH_MESSAGES: Record<string, { detail: string; hint: string }> = {
+  NILAI: { detail: "Nilai belanja setelah potongan belum memenuhi syarat promo.", hint: "Tambah belanjaan atau pilih Tanpa promo." },
+  TOTAL: { detail: "Potongan promo berubah sejak keranjang dihitung (harga atau promo diubah).", hint: HINT_RELOAD },
+  ELIGIBILITY: { detail: "Promo sudah tidak berlaku (nonaktif, kedaluwarsa, atau bukan untuk cabang ini).", hint: HINT_RELOAD },
+  RELEASE: { detail: "Promo ini belum diaktifkan di sistem.", hint: "Hubungi Owner/Admin. Sementara itu pilih Tanpa promo atau muat ulang kasir." },
+  HPP: { detail: "Rincian stok dan HPP promo tidak cocok.", hint: HINT_RELOAD },
+  WAIVER: { detail: "Izin harga di bawah modal (HPP) untuk promo ini tidak berlaku.", hint: "Minta Owner memeriksa izin di pengaturan promo, atau pilih promo lain." },
+  PICK: { detail: "Pilihan promo kasir tidak cocok dengan isi keranjang.", hint: "Pilih ulang promo (atau Otomatis), lalu coba lagi." },
+  CLAIM: { detail: "Baris keranjang tidak sah untuk promo bundling.", hint: HINT_RELOAD },
+  SNAPSHOT: { detail: "Data promo pada baris tidak boleh diubah setelah disimpan.", hint: HINT_RELOAD },
+  POSITION: { detail: "Urutan baris keranjang tidak lengkap.", hint: HINT_RELOAD },
+  SETS: { detail: "Jumlah kelipatan promo tidak sama antar baris atau melebihi batas.", hint: HINT_RELOAD },
+  GRANTS: { detail: "Jumlah barang hadiah tidak sesuai dengan kelipatan syarat.", hint: HINT_RELOAD },
+  SYARAT: { detail: "Jumlah barang syarat belum cukup untuk promo.", hint: "Tambah barang syarat atau pilih Tanpa promo." },
+  LINE: { detail: "Ada baris yang tidak boleh ikut promo (barang nonaktif, harga atau satuan tidak resmi, jumlah pecahan, atau diskon manual).", hint: "Hapus diskon manual pada baris itu atau pilih Tanpa promo." },
+  RULE: { detail: "Aturan promo rusak atau berubah.", hint: "Hubungi Owner/Admin untuk memeriksa promo; muat ulang kasir." },
+  TARGET: { detail: "Daftar barang promo berubah dari aturannya.", hint: "Hubungi Owner/Admin untuk memeriksa promo; muat ulang kasir." },
+  POST: { detail: "Transaksi belum siap diposting.", hint: HINT_RELOAD },
+  // editor-side codes (promo management screens) - never shown at the cashier, mapped for completeness
+  ACTIVE_EDIT: { detail: "Promo yang sedang aktif tidak boleh diubah.", hint: "Nonaktifkan promo dulu sebelum mengubah definisinya." },
+  AUDIT: { detail: "Riwayat promo tidak boleh diubah.", hint: "Periksa riwayat aktivitas promo." },
+  DRIFT: { detail: "Struktur database promo berubah.", hint: "Hubungi tim teknis sebelum melanjutkan." },
+  DUPLICATE: { detail: "Sudah ada promo aktif dengan aturan yang sama pada tanggal dan cabang yang beririsan.", hint: "Ganti tanggal/cabang atau nonaktifkan promo yang lama." },
+  EDITOR: { detail: "Editor promo belum cocok dengan database.", hint: "Hubungi tim teknis." },
+  EDITOR_DRIFT: { detail: "Fungsi editor promo di database berubah.", hint: "Hubungi tim teknis sebelum melanjutkan." },
+  MODE: { detail: "Mode promo tidak boleh diubah.", hint: "Buat promo baru dengan mode yang diinginkan." },
+  NO_DELETE: { detail: "Promo Syarat-Hasil tidak boleh dihapus.", hint: "Nonaktifkan saja promonya." },
+  OWNER_ONLY: { detail: "Izin penjualan di bawah modal (HPP) hanya boleh diatur Owner.", hint: "Minta Owner mengatur izin ini." },
+};
+const CLAIM_VARIANTS: [RegExp, { detail: string; hint: string }][] = [
+  [/manual line discount/i, { detail: "Baris yang diberi diskon manual tidak bisa ikut promo bundling.", hint: "Hapus diskon manual pada baris itu atau pilih Tanpa promo." }],
+  [/no Owner below-HPP waiver/i, { detail: "Promo ini tidak punya izin Owner untuk dijual di bawah modal (HPP).", hint: "Minta Owner mengizinkan di pengaturan promo, atau pilih promo lain." }],
+  [/waiver line|promo_floor_waiver/i, { detail: "Baris hadiah di bawah modal harus berisi unit hadiah saja.", hint: HINT_RELOAD }],
+  [/source_position/i, { detail: "Urutan baris keranjang tidak lengkap.", hint: HINT_RELOAD }],
+  [/syarat_hasil promo can only be attached/i, { detail: "Promo bundling hanya bisa dipasang lewat klaimnya.", hint: HINT_RELOAD }],
+];
+const RELEASE_PICKER = { detail: "Fitur pemilih promo (ganti/batalkan promo) belum diaktifkan di sistem.", hint: "Pilih Otomatis, atau minta Owner/Reza mengaktifkannya." };
+
+/** Database refusals of a promo claim (PROMO_SH_*, insert-time and finalization) -> a cashier-readable Indonesian message with a hint; null for any other message. */
 export function pesanPromoSyaratHasil(message: string | null | undefined): string | null {
-  const code = /PROMO_SH_([A-Z_]+)/.exec(message ?? "")?.[1];
+  const text = message ?? "";
+  const code = /PROMO_SH_([A-Z_]+)/.exec(text)?.[1];
   if (!code) return null;
-  const detail: Record<string, string> = {
-    NILAI: "Nilai belanja setelah potongan belum memenuhi syarat promo.",
-    TOTAL: "Potongan promo berubah sejak keranjang dihitung.",
-    ELIGIBILITY: "Promo sudah tidak berlaku (nonaktif, kedaluwarsa, atau bukan untuk cabang ini).",
-    RELEASE: "Promo ini belum diaktifkan di sistem.",
-    HPP: "Rincian stok dan HPP promo tidak cocok.",
-    WAIVER: "Izin harga di bawah HPP untuk promo ini tidak berlaku.",
-    PICK: "Pilihan promo kasir tidak cocok dengan isi keranjang.",
-  };
-  return `Promo bundling ditolak: ${detail[code] ?? "aturan promo berubah."} Muat ulang kasir lalu coba lagi.`;
+  let entry = SH_MESSAGES[code];
+  if (code === "CLAIM") entry = CLAIM_VARIANTS.find(([re]) => re.test(text))?.[1] ?? entry;
+  if (code === "RELEASE" && /picker/i.test(text)) entry = RELEASE_PICKER;
+  const e = entry ?? { detail: "aturan promo berubah.", hint: HINT_RELOAD };
+  return `Promo bundling ditolak: ${e.detail} ${e.hint}`;
 }

@@ -26,6 +26,7 @@ import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { roundPosMoney } from "@/lib/pos-money";
 import { serviceLinePromos, aggregateServiceLines } from "@/lib/service-line-promos";
 import { composedToLine, composeSyaratHasilCart } from "@/lib/promo-syarat-hasil-checkout";
+import { quotePromoGuard, type PromoGuardResult } from "./promo-quote";
 import type { SyaratHasilDef } from "@/lib/promo-syarat-hasil";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput } from "@/lib/service-performers";
@@ -363,7 +364,7 @@ export function KasirClient({
   const kodeTerbaca = useMemo(() => bacaKode(voucher, kodeKampanye), [voucher, kodeKampanye]);
   const promoKodeId = kodeTerbaca.promoId;
   const promoEfektif = useMemo(() => promoDenganKode(promoHitung, kodeTerbaca.promoId), [promoHitung, kodeTerbaca]);
-  const legacyPromoRows = useCallback((lines: CartLine[]) => serviceLinePromos(promoEfektif, lines.map(line => {
+  const legacyPromoRows = useCallback((lines: CartLine[], only?: string) => serviceLinePromos(only === undefined ? promoEfektif : promoEfektif.filter((p) => p.id === only), lines.map(line => {
     const unit = items.find(item => item.id === line.item_id)?.satuan?.find(unit => unit.unit === line.satuan);
     return {...line, officialPrice: unit?.sell_price, faktor: unit?.factor, manualOverride: line.harga !== unit?.sell_price};
   })), [promoEfektif, items]);
@@ -371,12 +372,42 @@ export function KasirClient({
   // Promo "syarat -> hasil" (bundling ala Accurate): hanya bila server mengirim definisinya (flag rilis DB menyala). Promo yang
   // bentrok dimenangkan yang lebih hemat bagi pelanggan; kode kampanye yang memaksa satu promo mematikannya; kasir bisa "Tanpa promo".
   // Angka di sini cuma untuk DITAMPILKAN, server menghitung ulang dan memecah baris yang diklaim.
-  const [tanpaPromo, setTanpaPromo] = useState(false);
+  // Pemilih promo (flag promo_picker): "auto" | "none" (Tanpa promo) | <id promo> = HANYA promo itu. Server menghitung ulang dan menolak pilihan basi.
+  const [pilihan, setPilihan] = useState("auto");
+  const [catatanPilihan, setCatatanPilihan] = useState("");
+  const [guard, setGuard] = useState<(PromoGuardResult & { sig: string; error: boolean }) | null>(null);
   const shDefs = kodeTerbaca.promoId ? NO_SH_DEFS : (syaratHasil?.defs ?? NO_SH_DEFS);
+  const modePromo: "auto" | "tanpa" | "pilih" = pilihan === "none" ? "tanpa" : pilihan === "auto" ? "auto" : "pilih";
+  const legacyDaftar = useMemo(() => promoEfektif.map((p) => ({ id: p.id, name: p.name })), [promoEfektif]);
+  const guardSig = useMemo(() => JSON.stringify([pilihan, cart.map((l) => [l.item_id, l.satuan ?? "", l.qty, l.harga, l.item_discount_type ?? "", l.item_discount_value ?? 0])]), [pilihan, cart]);
+  const guardIni = guard && guard.sig === guardSig ? guard : null;
+  const dikecualikan = guardIni?.excluded.map((e) => e.promo_id) ?? [];
   const komposisi = useMemo(() => shDefs.length === 0 ? null : composeSyaratHasilCart({
-    rows: cart.map(line => ({ ...line, officialPrice: line.hargaNormal ?? items.find(item => item.id === line.item_id)?.satuan?.find(unit => unit.unit === line.satuan)?.sell_price })),
-    defs: shDefs, legacy: (list) => legacyPromoRows(list as unknown as CartLine[]), mode: tanpaPromo ? "tanpa" : "auto",
-  }), [shDefs, cart, items, legacyPromoRows, tanpaPromo]);
+    rows: cart.map(line => ({ ...line, officialPrice: line.hargaNormal ?? items.find(item => item.id === line.item_id)?.satuan?.find(unit => unit.unit === line.satuan)?.sell_price, minSellBase: line.minJual ?? 0 })),
+    defs: shDefs, legacy: (list, only) => legacyPromoRows(list as unknown as CartLine[], only), mode: modePromo, pickId: modePromo === "pilih" ? pilihan : null,
+    excludedIds: dikecualikan, legacyPromos: legacyDaftar, withAlternatives: true,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [shDefs, cart, items, legacyPromoRows, modePromo, pilihan, legacyDaftar, guardIni]);
+  // Hadiah di bawah modal (HPP) tidak diketahui layar: server yang memeriksa, selama itu pembayaran ditahan.
+  const perluGuard = !!komposisi && komposisi.strategy === "syarat_hasil";
+  const guardMenunggu = perluGuard && !guardIni;
+  const guardGagal = perluGuard && !!guardIni?.error;
+  useEffect(() => {
+    if (!perluGuard || guardIni) return;
+    let batal = false;
+    quotePromoGuard({ cart: cart.map((l) => ({ item_id: l.item_id, satuan: l.satuan, qty: l.qty, harga: l.harga, item_discount_type: l.item_discount_type ?? null, item_discount_value: l.item_discount_value ?? null })), pick: pilihan })
+      .then((r) => { if (!batal) setGuard({ ...r, sig: guardSig, error: false }); })
+      .catch(() => { if (!batal) setGuard({ excluded: [], notes: [], waiverPromoIds: [], sig: guardSig, error: true }); });
+    return () => { batal = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perluGuard, guardSig, !!guardIni]);
+  // Pilihan yang tidak berlaku lagi (isi keranjang berubah / hadiah di bawah modal): kembali otomatis dengan penjelasan (tidak diam-diam).
+  const pilihanHilang = !!komposisi && modePromo === "pilih" && !komposisi.pick.ok;
+  if (pilihanHilang) { // "adjust state while rendering": settles immediately because the pick becomes "auto"
+    const turun = guardIni?.excluded.find((e) => e.promo_id === pilihan);
+    setCatatanPilihan(turun ? `Promo "${turun.name ?? "pilihan"}" tidak bisa dipakai: hadiah di bawah modal. Kembali ke Otomatis.` : "Promo yang dipilih tidak berlaku lagi untuk isi keranjang. Kembali ke Otomatis.");
+    setPilihan("auto");
+  }
   const potonganPromo = useMemo(() => komposisi
     ? komposisi.rows.flatMap((r, lineIndex) => (r.promo_id && r.promo_discount > 0 ? [{ lineIndex, potongan: r.promo_discount, promoId: r.promo_id, promoName: r.promo_name ?? "" }] : []))
     : potonganLegacy, [komposisi, potonganLegacy]);
@@ -433,7 +464,7 @@ export function KasirClient({
   // bayar — kalau hanya di server, pelanggan sudah terlanjur diberi tahu totalnya.
   const tolakVoucher = voucher.trim() === "" ? null : tolakKampanye ?? pesanVoucherLewatKampanye(kodeTerbaca, kodeKampanye) ?? (kampanye && !kampanye.voucher_code ? null : pesanVoucherDitolak(v ?? null, hariIni, {
     dasar: afterItems,
-    adaPromoOtomatis: potonganPromo.length > 0,
+    adaPromoOtomatis: komposisi ? komposisi.hitCount > 0 : potonganPromo.length > 0,
     customerId: cust?.id ?? null,
     categoryId: cust?.golonganId ?? null,
   }));
@@ -444,6 +475,8 @@ export function KasirClient({
   const poinUsed = Math.min(poin, maxPoin);
   const total = roundPosMoney(computeTotals(cartHitung, diskonVal + diskonKategori, voucherVal, poinUsed).total);
   const zeroPriceIssue = cashierPriceFloorIssue(cartHitung, total, cartHitung.map(() => 0));
+  // Promo di bawah modal (izin Owner) tidak boleh digabung potongan tingkat-struk (voucher/poin/diskon total/golongan): aturan yang sama dengan database.
+  const waiverGabung = (guardIni?.waiverPromoIds.length ?? 0) > 0 && total < roundPosMoney(afterItems);
   const kembali = Math.max(0, bayar - total);
   const kurang = metode === "Tunai" && bayar < total;
   let paymentValid = true;
@@ -459,7 +492,8 @@ export function KasirClient({
   // Minimum jual dicatat dalam satuan DASAR, jadi bandingkan setelah dikali faktor —
   // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
   const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty * (l.faktor ?? 1) < (l.minJual ?? 0));
-  const canPay = cart.length > 0 && (split || !!metode) && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0 && !zeroPriceIssue;
+  const canPay = cart.length > 0 && (split || !!metode) && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0 && !zeroPriceIssue
+    && !guardMenunggu && !guardGagal && !waiverGabung && !pilihanHilang;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   // Promo yang sudah dipotong otomatis tidak perlu diingatkan lagi — kasir sudah
@@ -691,7 +725,8 @@ export function KasirClient({
           <input type="hidden" name="replacementSaleId" value={replacementId ?? ""} />
           <input type="hidden" name="customerId" value={cust?.id ?? ""} />
           <input type="hidden" name="cart" value={JSON.stringify(cart)} />
-          {komposisi && <input type="hidden" name="promoPick" value={tanpaPromo ? "none" : "auto"} />}
+          {komposisi && <input type="hidden" name="promoPick" value={pilihan} />}
+          {komposisi && <input type="hidden" name="promoExpect" value={komposisi.savings.total} />}
           <input type="hidden" name="diskon" value={diskonVal} />
           <input type="hidden" name="poinDigunakan" value={poinUsed} />
           <input type="hidden" name="voucherCode" value={kampanye ? kampanye.code : v ? v.code : ""} />
@@ -839,10 +874,29 @@ export function KasirClient({
                 ))}
               </div>
             )}
-            {syaratHasil?.pickerReleased && shDefs.length > 0 && (
-              <label data-testid="promo-tanpa" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, margin: "2px 0 6px" }}>
-                <input type="checkbox" checked={tanpaPromo} onChange={(e) => setTanpaPromo(e.target.checked)} /> Tanpa promo (batalkan semua promo transaksi ini)
-              </label>
+            {guardMenunggu && !guardGagal && <div data-testid="promo-memeriksa" role="status" style={{ fontSize: 10.5, color: "#92400e", margin: "2px 0 6px" }}>Memeriksa promo terhadap HPP…</div>}
+            {guardGagal && <div data-testid="promo-gagal" role="alert" style={{ fontSize: 10.5, color: "#b91c1c", margin: "2px 0 6px" }}>Promo belum dapat diperiksa terhadap HPP. Pilih Tanpa promo atau muat ulang kasir.</div>}
+            {guardIni && guardIni.notes.length > 0 && (
+              <div data-testid="promo-catatan" role="status" style={{ fontSize: 10.5, color: "#92400e", margin: "2px 0 6px" }}>{guardIni.notes.map((n) => <div key={n}>{n}</div>)}</div>
+            )}
+            {catatanPilihan && <div data-testid="promo-pilihan-hilang" role="status" style={{ fontSize: 10.5, color: "#92400e", margin: "2px 0 6px" }}>{catatanPilihan}</div>}
+            {waiverGabung && <div data-testid="promo-waiver-gabung" role="alert" style={{ fontSize: 10.5, color: "#b91c1c", margin: "2px 0 6px" }}>Promo di bawah modal tidak bisa digabung dengan voucher, poin, atau diskon total. Hapus potongan itu atau pilih Tanpa promo.</div>}
+            {syaratHasil?.pickerReleased && komposisi && (
+              <fieldset data-testid="promo-pemilih" style={{ border: "1px solid var(--bd, #e5e7eb)", borderRadius: 6, padding: "4px 8px", margin: "4px 0 8px", fontSize: 10.5 }}>
+                <legend style={{ fontSize: 10.5, padding: "0 4px" }}>Promo (kasir bisa memilih satu)</legend>
+                <label data-testid="promo-pilih-auto" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="radio" name="promoPilihUi" value="auto" checked={pilihan === "auto"} onChange={() => { setPilihan("auto"); setCatatanPilihan(""); }} /> Otomatis (yang paling hemat)
+                </label>
+                {komposisi.alternatives.map((a) => (
+                  <label key={a.promo_id} data-testid={`promo-pilih-${a.promo_id}`} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="radio" name="promoPilihUi" value={a.promo_id} checked={pilihan === a.promo_id} onChange={() => { setPilihan(a.promo_id); setCatatanPilihan(""); }} />
+                    <span>{a.name ?? "Promo"} · hemat {rp(a.saving)}{a.applied ? " (dipakai)" : ""}</span>
+                  </label>
+                ))}
+                <label data-testid="promo-tanpa" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="radio" name="promoPilihUi" value="none" checked={pilihan === "none"} onChange={() => { setPilihan("none"); setCatatanPilihan(""); }} /> Tanpa promo (batalkan semua promo transaksi ini)
+                </label>
+              </fieldset>
             )}
             {promoTerpakai > 0 && !komposisi && (
               <div style={{ fontSize: 9.5, color: "#15803d", margin: "-2px 0 4px" }}>

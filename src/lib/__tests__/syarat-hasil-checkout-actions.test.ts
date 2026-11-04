@@ -5,7 +5,7 @@ const PRICE: Record<string, number> = { item: 20000, other: 20000, anc: 15000 };
 const COST: Record<string, number> = { item: 17040, other: 17040, anc: 10000 };
 const state = vi.hoisted(() => ({
   calls: [] as { name: string; args: unknown }[], headers: [] as Record<string, unknown>[], items: [] as Record<string, unknown>[],
-  removed: false, finalizationError: "", pool: true, shRows: [] as Record<string, unknown>[], flags: {} as Record<string, boolean>, flagError: "" as string, promoReads: 0, prior: null as null | Record<string, unknown>, campaign: null as null | Record<string, unknown>,
+  removed: false, finalizationError: "", pool: true, shRows: [] as Record<string, unknown>[], flags: {} as Record<string, boolean>, flagError: "" as string, promoReads: 0, prior: null as null | Record<string, unknown>, campaign: null as null | Record<string, unknown>, insertError: null as null | { table: string; message: string }, minSell: {} as Record<string, number>,
 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
@@ -33,14 +33,14 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   from(table: string) {
     const eqs: Record<string, unknown> = {};
     let lookup = false;
-    let data: unknown = table === "items" ? Object.keys(PRICE).map(id => ({ id, code: id, nama: id, name: id, unit: "PCS", item_type: "Persediaan", sell_price: PRICE[id], buy_price: 0, min_sell_qty: 1, is_active: true }))
+    let data: unknown = table === "items" ? Object.keys(PRICE).map(id => ({ id, code: id, nama: id, name: id, unit: "PCS", item_type: "Persediaan", sell_price: PRICE[id], buy_price: 0, min_sell_qty: state.minSell[id] ?? 1, is_active: true }))
       : table === "stock_layers" ? Object.keys(PRICE).map(id => ({ id: `layer:${id}`, item_id: id, qty_left: 100, unit_cost: COST[id], exp_date: null, tanggal: "2026-10-15", created_at: "2026-10-15T00:00:00Z" }))
         : table === "promos" ? state.shRows : [];
-    const single = () => ({ data: table === "sales" && lookup ? state.prior : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" } : table === "customers" ? { points: 0, total_spending: 0, category_id: null, customer_categories: null }
+    const single = () => state.insertError && state.insertError.table === table && !lookup ? { data: null, error: { message: state.insertError.message } } : ({ data: table === "sales" && lookup ? state.prior : table === "cashier_shifts" ? { id: "shift", branch_id: "branch" } : table === "customers" ? { points: 0, total_spending: 0, category_id: null, customer_categories: null }
       : table === "warehouses" ? { id: "warehouse" } : { id: table === "sales" ? "sale" : "line" }, error: null });
     const query = {
       select: (fields: string) => { lookup = typeof fields === "string" && fields.includes("checkout_fingerprint"); return query; }, eq: (k: string, v: unknown) => { eqs[k] = v; if (table === "promos") state.promoReads++; return query; }, in: () => query, gt: () => query, lte: () => query, not: () => query, order: () => query, range: () => query, limit: () => query,
-      insert: (value: Record<string, unknown>) => { if (table === "sales") { state.headers.push(value); data = value; state.prior = { id: "sale", no_struk: "POS-SH-TEST", checkout_fingerprint: value.checkout_fingerprint, payments_finalized_at: null }; } if (table === "sale_items") state.items.push({ id: "line", ...value }); return query; },
+      insert: (value: Record<string, unknown>) => { if (table === "sales") { state.headers.push(value); data = value; if (state.insertError?.table !== "sales") state.prior = { id: "sale", no_struk: "POS-SH-TEST", checkout_fingerprint: value.checkout_fingerprint, payments_finalized_at: null }; } if (table === "sale_items") state.items.push({ id: "line", ...value }); return query; },
       update: () => query, delete: () => { if (table === "sales") { state.removed = true; state.prior = null; } return query; },
       single: async () => single(), maybeSingle: async () => single(),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, count: Array.isArray(data) ? data.length : 0, error: null }).then(resolve),
@@ -64,7 +64,7 @@ const ON = { syarat_hasil: true, promo_picker: true, below_hpp: false };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  Object.assign(state, { calls: [], headers: [], items: [], removed: false, finalizationError: "", pool: true, shRows: [], flags: {}, flagError: "", promoReads: 0, prior: null, campaign: null });
+  Object.assign(state, { calls: [], headers: [], items: [], removed: false, finalizationError: "", pool: true, shRows: [], flags: {}, flagError: "", promoReads: 0, prior: null, campaign: null, insertError: null, minSell: {} });
 });
 
 function form(lines: [string, number][], extra: Record<string, string> = {}, forged: Record<string, unknown> = {}) {
@@ -192,10 +192,10 @@ it("'tanpa promo' while the picker flag is OFF is refused before anything is wri
   expect(outcome).toContain("Fitur ganti promo belum aktif");
   expect(state.headers).toHaveLength(0);
 });
-it("an unknown promoPick value is refused", async () => {
+it("a malformed promoPick value is refused", async () => {
   state.shRows = [shPromo(3000)];
   state.flags = ON;
-  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "sh1" }))).toContain("Pilihan promo tidak dikenal");
+  for (const bad of ["bad value!", "x".repeat(80), "sh1;drop"]) expect(await run(form([["item", 2], ["anc", 1]], { promoPick: bad }))).toContain("Pilihan promo tidak dikenal");
   expect(state.headers).toHaveLength(0);
 });
 
@@ -219,4 +219,135 @@ it("a campaign code that forces a promo switches syarat-hasil off for that sale 
   expect(Object.keys(state.headers[0]).filter(k => k.startsWith("promo_"))).toEqual([]);
   expect(state.items.map(i => i.promo_id)).toEqual(["pool", null]);
   for (const i of state.items) for (const k of claimKeys) expect(i).not.toHaveProperty(k);
+});
+
+
+// ---------------------------------------------------------------------------------------------------- STAGE 3b: picker
+const WAIVER_RULE = (value: number, allowed: boolean) => { const r = RULE(value); (r.syarat_hasil.below_hpp as Record<string, unknown>) = allowed ? { allowed: true, reason: "barang mendekati expired", ack_by: "owner", ack_at: "2026-11-01T00:00:00Z" } : { allowed: false }; return r; };
+
+it("picker: the cashier picks the syarat-hasil promo although the pool saves more -> that promo only (exclusive), pick persisted, pool NOT applied", async () => {
+  state.shRows = [shPromo(1000)];
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "sh1" }))).toContain("/struk/sale");
+  expect(state.headers[0]).toMatchObject({ subtotal: 55000, total: 54000, discount: 1000, promo_pick_mode: "pilih", promo_pick_id: "sh1", promo_pick_exclusive: true });
+  expect(state.headers[0].promo_selection).toMatchObject({ version: 1, mode: "pilih", pick: "sh1", exclusive: true, applied: [{ promo_id: "sh1", discount: 1000 }] });
+  expect(state.items.map(shape)).toEqual([["item", 2, null, 0, 0], ["anc", 1, "sh1", 1000, 1]]);
+  expect(state.items.map(i => i.quantity_pool_claim)).toEqual([false, false]);
+});
+it("picker: the cashier picks the Bolt pool although syarat-hasil saves more -> only the pool, nothing claimed, pick = pool persisted", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "pool" }))).toContain("/struk/sale");
+  expect(state.headers[0]).toMatchObject({ total: 53000, promo_pick_mode: "pilih", promo_pick_id: "pool", promo_pick_exclusive: true });
+  expect(state.items.map(shape)).toEqual([["item", 2, "pool", 2000, 0], ["anc", 1, null, 0, 1]]);
+  expect(state.items.map(i => i.quantity_pool_claim)).toEqual([true, false]);
+  for (const i of state.items) for (const k of claimKeys) expect(i).not.toHaveProperty(k);
+});
+it("picker: a stale pick (promo no longer applies to the cart) is refused, nothing is written - never a silent fallback to another price", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  const out = await run(form([["item", 2]], { promoPick: "sh1" }));
+  expect(out).toContain("Promo pilihan tidak lagi berlaku");
+  expect(state.headers).toHaveLength(0);
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "ghost" }))).toContain("Promo pilihan tidak lagi berlaku");
+  expect(state.headers).toHaveLength(0);
+});
+it("picker: a promo pick while the picker flag is OFF is refused (same gate as 'tanpa promo')", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = { syarat_hasil: true, promo_picker: false, below_hpp: false };
+  expect(await run(form([["item", 2], ["anc", 1]], { promoPick: "sh1" }))).toContain("Fitur ganti promo belum aktif");
+  expect(state.headers).toHaveLength(0);
+});
+it("picker or 'tanpa' together with a campaign code that forces a promo is refused (the cashier's explicit choice cannot be honoured silently)", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  state.campaign = { code: "KAMPANYE1", voucher_code: null, promo_id: "pool", is_active: true };
+  expect(await run(form([["item", 2], ["anc", 1]], { voucherCode: "KAMPANYE1", promoPick: "none" }))).toContain("kode kampanye");
+  expect(state.headers).toHaveLength(0);
+});
+it("promoExpect (the saving the screen showed) differing from the server's saving is refused; equal or absent passes", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  expect(await run(form([["item", 2], ["anc", 1]], { promoExpect: "2000" }))).toContain("Potongan promo di layar");
+  expect(state.headers).toHaveLength(0);
+  expect(await run(form([["item", 2], ["anc", 1]], { promoExpect: "3000" }))).toContain("/struk/sale");
+  state.headers = []; state.items = []; state.prior = null;
+  expect(await run(form([["item", 2], ["anc", 1]]))).toContain("/struk/sale");
+});
+
+// ---------------------------------------------------------------------------------------------------- STAGE 3b: below-HPP
+it("HPP guard: a reward that would sell below FIFO cost (15000-6000 < 10000) without an Owner waiver is dropped - the sale goes through with the next best promo and the drop is recorded", async () => {
+  state.shRows = [shPromo(6000)];
+  state.flags = ON;
+  const outcome = await run(form([["item", 2], ["anc", 1]]));
+  expect(outcome).toContain("/struk/sale");
+  expect(state.headers[0]).toMatchObject({ total: 53000, promo_pick_mode: "auto" });
+  expect(state.headers[0].promo_selection).toMatchObject({ dropped: [{ promo_id: "sh1", reason: "below_hpp" }] });
+  expect(state.items.map(shape)).toEqual([["item", 2, "pool", 2000, 0], ["anc", 1, null, 0, 1]]);
+  for (const i of state.items) for (const k of claimKeys) expect(i).not.toHaveProperty(k);
+  expect(state.calls.filter(c => c.name === "cashier_post_stock_atomic")).toHaveLength(1);
+});
+it("HPP guard: the picked promo being dropped for HPP is refused with the reason (the cashier chose it explicitly)", async () => {
+  state.shRows = [shPromo(6000)];
+  state.flags = ON;
+  const out = await run(form([["item", 2], ["anc", 1]], { promoPick: "sh1" }));
+  expect(out).toContain("di bawah modal");
+  expect(state.headers).toHaveLength(0);
+});
+it("waiver: Owner waiver + below_hpp released -> the reward is a PURE reward line carrying promo_floor_waiver, the TS floor lets it through, the DB gets the flag", async () => {
+  state.shRows = [shPromo(6000, { rule: WAIVER_RULE(6000, true) })];
+  state.flags = { ...ON, below_hpp: true };
+  expect(await run(form([["item", 2], ["anc", 2]]))).toContain("/struk/sale");
+  expect(state.headers[0]).toMatchObject({ subtotal: 70000, total: 64000 });
+  const anc = state.items.filter(i => i.item_id === "anc");
+  expect(anc).toHaveLength(2);
+  expect(anc[0]).toMatchObject({ qty: 1, promo_syarat_units: 0, promo_hasil_units: 1, promo_floor_waiver: true, promo_discount: 6000 });
+  expect(anc[1]).toMatchObject({ qty: 1, promo_discount: 0 });
+  expect(anc[1]).not.toHaveProperty("promo_claim_id");
+  expect(state.items.filter(i => i.promo_floor_waiver === true)).toHaveLength(1);
+});
+it("waiver: a receipt-level discount on a sale with a below-cost waiver line is refused with the specific message (no voucher/points/total discount)", async () => {
+  state.shRows = [shPromo(6000, { rule: WAIVER_RULE(6000, true) })];
+  state.flags = { ...ON, below_hpp: true };
+  const out = await run(form([["item", 2], ["anc", 1]], { diskon: "1000" }));
+  expect(out).toMatch(/voucher.*poin.*diskon total/i);
+  expect(state.headers).toHaveLength(0);
+});
+it("waiver saved by the Owner but the below_hpp flag OFF: treated as no waiver (reward below cost is dropped, no waiver flag ever written)", async () => {
+  state.shRows = [shPromo(6000, { rule: WAIVER_RULE(6000, true) })];
+  state.flags = { ...ON, below_hpp: false };
+  expect(await run(form([["item", 2], ["anc", 1]]))).toContain("/struk/sale");
+  for (const i of state.items) expect(i).not.toHaveProperty("promo_floor_waiver");
+});
+
+// ---------------------------------------------------------------------------------------------------- STAGE 3b: insert-time DB refusals in Indonesian
+it("insert-time refusal on the sale header (PROMO_SH_RELEASE picker) is shown in Indonesian, nothing leaks", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  state.insertError = { table: "sales", message: "PROMO_SH_RELEASE: promo picker is not released" };
+  const out = await run(form([["item", 2], ["anc", 1]], { promoPick: "none" }));
+  expect(out).toContain("Promo bundling ditolak");
+  expect(out).toContain("pemilih promo");
+  expect(out).not.toContain("PROMO_SH");
+});
+it("insert-time refusal on a sale line (PROMO_SH_CLAIM / SNAPSHOT) is shown in Indonesian and the sale is removed", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  for (const message of ["PROMO_SH_CLAIM: a manual line discount cannot take part in a promo claim", "PROMO_SH_SNAPSHOT: promo claim is immutable"]) {
+    state.removed = false; state.insertError = { table: "sale_items", message }; state.headers = []; state.items = []; state.prior = null;
+    const out = await run(form([["item", 2], ["anc", 1]]));
+    expect(out).toContain("Promo bundling ditolak");
+    expect(out).not.toContain("PROMO_SH");
+    expect(state.removed).toBe(true);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------- STAGE 3b: min_sell_qty with a split
+it("min_sell_qty: a remainder below the item minimum is merged back into the claim line instead of leaving a 1-unit plain line (Bolt x3, minimum 3)", async () => {
+  state.shRows = [shPromo(3000)];
+  state.flags = ON;
+  state.minSell = { item: 3 };
+  expect(await run(form([["item", 3], ["anc", 1]]))).toContain("/struk/sale");
+  expect(state.items.filter(i => i.item_id === "item").map(i => [i.qty, i.promo_syarat_units, i.promo_hasil_units])).toEqual([[3, 2, 0]]);
+  expect(state.items.filter(i => i.item_id === "anc")).toHaveLength(1);
 });

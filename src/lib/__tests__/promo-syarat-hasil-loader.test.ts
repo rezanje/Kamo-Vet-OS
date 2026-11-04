@@ -69,7 +69,7 @@ describe("loadSyaratHasilKasir", () => {
     expect(await loadSyaratHasilKasir(db, "own")).toEqual(SYARAT_HASIL_OFF);
     expect(db.log.rpc).toEqual(["promo_release_enabled:syarat_hasil"]);
   });
-  it("released: definitions + the picker / below-HPP flags; branch and date filters apply; stage 3 never plans a waiver", async () => {
+  it("released: definitions + the picker / below-HPP flags; branch and date filters apply; the Owner waiver is planned only with the below_hpp flag released", async () => {
     const waiver = rule({ below_hpp: { allowed: true, reason: "barang mendekati expired", ack_by: "u", ack_at: "t" } });
     const db = database([
       sh("b-own"), sh("a-foreign", { branch_ids: ["other"] }), sh("c-future", { valid_from: "2999-01-01" }), sh("d-expired", { valid_until: "2000-01-01" }),
@@ -78,7 +78,9 @@ describe("loadSyaratHasilKasir", () => {
     const r = await loadSyaratHasilKasir(db, "own");
     expect(r).toMatchObject({ released: true, pickerReleased: true, belowHppReleased: true });
     expect(r.defs.map((d) => d.id)).toEqual(["b-own", "e-waiver"]);
-    expect(r.defs.every((d) => d.allow_below_hpp === false)).toBe(true);
+    expect(r.defs.map((d) => d.allow_below_hpp)).toEqual([false, true]);
+    const off = await loadSyaratHasilKasir(database([sh("e-waiver", { rule: waiver })], { syarat_hasil: true, promo_picker: true, below_hpp: false }), "own");
+    expect(off.defs.map((d) => d.allow_below_hpp)).toEqual([false]); // flag OFF: a saved waiver is never planned
     expect(r.defs[0]).toMatchObject({ name: "SH b-own", repeat: true, hasil: { items: [{ item_id: "anc", unit: "PCS" }], discount: { type: "nominal", value: 1000 } } });
   });
   it("flag RPC missing (code 42883 / PGRST202) = OFF; any other RPC failure is thrown (fail closed)", async () => {
