@@ -49,7 +49,12 @@
  *                           LESSER( qty * unit_price (official master price), charged )
  *                       where `charged` is what the customer is actually charged for the line: qty * harga minus the line's
  *                       manual / item discount (or the server-derived discount of another mechanism, e.g. the Bolt pool), before
- *                       cart-level voucher / points / total discount and before THIS promo's own reward discount. So a line
+ *                       cart-level voucher / points / total discount. R5 (stage 3): a claimed reward line is NOT special: its own reward discount
+ *                       (and the discount of every promo applied before it) IS subtracted, so reward units never qualify their own
+ *                       nilai syarat and the threshold means the money actually charged for the cart (a cart of only one reward unit
+ *                       paid Rp14.000 counts Rp14.000). The engine therefore plans `repeat` sets as the largest count whose own reward
+ *                       discount still leaves nilai >= sets x min, and a later promo may not push an earlier claimed nilai promo
+ *                       below its threshold (State.slack): the database counts the discount of EVERY claim. So a line
  *                       never counts more than the real money in the cart nor more than the official price (a tier price
  *                       counts at what is paid; an overcharge adds nothing). Manual-discount / no-evidence lines and units
  *                       claimed elsewhere still count (at their charged amount). A line with qty >= SH_NILAI_MAX_LINE_QTY
@@ -404,7 +409,16 @@ type Line = {
   gross: bigint | null;
   /** R1: the amount this line contributes to a `nilai` syarat: min(gross, charged), 0 for absurd qty / no price / invalid charged. */
   nilai: bigint;
+  /** R5: effective charged amount (charged absent -> gross; invalid -> 0) so the nilai can be recomputed once discounts sit on the line. */
+  chg: bigint;
 };
+
+/** R5: what a line counts toward a `nilai` syarat once `d` rupiah of promo discount sits on it (the database formula: min(official gross, qty x harga - d), never below 0). */
+function nilaiAfter(l: Line, d: bigint): bigint {
+  if (l.nilai === ZERO) return ZERO;
+  const v = minBig(l.gross as bigint, l.chg - d);
+  return v > ZERO ? v : ZERO;
+}
 
 function prepareLines(lines: unknown, strict: boolean): { lines: Line[]; skippedLines: SyaratHasilResult["skipped_lines"] } {
   if (!Array.isArray(lines)) throw badInput("lines harus berupa array");
@@ -443,11 +457,10 @@ function prepareLines(lines: unknown, strict: boolean): { lines: Line[]; skipped
     const gross = computable ? qty * price : null;
     const claimed = reason === null && src.units_claimed_elsewhere !== undefined ? BigInt(src.units_claimed_elsewhere) : ZERO;
     // R1: nilai counts min(qty x official price, actually charged); absurd quantities and invalid charged amounts count 0
-    const nilai = !computable || qty >= BigInt(SH_NILAI_MAX_LINE_QTY) ? ZERO
-      : src.charged === undefined ? (gross as bigint)
-        : isInt(src.charged, 0, Number.MAX_SAFE_INTEGER) ? minBig(gross as bigint, BigInt(src.charged)) : ZERO;
+    const chg = !computable ? ZERO : src.charged === undefined ? (gross as bigint) : isInt(src.charged, 0, Number.MAX_SAFE_INTEGER) ? BigInt(src.charged) : ZERO;
+    const nilai = !computable || qty >= BigInt(SH_NILAI_MAX_LINE_QTY) ? ZERO : minBig(gross as bigint, chg);
     out.push({
-      pos, src, reason, computable, qty, price, gross, nilai, key: keyOf(String(src.item_id), String(src.unit)),
+      pos, src, reason, computable, qty, price, gross, nilai, chg, key: keyOf(String(src.item_id), String(src.unit)),
       base: reason === null ? qty - claimed : ZERO,
     });
   });
@@ -467,6 +480,8 @@ type Prep = {
   rowMask: Map<number, number>;
   /** Every line this promo's plan reads (syarat pools + reward candidates): a cached plan stays valid until one of them is touched. */
   deps: number[];
+  /** R5: the promo has a `nilai` row: its plan depends on the whole-cart state, not only on its own lines. */
+  hasNilai: boolean;
   /** 1 when the line is a reward candidate (dense, by line index) */
   rewardFlag: Uint8Array;
   /** row mask per line (dense, by line index) */
@@ -480,12 +495,17 @@ type Prep = {
 };
 type State = {
   avail: bigint[]; owner: (string | null)[]; lineClaims: LineRec[][]; total: bigint;
+  /** R5: promo discount committed per line, the nilai the committed discounts removed from the cart, and the smallest headroom
+   *  (net cart nilai - sets x min) any committed nilai row still has (null = no committed nilai promo). */
+  disc: bigint[]; loss: bigint; slack: bigint | null;
   /** commit counter, and per line the commit number that last touched it (plan cache invalidation) */
   clock: number; stamp: number[];
 };
 type LineRec = { promo_id: string; sets: bigint; syarat: bigint; hasil: bigint; dpu: bigint; discount: bigint; allow: boolean };
 type Plan = {
   prep: Prep; sets_available: bigint; sets: bigint; grants: bigint; total: bigint;
+  /** R5: nilai this plan's reward discounts remove from the cart, and the headroom left for committed nilai rows after it. */
+  loss: bigint; slackAfter: bigint | null;
   reserve: Map<number, bigint>; rewards: { i: number; units: bigint; dpu: bigint; discount: bigint }[];
 };
 
@@ -529,20 +549,22 @@ function prepare(def: SyaratHasilDef, lines: Line[]): Prep {
   for (const i of dpu.keys()) rewardFlag[i] = 1;
   for (const [i, m] of rowMask) maskOf[i] = m;
   const betterCost = (a: number, b: number): boolean => rank(a, b) < 0;
-  return { def, id: def.id, rows, rq: BigInt(def.hasil.reward_qty ?? 1), repeat: def.repeat, rewards, dpu, rowMask, freeLines, costGroups, deps, rewardFlag, maskOf, betterCost };
+  return { def, id: def.id, rows, hasNilai: rows.some((r) => r.kind === "nilai"), rq: BigInt(def.hasil.reward_qty ?? 1), repeat: def.repeat, rewards, dpu, rowMask, freeLines, costGroups, deps, rewardFlag, maskOf, betterCost };
 }
 
 function freshState(lines: Line[]): State {
-  return { avail: lines.map((l) => l.base), owner: lines.map(() => null), lineClaims: lines.map(() => []), total: ZERO, clock: 0, stamp: lines.map(() => 0) };
+  return { avail: lines.map((l) => l.base), owner: lines.map(() => null), lineClaims: lines.map(() => []), total: ZERO, disc: lines.map(() => ZERO), loss: ZERO, slack: null, clock: 0, stamp: lines.map(() => 0) };
 }
 
 function plan(p: Prep, lines: Line[], st: State, cartSub: bigint, onePerLine: boolean): Plan | null {
   const av = (i: number): bigint => (onePerLine && st.owner[i] !== null && st.owner[i] !== p.id ? ZERO : st.avail[i]);
 
+  // R5: the whole-cart value is what the customer is charged AFTER the discounts committed so far
+  const net0 = cartSub - st.loss;
   // sets each row allows, AND-ed
   let maxSets: bigint | null = null;
   for (const row of p.rows) {
-    const met = row.kind === "nilai" ? cartSub : row.pool.reduce((s, i) => s + av(i), ZERO);
+    const met = row.kind === "nilai" ? net0 : row.pool.reduce((s, i) => s + av(i), ZERO);
     const n = met / row.min;
     if (n === ZERO) return null;
     if (maxSets === null || n < maxSets) maxSets = n;
@@ -674,29 +696,69 @@ function plan(p: Prep, lines: Line[], st: State, cartSub: bigint, onePerLine: bo
     if (next > grants) { a = a + ONE; grants = next; }
   }
   if (grants <= ZERO) return null;
-  const setsUsed = (grants + p.rq - ONE) / p.rq; // reserve only what the granted reward needs
-  const rvFinal = reserveMemo(setsUsed);
-  const reserve = new Map<number, bigint>();
-  for (const i of p.deps) if (rvFinal[i] > ZERO) reserve.set(i, rvFinal[i]);
 
-  // Pick reward units: lowest discount per unit first (p.rewards is pre-sorted).
-  const rewards: Plan["rewards"] = [];
-  let left = grants, total = ZERO;
-  for (const i of p.rewards) {
-    if (left === ZERO) break;
-    const free = avl[i] - rvFinal[i];
-    if (free <= ZERO) continue;
-    const units = minBig(free, left);
-    const dpu = p.dpu.get(i) as bigint;
-    rewards.push({ i, units, dpu, discount: units * dpu });
-    total += units * dpu;
-    left -= units;
+  // Pick reward units for `g` grants (lowest discount per unit first, p.rewards is pre-sorted) on the units left after reserving
+  // only what those grants need, and measure what they take away from the whole-cart value (R5).
+  type Mat = { g: bigint; s: bigint; rv: bigint[]; rewards: Plan["rewards"]; total: bigint; loss: bigint };
+  const materialize = (g: bigint): Mat => {
+    const s = (g + p.rq - ONE) / p.rq; // reserve only what the granted reward needs
+    const rv = reserveMemo(s);
+    const rewards: Plan["rewards"] = [];
+    let left = g, total = ZERO, loss = ZERO;
+    for (const i of p.rewards) {
+      if (left === ZERO) break;
+      const free = avl[i] - rv[i];
+      if (free <= ZERO) continue;
+      const units = minBig(free, left);
+      const dpu = p.dpu.get(i) as bigint;
+      const discount = units * dpu;
+      rewards.push({ i, units, dpu, discount });
+      total += discount;
+      loss += nilaiAfter(lines[i], st.disc[i]) - nilaiAfter(lines[i], st.disc[i] + discount);
+      left -= units;
+    }
+    return { g, s, rv, rewards, total, loss };
+  };
+  const nilaiRows = p.rows.filter((r): r is Extract<PrepRow, { kind: "nilai" }> => r.kind === "nilai");
+  // R5: does the plan keep EVERY nilai row (its own and those of promos committed earlier) satisfied once its reward discount is taken?
+  const fit = (m: Mat): { ok: boolean; slack: bigint | null } => {
+    let slack: bigint | null = st.slack === null ? null : st.slack - m.loss;
+    if (slack !== null && slack < ZERO) return { ok: false, slack };
+    const net1 = net0 - m.loss;
+    for (const row of nilaiRows) {
+      const sl = net1 - m.s * row.min;
+      if (sl < ZERO) return { ok: false, slack: sl };
+      if (slack === null || sl < slack) slack = sl;
+    }
+    return { ok: true, slack };
+  };
+  let m = materialize(grants);
+  let f = fit(m);
+  if (!f.ok) {
+    // Largest set count x in [1, a-1] whose own discount still fits (grants only grow with x, so fitting is monotone: true then false).
+    const gAt = (x: bigint): bigint => minBig(x * p.rq, rewardAt(x));
+    let lo2 = ZERO, hi2 = a - ONE;
+    while (lo2 < hi2) {
+      const x = (lo2 + hi2 + ONE) / TWO;
+      const g = gAt(x);
+      if (g > ZERO && fit(materialize(g)).ok) lo2 = x; else hi2 = x - ONE;
+    }
+    if (lo2 === ZERO) return null;
+    grants = gAt(lo2);
+    if (grants <= ZERO) return null;
+    m = materialize(grants);
+    f = fit(m);
+    if (!f.ok) return null; // cannot happen (checked above), kept as a guard
   }
+  const setsUsed = m.s;
+  const reserve = new Map<number, bigint>();
+  for (const i of p.deps) if (m.rv[i] > ZERO) reserve.set(i, m.rv[i]);
+  const rewards = m.rewards, total = m.total;
   // Overflow guard BEFORE anything is committed (the promo is skipped, lines untouched).
   num(total);
   num(st.total + total);
   for (const r of rewards) num(r.discount);
-  return { prep: p, sets_available: N, sets: setsUsed, grants, total, reserve, rewards };
+  return { prep: p, sets_available: N, sets: setsUsed, grants, total, loss: m.loss, slackAfter: f.slack, reserve, rewards };
 }
 
 function commit(pl: Plan, st: State) {
@@ -712,6 +774,9 @@ function commit(pl: Plan, st: State) {
   };
   for (const [i, units] of pl.reserve) { rec(i).syarat += units; st.avail[i] -= units; }
   for (const r of pl.rewards) { const x = rec(r.i); x.hasil += r.units; x.dpu = r.dpu; x.discount += r.discount; st.avail[r.i] -= r.units; }
+  for (const r of pl.rewards) st.disc[r.i] += r.discount;
+  st.loss += pl.loss;
+  st.slack = pl.slackAfter;
   st.clock++;
   for (const [i, r] of recs) { st.lineClaims[i].push(r); if (st.owner[i] === null) st.owner[i] = id; st.stamp[i] = st.clock; }
   st.total += pl.total;
@@ -734,7 +799,8 @@ function runPipeline(preps: Prep[], lines: Line[], cartSub: bigint, onePerLine: 
   for (const p of preps) { const sp = seed.get(p); if (sp !== undefined) cache.set(p, { plan: sp, at: 0 }); }
   const tryPlan = (p: Prep): Plan | null => {
     const c = cache.get(p);
-    if (c && p.deps.every((i) => st.stamp[i] <= c.at)) return c.plan;
+    // R5: a plan with a nilai row (or planned while a nilai promo is committed) depends on the whole-cart state: valid only until the next commit
+    if (c && p.deps.every((i) => st.stamp[i] <= c.at) && (!(p.hasNilai || st.slack !== null) || c.at === st.clock)) return c.plan;
     let pl: Plan | null = null;
     try { pl = plan(p, lines, st, cartSub, onePerLine); }
     catch (e) {

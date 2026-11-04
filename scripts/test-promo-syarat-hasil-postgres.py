@@ -106,8 +106,11 @@ MUTATIONS = {
     'r1_official_only': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else least(i.qty*coalesce(b.sell_price", "else greatest(i.qty*coalesce(b.sell_price"),
     'r1_charged_only': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else least(i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,0),\n      i.qty*i.harga-least(", "else least(1e30,\n      i.qty*i.harga-least("),
     'r1_qty_bound': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "case when i.qty>=1000000 then 0 else least(", "case when false then 0 else least("),
-    'r1_claim_addback_off': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else case when i.promo_claim_id is not null then 0 else coalesce(i.promo_discount,0) end end,0)", "else coalesce(i.promo_discount,0) end,0)"),
-    'r1_other_promo_discount_ignored': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else case when i.promo_claim_id is not null then 0 else coalesce(i.promo_discount,0) end end,0)", "else 0 end,0)"),
+    # stage-3: R5 (no add-back of a claim line's own reward discount) and H2 (finite guard)
+    'r5_claim_addback': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else coalesce(i.promo_discount,0) end,0),i.qty*i.harga)) end),0) into cart", "else case when i.promo_claim_id is not null then 0 else coalesce(i.promo_discount,0) end end,0),i.qty*i.harga)) end),0) into cart"),
+    'r1_other_promo_discount_ignored': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "else coalesce(i.promo_discount,0) end,0),i.qty*i.harga)) end),0) into cart", "else 0 end,0),i.qty*i.harga)) end),0) into cart"),
+    'h2_finite_guard_off': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "case when not (i.qty<1000000 and i.qty>=-1e15 and i.harga<=1e15 and i.harga>=-1e15) then 0 else least(", "case when not (i.qty<1000000) then 0 else least("),
+    'h2_harga_guard_off': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "i.harga<=1e15 and i.harga>=-1e15", "true"),
     'r1_manual_discount_ignored': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "case when d.manual>0 then d.manual else", "case when false then d.manual else"),
     'r1_percent_ignored': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "case when i.item_discount_type='percent' then round(i.qty*i.harga*coalesce(i.item_discount_value,0)/100,0) else", "case when false then 0 else"),
     'r1_harga_not_used': ('20261106310000_promo_syarat_hasil_sale_claims.sql', "i.qty*i.harga-least(greatest(case when d.manual>0", "i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,0)-least(greatest(case when d.manual>0"),

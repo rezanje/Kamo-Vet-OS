@@ -40,11 +40,16 @@ describe("B1: overlapping syarat / hasil pools (brute-force oracle, single promo
       const grants = res.claims[0]?.grants ?? 0;
       const flipped = lines.map((l) => ({ ...l, source_position: 1000 - l.source_position }));
       const flippedTotal = calculateSyaratHasilSafe(flipped, [def], { alternatives: false }).discount_total;
+      // R5: ties between equal-discount reward / syarat units are broken by source_position. When the tied lines were charged DIFFERENT amounts
+      // (only reachable through partly claimed-elsewhere rows: the adapter hands a claim line its full gross) the choice can change whether the
+      // nilai syarat still fits, so strict order independence is asserted for carts whose lines were charged their full gross; others are only
+      // required to stay valid (the invariants of the property test) - the oracle comparison above still uses the given positions.
+      const fullyCharged = lines.every((l) => l.charged === undefined || l.charged >= l.qty * l.unit_price);
       const problems: string[] = [];
       if (grants !== want.grants) problems.push(`grants ${grants} != oracle ${want.grants}`);
       if (res.discount_total !== want.money) problems.push(`money ${res.discount_total} != oracle ${want.money}`);
       if (res.discount_total > want.absMax) problems.push(`above the unconstrained bound ${want.absMax}`);
-      if (flippedTotal !== want.money) problems.push(`order dependent: flipped positions give ${flippedTotal}`);
+      if (fullyCharged && flippedTotal !== want.money) problems.push(`order dependent: flipped positions give ${flippedTotal}`);
       if (problems.length) { badCount++; if (bad.length < 3) bad.push(`seed=${SEED} case=${i}: ${problems.join("; ")} ${JSON.stringify({ lines, def })}`); }
       if (want.grants > 0) applied++;
       if (res.claims.length) engineApplied++;

@@ -8,7 +8,8 @@ import type { SyaratHasilCartLine, SyaratHasilDef } from "./promo-syarat-hasil";
  *
  * The oracle expands every line into individual units and enumerates EVERY subset of units that
  * could be reserved as syarat units. For a subset m:
- *   a      = sets the syarat allow with the units of m (min over rows; nilai rows use the whole cart; 1 without repeat)
+ *   a      = sets the syarat allow with the units of m (min over rows; 1 without repeat); R5: nilai rows count the cart AFTER the reward discount, so
+ *            every set count a <= the bound is tried (largest first is not assumed)
  *   g      = min(a * reward_qty, reward units NOT in m)          (partial last set allowed, as in the engine)
  *   valid  = g >= 1 and m is MINIMAL for ceil(g / reward_qty) sets (no unit of m can be dropped)
  *   money  = sum of the g LOWEST per-unit discounts among the free reward units (engine pick rule)
@@ -28,8 +29,13 @@ function unitDiscount(d: Def["hasil"]["discount"], price: number): number {
 
 export function oracle(lines: OLine[], def: Def): { grants: number; money: number; absMax: number } {
   const key = (l: { item_id: string; unit: string }) => `${l.item_id}\u0000${l.unit}`;
-  // R1: each line counts at min(qty x official price, charged); charged absent -> official gross; qty >= 1,000,000 -> 0
-  const cartSub = lines.reduce((s, l) => s + (l.qty >= 1_000_000 ? 0 : Math.min(l.qty * l.unit_price, l.charged ?? Infinity)), 0);
+  // R1: each line counts at min(qty x official price, charged); charged absent -> official gross; qty >= 1,000,000 -> 0.
+  // R5: ... and once the reward discount D sits on a line it counts min(gross, charged - D) (never below 0): the cart value is the money charged.
+  const gross = lines.map((l) => l.qty * l.unit_price);
+  const chg = lines.map((l, i) => l.charged ?? gross[i]);
+  const counted0 = lines.map((l, i) => (l.qty >= 1_000_000 ? 0 : Math.min(gross[i], chg[i])));
+  const nilaiAfter = (i: number, d: number): number => (counted0[i] === 0 ? 0 : Math.max(0, Math.min(gross[i], chg[i] - d)));
+  const cart0 = counted0.reduce((s, x) => s + x, 0);
   const units: { line: number; dpu: number }[] = [];
   const hasilKeys = new Set(def.hasil.items.map(key));
   lines.forEach((l, i) => {
@@ -40,7 +46,7 @@ export function oracle(lines: OLine[], def: Def): { grants: number; money: numbe
   });
   const U = units.length;
   const rq = def.hasil.reward_qty ?? 1;
-  // row masks over units
+  // row masks over units (qty rows only; nilai rows have no mask)
   const rowMasks = def.syarat.map((r) => {
     if (r.kind === "nilai") return null;
     const keys = new Set(r.items.map(key));
@@ -51,33 +57,45 @@ export function oracle(lines: OLine[], def: Def): { grants: number; money: numbe
   let rewardMask = 0;
   units.forEach((u, idx) => { if (u.dpu > 0) rewardMask |= 1 << idx; });
   const pop = (x: number) => { let c = 0; while (x) { x &= x - 1; c++; } return c; };
+  // upper bound of the sets: qty rows by the units of m, nilai rows by the PRE-discount cart (the discount is applied per candidate below)
   const setsFor = (m: number): number => {
     let a = Infinity;
     def.syarat.forEach((r, j) => {
-      const met = r.kind === "nilai" ? cartSub : pop(m & (rowMasks[j] as number));
+      const met = r.kind === "nilai" ? cart0 : pop(m & (rowMasks[j] as number));
       a = Math.min(a, Math.floor(met / r.min));
     });
     return a;
   };
-  const holds = (m: number, sets: number): boolean => def.syarat.every((r, j) => (r.kind === "nilai" ? cartSub : pop(m & (rowMasks[j] as number))) >= sets * r.min);
+  const holdsQty = (m: number, sets: number): boolean => def.syarat.every((r, j) => (r.kind === "nilai" ? true : pop(m & (rowMasks[j] as number)) >= sets * r.min));
+  const order = (x: { line: number; dpu: number }, y: { line: number; dpu: number }): number =>
+    x.dpu - y.dpu || lines[x.line].source_position - lines[y.line].source_position || (lines[x.line].item_id < lines[y.line].item_id ? -1 : lines[x.line].item_id > lines[y.line].item_id ? 1 : 0);
   let bestG = 0, bestMoney = Infinity, absMax = 0;
   for (let m = 0; m < 1 << U; m++) {
-    let a = setsFor(m);
-    if (a < 1) continue;
-    if (!def.repeat) a = 1;
-    const free: number[] = [];
-    for (let idx = 0; idx < U; idx++) if (!(m >> idx & 1) && (rewardMask >> idx & 1)) free.push(units[idx].dpu);
-    const g = Math.min(a * rq, free.length);
-    if (g < 1) continue;
-    const s = Math.ceil(g / rq);
-    let minimal = true;
-    for (let idx = 0; idx < U && minimal; idx++) if ((m >> idx & 1) && holds(m & ~(1 << idx), s)) minimal = false;
-    if (!minimal) continue;
-    free.sort((x, y) => x - y);
-    const money = free.slice(0, g).reduce((x, y) => x + y, 0);
-    const top = free.slice(free.length - g).reduce((x, y) => x + y, 0);
-    absMax = Math.max(absMax, top);
-    if (g > bestG || (g === bestG && money < bestMoney)) { bestG = g; bestMoney = money; }
+    const aUp = setsFor(m);
+    if (aUp < 1) continue;
+    const free: { line: number; dpu: number }[] = [];
+    for (let idx = 0; idx < U; idx++) if (!(m >> idx & 1) && (rewardMask >> idx & 1)) free.push(units[idx]);
+    if (free.length < 1) continue;
+    free.sort(order);
+    const aTop = def.repeat ? Math.min(aUp, Math.ceil(free.length / rq)) : 1;
+    for (let a = 1; a <= aTop; a++) {
+      const g = Math.min(a * rq, free.length);
+      const s = Math.ceil(g / rq);
+      if (s !== a) continue; // a smaller set count already covers these grants
+      let minimal = true;
+      for (let idx = 0; idx < U && minimal; idx++) if ((m >> idx & 1) && holdsQty(m & ~(1 << idx), s)) minimal = false;
+      if (!minimal) continue;
+      const take = free.slice(0, g);
+      const disc = new Map<number, number>();
+      for (const u of take) disc.set(u.line, (disc.get(u.line) ?? 0) + u.dpu);
+      let net = cart0;
+      for (const [i, d] of disc) net += nilaiAfter(i, d) - counted0[i];
+      if (!def.syarat.every((r) => r.kind !== "nilai" || net >= s * r.min)) continue; // R5: the reward discount must leave the nilai syarat satisfied
+      const money = take.reduce((x, u) => x + u.dpu, 0);
+      const top = free.slice(free.length - g).reduce((x, u) => x + u.dpu, 0);
+      absMax = Math.max(absMax, top);
+      if (g > bestG || (g === bestG && money < bestMoney)) { bestG = g; bestMoney = money; }
+    }
   }
   return { grants: bestG, money: bestG === 0 ? 0 : bestMoney, absMax };
 }

@@ -335,12 +335,12 @@ select pg_temp.sale('R1.A5b',400000+15000,400000+14000);
 select pg_temp.li('R1.A5b','KOPI',5,80000,1);select pg_temp.reward('R1.A5b');
 select pg_temp.refused('R1.A5b','PROMO_SH_NILAI','R1 A5b: KOPI x5 charged 80000 while the branch price is 100000 counts what is paid (400000)');
 -- a non-claim promo_discount (another mechanism) reduces the counted value too
-select pg_temp.sale('R1.PD1',560000+15000,560000-75000+14000);
-select pg_temp.li('R1.PD1','KOPI',7,80000,1,0,'nominal',75000);select pg_temp.reward('R1.PD1');
-select pg_temp.ok((pg_temp.post('R1.PD1')->>'finalized')::boolean,'R1 PD1 boundary: KOPI x7 net 485000 (promo_discount 75000) + reward 15000 = exactly 500000 is accepted');
-select pg_temp.sale('R1.PD2',560000+15000,560000-75001+14000);
-select pg_temp.li('R1.PD2','KOPI',7,80000,1,0,'nominal',75001);select pg_temp.reward('R1.PD2');
-select pg_temp.refused('R1.PD2','PROMO_SH_NILAI','R1 PD2 boundary: one rupiah more promo_discount -> 499999 < 500000 refused');
+select pg_temp.sale('R1.PD1',560000+15000,560000-74000+14000);
+select pg_temp.li('R1.PD1','KOPI',7,80000,1,0,'nominal',74000);select pg_temp.reward('R1.PD1');
+select pg_temp.ok((pg_temp.post('R1.PD1')->>'finalized')::boolean,'R1 PD1 boundary (R5): KOPI x7 net 486000 (promo_discount 74000) + reward NET 14000 = exactly 500000 is accepted');
+select pg_temp.sale('R1.PD2',560000+15000,560000-74001+14000);
+select pg_temp.li('R1.PD2','KOPI',7,80000,1,0,'nominal',74001);select pg_temp.reward('R1.PD2');
+select pg_temp.refused('R1.PD2','PROMO_SH_NILAI','R1 PD2 boundary (R5): one rupiah more promo_discount -> 499999 < 500000 refused');
 -- nilai-only WAIVER promo (review X1): fake free Jasa line + 50 below-HPP reward units
 select pg_temp.sale('R1.X1',750000,500000);
 select pg_temp.li('R1.X1','SVC600',1000000,0,1);
@@ -359,12 +359,12 @@ select pg_temp.ok((select net_paid from sale_line_pricing v join sales s on s.id
 select pg_temp.sale('R1.OK1',600000+15000,600000+14000);
 select pg_temp.li('R1.OK1','SVC600',1,600000,1);select pg_temp.reward('R1.OK1');
 select pg_temp.ok((pg_temp.post('R1.OK1')->>'finalized')::boolean,'R1 OK1: a genuinely paid Jasa 600000 satisfies the syarat');
-select pg_temp.sale('R1.OK2',600000+15000,485000+14000);
-select pg_temp.li('R1.OK2','SVC600',1,600000,1,115000);select pg_temp.reward('R1.OK2');
-select pg_temp.ok((pg_temp.post('R1.OK2')->>'finalized')::boolean,'R1 OK2 boundary: Jasa 600000 with a genuine 115000 discount (485000) + reward 15000 = 500000 is accepted');
-select pg_temp.sale('R1.NO2',600000+15000,484999+14000);
-select pg_temp.li('R1.NO2','SVC600',1,600000,1,115001);select pg_temp.reward('R1.NO2');
-select pg_temp.refused('R1.NO2','PROMO_SH_NILAI','R1 NO2 boundary: discount 115001 -> 499999 refused (the documented refinement: discounted value counts)');
+select pg_temp.sale('R1.OK2',600000+15000,486000+14000);
+select pg_temp.li('R1.OK2','SVC600',1,600000,1,114000);select pg_temp.reward('R1.OK2');
+select pg_temp.ok((pg_temp.post('R1.OK2')->>'finalized')::boolean,'R1 OK2 boundary (R5): Jasa 600000 with a genuine 114000 discount (486000) + reward NET 14000 = 500000 is accepted');
+select pg_temp.sale('R1.NO2',600000+15000,485999+14000);
+select pg_temp.li('R1.NO2','SVC600',1,600000,1,114001);select pg_temp.reward('R1.NO2');
+select pg_temp.refused('R1.NO2','PROMO_SH_NILAI','R1 NO2 boundary (R5): discount 114001 -> 499999 refused (the documented refinement: discounted value counts)');
 select pg_temp.sale('R1.OK3',600000+15000,540000+14000);
 select pg_temp.li('R1.OK3','SVC600',1,600000,1,10,'percent');select pg_temp.reward('R1.OK3');
 select pg_temp.ok((pg_temp.post('R1.OK3')->>'finalized')::boolean,'R1 OK3: Jasa with a genuine 10% discount (540000) is accepted');
@@ -402,3 +402,73 @@ select pg_temp.sale('R1.TD2',615000,440000);
 select pg_temp.li('R1.TD2','SVC600',1,600000,1);select pg_temp.reward('R1.TD2');
 select pg_temp.ok((pg_temp.post('R1.TD2')->>'finalized')::boolean,'R1 TD2 KNOWN RESIDUAL: a receipt-level discount to 440000 (HPP floor allows it) still counts the 600000 Jasa line (customer pays 440000 < 500000)');
 select pg_temp.ok((select count(*)=0 from stock_moves where source_ref like 'R1.A3%' or source_ref like 'R1.A7d%' or source_ref like 'R1.X1' or source_ref='R1.X1b'),'R1: no stock leaked by any refused attack');
+
+-- ============================================================ 9. stage-3: R5 (a reward unit never qualifies its own nilai syarat) and H2 (finite guard)
+-- Rule: a claim line is not special; its verified reward discount is subtracted like any other discount, so the nilai syarat means the money
+-- actually charged for the whole cart (reward units count at their NET).
+reset role;select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claims','',true);
+select pg_temp.mk('r5a',pg_temp.rule_of('[{"kind":"nilai","min":14500}]'::jsonb,pg_temp.hasil_of('ANC-CREAMY','{"type":"nominal","value":1000}')));
+select pg_temp.mk('r5a0',pg_temp.rule_of('[{"kind":"nilai","min":14000}]'::jsonb,pg_temp.hasil_of('ANC-CREAMY','{"type":"nominal","value":1000}')));
+select pg_temp.mk('r5b',pg_temp.rule_of('[{"kind":"nilai","min":74000}]'::jsonb,pg_temp.hasil_of('ANC-CREAMY','{"type":"nominal","value":1000}',5)));
+select pg_temp.mk('r5b0',pg_temp.rule_of('[{"kind":"nilai","min":70000}]'::jsonb,pg_temp.hasil_of('ANC-CREAMY','{"type":"nominal","value":1000}',5)));
+-- reward item ALSO a syarat unit: 2 ANC syarat + nilai
+select pg_temp.mk('r5d',pg_temp.rule_of('[{"kind":"qty","min":2,"items":[{"item_id":"e5500000-0000-4000-8000-000000000008","unit":"PCS"}]},{"kind":"nilai","min":44000}]'::jsonb,pg_temp.hasil_of('ANC-CREAMY','{"type":"nominal","value":1000}')));
+select pg_temp.mk('r5e',pg_temp.rule_of('[{"kind":"qty","min":2,"items":[{"item_id":"e5500000-0000-4000-8000-000000000008","unit":"PCS"}]},{"kind":"nilai","min":44001}]'::jsonb,pg_temp.hasil_of('ANC-CREAMY','{"type":"nominal","value":1000}')));
+set constraints all immediate;set constraints all deferred;
+select pg_temp.set_user('e1100000-0000-4000-8000-000000000001');
+set local role authenticated;
+-- R5a (review): reward-only cart: the customer pays 14000, the threshold is 14500 -> must be refused (old code counted 15000)
+select pg_temp.sale('R5.A',15000,14000);
+select pg_temp.cl('R5.A','ANC-CREAMY',1,15000,0,pg_temp.pid('r5a'),1,0,1,1000);
+select pg_temp.refused('R5.A','PROMO_SH_NILAI','R5a: a cart of ONLY one reward unit (paid 14000) cannot satisfy a nilai syarat of 14500 (the reward discount is not added back)');
+select pg_temp.sale('R5.A0',15000,14000);
+select pg_temp.cl('R5.A0','ANC-CREAMY',1,15000,0,pg_temp.pid('r5a0'),1,0,1,1000);
+select pg_temp.ok((pg_temp.post('R5.A0')->>'finalized')::boolean,'R5a control: nilai syarat 14000 == the money actually charged is accepted (boundary exact)');
+-- R5b (review): 5 reward units, nilai 74000 vs real spend 70000
+select pg_temp.sale('R5.B',75000,70000);
+select pg_temp.cl('R5.B','ANC-CREAMY',5,15000,0,pg_temp.pid('r5b'),1,0,5,5000);
+select pg_temp.refused('R5.B','PROMO_SH_NILAI','R5b: 5 reward units paid 70000 cannot satisfy a nilai syarat of 74000 (old code counted 75000)');
+select pg_temp.sale('R5.B0',75000,70000);
+select pg_temp.cl('R5.B0','ANC-CREAMY',5,15000,0,pg_temp.pid('r5b0'),1,0,5,5000);
+select pg_temp.ok((pg_temp.post('R5.B0')->>'finalized')::boolean,'R5b control: nilai syarat 70000 == real spend is accepted');
+-- legitimate: the reward item is ALSO a syarat line of the same promo (one claimed line: 2 syarat units + 1 reward unit)
+select pg_temp.sale('R5.D',45000,44000);
+select pg_temp.cl('R5.D','ANC-CREAMY',3,15000,0,pg_temp.pid('r5d'),1,2,1,1000);
+select pg_temp.ok((pg_temp.post('R5.D')->>'finalized')::boolean,'R5d: reward item that is also a syarat line (3 ANC: 2 syarat + 1 reward, paid 44000, nilai 44000) is NOT falsely refused');
+select pg_temp.sale('R5.E',45000,44000);
+select pg_temp.cl('R5.E','ANC-CREAMY',3,15000,0,pg_temp.pid('r5e'),1,2,1,1000);
+select pg_temp.refused('R5.E','PROMO_SH_NILAI','R5e: same cart against nilai 44001 is refused (44000 charged)');
+-- the reward line of ANOTHER promo also reduces the money counted (every claim line is honest about what it charges)
+select pg_temp.sale('R5.F',600000+15000,600000+14000);
+select pg_temp.li('R5.F','SVC600',1,600000,1);select pg_temp.cl('R5.F','ANC-CREAMY',1,15000,0,pg_temp.pid('pnil'),1,0,1,1000);
+select pg_temp.ok((pg_temp.post('R5.F')->>'finalized')::boolean,'R5f: Jasa 600000 + reward (nilai 500000) still posts');
+
+-- H2: non-finite harga / qty cannot count at the full official value. NaN/Infinity harga is refused earlier by cashier_post_stock_atomic /
+-- finalize_pos_sale, so the nilai expression is probed DIRECTLY (as the database owner, after the original FIFO writer issued the stock).
+reset role;
+create function pg_temp.fifo_claims(ref text) returns void language plpgsql as $$
+declare l record;cost numeric;s public.sales%rowtype;begin
+ select * into s from public.sales where no_struk=ref;
+ for l in select i.* from public.sale_items i where i.sale_id=s.id and i.promo_claim_id is not null order by i.id loop
+  select x.cost into strict cost from public.sale_stock_out_fifo('e3300000-0000-4000-8000-000000000001',l.item_id,l.qty*l.faktor,'sale',s.no_struk,(s.created_at at time zone 'Asia/Jakarta')::date,l.id) x;
+  update public.sale_items set hpp=cost where id=l.id;
+ end loop;
+end$$;
+create function pg_temp.verify_ok(ref text) returns boolean language plpgsql as $$
+begin perform public.promo_sh_verify_claims((select id from public.sales where no_struk=ref));return true;end$$;
+select pg_temp.set_user('e1100000-0000-4000-8000-000000000001');
+select pg_temp.sale('H2.CTRL',600000+15000,600000+14000);
+select pg_temp.li('H2.CTRL','SVC600',1,600000,1);select pg_temp.reward('H2.CTRL');select pg_temp.fifo_claims('H2.CTRL');
+select pg_temp.ok(pg_temp.verify_ok('H2.CTRL'),'H2 control: a finite Jasa 600000 + reward passes the claim verification when called directly');
+select pg_temp.sale('H2.NAN',600000+15000,600000+14000);
+select pg_temp.li('H2.NAN','SVC600',1,'NaN'::numeric,1);select pg_temp.reward('H2.NAN');select pg_temp.fifo_claims('H2.NAN');
+select pg_temp.must_reject($q$select pg_temp.verify_ok('H2.NAN')$q$,'PROMO_SH_NILAI','H2: a NaN harga line counts 0 (old expression counted the official 600000)');
+select pg_temp.sale('H2.INF',600000+15000,600000+14000);
+select pg_temp.li('H2.INF','SVC600',1,'Infinity'::numeric,1);select pg_temp.reward('H2.INF');select pg_temp.fifo_claims('H2.INF');
+select pg_temp.must_reject($q$select pg_temp.verify_ok('H2.INF')$q$,'PROMO_SH_NILAI','H2: an Infinity harga line counts 0');
+select pg_temp.sale('H2.QNAN',600000+15000,600000+14000);
+select pg_temp.li('H2.QNAN','SVC600','NaN'::numeric,600000,1);select pg_temp.reward('H2.QNAN');select pg_temp.fifo_claims('H2.QNAN');
+select pg_temp.must_reject($q$select pg_temp.verify_ok('H2.QNAN')$q$,'PROMO_SH_NILAI','H2: a NaN qty line counts 0');
+select pg_temp.sale('H2.NINF',600000+15000,600000+14000);
+select pg_temp.li('H2.NINF','SVC600',1,'-Infinity'::numeric,1);select pg_temp.reward('H2.NINF');select pg_temp.fifo_claims('H2.NINF');
+select pg_temp.must_reject($q$select pg_temp.verify_ok('H2.NINF')$q$,'PROMO_SH_NILAI','H2: a -Infinity harga line counts 0 (never a huge value)');

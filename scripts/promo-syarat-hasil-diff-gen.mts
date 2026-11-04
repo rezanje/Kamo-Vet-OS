@@ -3,7 +3,9 @@
 // database and finalizes it through the original cashier RPC: whatever the engine claims, the database verification must accept.
 // R1: carts now contain lines the cashier overrode (harga below the official price, manual nominal discounts); the engine sees them through
 // the REAL adapter (syaratHasilLinesFromCart -> charged), so nilai rows are measured with the new rule "min(official gross, actually charged)".
-// Boundary variants: a promo's nilai minimum is often set to exactly the nilai value of the cart (TS restatement of the rule). The base
+// R5 (stage 3): the cart value is the money actually charged AFTER the discount of every claim (reward units never qualify their own nilai), so the
+// expected value of a scenario is nilaiOf(lines) - total_discount, and promos with a nilai row are TIGHTENED (min = value after the engine's own
+// claims / sets) so that the exact boundary is exercised often. Boundary variants: a promo's nilai minimum is often set to exactly the nilai value of the cart (TS restatement of the rule). The base
 // scenario (engine claims, nilai == need) must be ACCEPTED; the SHAVED variant (same claims, one rupiah of manual discount added to a
 // counted non-claimed line, so nilai == need - 1) must be REFUSED with PROMO_SH_NILAI (expect REFUSE_NILAI): the database is neither
 // looser nor stricter than the engine's rule at the boundary.
@@ -59,8 +61,22 @@ for (let idx = 0; idx < count; idx++) {
     if (rnd() < 0.2) manual = int(1, Math.floor((qty * harga * 4) / 10)); // genuine manual nominal discount (<= 40% of the line)
     return { pos, item: it.id, price: it.price, qty, harga, manual };
   });
-  const defs = Array.from({ length: int(1, 2) }, (_, k) => promo(`f4000000-0000-4000-8000-${String(idx * 2 + k).padStart(12, "0")}`, nilaiOf(lines)));
-  const r = calculateSyaratHasilSafe(syaratHasilLinesFromCart(rowsOf(lines)), defs, { one_promo_per_line: true, alternatives: false });
+  const defs: SyaratHasilDef[] = Array.from({ length: int(1, 2) }, (_, k) => promo(`f4000000-0000-4000-8000-${String(idx * 2 + k).padStart(12, "0")}`, nilaiOf(lines)));
+  const cartRows = syaratHasilLinesFromCart(rowsOf(lines));
+  let r = calculateSyaratHasilSafe(cartRows, defs, { one_promo_per_line: true, alternatives: false });
+  // tighten: the nilai row of a claimed promo := the money left after ALL claims / the sets it consumed (when divisible); keep it only if the engine still makes the same claims
+  const netAfter = nilaiOf(lines) - r.discount_total;
+  if (rnd() < 0.7) {
+    for (const c of r.claims) {
+      const d = defs.find((x) => x.id === c.promo_id) as SyaratHasilDef;
+      const k = d.syarat.findIndex((row) => row.kind === "nilai");
+      if (k < 0 || c.sets_consumed < 1 || netAfter % c.sets_consumed !== 0 || netAfter / c.sets_consumed < 1) continue;
+      const tightened = defs.map((x) => (x === d ? { ...x, syarat: x.syarat.map((row, j) => (j === k ? { kind: "nilai" as const, min: netAfter / c.sets_consumed } : row)) } : x));
+      const r2 = calculateSyaratHasilSafe(cartRows, tightened, { one_promo_per_line: true, alternatives: false });
+      if (JSON.stringify(r2.claims.map((x) => [x.promo_id, x.sets_consumed, x.syarat_units, x.hasil_units])) === JSON.stringify(r.claims.map((x) => [x.promo_id, x.sets_consumed, x.syarat_units, x.hasil_units]))) { defs.splice(0, defs.length, ...tightened); r = r2; }
+      break;
+    }
+  }
   const claims: object[] = [];
   let multi = false;
   for (const l of r.lines) {
@@ -76,9 +92,9 @@ for (let idx = 0; idx < count; idx++) {
   }, 0);
   const claimedPos = new Set((claims as { pos: number }[]).map((x) => x.pos));
   const victim = lines.find((l) => !claimedPos.has(l.pos) && l.qty * l.harga - l.manual >= 2 && l.harga <= l.price);
-  if (need > 0 && nilaiOf(lines) === need && victim) {
+  if (need > 0 && nilaiOf(lines) - r.discount_total === need && victim) { // R5: the value after every claim's discount sits exactly on the boundary
     const shaved = lines.map((l) => (l === victim ? { ...l, manual: l.manual + 1 } : l));
-    if (nilaiOf(shaved) !== need - 1) throw new Error("generator bug: boundary arithmetic");
+    if (nilaiOf(shaved) - r.discount_total !== need - 1) throw new Error("generator bug: boundary arithmetic");
     console.log(JSON.stringify({ idx, expect: "REFUSE_NILAI", promos: defs.map((d) => ({ id: d.id, rule: ruleOf(d) })), lines: shaved, claims, total_discount: r.discount_total }));
   }
 }

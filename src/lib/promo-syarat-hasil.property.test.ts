@@ -84,7 +84,7 @@ function checkInvariants(c: Case, res: SyaratHasilResult, tag: string) {
   expect(res.lines.length, at("every input line comes back")).toBe(c.lines.length);
   expect(res.lines.map((l) => l.source_position), at("lines sorted by source_position")).toEqual([...res.lines.map((l) => l.source_position)].sort((a, b) => a - b));
 
-  let sumLines = 0, sumClaims = 0, cartSub = 0;
+  let sumLines = 0, sumClaims = 0, cartSub = 0, cartAfter = 0;
   for (const l of res.lines) {
     const src = byPos.get(l.source_position)!;
     const computable = Number.isSafeInteger(src.qty) && src.qty >= 1 && Number.isSafeInteger(src.unit_price) && src.unit_price >= 0;
@@ -101,6 +101,8 @@ function checkInvariants(c: Case, res: SyaratHasilResult, tag: string) {
     expect(counted, at("a line never counts more than its official gross")).toBeLessThanOrEqual(src.qty * src.unit_price);
     if (src.charged !== undefined && chargedOk) expect(counted, at("a line never counts more than what is charged")).toBeLessThanOrEqual(src.charged);
     cartSub += counted;
+    // R5 restated independently: once the line's total promo discount d sits on it, it counts min(gross, charged - d) (never below 0); 0 stays 0
+    cartAfter += counted === 0 ? 0 : Math.max(0, Math.min(src.qty * src.unit_price, (src.charged ?? src.qty * src.unit_price) - l.discount));
     expect(l.gross, at("gross")).toBe(src.qty * src.unit_price);
     expect(l.net, at("net = gross - discount")).toBe(l.gross! - l.discount);
     expect(l.discount, at("discount >= 0")).toBeGreaterThanOrEqual(0);
@@ -167,6 +169,7 @@ function checkInvariants(c: Case, res: SyaratHasilResult, tag: string) {
     for (const row of def.syarat) {
       if (row.kind === "nilai") {
         expect(cartSub, at("nilai row holds on the sum of min(official gross, charged) over the WHOLE cart")).toBeGreaterThanOrEqual(cl.sets_consumed * row.min);
+        expect(cartAfter, at("R5: nilai row ALSO holds after the discount of EVERY claim (the database counts them all): reward units never qualify themselves")).toBeGreaterThanOrEqual(cl.sets_consumed * row.min);
         continue;
       }
       row.items.forEach((i) => allSyaratKeys.add(key(i)));

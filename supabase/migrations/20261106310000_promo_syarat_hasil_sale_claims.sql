@@ -23,9 +23,10 @@
 --    an HPP floor (Jasa / Non-Persediaan) can be priced at Rp1, discounted 100% or sold in qty 1,000,000 at harga 0.
 --    Actually charged = qty*harga - least(greatest(d,0), qty*harga) with d = the manual line discount (percent: round(gross*value/100); any
 --    other type: the value) when it is > 0, else promo_discount (another mechanism such as the Bolt pool) - exactly the formula the finalize
---    guard and the P03 floor use for the line net - BEFORE cart-level voucher/points/total discount. The reward discount of a line that
---    carries a claim is NOT subtracted (it is the promo's own output, re-derived exactly by the claim verification; the engine plans the
---    threshold before it as well). A line of qty >= 1,000,000 counts 0 (absurd-quantity bound, the engine uses the same bound), a line without
+--    guard and the P03 floor use for the line net - BEFORE cart-level voucher/points/total discount. R5 (stage-3): the reward discount of a line
+--    that carries a claim IS subtracted like every other discount (no special case): reward units never qualify their own nilai syarat, the
+--    threshold means the money actually charged for the cart (a reward-only cart paid Rp1.000 counts Rp1.000). The engine plans the sets so that this
+--    holds (largest set count whose own reward discount still leaves nilai >= sets x min). H2: non-finite harga/qty count 0. A line of qty >= 1,000,000 counts 0 (absurd-quantity bound, the engine uses the same bound), a line without
 --    an active item / official price (free text, inactive item, unknown unit) counts 0. Consequences the app must know: a manual discount, a tier
 --    price below the official price or a Persediaan line sold at HPP counts at the discounted amount; an overcharge counts at the official price.
 --    Why this is provable without a new HPP rule: the counted value of every line is bounded by what the sale charges for it, and a below-HPP
@@ -225,11 +226,13 @@ begin
      raise exception 'PROMO_SH_SYARAT: row % needs % units, claim supplies %',cur_row,a*(row_json->>'min')::numeric,supplied;
     end if;
    else
-    -- S1 + R1: ONLY lines that join an active item master count, each at the LESSER of qty x OFFICIAL price (branch price, else unit/base price)
-    -- and the amount actually charged for the line (same net formula as the finalize guard / P03 floor; a claim line keeps its own verified reward
-    -- discount added back). Free text / no official price -> 0; qty >= 1,000,000 on one line -> 0. harga/discount/qty are client-written: they can only LOWER the count.
-    select coalesce(sum(case when i.qty>=1000000 then 0 else least(i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,0),
-      i.qty*i.harga-least(greatest(case when d.manual>0 then d.manual else case when i.promo_claim_id is not null then 0 else coalesce(i.promo_discount,0) end end,0),i.qty*i.harga)) end),0) into cart
+    -- S1 + R1 + R5 + H2: ONLY lines that join an active item master count, each at the LESSER of qty x OFFICIAL price (branch price, else unit/base price)
+    -- and the amount actually charged for the line (same net formula as the finalize guard / P03 floor). R5: a claim line is NOT special: its own verified
+    -- reward discount is subtracted like any other discount, so reward units can never qualify their own nilai syarat (the cart counts the money actually
+    -- charged). Free text / no official price -> 0; qty >= 1,000,000 on one line -> 0; H2: a non-finite (NaN / +-Infinity) or absurd harga/qty (|x| > 1e15) -> 0.
+    -- harga/discount/qty are client-written: they can only LOWER the count.
+    select coalesce(sum(case when not (i.qty<1000000 and i.qty>=-1e15 and i.harga<=1e15 and i.harga>=-1e15) then 0 else least(i.qty*coalesce(b.sell_price,case when i.satuan=it.unit then it.sell_price else u.sell_price end,0),
+      i.qty*i.harga-least(greatest(case when d.manual>0 then d.manual else coalesce(i.promo_discount,0) end,0),i.qty*i.harga)) end),0) into cart
      from public.sale_items i join public.items it on it.id=i.item_id and it.is_active
      cross join lateral(select case when i.item_discount_type='percent' then round(i.qty*i.harga*coalesce(i.item_discount_value,0)/100,0) else coalesce(i.item_discount_value,0) end manual) d
      left join public.item_units u on u.item_id=it.id and u.unit=i.satuan and i.satuan<>it.unit

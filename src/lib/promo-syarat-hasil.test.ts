@@ -219,12 +219,12 @@ describe("worked examples (Andri)", () => {
     expect(r.claims[0].syarat_units).toEqual([{ source_position: 1, units: 2 }]);
   });
 
-  it("nilai belanja is measured on the WHOLE cart (normal price, before discounts), not only syarat items", () => {
+  it("nilai belanja is measured on the WHOLE cart (money charged incl. the reward's own discount, R5), not only syarat items", () => {
     const def = boltAnc({ syarat: [{ kind: "nilai", min: 100000 }] });
-    const ok = calc([line(1, KOPI, 1, 85000), line(2, ANC, 1, 15000)], [def]);
-    expect(ok.discount_total).toBe(1000); // 85.000 + 15.000 = exactly the minimum
+    const ok = calc([line(1, KOPI, 1, 86000), line(2, ANC, 1, 15000)], [def]);
+    expect(ok.discount_total).toBe(1000); // 86.000 + reward net 14.000 = exactly the minimum
     expect(ok.claims[0].syarat_units).toEqual([]); // nilai reserves nothing
-    expect(calc([line(1, KOPI, 1, 84999), line(2, ANC, 1, 15000)], [def]).discount_total).toBe(0); // min - 1
+    expect(calc([line(1, KOPI, 1, 85999), line(2, ANC, 1, 15000)], [def]).discount_total).toBe(0); // min - 1
   });
 
   it("nilai counts every computable line at gross: manual-discount / no-evidence / claimed-elsewhere lines too", () => {
@@ -666,8 +666,8 @@ describe("R1: nilai-belanja counts each line at the LESSER of qty x official pri
       const cheap = calc([line(0, WHISKAS, 1, 600000, { charged: 1 }), line(1, ANC, 1, 15000)], [nilaiPromo]);
       expect(cheap.discount_total).toBe(0); // 1 + 15000 < 60000 although the master price is 600000
       expect(calc([line(0, WHISKAS, 1, 600000, { charged: 0 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(0);
-      expect(calc([line(0, WHISKAS, 1, 600000, { charged: 45000 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(1000); // 45000 + 15000 = exactly 60000
-      expect(calc([line(0, WHISKAS, 1, 600000, { charged: 44999 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(0);
+      expect(calc([line(0, WHISKAS, 1, 600000, { charged: 46000 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(1000); // 46000 + reward NET 14000 = exactly 60000 (R5)
+      expect(calc([line(0, WHISKAS, 1, 600000, { charged: 45999 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(0);
     });
     it("charged above the official gross never counts more than the gross (overcharge adds nothing)", () => {
       expect(calc([line(0, KOPI, 1, 50000, { charged: 90000 }), line(1, ANC, 1, 15000)], [nilaiPromo]).discount_total).toBe(1000); // 65000
@@ -776,8 +776,8 @@ describe("R1: nilai-belanja counts each line at the LESSER of qty x official pri
     it("end to end: legit carts are not falsely refused (branch/tier price, derived unit, genuinely discounted line)", () => {
       expect(discountOf([row(KOPI, 5, 100000, 100000), anc])).toBe(1000);                                    // branch price counted at official
       expect(discountOf([row(KOPI, 1, 500000, 500000, { satuan: "SAK", faktor: 25 }), anc])).toBe(1000);       // derived unit at its own price
-      expect(discountOf([row(KOPI, 1, 50000, 50000, { item_discount_type: "percent", item_discount_value: 10 }), anc])).toBe(1000); // 45000 + 15000 = 60000
-      expect(discountOf([row(KOPI, 1, 50000, 50000, { item_discount_type: "percent", item_discount_value: 11 }), anc])).toBe(0);     // 44500 + 15000 < 60000: documented refinement
+      expect(discountOf([row(KOPI, 1, 50000, 50000, { item_discount_type: "percent", item_discount_value: 8 }), anc])).toBe(1000); // 46000 + reward net 14000 = 60000
+      expect(discountOf([row(KOPI, 1, 50000, 50000, { item_discount_type: "percent", item_discount_value: 9 }), anc])).toBe(0);     // 45500 + 14000 < 60000: documented refinement
       expect(discountOf([row(KOPI, 1, 80000, 100000), anc])).toBe(1000);                                     // tier price below official counts at what is paid (80000 + 15000)
       expect(discountOf([row(KOPI, 1, 120000, 100000), anc])).toBe(1000);                                    // overcharge counts at official only
     });
@@ -845,5 +845,67 @@ describe("stage-1 review v2 residuals", () => {
     expect(code(() => calculateSyaratHasil([line(1.5, ANC, 1, 1)], [boltAnc()]))).toBe("SH_LINE_POSITION_INVALID");
     // SAFE never throws on the conflict
     expect(code(() => calc([line(1, ANC, 1, 1)], [boltAnc()], opt))).toBe("no throw");
+  });
+});
+
+describe("R5 (stage 3): reward units never qualify their own nilai syarat; the nilai counts the money actually charged, own reward discount included", () => {
+  const nilaiOnly = (min: number, over: Partial<SyaratHasilDef> = {}): SyaratHasilDef => ({
+    id: "R5", repeat: true, syarat: [{ kind: "nilai", min }], hasil: { items: [ref(ANC)], discount: nominal(1000) }, ...over,
+  });
+  it("R5a (review): a cart of ONLY one reward unit (paid 14000) does not satisfy a nilai syarat of 14500", () => {
+    expect(calc([line(0, ANC, 1, 15000)], [nilaiOnly(14500)]).discount_total).toBe(0);
+    expect(calc([line(0, ANC, 1, 15000)], [nilaiOnly(14000)]).discount_total).toBe(1000); // exact boundary: the money charged
+    expect(calc([line(0, ANC, 1, 15000)], [nilaiOnly(14001)]).discount_total).toBe(0);
+  });
+  it("R5b (review): 5 reward units (real spend 70000) do not satisfy a nilai syarat of 74000", () => {
+    const def = nilaiOnly(74000, { hasil: { items: [ref(ANC)], reward_qty: 5, discount: nominal(1000) } });
+    expect(calc([line(0, ANC, 5, 15000)], [def]).discount_total).toBe(0);
+    const ok = calc([line(0, ANC, 5, 15000)], [nilaiOnly(70000, { hasil: { items: [ref(ANC)], reward_qty: 5, discount: nominal(1000) } })]);
+    expect(ok.claims[0]).toMatchObject({ grants: 5, discount_total: 5000, sets_consumed: 1 });
+  });
+  it("legitimate: the reward item is ALSO a syarat line of the same promo (3 ANC: 2 syarat + 1 reward, paid 44000)", () => {
+    const def = (nilai: number): SyaratHasilDef => ({ id: "R5D", repeat: false, syarat: [{ kind: "qty", min: 2, items: [ref(ANC)] }, { kind: "nilai", min: nilai }], hasil: { items: [ref(ANC)], discount: nominal(1000) } });
+    expect(calc([line(0, ANC, 3, 15000)], [def(44000)]).claims[0]).toMatchObject({ grants: 1, discount_total: 1000 });
+    expect(calc([line(0, ANC, 3, 15000)], [def(44001)]).discount_total).toBe(0);
+  });
+  it("kelipatan is reduced to the largest set count whose OWN reward discount still leaves nilai >= sets x min", () => {
+    // 85000 pre-discount -> 4 sets by value, 4 reward units available; 4 sets need 80000 but pay 85000-20000=65000; 3 sets need 60000 and pay 70000
+    const def = nilaiOnly(20000, { hasil: { items: [ref(ANC)], discount: nominal(5000) } });
+    const r = calc([line(0, WHISKAS, 1, 25000), line(1, ANC, 4, 15000)], [def]);
+    expect(r.claims[0]).toMatchObject({ sets_consumed: 3, grants: 3, discount_total: 15000 });
+    // when even one set does not fit nothing is claimed
+    expect(calc([line(0, ANC, 2, 15000)], [nilaiOnly(30000, { hasil: { items: [ref(ANC)], discount: nominal(5000) } })]).discount_total).toBe(0);
+  });
+  it("a LATER promo may not push an earlier claimed nilai promo below its threshold (the database counts every claim discount)", () => {
+    const bolt: SyaratHasilDef = { id: "A", repeat: false, syarat: [{ kind: "qty", min: 2, items: [ref(BOLT_IKAN)] }], hasil: { items: [ref(ANC)], discount: nominal(1000) } };
+    const cart = [line(0, BOLT_IKAN, 2, 20000), line(1, ANC, 1, 15000), line(2, WHISKAS, 1, 45000)]; // 100000
+    const nilaiB = (min: number): SyaratHasilDef => ({ id: "B", repeat: false, syarat: [{ kind: "nilai", min }], hasil: { items: [ref(WHISKAS)], discount: nominal(500) } });
+    // B at 99500 and A together would leave 98500: only one of them can hold; the better (A, 1000) wins
+    const tight = calc(cart, [bolt, nilaiB(99500)]);
+    expect(tight.claims.map((c) => c.promo_id)).toEqual(["A"]);
+    expect(tight.discount_total).toBe(1000);
+    // B at 98500: A (-1000) then B (-500) leave exactly 98500: both apply
+    const both = calc(cart, [bolt, nilaiB(98500)]);
+    expect(both.claims.map((c) => c.promo_id).sort()).toEqual(["A", "B"]);
+    expect(both.discount_total).toBe(1500);
+    // B at 98501: not both
+    expect(calc(cart, [bolt, nilaiB(98501)]).claims.map((c) => c.promo_id)).toEqual(["A"]);
+  });
+  it("the adapter: a non-claim promoDiscount and the reward's own discount both reduce the counted money (end to end)", () => {
+    const anc = { item_id: ANC, qty: 1, harga: 15000, satuan: "PCS", faktor: 1, officialPrice: 15000 };
+    expect(calc(syaratHasilLinesFromCart([anc]), [nilaiOnly(14500)]).discount_total).toBe(0);
+    expect(calc(syaratHasilLinesFromCart([anc]), [nilaiOnly(14000)]).discount_total).toBe(1000);
+  });
+  it("H2: a non-finite harga / qty / discount through the adapter counts 0 toward nilai (never the official value)", () => {
+    const anc = { item_id: ANC, qty: 1, harga: 15000, satuan: "PCS", faktor: 1, officialPrice: 15000 };
+    const rows = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY].flatMap((bad) => [
+      { item_id: "jasa", qty: 1, harga: bad, satuan: "PCS", faktor: 1, officialPrice: 600000 },
+      { item_id: "jasa", qty: bad, harga: 600000, satuan: "PCS", faktor: 1, officialPrice: 600000 },
+    ]);
+    for (const bad of rows) {
+      const lines = syaratHasilLinesFromCart([bad, anc]);
+      expect(lines[0].charged, JSON.stringify(bad)).toBe(0);
+      expect(calc(lines, [nilaiOnly(500000)]).discount_total, JSON.stringify(bad)).toBe(0);
+    }
   });
 });
