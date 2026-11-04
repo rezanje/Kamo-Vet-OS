@@ -470,7 +470,7 @@ def atomic_checks(db, text):
         try:
             holder.stdin.write("begin;\nlock table public.prescription_items in access share mode;\nselect 'held';\nselect pg_sleep(60);\n"); holder.stdin.flush()
             assert holder.stdout.readline().strip() == 'held'
-            rc, stderr, secs = psql_timed(db, 'atom_lock', wrap(text), timeout=40)
+            rc, stderr, secs = psql_timed(db, 'atom_lock', wrap(text), timeout=25)
         finally:
             holder.kill(); holder.wait()
         lock_base = footprint(db)
