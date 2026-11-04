@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 const test = vi.hoisted(() => ({ tax: { mode_pkp: true, ppn_rate: 12 } as {mode_pkp:boolean;ppn_rate:number}|null }));
+vi.mock("@/lib/service-performers-server", () => ({ loadServiceStaff: async () => [], loadBranchGroomingPolicy: async () => ({ applies: false, doctorRequired: false }) }));
 vi.mock('@/lib/clinic-payment', () => ({ loadClinicPaymentMaster: async () => ({ obat: [], jasa: [] }), loadClinicPackages: async () => [] }));
 vi.mock('@/lib/pajak', () => ({ getPajakSettings: async () => { throw new Error('Do not use a separate fallible tax fallback after the trusted quote'); } }));
 vi.mock('@/lib/dp-minimal', () => ({ getDpMinimalPercent: async () => 50, bolehMenerobosDp: () => false }));

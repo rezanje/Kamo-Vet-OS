@@ -4,6 +4,8 @@ import { Popup } from "@/components/Popup";
 import type { createClient } from "@/lib/supabase/server";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { customerPackageLines } from "@/lib/clinic-package-print";
+import { loadBranchGroomingPolicy, loadServiceStaff } from "@/lib/service-performers-server";
+import type { ServiceStaff } from "@/lib/service-performers";
 
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
@@ -12,9 +14,9 @@ import { PaymentPageHeading, PaymentPatientHeader, type PaymentPatient } from ".
 import { InpatientCashier } from "./InpatientCashier";
 const rp=(n:number)=>`Rp ${Math.round(n).toLocaleString("id-ID")}`;
 type Query={error?:string;success?:string;invoice?:string;receipt?:string;applications?:string};
-export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,query,patient,catatanResep = null,stayStatus}: {
+export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,query,patient,catatanResep = null,stayStatus,visitDoctorId = null}: {
  db:Awaited<ReturnType<typeof createClient>>;visitId:string;recordId:string;branchId:string|null;userId:string;query:Query;
- patient:PaymentPatient;catatanResep?:string|null;stayStatus?:string;
+ patient:PaymentPatient;catatanResep?:string|null;stayStatus?:string;visitDoctorId?:string|null;
 }) {
  const [read,master,minDpPercent,profile]=await Promise.all([
   db.rpc("clinic_read_inpatient_cashier",{p_record_id:recordId,p_visit_id:visitId}),loadClinicPaymentMaster(db,branchId),getDpMinimalPercent(db),
@@ -30,6 +32,15 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
  if(editable) {
   try { packages = await loadClinicPackages(db); }
   catch { return <section className="card" role="alert">Resep paket rawat inap belum dapat diverifikasi. Muat ulang sebelum memproses uang.</section>; }
+ }
+ // Tenaga penjual (Dokter / Non-dokter) untuk item baru di kasir — sama seperti pembayaran rawat jalan.
+ // Gagal baca = gagal tertutup: kasir tanpa pemilih akan menagih tanpa atribusi/komisi.
+ let serviceStaff: ServiceStaff[] = [];
+ let grooming = { applies: false, doctorRequired: false };
+ if(editable) {
+  try {
+   [serviceStaff, grooming] = await Promise.all([loadServiceStaff(db, branchId), branchId ? loadBranchGroomingPolicy(db, branchId) : Promise.resolve(grooming)]);
+  } catch { return <section className="card" role="alert">Daftar tenaga penjual cabang belum dapat diverifikasi. Muat ulang sebelum memproses uang.</section>; }
  }
  const savedInvoice=query.invoice?data.history.find(i=>i.id===query.invoice&&!i.correction_pending):null;
  const savedReceipt=query.receipt?data.receipts.find(r=>r.id===query.receipt&&r.status==="aktif"):null;
@@ -55,7 +66,7 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
   {stayStatus&&<div style={{fontSize:11,color:"var(--tm)",marginBottom:12}}>{stayStatus}</div>}
   <Popup message={query.error}/>
   {editable&&!query.error&&saved&&<Popup tone="success" title={settled&&data.history.length?"Pembayaran lunas":savedApplications?"Saldo pemilik diterapkan":savedReceipt?"Pembayaran diterima":"Transaksi tersimpan"} message={`${savedInvoice?.invoice_no??savedReceipt?.no_kwitansi??"Pemakaian saldo pemilik"} · Sisa pembayaran ${rp(editable.quote.remaining)}`}/>}
-  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} patient={patient} catatanResep={catatanResep} cashierName={profile.data?.full_name??"Akun kasir"} masterObat={master.obat} masterJasa={master.jasa} packages={packages}
+  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} patient={patient} catatanResep={catatanResep} cashierName={profile.data?.full_name??"Akun kasir"} masterObat={master.obat} masterJasa={master.jasa} packages={packages} serviceStaff={serviceStaff} visitDoctorId={visitDoctorId} groomingDoctorRequired={grooming.doctorRequired} groomingApplies={grooming.applies}
    ppnRate={editable.tax_settings.mode_pkp?Number(editable.tax_settings.ppn_rate):0} minDpPercent={minDpPercent} bolehTerobos={bolehMenerobosDp(profile.data?.role??null)}/>:<><PaymentPatientHeader patient={patient}/><section className="card" role="status">Riwayat tetap dapat dibaca. Buka shift klinik milik Anda sebelum mengubah keranjang atau memproses pembayaran. <Link href="/klinik/shift">Buka shift</Link></section></>}
   <section className="card" style={{marginTop:12}}><h2 style={{fontSize:16}}>INVOICE / RIWAYAT TAHAP · BACA SAJA</h2>
    <p>Setiap pilihan membuka invoice yang benar-benar diterbitkan, bukan nomor invoice gabungan baru.</p>
