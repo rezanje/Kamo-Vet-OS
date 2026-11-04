@@ -16,6 +16,8 @@ import { resolvePosPayments, type PosPaymentPart } from "@/lib/pos-payments";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { totalPotonganPromo, type PromoHitung } from "@/lib/promo-hitung";
 import { aggregateServiceLines, serviceLinePromos } from "@/lib/service-line-promos";
+import { composeSyaratHasilCart } from "@/lib/promo-syarat-hasil-checkout";
+import type { SyaratHasilDef } from "@/lib/promo-syarat-hasil";
 import { posNetTotal, posSubtotal } from "@/lib/pos-money";
 import { bacaKode, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
 import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
@@ -46,14 +48,17 @@ const sameProductUnit = (a: Line, b: Line) => a.item_id === b.item_id && a.satua
 // ulang di layar, tidak perlu bolak-balik ke server.
 export type HargaPerCabang = Record<string, Record<string, number>>; // branchId → "itemId|satuan" → harga
 const TANPA_PELANGGAN: Cust[] = [];
+const NO_SH_DEFS: SyaratHasilDef[] = [];
 
-export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
+export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, syaratHasilPerCabang, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
   items: Item[];
   /** Pelanggan yang sudah diketahui (opsional). Daftar lengkap tidak lagi dikirim — dicari di server. */
   customers?: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
   /** P03: peringatan jual di bawah HPP dari simpan sebelumnya; wajib dikonfirmasi sebelum simpan ulang. */
   hppWarning?: string | null; hppSignature?: string | null;
   promoPerCabang?: Record<string, PromoHitung[]>;
+  /** Promo "syarat -> hasil" aktif per cabang. Hanya diisi server bila flag rilis DB menyala; tanpa ini layar persis seperti sebelumnya (tahap 4). */
+  syaratHasilPerCabang?: Record<string, SyaratHasilDef[]>;
   /** C05: kode kampanye aktif + voucher tujuannya — hanya untuk tampilan; server memeriksa ulang. */
   kodeKampanye?: KodeKampanye[];
   voucherKampanye?: VoucherRow[];
@@ -224,11 +229,19 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
   // C05: kode kampanye terikat promo → promo itu ikut dipotong; terikat voucher → rumus voucher itu.
   const kode = bacaKode(voucher, kodeKampanye);
   const promoCabang = promoDenganKode(promoPerCabang[branchId] ?? [], kode.promoId);
-  const rincianPromo = serviceLinePromos(promoCabang, cart.map(line => {
+  const legacyBaris = (lines: typeof cart, only?: string) => serviceLinePromos(only === undefined ? promoCabang : promoCabang.filter((p) => p.id === only), lines.map(line => {
     const unit = katalog.find(item => item.id === line.item_id)?.units.find(unit => unit.unit === line.satuan);
     return {...line, officialPrice: unit?.sell_price, faktor: unit?.factor, manualOverride: line.harga !== unit?.sell_price};
   }));
-  const promoDiscount = totalPotonganPromo(rincianPromo);
+  const rincianPromo = legacyBaris(cart);
+  // Promo "syarat -> hasil": komposer yang sama dengan server (checkoutSale); tanpa pemilih di layar ini. Server menghitung ulang dan melepas
+  // promo yang hadiahnya akan terjual di bawah HPP (layar tidak tahu HPP).
+  const shDefs = kode.promoId ? NO_SH_DEFS : (syaratHasilPerCabang?.[branchId] ?? NO_SH_DEFS);
+  const komposisi = shDefs.length === 0 ? null : composeSyaratHasilCart({
+    rows: cart.map(line => ({ ...line, officialPrice: katalog.find(item => item.id === line.item_id)?.units.find(unit => unit.unit === line.satuan)?.sell_price })),
+    defs: shDefs, legacy: (list, only) => legacyBaris(list as unknown as typeof cart, only), mode: "auto",
+  });
+  const promoDiscount = komposisi ? komposisi.savings.total : totalPotonganPromo(rincianPromo);
   const infoMap = useMemo(() => new Map(Object.entries(infoBarang)), [infoBarang]);
   const diskonKategori = diskonGolonganKeranjang(
     aggregateServiceLines(cart), cust?.golonganId ? aturanDiskon[cust.golonganId] ?? [] : [],
@@ -244,7 +257,7 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
       const voucherRow = voucherKampanye.find((v) => v.code === kode.voucherCode) ?? null;
       const dasarVoucher = posNetTotal(subtotal, promoDiscount);
       tolakKode = pesanVoucherDitolak(voucherRow, hariIni, {
-        dasar: dasarVoucher, adaPromoOtomatis: rincianPromo.length > 0,
+        dasar: dasarVoucher, adaPromoOtomatis: komposisi ? komposisi.hitCount > 0 : rincianPromo.length > 0,
         customerId: cust?.id ?? null, categoryId: cust?.golonganId ?? null,
       });
       if (!tolakKode && voucherRow) voucherVal = potonganVoucher(dasarVoucher, voucherRow);
@@ -421,6 +434,13 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
           <div style={{ borderTop: ".5px solid var(--bd)", paddingTop: 7 }}>
             <Row k="Subtotal" v={rp(subtotal)} />
             {promoDiscount > 0 && <Row k="Promo otomatis" v={`-${rp(promoDiscount)}`} />}
+            {komposisi && komposisi.strategy === "syarat_hasil" && (
+              <div data-testid="pos-promo-diterapkan" style={{ fontSize: 10.5, color: "#15803d", margin: "-2px 0 6px", lineHeight: 1.45 }}>
+                <b><i className="ti ti-discount-2" /> Promo bundling</b>
+                {komposisi.applied.filter((a) => a.kind === "syarat_hasil").map((a) => <div key={a.promo_id}>{a.name ?? "Promo"} · hemat {rp(a.discount)}</div>)}
+                <div style={{ color: "var(--tm)" }}>Bila hadiahnya akan terjual di bawah modal (HPP) tanpa izin Owner, server melepas promo ini dan total menjadi lebih tinggi.</div>
+              </div>
+            )}
             {diskonKategori > 0 && cust?.golongan && (
               <Row k={`Diskon ${cust.golongan.nama}`} v={`-${rp(diskonKategori)}`} />
             )}

@@ -6,6 +6,7 @@ import { loadServiceStaff } from "@/lib/service-performers-server";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
 import { loadPromoAktif } from "@/lib/promo-hitung";
+import { loadSyaratHasilPerCabang } from "@/lib/promo-syarat-hasil-checkout";
 import { readCompleteList } from "@/lib/checked-list";
 import { loadKodeKampanyeAktif } from "@/lib/kode-kampanye";
 import { loadActiveVouchers } from "@/lib/voucher-loader";
@@ -76,6 +77,8 @@ export default async function TransaksiPage({
       .map(async branch => [branch.id, await loadServiceStaff(supabase, branch.id)] as const)),
   ]);
 
+  const syaratHasilPerCabang = await loadSyaratHasilPerCabang(supabase, (branches ?? []).map(branch => branch.id));
+
   const { data: openShift } = await supabase
     .from("cashier_shifts").select("id").eq("opened_by", user?.id ?? "").eq("status", "open")
     .eq("shift_type", "petshop").maybeSingle();
@@ -117,6 +120,7 @@ export default async function TransaksiPage({
         groomingAppliesByBranch={Object.fromEntries((branches ?? []).map(branch => [branch.id, isGroomingOutlet(branch.type)]))}
         hargaPerCabang={hargaPerCabang}
         promoPerCabang={Object.fromEntries(promoEntries)}
+        syaratHasilPerCabang={syaratHasilPerCabang}
         aturanDiskon={Object.fromEntries(discountEntries)}
         infoBarang={Object.fromEntries(itemInfo)}
         kodeKampanye={kodeKampanye}
