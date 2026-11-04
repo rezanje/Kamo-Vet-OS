@@ -112,6 +112,19 @@ export async function loadSyaratHasilKasir(supabase: AnyClient, branchId: string
   return { released: true, pickerReleased, belowHppReleased, defs };
 }
 
+/**
+ * Back-office screen (stage 4): definitions per branch, DISPLAY ONLY. Undefined when nothing applies anywhere (the screen stays the legacy one).
+ * A failing read only hides the preview: checkoutSale loads its own definitions and fails closed.
+ */
+export async function loadSyaratHasilPerCabang(supabase: AnyClient, branchIds: readonly string[]): Promise<Record<string, SyaratHasilDef[]> | undefined> {
+  const entries = await Promise.all(branchIds.map(async (id) => {
+    try { return [id, (await loadSyaratHasilKasir(supabase, id)).defs] as const; }
+    catch (error) { console.error("[pos/transaksi] promo syarat-hasil tidak terbaca untuk tampilan:", error); return [id, [] as SyaratHasilDef[]] as const; }
+  }));
+  const present = entries.filter(([, defs]) => defs.length > 0);
+  return present.length > 0 ? Object.fromEntries(present) : undefined;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Pure composition
 // ---------------------------------------------------------------------------------------------

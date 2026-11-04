@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadPromoAktif } from "../promo-hitung";
-import { loadSyaratHasilKasir, pesanPromoSyaratHasil, SYARAT_HASIL_OFF } from "../promo-syarat-hasil-checkout";
+import { loadSyaratHasilKasir, loadSyaratHasilPerCabang, pesanPromoSyaratHasil, SYARAT_HASIL_OFF } from "../promo-syarat-hasil-checkout";
 
 type Row = Record<string, unknown>;
 const legacy = (id: string, extra: Row = {}) => ({ id, name: id, rule: {}, branch_ids: null, valid_from: null, valid_until: null, is_active: true, auto_apply: true, min_qty: null, max_qty: null, kelipatan: false, discount_type: "nominal", discount_value: 2000, ...extra });
@@ -101,5 +101,23 @@ describe("pesanPromoSyaratHasil", () => {
     expect(pesanPromoSyaratHasil("PROMO_SH_NILAI: x")).not.toContain("PROMO_SH");
     expect(pesanPromoSyaratHasil("Harga neto Persediaan di bawah HPP FIFO")).toBeNull();
     expect(pesanPromoSyaratHasil(undefined)).toBeNull();
+  });
+});
+
+describe("loadSyaratHasilPerCabang (back-office display, stage 4)", () => {
+  it("no active syarat_hasil promo: undefined (the screen stays the legacy one) and no flag RPC", async () => {
+    const db = database([legacy("a")], { syarat_hasil: true });
+    expect(await loadSyaratHasilPerCabang(db, ["own", "other"])).toBeUndefined();
+    expect(db.log.rpc).toEqual([]);
+  });
+  it("released: only branches that have definitions are present, branch filters apply", async () => {
+    const db = database([sh("x", { branch_ids: ["own"] })], { syarat_hasil: true, promo_picker: false, below_hpp: false });
+    const r = await loadSyaratHasilPerCabang(db, ["own", "other"]);
+    expect(Object.keys(r ?? {})).toEqual(["own"]);
+    expect(r?.own.map((d) => d.id)).toEqual(["x"]);
+  });
+  it("a failing flag read only hides the preview (the server checkout stays authoritative and fails closed itself)", async () => {
+    const db = database([sh("x")], { syarat_hasil: new Error("XX000") });
+    expect(await loadSyaratHasilPerCabang(db, ["own"])).toBeUndefined();
   });
 });
