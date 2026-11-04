@@ -92,7 +92,7 @@ def main():
     with NativePostgres(args.pg_bin) as pg:
         pg.sql(hris.PLATFORM)
         pg.sql(hris.PERAN)
-        lain = [f for f in sorted(MIGRATIONS.glob("*.sql")) if f.name != MIGRASI.name]
+        lain = [f for f in sorted(MIGRATIONS.glob("*.sql")) if f.name < MIGRASI.name]  # hanya yang lebih tua; migrasi lebih baru menambal fungsi ini dan diuji suite masing-masing
         for berkas in lain:
             if berkas.name in hris.SEBELUM:
                 pg.sql(hris.SEBELUM[berkas.name])
