@@ -12,6 +12,8 @@ import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import type { InpatientCashierData, InpatientCashierReadOnly } from "@/lib/inpatient-cashier";
 import { PaymentPageHeading, PaymentPatientHeader, type PaymentPatient } from "./PaymentPresentation";
 import { InpatientCashier } from "./InpatientCashier";
+// Sama dengan penjaga database: DOKTER tidak mengganti pelaksana di kasir (tidak melakukan pembayaran).
+const PERAN_GANTI_PELAKSANA=["OWNER","ADMIN","FINANCE","STAFF"];
 const rp=(n:number)=>`Rp ${Math.round(n).toLocaleString("id-ID")}`;
 type Query={error?:string;success?:string;invoice?:string;receipt?:string;applications?:string};
 export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,query,patient,catatanResep = null,stayStatus,visitDoctorId = null}: {
@@ -66,7 +68,7 @@ export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,
   {stayStatus&&<div style={{fontSize:11,color:"var(--tm)",marginBottom:12}}>{stayStatus}</div>}
   <Popup message={query.error}/>
   {editable&&!query.error&&saved&&<Popup tone="success" title={settled&&data.history.length?"Pembayaran lunas":savedApplications?"Saldo pemilik diterapkan":savedReceipt?"Pembayaran diterima":"Transaksi tersimpan"} message={`${savedInvoice?.invoice_no??savedReceipt?.no_kwitansi??"Pemakaian saldo pemilik"} · Sisa pembayaran ${rp(editable.quote.remaining)}`}/>}
-  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} patient={patient} catatanResep={catatanResep} cashierName={profile.data?.full_name??"Akun kasir"} masterObat={master.obat} masterJasa={master.jasa} packages={packages} serviceStaff={serviceStaff} visitDoctorId={visitDoctorId} groomingDoctorRequired={grooming.doctorRequired} groomingApplies={grooming.applies}
+  {editable?<InpatientCashier key={editable.snapshot} data={editable} visitId={visitId} recordId={recordId} requestKey={randomUUID()} patient={patient} catatanResep={catatanResep} cashierName={profile.data?.full_name??"Akun kasir"} masterObat={master.obat} masterJasa={master.jasa} packages={packages} serviceStaff={serviceStaff} visitDoctorId={visitDoctorId} groomingDoctorRequired={grooming.doctorRequired} groomingApplies={grooming.applies} canChangePerformers={PERAN_GANTI_PELAKSANA.includes(profile.data?.role??"")}
    ppnRate={editable.tax_settings.mode_pkp?Number(editable.tax_settings.ppn_rate):0} minDpPercent={minDpPercent} bolehTerobos={bolehMenerobosDp(profile.data?.role??null)}/>:<><PaymentPatientHeader patient={patient}/><section className="card" role="status">Riwayat tetap dapat dibaca. Buka shift klinik milik Anda sebelum mengubah keranjang atau memproses pembayaran. <Link href="/klinik/shift">Buka shift</Link></section></>}
   <section className="card" style={{marginTop:12}}><h2 style={{fontSize:16}}>INVOICE / RIWAYAT TAHAP · BACA SAJA</h2>
    <p>Setiap pilihan membuka invoice yang benar-benar diterbitkan, bukan nomor invoice gabungan baru.</p>

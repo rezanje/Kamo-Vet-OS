@@ -40,6 +40,8 @@ type Line = {
   salesperson_name?: string | null;
   source_invoice_item_id?: string | null;
   service_performers?: ServicePerformersSnapshot | null;
+  /** Rawat inap: baris pending yang masih menunjuk invoice dibatalkan — pelaksana tersegel, pemilih tidak dibuka. */
+  performers_sealed?: boolean;
   kategori?: string | null;
   deskripsi: string; qty: number; harga: number; item_id?: string | null; satuan?: string | null;
   prescription_item_id?: string | null; recipe_id?: string | null;
@@ -83,7 +85,7 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, packageQuantityLocked = sealedPerformers, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, performersForNewRows = false, onPickPackage, onPackageQty, onRemovePackage }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, packageQuantityLocked = sealedPerformers, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, performersForNewRows = false, performersForPendingRows = false, onPickPackage, onPackageQty, onRemovePackage }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; packageQuantityLocked?: boolean; groomingDoctorRequired?: boolean;
@@ -98,6 +100,10 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   /** Rawat inap: baris sumber/pending tetap tersegel (database tidak mengubah pelaksananya), tetapi baris BARU
    * yang ditambah kasir (manual atau isi paket) boleh diberi Dokter / Non-dokter seperti pembayaran rawat jalan. */
   performersForNewRows?: boolean;
+  /** Rawat inap (Andri 4 Nov 2026: kasir boleh mengganti dokter): baris pending yang SUDAH masuk keranjang
+   * juga boleh diganti Dokter / Non-dokter. Racikan (terkunci) dan baris tertagih tetap tersegel; database
+   * menegakkan peran, karyawan aktif, cabang, dan hanya untuk keranjang pending kunjungan itu. */
+  performersForPendingRows?: boolean;
   /** Paket dipilih dari daftar: baris ini diganti isi paketnya (obat di sini, jasa di tabel Jasa). */
   onPickPackage?: (rowIndex: number, packageId: string) => void;
   /** Jumlah paket diubah: semua baris isi paket yang sama (obat & jasa) ikut menyesuaikan. */
@@ -105,8 +111,9 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   /** Paket dihapus: semua isinya (obat & jasa) ikut terhapus. */
   onRemovePackage?: (packageId: string) => void;
 }) {
-  const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id));
-  const rowSealed = (r: Line) => sealedPerformers && !(performersForNewRows && !r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id);
+  const pendingEditable = (r: Line) => performersForPendingRows && !!r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id && !r.performers_sealed;
+  const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id) && !pendingEditable(r));
+  const rowSealed = (r: Line) => sealedPerformers && !(performersForNewRows && !r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id) && !pendingEditable(r);
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => setRows([...rows, { key: crypto.randomUUID(), deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0, service_performers: visitDefaultPerformers(defaultDoctorId) }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
@@ -164,7 +171,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
             rows.findIndex(row => row.package_item_id === r.package_item_id) === i
               ? <PaketTagihan key={`paket-${r.package_item_id}`} nomor={i + 1} nama={packages.find(option => option.id === r.package_item_id)!.name}
                   isi={rows.filter(row => row.package_item_id === r.package_item_id)} allowUnits={allowUnits} discountsDisabled={discountsDisabled}
-                  staff={serviceStaff} performerLocked={rowSealed(r) || performerLocked(r)} quantityLocked={packageQuantityLocked} allowDetach={!sealedPerformers}
+                  staff={serviceStaff} performerLocked={rows.filter(row => row.package_item_id === r.package_item_id).some(row => rowSealed(row) || performerLocked(row))} quantityLocked={packageQuantityLocked} allowDetach={!sealedPerformers}
                   onJumlah={jumlah => onPackageQty ? onPackageQty(r.package_item_id!, jumlah) : undefined}
                   onDiskon={diskon => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, diskon_persen: diskon } : row))}
                   onPelaksana={value => setRows(rows.map(row => row.package_item_id === r.package_item_id ? { ...row, service_performers: value } : row))}

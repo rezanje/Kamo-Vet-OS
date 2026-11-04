@@ -68,6 +68,7 @@ export function resizeInpatientPackage<L extends PackageLine>(rows: L[], id: str
   return rows.map(row => row.package_item_id === id ? { ...row, qty: row.qty * count / previous, package_qty: count } : row);
 }
 
-export type InpatientCashierRow = { id:string; medical_record_id?:string; item_id:string|null; nama_obat:string; qty:number; harga:number; satuan:string|null; jenis:string; compound_recipe_id?:string|null; bmhp_components?:unknown; package_item_id?:string|null; package_qty?:number|null; service_performers?:ServicePerformersSnapshot|null };
+export type InpatientCashierRow = { id:string; medical_record_id?:string; item_id:string|null; nama_obat:string; qty:number; harga:number; satuan:string|null; jenis:string; compound_recipe_id?:string|null; bmhp_components?:unknown; package_item_id?:string|null; package_qty?:number|null; service_performers?:ServicePerformersSnapshot|null;
+  /** true = baris pending ini masih menunjuk invoice yang dibatalkan/terbit ulang: pelaksananya tersegel (database menolak penggantian). */ performers_sealed?:boolean };
 export type InpatientCashierReadOnly = Pick<InpatientCashierData,"history"|"receipts"|"applications"> & {state:"SHIFT_REQUIRED";quote:null;snapshot:null};
 export type InpatientCashierData = {state?:"EDITABLE";compound_pending?:boolean;tax_settings:{mode_pkp:boolean;ppn_rate:number|string};snapshot:string;rows:InpatientCashierRow[];quote:RanapPaymentQuote;history:{id:string;invoice_no:string;total:number;received:number;dp_amount:number;paid_status:string;correction_pending:boolean;lines:InpatientHistoryRow[]}[];receipts:{id:string;no_kwitansi:string;total:number;status:string;parts:{metode:string;amount:number}[]}[];applications:{id:string;invoice_id:string;amount:number;released_at:string|null}[]};
