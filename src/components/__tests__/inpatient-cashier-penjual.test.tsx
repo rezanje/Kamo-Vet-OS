@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Andri 3 Nov 2026: di pembayaran rawat inap kasir tidak bisa menambahkan tenaga penjual
-// (Dokter / Non-dokter) pada item yang ditambah di kasir. Baris pending dari rekam medis
-// tetap tersegel (database tidak mengubah pelaksananya); hanya baris BARU yang boleh diisi.
+// (Dokter / Non-dokter) pada item yang ditambah di kasir. (Baris pending yang sudah masuk kini
+// boleh diganti pelaksananya — Andri 4 Nov 2026; lihat inpatient-cashier-ganti-pelaksana.test.tsx.)
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -66,13 +66,6 @@ it("item baru yang ditambah kasir punya pilihan Dokter dan Non-dokter, default d
   expect(payload()[0].service_performers).toEqual({ doctor_id: doctor, staff_id: null });
   await selectValue(nonDokter!, groomer);
   expect(payload()[0].service_performers).toEqual({ doctor_id: doctor, staff_id: groomer });
-});
-
-it("baris pending dari rekam medis tetap tersegel: tanpa pemilih, pelaksana lama ikut apa adanya", async () => {
-  const sealed = { doctor_id: doctor, doctor_name: "drh. Fiktif", staff_id: null, staff_name: null };
-  await render([{ id: "old-1", item_id: material, nama_obat: "Bahan Isi", qty: 1, harga: 5000, satuan: "pcs", jenis: "obat", service_performers: sealed }]);
-  expect(host.querySelectorAll("select").length).toBe(0);
-  expect(payload()[0].service_performers).toEqual(sealed);
 });
 
 it("isi Grup yang dipilih di kasir ranap dapat diberi pelaksana dan default dokter PJ", async () => {

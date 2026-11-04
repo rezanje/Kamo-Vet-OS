@@ -83,7 +83,7 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, packageQuantityLocked = sealedPerformers, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, performersForNewRows = false, onPickPackage, onPackageQty, onRemovePackage }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, packageQuantityLocked = sealedPerformers, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, performersForNewRows = false, performersForPendingRows = false, onPickPackage, onPackageQty, onRemovePackage }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; packageQuantityLocked?: boolean; groomingDoctorRequired?: boolean;
@@ -98,6 +98,10 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   /** Rawat inap: baris sumber/pending tetap tersegel (database tidak mengubah pelaksananya), tetapi baris BARU
    * yang ditambah kasir (manual atau isi paket) boleh diberi Dokter / Non-dokter seperti pembayaran rawat jalan. */
   performersForNewRows?: boolean;
+  /** Rawat inap (Andri 4 Nov 2026: kasir boleh mengganti dokter): baris pending yang SUDAH masuk keranjang
+   * juga boleh diganti Dokter / Non-dokter. Racikan (terkunci) dan baris tertagih tetap tersegel; database
+   * menegakkan peran, karyawan aktif, cabang, dan hanya untuk keranjang pending kunjungan itu. */
+  performersForPendingRows?: boolean;
   /** Paket dipilih dari daftar: baris ini diganti isi paketnya (obat di sini, jasa di tabel Jasa). */
   onPickPackage?: (rowIndex: number, packageId: string) => void;
   /** Jumlah paket diubah: semua baris isi paket yang sama (obat & jasa) ikut menyesuaikan. */
@@ -105,8 +109,9 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   /** Paket dihapus: semua isinya (obat & jasa) ikut terhapus. */
   onRemovePackage?: (packageId: string) => void;
 }) {
-  const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id));
-  const rowSealed = (r: Line) => sealedPerformers && !(performersForNewRows && !r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id);
+  const pendingEditable = (r: Line) => performersForPendingRows && !!r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id;
+  const performerLocked = (r: Line) => !!r.terkunci || (!!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id) && !pendingEditable(r));
+  const rowSealed = (r: Line) => sealedPerformers && !(performersForNewRows && !r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id) && !pendingEditable(r);
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => setRows([...rows, { key: crypto.randomUUID(), deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0, service_performers: visitDefaultPerformers(defaultDoctorId) }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));

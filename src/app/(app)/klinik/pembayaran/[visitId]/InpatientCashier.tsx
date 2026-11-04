@@ -10,11 +10,13 @@ import { visitDefaultPerformers, type ServiceStaff } from "@/lib/service-perform
 
 type Line = ComponentProps<typeof ItemTable>["rows"][number];
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, packages = [], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = false, ppnRate, minDpPercent, bolehTerobos }: {
+export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, packages = [], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = false, canChangePerformers = true, ppnRate, minDpPercent, bolehTerobos }: {
   data: InpatientCashierData; patient: PaymentPatient; catatanResep?: string | null; cashierName?: string;
   visitId: string; recordId: string; requestKey: string; masterObat: MasterItem[]; masterJasa: MasterItem[]; packages?: PackageOption[];
   /** Tenaga penjual (Dokter / Non-dokter) cabang kunjungan + dokter PJ — sama seperti pembayaran rawat jalan. */
-  serviceStaff?: ServiceStaff[]; visitDoctorId?: string | null; groomingDoctorRequired?: boolean; groomingApplies?: boolean; ppnRate: number; minDpPercent: number; bolehTerobos: boolean;
+  serviceStaff?: ServiceStaff[]; visitDoctorId?: string | null; groomingDoctorRequired?: boolean; groomingApplies?: boolean;
+  /** Andri 4 Nov 2026: kasir/admin/pemilik boleh mengganti Dokter / Non-dokter pada baris pending; dokter tidak (database juga menolak). */
+  canChangePerformers?: boolean; ppnRate: number; minDpPercent: number; bolehTerobos: boolean;
 }) {
   // Only the authoritative pending set enters this cart. No outpatient draft hook,
   // historical invoice prefill or visit-default performer rewrite belongs here.
@@ -76,8 +78,8 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
     extraFields={{ pending_snapshot: data.snapshot, pending_rows: JSON.stringify(payload), cart_reason: reason }}
     presentation={{ patient, cashierName, catatanResep,
       cart: <>
-        <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={next => setTable("obat", next)} master={masterObat} listId="ranap-obat" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} performersForNewRows onPickPackage={(index, id) => pickPackage(obat, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
-        <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={next => setTable("jasa", next)} master={masterJasa} listId="ranap-jasa" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} serviceRows groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} performersForNewRows onPickPackage={(index, id) => pickPackage(jasa, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
+        <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={next => setTable("obat", next)} master={masterObat} listId="ranap-obat" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} performersForNewRows performersForPendingRows={canChangePerformers} onPickPackage={(index, id) => pickPackage(obat, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
+        <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={next => setTable("jasa", next)} master={masterJasa} listId="ranap-jasa" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} serviceRows groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} performersForNewRows performersForPendingRows={canChangePerformers} onPickPackage={(index, id) => pickPackage(jasa, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
         {data.rows.filter(row => row.compound_recipe_id).map(row => <p key={row.id}>Racikan {row.nama_obat}: <Link href={`/klinik/racik/${row.compound_recipe_id}`}>Aksi koreksi / pengembalian bahan</Link> (tidak dikeluarkan ulang saat bayar).</p>)}
         <label className="flab">Alasan / catatan revisi keranjang<input className="fi" aria-label="Alasan revisi keranjang" value={reason} onChange={event => setReason(event.target.value)} minLength={3} maxLength={1000} /></label>
       </>,
