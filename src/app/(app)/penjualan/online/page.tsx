@@ -85,9 +85,14 @@ export default async function PenjualanOnlinePage({
           title="ORDER ONLINE"
           desc={`Marketplace & WA. Dana marketplace belum cair: ${rp(piutang)}.`}
           action={
-            <Link href="/penjualan/online/baru" className="btn-acc" style={{ textDecoration: "none" }}>
-              + Buat order
-            </Link>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Link href="/penjualan/online/impor" className="btn-def" style={{ textDecoration: "none" }}>
+                <i className="ti ti-file-import" /> Impor dari Shopee
+              </Link>
+              <Link href="/penjualan/online/baru" className="btn-acc" style={{ textDecoration: "none" }}>
+                + Buat order
+              </Link>
+            </div>
           }
         />
         <div style={{ overflowX: "auto" }}>
