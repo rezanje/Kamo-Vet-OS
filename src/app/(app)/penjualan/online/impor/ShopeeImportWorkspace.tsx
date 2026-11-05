@@ -6,7 +6,9 @@ import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { analisisImpor, kunciBaris, type AnalisisPesanan, type ExistingOrders } from "@/lib/shopee-import-match";
 import { pratinjauImporShopee, simpanImporShopee, type HasilImporOrder, type PratinjauImpor, type PilihanImpor } from "./actions";
 
-type Warehouse = { id: string; name: string; branch_name: string };
+import { kelompokPerCabang, labelTipeGudang, type GudangOnline } from "@/lib/online-gudang";
+
+type Warehouse = Pick<GudangOnline, "id" | "name" | "branch_name"> & { type?: string };
 
 const rp = (n: number) => `Rp ${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
 const CHUNK = 10;
@@ -101,10 +103,14 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
         <div className="fg" style={{ minWidth: 240 }}>
-          <label className="flab" htmlFor="gudang-impor">Gudang online *</label>
+          <label className="flab" htmlFor="gudang-impor">Cabang &amp; gudang *</label>
           <select id="gudang-impor" className="fi" aria-label="Gudang online" value={warehouseId} onChange={e => { setWarehouseId(e.target.value); reset(); }}>
             <option value="">Pilih gudang</option>
-            {warehouses.map(w => <option key={w.id} value={w.id}>{w.name} · {w.branch_name}</option>)}
+            {kelompokPerCabang(warehouses.map(w => ({ ...w, branch_id: "", type: w.type ?? "" }))).map(k => (
+              <optgroup key={k.cabang} label={k.cabang}>
+                {k.gudang.map(w => <option key={w.id} value={w.id}>{w.name}{w.type ? ` · ${labelTipeGudang(w.type)}` : ""} · {w.branch_name}</option>)}
+              </optgroup>
+            ))}
           </select>
         </div>
         <div className="fg" style={{ minWidth: 260 }}>

@@ -7,7 +7,7 @@ vi.mock("@/lib/supabase/server", () => ({
     auth: { getUser: async () => ({ data: { user: { id: "u" } } }) },
     from(table: string) {
       const q: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "not", "is", "order", "limit"]) q[m] = () => q;
+      for (const m of ["select", "eq", "in", "not", "is", "order", "limit"]) q[m] = () => q;
       q.maybeSingle = async () => ({ data: { role: db.role, is_active: db.active }, error: null });
       q.then = (ok: (v: unknown) => unknown) => ok(table === "warehouses" ? { data: db.warehouses, error: db.whError } : { data: [], error: null });
       return q;
@@ -19,7 +19,7 @@ vi.mock("@/app/(app)/penjualan/online/impor/actions", () => ({ pratinjauImporSho
 import ImporShopeePage from "@/app/(app)/penjualan/online/impor/page";
 import PenjualanOnlinePage from "@/app/(app)/penjualan/online/page";
 
-const wh = (id: string, branch: string) => ({ id, name: `Online ${branch}`, branches: { name: branch } });
+const wh = (id: string, branch: string, type = "ONLINE") => ({ id, name: `Online ${branch}`, branch_id: `b-${branch}`, type, branches: { name: branch } });
 beforeEach(() => { db.role = "STAFF"; db.active = true; db.warehouses = [wh("w-pusat", "Kamo Pusat"), wh("w-pandu", "Kamo Panduraya")]; db.whError = null; });
 
 it("halaman Penjualan Online punya tombol 'Impor dari Shopee' ke /penjualan/online/impor", async () => {
@@ -38,6 +38,15 @@ it("halaman impor: gudang cabang Panduraya terpilih otomatis bila hanya satu", a
 it("lebih dari satu gudang Panduraya atau tidak ada -> tidak ada pilihan bawaan (wajib memilih)", async () => {
   db.warehouses = [wh("w1", "Panduraya A"), wh("w2", "Panduraya B")];
   expect(renderToStaticMarkup(await ImporShopeePage())).not.toMatch(/<option value="w\d" selected/);
+});
+
+it("Panduraya punya gudang toko + gudang online -> gudang online tetap jadi bawaan; semua gudang tampil per cabang", async () => {
+  db.warehouses = [wh("w-toko", "Kamo Panduraya", "RETAIL"), wh("w-pandu", "Kamo Panduraya"), wh("w-pusat", "Kamo Pusat", "RETAIL")];
+  const html = renderToStaticMarkup(await ImporShopeePage());
+  expect(html).toMatch(/<option value="w-pandu" selected(="")?>/);
+  expect(html).toContain('<optgroup label="Kamo Panduraya">');
+  expect(html).toContain('<option value="w-toko">');
+  expect(html).toContain("Toko/Petshop");
 });
 
 it("tanpa gudang online / galat memuat gudang -> pesan, bukan formulir", async () => {
