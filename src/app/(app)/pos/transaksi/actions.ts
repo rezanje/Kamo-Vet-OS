@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { PESAN_PELANGGAN_DISEMBUNYIKAN, pelangganDisembunyikan } from "@/lib/pelanggan-server";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { stockOut } from "@/lib/inventory";
@@ -58,6 +59,11 @@ export async function checkoutSale(formData: FormData) {
   try { checkout = posCheckoutIdentity(formData, branchId); }
   catch (error) { redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Identitas transaksi tidak valid")}`); }
   await resumePosCheckout(supabase, user.id, checkout, "backoffice");
+  // Kartu yang disembunyikan Owner/Admin (mis. "CS Kamo Pusat") tidak boleh dapat transaksi baru.
+  let tersembunyi = false;
+  try { tersembunyi = await pelangganDisembunyikan(supabase, customerId); }
+  catch { redirect(`/pos/transaksi?error=${encodeURIComponent("Data pelanggan gagal dimuat. Coba lagi.")}`); }
+  if (tersembunyi) redirect(`/pos/transaksi?error=${encodeURIComponent(PESAN_PELANGGAN_DISEMBUNYIKAN)}`);
   const cashier = await loggedInCashier(supabase, user.id, branchId);
 
   let cart: CartLine[] = [];

@@ -10,12 +10,43 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 
 export class PelangganGagalDimuat extends Error {}
 
-/** Beberapa pelanggan yang cocok dengan ketikan (nama / no. HP), urut nama. */
+/**
+ * Kolom penanda sembunyi belum ada di database (migrasi 20261107010000 belum
+ * dipasang). Kode boleh rilis lebih dulu: pencarian tetap jalan seperti dulu.
+ */
+const kolomSembunyiBelumAda = (error: { code?: string; message?: string } | null) =>
+  !!error && (error.code === "42703" || error.code === "PGRST204" || /hidden_at/.test(error.message ?? ""));
+
+/** Pesan untuk kasir saat pelanggan terpilih ternyata sudah disembunyikan Owner/Admin. */
+export const PESAN_PELANGGAN_DISEMBUNYIKAN =
+  "Pelanggan ini sudah disembunyikan Owner/Admin dan tidak bisa dipakai untuk transaksi baru. Pilih pelanggan lain.";
+
+/** true bila kartu pelanggan disembunyikan dari transaksi baru. */
+export async function pelangganDisembunyikan(supabase: Db, id: string | null | undefined): Promise<boolean> {
+  if (!id) return false;
+  const { data, error } = await supabase.from("customers").select("hidden_at").eq("id", id).maybeSingle();
+  if (error) {
+    if (kolomSembunyiBelumAda(error)) return false;
+    throw new PelangganGagalDimuat("Data pelanggan gagal dimuat. Coba lagi.");
+  }
+  return !!(data as { hidden_at?: string | null } | null)?.hidden_at;
+}
+
+/**
+ * Beberapa pelanggan yang cocok dengan ketikan (nama / no. HP), urut nama.
+ * Kartu yang disembunyikan Owner/Admin (mis. "CS Kamo Pusat") tidak ikut muncul.
+ */
 export async function cariPelangganDb(supabase: Db, kueri: string, limit = BATAS_HASIL_PELANGGAN): Promise<PelangganDasar[]> {
   const filter = filterCariPelanggan(kueri);
   if (!filter) return [];
-  const { data, error } = await supabase.from("customers").select("id, name, phone")
-    .or(filter).order("name").order("id").limit(Math.max(1, Math.min(limit, 50)));
+  const batas = Math.max(1, Math.min(limit, 50));
+  const cari = (tanpaTersembunyi: boolean) => {
+    let q = supabase.from("customers").select("id, name, phone").or(filter);
+    if (tanpaTersembunyi) q = q.is("hidden_at", null);
+    return q.order("name").order("id").limit(batas);
+  };
+  let { data, error } = await cari(true);
+  if (kolomSembunyiBelumAda(error)) ({ data, error } = await cari(false));
   if (error) throw new PelangganGagalDimuat("Pencarian pelanggan gagal. Coba lagi.");
   return (data ?? []) as PelangganDasar[];
 }
