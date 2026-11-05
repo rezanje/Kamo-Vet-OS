@@ -48,7 +48,7 @@ describe("F4: rows named by the price-floor error are highlighted with their min
     expect(fixed.match(/data-harga-di-bawah-hpp="true"/g)).toHaveLength(1);
   });
   it("does not mark a different row that merely contains the name", () => {
-    const out = html({ lantaiHarga: lantai }, [{ key: "x", deskripsi: "Infus Refill Besar", qty: 1, harga: 10, item_id: "i9", satuan: "PCS" }]);
+    const out = html({ lantaiHarga: lantai }, [{ key: "x", deskripsi: "Infus Refill Besar", qty: 1, harga: 10, item_id: "i9", satuan: "PCS", prescription_item_id: "rx9" }]);
     expect(out).not.toContain("data-harga-di-bawah-hpp");
   });
   it("marks a package card named in the error", () => {
