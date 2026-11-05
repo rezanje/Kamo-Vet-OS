@@ -1,0 +1,385 @@
+{
+  "sales": [
+    {
+      "id": "49179767-d4bc-4c94-b6f2-47630adc383c",
+      "bayar": 88000,
+      "total": 88000,
+      "komisi": 0,
+      "pet_id": null,
+      "channel": null,
+      "kembali": 0,
+      "discount": 2000,
+      "no_struk": "POS-20261101-0009",
+      "revision": 0,
+      "shift_id": "cbcfb73b-71a4-43a9-97a9-fd8211ad15e5",
+      "subtotal": 90000,
+      "branch_id": "d25e7c15-9d98-4b4f-bab0-81383f5dce0c",
+      "voided_at": null,
+      "voided_by": null,
+      "buyer_name": null,
+      "cashier_id": "780c68a2-732e-4b56-9110-f16d09dc0c96",
+      "created_at": "2026-11-01T03:22:00.901287+00:00",
+      "customer_id": "9b9041e0-936c-45c8-ae63-c587f9eb3796",
+      "poin_earned": 88,
+      "void_reason": null,
+      "cashier_name": "DIMAS CAHYANA",
+      "checkout_key": "8a60d31d-3740-46ef-b659-6df6d1bca0c9",
+      "disbursed_at": null,
+      "external_ref": null,
+      "metode_bayar": "QRIS",
+      "payment_plan": [
+        {
+          "amount": 88000,
+          "method": "QRIS"
+        }
+      ],
+      "voucher_code": null,
+      "campaign_code": null,
+      "poin_digunakan": 0,
+      "salesperson_id": "5cef6262-8523-4a7d-94bc-921e1d37d3d4",
+      "diskon_kategori": 0,
+      "marketplace_status": null,
+      "merchant_fee_total": 0,
+      "cashier_employee_id": "5cef6262-8523-4a7d-94bc-921e1d37d3d4",
+      "checkout_fingerprint": "802617a9f573b3e73611dc8b3574131dfa0bc97634da95e004947cccd5dee9b5",
+      "payments_finalized_at": null,
+      "quest_effects_tracked": true
+    },
+    {
+      "id": "8f887ebb-b0ea-4638-8b1d-74df4a9d1e2f",
+      "bayar": 50000,
+      "total": 35000,
+      "komisi": 0,
+      "pet_id": null,
+      "channel": null,
+      "kembali": 15000,
+      "discount": 0,
+      "no_struk": "POS-20261101-0004-VKDX",
+      "revision": 0,
+      "shift_id": "829e185c-9e3c-46a8-b192-fde9b6a955ce",
+      "subtotal": 35000,
+      "branch_id": "0895e841-63c4-4efa-acf5-97e4226eb6e5",
+      "voided_at": null,
+      "voided_by": null,
+      "buyer_name": null,
+      "cashier_id": "e817efd9-4b91-4133-9b29-40405d021fd3",
+      "created_at": "2026-11-01T06:09:23.051178+00:00",
+      "customer_id": "3cde17e9-593f-4b1b-a45a-65f29f8dc104",
+      "poin_earned": 35,
+      "void_reason": null,
+      "cashier_name": "MUHAMMAD RAIDIKA HASYA",
+      "checkout_key": "be4aab67-8876-44dc-a3f7-ad8a339cb2c7",
+      "disbursed_at": null,
+      "external_ref": null,
+      "metode_bayar": "Tunai",
+      "payment_plan": [
+        {
+          "amount": 35000,
+          "method": "Tunai"
+        }
+      ],
+      "voucher_code": null,
+      "campaign_code": null,
+      "poin_digunakan": 0,
+      "salesperson_id": "c8cc9562-ccfa-49f6-ba2d-1eb269ec064e",
+      "diskon_kategori": 0,
+      "marketplace_status": null,
+      "merchant_fee_total": 0,
+      "cashier_employee_id": "c8cc9562-ccfa-49f6-ba2d-1eb269ec064e",
+      "checkout_fingerprint": "360269c2ebd8621b6a24cb3a3962fd918d3760a806e62d89fa96e336fa31fa4d",
+      "payments_finalized_at": null,
+      "quest_effects_tracked": true
+    },
+    {
+      "id": "50162dac-8686-430a-9ee7-18f9c2ccfb72",
+      "bayar": 105000,
+      "total": 105000,
+      "komisi": 0,
+      "pet_id": null,
+      "channel": null,
+      "kembali": 0,
+      "discount": 0,
+      "no_struk": "POS-20261101-0004-8GZC",
+      "revision": 0,
+      "shift_id": "26ec5b1b-fddd-4cb2-88c0-8d0ea60f6272",
+      "subtotal": 105000,
+      "branch_id": "8e490c92-9dca-4875-81b3-89639877a2fc",
+      "voided_at": null,
+      "voided_by": null,
+      "buyer_name": null,
+      "cashier_id": "57b8b832-16c7-468d-a55d-013257739dac",
+      "created_at": "2026-11-01T02:46:05.6134+00:00",
+      "customer_id": "a5bc6e1e-6629-464e-9fa1-7c1f4cae79c8",
+      "poin_earned": 105,
+      "void_reason": null,
+      "cashier_name": "MUHAMAD SUBHAN SHABIRI",
+      "checkout_key": "a5af5e2f-1c8b-44e4-8c81-b38013ce9410",
+      "disbursed_at": null,
+      "external_ref": null,
+      "metode_bayar": "Tunai",
+      "payment_plan": [
+        {
+          "amount": 105000,
+          "method": "Tunai"
+        }
+      ],
+      "voucher_code": null,
+      "campaign_code": null,
+      "poin_digunakan": 0,
+      "salesperson_id": "44fb49f9-1cf2-40ac-b65f-de3b174f10d1",
+      "diskon_kategori": 0,
+      "marketplace_status": null,
+      "merchant_fee_total": 0,
+      "cashier_employee_id": "44fb49f9-1cf2-40ac-b65f-de3b174f10d1",
+      "checkout_fingerprint": "9dd72f4c799ff64be6c86f8ee47b79295dacea9e448fdd9299206f86916d63f0",
+      "payments_finalized_at": null,
+      "quest_effects_tracked": true
+    }
+  ],
+  "sale_items": [
+    {
+      "id": "8c65dcac-a3ba-4978-a62b-703b19a8897b",
+      "hpp": 0,
+      "qty": 1,
+      "nama": "Catto 50gr Tuna",
+      "harga": 10000,
+      "faktor": 1,
+      "satuan": "PCS",
+      "item_id": "3804413b-7a47-4b38-b333-bbb2619c1b32",
+      "sale_id": "50162dac-8686-430a-9ee7-18f9c2ccfb72",
+      "promo_id": null,
+      "created_at": "2026-11-01T02:46:31.480626+00:00",
+      "promo_discount": 0,
+      "target_species": "Universal",
+      "source_position": 0,
+      "item_discount_type": null,
+      "service_performers": null,
+      "item_discount_value": 0,
+      "quantity_pool_claim": false
+    },
+    {
+      "id": "492e3ceb-71ff-4c9d-a0b8-0c87d233668c",
+      "hpp": 0,
+      "qty": 1,
+      "nama": "Delijoy Pouch Tuna",
+      "harga": 10000,
+      "faktor": 1,
+      "satuan": "PCS",
+      "item_id": "42459476-ed3c-4e4c-9c72-29f13874a8df",
+      "sale_id": "50162dac-8686-430a-9ee7-18f9c2ccfb72",
+      "promo_id": null,
+      "created_at": "2026-11-01T02:46:59.686507+00:00",
+      "promo_discount": 0,
+      "target_species": "Universal",
+      "source_position": 1,
+      "item_discount_type": null,
+      "service_performers": null,
+      "item_discount_value": 0,
+      "quantity_pool_claim": false
+    },
+    {
+      "id": "37e91d92-2e0c-494e-b7cc-fa3be93fa7e8",
+      "hpp": 0,
+      "qty": 1,
+      "nama": "Cat Choize Kitten",
+      "harga": 30000,
+      "faktor": 1,
+      "satuan": "PCS",
+      "item_id": "4091a33c-8c1f-4367-a4d7-30774166e390",
+      "sale_id": "49179767-d4bc-4c94-b6f2-47630adc383c",
+      "promo_id": null,
+      "created_at": "2026-11-01T03:22:03.909854+00:00",
+      "promo_discount": 0,
+      "target_species": "Universal",
+      "source_position": 0,
+      "item_discount_type": null,
+      "service_performers": null,
+      "item_discount_value": 0,
+      "quantity_pool_claim": false
+    },
+    {
+      "id": "d0d35c1c-5eeb-40aa-9048-a2e038fdc848",
+      "hpp": 0,
+      "qty": 2,
+      "nama": "Cat Choize Tuna adult",
+      "harga": 20000,
+      "faktor": 1,
+      "satuan": "PCS",
+      "item_id": "60e1f1f6-f064-44e8-8eb0-7fa9a5a6a532",
+      "sale_id": "49179767-d4bc-4c94-b6f2-47630adc383c",
+      "promo_id": "8ad9a2de-9c85-4c93-82cc-eb1f5cf187f1",
+      "created_at": "2026-11-01T03:22:04.835334+00:00",
+      "promo_discount": 2000,
+      "target_species": "Universal",
+      "source_position": 1,
+      "item_discount_type": null,
+      "service_performers": null,
+      "item_discount_value": 0,
+      "quantity_pool_claim": true
+    },
+    {
+      "id": "b1af02d2-fd01-4540-8195-32f44b3f3a5c",
+      "hpp": 0,
+      "qty": 1,
+      "nama": "Bolt Ikan 800gr",
+      "harga": 20000,
+      "faktor": 1,
+      "satuan": "PCS",
+      "item_id": "4750ca73-68ae-43a9-879e-3abaef5ccea3",
+      "sale_id": "49179767-d4bc-4c94-b6f2-47630adc383c",
+      "promo_id": null,
+      "created_at": "2026-11-01T03:22:05.572579+00:00",
+      "promo_discount": 0,
+      "target_species": "Universal",
+      "source_position": 2,
+      "item_discount_type": null,
+      "service_performers": null,
+      "item_discount_value": 0,
+      "quantity_pool_claim": false
+    },
+    {
+      "id": "9372f84a-2056-4532-a245-1fb891f5b57b",
+      "hpp": 0,
+      "qty": 1,
+      "nama": "ANC Cat Litter 5,5L Coffee",
+      "harga": 35000,
+      "faktor": 1,
+      "satuan": "PCS",
+      "item_id": "cfc40f8c-eeeb-4925-be9c-bfc3e94f753f",
+      "sale_id": "8f887ebb-b0ea-4638-8b1d-74df4a9d1e2f",
+      "promo_id": null,
+      "created_at": "2026-11-01T06:09:23.730472+00:00",
+      "promo_discount": 0,
+      "target_species": "Universal",
+      "source_position": 0,
+      "item_discount_type": null,
+      "service_performers": null,
+      "item_discount_value": 0,
+      "quantity_pool_claim": false
+    }
+  ],
+  "stock_moves": null,
+  "sale_payments": [
+    {
+      "id": "796fce79-5d11-4d75-88c2-d7e0b000fac6",
+      "amount": 88000,
+      "method": "QRIS",
+      "sale_id": "49179767-d4bc-4c94-b6f2-47630adc383c",
+      "coa_code": "120002",
+      "created_at": "2026-11-01T03:22:00.901287+00:00",
+      "fee_amount": 0,
+      "fee_percent": 0,
+      "account_snapshot": {
+        "code": "120002",
+        "name": "Bank BCA Transaksi (4270086743)",
+        "coa_id": "8b5cc10f-0be7-4727-be6d-32bf216071f3",
+        "cash_account_id": "7c49f8d6-ab4e-45ed-bf86-769b81a5868d",
+        "cash_account_name": "Bank BCA"
+      }
+    },
+    {
+      "id": "6dbac589-afb8-4007-87f2-a726b156cc2a",
+      "amount": 105000,
+      "method": "Tunai",
+      "sale_id": "50162dac-8686-430a-9ee7-18f9c2ccfb72",
+      "coa_code": "110003",
+      "created_at": "2026-11-01T02:46:05.6134+00:00",
+      "fee_amount": 0,
+      "fee_percent": 0,
+      "account_snapshot": {
+        "code": "110003",
+        "name": "Kas Kecil",
+        "coa_id": "6a83a3b2-b040-485c-8f15-c1ced1cf4aa3",
+        "cash_account_id": "9fccbeb8-0118-4a09-8145-936db872f563",
+        "cash_account_name": "Kas"
+      }
+    },
+    {
+      "id": "911b250f-f455-4e21-af2c-7cab68c787ed",
+      "amount": 35000,
+      "method": "Tunai",
+      "sale_id": "8f887ebb-b0ea-4638-8b1d-74df4a9d1e2f",
+      "coa_code": "110003",
+      "created_at": "2026-11-01T06:09:23.051178+00:00",
+      "fee_amount": 0,
+      "fee_percent": 0,
+      "account_snapshot": {
+        "code": "110003",
+        "name": "Kas Kecil",
+        "coa_id": "6a83a3b2-b040-485c-8f15-c1ced1cf4aa3",
+        "cash_account_id": "9fccbeb8-0118-4a09-8145-936db872f563",
+        "cash_account_name": "Kas"
+      }
+    }
+  ],
+  "journal_entries": null,
+  "pos_sale_postings": [
+    {
+      "sale_id": "50162dac-8686-430a-9ee7-18f9c2ccfb72",
+      "expected_lines": [
+        {
+          "code": "110003",
+          "debit": 105000,
+          "credit": 0
+        },
+        {
+          "code": "510001",
+          "debit": 0,
+          "credit": 105000
+        }
+      ],
+      "hpp_journal_id": null,
+      "revenue_journal_id": null
+    },
+    {
+      "sale_id": "49179767-d4bc-4c94-b6f2-47630adc383c",
+      "expected_lines": [
+        {
+          "code": "120002",
+          "debit": 88000,
+          "credit": 0
+        },
+        {
+          "code": "520002",
+          "debit": 2000,
+          "credit": 0
+        },
+        {
+          "code": "510001",
+          "debit": 0,
+          "credit": 90000
+        }
+      ],
+      "hpp_journal_id": null,
+      "revenue_journal_id": null
+    },
+    {
+      "sale_id": "8f887ebb-b0ea-4638-8b1d-74df4a9d1e2f",
+      "expected_lines": [
+        {
+          "code": "110003",
+          "debit": 35000,
+          "credit": 0
+        },
+        {
+          "code": "510001",
+          "debit": 0,
+          "credit": 35000
+        }
+      ],
+      "hpp_journal_id": null,
+      "revenue_journal_id": null
+    }
+  ],
+  "restrict_children": {
+    "corr": 0,
+    "gate": 0,
+    "effects": 0,
+    "pricing": 0,
+    "returns": 0,
+    "corr_req": 0,
+    "cancellations": 0
+  },
+  "quest_new_customer_claims": null,
+  "sale_item_group_components": null
+}

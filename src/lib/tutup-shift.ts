@@ -24,6 +24,7 @@ import { cashExpenseTotal, cashVariance, expectedCash, invoiceCashRows, methodBr
 import { hariIniWIB } from "./tanggal";
 import { salePaymentRows } from "./sale-payment-reporting";
 import { gagalBacaUang } from "./baca-uang";
+import { buangTransaksiTerputus, pesanTutupShift } from "./transaksi-terputus";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -210,6 +211,10 @@ export async function tutupShift(
   const { shift, closing } = o;
   if (shift.status !== "open") return { ok: false, error: "Shift sudah ditutup." };
 
+  // Struk kasir yang terputus sebelum final menahan tutup shift selamanya kalau tidak
+  // dibuang. Hanya yang belum memotong stok yang dibuang — lihat lib/transaksi-terputus.
+  if (shift.shift_type !== "klinik") await buangTransaksiTerputus(supabase, shift.id);
+
   let calculation: Awaited<ReturnType<typeof hitungShift>>;
   try {
     calculation = await hitungShift(supabase, shift);
@@ -238,7 +243,7 @@ export async function tutupShift(
     })
     .eq("id", shift.id).eq("status", "open")
     .select("id");
-  if (error) return { ok: false, error: pesanPenjagaLaci(error.message) };
+  if (error) return { ok: false, error: pesanTutupShift(pesanPenjagaLaci(error.message)) };
   if (!terupdate || terupdate.length === 0) {
     return { ok: false, error: "Shift sudah ditutup barusan — tidak ditutup dua kali." };
   }
