@@ -93,7 +93,15 @@ describe("pratinjauImporShopee", () => {
     expect((await pratinjauImporShopee(form([]))).error).toMatch(/masuk|login|sesi/i);
     db.user = { id: "fixture-user" };
     db.tables.warehouses = [];
-    expect((await pratinjauImporShopee(form([]))).error).toMatch(/gudang online/i);
+    expect((await pratinjauImporShopee(form([]))).error).toMatch(/gudang tidak ditemukan/i);
+    // Gudang expired/transit bukan stok jual — ditolak sama seperti database (20261107030000).
+    db.tables.warehouses = [{ id: WH, type: "EXPIRED", is_active: true }];
+    expect((await pratinjauImporShopee(form([]))).error).toMatch(/tidak bisa dipakai untuk order online/i);
+    db.tables.warehouses = [{ id: WH, type: "TRANSIT", is_active: true }];
+    expect((await pratinjauImporShopee(form([]))).error).toMatch(/tidak bisa dipakai untuk order online/i);
+    // Gudang toko/petshop cabang boleh (Aldi 5 Nov 2026).
+    db.tables.warehouses = [{ id: WH, type: "RETAIL", is_active: true }];
+    expect((await pratinjauImporShopee(form([]))).error ?? "").not.toMatch(/gudang/i);
     db.tables.warehouses = [{ id: WH, type: "ONLINE", is_active: true }];
     expect((await pratinjauImporShopee(form([], {}, new File(["x"], "a.csv")))).error).toMatch(/\.xlsx/);
     const fd = new FormData(); fd.set("warehouse_id", WH);

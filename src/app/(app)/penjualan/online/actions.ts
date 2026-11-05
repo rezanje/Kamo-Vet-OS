@@ -6,8 +6,30 @@ import { createClient } from "@/lib/supabase/server";
 import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { hitungKomisi, isMarketplace } from "@/lib/online";
+import { parseLampiran, type LampiranDraft } from "@/lib/dokumen";
 
 const BACK = "/penjualan/online";
+const FOLDER_BUKTI = "penjualan-online";
+
+// Catat lampiran untuk penjualan online. Kirim ulang (respons hilang → simpan lagi dengan kunci
+// yang sama) tidak boleh membuat baris ganda: path yang sudah tercatat untuk order ini dilewati.
+async function lampirkanBukti(db: Awaited<ReturnType<typeof createClient>>, saleId: string, rows: LampiranDraft[]): Promise<boolean> {
+  if (!rows.length) return true;
+  try {
+    const { data: { user } } = await db.auth.getUser();
+    const { data: ada, error: bacaErr } = await db.from("document_attachments").select("path")
+      .eq("modul", "penjualan").eq("ref_id", saleId).in("path", rows.map(r => r.path));
+    if (bacaErr) return false;
+    const sudah = new Set((ada ?? []).map(r => String(r.path)));
+    const baru = rows.filter(r => !sudah.has(r.path));
+    if (!baru.length) return true;
+    const { error } = await db.from("document_attachments").insert(
+      baru.map(r => ({ ...r, modul: "penjualan", ref_id: saleId, uploaded_by: user?.id ?? null })));
+    return !error;
+  } catch {
+    return false;
+  }
+}
 
 // Duplikat kecil dari src/app/me/actions.ts (house style — bukan modul bersama baru).
 // Server Vercel jalan di UTC tapi bisnisnya WIB (UTC+7); "hari ini" harus dihitung WIB
@@ -33,10 +55,15 @@ export async function buatPenjualanOnline(formData: FormData) {
   try { items = JSON.parse(String(formData.get("items") ?? "[]")); } catch { fail("Data barang tidak valid."); }
   const header = Object.fromEntries(["channel", "warehouse_id", "buyer_name", "external_ref", "customer_id"].map(k => [k, String(formData.get(k) ?? "")]));
   header.tanggal = String(formData.get("tanggal") ?? "") || todayJakarta();
+  const lampiran = parseLampiran(formData.get("lampiran")).filter(l => l.path.startsWith(`${FOLDER_BUKTI}/`));
   const { data, error } = await db.rpc("post_online_order", {p_request_key:key,p_header:header,p_items:items});
   if (error || !data) fail(error?.message ?? "Respons simpan belum terkonfirmasi. Periksa hasil transaksi terakhir sebelum menyimpan ulang.");
+  // Bukti order (screenshot Shopee/transfer) menempel ke penjualan yang baru jadi. Order tetap sah
+  // walau lampiran gagal dicatat — operator diberi tahu dan bisa melampirkan lagi dari detail order.
+  const lampiranGagal = !(await lampirkanBukti(db, data.document_id, lampiran));
   revalidatePath(BACK);
-  redirect(`${BACK}/baru?success=${encodeURIComponent(`Order ${data.document_no} tersimpan.`)}&request_scope=${encodeURIComponent(confirmedScope)}&request_done=${encodeURIComponent(key)}${replacementId ? `&replace_sale=${encodeURIComponent(replacementId)}` : ""}`);
+  const pesan = `Order ${data.document_no} tersimpan.` + (lampiranGagal ? " Bukti order belum tercatat — lampirkan lagi dari detail order." : lampiran.length ? ` ${lampiran.length} bukti order terlampir.` : "");
+  redirect(`${BACK}/baru?success=${encodeURIComponent(pesan)}&request_scope=${encodeURIComponent(confirmedScope)}&request_done=${encodeURIComponent(key)}${replacementId ? `&replace_sale=${encodeURIComponent(replacementId)}` : ""}`);
 }
 
 // Pencairan marketplace: input dana yang benar-benar masuk bank; selisihnya = komisi platform.
