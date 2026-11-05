@@ -102,7 +102,10 @@ export default async function PromoAdminPage({
       {success === "paket-aktif-peringatan" && <div className="p2ban" role="status" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}><i className="ti ti-alert-triangle" /> Promo paket diaktifkan. Peringatan: perkiraan harga hasil di bawah modal (HPP, dari harga beli master); kasir bisa menolak penjualan barang hadiah sampai harga/diskon hadiah dinaikkan di atas modal.</div>}
       {success && success !== "paket-aktif-peringatan" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : success === "paket-aktif" ? "Promo paket diaktifkan." : success === "paket-nonaktif" ? "Promo paket dinonaktifkan." : "Promo baru dibuat."}</div>}
 
-      {canEdit&&<div style={{marginBottom:12}}><Link className="btn-def" href="/crm/promo/impor"><i className="ti ti-file-import" /> Impor promo dari Excel</Link></div>}
+      {canEdit&&<div style={{marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Link className="btn-def" href="/crm/promo/impor-daftar"><i className="ti ti-file-import" /> Impor daftar promo (banyak barang)</Link>
+        <Link className="btn-def" href="/crm/promo/impor"><i className="ti ti-file-import" /> Impor promo per SKU</Link>
+      </div>}
 
       <div className="crm-sec">
         <SecHeader num="01" title="BUAT PROMO" desc="Set promo per cabang + masa berlaku. Kosongkan cabang = berlaku semua cabang." />
