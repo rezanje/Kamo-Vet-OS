@@ -6,6 +6,11 @@ import ExcelJS from "exceljs";
 
 export const BATAS_FILE_SHOPEE = 5 * 1024 * 1024;
 const BATAS_BARIS = 5000;
+// Batas isi zip SETELAH dikembangkan (dibaca dari central directory, sebelum ExcelJS membuka apa pun).
+// Ekspor Shopee biasa < 5 MB terkompresi dan jauh di bawah batas ini.
+export const BATAS_ISI_TOTAL = 25 * 1024 * 1024;
+export const BATAS_ISI_ENTRI = 15 * 1024 * 1024;
+export const BATAS_JUMLAH_ENTRI = 200;
 
 export type ShopeeLine = {
   /** Nomor baris di sheet (1 = header) untuk pesan kesalahan. */
@@ -54,35 +59,43 @@ export type ShopeeOrder = {
   selisih: number | null;
 };
 
-/** Angka format Indonesia ("20.912" = 20912, "1.234,50" = 1234,5). Teks bukan angka = NaN. */
-export function parseShopeeNumber(raw: unknown): number {
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : NaN;
-  if (raw == null) return 0;
+/**
+ * Angka format Indonesia: titik = pemisah ribuan ("20.912" = 20912), koma = desimal ("1.234,5" = 1234,5).
+ * Bentuk yang bisa dibaca dua arti DITOLAK, bukan ditebak: "1,000" / "12,500" (ribuan gaya Inggris?), "16.5" / "1.5" (desimal gaya Inggris?).
+ * Teks bukan angka = NaN. Sel angka asli dipakai apa adanya.
+ */
+export function bacaAngkaShopee(raw: unknown): { value: number; ambigu: boolean } {
+  const tolak = (ambigu: boolean) => ({ value: NaN, ambigu });
+  if (typeof raw === "number") return { value: Number.isFinite(raw) ? raw : NaN, ambigu: false };
+  if (raw == null) return { value: 0, ambigu: false };
   const s = String(raw).replace(/^\s*rp\.?\s*/i, "").replace(/\s+/g, "");
-  if (s === "") return 0;
-  if (!/^-?[\d.,]+$/.test(s) || !/\d/.test(s)) return NaN;
+  if (s === "") return { value: 0, ambigu: false };
+  if (!/^-?[\d.,]+$/.test(s) || !/\d/.test(s)) return tolak(false);
   const neg = s.startsWith("-");
   const body = neg ? s.slice(1) : s;
-  const dots = (body.match(/\./g) ?? []).length;
-  const commas = (body.match(/,/g) ?? []).length;
+  const ribuan = /^\d{1,3}(\.\d{3})+$/;
   let num: string;
-  if (commas > 1) return NaN;
-  if (commas === 1) {
-    const [int, frac] = body.split(",");
-    // Titik sebelum koma harus pemisah ribuan yang rapi.
-    if (dots > 0 && !/^\d{1,3}(\.\d{3})+$/.test(int)) return NaN;
-    if (!/^\d+$/.test(frac)) return NaN;
+  if (body.includes(",")) {
+    const bagian = body.split(",");
+    if (bagian.length !== 2) return tolak(false);
+    const [int, frac] = bagian;
+    if (!/^\d+$/.test(frac)) return tolak(false);
+    if (int.includes(".") ? !ribuan.test(int) : !/^\d+$/.test(int)) return tolak(false);
+    // "1,000" / "12,500": koma + tepat 3 digit tanpa titik ribuan = bisa ribuan gaya Inggris → ambigu.
+    if (frac.length === 3 && !int.includes(".")) return tolak(true);
     num = `${int.replace(/\./g, "")}.${frac}`;
-  } else if (dots === 0) {
+  } else if (!body.includes(".")) {
     num = body;
-  } else if (/^\d{1,3}(\.\d{3})+$/.test(body)) {
+  } else if (ribuan.test(body)) {
     num = body.replace(/\./g, "");
-  } else if (dots === 1 && /^\d+\.\d+$/.test(body)) {
-    num = body;
-  } else return NaN;
+  } else {
+    // Titik yang bukan pemisah ribuan rapi ("16.5", "1.50", "1.234.56"): bisa desimal gaya Inggris → ditolak.
+    return tolak(/^\d+\.\d{1,2}$/.test(body));
+  }
   const value = Number(num);
-  return Number.isFinite(value) ? (neg ? -value : value) : NaN;
+  return Number.isFinite(value) ? { value: neg ? -value : value, ambigu: false } : tolak(false);
 }
+export const parseShopeeNumber = (raw: unknown): number => bacaAngkaShopee(raw).value;
 
 const STATUS_DILEWATI: [RegExp, string][] = [
   [/^pembatalan diajukan$/i, "Pembatalan diajukan — dilewati, tidak diimpor"],
@@ -99,6 +112,33 @@ export function statusImpor(status: string, statusPembatalan: string): { importa
   if (statusPembatalan.trim()) return { importable: false, reason: `Status pembatalan/pengembalian "${statusPembatalan.trim()}" — dilewati, tidak diimpor` };
   if (STATUS_BOLEH.test(st)) return { importable: true, reason: null };
   return { importable: false, reason: `Status "${st || "(kosong)"}" tidak dikenali — dilewati, tidak diimpor` };
+}
+
+/**
+ * Periksa isi zip dari central directory (tanpa mengembangkan apa pun). Mengembalikan pesan kesalahan, atau null bila aman/tidak bisa dikenali
+ * (file yang bukan zip dibiarkan ke pembaca xlsx yang memberi pesan "tidak bisa dibaca"). Penanda zip64 (0xFFFF/0xFFFFFFFF) sengaja
+ * dihitung sebagai nilai raksasa: ekspor Shopee tidak pernah memakainya.
+ */
+export function periksaIsiZip(file: Uint8Array): string | null {
+  const buf = Buffer.from(file.buffer, file.byteOffset, file.byteLength);
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return null;
+  const jumlah = buf.readUInt16LE(eocd + 10);
+  if (jumlah > BATAS_JUMLAH_ENTRI) return `File berisi terlalu banyak bagian (maksimal ${BATAS_JUMLAH_ENTRI}). Gunakan file .xlsx asli hasil ekspor Shopee.`;
+  let pos = buf.readUInt32LE(eocd + 16);
+  let total = 0;
+  for (let n = 0; n < jumlah; n++) {
+    if (pos + 46 > buf.length || buf.readUInt32LE(pos) !== 0x02014b50) return null;
+    const ukuran = buf.readUInt32LE(pos + 24);
+    if (ukuran > BATAS_ISI_ENTRI) return "File terlalu besar setelah dibuka (satu bagian lebih dari 15 MB). Gunakan file .xlsx asli hasil ekspor Shopee.";
+    total += ukuran;
+    if (total > BATAS_ISI_TOTAL) return "File terlalu besar setelah dibuka (lebih dari 25 MB). Gunakan file .xlsx asli hasil ekspor Shopee.";
+    pos += 46 + buf.readUInt16LE(pos + 28) + buf.readUInt16LE(pos + 30) + buf.readUInt16LE(pos + 32);
+  }
+  return null;
 }
 
 const norm = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -179,6 +219,8 @@ const nol: ShopeeRincian = { voucherPenjual: 0, voucherShopee: 0, koin: 0, kartu
 export async function bacaShopeeXlsx(file: Uint8Array | Buffer): Promise<{ orders: ShopeeOrder[]; error: string | null }> {
   const gagal = (error: string) => ({ orders: [] as ShopeeOrder[], error });
   if (file.length > BATAS_FILE_SHOPEE) return gagal("File lebih dari 5 MB. Ekspor per hari atau per rentang yang lebih pendek.");
+  const zipGalat = periksaIsiZip(file);
+  if (zipGalat) return gagal(zipGalat);
   const wb = new ExcelJS.Workbook();
   try { await wb.xlsx.load(file as unknown as Parameters<typeof wb.xlsx.load>[0]); } catch { return gagal("File tidak bisa dibaca. Gunakan file .xlsx hasil ekspor pesanan Shopee."); }
 
@@ -198,7 +240,9 @@ export async function bacaShopeeXlsx(file: Uint8Array | Buffer): Promise<{ order
     const txt = (k: Kunci) => String(get(k)).trim();
     const orderNo = txt("orderNo");
     if (!orderNo) return;
-    const qty = parseShopeeNumber(get("jumlah")), harga = parseShopeeNumber(get("harga"));
+    const qtyRaw = get("jumlah"), hargaRaw = get("harga");
+    const qtyAngka = bacaAngkaShopee(qtyRaw), hargaAngka = bacaAngkaShopee(hargaRaw);
+    const qty = qtyAngka.value, harga = hargaAngka.value;
     const line: ShopeeLine = {
       baris: rowNumber, skuInduk: txt("skuInduk"), skuRef: txt("skuRef"), namaProduk: txt("nama"), variasi: txt("variasi"),
       qty, hargaAwal: parseShopeeNumber(get("hargaAwal")), harga, subtotal: parseShopeeNumber(get("subtotal")),
@@ -223,8 +267,14 @@ export async function bacaShopeeXlsx(file: Uint8Array | Buffer): Promise<{ order
     }
     entry.statuses.push({ s: txt("status"), b: txt("statusBatal") });
     if (!entry.order.buyer) entry.order.buyer = txt("buyer");
-    if (!Number.isFinite(qty) || qty <= 0) entry.bad.push(`baris ${rowNumber}: jumlah tidak valid`);
-    if (!Number.isFinite(harga) || harga < 0) entry.bad.push(`baris ${rowNumber}: harga tidak valid`);
+    const AMBIGU = "angka tidak jelas: tulis 1000 atau 1.000";
+    const tampil = (v: string | number) => String(v).slice(0, 20);
+    if (qtyAngka.ambigu) entry.bad.push(`baris ${rowNumber}: jumlah "${tampil(qtyRaw)}" ${AMBIGU}`);
+    else if (!Number.isFinite(qty) || qty <= 0) entry.bad.push(`baris ${rowNumber}: jumlah tidak valid`);
+    else if (!Number.isInteger(qty)) entry.bad.push(`baris ${rowNumber}: jumlah harus bilangan bulat`);
+    if (String(hargaRaw).trim() === "") entry.bad.push(`baris ${rowNumber}: harga kosong`);
+    else if (hargaAngka.ambigu) entry.bad.push(`baris ${rowNumber}: harga "${tampil(hargaRaw)}" ${AMBIGU}`);
+    else if (!Number.isFinite(harga) || harga < 0) entry.bad.push(`baris ${rowNumber}: harga tidak valid`);
     entry.order.lines.push(line);
   });
 

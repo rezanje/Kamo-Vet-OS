@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
+import JSZip from "jszip";
 import { bacaShopeeXlsx, parseShopeeNumber, statusImpor } from "../shopee-import";
 
 const FIXTURE = join(__dirname, "fixtures", "shopee-order-toship-sample.xlsx");
@@ -35,11 +36,14 @@ async function xlsx(rows: Record<string, Cell>[], headers: string[] = HEADERS, s
 describe("parseShopeeNumber", () => {
   it.each([
     ["20.912", 20912], ["3.500", 3500], ["1.234.567", 1234567], ["0", 0], ["", 0], ["  16.349 ", 16349],
-    ["Rp 78.663", 78663], ["12,5", 12.5], ["1.234,50", 1234.5], ["12.5", 12.5], ["1000", 1000],
+    ["Rp 78.663", 78663], ["12,5", 12.5], ["1.234,50", 1234.5], ["1000", 1000], ["16.349,000", 16349], ["78.663", 78663],
   ])("%s -> %s", (raw, out) => expect(parseShopeeNumber(raw)).toBe(out));
   it("angka asli dari sel Excel dipakai apa adanya", () => {
     expect(parseShopeeNumber(20912)).toBe(20912);
     expect(parseShopeeNumber(3.5)).toBe(3.5);
+  });
+  it.each(["1,000", "12,500", "16.5", "12.5", "1.5", "0.5", "1.234.56", "1,2,3", "1.00"])("bentuk ambigu/janggal %s ditolak (NaN), bukan ditebak", raw => {
+    expect(parseShopeeNumber(raw)).toBeNaN();
   });
   it("teks bukan angka = NaN (tidak diam-diam 0)", () => {
     expect(parseShopeeNumber("abc")).toBeNaN();
@@ -196,5 +200,92 @@ describe("bacaShopeeXlsx: pengelompokan dan status", () => {
     const r = await bacaShopeeXlsx(Buffer.from("bukan excel"));
     expect(r.orders).toEqual([]);
     expect(r.error).toMatch(/xlsx/i);
+  });
+});
+
+describe("bacaShopeeXlsx: angka jumlah/harga ketat (format Indonesia)", () => {
+  const baca = async (o: Record<string, Cell>) => (await bacaShopeeXlsx(await xlsx([baris(o)]))).orders[0];
+  const rusak = (o: Awaited<ReturnType<typeof baca>>) => { expect(o.dataValid).toBe(false); expect(o.importable).toBe(false); };
+  it("'1,000' / '12,500' pada harga = baris rusak dengan pesan 'angka tidak jelas: tulis 1000 atau 1.000'", async () => {
+    for (const harga of ["1,000", "12,500"]) {
+      const o = await baca({ "Harga Setelah Diskon": harga });
+      rusak(o);
+      expect(o.skipReason).toContain("angka tidak jelas: tulis 1000 atau 1.000");
+      expect(o.skipReason).toMatch(/harga/i);
+    }
+  });
+  it("'1,000' pada jumlah = baris rusak dengan pesan yang sama", async () => {
+    const o = await baca({ Jumlah: "1,000" });
+    rusak(o);
+    expect(o.skipReason).toContain("angka tidak jelas: tulis 1000 atau 1.000");
+    expect(o.skipReason).toMatch(/jumlah/i);
+  });
+  it("jumlah harus bilangan bulat positif: '1,5', '1.5', 1.5 (sel angka), 0 ditolak", async () => {
+    for (const q of ["1,5", "1.5", 1.5, "0"] as Cell[]) {
+      const o = await baca({ Jumlah: q });
+      rusak(o);
+      expect(o.skipReason).toMatch(/jumlah/i);
+    }
+  });
+  it("harga kosong = baris rusak, bukan Rp 0", async () => {
+    const o = await baca({ "Harga Setelah Diskon": "" });
+    rusak(o);
+    expect(o.skipReason).toMatch(/harga kosong/i);
+  });
+  it("harga kosong di baris ke-2 pesanan yang baris ke-1 berharga tetap membuat seluruh pesanan rusak", async () => {
+    const { orders } = await bacaShopeeXlsx(await xlsx([baris({}), baris({ "Harga Setelah Diskon": "" })]));
+    rusak(orders[0]);
+  });
+  it("angka sah tetap lolos: '20.912', '16.349', '78.663', '1.000', '1000', 2, harga '12,5' desimal koma", async () => {
+    for (const [h, q, nilai] of [["20.912", "2", 20912], ["16.349", "1", 16349], ["78.663", "1", 78663], ["1.000", "3", 1000], ["1000", "3", 1000], [16349, 2, 16349], ["12,5", "1", 12.5]] as [Cell, Cell, number][]) {
+      const o = await baca({ "Harga Setelah Diskon": h, Jumlah: q });
+      expect(o.dataValid).toBe(true);
+      expect(o.importable).toBe(true);
+      expect(o.lines[0].harga).toBe(nilai);
+    }
+  });
+});
+
+describe("bacaShopeeXlsx: batas isi zip (anti zip-bomb), dicek sebelum xlsx dibuka", () => {
+  const MB = 1024 * 1024;
+  const zipDari = async (entri: Record<string, number>) => {
+    const z = new JSZip();
+    for (const [nama, ukuran] of Object.entries(entri)) z.file(nama, Buffer.alloc(ukuran, 65));
+    return Buffer.from(await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 9 } }));
+  };
+  it("file kecil berisi satu entri 16 MB (rasio tinggi) ditolak", async () => {
+    const f = await zipDari({ "xl/worksheets/sheet1.xml": 16 * MB });
+    expect(f.length).toBeLessThan(200 * 1024);
+    const r = await bacaShopeeXlsx(f);
+    expect(r.orders).toEqual([]);
+    expect(r.error).toMatch(/terlalu besar|15 MB/i);
+  });
+  it("total isi 26 MB (dua entri 13 MB) ditolak", async () => {
+    const r = await bacaShopeeXlsx(await zipDari({ "a.xml": 13 * MB, "b.xml": 13 * MB }));
+    expect(r.error).toMatch(/25 MB/);
+  });
+  it("201 entri ditolak", async () => {
+    const entri: Record<string, number> = {};
+    for (let i = 0; i < 201; i++) entri[`e${i}.xml`] = 10;
+    expect((await bacaShopeeXlsx(await zipDari(entri))).error).toMatch(/200/);
+  });
+  it("tepat di batas lolos pemeriksaan zip (2 entri 12 MB = 24 MB, 200 entri) lalu ditolak karena bukan xlsx, bukan karena ukuran", async () => {
+    const entri: Record<string, number> = {};
+    for (let i = 0; i < 200; i++) entri[`e${i}.xml`] = 10;
+    expect((await bacaShopeeXlsx(await zipDari(entri))).error).not.toMatch(/200|MB/);
+    expect((await bacaShopeeXlsx(await zipDari({ "a.xml": 12 * MB, "b.xml": 12 * MB }))).error).not.toMatch(/MB/);
+  });
+  it("ukuran yang tertulis di central directory yang dipakai (ukuran dipalsukan 0xFFFFFFFF/zip64 ditolak)", async () => {
+    const f = await zipDari({ "a.xml": 10 });
+    const i = f.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    f.writeUInt32LE(0xffffffff, i + 24);
+    expect((await bacaShopeeXlsx(f)).error).toMatch(/MB/);
+  });
+  it("fixture asli dan file xlsx normal tetap terbaca", async () => {
+    expect((await bacaShopeeXlsx(readFileSync(FIXTURE))).error).toBeNull();
+    expect((await bacaShopeeXlsx(await xlsx([baris({})]))).error).toBeNull();
+  });
+  it("ZIP terpotong/rusak tetap pesan 'File tidak bisa dibaca'", async () => {
+    expect((await bacaShopeeXlsx((await zipDari({ "a.xml": 10 })).subarray(0, 30))).error).toMatch(/tidak bisa dibaca/);
   });
 });

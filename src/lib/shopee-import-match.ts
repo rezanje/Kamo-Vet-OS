@@ -30,14 +30,19 @@ export function cocokkanBarang(line: Pick<ShopeeLine, "skuInduk" | "skuRef" | "n
     if (hits.length > 1) return { itemId: null, kind: "ambigu", perluPeriksa: true };
     return { itemId: hits[0].id, kind, perluPeriksa: false };
   };
-  const kode = [line.skuRef, line.skuInduk].map(s => s.trim()).filter(Boolean);
-  for (const k of kode) {
+  // Pesanan dengan Nama Variasi: SKU Induk / nama produk dipakai bersama semua variasi (ukuran, isi dus, rasa), jadi kecocokan lewat
+  // keduanya hanya perkiraan dan WAJIB dicentang Owner. Hanya Nomor Referensi SKU (SKU variasi) yang cocok persis ke satu barang yang diam-diam.
+  const adaVariasi = line.variasi.trim() !== "";
+  const tanpaSku = (m: LineMatch | null): LineMatch | null =>
+    adaVariasi && m && m.itemId ? { itemId: m.itemId, kind: "perkiraan", perluPeriksa: true } : m;
+  const kode = [{ k: line.skuRef.trim(), skuVariasi: true }, { k: line.skuInduk.trim(), skuVariasi: false }].filter(x => x.k);
+  for (const { k, skuVariasi } of kode) {
     const m = hasil(catalog.filter(i => rapi(i.code) === rapi(k)), "sku") ?? hasil(catalog.filter(i => i.code && normalisasiNama(i.code) === normalisasiNama(k)), "sku");
-    if (m) return m;
+    if (m) return skuVariasi ? m : tanpaSku(m)!;
   }
   const teks = [line.skuRef, line.skuInduk, line.namaProduk].map(s => s.trim()).filter(Boolean);
-  for (const t of teks) { const m = hasil(catalog.filter(i => rapi(i.name) === rapi(t)), "nama"); if (m) return m; }
-  for (const t of teks) { const m = hasil(catalog.filter(i => normalisasiNama(i.name) === normalisasiNama(t)), "nama-normal"); if (m) return m; }
+  for (const t of teks) { const m = hasil(catalog.filter(i => rapi(i.name) === rapi(t)), "nama"); if (m) return tanpaSku(m)!; }
+  for (const t of teks) { const m = hasil(catalog.filter(i => normalisasiNama(i.name) === normalisasiNama(t)), "nama-normal"); if (m) return tanpaSku(m)!; }
 
   // Perkiraan: seluruh kata nama master termuat di teks Shopee (nama produk di Shopee biasanya diberi
   // embel-embel SEO), atau kode/SKU Shopee yang lebih pendek termuat di nama master.

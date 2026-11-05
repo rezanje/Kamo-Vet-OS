@@ -69,6 +69,44 @@ describe("cocokkanBarang", () => {
   });
 });
 
+describe("cocokkanBarang: Nama Variasi", () => {
+  const POUCH = [item("i-pouch", "POUCH-85", "Pouch Cat 85gr", 9000), item("i-pouch-12", "POUCH-85-12", "Pouch Cat 85gr Dus Isi 12", 100000)];
+  const perkiraan = { kind: "perkiraan", perluPeriksa: true };
+  it("nama persis + variasi terisi ('Pouch Cat 85gr' + 'dus isi 12') = perkiraan, WAJIB dicentang", () => {
+    expect(cocokkanBarang(line({ namaProduk: "Pouch Cat 85gr", variasi: "dus isi 12" }), [POUCH[0]])).toEqual({ itemId: "i-pouch", ...perkiraan });
+  });
+  it("nama ternormalisasi + variasi terisi = perkiraan", () => {
+    expect(cocokkanBarang(line({ namaProduk: "pouch cat 85 gr", variasi: "dus isi 12" }), [POUCH[0]])).toEqual({ itemId: "i-pouch", ...perkiraan });
+  });
+  it("SKU Induk (kode induk dipakai semua variasi) + variasi terisi = perkiraan", () => {
+    expect(cocokkanBarang(line({ skuInduk: "POUCH-85", namaProduk: "Pouch Cat", variasi: "dus isi 12" }), POUCH)).toEqual({ itemId: "i-pouch", ...perkiraan });
+  });
+  it("SKU Induk berupa nama barang + variasi terisi = perkiraan", () => {
+    expect(cocokkanBarang(line({ skuInduk: "Bolt Ikan 800 gr", variasi: "bulat, salmon 800 gr" }), CATALOG)).toEqual({ itemId: "i-bolt", ...perkiraan });
+  });
+  it("Nomor Referensi SKU (SKU variasi) yang cocok kode barang tetap diam-diam (tanpa centang), walau variasi terisi", () => {
+    expect(cocokkanBarang(line({ skuRef: "POUCH-85-12", skuInduk: "POUCH-85", namaProduk: "Pouch Cat 85gr", variasi: "dus isi 12" }), POUCH)).toEqual({ itemId: "i-pouch-12", kind: "sku", perluPeriksa: false });
+  });
+  it("SKU variasi cocok ke dua barang = ambigu (bukan diam-diam)", () => {
+    const dobel = [...POUCH, item("i-x", "POUCH-85-12", "Lain", 1)];
+    expect(cocokkanBarang(line({ skuRef: "POUCH-85-12", variasi: "dus isi 12" }), dobel).kind).toBe("ambigu");
+  });
+  it("variasi kosong / hanya spasi: perilaku lama (diam-diam)", () => {
+    expect(cocokkanBarang(line({ namaProduk: "Pouch Cat 85gr", variasi: "" }), [POUCH[0]])).toEqual({ itemId: "i-pouch", kind: "nama", perluPeriksa: false });
+    expect(cocokkanBarang(line({ namaProduk: "Pouch Cat 85gr", variasi: "   " }), [POUCH[0]])).toMatchObject({ kind: "nama", perluPeriksa: false });
+    expect(cocokkanBarang(line({ skuInduk: "POUCH-85", variasi: "" }), [POUCH[0]])).toMatchObject({ kind: "sku", perluPeriksa: false });
+  });
+  it("analisisImpor: baris perkiraan karena variasi tidak lolos sebelum dicentang; lolos setelah dicentang", () => {
+    const o = order({ lines: [line({ namaProduk: "Pouch Cat 85gr", variasi: "dus isi 12", harga: 9000 })] });
+    const cat = [POUCH[0]];
+    const [a] = analisisImpor([o], cat, opts());
+    expect(a.status).toBe("perlu-perbaikan");
+    expect(a.saveable).toBe(false);
+    const [b] = analisisImpor([o], cat, opts({ konfirmasi: new Set([kunciBaris("FIKTIF-1", 0)]) }));
+    expect(b.status).toBe("siap");
+  });
+});
+
 describe("pilihGudangDefault", () => {
   const w = (id: string, branch: string) => ({ id, name: `Online ${branch}`, branch_name: branch });
   it("tepat satu gudang cabang Panduraya -> terpilih", () => {

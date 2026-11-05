@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import ExcelJS from "exceljs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Row = Record<string, unknown>;
@@ -142,6 +143,19 @@ describe("simpanImporShopee", () => {
     expect(db.rpc).toHaveLength(1);
   });
 
+  it("pesanan berdata rusak (angka '1,000' tidak jelas) tidak pernah diposting, juga oleh Owner yang menyertakan; pesanan sehat di file yang sama tetap jalan", async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("orders");
+    ws.addRow(["No. Pesanan", "Status Pesanan", "Waktu Pesanan Dibuat", "Nama Produk", "Harga Setelah Diskon", "Jumlah", "Username (Pembeli)"]);
+    ws.addRow(["RUSAK-0001", "Perlu Dikirim", "2026-11-05 10:00", "Jio Dryfood 500gr", "1,000", "1", "pembeli_fiktif"]);
+    ws.addRow(["SEHAT-0001", "Perlu Dikirim", "2026-11-05 10:00", "Jio Dryfood 500gr", "16.500", "1", "pembeli_fiktif"]);
+    const f = new File([Buffer.from(await wb.xlsx.writeBuffer())], "Order.toship.xlsx");
+    db.role = "OWNER";
+    const r = await simpanImporShopee(form([{ orderNo: "RUSAK-0001", items: [JIO], sertakan: true }, { orderNo: "SEHAT-0001", items: [JIO] }], {}, f));
+    expect(r.results.map(x => [x.orderNo, x.status])).toEqual([["RUSAK-0001", "dilewati"], ["SEHAT-0001", "ok"]]);
+    expect(r.results[0].message).toContain("angka tidak jelas");
+    expect(db.rpc.map(c => c.args.p_header.external_ref)).toEqual(["SEHAT-0001"]);
+  });
   it("pesanan yang sudah ada (external_ref) = duplikat, RPC tidak dipanggil", async () => {
     db.tables.sales = [{ id: "sale-1", channel: "Shopee", external_ref: O2, no_struk: "ONL-20261105-0007", voided_at: null }];
     const r = await simpanImporShopee(form(SEL));
