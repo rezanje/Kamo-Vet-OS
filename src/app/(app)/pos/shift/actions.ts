@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { bacaShift, hitungShift, PESAN_LACI_ORANG_LAIN, pesanPenjagaLaci, tutupShift } from "@/lib/tutup-shift";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
+import { pesanTutupPaksa } from "@/lib/transaksi-terputus";
 
 export async function openShift(formData: FormData) {
   const supabase = await createClient();
@@ -82,7 +83,9 @@ export async function forceCloseShift(formData: FormData) {
   const { error } = await supabase.rpc("cashier_shift_supervisor_close", {
     p_shift_id: shiftId, p_reason: alasan, p_expected: target.expected, p_breakdown: target.breakdown,
   });
-  if (error) redirect(`/pos/shift?error=${encodeURIComponent(pesanPenjagaLaci(error.message))}`);
+  // Transaksi kasir yang terputus hanya bisa dibersihkan kasir pemilik laci (pemicu
+  // database), jadi pesan penjaganya diterjemahkan ke langkah yang benar untuk supervisor.
+  if (error) redirect(`/pos/shift?error=${encodeURIComponent(pesanTutupPaksa(pesanPenjagaLaci(error.message)))}`);
 
   redirect(`/pos/shift?success=force`);
 }
