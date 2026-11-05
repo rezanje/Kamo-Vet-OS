@@ -66,7 +66,9 @@ export async function updateKategoriPelanggan(formData: FormData) {
     if (!kat) redirect(`/crm/pelanggan?error=${encodeURIComponent("Golongan tidak valid")}`);
   }
 
-  await supabase.from("customers").update({ category_id: categoryId }).eq("id", id);
+  // Kosong = ikut benefit level (golongan diisi otomatis oleh database dari level pelanggan);
+  // golongan yang dipilih = golongan khusus yang menang atas benefit level.
+  await supabase.from("customers").update({ category_id: categoryId, category_manual: !!categoryId }).eq("id", id);
   revalidatePath("/crm/pelanggan");
 }
 

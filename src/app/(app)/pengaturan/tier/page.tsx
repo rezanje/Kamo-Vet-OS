@@ -13,8 +13,13 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   if (!me || !["OWNER", "ADMIN"].includes(me.role)) redirect("/pengaturan");
 
-  const { data: cfg, error: cfgError } = await supabase.from("tier_settings").select("bronze_min, silver_min, gold_min, platinum_min, points_expiry_enabled, points_expiry_months, tier_downgrade_enabled, tier_downgrade_days").eq("id", 1).maybeSingle();
-  if (cfgError) throw new Error("Aturan loyalty belum dapat diverifikasi. Muat ulang halaman.");
+  const [{ data: cfg, error: cfgError }, { data: golonganRows, error: golonganError }] = await Promise.all([
+    supabase.from("tier_settings").select("bronze_min, silver_min, gold_min, platinum_min, points_expiry_enabled, points_expiry_months, tier_downgrade_enabled, tier_downgrade_days, bronze_category_id, silver_category_id, gold_category_id, platinum_category_id").eq("id", 1).maybeSingle(),
+    supabase.from("customer_categories").select("id, nama, diskon_persen, rupiah_per_poin, is_active").order("nama"),
+  ]);
+  if (cfgError || golonganError) throw new Error("Aturan loyalty belum dapat diverifikasi. Muat ulang halaman.");
+  const golongan = (golonganRows ?? []) as { id: string; nama: string; diskon_persen: number; rupiah_per_poin: number; is_active: boolean }[];
+  const benefit = (cfg ?? {}) as Partial<Record<"bronze_category_id" | "silver_category_id" | "gold_category_id" | "platinum_category_id", string | null>>;
   // tier_settings bisa dibaca semua akun login: baris kosong = memang belum pernah disimpan.
   const tersimpan = !!cfg;
   // Angka di bawah hanya untuk "Saat ini" — sama dengan cadangan yang dipakai database
@@ -28,12 +33,18 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
   const tahunLalu = String(new Date().getFullYear() - 1);
   const bolehTutup = me.role === "OWNER";
 
-  const rows: { name: string; k: string; v: number }[] = [
-    { name: "Bronze", k: "bronze_min", v: Number(c.bronze_min) },
-    { name: "Silver", k: "silver_min", v: Number(c.silver_min) },
-    { name: "Gold", k: "gold_min", v: Number(c.gold_min) },
-    { name: "Platinum", k: "platinum_min", v: Number(c.platinum_min) },
+  const rows: { name: string; k: string; v: number; b: keyof typeof benefit }[] = [
+    { name: "Bronze", k: "bronze_min", v: Number(c.bronze_min), b: "bronze_category_id" },
+    { name: "Silver", k: "silver_min", v: Number(c.silver_min), b: "silver_category_id" },
+    { name: "Gold", k: "gold_min", v: Number(c.gold_min), b: "gold_category_id" },
+    { name: "Platinum", k: "platinum_min", v: Number(c.platinum_min), b: "platinum_category_id" },
   ];
+  // Golongan nonaktif tetap ditampilkan kalau masih terpasang, supaya admin tahu kenapa
+  // benefit level itu tidak jalan (kasir mengabaikan golongan nonaktif).
+  const opsiBenefit = (terpasang: string | null | undefined) =>
+    golongan.filter((g) => g.is_active || g.id === terpasang);
+  const ringkasGolongan = (g: { diskon_persen: number; rupiah_per_poin: number; is_active: boolean }) =>
+    `${Number(g.diskon_persen) > 0 ? `diskon ${Number(g.diskon_persen)}%` : "tanpa diskon dasar"} · Rp${Number(g.rupiah_per_poin).toLocaleString("id-ID")}/poin${g.is_active ? "" : " · NONAKTIF"}`;
 
   return (
     <>
@@ -63,6 +74,28 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>Saat ini: {rp(r.v)}{tersimpan ? "" : " (bawaan sistem, belum disimpan)"}</div>
           </div>
         ))}
+        <div style={{ fontSize: 12.5, fontWeight: 700, margin: "4px 0 4px" }}>Benefit tiap level</div>
+        <div style={{ fontSize: 11, color: "var(--td)", marginBottom: 10 }}>
+          Pilih golongan yang jadi paket benefit level itu (diskon dasar, diskon per SKU / kategori produk,
+          dan aturan poin diatur di <Link href="/crm/kategori-pelanggan">CRM → Kategori Pelanggan</Link>).
+          Benefit ikut otomatis saat level pelanggan naik/turun. Pelanggan yang dipasangi golongan khusus
+          di data pelanggan tetap memakai golongan khususnya.
+        </div>
+        {rows.map((r) => {
+          const terpasang = benefit[r.b] ?? null;
+          const pilihan = opsiBenefit(terpasang);
+          const dipilih = golongan.find((g) => g.id === terpasang);
+          return (
+            <div className="fg" key={r.b}>
+              <label className="flab">Benefit {r.name}</label>
+              <select className="fi" name={r.b} defaultValue={terpasang ?? ""}>
+                <option value="">— tanpa benefit level —</option>
+                {pilihan.map((g) => <option key={g.id} value={g.id}>{g.nama}{g.is_active ? "" : " (nonaktif)"}</option>)}
+              </select>
+              {dipilih && <div style={{ fontSize: 9.5, color: dipilih.is_active ? "var(--td)" : "#b91c1c", marginTop: 2 }}>{ringkasGolongan(dipilih)}</div>}
+            </div>
+          );
+        })}
         <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Aturan expiry & downgrade</div>
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5, marginBottom: 8 }}>
           <input type="checkbox" name="points_expiry_enabled" defaultChecked={!!c.points_expiry_enabled} /> Aktifkan expiry poin

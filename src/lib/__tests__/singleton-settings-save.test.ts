@@ -7,6 +7,8 @@ const db = vi.hoisted(() => ({
   denied: false,
   result: { data: [{ id: true }] as unknown, error: null as unknown },
   upserts: [] as { table: string; values: Record<string, unknown>; options: unknown }[],
+  golongan: [] as { id: string; is_active: boolean }[],
+  tierRow: null as Record<string, unknown> | null,
 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -14,7 +16,10 @@ vi.mock("@/lib/loyalty-server", () => ({ jalankanPerawatanLoyalty: vi.fn() }));
 const client = {
   auth: { getUser: async () => ({ data: { user: { id: "a0000000-0000-4000-8000-000000000001" } } }) },
   from: (table: string) => ({
-    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { role: db.role }, error: null }) }) }),
+    select: () => ({
+      eq: () => ({ maybeSingle: async () => ({ data: table === "tier_settings" ? db.tierRow : { role: db.role }, error: null }) }),
+      in: async (_col: string, ids: string[]) => ({ data: db.golongan.filter((g) => ids.includes(g.id)), error: null }),
+    }),
     upsert: (values: Record<string, unknown>, options: unknown) => {
       db.upserts.push({ table, values, options });
       return { select: async () => db.result };
@@ -46,7 +51,7 @@ const tierForm = () => {
 const pajakForm = () => { const f = new FormData(); f.set("ppn_rate", "11"); return f; };
 
 beforeEach(() => {
-  db.role = "OWNER"; db.denied = false; db.upserts = [];
+  db.role = "OWNER"; db.denied = false; db.upserts = []; db.golongan = []; db.tierRow = null;
   db.result = { data: [{ id: true }], error: null };
 });
 
@@ -77,6 +82,26 @@ it("upserts loyalty tier settings and reports 0 written rows as a failure", asyn
   expect(db.upserts[0]).toMatchObject({ table: "tier_settings", values: { id: 1, bronze_min: 1, platinum_min: 4 }, options: { onConflict: "id" } });
   db.result = { data: [], error: null };
   await expect(updateTierSettings(tierForm())).rejects.toThrow("/pengaturan/tier?error=");
+});
+
+it("saves the golongan chosen as benefit for each level; empty means no level benefit", async () => {
+  db.golongan = [{ id: "g-gold", is_active: true }];
+  const f = tierForm(); f.set("gold_category_id", "g-gold"); f.set("silver_category_id", "");
+  await expect(updateTierSettings(f)).rejects.toThrow("/pengaturan/tier?success=1");
+  expect(db.upserts[0].values).toMatchObject({ gold_category_id: "g-gold", silver_category_id: null, bronze_category_id: null, platinum_category_id: null });
+});
+
+it("refuses an unknown or inactive golongan as level benefit, but keeps one already attached", async () => {
+  db.golongan = [{ id: "g-off", is_active: false }];
+  const f = tierForm(); f.set("bronze_category_id", "g-off");
+  await expect(updateTierSettings(f)).rejects.toThrow("/pengaturan/tier?error=Golongan%20benefit%20tidak%20valid");
+  f.set("bronze_category_id", "g-missing");
+  await expect(updateTierSettings(f)).rejects.toThrow("/pengaturan/tier?error=Golongan%20benefit%20tidak%20valid");
+  expect(db.upserts).toHaveLength(0);
+  db.tierRow = { bronze_category_id: "g-off" };
+  f.set("bronze_category_id", "g-off");
+  await expect(updateTierSettings(f)).rejects.toThrow("/pengaturan/tier?success=1");
+  expect(db.upserts[0].values).toMatchObject({ bronze_category_id: "g-off" });
 });
 
 it("upserts tax settings and reports 0 written rows as a failure", async () => {

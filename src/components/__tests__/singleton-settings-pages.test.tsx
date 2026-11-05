@@ -4,7 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 // Saat baris pengaturan satu baris belum pernah disimpan, layar memberi tahu itu dan
 // kolom angkanya kosong + wajib diisi: tidak ada angka bawaan yang ikut tersimpan.
-const state = vi.hoisted(() => ({ rows: {} as Record<string, unknown> }));
+const state = vi.hoisted(() => ({ rows: {} as Record<string, unknown>, lists: {} as Record<string, unknown[]> }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props}>{children}</a> }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 vi.mock("@/app/(app)/pengaturan/gaji/actions", () => ({ simpanAturanGaji: async () => {} }));
@@ -16,9 +16,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   from: (table: string) => {
     const result = () => table === "profiles" ? { data: { role: "OWNER", is_active: true }, error: null } : { data: state.rows[table] ?? null, error: null };
     const query = {
-      select: () => query, eq: () => query, gt: () => query,
+      select: () => query, eq: () => query, gt: () => query, order: () => query,
       maybeSingle: async () => result(),
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: state.lists[table] ?? [], error: null }).then(resolve),
     };
     return query;
   },
@@ -29,7 +29,7 @@ import TierPage from "@/app/(app)/pengaturan/tier/page";
 
 const sp = Promise.resolve({});
 const field = (html: string, name: string) => html.match(new RegExp(`<input[^>]*name="${name}"[^>]*>`))?.[0] ?? "";
-beforeEach(() => { state.rows = {}; });
+beforeEach(() => { state.rows = {}; state.lists = {}; });
 
 it("payroll settings: never-saved banner, empty required fields, no worked examples from defaults", async () => {
   const html = renderToStaticMarkup(await GajiPage({ searchParams: sp }));
@@ -63,4 +63,22 @@ it("loyalty settings: never-saved banner and empty required thresholds instead o
     expect(field(html, name)).toMatch(/value=""/);
     expect(field(html, name)).toContain("required");
   }
+});
+
+it("loyalty settings: each level offers active golongan as benefit and shows the attached one", async () => {
+  state.rows.tier_settings = { bronze_min: 1, silver_min: 2, gold_min: 3, platinum_min: 4, points_expiry_enabled: false, points_expiry_months: 12, tier_downgrade_enabled: false, tier_downgrade_days: 180, gold_category_id: "g-gold", bronze_category_id: "g-off" };
+  state.lists.customer_categories = [
+    { id: "g-gold", nama: "Benefit Gold", diskon_persen: 5, rupiah_per_poin: 500, is_active: true },
+    { id: "g-off", nama: "Lama", diskon_persen: 0, rupiah_per_poin: 1000, is_active: false },
+    { id: "g-hidden", nama: "Nonaktif lain", diskon_persen: 0, rupiah_per_poin: 1000, is_active: false },
+  ];
+  const html = renderToStaticMarkup(await TierPage({ searchParams: sp }));
+  for (const name of ["bronze_category_id", "silver_category_id", "gold_category_id", "platinum_category_id"]) expect(html).toContain(`name="${name}"`);
+  const gold = html.match(/<select[^>]*name="gold_category_id"[\s\S]*?<\/select>/)?.[0] ?? "";
+  expect(gold).toMatch(/<option value="g-gold" selected="">Benefit Gold<\/option>/);
+  expect(gold).not.toContain("Nonaktif lain");
+  expect(html).toContain("diskon 5% · Rp500/poin");
+  const bronze = html.match(/<select[^>]*name="bronze_category_id"[\s\S]*?<\/select>/)?.[0] ?? "";
+  expect(bronze).toContain("Lama (nonaktif)");
+  expect(html).toContain("NONAKTIF");
 });

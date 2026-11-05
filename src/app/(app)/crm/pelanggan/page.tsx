@@ -5,7 +5,7 @@ import { filterCariPelanggan } from "@/lib/pelanggan-cari";
 import { PelangganClient, type CustomerRow } from "./PelangganClient";
 
 const KOLOM_PELANGGAN =
-  "id, name, phone, email, dob, address, tier, kategori, category_id, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
+  "id, name, phone, email, dob, address, tier, kategori, category_id, category_manual, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
   "review_status_id, review_catatan, review_updated_at, " +
   "customer_categories(nama, diskon_persen), customer_review_statuses(nama, warna, nada), " +
   "pets(id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status, created_at)";

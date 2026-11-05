@@ -20,6 +20,7 @@ export type CustomerRow = {
   id: string; name: string; phone: string; email: string | null;
   dob: string | null; address: string | null; tier: string | null;
   kategori: string; category_id: string | null;
+  category_manual?: boolean | null; // false = golongan mengikuti benefit level
   customer_categories: { nama: string; diskon_persen: number } | { nama: string; diskon_persen: number }[] | null;
   points: number; total_spending: number;
   catatan: string | null; pekerjaan: string | null; sumber_info: string | null;
@@ -382,8 +383,8 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                       <form action={updateKategoriPelanggan} style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
                         <input type="hidden" name="id" value={sel.id} />
                         <label style={{ fontSize: 10, color: "var(--tm)" }}>Golongan:</label>
-                        <select name="category_id" defaultValue={sel.category_id ?? ""} className="fi" style={{ width: "auto", fontSize: 11, padding: "4px 8px" }} key={`kat-${sel.id}`}>
-                          <option value="">— tanpa golongan —</option>
+                        <select name="category_id" defaultValue={sel.category_manual ? sel.category_id ?? "" : ""} className="fi" style={{ width: "auto", fontSize: 11, padding: "4px 8px" }} key={`kat-${sel.id}-${sel.category_manual ? "m" : "l"}`}>
+                          <option value="">— ikut level{!sel.category_manual && sel.category_id ? ` (${namaGolongan(sel)})` : ""} —</option>
                           {categories.map((k) => (
                             <option key={k.id} value={k.id}>
                               {k.nama}{k.diskon_persen > 0 ? ` (${k.diskon_persen}%)` : ""}

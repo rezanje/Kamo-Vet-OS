@@ -31,6 +31,23 @@ export async function updateTierSettings(formData: FormData) {
   const downgradeEnabled = formData.get("tier_downgrade_enabled") === "on";
   const downgradeDays = Math.max(1, Math.min(3650, Math.floor(num("tier_downgrade_days"))));
 
+  // Benefit tiap level = satu golongan (boleh kosong). Id dari form diverifikasi: harus
+  // golongan aktif, kecuali golongan yang memang sudah terpasang (dibiarkan apa adanya).
+  const kolomBenefit = ["bronze_category_id", "silver_category_id", "gold_category_id", "platinum_category_id"] as const;
+  const benefit = Object.fromEntries(kolomBenefit.map((k) => [k, String(formData.get(k) ?? "").trim() || null])) as Record<(typeof kolomBenefit)[number], string | null>;
+  const dipilih = [...new Set(Object.values(benefit).filter((v): v is string => !!v))];
+  if (dipilih.length) {
+    const [{ data: kat, error: katError }, { data: lama, error: lamaError }] = await Promise.all([
+      supabase.from("customer_categories").select("id, is_active").in("id", dipilih),
+      supabase.from("tier_settings").select(kolomBenefit.join(", ")).eq("id", 1).maybeSingle(),
+    ]);
+    if (katError || lamaError) redirect(`/pengaturan/tier?error=${encodeURIComponent("Golongan benefit belum dapat diperiksa, coba lagi")}`);
+    const aktif = new Map(((kat ?? []) as { id: string; is_active: boolean }[]).map((k) => [k.id, k.is_active]));
+    const terpasang = (lama ?? {}) as Partial<Record<(typeof kolomBenefit)[number], string | null>>;
+    const salah = kolomBenefit.some((k) => benefit[k] && !aktif.get(benefit[k]!) && benefit[k] !== terpasang[k]);
+    if (salah) redirect(`/pengaturan/tier?error=${encodeURIComponent("Golongan benefit tidak valid atau sudah nonaktif")}`);
+  }
+
   // Tabel satu baris: upsert, lalu pastikan benar-benar 1 baris tertulis.
   // Update atas baris yang belum ada lolos tanpa error padahal tidak menyimpan apa pun.
   const { data, error } = await supabase.from("tier_settings").upsert({
@@ -40,6 +57,7 @@ export async function updateTierSettings(formData: FormData) {
     points_expiry_months: pointsExpiryMonths,
     tier_downgrade_enabled: downgradeEnabled,
     tier_downgrade_days: downgradeDays,
+    ...benefit,
   }, { onConflict: "id" }).select("id");
   if (error || !Array.isArray(data) || data.length !== 1) {
     redirect("/pengaturan/tier?error=" + encodeURIComponent("Gagal menyimpan aturan loyalty"));
