@@ -40,8 +40,7 @@ export async function buatPenjualanOnline(formData: FormData) {
 }
 
 // Pencairan marketplace: input dana yang benar-benar masuk bank; selisihnya = komisi platform.
-// ponytail: 1 order = 1 pencairan. Kalau volume naik dan platform mencairkan
-// banyak order sekaligus, naikkan ke pencairan batch (tabel disbursements).
+// Satu order. Untuk banyak order dalam satu transfer platform → cairkanSekaligus di bawah.
 export async function tandaiCair(formData: FormData) {
   const supabase = await createClient();
   const fail = (msg: string) => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
@@ -110,6 +109,35 @@ export async function tandaiCair(formData: FormData) {
 
   revalidatePath(BACK);
   redirect(`${BACK}?success=${encodeURIComponent(`Pencairan ${sale!.no_struk} tercatat.`)}`);
+}
+
+// Pencairan banyak order sekaligus (permintaan Aldi 5 Nov): marketplace mencairkan
+// banyak order dalam satu transfer. Semua validasi, pembagian komisi, dan jurnal ada di
+// RPC atomik online_disburse_batch — order & jurnal tercatat bersama atau tidak sama sekali.
+export async function cairkanSekaligus(formData: FormData) {
+  const supabase = await createClient();
+  const fail = (msg: string) => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
+
+  const saleIds = formData.getAll("sale_id").map(String).filter(Boolean);
+  const nominal = Number(formData.get("nominal"));
+  const tanggal = String(formData.get("tanggal") ?? "") || todayJakarta();
+  const accountId = String(formData.get("account_id") ?? "").trim() || null;
+  const requestKey = String(formData.get("request_key") ?? "").trim();
+  if (!requestKey) fail("Identitas simpan belum tersedia. Muat ulang halaman.");
+  if (saleIds.length === 0) fail("Centang minimal satu order yang dicairkan.");
+  if (!Number.isFinite(nominal) || nominal <= 0) fail("Isi dana yang masuk ke rekening.");
+
+  const { data, error } = await supabase.rpc("online_disburse_batch", {
+    p_request_key: requestKey, p_sale_ids: saleIds, p_nominal: nominal,
+    p_tanggal: tanggal, p_account_id: accountId,
+  });
+  if (error || !data) fail(`Pencairan belum tersimpan. ${error?.message ?? "Periksa daftar order sebelum mencoba lagi."}`);
+
+  revalidatePath(BACK);
+  const rpS = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+  redirect(`${BACK}?success=${encodeURIComponent(
+    `Pencairan ${data.reference}: ${data.orders} order ${data.channel} lunas, dana masuk ${rpS(Number(data.nominal))}, potongan platform ${rpS(Number(data.komisi))}.`,
+  )}`);
 }
 
 export async function recoverUnitPosting(form: FormData) {
