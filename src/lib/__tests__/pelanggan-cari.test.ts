@@ -65,7 +65,7 @@ describe("pelanggan-server", () => {
     const calls: string[] = [];
     const rows = [{ id: "a", name: "Yayan", phone: "0812" }];
     expect(await cariPelangganDb(fakeDb({ customers: rows }, calls), "yay")).toEqual(rows);
-    expect(calls[0]).toMatch(/^customers:or:name\.ilike\."\*yay\*"&limit=8$/);
+    expect(calls[0]).toMatch(/^customers:is_active=true&or:name\.ilike\."\*yay\*"&limit=8$/);
     expect(await cariPelangganDb(fakeDb({ customers: rows }), "y")).toEqual([]);
   });
 
@@ -92,6 +92,64 @@ describe("pelanggan-server", () => {
       customer_categories: [{ nama: "Old", diskon_persen: 80, rupiah_per_poin: 5, is_active: false }], customer_review_statuses: null, pets: [{ id: "p", name: "Mochi", species: "Kucing" }] };
     expect(await muatPelangganKasir(fakeDb({ customers: cust, sales: [], invoices: [] }), "c2")).toMatchObject({ diskonPersen: 0, golonganId: null, kategori: "Old" });
     expect(await muatPelangganPos(fakeDb({ customers: cust }), "c2")).toEqual({ id: "c2", name: "Lama", phone: "0813", points: 0, pets: [{ id: "p", name: "Mochi", species: "Kucing" }], golonganId: null, golongan: null });
+  });
+
+  it("pelanggan nonaktif (mis. CS pusat) tidak ditawarkan di pencarian maupun pemuatan per id", async () => {
+    const calls: string[] = [];
+    const filters: string[] = [];
+    const db = {
+      from: (table: string) => {
+        const f: string[] = [];
+        const query = {
+          select: () => query, order: () => query, or: () => query, limit: () => query, is: () => query,
+          eq: (k: string, v: unknown) => { f.push(`${k}=${v}`); return query; },
+          maybeSingle: async () => { filters.push(`${table}:${f.join("&")}`); return { data: null, error: null }; },
+          then: (resolve: (v: unknown) => unknown) => { calls.push(`${table}:${f.join("&")}`); return Promise.resolve({ data: [], error: null }).then(resolve); },
+        };
+        return query;
+      },
+    } as never;
+    await cariPelangganDb(db, "cs pusat");
+    await muatPelangganKasir(db, "c1");
+    await muatPelangganPos(db, "c1");
+    const { muatPelangganDasar } = await import("@/lib/pelanggan-server");
+    await muatPelangganDasar(db, "c1");
+    expect(calls[0]).toBe("customers:is_active=true");
+    expect(filters.filter((x) => x.startsWith("customers:"))).toEqual([
+      "customers:id=c1&is_active=true", "customers:id=c1&is_active=true", "customers:id=c1&is_active=true",
+    ]);
+  });
+
+  it("bila kolom status belum ada (aplikasi terdeploy sebelum migrasi), pencarian kasir tetap jalan tanpa filter", async () => {
+    const calls: string[] = [];
+    const db = {
+      from: () => {
+        const f: string[] = [];
+        const query = {
+          select: () => query, order: () => query, or: () => query, limit: () => query,
+          eq: (k: string, v: unknown) => { f.push(`${k}=${v}`); return query; },
+          then: (resolve: (v: unknown) => unknown) => {
+            calls.push(f.join("&"));
+            const kolomBelumAda = f.includes("is_active=true");
+            return Promise.resolve(kolomBelumAda
+              ? { data: null, error: { code: "42703", message: "column customers.is_active does not exist" } }
+              : { data: [{ id: "a", name: "Yayan", phone: "0812" }], error: null }).then(resolve);
+          },
+        };
+        return query;
+      },
+    } as never;
+    expect(await cariPelangganDb(db, "yay")).toEqual([{ id: "a", name: "Yayan", phone: "0812" }]);
+    expect(calls).toEqual(["is_active=true", ""]);
+  });
+
+  it("galat database lain tetap dilaporkan (tidak diam-diam membuang filter)", async () => {
+    const db = { from: () => {
+      const query = { select: () => query, order: () => query, or: () => query, limit: () => query, eq: () => query,
+        then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: null, error: { code: "57014", message: "timeout" } }).then(resolve) };
+      return query;
+    } } as never;
+    await expect(cariPelangganDb(db, "yay")).rejects.toThrow("Pencarian pelanggan gagal");
   });
 
   it("pelanggan yang tidak ada mengembalikan null", async () => {

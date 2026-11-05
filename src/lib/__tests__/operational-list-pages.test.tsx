@@ -63,7 +63,7 @@ beforeEach(() => {
   fixture.jumlahOverride = undefined;
   fixture.failedTable = "";
   fixture.tables = {
-    customers: Array.from({ length: 1200 }, (_, i) => ({ id: `customer-${i}`, name: `Owner ${i}`, phone: `08${i}`, pets: [] })),
+    customers: Array.from({ length: 1200 }, (_, i) => ({ id: `customer-${i}`, name: `Owner ${i}`, phone: `08${i}`, is_active: true, pets: [] })),
     customer_categories: [], customer_review_statuses: [],
     warehouses: [{ id: "wh-a", code: "WH-A", name: "Warehouse A", is_active: true }],
     visits: Array.from({ length: 350 }, (_, i) => ({ id: `visit-${i}`, pet_id: "pet-a", created_at: "2020-01-01T00:00:00Z", pets: { name: `Pet ${i}` }, customers: { name: `Owner ${i}`, phone: `08${i}` }, branches: { code: "A" }, medical_records: { diagnosis: "Fictional" } })),
@@ -108,6 +108,16 @@ describe("complete operational page sources", () => {
     expect(found.customers.map((c) => c.id)).toEqual(["customer-1199"]);
     expect(found.total).toBe(1);
     expect(found.stats.total).toBe(1200);
+  });
+  it("hides deactivated customers from the list unless 'Tampilkan nonaktif' is ticked", async () => {
+    fixture.tables.customers = [...fixture.tables.customers, { id: "cs-pusat", name: "CS Pusat", phone: "0800", is_active: false, pets: [] }];
+    const biasa = customerProps(await CustomersPage({ searchParams: Promise.resolve({ cari: "CS Pusat" }) })) as unknown as { customers: { id: string }[]; jumlahNonaktif: number; tampilNonaktif: boolean };
+    expect(biasa.customers).toEqual([]);
+    expect(biasa.jumlahNonaktif).toBe(1);
+    expect(biasa.tampilNonaktif).toBe(false);
+    const semua = customerProps(await CustomersPage({ searchParams: Promise.resolve({ cari: "CS Pusat", nonaktif: "1" }) })) as unknown as { customers: { id: string }[]; tampilNonaktif: boolean };
+    expect(semua.customers.map((c) => c.id)).toEqual(["cs-pusat"]);
+    expect(semua.tampilNonaktif).toBe(true);
   });
   it("searches medical history beyond the former 300-row cap and preserves pet scope", async () => {
     const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ q: "Pet 349", pet: "pet-a" }) }));

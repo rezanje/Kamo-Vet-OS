@@ -1,0 +1,25 @@
+{
+  "mode": "RED",
+  "migration_count": 376,
+  "cases": [
+    {
+      "case": "preflight: columns installed",
+      "status": "FAIL",
+      "detail": {}
+    },
+    {
+      "case": "preflight: status_guard installed",
+      "status": "FAIL",
+      "detail": {}
+    },
+    {
+      "case": "preflight: tx_guards installed",
+      "status": "FAIL",
+      "detail": {}
+    }
+  ],
+  "totals": {
+    "PASS": 0,
+    "FAIL": 3
+  }
+}

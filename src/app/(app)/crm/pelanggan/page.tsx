@@ -6,16 +6,18 @@ import { PelangganClient, type CustomerRow } from "./PelangganClient";
 
 const KOLOM_PELANGGAN =
   "id, name, phone, email, dob, address, tier, kategori, category_id, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
-  "review_status_id, review_catatan, review_updated_at, " +
+  "review_status_id, review_catatan, review_updated_at, is_active, deactivated_at, deactivation_reason, deactivated_by, " +
   "customer_categories(nama, diskon_persen), customer_review_statuses(nama, warna, nada), " +
   "pets(id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status, created_at)";
 const TIER = ["Bronze", "Silver", "Gold", "Platinum"] as const;
 
 export default async function PelangganPage({ searchParams }: {
-  searchParams: Promise<{ cari?: string; hal?: string; success?: string; error?: string }>;
+  searchParams: Promise<{ cari?: string; hal?: string; nonaktif?: string; success?: string; error?: string }>;
 }) {
   // `cari` datang dari kotak cari halaman ini atau pencarian global di topbar.
-  const { cari, hal, success, error: pesanError } = await searchParams;
+  const { cari, hal, nonaktif, success, error: pesanError } = await searchParams;
+  // Pelanggan nonaktif (mis. akun penampung "CS pusat") disembunyikan dari daftar kecuali diminta.
+  const tampilNonaktif = nonaktif === "1";
   const supabase = await createClient();
   const filter = cari ? filterCariPelanggan(cari) : null;
 
@@ -41,17 +43,28 @@ export default async function PelangganPage({ searchParams }: {
   let total: number;
   let pageInfo: { page: number; from: number; totalPages: number };
   let stats: { total: number; member: number; tierCounts: Record<string, number> };
+  let jumlahNonaktif: number;
   try {
-    const [daftar, semua, member, ...perTier] = await Promise.all([
+    const [daftar, nonaktifCount, semua, member, ...perTier] = await Promise.all([
       readListPage<CustomerRow>(async (from, to) => {
         let q = supabase.from("customers").select(KOLOM_PELANGGAN, { count: "exact" });
+        if (!tampilNonaktif) q = q.eq("is_active", true);
         if (filter) q = q.or(filter);
         const result = await q.order("total_spending", { ascending: false }).order("id").range(from, to);
         return { ...result, data: result.data as unknown as CustomerRow[] | null };
       }, "Pelanggan", hal),
+      // Jumlah nonaktif yang cocok dengan pencarian ini — ditampilkan di samping centang filter.
+      (async () => {
+        let q = supabase.from("customers").select("id", { count: "exact", head: true }).eq("is_active", false);
+        if (filter) q = q.or(filter);
+        const { count, error } = await q;
+        if (error || typeof count !== "number") throw new Error("count");
+        return count;
+      })(),
       hitung(), hitungMember(), ...TIER.map((tier) => hitung(tier)),
     ]);
     customers = daftar.rows;
+    jumlahNonaktif = nonaktifCount;
     total = daftar.count;
     pageInfo = daftar.pageInfo;
     stats = { total: semua, member, tierCounts: Object.fromEntries(TIER.map((tier, i) => [tier, perTier[i]])) };
@@ -60,6 +73,13 @@ export default async function PelangganPage({ searchParams }: {
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   const isAdmin = !!me && ["OWNER", "ADMIN"].includes(me.role);
 
+  // Nama yang menonaktifkan, untuk keterangan di panel detail (hanya pelanggan nonaktif).
+  const idPenonaktif = [...new Set(customers.map((c) => c.deactivated_by).filter((v): v is string => !!v))];
+  const { data: profilPenonaktif } = idPenonaktif.length
+    ? await supabase.from("profiles").select("id, full_name").in("id", idPenonaktif)
+    : { data: [] as { id: string; full_name: string | null }[] };
+  const namaPenonaktif = new Map((profilPenonaktif ?? []).map((p) => [p.id as string, (p.full_name as string | null) ?? null]));
+
   // Kartu anabul hasil pembersihan duplikat (status 'Digabung', migrasi 0076)
   // riwayatnya sudah dipindah ke kartu induk — jangan ditampilkan lagi supaya
   // daftar anabul tidak kelihatan dobel. Disaring di sini, bukan di query,
@@ -67,6 +87,7 @@ export default async function PelangganPage({ searchParams }: {
   const enriched = customers.map((c) => ({
     ...c,
     pets: (c.pets ?? []).filter((p) => p.status === "Aktif"),
+    penonaktif: c.deactivated_by ? namaPenonaktif.get(c.deactivated_by) ?? null : null,
     purchases: [], ledger: [], stat: null,
   }));
 
@@ -94,6 +115,7 @@ export default async function PelangganPage({ searchParams }: {
         cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin}
         categories={categories} statusUlasan={statusUlasan}
         total={total} stats={stats} halaman={pageInfo}
+        tampilNonaktif={tampilNonaktif} jumlahNonaktif={jumlahNonaktif}
       />
     </>
   );

@@ -65,6 +65,8 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
   const [looking, setLooking] = useState(false);
   const [customer, setCustomer] = useState<CustomerLite | null>(null);
   const [existingPets, setExistingPets] = useState<PetLite[]>([]);
+  // No. HP milik pelanggan yang sudah dinonaktifkan (mis. akun penampung "CS pusat").
+  const [pemilikNonaktif, setPemilikNonaktif] = useState(false);
   // Satu pemilik boleh membawa beberapa hewan sekaligus; tiap hewan satu tab.
   const [pets, setPets] = useState<PetDraft[]>([
     awal
@@ -102,6 +104,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
       const res = await lookupPetsByPhone(p);
       setCustomer(res.customer);
       setExistingPets(res.pets);
+      setPemilikNonaktif(!!res.nonaktif);
     } finally {
       setLooking(false);
     }
@@ -144,7 +147,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
       <LocalTransactionDraft scope={draftScope} state={{
         snapshot:{service,phone,pets:pets.map(p=>({...p,photo_url:p.photo_url.startsWith("blob:")?"":p.photo_url})),aktif},
         restore:value=>{if(typeof value.service!=="string"||typeof value.phone!=="string"||!Array.isArray(value.pets)||value.pets.length<1||value.pets.length>MAKS_HEWAN||!value.pets.every(p=>p&&typeof p==="object"&&Object.keys(petKosong()).every(k=>k==="weight"?p[k]===null||(typeof p[k]==="number"&&Number.isFinite(p[k])):typeof p[k]==="string")&&!p.photo_url.startsWith("blob:"))||typeof value.aktif!=="number"||!Number.isInteger(value.aktif)||value.aktif<0||value.aktif>=value.pets.length)return false;setService(value.service);setPhone(value.phone);setPets(value.pets);setAktif(value.aktif);return true;},
-        reset:()=>{setPhone(awal?.phone??"");setService(awal?.poli??"Poli Umum");setPets([awal?{...petKosong(),name:awal.namaHewan,species:awal.jenisHewan,keluhan:awal.keluhan}:petKosong()]);setAktif(0);setCustomer(null);setExistingPets([]);}
+        reset:()=>{setPhone(awal?.phone??"");setService(awal?.poli??"Poli Umum");setPets([awal?{...petKosong(),name:awal.namaHewan,species:awal.jenisHewan,keluhan:awal.keluhan}:petKosong()]);setAktif(0);setCustomer(null);setExistingPets([]);setPemilikNonaktif(false);}
       }}/>
       {(registration.failure||payment.failure)&&<div role="alert" className="p2ban">{registration.failure||payment.failure}</div>}
       <input type="hidden" name="pets" value={JSON.stringify(pets)} />
@@ -160,8 +163,10 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
               className="fi" name="phone" placeholder="081234567890" required
               value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={onPhoneBlur}
             />
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-              {looking ? "Mencari pelanggan…" : customer
+            <div style={{ fontSize: 9.5, color: pemilikNonaktif && !looking ? "#b91c1c" : "var(--td)", marginTop: 3 }} role={pemilikNonaktif ? "alert" : undefined}>
+              {looking ? "Mencari pelanggan…" : pemilikNonaktif
+                ? "No. HP ini milik pelanggan yang sudah dinonaktifkan. Pakai no. HP pemilik asli."
+                : customer
                 ? `Pelanggan terdaftar: ${customer.name}${existingPets.length ? ` · ${existingPets.length} anabul ditemukan` : ""}`
                 : "Kalau nomor sudah terdaftar, data pelanggan lama otomatis dipakai."}
             </div>

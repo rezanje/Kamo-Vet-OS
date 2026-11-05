@@ -101,3 +101,51 @@ export async function updateUlasanPelanggan(formData: FormData) {
   }).eq("id", id);
   revalidatePath("/crm/pelanggan");
 }
+
+export type StatusPelanggan = {
+  is_active: boolean;
+  deactivated_at: string | null;
+  deactivation_reason: string | null;
+  /** Nama pengguna yang menonaktifkan (dibaca dari profil), bila ada. */
+  penonaktif: string | null;
+};
+
+// Pelanggan nonaktif (Aldi, 5 Nov 2026): kasir cabang memakai pelanggan "CS pusat" untuk
+// menampung penjualan yang seharusnya atas nama pelanggan asli. Hanya OWNER/ADMIN yang boleh
+// menonaktifkan/mengaktifkan; database memeriksa ulang peran, mengisi waktu & pelakunya sendiri,
+// dan menolak transaksi baru atas pelanggan nonaktif. Riwayat lama tidak disentuh.
+export async function ubahStatusPelanggan(
+  id: string, aktif: boolean, alasan: string,
+): Promise<{ ok: true; status: StatusPelanggan } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role, is_active").eq("id", user?.id ?? "").maybeSingle();
+  if (!me || !["OWNER", "ADMIN"].includes(me.role) || me.is_active === false) {
+    return { ok: false, error: "Hanya owner/admin yang bisa menonaktifkan atau mengaktifkan pelanggan." };
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: "Pelanggan tidak valid." };
+
+  const { data, error } = await supabase.from("customers")
+    .update(aktif ? { is_active: true } : { is_active: false, deactivation_reason: alasan.trim().slice(0, 500) || null })
+    .eq("id", id)
+    .select("is_active, deactivated_at, deactivation_reason, deactivated_by")
+    .maybeSingle();
+  if (error) return { ok: false, error: error.code === "42501" ? error.message : "Status pelanggan gagal disimpan. Coba lagi." };
+  if (!data) return { ok: false, error: "Pelanggan tidak ditemukan." };
+
+  let penonaktif: string | null = null;
+  if (data.deactivated_by) {
+    const { data: profil } = await supabase.from("profiles").select("full_name").eq("id", data.deactivated_by).maybeSingle();
+    penonaktif = (profil?.full_name as string | null) ?? null;
+  }
+  revalidatePath("/crm/pelanggan");
+  return {
+    ok: true,
+    status: {
+      is_active: data.is_active as boolean,
+      deactivated_at: (data.deactivated_at as string | null) ?? null,
+      deactivation_reason: (data.deactivation_reason as string | null) ?? null,
+      penonaktif,
+    },
+  };
+}

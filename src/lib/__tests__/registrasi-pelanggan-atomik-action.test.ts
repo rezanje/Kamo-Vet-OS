@@ -11,6 +11,7 @@ const s = vi.hoisted(() => ({
   pick: { customer_id: "pemilik-ada", dibuat: false } as Record<string, unknown> | null,
   rpcError: "" as string,
   pickByPhone: null as Record<string, unknown> | null,
+  pemilikAktif: true,
 }));
 
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Object.assign(new Error(`REDIRECT:${url}`), { url }); } }));
@@ -37,7 +38,7 @@ vi.mock("@/lib/supabase/server", () => ({
       Object.assign(q, {
         select: chain, eq: chain, gte: chain, lt: chain, in: chain, order: chain, limit: chain,
         maybeSingle: async () => ({
-          data: table === "branches" ? { code: "TST" } : table === "customers" ? { id: "pemilik-ada", name: "Pemilik Fiktif" } : null,
+          data: table === "branches" ? { code: "TST" } : table === "customers" ? { id: "pemilik-ada", name: "Pemilik Fiktif", is_active: s.pemilikAktif } : null,
           error: null,
         }),
         single: async () => ({ data: { id: `${table}-baru` }, error: null }),
@@ -76,6 +77,7 @@ beforeEach(() => {
   s.pick = { customer_id: "pemilik-ada", dibuat: false };
   s.rpcError = "";
   s.pickByPhone = null;
+  s.pemilikAktif = true;
 });
 
 it("mencari-atau-membuat pemilik lewat satu RPC atomik, bukan cari lalu insert terpisah", async () => {
@@ -113,4 +115,18 @@ it("isian otomatis memakai kunci HP kanonik yang sama dengan penyimpanan", async
 it("isian otomatis tidak memilih bila satu HP dipakai beberapa pelanggan", async () => {
   s.pickByPhone = { status: "ambiguous", count: 2 };
   expect(await lookupPetsByPhone("0812-3456-7890")).toEqual({ customer: null, pets: [] });
+});
+
+it("pemilik nonaktif (mis. akun CS pusat) ditolak sebelum anabul atau kunjungan disimpan", async () => {
+  s.pemilikAktif = false;
+  const hasil = await jalankan(form());
+  expect(hasil).toContain("/klinik/registrasi?error=");
+  expect(hasil).toContain("sudah dinonaktifkan");
+  expect(s.inserts).toEqual([]);
+});
+
+it("isian otomatis tidak memakai pemilik nonaktif dan memberi tahu layar", async () => {
+  s.pickByPhone = { status: "one", customer_id: "pemilik-ada" };
+  s.pemilikAktif = false;
+  expect(await lookupPetsByPhone("0812-3456-7890")).toEqual({ customer: null, pets: [], nonaktif: true });
 });

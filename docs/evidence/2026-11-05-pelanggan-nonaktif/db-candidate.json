@@ -1,0 +1,360 @@
+{
+  "mode": "candidate",
+  "migration_count": 377,
+  "cases": [
+    {
+      "case": "preflight: columns installed",
+      "status": "PASS",
+      "detail": {}
+    },
+    {
+      "case": "preflight: status_guard installed",
+      "status": "PASS",
+      "detail": {}
+    },
+    {
+      "case": "preflight: tx_guards installed",
+      "status": "PASS",
+      "detail": {}
+    },
+    {
+      "case": "existing and new customers are active by default with no deactivation trail",
+      "status": "PASS",
+      "detail": {
+        "name": "CS Pusat Fiktif",
+        "is_active": true,
+        "deactivated_at": null,
+        "deactivated_by": null,
+        "deactivation_reason": null
+      }
+    },
+    {
+      "case": "STAFF cannot deactivate a customer (refused in the DB, still active)",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Hanya owner/admin yang bisa menonaktifkan atau mengaktifkan pelanggan.\nCONTEXT:  PL/pgSQL function public.guard_customer_status() line 12 at RAISE\n{\"sub\": \"fa100000-0000-4000-8000-000000000004"
+      }
+    },
+    {
+      "case": "DOCTOR cannot deactivate a customer (refused in the DB, still active)",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Hanya owner/admin yang bisa menonaktifkan atau mengaktifkan pelanggan.\nCONTEXT:  PL/pgSQL function public.guard_customer_status() line 12 at RAISE\n{\"sub\": \"fa100000-0000-4000-8000-000000000005"
+      }
+    },
+    {
+      "case": "FINANCE cannot deactivate a customer (refused in the DB, still active)",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Hanya owner/admin yang bisa menonaktifkan atau mengaktifkan pelanggan.\nCONTEXT:  PL/pgSQL function public.guard_customer_status() line 12 at RAISE\n{\"sub\": \"fa100000-0000-4000-8000-000000000003"
+      }
+    },
+    {
+      "case": "inactive ADMIN cannot deactivate a customer (refused in the DB, still active)",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Hanya owner/admin yang bisa menonaktifkan atau mengaktifkan pelanggan.\nCONTEXT:  PL/pgSQL function public.guard_customer_status() line 12 at RAISE\n{\"sub\": \"faa00000-0000-4000-8000-000000000061"
+      }
+    },
+    {
+      "case": "STAFF may still edit ordinary customer fields (status untouched)",
+      "status": "PASS",
+      "detail": {
+        "error": null
+      }
+    },
+    {
+      "case": "OWNER deactivates: timestamp & actor set by the DB (client spoof ignored), reason trimmed",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "st": {
+          "name": "CS Pusat Fiktif (ubah)",
+          "is_active": false,
+          "deactivated_at": "2026-11-05T17:26:09.758175+00:00",
+          "deactivated_by": "fa100000-0000-4000-8000-000000000001",
+          "deactivation_reason": "Akun penampung CS pusat"
+        }
+      }
+    },
+    {
+      "case": "history intact: every existing document of the customer still there, unchanged count",
+      "status": "PASS",
+      "detail": {
+        "before": {
+          "sales": 1.0,
+          "visits": 0.0,
+          "sales_quotations": 0.0,
+          "sales_orders": 0.0,
+          "sales_invoices": 1.0,
+          "sales_advances": 0.0
+        },
+        "after": {
+          "sales": 1.0,
+          "visits": 0.0,
+          "sales_quotations": 0.0,
+          "sales_orders": 0.0,
+          "sales_invoices": 1.0,
+          "sales_advances": 0.0
+        }
+      }
+    },
+    {
+      "case": "while inactive the deactivation trail cannot be rewritten; only the reason may be corrected",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "st": {
+          "name": "CS Pusat Fiktif (ubah)",
+          "is_active": false,
+          "deactivated_at": "2026-11-05T17:26:09.758175+00:00",
+          "deactivated_by": "fa100000-0000-4000-8000-000000000001",
+          "deactivation_reason": "Alasan diperbaiki"
+        }
+      }
+    },
+    {
+      "case": "STAFF cannot change the reason of an inactive customer either",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Hanya owner/admin yang bisa menonaktifkan atau mengaktifkan pelanggan.\nCONTEXT:  PL/pgSQL function public.guard_customer_status() line 12 at RAISE\n{\"sub\": \"fa100000-0000-4000-8000-000000000004"
+      }
+    },
+    {
+      "case": "ordinary updates on an inactive customer still allowed (e.g. points), status untouched",
+      "status": "PASS",
+      "detail": {
+        "error": null
+      }
+    },
+    {
+      "case": "new sales for an inactive customer refused with a clear message",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Pelanggan ini sudah dinonaktifkan, pilih pelanggan asli.\nHINT:  CUSTOMER_INACTIVE\nCONTEXT:  PL/pgSQL function public.guard_new_transaction_customer_active() line 22 at RAISE\n"
+      }
+    },
+    {
+      "case": "control: the same new sales for an ACTIVE customer is accepted",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "new visits for an inactive customer refused with a clear message",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Pelanggan ini sudah dinonaktifkan, pilih pelanggan asli.\nHINT:  CUSTOMER_INACTIVE\nCONTEXT:  PL/pgSQL function public.guard_new_transaction_customer_active() line 22 at RAISE\n"
+      }
+    },
+    {
+      "case": "control: the same new visits for an ACTIVE customer is accepted",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "new sales_quotations for an inactive customer refused with a clear message",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Pelanggan ini sudah dinonaktifkan, pilih pelanggan asli.\nHINT:  CUSTOMER_INACTIVE\nCONTEXT:  PL/pgSQL function public.guard_new_transaction_customer_active() line 22 at RAISE\n"
+      }
+    },
+    {
+      "case": "control: the same new sales_quotations for an ACTIVE customer is accepted",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "new sales_orders for an inactive customer refused with a clear message",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Pelanggan ini sudah dinonaktifkan, pilih pelanggan asli.\nHINT:  CUSTOMER_INACTIVE\nCONTEXT:  PL/pgSQL function public.guard_new_transaction_customer_active() line 22 at RAISE\n"
+      }
+    },
+    {
+      "case": "control: the same new sales_orders for an ACTIVE customer is accepted",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "new sales_invoices for an inactive customer refused with a clear message",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Pelanggan ini sudah dinonaktifkan, pilih pelanggan asli.\nHINT:  CUSTOMER_INACTIVE\nCONTEXT:  PL/pgSQL function public.guard_new_transaction_customer_active() line 22 at RAISE\n"
+      }
+    },
+    {
+      "case": "control: the same new sales_invoices for an ACTIVE customer is accepted",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "new sales_advances for an inactive customer refused with a clear message",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Pelanggan ini sudah dinonaktifkan, pilih pelanggan asli.\nHINT:  CUSTOMER_INACTIVE\nCONTEXT:  PL/pgSQL function public.guard_new_transaction_customer_active() line 22 at RAISE\n"
+      }
+    },
+    {
+      "case": "control: the same new sales_advances for an ACTIVE customer is accepted",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "walk-in sale without a customer is unaffected",
+      "status": "PASS",
+      "detail": {
+        "error": null
+      }
+    },
+    {
+      "case": "also refused when a cashier (authenticated STAFF) posts directly",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Pelanggan ini sudah dinonaktifkan, pilih pelanggan asli.\nHINT:  CUSTOMER_INACTIVE\nCONTEXT:  PL/pgSQL function public.guard_new_transaction_customer_active() line 22 at RAISE\n{\"sub\": \"fa100000-"
+      }
+    },
+    {
+      "case": "moving an existing sales onto an inactive customer is refused",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Pelanggan ini sudah dinonaktifkan, pilih pelanggan asli.\nHINT:  CUSTOMER_INACTIVE\nCONTEXT:  PL/pgSQL function public.guard_new_transaction_customer_active() line 22 at RAISE\n"
+      }
+    },
+    {
+      "case": "moving an existing visits onto an inactive customer is refused",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Pelanggan ini sudah dinonaktifkan, pilih pelanggan asli.\nHINT:  CUSTOMER_INACTIVE\nCONTEXT:  PL/pgSQL function public.guard_new_transaction_customer_active() line 22 at RAISE\n"
+      }
+    },
+    {
+      "case": "old documents of the inactive customer can still be updated (e.g. payment/void bookkeeping)",
+      "status": "PASS",
+      "detail": {
+        "error": null
+      }
+    },
+    {
+      "case": "imported historical medical record (legacy_source_key) still lands on the inactive customer",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "continuation of an ongoing inpatient stay (continued_from_visit_id) still allowed",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "replacement invoice that corrects an OLD invoice (replaces_invoice_id) still allowed",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "opening AR balance (opening_batch_id) still allowed",
+      "status": "PASS",
+      "detail": {
+        "error": ""
+      }
+    },
+    {
+      "case": "ADMIN reactivates: trail cleared",
+      "status": "PASS",
+      "detail": {
+        "error": null,
+        "st": {
+          "name": "CS Pusat Fiktif (ubah)",
+          "is_active": true,
+          "deactivated_at": null,
+          "deactivated_by": null,
+          "deactivation_reason": null
+        }
+      }
+    },
+    {
+      "case": "after reactivation new sales are accepted again",
+      "status": "PASS",
+      "detail": {
+        "error": null
+      }
+    },
+    {
+      "case": "STAFF cannot create a customer that is already inactive",
+      "status": "PASS",
+      "detail": {
+        "error": "ERROR:  Hanya owner/admin yang bisa menonaktifkan atau mengaktifkan pelanggan.\nCONTEXT:  PL/pgSQL function public.guard_customer_status() line 32 at RAISE\n{\"sub\": \"fa100000-0000-4000-8000-000000000004"
+      }
+    },
+    {
+      "case": "trigger functions are not callable by clients; search_path pinned",
+      "status": "PASS",
+      "detail": [
+        {
+          "f": "customer_status_manager",
+          "cfg": [
+            "search_path=\"\""
+          ],
+          "def": true,
+          "pub": false,
+          "anon": false,
+          "auth": true
+        },
+        {
+          "f": "guard_customer_status",
+          "cfg": [
+            "search_path=\"\""
+          ],
+          "def": false,
+          "pub": false,
+          "anon": false,
+          "auth": false
+        },
+        {
+          "f": "guard_new_transaction_customer_active",
+          "cfg": [
+            "search_path=\"\""
+          ],
+          "def": true,
+          "pub": false,
+          "anon": false,
+          "auth": false
+        }
+      ]
+    },
+    {
+      "case": "role helper is SECURITY DEFINER, callable by authenticated only",
+      "status": "PASS",
+      "detail": {
+        "f": "customer_status_manager",
+        "cfg": [
+          "search_path=\"\""
+        ],
+        "def": true,
+        "pub": false,
+        "anon": false,
+        "auth": true
+      }
+    }
+  ],
+  "totals": {
+    "PASS": 40,
+    "FAIL": 0
+  }
+}

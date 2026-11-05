@@ -4,7 +4,8 @@ import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { detailPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
+import { detailPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan, type StatusPelanggan } from "./actions";
+import { StatusPelangganPanel } from "./StatusPelanggan";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 
 export type PetRow = {
@@ -26,6 +27,9 @@ export type CustomerRow = {
   review_status_id: string | null; review_catatan: string | null; review_updated_at: string | null;
   customer_review_statuses: StatusUlasan | StatusUlasan[] | null;
   created_at: string; pets: PetRow[];
+  /** false = dinonaktifkan (tidak bisa dipakai transaksi baru; riwayat tetap utuh). */
+  is_active: boolean; deactivated_at: string | null; deactivation_reason: string | null; deactivated_by: string | null;
+  penonaktif?: string | null;
   purchases: Purchase[]; ledger: Ledger[]; stat: UnitStat | null;
 };
 
@@ -80,6 +84,9 @@ function TierBadge({ c }: { c: CustomerRow }) {
   const cfg = c.tier ? TIER_CFG[c.tier] : null;
   if (!cfg) return <span style={{ color: "var(--td)" }}>—</span>;
   return <span className="bge" style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>;
+}
+function NonaktifBadge() {
+  return <span className="bge" style={{ background: "#fee2e2", color: "#b91c1c" }} title="Tidak bisa dipakai untuk transaksi baru">Nonaktif</span>;
 }
 function KategoriBadge({ v }: { v: string }) {
   return <span className="bge" style={{ background: "#eff6ff", color: "#1d4ed8" }}>{v}</span>;
@@ -138,7 +145,7 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers, isAdmin, categories, statusUlasan, cariAwal = "", total, stats, halaman }: {
+export function PelangganClient({ customers, isAdmin, categories, statusUlasan, cariAwal = "", total, stats, halaman, tampilNonaktif = false, jumlahNonaktif = 0 }: {
   /** Satu halaman pelanggan (50 baris) hasil pencarian di server — bukan seluruh pelanggan. */
   customers: CustomerRow[];
   /** Jumlah pelanggan yang cocok dengan pencarian. */
@@ -151,6 +158,10 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   statusUlasan: (StatusUlasan & { id: string })[];
   /** Kata kunci dari pencarian global — kotak cari langsung terisi. */
   cariAwal?: string;
+  /** Daftar ikut menampilkan pelanggan nonaktif (?nonaktif=1). */
+  tampilNonaktif?: boolean;
+  /** Jumlah pelanggan nonaktif yang cocok dengan pencarian saat ini. */
+  jumlahNonaktif?: number;
 }) {
   const router = useRouter();
   const pathname = usePathname() ?? "/crm/pelanggan";
@@ -163,6 +174,8 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   const [q, setQ] = useState(cariAwal);
   const [cariTerkirim, setCariTerkirim] = useState(cariAwal);
   const [detailByCustomer, setDetailByCustomer] = useState<Record<string, DetailPelanggan>>({});
+  // Status aktif yang baru diubah di layar ini, dipakai sampai daftar dari server diperbarui.
+  const [statusLokal, setStatusLokal] = useState<Record<string, StatusPelanggan>>({});
   const detailRef = useRef<HTMLDivElement>(null);
 
   // Pencarian global di topbar bisa mengganti ?cari= saat halaman ini sudah terbuka.
@@ -177,10 +190,11 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
     }
   }
 
-  const buka = (cari: string, hal = 1) => {
+  const buka = (cari: string, hal = 1, nonaktif = tampilNonaktif) => {
     const params = new URLSearchParams();
     if (cari.trim()) params.set("cari", cari.trim());
     if (hal > 1) params.set("hal", String(hal));
+    if (nonaktif) params.set("nonaktif", "1");
     const qs = params.toString();
     setCariTerkirim(cari.trim());
     startMemuat(() => router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false }));
@@ -209,7 +223,9 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   const agg = { ...stats, nonMember: stats.total - stats.member, tierCounts: Object.fromEntries(TIER_ORDER.map((k) => [k, stats.tierCounts[k] ?? 0])) };
   const visibleCustomers = customers;
 
-  const sel = customers.find((c) => c.id === selId) ?? selSimpan;
+  const selDasar = customers.find((c) => c.id === selId) ?? selSimpan;
+  const sel = selDasar && statusLokal[selDasar.id] ? { ...selDasar, ...statusLokal[selDasar.id] } : selDasar;
+  const statusBaris = (c: CustomerRow) => (statusLokal[c.id]?.is_active ?? c.is_active) !== false;
   const detail = sel ? detailByCustomer[sel.id] ?? null : null;
 
   useEffect(() => {
@@ -309,9 +325,15 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                 </Link>
               )}
             </div>
-            <div style={{ position: "relative", width: 220 }}>
-              <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => setQ(e.target.value)} style={{ fontSize: 11, paddingRight: 26 }} />
-              <i className={memuat ? "ti ti-loader-2" : "ti ti-search"} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 11, pointerEvents: "none" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <label style={{ fontSize: 10.5, color: "var(--tm)", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", cursor: "pointer" }}>
+                <input type="checkbox" checked={tampilNonaktif} disabled={memuat} onChange={(e) => buka(cariTerkirim, 1, e.target.checked)} />
+                Tampilkan nonaktif{jumlahNonaktif ? ` (${fmt(jumlahNonaktif)})` : ""}
+              </label>
+              <div style={{ position: "relative", width: 220 }}>
+                <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => setQ(e.target.value)} style={{ fontSize: 11, paddingRight: 26 }} />
+                <i className={memuat ? "ti ti-loader-2" : "ti ti-search"} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 11, pointerEvents: "none" }} />
+              </div>
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -326,12 +348,13 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
               </thead>
               <tbody>
                 {visibleCustomers.map((c, i) => (
-                  <tr key={c.id} style={{ cursor: "pointer", background: selId === c.id ? "rgba(217,119,87,.06)" : undefined, transition: "background .1s" }} onClick={() => pilihPelanggan(c.id)}>
+                  <tr key={c.id} style={{ cursor: "pointer", background: selId === c.id ? "rgba(217,119,87,.06)" : undefined, opacity: statusBaris(c) ? undefined : 0.6, transition: "background .1s" }} onClick={() => pilihPelanggan(c.id)}>
                     <td style={{ color: "var(--td)", fontSize: 11 }}>{halaman.from + i + 1}</td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                         <Av initials={initials(c.name)} color={colorFor(c.id)} size={25} />
                         <span style={{ fontWeight: 500, fontSize: 11.5 }}>{c.name}</span>
+                        {!statusBaris(c) && <NonaktifBadge />}
                       </div>
                     </td>
                     <td><KategoriBadge v={namaGolongan(c)} /></td>
@@ -377,7 +400,13 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <div style={{ marginTop: 4, display: "flex", gap: 5, flexWrap: "wrap" }}>
                       <KategoriBadge v={namaGolongan(sel)} /><TierBadge c={sel} />
                       {ulasan(sel) && <UlasanBadge s={ulasan(sel)!} />}
+                      {sel.is_active === false && <NonaktifBadge />}
                     </div>
+                    <StatusPelangganPanel
+                      key={`status-${sel.id}`} id={sel.id} nama={sel.name} isAdmin={isAdmin}
+                      status={{ is_active: sel.is_active !== false, deactivated_at: sel.deactivated_at, deactivation_reason: sel.deactivation_reason, penonaktif: sel.penonaktif ?? null }}
+                      onBerubah={(st) => { setStatusLokal((cur) => ({ ...cur, [sel.id]: st })); router.refresh(); }}
+                    />
                     {isAdmin && (
                       <form action={updateKategoriPelanggan} style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
                         <input type="hidden" name="id" value={sel.id} />

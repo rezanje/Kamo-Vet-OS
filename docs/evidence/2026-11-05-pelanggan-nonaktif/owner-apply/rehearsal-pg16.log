@@ -1,0 +1,14 @@
+PASS apply.sql = migrasi dalam satu transaksi
+PASS rollback.sql = docs/rollback salinan identik
+Applied 376 repository migrations to isolated PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) with fictional auth/storage shims.
+PASS preflight: semua ok ['t', 't', 't', 't', 't']
+PASS readback setelah apply: semua ok ['t', 't', 't', 't', 't', 't']
+PASS apply ulang aman, readback sama
+PASS setelah dinonaktifkan: struk baru ditolak
+PASS rollback tanpa flag: penjaga dicabut, kolom status disimpan
+PASS apply lagi: pelanggan tetap nonaktif, struk baru ditolak lagi
+PASS rollback dengan flag owner: kolom & fungsi bersih
+PASS preflight setelah rollback penuh: semua ok ['t', 't', 't', 't', 't']
+PASS apply terakhir: readback semua ok ['t', 't', 't', 't', 't', 't']
+Stopped and removed the throwaway PostgreSQL cluster.
+PASS sha256 apply.sql 43379ae0a27131c438b356bd21036c37efabf15d3caf94ff45401f9db3bddffd

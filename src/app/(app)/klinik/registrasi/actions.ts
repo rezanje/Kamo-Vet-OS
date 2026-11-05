@@ -10,6 +10,9 @@ import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar } from "@/lib/an
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 import { resolveDokter } from "@/lib/dokter";
 import { bacaPets, susunKeluhan } from "@/lib/rombongan";
+import { tolakPelangganNonaktif } from "@/lib/pelanggan-aktif";
+
+const PESAN_PEMILIK_NONAKTIF = "No. HP ini milik pelanggan yang sudah dinonaktifkan. Pakai no. HP pemilik asli.";
 
 // Inti registrasi: buat/reuse pelanggan, simpan tiap anabul, buat satu kunjungan
 // per hewan lengkap dengan nomor antrian berurutan.
@@ -80,6 +83,13 @@ async function daftar(formData: FormData): Promise<string[]> {
   const customerId = (pemilik as { customer_id?: unknown } | null)?.customer_id;
   if (pemilikError || typeof customerId !== "string") {
     redirect(`/klinik/registrasi?error=${encodeURIComponent(pemilikError?.message ?? "Gagal simpan pelanggan")}`);
+  }
+
+  // Pemilik nonaktif (mis. akun penampung "CS pusat") tidak boleh menerima kunjungan baru.
+  // Dicek SEBELUM anabul disimpan supaya tidak ada kartu hewan yang menempel ke akun itu;
+  // database tetap menolak kunjungannya bila cek ini terlewati.
+  if (await tolakPelangganNonaktif(supabase, customerId as string)) {
+    redirect(`/klinik/registrasi?error=${encodeURIComponent(PESAN_PEMILIK_NONAKTIF)}`);
   }
 
   // Nomor antrian <KODE CABANG>-<Huruf><3 digit> per cabang per hari (Addendum §4 +
@@ -200,7 +210,7 @@ export type CustomerLite = {
 
 // Dipanggil dari client saat staff selesai isi no. HP — "panggil data anabul
 // existing" (referensi). Kalau nomor sudah terdaftar, kembalikan pemilik + anabul-anabulnya.
-export async function lookupPetsByPhone(phone: string): Promise<{ customer: CustomerLite | null; pets: PetLite[] }> {
+export async function lookupPetsByPhone(phone: string): Promise<{ customer: CustomerLite | null; pets: PetLite[]; nonaktif?: boolean }> {
   const supabase = await createClient();
   const p = phone.trim();
   if (!p) return { customer: null, pets: [] };
@@ -215,8 +225,11 @@ export async function lookupPetsByPhone(phone: string): Promise<{ customer: Cust
   if (typeof customerId !== "string") return { customer: null, pets: [] };
 
   const { data: customer } = await supabase
-    .from("customers").select("id, name, dob, email, address, tier").eq("id", customerId).maybeSingle();
+    .from("customers").select("id, name, dob, email, address, tier, is_active").eq("id", customerId).maybeSingle();
   if (!customer) return { customer: null, pets: [] };
+  // Pemilik nonaktif tidak diisikan ke form: layar memberi tahu staf untuk memakai HP pemilik asli.
+  if ((customer as { is_active?: boolean }).is_active === false) return { customer: null, pets: [], nonaktif: true };
+  delete (customer as { is_active?: boolean }).is_active;
 
   const { data: pets } = await supabase
     .from("pets")
