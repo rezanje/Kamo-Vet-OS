@@ -10,7 +10,9 @@
 --    ikut dihitung; paket: total harga minimum paket);
 --  * awalan galat tetap PRICE_ZERO / PRICE_BELOW_HPP / COST_MISSING milik baris pertama yang gagal, seperti dulu;
 --  * petunjuk "kurangi diskon" dihilangkan untuk invoice tahap rawat inap (diskon tahap tidak bisa diubah);
---  * baris racikan diberi petunjuk khusus.
+--  * baris racikan diberi petunjuk khusus;
+--  * total tagihan Rp0 (mis. satu-satunya baris adalah obat gratis) tidak punya diskon invoice: harga minimum tetap dihitung
+--    dari HPP; "tidak dapat dihitung" hanya untuk diskon invoice 100% sungguhan atau diskon 100% pada baris (kalimatnya menyebut yang mana).
 -- ATURAN (apa yang ditolak) TIDAK berubah: baris/paket ditolak persis ketika neto <= 0, HPP kosong, atau neto < HPP.
 -- Signature, SECURITY DEFINER, search_path, pemilik dan ACL tetap. Penggantian memakai jangkar eksak dan gagal
 -- tertutup bila definisinya sudah berubah dari teks yang ditinjau (P03, 20261104372000).
@@ -104,6 +106,7 @@ end$old$;
   v_q numeric;
   v_unit text;
   v_factor numeric;
+  v_mshare numeric;
   v_min numeric;
   v_text text;
 begin
@@ -113,6 +116,10 @@ begin
   -- Invoice-level discount is apportioned by each line's share of the subtotal, the
   -- same convention as the petshop cashier. Tax is not revenue and is ignored.
   v_share := case when p_subtotal > 0 then (p_subtotal - p_discount) / p_subtotal else 0 end;
+  -- MESSAGE ONLY (the rule above keeps v_share): a zero invoice subtotal (e.g. the only row is a free obat) has no
+  -- invoice discount (discount <= subtotal = 0), so the minimum price is computed with share 1; the minimum is
+  -- uncomputable only for a real 100% invoice discount (v_mshare = 0) or a 100% row discount.
+  v_mshare := case when p_subtotal > 0 then v_share else 1 end;
   -- Inpatient stage invoices cannot carry a discount (stage discount is locked at 0):
   -- the hint must not tell the cashier to lower a discount there.
   -- Stage = the posting context opened by the inpatient stage RPC (first posting and its corrections) or an
@@ -158,14 +165,15 @@ begin
     if v_count <= 30 then
       v_q := greatest(v_line.qty, 1);
       v_unit := coalesce(nullif(btrim(v_line.satuan), ''), 'unit');
-      v_factor := v_q * (1 - coalesce(v_line.diskon_persen, 0) / 100) * v_share;
+      v_factor := v_q * (1 - coalesce(v_line.diskon_persen, 0) / 100) * v_mshare;
       v_min := case when v_factor > 0 then greatest(ceil(coalesce(v_line.hpp, 0) / v_factor), 1) end;
       v_rows := v_rows || format('- %s%s: harga neto %s per %s, %s, %s', v_name,
         case when v_line.racik then ' (racikan)' else '' end,
         clinic_private.rupiah_text(v_net / v_q), v_unit,
         case when v_line.hpp is null then 'HPP belum tersedia'
           else format('HPP %s per %s', clinic_private.rupiah_text(v_line.hpp / v_q), v_unit) end,
-        case when v_min is null then 'harga minimum tidak dapat dihitung (diskon invoice 100%)'
+        case when v_min is null then 'harga minimum tidak dapat dihitung ('
+            || case when coalesce(v_line.diskon_persen, 0) >= 100 then 'diskon 100% pada baris' else 'diskon invoice 100%' end || ')'
           else format('harga minimum %s per %s', clinic_private.rupiah_text(v_min), v_unit) end)::text;
     end if;
   end loop;
@@ -196,7 +204,7 @@ begin
     end if;
     v_count := v_count + 1;
     if v_count <= 30 then
-      v_min := case when v_share > 0 then greatest(ceil(v_line.hpp / v_share), 1) end;
+      v_min := case when v_mshare > 0 then greatest(ceil(v_line.hpp / v_mshare), 1) end;
       v_rows := v_rows || format('- %s (paket): harga neto %s untuk seluruh paket, total HPP komponen %s, %s', v_name,
         clinic_private.rupiah_text(v_net), clinic_private.rupiah_text(v_line.hpp),
         case when v_min is null then 'harga minimum tidak dapat dihitung (diskon invoice 100%)'

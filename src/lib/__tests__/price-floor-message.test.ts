@@ -35,6 +35,18 @@ describe("parsePriceFloorRows", () => {
       { kind: "row", name: "Gratis", net: 0, hpp: null, minimum: null, unit: "pcs" },
     ]);
   });
+  it("parses the C8 wordings: zero-subtotal row with a printed minimum, 100% row discount without one", () => {
+    const rows = parsePriceFloorRows([
+      "- Obat Gratis: harga neto Rp0 per pcs, HPP Rp1.000 per pcs, harga minimum Rp1.000 per pcs",
+      "- Diskon Penuh: harga neto Rp0 per pcs, HPP Rp1.000 per pcs, harga minimum tidak dapat dihitung (diskon 100% pada baris)",
+    ].join("\n"));
+    expect(rows).toEqual([
+      { kind: "row", name: "Obat Gratis", net: 0, hpp: 1000, minimum: 1000, unit: "pcs" },
+      { kind: "row", name: "Diskon Penuh", net: 0, hpp: 1000, minimum: null, unit: "pcs" },
+    ]);
+    expect(hargaMinimumUntuk(rows, { deskripsi: "Obat Gratis", harga: 0 })).toBe(1000);
+    expect(hargaMinimumUntuk(rows, { deskripsi: "Diskon Penuh", harga: 5 })).toBe(0);
+  });
   it("ignores the 'dan N baris lain lagi' tail and hint sentences", () => {
     expect(parsePriceFloorRows("dan 5 baris lain lagi.\nHPP belum tersedia untuk: A, B\nNaikkan Harga di baris tersebut.")).toEqual([]);
   });

@@ -10,7 +10,8 @@
 --    invoice, hanya kolom harga; peran WAJIB OWNER aktif (ADMIN/FINANCE/STAFF ditolak: ACCESS_DENIED);
 --  * alasan wajib (minimal 5 karakter bukan-spasi, maksimal 500) per baris (field harga_reason pada baris);
 --  * jumlah, barang, tautan racikan, komposisi, pelaksana tetap terkunci (COMPOUND_LOCKED seperti sebelumnya);
---  * harga >= 0 dan <= 1e12 (batas keranjang yang ada); aturan P03 tetap berlaku setelahnya: harga yang masih di
+--  * harga >= 0 dan <= 1e12 (batas keranjang yang ada) dan paling banyak 10x harga tersimpan (bila harga tersimpan Rp0:
+--    10x HPP racikan) agar salah ketik angka ditolak dengan pesan CART_INVALID; aturan P03 tetap berlaku setelahnya: harga yang masih di
 --    bawah HPP tetap ditolak dan seluruh simpan dibatalkan (tidak ada harga, jejak, atau izin yang tersisa);
 --  * racikan master (SKU): harga penjualan tersimpan clinic_compound_sales.sale_price ikut disamakan, karena
 --    protect_master_compound_invoice menolak baris invoice yang harganya beda dari snapshot itu;
@@ -18,6 +19,18 @@
 --    pada baris pending, hanya bila RPC di atas menanam izin per-transaksi untuk baris itu (tabel privat);
 --  * jejak: clinic_private.racikan_price_changes (tambah-saja: siapa/kapan/harga lama-baru/alasan) dan
 --    clinic_pending_cart_edits (sebelum/sesudah keranjang, seperti perubahan keranjang lain).
+--
+-- MEMBACA JEJAK (belum ada layar untuk Owner; semua hak aplikasi atas tabel privat dicabut, jadi bacalah lewat SQL editor
+-- sebagai role postgres). Siapa/kapan/harga lama-baru/alasan perubahan harga racikan:
+-- BACA_JEJAK_MULAI
+--   select c.changed_at, p.full_name as diubah_oleh, c.visit_id, c.prescription_item_id, c.old_price, c.new_price, c.reason, c.request_key
+--   from clinic_private.racikan_price_changes c join public.profiles p on p.id = c.changed_by
+--   order by c.changed_at desc limit 100;
+-- BACA_JEJAK_SELESAI
+-- Sebelum/sesudah baris keranjang kunjungan itu: select * from public.clinic_pending_cart_edits where visit_id = '<id kunjungan>' order by created_at;
+-- Catatan: tabel jejak bersifat tambah-saja dan memakai kunci asing ke visits/prescription_items/compounding_recipes/profiles:
+-- menghapus permanen baris-baris itu kelak akan ditolak (gagal tertutup); periksa alat purge/arsip sebelum menghapus.
+--
 -- Tidak ada backfill. Signature, SECURITY DEFINER, search_path, lock_timeout, pemilik dan ACL tetap. Definisi berjalan
 -- ditambal dengan jangkar eksak dan gagal tertutup bila definisinya tidak seperti yang diharapkan.
 
@@ -78,7 +91,7 @@ begin
     -- 2. Keranjang kasir: variabel kerja.
     ('public.clinic_save_inpatient_cashier(uuid,uuid,text,date,text,jsonb,jsonb,text,boolean,text,text)',
      $o$v_perf jsonb;v_perf_changed boolean;$o$,
-     $n$v_perf jsonb;v_perf_changed boolean;v_racik_reason text;v_sale numeric;v_has_sale boolean;$n$),
+     $n$v_perf jsonb;v_perf_changed boolean;v_racik_reason text;v_sale numeric;v_has_sale boolean;v_cap numeric;$n$),
     -- 3. Harga tidak lagi bagian dari kunci racikan; jumlah, barang, dan pelaksana tetap terkunci.
     ('public.clinic_save_inpatient_cashier(uuid,uuid,text,date,text,jsonb,jsonb,text,boolean,text,text)',
      E' or (row_value->>''harga'')::numeric is distinct from rx.harga\n    or nullif(row_value->>''item_id'','''')::uuid is distinct from rx.item_id',
@@ -95,6 +108,12 @@ begin
      v_racik_reason:=btrim(coalesce(row_value->>'harga_reason',''));
      if length(regexp_replace(v_racik_reason,'\s','','g'))<5 or length(v_racik_reason)>500 then
       raise exception using errcode='P0001',message='CART_INVALID: alasan ubah harga racikan wajib diisi (minimal 5 huruf, maksimal 500)';
+     end if;
+     -- typo guard: the new price is at most 10 x the stored price (stored Rp0: 10 x the racikan HPP), in addition to 0..1e12
+     v_cap:=case when rx.harga>0 then rx.harga*10 else 10*coalesce((select round(sum(ci.qty*ci.unit_cost),2) from public.compound_issues ci where ci.recipe_id=rx.compound_recipe_id),0) end;
+     if v_cap is not null and v_price > v_cap then
+      raise exception using errcode='P0001',message=format('CART_INVALID: harga racikan baru %s melebihi batas 10x harga tersimpan %s (maksimal %s); periksa angka yang diketik',
+       clinic_private.rupiah_text(v_price),clinic_private.rupiah_text(rx.harga),clinic_private.rupiah_text(v_cap));
      end if;
      if exists(select 1 from public.invoice_items l where l.prescription_item_id=v_id or l.compound_recipe_id=rx.compound_recipe_id)then
       raise exception using errcode='P0001',message='COMPOUND_LOCKED: racikan ini pernah masuk invoice; ubah harga lewat koreksi dokumen invoice';
@@ -128,7 +147,7 @@ do $check$
 declare d text;
 begin
   d := pg_get_functiondef('public.clinic_save_inpatient_cashier(uuid,uuid,text,date,text,jsonb,jsonb,text,boolean,text,text)'::regprocedure);
-  if position('F7_RACIKAN_HARGA' in d) = 0 or position('racikan_price_permits' in d) = 0 or position('lock_timeout' in d) = 0
+  if position('F7_RACIKAN_HARGA' in d) = 0 or position('racikan_price_permits' in d) = 0 or position('lock_timeout' in d) = 0 or position('v_cap' in d) = 0
     or position('SECURITY DEFINER' in d) = 0 or position('(row_value->>''harga'')::numeric is distinct from rx.harga' in d) > 0 then
     raise exception 'F7 racikan harga: definisi kasir tidak sesuai setelah ditambal';
   end if;

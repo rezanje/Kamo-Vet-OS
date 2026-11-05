@@ -119,6 +119,32 @@ def run(h, setup=True, baseline=False):
     for label, price in (('negative', -1), ('above the 1e12 cap', 1e12 + 1)):
         err = pay(h, v2, stay2, cart2, with_price(cart2, comp2['id'], price, 'Alasan cukup panjang'), 'f7-cap-' + label.split()[0], r.OWNER)
         check(f'NEG owner price {label} -> CART_INVALID', bool(err and 'CART_INVALID' in err) and untouched(h, v2, comp2, *b), dict(error=(err or '')[:200]))
+    # ---------------------------------------------------------------- relative ceiling: new price <= 10 x the stored price (typo guard)
+    old2 = comp2['harga']
+    for label, price in (('10x the old price plus one rupiah', old2 * 10 + 1), ('450500 typed instead of 45050 (ten times the right price)', (int(hpp2) + 500) * 100)):
+        err = pay(h, v2, stay2, cart2, with_price(cart2, comp2['id'], price, 'Alasan cukup panjang'), 'f7-ceil-' + label.split()[0], r.OWNER)
+        check(f'NEG owner price {label} -> CART_INVALID "melebihi batas 10x", whole save rolls back',
+              bool(err and 'CART_INVALID' in err and 'melebihi batas 10x' in err and 'harga tersimpan' in err) and untouched(h, v2, comp2, *b), dict(error=(err or '')[:260]))
+    v7, mr7, stay7, cart7, comp7, hpp7 = racikan_visit(h, 3407)
+    cap7 = comp7['harga'] * 10
+    err = pay(h, v7, stay7, cart7, with_price(cart7, comp7['id'], cap7, 'Alasan cukup panjang'), 'f7-ceil-exact', r.OWNER)
+    check('owner price exactly 10x the stored price is accepted (the ceiling is not stricter than stated)', err is None and harga_of(h, comp7['id']) == cap7 and changes(h, v7) == 1, dict(error=(err or '')[:200], cap=cap7))
+    # stored price Rp0 (below HPP, stuck): the ceiling then rests on 10 x HPP, never on a free-for-all
+    v8, mr8, stay8, cart8, comp8, hpp8 = racikan_visit(h, 3408)
+    plant(h, comp8['id'], 0); cart8 = read(h, v8, stay8); comp8 = next(row for row in cart8['rows'] if row.get('compound_recipe_id')); b8 = (changes(h, v8), edits(h, v8))
+    err = pay(h, v8, stay8, cart8, with_price(cart8, comp8['id'], hpp8 * 10 + 1, 'Alasan cukup panjang'), 'f7-ceil-zero', r.OWNER)
+    check('NEG stored price Rp0: new price above 10 x HPP is refused with the same message', bool(err and 'melebihi batas 10x' in err) and untouched(h, v8, comp8, *b8), dict(error=(err or '')[:220]))
+    err = pay(h, v8, stay8, cart8, with_price(cart8, comp8['id'], hpp8 * 10, 'Alasan cukup panjang'), 'f7-ceil-zero-ok', r.OWNER)
+    check('stored price Rp0: new price at 10 x HPP is accepted', err is None and harga_of(h, comp8['id']) == hpp8 * 10, dict(error=(err or '')[:220]))
+    # the audit has a documented SQL read path (migration header); the documented query itself must run and show the change
+    hdr = (MIG / CANDIDATE).read_text().split('BACA_JEJAK_MULAI')[1].split('BACA_JEJAK_SELESAI')[0] if 'BACA_JEJAK_MULAI' in (MIG / CANDIDATE).read_text() else ''
+    qtext = '\n'.join(l[2:] if l.startswith('--') else l for l in hdr.splitlines() if l.startswith('--   ')).strip()
+    try:
+        out = h.sql(qtext) if qtext else ''
+        check('audit read path: the query documented in the migration header runs and lists the Owner price change (who, old/new price, reason)',
+              'Alasan' in out or 'Harga racikan dinaikkan' in out, dict(rows=out[:200], query=qtext[:120]))
+    except RuntimeError as e:
+        check('audit read path: the query documented in the migration header runs', False, dict(error=str(e)[:200], query=qtext[:200]))
     # ---------------------------------------------------------------- already on an invoice
     v3, mr3, stay3, cart3, comp3, hpp3 = racikan_visit(h, 3403); b3 = (changes(h, v3), edits(h, v3))
     # A pending racikan row that still points at a VOIDED invoice line (the sealed-row case): planted inside the stage posting context.
@@ -208,6 +234,9 @@ MUTANTS = [
     ('F7-M10 item lock dropped together with the price lock', "E' or nullif(row_value->>''item_id'','''')::uuid is distinct from rx.item_id'),", "E' '),"),
     ('F7-M11 trigger exception also allows billed rows', "\\n       and not exists(select 1 from public.invoice_items ii where ii.prescription_item_id = old.id) then", " then"),
     ('F7-M12 trigger exception allows withdrawn rows', "\\n       and old.billing_withdrawn_at is null", ""),
+    ('F7-M13 ceiling removed', "if v_cap is not null and v_price > v_cap then", "if false then"),
+    ('F7-M14 ceiling factor 100 instead of 10', "v_cap:=case when rx.harga>0 then rx.harga*10", "v_cap:=case when rx.harga>0 then rx.harga*100"),
+    ('F7-M15 stored price 0: no HPP-based ceiling', "else 10*coalesce((select round(sum(ci.qty*ci.unit_cost),2) from public.compound_issues ci where ci.recipe_id=rx.compound_recipe_id),0) end;", "else null end;"),
 ]
 
 

@@ -131,6 +131,25 @@ select pg_temp.ok(pg_temp.has(msg,'harga minimum Rp1.500 per pcs') and pg_temp.h
 select pg_temp.cart('[{"d":"P03 obat A","q":1,"p":1000,"hpp":1000}]');
 insert into m values('t3c',pg_temp.floor(1000,1000));
 select pg_temp.ok(msg like 'PRICE_ZERO: Harga neto P03 obat A Rp0.%' and pg_temp.has(msg,'harga minimum tidak dapat dihitung (diskon invoice 100%)'),'T3c: '||replace(msg,E'\n',' // ')) from m where label='t3c';
+-- T3d (C8): the WHOLE invoice subtotal is 0 because the only row is a free obat: there is no invoice discount, the minimum
+-- IS computable (HPP per unit, row discount included) and must be printed; the message must not blame a discount.
+select pg_temp.cart('[{"d":"P03 obat A","q":1,"p":0,"hpp":1000}]');
+insert into m values('t3d',pg_temp.floor(0));
+select pg_temp.ok(msg like 'PRICE_ZERO: Harga neto P03 obat A Rp0.%' and pg_temp.has(msg,'- P03 obat A: harga neto Rp0 per pcs, HPP Rp1.000 per pcs, harga minimum Rp1.000 per pcs')
+ and not pg_temp.has(msg,'diskon invoice') and not pg_temp.has(msg,'tidak dapat dihitung'),'T3d zero subtotal prints the minimum: '||replace(msg,E'\n',' // ')) from m where label='t3d';
+select pg_temp.cart('[{"d":"P03 obat A","q":3,"p":0,"hpp":3000}]');
+insert into m values('t3e',pg_temp.floor(0));
+select pg_temp.ok(pg_temp.has(msg,'HPP Rp1.000 per pcs, harga minimum Rp1.000 per pcs') and not pg_temp.has(msg,'tidak dapat dihitung'),'T3e zero subtotal, qty 3: '||replace(msg,E'\n',' // ')) from m where label='t3e';
+-- row discount 50% on a free row under a zero subtotal: the minimum still honours the row discount (1000 / 0.5)
+select pg_temp.cart('[{"d":"P03 obat A","q":1,"p":0,"hpp":1000,"disc":50}]');
+insert into m values('t3g',pg_temp.floor(0));
+select pg_temp.ok(pg_temp.has(msg,'harga minimum Rp2.000 per pcs') and not pg_temp.has(msg,'diskon invoice'),'T3g zero subtotal with 50% row discount: '||replace(msg,E'\n',' // ')) from m where label='t3g';
+-- T3f (C8): a 100% ROW discount cannot be fixed by any price: say so, naming the ROW discount (never an invoice discount).
+select pg_temp.cart('[{"d":"P03 obat A","q":1,"p":1000,"hpp":1000,"disc":100}]');
+insert into m values('t3f',pg_temp.floor(0));
+select pg_temp.ok(msg like 'PRICE_ZERO: Harga neto P03 obat A Rp0.%' and pg_temp.has(msg,'harga minimum tidak dapat dihitung (diskon 100% pada baris)') and not pg_temp.has(msg,'diskon invoice'),'T3f 100% row discount: '||replace(msg,E'\n',' // ')) from m where label='t3f';
+-- invoice discount equal to a non-zero subtotal keeps its own wording
+select pg_temp.ok((select count(*) from m where label='t3c' and msg like '%harga minimum tidak dapat dihitung (diskon invoice 100%)%')=1,'T3c wording stays for a real 100% invoice discount');
 -- T4 two packages + a plain row, all listed, package minimum is a package total.
 select pg_temp.cart('[{"d":"P03 obat komp","q":1,"p":0,"hpp":1000,"pkg":"f0340000-0000-4000-8000-000000000005"},
  {"d":"P03 jasa","q":1,"p":800,"kind":"jasa","item":"f0340000-0000-4000-8000-000000000004","pkg":"f0340000-0000-4000-8000-000000000005"},
@@ -146,6 +165,10 @@ select pg_temp.cart('[{"d":"P03 obat komp","q":1,"p":0,"hpp":1000,"pkg":"f034000
  {"d":"P03 jasa","q":1,"p":1200,"kind":"jasa","item":"f0340000-0000-4000-8000-000000000004","pkg":"f0340000-0000-4000-8000-000000000005"}]');
 insert into m values('t4b',pg_temp.floor(1200,300));
 select pg_temp.ok(pg_temp.has(msg,'harga minimum paket Rp1.334'),'T4b package min with invoice discount: '||replace(msg,E'\n',' // ')) from m where label='t4b';
+-- T4c (C8): a package whose whole invoice subtotal is 0: no invoice discount exists, the package minimum is printed.
+select pg_temp.cart('[{"d":"P03 obat komp","q":1,"p":0,"hpp":1000,"pkg":"f0340000-0000-4000-8000-000000000005"}]');
+insert into m values('t4c',pg_temp.floor(0));
+select pg_temp.ok(msg like 'PRICE_ZERO: Harga neto paket P03 paket klinik Rp0.%' and pg_temp.has(msg,'harga minimum paket Rp1.000') and not pg_temp.has(msg,'tidak dapat dihitung'),'T4c zero-subtotal package: '||replace(msg,E'\n',' // ')) from m where label='t4c';
 -- T5 racikan row: named, marked, and its hint points at the Owner price / dokter composition (inpatient stage) or dokter only (outpatient).
 select pg_temp.cart('[{"d":"Obat Racik Probiotik","q":1,"p":50000,"hpp":50151,"racik":true,"unit":"racikan"}]');
 insert into m values('t5',pg_temp.floor(50000));
@@ -232,6 +255,10 @@ insert into m values('p2',pg_temp.post_msg(1,'pm-2',1500,500,jsonb_build_array(p
 select pg_temp.ok(pg_temp.has(msg,'harga minimum Rp1.500 per pcs'),'P2 min: '||replace(msg,E'\n',' // ')) from m where label='p2';
 select pg_temp.ok(pg_temp.post_msg(9,'pm-9',1800,500,jsonb_build_array(pg_temp.line('P03 obat A',1,1500),
  jsonb_build_object('description','P03 jasa','qty',1,'price',300,'kind','jasa','item_id','f0340000-0000-4000-8000-000000000004','discount_percent',0)))='ACCEPT','P2b minimum accepted under the invoice discount');
+-- P2c (C8) the real posting path with ONLY a free obat row (subtotal 0): the minimum is printed and is sufficient.
+insert into m values('p2c',pg_temp.post_msg(2,'pm-2c',0,0,jsonb_build_array(pg_temp.line('P03 obat A',1,0))));
+select pg_temp.ok(msg like 'PRICE_ZERO:%' and pg_temp.has(msg,'harga minimum Rp1.000 per pcs') and not pg_temp.has(msg,'tidak dapat dihitung') and not pg_temp.has(msg,'diskon invoice'),'P2c free obat posting message: '||replace(msg,E'\n',' // ')) from m where label='p2c';
+select pg_temp.ok(pg_temp.post_msg(3,'pm-3',1000,0,jsonb_build_array(pg_temp.line('P03 obat A',1,1000)))='ACCEPT','P2d the printed minimum of the free obat row (Rp1.000) is accepted');
 -- P3 correction path lists every row too.
 create function pg_temp.edit_msg(sub numeric, lines jsonb) returns text language plpgsql as $$
 begin
