@@ -128,7 +128,10 @@ it("flags OFF: every scenario is byte-identical to main (hash of the DB call log
   const out: Record<string, unknown> = {}; const hashes: Record<string, string> = {}; const forgedPicks: string[] = [];
   const isForgedPick = (name: string) => /pick (none|id |garbage)/.test(name);
   // The two additions stage 3b/4 accepted on the back office (read-only, no effect on pricing/writes): the syarat-hasil promos read and the release-flag RPC.
-  const normalise = (log: unknown[]) => log.filter((e) => !((e as { table?: string; ops?: unknown }).table === "promos" && JSON.stringify((e as { ops?: unknown }).ops).includes("rule->>discount_mode")) && (e as { rpc?: string }).rpc !== "promo_release_enabled");
+  // Hidden-customer guard (customers.hidden_at, read-only; no effect on pricing/writes when the customer is visible).
+  const isHiddenCustomerCheck = (e: unknown) => (e as { table?: string }).table === "customers"
+    && JSON.stringify((e as { ops?: unknown[] }).ops?.[0]) === JSON.stringify(["select", "hidden_at", null]);
+  const normalise = (log: unknown[]) => log.filter((e) => !isHiddenCustomerCheck(e) && !((e as { table?: string; ops?: unknown }).table === "promos" && JSON.stringify((e as { ops?: unknown }).ops).includes("rule->>discount_mode")) && (e as { rpc?: string }).rpc !== "promo_release_enabled");
   for (const sc of scenarios) {
     S.log = []; S.uuid = 0; S.flagCalls = 0;
     Object.assign(S, { pool: sc.pool ?? "none", shRows: sc.sh ? SH : [], campaign: sc.campaign ?? null, points: sc.points ?? 0, category: sc.category ?? null, rpcFail: sc.rpcFail ?? "", rpcError: sc.rpcError ?? "", saleError: sc.saleError ?? "", voucher: sc.voucher ?? null });

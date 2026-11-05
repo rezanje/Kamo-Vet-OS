@@ -126,7 +126,10 @@ it("flags OFF: every scenario is byte-identical to main (hash of the DB call log
   vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-04T05:00:00Z"));
   const out: Record<string, unknown> = {}; const hashes: Record<string, string> = {}; const forgedPicks: string[] = [];
   const isForgedPick = (name: string) => /pick id /.test(name);
-  const normalise = (log: unknown[]) => log;
+  // Hidden-customer guard (customers.hidden_at, read-only; no effect on pricing/writes when the customer is visible).
+  const isHiddenCustomerCheck = (e: unknown) => (e as { table?: string }).table === "customers"
+    && JSON.stringify((e as { ops?: unknown[] }).ops?.[0]) === JSON.stringify(["select", "hidden_at", null]);
+  const normalise = (log: unknown[]) => log.filter((e) => !isHiddenCustomerCheck(e));
   for (const sc of scenarios) {
     S.log = []; S.uuid = 0; S.flagCalls = 0;
     Object.assign(S, { pool: sc.pool ?? "none", shRows: sc.sh ? SH : [], campaign: sc.campaign ?? null, points: sc.points ?? 0, category: sc.category ?? null, rpcFail: sc.rpcFail ?? "", rpcError: sc.rpcError ?? "", saleError: sc.saleError ?? "", voucher: sc.voucher ?? null });

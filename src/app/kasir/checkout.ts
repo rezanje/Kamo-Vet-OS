@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { PESAN_PELANGGAN_DISEMBUNYIKAN, pelangganDisembunyikan } from "@/lib/pelanggan-server";
 import { loadHargaCabang, hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
 import { computeTotals, lineDiscount, linePromoApplied } from "@/lib/pos-calc";
@@ -77,6 +78,15 @@ export async function checkoutKasir(formData: FormData) {
   const branchId = shift!.branch_id;
   const customerId = String(formData.get("customerId") ?? "") || null;
   if (!customerId) redirect(`${failureUrl}${encodeURIComponent("Pilih pelanggan dulu sebelum bayar")}`);
+  // Kartu yang disembunyikan Owner/Admin (mis. "CS Kamo Pusat") tidak boleh dapat
+  // transaksi baru, walau masih tersimpan di draf kasir. Transaksi pengganti untuk
+  // membetulkan struk lama tetap boleh memakai pelanggan aslinya.
+  if (!replacementId) {
+    let tersembunyi = false;
+    try { tersembunyi = await pelangganDisembunyikan(supabase, customerId); }
+    catch { redirect(`${failureUrl}${encodeURIComponent("Data pelanggan gagal dimuat. Coba lagi.")}`); }
+    if (tersembunyi) redirect(`${failureUrl}${encodeURIComponent(PESAN_PELANGGAN_DISEMBUNYIKAN)}`);
+  }
   const cashier = await loggedInCashier(supabase, user.id, branchId);
   const salespersonId = cashier.employeeId;
   const metode = String(formData.get("metode") ?? "");

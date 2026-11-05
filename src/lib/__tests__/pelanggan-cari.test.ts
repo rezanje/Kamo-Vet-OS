@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { bersihkanKueriPelanggan, filterCariPelanggan } from "@/lib/pelanggan-cari";
 import { cocokFilterPelanggan } from "@/components/__tests__/pelanggan-fake-api";
-import { cariPelangganDb, muatPelangganKasir, muatPelangganPos } from "@/lib/pelanggan-server";
+import { cariPelangganDb, muatPelangganKasir, muatPelangganPos, pelangganDisembunyikan } from "@/lib/pelanggan-server";
 
 const cocok = (q: string, row: { name: string; phone: string }) => {
   const filter = filterCariPelanggan(q);
@@ -48,7 +48,8 @@ function fakeDb(tables: Record<string, Record<string, unknown>[] | Record<string
     from(table: string) {
       const filters: string[] = [];
       const query = {
-        select: () => query, order: () => query, is: () => query,
+        select: () => query, order: () => query,
+        is: (k: string, v: unknown) => { filters.push(`${k} is ${v}`); return query; },
         or: (f: string) => { filters.push(`or:${f}`); return query; },
         eq: (k: string, v: unknown) => { filters.push(`${k}=${v}`); return query; },
         limit: (n: number) => { filters.push(`limit=${n}`); return query; },
@@ -65,8 +66,53 @@ describe("pelanggan-server", () => {
     const calls: string[] = [];
     const rows = [{ id: "a", name: "Yayan", phone: "0812" }];
     expect(await cariPelangganDb(fakeDb({ customers: rows }, calls), "yay")).toEqual(rows);
-    expect(calls[0]).toMatch(/^customers:or:name\.ilike\."\*yay\*"&limit=8$/);
+    expect(calls[0]).toMatch(/^customers:or:name\.ilike\."\*yay\*"&hidden_at is null&limit=8$/);
     expect(await cariPelangganDb(fakeDb({ customers: rows }), "y")).toEqual([]);
+  });
+
+  it("kartu yang disembunyikan Owner/Admin tidak ikut dicari", async () => {
+    const calls: string[] = [];
+    await cariPelangganDb(fakeDb({ customers: [] }, calls), "cs kamo");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("hidden_at is null");
+  });
+
+  it("tetap mencari seperti dulu bila kolom sembunyi belum dipasang di database", async () => {
+    const calls: string[] = [];
+    const rows = [{ id: "a", name: "CS Kamo Pusat", phone: "0812" }];
+    const db = {
+      from() {
+        const filters: string[] = [];
+        const query = {
+          select: () => query, order: () => query, or: () => query, limit: () => query,
+          is: (k: string) => { filters.push(k); return query; },
+          then: (resolve: (v: unknown) => unknown) => {
+            calls.push(filters.join("&"));
+            const res = filters.length
+              ? { data: null, error: { code: "42703", message: "column customers.hidden_at does not exist" } }
+              : { data: rows, error: null };
+            return Promise.resolve(res).then(resolve);
+          },
+        };
+        return query;
+      },
+    } as never;
+    expect(await cariPelangganDb(db, "cs kamo")).toEqual(rows);
+    expect(calls).toEqual(["hidden_at", ""]);
+  });
+
+  it("menandai pelanggan tersembunyi untuk ditolak di kasir/POS", async () => {
+    const dbDenganKartu = (row: unknown, error: unknown = null) => ({
+      from: () => {
+        const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: row, error }) };
+        return query;
+      },
+    }) as never;
+    expect(await pelangganDisembunyikan(dbDenganKartu({ hidden_at: "2026-11-05T10:00:00Z" }), "c1")).toBe(true);
+    expect(await pelangganDisembunyikan(dbDenganKartu({ hidden_at: null }), "c1")).toBe(false);
+    expect(await pelangganDisembunyikan(dbDenganKartu(null), null)).toBe(false);
+    expect(await pelangganDisembunyikan(dbDenganKartu(null, { code: "42703", message: "hidden_at" }), "c1")).toBe(false);
+    await expect(pelangganDisembunyikan(dbDenganKartu(null, { code: "500", message: "boom" }), "c1")).rejects.toThrow();
   });
 
   it("menghitung ringkasan transaksi kasir hanya dari penjualan selesai milik pelanggan itu", async () => {
@@ -84,7 +130,7 @@ describe("pelanggan-server", () => {
     const row = await muatPelangganKasir(db, "c1");
     expect(row).toMatchObject({ id: "c1", trx: 2, belanja: 400, kategori: "Member", diskonPersen: 10, rupiahPerPoin: 500, golonganId: "gol", points: 12 });
     expect(calls).toContain("sales:customer_id=c1");
-    expect(calls).toContain("invoices:visits.customer_id=c1&paid_status=Lunas");
+    expect(calls).toContain("invoices:visits.customer_id=c1&paid_status=Lunas&voided_at is null");
   });
 
   it("golongan nonaktif tidak memberi diskon di kasir maupun POS", async () => {

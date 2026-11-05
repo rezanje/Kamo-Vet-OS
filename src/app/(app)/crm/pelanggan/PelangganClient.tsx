@@ -4,7 +4,7 @@ import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { detailPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
+import { aturSembunyiPelanggan, detailPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 
 export type PetRow = {
@@ -26,6 +26,8 @@ export type CustomerRow = {
   review_status_id: string | null; review_catatan: string | null; review_updated_at: string | null;
   customer_review_statuses: StatusUlasan | StatusUlasan[] | null;
   created_at: string; pets: PetRow[];
+  /** Disembunyikan dari pemilih pelanggan transaksi baru (kosong bila migrasinya belum terpasang). */
+  hidden_at?: string | null; hidden_reason?: string | null;
   purchases: Purchase[]; ledger: Ledger[]; stat: UnitStat | null;
 };
 
@@ -138,7 +140,7 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers, isAdmin, categories, statusUlasan, cariAwal = "", total, stats, halaman }: {
+export function PelangganClient({ customers, isAdmin, categories, statusUlasan, cariAwal = "", total, stats, halaman, hanyaTersembunyi = false }: {
   /** Satu halaman pelanggan (50 baris) hasil pencarian di server — bukan seluruh pelanggan. */
   customers: CustomerRow[];
   /** Jumlah pelanggan yang cocok dengan pencarian. */
@@ -151,6 +153,8 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   statusUlasan: (StatusUlasan & { id: string })[];
   /** Kata kunci dari pencarian global — kotak cari langsung terisi. */
   cariAwal?: string;
+  /** Daftar hanya menampilkan pelanggan yang disembunyikan dari kasir. */
+  hanyaTersembunyi?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname() ?? "/crm/pelanggan";
@@ -181,6 +185,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
     const params = new URLSearchParams();
     if (cari.trim()) params.set("cari", cari.trim());
     if (hal > 1) params.set("hal", String(hal));
+    if (hanyaTersembunyi) params.set("tersembunyi", "1");
     const qs = params.toString();
     setCariTerkirim(cari.trim());
     startMemuat(() => router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false }));
@@ -308,6 +313,12 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                   <i className="ti ti-file-spreadsheet" /> Impor dari Excel
                 </Link>
               )}
+              {isAdmin && (
+                <Link href={hanyaTersembunyi ? "/crm/pelanggan" : "/crm/pelanggan?tersembunyi=1"} className="btn-def"
+                  style={{ fontSize: 11, textDecoration: "none" }}>
+                  <i className={hanyaTersembunyi ? "ti ti-users" : "ti ti-eye-off"} /> {hanyaTersembunyi ? "Semua pelanggan" : "Lihat yang disembunyikan"}
+                </Link>
+              )}
             </div>
             <div style={{ position: "relative", width: 220 }}>
               <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => setQ(e.target.value)} style={{ fontSize: 11, paddingRight: 26 }} />
@@ -332,6 +343,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                         <Av initials={initials(c.name)} color={colorFor(c.id)} size={25} />
                         <span style={{ fontWeight: 500, fontSize: 11.5 }}>{c.name}</span>
+                        {c.hidden_at && <SembunyiBadge />}
                       </div>
                     </td>
                     <td><KategoriBadge v={namaGolongan(c)} /></td>
@@ -348,7 +360,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                   </tr>
                 ))}
                 {customers.length === 0 && (
-                  <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Tidak ada pelanggan.</td></tr>
+                  <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>{hanyaTersembunyi ? "Belum ada pelanggan yang disembunyikan." : "Tidak ada pelanggan."}</td></tr>
                 )}
               </tbody>
             </table>
@@ -377,7 +389,14 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <div style={{ marginTop: 4, display: "flex", gap: 5, flexWrap: "wrap" }}>
                       <KategoriBadge v={namaGolongan(sel)} /><TierBadge c={sel} />
                       {ulasan(sel) && <UlasanBadge s={ulasan(sel)!} />}
+                      {sel.hidden_at && <SembunyiBadge />}
                     </div>
+                    {sel.hidden_at && (
+                      <div style={{ marginTop: 6, fontSize: 10, color: "#92400e", background: "#fffbeb", border: ".5px solid #fcd34d", borderRadius: 6, padding: "5px 8px" }}>
+                        Tidak muncul saat kasir/POS mencari pelanggan sejak {fmtDate(sel.hidden_at)}.
+                        {sel.hidden_reason ? <> Alasan: {sel.hidden_reason}</> : null} Riwayat transaksi tetap utuh.
+                      </div>
+                    )}
                     {isAdmin && (
                       <form action={updateKategoriPelanggan} style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
                         <input type="hidden" name="id" value={sel.id} />
@@ -406,6 +425,25 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                           placeholder='mis. "protes soal antrian, 12 Agu"'
                           style={{ width: 210, fontSize: 11, padding: "4px 8px" }} key={`ulasancat-${sel.id}`} />
                         <button type="submit" className="btn-acc" style={{ fontSize: 10, padding: "4px 10px" }}>Simpan</button>
+                      </form>
+                    )}
+                    {isAdmin && (
+                      <form action={aturSembunyiPelanggan} key={`sembunyi-${sel.id}-${sel.hidden_at ?? ""}`}
+                        onSubmit={(e) => {
+                          if (!sel.hidden_at && !window.confirm(`Sembunyikan "${sel.name}" dari pencarian kasir & POS?\n\nRiwayat transaksinya tetap utuh dan bisa ditampilkan lagi kapan saja.`)) e.preventDefault();
+                        }}
+                        style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                        <input type="hidden" name="id" value={sel.id} />
+                        <input type="hidden" name="nama" value={sel.name} />
+                        <input type="hidden" name="aksi" value={sel.hidden_at ? "tampilkan" : "sembunyikan"} />
+                        <label style={{ fontSize: 10, color: "var(--tm)" }}>Di kasir:</label>
+                        {!sel.hidden_at && (
+                          <input name="hidden_reason" className="fi" maxLength={300} placeholder='Alasan, mis. "kartu umum, sering salah pilih"'
+                            style={{ width: 210, fontSize: 11, padding: "4px 8px" }} />
+                        )}
+                        <button type="submit" className="btn-def" style={{ fontSize: 10, padding: "4px 10px" }}>
+                          <i className={sel.hidden_at ? "ti ti-eye" : "ti ti-eye-off"} /> {sel.hidden_at ? "Tampilkan lagi" : "Sembunyikan dari kasir"}
+                        </button>
                       </form>
                     )}
                   </div>
@@ -440,6 +478,17 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                         <span>{u.count}x · {rp(u.total)} · rata2 {rp(u.count ? u.total / u.count : 0)}</span>
                       </div>
                     ))}
+                    {(detail.perCabang?.length ?? 0) > 1 && (
+                      <>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", margin: "10px 0 6px" }}>PER CABANG</div>
+                        {detail.perCabang!.map((c) => (
+                          <div key={c.cabang} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
+                            <span>{c.cabang}</span>
+                            <span>{c.count}x · {rp(c.total)}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                 )}
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
@@ -605,5 +654,14 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
         )}
       </div>
     </>
+  );
+}
+
+function SembunyiBadge() {
+  return (
+    <span title="Tidak muncul saat kasir/POS mencari pelanggan"
+      style={{ fontSize: 9, fontWeight: 600, color: "#92400e", background: "#fef3c7", border: ".5px solid #fcd34d", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>
+      <i className="ti ti-eye-off" /> Disembunyikan
+    </span>
   );
 }
