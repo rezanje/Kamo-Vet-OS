@@ -9,7 +9,7 @@ const KOLOM_PELANGGAN =
   "review_status_id, review_catatan, review_updated_at, " +
   "customer_categories(nama, diskon_persen), customer_review_statuses(nama, warna, nada), " +
   "pets(id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status, created_at)";
-// Penanda sembunyi (migrasi 20261107010000). Dibaca terpisah supaya halaman tetap
+// Penanda sembunyi (migrasi 20261107020000). Dibaca terpisah supaya halaman tetap
 // terbuka bila migrasinya belum terpasang.
 const KOLOM_SEMBUNYI = ", hidden_at, hidden_reason";
 const TIER = ["Bronze", "Silver", "Gold", "Platinum"] as const;

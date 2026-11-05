@@ -11,7 +11,7 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 export class PelangganGagalDimuat extends Error {}
 
 /**
- * Kolom penanda sembunyi belum ada di database (migrasi 20261107010000 belum
+ * Kolom penanda sembunyi belum ada di database (migrasi 20261107020000 belum
  * dipasang). Kode boleh rilis lebih dulu: pencarian tetap jalan seperti dulu.
  */
 const kolomSembunyiBelumAda = (error: { code?: string; message?: string } | null) =>

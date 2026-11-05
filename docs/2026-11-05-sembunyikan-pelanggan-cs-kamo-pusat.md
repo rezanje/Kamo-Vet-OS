@@ -6,7 +6,7 @@ transaksi di cs kamo pusat". Reza: "coba sambil cek kalo bisa dipisahin yg salah
 ## Yang dikerjakan
 
 1. **Penanda sembunyi** di kartu pelanggan (`customers.hidden_at`, `hidden_by`, `hidden_reason`) —
-   migrasi `20261107010000_pelanggan_disembunyikan.sql`.
+   migrasi `20261107020000_pelanggan_disembunyikan.sql`.
    - Trigger `customers_guard_hidden`: hanya OWNER/ADMIN aktif yang boleh mengubah penanda; waktu & pelaku
      diisi server. Sesi tanpa pengguna (service/maintenance) tidak diperiksa.
    - Trigger `customers_guard_hidden_insert`: kartu baru dari sesi pengguna selalu lahir tampil.
