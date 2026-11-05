@@ -3,7 +3,7 @@ import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { SubmitButton } from "@/components/SubmitButton";
 import { STAY_TYPES, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
-import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
+import { servicePerformerNames } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
 import { bolehLihatRiwayat, klinikHistory } from "@/lib/transaction-history";
@@ -33,7 +33,7 @@ import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
-import { perkiraanTagihan, bekalPotonganKlinik, nilaiBaris } from "@/lib/tagihan-klinik";
+import { perkiraanTagihan, bekalPotonganKlinik } from "@/lib/tagihan-klinik";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 import { mulai } from "@/lib/u07-waktu";
@@ -660,6 +660,7 @@ export default async function PembayaranPage({
       )}
       {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
+          serverError={error}
           key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
           visitId={visit.id}
           requestKey={invoiceRequestKey}
@@ -784,6 +785,7 @@ export default async function PembayaranPage({
         </>
       ) : (
         <PembayaranForm
+          serverError={error}
           key={`${draftUser?.id ?? ""}:${visit.id}:new:${invoiceRequestKey}`}
           visitId={visit.id}
           requestKey={invoiceRequestKey}
