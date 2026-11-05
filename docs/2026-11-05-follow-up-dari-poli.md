@@ -25,9 +25,22 @@ Fiturnya sudah ada (form pemeriksaan → kartu Rencana Follow Up → Klinik › 
 - `page.tsx`: baca `follow_ups` per kunjungan di gelombang baca pertama (tidak menambah putaran).
 - Tidak ada migrasi database.
 
+## Tahap 2 — masukan lanjutan (14.28–14.32)
+- Babibu: "kalau sudah next step, gak muncul" → sudah ditangani kartu Follow up di detail rekam medis.
+- Aldi: "followup buat direct ke WA belum ada, pengen dashboard di frontend klinik" → halaman
+  Klinik › Follow up (tombol Kirim WA) sudah ada, tapi **tidak ditautkan di layar sambutan staf**
+  (`StaffKlinikHome`, layar role STAFF). Ditambah kartu **FOLLOW UP** dengan angka pasien yang perlu
+  diingatkan (hitungan cabang aktif, gagal dibaca → kartu tetap tampil tanpa angka).
+- Babibu: Ciomas kirim WA **3 hari sebelum** → tab "Jatuh tempo" diganti **"Perlu diingatkan"**
+  = status Menunggu & tanggal ≤ hari ini + H. Bawaan H-3, bisa dipilih di hari-H/H-1/H-2/H-3/H-5/H-7
+  (`?h=`), pilihan dipertahankan setelah klik Kirim WA/Selesai/Batal. Kolom tanggal memberi tanda
+  "terlewat n hari" / "hari ini" / "H-n". Tautan lama `?tab=jatuh-tempo` tetap membuka tab ini.
+- Pilihan H-x belum disimpan per cabang (perlu kolom baru); untuk sekarang bawaan H-3 untuk semua cabang.
+
 ## Uji
-- `src/lib/__tests__/followup-poli.test.ts` (baru) — isian belum di-Tambah, validasi, tombol tanggal.
-- Seluruh vitest: 816 file lulus (2 di-skip), 7281 tes lulus.
+- `src/lib/__tests__/followup-poli.test.ts` (baru) — isian belum di-Tambah, validasi, tombol tanggal, H-x.
+- `src/components/__tests__/clinic-shift-entry.test.tsx` — kartu FOLLOW UP + angka, dan tetap tampil saat hitungan gagal.
+- Seluruh vitest: 816 file lulus (2 di-skip), 7286 tes lulus.
 - `tsc --noEmit` bersih, eslint tanpa error, `next build` sukses (env Supabase dummy).
 
 ## Belum diuji

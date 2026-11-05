@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barisFollowUpTerkirim, bersihkanFollowUp, tanggalSetelah } from "@/lib/followup";
+import { barisFollowUpTerkirim, batasPerluDiingatkan, bacaHariIngat, bersihkanFollowUp, posisiFollowUp, tanggalSetelah } from "@/lib/followup";
 
 // Masukan Babibu (5 Nov): follow up dari poli pemeriksaan harus otomatis masuk daftar
 // follow up. Isian yang tanggalnya sudah dipilih tapi tombol "Tambah" belum diklik dulu
@@ -36,5 +36,29 @@ describe("tombol cepat tanggal follow up", () => {
     expect(tanggalSetelah("2026-12-20", { hari: 14 })).toBe("2027-01-03");
     expect(tanggalSetelah("2027-01-31", { bulan: 1 })).toBe("2027-02-28");
     expect(tanggalSetelah("2028-01-31", { bulan: 1 })).toBe("2028-02-29");
+  });
+});
+
+// Babibu (5 Nov): Ciomas mengirim WA 3 hari sebelum jadwal — daftar harus memuat H-3 tanpa cek manual.
+describe("pengingat H-x sebelum jadwal", () => {
+  it("bawaan H-3, pilihan di luar daftar kembali ke bawaan", () => {
+    expect(bacaHariIngat(undefined)).toBe(3);
+    expect(bacaHariIngat("")).toBe(3);
+    expect(bacaHariIngat("0")).toBe(0);
+    expect(bacaHariIngat("7")).toBe(7);
+    expect(bacaHariIngat("4")).toBe(3);
+    expect(bacaHariIngat("abc")).toBe(3);
+  });
+
+  it("batas daftar = hari ini + H", () => {
+    expect(batasPerluDiingatkan("2026-11-05", 3)).toBe("2026-11-08");
+    expect(batasPerluDiingatkan("2026-11-30", 3)).toBe("2026-12-03");
+    expect(batasPerluDiingatkan("2026-11-05", 0)).toBe("2026-11-05");
+  });
+
+  it("menandai terlewat / hari ini / H-n", () => {
+    expect(posisiFollowUp("2026-11-03", "2026-11-05")).toEqual({ teks: "terlewat 2 hari", telat: true });
+    expect(posisiFollowUp("2026-11-05", "2026-11-05")).toEqual({ teks: "hari ini", telat: false });
+    expect(posisiFollowUp("2026-11-08", "2026-11-05")).toEqual({ teks: "H-3", telat: false });
   });
 });

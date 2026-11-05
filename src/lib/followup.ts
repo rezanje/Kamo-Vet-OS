@@ -21,6 +21,32 @@ export function barisFollowUpTerkirim(rows: FollowUpDraft[], isian: FollowUpDraf
   return isian.tanggal ? [...rows, { ...isian, catatan: isian.catatan.trim() }] : rows;
 }
 
+/**
+ * Berapa hari SEBELUM tanggal follow up pelanggan diingatkan. Klinik Ciomas mengirim
+ * WhatsApp 3 hari sebelumnya (Babibu, 5 Nov) — dulu daftar "Jatuh tempo" baru memuat
+ * jadwal di hari-H, jadi staf harus memeriksa tab Mendatang secara manual tiap hari.
+ */
+export const HARI_INGAT_DEFAULT = 3;
+export const PILIHAN_HARI_INGAT = [0, 1, 2, 3, 5, 7] as const;
+
+export function bacaHariIngat(raw: string | null | undefined): number {
+  const n = Number(raw);
+  return raw != null && raw !== "" && (PILIHAN_HARI_INGAT as readonly number[]).includes(n) ? n : HARI_INGAT_DEFAULT;
+}
+
+/** Tanggal terakhir yang sudah masuk daftar "Perlu diingatkan" (hari ini + H). */
+export function batasPerluDiingatkan(hariIni: string, hariIngat: number): string {
+  return tanggalSetelah(hariIni, { hari: hariIngat });
+}
+
+/** Keterangan singkat posisi follow up terhadap hari ini: terlewat / hari ini / H-n. */
+export function posisiFollowUp(tanggal: string, hariIni: string): { teks: string; telat: boolean } {
+  const selisih = Math.round((Date.parse(`${tanggal.slice(0, 10)}T00:00:00Z`) - Date.parse(`${hariIni}T00:00:00Z`)) / 86_400_000);
+  if (selisih < 0) return { teks: `terlewat ${-selisih} hari`, telat: true };
+  if (selisih === 0) return { teks: "hari ini", telat: false };
+  return { teks: `H-${selisih}`, telat: false };
+}
+
 /** Tombol cepat tanggal follow up (vaksin ulang, kontrol). */
 export const PINTASAN_FOLLOWUP = [
   { label: "+1 minggu", hari: 7 },
