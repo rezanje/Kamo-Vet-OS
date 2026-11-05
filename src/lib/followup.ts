@@ -1,6 +1,44 @@
 export const FOLLOWUP_JENIS = ["Kontrol", "Vaksin", "Grooming", "Obat habis", "Lainnya"] as const;
 export type FollowUpJenis = (typeof FOLLOWUP_JENIS)[number];
 
+export type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
+
+/** Satu baris follow up dari form → baris sah, atau null bila tanggalnya bukan YYYY-MM-DD. */
+export function bersihkanFollowUp(row: unknown): FollowUpDraft | null {
+  const r = (row ?? {}) as Partial<Record<keyof FollowUpDraft, unknown>>;
+  const tanggal = String(r.tanggal ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal) || Number.isNaN(Date.parse(`${tanggal}T00:00:00Z`))) return null;
+  const jenis = FOLLOWUP_JENIS.includes(r.jenis as FollowUpJenis) ? String(r.jenis) : "Lainnya";
+  return { jenis, tanggal, catatan: String(r.catatan ?? "").trim().slice(0, 1000) };
+}
+
+/**
+ * Baris yang dikirim form pemeriksaan: baris yang sudah di-"Tambah" ditambah isian yang
+ * tanggalnya sudah dipilih tapi tombol Tambah belum diklik. Dulu isian itu hilang diam-diam
+ * saat Simpan, sehingga dokter mengira follow up sudah dibuat padahal tidak masuk daftar.
+ */
+export function barisFollowUpTerkirim(rows: FollowUpDraft[], isian: FollowUpDraft): FollowUpDraft[] {
+  return isian.tanggal ? [...rows, { ...isian, catatan: isian.catatan.trim() }] : rows;
+}
+
+/** Tombol cepat tanggal follow up (vaksin ulang, kontrol). */
+export const PINTASAN_FOLLOWUP = [
+  { label: "+1 minggu", hari: 7 },
+  { label: "+2 minggu", hari: 14 },
+  { label: "+1 bulan", bulan: 1 },
+  { label: "+3 bulan", bulan: 3 },
+  { label: "+1 tahun", bulan: 12 },
+] as const satisfies readonly { label: string; hari?: number; bulan?: number }[];
+
+/** Tanggal (YYYY-MM-DD) sekian hari / bulan setelah `dari`; 31 Jan + 1 bulan = 28/29 Feb. */
+export function tanggalSetelah(dari: string, geser: { hari?: number; bulan?: number }): string {
+  const [y, m, d] = dari.slice(0, 10).split("-").map(Number);
+  const bulanTujuan = m - 1 + (geser.bulan ?? 0);
+  const hariTerakhir = new Date(Date.UTC(y, bulanTujuan + 1, 0)).getUTCDate();
+  const hasil = new Date(Date.UTC(y, bulanTujuan, Math.min(d, hariTerakhir) + (geser.hari ?? 0)));
+  return hasil.toISOString().slice(0, 10);
+}
+
 // Kalimat pembuka per jenis — biar staff gak nyusun pesan dari nol tiap kali.
 const PEMBUKA: Record<string, string> = {
   Kontrol: "waktunya kontrol ulang",

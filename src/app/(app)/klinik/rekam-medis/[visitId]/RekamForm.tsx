@@ -647,7 +647,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
         </div>
       </div>
 
-      {correction ? <div className="card"><b>Tindak lanjut tersimpan</b><p>{correction.follow_up ?? "Tidak ada tindak lanjut."}</p></div> : <FollowUpTable name="follow_ups" value={followUps} onChange={setFollowUps} />}
+      {correction ? <div className="card"><b>Tindak lanjut tersimpan</b><p>{correction.follow_up ?? "Tidak ada tindak lanjut."}</p><p style={{ fontSize: 10.5, color: "var(--tm)" }}>Follow up baru ditambahkan lewat kartu Follow up di halaman detail rekam medis.</p></div> : <FollowUpTable name="follow_ups" value={followUps} onChange={setFollowUps} />}
 
       {correction && <div style={{ marginTop: 12 }}><label className="flab" htmlFor="correction-reason">Alasan koreksi *</label><textarea id="correction-reason" className="fi" name="correction_reason" required minLength={3} maxLength={1000} /></div>}
       {/* Aksi */}
