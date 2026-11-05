@@ -2,22 +2,24 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-
-const BACK = "/klinik/follow-up";
+import { bacaHariIngat } from "@/lib/followup";
 
 // Staff sudah klik tombol WhatsApp / sudah menghubungi → catat supaya gak dobel kirim.
 export async function tandaiFollowUp(formData: FormData) {
+  // Kembali ke tab & pilihan H-x yang sama, supaya staf tidak perlu memilih ulang.
+  const tab = String(formData.get("tab") ?? "") === "mendatang" ? "mendatang" : "perlu";
+  const BACK = `/klinik/follow-up?tab=${tab}&h=${bacaHariIngat(String(formData.get("h") ?? ""))}`;
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!id || !["Terkirim", "Selesai", "Batal"].includes(status)) {
-    redirect(`${BACK}?error=${encodeURIComponent("Aksi tidak valid")}`);
+    redirect(`${BACK}&error=${encodeURIComponent("Aksi tidak valid")}`);
   }
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: followUp, error: loadError } = await supabase.from("follow_ups")
     .select("id, status, branch_id, visit_id").eq("id", id).maybeSingle();
-  if (loadError || !followUp) redirect(`${BACK}?error=${encodeURIComponent(loadError?.message ?? "Follow up tidak ditemukan")}`);
+  if (loadError || !followUp) redirect(`${BACK}&error=${encodeURIComponent(loadError?.message ?? "Follow up tidak ditemukan")}`);
   const now = new Date().toISOString();
   const { error } = await supabase
     .from("follow_ups")
@@ -29,5 +31,5 @@ export async function tandaiFollowUp(formData: FormData) {
     .eq("id", id)
     .eq("status", followUp.status);
 
-  redirect(error ? `${BACK}?error=${encodeURIComponent(error.message)}` : `${BACK}?success=1`);
+  redirect(error ? `${BACK}&error=${encodeURIComponent(error.message)}` : `${BACK}&success=1`);
 }
