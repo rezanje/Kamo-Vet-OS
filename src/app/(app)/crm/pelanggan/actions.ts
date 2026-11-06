@@ -154,3 +154,35 @@ export async function aturSembunyiPelanggan(formData: FormData) {
     ? "Pelanggan disembunyikan — tidak muncul lagi saat kasir mencari pelanggan."
     : "Pelanggan ditampilkan lagi di pencarian kasir.")}${kembali}`);
 }
+
+// Ubah data pelanggan (nama pemilik, email, alamat, pekerjaan) — permintaan klinik 6 Nov 2026:
+// nama yang salah ketik saat registrasi selama ini tidak bisa dibetulkan. No. HP sengaja
+// tidak ikut diubah di sini karena jadi kunci pengenal pelanggan di kasir & registrasi.
+// Hanya OWNER/ADMIN; perubahan otomatis tercatat di riwayat aktivitas pelanggan.
+export async function ubahDataPelanggan(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  const id = String(formData.get("id") ?? "");
+  const phone = String(formData.get("phone") ?? "").trim().slice(0, 30);
+  const kembali = phone ? `&cari=${encodeURIComponent(phone)}` : "";
+  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+    redirect(`/crm/pelanggan?error=${encodeURIComponent("Hanya owner/admin yang bisa mengubah data pelanggan")}${kembali}`);
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(id)) redirect(`/crm/pelanggan?error=${encodeURIComponent("Pelanggan tidak valid")}${kembali}`);
+
+  const nama = String(formData.get("nama") ?? "").replace(/\s+/g, " ").trim();
+  if (!nama) redirect(`/crm/pelanggan?error=${encodeURIComponent("Nama pelanggan wajib diisi")}${kembali}`);
+  if (nama.length > 100) redirect(`/crm/pelanggan?error=${encodeURIComponent("Nama pelanggan maksimal 100 huruf")}${kembali}`);
+  const email = String(formData.get("email") ?? "").trim().slice(0, 120) || null;
+  const alamat = String(formData.get("alamat") ?? "").trim().slice(0, 500) || null;
+  const pekerjaan = String(formData.get("pekerjaan") ?? "").trim().slice(0, 80) || null;
+
+  const { data, error } = await supabase.from("customers")
+    .update({ name: nama, email, address: alamat, pekerjaan })
+    .eq("id", id).select("id");
+  if (error) redirect(`/crm/pelanggan?error=${encodeURIComponent("Gagal menyimpan data pelanggan. Coba lagi.")}${kembali}`);
+  if (!data?.length) redirect(`/crm/pelanggan?error=${encodeURIComponent("Pelanggan tidak ditemukan")}${kembali}`);
+  revalidatePath("/crm/pelanggan");
+  redirect(`/crm/pelanggan?success=${encodeURIComponent("Data pelanggan tersimpan.")}${kembali}`);
+}
