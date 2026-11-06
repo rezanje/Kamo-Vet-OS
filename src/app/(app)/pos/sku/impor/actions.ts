@@ -988,6 +988,29 @@ export async function previewKomponenGrup(formData: FormData): Promise<GroupImpo
   }
 }
 
+/**
+ * Status aktif barang dijaga trigger guard_master_data_lifecycle (migrasi 20261021134543):
+ * UPDATE items SET is_active langsung ditolak ("Perubahan status wajib melalui aksi master").
+ * Aktivasi harus lewat RPC change_master_data_lifecycle (alasan + versi + jejak audit).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function aktifkanGrupSetelahRincian(supabase: any, groupId: string, groupCode: string) {
+  const current = await supabase.from("items")
+    .select("is_active, lifecycle_revision, trashed_at, item_type").eq("id", groupId).maybeSingle();
+  if (current.error) throw new Error(current.error.message);
+  if (!current.data || current.data.item_type !== "Grup") throw new Error(`Grup ${groupCode} tidak ditemukan.`);
+  if (current.data.trashed_at) throw new Error(`Grup ${groupCode} ada di Sampah. Pulihkan dulu, lalu ulangi konfirmasi.`);
+  if (current.data.is_active === true) return;
+  const activated = await supabase.rpc("change_master_data_lifecycle", {
+    p_entity: "items",
+    p_id: groupId,
+    p_action: "activate",
+    p_expected_revision: Number(current.data.lifecycle_revision ?? 0),
+    p_reason: "Aktivasi otomatis: rincian Grup lengkap dari impor Rincian Grup",
+  });
+  if (activated.error) throw new Error(activated.error.message);
+}
+
 export async function konfirmasiKomponenGrup(formData: FormData): Promise<GroupImportState> {
   try {
     const prepared = await prepareGroupImport(formData);
@@ -1019,9 +1042,7 @@ export async function konfirmasiKomponenGrup(formData: FormData): Promise<GroupI
         p_components: components,
       });
       if (rpc.error) throw new Error(rpc.error.message);
-      const activated = await prepared.supabase.from("items").update({ is_active: true })
-        .eq("id", group.id).eq("item_type", "Grup");
-      if (activated.error) throw new Error(activated.error.message);
+      await aktifkanGrupSetelahRincian(prepared.supabase, group.id, groupCode);
       complete += 1;
     }
     revalidatePath("/pos/sku");
