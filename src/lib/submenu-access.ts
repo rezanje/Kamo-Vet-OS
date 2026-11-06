@@ -287,3 +287,11 @@ export function gabungSubmenu<T extends { role: string; module_id: string }>(rul
     return hit ? { ...r, submenus: [...hit.allowed] } : r;
   });
 }
+
+/**
+ * Halaman yang tidak dimiliki awalan modul mana pun. Peran yang bawaannya SEMUA modul (ADMIN, DOCTOR) hanya memegangnya
+ * selama SEMUA modul tercentang dan masing-masing masih punya sub-menu terbuka (aturan `bolehBukaPath`, jangkauan penuh).
+ * Satu modul saja yang tak dicentang atau dikosongkan membuat semuanya tertutup. Tes membuktikan daftar ini sama
+ * dengan perilaku `bolehBukaPath`.
+ */
+export const OWNERLESS_FULL_REACH_PAGES = ["/dokumen", "/keuangan", "/pajak/faktur", "/aset-tetap", "/keuangan/laba-ditahan"] as const;

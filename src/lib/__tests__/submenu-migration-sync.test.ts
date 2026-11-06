@@ -21,11 +21,23 @@ describe("migration 20261107890000_role_submenu_access.sql stays in sync with th
     expect(sql.replace(/--.*$/gm, "")).not.toMatch(/^\s*(begin|commit|rollback)\s*;/im);
   });
 
-  it("is numbered above every other migration", async () => {
+  // Renumber rule (docs/ROLE-SUBMENU-ACCESS.md, "Nomor migrasi"): a LARGER migration landing later must not turn this red -
+  // only uniqueness of our version, version == file name and ordering after role_settings_atomic are required.
+  // If main already has a number above ours when merging, renumber this file (name + this test + docs).
+  it("is numbered above the migrations it extends, unique, and its version equals its file name", async () => {
     const { readdirSync } = await import("node:fs");
+    const NAME = "20261107890000_role_submenu_access.sql";
     const names = readdirSync(join(__dirname, "../../../supabase/migrations")).filter(n => n.endsWith(".sql")).sort();
-    expect(names.at(-1)).toBe("20261107890000_role_submenu_access.sql");
-    expect(Number(names.at(-1)!.slice(0, 14))).toBeGreaterThan(20261106890000);
+    // Only OUR version must be unique: main already carries two older duplicate-version pairs (20261029140000,
+    // 20261029150000) that are not ours to fix here. A second file with our version breaks `supabase db push`.
+    const versions = names.map(n => /^(\d{14})_/.exec(n)?.[1]).filter(Boolean);
+    expect(names).toContain(NAME);
+    expect(versions.filter(v => v === NAME.slice(0, 14))).toHaveLength(1);
+    expect(NAME).toMatch(/^\d{14}_[a-z0-9_]+\.sql$/);
+    expect(names.filter(n => n.includes("role_submenu_access"))).toEqual([NAME]);
+    expect(path.endsWith(NAME)).toBe(true);
+    expect(Number(NAME.slice(0, 14))).toBeGreaterThan(20261106890000);
+    expect(names.indexOf(NAME)).toBeGreaterThan(names.findIndex(n => n.includes("role_settings_atomic")));
   });
 
   it("anchored and additive: every function patch goes through patch_once and nothing drops data", () => {

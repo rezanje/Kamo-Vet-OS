@@ -1,7 +1,7 @@
-import { readdirSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MODULES, TILES } from "../nav";
+import { findRouteFiles } from "./submenu-route-scan";
 import { MODULE_PATHS, OPERATIONAL_PATHS, SELALU_BOLEH } from "../akses";
 import {
   SUBMENU_ENTRIES, SUBMENU_HOME, moduleHasAllowedSubmenu, resolveSubmenu, selectableSubmenus, submenuIzinkan,
@@ -79,15 +79,7 @@ describe("every nav tile href resolves to exactly one sub-menu (or is explicitly
 
 describe("every real page route resolves under each module that owns it", () => {
   const root = join(__dirname, "../../app/(app)");
-  const found: string[] = [];
-  const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const full = join(dir, name);
-      if (statSync(full).isDirectory()) { if (name !== "__tests__") walk(full); continue; }
-      if (name === "page.tsx" || name === "route.ts") found.push(full);
-    }
-  };
-  walk(root);
+  const found = findRouteFiles(root);
   const routes = found.map(f => "/" + f.slice(root.length + 1).split(sep).slice(0, -1).filter(s => !/^\(.*\)$/.test(s)).join("/")).map(r => r.replace(/\[[^\]]+\]/g, "x"));
 
   // Pages in a module prefix that deliberately get NO sub-menu: a restricted role cannot open them.

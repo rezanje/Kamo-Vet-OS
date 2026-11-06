@@ -246,6 +246,46 @@ describe("sub-menu policy: ROLE ADMIN restricted to a few pages (server-side, UR
     expect(r.status).toBe(303);
     expect(new URL(r.headers.get("location")!).pathname).toBe("/login");
   });
+  it("OWNER is never locked out by a failing policy read, whatever the error", async () => {
+    state.profile = { role: "OWNER", is_active: true };
+    for (const err of [{ code: "57014", message: "statement timeout" }, { code: "42501", message: "permission denied for function get_my_submenu_policy" },
+      { message: "fetch failed" }, { code: "42883", message: "function public.foo(text) does not exist" }]) {
+      state.policyError = err;
+      for (const p of ["/crm/promo", "/pengaturan/akses-grup", "/"]) {
+        const r = await go(p);
+        expect(r.headers.get("x-middleware-next"), `${err.code} ${p}`).toBe("1");
+      }
+      expect((await go("/pengaturan/akses-grup", "POST")).headers.get("x-middleware-next")).toBe("1");
+    }
+  });
+  it("OWNER is not locked out by a malformed policy payload either", async () => {
+    state.profile = { role: "OWNER", is_active: true };
+    state.policy = { not: "an array" } as never;
+    expect((await go("/crm/promo")).headers.get("x-middleware-next")).toBe("1");
+  });
+  it("OWNER still needs an active profile: a failing policy read does not bypass the profile/rules checks", async () => {
+    state.profile = null;
+    state.policyError = { code: "57014", message: "statement timeout" };
+    const r = await go("/crm/promo");
+    expect(r.status).toBe(303);
+    expect(new URL(r.headers.get("location")!).pathname).toBe("/login");
+  });
+  it("a non-OWNER role whose policy read fails is sent to login with a clear message (GET and POST), never let through", async () => {
+    state.policyError = { code: "57014", message: "statement timeout" };
+    for (const method of ["GET", "POST"]) {
+      const r = await go("/crm/promo", method);
+      expect(r.status).toBe(303);
+      const url = new URL(r.headers.get("location")!);
+      expect(url.pathname).toBe("/login");
+      expect(url.searchParams.get("error"), method).toContain("Hak akses");
+    }
+  });
+  it("a DB 'function does not exist' raised from INSIDE another function is an error for restricted roles (fail-closed)", async () => {
+    state.policyError = { code: "42883", message: "function public.foo(text) does not exist" };
+    const r = await go("/crm/promo");
+    expect(r.status).toBe(303);
+    expect(new URL(r.headers.get("location")!).pathname).toBe("/login");
+  });
   it("a module whose every sub-menu is unchecked is refused including its home", async () => {
     state.policy = [{ role: "ADMIN", module_id: "crm", allowed: [] }];
     expect(blocked(await go("/crm"))).toBe(true);

@@ -92,3 +92,46 @@ it("explains the sub-menu feature in plain Indonesian", async () => {
   expect(host.textContent).toContain("sub-menu");
   expect(host.textContent).toContain("Bawaan: semua sub-menu");
 });
+
+// ---- Halaman tanpa pemilik: aturan yang sebenarnya ada di bolehBukaPath ----
+// Peran yang bawaannya SEMUA modul (ADMIN/DOCTOR) hanya memegang halaman tanpa pemilik modul
+// (/dokumen, /keuangan, /pajak/faktur, /aset-tetap, /keuangan/laba-ditahan) selama SEMUA modul tercentang
+// dan punya sub-menu terbuka. Satu modul tak dicentang atau dikosongkan => semuanya tertutup.
+import { bolehBukaPath, ROLE_V2_MARKER } from "@/lib/akses";
+import { OWNERLESS_FULL_REACH_PAGES } from "@/lib/submenu-access";
+const ownerless = (m: string) => section(m).querySelector("[data-ownerless-warning]");
+
+it("the listed ownerless pages are exactly the ones bolehBukaPath closes when a module is emptied (rule, not a guess)", () => {
+  expect([...OWNERLESS_FULL_REACH_PAGES].sort()).toEqual(["/aset-tetap", "/dokumen", "/keuangan", "/keuangan/laba-ditahan", "/pajak/faktur"]);
+  const rules = (sub?: Record<string, string[]>) => [{ role: "ADMIN", module_id: ROLE_V2_MARKER }, ...ALL.map(m => (sub && m in sub ? { role: "ADMIN", module_id: m, submenus: sub[m] } : { role: "ADMIN", module_id: m }))];
+  for (const p of OWNERLESS_FULL_REACH_PAGES) {
+    expect(bolehBukaPath("ADMIN", p, rules()), `${p} full`).toBe(true);
+    expect(bolehBukaPath("ADMIN", p, rules({ klinik: ["klinik.antrian"] })), `${p} partly restricted`).toBe(true);
+    expect(bolehBukaPath("ADMIN", p, rules({ klinik: [] })), `${p} emptied`).toBe(false);
+    expect(bolehBukaPath("ADMIN", p, rules().filter(r => r.module_id !== "crm")), `${p} unchecked`).toBe(false);
+  }
+});
+
+it("emptying a module of a full-reach role (ADMIN) also warns, in plain words, about the ownerless pages", async () => {
+  await render(admin);
+  expect(ownerless("klinik")).toBeNull();
+  await act(async () => [...section("klinik").querySelectorAll("button")].find(b => b.textContent === "Kosongkan")!.click());
+  const text = ownerless("klinik")!.textContent!;
+  for (const p of OWNERLESS_FULL_REACH_PAGES) expect(text, p).toContain(p);
+  expect(text).toContain("ikut tertutup");
+  expect(text).toMatch(/semua modul/i);
+});
+
+it("unchecking a whole module warns the same way; restoring it removes the warning", async () => {
+  await render(admin);
+  await act(async () => host.querySelector<HTMLInputElement>('input[name="mod_crm"]')!.click());
+  expect(ownerless("crm")!.textContent).toContain("/dokumen");
+  await act(async () => host.querySelector<HTMLInputElement>('input[name="mod_crm"]')!.click());
+  expect(ownerless("crm")).toBeNull();
+});
+
+it("a role whose default is NOT every module (STAFF) gets no ownerless-pages claim", async () => {
+  await render({ ...admin, role: "STAFF", modules: ["klinik"] });
+  await act(async () => [...section("klinik").querySelectorAll("button")].find(b => b.textContent === "Kosongkan")!.click());
+  expect(ownerless("klinik")).toBeNull();
+});

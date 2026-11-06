@@ -4,6 +4,7 @@ import { CorrectionTransactionForm } from "@/components/CorrectionTransactionFor
 import { SubmitButton } from "@/components/SubmitButton";
 import { effectiveAllowedActions, ROLE_ACCESS_CATALOG, roleAccessScope, type RoleAccessConfig } from "@/lib/role-access-catalog";
 import { roleCapabilities } from "@/lib/role-capabilities";
+import { modulBawaan } from "@/lib/akses";
 import { selectableSubmenus } from "@/lib/submenu-access";
 import { saveRoleSettings } from "./actions";
 import { SubmenuPicker } from "./submenuPicker";
@@ -30,7 +31,7 @@ export function NewRoleSettingsForm({ userId, config, canEdit }: { userId: strin
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 10, alignItems: "start" }}>
           {ROLE_ACCESS_CATALOG.filter(m => m.group === group).map(m => <div key={m.id}>
             <label><input type="checkbox" name={`mod_${m.id}`} defaultChecked={config.modules.includes(m.id)} /> {m.label}</label>
-            {selectableSubmenus(m.id).length > 0 && <SubmenuPicker moduleId={m.id} moduleLabel={m.label} allowed={config.submenus?.[m.id]} moduleChecked={config.modules.includes(m.id)} />}
+            {selectableSubmenus(m.id).length > 0 && <SubmenuPicker moduleId={m.id} moduleLabel={m.label} allowed={config.submenus?.[m.id]} moduleChecked={config.modules.includes(m.id)} fullReach={modulBawaan(config.role) === null} />}
           </div>)}
         </div>
       </section>)}

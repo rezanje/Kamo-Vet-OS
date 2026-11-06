@@ -1,13 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { selectableSubmenus, submenuLabel, submenuTileLabels } from "@/lib/submenu-access";
+import { OWNERLESS_FULL_REACH_PAGES, selectableSubmenus, submenuLabel, submenuTileLabels } from "@/lib/submenu-access";
 
 /**
  * Daftar sub-menu satu modul (bisa dibuka-tutup). Kotak centang tetap input biasa (tidak dikendalikan React)
  * supaya mekanisme draf formulir yang sudah ada tetap memulihkannya; hitungan dibaca ulang dari DOM.
  * `subs_<modul>` menandai bahwa bagian ini tampil, sehingga "semua dikosongkan" tidak tertukar dengan "tidak ada".
  */
-export function SubmenuPicker({ moduleId, moduleLabel, allowed, moduleChecked }: { moduleId: string; moduleLabel: string; allowed: string[] | undefined; moduleChecked: boolean }) {
+export function SubmenuPicker({ moduleId, moduleLabel, allowed, moduleChecked, fullReach = false }: { moduleId: string; moduleLabel: string; allowed: string[] | undefined; moduleChecked: boolean; fullReach?: boolean }) {
   const entries = selectableSubmenus(moduleId);
   const ref = useRef<HTMLDetailsElement>(null);
   const initial = allowed === undefined ? entries.length : entries.filter(e => allowed.includes(e.id)).length;
@@ -38,6 +38,8 @@ export function SubmenuPicker({ moduleId, moduleLabel, allowed, moduleChecked }:
     });
   };
   const total = entries.length;
+  // Peran yang bawaannya semua modul: modul tak dicentang / dikosongkan juga menutup halaman tanpa pemilik modul.
+  const closesOwnerless = fullReach && (!view.moduleOn || view.checked === 0);
   return (
     <details ref={ref} data-submenu-module={moduleId} style={{ margin: "2px 0 6px 22px" }}>
       <summary>{moduleLabel}: {view.checked} dari {total} sub-menu{view.checked === total ? " (semua)" : ""}</summary>
@@ -48,6 +50,9 @@ export function SubmenuPicker({ moduleId, moduleLabel, allowed, moduleChecked }:
       </div>
       {!view.moduleOn && <p role="note">Modul ini belum dicentang di atas, jadi semua sub-menunya belum bisa dibuka.</p>}
       {view.moduleOn && view.checked === 0 && <p role="alert" style={{ color: "#b91c1c" }}>Modul dicentang tetapi semua sub-menunya kosong: modul ini dianggap tidak bisa dibuka dan hilang dari menu.</p>}
+      {closesOwnerless && <p role="note" data-ownerless-warning style={{ color: "#b45309" }}>
+        Peran ini awalnya boleh membuka semua modul. Selama masih ada modul yang tidak dicentang atau semua sub-menunya dikosongkan, halaman yang tidak dimiliki modul mana pun ikut tertutup: {OWNERLESS_FULL_REACH_PAGES.join(", ")}. Centang lagi semua modul (minimal satu sub-menu tiap modul) agar halaman itu terbuka kembali.
+      </p>}
       {entries.map(e => {
         const also = submenuTileLabels(e.id).filter(l => l !== submenuLabel(e.id));
         return <label key={e.id} style={{ display: "block" }}>
