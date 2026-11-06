@@ -227,7 +227,7 @@ export default async function PenjualanRinciPage({
             <label className="flab">Cabang</label>
             {cabangId ? <>
               <input type="hidden" name="cabang_id" value={cabangId}/>
-              <div>{cabangList.find(b=>b.id===cabangId)?.name ?? rows[0]?.cabang ?? "Cabang tidak tersedia"} · {cabangId.slice(0,8)}</div>
+              <div>{cabangList.find(b=>b.id===cabangId)?.name ?? rows[0]?.cabang ?? "Cabang tidak tersedia"}</div>
               <Link href={`/laporan/transaksi-cabang?${new URLSearchParams({dari,sampai,...(kanal?{kanal}:{})})}`}>Ganti cabang / semua cabang</Link>
             </> : <>
             <select className="fi" name="cabang" defaultValue={cabang}>
