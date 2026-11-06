@@ -1,5 +1,6 @@
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
+import { uniqueOptionLabels } from "@/lib/branch-display";
 import Link from "next/link";
 import { formatPosMoney } from "@/lib/pos-money";
 import { tarikTransaksi } from "@/lib/laporan-transaksi-server";
@@ -35,6 +36,7 @@ export default async function TransaksiCabangPage({
   const cabangOptions = new Map(cabangList.map(b => [b.id, b.name]));
   for (const t of semua) if (t.cabangId) cabangOptions.set(t.cabangId,t.cabang);
   const unavailable = !!cabangId && !cabangOptions.has(cabangId);
+  const labelCabang = uniqueOptionLabels([...cabangOptions].map(([id, name]) => ({ id, name })), (b) => b.name);
   const trx: Trx[] = semua.filter(t => (!kanal || t.kanal===kanal) && (!cabangId || t.cabangId===cabangId));
   const hari = perHari(trx);
 
@@ -64,7 +66,7 @@ export default async function TransaksiCabangPage({
             <select id="report-branch" className="fi" name="cabang_id" defaultValue={cabangId}>
               <option value="">Semua cabang</option>
               {unavailable && <option value={cabangId}>Cabang tidak tersedia</option>}
-              {[...cabangOptions].map(([id,name]) => <option key={id} value={id}>{name} · {id.slice(0,8)}</option>)}
+              {[...cabangOptions].map(([id,name]) => <option key={id} value={id}>{labelCabang.get(id) ?? name}</option>)}
             </select>
           </div>
           <div style={{ minWidth: 170 }}>
@@ -119,7 +121,7 @@ export default async function TransaksiCabangPage({
                 return (
                   <tr key={b.cabangId ?? b.cabang}>
                     <td style={{ fontSize: 11, fontWeight: i < 3 ? 800 : 400, color: i < 3 ? "#b45309" : "var(--tm)" }}>{i + 1}</td>
-                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>{b.cabangId ? <Link href={`?${new URLSearchParams({dari,sampai,cabang_id:b.cabangId,...(kanal?{kanal}:{})})}`}>{b.cabang} · {b.cabangId.slice(0,8)}</Link> : b.cabang}</td>
+                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>{b.cabangId ? <Link href={`?${new URLSearchParams({dari,sampai,cabang_id:b.cabangId,...(kanal?{kanal}:{})})}`}>{labelCabang.get(b.cabangId) ?? b.cabang}</Link> : b.cabang}</td>
                     <td style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700 }}>{b.trx}x</td>
                     <td style={{ textAlign: "center", fontSize: 10.5, color: "var(--tm)" }}>
                       {pecahanKanal(k)}
