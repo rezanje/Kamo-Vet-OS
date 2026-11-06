@@ -34,6 +34,19 @@ export function GroupComponentImport() {
         Grup baru aktif hanya setelah seluruh komponennya valid.
       </div>
 
+      <ol style={{ fontSize: 11.5, color: "var(--tx)", margin: "10px 0 0", paddingLeft: 18, lineHeight: 1.7 }}>
+        <li>
+          Impor dulu barang Grup dari Excel Accurate (Jenis Barang GROUP) lewat &apos;Mode impor: Perbarui master dan
+          kategori&apos; di atas. File Excel Accurate hanya membawa nama Grup, belum isinya.
+        </li>
+        <li>
+          Isi file rincian: satu baris per komponen. Grup berisi 2 barang berarti 2 baris dengan Kode Grup yang sama.
+          Klik &quot;Unduh contoh (.xlsx)&quot; untuk file yang sudah siap diisi.
+        </li>
+        <li>Pilih file, lalu tekan Cek rincian.</li>
+        <li>Periksa hasilnya. Bila sudah benar, tekan Konfirmasi rincian Grup.</li>
+      </ol>
+
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
         <label className="btn-def" style={{ cursor: "pointer" }}>
           <i className="ti ti-components" /> Pilih Rincian Grup .xlsx
@@ -51,8 +64,21 @@ export function GroupComponentImport() {
         <button type="button" className="btn-acc" disabled={pending || !file} onClick={() => run(previewKomponenGrup)}>
           <i className={`ti ${pending ? "ti-loader-2" : "ti-eye"}`} /> {pending ? "Memproses…" : "Cek rincian"}
         </button>
+        <a
+          className="btn-def"
+          href="/pos/sku/impor/template?jenis=rincian-grup"
+          download="Contoh-Rincian-Grup-VetOS.xlsx"
+          style={{ textDecoration: "none" }}
+        >
+          <i className="ti ti-download" /> Unduh contoh (.xlsx)
+        </a>
         {file && <span style={{ fontSize: 11, color: "var(--tm)" }}>{file.name}</span>}
       </div>
+      {!file && (
+        <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 6 }}>
+          Tombol Cek rincian baru bisa ditekan setelah Anda memilih file (.xlsx) rincian Grup.
+        </div>
+      )}
 
       {(error || (state && !state.ok)) && (
         <div className="p2ban" style={{ marginTop: 10, background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
