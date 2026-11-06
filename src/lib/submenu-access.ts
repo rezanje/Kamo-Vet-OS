@@ -252,7 +252,10 @@ for (const [moduleId, tiles] of Object.entries(TILES)) {
     if (!entry) continue;
     const list = TILE_LABELS.get(entry.id) ?? [];
     // tile milik modul pemilik didahulukan
-    if (!list.includes(tile.label)) moduleId === entry.module ? list.unshift(tile.label) : list.push(tile.label);
+    if (!list.includes(tile.label)) {
+      if (moduleId === entry.module) list.unshift(tile.label);
+      else list.push(tile.label);
+    }
     TILE_LABELS.set(entry.id, list);
   }
 }
