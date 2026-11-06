@@ -5,7 +5,7 @@ import { join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MODULES, TILES } from "../nav";
 import { bolehBukaPath, modulDiizinkan, MODULE_PATHS, OPERATIONAL_PATHS, SELALU_BOLEH } from "../akses";
-import { SUBMENU_ENTRIES, SUBMENU_HOME, resolveSubmenu, selectableSubmenus, submenuLabel, submenuTileLabels } from "../submenu-access";
+import { SUBMENU_ENTRIES, SUBMENU_HOME, submenuOfPath, resolveSubmenu, selectableSubmenus, submenuLabel, submenuTileLabels } from "../submenu-access";
 
 const out = process.env.SUBMENU_REPORT_OUT;
 const prefix = (path: string, p: string) => (p === "/" ? path === "/" : path === p || path.startsWith(p + "/"));
@@ -43,7 +43,15 @@ describe.skipIf(!out)("report dump", () => {
       && !SELALU_BOLEH.some(p => prefix(r, p)) && !Object.values(OPERATIONAL_PATHS).flat().some(p => prefix(r, p)));
     const operational = Object.entries(OPERATIONAL_PATHS).map(([id, ps]) => ({ id, paths: ps }));
     const sample = ["/klinik/rekam-medis", "/dokumen/x", "/pajak/faktur", "/pos/shift", "/kasir", "/keuangan"].map(p => ({ path: p, adminToday: bolehBukaPath("ADMIN", p, []) }));
-    writeFileSync(out!, JSON.stringify({ totalSubmenus: SUBMENU_ENTRIES.length, tree, adminToday, adminUnownedPagesReachableToday: unowned, operationalGroups: operational, adminSamples: sample, routeCount: routes.length }, null, 1));
+    const tileMap = Object.entries(TILES).flatMap(([module, tiles]) => tiles.map(t => {
+      if (!t.href) return { module, label: t.label, href: null, maps_to: "tanpa halaman (dalam pengembangan/Fase 2): hilang bila modul dibatasi" };
+      const path = t.href.split(/[?#]/)[0];
+      const kind = SELALU_BOLEH.some(p => prefix(path, p)) ? "selalu boleh (/me)"
+        : Object.entries(OPERATIONAL_PATHS).find(([, ps]) => ps.some(p => prefix(path, p))) ? "grup Operasional " + Object.entries(OPERATIONAL_PATHS).find(([, ps]) => ps.some(p => prefix(path, p)))![0]
+        : submenuOfPath(path)?.id ?? "TANPA PEMILIK MODUL (tetap seperti sekarang)";
+      return { module, label: t.label, href: t.href, maps_to: kind };
+    }));
+    writeFileSync(out!, JSON.stringify({ tileMap, totalSubmenus: SUBMENU_ENTRIES.length, tree, adminToday, adminUnownedPagesReachableToday: unowned, operationalGroups: operational, adminSamples: sample, routeCount: routes.length }, null, 1));
     expect(tree.length).toBeGreaterThan(5);
   });
 });
