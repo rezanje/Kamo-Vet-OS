@@ -1,3 +1,5 @@
+import { moduleHasAllowedSubmenu, submenuIzinkan } from "./submenu-access";
+
 // Akses Grup (migrasi 0101) — murni, dites di __tests__/akses.test.ts
 //
 // Satu tempat memutuskan "peran ini boleh buka apa", dipakai sidebar DAN middleware.
@@ -67,7 +69,8 @@ export function modulBawaan(role: string): string[] | null {
   return null; // OWNER, ADMIN, DOCTOR — seluruh modul
 }
 
-export type AturanTersimpan = { role: string; module_id: string }[];
+// `submenus` (opsional): kebijakan sub-menu untuk modul ini. Tidak ada = semua sub-menu (perilaku lama).
+export type AturanTersimpan = { role: string; module_id: string; submenus?: string[] }[];
 export function roleUsesLegacyStaffShell(role: string, rules: AturanTersimpan): boolean {
   return role === "STAFF" && !rules.some(r => r.role === role && r.module_id === ROLE_V2_MARKER);
 }
@@ -81,8 +84,11 @@ export function roleUsesLegacyStaffShell(role: string, rules: AturanTersimpan): 
  */
 export function modulDiizinkan(role: string, tersimpan: AturanTersimpan): string[] | null {
   if (role === "OWNER") return null;
-  const milikDia = tersimpan.filter((r) => r.role === role).map((r) => r.module_id);
-  return milikDia.length > 0 ? milikDia.filter(id => id !== ROLE_V2_MARKER) : modulBawaan(role);
+  const baris = tersimpan.filter((r) => r.role === role);
+  // Modul yang dibatasi sub-menu tetapi tidak ada satu pun sub-menu sah yang diizinkan = modul tidak bisa dibuka.
+  return baris.length > 0
+    ? baris.filter(r => r.module_id !== ROLE_V2_MARKER && (r.submenus === undefined || moduleHasAllowedSubmenu(r.module_id, r.submenus))).map(r => r.module_id)
+    : modulBawaan(role);
 }
 
 /** Peran ini sedang memakai aturan sendiri, atau masih bawaan? */
@@ -108,6 +114,10 @@ export function bolehBukaPath(role: string, path: string, tersimpan: AturanTersi
 
   const modul = modulDiizinkan(role, tersimpan);
   if (modul === null) return true; // akses penuh
+  // Kebijakan sub-menu modul ini; path dinilai tanpa query/hash. Tidak ada kebijakan => true (perilaku lama).
+  const bersihPath = path.split(/[?#]/)[0];
+  const izinSub = (id: string) => submenuIzinkan(id, bersihPath, tersimpan.find(r => r.role === role && r.module_id === id)?.submenus);
+  const adaPembatasan = tersimpan.some(r => r.role === role && r.submenus !== undefined);
   if (v2) {
     // Query/hash variants are the same menu; preserve historical matcher outside v2.
     const pathname = path.split(/[?#]/)[0];
@@ -115,7 +125,19 @@ export function bolehBukaPath(role: string, path: string, tersimpan: AturanTersi
     // and keeps the original full reach — including the pages no module prefix owns (/pajak*, /aset-tetap*,
     // /keuangan/laba-ditahan*, /keuangan, /dokumen/*, ...). Any partial selection never gets them: the original
     // matcher never granted those to a restricted role, so saving the displayed list must not either.
-    if (modulBawaan(role) === null && Object.keys(MODULE_PATHS).every(id => modul.includes(id))) return true;
+    if (modulBawaan(role) === null && Object.keys(MODULE_PATHS).every(id => modul.includes(id))) {
+      if (!adaPembatasan) return true;
+      // Ada modul yang dibatasi sub-menu: halaman operasional dan halaman tanpa pemilik tetap seperti semula;
+      // halaman yang dimiliki modul ditentukan sub-menunya (cukup satu modul pemilik yang mengizinkan).
+      const operasional = Object.values(OPERATIONAL_PATHS).flat().some(prefix => cocokPrefix(pathname, prefix));
+      if (operasional) return true;
+      // Huruf besar/kecil dan %-encoding tidak boleh membuat halaman bermodul tampak "tanpa pemilik".
+      let didekode: string;
+      try { didekode = decodeURIComponent(pathname); } catch { return false; }
+      const alias = [pathname, pathname.toLowerCase(), didekode, didekode.toLowerCase()];
+      const pemilik = Object.keys(MODULE_PATHS).filter(id => !(id in OPERATIONAL_PATHS) && MODULE_PATHS[id].some(p => alias.some(a => cocokPrefix(a, p))));
+      return pemilik.length === 0 || pemilik.some(izinSub);
+    }
     // Operational groups (kasir, quest-staff, pos-shift) are more specific than the module that contains their
     // URLs (/pos), so the longest operational prefix governs and `pos` alone cannot open /pos/shift or /pos/quest.
     const operational = Object.entries(OPERATIONAL_PATHS)
@@ -133,10 +155,10 @@ export function bolehBukaPath(role: string, path: string, tersimpan: AturanTersi
     }
     // Real modules: ANY granted module whose prefix matches opens the path, exactly like the original matcher
     // (so `pengaturan` still opens /pengaturan/pajak, as it always did).
-    return modul.some(id => !(id in OPERATIONAL_PATHS) && (MODULE_PATHS[id] ?? []).some(p => cocokPrefix(pathname, p)));
+    return modul.some(id => !(id in OPERATIONAL_PATHS) && (MODULE_PATHS[id] ?? []).some(p => cocokPrefix(pathname, p)) && izinSub(id));
   }
 
-  return modul.some((id) => (MODULE_PATHS[id] ?? []).some((p) => cocokPrefix(path, p)));
+  return modul.some((id) => (MODULE_PATHS[id] ?? []).some((p) => cocokPrefix(path, p)) && izinSub(id));
 }
 
 /** Halaman tujuan saat sebuah URL diblokir — jangan pernah melempar ke halaman yang juga diblokir. */
