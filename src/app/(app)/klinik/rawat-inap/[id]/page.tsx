@@ -1,4 +1,5 @@
 import { HandoffPanel } from "./HandoffPanel";
+import { LogRowAction } from "./LogRowAction";
 import { loadInpatientHandoff } from "@/lib/inpatient-handoff";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
@@ -202,6 +203,7 @@ export default async function RawatInapDetailPage({
         <div style={{ display: "flex", gap: 22, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div style={{ width: 120, height: 120, borderRadius: 12, background: "var(--sf1)", border: ".5px solid var(--bd)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
             {pet?.photo_url
+              /* eslint-disable-next-line @next/next/no-img-element */
               ? <img src={pet.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               : <i className="ti ti-paw" style={{ fontSize: 48, color: "var(--td)" }} />}
           </div>
@@ -243,7 +245,7 @@ export default async function RawatInapDetailPage({
       </div>
 
       {/* Ubah kondisi — pengaman form Pulang Paksa tetap ditegakkan atomik di database. */}
-      <div className="card" style={{ marginBottom: 12 }}>
+      <div id="ubah-kondisi" className="card" style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
           <i className="ti ti-heart-rate-monitor" /> UBAH KONDISI PASIEN
         </div>
@@ -339,7 +341,7 @@ export default async function RawatInapDetailPage({
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
-            <thead><tr><th>Tanggal</th><th>Waktu</th><th>Kondisi Pasien</th><th>Tindakan</th><th>Keterangan</th><th>Dokter visit</th><th>Paramedis</th><th style={{ textAlign: "center" }}>Detail</th></tr></thead>
+            <thead><tr><th>Tanggal</th><th>Waktu</th><th>Kondisi Pasien</th><th>Tindakan</th><th>Keterangan</th><th>Dokter visit</th><th>Paramedis</th><th style={{ textAlign: "center" }}>Lihat / Edit</th></tr></thead>
             <tbody>
               {(logs ?? []).map((l, i) => (
                 <tr key={i}>
@@ -354,10 +356,7 @@ export default async function RawatInapDetailPage({
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.doctor_name ?? "—"}</td>
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.paramedic_name ?? "—"}</td>
                   <td style={{ textAlign: "center" }}>
-                    <Link href={`/klinik/rawat-inap/${rec.id}/catatan/${l.id}`} title="Lihat detail"
-                      style={{ display: "inline-flex", width: 26, height: 26, borderRadius: 6, border: "1px solid #bfdbfe", color: "var(--posb)", background: "#fff", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>
-                      <i className="ti ti-eye" />
-                    </Link>
+                    <LogRowAction recordId={String(rec.id)} logId={String(l.id)} editable={active} />
                   </td>
                 </tr>
               ))}
