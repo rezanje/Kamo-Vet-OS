@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { bolehBukaPath, type AturanTersimpan } from "@/lib/akses";
+import { rulesWithSubmenu } from "@/lib/submenu-policy";
 import { amankanKueri, type HasilData } from "@/lib/cari-global";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
     supabase.from("role_modules").select("role, module_id"),
   ]);
   const role = profile?.role ?? "STAFF";
-  const aturan = (aturanRows ?? []) as AturanTersimpan;
+  const aturan = await rulesWithSubmenu(supabase, (aturanRows ?? []) as AturanTersimpan);
   const boleh = (path: string) => bolehBukaPath(role, path, aturan);
 
   const pola = `%${kueri}%`;

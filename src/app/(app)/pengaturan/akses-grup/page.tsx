@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SEMUA_PERAN } from "@/lib/akses";
+import { submenuSummary } from "@/lib/submenu-access";
 import { editableRole, parseRoleAccessConfig, ROLE_ACCESS_CATALOG } from "@/lib/role-access-catalog";
 
 import { NewRoleSettingsForm } from "./newRoleSettingsForm";
@@ -27,7 +28,7 @@ export default async function AksesGrupPage({ searchParams }: { searchParams: Pr
 
     <section className="crm-sec"><h2>Ringkasan peran</h2>
       <p>Perubahan berlaku untuk semua pengguna dengan peran terkait. Jumlah pengguna tidak ditampilkan karena visibilitas akun dapat dibatasi. OWNER selalu penuh dan tidak dapat mengunci dirinya sendiri.</p>
-      <table className="tbl"><thead><tr><th>Peran</th><th>Menu</th><th>Sumber</th></tr></thead><tbody>{snapshots.map(s => <tr key={s.role}><td>{s.role}</td><td>{s.role === "OWNER" ? "Selalu penuh" : s.config ? `${s.config.modules.length}/${ROLE_ACCESS_CATALOG.length}` : "tidak diketahui"}</td><td>{s.config?.source ?? "tidak diketahui"}</td></tr>)}</tbody></table>
+      <table className="tbl"><thead><tr><th>Peran</th><th>Menu</th><th>Sub-menu</th><th>Sumber</th></tr></thead><tbody>{snapshots.map(s => <tr key={s.role}><td>{s.role}</td><td>{s.role === "OWNER" ? "Selalu penuh" : s.config ? `${s.config.modules.length}/${ROLE_ACCESS_CATALOG.length}` : "tidak diketahui"}</td><td>{s.role === "OWNER" ? "Selalu penuh" : s.config ? (Object.keys(s.config.submenus ?? {}).length ? Object.entries(s.config.submenus ?? {}).map(([m, ids]) => { const x = submenuSummary(m, ids); return `${ROLE_ACCESS_CATALOG.find(c => c.id === m)?.label ?? m}: ${x.allowed} dari ${x.total} sub-menu`; }).join("; ") : "Semua sub-menu") : "tidak diketahui"}</td><td>{s.config?.source ?? "tidak diketahui"}</td></tr>)}</tbody></table>
     </section>
     <section className="crm-sec"><form method="get"><label>Peran <select name="peran" defaultValue={role}>{SEMUA_PERAN.filter(editableRole).map(r => <option key={r}>{r}</option>)}</select></label><button type="submit" className="btn-def">Lihat</button></form>
       {!config || !user ? <div role="alert">Konfigurasi tidak diketahui atau gagal dibaca. Penyimpanan dinonaktifkan; muat ulang. Tidak ada izin kosong/bawaan yang diasumsikan.</div>

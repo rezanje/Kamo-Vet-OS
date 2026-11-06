@@ -45,7 +45,10 @@ function TileCard({ tile }: { tile: Tile }) {
 export function TileGrid({ moduleId }: { moduleId: string }) {
   const access = useRoleMenu();
   const v2 = access?.rules.some(r => r.role === access.role && r.module_id === ROLE_V2_MARKER);
-  const tiles = (TILES[moduleId] ?? []).filter(t => !v2 || !t.href || bolehBukaPath(access!.role, t.href, access!.rules));
+  // Modul yang dibatasi sub-menu: tile tanpa halaman ("dalam pengembangan") tidak punya sub-menu, jadi ikut disembunyikan.
+  const dibatasi = !!access && access.rules.some(r => r.role === access.role && r.module_id === moduleId && r.submenus !== undefined);
+  const ada = !!access && access.rules.some(r => r.role === access.role && r.submenus !== undefined);
+  const tiles = (TILES[moduleId] ?? []).filter(t => (t.href ? !(v2 || ada) || bolehBukaPath(access!.role, t.href, access!.rules) : !dibatasi));
   return (
     <div className="tile-grid">
       {tiles.map((t) => (

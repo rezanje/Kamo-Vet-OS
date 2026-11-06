@@ -226,6 +226,16 @@ export function submenuIzinkan(moduleId: string, path: string, allowed: readonly
   return false;
 }
 
+/** Tujuan klik modul di sidebar untuk modul yang dibatasi: halaman depan bila terbuka, selain itu sub-menu pertama yang diizinkan. */
+export function submenuLanding(moduleId: string, allowed: readonly string[] | undefined): string | null {
+  if (allowed === undefined || !moduleHasAllowedSubmenu(moduleId, allowed)) return null;
+  const root = `/${moduleId}`;
+  if (submenuIzinkan(moduleId, root, allowed)) return root;
+  if (SUBMENU_HOME[moduleId]) return SUBMENU_HOME[moduleId];
+  const first = selectableSubmenus(moduleId).find(x => allowed.includes(x.id));
+  return first ? first.routes[0] : null;
+}
+
 export function submenuSummary(moduleId: string, allowed: readonly string[] | undefined): { allowed: number; total: number; restricted: boolean } {
   const all = selectableSubmenus(moduleId);
   if (allowed === undefined) return { allowed: all.length, total: all.length, restricted: false };

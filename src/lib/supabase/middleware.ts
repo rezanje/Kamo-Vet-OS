@@ -2,6 +2,8 @@ import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { bolehBukaPath, tujuanSaatDiblokir } from "@/lib/akses";
+import { gabungSubmenu } from "@/lib/submenu-access";
+import { loadSubmenuPolicy } from "@/lib/submenu-policy";
 import { BRANCH_HEADER, MODE_HEADER, branchCookie, operationalMode, parseBranchContext } from "@/lib/operational-context";
 import { resolveOperationalBranch } from "@/lib/operational-branch";
 import { getOpenShift } from "@/lib/shift";
@@ -79,14 +81,17 @@ export async function updateSession(request: NextRequest) {
       // Read without operational scope so a stale/tampered cookie cannot hide
       // another open shift and bypass the switching guard.
       const shiftP = mode && context ? mulai(getOpenShift(supabase, userId, mode)) : null;
-      const [{ data: profile, error: profileError }, { data: aturan, error: rulesError }] = await Promise.all([
+      // Kebijakan sub-menu dibaca paralel (satu putaran yang sama). Fungsi belum ada di database = perilaku lama;
+      // gagal baca lain = tidak bisa dipastikan, jadi gagal tertutup seperti galat aturan modul.
+      const [{ data: profile, error: profileError }, { data: aturan, error: rulesError }, submenu] = await Promise.all([
         supabase.from("profiles").select("role, is_active").eq("id", userId).maybeSingle(),
         supabase.from("role_modules").select("role, module_id"),
+        loadSubmenuPolicy(supabase),
       ]);
       // Auth deletion cascades the profile; an unexpired JWT alone is not enough.
-      if (profileError || rulesError || !profile || profile.is_active === false) return loginRedirect(request);
+      if (profileError || rulesError || submenu.status === "error" || !profile || profile.is_active === false) return loginRedirect(request);
       const role = profile?.role ?? "";
-      const tersimpan = (aturan ?? []) as { role: string; module_id: string }[];
+      const tersimpan = gabungSubmenu((aturan ?? []) as { role: string; module_id: string }[], submenu.rows);
 
       const accountPage = path === "/pengaturan/pengguna";
       const canCreateAccount = accountPage && (await loadRoleCapabilities(supabase, role)).create_accounts;

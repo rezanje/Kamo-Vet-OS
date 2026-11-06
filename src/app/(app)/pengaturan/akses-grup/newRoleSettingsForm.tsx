@@ -4,7 +4,9 @@ import { CorrectionTransactionForm } from "@/components/CorrectionTransactionFor
 import { SubmitButton } from "@/components/SubmitButton";
 import { effectiveAllowedActions, ROLE_ACCESS_CATALOG, roleAccessScope, type RoleAccessConfig } from "@/lib/role-access-catalog";
 import { roleCapabilities } from "@/lib/role-capabilities";
+import { selectableSubmenus } from "@/lib/submenu-access";
 import { saveRoleSettings } from "./actions";
+import { SubmenuPicker } from "./submenuPicker";
 
 export function NewRoleSettingsForm({ userId, config, canEdit }: { userId: string; config: RoleAccessConfig; canEdit: boolean }) {
   const [mode, setMode] = useState("custom");
@@ -23,9 +25,13 @@ export function NewRoleSettingsForm({ userId, config, canEdit }: { userId: strin
       {config.source === "legacy" && <p role="note">Aturan lama tetap berlaku sampai disimpan. Saat menyimpan, grup operasional menjadi pilihan eksplisit; periksa Kasir, Quest, dan Shift.</p>}
       {["Modul", "Operasional"].map(group => <section key={group} aria-label={group}>
         <h3>{group}</h3>
+        {group === "Modul" && <p>Bawaan: semua sub-menu di dalam modul yang dicentang. Buka daftar sub-menu sebuah modul untuk memberi peran ini hanya sebagian halaman; halaman lain di modul itu tidak bisa dibuka lewat menu maupun URL. Shift Kasir dan Quest Staff diatur di grup Operasional, bukan di sini.</p>}
         {group === "Operasional" && <p>Quest Staff mengaktifkan quest, tetapi tiap halaman juga butuh areanya: /kasir/quest butuh Kasir, /pos/quest (konfigurasi) butuh modul POS. Kasir atau POS saja tidak membuka quest.</p>}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
-          {ROLE_ACCESS_CATALOG.filter(m => m.group === group).map(m => <label key={m.id}><input type="checkbox" name={`mod_${m.id}`} defaultChecked={config.modules.includes(m.id)} /> {m.label}</label>)}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 10, alignItems: "start" }}>
+          {ROLE_ACCESS_CATALOG.filter(m => m.group === group).map(m => <div key={m.id}>
+            <label><input type="checkbox" name={`mod_${m.id}`} defaultChecked={config.modules.includes(m.id)} /> {m.label}</label>
+            {selectableSubmenus(m.id).length > 0 && <SubmenuPicker moduleId={m.id} moduleLabel={m.label} allowed={config.submenus?.[m.id]} moduleChecked={config.modules.includes(m.id)} />}
+          </div>)}
         </div>
       </section>)}
       <section aria-label="Tindakan bisnis">

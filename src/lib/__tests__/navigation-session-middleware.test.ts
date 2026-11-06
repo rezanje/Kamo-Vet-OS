@@ -12,6 +12,9 @@ const state = vi.hoisted(() => ({
   grants: ["eb200000-0000-4000-8000-000000000001"],
   branch: { id: "eb200000-0000-4000-8000-000000000001", is_active: true, type: "BOTH" },
   shift: null as {branch_id:string; branches:{name:string}} | null,
+  policy: [] as { role: string; module_id: string; allowed: string[] }[],
+  policyError: null as { code?: string; message: string } | null,
+  rpcCalls: [] as string[],
 }));
 
 vi.mock("@supabase/ssr", () => ({
@@ -24,6 +27,10 @@ vi.mock("@supabase/ssr", () => ({
         return state.claims();
       },
       getUser: state.remoteUser,
+    },
+    rpc: async (name: string) => {
+      state.rpcCalls.push(name);
+      return state.policyError ? { data: null, error: state.policyError } : { data: state.policy, error: null };
     },
     from: (table: string) => {
       state.reads.push(table);
@@ -55,6 +62,9 @@ beforeEach(() => {
   state.profileError = null;
   state.rules = [];
   state.reads = [];
+  state.policy = [];
+  state.policyError = null;
+  state.rpcCalls = [];
   state.refresh = false;
   state.shift = null;
   state.branch.is_active = true;
@@ -187,5 +197,58 @@ describe("operational branch navigation", () => {
     expect(response.status).toBe(303);
     expect(new URL(response.headers.get("location")!).searchParams.get("error")).toContain("Pilih cabang");
     expect(response.cookies.get("test-session")?.value).toBe("renewed");
+  });
+});
+
+describe("sub-menu policy: ROLE ADMIN restricted to a few pages (server-side, URL typing)", () => {
+  const ALL = ["crm", "pos", "laporan", "kas-bank"];
+  const adminRules = () => [{ role: "ADMIN", module_id: "__role_v2__" }, ...ALL.map(module_id => ({ role: "ADMIN", module_id }))];
+  const go = async (path: string, method = "GET") => updateSession(new NextRequest("https://vetos.test" + path, { method }));
+  const blocked = (r: Response) => r.status === 307 && new URL(r.headers.get("location")!).pathname === "/mulai";
+  beforeEach(() => {
+    state.profile = { role: "ADMIN", is_active: true };
+    state.rules = adminRules();
+    state.policy = [{ role: "ADMIN", module_id: "crm", allowed: ["crm.pelanggan"] }, { role: "ADMIN", module_id: "pos", allowed: ["pos.stok"] }];
+  });
+  // ADMIN holds only these five modules here, so a blocked URL goes to /mulai (no dashboard module).
+  it("reads the policy once per navigation, alongside profile and rules", async () => {
+    await go("/crm/pelanggan");
+    expect(state.rpcCalls).toEqual(["get_my_submenu_policy"]);
+  });
+  it("opens the chosen sub-menu and nested detail pages", async () => {
+    for (const p of ["/crm", "/crm/pelanggan", "/crm/pelanggan/baru", "/pos/stok", "/pos/stok/x", "/laporan/gaji", "/kas-bank/rekening"]) {
+      expect((await go(p)).headers.get("x-middleware-next"), p).toBe("1");
+    }
+  });
+  it("refuses other pages of a restricted module by typed URL, GET and form POST alike", async () => {
+    for (const p of ["/crm/promo", "/crm/promo/abc/edit", "/crm/baru-tanpa-menu", "/pos/sku", "/pos/opname/baru"]) {
+      expect(blocked(await go(p)), p).toBe(true);
+      expect(blocked(await go(p, "POST")), "POST " + p).toBe(true);
+    }
+  });
+  it("OWNER is never restricted, whatever the policy table says", async () => {
+    state.profile = { role: "OWNER", is_active: true };
+    state.policy = [{ role: "OWNER", module_id: "crm", allowed: [] }];
+    expect((await go("/crm/promo")).headers.get("x-middleware-next")).toBe("1");
+  });
+  it("another role is not restricted by ADMIN's policy", async () => {
+    state.profile = { role: "STAFF", is_active: true };
+    state.rules = [{ role: "STAFF", module_id: "crm" }];
+    expect((await go("/crm/promo")).headers.get("x-middleware-next")).toBe("1");
+  });
+  it("function not yet in the database behaves exactly as today (all pages of an allowed module)", async () => {
+    state.policyError = { code: "PGRST202", message: "Could not find the function public.get_my_submenu_policy in the schema cache" };
+    expect((await go("/crm/promo")).headers.get("x-middleware-next")).toBe("1");
+  });
+  it("an unconfirmed policy read fails closed to login, never to 'everything allowed'", async () => {
+    state.policyError = { code: "57014", message: "statement timeout" };
+    const r = await go("/crm/promo");
+    expect(r.status).toBe(303);
+    expect(new URL(r.headers.get("location")!).pathname).toBe("/login");
+  });
+  it("a module whose every sub-menu is unchecked is refused including its home", async () => {
+    state.policy = [{ role: "ADMIN", module_id: "crm", allowed: [] }];
+    expect(blocked(await go("/crm"))).toBe(true);
+    expect(blocked(await go("/crm/pelanggan"))).toBe(true);
   });
 });

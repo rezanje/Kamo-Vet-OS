@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MODULES } from "@/lib/nav";
 import { bolehBukaPath, modulDiizinkan, type AturanTersimpan } from "@/lib/akses";
+import { submenuLanding } from "@/lib/submenu-access";
 import { logout } from "@/app/login/actions";
 import { useEffect, useState } from "react";
 import { moduleHref, rememberPath } from "@/lib/menu-last-path";
@@ -61,9 +62,12 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
   const active = activeModule(pathname);
   const allow = modulDiizinkan(role, aksesModul);
   const shortcuts = PETSHOP_SHORTCUTS.filter((s) => bolehBukaPath(role, s.href, aksesModul));
+  // Modul yang dibatasi sub-menu: klik mendarat di halaman yang memang boleh dibuka.
+  const landing = (id: string, href: string) =>
+    submenuLanding(id, aksesModul.find((r) => r.role === role && r.module_id === id)?.submenus) ?? href;
   const menu = MODULES.flatMap((m) => {
     const entries = allow === null || allow.includes(m.id)
-      ? [{ ...m, href: m.id === "dashboard" ? "/" : `/${m.id}` }]
+      ? [{ ...m, href: m.id === "dashboard" ? "/" : landing(m.id, `/${m.id}`) }]
       : [];
     return m.id === "klinik" ? [...entries, ...shortcuts] : entries;
   });

@@ -1,6 +1,8 @@
 import { ActivityNavigationProvider } from "@/components/ActivityHistoryLink";
 import { ActivityMenuLink } from "@/components/ActivityMenuLink";
 import { bolehBukaPath, roleUsesLegacyStaffShell } from "@/lib/akses";
+import { loadSubmenuPolicy } from "@/lib/submenu-policy";
+import { gabungSubmenu } from "@/lib/submenu-access";
 import { RoleMenuProvider } from "@/components/RoleMenuContext";
 import { Suspense } from "react";
 import { DraftUserProvider, TransactionDraftComplete } from "@/components/LocalTransactionDraft";
@@ -32,6 +34,8 @@ export default async function AppLayout({
   // (dulu menunggu sesi lalu profil: layout ini ikut dirender di tiap halaman klinik).
   const branchesP = mulai(supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"));
   const aksesModulP = mulai(supabase.from("role_modules").select("role, module_id"));
+  // Kebijakan sub-menu ikut dibaca bersamaan; hanya untuk tampilan (middleware yang menegakkan).
+  const submenuP = mulai(loadSubmenuPolicy(supabase));
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -52,7 +56,8 @@ export default async function AppLayout({
     redirect("/login?error=" + encodeURIComponent("Akun Anda dinonaktifkan. Hubungi admin."));
   }
 
-  const [{ data: branches }, { data: aksesModul }] = await Promise.all([branchesP, aksesModulP]);
+  const [{ data: branches }, { data: aksesModulMentah }, submenu] = await Promise.all([branchesP, aksesModulP, submenuP]);
+  const aksesModul = aksesModulMentah ? gabungSubmenu(aksesModulMentah, submenu.rows) : aksesModulMentah;
 
   // STAFF cuma masuk (app) lewat alur kasir klinik (/klinik/shift & seterusnya) —
   // sidebar admin (Keuangan, HRIS, Pengaturan, dst) bukan buat mereka.
