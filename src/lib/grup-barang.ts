@@ -40,6 +40,7 @@ export function parseKomponenGrupDrafts(raw: unknown): {
 export function normalisasiKomponenGrup(
   rows: KomponenGrupDraft[],
   masters: Map<string, MasterKomponenGrup>,
+  groupItemId?: string | null,
 ): { rows: KomponenGrupDraft[]; error: string | null } {
   const normalized: KomponenGrupDraft[] = [];
   for (const row of rows) {
@@ -54,13 +55,20 @@ export function normalisasiKomponenGrup(
   const error = validasiKomponenGrup(
     normalized,
     new Map([...masters].map(([id, master]) => [id, master.item_type])),
+    groupItemId,
   );
   return error ? { rows: [], error } : { rows: normalized, error: null };
 }
 
+/**
+ * Sejak 6 Nov 2026 komponen boleh Grup lain (paket di dalam paket, permintaan Andri).
+ * Yang ditolak di sini hanya paket berisi dirinya sendiri; lingkaran tidak langsung
+ * (A berisi B, B berisi A) dan kedalaman > 5 tingkat ditolak database saat simpan.
+ */
 export function validasiKomponenGrup(
   rows: KomponenGrupDraft[],
   jenis: Map<string, JenisKomponen>,
+  groupItemId?: string | null,
 ): string | null {
   if (rows.length === 0) return "Grup wajib punya minimal 1 komponen";
 
@@ -69,7 +77,7 @@ export function validasiKomponenGrup(
     if (!row.component_item_id) return "Komponen wajib dipilih";
     if (!Number.isFinite(row.qty) || row.qty <= 0) return "Qty komponen harus lebih dari 0";
     if (!Number.isFinite(row.factor) || row.factor <= 0) return "Faktor satuan harus lebih dari 0";
-    if (jenis.get(row.component_item_id) === "Grup") return "Komponen tidak boleh Grup";
+    if (groupItemId && row.component_item_id === groupItemId) return "Paket tidak boleh berisi dirinya sendiri";
 
     const key = `${row.component_item_id}:${row.unit.trim().toLowerCase()}`;
     if (seen.has(key)) return "Komponen dan satuan kembar tidak diperbolehkan";

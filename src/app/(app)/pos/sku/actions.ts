@@ -111,7 +111,7 @@ export async function simpanBarang(formData: FormData) {
           })),
         }]),
     );
-    const normalized = normalisasiKomponenGrup(parsed.rows, masters);
+    const normalized = normalisasiKomponenGrup(parsed.rows, masters, id || null);
     if (normalized.error) gagal(normalized.error);
     groupComponents = normalized.rows;
   }
