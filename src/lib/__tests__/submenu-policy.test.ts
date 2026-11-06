@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { loadSubmenuPolicy, rulesWithSubmenu, SUBMENU_POLICY_RPC } from "../submenu-policy";
 
-const client = (result: unknown | (() => never)) => ({
-  rpc: async (name: string) => { expect(name).toBe(SUBMENU_POLICY_RPC); if (typeof result === "function") return (result as () => never)(); return result; },
+type RpcResult = { data: unknown; error: { code?: string; message?: string } | null };
+const client = (result: RpcResult | (() => never)) => ({
+  rpc: async (name: string): Promise<RpcResult> => { expect(name).toBe(SUBMENU_POLICY_RPC); if (typeof result === "function") return result(); return result; },
 });
 
 describe("loadSubmenuPolicy", () => {

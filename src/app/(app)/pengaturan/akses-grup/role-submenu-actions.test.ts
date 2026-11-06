@@ -66,7 +66,8 @@ it("a module the page did not render keeps its saved policy", async () => {
   expect(saveArgs().p_submenus).toEqual({ klinik: ["klinik.antrian"], pos: ["pos.stok"] });
 });
 it("refuses unknown, duplicate, malformed or cross-module sub-menu fields before any write", async () => {
-  for (const bad of [{ "sub_klinik.tidak-ada": "on" }, { "sub_klinik.antrian": "true" }, { "sub_": "on" }, { "sub_pos.stok": "off" }]) {
+  const bads: Record<string, string>[] = [{ "sub_klinik.tidak-ada": "on" }, { "sub_klinik.antrian": "true" }, { "sub_": "on" }, { "sub_pos.stok": "off" }];
+  for (const bad of bads) {
     mocks.rpc.mockClear();
     await expect(saveRoleSettings("ADMIN", revision, form({ subs_klinik: "1", ...bad }))).resolves.toMatchObject({ ok: false, message: expect.stringContaining("sub-menu") });
     expect(mocks.rpc.mock.calls.filter(c => c[0] === "save_role_access_config")).toHaveLength(0);
