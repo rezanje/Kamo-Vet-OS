@@ -82,9 +82,19 @@ it("mengganti pilihan membatalkan pratinjau lama (tidak boleh menarik baris yang
   expect(host.textContent).not.toContain("Pratinjau (belum ada yang berubah)");
 });
 
-it("memberi tahu Owner sebelum menekan apa pun: nilai baris jadi saldo uang muka dan fitur transfer balik belum ada", () => {
+it("memberi tahu Owner sebelum menekan apa pun: nilai baris jadi saldo uang muka, dan pengembaliannya lewat panel Kembalikan saldo uang muka", () => {
   const n = host.querySelector("[role=note]")!;
   expect(n.textContent).toContain("saldo uang muka pasien");
-  expect(n.textContent).toContain("belum tersedia");
+  expect(n.textContent).toContain("Kembalikan saldo uang muka");
+  expect(n.textContent).not.toContain("belum tersedia");
   expect(n.textContent).toContain("jangan transfer di luar catatan");
+});
+
+it("setelah sukses menunjuk panel Kembalikan saldo uang muka untuk mengembalikan sisanya lewat transfer (bukan lagi 'belum ada fitur')", async () => {
+  await act(async () => box("Infus Refill").click());
+  await type("Infus tidak jadi dipakai");
+  await act(async () => btn("Pratinjau").click());
+  await act(async () => btn("Tarik baris").click());
+  expect(host.textContent).toContain("Kembalikan saldo uang muka");
+  expect(host.textContent).not.toContain("belum punya fitur");
 });

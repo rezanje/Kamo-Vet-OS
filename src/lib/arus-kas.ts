@@ -9,6 +9,7 @@ export const SUMBER_KAS: Record<string, { act: Aktivitas; label: string }> = {
   klinik: { act: "operasi", label: "Penerimaan jasa klinik" },
   "klinik-ar": { act: "operasi", label: "Pelunasan piutang pelanggan" },
   "klinik-edit": { act: "operasi", label: "Koreksi invoice klinik" },
+  "klinik-uang-muka-refund": { act: "operasi", label: "Pengembalian saldo uang muka pelanggan" },
   "klinik-void": { act: "operasi", label: "Void invoice klinik" },
   expense: { act: "operasi", label: "Pembayaran beban operasional" },
   payroll: { act: "operasi", label: "Pembayaran gaji karyawan" },
