@@ -17,6 +17,8 @@ export type Dashboard = {
   arusKas: { tanggal: string; masuk: number; keluar: number }[];
   penjualan: { total: number; lunas: number; belumLunas: number };
   pembelian: { total: number; lunas: number; belumLunas: number };
+  /** PO diterima yang sisa belum difakturkannya tidak dapat dihitung (lihat Hutang Usaha). */
+  poPerluTinjau: number;
   trenPenjualan: { tanggal: string; total: number }[];
   saldoKas: number;
 };
@@ -152,7 +154,7 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   type PurchaseInvoice = { po_id: string | null; total: number; purchase_invoice_items: ItemFakturPoTersimpan[] | null; purchase_invoice_payments: { amount: number }[] | null };
   const purchases = new Map<string, { total: number; paid: number }>();
   const billed = new Map<string, ItemFakturPoTersimpan[]>();
-  let pembTotal = 0, pembBelum = 0;
+  let pembTotal = 0, pembBelum = 0, poPerluTinjau = 0;
   for (const invoice of (poFaktur.data ?? []) as PurchaseInvoice[]) {
     const total = Number(invoice.total);
     const paid = (invoice.purchase_invoice_payments ?? []).reduce((sum, payment) => sum + Number(payment.amount), 0);
@@ -166,8 +168,15 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   for (const po of (poRows.data ?? []) as ReceivedPo[]) {
     const rows = po.purchase_order_items ?? [];
     const remaining = sisaFakturablePerBaris(rows.map(row => ({ id: row.id, item_id: row.item_id, diterima: Number(row.qty_terima ?? row.qty), faktor: Number(row.faktor) })), billed.get(po.id) ?? []);
-    if (remaining.invalidLinkedLines || remaining.invalidPoItemIds.length || remaining.legacyAmbiguousItemIds.length) throw new Error("Sisa kewajiban PO perlu direkonsiliasi sebelum dashboard dapat dihitung.");
     const current = purchases.get(po.id) ?? { total: 0, paid: 0 };
+    // Satu PO bermasalah tidak boleh menjatuhkan seluruh dashboard (7 Nov 2026: Owner
+    // tidak bisa membuka dashboard sama sekali). Sama dengan Hutang Usaha: sisa belum
+    // difakturkan PO ini tidak ditambahkan dan PO-nya dihitung sebagai perlu ditinjau.
+    if (remaining.invalidLinkedLines || remaining.invalidPoItemIds.length || remaining.legacyAmbiguousItemIds.length) {
+      poPerluTinjau += 1;
+      purchases.set(po.id, current);
+      continue;
+    }
     current.total += rows.reduce((sum, row) => sum + (remaining.sisaPerBaris[row.id] ?? 0) * Number(row.harga_beli), 0);
     purchases.set(po.id, current);
   }
@@ -201,5 +210,5 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   const setRekening = new Set(kodeRekening);
   const saldoKas = bal.filter((b) => setRekening.has(b.code)).reduce((a, b) => a + b.saldo, 0);
 
-  return { labaRugi: { pendapatan, hpp, pengeluaran, laba }, beban, arusKas, penjualan, pembelian, trenPenjualan, saldoKas };
+  return { labaRugi: { pendapatan, hpp, pengeluaran, laba }, beban, arusKas, penjualan, pembelian, poPerluTinjau, trenPenjualan, saldoKas };
 }
