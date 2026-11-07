@@ -26,8 +26,8 @@ fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
 from native_postgres import NativePostgres  # noqa: E402
 
-CANDIDATE = '20261106860000_price_floor_pesan_jelas.sql'
-LATER = ['20261106870000_ranap_racikan_ubah_harga.sql']   # independent migration of the same PR; excluded from baseline chains
+CANDIDATE = '20261107100000_price_floor_pesan_jelas.sql'
+LATER = ['20261107110000_ranap_racikan_ubah_harga.sql']   # independent migration of the same PR; excluded from baseline chains
 MIGRATIONS = ROOT / 'supabase/migrations'
 TESTS = ROOT / 'supabase/tests'
 RESULTS = []

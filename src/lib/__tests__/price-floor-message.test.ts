@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hargaMinimumUntuk, paketDiBawahHpp, parsePriceFloorRows } from "../price-floor-message";
 
-// The exact text clinic_private.assert_invoice_price_floor raises (20261106860000), prefixed by klinik-posting.
+// The exact text clinic_private.assert_invoice_price_floor raises (20261107100000), prefixed by klinik-posting.
 const PESAN = [
   "Penjualan ditolak. Harga neto Infus Refill Rp20.000 di bawah HPP Rp29.578. Ada 3 baris yang ditolak; semuanya tercantum di bawah.",
   "- Infus Refill: harga neto Rp20.000 per pcs, HPP Rp29.578 per pcs, harga minimum Rp29.578 per pcs",

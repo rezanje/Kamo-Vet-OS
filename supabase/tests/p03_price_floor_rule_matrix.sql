@@ -1,6 +1,6 @@
 -- P03 rule matrix: prints MX|<cart>/<discount mode>|<ACCEPT or error prefix> for every one- and two-row cart built from
 -- 18 row templates (goods below/at/above HPP, zero, HPP missing, row discount, services, racikan, packages, free text).
--- Run it on a chain WITHOUT and WITH 20261106860000_price_floor_pesan_jelas.sql: the outputs must be byte-identical
+-- Run it on a chain WITHOUT and WITH 20261107100000_price_floor_pesan_jelas.sql: the outputs must be byte-identical
 -- (the message was made readable, the RULE of what is refused must not move).
 -- Fictional fixtures in disposable PostgreSQL only; everything rolls back.
 begin;

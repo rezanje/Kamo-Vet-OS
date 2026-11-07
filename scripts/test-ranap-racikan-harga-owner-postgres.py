@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""F7: OWNER changes ONLY the price of a saved, still-pending racikan row in the ranap cashier (migration 20261106870000).
+"""F7: OWNER changes ONLY the price of a saved, still-pending racikan row in the ranap cashier (migration 20261107110000).
 
 Native full schema, fictional fixtures, throwaway local cluster, no network.
   python3 -I scripts/test-ranap-racikan-harga-owner-postgres.py --pg-bin DIR --json out.json     [wrap in flock /opt/data/kamo-heavy-test.lock]
@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / 'scrip
 spec = importlib.util.spec_from_file_location('medical', ROOT / 'scripts/test-rekam-full-edit-postgres.py'); assert spec and spec.loader
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 x, r, q, j = m.x, m.r, m.q, m.j
-CANDIDATE = '20261106870000_ranap_racikan_ubah_harga.sql'
+CANDIDATE = '20261107110000_ranap_racikan_ubah_harga.sql'
 MIG = ROOT / 'supabase/migrations'
 RESULTS = []
 OFF = 0

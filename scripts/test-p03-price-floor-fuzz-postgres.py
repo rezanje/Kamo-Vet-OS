@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / 'scrip
 spec = importlib.util.spec_from_file_location('medical', ROOT / 'scripts/test-rekam-full-edit-postgres.py'); assert spec and spec.loader
 mm = importlib.util.module_from_spec(spec); spec.loader.exec_module(mm)
 x, r, q, j = mm.x, mm.r, mm.q, mm.j
-MIG = (ROOT / 'supabase/migrations/20261106860000_price_floor_pesan_jelas.sql').read_text()
+MIG = (ROOT / 'supabase/migrations/20261107100000_price_floor_pesan_jelas.sql').read_text()
 old_body = re.search(r"old_text text := \$old\$(.*?)\$old\$;", MIG, re.S).group(1)
 ap = argparse.ArgumentParser(); ap.add_argument('--pg-bin', required=True); ap.add_argument('--json', type=Path, required=True); ap.add_argument('-n', type=int, default=20000); A = ap.parse_args()
 N = A.n; r.BIN = A.pg_bin

@@ -5,7 +5,7 @@ Native full schema, fictional fixtures, throwaway local cluster, no network. The
 into the Supabase SQL editor (docs/evidence/ranap-racikan-harga-sekali.sql, identical to /opt/data/kamo-cost-missing-evidence/ranap-racikan-harga-sekali.sql); only the visit id / branch / row id literals differ.
 
   python3 -I scripts/test-ranap-racikan-harga-sekali-postgres.py --json out.json   (wrap in flock /opt/data/kamo-heavy-test.lock)
-  --prod-chain   chain WITHOUT 20261106860000/870000 = the production state F8 is pasted into (RED-b then expects COMPOUND_LOCKED)
+  --prod-chain   chain WITHOUT 20261107100000/20261107110000 = the production state F8 is pasted into (RED-b then expects COMPOUND_LOCKED)
   --sql FILE     test another copy of the SQL (RED baseline: the pre-review file)
   --mutations    mutants of the SQL text (function, preview, post-check); every one must be killed
 RED = the deadlock itself (cart refuses P03 and COMPOUND_LOCKED); GREEN = after the one-off SQL the cashier saves and posts.
@@ -156,9 +156,9 @@ def run(h, setup=True):
     check('RED-a: the cashier cannot post (P03 floor names the racikan row)', bool(err and 'PRICE_BELOW_HPP' in err) and invoices(h, v) == 0, dict(error=(err or '')[:300]))
     rows = json.loads(json.dumps(cart['rows'])); next(rw for rw in rows if rw['id'] == comp['id'])['harga'] = round(hpp) + 500
     err = h.gagal(save(v, stay, cart['snapshot'], rows, [dict(method='Tunai', amount=total(cart))], f'f8-red-b-{OFF}'), r.STAFF)
-    if PROD_CHAIN:   # production state: F7 (870000) is not applied, the price is locked
+    if PROD_CHAIN:   # production state: F7 (20261107110000) is not applied, the price is locked
         check('RED-b: the cashier cannot raise the racikan price (COMPOUND_LOCKED, production chain) -> deadlock', bool(err and 'COMPOUND_LOCKED' in err) and harga_of(h, comp['id']) == comp['harga'], dict(error=(err or '')[:200]))
-    else:            # branch chain: migration 870000 makes the price Owner-only, STAFF is refused at the role check
+    else:            # branch chain: migration 20261107110000 makes the price Owner-only, STAFF is refused at the role check
         check('RED-b: STAFF cannot raise the racikan price (ACCESS_DENIED: hanya Owner yang boleh mengubah harga racikan, F7 chain)',
               bool(err and 'ACCESS_DENIED: hanya Owner yang boleh mengubah harga racikan' in err) and 'COMPOUND_LOCKED' not in err and harga_of(h, comp['id']) == comp['harga'], dict(error=(err or '')[:200]))
     err = h.gagal(f"begin;{x.claims(r.OWNER)}update prescription_items set harga={round(hpp)+500} where id={q(comp['id'])};commit;")
@@ -368,7 +368,7 @@ def main_mutations(a):
     'killed' by a leftover of an earlier battery (e.g. exhausted stock), only by its own cases."""
     global OFF, MUTANT
     with r.NativePostgres(r.BIN) as db:
-        build(db, {B860, B870} if PROD_CHAIN else set()); h = x.Harness(db)
+        build(db, {B100, B110} if PROD_CHAIN else set()); h = x.Harness(db)
         x.setup(h)
         plan = [('F8-M0 control (unmodified SQL) has 0 FAIL', None)] + [(n, (o, w)) for n, o, w in MUTANTS]
         for i, (name, mut) in enumerate(plan):
@@ -394,7 +394,7 @@ def main_mutations(a):
     MUTANT = None
 
 
-B860, B870 = '20261106860000_price_floor_pesan_jelas.sql', '20261106870000_ranap_racikan_ubah_harga.sql'
+B100, B110 = '20261107100000_price_floor_pesan_jelas.sql', '20261107110000_ranap_racikan_ubah_harga.sql'
 
 
 def build(db, exclude):
@@ -421,7 +421,7 @@ def main():
         if a.mutations: main_mutations(a)
         else:
             with r.NativePostgres(r.BIN) as db:
-                build(db, {B860, B870} if PROD_CHAIN else set()); run(x.Harness(db))
+                build(db, {B100, B110} if PROD_CHAIN else set()); run(x.Harness(db))
     except AssertionError as e: check('HARNESS', False, 'assert: ' + str(e)[:800])
     except Exception as e: check('HARNESS', False, str(e)[:800])
     totals = {s: sum(c['status'] == s for c in RESULTS) for s in ['PASS', 'FAIL']}
