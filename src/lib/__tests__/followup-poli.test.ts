@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barisFollowUpTerkirim, batasPerluDiingatkan, bacaHariIngat, bersihkanFollowUp, posisiFollowUp, tanggalSetelah } from "@/lib/followup";
+import { barisFollowUpTerkirim, batasPerluDiingatkan, bacaHariIngat, bersihkanFollowUp, pesanReminder, posisiFollowUp, sapaanPemilik, tanggalSetelah } from "@/lib/followup";
 
 // Masukan Babibu (5 Nov): follow up dari poli pemeriksaan harus otomatis masuk daftar
 // follow up. Isian yang tanggalnya sudah dipilih tapi tombol "Tambah" belum diklik dulu
@@ -60,5 +60,27 @@ describe("pengingat H-x sebelum jadwal", () => {
     expect(posisiFollowUp("2026-11-03", "2026-11-05")).toEqual({ teks: "terlewat 2 hari", telat: true });
     expect(posisiFollowUp("2026-11-05", "2026-11-05")).toEqual({ teks: "hari ini", telat: false });
     expect(posisiFollowUp("2026-11-08", "2026-11-05")).toEqual({ teks: "H-3", telat: false });
+  });
+});
+
+// Nama pelanggan yang tersimpan dengan sapaan dulu menghasilkan "Halo Kak Pak Dimas".
+describe("sapaan pesan pengingat WhatsApp", () => {
+  it("memakai sapaan bawaan nama, menambah Kak hanya bila belum ada", () => {
+    expect(sapaanPemilik("Dimas")).toBe("Kak Dimas");
+    expect(sapaanPemilik("Pak Dimas")).toBe("Pak Dimas");
+    expect(sapaanPemilik("bu  Rina ")).toBe("bu Rina");
+    expect(sapaanPemilik("Kak Nadia")).toBe("Kak Nadia");
+    expect(sapaanPemilik("drh. Sari")).toBe("drh. Sari");
+    expect(sapaanPemilik("Pakdi")).toBe("Kak Pakdi");
+    expect(sapaanPemilik("Masayu")).toBe("Kak Masayu");
+    expect(sapaanPemilik("")).toBe("Kak");
+    expect(sapaanPemilik(null)).toBe("Kak");
+  });
+
+  it("pesan tidak lagi berbunyi Kak Pak / Kak Kak", () => {
+    const pesan = (pemilik: string) => pesanReminder({ pemilik, hewan: "Bruno", jenis: "Vaksin", tanggal: "2026-11-07" });
+    expect(pesan("Pak Dimas")).toMatch(/^Halo Pak Dimas, Bruno sudah masuk jadwal vaksin pada 7 Nov 2026\./);
+    expect(pesan("Dimas")).toMatch(/^Halo Kak Dimas, /);
+    expect(pesan("")).toMatch(/^Halo Kak, Bruno/);
   });
 });

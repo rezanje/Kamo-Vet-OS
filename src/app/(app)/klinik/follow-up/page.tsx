@@ -113,7 +113,7 @@ export default async function FollowUpPage({
                 const pet = one(r.pets), cust = one(r.customers), br = one(r.branches);
                 const posisi = posisiFollowUp(r.tanggal, today);
                 const pesan = pesanReminder({
-                  pemilik: cust?.name ?? "Kak", hewan: pet?.name ?? "anabul",
+                  pemilik: cust?.name ?? "", hewan: pet?.name ?? "anabul",
                   jenis: r.jenis, tanggal: r.tanggal, catatan: r.catatan, klinik: br?.name,
                 });
                 return (

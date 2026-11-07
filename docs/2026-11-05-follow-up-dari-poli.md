@@ -46,3 +46,10 @@ Fiturnya sudah ada (form pemeriksaan → kartu Rencana Follow Up → Klinik › 
 ## Belum diuji
 - Belum dicoba di Production / oleh dokter langsung (UAT).
 - Follow up dari layar rawat inap (saat pasien pulang) belum ada — di luar cakupan.
+
+## Tahap 3 — sapaan pesan WA (7 Nov)
+- Keputusan Reza: tetap pakai **Kirim WA sekali klik** (opsi A), tidak pindah ke kirim otomatis penuh.
+- Perbaikan: nama pelanggan yang tersimpan dengan sapaan ("Pak Dimas") dulu menghasilkan
+  "Halo Kak Pak Dimas"; nama kosong menghasilkan "Halo Kak Kak". `sapaanPemilik` (`src/lib/followup.ts`)
+  memakai sapaan bawaan nama, "Kak" hanya ditambah bila belum ada. Uji di `followup-poli.test.ts`.
+- Tidak ada migrasi database.

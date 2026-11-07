@@ -74,12 +74,23 @@ const PEMBUKA: Record<string, string> = {
   Lainnya: "ada jadwal follow up",
 };
 
+// Nama pelanggan sering disimpan lengkap dengan sapaannya ("Pak Dimas", "Bu Rina"). Dulu pesan
+// selalu diawali "Kak", jadi keluar "Halo Kak Pak Dimas". Sapaan bawaan pelanggan dipakai apa adanya;
+// "Kak" hanya ditambahkan bila nama belum bersapaan, dan nama kosong cukup "Kak".
+const SAPAAN = /^(kak|kakak|pak|bapak|bpk|bu|ibu|bunda|mas|mbak|mba|om|tante|drh|dr|ny|nyonya|tn|tuan|koh|cik|sdr|sdri)\.?(\s|$)/i;
+
+export function sapaanPemilik(nama: string | null | undefined): string {
+  const bersih = (nama ?? "").trim().replace(/\s+/g, " ");
+  if (!bersih) return "Kak";
+  return SAPAAN.test(bersih) ? bersih : `Kak ${bersih}`;
+}
+
 export function pesanReminder(p: {
   pemilik: string; hewan: string; jenis: string; tanggal: string; catatan?: string | null; klinik?: string | null;
 }) {
   const tgl = tanggalIndo(p.tanggal);
   const baris = [
-    `Halo Kak ${p.pemilik}, ${p.hewan} ${PEMBUKA[p.jenis] ?? PEMBUKA.Lainnya} pada ${tgl}.`,
+    `Halo ${sapaanPemilik(p.pemilik)}, ${p.hewan} ${PEMBUKA[p.jenis] ?? PEMBUKA.Lainnya} pada ${tgl}.`,
     p.catatan?.trim() ? `Catatan dokter: ${p.catatan.trim()}` : null,
     "Boleh dibalas pesan ini untuk atur jadwalnya ya. Terima kasih!",
     p.klinik?.trim() ? `— ${p.klinik.trim()}` : null,
