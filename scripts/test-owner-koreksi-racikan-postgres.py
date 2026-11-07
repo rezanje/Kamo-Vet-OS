@@ -61,17 +61,22 @@ def plant(h, rx, harga):
           "set constraints all immediate;alter table public.prescription_items enable trigger official_prescription_snapshot;commit;")
 
 
-def racik_visit(h, n, price=50000, a=2, b=3, status=None):
+def racik_visit(h, n, price=50000, a=2, b=3, status=None, paid=False):
     """Live shape: ranap visit WITH DP 200000 (first stage invoice posted), racikan issued afterwards at FIFO cost, row not invoiced."""
     n += OFF
     v, mr = x.visit(h, n)
+    if paid:   # the first stage invoice is settled in full (payment rows + Lunas) BEFORE the racikan is issued
+        h.sql(f"select public.clinic_receive_invoice_payment({q(h.aktif(v))},'2026-11-03',170000,'Tunai','110003','Fiktif',{q('okr-settle-' + str(n))});", r.OWNER)
+    return issue_racikan(h, v, mr, n, f'okr-{n}', price, a, b, status)
+
+
+def issue_racikan(h, v, mr, n, key, price=50000, a=2, b=3, status=None):
     # fresh EARLIEST FIFO layers per fixture so every racikan is issued at the same known cost (A 2 @12000; B 1 @8700.50 + 2 @9100.25)
     h.sql(f"""insert into public.stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source) values
  ({q(r.WH)},{q(MA)},'2026-01-01',{a},{a},12000,'purchase'),({q(r.WH)},{q(MB)},'2026-01-01',1,1,8700.50,'purchase'),({q(r.WH)},{q(MB)},'2026-01-02',2,2,9100.25,'purchase');
 update public.stock set qty=qty+{a} where warehouse_id={q(r.WH)} and item_id={q(MA)};
 update public.stock set qty=qty+3 where warehouse_id={q(r.WH)} and item_id={q(MB)};
 update public.items set sell_price={price} where id={q(x.SKU)};""")
-    key = f'okr-{n}'
     h.sql(x.issue(v, mr, dict(request_key=key, dosage_instruction='Instruksi Fiktif', sale_item_id=x.SKU, recipe=recipe_json(a, b))), r.OWNER)
     recipe = h.nilai(f"select id from compounding_recipes where request_key={q(key)}")
     rx = h.nilai(f"select id from prescription_items where compound_recipe_id={q(recipe)}")
@@ -250,6 +255,17 @@ def run(h, db=None, setup=True, baseline=False):  # baseline: same battery again
     err = call(h, n2, ing(2, 3), key='okr-nochange')
     check('NEG unchanged composition refused (no audit noise)', err_has(err, 'NO_CHANGE') and state(h, n2) == s0, dict(error=(err or '')[:160]))
 
+    # ------------------------------------------------------------------ DP settled in full / receipts and payment rows exist: still correctable
+    pd = racik_visit(h, 5105, paid=True); sp0 = state(h, pd)
+    check('fixture: visit whose first stage invoice is Lunas with payment rows; the later racikan is not invoiced',
+          sp0['payments'] >= 1 and h.nilai(f"select count(*) from invoices where visit_id={q(pd['v'])} and paid_status='Lunas'") == '1', dict(payments=sp0['payments']))
+    err = call(h, pd, ing(2, 2), key='okr-paid-1'); sp1 = state(h, pd)
+    check('GREEN visit with a settled invoice + payments: owner correction works; invoices, payments, receipts, journals untouched',
+          err is None and hpp_of(h, pd['recipe']) == Decimal('41800.75') and sp1['invoice_rows'] == sp0['invoice_rows'] and sp1['payments'] == sp0['payments']
+          and sp1['receipts'] == sp0['receipts'] and sp1['journals'] == sp0['journals'], dict(error=(err or '')[:200]))
+    err = h.gagal(f"select clinic_adjust_compound({q(pd['recipe'])},{j(ing(2, 1))},'Koreksi uji');", r.OWNER)
+    check('the existing clinic_adjust_compound still refuses that visit (INVOICE_PAID)', err_has(err, 'INVOICE_PAID'), dict(error=(err or '')[:120]))
+
     # ------------------------------------------------------------------ the racikan is on an invoice line / sealed / closed / not ranap
     p = racik_visit(h, 5130, price=80000)
     e, _ = pay(h, p, 'okr-p-pay'); sp = state(h, p)
@@ -422,7 +438,7 @@ def main():
                         n = text.count(old)
                         if n != expected: check(name + ' anchor occurs %d time(s)' % expected, False, dict(count=n, anchor=old[:60])); ok = False; break
                         text = text.replace(old, new)
-                    if not ok or (a.only and a.only not in name): continue
+                    if not ok or (a.only and not any(o in name for o in a.only.split(','))): continue
                     plan.append((name, text))
                 for i, (name, text) in enumerate(plan):
                     os.environ.pop('PGDATABASE', None)
@@ -437,7 +453,7 @@ def main():
                     if i == 0: check(name + ' has 0 FAIL', not fails and not crash, (fails + [crash or ''])[:3])
                     else:
                         extra['mutants'][name] = dict(killed=bool(fails), failing=fails[:4], crash=crash)
-                        check(name + ' KILLED', bool(fails), fails[:3]); print('   failing:', fails[:4], flush=True)
+                        check(name + ' KILLED', bool(fails), fails[:3] or [crash]); print('   failing:', fails[:4], flush=True)
         else:
             with r.NativePostgres(r.BIN) as db:
                 build(db, {CANDIDATE} if a.baseline else set()); run(x.Harness(db), db, baseline=a.baseline)
