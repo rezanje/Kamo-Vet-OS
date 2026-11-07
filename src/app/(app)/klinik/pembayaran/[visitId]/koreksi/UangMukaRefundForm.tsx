@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { NumberInput } from "@/components/NumberInput";
 import { ajukanRefundUangMuka } from "./uang-muka-refund-actions";
 
 const rp = (n: number) => "Rp " + Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 });
@@ -41,7 +42,7 @@ export function UangMukaRefundForm({ advanceId, noUangMuka, saldo, requestKey }:
   return <div style={{ marginTop: 6 }}>
     <p style={{ fontSize: 11 }}>Uang muka <b>{noUangMuka}</b>: saldo belum terpakai <b>{rp(saldo)}</b>. Pengajuan mencadangkan jumlahnya; uang baru keluar dari bank setelah Finance mentransfer dan mencatatnya.</p>
     <label className="flab" htmlFor="rum-jumlah">Jumlah dikembalikan (Rp) *</label>
-    <input id="rum-jumlah" className="fi" inputMode="decimal" value={jumlah} onChange={(e) => { setJumlah(e.target.value); setPesan(null); }} />
+    <NumberInput id="rum-jumlah" className="fi" type="number" min={0} step="any" value={jumlah} onChange={(e) => { setJumlah(e.target.value); setPesan(null); }} />
     {lebih && <div className="p2ban" role="note">Jumlah tidak boleh melebihi saldo {rp(saldo)}.</div>}
     <label className="flab" htmlFor="rum-bank">Bank tujuan *</label>
     <input id="rum-bank" className="fi" value={bank} maxLength={80} onChange={(e) => setBank(e.target.value)} placeholder="mis. BCA" />

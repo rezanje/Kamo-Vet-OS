@@ -25,7 +25,7 @@
 --    HARUS baris cash_accounts jenis 'Bank' yang aktif, berlaku untuk cabang, DAN akun pembukuannya anak langsung dari grup Bank
 --    (c_bank_group = 120000, grup yang sama dengan 120001-120006 di bagan akun). Kas/laci (110003), Piutang (150001), 314001, Persediaan,
 --    Pendapatan, Beban atau baris 'Bank' palsu yang menunjuk akun lain ditolak (ACCOUNT_INVALID); tabel cash_accounts terbuka untuk semua
---    pengguna login, jadi jenis saja tidak cukup.
+--    pengguna login, jadi memeriksa jenis saja belum memadai.
 --  * TANGGAL JURNAL: tanggal transfer yang diisi Finance (boleh hari ini atau sebelumnya, tidak lebih awal dari tanggal pengajuan, tidak di
 --    periode yang sudah dikunci); kosong = hari ini (WIB). Sumber jurnal 'klinik-uang-muka-refund', source_ref = nomor refund (RUM-YYYYMM-nnnn,
 --    unik per refund).
