@@ -250,7 +250,7 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
     err, res = corr(h, dsc, ing(1, 3), key='okrt-disc-1')
     check('price flags use the P03 net price (line 80000 x invoice discount share 0.5 = 40000): before 40000 < 50901 true, after A 2 -> 1 (HPP 38901.00) false; total untouched',
           err is None and res and D(str(res['net_price'])) == D('40000.00') and res['price_below_hpp_before'] is True and res['price_below_hpp_after'] is False and line_hpp(h, dsc) == D('38901.00')
-          and h.nilai(f"select total from invoices where id={q(dsc['inv'])}") == '40000.00', dict(error=(err or '')[:200], res=str(res)[:200]))
+          and D(h.nilai(f"select total from invoices where id={q(dsc['inv'])}")) == D('40000'), dict(error=(err or '')[:200], res=str(res)[:200]))
 
     # ------------------------------------------------------------------ mixed: A up, C added, B removed
     m = inv_visit(h, 6105); sm0 = snap(h, m)
