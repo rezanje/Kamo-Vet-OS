@@ -41,9 +41,38 @@ export default async function Dashboard({
     return <DashboardLain sudut={sudut} role={profile?.role ?? null} />;
   }
 
-  const [d, pendingWork] = await Promise.all([
-    getDashboard(supabase as never, today), loadPendingWork(supabase, profile?.role ?? null),
+  const [hasil, pendingWork] = await Promise.all([
+    // Galat ringkasan keuangan tidak boleh menjatuhkan seluruh halaman (7 Nov 2026:
+    // Owner hanya melihat "Application error"). Halaman tetap tampil dengan keterangannya.
+    getDashboard(supabase as never, today).then(
+      (data) => ({ data, galat: null as string | null }),
+      (error: unknown) => {
+        console.error("[dashboard] ringkasan keuangan gagal dihitung", error);
+        return { data: null, galat: error instanceof Error && error.message ? error.message : "Kesalahan tidak dikenal" };
+      },
+    ),
+    loadPendingWork(supabase, profile?.role ?? null),
   ]);
+
+  if (!hasil.data) {
+    return (
+      <>
+        <div className="pg-hd">Dashboard</div>
+        <div className="pg-sub">PT Kamo Group · Semua Cabang · Tahun {today.slice(0, 4)}</div>
+        <PilihSudut aktif={sudut} />
+        <PendingWorkAlerts items={pendingWork} />
+        <div className="card" role="alert">
+          <div className="card-hd"><i className="ti ti-alert-triangle" style={{ color: "#d97706" }} /> Ringkasan keuangan belum dapat dihitung</div>
+          <p style={{ fontSize: 12, margin: "0 0 6px" }}>
+            Menu lain tetap bisa dipakai seperti biasa. Coba muat ulang halaman ini sebentar lagi, atau buka tampilan{" "}
+            <Link href="/?sudut=operasional" style={{ color: "#2563eb" }}>Operasional</Link>.
+          </p>
+          <p style={{ fontSize: 10.5, color: "var(--tm)", margin: 0 }}>Keterangan: {hasil.galat}</p>
+        </div>
+      </>
+    );
+  }
+  const d = hasil.data;
 
   const lr = d.labaRugi;
   const totalBeban = d.beban.reduce((a, b) => a + b.amount, 0);
@@ -128,7 +157,8 @@ export default async function Dashboard({
 
         <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
           <SummaryCard title="Penjualan neto (tahun ini)" icon="ti-receipt-2" total={d.penjualan.total} lunas={d.penjualan.lunas} belum={d.penjualan.belumLunas} lunasLabel="Dibayar" belumLabel="Piutang aktif" settlementTotal={d.penjualan.lunas + d.penjualan.belumLunas} note="Penjualan mengikuti tanggal dokumen dan pembalik. Pelunasan grosir memakai faktur aktif, termasuk tagihan tahun sebelumnya." />
-          <SummaryCard title="Pembelian (tahun ini)" icon="ti-truck-delivery" total={d.pembelian.total} lunas={d.pembelian.lunas} belum={d.pembelian.belumLunas} lunasLabel="Terbayar" belumLabel="Belum bayar" />
+          <SummaryCard title="Pembelian (tahun ini)" icon="ti-truck-delivery" total={d.pembelian.total} lunas={d.pembelian.lunas} belum={d.pembelian.belumLunas} lunasLabel="Terbayar" belumLabel="Belum bayar"
+            note={d.poPerluTinjau > 0 ? `${d.poPerluTinjau} PO diterima perlu ditinjau di Hutang Usaha — sisa yang belum difakturkan dari PO tersebut belum ikut dihitung.` : undefined} />
         </div>
       </div>
     </>
