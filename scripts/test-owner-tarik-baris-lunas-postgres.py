@@ -409,7 +409,7 @@ def sec_neg(h):
     s0 = snap(h, N)
     err = h.gagal(f"set role authenticated;select set_config('request.jwt.claim.role','authenticated',false);select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);"
                   f"select set_config('request.headers',{q(json.dumps({'x-kamo-operational-branch': r.BRANCH2}))},false);select {RPC}({q(N['inv'])},{j(L(N['INF']))},'Alasan cukup panjang','tbl-branch');")
-    check('NEG OWNER working in ANOTHER branch (operational-branch header) refused (ACCESS_DENIED)', err_has(err, 'ACCESS_DENIED') and snap(h, N) == s0, dict(error=(err or '')[:160]))
+    check('NEG OWNER working in ANOTHER branch (operational-branch header) refused by the branch check itself (ACCESS_DENIED: cabang tagihan)', err_has(err, 'ACCESS_DENIED', 'cabang tagihan') and snap(h, N) == s0, dict(error=(err or '')[:160]))
     err = h.gagal(f"reset role;select {RPC}({q(N['inv'])},{j(L(N['INF']))},'Alasan cukup panjang','tbl-anon');")
     check('NEG no authenticated session refused', bool(err) and ('ACCESS_DENIED' in err or 'permission denied' in err) and snap(h, N) == s0, dict(error=(err or '')[:160]))
     for label, reason in (('missing', None), ('empty', ''), ('whitespace', '       '), ('4 significant chars', 'ab c  d'), ('too long', 'x' * 501)):
@@ -520,8 +520,11 @@ def sec_scope(h):
     refused(h, P8, 'NEG invoice awaiting a correction (correction_pending) refused (INVOICE_ADJUSTED)', L(P8['INF']), ['INVOICE_ADJUSTED'])
     # BMHP data that is not exact: stock ledger of the component does not match the snapshot
     P9 = build(h, 7032)
-    h.sql(f"delete from stock_moves where source='klinik-bmhp' and source_ref={q(P9['no'])} and item_id={q(C2)};")
-    refused(h, P9, 'NEG BMHP component stock ledger does not match the line snapshot refused (STOCK_MISMATCH): never guess', L(P9['INF']), ['STOCK_MISMATCH'])
+    h.sql(f"update stock_moves set qty=qty+1 where source='klinik-bmhp' and source_ref={q(P9['no'])} and item_id={q(C2)};")
+    refused(h, P9, 'NEG BMHP component stock ledger (10 recorded out, snapshot says 10, ledger says 9) does not match the invoice lines: refused by the ledger check itself (STOCK_MISMATCH: kartu stok tagihan): never guess', L(P9['INF']), ['STOCK_MISMATCH', 'kartu stok tagihan'])
+    P9b = build(h, 7039)
+    h.sql(f"delete from stock_moves where source='klinik-bmhp' and source_ref={q(P9b['no'])} and item_id={q(C2)};")
+    refused(h, P9b, 'NEG BMHP component stock moves missing entirely refused (STOCK_MISMATCH)', L(P9b['INF']), ['STOCK_MISMATCH'])
     P10 = build(h, 7033)
     h.sql(f"update invoice_items set hpp=hpp+0.5 where id={q(P10['INF'])};")
     refused(h, P10, 'NEG line HPP differing from its BMHP cost by 0.50 refused (COST_MISMATCH)', L(P10['INF']), ['COST_MISMATCH'])
