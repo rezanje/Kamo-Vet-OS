@@ -33,6 +33,7 @@ import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clini
 import { tambahAdendumRekamMedis } from "./actions";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { labelSusulan, type SusulanFields } from "@/lib/rekam-medis-susulan";
+import type { WithdrawnItem } from "@/lib/tarik-item";
 import { adalahKekuranganStok } from "@/lib/stok-kurang";
 import { adalahRiwayatBersama, bacaDetailRiwayatBersama, ownerAktif } from "@/lib/riwayat-bersama";
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
@@ -165,6 +166,7 @@ export default async function RekamMedisPage({
   let mrLoadFailed = false;
   let correctionDataFailed = false;
   let resep: (ClinicalCorrection["prescriptions"][number] & SusulanFields)[] = [];
+  let withdrawn: WithdrawnItem[] = [];
   let racikanList: { id: string; recipe_name: string; dosage_form: string; total_volume: string; status: string }[] = [];
   if (recorded) {
     mrLoadFailed = !!latestRecord.error;
@@ -192,8 +194,10 @@ export default async function RekamMedisPage({
     recorded && mrId ? Promise.all([
       supabase
         .from("prescription_items")
-        .select("id, item_id, nama_obat, qty, harga, satuan, faktor, aturan_pakai, jenis, kategori, service_performers, compound_recipe_id, bmhp_components, susulan_at, susulan_by_name, susulan_source")
+        .select("id, item_id, nama_obat, qty, harga, satuan, faktor, aturan_pakai, jenis, kategori, service_performers, compound_recipe_id, bmhp_components, susulan_at, susulan_by_name, susulan_source, package_item_id, package_qty, package:items!prescription_items_package_item_id_fkey(name)")
         .eq("medical_record_id", mrId)
+        // Baris yang ditarik (Tarik item) tidak lagi bagian resep/keranjang; tampil terpisah di bawah.
+        .is("record_withdrawn_at", null)
         .order("created_at"),
       // Addendum §2: racikan bisa lebih dari satu per rekam medis (racikan harian rawat inap).
       supabase
@@ -204,6 +208,8 @@ export default async function RekamMedisPage({
       menungguBayar && !visit.checked_out_at && !mrLoadFailed
         ? supabase.rpc("clinic_can_correct_record", { p_record_id: mrId })
         : Promise.resolve({ data: false, error: null }),
+      // Riwayat penarikan: siapa, kapan, alasan. Gagal dibaca tidak menghalangi layar (daftar kosong).
+      supabase.rpc("clinic_record_withdrawn_items", { p_record_id: mrId }),
     ]) : null,
     examForm && categoriesP && compoundP ? Promise.all([
       loadServiceStaff(supabase, visit.branch_id ?? null),
@@ -228,7 +234,8 @@ export default async function RekamMedisPage({
   ]);
   let correctionCheck: { data: unknown; error: unknown } = { data: false, error: null };
   if (recordedData) {
-    const [{ data: pi, error: piError }, { data: cr, error: crError }, check] = recordedData;
+    const [{ data: pi, error: piError }, { data: cr, error: crError }, check, withdrawnRead] = recordedData;
+    withdrawn = Array.isArray(withdrawnRead?.data) ? withdrawnRead.data as WithdrawnItem[] : [];
     resep = pi ?? [];
     racikanList = cr ?? [];
     correctionDataFailed = !!(piError || crError);
@@ -269,7 +276,7 @@ export default async function RekamMedisPage({
     anamnesis: record.anamnesis, diagnosis: record.diagnosis, therapy: record.therapy,
     suhu: record.suhu, berat: record.berat, gejala_klinis: record.gejala_klinis, hasil_penunjang: record.hasil_penunjang,
     penunjang_urls: record.penunjang_urls, follow_up: record.follow_up, catatan_resep: record.catatan_resep,
-    prescriptions: resep, compounds: racikanList,
+    prescriptions: resep, compounds: racikanList, withdrawn,
   } : undefined;
   // Any invoice, active or voided: unpaid Edit closes as soon as one ever existed.
   // Klinik-A: bacaan tahap 1 sudah persis query ini (invoice apa pun untuk kunjungan ini),
@@ -577,6 +584,13 @@ export default async function RekamMedisPage({
                   </tbody>
                 </table>
               )}
+              {withdrawn.length > 0 && <div data-item-ditarik style={{ marginTop: 8, fontSize: 11, color: "var(--tm)" }}>
+                <div style={{ fontWeight: 700 }}>Item ditarik (tidak ditagih)</div>
+                {withdrawn.map(w => <div key={w.id} style={{ marginTop: 2 }}>
+                  <s>{w.nama_obat} · {w.qty} {w.satuan ?? ""}</s>
+                  <span> — Ditarik oleh {w.withdrawn_by_name ?? "pengguna"}{w.withdrawn_at ? `, ${new Date(w.withdrawn_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}` : ""}, alasan: {w.reason ?? "—"}</span>
+                </div>)}
+              </div>}
             </div>
           </div>
 

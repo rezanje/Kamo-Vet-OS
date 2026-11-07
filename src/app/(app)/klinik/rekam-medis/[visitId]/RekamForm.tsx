@@ -5,7 +5,7 @@ import { QtyInput } from "@/components/QtyInput";
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ClinicalCorrection } from "@/lib/clinical-correction";
+import { savedPackageOrigin, type ClinicalCorrection } from "@/lib/clinical-correction";
 import Link from "next/link";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { TindakanRacikanForm } from "@/components/TindakanRacikanForm";
@@ -21,7 +21,8 @@ import { petaStokKlinik } from "@/lib/stok-klinik";
 import { StokKlinik, StokKeranjangKlinik } from "@/components/StokKlinik";
 import { StokKurangPopup, StokKurangDariPesan } from "@/components/StokKurangPopup";
 import type { BarisKurangStok } from "@/lib/stok-kurang";
-import { simpanRekamMedis, koreksiRekamMedis, koreksiRekamMedisLengkap } from "./actions";
+import { simpanRekamMedis, koreksiRekamMedis, koreksiRekamMedisLengkap, tarikItemRekamMedis } from "./actions";
+import { alasanTarikValid, bisaDitarik, idTarik, tarikMenghabiskan, ALASAN_TARIK_MAX, type WithdrawnItem } from "@/lib/tarik-item";
 import { type RacikanIngredient } from "@/lib/racikan";
 import { PenunjangUpload } from "@/components/PenunjangUpload";
 import { PetPhotoUpload } from "@/components/PetPhotoUpload";
@@ -56,6 +57,8 @@ type CartRow = {
   bmhp?: BmhpRow[];
   /** Diisi hanya bila racikan sudah pernah diracik (stok bahan sudah keluar). */
   compound_recipe_id?: string;
+  /** Asal paket baris TERSIMPAN (dibawa pulang apa adanya supaya Simpan tidak menghapusnya; dipakai Tarik paket). */
+  package_item_id?: string | null; package_qty?: number | null;
   /** Baris isi paket (Grup) yang dipilih dari daftar Obat — hanya untuk tampilan keranjang. */
   paket_id?: string; paket_nama?: string; paket_qty?: number;
 };
@@ -116,8 +119,40 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     jenis: row.compound_recipe_id ? "racikan" : row.jenis === "jasa" ? "jasa" : "obat",
     kategori: row.kategori ?? undefined, aturan_pakai: row.aturan_pakai ?? undefined,
     compound_recipe_id: row.compound_recipe_id ?? undefined, service_performers: row.service_performers,
+    package_item_id: row.package_item_id ?? undefined, package_qty: row.package_qty == null ? undefined : Number(row.package_qty),
     bmhp: row.bmhp_components?.map(material => ({...material,nama:material.name ?? material.item_id})),
+    // Anisa 7 Nov: koreksi rekam medis dulu memuat isi paket tanpa asal paketnya, lalu
+    // menyimpannya kembali sebagai baris biasa — kasir melihat isi paket berceceran.
+    // Asal paket tersimpan dibawa ke keranjang supaya tetap satu baris paket dan ikut terkirim.
+    ...savedPackageOrigin(row),
   })) : []);
+  // Tarik item: baris tersimpan yang belum ditagih ditarik LANGSUNG (RPC sendiri, alasan wajib).
+  const [ditarik, setDitarik] = useState<WithdrawnItem[]>(() => correction?.withdrawn ?? []);
+  const [tarikTarget, setTarikTarget] = useState<{ ids: string[]; label: string; key: string } | null>(null);
+  const [tarikAlasan, setTarikAlasan] = useState("");
+  const [tarikBusy, setTarikBusy] = useState(false);
+  const [tarikError, setTarikError] = useState("");
+  const bukaTarik = (row: CartRow) => {
+    const ids = idTarik(cart, row);
+    if (!ids.length) return;
+    const label = ids.length > 1 ? `paket ${cart.filter(r => r.prescription_item_id && ids.includes(r.prescription_item_id)).map(r => r.nama_obat).join(", ")}` : row.nama_obat;
+    setTarikTarget({ ids, label, key: `tarik-${crypto.randomUUID()}` });
+    setTarikAlasan(""); setTarikError("");
+  };
+  const konfirmasiTarik = async () => {
+    if (!tarikTarget || tarikBusy || !correction || !alasanTarikValid(tarikAlasan)) return;
+    setTarikBusy(true); setTarikError("");
+    try {
+      const out = await tarikItemRekamMedis({ visitId, recordId: correction.recordId, itemIds: tarikTarget.ids, reason: tarikAlasan.trim(), requestKey: tarikTarget.key });
+      if (!out.ok) { setTarikError(out.error); return; }
+      const gone = cart.filter(r => r.prescription_item_id && tarikTarget.ids.includes(r.prescription_item_id));
+      setDitarik(list => [...list, ...gone.map(r => ({ id: r.prescription_item_id!, nama_obat: r.nama_obat, qty: r.qty, satuan: r.satuan, jenis: r.jenis,
+        withdrawn_at: new Date().toISOString(), withdrawn_by_name: "Anda", reason: tarikAlasan.trim() }))]);
+      setCart(rows => rows.filter(r => !(r.prescription_item_id && tarikTarget.ids.includes(r.prescription_item_id))));
+      setTarikTarget(null); setTarikAlasan("");
+    } catch { setTarikError("Penarikan belum terkonfirmasi. Muat ulang halaman sebelum mencoba lagi."); }
+    finally { setTarikBusy(false); }
+  };
   const [procedureDraft, setProcedureDraft] = useState<{ item: ItemLite; bmhp: BmhpRow[]; editKey: string | null } | null>(null);
   const [procedureError, setProcedureError] = useState("");
   const procedureCommitted = useRef(false);
@@ -530,6 +565,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                 <span style={{ fontSize: 11, fontWeight: 700, color: "var(--posb)" }}>KERANJANG ({cart.length})</span>
                 {cart.length > 0 && !correction?.fullEdit && <button type="button" onClick={clear} className="back-btn" style={{ fontSize: 10, color: "#b91c1c" }}>Hapus semua</button>}
               </div>
+              {correction?.fullEdit && cart.some(r => r.prescription_item_id) && <div data-hapus-petunjuk style={{ fontSize: 10, color: "var(--tm)", marginBottom: 6 }}>
+                <i className="ti ti-lock" /> Item tersimpan yang belum ditagih bisa <b>Tarik</b> (alasan wajib, langsung tersimpan, tercatat siapa dan kapan). BMHP: pakai Ubah BMHP lalu ×.
+                Baris bergembok (racikan sudah diracik) hanya lewat Aksi racikan.
+              </div>}
               <div style={{ minHeight: 60, overflowX: "auto" }}>
                 {cart.length === 0 ? (
                   <div style={{ fontSize: 10.5, color: "var(--td)", padding: "8px 0" }}>Belum ada item. Tambah obat/jasa dari kiri.</div>
@@ -545,6 +584,9 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                         cart.find(row => row.paket_id === r.paket_id) === r
                           ? <BarisPaket key={`paket-${r.paket_id}`} isi={cart.filter(row => row.paket_id === r.paket_id)} staff={serviceStaff}
                               onJumlah={jumlah => setJumlahPaket(r.paket_id!, jumlah)} onHapus={() => del(r.key)}
+                              // Tarik item + asal paket tersimpan (#471): isi paket yang sudah tersimpan tidak bisa dihapus dari Edit;
+                              // tombol Tarik menarik SELURUH paket (idTarik mengelompokkan lewat package_item_id), bukan ✕.
+                              onTarik={correction?.fullEdit && cart.some(row => row.paket_id === r.paket_id && bisaDitarik(row)) ? () => bukaTarik(cart.find(row => row.paket_id === r.paket_id && bisaDitarik(row))!) : undefined}
                               onPelaksana={value => setCart(rows => rows.map(row => row.paket_id === r.paket_id ? { ...row, service_performers: value } : row))} />
                           : null
                       ) : (
@@ -603,7 +645,20 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                           </td>
                           <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(r.qty * r.harga)}</td>
                           <td style={{ textAlign: "center" }}>
-                            {!r.prescription_item_id && <i className="ti ti-x" onClick={() => del(r.key)} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />}
+                            {!r.prescription_item_id
+                              ? <i className="ti ti-x" onClick={() => del(r.key)} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />
+                              // Database menolak menghapus baris resep tersimpan dari Edit (RECORD_INVALID); tombol hapus
+                              // yang hilang tanpa tanda terbaca sebagai kerusakan (laporan Andri 4 Nov): baris tersimpan
+                              // yang belum ditagih bisa DITARIK (alasan wajib); racikan tetap bergembok.
+                              : correction?.fullEdit && bisaDitarik(r)
+                              ? <button type="button" data-tarik-baris className="btn-def" onClick={() => bukaTarik(r)}
+                                  aria-label={`Tarik ${r.package_item_id ? "paket " : ""}${r.nama_obat}`} title={r.package_item_id ? "Tarik seluruh paket dari rekam medis (tidak ditagih)." : "Tarik dari rekam medis (tidak ditagih); alasan wajib."}
+                                  style={{ padding: "1px 6px", fontSize: 9.5 }}>Tarik</button>
+                              : <i className="ti ti-lock" role="img" data-baris-terkunci aria-label={`${r.nama_obat} tersimpan, tidak bisa dihapus dari Edit`}
+                                title={r.compound_recipe_id
+                                  ? "Racikan sudah diracik (stok bahan sudah keluar) — koreksi lewat Aksi → Ubah komposisi / koreksi racikan."
+                                  : "Baris tersimpan tidak bisa dihapus dari Edit."}
+                                style={{ color: "var(--td)", fontSize: 13 }} />}
                           </td>
                         </tr>
                       ))}
@@ -611,6 +666,26 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                   </table>
                 )}
               </div>
+              {correction?.fullEdit && tarikTarget && <div data-tarik-panel role="group" aria-label="Tarik item" style={{ border: ".5px solid #b45309", borderRadius: 6, padding: 8, marginTop: 8, fontSize: 10.5 }}>
+                <div><b>Tarik {tarikTarget.label}</b> dari rekam medis? Item ini tidak akan ditagih dan tidak ikut resep/cetak. Penarikan <b>langsung tersimpan</b> (tidak menunggu tombol Simpan) dan tercatat atas nama Anda; perubahan lain di form ini tetap perlu disimpan.</div>
+                <input className="fi" aria-label="Alasan penarikan" value={tarikAlasan} maxLength={ALASAN_TARIK_MAX} placeholder="Alasan (min. 5 huruf/angka), mis. salah input / diganti obat lain"
+                  onChange={e => setTarikAlasan(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void konfirmasiTarik(); } }}
+                  style={{ width: "100%", marginTop: 4 }} />
+                {tarikMenghabiskan(cart, tarikTarget.ids) && <div role="alert" data-tarik-peringatan-terakhir style={{ color: "#b45309", marginTop: 4, fontWeight: 600 }}>
+                  Ini baris terakhir di rekam medis. Kunjungan tanpa baris tidak dapat ditagih. Jika ditarik, baris dapat ditambahkan lagi lewat Edit (Tambah item lalu Simpan).
+                </div>}
+                {tarikError && <div role="alert" data-tarik-error style={{ color: "#b91c1c", marginTop: 4 }}>{tarikError}</div>}
+                <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                  <button type="button" className="btn-def" data-tarik-konfirmasi disabled={tarikBusy || !alasanTarikValid(tarikAlasan)} onClick={() => void konfirmasiTarik()}>{tarikBusy ? "Menarik…" : tarikMenghabiskan(cart, tarikTarget.ids) ? "Tetap tarik baris terakhir" : "Ya, tarik"}</button>
+                  <button type="button" className="btn-def" disabled={tarikBusy} onClick={() => { setTarikTarget(null); setTarikError(""); }}>Batal</button>
+                </div>
+              </div>}
+              {correction?.fullEdit && ditarik.length > 0 && <div data-item-ditarik style={{ marginTop: 8, fontSize: 10, color: "var(--tm)" }}>
+                <div style={{ fontWeight: 700 }}>Item ditarik ({ditarik.length}) — tidak ditagih</div>
+                {ditarik.map(w => <div key={w.id} style={{ marginTop: 2 }}>
+                  <s>{w.nama_obat} · {w.qty} {w.satuan ?? ""}</s> — Ditarik oleh {w.withdrawn_by_name ?? "pengguna"}, alasan: {w.reason ?? "—"}
+                </div>)}
+              </div>}
 
               {/* Koreksi tidak menyimpan catatan resep umum; aturan pakai tiap racikan ikut barisnya. */}
               {hasRacikan && !correction && (
@@ -664,8 +739,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
 }
 
 /** Satu paket di keranjang: nama & harga paket, jumlah paket, pelaksana, isi paket tanpa harga. */
-function BarisPaket({ isi, staff, onJumlah, onHapus, onPelaksana }: {
-  isi: CartRow[]; staff: ServiceStaff[]; onJumlah: (jumlah: number) => void; onHapus: () => void;
+function BarisPaket({ isi, staff, onJumlah, onHapus, onTarik, onPelaksana }: {
+  isi: CartRow[]; staff: ServiceStaff[]; onJumlah: (jumlah: number) => void; onHapus: () => void; onTarik?: () => void;
   onPelaksana: (value: ServicePerformersInput) => void;
 }) {
   const utama = isi[0];
@@ -687,7 +762,12 @@ function BarisPaket({ isi, staff, onJumlah, onHapus, onPelaksana }: {
     </td>
     <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(total)}</td>
     <td style={{ textAlign: "center" }}>
-      <i className="ti ti-x" role="button" aria-label={`Hapus paket ${utama.paket_nama}`} onClick={onHapus} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />
+      {onTarik
+        ? <button type="button" data-tarik-baris className="btn-def" onClick={onTarik} aria-label={`Tarik paket ${utama.paket_nama}`}
+            title="Tarik seluruh paket dari rekam medis (tidak ditagih); alasan wajib." style={{ padding: "1px 6px", fontSize: 9.5 }}>Tarik</button>
+        : isi.some(row => row.prescription_item_id)
+        ? <i className="ti ti-lock" role="img" data-baris-terkunci aria-label={`Paket ${utama.paket_nama} tersimpan, tidak bisa dihapus dari Edit`} title="Baris tersimpan tidak bisa dihapus dari Edit." style={{ color: "var(--td)", fontSize: 13 }} />
+        : <i className="ti ti-x" role="button" aria-label={`Hapus paket ${utama.paket_nama}`} onClick={onHapus} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />}
     </td>
   </tr>;
 }
