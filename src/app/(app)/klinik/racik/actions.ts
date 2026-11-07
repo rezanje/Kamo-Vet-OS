@@ -12,6 +12,7 @@ import { hargaCabang } from "@/lib/harga-cabang";
 import { stokGudangKlinik } from "@/lib/stok-klinik";
 import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams } from "@/lib/klinik-posting";
 import { loadKatalogRacikan } from "@/lib/katalog-racikan-server";
+import { queryErrorRacikan } from "./racikan-error";
 
 /** `stok` null = gudang klinik cabang belum terbaca ("belum terbaca"), bukan nol. */
 export type BahanRacikan = { id: string; name: string; unit: string; sell_price: number; stok: number | null };
@@ -218,7 +219,7 @@ export async function ubahKomposisiRacikan(formData: FormData) {
   const { error } = await supabase.rpc("clinic_adjust_compound", {
     p_recipe_id: recipeId, p_ingredients: rows, p_reason: reason,
   });
-  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
+  if (error) redirect(`${back}?${queryErrorRacikan(error)}`);
   revalidatePath(back);
   if (visitId) { revalidatePath(`/klinik/rekam-medis/${visitId}`); revalidatePath(`/klinik/pembayaran/${visitId}`); }
   redirect(`${back}?success=komposisi${transactionDraftAck(formData)}`);
@@ -236,7 +237,7 @@ export async function kembalikanBahanRacikan(formData: FormData) {
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("clinic_return_compound", { p_recipe_id: recipeId, p_reason: reason });
-  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
+  if (error) redirect(`${back}?${queryErrorRacikan(error)}`);
   revalidatePath(back);
   if (visitId) { revalidatePath(`/klinik/rekam-medis/${visitId}`); revalidatePath(`/klinik/pembayaran/${visitId}`); }
   redirect(visitId ? `/klinik/rekam-medis/${visitId}?racikan=kembali` : `/klinik/racik?success=kembali`);

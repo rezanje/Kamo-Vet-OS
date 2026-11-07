@@ -121,3 +121,38 @@ it("refuses a return without a reason and surfaces a rejected database rule", as
   await expect(kembalikanBahanRacikan(form({ recipeId: "recipe", visitId: "visit", reason: "Salah racik" })))
     .rejects.toThrow("REDIRECT /klinik/racik/recipe?error=");
 });
+
+it("INVOICE_PAID dari database: redirect membawa pesan Indonesia + kode asli di &kode= (tidak disembunyikan)", async () => {
+  fixture.rpcError = { code: "P0001", message: "INVOICE_PAID: tagihan kunjungan sudah dibayar" };
+  const err = await kembalikanBahanRacikan(form({ recipeId: "recipe", visitId: "visit", reason: "salah racik" })).catch(e => e as Error);
+  const href = decodeURIComponent((err as Error).message);
+  expect(href).toContain("REDIRECT /klinik/racik/recipe?error=Kunjungan ini sudah punya DP/pembayaran");
+  expect(href).toContain("Hubungi Owner/Reza untuk koreksi tagihan.");
+  expect(href).toContain("&kode=INVOICE_PAID: tagihan kunjungan sudah dibayar");
+});
+
+it("ubah komposisi: RECIPE_LINKED juga diterjemahkan dengan kode asli tersimpan", async () => {
+  fixture.rpcError = { code: "P0001", message: "RECIPE_LINKED: racikan sudah dipakai pada invoice" };
+  const err = await ubahKomposisiRacikan(form({ recipeId: "recipe", visitId: "visit", reason: "dosis", ingredients: JSON.stringify([{ item_id: "bahan", quantity: 3 }]) })).catch(e => e as Error);
+  const href = decodeURIComponent((err as Error).message);
+  expect(href).toContain("sudah masuk tagihan");
+  expect(href).toContain("&kode=RECIPE_LINKED: racikan sudah dipakai pada invoice");
+});
+
+it("halaman racik menampilkan Detail teknis (kotak lipat) berisi kode asli dari ?kode=", async () => {
+  document.body.innerHTML = renderToStaticMarkup(await Page({
+    params: Promise.resolve({ recipeId: "recipe" }),
+    searchParams: Promise.resolve({ error: "Pesan manusiawi", kode: "INVOICE_PAID: tagihan kunjungan sudah dibayar" }),
+  }));
+  const detail = document.querySelector("details:not([aria-label])")!;
+  expect(detail.querySelector("summary")?.textContent).toBe("Detail teknis");
+  expect(detail.querySelector("code")?.textContent).toBe("INVOICE_PAID: tagihan kunjungan sudah dibayar");
+  expect(document.body.textContent).toContain("Pesan manusiawi");
+});
+
+it("racikan rawat inap (kunjungan punya inpatient_records): kotak Aksi terbuka & beranchor #aksi", async () => {
+  const doc = await render();
+  const aksi = doc.querySelector('details[aria-label="Aksi racikan"]')!;
+  expect(aksi.hasAttribute("open")).toBe(true);
+  expect(aksi.id).toBe("aksi");
+});

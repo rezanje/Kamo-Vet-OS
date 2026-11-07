@@ -31,10 +31,10 @@ export default async function RacikDetailPage({
   searchParams,
 }: {
   params: Promise<{ recipeId: string }>;
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; kode?: string }>;
 }) {
   const { recipeId } = await params;
-  const { error, success } = await searchParams;
+  const { error, success, kode } = await searchParams;
   const supabase = await createClient();
 
   const { data: r, error: recipeError } = await supabase
@@ -109,6 +109,16 @@ export default async function RacikDetailPage({
     ? await bahanRacikanUntukKunjungan(visit.id).then(rows => rows.map(row => ({ id: row.id, name: row.name, unit: row.unit, stok: row.stok })))
       .catch(() => [] as { id: string; name: string; unit: string; stok: number | null }[])
     : [];
+
+  // Racikan kunjungan rawat inap: kotak Aksi dibuka otomatis. Gagal baca = tetap tertutup (perilaku lama).
+  const rawatInap = visit
+    ? await (async () => {
+      try {
+        const res = await supabase.from("inpatient_records").select("id").eq("visit_id", visit.id).limit(1);
+        return !res.error && (res.data?.length ?? 0) > 0;
+      } catch { return false; }
+    })()
+    : false;
 
   const tglResep = visit ? new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
   const tglPeriksa = visit ? new Date(visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -192,7 +202,7 @@ export default async function RacikDetailPage({
         <span className={`bge ${statusBadge(r.status)}`}>{statusLabel[r.status]}</span>
       </div>
 
-      {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
+      {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}{kode && <details style={{ marginTop: 4, fontSize: 10.5 }}><summary style={{ cursor: "pointer" }}>Detail teknis</summary><code data-kode-error style={{ wordBreak: "break-word" }}>{kode.slice(0, 300)}</code></details>}</div>}
       {success === "ready" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Obat siap diserahkan ke pasien.</div>}
       {success === "handed_over" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Racikan sudah diserahkan.</div>}
       {success === "petunjuk" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Petunjuk racik tersimpan.</div>}
@@ -204,6 +214,7 @@ export default async function RacikDetailPage({
         <div style={{ display: "flex", gap: 22, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div style={{ display: "flex", gap: 16, minWidth: 300, flex: 1 }}>
             <div style={{ width: 96, height: 96, borderRadius: 12, background: "var(--sf1)", border: ".5px solid var(--bd)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element -- foto hewan dari URL storage eksternal; sama seperti halaman lain */}
               {pet?.photo_url ? <img src={pet.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <i className="ti ti-paw" style={{ fontSize: 40, color: "var(--td)" }} />}
             </div>
             <div>
@@ -363,7 +374,7 @@ export default async function RacikDetailPage({
         </div>
       )}
       {(r.status === "pending" || r.status === "ready") && (
-        <RacikanAksi recipeId={r.id} visitId={visit?.id ?? ""} ingredients={komposisiIni} materials={bahanPilihan} />
+        <RacikanAksi recipeId={r.id} visitId={visit?.id ?? ""} ingredients={komposisiIni} materials={bahanPilihan} rawatInap={rawatInap} />
       )}
       {r.status !== "pending" && r.status !== "ready" && (
         <div style={{ fontSize: 10, color: "var(--td)", textAlign: "center", marginTop: 12 }}>
