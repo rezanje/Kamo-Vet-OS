@@ -66,6 +66,8 @@ insert into payment_account_map(metode,branch_id,cash_account_id) values
  ('Tunai','f0310000-0000-4000-8000-000000000001',(select id from cash_accounts where coa_code='1111')) on conflict do nothing;
 update accounting_locks set closed_until=null;
 update company_settings set mode_pkp=false;
+-- DP minimum (ranap_tagihan_berjalan) is not under test here; without this the first accepted post stops at DP_MINIMAL.
+update clinic_billing_settings set min_dp_percent=0;
 
 create function pg_temp.sale(ref text, gross numeric, net numeric) returns uuid language plpgsql as $$
 declare result uuid;begin
