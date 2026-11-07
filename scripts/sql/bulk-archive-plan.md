@@ -5,7 +5,7 @@ Berkas (di repo `scripts/sql/`, branch `hermes/arsip-followup`; salinan di folde
 - `bulk-arsip-antrian-pratinjau.sql` — BACA-SAJA (hanya tabel sementara sesi). 6 hasil, lihat langkah 1.
 - `bulk-arsip-antrian-jalankan.sql` — fungsi `pg_temp` + satu `select`; **simulasi (dry run) secara bawaan**.
 
-Prasyarat: migrasi `20261106840000` sudah aktif (fungsi klasifikasi, jalur arsip paksa, dan trigger penanda asal) dan diterapkan sebagai SATU transaksi.
+Prasyarat: migrasi `20261107220000` sudah aktif (fungsi klasifikasi, jalur arsip paksa, dan trigger penanda asal) dan diterapkan sebagai SATU transaksi.
 
 ## Aturan keselamatan parameter (dijaga di database dan diuji native)
 | Parameter | Aturan |

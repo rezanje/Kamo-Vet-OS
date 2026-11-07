@@ -1,6 +1,6 @@
 -- PRATINJAU BACA-SAJA: arsip massal antrean klinik sebelum 1 Nov 2026 (data percobaan, keputusan Andri 4 Nov 2026).
 -- Tidak menulis apa pun (hanya SELECT). Jalankan sebagai postgres di SQL editor SETELAH migrasi
--- 20261106840000 aktif. Tidak bergantung pada fungsi arsip: bendera uang/stok dihitung langsung dari tabel.
+-- 20261107220000 aktif. Tidak bergantung pada fungsi arsip: bendera uang/stok dihitung langsung dari tabel.
 -- Ubah HANYA tanggal batas di baris "cutoff".
 --
 -- Hasil 6 tabel (jalankan satu per satu bila editor hanya menampilkan hasil terakhir):

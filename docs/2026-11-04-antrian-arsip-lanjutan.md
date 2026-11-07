@@ -1,6 +1,6 @@
 # Arsip antrean klinik — lanjutan PR #438 (keputusan Andri 4 Nov 2026)
 
-Migrasi: `supabase/migrations/20261106840000_antrian_arsip_paksa_dan_selesai_erp.sql` (setelah `20261106400000`, tidak mengubah file lama).
+Migrasi: `supabase/migrations/20261107220000_antrian_arsip_paksa_dan_selesai_erp.sql` (setelah `20261106400000`, tidak mengubah file lama).
 Bukti native: `scripts/test-antrian-arsip-postgres.py` (96 tes lama tetap hijau + tes baru).
 
 ## 1. Arsip PAKSA oleh OWNER
