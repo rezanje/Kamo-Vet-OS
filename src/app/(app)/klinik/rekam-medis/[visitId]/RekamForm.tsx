@@ -5,7 +5,7 @@ import { QtyInput } from "@/components/QtyInput";
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ClinicalCorrection } from "@/lib/clinical-correction";
+import { savedPackageOrigin, type ClinicalCorrection } from "@/lib/clinical-correction";
 import Link from "next/link";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { TindakanRacikanForm } from "@/components/TindakanRacikanForm";
@@ -121,6 +121,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     compound_recipe_id: row.compound_recipe_id ?? undefined, service_performers: row.service_performers,
     package_item_id: row.package_item_id ?? undefined, package_qty: row.package_qty ?? undefined,
     bmhp: row.bmhp_components?.map(material => ({...material,nama:material.name ?? material.item_id})),
+    // Anisa 7 Nov: koreksi rekam medis dulu memuat isi paket tanpa asal paketnya, lalu
+    // menyimpannya kembali sebagai baris biasa — kasir melihat isi paket berceceran.
+    // Asal paket tersimpan dibawa ke keranjang supaya tetap satu baris paket dan ikut terkirim.
+    ...savedPackageOrigin(row),
   })) : []);
   // Tarik item: baris tersimpan yang belum ditagih ditarik LANGSUNG (RPC sendiri, alasan wajib).
   const [ditarik, setDitarik] = useState<WithdrawnItem[]>(() => correction?.withdrawn ?? []);
