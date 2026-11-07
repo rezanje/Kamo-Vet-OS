@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import {createClient} from '@/lib/supabase/server';
 import {readCompleteList} from '@/lib/checked-list';
-import {hariIniWIB} from '@/lib/tanggal';
+import {hariIniWIB,tanggalWIB} from '@/lib/tanggal';
 import {TransactionForm} from '@/components/LocalTransactionDraft';
 import {SubmitButton} from '@/components/SubmitButton';
 import {processRefund} from './actions';
-type Row={kind:'petshop'|'klinik';id:string;sale_id?:string;visit_id?:string;refund_id?:string|null;refund_no?:string|null;source_ref:string;branch_id:string;requested_by:string;status:'pending'|'diproses'|'selesai'|'batal';quoted_total:number;destination:{bank:string;account:string;name:string}|null;requested_date:string;created_at:string;processed_by:string|null;return_id?:string|null};
+type Row={kind:'petshop'|'klinik'|'uang_muka';no_uang_muka?:string;customer_name?:string|null;id:string;sale_id?:string;visit_id?:string;refund_id?:string|null;refund_no?:string|null;source_ref:string;branch_id:string;requested_by:string;status:'pending'|'diproses'|'selesai'|'batal';quoted_total:number;destination:{bank:string;account:string;name:string}|null;requested_date:string;created_at:string;processed_by:string|null;return_id?:string|null};
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 function readRows(value:unknown,kind:Row['kind']):Row[]{
  if(!Array.isArray(value)||value.length>100)throw Error('Antrean refund belum dapat diperiksa. Muat ulang.');
@@ -15,6 +15,18 @@ function readRows(value:unknown,kind:Row['kind']):Row[]{
   ids.add(v.id);return {...v,kind};
  });
 }
+// Pengembalian saldo uang muka klinik (RPC get_clinic_advance_refunds) dipetakan ke bentuk antrean yang sama.
+function readAdvanceRows(value:unknown):Row[]{
+ if(!Array.isArray(value)||value.length>100)throw Error('Antrean refund belum dapat diperiksa. Muat ulang.');
+ const ids=new Set();
+ return value.map((v:Record<string,unknown>)=>{
+  const amount=Number(v?.amount),dest=v?.destination as Row['destination'];
+  if(!v||!uuid(v.id)||!uuid(v.advance_id)||typeof v.no_refund!=='string'||typeof v.no_uang_muka!=='string'||typeof v.branch_id!=='string'||!['pending','diproses','selesai','batal'].includes(String(v.status))||!Number.isFinite(amount)||amount<=0||ids.has(v.id)||typeof v.requested_at!=='string'||(v.visit_id!=null&&!uuid(v.visit_id))||(dest!=null&&!['bank','account','name'].every(k=>typeof dest?.[k as keyof typeof dest]==='string')))throw Error('Antrean refund belum dapat diperiksa. Muat ulang.');
+  ids.add(v.id);
+  return {kind:'uang_muka' as const,id:v.id as string,visit_id:(v.visit_id as string|null)??undefined,refund_no:v.no_refund,no_uang_muka:v.no_uang_muka,customer_name:(v.customer_name as string|null)??null,source_ref:v.no_uang_muka,branch_id:v.branch_id as string,
+   requested_by:String(v.requested_by??''),status:v.status as Row['status'],quoted_total:amount,destination:dest??null,requested_date:tanggalWIB(v.requested_at as string),created_at:v.requested_at as string,processed_by:(v.processed_by as string|null)??null};
+ });
+}
 export default async function RefundPage({searchParams}:{searchParams:Promise<{status?:string;offset?:string;error?:string;success?:string}>}){
  const params=await searchParams,db=await createClient();
  const {data:{user}}=await db.auth.getUser();if(!user)throw Error('Akses refund memerlukan sesi aktif.');
@@ -22,15 +34,18 @@ export default async function RefundPage({searchParams}:{searchParams:Promise<{s
  if(profileError||!profile?.is_active||!['OWNER','ADMIN','FINANCE'].includes(profile.role))throw Error('Akses antrean refund hanya untuk finance berwenang.');
  const status=params.status??'',offset=Number(params.offset??0);
  if(!['','pending','diproses','selesai','batal'].includes(status)||!Number.isInteger(offset)||offset<0||offset>100000)throw Error('Filter antrean refund tidak valid.');
- const [result,clinic,banks]=await Promise.all([
+ const [result,clinic,advance,banks]=await Promise.all([
   db.rpc('get_sales_refund_requests',{p_sale_id:null,p_office:true,p_status:status,p_offset:offset}),
   db.rpc('get_clinic_refund_requests',{p_invoice:null,p_office:true,p_status:status,p_offset:offset}),
+  db.rpc('get_clinic_advance_refunds',{p_advance:null,p_office:true,p_status:status,p_offset:offset}),
   readCompleteList<{id:string;nama:string;branch_id:string|null}>((from,to)=>db.from('cash_accounts').select('id,nama,branch_id',{count:'exact'}).eq('is_active',true).eq('jenis','Bank').order('nama').order('id').range(from,to),'Rekening sumber refund',{maxRows:null}),
  ]);
  if(result.error)throw Error('Antrean refund belum dapat dimuat. Muat ulang tanpa mengulang transfer.');
  // J03: clinic requests share this queue. Before the J03 database step the clinic RPC is absent; petshop stays usable.
  const clinicRows=clinic.error?[]:readRows(clinic.data,'klinik');
- const rows=[...readRows(result.data,'petshop'),...clinicRows],page=(n:number)=>`/kas-bank/refund?status=${encodeURIComponent(status)}&offset=${n}`;
+ // Pengembalian saldo uang muka: sebelum langkah database-nya RPC belum ada; antrean lain tetap bisa dipakai.
+ const advanceRows=advance.error?[]:readAdvanceRows(advance.data);
+ const rows=[...readRows(result.data,'petshop'),...clinicRows,...advanceRows],page=(n:number)=>`/kas-bank/refund?status=${encodeURIComponent(status)}&offset=${n}`;
  return <>
   <Link className="back-btn" href="/kas-bank">Kembali ke Kas &amp; Bank</Link><h2>Antrean refund transfer</h2>
   <p>Ambil proses sebelum melakukan transfer. Ini pencatatan pembayaran manual; aplikasi tidak mengirim uang ke bank. Permintaan pending/diproses: retur, stok dan jurnal belum diposting.</p>
@@ -38,23 +53,25 @@ export default async function RefundPage({searchParams}:{searchParams:Promise<{s
   <form method="get"><label>Status <select name="status" defaultValue={status}><option value="">Semua</option>{['pending','diproses','selesai','batal'].map(s=><option key={s} value={s}>{s}</option>)}</select></label><button type="submit" className="btn-def">Tampilkan</button></form>
   {!rows.length&&<p>Belum ada permintaan pada halaman ini.</p>}
   {rows.map(row=><section className="crm-sec" key={row.kind+row.id} style={{overflowWrap:'anywhere'}}>
-   <h3>{row.kind==='klinik'?<>Klinik · <Link href={`/klinik/pembayaran/${row.visit_id}`}>{row.source_ref}</Link></>:<Link href={`/penjualan/${row.sale_id}`}>{row.source_ref}</Link>} · {row.status}</h3><small>ID permintaan: {row.id}</small>
+   <h3>{row.kind==='uang_muka'?<>Uang muka · {row.visit_id?<Link href={`/klinik/pembayaran/${row.visit_id}`}>{row.source_ref}</Link>:row.source_ref} · {row.refund_no}</>:row.kind==='klinik'?<>Klinik · <Link href={`/klinik/pembayaran/${row.visit_id}`}>{row.source_ref}</Link></>:<Link href={`/penjualan/${row.sale_id}`}>{row.source_ref}</Link>} · {row.status}</h3><small>ID permintaan: {row.id}</small>
    <p>Rp {row.quoted_total.toLocaleString('id-ID',{maximumFractionDigits:2})} · Tanggal permintaan {row.requested_date}</p>
+   {row.kind==='uang_muka'&&<p>Kembalikan saldo uang muka{row.customer_name?` ${row.customer_name}`:''}. Saat transfer selesai dicatat, jurnal Dr uang muka pelanggan / Cr rekening bank diposting pada tanggal transfer.</p>}
    {row.destination&&<p>Tujuan: {row.destination.bank} · {row.destination.account} · {row.destination.name}</p>}
    {row.return_id&&<p><Link href={`/penjualan/retur/${row.return_id}`}>Lihat retur dan jurnal asal</Link></p>}
    {row.kind==='klinik'&&row.refund_no&&<p>Refund klinik {row.refund_no} — <Link href={`/klinik/pembayaran/${row.visit_id}`}>lihat di invoice</Link></p>}
-   {row.status==='pending'&&<TransactionForm userId={user.id} scope={`refund-claim:${row.id}`} action={processRefund}><input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="claim"/><SubmitButton className="btn-acc" pendingText="Memeriksa…">Ambil proses</SubmitButton></TransactionForm>}
+   {row.kind==='uang_muka'&&row.requested_by===user.id&&['pending','diproses'].includes(row.status)&&<p>Anda yang mengajukan pengembalian ini. Pemisahan tugas: Finance atau Owner lain yang mengambil proses dan mencatat transfernya; Anda masih boleh membatalkannya selama belum ditransfer.</p>}
+   {row.status==='pending'&&!(row.kind==='uang_muka'&&row.requested_by===user.id)&&<TransactionForm userId={user.id} scope={`refund-claim:${row.id}`} action={processRefund}><input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="claim"/><SubmitButton className="btn-acc" pendingText="Memeriksa…">Ambil proses</SubmitButton></TransactionForm>}
    {row.status==='diproses'&&row.processed_by!==user.id&&<p>Sedang ditangani petugas lain. Hubungi pemroses sebelum pembatalan; jangan transfer ulang.</p>}
-   {row.status==='diproses'&&row.processed_by===user.id&&<TransactionForm userId={user.id} scope={`refund-complete:${row.id}`} action={processRefund}>
+   {row.status==='diproses'&&row.processed_by===user.id&&!(row.kind==='uang_muka'&&row.requested_by===user.id)&&<TransactionForm userId={user.id} scope={`refund-complete:${row.id}`} action={processRefund}>
     <input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="complete"/>
     <div style={{display:'flex',gap:10,flexWrap:'wrap'}}><label>Tanggal transfer <input className="fi" name="tanggal" type="date" required min={row.requested_date} max={hariIniWIB()} defaultValue={hariIniWIB()}/></label>
     <label>Rekening sumber <select className="fi" name="account_id" required defaultValue=""><option value="">Pilih rekening bank</option>{banks.filter(b=>b.branch_id===null||b.branch_id===row.branch_id).map(b=><option key={b.id} value={b.id}>{b.nama}</option>)}</select></label>
     <label>Referensi transfer <input className="fi" name="reference" required maxLength={120}/></label></div>
     <p><label><input type="checkbox" name="payment_confirmed" value="yes" required/> Saya pastikan transfer sudah dilakukan tepat satu kali ke tujuan di atas.</label></p>
-    <SubmitButton className="btn-acc" pendingText="Memeriksa bukti…">Catat transfer selesai &amp; posting retur</SubmitButton>
+    <SubmitButton className="btn-acc" pendingText="Memeriksa bukti…">{row.kind==='uang_muka'?'Catat transfer selesai & posting jurnal':'Catat transfer selesai & posting retur'}</SubmitButton>
    </TransactionForm>}
    {['pending','diproses'].includes(row.status)&&<details><summary>Batalkan permintaan yang belum dibayar</summary><TransactionForm userId={user.id} scope={`refund-cancel:${row.id}`} action={processRefund}>
-    <input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="cancel"/><label>Alasan <input className="fi" name="reason" required minLength={3} maxLength={500}/></label>
+    <input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="cancel"/><label>Alasan{row.kind==='uang_muka'?' (minimal 5 huruf)':''} <input className="fi" name="reason" required minLength={row.kind==='uang_muka'?5:3} maxLength={500}/></label>
     <p><label><input type="checkbox" name="unpaid_confirmed" value="yes" required/> Refund ini belum dibayar.</label></p><SubmitButton className="btn-def" pendingText="Memeriksa…">Batalkan permintaan</SubmitButton>
    </TransactionForm></details>}
   </section>)}
