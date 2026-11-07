@@ -16,7 +16,7 @@ MUTANTS = [
     ('M09 journal credits cash 110003 instead of the bank account', ['main'], [("jsonb_build_object('code', v_code, 'debit', 0, 'credit', v_ref.amount)));", "jsonb_build_object('code', '110003', 'debit', 0, 'credit', v_ref.amount)));", 1)]),
     ('M10 journal dated a day before the chosen transfer date', ['main'], [("v_jid := public.clinic_write_journal(v_date, 'Pengembalian", "v_jid := public.clinic_write_journal(v_date - 1, 'Pengembalian", 1)]),
     ('M11 closed accounting period no longer checked', ['neg'], [("if v_closed is not null and v_date <= v_closed then", "if false then", 1)]),
-    ('M12 account type (Bank) no longer required', ['neg'], [(" or v_acc.jenis is distinct from 'Bank' or (v_acc.branch_id", " or (v_acc.branch_id", 1)]),
+    ('M12 account type (Bank) no longer required', ['neg', 'acct'], [(" or v_acc.jenis is distinct from 'Bank' or (v_acc.branch_id", " or (v_acc.branch_id", 1)]),
     ('M13 bank account branch no longer checked', ['neg'], [(" or (v_acc.branch_id is not null and v_acc.branch_id is distinct from v_ref.branch_id) then", " then", 1)]),
     ('M14 inactive bank account accepted', ['neg'], [("if not found or not v_acc.is_active or v_acc.jenis", "if not found or v_acc.jenis", 1)]),
     ('M15 claim no longer required before completion (any status diproses/pending completes)', ['main', 'neg'], [("if v_ref.status <> 'diproses' or v_ref.processed_by is distinct from v_user then", "if false then", 1)]),
