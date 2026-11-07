@@ -10,8 +10,11 @@ const invoice = (qty: number, total: number, voided_at: string | null = null) =>
   purchase_invoice_items: [{ po_item_id: "line", item_id: "sku", qty, faktor: 10 }],
   purchase_invoice_payments: [] as { amount: number }[],
 });
-async function purchase(rows: object[], returns: object[] = []) {
-  const tables: Record<string, object[]> = { purchase_orders: [po], purchase_invoices: rows, purchase_returns: returns };
+async function purchase(rows: object[], returns: object[] = [], orders: object[] = [po]) {
+  return (await dashboard(rows, returns, orders)).pembelian;
+}
+async function dashboard(rows: object[], returns: object[] = [], orders: object[] = [po]) {
+  const tables: Record<string, object[]> = { purchase_orders: orders, purchase_invoices: rows, purchase_returns: returns };
   const client = { from: (table: string) => {
     let data = tables[table] ?? [];
     const query = {
@@ -21,7 +24,7 @@ async function purchase(rows: object[], returns: object[] = []) {
     };
     return query;
   } };
-  return (await getDashboard(client, "2026-10-21")).pembelian;
+  return getDashboard(client, "2026-10-21");
 }
 
 describe("purchase dashboard keeps received but unbilled liability", () => {
@@ -48,6 +51,16 @@ describe("purchase dashboard keeps received but unbilled liability", () => {
     const expected = { total: 400, lunas: 100, belumLunas: 300 };
     expect(await purchase([], returns)).toEqual(expected);
     expect(await purchase([invoice(4, 400)], returns)).toEqual(expected);
+  });
+  it("does not crash on a PO needing reconciliation; flags it and skips only its unbilled remainder", async () => {
+    // Faktor satuan rusak (0) — dulu ini melempar galat dan seluruh dashboard tidak bisa dibuka.
+    const broken = { id: "po-rusak", purchase_order_items: [{ id: "x", item_id: "sku2", qty: 2, qty_terima: 2, harga_beli: 50, faktor: 0 }] };
+    const billedBroken = { po_id: "po-rusak", total: 70, voided_at: null, opening_batch_id: null,
+      purchase_invoice_items: [{ po_item_id: "x", item_id: "sku2", qty: 1, faktor: 1 }], purchase_invoice_payments: [{ amount: 70 }] };
+    const result = await dashboard([billedBroken], [], [po, broken]);
+    expect(result.poPerluTinjau).toBe(1);
+    expect(result.pembelian).toEqual({ total: 470, lunas: 70, belumLunas: 400 });
+    expect((await dashboard([])).poPerluTinjau).toBe(0);
   });
   it("counts the active return replacement once", async () => {
     expect(await purchase([invoice(4, 400)], [
