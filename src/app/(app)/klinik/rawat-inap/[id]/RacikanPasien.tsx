@@ -23,6 +23,9 @@ export function RacikanPasien({ recipes, owner = false }: { recipes: RacikanKunj
             ? <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 2 }}>Bila kunjungan ini sudah punya DP/pembayaran, sistem akan menolak dengan penjelasan; bahan dikembalikan hanya bila belum ditagih.</div>
             : <div style={{ fontSize: 11, color: "var(--td)", marginTop: 2 }}>{info.alasan}</div>}
         </div>
+        {owner && row.status !== "void" && <div style={{ flexBasis: "100%", fontSize: 11, color: "#92400e" }}>
+          Racikan yang sudah ditagih tetap bisa dikoreksi bahannya oleh Owner: HPP dan jurnal dikoreksi, harga dan tagihan tidak berubah.
+        </div>}
         {owner && row.status !== "void" && <Link href={`/klinik/racik/${encodeURIComponent(row.id)}#koreksi-owner`} className="btn-def" style={{ textDecoration: "none", color: "#92400e", borderColor: "#fcd34d" }}>
           <i className="ti ti-shield-check" /> Koreksi komposisi (Owner)
         </Link>}

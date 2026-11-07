@@ -99,11 +99,17 @@ describe("kartu 'Koreksi komposisi (Owner)' di /klinik/racik/<id>", () => {
     set();
     expect(kartu(await render())).toBeNull();
   });
-  it("racikan sudah ada di baris invoice: tanpa form, ada penjelasan 'Fase berikutnya'", async () => {
-    fixture.invoiceLines = [{ id: "il", invoice_id: "inv", invoices: { id: "inv", visit_id: "visit", invoice_no: "INV-1", voided_at: null } }];
+  it("racikan hanya di baris invoice yang DIBATALKAN: tanpa form, penjelasan (jalur bertagihan lihat koreksi-owner-racikan-tagihan.test.tsx)", async () => {
+    fixture.invoiceLines = [{ id: "il", invoice_id: "inv", invoices: { id: "inv", visit_id: "visit", invoice_no: "INV-1", voided_at: "2026-11-05T00:00:00Z" } }];
     const doc = await render();
     expect(doc.querySelector("#koreksi-owner form")).toBeNull();
-    expect(doc.body.textContent).toMatch(/sudah masuk (baris )?(invoice|tagihan)/i);
+    expect(doc.body.textContent).toMatch(/dibatalkan/i);
+  });
+  it("racikan di baris invoice AKTIF: kartu bertagihan (notice 'Tagihan sudah terbit'), bukan lagi penjelasan tanpa form", async () => {
+    fixture.invoiceLines = [{ id: "il", invoice_id: "inv", invoices: { id: "inv", visit_id: "visit", invoice_no: "INV-1", voided_at: null } }];
+    const doc = await render();
+    expect(doc.querySelector('#koreksi-owner[data-mode="tagihan"] form')).not.toBeNull();
+    expect(doc.body.textContent).toContain("Tagihan sudah terbit: HPP dan jurnal dikoreksi, harga dan tagihan tidak berubah");
   });
 });
 

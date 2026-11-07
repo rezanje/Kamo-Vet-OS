@@ -244,6 +244,14 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
     check('payment on the corrected unpaid invoice behaves exactly as before the correction (the floor is judged at posting/edit, not at receipt): accepted, invoice Lunas, line hpp kept',
           e4 is None and h.nilai(f"select paid_status from invoices where id={q(p3['inv'])}") == 'Lunas' and line_hpp(h, p3) == D('86901.00'), dict(error=(e4 or '')[:200]))
 
+    # the price-below-HPP flag uses the P03 net price: line amount x the invoice discount share
+    dsc = inv_visit(h, 6180)
+    h.sistem(f"update invoices set discount=40000,total=40000 where id={q(dsc['inv'])};")
+    err, res = corr(h, dsc, ing(1, 3), key='okrt-disc-1')
+    check('price flags use the P03 net price (line 80000 x invoice discount share 0.5 = 40000): before 40000 < 50901 true, after A 2 -> 1 (HPP 38901.00) false; total untouched',
+          err is None and res and D(str(res['net_price'])) == D('40000.00') and res['price_below_hpp_before'] is True and res['price_below_hpp_after'] is False and line_hpp(h, dsc) == D('38901.00')
+          and h.nilai(f"select total from invoices where id={q(dsc['inv'])}") == '40000.00', dict(error=(err or '')[:200], res=str(res)[:200]))
+
     # ------------------------------------------------------------------ mixed: A up, C added, B removed
     m = inv_visit(h, 6105); sm0 = snap(h, m)
     err, res = corr(h, m, ing(a=3, c_=4), key='okrt-m-1'); sm1 = snap(h, m); djm = new_rows(sm1['jr'], sm0['jr'])

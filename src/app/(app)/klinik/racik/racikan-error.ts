@@ -13,6 +13,7 @@ export const KODE_RACIKAN_DITERJEMAHKAN = [
   "INVOICE_PAID", "RECIPE_LINKED", "RECIPE_INVALID", "RECORD_POSTED", "REASON_REQUIRED",
   "ACCESS_DENIED", "COST_MISSING", "STOCK_SHORT", "LAYER_SHORT", "INGREDIENT_INVALID", "WAREHOUSE_MISSING",
   "NOT_INPATIENT", "VISIT_CLOSED", "NO_CHANGE", "IDEMPOTENCY_CONFLICT",
+  "NOT_INVOICED", "INVOICE_VOID", "INVOICE_PENDING", "HPP_INCONSISTENT",
 ] as const;
 
 function bersihkan(text: string): string {
@@ -23,6 +24,10 @@ export function pesanRacikanError(error: Galat): PesanRacikan {
   const raw = bersihkan(error?.message ?? "");
   const detail = raw;
   const sebut = (sisa: string | undefined) => (sisa ? ` (${sisa})` : "");
+  // Kunci periode datang dari penjaga tanggal database tanpa kode di depan pesan.
+  if (error?.code === "P0001" && /^Periode (akuntansi|persediaan) sampai/.test(raw)) {
+    return { detail, pesan: `Periode ${/^Periode akuntansi/.test(raw) ? "akuntansi" : "persediaan"} untuk tanggal hari ini sudah ditutup/terkunci, jadi koreksi (jurnal dan stok bertanggal hari ini) tidak bisa disimpan. Hubungi Reza untuk membuka periode.` };
+  }
   if (error?.code === "P0001") {
     const cocok = /^([A-Z_]+):\s*(.*)$/.exec(raw);
     const kode = cocok?.[1];
@@ -51,6 +56,7 @@ export function pesanRacikanError(error: Galat): PesanRacikan {
         return { detail, pesan: "Alasan wajib diisi (3–500 karakter)." };
       case "ACCESS_DENIED":
         if (/tidak terautentikasi/.test(sisa)) return { detail, pesan: "Sesi Anda berakhir. Masuk ulang lalu coba lagi." };
+        if (/sudah ditagih hanya untuk Owner/.test(sisa)) return { detail, pesan: "Koreksi racikan yang sudah ditagih hanya untuk Owner. Minta Owner melakukannya." };
         if (/hanya untuk Owner/.test(sisa)) return { detail, pesan: "Koreksi komposisi setelah DP/pembayaran hanya untuk Owner. Minta Owner melakukannya." };
         if (/cabang/.test(sisa)) return { detail, pesan: "Akun Anda tidak punya akses cabang racikan ini." };
         if (/tidak ditemukan/.test(sisa)) return { detail, pesan: "Racikan tidak ditemukan atau tidak bisa Anda akses." };
@@ -71,6 +77,14 @@ export function pesanRacikanError(error: Galat): PesanRacikan {
         return { detail, pesan: "Kunjungan ini sudah selesai/checkout, jadi komposisi racikan tidak bisa diubah lagi. Hubungi Reza." };
       case "NO_CHANGE":
         return { detail, pesan: "Komposisi sama dengan yang sekarang, tidak ada yang diubah." };
+      case "NOT_INVOICED":
+        return { detail, pesan: "Racikan ini belum masuk baris tagihan, jadi pakai kartu Koreksi komposisi (Owner) biasa. Muat ulang halaman." };
+      case "INVOICE_VOID":
+        return { detail, pesan: "Tagihan racikan ini sudah dibatalkan (void), jadi HPP-nya tidak dikoreksi dari sini. Hubungi Reza." };
+      case "INVOICE_PENDING":
+        return { detail, pesan: "Tagihan ini sedang menunggu koreksi kasir. Selesaikan koreksi kasir dulu, lalu koreksi bahan racikan." };
+      case "HPP_INCONSISTENT":
+        return { detail, pesan: "HPP baris tagihan tidak cocok dengan riwayat stok racikan ini, jadi koreksi ditolak supaya jurnal tidak salah. Hubungi Reza sebelum mengubah apa pun." };
       case "IDEMPOTENCY_CONFLICT":
         return { detail, pesan: "Permintaan ini bentrok dengan koreksi sebelumnya. Muat ulang halaman lalu coba lagi." };
       default:
