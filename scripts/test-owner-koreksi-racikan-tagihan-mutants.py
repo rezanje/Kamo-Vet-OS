@@ -71,4 +71,6 @@ MUTANTS = [
      [("    continue when v_delta = 0;\n", "", 1)]),
     ('M33 invoice net price ignores the invoice discount share (floor flag wrong)',
      [("then (v_inv.subtotal - v_inv.discount) / v_inv.subtotal else 1 end;", "then 1 else 1 end;", 1)]),
+    ('M34 delta journal written under the unique-indexed source klinik-hpp instead of klinik-hpp-edit',
+     [("'klinik-hpp-edit', v_inv.invoice_no, v_visit.branch_id, v_jlines);", "'klinik-hpp', v_inv.invoice_no, v_visit.branch_id, v_jlines);", 1)]),
 ]

@@ -128,6 +128,12 @@ def corr(h, rv, ings, reason='Bahan racikan disesuaikan setelah ditimbang ulang'
 
 
 def hpp_of(h, recipe): return base.hpp_of(h, recipe)
+def qread(h, rv, ings):
+    """Quote result or None (an error is reported by the checks that use it, never a harness crash)."""
+    try: return J(h.nilai(f"select {QUOTE}({q(rv['recipe'])},{j(ings)});", r.OWNER))
+    except RuntimeError: return None
+
+
 def line_hpp(h, rv): return D(h.nilai(f"select hpp from invoice_items where compound_recipe_id={q(rv['recipe'])}"))
 def ing(a=None, b=None, c_=None): return base.ing(a, b, c_)
 def new_rows(after, before): return after[len(before):] if after[:len(before)] == before else after   # journal lines are ordered by creation; duplicates by value are legal
@@ -214,14 +220,14 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
 
     # ------------------------------------------------------------------ increase (new issues at current FIFO stay linked to the line, journal debits HPP)
     b = inv_visit(h, 6102); sb0 = snap(h, b)
-    qr = h.nilai(f"select {QUOTE}({q(b['recipe'])},{j(ing(4, 3))});", r.OWNER) if not baseline else None
+    qj = qread(h, b, ing(4, 3))
     err, res = corr(h, b, ing(4, 3), key='okrt-b-1'); sb1 = snap(h, b); djb = new_rows(sb1['jr'], sb0['jr'])
     check('GREEN increase A 2 -> 4: 2 more issued at current FIFO @12000: HPP 50901.00 -> 74901.00; new issue rows linked to the same line; journal Dr 600001 / Cr 170001 24000.00',
           err is None and line_hpp(h, b) == D('74901.00') == hpp_of(h, b['recipe']) and all(i[5] == b['line'] and i[6] is None for i in sb1['issues'])
           and sum(float(i[1]) for i in sb1['issues'] if i[0] == MA) == 4 and float(sb1['stock'][MA]) == float(sb0['stock'][MA]) - 2
           and sorted(djb) == sorted([['klinik-hpp-edit', today, '600001', D('24000.00'), D('0.00')], ['klinik-hpp-edit', today, '170001', D('0.00'), D('24000.00')]])
           and jsum(sb1['jr']) == D('74901.00') and sb1['invoice_rows'] == sb0['invoice_rows'], dict(error=(err or '')[:240], djb=djb))
-    qj = J(qr) if qr else {}
+    qj = qj or {}
     check('quote of the same correction (taken before): HPP 50901.00 -> 74901.00, delta +24000.00, journal preview Dr 600001/Cr 170001 dated today, invoice no, line price, price not below HPP',
           qj and D(str(qj['cost_before'])) == D('50901.00') and D(str(qj['cost_after'])) == D('74901.00') and D(str(qj['hpp_delta'])) == D('24000.00') and qj['invoice_no'] == b['no']
           and qj['price_below_hpp_after'] is False and qj['price_below_hpp_before'] is False and D(str(qj['price'])) == D('80000.00') and qj['paid_status'] == 'Belum Lunas'
@@ -229,7 +235,7 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
 
     # ------------------------------------------------------------------ HPP above the price: allowed + reported (P03 semantics untouched)
     p3 = inv_visit(h, 6103); sp0 = snap(h, p3)
-    qr = J(h.nilai(f"select {QUOTE}({q(p3['recipe'])},{j(ing(5, 3))});", r.OWNER)) if not baseline else {}
+    qr = qread(h, p3, ing(5, 3)) or {}
     err, res = corr(h, p3, ing(5, 3), key='okrt-p3-1'); sp1 = snap(h, p3)
     check('HPP pushed above the price (A 2 -> 5: 86901.00 > 80000): the correction is applied and REPORTED (price_below_hpp_after true, before false), journal +36000.00; the price/total are not touched',
           err is None and res and res['price_below_hpp_after'] is True and res['price_below_hpp_before'] is False and line_hpp(h, p3) == D('86901.00') and jsum(sp1['jr']) == D('86901.00')
@@ -304,7 +310,7 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
         check(f'NEG {label} refused (ACCESS_DENIED), nothing changed', err_has(err, 'ACCESS_DENIED') and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
     err = h.gagal(f"set role authenticated;select set_config('request.jwt.claim.role','authenticated',false);select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);"
                   f"select set_config('request.headers',{q(json.dumps({'x-kamo-operational-branch': r.BRANCH2}))},false);select {RPC}({q(n1['recipe'])},{j(ing(2, 2))},'Alasan cukup panjang','okrt-branch');")
-    check('NEG OWNER working in ANOTHER branch (operational-branch header) refused (ACCESS_DENIED)', err_has(err, 'ACCESS_DENIED') and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
+    check('NEG OWNER working in ANOTHER branch (operational-branch header) refused by THIS function (ACCESS_DENIED: cabang racikan tidak diizinkan)', err_has(err, 'ACCESS_DENIED', 'cabang racikan') and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
     err = h.gagal(f"reset role;select {RPC}({q(n1['recipe'])},{j(ing(2, 2))},'Alasan cukup panjang','okrt-anon');")
     check('NEG no authenticated session refused', bool(err) and ('ACCESS_DENIED' in err or 'permission denied' in err) and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
     for label, reason in (('missing', None), ('empty', ''), ('whitespace', '       '), ('4 significant chars', 'ab c  d'), ('too long', 'x' * 501)):
@@ -360,7 +366,7 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
     oerr, _ = save(h, orv, 'okrt-off-save', [])
     link(h, orv); s = snap(h, orv)
     err, _ = corr(h, orv, [dict(item_id=x.MATERIAL, quantity=1)])
-    check('NEG official (resep resmi) racikan on an invoice line refused (RECIPE_LINKED: resep resmi), nothing changed', oerr is None and orv['line'] and err_has(err, 'RECIPE_LINKED', 'resep resmi') and snap(h, orv) == s, dict(save=(oerr or '')[:120], error=(err or '')[:160]))
+    check('NEG official (resep resmi) racikan on an invoice line refused (RECIPE_LINKED: komposisi resep resmi, the guard of THIS function, not the compounding_ingredients trigger), nothing changed', oerr is None and orv['line'] and err_has(err, 'RECIPE_LINKED', 'komposisi resep resmi') and snap(h, orv) == s, dict(save=(oerr or '')[:120], error=(err or '')[:160]))
     ck = inv_visit(h, 6153); h.sql(f"update visits set checked_out_at=now() where id={q(ck['v'])};"); s = snap(h, ck)
     err, _ = corr(h, ck, ing(2, 2))
     check('NEG visit checked out refused (VISIT_CLOSED), nothing changed', err_has(err, 'VISIT_CLOSED') and snap(h, ck) == s, dict(error=(err or '')[:160]))
