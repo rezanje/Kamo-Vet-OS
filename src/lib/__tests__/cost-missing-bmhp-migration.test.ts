@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 // COST_MISSING detail (Andri 4 Nov 2026). The migration only rewrites the TEXT of the BMHP rejection; the safety condition
 // itself must stay exactly as K02 defined it. Without a database in CI the invariants are read from the migration text.
-const NAMA = "20261106810000_cost_missing_bmhp_detail.sql";
+const NAMA = "20261107180000_cost_missing_bmhp_detail.sql";
 const SQL = readFileSync(`supabase/migrations/${NAMA}`, "utf8");
 const K02 = readFileSync("supabase/migrations/20261026100000_k02_procedure_bmhp.sql", "utf8");
 
@@ -30,5 +30,17 @@ describe("COST_MISSING BMHP detail migration", () => {
   it("does not widen privileges", () => {
     expect(SQL).toContain("revoke all on function clinic_private.bmhp_issue(uuid, uuid, text, date) from public, anon, authenticated, service_role;");
     expect(SQL).not.toMatch(/grant\s+execute/i);
+  });
+
+  it("is numbered above the hosted maximum (20261107160000), unique, and no leftover mention of the retired number", () => {
+    expect(existsSync(`supabase/migrations/${NAMA}`)).toBe(true);
+    const versi = NAMA.slice(0, 14);
+    expect(Number(versi)).toBeGreaterThan(20261107160000);
+    const sama = readdirSync("supabase/migrations").filter((f) => f.startsWith(`${versi}_`) || f.startsWith(`${versi}.`));
+    expect(sama).toEqual([NAMA]);
+    const lama = ["20261106", "810000"].join(""); // built in two parts so this file itself never carries the retired number
+    expect(readdirSync("supabase/migrations").some((f) => f.includes(lama))).toBe(false);
+    expect(SQL).not.toContain(lama);
+    expect(readFileSync("src/lib/__tests__/cost-missing-bmhp-migration.test.ts", "utf8")).not.toContain(lama);
   });
 });

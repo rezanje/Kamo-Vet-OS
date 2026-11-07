@@ -8,6 +8,8 @@
 --   COST_MISSING: <material> [stok=<qty in base unit>;butuh=<qty needed>;satuan=<base unit>;sebab=<harga0|lapisan>]
 --   sebab=lapisan  FIFO layers do not cover the needed quantity (shortfall)
 --   sebab=harga0   layers exist but cost nothing (e.g. stock added by Penyesuaian while the item's Harga beli is 0)
+-- Advice to the cashier lives in src/lib/klinik-posting.ts (not here): costing is FIFO, so for sebab=harga0 the Owner must lower stock
+-- via Penyesuaian until the Rp0 layer is consumed and raise it again with Harga beli filled; adding priced stock alone does not clear it.
 -- Signature, SECURITY DEFINER-ness (invoker), search_path and ACL are unchanged; anchored replace fails hard on drift.
 
 do $patch$
