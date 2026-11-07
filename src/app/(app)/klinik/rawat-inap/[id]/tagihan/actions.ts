@@ -18,6 +18,10 @@ import type { RanapPaymentState } from "@/lib/ranap-payment";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { clinicPackageOriginInput } from "@/lib/clinic-package-origin";
 
+const DRAFT_RESCUE_NOTE = "Keranjang yang Anda lihat (barang dihapus, jasa/obat ditambah, harga/jumlah diubah) sudah disimpan sebagai draft. Penyimpanan ini belum membuat invoice dan belum mencatat uang (invoice tahap atau uang muka dari simpan sebelumnya, bila ada, tidak berubah). Perbaiki baris yang ditolak, lalu simpan atau bayar lagi.";
+// Penolakan dibawa lewat ?error= di URL: batasi panjangnya (pesan P03 bisa sampai ribuan karakter) agar URL tidak melewati batas proxy; draft sudah tersimpan.
+const MAX_REJECTION_CHARS = 1500;
+const clipRejection = (message: string) => message.length > MAX_REJECTION_CHARS ? `${message.slice(0, MAX_REJECTION_CHARS).trimEnd()}… (pesan dipotong)` : message;
 const tidakPasti = "Hasil penyimpanan belum dapat dipastikan. Muat ulang dan periksa tagihan yang sudah tersimpan sebelum mencoba lagi.";
 
 function kembali(recordId: string) {
@@ -178,6 +182,21 @@ export async function simpanBayar(formData: FormData): Promise<RanapPaymentState
       draftRows = value;
     } catch {return invalid();}
   }
+  // Keranjang kasir yang terlihat selalu dapat disimpan sebagai draft (tanpa invoice, tanpa uang): tombol "Simpan Draft",
+  // dan sebagai penyelamat bila langkah uang ditolak (transaksi uang dibatalkan database, penghapusan/tambahan kasir ikut hilang).
+  const cartDraft = () => supabase.rpc("clinic_save_inpatient_cart_draft", {
+    p_record_id: recordId, p_visit_id: visitId, p_request_key: requestKey, p_snapshot: String(formData.get("pending_snapshot") ?? ""),
+    p_rows: draftRows, p_reason: String(formData.get("cart_reason") ?? "").trim(),
+  });
+  const draftHref = (query: string) => `/klinik/pembayaran/${visitId}?${query}`;
+  if (cashierDraft && formData.get("draft_only") === "1") {
+    const { data: draftData, error: draftError } = await cartDraft();
+    if (draftError) return { status: "ERROR", error: parseClinicPostingError(draftError, tidakPasti) };
+    if (draftData?.status !== "DRAFT_SAVED" || draftData.visit_id !== visitId || draftData.record_id !== recordId) return { status: "ERROR", error: tidakPasti };
+    revalidatePath(`/klinik/pembayaran/${visitId}`);
+    revalidatePath(`/klinik/rekam-medis/${visitId}`);
+    return { status: "DRAFT_SAVED", href: draftHref("success=draft") };
+  }
   const { data, error } = await supabase.rpc(cashierDraft ? "clinic_save_inpatient_cashier" : "clinic_bill_and_pay_inpatient", {
     p_record_id: recordId, p_visit_id: visitId, p_request_key: requestKey, p_tanggal: hariIniWIB(), p_parts: parts,
     p_overpayment_ack: String(formData.get("overpayment_ack") ?? "").trim() || null,
@@ -185,7 +204,19 @@ export async function simpanBayar(formData: FormData): Promise<RanapPaymentState
     p_dp_override_reason: String(formData.get("dp_override_reason") ?? "").trim() || null,
     ...(cashierDraft ? {p_snapshot:String(formData.get("pending_snapshot") ?? ""),p_rows:draftRows,p_reason:String(formData.get("cart_reason") ?? "").trim()} : {}),
   });
-  if (error) return { status: "ERROR", error: parseClinicPostingError(error, tidakPasti) };
+  if (error) {
+    const message = parseClinicPostingError(error, tidakPasti);
+    // Hanya penolakan database (kode SQLSTATE 5 karakter); galat jaringan/HTTP tidak pasti hasilnya, jangan menulis apa pun lagi.
+    if (cashierDraft && typeof error.code === "string" && /^[0-9A-Z]{5}$/.test(error.code)) {
+      const { data: rescued, error: rescueError } = await cartDraft();
+      if (!rescueError && rescued?.status === "DRAFT_SAVED" && rescued.visit_id === visitId && rescued.record_id === recordId) {
+        revalidatePath(`/klinik/pembayaran/${visitId}`);
+        revalidatePath(`/klinik/rekam-medis/${visitId}`);
+        return { status: "DRAFT_SAVED", message, href: draftHref(`error=${encodeURIComponent(`${clipRejection(message)}\n\n${DRAFT_RESCUE_NOTE}`)}`) };
+      }
+    }
+    return { status: "ERROR", error: message };
+  }
   if (data?.status === "OVERPAYMENT_CONFIRM_REQUIRED" && data.quote) return { status: "OVERPAYMENT_CONFIRM_REQUIRED", quote: data.quote };
   const applicationIds: string[] = Array.isArray(data?.application_ids) && data.application_ids.every((id: unknown) =>
     typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) ? data.application_ids : [];

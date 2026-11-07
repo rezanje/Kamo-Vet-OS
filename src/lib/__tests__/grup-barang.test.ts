@@ -72,9 +72,14 @@ describe("validasiKomponenGrup", () => {
       .toBe("Faktor satuan harus lebih dari 0");
   });
 
-  it("menolak komponen bertipe Grup", () => {
-    expect(validasiKomponenGrup([component({ component_item_id: "bundle" })], persediaan))
-      .toBe("Komponen tidak boleh Grup");
+  it("mengizinkan Grup lain sebagai komponen (paket di dalam paket)", () => {
+    expect(validasiKomponenGrup([component({ component_item_id: "bundle" })], persediaan)).toBeNull();
+    expect(validasiKomponenGrup([component({ component_item_id: "bundle" })], persediaan, "outer")).toBeNull();
+  });
+
+  it("menolak paket yang berisi dirinya sendiri", () => {
+    expect(validasiKomponenGrup([component({ component_item_id: "bundle" })], persediaan, "bundle"))
+      .toBe("Paket tidak boleh berisi dirinya sendiri");
   });
 
   it("menolak item+satuan kembar tetapi mengizinkan item sama dalam satuan berbeda", () => {

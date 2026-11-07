@@ -3,7 +3,7 @@ import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { SubmitButton } from "@/components/SubmitButton";
 import { STAY_TYPES, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
-import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
+import { servicePerformerNames } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
 import { bolehLihatRiwayat, klinikHistory } from "@/lib/transaction-history";
@@ -12,6 +12,7 @@ import { Popup } from "@/components/Popup";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
+import { UangMukaRefundSection } from "./UangMukaRefundSection";
 import { ClinicPaymentCorrectionPanel, type ClinicPaymentCorrectionRow } from "./ClinicPaymentCorrectionPanel";
 import { clinicCorrectableParts } from "@/lib/clinic-payment-correction";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
@@ -33,7 +34,7 @@ import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
-import { perkiraanTagihan, bekalPotonganKlinik, nilaiBaris } from "@/lib/tagihan-klinik";
+import { perkiraanTagihan, bekalPotonganKlinik } from "@/lib/tagihan-klinik";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 import { mulai } from "@/lib/u07-waktu";
@@ -660,6 +661,7 @@ export default async function PembayaranPage({
       )}
       {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
+          serverError={error}
           key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
           visitId={visit.id}
           requestKey={invoiceRequestKey}
@@ -753,6 +755,13 @@ export default async function PembayaranPage({
             </div>
           </div>
 
+          {/* Tarik baris dari tagihan lunas (Owner, tagihan tahap rawat inap): halaman koreksi terpisah. */}
+          {inpat && lunas && (profilKasir as { role?: string } | null)?.role === "OWNER" && (
+            <div style={{ marginTop: 12 }}>
+              <Link href={`/klinik/pembayaran/${visit.id}/koreksi?invoice_id=${invoice.id}`} className="btn-def"><i className="ti ti-arrow-back-up" /> Tarik baris (Owner)</Link>
+            </div>
+          )}
+
           {/* J03: refund per baris untuk invoice lunas. */}
           {refundData && (
             <ClinicRefundPanel data={refundData} visitId={visit.id} userId={draftUser?.id}
@@ -761,6 +770,9 @@ export default async function PembayaranPage({
                 diskon_persen: l.diskon_persen === null ? null : Number(l.diskon_persen), compound_recipe_id: l.compound_recipe_id, satuan: l.satuan }))}
               message={success && !["bayar", "edit", "rombongan", "reissue", "koreksi-metode"].includes(success) ? success : undefined} />
           )}
+
+          {/* Kembalikan saldo uang muka (Owner/Finance): sisa uang muka pasien dikembalikan lewat transfer; diselesaikan Finance di antrean refund. */}
+          {inpat && lunas && <UangMukaRefundSection db={supabase} visitId={visit.id} role={(profilKasir as { role?: string } | null)?.role} requestKeyBase={invoiceRequestKey} />}
 
           {/* J02: koreksi Tunai <-> Transfer (Owner/Finance), jurnal koreksi; struk dan nominal tetap. */}
           {canCorrectMethod && draftUser && (correctionParts.length > 0 || (correctionData ?? []).length > 0) && (
@@ -784,6 +796,7 @@ export default async function PembayaranPage({
         </>
       ) : (
         <PembayaranForm
+          serverError={error}
           key={`${draftUser?.id ?? ""}:${visit.id}:new:${invoiceRequestKey}`}
           visitId={visit.id}
           requestKey={invoiceRequestKey}

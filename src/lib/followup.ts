@@ -1,6 +1,70 @@
 export const FOLLOWUP_JENIS = ["Kontrol", "Vaksin", "Grooming", "Obat habis", "Lainnya"] as const;
 export type FollowUpJenis = (typeof FOLLOWUP_JENIS)[number];
 
+export type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
+
+/** Satu baris follow up dari form → baris sah, atau null bila tanggalnya bukan YYYY-MM-DD. */
+export function bersihkanFollowUp(row: unknown): FollowUpDraft | null {
+  const r = (row ?? {}) as Partial<Record<keyof FollowUpDraft, unknown>>;
+  const tanggal = String(r.tanggal ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal) || Number.isNaN(Date.parse(`${tanggal}T00:00:00Z`))) return null;
+  const jenis = FOLLOWUP_JENIS.includes(r.jenis as FollowUpJenis) ? String(r.jenis) : "Lainnya";
+  return { jenis, tanggal, catatan: String(r.catatan ?? "").trim().slice(0, 1000) };
+}
+
+/**
+ * Baris yang dikirim form pemeriksaan: baris yang sudah di-"Tambah" ditambah isian yang
+ * tanggalnya sudah dipilih tapi tombol Tambah belum diklik. Dulu isian itu hilang diam-diam
+ * saat Simpan, sehingga dokter mengira follow up sudah dibuat padahal tidak masuk daftar.
+ */
+export function barisFollowUpTerkirim(rows: FollowUpDraft[], isian: FollowUpDraft): FollowUpDraft[] {
+  return isian.tanggal ? [...rows, { ...isian, catatan: isian.catatan.trim() }] : rows;
+}
+
+/**
+ * Berapa hari SEBELUM tanggal follow up pelanggan diingatkan. Klinik Ciomas mengirim
+ * WhatsApp 3 hari sebelumnya (Babibu, 5 Nov) — dulu daftar "Jatuh tempo" baru memuat
+ * jadwal di hari-H, jadi staf harus memeriksa tab Mendatang secara manual tiap hari.
+ */
+export const HARI_INGAT_DEFAULT = 3;
+export const PILIHAN_HARI_INGAT = [0, 1, 2, 3, 5, 7] as const;
+
+export function bacaHariIngat(raw: string | null | undefined): number {
+  const n = Number(raw);
+  return raw != null && raw !== "" && (PILIHAN_HARI_INGAT as readonly number[]).includes(n) ? n : HARI_INGAT_DEFAULT;
+}
+
+/** Tanggal terakhir yang sudah masuk daftar "Perlu diingatkan" (hari ini + H). */
+export function batasPerluDiingatkan(hariIni: string, hariIngat: number): string {
+  return tanggalSetelah(hariIni, { hari: hariIngat });
+}
+
+/** Keterangan singkat posisi follow up terhadap hari ini: terlewat / hari ini / H-n. */
+export function posisiFollowUp(tanggal: string, hariIni: string): { teks: string; telat: boolean } {
+  const selisih = Math.round((Date.parse(`${tanggal.slice(0, 10)}T00:00:00Z`) - Date.parse(`${hariIni}T00:00:00Z`)) / 86_400_000);
+  if (selisih < 0) return { teks: `terlewat ${-selisih} hari`, telat: true };
+  if (selisih === 0) return { teks: "hari ini", telat: false };
+  return { teks: `H-${selisih}`, telat: false };
+}
+
+/** Tombol cepat tanggal follow up (vaksin ulang, kontrol). */
+export const PINTASAN_FOLLOWUP = [
+  { label: "+1 minggu", hari: 7 },
+  { label: "+2 minggu", hari: 14 },
+  { label: "+1 bulan", bulan: 1 },
+  { label: "+3 bulan", bulan: 3 },
+  { label: "+1 tahun", bulan: 12 },
+] as const satisfies readonly { label: string; hari?: number; bulan?: number }[];
+
+/** Tanggal (YYYY-MM-DD) sekian hari / bulan setelah `dari`; 31 Jan + 1 bulan = 28/29 Feb. */
+export function tanggalSetelah(dari: string, geser: { hari?: number; bulan?: number }): string {
+  const [y, m, d] = dari.slice(0, 10).split("-").map(Number);
+  const bulanTujuan = m - 1 + (geser.bulan ?? 0);
+  const hariTerakhir = new Date(Date.UTC(y, bulanTujuan + 1, 0)).getUTCDate();
+  const hasil = new Date(Date.UTC(y, bulanTujuan, Math.min(d, hariTerakhir) + (geser.hari ?? 0)));
+  return hasil.toISOString().slice(0, 10);
+}
+
 // Kalimat pembuka per jenis — biar staff gak nyusun pesan dari nol tiap kali.
 const PEMBUKA: Record<string, string> = {
   Kontrol: "waktunya kontrol ulang",

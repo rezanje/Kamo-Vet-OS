@@ -161,7 +161,6 @@ export function parseKomponenGrupRows(rows: KomponenGrupDraft[], master: Map<str
     const reason = !group ? "Kode Grup tidak ditemukan"
       : group.itemType !== "Grup" ? "Kode induk bukan Grup"
       : !component ? "Kode komponen tidak ditemukan"
-      : component.itemType === "Grup" ? "Grup bertingkat tidak didukung"
       : component.isActive === false ? "Komponen tidak aktif"
       : key(row.groupCode) === key(row.componentCode) ? "Komponen tidak boleh sama dengan Grup"
       : !Number.isFinite(row.qty) || row.qty <= 0 ? "Kuantitas komponen harus lebih dari 0"

@@ -1,8 +1,11 @@
 import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
+import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { tandaiCair } from "./actions";
+import { CairSekaligusForm, type GrupPiutang } from "./CairSekaligusForm";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Row = {
   id: string;
@@ -52,11 +55,34 @@ export default async function PenjualanOnlinePage({
   // saat ini 1000) — di atas 1000 baris piutang, total ini diam-diam kurang. Upgrade path:
   // aktifkan db-aggregates-enabled di API settings project lalu pakai `.select("total.sum()")`,
   // atau pindahkan sum ke RPC/view di Postgres.
-  const { data: piutangRows } = await supabase
-    .from("sales")
-    .select("total")
-    .eq("marketplace_status", "piutang").is("voided_at", null);
-  const piutang = (piutangRows ?? []).reduce((a, r) => a + Number(r.total), 0);
+  const [{ data: piutangRows }, { data: bankRows }] = await Promise.all([
+    supabase
+      .from("sales")
+      .select("id, no_struk, created_at, channel, buyer_name, external_ref, total, branch_id, branches(name), customers(name)")
+      .eq("marketplace_status", "piutang").is("voided_at", null)
+      .order("created_at", { ascending: true }),
+    supabase.from("cash_accounts").select("id, nama").eq("is_active", true).eq("jenis", "Bank").order("nama"),
+  ]);
+  type PiutangRow = Omit<Row, "created_at" | "komisi" | "marketplace_status"> & {
+    created_at: string; branch_id: string | null; branches: { name: string } | { name: string }[] | null;
+  };
+  const piutangList = (piutangRows ?? []) as unknown as PiutangRow[];
+  const piutang = piutangList.reduce((a, r) => a + Number(r.total), 0);
+
+  // Kelompok pencairan = marketplace + cabang (satu transfer platform = satu toko online).
+  const grupMap = new Map<string, GrupPiutang>();
+  for (const r of piutangList) {
+    const key = `${r.channel ?? ""}|${r.branch_id ?? ""}`;
+    const cabang = (Array.isArray(r.branches) ? r.branches[0] : r.branches)?.name ?? "—";
+    const cust = Array.isArray(r.customers) ? r.customers[0] : r.customers;
+    const g = grupMap.get(key) ?? { key, channel: r.channel ?? "—", cabang, orders: [] };
+    g.orders.push({
+      id: r.id, no_struk: r.no_struk, tanggal: fmtD(r.created_at), external_ref: r.external_ref,
+      pembeli: cust?.name ?? r.buyer_name, total: Number(r.total),
+    });
+    grupMap.set(key, g);
+  }
+  const groups = [...grupMap.values()];
 
   return (
     <>
@@ -79,15 +105,31 @@ export default async function PenjualanOnlinePage({
         </div>
       )}
 
+      {groups.length > 0 && (
+        <div className="crm-sec">
+          <SecHeader
+            num="01"
+            title="PENCAIRAN SEKALIGUS"
+            desc="Dana marketplace sudah masuk rekening? Pilih tokonya, centang order yang ikut cair, isi dana yang masuk — selisihnya tercatat sebagai potongan platform."
+          />
+          <CairSekaligusForm key={success ?? "cair"} groups={groups} rekening={(bankRows ?? []) as { id: string; nama: string }[]} today={hariIniWIB()} requestKey={randomUUID()} />
+        </div>
+      )}
+
       <div className="crm-sec">
         <SecHeader
-          num="01"
+          num={groups.length > 0 ? "02" : "01"}
           title="ORDER ONLINE"
           desc={`Marketplace & WA. Dana marketplace belum cair: ${rp(piutang)}.`}
           action={
-            <Link href="/penjualan/online/baru" className="btn-acc" style={{ textDecoration: "none" }}>
-              + Buat order
-            </Link>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Link href="/penjualan/online/impor" className="btn-def" style={{ textDecoration: "none" }}>
+                <i className="ti ti-file-import" /> Impor dari Shopee
+              </Link>
+              <Link href="/penjualan/online/baru" className="btn-acc" style={{ textDecoration: "none" }}>
+                + Buat order
+              </Link>
+            </div>
           }
         />
         <div style={{ overflowX: "auto" }}>

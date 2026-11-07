@@ -4,8 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
 import { OnlineForm } from "./OnlineForm";
 import { readCompleteList } from "@/lib/checked-list";
-
-type WhRow = { branch_id: string; id: string; name: string; branches: { name: string } | { name: string }[] | null };
+import { muatGudangOrderOnline } from "@/lib/online-gudang";
 
 export default async function OnlineBaruPage({
   searchParams,
@@ -18,10 +17,10 @@ export default async function OnlineBaruPage({
   if (replacement && !replacement.channel) throw new Error("Gunakan kasir untuk pengganti penjualan toko.");
   const {data:{user}} = await supabase.auth.getUser();
 
+  // Semua gudang aktif cabang mana pun (kecuali expired/transit) — Aldi 5 Nov 2026:
+  // order online boleh langsung dari gudang petshop cabang.
   const [{ data: whRaw, error: whErr }, items, { data: initialCustomer }] = await Promise.all([
-    supabase
-      .from("warehouses").select("id, branch_id, name, branches(name)")
-      .eq("type", "ONLINE").eq("is_active", true).order("name"),
+    muatGudangOrderOnline(supabase),
     readCompleteList<{ id: string; code: string; name: string; sell_price: number }>((from, to) => supabase.from("items").select("id, code, name, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang order online", { maxRows: null }),
     // Hanya pelanggan order sumber; pelanggan lain dicari di server sambil mengetik.
     replacement?.customer_id
@@ -32,10 +31,7 @@ export default async function OnlineBaruPage({
   // gudang ONLINE" (M6), supaya operator tidak disuruh minta admin buat sesuatu yang sudah ada.
   if (whErr) console.error("[OnlineBaruPage] gagal query gudang online:", whErr);
 
-  const warehouses = ((whRaw ?? []) as unknown as WhRow[]).filter(w => !replacement || w.branch_id === replacement.branch_id).map((w) => {
-    const br = Array.isArray(w.branches) ? w.branches[0] : w.branches;
-    return { id: w.id, name: w.name, branch_name: br?.name ?? "—" };
-  });
+  const warehouses = whRaw.filter(w => !replacement || w.branch_id === replacement.branch_id);
 
   const units = await loadUnitOptions(supabase, items.map(it => it.id));
 
@@ -58,13 +54,13 @@ export default async function OnlineBaruPage({
 
       {whErr ? (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-          <i className="ti ti-alert-circle" /> Gagal memuat daftar gudang online. Coba muat ulang halaman;
+          <i className="ti ti-alert-circle" /> Gagal memuat daftar gudang. Coba muat ulang halaman;
           kalau masih gagal, hubungi admin.
         </div>
       ) : warehouses.length === 0 ? (
         <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#b45309" }}>
-          <i className="ti ti-alert-triangle" /> Belum ada gudang bertipe ONLINE yang aktif. Minta admin
-          membuat cabang &amp; gudang online dulu sebelum mencatat order.
+          <i className="ti ti-alert-triangle" /> Belum ada gudang aktif yang bisa dipakai. Minta admin
+          membuat gudang cabang dulu sebelum mencatat order.
         </div>
       ) : (
         <OnlineForm

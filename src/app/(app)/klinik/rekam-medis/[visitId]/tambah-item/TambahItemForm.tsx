@@ -13,6 +13,7 @@ import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bm
 import { bulkFillServicePerformers, emptyServicePerformers, visitDefaultPerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
+import { cegahEnterSimpan } from "@/lib/cegah-enter-simpan";
 import { kekuranganStok } from "@/lib/stok-keranjang";
 import { StokKurangPopup, StokKurangDariPesan } from "@/components/StokKurangPopup";
 import type { BarisKurangStok } from "@/lib/stok-kurang";
@@ -235,7 +236,7 @@ export function TambahItemForm({
       petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />
     {stokKurang.length === 0 && <StokKurangDariPesan pesan={draftSaveError}
       petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />}
-    <form ref={draftAttachForm} action={(data) => draftSubmit(data, tambahItemRekamMedis)}
+    <form ref={draftAttachForm} onKeyDown={cegahEnterSimpan} action={(data) => draftSubmit(data, tambahItemRekamMedis)}
       onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
         const kurang = kekuranganStok(cart, stokById, (id, unit) => unitsOf(id).find(u => u.unit === unit)?.factor ?? 1);
         if (procedureDraft || saleItemId) {

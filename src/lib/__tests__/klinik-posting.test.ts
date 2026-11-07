@@ -40,6 +40,65 @@ describe("parseClinicPostingError", () => {
       .toBe("HPP historis bahan tidak tersedia: Bahan A");
   });
 
+  it("explains BMHP COST_MISSING: material, clinic stock vs needed, the cause and a FIFO-correct action (Andri 4 Nov)", () => {
+    const zeroCost = parseClinicPostingError({ code: "P0001",
+      message: "COST_MISSING: Revolution Dog Teal 2.0 Ml New [stok=12;butuh=6;satuan=0.1 ml;sebab=harga0]" });
+    expect(zeroCost).toContain("Modal terakhir bahan tidak tersedia: Revolution Dog Teal 2.0 Ml New.");
+    expect(zeroCost).not.toContain("HPP historis");
+    // The unit is shown once, in words, never glued to the numbers ("12 0.1 ml").
+    expect(zeroCost).toContain("Stok gudang klinik cabang ini 12, dibutuhkan 6 (satuan barang: 0.1 ml");
+    expect(zeroCost).not.toContain("12 0.1 ml");
+    expect(zeroCost).toContain("berharga modal Rp0");
+    // Live costing is FIFO: the old Rp0 layer is consumed first, so adding priced stock / filling Harga beli alone does NOT clear it.
+    expect(zeroCost).toContain("dipakai lebih dulu (FIFO)");
+    expect(zeroCost).toContain("menambah stok baru atau mengisi Harga beli saja tidak menyelesaikan");
+    expect(zeroCost).toContain("Penyesuaian Persediaan");
+    expect(zeroCost).toContain("turunkan stok sampai lapisan Rp0 habis");
+    expect(zeroCost).toContain("naikkan lagi");
+    expect(zeroCost).toContain("Kartu Stok");
+    // The old advice (a receipt alone fixes it) is wrong for harga0 and must be gone; no feature that is not live is promised.
+    expect(zeroCost).not.toContain("lalu tambahkan stok lewat Penerimaan barang");
+    expect(zeroCost).not.toContain("bukan Penyesuaian");
+    expect(zeroCost).not.toMatch(/Penyesuaian modal/i);
+    expect(zeroCost).toContain("Menghapus satu baris tidak membantu");
+    expect(zeroCost).toContain("Belum ada yang tersimpan.");
+    const layers = parseClinicPostingError({ code: "P0001",
+      message: "COST_MISSING: Revolution Dog Teal 2.0 Ml New [stok=12;butuh=6;satuan=0.1 ml;sebab=lapisan]" });
+    expect(layers).toContain("Modal terakhir bahan tidak tersedia: Revolution Dog Teal 2.0 Ml New.");
+    expect(layers).toContain("Lapisan stok (FIFO)");
+    expect(layers).toContain("Penerimaan barang / Faktur pembelian");
+    expect(layers).toContain("Rekonsiliasi sumber diperlukan");
+    expect(layers).not.toContain("berharga modal Rp0");
+    expect(layers).not.toContain("HPP historis");
+    // A malformed tail never becomes a half-rendered sentence: it keeps the plain COST_MISSING mapping.
+    expect(parseClinicPostingError({ code: "P0001", message: "COST_MISSING: Bahan A [stok=x;butuh=1;satuan=pcs;sebab=lain]" }))
+      .toMatch(/^HPP historis bahan tidak tersedia: Bahan A /);
+    expect(parseClinicPostingError({ code: "P0001", message: "COST_MISSING: Bahan A [stok=x;butuh=1;satuan=pcs;sebab=lain]" }))
+      .not.toContain("dibutuhkan");
+    // The older database text (before the detail migration) still maps as before.
+    expect(parseClinicPostingError({ code: "P0001", message: "COST_MISSING: Revolution Dog Teal 2.0 Ml New" }))
+      .toBe("HPP historis bahan tidak tersedia: Revolution Dog Teal 2.0 Ml New");
+  });
+
+  it("parses the BMHP COST_MISSING tail from the LAST [stok= marker, so a material name with brackets still renders", () => {
+    const bracket = parseClinicPostingError({ code: "P0001",
+      message: "COST_MISSING: Obat [Baru] 10 ml [stok=3;butuh=2;satuan=pcs;sebab=harga0]" });
+    expect(bracket).toContain("Modal terakhir bahan tidak tersedia: Obat [Baru] 10 ml.");
+    expect(bracket).toContain("Stok gudang klinik cabang ini 3, dibutuhkan 2 (satuan barang: pcs");
+    expect(bracket).not.toContain("[stok=");
+    const fake = parseClinicPostingError({ code: "P0001",
+      message: "COST_MISSING: Aneh [stok=9;butuh=9;satuan=x;sebab=lapisan] ok [stok=3;butuh=2;satuan=pcs;sebab=harga0]" });
+    expect(fake).toContain("Aneh [stok=9;butuh=9;satuan=x;sebab=lapisan] ok.");
+    expect(fake).toContain("Stok gudang klinik cabang ini 3, dibutuhkan 2");
+    expect(fake).toContain("berharga modal Rp0");
+    // A unit containing ']' or ';' still renders (the tail is anchored at the end, not split on the unit).
+    expect(parseClinicPostingError({ code: "P0001", message: "COST_MISSING: Bahan B [stok=1;butuh=2;satuan=tab;1];sebab=lapisan]" }))
+      .toContain("(satuan barang: tab;1]");
+    // A tail with a different layout or trailing junk never half-renders.
+    expect(parseClinicPostingError({ code: "P0001", message: "COST_MISSING: Bahan C [stok=1;butuh=2;satuan=pcs;sebab=lapisan] tambahan" }))
+      .not.toContain("dibutuhkan");
+  });
+
   it("explains request conflicts and unsupported recipe lifecycle transitions", () => {
     expect(parseClinicPostingError({ code: "P0001", message: "IDEMPOTENCY_CONFLICT: request key" }))
       .toBe("Permintaan racikan bertentangan dengan penyimpanan sebelumnya.");
@@ -69,6 +128,15 @@ describe("parseClinicPostingError", () => {
     expect(parseClinicPostingError({ code: "P0001",
       message: "PRICE_BELOW_HPP: Harga neto Obat A Rp900 di bawah HPP Rp1.000. Naikkan harga atau kurangi diskon." }))
       .toBe("Penjualan ditolak. Harga neto Obat A Rp900 di bawah HPP Rp1.000. Naikkan harga atau kurangi diskon.");
+    // Several offending rows: the whole list reaches the cashier (line breaks kept), not only the first line.
+    const banyak = ["PRICE_BELOW_HPP: Harga neto Infus Refill Rp20.000 di bawah HPP Rp29.578. Ada 2 baris yang ditolak; semuanya tercantum di bawah.",
+      "- Infus Refill: harga neto Rp20.000 per pcs, HPP Rp29.578 per pcs, harga minimum Rp29.578 per pcs",
+      "- Obat Racik Probiotik (racikan): harga neto Rp50.000 per racikan, HPP Rp50.151 per racikan, harga minimum Rp50.151 per racikan",
+      "Naikkan Harga di baris tersebut atau ubah Harga jual di Barang & Jasa."].join("\n");
+    const hasil = parseClinicPostingError({ code: "P0001", message: banyak });
+    expect(hasil).toBe(`Penjualan ditolak. ${banyak.replace("PRICE_BELOW_HPP: ", "")}`);
+    expect(hasil).toContain("Obat Racik Probiotik (racikan)");
+    expect(hasil).not.toContain("kurangi diskon");
     expect(parseClinicPostingError({ code: "P0001",
       message: "PRICE_ZERO: Harga neto paket Paket Steril Rp0. Paket yang berisi obat/barang tidak boleh gratis." }))
       .toBe("Penjualan ditolak. Harga neto paket Paket Steril Rp0. Paket yang berisi obat/barang tidak boleh gratis.");

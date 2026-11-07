@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buatTemplateImporBarang, buatTemplateKategoriImporBarang } from "@/lib/template-impor-barang";
+import { buatTemplateRincianGrup } from "@/lib/template-rincian-grup";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,7 +15,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Akses impor tidak diizinkan" }, { status: 403 });
   }
 
-  const isCategoryTemplate = new URL(request.url).searchParams.get("jenis") === "kategori";
+  const jenis = new URL(request.url).searchParams.get("jenis");
+  if (jenis === "rincian-grup") {
+    return new NextResponse(await buatTemplateRincianGrup(), {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": 'attachment; filename="Contoh-Rincian-Grup-VetOS.xlsx"',
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+  const isCategoryTemplate = jenis === "kategori";
   const workbook = isCategoryTemplate ? await buatTemplateKategoriImporBarang() : await buatTemplateImporBarang();
   return new NextResponse(workbook, {
     headers: {

@@ -11,9 +11,9 @@ export type HppWarning = { nama: string; net: number; hpp: number; paket: boolea
 
 const rupiah = (value: number) => "Rp" + Math.round(value).toLocaleString("id-ID");
 
-/** Zero-net and below-HPP goods lines only; an unknown cost is not a reason to warn. */
+/** Zero-net and below-HPP goods lines only; an unknown cost is not a reason to warn, and an Owner-approved promo line (below_waived) needs no confirmation. */
 export function hppWarningsFrom(findings: PriceFloorFinding[]): HppWarning[] {
-  return findings.flatMap(finding => finding.kind === "unknown" ? [] : [{
+  return findings.flatMap(finding => finding.kind === "unknown" || finding.kind === "below_waived" ? [] : [{
     nama: finding.nama, net: finding.net, hpp: finding.hpp ?? 0, paket: finding.paket,
   }]);
 }

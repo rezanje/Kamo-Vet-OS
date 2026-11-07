@@ -23,6 +23,7 @@ import { readVisitContinuation, STAY_TYPE_LABEL, STAY_TYPES } from "@/lib/inpati
 import { SubmitButton } from "@/components/SubmitButton";
 import { bacaSaudaraKunjungan } from "@/lib/rombongan-server";
 import { ReferralPanel } from "./ReferralPanel";
+import { FollowUpPanel, type FollowUpKunjungan } from "./FollowUpPanel";
 import { bolehRacikKhusus, loadKatalogRacikan } from "@/lib/katalog-racikan-server";
 import { loadClinicCompoundSkus, loadClinicSkuDetails } from "@/lib/clinic-compound-skus";
 import { stokGudangKlinik } from "@/lib/stok-klinik";
@@ -83,6 +84,7 @@ export default async function RekamMedisPage({
     [{ data: inpatient, error: inpatientError }, { data: referralRows }],
     [{ data: consentRows, error: consentsError }, { data: tplRows, error: templatesError }],
     { data: inpatientConsentRule, error: ruleError },
+    followUpRead,
   ] = await Promise.all([
     supabase.auth.getUser(),
     supabase
@@ -120,6 +122,9 @@ export default async function RekamMedisPage({
       supabase.from("consent_templates").select("id, nama, kategori, branch_id, is_active"),
     ]),
     supabase.from("consent_rules").select("wajib,template_id").eq("kategori", "Rawat Inap").maybeSingle(),
+    // Follow up kunjungan ini (kontrol / vaksin berikutnya) — tampil di kartu Follow up detail.
+    supabase.from("follow_ups").select("id, jenis, tanggal, catatan, status")
+      .eq("visit_id", visitId).order("tanggal"),
   ]);
   const draftUserId = user?.id ?? "";
 
@@ -417,6 +422,7 @@ export default async function RekamMedisPage({
       {visit.archived_at && <div className="p2ban" role="alert"><i className="ti ti-archive" /> Kunjungan ini diarsipkan{visit.archive_reason ? ` (${visit.archive_reason})` : ""}. Tidak dapat diperiksa, dicatat atau dibayar sampai dipulihkan oleh pemilik/admin dari tab Diarsipkan di Antrian.</div>}
       {success === "correction" && <div className="p2ban" role="status">Koreksi catatan klinis tersimpan.</div>}
       {success === "susulan" && <div className="p2ban" role="status" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Item susulan tersimpan di rekam medis dan otomatis ikut tagihan di layar Pembayaran.</div>}
+      {success === "followup" && <div className="p2ban" role="status" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Follow up tersimpan dan sudah masuk daftar Klinik → Follow up.</div>}
       {success === "addendum" && <div className="p2ban" role="status">Adendum rekam medis tersimpan; catatan asli, tagihan, dan stok tidak berubah.</div>}
       {success === "lanjutan" && (
         <div className="p2ban" role="status" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
@@ -660,6 +666,9 @@ export default async function RekamMedisPage({
           <div id="persetujuan-rawat-inap" style={{ marginTop: 12, scrollMarginTop: 20 }}>
             {consentsError || templatesError ? <div className="card" role="alert"><p>Data persetujuan belum dapat dimuat lengkap. Muat ulang sebelum membuat atau menandatangani form baru.</p><Link className="back-btn" href={`/klinik/rekam-medis/${encodeURIComponent(visitId)}`}>Muat ulang persetujuan</Link></div> : <ConsentSection visitId={visit.id as string} consents={consents} templates={templates} />}
           </div>
+
+          <FollowUpPanel visitId={visit.id as string} rows={(followUpRead?.data ?? []) as FollowUpKunjungan[]}
+            loadFailed={!!followUpRead?.error} bolehTambah={!visit.archived_at} />
 
           <ReferralPanel key={visit.id} visitId={visit.id as string} referrals={(referralRows ?? []) as { id: string; direction: string; facility: string; reason: string; notes: string | null; referred_at: string }[]} />
 
