@@ -45,7 +45,7 @@ it("penolakan database diterjemahkan ke Indonesia dan tidak ada revalidate", asy
 });
 
 it("isian tidak valid ditolak sebelum menyentuh database: alasan pendek, tanpa baris, id bukan uuid, baris dobel, kunci kosong", async () => {
-  for (const bad of [{ reason: "ab c" }, { line: [] as string[] }, { line: ["bukan-uuid"] }, { line: [U(3), U(3)] }, { request_key: "" }, { invoice_id: "x" }]) {
+  for (const bad of [{ reason: "ab c" }, { line: [] as string[] }, { line: ["bukan-uuid"] }, { line: [U(3), U(3)] }, { request_key: "" }, { invoice_id: "x" }] as Record<string, string | string[]>[]) {
     const r = await tarikBarisLunas(form(bad));
     expect(r.ok, JSON.stringify(bad)).toBe(false);
   }
