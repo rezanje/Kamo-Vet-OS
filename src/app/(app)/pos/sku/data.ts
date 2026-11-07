@@ -40,10 +40,11 @@ export async function siapkanFormBarang() {
     completeReportQuery<{ id: string; code: string; name: string }>(
       supabase.from("items").select("id, code, name", { count: "exact" }).eq("is_active", true)
         .eq("item_type", "Persediaan").order("name")),
-    // Komponen Grup boleh Persediaan/Jasa/Non-Persediaan, tetapi tidak boleh Grup.
+    // Komponen Grup boleh Persediaan/Jasa/Non-Persediaan, dan sejak 6 Nov 2026 juga Grup lain
+    // (paket di dalam paket). Lingkaran & kedalaman ditolak database saat simpan.
     completeReportQuery<Omit<KandidatKomponenGrup, "units">>(
       supabase.from("items").select("id, code, name, unit, item_type, sell_price, buy_price", { count: "exact" })
-        .eq("is_active", true).neq("item_type", "Grup").order("name")),
+        .eq("is_active", true).order("name")),
   ]);
 
   const kandidatIds = ((kandidatGrupRaw ?? []) as { id: string }[]).map((row) => row.id);
@@ -68,7 +69,8 @@ export async function loadBarang(supabase: any, id: string): Promise<BarangRow |
   const [units, { data: tiers }, { data: groupComponents }] = await Promise.all([
     loadItemUnits(supabase, [id]),
     supabase.from("item_price_tiers").select("min_qty, harga").eq("item_id", id).order("min_qty"),
-    supabase.from("item_group_components")
+    // Susunan yang diisi admin (boleh berisi Grup), bukan resep terbuka hasil hitungan.
+    supabase.from("item_group_recipe")
       .select("component_item_id, qty, unit, factor")
       .eq("group_item_id", id).order("sort_order"),
   ]);

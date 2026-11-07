@@ -7,7 +7,7 @@ vi.mock("next/link", () => ({ default: ({ children, ...props }: React.AnchorHTML
 vi.mock("@/lib/shift", () => ({ getOpenShift: async () => ({ id: "shift", branch_id: "branch" }) }));
 vi.mock("@/app/(app)/klinik/stok/StokTabs", () => ({ StokTabs: () => null, StatCard: () => null }));
 vi.mock("@/app/(app)/klinik/pengeluaran/TambahPengeluaran", () => ({ TambahPengeluaran: () => null }));
-vi.mock("@/app/(app)/penjualan/online/actions", () => ({ tandaiCair: vi.fn() }));
+vi.mock("@/app/(app)/penjualan/online/actions", () => ({ tandaiCair: vi.fn(), cairkanSekaligus: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
   storage: { from: () => ({ createSignedUrls: async (paths: string[]) => ({ data: paths.map((path) => ({ path, signedUrl: `https://signed/${path}` })) }) }) },

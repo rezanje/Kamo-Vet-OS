@@ -12,6 +12,7 @@ import { hargaCabang } from "@/lib/harga-cabang";
 import { stokGudangKlinik } from "@/lib/stok-klinik";
 import { parseClinicPostingError, toClinicCompoundRecipeInput, type ClinicIssueCompoundParams } from "@/lib/klinik-posting";
 import { loadKatalogRacikan } from "@/lib/katalog-racikan-server";
+import { pesanRacikanError, queryErrorRacikan } from "./racikan-error";
 
 /** `stok` null = gudang klinik cabang belum terbaca ("belum terbaca"), bukan nol. */
 export type BahanRacikan = { id: string; name: string; unit: string; sell_price: number; stok: number | null };
@@ -218,7 +219,7 @@ export async function ubahKomposisiRacikan(formData: FormData) {
   const { error } = await supabase.rpc("clinic_adjust_compound", {
     p_recipe_id: recipeId, p_ingredients: rows, p_reason: reason,
   });
-  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
+  if (error) redirect(`${back}?${queryErrorRacikan(error)}`);
   revalidatePath(back);
   if (visitId) { revalidatePath(`/klinik/rekam-medis/${visitId}`); revalidatePath(`/klinik/pembayaran/${visitId}`); }
   redirect(`${back}?success=komposisi${transactionDraftAck(formData)}`);
@@ -236,8 +237,92 @@ export async function kembalikanBahanRacikan(formData: FormData) {
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("clinic_return_compound", { p_recipe_id: recipeId, p_reason: reason });
-  if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error))}`);
+  if (error) redirect(`${back}?${queryErrorRacikan(error)}`);
   revalidatePath(back);
   if (visitId) { revalidatePath(`/klinik/rekam-medis/${visitId}`); revalidatePath(`/klinik/pembayaran/${visitId}`); }
   redirect(visitId ? `/klinik/rekam-medis/${visitId}?racikan=kembali` : `/klinik/racik?success=kembali`);
+}
+
+// ---------------------------------------------------------------------------
+// Koreksi komposisi OWNER (racikan rawat inap, juga setelah DP/pembayaran selama belum ada di baris invoice).
+// Aturan sebenarnya ditegakkan di database (clinic_owner_correct_compound); layar hanya memeriksa bentuk isian.
+// ---------------------------------------------------------------------------
+type BahanKoreksi = { item_id: string; quantity: number };
+
+function bahanKoreksi(raw: unknown): BahanKoreksi[] | null {
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 100) return null;
+  const rows = raw.map(item => {
+    const row = (item ?? {}) as Record<string, unknown>;
+    return { item_id: typeof row.item_id === "string" ? row.item_id.trim() : "", quantity: Number(row.quantity) };
+  });
+  if (rows.some(row => !row.item_id || !Number.isFinite(row.quantity) || row.quantity <= 0)
+    || new Set(rows.map(row => row.item_id)).size !== rows.length) return null;
+  return rows;
+}
+
+type JalurKoreksi = { rpc: string; sukses: string };
+const JALUR_BIASA: JalurKoreksi = { rpc: "clinic_owner_correct_compound", sukses: "koreksi-owner" };
+const JALUR_TAGIHAN: JalurKoreksi = { rpc: "clinic_owner_correct_compound_invoiced", sukses: "koreksi-owner-tagihan" };
+
+async function jalankanKoreksiOwner(formData: FormData, jalur: JalurKoreksi) {
+  const recipeId = String(formData.get("recipeId") ?? "");
+  const visitId = String(formData.get("visitId") ?? "");
+  const back = `/klinik/racik/${recipeId}`;
+  if (!recipeId) redirect(`/klinik/racik?error=${encodeURIComponent("Racikan tidak valid")}`);
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (reason.replace(/\s/g, "").length < 5 || reason.length > 500) {
+    redirect(`${back}?error=${encodeURIComponent("Alasan koreksi wajib diisi (minimal 5 huruf, maksimal 500)")}`);
+  }
+  const requestKey = String(formData.get("requestKey") ?? "").trim();
+  if (!requestKey || requestKey.length > 100) redirect(`${back}?error=${encodeURIComponent("Formulir belum siap. Muat ulang halaman lalu coba lagi.")}`);
+  let parsed: unknown;
+  try { parsed = JSON.parse(String(formData.get("ingredients") ?? "[]")); }
+  catch { return redirect(`${back}?error=${encodeURIComponent("Komposisi racikan tidak valid")}`); }
+  const rows = bahanKoreksi(parsed);
+  if (!rows) redirect(`${back}?error=${encodeURIComponent("Komposisi racikan tidak valid: periksa bahan dan jumlahnya")}`);
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc(jalur.rpc, {
+    p_recipe_id: recipeId, p_ingredients: rows, p_reason: reason, p_request_key: requestKey,
+  });
+  if (error) redirect(`${back}?${queryErrorRacikan(error)}`);
+  revalidatePath(back);
+  if (visitId) {
+    revalidatePath(`/klinik/rekam-medis/${visitId}`);
+    revalidatePath(`/klinik/pembayaran/${visitId}`);
+    revalidatePath("/klinik/rawat-inap", "layout");
+  }
+  redirect(`${back}?success=${jalur.sukses}`);
+}
+
+export async function koreksiKomposisiOwner(formData: FormData) {
+  return jalankanKoreksiOwner(formData, JALUR_BIASA);
+}
+
+/** Racikan yang SUDAH di baris tagihan: HPP baris dan jurnal selisih (hari ini) dikoreksi; harga dan tagihan tidak berubah.
+ * Aturan sebenarnya ditegakkan database (clinic_owner_correct_compound_invoiced). */
+export async function koreksiKomposisiOwnerTagihan(formData: FormData) {
+  return jalankanKoreksiOwner(formData, JALUR_TAGIHAN);
+}
+
+export type PratinjauKoreksi = { ok: true; data: Record<string, unknown> } | { ok: false; pesan: string };
+
+async function pratinjau(rpc: string, recipeId: string, ingredients: unknown): Promise<PratinjauKoreksi> {
+  const rows = bahanKoreksi(ingredients);
+  if (!recipeId || !rows) return { ok: false, pesan: "Komposisi racikan tidak valid: periksa bahan dan jumlahnya." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(rpc, { p_recipe_id: recipeId, p_ingredients: rows });
+  if (error) return { ok: false, pesan: pesanRacikanError(error).pesan };
+  if (!data || typeof data !== "object") return { ok: false, pesan: "Pratinjau tidak tersedia. Muat ulang halaman lalu coba lagi." };
+  return { ok: true, data: data as Record<string, unknown> };
+}
+
+/** Pratinjau baca-saja: HPP sebelum/sesudah dan selisih stok. Tidak mengubah apa pun (dibatalkan di database). */
+export async function pratinjauKoreksiOwner(recipeId: string, ingredients: unknown): Promise<PratinjauKoreksi> {
+  return pratinjau("clinic_owner_compound_correction_quote", recipeId, ingredients);
+}
+
+/** Pratinjau baca-saja untuk racikan yang sudah ditagih: HPP sebelum/sesudah/selisih, jurnal selisih, efek stok, harga. */
+export async function pratinjauKoreksiOwnerTagihan(recipeId: string, ingredients: unknown): Promise<PratinjauKoreksi> {
+  return pratinjau("clinic_owner_compound_invoiced_correction_quote", recipeId, ingredients);
 }

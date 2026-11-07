@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
-import { pesanReminder, tanggalIndo, waLink } from "@/lib/followup";
+import { batasPerluDiingatkan, bacaHariIngat, PILIHAN_HARI_INGAT, pesanReminder, posisiFollowUp, tanggalIndo, waLink } from "@/lib/followup";
 import { hariIniWIB } from "@/lib/tanggal";
 import { tandaiFollowUp } from "./actions";
 import { WaButton } from "./WaButton";
@@ -20,7 +20,7 @@ type Row = {
 };
 
 const TABS = [
-  ["jatuh-tempo", "Jatuh tempo", "ti-bell-ringing"],
+  ["perlu", "Perlu diingatkan", "ti-bell-ringing"],
   ["mendatang", "Mendatang", "ti-calendar"],
   ["riwayat", "Riwayat", "ti-history"],
 ] as const;
@@ -29,21 +29,26 @@ const TABS = [
 export default async function FollowUpPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; error?: string; success?: string }>;
+  searchParams: Promise<{ tab?: string; h?: string; error?: string; success?: string }>;
 }) {
-  const { tab = "jatuh-tempo", error, success } = await searchParams;
+  const { tab: tabParam, h, error, success } = await searchParams;
+  // "jatuh-tempo" = nama tab lama; tautan yang sudah tersimpan tetap membuka daftar yang sama.
+  const tab = tabParam === "mendatang" || tabParam === "riwayat" ? tabParam : "perlu";
+  const hariIngat = bacaHariIngat(h);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   const today = hariIniWIB();
+  const batas = batasPerluDiingatkan(today, hariIngat);
+  const tabHref = (id: string, hari = hariIngat) => `/klinik/follow-up?tab=${id}&h=${hari}`;
   let q = supabase
     .from("follow_ups")
     .select("id, jenis, tanggal, catatan, status, pets(name), customers(name, phone), branches(name), visits(dokter)");
 
   if (tab === "riwayat") q = q.neq("status", "Menunggu").order("tanggal", { ascending: false });
-  else if (tab === "mendatang") q = q.eq("status", "Menunggu").gt("tanggal", today).order("tanggal");
-  else q = q.eq("status", "Menunggu").lte("tanggal", today).order("tanggal");
+  else if (tab === "mendatang") q = q.eq("status", "Menunggu").gt("tanggal", batas).order("tanggal");
+  else q = q.eq("status", "Menunggu").lte("tanggal", batas).order("tanggal");
 
   const { data } = await q.limit(200);
   const rows = (data ?? []) as unknown as Row[];
@@ -69,12 +74,29 @@ export default async function FollowUpPage({
 
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {TABS.map(([id, label, icon]) => (
-          <Link key={id} href={`/klinik/follow-up?tab=${id}`} className="back-btn" style={{
+          <Link key={id} href={tabHref(id)} className="back-btn" style={{
             padding: "7px 14px", borderRadius: 8, fontSize: 11.5, fontWeight: 600, textDecoration: "none",
             border: ".5px solid var(--bd)", background: tab === id ? "var(--posb)" : "#fff", color: tab === id ? "#fff" : "var(--tm)",
           }}><i className={`ti ${icon}`} /> {label}</Link>
         ))}
       </div>
+
+      {tab !== "riwayat" && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 10, fontSize: 11, color: "var(--tm)" }}>
+          <span>Ingatkan pelanggan</span>
+          {PILIHAN_HARI_INGAT.map((hari) => (
+            <Link key={hari} href={tabHref(tab, hari)} aria-current={hari === hariIngat ? "true" : undefined} style={{
+              padding: "3px 9px", borderRadius: 7, fontSize: 10.5, fontWeight: 600, textDecoration: "none",
+              border: ".5px solid var(--bd)", background: hari === hariIngat ? "#d97706" : "#fff", color: hari === hariIngat ? "#fff" : "var(--tm)",
+            }}>{hari === 0 ? "di hari-H" : `H-${hari}`}</Link>
+          ))}
+          <span>
+            {tab === "perlu"
+              ? `· menampilkan jadwal sampai ${tanggalIndo(batas)} yang belum dikirimi WhatsApp.`
+              : `· jadwal setelah ${tanggalIndo(batas)}; otomatis pindah ke "Perlu diingatkan" saat masuk H-${hariIngat}.`}
+          </span>
+        </div>
+      )}
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ overflowX: "auto" }}>
@@ -89,15 +111,15 @@ export default async function FollowUpPage({
             <tbody>
               {rows.map((r) => {
                 const pet = one(r.pets), cust = one(r.customers), br = one(r.branches);
-                const telat = r.tanggal < today;
+                const posisi = posisiFollowUp(r.tanggal, today);
                 const pesan = pesanReminder({
                   pemilik: cust?.name ?? "Kak", hewan: pet?.name ?? "anabul",
                   jenis: r.jenis, tanggal: r.tanggal, catatan: r.catatan, klinik: br?.name,
                 });
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontSize: 10.5, color: telat ? "#b91c1c" : "var(--tx)", fontWeight: telat ? 700 : 400 }}>
-                      {tanggalIndo(r.tanggal)}{telat && tab !== "riwayat" && <div style={{ fontSize: 9 }}>terlewat</div>}
+                    <td style={{ fontSize: 10.5, color: posisi.telat && tab !== "riwayat" ? "#b91c1c" : "var(--tx)", fontWeight: posisi.telat && tab !== "riwayat" ? 700 : 400 }}>
+                      {tanggalIndo(r.tanggal)}{tab !== "riwayat" && <div style={{ fontSize: 9, color: posisi.telat ? "#b91c1c" : "#d97706" }}>{posisi.teks}</div>}
                     </td>
                     <td><span className="bge b">{r.jenis}</span></td>
                     <td style={{ fontSize: 11.5, fontWeight: 600 }}>{pet?.name ?? "—"}</td>
@@ -120,17 +142,20 @@ export default async function FollowUpPage({
                           {cust?.phone && (
                             <form action={tandaiFollowUp}>
                               <input type="hidden" name="id" value={r.id} />
+                              <input type="hidden" name="tab" value={tab} /><input type="hidden" name="h" value={hariIngat} />
                               <input type="hidden" name="status" value="Terkirim" />
                               <WaButton href={waLink(cust.phone, pesan)} />
                             </form>
                           )}
                           <form action={tandaiFollowUp}>
                             <input type="hidden" name="id" value={r.id} />
+                              <input type="hidden" name="tab" value={tab} /><input type="hidden" name="h" value={hariIngat} />
                             <input type="hidden" name="status" value="Selesai" />
                             <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">Selesai</SubmitButton>
                           </form>
                           <form action={tandaiFollowUp}>
                             <input type="hidden" name="id" value={r.id} />
+                              <input type="hidden" name="tab" value={tab} /><input type="hidden" name="h" value={hariIngat} />
                             <input type="hidden" name="status" value="Batal" />
                             <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }} pendingText="…">Batal</SubmitButton>
                           </form>
@@ -142,7 +167,7 @@ export default async function FollowUpPage({
               })}
               {rows.length === 0 && (
                 <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
-                  {tab === "jatuh-tempo" ? "Tidak ada follow up yang jatuh tempo. Aman." : "Belum ada data."}
+                  {tab === "perlu" ? "Tidak ada pelanggan yang perlu diingatkan. Aman." : "Belum ada data."}
                 </td></tr>
               )}
             </tbody>

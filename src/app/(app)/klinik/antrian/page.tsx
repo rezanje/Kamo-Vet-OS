@@ -221,6 +221,9 @@ export default async function AntrianPage({
   const fmtTime = (iso: string) =>
     new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
   const fmtOptional = (iso: string | null | undefined) => iso ? fmtTime(iso) : "—";
+  // Durasi dihitung dari stempel waktu sampai milidetik; layar cukup menit bulat
+  // (dulu tampil "6.916766666667 mnt").
+  const fmtMenit = (menit: number | null) => menit == null ? "Belum tercatat" : `${Math.round(menit)} mnt`;
   // Nomor antrian berulang tiap hari, jadi baris dari hari lain wajib membawa tanggalnya.
   const fmtTgl = (iso: string) =>
     new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short", timeZone: "Asia/Jakarta" });
@@ -344,7 +347,7 @@ export default async function AntrianPage({
           <div>Daftar {dariHariLalu ? `${fmtTgl(v.created_at)} ` : ""}{fmtTime(v.created_at)}</div>
           <div>Check-in {fmtOptional(v.checked_in_at)}</div>
           <div>Mulai {fmtOptional(v.service_started_at)} · Selesai {fmtOptional(v.service_finished_at)}</div>
-          <div style={{ color: "var(--td)" }}>Tunggu {durations.waitMinutes == null ? "Belum tercatat" : `${durations.waitMinutes} mnt`} · Layanan {durations.serviceMinutes == null ? "Belum tercatat" : `${durations.serviceMinutes} mnt`}</div>
+          <div style={{ color: "var(--td)" }}>Tunggu {fmtMenit(durations.waitMinutes)} · Layanan {fmtMenit(durations.serviceMinutes)}</div>
         </td>
         <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
           {v.status === "Menunggu" && pos !== undefined ? `± ${estimatedWaitMinutes(pos)} mnt` : "—"}

@@ -9,13 +9,19 @@ const KOLOM_PELANGGAN =
   "review_status_id, review_catatan, review_updated_at, " +
   "customer_categories(nama, diskon_persen), customer_review_statuses(nama, warna, nada), " +
   "pets(id, name, species, breed, gender, dob, weight, warna, sterilisasi, golongan_darah, status, created_at)";
+// Penanda sembunyi (migrasi 20261107020000). Dibaca terpisah supaya halaman tetap
+// terbuka bila migrasinya belum terpasang.
+const KOLOM_SEMBUNYI = ", hidden_at, hidden_reason";
 const TIER = ["Bronze", "Silver", "Gold", "Platinum"] as const;
+const kolomSembunyiBelumAda = (error: { code?: string; message?: string } | null) =>
+  !!error && (error.code === "42703" || error.code === "PGRST204" || /hidden_/.test(error.message ?? ""));
 
 export default async function PelangganPage({ searchParams }: {
-  searchParams: Promise<{ cari?: string; hal?: string; success?: string; error?: string }>;
+  searchParams: Promise<{ cari?: string; hal?: string; success?: string; error?: string; tersembunyi?: string }>;
 }) {
   // `cari` datang dari kotak cari halaman ini atau pencarian global di topbar.
-  const { cari, hal, success, error: pesanError } = await searchParams;
+  const { cari, hal, success, error: pesanError, tersembunyi } = await searchParams;
+  const hanyaTersembunyi = tersembunyi === "1";
   const supabase = await createClient();
   const filter = cari ? filterCariPelanggan(cari) : null;
 
@@ -44,9 +50,14 @@ export default async function PelangganPage({ searchParams }: {
   try {
     const [daftar, semua, member, ...perTier] = await Promise.all([
       readListPage<CustomerRow>(async (from, to) => {
-        let q = supabase.from("customers").select(KOLOM_PELANGGAN, { count: "exact" });
-        if (filter) q = q.or(filter);
-        const result = await q.order("total_spending", { ascending: false }).order("id").range(from, to);
+        const baca = (denganSembunyi: boolean) => {
+          let q = supabase.from("customers").select(KOLOM_PELANGGAN + (denganSembunyi ? KOLOM_SEMBUNYI : ""), { count: "exact" });
+          if (filter) q = q.or(filter);
+          if (denganSembunyi && hanyaTersembunyi) q = q.not("hidden_at", "is", null);
+          return q.order("total_spending", { ascending: false }).order("id").range(from, to);
+        };
+        let result = await baca(true);
+        if (kolomSembunyiBelumAda(result.error)) result = await baca(false);
         return { ...result, data: result.data as unknown as CustomerRow[] | null };
       }, "Pelanggan", hal),
       hitung(), hitungMember(), ...TIER.map((tier) => hitung(tier)),
@@ -91,7 +102,7 @@ export default async function PelangganPage({ searchParams }: {
         </div>
       )}
       <PelangganClient
-        cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin}
+        cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin} hanyaTersembunyi={hanyaTersembunyi}
         categories={categories} statusUlasan={statusUlasan}
         total={total} stats={stats} halaman={pageInfo}
       />

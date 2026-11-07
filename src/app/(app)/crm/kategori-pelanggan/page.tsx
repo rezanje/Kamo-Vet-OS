@@ -5,20 +5,29 @@ import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { simpanKategoriPelanggan, toggleKategoriPelanggan } from "./actions";
+import { LEVEL_PELANGGAN, labelLevel, pesanPindahLevel } from "@/lib/golongan-level";
 
-type Kat = { id: string; nama: string; diskon_persen: number; rupiah_per_poin: number; is_active: boolean };
+type Kat = { id: string; nama: string; diskon_persen: number; rupiah_per_poin: number; is_active: boolean; tier_otomatis: string | null; khusus: boolean | null };
+const KOLOM = "id, nama, diskon_persen, rupiah_per_poin, is_active";
 
 export default async function KategoriPelangganPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; edit?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string; pindah?: string }>;
 }) {
-  const { error, success, edit } = await searchParams;
+  const { error, success, edit, pindah } = await searchParams;
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data }, { data: custRows }] = await Promise.all([
-    supabase.from("customer_categories").select("id, nama, diskon_persen, rupiah_per_poin, is_active").order("nama"),
+  // Kolom level (20261107040000) dibaca dengan cadangan: halaman tetap terbuka bila migrasinya belum terpasang.
+  const bacaGolongan = async () => {
+    const baru = await supabase.from("customer_categories").select(`${KOLOM}, tier_otomatis, khusus`).order("nama");
+    if (!baru.error) return { data: baru.data as unknown as Kat[] | null, levelAktif: true };
+    const lama = await supabase.from("customer_categories").select(KOLOM).order("nama");
+    return { data: (lama.data ?? []).map((k) => ({ ...k, tier_otomatis: null, khusus: null })) as Kat[], levelAktif: false };
+  };
+  const [{ data, levelAktif }, { data: custRows }] = await Promise.all([
+    bacaGolongan(),
     supabase.from("customers").select("category_id").not("category_id", "is", null),
   ]);
 
@@ -38,7 +47,7 @@ export default async function KategoriPelangganPage({
       back="/crm" icon="ti-crown" iconBg="#fef3c7" iconFg="#b45309"
       title="KATEGORI PELANGGAN"
       desc="Golongan pelanggan + diskon otomatis di kasir petshop"
-      error={error} success={success} successMsg="Golongan tersimpan."
+      error={error} success={success} successMsg={["Golongan tersimpan.", pesanPindahLevel(pindah)].filter(Boolean).join(" ")}
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah golongan pelanggan."
     >
@@ -46,6 +55,8 @@ export default async function KategoriPelangganPage({
         <i className="ti ti-info-circle" /> Diskon di sini langsung dipakai kasir petshop begitu
         pelanggannya dipilih. Strata belanja otomatis (Bronze/Gold/VIP) diatur terpisah di{" "}
         <Link href="/pengaturan/tier" style={{ color: "#2563eb" }}>Konfigurasi loyalty</Link>.
+        {" "}Pilih <b>Otomatis untuk level</b> supaya golongan (beserta diskon per barang/kategorinya) dipasang
+        sendiri saat pelanggan naik atau turun level. Golongan <b>khusus</b> (mis. Reseller) tidak pernah diganti otomatis.
       </div>
 
       {bolehKelola && (
@@ -69,6 +80,22 @@ export default async function KategoriPelangganPage({
                 Makin kecil, makin royal. 1000 = tiap Rp1.000 dapat 1 poin.
               </div>
             </div>
+            {levelAktif && (
+              <div style={{ width: 190 }}>
+                <label className="flab">Otomatis untuk level</label>
+                <select className="fi" name="tier_otomatis" defaultValue={editing?.tier_otomatis ?? ""}>
+                  <option value="">— tidak —</option>
+                  {LEVEL_PELANGGAN.map((l) => {
+                    const dipakai = kategori.find((k) => k.tier_otomatis === l && k.id !== editing?.id);
+                    return <option key={l} value={l} disabled={!!dipakai}>{labelLevel(l)}{dipakai ? ` (dipakai ${dipakai.nama})` : ""}</option>;
+                  })}
+                </select>
+                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "var(--tm)", marginTop: 5 }}>
+                  <input type="checkbox" name="khusus" defaultChecked={editing ? editing.khusus !== false : true} />
+                  Golongan khusus (tidak diganti level)
+                </label>
+              </div>
+            )}
             <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
@@ -85,6 +112,7 @@ export default async function KategoriPelangganPage({
                 <th style={{ width: 30 }}>No.</th><th>Golongan</th>
                 <th style={{ width: 90 }}>Diskon</th>
                 <th style={{ width: 120 }}>Poin</th>
+                {levelAktif && <th style={{ width: 130 }}>Level otomatis</th>}
                 <th style={{ width: 120 }}>Dipakai</th><th style={{ width: 80 }}>Status</th>
                 {bolehKelola && <th style={{ width: 150 }}>Aksi</th>}
               </tr>
@@ -98,6 +126,13 @@ export default async function KategoriPelangganPage({
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
                     Rp {k.rupiah_per_poin.toLocaleString("id-ID")} = 1 poin
                   </td>
+                  {levelAktif && (
+                    <td style={{ fontSize: 10.5 }}>
+                      {k.tier_otomatis ? <span className="bge g">{labelLevel(k.tier_otomatis)}</span>
+                        : k.khusus ? <span style={{ color: "var(--tm)" }}>Khusus (manual)</span>
+                          : <span style={{ color: "var(--td)" }}>—</span>}
+                    </td>
+                  )}
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{pakai.get(k.id) ?? 0} pelanggan</td>
                   <td><span className={`bge ${k.is_active ? "g" : "x"}`}>{k.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   {bolehKelola && (
@@ -118,7 +153,7 @@ export default async function KategoriPelangganPage({
                 </tr>
               ))}
               {kategori.length === 0 && (
-                <tr><td colSpan={bolehKelola ? 6 : 5} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                <tr><td colSpan={(bolehKelola ? 6 : 5) + (levelAktif ? 1 : 0)} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                   Belum ada golongan.
                 </td></tr>
               )}

@@ -172,3 +172,13 @@ it('explains a missing forced discharge template instead of sending staff to an 
  expect(unreadable).not.toContain('Template form Pulang Paksa belum tersedia');
  expect(unreadable).toContain('buat dan tandatangani form khusus kategori Pulang Paksa');
 });
+it('detail rawat inap menampilkan bagian Racikan pasien ini lewat SATU query berfilter kunjungan (tanpa N+1)',async()=>{
+ const html=await render();
+ expect(html).toContain('Racikan pasien ini');
+ expect(html).toContain('Fictional mixture');
+ // fixture berstatus handed_over: status + alasan, tanpa tombol koreksi
+ expect(html).toContain('sudah diserahkan ke pasien');
+ expect(html).not.toContain('Koreksi / Kembalikan bahan');
+ const perKunjungan=s.reads.filter(r=>r.table==='compounding_recipes'&&r.eq['medical_records.visit_id']==='visit-a');
+ expect(perKunjungan).toHaveLength(1);
+});
