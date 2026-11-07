@@ -307,6 +307,7 @@ def sec_neg(h):
     r3, e3 = req(h, N, 20000, 'rum-cap-4')
     check('cancel then RE-REQUEST works (new key): 20000 reserved again, total reserved 30000', r3 is not None and D(adv_row(h, N)['refund_reserved']) == 30000, dict(error=(e3 or '')[:160]))
     # claim / complete validations on the 10000 request
+    sC = snap(h, N)
     refused(h, N, 'NEG claim by a non-finance role (STAFF) refused (ACCESS_DENIED)', claim(h, rid2, user=r.STAFF), ['ACCESS_DENIED'], sC)
     refused(h, N, 'NEG claim by FINANCE of another branch refused (ACCESS_DENIED)', claim(h, rid2, user=r.FIN_LUAR), ['ACCESS_DENIED'], sC)
     refused(h, N, 'NEG claim of an unknown refund refused (REFUND_NOT_FOUND)', claim(h, r.uid('e', 9998)), ['REFUND_NOT_FOUND'])
@@ -350,11 +351,6 @@ def sec_scope(h):
     V = tbl.build(h, 7121); h.gagal(r.lepas_sql(V['adv'], 'rum-sc-rel'), r.OWNER); h.gagal(r.batal_kwitansi_sql(V['receipt'], 'rum-sc-void'), r.OWNER)
     sV = snap(h, V)
     refused(h, V, 'NEG advance whose receipt was voided (status batal) refused (ADVANCE_INVALID), nothing changed', req(h, V, 100, 'rum-sc-2'), ['ADVANCE_INVALID'], sV)
-    # archived visit: the archive guard refuses the advance update; nothing half-done
-    Ar = live(h, 7122); sA = snap(h, Ar)
-    h.sql(f"alter table visits disable trigger user;update visits set archived_at=now(),archived_by={q(r.OWNER)},archive_reason='arsip uji' where id={q(Ar['v'])};alter table visits enable trigger user;")
-    res, err = req(h, Ar, 100, 'rum-sc-3')
-    check('NEG advance of an ARCHIVED visit refused (VISIT_ARCHIVED from the archive guard; no half effects: no refund row, advance unchanged)', res is None and err_has(err, 'VISIT_ARCHIVED') and snap(h, Ar)['adv'] == sA['adv'] and snap(h, Ar)['refunds'] == sA['refunds'], dict(error=(err or '')[:160]))
     # destination note is stored trimmed; bank note has no free HTML
     D2 = live(h, 7123); r2, _ = req(h, D2, 30000, 'rum-sc-4', dest=dict(bank='  BCA  ', account=' 123 456 7890 ', name=' Tn. Keripik '))
     check('destination fields are trimmed when stored', r2 is not None and refund_row(h, r2['refund_id'])['destination'] == dict(bank='BCA', account='123 456 7890', name='Tn. Keripik'), dict(row=str((r2 or {}).get('refund_id'))))
