@@ -122,6 +122,39 @@ function recipeRequiredMessage(message: string): string {
   return `Obat racik${name ? ` "${name}"` : ""} wajib diisi komposisinya. Hapus baris ini lalu tambahkan lewat tombol "Racikan baru" di rekam medis.`;
 }
 
+function costMissingBmhpMessage(name: string, stok: string, butuh: string, satuan: string, sebab: "harga0" | "lapisan"): string {
+  // Costing is FIFO: the oldest layer is consumed first. A Rp0 layer therefore sits AHEAD of any stock added later, so filling
+  // Harga beli or receiving priced stock does not clear it; the Owner has to let the Rp0 layer be consumed (lower stock via
+  // Penyesuaian Persediaan) and raise it again with Harga beli filled (the raise is costed at the item's Harga beli).
+  const sebabDanLangkah = sebab === "harga0"
+    ? "Sebagian stok bahan ini tercatat berharga modal Rp0 (misalnya dari Penyesuaian atau Pemindahan saat Harga beli barang masih 0). "
+      + "Stok lama dipakai lebih dulu (FIFO), jadi menambah stok baru atau mengisi Harga beli saja tidak menyelesaikan. "
+      + "Minta Owner memperbaikinya: isi Harga beli barang ini di Barang & Jasa, lalu di Penyesuaian Persediaan turunkan stok sampai lapisan Rp0 habis "
+      + "(boleh sampai 0; lihat Kartu Stok), kemudian naikkan lagi ke jumlah semula agar tercatat dengan Harga beli yang terisi."
+    : "Lapisan stok (FIFO) bahan ini tidak mencukupi jumlah yang dibutuhkan, walau saldo stoknya tercatat. "
+      + "Tambahkan stok berharga lewat Penerimaan barang / Faktur pembelian. Kalau saldo stok lebih besar daripada lapisannya, "
+      + "Penyesuaian ditolak (Rekonsiliasi sumber diperlukan): minta Owner memeriksa Kartu Stok barang ini.";
+  return `Modal terakhir bahan tidak tersedia: ${name.trim()}. Stok gudang klinik cabang ini ${stok}, dibutuhkan ${butuh} (satuan barang: ${satuan.trim()}; `
+    + `BMHP yang dicatat dokter pada tindakan yang masih ditagih). ${sebabDanLangkah} `
+    + "Menghapus satu baris tidak membantu selama baris tindakan lain masih memakai bahan ini. Belum ada yang tersimpan.";
+}
+
+/**
+ * clinic_private.bmhp_issue raises `COST_MISSING: <name> [stok=..;butuh=..;satuan=..;sebab=harga0|lapisan]`. The tail is read from the
+ * LAST "[stok=" marker so a material name that itself contains brackets still parses; anything else keeps the plain mapping.
+ */
+function parseBmhpCostMissing(message: string): string | null {
+  const head = "COST_MISSING:";
+  if (!message.startsWith(head)) return null;
+  const marker = message.lastIndexOf("[stok=");
+  if (marker < 0) return null;
+  const name = message.slice(head.length, marker).trim();
+  if (!name || name.length > 120 || /[\r\n]/.test(name)) return null;
+  const tail = /^\[stok=([0-9.]{1,24});butuh=([0-9.]{1,24});satuan=([^\r\n]{1,20}?);sebab=(harga0|lapisan)\]\s*$/.exec(message.slice(marker));
+  if (!tail) return null;
+  return costMissingBmhpMessage(name, tail[1], tail[2], tail[3], tail[4] as "harga0" | "lapisan");
+}
+
 export function parseClinicPostingError(error: { code?: string; message: string } | null, uncertainFallback?: string): string {
   if (error?.code === "55P03") return "Data sedang dipakai proses lain. Muat ulang tagihan, periksa hasil sebelumnya, lalu coba lagi.";
   const kampanye = pesanGagalKampanye(error?.message);
@@ -133,6 +166,10 @@ export function parseClinicPostingError(error: { code?: string; message: string 
     // The text may list several rows, one per line (see price-floor-message.ts): keep the line breaks.
     const priceFloor = /^(PRICE_ZERO|PRICE_BELOW_HPP):\s*([\s\S]{1,6000})/.exec(error.message);
     if (priceFloor) return `Penjualan ditolak. ${priceFloor[2].trim()}`;
+    // BMHP posting (clinic_private.bmhp_issue) names the material, the clinic warehouse stock, the quantity the
+    // doctor recorded and why the cost could not be formed, so the cashier knows what to fix instead of retrying.
+    const bmhpCost = parseBmhpCostMissing(error.message);
+    if (bmhpCost) return bmhpCost;
     const detailMessages: Record<string, string> = {
       STOCK_SHORT: "Stok tidak cukup",
       WAREHOUSE_MISSING: "Gudang aktif cabang belum tersedia",
