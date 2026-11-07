@@ -39,14 +39,14 @@ export function TarikBarisForm({ visitId, invoiceId, invoiceNo, lines, requestKe
     return <div className="card" role="status">
       <div className="card-hd"><span><i className="ti ti-circle-check" /> Baris sudah ditarik dari {selesai.invoice_no}</span></div>
       <p>Total tagihan sekarang {rp(selesai.total_after)} (nomor tagihan sama). Saldo uang muka pasien {selesai.advance.no_uang_muka ?? ""} bertambah {rp(selesai.removed_total)}.</p>
-      <p style={{ fontSize: 11 }}>Tidak ada uang kas atau bank yang bergerak; sisanya menjadi saldo uang muka pasien dan otomatis dipakai tagihan tahap berikutnya. Sistem belum punya fitur mengembalikan sebagian saldo uang muka lewat transfer: jangan transfer di luar catatan, minta Reza memutuskan pengembaliannya.</p>
+      <p style={{ fontSize: 11 }}>Tidak ada uang kas atau bank yang bergerak; sisanya menjadi saldo uang muka pasien dan otomatis dipakai tagihan tahap berikutnya. Untuk mengembalikannya lewat transfer, pakai panel &quot;Kembalikan saldo uang muka&quot; di bawah (diajukan Owner/Finance, diselesaikan Finance); jangan transfer di luar catatan.</p>
     </div>;
   }
 
   return <div className="card">
     <div className="card-hd"><span><i className="ti ti-arrow-back-up" /> Tarik baris dari tagihan lunas {invoiceNo} (Owner)</span></div>
     <p style={{ fontSize: 11 }}>Baris dihapus dari tagihan yang sama (nomor tidak berubah). Stok bahan kembali, jurnal dibalik hari ini, dan selisihnya menjadi saldo uang muka pasien. Hanya baris penuh yang bisa ditarik.</p>
-    <p style={{ fontSize: 11 }} role="note"><b>Penting:</b> nilai baris yang ditarik menjadi <b>saldo uang muka pasien</b>, bukan uang kembali. Fitur mengembalikan saldo uang muka lewat transfer/tunai belum tersedia; jangan transfer di luar catatan, minta Reza memutuskan pengembaliannya.</p>
+    <p style={{ fontSize: 11 }} role="note"><b>Penting:</b> nilai baris yang ditarik menjadi <b>saldo uang muka pasien</b>, bukan uang kembali. Untuk mengembalikannya lewat transfer, pakai panel &quot;Kembalikan saldo uang muka&quot; di bawah setelah baris ditarik; jangan transfer di luar catatan.</p>
     <table className="tbl">
       <thead><tr><th /><th>Baris</th><th style={{ textAlign: "right" }}>Jumlah</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "right" }}>HPP</th><th>Keterangan</th></tr></thead>
       <tbody>{lines.map((l) => <tr key={l.invoice_item_id}>

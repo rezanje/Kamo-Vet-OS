@@ -12,6 +12,7 @@ import { Popup } from "@/components/Popup";
 import { readDemoPolicy } from "@/lib/clinic-demo-policy-server";
 import { VoidReissueForm } from "./VoidReissueForm";
 import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
+import { UangMukaRefundSection } from "./UangMukaRefundSection";
 import { ClinicPaymentCorrectionPanel, type ClinicPaymentCorrectionRow } from "./ClinicPaymentCorrectionPanel";
 import { clinicCorrectableParts } from "@/lib/clinic-payment-correction";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
@@ -769,6 +770,9 @@ export default async function PembayaranPage({
                 diskon_persen: l.diskon_persen === null ? null : Number(l.diskon_persen), compound_recipe_id: l.compound_recipe_id, satuan: l.satuan }))}
               message={success && !["bayar", "edit", "rombongan", "reissue", "koreksi-metode"].includes(success) ? success : undefined} />
           )}
+
+          {/* Kembalikan saldo uang muka (Owner/Finance): sisa uang muka pasien dikembalikan lewat transfer; diselesaikan Finance di antrean refund. */}
+          {inpat && lunas && <UangMukaRefundSection db={supabase} visitId={visit.id} role={(profilKasir as { role?: string } | null)?.role} requestKeyBase={invoiceRequestKey} />}
 
           {/* J02: koreksi Tunai <-> Transfer (Owner/Finance), jurnal koreksi; struk dan nominal tetap. */}
           {canCorrectMethod && draftUser && (correctionParts.length > 0 || (correctionData ?? []).length > 0) && (

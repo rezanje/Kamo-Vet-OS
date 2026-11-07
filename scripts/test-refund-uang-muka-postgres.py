@@ -270,7 +270,8 @@ def sec_neg(h):
     N = live(h, 7110); A = {a: h.saldo(a) for a in ACCTS}
     s0 = snap(h, N)
     for label, user in (('ADMIN', r.ADMIN), ('DOCTOR', r.DOCTOR), ('STAFF', r.STAFF), ('inactive FINANCE', r.FIN_NONAKTIF), ('FINANCE of another branch', r.FIN_LUAR)):
-        refused(h, N, f'NEG request by {label} refused (ACCESS_DENIED), nothing changed', req(h, N, 30000, 'rum-neg-' + label[:4], user=user), ['ACCESS_DENIED'], s0)
+        refused(h, N, f'NEG request by {label} refused (ACCESS_DENIED: ' + ('cabang' if 'another' in label else 'only Owner/Finance') + '), nothing changed', req(h, N, 30000, 'rum-neg-' + label[:4], user=user),
+                ['ACCESS_DENIED', 'cabang' if 'another' in label else 'hanya untuk Owner atau Finance'], s0)
     err = h.gagal(f"reset role;select public.{FN['req']}({q(N['adv'])},30000,{q(REASON)},{j(DEST)},'rum-anon');")
     check('NEG request without an authenticated session refused', bool(err) and ('ACCESS_DENIED' in err or 'permission denied' in err) and snap(h, N) == s0, dict(error=(err or '')[:140]))
     err = h.gagal(f"set role authenticated;select set_config('request.jwt.claim.role','authenticated',false);select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);select set_config('request.headers',{q(json.dumps({'x-kamo-operational-branch': r.BRANCH2}))},false);"
@@ -297,8 +298,8 @@ def sec_neg(h):
     sC = snap(h, N); rid1 = (r1 or {}).get('refund_id'); rid2 = (r2 or {}).get('refund_id')
     refused(h, N, 'NEG cancel without the "belum dibayar" confirmation refused (CANCEL_CONFIRM_REQUIRED)', cancel(h, rid1, conf='false'), ['CANCEL_CONFIRM_REQUIRED'], sC)
     refused(h, N, 'NEG cancel without a reason (4 chars) refused (REASON_REQUIRED)', cancel(h, rid1, reason='a b c'), ['REASON_REQUIRED'], sC)
-    refused(h, N, 'NEG cancel by ADMIN refused (ACCESS_DENIED)', cancel(h, rid1, user=r.ADMIN), ['ACCESS_DENIED'], sC)
-    refused(h, N, 'NEG cancel by FINANCE of another branch refused (ACCESS_DENIED)', cancel(h, rid1, user=r.FIN_LUAR), ['ACCESS_DENIED'], sC)
+    refused(h, N, 'NEG cancel by ADMIN refused (ACCESS_DENIED: only Owner/Finance)', cancel(h, rid1, user=r.ADMIN), ['ACCESS_DENIED', 'hanya untuk Owner atau Finance'], sC)
+    refused(h, N, 'NEG cancel by FINANCE of another branch refused (ACCESS_DENIED: cabang)', cancel(h, rid1, user=r.FIN_LUAR), ['ACCESS_DENIED', 'cabang'], sC)
     refused(h, N, 'NEG cancel of an unknown refund refused (REFUND_NOT_FOUND)', cancel(h, r.uid('e', 9998)), ['REFUND_NOT_FOUND'], sC)
     c1, _ = cancel(h, rid1)
     check('cancel of the 20000 pending request frees exactly 20000 (balance 20000, reserved 10000)', c1 is not None and c1['status'] == 'batal' and D(adv_row(h, N)['refund_reserved']) == 10000 and bal(adv_row(h, N)) == 20000, dict(res=str(c1)[:100]))
@@ -308,8 +309,8 @@ def sec_neg(h):
     check('cancel then RE-REQUEST works (new key): 20000 reserved again, total reserved 30000', r3 is not None and D(adv_row(h, N)['refund_reserved']) == 30000, dict(error=(e3 or '')[:160]))
     # claim / complete validations on the 10000 request
     sC = snap(h, N)
-    refused(h, N, 'NEG claim by a non-finance role (STAFF) refused (ACCESS_DENIED)', claim(h, rid2, user=r.STAFF), ['ACCESS_DENIED'], sC)
-    refused(h, N, 'NEG claim by FINANCE of another branch refused (ACCESS_DENIED)', claim(h, rid2, user=r.FIN_LUAR), ['ACCESS_DENIED'], sC)
+    refused(h, N, 'NEG claim by a non-finance role (STAFF) refused (ACCESS_DENIED)', claim(h, rid2, user=r.STAFF), ['ACCESS_DENIED', 'hanya untuk Owner atau Finance'], sC)
+    refused(h, N, 'NEG claim by FINANCE of another branch refused (ACCESS_DENIED)', claim(h, rid2, user=r.FIN_LUAR), ['ACCESS_DENIED', 'cabang'], sC)
     refused(h, N, 'NEG claim of an unknown refund refused (REFUND_NOT_FOUND)', claim(h, r.uid('e', 9998)), ['REFUND_NOT_FOUND'])
     claim(h, rid2); sD = snap(h, N)
     td = today(h); bank = h.nilai("select id from cash_accounts where coa_code='120002'"); kas = h.nilai("select id from cash_accounts where coa_code='110003'")
@@ -325,7 +326,8 @@ def sec_neg(h):
     h.sql(f"update accounting_locks set closed_until='{td}' where id;")
     refused(h, N, 'NEG complete in a LOCKED accounting period refused (PERIOD_LOCKED), nothing changes (the request itself stays reserved)', done(h, rid2), ['PERIOD_LOCKED'], sD)
     h.sql("update accounting_locks set closed_until=null where id;")
-    refused(h, N, 'NEG complete by ADMIN (not finance/owner) refused (ACCESS_DENIED)', done(h, rid2, user=r.ADMIN), ['ACCESS_DENIED'], sD)
+    refused(h, N, 'NEG complete by FINANCE of another branch refused (ACCESS_DENIED: cabang)', done(h, rid2, user=r.FIN_LUAR), ['ACCESS_DENIED', 'cabang'], sD)
+    refused(h, N, 'NEG complete by ADMIN (not finance/owner) refused (ACCESS_DENIED)', done(h, rid2, user=r.ADMIN), ['ACCESS_DENIED', 'hanya untuk Owner atau Finance'], sD)
     c_ok, e_ok = done(h, rid2, account=bank, ref='TRF-EXPLICIT')
     check('complete with an EXPLICIT bank account (cash_accounts id of Bank BCA) works: journal Cr 120002', c_ok is not None and lines_of(h, c_ok['journal_id']) == sorted([('314001', D(10000), D(0)), ('120002', D(0), D(10000))]), dict(error=(e_ok or '')[:200]))
     # cancel after completion; pending 20000 left
@@ -336,7 +338,7 @@ def sec_neg(h):
     check('OWNER cancels a pending request (the requester) and the balance is released again', c3 is not None and c3['status'] == 'batal' and D(adv_row(h, N)['refund_reserved']) == 0 and bal(adv_row(h, N)) == 20000, dict(error=(e3 or '')[:160]))
     # claimed by FINANCE: OWNER may cancel, ADMIN may not
     r4, _ = req(h, N, 5000, 'rum-cap-5', user=r.FINANCE); rid4 = (r4 or {}).get('refund_id'); claim(h, rid4, user=r.FINANCE)
-    refused(h, N, 'NEG cancel of a diproses request by ADMIN refused (ACCESS_DENIED)', cancel(h, rid4, user=r.ADMIN), ['ACCESS_DENIED'])
+    refused(h, N, 'NEG cancel of a diproses request by ADMIN refused (ACCESS_DENIED)', cancel(h, rid4, user=r.ADMIN), ['ACCESS_DENIED', 'hanya untuk Owner atau Finance'])
     c4, _ = cancel(h, rid4, user=r.OWNER)
     check('OWNER may cancel a request that FINANCE has claimed (not yet paid); reservation released', c4 is not None and c4['status'] == 'batal' and D(adv_row(h, N)['refund_reserved']) == 0, dict(res=str(c4)[:100]))
 
@@ -371,7 +373,7 @@ def sec_static(h):
     rdel = h.gagal(f"delete from clinic_private.advance_refunds where id={q(rid)};")
     rupd = h.gagal(f"update clinic_private.advance_refunds set amount=1 where id={q(rid)};")
     rst = h.gagal(f"update clinic_private.advance_refunds set status='selesai' where id={q(rid)};")
-    check('refund rows cannot be deleted, their amount cannot be edited, and the state machine cannot skip (pending -> selesai) even for the superuser', rid is not None and bool(rdel) and bool(rupd) and bool(rst), dict(d=(rdel or '')[:80], u=(rupd or '')[:80], s=(rst or '')[:80]))
+    check('refund rows cannot be deleted, their amount cannot be edited, and the state machine cannot skip (pending -> selesai) even for the superuser (each with its own message)', rid is not None and err_has(rdel, 'tidak dapat dihapus') and err_has(rupd, 'tidak dapat diubah') and err_has(rst, 'perubahan status'), dict(d=(rdel or '')[:80], u=(rupd or '')[:80], s=(rst or '')[:80]))
     for t in ('advance_refunds', 'advance_refund_events'):
         e_ = h.gagal(f'select * from clinic_private.{t};', r.OWNER); w_ = h.gagal(f"insert into clinic_private.{t} select * from clinic_private.{t};", r.FINANCE)
         check(f'clinic_private.{t} has no app grant (owner cannot read, finance cannot write directly)', h.nilai(f"select (to_regclass('clinic_private.{t}') is not null)::text") == 'true' and bool(e_) and 'permission denied' in e_ and bool(w_) and 'permission denied' in w_, dict(r=(e_ or '')[:80], w=(w_ or '')[:80]))
@@ -396,7 +398,7 @@ def sec_static(h):
     # cap: applied can never exceed what is left after refunds
     inv = h.nilai("select pg_get_constraintdef(oid) from pg_constraint where conrelid='clinic_customer_advances'::regclass and conname='clinic_customer_advances_applied_cap'")
     check('existing applied <= amount cap still in place (applied can never take reserved or refunded money)', inv is not None and 'applied <= amount' in inv.replace('(', '').replace(')', ''), dict(c=inv))
-    dig = h.nilai("select md5(string_agg(pg_get_functiondef(p.oid)||coalesce(p.proacl::text,''),'' order by p.oid::regprocedure::text)) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','clinic_private') and p.prokind='f' and p.proname not in ('clinic_advance_refund_request','clinic_advance_refund_claim','clinic_advance_refund_complete','clinic_advance_refund_cancel','get_clinic_advance_refunds') and p.proname not like 'advance_refund%'")
+    dig = h.nilai(DIGEST_FN)
     RESULTS.append(dict(case='digest: every pre-existing function (definition + ACL) md5, for comparison RED vs GREEN', status='PASS', detail=dict(md5=dig)))
     print('PASS digest', dig, flush=True)
 
@@ -486,6 +488,21 @@ def races(h, db):
 def apply_candidate(db, text): db.sql('begin;\n' + text + '\ncommit;')
 
 
+NEW_FN = "('clinic_advance_refund_request','clinic_advance_refund_claim','clinic_advance_refund_complete','clinic_advance_refund_cancel','get_clinic_advance_refunds')"
+DIGEST_FN = (f"select md5(string_agg(pg_get_functiondef(p.oid)||coalesce(p.proacl::text,''),'' order by p.oid::regprocedure::text)) from pg_proc p join pg_namespace n on n.oid=p.pronamespace "
+             f"where n.nspname in ('public','clinic_private') and p.prokind='f' and p.proname not in {NEW_FN} and p.proname not like 'advance_refund%'")
+DIGEST_OBJ = """select md5(string_agg(x, '|' order by x)) from (
+ select 'col:'||table_schema||'.'||table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,'') x from information_schema.columns
+   where table_schema in ('public','clinic_private') and table_name not like 'advance_refund%' and not (table_name='clinic_customer_advances' and column_name in ('refunded_amount','refund_reserved'))
+ union all select 'con:'||conrelid::regclass||':'||conname||':'||pg_get_constraintdef(oid) from pg_constraint where connamespace in ('public'::regnamespace,'clinic_private'::regnamespace)
+   and conrelid::regclass::text not like '%advance_refund%' and not (conrelid='public.clinic_customer_advances'::regclass and conname='clinic_customer_advances_amount_check')
+ union all select 'trg:'||tgrelid::regclass||':'||tgname from pg_trigger where not tgisinternal and tgrelid::regclass::text not like '%advance_refund%' and tgname <> 'advance_refund_fence'
+ union all select 'idx:'||indexdef from pg_indexes where schemaname in ('public','clinic_private') and tablename not like 'advance_refund%'
+ union all select 'pol:'||schemaname||'.'||tablename||':'||policyname||':'||coalesce(qual,'')||coalesce(with_check,'') from pg_policies where schemaname in ('public','clinic_private') and tablename not like 'advance_refund%'
+ union all select 'rel:'||c.oid::regclass||':'||coalesce(c.relacl::text,'')||c.relrowsecurity from pg_class c where c.relnamespace in ('public'::regnamespace,'clinic_private'::regnamespace) and c.relkind in ('r','v','m') and c.relname not like 'advance_refund%'
+) t"""
+
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--json', type=Path, required=True); ap.add_argument('--pg-bin'); ap.add_argument('--attach')
     ap.add_argument('--baseline', action='store_true'); ap.add_argument('--sections', help='comma separated: main,life,neg,scope,static,race'); ap.add_argument('--mutations', action='store_true'); ap.add_argument('--only', help='comma separated mutant name parts'); a = ap.parse_args()
@@ -530,8 +547,11 @@ def main():
             with r.NativePostgres(r.BIN) as db:
                 okr.build(db, {CANDIDATE}); h = x.Harness(db); x.setup(h)
                 if not a.baseline:
-                    extra['digest_before'] = h.nilai("select md5(string_agg(pg_get_functiondef(p.oid)||coalesce(p.proacl::text,''),'' order by p.oid::regprocedure::text)) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','clinic_private') and p.prokind='f'")
+                    extra['digest_before'] = dict(functions=h.nilai(DIGEST_FN), objects=h.nilai(DIGEST_OBJ))
                     apply_candidate(db, (MIG / CANDIDATE).read_text())
+                    extra['digest_after'] = dict(functions=h.nilai(DIGEST_FN), objects=h.nilai(DIGEST_OBJ))
+                    check('DIGEST-DIFF: every pre-existing function (definition + ACL), column, constraint, trigger, index, policy and table ACL is byte-identical before vs after the migration, except the declared changes on clinic_customer_advances (2 columns, amount check, 1 trigger)',
+                          extra['digest_before'] == extra['digest_after'], extra)
                 run(h, db, setup=False, baseline=a.baseline)
     except Exception as e: check('HARNESS', False, str(e)[:800])
     totals = {s: sum(cc['status'] == s for cc in RESULTS) for s in ['PASS', 'FAIL']}
