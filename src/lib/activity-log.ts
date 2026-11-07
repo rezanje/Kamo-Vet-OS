@@ -78,6 +78,7 @@ export const ACTIVITY_ENTITIES: Record<string, string> = {
   item_price_tiers: "Harga Bertingkat Barang",
   item_branch_prices: "Harga Barang per Cabang",
   item_group_components: "Komponen Grup Barang",
+  item_group_recipe: "Susunan Grup Barang",
   item_variant_families: "Keluarga Varian Barang",
   item_variant_members: "Anggota Varian Barang",
   stock: "Saldo Stok",

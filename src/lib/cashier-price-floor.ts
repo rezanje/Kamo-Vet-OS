@@ -86,10 +86,17 @@ export function quoteCashierLineCosts(
   });
 }
 
-export type PriceFloorFinding = { index: number; nama: string; paket: boolean; kind: "zero" | "unknown" | "below"; net: number; hpp: number | null };
+/**
+ * `below_waived` is INFORMATION: a reward line of an Owner-approved promo sells below cost (allowed). `waived: true` on a `below` finding =
+ * the line is waived but a receipt-level discount (voucher/points/total discount) pushed it under the after-promo price (refused).
+ */
+export type PriceFloorFinding = { index: number; nama: string; paket: boolean; kind: "zero" | "unknown" | "below" | "below_waived"; net: number; hpp: number | null; waived?: boolean };
 
-/** Every goods line whose net (after item and allocated basket discounts) is zero, of unknown cost, or below HPP. */
-export function priceFloorFindings(lines: CashierLine[], netTotal: number, lineCosts: (number | null)[]): PriceFloorFinding[] {
+/**
+ * Every goods line whose net (after item and allocated basket discounts) is zero, of unknown cost, or below HPP.
+ * `waived[i]` (promo_floor_waiver of the line): same floor as the DB P05_PROMO_WAIVER = least(hpp, price after the promo); net must stay > 0 and an unknown cost still refuses.
+ */
+export function priceFloorFindings(lines: CashierLine[], netTotal: number, lineCosts: (number | null)[], waived: readonly boolean[] = []): PriceFloorFinding[] {
   const lineNets = lines.map(lineSubtotal);
   const afterItems = lineNets.reduce((sum, value) => sum.plus(value), new PosDecimal(0));
   const findings: PriceFloorFinding[] = [];
@@ -103,17 +110,23 @@ export function priceFloorFindings(lines: CashierLine[], netTotal: number, lineC
     const hpp = lineCosts[index] ?? null;
     if (!effectiveNet.isFinite() || effectiveNet.lte(0)) findings.push({ index, nama, paket, kind: "zero", net: 0, hpp });
     else if (hpp == null || !Number.isFinite(hpp) || hpp < 0) findings.push({ index, nama, paket, kind: "unknown", net: effectiveNet.toNumber(), hpp: null });
+    else if (waived[index] === true && !paket && lineNet.lt(hpp)) {
+      // relaxed floor = the after-promo price itself: only a receipt-level reduction can go below it
+      if (effectiveNet.lt(lineNet)) findings.push({ index, nama, paket, kind: "below", net: effectiveNet.toNumber(), hpp, waived: true });
+      else findings.push({ index, nama, paket, kind: "below_waived", net: effectiveNet.toNumber(), hpp });
+    }
     else if (effectiveNet.lt(hpp)) findings.push({ index, nama, paket, kind: "below", net: effectiveNet.toNumber(), hpp });
   }
   return findings;
 }
 
 /** Total-level discounts, voucher and points are allocated by each line's share after item discounts. */
-export function cashierPriceFloorIssue(lines: CashierLine[], netTotal: number, fifoLineCosts: (number | null)[]): string | null {
+export function cashierPriceFloorIssue(lines: CashierLine[], netTotal: number, fifoLineCosts: (number | null)[], waived: readonly boolean[] = []): string | null {
   if (!Number.isFinite(netTotal) || netTotal < 0 || fifoLineCosts.length !== lines.length) return "Harga neto atau HPP aktif tidak dapat diverifikasi.";
-  const finding = priceFloorFindings(lines, netTotal, fifoLineCosts)[0];
+  const finding = priceFloorFindings(lines, netTotal, fifoLineCosts, waived).find((f) => f.kind !== "below_waived");
   if (!finding) return null;
   const { nama, paket, kind } = finding;
+  if (finding.waived) return `Promo di bawah modal pada ${nama} tidak bisa digabung dengan voucher, poin, atau diskon total. Hapus potongan itu atau pilih Tanpa promo.`;
   if (kind === "zero") return paket
     ? `Harga neto paket ${nama} nol; paket berisi barang Persediaan ditolak.`
     : `Harga neto ${nama} nol; penjualan Persediaan ditolak.`;
@@ -138,6 +151,13 @@ export function cashierPriceFloorDbMessage(message: string): string {
     ["Harga neto Persediaan nol; penjualan ditolak:",
       name => `Harga neto ${name} nol. Barang tidak boleh dijual gratis (jasa tetap boleh).`],
   ];
+  // P05 waiver hint appended by cashier_post_stock_atomic to the name of a below-HPP promo line
+  const waiverAt = message.indexOf("Harga neto Persediaan di bawah HPP FIFO; penjualan ditolak:");
+  if (waiverAt >= 0 && message.includes("(baris promo di bawah HPP:")) {
+    const afterPrefix = message.slice(waiverAt + "Harga neto Persediaan di bawah HPP FIFO; penjualan ditolak:".length).trim();
+    const nama = afterPrefix.slice(0, afterPrefix.indexOf("(baris promo di bawah HPP:")).trim().slice(0, 120) || "barang";
+    return `Promo di bawah modal pada ${nama} tidak bisa digabung dengan voucher, poin, diskon total, atau pembulatan ke bawah. Hapus potongan itu atau pilih Tanpa promo.`;
+  }
   for (const [prefix, text] of rules) {
     const at = message.indexOf(prefix);
     if (at < 0) continue;

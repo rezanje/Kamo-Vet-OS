@@ -9,7 +9,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseClinicPostingError, parseClinicRecordError, toClinicCompoundRecipeInput } from "@/lib/klinik-posting";
 import { loadUnitOptions, pickUnit } from "@/lib/satuan";
-import { FOLLOWUP_JENIS } from "@/lib/followup";
+import { bersihkanFollowUp, type FollowUpDraft } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
 import { resolveDokter } from "@/lib/dokter";
 import { pesanBeratTidakWajar } from "@/lib/anabul";
 import { validateClinicalCompletion } from "@/lib/clinic-required-fields";
@@ -25,7 +26,6 @@ type ResepItem = {
   sale_item_id?: string;
 };
 
-type FollowUpDraft = { jenis: string; tanggal: string; catatan: string };
 
 /** Muatan `p_compounds` satu racikan baru — bentuk yang sama untuk item susulan dan Edit
  * rekam medis (keduanya berakhir di clinic_add_record_items). */
@@ -80,11 +80,8 @@ function parseFollowUps(raw: FormDataEntryValue | null): FollowUpDraft[] {
   }
   if (!Array.isArray(parsed)) return [];
   return parsed.flatMap((r) => {
-    const row = r as Partial<FollowUpDraft>;
-    const tanggal = String(row?.tanggal ?? "");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) return [];
-    const jenis = FOLLOWUP_JENIS.includes(row?.jenis as never) ? String(row!.jenis) : "Lainnya";
-    return [{ jenis, tanggal, catatan: String(row?.catatan ?? "").trim() }];
+    const row = bersihkanFollowUp(r);
+    return row ? [row] : [];
   });
 }
 
@@ -503,4 +500,42 @@ export async function createReferral(formData: FormData) {
   });
   if (error) redirect(`/klinik/rekam-medis/${visitId}?error=${encodeURIComponent(error.message)}`);
   redirect(`/klinik/rekam-medis/${visitId}?success=referral${transactionDraftAck(formData)}`);
+}
+
+/**
+ * Follow up susulan dari halaman detail rekam medis (masukan Babibu, 5 Nov): dokter bisa
+ * menjadwalkan kontrol / vaksin berikutnya walau rekam medis sudah tersimpan atau tagihan
+ * sudah lunas. Hanya menambah pengingat — tagihan, stok, dan isi rekam medis tidak berubah.
+ * Akses cabang tetap dijaga RLS tabel follow_ups.
+ */
+export async function tambahFollowUpKunjungan(formData: FormData) {
+  const visitId = String(formData.get("visit_id") ?? "").trim();
+  const back = `/klinik/rekam-medis/${visitId}`;
+  const gagal = (pesan: string): never => redirect(`${back}?error=${encodeURIComponent(pesan)}`);
+  if (!visitId) redirect("/klinik/follow-up");
+  const row = bersihkanFollowUp({
+    jenis: formData.get("jenis"), tanggal: formData.get("tanggal"), catatan: formData.get("catatan"),
+  });
+  if (!row) gagal("Tanggal follow up belum diisi.");
+  if (row!.tanggal < hariIniWIB()) gagal("Tanggal follow up tidak boleh sebelum hari ini.");
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  const [{ data: visit, error: visitError }, { data: record }] = await Promise.all([
+    supabase.from("visits").select("id, pet_id, customer_id, branch_id, archived_at").eq("id", visitId).maybeSingle(),
+    supabase.from("medical_records").select("id").eq("visit_id", visitId)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  if (visitError || !visit) gagal("Kunjungan tidak ditemukan atau tidak dapat diakses.");
+  if (visit!.archived_at) gagal("Kunjungan ini diarsipkan — follow up tidak dapat ditambahkan.");
+
+  const { error } = await supabase.from("follow_ups").insert({
+    visit_id: visitId, medical_record_id: record?.id ?? null, pet_id: visit!.pet_id,
+    customer_id: visit!.customer_id, branch_id: visit!.branch_id,
+    jenis: row!.jenis, tanggal: row!.tanggal, catatan: row!.catatan || null, created_by: user.id,
+  });
+  if (error) gagal(`Follow up belum tersimpan: ${error.message}`);
+  revalidatePath("/klinik/follow-up");
+  redirect(`${back}?success=followup${transactionDraftAck(formData)}`);
 }

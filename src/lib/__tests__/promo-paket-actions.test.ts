@@ -13,7 +13,10 @@ const db = vi.hoisted(() => ({
   units: [] as Record<string, unknown>[],
   hpp: [] as Record<string, unknown>[],
   hppFails: false,
+  belowFlag: false as boolean | null,
+  flagError: null as null | { code?: string; message: string },
   writes: [] as string[],
+  reads: [] as string[],
 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`REDIRECT ${url}`); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -24,10 +27,12 @@ vi.mock("@/lib/supabase/server", () => ({
     rpc: async (name: string, args: Record<string, unknown>) => {
       db.rpc.push({ name, args });
       if (name === "read_promo_edit") return { data: db.snapshot, error: db.readError };
+      if (name === "promo_release_enabled") return { data: db.belowFlag, error: db.flagError };
       if (db.rpcError) return { data: null, error: db.rpcError };
       return { data: db.saveData, error: null };
     },
     from(table: string) {
+      db.reads.push(table);
       const q: Record<string, unknown> = {};
       for (const m of ["insert", "update", "delete", "upsert"]) q[m] = () => { db.writes.push(`${m} ${table}`); throw new Error(`direct write ${m} ${table}`); };
       q.select = () => q; q.in = () => q; q.eq = () => q; q.order = () => q; q.range = () => q;
@@ -60,7 +65,7 @@ const snapOf = (f: PaketForm, active = false) => {
 };
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-04T03:00:00Z"));
-  Object.assign(db, { user: { id: "u1" }, me: { role: "OWNER", is_active: true }, rpc: [], rpcError: null, readError: null, saveData: savedSnapshot(), snapshot: snapOf(form()), hpp: [], hppFails: false, writes: [] });
+  Object.assign(db, { user: { id: "u1" }, me: { role: "OWNER", is_active: true }, rpc: [], rpcError: null, readError: null, saveData: savedSnapshot(), snapshot: snapOf(form()), hpp: [], hppFails: false, belowFlag: false, flagError: null, writes: [], reads: [] });
   db.items = [{ id: IKAN, code: "B1", name: "Bolt Ikan", unit: "PCS", is_active: true, item_type: "Persediaan" }, { id: DONAT, code: "B2", name: "Bolt Donat", unit: "PCS", is_active: true, item_type: "Persediaan" }, { id: ANC, code: "A1", name: "ANC Creamy Stick", unit: "PCS", is_active: true, item_type: "Persediaan" }];
   db.units = [];
 });
@@ -74,7 +79,7 @@ describe("simpanPromoPaket", () => {
     expect(db.rpc[0].args).toMatchObject({ p_id: null, p_expected_version: null });
     const values = db.rpc[0].args.p_values as Record<string, unknown>;
     expect(Object.keys(values).sort()).toEqual(["below_hpp", "branch_ids", "hasil", "name", "repeat", "suggest", "syarat", "valid_from", "valid_until"]);
-    expect(values.suggest).toContain("ANC Creamy Stick potongan Rp1.000/unit");
+    expect(values.suggest).toContain("potongan Rp1.000 per PCS ANC Creamy Stick");
     expect(db.writes).toEqual([]);
   });
   it("edits with the stale-version token the page was opened with", async () => {
@@ -132,6 +137,41 @@ describe("simpanPromoPaket", () => {
   });
 });
 
+describe("simpanPromoPaket — units, size gate before master reads, UUID branches", () => {
+  it("the generated suggest text carries the unit chosen per item ('Beli 2 DUS Bolt Ikan', 'potongan Rp1.000 per PCS ANC Creamy Stick')", async () => {
+    db.units = [{ id: "u1", item_id: IKAN, unit: "DUS" }];
+    const f = form({ syarat: [{ kind: "qty", min: "2", items: [{ item_id: IKAN, unit: "DUS" }] }] });
+    expect((await actions.simpanPromoPaket({ id: null, version: null, form: f })).ok).toBe(true);
+    const suggest = (db.rpc[0].args.p_values as { suggest: string }).suggest;
+    expect(suggest).toContain("Beli 2 DUS Bolt Ikan");
+    expect(suggest).toContain("potongan Rp1.000 per PCS ANC Creamy Stick");
+  });
+  const refs = (n: number) => Array.from({ length: n }, (_, i) => ({ item_id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`, unit: "PCS" }));
+  it("an oversize payload (50 rows x 200 refs, 51 items in a row, 21 reward items) is refused with a friendly message BEFORE any master read or RPC", async () => {
+    const huge = form({ syarat: Array.from({ length: 50 }, () => ({ kind: "qty" as const, min: "1", items: refs(200) })) });
+    const r = await actions.simpanPromoPaket({ id: null, version: null, form: huge });
+    expect(r).toMatchObject({ ok: false, message: expect.stringContaining("Syarat promo maksimal 8 baris.") });
+    expect(db.reads.filter((t) => t !== "profiles")).toEqual([]);
+    for (const f of [form({ syarat: [{ kind: "qty", min: "1", items: refs(51) }] }), form({ hasil: { ...form().hasil, items: refs(21) } })]) {
+      expect(await actions.simpanPromoPaket({ id: null, version: null, form: f })).toMatchObject({ ok: false, message: expect.stringMatching(/maksimal (50|20) barang/) });
+    }
+    expect(db.reads.filter((t) => t !== "profiles")).toEqual([]);
+    expect(db.rpc).toEqual([]);
+  });
+  it("branch ids that are not UUIDs get a friendly Indonesian error: no raw cast error, no master read, no RPC", async () => {
+    const r = await actions.simpanPromoPaket({ id: null, version: null, form: form({ branchIds: ["not-a-uuid", "x'--"] }) });
+    expect(r).toMatchObject({ ok: false, message: expect.stringContaining("Cabang tidak valid") });
+    expect(r.ok === false && r.message).not.toMatch(/invalid input syntax|uuid/i);
+    expect(db.reads.filter((t) => t !== "profiles")).toEqual([]);
+    expect(db.rpc).toEqual([]);
+  });
+  it("an expired promo refused by the database on save/activation reads cleanly (no 'Gagal menyimpan promo:' prefix)", async () => {
+    db.rpcError = { code: "23514", message: 'KADALUARSA: Promo "x" berakhir 2026-10-13 dan sudah lewat. Perpanjang dulu tanggal "Berlaku s/d" sebelum diaktifkan kembali.' };
+    const r = await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true });
+    expect(r).toEqual({ ok: false, message: 'Promo "x" berakhir 2026-10-13 dan sudah lewat. Perpanjang dulu tanggal "Berlaku s/d" sebelum diaktifkan kembali.' });
+  });
+});
+
 describe("ubahStatusPromoPaket", () => {
   it("activates through set_promo_syarat_hasil_active with the version token", async () => {
     db.saveData = savedSnapshot(true, V2);
@@ -157,21 +197,62 @@ describe("ubahStatusPromoPaket", () => {
     expect(await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true })).toMatchObject({ ok: false });
     expect(db.rpc).toEqual([]);
   });
-  it("activation is refused when the estimated reward price is below HPP and there is no Owner waiver (never reaches the set RPC)", async () => {
-    db.hpp = [{ item_id: ANC, unit: "PCS", price: 15000, hpp: 14500, source: "lapisan" }];
-    const r = await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true });
-    expect(r).toMatchObject({ ok: false, message: expect.stringContaining("di bawah HPP") });
-    expect(r.ok === false && r.message).toContain("Rp500/unit");
-    expect(db.rpc.map((c) => c.name)).toEqual(["read_promo_edit"]);
+  const LAYER = { item_id: ANC, unit: "PCS", price: 15000, hpp: 14500, source: "lapisan" as const };
+  it("RELIABLE estimate (real retail stock-layer cost, branch price) below HPP and no Owner waiver: activation is BLOCKED before the set RPC (Andri 5.1)", async () => {
+    db.hpp = [LAYER];
+    for (const role of ["OWNER", "ADMIN"]) {
+      db.me = { role, is_active: true }; db.rpc = [];
+      const r = await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true });
+      expect(r).toMatchObject({ ok: false, message: expect.stringContaining("perkiraan di bawah modal") });
+      expect(r.ok === false && r.message).toContain("perlu izin Owner");
+      expect(r.ok === false && r.message).toContain("Rp500/unit");
+      expect(db.rpc.map((c) => c.name)).toEqual(["read_promo_edit", "promo_release_enabled"]);
+      expect(db.rpc[1].args).toEqual({ p_flag: "below_hpp" });
+    }
   });
-  it("…but proceeds with the waiver, with unknown HPP, or when the price stays above HPP", async () => {
+  const BELUM = "Izin di bawah modal belum tersedia (fitur belum dirilis). Naikkan harga/diskon hadiah di atas modal, atau tunggu fitur dirilis.";
+  it("hard block while the below_hpp flag is OFF (or unreadable): tells the truth — no 'ask the Owner to tick' instruction", async () => {
+    db.hpp = [LAYER];
+    for (const off of [() => { db.belowFlag = false; }, () => { db.belowFlag = null; db.flagError = { code: "42883", message: "function does not exist" }; }]) {
+      off();
+      const r = await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true });
+      expect(r.ok === false && r.message).toContain(BELUM);
+      expect(r.ok === false && r.message).not.toMatch(/mencentang|Minta Owner/);
+    }
+  });
+  it("hard block while the flag is ON: the Owner waiver instruction is kept", async () => {
+    db.hpp = [LAYER]; db.belowFlag = true;
+    const r = await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true });
+    expect(r.ok === false && r.message).toContain("Minta Owner mencentang izin penjualan di bawah HPP");
+    expect(r.ok === false && r.message).not.toContain("belum tersedia");
+  });
+  it("FALLBACK estimate (master buy price, no stock layer) below HPP is only a warning: activation proceeds with the warning, for OWNER and ADMIN", async () => {
+    db.hpp = [{ ...LAYER, source: "harga_beli" as never }];
+    db.saveData = savedSnapshot(true, V2);
+    for (const role of ["OWNER", "ADMIN"]) {
+      db.me = { role, is_active: true }; db.rpc = [];
+      const r = await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true });
+      expect(r).toMatchObject({ ok: true, id: PID, version: V2, active: true, warning: expect.stringContaining("perkiraan di bawah modal") });
+      expect(r.ok && r.warning).toContain("perlu izin Owner");
+      expect(r.ok && r.warning).toContain("kasir bisa menolak penjualan barang hadiah");
+      expect(r.ok && r.warning).not.toContain("sampai Owner mencentang");
+      expect(db.rpc.map((c) => c.name)).toEqual(["read_promo_edit", "set_promo_syarat_hasil_active"]);
+    }
+  });
+  it("no warning with the waiver, with unknown HPP, or when the price stays above HPP", async () => {
+    db.saveData = savedSnapshot(true, V2);
     db.hpp = [{ item_id: ANC, unit: "PCS", price: 15000, hpp: 14500, source: "lapisan" }];
     db.snapshot = snapOf(form({ belowHpp: { allowed: true, reason: "barang reject sisa gudang" } }));
-    expect(await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true })).toMatchObject({ ok: true });
+    expect(await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true })).toEqual({ ok: true, id: PID, version: V2, active: true });
     db.snapshot = snapOf(form()); db.hpp = [{ item_id: ANC, unit: "PCS", price: 15000, hpp: null, source: null }];
-    expect(await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true })).toMatchObject({ ok: true });
+    expect(await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true })).toEqual({ ok: true, id: PID, version: V2, active: true });
     db.hpp = [{ item_id: ANC, unit: "PCS", price: 20000, hpp: 14500, source: "lapisan" }];
-    expect(await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true })).toMatchObject({ ok: true });
+    expect(await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true })).toEqual({ ok: true, id: PID, version: V2, active: true });
+  });
+  it("several branch rows: the message names the worst case", async () => {
+    db.hpp = [{ item_id: ANC, unit: "PCS", price: 15000, hpp: 14500, source: "lapisan", branch_ids: ["a"] }, { item_id: ANC, unit: "PCS", price: 15000, hpp: 15900, source: "lapisan", branch_ids: ["b"] }];
+    const r = await actions.ubahStatusPromoPaket({ id: PID, version: V1, active: true });
+    expect(r.ok === false && r.message).toContain("Rp1.900/unit");
   });
   it("an unreadable HPP never silently allows nor crashes: activation continues to the database, which stays the authority", async () => {
     db.hppFails = true;
@@ -188,6 +269,17 @@ describe("ubahStatusPaketDariDaftar (list button) — Edit/Aktifkan/Nonaktifkan 
     expect(db.rpc[1].args).toEqual({ p_id: PID, p_expected_version: V1, p_active: true });
     db.rpc = []; db.snapshot = snapOf(form(), true);
     expect(await go({ id: PID, active: "0", was: "1" })).toBe("REDIRECT /crm/promo?success=paket-nonaktif");
+  });
+  it("reliable below-HPP estimate from the list: refused with the message in the redirect, set RPC never called", async () => {
+    db.hpp = [{ item_id: ANC, unit: "PCS", price: 15000, hpp: 14500, source: "lapisan" }];
+    expect(decodeURIComponent(await go({ id: PID, active: "1", was: "0" }))).toContain("perkiraan di bawah modal");
+    expect(db.rpc.map((c) => c.name)).not.toContain("set_promo_syarat_hasil_active");
+    expect(decodeURIComponent(await go({ id: PID, active: "1", was: "0" }))).toContain("belum tersedia");
+  });
+  it("fallback below-HPP estimate from the list: activation succeeds, redirecting with the warning variant of the success marker", async () => {
+    db.hpp = [{ item_id: ANC, unit: "PCS", price: 15000, hpp: 14500, source: "harga_beli" }];
+    expect(await go({ id: PID, active: "1", was: "0" })).toBe("REDIRECT /crm/promo?success=paket-aktif-peringatan");
+    expect(db.rpc.map((c) => c.name)).toEqual(["read_promo_edit", "set_promo_syarat_hasil_active"]);
   });
   it("the state the list showed no longer matches → refused with a readable message", async () => {
     db.snapshot = snapOf(form(), true);
@@ -210,6 +302,75 @@ describe("ubahStatusPaketDariDaftar (list button) — Edit/Aktifkan/Nonaktifkan 
   });
 });
 
+describe("salinPromoPaket / salinPromoPaketDariDaftar — 'Salin promo' (Andri 5.2)", () => {
+  const withWaiver = () => snapOf(form({ name: "Beli 2 Bolt", branchIds: [], validUntil: "2026-11-30", belowHpp: { allowed: true, reason: "barang reject sisa gudang" } }), true);
+  it("creates a NEW inactive draft through save_promo_syarat_hasil with p_id null: 'Salinan dari <nama>', same syarat/hasil/branches, waiver NOT copied, dates restarted; works for an ACTIVE source", async () => {
+    db.snapshot = withWaiver();
+    const r = await actions.salinPromoPaket({ id: PID });
+    expect(r).toEqual({ ok: true, id: PID, version: V2, active: false });
+    expect(db.rpc.map((c) => c.name)).toEqual(["read_promo_edit", "save_promo_syarat_hasil"]);
+    expect(db.rpc[1].args).toMatchObject({ p_id: null, p_expected_version: null });
+    const v = db.rpc[1].args.p_values as Record<string, unknown>;
+    expect(Object.keys(v).sort()).toEqual(["below_hpp", "branch_ids", "hasil", "name", "repeat", "suggest", "syarat", "valid_from", "valid_until"]);
+    expect(v.name).toBe("Salinan dari Beli 2 Bolt");
+    expect(v.below_hpp).toEqual({ allowed: false });
+    expect(v.valid_from).toBe("2026-11-04");
+    expect(v.valid_until).toBeNull();
+    expect(v.syarat).toEqual(paketValuesFromForm(form(), "x").syarat);
+    expect(v.hasil).toEqual(paketValuesFromForm(form(), "x").hasil);
+    expect(v.suggest).toContain("potongan Rp1.000 per PCS ANC Creamy Stick");
+    expect(db.writes).toEqual([]);
+  });
+  it("copying a copy never builds a 'Salinan dari Salinan dari …' chain", async () => {
+    for (const name of ["Salinan dari Beli 2 Bolt", "Salinan dari Salinan dari Beli 2 Bolt"]) {
+      db.rpc = []; db.snapshot = snapOf(form({ name }));
+      expect((await actions.salinPromoPaket({ id: PID })).ok).toBe(true);
+      expect((db.rpc[1].args.p_values as { name: string }).name).toBe("Salinan dari Beli 2 Bolt");
+    }
+    db.rpc = []; db.snapshot = snapOf(form({ name: "Salinan dari " }));
+    await actions.salinPromoPaket({ id: PID });
+    expect((db.rpc[1].args.p_values as { name: string }).name).toBe("Salinan dari Salinan dari");
+  });
+  it("old dates of the source (even an already-expired end date) are never carried over to the copy", async () => {
+    const snap = snapOf(form()) as { promo: Record<string, unknown> };
+    snap.promo.valid_from = "2026-10-01"; snap.promo.valid_until = "2026-10-15";
+    db.snapshot = snap;
+    expect((await actions.salinPromoPaket({ id: PID })).ok).toBe(true);
+    expect(db.rpc[1].args.p_values).toMatchObject({ valid_from: "2026-11-04", valid_until: null });
+  });
+  it("a long source name is cut so the copy name stays within 120 characters", async () => {
+    db.snapshot = snapOf(form({ name: "N".repeat(120) }));
+    await actions.salinPromoPaket({ id: PID });
+    expect(((db.rpc[1].args.p_values as { name: string }).name).length).toBeLessThanOrEqual(120);
+    expect((db.rpc[1].args.p_values as { name: string }).name.startsWith("Salinan dari ")).toBe(true);
+  });
+  it("OWNER and ADMIN only; STAFF/anonymous/bad id are refused before any read; legacy promos and unreadable promos give a friendly message and never save", async () => {
+    db.me = { role: "STAFF", is_active: true };
+    expect(await actions.salinPromoPaket({ id: PID })).toMatchObject({ ok: false, message: "Hanya Owner/Admin aktif yang bisa mengatur promo." });
+    db.me = { role: "ADMIN", is_active: true };
+    expect(await actions.salinPromoPaket({ id: "nope" })).toMatchObject({ ok: false });
+    expect(db.rpc).toEqual([]);
+    expect(await actions.salinPromoPaket({ id: PID })).toMatchObject({ ok: true });
+    db.rpc = []; db.snapshot = { version: V1, item_ids: [], promo: { id: PID, name: "Lama", is_active: false, rule: { suggest: "x" }, branch_ids: [] } };
+    expect(await actions.salinPromoPaket({ id: PID })).toMatchObject({ ok: false, message: expect.stringContaining("bukan promo paket") });
+    db.rpc = []; db.readError = { code: "42501", message: "Promo tidak ditemukan atau tidak dapat diakses" };
+    expect(await actions.salinPromoPaket({ id: PID })).toMatchObject({ ok: false, message: expect.stringContaining("Promo tidak ditemukan") });
+    expect(db.rpc.map((c) => c.name)).toEqual(["read_promo_edit"]);
+  });
+  it("a source whose item became inactive cannot be copied silently: the validator's Indonesian message, no save", async () => {
+    db.snapshot = snapOf(form()); db.items[2].is_active = false;
+    expect(await actions.salinPromoPaket({ id: PID })).toMatchObject({ ok: false, message: expect.stringContaining("tidak aktif") });
+    expect(db.rpc.map((c) => c.name)).toEqual(["read_promo_edit"]);
+  });
+  it("the list button redirects to the new draft's editor; failures redirect back with the message", async () => {
+    db.snapshot = snapOf(form());
+    const f = new FormData(); f.set("id", PID);
+    await expect(actions.salinPromoPaketDariDaftar(f)).rejects.toThrow(`REDIRECT /crm/promo/paket/${PID}?salinan=1`);
+    db.me = { role: "STAFF", is_active: true };
+    await expect(actions.salinPromoPaketDariDaftar(f)).rejects.toThrow(/REDIRECT \/crm\/promo\?error=/);
+  });
+});
+
 describe("taksirHppPaket", () => {
   it("is behind the same gate and returns the rows (read-only)", async () => {
     db.hpp = [{ item_id: ANC, unit: "PCS", price: 15000, hpp: 14500, source: "lapisan" }];
@@ -219,11 +380,16 @@ describe("taksirHppPaket", () => {
     db.me = { role: "ADMIN", is_active: true };
     expect(await actions.taksirHppPaket("nope", [])).toMatchObject({ ok: false });
   });
+  it("refuses oversize / non-UUID branch id lists before reading anything", async () => {
+    const many = Array.from({ length: 201 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+    expect(await actions.taksirHppPaket([{ item_id: ANC, unit: "PCS" }], many)).toMatchObject({ ok: false });
+    expect(await actions.taksirHppPaket([{ item_id: ANC, unit: "PCS" }], ["nope"])).toMatchObject({ ok: false });
+  });
 });
 
 describe("no delete (deactivate only)", () => {
   it("the actions module exports no delete/remove capability and the source never deletes", () => {
-    expect(Object.keys(actions).sort()).toEqual(["simpanPromoPaket", "taksirHppPaket", "ubahStatusPaketDariDaftar", "ubahStatusPromoPaket"]);
+    expect(Object.keys(actions).sort()).toEqual(["salinPromoPaket", "salinPromoPaketDariDaftar", "simpanPromoPaket", "taksirHppPaket", "ubahStatusPaketDariDaftar", "ubahStatusPromoPaket"]);
     const src = readFileSync("src/app/(app)/crm/promo/paket/actions.ts", "utf8");
     expect(src).not.toMatch(/\.delete\(/);
     expect(src).not.toMatch(/\.(insert|update|upsert)\(/);

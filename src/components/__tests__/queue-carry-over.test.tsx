@@ -185,3 +185,15 @@ it("still fails the whole screen when today's own reads fail", async () => {
   expect(html).not.toContain("TOTAL ANTRIAN");
   expect(html).not.toContain("private DB detail");
 });
+
+it("shows wait and service time as whole minutes, not raw decimals", async () => {
+  // Anisa (TKI), 4 Nov: layar menampilkan "Tunggu 6.916766666667 mnt · Layanan 25.67845 mnt".
+  s.rows = [visit("cheetoz", "Pembayaran", "2026-11-01T04:24:46Z", {
+    checked_in_at: "2026-11-01T04:24:46.000Z",
+    service_started_at: "2026-11-01T04:31:41.006Z",
+    service_finished_at: "2026-11-01T04:57:21.713Z",
+  })];
+  const html = await render();
+  expect(html).toContain("Tunggu 7 mnt · Layanan 26 mnt");
+  expect(html).not.toMatch(/\d\.\d+ mnt/);
+});

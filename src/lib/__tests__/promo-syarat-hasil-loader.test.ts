@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadPromoAktif } from "../promo-hitung";
-import { loadSyaratHasilKasir, pesanPromoSyaratHasil, SYARAT_HASIL_OFF } from "../promo-syarat-hasil-checkout";
+import { loadSyaratHasilKasir, loadSyaratHasilPerCabang, pesanPromoSyaratHasil, SYARAT_HASIL_OFF } from "../promo-syarat-hasil-checkout";
 
 type Row = Record<string, unknown>;
 const legacy = (id: string, extra: Row = {}) => ({ id, name: id, rule: {}, branch_ids: null, valid_from: null, valid_until: null, is_active: true, auto_apply: true, min_qty: null, max_qty: null, kelipatan: false, discount_type: "nominal", discount_value: 2000, ...extra });
@@ -69,7 +69,7 @@ describe("loadSyaratHasilKasir", () => {
     expect(await loadSyaratHasilKasir(db, "own")).toEqual(SYARAT_HASIL_OFF);
     expect(db.log.rpc).toEqual(["promo_release_enabled:syarat_hasil"]);
   });
-  it("released: definitions + the picker / below-HPP flags; branch and date filters apply; stage 3 never plans a waiver", async () => {
+  it("released: definitions + the picker / below-HPP flags; branch and date filters apply; the Owner waiver is planned only with the below_hpp flag released", async () => {
     const waiver = rule({ below_hpp: { allowed: true, reason: "barang mendekati expired", ack_by: "u", ack_at: "t" } });
     const db = database([
       sh("b-own"), sh("a-foreign", { branch_ids: ["other"] }), sh("c-future", { valid_from: "2999-01-01" }), sh("d-expired", { valid_until: "2000-01-01" }),
@@ -78,7 +78,9 @@ describe("loadSyaratHasilKasir", () => {
     const r = await loadSyaratHasilKasir(db, "own");
     expect(r).toMatchObject({ released: true, pickerReleased: true, belowHppReleased: true });
     expect(r.defs.map((d) => d.id)).toEqual(["b-own", "e-waiver"]);
-    expect(r.defs.every((d) => d.allow_below_hpp === false)).toBe(true);
+    expect(r.defs.map((d) => d.allow_below_hpp)).toEqual([false, true]);
+    const off = await loadSyaratHasilKasir(database([sh("e-waiver", { rule: waiver })], { syarat_hasil: true, promo_picker: true, below_hpp: false }), "own");
+    expect(off.defs.map((d) => d.allow_below_hpp)).toEqual([false]); // flag OFF: a saved waiver is never planned
     expect(r.defs[0]).toMatchObject({ name: "SH b-own", repeat: true, hasil: { items: [{ item_id: "anc", unit: "PCS" }], discount: { type: "nominal", value: 1000 } } });
   });
   it("flag RPC missing (code 42883 / PGRST202) = OFF; any other RPC failure is thrown (fail closed)", async () => {
@@ -99,5 +101,23 @@ describe("pesanPromoSyaratHasil", () => {
     expect(pesanPromoSyaratHasil("PROMO_SH_NILAI: x")).not.toContain("PROMO_SH");
     expect(pesanPromoSyaratHasil("Harga neto Persediaan di bawah HPP FIFO")).toBeNull();
     expect(pesanPromoSyaratHasil(undefined)).toBeNull();
+  });
+});
+
+describe("loadSyaratHasilPerCabang (back-office display, stage 4)", () => {
+  it("no active syarat_hasil promo: undefined (the screen stays the legacy one) and no flag RPC", async () => {
+    const db = database([legacy("a")], { syarat_hasil: true });
+    expect(await loadSyaratHasilPerCabang(db, ["own", "other"])).toBeUndefined();
+    expect(db.log.rpc).toEqual([]);
+  });
+  it("released: only branches that have definitions are present, branch filters apply", async () => {
+    const db = database([sh("x", { branch_ids: ["own"] })], { syarat_hasil: true, promo_picker: false, below_hpp: false });
+    const r = await loadSyaratHasilPerCabang(db, ["own", "other"]);
+    expect(Object.keys(r ?? {})).toEqual(["own"]);
+    expect(r?.own.map((d) => d.id)).toEqual(["x"]);
+  });
+  it("a failing flag read only hides the preview (the server checkout stays authoritative and fails closed itself)", async () => {
+    const db = database([sh("x")], { syarat_hasil: new Error("XX000") });
+    expect(await loadSyaratHasilPerCabang(db, ["own"])).toBeUndefined();
   });
 });

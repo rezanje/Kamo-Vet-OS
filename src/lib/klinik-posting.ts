@@ -140,7 +140,8 @@ export function parseClinicPostingError(error: { code?: string; message: string 
     if(error.message.startsWith('CARE_INVALID:'))return error.message.slice('CARE_INVALID:'.length).trim();
     if (error.message.startsWith("RECIPE_REQUIRED:")) return recipeRequiredMessage(error.message);
     // P03: database names the line/package, its net price and HPP; the text is already for the cashier.
-    const priceFloor = /^(PRICE_ZERO|PRICE_BELOW_HPP):\s*([^\r\n]{1,300})/.exec(error.message);
+    // The text may list several rows, one per line (see price-floor-message.ts): keep the line breaks.
+    const priceFloor = /^(PRICE_ZERO|PRICE_BELOW_HPP):\s*([\s\S]{1,6000})/.exec(error.message);
     if (priceFloor) return `Penjualan ditolak. ${priceFloor[2].trim()}`;
     // BMHP posting (clinic_private.bmhp_issue) names the material, the clinic warehouse stock, the quantity the
     // doctor recorded and why the cost could not be formed, so the cashier knows what to fix instead of retrying.

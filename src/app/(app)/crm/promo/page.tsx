@@ -99,7 +99,8 @@ export default async function PromoAdminPage({
       </div>
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
-      {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : success === "paket-aktif" ? "Promo paket diaktifkan." : success === "paket-nonaktif" ? "Promo paket dinonaktifkan." : "Promo baru dibuat."}</div>}
+      {success === "paket-aktif-peringatan" && <div className="p2ban" role="status" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}><i className="ti ti-alert-triangle" /> Promo paket diaktifkan. Peringatan: perkiraan harga hasil di bawah modal (HPP, dari harga beli master); kasir bisa menolak penjualan barang hadiah sampai harga/diskon hadiah dinaikkan di atas modal.</div>}
+      {success && success !== "paket-aktif-peringatan" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : success === "paket-aktif" ? "Promo paket diaktifkan." : success === "paket-nonaktif" ? "Promo paket dinonaktifkan." : "Promo baru dibuat."}</div>}
 
       {canEdit&&<div style={{marginBottom:12}}><Link className="btn-def" href="/crm/promo/impor"><i className="ti ti-file-import" /> Impor promo dari Excel</Link></div>}
 

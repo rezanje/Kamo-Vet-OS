@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { branchDisplayName } from "./branch-display";
+import { branchDisplayName, uniqueOptionLabels } from "./branch-display";
 
 const catalog = [
   { code: "CIAW", name: "Kamo Petshop Ciawi", type: "PETSHOP" },
@@ -29,5 +29,24 @@ describe("branchDisplayName", () => {
       .toBe("Gerlong · Vet");
     expect(branchDisplayName({ code: "MIXED", name: "Mixed outlet", type: "BOTH" }, catalog))
       .toBe("Mixed outlet · Vet");
+  });
+});
+
+describe("uniqueOptionLabels", () => {
+  it("shows plain names without internal ID fragments", () => {
+    const labels = uniqueOptionLabels([
+      { id: "2828890b-aaaa-bbbb-cccc-000000000001", name: "B2C" },
+      { id: "78d6e24f-aaaa-bbbb-cccc-000000000002", name: "Kamo Pets Clinic Ciawi" },
+    ], row => row.name);
+    expect([...labels.values()]).toEqual(["B2C", "Kamo Pets Clinic Ciawi"]);
+  });
+
+  it("numbers duplicate names so they stay distinguishable", () => {
+    const labels = uniqueOptionLabels([
+      { id: "a", name: "Gudang" }, { id: "b", name: "Toko" }, { id: "c", name: "Gudang" },
+    ], row => row.name);
+    expect(labels.get("a")).toBe("Gudang");
+    expect(labels.get("b")).toBe("Toko");
+    expect(labels.get("c")).toBe("Gudang (2)");
   });
 });

@@ -26,12 +26,44 @@ export const PAKET_MAX_SUGGEST = 200;
 
 export const rp = (n: number) => "Rp" + Math.round(n).toLocaleString("id-ID");
 
-/** Bilangan bulat tak negatif dari isian: "2", "100.000" (titik ribuan). Desimal, minus, huruf, eksponen → null. */
-export function parseBulat(raw: unknown): number | null {
+/**
+ * Angka dari isian, dibaca TANPA salah tafsir (id-ID: titik = ribuan, koma = desimal; en: titik = desimal, koma = ribuan).
+ *  "1.000" → 1000 · "1,5" → 1.5 · "1.000,50" → 1000.5 · "1,000.50" → 1000.5 · "0.001" → 0.001 · "0.500" → 0.5.
+ * Satu-satunya bentuk yang TIDAK bisa dibedakan, "1,000" (1 atau 1000?), ditolak (null) daripada ditebak; lihat angkaAmbigu.
+ * Huruf, minus, eksponen, spasi di dalam angka, angka nol di depan ("00.100"), pengelompokan ribuan yang salah → null.
+ */
+type AngkaBaca = { value: number; desimal: boolean } | null | "ambigu";
+const GRUP_TITIK = /^[1-9]\d{0,2}(\.\d{3})+$/, GRUP_KOMA = /^[1-9]\d{0,2}(,\d{3})+$/;
+function bacaAngka(raw: unknown): AngkaBaca {
   const s = String(raw ?? "").trim();
-  if (!/^(\d+|\d{1,3}(\.\d{3})+)$/.test(s)) return null;
-  const n = Number(s.replace(/\./g, ""));
-  return Number.isSafeInteger(n) ? n : null;
+  if (!s || !/^[\d.,]+$/.test(s)) return null;
+  const hasDot = s.includes("."), hasComma = s.includes(",");
+  const ok = (text: string, desimal: boolean): AngkaBaca => { const n = Number(text); return Number.isFinite(n) && n <= Number.MAX_SAFE_INTEGER ? { value: n, desimal } : null; };
+  const INT = /^(0|[1-9]\d*)$/, FRAC = /^\d+$/;
+  if (!hasDot && !hasComma) return /^\d+$/.test(s) ? ok(s, false) : null;
+  if (hasDot && hasComma) {
+    const dec = s.lastIndexOf(".") > s.lastIndexOf(",") ? "." : ",", grp = dec === "." ? "," : ".";
+    const parts = s.split(dec);
+    if (parts.length !== 2 || !FRAC.test(parts[1]) || parts[0].includes(dec)) return null;
+    if (!(grp === "." ? GRUP_TITIK : GRUP_KOMA).test(parts[0])) return null;
+    return ok(`${parts[0].split(grp).join("")}.${parts[1]}`, true);
+  }
+  const sep = hasDot ? "." : ",", parts = s.split(sep);
+  if (parts.length > 2) return (sep === "." ? GRUP_TITIK : GRUP_KOMA).test(s) ? ok(s.split(sep).join(""), false) : null;
+  const [a, b] = parts;
+  if (!INT.test(a) || !FRAC.test(b)) return null;
+  const kelompokRibuan = a !== "0" && a.length <= 3 && b.length === 3;
+  if (sep === "." && kelompokRibuan) return ok(`${a}${b}`, false); // id-ID: "1.000" = seribu
+  if (sep === "," && kelompokRibuan) return "ambigu";
+  return ok(`${a}.${b}`, true);
+}
+export function parseAngka(raw: unknown): number | null { const r = bacaAngka(raw); return r === null || r === "ambigu" ? null : r.value; }
+/** "1,000" / "2,500": bisa dibaca 1 atau 1000 — ditolak dengan penjelasan, tidak ditebak. */
+export function angkaAmbigu(raw: unknown): boolean { return bacaAngka(raw) === "ambigu"; }
+/** Bilangan bulat tak negatif dari isian: "2", "100.000" (titik ribuan). Bentuk desimal ("0.5", "1,5", "1.00"), minus, huruf, eksponen, ambigu → null. */
+export function parseBulat(raw: unknown): number | null {
+  const r = bacaAngka(raw);
+  return r === null || r === "ambigu" || r.desimal || !Number.isSafeInteger(r.value) ? null : r.value;
 }
 const inRange = (n: number | null, lo: number, hi: number): n is number => n !== null && n >= lo && n <= hi;
 const validDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s;
@@ -149,6 +181,9 @@ function itemIssues(refs: PaketItemRef[], label: string, field: string, max: num
   if (missing) out.push({ field, message: `${label}: ada barang yang tidak tersedia. Lepaskan lalu pilih ulang.` });
 }
 
+/** Petunjuk tambahan bila isian memakai pemisah yang bisa dibaca dua arti. */
+const ambigu = (raw: string) => (angkaAmbigu(raw) ? ` "${raw.trim()}" bisa dibaca 1 atau 1000 (ambigu): tulis 1000 atau 1.000.` : "");
+
 export function validatePaketForm(f: PaketForm, ctx: PaketValidateContext): PaketIssue[] {
   const out: PaketIssue[] = [];
   const name = f.name.trim();
@@ -168,17 +203,17 @@ export function validatePaketForm(f: PaketForm, ctx: PaketValidateContext): Pake
   f.syarat.forEach((r, i) => {
     const field = `syarat.${i}`, label = `Syarat ${i + 1}`;
     if (r.kind === "qty") {
-      if (!inRange(parseBulat(r.min), 1, SH_MAX_QTY_MIN)) out.push({ field, message: `${label}: kuantitas minimum harus bilangan bulat 1–99.999.` });
+      if (!inRange(parseBulat(r.min), 1, SH_MAX_QTY_MIN)) out.push({ field, message: `${label}: kuantitas minimum harus bilangan bulat 1–99.999.${ambigu(r.min)}` });
       itemIssues(r.items, label, field, SH_MAX_ROW_ITEMS, ctx.items, out);
-    } else if (!inRange(parseBulat(r.min), 1, SH_MAX_MONEY)) out.push({ field, message: `${label}: nilai minimum harus bilangan bulat 1–99.999.999 (Rp).` });
+    } else if (!inRange(parseBulat(r.min), 1, SH_MAX_MONEY)) out.push({ field, message: `${label}: nilai minimum harus bilangan bulat 1–99.999.999 (Rp).${ambigu(r.min)}` });
   });
 
   itemIssues(f.hasil.items, "Hasil", "hasil", SH_MAX_HASIL_ITEMS, ctx.items, out);
-  if (!inRange(parseBulat(f.hasil.rewardQty), 1, SH_MAX_REWARD_QTY)) out.push({ field: "hasil", message: "Hasil: jumlah barang hasil per kelipatan harus bilangan bulat 1–999." });
+  if (!inRange(parseBulat(f.hasil.rewardQty), 1, SH_MAX_REWARD_QTY)) out.push({ field: "hasil", message: `Hasil: jumlah barang hasil per kelipatan harus bilangan bulat 1–999.${ambigu(f.hasil.rewardQty)}` });
   if (f.hasil.discountType === "nominal") {
-    if (!inRange(parseBulat(f.hasil.value), 1, SH_MAX_MONEY)) out.push({ field: "hasil", message: "Hasil: potongan nominal harus bilangan bulat Rp1–99.999.999." });
+    if (!inRange(parseBulat(f.hasil.value), 1, SH_MAX_MONEY)) out.push({ field: "hasil", message: `Hasil: potongan nominal harus bilangan bulat Rp1–99.999.999.${ambigu(f.hasil.value)}` });
   } else {
-    if (!inRange(parseBulat(f.hasil.value), 1, 100)) out.push({ field: "hasil", message: "Hasil: potongan persen harus bilangan bulat 1–100." });
+    if (!inRange(parseBulat(f.hasil.value), 1, 100)) out.push({ field: "hasil", message: `Hasil: potongan persen harus bilangan bulat 1–100.${ambigu(f.hasil.value)}` });
     if (f.hasil.maxAmount.trim() && !inRange(parseBulat(f.hasil.maxAmount), 1, SH_MAX_MONEY)) out.push({ field: "hasil", message: "Hasil: maksimum diskon harus bilangan bulat Rp1–99.999.999 (atau kosongkan)." });
   }
 
@@ -199,20 +234,44 @@ export function validatePaketForm(f: PaketForm, ctx: PaketValidateContext): Pake
   return out;
 }
 
+/**
+ * Pagar murah yang HARUS jalan sebelum pembacaan master barang/cabang: ukuran daftar (batas yang sama dengan database) dan
+ * bentuk id cabang (UUID), supaya payload raksasa/palsu ditolak dengan pesan Indonesia tanpa satu pun query.
+ */
+export function cekUkuranPaket(f: Pick<PaketForm, "branchIds" | "syarat" | "hasil">): PaketIssue[] {
+  const out: PaketIssue[] = [];
+  if (f.syarat.length > SH_MAX_SYARAT_ROWS) out.push({ field: "syarat", message: `Syarat promo maksimal ${SH_MAX_SYARAT_ROWS} baris.` });
+  f.syarat.forEach((r, i) => { if (r.kind === "qty" && r.items.length > SH_MAX_ROW_ITEMS) out.push({ field: `syarat.${i}`, message: `Syarat ${i + 1}: maksimal ${SH_MAX_ROW_ITEMS} barang.` }); });
+  if (f.hasil.items.length > SH_MAX_HASIL_ITEMS) out.push({ field: "hasil", message: `Hasil: maksimal ${SH_MAX_HASIL_ITEMS} barang.` });
+  if (f.branchIds.some((b) => !UUID.test(b))) out.push({ field: "cabang", message: "Cabang tidak valid. Muat ulang halaman lalu pilih cabang lagi." });
+  return out;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Kalimat pratinjau
 // ---------------------------------------------------------------------------------------------
-const kumpulan = (refs: PaketItemRef[], nameOf: (id: string) => string) => {
-  const names = refs.map((r) => nameOf(r.item_id));
+const satuanUnik = (refs: PaketItemRef[]) => [...new Set(refs.map((r) => r.unit))].sort();
+/** Nama barang; satuan ikut ditulis per barang hanya bila kelompok bercampur satuan (satuan tunggal ditulis sekali di kalimat). */
+const kumpulan = (refs: PaketItemRef[], nameOf: (id: string) => string, denganSatuan = false) => {
+  const names = refs.map((r) => (denganSatuan ? `${nameOf(r.item_id)} (${r.unit})` : nameOf(r.item_id)));
   return names.length <= 3 ? names.join(" / ") : `${names.slice(0, 2).join(" / ")} +${names.length - 2} varian`;
+};
+/** Keterangan campuran: varian banyak dan/atau satuan berbeda. Daftar satuan disebut bila nama yang tampil terpotong. */
+const campuran = (refs: PaketItemRef[], opts: { varian: boolean }) => {
+  const units = satuanUnik(refs), parts: string[] = [];
+  if (opts.varian && refs.length > 1) parts.push("campur varian");
+  if (units.length > 1) parts.push(refs.length > 3 ? `campur satuan: ${units.join(", ")}` : "campur satuan");
+  return parts.length ? ` (${parts.join(", ")})` : "";
 };
 
 export function ringkasPaket(f: Pick<PaketForm, "repeat" | "syarat" | "hasil">, nameOf: (id: string) => string): string {
   if (f.syarat.length === 0) return "Promo belum lengkap: isi syarat.";
   const pieces = f.syarat.map((r) => {
     if (r.kind === "nilai") { const m = parseBulat(r.min); return `belanja minimal ${m === null ? "Rp…" : rp(m)}`; }
-    const m = parseBulat(r.min);
-    return `beli ${m === null ? "…" : m} ${r.items.length ? kumpulan(r.items, nameOf) : "(barang belum dipilih)"}${r.items.length > 1 ? " (campur varian)" : ""}`;
+    const m = parseBulat(r.min), jumlah = m === null ? "…" : String(m);
+    if (r.items.length === 0) return `beli ${jumlah} (barang belum dipilih)`;
+    const satu = satuanUnik(r.items).length === 1;
+    return `beli ${jumlah} ${satu ? r.items[0].unit : "unit"} ${kumpulan(r.items, nameOf, !satu)}${campuran(r.items, { varian: true })}`;
   });
   const syarat = pieces.join(" DAN ");
   const head = `${syarat.charAt(0).toUpperCase()}${syarat.slice(1)}`;
@@ -222,12 +281,14 @@ export function ringkasPaket(f: Pick<PaketForm, "repeat" | "syarat" | "hasil">, 
   if (!inRange(value, 1, f.hasil.discountType === "percent" ? 100 : SH_MAX_MONEY)) missing.push("isi potongan");
   if (missing.length) return `${head} → (promo belum lengkap: ${missing.join(", ")})`;
   const cap = parseBulat(f.hasil.maxAmount);
-  const diskon = f.hasil.discountType === "percent"
-    ? `potongan ${value}%${cap ? ` (maks. ${rp(cap)}/unit)` : ""}`
-    : `potongan ${rp(value as number)}/unit`;
+  const satu = satuanUnik(f.hasil.items).length === 1, U = satu ? f.hasil.items[0].unit : "unit";
+  const diskon = f.hasil.discountType === "percent" ? `potongan ${value}% per ${U}` : `potongan ${rp(value as number)} per ${U}`;
   const rq = parseBulat(f.hasil.rewardQty);
-  const tail = [rq && rq > 1 ? `maks. ${rq} unit per kelipatan` : null, f.repeat ? "berlaku kelipatan" : "sekali saja"].filter(Boolean).join(", ");
-  return `${head} → ${kumpulan(f.hasil.items, nameOf)} ${diskon}, ${tail}`;
+  const tail = [
+    f.hasil.discountType === "percent" && cap ? `maks. diskon ${rp(cap)} per ${U}` : null,
+    rq && rq > 1 ? `maks. ${rq} ${U} per kelipatan` : null, f.repeat ? "berlaku kelipatan" : "sekali saja",
+  ].filter(Boolean).join(", ");
+  return `${head} → ${diskon} ${kumpulan(f.hasil.items, nameOf, !satu)}${campuran(f.hasil.items, { varian: false })}, ${tail}`;
 }
 
 /** Ringkasan satu baris untuk daftar promo; "—" bila aturan bukan Syarat-Hasil. */
@@ -271,6 +332,7 @@ export function pesanGalatPaket(error: { code?: string | null; message?: string 
   if (msg.includes("PROMO_SH_MODE")) return "Jenis promo tidak bisa diubah. Buat promo paket baru.";
   if (msg.includes("PROMO_SH_TARGET")) return `Barang promo bermasalah: ${detail("PROMO_SH_TARGET")}`;
   if (msg.includes("PROMO_SH_RULE")) return `Aturan promo ditolak: ${detail("PROMO_SH_RULE")}`;
+  if (/(?:^|[^A-Z_])KADALUARSA:/.test(msg)) return msg.slice(msg.search(/KADALUARSA:/) + "KADALUARSA:".length).trim();
   if (/Promo tidak ditemukan/i.test(msg)) return "Promo tidak ditemukan atau bukan promo paket.";
   if (code === "42501" || /Hanya owner\/manajer/i.test(msg)) return "Hanya Owner/Admin aktif yang bisa mengatur promo.";
   return msg ? `Gagal menyimpan promo: ${msg}` : "Gagal menyimpan promo. Coba lagi.";

@@ -127,12 +127,19 @@ export async function togglePromo(formData: FormData) {
   const supabase = await requireManager();
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "1";
+  // Promo Paket (discount_mode='syarat_hasil') hanya boleh diaktifkan/dinonaktifkan lewat set_promo_syarat_hasil_active
+  // (token versi + cek duplikat aktif). Pembalikan langsung is_active di sini melewati keduanya, jadi ditolak sebelum menulis.
+  // Promo yang tak terbaca tidak bisa digolongkan: ditolak juga, bukan ditulis buta.
+  const { data: promo, error: readError } = await supabase.from("promos").select("name, valid_until, rule").eq("id", id).maybeSingle();
+  if (readError) redirect(`${BACK}?error=${encodeURIComponent("Status promo belum dapat diperiksa. Muat ulang daftar lalu coba lagi.")}`);
+  if ((promo?.rule as { discount_mode?: unknown } | null | undefined)?.discount_mode === "syarat_hasil") {
+    redirect(`${BACK}?error=${encodeURIComponent("Promo Paket tidak bisa diubah statusnya dari sini. Gunakan tombol Aktifkan/Nonaktifkan di daftar promo atau di halaman /crm/promo/paket (editor Promo Paket).")}`);
+  }
   // Menghidupkan promo yang masa berlakunya sudah lewat tidak memberi potongan
   // apa pun di kasir dan akan dimatikan lagi oleh penyapu kedaluwarsa. Ditolak
   // di sini supaya pesannya menyebut langkah yang benar; database menolak juga
   // (trigger promo_kadaluarsa_otomatis) buat jalur tulis lain.
   if (active) {
-    const { data: promo } = await supabase.from("promos").select("name, valid_until").eq("id", id).maybeSingle();
     const pesan = promo && pesanAktivasiKadaluarsa(`Promo "${promo.name}"`, promo.valid_until, hariIniWIB());
     if (pesan) redirect(`${BACK}?error=${encodeURIComponent(pesan)}`);
   }

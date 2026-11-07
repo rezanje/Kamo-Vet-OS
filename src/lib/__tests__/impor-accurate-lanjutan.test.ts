@@ -27,14 +27,22 @@ describe("parseSaldoAwalRows", () => {
 });
 
 describe("parseKomponenGrupRows", () => {
-  it("menolak Grup bertingkat", () => {
+  it("menerima Grup bertingkat (lingkaran ditolak database)", () => {
     const hasil = parseKomponenGrupRows([
       { row: 2, groupCode: "G1", componentCode: "G2", qty: 1, unit: "PCS", sortOrder: 1 },
     ], new Map([
       ["G1", { itemType: "Grup", unit: "PCS" }],
       ["G2", { itemType: "Grup", unit: "PCS" }],
     ]));
-    expect(hasil.rejected[0].reason).toMatch(/Grup bertingkat/);
+    expect(hasil.rejected).toEqual([]);
+    expect(hasil.valid).toHaveLength(1);
+  });
+
+  it("menolak Grup berisi dirinya sendiri", () => {
+    const hasil = parseKomponenGrupRows([
+      { row: 2, groupCode: "G1", componentCode: "G1", qty: 1, unit: "PCS", sortOrder: 1 },
+    ], new Map([["G1", { itemType: "Grup", unit: "PCS" }]]));
+    expect(hasil.rejected[0].reason).toMatch(/sama dengan Grup/);
   });
 });
 

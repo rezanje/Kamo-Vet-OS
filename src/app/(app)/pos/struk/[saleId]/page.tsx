@@ -6,12 +6,15 @@ import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
 import { ClearPosDraft } from "@/components/ClearPosDraft";
 import { receiptPaymentRows, saleMerchandiseTotal } from "@/lib/sale-payment-reporting";
+import { pesanPilihanPromo } from "@/lib/promo-pick-note";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 const rp = formatPosMoney;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SaleRead = { data: any; error: { code?: string } | null };
 
 export default async function PosStrukPage({ params, searchParams }: {
   params: Promise<{ saleId: string }>;
@@ -21,12 +24,15 @@ export default async function PosStrukPage({ params, searchParams }: {
   const checkoutKey = (await searchParams)?.draft_done;
   const supabase = await createClient();
 
-  const { data: sale } = await supabase
-    .from("sales")
-    .select("id, no_struk, cashier_name, subtotal, discount, diskon_kategori, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, created_at, customers(name, customer_categories(nama, diskon_persen)), branches(name, code)")
-    .eq("id", saleId).is("channel", null).maybeSingle();
+  const SALE_COLUMNS = "id, no_struk, cashier_name, subtotal, discount, diskon_kategori, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), poin_earned, created_at, customers(name, customer_categories(nama, diskon_persen)), branches(name, code)";
+  // Kolom dipilih dari string yang dirakit: hasilnya sengaja tidak bertipe (dibaca persis seperti sebelumnya).
+  const readSale = (columns: string) => supabase.from("sales").select(columns).eq("id", saleId).is("channel", null).maybeSingle() as unknown as Promise<SaleRead>;
+  // Pilihan promo kasir (kolom promo_pick_mode/promo_selection): bila kolomnya belum ada di database struk tetap dicetak tanpa catatan, bukan 404.
+  const first = await readSale(`${SALE_COLUMNS}, promo_pick_mode, promo_selection`);
+  const sale = !first.data && (first.error?.code === "42703" || first.error?.code === "PGRST204") ? (await readSale(SALE_COLUMNS)).data : first.data;
   if (!sale) notFound();
   const paymentRows = receiptPaymentRows(sale);
+  const catatanPromo = pesanPilihanPromo(sale.promo_pick_mode, sale.promo_selection);
 
   const { data: items } = await supabase
     .from("sale_items").select("nama, qty, harga, satuan").eq("sale_id", saleId).order("created_at");
@@ -75,6 +81,7 @@ export default async function PosStrukPage({ params, searchParams }: {
           <Row k={`Diskon ${golongan?.nama ?? "golongan"}`} v={`-${rp(diskonKategori)}`} />
         )}
         {sale.discount > 0 && <Row k="Diskon" v={`-${rp(sale.discount)}`} />}
+        {catatanPromo && <div data-testid="struk-catatan-promo" style={{ fontSize: 10, margin: "2px 0" }}>{catatanPromo}</div>}
         {Number(sale.merchant_fee_total) > 0 && <>
           <Row k="Total barang" v={rp(saleMerchandiseTotal(sale))} />
           <Row k="Fee merchant" v={rp(sale.merchant_fee_total)} />

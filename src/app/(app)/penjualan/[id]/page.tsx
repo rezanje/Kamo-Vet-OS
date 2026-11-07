@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import { saleMerchandiseTotal, salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
+import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
+import { bolehLihatRiwayat, petshopHistory } from "@/lib/transaction-history";
+import { loadActorNames } from "@/lib/transaction-history-server";
 
 import { SaleCancelForm } from "./SaleCancelForm";
 import { SalePaymentCorrectionForm } from "./SalePaymentCorrectionForm";
@@ -38,7 +41,7 @@ type ReturRow = {
   id: string; no_retur: string | null; tanggal: string; total: number; voided_at: string | null;
   sales_return_items: { id: string; nama: string; qty: number }[] | null;
 };
-type PaymentCorrection = { id: string; revision: number; reason: string; created_at: string;
+type PaymentCorrection = { id: string; revision: number; reason: string; created_at: string; created_by: string | null;
   before_payments: { method: string; amount: number }[]; after_payments: { method: string; amount: number }[] };
 
 export default async function PenjualanDetailPage({
@@ -74,10 +77,23 @@ export default async function PenjualanDetailPage({
   const returs = (returData ?? []) as unknown as ReturRow[];
   const { data: correctionData, error: correctionError } = canCorrectRole
     ? await supabase.from("sale_payment_corrections")
-      .select("id, revision, reason, created_at, before_payments, after_payments")
+      .select("id, revision, reason, created_at, created_by, before_payments, after_payments")
       .eq("sale_id", id).order("revision", { ascending: false })
     : { data: null, error: null };
   const corrections = (correctionData ?? []) as PaymentCorrection[];
+  // Riwayat perubahan terpadu (hanya baca). Tiap sumber dibaca lewat RLS-nya sendiri; ADMIN tidak punya hak baca koreksi metode.
+  const tampilRiwayat = profile?.is_active === true && bolehLihatRiwayat(profile);
+  const { data: cancellationData, error: cancellationError } = tampilRiwayat && sale.voided_at
+    ? await supabase.from("sale_cancellations").select("id, reason, created_at, created_by").eq("sale_id", id).maybeSingle()
+    : { data: null, error: null };
+  const actors = tampilRiwayat
+    ? await loadActorNames(supabase, [...corrections.map(c => c.created_by), cancellationData?.created_by])
+    : { names: new Map<string, string>(), error: false };
+  const riwayat = tampilRiwayat ? petshopHistory({
+    viewerId: user?.id ?? null, names: actors.names, corrections,
+    cancellation: (cancellationData as { id: string; reason: string; created_at: string; created_by: string | null } | null) ?? null,
+    returns: returs,
+  }) : [];
   const cash = payments.find(part => part.method === "Tunai")?.amount ?? 0;
   const transfer = payments.find(part => part.method === "Transfer")?.amount ?? 0;
   const canCorrectPayment = canCorrectRole && !!user && !sale.voided_at && !sale.channel && !!sale.payment_plan
@@ -196,17 +212,9 @@ export default async function PenjualanDetailPage({
         </div>
       )}
 
-      {canCorrectRole && <div className="crm-sec">
-        <SecHeader num="03" title="RIWAYAT KOREKSI METODE" desc="Perubahan pembayaran pada penjualan yang sama." />
-        {correctionError ? <p role="alert">Riwayat koreksi belum dapat dibaca. Muat ulang sebelum mengoreksi kembali.</p>
-          : corrections.length === 0 ? <p>Belum ada koreksi metode.</p>
-          : corrections.map(change => <div key={change.id} style={{ borderBottom: ".5px solid var(--bd)", padding: "8px 0" }}>
-            <strong>Revisi {change.revision}</strong> · {fmtDt(change.created_at)}<br />
-            {change.before_payments.map(part => `${part.method} ${rp(Number(part.amount))}`).join(" + ")}
-            {" → "}{change.after_payments.map(part => `${part.method} ${rp(Number(part.amount))}`).join(" + ")}
-            <div style={{ color: "var(--tm)" }}>Alasan: {change.reason}</div>
-          </div>)}
-      </div>}
+      {tampilRiwayat && <TransactionHistoryPanel title="RIWAYAT PERUBAHAN TRANSAKSI" events={riwayat} error={!!correctionError || !!cancellationError}
+        hint={canCorrectRole ? "Koreksi metode bayar, pembatalan dan retur pada struk ini: siapa, kapan, apa, alasan."
+          : "Pembatalan dan retur pada struk ini. Koreksi metode bayar hanya terlihat oleh Owner dan Finance."} />}
 
       {canCorrectRole && user && !sale.voided_at && <details className="crm-sec">
         <summary>{isOwner ? "Koreksi atau batalkan penjualan" : "Koreksi metode pembayaran"}</summary>

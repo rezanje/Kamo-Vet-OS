@@ -81,6 +81,10 @@ export function pesanSimpanGagal(raw: string): string {
   // item_categories cuma punya policy SELECT sampai migrasi 0067). Pesannya tetap
   // menyebut tabelnya supaya developer bisa langsung nyari, tapi tidak lagi
   // memuntahkan error Postgres mentah ke layar kasir.
+  // Grup bertingkat (paket di dalam paket): pesan database sudah berbahasa admin,
+  // cukup buang kode teknis di depannya.
+  const grup = raw.match(/GRUP_(?:LINGKARAN|TERLALU_DALAM|QTY|SATUAN|NONAKTIF): (.+)$/);
+  if (grup) return grup[1];
   if (m.includes("row-level security")) {
     const tabel = raw.match(/table "([^"]+)"/)?.[1];
     return `Perubahan ditolak izin database${tabel ? ` (tabel ${tabel})` : ""} — hubungi developer`;

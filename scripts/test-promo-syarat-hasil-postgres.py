@@ -383,21 +383,24 @@ def differential(db, fixture_sql, count, seed):
     scenarios = [json.loads(line) for line in gen.stdout.splitlines() if line.strip()]
     with_claims = [x for x in scenarios if x['claims']]
     assert len([x for x in with_claims if not x.get('expect')]) >= 50, 'too few claim scenarios: %d' % len(with_claims)
-    calls, kinds = [], []
+    calls, kinds, scn = [], [], []
     for x in with_claims:
         body = '$j$' + json.dumps(x) + '$j$::jsonb'
         calls.append("select 'A'||pg_temp.diff_scenario(%s,false);" % body)
-        kinds.append('boundary' if x.get('expect') else 'engine')
+        kinds.append('boundary' if x.get('expect') else 'engine'); scn.append(x)
         if not x.get('expect'):  # forged +1 Rp only for the engine's own scenarios
             calls.append("select 'F'||pg_temp.diff_scenario(%s,true);" % body)
-            kinds.append('forged')
+            kinds.append('forged'); scn.append(x)
     out = db.sql('begin;\n' + fixture_sql + '\n' + (ROOT / 'supabase/tests/promo_syarat_hasil_diff_prelude.sql').read_text() + '\n' + '\n'.join(calls) + '\nrollback;').splitlines()
     results = [l for l in out if l.startswith(('AACCEPTED', 'AREFUSED', 'ASKIP', 'FACCEPTED', 'FREFUSED', 'FSKIP'))]
     assert len(results) == len(calls), 'unexpected result count %d != %d' % (len(results), len(calls))
     bad_a = [l for l, k in zip(results, kinds) if k == 'engine' and not l.startswith('AACCEPTED')]
     # R1 boundary: nilai == sets x min (+ the engine's own claims) is accepted above; one rupiah less must be refused by the nilai check only
     bad_b = [l for l, k in zip(results, kinds) if k == 'boundary' and not l.startswith('AREFUSED: PROMO_SH_NILAI')]
-    bad_f = [l for l, k in zip(results, kinds) if k == 'forged' and not l.startswith(('FREFUSED: PROMO_SH_TOTAL', 'FSKIP'))]
+    # A forged +1 Rp on a reward line is refused with PROMO_SH_TOTAL. With SEVERAL claimed promos an EARLIER promo (verified in id order) may hit its own
+    # nilai boundary first, because every claim's discount counts toward the cart value: still refused, by PROMO_SH_NILAI (stage 3b: min_sell_qty scenarios).
+    bad_f = [l for l, k, x in zip(results, kinds, scn) if k == 'forged' and not (l.startswith(('FREFUSED: PROMO_SH_TOTAL', 'FSKIP'))
+             or (l.startswith('FREFUSED: PROMO_SH_NILAI') and len({c['promo'] for c in x['claims']}) >= 2))]
     assert not bad_a, 'DB refused %d engine claims, e.g. %s' % (len(bad_a), bad_a[:3])
     assert not bad_b, 'nilai boundary (value = need - 1) not refused with PROMO_SH_NILAI: %s' % bad_b[:3]
     assert not bad_f, 'forged claims not refused with PROMO_SH_TOTAL: %s' % bad_f[:3]
@@ -407,7 +410,10 @@ def differential(db, fixture_sql, count, seed):
     n_engine = sum(1 for k in kinds if k == 'engine')
     n_composer = sum(1 for x in with_claims if x.get('src') == 'composer' and not x.get('expect'))
     assert n_composer >= 30, 'too few composer (split-line) scenarios: %d' % n_composer
-    print('PASS differential: %d/%d scenarios carried claims (carts with tier-price and manually discounted lines through the real adapter); all %d engine claim sets ACCEPTED by the DB (%d of them produced through the cashier composer: split claimed/plain lines); %d forged (+1 Rp) variants all REFUSED (PROMO_SH_TOTAL); %d nilai-boundary variants (value = need - 1) all REFUSED (PROMO_SH_NILAI)' % (n_engine, len(scenarios), n_engine, n_composer, n_forged, n_boundary), flush=True)
+    n_min = sum(1 for x in with_claims if x.get('src') == 'composer-min' and not x.get('expect'))
+    n_merged = sum(1 for x in with_claims if x.get('src') == 'composer-min' and x.get('merged'))
+    assert n_min >= 20 and n_merged >= 5, 'too few min_sell_qty composer scenarios (%d) / merged-claim-line scenarios (%d)' % (n_min, n_merged)
+    print('PASS differential: %d/%d scenarios carried claims (carts with tier-price and manually discounted lines through the real adapter); all %d engine claim sets ACCEPTED by the DB (%d of them produced through the cashier composer: split claimed/plain lines; %d with item minimum quantities, %d of those with a MERGED claim line qty > syarat+hasil units); %d forged (+1 Rp) variants all REFUSED (PROMO_SH_TOTAL); %d nilai-boundary variants (value = need - 1) all REFUSED (PROMO_SH_NILAI)' % (n_engine, len(scenarios), n_engine, n_composer, n_min, n_merged, n_forged, n_boundary), flush=True)
 
 
 if __name__ == '__main__':
