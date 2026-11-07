@@ -12,6 +12,7 @@ const HUBUNGI = "Hubungi Owner/Reza untuk koreksi tagihan.";
 export const KODE_RACIKAN_DITERJEMAHKAN = [
   "INVOICE_PAID", "RECIPE_LINKED", "RECIPE_INVALID", "RECORD_POSTED", "REASON_REQUIRED",
   "ACCESS_DENIED", "COST_MISSING", "STOCK_SHORT", "LAYER_SHORT", "INGREDIENT_INVALID", "WAREHOUSE_MISSING",
+  "NOT_INPATIENT", "VISIT_CLOSED", "NO_CHANGE", "IDEMPOTENCY_CONFLICT",
 ] as const;
 
 function bersihkan(text: string): string {
@@ -31,6 +32,7 @@ export function pesanRacikanError(error: Galat): PesanRacikan {
         return { detail, pesan: `Kunjungan ini sudah punya DP/pembayaran, jadi racikan tidak bisa dikembalikan dari sini. ${HUBUNGI}` };
       case "RECIPE_LINKED":
         if (/resep resmi/.test(sisa)) return { detail, pesan: "Racikan ini berasal dari resep resmi, jadi komposisinya tidak bisa diubah di sini. Bila racikan salah, gunakan Kembalikan bahan." };
+        if (/sudah masuk invoice \(aktif atau pernah\)/.test(sisa)) return { detail, pesan: `Racikan ini sudah masuk baris invoice (aktif atau pernah), jadi komposisinya tidak bisa diubah dari sini. Koreksi lewat dokumen invoice. ${HUBUNGI}` };
         if (/histori stok/.test(sisa)) return { detail, pesan: "Riwayat stok racikan ini tidak konsisten (ada bahan yang sudah ditagih atau dikembalikan). Hubungi Reza sebelum mengubah apa pun." };
         return { detail, pesan: `Racikan ini sudah masuk tagihan (invoice aktif), jadi tidak bisa diubah atau dikembalikan dari sini. ${HUBUNGI}` };
       case "RECIPE_INVALID":
@@ -38,14 +40,18 @@ export function pesanRacikanError(error: Galat): PesanRacikan {
         if (/tidak dapat diubah lagi/.test(sisa)) return { detail, pesan: "Racikan ini sudah void atau sudah diserahkan, jadi tidak bisa diubah lagi." };
         if (/minimal satu bahan/.test(sisa)) return { detail, pesan: "Racikan harus punya minimal satu bahan." };
         if (/pemulihan tidak konsisten/.test(sisa)) return { detail, pesan: "Riwayat pengembalian stok racikan ini tidak konsisten. Hubungi Reza sebelum mencoba lagi." };
+        if (/sudah dibatalkan/.test(sisa)) return { detail, pesan: "Racikan ini sudah dibatalkan (void), jadi komposisinya tidak bisa diubah." };
+        if (/ditarik dari tagihan/.test(sisa)) return { detail, pesan: "Baris racikan ini sudah ditarik dari tagihan, jadi komposisinya tidak bisa diubah. Hubungi Owner/Reza." };
         if (/bahan/.test(sisa)) return { detail, pesan: "Bahan atau jumlah racikan tidak valid. Periksa bahan dan jumlahnya lalu coba lagi." };
         return { detail, pesan: "Racikan tidak dapat diubah dalam keadaan sekarang." };
       case "RECORD_POSTED":
         return { detail, pesan: "Rekam medis kunjungan ini sudah terkunci, jadi tidak bisa diubah dari sini. Hubungi Owner/Reza." };
       case "REASON_REQUIRED":
+        if (/minimal 5 huruf/.test(sisa)) return { detail, pesan: "Alasan koreksi wajib diisi (minimal 5 huruf, maksimal 500)." };
         return { detail, pesan: "Alasan wajib diisi (3–500 karakter)." };
       case "ACCESS_DENIED":
         if (/tidak terautentikasi/.test(sisa)) return { detail, pesan: "Sesi Anda berakhir. Masuk ulang lalu coba lagi." };
+        if (/hanya untuk Owner/.test(sisa)) return { detail, pesan: "Koreksi komposisi setelah DP/pembayaran hanya untuk Owner. Minta Owner melakukannya." };
         if (/cabang/.test(sisa)) return { detail, pesan: "Akun Anda tidak punya akses cabang racikan ini." };
         if (/tidak ditemukan/.test(sisa)) return { detail, pesan: "Racikan tidak ditemukan atau tidak bisa Anda akses." };
         return { detail, pesan: "Akses ditolak untuk racikan ini." };
@@ -59,6 +65,14 @@ export function pesanRacikanError(error: Galat): PesanRacikan {
         return { detail, pesan: "Ada bahan yang tidak aktif atau bukan bahan racikan. Ganti bahannya lalu coba lagi." };
       case "WAREHOUSE_MISSING":
         return { detail, pesan: "Gudang klinik aktif untuk cabang ini belum ada. Hubungi Reza." };
+      case "NOT_INPATIENT":
+        return { detail, pesan: "Koreksi Owner ini hanya untuk racikan rawat inap. Untuk kunjungan lain pakai Ubah komposisi biasa." };
+      case "VISIT_CLOSED":
+        return { detail, pesan: "Kunjungan ini sudah selesai/checkout, jadi komposisi racikan tidak bisa diubah lagi. Hubungi Reza." };
+      case "NO_CHANGE":
+        return { detail, pesan: "Komposisi sama dengan yang sekarang, tidak ada yang diubah." };
+      case "IDEMPOTENCY_CONFLICT":
+        return { detail, pesan: "Permintaan ini bentrok dengan koreksi sebelumnya. Muat ulang halaman lalu coba lagi." };
       default:
         return { detail, pesan: `Penolakan dari sistem belum dikenali. Detail teknis ada di bawah; sampaikan ke Owner/Reza. (${parseClinicPostingError(error, "Belum tersimpan.")})` };
     }

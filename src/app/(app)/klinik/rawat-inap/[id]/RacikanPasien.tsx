@@ -8,7 +8,7 @@ const fmt = (iso: string) => {
 
 /** Bagian "Racikan pasien ini" di detail rawat inap: status tiap racikan dan jalan langsung ke
  * Kembalikan bahan (void racikan). `recipes` null = bacaan gagal (bukan "belum ada"). Server component. */
-export function RacikanPasien({ recipes }: { recipes: RacikanKunjungan[] | null }) {
+export function RacikanPasien({ recipes, owner = false }: { recipes: RacikanKunjungan[] | null; owner?: boolean }) {
   return <section id="racikan-pasien" className="crm-sec" aria-label="Racikan pasien ini">
     <h3 style={{ fontSize: 13, fontWeight: 700 }}>Racikan pasien ini</h3>
     {recipes === null && <p role="alert" style={{ fontSize: 12, color: "#b91c1c" }}>Daftar racikan tidak terbaca. Muat ulang halaman; bila tetap gagal, buka menu Klinik &gt; Racik obat.</p>}
@@ -23,6 +23,9 @@ export function RacikanPasien({ recipes }: { recipes: RacikanKunjungan[] | null 
             ? <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 2 }}>Bila kunjungan ini sudah punya DP/pembayaran, sistem akan menolak dengan penjelasan; bahan dikembalikan hanya bila belum ditagih.</div>
             : <div style={{ fontSize: 11, color: "var(--td)", marginTop: 2 }}>{info.alasan}</div>}
         </div>
+        {owner && row.status !== "void" && <Link href={`/klinik/racik/${encodeURIComponent(row.id)}#koreksi-owner`} className="btn-def" style={{ textDecoration: "none", color: "#92400e", borderColor: "#fcd34d" }}>
+          <i className="ti ti-shield-check" /> Koreksi komposisi (Owner)
+        </Link>}
         {info.bisaAksi && <Link href={`/klinik/racik/${encodeURIComponent(row.id)}#aksi`} className="btn-def" style={{ textDecoration: "none", color: "#b91c1c", borderColor: "#fca5a5" }}>
           <i className="ti ti-arrow-back-up" /> Koreksi / Kembalikan bahan
         </Link>}
