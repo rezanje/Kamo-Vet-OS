@@ -112,8 +112,12 @@ export default async function RacikDetailPage({
 
   // Racikan kunjungan rawat inap: kotak Aksi dibuka otomatis. Gagal baca = tetap tertutup (perilaku lama).
   const rawatInap = visit
-    ? await supabase.from("inpatient_records").select("id").eq("visit_id", visit.id).limit(1)
-      .then(res => !res.error && (res.data?.length ?? 0) > 0, () => false)
+    ? await (async () => {
+      try {
+        const res = await supabase.from("inpatient_records").select("id").eq("visit_id", visit.id).limit(1);
+        return !res.error && (res.data?.length ?? 0) > 0;
+      } catch { return false; }
+    })()
     : false;
 
   const tglResep = visit ? new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
