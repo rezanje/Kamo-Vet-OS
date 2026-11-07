@@ -136,7 +136,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     const ids = idTarik(cart, row);
     if (!ids.length) return;
     const label = ids.length > 1 ? `paket ${cart.filter(r => r.prescription_item_id && ids.includes(r.prescription_item_id)).map(r => r.nama_obat).join(", ")}` : row.nama_obat;
-    setTarikTarget({ ids, label, key: `tarik-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}` });
+    setTarikTarget({ ids, label, key: `tarik-${crypto.randomUUID()}` });
     setTarikAlasan(""); setTarikError("");
   };
   const konfirmasiTarik = async () => {
@@ -584,6 +584,9 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
                         cart.find(row => row.paket_id === r.paket_id) === r
                           ? <BarisPaket key={`paket-${r.paket_id}`} isi={cart.filter(row => row.paket_id === r.paket_id)} staff={serviceStaff}
                               onJumlah={jumlah => setJumlahPaket(r.paket_id!, jumlah)} onHapus={() => del(r.key)}
+                              // Tarik item + asal paket tersimpan (#471): isi paket yang sudah tersimpan tidak bisa dihapus dari Edit;
+                              // tombol Tarik menarik SELURUH paket (idTarik mengelompokkan lewat package_item_id), bukan ✕.
+                              onTarik={correction?.fullEdit && cart.some(row => row.paket_id === r.paket_id && bisaDitarik(row)) ? () => bukaTarik(cart.find(row => row.paket_id === r.paket_id && bisaDitarik(row))!) : undefined}
                               onPelaksana={value => setCart(rows => rows.map(row => row.paket_id === r.paket_id ? { ...row, service_performers: value } : row))} />
                           : null
                       ) : (
@@ -736,8 +739,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
 }
 
 /** Satu paket di keranjang: nama & harga paket, jumlah paket, pelaksana, isi paket tanpa harga. */
-function BarisPaket({ isi, staff, onJumlah, onHapus, onPelaksana }: {
-  isi: CartRow[]; staff: ServiceStaff[]; onJumlah: (jumlah: number) => void; onHapus: () => void;
+function BarisPaket({ isi, staff, onJumlah, onHapus, onTarik, onPelaksana }: {
+  isi: CartRow[]; staff: ServiceStaff[]; onJumlah: (jumlah: number) => void; onHapus: () => void; onTarik?: () => void;
   onPelaksana: (value: ServicePerformersInput) => void;
 }) {
   const utama = isi[0];
@@ -759,7 +762,12 @@ function BarisPaket({ isi, staff, onJumlah, onHapus, onPelaksana }: {
     </td>
     <td style={{ textAlign: "right", fontSize: 10.5, fontWeight: 600 }}>{rp(total)}</td>
     <td style={{ textAlign: "center" }}>
-      <i className="ti ti-x" role="button" aria-label={`Hapus paket ${utama.paket_nama}`} onClick={onHapus} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />
+      {onTarik
+        ? <button type="button" data-tarik-baris className="btn-def" onClick={onTarik} aria-label={`Tarik paket ${utama.paket_nama}`}
+            title="Tarik seluruh paket dari rekam medis (tidak ditagih); alasan wajib." style={{ padding: "1px 6px", fontSize: 9.5 }}>Tarik</button>
+        : isi.some(row => row.prescription_item_id)
+        ? <i className="ti ti-lock" role="img" data-baris-terkunci aria-label={`Paket ${utama.paket_nama} tersimpan, tidak bisa dihapus dari Edit`} title="Baris tersimpan tidak bisa dihapus dari Edit." style={{ color: "var(--td)", fontSize: 13 }} />
+        : <i className="ti ti-x" role="button" aria-label={`Hapus paket ${utama.paket_nama}`} onClick={onHapus} style={{ cursor: "pointer", color: "#dc2626", fontSize: 13 }} title="Hapus" />}
     </td>
   </tr>;
 }

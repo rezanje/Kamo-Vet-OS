@@ -79,8 +79,9 @@ describe("readers ignore Tarik-withdrawn rows (record_withdrawn_at) and leave ra
   ];
   it.each(sources)("%s reads prescription_items with record_withdrawn_at is null and NEVER keys on billing_withdrawn_at", (_name, file) => {
     const text = readFileSync(file, "utf8");
-    // Window of the query chain that starts at each prescription_items read (each file keeps these reads >450 chars apart).
-    const reads = [...text.matchAll(/from\(["']prescription_items["']\)/g)].map(m => text.slice(m.index, (m.index ?? 0) + 450));
+    // Window of the query chain that starts at each prescription_items read (each read is cut at the next prescription_items read, so one read's .is() can never satisfy another).
+    const starts = [...text.matchAll(/from\(["']prescription_items["']\)/g)].map(m => m.index ?? 0);
+    const reads = starts.map((start, i) => text.slice(start, Math.min(start + 900, starts[i + 1] ?? Infinity)));
     expect(reads.length).toBeGreaterThan(0);
     for (const read of reads) { expect(read).toMatch(/\.is\(["']record_withdrawn_at["'],\s*null\)/); expect(read).not.toMatch(/billing_withdrawn_at/); }
   });
