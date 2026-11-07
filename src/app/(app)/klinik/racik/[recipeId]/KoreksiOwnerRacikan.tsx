@@ -13,6 +13,7 @@ const rupiah = (value: unknown) => `Rp${Math.round(Number(value) || 0).toLocaleS
 type Efek = { name?: string; delta?: number; cost?: number; direction?: string };
 
 export const NOTICE_TAGIHAN = "Tagihan sudah terbit: HPP dan jurnal dikoreksi, harga dan tagihan tidak berubah";
+export const NOTICE_REFUND = "Setelah koreksi ini, refund per baris untuk tagihan tersebut akan ditolak sistem (pemeriksaan jurnal HPP); penolakan itu tidak merusak data.";
 
 /** Kartu khusus Owner: koreksi komposisi racikan rawat inap walau kunjungan sudah ada DP/pembayaran. Aturan sebenarnya ditegakkan
  * database; kartu ini hanya jalan masuknya. Tanpa `tagihan`: racikan belum di baris invoice (clinic_owner_correct_compound).
@@ -36,6 +37,7 @@ export function KoreksiOwnerRacikan({ recipeId, visitId, ingredients, materials,
     {tagihan
       ? <div style={{ fontSize: 11, color: "#92400e", margin: "4px 0 8px" }}>
         <p role="note" style={{ fontWeight: 700, margin: "0 0 4px" }}>{NOTICE_TAGIHAN}{tagihan.invoiceNo ? ` (${tagihan.invoiceNo})` : ""}.</p>
+        <p role="note" data-testid="notice-refund" style={{ margin: "0 0 6px", fontSize: 11.5 }}>{NOTICE_REFUND}</p>
         <p style={{ margin: 0 }}>
           Khusus Owner, lunas maupun belum lunas. Hanya selisih jumlah yang menggerakkan stok (bahan yang berkurang kembali pada harga pokok aslinya).
           HPP baris racikan di tagihan dihitung ulang dan selisihnya dijurnal bertanggal hari ini (HPP lawan Persediaan). Total tagihan, harga jual, dan pembayaran tidak disentuh.

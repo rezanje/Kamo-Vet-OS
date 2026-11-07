@@ -77,6 +77,7 @@ describe("kartu Owner untuk racikan yang SUDAH di baris tagihan", () => {
     expect(card).not.toBeNull();
     expect(card.textContent).toContain(NOTICE);
     expect(card.textContent).toContain("INV-202611-0089");
+    expect(card.textContent).toContain("refund per baris untuk tagihan tersebut akan ditolak sistem");
     expect(card.textContent).not.toMatch(/tidak bisa dikoreksi dari sini/);
     expect(card.querySelector("form")).not.toBeNull();
     const reason = card.querySelector<HTMLTextAreaElement>('textarea[name="reason"]')!;
@@ -91,6 +92,7 @@ describe("kartu Owner untuk racikan yang SUDAH di baris tagihan", () => {
     const card = kartu(await render())!;
     expect(card).not.toBeNull();
     expect(card.textContent).not.toContain(NOTICE);
+    expect(card.textContent).not.toContain("refund per baris");
     expect(card.getAttribute("data-mode")).toBe("biasa");
   });
   it("hanya baris di invoice yang dibatalkan: tanpa form, penjelasan 'dibatalkan'", async () => {
