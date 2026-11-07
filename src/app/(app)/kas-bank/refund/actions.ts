@@ -3,13 +3,14 @@ import {createClient} from '@/lib/supabase/server';
 import {redirect} from 'next/navigation';
 import {revalidatePath} from 'next/cache';
 import {transactionDraftAck} from '@/lib/transaction-draft-ack';
+import {pesanRefundUangMuka} from '@/lib/uang-muka-refund';
 const BASE='/kas-bank/refund';
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 export async function processRefund(form:FormData){
  const fail=(message:string):never=>redirect(`${BASE}?error=${encodeURIComponent(message)}`);
  const id=String(form.get('id')??''),operation=String(form.get('operation')??'');
  // J03: clinic invoice refunds share the queue with their own RPCs.
- const clinic=form.get('kind')==='klinik',rpcName=(op:string)=>clinic?`${op}_clinic_refund_request`:`${op}_sales_refund_request`;
+ const clinic=form.get('kind')==='klinik',advance=form.get('kind')==='uang_muka',rpcName=(op:string)=>advance?`clinic_advance_refund_${op}`:clinic?`${op}_clinic_refund_request`:`${op}_sales_refund_request`;
  if(!uuid(id)||!['claim','complete','cancel'].includes(operation))fail('Identitas proses refund tidak valid.');
  let rpc:string,args:Record<string,unknown>;
  if(operation==='claim'){rpc=rpcName('claim');args={p_id:id};}
@@ -26,10 +27,11 @@ export async function processRefund(form:FormData){
  const db=await createClient();let response;
  try{response=await db.rpc(rpc,args);}catch{fail('Hasil proses belum terkonfirmasi. Muat ulang status sebelum mencoba pencatatan lagi. Jangan transfer ulang.');}
  if(!response)return fail('Hasil proses belum terkonfirmasi. Periksa status terakhir. Jangan transfer ulang.');
- if(response.error)fail(['P0001','42501','22023'].includes(response.error.code)?response.error.message:'Hasil proses belum terkonfirmasi. Muat ulang status. Jangan transfer ulang.');
+ if(response.error)fail(['P0001','42501','22023'].includes(response.error.code)?(advance?pesanRefundUangMuka(response.error.message):response.error.message):'Hasil proses belum terkonfirmasi. Muat ulang status. Jangan transfer ulang.');
  const result=response.data,expected=operation==='claim'?'diproses':operation==='complete'?'selesai':'batal';
- if(!result||result.refund_request_id!==id||result.status!==expected||(expected==='selesai'&&(!uuid(result.document_id)||typeof result.document_no!=='string'||!result.document_no.trim())))fail('Hasil proses belum terkonfirmasi. Periksa status terakhir. Jangan transfer ulang.');
+ // Uang muka: kuitansi membawa refund_id (bukan refund_request_id) dan jurnalnya (journal_id + no_refund).
+ if(!result||(advance?result.refund_id:result.refund_request_id)!==id||result.status!==expected||(expected==='selesai'&&(advance?(!uuid(result.journal_id)||typeof result.no_refund!=='string'||!result.no_refund.trim()):(!uuid(result.document_id)||typeof result.document_no!=='string'||!result.document_no.trim()))))fail('Hasil proses belum terkonfirmasi. Periksa status terakhir. Jangan transfer ulang.');
  revalidatePath('/','layout');
- const message=expected==='selesai'?'Transfer dan retur terkonfirmasi. Bukti asal tetap tersimpan.':expected==='diproses'?'Refund diambil untuk diproses. Retur, stok dan jurnal belum diposting.':'Permintaan dibatalkan dengan konfirmasi belum dibayar; bukti tetap tersimpan.';
+ const message=advance?(expected==='selesai'?'Transfer terkonfirmasi dan jurnal pengembalian saldo uang muka diposting.':expected==='diproses'?'Pengembalian saldo uang muka diambil untuk diproses. Jurnal belum diposting; lakukan transfer lalu catat di sini.':'Pengajuan pengembalian dibatalkan; saldo uang muka dilepas kembali.'):expected==='selesai'?'Transfer dan retur terkonfirmasi. Bukti asal tetap tersimpan.':expected==='diproses'?'Refund diambil untuk diproses. Retur, stok dan jurnal belum diposting.':'Permintaan dibatalkan dengan konfirmasi belum dibayar; bukti tetap tersimpan.';
  redirect(`${BASE}?success=${encodeURIComponent(message)}${transactionDraftAck(form)}`);
 }

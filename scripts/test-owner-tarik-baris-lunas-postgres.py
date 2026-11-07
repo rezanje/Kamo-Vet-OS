@@ -394,7 +394,8 @@ def sec_gap(h):
     writers = h.nilai("""select coalesce(string_agg(p.oid::regprocedure::text,' | ' order by p.proname),'') from pg_proc p join pg_namespace n on n.oid=p.pronamespace
  where n.nspname in ('public','clinic_private') and p.prokind = 'f' and pg_get_functiondef(p.oid) ilike '%clinic_customer_advances%'
    and (pg_get_functiondef(p.oid) ~* 'set\\s+amount\\s*=' or p.proname ilike '%refund%' or p.proname ilike '%payout%' or p.proname ilike '%kembali%')
-   and p.proname not in ('clinic_owner_remove_invoice_lines','owner_remove_invoice_lines','clinic_owner_invoice_lines_quote')""")
+   and p.proname not in ('clinic_owner_remove_invoice_lines','owner_remove_invoice_lines','clinic_owner_invoice_lines_quote')
+   and p.proname not like '%advance_refund%'""")   # the refund feature (migration 20261107170000) is the one NEW writer; every PRE-EXISTING flow stays refused
     check('GAP (documented, existing behaviour): after the correction the leftover 30000 is an advance balance, and NO existing flow can refund a PART of an advance: '
           'no function reduces clinic_customer_advances.amount or is an advance refund/payout; void receipt refuses (ADVANCE_USED); the per-line refund (J03) source check says the corrected invoice is not eligible',
           e_ok is None and bal_r == 30000 and writers == '' and err_has(e_vr, 'ADVANCE_USED') and src == 'false', dict(balance=str(bal_r), writers=writers, void=(e_vr or '')[:100], j03_eligible=src))

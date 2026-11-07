@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { pesanTarikBaris, type BarisTarik } from "@/lib/tarik-baris-pesan";
 import { TarikBarisForm } from "./TarikBarisForm";
+import { UangMukaRefundSection } from "../UangMukaRefundSection";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -25,5 +26,7 @@ export default async function KoreksiTagihanLunasPage({ params, searchParams }: 
     {back}
     <h1 style={{ fontSize: 16, margin: "4px 0 10px" }}>Koreksi tagihan lunas {data.invoice_no}</h1>
     <TarikBarisForm key={invoiceId} visitId={visitId} invoiceId={invoiceId} invoiceNo={String(data.invoice_no)} lines={lines} requestKey={randomUUID()} />
+    {/* Sisa uang muka pasien (mis. setelah tarik baris) bisa dikembalikan lewat transfer: diajukan di sini, diselesaikan Finance di antrean refund. */}
+    <UangMukaRefundSection db={db} visitId={visitId} role={profil.role} requestKeyBase={randomUUID()} />
   </>;
 }
