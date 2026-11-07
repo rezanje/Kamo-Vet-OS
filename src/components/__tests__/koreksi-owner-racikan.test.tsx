@@ -2,7 +2,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Owner mengoreksi komposisi racikan rawat inap walau sudah DP/bayar (migrasi 20261107900000): kartu di halaman racikan,
+// Owner mengoreksi komposisi racikan rawat inap walau sudah DP/bayar (migrasi 20261107120000): kartu di halaman racikan,
 // aksi server (alasan >= 5 huruf, kunci permintaan, pesan Indonesia), pratinjau dampak biaya, tautan dari detail rawat inap.
 const fixture = vi.hoisted(() => ({
   status: "pending", role: "OWNER", ranap: true, official: false, invoiceLines: [] as unknown[], user: true as boolean,

@@ -1,4 +1,4 @@
-"""Mutants of 20261107900000_owner_koreksi_racikan.sql for scripts/test-owner-koreksi-racikan-postgres.py --mutations.
+"""Mutants of 20261107120000_owner_koreksi_racikan.sql for scripts/test-owner-koreksi-racikan-postgres.py --mutations.
 Each mutant = (name, [(anchor, replacement, expected_occurrences), ...]); a stale anchor fails loudly. Every mutant must be KILLED by a real failing case."""
 OWN = "p.is_active and p.role = 'OWNER')"
 RESTORE_STOCK = """      insert into public.stock (warehouse_id, item_id, qty, updated_at)

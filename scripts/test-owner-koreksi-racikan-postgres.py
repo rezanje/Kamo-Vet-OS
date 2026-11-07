@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """OWNER corrects the composition (BMHP/ingredients) of an already issued RANAP racikan, also when the visit has DP/payments,
-as long as the racikan row is not on any invoice line (migration 20261107900000_owner_koreksi_racikan.sql).
+as long as the racikan row is not on any invoice line (migration 20261107120000_owner_koreksi_racikan.sql).
 
 Native full schema, fictional fixtures, throwaway local cluster, no network.
   flock /opt/data/kamo-heavy-test.lock python3 -I scripts/test-owner-koreksi-racikan-postgres.py --pg-bin DIR --json out.json
@@ -17,7 +17,7 @@ spec = importlib.util.spec_from_file_location('medical', ROOT / 'scripts/test-re
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 x, r, q, j = m.x, m.r, m.q, m.j
 c = x.c
-CANDIDATE = '20261107900000_owner_koreksi_racikan.sql'
+CANDIDATE = '20261107120000_owner_koreksi_racikan.sql'
 MIG = ROOT / 'supabase/migrations'
 RESULTS = []
 OFF = 0
