@@ -46,7 +46,8 @@ it("pengajuan yang menunggu tampil dengan status dan tombol Selesaikan ke antrea
   const html = await render("FINANCE");
   expect(html).toContain("RUM-202611-0001");
   expect(html).toContain("Menunggu");
-  expect(html).toContain("href=\"/kas-bank/refund?status=pending\"");
+  expect(html).toContain("href=\"/kas-bank/refund\"");
+  expect(html).not.toContain("status=pending");
   expect(html).toContain("Selesaikan");
   expect(html).toContain("TRF-BCA-777");
   expect(s.rpc[0]).toEqual({ name: "get_clinic_advance_refunds", args: { p_advance: "adv-1", p_office: false, p_status: "", p_offset: 0 } });
@@ -65,4 +66,12 @@ it("gagal membaca uang muka: panel menyebut belum bisa dimuat dan tidak menawark
   const html = await render();
   expect(html).toContain("belum dapat dimuat");
   expect(html).not.toContain("data-testid=\"form\"");
+});
+
+it("pengajuan berstatus diproses juga punya tautan Selesaikan, ke antrean tanpa filter (semua status), bukan hanya pending", async () => {
+  s.refunds = [{ id: "r3", no_refund: "RUM-202611-0003", amount: 5000, status: "diproses", requested_at: "2026-11-07T01:00:00Z", destination: { bank: "BCA", account: "1234567890", name: "Keripik Tempe" } }];
+  const html = await render("FINANCE");
+  expect(html).toContain("Selesaikan");
+  expect(html).toContain("href=\"/kas-bank/refund\"");
+  expect(html).not.toContain("status=pending");
 });

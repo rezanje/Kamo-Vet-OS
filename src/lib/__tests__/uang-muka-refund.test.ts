@@ -5,7 +5,7 @@ import { hitungSaldoUangMuka, labelStatusRefund, pesanRefundUangMuka } from "../
 it("memetakan setiap kode penolakan database ke kalimat Indonesia tanpa kode teknis", () => {
   const kode = ["ACCESS_DENIED", "AMOUNT_INVALID", "AMOUNT_EXCEEDS", "REASON_REQUIRED", "DESTINATION_INVALID", "KEY_REQUIRED", "IDEMPOTENCY_CONFLICT", "ADVANCE_INVALID", "CLAIM_REQUIRED",
     "CLAIM_TAKEN", "CLAIM_STATE", "REFUND_NOT_FOUND", "REFUND_DONE", "REFUND_CANCELLED", "ALREADY_DONE", "REFERENCE_REQUIRED", "DATE_INVALID", "ACCOUNT_INVALID", "PERIOD_LOCKED",
-    "CANCEL_CONFIRM_REQUIRED", "ADVANCE_REFUNDED", "ADVANCE_FENCE"];
+    "CANCEL_CONFIRM_REQUIRED", "ADVANCE_REFUNDED", "ADVANCE_FENCE", "SOD_CLAIM", "SOD_COMPLETE"];
   for (const k of kode) {
     const pesan = pesanRefundUangMuka(`${k}: detail teknis rahasia`);
     expect(pesan, k).not.toMatch(/[A-Z]{4,}_[A-Z_]+/);
@@ -44,4 +44,10 @@ it("label status refund dipakai layar: menunggu, diproses Finance, selesai, diba
   expect(labelStatusRefund("selesai")).toContain("selesai");
   expect(labelStatusRefund("batal")).toContain("batal");
   expect(labelStatusRefund("aneh")).toBe("aneh");
+});
+
+it("pemisahan tugas dan rekening bank dijelaskan dengan kalimat yang jelas (siapa yang boleh, rekening apa)", () => {
+  expect(pesanRefundUangMuka("SOD_CLAIM: x")).toContain("Finance atau Owner lain");
+  expect(pesanRefundUangMuka("SOD_COMPLETE: x")).toContain("Finance atau Owner lain");
+  expect(pesanRefundUangMuka("ACCOUNT_INVALID: akun pembukuan rekening sumber (110003) bukan rekening di grup Bank (120000)")).toContain("rekening bank");
 });

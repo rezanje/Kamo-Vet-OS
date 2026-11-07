@@ -36,7 +36,7 @@ export async function UangMukaRefundSection({ db, visitId, role, requestKeyBase 
           <tbody>{refunds.map((r) => <tr key={r.id}>
             <td>{r.no_refund}</td><td>{labelStatusRefund(r.status)}</td><td style={{ textAlign: "right" }}>{rp(r.amount)}</td>
             <td style={{ fontSize: 10.5 }}>{r.destination ? `${r.destination.bank} · ${r.destination.account} · ${r.destination.name}` : ""}{r.status === "selesai" && r.bank_reference ? ` · bukti ${r.bank_reference} (${r.tanggal ?? ""})` : ""}</td>
-            <td>{(r.status === "pending" || r.status === "diproses") && <Link className="btn-def" href="/kas-bank/refund?status=pending">Selesaikan</Link>}</td>
+            <td>{(r.status === "pending" || r.status === "diproses") && <Link className="btn-def" href="/kas-bank/refund">Selesaikan</Link>}</td>
           </tr>)}</tbody>
         </table>}
       </div>;

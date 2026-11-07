@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {createClient} from '@/lib/supabase/server';
 import {readCompleteList} from '@/lib/checked-list';
-import {hariIniWIB} from '@/lib/tanggal';
+import {hariIniWIB,tanggalWIB} from '@/lib/tanggal';
 import {TransactionForm} from '@/components/LocalTransactionDraft';
 import {SubmitButton} from '@/components/SubmitButton';
 import {processRefund} from './actions';
@@ -24,7 +24,7 @@ function readAdvanceRows(value:unknown):Row[]{
   if(!v||!uuid(v.id)||!uuid(v.advance_id)||typeof v.no_refund!=='string'||typeof v.no_uang_muka!=='string'||typeof v.branch_id!=='string'||!['pending','diproses','selesai','batal'].includes(String(v.status))||!Number.isFinite(amount)||amount<=0||ids.has(v.id)||typeof v.requested_at!=='string'||(v.visit_id!=null&&!uuid(v.visit_id))||(dest!=null&&!['bank','account','name'].every(k=>typeof dest?.[k as keyof typeof dest]==='string')))throw Error('Antrean refund belum dapat diperiksa. Muat ulang.');
   ids.add(v.id);
   return {kind:'uang_muka' as const,id:v.id as string,visit_id:(v.visit_id as string|null)??undefined,refund_no:v.no_refund,no_uang_muka:v.no_uang_muka,customer_name:(v.customer_name as string|null)??null,source_ref:v.no_uang_muka,branch_id:v.branch_id as string,
-   requested_by:String(v.requested_by??''),status:v.status as Row['status'],quoted_total:amount,destination:dest??null,requested_date:(v.requested_at as string).slice(0,10),created_at:v.requested_at as string,processed_by:(v.processed_by as string|null)??null};
+   requested_by:String(v.requested_by??''),status:v.status as Row['status'],quoted_total:amount,destination:dest??null,requested_date:tanggalWIB(v.requested_at as string),created_at:v.requested_at as string,processed_by:(v.processed_by as string|null)??null};
  });
 }
 export default async function RefundPage({searchParams}:{searchParams:Promise<{status?:string;offset?:string;error?:string;success?:string}>}){
@@ -59,9 +59,10 @@ export default async function RefundPage({searchParams}:{searchParams:Promise<{s
    {row.destination&&<p>Tujuan: {row.destination.bank} · {row.destination.account} · {row.destination.name}</p>}
    {row.return_id&&<p><Link href={`/penjualan/retur/${row.return_id}`}>Lihat retur dan jurnal asal</Link></p>}
    {row.kind==='klinik'&&row.refund_no&&<p>Refund klinik {row.refund_no} — <Link href={`/klinik/pembayaran/${row.visit_id}`}>lihat di invoice</Link></p>}
-   {row.status==='pending'&&<TransactionForm userId={user.id} scope={`refund-claim:${row.id}`} action={processRefund}><input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="claim"/><SubmitButton className="btn-acc" pendingText="Memeriksa…">Ambil proses</SubmitButton></TransactionForm>}
+   {row.kind==='uang_muka'&&row.requested_by===user.id&&['pending','diproses'].includes(row.status)&&<p>Anda yang mengajukan pengembalian ini. Pemisahan tugas: Finance atau Owner lain yang mengambil proses dan mencatat transfernya; Anda masih boleh membatalkannya selama belum ditransfer.</p>}
+   {row.status==='pending'&&!(row.kind==='uang_muka'&&row.requested_by===user.id)&&<TransactionForm userId={user.id} scope={`refund-claim:${row.id}`} action={processRefund}><input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="claim"/><SubmitButton className="btn-acc" pendingText="Memeriksa…">Ambil proses</SubmitButton></TransactionForm>}
    {row.status==='diproses'&&row.processed_by!==user.id&&<p>Sedang ditangani petugas lain. Hubungi pemroses sebelum pembatalan; jangan transfer ulang.</p>}
-   {row.status==='diproses'&&row.processed_by===user.id&&<TransactionForm userId={user.id} scope={`refund-complete:${row.id}`} action={processRefund}>
+   {row.status==='diproses'&&row.processed_by===user.id&&!(row.kind==='uang_muka'&&row.requested_by===user.id)&&<TransactionForm userId={user.id} scope={`refund-complete:${row.id}`} action={processRefund}>
     <input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="complete"/>
     <div style={{display:'flex',gap:10,flexWrap:'wrap'}}><label>Tanggal transfer <input className="fi" name="tanggal" type="date" required min={row.requested_date} max={hariIniWIB()} defaultValue={hariIniWIB()}/></label>
     <label>Rekening sumber <select className="fi" name="account_id" required defaultValue=""><option value="">Pilih rekening bank</option>{banks.filter(b=>b.branch_id===null||b.branch_id===row.branch_id).map(b=><option key={b.id} value={b.id}>{b.nama}</option>)}</select></label>
@@ -70,7 +71,7 @@ export default async function RefundPage({searchParams}:{searchParams:Promise<{s
     <SubmitButton className="btn-acc" pendingText="Memeriksa bukti…">{row.kind==='uang_muka'?'Catat transfer selesai & posting jurnal':'Catat transfer selesai & posting retur'}</SubmitButton>
    </TransactionForm>}
    {['pending','diproses'].includes(row.status)&&<details><summary>Batalkan permintaan yang belum dibayar</summary><TransactionForm userId={user.id} scope={`refund-cancel:${row.id}`} action={processRefund}>
-    <input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="cancel"/><label>Alasan <input className="fi" name="reason" required minLength={3} maxLength={500}/></label>
+    <input type="hidden" name="id" value={row.id}/><input type="hidden" name="kind" value={row.kind}/><input type="hidden" name="operation" value="cancel"/><label>Alasan{row.kind==='uang_muka'?' (minimal 5 huruf)':''} <input className="fi" name="reason" required minLength={row.kind==='uang_muka'?5:3} maxLength={500}/></label>
     <p><label><input type="checkbox" name="unpaid_confirmed" value="yes" required/> Refund ini belum dibayar.</label></p><SubmitButton className="btn-def" pendingText="Memeriksa…">Batalkan permintaan</SubmitButton>
    </TransactionForm></details>}
   </section>)}

@@ -55,7 +55,7 @@ it("pengajuan mengirim isian beserta kunci permintaan yang sama; sukses menampil
   expect(f.get("reason")).toBe("Dikembalikan sesuai keputusan Andri");
   expect(host.textContent).toContain("RUM-202611-0001");
   expect(host.textContent).toContain("Finance");
-  expect(host.querySelector("a")!.getAttribute("href")).toBe("/kas-bank/refund?status=pending");
+  expect(host.querySelector("a")!.getAttribute("href")).toBe("/kas-bank/refund");
   expect([...host.querySelectorAll("button")].some((b) => b.textContent?.includes("Ajukan pengembalian"))).toBe(false);
 });
 

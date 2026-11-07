@@ -24,8 +24,8 @@ export function UangMukaRefundForm({ advanceId, noUangMuka, saldo, requestKey }:
 
   if (saldo <= 0) return <p style={{ fontSize: 11 }}>Uang muka {noUangMuka}: tidak ada saldo yang belum terpakai untuk dikembalikan.</p>;
   if (selesai) {
-    return <div className="p2ban" role="status"><i className="ti ti-circle-check" /> Pengajuan {selesai} dibuat dan jumlahnya dicadangkan (tidak bisa terpakai tagihan lain). Belum ada uang yang bergerak: Finance mengambil proses dan mencatat transfer selesai di antrean refund.{" "}
-      <Link href="/kas-bank/refund?status=pending">Buka antrean refund Finance</Link></div>;
+    return <div className="p2ban" role="status"><i className="ti ti-circle-check" /> Pengajuan {selesai} dibuat dan jumlahnya dicadangkan (tidak bisa terpakai tagihan lain). Belum ada uang yang bergerak: Finance (atau Owner lain, bukan yang mengajukan) mengambil proses dan mencatat transfer selesai di antrean refund.{" "}
+      <Link href="/kas-bank/refund">Buka antrean refund Finance</Link></div>;
   }
   const n = angka(jumlah);
   const lebih = n !== null && n > saldo;

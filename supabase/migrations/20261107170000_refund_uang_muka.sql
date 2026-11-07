@@ -16,8 +16,16 @@
 --    Sisa uang muka dikembalikan dengan pengembalian berikutnya, bukan dengan batal kwitansi. Uang muka tanpa pengembalian: tidak berubah.
 --  * SHIFT: refund TRANSFER BANK tidak memerlukan shift kasir (aturan yang sama dengan refund klinik J03: hanya Tunai butuh shift). Tunai
 --    tidak ditawarkan di v1 (kas laci perlu rekonsiliasi shift tersendiri).
---  * PERAN: hanya OWNER dan FINANCE aktif (konstanta clinic_private.advance_refund_roles); cabang uang muka dicek; pemohon boleh sama dengan
---    pemroses (keputusan terbuka bila Andri ingin dua orang berbeda).
+--  * PERAN: hanya OWNER dan FINANCE aktif (konstanta clinic_private.advance_refund_roles); cabang uang muka dicek.
+--  * PEMISAHAN TUGAS (review C2, Andri: "di transfer balik"; konstanta c_sod di claim dan complete, default true; ubah ke false dengan satu
+--    suntingan bila Owner memutuskan lain): orang yang MENGAJUKAN tidak boleh mengambil proses dan tidak boleh mencatat selesai pengajuannya
+--    sendiri. Alur: OWNER mengajukan -> FINANCE (atau Owner lain) menekan "Ambil proses" -> orang yang sama mencatat selesai.
+--    Yang mengambil proses wajib yang menyelesaikan (CLAIM_REQUIRED, sudah ada). Pesan: SOD_CLAIM / SOD_COMPLETE.
+--  * REKENING SUMBER (review C1): di jalur otomatis (p_account kosong, memakai pemetaan Transfer) maupun jalur pilihan, rekening yang dikredit
+--    HARUS baris cash_accounts jenis 'Bank' yang aktif, berlaku untuk cabang, DAN akun pembukuannya anak langsung dari grup Bank
+--    (c_bank_group = 120000, grup yang sama dengan 120001-120006 di bagan akun). Kas/laci (110003), Piutang (150001), 314001, Persediaan,
+--    Pendapatan, Beban atau baris 'Bank' palsu yang menunjuk akun lain ditolak (ACCOUNT_INVALID); tabel cash_accounts terbuka untuk semua
+--    pengguna login, jadi jenis saja tidak cukup.
 --  * TANGGAL JURNAL: tanggal transfer yang diisi Finance (boleh hari ini atau sebelumnya, tidak lebih awal dari tanggal pengajuan, tidak di
 --    periode yang sudah dikunci); kosong = hari ini (WIB). Sumber jurnal 'klinik-uang-muka-refund', source_ref = nomor refund (RUM-YYYYMM-nnnn,
 --    unik per refund).
@@ -295,6 +303,7 @@ create function public.clinic_advance_refund_claim(p_id uuid)
 returns jsonb language plpgsql security definer set search_path = '' set lock_timeout = '8s' as $function$
 declare
   v_user uuid := auth.uid(); v_role text; v_ref clinic_private.advance_refunds%rowtype; v_adv public.clinic_customer_advances%rowtype;
+  c_sod constant boolean := true;               -- pemisahan tugas: yang mengajukan tidak mengambil proses pengajuannya sendiri
 begin
   v_role := coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), nullif(current_setting('role', true), 'none'));
   if v_role is distinct from 'authenticated' or v_user is null then
@@ -325,6 +334,9 @@ begin
   if v_ref.status <> 'pending' then
     raise exception using errcode = 'P0001', message = format('CLAIM_STATE: pengembalian berstatus %s, tidak bisa diambil proses', v_ref.status);
   end if;
+  if c_sod and v_ref.requested_by = v_user then
+    raise exception using errcode = 'P0001', message = 'SOD_CLAIM: pengajuan ini tidak boleh diambil proses oleh orang yang mengajukannya; minta Finance atau Owner lain menekan "Ambil proses"';
+  end if;
   update clinic_private.advance_refunds set status = 'diproses', processed_by = v_user, processed_at = clock_timestamp() where id = p_id;
   perform clinic_private.advance_refund_event(p_id, 'claim', v_user, v_adv.amount - v_adv.applied, null, '{}'::jsonb);
   return clinic_private.advance_refund_json(p_id);
@@ -340,6 +352,8 @@ declare
   v_user uuid := auth.uid(); v_role text; v_ref clinic_private.advance_refunds%rowtype; v_adv public.clinic_customer_advances%rowtype;
   v_reference text := btrim(coalesce(p_reference, '')); v_today date := (now() at time zone 'Asia/Jakarta')::date; v_date date;
   v_acc public.cash_accounts%rowtype; v_code text; v_closed date; v_jid uuid;
+  c_sod constant boolean := true;               -- pemisahan tugas: yang mengajukan tidak menyelesaikan pengajuannya sendiri
+  c_bank_group constant text := '120000';       -- grup Bank di bagan akun: rekening sumber harus anak langsungnya
 begin
   v_role := coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), nullif(current_setting('role', true), 'none'));
   if v_role is distinct from 'authenticated' or v_user is null then
@@ -380,6 +394,9 @@ begin
   if v_ref.status <> 'diproses' or v_ref.processed_by is distinct from v_user then
     raise exception using errcode = 'P0001', message = 'CLAIM_REQUIRED: ambil proses pengembalian ini lebih dulu (hanya petugas yang mengambil yang bisa menyelesaikan)';
   end if;
+  if c_sod and v_ref.requested_by = v_user then
+    raise exception using errcode = 'P0001', message = 'SOD_COMPLETE: pengajuan ini tidak boleh diselesaikan oleh orang yang mengajukannya; minta Finance atau Owner lain mengambil proses dan mencatat transfernya';
+  end if;
   -- rekening sumber: bank terpilih, atau pemetaan Transfer (default 120002)
   if p_account is not null then
     select * into v_acc from public.cash_accounts c where c.id = p_account for share;
@@ -390,9 +407,13 @@ begin
   else
     v_code := clinic_private.kas_code('Transfer', v_ref.branch_id);
     select * into v_acc from public.cash_accounts c where c.coa_code = v_code and c.is_active and c.jenis = 'Bank' and (c.branch_id is null or c.branch_id = v_ref.branch_id) order by c.branch_id nulls last limit 1;
+    if not found then
+      raise exception using errcode = 'P0001', message = 'ACCOUNT_INVALID: pemetaan rekening Transfer tidak menunjuk rekening Bank yang aktif untuk cabang ini; pilih rekening bank sumber secara manual';
+    end if;
   end if;
-  if not exists (select 1 from public.coa_accounts a where a.code = v_code and a.type = 'ASET' and a.is_active and not a.is_header) then
-    raise exception using errcode = 'P0001', message = 'ACCOUNT_INVALID: akun bank tidak valid di bagan akun';
+  if not exists (select 1 from public.coa_accounts a join public.coa_accounts g on g.id = a.parent_id
+                 where a.code = v_code and a.type = 'ASET' and a.is_active and not a.is_header and g.code = c_bank_group and g.type = 'ASET' and g.is_header) then
+    raise exception using errcode = 'P0001', message = format('ACCOUNT_INVALID: akun pembukuan rekening sumber (%s) bukan rekening di grup Bank (%s); kas, piutang, uang muka dan akun lain ditolak', v_code, c_bank_group);
   end if;
   select l.closed_until into v_closed from public.accounting_locks l where l.id;
   if v_closed is not null and v_date <= v_closed then
@@ -500,12 +521,17 @@ do $check$
 declare d text;
 begin
   d := pg_get_functiondef('public.clinic_advance_refund_complete(uuid,date,uuid,text)'::regprocedure);
-  if position('billing_lock' in d) = 0 or position('clinic_write_journal' in d) = 0 or position('accounting_locks' in d) = 0 or position('314001' in d) = 0 or position('advance_refund_role_ok' in d) = 0 then
+  if position('billing_lock' in d) = 0 or position('clinic_write_journal' in d) = 0 or position('accounting_locks' in d) = 0 or position('314001' in d) = 0 or position('advance_refund_role_ok' in d) = 0
+     or position('c_bank_group' in d) = 0 or position('c_sod' in d) = 0 then
     raise exception 'Refund uang muka: definisi complete tidak sesuai setelah dipasang';
   end if;
   d := pg_get_functiondef('public.clinic_advance_refund_request(uuid,numeric,text,jsonb,text)'::regprocedure);
   if position('billing_lock' in d) = 0 or position('advance_refund_role_ok' in d) = 0 or position('AMOUNT_EXCEEDS' in d) = 0 or position('advance_refund_move' in d) = 0 then
     raise exception 'Refund uang muka: definisi request tidak sesuai setelah dipasang';
+  end if;
+  d := pg_get_functiondef('public.clinic_advance_refund_claim(uuid)'::regprocedure);
+  if position('c_sod' in d) = 0 or position('SOD_CLAIM' in d) = 0 then
+    raise exception 'Refund uang muka: definisi claim tidak sesuai setelah dipasang';
   end if;
   if clinic_private.advance_refund_roles() is distinct from array['OWNER', 'FINANCE']::text[] then
     raise exception 'Refund uang muka: peran tidak sesuai';

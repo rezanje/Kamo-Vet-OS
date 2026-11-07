@@ -86,3 +86,29 @@ it.each(['STAFF', 'DOCTOR', 'ADMIN'])('queue page for role %s does not show adva
   await expect(Page({ searchParams: Promise.resolve({}) })).rejects.toThrow(/Akses/);
   expect(s.advRpc).not.toHaveBeenCalled();
 });
+
+it('Selesaikan-time rules: the transfer-date minimum is the WIB request date (a request at 01:00 WIB on 7 Nov is 18:00 UTC on 6 Nov)', async () => {
+  s.advRpc.mockResolvedValue({ data: [{ ...row, status: 'diproses', processed_by: 'actor', requested_at: '2026-11-06T18:00:00.000Z' }], error: null });
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+  expect(html).toMatch(/<input[^>]*type="date"[^>]*min="2026-11-07"/);
+  expect(html).not.toContain('min="2026-11-06"');
+});
+
+it('cancel form of an advance refund asks for at least 5 letters (the database minimum), in the label and in minLength', async () => {
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+  expect(html).toContain('minimal 5 huruf');
+  expect(html).toMatch(/<input[^>]*minLength="5"[^>]*name="reason"/);
+  expect(html).not.toMatch(/<input[^>]*minLength="3"[^>]*name="reason"/);
+});
+
+it('separation of duties: the person who requested the refund is not offered Ambil proses nor the completion form, only a note', async () => {
+  s.advRpc.mockResolvedValue({ data: [{ ...row, requested_by: 'actor' }], error: null });
+  const pending = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+  expect(pending).not.toContain('Ambil proses</button>'); expect(pending).toContain('Anda yang mengajukan'); expect(pending).toContain('Batalkan permintaan');
+  s.advRpc.mockResolvedValue({ data: [{ ...row, requested_by: 'actor', status: 'diproses', processed_by: 'actor' }], error: null });
+  const held = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+  expect(held).not.toContain('name="reference"'); expect(held).toContain('Anda yang mengajukan');
+  // another person's request: unchanged
+  s.advRpc.mockResolvedValue({ data: [{ ...row, requested_by: 'owner' }], error: null });
+  expect(renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }))).toContain('Ambil proses</button>');
+});

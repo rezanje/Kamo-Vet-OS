@@ -118,7 +118,7 @@ def run(h, db=None, setup=True, baseline=False, sections=None):
                    "||'|'||(to_regclass('clinic_private.advance_refunds') is not null)::text||'|'||(to_regclass('clinic_private.advance_refund_events') is not null)::text"
                    "||'|'||(select count(*) from information_schema.columns where table_name='clinic_customer_advances' and column_name in ('refunded_amount','refund_reserved'))::text")
     check('preflight: 5 RPCs, refund table, audit event table and the 2 advance columns exist', have == '5|true|true|2', dict(have=have))
-    for name, fn in (('main', sec_main), ('life', sec_life), ('neg', sec_neg), ('scope', sec_scope), ('static', sec_static)):
+    for name, fn in (('main', sec_main), ('life', sec_life), ('neg', sec_neg), ('scope', sec_scope), ('static', sec_static), ('acct', sec_acct), ('sod', sec_sod)):
         if S(name):
             try: fn(h)
             except Exception as e: check(f'section {name} crashed (fixture or result missing)', False, str(e).strip().splitlines()[-1][:300] if str(e).strip() else repr(e))
@@ -337,7 +337,7 @@ def sec_neg(h):
     rid3 = (r3 or {}).get('refund_id'); c3, e3 = cancel(h, rid3, user=r.OWNER)
     check('OWNER cancels a pending request (the requester) and the balance is released again', c3 is not None and c3['status'] == 'batal' and D(adv_row(h, N)['refund_reserved']) == 0 and bal(adv_row(h, N)) == 20000, dict(error=(e3 or '')[:160]))
     # claimed by FINANCE: OWNER may cancel, ADMIN may not
-    r4, _ = req(h, N, 5000, 'rum-cap-5', user=r.FINANCE); rid4 = (r4 or {}).get('refund_id'); claim(h, rid4, user=r.FINANCE)
+    r4, _ = req(h, N, 5000, 'rum-cap-5', user=r.OWNER); rid4 = (r4 or {}).get('refund_id'); claim(h, rid4, user=r.FINANCE)
     refused(h, N, 'NEG cancel of a diproses request by ADMIN refused (ACCESS_DENIED)', cancel(h, rid4, user=r.ADMIN), ['ACCESS_DENIED', 'hanya untuk Owner atau Finance'])
     c4, _ = cancel(h, rid4, user=r.OWNER)
     check('OWNER may cancel a request that FINANCE has claimed (not yet paid); reservation released', c4 is not None and c4['status'] == 'batal' and D(adv_row(h, N)['refund_reserved']) == 0, dict(res=str(c4)[:100]))
@@ -360,8 +360,8 @@ def sec_scope(h):
     sh = h.nilai("select count(*) from cashier_shifts where status='open' and shift_type='klinik' and opened_by=" + q(r.FINANCE))
     h.sql(f"update cashier_shifts set status='closed',closed_at=now() where opened_by={q(r.FINANCE)} and status='open';")
     F3 = live(h, 7124); r3, _ = req(h, F3, 30000, 'rum-sc-5', user=r.FINANCE); rid3 = (r3 or {}).get('refund_id')
-    claim(h, rid3); c3, e3 = done(h, rid3)
-    check('NO open shift needed for a bank (Transfer) refund request / claim / completion by FINANCE (same rule as J03 Transfer; only cash would need a shift)', r3 is not None and c3 is not None and c3['status'] == 'selesai', dict(error=(e3 or '')[:160], open_shifts_before=sh))
+    claim(h, rid3, user=r.OWNER); c3, e3 = done(h, rid3, user=r.OWNER)
+    check('NO open shift needed for a bank (Transfer) refund: FINANCE (no open shift) requests, OWNER claims and completes (same rule as J03 Transfer; only cash would need a shift)', r3 is not None and c3 is not None and c3['status'] == 'selesai', dict(error=(e3 or '')[:160], open_shifts_before=sh))
 
 
 def sec_static(h):
@@ -405,6 +405,105 @@ def sec_static(h):
     dig = h.nilai(DIGEST_FN)
     RESULTS.append(dict(case='digest: every pre-existing function (definition + ACL) md5, for comparison RED vs GREEN', status='PASS', detail=dict(md5=dig)))
     print('PASS digest', dig, flush=True)
+
+
+BANK_FAKE = {'150001': 'b1', '314001': 'b2', '170001': 'b3', '510002': 'b4', '600001': 'b5', '110001': 'b6'}
+def fid(k): return 'e0000000-0000-4000-8000-0000000099' + k
+
+
+def claimed(h, n, key, user=r.OWNER, claimer=r.FINANCE):
+    """live-case advance, refund requested by `user` (30000) and claimed by `claimer`."""
+    F = live(h, n); res, err = req(h, F, 30000, key, user=user)
+    if not res: raise RuntimeError('request failed: ' + str(err)[:200])
+    rid = res['refund_id']
+    if claimer is not None:
+        c1, e1 = claim(h, rid, user=claimer)
+        if not c1: raise RuntimeError('claim failed: ' + str(e1)[:200])
+    return F, rid
+
+
+def set_map(h, cash_id):
+    h.sql("delete from payment_account_map where metode='Transfer' and branch_id is null;"
+          + (f"insert into payment_account_map(metode,branch_id,cash_account_id) values ('Transfer',null,{q(cash_id)});" if cash_id else ''))
+
+
+def sec_acct(h):
+    """C1 of the independent review: the credited account must be a REAL bank account on the default path too (reviewer exploits A1 and A2)."""
+    F, rid = claimed(h, 7150, 'rum-acct-1'); s0 = snap(h, F); b0 = {a: h.saldo(a) for a in ACCTS}
+    kas = h.nilai("select id from cash_accounts where coa_code='110003'"); bank = h.nilai("select id from cash_accounts where coa_code='120002'")
+    unchanged = lambda: all(h.saldo(a) == b0[a] for a in ACCTS) and tb(h) == 0
+    # A1: the Transfer payment-account map is pointed at the cash drawer; default path (p_account null)
+    set_map(h, kas)
+    refused(h, F, 'ACCT A1 (reviewer exploit): Transfer map pointed at Kas 110003, default path (account null) refused ACCOUNT_INVALID (pemetaan Transfer bukan rekening Bank); no journal, cash drawer untouched',
+            done(h, rid), ['ACCOUNT_INVALID', 'pemetaan rekening Transfer'], s0)
+    check('ACCT A1: ...and cash 110003, bank 120002, 314001 balances did not move', unchanged(), dict(b0=b0))
+    # A1b: the cash row relabelled as 'Bank' (cash_accounts is RLS-open): its coa is not in the Bank group -> refused on both paths
+    h.sql("update cash_accounts set jenis='Bank' where coa_code='110003';")
+    refused(h, F, 'ACCT A1b: the Kas row relabelled jenis=Bank (map -> it), default path refused: its accounting code 110003 is not in the Bank group (ACCOUNT_INVALID grup Bank)', done(h, rid), ['ACCOUNT_INVALID', 'grup Bank'], s0)
+    refused(h, F, 'ACCT A1b: ...same row chosen explicitly refused (grup Bank)', done(h, rid, account=kas), ['ACCOUNT_INVALID', 'grup Bank'], s0)
+    h.sql("update cash_accounts set jenis='Kas' where coa_code='110003';")
+    set_map(h, None)
+    # A2: fake 'Bank' rows whose accounting code is Piutang / liability / inventory / revenue / expense / another cash account
+    for coa, k in BANK_FAKE.items():
+        h.sql(f"insert into cash_accounts(id,nama,jenis,coa_code,is_active) values ({q(fid(k))},'Bank Palsu {coa}','Bank','{coa}',true);")
+        refused(h, F, f'ACCT A2 (reviewer exploit): a fake Bank row with accounting code {coa} chosen explicitly refused (ACCOUNT_INVALID grup Bank), nothing posted', done(h, rid, account=fid(k)), ['ACCOUNT_INVALID', 'grup Bank'], s0)
+    # A3: the type alone matters too: a row typed 'Kas' whose accounting code IS in the Bank group (120006) is refused on both paths by the type guard
+    h.sql(f"insert into cash_accounts(id,nama,jenis,coa_code,is_active) values ({q(fid('a3'))},'Kas Salah Jenis','Kas','120006',true);")
+    refused(h, F, 'ACCT A3: a row typed Kas (accounting code 120006 inside the Bank group) chosen explicitly refused: not a Bank row (ACCOUNT_INVALID rekening bank yang aktif)', done(h, rid, account=fid('a3')), ['ACCOUNT_INVALID', 'rekening bank yang aktif'], s0)
+    set_map(h, fid('a3'))
+    refused(h, F, 'ACCT A3: Transfer map pointed at that Kas-typed row, default path refused (pemetaan rekening Transfer): the mapped row is not an active Bank row', done(h, rid), ['ACCOUNT_INVALID', 'pemetaan rekening Transfer'], s0)
+    set_map(h, None)
+    set_map(h, fid(BANK_FAKE['150001']))
+    refused(h, F, 'ACCT A2: Transfer map pointed at the fake Bank row (Piutang 150001), default path refused (grup Bank)', done(h, rid), ['ACCOUNT_INVALID', 'grup Bank'], s0)
+    check('ACCT A2: ...and no balance moved by any refused attempt', unchanged(), dict(b0=b0))
+    set_map(h, None)
+    # control: real bank accounts of the Bank group still work, explicit and through the map
+    h.sql(f"insert into cash_accounts(id,nama,jenis,coa_code,is_active) values ({q(fid('c1'))},'Bank BCA Toko','Bank','120001',true),({q(fid('c2'))},'Bank BCA Margin','Bank','120005',true);")
+    set_map(h, fid('c2'))
+    c1, e1 = done(h, rid, ref='TRF-MAP-GUDANG')
+    check('ACCT control: Transfer map pointed at a real Bank-group account (120005), default path works: journal Dr 314001 / Cr 120005', c1 is not None and lines_of(h, c1['journal_id']) == sorted([('314001', D(30000), D(0)), ('120005', D(0), D(30000))]), dict(error=(e1 or '')[:200]))
+    set_map(h, None)
+    G, rid2 = claimed(h, 7151, 'rum-acct-2')
+    c2, e2 = done(h, rid2, account=fid('c1'), ref='TRF-TOKO')
+    check('ACCT control: a real Bank-group account chosen explicitly (120001) works: journal Cr 120001', c2 is not None and lines_of(h, c2['journal_id']) == sorted([('314001', D(30000), D(0)), ('120001', D(0), D(30000))]), dict(error=(e2 or '')[:200]))
+    H, rid3 = claimed(h, 7152, 'rum-acct-3')
+    c3, e3 = done(h, rid3, ref='TRF-DEFAULT')
+    check('ACCT control: no map row and no account (hosted state today): default Bank BCA 120002 works', c3 is not None and lines_of(h, c3['journal_id']) == sorted([('314001', D(30000), D(0)), ('120002', D(0), D(30000))]), dict(error=(e3 or '')[:200]))
+    check('ACCT: the bank-group constant and the default-path refusal are in the installed function text (documented, flippable)',
+          h.nilai("select (position('c_bank_group' in d)>0 and position('pemetaan rekening Transfer' in d)>0)::text from (select pg_get_functiondef('public.clinic_advance_refund_complete(uuid,date,uuid,text)'::regprocedure) d) t") == 'true', dict())
+
+
+def sec_sod(h):
+    """C2 of the independent review: separation of duties. Owner requests, Finance (or another Owner) completes; nobody takes their own request."""
+    # reviewer exploit A5: FINANCE alone requests, takes the process and completes
+    F, rid = claimed(h, 7160, 'rum-sod-1', user=r.FINANCE, claimer=None); s0 = snap(h, F); b0 = {a: h.saldo(a) for a in ACCTS}
+    refused(h, F, 'SOD exploit A5: FINANCE who requested the refund cannot take it (Ambil proses): refused SOD_CLAIM with an Indonesian message; nothing changes', claim(h, rid, user=r.FINANCE), ['SOD_CLAIM', 'pengaju'], s0)
+    refused(h, F, 'SOD exploit A5: ...and cannot complete it either (no claim): refused, nothing changes, no journal', done(h, rid, user=r.FINANCE), ['CLAIM_REQUIRED'], s0)
+    check('SOD: the refused attempts left the request pending and the balances unmoved', refund_row(h, rid)['status'] == 'pending' and all(h.saldo(a) == b0[a] for a in ACCTS), dict(status=refund_row(h, rid)['status']))
+    # a request already held by its own requester (planted: older rows / flipped constant) still cannot be COMPLETED by that person
+    h.sql(f"update clinic_private.advance_refunds set status='diproses', processed_by=requested_by, processed_at=now() where id={q(rid)};")
+    s1 = snap(h, F)
+    refused(h, F, 'SOD: a request whose claimer IS its requester (planted) cannot be completed by that person: refused SOD_COMPLETE (own message), no journal', done(h, rid, user=r.FINANCE), ['SOD_COMPLETE', 'pengaju'], s1)
+    # the same person as OWNER
+    G = live(h, 7161); g1, _ = req(h, G, 30000, 'rum-sod-2', user=r.OWNER); rg = g1['refund_id']; sg = snap(h, G)
+    refused(h, G, 'SOD: OWNER who requested cannot take the process either (SOD_CLAIM)', claim(h, rg, user=r.OWNER), ['SOD_CLAIM'], sg)
+    refused(h, G, 'SOD: ...and OWNER cannot complete their own request (CLAIM_REQUIRED, no claim)', done(h, rg, user=r.OWNER), ['CLAIM_REQUIRED'], sg)
+    # planted: an OWNER request held by its own OWNER cannot be completed by that OWNER either
+    K = live(h, 7163); k1, _ = req(h, K, 30000, 'rum-sod-2b', user=r.OWNER); rk = k1['refund_id']
+    h.sql(f"update clinic_private.advance_refunds set status='diproses', processed_by=requested_by, processed_at=now() where id={q(rk)};"); sk = snap(h, K)
+    refused(h, K, 'SOD: a request held by its own OWNER (planted) cannot be completed by that OWNER: refused SOD_COMPLETE, no journal', done(h, rk, user=r.OWNER), ['SOD_COMPLETE'], sk)
+    c1, e1 = claim(h, rg, user=r.FINANCE); c2, e2 = done(h, rg, user=r.FINANCE, ref='TRF-SOD-OK')
+    check('SOD default flow: OWNER requests, FINANCE takes the process and completes (the live Keripik Tempe flow): selesai, ONE journal Dr 314001 / Cr 120002', c1 is not None and c2 is not None and c2['status'] == 'selesai'
+          and lines_of(h, c2['journal_id']) == sorted([('314001', D(30000), D(0)), ('120002', D(0), D(30000))]) and refund_row(h, rg)['requested_by'] == r.OWNER and refund_row(h, rg)['completed_by'] == r.FINANCE, dict(c=(e1 or e2 or '')[:200]))
+    # FINANCE requests, another person (OWNER) completes
+    H, rh = claimed(h, 7162, 'rum-sod-3', user=r.FINANCE, claimer=r.OWNER)
+    c3, e3 = done(h, rh, user=r.OWNER, ref='TRF-SOD-OWNER')
+    check('SOD default flow: FINANCE requests, OWNER takes the process and completes: selesai, requested_by FINANCE, completed_by OWNER', c3 is not None and c3['status'] == 'selesai' and refund_row(h, rh)['requested_by'] == r.FINANCE and refund_row(h, rh)['completed_by'] == r.OWNER, dict(error=(e3 or '')[:200]))
+    ev = events(h, rh)
+    check('SOD: audit events of the two-person flow show different actors for request and complete', [e_['event'] for e_ in ev] == ['request', 'claim', 'complete'] and ev[0]['actor_id'] == r.FINANCE and ev[2]['actor_id'] == r.OWNER, dict(events=str([(e_['event'], e_['actor_id'][-4:]) for e_ in ev])))
+    check('SOD: the switch is a named constant (c_sod) in claim and complete, default true (flip it with one edit if the owners decide otherwise)',
+          h.nilai("select (select count(*) from pg_proc p where p.proname in ('clinic_advance_refund_claim','clinic_advance_refund_complete') and pg_get_functiondef(p.oid) like '%c_sod constant boolean := true;%')::text"
+                  "||'|'||(select count(*) from pg_proc p where p.proname in ('clinic_advance_refund_claim','clinic_advance_refund_complete') and pg_get_functiondef(p.oid) like '%SOD_%')::text") == '2|2', dict())
 
 
 def races(h, db):
