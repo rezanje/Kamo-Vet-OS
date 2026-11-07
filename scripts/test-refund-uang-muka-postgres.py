@@ -495,7 +495,7 @@ DIGEST_OBJ = """select md5(string_agg(x, '|' order by x)) from (
  select 'col:'||table_schema||'.'||table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,'') x from information_schema.columns
    where table_schema in ('public','clinic_private') and table_name not like 'advance_refund%' and not (table_name='clinic_customer_advances' and column_name in ('refunded_amount','refund_reserved'))
  union all select 'con:'||conrelid::regclass||':'||conname||':'||pg_get_constraintdef(oid) from pg_constraint where connamespace in ('public'::regnamespace,'clinic_private'::regnamespace)
-   and conrelid::regclass::text not like '%advance_refund%' and not (conrelid='public.clinic_customer_advances'::regclass and conname='clinic_customer_advances_amount_check')
+   and conrelid::regclass::text not like '%advance_refund%' and not (conrelid='public.clinic_customer_advances'::regclass and conname in ('clinic_customer_advances_amount_check','clinic_customer_advances_refunded_amount_check','clinic_customer_advances_refund_reserved_check'))
  union all select 'trg:'||tgrelid::regclass||':'||tgname from pg_trigger where not tgisinternal and tgrelid::regclass::text not like '%advance_refund%' and tgname <> 'advance_refund_fence'
  union all select 'idx:'||indexdef from pg_indexes where schemaname in ('public','clinic_private') and tablename not like 'advance_refund%'
  union all select 'pol:'||schemaname||'.'||tablename||':'||policyname||':'||coalesce(qual,'')||coalesce(with_check,'') from pg_policies where schemaname in ('public','clinic_private') and tablename not like 'advance_refund%'
@@ -550,7 +550,7 @@ def main():
                     extra['digest_before'] = dict(functions=h.nilai(DIGEST_FN), objects=h.nilai(DIGEST_OBJ))
                     apply_candidate(db, (MIG / CANDIDATE).read_text())
                     extra['digest_after'] = dict(functions=h.nilai(DIGEST_FN), objects=h.nilai(DIGEST_OBJ))
-                    check('DIGEST-DIFF: every pre-existing function (definition + ACL), column, constraint, trigger, index, policy and table ACL is byte-identical before vs after the migration, except the declared changes on clinic_customer_advances (2 columns, amount check, 1 trigger)',
+                    check('DIGEST-DIFF: every pre-existing function (definition + ACL), column, constraint, trigger, index, policy and table ACL is byte-identical before vs after the migration, except the declared changes on clinic_customer_advances (2 columns, their 2 column checks, the amount check, 1 trigger)',
                           extra['digest_before'] == extra['digest_after'], extra)
                 run(h, db, setup=False, baseline=a.baseline)
     except Exception as e: check('HARNESS', False, str(e)[:800])
