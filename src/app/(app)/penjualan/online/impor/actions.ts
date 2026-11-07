@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { TIPE_GUDANG_ORDER_ONLINE } from "@/lib/online-gudang";
 import { createClient } from "@/lib/supabase/server";
 import { readCompleteList } from "@/lib/checked-list";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
@@ -74,8 +75,9 @@ export async function pratinjauImporShopee(formData: FormData): Promise<Pratinja
     const baca = await bacaFile(formData);
     if ("error" in baca) return kosong(baca.error);
 
-    const { data: wh } = await db.from("warehouses").select("id").eq("id", warehouseId).eq("type", "ONLINE").eq("is_active", true).maybeSingle();
-    if (!wh) return kosong("Gudang online tidak ditemukan atau tidak aktif.");
+    const { data: wh } = await db.from("warehouses").select("id").eq("id", warehouseId)
+      .in("type", [...TIPE_GUDANG_ORDER_ONLINE]).eq("is_active", true).maybeSingle();
+    if (!wh) return kosong("Gudang tidak ditemukan, tidak aktif, atau tidak bisa dipakai untuk order online.");
 
     const [items, stock, existing] = await Promise.all([
       readCompleteList<{ id: string; code: string; name: string; sell_price: number | string; item_type: string | null }>((from, to) => db.from("items")

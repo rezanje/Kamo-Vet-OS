@@ -13,6 +13,7 @@ import { bulkFillServicePerformers, emptyServicePerformers, visitDefaultPerforme
 import { useClinicDraft } from "@/components/useClinicDraft";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
+import { cegahEnterSimpan } from "@/lib/cegah-enter-simpan";
 import { createClient } from "@/lib/supabase/client";
 import { type RacikanIngredient } from "@/lib/racikan";
 import { OPSI_MAKAN, OPSI_MINUM, OPSI_BAB, OPSI_PIPIS, OPSI_KOMUNIKASI } from "@/lib/monitoring-inap";
@@ -353,7 +354,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
         bermuara ke popup yang sama. Hanya satu dialog yang boleh terbuka. */}
     {stokKurang.length === 0 && <StokKurangDariPesan pesan={draftSaveError}
       petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />}
-    <form ref={draftAttachForm} action={(data) => {
+    <form ref={draftAttachForm} onKeyDown={cegahEnterSimpan} action={(data) => {
       if (clinicalBillingDraft) return;
       if (clinical) { data.set("resep", "[]"); data.delete("catatan_resep"); }
       return draftSubmit(data, billables ? addInpatientBillables : addDailyLogPos);

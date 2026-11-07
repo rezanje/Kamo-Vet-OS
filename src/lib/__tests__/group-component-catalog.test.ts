@@ -63,10 +63,12 @@ describe("Group component catalog on new and edit item forms",()=>{
  });
  it("loads eligible components past the API cap and former 5000 limit, retaining filters and alphabetical order",async()=>{
   const form=await siapkanFormBarang();
-  expect(form.kandidatGrup).toHaveLength(6001);
+  // Grup aktif ikut jadi kandidat (paket di dalam paket, 6 Nov 2026).
+  expect(form.kandidatGrup).toHaveLength(6002);
   expect(form.kandidatGrup.at(-1)).toMatchObject({id:"item-6000",name:"Zebra late component",item_type:"Jasa"});
   expect(form.kandidatGrup.find(row=>row.id==="item-5999")?.item_type).toBe("Non-Persediaan");
-  expect(form.kandidatGrup.some(row=>["inactive","nested-group"].includes(row.id))).toBe(false);
+  expect(form.kandidatGrup.some(row=>row.id==="inactive")).toBe(false);
+  expect(form.kandidatGrup.find(row=>row.id==="nested-group")?.item_type).toBe("Grup");
   expect(form.kandidatGrup.map(row=>row.name)).toEqual(form.kandidatGrup.map(row=>row.name).sort());
  });
  it("loads substitute stock items and extra units for late components",async()=>{

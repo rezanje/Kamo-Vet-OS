@@ -55,14 +55,37 @@ const LAINLAIN: { label: string; href?: string }[] = [
   { label: "Penerimaan barang", href: "/klinik/penerimaan" },
 ];
 
-function HeroCard({ h }: { h: Hero }) {
+// Follow up dari dokter (kontrol / vaksin berikutnya) → daftar kirim WhatsApp. Dulu hanya
+// ada di tile admin, sehingga staf front desk tidak menemukannya (Aldi, 5 Nov).
+function followUpHero(perlu: number | null, hariIngat: number): Hero {
+  return {
+    label: "FOLLOW UP",
+    desc: perlu == null
+      ? "Ingatkan pelanggan jadwal kontrol & vaksin lewat WhatsApp"
+      : perlu > 0
+        ? `${perlu} pasien perlu diingatkan via WhatsApp (H-${hariIngat})`
+        : "Belum ada pasien yang perlu diingatkan",
+    icon: "ti-brand-whatsapp",
+    color: "#0f766e",
+    tint: "#ecfdf5",
+    href: `/klinik/follow-up?tab=perlu&h=${hariIngat}`,
+  };
+}
+
+function HeroCard({ h, badge }: { h: Hero; badge?: number | null }) {
   const body = (
     <>
       <div
         className="skl-icon"
-        style={{ background: h.tint, color: h.color }}
+        style={{ background: h.tint, color: h.color, position: "relative" }}
       >
         <i className={`ti ${h.icon}`} />
+        {badge ? (
+          <span aria-label={`${badge} perlu diingatkan`} style={{
+            position: "absolute", top: -2, right: -2, minWidth: 24, height: 24, borderRadius: 12, padding: "0 6px",
+            background: "#dc2626", color: "#fff", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+          }}>{badge > 99 ? "99+" : badge}</span>
+        ) : null}
       </div>
       <div className="skl-title" style={{ color: h.color }}>
         {h.label}
@@ -79,7 +102,12 @@ function HeroCard({ h }: { h: Hero }) {
   );
 }
 
-export function StaffKlinikHome({ fullName }: { fullName: string }) {
+export function StaffKlinikHome({ fullName, followUpPerlu = null, hariIngat = 3 }: {
+  fullName: string;
+  /** Jumlah follow up yang perlu diingatkan; null = belum terbaca (kartu tetap tampil). */
+  followUpPerlu?: number | null;
+  hariIngat?: number;
+}) {
   return (
     <div className="skl-wrap">
       {/* watermark paw + plus (dekoratif, ala referensi KAMO CLINIC) */}
@@ -99,6 +127,7 @@ export function StaffKlinikHome({ fullName }: { fullName: string }) {
         {HERO.map((h) => (
           <HeroCard key={h.label} h={h} />
         ))}
+        <HeroCard h={followUpHero(followUpPerlu, hariIngat)} badge={followUpPerlu} />
 
         {/* LAIN-LAIN: kartu ungu berisi daftar fitur klinik lain */}
         <div className="skl-card">

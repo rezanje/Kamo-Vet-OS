@@ -4,7 +4,7 @@ import { NumberInput } from "@/components/NumberInput";
 
 import { ItemReferenceField } from "@/components/ItemReferenceField";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { SubmitButton } from "@/components/SubmitButton";
 import { TINDAKAN_KATEGORI, kategoriWajibConsent } from "@/lib/tindakan";
@@ -20,7 +20,8 @@ export type KandidatKomponenGrup = {
   code: string | null;
   name: string;
   unit: string;
-  item_type: Exclude<ItemType, "Grup">;
+  /** Grup boleh menjadi isi Grup lain (grup bertingkat, 6 Nov 2026). */
+  item_type: ItemType;
   sell_price: number;
   buy_price: number;
   units: { unit: string; factor: number }[];
@@ -81,6 +82,11 @@ export function BarangForm({
 
   const isJasa = itemType === "Jasa";
   const isGroup = itemType === "Grup";
+  // Paket tidak boleh berisi dirinya sendiri; lingkaran lebih jauh ditolak server.
+  const pilihanKomponen = useMemo(
+    () => kandidatGrup.filter(candidate => candidate.id !== editing?.id),
+    [kandidatGrup, editing?.id],
+  );
   const punyaStok = itemType === "Persediaan";
   const dasar = baseUnit.trim();
   const labelDasar = dasar || "satuan dasar";
@@ -470,6 +476,7 @@ export function BarangForm({
               </div>
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>
                 Harga dijual dari Grup. Stok dan HPP mengikuti komponen Persediaan; kasir tidak dapat mengubah rincian.
+                Paket lain boleh dimasukkan sebagai komponen — isinya ikut berubah otomatis bila paket itu diubah.
               </div>
             </div>
             <button type="button" className="btn-def" onClick={addGroupComponent}
@@ -485,20 +492,20 @@ export function BarangForm({
           )}
 
           {groupComponents.map((row, i) => {
-            const item = kandidatGrup.find((candidate) => candidate.id === row.component_item_id);
+            const item = pilihanKomponen.find((candidate) => candidate.id === row.component_item_id);
             const unitOptions = item?.units ?? (row.unit ? [{ unit: row.unit, factor: row.factor }] : []);
             return (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 110px 120px 38px", gap: 7, alignItems: "end", marginBottom: 8 }}>
                 <div>
-                  {i === 0 && <label className="flab">Barang / jasa komponen *</label>}
-                  <SearchableItemPicker items={kandidatGrup.map(candidate => ({...candidate, code: candidate.code ?? ""}))}
+                  {i === 0 && <label className="flab">Barang / jasa / paket komponen *</label>}
+                  <SearchableItemPicker items={pilihanKomponen.map(candidate => ({...candidate, code: candidate.code ?? ""}))}
                     value={row.component_item_id} required ariaLabel={`Barang / jasa komponen ${i + 1}`}
                     onChange={id => {
-                      const selected = kandidatGrup.find(candidate => candidate.id === id);
+                      const selected = pilihanKomponen.find(candidate => candidate.id === id);
                       const firstUnit = selected?.units[0] ?? { unit: "", factor: 1 };
                       setGroupComponent(i, { component_item_id: id, unit: firstUnit.unit, factor: firstUnit.factor });
                     }} />
-                  {item && <small style={{color:'var(--tm)'}}>Jenis: {item.item_type}</small>}
+                  {item && <small style={{color:'var(--tm)'}}>Jenis: {item.item_type === "Grup" ? "Grup (paket) — isinya ikut otomatis" : item.item_type}</small>}
                 </div>
                 <div>
                   {i === 0 && <label className="flab">Qty *</label>}

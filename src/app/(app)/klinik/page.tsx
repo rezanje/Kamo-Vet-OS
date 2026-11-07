@@ -6,6 +6,21 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { ModuleHome } from "@/components/ModuleHome";
 import { StaffKlinikHome } from "@/components/StaffKlinikHome";
+import { batasPerluDiingatkan, HARI_INGAT_DEFAULT } from "@/lib/followup";
+import { hariIniWIB } from "@/lib/tanggal";
+
+type Klien = Awaited<ReturnType<typeof createClient>>;
+/** Jumlah follow up cabang aktif yang perlu diingatkan (RLS membatasi ke cabang operasional). */
+async function hitungFollowUpPerlu(supabase: Klien): Promise<number | null> {
+  try {
+    const { count, error } = await supabase.from("follow_ups").select("id", { count: "exact", head: true })
+      .eq("status", "Menunggu").lte("tanggal", batasPerluDiingatkan(hariIniWIB(), HARI_INGAT_DEFAULT));
+    return error ? null : count ?? 0;
+  } catch {
+    // Hitungan cuma penanda di kartu — gagal dibaca tidak boleh menahan layar klinik.
+    return null;
+  }
+}
 
 export default async function Page() {
   const supabase = await createClient();
@@ -19,7 +34,7 @@ export default async function Page() {
   // STAFF dapat layar sambutan klinik; admin/owner tetap tile-grid.
   if (profile?.role === "STAFF" && (await headers()).get(BRANCH_HEADER) !== ALL_BRANCHES) {
     if (!shift) redirect("/klinik/shift");
-    return <StaffKlinikHome fullName={profile.full_name ?? "Staff"} />;
+    return <StaffKlinikHome fullName={profile.full_name ?? "Staff"} followUpPerlu={await hitungFollowUpPerlu(supabase)} hariIngat={HARI_INGAT_DEFAULT} />;
   }
 
   return <>

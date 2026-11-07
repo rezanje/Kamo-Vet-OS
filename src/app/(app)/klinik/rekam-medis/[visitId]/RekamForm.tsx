@@ -15,6 +15,7 @@ import { vaccinationBmhp, vaccinationOf, type BmhpRow } from "@/lib/procedure-bm
 import { bulkFillServicePerformers, emptyServicePerformers, servicePerformerNames, visitDefaultPerformers, type ServicePerformersInput, type ServiceStaff } from "@/lib/service-performers";
 import { useClinicDraft } from "@/components/useClinicDraft";
 import { SubmitButton } from "@/components/SubmitButton";
+import { cegahEnterSimpan } from "@/lib/cegah-enter-simpan";
 import { kekuranganStok } from "@/lib/stok-keranjang";
 import { petaStokKlinik } from "@/lib/stok-klinik";
 import { StokKlinik, StokKeranjangKlinik } from "@/components/StokKlinik";
@@ -349,7 +350,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
         bermuara ke popup yang sama. Hanya satu dialog yang boleh terbuka. */}
     {stokKurang.length === 0 && <StokKurangDariPesan pesan={draftSaveError}
       petunjuk="Kurangi jumlahnya atau ganti dengan obat lain yang stoknya ada." />}
-    <form ref={draftAttachForm} action={(data) => draftSubmit(data, correction?.fullEdit ? koreksiRekamMedisLengkap : correction ? koreksiRekamMedis : simpanRekamMedis)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
+    <form ref={draftAttachForm} onKeyDown={cegahEnterSimpan} action={(data) => draftSubmit(data, correction?.fullEdit ? koreksiRekamMedisLengkap : correction ? koreksiRekamMedis : simpanRekamMedis)} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
       const kurang = correction ? [] : kekuranganStok(cart, stokById, (id, unit) => unitsOf(id).find(u => u.unit === unit)?.factor ?? 1);
       if (procedureDraft || saleItemId) { event.preventDefault(); event.stopPropagation(); setTab(TINDAKAN); setProcedureError("Selesaikan form tindakan / racikan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
       else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(kurang); }
@@ -647,7 +648,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
         </div>
       </div>
 
-      {correction ? <div className="card"><b>Tindak lanjut tersimpan</b><p>{correction.follow_up ?? "Tidak ada tindak lanjut."}</p></div> : <FollowUpTable name="follow_ups" value={followUps} onChange={setFollowUps} />}
+      {correction ? <div className="card"><b>Tindak lanjut tersimpan</b><p>{correction.follow_up ?? "Tidak ada tindak lanjut."}</p><p style={{ fontSize: 10.5, color: "var(--tm)" }}>Follow up baru ditambahkan lewat kartu Follow up di halaman detail rekam medis.</p></div> : <FollowUpTable name="follow_ups" value={followUps} onChange={setFollowUps} />}
 
       {correction && <div style={{ marginTop: 12 }}><label className="flab" htmlFor="correction-reason">Alasan koreksi *</label><textarea id="correction-reason" className="fi" name="correction_reason" required minLength={3} maxLength={1000} /></div>}
       {/* Aksi */}

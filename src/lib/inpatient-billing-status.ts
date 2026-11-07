@@ -4,6 +4,7 @@ import { ringkasTahap, type TagihanTahap, type BarisBayar } from "./tagihan-berj
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 export type BillingStatus = { label: string; badge: string; action: string };
+export const BILLING_LUNAS_LABEL = "Lunas";
 export const BILLING_UNREAD: BillingStatus = { label: "Belum terbaca", badge: "o", action: "Buka tagihan" };
 type Stay = { visit_id: string; branch_id: string };
 type Invoice = TagihanTahap & { visit_id: string };
@@ -55,7 +56,7 @@ export async function readInpatientBillingStatuses(db: Db, stays: readonly Stay[
       const partial = stages.some(i => i.sisa > 0 && i.dibayar > 0);
       out.set(visitId, stages.some(i => i.correction_pending) ? { label: "Koreksi tagihan", badge: "o", action: "Buka tagihan" }
         : pendingVisits.has(visitId) ? { label: "Belum ditagih", badge: "o", action: "Buka tagihan" }
-        : paid ? { label: "Lunas", badge: "g", action: "Lihat tagihan" }
+        : paid ? { label: BILLING_LUNAS_LABEL, badge: "g", action: "Lihat tagihan" }
         : !stages.some(i => Number(i.total) > 0) ? { label: "Belum ada tagihan", badge: "o", action: "Buka tagihan" }
         : { label: partial ? "DP" : "Belum lunas", badge: "o", action: "Bayar tagihan" });
     }

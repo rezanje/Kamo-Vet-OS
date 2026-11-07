@@ -6,12 +6,14 @@ import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL } from "@/lib/inpatient";
 import { readStayTypes, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 import { BILLING_UNREAD, readInpatientBillingStatuses } from "@/lib/inpatient-billing-status";
+import { canSeeLaporanTertinggal, isLunasBelumPulang, laporanHarian, laporanTertinggal, readDailyLogsBatched, wibDate } from "@/lib/inpatient-daily-report";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
+const FILTER_LUNAS_BELUM_PULANG = "lunas_belum_pulang";
 const COND_BADGE: Record<string, string> = { stabil: "g", kritis: "r", sembuh: "b", rip: "r" };
 
 function petAge(dob: string | null | undefined): string | null {
@@ -27,6 +29,7 @@ function petAge(dob: string | null | undefined): string | null {
 function PetPhoto({ url }: { url?: string | null }) {
   return (
     <div style={{ width: 40, height: 40, borderRadius: 8, background: "var(--sf1)", border: ".5px solid var(--bd)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       {url ? <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <i className="ti ti-paw" style={{ fontSize: 18, color: "var(--td)" }} />}
     </div>
   );
@@ -44,15 +47,18 @@ export default async function RawatInapPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   // U07: bacaan yang tidak saling bergantung jalan bersamaan (dulu enam bacaan berurutan).
-  const [branches, { data: labelCatalog }] = await Promise.all([
+  const [branches, { data: labelCatalog }, { data: me }] = await Promise.all([
     availableOperationalBranches(supabase, user.id, "klinik"),
     supabase.from("branches").select("code,name,type").eq("is_active", true),
+    // Hanya untuk menentukan siapa yang melihat ringkasan "Laporan tertinggal"; tidak memberi/mencabut hak apa pun.
+    supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
   ]);
+  const bolehLihatTertinggal = canSeeLaporanTertinggal(me?.role as string | null | undefined);
   const branchIds = branches.map(b => b.id);
 
   // Server jalan di UTC, klinik di WIB. Tanpa geser +7 jam, pasien yang masuk
   // 00.00–07.00 WIB terhitung "kemarin" di kartu RAWAT INAP HARI INI.
-  const tglWIB = (iso: string) => new Date(new Date(iso).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+  const tglWIB = wibDate;
   const hariIniWIB = tglWIB(new Date().toISOString());
 
   let query = supabase
@@ -61,7 +67,9 @@ export default async function RawatInapPage({
     .in("branch_id", branchIds)
     .order("admitted_at", { ascending: false });
   if (branch) query = query.eq("branch_id", branch);
-  if (filter === "aktif") query = query.is("discharged_at", null);
+  // "Lunas belum pulang" = pasien aktif yang disaring lagi menurut kolom Tagihan (di bawah).
+  const hanyaAktif = filter === "aktif" || filter === FILTER_LUNAS_BELUM_PULANG;
+  if (hanyaAktif) query = query.is("discharged_at", null);
 
   // Card counters (§3 dashboard req) — dihitung dari query terpisah tanpa filter tabel.
   // Kartu hanya butuh pasien yang masih dirawat atau masuk hari ini, jadi riwayat lama
@@ -72,10 +80,24 @@ export default async function RawatInapPage({
 
   const [{ data: records }, { data: allRecs }] = await Promise.all([query, counterQ]);
   // K14: tipe dibaca terpisah supaya daftar tetap tampil sebelum migrasinya terpasang.
-  const [stayTypes, billingStatuses] = await Promise.all([
+  // Laporan harian: satu bacaan bertumpuk untuk semua pasien aktif di daftar (bukan satu per pasien).
+  const aktifIds = (records ?? []).filter((r) => !r.discharged_at).map((r) => r.id as string);
+  const [stayTypes, billingStatuses, dailyLogs] = await Promise.all([
     readStayTypes(supabase, (records ?? []).map((r) => r.id as string)),
     readInpatientBillingStatuses(supabase, records ?? []),
+    readDailyLogsBatched(supabase, aktifIds),
   ]);
+  const rows = filter === FILTER_LUNAS_BELUM_PULANG
+    ? (records ?? []).filter((r) => isLunasBelumPulang(r, billingStatuses.get(r.visit_id)))
+    : (records ?? []);
+  const tertinggal = bolehLihatTertinggal && dailyLogs
+    ? laporanTertinggal(
+        (records ?? []).filter((r) => !r.discharged_at).map((r) => ({
+          id: r.id as string,
+          label: one(one(r.visits as Rel<{ pets: Rel<{ name: string }> }>)?.pets ?? null)?.name ?? "—",
+        })),
+        dailyLogs, hariIniWIB)
+    : [];
 
   const counts = {
     total: (allRecs ?? []).filter((r) => !r.discharged_at).length,
@@ -145,6 +167,22 @@ export default async function RawatInapPage({
         ))}
       </div>
 
+      {tertinggal.length > 0 && (
+        <section data-testid="laporan-tertinggal" className="p2ban" style={{ display: "block", marginBottom: 14, background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+          <div style={{ fontWeight: 800, fontSize: 12, marginBottom: 4 }}>
+            <i className="ti ti-clipboard-off" /> Laporan tertinggal — {tertinggal.length} pasien aktif belum ada laporan harian hari ini
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11.5 }}>
+            {tertinggal.map((t) => (
+              <li key={t.id}>
+                <Link href={`/klinik/rawat-inap/${t.id}`}>{t.label}</Link>
+                {t.daysSince === null ? " — belum pernah ada laporan" : t.daysSince > 1 ? ` — laporan terakhir ${t.daysSince} hari lalu` : ""}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="crm-sec">
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <i className="ti ti-clipboard-list" style={{ fontSize: 18, color: "var(--posb)" }} />
@@ -155,6 +193,7 @@ export default async function RawatInapPage({
           {[
             { key: "aktif", label: "Sedang Dirawat" },
             { key: "semua", label: "Semua (termasuk pulang)" },
+            { key: FILTER_LUNAS_BELUM_PULANG, label: "Lunas belum pulang" },
           ].map((t) => (
             <Link key={t.key} href={`/klinik/rawat-inap?filter=${t.key}${branch ? `&branch=${branch}` : ""}`} className="back-btn"
               style={{ padding: "5px 12px", borderRadius: 7, border: ".5px solid var(--bd)",
@@ -164,19 +203,27 @@ export default async function RawatInapPage({
           ))}
         </div>
 
+        {hanyaAktif && (
+          <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 10 }}>
+            Pasien yang sudah dipulangkan tidak tampil di sini; lihat tab Semua/Pulang (&ldquo;Semua (termasuk pulang)&rdquo;).
+          </div>
+        )}
+
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 940 }}>
             <thead>
               <tr><th style={{ width: 30 }}>No.</th><th>Pasien</th><th>Tipe</th><th>Pemilik</th><th>Cabang</th><th>Dokter PIC</th><th>Tanggal Masuk</th><th>Lama Inap</th><th>Kondisi</th><th>Catatan</th><th>Aksi</th><th>Tagihan</th></tr>
             </thead>
             <tbody>
-              {(records ?? []).map((r, idx) => {
+              {rows.map((r, idx) => {
                 const visit = one(r.visits as Rel<{ pets: Rel<{ name: string; species: string | null; breed: string | null; dob: string | null; photo_url: string | null }>; customers: Rel<{ name: string; phone: string }> }>);
                 const pet = one(visit?.pets ?? null);
                 const cust = one(visit?.customers ?? null);
                 const br = one(r.branches as Rel<{ name: string }>);
                 const age = petAge(pet?.dob);
                 const billing = billingStatuses.get(r.visit_id) ?? BILLING_UNREAD;
+                const lunasBelumPulang = isLunasBelumPulang(r, billingStatuses.get(r.visit_id));
+                const laporan = r.discharged_at ? null : dailyLogs ? laporanHarian(dailyLogs.get(r.id as string) ?? [], hariIniWIB) : "tidak-terbaca" as const;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{idx + 1}</td>
@@ -204,6 +251,23 @@ export default async function RawatInapPage({
                       {/* Formulir harian dikasih pintu langsung dari daftar: dokter jaga
                           mengisinya tiap giliran, dan menyuruh mereka membuka detail dulu
                           membuat formulirnya terasa "tidak ada" (masukan drh. Ilham, 25 Agu). */}
+                      {laporan && (
+                        <div style={{ marginBottom: 5 }}>
+                          <span className={`bge ${laporan === "tidak-terbaca" ? "o" : laporan.state === "ada" ? "g" : "r"}`}>
+                            Laporan hari ini: {laporan === "tidak-terbaca" ? "tidak terbaca" : laporan.state === "ada" ? `ada (${laporan.count})` : "belum"}
+                          </span>
+                        </div>
+                      )}
+                      {lunasBelumPulang && (
+                        <div style={{ marginBottom: 5, display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+                          <span className="bge b">Lunas, belum dipulangkan</span>
+                          {/* Hanya pintasan ke Ubah Kondisi di detail; tidak memulangkan dan tidak mengubah siapa yang boleh. */}
+                          <Link href={`/klinik/rawat-inap/${r.id}#ubah-kondisi`} className="btn-def"
+                            style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>
+                            <i className="ti ti-door-exit" /> Pulangkan
+                          </Link>
+                        </div>
+                      )}
                       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                         {!r.discharged_at && (
                           <Link href={`/klinik/rawat-inap/${r.id}/catatan`} className="btn-acc"
@@ -211,8 +275,9 @@ export default async function RawatInapPage({
                             <i className="ti ti-clipboard-plus" /> Isi laporan harian
                           </Link>
                         )}
-                        <Link href={`/klinik/rawat-inap/${r.id}`} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
-                          <i className="ti ti-eye" /> Detail
+                        {/* Catatan harian pasien aktif bisa dikoreksi dari detail; setelah pulang hanya dilihat. */}
+                        <Link href={`/klinik/rawat-inap/${r.id}`} className="btn-def" title={r.discharged_at ? "Lihat detail" : "Lihat / Edit catatan harian"} style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
+                          <i className={`ti ${r.discharged_at ? "ti-eye" : "ti-pencil"}`} /> {r.discharged_at ? "Lihat detail" : "Lihat / Edit"}
                         </Link>
                       </div>
                     </td>
@@ -228,7 +293,7 @@ export default async function RawatInapPage({
                   </tr>
                 );
               })}
-              {(records ?? []).length === 0 && (
+              {rows.length === 0 && (
                 <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>Tidak ada pasien rawat inap.</td></tr>
               )}
             </tbody>

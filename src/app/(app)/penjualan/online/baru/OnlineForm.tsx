@@ -15,8 +15,10 @@ import { type ItemUnit } from "@/lib/satuan";
 import { usePreservedAction } from "@/components/LocalTransactionDraft";
 import { PostingRequestIdentity } from "@/components/PostingRequestIdentity";
 import { hariIniWIB } from "@/lib/tanggal";
+import { LampiranPicker } from "@/components/LampiranPicker";
+import { kelompokPerCabang, labelTipeGudang, type GudangOnline } from "@/lib/online-gudang";
 
-type Warehouse = { id: string; name: string; branch_name: string };
+type Warehouse = GudangOnline;
 type Item = { id: string; code: string; name: string; sell_price: number; units: ItemUnit[] };
 type Customer = { id: string; name: string; phone: string | null };
 // `nama` = nama bare yang diserialisasi ke server (kontrak actions.ts).
@@ -98,7 +100,7 @@ export function OnlineForm({
 
       <div className="grid2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))" }}>
         <div className="crm-sec" style={{ marginBottom: 0, minWidth: 0 }}>
-          <SecHeader num="01" title="DETAIL ORDER" desc="Channel, gudang online & data pembeli." />
+          <SecHeader num="01" title="DETAIL ORDER" desc="Channel, gudang & data pembeli." />
 
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="flab">Channel *</label>
@@ -121,13 +123,20 @@ export function OnlineForm({
           </div>
 
           <div className="fg" style={{ marginBottom: 10 }}>
-            <label className="flab">Gudang online *</label>
+            <label className="flab">Cabang &amp; gudang *</label>
             <select className="fi" name="warehouse_id" required>
               <option value="">Pilih gudang</option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>{w.name} · {w.branch_name}</option>
+              {kelompokPerCabang(warehouses).map((k) => (
+                <optgroup key={k.cabang} label={k.cabang}>
+                  {k.gudang.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name} · {labelTipeGudang(w.type)} · {w.branch_name}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+              Stok dipotong dari gudang ini, dan penjualan tercatat di cabangnya.
+            </div>
           </div>
 
           <div className="fg" style={{ marginBottom: 10 }}>
@@ -156,6 +165,14 @@ export function OnlineForm({
             <input className="fi" type="date" name="tanggal" defaultValue={today} />
           </div>
 
+          <div className="fg" style={{ marginBottom: 10 }}>
+            <label className="flab">Bukti order (opsional)</label>
+            <LampiranPicker folder="penjualan-online" />
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
+              Screenshot pesanan Shopee/Tokopedia atau bukti transfer. Bisa ditambah lagi nanti dari detail order.
+            </div>
+          </div>
+
           {total > 0 && (
             <div style={{
               marginTop: 14, padding: "10px 14px", background: "var(--bg2, #f9fafb)",
@@ -172,7 +189,7 @@ export function OnlineForm({
           <SecHeader
             num="02"
             title="DAFTAR BARANG"
-            desc="Pilih dari master SKU — stok gudang online otomatis berkurang."
+            desc="Pilih dari master SKU — stok gudang terpilih otomatis berkurang."
             action={
               <button type="button" onClick={add} className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5 }}>
                 + Tambah baris
