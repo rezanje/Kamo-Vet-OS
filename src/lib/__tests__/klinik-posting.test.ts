@@ -69,6 +69,15 @@ describe("parseClinicPostingError", () => {
     expect(parseClinicPostingError({ code: "P0001",
       message: "PRICE_BELOW_HPP: Harga neto Obat A Rp900 di bawah HPP Rp1.000. Naikkan harga atau kurangi diskon." }))
       .toBe("Penjualan ditolak. Harga neto Obat A Rp900 di bawah HPP Rp1.000. Naikkan harga atau kurangi diskon.");
+    // Several offending rows: the whole list reaches the cashier (line breaks kept), not only the first line.
+    const banyak = ["PRICE_BELOW_HPP: Harga neto Infus Refill Rp20.000 di bawah HPP Rp29.578. Ada 2 baris yang ditolak; semuanya tercantum di bawah.",
+      "- Infus Refill: harga neto Rp20.000 per pcs, HPP Rp29.578 per pcs, harga minimum Rp29.578 per pcs",
+      "- Obat Racik Probiotik (racikan): harga neto Rp50.000 per racikan, HPP Rp50.151 per racikan, harga minimum Rp50.151 per racikan",
+      "Naikkan Harga di baris tersebut atau ubah Harga jual di Barang & Jasa."].join("\n");
+    const hasil = parseClinicPostingError({ code: "P0001", message: banyak });
+    expect(hasil).toBe(`Penjualan ditolak. ${banyak.replace("PRICE_BELOW_HPP: ", "")}`);
+    expect(hasil).toContain("Obat Racik Probiotik (racikan)");
+    expect(hasil).not.toContain("kurangi diskon");
     expect(parseClinicPostingError({ code: "P0001",
       message: "PRICE_ZERO: Harga neto paket Paket Steril Rp0. Paket yang berisi obat/barang tidak boleh gratis." }))
       .toBe("Penjualan ditolak. Harga neto paket Paket Steril Rp0. Paket yang berisi obat/barang tidak boleh gratis.");

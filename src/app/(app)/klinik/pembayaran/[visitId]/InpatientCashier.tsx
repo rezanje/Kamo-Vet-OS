@@ -7,16 +7,19 @@ import { SimpanBayarForm } from "../../rawat-inap/[id]/tagihan/SimpanBayarForm";
 import { inpatientPackageOptionError, inpatientPackageRowsError, resizeInpatientPackage, type InpatientCashierData } from "@/lib/inpatient-cashier";
 import { pecahPaket } from "@/lib/paket-klinik";
 import { visitDefaultPerformers, type ServiceStaff } from "@/lib/service-performers";
+import { parsePriceFloorRows } from "@/lib/price-floor-message";
 
 type Line = ComponentProps<typeof ItemTable>["rows"][number];
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, packages = [], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = false, canChangePerformers = true, ppnRate, minDpPercent, bolehTerobos }: {
+export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, packages = [], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = false, canChangePerformers = true, ppnRate, minDpPercent, bolehTerobos, bolehUbahHargaRacikan = false }: {
   data: InpatientCashierData; patient: PaymentPatient; catatanResep?: string | null; cashierName?: string;
   visitId: string; recordId: string; requestKey: string; masterObat: MasterItem[]; masterJasa: MasterItem[]; packages?: PackageOption[];
   /** Tenaga penjual (Dokter / Non-dokter) cabang kunjungan + dokter PJ — sama seperti pembayaran rawat jalan. */
   serviceStaff?: ServiceStaff[]; visitDoctorId?: string | null; groomingDoctorRequired?: boolean; groomingApplies?: boolean;
   /** Andri 4 Nov 2026: kasir/admin/pemilik boleh mengganti Dokter / Non-dokter pada baris pending; dokter tidak (database juga menolak). */
   canChangePerformers?: boolean; ppnRate: number; minDpPercent: number; bolehTerobos: boolean;
+  /** Owner saja (F7): harga racikan tersimpan di keranjang boleh diubah dengan alasan; database menegakkan peran dan lantai HPP. */
+  bolehUbahHargaRacikan?: boolean;
 }) {
   // Only the authoritative pending set enters this cart. No outpatient draft hook,
   // historical invoice prefill or visit-default performer rewrite belongs here.
@@ -24,7 +27,11 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
     key: row.id, prescription_item_id: row.id, item_id: row.item_id, deskripsi: row.nama_obat, qty: Number(row.qty), harga: Number(row.harga), satuan: row.satuan,
     recipe_id: row.compound_recipe_id, service_performers: row.service_performers, performers_sealed: !!row.performers_sealed, terkunci: !!row.compound_recipe_id, diskon_persen: 0,
     jenis: row.jenis === "jasa" ? "jasa" : "obat", package_item_id: row.package_item_id, package_qty: row.package_qty,
+    harga_awal: Number(row.harga),
   })));
+  // Pesan galat penyimpanan terakhir: baris yang disebut aturan di bawah HPP diberi garis merah + harga minimum.
+  const [serverError, setServerError] = useState<string | null>(null);
+  const lantaiHarga = parsePriceFloorRows(serverError);
   const [reason, setReason] = useState("Konfirmasi keranjang rawat inap");
   const [packageError, setPackageError] = useState<string | null>(null);
   // One cart owns the source rows. The medicine table is only a projection: mixed
@@ -70,16 +77,17 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
   const billed = data.history.reduce((sum, invoice) => sum + Number(invoice.total), 0);
   const hasPrior = data.history.some(invoice => invoice.total > 0 && !invoice.correction_pending);
   const payload = rows.map(row => ({ id: row.key ?? row.prescription_item_id, item_id: row.item_id ?? null, nama_obat: row.deskripsi, qty: row.qty, harga: row.harga, satuan: row.satuan ?? null,
-    jenis: row.jenis === "jasa" ? "jasa" : "obat", package_item_id: row.package_item_id ?? null, package_qty: row.package_qty ?? null, compound_recipe_id: row.recipe_id ?? null, service_performers: row.service_performers ?? null, diskon_persen: row.diskon_persen ?? 0 }));
+    jenis: row.jenis === "jasa" ? "jasa" : "obat", package_item_id: row.package_item_id ?? null, package_qty: row.package_qty ?? null, compound_recipe_id: row.recipe_id ?? null, service_performers: row.service_performers ?? null, diskon_persen: row.diskon_persen ?? 0,
+    ...(row.recipe_id && row.harga_awal !== undefined && Number(row.harga) !== Number(row.harga_awal) ? { harga_reason: (row.harga_reason ?? "").trim() } : {}) }));
   const originError = inpatientPackageRowsError(rows, packages, masterObat, masterJasa);
   if (packageError || originError) return <section className="card" role="alert">{packageError ?? originError}</section>;
-  return <SimpanBayarForm recordId={recordId} visitId={visitId} requestKey={requestKey} remaining={remaining} pendingCount={rows.length} accounts={data.quote.accounts}
+  return <SimpanBayarForm onError={setServerError} recordId={recordId} visitId={visitId} requestKey={requestKey} remaining={remaining} pendingCount={rows.length} accounts={data.quote.accounts}
     compoundPending={data.compound_pending} applyCredit={Math.min(data.quote.credit, data.quote.debt)} bolehTerobos={bolehTerobos} dpOpsional={hasPrior ? Math.round(remaining / 2) : undefined}
     extraFields={{ pending_snapshot: data.snapshot, pending_rows: JSON.stringify(payload), cart_reason: reason }}
     presentation={{ patient, cashierName, catatanResep,
       cart: <>
-        <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={next => setTable("obat", next)} master={masterObat} listId="ranap-obat" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} performersForNewRows performersForPendingRows={canChangePerformers} onPickPackage={(index, id) => pickPackage(obat, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
-        <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={next => setTable("jasa", next)} master={masterJasa} listId="ranap-jasa" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} serviceRows groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} performersForNewRows performersForPendingRows={canChangePerformers} onPickPackage={(index, id) => pickPackage(jasa, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
+        <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={next => setTable("obat", next)} master={masterObat} listId="ranap-obat" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled lantaiHarga={lantaiHarga} racikanHargaOwner={bolehUbahHargaRacikan} packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} performersForNewRows performersForPendingRows={canChangePerformers} onPickPackage={(index, id) => pickPackage(obat, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
+        <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={next => setTable("jasa", next)} master={masterJasa} listId="ranap-jasa" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled lantaiHarga={lantaiHarga} racikanHargaOwner={bolehUbahHargaRacikan} packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} serviceRows groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} performersForNewRows performersForPendingRows={canChangePerformers} onPickPackage={(index, id) => pickPackage(jasa, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
         {data.rows.filter(row => row.compound_recipe_id).map(row => <p key={row.id}>Racikan {row.nama_obat}: <Link href={`/klinik/racik/${row.compound_recipe_id}`}>Aksi koreksi / pengembalian bahan</Link> (tidak dikeluarkan ulang saat bayar).</p>)}
         <label className="flab">Alasan / catatan revisi keranjang<input className="fi" aria-label="Alasan revisi keranjang" value={reason} onChange={event => setReason(event.target.value)} minLength={3} maxLength={1000} /></label>
       </>,
