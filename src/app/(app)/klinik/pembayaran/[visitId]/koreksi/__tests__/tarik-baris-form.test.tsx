@@ -81,3 +81,10 @@ it("mengganti pilihan membatalkan pratinjau lama (tidak boleh menarik baris yang
   await act(async () => box("Infus Refill").click());
   expect(host.textContent).not.toContain("Pratinjau (belum ada yang berubah)");
 });
+
+it("memberi tahu Owner sebelum menekan apa pun: nilai baris jadi saldo uang muka dan fitur transfer balik belum ada", () => {
+  const n = host.querySelector("[role=note]")!;
+  expect(n.textContent).toContain("saldo uang muka pasien");
+  expect(n.textContent).toContain("belum tersedia");
+  expect(n.textContent).toContain("jangan transfer di luar catatan");
+});

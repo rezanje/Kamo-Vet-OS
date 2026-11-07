@@ -46,6 +46,7 @@ export function TarikBarisForm({ visitId, invoiceId, invoiceNo, lines, requestKe
   return <div className="card">
     <div className="card-hd"><span><i className="ti ti-arrow-back-up" /> Tarik baris dari tagihan lunas {invoiceNo} (Owner)</span></div>
     <p style={{ fontSize: 11 }}>Baris dihapus dari tagihan yang sama (nomor tidak berubah). Stok bahan kembali, jurnal dibalik hari ini, dan selisihnya menjadi saldo uang muka pasien. Hanya baris penuh yang bisa ditarik.</p>
+    <p style={{ fontSize: 11 }} role="note"><b>Penting:</b> nilai baris yang ditarik menjadi <b>saldo uang muka pasien</b>, bukan uang kembali. Fitur mengembalikan saldo uang muka lewat transfer/tunai belum tersedia; jangan transfer di luar catatan, minta Reza memutuskan pengembaliannya.</p>
     <table className="tbl">
       <thead><tr><th /><th>Baris</th><th style={{ textAlign: "right" }}>Jumlah</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "right" }}>HPP</th><th>Keterangan</th></tr></thead>
       <tbody>{lines.map((l) => <tr key={l.invoice_item_id}>
