@@ -619,6 +619,16 @@ def races(h, db):
     check('race: correction started while a release holds the coordinator WAITS (advisory), then is refused (INVOICE_NOT_PAID) because the application was released; no half effect',
           wait5.endswith('advisory') and not res5['ok'] and 'INVOICE_NOT_PAID' in res5.get('error', '') and h.nilai(f"select count(*) from invoice_items where id={q(E['INF'])}") == '1', dict(wait=wait5, res=str(res5)[:200]))
 
+    # (6) correction first, void receipt waits, then is refused ADVANCE_USED (the advance is still applied); no imbalance, one consistent state
+    Fv = build(h, 7055)
+    with c.Session(db, 'obs6') as obs, session('correct6', r.OWNER) as a, session('void6', r.OWNER) as b:
+        a.sql('begin;' + tk(Fv, 'tbl-race6-1')); b.send(r.batal_kwitansi_sql(Fv['receipt'], 'tbl-race6-void'))
+        wait6 = blocked(obs, b); a.sql('commit;'); res6 = c.attempt(b, commit=False)
+    advF = advance_row(h, Fv)
+    check('race: void receipt started while a correction is in flight WAITS (advisory), then is refused (ADVANCE_USED); advance balance 30000 intact, receipt still active',
+          wait6.endswith('advisory') and not res6['ok'] and 'ADVANCE_USED' in res6.get('error', '') and Decimal(str(advF['amount'])) - Decimal(str(advF['applied'])) == 30000
+          and h.nilai(f"select status from clinic_payment_receipts where id={q(Fv['receipt'])}") == 'aktif', dict(wait=wait6, res=str(res6)[:200]))
+
 
 def build_chain(db, exclude):
     okr.build(db, exclude)
