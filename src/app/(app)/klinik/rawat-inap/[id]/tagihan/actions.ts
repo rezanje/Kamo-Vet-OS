@@ -18,7 +18,10 @@ import type { RanapPaymentState } from "@/lib/ranap-payment";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { clinicPackageOriginInput } from "@/lib/clinic-package-origin";
 
-const DRAFT_RESCUE_NOTE = "Keranjang yang Anda lihat (barang dihapus, jasa/obat ditambah, harga/jumlah diubah) sudah disimpan sebagai draft. Belum ada invoice dan belum ada uang yang tercatat. Perbaiki baris yang ditolak, lalu simpan atau bayar lagi.";
+const DRAFT_RESCUE_NOTE = "Keranjang yang Anda lihat (barang dihapus, jasa/obat ditambah, harga/jumlah diubah) sudah disimpan sebagai draft. Penyimpanan ini belum membuat invoice dan belum mencatat uang (invoice tahap atau uang muka dari simpan sebelumnya, bila ada, tidak berubah). Perbaiki baris yang ditolak, lalu simpan atau bayar lagi.";
+// Penolakan dibawa lewat ?error= di URL: batasi panjangnya (pesan P03 bisa sampai ribuan karakter) agar URL tidak melewati batas proxy; draft sudah tersimpan.
+const MAX_REJECTION_CHARS = 1500;
+const clipRejection = (message: string) => message.length > MAX_REJECTION_CHARS ? `${message.slice(0, MAX_REJECTION_CHARS).trimEnd()}… (pesan dipotong)` : message;
 const tidakPasti = "Hasil penyimpanan belum dapat dipastikan. Muat ulang dan periksa tagihan yang sudah tersimpan sebelum mencoba lagi.";
 
 function kembali(recordId: string) {
@@ -209,7 +212,7 @@ export async function simpanBayar(formData: FormData): Promise<RanapPaymentState
       if (!rescueError && rescued?.status === "DRAFT_SAVED" && rescued.visit_id === visitId && rescued.record_id === recordId) {
         revalidatePath(`/klinik/pembayaran/${visitId}`);
         revalidatePath(`/klinik/rekam-medis/${visitId}`);
-        return { status: "DRAFT_SAVED", message, href: draftHref(`error=${encodeURIComponent(`${message}\n\n${DRAFT_RESCUE_NOTE}`)}`) };
+        return { status: "DRAFT_SAVED", message, href: draftHref(`error=${encodeURIComponent(`${clipRejection(message)}\n\n${DRAFT_RESCUE_NOTE}`)}`) };
       }
     }
     return { status: "ERROR", error: message };

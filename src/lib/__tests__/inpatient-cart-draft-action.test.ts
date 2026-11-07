@@ -27,6 +27,7 @@ it("rejected money step (database SQLSTATE) -> the SAME snapshot/rows/reason are
   const href = (result as { href: string }).href;
   expect(href.startsWith("/klinik/pembayaran/visit?error=")).toBe(true);
   expect(decodeURIComponent(href)).toContain("Infus Refill"); expect(decodeURIComponent(href)).toContain("sudah disimpan sebagai draft");
+  expect(decodeURIComponent(href)).toContain("Penyimpanan ini belum membuat invoice");
   expect(s.revalidated).toContain("/klinik/pembayaran/visit");
 });
 it("success path is untouched: one RPC, no draft call", async () => {
@@ -72,4 +73,15 @@ it("a form without a cashier cart (plain DP admission style) never uses the draf
   const result = await simpanBayar(f);
   expect(s.calls.map(c => c.name)).toEqual(["clinic_bill_and_pay_inpatient"]);
   expect(result.status).toBe("ERROR");
+});
+it("a very long rejection text is clipped in ?error= (<= ~1500 chars of message) but the rescue note is kept and the draft is saved", async () => {
+  const long = { code: "P0001", message: `PRICE_BELOW_HPP: ${Array.from({ length: 200 }, (_, i) => `Harga neto Barang Fiktif ${i} Rp1 di bawah HPP Rp2.`).join(" ")}` };
+  s.replies = { clinic_save_inpatient_cashier: { data: null, error: long }, clinic_save_inpatient_cart_draft: draftOk };
+  const result = await simpanBayar(form());
+  expect(s.calls.map(c => c.name)).toEqual(["clinic_save_inpatient_cashier", "clinic_save_inpatient_cart_draft"]);
+  const query = decodeURIComponent((result as { href: string }).href.split("?error=")[1]);
+  expect(query).toContain("sudah disimpan sebagai draft"); expect(query).toContain("Penyimpanan ini belum membuat invoice"); expect(query).toContain("pesan dipotong");
+  const clipped = query.split("\n\n")[0];
+  expect(clipped.length).toBeLessThanOrEqual(1500 + 40);
+  expect((result as { href: string }).href.length).toBeLessThan(4000);
 });
