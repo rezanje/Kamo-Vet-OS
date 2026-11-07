@@ -130,7 +130,7 @@ export default async function PembayaranPage({
   // Satu bacaan resep untuk baris tagihan DAN kategori consent (dulu dibaca dua kali).
   const resepP = outpatient && mr ? mulai(cartVersionP!.then(() => readCompleteList<SavedPrescriptionSource>((from, to) => supabase.from("prescription_items")
     .select("id, nama_obat, qty, harga, jenis, kategori, item_id, satuan, compound_recipe_id, service_performers, salesperson_id, salesperson_name, package_item_id, package_qty, package:items!prescription_items_package_item_id_fkey(name)", { count: "exact" })
-    .eq("medical_record_id", mr.id).order("created_at").order("id").range(from, to), "Rincian resep tagihan", { maxRows: null }))
+    .eq("medical_record_id", mr.id).is("record_withdrawn_at", null).order("created_at").order("id").range(from, to), "Rincian resep tagihan", { maxRows: null }))
     .catch(() => { throw unverifiedBilling(); })) : null;
   const consentRowsP = outpatient ? mulai(supabase.from("consents").select("status").eq("visit_id", visitId)) : null;
   const aturanConsentP = outpatient ? mulai(bacaAturanConsent(supabase)) : null;

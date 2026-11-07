@@ -123,7 +123,7 @@ export async function loadInpatientHandoff(db:Db,visitId:string,branchId:string)
    for(let offset=0;offset<records.length;offset+=200){
     const ids=records.slice(offset,offset+200).map(row=>row.id);
     const [rx,compounds]=await Promise.all([
-     readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,kategori,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at,service_performers',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
+     readCompleteList<HandoffPrescription>((from,to)=>db.from('prescription_items').select('id,medical_record_id,kategori,nama_obat,qty,satuan,jenis,aturan_pakai,compound_recipe_id,created_at,service_performers',{count:'exact'}).in('medical_record_id',ids).is('record_withdrawn_at',null).order('created_at').order('id').range(from,to),'Resep handoff',{maxRows:null}),
      readCompleteList<HandoffRecipe>((from,to)=>db.from('compounding_recipes').select('id,medical_record_id,recipe_name,total_volume,dosage_form,dosage_instruction,status,created_at',{count:'exact'}).in('medical_record_id',ids).order('created_at').order('id').range(from,to),'Racikan handoff',{maxRows:null}),
     ]);prescriptions.push(...rx);recipes.push(...compounds);
    }

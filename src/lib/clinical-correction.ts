@@ -1,5 +1,6 @@
 import type { ServicePerformersSnapshot } from "./service-performers";
 import type { BmhpInput } from "./procedure-bmhp";
+import type { WithdrawnItem } from "./tarik-item";
 export type ClinicalCorrection = {
   fullEdit?: boolean;
   recordId: string; revision: number;
@@ -11,6 +12,8 @@ export type ClinicalCorrection = {
     package_item_id?: string | null; package_qty?: number | string | null;
     package?: { name: string | null } | { name: string | null }[] | null }[];
   compounds?: { id: string; recipe_name: string; status: string }[];
+  /** Baris yang sudah ditarik dari rekam medis (tidak ikut keranjang/tagihan). */
+  withdrawn?: WithdrawnItem[];
 };
 
 /** Asal paket baris resep tersimpan → isian paket keranjang rekam medis (koreksi). Anisa 7 Nov:
