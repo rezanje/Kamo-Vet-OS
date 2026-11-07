@@ -119,7 +119,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
     jenis: row.compound_recipe_id ? "racikan" : row.jenis === "jasa" ? "jasa" : "obat",
     kategori: row.kategori ?? undefined, aturan_pakai: row.aturan_pakai ?? undefined,
     compound_recipe_id: row.compound_recipe_id ?? undefined, service_performers: row.service_performers,
-    package_item_id: row.package_item_id ?? undefined, package_qty: row.package_qty ?? undefined,
+    package_item_id: row.package_item_id ?? undefined, package_qty: row.package_qty == null ? undefined : Number(row.package_qty),
     bmhp: row.bmhp_components?.map(material => ({...material,nama:material.name ?? material.item_id})),
     // Anisa 7 Nov: koreksi rekam medis dulu memuat isi paket tanpa asal paketnya, lalu
     // menyimpannya kembali sebagai baris biasa — kasir melihat isi paket berceceran.
