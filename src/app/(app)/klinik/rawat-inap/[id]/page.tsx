@@ -325,7 +325,7 @@ export default async function RawatInapDetailPage({
 
       <HandoffPanel data={handoff} visitId={String(rec.visit_id)} admittedAt={String(rec.admitted_at)} recordId={String(rec.id)} active={!rec.discharged_at} stayedDays={hariRawatInap(rec.admitted_at, rec.discharged_at ?? new Date().toISOString())}/>
 
-      <RacikanPasien recipes={racikanPasien} />
+      <RacikanPasien recipes={racikanPasien} owner={me?.role === "OWNER"} />
 
       {success === "billables" && <div role="status" className="p2ban">Obat / BMHP tersimpan ke tagihan pasien. Laporan Visit dan protokol dosis tidak berubah.</div>}
       {/* Obat berprotokol dicatat terpisah dari laporan harian: satu protokol bisa

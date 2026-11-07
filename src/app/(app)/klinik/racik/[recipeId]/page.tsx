@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { advanceRecipeStatus, bahanRacikanUntukKunjungan, updateRacikPetunjuk, updateRacikPemakaian } from "../actions";
 import { RacikanAksi } from "./RacikanAksi";
+import { KoreksiOwnerRacikan } from "./KoreksiOwnerRacikan";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readCompleteList } from "@/lib/checked-list";
 import { hrefAsalBahan, hrefInvoiceTujuan, labelAsalBahan, readCompoundTrace, type CompoundTrace } from "@/lib/compound-trace";
@@ -120,6 +121,18 @@ export default async function RacikDetailPage({
     })()
     : false;
 
+  // Kartu Owner: peran dibaca di server; yang menegakkan aturan tetap database. Gagal baca = bukan Owner (kartu tidak tampil).
+  const isOwner = await (async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+      const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+      return data?.role === "OWNER";
+    } catch { return false; }
+  })();
+  const koreksiOwner = isOwner && rawatInap && !official && r.status !== "void" && !!visit;
+  const sudahDiInvoice = invoiceLines.length > 0;
+
   const tglResep = visit ? new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
   const tglPeriksa = visit ? new Date(visit.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
   const noRM = visit ? `RM/${new Date(visit.created_at).getFullYear()}/${new Date(visit.created_at).toISOString().slice(5, 10).replace("-", "")}/${(visit.id as string).slice(0, 3).toUpperCase()}` : "—";
@@ -204,6 +217,7 @@ export default async function RacikDetailPage({
 
       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}{kode && <details style={{ marginTop: 4, fontSize: 10.5 }}><summary style={{ cursor: "pointer" }}>Detail teknis</summary><code data-kode-error style={{ wordBreak: "break-word" }}>{kode.slice(0, 300)}</code></details>}</div>}
       {success === "ready" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Obat siap diserahkan ke pasien.</div>}
+      {success === "koreksi-owner" && <div role="status" className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Koreksi komposisi (Owner) tersimpan. HPP racikan dihitung ulang; harga jual tidak berubah.</div>}
       {success === "handed_over" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Racikan sudah diserahkan.</div>}
       {success === "petunjuk" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Petunjuk racik tersimpan.</div>}
       {success === "pemakaian" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Petunjuk pemakaian tersimpan.</div>}
@@ -375,6 +389,17 @@ export default async function RacikDetailPage({
       )}
       {(r.status === "pending" || r.status === "ready") && (
         <RacikanAksi recipeId={r.id} visitId={visit?.id ?? ""} ingredients={komposisiIni} materials={bahanPilihan} rawatInap={rawatInap} />
+      )}
+      {koreksiOwner && !invoiceLookupFailed && !sudahDiInvoice && (
+        <KoreksiOwnerRacikan recipeId={r.id} visitId={visit?.id ?? ""} ingredients={komposisiIni} materials={bahanPilihan} />
+      )}
+      {koreksiOwner && (invoiceLookupFailed || sudahDiInvoice) && (
+        <section id="koreksi-owner" aria-label="Koreksi komposisi (Owner)" style={{ marginTop: 16, border: ".5px solid var(--bd)", borderRadius: 10, padding: 12, fontSize: 11.5 }}>
+          <div style={{ fontWeight: 800 }}>Koreksi komposisi (Owner)</div>
+          <p style={{ color: "var(--tm)" }}>{invoiceLookupFailed
+            ? "Tautan invoice belum dapat diperiksa, jadi koreksi belum ditampilkan. Muat ulang halaman."
+            : "Racikan ini sudah masuk baris invoice (aktif atau pernah), jadi komposisinya tidak bisa dikoreksi dari sini. Koreksi lewat dokumen invoice (butuh pembatalan penerimaan dan koreksi invoice; hubungi Reza)."}</p>
+        </section>
       )}
       {r.status !== "pending" && r.status !== "ready" && (
         <div style={{ fontSize: 10, color: "var(--td)", textAlign: "center", marginTop: 12 }}>
