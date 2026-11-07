@@ -48,11 +48,22 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
     try {
       const result = await simpanBayar(draft);
       if (result.status === "OVERPAYMENT_CONFIRM_REQUIRED") setConfirmation({ quote: result.quote, draft, draftVersion:JSON.stringify(extraFields) });
-      else if (result.status === "SAVED") { router.push(result.href); router.refresh(); }
+      else if (result.status === "SAVED" || result.status === "DRAFT_SAVED") {
+        // Draft diselamatkan karena langkah uang ditolak: tampilkan penolakannya (dan tandai baris di bawah HPP) sebelum memuat ulang.
+        if (result.status === "DRAFT_SAVED" && result.message) { setError(result.message); onError?.(result.message); }
+        router.push(result.href); router.refresh();
+      }
       else { setError(result.error); onError?.(result.error); }
     } catch {
       setError("Hasil penyimpanan belum dapat dipastikan. Muat ulang dan periksa riwayat sebelum mencoba lagi.");
     } finally { submitting.current = false; setBusy(false); }
+  }
+  // Keranjang kasir ranap: simpan baris yang terlihat sebagai draft saja (tanpa invoice, tanpa uang).
+  const draftable = presentation !== undefined && extraFields.pending_snapshot !== undefined;
+  function saveDraft(form: HTMLFormElement | null) {
+    if (!form || busy || confirmation) return;
+    const draft = new FormData(form); draft.set("draft_only", "1");
+    void send(draft);
   }
   const compoundWarning = compoundPending && <label style={{display:"block",background:"#fffbeb",padding:10,marginBottom:10}}><input type="checkbox" aria-label="Konfirmasi racikan belum siap" checked={compoundAck} onChange={e=>setCompoundAck(e.target.checked)}/> Racikan masih menunggu diracik. Saya sudah memastikan penyerahan obat; pembayaran boleh dilanjutkan.</label>;
   const excessWarning = excess > 0 && <div role="alert" style={{ background: "#fff7ed", border: "2px solid #ea580c", borderRadius: 8, padding: 14, fontSize: 19, fontWeight: 800, color: "#9a3412", marginBottom: 12 }}>Lebih {rp(excess)} disimpan sebagai saldo pemilik</div>;
@@ -91,6 +102,7 @@ export function SimpanBayarForm({ recordId, visitId, requestKey, remaining, pend
         {error && <div role="alert" style={{color:"#b91c1c",whiteSpace:"pre-line"}}>{error}</div>}
         <PaymentActions print={<PaymentPrintUnavailable />} save={<SubmitButton className="btn-acc" disabled={blocked || !!confirmation} busy={busy} icon="ti-device-floppy" pendingText="Menyimpan…" style={{justifyContent:"center",padding:"9px 0",background:"var(--posb)"}}>Simpan</SubmitButton>}
           finish={<SubmitButton className="kpos-bayar" disabled={blocked || !!confirmation || total < remaining} busy={busy} icon="ti-circle-check" pendingText="Memproses…" style={{background:"#16a34a"}}>Bayar &amp; Selesai</SubmitButton>} />
+        {draftable && <button type="button" className="btn-def" disabled={busy || !!confirmation} onClick={event => saveDraft(event.currentTarget.form)} style={{justifyContent:"center",padding:"9px 0",marginTop:6,width:"100%"}}><i className="ti ti-file-check" /> Simpan Draft (tanpa invoice)</button>}
       </>} />
     </> : <>
     {compoundWarning}

@@ -754,6 +754,13 @@ export default async function PembayaranPage({
             </div>
           </div>
 
+          {/* Tarik baris dari tagihan lunas (Owner, tagihan tahap rawat inap): halaman koreksi terpisah. */}
+          {inpat && lunas && (profilKasir as { role?: string } | null)?.role === "OWNER" && (
+            <div style={{ marginTop: 12 }}>
+              <Link href={`/klinik/pembayaran/${visit.id}/koreksi?invoice_id=${invoice.id}`} className="btn-def"><i className="ti ti-arrow-back-up" /> Tarik baris (Owner)</Link>
+            </div>
+          )}
+
           {/* J03: refund per baris untuk invoice lunas. */}
           {refundData && (
             <ClinicRefundPanel data={refundData} visitId={visit.id} userId={draftUser?.id}

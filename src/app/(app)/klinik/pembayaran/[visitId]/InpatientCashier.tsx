@@ -11,7 +11,7 @@ import { parsePriceFloorRows } from "@/lib/price-floor-message";
 
 type Line = ComponentProps<typeof ItemTable>["rows"][number];
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, packages = [], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = false, canChangePerformers = true, ppnRate, minDpPercent, bolehTerobos, bolehUbahHargaRacikan = false }: {
+export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, packages = [], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = false, canChangePerformers = true, ppnRate, minDpPercent, bolehTerobos, bolehUbahHargaRacikan = false, initialError = null }: {
   data: InpatientCashierData; patient: PaymentPatient; catatanResep?: string | null; cashierName?: string;
   visitId: string; recordId: string; requestKey: string; masterObat: MasterItem[]; masterJasa: MasterItem[]; packages?: PackageOption[];
   /** Tenaga penjual (Dokter / Non-dokter) cabang kunjungan + dokter PJ — sama seperti pembayaran rawat jalan. */
@@ -20,6 +20,8 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
   canChangePerformers?: boolean; ppnRate: number; minDpPercent: number; bolehTerobos: boolean;
   /** Owner saja (F7): harga racikan tersimpan di keranjang boleh diubah dengan alasan; database menegakkan peran dan lantai HPP. */
   bolehUbahHargaRacikan?: boolean;
+  /** Galat terakhir dari penyimpanan sebelumnya (dibawa lewat ?error= setelah keranjang diselamatkan sebagai draft). */
+  initialError?: string | null;
 }) {
   // Only the authoritative pending set enters this cart. No outpatient draft hook,
   // historical invoice prefill or visit-default performer rewrite belongs here.
@@ -30,7 +32,7 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
     harga_awal: Number(row.harga),
   })));
   // Pesan galat penyimpanan terakhir: baris yang disebut aturan di bawah HPP diberi garis merah + harga minimum.
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(initialError);
   const lantaiHarga = parsePriceFloorRows(serverError);
   const [reason, setReason] = useState("Konfirmasi keranjang rawat inap");
   const [packageError, setPackageError] = useState<string | null>(null);
