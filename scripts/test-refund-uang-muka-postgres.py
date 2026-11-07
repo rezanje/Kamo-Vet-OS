@@ -393,6 +393,10 @@ def sec_static(h):
     Q = live(h, 7131)
     e1 = h.gagal(f"update clinic_customer_advances set refunded_amount=100 where id={q(Q['adv'])};"); e2 = h.gagal(f"update clinic_customer_advances set amount=amount-100 where id={q(Q['adv'])};"); e3 = h.gagal(f"update clinic_customer_advances set refund_reserved=5 where id={q(Q['adv'])};")
     check('direct writes to amount / refunded_amount / refund_reserved are refused outside the refund functions (even for the superuser); the row is unchanged', bool(e1) and bool(e2) and bool(e3) and D(adv_row(h, Q)['amount']) == Q['total'], dict(e1=(e1 or '')[:90], e2=(e2 or '')[:90]))
+    e5 = h.gagal(f"update clinic_customer_advances set amount=amount-100, refund_reserved=refund_reserved+100 where id={q(Q['adv'])};")
+    e6 = h.gagal(f"begin;insert into clinic_private.advance_refund_permits values (txid_current());update clinic_customer_advances set amount=amount-100 where id={q(Q['adv'])};commit;")
+    check('the fence has TWO independent guards: a total-conserving direct write (amount-100, reserved+100) is refused for lack of the per-transaction permit; even WITH a permit, a write that changes the received total (amount-100 alone) is refused',
+          err_has(e5, 'hanya boleh berubah lewat fungsi') and err_has(e6, 'tidak boleh berubah') and D(adv_row(h, Q)['amount']) == Q['total'], dict(e5=(e5 or '')[:120], e6=(e6 or '')[:120]))
     e4 = h.gagal(f"update clinic_customer_advances set applied=applied+30000 where id={q(Q['adv'])};")
     check('ordinary movements of the existing columns are NOT affected by the new guard (applied can still change through the existing code paths: here applied+30000 = amount is allowed)', e4 is None, dict(error=(e4 or '')[:120]))
     # cap: applied can never exceed what is left after refunds
