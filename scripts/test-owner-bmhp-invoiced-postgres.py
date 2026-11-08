@@ -409,7 +409,10 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
                 ('snapshot cost differs from its components (planted through a valid permit)', "begin;insert into {permits} values (txid_current(),{owner},{line});select set_config('request.jwt.claim.sub',{owner},false);update invoice_items set bmhp_components=jsonb_set(bmhp_components,'{{cost}}','1') where id={line};delete from {permits};commit", 'HPP_INCONSISTENT'),
                 ('invoice HPP journal differs from the line hpp (an extra hpp-edit journal)', "select public.clinic_write_journal(current_date,'uji','klinik-hpp-edit',{no},{branch},'[{{\"code\":\"600001\",\"debit\":5,\"credit\":0}},{{\"code\":\"170001\",\"debit\":0,\"credit\":5}}]'::jsonb)", 'JOURNAL_MISMATCH'))):
             hv = inv(h, 9150 + i)
-            h.sistem(plant.format(no=q(hv['no']), permits=PERMITS, owner=q(r.OWNER), line=q(hv['line']), branch=q(r.BRANCH)) + ';'); s = snap(h, hv)
+            try: h.sistem(plant.format(no=q(hv['no']), permits=PERMITS, owner=q(r.OWNER), line=q(hv['line']), branch=q(r.BRANCH)) + ';')
+            except RuntimeError as e:
+                check(f'NEG inconsistent history ({label}) refused ({word}), nothing changed', False, dict(fixture=str(e)[:160])); continue
+            s = snap(h, hv)
             err, _ = corr(h, hv, [comp(LAC, 3)], key=f'bi-inc-{i}')
             check(f'NEG inconsistent history ({label}) refused ({word}), nothing changed', err_has(err, word) and snap(h, hv) == s, dict(error=(err or '')[:200]))
         # non-ranap: remove the stay (outpatient-like): the correction refuses (NOT_INPATIENT)
@@ -467,7 +470,9 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
                                                                   'function public.clinic_owner_remove_invoice_lines', 'function public.clinic_owner_correct_compound', 'function public.clinic_edit_invoice_core', 'function public.clinic_write_journal',
                                                                   'function public.stock_in_fifo', 'function public.stock_out_fifo', 'function public.guard_prescription_bmhp', 'function clinic_private.owner_bmhp_normalize')), dict())
 
-    if db is not None and S('races'): races(h, db)
+    if db is not None and S('races'):
+        try: races(h, db)
+        except RuntimeError as e: check('races: the concurrency battery could not run', False, str(e)[:300])
 
 
 def races(h, db):
