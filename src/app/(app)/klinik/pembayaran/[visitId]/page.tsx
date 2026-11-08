@@ -762,6 +762,13 @@ export default async function PembayaranPage({
             </div>
           )}
 
+          {/* Ubah BMHP baris tindakan yang sudah ditagih (Owner, tagihan tahap rawat inap, lunas atau belum): halaman koreksi terpisah. */}
+          {inpat && (profilKasir as { role?: string } | null)?.role === "OWNER" && (
+            <div style={{ marginTop: 8 }}>
+              <Link href={`/klinik/pembayaran/${visit.id}/koreksi-bmhp?invoice_id=${invoice.id}`} className="btn-def"><i className="ti ti-flask" /> Ubah BMHP tindakan (Owner)</Link>
+            </div>
+          )}
+
           {/* J03: refund per baris untuk invoice lunas. */}
           {refundData && (
             <ClinicRefundPanel data={refundData} visitId={visit.id} userId={draftUser?.id}

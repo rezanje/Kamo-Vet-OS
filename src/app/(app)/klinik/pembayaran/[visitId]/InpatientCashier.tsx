@@ -8,10 +8,12 @@ import { inpatientPackageOptionError, inpatientPackageRowsError, resizeInpatient
 import { pecahPaket } from "@/lib/paket-klinik";
 import { visitDefaultPerformers, type ServiceStaff } from "@/lib/service-performers";
 import { parsePriceFloorRows } from "@/lib/price-floor-message";
+import { BmhpOwnerForm } from "./BmhpOwnerForm";
+import type { KomponenBmhp } from "@/lib/bmhp-owner";
 
 type Line = ComponentProps<typeof ItemTable>["rows"][number];
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, packages = [], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = false, canChangePerformers = true, ppnRate, minDpPercent, bolehTerobos, bolehUbahHargaRacikan = false, initialError = null }: {
+export function InpatientCashier({ data, patient, catatanResep = null, cashierName = "Akun kasir", visitId, recordId, requestKey, masterObat, masterJasa, packages = [], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = false, canChangePerformers = true, ppnRate, minDpPercent, bolehTerobos, bolehUbahHargaRacikan = false, bolehUbahBmhp = false, initialError = null }: {
   data: InpatientCashierData; patient: PaymentPatient; catatanResep?: string | null; cashierName?: string;
   visitId: string; recordId: string; requestKey: string; masterObat: MasterItem[]; masterJasa: MasterItem[]; packages?: PackageOption[];
   /** Tenaga penjual (Dokter / Non-dokter) cabang kunjungan + dokter PJ — sama seperti pembayaran rawat jalan. */
@@ -20,6 +22,8 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
   canChangePerformers?: boolean; ppnRate: number; minDpPercent: number; bolehTerobos: boolean;
   /** Owner saja (F7): harga racikan tersimpan di keranjang boleh diubah dengan alasan; database menegakkan peran dan lantai HPP. */
   bolehUbahHargaRacikan?: boolean;
+  /** Owner saja: ubah daftar BMHP baris tindakan yang masih di keranjang (database menegakkan peran, batas, dan lantai HPP). */
+  bolehUbahBmhp?: boolean;
   /** Galat terakhir dari penyimpanan sebelumnya (dibawa lewat ?error= setelah keranjang diselamatkan sebagai draft). */
   initialError?: string | null;
 }) {
@@ -91,6 +95,10 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
         <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={obat} setRows={next => setTable("obat", next)} master={masterObat} listId="ranap-obat" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled lantaiHarga={lantaiHarga} racikanHargaOwner={bolehUbahHargaRacikan} packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} performersForNewRows performersForPendingRows={canChangePerformers} onPickPackage={(index, id) => pickPackage(obat, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
         <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={jasa} setRows={next => setTable("jasa", next)} master={masterJasa} listId="ranap-jasa" allowUnits sealedPerformers packageQuantityLocked={false} discountsDisabled lantaiHarga={lantaiHarga} racikanHargaOwner={bolehUbahHargaRacikan} packages={packages} serviceStaff={serviceStaff} defaultDoctorId={visitDoctorId} serviceRows groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} performersForNewRows performersForPendingRows={canChangePerformers} onPickPackage={(index, id) => pickPackage(jasa, index, id)} onPackageQty={packageQty} onRemovePackage={removePackage} />
         {data.rows.filter(row => row.compound_recipe_id).map(row => <p key={row.id}>Racikan {row.nama_obat}: <Link href={`/klinik/racik/${row.compound_recipe_id}`}>Aksi koreksi / pengembalian bahan</Link> (tidak dikeluarkan ulang saat bayar).</p>)}
+        {bolehUbahBmhp && data.rows.filter(row => !row.compound_recipe_id && Array.isArray(row.bmhp_components) && row.bmhp_components.length > 0).map(row => <div key={`bmhp-${row.id}`} style={{marginTop:8}} data-bmhp-owner-row={row.id}>
+          <BmhpOwnerForm mode="pending" visitId={visitId} recordId={recordId} targetId={row.id} snapshot={data.snapshot} title={row.nama_obat} price={row.harga}
+            components={row.bmhp_components as KomponenBmhp[]} master={masterObat.filter(item => !item.paket).map(item => ({ id: item.id, name: item.name, unit: item.unit }))} />
+        </div>)}
         <label className="flab">Alasan / catatan revisi keranjang<input className="fi" aria-label="Alasan revisi keranjang" value={reason} onChange={event => setReason(event.target.value)} minLength={3} maxLength={1000} /></label>
       </>,
       chargeSummary: <>
