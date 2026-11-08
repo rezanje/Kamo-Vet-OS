@@ -151,16 +151,29 @@ it("prints the promo discount on its own line and never repeats it as a transact
   fixture.promo = true;
   const doc = await render();
   const text = doc.body.textContent ?? "";
-  expect(text).toContain("Pot. PROMO LEBARAN HEMAT");
-  expect(text).toContain("Pot. per item-Rp 5.000");
+  expect(text).toContain("PROMO LEBARAN HEMAT-Rp 5.000"); expect(text).not.toContain("Promo PROMO");
+  // Reza 8 Nov: bagian bawah khusus diskon transaksi; subtotal sudah setelah potongan barang.
+  expect(text).toContain("SubtotalRp 120.000");
+  expect(text).not.toContain("Pot. per item");
   expect(text).not.toContain("Diskon transaksi");
+});
+
+it("prints the promo under its item on the backoffice receipt and keeps the bottom for transaction discounts", async () => {
+  fixture.promo = true;
+  const doc = new DOMParser().parseFromString(renderToStaticMarkup(await BackofficeReceiptPage({ params: Promise.resolve({ saleId: "receipt" }) })), "text/html");
+  const text = doc.body.textContent ?? "";
+  expect(text).toContain("PROMO LEBARAN HEMAT-Rp 5.000"); expect(text).not.toContain("Promo PROMO");
+  expect(text).toContain("SubtotalRp 120.000");
+  expect(text).not.toContain("Diskon transaksi");
+  expect(text).not.toContain("Diskon-Rp");
+  expect(text).toContain("TOTALRp 120.000");
 });
 
 it("labels a cashier override as an item discount, not as the promo it displaced", async () => {
   fixture.promoDitimpa = true;
   const doc = await render();
   const text = doc.body.textContent ?? "";
-  expect(text).toContain("Pot. item");
+  expect(text).toContain("Diskon item-Rp 5.000");
   expect(text).not.toContain("PROMO LEBARAN HEMAT");
-  expect(text).toContain("Pot. per item-Rp 5.000");
+  expect(text).not.toContain("Pot. per item");
 });

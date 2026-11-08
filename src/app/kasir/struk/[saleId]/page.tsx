@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton, AutoPrint } from "@/components/PrintButton";
 import { lineDiscount, linePromoApplied, type CartLine } from "@/lib/pos-calc";
+import { labelDiskonManual, labelPromo } from "@/lib/label-potongan";
 import { ClearKasirDraft } from "@/components/ClearKasirDraft";
 import { KasirReceiptPaper, ReceiptHr as Hr, ReceiptRow as Row } from "@/components/KasirReceiptPaper";
 import { receiptPaymentRows, saleMerchandiseTotal } from "@/lib/sale-payment-reporting";
@@ -95,7 +96,7 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
               ))}
               {disc > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
-                  <span>&nbsp;&nbsp;Pot. {promo?.name ?? "item"}{it.item_discount_type === "percent" ? ` ${Number(it.item_discount_value)}%` : ""}</span>
+                  <span>&nbsp;&nbsp;{promo ? labelPromo(promo.name) : labelDiskonManual(it.item_discount_type === "percent" ? Number(it.item_discount_value) : null)}</span>
                   <span>-{rp(disc)}</span>
                 </div>
               )}
@@ -108,8 +109,9 @@ export default async function KasirStrukPage({ params, searchParams }: { params:
           const txnDisc = Math.max(0, Number(sale.discount) - itemDisc - Number(sale.poin_digunakan));
           return (
             <>
-              <Row k="Subtotal" v={rp(sale.subtotal)} />
-              {itemDisc > 0 && <Row k="Pot. per item" v={`-${rp(itemDisc)}`} />}
+              {/* Reza 8 Nov: potongan per barang cukup di bawah barangnya; bagian bawah
+                  khusus diskon transaksi. Subtotal = jumlah baris setelah potongannya. */}
+              <Row k="Subtotal" v={rp(Number(sale.subtotal) - itemDisc)} />
               {txnDisc > 0 && <Row k={sale.voucher_code ? `Diskon + voucher ${sale.voucher_code}` : "Diskon transaksi"} v={`-${rp(txnDisc)}`} />}
               {!txnDisc && sale.voucher_code ? <Row k={`Voucher ${sale.voucher_code}`} v="✓" /> : null}
               {sale.poin_digunakan > 0 && <Row k="Poin dipakai" v={`-${rp(sale.poin_digunakan)}`} />}
