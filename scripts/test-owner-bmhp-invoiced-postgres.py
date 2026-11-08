@@ -122,6 +122,12 @@ def quote(h, rv, comps, user=r.OWNER, line=None):
         return str(e), None
 
 
+def safe_gagal(h, source, user=None):
+    """h.gagal that never aborts the battery: a harness-level error (e.g. a statement that cannot even be parsed in the RED chain) counts as a refusal."""
+    try: return h.gagal(source, user)
+    except RuntimeError as e: return 'HARNESS-REFUSED: ' + str(e)[:200]
+
+
 def n(v): return D(str(v))
 def new_rows(after, before): return after[len(before):] if after[:len(before)] == before else after
 def layer_left(h, item): return D(h.nilai(f"select coalesce(sum(qty_left),0) from stock_layers where item_id={q(item)}"))
@@ -229,17 +235,17 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
         pf = inv(h, 9102); sp = snap(h, pf)
         mk = f"update invoice_items set bmhp_components=bmhp_components where id={q(pf['line'])};"
         tamper = f"update invoice_items set bmhp_components=jsonb_set(bmhp_components,'{{cost}}','1') where id={q(pf['line'])};"
-        g_none = h.gagal(tamper)
-        g_other_actor = h.gagal(f"begin;insert into {PERMITS} values (txid_current(),{q(r.STAFF)},{q(pf['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}commit;")
-        g_other_line = h.gagal(f"begin;insert into {PERMITS} values (txid_current(),{q(r.OWNER)},{q(a['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}commit;")
-        g_stale = h.gagal(f"begin;insert into {PERMITS} values (1,{q(r.OWNER)},{q(pf['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}commit;")
-        h.sql(f"delete from {PERMITS} where transaction_id=1;") if h.nilai(f"select to_regclass('{PERMITS}') is not null") == 't' else None
-        g_ok = h.gagal(f"begin;insert into {PERMITS} values (txid_current(),{q(r.OWNER)},{q(pf['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}delete from {PERMITS};commit;")
+        g_none = safe_gagal(h, tamper)
+        g_other_actor = safe_gagal(h, f"begin;insert into {PERMITS} values (txid_current(),{q(r.STAFF)},{q(pf['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}commit;")
+        g_other_line = safe_gagal(h, f"begin;insert into {PERMITS} values (txid_current(),{q(r.OWNER)},{q(a['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}commit;")
+        g_stale = safe_gagal(h, f"begin;insert into {PERMITS} values (1,{q(r.OWNER)},{q(pf['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}commit;")
+        if h.nilai(f"select to_regclass('{PERMITS}') is not null") == 't': h.sql(f"delete from {PERMITS} where transaction_id=1;")
+        g_ok = safe_gagal(h, f"begin;insert into {PERMITS} values (txid_current(),{q(r.OWNER)},{q(pf['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}delete from {PERMITS};commit;")
         check('permit guard: no permit / a permit of ANOTHER actor / a permit for ANOTHER line / a LEFTOVER permit of another transaction are all refused (BMHP_INVALID); only the exact (transaction, actor, line) permit opens the snapshot guard',
               err_has(g_none, 'BMHP_INVALID') and err_has(g_other_actor, 'BMHP_INVALID') and err_has(g_other_line, 'BMHP_INVALID') and err_has(g_stale, 'BMHP_INVALID') and g_ok is None, dict(none=(g_none or '')[:60], actor=(g_other_actor or '')[:60], line=(g_other_line or '')[:60], ok=(g_ok or '')[:100]))
         left = h.nilai(f"select count(*) from {PERMITS}") if h.nilai(f"select to_regclass('{PERMITS}') is not null") == 't' else 'x'
         check('no permit row is left behind after the corrections above (every correction deletes its own permit in the same transaction)', left == '0', dict(left=left))
-        gp = h.gagal(f"insert into {PERMITS} values (txid_current(),{q(r.OWNER)},{q(pf['line'])});", r.OWNER)
+        gp = safe_gagal(h, f"insert into {PERMITS} values (txid_current(),{q(r.OWNER)},{q(pf['line'])});", r.OWNER)
         check('the permit table has no app grant (an owner session cannot forge a permit)', h.nilai(f"select to_regclass('{PERMITS}') is not null") == 't' and bool(gp) and 'permission denied' in gp, dict(error=(gp or '')[:100]))
 
     if S('paths'):
