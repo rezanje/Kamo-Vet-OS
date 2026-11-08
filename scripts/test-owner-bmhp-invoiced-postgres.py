@@ -240,7 +240,7 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
         g_other_line = safe_gagal(h, f"begin;insert into {PERMITS} values (txid_current(),{q(r.OWNER)},{q(a['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}commit;")
         g_stale = safe_gagal(h, f"begin;insert into {PERMITS} values (1,{q(r.OWNER)},{q(pf['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}commit;")
         if h.nilai(f"select to_regclass('{PERMITS}') is not null") == 't': h.sql(f"delete from {PERMITS} where transaction_id=1;")
-        g_ok = safe_gagal(h, f"begin;insert into {PERMITS} values (txid_current(),{q(r.OWNER)},{q(pf['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}delete from {PERMITS};commit;")
+        g_ok = safe_gagal(h, f"begin;insert into {PERMITS} values (txid_current(),{q(r.OWNER)},{q(pf['line'])});select set_config('request.jwt.claim.sub',{q(r.OWNER)},false);{tamper}delete from {PERMITS} where transaction_id=txid_current();commit;")
         check('permit guard: no permit / a permit of ANOTHER actor / a permit for ANOTHER line / a LEFTOVER permit of another transaction are all refused (BMHP_INVALID); only the exact (transaction, actor, line) permit opens the snapshot guard',
               err_has(g_none, 'BMHP_INVALID') and err_has(g_other_actor, 'BMHP_INVALID') and err_has(g_other_line, 'BMHP_INVALID') and err_has(g_stale, 'BMHP_INVALID') and g_ok is None, dict(none=(g_none or '')[:60], actor=(g_other_actor or '')[:60], line=(g_other_line or '')[:60], ok=(g_ok or '')[:100]))
         left = h.nilai(f"select count(*) from {PERMITS}") if h.nilai(f"select to_regclass('{PERMITS}') is not null") == 't' else 'x'
