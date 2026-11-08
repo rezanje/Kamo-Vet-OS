@@ -327,13 +327,19 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
         check('NEG empty request key -> REASON_REQUIRED (kunci), nothing changed', err_has(err, 'REASON_REQUIRED', 'kunci') and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
         W4 = 'maksimal 4 desimal'
         bad = [('empty array', [], 'minimal satu bahan'), ('not an array', {'a': 1}, 'minimal satu bahan'), ('zero quantity', [comp(LAC, 0)], W4), ('negative quantity', [comp(LAC, -1)], W4), ('NaN quantity', [dict(item_id=LAC, qty='NaN')], W4),
-               ('text quantity', [dict(item_id=LAC, qty='abc')], 'jumlah BMHP tidak valid'), ('5 decimals', [comp(LAC, 1.00001)], W4), ('over 100000', [comp(LAC, 100001)], W4), ('duplicate ingredient', [comp(LAC, 3), comp(LAC, 1)], W4),
+               ('text quantity', [dict(item_id=LAC, qty='abc')], 'jumlah BMHP tidak valid'), ('5 decimals', [comp(LAC, 1.00001)], W4), ('over 100000', [comp(LAC, 100001)], W4), ('duplicate ingredient', [comp(LAC, 3), comp(LAC, 1)], W4), ('below 0.01 minimum', [comp(LAC, 0.001)], 'batas minimal 0,01'),
                ('unknown item', [comp(r.uid('e', 99999), 1)], 'yang ada di master'), ('inactive new ingredient', [comp(CX, 1)], 'tidak aktif'), ('non-stock (service) ingredient', [comp(CS, 1)], 'yang ada di master'),
                ('missing item_id', [dict(qty=2)], W4), ('unknown unit', [comp(LAC, 1, 'galon')], 'tidak ditemukan'), ('over the 10x bound (51 of an original 5)', [comp(LAC, 51)], 'BMHP_LIMIT'),
                ('new ingredient over 1000', [comp(LAC, 5), comp(CB, 1001)], 'BMHP_LIMIT'), ('more than 50 rows', [comp(LAC, 1)] * 51, 'minimal satu bahan')]
         for label, payload, word in bad:
             err = h.gagal(f"select {RPC}({q(n1['line'])},{j(payload)},'Alasan cukup panjang',{q('bi-bad-' + label.split()[0] + label.split()[-1])});", r.OWNER)
             check(f'NEG payload {label} refused ({word}), NO partial effect (stock, layers, line, rx, journals)', bool(err) and word in err and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
+        lo = inv(h, 9124, comps=[comp(LAC, 5), comp(CC, 0.005)]); slo = snap(h, lo)
+        q_keep = quote(h, lo, [comp(LAC, 3), comp(CC, 0.005)]); q_below = quote(h, lo, [comp(LAC, 5), comp(CC, 0.004)]); q_edge = quote(h, lo, [comp(LAC, 5), comp(CC, 0.01)])
+        e_below, _ = corr(h, lo, [comp(LAC, 5), comp(CC, 0.004)], key='bi-below')
+        check('lower bound (review non-blocking item): a NEW quantity below 0.01 (CC 0.004) is refused in the quote AND the correction (BMHP_INVALID, batas minimal 0,01), nothing changed; 0.01 is accepted; an UNCHANGED existing 0.005 stays accepted',
+              err_has(q_below[0], 'BMHP_INVALID', 'batas minimal 0,01') and err_has(e_below, 'BMHP_INVALID', 'batas minimal 0,01') and q_edge[0] is None and q_keep[0] is None and snap(h, lo) == slo,
+              dict(keep=(q_keep[0] or '')[:120], below=(q_below[0] or '')[:120], edge=(q_edge[0] or '')[:120]))
         err, _ = corr(h, n1, [comp(LAC, 5)], key='bi-nochange')
         check('NEG unchanged components refused (NO_CHANGE, no audit noise, no journal)', err_has(err, 'NO_CHANGE') and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
         # stock short: nothing left to issue the extra unit from
@@ -436,6 +442,39 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
         check('an ingredient deactivated after posting: increasing, keeping or reducing it is refused (tidak aktif) with no effect; taking it OUT of the list works (its whole recorded cost 400.00 comes back)',
               all(err_has(e_, 'tidak aktif') for e_ in (e_up, e_keep, e_down)) and unchanged and e_out is None and n(cm.line_row(h, ia)['hpp']) == D('500.00') and len(cm.line_row(h, ia)['bmhp_components']['components']) == 1,
               dict(up=(e_up or '')[:80], keep=(e_keep or '')[:80], down=(e_down or '')[:80], out=(e_out or '')[:120]))
+
+    if S('tarik'):
+        # -------------------------------------------------------------- review condition C1: a line that was corrected here can LATER be pulled by the Owner (tarik baris);
+        # the audit row must survive the deleted line (no FK on invoice_item_id) and the pull must restore stock and journals exactly.
+        tk = cm.bmhp_visit(h, 9190, comps=[comp(LAC, 5)], proc=PROCJ, price=80000)
+        plain_rx = r.uid(9, 9190 * 10 + 8)
+        h.sql(f"insert into public.prescription_items(id,medical_record_id,nama_obat,item_id,qty,satuan,faktor,harga,jenis,kategori) \
+values ({q(plain_rx)},{q(tk['mr'])},{q(cm.NAMES[PROCJ])},{q(PROCJ)},1,'kali',1,20000,'jasa','Tindakan');")
+        stk0 = cm.stock_state(h)
+        err, _ = cm.save(h, tk, 'bi-tk-save', [], paid=True); cm.link(h, tk)
+        plain_line = h.nilai(f"select id from invoice_items where prescription_item_id={q(plain_rx)} and invoice_id in (select id from invoices where voided_at is null)")
+        same_inv = bool(plain_line) and h.nilai(f"select invoice_id from invoice_items where id={q(plain_line)}") == tk['inv']
+        check('fixture (tarik after correction): a PAID (Lunas) invoice with TWO lines: the BMHP service line (Lacto-B 5, HPP 60000.00) and a plain service line on the same invoice',
+              err is None and same_inv and h.nilai(f"select paid_status from invoices where id={q(tk['inv'])}") == 'Lunas' and n(cm.line_row(h, tk)['hpp']) == D('60000.00'), dict(error=(err or '')[:200], same_inv=same_inv))
+        if same_inv:
+            e_c, _ = corr(h, tk, [comp(LAC, 3)], key='bi-tk-corr'); au_before = audit_rows(h, tk)
+            check('the paid BMHP line is corrected 5 -> 3 (HPP 36000.00) and one audit row exists', e_c is None and len(au_before) == 1 and n(cm.line_row(h, tk)['hpp']) == D('36000.00'), dict(error=(e_c or '')[:200]))
+            try: out = h.nilai(f"select clinic_owner_remove_invoice_lines({q(tk['inv'])},{j([dict(invoice_item_id=tk['line'])])},'Uji tarik sesudah koreksi BMHP','bi-tk-pull{cm.OFF}');", r.OWNER); e_t = None
+            except RuntimeError as e: out, e_t = None, str(e)
+            gone = h.nilai(f"select count(*) from invoice_items where id={q(tk['line'])}") == '0'
+            lac_net = D(h.nilai(f"select coalesce(-sum(qty),0) from stock_moves where source_ref={q(tk['no'])} and item_id={q(LAC)}"))
+            stk1 = cm.stock_state(h); rest_hpp = D(h.nilai(f"select coalesce(sum(hpp),0) from invoice_items where invoice_id={q(tk['inv'])}"))
+            check('C1: the Owner can pull (tarik baris) a line that was corrected here: NO raw foreign-key error, the line is gone, the plain line stays, the invoice stays Lunas',
+                  e_t is None and gone and h.nilai(f"select count(*) from invoice_items where id={q(plain_line)}") == '1' and h.nilai(f"select paid_status from invoices where id={q(tk['inv'])}") == 'Lunas'
+                  and 'foreign key' not in (e_t or ''), dict(error=(e_t or '')[:300]))
+            check('C1: after the pull the Lacto-B stock is fully back (net out for the invoice 0, stock quantity == before the fixture was issued), journals balanced (no unbalanced entry, trial balance 0), net HPP journal == the remaining lines HPP',
+                  e_t is None and lac_net == 0 and json.loads(stk1['stock']).get(LAC) == json.loads(stk0['stock']).get(LAC) and cm.unbalanced_entries(h) == 0 and D(cm.all_balanced(h)) == 0
+                  and cm.jsum(cm.jr(h, tk['no'])) == rest_hpp, dict(lac_net=str(lac_net), rest_hpp=str(rest_hpp), net=str(cm.jsum(cm.jr(h, tk['no'])))))
+            au_after = audit_rows(h, tk)
+            check('C1: the audit row of the correction SURVIVES the pull, unchanged (append-only; it keeps the deleted line id as plain history)', len(au_after) == 1 and au_after == au_before, dict(n=len(au_after)))
+            fk = h.nilai("select count(*) from pg_constraint where conrelid='clinic_private.owner_bmhp_invoice_corrections'::regclass and contype='f' and confrelid='public.invoice_items'::regclass") if h.nilai(f"select to_regclass('{NEWTAB}') is not null") == 't' else 'x'
+            check('C1: the audit table keeps NO foreign key to invoice_items (the column stays as plain history), and still references the invoice, visit, prescription row and profile', fk == '0'
+                  and h.nilai("select count(*) from pg_constraint where conrelid='clinic_private.owner_bmhp_invoice_corrections'::regclass and contype='f'") == '5', dict(fk_invoice_items=fk))
 
     if S('acl'):
         ar_ = h.gagal(f"update {NEWTAB} set reason='diubah semua';"); ad = h.gagal(f'delete from {NEWTAB};'); at = h.gagal(f'truncate {NEWTAB};')
@@ -588,9 +627,10 @@ def prepare(db, h):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--json', type=Path, required=True); ap.add_argument('--pg-bin'); ap.add_argument('--attach')
-    ap.add_argument('--baseline', action='store_true'); ap.add_argument('--mutations', action='store_true'); ap.add_argument('--only', help='comma-separated substrings: run only mutants whose name contains one'); a = ap.parse_args()
+    ap.add_argument('--baseline', action='store_true'); ap.add_argument('--mutations', action='store_true'); ap.add_argument('--sections', help='comma-separated sections to run (core,paths,neg,tarik,acl,races); default all'); ap.add_argument('--only', help='comma-separated substrings: run only mutants whose name contains one'); a = ap.parse_args()
     if a.pg_bin: r.BIN = a.pg_bin
     global SECTIONS
+    if a.sections: SECTIONS = set(a.sections.split(','))
     extra = {}
     cand_path = MIG / CANDIDATE
     try:

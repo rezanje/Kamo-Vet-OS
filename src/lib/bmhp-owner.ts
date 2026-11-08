@@ -27,6 +27,10 @@ const PESAN: Record<string, string> = {
   PERIOD_LOCKED: "Periode akuntansi atau persediaan sudah ditutup.",
 };
 
+/** Review C2: HPP baris tagihan bisa berbeda dari modal bahannya (HPP tercatat dari lapisan hasil tindakan yang lebih lama). Koreksi hanya menggeser HPP sebesar selisih bahan. */
+export const PERINGATAN_HPP_BEDA_BAHAN =
+  "Perhatian: modal baris ini berbeda dari modal bahannya; koreksi menggeser modal sebesar selisih bahan saja, bukan seluruh modal baris. HPP baris ini berasal dari stok hasil tindakan yang lebih lama, jadi nilai lamanya tidak dihitung ulang.";
+
 export function pesanBmhpOwner(raw: string | null | undefined): string {
   const text = String(raw ?? "").trim();
   const code = /^([A-Z_]{4,40}):/.exec(text)?.[1];

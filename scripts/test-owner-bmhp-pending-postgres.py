@@ -274,6 +274,12 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
         e50, _ = corr(h, bd, [comp(LAC, 50)], key='bp-bd-2')
         e51b, _ = corr(h, bd, [comp(LAC, 51)], key='bp-bd-3')
         e1k, _ = corr(h, bd, [comp(LAC, 5), comp(CB, 1001)], key='bp-bd-4')
+        # lower bound (review non-blocking item): a NEW quantity below 0.01 of the unit is refused; the same quantity UNCHANGED from the current list stays accepted
+        lo2 = cm.bmhp_visit(h, 8109, comps=[comp(LAC, 5), comp(CC, 0.005)]); slo2 = snap(h, lo2)
+        q_keep = quote(h, lo2, [comp(LAC, 3), comp(CC, 0.005)]); q_below = quote(h, lo2, [comp(LAC, 5), comp(CC, 0.004)]); q_tiny = quote(h, lo2, [comp(LAC, 0.001)]); q_edge = quote(h, lo2, [comp(LAC, 5), comp(CC, 0.01)])
+        check('lower bound: a NEW quantity below 0.01 (CC 0.004, LAC 0.001) is refused (BMHP_INVALID, kurang dari batas minimal 0,01); 0.01 exactly is accepted; an UNCHANGED existing 0.005 (not edited by the Owner) stays accepted; nothing changed',
+              err_has(q_below[0], 'BMHP_INVALID', 'batas minimal 0,01') and err_has(q_tiny[0], 'BMHP_INVALID', 'batas minimal 0,01') and q_edge[0] is None and q_keep[0] is None and snap(h, lo2) == slo2,
+              dict(keep=(q_keep[0] or '')[:120], below=(q_below[0] or '')[:120], tiny=(q_tiny[0] or '')[:120], edge=(q_edge[0] or '')[:120]))
         au = audit_rows(h, bd)
         check('bounds: > 10x the doctor\'s original (51 > 50) refused (BMHP_LIMIT); exactly 10x accepted; after that 51 is STILL refused (measured from the ORIGINAL, no ratchet); a NEW ingredient above 1000 base units refused; original kept in the audit',
               err_has(e51, 'BMHP_LIMIT') and e50 is None and err_has(e51b, 'BMHP_LIMIT') and err_has(e1k, 'BMHP_LIMIT') and len(au) == 1 and au[0]['original_components'][0]['qty'] == 5, dict(e51=(e51 or '')[:100], e50=(e50 or '')[:100], e51b=(e51b or '')[:100], e1k=(e1k or '')[:100]))
@@ -303,7 +309,7 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
         bad = [('empty array', [], 'minimal satu bahan'), ('not an array', {'a': 1}, 'minimal satu bahan'), ('zero quantity', [comp(LAC, 0)], W4), ('negative quantity', [comp(LAC, -1)], W4),
                ('NaN quantity', [dict(item_id=LAC, qty='NaN')], W4), ('text quantity', [dict(item_id=LAC, qty='abc')], 'jumlah BMHP tidak valid'), ('5 decimals', [comp(LAC, 1.00001)], W4),
                ('5 decimals on an alternative unit', [comp(CU, 0.00001, 'kotak')], W4), ('over 100000', [comp(LAC, 100001)], W4),
-               ('duplicate ingredient', [comp(LAC, 3), comp(LAC, 1)], W4), ('unknown item', [comp(r.uid('e', 99999), 1)], 'yang ada di master'), ('inactive ingredient', [comp(CX, 1)], 'tidak aktif'),
+               ('duplicate ingredient', [comp(LAC, 3), comp(LAC, 1)], W4), ('below 0.01 minimum', [comp(LAC, 0.001)], 'batas minimal 0,01'), ('unknown item', [comp(r.uid('e', 99999), 1)], 'yang ada di master'), ('inactive ingredient', [comp(CX, 1)], 'tidak aktif'),
                ('non-stock (service) ingredient', [comp(CS, 1)], 'yang ada di master'), ('null item_id', [dict(item_id=None, qty=1)], W4), ('missing item_id', [dict(qty=2)], W4),
                ('unknown unit', [comp(LAC, 1, 'galon')], 'tidak ditemukan'), ('more than 50 rows', [comp(LAC, 1)] * 51, 'minimal satu bahan'), ('item_id not a uuid', [dict(item_id='xyz', qty=1)], 'jumlah BMHP tidak valid')]
         for label, payload, word in bad:

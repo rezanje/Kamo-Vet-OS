@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
-import { muatanKomponen, type KomponenBmhp, type PratinjauBmhp } from "@/lib/bmhp-owner";
+import { muatanKomponen, PERINGATAN_HPP_BEDA_BAHAN, type KomponenBmhp, type PratinjauBmhp } from "@/lib/bmhp-owner";
 import { pratinjauBmhp, simpanBmhp } from "./bmhp-owner-actions";
 
 const rp = (n: number) => "Rp " + Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 });
@@ -52,6 +52,7 @@ export function BmhpOwnerForm({ mode, visitId, recordId = "", targetId, snapshot
     return <div className="p2ban" role="status">
       <b>BMHP {title} sudah diubah.</b> HPP {rp(selesai.hpp_before)} → <b>{rp(selesai.hpp_after)}</b>.
       {mode === "pending" ? " Keranjang dimuat ulang; lanjutkan dengan Simpan atau Bayar seperti biasa." : " Harga, total tagihan, dan pembayaran tidak berubah."}
+      {mode === "tagihan" && selesai.hpp_differs_from_cost && <div role="alert" style={{ marginTop: 6 }}>{PERINGATAN_HPP_BEDA_BAHAN}</div>}
     </div>;
   }
   if (!terbuka) return <button type="button" className="btn-def" onClick={() => setTerbuka(true)}><i className="ti ti-flask" /> Ubah BMHP (Owner)</button>;
@@ -99,7 +100,7 @@ export function BmhpOwnerForm({ mode, visitId, recordId = "", targetId, snapshot
       {mode === "pending" && pratinjau.sim_error_after && <div role="alert">Belum bisa diproses: {pratinjau.sim_error_after}</div>}
       {mode === "tagihan" && pratinjau.stock && <div>Stok: {pratinjau.stock.length === 0 ? "tidak ada pergerakan" : pratinjau.stock.map((s) => `${s.direction} ${Math.abs(s.delta)}× ${s.name ?? ""}`).join(", ")}.</div>}
       {mode === "tagihan" && pratinjau.journal && <div>Jurnal {pratinjau.journal.date}: {pratinjau.journal.lines.map((l) => `${l.code} ${l.debit > 0 ? "Dr " + rp(l.debit) : "Cr " + rp(l.credit)}`).join("; ")}.</div>}
-      {mode === "tagihan" && pratinjau.hpp_differs_from_cost && <div style={{ fontSize: 11 }}>Catatan: HPP baris ini berbeda dari total biaya bahan (HPP tercatat dari lapisan keluaran, bukan dari bahan); selisihnya dipertahankan.</div>}
+      {mode === "tagihan" && pratinjau.hpp_differs_from_cost && <div role="alert" style={{ marginTop: 4 }}>{PERINGATAN_HPP_BEDA_BAHAN}</div>}
     </div>}
   </div>;
 }

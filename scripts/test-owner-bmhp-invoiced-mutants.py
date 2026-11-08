@@ -74,4 +74,6 @@ MUTANTS = [
      [("or not exists (select 1 from public.visits v where v.id = v_inv.visit_id and public.user_can_access_branch(v.branch_id))", "or false", 1)], ['core']),
     ('B43 restore of a reduced ingredient not added back to stock (stock_in skipped)',
      [("perform public.stock_in_fifo(v_warehouse, v_target.item_id, -v_d, v_restore_val / (-v_d), 'klinik-edit', v_inv.invoice_no, current_date, null);", "null; -- stock_in_fifo skipped", 1)], ['core']),
+    ('B44 audit table gets its foreign key to invoice_items back (a corrected line can no longer be pulled by the Owner: review C1)',
+     [("  invoice_item_id uuid not null,   -- sengaja TANPA foreign key", "  invoice_item_id uuid not null references public.invoice_items(id),   -- sengaja TANPA foreign key", 1)], ['tarik']),
 ]

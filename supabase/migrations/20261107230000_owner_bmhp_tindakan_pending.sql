@@ -19,7 +19,7 @@
 -- Yang ditambahkan (HANYA objek baru; kasir ranap, draft keranjang, P03, clinic_post_invoice, bmhp_issue, guard BMHP, edit dokter,
 -- clinic_write_journal tidak diganti satu byte pun; dibuktikan dengan digest native):
 --  * clinic_private.owner_bmhp_normalize(p_components, p_original, p_current, p_keep_inactive): validasi + normalisasi (bahan aktif bertipe
---    Persediaan, jumlah > 0 maksimal 4 desimal, tanpa duplikat, satuan dari item_units, batas <= 10x resep ASLI dokter per bahan / <= 1000
+--    Persediaan, jumlah > 0 maksimal 4 desimal (jumlah BARU minimal 0,01 satuan; jumlah yang tidak diubah dari daftar sekarang tetap diterima), tanpa duplikat, satuan dari item_units, batas <= 10x resep ASLI dokter per bahan / <= 1000
 --    satuan dasar untuk bahan baru; BMHP_INVALID / BMHP_LIMIT).
 --  * clinic_private.owner_bmhp_sim(...): simulasi biaya dan HPP baris seperti posting (bahan keluar FIFO, hasil tindakan masuk senilai bahan
 --    lalu keluar FIFO) di sub-transaksi yang selalu dibatalkan.
@@ -138,6 +138,11 @@ begin
       raise exception using errcode = 'P0001', message = 'BMHP_INVALID: BMHP harus barang persediaan yang ada di master';
     end if;
     v_cur := (select e.value from jsonb_array_elements(coalesce(p_current, '[]'::jsonb)) e where e.value ->> 'item_id' = v_id::text limit 1);
+    -- Batas bawah: jumlah baru minimal 0,01 satuan bahan (0,0001 hampir menghapus modal tanpa mengeluarkan bahan). Jumlah yang TIDAK diubah
+    -- dari daftar saat ini tetap diterima (daftar dokter yang sudah ada tidak boleh membuat Owner tersangkut).
+    if v_qty < 0.01 and not (v_cur is not null and (v_cur ->> 'qty') ~ '^[0-9.]+$' and v_qty = (v_cur ->> 'qty')::numeric) then
+      raise exception using errcode = 'P0001', message = format('BMHP_INVALID: jumlah %s kurang dari batas minimal 0,01 satuan; keluarkan bahan dari daftar bila memang tidak dipakai', v_item.name);
+    end if;
     v_unit := coalesce(v_unit, v_cur ->> 'unit', v_item.unit);
     if v_unit = v_item.unit then v_factor := 1;
     else

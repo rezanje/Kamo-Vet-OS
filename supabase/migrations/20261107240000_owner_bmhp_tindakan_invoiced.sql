@@ -8,6 +8,8 @@
 -- Padanan dari clinic_owner_correct_compound_invoiced (racikan, 20261107160000) untuk BMHP:
 --  * clinic_private.owner_bmhp_invoice_corrections: jejak tambah-saja (siapa/kapan/tagihan+baris/status bayar/daftar sebelum-sesudah-ASLI/
 --    biaya & HPP sebelum-sesudah-selisih/jurnal/alasan/kunci/efek stok). Tanpa hak aplikasi.
+--    Kolom invoice_item_id sengaja BUKAN foreign key ke invoice_items: baris yang sudah dikoreksi tetap bisa ditarik Owner (tarik baris menghapus
+--    baris invoice) dan jejaknya tetap tersimpan; foreign key ke tagihan, kunjungan, baris resep, profil, dan jurnal tetap ada.
 --  * clinic_private.owner_correct_invoiced_bmhp(..., p_dry) + public.clinic_owner_correct_invoiced_bmhp(p_invoice_item_id, p_components,
 --    p_reason, p_request_key) + public.clinic_owner_invoiced_bmhp_quote(p_invoice_item_id, p_components) (pratinjau baca-saja: kode yang sama
 --    di sub-transaksi yang dibatalkan) + public.clinic_owner_invoice_bmhp_lines(p_invoice_id) (daftar baris ber-BMHP + riwayat untuk layar).
@@ -106,7 +108,7 @@ create table clinic_private.owner_bmhp_invoice_corrections (
   visit_id uuid not null references public.visits(id),
   prescription_item_id uuid not null references public.prescription_items(id),
   invoice_id uuid not null references public.invoices(id),
-  invoice_item_id uuid not null references public.invoice_items(id),
+  invoice_item_id uuid not null,   -- sengaja TANPA foreign key: Owner masih boleh menarik baris yang pernah dikoreksi (owner_tarik_baris menghapus baris invoice); jejak tetap utuh sebagai riwayat
   invoice_no text not null,
   paid_status text not null,
   reason text not null check (length(regexp_replace(btrim(reason), '\s', '', 'g')) >= 5 and length(btrim(reason)) <= 500),

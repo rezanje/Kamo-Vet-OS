@@ -59,4 +59,10 @@ MUTANTS = [
       ("ir.discharged_at is null)) then\n    raise exception using errcode = 'P0001', message = 'VISIT_CLOSED", "ir.discharged_at is null))) then\n    raise exception using errcode = 'P0001', message = 'VISIT_CLOSED", 1)], ['neg']),
     ('M26 stored list not the validated one (permit-less write path tampered: the written list is the RAW payload)',
      [("update public.prescription_items set bmhp_components = v_after where id = p_rx_id;", "update public.prescription_items set bmhp_components = (select jsonb_agg(jsonb_build_object('item_id', e.value ->> 'item_id', 'qty', (e.value ->> 'qty')::numeric + 1, 'unit', coalesce(e.value ->> 'unit', 'pcs'))) from jsonb_array_elements(p_components) e) where id = p_rx_id;", 1)], ['core']),
+    ('M27 lower bound (0.01) removed: a tiny new quantity is accepted',
+     [("if v_qty < 0.01 and not (v_cur is not null", "if false and not (v_cur is not null", 1)], ['bounds', 'neg']),
+    ('M28 lower bound ignores the unchanged-quantity exemption (an existing tiny quantity blocks the Owner)',
+     [("and (v_cur ->> 'qty') ~ '^[0-9.]+$' and v_qty = (v_cur ->> 'qty')::numeric) then", "and false) then", 1)], ['bounds']),
+    ('M29 lower bound exemption too wide (any quantity of an existing ingredient is accepted)',
+     [("and v_qty = (v_cur ->> 'qty')::numeric) then", ") then", 1)], ['bounds']),
 ]
