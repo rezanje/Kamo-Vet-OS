@@ -7,6 +7,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "../PrintButton";
+import { labelPromo } from "@/lib/label-potongan";
+import { bacaRincianPromoKlinik, labelDiskonBaris, pasangPromoKeBaris } from "@/lib/rincian-promo-klinik";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -35,7 +37,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   if (!invoice) notFound();
 
   const items = await readCompleteList<PackagePrintSource & BarisTagihanPetugas & { id: string }>((from, to) => supabase
-    .from("invoice_items").select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers", { count: "exact" })
+    .from("invoice_items").select("id, invoice_id, item_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers", { count: "exact" })
     .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian struk", { maxRows: null });
   // Petugas dicetak per jabatan (Dokter / Groomer / Staff), bukan per baris — lihat petugas-cetak.ts.
   const petugas = petugasCetak(visit, items, await bacaKartuPetugas(supabase, idPetugas([visit], items)));
@@ -44,6 +46,12 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
     .select("fee_bearer,fee_amount,payments").eq("invoice_id",invoice.id).maybeSingle();
   if (demoError) throw new Error("Rincian biaya admin tidak terbaca. Muat ulang sebelum mencetak.");
+  // Promo per barang (Reza 8 Nov): dicetak di bawah barangnya; "Diskon transaksi" di
+  // bawah hanya sisanya (voucher, golongan, poin, diskon kasir). Total tidak berubah.
+  const lines = customerPackageLines(items, { subtotal: invoice.subtotal });
+  const promoInvoice = (await bacaRincianPromoKlinik(supabase, [invoice.id])).get(invoice.id) ?? [];
+  const { perBaris, totalPromo } = pasangPromoKeBaris(lines, promoInvoice, Number(invoice.discount));
+  const diskonTransaksi = Math.max(0, Number(invoice.discount) - totalPromo);
   const credit = (payments ?? []).filter((p) => p.transferred_from)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const received = Number(invoice.dp_amount) + (payments ?? [])
@@ -78,18 +86,20 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
         <Kv k="Pasien" v={`${pet?.name ?? "-"} (${pet?.species ?? "-"})`} />
         <Kv k="Pemilik" v={cust?.name ?? "-"} />
         <Hr />
-        {customerPackageLines(items, { subtotal: invoice.subtotal }).map((it, i) => (
+        {lines.map((it, i) => (
           <div key={i} style={{ marginBottom: 3 }}>
             <div>{it.deskripsi}</div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>{it.qty} x {rp(it.harga)}</span>
-              <span>{rp(it.jumlah)}</span>
+              <span>{rp(it.jumlah + it.diskon)}</span>
             </div>
+            <PotonganBaris label={labelDiskonBaris(it)} nilai={it.diskon} />
+            {perBaris[i].map((p, k) => <PotonganBaris key={k} label={labelPromo(p.nama)} nilai={p.potongan} />)}
           </div>
         ))}
         <Hr />
-        <Row k="Subtotal" v={rp(invoice.subtotal)} />
-        {invoice.discount > 0 && <Row k="Diskon" v={`-${rp(invoice.discount)}`} />}
+        <Row k="Subtotal" v={rp(Number(invoice.subtotal) - totalPromo)} />
+        {diskonTransaksi > 0.005 && <Row k="Diskon transaksi" v={`-${rp(diskonTransaksi)}`} />}
         <Row k="PPN 11%" v={rp(invoice.tax)} />
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 12, marginTop: 2 }}>
           <span>TOTAL</span><span>{rp(invoice.total)}</span>
@@ -110,6 +120,15 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   );
 }
 
+/** Potongan satu barang, menjorok di bawah barisnya (promo atau diskon kasir). */
+function PotonganBaris({ label, nilai }: { label: string | null; nilai: number }) {
+  if (!label || !(nilai > 0.005)) return null;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+      <span>&nbsp;&nbsp;{label}</span><span>-{rp(nilai)}</span>
+    </div>
+  );
+}
 function Hr() {
   return <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />;
 }

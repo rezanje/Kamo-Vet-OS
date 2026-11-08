@@ -138,6 +138,22 @@ export async function perkiraanTagihan(
 // pemakaiannya di rombongan: satu voucher untuk satu kedatangan, potongannya
 // dibagi proporsional ke nota tiap hewan (kesepakatan 2026-08-12).
 
+export type RincianPromoKlinik = { item_id: string; promo_id: string; promo_name: string; potongan: number };
+
+/** Hasil mesin promo → satu baris per (barang, promo); baris tanpa item_id tidak punya pegangan di struk. */
+export function rincianPromoPerBarang(hasil: readonly { item_id: string; promoId: string; promoName: string; potongan: number }[]): RincianPromoKlinik[] {
+  const per = new Map<string, RincianPromoKlinik>();
+  for (const h of hasil) {
+    const potongan = Number(h.potongan) || 0;
+    if (!h.item_id || !h.promoId || potongan <= 0) continue;
+    const key = `${h.item_id}:${h.promoId}`;
+    const ada = per.get(key);
+    if (ada) ada.potongan += potongan;
+    else per.set(key, { item_id: h.item_id, promo_id: h.promoId, promo_name: (h.promoName || "Promo").trim() || "Promo", potongan });
+  }
+  return [...per.values()];
+}
+
 export type BarisPotongan = { item_id: string | null; qty: number; harga: number; jenis?: string; satuan?: string | null };
 
 export type Potongan = {
@@ -148,6 +164,11 @@ export type Potongan = {
   total: number;
   /** Alasan voucher ditolak; null kalau tidak ada kode / kodenya sah. */
   tolakVoucher: string | null;
+  /**
+   * Promo per barang (Reza 8 Nov): dicetak di bawah baris barangnya di struk/invoice.
+   * Jumlahnya sama persis dengan `promo`; hanya rinciannya. Tampilan saja.
+   */
+  rincianPromo?: RincianPromoKlinik[];
   /** Kode voucher yang disimpan di invoice (tujuan kode kampanye bila ada). */
   voucherCode?: string | null;
   /** Kode kampanye yang diketik (C05); null bila bukan kode kampanye. */
@@ -265,7 +286,7 @@ export async function hitungPotonganKlinik(
   // Total potongan tidak boleh melebihi tagihan — kalau lewat, DPP jadi minus dan
   // jurnal pendapatannya ikut salah.
   const total = Math.min(subtotal, promo + golongan + voucher);
-  return { promo, voucher, golongan, total, tolakVoucher, ...kodeHasil,
+  return { promo, voucher, golongan, total, tolakVoucher, rincianPromo: rincianPromoPerBarang(potonganPromo), ...kodeHasil,
     ...(opts.promoKampanyeId ? { promoKampanyeTerpakai, promoKampanyeTersedia } : {}) };
 }
 

@@ -7,6 +7,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "../PrintButton";
+import { labelPromo } from "@/lib/label-potongan";
+import { bacaRincianPromoKlinik, pasangPromoKeBaris } from "@/lib/rincian-promo-klinik";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -44,7 +46,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   </section>;
 
   const items = await readCompleteList<PackagePrintSource & BarisTagihanPetugas & { id: string; compound_recipe_id: string | null; compounding_recipes: Rel<{ id: string; medical_records: Rel<{ visit_id: string }> }> }>((from, to) => supabase
-    .from("invoice_items").select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers, compound_recipe_id, compounding_recipes(id, medical_records(visit_id))", { count: "exact" })
+    .from("invoice_items").select("id, invoice_id, item_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers, compound_recipe_id, compounding_recipes(id, medical_records(visit_id))", { count: "exact" })
     .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian invoice", { maxRows: null });
   const { data: payments,error:paymentsError } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
@@ -62,6 +64,12 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   if (demoError) throw new Error("Rincian biaya admin tidak terbaca. Muat ulang sebelum mencetak.");
   // Petugas dicetak per jabatan (Dokter / Groomer / Staff), bukan per baris — lihat petugas-cetak.ts.
   const petugas = petugasCetak(visit, items, await bacaKartuPetugas(supabase, idPetugas([visit], items)));
+  // Promo per barang (Reza 8 Nov): baris "Promo …" di bawah barangnya; "Diskon transaksi"
+  // di ringkasan hanya sisanya. Total & DPP tidak berubah.
+  const lines = customerPackageLines(items, { subtotal: invoice.subtotal });
+  const promoInvoice = (await bacaRincianPromoKlinik(supabase, [invoice.id])).get(invoice.id) ?? [];
+  const { perBaris, totalPromo } = pasangPromoKeBaris(lines, promoInvoice, Number(invoice.discount));
+  const diskonTransaksi = Math.max(0, Number(invoice.discount) - totalPromo);
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const branch = one(one(invoice.visits)?.branches ?? null);
@@ -131,7 +139,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
             </tr>
           </thead>
           <tbody>
-            {customerPackageLines(items, { subtotal: invoice.subtotal }).map((it, i) => (
+            {lines.flatMap((it, i) => [
               <tr key={i}>
                 <td style={{ color: "var(--td)" }}>{i + 1}</td>
                 <td style={{ fontWeight: 500 }}>{it.deskripsi}</td>
@@ -139,15 +147,22 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
                 <td style={{ textAlign: "right" }}>{rp(it.harga)}</td>
                 <td style={{ textAlign: "center" }}>{it.diskon_persen === null ? rp(it.diskon) : Number(it.diskon_persen) > 0 ? `${Number(it.diskon_persen)}%` : "—"}</td>
                 <td style={{ textAlign: "right" }}>{rp(it.jumlah)}</td>
-              </tr>
-            ))}
+              </tr>,
+              ...perBaris[i].map((p, k) => (
+                <tr key={`${i}-promo-${k}`}>
+                  <td />
+                  <td colSpan={4} style={{ fontSize: 11, color: "var(--tm)", paddingLeft: 16 }}>{labelPromo(p.nama)}</td>
+                  <td style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>- {rp(p.potongan)}</td>
+                </tr>
+              )),
+            ])}
           </tbody>
         </table>
 
         {/* Summary */}
         <div style={{ marginTop: 14, marginLeft: "auto", width: 260 }}>
-          <SumRow label="Subtotal (DPP)" value={rp(invoice.subtotal)} />
-          {invoice.discount > 0 && <SumRow label="Diskon" value={`- ${rp(invoice.discount)}`} />}
+          <SumRow label="Subtotal" value={rp(Number(invoice.subtotal) - totalPromo)} />
+          {diskonTransaksi > 0.005 && <SumRow label="Diskon transaksi" value={`- ${rp(diskonTransaksi)}`} />}
           <SumRow label="PPN 11%" value={rp(invoice.tax)} />
           <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderTop: "1.5px solid #141413", marginTop: 4 }}>
             <span style={{ fontWeight: 700 }}>TOTAL</span>

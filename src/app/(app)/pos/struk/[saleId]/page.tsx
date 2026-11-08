@@ -7,12 +7,22 @@ import { PrintButton } from "@/components/PrintButton";
 import { ClearPosDraft } from "@/components/ClearPosDraft";
 import { receiptPaymentRows, saleMerchandiseTotal } from "@/lib/sale-payment-reporting";
 import { pesanPilihanPromo } from "@/lib/promo-pick-note";
+import { lineDiscount, linePromoApplied, type CartLine } from "@/lib/pos-calc";
+import { labelDiskonManual, labelPromo } from "@/lib/label-potongan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 const rp = formatPosMoney;
+/** Satu baris struk tersimpan dalam bentuk yang dimengerti lib/pos-calc (sama dengan struk kasir). */
+type BarisTersimpan = { qty: number; harga: number; item_discount_type?: string | null; item_discount_value?: number | null; promo_discount?: number | null };
+const barisStruk = (it: BarisTersimpan): CartLine => ({
+  qty: Number(it.qty), harga: Number(it.harga),
+  item_discount_type: (it.item_discount_type as "nominal" | "percent" | null) ?? null,
+  item_discount_value: Number(it.item_discount_value) || 0,
+  promo_discount: Number(it.promo_discount) || 0,
+});
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SaleRead = { data: any; error: { code?: string } | null };
 
@@ -35,7 +45,11 @@ export default async function PosStrukPage({ params, searchParams }: {
   const catatanPromo = pesanPilihanPromo(sale.promo_pick_mode, sale.promo_selection);
 
   const { data: items } = await supabase
-    .from("sale_items").select("nama, qty, harga, satuan").eq("sale_id", saleId).order("created_at");
+    .from("sale_items").select("nama, qty, harga, satuan, item_discount_type, item_discount_value, promo_discount, promos(name)").eq("sale_id", saleId).order("created_at");
+  // Reza 8 Nov: potongan per barang (promo) dicetak di bawah barangnya; bagian bawah khusus
+  // diskon transaksi. Potongan promo sudah termasuk di sale.discount, jadi dikurangkan di sana.
+  const itemDisc = (items ?? []).reduce((a, it) => a + lineDiscount(barisStruk(it)), 0);
+  const diskonTransaksi = Math.max(0, Number(sale.discount) - itemDisc);
 
   const cust = one(sale.customers) as { name: string; customer_categories?: unknown } | null;
   const branch = one(sale.branches);
@@ -67,20 +81,30 @@ export default async function PosStrukPage({ params, searchParams }: {
         <Row k="Pelanggan" v={cust?.name ?? "Umum"} />
         <Row k="Kasir" v={sale.cashier_name ?? "Kasir belum tercatat (data lama)"} />
         <Hr />
-        {(items ?? []).map((it, i) => (
-          <div key={i} style={{ marginBottom: 3 }}>
-            <div>{it.nama}</div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{it.qty}{it.satuan ? ` ${it.satuan}` : ""} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
+        {(items ?? []).map((it, i) => {
+          const disc = lineDiscount(barisStruk(it));
+          const promo = linePromoApplied(barisStruk(it)) > 0 ? one(it.promos as Rel<{ name: string }>) : null;
+          return (
+            <div key={i} style={{ marginBottom: 3 }}>
+              <div>{it.nama}</div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>{it.qty}{it.satuan ? ` ${it.satuan}` : ""} x {rp(it.harga)}</span><span>{rp(it.qty * it.harga)}</span>
+              </div>
+              {disc > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+                  <span>&nbsp;&nbsp;{promo ? labelPromo(promo.name) : labelDiskonManual(it.item_discount_type === "percent" ? Number(it.item_discount_value) : null)}</span>
+                  <span>-{rp(disc)}</span>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         <Hr />
-        <Row k="Subtotal" v={rp(sale.subtotal)} />
+        <Row k="Subtotal" v={rp(Number(sale.subtotal) - itemDisc)} />
         {diskonKategori > 0 && (
           <Row k={`Diskon ${golongan?.nama ?? "golongan"}`} v={`-${rp(diskonKategori)}`} />
         )}
-        {sale.discount > 0 && <Row k="Diskon" v={`-${rp(sale.discount)}`} />}
+        {diskonTransaksi > 0 && <Row k="Diskon transaksi" v={`-${rp(diskonTransaksi)}`} />}
         {catatanPromo && <div data-testid="struk-catatan-promo" style={{ fontSize: 10, margin: "2px 0" }}>{catatanPromo}</div>}
         {Number(sale.merchant_fee_total) > 0 && <>
           <Row k="Total barang" v={rp(saleMerchandiseTotal(sale))} />

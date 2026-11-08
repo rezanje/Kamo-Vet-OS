@@ -18,7 +18,8 @@ import { bacaPoinPelanggan, catatPoinKlinik, catatPoinNota, poinTerpakai, RUPIAH
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
-import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
+import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris, type RincianPromoKlinik } from "@/lib/tagihan-klinik";
+import { catatRincianPromoKlinik } from "@/lib/rincian-promo-klinik";
 import { clinicServicePerformerInput, parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { bacaKodeKampanye, cekVoucherLewatKampanye, pesanGagalKampanye, pesanKampanyeDitolak } from "@/lib/kode-kampanye";
@@ -463,6 +464,9 @@ export async function bayarVisit(formData: FormData) {
     redirect(`${back}?error=${encodeURIComponent(posted.invoiceId ? "Invoice sudah tersimpan, tetapi rinciannya belum dapat dibaca. Jangan menerima pembayaran ulang; muat ulang dan periksa invoice yang sama." : parseClinicPostingError(posted.error, uncertainPayment))}`);
   }
   const invoiceNo = posted.invoiceNo;
+  // Rincian promo per barang untuk struk (Reza 8 Nov) — tampilan saja, uangnya sudah
+  // tersimpan di diskon invoice. Gagal dicatat = struk memakai tampilan lama.
+  await catatRincianPromoKlinik(supabase, posted.invoiceId, "rincianPromo" in potongan ? potongan.rincianPromo : undefined);
   waktu.tandai("posting");
 
   // Paid creation and checkout commit atomically in the posting RPC. Do not
@@ -614,6 +618,7 @@ export async function bayarRombongan(formData: FormData) {
     cartVersion: string | null;
     subtotal: number;
     potonganNonVoucher: number;
+    rincianPromo: RincianPromoKlinik[];
     /** Promo kode kampanye memotong tagihan hewan ini / berlaku di cabangnya. */
     kenaPromoKampanye: boolean;
     promoKampanyeTersedia: boolean;
@@ -657,7 +662,7 @@ export async function bayarRombongan(formData: FormData) {
         ...(promoKampanyeId ? { promoKampanyeId } : {}),
       });
       const salespersonId = await salespersonP;
-      return { b, salespersonId, rows, cartVersion, subtotal, potonganNonVoucher: potonganPet.total,
+      return { b, salespersonId, rows, cartVersion, subtotal, potonganNonVoucher: potonganPet.total, rincianPromo: potonganPet.rincianPromo ?? [],
         kenaPromoKampanye: !!potonganPet.promoKampanyeTerpakai, promoKampanyeTersedia: !!potonganPet.promoKampanyeTersedia };
     })());
   };
@@ -765,6 +770,7 @@ export async function bayarRombongan(formData: FormData) {
     // Poin yang benar-benar terpakai dihitung dari nota yang BERHASIL terbit —
     // porsi hewan yang gagal tidak boleh ikut memotong saldo pelanggan. Dicatat per
     // nota (ref = nomor invoice) supaya refund invoice itu ikut menyesuaikan poinnya.
+    await catatRincianPromoKlinik(supabase, posted.invoiceId, s.rincianPromo);
     notaPoin.push({ ref: posted.invoiceNo, dipakai: Math.floor(poinPerPet[idx] / RUPIAH_PER_POIN), total });
     jumlahLunas++;
   }
