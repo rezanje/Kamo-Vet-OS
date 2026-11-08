@@ -1,5 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
+import { NumberInput } from "@/components/NumberInput";
 import { muatanKomponen, PERINGATAN_HPP_BEDA_BAHAN, type KomponenBmhp, type PratinjauBmhp } from "@/lib/bmhp-owner";
 import { pratinjauBmhp, simpanBmhp } from "./bmhp-owner-actions";
 
@@ -70,7 +71,7 @@ export function BmhpOwnerForm({ mode, visitId, recordId = "", targetId, snapshot
       <thead><tr><th>Bahan</th><th style={{ textAlign: "right" }}>Jumlah</th><th>Satuan</th></tr></thead>
       <tbody>{rows.map((r) => <tr key={r.item_id}>
         <td>{r.name}{!r.asal && " (baru)"}</td>
-        <td style={{ textAlign: "right" }}><input className="fi" style={{ width: 90, textAlign: "right" }} inputMode="decimal" aria-label={`Jumlah ${r.name}`} value={r.qty} disabled={sibuk} onChange={(e) => ubah(r.item_id, e.target.value)} /></td>
+        <td style={{ textAlign: "right" }}><NumberInput className="fi" type="number" step="any" min="0" style={{ width: 90, textAlign: "right" }} aria-label={`Jumlah ${r.name}`} value={r.qty} disabled={sibuk} onChange={(e) => ubah(r.item_id, e.target.value)} /></td>
         <td>{r.unit ?? "satuan dasar"}</td></tr>)}
         {sisa.map((c) => <tr key={c.item_id}><td colSpan={3} style={{ fontSize: 10.5 }}>{c.name ?? c.item_id}: dikeluarkan dari daftar</td></tr>)}
       </tbody>

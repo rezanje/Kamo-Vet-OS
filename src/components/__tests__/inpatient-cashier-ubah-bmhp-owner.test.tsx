@@ -46,12 +46,12 @@ it("Owner mengubah Lacto-B 5 -> 3,4: pratinjau mengirim snapshot keranjang, bari
   await klik(tombol("Ubah BMHP (Owner)")!);
   const qty = host.querySelector<HTMLInputElement>('input[aria-label="Jumlah Lacto-B Fiktif"]')!;
   expect(qty.value).toBe("5");
-  await ketik(qty, "3,4");
+  await ketik(qty, "3.4");
   expect(tombol("Simpan perubahan BMHP")!.disabled).toBe(true);
   await klik(tombol("Pratinjau")!);
   const f = aksi.pratinjau.mock.calls[0][0];
   expect(f.get("mode")).toBe("pending"); expect(f.get("visit_id")).toBe("visit-1"); expect(f.get("record_id")).toBe("stay-1"); expect(f.get("target_id")).toBe("rx-1"); expect(f.get("snapshot")).toBe("snapshot-keranjang-1");
-  expect(JSON.parse(String(f.get("components")))).toEqual([{ item_id: LAC, qty: "3,4", unit: null }]);
+  expect(JSON.parse(String(f.get("components")))).toEqual([{ item_id: LAC, qty: "3.4", unit: null }]);
   expect(host.textContent).toContain("belum ada yang berubah");
   expect(host.textContent).toContain("batas harga lolos");
   expect(tombol("Simpan perubahan BMHP")!.disabled).toBe(true); // alasan belum diisi
@@ -80,7 +80,7 @@ it("jumlah tidak valid atau semua bahan dikeluarkan: pratinjau terkunci dengan p
   const qty = host.querySelector<HTMLInputElement>('input[aria-label="Jumlah Lacto-B Fiktif"]')!;
   await ketik(qty, "-2"); expect(tombol("Pratinjau")!.disabled).toBe(true); expect(host.textContent).toContain("angka positif");
   await ketik(qty, ""); expect(tombol("Pratinjau")!.disabled).toBe(true); expect(host.textContent).toContain("Minimal satu bahan");
-  await ketik(qty, "1,00001"); expect(tombol("Pratinjau")!.disabled).toBe(true);
+  await ketik(qty, "1.00001"); expect(tombol("Pratinjau")!.disabled).toBe(true);
 });
 it("bahan lain bisa ditambah dari master (bukan paket), tidak dua kali", async () => {
   await render([jasa()], true);

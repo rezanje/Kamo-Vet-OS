@@ -23,7 +23,7 @@ const ketik = async (el: HTMLInputElement, value: string) => act(async () => {
 async function bukaDanPratinjau(mode: "pending" | "tagihan") {
   await act(async () => root.render(<BmhpOwnerForm mode={mode} visitId={U(1)} recordId={U(2)} targetId={U(3)} snapshot="snapshot-1" title="Injeksi Non Antibiotik" price={50000} components={komponen} master={[]} requestKey="k" />));
   await klik(tombol("Ubah BMHP (Owner)")!);
-  await ketik(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah Meloxicam Inj Fiktif"]')!, "0,5");
+  await ketik(host.querySelector<HTMLInputElement>('input[aria-label="Jumlah Meloxicam Inj Fiktif"]')!, "0.5");
   await klik(tombol("Pratinjau")!);
 }
 
