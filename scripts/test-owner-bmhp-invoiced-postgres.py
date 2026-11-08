@@ -334,14 +334,14 @@ def run(h, db=None, setup=True, baseline=False, pre=None):
         for label, payload, word in bad:
             err = h.gagal(f"select {RPC}({q(n1['line'])},{j(payload)},'Alasan cukup panjang',{q('bi-bad-' + label.split()[0] + label.split()[-1])});", r.OWNER)
             check(f'NEG payload {label} refused ({word}), NO partial effect (stock, layers, line, rx, journals)', bool(err) and word in err and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
+        err, _ = corr(h, n1, [comp(LAC, 5)], key='bi-nochange')
+        check('NEG unchanged components refused (NO_CHANGE, no audit noise, no journal)', err_has(err, 'NO_CHANGE') and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
         lo = inv(h, 9124, comps=[comp(LAC, 5), comp(CC, 0.005)]); slo = snap(h, lo)
         q_keep = quote(h, lo, [comp(LAC, 3), comp(CC, 0.005)]); q_below = quote(h, lo, [comp(LAC, 5), comp(CC, 0.004)]); q_edge = quote(h, lo, [comp(LAC, 5), comp(CC, 0.01)])
         e_below, _ = corr(h, lo, [comp(LAC, 5), comp(CC, 0.004)], key='bi-below')
         check('lower bound (review non-blocking item): a NEW quantity below 0.01 (CC 0.004) is refused in the quote AND the correction (BMHP_INVALID, batas minimal 0,01), nothing changed; 0.01 is accepted; an UNCHANGED existing 0.005 stays accepted',
               err_has(q_below[0], 'BMHP_INVALID', 'batas minimal 0,01') and err_has(e_below, 'BMHP_INVALID', 'batas minimal 0,01') and q_edge[0] is None and q_keep[0] is None and snap(h, lo) == slo,
               dict(keep=(q_keep[0] or '')[:120], below=(q_below[0] or '')[:120], edge=(q_edge[0] or '')[:120]))
-        err, _ = corr(h, n1, [comp(LAC, 5)], key='bi-nochange')
-        check('NEG unchanged components refused (NO_CHANGE, no audit noise, no journal)', err_has(err, 'NO_CHANGE') and snap(h, n1) == sn1, dict(error=(err or '')[:160]))
         # stock short: nothing left to issue the extra unit from
         sh = cm.bmhp_visit(h, 9121, comps=[comp(CD, 4)], layers=False); own_layers(h, CD, [(4, '100', '2025-12-01')])
         cm.save(h, sh, 'bi-sh-save', []); cm.link(h, sh)
