@@ -17,12 +17,13 @@ export default async function KoreksiBmhpTagihanPage({ params, searchParams }: {
   if (!uuid.test(visitId) || !invoiceId || !uuid.test(invoiceId)) notFound();
   const db = await createClient();
   const { data: { user } } = await db.auth.getUser();
-  const { data: profil } = user ? await db.from("profiles").select("role,is_active,branch_id").eq("id", user.id).maybeSingle() : { data: null };
+  const { data: profil } = user ? await db.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
   const back = <div style={{ marginBottom: 8 }}><Link href={`/klinik/pembayaran/${visitId}?invoice_id=${invoiceId}`} className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke tagihan</Link></div>;
   if (!profil || profil.role !== "OWNER" || profil.is_active !== true) return <>{back}<div className="p2ban" role="alert">{pesanBmhpOwner("ACCESS_DENIED: x")}</div></>;
   const { data, error } = await db.rpc("clinic_owner_invoice_bmhp_lines", { p_invoice_id: invoiceId });
   if (error || !data) return <>{back}<div className="p2ban" role="alert">{pesanBmhpOwner(error?.message)}</div></>;
-  const master = await loadClinicPaymentMaster(db, (profil as { branch_id?: string | null }).branch_id ?? null);
+  const { data: kunjungan } = await db.from("visits").select("branch_id").eq("id", visitId).maybeSingle();
+  const master = await loadClinicPaymentMaster(db, (kunjungan as { branch_id?: string | null } | null)?.branch_id ?? null);
   const bahan = master.obat.filter((item) => !item.paket).map((item) => ({ id: item.id, name: item.name, unit: item.unit }));
   const lines = (Array.isArray(data.lines) ? data.lines : []) as BarisBmhp[];
   return <>
