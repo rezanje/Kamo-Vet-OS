@@ -12,7 +12,7 @@ function fakeClient(withFee = false, withReturn = false) {
     { ...base, id: "final", ...(withFee ? { total: 101600, merchant_fee_total: 1600, sale_items: [{ ...base.sale_items[0], harga: 120000 }] } : {}), payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 81600 }], payments_finalized_at: "2026-10-15T05:00:01Z" },
     { ...base, id: "pending", payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }], payments_finalized_at: null }];
   const updates: Record<string, unknown>[] = [];
-  return { updates, from(table: string) {
+  return { updates, rpc: async () => ({ data: [], error: null }), from(table: string) {
     const data = table === "sales" ? sales : table === "sales_returns" && withReturn
       ? [{ id: "return", sale_id: "final", total: 50800, tanggal: "2026-10-16", sales_return_items: [{ item_id: "item", qty: 1, harga: 50800 }] }] : [];
     const result = { data, count: data.length, error: null };

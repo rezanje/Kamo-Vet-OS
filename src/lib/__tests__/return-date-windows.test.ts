@@ -21,7 +21,7 @@ function client(tables: Record<string, Row[]>) {
     return query;
   } };
 }
-const sale = (date: string) => ({ total: 200, created_at: date + "T12:00:00+07:00", voided_at: null });
+const sale = (date: string) => ({ id: `sale-${date}`, total: 200, created_at: date + "T12:00:00+07:00", voided_at: null });
 const returns = (date: string) => [
   { id: "original", total: 100, tanggal: date, voided_at: "2026-10-21T00:00:00Z" },
   { id: "replacement", total: 20, tanggal: date, voided_at: null },
