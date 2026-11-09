@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   KATEGORI_LAINNYA, KATEGORI_RACIKAN, KATEGORI_TANPA, KOLOM_ACCURATE,
-  barisAccurate, barisTabelRingkasan, cocokKategori, klasifikasiBaris, petaKategori, resolveKategori, ringkasKategori,
+  amankanSel, barisAccurate, barisTabelRingkasan, cocokKategori, klasifikasiBaris, petaKategori, resolveKategori, ringkasKategori,
 } from "../laporan-kategori-penjualan";
 
 const kategori = petaKategori([
@@ -113,6 +113,27 @@ describe("barisAccurate", () => {
   });
   it("tenaga penjual strip diganti kosong", () => {
     expect(barisAccurate({ dokumen: "x", cabang: "c", waktu: "2026-10-04T05:00:00Z", kode: "", nama: "n", kategori: "K", subKategori: "", qty: 1, harga: 1, nilai: 1, pelanggan: "p", diskon: 0, pelaksana: "—" })[12]).toBe("");
+  });
+});
+
+describe("keamanan sel Excel (rumus)", () => {
+  it("teks yang diawali = + - @ (atau tab/CR) diberi tanda petik di depan; teks biasa dan angka tidak berubah", () => {
+    for (const teks of ["=HYPERLINK(\"x\")", "+1+1", "-2+3", "@SUM(A1)", "\t=1", "\r=1", "  =1+1"]) expect(amankanSel(teks)).toBe(`'${teks}`);
+    expect(amankanSel("Injeksi")).toBe("Injeksi");
+    expect(amankanSel("")).toBe("");
+    expect(amankanSel(5)).toBe(5);
+    expect(amankanSel(-5)).toBe(-5);
+  });
+  it("barisAccurate menjaga semua kolom teks (nomor, kode, nama, pelanggan, tenaga penjual) tetapi tidak angka/tanggal", () => {
+    const hasil = barisAccurate({ dokumen: "=A1", cabang: "+c", waktu: "2026-10-04T05:00:00Z", kode: "-K", nama: "@nama", kategori: "=K", subKategori: "-S", qty: -1, harga: 1, nilai: -1, pelanggan: "=cmd|' /C calc'!A0", diskon: 0, pelaksana: "+dr" });
+    expect(hasil[0]).toBe("'=A1"); expect(hasil[1]).toBe("'+c"); expect(hasil[3]).toBe("'-K"); expect(hasil[4]).toBe("'@nama");
+    expect(hasil[5]).toBe("'=K"); expect(hasil[6]).toBe("'-S"); expect(hasil[10]).toBe("'=cmd|' /C calc'!A0"); expect(hasil[12]).toBe("'+dr");
+    expect(hasil[2]).toBeInstanceOf(Date); expect(hasil[7]).toBe(-1); expect(hasil[9]).toBe(-1);
+  });
+  it("jumlah Total Harga baris Accurate (tanpa baris anak) sama dengan total ringkasan layar", () => {
+    const rows = [{ ...baris("OBAT", "", 2, 30.5), indukId: undefined }, { ...baris("TINDAKAN", "Operasi", 1, 100), indukId: undefined }, { ...baris("TINDAKAN", "Operasi", 1, 0), indukId: "x" }];
+    const total = rows.filter(r => !r.indukId).reduce((s, r) => s + r.nilai, 0);
+    expect(ringkasKategori(rows).totalNilai).toBe(total);
   });
 });
 

@@ -5,7 +5,7 @@ import { bolehBukaPath } from "@/lib/akses";
 import { reportCsv } from "@/lib/csv-report";
 import { hariIniWIB } from "@/lib/tanggal";
 import { jenisLaporan } from "@/lib/laporan-penjualan-barang";
-import { KOLOM_ACCURATE, barisAccurate, barisTabelRingkasan } from "@/lib/laporan-kategori-penjualan";
+import { KOLOM_ACCURATE, amankanSel, barisAccurate, barisTabelRingkasan } from "@/lib/laporan-kategori-penjualan";
 import { KANAL_SEMUA, type Kanal } from "@/lib/laporan-transaksi";
 import { ambilPenjualanBarang, waktuWIB } from "../data";
 
@@ -14,7 +14,7 @@ function tambahRingkasanKategori(book: ExcelJS.Workbook, ringkasan: Parameters<t
   sheet.addRow(["Kategori", "Sub kategori", "Baris", "Kuantitas", "Total Harga"]);
   sheet.getRow(1).font = { bold: true };
   for (const baris of barisTabelRingkasan(ringkasan)) {
-    const row = sheet.addRow([baris.kategori, baris.tingkat === "sub" ? baris.subKategori : "", baris.baris, baris.qty, baris.nilai]);
+    const row = sheet.addRow([amankanSel(baris.kategori), amankanSel(baris.tingkat === "sub" ? baris.subKategori : ""), baris.baris, baris.qty, baris.nilai]);
     if (baris.tingkat === "kategori") row.font = { bold: true };
   }
   // Jumlah akhir hanya dari kategori (bukan sub) supaya tidak terhitung dua kali.
@@ -85,7 +85,7 @@ export async function GET(request: Request) {
     });
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: KOLOM_ACCURATE.length } };
     tambahRingkasanKategori(book, ringkasan);
-    book.addWorksheet("Filter").addRows(metadata);
+    book.addWorksheet("Filter").addRows(metadata.map(row => row.map(amankanSel)));
     const buffer = await book.xlsx.writeBuffer();
     return new NextResponse(new Uint8Array(buffer), { headers: { ...headers,
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -97,7 +97,7 @@ export async function GET(request: Request) {
     const sheet = book.addWorksheet("Penjualan barang", { views: [{ state: "frozen", ySplit: 1 }] });
     sheet.addRow(columns);
     sheet.getRow(1).font = { bold: true };
-    sheet.addRows(data);
+    sheet.addRows(data.map(row => row.map(amankanSel)));
     const kolomAngka = new Set(["Qty", "Harga", "Nilai baris", "HPP", "Diskon item", "Potongan / pembulatan"]);
     columns.forEach((nama, index) => {
       const angka = kolomAngka.has(nama);
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
       if (angka) sheet.getColumn(index + 1).numFmt = '#,##0.00';
     });
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
-    book.addWorksheet("Ringkasan dan filter").addRows(metadata);
+    book.addWorksheet("Ringkasan dan filter").addRows(metadata.map(row => row.map(amankanSel)));
     tambahRingkasanKategori(book, ringkasan);
     const buffer = await book.xlsx.writeBuffer();
     return new NextResponse(new Uint8Array(buffer), { headers: { ...headers,

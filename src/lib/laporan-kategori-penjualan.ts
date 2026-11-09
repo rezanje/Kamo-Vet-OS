@@ -113,7 +113,12 @@ function tanggalWib(waktu: string): Date {
   return new Date(`${hari}T00:00:00Z`);
 }
 
+/** Teks yang diawali = + - @ (atau tab/CR) diberi tanda petik di depan supaya Excel tidak membacanya sebagai rumus. Angka dan tanggal tidak berubah. */
+export function amankanSel<T extends string | number | Date>(nilai: T): T | string {
+  return typeof nilai === "string" && /^[\s\u0000-\u001f]*[=+@\-\t\r]/u.test(nilai) ? `'${nilai}` : nilai;
+}
+
 export function barisAccurate(row: BarisAccurate): (string | number | Date)[] {
   return [row.dokumen, row.cabang, tanggalWib(row.waktu), row.kode, row.nama, row.kategori, row.subKategori,
-    row.qty, row.harga, row.nilai, row.pelanggan === "—" ? "" : row.pelanggan, row.diskon, row.pelaksana === "—" ? "" : row.pelaksana];
+    row.qty, row.harga, row.nilai, row.pelanggan === "—" ? "" : row.pelanggan, row.diskon, row.pelaksana === "—" ? "" : row.pelaksana].map(amankanSel);
 }
