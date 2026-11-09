@@ -2,16 +2,19 @@ import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { bolehBukaPath, tujuanSaatDiblokir } from "@/lib/akses";
+import { gabungSubmenu } from "@/lib/submenu-access";
+import { loadSubmenuPolicy } from "@/lib/submenu-policy";
 import { BRANCH_HEADER, MODE_HEADER, branchCookie, operationalMode, parseBranchContext } from "@/lib/operational-context";
 import { resolveOperationalBranch } from "@/lib/operational-branch";
 import { getOpenShift } from "@/lib/shift";
 import { mulai } from "@/lib/u07-waktu";
 
-function loginRedirect(request: NextRequest) {
+function loginRedirect(request: NextRequest, message?: string) {
   const url = request.nextUrl.clone();
   url.pathname = "/login";
   // 303 avoids replaying an expired/deleted-account form into the login action.
-  if (request.method !== "GET") {
+  if (message) url.searchParams.set("error", message);
+  else if (request.method !== "GET") {
     url.searchParams.set("error", "Sesi kamu berakhir. Masuk lagi, lalu ulangi simpan.");
   }
   return NextResponse.redirect(url, { status: 303 });
@@ -79,14 +82,22 @@ export async function updateSession(request: NextRequest) {
       // Read without operational scope so a stale/tampered cookie cannot hide
       // another open shift and bypass the switching guard.
       const shiftP = mode && context ? mulai(getOpenShift(supabase, userId, mode)) : null;
-      const [{ data: profile, error: profileError }, { data: aturan, error: rulesError }] = await Promise.all([
+      // Kebijakan sub-menu dibaca paralel (satu putaran yang sama). Fungsi belum ada di database = perilaku lama;
+      // gagal baca lain = tidak bisa dipastikan, jadi gagal tertutup seperti galat aturan modul — KECUALI untuk OWNER:
+      // OWNER tidak pernah dibatasi sub-menu (bolehBukaPath selalu true), jadi galat RPC ini tidak boleh mengunci
+      // satu-satunya peran yang bisa memperbaiki Akses Grup. Peran lain diarahkan ke /login dengan pesan yang jelas.
+      const [{ data: profile, error: profileError }, { data: aturan, error: rulesError }, submenu] = await Promise.all([
         supabase.from("profiles").select("role, is_active").eq("id", userId).maybeSingle(),
         supabase.from("role_modules").select("role, module_id"),
+        loadSubmenuPolicy(supabase),
       ]);
       // Auth deletion cascades the profile; an unexpired JWT alone is not enough.
       if (profileError || rulesError || !profile || profile.is_active === false) return loginRedirect(request);
       const role = profile?.role ?? "";
-      const tersimpan = (aturan ?? []) as { role: string; module_id: string }[];
+      if (submenu.status === "error" && role !== "OWNER") {
+        return loginRedirect(request, "Hak akses halaman belum bisa diperiksa. Coba lagi sebentar lagi, atau masuk ulang.");
+      }
+      const tersimpan = gabungSubmenu((aturan ?? []) as { role: string; module_id: string }[], submenu.rows);
 
       const accountPage = path === "/pengaturan/pengguna";
       const canCreateAccount = accountPage && (await loadRoleCapabilities(supabase, role)).create_accounts;

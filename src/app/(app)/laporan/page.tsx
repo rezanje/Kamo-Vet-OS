@@ -1,3 +1,4 @@
+import { rulesWithSubmenu } from "@/lib/submenu-policy";
 import { ReportCatalog } from "@/components/ReportCatalog";
 import { buildReportCatalog } from "@/lib/report-catalog";
 import type { AturanTersimpan } from "@/lib/akses";
@@ -15,6 +16,6 @@ export default async function Page() {
   if(rulesError||!Array.isArray(rules))return <p role="alert">Hak akses katalog laporan belum dapat diverifikasi. Muat ulang.</p>;
   return <>
     <Suspense fallback={null}><ReportPresets title="Laporan" directory /></Suspense>
-    <ReportCatalog entries={buildReportCatalog(profile.role,rules as AturanTersimpan)}/>
+    <ReportCatalog entries={buildReportCatalog(profile.role,await rulesWithSubmenu(supabase,rules as AturanTersimpan))}/>
   </>;
 }

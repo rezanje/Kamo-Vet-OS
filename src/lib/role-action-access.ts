@@ -8,7 +8,7 @@ const REJECTIONS: [RegExp, string, string][] = [
   [/ROLE_REVISION_CONFLICT/, "ROLE_REVISION_CONFLICT", "Pengaturan akses peran ini sudah berubah sejak halaman dibuka. Tidak ada perubahan yang tersimpan. Muat ulang halaman untuk melihat pengaturan terbaru, lalu terapkan ulang perubahan Anda."],
   [/ROLE_OWNER_REQUIRED/, "ROLE_OWNER_REQUIRED", "Hanya pemilik (OWNER) aktif yang boleh mengubah hak akses. Tidak ada perubahan yang tersimpan."],
   [/ROLE_REQUEST_KEY_REUSED/, "ROLE_REQUEST_KEY_REUSED", "Kunci permintaan ini sudah dipakai untuk isian yang berbeda. Tidak ada perubahan yang tersimpan. Muat ulang halaman lalu simpan lagi."],
-  [/ROLE_(INPUT|ACTION|RESET|SCOPE)_INVALID/, "ROLE_INPUT_INVALID", "Isian pengaturan tidak valid atau tidak didukung. Tidak ada perubahan yang tersimpan. Muat ulang halaman lalu coba lagi."],
+  [/ROLE_(INPUT|ACTION|RESET|SCOPE|SUBMENU)_INVALID/, "ROLE_INPUT_INVALID", "Isian pengaturan tidak valid atau tidak didukung. Tidak ada perubahan yang tersimpan. Muat ulang halaman lalu coba lagi."],
   [/ROLE_ACTION_DENIED/, "ROLE_ACTION_DENIED", "Tindakan ini tidak diizinkan untuk peran Anda. Tidak ada yang disimpan. Minta pemilik membukanya di Pengaturan › Akses Grup."],
   [/BANK_SCOPE_DENIED/, "BANK_SCOPE_DENIED", "Rekening atau cabang ini di luar cakupan akses peran Anda (menu Kas & Bank, akses semua cabang, atau cabang rekening). Tidak ada yang disimpan."],
   [/EMPLOYEE_SCOPE_DENIED/, "EMPLOYEE_SCOPE_DENIED", "Karyawan atau cabang ini di luar cakupan akses peran Anda. Tidak ada yang disimpan."],

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionRejection } from "@/components/LocalTransactionDraft";
 import { roleRpcFailure } from "@/lib/role-action-access";
+import { SUBMENU_ENTRIES, selectableSubmenus, submenuById } from "@/lib/submenu-access";
 import { editableRole, parseRoleAccessConfig, ROLE_ACCESS_CATALOG, roleAccessScope, validRequestKey, validRevision } from "@/lib/role-access-catalog";
 
 const BASE = "/pengaturan/akses-grup";
@@ -56,6 +57,34 @@ export async function saveRoleSettings(role: string, revision: string, form: For
     }
     actions.push(id);
   }
+  // Sub-menu: hanya untuk modul yang dicentang dan yang bagian sub-menunya memang ditampilkan (penanda `subs_<modul>`).
+  // Pilihan penuh = tidak dibatasi (tidak disimpan); kosong = modul tidak bisa dibuka. Modul yang tidak ditampilkan
+  // mempertahankan kebijakan tersimpannya; modul yang tidak dicentang dilepas kebijakannya.
+  const checkedSub: string[] = [];
+  for (const [name, value] of form.entries()) {
+    if (!name.startsWith("sub_")) continue;
+    const id = name.slice(4);
+    if (value !== "on" || checkedSub.includes(id) || !submenuById(id)) return refuse("Pilihan sub-menu tidak dikenal atau ganda. Muat ulang; draf tetap tersedia.");
+    checkedSub.push(id);
+  }
+  const rendered: string[] = [];
+  for (const [name, value] of form.entries()) {
+    if (!name.startsWith("subs_")) continue;
+    const m = name.slice(5);
+    if (value !== "1" || rendered.includes(m) || selectableSubmenus(m).length === 0) return refuse("Bagian sub-menu tidak dikenal atau ganda. Muat ulang; draf tetap tersedia.");
+    rendered.push(m);
+  }
+  if (checkedSub.some(id => !rendered.includes(submenuById(id)!.module))) return refuse("Pilihan sub-menu tidak punya bagian modulnya. Muat ulang; draf tetap tersedia.");
+  const savedSub = snapshot.submenus ?? {};
+  const nextSub: Record<string, string[]> = {};
+  for (const m of [...new Set(SUBMENU_ENTRIES.map(x => x.module))]) {
+    if (!modules.includes(m)) continue;
+    if (!rendered.includes(m)) { if (savedSub[m]) nextSub[m] = savedSub[m]; continue; }
+    const all = selectableSubmenus(m).map(x => x.id);
+    const chosen = all.filter(id => checkedSub.includes(id));
+    if (chosen.length !== all.length) nextSub[m] = chosen.sort();
+  }
+  const sendSub = Object.keys(nextSub).length > 0 || Object.keys(savedSub).length > 0;
   // A role with NO saved action policy ("legacy") already allows every enforced action. The editor shows
   // those as checked; if the Owner left them exactly so, do not create a policy row at all, so a menu-only
   // save can never turn the implicit allow-all into an explicit (or empty) list.
@@ -66,6 +95,7 @@ export async function saveRoleSettings(role: string, revision: string, form: For
     p_modules: mode === "reset" ? [] : modules,
     p_capabilities: mode === "reset" ? null : { all_branches: form.get("all_branches") === "on", create_accounts: form.get("create_accounts") === "on" },
     p_reason: reason, p_actions: mode === "reset" || untouchedLegacy ? null : actions,
+    ...(mode !== "reset" && sendSub ? { p_submenus: nextSub } : {}),
   });
   if (error) {
     const known = roleRpcFailure(error);
