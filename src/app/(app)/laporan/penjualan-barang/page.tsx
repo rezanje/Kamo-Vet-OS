@@ -4,6 +4,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { ambilPenjualanBarang, waktuWIB } from "./data";
 import { normalizeReportColumns } from "@/lib/report-columns";
 import { jenisLaporan, SEMUA_JENIS_KLINIK } from "@/lib/laporan-penjualan-barang";
+import { barisTabelRingkasan } from "@/lib/laporan-kategori-penjualan";
 import { KANAL_SEMUA, type Kanal } from "@/lib/laporan-transaksi";
 import { uniqueOptionLabels } from "@/lib/branch-display";
 
@@ -11,7 +12,7 @@ const rupiah = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID"
 const UKURAN_HALAMAN_TAMPILAN = 100;
 
 export default async function LaporanPenjualanBarangPage({ searchParams }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; cabang_id?: string; pelaksana_id?: string; kolom?: string; halaman?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; cabang_id?: string; pelaksana_id?: string; kategori?: string; kolom?: string; halaman?: string }>;
 }) {
   const sp = await searchParams;
   const hariIni = hariIniWIB();
@@ -22,12 +23,13 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const q = (sp.q ?? "").trim().slice(0, 120);
   const cabangId = (sp.cabang_id ?? "").slice(0, 80);
   const pelaksanaId = (sp.pelaksana_id ?? "").slice(0, 80);
+  const kategori = (sp.kategori ?? "").trim().slice(0, 80);
   const halamanDiminta = Number(sp.halaman);
   const halaman = Number.isSafeInteger(halamanDiminta) && halamanDiminta > 0 ? halamanDiminta : 1;
   let kolom = "";
   try { kolom = normalizeReportColumns(sp.kolom ?? null); } catch { /* Invalid URL choices stay visible in the column editor. */ }
-  const { rows: terpilih, cabangOptions, pelaksanaOptions = [], pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({
-    dari, sampai, kanal: kanal as Kanal, jenis, q, cabangId, pelaksanaId,
+  const { rows: terpilih, cabangOptions, pelaksanaOptions = [], pesanError, nilaiTotal, qtyTotal, ringkasan, kategoriOptions } = await ambilPenjualanBarang({
+    dari, sampai, kanal: kanal as Kanal, jenis, q, cabangId, pelaksanaId, ...(kategori ? { kategori } : {}),
   });
   const labelCabang = uniqueOptionLabels(cabangOptions, (branch) => branch.name);
   const labelPelaksana = uniqueOptionLabels(pelaksanaOptions, (person) => person.nama);
@@ -35,11 +37,11 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const halamanAktif = Math.min(halaman, banyakHalaman);
   const terlihat = terpilih.slice((halamanAktif - 1) * UKURAN_HALAMAN_TAMPILAN, halamanAktif * UKURAN_HALAMAN_TAMPILAN);
   const tautanHalaman = (nomor: number) => {
-    const params = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId, halaman: String(nomor) });
+    const params = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId, kategori, halaman: String(nomor) });
     if (kolom) params.set("kolom", kolom);
     return `/laporan/penjualan-barang?${params}`;
   };
-  const csvParams = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId });
+  const csvParams = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId, kategori });
 
   return (
     <LaporanPage
@@ -66,6 +68,11 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
             <option value="Jasa">Jasa/tindakan</option><option value="Biaya Admin">Biaya admin DEMO</option>
           </> : <option value="Barang">{kanal === "Grosir" ? "Barang faktur grosir" : "Barang kasir/online"}</option>}
         </select></div>
+        <div><label className="flab">Kategori</label><select className="fi" name="kategori" defaultValue={kategori}>
+          <option value="">Semua</option>
+          {kategori && !kategoriOptions.includes(kategori) && <option value={kategori}>{kategori}</option>}
+          {kategoriOptions.map(nama => <option key={nama} value={nama}>{nama}</option>)}
+        </select></div>
         <div><label className="flab">Pelaksana tersimpan</label><select className="fi" name="pelaksana_id" defaultValue={pelaksanaId}>
           <option value="">Semua pelaksana</option>
           {pelaksanaId && !pelaksanaOptions.some(person => person.id === pelaksanaId) && <option value={pelaksanaId}>Pelaksana tidak ada pada data</option>}
@@ -87,12 +94,34 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
             <Link className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}`}>
               <i className="ti ti-download" /> Unduh CSV ({terpilih.length} baris)
             </Link>
+            <Link className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}&format=accurate`}>
+              <i className="ti ti-file-spreadsheet" /> Unduh Excel (format Accurate)
+            </Link>
             <Link className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}&format=xlsx`}>Excel lengkap</Link>
             <a className="btn-def" href={`/laporan/penjualan-barang/unduh?${csvParams}&format=print`} target="_blank" rel="noopener noreferrer">Cetak / PDF lengkap</a>
           </div>
-          <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 1350, width: "100%" }}>
+          <div style={{ fontWeight: 700, fontSize: 12, margin: "4px 0 6px" }}>Ringkasan per kategori</div>
+          <div style={{ overflowX: "auto", marginBottom: 16 }}><table className="tbl" style={{ minWidth: 520, width: "100%" }}>
+            <thead><tr><th>Kategori</th><th>Sub kategori</th><th style={{ textAlign: "right" }}>Baris</th><th style={{ textAlign: "right" }}>Qty</th><th style={{ textAlign: "right" }}>Total</th></tr></thead>
+            <tbody>
+              {barisTabelRingkasan(ringkasan).map(baris => <tr key={`${baris.tingkat}-${baris.kategori}-${baris.subKategori}`} style={baris.tingkat === "sub" ? { background: "var(--sf1)" } : undefined}>
+                <td style={{ fontWeight: baris.tingkat === "kategori" ? 700 : 400 }}>{baris.tingkat === "kategori" ? baris.kategori : ""}</td>
+                <td>{baris.tingkat === "sub" ? baris.subKategori : "—"}</td>
+                <td style={{ textAlign: "right" }}>{baris.baris.toLocaleString("id-ID")}</td>
+                <td style={{ textAlign: "right" }}>{baris.qty.toLocaleString("id-ID", { maximumFractionDigits: 2 })}</td>
+                <td style={{ textAlign: "right", fontWeight: baris.tingkat === "kategori" ? 700 : 400 }}>{rupiah(baris.nilai)}</td>
+              </tr>)}
+              {ringkasan.groups.length === 0 && <TabelKosong kolom={5} pesan="Belum ada penjualan untuk pilihan ini." />}
+              <tr style={{ fontWeight: 800 }}><td colSpan={2}>Jumlah semua kategori</td>
+                <td style={{ textAlign: "right" }}>{ringkasan.totalBaris.toLocaleString("id-ID")}</td>
+                <td style={{ textAlign: "right" }}>{ringkasan.totalQty.toLocaleString("id-ID", { maximumFractionDigits: 2 })}</td>
+                <td style={{ textAlign: "right" }}>{rupiah(ringkasan.totalNilai)}</td></tr>
+            </tbody>
+          </table></div>
+          <div style={{ fontWeight: 700, fontSize: 12, margin: "4px 0 6px" }}>Rincian per baris</div>
+          <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 1650, width: "100%" }}>
             <thead><tr>
-              <th>Waktu</th><th>No. dokumen</th><th>Cabang</th><th>Pelanggan / pasien</th><th>Barang / layanan</th><th>Pelaksana tersimpan</th>
+              <th>Waktu</th><th>No. dokumen</th><th>Cabang</th><th>Pelanggan / pasien</th><th>Barang / layanan</th><th>Kode</th><th>Kategori</th><th>Sub kategori</th><th>Pelaksana tersimpan</th>
               <th style={{ textAlign: "right" }}>Qty</th><th style={{ textAlign: "right" }}>Harga</th>
               <th style={{ textAlign: "right" }}>{kanal === "Online" || kanal === "Grosir" ? "Diskon item" : "Potongan / pembulatan"}</th><th style={{ textAlign: "right" }}>Nilai baris</th>
             </tr></thead>
@@ -108,13 +137,16 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
                       ? `BMHP tindakan · HPP ${rupiah(row.hpp ?? 0)}`
                       : `${row.jenis}${row.status !== "—" ? ` · ${row.status}` : ""}${row.kanal === "Grosir" ? ` · HPP ${row.hpp == null ? "belum tercatat" : rupiah(row.hpp)}` : ""}`}
                   </div></td>
+                <td style={{ fontSize: 10.5 }}>{row.indukId ? "" : row.kode}</td>
+                <td style={{ fontSize: 10.5 }}>{row.indukId ? "" : row.kategori}</td>
+                <td style={{ fontSize: 10.5 }}>{row.indukId ? "" : row.subKategori}</td>
                 <td>{row.indukId ? "" : row.pelaksana}</td>
                 <td style={{ textAlign: "right" }}>{row.qty.toLocaleString("id-ID", { maximumFractionDigits: 2 })}{row.satuan ? ` ${row.satuan}` : ""}</td>
                 <td style={{ textAlign: "right" }}>{row.indukId ? "—" : rupiah(row.harga)}</td>
                 <td style={{ textAlign: "right" }}>{row.diskon ? rupiah(row.diskon) : "—"}</td>
                 <td style={{ textAlign: "right", fontWeight: 700 }}>{rupiah(row.nilai)}</td>
               </tr>)}
-              {terlihat.length === 0 && <TabelKosong kolom={10} pesan="Belum ada penjualan untuk pilihan ini." />}
+              {terlihat.length === 0 && <TabelKosong kolom={13} pesan="Belum ada penjualan untuk pilihan ini." />}
             </tbody>
           </table></div>
           <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", marginTop: 12, fontSize: 11 }}>
