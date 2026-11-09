@@ -71,7 +71,7 @@ function totalsFunctionMissing(error: { code?: string; message?: string }): bool
 }
 
 // Total debit/kredit per akun. Jalur utama: satu RPC agregat di database (migrasi
-// 20261109090000) — tidak menarik seluruh baris jurnal ke aplikasi. Jalur lama (baca semua
+// 20261109084230) — tidak menarik seluruh baris jurnal ke aplikasi. Jalur lama (baca semua
 // baris lalu jumlah di sini) hanya dipakai bila fungsi itu belum ada.
 async function fetchTotals(supabase: AnyClient, f?: LedgerFilter): Promise<Map<string, { debit: number; credit: number }>> {
   const agg = new Map<string, { debit: number; credit: number }>();

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Uji migrasi 20261109090000 (saldo per akun dihitung di database) di PostgreSQL sungguhan, data fiktif.
+"""Uji migrasi 20261109084230 (saldo per akun dihitung di database) di PostgreSQL sungguhan, data fiktif.
 
 Babak:
   A. SKEMA PENUH — seluruh migrasi repo diputar dari nol, termasuk migrasi ini (dua kali: idempoten).
@@ -31,7 +31,7 @@ hris = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hris)
 
 MIGRATIONS = ROOT / "supabase/migrations"
-MIGRASI = MIGRATIONS / "20261109090000_saldo_akun_agregat.sql"
+MIGRASI = MIGRATIONS / "20261109084230_saldo_akun_agregat.sql"
 
 CAB_A = "a0000000-0000-4000-8000-00000000000a"
 CAB_B = "b0000000-0000-4000-8000-00000000000b"

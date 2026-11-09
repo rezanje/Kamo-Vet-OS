@@ -1,4 +1,6 @@
 -- Saldo per akun dihitung di database, bukan dengan menarik seluruh baris jurnal ke aplikasi.
+-- Versi riwayat Production: 20261109084230 (dipasang 9 Nov 2026 lewat Management API). Isi fungsi,
+-- hak EXECUTE, dan indeks = berkas ini; yang dipasang hanya memakai komentar pembuka yang lebih pendek.
 --
 -- Masalah (Production 9 Nov 2026, ±15.08 WIB): Kas & Bank menampilkan "Application error" dan
 -- halaman lain ikut lambat. Saldo tiap rekening (Kas & Bank, Rekening, Transfer, Kas masuk/keluar,
