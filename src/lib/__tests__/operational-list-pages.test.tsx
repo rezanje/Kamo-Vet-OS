@@ -3,16 +3,34 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, unknown>[]>, failedTable: "", calls: [] as { table: string; orders: string[]; filters: [string, unknown][]; range?: [number, number] }[],
-  rpcCalls: [] as { name: string; args: Record<string, unknown> }[], jumlahOverride: undefined as number | undefined }));
+  rpcCalls: [] as { name: string; args: Record<string, unknown> }[], jumlahOverride: undefined as number | undefined,
+  cabangAktif: null as string | null, ubahJawaban: null as null | ((data: Record<string, unknown>) => unknown) }));
 vi.stubGlobal("React", React);
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
+type Baris = Record<string, unknown> & { pets?: { name?: string }; customers?: { name?: string; phone?: string }; inpatient_records?: { discharged_at: string | null }[] };
+// Tiruan RPC daftar_rekam_medis_halaman: saringan yang sama dengan SQL (pet, cabang + impor, rawat-jalan, cari), satu halaman.
+function halamanRekamMedis(args: Record<string, unknown>) {
+  const semua = (fixture.tables.visits ?? []) as Baris[];
+  const lingkup = semua.filter((r) => (!args.p_pet || r.pet_id === args.p_pet)
+    && (!args.p_cabang || r.branch_id === args.p_cabang || (r.branch_id == null && !!r.legacy_source_key)));
+  const cari = typeof args.p_cari === "string" ? args.p_cari.trim().toLowerCase() : "";
+  const saring = lingkup.filter((r) => (args.p_tampilan === "semua" || !(r.inpatient_records ?? []).some((i) => i.discharged_at == null))
+    && (!cari || [r.pets?.name, r.customers?.name, r.customers?.phone].some((t) => String(t ?? "").toLowerCase().includes(cari))));
+  const offset = args.p_offset as number, batas = args.p_batas as number;
+  const data: Record<string, unknown> = {
+    jumlah: fixture.jumlahOverride ?? saring.length,
+    ringkasan: { riwayat: lingkup.length, hewan: new Set(lingkup.map((r) => r.pet_id)).size, impor: lingkup.filter((r) => r.legacy_source_key).length },
+    batas, offset, baris: saring.slice(offset, offset + batas),
+  };
+  return fixture.ubahJawaban ? fixture.ubahJawaban(data) : data;
+}
+vi.mock("@/lib/supabase/server", () => {
+  const client = () => ({
   auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
   async rpc(name: string, args: Record<string, unknown>) {
     fixture.rpcCalls.push({ name, args });
-    if (name !== "daftar_rekam_medis") return { data: false, error: null };
+    if (name !== "daftar_rekam_medis_halaman") return { data: false, error: null };
     if (fixture.failedTable === "visits") return { data: null, error: { message: "private DB detail" } };
-    const baris = (fixture.tables.visits ?? []).filter((r) => !args.p_pet || r.pet_id === args.p_pet);
-    return { data: { jumlah: fixture.jumlahOverride ?? baris.length, baris }, error: null };
+    return { data: halamanRekamMedis(args), error: null };
   },
   from(table: string) {
     const call = { table, orders: [] as string[], filters: [] as [string, unknown][], range: undefined as [number, number] | undefined };
@@ -42,7 +60,9 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     };
     return query;
   },
-}) }));
+  });
+  return { createClient: async () => client(), createClientLintasCabang: async () => ({ client: client(), cabangAktif: fixture.cabangAktif }) };
+});
 vi.mock("next/link", () => ({ default: ({ children, href, ...props }: React.PropsWithChildren<{ href: string }>) => <a href={href} {...props}>{children}</a> }));
 vi.mock("../../app/(app)/pos/stok/ResetSimulasiForm", () => ({ ResetSimulasiForm: () => null }));
 import CustomersPage from "../../app/(app)/crm/pelanggan/page";
@@ -61,6 +81,8 @@ beforeEach(() => {
   fixture.calls = [];
   fixture.rpcCalls = [];
   fixture.jumlahOverride = undefined;
+  fixture.cabangAktif = null;
+  fixture.ubahJawaban = null;
   fixture.failedTable = "";
   fixture.tables = {
     customers: Array.from({ length: 1200 }, (_, i) => ({ id: `customer-${i}`, name: `Owner ${i}`, phone: `08${i}`, pets: [] })),
@@ -109,27 +131,55 @@ describe("complete operational page sources", () => {
     expect(found.total).toBe(1);
     expect(found.stats.total).toBe(1200);
   });
-  it("searches medical history beyond the former 300-row cap and preserves pet scope", async () => {
-    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ q: "Pet 349", pet: "pet-a" }) }));
+  it("searches medical history on the server (one page request) and preserves pet scope", async () => {
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ q: " Pet 349 ", pet: "pet-a" }) }));
     expect(html).toContain("Pet 349");
     expect(html).toContain("350");
+    expect(html).toContain("1 riwayat ditemukan.");
     expect(tableRows(html)).toBe(1);
     expect(fixture.calls.filter((c) => c.table === "visits")).toHaveLength(0);
-    expect(fixture.rpcCalls).toEqual([{ name: "daftar_rekam_medis", args: { p_pet: "pet-a" } }]);
+    expect(fixture.rpcCalls).toEqual([{ name: "daftar_rekam_medis_halaman",
+      args: { p_cabang: null, p_cari: "Pet 349", p_tampilan: "semua", p_pet: "pet-a", p_batas: 50, p_offset: 0 } }]);
   });
-  it("reads the medical list in one snapshot and fails closed on a short or over-cap answer", async () => {
-    await MedicalPage({ searchParams: Promise.resolve({}) });
-    expect(fixture.rpcCalls).toEqual([{ name: "daftar_rekam_medis", args: { p_pet: null } }]);
-    fixture.jumlahOverride = 351;
-    const short = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
-    expect(short).toContain("Rekam medis belum dapat dimuat lengkap");
-    expect(short).not.toContain("<table");
-    fixture.jumlahOverride = 10_001;
-    const cap = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
-    expect(cap).toContain("melebihi batas 10.000 baris");
-    expect(cap).not.toContain("<table");
+  it("asks the server for exactly one 50-row page (no full-list read, no 10.000-row cap)", async () => {
+    fixture.tables.visits = Array.from({ length: 12_000 }, (_, i) => ({ ...fixture.tables.visits[0], id: `visit-${i}`, pet_id: `pet-${i}` }));
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ tampilan: "semua", hal: "240" }) }));
+    expect(fixture.rpcCalls.map((c) => c.args)).toEqual([{ p_cabang: null, p_cari: null, p_tampilan: "semua", p_pet: null, p_batas: 50, p_offset: 11_950 }]);
+    expect(tableRows(html)).toBe(50);
+    expect(html).toContain('href="/klinik/rekam-medis/visit-11999"');
+    expect(html).toMatch(/RIWAYAT TERSIMPAN<\/div><div[^>]*>12000</);
+    expect(html).not.toContain('role="alert"');
   });
-  it("counts distinct animal IDs rather than treating every visit name as another animal", async () => {
+  it("re-reads page 1 when the requested page is beyond the end", async () => {
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ tampilan: "semua", hal: "99" }) }));
+    expect(fixture.rpcCalls.map((c) => c.args.p_offset)).toEqual([4900, 0]);
+    expect(tableRows(html)).toBe(50);
+    expect(html).toContain('href="/klinik/rekam-medis/visit-0"');
+  });
+  type Ubah = (d: Record<string, unknown>) => unknown;
+  const baris = (d: Record<string, unknown>) => d.baris as Record<string, unknown>[];
+  it.each<[string, () => void]>([
+    ["a total that does not match the page length", () => { fixture.jumlahOverride = 351; }],
+    ["a page for another offset", () => { fixture.ubahJawaban = ((d) => ({ ...d, offset: 50 })) as Ubah; }],
+    ["a different page size", () => { fixture.ubahJawaban = ((d) => ({ ...d, batas: 200 })) as Ubah; }],
+    ["missing summary", () => { fixture.ubahJawaban = ((d) => ({ ...d, ringkasan: null })) as Ubah; }],
+    ["a summary smaller than the total", () => { fixture.ubahJawaban = ((d) => ({ ...d, ringkasan: { riwayat: 1, hewan: 1, impor: 0 } })) as Ubah; }],
+    ["a duplicated row", () => { fixture.ubahJawaban = ((d) => ({ ...d, baris: [...baris(d).slice(0, 49), baris(d)[0]] })) as Ubah; }],
+    ["a row without id", () => { fixture.ubahJawaban = ((d) => ({ ...d, baris: [{ ...baris(d)[0], id: "" }, ...baris(d).slice(1)] })) as Ubah; }],
+    ["a non-object answer", () => { fixture.ubahJawaban = () => []; }],
+  ])("fails closed (alert, never an empty or partial list) on %s", async (_label, setup) => {
+    setup();
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ tampilan: "semua" }) }));
+    expect(html).toContain("Rekam medis belum dapat dimuat lengkap");
+    expect(html).not.toContain("<table");
+    expect(html).not.toContain("Belum ada rekam medis");
+  });
+  it("refuses an over-long search before calling the server", async () => {
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ q: "x".repeat(101) }) }));
+    expect(html).toContain("Kata cari terlalu panjang");
+    expect(fixture.rpcCalls).toHaveLength(0);
+  });
+  it("counts distinct animal IDs from the server summary rather than visit names", async () => {
     const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
     expect(html).toMatch(/HEWAN TERCATAT<\/div><div[^>]*>1<\/div>/);
   });
@@ -139,6 +189,24 @@ describe("complete operational page sources", () => {
     expect(html).toContain("Pet 349");
     expect(html).not.toContain("Pet 0</div>");
     expect(html).toMatch(/q=Pet(?:&amp;|&)pet=pet-a(?:&amp;|&)tampilan=semua(?:&amp;|&)hal=6/);
+    expect(fixture.rpcCalls.map((c) => c.args.p_offset)).toEqual([300]);
+  });
+  it("active branch: sends the branch to the server and labels branchless imports instead of hiding them", async () => {
+    fixture.cabangAktif = "branch-a";
+    fixture.tables.visits = [
+      { ...fixture.tables.visits[0], id: "visit-cabang", branch_id: "branch-a", created_at: "2026-02-01T00:00:00Z" },
+      { ...fixture.tables.visits[1], id: "visit-impor", branch_id: null, branches: null, legacy_source_key: "impor::1", created_at: "2025-02-01T00:00:00Z" },
+      { ...fixture.tables.visits[2], id: "visit-lain", branch_id: "branch-b", branches: { code: "B" } },
+    ];
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
+    expect(fixture.rpcCalls[0].args.p_cabang).toBe("branch-a");
+    expect(html).toContain('href="/klinik/rekam-medis/visit-cabang"');
+    expect(html).toContain('href="/klinik/rekam-medis/visit-impor"');
+    expect(html).not.toContain('href="/klinik/rekam-medis/visit-lain"');
+    expect(html).toContain("Riwayat impor (semua cabang)");
+    expect(html).toContain(">Impor</span>");
+    expect(html).toContain("ikut tampil di setiap cabang");
+    expect(html).toMatch(/HASIL IMPORT<\/div><div[^>]*>1</);
   });
   it("renders only selected warehouse page 24 while preserving truthful total and stable ordering", async () => {
     const html = renderToStaticMarkup(await StockPage({ searchParams: Promise.resolve({ wh: "wh-a", hal: "24" }) }));

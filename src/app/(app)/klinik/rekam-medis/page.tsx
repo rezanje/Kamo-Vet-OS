@@ -1,12 +1,14 @@
-import { ListLoadError, TABLE_PAGE_SIZE } from "@/lib/checked-list";
+import { ListLoadError } from "@/lib/checked-list";
 import { infoHalaman } from "@/lib/pagination";
 import { ListPagination, ListLoadFailure } from "@/components/ListPagination";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { bacaHasilDaftarRekamMedis, saringDaftarRekamMedis, type BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
+import { createClientLintasCabang } from "@/lib/supabase/server";
+import {
+  bacaHasilHalamanRekamMedis, HALAMAN_REKAM_MEDIS, LABEL_RIWAYAT_IMPOR, MAKS_CARI_REKAM_MEDIS, PESAN_CARI_TERLALU_PANJANG,
+  type BarisDaftarRekamMedis, type HalamanRekamMedis,
+} from "@/lib/daftar-rekam-medis";
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
 import { hasActiveInpatient, statusPasienRekamMedis, type CatatanStatusRawatInap } from "@/lib/status-pasien-rekam-medis";
-import { adalahRiwayatBersama, bacaRiwayatBersamaHewan, ownerAktif, PESAN_GAGAL_RIWAYAT_BERSAMA, type RiwayatBersama } from "@/lib/riwayat-bersama";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 
 type Rel<T> = T | T[] | null;
@@ -30,9 +32,26 @@ type RekamRow = BarisDaftarRekamMedis & {
   patientStatus: ReturnType<typeof statusPasienRekamMedis>;
 };
 
+type SourceRow = {
+  id: string;
+  created_at: string;
+  pet_id: string | null;
+  branch_id: string | null;
+  dokter: string | null;
+  keluhan: string | null;
+  legacy_source_key: string | null;
+  pets: Rel<{ name: string; species: string | null; breed: string | null }>;
+  customers: Rel<{ name: string; phone: string | null }>;
+  branches: Rel<{ code: string }>;
+  medical_records: Rel<{ diagnosis: string | null; anamnesis: string | null }>;
+  inpatient_records: Rel<CatatanStatusRawatInap>;
+};
+
 const dateText = (iso: string) => new Date(iso).toLocaleDateString("id-ID", {
   timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric",
 });
+
+
 
 export default async function DaftarRekamMedisPage({
   searchParams,
@@ -40,82 +59,41 @@ export default async function DaftarRekamMedisPage({
   searchParams: Promise<{ q?: string; pet?: string; hal?: string; tampilan?: string }>;
 }) {
   const { q = "", pet: petId = "", hal, tampilan } = await searchParams;
-  const supabase = await createClient();
+  const fullHistory = tampilan === "semua" || !!petId;
+  const displayMode = fullHistory ? "semua" : "rawat-jalan";
+  const cari = q.trim();
 
-  type SourceRow = {
-    id: string;
-    created_at: string;
-    pet_id: string | null;
-    branch_id: string | null;
-    dokter: string | null;
-    keluhan: string | null;
-    legacy_source_key: string | null;
-    pets: Rel<{ name: string; species: string | null; breed: string | null }>;
-    customers: Rel<{ name: string; phone: string | null }>;
-    branches: Rel<{ code: string }>;
-    medical_records: Rel<{ diagnosis: string | null; anamnesis: string | null }>;
-    inpatient_records: Rel<CatatanStatusRawatInap>;
-  };
-
-  let data: SourceRow[];
+  // Paginasi + pencarian di server: satu RPC SECURITY INVOKER (RLS pemanggil) mengembalikan jumlah + SATU halaman
+  // (dulu seluruh daftar ~5 MB sekaligus, ~5 dtk, melewati batas 8 dtk). Klien TANPA header cabang + cabang aktif
+  // sebagai parameter: cabang aktif + riwayat impor tanpa cabang. RLS tetap membatasi siapa melihat impor.
+  let hasil: HalamanRekamMedis<SourceRow>;
+  let cabangAktif: string | null;
+  let pageInfo: ReturnType<typeof infoHalaman>;
   try {
-    // Satu RPC SECURITY INVOKER (RLS pemanggil) = satu snapshot. Dulu 8 halaman PostgREST paralel yang masing-masing
-    // mengevaluasi RLS seluruh tabel dua kali; dengan ~3.800 riwayat impor itu melewati batas 8 detik di Production.
-    const result = await supabase.rpc("daftar_rekam_medis", { p_pet: petId || null });
-    data = bacaHasilDaftarRekamMedis<SourceRow>(result, (pesan) => new ListLoadError(pesan));
+    if (cari.length > MAKS_CARI_REKAM_MEDIS) throw new ListLoadError(PESAN_CARI_TERLALU_PANJANG);
+    const lintas = await createClientLintasCabang();
+    cabangAktif = lintas.cabangAktif;
+    const baca = async (halaman: number) => {
+      const diminta = { batas: HALAMAN_REKAM_MEDIS, offset: (halaman - 1) * HALAMAN_REKAM_MEDIS };
+      const result = await lintas.client.rpc("daftar_rekam_medis_halaman", {
+        p_cabang: cabangAktif, p_cari: cari || null, p_tampilan: displayMode, p_pet: petId || null,
+        p_batas: diminta.batas, p_offset: diminta.offset,
+      });
+      return bacaHasilHalamanRekamMedis<SourceRow>(result, diminta, (pesan) => new ListLoadError(pesan));
+    };
+    const dimintaMentah = infoHalaman(hal, Number.MAX_SAFE_INTEGER, HALAMAN_REKAM_MEDIS).page;
+    // offset RPC bertipe integer: nomor halaman absurd langsung dianggap di luar jangkauan (halaman 1).
+    const diminta = (dimintaMentah - 1) * HALAMAN_REKAM_MEDIS > 2_000_000_000 ? 1 : dimintaMentah;
+    hasil = await baca(diminta);
+    pageInfo = infoHalaman(diminta, hasil.jumlah, HALAMAN_REKAM_MEDIS);
+    // Halaman di luar jangkauan kembali ke halaman 1 (sama dengan perilaku infoHalaman), dibaca ulang.
+    if (pageInfo.page !== diminta) {
+      hasil = await baca(pageInfo.page);
+      pageInfo = infoHalaman(pageInfo.page, hasil.jumlah, HALAMAN_REKAM_MEDIS);
+    }
   } catch (error) { return <ListLoadFailure error={error} label="Rekam medis" />; }
 
-  // RS-2: riwayat bersama hasil impor (tanpa cabang) satu hewan untuk OWNER aktif. Dibaca lewat RPC baca-saja
-  // di cabang aktif maupun "Semua cabang", jadi tampilannya sama; baris yang sama dari SELECT biasa diganti,
-  // bukan digandakan. Gagal/terlalu banyak = halaman gagal, tidak pernah dianggap kosong atau lengkap.
-  type PetRow = { id: string; customer_id: string | null; name: string | null; species: string | null; breed: string | null; customers: Rel<{ name: string; phone: string | null }> };
-  let shared: RiwayatBersama[] = [];
-  let sharedPet: PetRow | null = null;
-  const replaced = new Set<string>();
-  if (petId) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (await ownerAktif(supabase, user?.id)) {
-        const { data: pet, error } = await supabase.from("pets")
-          .select("id, customer_id, name, species, breed, customers(name, phone)").eq("id", petId).maybeSingle();
-        if (error) throw new ListLoadError(PESAN_GAGAL_RIWAYAT_BERSAMA);
-        if (pet) {
-          if (typeof pet.customer_id !== "string") throw new ListLoadError(PESAN_GAGAL_RIWAYAT_BERSAMA);
-          sharedPet = pet as PetRow;
-          shared = await bacaRiwayatBersamaHewan(supabase, petId, pet.customer_id);
-        }
-        const sharedIds = new Set(shared.map((row) => row.visit_id));
-        for (const visit of data) {
-          if (!adalahRiwayatBersama(visit)) continue;
-          // Riwayat bersama yang terlihat di SELECT biasa tapi ditolak pembaca (relasi tidak konsisten) = gagal.
-          if (!sharedIds.has(visit.id)) throw new ListLoadError(PESAN_GAGAL_RIWAYAT_BERSAMA);
-          replaced.add(visit.id);
-        }
-      }
-    } catch (error) { return <ListLoadFailure error={error} label="Rekam medis" />; }
-  }
-
-  const sharedOwner = one(sharedPet?.customers ?? null);
-  const sharedOwnerInvalid = isPlaceholderOwnerName(sharedOwner?.name);
-  const sharedRows: RekamRow[] = shared.map((row) => ({
-    id: row.visit_id,
-    date: row.tanggal,
-    petId: row.pet_id,
-    ownerName: sharedOwnerInvalid ? "Pemilik perlu verifikasi" : sharedOwner?.name ?? "—",
-    petName: sharedPet?.name ?? "—",
-    phone: sharedOwnerInvalid ? "" : sharedOwner?.phone ?? "",
-    species: sharedPet?.species ?? null,
-    breed: sharedPet?.breed ?? null,
-    doctor: row.dokter,
-    branch: null,
-    note: row.anamnesis ?? row.keluhan,
-    diagnosis: row.diagnosis,
-    isImported: true,
-    activeInpatient: false,
-    patientStatus: statusPasienRekamMedis(null, true),
-  }));
-
-  const normalRows: RekamRow[] = data.filter((visit) => !replaced.has(visit.id)).map((visit) => {
+  const rows: RekamRow[] = hasil.baris.map((visit) => {
     const pet = one(visit.pets);
     const owner = one(visit.customers);
     const branch = one(visit.branches);
@@ -139,18 +117,10 @@ export default async function DaftarRekamMedisPage({
       patientStatus: statusPasienRekamMedis(visit.inpatient_records, Boolean(visit.legacy_source_key)),
     };
   });
-  // Urutan sama dengan query biasa: terbaru dulu, lalu id.
-  const rows = sharedRows.length
-    ? [...normalRows, ...sharedRows].sort((a, b) => Date.parse(b.date) - Date.parse(a.date) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    : normalRows;
-  const fullHistory = tampilan === "semua" || !!petId;
-  const displayMode = fullHistory ? "semua" : "rawat-jalan";
-  const filtered = saringDaftarRekamMedis(fullHistory ? rows : rows.filter(row => !row.activeInpatient), q);
-  const pageInfo = infoHalaman(hal, filtered.length, TABLE_PAGE_SIZE);
-  const visibleRows = filtered.slice(pageInfo.from, pageInfo.to + 1);
-  const pets = new Set(rows.map((row) => row.petId).filter(Boolean)).size;
-  const imported = rows.filter((row) => row.isImported).length;
   const selectedPet = petId ? rows[0] : null;
+  const subjudul = selectedPet
+    ? `Riwayat ${selectedPet.petName} · ${selectedPet.ownerName}`
+    : cabangAktif ? "Riwayat pemeriksaan cabang aktif + riwayat impor (semua cabang)" : "Riwayat pemeriksaan seluruh cabang klinik";
 
   return (
     <>
@@ -162,9 +132,7 @@ export default async function DaftarRekamMedisPage({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
         <div>
           <div className="pg-hd" style={{ marginBottom: 2 }}>REKAM MEDIS</div>
-          <div className="pg-sub">
-            {selectedPet ? `Riwayat ${selectedPet.petName} · ${selectedPet.ownerName}` : "Riwayat pemeriksaan seluruh cabang klinik"}
-          </div>
+          <div className="pg-sub">{subjudul}</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Link href="/klinik/rekam-medis/perlu-dilengkapi" className="btn-def" style={{ textDecoration: "none" }}>
@@ -177,9 +145,9 @@ export default async function DaftarRekamMedisPage({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(150px, 1fr))", gap: 12, marginBottom: 14 }}>
-        <Stat icon="ti-medical-cross" label="RIWAYAT TERSIMPAN" value={rows.length} color="var(--posb)" bg="#eff6ff" />
-        <Stat icon="ti-paw" label="HEWAN TERCATAT" value={pets} color="#16a34a" bg="#e8f5ee" />
-        <Stat icon="ti-file-import" label="HASIL IMPORT" value={imported} color="#7c3aed" bg="#f3f0ff" />
+        <Stat icon="ti-medical-cross" label="RIWAYAT TERSIMPAN" value={hasil.ringkasan.riwayat} color="var(--posb)" bg="#eff6ff" />
+        <Stat icon="ti-paw" label="HEWAN TERCATAT" value={hasil.ringkasan.hewan} color="#16a34a" bg="#e8f5ee" />
+        <Stat icon="ti-file-import" label="HASIL IMPORT" value={hasil.ringkasan.impor} color="#7c3aed" bg="#f3f0ff" />
       </div>
 
       <div className="crm-sec">
@@ -189,23 +157,28 @@ export default async function DaftarRekamMedisPage({
           <Link href="/klinik/rawat-inap">Pasien Rawat Inap aktif</Link>
         </div>
         {!fullHistory && <p style={{ fontSize: 11 }}>Pasien Rawat Inap aktif ada di Status Rawat Inap. Riwayat medisnya tetap tersedia lewat Semua riwayat atau riwayat pasien.</p>}
+        {cabangAktif && hasil.ringkasan.impor > 0 && (
+          <p style={{ fontSize: 11, color: "var(--tm)" }}>
+            Riwayat hasil impor tidak punya data cabang, jadi ikut tampil di setiap cabang dengan label <b>Impor</b>.
+          </p>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Daftar riwayat</div>
             <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 2 }}>
-              {q ? `${filtered.length} riwayat ditemukan.` : selectedPet ? `Seluruh riwayat medis ${selectedPet.petName}.` : "Cari lewat nama pemilik, nama hewan, atau nomor telepon."}
+              {cari ? `${hasil.jumlah} riwayat ditemukan.` : selectedPet ? `Seluruh riwayat medis ${selectedPet.petName}.` : "Cari lewat nama pemilik, nama hewan, atau nomor telepon."}
             </div>
           </div>
           <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input type="hidden" name="tampilan" value={displayMode} />
             {petId && <input type="hidden" name="pet" value={petId} />}
-            <input className="fi" name="q" defaultValue={q} placeholder="Cari owner atau hewan..." style={{ width: 240 }} />
+            <input className="fi" name="q" defaultValue={q} maxLength={MAKS_CARI_REKAM_MEDIS} placeholder="Cari pemilik, hewan, atau telepon..." style={{ width: 240 }} />
             <button className="btn-def" type="submit"><i className="ti ti-search" /> Cari</button>
             {(q || petId) && <Link href="/klinik/rekam-medis?tampilan=semua" className="btn-def" style={{ textDecoration: "none" }}>Semua riwayat</Link>}
           </form>
         </div>
 
-        {filtered.length === 0 ? (
+        {rows.length === 0 ? (
           <div style={{ padding: "30px 12px", textAlign: "center", color: "var(--tm)", fontSize: 12 }}>
             <i className="ti ti-notes-off" style={{ display: "block", fontSize: 28, marginBottom: 7, color: "var(--td)" }} />
             {petId ? "Belum ada riwayat medis untuk anabul ini." : "Belum ada rekam medis yang cocok."}
@@ -217,10 +190,11 @@ export default async function DaftarRekamMedisPage({
                 <tr><th>Tanggal</th><th>Pasien</th><th>Pemilik</th><th>Status pasien</th><th>Ringkasan kunjungan</th><th>Diagnosa</th><th /></tr>
               </thead>
               <tbody>
-                {visibleRows.map((row) => (
+                {rows.map((row) => (
                   <tr key={row.id}>
                     <td style={{ whiteSpace: "nowrap", fontSize: 11 }}>{dateText(row.date)}<br />
-                      <span style={{ fontSize: 10, color: "var(--td)" }}>{row.branch ?? "Riwayat lama · semua cabang"}</span>
+                      <span style={{ fontSize: 10, color: "var(--td)" }}>{row.branch ?? (row.isImported ? LABEL_RIWAYAT_IMPOR : "Tanpa cabang")}</span>
+                      {row.isImported && <><br /><span className="bge" title="Riwayat hasil impor data lama" style={{ fontSize: 9.5 }}>Impor</span></>}
                     </td>
                     <td><div style={{ fontWeight: 700 }}>{row.petName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{[row.species, row.breed].filter(Boolean).join(" · ") || "—"}</div></td>
                     <td><div style={{ fontWeight: 600 }}>{row.ownerName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.phone || "—"}</div></td>
@@ -236,7 +210,7 @@ export default async function DaftarRekamMedisPage({
             </table>
           </div>
         )}
-        <ListPagination path="/klinik/rekam-medis" query={{ q, pet: petId, tampilan: displayMode }} total={filtered.length} pageInfo={pageInfo} />
+        <ListPagination path="/klinik/rekam-medis" query={{ q, pet: petId, tampilan: displayMode }} total={hasil.jumlah} pageInfo={pageInfo} />
       </div>
     </>
   );

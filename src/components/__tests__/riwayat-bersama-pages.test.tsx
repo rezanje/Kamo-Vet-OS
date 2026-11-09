@@ -39,20 +39,25 @@ const branchVisit = {
   inpatient_records: [], poli: "Poli Umum", status: "Selesai",
 };
 
-function visibleVisits() {
-  const shared = s.mode === "semua" && ["OWNER", "ADMIN"].includes(s.role) ? s.shared.map(normalOf) : [];
-  return [branchVisit, ...shared, ...s.extraNormal];
+// RLS yang ditiru: SELECT berheader cabang ("cabang") melihat riwayat impor hanya untuk DOKTER aktif (20261109100100);
+// tanpa header ("semua" atau klien lintas cabang) OWNER/ADMIN dan DOKTER aktif melihatnya; STAFF tidak pernah.
+function visibleVisits(lintas = false) {
+  const lihatImpor = s.active && (s.role === "DOCTOR" || ((lintas || s.mode === "semua") && ["OWNER", "ADMIN"].includes(s.role)));
+  return [branchVisit, ...(lihatImpor ? s.shared.map(normalOf) : []), ...s.extraNormal];
 }
 
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => ({
+vi.mock("@/lib/supabase/server", () => {
+  const client = (lintas: boolean) => ({
     auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
     rpc: async (name: string, args: Record<string, unknown>) => {
       s.rpcCalls.push({ name, args });
-      if (name === "daftar_rekam_medis") {
+      if (name === "daftar_rekam_medis_halaman") {
         if (s.visitError) return { data: null, error: { message: "PRIVATE visits failure" } };
-        const baris = visibleVisits().filter(r => !args.p_pet || r.pet_id === args.p_pet);
-        return { data: { jumlah: baris.length, baris }, error: null };
+        const lingkup = visibleVisits(lintas).filter(r => (!args.p_pet || r.pet_id === args.p_pet)
+          && (!args.p_cabang || r.branch_id === args.p_cabang || (r.branch_id == null && !!r.legacy_source_key)));
+        const offset = args.p_offset as number, batas = args.p_batas as number;
+        return { data: { jumlah: lingkup.length, batas, offset, baris: lingkup.slice(offset, offset + batas),
+          ringkasan: { riwayat: lingkup.length, hewan: new Set(lingkup.map(r => r.pet_id)).size, impor: lingkup.filter(r => r.legacy_source_key).length } }, error: null };
       }
       if (name === "riwayat_bersama_hewan") {
         if (s.rpcError === "list") return { data: null, error: { code: "42501", message: "PRIVATE backend detail" } };
@@ -73,7 +78,12 @@ vi.mock("@/lib/supabase/server", () => ({
       const source = (): { data: Record<string, unknown>[] | null; error: unknown } => {
         if (table === "profiles") return s.profileError ? { data: null, error: { message: "x" } } : { data: [{ id: "actor", role: s.role, is_active: s.active }], error: null };
         if (table === "pets") return s.petError ? { data: null, error: { message: "x" } } : { data: [{ id: PET, customer_id: s.petCustomer, name: "UJI KUCING SINTETIS", species: "Kucing", breed: null, customers: embedded.customers }], error: null };
-        if (table === "visits") return s.visitError ? { data: null, error: { message: "PRIVATE visits failure" } } : { data: visibleVisits(), error: null };
+        if (table === "visits") return s.visitError ? { data: null, error: { message: "PRIVATE visits failure" } } : { data: visibleVisits(lintas).map(v => ({ ...v, customer_id: CUST })), error: null };
+        if (table === "medical_records") {
+          const ids = new Set(visibleVisits(lintas).map(v => v.id));
+          return { data: s.shared.filter(r => ids.has(r.visit_id as string)).map(r => ({ id: `mr-${r.visit_id}`, visit_id: r.visit_id, diagnosis: r.diagnosis,
+            anamnesis: r.anamnesis, gejala_klinis: r.gejala_klinis, catatan_resep: r.terapi })), error: null };
+        }
         return { data: [], error: null };
       };
       const result = () => {
@@ -94,8 +104,12 @@ vi.mock("@/lib/supabase/server", () => ({
       };
       return query;
     },
-  }),
-}));
+  });
+  return {
+    createClient: async () => client(false),
+    createClientLintasCabang: async () => ({ client: client(true), cabangAktif: s.mode === "cabang" ? "branch-a" : null }),
+  };
+});
 import ListPage from "@/app/(app)/klinik/rekam-medis/page";
 import DetailPage from "@/app/(app)/klinik/rekam-medis/[visitId]/page";
 import { RekamMedisGagalDimuat, RiwayatBersamaDetail } from "@/app/(app)/klinik/rekam-medis/[visitId]/RiwayatBersamaDetail";
@@ -121,44 +135,43 @@ describe("pet history list (customer → pet → history)", () => {
     expect(html).toContain("UJI DIAGNOSIS 2 - BUKAN PASIEN NYATA");
     expect(html).toContain("Diagnosis cabang");
     for (const id of [S1, S2, A1]) expect(occurrences(html, `href="/klinik/rekam-medis/${id}"`)).toBe(1);
-    expect(occurrences(html, "Riwayat lama · semua cabang")).toBe(2);
+    expect(occurrences(html, "Riwayat impor (semua cabang)")).toBe(2);
+    expect(occurrences(html, ">Impor</span>")).toBe(2);
     expect(html).not.toContain("Belum ada riwayat medis untuk anabul ini.");
-    // Newest first: branch visit (1 Feb), then 16/1, then 15/1.
+    // Newest first (server order): branch visit (1 Feb), then 16/1, then 15/1.
     expect(html.indexOf(A1)).toBeLessThan(html.indexOf(S2));
     expect(html.indexOf(S2)).toBeLessThan(html.indexOf(S1));
-    expect(listCalls().map(c => c.args)).toEqual([{ p_pet: PET, p_dari: 0, p_jumlah: 200 }]);
+    // One server page; the cabang list is read WITHOUT the branch header and filtered by p_cabang (branch + imports).
+    expect(listCalls()).toHaveLength(0);
+    expect(s.rpcCalls).toEqual([{ name: "daftar_rekam_medis_halaman",
+      args: { p_cabang: mode === "cabang" ? "branch-a" : null, p_cari: null, p_tampilan: "semua", p_pet: PET, p_batas: 50, p_offset: 0 } }]);
   });
   it("counts the shared imports in the stats (no more 0 riwayat / 0 hasil import)", async () => {
     const html = await listHtml();
     expect(html).toMatch(/RIWAYAT TERSIMPAN<\/div><div[^>]*>3</);
     expect(html).toMatch(/HASIL IMPORT<\/div><div[^>]*>2</);
   });
-  it.each(["ADMIN", "DOCTOR", "STAFF"])("%s is unchanged: no shared reader call", async role => {
+  it.each(["ADMIN", "DOCTOR"])("%s at the active branch also sees the imports (server RPC, no RS-2 reader call)", async role => {
     s.role = role;
     const html = await listHtml();
     expect(listCalls()).toHaveLength(0);
-    expect(html).not.toContain(`href="/klinik/rekam-medis/${S1}"`);
+    for (const id of [S1, S2, A1]) expect(occurrences(html, `href="/klinik/rekam-medis/${id}"`)).toBe(1);
     expect(html).toContain("Diagnosis cabang");
   });
-  it("inactive OWNER is unchanged too", async () => {
-    s.active = false;
-    await listHtml();
+  it.each([["STAFF", true], ["OWNER", false]] as const)("%s (active=%s) without RLS access sees no imports, only the branch visit", async (role, active) => {
+    s.role = role; s.active = active;
+    const html = await listHtml();
+    expect(html).not.toContain(`href="/klinik/rekam-medis/${S1}"`);
+    expect(html).toContain("Diagnosis cabang");
     expect(listCalls()).toHaveLength(0);
   });
-  it("does not touch the general list (no pet)", async () => {
+  it("general list (no pet): one server page for the active branch", async () => {
     await listHtml({});
-    expect(s.rpcCalls).toEqual([{ name: "daftar_rekam_medis", args: { p_pet: null } }]);
+    expect(s.rpcCalls).toEqual([{ name: "daftar_rekam_medis_halaman",
+      args: { p_cabang: "branch-a", p_cari: null, p_tampilan: "rawat-jalan", p_pet: null, p_batas: 50, p_offset: 0 } }]);
   });
-  it.each([
-    ["the reader is refused", () => { s.rpcError = "list"; }],
-    ["the profile cannot be read", () => { s.profileError = true; }],
-    ["the pet cannot be read", () => { s.petError = true; }],
-    ["a reader row belongs to another customer", () => { s.shared = [{ ...s.shared[0], customer_id: "cust-lain" }]; }],
-    ["a normal shared row is refused by the reader (inconsistent link)", () => {
-      s.mode = "semua"; s.extraNormal = [normalOf(sharedRow("visit-x", "2026-01-20T01:00:00+00:00", 9))];
-    }],
-  ])("shows a generic failure (never an empty or partial history) when %s", async (_label, setup) => {
-    setup();
+  it("shows a generic failure (never an empty or partial history) when the server read fails", async () => {
+    s.visitError = true;
     const html = await listHtml();
     expect(html).toContain('role="alert"');
     expect(html).toContain("belum dapat dimuat lengkap");
@@ -166,21 +179,14 @@ describe("pet history list (customer → pet → history)", () => {
     expect(html).not.toContain("Belum ada riwayat medis");
     expect(html).not.toContain("PRIVATE");
   });
-  it("fails explicitly beyond 1000 shared rows instead of truncating", async () => {
-    s.shared = Array.from({ length: 1001 }, (_, i) => sharedRow(`v-${String(i).padStart(5, "0")}`, "2025-01-01T00:00:00+00:00", i));
+  it("pages 1001 shared rows + the branch row on the server without a 1000-row cap or duplicates", async () => {
+    s.shared = Array.from({ length: 1001 }, (_, i) => sharedRow(`v-${String(i).padStart(5, "0")}`, `2025-01-01T${String(i % 24).padStart(2, "0")}:00:00+00:00`, i));
     const html = await listHtml();
-    expect(html).toContain("melebihi 1.000 baris");
-    expect(html).not.toContain("<table");
-    expect(listCalls().map(c => [c.args.p_dari, c.args.p_jumlah])).toEqual([[0, 200], [200, 200], [400, 200], [600, 200], [800, 200], [1000, 1]]);
-  });
-  it("shows exactly 1000 shared rows merged and paginated with the branch row, without duplicates", async () => {
-    s.shared = Array.from({ length: 1000 }, (_, i) => sharedRow(`v-${String(i).padStart(5, "0")}`, `2025-01-01T${String(i % 24).padStart(2, "0")}:00:00+00:00`, i));
-    s.mode = "semua";
-    const html = await listHtml();
-    expect(html).toMatch(/RIWAYAT TERSIMPAN<\/div><div[^>]*>1001</);
+    expect(html).toMatch(/RIWAYAT TERSIMPAN<\/div><div[^>]*>1002</);
     expect(html).not.toContain('role="alert"');
     expect(occurrences(html, `href="/klinik/rekam-medis/${A1}"`)).toBe(1);
     expect(html.match(/href="\/klinik\/rekam-medis\/(v-|visit-)[^"]*"/g)).toHaveLength(50);
+    expect(s.rpcCalls.map(c => c.name)).toEqual(["daftar_rekam_medis_halaman"]);
   });
 });
 
@@ -226,10 +232,25 @@ describe("history detail", () => {
     s.visitError = true; s.role = "ADMIN";
     expect((await detail(A1) as React.ReactElement).type).toBe(RekamMedisGagalDimuat);
   });
-  it.each(["ADMIN", "DOCTOR"])("%s is unchanged: shared visit hidden under the active branch stays not found, no reader call", async role => {
-    s.role = role;
+  it.each([["DOCTOR", "cabang"], ["DOCTOR", "semua"], ["ADMIN", "cabang"]] as const)(
+    "%s (%s) opens an import listed in the branch list as the read-only renderer (no RS-2 reader, no work page)", async (role, mode) => {
+      s.role = role; s.mode = mode;
+      const { props, html } = await sharedProps(S1);
+      expect((props.row as Record<string, unknown>).visit_id).toBe(S1);
+      for (const text of ["15 Januari 2026", "drh. Uji 1", "Anamnesis uji 1", "UJI DIAGNOSIS 1 - BUKAN PASIEN NYATA", "UJI TERAPI 1", "UJI KUCING SINTETIS", "baca saja"]) {
+        expect(html).toContain(text);
+      }
+      expect(html).not.toMatch(/<form|<button|<input|<textarea|<select/i);
+      expect(s.rpcCalls.filter(c => c.name === "detail_riwayat_bersama")).toHaveLength(0);
+    });
+  it.each([["STAFF", true], ["DOCTOR", false]] as const)("%s (active=%s) still gets 404 for an import (RLS hides it), no reader call", async (role, active) => {
+    s.role = role; s.active = active;
     await expect(detail(S1)).rejects.toThrow("NOT_FOUND");
     expect(s.rpcCalls.filter(c => c.name === "detail_riwayat_bersama")).toHaveLength(0);
+  });
+  it("DOCTOR: an unreadable profile is a failure, not the work page", async () => {
+    s.role = "DOCTOR"; s.profileError = true;
+    expect((await detail(S1) as React.ReactElement).type).toBe(RekamMedisGagalDimuat);
   });
   it("ADMIN under Semua cabang keeps the existing page (no reader call)", async () => {
     s.role = "ADMIN"; s.mode = "semua";
