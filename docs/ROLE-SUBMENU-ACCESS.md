@@ -40,7 +40,7 @@ dibatasi, jadi galat baca kebijakan diabaikan untuk OWNER (tidak ada kunci-kelua
 atau dikosongkan ⇒ semuanya tertutup. Form Akses Grup memperingatkan hal ini (`OWNERLESS_FULL_REACH_PAGES`).
 
 ## Nomor migrasi
-`20261107890000_role_submenu_access.sql` sengaja bernomor jauh di depan. Aturan renumber: tes sinkron hanya meminta nomor
+`20261108110000_role_submenu_access.sql` dinomori tepat di atas migrasi terakhir yang sudah live saat dikirim (20261108090000, rincian_promo_baris_klinik). Aturan renumber: tes sinkron hanya meminta nomor
 ini unik, versi = nama berkas, dan setelah `role_settings_atomic`; migrasi lain bernomor lebih BESAR tidak membuat CI merah.
 Renumber saat merge: bila sudah ada migrasi di main bernomor LEBIH BESAR dari ini, ganti nomor berkas ini menjadi setelah
 migrasi terakhir (nama berkas + tes + dokumen ini). Sesudah ini terpasang di produksi, migrasi baru wajib bernomor di atasnya

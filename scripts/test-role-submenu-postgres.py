@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from native_postgres import NativePostgres  # noqa: E402
 
-CANDIDATE = '20261107890000_role_submenu_access.sql'
+CANDIDATE = '20261108110000_role_submenu_access.sql'
 EVIDENCE = Path('/opt/data/kamo-role-settings-evidence')
 IDS = {r: str(uuid.UUID(int=i + 1)) for i, r in enumerate(['OWNER', 'ADMIN', 'FINANCE', 'STAFF', 'DOCTOR', 'OWNER_OFF', 'ADMIN_OFF'])}
 ALL_MODULES = ['dashboard', 'klinik', 'crm', 'hris', 'pengaturan', 'perusahaan', 'buku-besar', 'kas-bank', 'penjualan', 'pembelian', 'pos',

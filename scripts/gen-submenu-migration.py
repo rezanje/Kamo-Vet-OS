@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerates supabase/migrations/20261107890000_role_submenu_access.sql from the TypeScript sub-menu registry.
+"""Regenerates supabase/migrations/20261108110000_role_submenu_access.sql from the TypeScript sub-menu registry.
 The generated file is committed; src/lib/__tests__/submenu-migration-sync.test.ts fails if it drifts from the registry."""
 import pathlib
 import re
@@ -126,5 +126,5 @@ $$;
 revoke all on function public.get_my_submenu_policy() from public,anon,service_role;
 grant execute on function public.get_my_submenu_policy() to authenticated;
 """
-(root / 'supabase/migrations/20261107890000_role_submenu_access.sql').write_text(head + rows + tail)
+(root / 'supabase/migrations/20261108110000_role_submenu_access.sql').write_text(head + rows + tail)
 print(len(ids), 'ids written')

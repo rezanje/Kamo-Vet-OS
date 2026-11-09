@@ -1,4 +1,4 @@
-"""Mutants of 20261107890000_role_submenu_access.sql for scripts/test-role-submenu-postgres.py --mutations.
+"""Mutants of 20261108110000_role_submenu_access.sql for scripts/test-role-submenu-postgres.py --mutations.
 Each anchor must occur EXACTLY once in the migration (the harness asserts it); every mutant must fail >= 1 case."""
 
 SAVE_WRITES_RESET = """if p_mode='reset' then
