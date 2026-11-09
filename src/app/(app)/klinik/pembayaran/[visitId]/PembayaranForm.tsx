@@ -26,6 +26,8 @@ import { bayarVisit } from "./actions";
 import { DpAdmissionFields } from "./DpAdmissionFields";
 import { hariIniWIB } from "@/lib/tanggal";
 import { hitungPromoKeranjang } from "@/lib/promo-hitung";
+import { rincianPromoLayar } from "@/lib/rincian-promo-layar";
+import { labelPromo } from "@/lib/label-potongan";
 import { diskonGolonganKeranjang } from "@/lib/harga-golongan";
 import { pesanVoucherDitolak, potonganVoucher } from "@/lib/voucher";
 import { bacaKode, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganKode } from "@/lib/kode-kampanye";
@@ -566,6 +568,9 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, serverErr
   const promoEfektif = promoDenganKode(bekal.promos, kodeTerbaca.promoId);
   const hasilPromo = editMode ? [] : hitungPromoKeranjang(promoEfektif, barisPotongan);
   const promoVal = hasilPromo.reduce((a, p) => a + p.potongan, 0);
+  // Andri 9 Nov: kasir harus tahu promo APA yang memotong dan di barang mana,
+  // bukan cuma angka "Promo otomatis". Rinciannya dari hasil hitung yang sama.
+  const rincianPromo = rincianPromoLayar(hasilPromo, barisSemua);
   const golonganVal = editMode ? 0 : diskonGolonganKeranjang(
     barisPotongan, bekal.aturanDiskon, bekal.golonganPersen, new Map(Object.entries(bekal.infoBarang)),
   );
@@ -761,6 +766,16 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, serverErr
                 <NumberInput className="fi" type="number" min={0} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 100, textAlign: "right" }} />
               </div>
               {promoVal > 0 && <SumRow label="Promo otomatis" value={`- ${rp(promoVal)}`} />}
+              {rincianPromo.length > 0 && (
+                <div data-testid="rincian-promo" style={{ fontSize: 10.5, color: "#15803d", margin: "-2px 0 4px" }}>
+                  {rincianPromo.map((p) => (
+                    <div key={p.promoId} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <span><i className="ti ti-discount-2" /> {labelPromo(p.nama)}{p.barang.length > 0 ? ` · ${p.barang.join(", ")}` : ""}</span>
+                      <span style={{ whiteSpace: "nowrap" }}>- {rp(p.potongan)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {golonganVal > 0 && <SumRow label="Diskon golongan pelanggan" value={`- ${rp(golonganVal)}`} />}
 
               {/* Kode voucher: mesin & syaratnya sama dengan kasir petshop. */}

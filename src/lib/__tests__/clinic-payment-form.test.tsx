@@ -72,3 +72,9 @@ it("blocks Bayar & Selesai when received money is below the remaining bill",()=>
  expect(pesanKurangBayar(100000,100000)).toBeNull();
  expect(pesanKurangBayar(150000,100000)).toBeNull();
 });
+
+it("names the automatic promo and the item it cut, not just the amount (Andri 9 Nov)",()=>{
+ const promo={id:"p",name:"Member Bronze",itemIds:["vaksin"],minQty:null,maxQty:null,kelipatan:false,autoApply:true,discountType:"nominal" as const,discountValue:27000};
+ const html=renderToStaticMarkup(React.createElement(PembayaranForm,{...props,initialJasa:[{deskripsi:"Vaksin F4",qty:1,harga:300000,item_id:"vaksin"}],bekal:{...props.bekal,promos:[promo]}}));
+ expect(html).toContain("Promo otomatis");expect(html).toContain("Promo Member Bronze · Vaksin F4");expect(html).toContain("Rp 27.000");
+});
