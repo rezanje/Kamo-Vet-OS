@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "../PrintButton";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
+import { labelPromo } from "@/lib/label-potongan";
+import { bacaRincianPromoKlinik, labelDiskonBaris, pasangPromoKeBaris } from "@/lib/rincian-promo-klinik";
 
 // Struk gabungan satu kedatangan: pemilik menerima SATU lembar untuk seluruh
 // hewannya. Di belakang layar tagihannya tetap terpisah per kunjungan — nomor
@@ -62,7 +64,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
 
   const allItems = invRows.length
     ? await readCompleteList<PackagePrintSource & BarisTagihanPetugas & { id: string; invoice_id: string }>((from, to) => supabase.from("invoice_items")
-        .select("id, invoice_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers", { count: "exact" })
+        .select("id, invoice_id, item_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers", { count: "exact" })
         .in("invoice_id", invRows.map((i) => i.id)).order("created_at").order("id").range(from, to), "Rincian struk gabungan", { maxRows: null })
     : [];
 
@@ -79,7 +81,14 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   const kunjunganPer = new Map(((visitRows ?? []) as (KunjunganPetugas & { id: string })[]).map((v) => [v.id, v]));
   const kartuPetugas = await bacaKartuPetugas(supabase, idPetugas([...kunjunganPer.values()], allItems ?? []));
 
-  const totalDiskon = invRows.reduce((a, i) => a + (Number(i.discount) || 0), 0);
+  // Promo per barang (Reza 8 Nov) dicetak di bawah barangnya, per nota hewan; "Diskon
+  // transaksi" di bawah hanya sisanya. Total tidak berubah.
+  const promoPerInv = await bacaRincianPromoKlinik(supabase, invRows.map((i) => i.id));
+  const cetakPerInv = new Map(invRows.map((inv) => {
+    const lines = customerPackageLines(itemsPerInv.get(inv.id) ?? [], { subtotal: inv.subtotal });
+    return [inv.id, { lines, ...pasangPromoKeBaris(lines, promoPerInv.get(inv.id) ?? [], Number(inv.discount)) }] as const;
+  }));
+  const totalDiskon = invRows.reduce((a, i) => a + Math.max(0, (Number(i.discount) || 0) - (cetakPerInv.get(i.id)?.totalPromo ?? 0)), 0);
   const totalPpn = invRows.reduce((a, i) => a + (Number(i.tax) || 0), 0);
   const metode = [...new Set(invRows.map((i) => i.metode_bayar).filter(Boolean))].join(", ") || "-";
   const tgl = new Date(`${rombongan.tanggal}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta",
@@ -124,13 +133,18 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
               {daftar[0] && <Kv k="Kasir" v={daftar[0].cashier_name ?? "Kasir belum tercatat"} />}
               {petugas.map((p) => <Kv key={p.label} k={p.label} v={p.nama} />)}
               {!daftar.length && <div style={{ fontSize: 9.5 }}>(tagihan belum dibuat)</div>}
-              {daftar.flatMap((inv) => customerPackageLines(itemsPerInv.get(inv.id) ?? [], { subtotal: inv.subtotal })).map((it, i) => (
-                <div key={i}>
+              {daftar.flatMap((inv) => {
+                const cetak = cetakPerInv.get(inv.id);
+                return (cetak?.lines ?? []).map((it, i) => ({ it, promos: cetak?.perBaris[i] ?? [], key: `${inv.id}-${i}` }));
+              }).map(({ it, promos, key }) => (
+                <div key={key}>
                   <div>{it.deskripsi}</div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>{it.qty} x {rp(it.harga)}</span>
-                    <span>{rp(it.jumlah)}</span>
+                    <span>{rp(it.jumlah + it.diskon)}</span>
                   </div>
+                  <PotonganBaris label={labelDiskonBaris(it)} nilai={it.diskon} />
+                  {promos.map((p, k) => <PotonganBaris key={k} label={labelPromo(p.nama)} nilai={p.potongan} />)}
                 </div>
               ))}
               {daftar.length > 0 && (
@@ -144,7 +158,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
         })}
 
         <Hr />
-        {totalDiskon > 0 && <Row k="Diskon" v={`-${rp(totalDiskon)}`} />}
+        {totalDiskon > 0.005 && <Row k="Diskon transaksi" v={`-${rp(totalDiskon)}`} />}
         {totalPpn > 0 && <Row k="PPN" v={rp(totalPpn)} />}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 12, marginTop: 2 }}>
           <span>TOTAL SEMUA</span><span>{rp(ringkasan.totalTagihan)}</span>
@@ -171,6 +185,15 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   );
 }
 
+/** Potongan satu barang, menjorok di bawah barisnya (promo atau diskon kasir). */
+function PotonganBaris({ label, nilai }: { label: string | null; nilai: number }) {
+  if (!label || !(nilai > 0.005)) return null;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+      <span>&nbsp;&nbsp;{label}</span><span>-{rp(nilai)}</span>
+    </div>
+  );
+}
 function Hr() {
   return <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />;
 }

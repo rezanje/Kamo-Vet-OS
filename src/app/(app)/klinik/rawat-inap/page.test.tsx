@@ -27,6 +27,11 @@ vi.mock("@/lib/supabase/server", () => ({
         is: () => q, order: () => q,
         range: (from: number, to: number) => { start = from; end = to; return q; },
         or: (...args: unknown[]) => { state.filters.push({ table, op: "or", args }); return q; },
+        maybeSingle: () => {
+          state.calls.push(table);
+          const rows = state.tables[table] ?? [];
+          return Promise.resolve({ data: rows[0] ?? null, error: state.errors.includes(table) ? { code: "42501" } : null });
+        },
         then: (resolve: (v: unknown) => unknown) => {
           state.calls.push(table);
           const rows = table === "inpatient_records" ? (counter ? state.counterRows : state.listRows)
@@ -157,5 +162,181 @@ describe("Status Rawat Inap — kolom tagihan", () => {
     expect(html.indexOf("<th>Aksi</th>")).toBeLessThan(html.indexOf("<th>Tagihan</th>"));
     expect(html).toContain("/klinik/rawat-inap/rec-1\"");
     expect(html).toContain("Isi laporan harian");
+  });
+});
+
+
+// Daftar rawat inap: lunas-belum-pulang, edit catatan terlihat, kepatuhan laporan harian
+// (laporan 6 Nov 2026). Hanya baca; tidak ada pemulangan otomatis.
+describe("Status Rawat Inap — lunas belum pulang & laporan harian", () => {
+  const rec = (id: string, visit: string, pet: string, extra: Record<string, unknown> = {}) => ({
+    id, visit_id: visit, branch_id: "b1", condition_status: "stabil", admitted_at: "2026-11-01T02:00:00Z",
+    discharged_at: null, doctor_name: "drh. A", treatment_plan: "Infus", branches: { name: "Klinik" },
+    visits: { pets: { name: pet, species: "Kucing", breed: null, dob: null, photo_url: null }, customers: { name: "Reza", phone: "08" } },
+    ...extra,
+  });
+  const lunasInv = (visit: string) => ({ id: `inv-${visit}`, visit_id: visit, total: 100, dp_amount: 100, paid_status: "DP", voided_at: null, created_at: "2026-11-01" });
+  const render = async (searchParams: Record<string, string> = {}) =>
+    renderToStaticMarkup(await RawatInapPage({ searchParams: Promise.resolve(searchParams) }));
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-06T03:00:00Z")); // 10.00 WIB, 6 Nov
+    state.filters = [];
+    state.counterRows = [];
+    state.errors = [];
+    state.calls = [];
+    state.tables = { profiles: [{ role: "OWNER" }], invoices: [lunasInv("v1")], inpatient_daily_logs: [] };
+    state.listRows = [rec("rec-1", "v1", "Bimo")];
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("pasien aktif dengan tagihan Lunas: badge + tombol Pulangkan ke Ubah Kondisi (tanpa memulangkan otomatis)", async () => {
+    const html = await render();
+    expect(html).toContain("Lunas, belum dipulangkan");
+    expect(html).toContain('href="/klinik/rawat-inap/rec-1#ubah-kondisi"');
+    expect(html).toContain("Pulangkan");
+    // Tidak menyentuh jalur pemulangan: tidak ada RPC / tabel status yang dibaca.
+    expect(state.calls).not.toContain("inpatient_status_log");
+  });
+
+  it("tagihan DP / belum lunas / belum ada tagihan tidak mendapat badge maupun Pulangkan", async () => {
+    state.tables.invoices[0].dp_amount = 0;
+    state.tables.invoices[0].paid_status = "Belum Lunas";
+    expect(await render()).not.toContain("Lunas, belum dipulangkan");
+    state.tables.invoices = [];
+    const html = await render();
+    expect(html).not.toContain("Lunas, belum dipulangkan");
+    expect(html).not.toContain("Pulangkan");
+  });
+
+  it("pasien yang sudah pulang tidak pernah diberi badge/tombol walau Lunas", async () => {
+    state.listRows = [rec("rec-1", "v1", "Bimo", { discharged_at: "2026-11-05T03:00:00Z" })];
+    const html = await render({ filter: "semua" });
+    expect(html).toContain(">Lunas</span>");
+    expect(html).not.toContain("Lunas, belum dipulangkan");
+    expect(html).not.toContain("Pulangkan");
+  });
+
+  it("gagal baca tagihan tidak memunculkan badge lunas belum pulang", async () => {
+    state.errors = ["invoice_payments"];
+    state.tables.invoice_payments = [];
+    expect(await render()).not.toContain("Lunas, belum dipulangkan");
+  });
+
+  it("chip filter 'Lunas belum pulang' ada, aktif saat dipilih, dan hanya menampilkan baris lunas aktif", async () => {
+    state.listRows = [rec("rec-1", "v1", "Bimo"), rec("rec-2", "v2", "Mimi")];
+    state.tables.invoices = [lunasInv("v1"), { ...lunasInv("v2"), dp_amount: 0, paid_status: "Belum Lunas" }];
+    const html = await render({ filter: "lunas_belum_pulang" });
+    expect(html).toContain("filter=lunas_belum_pulang");
+    expect(html).toContain("Lunas belum pulang");
+    const tabel = html.slice(html.indexOf("<tbody>"));
+    expect(tabel).toContain("Bimo");
+    expect(tabel).not.toContain("Mimi"); // (ringkasan Laporan tertinggal di atas tabel tidak ikut disaring)
+    expect(state.filters.some((f) => f.table === "inpatient_records" && f.op === "in")).toBe(true);
+  });
+
+  it("filter aktif/lunas membaca hanya yang belum pulang (discharged_at is null) dan menjelaskan di mana pasien pulang", async () => {
+    const html = await render();
+    expect(html).toContain("Pasien yang sudah dipulangkan tidak tampil di sini; lihat tab Semua/Pulang");
+    expect(await render({ filter: "semua" })).not.toContain("Pasien yang sudah dipulangkan tidak tampil di sini");
+  });
+
+  it("tautan ke detail berlabel 'Lihat / Edit' dengan tooltip untuk pasien aktif", async () => {
+    const html = await render();
+    expect(html).toContain('title="Lihat / Edit catatan harian"');
+    expect(html).toContain("Lihat / Edit");
+  });
+
+  it("pasien pulang: tautan tetap 'Lihat detail' (edit sudah terkunci), tidak menjanjikan Edit", async () => {
+    state.listRows = [rec("rec-1", "v1", "Bimo", { discharged_at: "2026-11-05T03:00:00Z" })];
+    const html = await render({ filter: "semua" });
+    expect(html).toContain("Lihat detail");
+    expect(html).not.toContain("Lihat / Edit");
+  });
+
+  it("badge laporan hari ini: belum", async () => {
+    expect(await render()).toContain("Laporan hari ini: belum");
+  });
+
+  it("badge laporan hari ini: ada (n) menurut tanggal WIB", async () => {
+    state.tables.inpatient_daily_logs = [
+      { inpatient_record_id: "rec-1", log_date: "2026-11-06", created_at: "2026-11-06T01:00:00Z" },
+      { inpatient_record_id: "rec-1", log_date: "2026-11-06", created_at: "2026-11-06T02:00:00Z" },
+      { inpatient_record_id: "rec-1", log_date: "2026-11-05", created_at: "2026-11-05T02:00:00Z" },
+    ];
+    const html = await render();
+    expect(html).toContain("Laporan hari ini: ada (2)");
+    expect(html).not.toContain("Laporan hari ini: belum");
+  });
+
+  it("batas WIB: 23.59 masih hari ini, 00.00 sudah hari baru", async () => {
+    state.tables.inpatient_daily_logs = [{ inpatient_record_id: "rec-1", log_date: "2026-11-06", created_at: "2026-11-06T16:00:00Z" }];
+    vi.setSystemTime(new Date("2026-11-06T16:59:00Z"));
+    expect(await render()).toContain("Laporan hari ini: ada (1)");
+    vi.setSystemTime(new Date("2026-11-06T17:00:00Z")); // 00.00 WIB 7 Nov
+    expect(await render()).toContain("Laporan hari ini: belum");
+  });
+
+  it("pasien pulang tidak diberi badge laporan hari ini", async () => {
+    state.listRows = [rec("rec-1", "v1", "Bimo", { discharged_at: "2026-11-05T03:00:00Z" })];
+    expect(await render({ filter: "semua" })).not.toContain("Laporan hari ini");
+  });
+
+  it("OWNER melihat ringkasan 'Laporan tertinggal' dengan jumlah hari sejak laporan terakhir (>1 hari)", async () => {
+    state.listRows = [rec("rec-1", "v1", "Bimo"), rec("rec-2", "v2", "Mimi"), rec("rec-3", "v3", "Coco")];
+    state.tables.inpatient_daily_logs = [
+      { inpatient_record_id: "rec-1", log_date: "2026-11-06", created_at: "2026-11-06T01:00:00Z" },
+      { inpatient_record_id: "rec-2", log_date: "2026-11-05", created_at: "2026-11-05T01:00:00Z" },
+      { inpatient_record_id: "rec-3", log_date: "2026-11-03", created_at: "2026-11-03T01:00:00Z" },
+    ];
+    const html = await render();
+    expect(html).toContain("Laporan tertinggal");
+    const ringkasan = html.slice(html.indexOf('data-testid="laporan-tertinggal"'));
+    expect(ringkasan).toContain("Mimi");
+    expect(ringkasan).toContain("Coco");
+    expect(ringkasan).toContain("3 hari");
+    expect(ringkasan.split("</section>")[0]).not.toContain("Bimo");
+    // Mimi tertinggal tepat 1 hari: tidak ditulis "1 hari sejak".
+    expect(ringkasan.split("</section>")[0]).not.toContain("1 hari");
+  });
+
+  it("ADMIN juga melihat ringkasan; DOCTOR / kasir / tanpa peran tidak", async () => {
+    state.tables.profiles = [{ role: "ADMIN" }];
+    expect(await render()).toContain('data-testid="laporan-tertinggal"');
+    for (const role of ["DOCTOR", "KASIR", "FINANCE"]) {
+      state.tables.profiles = [{ role }];
+      const html = await render();
+      expect(html).not.toContain('data-testid="laporan-tertinggal"');
+      expect(html).toContain("Laporan hari ini: belum"); // badge per pasien tetap terlihat
+    }
+    state.tables.profiles = [];
+    expect(await render()).not.toContain('data-testid="laporan-tertinggal"');
+  });
+
+  it("semua pasien sudah lapor → tidak ada ringkasan tertinggal", async () => {
+    state.tables.inpatient_daily_logs = [{ inpatient_record_id: "rec-1", log_date: "2026-11-06", created_at: "2026-11-06T01:00:00Z" }];
+    expect(await render()).not.toContain('data-testid="laporan-tertinggal"');
+  });
+
+  it("tanpa N+1: 3 pasien aktif → inpatient_daily_logs dibaca tepat satu kali", async () => {
+    state.listRows = [rec("rec-1", "v1", "A"), rec("rec-2", "v2", "B"), rec("rec-3", "v3", "C")];
+    await render();
+    expect(state.calls.filter((t) => t === "inpatient_daily_logs")).toHaveLength(1);
+    expect(state.filters).toContainEqual({ table: "inpatient_daily_logs", op: "in", args: ["inpatient_record_id", ["rec-1", "rec-2", "rec-3"]] });
+  });
+
+  it("hanya pasien aktif yang dibaca lognya; daftar semua-pulang tidak membaca log sama sekali", async () => {
+    state.listRows = [rec("rec-1", "v1", "A", { discharged_at: "2026-11-05T03:00:00Z" })];
+    await render({ filter: "semua" });
+    expect(state.calls).not.toContain("inpatient_daily_logs");
+  });
+
+  it("gagal baca log → 'tidak terbaca', tidak menuduh 'belum' dan tidak membuat ringkasan palsu", async () => {
+    state.errors = ["inpatient_daily_logs"];
+    const html = await render();
+    expect(html).toContain("Laporan hari ini: tidak terbaca");
+    expect(html).not.toContain("Laporan hari ini: belum");
+    expect(html).not.toContain('data-testid="laporan-tertinggal"');
   });
 });

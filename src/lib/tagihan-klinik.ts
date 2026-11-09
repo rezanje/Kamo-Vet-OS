@@ -65,7 +65,7 @@ export async function barisTagihanVisit(
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   const { data: resep } = mr
     ? await supabase.from("prescription_items")
-        .select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers").eq("medical_record_id", mr.id).order("created_at")
+        .select("id, nama_obat, qty, harga, jenis, item_id, satuan, compound_recipe_id, service_performers").eq("medical_record_id", mr.id).is("record_withdrawn_at", null).order("created_at")
     : { data: [] as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null }[] };
 
   const rows = ((resep ?? []) as { id: string; nama_obat: string; qty: number; harga: number; jenis: string; item_id: string | null; satuan: string | null; compound_recipe_id: string | null; service_performers?: ServicePerformersSnapshot | null }[])
@@ -138,6 +138,22 @@ export async function perkiraanTagihan(
 // pemakaiannya di rombongan: satu voucher untuk satu kedatangan, potongannya
 // dibagi proporsional ke nota tiap hewan (kesepakatan 2026-08-12).
 
+export type RincianPromoKlinik = { item_id: string; promo_id: string; promo_name: string; potongan: number };
+
+/** Hasil mesin promo → satu baris per (barang, promo); baris tanpa item_id tidak punya pegangan di struk. */
+export function rincianPromoPerBarang(hasil: readonly { item_id: string; promoId: string; promoName: string; potongan: number }[]): RincianPromoKlinik[] {
+  const per = new Map<string, RincianPromoKlinik>();
+  for (const h of hasil) {
+    const potongan = Number(h.potongan) || 0;
+    if (!h.item_id || !h.promoId || potongan <= 0) continue;
+    const key = `${h.item_id}:${h.promoId}`;
+    const ada = per.get(key);
+    if (ada) ada.potongan += potongan;
+    else per.set(key, { item_id: h.item_id, promo_id: h.promoId, promo_name: (h.promoName || "Promo").trim() || "Promo", potongan });
+  }
+  return [...per.values()];
+}
+
 export type BarisPotongan = { item_id: string | null; qty: number; harga: number; jenis?: string; satuan?: string | null };
 
 export type Potongan = {
@@ -148,6 +164,11 @@ export type Potongan = {
   total: number;
   /** Alasan voucher ditolak; null kalau tidak ada kode / kodenya sah. */
   tolakVoucher: string | null;
+  /**
+   * Promo per barang (Reza 8 Nov): dicetak di bawah baris barangnya di struk/invoice.
+   * Jumlahnya sama persis dengan `promo`; hanya rinciannya. Tampilan saja.
+   */
+  rincianPromo?: RincianPromoKlinik[];
   /** Kode voucher yang disimpan di invoice (tujuan kode kampanye bila ada). */
   voucherCode?: string | null;
   /** Kode kampanye yang diketik (C05); null bila bukan kode kampanye. */
@@ -265,7 +286,7 @@ export async function hitungPotonganKlinik(
   // Total potongan tidak boleh melebihi tagihan — kalau lewat, DPP jadi minus dan
   // jurnal pendapatannya ikut salah.
   const total = Math.min(subtotal, promo + golongan + voucher);
-  return { promo, voucher, golongan, total, tolakVoucher, ...kodeHasil,
+  return { promo, voucher, golongan, total, tolakVoucher, rincianPromo: rincianPromoPerBarang(potonganPromo), ...kodeHasil,
     ...(opts.promoKampanyeId ? { promoKampanyeTerpakai, promoKampanyeTersedia } : {}) };
 }
 
@@ -373,7 +394,7 @@ async function gerbangConsent(supabase: AnyClient, visitId: string): Promise<boo
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   const [{ data: jasaRows }, { data: inpat }, { data: consents }, aturanConsent] = await Promise.all([
     mr
-      ? supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mr.id)
+      ? supabase.from("prescription_items").select("jenis, kategori").eq("medical_record_id", mr.id).is("record_withdrawn_at", null)
       : Promise.resolve({ data: [] as { jenis: string; kategori: string | null }[] }),
     supabase.from("inpatient_records").select("id").eq("visit_id", visitId).limit(1).maybeSingle(),
     supabase.from("consents").select("status").eq("visit_id", visitId),

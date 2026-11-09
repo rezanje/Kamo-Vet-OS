@@ -11,6 +11,8 @@ export type PackagePrintSource = {
   qty: number;
   harga: number;
   diskon_persen?: number | null;
+  /** Barang/jasa sumber baris — pegangan rincian promo per barang (lib/rincian-promo-klinik). */
+  item_id?: string | null;
   package_item_id?: string | null;
   package_qty?: number | null;
   package?: Rel<{ name: string | null }>;

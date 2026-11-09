@@ -4,7 +4,7 @@ import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { aturSembunyiPelanggan, detailPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
+import { aturSembunyiPelanggan, detailPelanggan, ubahDataPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 
 export type PetRow = {
@@ -464,6 +464,31 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     <span style={{ fontSize: 11, fontWeight: 500, textAlign: "right", maxWidth: 180 }}>{row.val}</span>
                   </div>
                 ))}
+                {isAdmin && (
+                  <details key={`ubah-${sel.id}`} style={{ marginTop: 10 }}>
+                    <summary className="btn-def" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "5px 10px", cursor: "pointer", listStyle: "none" }}>
+                      <i className="ti ti-pencil" /> Ubah data pelanggan
+                    </summary>
+                    <form action={ubahDataPelanggan} aria-label="Ubah data pelanggan" style={{ marginTop: 8, display: "grid", gap: 8, padding: 10, border: ".5px solid var(--bd)", borderRadius: 8 }}>
+                      <input type="hidden" name="id" value={sel.id} />
+                      <input type="hidden" name="phone" value={sel.phone} />
+                      <label style={{ fontSize: 10, color: "var(--tm)" }}>Nama pemilik
+                        <input name="nama" className="fi" required maxLength={100} defaultValue={sel.name} style={{ display: "block", width: "100%", fontSize: 12 }} />
+                      </label>
+                      <label style={{ fontSize: 10, color: "var(--tm)" }}>Email
+                        <input name="email" inputMode="email" className="fi" maxLength={120} defaultValue={sel.email ?? ""} style={{ display: "block", width: "100%", fontSize: 12 }} />
+                      </label>
+                      <label style={{ fontSize: 10, color: "var(--tm)" }}>Pekerjaan
+                        <input name="pekerjaan" className="fi" maxLength={80} defaultValue={sel.pekerjaan ?? ""} style={{ display: "block", width: "100%", fontSize: 12 }} />
+                      </label>
+                      <label style={{ fontSize: 10, color: "var(--tm)" }}>Alamat
+                        <textarea name="alamat" className="fi" maxLength={500} rows={2} defaultValue={sel.address ?? ""} style={{ display: "block", width: "100%", fontSize: 12 }} />
+                      </label>
+                      <div style={{ fontSize: 10, color: "var(--tm)" }}>No. HP tidak bisa diubah di sini karena dipakai untuk mencari pelanggan di kasir & pendaftaran.</div>
+                      <button type="submit" className="btn-acc" style={{ justifySelf: "start", fontSize: 11, padding: "5px 12px" }}>Simpan perubahan</button>
+                    </form>
+                  </details>
+                )}
                 {isAdmin && <ActivityHistoryLink entity="customers" id={sel.id} />}
                 {isAdmin && detail?.stat && (
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>

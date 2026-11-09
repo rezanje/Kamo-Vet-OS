@@ -6,6 +6,7 @@ type Item = PackagePrintSource & { id: string; invoice_id: string; jenis?: strin
 const state = vi.hoisted(() => ({
   fail: false, missingName: false, mode: "complete", items: [] as Item[],
   subtotal: 305000 as number | null, secondInvoice: false, invoiceDiscount: 0, invoiceTax: 0,
+  promoLines: [] as { invoice_id: string; item_id: string; promo_name: string; potongan: number }[],
   selections: [] as string[], reads: [] as { from: number; to: number; exact: boolean; orders: string[] }[],
 }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props}>{children}</a> }));
@@ -24,7 +25,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from(tabl
     range: (start: number, end: number) => { from = start; to = end; return q; },
     maybeSingle: async () => ({ data: table === "visits" ? visit : table === "invoices" ? invoice : null, error: null, count: 1 }),
     then: (resolve: (r: unknown) => unknown) => {
-      let data: unknown[] = table === "invoice_items" ? state.items.map(item => ({ ...item, package: state.missingName && item.package_item_id ? null : item.package })) : table === "invoices" ? [invoice, ...(state.secondInvoice ? [{ ...invoice, id: "second", invoice_no: "INV-SECOND", subtotal: 200000, total: 200000 }] : [])] : table === "visits" ? [visit] : [];
+      let data: unknown[] = table === "invoice_items" ? state.items.map(item => ({ ...item, package: state.missingName && item.package_item_id ? null : item.package })) : table === "invoices" ? [invoice, ...(state.secondInvoice ? [{ ...invoice, id: "second", invoice_no: "INV-SECOND", subtotal: 200000, total: 200000 }] : [])] : table === "visits" ? [visit] : table === "invoice_promo_lines" ? state.promoLines : [];
       if (table === "invoice_items" && filters.invoice_id) data = data.filter(item => Array.isArray(filters.invoice_id) ? filters.invoice_id.includes((item as Item).invoice_id) : (item as Item).invoice_id === filters.invoice_id);
       const count = data.length;
       data = data.slice(from, to + 1);
@@ -45,7 +46,7 @@ import Invoice from "@/app/(app)/klinik/pembayaran/[visitId]/invoice/page";
 import Rombongan from "@/app/(app)/klinik/pembayaran/[visitId]/struk-rombongan/page";
 const pages = [["thermal", Struk], ["invoice", Invoice], ["rombongan", Rombongan]] as const;
 beforeEach(() => {
-  Object.assign(state, { fail: false, missingName: false, mode: "complete", subtotal: 305000, secondInvoice: false, invoiceDiscount: 0, invoiceTax: 0, selections: [], reads: [] });
+  Object.assign(state, { promoLines: [], fail: false, missingName: false, mode: "complete", subtotal: 305000, secondInvoice: false, invoiceDiscount: 0, invoiceTax: 0, selections: [], reads: [] });
   const origin = { invoice_id: "invoice", package_item_id: "package", package_qty: 1, package: { name: "Paket Steril" } };
   state.items = [
     { ...origin, id: "material-1", item_id: "same-sku", deskripsi: "BMHP spuit internal", qty: 2, harga: 5000, jenis: "obat" },
@@ -109,7 +110,11 @@ it.each(pages)("%s preserves mixed original component discounts rather than comp
   state.items[0].diskon_persen = 10;
   state.subtotal = 304000; state.invoiceDiscount = 4000; state.invoiceTax = 33000;
   const html = await render(Page);
-  expect(html).toContain("Rp 299.000"); expect(html).toContain("Rp 300.000");
+  // Invoice A4: kolom Jumlah = setelah diskon baris. Struk thermal (Reza 8 Nov): harga kotor
+  // di baris barang, potongannya dicetak sendiri di bawahnya.
+  if (Page === Invoice) expect(html).toContain("Rp 299.000");
+  else expect(html).toContain("Diskon item</span><span>-Rp 1.000");
+  expect(html).toContain("Rp 300.000");
   expect(html).toContain("Spuit dijual satuan");
   if (Page !== Rombongan) expect(html).toContain("Rp 333.000");
   if (Page === Invoice) { expect(html).toContain("Rp 1.000"); expect(html).not.toContain("10%</td>"); }
@@ -151,4 +156,34 @@ it.each(pages)("%s accepts a verified empty zero invoice without inventing a pac
   state.subtotal = 0; state.items = [];
   const html = await render(Page);
   expect(html).not.toContain("Paket Steril"); expect(html).toContain("INV-FIKSI");
+});
+
+// Reza 8 Nov: promo dicetak di bawah barangnya; bagian bawah khusus diskon transaksi.
+it.each(pages)("%s prints the promo under its item and keeps only the rest as transaction discount", async (_, Page) => {
+  state.items = [
+    { id: "anthel", invoice_id: "invoice", item_id: "sku-anthel", deskripsi: "Anthel Cat", qty: 1, harga: 18000, jenis: "obat" },
+    { id: "inap", invoice_id: "invoice", item_id: "sku-inap", deskripsi: "Rawat Inap Cat", qty: 7, harga: 95000, jenis: "jasa" },
+  ];
+  state.subtotal = 683000; state.invoiceDiscount = 37000;
+  state.promoLines = [{ invoice_id: "invoice", item_id: "sku-anthel", promo_name: "Icarae MBC", potongan: 27000 }];
+  state.items[0].harga = 45000; state.subtotal = 710000;
+  const html = await render(Page);
+  const text = html.replace(/<[^>]+>/g, "");
+  expect(text).toContain("Promo Icarae MBC");
+  expect(text).toContain("Rp 27.000");
+  // 37.000 diskon invoice − 27.000 promo barang = 10.000 diskon transaksi.
+  expect(text).toContain("Diskon transaksi");
+  expect(text).toContain("Rp 10.000");
+  expect(text).not.toContain("Rp 37.000");
+  // Promo menempel di bawah Anthel, bukan di bawah rawat inap.
+  expect(text.indexOf("Promo Icarae MBC")).toBeGreaterThan(text.indexOf("Anthel Cat"));
+  expect(text.indexOf("Promo Icarae MBC")).toBeLessThan(text.indexOf("Rawat Inap Cat"));
+  if (Page !== Rombongan) expect(text).toContain("SubtotalRp 683.000");
+});
+it.each(pages)("%s without recorded promo lines keeps the whole discount as transaction discount", async (_, Page) => {
+  state.subtotal = 305000; state.invoiceDiscount = 5000;
+  const text = (await render(Page)).replace(/<[^>]+>/g, "");
+  expect(text).not.toContain("Promo ");
+  expect(text).toContain("Diskon transaksi");
+  expect(text).toContain("Rp 5.000");
 });

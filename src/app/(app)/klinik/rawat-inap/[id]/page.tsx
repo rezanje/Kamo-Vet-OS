@@ -1,4 +1,7 @@
 import { HandoffPanel } from "./HandoffPanel";
+import { RacikanPasien } from "./RacikanPasien";
+import { bacaRacikanKunjungan } from "./racikan-pasien";
+import { LogRowAction } from "./LogRowAction";
 import { loadInpatientHandoff } from "@/lib/inpatient-handoff";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
@@ -75,7 +78,7 @@ export default async function RawatInapDetailPage({
   // Reads below depend only on the parent that already passed the branch guard, so they run together.
   // U07: tipe inap, asal kunjungan dan riwayat obat khusus ikut gelombang ini (dulu
   // menyusul berurutan, dan Obat Khusus membaca pengguna sekali lagi).
-  const [handoff, { data: consentRows }, { data: paksaTemplates, error: paksaTemplatesError }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih] = await Promise.all([
+  const [handoff, { data: consentRows }, { data: paksaTemplates, error: paksaTemplatesError }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih, racikanPasien] = await Promise.all([
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
@@ -95,6 +98,8 @@ export default async function RawatInapDetailPage({
     loadInpatientMedicationHistory(supabase, id),
     // Biaya yang sudah tercatat tapi belum ditagih — diperlihatkan SEBELUM pasien pulang.
     ringkasBelumDitagih(supabase, String(rec.visit_id)),
+    // Satu query racikan kunjungan ini; gagal baca = null ("tidak terbaca").
+    bacaRacikanKunjungan(supabase, String(rec.visit_id)),
   ]);
   waktu.tandai("anak");
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
@@ -202,6 +207,7 @@ export default async function RawatInapDetailPage({
         <div style={{ display: "flex", gap: 22, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div style={{ width: 120, height: 120, borderRadius: 12, background: "var(--sf1)", border: ".5px solid var(--bd)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
             {pet?.photo_url
+              /* eslint-disable-next-line @next/next/no-img-element */
               ? <img src={pet.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               : <i className="ti ti-paw" style={{ fontSize: 48, color: "var(--td)" }} />}
           </div>
@@ -243,7 +249,7 @@ export default async function RawatInapDetailPage({
       </div>
 
       {/* Ubah kondisi — pengaman form Pulang Paksa tetap ditegakkan atomik di database. */}
-      <div className="card" style={{ marginBottom: 12 }}>
+      <div id="ubah-kondisi" className="card" style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
           <i className="ti ti-heart-rate-monitor" /> UBAH KONDISI PASIEN
         </div>
@@ -319,6 +325,8 @@ export default async function RawatInapDetailPage({
 
       <HandoffPanel data={handoff} visitId={String(rec.visit_id)} admittedAt={String(rec.admitted_at)} recordId={String(rec.id)} active={!rec.discharged_at} stayedDays={hariRawatInap(rec.admitted_at, rec.discharged_at ?? new Date().toISOString())}/>
 
+      <RacikanPasien recipes={racikanPasien} owner={me?.role === "OWNER"} />
+
       {success === "billables" && <div role="status" className="p2ban">Obat / BMHP tersimpan ke tagihan pasien. Laporan Visit dan protokol dosis tidak berubah.</div>}
       {/* Obat berprotokol dicatat terpisah dari laporan harian: satu protokol bisa
           berjalan beberapa hari dan diberikan beberapa kali sehari oleh orang berbeda. */}
@@ -339,7 +347,7 @@ export default async function RawatInapDetailPage({
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
-            <thead><tr><th>Tanggal</th><th>Waktu</th><th>Kondisi Pasien</th><th>Tindakan</th><th>Keterangan</th><th>Dokter visit</th><th>Paramedis</th><th style={{ textAlign: "center" }}>Detail</th></tr></thead>
+            <thead><tr><th>Tanggal</th><th>Waktu</th><th>Kondisi Pasien</th><th>Tindakan</th><th>Keterangan</th><th>Dokter visit</th><th>Paramedis</th><th style={{ textAlign: "center" }}>Lihat / Edit</th></tr></thead>
             <tbody>
               {(logs ?? []).map((l, i) => (
                 <tr key={i}>
@@ -354,10 +362,7 @@ export default async function RawatInapDetailPage({
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.doctor_name ?? "—"}</td>
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.paramedic_name ?? "—"}</td>
                   <td style={{ textAlign: "center" }}>
-                    <Link href={`/klinik/rawat-inap/${rec.id}/catatan/${l.id}`} title="Lihat detail"
-                      style={{ display: "inline-flex", width: 26, height: 26, borderRadius: 6, border: "1px solid #bfdbfe", color: "var(--posb)", background: "#fff", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>
-                      <i className="ti ti-eye" />
-                    </Link>
+                    <LogRowAction recordId={String(rec.id)} logId={String(l.id)} editable={active} />
                   </td>
                 </tr>
               ))}

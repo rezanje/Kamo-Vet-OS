@@ -106,6 +106,8 @@ describe("pesan yang BUKAN soal kekurangan stok tidak memunculkan popup", () => 
     "Stok/lapisan biaya tidak cukup atau tidak konsisten. Rekonsiliasi diperlukan",
     // Bukan stok barang sama sekali.
     "Saldo poin pelanggan tidak cukup",
+    // Tarik baris tagihan lunas: pemakaian uang muka, bukan stok barang.
+    "ADVANCE_INSUFFICIENT: pemakaian uang muka tidak cukup untuk dikurangi",
     "Rincian pengiriman Obat A tidak cukup untuk alokasi HPP.",
     // Pembatalan penerimaan: tidak ada jumlah yang bisa diubah petugas di layar itu.
     "Stok pembelian langsung tidak cukup untuk pembatalan",
@@ -148,6 +150,8 @@ describe("penjaga: kalimat 'tidak cukup' baru di database harus ikut diputuskan"
   // diam-diam bertambah. Kalau tes ini gagal, putuskan kalimat barunya: tambahkan ke
   // pengurai (bila soal stok barang) atau ke daftar di bawah beserta alasannya.
   const DIKENAL = [
+    // Bukan stok barang: pemakaian uang muka pada tagihan lunas kurang dari yang akan dikurangi (tarik baris Owner).
+    "ADVANCE_INSUFFICIENT: pemakaian uang muka tidak cukup untuk dikurangi",
     "Lapisan FIFO tidak cukup untuk koreksi",
     "Lapisan stok % tidak cukup.",
     "Lapisan stok tidak cukup untuk HPP FIFO",

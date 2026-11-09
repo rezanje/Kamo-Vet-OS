@@ -36,7 +36,7 @@ export function SearchableMultiSelect({name,label,options,categories,value,onCha
   </div>
   <div aria-live="polite" style={{marginTop:4,color:"var(--tm)"}}>{selected.size} dipilih · {hits.length} hasil pencarian</div>
   {selected.size>0&&<div aria-label={`Pilihan ${label}`} style={{display:"flex",flexWrap:"wrap",gap:4,maxHeight:100,overflowY:"auto",marginTop:6}}>
-   {[...selected].map(id=>{const o=byId.get(id);const text=o?`${o.code} · ${o.name}`:`Pilihan tidak tersedia (${id.slice(0,8)})`;return <button key={id} type="button" className="btn-def" aria-label={`Lepas ${text}`} onClick={()=>toggle(id)} style={{maxWidth:"100%",whiteSpace:"normal",overflowWrap:"anywhere",textAlign:"left",fontSize:11}}><span>{o?.name??text}</span>{o?.code&&<small data-item-code style={{display:"block",color:"var(--tm)"}}>Kode: {o.code}</small>} ×</button>;})}
+   {[...selected].map(id=>{const o=byId.get(id);const text=o?(o.code?`${o.code} · ${o.name}`:o.name):"Pilihan tidak tersedia";return <button key={id} type="button" className="btn-def" aria-label={`Lepas ${text}`} onClick={()=>toggle(id)} style={{maxWidth:"100%",whiteSpace:"normal",overflowWrap:"anywhere",textAlign:"left",fontSize:11}}><span>{o?.name??text}</span>{o?.code&&<small data-item-code style={{display:"block",color:"var(--tm)"}}>Kode: {o.code}</small>} ×</button>;})}
   </div>}
   {missing.length>0&&<p role="alert">{missing.length} pilihan tidak tersedia. Lepaskan secara eksplisit atau periksa daftar; pilihan tidak dihapus otomatis.</p>}
   {open&&<div style={{border:"1px solid var(--bd)",borderRadius:6,padding:6,marginTop:5,minWidth:0}}>

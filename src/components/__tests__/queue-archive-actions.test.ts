@@ -24,7 +24,7 @@ vi.mock("@/lib/supabase/server", () => ({
     },
   }),
 }));
-import { archiveVisit, unarchiveVisit, cancelVisit } from "@/app/(app)/klinik/antrian/actions";
+import { archiveVisit, unarchiveVisit, cancelVisit, forceArchiveVisit } from "@/app/(app)/klinik/antrian/actions";
 
 const form = (fields: Record<string, string>) => { const d = new FormData(); for (const [k, v] of Object.entries(fields)) d.set(k, v); return d; };
 const redirectOf = async (p: Promise<unknown>) => { try { await p; return null; } catch (e) { return (e as Error).message; } };
@@ -92,4 +92,52 @@ it("Batal (hard delete of a Menunggu patient) never touches an archived row", as
   expect(f.deletes).toContainEqual(["delete", "visits"]);
   expect(f.deletes).toContainEqual(["is", "archived_at", null]);
   expect(f.deletes).toContainEqual(["eq", "status", "Menunggu"]);
+});
+
+// ---- Arsip PAKSA (hanya OWNER): peran, alasan bermakna, kata PAKSA dan persetujuan dicek SEBELUM RPC; RPC mengulang semuanya di database.
+const paksa = (over: Record<string, string> = {}) => form({ id: "v1", reason: "Percobaan paksa fiktif", request_key: "key-123456789", confirm: "PAKSA", ack: "on", ...over });
+
+it("OWNER force: calls clinic_force_archive_visit with id, trimmed reason, key and the PAKSA confirmation, then returns with the forced flag", async () => {
+  const to = await redirectOf(forceArchiveVisit(paksa({ reason: "  Percobaan paksa fiktif  " })));
+  expect(f.calls).toEqual([{ fn: "clinic_force_archive_visit", args: { p_visit_id: "v1", p_reason: "Percobaan paksa fiktif", p_request_key: "key-123456789", p_confirm: "PAKSA" } }]);
+  expect(to).toContain("success=arsip-paksa");
+});
+
+for (const role of ["ADMIN", "STAFF", "DOCTOR", "FINANCE", null, "OWNERX"]) {
+  it(`${role ?? "no profile"}: force is refused by the server action (no RPC call) with a clear message; only the owner may force`, async () => {
+    f.role = role;
+    const to = await redirectOf(forceArchiveVisit(paksa()));
+    expect(f.calls).toEqual([]);
+    expect(decodeURIComponent(to!)).toContain("Hanya pemilik yang boleh memaksa arsip");
+  });
+}
+
+it("an inactive OWNER cannot force", async () => {
+  f.active = false;
+  const to = await redirectOf(forceArchiveVisit(paksa()));
+  expect(f.calls).toEqual([]);
+  expect(to).toContain("error=");
+});
+
+for (const [label, over] of [["no confirmation word", { confirm: "" }], ["lowercase word", { confirm: "paksa" }], ["wrong word", { confirm: "YA" }], ["acknowledgement box not ticked", { ack: "" }],
+  ["reason only punctuation", { reason: "....." }], ["reason with 4 letters", { reason: "a-b-c-d---" }], ["empty reason", { reason: "" }], ["reason over 500", { reason: "x".repeat(501) }],
+  ["missing id", { id: "" }], ["missing key", { request_key: "" }]] as const) {
+  it(`force refused before the RPC: ${label}`, async () => {
+    const to = await redirectOf(forceArchiveVisit(paksa({ ...over })));
+    expect(f.calls).toEqual([]);
+    expect(to).toContain("error=");
+  });
+}
+
+it("force refusals from the database (hard blockers, stale, denied) reach the screen without the technical prefix", async () => {
+  f.rpcError = { message: "ARCHIVE_BLOCKED: kunjungan tidak dapat diarsipkan (walau dipaksa) karena sudah ada pembayaran." };
+  const to = await redirectOf(forceArchiveVisit(paksa()));
+  expect(decodeURIComponent(to!.split("error=")[1])).toBe("kunjungan tidak dapat diarsipkan (walau dipaksa) karena sudah ada pembayaran.");
+  expect(to).not.toContain("success=");
+});
+
+it("a lock timeout from the database becomes a plain-language retry message", async () => {
+  f.rpcError = { message: "canceling statement due to lock timeout" };
+  const to = await redirectOf(archiveVisit(form({ id: "v1", reason: "Percobaan batal fiktif", request_key: "key-123456789" })));
+  expect(decodeURIComponent(to!)).toContain("sedang diproses pengguna lain");
 });

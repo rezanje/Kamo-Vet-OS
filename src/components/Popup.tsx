@@ -26,7 +26,7 @@ export function Popup({ message, tone = "error", title, action, onClose }: {
     <div id="popup-title" style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700, color: t.color, marginBottom: 8 }}>
       <i className={`ti ${t.icon}`} style={{ fontSize: 20 }} /> {title ?? t.title}
     </div>
-    <div style={{ fontSize: 13, color: "var(--sb)", marginBottom: 16 }}>{message}</div>
+    <div style={{ fontSize: 13, color: "var(--sb)", marginBottom: 16, whiteSpace: "pre-line" }}>{message}</div>
     <form method="dialog" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
       <button type="submit" className="btn-def" autoFocus={!action}>{action ? "Tutup" : "Mengerti"}</button>
       {action && <Link href={action.href} className="btn-acc" autoFocus style={{ display: "inline-flex", alignItems: "center", gap: 5, textDecoration: "none" }}>

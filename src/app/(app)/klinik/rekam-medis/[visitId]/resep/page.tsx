@@ -33,7 +33,7 @@ export default async function ResepPage({ params, searchParams }: { params: Prom
   const { data: mr, error: recordError } = await recordQuery.order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (recordError || (requestedRecord && !mr)) notFound();
   const { data: resep, error: resepError } = mr
-    ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai, susulan_at, susulan_by_name, susulan_source").eq("medical_record_id", mr.id).order("created_at")
+    ? await supabase.from("prescription_items").select("nama_obat, qty, satuan, aturan_pakai, susulan_at, susulan_by_name, susulan_source").eq("medical_record_id", mr.id).is("record_withdrawn_at", null).order("created_at")
     : { data: [] as (SusulanFields & { nama_obat: string; qty: number; satuan: string | null; aturan_pakai: string | null })[], error: null };
 
   const tgl = new Date(visit.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });

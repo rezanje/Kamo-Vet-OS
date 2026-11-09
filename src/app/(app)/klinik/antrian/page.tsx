@@ -7,8 +7,8 @@ import { ALL_BRANCHES, BRANCH_HEADER } from "@/lib/operational-context";
 import { availableOperationalBranches, resolveOperationalBranch } from "@/lib/operational-branch";
 import { requireOperationalBranch } from "@/lib/operational-branch-server";
 import { randomUUID } from "node:crypto";
-import { archiveVisit, unarchiveVisit, updateVisitStatus } from "./actions";
-import { BATAS_DIARSIPKAN, ALASAN_ARSIP_MAX, ALASAN_ARSIP_MIN, bolehArsip } from "@/lib/antrian-arsip";
+import { archiveVisit, forceArchiveVisit, unarchiveVisit, updateVisitStatus } from "./actions";
+import { BATAS_DIARSIPKAN, ALASAN_ARSIP_MAX, ALASAN_ARSIP_MIN, KATA_KONFIRMASI_PAKSA, PERINGATAN_PAKSA_ARSIP, bolehArsip, bolehPaksaArsip } from "@/lib/antrian-arsip";
 import { CancelButton } from "./CancelButton";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LiveRefresh } from "./LiveRefresh";
@@ -35,7 +35,7 @@ function petAge(dob: string | null | undefined): string | null {
   return y >= 1 ? `${y} Tahun` : `${m} Bulan`;
 }
 
-const KOLOM_ANTRIAN = "id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, archived_at, archived_by, archive_reason, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at)";
+const KOLOM_ANTRIAN = "id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, archived_at, archived_by, archive_reason, legacy_source_key, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at)";
 
 // Batas jumlah baris pasien belum selesai dari hari-hari sebelumnya (terbaru dulu) yang dikirim ke layar.
 // Beban basis datanya (layar diperbarui tiap 20 detik) dijaga oleh indeks parsial
@@ -101,6 +101,7 @@ export default async function AntrianPage({
   const lihatHariIni = hariDipilih === hariIni;
   const { data: profilSaya } = await profilP;
   const adminArsip = bolehArsip(profilSaya);
+  const pemilikPaksa = bolehPaksaArsip(profilSaya);
   // Tab Diarsipkan hanya ada untuk OWNER/ADMIN; permintaan tab itu dari peran lain jatuh ke tab Aktif.
   const filter = filterMinta === "diarsipkan" && !adminArsip ? "aktif" : filterMinta;
   const tabArsip = filter === "diarsipkan";
@@ -386,7 +387,8 @@ export default async function AntrianPage({
               </Link>
               </>
             )}
-            {adminArsip && !tabArsip && v.status !== "Selesai" && (
+            {/* Selesai hanya bila dibuat lewat alur ERP: riwayat impor (legacy_source_key) tidak pernah ditawari arsip; database yang memutuskan. */}
+            {adminArsip && !tabArsip && !(v.status === "Selesai" && v.legacy_source_key) && (
               <details style={{ position: "relative" }}>
                 <summary className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, cursor: "pointer", listStyle: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
                   <i className="ti ti-archive" /> Arsipkan
@@ -397,6 +399,26 @@ export default async function AntrianPage({
                   <label className="flab" htmlFor={`alasan-${v.id}`}>Alasan arsip (wajib)</label>
                   <input id={`alasan-${v.id}`} className="fi" name="reason" required minLength={ALASAN_ARSIP_MIN} maxLength={ALASAN_ARSIP_MAX} placeholder="mis. percobaan / batal" autoComplete="off" />
                   <SubmitButton className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, color: "#b45309" }} pendingText="Mengarsipkan…">Arsipkan</SubmitButton>
+                </form>
+              </details>
+            )}
+            {pemilikPaksa && !tabArsip && !(v.status === "Selesai" && v.legacy_source_key) && (
+              <details style={{ position: "relative" }}>
+                <summary className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, cursor: "pointer", listStyle: "none", display: "inline-flex", alignItems: "center", gap: 4, color: "#b91c1c" }}>
+                  <i className="ti ti-alert-triangle" /> Paksa arsip
+                </summary>
+                <form action={forceArchiveVisit} style={{ position: "absolute", right: 0, zIndex: 6, background: "#fff", border: ".5px solid #b91c1c", borderRadius: 8, padding: 8, width: 280, display: "flex", flexDirection: "column", gap: 6, boxShadow: "0 4px 14px rgba(0,0,0,.18)" }}>
+                  <input type="hidden" name="id" value={v.id} />
+                  <input type="hidden" name="request_key" value={randomUUID()} />
+                  <div role="alert" style={{ fontSize: 10.5, color: "#b91c1c", lineHeight: 1.4 }}>{PERINGATAN_PAKSA_ARSIP}</div>
+                  <label className="flab" htmlFor={`alasan-paksa-${v.id}`}>Alasan arsip paksa (wajib, min. 5 huruf/angka)</label>
+                  <input id={`alasan-paksa-${v.id}`} className="fi" name="reason" required minLength={ALASAN_ARSIP_MIN} maxLength={ALASAN_ARSIP_MAX} placeholder="mis. data percobaan, pasien tidak datang" autoComplete="off" />
+                  <label style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 10.5 }}>
+                    <input type="checkbox" name="ack" required style={{ marginTop: 2 }} /> Saya paham data kunjungan ini disembunyikan dan hanya dapat dipulihkan dari tab Diarsipkan.
+                  </label>
+                  <label className="flab" htmlFor={`konfirmasi-paksa-${v.id}`}>Ketik {KATA_KONFIRMASI_PAKSA} untuk melanjutkan</label>
+                  <input id={`konfirmasi-paksa-${v.id}`} className="fi" name="confirm" required pattern={KATA_KONFIRMASI_PAKSA} placeholder={`ketik ${KATA_KONFIRMASI_PAKSA}`} autoComplete="off" />
+                  <SubmitButton className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, color: "#b91c1c" }} pendingText="Mengarsipkan…">Paksa arsip</SubmitButton>
                 </form>
               </details>
             )}
@@ -466,6 +488,8 @@ export default async function AntrianPage({
             ? "Pembayaran selesai, kunjungan ditutup."
             : success === "arsip"
               ? "Kunjungan diarsipkan: disembunyikan dari daftar kerja, bisa dipulihkan dari tab Diarsipkan."
+              : success === "arsip-paksa"
+                ? "Kunjungan diarsipkan secara paksa oleh pemilik (tercatat di jejak arsip): disembunyikan dari daftar kerja, bisa dipulihkan dari tab Diarsipkan."
               : success === "pulih"
                 ? "Kunjungan dipulihkan ke daftar semula."
             : Number(success) > 1

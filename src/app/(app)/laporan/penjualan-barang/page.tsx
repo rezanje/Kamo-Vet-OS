@@ -5,6 +5,7 @@ import { ambilPenjualanBarang, waktuWIB } from "./data";
 import { normalizeReportColumns } from "@/lib/report-columns";
 import { jenisLaporan, SEMUA_JENIS_KLINIK } from "@/lib/laporan-penjualan-barang";
 import { KANAL_SEMUA, type Kanal } from "@/lib/laporan-transaksi";
+import { uniqueOptionLabels } from "@/lib/branch-display";
 
 const rupiah = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 const UKURAN_HALAMAN_TAMPILAN = 100;
@@ -28,6 +29,8 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const { rows: terpilih, cabangOptions, pelaksanaOptions = [], pesanError, nilaiTotal, qtyTotal } = await ambilPenjualanBarang({
     dari, sampai, kanal: kanal as Kanal, jenis, q, cabangId, pelaksanaId,
   });
+  const labelCabang = uniqueOptionLabels(cabangOptions, (branch) => branch.name);
+  const labelPelaksana = uniqueOptionLabels(pelaksanaOptions, (person) => person.nama);
   const banyakHalaman = Math.max(1, Math.ceil(terpilih.length / UKURAN_HALAMAN_TAMPILAN));
   const halamanAktif = Math.min(halaman, banyakHalaman);
   const terlihat = terpilih.slice((halamanAktif - 1) * UKURAN_HALAMAN_TAMPILAN, halamanAktif * UKURAN_HALAMAN_TAMPILAN);
@@ -53,8 +56,8 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
         </select></div>
         <div><label className="flab">Cabang</label><select className="fi" name="cabang_id" defaultValue={cabangId}>
           <option value="">Semua cabang yang dapat diakses</option>
-          {cabangId && !cabangOptions.some(branch => branch.id === cabangId) && <option value={cabangId}>Cabang tidak ada pada data · {cabangId.slice(0, 8)}</option>}
-          {cabangOptions.map(branch => <option key={branch.id} value={branch.id}>{branch.name} · {branch.id.slice(0, 8)}</option>)}
+          {cabangId && !cabangOptions.some(branch => branch.id === cabangId) && <option value={cabangId}>Cabang tidak ada pada data</option>}
+          {cabangOptions.map(branch => <option key={branch.id} value={branch.id}>{labelCabang.get(branch.id) ?? branch.name}</option>)}
         </select></div>
         <div><label className="flab">Jenis</label><select className="fi" name="jenis" defaultValue={jenis}>
           {kanal === "Klinik" ? <>
@@ -65,8 +68,8 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
         </select></div>
         <div><label className="flab">Pelaksana tersimpan</label><select className="fi" name="pelaksana_id" defaultValue={pelaksanaId}>
           <option value="">Semua pelaksana</option>
-          {pelaksanaId && !pelaksanaOptions.some(person => person.id === pelaksanaId) && <option value={pelaksanaId}>Pelaksana tidak ada pada data · {pelaksanaId.slice(0, 8)}</option>}
-          {pelaksanaOptions.map(person => <option key={person.id} value={person.id}>{person.nama} · {person.id.slice(-8)}</option>)}
+          {pelaksanaId && !pelaksanaOptions.some(person => person.id === pelaksanaId) && <option value={pelaksanaId}>Pelaksana tidak ada pada data</option>}
+          {pelaksanaOptions.map(person => <option key={person.id} value={person.id}>{labelPelaksana.get(person.id) ?? person.nama}</option>)}
         </select></div>
         <div><label className="flab">Cari nama / invoice / pelanggan / pelaksana</label><input className="fi" name="q" defaultValue={q} placeholder="Mis. puyer" style={{ minWidth: 190 }} /></div>
         <button className="btn-def" type="submit"><i className="ti ti-filter" /> Tampilkan</button>
