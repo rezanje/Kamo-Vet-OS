@@ -63,19 +63,54 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLin
   }));
 }
 
-export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter): Promise<AccountBalance[]> {
-  const [{ data: accs }, lines] = await Promise.all([
-    completeReportQuery(supabase.from("coa_accounts").select("id, code, name, type, normal_balance, parent_id, is_header", { count: "exact" })) as Promise<{ data: { id: string; code: string; name: string; type: string; normal_balance: string; parent_id: string | null; is_header: boolean }[] | null }>,
-    fetchLines(supabase, f),
-  ]);
+export const ACCOUNT_TOTALS_RPC = "ledger_account_totals";
 
+/** Fungsi agregat belum dipasang di database (aplikasi rilis lebih dulu) — HANYA bila galat menyebut fungsi ini. */
+function totalsFunctionMissing(error: { code?: string; message?: string }): boolean {
+  return (error.code === "PGRST202" || error.code === "42883") && (error.message ?? "").includes(ACCOUNT_TOTALS_RPC);
+}
+
+// Total debit/kredit per akun. Jalur utama: satu RPC agregat di database (migrasi
+// 20261109084230) — tidak menarik seluruh baris jurnal ke aplikasi. Jalur lama (baca semua
+// baris lalu jumlah di sini) hanya dipakai bila fungsi itu belum ada.
+async function fetchTotals(supabase: AnyClient, f?: LedgerFilter): Promise<Map<string, { debit: number; credit: number }>> {
   const agg = new Map<string, { debit: number; credit: number }>();
-  for (const l of lines) {
+  // Sama dengan fetchLines: allow-list cabang kosong = tidak ada baris.
+  if (f?.branchIds && f.branchIds.length === 0) return agg;
+
+  if (typeof supabase.rpc === "function") {
+    // branchId dan branchIds sama-sama penyaring (AND), seperti .eq() + .in() di fetchLines.
+    const cabang = f?.branchIds?.length
+      ? (f.branchId ? f.branchIds.filter((id) => id === f.branchId) : f.branchIds)
+      : (f?.branchId ? [f.branchId] : null);
+    if (cabang && cabang.length === 0) return agg;
+    const { data, error } = await supabase.rpc(ACCOUNT_TOTALS_RPC, { p_from: f?.from ?? null, p_to: f?.to ?? null, p_branch_ids: cabang });
+    if (!error) {
+      if (!Array.isArray(data)) throw new Error("Data laporan gagal dibaca: saldo akun tidak tersedia");
+      for (const row of data as { account_id: string; debit: number | string; credit: number | string }[]) {
+        agg.set(row.account_id, { debit: Number(row.debit), credit: Number(row.credit) });
+      }
+      return agg;
+    }
+    if (!totalsFunctionMissing(error)) {
+      throw Object.assign(new Error(`Data laporan gagal dibaca: ${error.message}`), { code: error.code });
+    }
+  }
+
+  for (const l of await fetchLines(supabase, f)) {
     const cur = agg.get(l.account_id) ?? { debit: 0, credit: 0 };
     cur.debit += Number(l.debit);
     cur.credit += Number(l.credit);
     agg.set(l.account_id, cur);
   }
+  return agg;
+}
+
+export async function getAccountBalances(supabase: AnyClient, f?: LedgerFilter): Promise<AccountBalance[]> {
+  const [{ data: accs }, agg] = await Promise.all([
+    completeReportQuery(supabase.from("coa_accounts").select("id, code, name, type, normal_balance, parent_id, is_header", { count: "exact" })) as Promise<{ data: { id: string; code: string; name: string; type: string; normal_balance: string; parent_id: string | null; is_header: boolean }[] | null }>,
+    fetchTotals(supabase, f),
+  ]);
 
   return (accs ?? [])
     .map((a) => {
