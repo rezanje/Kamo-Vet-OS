@@ -39,15 +39,23 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
 
   const kodeRekening = await kodeSemuaRekening(supabase);
 
-  const [balances, salesRows, salesReturnRows, invRows, invPays, fjRows, fjReceipts, poRows, poFaktur, poRetur, cashLines] = await Promise.all([
+  // Batas API 1.000 baris per permintaan memotong data diam-diam (9 Nov 2026: 3.790 transaksi
+  // kasir dan 3.522 baris kas 7 hari, terbaca masing-masing 1.000) — penjualan & arus kas jadi
+  // kurang. Daftar yang bisa melewati batas itu dibaca lengkap; arus kas dijumlah di database.
+  const awalBaca = awal7 < awalTahun ? awal7 : awalTahun;
+  const [balances, salesRows, salesReturnRows, invRows, invPays, fjRows, fjReceipts, poRows, poFaktur, poRetur, cashTotals] = await Promise.all([
     getAccountBalances(supabase, { from: awalTahun, to: today }),
-    supabase.from("sales").select("total, created_at, metode_bayar, marketplace_status, payment_plan, payments_finalized_at, voided_at"),
+    // Hanya tahun berjalan + jendela 7 hari yang dipakai di bawah.
+    completeReportQuery(supabase.from("sales")
+      .select("id, total, created_at, metode_bayar, marketplace_status, payment_plan, payments_finalized_at, voided_at", { count: "exact" })
+      .gte("created_at", awalBaca)),
     // Return corrections restate the original open date. Include both YTD and
     // the complete seven-day window, which can begin in the preceding year.
     completeReportQuery(supabase.from("sales_returns").select("id,total,tanggal", { count: "exact" }).is("voided_at", null)
       .gte("tanggal", awal7 < awalTahun ? awal7 : awalTahun).lte("tanggal", today)),
-    supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at").is("voided_at", null),
-    supabase.from("invoice_payments").select("invoice_id, amount"),
+    completeReportQuery(supabase.from("invoices").select("id, total, dp_amount, paid_status, created_at", { count: "exact" })
+      .is("voided_at", null).gte("created_at", awalTahun)),
+    completeReportQuery(supabase.from("invoice_payments").select("id, invoice_id, amount", { count: "exact" })),
     // Retain prior-year/cancelled sources: their dated reversals may fall in
     // this year or the seven-day trend. Current settlement is computed separately.
     completeReportQuery(supabase.from("sales_invoices")
@@ -60,13 +68,13 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
     // selalu melaporkan seluruh PO sebagai belum dibayar.
     supabase.from("purchase_invoices").select("po_id, total, purchase_invoice_items(po_item_id,item_id,qty,faktor), purchase_invoice_payments(amount)").is("voided_at", null).is("opening_batch_id", null),
     supabase.from("purchase_returns").select("po_id, total").is("voided_at", null),
-    // baris jurnal kas/bank 7 hari terakhir untuk arus kas harian.
-    supabase
-      .from("journal_lines")
-      .select("debit, credit, coa_accounts!inner(code), journal_entries!inner(tanggal)")
-      .in("coa_accounts.code", kodeRekening)
-      .gte("journal_entries.tanggal", awal7)
-      .lte("journal_entries.tanggal", today),
+    // Arus kas harian 7 hari: total debit/kredit per akun per hari, dihitung di database
+    // (RPC yang sama dengan saldo akun; hak baca setara RLS jurnal).
+    kodeRekening.length === 0 ? Promise.resolve([]) : Promise.all(hari7.map(async (hari) => {
+      const { data, error } = await supabase.rpc("ledger_account_totals", { p_from: hari, p_to: hari, p_branch_ids: null });
+      if (error || !Array.isArray(data)) throw new Error(`Arus kas dashboard gagal dibaca: ${error?.message ?? "data tidak tersedia"}`);
+      return { hari, rows: data as { account_id: string; debit: number | string; credit: number | string }[] };
+    })),
   ]);
 
   // ── Laba/Rugi ──
@@ -86,14 +94,13 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
   if (lainnya > 0) beban.push({ name: "Lainnya", amount: lainnya });
 
   // ── Arus kas harian (7 hari) ──
-  type CL = { debit: number; credit: number; journal_entries: { tanggal: string } | { tanggal: string }[] };
+  const setRekening = new Set(kodeRekening);
+  const idRekening = new Set((balances as { id: string; code: string }[]).filter((b) => setRekening.has(b.code)).map((b) => b.id));
   const cashByDay = new Map<string, { masuk: number; keluar: number }>();
   for (const h of hari7) cashByDay.set(h, { masuk: 0, keluar: 0 });
-  for (const l of (cashLines.data ?? []) as CL[]) {
-    const je = Array.isArray(l.journal_entries) ? l.journal_entries[0] : l.journal_entries;
-    const t = je?.tanggal;
-    const bucket = t && cashByDay.get(t);
-    if (bucket) { bucket.masuk += Number(l.debit); bucket.keluar += Number(l.credit); }
+  for (const { hari, rows } of cashTotals) {
+    const bucket = cashByDay.get(hari)!;
+    for (const r of rows) if (idRekening.has(r.account_id)) { bucket.masuk += Number(r.debit); bucket.keluar += Number(r.credit); }
   }
   const arusKas = hari7.map((t) => ({ tanggal: t, ...cashByDay.get(t)! }));
 
@@ -207,7 +214,6 @@ export async function getDashboard(supabase: AnyClient, today: string): Promise<
 
   // Semua rekening kas/bank dari master — bukan daftar mati 110003/120002, supaya kartu ini
   // sama angkanya dengan laporan Arus Kas ketika ada rekening QRIS/e-wallet/bank baru.
-  const setRekening = new Set(kodeRekening);
   const saldoKas = bal.filter((b) => setRekening.has(b.code)).reduce((a, b) => a + b.saldo, 0);
 
   return { labaRugi: { pendapatan, hpp, pengeluaran, laba }, beban, arusKas, penjualan, pembelian, poPerluTinjau, trenPenjualan, saldoKas };
