@@ -8,7 +8,7 @@ import { TransactionForm } from "@/components/LocalTransactionDraft";
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createClientLintasCabang } from "@/lib/supabase/server";
 import { unitOptions, type ItemUnit } from "@/lib/satuan";
 import { hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { daftarDokter } from "@/lib/dokter";
@@ -35,7 +35,9 @@ import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { labelSusulan, type SusulanFields } from "@/lib/rekam-medis-susulan";
 import type { WithdrawnItem } from "@/lib/tarik-item";
 import { adalahKekuranganStok } from "@/lib/stok-kurang";
-import { adalahRiwayatBersama, bacaDetailRiwayatBersama, ownerAktif } from "@/lib/riwayat-bersama";
+import {
+  adalahRiwayatBersama, bacaDetailRiwayatBersama, bacaRiwayatImporLintasCabang, dokterAktif, ownerAktif, type RiwayatImporLintasCabang,
+} from "@/lib/riwayat-bersama";
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
 import { RekamMedisGagalDimuat, RiwayatBersamaDetail } from "./RiwayatBersamaDetail";
 import { mulai } from "@/lib/u07-waktu";
@@ -153,7 +155,31 @@ export default async function RekamMedisPage({
     }
   }
   if (visitError) return <RekamMedisGagalDimuat />;
-  if (!visit) notFound();
+  const tampilImpor = (impor: RiwayatImporLintasCabang) => {
+    if (impor.status !== "ada") return <RekamMedisGagalDimuat />;
+    const pemilikTidakSah = isPlaceholderOwnerName(impor.owner?.name);
+    return <RiwayatBersamaDetail row={impor.row} petName={impor.pet?.name ?? "—"} species={impor.pet?.species ?? null} breed={impor.pet?.breed ?? null}
+      ownerName={pemilikTidakSah ? "Pemilik perlu verifikasi" : impor.owner?.name ?? "—"} phone={pemilikTidakSah ? "" : impor.owner?.phone ?? ""} />;
+  };
+  if (visit && adalahRiwayatBersama(visit)) {
+    // DOKTER aktif kini membaca riwayat impor lewat RLS (baca saja, 20261109100100): tampil baca-saja, bukan halaman
+    // kerja yang tombol simpannya pasti ditolak database. Peran lain yang sudah melihatnya tidak berubah.
+    let dokter: boolean;
+    try { dokter = await dokterAktif(supabase, user?.id); }
+    catch { return <RekamMedisGagalDimuat />; }
+    if (dokter) return tampilImpor(await bacaRiwayatImporLintasCabang(supabase, visitId));
+  }
+  if (!visit) {
+    // Daftar rekam medis di cabang aktif kini ikut menampilkan riwayat impor (tanpa cabang). Bacaan berheader cabang
+    // tidak melihatnya, jadi bagi pengguna yang memang berhak melihatnya di "Semua cabang" dibaca ulang tanpa header
+    // (RLS pemanggil) dan ditampilkan baca-saja. Pengguna lain tetap tidak menemukannya (404 seperti sebelumnya).
+    const { client: lintas, cabangAktif } = await createClientLintasCabang();
+    if (cabangAktif) {
+      const impor = await bacaRiwayatImporLintasCabang(lintas, visitId);
+      if (impor.status !== "tidak-ada") return tampilImpor(impor);
+    }
+    notFound();
+  }
 
   const pet = one(visit.pets);
   const cust = one(visit.customers);
