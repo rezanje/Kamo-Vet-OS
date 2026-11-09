@@ -340,3 +340,37 @@ describe("Status Rawat Inap — lunas belum pulang & laporan harian", () => {
     expect(html).not.toContain('data-testid="laporan-tertinggal"');
   });
 });
+
+// Pencarian daftar rawat inap (Andri, 9 November 2026).
+describe("Status Rawat Inap — pencarian", () => {
+  const pasien = (id: string, pet: string, owner: string, phone: string, doctor: string) => ({
+    id, visit_id: `v-${id}`, branch_id: "b1", condition_status: "stabil", admitted_at: "2026-10-27T02:00:00Z",
+    discharged_at: null, doctor_name: doctor, treatment_plan: null, branches: { name: "Klinik" },
+    visits: { pets: { name: pet, species: "Kucing", breed: null, dob: null, photo_url: null }, customers: { name: owner, phone } },
+  });
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-29T03:00:00Z"));
+    state.filters = []; state.counterRows = []; state.tables = {}; state.errors = []; state.calls = [];
+    state.listRows = [pasien("r1", "Labi", "Ibu Omi", "082122262584", "drh. Farhan"), pasien("r2", "Mochi", "Pak Budi", "0811", "drh. Ilham")];
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const cari = async (q: string) =>
+    renderToStaticMarkup(await RawatInapPage({ searchParams: Promise.resolve({ q }) }));
+
+  it("menyaring menurut nama hewan, pemilik, no. HP, dan dokter tanpa peduli huruf besar", async () => {
+    for (const q of ["labi", "OMI", "26258", "farhan"]) {
+      const html = await cari(q);
+      expect(html).toContain("/klinik/rawat-inap/r1");
+      expect(html).not.toContain("/klinik/rawat-inap/r2");
+    }
+  });
+
+  it("tanpa kata kunci semua tampil; tidak cocok menampilkan pesan", async () => {
+    const semua = await cari("  ");
+    expect(semua).toContain("/klinik/rawat-inap/r1");
+    expect(semua).toContain("/klinik/rawat-inap/r2");
+    expect(await cari("zzz")).toContain("Tidak ada pasien yang cocok");
+  });
+});

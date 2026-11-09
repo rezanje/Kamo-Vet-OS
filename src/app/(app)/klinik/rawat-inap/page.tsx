@@ -39,9 +39,10 @@ function PetPhoto({ url }: { url?: string | null }) {
 export default async function RawatInapPage({
   searchParams,
 }: {
-  searchParams: Promise<{ branch?: string; filter?: string }>;
+  searchParams: Promise<{ branch?: string; filter?: string; q?: string }>;
 }) {
-  const { branch = "", filter = "aktif" } = await searchParams;
+  const { branch = "", filter = "aktif", q: qRaw = "" } = await searchParams;
+  const q = qRaw.trim();
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -87,9 +88,20 @@ export default async function RawatInapPage({
     readInpatientBillingStatuses(supabase, records ?? []),
     readDailyLogsBatched(supabase, aktifIds),
   ]);
-  const rows = filter === FILTER_LUNAS_BELUM_PULANG
+  const rowsByTab = filter === FILTER_LUNAS_BELUM_PULANG
     ? (records ?? []).filter((r) => isLunasBelumPulang(r, billingStatuses.get(r.visit_id)))
     : (records ?? []);
+  // Pencarian (Andri, 9 Nov): disaring dari daftar yang sudah dibaca — nama hewan, pemilik, no. HP, dokter.
+  // ponytail: saring di server Next, bukan di DB; tab "Semua" ikut batas baca 1.000 baris terbaru.
+  const kunci = q.toLowerCase();
+  const rows = kunci
+    ? rowsByTab.filter((r) => {
+        const visit = one(r.visits as Rel<{ pets: Rel<{ name: string }>; customers: Rel<{ name: string; phone: string }> }>);
+        const pet = one(visit?.pets ?? null);
+        const cust = one(visit?.customers ?? null);
+        return [pet?.name, cust?.name, cust?.phone, r.doctor_name].some((v) => (v ?? "").toLowerCase().includes(kunci));
+      })
+    : rowsByTab;
   const tertinggal = bolehLihatTertinggal && dailyLogs
     ? laporanTertinggal(
         (records ?? []).filter((r) => !r.discharged_at).map((r) => ({
@@ -189,18 +201,31 @@ export default async function RawatInapPage({
           <div style={{ fontSize: 13, fontWeight: 800, color: "var(--posb)", letterSpacing: ".02em" }}>DAFTAR PASIEN RAWAT INAP</div>
         </div>
 
-        <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
           {[
             { key: "aktif", label: "Sedang Dirawat" },
             { key: "semua", label: "Semua (termasuk pulang)" },
             { key: FILTER_LUNAS_BELUM_PULANG, label: "Lunas belum pulang" },
           ].map((t) => (
-            <Link key={t.key} href={`/klinik/rawat-inap?filter=${t.key}${branch ? `&branch=${branch}` : ""}`} className="back-btn"
+            <Link key={t.key} href={`/klinik/rawat-inap?filter=${t.key}${branch ? `&branch=${branch}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`} className="back-btn"
               style={{ padding: "5px 12px", borderRadius: 7, border: ".5px solid var(--bd)",
                 background: filter === t.key ? "var(--sb)" : "#fff", color: filter === t.key ? "#fff" : "var(--tm)" }}>
               {t.label}
             </Link>
           ))}
+          <form method="GET" role="search" style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <input type="hidden" name="filter" value={filter} />
+            {branch && <input type="hidden" name="branch" value={branch} />}
+            <input className="fi" type="search" name="q" defaultValue={q} aria-label="Cari pasien rawat inap"
+              placeholder="Cari hewan, pemilik, no. HP, dokter…" style={{ width: "min(100%, 260px)", fontSize: 11.5 }} />
+            <button type="submit" className="btn-acc" style={{ padding: "6px 12px", fontSize: 11.5, background: "var(--posb)" }}>
+              <i className="ti ti-search" /> Cari
+            </button>
+            {q && (
+              <Link href={`/klinik/rawat-inap?filter=${filter}${branch ? `&branch=${branch}` : ""}`} className="btn-def"
+                style={{ padding: "6px 10px", fontSize: 11.5, textDecoration: "none" }}>Hapus</Link>
+            )}
+          </form>
         </div>
 
         {hanyaAktif && (
@@ -294,7 +319,7 @@ export default async function RawatInapPage({
                 );
               })}
               {rows.length === 0 && (
-                <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>Tidak ada pasien rawat inap.</td></tr>
+                <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>{q ? <>Tidak ada pasien yang cocok dengan &ldquo;{q}&rdquo;.</> : "Tidak ada pasien rawat inap."}</td></tr>
               )}
             </tbody>
           </table>
