@@ -18,7 +18,10 @@ vi.mock("@/app/(app)/laporan/penjualan-barang/data", () => ({
     kanal: "Klinik", jenis: "Jasa", cabang: "Ciawi", pelanggan: "Pelanggan Fiktif", hewan: "Anabul Fiktif",
     nama: "Grooming", pelaksana: "Dokter: Dokter Tersimpan · Pelaksana: Groomer Tersimpan",
     qty: 1, harga: 100, diskon: 0, nilai: 100, status: "Lunas",
-  }], pesanError: "", nilaiTotal: 100, qtyTotal: 1 }),
+    kode: "J1", kategori: "GROOMING", subKategori: "",
+  }], pesanError: "", nilaiTotal: 100, qtyTotal: 1,
+  ringkasan: { groups: [{ kategori: "GROOMING", qty: 1, nilai: 100, baris: 1, subs: [{ subKategori: "", qty: 1, nilai: 100, baris: 1 }] }], totalQty: 1, totalNilai: 100, totalBaris: 1 },
+  kategoriOptions: [] }),
 }));
 
 import { GET } from "@/app/(app)/laporan/penjualan-barang/unduh/route";

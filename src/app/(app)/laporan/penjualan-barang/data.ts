@@ -9,6 +9,8 @@ import type { Kanal } from "@/lib/laporan-transaksi";
 import { fakturGrosirOmzet, hppBarisGrosir, nilaiBarisGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "@/lib/laporan-grosir";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
 import { servicePerformerNames, type ServicePerformersSnapshot } from "@/lib/service-performers";
+import { loadClinicItemCategories } from "@/lib/clinic-item-categories";
+import { cocokKategori, klasifikasiBaris, petaKategori, ringkasKategori, type ItemKategori, type KategoriNode, type RingkasanKategori } from "@/lib/laporan-kategori-penjualan";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? (value[0] ?? null) : value;
@@ -36,7 +38,7 @@ type InvoiceItem = {
   }>;
 };
 type SaleItem = {
-  id: string; nama: string; qty: number; harga: number;
+  id: string; nama: string; qty: number; harga: number; item_id?: string | null;
   service_performers: ServicePerformersSnapshot | null;
   item_discount_type: "nominal" | "percent" | null;
   item_discount_value: number | null; promo_discount: number | null;
@@ -60,6 +62,8 @@ export type Baris = {
   id: string; waktu: string; dokumen: string; href: string; kanal: Kanal;
   jenis: JenisBarisPenjualan; cabang: string; cabangId: string | null; pelanggan: string; hewan: string;
   nama: string; pelaksana: string; qty: number; harga: number; diskon: number; nilai: number; status: string;
+  /** Kode barang (items.code), kategori induk huruf besar, dan sub kategori (anak langsung induk). Hanya tampilan; tidak memengaruhi nilai. */
+  kode: string; kategori: string; subKategori: string;
   pelaksanaIds?: string[];
   /** Baris anak BMHP: id baris induknya. Nilainya 0 dan tidak masuk total. */
   indukId?: string;
@@ -75,6 +79,23 @@ function pelaksanaBaris(value: ServicePerformersSnapshot | null | undefined): { 
     value.staff_id ? { id: value.staff_id, nama: `Pelaksana: ${value.staff_name || `ID ${value.staff_id.slice(-8)}`}` } : null,
   ].filter((row): row is PilihanPelaksana => row !== null);
   return { ids: pilihan.map(row => row.id), pilihan };
+}
+
+/** Satu pembacaan kategori (seluruh pohon) dan item yang dipakai dikelompokkan per 100 id. Gagal baca -> kosong (TANPA KATEGORI), laporan tetap jalan. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function bacaKategoriBarang(supabase: any, itemIds: Iterable<string | null | undefined>): Promise<{ items: Map<string, ItemKategori>; peta: ReadonlyMap<string, KategoriNode> }> {
+  const ids = [...new Set([...itemIds].filter((id): id is string => !!id))];
+  const items = new Map<string, ItemKategori>();
+  if (!ids.length) return { items, peta: petaKategori([]) };
+  const [daftarItem, kategori] = await Promise.all([
+    Promise.all(potong(ids).map(batch => readReportRows<{ id: string; code: string | null; category_id: string | null }>(async (awal, ujung) => {
+      const { data, error, count } = await supabase.from("items").select("id, code, category_id", { count: "exact" }).in("id", batch).order("id").range(awal, ujung);
+      return { data, error, count };
+    }))).then(batches => batches.flat()).catch(error => { console.error("Kode/kategori barang laporan gagal dibaca:", error); return []; }),
+    loadClinicItemCategories(supabase).catch(error => { console.error("Kategori barang laporan gagal dibaca:", error); return [] as KategoriNode[]; }),
+  ]);
+  for (const item of daftarItem) items.set(item.id, item);
+  return { items, peta: petaKategori(kategori) };
 }
 
 function potong<T>(items: T[], ukuran = 100): T[][] {
@@ -108,14 +129,15 @@ function alokasiNetoBaris(bases: InstanceType<typeof PosDecimal>[], target: Inst
 }
 
 
-export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId = "", pelaksanaId = "" }: {
+export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId = "", pelaksanaId = "", kategori = "" }: {
   dari: string; sampai: string; kanal: Kanal;
-  jenis: string; q: string; cabangId?: string; pelaksanaId?: string;
-}): Promise<{ rows: Baris[]; cabangOptions: { id: string; name: string }[]; pelaksanaOptions: PilihanPelaksana[]; pesanError: string; nilaiTotal: number; qtyTotal: number }> {
+  jenis: string; q: string; cabangId?: string; pelaksanaId?: string; kategori?: string;
+}): Promise<{ rows: Baris[]; cabangOptions: { id: string; name: string }[]; pelaksanaOptions: PilihanPelaksana[]; pesanError: string; nilaiTotal: number; qtyTotal: number; ringkasan: RingkasanKategori; kategoriOptions: string[] }> {
   const tanggalSalah = !tanggalValid(dari) || !tanggalValid(sampai) || dari > sampai;
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
   const rows: Baris[] = [];
   const anakBmhp = new Map<string, Baris[]>();
+  const itemIdBaris = new Map<string, string | null>();
   const pilihanPelaksana = new Map<string, PilihanPelaksana>();
   let pesanError = tanggalSalah ? "Rentang tanggal tidak valid. Periksa tanggal awal dan akhir." : "";
   if (!tanggalSalah) {
@@ -135,7 +157,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
         }) : Promise.resolve([] as InvoiceItem[]),
         bacaKasir ? readReportRows<SaleItem>(async (awal, ujung) => {
           const { data, error, count } = await supabase.from("sale_items")
-            .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, branch_id, no_struk, created_at, channel, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
+            .select("id, nama, qty, harga, item_id, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, branch_id, no_struk, created_at, channel, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
             .gte("sales.created_at", mulai).lte("sales.created_at", akhir)
             .order("id").range(awal, ujung);
           return { data: data as unknown as SaleItem[] | null, error, count };
@@ -238,8 +260,9 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
           pelaksanaIds: pelaksana.ids,
           qty: Number(item.qty) || 0, harga: Number(item.harga) || 0,
           diskon: Math.max(0, (Number(item.qty) || 0) * (Number(item.harga) || 0) - nilai),
-          nilai, status: invoice.paid_status,
+          nilai, status: invoice.paid_status, kode: "", kategori: "", subKategori: "",
         });
+        itemIdBaris.set(barisId, item.item_id);
         // BMHP tampil sebagai baris anak: jumlah, satuan dan HPP-nya terlihat, tetapi
         // nilai jualnya 0 supaya omzet baris tindakan tidak terhitung dua kali.
         const bmhp = (item.bmhp_components?.components ?? []).filter(row => row && typeof row === "object");
@@ -252,7 +275,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
             pelanggan: one(visit?.customers ?? null)?.name ?? "—", hewan: one(visit?.pets ?? null)?.name ?? "—",
             nama: `BMHP · ${material.name ?? "Bahan"}`, pelaksana: "—",
             qty: Number(material.qty) || 0, satuan: material.unit ?? undefined, hpp: Number(material.cost) || 0,
-            harga: 0, diskon: 0, nilai: 0, status: invoice.paid_status,
+            harga: 0, diskon: 0, nilai: 0, status: invoice.paid_status, kode: "", kategori: "", subKategori: "",
           };
           anakBmhp.set(barisId, [...(anakBmhp.get(barisId) ?? []), anak]);
         });
@@ -281,7 +304,9 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
           pelaksana: item.service_performers ? servicePerformerNames(item.service_performers).join(" · ") : "—",
           pelaksanaIds: pelaksana.ids,
           qty, harga, diskon: new PosDecimal(qty).times(harga).minus(nilai).toNumber(), nilai, status: "—",
+          kode: "", kategori: "", subKategori: "",
         });
+        itemIdBaris.set(`kasir-${item.id}`, item.item_id ?? null);
       }
       // Faktur batal, faktur yang sudah diganti faktur koreksi, faktur saldo awal, dan
       // faktur selisih stok opname disaring sekaligus dari kumpulan faktur induknya.
@@ -313,7 +338,15 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
           ...(hpp === null ? {} : { hpp }),
           // Akrual: faktur berjalan tetap omzet, statusnya saja yang belum lunas.
           status: (faktur.status ?? "").trim().toLowerCase() === "lunas" ? "Lunas" : "Belum lunas",
+          kode: "", kategori: "", subKategori: "",
         });
+        itemIdBaris.set(`grosir-${item.id}`, item.item_id);
+      }
+      // Kode, kategori, sub kategori: murni keterangan baris. Nilai/qty/jumlah baris tidak disentuh di sini.
+      const { items: itemKategori, peta } = await bacaKategoriBarang(supabase, itemIdBaris.values());
+      for (const row of rows) {
+        Object.assign(row, klasifikasiBaris({ jenis: row.jenis, itemId: itemIdBaris.get(row.id), items: itemKategori, peta }));
+        for (const anak of anakBmhp.get(row.id) ?? []) Object.assign(anak, { kode: row.kode, kategori: row.kategori, subKategori: row.subKategori });
       }
     } catch (error) {
       console.error("Laporan penjualan per barang gagal:", error);
@@ -328,13 +361,16 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
     .sort((a, b) => a.name.localeCompare(b.name, "id") || a.id.localeCompare(b.id));
   const pelaksanaOptions = pesanError ? [] : [...pilihanPelaksana.values()]
     .sort((a, b) => a.nama.localeCompare(b.nama, "id") || a.id.localeCompare(b.id));
-  const terpilih = pesanError ? [] : rows.filter((row) =>
+  const tanpaFilterKategori = pesanError ? [] : rows.filter((row) =>
     (jenis === SEMUA_JENIS_KLINIK || row.jenis === jenis) && (!cabangId || row.cabangId === cabangId) && (!pelaksanaId || row.pelaksanaIds?.includes(pelaksanaId)) && (!cari || [row.nama, row.dokumen, row.cabang, row.pelanggan, row.hewan, row.pelaksana]
       .some((value) => value.toLocaleLowerCase("id-ID").includes(cari))),
-  ).sort((a, b) => b.waktu.localeCompare(a.waktu) || a.id.localeCompare(b.id));
+  );
+  const kategoriOptions = [...new Set(tanpaFilterKategori.map(row => row.kategori))].sort((a, b) => a.localeCompare(b, "id"));
+  const terpilih = tanpaFilterKategori.filter(row => cocokKategori(row, kategori))
+    .sort((a, b) => b.waktu.localeCompare(a.waktu) || a.id.localeCompare(b.id));
   const nilaiTotal = terpilih.reduce((sum, row) => sum + row.nilai, 0);
   const qtyTotal = terpilih.reduce((sum, row) => sum + row.qty, 0);
   // Baris anak BMHP menyusul induknya dan tidak pernah ikut menghitung total.
   const dengan = terpilih.flatMap(row => [row, ...(anakBmhp.get(row.id) ?? [])]);
-  return { rows: dengan, cabangOptions, pelaksanaOptions, pesanError, nilaiTotal, qtyTotal };
+  return { rows: dengan, cabangOptions, pelaksanaOptions, pesanError, nilaiTotal, qtyTotal, ringkasan: ringkasKategori(terpilih), kategoriOptions };
 }

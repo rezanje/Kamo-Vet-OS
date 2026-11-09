@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ExcelJS from "exceljs";
 import { beforeEach, expect, it, vi } from "vitest";
 import { clientFixture } from "./fixtures/hpp-report-client";
+import { ringkasKategori } from "../laporan-kategori-penjualan";
 import type { Baris } from "../../app/(app)/laporan/penjualan-barang/data";
 const mocks = vi.hoisted(() => ({ createClient: vi.fn(), load: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
@@ -11,10 +12,10 @@ vi.mock("next/link", () => ({ default: ({ children, href }: React.PropsWithChild
 import { GET } from "../../app/(app)/laporan/penjualan-barang/unduh/route";
 import Page from "../../app/(app)/laporan/penjualan-barang/page";
 
-const rows: Baris[] = Array.from({ length: 205 }, (_, index) => ({ id: String(index), waktu: "2026-10-04T05:00:00Z", dokumen: `INV-${index}`, href: `/invoice/${index}`, kanal: "Klinik", jenis: "Racikan", cabang: "Klinik A", cabangId: "b1", pelanggan: "Pemilik", hewan: "Kucing", nama: index === 204 ? "<obat>" : "Racikan", pelaksana: "—", qty: 2, harga: 100, diskon: 10, nilai: 190, status: "Lunas" }));
+const rows: Baris[] = Array.from({ length: 205 }, (_, index) => ({ id: String(index), waktu: "2026-10-04T05:00:00Z", dokumen: `INV-${index}`, href: `/invoice/${index}`, kanal: "Klinik", jenis: "Racikan", cabang: "Klinik A", cabangId: "b1", pelanggan: "Pemilik", hewan: "Kucing", nama: index === 204 ? "<obat>" : "Racikan", pelaksana: "—", qty: 2, harga: 100, diskon: 10, nilai: 190, status: "Lunas", kode: "K1", kategori: "OBAT", subKategori: "" }));
 beforeEach(() => {
   mocks.createClient.mockResolvedValue(clientFixture().client);
-  mocks.load.mockReset().mockResolvedValue({ rows, cabangOptions: [{ id: "b1", name: "Klinik A" }], pesanError: "", nilaiTotal: 38950, qtyTotal: 410 });
+  mocks.load.mockReset().mockResolvedValue({ rows, cabangOptions: [{ id: "b1", name: "Klinik A" }], pesanError: "", nilaiTotal: 38950, qtyTotal: 410, ringkasan: ringkasKategori(rows), kategoriOptions: [] });
 });
 
 it.each(["csv", "xlsx", "print"])("exports all selected rows, applied filters and complete totals as %s independently of display page", async format => {
@@ -50,7 +51,7 @@ it("provides only complete export links on the paginated report", async () => {
 });
 
 it("preserves the exact saved performer filter in page navigation and export metadata", async () => {
-  mocks.load.mockResolvedValue({ rows, cabangOptions: [], pelaksanaOptions: [{ id: "doctor-a", nama: "Dokter: Nama Sama" }], pesanError: "", nilaiTotal: 38950, qtyTotal: 410 });
+  mocks.load.mockResolvedValue({ rows, cabangOptions: [], pelaksanaOptions: [{ id: "doctor-a", nama: "Dokter: Nama Sama" }], pesanError: "", nilaiTotal: 38950, qtyTotal: 410, ringkasan: ringkasKategori(rows), kategoriOptions: [] });
   const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Racikan", pelaksana_id: "doctor-a", halaman: "2" }) }));
   expect(html).toContain("pelaksana_id=doctor-a");
   expect(html).toContain("Dokter: Nama Sama");

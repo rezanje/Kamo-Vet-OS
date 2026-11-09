@@ -14,8 +14,10 @@ vi.mock("./data", () => ({
       id: String(index), href: "/kasir/struk/dummy", waktu: "2026-10-26T00:00:00Z", dokumen: "DUMMY",
       cabang: "Cabang", pelanggan: "Pelanggan", hewan: "—", nama: "Vaksin", jenis: "Jasa", status: "—",
       pelaksana: "Dokter A", qty: 1, harga: 100, diskon: 0, nilai: 100,
+      kode: "J1", kategori: "TINDAKAN", subKategori: "",
     })),
     cabangOptions: [], pelaksanaOptions: [], pesanError: null, nilaiTotal: 10100, qtyTotal: 101,
+    ringkasan: { groups: [], totalQty: 101, totalNilai: 10100, totalBaris: 101 }, kategoriOptions: [],
   }),
 }));
 
