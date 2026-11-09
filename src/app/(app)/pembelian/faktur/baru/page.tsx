@@ -40,7 +40,7 @@ export default async function FakturBaruPage({
   searchParams: Promise<{ error?: string; replace_invoice?: string; po_no?: string; hal?: string; harga_cek?: string }>;
 }) {
   const { error, replace_invoice, po_no, hal, harga_cek } = await searchParams;
-  const poNo = (po_no ?? "").trim().slice(0, 24);
+  const poNo = (po_no ?? "").trim().slice(0, 64);  // nomor PO memuat kode cabang (sampai 30 karakter); jangan dipotong
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? "";
@@ -219,7 +219,7 @@ export default async function FakturBaruPage({
         </div>
       )}
       {!initial && <form method="get" style={{ display: "flex", alignItems: "end", gap: 8, marginBottom: 12 }}>
-        <div><label className="flab" htmlFor="po_no">Cari nomor PO tepat</label><input className="fi" id="po_no" name="po_no" defaultValue={poNo} maxLength={24} placeholder="Mis. PO.2026.10.00001" /></div>
+        <div><label className="flab" htmlFor="po_no">Cari nomor PO tepat</label><input className="fi" id="po_no" name="po_no" defaultValue={poNo} maxLength={64} placeholder="Mis. PO.2026.10.00001" /></div>
         <button type="submit" className="btn-def">Cari PO</button>
         {poNo && <Link href="/pembelian/faktur/baru" className="btn-def">Lihat terbaru</Link>}
       </form>}
