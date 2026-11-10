@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Uji migrasi 20261110100000 (kasir: stok tidak boleh minus) di PostgreSQL sungguhan, data fiktif.
+"""Uji migrasi 20261110043627 (kasir: stok tidak boleh minus) di PostgreSQL sungguhan, data fiktif.
 
 Laporan Andri 10 Nov 2026: kartu stok turun 2 -> 0 -> -4 lewat Faktur Penjualan kasir. Keputusan grup: barang
 dengan stok 0 tidak bisa ditransaksikan; saldo yang terlanjur minus dibiarkan (tidak ada data diubah).
@@ -39,7 +39,7 @@ fixture = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(fixture)
 
 MIGRATIONS = ROOT / "supabase/migrations"
-MIGRASI = MIGRATIONS / "20261110100000_kasir_kunci_stok_minus.sql"
+MIGRASI = MIGRATIONS / "20261110043627_kasir_kunci_stok_minus.sql"
 
 
 def uid(group, n):

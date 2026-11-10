@@ -1,6 +1,6 @@
 -- Uses the fictional pos_merchant_fees setup (runner prepends it); rolls back.
 -- Regression: 9 available @ 12,080 + 11 missing must cost 241,600, not 108,720.
--- Sejak 20261110100000 kasir/POS menolak penjualan yang melebihi stok (sale_stock_assert_available;
+-- Sejak 20261110043627 kasir/POS menolak penjualan yang melebihi stok (sale_stock_assert_available;
 -- diuji scripts/test-kasir-kunci-stok-postgres.py). Penilaian kekurangan stok di stock_out_fifo tetap
 -- dipakai jalur lain, jadi gerbang kasir dimatikan HANYA di transaksi uji ini (rollback) supaya
 -- regresi penilaian HPP di bawah tetap teruji lewat jalur penjualan yang sama seperti sebelumnya.

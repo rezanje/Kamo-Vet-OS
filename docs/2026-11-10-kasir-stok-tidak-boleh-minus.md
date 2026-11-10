@@ -14,7 +14,7 @@ Keputusan grup (Aldi, Reza): **barang stok 0 tidak bisa ditransaksikan**. Saldo 
   komentar `checkout.ts`: "owner boleh melanjutkan transaksi". Jadi transaksi tetap jalan dan saldo jadi minus.
 
 ## Perbaikan
-1. Migrasi `20261110100000_kasir_kunci_stok_minus.sql`
+1. Migrasi `20261110043627_kasir_kunci_stok_minus.sql`
    - Fungsi baru `sale_stock_assert_available(gudang, barang, qty)` (SECURITY DEFINER, tidak bisa dipanggil
      langsung oleh authenticated/anon): kunci baris `stock` (FOR UPDATE), tolak bila `qty < butuh`.
      Pesan: `Stok gudang cabang tidak cukup: <nama> butuh <n> <satuan>, tersedia <n> <satuan>` (saldo minus
@@ -59,6 +59,21 @@ Keputusan grup (Aldi, Reza): **barang stok 0 tidak bisa ditransaksikan**. Saldo 
 - Setelah pasang: daftar barang dengan saldo minus untuk dicek tim (Aldi):
   `select w.code, i.code, i.name, s.qty from stock s join items i on i.id=s.item_id join warehouses w on w.id=s.warehouse_id where s.qty<0 order by w.code, i.name;`
   Barang ini tidak bisa dijual sampai stoknya dibetulkan (Stok Opname / penerimaan).
+
+## Pemasangan Production (10 Nov 2026)
+- Pra-pemeriksaan (baca-saja): migrasi tertinggi live `20261109100100`; jangkar `sale_stock_out_fifo` tepat 1,
+  penanda belum ada, helper belum ada, `stock_qty_text` ada. Konsistensi saldo: 5.412 pasangan gudang×barang
+  berlapis — 0 saldo `stock` lebih kecil dari sisa lapisan, 0 lapisan tanpa saldo (tidak ada barang yang akan
+  tertahan keliru).
+- Dipasang via Supabase `apply_migration` → versi live `20261110043627 kasir_kunci_stok_minus` (nama file repo
+  disamakan).
+- Verifikasi pasca-pasang (transaksi di-rollback, tidak ada data berubah): penanda `KASIR_KUNCI_STOK` ada;
+  helper tidak bisa dipanggil authenticated; `sale_stock_out_fifo` tetap untuk authenticated, tidak untuk anon.
+  Uji gerbang pada data asli: Life Cat Tuna WH_CMGG (saldo −4) ditolak "butuh 1 1/2KG, tersedia 0 1/2KG";
+  barang lain dijual pas sebanyak saldonya lolos; saldo+1 ditolak.
+- Saldo minus saat pemasangan (dibiarkan, dicek tim): WH_BTKM Cat Choize Tuna adult −1; WH_CIAW Whiskas Pouch
+  Grilled Saba 80gr New −2; WH_CMGG Life Cat Tuna −4; WH_GRND Furlove Pouch Chicken −1; WH_GRND Gesekids FD Egg
+  Yolk 20gr −1; WH_MUAR Meo Pouch Kitten −2.
 
 ## Sisa
 - Saldo minus yang sudah ada tidak diubah (keputusan grup). Barangnya terkunci sampai dikoreksi.
