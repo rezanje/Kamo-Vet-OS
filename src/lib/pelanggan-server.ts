@@ -63,7 +63,7 @@ type Golongan = { nama: string; diskon_persen: number; rupiah_per_poin: number |
 export async function muatPelangganKasir(supabase: Db, id: string): Promise<CustRow | null> {
   const [cust, sales, invoices] = await Promise.all([
     supabase.from("customers")
-      .select("id, name, phone, points, tier, kategori, category_id, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), customer_review_statuses(nama, warna, nada)")
+      .select("id, name, phone, points, tier, kategori, category_id, review_catatan, customer_categories(nama, diskon_persen, rupiah_per_poin, is_active), customer_review_statuses(nama, warna, nada)")
       .eq("id", id).maybeSingle(),
     // Ringkasan transaksi (petshop + klinik lunas, semua waktu) dihitung hanya untuk
     // pelanggan ini — dulu seluruh tabel penjualan & invoice dibaca tiap kasir dibuka.
@@ -74,6 +74,7 @@ export async function muatPelangganKasir(supabase: Db, id: string): Promise<Cust
   if (cust.error || sales.error || invoices.error) throw new PelangganGagalDimuat("Data pelanggan gagal dimuat. Coba lagi.");
   const c = cust.data as unknown as {
     id: string; name: string; phone: string; points: number; tier: string | null; kategori: string; category_id: string | null;
+    review_catatan: string | null;
     customer_categories: Rel<Golongan>; customer_review_statuses: Rel<{ nama: string; warna: string; nada: string }>;
   } | null;
   if (!c) return null;
@@ -91,6 +92,8 @@ export async function muatPelangganKasir(supabase: Db, id: string): Promise<Cust
     golonganId: gol?.is_active ? c.category_id : null,
     trx, belanja,
     ulasan: one(c.customer_review_statuses) ?? null,
+    // Catatan internal tim — hanya untuk layar kasir, tidak ikut ke struk.
+    catatanInternal: (c.review_catatan ?? "").trim() || null,
   };
 }
 

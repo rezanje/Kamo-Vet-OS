@@ -235,7 +235,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
               )}
               {catatanUlasan && (
                 <div style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.6, marginTop: catatanPemilik ? 6 : 0 }}>
-                  <b>Catatan ulasan:</b> {catatanUlasan}
+                  <b>Catatan internal:</b> {catatanUlasan}
                 </div>
               )}
             </div>

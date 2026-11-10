@@ -140,6 +140,15 @@ describe("pelanggan-server", () => {
     expect(await muatPelangganPos(fakeDb({ customers: cust }), "c2")).toEqual({ id: "c2", name: "Lama", phone: "0813", points: 0, pets: [{ id: "p", name: "Mochi", species: "Kucing" }], golonganId: null, golongan: null });
   });
 
+  it("catatan internal ikut ke layar kasir walau tanpa status ulasan; kosong/spasi jadi null", async () => {
+    const base = { id: "c3", name: "Rina", phone: "0814", points: 0, tier: null, kategori: "Umum", category_id: null,
+      customer_categories: null, customer_review_statuses: null };
+    expect(await muatPelangganKasir(fakeDb({ customers: { ...base, review_catatan: "  sering komplain antrian " }, sales: [], invoices: [] }), "c3"))
+      .toMatchObject({ ulasan: null, catatanInternal: "sering komplain antrian" });
+    expect(await muatPelangganKasir(fakeDb({ customers: { ...base, review_catatan: "   " }, sales: [], invoices: [] }), "c3"))
+      .toMatchObject({ catatanInternal: null });
+  });
+
   it("pelanggan yang tidak ada mengembalikan null", async () => {
     expect(await muatPelangganKasir(fakeDb({ customers: null, sales: [], invoices: [] }), "x")).toBeNull();
     expect(await muatPelangganPos(fakeDb({ customers: null }), "x")).toBeNull();

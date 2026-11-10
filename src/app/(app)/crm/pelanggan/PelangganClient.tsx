@@ -422,8 +422,10 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                           {statusUlasan.map((u) => <option key={u.id} value={u.id}>{u.nama}</option>)}
                         </select>
                         <input name="review_catatan" defaultValue={sel.review_catatan ?? ""} className="fi" maxLength={500}
-                          placeholder='mis. "protes soal antrian, 12 Agu"'
-                          style={{ width: 210, fontSize: 11, padding: "4px 8px" }} key={`ulasancat-${sel.id}`} />
+                          placeholder='Catatan internal, mis. "sering komplain antrian"'
+                          title="Catatan khusus tim — tampil di kasir, antrian & pembayaran klinik. Tidak tercetak di struk/invoice."
+                          aria-label="Catatan internal"
+                          style={{ width: 240, fontSize: 11, padding: "4px 8px" }} key={`ulasancat-${sel.id}`} />
                         <button type="submit" className="btn-acc" style={{ fontSize: 10, padding: "4px 10px" }}>Simpan</button>
                       </form>
                     )}
@@ -519,9 +521,11 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>
                   <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tm)", letterSpacing: ".06em", marginBottom: 5 }}>CATATAN</div>
                   <div style={{ fontSize: 10.5, color: "var(--tm)", lineHeight: 1.5 }}>{sel.catatan ?? "—"}</div>
-                  {ulasan(sel) && (
+                  {(ulasan(sel) || sel.review_catatan) && (
                     <div style={{ marginTop: 8, fontSize: 10.5, color: "var(--tm)", lineHeight: 1.5 }}>
-                      <b style={{ color: ulasan(sel)!.warna }}>{ulasan(sel)!.nama}</b>
+                      {ulasan(sel)
+                        ? <b style={{ color: ulasan(sel)!.warna }}>{ulasan(sel)!.nama}</b>
+                        : <b>Catatan internal</b>}
                       {sel.review_catatan ? ` — ${sel.review_catatan}` : ""}
                       {sel.review_updated_at && (
                         <span style={{ color: "var(--td)" }}> · dicatat {fmtDate(sel.review_updated_at)}</span>
