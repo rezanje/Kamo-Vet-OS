@@ -1,6 +1,7 @@
 import { HandoffPanel } from "./HandoffPanel";
 import { RacikanPasien } from "./RacikanPasien";
 import { bacaRacikanKunjungan } from "./racikan-pasien";
+import { RiwayatObat, bacaRiwayatObat } from "./riwayat-obat";
 import { LogRowAction } from "./LogRowAction";
 import { loadInpatientHandoff } from "@/lib/inpatient-handoff";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
@@ -78,7 +79,7 @@ export default async function RawatInapDetailPage({
   // Reads below depend only on the parent that already passed the branch guard, so they run together.
   // U07: tipe inap, asal kunjungan dan riwayat obat khusus ikut gelombang ini (dulu
   // menyusul berurutan, dan Obat Khusus membaca pengguna sekali lagi).
-  const [handoff, { data: consentRows }, { data: paksaTemplates, error: paksaTemplatesError }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih, racikanPasien] = await Promise.all([
+  const [handoff, { data: consentRows }, { data: paksaTemplates, error: paksaTemplatesError }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih, racikanPasien, riwayatObat] = await Promise.all([
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
@@ -100,6 +101,8 @@ export default async function RawatInapDetailPage({
     ringkasBelumDitagih(supabase, String(rec.visit_id)),
     // Satu query racikan kunjungan ini; gagal baca = null ("tidak terbaca").
     bacaRacikanKunjungan(supabase, String(rec.visit_id)),
+    // Ringkasan obat/racikan/BMHP urut tanggal, hanya baca.
+    bacaRiwayatObat(supabase, String(rec.visit_id)),
   ]);
   waktu.tandai("anak");
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
@@ -322,6 +325,8 @@ export default async function RawatInapDetailPage({
           </div>
         )}
       </div>
+
+      <RiwayatObat rows={riwayatObat} />
 
       <HandoffPanel data={handoff} visitId={String(rec.visit_id)} admittedAt={String(rec.admitted_at)} recordId={String(rec.id)} active={!rec.discharged_at} stayedDays={hariRawatInap(rec.admitted_at, rec.discharged_at ?? new Date().toISOString())}/>
 
