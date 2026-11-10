@@ -38,7 +38,7 @@ import { simpanRekamMedis } from "../../app/(app)/klinik/rekam-medis/[visitId]/a
 function form() {
   const data = new FormData();
   for (const [key, value] of Object.entries({ visitId: "visit", petId: "pet", request_key: "stable-key", doctor_id: "doctor",
-    keluhan: "Batuk", berat: "4", next: "resep",
+    keluhan: "Batuk", anamnesis: "Anamnesa fiktif", gejala_klinis: "Temuan fiktif", diagnosis: "Diagnosa fiktif", berat: "4", next: "resep",
     resep: JSON.stringify([{ item_id: "service", nama_obat: "Tindakan", qty: 1, harga: 1, jenis: "jasa",
       bmhp: [{ item_id: "material", qty: 1, unit: "pcs", nama: "Kasa" }] }]) })) data.set(key, value);
   return data;

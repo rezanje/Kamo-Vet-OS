@@ -14,7 +14,7 @@ import { bersihkanFollowUp, type FollowUpDraft } from "@/lib/followup";
 import { hariIniWIB } from "@/lib/tanggal";
 import { resolveDokter } from "@/lib/dokter";
 import { pesanBeratTidakWajar } from "@/lib/anabul";
-import { validateClinicalCompletion } from "@/lib/clinic-required-fields";
+import { validateClinicalCompletion, validateSoapCompletion } from "@/lib/clinic-required-fields";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
 type ResepItem = {
@@ -166,7 +166,11 @@ export async function simpanRekamMedis(formData: FormData) {
       : Promise.resolve(false),
   ]);
   if (clinicalVisitError || !clinicalVisit) redirect(`${back}?error=${encodeURIComponent("Kunjungan tidak dapat dibaca. Muat ulang dan coba lagi.")}`);
-  const clinicalError = validateClinicalCompletion(clinicalVisit.poli, doctorId, keluhan);
+  const clinicalError = validateClinicalCompletion(clinicalVisit.poli, doctorId, keluhan)
+    ?? validateSoapCompletion(clinicalVisit.poli, {
+      anamnesis, gejalaKlinis: gejala_klinis, diagnosis, therapy,
+      adaRencana: followUps.length > 0 || resep.some((r) => !!r.nama_obat?.trim()),
+    });
   if (clinicalError) redirect(`${back}?error=${encodeURIComponent(clinicalError)}`);
   if (berat !== null) {
     const pesanBerat = pesanBeratTidakWajar(pet?.species ?? null, berat);
