@@ -53,9 +53,9 @@ it("starts consents, logs, role, stay type, continuation and medication history 
     ["consents", "inpatient_daily_logs", "inpatient_status_log", "profiles", "inpatient_medications"])));
   // Ringkasan handoff membaca medical_records SESUDAH `visits`-nya selesai. Ringkasan
   // biaya belum ditagih (UF-03) membacanya langsung dari visit_id induk, jadi selama
-  // gerbang `visits` masih tertutup hanya boleh ada SATU pembacaan medical_records —
-  // bukti bacaan handoff belum ikut jalan.
-  expect(s.started.filter((nama) => nama === "medical_records")).toHaveLength(1);
+  // gerbang `visits` masih tertutup hanya boleh ada DUA pembacaan medical_records
+  // (UF-03 + Riwayat Obat, keduanya dari visit_id induk) — bukti bacaan handoff belum ikut jalan.
+  expect(s.started.filter((nama) => nama === "medical_records")).toHaveLength(2);
   openVisit();
   const html = await page;
   expect(html).toContain("Ringkasan konsultasi dan resep");
