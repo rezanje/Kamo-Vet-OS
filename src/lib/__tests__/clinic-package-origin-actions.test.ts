@@ -40,7 +40,7 @@ const ordinary = { nama_obat: item.nama_obat, item_id: item.item_id, qty: 2, sat
 const queued = { prescription_item_id: null, item_id: item.item_id, nama_obat: item.nama_obat, qty: 2, harga: 100, satuan: "pcs", jenis: "jasa", kategori: "Operasi", aturan_pakai: null, compound_recipe_id: null, bmhp_components: [], service_performers: null };
 function form(rows: unknown[]) {
   const f = new FormData();
-  for (const [k, v] of Object.entries({ visitId: "visit", petId: "pet", medical_record_id: "record", expected_revision: "0", correction_reason: "Fictional correction", request_key: "literal-key", doctor_id: "doctor", keluhan: "Fictional complaint", resep: JSON.stringify(rows) })) f.set(k, v);
+  for (const [k, v] of Object.entries({ visitId: "visit", petId: "pet", medical_record_id: "record", expected_revision: "0", correction_reason: "Fictional correction", request_key: "literal-key", doctor_id: "doctor", keluhan: "Fictional complaint",anamnesis: "Fictional history", gejala_klinis: "Fictional finding", diagnosis: "Fictional diagnosis",  resep: JSON.stringify(rows) })) f.set(k, v);
   return f;
 }
 const routes = [

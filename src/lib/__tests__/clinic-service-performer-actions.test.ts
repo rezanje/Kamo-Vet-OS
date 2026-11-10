@@ -13,7 +13,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({
 import { simpanRekamMedis } from '../../app/(app)/klinik/rekam-medis/[visitId]/actions';
 import { addDailyLogPos } from '../../app/(app)/klinik/rawat-inap/actions';
 beforeEach(()=>{fixture.lostResponse=false;fixture.error=null;fixture.calls=[];fixture.revalidated=[];fixture.doctorId='doctor';fixture.service='Poli Umum'});
-function form(){const data=new FormData();for(const [key,value] of Object.entries({visitId:'visit',petId:'pet',recordId:'inpatient',request_key:'stable-key',doctor_id:'doctor',keluhan:'Batuk',condition_note:'Fictional clinical note',next:'resep',resep:'[]'}))data.set(key,value);return data;}
+function form(){const data=new FormData();for(const [key,value] of Object.entries({visitId:'visit',petId:'pet',recordId:'inpatient',request_key:'stable-key',doctor_id:'doctor',keluhan:'Batuk',anamnesis:'Anamnesa fiktif',gejala_klinis:'Temuan fiktif',diagnosis:'Diagnosa fiktif',condition_note:'Fictional clinical note',next:'resep',resep:'[]'}))data.set(key,value);return data;}
 
 it.each([['initial', simpanRekamMedis, 'clinic_save_initial_record'], ['inpatient', addDailyLogPos, 'clinic_save_inpatient_log_with_status']] as const)('%s carries independent per-line performers, goods included, in the same atomic save',async(_name,save,rpc)=>{
  const data=form();data.set('resep',JSON.stringify([

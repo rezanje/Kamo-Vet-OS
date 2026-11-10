@@ -31,7 +31,7 @@ it.each([['initial', simpanRekamMedis, 'clinic_save_initial_record'], ['inpatien
   expect.objectContaining({item_id:'action-sku',nama_obat:'Steril',qty:2,satuan:'tindakan',harga:75000,jenis:'jasa',kategori:'Operasi'})
  ]);
 });
-function form(){const data=new FormData();for(const [key,value] of Object.entries({visitId:'visit',petId:'pet',recordId:'inpatient',request_key:'stable-key',doctor_id:'doctor',keluhan:'Batuk',condition_note:'Fictional clinical note',next:'resep',resep:'[]'}))data.set(key,value);return data;}
+function form(){const data=new FormData();for(const [key,value] of Object.entries({visitId:'visit',petId:'pet',recordId:'inpatient',request_key:'stable-key',doctor_id:'doctor',keluhan:'Batuk',anamnesis:'Anamnesa fiktif',gejala_klinis:'Temuan fiktif',diagnosis:'Diagnosa fiktif',therapy:'Terapi fiktif',condition_note:'Fictional clinical note',next:'resep',resep:'[]'}))data.set(key,value);return data;}
 it('rejects medical completion with no resolved doctor',async()=>{
  fixture.doctorId=null;await expect(simpanRekamMedis(form())).rejects.toThrow(/^REDIRECT .*\?error=/);expect(fixture.revalidated).toEqual([]);
 });
@@ -113,4 +113,19 @@ it.each([undefined,'monitoring','doctor_visit'])('keeps the exact old no-label p
   ...(kind?{log_kind:kind,visit_doctor_id:'dc000000-0000-4000-8000-000000000002',paramedic_id:null}:{})});
 });
 it('persists optional therapy text in the existing atomic initial-record payload',async()=>{const data=form();data.set('therapy','Terapi fiktif\nObservasi');expect(await simpanRekamMedis(data)).toMatchObject({saved:true});expect(fixture.calls.find(c=>c.name==='clinic_save_initial_record')?.args.p_record).toMatchObject({therapy:'Terapi fiktif\nObservasi'});});
-it.each([undefined,'','   '])('keeps blank or absent therapy omitted so pre-deployment request hashes remain compatible (%s)',async(value)=>{const data=form();if(value!==undefined)data.set('therapy',value);expect(await simpanRekamMedis(data)).toMatchObject({saved:true});expect(fixture.calls.find(c=>c.name==='clinic_save_initial_record')?.args.p_record).not.toHaveProperty('therapy');});
+it.each([undefined,'','   '])('keeps blank or absent therapy omitted so pre-deployment request hashes remain compatible (%s)',async(value)=>{const data=form();data.set('resep',JSON.stringify([{ item_id:'action-sku', nama_obat:'Steril', qty:2, satuan:'tindakan', harga:75000, jenis:'jasa', kategori:'Operasi' }]));if(value===undefined)data.delete('therapy');else data.set('therapy',value);expect(await simpanRekamMedis(data)).toMatchObject({saved:true});expect(fixture.calls.find(c=>c.name==='clinic_save_initial_record')?.args.p_record).not.toHaveProperty('therapy');});
+// SOAP wajib (klinik 10 Nov): keluhan dari admin + dokter saja tidak lagi cukup untuk menyimpan pemeriksaan.
+it.each(['anamnesis','gejala_klinis','diagnosis'])('rejects a medical save with blank %s before any write',async(field)=>{
+ const data=form();data.set(field,'  ');
+ await expect(simpanRekamMedis(data)).rejects.toThrow(/^REDIRECT .*\?error=.*wajib%20diisi/);
+ expect(fixture.calls).toEqual([]);expect(fixture.revalidated).toEqual([]);
+});
+it('rejects a medical save with no therapy and nothing in the cart or follow up',async()=>{
+ const data=form();data.delete('therapy');
+ await expect(simpanRekamMedis(data)).rejects.toThrow(/Terapi%20%2F%20rencana%20\(P\)/);
+ expect(fixture.calls).toEqual([]);
+});
+it('keeps grooming free of SOAP requirements',async()=>{
+ fixture.service='Grooming';const data=form();for(const field of ['anamnesis','gejala_klinis','diagnosis'])data.delete(field);
+ expect(await simpanRekamMedis(data)).toMatchObject({saved:true});
+});

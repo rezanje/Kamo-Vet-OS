@@ -33,7 +33,7 @@ import { batasBeratWajar } from "@/lib/anabul";
 import { type KatalogRacikan } from "@/lib/katalog-racikan";
 import { masterCompoundCartRow, type CompoundDraft } from "@/lib/master-compound-cart";
 import { staffForService } from "@/lib/clinical-staff";
-import { isMedicalService } from "@/lib/clinic-required-fields";
+import { isMedicalService, SOAP_MESSAGES } from "@/lib/clinic-required-fields";
 import { pecahPaket, type ResepPaket } from "@/lib/paket-klinik";
 
 export type ItemLite = {
@@ -176,6 +176,12 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
 
   const [followUps, setFollowUps] = useState<FollowUpDraft[]>([]);
   const [penunjangPaths, setPenunjangPaths] = useState<string[]>(correction?.penunjang_urls ?? []);
+  // SOAP wajib di poli medis (klinik 10 Nov). P boleh diwakili obat/jasa/tindakan/racikan/follow up;
+  // server tetap memeriksa ulang (validateSoapCompletion).
+  const soapWajib = isMedicalService(service);
+  const adaRencana = (correction && !correction.fullEdit ? correction.prescriptions.length > 0 : cart.length > 0)
+    || (correction ? !!correction.follow_up?.trim() : followUps.length > 0);
+  const terapiWajib = soapWajib && !adaRencana;
   const {
     attachForm: draftAttachForm, submissionKey: draftSubmissionKey, recovered: draftRecovered,
     storageError: draftStorageError, saveError: draftSaveError,
@@ -450,8 +456,8 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
           <ExamField icon="ti-message-2" color="var(--posb)" label="Keluhan">
             <input className="fi" name="keluhan" readOnly={!!correction} required={isMedicalService(service)} pattern={isMedicalService(service) ? ".*\\S.*" : undefined} title="Keluhan pasien wajib diisi" defaultValue={patient.keluhan ?? ""} placeholder="Keluhan utama pasien" />
           </ExamField>
-          <ExamField icon="ti-file-text" color="var(--posb)" label="Anamnesa">
-            <textarea className="fi" name="anamnesis" defaultValue={correction?.anamnesis ?? ""} rows={2} placeholder="Riwayat & perjalanan penyakit" style={{ resize: "vertical" }} />
+          <ExamField icon="ti-file-text" color="var(--posb)" label={`Anamnesa${soapWajib ? " *" : ""}`}>
+            <textarea className="fi" name="anamnesis" required={soapWajib} title={SOAP_MESSAGES.anamnesis} defaultValue={correction?.anamnesis ?? ""} rows={2} placeholder="Riwayat & perjalanan penyakit" style={{ resize: "vertical" }} />
           </ExamField>
           <ExamField icon="ti-weight" color="#0891b2" label="Berat Badan">
             <div style={{ display: "flex", alignItems: "stretch" }}>
@@ -465,18 +471,19 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
               <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderLeft: "none", borderRadius: "0 6px 6px 0", padding: "6px 10px", fontSize: 11, color: "var(--tm)" }}>°C</span>
             </div>
           </ExamField>
-          <ExamField icon="ti-activity" color="#16a34a" label="Gejala Klinis">
-            <input className="fi" name="gejala_klinis" defaultValue={correction?.gejala_klinis ?? ""} placeholder="mis. hidung berair, nafas cepat" />
+          <ExamField icon="ti-activity" color="#16a34a" label={`Gejala Klinis${soapWajib ? " *" : ""}`}>
+            <input className="fi" name="gejala_klinis" required={soapWajib} pattern={soapWajib ? ".*\\S.*" : undefined} title={SOAP_MESSAGES.gejalaKlinis} defaultValue={correction?.gejala_klinis ?? ""} placeholder="Temuan pemeriksaan fisik, mis. hidung berair, nafas cepat" />
           </ExamField>
           <ExamField icon="ti-flask" color="#7c3aed" label="Hasil Pemeriksaan Penunjang">
             <input className="fi" name="hasil_penunjang" defaultValue={correction?.hasil_penunjang ?? ""} placeholder="mis. Foto thorax normal" />
             {correction ? <p>{penunjangPaths.length} lampiran pemeriksaan tersimpan.</p> : <PenunjangUpload name="penunjang_urls" value={penunjangPaths} onChange={setPenunjangPaths} />}
           </ExamField>
-          <ExamField icon="ti-stethoscope" color="var(--posb)" label="Diagnosa">
-            <textarea className="fi" name="diagnosis" defaultValue={correction?.diagnosis ?? ""} rows={2} placeholder="mis. ISPA (Infeksi Saluran Pernapasan Atas)" style={{ resize: "vertical" }} />
+          <ExamField icon="ti-stethoscope" color="var(--posb)" label={`Diagnosa${soapWajib ? " *" : ""}`}>
+            <textarea className="fi" name="diagnosis" required={soapWajib} title={SOAP_MESSAGES.diagnosis} defaultValue={correction?.diagnosis ?? ""} rows={2} placeholder="mis. ISPA (Infeksi Saluran Pernapasan Atas)" style={{ resize: "vertical" }} />
           </ExamField>
-          <ExamField icon="ti-clipboard-text" color="var(--posb)" label="Terapi / tindakan">
-            <textarea className="fi" name="therapy" defaultValue={correction?.therapy ?? ""} aria-label="Terapi / tindakan" rows={3} maxLength={4000} placeholder="Catatan terapi / tindakan (opsional)" style={{ resize: "vertical" }} />
+          <ExamField icon="ti-clipboard-text" color="var(--posb)" label={`Terapi / tindakan${terapiWajib ? " *" : ""}`}>
+            <textarea className="fi" name="therapy" required={terapiWajib} title={SOAP_MESSAGES.therapy} defaultValue={correction?.therapy ?? ""} aria-label="Terapi / tindakan" rows={3} maxLength={4000}
+              placeholder={soapWajib ? "Rencana pengobatan / tindakan lanjutan / rujukan (boleh kosong bila sudah ada obat, jasa, tindakan, atau follow up)" : "Catatan terapi / tindakan (opsional)"} style={{ resize: "vertical" }} />
           </ExamField>
         </div>
 

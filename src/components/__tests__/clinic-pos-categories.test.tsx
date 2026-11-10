@@ -190,11 +190,23 @@ it.each(["exam", "inpatient"])("%s retains a doctor-selected patient composition
   expect(cart()[0]).not.toHaveProperty("official_version_id");
 });
 
-it('places optional therapy below diagnosis and restores the note without adding billable items',async()=>{
+it('places therapy (SOAP plan) below diagnosis, required while the cart is empty, and restores the note without adding billable items',async()=>{
   await render('exam');
-  const note=host.querySelector<HTMLTextAreaElement>('textarea[name="therapy"]');expect(note).not.toBeNull();expect(note!.required).toBe(false);
+  const note=host.querySelector<HTMLTextAreaElement>('textarea[name="therapy"]');expect(note).not.toBeNull();expect(note!.required).toBe(true);
+  for(const name of ['anamnesis','gejala_klinis','diagnosis'])expect(host.querySelector<HTMLInputElement>(`[name=${name}]`)!.required).toBe(true);
   const fields=[...host.querySelectorAll('textarea')];expect(fields.indexOf(note!)).toBe(fields.findIndex(field=>field.name==='diagnosis')+1);
   await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(note,'Terapi fiktif\nObservasi');note!.dispatchEvent(new Event('input',{bubbles:true}));});
   await act(async()=>root.unmount());root=createRoot(host);await render('exam');
   expect(host.querySelector<HTMLTextAreaElement>('[name=therapy]')!.value).toBe('Terapi fiktif\nObservasi');expect(cart()).toEqual([]);
+});
+
+it('SOAP plan: therapy stops being required once a medicine is in the cart',async()=>{
+  await render('exam');
+  const note=()=>host.querySelector<HTMLTextAreaElement>('textarea[name="therapy"]')!;
+  expect(note().required).toBe(true);
+  const add=host.querySelector<HTMLButtonElement>('button[title="Tambah"]');expect(add).not.toBeNull();
+  await act(async()=>add!.click());
+  expect(cart().length).toBeGreaterThan(0);
+  expect(note().required).toBe(false);
+  expect(host.querySelector<HTMLTextAreaElement>('[name=anamnesis]')!.required).toBe(true);
 });
