@@ -96,7 +96,7 @@ export async function updateUlasanPelanggan(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
-    redirect(`/crm/pelanggan?error=${encodeURIComponent("Hanya owner/admin yang bisa mengubah status ulasan")}`);
+    redirect(`/crm/pelanggan?error=${encodeURIComponent("Hanya owner/admin yang bisa mengubah status ulasan & catatan internal")}`);
   }
 
   const id = String(formData.get("id") ?? "");
@@ -111,11 +111,13 @@ export async function updateUlasanPelanggan(formData: FormData) {
     if (!st) redirect(`/crm/pelanggan?error=${encodeURIComponent("Status ulasan tidak valid")}`);
   }
 
+  // `review_catatan` = catatan internal bebas (khusus layar tim, tidak pernah dicetak
+  // di struk/invoice). Boleh diisi tanpa memilih status — permintaan klinik 10 Nov.
   await supabase.from("customers").update({
     review_status_id: statusId,
-    review_catatan: statusId ? catatan : null,
-    // Kosongkan waktunya kalau statusnya dicabut — biar tidak ada tanggal menggantung.
-    review_updated_at: statusId ? new Date().toISOString() : null,
+    review_catatan: catatan,
+    // Kosongkan waktunya kalau status & catatan sama-sama dikosongkan.
+    review_updated_at: statusId || catatan ? new Date().toISOString() : null,
   }).eq("id", id);
   revalidatePath("/crm/pelanggan");
 }

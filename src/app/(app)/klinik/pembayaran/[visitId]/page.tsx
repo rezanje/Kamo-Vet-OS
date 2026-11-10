@@ -496,18 +496,24 @@ export default async function PembayaranPage({
         </div>
       )}
 
-      {ulasanPemilik && (
-        <div className="p2ban" style={{
-          background: `color-mix(in srgb, ${ulasanPemilik.warna} 8%, transparent)`,
-          border: `.5px solid color-mix(in srgb, ${ulasanPemilik.warna} 35%, transparent)`,
-          color: ulasanPemilik.warna,
-        }}>
-          <UlasanBadge s={ulasanPemilik} />
-          <span style={{ marginLeft: 8, color: "var(--tm)" }}>
-            {cust?.review_catatan ?? "Status ulasan pemilik — layani dengan perhatian lebih."}
-          </span>
-        </div>
-      )}
+      {(ulasanPemilik || cust?.review_catatan?.trim()) && (() => {
+        // Catatan internal boleh berdiri sendiri tanpa status ulasan (permintaan klinik 10 Nov).
+        const warna = ulasanPemilik?.warna ?? "#c2410c";
+        return (
+          <div className="p2ban" style={{
+            background: `color-mix(in srgb, ${warna} 8%, transparent)`,
+            border: `.5px solid color-mix(in srgb, ${warna} 35%, transparent)`,
+            color: warna,
+          }}>
+            {ulasanPemilik
+              ? <UlasanBadge s={ulasanPemilik} />
+              : <b><i className="ti ti-note" /> Catatan internal</b>}
+            <span style={{ marginLeft: 8, color: "var(--tm)" }}>
+              {cust?.review_catatan?.trim() || "Status ulasan pemilik — layani dengan perhatian lebih."}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Stepper */}
       <div className="card" style={{ marginBottom: 12 }}>

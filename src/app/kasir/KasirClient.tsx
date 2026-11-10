@@ -63,6 +63,7 @@ export type CustRow = {
   rupiahPerPoin?: number;     // belanja sebesar ini = 1 poin
   golonganId?: string | null; // kunci ke pengecualian diskon per produk (0082)
   ulasan?: StatusUlasan | null; // status ulasan terkini (mis. "Bintang 1 Google")
+  catatanInternal?: string | null; // catatan bebas tim, khusus layar — tidak pernah dicetak
 };
 // Bentuknya sama persis dengan lib/voucher — layar kasir perlu syarat lengkapnya
 // (plafon, minimal belanja, boleh gabung promo) untuk menolak SEBELUM bayar.
@@ -619,6 +620,18 @@ export function KasirClient({
             )}
             <CustStat icon="ti-shopping-bag" label={`${cust.trx}x · ${rp(cust.belanja)}`} sub="Total transaksi" />
             <CustStat icon="ti-trending-up" label={rp(cust.trx ? cust.belanja / cust.trx : 0)} sub="Rata-rata transaksi" />
+            {cust.catatanInternal && (
+              <div title={cust.catatanInternal} data-testid="kasir-catatan-internal"
+                style={{ display: "flex", alignItems: "center", gap: 8, maxWidth: 320, padding: "4px 10px", borderRadius: 8, background: "#fff7ed", border: ".5px solid #fdba74" }}>
+                <i className="ti ti-note" style={{ fontSize: 18, color: "#c2410c" }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, color: "#9a3412", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {cust.catatanInternal}
+                  </div>
+                  <div style={{ fontSize: 9, color: "var(--td)" }}>Catatan internal · tidak tercetak</div>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <span style={{ fontSize: 11, color: "#b91c1c" }}><i className="ti ti-alert-circle" style={{ marginRight: 3 }} />Pilih atau tambah pelanggan dulu — wajib diisi sebelum bayar.</span>
