@@ -32,6 +32,10 @@ import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput } from "@/lib/service-performers";
 import { KasirQuantityInput } from "./KasirQuantityInput";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
+import { stokKurangKasir } from "@/lib/stok-kasir";
+import { angkaTampil } from "@/lib/stok-kurang";
+
+const PETUNJUK_STOK_KURANG = "Barang dengan stok kurang tidak bisa dijual. Kurangi jumlahnya atau hapus barangnya. Kalau barangnya memang ada di rak, perbaiki stoknya dulu lewat Stok Opname.";
 
 export type GroupComponentRow = {
   itemId: string; code: string; name: string;
@@ -439,17 +443,10 @@ export function KasirClient({
     [cart, promoPerItem, komposisi],
   );
 
-  // Stok sistem tetap ditampilkan sebagai peringatan operasional. Harga jual
-  // diverifikasi terhadap HPP FIFO aktif oleh server saat kasir membayar.
-  const peringatan = useMemo(() => {
-    const stokKurang = cart.filter((l) => {
-      if (l.stok == null) return false;
-      const stok = Number(l.stok);
-      if (!Number.isFinite(stok)) return false;
-      return l.qty * (Number(l.faktor) || 1) > stok;
-    });
-    return { stokKurang };
-  }, [cart]);
+  // Stok tidak boleh minus (10 Nov 2026): barang yang stoknya kurang menahan tombol Bayar.
+  // Angka stok di layar diambil saat barang masuk keranjang; database memeriksa ulang saldo
+  // terkini saat bayar. Harga jual diverifikasi terhadap HPP FIFO aktif oleh server.
+  const stokKurang = useMemo(() => stokKurangKasir(cart), [cart]);
 
   // Urutan kalkulasi (§6): diskon item → diskon transaksi + voucher → poin (lihat lib/pos-calc).
   const subtotal = cartHitung.reduce((a, l) => a + l.qty * l.harga, 0);
@@ -508,7 +505,7 @@ export function KasirClient({
   // Minimum jual dicatat dalam satuan DASAR, jadi bandingkan setelah dikali faktor —
   // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
   const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty * (l.faktor ?? 1) < (l.minJual ?? 0));
-  const canPay = cart.length > 0 && (split || !!metode) && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0 && !zeroPriceIssue
+  const canPay = cart.length > 0 && stokKurang.length === 0 && (split || !!metode) && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0 && !zeroPriceIssue
     && !guardMenunggu && !waiverGabung && !pilihanHilang;
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
@@ -549,10 +546,8 @@ export function KasirClient({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
-      {/* Penolakan stok dari server (cashier_post_stock_atomic) naik jadi popup.
-          Peringatan oranye di keranjang sengaja TIDAK diubah: kasir tetap boleh
-          melanjutkan kalau barangnya memang ada di rak. */}
-      <StokKurangDariPesan pesan={error} petunjuk="Kurangi jumlahnya, atau catat selisih stok lewat Stok Opname lalu ulangi." />
+      {/* Penolakan stok dari server (sale_stock_assert_available) naik jadi popup. */}
+      <StokKurangDariPesan pesan={error} petunjuk={PETUNJUK_STOK_KURANG} />
 
 
       {/* DATA CUSTOMER strip */}
@@ -861,12 +856,12 @@ export function KasirClient({
               <button className="btn-def" type="button" onClick={() => setCart(rows => bulkFillServicePerformers(rows, bulkPerformers))}>Isi baris kosong</button>
               <p style={{ fontSize: 10 }}>Hanya baris kosong diisi. Pilihan per baris tetap. Baris baru belum ditetapkan; pilih per baris atau isi lagi.</p>
             </div>}
-            {/* Stok kurang tetap peringatan; aturan harga Persediaan diterapkan oleh server. */}
-            {peringatan.stokKurang.length > 0 && (
-              <div style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#b45309", borderRadius: 7, padding: "6px 8px", fontSize: 10, marginBottom: 6 }}>
-                <i className="ti ti-alert-triangle" /> Stok sistem tidak cukup untuk{" "}
-                {peringatan.stokKurang.map((l) => l.nama).join(", ")}. Boleh dilanjut kalau barangnya memang ada di rak —
-                catat selisihnya lewat Stok Opname.
+            {/* Stok kurang menahan pembayaran; aturan harga Persediaan diterapkan oleh server. */}
+            {stokKurang.length > 0 && (
+              <div role="alert" data-testid="stok-kurang-kasir" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c", borderRadius: 7, padding: "6px 8px", fontSize: 10, marginBottom: 6 }}>
+                <i className="ti ti-alert-circle" /> Stok tidak cukup:{" "}
+                {stokKurang.map((b) => `${b.nama} (butuh ${angkaTampil(b.butuh)}, tersedia ${angkaTampil(b.tersedia)})`).join(", ")}.
+                Kurangi jumlahnya atau hapus barangnya. Kalau barangnya memang ada di rak, perbaiki stoknya dulu lewat Stok Opname.
               </div>
             )}
             {cart.some(line => line.item_type === "Persediaan" || line.item_type === "Grup") && <div className="p2ban" role="status">Harga neto barang Persediaan nol atau di bawah HPP FIFO aktif akan ditolak saat bayar. Paket Grup berisi barang dibandingkan dengan total HPP komponennya. Jasa gratis tetap diperbolehkan.</div>}

@@ -178,6 +178,9 @@ const TANPA_RINCIAN = (nama: string): BarisKurangStok[] => [{ nama, butuh: null,
  * jadi "Ubah jumlah" bukan jalan keluarnya.
  */
 const SELUBUNG: Selubung[] = [
+  // Kasir/POS — `sale_stock_assert_available` (stok tidak boleh minus, 10 Nov 2026). Jalur POS
+  // back-office membungkusnya dengan awalan "keluarkan stok: ", jadi awal kalimat tidak dipatok.
+  { pola: /(?:^|:\s*)Stok gudang cabang tidak cukup[.:]\s*(.+)$/i, gudang: "Gudang cabang", daftar: (m) => m[1] },
   // Permintaan barang — persetujuan dan pengiriman (server action dan RPC database).
   { pola: /^Stok gudang pengirim tidak cukup[.:]\s*(.+)$/i, gudang: "Gudang pengirim", daftar: (m) => m[1] },
   // Pemindahan barang — pemeriksaan di layar dan `stock_transfer_fifo_exact`.

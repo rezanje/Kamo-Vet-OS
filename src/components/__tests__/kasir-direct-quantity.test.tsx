@@ -46,13 +46,23 @@ it("types an absolute quantity and recalculates tier pricing, item discount and 
   expect(qty().closest("tr")!.textContent).toContain("18.000");
 });
 
-it("keeps fractional quantity precision and existing nonblocking stock warning", async () => {
+it("keeps fractional quantity precision and blocks quantities above stock (stok tidak boleh minus)", async () => {
   await edit("0.3333");
   expect(qty().step).toBe("any");
   expect(cart()[0].qty).toBe(0.3333);
+  const banner = () => host.querySelector('[data-testid="stok-kurang-kasir"]');
+  await edit("5");
+  expect(banner()).toBeNull();
   await edit("6.25");
   expect(cart()[0].qty).toBe(6.25);
-  expect(host.textContent).toContain("Stok sistem tidak cukup");
+  expect(banner()?.textContent).toContain("Pakan (butuh 6,25, tersedia 5)");
+  expect(banner()?.getAttribute("role")).toBe("alert");
+  expect(host.textContent).not.toContain("Boleh dilanjut");
+  // Satuan box (12 pcs) x 1 melebihi stok 5 pcs: tetap ditahan dalam satuan dasar.
+  await edit("1");
+  const unit = qty().closest("tr")!.querySelector<HTMLSelectElement>("select")!;
+  await act(async () => { unit.value = "box"; unit.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(banner()?.textContent).toContain("butuh 12, tersedia 5");
 });
 
 it.each(["", "0", "-2", "abc", "1e309", "1e20"])("keeps last valid cart quantity for invalid input %j and restores it on blur", async value => {
