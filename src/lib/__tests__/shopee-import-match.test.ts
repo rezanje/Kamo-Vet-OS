@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bacaShopeeXlsx, type ShopeeLine, type ShopeeOrder } from "../shopee-import";
-import { analisisImpor, cocokkanBarang, kunciBaris, normalisasiNama, pilihGudangDefault, type CatalogItem } from "../shopee-import-match";
+import { analisisImpor, cocokkanBarang, kunciBaris, normalisasiNama, pilihGudangDefault, satuanBarang, tebakSatuan, type CatalogItem } from "../shopee-import-match";
 
 const FIXTURE = join(__dirname, "fixtures", "shopee-order-toship-sample.xlsx");
 const item = (id: string, code: string, name: string, sell_price: number, stock = 10): CatalogItem => ({ id, code, name, sell_price, stock });
@@ -210,5 +210,68 @@ describe("analisisImpor", () => {
   it("pesanan tanpa baris tidak bisa disimpan", () => {
     const [a] = analisisImpor([order({ lines: [], subtotalBarang: 0 })], CATALOG, opts());
     expect(a.saveable).toBe(false);
+  });
+});
+
+describe("satuan (Shopee tidak mengirim satuan; sistem wajib tahu)", () => {
+  const SET = [{ unit: "1/2kg", factor: 1, sell_price: 15000 }, { unit: "1kg", factor: 2, sell_price: 29000 }, { unit: "Sak 20kg", factor: 40, sell_price: 520000 }];
+  const beauty: CatalogItem = { id: "i-beauty", code: "DRC8997210900539", name: "Beauty Premium", sell_price: 15000, stock: 10, units: SET };
+  const lineBeauty = (o: Partial<ShopeeLine> = {}) => line({ skuRef: "DRC8997210900539", namaProduk: "Beauty premium cat food All stage 1kg/makanan kucing murah/makanan kucing", harga: 32502, hargaAwal: 32502, ...o });
+
+  it("tebakSatuan: hanya ukuran yang tertulis utuh; 1/2kg tidak dibaca 1kg atau 2kg; ambigu = null", () => {
+    expect(tebakSatuan({ namaProduk: "Beauty premium All stage 1kg/makanan kucing", variasi: "" }, SET)).toBe("1kg");
+    expect(tebakSatuan({ namaProduk: "Beauty premium 1 KG", variasi: "" }, SET)).toBe("1kg");
+    expect(tebakSatuan({ namaProduk: "Beauty premium 1/2kg", variasi: "" }, SET)).toBe("1/2kg");
+    expect(tebakSatuan({ namaProduk: "Beauty premium ½ kg", variasi: "" }, SET)).toBe("1/2kg");
+    expect(tebakSatuan({ namaProduk: "Beauty premium 1/2kg 1kg 20kg", variasi: "1kg" }, SET)).toBe("1kg"); // variasi didahulukan
+    expect(tebakSatuan({ namaProduk: "Beauty premium 1/2kg dan 1kg", variasi: "" }, SET)).toBeNull();
+    expect(tebakSatuan({ namaProduk: "Beauty premium 21kg 11kg", variasi: "" }, SET)).toBeNull();
+    expect(tebakSatuan({ namaProduk: "Beauty premium", variasi: "" }, SET)).toBeNull();
+    expect(tebakSatuan({ namaProduk: "isi 2 pcs", variasi: "" }, [{ unit: "pcs", factor: 1, sell_price: 1 }])).toBeNull(); // satuan tanpa angka tidak ditebak
+  });
+
+  it("satuanBarang: tanpa data satuan = satu satuan dasar dengan harga master", () => {
+    expect(satuanBarang({ sell_price: 5000 })).toEqual([{ unit: "", factor: 1, sell_price: 5000 }]);
+    expect(satuanBarang(beauty)).toEqual(SET);
+  });
+
+  it("kasus Beauty Premium: nama Shopee '1kg' → satuan 1kg, harga dibandingkan ke harga 1kg (bukan 1/2kg), stok keluar 2 × 1/2kg", () => {
+    const [a] = analisisImpor([order({ lines: [lineBeauty({ qty: 3 })], subtotalBarang: 97506, totalPembayaran: null, selisih: null })], [beauty], opts({ konfirmasi: new Set([kunciBaris("FIKTIF-1", 0)]) }));
+    const l = a.lines[0];
+    expect(l.satuan).toEqual(SET[1]);
+    expect(l.sumberSatuan).toBe("tebakan");
+    const teks = l.warnings.map(w => w.text).join(" | ");
+    expect(teks).not.toMatch(/\+117%/);
+    expect(teks).toMatch(/Satuan 1kg terbaca dari nama produk Shopee/);
+    expect(teks).not.toMatch(/Stok gudang/); // 3 × 2 = 6 (1/2kg) ≤ stok 10
+    expect(a.saveable).toBe(true);
+  });
+
+  it("pilihan manual menang atas tebakan; satuan yang tidak ada di barang diabaikan", () => {
+    const key = kunciBaris("FIKTIF-1", 0);
+    const o = order({ lines: [lineBeauty()], totalPembayaran: null, selisih: null });
+    const [a] = analisisImpor([o], [beauty], opts({ satuan: { [key]: "1/2kg" } }));
+    expect(a.lines[0].satuan?.unit).toBe("1/2kg");
+    expect(a.lines[0].sumberSatuan).toBe("pilihan");
+    expect(a.lines[0].warnings.map(w => w.text).join(" ")).toMatch(/\+117%.*Rp 15\.000 per 1\/2kg/);
+    const [b] = analisisImpor([o], [beauty], opts({ satuan: { [key]: "dus" } }));
+    expect(b.lines[0].satuan?.unit).toBe("1kg");
+  });
+
+  it("stok dihitung dalam satuan dasar (qty × isi) dan kumulatif lintas pesanan", () => {
+    const key = (n: string) => kunciBaris(n, 0);
+    const o1 = order({ orderNo: "A1", lines: [lineBeauty({ qty: 3 })], totalPembayaran: null, selisih: null });
+    const o2 = order({ orderNo: "A2", lines: [lineBeauty({ qty: 2, namaProduk: "Beauty premium 1/2kg" , harga: 15000 })], totalPembayaran: null, selisih: null });
+    const [a, b] = analisisImpor([o1, o2], [{ ...beauty, stock: 7 }], opts({ konfirmasi: new Set([key("A1"), key("A2")]) }));
+    expect(a.lines[0].warnings.map(w => w.text).join(" ")).not.toMatch(/Stok gudang/); // 3 × 2 = 6 ≤ 7
+    expect(b.lines[0].warnings.map(w => w.text).join(" ")).toMatch(/Stok gudang 7 1\/2kg, kebutuhan kumulatif 8 1\/2kg/); // + 2 × 1
+  });
+
+  it("barang bersatuan ganda tanpa ukuran di nama Shopee: pakai satuan dasar + info untuk dicek", () => {
+    const [a] = analisisImpor([order({ lines: [lineBeauty({ namaProduk: "Beauty premium cat food", harga: 15000 })], totalPembayaran: null, selisih: null })], [beauty], opts({ konfirmasi: new Set([kunciBaris("FIKTIF-1", 0)]) }));
+    expect(a.lines[0].satuan?.unit).toBe("1/2kg");
+    expect(a.lines[0].sumberSatuan).toBe("dasar");
+    expect(a.lines[0].warnings).toContainEqual({ level: "info", text: expect.stringMatching(/beberapa satuan \(1\/2kg, 1kg, Sak 20kg\); dipakai 1\/2kg/) });
+    expect(a.saveable).toBe(true);
   });
 });

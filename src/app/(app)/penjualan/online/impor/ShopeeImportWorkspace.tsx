@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
-import { analisisImpor, kunciBaris, type AnalisisPesanan, type ExistingOrders } from "@/lib/shopee-import-match";
+import { analisisImpor, kunciBaris, satuanBarang, type AnalisisPesanan, type ExistingOrders } from "@/lib/shopee-import-match";
 import { pratinjauImporShopee, simpanImporShopee, type HasilImporOrder, type PratinjauImpor, type PilihanImpor } from "./actions";
 
 import { kelompokPerCabang, labelTipeGudang, type GudangOnline } from "@/lib/online-gudang";
@@ -29,6 +29,7 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
   const [preview, setPreview] = useState<PratinjauImpor | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string | null>>({});
   const [konfirmasi, setKonfirmasi] = useState<Set<string>>(new Set());
+  const [satuan, setSatuan] = useState<Record<string, string>>({});
   const [sertakan, setSertakan] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState<ExistingOrders>({});
   const [results, setResults] = useState<Record<string, HasilImporOrder>>({});
@@ -37,12 +38,12 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
   const busyRef = useRef(false);
 
   const analisis = useMemo(() => preview && !preview.error
-    ? analisisImpor(preview.orders, preview.catalog, { existing: { ...preview.existing, ...saved }, overrides, konfirmasi, sertakan })
-    : [], [preview, saved, overrides, konfirmasi, sertakan]);
+    ? analisisImpor(preview.orders, preview.catalog, { existing: { ...preview.existing, ...saved }, overrides, konfirmasi, sertakan, satuan })
+    : [], [preview, saved, overrides, konfirmasi, sertakan, satuan]);
   const siap = analisis.filter(a => a.saveable);
   const catalogPicker = useMemo(() => (preview?.catalog ?? []).map(c => ({ id: c.id, code: c.code, name: c.name })), [preview]);
 
-  function reset() { setPreview(null); setOverrides({}); setKonfirmasi(new Set()); setSertakan(new Set()); setSaved({}); setResults({}); setMessage(""); }
+  function reset() { setPreview(null); setOverrides({}); setKonfirmasi(new Set()); setSatuan({}); setSertakan(new Set()); setSaved({}); setResults({}); setMessage(""); }
 
   async function baca() {
     if (busyRef.current) return;
@@ -67,6 +68,7 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
     const pilihan: PilihanImpor[] = siap.map(a => ({
       orderNo: a.order.orderNo,
       items: a.lines.map(l => l.item?.id ?? ""),
+      satuan: a.lines.map(l => l.satuan?.unit ?? ""),
       ...(a.order.importable ? {} : { sertakan: true }),
     }));
     try {
@@ -149,8 +151,8 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
             )}
             {a.warnings.map((w, i) => <div key={i} style={{ fontSize: 10.5, color: WARNA[w.level] }}>{w.level === "blok" ? "⛔ " : w.level === "peringatan" ? "⚠ " : "ℹ "}{w.text}</div>)}
             <div style={{ overflowX: "auto" }}>
-              <table className="tbl" style={{ minWidth: 820, marginTop: 6 }}>
-                <thead><tr><th>Produk di Shopee</th><th>Barang master</th><th style={{ textAlign: "right" }}>Qty</th><th style={{ textAlign: "right" }}>Harga dibebankan</th><th style={{ textAlign: "right" }}>Subtotal</th></tr></thead>
+              <table className="tbl" style={{ minWidth: 920, marginTop: 6 }}>
+                <thead><tr><th>Produk di Shopee</th><th>Barang master</th><th>Satuan</th><th style={{ textAlign: "right" }}>Qty</th><th style={{ textAlign: "right" }}>Harga dibebankan</th><th style={{ textAlign: "right" }}>Subtotal</th></tr></thead>
                 <tbody>
                   {a.lines.map(l => {
                     const key = kunciBaris(a.order.orderNo, l.index);
@@ -163,7 +165,11 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
                         </td>
                         <td style={{ minWidth: 240 }}>
                           <SearchableItemPicker items={catalogPicker} value={l.item?.id ?? ""} ariaLabel={`Barang ${a.order.orderNo} baris ${l.index + 1}`}
-                            onChange={id => setOverrides(o => ({ ...o, [key]: id || null }))} />
+                            onChange={id => {
+                              setOverrides(o => ({ ...o, [key]: id || null }));
+                              // Satuan barang lama belum tentu ada di barang baru → kembali ke tebakan/satuan dasar.
+                              setSatuan(s => { const n = { ...s }; delete n[key]; return n; });
+                            }} />
                           <div style={{ fontSize: 10, color: "var(--tm)" }}>
                             {l.item ? `Master: ${l.item.name} · ` : ""}{KIND_LABEL[l.match.kind]}
                           </div>
@@ -173,7 +179,28 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
                                 onChange={e => setKonfirmasi(s => toggle(s, key, e.target.checked))} /> Sudah saya periksa, barang ini benar
                             </label>
                           )}
-                          {l.warnings.map((w, i) => <div key={i} style={{ fontSize: 10, color: WARNA[w.level] }}>{w.level === "blok" ? "⛔ " : "⚠ "}{w.text}</div>)}
+                          {l.warnings.map((w, i) => <div key={i} style={{ fontSize: 10, color: WARNA[w.level] }}>{w.level === "blok" ? "⛔ " : w.level === "peringatan" ? "⚠ " : "ℹ "}{w.text}</div>)}
+                        </td>
+                        <td style={{ minWidth: 110 }}>
+                          {l.item && l.satuan ? (() => {
+                            const daftar = satuanBarang(l.item);
+                            const dasar = daftar[0];
+                            return (
+                              <>
+                                {daftar.length > 1 ? (
+                                  <select className="fi" aria-label={`Satuan ${a.order.orderNo} baris ${l.index + 1}`} value={l.satuan.unit}
+                                    onChange={e => setSatuan(s => ({ ...s, [key]: e.target.value }))}>
+                                    {daftar.map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
+                                  </select>
+                                ) : (
+                                  <span style={{ fontSize: 11.5 }}>{l.satuan.unit || "—"}</span>
+                                )}
+                                {l.satuan.factor !== 1 && (
+                                  <div style={{ fontSize: 9.5, color: "var(--tm)" }}>stok keluar {String(Math.round(l.qty * l.satuan.factor * 1000) / 1000).replace(".", ",")} {dasar.unit}</div>
+                                )}
+                              </>
+                            );
+                          })() : <span style={{ fontSize: 11.5, color: "var(--tm)" }}>—</span>}
                         </td>
                         <td style={{ textAlign: "right", fontSize: 11.5 }}>{l.qty}</td>
                         <td style={{ textAlign: "right", fontSize: 11.5 }}>{rp(l.harga)}{l.hargaAwal !== l.harga && <div style={{ fontSize: 9.5, color: "var(--tm)" }}>awal {rp(l.hargaAwal)}</div>}</td>

@@ -62,7 +62,7 @@ beforeEach(() => {
   db.tables = {
     warehouses: [{ id: WH, type: "ONLINE", is_active: true, name: "Online Fiktif" }],
     items: [
-      { id: JIO, code: "JIO-500", name: "Jio Dryfood 500gr", sell_price: "16500.00", is_active: true, item_type: "Persediaan" },
+      { id: JIO, code: "JIO-500", name: "Jio Dryfood 500gr", unit: "1/2kg", sell_price: "16500.00", is_active: true, item_type: "Persediaan" },
       { id: DIG, code: "MRV-DIG", name: "Mr.Vet Digestion Care T1 1kg", sell_price: "80000", is_active: true, item_type: "Persediaan" },
       { id: HAIR, code: "MRV-HAIR", name: "Mr.Vet Hair & Skin Care T2 1kg", sell_price: "80000", is_active: true, item_type: "Persediaan" },
       { id: "44444444-4444-4444-8444-444444444444", code: "GRUP-1", name: "Paket Grup", sell_price: "1", is_active: true, item_type: "Grup" },
@@ -70,6 +70,7 @@ beforeEach(() => {
     ],
     stock: [{ id: "s1", warehouse_id: WH, item_id: JIO, qty: "6" }, { id: "s2", warehouse_id: "lain", item_id: JIO, qty: "99" }],
     sales: [],
+    item_units: [{ item_id: JIO, unit: "1kg", factor: "2", sell_price: "31000", buy_price: "25000" }],
   };
 });
 
@@ -81,6 +82,10 @@ describe("pratinjauImporShopee", () => {
     expect(r.orders.map(o => o.orderNo)).toEqual([O1, O2, O3]);
     expect(r.catalog.map(c => c.code).sort()).toEqual(["JIO-500", "MRV-DIG", "MRV-HAIR"]);
     expect(r.catalog.find(c => c.id === JIO)).toMatchObject({ sell_price: 16500, stock: 6 });
+    // Satuan: dasar dari master (default pcs) + turunan dari item_units, tanpa harga beli.
+    expect(r.catalog.find(c => c.id === JIO)?.units).toEqual([{ unit: "1/2kg", factor: 1, sell_price: 16500 }, { unit: "1kg", factor: 2, sell_price: 31000 }]);
+    expect(r.catalog.find(c => c.id === DIG)?.units).toEqual([{ unit: "pcs", factor: 1, sell_price: 80000 }]);
+    expect(JSON.stringify(r.catalog)).not.toMatch(/buy_price/);
     expect(r.catalog.find(c => c.id === DIG)?.stock).toBe(0);
     expect(r.existing).toEqual({ [O2]: { noStruk: "ONL-20261105-0007", voided: false } });
   });
@@ -126,6 +131,25 @@ describe("simpanImporShopee", () => {
     ]);
     expect(db.rpc[1].args.p_request_key).toBe(`shopee-import:${O3}:${WH}`);
     expect(db.revalidated).toContain("/penjualan/online");
+  });
+
+  it("satuan pilihan per baris diteruskan ke RPC (faktor isi ditentukan database); satuan tidak valid ditolak tanpa RPC", async () => {
+    await simpanImporShopee(form([{ orderNo: O3, items: [DIG, HAIR], satuan: ["1kg", " Sak 20kg "] }]));
+    expect(db.rpc[0].args.p_items).toEqual([
+      { item_id: DIG, qty: 1, harga: 78663, satuan: "1kg" },
+      { item_id: HAIR, qty: 1, harga: 78663, satuan: "Sak 20kg" },
+    ]);
+    db.rpc = [];
+    const r = await simpanImporShopee(form([{ orderNo: O2, items: [JIO], satuan: ["1kg", "1kg"] }, { orderNo: O3, items: [DIG, HAIR], satuan: ["x".repeat(41)] }]));
+    expect(r.results.map(x => x.status)).toEqual(["error", "error"]);
+    expect(r.results[0].message).toMatch(/satuan/i);
+    expect(db.rpc).toEqual([]);
+  });
+
+  it("satuan yang sudah dihapus dari master dijelaskan dengan bahasa pengguna", async () => {
+    db.rpcImpl = () => ({ error: { message: "Satuan tidak terdaftar" } });
+    const r = await simpanImporShopee(form([{ orderNo: O2, items: [JIO], satuan: ["dus"] }]));
+    expect(r.results[0]).toMatchObject({ status: "error", message: expect.stringMatching(/pilih satuannya lagi/i) });
   });
 
   it("tidak menyimpan alamat/telepon/nama penerima di payload RPC", async () => {

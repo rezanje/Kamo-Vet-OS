@@ -100,7 +100,7 @@ it("Simpan semua aktif setelah perkiraan dikonfirmasi; mengirim hanya pesanan si
   expect(mocks.simpan).toHaveBeenCalledTimes(1);
   const fd = mocks.simpan.mock.calls[0][0] as FormData;
   expect(fd.get("warehouse_id")).toBe(WH_PANDU);
-  expect(JSON.parse(String(fd.get("selection")))).toEqual([{ orderNo: O2, items: [JIO] }, { orderNo: O3, items: [DIG, HAIR] }]);
+  expect(JSON.parse(String(fd.get("selection")))).toEqual([{ orderNo: O2, items: [JIO], satuan: [""] }, { orderNo: O3, items: [DIG, HAIR], satuan: ["", ""] }]);
   expect(sel(c, `[data-result="${O2}"]`).textContent).toMatch(/ONL-20261105-0001/);
   expect(sel(c, `[data-result="${O3}"]`).textContent).toMatch(/Stok tidak cukup/);
   expect(sel(c, `[data-result="${O1}"]`)).toBeNull();
@@ -148,6 +148,31 @@ it("pilihan barang manual lewat dropdown menyelesaikan pesanan; pesanan Owner-on
   await pilihFile(owner.c); await klik(tombol(owner.c, /pratinjau/i));
   expect(owner.c.querySelector(`input[aria-label="Sertakan ${O1}"]`)).not.toBeNull();
   await owner.dispose();
+});
+
+it("kolom Satuan di kiri Qty: barang bersatuan ganda bisa dipilih, harga/stok dihitung per satuan, dan satuan ikut dikirim", async () => {
+  // Jio di master bersatuan dasar "1/2kg" dengan satuan turunan "1kg" (isi 2); Shopee menjual 500gr = 1/2kg.
+  const JIO_SATUAN: CatalogItem = { ...CATALOG[0], sell_price: 16500, stock: 3, units: [{ unit: "1/2kg", factor: 1, sell_price: 16500 }, { unit: "1kg", factor: 2, sell_price: 31000 }] };
+  mocks.pratinjau.mockResolvedValue({ orders: (await bacaShopeeXlsx(readFileSync(FIXTURE))).orders, catalog: [JIO_SATUAN, CATALOG[1], CATALOG[2]], existing: {} });
+  mocks.simpan.mockResolvedValue({ ok: true, results: [] });
+  const { c, dispose } = await mount();
+  await pilihFile(c); await klik(tombol(c, /pratinjau/i));
+  expect([...sel(c, `[data-order="${O2}"]`).querySelectorAll("th")].map(th => th.textContent)).toEqual(["Produk di Shopee", "Barang master", "Satuan", "Qty", "Harga dibebankan", "Subtotal"]);
+  const pilih = sel(c, `select[aria-label="Satuan ${O2} baris 1"]`) as HTMLSelectElement;
+  expect([...pilih.options].map(o => o.value)).toEqual(["1/2kg", "1kg"]);
+  expect(pilih.value).toBe("1/2kg");
+  expect(sel(c, `[data-order="${O2}"]`).textContent).not.toMatch(/Stok gudang/); // 2 × 1/2kg ≤ stok 3
+  // Ganti ke 1kg → stok keluar 4 (1/2kg) > 3 dan harga dibandingkan dengan harga 1kg
+  await act(async () => { pilih.value = "1kg"; pilih.dispatchEvent(new Event("change", { bubbles: true })); });
+  const o2 = sel(c, `[data-order="${O2}"]`).textContent!;
+  expect(o2).toMatch(/stok keluar 4 1\/2kg/);
+  expect(o2).toMatch(/Stok gudang 3 1\/2kg, kebutuhan kumulatif 4 1\/2kg/);
+  expect(o2).toMatch(/harga master Rp 31\.000 per 1kg/);
+  for (const q of [`${O2} baris 1`, `${O3} baris 1`, `${O3} baris 2`]) await klik(sel(c, `input[aria-label="Konfirmasi kecocokan ${q}"]`));
+  await klik(tombol(c, /simpan semua/i));
+  const fd = mocks.simpan.mock.calls[0][0] as FormData;
+  expect(JSON.parse(String(fd.get("selection")))[0]).toEqual({ orderNo: O2, items: [JIO], satuan: ["1kg"] });
+  await dispose();
 });
 
 it("galat pratinjau ditampilkan dan tidak ada tabel", async () => {

@@ -5,6 +5,7 @@ import { TIPE_GUDANG_ORDER_ONLINE } from "@/lib/online-gudang";
 import { createClient } from "@/lib/supabase/server";
 import { readCompleteList } from "@/lib/checked-list";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
+import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { bacaShopeeXlsx, type ShopeeOrder } from "@/lib/shopee-import";
 import type { CatalogItem, ExistingOrders } from "@/lib/shopee-import-match";
 
@@ -23,7 +24,8 @@ export type PratinjauImpor = {
   catalog: CatalogItem[];
   existing: ExistingOrders;
 };
-export type PilihanImpor = { orderNo: string; items: string[]; sertakan?: boolean };
+/** satuan[i] = satuan untuk items[i] ("" / tidak ada = satuan dasar). Faktor isi ditentukan database, bukan klien. */
+export type PilihanImpor = { orderNo: string; items: string[]; satuan?: string[]; sertakan?: boolean };
 export type HasilImporOrder = { orderNo: string; status: "ok" | "duplikat" | "dilewati" | "error"; message: string; documentNo?: string };
 export type HasilSimpanImpor = { ok: boolean; error?: string; results: HasilImporOrder[] };
 
@@ -79,16 +81,22 @@ export async function pratinjauImporShopee(formData: FormData): Promise<Pratinja
       .in("type", [...TIPE_GUDANG_ORDER_ONLINE]).eq("is_active", true).maybeSingle();
     if (!wh) return kosong("Gudang tidak ditemukan, tidak aktif, atau tidak bisa dipakai untuk order online.");
 
-    const [items, stock, existing] = await Promise.all([
-      readCompleteList<{ id: string; code: string; name: string; sell_price: number | string; item_type: string | null }>((from, to) => db.from("items")
-        .select("id,code,name,sell_price,item_type", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang", { maxRows: null }),
+    const [items, stock, existing, extraUnits] = await Promise.all([
+      readCompleteList<{ id: string; code: string; name: string; unit: string | null; sell_price: number | string; item_type: string | null }>((from, to) => db.from("items")
+        .select("id,code,name,unit,sell_price,item_type", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang", { maxRows: null }),
       loadWarehouseStock(db, [warehouseId]),
       cariSudahAda(db, baca.orders.map(o => o.orderNo)),
+      loadItemUnits(db),
     ]);
     const qty = new Map(stock.map(s => [s.item_id, Number(s.qty) || 0]));
     const catalog: CatalogItem[] = items
       .filter(i => !i.item_type || i.item_type === "Persediaan")
-      .map(i => ({ id: i.id, code: i.code ?? "", name: i.name, sell_price: Number(i.sell_price) || 0, stock: qty.get(i.id) ?? 0 }));
+      .map(i => {
+        const sell = Number(i.sell_price) || 0;
+        // Harga beli tidak ikut dikirim ke browser.
+        const units = unitOptions({ unit: i.unit, sell_price: sell }, extraUnits.get(i.id) ?? []).map(u => ({ unit: u.unit, factor: u.factor, sell_price: u.sell_price }));
+        return { id: i.id, code: i.code ?? "", name: i.name, sell_price: sell, stock: qty.get(i.id) ?? 0, units };
+      });
     return { orders: baca.orders, catalog, existing };
   } catch (e) {
     return kosong(e instanceof Error && e.message ? e.message : "Pratinjau gagal dimuat. Coba lagi.");
@@ -97,6 +105,7 @@ export async function pratinjauImporShopee(formData: FormData): Promise<Pratinja
 
 function pesanError(raw: string): string {
   if (/rincian berbeda/i.test(raw)) return "Order ini pernah dikirim dengan rincian berbeda. Periksa daftar Penjualan Online; bila sudah tercatat, tidak perlu diimpor lagi.";
+  if (/satuan tidak terdaftar/i.test(raw)) return "Satuan yang dipilih sudah tidak ada di master barang. Muat ulang pratinjau lalu pilih satuannya lagi.";
   return raw || "Gagal menyimpan order.";
 }
 
@@ -141,12 +150,15 @@ export async function simpanImporShopee(formData: FormData): Promise<HasilSimpan
         hasil("error", "Ada barang yang belum dipetakan ke master — pesanan tidak disimpan sebagian.");
         continue;
       }
+      // Satuan hanya nama; database (unit_posting_factor) yang menentukan isinya dan menolak satuan yang tidak terdaftar.
+      const satuan = Array.isArray(p.satuan) ? p.satuan.map(x => (typeof x === "string" ? x.trim() : "")) : [];
+      if (satuan.length > ids.length || satuan.some(u => u.length > 40)) { hasil("error", "Satuan barang tidak valid — muat ulang pratinjau."); continue; }
       const key = `shopee-import:${orderNo}:${warehouseId}`;
       try {
         const { data, error } = await db.rpc("post_online_order", {
           p_request_key: key,
           p_header: { channel: "Shopee", warehouse_id: warehouseId, buyer_name: order.buyer, external_ref: orderNo, customer_id: "", tanggal: order.tanggal ?? "" },
-          p_items: order.lines.map((l, i) => ({ item_id: ids[i], qty: l.qty, harga: l.harga, satuan: "" })),
+          p_items: order.lines.map((l, i) => ({ item_id: ids[i], qty: l.qty, harga: l.harga, satuan: satuan[i] ?? "" })),
         });
         if (error || !data) { hasil("error", pesanError(error?.message ?? "Respons simpan belum terkonfirmasi. Muat ulang pratinjau: order yang sudah tersimpan akan tampil 'sudah diimpor'.")); continue; }
         hasil("ok", `Tersimpan sebagai ${data.document_no}.`, data.document_no);
