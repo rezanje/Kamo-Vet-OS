@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { PosClient, type Item } from "./PosClient";
+import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { loadServiceStaff } from "@/lib/service-performers-server";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
 import { loadAturanDiskon, loadInfoBarang } from "@/lib/harga-golongan";
@@ -97,6 +98,8 @@ export default async function TransaksiPage({
           <i className="ti ti-alert-circle" /> {error}
         </div>
       )}
+      {/* Stok tidak boleh minus: penolakan database (sale_stock_assert_available) jadi popup per barang. */}
+      <StokKurangDariPesan pesan={error} petunjuk="Barang dengan stok kurang tidak bisa dijual. Kurangi jumlahnya, atau perbaiki stoknya dulu lewat Stok Opname." />
       {completedSaleId && usedDraftKey && (
         <div className="p2ban">
           <Link href={`/pos/struk/${encodeURIComponent(completedSaleId)}?draft_done=${encodeURIComponent(usedDraftKey)}`}>

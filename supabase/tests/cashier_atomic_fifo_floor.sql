@@ -34,6 +34,10 @@ insert into item_group_components(group_item_id,component_item_id,qty,unit,facto
 insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source) values
  ('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000001',(now() at time zone 'Asia/Jakarta')::date,20,20,10,'purchase'),
  ('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000003',(now() at time zone 'Asia/Jakarta')::date,20,20,20,'purchase');
+-- Saldo agregat ikut lapisan, seperti stok yang masuk lewat penerimaan (kasir menolak penjualan melebihi saldo).
+insert into stock(warehouse_id,item_id,qty) values
+ ('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000001',20),
+ ('e3300000-0000-4000-8000-000000000001','e5500000-0000-4000-8000-000000000003',20);
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
  ('1111','Test cash','ASET','D',false),('510001','Sales','PENDAPATAN','K',false),
  ('520002','Discount','PENDAPATAN','D',false),('312005','VAT','LIABILITAS','K',false),

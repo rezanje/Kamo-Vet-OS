@@ -476,8 +476,9 @@ export async function checkoutKasir(formData: FormData) {
     redirect(`${failureUrl}${encodeURIComponent(error instanceof Error ? error.message : "Rincian pembayaran tidak valid")}`);
   }
 
-  // Cabang tetap wajib punya gudang aktif untuk mencatat stok keluar. Bila stok
-  // kurang, layar kasir mengingatkan tetapi owner boleh melanjutkan transaksi.
+  // Cabang tetap wajib punya gudang aktif untuk mencatat stok keluar. Stok tidak
+  // boleh minus (10 Nov 2026): layar kasir menahan tombol Bayar dan database
+  // (sale_stock_assert_available) menolak transaksi bila saldo gudang kurang.
   const kebutuhanStok = kebutuhanStokCheckout(rows.map((row) => ({
     item_id: row.item_id,
     item_type: row.item_type ?? "Non-Persediaan",

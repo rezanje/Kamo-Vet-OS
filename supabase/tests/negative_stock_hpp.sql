@@ -1,5 +1,11 @@
 -- Uses the fictional pos_merchant_fees setup (runner prepends it); rolls back.
 -- Regression: 9 available @ 12,080 + 11 missing must cost 241,600, not 108,720.
+-- Sejak 20261110043627 kasir/POS menolak penjualan yang melebihi stok (sale_stock_assert_available;
+-- diuji scripts/test-kasir-kunci-stok-postgres.py). Penilaian kekurangan stok di stock_out_fifo tetap
+-- dipakai jalur lain, jadi gerbang kasir dimatikan HANYA di transaksi uji ini (rollback) supaya
+-- regresi penilaian HPP di bawah tetap teruji lewat jalur penjualan yang sama seperti sebelumnya.
+create or replace function public.sale_stock_assert_available(p_warehouse_id uuid,p_item_id uuid,p_qty numeric) returns void
+language plpgsql security definer set search_path='' as $$begin return;end$$;
 insert into warehouses(id,branch_id,code,name,type) values
  ('eb300000-0000-4000-8000-000000000001','e2200000-0000-4000-8000-000000000001','HPPDC','HPP distribution centre','RETAIL');
 update items set buy_price=12080 where id='e5500000-0000-4000-8000-000000000002';

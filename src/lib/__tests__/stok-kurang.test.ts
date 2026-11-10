@@ -123,6 +123,25 @@ describe("pesan yang BUKAN soal kekurangan stok tidak memunculkan popup", () => 
   });
 });
 
+describe("kasir/POS: stok tidak boleh minus (sale_stock_assert_available)", () => {
+  it("kalimat database terbaca jadi satu baris per barang, satuan apa adanya", () => {
+    expect(urai("Stok gudang cabang tidak cukup: Royal Canin Kitten butuh 4 1/2KG, tersedia 0 1/2KG")).toEqual({
+      baris: [{ gudang: "Gudang cabang", nama: "Royal Canin Kitten", butuh: 4, tersedia: 0, satuan: "1/2KG" }],
+      petunjuk: null,
+    });
+  });
+
+  it("awalan 'keluarkan stok: ' dari POS back-office tidak menghalangi popup", () => {
+    expect(urai("keluarkan stok: Stok gudang cabang tidak cukup: Pasir, Wangi butuh 2.5 kg, tersedia 1 kg")?.baris)
+      .toEqual([{ gudang: "Gudang cabang", nama: "Pasir, Wangi", butuh: 2.5, tersedia: 1, satuan: "kg" }]);
+  });
+
+  it("barang tanpa satuan tetap terbaca", () => {
+    expect(urai("Stok gudang cabang tidak cukup: Snack butuh 3, tersedia 0")?.baris[0])
+      .toMatchObject({ nama: "Snack", butuh: 3, tersedia: 0, satuan: null });
+  });
+});
+
 describe("pesan lama dan bentuk tak terduga tidak membuat popup salah baca", () => {
   it("angka bergaya Indonesia dari pesan lama tetap terbaca", () => {
     expect(urai("Stok gudang asal tidak cukup. Obat A butuh 1.234,5 ml, tersedia 250 ml. Kurangi kuantitasnya")?.baris[0])
@@ -162,6 +181,8 @@ describe("penjaga: kalimat 'tidak cukup' baru di database harus ikut diputuskan"
     "Stok bahan tidak cukup",
     "Stok bahan tidak cukup atau jumlah tidak valid",
     "Stok gudang asal tidak cukup",
+    // Kasir/POS (sale_stock_assert_available): nama, butuh, tersedia, satuan disambung sesudahnya.
+    "Stok gudang cabang tidak cukup: ",
     "Stok gudang asal tidak cukup: % perlu %, tersedia %",
     "Stok gudang pengirim tidak cukup. %. Kurangi jumlah kirim atau tunggu stok masuk",
     "Stok gudang pengirim tidak cukup. %. Turunkan jumlah yang disetujui",
