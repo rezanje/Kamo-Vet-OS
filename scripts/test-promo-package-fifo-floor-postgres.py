@@ -63,6 +63,8 @@ insert into items(id,code,name,unit,item_type,buy_price) values
 {','.join(f"('{ITEM[k]}','C04STOCK{k}','Fiction stock {k}','pcs','Persediaan',10)" for k in ITEM)};
 insert into stock_layers(warehouse_id,item_id,tanggal,qty_in,qty_left,unit_cost,source) values
 {','.join(f"('{WAREHOUSE}','{ITEM[k]}',(now() at time zone 'Asia/Jakarta')::date,20,20,10,'purchase')" for k in ITEM)};
+insert into stock(warehouse_id,item_id,qty) values
+{','.join(f"('{WAREHOUSE}','{ITEM[k]}',20)" for k in ITEM)};
 insert into coa_accounts(code,name,type,normal_balance,is_header) values
  ('1111','Test cash','ASET','D',false),('510001','Sales','PENDAPATAN','K',false),('520002','Discount','PENDAPATAN','D',false),
  ('312005','VAT','LIABILITAS','K',false),('600001','COGS','BEBAN','D',false),('170001','Inventory','ASET','D',false)
