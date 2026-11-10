@@ -143,7 +143,12 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
     <Link className="back-btn" href="/penjualan/faktur">← Faktur & penerimaan</Link>
     <div className="crm-sec">
       <div style={{ fontSize: 20, fontWeight: 900 }}>{printBranchHeading(Array.isArray(invoice.branches) ? invoice.branches[0] : invoice.branches)}</div>
-      <h1 style={{ fontSize: 18 }}>{invoice.no_faktur}</h1>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <h1 style={{ fontSize: 18 }}>{invoice.no_faktur}</h1>
+        <Link className="btn-acc" href={`/penjualan/faktur/${id}/cetak`} style={{ textDecoration: "none", padding: "6px 14px", display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <i className="ti ti-file-type-pdf" /> Cetak / PDF
+        </Link>
+      </div>
       {sp.error && <div className="p2ban" role="alert">{sp.error}</div>}
       {sp.success && <div className="p2ban" role="status">{sp.success}</div>}
       <p>{customer?.name ?? "Tanpa pelanggan"} · {invoice.tanggal ?? "tanggal faktur tidak ada"} · jatuh tempo {invoice.jatuh_tempo ?? "tidak ada"} · {invoice.status}</p>
