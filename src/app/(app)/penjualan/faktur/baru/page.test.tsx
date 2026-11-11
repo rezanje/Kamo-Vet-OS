@@ -10,7 +10,9 @@ vi.mock("@/lib/branch-access", async () => {
   return { ...actual, allowedBranchIds: async () => state.allowed };
 });
 vi.mock("@/lib/satuan", () => ({ loadItemUnits: async () => new Map() }));
-vi.mock("@/lib/checked-list", () => ({ readCompleteList: async () => [{ id: "item", code: "SKU", name: "Royal Canin", unit: "sak", sell_price: 300000 }] }));
+vi.mock("@/lib/checked-list", () => ({ readCompleteList: async (_q: unknown, label: string) => label === "Daftar tenaga penjual"
+  ? [{ id: "emp-dokter", nama: "Drh. Fiktif", jabatan: "Dokter Hewan", profile_id: null }, { id: "emp-actor", nama: "Admin Fiktif", jabatan: "Admin", profile_id: "actor" }]
+  : [{ id: "item", code: "SKU", name: "Royal Canin", unit: "sak", sell_price: 300000 }] }));
 vi.mock("@/app/(app)/penjualan/BarisJualForm", () => ({ BarisJualForm: () => <div data-testid="baris" /> }));
 vi.mock("@/app/(app)/penjualan/faktur/baru/actions", () => ({ buatFakturLangsung: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
@@ -70,4 +72,12 @@ it("menyembunyikan formulir dari peran yang tidak boleh menerbitkan faktur", asy
 
 it("membawa identitas permintaan supaya pengiriman dan faktur tidak dobel", async () => {
   expect(await render()).toContain('name="request_key"');
+});
+
+it("menawarkan tenaga penjual dari daftar karyawan aktif, bawaan = karyawan akun yang login", async () => {
+  const html = await render();
+  expect(html).toContain('name="salesperson_id"');
+  expect(html).toContain("Drh. Fiktif — Dokter Hewan");
+  expect(html).toMatch(/<option value="emp-actor" selected="">Admin Fiktif/);
+  expect(html).toContain("— Pembuat faktur —");
 });

@@ -81,6 +81,8 @@ type SaleItemRow = {
 type FakturRel = FakturGrosirInti & {
   no_faktur: string | null; branch_id: string | null; tanggal: string; created_by: string | null;
   branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
+  /** Tenaga penjual pilihan di pesanan dasar faktur; kosong = pembuat faktur. */
+  sales_orders?: Rel<{ salesperson_id: string | null }>;
 };
 type GrosirItemRow = {
   id: string; nama: string; qty: number; harga: number; diskon: number | null;
@@ -153,7 +155,7 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
       }),
       readReportRows<GrosirItemRow>(async (awal, ujung) => {
         const { data, error, count } = await supabase.from("sales_invoice_items")
-          .select(`id, nama, qty, harga, diskon, sales_invoices!inner(${SELECT_FAKTUR_GROSIR}, created_by, branches(name), customers(name))`, { count: "exact" })
+          .select(`id, nama, qty, harga, diskon, sales_invoices!inner(${SELECT_FAKTUR_GROSIR}, created_by, sales_orders(salesperson_id), branches(name), customers(name))`, { count: "exact" })
           .gte("sales_invoices.tanggal", dari).lte("sales_invoices.tanggal", sampai)
           .order("id").range(awal, ujung);
         return { data: data as unknown as GrosirItemRow[] | null, error, count };
@@ -380,6 +382,10 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
     }
 
     // ── Grosir ────────────────────────────────────────────────────────────────
+    // Penjual = tenaga penjual pilihan di pesanan dasarnya, atau pembuat faktur bila kosong.
+    const penjualFaktur = (faktur: FakturRel): string | null =>
+      one(faktur.sales_orders ?? null)?.salesperson_id
+      ?? (faktur.created_by ? empPerProfile.get(faktur.created_by) ?? null : null);
     const fakturPer = new Map<string, FakturRel>();
     for (const item of grosirItems) {
       const faktur = one(item.sales_invoices);
@@ -411,7 +417,7 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
         netto: nilaiBarisGrosir(item),
         dokterId: null,
         stafId: null,
-        penjualId: faktur.created_by ? empPerProfile.get(faktur.created_by) ?? null : null,
+        penjualId: penjualFaktur(faktur),
         retur: false,
       });
     }
@@ -441,7 +447,7 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
         const dibayar = (Number(row.carried_paid) || 0) + (dibayarPer.get(id) ?? 0);
         return {
           id, no_faktur: row.no_faktur ?? "—", tanggal: row.tanggal,
-          penjualId: row.created_by ? empPerProfile.get(row.created_by) ?? null : null,
+          penjualId: fakturPer.has(id) ? penjualFaktur(fakturPer.get(id)!) : row.created_by ? empPerProfile.get(row.created_by) ?? null : null,
           nilai: Number(row.total) || 0, dibayar, sisa: Math.max(0, (Number(row.total) || 0) - dibayar),
         };
       })

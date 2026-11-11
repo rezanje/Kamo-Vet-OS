@@ -39,7 +39,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   const db = await createClient();
   const { data: { user } } = await db.auth.getUser();
   const { data: invoice, error } = await db.from("sales_invoices")
-    .select("id,no_faktur,order_id,tanggal,jatuh_tempo,total,dpp,ppn,carried_paid,returned_ar,revision,status,voided_on,void_reason,replaces_invoice_id,catatan,kategori,opening_batch_id,customers(name),branches(name, code)")
+    .select("id,no_faktur,order_id,tanggal,jatuh_tempo,total,dpp,ppn,carried_paid,returned_ar,revision,status,voided_on,void_reason,replaces_invoice_id,catatan,kategori,opening_batch_id,customers(name),branches(name, code),sales_orders(salesperson:employees(nama))")
     .eq("id", id).maybeSingle();
   if (error) throw new Error("Rincian faktur belum dapat dibaca: " + error.message);
   if (!invoice) notFound();
@@ -137,6 +137,10 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
   const hppBaris = new Map((lines.data ?? []).map((i) => [i.id, Number(i.hpp ?? 0)]));
   const bolehEditBaris = bolehKoreksi && !blokirEdit && barisEdit.length > 0 && !!user;
   const taxRate = Number(invoice.ppn) > 0 ? Number(settings.data?.ppn_rate) || 11 : 0;
+  // Tenaga penjual pilihan di pesanan dasar (faktur langsung sejak 11 Nov 2026); kosong = pembuat faktur.
+  const pesananDasar = Array.isArray(invoice.sales_orders) ? invoice.sales_orders[0] : invoice.sales_orders;
+  const penjualRel = pesananDasar?.salesperson;
+  const tenagaPenjual = (Array.isArray(penjualRel) ? penjualRel[0] : penjualRel)?.nama ?? null;
   return <>
     <DocumentBackLink from={sp.from} />
     <ActivityHistoryLink entity="sales_invoices" id={id} />
@@ -154,6 +158,7 @@ export default async function WholesaleInvoicePage({ params, searchParams }: {
       <p>{customer?.name ?? "Tanpa pelanggan"} · {invoice.tanggal ?? "tanggal faktur tidak ada"} · jatuh tempo {invoice.jatuh_tempo ?? "tidak ada"} · {invoice.status}</p>
       <p>Total {rp(invoice.total)} · Pembayaran terbawa {rp(invoice.carried_paid)} · Penerimaan faktur ini {rp(ownPaid)}{Number(invoice.returned_ar) > 0 && <> · Dikurangi retur {rp(invoice.returned_ar)}</>} · Sisa piutang {rp(sisaPiutangGrosir(invoice, ownPaid))}</p>
       {invoice.opening_batch_id && <p><span className="bge b">Saldo awal</span> {invoice.catatan} — sisa tagihan dari Accurate per tanggal cutover, tanpa barang, PPN, atau pendapatan periode ini. Terima pembayarannya dari daftar Faktur &amp; Penerimaan; pembatalan/koreksi tidak tersedia.</p>}
+      {tenagaPenjual && <p>Tenaga penjual: <strong>{tenagaPenjual}</strong></p>}
       {invoice.order_id && <p><Link href={`/penjualan/pesanan/${invoice.order_id}`}>Buka pesanan dan bukti pengiriman fisik</Link></p>}
       {invoice.replaces_invoice_id && <p>{byId.has(invoice.replaces_invoice_id) ? <>Menggantikan <DocumentLink kind="sales-invoice" id={invoice.replaces_invoice_id} from={`/penjualan/faktur/${id}`}>{byId.get(invoice.replaces_invoice_id)!.no_faktur}</DocumentLink> · {byId.get(invoice.replaces_invoice_id)!.status}</> : "Faktur asal tidak tersedia atau tidak dapat diakses."}</p>}
       {successor && <p>Diganti oleh <DocumentLink kind="sales-invoice" id={successor.id} from={`/penjualan/faktur/${id}`}>{successor.no_faktur}</DocumentLink> · {successor.status}</p>}

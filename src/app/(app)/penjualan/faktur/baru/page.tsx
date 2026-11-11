@@ -15,6 +15,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { PelangganPicker } from "@/components/PelangganPicker";
 
 type CatalogItem = { id: string; code: string; name: string; unit: string; sell_price: number };
+type TenagaPenjual = { id: string; nama: string; jabatan: string | null; profile_id: string | null };
 
 /**
  * Faktur Penjualan baru tanpa lewat halaman pesanan (permintaan Andri).
@@ -29,14 +30,21 @@ export default async function FakturJualBaruPage({ searchParams }: {
   const boleh = await bolehTransaksiKas();
   const today = hariIniWIB();
 
-  const [{ data: cabData }, { data: gudangData }, itemData, allowed] = await Promise.all([
+  const [{ data: cabData }, { data: gudangData }, itemData, allowed, penjualData] = await Promise.all([
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     supabase.from("warehouses").select("id, name, branch_id").eq("is_active", true).order("name"),
     readCompleteList<CatalogItem>((from, to) => supabase.from("items")
       .select("id, code, name, unit, sell_price", { count: "exact" })
       .eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang faktur", { maxRows: null }),
     user ? allowedBranchIds(supabase, user.id) : Promise.resolve([] as string[]),
+    // Tenaga penjual: karyawan aktif dari cabang mana pun (dokter klinik boleh jadi penjual faktur DC).
+    readCompleteList<TenagaPenjual>((from, to) => supabase.from("employees")
+      .select("id, nama, jabatan, profile_id", { count: "exact" })
+      .eq("status", "Aktif").is("trashed_at", null).order("nama").order("id").range(from, to), "Daftar tenaga penjual", { maxRows: null }),
   ]);
+  const penjual = penjualData as TenagaPenjual[];
+  // Bawaan = karyawan milik akun yang login, sama dengan perilaku lama (pembuat faktur = penjual).
+  const penjualBawaan = penjual.find((p) => !!user && p.profile_id === user.id)?.id ?? "";
 
   const cabang = ((cabData ?? []) as CabangOpsi[]).filter((b) => canUseBranch(allowed, b.id));
   const gudang = ((gudangData ?? []) as GudangOpsi[]).filter((g) => !!g.branch_id && canUseBranch(allowed, g.branch_id));
@@ -77,6 +85,13 @@ export default async function FakturJualBaruPage({ searchParams }: {
               <div>
                 <label className="flab" htmlFor="faktur-catatan">Catatan</label>
                 <input className="fi" id="faktur-catatan" name="catatan" placeholder="opsional" maxLength={1000} />
+              </div>
+              <div>
+                <label className="flab" htmlFor="faktur-penjual">Tenaga penjual</label>
+                <select className="fi" id="faktur-penjual" name="salesperson_id" defaultValue={penjualBawaan}>
+                  <option value="">— Pembuat faktur —</option>
+                  {penjual.map((p) => <option key={p.id} value={p.id}>{p.nama}{p.jabatan ? ` — ${p.jabatan}` : ""}</option>)}
+                </select>
               </div>
             </div>
 

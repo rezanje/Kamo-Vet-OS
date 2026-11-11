@@ -33,12 +33,15 @@ export async function buatFakturLangsung(formData: FormData) {
   const jatuhTempo = String(formData.get("jatuh_tempo") ?? "").trim() || tanggal;
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
   const requestKey = String(formData.get("request_key") ?? "").trim();
+  // Tenaga penjual opsional; kosong = pembuat faktur (perilaku lama). Database memeriksa karyawan aktif.
+  const salespersonId = String(formData.get("salesperson_id") ?? "").trim() || null;
 
   if (!requestKey || requestKey.length > 100) gagal("Formulir tidak valid. Muat ulang halaman lalu coba lagi.");
   if (!customerId) gagal("Pilih pelanggan dulu.");
   if (!branchId) gagal("Pilih cabang dulu.");
   if (!warehouseId) gagal("Pilih gudang pengirim dulu.");
   if (jatuhTempo < tanggal) gagal("Jatuh tempo tidak boleh mendahului tanggal faktur.");
+  if (salespersonId && !/^[0-9a-f-]{36}$/i.test(salespersonId)) gagal("Pilih tenaga penjual dari daftar karyawan.");
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) gagal("Sesi login sudah berakhir. Masuk lagi lalu ulangi.");
@@ -67,6 +70,7 @@ export async function buatFakturLangsung(formData: FormData) {
   const { data: order, error: orderError } = await supabase.from("sales_orders").insert({
     no_pesanan: noPesanan, customer_id: customerId, branch_id: branchId, warehouse_id: warehouseId,
     tanggal, rencana_kirim: tanggal, total: totalBaris(baris), catatan, created_by: user!.id,
+    ...(salespersonId ? { salesperson_id: salespersonId } : {}),
   }).select("id").single();
   if (orderError || !order) gagal(orderError?.message ?? "Pesanan dasar faktur gagal disimpan.");
 

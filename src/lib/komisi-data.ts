@@ -122,6 +122,8 @@ type FakturJualRow = {
   dpp: number;
   branch_id: string | null;
   created_by: string | null;
+  /** Tenaga penjual pilihan di pesanan dasar faktur; kosong = pembuat faktur. */
+  sales_orders: { salesperson_id: string | null } | { salesperson_id: string | null }[] | null;
   sales_invoice_items: { order_item_id: string | null; item_id: string | null; qty: number; harga: number }[] | null;
 };
 
@@ -366,10 +368,11 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   // Dipatok pada tanggal faktur, bukan tanggal pelunasan seperti klinik: di sini
   // pendapatan diakui saat faktur terbit (Dr 150001 / Cr 510001), jadi omzet komisi,
   // realisasi target, dan omzet dashboard menunjuk angka yang sama. Faktur batal
-  // tidak ikut. Yang dianggap penjualnya = pembuat faktur.
+  // tidak ikut. Penjualnya = tenaga penjual yang dipilih di pesanan dasarnya, atau pembuat
+  // faktur bila kosong (dokumen sebelum 11 Nov 2026).
   const { data: fjData } = await completeReportQuery(supabase
     .from("sales_invoices")
-    .select("id, tanggal, dpp, branch_id, created_by, sales_invoice_items(order_item_id, item_id, qty, harga)", { count: "exact" })
+    .select("id, tanggal, dpp, branch_id, created_by, sales_orders(salesperson_id), sales_invoice_items(order_item_id, item_id, qty, harga)", { count: "exact" })
     .neq("status", "batal").is("opening_batch_id", null)
     .gte("tanggal", awal).lte("tanggal", akhir));
 
@@ -380,7 +383,8 @@ export async function kumpulkanBarisKomisi(supabase: AnyClient, periode: string)
   );
 
   for (const f of fakturs) {
-    const employeeId = f.created_by ? empPerProfile.get(f.created_by) ?? null : null;
+    const pesanan = Array.isArray(f.sales_orders) ? f.sales_orders[0] : f.sales_orders;
+    const employeeId = pesanan?.salesperson_id ?? (f.created_by ? empPerProfile.get(f.created_by) ?? null : null);
     const items = f.sales_invoice_items ?? [];
 
     // Baris faktur tidak punya diskon sendiri; potongan kepala faktur (kalau ada)
