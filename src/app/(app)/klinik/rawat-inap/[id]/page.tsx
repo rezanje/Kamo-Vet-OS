@@ -10,7 +10,7 @@ import Link from "next/link";
 import { ObatKhusus } from "./ObatKhusus";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { CONDITION_LABEL, ripWaMessage, type Condition, hariRawatInap } from "@/lib/inpatient";
+import { CONDITION_LABEL, ripWaMessage, type Condition, hariRawatInap, isTerminal } from "@/lib/inpatient";
 import { hasSignedConsent, templatesForBranch } from "@/lib/consent";
 import { changeCondition, sendRipWa } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -51,10 +51,10 @@ export default async function RawatInapDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; success?: string; wa?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; wa?: string; pulang?: string }>;
 }) {
   const { id } = await params;
-  const { error, success, wa } = await searchParams;
+  const { error, success, wa, pulang } = await searchParams;
   const supabase = await createClient();
   const waktu = catatWaktu("detailRawatInap", id);
   // U07: data induk dibaca bersamaan dengan pengguna & hak cabangnya. Tidak ada bacaan
@@ -117,6 +117,10 @@ export default async function RawatInapDetailPage({
   const isDoctor = me?.role === "DOCTOR";
   const canManageTemplates = me?.role === "OWNER" || me?.role === "ADMIN";
   const active = !rec.discharged_at;
+  // Datang dari tombol "Pulangkan" di daftar: pilihan kondisi dipilihkan ke Sembuh / Boleh Pulang
+  // supaya staf tinggal menekan Simpan Kondisi. Tidak memulangkan apa pun sebelum disimpan.
+  const mauPulang = pulang === "1" && active && !isTerminal(cond);
+  const pilihanAwal: Condition = mauPulang ? "sembuh" : cond;
   const age = petAge(pet?.dob);
   const box = COND_BOX[cond] ?? COND_BOX.stabil;
   const admitDate = new Date(rec.admitted_at);
@@ -165,7 +169,7 @@ export default async function RawatInapDetailPage({
       {success === "admit" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Pasien masuk rawat inap.</div>}
       {success === "log" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Laporan harian tercatat (append-only).</div>}
       {success === "logedit" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Catatan dikoreksi — isi lama tersimpan di riwayat koreksi.</div>}
-      {success === "status" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Kondisi pasien diperbarui & tercatat di log.</div>}
+      {success === "status" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {active ? "Kondisi pasien diperbarui & tercatat di log." : "Pasien sudah dipulangkan & tercatat di log — tidak tampil lagi di daftar Sedang Dirawat."}</div>}
       {success === "wa" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-brand-whatsapp" /> WA duka terkirim ke pemilik.</div>}
       {success === "rxbukti" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>Bukti obat biasa tercatat.</div>}
       {success === "rxbuktibatal" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>Bukti obat biasa dibatalkan dan tersimpan di riwayat.</div>}
@@ -256,18 +260,22 @@ export default async function RawatInapDetailPage({
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sb)", letterSpacing: ".04em", marginBottom: 8 }}>
           <i className="ti ti-heart-rate-monitor" /> UBAH KONDISI PASIEN
         </div>
+        {mauPulang && (
+          <div className="p2ban" style={{ marginBottom: 10, background: "#eff6ff", border: ".5px solid #bfdbfe", color: "var(--posb)" }}>
+            <span><i className="ti ti-door-exit" /> Pasien <b>belum</b> dipulangkan. &ldquo;Sembuh / Boleh Pulang&rdquo; sudah dipilihkan — ganti ke Pulang Paksa / RIP bila perlu, lalu tekan <b>Simpan Kondisi</b>.</span>
+          </div>
+        )}
         {cond !== "pulang_paksa" && <TransactionForm userId={draftUserId} scope={`inpatient-condition:${id}`} action={changeCondition} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
           <input type="hidden" name="recordId" value={rec.id} />
           <div>
             <label className="flab">Kondisi baru</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
               {(["stabil", "kritis", "sembuh", "rip", "pulang_paksa"] as const).map((s) => (
-                <label key={s} className="back-btn" style={{
-                  padding: "6px 13px", borderRadius: 7, border: ".5px solid var(--bd)", cursor: "pointer", fontSize: 11,
-                  background: s === cond ? "var(--sb)" : "#fff", color: s === cond ? "#fff" : s === "rip" ? "#b91c1c" : "var(--tm)",
-                }}>
-                  <input type="radio" name="new_status" value={s} defaultChecked={s === cond} style={{ marginRight: 5 }} />
-                  {CONDITION_LABEL[s]}
+                // Warna gelap mengikuti pilihan yang sedang dicentang (CSS), bukan kondisi tersimpan:
+                // dulu yang menyala selalu kondisi lama, jadi pilihan baru terlihat seperti belum dipilih.
+                <label key={s} className={`back-btn kondisi-opsi${s === "rip" ? " kondisi-opsi-rip" : ""}`}>
+                  <input type="radio" name="new_status" value={s} defaultChecked={s === pilihanAwal} style={{ marginRight: 5 }} />
+                  {CONDITION_LABEL[s]}{s === cond && <span style={{ fontSize: 9.5, opacity: .75, marginLeft: 4 }}>(saat ini)</span>}
                 </label>
               ))}
             </div>
@@ -280,6 +288,7 @@ export default async function RawatInapDetailPage({
         </TransactionForm>}
         {cond === "pulang_paksa" && <div style={{ fontSize: 12 }}>Status kepulangan sudah tercatat. Koreksi selanjutnya perlu proses terpisah.</div>}
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 7 }}>
+          {active && "Pasien keluar dari daftar Sedang Dirawat setelah kondisi Sembuh / Pulang Paksa / RIP disimpan · "}
           Transisi ke RIP hanya oleh dokter{isDoctor ? "" : " (akun ini bukan dokter)"} · Pulang Paksa memerlukan form khusus yang ditandatangani setelah pasien masuk · jasa dan jumlah hari rawat inap dicatat manual di rekam medis, lalu ditagih lewat layar Tagihan rawat inap.
         </div>
         {!paksaConsentSigned && active && visit && paksaTemplateMissing && (

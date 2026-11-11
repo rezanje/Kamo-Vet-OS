@@ -286,8 +286,10 @@ export default async function RawatInapPage({
                       {lunasBelumPulang && (
                         <div style={{ marginBottom: 5, display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
                           <span className="bge b">Lunas, belum dipulangkan</span>
-                          {/* Hanya pintasan ke Ubah Kondisi di detail; tidak memulangkan dan tidak mengubah siapa yang boleh. */}
-                          <Link href={`/klinik/rawat-inap/${r.id}#ubah-kondisi`} className="btn-def"
+                          {/* Hanya pintasan ke Ubah Kondisi di detail; tidak memulangkan dan tidak mengubah siapa yang boleh.
+                              `pulang=1` membuat detail memilihkan "Sembuh / Boleh Pulang" dan memberi petunjuk
+                              bahwa pasien baru keluar dari daftar setelah Simpan Kondisi ditekan (laporan klinik, 11 Nov). */}
+                          <Link href={`/klinik/rawat-inap/${r.id}?pulang=1#ubah-kondisi`} className="btn-def"
                             style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>
                             <i className="ti ti-door-exit" /> Pulangkan
                           </Link>

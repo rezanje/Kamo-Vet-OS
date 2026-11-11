@@ -346,7 +346,11 @@ export async function changeCondition(formData: FormData) {
   const { data: rec } = await supabase
     .from("inpatient_records").select("condition_status").eq("id", recordId).single();
   if (!rec) redirect(`${back}?error=${encodeURIComponent("Data rawat inap tidak ditemukan")}`);
-  if (rec!.condition_status === newStatus) redirect(back);
+  // Dulu kembali diam-diam: staf mengira pasien sudah dipulangkan padahal pilihan kondisi
+  // belum diganti (pilihan bawaan = kondisi saat ini).
+  if (rec!.condition_status === newStatus) {
+    redirect(`${back}?error=${encodeURIComponent("Kondisi belum diganti — pilih kondisi baru (mis. Sembuh / Boleh Pulang), lalu tekan Simpan Kondisi")}`);
+  }
 
   const { error } = await supabase.rpc("clinic_change_inpatient_condition", {
     p_inpatient_id: recordId, p_new_status: newStatus, p_notes: notes,
