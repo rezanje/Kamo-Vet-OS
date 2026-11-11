@@ -31,6 +31,7 @@ import { sisaTagihan } from "@/lib/pelunasan-klinik";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
+import { adaPenerimaan, bolehBatalPenerimaan } from "@/lib/batal-penerimaan-akses";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -346,6 +347,9 @@ export default async function PembayaranPage({
   // Batalkan + terbitkan ulang adalah pekerjaan keuangan (ditegakkan di database);
   // layar tidak menawarkannya ke peran lain supaya tidak menabrak penolakan.
   const bolehTerbitUlang = bolehSiklusTagihan((profilKasir as { role?: string } | null)?.role);
+  // Batalkan penerimaan (Owner / peran berizin): hanya untuk tagihan yang punya uang diterima; database memeriksa ulang.
+  const bolehBatalTerima = !!invoice && !invoice.correction_pending && adaPenerimaan(invoice, paidAmount)
+    ? await bolehBatalPenerimaan(supabase, (profilKasir as { role?: string } | null)?.role) : false;
 
   const lunas = invoice?.paid_status === "Lunas";
   // Pelunasan DP/Belum Lunas rawat jalan oleh kasir klinik: invoice sama, laci shift sendiri.
@@ -773,6 +777,13 @@ export default async function PembayaranPage({
           {inpat && (profilKasir as { role?: string } | null)?.role === "OWNER" && (
             <div style={{ marginTop: 8 }}>
               <Link href={`/klinik/pembayaran/${visit.id}/koreksi-bmhp?invoice_id=${invoice.id}`} className="btn-def"><i className="ti ti-flask" /> Ubah BMHP tindakan (Owner)</Link>
+            </div>
+          )}
+
+          {/* Batalkan penerimaan (gaya Accurate): uang keluar dari kas/bank, tagihan kembali Belum Lunas, lalu diubah dan diterima lagi. */}
+          {bolehBatalTerima && invoice && (
+            <div style={{ marginTop: 8 }}>
+              <Link href={`/klinik/pembayaran/${visit.id}/batal-penerimaan?invoice_id=${invoice.id}`} className="btn-def"><i className="ti ti-receipt-off" /> Batalkan penerimaan</Link>
             </div>
           )}
 

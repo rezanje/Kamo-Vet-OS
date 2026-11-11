@@ -125,6 +125,24 @@ async function kwitansiKlinikRows(
   return rows;
 }
 
+/**
+ * "Batalkan penerimaan" klinik: uang TUNAI yang dikeluarkan dari tagihan milik shift lain yang sudah TUTUP dicatat sebagai pengurang
+ * di shift yang sedang terbuka (shift_berjalan); rekaman shift lama tidak pernah diubah. Bila shift asal masih terbuka, efeknya sudah
+ * otomatis di sana (tagihan tidak lagi lunas / baris pembayarannya dibalik), jadi TIDAK dihitung lagi di sini supaya tidak ganda.
+ * Tabel yang belum ada = fitur belum terpasang (kosong); gangguan baca lain menghentikan penutupan.
+ */
+async function pembatalanTunaiShift(supabase: AnyClient, shiftId: string): Promise<{ total: number; metode_bayar: string }[]> {
+  const { data, error } = await supabase
+    .from("clinic_receipt_cancellations")
+    .select("cash_amount, shift_mode")
+    .eq("cancel_shift_id", shiftId).eq("shift_mode", "shift_berjalan");
+  if (gagalBacaUang(error)) throw new Error(UANG_SHIFT_TIDAK_TERBACA);
+  if (error) return [];
+  return ((data ?? []) as { cash_amount: number | string | null; shift_mode?: string }[])
+    .filter((r) => (r.shift_mode ?? "shift_berjalan") === "shift_berjalan" && Number(r.cash_amount) > 0)
+    .map((r) => ({ total: -(Number(r.cash_amount) || 0), metode_bayar: "Tunai" }));
+}
+
 /** Uang masuk shift ini, dari sumber yang benar menurut jenis shiftnya. */
 export async function pemasukanShift(
   supabase: AnyClient,
@@ -166,8 +184,9 @@ export async function pemasukanShift(
     // Itu bukan uang masuk, hanya utang klinik ke pemilik yang berkurang — uangnya sudah
     // masuk laci pada shift saat kwitansinya dibuat.
     const kwitansiRows = await kwitansiKlinikRows(supabase, shift.id);
+    const batalRows = await pembatalanTunaiShift(supabase, shift.id);
 
-    return [...originalParts, ...kwitansiRows, ...invoiceCashRows(
+    return [...originalParts, ...kwitansiRows, ...batalRows, ...invoiceCashRows(
       ((invoices ?? []) as {
         id: string; total: number; dp_amount: number; paid_status: string; metode_bayar: string;
         shift_cash_carry?: number | null;

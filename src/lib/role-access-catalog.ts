@@ -36,4 +36,7 @@ export function parseRoleAccessConfig(value: unknown, role: string): RoleAccessC
 /** The policy the database actually applies: no saved action policy ("legacy") allows every enforced action
  * (subject to the original role/branch/state ceilings); an explicit policy allows exactly its list. */
 export const effectiveAllowedActions = (config: RoleAccessConfig): string[] =>
-  config.actions.source === "legacy" ? config.action_catalog.filter(a => a.enforced).map(a => a.id) : config.actions.allowed;
+  config.actions.source === "legacy" ? config.action_catalog.filter(a => a.enforced && !ACTIONS_DEFAULT_OFF.includes(a.id)).map(a => a.id) : config.actions.allowed;
+/** Aksi yang BAWAANNYA MATI untuk peran selain Owner: kebijakan "bawaan lama" tidak memberinya; hanya izin tertulis eksplisit
+ * (database menolak peran tanpa izin tertulis, jadi layar tidak boleh menampilkannya tercentang). */
+export const ACTIONS_DEFAULT_OFF: readonly string[] = ["klinik.batalkan_penerimaan"];

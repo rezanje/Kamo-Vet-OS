@@ -22,6 +22,7 @@ type Db = {
   cash_advances_inserted?: Any[];
   journalLines?: Any[];
   clinic_payment_receipts?: Any[];
+  clinic_receipt_cancellations?: Any[];
   /** Tabel yang bacaannya gagal — untuk menguji gagal-tertutup. */
   gagal?: Record<string, { code?: string; message: string }>;
 };
@@ -168,6 +169,26 @@ describe("pemasukanShift", () => {
     const hasil = await hitungShift(makeClient(lain), shift({ shift_type: "klinik" }));
     expect(hasil.breakdown.Tunai).toBe(-80000);
     expect(hasil.expected).toBe(20000);
+  });
+
+  // Batalkan penerimaan klinik: tunai yang dikeluarkan dari tagihan shift lain yang sudah tutup mengurangi laci shift berjalan.
+  it("subtracts cash returned by a receipt cancellation recorded in this (current) shift, and ignores origin-open mode", async () => {
+    const berjalan: Db = { clinic_receipt_cancellations: [{ cancel_shift_id: "S1", shift_mode: "shift_berjalan", cash_amount: 60000 }] };
+    const hasil = await hitungShift(makeClient(berjalan), shift({ shift_type: "klinik" }));
+    expect(hasil.breakdown.Tunai).toBe(-60000);
+    expect(hasil.expected).toBe(40000);
+    const asalTerbuka: Db = { clinic_receipt_cancellations: [{ cancel_shift_id: "S1", shift_mode: "shift_asal_terbuka", cash_amount: 60000 }] };
+    expect((await hitungShift(makeClient(asalTerbuka), shift({ shift_type: "klinik" }))).breakdown.Tunai).toBe(0);
+    const nol: Db = { clinic_receipt_cancellations: [{ cancel_shift_id: "S1", shift_mode: "shift_berjalan", cash_amount: 0 }] };
+    expect((await hitungShift(makeClient(nol), shift({ shift_type: "klinik" }))).breakdown.Tunai).toBe(0);
+  });
+  it("fails closed when the cancellation read fails, but treats a not-yet-installed table as empty", async () => {
+    await expect(pemasukanShift(makeClient({ gagal: { clinic_receipt_cancellations: { code: "PGRST301", message: "izin ditolak" } } }), shift({ shift_type: "klinik" }))).rejects.toThrow(/Uang shift belum dapat dibaca/);
+    expect(await pemasukanShift(makeClient({ gagal: { clinic_receipt_cancellations: { code: "42P01", message: 'relation "clinic_receipt_cancellations" does not exist' } } }), shift({ shift_type: "klinik" }))).toEqual([]);
+  });
+  it("a cancellation of another shift's cash never touches a petshop shift", async () => {
+    const db: Db = { clinic_receipt_cancellations: [{ cancel_shift_id: "S1", shift_mode: "shift_berjalan", cash_amount: 60000 }] };
+    expect(await pemasukanShift(makeClient(db), shift({ shift_type: "petshop" }))).toEqual([]);
   });
 
   it("counts original mixed checkout parts separately in the clinic shift", async () => {
