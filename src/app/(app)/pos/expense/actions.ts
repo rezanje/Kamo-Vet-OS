@@ -3,11 +3,12 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
-import { saveExpense } from "@/lib/expense-save";
+import { saveExpense, isExpenseRejection } from "@/lib/expense-save";
 import { createClient } from "@/lib/supabase/server";
 
 export async function simpanExpense(formData: FormData) {
-  await saveExpense(formData, "backoffice");
+  const saved = await saveExpense(formData, "backoffice");
+  if (isExpenseRejection(saved)) return saved;
   revalidatePath("/kasir/pengeluaran");
   revalidatePath("/pos/expense");
   revalidatePath("/buku-besar/beban");
