@@ -191,7 +191,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
       key: isService || bmhp ? crypto.randomUUID() : it.id, item_id: it.id, nama_obat: it.name, qty: 1,
       satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1, jenis: isService ? "jasa" : "obat",
       kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
-        service_performers: visitDefaultPerformers(visitDoctorId),
+        service_performers: visitDefaultPerformers(visitDoctorId, serviceStaff),
         ...(bmhp ? { bmhp } : {}),
     }];
   });
@@ -242,7 +242,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
     setCart(rows => [...rows, ...hasil.baris.map((row): CartRow => ({
       key: crypto.randomUUID(), item_id: row.item_id, nama_obat: row.nama, qty: row.qty, satuan: row.satuan,
       harga: row.harga, faktor: row.faktor, jenis: row.jenis, kategori: row.kategori ?? undefined,
-      service_performers: visitDefaultPerformers(visitDoctorId), paket_id: it.id, paket_nama: it.name, paket_qty: 1,
+      service_performers: visitDefaultPerformers(visitDoctorId, serviceStaff), paket_id: it.id, paket_nama: it.name, paket_qty: 1,
     }))]);
   };
   const pickObat = (it: ItemLite): void => {
@@ -300,7 +300,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
     const baris = dibuat; // konstan supaya bisa dipakai di dalam penutup setCart
     setCart(rows => racikanEditKey
       ? rows.map(line => line.key === racikanEditKey ? { ...baris, service_performers: line.service_performers } : line)
-      : [...rows, { ...baris, service_performers: visitDefaultPerformers(visitDoctorId) }]);
+      : [...rows, { ...baris, service_performers: visitDefaultPerformers(visitDoctorId, serviceStaff) }]);
     resetRacikan();
     setProcedureError("");
   };

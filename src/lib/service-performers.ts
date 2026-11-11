@@ -4,8 +4,18 @@ export type ServiceStaff = { id: string; nama: string; jabatan: string | null };
 export type ServicePerformersInput = { doctor_id: string | null; staff_id: string | null };
 export type ServicePerformersSnapshot = ServicePerformersInput & { version?: number; doctor_name?: string | null; staff_name?: string | null };
 export const emptyServicePerformers = (): ServicePerformersInput => ({ doctor_id: null, staff_id: null });
-/** Every clinic line starts on the visit's attending doctor (visits.doctor_id); admin may change it per line. */
-export const visitDefaultPerformers = (doctorId?: string | null): ServicePerformersInput => ({ doctor_id: doctorId || null, staff_id: null });
+/** Every clinic line starts on the visit's PJ (visits.doctor_id); admin may change it per line.
+ * The PJ is not always a doctor: grooming visits pick a groomer, penitipan any staff. Given the
+ * branch staff list, the PJ goes into the slot matching their jabatan — a groomer PJ in the Dokter
+ * slot made every line fail "pilih satu dokter dan satu non-dokter sesuai jabatan" (Babibu, 11 Nov).
+ * Someone outside the list (inactive / not assigned to the branch) is not preselected at all. */
+export function visitDefaultPerformers(personId?: string | null, staff?: ServiceStaff[]): ServicePerformersInput {
+  if (!personId) return emptyServicePerformers();
+  if (!staff) return { doctor_id: personId, staff_id: null };
+  const person = staff.find(row => row.id === personId);
+  if (!person) return emptyServicePerformers();
+  return clinicalRoles(person.jabatan).includes("doctor") ? { doctor_id: personId, staff_id: null } : { doctor_id: null, staff_id: personId };
+}
 
 /** Only reference IDs cross the write boundary. Database supplies the names. */
 export function servicePerformerInput(value: unknown): ServicePerformersInput {

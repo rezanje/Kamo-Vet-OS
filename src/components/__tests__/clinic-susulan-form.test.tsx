@@ -27,7 +27,7 @@ async function render(tabAwal?: string) {
   await act(async () => root.render(
     <TambahItemForm visitId="visit" requestKey="request" draftUserId="owner" tabAwal={tabAwal}
       items={[obat]} jasaItems={[]} tindakanItems={[tindakan]} bahanItems={[]} racikanItems={[]}
-      katalogRacikan={[]} bolehManual serviceStaff={[]} visitDoctorId="doctor" />));
+      katalogRacikan={[]} bolehManual serviceStaff={[{ id: "doctor", nama: "drh. Fiktif", jabatan: "Dokter" }]} visitDoctorId="doctor" />));
 }
 const tindakanPanel = () => host.querySelector('section[aria-label="Pilih tindakan / racikan"]');
 const obatPanel = () => host.querySelector('[placeholder="Cari nama obat / scan barcode…"]');

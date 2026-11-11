@@ -159,7 +159,7 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
   // Dokter PJ kunjungan jadi isian awal kolom Dokter tiap baris. Dibaca dari DOM supaya
   // pemulihan draf (yang menulis langsung ke kontrol) tetap jadi acuan.
   const dokterPjRef = useRef<HTMLSelectElement>(null);
-  const barisDefault = () => visitDefaultPerformers(dokterPjRef.current?.value ?? patient.dokterId);
+  const barisDefault = () => visitDefaultPerformers(dokterPjRef.current?.value ?? patient.dokterId, serviceStaff);
   const [bulkPerformers, setBulkPerformers] = useState(emptyServicePerformers);
   const [catatan, setCatatan] = useState("");
   const [discountPct, setDiscountPct] = useState(0);

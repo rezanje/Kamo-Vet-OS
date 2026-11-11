@@ -126,7 +126,7 @@ export function TambahItemForm({
     const baris = dibuat;
     setCart(rows => racikanEditKey
       ? rows.map(line => line.key === racikanEditKey ? { ...baris, service_performers: line.service_performers } : line)
-      : [...rows, { ...baris, service_performers: visitDefaultPerformers(visitDoctorId) }]);
+      : [...rows, { ...baris, service_performers: visitDefaultPerformers(visitDoctorId, serviceStaff) }]);
     resetRacikan();
     setProcedureError("");
   };
@@ -149,7 +149,7 @@ export function TambahItemForm({
       satuan: u?.unit ?? it.unit, harga: u?.sell_price ?? it.sell_price, faktor: u?.factor ?? 1,
       jenis: isService ? "jasa" : "obat",
       kategori: isService ? it.tindakan_kategori ?? undefined : undefined,
-      service_performers: visitDefaultPerformers(visitDoctorId),
+      service_performers: visitDefaultPerformers(visitDoctorId, serviceStaff),
       ...(bmhp ? { bmhp } : {}),
     }];
   });

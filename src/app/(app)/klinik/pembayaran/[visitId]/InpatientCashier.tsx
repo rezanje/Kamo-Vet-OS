@@ -70,7 +70,7 @@ export function InpatientCashier({ data, patient, catatanResep = null, cashierNa
     } else {
       const added: Line[] = result.baris.map(row => ({ key: crypto.randomUUID(), item_id: row.item_id, deskripsi: row.nama,
         qty: row.qty, harga: row.harga, satuan: row.satuan, jenis: row.jenis, kategori: row.kategori,
-        package_item_id: id, package_qty: 1, diskon_persen: 0, service_performers: visitDefaultPerformers(visitDoctorId) }));
+        package_item_id: id, package_qty: 1, diskon_persen: 0, service_performers: visitDefaultPerformers(visitDoctorId, serviceStaff) }));
       setRows(current => [...current.filter(row => row !== selected), ...added]);
     }
   };

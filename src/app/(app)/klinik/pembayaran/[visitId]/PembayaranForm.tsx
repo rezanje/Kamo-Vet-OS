@@ -132,7 +132,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   const performerLocked = (r: Line) => !!r.terkunci || (!performersInCorrection && !!r.prescription_item_id && !openSourceIds.has(r.prescription_item_id) && !pendingEditable(r));
   const rowSealed = (r: Line) => sealedPerformers && !performersInCorrection && !(performersForNewRows && !r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id) && !pendingEditable(r);
   const set = (i: number, patch: Partial<Line>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const add = () => setRows([...rows, { key: crypto.randomUUID(), deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0, service_performers: visitDefaultPerformers(defaultDoctorId) }]);
+  const add = () => setRows([...rows, { key: crypto.randomUUID(), deskripsi: "", qty: 1, harga: 0, item_id: null, diskon_persen: 0, service_performers: visitDefaultPerformers(defaultDoctorId, serviceStaff) }]);
   const del = (i: number) => setRows(rows.filter((_, j) => j !== i));
   // Andri 29 Okt: baris resep/racikan yang dihapus tidak pernah tertagih lagi (1 kunjungan
   // = 1 tagihan). Minta konfirmasi dulu; baris yang ditambah kasir sendiri langsung hapus.
@@ -451,7 +451,7 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, serverErr
   const berikanDefault = (rows: Line[]) => editMode ? rows : rows.map(row => row.terkunci
     || (!!row.prescription_item_id && !openSourceIds.has(row.prescription_item_id))
     || row.service_performers?.doctor_id || row.service_performers?.staff_id
-    ? row : { ...row, service_performers: visitDefaultPerformers(visitDoctorId) });
+    ? row : { ...row, service_performers: visitDefaultPerformers(visitDoctorId, serviceStaff) });
   // Group only explicit persisted origin or a deliberate package pick. Matching
   // a current recipe/price is NOT evidence that ordinary goods were a package.
   const [obat, setObat] = useState<Line[]>(() => berikanDefault(initialObat));
@@ -536,7 +536,7 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, serverErr
     const baru = hasil.baris.map((row): Line => ({
       key: crypto.randomUUID(), deskripsi: row.nama, qty: row.qty, harga: row.harga, item_id: row.item_id, satuan: row.satuan,
       kategori: row.kategori, diskon_persen: 0, package_item_id: packageId, package_qty: 1, jenis: row.jenis,
-      service_performers: visitDefaultPerformers(visitDoctorId),
+      service_performers: visitDefaultPerformers(visitDoctorId, serviceStaff),
     }));
     setObat(rows => [...rows.slice(0, i), ...baru, ...rows.slice(i + 1)]);
   };

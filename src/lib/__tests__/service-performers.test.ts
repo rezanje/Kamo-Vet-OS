@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { bulkFillServicePerformers, servicePerformerNames, servicePerformerInput, serviceStaffSlots } from "../service-performers";
+import { bulkFillServicePerformers, servicePerformerNames, servicePerformerInput, serviceStaffSlots, visitDefaultPerformers } from "../service-performers";
 const staff = [{id:"d",nama:"Fictional vet",jabatan:"Dokter"},{id:"n",nama:"Fictional nurse",jabatan:"Asisten dokter"},{id:"g",nama:"Fictional groomer",jabatan:"Groomer"}];
 it("reuses doctor classification without treating an assistant as a second doctor",()=>{
   expect(serviceStaffSlots(staff).doctors.map(row=>row.id)).toEqual(["d"]);
@@ -24,4 +24,12 @@ it("renders only recorded snapshot names, with honest unassigned and legacy labe
   expect(servicePerformerNames(null)).toEqual(["Pelaksana per baris belum tercatat (data lama)"]);
   expect(servicePerformerNames({version:1,doctor_id:null,staff_id:null})).toEqual(["Pelaksana belum ditetapkan"]);
   expect(servicePerformerNames({version:1,doctor_id:"d",staff_id:null})).toEqual(["Nama dokter tidak tersedia"]);
+});
+it("puts the visit PJ into the slot matching their jabatan, so a groomer PJ never lands in the Dokter slot",()=>{
+  expect(visitDefaultPerformers("d",staff)).toEqual({doctor_id:"d",staff_id:null});
+  expect(visitDefaultPerformers("g",staff)).toEqual({doctor_id:null,staff_id:"g"});
+  expect(visitDefaultPerformers("n",staff)).toEqual({doctor_id:null,staff_id:"n"});
+  expect(visitDefaultPerformers("gone",staff)).toEqual({doctor_id:null,staff_id:null});
+  expect(visitDefaultPerformers(null,staff)).toEqual({doctor_id:null,staff_id:null});
+  expect(visitDefaultPerformers("d")).toEqual({doctor_id:"d",staff_id:null});
 });
