@@ -2,8 +2,18 @@ import { createClient } from "@/lib/supabase/server";
 import { parseLampiran } from "@/lib/dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
 
-/** The database commits the document, proof and journal together, including retries. */
-export async function saveExpense(formData: FormData, context: "cashier" | "clinic" | "backoffice") {
+const KEY_REUSED_MESSAGE = "Permintaan sudah digunakan dengan rincian berbeda";
+
+/** A deterministic refusal returned (not thrown): production masks thrown action errors as a generic
+ * "Server Components render" digest, so the cashier could neither read nor recover from this one. */
+export type ExpenseRejection = { ok: false; outcome: "rejected"; code: "stale_request_key"; message: string };
+export const isExpenseRejection = (value: unknown): value is ExpenseRejection =>
+  typeof value === "object" && value !== null && (value as ExpenseRejection).ok === false;
+
+/** The database commits the document, proof and journal together, including retries.
+ * Returns an ExpenseRejection when this request key already belongs to a DIFFERENT saved expense: the database
+ * proved nothing was written for this payload, so the form may take a fresh key and retry without duplicating. */
+export async function saveExpense(formData: FormData, context: "cashier" | "clinic" | "backoffice"): Promise<{ expense_id: string; journal_id: string } | ExpenseRejection> {
   const requestKey = String(formData.get("request_key") ?? "").trim();
   const jumlah = Number(formData.get("jumlah"));
   const kategori = String(formData.get("kategori") ?? "").trim();
@@ -28,6 +38,10 @@ export async function saveExpense(formData: FormData, context: "cashier" | "clin
     },
     p_attachments: lampiran,
   });
+  if (error?.message === KEY_REUSED_MESSAGE) {
+    return { ok: false, outcome: "rejected", code: "stale_request_key",
+      message: "Kunci simpan lama sudah dipakai pengeluaran lain yang tersimpan sebelumnya. Pengeluaran ini BELUM tersimpan. Kunci sudah diganti otomatis; periksa isian lalu tekan Simpan sekali lagi." };
+  }
   if (error) throw new Error(error.message || "Gagal menyimpan pengeluaran. Draf tetap tersedia.");
   if (!data?.expense_id || !data?.journal_id) throw new Error("Pengeluaran dan jurnal belum terkonfirmasi lengkap. Periksa daftar lalu coba lagi dengan draf yang sama.");
   return data as { expense_id: string; journal_id: string };

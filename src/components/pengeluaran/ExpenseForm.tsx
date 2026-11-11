@@ -2,22 +2,30 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
-import { TransactionDraft, clearTransactionDraft } from "@/components/TransactionDraft";
-import { usePreservedAction } from "@/components/LocalTransactionDraft";
+import { TransactionDraft, clearTransactionDraft, transactionDraftName } from "@/components/TransactionDraft";
+import { usePreservedAction, type ActionRejection } from "@/components/LocalTransactionDraft";
 import { periksaExpense } from "@/app/(app)/pos/expense/actions";
 
 const Ready = createContext(false);
 
 /** A financial request identity survives failed responses independently of draft expiry. */
 export function ExpenseForm({ userId, scope, action, children }: {
-  userId: string; scope: string; action: (data: FormData) => Promise<void>; children: ReactNode;
+  userId: string; scope: string; action: (data: FormData) => Promise<void | ActionRejection>; children: ReactNode;
 }) {
   const identity = `${userId}:${scope}`;
   const [stored, setStored] = useState({ identity: "", key: "" });
   const [storageFailure, setStorageFailure] = useState("");
   const key = stored.identity === identity ? stored.key : "";
   const inFlight = useRef(false);
-  const { save, failure } = usePreservedAction(action);
+  const rotateKey = useRef<() => void>(() => {});
+  // The server proved this key already belongs to another saved expense, so nothing was written for this
+  // payload: take a fresh key (keeping the typed fields and the draft) instead of failing forever.
+  const guarded = async (data: FormData) => {
+    const result = await action(data);
+    if ((result as { code?: string } | void)?.code === "stale_request_key") rotateKey.current();
+    return result;
+  };
+  const { save, failure } = usePreservedAction(guarded);
   const recovery = usePreservedAction(periksaExpense);
   useEffect(() => {
     const name = `vetos:expense-request:v1:${identity}`;
@@ -37,6 +45,22 @@ export function ExpenseForm({ userId, scope, action, children }: {
       setStored({ identity, key: durable ? requestKey : "" });
       setStorageFailure(durable ? "" : "Penyimpanan browser tidak tersedia. Isian tetap terlihat; aktifkan penyimpanan lalu muat ulang sebelum menyimpan pengeluaran.");
     } });
+    rotateKey.current = () => {
+      const previous = requestKey;
+      requestKey = crypto.randomUUID();
+      try {
+        const draftName = transactionDraftName(userId, "transaction", scope);
+        const draft = JSON.parse(sessionStorage.getItem(draftName) ?? "null");
+        if (draft?.requestKey === previous) sessionStorage.setItem(draftName, JSON.stringify({ ...draft, requestKey }));
+        sessionStorage.removeItem(`vetos:expense-attempt:v1:${identity}`);
+        sessionStorage.setItem(name, requestKey);
+        if (sessionStorage.getItem(name) !== requestKey) throw Error("Storage unavailable");
+        setStored({ identity, key: requestKey });
+      } catch {
+        setStored({ identity, key: "" });
+        setStorageFailure("Penyimpanan browser tidak tersedia. Muat ulang halaman lalu isi kembali sebelum menyimpan pengeluaran.");
+      }
+    };
     const confirmed = (event: Event) => {
       const detail = (event as CustomEvent<{ scope: string; key: string }>).detail;
       if (detail?.scope !== scope || detail.key !== requestKey) return;
@@ -52,7 +76,7 @@ export function ExpenseForm({ userId, scope, action, children }: {
       }
     };
     window.addEventListener("vetos:transaction-confirmed", confirmed);
-    return () => { cancelled = true; window.removeEventListener("vetos:transaction-confirmed", confirmed); };
+    return () => { cancelled = true; rotateKey.current = () => {}; window.removeEventListener("vetos:transaction-confirmed", confirmed); };
   }, [identity, scope, userId]);
 
   const submit = async (data: FormData) => {
