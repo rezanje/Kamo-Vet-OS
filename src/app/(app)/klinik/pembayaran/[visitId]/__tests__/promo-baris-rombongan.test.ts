@@ -19,10 +19,14 @@ vi.mock("@/lib/rombongan-server", () => ({ bacaRombongan: async () => ({ custome
   baris: [{ visitId: "pet-a", hewan: "Alpha", invoiceNo: null }, { visitId: "pet-b", hewan: "Beta", invoiceNo: null }] }) }));
 // Pet A: Rp100.000 of item-a; pet B: Rp50.000 of item-b. The code's promo (20%) only covers item-b.
 vi.mock("@/lib/tagihan-klinik", async (original) => ({ ...await original<typeof import("@/lib/tagihan-klinik")>(),
-  barisTagihanVisit: async (_s: unknown, visitId: string): Promise<{ deskripsi: string; qty: number; harga: number; jenis: string; item_id: string; satuan: string | null }[]> => [visitId === "pet-a"
-    ? { deskripsi: "Rawat A", qty: 1, harga: 100000, jenis: "jasa", item_id: "item-a", satuan: null }
-    : { deskripsi: "Rawat B", qty: 1, harga: 50000, jenis: "jasa", item_id: "item-b", satuan: null }]
-    .concat(visitId === "pet-b" ? [{ deskripsi: "Anthel Cat", qty: 1, harga: 18000, jenis: "obat", item_id: "item-anthel", satuan: "pcs" }] : []),
+  barisTagihanVisit: async (_s: unknown, visitId: string) => {
+    type Baris = { deskripsi: string; qty: number; harga: number; jenis: string; item_id: string; satuan: string | null };
+    const baris: Baris[] = visitId === "pet-a"
+      ? [{ deskripsi: "Rawat A", qty: 1, harga: 100000, jenis: "jasa", item_id: "item-a", satuan: null }]
+      : [{ deskripsi: "Rawat B", qty: 1, harga: 50000, jenis: "jasa", item_id: "item-b", satuan: null },
+         { deskripsi: "Anthel Cat", qty: 1, harga: 18000, jenis: "obat", item_id: "item-anthel", satuan: "pcs" }];
+    return baris;
+  },
   hitungPotonganKlinik: async (_s: unknown, opts: { rows: { item_id: string; harga: number }[]; promoKampanyeId?: string | null }) => {
     const kena = opts.promoKampanyeId === "promo-b" && opts.rows.some((r) => r.item_id === "item-b");
     return { promo: kena ? 10000 : 0, voucher: 0, golongan: 0, total: kena ? 10000 : 0, tolakVoucher: null,
