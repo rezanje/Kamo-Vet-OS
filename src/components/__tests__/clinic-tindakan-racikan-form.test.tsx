@@ -78,7 +78,7 @@ async function pickFrom(label: string, query: string) {
 }
 const cell = (name: string) => [...host.querySelectorAll("td")].find(td => td.querySelector("[data-cart-item]")?.textContent === name);
 
-it("standalone checkpoint clearly refuses a multi-recipe batch without submitting or losing cart", async () => {
+it("standalone sends a multi-recipe cart in one click (server saves them one by one)", async () => {
   await render("standalone"); await openTab();
   for (let i=0;i<2;i++) {
     await click('button[aria-label="Pilih Obat Racik Sirup"]');
@@ -86,10 +86,11 @@ it("standalone checkpoint clearly refuses a multi-recipe batch without submittin
     await click('button[aria-label="Tambah Obat Racik Sirup ke keranjang"]');
   }
   vi.clearAllMocks();
+  vi.mocked(addInpatientBillables).mockResolvedValue({ saved: false, href: "" });
   await act(async()=>host.querySelector('form')!.requestSubmit());
-  expect(addInpatientBillables).not.toHaveBeenCalled();
-  expect(cart()).toHaveLength(2);
-  expect(host.textContent).toContain("Simpan satu racikan per penambahan");
+  expect(addInpatientBillables).toHaveBeenCalledTimes(1);
+  expect(cart().filter((row: { jenis: string }) => row.jenis === "racikan")).toHaveLength(2);
+  expect(host.textContent).not.toContain("Simpan satu racikan per penambahan");
 });
 
 it.each(["exam", "inpatient", "standalone"])("%s shows one picker listing procedures and compounds side by side", async kind => {

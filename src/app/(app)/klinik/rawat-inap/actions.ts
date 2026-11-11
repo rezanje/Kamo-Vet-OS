@@ -296,13 +296,39 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
     }
   }
   waktu.tandai("baca");
-  const { error: saveError } = billables ? await supabase.rpc("clinic_add_inpatient_billables", {
-    p_inpatient_id: recordId,
-    p_rows: rows,
-    p_compounds: compounds,
-    p_reason: String(formData.get("entry_reason") ?? "").trim(),
-    p_request_key: requestKey,
-  }) : await supabase.rpc("clinic_save_inpatient_log_with_status", {
+  if (billables) {
+    // Database menerbitkan satu racikan per transaksi (urutan kunci stok bahan antar pasien
+    // belum diverifikasi untuk banyak racikan sekaligus). Keranjang berisi beberapa racikan
+    // dipecah di sini: simpanan 1 = obat/BMHP + racikan pertama, berikutnya satu racikan
+    // per simpanan. Kunci tiap simpanan diturunkan dari kunci draf yang sama, jadi Simpan
+    // ulang setelah gagal di tengah memutar ulang yang sudah masuk, bukan menagih dua kali.
+    const reason = String(formData.get("entry_reason") ?? "").trim();
+    const batches = compounds.length > 1
+      ? compounds.map((compound, index) => ({
+        rows: index === 0 ? rows : [], compounds: [compound],
+        key: index === 0 ? requestKey : `${requestKey}:racikan-${index + 1}`,
+      }))
+      : [{ rows, compounds, key: requestKey }];
+    for (const [index, batch] of batches.entries()) {
+      const { error } = await supabase.rpc("clinic_add_inpatient_billables", {
+        p_inpatient_id: recordId,
+        p_rows: batch.rows,
+        p_compounds: batch.compounds,
+        p_reason: reason,
+        p_request_key: batch.key,
+      });
+      if (!error) continue;
+      waktu.selesai();
+      const pesan = parseClinicRecordError(error);
+      if (index === 0) redirect(`${formHref}?error=${encodeURIComponent(pesan)}`);
+      // Sebagian sudah masuk tagihan: halaman tagihan perlu segar walau simpanan berhenti.
+      for (const path of [back, `/klinik/pembayaran/${rec!.visit_id}`, "/klinik/racik", "/klinik/stok", "/pos/stok"]) revalidatePath(path);
+      const masuk = racikan.slice(0, index).map(r => r.nama_obat).join(", ");
+      redirect(`${formHref}?error=${encodeURIComponent(`${masuk} sudah masuk tagihan. ${racikan[index]?.nama_obat ?? "Racikan berikutnya"} belum tersimpan: ${pesan} `
+        + "Perbaiki racikan yang belum tersimpan tanpa mengubah baris lain, lalu Simpan lagi — yang sudah masuk tidak ditagih dua kali.")}`);
+    }
+  }
+  const { error: saveError } = billables ? { error: null } : await supabase.rpc("clinic_save_inpatient_log_with_status", {
     p_inpatient_id: recordId,
     p_medical_record_id: mrId,
     p_log: log,

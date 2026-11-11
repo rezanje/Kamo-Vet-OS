@@ -361,8 +361,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
     }} onInputCapture={draftCapture} onChangeCapture={draftCapture} onSubmitCapture={event => {
       if (clinicalBillingDraft) { event.preventDefault(); event.stopPropagation(); draftCapture(); return; }
       const kurang = kekuranganStok(cart, stokById, (id, unit) => unitsOf(id).find(u => u.unit === unit)?.factor ?? 1);
-      if (billables && cart.filter(row => row.jenis === "racikan").length > 1) { event.preventDefault(); event.stopPropagation(); setProcedureError("Simpan satu racikan per penambahan. Obat / BMHP boleh beberapa baris; racikan berikutnya disimpan terpisah."); }
-      else if (procedureDraft || saleItemId) { event.preventDefault(); event.stopPropagation(); setTab(TINDAKAN); setProcedureError("Selesaikan form tindakan / racikan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
+      if (procedureDraft || saleItemId) { event.preventDefault(); event.stopPropagation(); setTab(TINDAKAN); setProcedureError("Selesaikan form tindakan / racikan: tambahkan ke keranjang atau batalkan sebelum menyimpan."); }
       else if (kurang.length) { event.preventDefault(); event.stopPropagation(); setStokKurang(kurang); }
       else draftCapture();
     }}>
@@ -415,7 +414,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
             Obat, jasa, tindakan / BMHP dan racikan masuk tagihan pasien pada kunjungan yang sama, tanpa membuat Laporan Visit.
             <label className="flab">Alasan penambahan<input className="fi" name="entry_reason" required minLength={3} maxLength={1000} defaultValue="Penambahan obat / BMHP rawat inap" /></label>
             Protokol dan pemberian dosis tetap dicatat terpisah, tidak otomatis menambah tagihan.
-            <div>Satu racikan per penyimpanan; obat dan tindakan / BMHP boleh beberapa baris.</div>
+            <div>Obat, tindakan / BMHP dan racikan boleh beberapa baris; beberapa racikan disimpan berurutan otomatis.</div>
           </div> : <>
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0 10px" }}>
             <i className="ti ti-clipboard-list" style={{ fontSize: 16, color: "var(--posb)" }} />
