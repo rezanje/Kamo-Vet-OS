@@ -31,7 +31,7 @@ import { sisaTagihan } from "@/lib/pelunasan-klinik";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
-import { adaPenerimaan, bolehBatalPenerimaan } from "@/lib/batal-penerimaan-akses";
+import { adaPenerimaan, bacaBolehBatalPenerimaan, putuskanBolehBatalPenerimaan } from "@/lib/batal-penerimaan-akses";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -257,7 +257,7 @@ export default async function PembayaranPage({
       };
     }))
     : null;
-  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
+  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult, batalDibaca] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
     invoice ? supabase.from("clinic_demo_invoice_snapshots").select("fee_bearer,fee_amount,payments,incentive_pool").eq("invoice_id",invoice.id).maybeSingle() : Promise.resolve({data:null,error:null}),
@@ -267,6 +267,8 @@ export default async function PembayaranPage({
     // cabang, DEMO, tagihan batal). Tebakan lama di layar ini menolak keadaan yang
     // justru diterima RPC-nya, sehingga koreksi sesudah pembatalan kwitansi mentok.
     invoice ? supabase.rpc("clinic_invoice_correction_eligible", {p_invoice_id:invoice.id}) : Promise.resolve({data:false,error:null}),
+    // Batalkan penerimaan: dibaca bersama bacaan lain (bukan rantai baru); peran dipakai belakangan hanya untuk jatuh-ke-Owner bila gagal baca.
+    invoice ? bacaBolehBatalPenerimaan(supabase) : Promise.resolve(null),
   ]);
   const cartVersion = versiKeranjang(!invoice, cartVersionP ? await cartVersionP : {data:null,error:null});
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
@@ -349,7 +351,7 @@ export default async function PembayaranPage({
   const bolehTerbitUlang = bolehSiklusTagihan((profilKasir as { role?: string } | null)?.role);
   // Batalkan penerimaan (Owner / peran berizin): hanya untuk tagihan yang punya uang diterima; database memeriksa ulang.
   const bolehBatalTerima = !!invoice && !invoice.correction_pending && adaPenerimaan(invoice, paidAmount)
-    ? await bolehBatalPenerimaan(supabase, (profilKasir as { role?: string } | null)?.role) : false;
+    && putuskanBolehBatalPenerimaan(batalDibaca, (profilKasir as { role?: string } | null)?.role);
 
   const lunas = invoice?.paid_status === "Lunas";
   // Pelunasan DP/Belum Lunas rawat jalan oleh kasir klinik: invoice sama, laci shift sendiri.
