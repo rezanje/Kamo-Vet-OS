@@ -55,6 +55,7 @@ export default async function PenjualanDetailPage({
   const { id } = await params;
   const { success, error, shift: shiftParam } = await searchParams;
   const shiftLain = shiftParam === "lain";
+  const shiftTanpa = shiftParam === "tanpa";
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -74,7 +75,7 @@ export default async function PenjualanDetailPage({
 
   // Batalkan penerimaan: catatan struk ini, status shift asal, dan hak peran (Owner tidak pernah terkunci).
   const { data: receiptData, error: receiptError } = await supabase.from("pos_receipt_cancellations")
-    .select("id, reason, created_at, created_by, source_shift_status, source_shift_id, effect_shift_id, before_payments, after_payments, closed_at, closed_by, closed_kind")
+    .select("id, reason, created_at, created_by, source_shift_status, source_shift_id, effect_shift_id, shift_mode, before_payments, after_payments, closed_at, closed_by, closed_kind")
     .eq("sale_id", id).order("created_at", { ascending: true });
   const receiptCancels = (receiptData ?? []) as unknown as PetshopReceiptCancel[];
   const openCancel = receiptCancels.find(c => !c.closed_at) ?? null;
@@ -144,8 +145,8 @@ export default async function PenjualanDetailPage({
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {success === "cancelled" ? "Penjualan dibatalkan. Riwayat dan pembalikannya tersimpan."
             : success === "payment-corrected" ? "Metode pembayaran terkoreksi pada penjualan ini. Jurnal pembalik dan pengganti tersimpan."
-            : success === "receipt-cancelled" ? `Penerimaan dibatalkan: uang dikeluarkan dari kas/bank dan struk menjadi belum dibayar.${shiftLain ? " Shift asal struk sudah ditutup; angka tutupnya tidak diubah, pengembalian dicatat di shift terbuka cabang ini." : ""} Terima pembayaran lagi atau ubah transaksi di bawah.`
-            : success === "receipt-received" ? "Pembayaran diterima ulang. Jurnal dan laci shift tercatat."
+            : success === "receipt-cancelled" ? `Penerimaan dibatalkan: uang dikeluarkan dari kas/bank dan struk menjadi belum dibayar.${shiftLain ? " Shift asal struk sudah ditutup; angka tutupnya tidak diubah, pengembalian dicatat di shift terbuka Anda." : ""}${shiftTanpa ? " Shift asal struk sudah ditutup dan Anda tidak punya shift terbuka: pengembalian tunai ditandai \"tanpa shift\" untuk Finance dan tidak mengubah laci kasir mana pun." : ""} Terima pembayaran lagi atau ubah transaksi di bawah.`
+            : success === "receipt-received" ? `Pembayaran diterima ulang. Jurnal dan laci shift tercatat.${shiftTanpa ? " Anda tidak punya shift terbuka: uang tunai ditandai \"tanpa shift\" untuk Finance dan tidak masuk laci kasir mana pun." : ""}`
             : success === "disbursement-cancelled" ? "Pencairan dibatalkan: order kembali menjadi piutang marketplace." : "Dokumen tersimpan."}
         </div>
       )}

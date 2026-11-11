@@ -167,7 +167,7 @@ type PetshopReturn = { id: string; no_retur: string | null; tanggal: string; tot
 /** Batalkan penerimaan (gaya Accurate): satu catatan = pembatalan, dan (bila sudah) penutupannya. */
 export type PetshopReceiptCancel = {
   id: string; reason: string; created_at: string; created_by: string | null; source_shift_status: string | null;
-  effect_shift_id: string | null; source_shift_id: string | null; before_payments: PayPart[]; after_payments: PayPart[] | null;
+  effect_shift_id: string | null; source_shift_id: string | null; shift_mode?: string | null; before_payments: PayPart[]; after_payments: PayPart[] | null;
   closed_at: string | null; closed_by: string | null; closed_kind: string | null;
 };
 export type PetshopOnlineCancel = { id: string; reason: string; created_at: string; created_by: string | null; amount_bank: number; amount_fee: number };
@@ -190,7 +190,8 @@ export function petshopHistory(input: {
       detail: ["Stok dan jurnal dibalik"], reason: clean(c.reason), tone: "danger" });
   }
   for (const c of input.receiptCancellations ?? []) {
-    const other = c.effect_shift_id && c.effect_shift_id !== c.source_shift_id ? " · dicatat di shift terbuka lain (shift asal sudah ditutup)" : "";
+    const other = c.shift_mode === "tanpa_shift" ? " · TANPA SHIFT: pelaku tidak punya shift terbuka, uang tunai tidak masuk laci siapa pun (untuk Finance)"
+      : c.effect_shift_id && c.effect_shift_id !== c.source_shift_id ? " · dicatat di shift terbuka pelaku (shift asal sudah ditutup)" : "";
     events.push({ key: `batal-terima:${c.id}`, at: c.created_at, actor: actorLabel(c.created_by, names, viewerId), label: "Penerimaan dibatalkan (struk belum dibayar)",
       detail: [`${parts(c.before_payments)} dikeluarkan dari kas/bank${other}`], reason: clean(c.reason), tone: "warn" });
     if (c.closed_at && c.closed_kind === "diterima-ulang") {

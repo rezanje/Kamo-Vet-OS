@@ -203,9 +203,15 @@ select pg_temp.reject(pg_temp.edit_sql('pf-groom11','pf-edit-2b',108000,45000,
   jsonb_build_array(pg_temp.with_src('pf-groom11',pg_temp.obat(1,1,18000)),pg_temp.jasa(3,90000))),
   'PRICE_BELOW_HPP: Harga neto Anthel Cat Rp10.500','G4b baris Grooming tanpa sumber: promo tidak diwarisi, Anthel Rp10.500 ditolak');
 -- harga Grooming berubah: promo TIDAK diwarisi (klien tidak boleh mengklaim); aturan lama memukul Anthel
-select pg_temp.reject(pg_temp.edit_sql('pf-groom11','pf-edit-3',100000,45000,
-  jsonb_build_array(pg_temp.with_src('pf-groom11',pg_temp.obat(1,1,20000)),pg_temp.with_src('pf-groom11',pg_temp.jasa(3,80000,45000)))),
-  'PRICE_BELOW_HPP: Harga neto Anthel Cat Rp11.000','G5 harga Grooming berubah + klaim promo dari klien: promo tak diwarisi/tak dibaca, Anthel Rp11.000 ditolak');
+-- MITIGASI_1111 F1 (migrasi 20261113100000): klaim promo dari klien pada baris yang BERUBAH kini dibaca (divalidasi seperti clinic_post_invoice), jadi Anthel
+-- tidak lagi menanggung potongan Grooming. Dijalankan di subtransaksi yang dibatalkan sendiri supaya G6/G7 di bawah tetap memakai keadaan nota yang sama.
+do $g5$ begin
+  execute pg_temp.edit_sql('pf-groom11','pf-edit-3',100000,45000,
+    jsonb_build_array(pg_temp.with_src('pf-groom11',pg_temp.obat(1,1,20000)),pg_temp.with_src('pf-groom11',pg_temp.jasa(3,80000,45000))));
+  perform pg_temp.ok(pg_temp.promo_of('pf-groom11','Grooming VET Lengkap')=45000 and pg_temp.promo_of('pf-groom11','Anthel Cat')=0,'G5 harga Grooming berubah + klaim promo 45.000 dari klien pada baris Grooming: diterima, Anthel tidak menanggung potongan');
+  raise exception 'G5_ROLLBACK';
+exception when others then if sqlerrm<>'G5_ROLLBACK' then raise; end if;
+end $g5$;
 -- diskon diturunkan di bawah promo warisan: kembali ke aturan lama (promo diabaikan)
 select pg_temp.reject(pg_temp.edit_sql('pf-groom11','pf-edit-4',104000,30000,
   jsonb_build_array(pg_temp.with_src('pf-groom11',pg_temp.obat(1,1,14000)),pg_temp.with_src('pf-groom11',pg_temp.jasa(3,90000)))),
