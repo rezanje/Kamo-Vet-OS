@@ -39,6 +39,7 @@ import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 import { mulai } from "@/lib/u07-waktu";
 import { readCompleteList } from "@/lib/checked-list";
+import { muatBagianUangMuka, labelMetodeInvoice } from "@/lib/metode-uang-muka";
 
 type SavedPrescriptionSource = Omit<PackagePrintSource, "deskripsi"> & {
   id: string; nama_obat: string; jenis: string | null; kategori: string | null;
@@ -366,6 +367,10 @@ export default async function PembayaranPage({
   const riwayatResult = riwayatP ? await riwayatP : null;
   const tampilRiwayat = !!riwayatResult;
   const correctionParts = invoice ? clinicCorrectableParts(invoice, paymentRows ?? []) : [];
+  // Label metode di kepala kartu: invoice yang dipotong uang muka dibaca dari kwitansi asalnya.
+  const metodeLabel = invoice
+    ? labelMetodeInvoice(invoice, paymentRows ?? [], await muatBagianUangMuka(supabase, [{ id: invoice.id, payments: paymentRows ?? [] }]))
+    : "—";
   const correctionBlocked = refundData && (refundData.refunds.length > 0
     || refundData.requests.some((r) => r.status === "pending" || r.status === "diproses"))
     ? "Invoice sudah direfund atau sedang diproses refund; koreksi metode memerlukan rekonsiliasi finance." : null;
@@ -716,7 +721,7 @@ export default async function PembayaranPage({
             <div className="card-hd" style={{ justifyContent: "space-between" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <i className="ti ti-receipt" style={{ color: "var(--acc)" }} /> {invoice.invoice_no ?? "Rincian tagihan"}
-                <span style={{ fontSize: 10, fontWeight: 400, color: "var(--tm)" }}>· {invoice.metode_bayar ?? "—"}</span>
+                <span style={{ fontSize: 10, fontWeight: 400, color: "var(--tm)" }}>· {metodeLabel}</span>
               </span>
               <span style={{ display: "flex", gap: 5 }}>
                 {canEdit && (

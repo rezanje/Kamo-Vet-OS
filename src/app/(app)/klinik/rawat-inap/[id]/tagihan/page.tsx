@@ -9,6 +9,7 @@ import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { muatTagihanBerjalan } from "@/lib/tagihan-berjalan-server";
 import { nilaiBarisResep, ringkasRekap } from "@/lib/tagihan-berjalan";
 import type { RanapPaymentQuote } from "@/lib/ranap-payment";
+import { muatLabelMetodeInvoice } from "@/lib/metode-uang-muka";
 import { SimpanBayarForm } from "./SimpanBayarForm";
 import { BatalKwitansiForm } from "./BatalKwitansiForm";
 import { LepasUangMukaForm } from "./LepasUangMukaForm";
@@ -58,6 +59,10 @@ export default async function TagihanRawatInapPage({
   // Hanya pratinjau; DB memeriksa lagi invoice aktif lain di pembungkus tahap.
   const dpLanjutanOpsional = data.tahap.some((t) => Number(t.total) > 0 && !t.correction_pending);
   const dpAwal = data.tahap.filter((t) => !t.reissued_from && Number(t.dp_amount) > 0);
+  // Metode per tagihan tahap. Kolom invoices.metode_bayar hanya bawaan ("Tunai"); tagihan
+  // yang dipotong uang muka memakai metode kwitansi asalnya. Gagal baca = strip, tidak menebak.
+  const metodeTahap = await muatLabelMetodeInvoice(supabase,
+    data.tahap.map((t) => ({ id: t.id, metode_bayar: t.metode_bayar ?? null, dp_amount: t.dp_amount })));
   // Riwayat kwitansi/uang muka belum tersedia = saldo yang tampil belum bisa dipercaya.
   // Menerima uang atau membatalkan kwitansi di atas angka yang belum lengkap berisiko
   // penerimaan dobel, jadi aksinya dikunci sampai datanya terbaca.
@@ -193,7 +198,7 @@ export default async function TagihanRawatInapPage({
               <tr>
                 <th>No. tagihan</th><th>Tanggal</th><th style={{ textAlign: "right" }}>Total</th>
                 <th style={{ textAlign: "right" }}>Dibayar</th><th style={{ textAlign: "right" }}>Sisa</th>
-                <th>Status</th><th />
+                <th>Metode</th><th>Status</th><th />
               </tr>
             </thead>
             <tbody>
@@ -204,6 +209,7 @@ export default async function TagihanRawatInapPage({
                   <td style={{ textAlign: "right" }}>{rp(t.total)}</td>
                   <td style={{ textAlign: "right" }}>{rp(t.dibayar)}</td>
                   <td style={{ textAlign: "right", color: t.sisa > 0 ? "#b91c1c" : "#15803d" }}>{rp(t.sisa)}</td>
+                  <td style={{ fontSize: 10.5 }}>{metodeTahap.get(t.id) ?? "—"}</td>
                   <td><span className={`bge ${t.paid_status === "Lunas" ? "g" : "r"}`}>{t.paid_status}</span></td>
                   <td>
                     <Link href={`/klinik/pembayaran/${data.visit.id}/invoice?invoice_id=${t.id}`} className="btn-def"
@@ -214,7 +220,7 @@ export default async function TagihanRawatInapPage({
                 </tr>
               ))}
               {!data.tahap.length && (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>
                   Belum ada tagihan tahap untuk kunjungan ini.
                 </td></tr>
               )}
