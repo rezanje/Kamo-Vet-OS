@@ -36,7 +36,7 @@ export function parseRoleAccessConfig(value: unknown, role: string): RoleAccessC
 }
 /** The policy the database actually applies: no saved action policy ("legacy") allows every enforced action
  * (subject to the original role/branch/state ceilings); an explicit policy allows exactly its list.
- * Exception: grant-only actions (izin khusus, e.g. pembelian.batalkan_*) are OFF for a legacy role: the database only
- * allows them when a saved policy lists them explicitly. */
+ * Exception: grant-only actions (izin khusus, e.g. pembelian.batalkan_*) are OFF for a legacy role: the database only allows them when a saved
+ * policy lists them explicitly. */
 export const effectiveAllowedActions = (config: RoleAccessConfig): string[] =>
   config.actions.source === "legacy" ? config.action_catalog.filter(a => a.enforced && !isGrantOnlyAction(a.id)).map(a => a.id) : config.actions.allowed;

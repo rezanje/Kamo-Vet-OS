@@ -9,7 +9,9 @@ const migration = readFileSync(join(process.cwd(), "supabase/migrations/20261112
 describe("izin khusus batal pembelian", () => {
   it("daftar TS sama persis dengan baris katalog yang dipasang migrasi", () => {
     const inMigration = [...migration.matchAll(/'(pembelian\.batalkan_[a-z_]+)'/g)].map(m => m[1]);
-    expect([...new Set(inMigration)].sort()).toEqual([...GRANT_ONLY_ACTIONS].sort());
+    expect([...new Set(inMigration)].sort()).toEqual(GRANT_ONLY_ACTIONS.filter(id => id.startsWith("pembelian.batalkan_")).sort());
+    // domain lain (penjualan/klinik) tetap terdaftar: penggabungan tidak boleh menghapus id mereka
+    expect(GRANT_ONLY_ACTIONS).toEqual(expect.arrayContaining(["penjualan.pos_penerimaan.batalkan", "klinik.batalkan_penerimaan"]));
   });
   it("peran legacy tidak ditampilkan boleh batal; kebijakan eksplisit dihormati apa adanya", () => {
     const cat = [...GRANT_ONLY_ACTIONS, "pembelian.terima"].map(id => ({ id, label: id, group: "Pembelian", enforced: true }));

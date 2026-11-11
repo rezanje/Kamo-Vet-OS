@@ -1,0 +1,55 @@
+"use client";
+import { useState, useTransition } from "react";
+import Link from "next/link";
+import { ringkasanHasil, type HasilBatal } from "@/lib/batal-penerimaan-pesan";
+import { batalkanPenerimaanKlinik } from "./actions";
+
+/** "Batalkan penerimaan": ringkasan efek (dari pratinjau database), alasan wajib, persetujuan eksplisit, lalu satu kali kirim. */
+export function BatalPenerimaanForm({ visitId, invoiceId, invoiceNo, ringkasan, requestKey, kembaliHref }: {
+  visitId: string; invoiceId: string; invoiceNo: string; ringkasan: string[]; requestKey: string; kembaliHref: string;
+}) {
+  const [alasan, setAlasan] = useState("");
+  const [paham, setPaham] = useState(false);
+  const [pesan, setPesan] = useState<string | null>(null);
+  const [hasil, setHasil] = useState<HasilBatal | null>(null);
+  const [key] = useState(requestKey);
+  const [sibuk, mulai] = useTransition();
+  const siap = alasan.replace(/\s/g, "").length >= 3 && paham && !sibuk;
+
+  const kirim = () => mulai(async () => {
+    setPesan(null);
+    const f = new FormData();
+    f.set("visit_id", visitId); f.set("invoice_id", invoiceId); f.set("reason", alasan); f.set("request_key", key);
+    const r = await batalkanPenerimaanKlinik(f);
+    if (r.ok) setHasil(r.hasil); else setPesan(r.pesan);
+  });
+
+  if (hasil) {
+    return <div className="card" role="status">
+      <div className="card-hd"><span><i className="ti ti-circle-check" /> Penerimaan {hasil.invoice_no} dibatalkan</span></div>
+      <ul style={{ fontSize: 11.5, paddingLeft: 18 }}>{ringkasanHasil(hasil).map((t) => <li key={t}>{t}</li>)}</ul>
+      <p style={{ fontSize: 11 }}>Langkah berikutnya: ubah tagihan di halaman tagihan (harga, jumlah, baris, BMHP, voucher), lalu terima pembayaran lagi sesuai tagihan yang sudah diubah.</p>
+      <Link href={kembaliHref} className="btn-def"><i className="ti ti-arrow-left" /> Kembali ke tagihan</Link>
+    </div>;
+  }
+
+  return <div className="card">
+    <div className="card-hd"><span><i className="ti ti-receipt-off" /> Batalkan penerimaan {invoiceNo}</span></div>
+    <p style={{ fontSize: 11 }}>Seperti menghapus penerimaan di Accurate: uang keluar dari kas/bank, tagihan kembali Belum Lunas dengan nomor yang sama, lalu bisa diubah dan diterima lagi sesuai tagihan baru. Tidak ada kredit atau saldo tersembunyi.</p>
+    <div className="p2ban" role="note"><b>Yang akan terjadi (belum ada yang berubah):</b>
+      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{ringkasan.map((t) => <li key={t}>{t}</li>)}</ul>
+    </div>
+    <label className="flab" htmlFor="alasan-batal">Alasan (wajib) *</label>
+    <input id="alasan-batal" className="fi" value={alasan} maxLength={500} onChange={(e) => { setAlasan(e.target.value); setPesan(null); }}
+      placeholder="mis. harga vaksin salah, disetujui pemilik" />
+    <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11, marginTop: 8 }}>
+      <input type="checkbox" checked={paham} onChange={(e) => setPaham(e.target.checked)} />
+      Saya paham: uang pelanggan tidak otomatis dikembalikan dari sini; setelah diubah, penerimaan dicatat lagi.
+    </label>
+    {pesan && <div className="p2ban" role="alert" style={{ marginTop: 8 }}>{pesan}</div>}
+    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+      <button type="button" className="btn-def" style={{ color: "#b91c1c", borderColor: "#fca5a5" }} disabled={!siap} onClick={kirim}>{sibuk ? "Memproses…" : "Ya, batalkan penerimaan"}</button>
+      <Link href={kembaliHref} className="btn-def">Tidak jadi</Link>
+    </div>
+  </div>;
+}

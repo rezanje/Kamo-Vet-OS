@@ -164,10 +164,18 @@ type PayPart = { method: string; amount: number };
 type PetshopCorrection = { id: string; revision: number; reason: string; created_at: string; created_by: string | null; before_payments: PayPart[]; after_payments: PayPart[] };
 type PetshopCancellation = { id: string; reason: string; created_at: string; created_by: string | null };
 type PetshopReturn = { id: string; no_retur: string | null; tanggal: string; total: number; voided_at: string | null };
+/** Batalkan penerimaan (gaya Accurate): satu catatan = pembatalan, dan (bila sudah) penutupannya. */
+export type PetshopReceiptCancel = {
+  id: string; reason: string; created_at: string; created_by: string | null; source_shift_status: string | null;
+  effect_shift_id: string | null; source_shift_id: string | null; before_payments: PayPart[]; after_payments: PayPart[] | null;
+  closed_at: string | null; closed_by: string | null; closed_kind: string | null;
+};
+export type PetshopOnlineCancel = { id: string; reason: string; created_at: string; created_by: string | null; amount_bank: number; amount_fee: number };
 
 export function petshopHistory(input: {
   viewerId?: string | null; names: ActorNames;
   corrections: PetshopCorrection[]; cancellation: PetshopCancellation | null; returns: PetshopReturn[];
+  receiptCancellations?: PetshopReceiptCancel[]; onlineCancellations?: PetshopOnlineCancel[];
 }): HistoryEvent[] {
   const { viewerId, names } = input;
   const events: HistoryEvent[] = [];
@@ -180,6 +188,19 @@ export function petshopHistory(input: {
     const c = input.cancellation;
     events.push({ key: `batal:${c.id}`, at: c.created_at, actor: actorLabel(c.created_by, names, viewerId), label: "Penjualan dibatalkan",
       detail: ["Stok dan jurnal dibalik"], reason: clean(c.reason), tone: "danger" });
+  }
+  for (const c of input.receiptCancellations ?? []) {
+    const other = c.effect_shift_id && c.effect_shift_id !== c.source_shift_id ? " · dicatat di shift terbuka lain (shift asal sudah ditutup)" : "";
+    events.push({ key: `batal-terima:${c.id}`, at: c.created_at, actor: actorLabel(c.created_by, names, viewerId), label: "Penerimaan dibatalkan (struk belum dibayar)",
+      detail: [`${parts(c.before_payments)} dikeluarkan dari kas/bank${other}`], reason: clean(c.reason), tone: "warn" });
+    if (c.closed_at && c.closed_kind === "diterima-ulang") {
+      events.push({ key: `terima-ulang:${c.id}`, at: c.closed_at, actor: actorLabel(c.closed_by, names, viewerId), label: "Pembayaran diterima ulang",
+        detail: [`${parts(c.before_payments)} → ${parts(c.after_payments ?? [])}`], reason: null, tone: "info" });
+    }
+  }
+  for (const c of input.onlineCancellations ?? []) {
+    events.push({ key: `batal-cair:${c.id}`, at: c.created_at, actor: actorLabel(c.created_by, names, viewerId), label: "Pencairan marketplace dibatalkan (kembali piutang)",
+      detail: [`Dana bank ${rp(Number(c.amount_bank))} + komisi ${rp(Number(c.amount_fee))} dibalik`], reason: clean(c.reason), tone: "warn" });
   }
   for (const r of input.returns) {
     events.push({ key: `retur:${r.id}`, at: r.tanggal, actor: actorLabel(null, names, viewerId), label: r.voided_at ? "Retur dibatalkan / diganti" : "Retur dibuat",
