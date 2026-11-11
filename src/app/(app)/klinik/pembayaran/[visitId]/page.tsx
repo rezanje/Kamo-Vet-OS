@@ -695,6 +695,7 @@ export default async function PembayaranPage({
           minDpPercent={minDpPercent}
           bolehTerobosDp={bolehTerobosDp}
           editMode
+          performersInCorrection={bolehTerbitUlang}
           targetInvoiceId={invoice.id}
           packages={savedPackages}
         />

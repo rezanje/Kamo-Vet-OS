@@ -286,6 +286,34 @@ it('clinic invoice correction displays the stored seller name on a sealed source
   const lines = JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
   expect(lines[0]).toMatchObject({source_invoice_item_id:'old-line',salesperson_id:'doctor-a'});
 });
+it('clinic invoice correction keeps performers sealed unless the finance role may change them, racikan stays sealed', async () => {
+  const bekal={promos:[],aturanDiskon:[],golonganPersen:0,infoBarang:{},vouchers:[],hariIni:'2026-11-11',customerId:null,categoryId:null,poinSaldo:0,rupiahPerPoin:1};
+  const view=(performersInCorrection:boolean)=><PembayaranForm visitId="reissue" requestKey="edit" editMode performersInCorrection={performersInCorrection}
+    patient={{...patient, jenisLayanan:'Klinik', noInvoice:'INV-baru', tanggal:'hari ini'}}
+    initialObat={[
+      {deskripsi:'Hematologi',qty:1,harga:100,item_id:'lab',source_invoice_item_id:'line-lab',service_performers:null},
+      {deskripsi:'Racikan',qty:1,harga:100,source_invoice_item_id:'line-racik',recipe_id:'recipe',terkunci:true,service_performers:null},
+    ]}
+    initialJasa={[{deskripsi:'Konsultasi',qty:1,harga:0,item_id:'consult',prescription_item_id:'rx-consult',source_invoice_item_id:'line-consult',
+      service_performers:{version:1,doctor_id:null,staff_id:null,doctor_name:null,staff_name:null}}]}
+    serviceStaff={common.serviceStaff} catatanResep={null} bekal={bekal} />;
+  const fieldsFor=(name:string)=>[...host.querySelectorAll('fieldset')].filter(field=>field.querySelector('legend')?.textContent===`Pelaksana ${name}`);
+  await act(async()=>root.render(view(false)));
+  expect(fieldsFor('Hematologi')).toHaveLength(0);
+  expect(fieldsFor('Konsultasi')).toHaveLength(0);
+  await act(async()=>root.unmount()); root=createRoot(host);
+  await act(async()=>root.render(view(true)));
+  expect(fieldsFor('Racikan')).toHaveLength(0);
+  const doctor=(name:string)=>fieldsFor(name)[0].querySelectorAll('select')[0];
+  await act(async()=>{const s=doctor('Hematologi');s.value='doctor-a';s.dispatchEvent(new Event('change',{bubbles:true}));});
+  await act(async()=>{const s=doctor('Konsultasi');s.value='doctor-a';s.dispatchEvent(new Event('change',{bubbles:true}));});
+  const lines=JSON.parse(host.querySelector<HTMLInputElement>('[name=items]')!.value);
+  const byName=(name:string)=>lines.find((line:{deskripsi:string})=>line.deskripsi===name);
+  expect(byName('Hematologi')).toMatchObject({source_invoice_item_id:'line-lab',service_performers:{doctor_id:'doctor-a',staff_id:null}});
+  expect(byName('Konsultasi')).toMatchObject({source_invoice_item_id:'line-consult',service_performers:{doctor_id:'doctor-a',staff_id:null}});
+  expect(byName('Racikan').service_performers ?? null).toBeNull();
+});
+
 it('clears saved seller and source when a clinic payment line switches SKU',async()=>{
  const Harness=()=>{const [rows,setRows]=React.useState<React.ComponentProps<typeof ItemTable>['rows']>([{deskripsi:'Obat A',qty:1,harga:100,item_id:'sku-a',prescription_item_id:'prescribed',source_invoice_item_id:'original-line',salesperson_id:'doctor-a',salesperson_name:'Original'}]);
   return <><ItemTable title="OBAT" icon="ti-pill" color="purple" rows={rows} setRows={setRows}
