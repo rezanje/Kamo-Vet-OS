@@ -59,7 +59,9 @@ Urutan, per baris:
 2. Kalau tidak ada `service_performers`: isian penjual lama → peran **Penjual (dokumen lama)**.
    - klinik: `invoice_items.salesperson_id` lalu `invoices.salesperson_id` (bekas isian "Penjual SKU")
    - petshop: `sales.salesperson_id` lalu karyawan pemilik `sales.cashier_id`
-   - grosir: karyawan pemilik `sales_invoices.created_by`
+   - grosir: tenaga penjual pilihan di pesanan dasar (`sales_orders.salesperson_id`, diisi dari Faktur
+     Penjualan langsung sejak 11 Nov 2026), lalu karyawan pemilik `sales_invoices.created_by`. Komisi memakai
+     urutan yang sama.
 3. Tagihan klinik lama tanpa keduanya → `visits.doctor_id` (dokter PJ), dihitung sebagai peran **Dokter**.
 4. Tidak ada satu pun → baris **"Tanpa tenaga penjual"**.
 

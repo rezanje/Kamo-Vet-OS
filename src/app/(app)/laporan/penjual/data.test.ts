@@ -171,6 +171,43 @@ it("membuang faktur grosir yang tidak dihitung omzet dan memakai pembuat faktur 
   expect(rows[0]).toMatchObject({ kanal: "Grosir", penjualId: "kasir", netto: 1000 });
 });
 
+it("faktur grosir memakai tenaga penjual pilihan di pesanan, sama di laporan dan komisi; kosong tetap pembuat faktur", async () => {
+  const dasar = { branch_id: "cabang", tanggal: "2026-10-12", status: "berjalan", kategori: "umum", voided_on: null, opening_batch_id: null, replaces_invoice_id: null, created_by: "profil-kasir", branches: { name: "Cabang Uji" }, customers: { name: "Kolega Fiktif" } };
+  const dipilih = { ...dasar, id: "f-pilih", no_faktur: "FJ-PILIH", sales_orders: { salesperson_id: "dokter" } };
+  const lama = { ...dasar, id: "f-lama", no_faktur: "FJ-LAMA", sales_orders: { salesperson_id: null } };
+  state.tables.sales_invoice_items = [
+    { id: "p1", nama: "Kimia darah", qty: 1, harga: 550, diskon: 0, sales_invoices: dipilih },
+    { id: "l1", nama: "Pakan", qty: 1, harga: 100, diskon: 0, sales_invoices: lama },
+  ];
+  state.tables.sales_invoices = [
+    { id: "f-pilih", no_faktur: "FJ-PILIH", tanggal: "2026-10-12", total: 550, carried_paid: 0, created_by: "profil-kasir" },
+  ];
+  const { rows, faktur } = await ambilTenagaPenjual(RENTANG);
+  expect(rows.find((row) => row.dokumen === "FJ-PILIH")).toMatchObject({ kanal: "Grosir", penjualId: "dokter" });
+  expect(rows.find((row) => row.dokumen === "FJ-LAMA")).toMatchObject({ kanal: "Grosir", penjualId: "kasir" });
+  expect(faktur.find((row) => row.no_faktur === "FJ-PILIH")?.penjualId).toBe("dokter");
+
+  const komisi = await kumpulkanBarisKomisi({
+    from(table: string) {
+      const data = table === "sales_invoices" ? [
+        { id: "f-pilih", tanggal: "2026-10-12", dpp: 550, branch_id: "cabang", created_by: "profil-kasir", sales_orders: [{ salesperson_id: "dokter" }],
+          sales_invoice_items: [{ order_item_id: null, item_id: null, qty: 1, harga: 550 }] },
+        { id: "f-lama", tanggal: "2026-10-12", dpp: 100, branch_id: "cabang", created_by: "profil-kasir", sales_orders: null,
+          sales_invoice_items: [{ order_item_id: null, item_id: null, qty: 1, harga: 100 }] },
+      ] : table === "employees" ? state.tables.employees : [];
+      const hasil = { data, count: data.length, error: null };
+      const q: Record<string, unknown> = {
+        select: () => q, eq: () => q, is: () => q, not: () => q, neq: () => q, gte: () => q, lte: () => q,
+        in: () => q, order: () => q, range: async () => hasil,
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve(hasil).then(resolve),
+      };
+      return q;
+    },
+  }, "2026-10");
+  const reseller = komisi.baris.filter((row) => row.sumber === "reseller");
+  expect(reseller.map((row) => [row.employeeId, row.omzet])).toEqual([["dokter", 550], ["kasir", 100]]);
+});
+
 it("tidak menampilkan baris cabang yang tidak boleh dibuka pengguna", async () => {
   state.allowed = ["cabang-lain"];
   state.tables.invoice_items = [{
