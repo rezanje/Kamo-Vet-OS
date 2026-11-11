@@ -16,6 +16,7 @@ import {
   type SupplierPerformance,
 } from "./operation-sales";
 import { collectOperationalClinic } from "./operasional-klinik-server";
+import { collectNilaiStokBlock, collectPerbandinganBlock, type NilaiStokBlock, type PerbandinganBlock } from "./perbandingan-cabang-server";
 import { batasTanggalWIB } from "./laporan-transaksi";
 import { completeReportQuery } from "./report-query";
 import { isCompletedSale, saleMerchandiseTotal, saleRefundMerchantFee, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
@@ -72,6 +73,10 @@ export type DashboardData = {
   stock: DashboardBlock<StockBlock>;
   purchase: DashboardBlock<PurchaseBlock>;
   clinic: DashboardBlock<ClinicBlock>;
+  /** Per cabang vs rentang tanggal yang sama bulan lalu (petshop, klinik, grooming). */
+  comparison: DashboardBlock<PerbandinganBlock>;
+  /** Nilai stok HPP per cabang vs bulan lalu; null bila pengguna tidak berhak melihat nilai persediaan. */
+  stockValue: DashboardBlock<NilaiStokBlock> | null;
 };
 
 type QueryResult = { data: any; error: { message: string; code?: string } | null };
@@ -247,9 +252,11 @@ function itemNetRows(
   return { branchId, customerId, date, source: "sale", rows, kindValues };
 }
 
-async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, filter: DashboardFilter) {
+export type SalesDocument = ReturnType<typeof itemNetRows> & { origin: "petshop" | "klinik" | "reseller" };
+
+export async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, filter: DashboardFilter): Promise<{ documents: SalesDocument[] }> {
   const { start, end } = dateBounds(filter);
-  const documents: ReturnType<typeof itemNetRows>[] = [];
+  const documents: SalesDocument[] = [];
 
   if (filter.channel !== "klinik" && filter.channel !== "reseller") {
     let query = supabase.from("sales")
@@ -265,7 +272,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
       supabase.from("sales_returns").select("id,sale_id,total", { count: "exact" }).is("voided_at", null).in("sale_id", ids));
     for (const sale of sales) {
       const items = sale.sale_items ?? [];
-      documents.push(itemNetRows(
+      documents.push({ origin: "petshop", ...itemNetRows(
         sale.id,
         sale.branch_id,
         sale.customer_id,
@@ -282,7 +289,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
           };
         }),
         (returnMap.get(sale.id) ?? 0) - saleRefundMerchantFee(sale, returnMap.get(sale.id) ?? 0),
-      ));
+      ) });
     }
   }
 
@@ -312,7 +319,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
     const refundMap = await sumTotalsBySource([...invoices.keys()], "invoice_id", (ids) =>
       supabase.from("clinic_refunds").select("id,invoice_id,total", { count: "exact" }).in("invoice_id", ids));
     for (const { invoice, visit } of invoices.values()) {
-      documents.push(itemNetRows(
+      documents.push({ origin: "klinik", ...itemNetRows(
         invoice.id,
         visit.branch_id,
         visit.customer_id,
@@ -320,7 +327,7 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
         Number(invoice.total) || 0,
         (invoice.invoice_items ?? []).map((item) => ({ qty: item.qty, hpp: item.hpp, harga: item.harga, itemId: item.item_id, kind: "clinic" as const })),
         refundMap.get(invoice.id) ?? 0,
-      ));
+      ) });
     }
   }
 
@@ -330,14 +337,14 @@ async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, fi
       .in("branch_id", scope.branchIds).neq("status", "batal").is("opening_batch_id", null)
       .gte("tanggal", filter.from).lte("tanggal", filter.to));
     for (const invoice of resellerInvoices) {
-      documents.push(itemNetRows(
+      documents.push({ origin: "reseller", ...itemNetRows(
         invoice.id,
         invoice.branch_id ?? "",
         invoice.customer_id,
         invoice.tanggal,
         Number(invoice.dpp) || 0,
         (invoice.sales_invoice_items ?? []).map((item) => ({ qty: item.qty, harga: item.harga, itemId: item.item_id, kind: "product" as const })),
-      ));
+      ) });
     }
   }
   return { documents };
@@ -372,12 +379,19 @@ function salesBlockFromDocuments(scope: DashboardScope, documents: ReturnType<ty
   };
 }
 
-export async function collectSalesBlock(scope: DashboardScope, filter: DashboardFilter, supabase: AnyClient): Promise<SalesBlock> {
+export async function collectSalesBlock(
+  scope: DashboardScope,
+  filter: DashboardFilter,
+  supabase: AnyClient,
+  // Dokumen yang sudah dibaca untuk rentang & kanal yang sama (dipakai bersama blok
+  // perbandingan cabang supaya sumber penjualan tidak dibaca dua kali).
+  preloaded?: Promise<{ documents: SalesDocument[] }>,
+): Promise<SalesBlock> {
   ensureDate(filter.from);
   ensureDate(filter.to);
   if (filter.from > filter.to) throw new Error("Rentang tanggal tidak valid");
   const [{ documents }, { data: targets, error: targetError }] = await Promise.all([
-    loadSalesDocuments(supabase, scope, filter),
+    preloaded ?? loadSalesDocuments(supabase, scope, filter),
     read(supabase.from("sales_targets").select("periode,target,branch_id,employee_id,category_id").eq("periode", filter.from.slice(0, 7))),
   ]);
   queryError({ data: targets, error: targetError });
@@ -497,20 +511,35 @@ export async function collectClinicBlock(scope: DashboardScope, filter: Dashboar
   return collectOperationalClinic(supabase, { from: filter.from, to: filter.to, branchIds: scope.branchIds });
 }
 
-export async function collectDashboard(supabase: AnyClient, filter: DashboardFilter): Promise<DashboardData> {
+export async function collectDashboard(
+  supabase: AnyClient,
+  filter: DashboardFilter,
+  options: { includeStockValue?: boolean } = {},
+): Promise<DashboardData> {
   ensureDate(filter.from);
   ensureDate(filter.to);
   const scope = await resolveDashboardScope(supabase, filter.branchIds);
+  // Perbandingan cabang selalu memakai semua kanal penjualan (petshop + klinik). Bila filter
+  // kanal juga "Semua kanal", dokumen periode ini dibaca sekali dan dipakai bersama blok
+  // Sales, Branch, dan perbandingan.
+  const loadRange = (range: { from: string; to: string }) =>
+    loadSalesDocuments(supabase, scope, { ...filter, from: range.from, to: range.to, channel: "all" });
+  const sharedDocuments = filter.channel === "all" ? loadRange({ from: filter.from, to: filter.to }) : undefined;
+  // Penolakan dari bacaan bersama ditangani oleh blok-blok yang memakainya.
+  sharedDocuments?.catch(() => undefined);
   // The branch block is the sales block's per-branch view: read the (paged) sales
   // sources once and let both blocks share the result.
-  const salesBlock = collectSalesBlock(scope, filter, supabase);
-  const [sales, branch, customer, stock, purchase, clinic] = await Promise.all([
+  const salesBlock = collectSalesBlock(scope, filter, supabase, sharedDocuments);
+  const [sales, branch, customer, stock, purchase, clinic, comparison, stockValue] = await Promise.all([
     safeBlock(() => salesBlock),
     safeBlock(async () => (await salesBlock).branches),
     safeBlock(() => collectCustomerBlock(scope, filter, supabase)),
     safeBlock(() => collectStockBlock(scope, filter, supabase)),
     safeBlock(() => collectPurchaseBlock(scope, filter, supabase)),
     safeBlock(() => collectClinicBlock(scope, filter, supabase)),
+    safeBlock(() => collectPerbandinganBlock(supabase, scope, { from: filter.from, to: filter.to },
+      (range) => sharedDocuments && range.from === filter.from && range.to === filter.to ? sharedDocuments : loadRange(range))),
+    options.includeStockValue ? safeBlock(() => collectNilaiStokBlock(supabase, scope, filter.to)) : Promise.resolve(null),
   ]);
-  return { scope, filter, sales, branch, customer, stock, purchase, clinic };
+  return { scope, filter, sales, branch, customer, stock, purchase, clinic, comparison, stockValue };
 }

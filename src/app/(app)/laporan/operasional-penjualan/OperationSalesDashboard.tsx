@@ -3,6 +3,7 @@ import type { DashboardData } from "@/lib/operation-sales-server";
 import type { AlertEvaluation } from "@/lib/operational-alerts";
 import type { DashboardBlock } from "@/lib/operation-sales-server";
 import { OperationalAlertPanel } from "./OperationalAlertPanel";
+import { PerbandinganCabang } from "./PerbandinganCabang";
 import {
   angka,
   BlockState,
@@ -89,14 +90,16 @@ export function OperationSalesDashboard({ data, alerts, showAlertDiagnostics, ca
                 </tbody>
               </table>
             </div>
-            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>Growth periode sebelumnya aktif setelah data pembanding tersedia.</div>
+            <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>Perbandingan dengan bulan lalu ada di bagian 03 di bawah.</div>
           </Section>
         )}
       </BlockState>
 
+      {data.comparison && <PerbandinganCabang nomor="03" block={data.comparison} stockValue={data.stockValue ?? null} />}
+
       <BlockState block={data.customer}>
         {(customer) => (
-          <Section title="03 · CUSTOMER">
+          <Section title="04 · CUSTOMER">
             <KpiGrid>
               <KpiCard label="Pelanggan baru" value={`${customer.classification.newCustomers}`} href={detailHref("/laporan/akuisisi", detailFilter)} />
               <KpiCard label="Repeat" value={`${customer.classification.repeatCustomers}`} href={detailHref("/laporan/retensi", detailFilter)} />
@@ -113,7 +116,7 @@ export function OperationSalesDashboard({ data, alerts, showAlertDiagnostics, ca
 
       <BlockState block={data.stock}>
         {(stock) => (
-          <Section title="04 · STOCK & OPERATION">
+          <Section title="05 · STOCK & OPERATION">
             <KpiGrid>
               {canViewInventoryValue && <KpiCard label="Nilai persediaan" value="Lihat laporan FIFO" href="/laporan/nilai-persediaan" note="Nilai saat ini; tidak mengikuti periode dashboard." />}
               <KpiCard label="Coverage" value={stock.coverageDays === null ? "Data belum tersedia" : `${angka(stock.coverageDays)} hari`} />
@@ -131,7 +134,7 @@ export function OperationSalesDashboard({ data, alerts, showAlertDiagnostics, ca
 
       <BlockState block={data.purchase}>
         {(purchase) => (
-          <Section title="05 · PURCHASING">
+          <Section title="06 · PURCHASING">
             <KpiGrid>
               <KpiCard label="Pembelian" value={rupiah(purchase.purchase)} href={detailHref("/laporan/pembelian", detailFilter)} />
               <KpiCard label="Outstanding PO" value={angka(purchase.outstandingPoQty, 2)} href="/pembelian" tone={purchase.outstandingPoQty ? "#b45309" : undefined} />
@@ -144,7 +147,7 @@ export function OperationSalesDashboard({ data, alerts, showAlertDiagnostics, ca
 
       <BlockState block={data.clinic}>
         {(clinic) => (
-          <Section title="06 · CLINIC & SERVICE">
+          <Section title="07 · CLINIC & SERVICE">
             <KpiGrid>
               <KpiCard label="Booking" value={`${clinic.branches.reduce((sum, row) => sum + row.bookings.total, 0)}`} href={detailHref("/laporan/rekap-klinik", detailFilter)} />
               <KpiCard label="No-show" value={`${clinic.branches.reduce((sum, row) => sum + row.bookings.noShow, 0)}`} tone="#b91c1c" />

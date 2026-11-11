@@ -54,9 +54,10 @@ export default async function OperationSalesPage({
       </LaporanPage>
     );
   }
+  const canViewInventoryValue = profile?.is_active === true && (role === "OWNER" || role === "FINANCE");
   let dashboard;
   try {
-    dashboard = await collectDashboard(supabase, { from, to, branchIds: branch ? [branch] : [], channel });
+    dashboard = await collectDashboard(supabase, { from, to, branchIds: branch ? [branch] : [], channel }, { includeStockValue: canViewInventoryValue });
   } catch {
     return (
       <LaporanPage icon="ti-dashboard" title="OPERATION & SALES" desc="Cockpit operasi, penjualan, customer, stok, pembelian, dan klinik.">
@@ -109,7 +110,7 @@ export default async function OperationSalesPage({
         </>
       }
     >
-      <OperationSalesDashboard data={dashboard} alerts={alerts} showAlertDiagnostics={role === "OWNER" || role === "ADMIN"} canViewInventoryValue={profile?.is_active === true && (role === "OWNER" || role === "FINANCE")} />
+      <OperationSalesDashboard data={dashboard} alerts={alerts} showAlertDiagnostics={role === "OWNER" || role === "ADMIN"} canViewInventoryValue={canViewInventoryValue} />
     </LaporanPage>
   );
 }
