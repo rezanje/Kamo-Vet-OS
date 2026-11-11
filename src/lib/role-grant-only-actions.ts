@@ -11,6 +11,7 @@
  */
 export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "penjualan.pos_penerimaan.batalkan",
+  "klinik.batalkan_penerimaan",
 ];
 
 export const isGrantOnlyAction = (id: string): boolean => GRANT_ONLY_ACTIONS.includes(id);

@@ -23,7 +23,7 @@ describe("Batalkan penerimaan petshop: izin khusus (bawaan mati)", () => {
   });
   it("sinkron dengan baris katalog yang dipasang migrasi: id, enforced=true, modul penjualan", () => {
     const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261112300000_batalkan_penerimaan_petshop.sql"), "utf8");
-    for (const id of GRANT_ONLY_ACTIONS) expect(sql).toContain(`'${id}'`);
+    for (const id of GRANT_ONLY_ACTIONS.filter((x) => x.startsWith("penjualan."))) expect(sql).toContain(`'${id}'`);
     expect(sql).toMatch(/'penjualan\.pos_penerimaan\.batalkan','Batalkan penerimaan[^']*','Penjualan',true\)/);
     expect(sql).toContain("action_modules(id,module_id) values('penjualan.pos_penerimaan.batalkan','penjualan')");
   });
