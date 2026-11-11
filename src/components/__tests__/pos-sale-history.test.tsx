@@ -8,8 +8,10 @@ vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("not found
 vi.mock("@/components/dokumen/DokumenPanel", () => ({ DokumenPanel: () => null }));
 vi.mock("@/app/(app)/penjualan/[id]/SaleCancelForm", () => ({ SaleCancelForm: () => <span>form batal</span> }));
 vi.mock("@/app/(app)/penjualan/[id]/SalePaymentCorrectionForm", () => ({ SalePaymentCorrectionForm: () => <span>form koreksi</span> }));
+vi.mock("@/app/(app)/penjualan/[id]/SaleReceiptForms", () => ({ SaleReceiptCancelForm: () => <span>form batalkan penerimaan</span>, SaleReceiveAgainForm: () => null, OnlineDisbursementCancelForm: () => null }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "viewer" } } }) },
+  rpc: async () => ({ data: state.role === "OWNER", error: null }),
   from(table: string) {
     const sale = { id: "sale", revision: 3, channel: null, void_reason: state.voided ? "Dobel scan" : null, no_struk: "S-100", created_at: "2026-11-01T01:00:00Z",
       subtotal: 100000, discount: 0, total: 100000, merchant_fee_total: 0, metode_bayar: "Transfer", bayar: 100000, kembali: 0, payment_plan: [], payments_finalized_at: "2026-11-01T01:00:00Z",
