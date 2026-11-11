@@ -194,7 +194,7 @@ describe("Status Rawat Inap — lunas belum pulang & laporan harian", () => {
   it("pasien aktif dengan tagihan Lunas: badge + tombol Pulangkan ke Ubah Kondisi (tanpa memulangkan otomatis)", async () => {
     const html = await render();
     expect(html).toContain("Lunas, belum dipulangkan");
-    expect(html).toContain('href="/klinik/rawat-inap/rec-1#ubah-kondisi"');
+    expect(html).toContain('href="/klinik/rawat-inap/rec-1?pulang=1#ubah-kondisi"');
     expect(html).toContain("Pulangkan");
     // Tidak menyentuh jalur pemulangan: tidak ada RPC / tabel status yang dibaca.
     expect(state.calls).not.toContain("inpatient_status_log");

@@ -182,3 +182,19 @@ it('detail rawat inap menampilkan bagian Racikan pasien ini lewat SATU query ber
  const perKunjungan=s.reads.filter(r=>r.table==='compounding_recipes'&&r.eq['medical_records.visit_id']==='visit-a');
  expect(perKunjungan).toHaveLength(1);
 });
+// Laporan klinik 11 Nov: "klik Pulangkan tapi pasien masih ada". Tombol di daftar hanya
+// membuka detail; detail kini memilihkan Sembuh dan menjelaskan bahwa Simpan Kondisi wajib.
+it('Pulangkan shortcut preselects Sembuh with a save hint, without discharging on render',async()=>{
+ const html=renderToStaticMarkup(await Page({params:Promise.resolve({id:'inpat'}),searchParams:Promise.resolve({pulang:'1'})}));
+ expect(html).toMatch(/checked="" value="sembuh"/);
+ expect(html).not.toMatch(/checked="" value="stabil"/);
+ expect(html).toContain('Pasien <b>belum</b> dipulangkan');
+ expect(html).toContain('Simpan Kondisi');
+ const plain=await render();
+ expect(plain).toMatch(/checked="" value="stabil"/);
+ expect(plain).not.toMatch(/checked="" value="sembuh"/);
+ // Penanda kondisi tersimpan tetap terlihat walau pilihan dipindah.
+ expect(html).toContain('Stabil<span style="font-size:9.5px;opacity:0.75;margin-left:4px">(saat ini)</span>');
+ expect(plain).not.toContain('Pasien <b>belum</b> dipulangkan');
+ expect(plain).toContain('Pasien keluar dari daftar Sedang Dirawat setelah kondisi Sembuh / Pulang Paksa / RIP disimpan');
+});
