@@ -19,8 +19,8 @@ function cents(value: string): number | null {
 }
 
 /** Tombol "Batalkan penerimaan": konfirmasi + alasan wajib. Uang keluar dari kas/bank, struk menjadi belum dibayar. */
-export function SaleReceiptCancelForm({ userId, saleId, revision, total, shiftClosed }: {
-  userId: string; saleId: string; revision: number; total: number; shiftClosed: boolean;
+export function SaleReceiptCancelForm({ userId, saleId, revision, total, shiftClosed, ubahTerhalang = [] }: {
+  userId: string; saleId: string; revision: number; total: number; shiftClosed: boolean; ubahTerhalang?: string[];
 }) {
   return <CorrectionTransactionForm userId={userId} scope={`sale-receipt-cancel:${saleId}:${revision}`} action={batalkanPenerimaan}>
     {({ ready }) => <>
@@ -28,8 +28,10 @@ export function SaleReceiptCancelForm({ userId, saleId, revision, total, shiftCl
       <p><strong>Batalkan penerimaan</strong> (gaya Accurate): pembayaran {formatPosMoney(total)} dikeluarkan dari kas/bank (jurnal dibalik, catatan tersimpan,
         tidak ada yang dihapus) dan struk menjadi <em>belum dibayar</em>. Stok, HPP, dan pendapatan tidak berubah.
         Sesudahnya Anda bisa <strong>Terima pembayaran</strong> lagi (metode boleh diganti), atau <strong>Ubah transaksi</strong> (harga, jumlah, barang, voucher) lewat kasir.</p>
-      {shiftClosed && <p role="note">Shift struk ini sudah ditutup. Angka tutup shift lama tidak diubah; pengembalian uang dicatat di shift kasir yang sedang terbuka di cabang ini.
-        Bila struk dibayar tunai dan tidak ada shift terbuka, buka shift dulu.</p>}
+      {ubahTerhalang.length > 0 && <p role="alert"><strong>Perhatian:</strong> {ubahTerhalang.join(" dan ")}, sehingga isi struk TIDAK bisa diubah lewat <em>Batalkan penjualan</em> (perlu rekonsiliasi kuota promo atau komisi penggajian lebih dulu).
+        Sesudah penerimaan dibatalkan, pilihan Anda hanya <strong>Terima pembayaran</strong> lagi dengan total yang sama. Bila isi struk perlu berubah, selesaikan rekonsiliasi itu dulu atau hubungi tim teknis sebelum membatalkan penerimaan.</p>}
+      {shiftClosed && <p role="note">Shift struk ini sudah ditutup. Angka tutup shift lama tidak diubah; pengembalian uang dicatat di shift terbuka milik Anda (bukan shift kasir lain).
+        Bila struk dibayar tunai dan Anda tidak punya shift terbuka, pembatalan tetap berjalan dan ditandai &quot;tanpa shift&quot; untuk Finance; laci kasir mana pun tidak berubah.</p>}
       <label className="flab" htmlFor="receipt-cancel-reason">Alasan membatalkan penerimaan *</label>
       <input id="receipt-cancel-reason" className="fi" name="alasan" minLength={3} maxLength={1000} required placeholder="Contoh: pelanggan bayar QRIS, kasir memilih tunai" />
       <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>

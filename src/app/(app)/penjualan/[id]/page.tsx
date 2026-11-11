@@ -7,6 +7,7 @@ import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import { saleMerchandiseTotal, salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
 import { bolehLihatRiwayat, petshopHistory, type PetshopOnlineCancel, type PetshopReceiptCancel } from "@/lib/transaction-history";
+import { alasanUbahTransaksiTerhalang, bulanJakarta } from "@/lib/ubah-transaksi-petshop";
 import { loadActorNames } from "@/lib/transaction-history-server";
 
 import { SaleCancelForm } from "./SaleCancelForm";
@@ -36,7 +37,8 @@ type Sale = SalePaymentSource & {
   branches: Rel<{ name: string }>;
   customers: Rel<{ name: string; phone: string | null }>;
   kasir: Rel<{ full_name: string | null }>;
-  sale_items: { id: string; nama: string; qty: number; harga: number; satuan: string | null }[] | null;
+  voucher_code?: string | null;
+  sale_items: { id: string; nama: string; qty: number; harga: number; satuan: string | null; promo_id?: string | null }[] | null;
 };
 
 type ReturRow = {
@@ -60,7 +62,7 @@ export default async function PenjualanDetailPage({
 
   const { data } = await supabase
     .from("sales")
-    .select("id, revision, channel, void_reason, branch_id, shift_id, marketplace_status, no_struk, created_at, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), sale_items(id, nama, qty, harga, satuan)")
+    .select("id, revision, channel, void_reason, branch_id, shift_id, marketplace_status, no_struk, created_at, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), voucher_code, sale_items(id, nama, qty, harga, satuan, promo_id)")
     .eq("id", id)
     .maybeSingle();
 
@@ -70,6 +72,9 @@ export default async function PenjualanDetailPage({
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
   const isOwner = profile?.role === "OWNER" && profile.is_active === true;
+  // R4 (audit 11 Nov): peringatan dini bahwa isi struk tak bisa diubah lewat "Batalkan penjualan" (voucher/promo/penggajian). Hanya peringatan; gagal baca = tanpa peringatan.
+  const payrollRes = isOwner && !sale.voided_at ? await supabase.from("payrolls").select("id", { count: "exact", head: true }).eq("periode", bulanJakarta(sale.created_at)) : null;
+  const ubahTerhalang = alasanUbahTransaksiTerhalang({ voucherCode: sale.voucher_code, promoItemCount: (sale.sale_items ?? []).filter(i => !!i.promo_id).length, payrollMonthExists: !!payrollRes && !payrollRes.error && (payrollRes.count ?? 0) > 0 });
   // J02: koreksi metode (juga sesudah shift ditutup) boleh Owner dan Finance; pembatalan tetap Owner.
   const canCorrectRole = isOwner || (profile?.role === "FINANCE" && profile.is_active === true);
 
@@ -255,7 +260,7 @@ export default async function PenjualanDetailPage({
         {!receiptError && openCancel && canCancelReceipt && <SaleReceiveAgainForm userId={user.id} saleId={sale.id} revision={sale.revision}
           total={Number(sale.total)} previous={openCancel.before_payments.map(part => ({ method: part.method, amount: Number(part.amount) }))} />}
         {!receiptError && !openCancel && canCancelReceipt && !sale.channel && !!sale.payment_plan && !!sale.payments_finalized_at && <SaleReceiptCancelForm userId={user.id} saleId={sale.id}
-          revision={sale.revision} total={Number(sale.total)} shiftClosed={shiftClosed} />}
+          revision={sale.revision} total={Number(sale.total)} shiftClosed={shiftClosed} ubahTerhalang={ubahTerhalang} />}
         {!receiptError && !onlineError && canCancelReceipt && !!sale.channel && sale.marketplace_status === "cair" && <OnlineDisbursementCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />}
         {canCorrectPayment && !correctionError && <SalePaymentCorrectionForm userId={user.id} saleId={sale.id}
           revision={sale.revision} cash={cash} transfer={transfer} change={Number(sale.kembali)}
