@@ -7,7 +7,7 @@ const base = {
   source_shift_id: "s-asal", before_payments: [{ method: "Tunai", amount: 100000 }], after_payments: null, closed_at: null, closed_by: null, closed_kind: null,
 };
 function detail(c: Record<string, unknown>): string {
-  const events = petshopHistory({ corrections: [], cancellation: null, returns: [], receiptCancellations: [{ ...base, ...c } as never], names: {}, viewerId: null });
+  const events = petshopHistory({ corrections: [], cancellation: null, returns: [], receiptCancellations: [{ ...base, ...c } as never], names: new Map(), viewerId: null });
   return events.find(e => e.key === "batal-terima:c1")!.detail.join(" ");
 }
 describe("riwayat batalkan penerimaan petshop: tempat uang tunai jatuh", () => {
