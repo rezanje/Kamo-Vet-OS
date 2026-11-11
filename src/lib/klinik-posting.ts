@@ -31,6 +31,11 @@ export type ClinicInvoiceLineInput = {
   salesperson_id?: string;
   package_item_id?: string;
   package_qty?: number;
+  /**
+   * Potongan PROMO (rupiah) yang jatuh pada baris ini; sudah termasuk di `discount` invoice. Hanya dikirim bila > 0 (kunci tidak
+   * ada = perilaku lama, hash idempotensi tetap). Database memeriksa: >= 0, <= nilai baris, jumlah semua baris <= diskon invoice.
+   */
+  promo_discount?: number;
 };
 
 export type ClinicInvoiceInput = {
