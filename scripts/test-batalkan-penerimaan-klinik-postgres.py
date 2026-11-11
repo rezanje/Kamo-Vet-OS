@@ -429,6 +429,13 @@ def section_guards(h):
     h.sistem(f"set session_replication_role=replica; insert into public.clinic_refund_requests(invoice_id,branch_id,requested_by,request_key,payload,quoted_total,status) values ({q(R['inv'])},{q(r.BRANCH)},{q(OWNER)},{q('rf-'+str(R['n']))},'{{}}'::jsonb,1000,'pending'); set session_replication_role=origin;")
     err9, _ = do_cancel(h, R['inv'], f"c-{R['n']}")
     check('tagihan dengan permintaan refund aktif: ditolak dengan petunjuk', has(err9, 'SUDAH_REFUND') and money_state(h) == st, dict(err=(err9 or '')[:200]))
+    # pasca-syarat: bila setelah pembalikan tagihan tetap Lunas (mis. ada pemicu/pembayaran tak terduga), SEMUANYA dibatalkan utuh
+    S = rj(h, nxt(), 'QRIS'); st = money_state(h)
+    h.sistem("create or replace function public.zz_force_lunas() returns trigger language plpgsql as $f$ begin new.paid_status := 'Lunas'; return new; end $f$;"
+             "create trigger zz_force_lunas before update on public.invoices for each row execute function public.zz_force_lunas();")
+    try: err10, _ = do_cancel(h, S['inv'], f"c-{S['n']}")
+    finally: h.sistem("drop trigger if exists zz_force_lunas on public.invoices; drop function if exists public.zz_force_lunas();")
+    check('pasca-syarat: tagihan tetap Lunas setelah pembalikan -> ditolak MASIH_LUNAS dan semua efek dibatalkan (atomik)', has(err10, 'MASIH_LUNAS') and money_state(h) == st and h.status_bayar(S['inv']) == 'Lunas', dict(err=(err10 or '')[:200]))
     # void & terbit ulang -> tagihan baru (koreksi berjalan) ditolak; tagihan lama void
     V = rj(h, nxt(), 'QRIS')
     h.sql(r.terbit_ulang_sql(V['inv'], f"k{V['n']}-ulang"), OWNER)

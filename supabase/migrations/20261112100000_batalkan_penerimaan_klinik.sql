@@ -94,7 +94,7 @@ begin
   -- Owner tidak pernah dikunci oleh tabel kebijakan: tidak ada pembacaan yang bisa menolaknya.
   if v_role = 'OWNER' then return 'OWNER'; end if;
   begin
-    -- Peran lain: HARUS ada izin tertulis eksplisit (kebijakan "bawaan lama" = semua aksi TIDAK cukup) dan lolos pagar modul/epoch.
+    -- Peran lain: HARUS ada izin tertulis eksplisit (kebijakan "bawaan lama" = semua aksi bukan izin tertulis) dan lolos pagar modul/epoch.
     v_ok := exists (select 1 from role_settings_private.action_policies a
                     where a.role = v_role and 'klinik.batalkan_penerimaan' = any (a.allowed))
             and public.role_action_allowed('klinik.batalkan_penerimaan');
