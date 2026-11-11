@@ -223,6 +223,10 @@ def run_baseline(db, a):
     check('RED: suite fails at the baseline (objects missing) with zero assertions passed', not ok and len(passes) == 0, why)
 
 
+NEIGHBOURS = ['pos_split_payments.sql', 'pos_payment_method_corrections.sql', 'pos_merchant_fees.sql', 'online_return_unit_posting.sql',
+              'sales_return_branch_isolation.sql', 'sales_group_access.sql', 'expense_correction_after_shift.sql', 'sales_safe_posting.sql']
+
+
 def run_green(db, a):
     build_chain(db, {CAND})
     os.environ.pop('PGDATABASE', None)
@@ -246,6 +250,18 @@ def run_green(db, a):
     tabs = db.sql("select c.relname||':'||coalesce(c.relacl::text,'') from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname in('pos_receipt_cancellations','sale_receipt_shift_effects','online_disbursement_cancellations','receipt_cancel_requests') order by 1") if False else None
     ok, passes, why = run_suite(db, 'g')
     check('SQL suite %s GREEN: %d assertions passed' % (SUITE, len(passes)), ok and len(passes) >= 90, why or 'passes=%d' % len(passes))
+    # neighbouring suites: same outcome on the chain WITHOUT the candidate and WITH it (a legacy suite that already fails
+    # on main for unrelated reasons must fail identically, never differently)
+    for i, nb in enumerate(NEIGHBOURS):
+        res = {}
+        for tag, with_cand in (('before', False), ('after', True)):
+            name = 'nb%d_%s' % (i, tag)
+            clone(db, name)
+            if with_cand: apply(db, name, (MIGRATIONS / CAND).read_text())
+            rc, out, err = raw(db, (TESTS / nb).read_text(), name)
+            errs = [l for l in err.splitlines() if l.startswith('ERROR')]
+            res[tag] = (rc, errs[0][:160] if errs else '')
+        check('NEIGHBOUR %s: outcome identical without/with the candidate %s' % (nb, res['after'][:1]), res['before'] == res['after'], res)
     # races on a committed fixture
     clone(db, 'rc'); apply(db, 'rc', (MIGRATIONS / CAND).read_text())
     races(db, 'rc')
