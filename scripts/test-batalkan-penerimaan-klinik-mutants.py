@@ -47,4 +47,6 @@ MUTANTS = [
     ('M35 audit table writable by apps (insert grant)', ['static'], [("grant select on public.clinic_receipt_cancellations to authenticated;", "grant select, insert on public.clinic_receipt_cancellations to authenticated;", 1)]),
     ('M36 audit rows mutable', ['static'], [("  for each row execute function clinic_private.receipt_cancellation_immutable();", "  for each row when (false) execute function clinic_private.receipt_cancellation_immutable();", 1)]),
     ('M37 RPC granted to anon', ['static'], [("revoke all on function public.clinic_cancel_invoice_receipt(uuid, text, text) from public, anon, service_role;", "revoke all on function public.clinic_cancel_invoice_receipt(uuid, text, text) from public;", 1)]),
+    ('M38 account derived only from the original klinik journal (breaks one-off corrected invoices)', ['oneoff'],
+     [("and e.source in ('klinik', 'klinik-edit', 'klinik-reissue', 'klinik-koreksi-bayar')", "and e.source in ('klinik')", 1)]),
 ]
