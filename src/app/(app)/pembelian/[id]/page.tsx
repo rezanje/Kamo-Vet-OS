@@ -9,6 +9,8 @@ import { SecHeader } from "@/components/SecHeader";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import {POPriceCorrectionForm} from "./POPriceCorrectionForm";
 import { POShortCloseForm } from "./POShortCloseForm";
+import { POReopenForm } from "./POReopenForm";
+import { loadPurchaseCancelAccess } from "@/lib/purchase-cancel-access";
 import type { ReceiptClosure } from "@/lib/purchase-short-close";
 import { POEditForm, POCancelForm } from "./POCorrectionForm";
 import { POLineEdit } from "./POLineEdit";
@@ -80,6 +82,7 @@ export default async function PODetailPage({
   const closure = one(closureData as unknown as Rel<ReceiptClosure>);
   const partial = items.some(row => Number(row.qty_terima ?? 0) > 0) && items.some(row => Number(row.qty_terima ?? 0) < Number(row.qty));
   const owner = !!user && profile?.role === "OWNER" && profile.is_active;
+  const cancelAccess = await loadPurchaseCancelAccess(supabase, profile);
   // P08: a cancelled receipt (stock, journal and PO qty already reversed) no longer freezes the PO.
   const activeReceipts = receipts.filter(r => !r.voided_at);
   const hasChildren = items.some(item => Number(item.qty_terima) > 0) || activeReceipts.length > 0
@@ -92,6 +95,12 @@ export default async function PODetailPage({
     ? await supabase.from("purchase_invoice_items").select("po_item_id,harga").in("invoice_id", activeInvoiceIds)
     : { data: [] as { po_item_id: string | null; harga: number }[] };
   const invoicedPrice = new Map((invoicedRows ?? []).flatMap(row => row.po_item_id ? [[row.po_item_id, Number(row.harga)] as const] : []));
+  // Dokumen turunan yang sudah dibatalkan tidak lagi menghalangi PEMBATALAN PO; mengganti seluruh baris tetap butuh PO tanpa riwayat
+  // (baris dirujuk dokumen lama). Aturan yang sama diperiksa ulang di database (revise_purchase_order).
+  const activeInvoices = invoices.filter(invoice => !invoice.voided_at);
+  const activeChildren = items.some(item => Number(item.qty_terima) > 0) || activeReceipts.length > 0 || payments.length > 0
+    || returns.some(r => !r.voided_at) || advances.some(a => a.status === "aktif") || activeInvoices.length > 0;
+  const canVoid = owner && !activeChildren && (po.status === "Draft" || po.status === "Dipesan");
   const editable = owner && !hasChildren && (po.status === "Draft" || po.status === "Dipesan");
   const priceEditable=owner&&!closureError&&!closure&&!editable&&!!advances.length&&items.length>0&&items.length<=1000&&(po.status==='Draft'||po.status==='Dipesan')&&!items.some(row=>Number(row.qty_terima??0)!==0||Number(row.qty_rusak??0)!==0)&&!activeReceipts.length&&!payments.length&&!returns.length&&!invoices.length;
   const activeAdvances=advances.filter(a=>a.status==='aktif').reduce((sum,a)=>sum.plus(Number(a.jumlah)),new PosDecimal(0)).toNumber();
@@ -117,7 +126,7 @@ export default async function PODetailPage({
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {priceEditable && <a href="#edit-po-prices" className="btn-def">Koreksi harga PO</a>}
-        {editable && <><a href="#edit-po" className="btn-def">Edit PO</a><a href="#cancel-po" className="btn-def" style={{ color: "#b91c1c" }}>Batalkan PO</a></>}
+        {editable && <a href="#edit-po" className="btn-def">Edit PO</a>}{canVoid && <a href="#cancel-po" className="btn-def" style={{ color: "#b91c1c" }}>Batalkan PO</a>}
         {owner && ((hasChildren && !priceEditable) || po.status === "Diterima") && <a href="#purchase-correction" className="btn-def">Koreksi pembelian</a>}
         {!owner && <a href="#request-purchase-correction" className="btn-def">Minta koreksi</a>}
         {po.status !== "Diterima" && po.status !== "Batal" && (
@@ -202,6 +211,7 @@ export default async function PODetailPage({
             <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Barang</th><th>Dipesan</th><th>Diterima</th><th>Sisa ditutup</th></tr></thead><tbody>{closure.lines.map(row => <tr key={row.id}><td>{items.find(item => item.id === row.id)?.nama ?? row.id} ({row.satuan ?? "unit"})</td><td>{Number(row.ordered_qty)}</td><td>{Number(row.received_qty)}</td><td>{Number(row.closed_qty)}</td></tr>)}</tbody></table></div>
           </> : <p>Penerimaan masih sebagian. Jika pemasok masih akan mengirim sisanya, lanjutkan Terima barang dan biarkan PO tetap terbuka.</p>}
           {owner && user && <POShortCloseForm userId={user.id} poId={po.id} rows={items} alreadyClosed={!!closure} />}
+          {closure && cancelAccess.penerimaan && user && <POReopenForm userId={user.id} poId={po.id} />}
         </>}
       </section>}
 
@@ -210,14 +220,29 @@ export default async function PODetailPage({
         <POPriceCorrectionForm userId={user.id} poId={po.id} revision={po.revision} rows={items} originalTotal={Number(po.total)} activeAdvances={activeAdvances}/>
       </section>}
 
-      {editable && user && (
+      {canVoid && user && (
         <div className="crm-sec" id="edit-po">
-          <SecHeader num="02" title="KOREKSI PO" desc="Hanya Super Admin yang dapat mengubah atau membatalkan PO sebelum ada transaksi turunan." />
-          <POEditForm unitOptions={units} userId={user.id} poId={po.id} revision={po.revision} supplierId={po.supplier_id ?? ""} warehouseId={po.to_warehouse_id} tanggal={po.tanggal} rows={items} suppliers={(suppliers ?? []) as { id: string; nama: string }[]} warehouses={(warehouses ?? []) as { id: string; name: string }[]} />
+          <SecHeader num="02" title="KOREKSI PO" desc="Hanya Super Admin yang dapat mengubah atau membatalkan PO. Dokumen turunan yang sudah dibatalkan tidak menghalangi pembatalan PO." />
+          {editable && <POEditForm unitOptions={units} userId={user.id} poId={po.id} revision={po.revision} supplierId={po.supplier_id ?? ""} warehouseId={po.to_warehouse_id} tanggal={po.tanggal} rows={items} suppliers={(suppliers ?? []) as { id: string; nama: string }[]} warehouses={(warehouses ?? []) as { id: string; name: string }[]} />}
+          {!editable && <p role="note" style={{ fontSize: 11, color: "var(--tm)" }}>PO ini punya dokumen yang sudah dibatalkan, jadi seluruh barisnya tidak bisa diganti. Ubah jumlah atau harga lewat Edit baris di daftar item, atau batalkan PO ini lalu buat PO baru.</p>}
           <div id="cancel-po" style={{ borderTop: ".5px solid var(--bd)", marginTop: 14, paddingTop: 12 }}>
             <POCancelForm userId={user.id} poId={po.id} revision={po.revision} />
           </div>
         </div>
+      )}
+
+      {(cancelAccess.penerimaan || cancelAccess.faktur || cancelAccess.pembayaran) && (activeReceipts.length > 0 || activeInvoices.length > 0) && (
+        <section className="crm-sec no-print" id="alur-batal">
+          <SecHeader num="03" title="BATALKAN / UBAH ALA ACCURATE" desc="Urutan: pembayaran, faktur, penerimaan, ubah PO, terima ulang. Dokumen asli tetap tersimpan dengan status dibatalkan." />
+          <ol style={{ fontSize: 12, lineHeight: 1.7, paddingLeft: 18 }}>
+            {activeInvoices.length > 0 && <li>Pembayaran dan faktur: buka faktur lalu batalkan pembayarannya (faktur kembali belum dibayar), kemudian batalkan fakturnya.{" "}
+              {activeInvoices.map((inv, i) => <span key={inv.id}>{i > 0 && ", "}<Link href={`/pembelian/faktur/${inv.id}?from=${encodeURIComponent(`/pembelian/${po.id}`)}`}>Faktur {inv.no_faktur}</Link></span>)}</li>}
+            {activeReceipts.length > 0 && <li>Penerimaan barang: buka penerimaan, lihat pratinjau, lalu batalkan (stok dan jurnal dibalik).{" "}
+              {activeReceipts.map((r, i) => <span key={r.id}>{i > 0 && ", "}<Link href={`/pembelian/penerimaan/${r.id}?from=${encodeURIComponent(`/pembelian/${po.id}`)}#batal`}>{r.no_terima}</Link></span>)}</li>}
+            <li>Ubah PO: Edit baris di daftar item (jumlah dan harga){canVoid ? ", atau Batalkan PO" : ""}.</li>
+            <li>Penerimaan ulang dilakukan dari halaman PO ini setelah PO terbuka kembali, lalu buat faktur lagi.</li>
+          </ol>
+        </section>
       )}
 
       <PurchaseCorrectionRequestPanel kind="purchase_order" sourceId={po.id} label={po.no_po ?? "PO ini"} owner={owner}

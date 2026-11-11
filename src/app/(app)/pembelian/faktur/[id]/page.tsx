@@ -10,6 +10,7 @@ import { InvoiceCorrectionForm } from "./InvoiceCorrectionForm";
 import { PaymentCorrectionForm } from "./PaymentCorrectionForm";
 import { PurchaseCorrectionRequestPanel } from "@/components/PurchaseCorrectionRequestPanel";
 import { loadRequestsForSource, type PurchaseCorrectionRequest } from "@/lib/purchase-correction-requests";
+import { loadPurchaseCancelAccess } from "@/lib/purchase-cancel-access";
 
 const rp = (value: number) => `Rp ${Number(value).toLocaleString("id-ID")}`;
 type Rel<T> = T | T[] | null;
@@ -70,6 +71,8 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
     ...(returns.data ?? []).map(r => ({kind:'purchase-return' as const,id:r.id,label:`Retur PO ${r.no_retur}`,status:r.voided_at?'Dibatalkan':'Tersimpan'})),
   ];
   const owner = profile?.role === "OWNER" && profile.is_active;
+  // Batal faktur / batal pembayaran: OWNER selalu; peran lain hanya dengan izin dari Akses Grup (database memeriksa ulang).
+  const cancelAccess = await loadPurchaseCancelAccess(supabase, profile);
   const canReprice = !!owner && !invoice.voided_at && !invoice.opening_batch_id;
   // Riwayat koreksi harga (P02) memuat selisih HPP/nilai stok: hanya OWNER/FINANCE (database juga membatasi).
   // Gagal baca tidak menyembunyikan faktur; tabel hanya tampil bila terbaca.
@@ -108,7 +111,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
         </tbody></table></div>
       </>}
       {!invoice.voided_at && <Link className="btn-def" href="/keuangan/hutang">Periksa sisa hutang &amp; bayar</Link>}
-      {owner && !invoice.opening_batch_id && <InvoiceCorrectionForm userId={user!.id} invoiceId={id} revision={invoice.revision} voided={!!invoice.voided_at} />}
+      {cancelAccess.faktur && !invoice.opening_batch_id && <InvoiceCorrectionForm userId={user!.id} invoiceId={id} revision={invoice.revision} voided={!!invoice.voided_at} />}
     </section>
     <PurchaseCorrectionRequestPanel kind="purchase_invoice" sourceId={id} label={invoice.no_faktur} owner={!!owner}
       requests={correctionRequests} requestKey={crypto.randomUUID()}
@@ -129,10 +132,10 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
         {one(payment.advance) ? <p><DocumentLink kind="purchase-advance" id={one(payment.advance)!.id} from={`/pembelian/faktur/${id}#payment-${payment.id}`}>Uang muka {one(payment.advance)!.no_um}</DocumentLink> · {one(payment.advance)!.status}</p> : (payment.advance_id || Number(payment.dari_uang_muka)>0) && <p>Uang muka terkait tidak tersedia atau tidak dapat diakses. Alokasi lama tidak ditebak.</p>}
         {payment.catatan && <p>{payment.catatan}</p>}
         {one(payment.payment_order) ? <p><DocumentLink kind="payment-order" id={one(payment.payment_order)!.id} from={`/pembelian/faktur/${id}#payment-${payment.id}`}>Perintah bayar {one(payment.payment_order)!.no_pp}</DocumentLink> · {one(payment.payment_order)!.status}</p> : payment.payment_order_id && <p>Perintah bayar terkait tidak tersedia atau tidak dapat diakses.</p>}
-        {owner && !payment.reversal_of && !payment.voided_at && <details><summary className="btn-def">Koreksi pembayaran</summary>
+        {cancelAccess.pembayaran && !payment.reversal_of && !payment.voided_at && <details><summary className="btn-def">Batalkan / koreksi pembayaran</summary>
           <PaymentCorrectionForm userId={user!.id} invoiceId={id} paymentId={payment.id} revision={payment.revision} grouped={!!payment.payment_order_id} />
         </details>}
-        {owner && !invoice.voided_at && payment.voided_at && !payment.payment_order_id && !payments.some(p => p.replaces_payment_id === payment.id) && <Link href={`/keuangan/hutang?replace_payment=${payment.id}`}>Siapkan pembayaran pengganti</Link>}
+        {cancelAccess.pembayaran && !invoice.voided_at && payment.voided_at && !payment.payment_order_id && !payments.some(p => p.replaces_payment_id === payment.id) && <Link href={`/keuangan/hutang?replace_payment=${payment.id}`}>Siapkan pembayaran pengganti</Link>}
       </article>)}
     </section>
   </>;

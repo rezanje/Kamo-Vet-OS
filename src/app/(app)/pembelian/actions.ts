@@ -285,6 +285,23 @@ export async function closeRemainingPO(formData: FormData) {
   redirect(`/pembelian/${poId}?success=${encodeURIComponent("Sisa penerimaan ditutup. Faktur hanya untuk jumlah diterima yang belum difakturkan.")}${transactionDraftAck(formData)}`);
 }
 
+/** Buka kembali sisa PO yang sudah ditutup (jalan keluar sebelum membatalkan penerimaannya). Semua pemeriksaan ada di RPC. */
+export async function bukaKembaliSisaPO(formData: FormData) {
+  const supabase = await createClient();
+  const poId = String(formData.get("po_id") ?? "").trim();
+  const requestKey = String(formData.get("draft_key") ?? "").trim();
+  const reason = String(formData.get("alasan") ?? "").trim();
+  const back = `/pembelian/${encodeURIComponent(poId)}`;
+  const fail = (message: string): never => redirect(`${back}?error=${encodeURIComponent(message)}`);
+  if (!poId || !requestKey || requestKey.length > 120) fail("Identitas pembukaan belum siap. Muat ulang halaman.");
+  if (reason.length < 3 || reason.length > 1000) fail("Alasan wajib diisi (3 sampai 1.000 karakter).");
+  const { data, error } = await supabase.rpc("reopen_purchase_order_remainder", { p_po_id: poId, p_request_key: requestKey, p_reason: reason });
+  if (error) fail(error.message);
+  if (!data || data.po_id !== poId || data.reopened !== true) throw new Error("Pembukaan belum terkonfirmasi. Muat ulang halaman sebelum mengulang.");
+  for (const path of ["/pembelian", back, `${back}/terima`, "/pembelian/penerimaan", "/pembelian/faktur/baru", "/pembelian/uang-muka", "/"]) revalidatePath(path);
+  redirect(`${back}?success=${encodeURIComponent("Sisa PO dibuka kembali. Penerimaan bisa dibatalkan atau barang yang tersisa diterima lagi.")}${transactionDraftAck(formData)}`);
+}
+
 export async function ubahHargaPO(formData: FormData) {
   const id=String(formData.get('id')??''),key=String(formData.get('draft_key')??''),revision=Number(formData.get('revision')),reason=String(formData.get('alasan')??'').trim();
   const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
