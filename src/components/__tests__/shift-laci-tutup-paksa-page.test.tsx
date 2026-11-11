@@ -29,8 +29,8 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 
 import ShiftPage from "@/app/(app)/pos/shift/page";
 
-const render = async () => new DOMParser().parseFromString(
-  renderToStaticMarkup(await ShiftPage({ searchParams: Promise.resolve({}) })), "text/html");
+const render = async (params: Record<string, string> = {}) => new DOMParser().parseFromString(
+  renderToStaticMarkup(await ShiftPage({ searchParams: Promise.resolve(params) })), "text/html");
 const baris = (page: Document, kasir: string) =>
   [...page.querySelectorAll("tbody tr")].find(tr => tr.textContent?.includes(kasir))!;
 
@@ -58,4 +58,16 @@ it.each(["FINANCE", "STAFF", "DOCTOR"])("%s tidak melihat tombol menutup laci or
   const page = await render();
   expect(baris(page, "Kasir B").querySelector("form")).toBeNull();
   expect(page.querySelector("input[name=alasan]")).toBeNull();
+});
+
+it("sesudah tutup paksa, struk terputus yang ikut dibuang disebut supaya toko mengecek input ulang", async () => {
+  const page = await render({ success: "force", dibuang: "POS-20261101-0004-8GZC,POS-20261101-0009" });
+  const teks = page.body.textContent ?? "";
+  expect(teks).toContain("Shift ditutup paksa oleh manajer.");
+  expect(teks).toContain("2 transaksi kasir yang terputus ikut dibuang (POS-20261101-0004-8GZC, POS-20261101-0009)");
+});
+
+it("catatan struk dibuang hanya muncul bersama sukses tutup paksa", async () => {
+  expect((await render({ success: "force" })).body.textContent).not.toContain("ikut dibuang");
+  expect((await render({ dibuang: "POS-1" })).body.textContent).not.toContain("ikut dibuang");
 });

@@ -7,6 +7,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { openShift, closeShift, forceCloseShift } from "./actions";
 import { cashExpenseTotal, expectedCash, methodBreakdown } from "@/lib/shift-calc";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
+import { pesanStrukDibuang } from "@/lib/transaksi-terputus";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -18,9 +19,10 @@ const fmtDt = (iso: string) => new Date(iso).toLocaleString("id-ID", { timeZone:
 export default async function ShiftPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; dibuang?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const { error, success, dibuang } = await searchParams;
+  const catatanDibuang = success === "force" ? pesanStrukDibuang(dibuang) : null;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -84,6 +86,7 @@ export default async function ShiftPage({
       {success === "open" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Shift dibuka. Kasir siap transaksi.</div>}
       {success === "close" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Shift ditutup & direkonsiliasi.</div>}
       {success === "force" && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> Shift ditutup paksa oleh manajer.</div>}
+      {catatanDibuang && <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}><i className="ti ti-alert-triangle" /> {catatanDibuang}</div>}
 
       <div className="crm-sec">
         {open ? (
