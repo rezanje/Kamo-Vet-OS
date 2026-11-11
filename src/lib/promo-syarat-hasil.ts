@@ -53,8 +53,8 @@
  *                       (and the discount of every promo applied before it) IS subtracted, so reward units never qualify their own
  *                       nilai syarat and the threshold means the money actually charged for the cart (a cart of only one reward unit
  *                       paid Rp14.000 counts Rp14.000). The engine therefore plans `repeat` sets as the largest count whose own reward
- *                       discount still leaves nilai >= sets x min, and a later promo may not push an earlier claimed nilai promo
- *                       below its threshold (State.slack): the database counts the discount of EVERY claim. So a line
+ *                       discount still leaves nilai >= sets x min (all promos together, see SHARED SPEND), and a later promo may not push the money below what the
+ *                       earlier claims already consumed (State.need): the database counts the discount of EVERY claim. So a line
  *                       never counts more than the real money in the cart nor more than the official price (a tier price
  *                       counts at what is paid; an overcharge adds nothing). Manual-discount / no-evidence lines and units
  *                       claimed elsewhere still count (at their charged amount). A line with qty >= SH_NILAI_MAX_LINE_QTY
@@ -67,6 +67,14 @@
  *                       (integer 1..100, half-up rounding per unit) with an optional Rp cap that applies
  *                       PER REWARD UNIT (Q4). `reward_qty` reward units per syarat set (default 1).
  *  - `repeat` (kelipatan): sets = min over rows of floor(met / min). Without repeat: 0 or 1.
+ *  - SHARED SPEND (Andri 11 Nov 2026, PayDay 11.11: "setiap 100k tidak bisa ditambah dengan item2 hadiah syarat yang lain"): the `nilai`
+ *    syarat is ONE pool of money per receipt, not a gate every promo passes on its own. Every set of a promo that has a nilai row
+ *    consumes `sets x (largest nilai row of that promo)` of the money actually charged for the cart (after every reward discount, R5),
+ *    and the consumption of all promos together may never exceed that money: a rupiah of spend cannot satisfy two promos. So a
+ *    Rp155.000 cart with seven "Belanja min Rp100.000" promos buys ONE reward set, Rp250.000 buys two, and the order of the cart lines /
+ *    promos changes nothing. Which rewards win is the conflict rule below (biggest saving for the customer, ties -> smaller promo id).
+ *    The reward discount lands on the reward units only (reward_qty x sets, never above the units in the cart), never on the other units
+ *    of the same item. Promos with only qty rows consume no spend. The DB (promo_sh_verify_claims) enforces the same aggregate.
  *  - The reward must already be in the cart (no auto-add). Reward units come from lines matching the
  *    hasil pool, may be ANY variant of it, and are disjoint from the syarat units of the same promo.
  *    Which reward units are discounted: LOWEST resulting discount first, ties -> source_position,
@@ -495,17 +503,17 @@ type Prep = {
 };
 type State = {
   avail: bigint[]; owner: (string | null)[]; lineClaims: LineRec[][]; total: bigint;
-  /** R5: promo discount committed per line, the nilai the committed discounts removed from the cart, and the smallest headroom
-   *  (net cart nilai - sets x min) any committed nilai row still has (null = no committed nilai promo). */
-  disc: bigint[]; loss: bigint; slack: bigint | null;
+  /** R5: promo discount committed per line, the nilai the committed discounts removed from the cart, and `need` = the SHARED spend the
+   *  committed promos already consumed (sum of sets x largest nilai row over the committed promos; ZERO = no committed nilai promo). */
+  disc: bigint[]; loss: bigint; need: bigint;
   /** commit counter, and per line the commit number that last touched it (plan cache invalidation) */
   clock: number; stamp: number[];
 };
 type LineRec = { promo_id: string; sets: bigint; syarat: bigint; hasil: bigint; dpu: bigint; discount: bigint; allow: boolean };
 type Plan = {
   prep: Prep; sets_available: bigint; sets: bigint; grants: bigint; total: bigint;
-  /** R5: nilai this plan's reward discounts remove from the cart, and the headroom left for committed nilai rows after it. */
-  loss: bigint; slackAfter: bigint | null;
+  /** R5: nilai this plan's reward discounts remove from the cart, and the shared spend consumed in total once this plan is committed. */
+  loss: bigint; needAfter: bigint;
   reserve: Map<number, bigint>; rewards: { i: number; units: bigint; dpu: bigint; discount: bigint }[];
 };
 
@@ -553,18 +561,21 @@ function prepare(def: SyaratHasilDef, lines: Line[]): Prep {
 }
 
 function freshState(lines: Line[]): State {
-  return { avail: lines.map((l) => l.base), owner: lines.map(() => null), lineClaims: lines.map(() => []), total: ZERO, disc: lines.map(() => ZERO), loss: ZERO, slack: null, clock: 0, stamp: lines.map(() => 0) };
+  return { avail: lines.map((l) => l.base), owner: lines.map(() => null), lineClaims: lines.map(() => []), total: ZERO, disc: lines.map(() => ZERO), loss: ZERO, need: ZERO, clock: 0, stamp: lines.map(() => 0) };
 }
 
 function plan(p: Prep, lines: Line[], st: State, cartSub: bigint, onePerLine: boolean): Plan | null {
   const av = (i: number): bigint => (onePerLine && st.owner[i] !== null && st.owner[i] !== p.id ? ZERO : st.avail[i]);
 
-  // R5: the whole-cart value is what the customer is charged AFTER the discounts committed so far
+  // R5: the whole-cart value is what the customer is charged AFTER the discounts committed so far.
+  // SHARED SPEND (Andri 11 Nov): the `nilai` syarat is ONE pool of money per receipt. What the committed promos already consumed
+  // (st.need = sum of sets x min) cannot satisfy another promo, so a nilai row only sees the spend that is still free.
   const net0 = cartSub - st.loss;
+  const freeSpend = net0 > st.need ? net0 - st.need : ZERO;
   // sets each row allows, AND-ed
   let maxSets: bigint | null = null;
   for (const row of p.rows) {
-    const met = row.kind === "nilai" ? net0 : row.pool.reduce((s, i) => s + av(i), ZERO);
+    const met = row.kind === "nilai" ? freeSpend : row.pool.reduce((s, i) => s + av(i), ZERO);
     const n = met / row.min;
     if (n === ZERO) return null;
     if (maxSets === null || n < maxSets) maxSets = n;
@@ -719,18 +730,12 @@ function plan(p: Prep, lines: Line[], st: State, cartSub: bigint, onePerLine: bo
     }
     return { g, s, rv, rewards, total, loss };
   };
-  const nilaiRows = p.rows.filter((r): r is Extract<PrepRow, { kind: "nilai" }> => r.kind === "nilai");
-  // R5: does the plan keep EVERY nilai row (its own and those of promos committed earlier) satisfied once its reward discount is taken?
-  const fit = (m: Mat): { ok: boolean; slack: bigint | null } => {
-    let slack: bigint | null = st.slack === null ? null : st.slack - m.loss;
-    if (slack !== null && slack < ZERO) return { ok: false, slack };
-    const net1 = net0 - m.loss;
-    for (const row of nilaiRows) {
-      const sl = net1 - m.s * row.min;
-      if (sl < ZERO) return { ok: false, slack: sl };
-      if (slack === null || sl < slack) slack = sl;
-    }
-    return { ok: true, slack };
+  // The spend ONE set of this promo consumes: its largest nilai row (rows are AND-ed over the same cart money, so the strictest one decides).
+  const setSpend = p.rows.reduce((mx, r) => (r.kind === "nilai" && r.min > mx ? r.min : mx), ZERO);
+  // R5 + shared spend: after its own reward discount is taken, does the money still paid cover EVERY committed set AND this plan's sets?
+  const fit = (m: Mat): { ok: boolean; needAfter: bigint } => {
+    const needAfter = st.need + m.s * setSpend;
+    return { ok: net0 - m.loss >= needAfter, needAfter };
   };
   let m = materialize(grants);
   let f = fit(m);
@@ -758,7 +763,7 @@ function plan(p: Prep, lines: Line[], st: State, cartSub: bigint, onePerLine: bo
   num(total);
   num(st.total + total);
   for (const r of rewards) num(r.discount);
-  return { prep: p, sets_available: N, sets: setsUsed, grants, total, loss: m.loss, slackAfter: f.slack, reserve, rewards };
+  return { prep: p, sets_available: N, sets: setsUsed, grants, total, loss: m.loss, needAfter: f.needAfter, reserve, rewards };
 }
 
 function commit(pl: Plan, st: State) {
@@ -776,7 +781,7 @@ function commit(pl: Plan, st: State) {
   for (const r of pl.rewards) { const x = rec(r.i); x.hasil += r.units; x.dpu = r.dpu; x.discount += r.discount; st.avail[r.i] -= r.units; }
   for (const r of pl.rewards) st.disc[r.i] += r.discount;
   st.loss += pl.loss;
-  st.slack = pl.slackAfter;
+  st.need = pl.needAfter;
   st.clock++;
   for (const [i, r] of recs) { st.lineClaims[i].push(r); if (st.owner[i] === null) st.owner[i] = id; st.stamp[i] = st.clock; }
   st.total += pl.total;
@@ -800,7 +805,7 @@ function runPipeline(preps: Prep[], lines: Line[], cartSub: bigint, onePerLine: 
   const tryPlan = (p: Prep): Plan | null => {
     const c = cache.get(p);
     // R5: a plan with a nilai row (or planned while a nilai promo is committed) depends on the whole-cart state: valid only until the next commit
-    if (c && p.deps.every((i) => st.stamp[i] <= c.at) && (!(p.hasNilai || st.slack !== null) || c.at === st.clock)) return c.plan;
+    if (c && p.deps.every((i) => st.stamp[i] <= c.at) && (!(p.hasNilai || st.need > ZERO) || c.at === st.clock)) return c.plan;
     let pl: Plan | null = null;
     try { pl = plan(p, lines, st, cartSub, onePerLine); }
     catch (e) {
