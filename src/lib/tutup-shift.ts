@@ -178,7 +178,19 @@ export async function pemasukanShift(
   const { data: sales, error } = await supabase
     .from("sales").select("no_struk, total, metode_bayar, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount)").eq("shift_id", shift.id);
   if (error) throw new Error(UANG_SHIFT_TIDAK_TERBACA);
-  return salePaymentRows(sales ?? []);
+  return [...salePaymentRows(sales ?? []), ...(await efekPenerimaanShift(supabase, shift.id))];
+}
+
+/**
+ * Batalkan penerimaan: uang yang dikembalikan/diterima ulang dicatat per shift (bertanda: minus = keluar dari laci).
+ * Shift asal yang sudah tertutup tidak disentuh; koreksinya jatuh di shift terbuka. Gagal baca TIDAK boleh menjadi nol
+ * (kas lebih/kurang palsu); tabel yang memang belum ada = belum ada fitur.
+ */
+export async function efekPenerimaanShift(supabase: AnyClient, shiftId: string): Promise<{ total: number; metode_bayar: string }[]> {
+  const { data, error } = await supabase.from("sale_receipt_shift_effects").select("method, amount").eq("shift_id", shiftId);
+  if (gagalBacaUang(error)) throw new Error(UANG_SHIFT_TIDAK_TERBACA);
+  if (error) return [];
+  return ((data ?? []) as { method: string; amount: number | string }[]).map(row => ({ total: Number(row.amount) || 0, metode_bayar: row.method }));
 }
 
 /** Hitung target kas shift tanpa menutupnya — dipakai juga oleh force-close. */

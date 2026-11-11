@@ -7,6 +7,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { openShift, closeShift, forceCloseShift } from "./actions";
 import { cashExpenseTotal, expectedCash, methodBreakdown } from "@/lib/shift-calc";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
+import { efekPenerimaanShift } from "@/lib/tutup-shift";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -45,7 +46,11 @@ export default async function ShiftPage({
     ]);
     if (saleError || expenseError) throw new Error("Rincian pembayaran shift belum dapat dibaca. Coba lagi.");
     const sales = (cs ?? []).filter(isCompletedSale);
-    tunai = methodBreakdown(sales).Tunai;
+    let efekTunai = 0;
+    try {
+      efekTunai = (await efekPenerimaanShift(supabase, open.id)).filter(row => row.metode_bayar === "Tunai").reduce((sum, row) => sum + row.total, 0);
+    } catch { throw new Error("Rincian pembayaran shift belum dapat dibaca. Coba lagi."); }
+    tunai = Math.round((methodBreakdown(sales).Tunai + efekTunai) * 100) / 100;
     trxCount = sales.length;
     cashExpenses = cashExpenseTotal(expenses ?? []);
   }

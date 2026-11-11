@@ -63,3 +63,70 @@ export async function batalkanPenjualan(form: FormData) {
   }
   redirect(`/penjualan/${id}?success=cancelled&draft_scope=${encodeURIComponent(`sale-cancel:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
 }
+
+const SALE_METHODS = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"] as const;
+
+function receiptFields(form: FormData) {
+  const id = String(form.get("id") ?? "");
+  const revisionText = String(form.get("revision") ?? "");
+  const revision = Number(revisionText);
+  const key = String(form.get("requestKey") ?? "");
+  const reason = String(form.get("alasan") ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(id) || !revisionText.trim() || !Number.isSafeInteger(revision) || revision < 0 || !key.trim() || key.length > 120) {
+    throw new Error("Identitas penjualan tidak lengkap. Muat ulang halaman lalu coba lagi.");
+  }
+  return { id, revision, key, reason };
+}
+
+/** Batalkan penerimaan (gaya Accurate): uang hilang dari kas/bank, struk menjadi belum dibayar. Hanya Owner (atau peran yang dicentang Owner). */
+export async function batalkanPenerimaan(form: FormData) {
+  const { id, revision, key, reason } = receiptFields(form);
+  if (reason.length < 3 || reason.length > 1000) throw new Error("Isi alasan membatalkan penerimaan (minimal 3 huruf).");
+  if (form.get("konfirmasi") !== "ya") throw new Error("Centang kotak konfirmasi dulu: uang pembayaran akan dikeluarkan dari kas/bank dan struk menjadi belum dibayar.");
+  const db = await createClient();
+  const { data, error } = await db.rpc("cancel_pos_sale_receipt", {
+    p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason,
+  });
+  if (error || data?.sale_id !== id || data?.unpaid !== true || !data?.cancellation_id) {
+    throw new Error(error?.message ?? "Hasil pembatalan penerimaan belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
+  }
+  revalidatePath("/", "layout");
+  const other = data.effect_in_other_shift === true ? "&shift=lain" : "";
+  redirect(`/penjualan/${id}?success=receipt-cancelled${other}&draft_scope=${encodeURIComponent(`sale-receipt-cancel:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
+}
+
+/** Terima pembayaran lagi sesudah penerimaan dibatalkan: metode boleh diganti, jumlahnya harus sama dengan total struk. */
+export async function terimaPembayaranUlang(form: FormData) {
+  const { id, revision, key } = receiptFields(form);
+  const plan = SALE_METHODS.flatMap(method => {
+    const raw = form.get(`amount_${method}`);
+    const amount = raw === null ? 0 : correctionMoney(raw); // kolom yang tidak dikirim = 0; basis data tetap memeriksa jumlah = total
+    return amount > 0 ? [{ method, amount }] : [];
+  });
+  if (plan.length === 0) throw new Error("Isi jumlah pembayaran minimal satu metode.");
+  const db = await createClient();
+  const { data, error } = await db.rpc("receive_pos_sale_payment", {
+    p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_plan: plan,
+  });
+  if (error || data?.sale_id !== id || data?.unpaid !== false || !data?.journal_id) {
+    throw new Error(error?.message ?? "Hasil penerimaan pembayaran belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
+  }
+  revalidatePath("/", "layout");
+  redirect(`/penjualan/${id}?success=receipt-received&draft_scope=${encodeURIComponent(`sale-receipt-receive:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
+}
+
+/** Order marketplace: batalkan pencairan sehingga order kembali ke piutang marketplace (lalu bisa dicairkan ulang atau dibatalkan/diganti). */
+export async function batalkanPencairan(form: FormData) {
+  const { id, revision, key, reason } = receiptFields(form);
+  if (reason.length < 3 || reason.length > 1000) throw new Error("Isi alasan membatalkan pencairan (minimal 3 huruf).");
+  if (form.get("konfirmasi") !== "ya") throw new Error("Centang kotak konfirmasi dulu: dana pencairan akan dikeluarkan dari bank dan order kembali menjadi piutang marketplace.");
+  const db = await createClient();
+  const { data, error } = await db.rpc("cancel_online_disbursement", {
+    p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason,
+  });
+  if (error || data?.sale_id !== id || data?.status !== "piutang" || !data?.cancellation_id) {
+    throw new Error(error?.message ?? "Hasil pembatalan pencairan belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
+  }
+  revalidatePath("/", "layout");
+  redirect(`/penjualan/${id}?success=disbursement-cancelled&draft_scope=${encodeURIComponent(`sale-disbursement-cancel:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
+}
