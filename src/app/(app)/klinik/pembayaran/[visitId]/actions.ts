@@ -20,6 +20,7 @@ import { cekPeriode } from "@/lib/jurnal-guard";
 import { bacaRombongan } from "@/lib/rombongan-server";
 import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris, type RincianPromoKlinik } from "@/lib/tagihan-klinik";
 import { catatRincianPromoKlinik } from "@/lib/rincian-promo-klinik";
+import { alokasiPromoPerBaris } from "@/lib/promo-baris-klinik";
 import { clinicServicePerformerInput, parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { bacaKodeKampanye, cekVoucherLewatKampanye, pesanGagalKampanye, pesanKampanyeDitolak } from "@/lib/kode-kampanye";
@@ -92,8 +93,8 @@ async function setelahRespons(task: () => Promise<unknown>) {
 const uncertainPayment = "Hasil pembayaran belum dapat dipastikan. Periksa invoice yang sudah tersimpan sebelum mencoba lagi dengan permintaan yang sama; jangan menerima pembayaran ulang.";
 const todayIso = () => hariIniWIB();
 
-function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceLineInput[] {
-  return rows.map((row) => ({
+function barisUntukPosting(rows: Line[], inheritInvoice = false, promoPerBaris: readonly number[] = []): ClinicInvoiceLineInput[] {
+  return rows.map((row, index) => ({
     description: row.deskripsi,
     qty: row.qty,
     price: row.harga,
@@ -107,6 +108,8 @@ function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceL
     ...(row.service_performers != null ? {service_performers:row.service_performers} : {}),
     ...(row.salesperson_id ? {salesperson_id:row.salesperson_id} : {}),
     ...(!inheritInvoice && row.package_item_id && Number(row.package_qty) > 0 ? {package_item_id:row.package_item_id,package_qty:Number(row.package_qty)} : {}),
+    // Lantai harga (P03): potongan promo dibebankan ke baris yang memang kena promo; kunci tidak dikirim bila 0.
+    ...(!inheritInvoice && (promoPerBaris[index] ?? 0) > 0 ? {promo_discount:promoPerBaris[index]} : {}),
   }));
 }
 
@@ -458,7 +461,8 @@ export async function bayarVisit(formData: FormData) {
       ...(campaignCode ? { campaign_code: campaignCode } : {}),
       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
     },
-    p_lines: barisUntukPosting(rows),
+    // Promo per baris (hanya jalur CREATE; koreksi mewarisi dari baris asal di database).
+    p_lines: barisUntukPosting(rows, false, alokasiPromoPerBaris(rows, "rincianPromo" in potongan ? potongan.rincianPromo : undefined, discount)),
   }, payments, demo, admission, cartVersionDari(formData));
   if (posted.error || !posted.invoiceNo) {
     redirect(`${back}?error=${encodeURIComponent(posted.invoiceId ? "Invoice sudah tersimpan, tetapi rinciannya belum dapat dibaca. Jangan menerima pembayaran ulang; muat ulang dan periksa invoice yang sama." : parseClinicPostingError(posted.error, uncertainPayment))}`);
@@ -751,7 +755,7 @@ export async function bayarRombongan(formData: FormData) {
         ...(pendamping ? { campaign_carrier_id: pendamping } : {}),
         service_pricing_version:1,
       },
-      p_lines: barisUntukPosting(rows),
+      p_lines: barisUntukPosting(rows, false, alokasiPromoPerBaris(rows, s.rincianPromo, discount)),
     }, undefined, undefined, undefined, cartVersion ?? undefined);
     // Nota yang tersimpan sudah memakai kodenya (dihitung database), walau nomornya belum terbaca.
     if (posted.invoiceId) notaTersimpan++;
