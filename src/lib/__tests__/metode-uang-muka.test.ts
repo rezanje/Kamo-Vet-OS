@@ -26,7 +26,7 @@ describe("alokasiUangMuka", () => {
 
   it("sebagian saja terpakai: pembagian sebanding, sisa pembulatan tidak hilang", () => {
     const hasil = alokasiUangMuka(100, [{ metode: "Tunai", amount: 1 }, { metode: "QRIS", amount: 1 }, { metode: "Transfer", amount: 1 }]);
-    expect(hasil.reduce((s, h) => s + h.amount, 0)).toBe(100);
+    expect((hasil ?? []).reduce((s, h) => s + h.amount, 0)).toBe(100);
   });
 
   it("komposisi kosong atau nol: tidak menebak metode", () => {
