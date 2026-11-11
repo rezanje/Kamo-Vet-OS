@@ -2,6 +2,7 @@ import { MODULES } from "./nav";
 import { SEMUA_PERAN } from "./akses";
 import type { RoleCapabilities } from "./role-capabilities";
 import { selectableSubmenus } from "./submenu-access";
+import { isGrantOnlyAction } from "./role-grant-only-actions";
 
 export const ROLE_ACCESS_CATALOG = [...MODULES.map(m => ({ ...m, group: "Modul" })),
   { id: "kasir", label: "Kasir", icon: "ti-cash-register", group: "Operasional" },
@@ -34,9 +35,8 @@ export function parseRoleAccessConfig(value: unknown, role: string): RoleAccessC
   return v;
 }
 /** The policy the database actually applies: no saved action policy ("legacy") allows every enforced action
- * (subject to the original role/branch/state ceilings); an explicit policy allows exactly its list. */
+ * (subject to the original role/branch/state ceilings); an explicit policy allows exactly its list.
+ * Exception: grant-only actions (izin khusus) are OFF for a legacy role: the database only allows them when a saved
+ * policy lists them explicitly. */
 export const effectiveAllowedActions = (config: RoleAccessConfig): string[] =>
-  config.actions.source === "legacy" ? config.action_catalog.filter(a => a.enforced && !ACTIONS_DEFAULT_OFF.includes(a.id)).map(a => a.id) : config.actions.allowed;
-/** Aksi yang BAWAANNYA MATI untuk peran selain Owner: kebijakan "bawaan lama" tidak memberinya; hanya izin tertulis eksplisit
- * (database menolak peran tanpa izin tertulis, jadi layar tidak boleh menampilkannya tercentang). */
-export const ACTIONS_DEFAULT_OFF: readonly string[] = ["klinik.batalkan_penerimaan"];
+  config.actions.source === "legacy" ? config.action_catalog.filter(a => a.enforced && !isGrantOnlyAction(a.id)).map(a => a.id) : config.actions.allowed;

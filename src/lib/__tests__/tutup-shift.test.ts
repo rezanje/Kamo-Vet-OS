@@ -23,6 +23,7 @@ type Db = {
   journalLines?: Any[];
   clinic_payment_receipts?: Any[];
   clinic_receipt_cancellations?: Any[];
+  sale_receipt_shift_effects?: Any[];
   /** Tabel yang bacaannya gagal — untuk menguji gagal-tertutup. */
   gagal?: Record<string, { code?: string; message: string }>;
 };
@@ -240,6 +241,38 @@ describe("pemasukanShift", () => {
     };
     const rows = await pemasukanShift(makeClient(db), shift({ shift_type: "klinik" }));
     expect(rows[0].total).toBe(100_000);
+  });
+});
+
+describe("batalkan penerimaan: efek laci shift petshop", () => {
+  it("efek bertanda (minus = uang dikembalikan) ikut menghitung target kas dan rincian metode", async () => {
+    const db: Db = {
+      sales: [{ no_struk: "S1", total: 100000, metode_bayar: "Tunai", payment_plan: [], payments_finalized_at: "2026-11-01", voided_at: null, sale_payments: [{ method: "Tunai", amount: 100000 }] }],
+      sale_receipt_shift_effects: [{ method: "Tunai", amount: -60000 }, { method: "QRIS", amount: -40000 }, { method: "Transfer", amount: 100000 }],
+    };
+    const rows = await pemasukanShift(makeClient(db), shift());
+    expect(rows).toEqual(expect.arrayContaining([{ total: -60000, metode_bayar: "Tunai" }, { total: -40000, metode_bayar: "QRIS" }, { total: 100000, metode_bayar: "Transfer" }]));
+    const { expected, breakdown } = await hitungShift(makeClient(db), shift());
+    expect(breakdown.Tunai).toBe(40000);
+    expect(breakdown.QRIS).toBe(-40000);
+    expect(breakdown.Transfer).toBe(100000);
+    expect(expected).toBe(140000);
+  });
+  it("tanpa efek: hitungan sama persis seperti sebelum fitur ini", async () => {
+    const db: Db = { sales: [{ no_struk: "S1", total: 100000, metode_bayar: "Tunai", payment_plan: [], payments_finalized_at: "2026-11-01", voided_at: null, sale_payments: [{ method: "Tunai", amount: 100000 }] }] };
+    expect((await hitungShift(makeClient(db), shift())).expected).toBe(200000);
+  });
+  it("gagal membaca efek = berhenti (tidak dianggap nol: kas lebih/kurang palsu)", async () => {
+    const db: Db = { sales: [], gagal: { sale_receipt_shift_effects: { code: "57014", message: "timeout" } } };
+    await expect(pemasukanShift(makeClient(db), shift())).rejects.toThrow(/Uang shift belum dapat dibaca/);
+  });
+  it("tabel efek belum ada (database lama) = belum ada fitur, bukan galat", async () => {
+    const db: Db = { sales: [], gagal: { sale_receipt_shift_effects: { code: "42P01", message: "relation does not exist" } } };
+    expect(await pemasukanShift(makeClient(db), shift())).toEqual([]);
+  });
+  it("shift klinik tidak membaca efek petshop", async () => {
+    const db: Db = { invoices: [], sale_receipt_shift_effects: [{ method: "Tunai", amount: -5 }] };
+    expect(await pemasukanShift(makeClient(db), shift({ shift_type: "klinik" }))).toEqual([]);
   });
 });
 
