@@ -14,6 +14,7 @@ import { bolehTransaksiKas } from "@/lib/master-guard";
 import {readCompleteList,ListLoadError} from "@/lib/checked-list";
 import {AdvanceForm,type AdvancePO} from "./AdvanceForm";
 import { batalkanUangMuka } from "./actions";
+import { loadPurchaseCancelAccess } from "@/lib/purchase-cancel-access";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -37,6 +38,13 @@ export default async function UangMukaPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
+  // Batal uang muka + pembayarannya: OWNER selalu; peran lain dengan izin dari Akses Grup. Bila izin tidak terbaca, tautan tetap
+  // tampil untuk yang berhak mengelola kas (database tetap menolak dengan penjelasan): Owner tidak pernah kehilangan tombol.
+  let cascadeAllowed = true;
+  try {
+    const { data: me } = await supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle();
+    if (me) { const access = await loadPurchaseCancelAccess(supabase, me); cascadeAllowed = access.uangMuka && access.pembayaran; }
+  } catch { cascadeAllowed = true; }
 
   let daftar:UM[]=[],pemasok:{id:string;nama:string}[]=[],po:AdvancePO[]=[],receipts:{id:string;po_id:string;voided_at?:string|null}[]=[];
   let loadError="";
@@ -138,7 +146,7 @@ export default async function UangMukaPage({
                           </form>
                         )}
                         {/* P08: a used advance is cancelled together with its payments, after a preview (Super Admin). */}
-                        {u.status === "aktif" && Number(u.terpakai) > 0 && (
+                        {u.status === "aktif" && Number(u.terpakai) > 0 && cascadeAllowed && (
                           <Link href={`/pembelian/uang-muka/${u.id}/batal`} style={{ fontSize: 10.5, color: "#b91c1c" }}>
                             Batalkan + pembayaran
                           </Link>

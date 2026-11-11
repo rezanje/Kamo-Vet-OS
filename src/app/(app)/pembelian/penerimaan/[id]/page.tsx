@@ -4,6 +4,9 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
 import { ReceiptCancelForm } from "./ReceiptCancelForm";
+import { ReceiptCancelPreviewPanel } from "@/components/ReceiptCancelPreviewPanel";
+import { loadReceiptCancelPreview } from "@/lib/purchase-cancel-preview";
+import { loadPurchaseCancelAccess } from "@/lib/purchase-cancel-access";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
@@ -23,7 +26,8 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle();
-  const owner = !!user && profile?.role === "OWNER" && profile.is_active === true;
+  // OWNER selalu boleh (tanpa membaca kebijakan); peran lain hanya bila diberi izin Batalkan penerimaan di Akses Grup. Database memeriksa ulang.
+  const canCancel = !!user && (await loadPurchaseCancelAccess(supabase, profile)).penerimaan;
 
   const { data, error } = await supabase
     .from("goods_receipts")
@@ -55,6 +59,7 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
     : legacyShown
       ? "Faktur yang menagih penerimaan ini ditandai. Faktur lama tanpa catatan penerimaan dikelompokkan lewat PO yang sama."
       : "Faktur yang menagih penerimaan ini, tercatat saat faktur dibuat.";
+  const { preview, error: previewError } = canCancel && !data.voided_at ? await loadReceiptCancelPreview(supabase, id) : { preview: null, error: null };
   const baris = (data.goods_receipt_items ?? []) as Baris[];
   const penerima = one(data.profiles as Rel<{ full_name: string | null }>)?.full_name ?? "—";
 
@@ -144,11 +149,14 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
           <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 10 }}>Catatan: {data.catatan}</div>
         )}
 
-        {owner && !data.voided_at && (
-          <details className="no-print" style={{ marginTop: 14 }}>
-            <summary className="btn-def">Batalkan penerimaan (Super Admin)</summary>
-            <ReceiptCancelForm userId={user!.id} receiptId={data.id} />
-          </details>
+        {canCancel && !data.voided_at && (
+          <section className="no-print" id="batal" style={{ marginTop: 14 }}>
+            <ReceiptCancelPreviewPanel preview={preview} error={previewError} from={`/pembelian/penerimaan/${id}`} />
+            <details style={{ marginTop: 10 }} open={preview?.can_cancel === true}>
+              <summary className="btn-def">{preview && !preview.can_cancel ? "Tetap coba batalkan (database memeriksa ulang)" : "Batalkan penerimaan"}</summary>
+              <ReceiptCancelForm userId={user!.id} receiptId={data.id} />
+            </details>
+          </section>
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 40, marginTop: 34, fontSize: 10.5 }}>

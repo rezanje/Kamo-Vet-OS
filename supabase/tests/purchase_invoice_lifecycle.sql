@@ -132,7 +132,10 @@ update stock_layers set unit_cost=unit_cost+1 where id=(select layer_id from pur
 set local role authenticated;
 select pg_temp.expect_error(format('select cancel_purchase_invoice(%L,0,''later-price'',''Wrong price'')',result->>'invoice_id'),'harga sudah berubah') from invoice_test_results where name='direct-replacement';
 select stock_out_fifo('ee200000-0000-4000-8000-000000000001','ee400000-0000-4000-8000-000000000001',1,'test-consume','INV.CONSUME',current_date);
-select pg_temp.expect_error(format('select cancel_purchase_invoice(%L,0,''consumed'',''Wrong price'')',result->>'invoice_id'),'Rekonsiliasi') from invoice_test_results where name='po-replacement';
+select pg_temp.expect_error(format('select cancel_purchase_invoice(%L,0,''consumed'',''Wrong price'')',result->>'invoice_id'),'Rekonsiliasi') from invoice_test_results where name='po-replacement' and public.inventory_is_average();
+-- FIFO (metode produksi): pengeluaran di atas mengambil lapisan faktur lain yang lebih tua; lapisan faktur po-replacement utuh, jadi
+-- pembatalannya aman dan sengaja tidak lagi ditolak (migrasi 20261112500000). Penolakan tetap berlaku di rata-rata bergerak, dan di FIFO bila
+-- lapisan faktur itu sendiri terpakai (supabase/tests/batal_pembelian/04_faktur_fifo.sql).
 reset role;
 update accounting_locks set closed_until=current_date;
 set local role authenticated;

@@ -10,8 +10,9 @@ export function ReceiptCancelForm({ userId, receiptId }: { userId: string; recei
     {({ ready }) => <>
       <input type="hidden" name="receipt_id" value={receiptId} />
       <p style={{ fontSize: 11, color: "var(--tm)" }}>
-        Hanya bisa bila PO belum punya faktur aktif dan barang dari penerimaan ini belum ada yang terpakai atau keluar gudang.
-        Kalau sudah, gunakan Retur Pembelian. Dokumen asli tetap tersimpan dengan status dibatalkan.
+        Stok, jurnal persediaan, dan jumlah diterima di PO dibalik dalam satu langkah; dokumen asli tetap tersimpan dengan status dibatalkan.
+        Bila masih ada pembayaran atau faktur aktif, atau barangnya sudah terpakai, sistem menolak dan menjelaskan langkah yang harus dilakukan dulu
+        (urutan: batalkan pembayaran, batalkan faktur, lalu batalkan penerimaan). Stok tidak pernah dibuat minus diam-diam.
       </p>
       <label className="flab" htmlFor="receipt-cancel-reason">Alasan pembatalan</label>
       <input className="fi" id="receipt-cancel-reason" name="alasan" minLength={3} maxLength={1000} required />
