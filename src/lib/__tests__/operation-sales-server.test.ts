@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { collectDashboard, resolveDashboardScope } from "../operation-sales-server";
 
 type QueryRecord = { table: string; calls: { method: string; args: unknown[] }[] };
@@ -18,9 +18,11 @@ function applyFilters(rows: Row[], calls: QueryRecord["calls"]): Row[] {
   const select = String(calls.find((call) => call.method === "select")?.args[0] ?? "");
   let out = rows.map((row) => ({ ...row }));
   for (const { method, args } of calls) {
-    if (!["eq", "in", "is", "gte", "lte", "gt", "lt"].includes(method)) continue;
+    if (!["eq", "in", "is", "gte", "lte", "gt", "lt", "ilike"].includes(method)) continue;
     const [column, value] = args as [string, unknown];
-    const test = (cell: unknown) => method === "in" ? (value as unknown[]).includes(cell)
+    const test = (cell: unknown) => method === "ilike"
+      ? String(cell ?? "").toLowerCase().includes(String(value).replaceAll("%", "").toLowerCase())
+      : method === "in" ? (value as unknown[]).includes(cell)
       : method === "is" ? (cell ?? null) === value
       : method === "eq" ? cell === value
       : method === "gte" ? compareCell(cell, value) >= 0
@@ -80,6 +82,8 @@ function fakeSupabase(options: {
   tables?: Record<string, Row[]>;
   /** Server row cap per response (PostgREST max-rows). */
   maxRows?: number;
+  /** Hasil RPC selain user_can_access_branch (mis. inventory_is_average). */
+  rpcs?: Record<string, unknown>;
 }) {
   const records: QueryRecord[] = [];
   const errors = options.errors ?? {};
@@ -99,7 +103,7 @@ function fakeSupabase(options: {
             ? options.layers ?? []
           : table === "sales" ? options.sales ?? [] : table === "sales_returns" ? options.returns ?? [] : [];
     const query: Record<string, unknown> = {};
-    for (const method of ["select", "eq", "in", "gte", "lte", "lt", "gt", "is", "not", "neq", "order", "range", "limit", "maybeSingle"]) {
+    for (const method of ["select", "eq", "in", "gte", "lte", "lt", "gt", "is", "ilike", "not", "neq", "order", "range", "limit", "maybeSingle"]) {
       query[method] = (...args: unknown[]) => {
         record.calls.push({ method, args });
         return query;
@@ -117,6 +121,7 @@ function fakeSupabase(options: {
     from,
     rpc: async (name: string, args: Record<string, unknown>) => {
       records.push({ table: `rpc:${name}`, calls: [{ method: "rpc", args: [args] }] });
+      if (options.rpcs && name in options.rpcs) return { data: options.rpcs[name], error: null };
       return { data: args.b === "foreign" ? false : true, error: null };
     },
     records,
@@ -519,14 +524,15 @@ describe("retur struk petshop mengurangi omzet struk asalnya (sama dengan Lapora
 
     const inLists = supabase.records.filter((record) => record.table === "sales_returns")
       .map((record) => record.calls.find((call) => call.method === "in")?.args[1] as string[]);
-    // Blok cabang memakai muatan dokumen blok penjualan (satu muatan), dipecah jadi 2 potongan:
-    // tiap id struk muncul tepat sekali.
-    expect(inLists).toHaveLength(2);
+    // Blok cabang memakai muatan dokumen blok penjualan (satu muatan). Karena kanal bukan
+    // "Semua kanal", blok perbandingan cabang membaca sendiri (semua kanal). Tiap muatan
+    // dipecah jadi 2 potongan: tiap id struk muncul tepat sekali per muatan.
+    expect(inLists).toHaveLength(4);
     expect(inLists.every((ids) => ids.length <= 100)).toBe(true);
     const seen = new Map<string, number>();
     for (const id of inLists.flat()) seen.set(id, (seen.get(id) ?? 0) + 1);
     expect(seen.size).toBe(150);
-    expect([...seen.values()].every((count) => count === 1)).toBe(true);
+    expect([...seen.values()].every((count) => count === 2)).toBe(true);
     expect(result.branch).toMatchObject({ status: "ready", data: [{ branchId: "b1", sales: 150 * 99000, transactions: 150 }] });
   });
 });
@@ -618,7 +624,10 @@ describe("refund klinik mengurangi omzet tagihan asalnya (sama dengan Laporan Tr
     } });
     const result = await collectDashboard(pos, { from: "2026-11-02", to: "2026-11-02", branchIds: ["b1"], channel: "pos" });
     expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 0, transactions: 0 } } });
-    expect(pos.records.some((record) => record.table === "clinic_refunds")).toBe(false);
+    // Blok Sales kanal POS tidak menyentuh refund klinik; satu-satunya bacaan datang dari
+    // blok perbandingan cabang, yang selalu memuat klinik.
+    expect(pos.records.filter((record) => record.table === "clinic_refunds")).toHaveLength(1);
+    expect(result.comparison).toMatchObject({ status: "ready", data: { rows: [{ sekarang: { klinik: { transaksi: 1, omzet: 100000 } } }] } });
   });
 
   it("daftar tagihan panjang dibaca refund-nya per 100 id tanpa ada yang terlewat atau dobel", async () => {
@@ -630,14 +639,15 @@ describe("refund klinik mengurangi omzet tagihan asalnya (sama dengan Laporan Tr
 
     const inLists = supabase.records.filter((record) => record.table === "clinic_refunds")
       .map((record) => record.calls.find((call) => call.method === "in")?.args[1] as string[]);
-    // Blok cabang memakai muatan dokumen blok penjualan (satu muatan), dipecah jadi 2 potongan:
-    // tiap id tagihan muncul tepat sekali.
-    expect(inLists).toHaveLength(2);
+    // Blok cabang memakai muatan dokumen blok penjualan (satu muatan). Karena kanal bukan
+    // "Semua kanal", blok perbandingan cabang membaca sendiri (semua kanal). Tiap muatan
+    // dipecah jadi 2 potongan: tiap id tagihan muncul tepat sekali per muatan.
+    expect(inLists).toHaveLength(4);
     expect(inLists.every((ids) => ids.length <= 100)).toBe(true);
     const seen = new Map<string, number>();
     for (const id of inLists.flat()) seen.set(id, (seen.get(id) ?? 0) + 1);
     expect(seen.size).toBe(150);
-    expect([...seen.values()].every((count) => count === 1)).toBe(true);
+    expect([...seen.values()].every((count) => count === 2)).toBe(true);
     expect(result.branch).toMatchObject({ status: "ready", data: [{ branchId: "b1", sales: 150 * (150000 - 1000), transactions: 150 }] });
   });
 
@@ -648,5 +658,104 @@ describe("refund klinik mengurangi omzet tagihan asalnya (sama dengan Laporan Tr
     const supabase = fakeSupabase({ tables: { invoices, clinic_refunds: refunds } });
     const result = await collectDashboard(supabase, { from: "2026-11-02", to: "2026-11-02", branchIds: ["b1"], channel: "klinik" });
     expect(result.sales).toMatchObject({ status: "ready", data: { metrics: { sales: 100 * (150000 - 1100), transactions: 100 } } });
+  });
+});
+
+describe("cabang vs bulan lalu (Mas Mai, 11 Nov 2026)", () => {
+  const sale = (id: string, createdAt: string, total: number, customerId: string | null, extra: Row = {}) => ({
+    id, branch_id: "b1", customer_id: customerId, total, channel: null, created_at: createdAt, voided_at: null,
+    sale_items: [{ item_id: "barang", qty: 1, harga: total, hpp: 0, items: { item_type: "Barang", tindakan_kategori: null } }], ...extra,
+  });
+  const invoice = (id: string, createdAt: string, total: number, customerId: string) => ({
+    id, visit_id: `v-${id}`, total, created_at: createdAt, voided_at: null,
+    visits: { branch_id: "b1", customer_id: customerId }, invoice_items: [{ item_id: "jasa", qty: 1, harga: total, hpp: 0, jenis: "Jasa" }],
+  });
+  const visit = (id: string, createdAt: string, poli: string) => ({ id, branch_id: "b1", poli, archived_at: null, status: "Selesai", created_at: createdAt });
+  const groomingLine = (id: string, createdAt: string, qty: number, voidedAt: string | null = null) => ({
+    id, qty, sales: { created_at: createdAt, voided_at: voidedAt, branch_id: "b1" }, items: { item_type: "Jasa", tindakan_kategori: "Grooming" },
+  });
+
+  it("membandingkan rata-rata transaksi, customer, transaksi, dan grooming dengan tanggal yang sama bulan lalu", async () => {
+    const supabase = fakeSupabase({ tables: {
+      sales: [
+        sale("s1", "2026-11-03T03:00:00Z", 100000, "c1"),
+        sale("s2", "2026-11-10T03:00:00Z", 50000, "c1"),
+        sale("s3", "2026-11-12T03:00:00Z", 30000, null),
+        sale("o1", "2026-10-05T03:00:00Z", 120000, "c2"),
+        sale("o2", "2026-10-20T03:00:00Z", 999000, "c3"),
+      ],
+      invoices: [invoice("i1", "2026-11-04T03:00:00Z", 200000, "k1"), invoice("i0", "2026-10-04T03:00:00Z", 100000, "k1")],
+      visits: [
+        visit("v1", "2026-11-02T03:00:00Z", "Grooming"), visit("v2", "2026-11-03T03:00:00Z", "grooming kucing"),
+        visit("v3", "2026-11-03T04:00:00Z", "Umum"), visit("v0", "2026-10-02T03:00:00Z", "Grooming"),
+      ],
+      sale_items: [
+        groomingLine("g1", "2026-11-05T03:00:00Z", 2), groomingLine("g-void", "2026-11-05T04:00:00Z", 5, "2026-11-05T05:00:00Z"),
+        groomingLine("g0", "2026-10-05T03:00:00Z", 1),
+      ],
+    } });
+    const result = await collectDashboard(supabase, { from: "2026-11-01", to: "2026-11-15", branchIds: ["b1"], channel: "all" });
+    expect(result.stockValue).toBeNull();
+    expect(result.comparison).toMatchObject({ status: "ready", data: {
+      periode: { from: "2026-11-01", to: "2026-11-15" },
+      pembanding: { from: "2026-10-01", to: "2026-10-15" },
+      rows: [{
+        branchId: "b1",
+        sekarang: {
+          petshop: { transaksi: 3, omzet: 180000, rataRata: 60000, customer: 1 },
+          klinik: { transaksi: 1, omzet: 200000, rataRata: 200000, customer: 1 },
+          grooming: 4,
+        },
+        bulanLalu: {
+          petshop: { transaksi: 1, omzet: 120000, rataRata: 120000, customer: 1 },
+          klinik: { transaksi: 1, omzet: 100000, rataRata: 100000, customer: 1 },
+          grooming: 2,
+        },
+      }],
+    } });
+    // Kanal "Semua kanal": struk periode ini dibaca sekali untuk Sales, Branch, dan perbandingan.
+    const salesReads = supabase.records.filter((record) => record.table === "sales"
+      && record.calls.some((call) => call.method === "gte" && call.args[1] === "2026-11-01T00:00:00+07:00"));
+    expect(new Set(salesReads.map((record) => JSON.stringify(record.calls.filter((call) => call.method !== "range")))).size).toBe(1);
+  });
+
+  it("nilai stok HPP petshop & klinik dihitung mundur dari kartu stok ke tanggal yang sama bulan lalu", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-15T05:00:00Z"));
+    try {
+      const supabase = fakeSupabase({ rpcs: { inventory_is_average: false }, tables: {
+        warehouses: [
+          { id: "w-r", branch_id: "b1", type: "RETAIL" }, { id: "w-v", branch_id: "b1", type: "VET" }, { id: "w-dc", branch_id: "b1", type: "DC" },
+        ],
+        stock: [
+          { id: "st1", warehouse_id: "w-r", item_id: "i1", qty: 10 }, { id: "st2", warehouse_id: "w-v", item_id: "i2", qty: 4 },
+          { id: "st3", warehouse_id: "w-dc", item_id: "i1", qty: 100 },
+        ],
+        stock_layers: [
+          { id: "l1", warehouse_id: "w-r", item_id: "i1", qty_left: 10, unit_cost: 1000 },
+          { id: "l2", warehouse_id: "w-v", item_id: "i2", qty_left: 4, unit_cost: 2500 },
+          { id: "l3", warehouse_id: "w-dc", item_id: "i1", qty_left: 100, unit_cost: 1000 },
+        ],
+        stock_moves: [
+          { id: "m1", warehouse_id: "w-r", tanggal: "2026-11-05", qty: -5, unit_cost: 1000, valuation_adjustment: 0 },
+          { id: "m2", warehouse_id: "w-r", tanggal: "2026-10-20", qty: 10, unit_cost: 1000, valuation_adjustment: 0 },
+          { id: "m3", warehouse_id: "w-r", tanggal: "2026-10-10", qty: 3, unit_cost: 1000, valuation_adjustment: 0 },
+          { id: "m4", warehouse_id: "w-v", tanggal: "2026-11-15", qty: -1, unit_cost: 2500, valuation_adjustment: 0 },
+          { id: "m5", warehouse_id: "w-v", tanggal: "2026-11-01", qty: -2, unit_cost: 2500, valuation_adjustment: 0 },
+        ],
+      } });
+      const result = await collectDashboard(supabase, { from: "2026-11-01", to: "2026-11-15", branchIds: ["b1"], channel: "pos" },
+        { includeStockValue: true });
+      expect(result.stockValue).toMatchObject({ status: "ready", data: {
+        tanggal: "2026-11-15", tanggalPembanding: "2026-10-15", metode: "fifo",
+        rows: [{ branchId: "b1", sekarang: { petshop: 10000, klinik: 10000 }, bulanLalu: { petshop: 5000, klinik: 17500 } }],
+        total: { branchId: "*", sekarang: { petshop: 10000, klinik: 10000 }, bulanLalu: { petshop: 5000, klinik: 17500 } },
+      } });
+      // Mutasi lebih lama dari tanggal pembanding tidak dibaca sama sekali.
+      const moveFilters = supabase.records.filter((record) => record.table === "stock_moves").flatMap((record) => record.calls);
+      expect(moveFilters).toContainEqual({ method: "gt", args: ["tanggal", "2026-10-15"] });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
