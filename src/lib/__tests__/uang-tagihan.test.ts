@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  TANPA_BAYAR, bayarPerTagihan, sisaTagihan, statusUangTagihan, uangDiterimaTagihan,
+  TANPA_BAYAR, bayarPerTagihan, bolehLihatTagihanTanpaShift, sisaTagihan, statusUangTagihan, uangDiterimaTagihan,
 } from "../uang-tagihan";
 
 // IND-06: satu perhitungan "sudah dibayar" untuk SEMUA bentuk tagihan klinik.
@@ -76,5 +76,14 @@ describe("uang diterima per tagihan", () => {
     ]);
     expect(peta.get("i1")).toEqual({ jumlah: 100_000, baris: 1 });
     expect(peta.get("i2")).toEqual({ jumlah: 75_000, baris: 2 });
+  });
+});
+
+// Reza, 2 November 2026: hanya Owner/Admin yang boleh membuka layar tagihan belum lunas
+// tanpa shift kasir sendiri (baca saja). Peran lain tetap diarahkan ke Mulai Shift.
+describe("lihat tagihan tanpa shift", () => {
+  it.each(["OWNER", "ADMIN"])("%s boleh", (role) => expect(bolehLihatTagihanTanpaShift(role)).toBe(true));
+  it.each(["FINANCE", "STAFF", "DOCTOR", "owner", "", null, undefined])("%s tidak boleh", (role) => {
+    expect(bolehLihatTagihanTanpaShift(role)).toBe(false);
   });
 });
