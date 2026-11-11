@@ -62,3 +62,60 @@ it("kunci yang sama tetap dipakai saat respons hilang (jangan menggandakan trans
   expect(keyOf()).toBe(before);
   expect(host.textContent).toContain("Respons simpan belum terkonfirmasi");
 });
+
+// --- Review hostile (uang): kunci basi TIDAK BOLEH diganti otomatis bila percobaan sebelumnya dengan kunci yang
+// sama belum jelas hasilnya. Respons hilang + isian diubah = server menjawab "rincian berbeda" padahal pengeluaran
+// pertama SUDAH tersimpan; mengganti kunci lalu menyimpan lagi akan mencatat pengeluaran dua kali.
+const ATTEMPT = "vetos:expense-attempt:v1:u1:clinic-expense:s1";
+
+it("respons hilang lalu isian diubah dan ditolak 'kunci basi': kunci TIDAK diganti, pesan memperingatkan mungkin sudah tersimpan", async () => {
+  fixture.save.mockRejectedValueOnce(Error("network")).mockResolvedValueOnce(STALE);
+  await mount(); await type("80000");
+  const before = keyOf();
+  await submit();
+  await type("85000");
+  await submit();
+  expect(keyOf()).toBe(before);
+  expect(sessionStorage.getItem("vetos:expense-request:v1:u1:clinic-expense:s1")).toBe(before);
+  expect(host.textContent).toContain("mungkin SUDAH tersimpan");
+  expect(host.textContent).not.toContain("BELUM tersimpan");
+});
+
+it("peringatan sudah ditampilkan lalu pengguna menekan Simpan lagi dan ditolak lagi: baru kunci diganti (keputusan manusia)", async () => {
+  fixture.save.mockRejectedValueOnce(Error("network")).mockResolvedValueOnce(STALE).mockResolvedValueOnce(STALE);
+  await mount(); await type("80000");
+  const before = keyOf();
+  await submit(); await submit();
+  expect(keyOf()).toBe(before);
+  await submit();
+  expect(keyOf()).not.toBe(before);
+  expect(host.querySelector<HTMLInputElement>('input[name="jumlah"]')!.value).toBe("80000");
+});
+
+it("aksi yang kembali tanpa hasil (tidak redirect) juga dianggap belum jelas: tidak ada rotasi otomatis", async () => {
+  fixture.save.mockResolvedValueOnce(undefined).mockResolvedValueOnce(STALE);
+  await mount(); await type("80000");
+  const before = keyOf();
+  await submit(); await submit();
+  expect(keyOf()).toBe(before);
+  expect(host.textContent).toContain("mungkin SUDAH tersimpan");
+});
+
+it("halaman dimuat ulang saat ada percobaan belum jelas (penanda percobaan ada): tidak ada rotasi otomatis", async () => {
+  sessionStorage.setItem("vetos:expense-request:v1:u1:clinic-expense:s1", "kunci-percobaan-lama");
+  sessionStorage.setItem(ATTEMPT, "kunci-percobaan-lama");
+  fixture.save.mockResolvedValueOnce(STALE);
+  await mount(); await type("80000");
+  await submit();
+  expect(keyOf()).toBe("kunci-percobaan-lama");
+  expect(host.textContent).toContain("mungkin SUDAH tersimpan");
+});
+
+it("penanda percobaan milik kunci lain tidak menghalangi rotasi", async () => {
+  sessionStorage.setItem("vetos:expense-request:v1:u1:clinic-expense:s1", "kunci-basi");
+  sessionStorage.setItem(ATTEMPT, "kunci-lain");
+  fixture.save.mockResolvedValueOnce(STALE);
+  await mount(); await type("80000");
+  await submit();
+  expect(keyOf()).not.toBe("kunci-basi");
+});

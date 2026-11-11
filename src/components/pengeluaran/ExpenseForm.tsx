@@ -17,12 +17,34 @@ export function ExpenseForm({ userId, scope, action, children }: {
   const [storageFailure, setStorageFailure] = useState("");
   const key = stored.identity === identity ? stored.key : "";
   const inFlight = useRef(false);
-  const rotateKey = useRef<() => void>(() => {});
+  const rotateKey = useRef<(previous: string) => void>(() => {});
+  // Keys whose earlier attempt ended without a confirmed answer (lost response / plain return), and keys for
+  // which the person was already warned once. The server cannot tell "another expense owns this key" from
+  // "MY first request saved and only the response was lost, then I edited a field": rotating in the second
+  // case would post the expense twice. Only rotate when this key has no unresolved earlier attempt.
+  const unresolvedKeys = useRef(new Set<string>());
+  const warnedKeys = useRef(new Set<string>());
+  const priorAttempt = useRef(false);
   // The server proved this key already belongs to another saved expense, so nothing was written for this
   // payload: take a fresh key (keeping the typed fields and the draft) instead of failing forever.
   const guarded = async (data: FormData) => {
-    const result = await action(data);
-    if ((result as { code?: string } | void)?.code === "stale_request_key") rotateKey.current();
+    const submitted = String(data.get("request_key") ?? "");
+    const unresolved = priorAttempt.current || unresolvedKeys.current.has(submitted);
+    let result: void | ActionRejection;
+    try { result = await action(data); }
+    catch (error) {
+      const redirected = typeof error === "object" && error !== null && "digest" in error && String(error.digest).startsWith("NEXT_REDIRECT");
+      if (!redirected) unresolvedKeys.current.add(submitted);
+      throw error;
+    }
+    if (result === undefined) unresolvedKeys.current.add(submitted);
+    if ((result as { code?: string } | void)?.code === "stale_request_key") {
+      if (unresolved && !warnedKeys.current.has(submitted)) {
+        warnedKeys.current.add(submitted);
+        return { ok: false, outcome: "rejected", message: "Kunci simpan ini sudah tercatat di server dengan isian yang berbeda, padahal percobaan sebelumnya belum jelas hasilnya. Pengeluaran ini mungkin SUDAH tersimpan. Periksa daftar pengeluaran atau tekan Periksa Hasil Simpan dulu. Jika yakin belum ada, tekan Simpan sekali lagi." } satisfies ActionRejection;
+      }
+      rotateKey.current(submitted);
+    }
     return result;
   };
   const { save, failure } = usePreservedAction(guarded);
@@ -45,8 +67,9 @@ export function ExpenseForm({ userId, scope, action, children }: {
       setStored({ identity, key: durable ? requestKey : "" });
       setStorageFailure(durable ? "" : "Penyimpanan browser tidak tersedia. Isian tetap terlihat; aktifkan penyimpanan lalu muat ulang sebelum menyimpan pengeluaran.");
     } });
-    rotateKey.current = () => {
+    rotateKey.current = (submitted: string) => {
       const previous = requestKey;
+      if (submitted !== previous) return;
       requestKey = crypto.randomUUID();
       try {
         const draftName = transactionDraftName(userId, "transaction", scope);
@@ -81,6 +104,7 @@ export function ExpenseForm({ userId, scope, action, children }: {
 
   const submit = async (data: FormData) => {
     if (!key || inFlight.current) return;
+    try { priorAttempt.current = sessionStorage.getItem(`vetos:expense-attempt:v1:${identity}`) === key; } catch { priorAttempt.current = false; }
     try { sessionStorage.setItem(`vetos:expense-attempt:v1:${identity}`, key); }
     catch {
       setStorageFailure("Penyimpanan browser tidak tersedia. Pengeluaran belum dikirim. Isian tetap tersedia.");

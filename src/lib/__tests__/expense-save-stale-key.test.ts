@@ -40,6 +40,16 @@ describe("kunci permintaan simpan pengeluaran yang basi", () => {
     await expect(saveExpense(form(), "clinic")).rejects.toThrow("Periode akuntansi sudah ditutup");
   });
 
+  it.each([
+    "Permintaan sudah digunakan dengan rincian berbeda. Muat ulang halaman.",
+    "permintaan sudah digunakan dengan rincian berbeda",
+    " Permintaan sudah digunakan dengan rincian berbeda",
+    "Permintaan sudah digunakan",
+  ])("pesan mirip tetapi tidak persis (%s) tetap dilempar", async message => {
+    fixture.rpc.mockResolvedValue({ data: null, error: { message } });
+    await expect(saveExpense(form(), "clinic")).rejects.toThrow();
+  });
+
   it("aksi klinik, kasir, dan backoffice mengembalikan penolakan dan TIDAK redirect/revalidasi", async () => {
     fixture.rpc.mockResolvedValue({ data: null, error: { message: "Permintaan sudah digunakan dengan rincian berbeda" } });
     for (const action of [simpanPengeluaranKlinik, simpanPengeluaranKasir, simpanExpense]) {
