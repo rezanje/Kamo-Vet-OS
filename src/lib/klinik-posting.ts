@@ -240,6 +240,9 @@ export function parseClinicPostingError(error: { code?: string; message: string 
     if (error.message === "INVOICE_INVALID: nilai invoice tidak konsisten") {
       return "Nilai invoice ditolak karena tidak konsisten. Periksa metode pembayaran, diskon, dan jumlah bayar, lalu pilih ulang metode atau muat ulang tagihan (belum ada yang tersimpan).";
     }
+    // Tanggal efektif (backdate) Owner: penolakan periode/persediaan terkunci dan tagihan bercampur tanggal sudah berbahasa biasa.
+    const tanggalEfektif = /^(PERIODE_TERKUNCI|PERSEDIAAN_TERKUNCI|BACKDATE_CAMPUR|BACKDATE_SISA):\s*([^\r\n]{1,600})$/.exec(error.message);
+    if (tanggalEfektif) return `${tanggalEfektif[2].trim()}. Belum ada yang tersimpan.`;
     const match = /^([A-Z_]+)(?::\s*([^\r\n]{1,100}))?$/.exec(error.message);
     if (match && fixedMessages[match[1]]) return fixedMessages[match[1]];
     if (match && match[2] && detailMessages[match[1]]) return `${detailMessages[match[1]]}: ${match[2]}`;

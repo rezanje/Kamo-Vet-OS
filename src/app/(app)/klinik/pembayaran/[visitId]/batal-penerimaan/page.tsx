@@ -22,6 +22,7 @@ export default async function BatalPenerimaanPage({ params, searchParams }: { pa
     {back}
     <h1 style={{ fontSize: 16, margin: "4px 0 10px" }}>Batalkan penerimaan {p.invoice.no ?? ""}</h1>
     <BatalPenerimaanForm key={invoiceId} visitId={visitId} invoiceId={invoiceId} invoiceNo={String(p.invoice.no ?? "")}
-      ringkasan={ringkasanPratinjau(p)} requestKey={randomUUID()} kembaliHref={kembali} />
+      ringkasan={ringkasanPratinjau(p)} requestKey={randomUUID()} kembaliHref={kembali}
+      hariIni={p.today} minTanggal={p.min_date ?? null} bolehMundur={p.can_backdate === true} />
   </>;
 }

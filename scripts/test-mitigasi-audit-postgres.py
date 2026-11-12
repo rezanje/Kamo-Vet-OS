@@ -27,6 +27,7 @@ bp = _load('bp', 'scripts/test-batalkan-penerimaan-petshop-postgres.py')
 okr, x, r, q, j, c = bk.okr, bk.x, bk.r, bk.q, bk.j, bk.c
 OWNER, ADMIN, FINANCE, STAFF = r.OWNER, r.ADMIN, r.FINANCE, r.STAFF
 CAND = '20261113100000_mitigasi_audit_integrasi_1111.sql'
+LATER = sorted(p.name for p in (Path(__file__).resolve().parents[1] / 'supabase/migrations').glob('*.sql') if p.name > CAND)
 MIG = ROOT / 'supabase/migrations'; TESTS = ROOT / 'supabase/tests'
 RESULTS = []
 NEXT = [21000]
@@ -407,6 +408,10 @@ def drop_created(db):
 def apply_text(db, name, text):
     rc, out, err = raw(db, 'begin;\n' + text + '\ncommit;', name)
     if rc: raise RuntimeError((err + out)[-1500:])
+    # Migrasi yang ditulis SESUDAH kandidat (mis. tanggal efektif petshop) dipasang di atasnya, urutan nyata; rantai dasar hanya memuat yang lebih lama.
+    for later in LATER:
+        rc, out, err = raw(db, 'begin;\n' + (MIG / later).read_text() + '\ncommit;', name)
+        if rc: raise RuntimeError(later + ': ' + (err + out)[-1500:])
 
 
 def suite_result(label, rc, err, expect_min):
@@ -499,7 +504,7 @@ def section_static(db, tag, cand):
     try:
         meta = json.loads(db.sql("select coalesce(jsonb_agg(jsonb_build_object('f',p.oid::regprocedure::text,'sec',p.prosecdef,'cfg',p.proconfig::text,'anon',has_function_privilege('anon',p.oid,'execute'),'auth',has_function_privilege('authenticated',p.oid,'execute'))),'[]') from pg_proc p where p.proname='klinik_shift_expected_cash'").splitlines()[-1])
         check('ACL: klinik_shift_expected_cash definer, search_path kosong, tanpa hak anon/authenticated', len(meta) == 1 and meta[0]['sec'] and not meta[0]['anon'] and not meta[0]['auth'] and 'search_path=' in (meta[0]['cfg'] or ''), meta)
-        marks = json.loads(db.sql("select coalesce(jsonb_object_agg(p.oid::regprocedure::text, position('MITIGASI_1111' in pg_get_functiondef(p.oid))>0),'{}') from pg_proc p where p.oid in ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)'::regprocedure,'public.pos_shift_pending_checkout_guard()'::regprocedure,'public.purchase_cancel_allowed(text)'::regprocedure,'public.preview_goods_receipt_cancellation(uuid,date)'::regprocedure,'public.cancel_purchase_payment(uuid,integer,text,text)'::regprocedure,'public.cancel_pos_sale_receipt(uuid,integer,text,text)'::regprocedure,'public.receive_pos_sale_payment(uuid,integer,text,jsonb)'::regprocedure,'public.cancel_online_disbursement(uuid,integer,text,text)'::regprocedure,'public.clinic_cancel_invoice_receipt(uuid,text,text)'::regprocedure,'public.clinic_cancel_invoice_receipt_preview(uuid)'::regprocedure)").splitlines()[-1])
+        marks = json.loads(db.sql("select coalesce(jsonb_object_agg(p.oid::regprocedure::text, position('MITIGASI_1111' in pg_get_functiondef(p.oid))>0),'{}') from pg_proc p where p.oid in ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)'::regprocedure,'public.pos_shift_pending_checkout_guard()'::regprocedure,'public.purchase_cancel_allowed(text)'::regprocedure,'public.preview_goods_receipt_cancellation(uuid,date)'::regprocedure,'public.cancel_purchase_payment(uuid,integer,text,text)'::regprocedure,'public.cancel_pos_sale_receipt(uuid,integer,text,text)'::regprocedure,'public.receive_pos_sale_payment(uuid,integer,text,jsonb)'::regprocedure,'public.cancel_online_disbursement(uuid,integer,text,text)'::regprocedure,'public.clinic_cancel_invoice_receipt(uuid,text,text,date)'::regprocedure,'public.clinic_cancel_invoice_receipt_preview(uuid,date)'::regprocedure)").splitlines()[-1])
         check('statik: sepuluh fungsi tertambal bertanda MITIGASI_1111', len(marks) == 10 and all(marks.values()), marks)
         order = db.sql("select (position('purchase_cancel_allowed(''pembelian.batalkan_pembayaran'')' in d) between 1 and position('pg_advisory_xact_lock' in d) - 1)::text||'|'||(position('purchase_cancel_allowed(''pembelian.batalkan_pembayaran'')' in d) < position('for update' in d))::text from (select pg_get_functiondef('public.cancel_purchase_payment(uuid,integer,text,text)'::regprocedure) d) z").splitlines()[-1]
         check('statik: cancel_purchase_payment memeriksa izin SEBELUM kunci advisory dan kunci baris', order == 'true|true', order)
@@ -547,7 +552,7 @@ def main():
                     run_sections(db, 'dev%d' % int(time.time()), None if a.baseline else cand_text, secs)
         else:
             with r.NativePostgres(r.BIN) as db:
-                build_templates(db, {CAND})
+                build_templates(db, {CAND, *LATER})
                 if a.mutations: extra['mutants'] = run_mutants(db, cand_text, a.only)
                 else: run_sections(db, 'v', None if a.baseline else cand_text, secs)
     except Exception as e:
