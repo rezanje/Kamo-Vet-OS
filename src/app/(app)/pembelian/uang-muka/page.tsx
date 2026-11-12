@@ -14,6 +14,8 @@ import { bolehTransaksiKas } from "@/lib/master-guard";
 import {readCompleteList,ListLoadError} from "@/lib/checked-list";
 import {AdvanceForm,type AdvancePO} from "./AdvanceForm";
 import { batalkanUangMuka } from "./actions";
+import { EffectiveDateField } from "@/components/EffectiveDateField";
+import { loadPurchaseBackdateAccess } from "@/lib/purchase-backdate";
 import { loadPurchaseCancelAccess } from "@/lib/purchase-cancel-access";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -41,9 +43,10 @@ export default async function UangMukaPage({
   // Batal uang muka + pembayarannya: OWNER selalu; peran lain dengan izin dari Akses Grup. Bila izin tidak terbaca, tautan tetap
   // tampil untuk yang berhak mengelola kas (database tetap menolak dengan penjelasan): Owner tidak pernah kehilangan tombol.
   let cascadeAllowed = true;
+  let canBackdate = false;
   try {
     const { data: me } = await supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle();
-    if (me) { const access = await loadPurchaseCancelAccess(supabase, me); cascadeAllowed = access.uangMuka && access.pembayaran; }
+    if (me) { const access = await loadPurchaseCancelAccess(supabase, me); cascadeAllowed = access.uangMuka && access.pembayaran; canBackdate = await loadPurchaseBackdateAccess(supabase, me); }
   } catch { cascadeAllowed = true; }
 
   let daftar:UM[]=[],pemasok:{id:string;nama:string}[]=[],po:AdvancePO[]=[],receipts:{id:string;po_id:string;voided_at?:string|null}[]=[];
@@ -138,12 +141,18 @@ export default async function UangMukaPage({
                     {boleh && (
                       <td>
                         {u.status === "aktif" && Number(u.terpakai) === 0 && (
-                          <form action={batalkanUangMuka}>
-                            <input type="hidden" name="id" value={u.id} />
-                            <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }} pendingText="…">
-                              Batalkan
-                            </SubmitButton>
-                          </form>
+                          <details>
+                            <summary className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }}>Batalkan</summary>
+                            <form action={batalkanUangMuka} style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 220, padding: "6px 0" }}>
+                              <input type="hidden" name="id" value={u.id} />
+                              <EffectiveDateField id={`batal-um-${u.id}`} docDate={u.tanggal} docLabel="uang muka" canBackdate={canBackdate} />
+                              <label className="flab" htmlFor={`alasan-um-${u.id}`}>Alasan</label>
+                              <input className="fi" id={`alasan-um-${u.id}`} name="alasan" maxLength={1000} placeholder="Wajib bila tanggal sebelum hari ini" />
+                              <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }} pendingText="…">
+                                Batalkan uang muka
+                              </SubmitButton>
+                            </form>
+                          </details>
                         )}
                         {/* P08: a used advance is cancelled together with its payments, after a preview (Super Admin). */}
                         {u.status === "aktif" && Number(u.terpakai) > 0 && cascadeAllowed && (

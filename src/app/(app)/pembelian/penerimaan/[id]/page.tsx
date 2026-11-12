@@ -7,6 +7,7 @@ import { ReceiptCancelForm } from "./ReceiptCancelForm";
 import { ReceiptCancelPreviewPanel } from "@/components/ReceiptCancelPreviewPanel";
 import { loadReceiptCancelPreview } from "@/lib/purchase-cancel-preview";
 import { loadPurchaseCancelAccess } from "@/lib/purchase-cancel-access";
+import { loadPurchaseBackdateAccess } from "@/lib/purchase-backdate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
@@ -28,6 +29,8 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
   const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle();
   // OWNER selalu boleh (tanpa membaca kebijakan); peran lain hanya bila diberi izin Batalkan penerimaan di Akses Grup. Database memeriksa ulang.
   const canCancel = !!user && (await loadPurchaseCancelAccess(supabase, profile)).penerimaan;
+  // Tanggal mundur: Owner selalu; peran lain hanya dengan izin Tanggal mundur di Akses Grup (database memeriksa ulang).
+  const canBackdate = canCancel && (await loadPurchaseBackdateAccess(supabase, profile));
 
   const { data, error } = await supabase
     .from("goods_receipts")
@@ -154,7 +157,7 @@ export default async function DetailPenerimaanPage({ params, searchParams }: { p
             <ReceiptCancelPreviewPanel preview={preview} error={previewError} from={`/pembelian/penerimaan/${id}`} />
             <details style={{ marginTop: 10 }} open={preview?.can_cancel === true}>
               <summary className="btn-def">{preview && !preview.can_cancel ? "Tetap coba batalkan (database memeriksa ulang)" : "Batalkan penerimaan"}</summary>
-              <ReceiptCancelForm userId={user!.id} receiptId={data.id} />
+              <ReceiptCancelForm userId={user!.id} receiptId={data.id} docDate={data.tanggal} canBackdate={canBackdate} />
             </details>
           </section>
         )}

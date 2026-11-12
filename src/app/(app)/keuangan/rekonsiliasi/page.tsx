@@ -6,6 +6,7 @@ import { getAccountBalances } from "@/lib/ledger";
 import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { hariIniWIB } from "@/lib/tanggal";
 import { RekonForm, type RekeningRekon } from "./RekonForm";
+import { BackdateCashTable, type BackdateCashRow } from "@/components/BackdateCashTable";
 
 const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 const fmtDate = (s: string) => new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -24,6 +25,8 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
   const capabilities = await loadRoleCapabilities(supabase, profile?.role ?? "");
   if (!profile?.is_active || !["OWNER","ADMIN","FINANCE"].includes(profile.role) || !capabilities.all_branches) return <div className="p2ban">Rekonsiliasi bank memerlukan akses keuangan seluruh cabang agar saldo buku lengkap.</div>;
 
+  // Pembatalan pembelian bertanggal mundur yang menggerakkan kas/bank: tanggal pembukuan dan tanggal fisik berdampingan.
+  const backdated = await supabase.rpc("list_purchase_backdate_audit", { p_limit: 50, p_cash_only: true });
   const [balances, { data: rekData }, { data: history, error: historyError, count }] = await Promise.all([
     getAccountBalances(supabase as never),
     supabase.from("cash_accounts").select("id, nama, coa_code").eq("jenis", "Bank").eq("is_active", true).order("nama"),
@@ -72,7 +75,12 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
       </div>
 
       <div className="crm-sec">
-        <SecHeader num="02" title="RIWAYAT REKONSILIASI" desc="Rekonsiliasi yang sudah diproses." />
+        <SecHeader num="02" title="PEMBATALAN PEMBELIAN — TANGGAL PEMBUKUAN VS UANG FISIK" desc="Pembatalan pembayaran/uang muka yang dibukukan di tanggal asli; uang fisiknya kembali pada hari pencatatan." />
+        <BackdateCashTable rows={(backdated.data ?? []) as BackdateCashRow[]} error={backdated.error ? "Daftar belum dapat dimuat. Muat ulang halaman." : null} />
+      </div>
+
+      <div className="crm-sec">
+        <SecHeader num="03" title="RIWAYAT REKONSILIASI" desc="Rekonsiliasi yang sudah diproses." />
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
             <thead>

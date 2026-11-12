@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { readEffectiveDate } from "@/lib/purchase-backdate";
 
 /** P08: OWNER cancels a used advance with every payment that used it, in one database transaction. */
 export async function batalkanUangMukaBeserta(formData: FormData) {
@@ -16,8 +17,12 @@ export async function batalkanUangMukaBeserta(formData: FormData) {
   if (!id || !requestKey || requestKey.length > 120 || !fingerprint) fail("Formulir pembatalan tidak lengkap. Muat ulang halaman.");
   if (reason.length < 3 || reason.length > 1000) fail("Alasan pembatalan wajib diisi (3 sampai 1.000 karakter).");
   if (formData.get("setuju") !== "1") fail("Centang konfirmasi setelah memeriksa daftar pembayaran yang akan dibalik.");
+  // Tanggal efektif (Accurate: bisa dibukukan di tanggal asli). Kosong = hari ini; izin, rentang, dan periode diperiksa database.
+  const effective = readEffectiveDate(formData.get("tanggal"));
+  if (!effective.ok) fail(effective.message);
   const { data, error } = await supabase.rpc("cancel_purchase_advance_cascade", {
     p_advance_id: id, p_reason: reason, p_request_key: requestKey, p_expected_fingerprint: fingerprint,
+    p_tanggal: effective.ok ? effective.value : "",
   });
   if (error) fail(error.message);
   if (!data?.advance_id || !data?.journal_id || data.advance_id !== id) throw new Error("Pembatalan belum terkonfirmasi lengkap. Periksa daftar uang muka sebelum mengulang.");
