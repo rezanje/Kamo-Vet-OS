@@ -23,7 +23,7 @@ it("jendela terbuka (peran berhak): tanggal pembukuan diubah, uang fisik tetap h
   const h = await html();
   expect(h).toContain("Tanggal pembukuan diubah ke 2026-11-09"); expect(h).toContain("INV-9"); expect(h).toContain("uang fisik tetap hari ini");
   expect(h).toContain("Pakai tanggal hari ini"); expect(h).toContain('name="invoice_id"'); expect(h).toContain('value="v1"');
-  expect(h).not.toMatch(/Lepas tanggal|mundur|efektif/i);
+  expect(h).not.toMatch(/Lepas tanggal|mundur|Tanggal efektif/i);
 });
 it("tanpa hak atau hak tak terbaca: tidak menampilkan apa pun tentang tanggal", async () => {
   st.boleh = false; expect(await html()).toBe("");

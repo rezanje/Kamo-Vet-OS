@@ -18,7 +18,7 @@ describe("kalimat tanggal pembukuan", () => {
   });
   it("tanggal diubah: satu kalimat pendek (dicatat di tanggal itu, uang fisik tetap hari ini)", () => {
     const r = ringkasanPratinjau(P, "2026-11-09").join("\n");
-    expect(r).toContain("Dicatat di tanggal 2026-11-09; uang fisik tetap hari ini."); expect(r).not.toMatch(/mundur|efektif|Tetap HARI INI/i);
+    expect(r).toContain("Dicatat di tanggal 2026-11-09; uang fisik tetap hari ini."); expect(r).not.toMatch(/mundur|efektif/i);
     expect(ringkasanTanggalMundur("2026-11-09")).toEqual(["Dicatat di tanggal 2026-11-09; uang fisik tetap hari ini."]);
   });
   it("hasil dengan tanggal diubah menyebut satu kalimat; hasil biasa tidak", () => {

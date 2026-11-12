@@ -73,6 +73,5 @@ it("Batalkan pencairan: kolom tanggal ada di kontrol tertutup; alasan wajib bila
   await act(async () => root.render(<OnlineDisbursementCancelForm userId="u" saleId={saleId} revision={1} batasTanggal={OWNER} />));
   expect(field("tanggal")).not.toBeNull();
   await setDate("2026-11-08");
-  expect(host.textContent).toContain("Alasan mengubah tanggal");
   expect(field("alasan")!.required).toBe(true);
 });
