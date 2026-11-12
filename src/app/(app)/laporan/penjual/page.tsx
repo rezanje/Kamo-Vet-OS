@@ -62,10 +62,16 @@ export default async function PenjualPage({
     .sort((a, b) => b.sisa - a.sisa || b.nilai - a.nilai);
 
   const KOLOM = 7 + KANAL_PENJUAL.length + JENIS_PENJUAL.length;
+  const paramUnduh = new URLSearchParams(Object.entries({
+    dari, sampai, cabang_id: cabangId, kanal, peran, karyawan: karyawanId, jenis, tampilan,
+  }).filter(([, nilai]) => nilai)).toString();
 
   return (
     <LaporanPage
       siap={siap}
+      // A3: unduhan dibentuk di server (lengkap, semua kombinasi filter), bukan disalin dari layar.
+      unduhTampilan={false}
+      pilihKolom
       icon="ti-user-dollar" title="PENJUALAN PER TENAGA PENJUAL"
       desc="Omzet per orang dari seluruh kanal — kasir petshop, tagihan klinik, dan faktur grosir — dipisah menurut peran Dokter dan Non-dokter pada tiap baris."
       filter={
@@ -133,6 +139,12 @@ export default async function PenjualPage({
         ]} />
       }
     >
+      <div className="no-print" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+        <span style={{ fontSize: 11, color: "var(--tm)" }}>Unduh lengkap (rekap per orang, rekap per item, rincian baris, faktur grosir):</span>
+        <a className="btn-def" style={{ fontSize: 11 }} href={`/laporan/penjual/unduh?${paramUnduh}`}>Excel</a>
+        <a className="btn-def" style={{ fontSize: 11 }} href={`/laporan/penjual/unduh?${paramUnduh}&format=csv`}>CSV</a>
+      </div>
+
       {data.pesanError && (
         <div className="crm-sec" role="alert" style={{ marginBottom: 12, color: "#b91c1c", fontSize: 12 }}>{data.pesanError}</div>
       )}

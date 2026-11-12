@@ -29,9 +29,11 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
   Retur mengurangi item asalnya; satuan berbeda ditulis terpisah.
 - Screenshot: `laporan-penjualan-per-tenaga-penjual.jpg`
 
-### A3 · [ ] P0 — Laporan Penjualan per Tenaga Penjual: download Excel
+### A3 · [x] P0 — Laporan Penjualan per Tenaga Penjual: download Excel
 - Saat difilter ke **satu tenaga penjual**, laporan belum bisa diunduh.
 - Yang diminta: export ke Excel bisa dipakai untuk semua kombinasi filter, termasuk mode rekap per item dari A2.
+- Status: tombol "Excel"/"CSV" kini membentuk berkas di server dari data & saringan yang sama dengan layar.
+  Isi: Filter (nama, bukan ID), Rekap per orang, Rekap per item, Rincian baris, Faktur grosir.
 
 ### A4 · [ ] P1 — Laporan Visit (baru)
 - Belum ada. Dibutuhkan di klinik karena dokter/paramedis dapat insentif per visit.

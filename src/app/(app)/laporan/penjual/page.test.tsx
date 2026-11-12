@@ -153,3 +153,10 @@ it("A2: tampilan Rekap per item menjumlah qty per orang per item; tampilan rinci
   expect(bawaan).toContain("02 · RINCIAN BARIS PER ORANG");
   expect(bawaan).not.toContain("PER ITEM");
 });
+
+it("A3: tombol unduh lengkap membawa semua saringan aktif, termasuk satu karyawan dan tampilan", async () => {
+  state.data = data([baris({ id: "a", dokterId: "dokter" })]);
+  const html = await render({ dari: "2026-10-01", sampai: "2026-10-31", karyawan: "dokter", tampilan: "rekap-item", cabang_id: "cabang" });
+  expect(html).toContain('href="/laporan/penjual/unduh?dari=2026-10-01&amp;sampai=2026-10-31&amp;cabang_id=cabang&amp;karyawan=dokter&amp;tampilan=rekap-item"');
+  expect(html).toContain("&amp;format=csv");
+});
