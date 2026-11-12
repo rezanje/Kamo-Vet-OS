@@ -18,7 +18,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Screenshot: `laporan-daftar.jpg`, `laporan-penjualan-per-tenaga-penjual.jpg`
 - Kriteria selesai: membuka halaman laporan tidak memicu query berat; data baru ditarik setelah filter dipilih dan "Tampilkan" diklik.
 - Status: dikerjakan di branch `claude/epic-hypatia-raw2el` (lihat `RENCANA-P0.md`). Index tanggal ditulis sebagai migrasi
-  `20261115100000_a1_index_tanggal_laporan.sql`, **belum dipasang** ke Production (menunggu persetujuan).
+  `20261115200000_a1_index_tanggal_laporan.sql`, **belum dipasang** ke Production (menunggu persetujuan).
 
 ### A2 · [x] P0 — Laporan Penjualan per Tenaga Penjual: rekap per item (qty)
 - Halaman: `/laporan/penjual`

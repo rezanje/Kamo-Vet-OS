@@ -27,6 +27,7 @@ import { PembayaranForm } from "./PembayaranForm";
 import { InpatientPaymentPage } from "./InpatientPaymentPage";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { PelunasanTagihanForm } from "./PelunasanTagihanForm";
+import { TanggalEfektifBanner } from "./batal-penerimaan/TanggalEfektifBanner";
 import { sisaTagihan } from "@/lib/pelunasan-klinik";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
@@ -354,6 +355,8 @@ export default async function PembayaranPage({
     && putuskanBolehBatalPenerimaan(batalDibaca, (profilKasir as { role?: string } | null)?.role);
 
   const lunas = invoice?.paid_status === "Lunas";
+  // Pemberitahuan tanggal efektif (Owner memilih tanggal saat Batalkan penerimaan): diselesaikan di sini supaya halaman tetap satu render; gagal baca = tidak tampil.
+  const bannerTanggalEfektif = invoice && !lunas ? await TanggalEfektifBanner({ visitId: visit.id, tagihan: [{ id: invoice.id, no: invoice.invoice_no ?? null }] }) : null;
   // Pelunasan DP/Belum Lunas rawat jalan oleh kasir klinik: invoice sama, laci shift sendiri.
   const sisaPelunasan = invoice ? sisaTagihan(Number(invoice.total), paidAmount) : 0;
   const pelunasanTerbuka = !inpat && !!invoice && !lunas && !invoice.correction_pending && sisaPelunasan > 0;
@@ -667,6 +670,7 @@ export default async function PembayaranPage({
           <SubmitButton className="btn-acc" pendingText="Memproses…">Masukkan Rawat Inap (tanpa pembayaran ulang)</SubmitButton>
         </TransactionForm>
       </div>}
+      {bannerTanggalEfektif}
       {bolehTagih && pelunasanTerbuka && invoice && (
         <PelunasanTagihanForm key={`${invoice.id}:${sisaPelunasan}`} visitId={visit.id} invoiceId={invoice.id}
           invoiceNo={invoice.invoice_no ?? ""} total={Number(invoice.total)} diterima={paidAmount} sisa={sisaPelunasan} requestKey={randomUUID()} />

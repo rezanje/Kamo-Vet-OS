@@ -7,6 +7,7 @@ import { NoDok } from "@/components/NoDok";
 import { postRecurringCatchUp } from "@/lib/recurring";
 import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 import { laporanDiminta } from "@/lib/report-gate";
+import { geserHari, hariIniWIB } from "@/lib/tanggal";
 
 // ponytail: jurnal umum — catat + riwayat. Real data dari journal_entries + journal_lines.
 
@@ -26,6 +27,7 @@ type JournalEntry = {
   journal_lines: JournalLine[];
   revision: number;
   voided_at: string | null;
+  created_at?: string | null;
 };
 
 const akunDari = (l: JournalLine): Akun | null =>
@@ -64,6 +66,13 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   "wholesale-return-void": { label: "Batal Retur Faktur", cls: "r" },
 };
 
+/** Jurnal bertanggal mundur: tanggal jurnal < hari (WIB) saat dicatat. */
+function dicatatMundur(tanggal: string | null | undefined, createdAt: string | null | undefined): boolean {
+  if (!tanggal || !createdAt) return false;
+  const hariCatat = new Date(new Date(createdAt).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+  return tanggal < hariCatat;
+}
+
 export default async function JurnalPage({
   searchParams,
 }: {
@@ -99,7 +108,7 @@ export default async function JurnalPage({
   // supaya mencari jurnal bulan lalu tidak perlu menggulir ratusan baris.
   let qEntries = supabase
     .from("journal_entries")
-    .select("id, no_jurnal, tanggal, deskripsi, source, source_ref, branch_id, revision, voided_at, branches(name), journal_lines(debit, credit, coa_accounts(id, code, name))")
+    .select("id, no_jurnal, tanggal, created_at, deskripsi, source, source_ref, branch_id, revision, voided_at, branches(name), journal_lines(debit, credit, coa_accounts(id, code, name))")
     .order("tanggal", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(200);
@@ -126,6 +135,22 @@ export default async function JurnalPage({
       .order("name"),
     siap ? qEntries : { data: [] },
   ]);
+
+  // Rekonsiliasi bank/QRIS (Finance): jurnal klinik yang tanggalnya lebih awal dari saat dicatat (tanggal efektif / backdate Owner). Gagal baca = bagian ini tidak tampil.
+  type Mundur = { no_jurnal: string; tanggal: string; dicatat_pada: string; sumber: string; ref: string | null; jumlah: number; rekening: string | null };
+  let mundur: Mundur[] = [];
+  // A1: daftar ini juga laporan — baru dibaca setelah Tampilkan.
+  if (siap && canCreateSourceSchedule) {
+    try {
+      const hariIni = hariIniWIB();
+      const awal = dari || geserHari(hariIni, -30);
+      const akhir = sampai || hariIni;
+      if (typeof (supabase as { rpc?: unknown }).rpc === "function" && awal <= akhir) {
+        const { data: md } = await supabase.rpc("clinic_backdated_entries", { p_from: awal, p_to: akhir, p_branch: cabang || null });
+        if (Array.isArray(md)) mundur = md as Mundur[];
+      }
+    } catch { mundur = []; }
+  }
 
   const accounts = (accData ?? []) as unknown as CoaAccount[];
   const branches = (branchData ?? []) as unknown as Branch[];
@@ -242,6 +267,31 @@ export default async function JurnalPage({
         </form>
 
         {!siap ? <LaporanBelumDitampilkan pesan="Atur saringan (cabang, sumber, tanggal), lalu klik Tampilkan untuk melihat riwayat jurnal." /> : <>
+        {mundur.length > 0 && (
+          <details style={{ marginBottom: 10 }} data-testid="jurnal-mundur">
+            <summary style={{ cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>
+              Jurnal klinik bertanggal mundur ({mundur.length}) — untuk rekonsiliasi bank/QRIS: tanggal jurnal vs waktu dicatat sebenarnya
+            </summary>
+            <div style={{ overflowX: "auto", marginTop: 6 }}>
+              <table className="tbl" style={{ minWidth: 560 }}>
+                <thead><tr><th>No. Jurnal</th><th>Tanggal jurnal</th><th>Dicatat sebenarnya</th><th>Dokumen</th><th>Rekening kas/bank</th><th style={{ textAlign: "right" }}>Jumlah</th></tr></thead>
+                <tbody>
+                  {mundur.map((m) => (
+                    <tr key={m.no_jurnal}>
+                      <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{m.no_jurnal}</td>
+                      <td style={{ fontSize: 10.5 }}>{m.tanggal}</td>
+                      <td style={{ fontSize: 10.5 }}>{new Date(m.dicatat_pada).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                      <td style={{ fontSize: 10.5 }}>{m.ref ?? "—"}</td>
+                      <td style={{ fontSize: 10.5 }}>{m.rekening ?? "—"}</td>
+                      <td style={{ textAlign: "right", fontFamily: "monospace", fontSize: 10.5 }}>{Number(m.jumlah).toLocaleString("id-ID")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
+
         <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
           {entries.length} entri {adaSaringan ? "cocok saringan" : "terbaru"}
           {entries.length === 200 && " (dibatasi 200 — persempit saringannya)"}
@@ -318,7 +368,15 @@ export default async function JurnalPage({
                           </div>
                         </details>
                       </td>
-                      <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{tgl}</td>
+                      <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                        {tgl}
+                        {/* Rekonsiliasi bank/QRIS: tanggal jurnal (efektif) DAN waktu dicatat sebenarnya. Hanya tampil bila dicatat di hari yang lebih lambat. */}
+                        {dicatatMundur(e.tanggal, e.created_at) && (
+                          <div title="Tanggal jurnal lebih awal dari saat jurnal ini dicatat (tanggal efektif / backdate)" style={{ fontSize: 9.5, color: "#b45309" }}>
+                            dicatat {new Date(e.created_at as string).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ fontSize: 11, maxWidth: 200 }}>{e.deskripsi}</td>
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
                         {(Array.isArray(e.branches) ? e.branches[0] : e.branches)?.name ?? "Pusat"}
