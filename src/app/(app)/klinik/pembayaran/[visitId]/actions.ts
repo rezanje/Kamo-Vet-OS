@@ -23,6 +23,7 @@ import { catatRincianPromoKlinik } from "@/lib/rincian-promo-klinik";
 import { alokasiPromoPerBaris } from "@/lib/promo-baris-klinik";
 import { clinicServicePerformerInput, parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
 import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
+import { clinicManualDiscountRaised, manualDiscountAllowed, PESAN_DISKON_MANUAL_DITOLAK } from "@/lib/manual-discount";
 import { bacaKodeKampanye, cekVoucherLewatKampanye, pesanGagalKampanye, pesanKampanyeDitolak } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
 import { kodeAkunBayar } from "@/lib/kas-akun";
@@ -294,6 +295,21 @@ export async function bayarVisit(formData: FormData) {
 
   if (rows.length === 0) {
     redirect(`${back}?error=${encodeURIComponent("Minimal 1 item tagihan")}`);
+  }
+
+  // Diskon manual (diskon % per baris & diskon total) hanya Owner/Admin (12 Nov 2026). Koreksi tagihan lama boleh mempertahankan
+  // atau mengurangi diskon yang sudah tersimpan, tidak boleh menambah. Promo, voucher, poin, dan diskon golongan tidak terpengaruh.
+  const diskonDiketik = Number(formData.get("discount")) || 0;
+  if ((diskonDiketik > 0 || rows.some((l) => l.diskon_persen > 0)) && !(await manualDiscountAllowed(supabase))) {
+    const storedLine = new Map<string, number>();
+    if (existing && rows.some((l) => l.diskon_persen > 0)) {
+      const { data: tersimpan, error: tersimpanErr } = await supabase.from("invoice_items").select("id, diskon_persen").eq("invoice_id", existing.id);
+      if (tersimpanErr) redirect(`${back}?error=${encodeURIComponent("Diskon tagihan lama belum dapat diperiksa. Coba lagi; tidak ada yang disimpan.")}`);
+      for (const r of (tersimpan ?? []) as { id: string; diskon_persen: number | null }[]) storedLine.set(r.id, Number(r.diskon_persen) || 0);
+    }
+    if (clinicManualDiscountRaised(diskonDiketik, rows, existing ? { discount: Number(existing.discount) || 0, storedLine } : null)) {
+      redirect(`${back}?error=${encodeURIComponent(PESAN_DISKON_MANUAL_DITOLAK)}`);
+    }
   }
 
   // Invoice + potong stok obat + jurnal harus jalan bareng. Periode terkunci =

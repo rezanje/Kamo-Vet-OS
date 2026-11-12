@@ -239,7 +239,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
                             <option>Tunai</option><option>QRIS</option><option>Transfer</option><option>Debit</option>
                           </select>
                         </div>
-                        <PilihRekening rekening={rekening} width={150} />
+                        <PilihRekening rekening={rekening} width={260} />
                         <button type="submit" className="pay-btn" style={{ padding: "7px 12px", fontSize: 11 }}>Simpan</button>
                       </TransactionForm>
                     </details>

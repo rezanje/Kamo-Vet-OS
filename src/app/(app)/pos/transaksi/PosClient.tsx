@@ -51,7 +51,7 @@ export type HargaPerCabang = Record<string, Record<string, number>>; // branchId
 const TANPA_PELANGGAN: Cust[] = [];
 const NO_SH_DEFS: SyaratHasilDef[] = [];
 
-export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, syaratHasilPerCabang, promoPickerPerCabang, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null }: {
+export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, syaratHasilPerCabang, promoPickerPerCabang, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null, bolehDiskon = true }: {
   items: Item[];
   /** Pelanggan yang sudah diketahui (opsional). Daftar lengkap tidak lagi dikirim — dicari di server. */
   customers?: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
@@ -68,6 +68,8 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
   hariIni?: string;
   aturanDiskon?: Record<string, AturanDiskon[]>;
   infoBarang?: Record<string, BarangDiskon>;
+  /** Diskon manual hanya Owner/Admin (izin Akses Grup, dibaca server). */
+  bolehDiskon?: boolean;
 }) {
   const [branchId, setBranchId] = useState("");
   const [q, setQ] = useState("");
@@ -126,7 +128,7 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
         setMerchantFeePercent(draft.merchantFeePercent ?? 0);
         setSplit(draft.split ?? draft.metode === "Split");
         if (draft.payments?.length) setPayments(draft.payments);
-        setDiscount(draft.discount);
+        setDiscount(bolehDiskon ? draft.discount : 0);
         setVoucher(draft.voucher ?? "");
         setBayar(draft.bayar);
         setCart(restoredCart);
@@ -134,7 +136,7 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
       draftReady.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [branches, customers, hargaPerCabang, items]);
+  }, [branches, customers, hargaPerCabang, items, bolehDiskon]);
 
   useEffect(() => {
     if (!draftReady.current) return;
@@ -500,10 +502,10 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
             {diskonKategori > 0 && cust?.golongan && (
               <Row k={`Diskon ${cust.golongan.nama}`} v={`-${rp(diskonKategori)}`} />
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
+            {bolehDiskon && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
               <span>Diskon manual / promo</span>
               <NumberInput className="fi" type="number" min={0} step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 90, textAlign: "right", padding: "3px 6px" }} />
-            </div>
+            </div>}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10.5, color: "var(--tm)", margin: "3px 0" }}>
               <span>Kode kampanye</span>
               <input className="fi" aria-label="Kode kampanye" value={voucher} placeholder="opsional" onChange={(e) => setVoucher(e.target.value)}

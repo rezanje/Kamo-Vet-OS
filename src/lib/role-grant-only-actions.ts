@@ -19,8 +19,21 @@ export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "pembelian.batalkan_pembayaran",
   "pembelian.batalkan_uang_muka",
   "pembelian.tanggal_mundur",
-  // A5 (meeting 12 Nov 2026): koreksi visit rawat inap (migrasi 20261115400000_a5_koreksi_visit_rawat_inap.sql).
+  "kasir.diskon_manual",
+  // A5 (meeting 12 Nov 2026): koreksi visit rawat inap (migrasi 20261116300000_a5_koreksi_visit_rawat_inap.sql).
   "klinik.koreksi_visit",
 ];
 
 export const isGrantOnlyAction = (id: string): boolean => GRANT_ONLY_ACTIONS.includes(id);
+
+/**
+ * Pengecualian bawaan per peran: izin khusus yang untuk peran TANPA kebijakan tersimpan (legacy) justru bawaannya HIDUP.
+ * Harus sama dengan fungsi database pemeriksanya (mis. manual_discount_allowed: legacy hanya ADMIN).
+ */
+export const GRANT_ONLY_LEGACY_ROLES: Readonly<Record<string, readonly string[]>> = {
+  "kasir.diskon_manual": ["ADMIN"],
+};
+
+/** Peran legacy dianggap punya tindakan ini? Tindakan biasa: ya. Izin khusus: hanya bila peran ada di daftar pengecualian. */
+export const legacyRoleHasAction = (id: string, role: string): boolean =>
+  !isGrantOnlyAction(id) || (GRANT_ONLY_LEGACY_ROLES[id] ?? []).includes(role);

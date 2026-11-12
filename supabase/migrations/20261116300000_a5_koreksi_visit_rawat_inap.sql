@@ -325,6 +325,8 @@ declare
     'klinik.batalkan_penerimaan', 'klinik.batalkan_penerimaan_tanggal',
     'pembelian.batalkan_penerimaan', 'pembelian.batalkan_faktur', 'pembelian.batalkan_pembayaran',
     'pembelian.batalkan_uang_muka', 'pembelian.tanggal_mundur'];
+  -- 'kasir.diskon_manual' SENGAJA tidak dikecualikan: untuk ADMIN bawaan-lama, diskon manual BOLEH
+  -- (20261112072724_diskon_manual_owner_admin: legacy hanya ADMIN), jadi kebijakan setara harus memuatnya.
 begin
   perform 1 from role_settings_private.epochs where role = 'ADMIN' for update;
   perform pg_advisory_xact_lock(724061, 1);

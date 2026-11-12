@@ -9,7 +9,7 @@ import {
 } from "../koreksi-visit-akses";
 
 // A5 (meeting 12 Nov 2026): izin Akses Grup "Koreksi visit rawat inap".
-const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261115400000_a5_koreksi_visit_rawat_inap.sql"), "utf8");
+const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261116300000_a5_koreksi_visit_rawat_inap.sql"), "utf8");
 
 describe("izin khusus klinik.koreksi_visit — sinkron dengan migrasi", () => {
   it("terdaftar sebagai izin khusus (bawaan mati), baris katalog enforced grup Klinik, modul klinik", () => {
@@ -24,7 +24,10 @@ describe("izin khusus klinik.koreksi_visit — sinkron dengan migrasi", () => {
     const block = /v_grant_only constant text\[\] := array\[([\s\S]*?)\];/.exec(sql);
     expect(block).not.toBeNull();
     const inMigration = [...block![1].matchAll(/'([a-z_.]+)'/g)].map(m => m[1]).sort();
-    expect(inMigration).toEqual(GRANT_ONLY_ACTIONS.filter(id => id !== IZIN_KOREKSI_VISIT).slice().sort());
+    // kasir.diskon_manual: izin khusus, TETAPI bawaan-lama-nya boleh untuk ADMIN (20261112072724), jadi kebijakan setara
+    // untuk ADMIN bawaan-lama justru harus MEMUATNYA — tidak boleh ikut dikecualikan.
+    const bawaanLamaAdminBoleh = ["kasir.diskon_manual"];
+    expect(inMigration).toEqual(GRANT_ONLY_ACTIONS.filter(id => id !== IZIN_KOREKSI_VISIT && !bawaanLamaAdminBoleh.includes(id)).slice().sort());
   });
 
   it("peran bawaan lama tidak ditampilkan tercentang; kebijakan tertulis dihormati apa adanya", () => {

@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase/server";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LampiranPicker } from "@/components/LampiranPicker";
-import { getAccountBalances } from "@/lib/ledger";
 import { hariIniWIB } from "@/lib/tanggal";
 import { akunLawanTerlarang, type JenisKas } from "@/lib/kas-entry";
 import { simpanKasEntry } from "./actions";
@@ -52,7 +51,7 @@ export async function KasEntryScreen({
   const isOwner = profile?.role === "OWNER" && profile.is_active === true;
   const keluar = jenis === "Keluar";
 
-  const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }, saldoAkun] = await Promise.all([
+  const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }] = await Promise.all([
     supabase.from("cash_accounts").select("id, nama, coa_code").eq("is_active", true).order("nama"),
     supabase.from("coa_accounts").select("code, name, type").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
@@ -61,7 +60,6 @@ export async function KasEntryScreen({
       .select(CASH_SELECT)
       .eq("jenis", jenis)
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(50),
-    getAccountBalances(supabase),
   ]);
 
   const rekening = (rekData ?? []) as { id: string; nama: string; coa_code: string }[];
@@ -74,7 +72,6 @@ export async function KasEntryScreen({
     if (selected.error) throw new Error("Bukti kas terpilih belum dapat dibaca.");
     if (selected.data) cashRows = [selected.data as unknown as Baris, ...cashRows];
   }
-  const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
 
   // Pengeluaran kasir cabang tercatat di tabel beban, bukan di kas entries. Sejak
   // menu "Pencatatan Beban" dihapus (menu kembar, keputusan meeting 14 Agustus),
@@ -215,11 +212,8 @@ export async function KasEntryScreen({
               <label className="flab">{keluar ? "Dibayar dari rekening *" : "Masuk ke rekening *"}</label>
               <select className="fi" name="account_id" defaultValue="" required>
                 <option value="">— pilih —</option>
-                {rekening.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.nama} — {rp(saldoPerKode.get(r.coa_code) ?? 0)}
-                  </option>
-                ))}
+                {/* Saldo sengaja tidak ditempel di pilihan rekening (permintaan klinik, 12 Nov). */}
+                {rekening.map((r) => <option key={r.id} value={r.id}>{r.nama}</option>)}
               </select>
             </div>
             <div>
