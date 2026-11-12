@@ -28,8 +28,15 @@ it("opens a selected correction in a full width panel and retains recovery", asy
   const html = renderToStaticMarkup(await TransferPage({ searchParams: Promise.resolve({ koreksi: "transfer-id" }) }));
   expect(html).toContain('id="koreksi-transfer"'); expect(html).toContain('data-mode="edit"'); expect(html).toContain("Transfer recovery");
 });
-it.each(["ADMIN", "FINANCE"])("never exposes correction or cancellation to %s", async role => {
+// 12 Nov 2026: koreksi/batal dibuka untuk ADMIN dan FINANCE (keputusan Reza).
+it.each(["ADMIN", "FINANCE"])("exposes correction, cancellation and attachments to %s", async role => {
   profile.role = role;
+  const html = renderToStaticMarkup(await TransferPage({ searchParams: Promise.resolve({ koreksi: "transfer-id" }) }));
+  expect(html).toContain('data-mode="edit"');
+  expect(html).toContain('href="/kas-bank/transfer/lampiran/transfer-id"');
+});
+it("keeps correction away from other roles", async () => {
+  profile.role = "STAFF";
   const html = renderToStaticMarkup(await TransferPage({ searchParams: Promise.resolve({ koreksi: "transfer-id" }) }));
   expect(html).not.toContain('data-mode="edit"'); expect(html).not.toContain('data-mode="void"');
 });
