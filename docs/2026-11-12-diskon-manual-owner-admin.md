@@ -18,7 +18,7 @@ Angka yang **diketik kasir**:
 poin, diskon golongan member, dan diskon bawaan barang dari master (`items.default_discount`, terpasang otomatis di kasir).
 
 ## Perbaikan
-1. Migrasi `20261115700000_diskon_manual_owner_admin.sql`
+1. Migrasi `20261112072724_diskon_manual_owner_admin.sql`
    - Katalog Akses Grup: tindakan `kasir.diskon_manual` (enforced, grup "Kasir & Tagihan", modul `kasir`).
    - Fungsi `public.manual_discount_allowed()` (SECURITY DEFINER, STABLE, hanya `authenticated`):
      OWNER selalu `true` (tidak membaca tabel kebijakan); peran tanpa kebijakan tindakan tersimpan (legacy) → hanya ADMIN;
@@ -69,3 +69,11 @@ poin, diskon golongan member, dan diskon bawaan barang dari master (`items.defau
 - Faktur penjualan grosir/back-office di modul Penjualan tidak termasuk (bukan kasir; dikerjakan Admin/Finance).
 - Koreksi struk kasir (ganti struk) oleh Staff atas struk yang dulu diberi diskon Owner/Admin: diskonnya perlu dihapus
   atau koreksi dilakukan Owner/Admin.
+
+## Pemasangan Production (12 Nov 2026, ±14.27 WIB)
+- Pra-pemeriksaan (baca-saja): migrasi tertinggi live `20261115100000`; fungsi `manual_discount_allowed()` belum ada; katalog
+  `kasir.diskon_manual` belum ada; nomor 20261115700000 belum dipakai. Akun aktif: OWNER 6, ADMIN 6, FINANCE 1, STAFF 55, DOCTOR 27.
+  **ADMIN sudah punya kebijakan tindakan tersimpan** (6 tindakan, tanpa `kasir.diskon_manual`) → Admin TIDAK otomatis boleh; Owner perlu
+  mencentang "Beri diskon manual" untuk ADMIN di Pengaturan › Akses Grup. Peran lain tanpa kebijakan tersimpan (STAFF/DOCTOR/FINANCE → tidak boleh).
+- Dipasang via Supabase `apply_migration` → versi live `20261112072724 diskon_manual_owner_admin` (nama file repo disamakan).
+- Pasca-pasang: fungsi ada; katalog enforced; `authenticated` boleh memanggil, `anon` tidak.
