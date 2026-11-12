@@ -1,0 +1,3023 @@
+diff --git a/docs/handoff-plap-3379.md b/docs/handoff-plap-3379.md
+new file mode 100644
+index 00000000..29d21b74
+--- /dev/null
++++ b/docs/handoff-plap-3379.md
+@@ -0,0 +1,41 @@
++# Approved promo Excel + per-program reports: local checkpoint
++
++## Scope / integration
++
++- Branch: `hermes/plap-3379-resume`; resumed candidate `652da0f6116f27c977bd4698db0f3c8b421d87d9`.
++- Normal merge of the supplied newer main snapshot `0a9b0323adbccbec92f2711c9941b14bfee97423`, integration commit `42c89ae1`.
++- The local `main` ref is older than that supplied snapshot, not a newer integration target. No fetch was used.
++- Payment-action conflict retains BOTH promo attribution and main's DP override reason / atomic DP-admission dispatch. Existing cashiers, clinical UI, inpatient payments and separate shared-UI work were not redesigned.
++- All migrations already present on the supplied main stay byte-identical. The previously unapplied promo candidate is renumbered to `20261104150000_promo_atribusi_klinik_dan_impor_daftar.sql`; it remains UNAPPLIED.
++
++## Fixes in this resumption
++
++1. Same-name preview now rejects ambiguous existing master names rather than selecting an arbitrary record for its diff.
++2. Preview rejects existing `package_total` / unsupported discount modes, matching the import RPC instead of offering a save that the database rejects.
++3. Reject oversized Excel uploads before `arrayBuffer()` allocation, using the parser's shared 1,000,000-byte limit.
++4. Forward SQL candidate normalizes JSON `null` branch IDs before array expansion: the application's all-branches payload previously attempted to expand a scalar. Verified only as a SQL text contract; no PostgreSQL execution in this task.
++5. Added rendered workspace tests for the template link, red invalid rows and disabled save, same-name before/after diff and one save, and invalidating the previous preview when selecting another file. Access tests use actual STAFF / DOCTOR / FINANCE roles, all denied master write.
++
++## Existing engine reconciliation
++
++Item-specific clinic promotions already use `loadPromoAktif`, `promo_items`, and the shared service-line pricing engine on main. This candidate adds import and attribution/reporting, not a second eligibility engine. Expiry-on-access already exists on main; its unchanged tests were rerun, without adding expiry SQL or claiming a cron.
++
++## Verification
++
++- RED: two new preview cases failed with `valid: true` before the fixes.
++- RED: oversized-file test observed `arrayBuffer()` called before rejection.
++- RED: all-branches SQL text-contract test failed before `nullif(..., 'null'::jsonb)`.
++- Final bounded targeted Vitest: **211 passed, 0 failed, 0 skipped in 17 files**. Includes clinic payment action (48), clinic promo posting (3), attribution (7), report page (8), import parsing/review (26), import actions (11), rendered import workspace (3), expiry regressions, service-line pricing and group billing.
++- `NODE_OPTIONS=--max-old-space-size=1024`; Vitest `--pool=forks --maxWorkers=1`.
++- Changed-file ESLint and `git diff --check` are separate local gates. Exact final results are in `/opt/data/kamo-plap-3379-results.json`.
++- Raw RED/final logs and machine-readable final Vitest output are under `/opt/data/kamo-plap-3379-*`.
++
++## Release blockers / limits
++
++This is a usable local source/UI/helper checkpoint, **not a release-ready or deployed feature**. Migration 0415 changes clinic posting/correction/reissue attribution and creates a privileged import RPC; this is **DB-dependent, not UI-only**.
++
++Next gate: when the single native database slot is available, compile 0415 AFTER the complete supplied-main chain (and coordinate the discount worker's trusted-allocation changes), then run real public-RPC role/branch, all-branches import, same-name update, rollback/atomicity, reissue and money/stock regression tests. Text assertions and mocked server actions do not prove database behavior or deployment compatibility.
++
++Known retained limitations: historical clinic attribution is unknown, not backfilled; petshop voucher value is an explicitly labelled upper bound because voucher and manual discount remain combined; report detail/export is the displayed filtered set (400-row detail cap), not an unbounded ledger export. No claim of full per-program exactness for those historical/combined values.
++
++Not run: full tsc/build/full Vitest, native PostgreSQL, hosted reads/writes or preflight, migration application, network, push, CI, deployment, authenticated browser UAT. Existing edit-transaksi and bundling candidates were inspected read-only only; their exact findings and executable next steps are recorded in `/opt/data/kamo-backlog-3379-ready.json` and `/opt/data/kamo-pr-plap-3379.md`.
+diff --git a/src/app/(app)/crm/promo/impor-daftar/PromoMasterWorkspace.tsx b/src/app/(app)/crm/promo/impor-daftar/PromoMasterWorkspace.tsx
+new file mode 100644
+index 00000000..a41e0a43
+--- /dev/null
++++ b/src/app/(app)/crm/promo/impor-daftar/PromoMasterWorkspace.tsx
+@@ -0,0 +1,128 @@
++"use client";
++
++import { useState } from "react";
++import Link from "next/link";
++import { previewPromoMaster, periksaPromoMaster, simpanPromoMaster } from "./actions";
++import { PROMO_MASTER_HEADERS } from "@/lib/promo-master-excel";
++import type { PromoMasterReview } from "@/lib/promo-master-import";
++
++const KOSONG: PromoMasterReview = { rows: [], plans: [], diffs: [], valid: false, error: null };
++
++const WARNA_STATUS: Record<string, string> = { baru: "#15803d", ubah: "#b45309", sama: "var(--td)" };
++
++export function PromoMasterWorkspace() {
++  const [file, setFile] = useState<File | null>(null);
++  const [hasil, setHasil] = useState<PromoMasterReview>(KOSONG);
++  const [sibuk, setSibuk] = useState(false);
++  const [pesan, setPesan] = useState("");
++  const [tersimpan, setTersimpan] = useState(false);
++
++  function terapkan(result: PromoMasterReview) {
++    setHasil(result);
++    const ringkas = `${result.rows.length} baris, ${result.plans.length} promo siap disimpan.`;
++    setPesan(result.error ?? (result.valid ? ringkas : "Ada baris bertanda merah. Perbaiki di Excel lalu unggah ulang berkasnya."));
++  }
++
++  async function baca() {
++    if (!file) { setPesan("Pilih berkas Excel .xlsx terlebih dahulu."); return; }
++    setSibuk(true); setPesan(""); setTersimpan(false);
++    try {
++      const form = new FormData();
++      form.set("file", file);
++      terapkan(await previewPromoMaster(form));
++    } catch { setPesan("Preview gagal dimuat. Coba berkas yang sama lagi."); }
++    finally { setSibuk(false); }
++  }
++
++  async function periksa() {
++    setSibuk(true); setPesan("");
++    try { terapkan(await periksaPromoMaster(hasil.rows)); }
++    catch { setPesan("Pemeriksaan gagal. Coba lagi sebelum menyimpan."); }
++    finally { setSibuk(false); }
++  }
++
++  async function simpan() {
++    if (!hasil.valid || sibuk || tersimpan) return;
++    setSibuk(true); setPesan("");
++    try {
++      const result = await simpanPromoMaster(hasil.rows);
++      setPesan(result.message);
++      setTersimpan(result.ok);
++      if (!result.ok) setHasil(current => ({ ...current, valid: false }));
++    } catch {
++      setPesan("Hasil simpan belum dapat dipastikan. Buka daftar promo untuk memeriksa sebelum mengunggah ulang.");
++    } finally { setSibuk(false); }
++  }
++
++  return <div style={{ display: "grid", gap: 14 }}>
++    <p style={{ fontSize: 12, color: "var(--tm)" }}>
++      Gunakan <Link href="/crm/promo/impor-daftar/template">Format-Daftar-Promo-VetOS.xlsx</Link>. Satu baris = satu barang;
++      ulangi <b>Nama Promo</b> yang sama untuk menambah barang ke promo itu. Nama promo yang sudah ada akan
++      <b> diperbarui</b>, bukan digandakan. Berlaku untuk barang petshop maupun klinik (jasa grooming, tindakan, obat).
++      Maksimal 50 promo, 500 baris, dan 1 MB per berkas; rumus Excel ditolak.
++    </p>
++
++    <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap" }}>
++      <label className="flab">Berkas Excel (.xlsx)
++        <input className="fi" type="file" disabled={sibuk} accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
++          onChange={event => { setFile(event.target.files?.[0] ?? null); setHasil(KOSONG); setTersimpan(false); setPesan(""); }} />
++      </label>
++      <button type="button" className="btn-def" disabled={sibuk || !file} onClick={baca}>Baca dan preview</button>
++    </div>
++
++    {pesan && <p role="status" style={{ color: tersimpan ? "#15803d" : hasil.error ? "#b91c1c" : "var(--tm)", fontSize: 12 }}>{pesan}</p>}
++
++    {hasil.diffs.length > 0 && <div>
++      <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 6 }}>PERUBAHAN YANG AKAN DISIMPAN</div>
++      <div style={{ display: "grid", gap: 8 }}>
++        {hasil.diffs.map(diff => <div key={diff.name} className="card" style={{ padding: 10 }}>
++          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
++            <span style={{ fontWeight: 700, fontSize: 12 }}>{diff.name}</span>
++            <span style={{ fontSize: 10.5, fontWeight: 700, color: WARNA_STATUS[diff.status] }}>
++              {diff.status === "baru" ? "PROMO BARU" : diff.status === "ubah" ? "DIPERBARUI" : "TIDAK ADA PERUBAHAN"}
++            </span>
++          </div>
++          {diff.changes.length > 0 && <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 11 }}>
++            {diff.changes.map(change => <li key={change.label}>{change.label}: {change.dari} → <b>{change.ke}</b></li>)}
++          </ul>}
++          {diff.itemsAdded.length > 0 && <div style={{ fontSize: 11, marginTop: 4, color: "#15803d" }}>
++            Barang ditambah: {diff.itemsAdded.join(", ")}
++          </div>}
++          {diff.itemsRemoved.length > 0 && <div style={{ fontSize: 11, marginTop: 4, color: "#b91c1c" }}>
++            Barang dikeluarkan: {diff.itemsRemoved.join(", ")}
++          </div>}
++        </div>)}
++      </div>
++    </div>}
++
++    {hasil.rows.length > 0 && <>
++      <div style={{ overflowX: "auto" }}>
++        <table className="tbl" style={{ minWidth: 1280 }}>
++          <thead><tr>
++            <th style={{ width: 54 }}>Baris</th>
++            {PROMO_MASTER_HEADERS.map(header => <th key={header}>{header}</th>)}
++            <th style={{ width: 90 }}>Barang</th>
++            <th style={{ width: 230 }}>Pemeriksaan</th>
++          </tr></thead>
++          <tbody>
++            {hasil.rows.map((row, index) => <tr key={`${row.line}:${index}`} style={row.error ? { background: "#fef2f2" } : undefined}>
++              <td style={{ fontSize: 11 }}>{row.line}</td>
++              {PROMO_MASTER_HEADERS.map(header => <td key={header} style={{ fontSize: 11 }}>{row[header] || "—"}</td>)}
++              <td style={{ fontSize: 11, color: "var(--tm)" }}>{row.item_name ?? "—"}</td>
++              <td style={{ fontSize: 10.5, fontWeight: row.error ? 700 : 400, color: row.error ? "#b91c1c" : "#15803d" }}>
++                {row.error ?? "Siap"}
++              </td>
++            </tr>)}
++          </tbody>
++        </table>
++      </div>
++      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
++        <button type="button" className="btn-def" disabled={sibuk || tersimpan} onClick={periksa}>Periksa ulang</button>
++        <button type="button" className="btn-acc" disabled={sibuk || !hasil.valid || tersimpan} onClick={simpan}>
++          {sibuk ? "Memproses…" : "Simpan seluruh daftar"}
++        </button>
++        {tersimpan && <Link href="/crm/promo" className="back-btn">Lihat daftar promo</Link>}
++      </div>
++    </>}
++  </div>;
++}
+diff --git a/src/app/(app)/crm/promo/impor-daftar/actions.ts b/src/app/(app)/crm/promo/impor-daftar/actions.ts
+new file mode 100644
+index 00000000..d23d0199
+--- /dev/null
++++ b/src/app/(app)/crm/promo/impor-daftar/actions.ts
+@@ -0,0 +1,174 @@
++"use server";
++
++import { revalidatePath } from "next/cache";
++import { createClient } from "@/lib/supabase/server";
++import { readCompleteList } from "@/lib/checked-list";
++import { EXCEL_SHEET_MAX_BYTES } from "@/lib/excel-sheet";
++import { PROMO_MASTER_MAX_ROWS, readPromoMasterExcel, type PromoMasterExcelRow } from "@/lib/promo-master-excel";
++import {
++  reviewPromoMaster,
++  type PromoMasterBranch,
++  type PromoMasterExisting,
++  type PromoMasterItem,
++  type PromoMasterReview,
++} from "@/lib/promo-master-import";
++
++const KOSONG: PromoMasterReview = { rows: [], plans: [], diffs: [], valid: false, error: null };
++
++async function managerClient() {
++  const db = await createClient();
++  const { data: { user } } = await db.auth.getUser();
++  if (!user) throw new Error("Sesi berakhir. Masuk kembali sebelum mengunggah daftar promo.");
++  const { data: profile, error } = await db.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
++  if (error || !profile?.is_active || !["OWNER", "ADMIN"].includes(profile.role)) {
++    throw new Error("Hanya Owner/Admin aktif yang boleh mengunggah daftar promo.");
++  }
++  return db;
++}
++
++type Db = Awaited<ReturnType<typeof managerClient>>;
++
++type PromoRow = {
++  id: string; name: string; promo_type: string;
++  rule: { suggest?: unknown; min_subtotal?: unknown; discount_mode?: string } | null;
++  discount_type: "percent" | "nominal" | null; discount_value: number | null;
++  auto_apply: boolean; branch_ids: string[] | null;
++  valid_from: string | null; valid_until: string | null;
++  min_qty: number | null; max_qty: number | null; kelipatan: boolean;
++};
++
++const angka = (value: unknown): number | null => (value == null || value === "" ? null : Number(value));
++
++/**
++ * Semua bahan pemeriksaan dibaca sekali, lalu dipakai mesin murni yang sama
++ * dengan layar preview — supaya "yang terlihat hijau" dan "yang benar-benar
++ * tersimpan" tidak pernah dihitung dua kali dengan aturan berbeda.
++ */
++async function review(db: Db, rows: PromoMasterExcelRow[]): Promise<PromoMasterReview> {
++  if (!Array.isArray(rows) || rows.length < 1 || rows.length > PROMO_MASTER_MAX_ROWS) {
++    throw new Error(`Daftar promo harus berisi 1 sampai ${PROMO_MASTER_MAX_ROWS} baris.`);
++  }
++  const codes = [...new Set(rows.map(row => String(row["Kode SKU"] ?? "").trim()).filter(Boolean))];
++  const names = new Set(rows.map(row => String(row["Nama Promo"] ?? "").trim().toLowerCase()).filter(Boolean));
++
++  const items: PromoMasterItem[] = [];
++  for (let offset = 0; offset < codes.length; offset += 150) {
++    items.push(...await readCompleteList<PromoMasterItem>((from, to) => db.from("items")
++      .select("id,code,name,is_active", { count: "exact" })
++      .in("code", codes.slice(offset, offset + 150)).order("id").range(from, to),
++    "Master SKU promo", { maxRows: null }));
++  }
++
++  const branches = await readCompleteList<PromoMasterBranch>((from, to) => db.from("branches")
++    .select("id,code,name,is_active", { count: "exact" }).order("id").range(from, to),
++  "Cabang promo", { maxRows: null });
++
++  // Master promo adalah konfigurasi, bukan transaksi: jumlahnya kecil dan
++  // dibaca utuh supaya pencocokan nama bisa mengabaikan huruf besar/kecil.
++  const promos = await readCompleteList<PromoRow>((from, to) => db.from("promos")
++    .select("id,name,promo_type,rule,discount_type,discount_value,auto_apply,branch_ids,valid_from,valid_until,min_qty,max_qty,kelipatan", { count: "exact" })
++    .order("id").range(from, to), "Daftar promo", { maxRows: null });
++  const cocok = promos.filter(promo => names.has(String(promo.name ?? "").trim().toLowerCase()));
++  const ids = cocok.map(promo => promo.id);
++
++  const targets = ids.length
++    ? await readCompleteList<{ promo_id: string; item_id: string; id: string }>(async (from, to) => {
++        const result = await db.from("promo_items").select("promo_id,item_id", { count: "exact" })
++          .in("promo_id", ids).order("promo_id").order("item_id").range(from, to);
++        return { ...result, data: Array.isArray(result.data)
++          ? (result.data as { promo_id: string; item_id: string }[]).map(row => ({ ...row, id: `${row.promo_id}:${row.item_id}` }))
++          : null };
++      }, "Barang promo lama", { maxRows: null })
++    : [];
++
++  const locked = ids.length
++    ? await readCompleteList<{ promo_id: string; id: string }>(async (from, to) => {
++        const result = await db.from("promo_import_targets").select("promo_id", { count: "exact" })
++          .in("promo_id", ids).order("promo_id").range(from, to);
++        return { ...result, data: Array.isArray(result.data)
++          ? (result.data as { promo_id: string }[]).map(row => ({ ...row, id: row.promo_id })) : null };
++      }, "Promo impor per-SKU", { maxRows: null })
++    : [];
++  const terkunci = new Set(locked.map(row => row.promo_id));
++
++  const perPromo = new Map<string, string[]>();
++  for (const row of targets) perPromo.set(row.promo_id, [...(perPromo.get(row.promo_id) ?? []), row.item_id]);
++
++  // Nama barang lama dipakai memberi tahu barang mana yang akan DIHAPUS dari promo.
++  const lamaIds = [...new Set(targets.map(row => row.item_id))].filter(id => !items.some(item => item.id === id));
++  const lama: { id: string; code: string; name: string }[] = [];
++  for (let offset = 0; offset < lamaIds.length; offset += 150) {
++    lama.push(...await readCompleteList<{ id: string; code: string; name: string }>((from, to) => db.from("items")
++      .select("id,code,name", { count: "exact" })
++      .in("id", lamaIds.slice(offset, offset + 150)).order("id").range(from, to),
++    "Barang promo lama", { maxRows: null }));
++  }
++  const itemLabels = Object.fromEntries([...items, ...lama].map(item => [item.id, `${item.code} · ${item.name}`]));
++
++  const existing: PromoMasterExisting[] = cocok.map(promo => ({
++    id: promo.id, name: promo.name, promo_type: promo.promo_type,
++    discount_type: promo.discount_type, discount_value: angka(promo.discount_value),
++    auto_apply: !!promo.auto_apply, branch_ids: promo.branch_ids,
++    valid_from: promo.valid_from, valid_until: promo.valid_until,
++    min_qty: angka(promo.min_qty), max_qty: angka(promo.max_qty), kelipatan: !!promo.kelipatan,
++    min_subtotal: angka(promo.rule?.min_subtotal), suggest: promo.rule?.suggest == null ? null : String(promo.rule.suggest),
++    item_ids: perPromo.get(promo.id) ?? [],
++    locked: terkunci.has(promo.id),
++    discount_mode: promo.rule?.discount_mode ?? "per_unit",
++  }));
++
++  return reviewPromoMaster(rows, { items, branches, existing, itemLabels });
++}
++
++export async function previewPromoMaster(formData: FormData): Promise<PromoMasterReview> {
++  try {
++    const db = await managerClient();
++    const file = formData.get("file");
++    if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".xlsx")) {
++      throw new Error("Pilih file Excel .xlsx dari format daftar promo.");
++    }
++    if (file.size < 1 || file.size > EXCEL_SHEET_MAX_BYTES) {
++      throw new Error("File Excel harus 1 byte sampai 1 MB");
++    }
++    const rows = await readPromoMasterExcel(new Uint8Array(await file.arrayBuffer()));
++    return await review(db, rows);
++  } catch (error) {
++    return { ...KOSONG, error: error instanceof Error ? error.message : "Berkas promo tidak dapat dibaca" };
++  }
++}
++
++export async function periksaPromoMaster(rows: PromoMasterExcelRow[]): Promise<PromoMasterReview> {
++  try {
++    return await review(await managerClient(), rows);
++  } catch (error) {
++    return { ...KOSONG, error: error instanceof Error ? error.message : "Baris promo tidak dapat diperiksa" };
++  }
++}
++
++export async function simpanPromoMaster(rows: PromoMasterExcelRow[]): Promise<{ ok: boolean; message: string }> {
++  try {
++    const db = await managerClient();
++    // Yang disimpan adalah hasil pemeriksaan ULANG di server, bukan rencana dari
++    // layar: layar yang sudah lama terbuka bisa memegang SKU yang sudah nonaktif.
++    const hasil = await review(db, rows);
++    if (!hasil.valid) {
++      return { ok: false, message: hasil.error ?? "Perbaiki baris bertanda merah, lalu periksa ulang sebelum menyimpan." };
++    }
++    const { data, error } = await db.rpc("import_promo_master", {
++      p_promos: hasil.plans.map(plan => ({
++        name: plan.name, discount_type: plan.discount_type, discount_value: plan.discount_value,
++        auto_apply: plan.auto_apply, branch_ids: plan.branch_ids,
++        valid_from: plan.valid_from, valid_until: plan.valid_until,
++        min_qty: plan.min_qty, max_qty: plan.max_qty, kelipatan: plan.kelipatan,
++        min_subtotal: plan.min_subtotal, suggest: plan.suggest, item_ids: plan.item_ids,
++      })),
++    });
++    if (error) return { ok: false, message: error.message };
++    revalidatePath("/crm/promo");
++    const baru = Number(data?.created ?? 0);
++    const diperbarui = Number(data?.updated ?? 0);
++    return { ok: true, message: `${baru} promo baru dan ${diperbarui} promo diperbarui.` };
++  } catch (error) {
++    return { ok: false, message: error instanceof Error ? error.message : "Daftar promo gagal disimpan" };
++  }
++}
+diff --git a/src/app/(app)/crm/promo/impor-daftar/page.tsx b/src/app/(app)/crm/promo/impor-daftar/page.tsx
+new file mode 100644
+index 00000000..123dfc19
+--- /dev/null
++++ b/src/app/(app)/crm/promo/impor-daftar/page.tsx
+@@ -0,0 +1,19 @@
++import Link from "next/link";
++import { createClient } from "@/lib/supabase/server";
++import { SecHeader } from "@/components/SecHeader";
++import { PromoMasterWorkspace } from "./PromoMasterWorkspace";
++
++export default async function PromoMasterImportPage() {
++  const db = await createClient();
++  const { data: { user } } = await db.auth.getUser();
++  const { data: me } = await db.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle();
++  const allowed = !!user && !!me?.is_active && ["OWNER", "ADMIN"].includes(me.role);
++  return <>
++    <Link href="/crm/promo" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Promo</Link>
++    <div className="crm-sec" style={{ marginTop: 12 }}>
++      <SecHeader num="01" title="IMPOR DAFTAR PROMO (EXCEL)"
++        desc="Satu berkas boleh memuat beberapa promo diskon; tiap promo boleh memuat banyak barang. Nama yang sudah ada diperbarui, lengkap dengan preview perubahannya." />
++      {allowed ? <PromoMasterWorkspace /> : <p>Hanya Owner/Admin aktif yang boleh mengunggah daftar promo.</p>}
++    </div>
++  </>;
++}
+diff --git a/src/app/(app)/crm/promo/impor-daftar/template/route.ts b/src/app/(app)/crm/promo/impor-daftar/template/route.ts
+new file mode 100644
+index 00000000..e94a0bcf
+--- /dev/null
++++ b/src/app/(app)/crm/promo/impor-daftar/template/route.ts
+@@ -0,0 +1,28 @@
++import { NextResponse } from "next/server";
++import { createClient } from "@/lib/supabase/server";
++import { readCompleteList } from "@/lib/checked-list";
++import { makePromoMasterTemplate } from "@/lib/promo-master-excel";
++
++export const dynamic = "force-dynamic";
++export const runtime = "nodejs";
++
++export async function GET() {
++  const db = await createClient();
++  const { data: { user } } = await db.auth.getUser();
++  if (!user) return NextResponse.json({ error: "Sesi tidak ditemukan" }, { status: 401 });
++  const { data: me } = await db.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
++  if (!me?.is_active || !["OWNER", "ADMIN"].includes(me.role)) {
++    return NextResponse.json({ error: "Akses format daftar promo tidak diizinkan" }, { status: 403 });
++  }
++  // Kode cabang ikut dicetak di sheet Petunjuk supaya pengisi tidak menebak.
++  const branches = await readCompleteList<{ code: string | null; name: string; id: string }>((from, to) => db.from("branches")
++    .select("id,code,name", { count: "exact" }).eq("is_active", true).order("id").range(from, to),
++  "Cabang format promo", { maxRows: null });
++  return new NextResponse(await makePromoMasterTemplate(branches) as unknown as BodyInit, {
++    headers: {
++      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
++      "Content-Disposition": 'attachment; filename="Format-Daftar-Promo-VetOS.xlsx"',
++      "Cache-Control": "no-store",
++    },
++  });
++}
+diff --git a/src/app/(app)/crm/promo/page.tsx b/src/app/(app)/crm/promo/page.tsx
+index 985c4d92..dfebea6c 100644
+--- a/src/app/(app)/crm/promo/page.tsx
++++ b/src/app/(app)/crm/promo/page.tsx
+@@ -120,7 +120,10 @@ export default async function PromoAdminPage({
+       {error && <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}><i className="ti ti-alert-circle" /> {error}</div>}
+       {success && <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}><i className="ti ti-circle-check" /> {success === "edit" ? "Perubahan promo tersimpan." : "Promo baru dibuat."}</div>}
+ 
+-      {canEdit&&<div style={{marginBottom:12}}><Link className="btn-def" href="/crm/promo/impor"><i className="ti ti-file-import" /> Impor promo dari Excel</Link></div>}
++      {canEdit&&<div style={{marginBottom:12,display:"flex",gap:8,flexWrap:"wrap"}}>
++        <Link className="btn-def" href="/crm/promo/impor-daftar"><i className="ti ti-file-import" /> Impor daftar promo (banyak barang)</Link>
++        <Link className="btn-def" href="/crm/promo/impor"><i className="ti ti-file-import" /> Impor promo per SKU</Link>
++      </div>}
+ 
+       <div className="crm-sec">
+         <SecHeader num="01" title="BUAT PROMO" desc="Set promo per cabang + masa berlaku. Kosongkan cabang = berlaku semua cabang." />
+diff --git a/src/app/(app)/klinik/pembayaran/[visitId]/actions.ts b/src/app/(app)/klinik/pembayaran/[visitId]/actions.ts
+index d4eec04e..8c30cf61 100644
+--- a/src/app/(app)/klinik/pembayaran/[visitId]/actions.ts
++++ b/src/app/(app)/klinik/pembayaran/[visitId]/actions.ts
+@@ -19,6 +19,7 @@ import { hariIniWIB } from "@/lib/tanggal";
+ import { cekPeriode } from "@/lib/jurnal-guard";
+ import { bacaRombongan } from "@/lib/rombongan-server";
+ import { barisTagihanVisit, hitungPotonganKlinik, bagiPotongan, hargaNetto, nilaiBaris } from "@/lib/tagihan-klinik";
++import { atribusiPotonganKlinik, type AtribusiBaris } from "@/lib/clinic-promo-attribution";
+ import { clinicServicePerformerInput, parseClinicPostingError, type ClinicInvoiceLineInput, type ClinicPostInvoiceParams } from "@/lib/klinik-posting";
+ import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
+ import { bacaKodeKampanye } from "@/lib/kode-kampanye";
+@@ -88,8 +89,13 @@ async function setelahRespons(task: () => Promise<unknown>) {
+ const uncertainPayment = "Hasil pembayaran belum dapat dipastikan. Periksa invoice yang sudah tersimpan sebelum mencoba lagi dengan permintaan yang sama; jangan menerima pembayaran ulang.";
+ const todayIso = () => hariIniWIB();
+ 
+-function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceLineInput[] {
+-  return rows.map((row) => ({
++function barisUntukPosting(
++  rows: Line[],
++  inheritInvoice = false,
++  /** Atribusi promo per index baris; kosong pada koreksi (database membawanya sendiri). */
++  promo: Map<number, AtribusiBaris> = new Map(),
++): ClinicInvoiceLineInput[] {
++  return rows.map((row, index) => ({
+     description: row.deskripsi,
+     qty: row.qty,
+     price: row.harga,
+@@ -103,6 +109,7 @@ function barisUntukPosting(rows: Line[], inheritInvoice = false): ClinicInvoiceL
+     ...(row.service_performers != null ? {service_performers:row.service_performers} : {}),
+     ...(row.salesperson_id ? {salesperson_id:row.salesperson_id} : {}),
+     ...(!inheritInvoice && row.package_item_id && Number(row.package_qty) > 0 ? {package_item_id:row.package_item_id,package_qty:Number(row.package_qty)} : {}),
++    ...(promo.get(index) ?? {}),
+   }));
+ }
+ 
+@@ -315,6 +322,14 @@ export async function bayarVisit(formData: FormData) {
+   const potonganPoin = poinDipakai * RUPIAH_PER_POIN;
+ 
+   const discount = Math.min(subtotal, sebelumPoin + potonganPoin);
++  // Rincian potongan per program disimpan terpisah dari `discount`: tanpa ini
++  // laporan promo klinik hanya melihat satu angka gabungan dan harus menebak.
++  const atribusi = atribusiPotonganKlinik({
++    rincianPromo: "rincianPromo" in potongan ? potongan.rincianPromo : [],
++    voucher: "voucher" in potongan ? potongan.voucher : 0,
++    golongan: "golongan" in potongan ? potongan.golongan : 0,
++    discount,
++  });
+   const dpp = Math.max(0, subtotal - discount);
+   // PPN hanya ditambahkan bila Mode PKP aktif (pengaturan/pajak); OFF → tax 0.
+   const { tax, total } = tambahPpn(dpp, await pajakP);
+@@ -400,13 +415,14 @@ export async function bayarVisit(formData: FormData) {
+       tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: dpAmount, dp_date: dpDate,
+       paid_status: paidStatus as "Belum Lunas" | "DP" | "Lunas", metode_bayar: metode,
+       shift_id: klinikShift.id, voucher_code: voucherCode, salesperson_id: salespersonId,
++      voucher_discount: atribusi.voucher_discount, diskon_kategori: atribusi.diskon_kategori,
+       // Uang muka minimal ditegakkan di RPC posting; alasan penerobosan ikut dikirim dan
+       // dicatat di sana beserta siapa dan kapannya (Andri, 29 Oktober 2026).
+       ...(dpOverrideReason ? { dp_override_reason: dpOverrideReason } : {}),
+       ...(campaignCode ? { campaign_code: campaignCode } : {}),
+       ...(groupedServicePricing ? {service_pricing_version:1 as const} : {}),
+     },
+-    p_lines: barisUntukPosting(rows),
++    p_lines: barisUntukPosting(rows, false, atribusi.baris),
+   }, payments, demo, admission);
+   if (posted.error || !posted.invoiceNo) {
+     redirect(`${back}?error=${encodeURIComponent(posted.invoiceId ? "Invoice sudah tersimpan, tetapi rinciannya belum dapat dibaca. Jangan menerima pembayaran ulang; muat ulang dan periksa invoice yang sama." : parseClinicPostingError(posted.error, uncertainPayment))}`);
+@@ -537,6 +553,8 @@ export async function bayarRombongan(formData: FormData) {
+     rows: Awaited<ReturnType<typeof barisTagihanVisit>>;
+     subtotal: number;
+     potonganNonVoucher: number;
++    promoRincian: Awaited<ReturnType<typeof hitungPotonganKlinik>>["rincianPromo"];
++    golongan: number;
+   };
+   const siap: Siap[] = [];
+ 
+@@ -572,7 +590,8 @@ export async function bayarRombongan(formData: FormData) {
+         rows:rows.map(line=>({item_id:line.item_id,qty:line.qty,harga:hargaNetto(line),jenis:line.jenis,satuan:line.satuan})),
+       });
+       const salespersonId = await salespersonP;
+-      return { b, salespersonId, rows, subtotal, potonganNonVoucher: potonganPet.total };
++      return { b, salespersonId, rows, subtotal, potonganNonVoucher: potonganPet.total,
++        promoRincian: potonganPet.rincianPromo, golongan: potonganPet.golongan };
+     })());
+   };
+   const persiapan = belum.map(siapkan);
+@@ -624,6 +643,9 @@ export async function bayarRombongan(formData: FormData) {
+   for (const [idx, s] of siap.entries()) {
+     const { b, rows, subtotal, salespersonId } = s;
+     const discount = Math.min(subtotal, s.potonganNonVoucher + voucherPerPet[idx] + poinPerPet[idx]);
++    const atribusi = atribusiPotonganKlinik({
++      rincianPromo: s.promoRincian, voucher: voucherPerPet[idx], golongan: s.golongan, discount,
++    });
+     const dpp = Math.max(0, subtotal - discount);
+     const { tax, total } = tambahPpn(dpp, pajakSettings);
+ 
+@@ -634,9 +656,10 @@ export async function bayarRombongan(formData: FormData) {
+         tanggal: todayIso(), subtotal, discount, tax, total, dp_amount: 0, dp_date: null,
+         paid_status: "Lunas", metode_bayar: metode, shift_id: klinikShift.id,
+         voucher_code: voucherPerPet[idx] > 0 ? voucherCode : null, salesperson_id: salespersonId,
++        voucher_discount: atribusi.voucher_discount, diskon_kategori: atribusi.diskon_kategori,
+         service_pricing_version:1,
+       },
+-      p_lines: barisUntukPosting(rows),
++      p_lines: barisUntukPosting(rows, false, atribusi.baris),
+     });
+     if (posted.error || !posted.invoiceNo) {
+       dilewati.push(`${b.hewan}: ${posted.invoiceId ? "invoice sudah tersimpan; periksa status tanpa membayar ulang" : parseClinicPostingError(posted.error, uncertainPayment)}`);
+diff --git a/src/app/(app)/laporan/promo/page.test.tsx b/src/app/(app)/laporan/promo/page.test.tsx
+index 16cdee37..12125a78 100644
+--- a/src/app/(app)/laporan/promo/page.test.tsx
++++ b/src/app/(app)/laporan/promo/page.test.tsx
+@@ -1,44 +1,178 @@
++// @vitest-environment jsdom
+ import { renderToStaticMarkup } from "react-dom/server";
+-import { expect, it, vi } from "vitest";
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import { displaySections } from "@/lib/report-display-export";
+ 
+-const fixture = vi.hoisted(() => ({ responses: [] as Array<{ data: unknown[] }> }));
++const fixture = vi.hoisted(() => ({ responses: [] as Array<{ data: unknown[] }>, rpc: [] as unknown[] }));
+ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
+   from: () => {
+     // The query is consumed by the mocked completeReportQuery after all builder methods.
+     const query = new Proxy({}, { get: () => () => query });
+     return query;
+   },
++  rpc: async () => ({ data: fixture.rpc, error: null }),
+ }) }));
+ vi.mock("@/lib/report-query", () => ({ completeReportQuery: async () => fixture.responses.shift() }));
+ vi.mock("@/components/LaporanPage", () => ({
+-  LaporanPage: ({ filter, ringkasan, children }: { filter: React.ReactNode; ringkasan: React.ReactNode; children: React.ReactNode }) => <main><form>{filter}</form>{ringkasan}{children}</main>,
++  LaporanPage: ({ filter, ringkasan, children }: { filter: React.ReactNode; ringkasan: React.ReactNode; children: React.ReactNode }) => <main><form>{filter}</form>{ringkasan}<div id="laporan-isi">{children}</div></main>,
+   KartuAngka: ({ items }: { items: Array<{ label: string; nilai: string }> }) => <div>{items.map(item => <span key={item.label}>{item.label}: {item.nilai}</span>)}</div>,
+   TabelKosong: ({ pesan }: { pesan: string }) => <tr><td>{pesan}</td></tr>,
+ }));
+ import Page from "./page";
+ 
+-it("reopens a monthly named-promo view without changing overall transaction totals", async () => {
+-  const alpha = "fa100000-0000-4000-8000-000000000011";
+-  const beta = "fa100000-0000-4000-8000-000000000012";
+-  const sale = (id: string, promoId: string) => ({
+-    id, total: 90, subtotal: 100, discount: 10, diskon_kategori: 0, poin_digunakan: 0,
+-    voucher_code: null, created_at: "2026-10-10T08:00:00Z", branch_id: null, branches: null,
+-    payment_plan: null, voided_at: null,
+-    sale_items: [{ qty: 1, harga: 100, item_discount_type: null, item_discount_value: null, promo_id: promoId, promo_discount: 10 }],
+-  });
++const ALPHA = "fa100000-0000-4000-8000-000000000011";
++const BETA = "fa100000-0000-4000-8000-000000000012";
++
++type Row = Record<string, unknown>;
++
++const sale = (over: Row = {}): Row => ({
++  id: "sale-a", no_struk: "POS-1", total: 90, subtotal: 100, discount: 10, diskon_kategori: 0,
++  poin_digunakan: 0, voucher_code: null, campaign_code: null, cashier_name: "Kasir Satu",
++  created_at: "2026-10-10T08:00:00Z", branch_id: null, branches: { name: "Cabang Pusat" },
++  customers: { name: "Bu Rina" }, payment_plan: null, payments_finalized_at: null, voided_at: null,
++  sale_items: [{ qty: 1, harga: 100, item_discount_type: null, item_discount_value: null, promo_id: ALPHA, promo_discount: 10 }],
++  ...over,
++});
++
++const invoice = (over: Row = {}): Row => ({
++  id: "inv-a", invoice_no: "INV-1", visit_id: "visit-a", total: 180, subtotal: 200, discount: 20,
++  voucher_code: null, campaign_code: null, voucher_discount: 0, diskon_kategori: 0, cashier_name: "Kasir Klinik",
++  created_at: "2026-10-11T08:00:00Z",
++  visits: { branch_id: null, branches: { name: "Cabang Pusat" }, customers: { name: "Pak Budi" } },
++  invoice_items: [{ qty: 2, harga: 100, diskon_persen: 0, promo_id: BETA, promo_discount: 20 }],
++  ...over,
++});
++
++function pasang(opts: { sales?: Row[]; invoices?: Row[]; vouchers?: Row[]; promos?: Row[]; kode?: Row[]; pakai?: unknown[] } = {}) {
+   fixture.responses = [
+-    { data: [sale("sale-a", alpha), sale("sale-b", beta)] },
+-    { data: [] }, { data: [] },
+-    { data: [{ id: alpha, name: "Vaksin A", promo_type: "barang" }, { id: beta, name: "Makanan B", promo_type: "barang" }] },
++    { data: opts.sales ?? [] },
++    { data: opts.invoices ?? [] },
++    { data: opts.vouchers ?? [] },
++    { data: opts.promos ?? [{ id: ALPHA, name: "Vaksin A", promo_type: "diskon_produk" }, { id: BETA, name: "Grooming B", promo_type: "diskon_produk" }] },
+     { data: [] },
++    { data: opts.kode ?? [] },
++    { data: [{ id: "branch-1", name: "Cabang Pusat" }] },
+   ];
+-  const page = await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", promo_id: alpha }) });
+-  const html = renderToStaticMarkup(page);
++  fixture.rpc = opts.pakai ?? [];
++}
++
++const render = async (sp: Record<string, string> = {}) =>
++  renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", ...sp }) }));
++
++const potong = (html: string, awal: string, akhir?: string) => {
++  const sisa = html.split(awal)[1] ?? "";
++  return akhir ? sisa.split(akhir)[0] : sisa;
++};
++
++beforeEach(() => { fixture.responses = []; fixture.rpc = []; });
++
++it("reopens a monthly named-promo view without changing overall transaction totals", async () => {
++  pasang({
++    sales: [sale({ id: "sale-a", sale_items: [{ qty: 1, harga: 100, item_discount_type: null, item_discount_value: null, promo_id: ALPHA, promo_discount: 10 }] }),
++      sale({ id: "sale-b", no_struk: "POS-2", sale_items: [{ qty: 1, harga: 100, item_discount_type: null, item_discount_value: null, promo_id: BETA, promo_discount: 10 }] })],
++    promos: [{ id: ALPHA, name: "Vaksin A", promo_type: "barang" }, { id: BETA, name: "Makanan B", promo_type: "barang" }],
++  });
++  const html = await render({ promo_id: ALPHA });
+   expect(html).toContain(`name="promo_id"`);
+-  expect(html).toContain(`value="${alpha}" selected=""`);
+-  const promoTable = html.split("02 · PROMO OTOMATIS")[1].split("03 · DISKON PER CABANG")[0];
++  expect(html).toContain(`value="${ALPHA}" selected=""`);
++  const promoTable = potong(html, "02 · PROMO OTOMATIS", "03 · DISKON PER CABANG");
+   expect(promoTable).toContain("Vaksin A");
+   expect(promoTable).not.toContain("Makanan B");
+-  expect(html).toContain("seluruh transaksi pada periode terpilih");
+   expect(html).toContain("Omzet bersih: Rp 180");
+ });
++
++describe("ringkasan per program", () => {
++  it("menjumlahkan promo petshop dan klinik dalam satu daftar", async () => {
++    pasang({ sales: [sale()], invoices: [invoice()] });
++    const ringkasan = potong(await render(), "04 · RINGKASAN PER PROGRAM", "05 · RINCIAN PER TRANSAKSI");
++    expect(ringkasan).toContain("Vaksin A");
++    expect(ringkasan).toContain("Grooming B");
++    // Potongan klinik dibaca dari baris invoice, bukan dari kolom diskon gabungan.
++    expect(ringkasan).toContain("Rp 20");
++    expect(ringkasan).toContain("Rp 10");
++  });
++
++  it("menghitung voucher dan kode kampanye klinik dari kolomnya sendiri", async () => {
++    pasang({
++      invoices: [invoice({
++        discount: 50, total: 150, voucher_code: "HEMAT10", campaign_code: "KAMPANYE1",
++        voucher_discount: 30, diskon_kategori: 0,
++        invoice_items: [{ qty: 2, harga: 100, diskon_persen: 0, promo_id: BETA, promo_discount: 20 }],
++      })],
++      kode: [{ id: "k1", code: "KAMPANYE1", voucher_id: "v1", promo_id: null, max_uses: 5, is_active: true }],
++      pakai: [{ code: "KAMPANYE1", used: 3 }],
++    });
++    const ringkasan = potong(await render(), "04 · RINGKASAN PER PROGRAM", "05 · RINCIAN PER TRANSAKSI");
++    expect(ringkasan).toContain("HEMAT10");
++    expect(ringkasan).toContain("KAMPANYE1");
++    expect(ringkasan).toContain("Rp 30");
++    // Kode terikat voucher mewarisi nilai vouchernya, dan batas pemakaiannya terlihat.
++    expect(ringkasan).toContain("3 / 5");
++    expect(ringkasan).not.toContain("potongan belum tercatat terpisah&gt;");
++  });
++
++  it("menandai voucher petshop sebagai nilai yang belum terpisah dari diskon manual", async () => {
++    pasang({ sales: [sale({ voucher_code: "HEMAT10", discount: 25, total: 75, sale_items: [{ qty: 1, harga: 100, item_discount_type: null, item_discount_value: null, promo_id: null, promo_discount: 0 }] })] });
++    const ringkasan = potong(await render(), "04 · RINGKASAN PER PROGRAM", "05 · RINCIAN PER TRANSAKSI");
++    expect(ringkasan).toContain("HEMAT10");
++    expect(ringkasan).toContain("potongan belum tercatat terpisah");
++    expect(ringkasan).toContain("Rp 25");
++  });
++
++  it("menyaring per cabang dan per kanal", async () => {
++    pasang({
++      sales: [sale({ branches: { name: "Cabang Lain" } })],
++      invoices: [invoice()],
++    });
++    const ringkasan = potong(await render({ cabang: "Cabang Pusat" }), "04 · RINGKASAN PER PROGRAM", "05 · RINCIAN PER TRANSAKSI");
++    expect(ringkasan).toContain("Grooming B");
++    expect(ringkasan).not.toContain("Vaksin A");
++
++    pasang({ sales: [sale()], invoices: [invoice()] });
++    const petshop = potong(await render({ kanal: "Petshop" }), "04 · RINGKASAN PER PROGRAM", "05 · RINCIAN PER TRANSAKSI");
++    expect(petshop).toContain("Vaksin A");
++    expect(petshop).not.toContain("Grooming B");
++  });
++});
++
++describe("transaksi batal dan tagihan lama", () => {
++  it("tidak menghitung struk yang di-void atau belum selesai dibayar", async () => {
++    pasang({ sales: [
++      sale({ id: "sale-void", voided_at: "2026-10-12T00:00:00Z" }),
++      sale({ id: "sale-pending", payment_plan: { kind: "cicil" }, payments_finalized_at: null }),
++    ] });
++    const html = await render();
++    const ringkasan = potong(html, "04 · RINGKASAN PER PROGRAM", "05 · RINCIAN PER TRANSAKSI");
++    expect(ringkasan).toContain("Belum ada promo, voucher, atau kode kampanye yang terpakai");
++    expect(potong(html, "05 · RINCIAN PER TRANSAKSI")).toContain("Belum ada transaksi berpromo");
++  });
++
++  it("menampilkan tagihan klinik lama sebagai tidak tercatat per program", async () => {
++    pasang({ invoices: [invoice({
++      discount: 20, voucher_discount: null, diskon_kategori: null,
++      invoice_items: [{ qty: 2, harga: 100, diskon_persen: 0, promo_id: null, promo_discount: null }],
++    })] });
++    const rincian = potong(await render(), "05 · RINCIAN PER TRANSAKSI");
++    expect(rincian).toContain("tidak tercatat per program");
++    expect(rincian).toContain("INV-1");
++  });
++});
++
++it("menyediakan kolom unduhan Excel untuk ringkasan program dan rinciannya", async () => {
++  pasang({ sales: [sale()], invoices: [invoice({ voucher_code: "HEMAT10", voucher_discount: 5, discount: 25, total: 175 })] });
++  const host = document.createElement("div");
++  host.innerHTML = await render();
++  const bagian = displaySections(host.querySelector("#laporan-isi") as HTMLElement);
++  const tabel = bagian.filter(part => part.name.startsWith("Tabel "));
++  const ringkasan = tabel.find(part => part.rows[0]?.includes("Program") && part.rows[0]?.includes("Total potongan"));
++  expect(ringkasan?.rows[0]).toEqual([
++    "Jenis", "Program", "Transaksi", "Baris kena", "Unit kena", "Total potongan",
++    "Rata-rata / transaksi", "Omzet bruto", "Omzet netto", "Pemakaian / batas",
++  ]);
++  const rincian = tabel.find(part => part.rows[0]?.includes("Kode diketik"));
++  expect(rincian?.rows[0]).toEqual([
++    "Tanggal", "Cabang", "Kanal", "No. struk / invoice", "Program", "Kode diketik", "Potongan", "Kasir", "Pelanggan",
++  ]);
++  expect(rincian?.rows.some(row => row.includes("POS-1"))).toBe(true);
++  expect(rincian?.rows.some(row => row.includes("INV-1"))).toBe(true);
++});
+diff --git a/src/app/(app)/laporan/promo/page.tsx b/src/app/(app)/laporan/promo/page.tsx
+index ab4a7618..5a4d6de6 100644
+--- a/src/app/(app)/laporan/promo/page.tsx
++++ b/src/app/(app)/laporan/promo/page.tsx
+@@ -1,3 +1,4 @@
++import Link from "next/link";
+ import { completeReportQuery } from "@/lib/report-query";
+ import { createClient } from "@/lib/supabase/server";
+ import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
+@@ -7,6 +8,7 @@ import { rentangBulan } from "@/lib/pertumbuhan";
+ import { hariIniWIB, tanggalWIB } from "@/lib/tanggal";
+ import { tanggalIndo } from "@/lib/followup";
+ import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
++import { hrefInvoiceKlinik } from "@/lib/tautan-dokumen";
+ 
+ // Promo, Voucher & Diskon — permintaan Kamo Group 24 Agu 2026:
+ // "voucher: diterbitkan, ditukarkan, redemption rate per program per cabang" dan
+@@ -27,23 +29,28 @@ const WARNA_STATUS: Record<string, string> = {
+ export default async function PromoPage({
+   searchParams,
+ }: {
+-  searchParams: Promise<{ dari?: string; sampai?: string; promo_id?: string }>;
++  searchParams: Promise<{ dari?: string; sampai?: string; promo_id?: string; cabang?: string; kanal?: string }>;
+ }) {
+   const sp = await searchParams;
+   const dari = sp.dari || awalBulan();
+   const sampai = sp.sampai || hariIniWIB();
++  // Satu kotak "Program" untuk promo, voucher, dan kode kampanye sekaligus.
++  // Nilai promo tetap UUID telanjang supaya preset laporan lama tetap terbuka.
+   const promoId = (sp.promo_id ?? "").slice(0, 80);
++  const cabang = (sp.cabang ?? "").slice(0, 120);
++  const kanal = sp.kanal === "Petshop" || sp.kanal === "Klinik" ? sp.kanal : "";
+   const mulai = `${dari}T00:00:00+07:00`;
+   const akhir = `${sampai}T23:59:59+07:00`;
+ 
+   const supabase = await createClient();
+-  const [{ data: salesData }, { data: invData }, { data: voucherData }, { data: promoData }, { data: targetData }] =
++  const [{ data: salesData }, { data: invData }, { data: voucherData }, { data: promoData }, { data: targetData },
++    { data: kodeData }, pemakaianKode, { data: cabangList }] =
+     await Promise.all([
+       completeReportQuery(supabase.from("sales")
+-        .select("id, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, created_at, branch_id, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)", { count: "exact" })
++        .select("id, no_struk, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, campaign_code, cashier_name, created_at, branch_id, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)", { count: "exact" })
+         .gte("created_at", mulai).lte("created_at", akhir)),
+       completeReportQuery(supabase.from("invoices")
+-        .select("id, total, subtotal, discount, voucher_code, created_at, visits(branch_id, branches(name))", { count: "exact" })
++        .select("id, invoice_no, total, subtotal, discount, voucher_code, campaign_code, voucher_discount, diskon_kategori, cashier_name, created_at, visit_id, visits(branch_id, branches(name), customers(name)), invoice_items(qty, harga, diskon_persen, promo_id, promo_discount)", { count: "exact" })
+         .is("voided_at", null).gte("created_at", mulai).lte("created_at", akhir)),
+       completeReportQuery(supabase.from("vouchers")
+         .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id", { count: "exact" })),
+@@ -54,6 +61,13 @@ export default async function PromoPage({
+       completeReportQuery(supabase.from("sales_targets")
+         .select("id, periode, branch_id, basis, target", { count: "exact" })
+         .is("employee_id", null).is("category_id", null)),
++      completeReportQuery(supabase.from("campaign_codes")
++        .select("id, code, voucher_id, promo_id, max_uses, is_active", { count: "exact" }).order("code")),
++      // Batas pemakaian kode dihitung sepanjang masa (bukan periode ini) dan hanya
++      // terbuka untuk OWNER/ADMIN; peran lain cukup melihat pemakaian periode ini.
++      supabase.rpc("campaign_code_usage"),
++      completeReportQuery(supabase.from("branches")
++        .select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
+     ]);
+ 
+   type SaleItem = {
+@@ -61,17 +75,32 @@ export default async function PromoPage({
+     promo_id: string | null; promo_discount: number | null;
+   };
+   type Sale = SaleCompletion & {
+-    id: string; total: number; subtotal: number; discount: number; diskon_kategori: number | null;
+-    poin_digunakan: number | null; voucher_code: string | null; created_at: string;
+-    branch_id: string | null; branches: Rel<{ name: string }>; sale_items: SaleItem[] | null;
++    id: string; no_struk: string | null; total: number; subtotal: number; discount: number; diskon_kategori: number | null;
++    poin_digunakan: number | null; voucher_code: string | null; campaign_code: string | null;
++    cashier_name: string | null; created_at: string;
++    branch_id: string | null; branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
++    sale_items: SaleItem[] | null;
++  };
++  type InvItem = {
++    qty: number; harga: number; diskon_persen: number | null;
++    promo_id: string | null; promo_discount: number | null;
+   };
+   type Inv = {
+-    total: number; subtotal: number; discount: number; voucher_code: string | null; created_at: string;
+-    visits: Rel<{ branch_id: string | null; branches: Rel<{ name: string }> }>;
++    id: string; invoice_no: string | null; visit_id: string;
++    total: number; subtotal: number; discount: number; voucher_code: string | null; campaign_code: string | null;
++    voucher_discount: number | null; diskon_kategori: number | null; cashier_name: string | null; created_at: string;
++    visits: Rel<{ branch_id: string | null; branches: Rel<{ name: string }>; customers: Rel<{ name: string }> }>;
++    invoice_items: InvItem[] | null;
+   };
+ 
+-  const sales = ((salesData ?? []) as unknown as Sale[]).filter(isCompletedSale);
+-  const invoices = (invData ?? []) as unknown as Inv[];
++  const namaCabangSale = (s: Sale) => one(s.branches)?.name ?? "\u2014";
++  const namaCabangInv = (i: Inv) => one(one(i.visits)?.branches ?? null)?.name ?? "\u2014";
++  // Filter cabang & kanal berlaku untuk SELURUH halaman: angka di kartu ringkasan,
++  // tabel voucher, dan tabel diskon harus menceritakan potongan yang sama.
++  const sales = kanal === "Klinik" ? [] : ((salesData ?? []) as unknown as Sale[])
++    .filter(isCompletedSale).filter((s) => !cabang || namaCabangSale(s) === cabang);
++  const invoices = kanal === "Petshop" ? [] : ((invData ?? []) as unknown as Inv[])
++    .filter((i) => !cabang || namaCabangInv(i) === cabang);
+ 
+   // ── Diskon per cabang ──────────────────────────────────────────────────────
+   type Diskon = {
+@@ -204,6 +233,149 @@ export default async function PromoPage({
+   for (const row of promoRows) if (!namaPromo.has(row.id)) promoOptions.push({ id: row.id, nama: row.nama });
+   promoOptions.sort((a, b) => a.nama.localeCompare(b.nama, "id"));
+ 
++  // ── Per program: promo, voucher, kode kampanye ─────────────────────────────
++  // Satu transaksi bisa muncul di beberapa program (mis. kode kampanye yang
++  // menunjuk sebuah promo). Daftar ini sengaja BUKAN pembagian habis total
++  // potongan — kolomnya menjawab "program X menghasilkan potongan berapa".
++  type JenisProgram = "Promo" | "Voucher" | "Kode kampanye";
++  type PakaiProgram = { key: string; jenis: JenisProgram; nama: string; potongan: number; baris: number; unit: number; pasti: boolean };
++  type Transaksi = {
++    id: string; waktu: string; tanggal: string; kanal: "Petshop" | "Klinik";
++    cabang: string; nomor: string; href: string; pelanggan: string; kasir: string;
++    kodeDiketik: string; bruto: number; netto: number;
++    program: PakaiProgram[]; tidakTercatat: boolean;
++  };
++
++  const kodeKampanye = ((kodeData ?? []) as { code: string; voucher_id: string | null; promo_id: string | null; max_uses: number | null; is_active: boolean }[]);
++  const kodeByCode = new Map(kodeKampanye.map((k) => [k.code, k]));
++  const pakaiSepanjangMasa = new Map(((pemakaianKode?.data ?? []) as { code: string; used: number }[])
++    .map((u) => [u.code, Number(u.used) || 0]));
++
++  const labelPromo = (id: string) => namaPromo.get(id)?.name ?? "(promo terhapus)";
++  const kumpulkanPromo = (rows: { qty: number; promo_id: string | null; promo_discount: number | null }[]) => {
++    const per = new Map<string, { potongan: number; baris: number; unit: number }>();
++    for (const row of rows) {
++      const nilai = Number(row.promo_discount) || 0;
++      if (!row.promo_id || nilai <= 0) continue;
++      const cur = per.get(row.promo_id) ?? { potongan: 0, baris: 0, unit: 0 };
++      cur.potongan += nilai;
++      cur.baris++;
++      cur.unit += Number(row.qty) || 0;
++      per.set(row.promo_id, cur);
++    }
++    return per;
++  };
++  const programKampanye = (kode: string | null, promoPer: Map<string, { potongan: number }>, voucherNilai: number, voucherPasti: boolean): PakaiProgram | null => {
++    if (!kode) return null;
++    const master = kodeByCode.get(kode);
++    const potongan = master?.promo_id ? promoPer.get(master.promo_id)?.potongan ?? 0 : master?.voucher_id ? voucherNilai : 0;
++    return { key: `kode:${kode}`, jenis: "Kode kampanye", nama: kode, potongan,
++      baris: 0, unit: 0, pasti: master?.promo_id ? true : master?.voucher_id ? voucherPasti : false };
++  };
++
++  const transaksi: Transaksi[] = [
++    ...sales.map((s): Transaksi => {
++      const items = s.sale_items ?? [];
++      const diskonItem = items.reduce((a, l) => a + lineDiscount({
++        qty: Number(l.qty) || 0, harga: Number(l.harga) || 0,
++        item_discount_type: (l.item_discount_type as "nominal" | "percent" | null) ?? null,
++        item_discount_value: Number(l.item_discount_value) || 0,
++        promo_discount: Number(l.promo_discount) || 0,
++      }), 0);
++      const poin = Number(s.poin_digunakan) || 0;
++      // Kasir petshop belum menyimpan rupiah voucher terpisah: sisanya setelah
++      // diskon item dan poin = diskon manual kasir + voucher, masih menyatu.
++      const sisaTransaksi = Math.max(0, (Number(s.discount) || 0) - diskonItem - poin);
++      const promoPer = kumpulkanPromo(items.map((l) => ({ qty: l.qty, promo_id: l.promo_id, promo_discount: l.promo_discount })));
++      const program: PakaiProgram[] = [...promoPer].map(([id, v]) => ({
++        key: id, jenis: "Promo" as const, nama: labelPromo(id), potongan: v.potongan, baris: v.baris, unit: v.unit, pasti: true,
++      }));
++      if (s.voucher_code) {
++        program.push({ key: `voucher:${s.voucher_code}`, jenis: "Voucher", nama: s.voucher_code,
++          potongan: sisaTransaksi, baris: 0, unit: 0, pasti: false });
++      }
++      const kampanye = programKampanye(s.campaign_code, promoPer, sisaTransaksi, false);
++      if (kampanye) program.push(kampanye);
++      return {
++        id: s.id, waktu: s.created_at, tanggal: tanggalWIB(s.created_at), kanal: "Petshop",
++        cabang: namaCabangSale(s), nomor: s.no_struk ?? "—", href: `/penjualan/${s.id}`,
++        pelanggan: one(s.customers)?.name ?? "—", kasir: s.cashier_name ?? "—",
++        kodeDiketik: s.campaign_code || s.voucher_code || "—",
++        bruto: Number(s.subtotal) || 0, netto: Number(s.total) || 0, program, tidakTercatat: false,
++      };
++    }),
++    ...invoices.map((inv): Transaksi => {
++      const items = inv.invoice_items ?? [];
++      const promoPer = kumpulkanPromo(items.map((l) => ({ qty: l.qty, promo_id: l.promo_id, promo_discount: l.promo_discount })));
++      // NULL = tagihan sebelum rilis atribusi klinik. Tidak ditebak mundur.
++      const tercatat = inv.voucher_discount != null || inv.diskon_kategori != null
++        || items.some((l) => l.promo_discount != null);
++      const voucherNilai = Number(inv.voucher_discount) || 0;
++      const program: PakaiProgram[] = [...promoPer].map(([id, v]) => ({
++        key: id, jenis: "Promo" as const, nama: labelPromo(id), potongan: v.potongan, baris: v.baris, unit: v.unit, pasti: true,
++      }));
++      if (inv.voucher_code) {
++        program.push({ key: `voucher:${inv.voucher_code}`, jenis: "Voucher", nama: inv.voucher_code,
++          potongan: tercatat ? voucherNilai : 0, baris: 0, unit: 0, pasti: tercatat });
++      }
++      const kampanye = programKampanye(inv.campaign_code, promoPer, voucherNilai, tercatat);
++      if (kampanye) program.push(kampanye);
++      const v = one(inv.visits);
++      return {
++        id: inv.id, waktu: inv.created_at, tanggal: tanggalWIB(inv.created_at), kanal: "Klinik",
++        cabang: namaCabangInv(inv), nomor: inv.invoice_no ?? "—", href: hrefInvoiceKlinik(inv.visit_id, inv.id),
++        pelanggan: one(v?.customers ?? null)?.name ?? "—", kasir: inv.cashier_name ?? "—",
++        kodeDiketik: inv.campaign_code || inv.voucher_code || "—",
++        bruto: Number(inv.subtotal) || 0, netto: Number(inv.total) || 0, program,
++        tidakTercatat: !tercatat && (Number(inv.discount) || 0) > 0,
++      };
++    }),
++  ].sort((a, b) => b.waktu.localeCompare(a.waktu));
++
++  type RingkasProgram = {
++    key: string; jenis: JenisProgram; nama: string; trx: number; baris: number; unit: number;
++    potongan: number; bruto: number; netto: number; pasti: boolean; batas: number | null; dipakaiTotal: number | null;
++  };
++  const ringkasProgram = new Map<string, RingkasProgram>();
++  for (const t of transaksi) {
++    for (const p of t.program) {
++      const master = p.jenis === "Kode kampanye" ? kodeByCode.get(p.nama) : undefined;
++      const cur = ringkasProgram.get(p.key) ?? {
++        key: p.key, jenis: p.jenis, nama: p.nama, trx: 0, baris: 0, unit: 0, potongan: 0, bruto: 0, netto: 0,
++        pasti: true, batas: master?.max_uses ?? null, dipakaiTotal: pakaiSepanjangMasa.get(p.nama) ?? null,
++      };
++      cur.trx++;
++      cur.baris += p.baris;
++      cur.unit += p.unit;
++      cur.potongan += p.potongan;
++      cur.bruto += t.bruto;
++      cur.netto += t.netto;
++      if (!p.pasti) cur.pasti = false;
++      ringkasProgram.set(p.key, cur);
++    }
++  }
++  const programRows = [...ringkasProgram.values()]
++    .filter((row) => !promoId || row.key === promoId)
++    .sort((a, b) => b.potongan - a.potongan || b.trx - a.trx || a.nama.localeCompare(b.nama, "id"));
++
++  const rincianRows = transaksi.flatMap((t) => {
++    const dipakai = t.program.filter((p) => !promoId || p.key === promoId);
++    const baris = dipakai.map((p) => ({ t, program: p.nama, jenis: p.jenis as string, potongan: p.potongan, pasti: p.pasti }));
++    if (!promoId && t.tidakTercatat) {
++      baris.push({ t, program: "tidak tercatat per program", jenis: "—", potongan: 0, pasti: false });
++    }
++    return baris;
++  });
++  const RINCIAN_MAKS = 400;
++  const rincianTampil = rincianRows.slice(0, RINCIAN_MAKS);
++
++  // Pilihan program menggabungkan promo, voucher, dan kode kampanye dalam satu kotak.
++  const programOptions = [
++    ...promoOptions.map((promo) => ({ value: promo.id, label: `Promo · ${promo.nama} · ${promo.id.slice(-8)}` })),
++    ...vouchers.map((v) => ({ value: `voucher:${v.code}`, label: `Voucher · ${v.code}` })),
++    ...kodeKampanye.map((k) => ({ value: `kode:${k.code}`, label: `Kode kampanye · ${k.code}` })),
++  ];
++
+   // Struk paling lama di rentang — dipakai memberi tahu kalau datanya dari masa
+   // sebelum nilai promo mulai dicatat (migrasi 0127, 25 Agustus 2026).
+   const strukTerlama = sales.length
+@@ -214,7 +386,7 @@ export default async function PromoPage({
+   return (
+     <LaporanPage
+       icon="ti-discount" title="PROMO, VOUCHER & DISKON"
+-      desc="Berapa kode voucher yang ditukarkan, promo mana yang jalan, dan berapa besar potongan yang diberikan."
++      desc="Promo, voucher, dan kode kampanye di petshop maupun klinik: berapa kali dipakai, berapa potongannya, dan di transaksi mana. Bisa diunduh ke Excel."
+       filter={
+         <>
+           <div>
+@@ -225,12 +397,27 @@ export default async function PromoPage({
+             <label className="flab">Sampai tanggal</label>
+             <input className="fi" type="date" name="sampai" defaultValue={sampai} />
+           </div>
+-          <div>
+-            <label className="flab">Promo otomatis (tabel 02)</label>
++          <div style={{ minWidth: 170 }}>
++            <label className="flab">Cabang</label>
++            <select className="fi" name="cabang" defaultValue={cabang}>
++              <option value="">Semua cabang</option>
++              {(cabangList ?? []).map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
++            </select>
++          </div>
++          <div style={{ minWidth: 150 }}>
++            <label className="flab">Kanal</label>
++            <select className="fi" name="kanal" defaultValue={kanal}>
++              <option value="">Petshop &amp; Klinik</option>
++              <option value="Petshop">Petshop (kasir)</option>
++              <option value="Klinik">Klinik</option>
++            </select>
++          </div>
++          <div style={{ minWidth: 230 }}>
++            <label className="flab">Program</label>
+             <select className="fi" name="promo_id" defaultValue={promoId}>
+-              <option value="">Semua promo</option>
+-              {promoId && !promoOptions.some(promo => promo.id === promoId) && <option value={promoId}>Promo tidak ada · {promoId.slice(0, 8)}</option>}
+-              {promoOptions.map(promo => <option key={promo.id} value={promo.id}>{promo.nama} · {promo.id.slice(-8)}</option>)}
++              <option value="">Semua program</option>
++              {promoId && !programOptions.some(option => option.value === promoId) && <option value={promoId}>Program tidak ada · {promoId.slice(0, 12)}</option>}
++              {programOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+             </select>
+           </div>
+           <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+@@ -345,7 +532,7 @@ export default async function PromoPage({
+         </div>
+       </div>
+ 
+-      <div className="crm-sec" style={{ marginBottom: 0 }}>
++      <div className="crm-sec" style={{ marginBottom: 12 }}>
+         <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>03 · DISKON PER CABANG</div>
+         <div style={{ overflowX: "auto" }}>
+           <table className="tbl" style={{ minWidth: 1020 }}>
+@@ -416,6 +603,119 @@ export default async function PromoPage({
+             : "Target yang dipakai hanya target murni per cabang atau se-perusahaan. Target per karyawan dan per kategori sengaja tidak ikut dijumlah supaya satu omzet tidak terhitung memenuhi beberapa target sekaligus."}
+         </div>
+       </div>
++
++      <div className="crm-sec" style={{ marginBottom: 12 }}>
++        <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>04 · RINGKASAN PER PROGRAM</div>
++        <div style={{ overflowX: "auto" }}>
++          <table className="tbl" style={{ minWidth: 1180 }}>
++            <thead>
++              <tr>
++                <th style={{ width: 120 }}>Jenis</th>
++                <th>Program</th>
++                <th style={{ width: 90, textAlign: "center" }}>Transaksi</th>
++                <th style={{ width: 95, textAlign: "center" }}>Baris kena</th>
++                <th style={{ width: 90, textAlign: "center" }}>Unit kena</th>
++                <th style={{ width: 130, textAlign: "right" }}>Total potongan</th>
++                <th style={{ width: 130, textAlign: "right" }}>Rata-rata / transaksi</th>
++                <th style={{ width: 130, textAlign: "right" }}>Omzet bruto</th>
++                <th style={{ width: 130, textAlign: "right" }}>Omzet netto</th>
++                <th style={{ width: 120, textAlign: "center" }}>Pemakaian / batas</th>
++              </tr>
++            </thead>
++            <tbody>
++              {programRows.map((row) => (
++                <tr key={row.key}>
++                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.jenis}</td>
++                  <td style={{ fontSize: 11.5, fontWeight: 600 }}>
++                    {row.nama}
++                    {!row.pasti && <span style={{ fontSize: 9.5, color: "#b45309", marginLeft: 6 }}>potongan belum tercatat terpisah</span>}
++                  </td>
++                  <td style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700 }}>{row.trx}</td>
++                  <td style={{ textAlign: "center", fontSize: 11 }}>{row.baris || "—"}</td>
++                  <td style={{ textAlign: "center", fontSize: 11 }}>{row.unit ? Math.round(row.unit * 100) / 100 : "—"}</td>
++                  <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 700, color: row.potongan ? "#b45309" : "var(--td)" }}>{rp(row.potongan)}</td>
++                  <td style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>{rp(row.trx ? row.potongan / row.trx : 0)}</td>
++                  <td style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>{rp(row.bruto)}</td>
++                  <td style={{ textAlign: "right", fontSize: 11, color: "var(--tm)" }}>{rp(row.netto)}</td>
++                  <td style={{ textAlign: "center", fontSize: 11 }}>
++                    {row.batas == null ? "tanpa batas" : `${row.dipakaiTotal ?? row.trx} / ${row.batas}`}
++                  </td>
++                </tr>
++              ))}
++              {programRows.length === 0 && (
++                <TabelKosong kolom={10} pesan="Belum ada promo, voucher, atau kode kampanye yang terpakai pada rentang ini." />
++              )}
++            </tbody>
++          </table>
++        </div>
++        <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
++          Satu transaksi bisa muncul di dua baris sekaligus — kode kampanye dihitung bersama promo
++          atau voucher yang ditunjuknya — jadi kolom potongan di tabel ini TIDAK untuk dijumlah
++          ke bawah. Gunakan tabel 03 untuk total potongan yang tidak tumpang tindih.<br />
++          Omzet bruto = nilai transaksi sebelum potongan; omzet netto = yang benar-benar ditagih.
++          Keduanya nilai SELURUH transaksi yang memakai program itu, bukan hanya baris yang kena.<br />
++          Kolom &quot;Pemakaian / batas&quot; hanya untuk kode kampanye yang dibatasi. Angka kiri
++          dihitung sepanjang masa bila akun Anda Owner/Admin; peran lain melihat pemakaian pada
++          rentang tanggal ini saja.<br />
++          Potongan voucher di kasir petshop masih menyatu dengan diskon manual kasir — baris itu
++          ditandai &quot;potongan belum tercatat terpisah&quot; dan nilainya adalah batas atas.
++          Tagihan klinik yang dibuat sebelum rilis ini juga tidak menyimpan rinciannya.
++        </div>
++      </div>
++
++      <div className="crm-sec" style={{ marginBottom: 0 }}>
++        <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>05 · RINCIAN PER TRANSAKSI</div>
++        <div style={{ overflowX: "auto" }}>
++          <table className="tbl" style={{ minWidth: 1180 }}>
++            <thead>
++              <tr>
++                <th style={{ width: 95 }}>Tanggal</th>
++                <th style={{ width: 140 }}>Cabang</th>
++                <th style={{ width: 85 }}>Kanal</th>
++                <th style={{ width: 140 }}>No. struk / invoice</th>
++                <th>Program</th>
++                <th style={{ width: 120 }}>Kode diketik</th>
++                <th style={{ width: 120, textAlign: "right" }}>Potongan</th>
++                <th style={{ width: 150 }}>Kasir</th>
++                <th style={{ width: 150 }}>Pelanggan</th>
++              </tr>
++            </thead>
++            <tbody>
++              {rincianTampil.map((row, index) => (
++                <tr key={`${row.t.id}:${row.program}:${index}`}>
++                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{tanggalIndo(row.t.tanggal)}</td>
++                  <td style={{ fontSize: 10.5 }}>{row.t.cabang}</td>
++                  <td style={{ fontSize: 10.5 }}>{row.t.kanal}</td>
++                  <td style={{ fontSize: 11 }}><Link href={row.t.href}>{row.t.nomor}</Link></td>
++                  <td style={{ fontSize: 11 }}>
++                    {row.program}
++                    <span style={{ fontSize: 9.5, color: "var(--td)", marginLeft: 6 }}>{row.jenis}</span>
++                  </td>
++                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.t.kodeDiketik}</td>
++                  <td style={{ textAlign: "right", fontSize: 11, fontWeight: 700, color: row.potongan ? "#b45309" : "var(--td)" }}>
++                    {row.pasti || row.potongan ? rp(row.potongan) : "—"}
++                  </td>
++                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.t.kasir}</td>
++                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.t.pelanggan}</td>
++                </tr>
++              ))}
++              {rincianTampil.length === 0 && (
++                <TabelKosong kolom={9} pesan="Belum ada transaksi berpromo pada rentang ini." />
++              )}
++            </tbody>
++          </table>
++        </div>
++        <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
++          Transaksi yang dibatalkan TIDAK ditampilkan: struk kasir yang di-void atau belum selesai
++          dibayar dan tagihan klinik yang dibatalkan ikut hilang dari semua tabel di halaman ini,
++          sama seperti laporan penjualan lain. Tagihan klinik yang dibatalkan lalu diterbitkan ulang
++          muncul satu kali, dengan nomor barunya.<br />
++          Satu transaksi muncul satu baris per program. Tagihan klinik lama yang potongannya tidak
++          pernah dicatat per program muncul sebagai &quot;tidak tercatat per program&quot; — isinya
++          tidak ditebak mundur.
++          {rincianRows.length > rincianTampil.length && <><br />Hanya {RINCIAN_MAKS} baris terbaru yang ditampilkan dari {rincianRows.length} baris. Persempit rentang tanggal, cabang, atau program untuk melihat sisanya.</>}
++        </div>
++      </div>
+     </LaporanPage>
+   );
+ }
+diff --git a/src/components/__tests__/promo-master-workspace.test.tsx b/src/components/__tests__/promo-master-workspace.test.tsx
+new file mode 100644
+index 00000000..fb1f5298
+--- /dev/null
++++ b/src/components/__tests__/promo-master-workspace.test.tsx
+@@ -0,0 +1,77 @@
++// @vitest-environment jsdom
++import { act } from "react";
++import { createRoot, type Root } from "react-dom/client";
++import { afterEach, beforeEach, expect, it, vi } from "vitest";
++import type { PromoMasterReview } from "@/lib/promo-master-import";
++import { PROMO_MASTER_HEADERS } from "@/lib/promo-master-excel";
++
++const calls = vi.hoisted(() => ({ preview: vi.fn(), save: vi.fn(), review: vi.fn() }));
++vi.mock("@/app/(app)/crm/promo/impor-daftar/actions", () => ({
++  previewPromoMaster: calls.preview, simpanPromoMaster: calls.save, periksaPromoMaster: calls.review,
++}));
++import { PromoMasterWorkspace } from "@/app/(app)/crm/promo/impor-daftar/PromoMasterWorkspace";
++
++let host: HTMLDivElement;
++let root: Root;
++const button = (label: string) => [...host.querySelectorAll("button")].find(b => b.textContent === label)!;
++const result = (error: string | null = null): PromoMasterReview => ({
++  valid: !error, error: null, plans: [],
++  rows: [{ line: 2, ...Object.fromEntries(PROMO_MASTER_HEADERS.map(h => [h, ""])),
++    "Nama Promo": "Promo example", "Kode SKU": "SKU-001", item_name: "Example item", error,
++  } as PromoMasterReview["rows"][number]],
++  diffs: error ? [] : [{ name: "Promo example", promoId: "existing-promo", status: "ubah",
++    itemsAdded: ["SKU-001"], itemsRemoved: ["SKU-002"],
++    changes: [{ label: "Nilai", dari: "5", ke: "10" }],
++  }],
++});
++
++beforeEach(async () => {
++  vi.clearAllMocks();
++  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
++  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
++  await act(async () => { root.render(<PromoMasterWorkspace />); });
++});
++afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
++
++async function upload(review: PromoMasterReview) {
++  calls.preview.mockResolvedValue(review);
++  const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
++  Object.defineProperty(input, "files", { configurable: true, value: [new File(["fixture"], "promo.xlsx")] });
++  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
++  await act(async () => button("Baca dan preview").click());
++}
++
++it("links the template and prevents saving red validation rows", async () => {
++  expect(host.querySelector('a[href="/crm/promo/impor-daftar/template"]')).not.toBeNull();
++  await upload(result("SKU tidak ada di master"));
++  expect(host.textContent).toContain("SKU tidak ada di master");
++  const row = host.querySelector("tbody tr") as HTMLTableRowElement;
++  expect(row.style.background).toBe("rgb(254, 242, 242)");
++  expect(button("Simpan seluruh daftar").disabled).toBe(true);
++  await act(async () => button("Simpan seluruh daftar").click());
++  expect(calls.save).not.toHaveBeenCalled();
++});
++
++it("shows same-name update diff and saves the reviewed rows once", async () => {
++  const reviewed = result();
++  await upload(reviewed);
++  expect(host.textContent).toContain("DIPERBARUI");
++  expect(host.textContent).toContain("Nilai: 5 → 10");
++  expect(host.textContent).toContain("Barang ditambah: SKU-001");
++  expect(host.textContent).toContain("Barang dikeluarkan: SKU-002");
++  calls.save.mockResolvedValue({ ok: true, message: "0 promo baru dan 1 promo diperbarui." });
++  await act(async () => button("Simpan seluruh daftar").click());
++  expect(calls.save).toHaveBeenCalledExactlyOnceWith(reviewed.rows);
++  expect(host.textContent).toContain("0 promo baru dan 1 promo diperbarui.");
++  expect(button("Simpan seluruh daftar").disabled).toBe(true);
++});
++
++it("clears the old valid preview when another file is selected", async () => {
++  await upload(result());
++  const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
++  Object.defineProperty(input, "files", { configurable: true, value: [new File(["new"], "other.xlsx")] });
++  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
++  expect(host.textContent).not.toContain("DIPERBARUI");
++  expect(host.textContent).not.toContain("Simpan seluruh daftar");
++  expect(calls.save).not.toHaveBeenCalled();
++});
+diff --git a/src/components/__tests__/split-payment-reports.test.tsx b/src/components/__tests__/split-payment-reports.test.tsx
+index 0f1c5a87..59044aa7 100644
+--- a/src/components/__tests__/split-payment-reports.test.tsx
++++ b/src/components/__tests__/split-payment-reports.test.tsx
+@@ -44,6 +44,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { g
+       then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve) };
+     return q;
+   },
++  rpc: async () => ({ data: [], error: null }),
+ }) }));
+ 
+ import ShiftPage from "@/app/(app)/pos/shift/page";
+diff --git a/src/lib/__tests__/clinic-payment-action.test.ts b/src/lib/__tests__/clinic-payment-action.test.ts
+index 14df8b60..9857bf5b 100644
+--- a/src/lib/__tests__/clinic-payment-action.test.ts
++++ b/src/lib/__tests__/clinic-payment-action.test.ts
+@@ -23,7 +23,7 @@ vi.mock("@/lib/jurnal-guard",()=>({cekPeriode:async()=>state.periodeError?"Gagal
+ vi.mock("@/lib/tanggal",async()=>await import("../tanggal"));
+ vi.mock("@/lib/pajak",()=>({getPajakSettings:async()=>{if(state.pajakThrow)throw Error("Pajak read failed");return {};},tambahPpn:(dpp:number)=>({tax:0,total:dpp})}));
+ vi.mock("@/lib/rombongan-server",()=>({bacaRombongan:vi.fn()}));
+-vi.mock("@/lib/tagihan-klinik",()=>({nilaiBaris:(r:{qty:number;harga:number})=>r.qty*r.harga,hargaNetto:(r:{harga:number})=>r.harga,hitungPotonganKlinik:async()=>({total:0,tolakVoucher:null}),barisTagihanVisit:vi.fn(),bagiPotongan:vi.fn()}));
++vi.mock("@/lib/tagihan-klinik",()=>({nilaiBaris:(r:{qty:number;harga:number})=>r.qty*r.harga,hargaNetto:(r:{harga:number})=>r.harga,hitungPotonganKlinik:async()=>({promo:0,voucher:0,golongan:0,total:0,tolakVoucher:null,rincianPromo:[]}),barisTagihanVisit:vi.fn(),bagiPotongan:vi.fn()}));
+ vi.mock("@/lib/voucher",()=>({normalizeKode:()=>"",pesanVoucherDitolak:vi.fn(),potonganVoucher:vi.fn()}));
+ vi.mock("@/lib/klinik-posting",async()=>await import("../klinik-posting"));
+ vi.mock("@/lib/poin-klinik",async()=>await import("../poin-klinik"));
+diff --git a/src/lib/__tests__/klinik-promo-atribusi.test.ts b/src/lib/__tests__/klinik-promo-atribusi.test.ts
+new file mode 100644
+index 00000000..ab49e7e1
+--- /dev/null
++++ b/src/lib/__tests__/klinik-promo-atribusi.test.ts
+@@ -0,0 +1,118 @@
++import { describe, expect, it, vi } from "vitest";
++
++// Promo klinik boleh mengenai jasa grooming, tindakan, dan obat — dibatasi
++// daftar barang promo (promo_items). Yang diuji di sini: promo yang benar kena
++// baris yang benar, DAN rupiahnya menempel pada baris invoice yang benar
++// (atribusi per program), termasuk saat satu SKU jasa muncul dua kali.
++
++const promos = vi.hoisted(() => ({ list: [] as unknown[] }));
++vi.mock("../promo-hitung", async original => ({
++  ...await original<typeof import("../promo-hitung")>(),
++  loadPromoAktif: async () => promos.list,
++}));
++
++import { hitungPotonganKlinik } from "../tagihan-klinik";
++import { atribusiPotonganKlinik } from "../clinic-promo-attribution";
++
++const promo = (over: Record<string, unknown>) => ({
++  id: "promo", name: "Promo", itemIds: [], minQty: null, maxQty: null, kelipatan: false,
++  autoApply: true, discountType: "percent", discountValue: 10, discountMode: "per_unit", minSubtotal: null,
++  ...over,
++});
++
++const db = {} as never;
++
++describe("potongan promo klinik per baris", () => {
++  it("mengenai tindakan dan obat yang ditarget saja, dengan rupiah per baris asal", async () => {
++    promos.list = [
++      promo({ id: "promo-tindakan", name: "DISKON TINDAKAN", itemIds: ["tindakan-1"], discountType: "percent", discountValue: 10 }),
++      promo({ id: "promo-obat", name: "DISKON OBAT", itemIds: ["obat-1"], discountType: "nominal", discountValue: 500 }),
++    ];
++    const hasil = await hitungPotonganKlinik(db, {
++      branchId: "branch", customerId: null,
++      rows: [
++        { item_id: "tindakan-1", qty: 1, harga: 100000, jenis: "jasa", satuan: "jasa" },
++        // Baris kosong harus dilewati TANPA menggeser nomor baris berikutnya.
++        { item_id: "obat-3", qty: 0, harga: 1000, jenis: "obat", satuan: "box" },
++        { item_id: "tindakan-1", qty: 1, harga: 100000, jenis: "jasa", satuan: "jasa" },
++        { item_id: "obat-1", qty: 2, harga: 10000, jenis: "obat", satuan: "box" },
++        { item_id: "obat-2", qty: 1, harga: 5000, jenis: "obat", satuan: "box" },
++      ],
++    });
++    expect(hasil.promo).toBe(21000);
++    expect(hasil.rincianPromo).toEqual([
++      { lineIndex: 0, promoId: "promo-tindakan", promoName: "DISKON TINDAKAN", potongan: 10000 },
++      { lineIndex: 2, promoId: "promo-tindakan", promoName: "DISKON TINDAKAN", potongan: 10000 },
++      { lineIndex: 3, promoId: "promo-obat", promoName: "DISKON OBAT", potongan: 1000 },
++    ]);
++  });
++
++  it("promo bertarget yang tidak cocok tidak berubah jadi promo semua barang", async () => {
++    promos.list = [promo({ id: "promo-lain", name: "DISKON LAIN", itemIds: ["tindakan-9"] })];
++    const hasil = await hitungPotonganKlinik(db, {
++      branchId: "branch", customerId: null,
++      rows: [{ item_id: "obat-1", qty: 1, harga: 10000, jenis: "obat", satuan: "box" }],
++    });
++    expect(hasil.promo).toBe(0);
++    expect(hasil.rincianPromo).toEqual([]);
++  });
++
++  it("tanpa penggabungan jasa, tiap baris dihitung sendiri-sendiri", async () => {
++    promos.list = [promo({ id: "promo-tindakan", name: "DISKON TINDAKAN", itemIds: ["tindakan-1"], minQty: 2 })];
++    const rows = [
++      { item_id: "tindakan-1", qty: 1, harga: 100000, jenis: "jasa", satuan: "jasa" },
++      { item_id: "tindakan-1", qty: 1, harga: 100000, jenis: "jasa", satuan: "jasa" },
++    ];
++    const digabung = await hitungPotonganKlinik(db, { branchId: "branch", customerId: null, rows });
++    const terpisah = await hitungPotonganKlinik(db, { branchId: "branch", customerId: null, rows, groupServices: false });
++    // Syarat min. 2 terpenuhi hanya kalau kedua baris dihitung sebagai satu paket harga.
++    expect(digabung.promo).toBe(20000);
++    expect(terpisah.promo).toBe(0);
++    expect(terpisah.rincianPromo).toEqual([]);
++  });
++});
++
++describe("atribusi potongan ke kolom invoice", () => {
++  const rincianPromo = [
++    { lineIndex: 0, promoId: "promo-a", promoName: "A", potongan: 10000 },
++    { lineIndex: 2, promoId: "promo-b", promoName: "B", potongan: 1000 },
++  ];
++
++  it("menyimpan promo per baris, voucher dan golongan terpisah saat muat di dalam diskon", () => {
++    const hasil = atribusiPotonganKlinik({ rincianPromo, voucher: 2000, golongan: 1000, discount: 20000 });
++    expect([...hasil.baris]).toEqual([
++      [0, { promo_id: "promo-a", promo_discount: 10000 }],
++      [2, { promo_id: "promo-b", promo_discount: 1000 }],
++    ]);
++    expect(hasil.voucher_discount).toBe(2000);
++    expect(hasil.diskon_kategori).toBe(1000);
++  });
++
++  it("mengecilkan seluruh atribusi bila potongan sempat dibatasi nilai tagihan", () => {
++    const hasil = atribusiPotonganKlinik({ rincianPromo, voucher: 2000, golongan: 1000, discount: 7000 });
++    const jumlah = [...hasil.baris.values()].reduce((a, b) => a + b.promo_discount, 0)
++      + hasil.voucher_discount + hasil.diskon_kategori;
++    expect(jumlah).toBeLessThanOrEqual(7000);
++    // 14.000 atribusi dibagi rata jadi separuhnya supaya muat di diskon 7.000.
++    expect(hasil.baris.get(0)!.promo_discount).toBe(5000);
++    expect(hasil.baris.get(2)!.promo_discount).toBe(500);
++    expect(hasil.voucher_discount).toBe(1000);
++    expect(hasil.diskon_kategori).toBe(500);
++    expect(jumlah).toBe(7000);
++  });
++
++  it("tidak mencatat apa pun saat seluruh potongan nol", () => {
++    const hasil = atribusiPotonganKlinik({ rincianPromo: [], voucher: 0, golongan: 0, discount: 0 });
++    expect(hasil.baris.size).toBe(0);
++    expect(hasil.voucher_discount).toBe(0);
++    expect(hasil.diskon_kategori).toBe(0);
++  });
++
++  it("melewati baris yang promonya dikalahkan potongan lain", () => {
++    const hasil = atribusiPotonganKlinik({
++      rincianPromo: [{ lineIndex: 1, promoId: "promo-a", promoName: "A", potongan: 0 }],
++      voucher: 0, golongan: 0, discount: 5000,
++    });
++    expect(hasil.baris.size).toBe(0);
++  });
++});
+diff --git a/src/lib/__tests__/klinik-promo-posting.test.ts b/src/lib/__tests__/klinik-promo-posting.test.ts
+new file mode 100644
+index 00000000..f203f0db
+--- /dev/null
++++ b/src/lib/__tests__/klinik-promo-posting.test.ts
+@@ -0,0 +1,104 @@
++import { beforeEach, expect, it, vi } from "vitest";
++
++// Cermin TypeScript dari jangkar SQL pada migrasi 20261031170000: pembayaran
++// klinik harus MENGIRIM atribusi per program (promo per baris, voucher dan
++// diskon golongan di kepala invoice), dan koreksi tidak boleh mengirimnya —
++// database yang membawa atribusi lama supaya jejaknya tidak hilang (audit S-4).
++
++const state = vi.hoisted(() => ({ existing: false, calls: [] as { name: string; params: Record<string, unknown> }[] }));
++vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
++vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); } }));
++vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
++  auth: { getUser: async () => ({ data: { user: { id: "owner" } } }) },
++  from(table: string) {
++    const invoice = { id: "invoice", visit_id: "visit", invoice_no: "INV-1", request_key: "original",
++      subtotal: 100, discount: 0, tax: 0, total: 100, dp_amount: 0, paid_status: "Belum Lunas",
++      metode_bayar: "Tunai", voucher_code: null, correction_pending: false, service_pricing_version: 1, salesperson_id: null };
++    const q = {
++      select: () => q, eq: () => q, is: () => q, order: () => q, limit: () => q, update: () => q, insert: () => q,
++      maybeSingle: async () => ({ data: table === "medical_records" ? { id: "record" }
++        : table === "visits" ? { branch_id: "branch", customer_id: null, doctor_id: null, service_provider_id: null }
++        : table === "invoices" ? (state.existing ? invoice : state.calls.length ? { invoice_no: "INV-1" } : null) : null, error: null }),
++      then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve),
++    };
++    return q;
++  },
++  rpc: async (name: string, params: Record<string, unknown>) => {
++    state.calls.push({ name, params });
++    return { data: name.includes("post") ? "invoice" : null, error: null };
++  },
++}) }));
++vi.mock("@/lib/shift", () => ({ getOpenShift: async () => ({ id: "shift" }) }));
++vi.mock("@/lib/tindakan", () => ({ bolehBayar: () => true, kategoriBerisiko: () => [] }));
++vi.mock("@/lib/consent-server", () => ({ bacaAturanConsent: async () => [] }));
++vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
++vi.mock("@/lib/pajak", () => ({ getPajakSettings: async () => ({}), tambahPpn: (dpp: number) => ({ tax: 0, total: dpp }) }));
++vi.mock("@/lib/rombongan-server", () => ({ bacaRombongan: vi.fn() }));
++vi.mock("@/lib/customer-tier", () => ({ recomputeCustomerTier: vi.fn() }));
++vi.mock("@/lib/wa-engine", () => ({ kirimStrukWa: vi.fn() }));
++vi.mock("@/lib/voucher", async original => ({ ...await original<typeof import("../voucher")>(), normalizeKode: () => "HEMAT" }));
++vi.mock("@/lib/tagihan-klinik", async original => ({
++  ...await original<typeof import("../tagihan-klinik")>(),
++  barisTagihanVisit: vi.fn(),
++  hitungPotonganKlinik: async () => ({
++    promo: 6000, voucher: 2000, golongan: 1000, total: 9000, tolakVoucher: null,
++    voucherCode: "HEMAT", campaignCode: "KAMPANYE1",
++    rincianPromo: [
++      { lineIndex: 0, promoId: "promo-tindakan", promoName: "DISKON TINDAKAN", potongan: 5000 },
++      { lineIndex: 1, promoId: "promo-obat", promoName: "DISKON OBAT", potongan: 1000 },
++    ],
++  }),
++}));
++import { bayarVisit } from "../../app/(app)/klinik/pembayaran/[visitId]/actions";
++
++const ITEMS = [
++  { deskripsi: "Grooming lengkap", qty: 1, harga: 100000, jenis: "jasa", item_id: "tindakan-1", satuan: "jasa" },
++  { deskripsi: "Obat kutu", qty: 1, harga: 20000, jenis: "obat", item_id: "obat-1", satuan: "box" },
++];
++
++function form(over: Record<string, string> = {}, items = ITEMS) {
++  const data = new FormData();
++  data.set("visitId", "visit");
++  data.set("requestKey", "request");
++  data.set("items", JSON.stringify(items));
++  data.set("edit_reason", "Koreksi");
++  Object.entries(over).forEach(([key, value]) => data.set(key, value));
++  return data;
++}
++
++beforeEach(() => { state.existing = false; state.calls = []; });
++
++it("mengirim promo per baris dan potongan program di kepala invoice", async () => {
++  await expect(bayarVisit(form())).resolves.toMatchObject({ saved: true });
++  const params = state.calls[0].params as { p_invoice: Record<string, unknown>; p_lines: Record<string, unknown>[] };
++  expect(state.calls[0].name).toBe("clinic_post_invoice");
++  expect(params.p_invoice).toMatchObject({
++    discount: 9000, voucher_discount: 2000, diskon_kategori: 1000,
++    voucher_code: "HEMAT", campaign_code: "KAMPANYE1",
++  });
++  expect(params.p_lines[0]).toMatchObject({ item_id: "tindakan-1", promo_id: "promo-tindakan", promo_discount: 5000 });
++  expect(params.p_lines[1]).toMatchObject({ item_id: "obat-1", promo_id: "promo-obat", promo_discount: 1000 });
++});
++
++it("tidak menempelkan promo pada baris yang tidak kena promo", async () => {
++  const items = [...ITEMS, { deskripsi: "Vitamin", qty: 1, harga: 5000, jenis: "obat", item_id: "obat-2", satuan: "box" }];
++  await expect(bayarVisit(form({}, items))).resolves.toMatchObject({ saved: true });
++  const params = state.calls[0].params as { p_lines: Record<string, unknown>[] };
++  expect(params.p_lines[2]).not.toHaveProperty("promo_id");
++  expect(params.p_lines[2]).not.toHaveProperty("promo_discount");
++});
++
++it("koreksi tidak mengirim atribusi: database mempertahankan jejak program lama", async () => {
++  state.existing = true;
++  const items = ITEMS.map((row, index) => ({ ...row, source_invoice_item_id: `line-${index}` }));
++  await expect(bayarVisit(form({ discount: "9000" }, items))).resolves.toMatchObject({ saved: true });
++  const call = state.calls[0];
++  expect(call.name).toBe("clinic_edit_invoice");
++  const params = call.params as { p_invoice: Record<string, unknown>; p_lines: Record<string, unknown>[] };
++  expect(params.p_invoice).not.toHaveProperty("voucher_discount");
++  expect(params.p_invoice).not.toHaveProperty("diskon_kategori");
++  for (const line of params.p_lines) {
++    expect(line).not.toHaveProperty("promo_id");
++    expect(line.source_invoice_item_id).toMatch(/^line-/);
++  }
++});
+diff --git a/src/lib/__tests__/promo-atribusi-migration.test.ts b/src/lib/__tests__/promo-atribusi-migration.test.ts
+new file mode 100644
+index 00000000..4330c4af
+--- /dev/null
++++ b/src/lib/__tests__/promo-atribusi-migration.test.ts
+@@ -0,0 +1,115 @@
++import { readFileSync, readdirSync } from "node:fs";
++import { describe, expect, it } from "vitest";
++
++// Atribusi promo klinik + impor daftar promo hidup di satu migrasi maju. Tanpa
++// database di CI, invariannya diperiksa dari teks migrasinya: jangkar eksak,
++// kolom yang ditulis, pengaman nilai, dan hak akses RPC impor.
++const NAMA = "20261104150000_promo_atribusi_klinik_dan_impor_daftar.sql";
++const SQL = readFileSync(`supabase/migrations/${NAMA}`, "utf8");
++const potong = (awal: string, akhir: string) => SQL.slice(SQL.indexOf(awal), SQL.indexOf(akhir));
++
++describe("urutan dan gaya migrasi", () => {
++  it("dipasang setelah kunci tulis master promo dan memakai jangkar eksak", () => {
++    const semua = readdirSync("supabase/migrations").filter(name => name.endsWith(".sql")).sort();
++    expect(semua).toContain(NAMA);
++    expect(NAMA > "20261031090000_promo_voucher_manager_only_rls.sql").toBe(true);
++    expect(SQL).toContain("pg_get_functiondef");
++    expect(SQL).toContain("jangkar harus muncul tepat sekali");
++    // Semua tambalan satu fungsi dikumpulkan dulu, lalu dikompilasi sekali.
++    expect(SQL).toContain("pending := pending || jsonb_build_object(p.sig, replace(definition, p.old_text, p.new_text));");
++    expect(SQL).toContain("do $check$");
++  });
++
++  it("menambal ketiga jalur tulis baris tagihan klinik", () => {
++    for (const sig of [
++      "public.clinic_post_invoice(uuid,text,jsonb,jsonb)",
++      "public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)",
++      "public.clinic_void_reissue_invoice_core(uuid,text,text)",
++    ]) {
++      expect(SQL).toContain(`('${sig}',`);
++    }
++  });
++});
++
++describe("kolom atribusi", () => {
++  const kolom = potong("alter table public.invoice_items", "-- 2. Posting, koreksi");
++  it("nullable dengan sengaja supaya tagihan lama terbaca sebagai tidak tercatat", () => {
++    expect(kolom).toContain("add column if not exists promo_id uuid references public.promos(id) on delete set null");
++    expect(kolom).toContain("add column if not exists promo_discount numeric(15,2)");
++    expect(kolom).toContain("add column if not exists voucher_discount numeric(15,2)");
++    expect(kolom).toContain("add column if not exists diskon_kategori numeric(15,2)");
++    expect(kolom).not.toContain("not null default 0");
++  });
++  it("menolak potongan negatif dan potongan tanpa promo", () => {
++    expect(kolom).toContain("check (promo_discount is null or (promo_discount >= 0 and (promo_discount = 0 or promo_id is not null)))");
++    expect(kolom).toContain("voucher_discount is null or voucher_discount >= 0");
++    expect(kolom).toContain("diskon_kategori is null or diskon_kategori >= 0");
++  });
++});
++
++describe("posting tagihan klinik", () => {
++  it("menyimpan promo per baris dan potongan program di kepala invoice", () => {
++    expect(SQL).toContain("promo_id, promo_discount");
++    expect(SQL).toContain("voucher_discount, diskon_kategori");
++    expect(SQL).toContain("nullif(p_invoice->>''voucher_discount'','''')::numeric(15,2)");
++    expect(SQL).toContain("nullif(p_invoice->>''diskon_kategori'','''')::numeric(15,2)");
++  });
++  it("menolak potongan promo yang melebihi barisnya atau tanpa promo yang ada", () => {
++    expect(SQL).toContain("LINE_INVALID: potongan promo baris tidak valid");
++    expect(SQL).toContain("v_promo_discount > v_line_amount");
++    expect(SQL).toContain("select 1 from public.promos p where p.id = v_promo_id");
++  });
++  it("menjaga jumlah atribusi tidak melebihi diskon invoice", () => {
++    expect(SQL).toContain("INVOICE_INVALID: rincian potongan melebihi diskon invoice");
++    expect(SQL).toContain("v_attributed > v_discount");
++  });
++});
++
++describe("koreksi dan terbit ulang mempertahankan atribusi (S-4)", () => {
++  it("koreksi membawa promo baris asal dan membatasinya pada nilai baris baru", () => {
++    expect(SQL).toContain("S-4: koreksi mempertahankan atribusi program dari baris asalnya.");
++    expect(SQL).toContain("jsonb_object_agg(id::text,jsonb_build_object(''promo_id'',promo_id,''promo_discount'',promo_discount))");
++    expect(SQL).toContain("nullif(v_promo_old->nullif(v_line->>''source_invoice_item_id'','''')->>''promo_id'','''')::uuid");
++    // NULL pada baris lama tetap NULL: tagihan lama tidak diubah jadi "nol rupiah".
++    expect(SQL).toContain("->>''promo_discount'' is null then null");
++    expect(SQL).toContain("v_promo_scale := v_discount/v_attributed");
++  });
++  it("potongan program ikut dikecilkan bersama barisnya, bukan dihapus", () => {
++    expect(SQL).toContain("voucher_discount=case when voucher_discount is null then null else round(voucher_discount*v_promo_scale,2) end");
++    expect(SQL).toContain("diskon_kategori=case when diskon_kategori is null then null else round(diskon_kategori*v_promo_scale,2) end");
++  });
++  it("terbit ulang menyalin atribusi baris dan kepala invoice", () => {
++    expect(SQL).toContain("v_invoice.voucher_discount,v_invoice.diskon_kategori)");
++    expect(SQL).toContain("promo_id,promo_discount from public.invoice_items where invoice_id=p_invoice_id;");
++  });
++});
++
++describe("RPC impor daftar promo", () => {
++  const rpc = potong("create or replace function public.import_promo_master", "-- 4. Pemeriksaan akhir");
++  it("hanya untuk owner/manajer aktif dan tidak dapat dipanggil anon", () => {
++    expect(rpc).toContain("perform public.assert_promo_manager();");
++    expect(rpc).toContain("security definer set search_path = ''");
++    expect(SQL).toContain("revoke all on function public.import_promo_master(jsonb) from public, anon, service_role;");
++    expect(SQL).toContain("grant execute on function public.import_promo_master(jsonb) to authenticated;");
++  });
++  it("mengubah JSON null cabang menjadi array kosong sebelum ekspansi", () => {
++    // Payload aplikasi memakai null untuk semua cabang. COALESCE saja tidak
++    // mengubah JSON null menjadi SQL NULL; jsonb_array_elements_text menolak scalar.
++    expect(rpc).toContain("coalesce(nullif(v_entry -> 'branch_ids', 'null'::jsonb), '[]'::jsonb)");
++  });
++  it("memperbarui promo bernama sama beserta daftar barangnya, bukan menggandakan", () => {
++    expect(rpc).toContain("select * into v_existing from public.promos p where lower(btrim(p.name)) = lower(v_name) for update;");
++    expect(rpc).toContain("delete from public.promo_items pi where pi.promo_id = v_existing.id and not (pi.item_id = any(v_item_ids));");
++    expect(rpc).toContain("perform pg_advisory_xact_lock(hashtextextended('vetos:promo-master:' || lower(v_name), 0));");
++  });
++  it("menolak isian yang tidak masuk akal dan target yang dikunci impor per-SKU", () => {
++    expect(rpc).toContain("Impor daftar promo harus berisi 1 sampai 50 promo");
++    expect(rpc).toContain("Maksimal 500 baris barang per berkas");
++    expect(rpc).toContain("v_entry ->> 'discount_type' = 'percent' and v_discount_value > 100");
++    expect(rpc).toContain("Ada barang promo % yang tidak dikenal atau nonaktif");
++    expect(rpc).toContain("Cabang promo % tidak tersedia atau tidak dapat diakses");
++    expect(rpc).toContain("from public.promo_import_targets t where t.promo_id = v_existing.id");
++    expect(rpc).toContain("memakai perhitungan total per paket");
++    expect(rpc).toContain("Nama promo muncul dua kali dalam satu berkas");
++  });
++});
+diff --git a/src/lib/__tests__/promo-master-actions.test.ts b/src/lib/__tests__/promo-master-actions.test.ts
+new file mode 100644
+index 00000000..c20c5b74
+--- /dev/null
++++ b/src/lib/__tests__/promo-master-actions.test.ts
+@@ -0,0 +1,142 @@
++import ExcelJS from "exceljs";
++import { beforeEach, expect, it, vi } from "vitest";
++import { PROMO_MASTER_HEADERS, PROMO_MASTER_SHEET, type PromoMasterExcelRow } from "../promo-master-excel";
++
++// Unggah daftar promo mengubah master harga: hanya OWNER/ADMIN aktif yang boleh,
++// dan yang disimpan selalu hasil pemeriksaan ULANG di server — bukan rencana
++// yang dikirim layar, yang bisa saja sudah basi.
++
++const state = vi.hoisted(() => ({
++  profile: { role: "OWNER", is_active: true } as { role: string; is_active: boolean } | null,
++  user: { id: "owner" } as { id: string } | null,
++  calls: [] as { name: string; params: Record<string, unknown> }[],
++}));
++
++const ITEMS = [
++  { id: "item-1", code: "SKU-1", name: "Grooming Lengkap", is_active: true },
++  { id: "item-2", code: "SKU-2", name: "Obat Kutu", is_active: true },
++];
++const BRANCHES = [{ id: "branch-bdg", code: "BDG", name: "Bandung", is_active: true }];
++
++vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
++vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
++  auth: { getUser: async () => ({ data: { user: state.user } }) },
++  from(table: string) {
++    let kolom = "";
++    let nilai: string[] = [];
++    const rows = () => {
++      if (table === "items") return kolom === "code" ? ITEMS.filter(i => nilai.includes(i.code)) : ITEMS.filter(i => nilai.includes(i.id));
++      if (table === "branches") return BRANCHES;
++      return [];                                   // promos, promo_items, promo_import_targets
++    };
++    const q = {
++      select: () => q, eq: () => q, order: () => q, range: () => q,
++      in: (col: string, values: string[]) => { kolom = col; nilai = values; return q; },
++      maybeSingle: async () => ({ data: table === "profiles" ? state.profile : null, error: null }),
++      then: (resolve: (value: unknown) => unknown) => {
++        const data = rows();
++        return Promise.resolve({ data, count: data.length, error: null }).then(resolve);
++      },
++    };
++    return q;
++  },
++  rpc: async (name: string, params: Record<string, unknown>) => {
++    state.calls.push({ name, params });
++    return { data: { created: 1, updated: 0 }, error: null };
++  },
++}) }));
++import { previewPromoMaster, periksaPromoMaster, simpanPromoMaster } from "../../app/(app)/crm/promo/impor-daftar/actions";
++
++const ISI: Record<string, string> = {
++  "Nama Promo": "PROMO NOVEMBER", "Kode SKU": "SKU-1", "Jenis Diskon": "Persen", "Nilai": "10",
++  "Potong Otomatis": "Ya", "Cabang": "BDG", "Tanggal Mulai": "2026-11-01", "Tanggal Berakhir": "2026-11-30",
++  "Min Qty": "", "Maks Qty": "", "Kelipatan": "Tidak", "Min Belanja": "", "Teks Saran": "Diskon awal bulan",
++};
++const baris = (over: Record<string, string> = {}, line = 2) =>
++  ({ line, ...ISI, ...over }) as unknown as PromoMasterExcelRow;
++
++async function unggahan(rows: Record<string, string>[]): Promise<FormData> {
++  const book = new ExcelJS.Workbook();
++  const sheet = book.addWorksheet(PROMO_MASTER_SHEET);
++  sheet.addRow([...PROMO_MASTER_HEADERS]);
++  for (const row of rows) sheet.addRow(PROMO_MASTER_HEADERS.map(header => row[header] ?? ""));
++  const form = new FormData();
++  form.set("file", new File([await book.xlsx.writeBuffer() as ArrayBuffer], "daftar.xlsx"));
++  return form;
++}
++
++beforeEach(() => { state.profile = { role: "OWNER", is_active: true }; state.user = { id: "owner" }; state.calls = []; });
++
++it("membaca berkas unggahan dan menyiapkan rencananya", async () => {
++  const hasil = await previewPromoMaster(await unggahan([ISI, { ...ISI, "Kode SKU": "SKU-2" }]));
++  expect(hasil.error).toBeNull();
++  expect(hasil.valid).toBe(true);
++  expect(hasil.plans[0].item_ids).toEqual(["item-1", "item-2"]);
++  expect(hasil.diffs[0].status).toBe("baru");
++});
++
++it("menolak berkas yang bukan .xlsx tanpa menyentuh master", async () => {
++  const form = new FormData();
++  form.set("file", new File(["bukan excel"], "daftar.csv"));
++  const hasil = await previewPromoMaster(form);
++  expect(hasil.error).toContain("Pilih file Excel .xlsx");
++  expect(state.calls).toEqual([]);
++});
++
++it.each([
++  ["staff", { role: "STAFF", is_active: true }],
++  ["doctor", { role: "DOCTOR", is_active: true }],
++  ["finance", { role: "FINANCE", is_active: true }],
++  ["admin nonaktif", { role: "ADMIN", is_active: false }],
++])("menolak unggahan dari %s", async (_label, profile) => {
++  state.profile = profile;
++  expect((await periksaPromoMaster([baris()])).error).toContain("Hanya Owner/Admin aktif");
++  const simpan = await simpanPromoMaster([baris()]);
++  expect(simpan).toMatchObject({ ok: false });
++  expect(simpan.message).toContain("Hanya Owner/Admin aktif");
++  expect(state.calls).toEqual([]);
++});
++
++it("menolak unggahan tanpa sesi", async () => {
++  state.user = null;
++  expect((await simpanPromoMaster([baris()])).message).toContain("Sesi berakhir");
++  expect(state.calls).toEqual([]);
++});
++
++it("menolak file lebih dari 1 MB sebelum membacanya ke memori", async () => {
++  const file = new File([new Uint8Array(1024 * 1024 + 1)], "besar.xlsx");
++  const form = new FormData();
++  form.set("file", file);
++  const read = vi.spyOn(file, "arrayBuffer");
++  const hasil = await previewPromoMaster(form);
++  expect(hasil.error).toContain("1 MB");
++  expect(read).not.toHaveBeenCalled();
++  expect(state.calls).toEqual([]);
++});
++
++it("menyimpan hasil pemeriksaan ulang server, bukan angka dari layar", async () => {
++  const hasil = await simpanPromoMaster([baris(), baris({ "Kode SKU": "SKU-2" }, 3)]);
++  expect(hasil).toMatchObject({ ok: true });
++  expect(hasil.message).toContain("1 promo baru");
++  expect(state.calls).toHaveLength(1);
++  expect(state.calls[0].name).toBe("import_promo_master");
++  expect(state.calls[0].params.p_promos).toEqual([{
++    name: "PROMO NOVEMBER", discount_type: "percent", discount_value: 10, auto_apply: true,
++    branch_ids: ["branch-bdg"], valid_from: "2026-11-01", valid_until: "2026-11-30",
++    min_qty: null, max_qty: null, kelipatan: false, min_subtotal: null,
++    suggest: "Diskon awal bulan", item_ids: ["item-1", "item-2"],
++  }]);
++});
++
++it("tidak menyimpan apa pun selama masih ada baris merah", async () => {
++  const hasil = await simpanPromoMaster([baris(), baris({ "Nama Promo": "PROMO RUSAK", "Kode SKU": "SKU-X" }, 3)]);
++  expect(hasil.ok).toBe(false);
++  expect(hasil.message).toContain("baris bertanda merah");
++  expect(state.calls).toEqual([]);
++});
++
++it("menolak jumlah baris di luar batas", async () => {
++  expect((await periksaPromoMaster([])).error).toContain("1 sampai 500 baris");
++  expect((await simpanPromoMaster(Array.from({ length: 501 }, (_, i) => baris({}, i + 2)))).message).toContain("1 sampai 500 baris");
++  expect(state.calls).toEqual([]);
++});
+diff --git a/src/lib/__tests__/promo-master-import.test.ts b/src/lib/__tests__/promo-master-import.test.ts
+new file mode 100644
+index 00000000..3f8d6fd9
+--- /dev/null
++++ b/src/lib/__tests__/promo-master-import.test.ts
+@@ -0,0 +1,227 @@
++import ExcelJS from "exceljs";
++import { describe, expect, it } from "vitest";
++import {
++  PROMO_MASTER_HEADERS, PROMO_MASTER_SHEET, makePromoMasterTemplate, readPromoMasterExcel,
++  type PromoMasterExcelRow,
++} from "../promo-master-excel";
++import {
++  parsePromoAngka, parsePromoTanggal, parsePromoYaTidak, reviewPromoMaster,
++  type PromoMasterExisting,
++} from "../promo-master-import";
++
++type Isi = Partial<Record<(typeof PROMO_MASTER_HEADERS)[number], string | number>>;
++
++const BARIS: Isi = {
++  "Nama Promo": "PROMO NOVEMBER", "Kode SKU": "SKU-1", "Jenis Diskon": "Persen", "Nilai": 10,
++  "Potong Otomatis": "Ya", "Cabang": "BDG", "Tanggal Mulai": "2026-11-01", "Tanggal Berakhir": "2026-11-30",
++  "Min Qty": "", "Maks Qty": "", "Kelipatan": "Tidak", "Min Belanja": "", "Teks Saran": "Diskon awal bulan",
++};
++
++async function berkas(rows: Isi[], ubah?: (sheet: ExcelJS.Worksheet) => void): Promise<Uint8Array> {
++  const book = new ExcelJS.Workbook();
++  const sheet = book.addWorksheet(PROMO_MASTER_SHEET);
++  sheet.addRow([...PROMO_MASTER_HEADERS]);
++  for (const row of rows) sheet.addRow(PROMO_MASTER_HEADERS.map(header => row[header] ?? ""));
++  ubah?.(sheet);
++  return new Uint8Array(await book.xlsx.writeBuffer());
++}
++
++const MASTER = {
++  items: [
++    { id: "item-1", code: "SKU-1", name: "Grooming Lengkap", is_active: true },
++    { id: "item-2", code: "SKU-2", name: "Obat Kutu", is_active: true },
++    { id: "item-3", code: "SKU-3", name: "Barang Arsip", is_active: false },
++  ],
++  branches: [
++    { id: "branch-bdg", code: "BDG", name: "Bandung", is_active: true },
++    { id: "branch-jkt", code: "JKT", name: "Jakarta", is_active: true },
++    { id: "branch-tutup", code: "TTP", name: "Tutup", is_active: false },
++  ],
++  existing: [] as PromoMasterExisting[],
++  itemLabels: { "item-1": "SKU-1 · Grooming Lengkap", "item-2": "SKU-2 · Obat Kutu", "item-9": "SKU-9 · Barang Lama" },
++};
++
++const baris = (over: Isi = {}, line = 2): PromoMasterExcelRow => ({
++  line, ...(Object.fromEntries(PROMO_MASTER_HEADERS.map(header =>
++    [header, String((over[header] ?? BARIS[header]) ?? "")])) as Record<(typeof PROMO_MASTER_HEADERS)[number], string>),
++});
++
++describe("format Excel daftar promo", () => {
++  it("berkas format berisi sheet isian, kolom lengkap, dan petunjuk pengisian", async () => {
++    const book = new ExcelJS.Workbook();
++    await book.xlsx.load(Buffer.from(await makePromoMasterTemplate([
++      { code: "BDG", name: "Bandung" }, { code: null, name: "Tanpa kode" },
++    ])) as never);
++    const sheet = book.getWorksheet(PROMO_MASTER_SHEET)!;
++    expect(PROMO_MASTER_HEADERS.map((_, i) => sheet.getRow(1).getCell(i + 1).value)).toEqual([...PROMO_MASTER_HEADERS]);
++    const petunjuk = book.getWorksheet("Petunjuk")!;
++    const teks = JSON.stringify(petunjuk.getSheetValues());
++    expect(teks).toContain("Nama yang sudah ada di VetOS akan DIPERBARUI");
++    expect(teks).toContain("BDG = Bandung");
++    expect(teks).not.toContain("Tanpa kode");
++  });
++
++  it("membaca baris apa adanya walau urutan kolomnya berbeda", async () => {
++    const book = new ExcelJS.Workbook();
++    const sheet = book.addWorksheet(PROMO_MASTER_SHEET);
++    const terbalik = [...PROMO_MASTER_HEADERS].reverse();
++    sheet.addRow(terbalik);
++    sheet.addRow(terbalik.map(header => BARIS[header] ?? ""));
++    const rows = await readPromoMasterExcel(new Uint8Array(await book.xlsx.writeBuffer()));
++    expect(rows).toHaveLength(1);
++    expect(rows[0]["Nama Promo"]).toBe("PROMO NOVEMBER");
++    expect(rows[0]["Kode SKU"]).toBe("SKU-1");
++  });
++
++  it("menolak rumus Excel, sheet salah, dan berkas tanpa isi", async () => {
++    await expect(readPromoMasterExcel(await berkas([BARIS], sheet => {
++      sheet.getCell("D2").value = { formula: "1+1", result: 2 } as never;
++    }))).rejects.toThrow(/Rumus tidak didukung/);
++    const book = new ExcelJS.Workbook();
++    book.addWorksheet("Lembar Lain").addRow(["x"]);
++    await expect(readPromoMasterExcel(new Uint8Array(await book.xlsx.writeBuffer())))
++      .rejects.toThrow(/Sheet Daftar Promo tidak ditemukan/);
++    await expect(readPromoMasterExcel(await berkas([]))).rejects.toThrow(/belum berisi satu baris pun/);
++  });
++
++  it("angka dan tanggal gaya Indonesia tetap terbaca", () => {
++    expect(parsePromoAngka("1.500.000")).toBe(1500000);
++    expect(parsePromoAngka("12,5")).toBe(12.5);
++    expect(parsePromoAngka("Rp 10.000")).toBe(10000);
++    expect(parsePromoAngka("12,345")).toBeNaN();
++    expect(parsePromoTanggal("01/11/2026")).toBe("2026-11-01");
++    expect(parsePromoTanggal("2026-02-30")).toBe("");
++    expect(parsePromoYaTidak("YA")).toBe(true);
++    expect(parsePromoYaTidak("tidak")).toBe(false);
++    expect(parsePromoYaTidak("mungkin")).toBeNull();
++  });
++});
++
++describe("pemeriksaan isi berkas", () => {
++  it("menggabungkan baris bernama sama jadi satu promo berisi banyak barang", () => {
++    const hasil = reviewPromoMaster([
++      baris({}, 2), baris({ "Kode SKU": "SKU-2" }, 3),
++    ], MASTER);
++    expect(hasil.valid).toBe(true);
++    expect(hasil.plans).toHaveLength(1);
++    expect(hasil.plans[0]).toMatchObject({
++      name: "PROMO NOVEMBER", discount_type: "percent", discount_value: 10, auto_apply: true,
++      branch_ids: ["branch-bdg"], valid_from: "2026-11-01", valid_until: "2026-11-30",
++      kelipatan: false, suggest: "Diskon awal bulan",
++    });
++    expect(hasil.plans[0].item_ids).toEqual(["item-1", "item-2"]);
++    expect(hasil.diffs[0]).toMatchObject({ status: "baru", promoId: null });
++  });
++
++  it("satu berkas boleh memuat beberapa promo sekaligus", () => {
++    const hasil = reviewPromoMaster([
++      baris({}, 2),
++      baris({ "Nama Promo": "PROMO OBAT", "Kode SKU": "SKU-2", "Jenis Diskon": "Nominal", Nilai: 2000, Cabang: "BDG,JKT" }, 3),
++    ], MASTER);
++    expect(hasil.valid).toBe(true);
++    expect(hasil.plans.map(plan => plan.name)).toEqual(["PROMO NOVEMBER", "PROMO OBAT"]);
++    expect(hasil.plans[1]).toMatchObject({ discount_type: "nominal", discount_value: 2000 });
++    expect(hasil.plans[1].branch_ids).toEqual(["branch-bdg", "branch-jkt"]);
++  });
++
++  it("kosongnya kolom cabang berarti semua cabang", () => {
++    const hasil = reviewPromoMaster([baris({ Cabang: "" })], MASTER);
++    expect(hasil.valid).toBe(true);
++    expect(hasil.plans[0].branch_ids).toBeNull();
++  });
++
++  it.each([
++    ["SKU tidak dikenal", { "Kode SKU": "SKU-X" }, "SKU tidak ada di master"],
++    ["SKU nonaktif", { "Kode SKU": "SKU-3" }, "SKU nonaktif"],
++    ["persen di atas 100", { Nilai: 120 }, "Diskon Persen tidak boleh lebih dari 100"],
++    ["nilai nol", { Nilai: 0 }, "Nilai harus angka lebih dari 0"],
++    ["cabang tidak dikenal", { Cabang: "XXX" }, "Kode cabang tidak dikenal"],
++    ["cabang nonaktif", { Cabang: "TTP" }, "Kode cabang tidak dikenal"],
++    ["tanggal terbalik", { "Tanggal Berakhir": "2026-10-01" }, "Tanggal Berakhir mendahului"],
++    ["tanggal kosong", { "Tanggal Mulai": "" }, "wajib format YYYY-MM-DD"],
++    ["maks qty di bawah min", { "Min Qty": 3, "Maks Qty": 2 }, "Maks Qty tidak boleh lebih kecil"],
++    ["kelipatan tanpa min qty", { Kelipatan: "Ya" }, "Kelipatan Ya memerlukan Min Qty"],
++    ["jenis diskon salah", { "Jenis Diskon": "Potongan" }, "Jenis Diskon harus Persen atau Nominal"],
++  ])("menandai merah: %s", (_label, over, pesan) => {
++    const hasil = reviewPromoMaster([baris(over)], MASTER);
++    expect(hasil.valid).toBe(false);
++    expect(hasil.plans).toHaveLength(0);
++    expect(hasil.rows[0].error).toContain(pesan);
++  });
++
++  it("menolak nilai promo yang berbeda antar baris satu promo", () => {
++    const hasil = reviewPromoMaster([baris({}, 2), baris({ "Kode SKU": "SKU-2", Nilai: 20 }, 3)], MASTER);
++    expect(hasil.valid).toBe(false);
++    expect(hasil.rows[1].error).toContain("Kolom Nilai berbeda dari baris pertama");
++  });
++
++  it("menolak SKU yang sama dua kali di promo yang sama", () => {
++    const hasil = reviewPromoMaster([baris({}, 2), baris({}, 3)], MASTER);
++    expect(hasil.valid).toBe(false);
++    expect(hasil.rows[1].error).toContain("sudah ada di promo yang sama");
++  });
++
++  it("tidak menyimpan apa pun selama masih ada baris merah", () => {
++    const hasil = reviewPromoMaster([baris({}, 2), baris({ "Nama Promo": "PROMO RUSAK", "Kode SKU": "SKU-X" }, 3)], MASTER);
++    expect(hasil.valid).toBe(false);
++    // Promo pertama tetap dirinci untuk diperlihatkan, tapi valid=false menahan simpan.
++    expect(hasil.plans.map(plan => plan.name)).toEqual(["PROMO NOVEMBER"]);
++  });
++});
++
++describe("preview perubahan promo lama", () => {
++  const lama: PromoMasterExisting = {
++    id: "promo-1", name: "Promo November", promo_type: "diskon_produk",
++    discount_type: "percent", discount_value: 5, auto_apply: true, branch_ids: ["branch-jkt"],
++    valid_from: "2026-11-01", valid_until: "2026-11-30", min_qty: null, max_qty: null,
++    kelipatan: false, min_subtotal: null, suggest: "Saran lama",
++    item_ids: ["item-1", "item-9"], locked: false,
++  };
++
++  it("memperlihatkan nilai yang berubah serta barang yang masuk dan keluar", () => {
++    const hasil = reviewPromoMaster([baris({}, 2), baris({ "Kode SKU": "SKU-2" }, 3)], { ...MASTER, existing: [lama] });
++    expect(hasil.valid).toBe(true);
++    expect(hasil.diffs[0]).toMatchObject({ status: "ubah", promoId: "promo-1" });
++    expect(hasil.diffs[0].changes).toEqual(expect.arrayContaining([
++      { label: "Nilai", dari: "5", ke: "10" },
++      { label: "Cabang", dari: "JKT", ke: "BDG" },
++      { label: "Teks Saran", dari: "Saran lama", ke: "Diskon awal bulan" },
++    ]));
++    expect(hasil.diffs[0].itemsAdded).toEqual(["SKU-2 · Obat Kutu"]);
++    expect(hasil.diffs[0].itemsRemoved).toEqual(["SKU-9 · Barang Lama"]);
++  });
++
++  it("berkas yang sama persis dengan master ditandai tidak ada perubahan", () => {
++    const sama: PromoMasterExisting = {
++      ...lama, discount_value: 10, branch_ids: ["branch-bdg"], suggest: "Diskon awal bulan", item_ids: ["item-1"],
++    };
++    const hasil = reviewPromoMaster([baris()], { ...MASTER, existing: [sama] });
++    expect(hasil.diffs[0]).toMatchObject({ status: "sama", itemsAdded: [], itemsRemoved: [], changes: [] });
++  });
++
++  it("menolak nama master yang ambigu sebelum menampilkan diff atau mengizinkan simpan", () => {
++    const hasil = reviewPromoMaster([baris()], {
++      ...MASTER, existing: [lama, { ...lama, id: "promo-2", name: " PROMO NOVEMBER " }],
++    });
++    expect(hasil.valid).toBe(false);
++    expect(hasil.plans).toEqual([]);
++    expect(hasil.diffs).toEqual([]);
++    expect(hasil.rows[0].error).toContain("lebih dari satu promo");
++  });
++
++  it("menolak promo total per paket di preview, sama seperti RPC simpan", () => {
++    const hasil = reviewPromoMaster([baris()], {
++      ...MASTER, existing: [{ ...lama, discount_mode: "package_total" }],
++    });
++    expect(hasil.valid).toBe(false);
++    expect(hasil.plans).toEqual([]);
++    expect(hasil.rows[0].error).toContain("total per paket");
++  });
++
++  it("menolak menimpa promo jenis lain dan promo hasil impor per-SKU", () => {
++    const bundling = reviewPromoMaster([baris()], { ...MASTER, existing: [{ ...lama, promo_type: "bundling" }] });
++    expect(bundling.rows[0].error).toContain("sudah dipakai promo jenis bundling");
++    const dikunci = reviewPromoMaster([baris()], { ...MASTER, existing: [{ ...lama, locked: true }] });
++    expect(dikunci.rows[0].error).toContain("targetnya dikunci");
++  });
++});
+diff --git a/src/lib/clinic-promo-attribution.ts b/src/lib/clinic-promo-attribution.ts
+new file mode 100644
+index 00000000..b682b4d3
+--- /dev/null
++++ b/src/lib/clinic-promo-attribution.ts
+@@ -0,0 +1,65 @@
++// Atribusi potongan tagihan klinik: siapa yang memberi potongan, bukan satu
++// angka `discount` gabungan. Sama seperti sale_items di kasir petshop (#312),
++// tapi klinik juga menyimpan voucher dan diskon golongan terpisah di kepala
++// invoice supaya laporan per program tidak perlu menebak.
++//
++// Murni, tanpa database: dipakai aksi pembayaran per kunjungan DAN pembayaran
++// rombongan, dan bisa diuji tanpa memposting apa pun.
++
++export type RincianPromoKlinik = {
++  /** Index baris pada daftar baris yang dikirim ke hitungPotonganKlinik. */
++  lineIndex: number;
++  promoId: string;
++  promoName: string;
++  potongan: number;
++};
++
++export type AtribusiBaris = { promo_id: string; promo_discount: number };
++
++export type AtribusiKlinik = {
++  /** Kunci = index baris; baris tanpa promo sengaja tidak masuk. */
++  baris: Map<number, AtribusiBaris>;
++  voucher_discount: number;
++  diskon_kategori: number;
++};
++
++const sen = (value: number) => Math.round((Number(value) || 0) * 100);
++
++/**
++ * Pecah potongan yang benar-benar diberikan (`discount`) menjadi bagian promo
++ * per baris, voucher, dan diskon golongan.
++ *
++ * `discount` adalah batas keras: di dalamnya masih ada diskon manual kasir dan
++ * poin, jadi jumlah atribusi tidak boleh melebihinya. Bila mesin potongan sempat
++ * dibatasi (promo + golongan + voucher lebih besar dari tagihan), seluruh
++ * atribusi dikecilkan proporsional — database memeriksa batas yang sama.
++ */
++export function atribusiPotonganKlinik(input: {
++  rincianPromo: readonly RincianPromoKlinik[];
++  voucher: number;
++  golongan: number;
++  discount: number;
++}): AtribusiKlinik {
++  const batas = Math.max(0, sen(input.discount));
++  const promo = input.rincianPromo.filter((row) => sen(row.potongan) > 0 && !!row.promoId);
++  const bagian = [
++    ...promo.map((row) => sen(row.potongan)),
++    Math.max(0, sen(input.voucher)),
++    Math.max(0, sen(input.golongan)),
++  ];
++  const jumlah = bagian.reduce((a, b) => a + b, 0);
++  // Pembagian memakai pembulatan ke bawah supaya totalnya tidak pernah melewati
++  // batas gara-gara pembulatan sen.
++  const skala = (nilai: number) => (jumlah <= batas ? nilai : Math.floor((nilai * batas) / jumlah));
++
++  const baris = new Map<number, AtribusiBaris>();
++  promo.forEach((row, index) => {
++    const nilai = skala(bagian[index]);
++    if (nilai > 0) baris.set(row.lineIndex, { promo_id: row.promoId, promo_discount: nilai / 100 });
++  });
++  return {
++    baris,
++    voucher_discount: skala(bagian[bagian.length - 2]) / 100,
++    diskon_kategori: skala(bagian[bagian.length - 1]) / 100,
++  };
++}
+diff --git a/src/lib/excel-sheet.ts b/src/lib/excel-sheet.ts
+new file mode 100644
+index 00000000..2683d538
+--- /dev/null
++++ b/src/lib/excel-sheet.ts
+@@ -0,0 +1,94 @@
++import ExcelJS from "exceljs";
++
++// Penolong Excel bersama untuk semua unggahan master (promo diskon, dan nanti
++// bundling). Satu tempat yang tahu cara membaca sel, menolak rumus, dan
++// membentuk berkas format — supaya dua layar impor tidak pelan-pelan jadi beda
++// aturan: yang satu menerima rumus, yang lain tidak.
++
++export type SheetRow = { line: number; values: Record<string, string> };
++
++export type TemplateColumn = {
++  header: string;
++  width?: number;
++  /** "@" memaksa teks (kode berawalan nol), "#,##0.00" untuk rupiah. */
++  numFmt?: string;
++};
++
++export const EXCEL_SHEET_MAX_BYTES = 1_000_000;
++
++function excelDate(value: Date): string {
++  return value.toISOString().slice(0, 10);
++}
++
++/** Satu sel jadi teks yang dapat divalidasi. Rumus ditolak: hasilnya tidak ikut terkirim. */
++export function cellText(cell: ExcelJS.Cell): string {
++  const value = cell.value;
++  if (value == null) return "";
++  if (value instanceof Date) return excelDate(value);
++  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
++  if (typeof value === "object") {
++    if ("formula" in value || "sharedFormula" in value) throw new Error(`Rumus tidak didukung di baris ${cell.row}, kolom ${cell.col}`);
++    if ("richText" in value) return value.richText.map(part => part.text).join("").trim();
++    if ("text" in value) return String(value.text).trim();
++    if ("error" in value) throw new Error(`Sel bernilai error di baris ${cell.row}, kolom ${cell.col}`);
++    throw new Error(`Isi sel tidak didukung di baris ${cell.row}, kolom ${cell.col}`);
++  }
++  return String(value).trim();
++}
++
++/**
++ * Baca satu sheet sesuai daftar kolom yang didokumentasikan. Kolom boleh berpindah
++ * urutan; kolom yang tidak dikenal diabaikan. Baris kosong dilewati.
++ */
++export async function readSheetRows(bytes: Uint8Array, opts: {
++  sheet: string; headers: readonly string[]; maxRows: number;
++  /** Kolom yang boleh tidak ada di berkas lama; dibaca sebagai string kosong. */
++  optional?: readonly string[];
++}): Promise<SheetRow[]> {
++  if (bytes.length === 0 || bytes.length > EXCEL_SHEET_MAX_BYTES) throw new Error("File Excel harus 1 byte sampai 1 MB");
++  const book = new ExcelJS.Workbook();
++  await book.xlsx.load(Buffer.from(bytes) as never);
++  const sheet = book.getWorksheet(opts.sheet);
++  if (!sheet) throw new Error(`Sheet ${opts.sheet} tidak ditemukan. Unduh dan isi format dari aplikasi.`);
++  const optional = new Set(opts.optional ?? []);
++  const header = sheet.getRow(1);
++  const cols = opts.headers.map(name => {
++    for (let col = 1; col <= sheet.columnCount; col++) {
++      if (cellText(header.getCell(col)).toLowerCase() === name.toLowerCase()) return col;
++    }
++    if (optional.has(name)) return 0;
++    throw new Error(`Kolom ${name} tidak ditemukan di sheet ${opts.sheet}`);
++  });
++  const rows: SheetRow[] = [];
++  sheet.eachRow({ includeEmpty: false }, row => {
++    if (row.number === 1) return;
++    const cells = cols.map(col => (col === 0 ? "" : cellText(row.getCell(col))));
++    if (cells.every(value => !value)) return;
++    rows.push({ line: row.number, values: Object.fromEntries(opts.headers.map((name, index) => [name, cells[index]])) });
++    if (rows.length > opts.maxRows) throw new Error(`Maksimal ${opts.maxRows} baris per file`);
++  });
++  if (!rows.length) throw new Error(`Sheet ${opts.sheet} belum berisi satu baris pun`);
++  return rows;
++}
++
++/** Berkas format: satu sheet isian berkolom tebal plus satu sheet petunjuk. */
++export async function makeTemplateWorkbook(opts: {
++  sheet: string; columns: TemplateColumn[]; guide: [string, string][];
++  /** Contoh isian; ditulis apa adanya di bawah header. */
++  sample?: (string | number)[][];
++}): Promise<Uint8Array> {
++  const book = new ExcelJS.Workbook();
++  book.creator = "VetOS";
++  const sheet = book.addWorksheet(opts.sheet, { views: [{ state: "frozen", ySplit: 1 }] });
++  sheet.columns = opts.columns.map(column => ({ header: column.header, width: column.width ?? 20 }));
++  sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
++  sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "17365D" } };
++  opts.columns.forEach((column, index) => { if (column.numFmt) sheet.getColumn(index + 1).numFmt = column.numFmt; });
++  (opts.sample ?? []).forEach(row => sheet.addRow(row));
++  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: opts.columns.length } };
++  const guide = book.addWorksheet("Petunjuk");
++  guide.columns = [{ width: 26 }, { width: 100 }];
++  guide.getRow(1).font = { bold: true };
++  opts.guide.forEach(([label, detail]) => guide.addRow([label, detail]));
++  return new Uint8Array(await book.xlsx.writeBuffer());
++}
+diff --git a/src/lib/klinik-posting.ts b/src/lib/klinik-posting.ts
+index 1397d060..9ac316cf 100644
+--- a/src/lib/klinik-posting.ts
++++ b/src/lib/klinik-posting.ts
+@@ -31,6 +31,9 @@ export type ClinicInvoiceLineInput = {
+   salesperson_id?: string;
+   package_item_id?: string;
+   package_qty?: number;
++  /** Promo yang memotong baris ini; hanya dikirim bila potongannya > 0. */
++  promo_id?: string;
++  promo_discount?: number;
+ };
+ 
+ export type ClinicInvoiceInput = {
+@@ -48,6 +51,10 @@ export type ClinicInvoiceInput = {
+   voucher_code: string | null;
+   /** Kode kampanye yang diketik (C05); batas pemakaiannya dijaga database. */
+   campaign_code?: string | null;
++  /** Bagian `discount` yang berasal dari voucher; dipisah supaya laporan tidak menebak. */
++  voucher_discount?: number;
++  /** Bagian `discount` yang berasal dari diskon golongan pelanggan. */
++  diskon_kategori?: number;
+   salesperson_id: string | null;
+ };
+ 
+diff --git a/src/lib/promo-master-excel.ts b/src/lib/promo-master-excel.ts
+new file mode 100644
+index 00000000..6ecf28e6
+--- /dev/null
++++ b/src/lib/promo-master-excel.ts
+@@ -0,0 +1,60 @@
++import { makeTemplateWorkbook, readSheetRows } from "./excel-sheet";
++
++// Format "Daftar Promo" — satu berkas boleh memuat beberapa promo diskon produk.
++// Barisnya dikelompokkan oleh kolom Nama Promo: semua baris dengan nama sama
++// menjadi SATU promo dengan banyak barang. Kolom selain Kode SKU karena itu
++// wajib sama persis di seluruh baris satu promo.
++
++export const PROMO_MASTER_SHEET = "Daftar Promo";
++
++export const PROMO_MASTER_HEADERS = [
++  "Nama Promo", "Kode SKU", "Jenis Diskon", "Nilai", "Potong Otomatis", "Cabang",
++  "Tanggal Mulai", "Tanggal Berakhir", "Min Qty", "Maks Qty", "Kelipatan", "Min Belanja", "Teks Saran",
++] as const;
++
++export type PromoMasterHeader = (typeof PROMO_MASTER_HEADERS)[number];
++export type PromoMasterExcelRow = { line: number } & Record<PromoMasterHeader, string>;
++
++export const PROMO_MASTER_MAX_ROWS = 500;
++
++export async function readPromoMasterExcel(bytes: Uint8Array): Promise<PromoMasterExcelRow[]> {
++  const rows = await readSheetRows(bytes, {
++    sheet: PROMO_MASTER_SHEET, headers: PROMO_MASTER_HEADERS, maxRows: PROMO_MASTER_MAX_ROWS,
++  });
++  return rows.map(row => ({ line: row.line, ...(row.values as Record<PromoMasterHeader, string>) }));
++}
++
++const PETUNJUK: [string, string][] = [
++  ["Satu baris", "Satu barang di dalam satu promo. Ulangi Nama Promo yang sama untuk menambah barang ke promo itu."],
++  ["Nama Promo", "Wajib, maksimal 120 karakter. Nama yang sudah ada di VetOS akan DIPERBARUI, bukan digandakan."],
++  ["Kode SKU", "Kode barang/jasa/tindakan persis seperti di master VetOS. Simpan kode berawalan nol sebagai teks."],
++  ["Jenis Diskon", "Isi Persen atau Nominal. Harus sama untuk semua baris dalam satu promo."],
++  ["Nilai", "Angka positif, maksimal dua desimal. Persen maksimal 100; Nominal adalah rupiah per satuan."],
++  ["Potong Otomatis", "Ya = langsung memotong di kasir/klinik. Tidak = hanya jalan bila dipanggil kode kampanye."],
++  ["Cabang", "Kosong = semua cabang. Isi kode cabang; beberapa cabang dipisah koma, contoh: BDG,JKT."],
++  ["Tanggal Mulai / Berakhir", "Format YYYY-MM-DD, contoh 2026-11-01. Tanggal berakhir tidak boleh mendahului mulai."],
++  ["Min Qty", "Kosong = tanpa syarat. Isi angka bulat lebih dari 0 bila promo butuh pembelian minimal."],
++  ["Maks Qty", "Kosong = tanpa batas. Bila diisi, tidak boleh lebih kecil dari Min Qty."],
++  ["Kelipatan", "Ya = potongan berulang tiap kelipatan Min Qty (min 2, beli 5 → yang dapat 4). Butuh Min Qty terisi."],
++  ["Min Belanja", "Kosong atau 0 = tanpa syarat belanja. Isi rupiah minimal satu transaksi."],
++  ["Teks Saran", "Kalimat yang muncul sebagai saran di layar. Kosong = dipakai Nama Promo."],
++  ["Sebelum simpan", "Periksa preview. Baris merah wajib diperbaiki di Excel; tidak ada yang tersimpan sampai bersih."],
++  ["Mengubah promo lama", "Unggah ulang dengan Nama Promo yang sama. Preview memperlihatkan barang yang ditambah, dihapus, dan nilai yang berubah."],
++];
++
++export async function makePromoMasterTemplate(branches: { code: string | null; name: string }[] = []): Promise<Uint8Array> {
++  const daftarCabang = branches.filter(branch => branch.code).map(branch => `${branch.code} = ${branch.name}`).join(" · ");
++  return makeTemplateWorkbook({
++    sheet: PROMO_MASTER_SHEET,
++    columns: [
++      { header: "Nama Promo", width: 30 }, { header: "Kode SKU", width: 20, numFmt: "@" },
++      { header: "Jenis Diskon", width: 15 }, { header: "Nilai", width: 14, numFmt: "#,##0.00" },
++      { header: "Potong Otomatis", width: 16 }, { header: "Cabang", width: 18, numFmt: "@" },
++      { header: "Tanggal Mulai", width: 16, numFmt: "@" }, { header: "Tanggal Berakhir", width: 17, numFmt: "@" },
++      { header: "Min Qty", width: 10 }, { header: "Maks Qty", width: 11 },
++      { header: "Kelipatan", width: 12 }, { header: "Min Belanja", width: 15, numFmt: "#,##0.00" },
++      { header: "Teks Saran", width: 36 },
++    ],
++    guide: [...PETUNJUK, ["Kode cabang tersedia", daftarCabang || "Belum ada cabang aktif berkode."]],
++  });
++}
+diff --git a/src/lib/promo-master-import.ts b/src/lib/promo-master-import.ts
+new file mode 100644
+index 00000000..1ef18bd9
+--- /dev/null
++++ b/src/lib/promo-master-import.ts
+@@ -0,0 +1,304 @@
++import type { PromoMasterExcelRow } from "./promo-master-excel";
++
++// Pemeriksaan berkas "Daftar Promo" — murni, tanpa database, supaya layar preview
++// dan server memakai hasil yang persis sama. Tidak ada satu pun promo tersimpan
++// sampai seluruh baris bersih.
++
++export type PromoMasterItem = { id: string; code: string; name: string; is_active: boolean };
++export type PromoMasterBranch = { id: string; code: string | null; name: string; is_active: boolean };
++
++export type PromoMasterExisting = {
++  id: string; name: string; promo_type: string;
++  discount_type: "percent" | "nominal" | null; discount_value: number | null;
++  auto_apply: boolean; branch_ids: string[] | null;
++  valid_from: string | null; valid_until: string | null;
++  min_qty: number | null; max_qty: number | null; kelipatan: boolean;
++  min_subtotal: number | null; suggest: string | null;
++  item_ids: string[];
++  /** Promo hasil impor per-SKU lama: target & satuannya dikunci trigger database. */
++  locked: boolean;
++  /** Hanya per_unit yang didukung format daftar ini. */
++  discount_mode?: string;
++};
++
++export type PromoMasterPlan = {
++  name: string;
++  discount_type: "percent" | "nominal";
++  discount_value: number;
++  auto_apply: boolean;
++  /** null = semua cabang. */
++  branch_ids: string[] | null;
++  branch_codes: string[];
++  valid_from: string; valid_until: string;
++  min_qty: number | null; max_qty: number | null;
++  kelipatan: boolean;
++  min_subtotal: number | null;
++  suggest: string;
++  item_ids: string[];
++  item_codes: string[];
++};
++
++export type PromoMasterChange = { label: string; dari: string; ke: string };
++export type PromoMasterDiff = {
++  name: string;
++  promoId: string | null;
++  status: "baru" | "ubah" | "sama";
++  itemsAdded: string[];
++  itemsRemoved: string[];
++  changes: PromoMasterChange[];
++};
++
++export type PromoMasterReviewRow = PromoMasterExcelRow & { item_name: string | null; error: string | null };
++
++export type PromoMasterReview = {
++  rows: PromoMasterReviewRow[];
++  plans: PromoMasterPlan[];
++  diffs: PromoMasterDiff[];
++  valid: boolean;
++  error: string | null;
++};
++
++export const PROMO_MASTER_MAX_PROMOS = 50;
++
++const teks = (value: unknown) => String(value ?? "").trim();
++
++/** Angka Indonesia maupun Inggris; maksimal dua desimal. NaN = tidak valid. */
++export function parsePromoAngka(raw: string): number {
++  const text = raw.replace(/\s|_/g, "").replace(/^Rp/i, "");
++  if (!text) return NaN;
++  let normal = text;
++  if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(text)) normal = text.replaceAll(".", "").replace(",", ".");
++  else if (/^\d+,\d{1,2}$/.test(text)) normal = text.replace(",", ".");
++  else if (!/^\d+(\.\d{1,2})?$/.test(text)) return NaN;
++  const value = Number(normal);
++  return Number.isFinite(value) ? value : NaN;
++}
++
++/** "YYYY-MM-DD", "DD/MM/YYYY" atau "D-M-YYYY" → "YYYY-MM-DD"; "" bila tidak valid. */
++export function parsePromoTanggal(raw: string): string {
++  const text = raw.trim();
++  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
++  const lokal = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(text);
++  const parts = iso ? [iso[1], iso[2], iso[3]] : lokal ? [lokal[3], lokal[2], lokal[1]] : null;
++  if (!parts) return "";
++  const [year, month, day] = parts.map(Number);
++  if (month < 1 || month > 12 || day < 1 || day > 31) return "";
++  const date = new Date(Date.UTC(year, month - 1, day));
++  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return "";
++  return date.toISOString().slice(0, 10);
++}
++
++export function parsePromoYaTidak(raw: string): boolean | null {
++  const text = raw.trim().toLowerCase();
++  if (["ya", "y", "true", "1", "aktif"].includes(text)) return true;
++  if (["tidak", "t", "n", "no", "false", "0", "-"].includes(text)) return false;
++  return null;
++}
++
++const rupiah = (value: number | null) => (value == null ? "—" : `Rp ${Math.round(value).toLocaleString("id-ID")}`);
++const yaTidak = (value: boolean) => (value ? "Ya" : "Tidak");
++const angka = (value: number | null) => (value == null ? "—" : String(value));
++
++type Parsed = {
++  nama: string;
++  sku: string;
++  discount_type: "percent" | "nominal" | null;
++  discount_value: number;
++  auto_apply: boolean | null;
++  branch_codes: string[];
++  valid_from: string; valid_until: string;
++  min_qty: number | null; max_qty: number | null;
++  kelipatan: boolean | null;
++  min_subtotal: number | null;
++  suggest: string;
++};
++
++const BANDING: { key: keyof Parsed; label: string }[] = [
++  { key: "discount_type", label: "Jenis Diskon" }, { key: "discount_value", label: "Nilai" },
++  { key: "auto_apply", label: "Potong Otomatis" }, { key: "valid_from", label: "Tanggal Mulai" },
++  { key: "valid_until", label: "Tanggal Berakhir" }, { key: "min_qty", label: "Min Qty" },
++  { key: "max_qty", label: "Maks Qty" }, { key: "kelipatan", label: "Kelipatan" },
++  { key: "min_subtotal", label: "Min Belanja" }, { key: "suggest", label: "Teks Saran" },
++];
++
++function samaCabang(a: string[], b: string[]): boolean {
++  return a.length === b.length && a.every((code, index) => code === b[index]);
++}
++
++export function reviewPromoMaster(
++  rows: PromoMasterExcelRow[],
++  master: { items: PromoMasterItem[]; branches: PromoMasterBranch[]; existing: PromoMasterExisting[]; itemLabels?: Record<string, string> },
++): PromoMasterReview {
++  if (!Array.isArray(rows) || rows.length < 1) {
++    return { rows: [], plans: [], diffs: [], valid: false, error: "Berkas promo belum berisi satu baris pun." };
++  }
++  const byCode = new Map(master.items.map(item => [item.code.toLowerCase(), item]));
++  const branchByCode = new Map(master.branches.flatMap(branch => (branch.code ? [[branch.code.toLowerCase(), branch] as const] : [])));
++  const existingByName = new Map(master.existing.map(promo => [promo.name.trim().toLowerCase(), promo]));
++  const ambiguousNames = new Set<string>();
++  const seenNames = new Set<string>();
++  for (const promo of master.existing) {
++    const key = promo.name.trim().toLowerCase();
++    if (seenNames.has(key)) ambiguousNames.add(key);
++    seenNames.add(key);
++  }
++  const label = (id: string) => master.itemLabels?.[id] ?? id;
++
++  const errors = new Map<number, string>();
++  const setError = (index: number, message: string) => { if (!errors.has(index)) errors.set(index, message); };
++
++  const parsed: Parsed[] = rows.map((row, index) => {
++    const nama = teks(row["Nama Promo"]);
++    const sku = teks(row["Kode SKU"]);
++    const jenisRaw = teks(row["Jenis Diskon"]).toLowerCase();
++    const jenis = jenisRaw === "persen" || jenisRaw === "percent" ? "percent"
++      : jenisRaw === "nominal" || jenisRaw === "rupiah" ? "nominal" : null;
++    const nilai = parsePromoAngka(teks(row["Nilai"]));
++    const otomatis = parsePromoYaTidak(teks(row["Potong Otomatis"]));
++    const cabangRaw = teks(row["Cabang"]);
++    const branch_codes = [...new Set(cabangRaw.split(",").map(part => part.trim().toUpperCase()).filter(Boolean))].sort();
++    const mulai = parsePromoTanggal(teks(row["Tanggal Mulai"]));
++    const akhir = parsePromoTanggal(teks(row["Tanggal Berakhir"]));
++    const minRaw = teks(row["Min Qty"]);
++    const maksRaw = teks(row["Maks Qty"]);
++    const kelipatan = parsePromoYaTidak(teks(row["Kelipatan"]) || "Tidak");
++    const belanjaRaw = teks(row["Min Belanja"]);
++    const saran = teks(row["Teks Saran"]).slice(0, 160) || nama.slice(0, 160);
++    const minQty = minRaw ? parsePromoAngka(minRaw) : null;
++    const maxQty = maksRaw ? parsePromoAngka(maksRaw) : null;
++    const minBelanja = belanjaRaw ? parsePromoAngka(belanjaRaw) : null;
++
++    const item = byCode.get(sku.toLowerCase());
++    if (!nama) setError(index, "Nama Promo wajib diisi");
++    else if (nama.length > 120) setError(index, "Nama Promo maksimal 120 karakter");
++    else if (!sku) setError(index, "Kode SKU wajib diisi");
++    else if (!item) setError(index, "SKU tidak ada di master");
++    else if (!item.is_active) setError(index, "SKU nonaktif");
++    else if (!jenis) setError(index, "Jenis Diskon harus Persen atau Nominal");
++    else if (!Number.isFinite(nilai) || nilai <= 0) setError(index, "Nilai harus angka lebih dari 0, maksimal dua desimal");
++    else if (jenis === "percent" && nilai > 100) setError(index, "Diskon Persen tidak boleh lebih dari 100");
++    else if (otomatis === null) setError(index, "Potong Otomatis harus Ya atau Tidak");
++    else if (kelipatan === null) setError(index, "Kelipatan harus Ya atau Tidak");
++    else if (branch_codes.some(code => !branchByCode.get(code.toLowerCase())?.is_active)) {
++      setError(index, `Kode cabang tidak dikenal atau nonaktif: ${branch_codes.filter(code => !branchByCode.get(code.toLowerCase())?.is_active).join(", ")}`);
++    } else if (!mulai || !akhir) setError(index, "Tanggal Mulai dan Tanggal Berakhir wajib format YYYY-MM-DD");
++    else if (akhir < mulai) setError(index, "Tanggal Berakhir mendahului Tanggal Mulai");
++    else if (minRaw && (!Number.isFinite(minQty as number) || (minQty as number) <= 0)) setError(index, "Min Qty harus lebih dari 0 atau dikosongkan");
++    else if (maksRaw && (!Number.isFinite(maxQty as number) || (maxQty as number) <= 0)) setError(index, "Maks Qty harus lebih dari 0 atau dikosongkan");
++    else if (minQty != null && maxQty != null && maxQty < minQty) setError(index, "Maks Qty tidak boleh lebih kecil dari Min Qty");
++    else if (belanjaRaw && (!Number.isFinite(minBelanja as number) || (minBelanja as number) < 0)) setError(index, "Min Belanja harus angka 0 atau lebih");
++    else if (kelipatan && otomatis && minQty == null) setError(index, "Kelipatan Ya memerlukan Min Qty terisi");
++
++    return {
++      nama, sku, discount_type: jenis, discount_value: Number.isFinite(nilai) ? nilai : 0,
++      auto_apply: otomatis, branch_codes, valid_from: mulai, valid_until: akhir,
++      min_qty: minRaw && Number.isFinite(minQty as number) ? (minQty as number) : null,
++      max_qty: maksRaw && Number.isFinite(maxQty as number) ? (maxQty as number) : null,
++      kelipatan, min_subtotal: belanjaRaw && Number.isFinite(minBelanja as number) ? (minBelanja as number) : null,
++      suggest: saran,
++    };
++  });
++
++  // Kelompokkan baris per Nama Promo. Nilai selain Kode SKU wajib sama persis.
++  const groups = new Map<string, number[]>();
++  parsed.forEach((row, index) => {
++    if (!row.nama) return;
++    const key = row.nama.toLowerCase();
++    groups.set(key, [...(groups.get(key) ?? []), index]);
++  });
++
++  if (groups.size > PROMO_MASTER_MAX_PROMOS) {
++    return {
++      rows: rows.map((row, index) => ({ ...row, item_name: byCode.get(teks(row["Kode SKU"]).toLowerCase())?.name ?? null, error: errors.get(index) ?? null })),
++      plans: [], diffs: [], valid: false,
++      error: `Maksimal ${PROMO_MASTER_MAX_PROMOS} promo per berkas; berkas ini berisi ${groups.size}.`,
++    };
++  }
++
++  const plans: PromoMasterPlan[] = [];
++  const diffs: PromoMasterDiff[] = [];
++
++  for (const [key, indexes] of groups) {
++    const first = parsed[indexes[0]];
++    const seen = new Set<string>();
++    for (const index of indexes) {
++      const row = parsed[index];
++      const sku = row.sku.toLowerCase();
++      if (seen.has(sku)) setError(index, "Kode SKU ini sudah ada di promo yang sama");
++      seen.add(sku);
++      if (index === indexes[0]) continue;
++      const beda = BANDING.find(field => JSON.stringify(row[field.key]) !== JSON.stringify(first[field.key]));
++      if (beda) setError(index, `Kolom ${beda.label} berbeda dari baris pertama promo ini`);
++      else if (!samaCabang(row.branch_codes, first.branch_codes)) setError(index, "Kolom Cabang berbeda dari baris pertama promo ini");
++    }
++
++    const existing = existingByName.get(key) ?? null;
++    if (ambiguousNames.has(key)) {
++      setError(indexes[0], "Nama ini dipakai lebih dari satu promo; rapikan dulu di layar promo");
++    } else if (existing && existing.promo_type !== "diskon_produk") {
++      setError(indexes[0], `Nama ini sudah dipakai promo jenis ${existing.promo_type}; ganti nama promo`);
++    } else if (existing?.discount_mode && existing.discount_mode !== "per_unit") {
++      setError(indexes[0], "Promo ini memakai perhitungan total per paket; ubah lewat layar promo");
++    } else if (existing?.locked) {
++      setError(indexes[0], "Promo ini dibuat lewat impor per-SKU dan targetnya dikunci; buat nama baru");
++    }
++    if (indexes.some(index => errors.has(index))) continue;
++
++    const item_ids = indexes.map(index => byCode.get(parsed[index].sku.toLowerCase())!.id);
++    const branch_ids = first.branch_codes.length
++      ? first.branch_codes.map(code => branchByCode.get(code.toLowerCase())!.id).sort()
++      : null;
++    const plan: PromoMasterPlan = {
++      name: first.nama, discount_type: first.discount_type!, discount_value: first.discount_value,
++      auto_apply: !!first.auto_apply, branch_ids, branch_codes: first.branch_codes,
++      valid_from: first.valid_from, valid_until: first.valid_until,
++      min_qty: first.min_qty, max_qty: first.max_qty, kelipatan: !!first.kelipatan,
++      min_subtotal: first.min_subtotal, suggest: first.suggest,
++      item_ids: [...new Set(item_ids)].sort(),
++      item_codes: indexes.map(index => parsed[index].sku),
++    };
++    plans.push(plan);
++    diffs.push(bandingkan(plan, existing, master.branches, label));
++  }
++
++  const reviewed: PromoMasterReviewRow[] = rows.map((row, index) => ({
++    ...row,
++    item_name: byCode.get(teks(row["Kode SKU"]).toLowerCase())?.name ?? null,
++    error: errors.get(index) ?? null,
++  }));
++  const valid = reviewed.every(row => !row.error) && plans.length > 0;
++  return { rows: reviewed, plans, diffs, valid, error: null };
++}
++
++function bandingkan(
++  plan: PromoMasterPlan, existing: PromoMasterExisting | null,
++  branches: PromoMasterBranch[], label: (id: string) => string,
++): PromoMasterDiff {
++  if (!existing) {
++    return { name: plan.name, promoId: null, status: "baru", itemsAdded: plan.item_codes, itemsRemoved: [], changes: [] };
++  }
++  const branchName = new Map(branches.map(branch => [branch.id, branch.code || branch.name]));
++  const cabangLama = existing.branch_ids?.length ? [...existing.branch_ids].sort().map(id => branchName.get(id) ?? id).join(", ") : "Semua cabang";
++  const cabangBaru = plan.branch_ids?.length ? plan.branch_ids.map(id => branchName.get(id) ?? id).join(", ") : "Semua cabang";
++  const changes: PromoMasterChange[] = [];
++  const catat = (label: string, dari: string, ke: string) => { if (dari !== ke) changes.push({ label, dari, ke }); };
++  catat("Jenis Diskon", existing.discount_type === "percent" ? "Persen" : existing.discount_type === "nominal" ? "Nominal" : "—",
++    plan.discount_type === "percent" ? "Persen" : "Nominal");
++  catat("Nilai", existing.discount_value == null ? "—" : String(existing.discount_value), String(plan.discount_value));
++  catat("Potong Otomatis", yaTidak(existing.auto_apply), yaTidak(plan.auto_apply));
++  catat("Cabang", cabangLama, cabangBaru);
++  catat("Tanggal Mulai", existing.valid_from ?? "—", plan.valid_from);
++  catat("Tanggal Berakhir", existing.valid_until ?? "—", plan.valid_until);
++  catat("Min Qty", angka(existing.min_qty), angka(plan.min_qty));
++  catat("Maks Qty", angka(existing.max_qty), angka(plan.max_qty));
++  catat("Kelipatan", yaTidak(existing.kelipatan), yaTidak(plan.kelipatan));
++  catat("Min Belanja", rupiah(existing.min_subtotal), rupiah(plan.min_subtotal));
++  catat("Teks Saran", existing.suggest ?? "—", plan.suggest);
++
++  const lama = new Set(existing.item_ids);
++  const baru = new Set(plan.item_ids);
++  const itemsAdded = plan.item_ids.filter(id => !lama.has(id)).map(label);
++  const itemsRemoved = existing.item_ids.filter(id => !baru.has(id)).map(label);
++  const status = changes.length || itemsAdded.length || itemsRemoved.length ? "ubah" : "sama";
++  return { name: plan.name, promoId: existing.id, status, itemsAdded, itemsRemoved, changes };
++}
+diff --git a/src/lib/tagihan-klinik.ts b/src/lib/tagihan-klinik.ts
+index 53987400..f50e6ee4 100644
+--- a/src/lib/tagihan-klinik.ts
++++ b/src/lib/tagihan-klinik.ts
+@@ -1,4 +1,5 @@
+-import { aggregateServiceLines } from "./service-line-promos";
++import { aggregateServiceLines, serviceLinePromos } from "./service-line-promos";
++import type { RincianPromoKlinik } from "./clinic-promo-attribution";
+ import type { ServicePerformersSnapshot } from "./service-performers";
+ // Perakitan baris tagihan klinik dari resep dokter — dipakai layar pembayaran
+ // (untuk memperlihatkan perkiraan sebelum ditagih) DAN aksi bayar rombongan
+@@ -11,7 +12,7 @@ import type { ServicePerformersSnapshot } from "./service-performers";
+ import { bolehBayar } from "./tindakan";
+ import { bacaAturanConsent } from "./consent-server";
+ import { tambahPpn, type PajakSettings } from "./pajak";
+-import { hitungPromoKeranjang, loadPromoAktif } from "./promo-hitung";
++import { loadPromoAktif } from "./promo-hitung";
+ import { diskonGolonganKeranjang, loadAturanDiskon, loadInfoBarang } from "./harga-golongan";
+ import { pesanVoucherDitolak, potonganVoucher, normalizeKode, voucherBerlaku, type VoucherRow } from "./voucher";
+ import { hariIniWIB } from "./tanggal";
+@@ -152,9 +153,11 @@ export type Potongan = {
+   voucherCode?: string | null;
+   /** Kode kampanye yang diketik (C05); null bila bukan kode kampanye. */
+   campaignCode?: string | null;
++  /** Promo mana memotong baris mana — index mengikuti `opts.rows` yang dikirim. */
++  rincianPromo: RincianPromoKlinik[];
+ };
+ 
+-const KOSONG: Potongan = { promo: 0, voucher: 0, golongan: 0, total: 0, tolakVoucher: null };
++const KOSONG: Potongan = { promo: 0, voucher: 0, golongan: 0, total: 0, tolakVoucher: null, rincianPromo: [] };
+ 
+ /**
+  * Potongan otomatis untuk satu tagihan klinik. SELALU dihitung ulang di server
+@@ -176,7 +179,10 @@ export async function hitungPotonganKlinik(
+     groupServices?: boolean;
+   },
+ ): Promise<Potongan> {
+-  const rows = opts.rows.filter((l) => Number(l.qty) > 0);
++  // Index asal dipertahankan: atribusi promo harus menempel pada baris invoice
++  // yang benar, bukan pada urutan setelah baris kosong dibuang.
++  const dipakai = opts.rows.map((line, index) => ({ line, index })).filter((x) => Number(x.line.qty) > 0);
++  const rows = dipakai.map((x) => x.line);
+   const subtotal = rows.reduce((a, l) => a + Number(l.qty) * Number(l.harga), 0);
+   const kodeMasuk = normalizeKode(opts.voucherCode) || null;
+   // Kode kampanye (C05) diterjemahkan ke voucher/promo tujuannya.
+@@ -197,8 +203,19 @@ export async function hitungPotonganKlinik(
+     item_type:line.jenis === "jasa" && line.item_id ? "Jasa" : "Persediaan",
+   }));
+   const pricingRows = opts.groupServices === false ? pricingSource : aggregateServiceLines(pricingSource);
+-  const potonganPromo = hitungPromoKeranjang(promoAktif, pricingRows);
++  // serviceLinePromos memberi hasil yang sama dengan hitungPromoKeranjang atas
++  // baris yang digabung, tapi mengembalikan alokasinya PER BARIS sumber. Saat
++  // penggabungan jasa dimatikan, tiap baris jadi kelompoknya sendiri.
++  const potonganPromo = serviceLinePromos(
++    promoAktif,
++    opts.groupServices === false
++      ? pricingSource.map((line) => ({ ...line, item_type: "Persediaan" }))
++      : pricingSource,
++  );
+   const promo = potonganPromo.reduce((a, p) => a + Number(p.potongan), 0);
++  const rincianPromo: RincianPromoKlinik[] = potonganPromo
++    .filter((p) => Number(p.potongan) > 0)
++    .map((p) => ({ lineIndex: dipakai[p.lineIndex].index, promoId: p.promoId, promoName: p.promoName, potongan: Number(p.potongan) }));
+   const tolakKampanye = kampanye ? pesanKampanyeDitolak(kampanye,
+     promoAktif.some((p) => p.id === terbaca.promoId), potonganPromo.some((p) => p.promoId === terbaca.promoId)) : null;
+ 
+@@ -250,7 +267,7 @@ export async function hitungPotonganKlinik(
+   // Total potongan tidak boleh melebihi tagihan — kalau lewat, DPP jadi minus dan
+   // jurnal pendapatannya ikut salah.
+   const total = Math.min(subtotal, promo + golongan + voucher);
+-  return { promo, voucher, golongan, total, tolakVoucher, ...kodeHasil };
++  return { promo, voucher, golongan, total, tolakVoucher, rincianPromo, ...kodeHasil };
+ }
+ 
+ export type BekalPotongan = {
+diff --git a/supabase/migrations/20261104150000_promo_atribusi_klinik_dan_impor_daftar.sql b/supabase/migrations/20261104150000_promo_atribusi_klinik_dan_impor_daftar.sql
+new file mode 100644
+index 00000000..2c18679e
+--- /dev/null
++++ b/supabase/migrations/20261104150000_promo_atribusi_klinik_dan_impor_daftar.sql
+@@ -0,0 +1,354 @@
++-- Promo: atribusi per program di tagihan klinik + impor daftar promo dari Excel.
++--
++-- 1. Tagihan klinik menyimpan SIAPA yang memberi potongan, bukan satu angka
++--    `discount` gabungan:
++--      * invoice_items.promo_id / promo_discount  — persis seperti sale_items
++--        di kasir petshop sejak #312;
++--      * invoices.voucher_discount / diskon_kategori — potongan voucher dan
++--        diskon golongan pelanggan, terpisah dari diskon manual kasir dan poin;
++--      * invoices.campaign_code sudah ada sejak C05 dan tidak diubah di sini.
++--    Kolomnya NULLABLE dengan sengaja: tagihan lama tidak punya rinciannya, dan
++--    NULL berarti "tidak tercatat per program" — bukan "nol rupiah". Tidak ada
++--    tebakan yang diisikan mundur ke data lama.
++--
++-- 2. Koreksi tagihan (S-4) MEMPERTAHANKAN atribusi itu: baris koreksi membawa
++--    promo baris asalnya, dibatasi nilai baris yang baru, dan seluruh atribusi
++--    dikecilkan proporsional bila diskon barunya lebih kecil. Terbit ulang
++--    (void + reissue) menyalin atribusi apa adanya.
++--
++-- 3. import_promo_master(): satu berkas Excel "Daftar Promo" berisi beberapa
++--    promo diskon produk, masing-masing dengan banyak SKU. Nama promo yang sudah
++--    ada DIPERBARUI (bukan digandakan) beserta daftar barangnya. Hanya OWNER/
++--    ADMIN aktif (assert_promo_manager) yang boleh memanggilnya.
++--
++-- Semua perubahan pada RPC yang sudah berjalan memakai jangkar eksak di atas
++-- definisi berjalan (pg_get_functiondef + replace), gagal tertutup bila
++-- definisinya sudah berubah, dan seluruh tambalan satu fungsi dikompilasi SEKALI.
++--
++-- BELUM DITERAPKAN ke Production. Terapkan bersama rilis berikutnya.
++
++-- ---------------------------------------------------------------------------
++-- 1. Kolom atribusi
++-- ---------------------------------------------------------------------------
++alter table public.invoice_items
++  add column if not exists promo_id uuid references public.promos(id) on delete set null,
++  add column if not exists promo_discount numeric(15,2);
++alter table public.invoice_items drop constraint if exists invoice_items_promo_discount_wajar;
++alter table public.invoice_items add constraint invoice_items_promo_discount_wajar
++  check (promo_discount is null or (promo_discount >= 0 and (promo_discount = 0 or promo_id is not null)));
++create index if not exists invoice_items_promo_id_idx on public.invoice_items (promo_id) where promo_id is not null;
++comment on column public.invoice_items.promo_id is
++  'Promo yang memotong baris ini. NULL pada baris tanpa promo dan pada tagihan sebelum rilis atribusi klinik.';
++comment on column public.invoice_items.promo_discount is
++  'Rupiah potongan promo untuk seluruh baris ini. NULL = tagihan lama, rinciannya tidak tercatat per program.';
++
++alter table public.invoices
++  add column if not exists voucher_discount numeric(15,2),
++  add column if not exists diskon_kategori numeric(15,2);
++alter table public.invoices drop constraint if exists invoices_potongan_program_wajar;
++alter table public.invoices add constraint invoices_potongan_program_wajar
++  check ((voucher_discount is null or voucher_discount >= 0)
++     and (diskon_kategori is null or diskon_kategori >= 0));
++comment on column public.invoices.voucher_discount is
++  'Bagian diskon yang berasal dari voucher (termasuk voucher yang dipanggil kode kampanye). NULL = tidak tercatat.';
++comment on column public.invoices.diskon_kategori is
++  'Bagian diskon yang berasal dari golongan pelanggan. NULL = tidak tercatat.';
++
++-- ---------------------------------------------------------------------------
++-- 2. Posting, koreksi, dan terbit ulang tagihan klinik
++-- ---------------------------------------------------------------------------
++do $patch$
++-- Semua tambalan satu fungsi diterapkan pada teksnya dulu, baru dikompilasi SEKALI.
++declare p record; definition text; signature regprocedure; pending jsonb := '{}'::jsonb; k text;
++begin
++ for p in select * from (values
++  -- variabel atribusi program
++  ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',
++   E'  v_job_order_cost numeric(15,2);\nbegin',
++   E'  v_job_order_cost numeric(15,2);\n  v_promo_id uuid;\n  v_promo_discount numeric(15,2);\n  v_attributed numeric(15,2);\nbegin'),
++  -- kolom potongan tingkat invoice
++  ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',
++   E'paid_status, metode_bayar, paid_at, shift_id, voucher_code, salesperson_id, service_pricing_version, campaign_code',
++   E'paid_status, metode_bayar, paid_at, shift_id, voucher_code, salesperson_id, service_pricing_version, campaign_code,\n    voucher_discount, diskon_kategori'),
++  -- nilai potongan tingkat invoice
++  ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',
++   E'v_shift.id, v_voucher, v_salesperson_id, nullif(p_invoice->>''service_pricing_version'','''')::smallint, nullif(p_invoice->>''campaign_code'','''')',
++   E'v_shift.id, v_voucher, v_salesperson_id, nullif(p_invoice->>''service_pricing_version'','''')::smallint, nullif(p_invoice->>''campaign_code'',''''),\n    nullif(p_invoice->>''voucher_discount'','''')::numeric(15,2), nullif(p_invoice->>''diskon_kategori'','''')::numeric(15,2)'),
++  -- baca atribusi promo per baris
++  ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',
++   E'    v_unit := nullif(btrim(v_line.value ->> ''unit''), '''');\n',
++   E'    v_unit := nullif(btrim(v_line.value ->> ''unit''), '''');\n    v_promo_id := nullif(v_line.value ->> ''promo_id'', '''')::uuid;\n    v_promo_discount := coalesce(nullif(v_line.value ->> ''promo_discount'', '''')::numeric, 0)::numeric(15,2);\n'),
++  -- potongan promo baris tidak boleh melebihi barisnya
++  ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',
++   E'    v_line_amount := round(v_qty * v_price * (1 - v_discount_percent / 100), 2)::numeric(15,2);\n    insert into public.invoice_items (',
++   E'    v_line_amount := round(v_qty * v_price * (1 - v_discount_percent / 100), 2)::numeric(15,2);\n    if v_promo_discount < 0 or v_promo_discount > v_line_amount\n       or (v_promo_discount > 0 and v_promo_id is null)\n       or (v_promo_id is not null and not exists (select 1 from public.promos p where p.id = v_promo_id)) then\n      raise exception using errcode = ''P0001'', message = ''LINE_INVALID: potongan promo baris tidak valid'';\n    end if;\n    insert into public.invoice_items ('),
++  -- kolom atribusi promo baris
++  ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',
++   E'      compound_recipe_id, prescription_item_id, satuan, faktor, service_performers, bmhp_components, salesperson_id, package_item_id, package_qty\n    ) values (',
++   E'      compound_recipe_id, prescription_item_id, satuan, faktor, service_performers, bmhp_components, salesperson_id, package_item_id, package_qty,\n      promo_id, promo_discount\n    ) values ('),
++  -- nilai atribusi promo baris
++  ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',
++   E'      nullif(v_line.value->>''package_item_id'','''')::uuid, nullif(v_line.value->>''package_qty'','''')::numeric\n    ) returning id into v_account_id;',
++   E'      nullif(v_line.value->>''package_item_id'','''')::uuid, nullif(v_line.value->>''package_qty'','''')::numeric,\n      case when v_promo_discount > 0 then v_promo_id else null end, v_promo_discount\n    ) returning id into v_account_id;'),
++  -- jumlah atribusi dijaga terhadap diskon invoice
++  ('public.clinic_post_invoice(uuid,text,jsonb,jsonb)',
++   E'  select round(coalesce(sum(ii.hpp), 0), 2)::numeric(15,2)\n    into v_total_hpp from public.invoice_items ii where ii.invoice_id = v_invoice_id;',
++   E'  -- Atribusi per program tidak boleh melebihi diskon yang benar-benar diberikan.\n  select round(coalesce(sum(ii.promo_discount), 0), 2)::numeric(15,2)\n    into v_attributed from public.invoice_items ii where ii.invoice_id = v_invoice_id;\n  v_attributed := v_attributed\n    + coalesce(nullif(p_invoice->>''voucher_discount'','''')::numeric, 0)\n    + coalesce(nullif(p_invoice->>''diskon_kategori'','''')::numeric, 0);\n  if v_attributed < 0 or v_attributed > v_discount then\n    raise exception using errcode = ''P0001'', message = ''INVOICE_INVALID: rincian potongan melebihi diskon invoice'';\n  end if;\n  select round(coalesce(sum(ii.hpp), 0), 2)::numeric(15,2)\n    into v_total_hpp from public.invoice_items ii where ii.invoice_id = v_invoice_id;'),
++  -- variabel atribusi koreksi
++  ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)',
++   E'  v_credit numeric;\nbegin',
++   E'  v_credit numeric;\n  v_promo_old jsonb;\n  v_attributed numeric(15,2);\n  v_promo_scale numeric := 1;\nbegin'),
++  -- bawa atribusi lama dan kecilkan bila melebihi diskon baru
++  ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)',
++   E'  select coalesce(array_agg(id),array[]::uuid[]) into v_service_old_ids from public.invoice_items where invoice_id=p_invoice_id;',
++   E'  select coalesce(array_agg(id),array[]::uuid[]) into v_service_old_ids from public.invoice_items where invoice_id=p_invoice_id;\n  -- S-4: koreksi mempertahankan atribusi program dari baris asalnya.\n  select coalesce(jsonb_object_agg(id::text,jsonb_build_object(''promo_id'',promo_id,''promo_discount'',promo_discount)),''{}''::jsonb)\n    into v_promo_old from public.invoice_items where invoice_id=p_invoice_id;\n  select coalesce(sum(case when v_promo_old->nullif(x.value->>''source_invoice_item_id'','''')->>''promo_discount'' is null then 0\n    else least((v_promo_old->nullif(x.value->>''source_invoice_item_id'','''')->>''promo_discount'')::numeric,\n      round((x.value->>''qty'')::numeric*(x.value->>''price'')::numeric*(1-coalesce((x.value->>''discount_percent'')::numeric,0)/100),2)) end),0)\n    into v_attributed from jsonb_array_elements(p_lines) x;\n  v_attributed := v_attributed+coalesce(v_invoice.voucher_discount,0)+coalesce(v_invoice.diskon_kategori,0);\n  if v_attributed>v_discount and v_attributed>0 then v_promo_scale := v_discount/v_attributed; end if;'),
++  -- kolom atribusi promo baris koreksi
++  ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)',
++   E'      item_id,hpp,prescription_item_id,satuan,faktor,service_performers,service_source_line_id,bmhp_components,salesperson_id)',
++   E'      item_id,hpp,prescription_item_id,satuan,faktor,service_performers,service_source_line_id,bmhp_components,salesperson_id,\n      promo_id,promo_discount)'),
++  -- nilai atribusi promo baris koreksi
++  ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)',
++   E'      v_bmhp_map->nullif(v_line->>''prescription_item_id'',''''),nullif(v_line->>''salesperson_id'','''')::uuid);',
++   E'      v_bmhp_map->nullif(v_line->>''prescription_item_id'',''''),nullif(v_line->>''salesperson_id'','''')::uuid,\n      nullif(v_promo_old->nullif(v_line->>''source_invoice_item_id'','''')->>''promo_id'','''')::uuid,\n      case when v_promo_old->nullif(v_line->>''source_invoice_item_id'','''')->>''promo_discount'' is null then null\n        else round(least((v_promo_old->nullif(v_line->>''source_invoice_item_id'','''')->>''promo_discount'')::numeric,\n          round((v_line->>''qty'')::numeric*(v_line->>''price'')::numeric*(1-coalesce((v_line->>''discount_percent'')::numeric,0)/100),2))*v_promo_scale,2) end);'),
++  -- potongan program ikut dikecilkan bersama barisnya
++  ('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)',
++   E'    correction_pending=false,\n    voucher_code=nullif(p_invoice->>''voucher_code'','''') where id=p_invoice_id;',
++   E'    correction_pending=false,\n    voucher_discount=case when voucher_discount is null then null else round(voucher_discount*v_promo_scale,2) end,\n    diskon_kategori=case when diskon_kategori is null then null else round(diskon_kategori*v_promo_scale,2) end,\n    voucher_code=nullif(p_invoice->>''voucher_code'','''') where id=p_invoice_id;'),
++  -- kolom potongan program pada terbit ulang
++  ('public.clinic_void_reissue_invoice_core(uuid,text,text)',
++   E'    reissued_from,request_key,request_hash,correction_pending,shift_cash_carry,service_pricing_version)',
++   E'    reissued_from,request_key,request_hash,correction_pending,shift_cash_carry,service_pricing_version,\n    voucher_discount,diskon_kategori)'),
++  -- nilai potongan program pada terbit ulang
++  ('public.clinic_void_reissue_invoice_core(uuid,text,text)',
++   E'v_invoice.voucher_code,v_invoice.salesperson_id,p_invoice_id,v_key,v_hash,true,v_shift_cash,v_invoice.service_pricing_version)',
++   E'v_invoice.voucher_code,v_invoice.salesperson_id,p_invoice_id,v_key,v_hash,true,v_shift_cash,v_invoice.service_pricing_version,\n    v_invoice.voucher_discount,v_invoice.diskon_kategori)'),
++  -- kolom atribusi baris pada terbit ulang
++  ('public.clinic_void_reissue_invoice_core(uuid,text,text)',
++   E'    item_id,hpp,prescription_item_id,satuan,faktor,service_performers,service_source_line_id,bmhp_components)',
++   E'    item_id,hpp,prescription_item_id,satuan,faktor,service_performers,service_source_line_id,bmhp_components,\n    promo_id,promo_discount)'),
++  -- nilai atribusi baris pada terbit ulang
++  ('public.clinic_void_reissue_invoice_core(uuid,text,text)',
++   E'    prescription_item_id,satuan,faktor,service_performers,id,bmhp_components from public.invoice_items where invoice_id=p_invoice_id;',
++   E'    prescription_item_id,satuan,faktor,service_performers,id,bmhp_components,\n    promo_id,promo_discount from public.invoice_items where invoice_id=p_invoice_id;')
++ ) as patches(sig, old_text, new_text) loop
++  signature := to_regprocedure(p.sig);
++  if signature is null then raise exception 'Atribusi promo klinik: RPC wajib tidak ada: %', p.sig; end if;
++  definition := coalesce(pending->>p.sig, pg_get_functiondef(signature));
++  if (length(definition) - length(replace(definition, p.old_text, ''))) / length(p.old_text) <> 1 then
++   raise exception 'Atribusi promo klinik: jangkar harus muncul tepat sekali di %: %', p.sig, left(p.old_text, 80);
++  end if;
++  pending := pending || jsonb_build_object(p.sig, replace(definition, p.old_text, p.new_text));
++ end loop;
++ for k in select jsonb_object_keys(pending) loop
++  execute pending->>k;
++ end loop;
++end $patch$;
++
++-- ---------------------------------------------------------------------------
++-- 3. Impor daftar promo dari Excel (satu berkas = beberapa promo diskon produk)
++-- ---------------------------------------------------------------------------
++-- Bedanya dengan import_promo_excel_batch (C03, satu baris = satu promo per SKU):
++-- di sini SATU promo memiliki BANYAK SKU, dan mengunggah ulang nama yang sama
++-- MEMPERBARUI promo itu beserta daftar barangnya. Karena bentuknya deklaratif
++-- (hasil akhir = isi berkas), mengunggah berkas yang sama dua kali tidak
++-- menggandakan apa pun dan tidak memerlukan kunci idempotensi.
++create or replace function public.import_promo_master(p_promos jsonb)
++returns jsonb language plpgsql security definer set search_path = '' as $$
++declare
++  v_entry jsonb;
++  v_count integer;
++  v_items_total integer := 0;
++  v_name text;
++  v_key text;
++  v_suggest text;
++  v_branch_ids uuid[];
++  v_item_ids uuid[];
++  v_existing public.promos%rowtype;
++  v_duplicates integer;
++  v_rule jsonb;
++  v_min_subtotal numeric;
++  v_discount_value numeric;
++  v_min_qty numeric;
++  v_max_qty numeric;
++  v_promo_id uuid;
++  v_created integer := 0;
++  v_updated integer := 0;
++  v_seen text[] := '{}';
++begin
++  perform public.assert_promo_manager();
++  if jsonb_typeof(p_promos) is distinct from 'array' then
++    raise exception 'Data impor promo tidak valid' using errcode = '22023';
++  end if;
++  v_count := jsonb_array_length(p_promos);
++  if v_count not between 1 and 50 then
++    raise exception 'Impor daftar promo harus berisi 1 sampai 50 promo' using errcode = '22023';
++  end if;
++
++  for v_entry in select value from jsonb_array_elements(p_promos) loop
++    if jsonb_typeof(v_entry) is distinct from 'object'
++       or (select count(*) from jsonb_object_keys(v_entry) k where k not in
++           ('name','discount_type','discount_value','auto_apply','branch_ids','valid_from','valid_until',
++            'min_qty','max_qty','kelipatan','min_subtotal','suggest','item_ids')) > 0 then
++      raise exception 'Kolom promo tidak lengkap atau tidak diizinkan' using errcode = '22023';
++    end if;
++    v_name := btrim(v_entry ->> 'name');
++    if v_name is null or length(v_name) not between 1 and 120 then
++      raise exception 'Nama promo wajib 1-120 karakter' using errcode = '22023';
++    end if;
++    if lower(v_name) = any(v_seen) then
++      raise exception 'Nama promo muncul dua kali dalam satu berkas: %', v_name using errcode = '22023';
++    end if;
++    v_seen := array_append(v_seen, lower(v_name));
++    v_suggest := btrim(coalesce(nullif(v_entry ->> 'suggest', ''), v_name));
++    if length(v_suggest) > 160 then
++      raise exception 'Teks saran promo % terlalu panjang', v_name using errcode = '22023';
++    end if;
++
++    if coalesce(v_entry ->> 'discount_type', '') not in ('percent','nominal') then
++      raise exception 'Jenis diskon promo % harus Persen atau Nominal', v_name using errcode = '22023';
++    end if;
++    if jsonb_typeof(v_entry -> 'discount_value') is distinct from 'number'
++       or jsonb_typeof(v_entry -> 'auto_apply') is distinct from 'boolean'
++       or jsonb_typeof(v_entry -> 'kelipatan') is distinct from 'boolean' then
++      raise exception 'Nilai atau pilihan Ya/Tidak promo % tidak valid', v_name using errcode = '22023';
++    end if;
++    v_discount_value := (v_entry ->> 'discount_value')::numeric;
++    if v_discount_value is null or v_discount_value <= 0
++       or v_discount_value::text in ('NaN','Infinity','-Infinity')
++       or round(v_discount_value, 2) <> v_discount_value
++       or (v_entry ->> 'discount_type' = 'percent' and v_discount_value > 100) then
++      raise exception 'Nilai diskon promo % tidak valid', v_name using errcode = '22023';
++    end if;
++    if coalesce(v_entry ->> 'valid_from', '') !~ '^\d{4}-\d{2}-\d{2}$'
++       or coalesce(v_entry ->> 'valid_until', '') !~ '^\d{4}-\d{2}-\d{2}$'
++       or (v_entry ->> 'valid_until')::date < (v_entry ->> 'valid_from')::date then
++      raise exception 'Tanggal promo % tidak valid', v_name using errcode = '22023';
++    end if;
++    foreach v_key in array array['min_qty','max_qty','min_subtotal'] loop
++      if jsonb_typeof(v_entry -> v_key) not in ('null','number') then
++        raise exception 'Angka promo % tidak valid', v_name using errcode = '22023';
++      end if;
++    end loop;
++    v_min_qty := (v_entry ->> 'min_qty')::numeric;
++    v_max_qty := (v_entry ->> 'max_qty')::numeric;
++    v_min_subtotal := (v_entry ->> 'min_subtotal')::numeric;
++    if v_min_qty <= 0 or v_max_qty <= 0 or v_max_qty < v_min_qty or v_min_subtotal < 0 then
++      raise exception 'Syarat jumlah atau belanja promo % tidak valid', v_name using errcode = '22023';
++    end if;
++    if (v_entry ->> 'auto_apply')::boolean and (v_entry ->> 'kelipatan')::boolean and v_min_qty is null then
++      raise exception 'Kelipatan pada promo % memerlukan min. qty terisi', v_name using errcode = '22023';
++    end if;
++
++    if jsonb_typeof(v_entry -> 'branch_ids') not in ('array','null') then
++      raise exception 'Daftar cabang promo % tidak valid', v_name using errcode = '22023';
++    end if;
++    select array_agg(distinct x::uuid order by x::uuid) into v_branch_ids
++    from jsonb_array_elements_text(coalesce(nullif(v_entry -> 'branch_ids', 'null'::jsonb), '[]'::jsonb)) x;
++    if v_branch_ids is not null then
++      perform id from public.branches where id = any(v_branch_ids) order by id for share;
++      if (select count(*) from public.branches b where b.id = any(v_branch_ids) and b.is_active
++          and public.user_can_access_branch(b.id)) <> cardinality(v_branch_ids) then
++        raise exception 'Cabang promo % tidak tersedia atau tidak dapat diakses', v_name using errcode = '42501';
++      end if;
++    end if;
++
++    if jsonb_typeof(v_entry -> 'item_ids') is distinct from 'array'
++       or jsonb_array_length(v_entry -> 'item_ids') < 1 then
++      raise exception 'Promo % harus menyebut sedikitnya satu barang', v_name using errcode = '22023';
++    end if;
++    select array_agg(distinct x::uuid order by x::uuid) into v_item_ids
++    from jsonb_array_elements_text(v_entry -> 'item_ids') x;
++    v_items_total := v_items_total + cardinality(v_item_ids);
++    if v_items_total > 500 then
++      raise exception 'Maksimal 500 baris barang per berkas' using errcode = '22023';
++    end if;
++    perform id from public.items where id = any(v_item_ids) order by id for share;
++    if (select count(*) from public.items i where i.id = any(v_item_ids) and i.is_active) <> cardinality(v_item_ids) then
++      raise exception 'Ada barang promo % yang tidak dikenal atau nonaktif', v_name using errcode = '22023';
++    end if;
++
++    -- Serialize dua unggahan yang menyebut nama promo yang sama.
++    perform pg_advisory_xact_lock(hashtextextended('vetos:promo-master:' || lower(v_name), 0));
++    select count(*) into v_duplicates from public.promos p where lower(btrim(p.name)) = lower(v_name);
++    if v_duplicates > 1 then
++      raise exception 'Nama % dipakai lebih dari satu promo; rapikan dulu di layar promo', v_name using errcode = '22023';
++    end if;
++    v_existing := null;
++    select * into v_existing from public.promos p where lower(btrim(p.name)) = lower(v_name) for update;
++
++    v_rule := jsonb_build_object('suggest', v_suggest);
++    if v_min_subtotal is not null then v_rule := v_rule || jsonb_build_object('min_subtotal', v_min_subtotal); end if;
++
++    if v_existing.id is not null then
++      if v_existing.promo_type <> 'diskon_produk' then
++        raise exception 'Nama % sudah dipakai promo jenis %; ganti nama promo', v_name, v_existing.promo_type using errcode = '22023';
++      end if;
++      if coalesce(v_existing.rule ->> 'discount_mode', 'per_unit') <> 'per_unit' then
++        raise exception 'Promo % memakai perhitungan total per paket; ubah lewat layar promo', v_name using errcode = '22023';
++      end if;
++      if exists (select 1 from public.promo_import_targets t where t.promo_id = v_existing.id) then
++        raise exception 'Promo % berasal dari impor per-SKU dan targetnya dikunci; pakai nama baru', v_name using errcode = '22023';
++      end if;
++      update public.promos set
++        name = v_name,
++        rule = (coalesce(v_existing.rule, '{}'::jsonb) - 'suggest' - 'min_subtotal') || v_rule,
++        min_qty = v_min_qty, max_qty = v_max_qty,
++        kelipatan = (v_entry ->> 'kelipatan')::boolean,
++        auto_apply = (v_entry ->> 'auto_apply')::boolean,
++        discount_type = v_entry ->> 'discount_type',
++        discount_value = v_discount_value,
++        branch_ids = v_branch_ids,
++        valid_from = (v_entry ->> 'valid_from')::date,
++        valid_until = (v_entry ->> 'valid_until')::date,
++        is_active = true
++      where id = v_existing.id;
++      delete from public.promo_items pi where pi.promo_id = v_existing.id and not (pi.item_id = any(v_item_ids));
++      insert into public.promo_items(promo_id, item_id)
++      select v_existing.id, candidate.id from unnest(v_item_ids) candidate(id)
++      where not exists (select 1 from public.promo_items pi where pi.promo_id = v_existing.id and pi.item_id = candidate.id);
++      v_updated := v_updated + 1;
++    else
++      insert into public.promos(name, promo_type, rule, is_active, branch_ids, valid_from, valid_until,
++        auto_apply, discount_type, discount_value, min_qty, max_qty, kelipatan)
++      values (v_name, 'diskon_produk', v_rule, true, v_branch_ids,
++        (v_entry ->> 'valid_from')::date, (v_entry ->> 'valid_until')::date,
++        (v_entry ->> 'auto_apply')::boolean, v_entry ->> 'discount_type', v_discount_value,
++        v_min_qty, v_max_qty, (v_entry ->> 'kelipatan')::boolean)
++      returning id into v_promo_id;
++      insert into public.promo_items(promo_id, item_id)
++      select v_promo_id, candidate.id from unnest(v_item_ids) candidate(id);
++      v_created := v_created + 1;
++    end if;
++  end loop;
++
++  return jsonb_build_object('created', v_created, 'updated', v_updated);
++end $$;
++revoke all on function public.import_promo_master(jsonb) from public, anon, service_role;
++grant execute on function public.import_promo_master(jsonb) to authenticated;
++comment on function public.import_promo_master(jsonb) is
++  'Impor daftar promo diskon produk dari Excel: satu promo banyak SKU, nama yang sudah ada diperbarui. OWNER/ADMIN saja.';
++
++-- ---------------------------------------------------------------------------
++-- 4. Pemeriksaan akhir: tolak pemasangan bila hasilnya tidak seperti yang ditinjau
++-- ---------------------------------------------------------------------------
++do $check$
++declare d text;
++begin
++  d := pg_get_functiondef('public.clinic_post_invoice(uuid,text,jsonb,jsonb)'::regprocedure);
++  if position('promo_id, promo_discount' in d) = 0
++     or position('voucher_discount, diskon_kategori' in d) = 0
++     or position('INVOICE_INVALID: rincian potongan melebihi diskon invoice' in d) = 0 then
++    raise exception 'Atribusi promo klinik: posting tagihan belum menyimpan rincian per program';
++  end if;
++  d := pg_get_functiondef('public.clinic_edit_invoice_core(uuid,text,jsonb,jsonb)'::regprocedure);
++  if position('v_promo_old' in d) = 0 or position('v_promo_scale' in d) = 0 then
++    raise exception 'Atribusi promo klinik: koreksi tagihan menghapus rincian per program';
++  end if;
++  d := pg_get_functiondef('public.clinic_void_reissue_invoice_core(uuid,text,text)'::regprocedure);
++  if position('promo_id,promo_discount' in d) = 0 or position('v_invoice.voucher_discount' in d) = 0 then
++    raise exception 'Atribusi promo klinik: terbit ulang tidak menyalin rincian per program';
++  end if;
++  if to_regprocedure('public.import_promo_master(jsonb)') is null then
++    raise exception 'Impor daftar promo: RPC tidak terpasang';
++  end if;
++end $check$;
