@@ -2,9 +2,9 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ role: "FINANCE", pending: false, clinicPending: false, rpcCalls: [] as { name: string; args: unknown }[] }));
+const state = vi.hoisted(() => ({ role: "FINANCE", pending: false, clinicPending: false, rpcCalls: [] as { name: string; args: unknown }[], balanceCalls: 0 }));
 vi.mock("next/link", () => ({ default: ({ children, prefetch, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { prefetch?: boolean }) => <a {...props} data-prefetch={prefetch ? "true" : undefined}>{children}</a> }));
-vi.mock("@/lib/ledger", () => ({ getAccountBalances: async () => [] }));
+vi.mock("@/lib/ledger", () => ({ getAccountBalances: async () => { state.balanceCalls++; return [{ code: "120002", saldo: 600_199_200 }]; } }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
   from: (table: string) => {
@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 
 import KasBankPage from "@/app/(app)/kas-bank/page";
 
-beforeEach(() => { state.role = "FINANCE"; state.pending = false; state.clinicPending = false; state.rpcCalls = []; });
+beforeEach(() => { state.role = "FINANCE"; state.pending = false; state.clinicPending = false; state.rpcCalls = []; state.balanceCalls = 0; });
 
 it("shows an authorized finance user that a transfer refund is waiting", async () => {
   state.pending = true;
@@ -40,6 +40,13 @@ it("keeps the refund queue entry out of a cashier's module home", async () => {
   expect(html).not.toContain('href="/kas-bank/refund"');
   expect(html).not.toContain("Ada refund transfer menunggu");
   expect(state.rpcCalls).toEqual([]);
+});
+
+it("does not show account balances on the Kas & Bank front page", async () => {
+  const html = renderToStaticMarkup(await KasBankPage());
+  expect(html).not.toContain("Rp ");
+  expect(html).not.toContain("Saldo tiap rekening");
+  expect(state.balanceCalls).toBe(0);
 });
 
 it("shows the waiting notice for a clinic transfer refund in the shared queue", async () => {
