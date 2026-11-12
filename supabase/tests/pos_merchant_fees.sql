@@ -9,6 +9,7 @@ select pg_temp.assert_ok(to_regclass('public.sale_payments') is not null,'Split 
 insert into auth.users(id,raw_user_meta_data) values
 ('e1100000-0000-4000-8000-000000000001','{"full_name":"Split cashier"}'),('e1100000-0000-4000-8000-000000000002','{"full_name":"Other cashier"}');
 update profiles set role='STAFF',is_active=true where id in('e1100000-0000-4000-8000-000000000001','e1100000-0000-4000-8000-000000000002');
+insert into role_settings_private.action_policies(role, allowed) values ('STAFF', array['kasir.diskon_manual']) on conflict (role) do update set allowed = excluded.allowed; -- izin diskon manual (20261116100000): fixture ini memposting diskon ketikan sebagai STAFF; yang diuji bukan diskonnya
 insert into role_modules(role,module_id) values('STAFF','pos') on conflict do nothing;
 insert into branches(id,code,name,type) values('e2200000-0000-4000-8000-000000000001','SPLITTEST','Split test','PETSHOP'),('e2200000-0000-4000-8000-000000000002','SPLITOTHER','Other test','PETSHOP');
 insert into user_branches(user_id,branch_id) values('e1100000-0000-4000-8000-000000000001','e2200000-0000-4000-8000-000000000001'),('e1100000-0000-4000-8000-000000000002','e2200000-0000-4000-8000-000000000002');
