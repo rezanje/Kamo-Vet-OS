@@ -2,7 +2,7 @@ import { MODULES } from "./nav";
 import { SEMUA_PERAN } from "./akses";
 import type { RoleCapabilities } from "./role-capabilities";
 import { selectableSubmenus } from "./submenu-access";
-import { isGrantOnlyAction } from "./role-grant-only-actions";
+import { legacyRoleHasAction } from "./role-grant-only-actions";
 
 export const ROLE_ACCESS_CATALOG = [...MODULES.map(m => ({ ...m, group: "Modul" })),
   { id: "kasir", label: "Kasir", icon: "ti-cash-register", group: "Operasional" },
@@ -37,6 +37,6 @@ export function parseRoleAccessConfig(value: unknown, role: string): RoleAccessC
 /** The policy the database actually applies: no saved action policy ("legacy") allows every enforced action
  * (subject to the original role/branch/state ceilings); an explicit policy allows exactly its list.
  * Exception: grant-only actions (izin khusus, e.g. pembelian.batalkan_*) are OFF for a legacy role: the database only allows them when a saved
- * policy lists them explicitly. */
+ * policy lists them explicitly — kecuali pengecualian per peran (GRANT_ONLY_LEGACY_ROLES, mis. diskon manual: ADMIN legacy boleh). */
 export const effectiveAllowedActions = (config: RoleAccessConfig): string[] =>
-  config.actions.source === "legacy" ? config.action_catalog.filter(a => a.enforced && !isGrantOnlyAction(a.id)).map(a => a.id) : config.actions.allowed;
+  config.actions.source === "legacy" ? config.action_catalog.filter(a => a.enforced && legacyRoleHasAction(a.id, config.role)).map(a => a.id) : config.actions.allowed;

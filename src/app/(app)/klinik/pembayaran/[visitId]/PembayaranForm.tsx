@@ -93,7 +93,7 @@ export function openServiceSourceIds(rows: Line[]): Set<string> {
     && !row.service_performers.doctor_id && !row.service_performers.staff_id).map(row => row.prescription_item_id!));
 }
 
-export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, packageQuantityLocked = sealedPerformers, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, performersForNewRows = false, performersForPendingRows = false, performersInCorrection = false, onPickPackage, onPackageQty, onRemovePackage, lantaiHarga = NO_FLOOR, racikanHargaOwner = false }: {
+export function ItemTable({ title, icon, color, rows, setRows, master, listId, allowUnits = false, serviceStaff = [], serviceRows = false, sealedPerformers = false, packageQuantityLocked = sealedPerformers, defaultDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, openSourceIds = NO_OPEN_SOURCES, packages = NO_PACKAGES, discountsDisabled = false, performersForNewRows = false, performersForPendingRows = false, performersInCorrection = false, onPickPackage, onPackageQty, onRemovePackage, lantaiHarga = NO_FLOOR, racikanHargaOwner = false, discountTitle }: {
   title: string; icon: string; color: string; rows: Line[]; setRows: (r: Line[]) => void;
   master: MasterItem[]; listId: string; allowUnits?: boolean;
   serviceStaff?: ServiceStaff[]; serviceRows?: boolean; sealedPerformers?: boolean; packageQuantityLocked?: boolean; groomingDoctorRequired?: boolean;
@@ -126,6 +126,8 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
   lantaiHarga?: PriceFloorRow[];
   /** Rawat inap, Owner saja: harga racikan tersimpan boleh diubah (alasan wajib); database yang menegakkan peran dan lantai HPP. */
   racikanHargaOwner?: boolean;
+  /** Keterangan saat kolom diskon dikunci (bawaan: tahap rawat inap). */
+  discountTitle?: string;
 }) {
   const minimumUntuk = (row: Line) => hargaMinimumUntuk(lantaiHarga, row);
   const pendingEditable = (r: Line) => performersForPendingRows && !!r.prescription_item_id && !r.terkunci && !r.source_invoice_item_id && !r.performers_sealed;
@@ -153,14 +155,15 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
     if(item){
       const changed=rows[i]?.item_id!==item.id || !!rows[i]?.recipe_id;
       set(i,{deskripsi:item.name,item_id:item.id,harga:item.harga,satuan:item.unit,kategori:item.tindakan_kategori,
-        ...(changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null,package_item_id:null,package_qty:null} : {})});
+        ...(changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null,package_item_id:null,package_qty:null,...(discountsDisabled?{diskon_persen:0}:{})} : {})});
     }
   };
   const setNama = (i: number, v: string) => {
     const it = byLabel.get(v) ?? byName.get(v.trim().toLowerCase());
     if (it?.paket && onPickPackage) { onPickPackage(i, it.id); return; }
     const changed=it ? rows[i]?.item_id!==it.id || !!rows[i]?.recipe_id : v!==rows[i]?.deskripsi;
-    const clearSource=changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null,package_item_id:null,package_qty:null} : {};
+    // Baris yang diganti isinya jadi baris baru: tanpa izin diskon, diskon lama baris itu tidak ikut terbawa.
+    const clearSource=changed ? {prescription_item_id:null,recipe_id:null,source_invoice_item_id:null,salesperson_id:null,salesperson_name:null,package_item_id:null,package_qty:null,...(discountsDisabled?{diskon_persen:0}:{})} : {};
     set(i, it
       ? { deskripsi: it.name, item_id: it.id, harga: it.harga, satuan: it.unit, kategori:it.tindakan_kategori, ...clearSource }
       : {
@@ -295,7 +298,7 @@ export function ItemTable({ title, icon, color, rows, setRows, master, listId, a
               </td>
               <td>
                 <NumberInput className="fi" type="number" min={0} max={100} step="any"
-                  aria-label={`Diskon ${r.deskripsi}`} readOnly={discountsDisabled} title={discountsDisabled ? "Diskon tidak berlaku pada invoice tahap rawat inap" : undefined}
+                  aria-label={`Diskon ${r.deskripsi}`} readOnly={discountsDisabled} title={discountsDisabled ? discountTitle ?? "Diskon tidak berlaku pada invoice tahap rawat inap" : undefined}
                   value={r.diskon_persen ?? 0}
                   onChange={(e) => set(i, { diskon_persen: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
                   style={{ textAlign: "center" }} />
@@ -414,7 +417,9 @@ function ServicePerformersBulk({rows,setRows,staff,locked}:{rows:Line[];setRows:
   </div>;
 }
 
-export function PembayaranForm({ visitId, requestKey, targetInvoiceId, serverError = null, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, minDpPercent = 0, bolehTerobosDp = false, allowDpAdmission = false, initialDpAdmission = false, performersInCorrection = false }: {
+const TANPA_IZIN_DISKON = "Diskon manual hanya bisa diberikan Owner/Admin";
+
+export function PembayaranForm({ visitId, requestKey, targetInvoiceId, serverError = null, patient, initialObat, initialJasa, masterObat = [], masterJasa = [], bekal, catatanResep, ppnRate = 0, initialDiscount = 0, initialDpAmount = 0, initialCreditAmount = 0, initialDpDate = null, initialMetode = "Tunai", editMode = false, initialSalespersonId = "", serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, cashierName = "Akun kasir", sealedSalespersonName = "Tanpa penjual", manualUnitsEnabled = false, demoPolicy = null, demoStaff = [], draftUserId = "", sourceVersion = "", draftScope = `payment:${visitId}:new`, packages = NO_PACKAGES, racikanPending = false, minDpPercent = 0, bolehTerobosDp = false, allowDpAdmission = false, initialDpAdmission = false, performersInCorrection = false, bolehDiskon = true }: {
   visitId: string; requestKey: string; patient: Patient; initialObat: Line[]; initialJasa: Line[]; catatanResep: string | null;
   targetInvoiceId?: string;
   /** Pesan galat server (?error=) dari penyimpanan sebelumnya; baris yang disebut aturan di bawah HPP diberi tanda. */
@@ -434,6 +439,8 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, serverErr
   groomingApplies?: boolean;
   salespeople?: PilihanPenjual[]; initialSalespersonId?: string; sealedSalespersonName?: string;
   ppnRate?: number;
+  /** Diskon manual (diskon % per baris & diskon total) hanya Owner/Admin — dibaca server dari izin Akses Grup. Diskon lama tetap terlihat. */
+  bolehDiskon?: boolean;
   initialDiscount?: number; initialDpAmount?: number; initialCreditAmount?: number; initialDpDate?: string | null; initialMetode?: string; editMode?: boolean;
   /** Uang muka minimal tagihan klinik (persen). 0 = aturannya dimatikan. */
   minDpPercent?: number;
@@ -668,8 +675,13 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, serverErr
         return [...restored, ...initial.filter(source => source.terkunci
           && !restored.some(row => row.item_id === source.item_id))];
       };
-      setObat(restoreRows(value.obat, initialObat)); setJasa(restoreRows(value.jasa, initialJasa));
-      setDiscount(value.discount); const metodeDraf = pulihkanMetodeDraf(value.metode, value.bayar); setMetode(metodeDraf.metode); setPesanMetodeDraf(metodeDraf.pesan); setReason(value.reason);
+      // Tanpa izin diskon manual: diskon dari draf tidak boleh melebihi yang sudah tersimpan di tagihan (baris asal / diskon total).
+      const batasiDiskon = (rows: Line[], initial: Line[]) => bolehDiskon ? rows : rows.map(row => {
+        const tersimpan = row.source_invoice_item_id ? Number(initial.find(source => source.source_invoice_item_id === row.source_invoice_item_id)?.diskon_persen) || 0 : 0;
+        return (Number(row.diskon_persen) || 0) > tersimpan ? { ...row, diskon_persen: tersimpan } : row;
+      });
+      setObat(batasiDiskon(restoreRows(value.obat, initialObat), initialObat)); setJasa(batasiDiskon(restoreRows(value.jasa, initialJasa), initialJasa));
+      setDiscount(bolehDiskon ? value.discount : Math.min(Number(value.discount) || 0, initialDiscount)); const metodeDraf = pulihkanMetodeDraf(value.metode, value.bayar); setMetode(metodeDraf.metode); setPesanMetodeDraf(metodeDraf.pesan); setReason(value.reason);
       setVoucher(value.voucher); setPoinPakai(value.poinPakai); setBayar(metodeDraf.bayar); setBayarManual(metodeDraf.bayarManual); setSalesperson(value.salesperson);
       setDemoEnabled(!editMode && !!demoPolicy && value.demoEnabled === true);
       setDemoPolicyId(typeof value.demoPolicyId === "string" ? value.demoPolicyId : demoPolicy?.id ?? "");
@@ -760,16 +772,16 @@ export function PembayaranForm({ visitId, requestKey, targetInvoiceId, serverErr
       <PaymentCashierHeader name={cashierName} historical={editMode} historicalName={sealedSalespersonName} />
 
       <PaymentLayout catatanResep={catatanResep} cart={<>
-          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={displayObat} setRows={setDisplayObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedPerformers={editMode} performersInCorrection={editMode && performersInCorrection} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} packages={packages} lantaiHarga={lantaiHarga}
+          <ItemTable title="OBAT" icon="ti-pill" color="#7c3aed" rows={displayObat} setRows={setDisplayObat} master={masterObat} listId="mst-obat" allowUnits={manualUnitsEnabled} serviceStaff={serviceStaff} sealedPerformers={editMode} performersInCorrection={editMode && performersInCorrection} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} packages={packages} lantaiHarga={lantaiHarga} discountsDisabled={!bolehDiskon} discountTitle={TANPA_IZIN_DISKON}
             onPickPackage={editMode ? undefined : pilihPaket} onPackageQty={editMode ? undefined : aturJumlahPaket} onRemovePackage={hapusPaket} />
-          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={displayJasa} setRows={setDisplayJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} performersInCorrection={editMode && performersInCorrection} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} packages={packages} lantaiHarga={lantaiHarga} onPackageQty={editMode ? undefined : aturJumlahPaket} onRemovePackage={hapusPaket} />
+          <ItemTable title="JASA / Tindakan" icon="ti-stethoscope" color="var(--posb)" rows={displayJasa} setRows={setDisplayJasa} master={masterJasa} listId="mst-jasa" serviceRows serviceStaff={serviceStaff} sealedPerformers={editMode} performersInCorrection={editMode && performersInCorrection} defaultDoctorId={visitDoctorId} openSourceIds={openSourceIds} groomingDoctorRequired={groomingDoctorRequired} groomingApplies={groomingApplies} packages={packages} lantaiHarga={lantaiHarga} discountsDisabled={!bolehDiskon} discountTitle={TANPA_IZIN_DISKON} onPackageQty={editMode ? undefined : aturJumlahPaket} onRemovePackage={hapusPaket} />
 
         </>} chargeSummary={<>
               {customerFee > 0 && <SumRow label="Admin pembayaran DEMO" value={rp(customerFee)}/>}
               <SumRow label="Subtotal (Obat + Jasa)" value={rp(subtotal)} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0" }}>
                 <span style={{ fontSize: 11.5, color: "var(--tm)" }}>Diskon</span>
-                <NumberInput className="fi" type="number" min={0} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 100, textAlign: "right" }} />
+                <NumberInput className="fi" type="number" min={0} step={1} value={discount} readOnly={!bolehDiskon} title={!bolehDiskon ? TANPA_IZIN_DISKON : undefined} onChange={(e) => setDiscount(Number(e.target.value))} style={{ width: 100, textAlign: "right" }} />
               </div>
               {promoVal > 0 && <SumRow label="Promo otomatis" value={`- ${rp(promoVal)}`} />}
               {rincianPromo.length > 0 && (

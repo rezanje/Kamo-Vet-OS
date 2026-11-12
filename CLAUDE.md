@@ -18,6 +18,13 @@ Format **setiap kali satu pekerjaan selesai** (permintaan Reza, 1 Nov) — wajib
 3. **Chat buat user** — draf pesan siap kirim ke pelapor (mis. Anisa di grup klinik), bahasa santai,
    tanpa istilah teknis, berisi apa yang berubah dan cara pakainya.
 
+Gaya **draf chat atas nama Reza** ke user/klien (permintaan Reza, 12 Nov):
+- Pakai **"aku"**, jangan "kami"/"kita" sebagai pengganti diri Reza.
+- Panggil **"mas"/"mba"**, jangan "Pak"/"Bu"/"kak".
+- Santai, tidak kaku, boleh sedikit iseng ("siapp", "hehe", "kok"). Contoh:
+  "siapp mas aku coba selesaikan dulu untuk a, b, c ya".
+- Pendek, langsung ke inti, tanpa istilah teknis.
+
 Aturan keras:
 - Tanpa jargon. Istilah teknis diterjemahkan jadi dampak bisnis.
 - Jangan tempel kode, log, error mentah, nama file/tabel/kolom, atau jalan pikiran teknis ke chat.
