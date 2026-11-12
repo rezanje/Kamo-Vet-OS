@@ -17,7 +17,7 @@ Shopee B2C, Shopee Bogor, Shopee Bandung, Tokopedia Bogor, Lazada Bogor, Tokoped
 130000. Yang terdaftar sebagai rekening (`20261112070356`) hanya akun 11xxxx dan 12xxxx, sehingga dompet tidak
 bisa dipilih di layar mana pun. Saldo dompet di Production pada 12 Nov masih Rp 0, tanpa jurnal.
 
-Perbaikan ada di migrasi `20261115400000_dompet_ecommerce_jadi_rekening.sql`. Migrasi ini idempoten dan tidak
+Perbaikan ada di migrasi `20261112081850_dompet_ecommerce_jadi_rekening.sql`. Migrasi ini idempoten dan tidak
 membuat jurnal:
 
 - Setiap akun aktif bukan-induk bertipe ASET berkode `13xxxx`, kecuali 130009 Piutang Marketplace, didaftarkan
@@ -38,7 +38,7 @@ dengan semua migrasi.
 
 ## 2. Edit Kas Masuk/Keluar & Transfer untuk Admin/Finance
 
-Migrasi `20261115410000_edit_kas_transfer_admin_finance.sql`:
+Migrasi `20261112083122_edit_kas_transfer_admin_finance.sql`:
 
 - `internal_transfer_access`: koreksi dan batal transfer kini boleh dilakukan OWNER, ADMIN, dan FINANCE aktif.
   Sebelumnya hanya OWNER.
@@ -91,7 +91,7 @@ Perubahan aplikasi:
 
 ## Rilis
 
-1. Terapkan kedua migrasi ke Production: `20261115400000`, lalu `20261115410000`. Keduanya aman dijalankan
+1. Terapkan kedua migrasi ke Production: `20261112081850`, lalu `20261112083122`. Keduanya aman dijalankan
    sebelum atau sesudah aplikasi baru live. Kalau aplikasi lebih dulu live, tombol edit untuk Admin/Finance akan
    ditolak database dengan pesan yang jelas sampai migrasi kedua terpasang.
 2. Kueri baca sesudah pasang:
@@ -106,3 +106,18 @@ select position('d<>doc.tanggal' in pg_get_functiondef('public.mutate_cash_trans
 Catatan akses: per 12 Nov, grup ADMIN di Production belum diberi izin Transfer (menu dan tindakan
 `bank.cash_transfer.*`). Admin baru bisa memakai dan mengoreksi Transfer setelah OWNER menyalakannya di
 Pengaturan > Akses Grup. Finance sudah bisa.
+
+## Status Production (12 Nov 2026)
+
+- Kedua migrasi diterapkan langsung ke Production lewat konektor Supabase atas izin Reza. Versinya tercatat
+  `20261112081850` dan `20261112083122`, dan nama berkas di repo disamakan dengan versi itu.
+- Kueri baca sesudah pasang:
+  - 8 dompet 130001–130008 terdaftar sebagai rekening Bank untuk semua cabang.
+  - Pembatas "Hanya Super Admin" sudah tidak ada di `revise_cash_entry` maupun `internal_transfer_access`.
+  - Aturan "tanggal sama" sudah tidak ada di `mutate_cash_transfer`, sementara aturan cabang tetap ada.
+  - `search_path` dan `lock_timeout` fungsi tetap, izin `authenticated` tetap.
+- Atas permintaan Reza, grup ADMIN diberi akses Transfer lewat RPC resmi `save_role_access_config`. RPC itu
+  dijalankan dengan identitas akun Owner (`f34a14f2-…`); alasan tercatat di audit akses, id
+  `799e54b5-b930-494d-9356-21892bb08fcb`.
+  - Yang ditambahkan: submenu `kas-bank.transfer` dan tindakan `bank.cash_transfer.create/edit/void/recover`.
+  - Modul, kapabilitas, submenu, dan tindakan lain tetap sama. Epoch ADMIN naik dari 9 ke 10.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dompet e-commerce jadi rekening (20261115400000) on a throwaway native PostgreSQL.
+"""Dompet e-commerce jadi rekening (20261112081850) on a throwaway native PostgreSQL.
 
 Applies every repository migration, removes any e-commerce rekening to rebuild the pre-release production state
 (plus one wallet finance already registered by hand and renamed), re-applies the target migration and checks:
@@ -23,7 +23,7 @@ spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-ac
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
 BIN = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PG_BIN", "/usr/lib/postgresql/16/bin"))
-TARGET = ROOT / "supabase/migrations/20261115400000_dompet_ecommerce_jadi_rekening.sql"
+TARGET = ROOT / "supabase/migrations/20261112081850_dompet_ecommerce_jadi_rekening.sql"
 
 
 def ok(cond, msg):

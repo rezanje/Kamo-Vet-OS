@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Edit Kas & Transfer untuk Admin/Finance (20261115410000) on a throwaway native PostgreSQL.
+"""Edit Kas & Transfer untuk Admin/Finance (20261112083122) on a throwaway native PostgreSQL.
 
 Applies every repository migration (including the target), then:
   * re-applies the target migration: it must be a no-op (idempotent text patches);
@@ -26,7 +26,7 @@ spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-ac
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
 BIN = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PG_BIN", "/usr/lib/postgresql/16/bin"))
-TARGET = ROOT / "supabase/migrations/20261115410000_edit_kas_transfer_admin_finance.sql"
+TARGET = ROOT / "supabase/migrations/20261112083122_edit_kas_transfer_admin_finance.sql"
 CASH = "public.revise_cash_entry(text,uuid,integer,text,jsonb,text)"
 TRANSFER = "public.mutate_cash_transfer(text,text,uuid,integer,jsonb,text)"
 
