@@ -52,7 +52,7 @@ describe("izin khusus tanggal mundur", () => {
     expect(GRANT_ONLY_ACTIONS).toContain("klinik.batalkan_penerimaan_tanggal"); expect(isGrantOnlyAction("klinik.batalkan_penerimaan_tanggal")).toBe(true);
     expect(sql).toMatch(/action_catalog\(id, label, "group", enforced\)\s*values \('klinik\.batalkan_penerimaan_tanggal', '[^']*', 'Klinik', true\)/);
     expect(sql).toMatch(/action_modules\(id, module_id\)\s*values \('klinik\.batalkan_penerimaan_tanggal', 'klinik'\)/);
-    for (const id of GRANT_ONLY_ACTIONS.filter((x) => x.startsWith("klinik."))) expect(sql + readFileSync(join(process.cwd(), "supabase/migrations/20261112100000_batalkan_penerimaan_klinik.sql"), "utf8")).toContain(`'${id}'`);
+    for (const id of GRANT_ONLY_ACTIONS.filter((x) => x.startsWith("klinik.") && !x.endsWith(".ubah_metode_bayar"))) expect(sql + readFileSync(join(process.cwd(), "supabase/migrations/20261112100000_batalkan_penerimaan_klinik.sql"), "utf8")).toContain(`'${id}'`);
   });
   it("migrasi tanpa begin/commit sendiri dan semua tambalan berjangkar memakai penanda BACKDATE_KLINIK", () => {
     expect(sql.split("\n").filter((l) => ["begin;", "commit;"].includes(l.trim().toLowerCase()))).toEqual([]);

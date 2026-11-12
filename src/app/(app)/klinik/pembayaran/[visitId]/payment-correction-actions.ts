@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { metodeBayarSah, pesanMetodeBayarTidakSah } from "@/lib/metode-bayar";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * J02 klinik: koreksi Tunai <-> Transfer satu bagian pembayaran invoice (Owner/Finance).
+ * J02 klinik: koreksi metode (Tunai, Transfer, Debit, Kredit, QRIS, E-Wallet) satu bagian pembayaran invoice (Owner/Finance).
  * Satu RPC atomik membuat jurnal koreksi; kunci yang sama aman diulang bila respons hilang.
  */
 export async function koreksiMetodeBayarKlinik(form: FormData) {
@@ -21,10 +22,10 @@ export async function koreksiMetodeBayarKlinik(form: FormData) {
   const method = String(form.get("metode") ?? "");
   if (!uuid.test(visitId) || !uuid.test(invoiceId) || (paymentText !== "" && !uuid.test(paymentText))
     || !revisionText.trim() || !Number.isSafeInteger(revision) || revision < 0
-    || !key.trim() || key.length > 120 || reason.length < 3 || reason.length > 1000
-    || (method !== "Tunai" && method !== "Transfer")) {
+    || !key.trim() || key.length > 120 || reason.length < 3 || reason.length > 1000) {
     throw new Error("Identitas, alasan atau metode koreksi tidak valid. Muat ulang lalu coba lagi.");
   }
+  if (!metodeBayarSah(method)) throw new Error(pesanMetodeBayarTidakSah(method));
   const paymentId = paymentText === "" ? null : paymentText;
   const db = await createClient();
   const { data, error } = await db.rpc("correct_clinic_invoice_payment", {
@@ -38,4 +39,33 @@ export async function koreksiMetodeBayarKlinik(form: FormData) {
   revalidatePath("/", "layout");
   const scope = `clinic-payment:${invoiceId}:${paymentId ?? "langsung"}:${revision}`;
   redirect(`/klinik/pembayaran/${visitId}?success=koreksi-metode&draft_scope=${encodeURIComponent(scope)}&draft_done=${encodeURIComponent(key)}`);
+}
+
+/**
+ * Ubah metode bayar satu BAGIAN KWITANSI klinik (rawat inap, pelunasan, uang muka). Satu RPC atomik: reklas jurnal hari ini,
+ * metode+rekening bagian kwitansi dan baris pembayarannya, jejak tambah-saja. Kunci yang sama aman diulang bila respons hilang.
+ */
+export async function ubahMetodeKwitansiKlinik(form: FormData) {
+  const visitId = String(form.get("visitId") ?? "");
+  const receiptId = String(form.get("receiptId") ?? "");
+  const partId = String(form.get("partId") ?? "");
+  const revisionText = String(form.get("revision") ?? "0");
+  const key = String(form.get("requestKey") ?? "");
+  const reason = String(form.get("alasan") ?? "").trim();
+  const method = String(form.get("metode") ?? "");
+  if (!uuid.test(visitId) || !uuid.test(receiptId) || !uuid.test(partId)
+    || !key.trim() || key.length > 100 || reason.length < 3 || reason.length > 500) {
+    throw new Error("Identitas atau alasan tidak valid (alasan 3 sampai 500 huruf). Muat ulang lalu coba lagi.");
+  }
+  if (!metodeBayarSah(method)) throw new Error(pesanMetodeBayarTidakSah(method));
+  const db = await createClient();
+  const { data, error } = await db.rpc("correct_clinic_receipt_part_method", {
+    p_receipt_id: receiptId, p_part_id: partId, p_request_key: key, p_reason: reason, p_new_method: method,
+  });
+  if (error || data?.receipt_id !== receiptId || data?.part_id !== partId || data?.to_method !== method || !data?.audit_id) {
+    throw new Error(error?.message ?? "Hasil koreksi belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
+  }
+  revalidatePath("/", "layout");
+  const scope = `clinic-receipt-method:${receiptId}:${partId}:${revisionText}`;
+  redirect(`/klinik/pembayaran/${visitId}?success=ubah-metode-kwitansi&draft_scope=${encodeURIComponent(scope)}&draft_done=${encodeURIComponent(key)}`);
 }

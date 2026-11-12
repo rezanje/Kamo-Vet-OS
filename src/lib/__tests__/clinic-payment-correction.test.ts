@@ -33,15 +33,21 @@ describe("koreksiMetodeBayarKlinik", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
+  it.each(["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"])("accepts %s as the new method", async (metode) => {
+    fixture.rpc.mockResolvedValue({ data: { invoice_id: invoiceId, payment_id: paymentId, revision: 2, audit_id: "audit" }, error: null });
+    await expect(koreksiMetodeBayarKlinik(form({ metode }))).rejects.toThrow(/success=koreksi-metode/);
+    expect(fixture.rpc).toHaveBeenCalledWith("correct_clinic_invoice_payment", expect.objectContaining({ p_new_method: metode }));
+  });
+
   it("sends a null payment id for the invoice's direct payment", async () => {
     fixture.rpc.mockResolvedValue({ data: { invoice_id: invoiceId, payment_id: null, revision: 1, audit_id: "audit" }, error: null });
     await expect(koreksiMetodeBayarKlinik(form({ paymentId: "", revision: "0", metode: "Tunai" }))).rejects.toThrow(/success=koreksi-metode/);
     expect(fixture.rpc).toHaveBeenCalledWith("correct_clinic_invoice_payment", expect.objectContaining({ p_payment_id: null, p_new_method: "Tunai", p_expected_revision: 0 }));
   });
 
-  it.each([["metode", "QRIS"], ["revision", "-1"], ["revision", ""], ["alasan", "x"], ["requestKey", ""], ["paymentId", "bukan-uuid"], ["invoiceId", ""]])(
+  it.each([["metode", "Kartu"], ["metode", "tunai"], ["revision", "-1"], ["revision", ""], ["alasan", "x"], ["requestKey", ""], ["paymentId", "bukan-uuid"], ["invoiceId", ""]])(
     "rejects invalid %s=%s before RPC", async (field, value) => {
-      await expect(koreksiMetodeBayarKlinik(form({ [field]: value }))).rejects.toThrow(/tidak valid/);
+      await expect(koreksiMetodeBayarKlinik(form({ [field]: value }))).rejects.toThrow(/tidak (valid|dikenal)/);
       expect(fixture.rpc).not.toHaveBeenCalled();
     });
 
@@ -65,19 +71,25 @@ describe("clinicCorrectableParts", () => {
     expect(clinicCorrectableParts(base, [])).toEqual([{ paymentId: null, label: "Pembayaran invoice", method: "Tunai", amount: 100000 }]);
   });
 
-  it("offers each cash/transfer split part but not other methods or transferred balances", () => {
+  it("offers each split part of any valid method but not transferred balances, receipt-bound parts or unknown methods", () => {
     const parts = clinicCorrectableParts(base, [
       { id: "a", amount: 30000, metode: "Tunai", transferred_from: null },
       { id: "b", amount: 50000, metode: "QRIS", transferred_from: null },
       { id: "c", amount: 20000, metode: "Transfer", transferred_from: "old" },
+      { id: "d", amount: 10000, metode: "E-Wallet", transferred_from: null, receipt_id: "kwitansi-ranap" },
+      { id: "e", amount: 5000, metode: "Kartu", transferred_from: null },
     ]);
-    expect(parts).toEqual([{ paymentId: "a", label: "Bagian pembayaran 1", method: "Tunai", amount: 30000 }]);
+    expect(parts).toEqual([
+      { paymentId: "a", label: "Bagian pembayaran 1", method: "Tunai", amount: 30000 },
+      { paymentId: "b", label: "Bagian pembayaran 2", method: "QRIS", amount: 50000 },
+    ]);
   });
 
   it("offers the down payment and later receipts, never a reissued invoice's direct part", () => {
     const dp = { ...base, paid_status: "DP", dp_amount: 40000, metode_bayar: "Transfer" };
     expect(clinicCorrectableParts(dp, []).map(p => [p.paymentId, p.label, p.amount])).toEqual([[null, "Uang muka", 40000]]);
     expect(clinicCorrectableParts({ ...base, reissued_from: "old" }, [])).toEqual([]);
-    expect(clinicCorrectableParts({ ...base, metode_bayar: "Debit" }, [])).toEqual([]);
+    expect(clinicCorrectableParts({ ...base, metode_bayar: "Debit" }, []).map(p => p.method)).toEqual(["Debit"]);
+    expect(clinicCorrectableParts({ ...base, metode_bayar: "Kartu" }, [])).toEqual([]);
   });
 });

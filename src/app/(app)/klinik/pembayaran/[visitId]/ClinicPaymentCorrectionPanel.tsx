@@ -8,18 +8,19 @@ export type ClinicPaymentCorrectionRow = {
   id: string; revision: number; amount: number; from_method: string; to_method: string; reason: string; created_at: string;
 };
 
-/** J02 klinik (Owner/Finance): riwayat dan form koreksi Tunai <-> Transfer pada invoice yang sama. */
+/** J02 klinik (Owner/Finance): riwayat dan form koreksi metode pembayaran (semua metode) pada invoice yang sama. */
 export function ClinicPaymentCorrectionPanel({ userId, visitId, invoiceId, parts, history, readError, blocked }: {
   userId: string; visitId: string; invoiceId: string; parts: ClinicCorrectablePart[];
   history: ClinicPaymentCorrectionRow[]; readError: boolean; blocked: string | null;
 }) {
   return <details className="card" style={{ marginTop: 12 }}>
     <summary style={{ fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-      <i className="ti ti-arrows-exchange" /> KOREKSI METODE PEMBAYARAN (TUNAI ↔ TRANSFER)
+      <i className="ti ti-arrows-exchange" /> KOREKSI METODE PEMBAYARAN
     </summary>
     <div style={{ fontSize: 10.5, color: "var(--tm)", margin: "6px 0" }}>
-      Nominal dan struk tidak berubah. Sistem mencatat jurnal koreksi hari ini dari rekening lama ke rekening metode baru.
-      Shift yang sudah ditutup tidak dibuka ulang.
+      Nominal dan struk tidak berubah. Sistem mencatat jurnal koreksi hari ini dari rekening lama ke rekening metode baru
+      (bila kedua metode memakai rekening yang sama, hanya label metode yang berubah). Shift yang sudah ditutup tidak dibuka ulang.
+      Invoice DEMO tidak bisa dikoreksi. Bagian dari kwitansi (rawat inap, pelunasan, uang muka) diubah lewat panel Ubah metode bayar kwitansi di bawah.
     </div>
     {readError ? <p role="alert">Riwayat koreksi belum dapat dibaca. Muat ulang sebelum mengoreksi.</p> : <>
       {history.length > 0 && <div style={{ marginBottom: 6 }}>
@@ -29,7 +30,7 @@ export function ClinicPaymentCorrectionPanel({ userId, visitId, invoiceId, parts
         </div>)}
       </div>}
       {blocked ? <p role="status" style={{ fontSize: 11 }}>{blocked}</p>
-        : parts.length === 0 ? <p role="status" style={{ fontSize: 11 }}>Tidak ada bagian pembayaran Tunai atau Transfer yang dapat dikoreksi.</p>
+        : parts.length === 0 ? <p role="status" style={{ fontSize: 11 }}>Tidak ada bagian pembayaran yang dapat dikoreksi.</p>
         : parts.map((part) => <ClinicPaymentCorrectionForm key={`${part.paymentId ?? "langsung"}:${history.length}`} userId={userId}
           visitId={visitId} invoiceId={invoiceId} paymentId={part.paymentId} revision={history.length}
           label={part.label} method={part.method} amount={part.amount} />)}

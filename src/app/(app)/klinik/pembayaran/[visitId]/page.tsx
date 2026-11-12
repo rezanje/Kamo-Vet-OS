@@ -14,6 +14,8 @@ import { VoidReissueForm } from "./VoidReissueForm";
 import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
 import { UangMukaRefundSection } from "./UangMukaRefundSection";
 import { ClinicPaymentCorrectionPanel, type ClinicPaymentCorrectionRow } from "./ClinicPaymentCorrectionPanel";
+import { KwitansiMetodePanel, type KwitansiAktif, type KwitansiMetodeRiwayat } from "./KwitansiMetodePanel";
+import { metodeBayarSah, type MetodeBayar } from "@/lib/metode-bayar";
 import { clinicCorrectableParts } from "@/lib/clinic-payment-correction";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
@@ -203,13 +205,15 @@ export default async function PembayaranPage({
     .select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name)", { count: "exact" })
     .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian tagihan tersimpan", { maxRows: null })
     .catch(() => { throw unverifiedBilling(); })) : null;
-  const paymentRowsP = invoice ? mulai(supabase.from("invoice_payments").select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id)) : null;
+  const paymentRowsP = invoice ? mulai(supabase.from("invoice_payments").select("id, amount, metode, transferred_from, receipt_id").eq("invoice_id", invoice.id)) : null;
   const refundDataP = invoice && invoice.paid_status === "Lunas" && !invoice.correction_pending ? mulai(loadClinicRefundData(supabase, invoice.id)) : null;
   // J02: peran pembaca + riwayat koreksi metode ikut berangkat bersama bacaan invoice
   // (bukan putaran tersendiri); riwayat hanya dipakai bila perannya OWNER/FINANCE.
   const viewerProfileP = invoice && draftUser
     ? mulai(supabase.from("profiles").select("role,is_active").eq("id", draftUser.id).maybeSingle())
     : null;
+  // Izin khusus "Ubah metode bayar" dibaca bersamaan dengan profil (bukan putaran tersendiri); hanya dipakai bila perannya bukan Owner/Finance.
+  const ubahIzinP = invoice && draftUser ? mulai(supabase.rpc("ubah_metode_allowed", { p_domain: "klinik" })) : null;
   const correctionRowsP = invoice && draftUser && !invoice.correction_pending && !invoice.reissued_from
     ? mulai(supabase.from("clinic_payment_corrections")
       .select("id, revision, amount, from_method, to_method, reason, created_at")
@@ -362,7 +366,7 @@ export default async function PembayaranPage({
   const pelunasanTerbuka = !inpat && !!invoice && !lunas && !invoice.correction_pending && sisaPelunasan > 0;
   const refundData = refundDataP ? await refundDataP : null;
 
-  // J02: Owner/Finance boleh mengoreksi Tunai <-> Transfer, juga sesudah shift ditutup.
+  // J02: Owner/Finance boleh mengoreksi metode pembayaran ke metode lain, juga sesudah shift ditutup.
   const [{ data: viewerProfile }, correctionRead] = await Promise.all([
     viewerProfileP ?? Promise.resolve({ data: null }),
     correctionRowsP ?? Promise.resolve({ data: [], error: null }),
@@ -372,6 +376,37 @@ export default async function PembayaranPage({
   const { data: correctionData, error: correctionError } = canCorrectMethod
     ? correctionRead
     : { data: [], error: null };
+  // Ubah metode bayar KWITANSI (rawat inap, pelunasan, uang muka): Owner, Finance, atau izin khusus "Ubah metode bayar" (bawaan mati).
+  // Database memeriksa ulang (correct_clinic_receipt_part_method); di sini hanya menentukan tombolnya tampil atau tidak.
+  let ubahMetodeBoleh = !!invoice && viewerProfile?.is_active === true && (viewerProfile.role === "OWNER" || viewerProfile.role === "FINANCE");
+  if (!ubahMetodeBoleh && invoice && viewerProfile?.is_active === true && ubahIzinP) {
+    const { data: izin } = await ubahIzinP;
+    ubahMetodeBoleh = izin === true;
+  }
+  let kwitansiAktif: KwitansiAktif[] = [];
+  let kwitansiRiwayat: KwitansiMetodeRiwayat[] = [];
+  let kwitansiError = false;
+  if (ubahMetodeBoleh) {
+    const [rc, rh] = await Promise.all([
+      supabase.from("clinic_payment_receipts").select("id, no_kwitansi, tanggal, shift_id, status, clinic_payment_receipt_parts(id, urutan, metode, amount)")
+        .eq("visit_id", visitId).eq("status", "aktif").order("created_at", { ascending: true }),
+      supabase.from("clinic_receipt_method_corrections").select("id, receipt_id, revision, amount, from_method, to_method, reason, created_at")
+        .order("created_at", { ascending: false }),
+    ]);
+    const kwitansiRows = (rc.data ?? []) as unknown as { id: string; no_kwitansi: string; tanggal: string; shift_id: string | null;
+      clinic_payment_receipt_parts: { id: string; urutan: number; metode: string; amount: number }[] | null }[];
+    const shiftIds = [...new Set(kwitansiRows.map(k => k.shift_id).filter((s): s is string => !!s))];
+    const shiftRead = shiftIds.length > 0 ? await supabase.from("cashier_shifts").select("id, status").in("id", shiftIds) : { data: [], error: null };
+    kwitansiError = !!rc.error || !!rh.error || !!shiftRead.error;
+    const shiftTutup = new Set(((shiftRead.data ?? []) as { id: string; status: string }[]).filter(s => s.status === "closed").map(s => s.id));
+    kwitansiAktif = kwitansiRows.map(k => ({
+      id: k.id, no: k.no_kwitansi, tanggal: k.tanggal, shiftClosed: !!k.shift_id && shiftTutup.has(k.shift_id),
+      parts: [...(k.clinic_payment_receipt_parts ?? [])].sort((a, b) => a.urutan - b.urutan)
+        .filter((p): p is typeof p & { metode: MetodeBayar } => metodeBayarSah(p.metode)).map(p => ({ id: p.id, urutan: p.urutan, metode: p.metode, amount: Number(p.amount) })),
+    }));
+    const ids = new Set(kwitansiAktif.map(k => k.id));
+    kwitansiRiwayat = ((rh.data ?? []) as unknown as KwitansiMetodeRiwayat[]).filter(h => ids.has(h.receipt_id)).map(h => ({ ...h, amount: Number(h.amount) }));
+  }
   const riwayatResult = riwayatP ? await riwayatP : null;
   const tampilRiwayat = !!riwayatResult;
   const correctionParts = invoice ? clinicCorrectableParts(invoice, paymentRows ?? []) : [];
@@ -497,6 +532,11 @@ export default async function PembayaranPage({
       {!error && success === "koreksi-metode" && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> Metode pembayaran terkoreksi pada invoice ini. Jurnal koreksi dan alasannya tersimpan.
+        </div>
+      )}
+      {!error && success === "ubah-metode-kwitansi" && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Metode bayar kwitansi diubah. Jurnal koreksi (hari ini), alasan, dan nama Anda tersimpan; nominal tidak berubah.
         </div>
       )}
       {!error && success === "reissue" && (
@@ -799,17 +839,21 @@ export default async function PembayaranPage({
               invoice={{ id: invoice.id, subtotal: Number(invoice.subtotal), total: Number(invoice.total) }}
               lines={(invItems ?? []).map((l) => ({ id: l.id, deskripsi: l.deskripsi, qty: Number(l.qty), harga: Number(l.harga), jenis: l.jenis, item_id: l.item_id,
                 diskon_persen: l.diskon_persen === null ? null : Number(l.diskon_persen), compound_recipe_id: l.compound_recipe_id, satuan: l.satuan }))}
-              message={success && !["bayar", "edit", "rombongan", "reissue", "koreksi-metode"].includes(success) ? success : undefined} />
+              message={success && !["bayar", "edit", "rombongan", "reissue", "koreksi-metode", "ubah-metode-kwitansi"].includes(success) ? success : undefined} />
           )}
 
           {/* Kembalikan saldo uang muka (Owner/Finance): sisa uang muka pasien dikembalikan lewat transfer; diselesaikan Finance di antrean refund. */}
           {inpat && lunas && <UangMukaRefundSection db={supabase} visitId={visit.id} role={(profilKasir as { role?: string } | null)?.role} requestKeyBase={invoiceRequestKey} />}
 
-          {/* J02: koreksi Tunai <-> Transfer (Owner/Finance), jurnal koreksi; struk dan nominal tetap. */}
+          {/* J02: koreksi metode (Owner/Finance/izin Ubah metode bayar), jurnal koreksi; struk dan nominal tetap. */}
           {canCorrectMethod && draftUser && (correctionParts.length > 0 || (correctionData ?? []).length > 0) && (
             <ClinicPaymentCorrectionPanel userId={draftUser.id} visitId={visit.id} invoiceId={invoice.id}
               parts={correctionParts} history={(correctionData ?? []) as ClinicPaymentCorrectionRow[]}
               readError={!!correctionError} blocked={correctionBlocked} />
+          )}
+
+          {ubahMetodeBoleh && draftUser && (kwitansiAktif.length > 0 || kwitansiError) && (
+            <KwitansiMetodePanel userId={draftUser.id} visitId={visit.id} receipts={kwitansiAktif} history={kwitansiRiwayat} readError={kwitansiError} />
           )}
 
           {/* Void & Reissue — hanya invoice lunas (Addendum §7). */}
