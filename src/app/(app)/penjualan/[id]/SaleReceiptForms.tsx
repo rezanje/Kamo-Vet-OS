@@ -4,6 +4,8 @@ import { useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { NumberInput } from "@/components/NumberInput";
 import { formatPosMoney } from "@/lib/pos-money";
+import type { BatasTanggal } from "@/lib/tanggal-efektif-petshop";
+import { TanggalEfektifField } from "./TanggalEfektifField";
 import { batalkanPenerimaan, batalkanPencairan, terimaPembayaranUlang } from "./actions";
 
 const METHODS = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"] as const;
@@ -19,8 +21,8 @@ function cents(value: string): number | null {
 }
 
 /** Tombol "Batalkan penerimaan": konfirmasi + alasan wajib. Uang keluar dari kas/bank, struk menjadi belum dibayar. */
-export function SaleReceiptCancelForm({ userId, saleId, revision, total, shiftClosed, ubahTerhalang = [] }: {
-  userId: string; saleId: string; revision: number; total: number; shiftClosed: boolean; ubahTerhalang?: string[];
+export function SaleReceiptCancelForm({ userId, saleId, revision, total, shiftClosed, ubahTerhalang = [], batasTanggal }: {
+  userId: string; saleId: string; revision: number; total: number; shiftClosed: boolean; ubahTerhalang?: string[]; batasTanggal?: BatasTanggal | null;
 }) {
   return <CorrectionTransactionForm userId={userId} scope={`sale-receipt-cancel:${saleId}:${revision}`} action={batalkanPenerimaan}>
     {({ ready }) => <>
@@ -32,6 +34,7 @@ export function SaleReceiptCancelForm({ userId, saleId, revision, total, shiftCl
         Sesudah penerimaan dibatalkan, pilihan Anda hanya <strong>Terima pembayaran</strong> lagi dengan total yang sama. Bila isi struk perlu berubah, selesaikan rekonsiliasi itu dulu atau hubungi tim teknis sebelum membatalkan penerimaan.</p>}
       {shiftClosed && <p role="note">Shift struk ini sudah ditutup. Angka tutup shift lama tidak diubah; pengembalian uang dicatat di shift terbuka milik Anda (bukan shift kasir lain).
         Bila struk dibayar tunai dan Anda tidak punya shift terbuka, pembatalan tetap berjalan dan ditandai &quot;tanpa shift&quot; untuk Finance; laci kasir mana pun tidak berubah.</p>}
+      {batasTanggal && <TanggalEfektifField batas={batasTanggal} idPrefix="receipt-cancel" jenis="batal" />}
       <label className="flab" htmlFor="receipt-cancel-reason">Alasan membatalkan penerimaan *</label>
       <input id="receipt-cancel-reason" className="fi" name="alasan" minLength={3} maxLength={1000} required placeholder="Contoh: pelanggan bayar QRIS, kasir memilih tunai" />
       <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
@@ -43,8 +46,8 @@ export function SaleReceiptCancelForm({ userId, saleId, revision, total, shiftCl
 }
 
 /** Terima pembayaran lagi: bagian metode diisi dari penerimaan lama; jumlahnya harus sama dengan total struk. */
-export function SaleReceiveAgainForm({ userId, saleId, revision, total, previous }: {
-  userId: string; saleId: string; revision: number; total: number; previous: { method: string; amount: number }[];
+export function SaleReceiveAgainForm({ userId, saleId, revision, total, previous, batasTanggal }: {
+  userId: string; saleId: string; revision: number; total: number; previous: { method: string; amount: number }[]; batasTanggal?: BatasTanggal | null;
 }) {
   const initial = Object.fromEntries(METHODS.map(method => [method, String(previous.find(part => part.method === method)?.amount ?? "")]));
   const [values, setValues] = useState<Record<string, string>>(initial);
@@ -59,6 +62,7 @@ export function SaleReceiveAgainForm({ userId, saleId, revision, total, previous
     {({ ready }) => <>
       <input type="hidden" name="id" value={saleId} /><input type="hidden" name="revision" value={revision} />
       <p><strong>Terima pembayaran</strong>: catat penerimaan lagi untuk struk ini (jumlah harus sama dengan total {formatPosMoney(total)}). Kolom sudah berisi penerimaan sebelumnya; ubah bila metodenya berbeda.</p>
+      {batasTanggal && <TanggalEfektifField batas={batasTanggal} idPrefix="receipt-receive" jenis="terima" alasanWajibMundur />}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
         {METHODS.map(method => <div key={method}>
           <label className="flab" htmlFor={`receipt-receive-${method}`}>{method}</label>
@@ -73,12 +77,13 @@ export function SaleReceiveAgainForm({ userId, saleId, revision, total, previous
 }
 
 /** Order marketplace yang sudah dicairkan: batalkan pencairan -> kembali ke piutang marketplace. */
-export function OnlineDisbursementCancelForm({ userId, saleId, revision }: { userId: string; saleId: string; revision: number }) {
+export function OnlineDisbursementCancelForm({ userId, saleId, revision, batasTanggal }: { userId: string; saleId: string; revision: number; batasTanggal?: BatasTanggal | null }) {
   return <CorrectionTransactionForm userId={userId} scope={`sale-disbursement-cancel:${saleId}:${revision}`} action={batalkanPencairan}>
     {({ ready }) => <>
       <input type="hidden" name="id" value={saleId} /><input type="hidden" name="revision" value={revision} />
       <p><strong>Batalkan pencairan</strong>: dana yang tercatat masuk bank dan potongan komisi platform dibalik, order kembali menjadi <em>piutang marketplace</em>.
         Setelah itu order bisa dicairkan ulang dengan nominal yang benar, atau dibatalkan/diganti.</p>
+      {batasTanggal && <TanggalEfektifField batas={batasTanggal} idPrefix="disb-cancel" jenis="pencairan" />}
       <label className="flab" htmlFor="disb-cancel-reason">Alasan membatalkan pencairan *</label>
       <input id="disb-cancel-reason" className="fi" name="alasan" minLength={3} maxLength={1000} required placeholder="Contoh: nominal pencairan salah ketik" />
       <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>

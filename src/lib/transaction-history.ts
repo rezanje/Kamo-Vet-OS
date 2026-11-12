@@ -169,8 +169,20 @@ export type PetshopReceiptCancel = {
   id: string; reason: string; created_at: string; created_by: string | null; source_shift_status: string | null;
   effect_shift_id: string | null; source_shift_id: string | null; shift_mode?: string | null; before_payments: PayPart[]; after_payments: PayPart[] | null;
   closed_at: string | null; closed_by: string | null; closed_kind: string | null;
+  /** Tanggal efektif (tanggal pembukuan jurnal pembalik / terima ulang), bila dipilih; waktu nyata tetap created_at / closed_at. */
+  effective_date?: string | null; receive_effective_date?: string | null; receive_reason?: string | null;
 };
-export type PetshopOnlineCancel = { id: string; reason: string; created_at: string; created_by: string | null; amount_bank: number; amount_fee: number };
+export type PetshopOnlineCancel = { id: string; reason: string; created_at: string; created_by: string | null; amount_bank: number; amount_fee: number; effective_date?: string | null };
+
+/** "2026-11-12" -> "12/11/2026" (tanpa zona waktu). */
+const tglId = (iso: string) => iso.split("-").reverse().join("/");
+/** Tanggal pembukuan hanya disebut bila beda dari tanggal catat (WIB). */
+const efektif = (date: string | null | undefined, atIso: string | null | undefined): string | null => {
+  if (!date) return null;
+  const t0 = atIso ? Date.parse(atIso) : NaN;
+  const catat = Number.isNaN(t0) ? "" : new Date(t0 + 7 * 3600_000).toISOString().slice(0, 10);
+  return catat === date ? null : `dibukukan di tanggal ${tglId(date)} (dicatat ${catat ? tglId(catat) : "—"})`;
+};
 
 export function petshopHistory(input: {
   viewerId?: string | null; names: ActorNames;
@@ -193,15 +205,15 @@ export function petshopHistory(input: {
     const other = c.shift_mode === "tanpa_shift" ? " · TANPA SHIFT: pelaku tidak punya shift terbuka, uang tunai tidak masuk laci siapa pun (untuk Finance)"
       : c.effect_shift_id && c.effect_shift_id !== c.source_shift_id ? " · dicatat di shift terbuka pelaku (shift asal sudah ditutup)" : "";
     events.push({ key: `batal-terima:${c.id}`, at: c.created_at, actor: actorLabel(c.created_by, names, viewerId), label: "Penerimaan dibatalkan (struk belum dibayar)",
-      detail: [`${parts(c.before_payments)} dikeluarkan dari kas/bank${other}`], reason: clean(c.reason), tone: "warn" });
+      detail: [`${parts(c.before_payments)} dikeluarkan dari kas/bank${other}`, ...[efektif(c.effective_date, c.created_at)].filter((x): x is string => !!x)], reason: clean(c.reason), tone: "warn" });
     if (c.closed_at && c.closed_kind === "diterima-ulang") {
       events.push({ key: `terima-ulang:${c.id}`, at: c.closed_at, actor: actorLabel(c.closed_by, names, viewerId), label: "Pembayaran diterima ulang",
-        detail: [`${parts(c.before_payments)} → ${parts(c.after_payments ?? [])}`], reason: null, tone: "info" });
+        detail: [`${parts(c.before_payments)} → ${parts(c.after_payments ?? [])}`, ...[efektif(c.receive_effective_date, c.closed_at)].filter((x): x is string => !!x)], reason: clean(c.receive_reason), tone: "info" });
     }
   }
   for (const c of input.onlineCancellations ?? []) {
     events.push({ key: `batal-cair:${c.id}`, at: c.created_at, actor: actorLabel(c.created_by, names, viewerId), label: "Pencairan marketplace dibatalkan (kembali piutang)",
-      detail: [`Dana bank ${rp(Number(c.amount_bank))} + komisi ${rp(Number(c.amount_fee))} dibalik`], reason: clean(c.reason), tone: "warn" });
+      detail: [`Dana bank ${rp(Number(c.amount_bank))} + komisi ${rp(Number(c.amount_fee))} dibalik`, ...[efektif(c.effective_date, c.created_at)].filter((x): x is string => !!x)], reason: clean(c.reason), tone: "warn" });
   }
   for (const r of input.returns) {
     events.push({ key: `retur:${r.id}`, at: r.tanggal, actor: actorLabel(null, names, viewerId), label: r.voided_at ? "Retur dibatalkan / diganti" : "Retur dibuat",

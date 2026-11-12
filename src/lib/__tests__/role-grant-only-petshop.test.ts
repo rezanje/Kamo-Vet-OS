@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GRANT_ONLY_ACTIONS, isGrantOnlyAction } from "../role-grant-only-actions";
@@ -22,9 +22,23 @@ describe("Batalkan penerimaan petshop: izin khusus (bawaan mati)", () => {
     expect(effectiveAllowedActions(cfg)).toEqual([ID]);
   });
   it("sinkron dengan baris katalog yang dipasang migrasi: id, enforced=true, modul penjualan", () => {
-    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261112300000_batalkan_penerimaan_petshop.sql"), "utf8");
+    const dir = join(process.cwd(), "supabase/migrations");
+    const read = (suffix: string) => readFileSync(join(dir, readdirSync(dir).filter((f) => f.endsWith(suffix)).sort()[0]), "utf8");
+    const sql = read("_batalkan_penerimaan_petshop.sql") + "\n" + read("_backdate_petshop.sql");
     for (const id of GRANT_ONLY_ACTIONS.filter((x) => x.startsWith("penjualan."))) expect(sql).toContain(`'${id}'`);
     expect(sql).toMatch(/'penjualan\.pos_penerimaan\.batalkan','Batalkan penerimaan[^']*','Penjualan',true\)/);
     expect(sql).toContain("action_modules(id,module_id) values('penjualan.pos_penerimaan.batalkan','penjualan')");
+  });
+  it("izin khusus Tanggal mundur: terdaftar, katalog migrasi (enforced, modul penjualan), peran legacy tidak tercentang", () => {
+    const TM = "penjualan.pos_penerimaan.tanggal_mundur";
+    expect(isGrantOnlyAction(TM)).toBe(true);
+    const dir = join(process.cwd(), "supabase/migrations");
+    const sql = readFileSync(join(dir, readdirSync(dir).filter((f) => f.endsWith("_backdate_petshop.sql")).sort()[0]), "utf8");
+    expect(sql).toMatch(/'penjualan\.pos_penerimaan\.tanggal_mundur','Tanggal efektif mundur[^']*','Penjualan',true\)/);
+    expect(sql).toContain("action_modules(id,module_id) values('penjualan.pos_penerimaan.tanggal_mundur','penjualan')");
+    const cfg = parseRoleAccessConfig({ ...snapshot("legacy", []), action_catalog: [row(ID), row(TM), row("bank.cash_accounts.create")] }, "ADMIN")!;
+    expect(effectiveAllowedActions(cfg)).toEqual(["bank.cash_accounts.create"]);
+    const granted = parseRoleAccessConfig({ ...snapshot("custom", [ID, TM]), action_catalog: [row(ID), row(TM)] }, "ADMIN")!;
+    expect(effectiveAllowedActions(granted)).toEqual([ID, TM]);
   });
 });
