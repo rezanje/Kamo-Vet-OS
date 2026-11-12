@@ -5,8 +5,8 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { EffectiveDateField } from "@/components/EffectiveDateField";
 import { batalkanPembayaranFaktur } from "./actions";
 
-export function PaymentCorrectionForm({ userId, invoiceId, paymentId, revision, grouped, docDate, canBackdate }: {
-  userId: string; invoiceId: string; paymentId: string; revision: number; grouped: boolean; docDate: string; canBackdate: boolean;
+export function PaymentCorrectionForm({ userId, invoiceId, paymentId, revision, grouped, docDate, canBackdate = false }: {
+  userId: string; invoiceId: string; paymentId: string; revision: number; grouped: boolean; docDate?: string | null; canBackdate?: boolean;
 }) {
   return <CorrectionTransactionForm userId={userId} scope={`purchase-payment-cancel:${paymentId}:${revision}`} action={batalkanPembayaranFaktur}>
     {({ ready }) => <>
