@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Semua akun Kas & Bank jadi rekening (20261115100000) on a throwaway native PostgreSQL.
+"""Semua akun Kas & Bank jadi rekening (20261115610000) on a throwaway native PostgreSQL.
 
 Applies every repository migration, then rebuilds the production state from before the release (only the
 default 110003 "Kas" / 120002 "Bank BCA" rekening plus a few hand-made finance settings), re-applies the target
@@ -23,7 +23,7 @@ spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-ac
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
 BIN = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PG_BIN", "/usr/lib/postgresql/16/bin"))
-TARGET = ROOT / "supabase/migrations/20261115100000_semua_akun_kas_bank_jadi_rekening.sql"
+TARGET = ROOT / "supabase/migrations/20261115610000_semua_akun_kas_bank_jadi_rekening.sql"
 
 
 def ok(cond, msg):
