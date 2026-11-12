@@ -1,9 +1,10 @@
 -- Fictional isolated M05 fixture (opening AP/AR per invoice); every row rolls back.
 begin;
-insert into auth.users(id)values(md5('m05-owner')::uuid),(md5('m05-finance')::uuid),(md5('m05-staff')::uuid),(md5('m05-owner-off')::uuid);
+insert into auth.users(id)values(md5('m05-owner')::uuid),(md5('m05-finance')::uuid),(md5('m05-staff')::uuid),(md5('m05-owner-off')::uuid),(md5('m05-admin')::uuid);
 insert into profiles(id,full_name,role,is_active)values
  (md5('m05-owner')::uuid,'Fiction owner','OWNER',true),(md5('m05-finance')::uuid,'Fiction finance','FINANCE',true),
- (md5('m05-staff')::uuid,'Fiction staff','STAFF',true),(md5('m05-owner-off')::uuid,'Fiction inactive owner','OWNER',false)
+ (md5('m05-staff')::uuid,'Fiction staff','STAFF',true),(md5('m05-owner-off')::uuid,'Fiction inactive owner','OWNER',false),
+ (md5('m05-admin')::uuid,'Fiction admin','ADMIN',true)
 on conflict(id)do update set full_name=excluded.full_name,role=excluded.role,is_active=excluded.is_active;
 insert into branches(id,code,name,type)values(md5('m05-branch')::uuid,'M05-A','Fiction M05 branch','PETSHOP');
 insert into user_branches(user_id,branch_id,role)values(md5('m05-staff')::uuid,md5('m05-branch')::uuid,'PRIMARY');
@@ -26,15 +27,20 @@ set local role authenticated;set local request.jwt.claim.role='authenticated';
 do $$declare p jsonb;bad jsonb;report jsonb;res jsonb;again jsonb;blocked boolean;row_errors text;j uuid;inv2 uuid;ar uuid;pay jsonb;rc jsonb;remaining numeric;
 begin
  select payload into p from m05_payload;
- -- Access: STAFF cannot even preview; FINANCE previews but cannot post; inactive OWNER refused.
+ -- Access: STAFF cannot even preview; FINANCE previews and may post; ADMIN previews only; inactive OWNER refused.
  perform set_config('request.jwt.claim.sub',md5('m05-staff')::uuid::text,true);
  blocked:=false;begin perform preview_opening_invoices(p);exception when insufficient_privilege then blocked:=true;end;
  if not blocked then raise exception 'STAFF preview accepted';end if;
  perform set_config('request.jwt.claim.sub',md5('m05-finance')::uuid::text,true);
  report:=preview_opening_invoices(p);
  if not (report->>'can_post')::boolean then raise exception 'Valid file not postable: %',report;end if;
+ -- FINANCE passes the role gate (a stale hash is the next refusal); the real FINANCE post is below.
+ blocked:=false;begin perform post_opening_invoices(p,repeat('0',64),'Cutover Accurate 31 Oktober');exception when others then blocked:=sqlerrm like 'Isi file berubah%';end;
+ if not blocked then raise exception 'FINANCE refused at the role gate';end if;
+ perform set_config('request.jwt.claim.sub',md5('m05-admin')::uuid::text,true);
+ report:=preview_opening_invoices(p);
  blocked:=false;begin perform post_opening_invoices(p,report->>'source_hash','Cutover Accurate 31 Oktober');exception when insufficient_privilege then blocked:=true;end;
- if not blocked then raise exception 'FINANCE post accepted';end if;
+ if not blocked then raise exception 'ADMIN post accepted';end if;
  perform set_config('request.jwt.claim.sub',md5('m05-owner-off')::uuid::text,true);
  blocked:=false;begin perform post_opening_invoices(p,report->>'source_hash','Cutover Accurate 31 Oktober');exception when insufficient_privilege then blocked:=true;end;
  if not blocked then raise exception 'Inactive OWNER post accepted';end if;
@@ -84,7 +90,10 @@ begin
  report:=preview_opening_invoices(p);
  blocked:=false;begin perform post_opening_invoices(p,repeat('0',64),'Cutover Accurate 31 Oktober');exception when others then blocked:=sqlerrm like 'Isi file berubah%';end;
  if not blocked then raise exception 'Stale preview hash accepted';end if;
+ perform set_config('request.jwt.claim.sub',md5('m05-finance')::uuid::text,true);
  res:=post_opening_invoices(p,report->>'source_hash','Cutover Accurate 31 Oktober');
+ perform set_config('request.jwt.claim.sub',md5('m05-owner')::uuid::text,true);
+ if (select created_by from opening_invoice_batches where id=(res->>'batch_id')::uuid)<>md5('m05-finance')::uuid then raise exception 'Batch poster not recorded as FINANCE';end if;
  if (res->>'replayed')::boolean or (res->'hutang'->>'jumlah_faktur')::int<>3 or (res->'piutang'->>'jumlah_faktur')::int<>1 then raise exception 'Post result wrong: %',res;end if;
  j:=(res->>'journal_id')::uuid;
  if (select count(*) from purchase_invoices where opening_batch_id=(res->>'batch_id')::uuid and supplier_id=md5('m05-sup-1')::uuid and branch_id=md5('m05-branch')::uuid)<>3
@@ -164,4 +173,26 @@ do $$declare blocked boolean:=false;begin
  blocked:=false;begin delete from opening_invoice_batches;exception when others then blocked:=true;end;
  if not blocked then raise exception 'Batch with invoices deleted';end if;
 end$$;
+-- FINANCE posting follows the same gates as its preview: Akses Grup without Buku Besar, or no all-branch access, refuses.
+delete from role_modules where role='FINANCE';
+insert into role_modules(role,module_id)values('FINANCE','kas-bank');
+set local role authenticated;
+do $$declare blocked boolean:=false;p jsonb;begin
+ select payload into p from m05_payload;
+ perform set_config('request.jwt.claim.sub',md5('m05-finance')::uuid::text,true);
+ begin perform post_opening_invoices(p,repeat('0',64),'Cutover Accurate 31 Oktober');exception when insufficient_privilege then blocked:=sqlerrm like 'Akses Buku Besar%';end;
+ if not blocked then raise exception 'FINANCE without Buku Besar module could post';end if;
+end$$;
+reset role;
+delete from role_modules where role='FINANCE';
+insert into role_capabilities(role,all_branches,create_accounts)values('FINANCE',false,false)
+ on conflict(role)do update set all_branches=false;
+set local role authenticated;
+do $$declare blocked boolean:=false;p jsonb;begin
+ select payload into p from m05_payload;
+ perform set_config('request.jwt.claim.sub',md5('m05-finance')::uuid::text,true);
+ begin perform post_opening_invoices(p,repeat('0',64),'Cutover Accurate 31 Oktober');exception when insufficient_privilege then blocked:=true;end;
+ if not blocked then raise exception 'FINANCE without all-branch access could post';end if;
+end$$;
+reset role;
 rollback;

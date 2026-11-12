@@ -17,7 +17,7 @@ function Kartu({ judul, t }: { judul: string; t: OpeningInvoiceTotals }) {
   </div>;
 }
 
-export function SaldoAwalFakturForm({ branches, defaultAsOf, isOwner }: { branches: { id: string; name: string }[]; defaultAsOf: string; isOwner: boolean }) {
+export function SaldoAwalFakturForm({ branches, defaultAsOf, canPost }: { branches: { id: string; name: string }[]; defaultAsOf: string; canPost: boolean }) {
   const [report, setReport] = useState<OpeningInvoiceReport | null>(null);
   const [payload, setPayload] = useState<OpeningInvoicePayload | null>(null);
   const [receipt, setReceipt] = useState<OpeningInvoiceReceipt | null>(null);
@@ -154,7 +154,7 @@ export function SaldoAwalFakturForm({ branches, defaultAsOf, isOwner }: { branch
         Terposting{receipt.replayed ? " (sudah ada sebelumnya, tidak dicatat ulang)" : ""}: jurnal {receipt.no_jurnal} per {receipt.as_of} ·
         hutang {receipt.hutang.jumlah_faktur} faktur {rp(receipt.hutang.total)} · piutang {receipt.piutang.jumlah_faktur} faktur {rp(receipt.piutang.total)}.{" "}
         <Link href="/keuangan/hutang">Buka Pembayaran Hutang</Link> · <Link href="/keuangan/piutang">Buka Piutang</Link>
-      </div> : isOwner ? <div style={{ display: "grid", gap: 8, maxWidth: 640 }}>
+      </div> : canPost ? <div style={{ display: "grid", gap: 8, maxWidth: 640 }}>
         <label className="flab">Alasan audit (10–1.000 karakter) *
           <textarea className="fi" rows={2} value={reason} onChange={e => setReason(e.target.value)} disabled={pending || !report.can_post}
             placeholder="mis. Cutover Accurate 31 Oktober 2026, sesuai laporan umur hutang/piutang" />
@@ -166,7 +166,7 @@ export function SaldoAwalFakturForm({ branches, defaultAsOf, isOwner }: { branch
         <button type="button" className="pay-btn" onClick={posting} disabled={pending || !report.can_post || !confirmed || reason.trim().length < 10}>
           {pending ? "Memposting…" : "Posting saldo awal per faktur"}
         </button>
-      </div> : <p style={{ fontSize: 12, color: "var(--tm)" }}>Hasil pemeriksaan siap ditinjau. Posting hanya oleh OWNER.</p>}
+      </div> : <p style={{ fontSize: 12, color: "var(--tm)" }}>Hasil pemeriksaan siap ditinjau. Posting hanya oleh OWNER atau FINANCE.</p>}
     </>}
   </div>;
 }
