@@ -50,6 +50,8 @@ insert into payment_account_map(metode,branch_id,cash_account_id)
  select 'Tunai','f2000000-0000-4000-8000-000000000001'::uuid,id from cash_accounts where coa_code='110003'
  union all select 'Transfer','f2000000-0000-4000-8000-000000000001'::uuid,id from cash_accounts where coa_code='120002';
 update accounting_locks set closed_until=null where id;
+-- Uang muka minimal 50% (ranap_tagihan_berjalan) berlaku sejak suite ini ditulis; fixture DP 40% memakai 0.
+update clinic_billing_settings set min_dp_percent=0 where id;
 create temp table inv(name text primary key,id uuid);
 grant all on inv to authenticated;
 
