@@ -200,7 +200,7 @@ it("riwayat hanya membaca cabang yang boleh dilihat dan membuka laporan per shif
   fx.history = [{
     ...shiftContoh(), id: "shift-9", closed_at: "2026-11-02T14:00:00Z", selisih: -20_000,
   }];
-  const html = renderToStaticMarkup(await Riwayat({ searchParams: Promise.resolve({ dari: "2026-11-01", sampai: "2026-11-02" }) }));
+  const html = renderToStaticMarkup(await Riwayat({ searchParams: Promise.resolve({ dari: "2026-11-01", sampai: "2026-11-02", tampil: "1" }) }));
   const doc = new DOMParser().parseFromString(html, "text/html");
   const shiftCall = fx.calls.find((c) => c.table === "cashier_shifts")!;
   expect(shiftCall.filters).toContainEqual(["in", "branch_id", ["cab-a"]]);
@@ -225,7 +225,7 @@ it("riwayat hanya membaca cabang yang boleh dilihat dan membuka laporan per shif
 
 it("riwayat kosong kalau akun tidak punya cabang sama sekali", async () => {
   fx.allowed = [];
-  const html = renderToStaticMarkup(await Riwayat({ searchParams: Promise.resolve({}) }));
+  const html = renderToStaticMarkup(await Riwayat({ searchParams: Promise.resolve({ tampil: "1" }) }));
   expect(html).toContain("Belum ada shift yang ditutup");
   expect(fx.calls.some((c) => c.table === "cashier_shifts")).toBe(false);
 });

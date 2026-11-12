@@ -7,6 +7,8 @@ import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { hariIniWIB } from "@/lib/tanggal";
 import { RekonForm, type RekeningRekon } from "./RekonForm";
 import { BackdateCashTable, type BackdateCashRow } from "@/components/BackdateCashTable";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
 
 const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 const fmtDate = (s: string) => new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -14,8 +16,9 @@ const fmtDate = (s: string) => new Date(s).toLocaleDateString("id-ID", { timeZon
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
 
-export default async function RekonsiliasiPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; page?: string }> }) {
-  const { success, error, page: pageText } = await searchParams;
+export default async function RekonsiliasiPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; page?: string; tampil?: string }> }) {
+  const sp = await searchParams;
+  const { success, error, page: pageText } = sp;
   const parsedPage = Number(pageText ?? "1");
   const page = Number.isSafeInteger(parsedPage) && parsedPage > 0 && parsedPage < 100000 ? parsedPage : 1;
   const supabase = await createClient();
@@ -24,6 +27,35 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle() : { data: null };
   const capabilities = await loadRoleCapabilities(supabase, profile?.role ?? "");
   if (!profile?.is_active || !["OWNER","ADMIN","FINANCE"].includes(profile.role) || !capabilities.all_branches) return <div className="p2ban">Rekonsiliasi bank memerlukan akses keuangan seluruh cabang agar saldo buku lengkap.</div>;
+
+  // A1 (meeting 12 Nov 2026): saldo buku tiap rekening dihitung dari SELURUH jurnal, jadi
+  // formulir, daftar pembatalan, dan riwayat baru dibaca setelah Tampilkan ditekan.
+  const kepala = (
+    <>
+      <BankReconciliationRecovery userId={user?.id ?? ""}/>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+        <Link href="/kas-bank" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+        <span style={{ color: "var(--td)" }}>·</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>Rekonsiliasi Bank</span>
+        <form method="get" style={{ marginLeft: "auto" }}>
+          <InputTampil />
+          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+        </form>
+      </div>
+
+      {success && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Rekonsiliasi tersimpan beserta penyesuaiannya.
+        </div>
+      )}
+      {error && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-triangle" /> {error}
+        </div>
+      )}
+    </>
+  );
+  if (!laporanDiminta(sp)) return <>{kepala}<LaporanBelumDitampilkan pesan="Klik Tampilkan untuk membuka formulir rekonsiliasi (saldo buku tiap rekening) dan riwayatnya." /></>;
 
   // Pembatalan pembelian bertanggal mundur yang menggerakkan kas/bank: tanggal pembukuan dan tanggal fisik berdampingan.
   const backdated = await supabase.rpc("list_purchase_backdate_audit", { p_limit: 50, p_cash_only: true });
@@ -51,23 +83,7 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
 
   return (
     <>
-      <BankReconciliationRecovery userId={user?.id ?? ""}/>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/kas-bank" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Rekonsiliasi Bank</span>
-      </div>
-
-      {success && (
-        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Rekonsiliasi tersimpan beserta penyesuaiannya.
-        </div>
-      )}
-      {error && (
-        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-          <i className="ti ti-alert-triangle" /> {error}
-        </div>
-      )}
+      {kepala}
 
       <div className="crm-sec">
         <SecHeader num="01" title="REKONSILIASI BANK" desc="Pilih rekening, lalu cocokkan saldo buku dengan rekening korannya." />
@@ -107,9 +123,9 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
           </table>
         </div>
         <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
-          {page > 1 && <Link href={`?page=${page-1}`}>Sebelumnya</Link>}
+          {page > 1 && <Link href={denganTampil(`?page=${page-1}`)}>Sebelumnya</Link>}
           <span>Halaman {page}</span>
-          {page*50 < (count ?? 0) && <Link href={`?page=${page+1}`}>Berikutnya</Link>}
+          {page*50 < (count ?? 0) && <Link href={denganTampil(`?page=${page+1}`)}>Berikutnya</Link>}
         </div>
       </div>
     </>

@@ -10,13 +10,15 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 
 ## A. LAPORAN
 
-### A1 · [ ] P0 — Semua laporan wajib filter dulu sebelum menarik data
+### A1 · [x] P0 — Semua laporan wajib filter dulu sebelum menarik data
 - Masalah: laporan loading sangat lama karena saat dibuka langsung menarik semua data dari semua cabang (kasusnya sama dengan dashboard).
 - Yang diminta: alur seperti Accurate. Halaman laporan dibuka dalam keadaan kosong, user pilih filter dulu (minimal cabang dan rentang tanggal), lalu klik "Tampilkan" baru query jalan.
 - Berlaku untuk **semua laporan** di Daftar Laporan.
 - Tambahan: cek query/index supaya tetap cepat walaupun data sudah setahun.
 - Screenshot: `laporan-daftar.jpg`, `laporan-penjualan-per-tenaga-penjual.jpg`
 - Kriteria selesai: membuka halaman laporan tidak memicu query berat; data baru ditarik setelah filter dipilih dan "Tampilkan" diklik.
+- Status: dikerjakan di branch `claude/epic-hypatia-raw2el` (lihat `RENCANA-P0.md`). Index tanggal ditulis sebagai migrasi
+  `20261115100000_a1_index_tanggal_laporan.sql`, **belum dipasang** ke Production (menunggu persetujuan).
 
 ### A2 · [ ] P0 — Laporan Penjualan per Tenaga Penjual: rekap per item (qty)
 - Halaman: `/laporan/penjual`

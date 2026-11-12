@@ -3,8 +3,12 @@
 import { redirect } from "next/navigation";
 import { assertMasterAdmin } from "@/lib/master-guard";
 import { pesanSimpanGagal } from "@/lib/barang";
+import { PARAM_TAMPIL } from "@/lib/report-gate";
 
 const BACK = "/keuangan/kategori-aset";
+// A1 (meeting 12 Nov 2026): kembali ke daftar yang sudah tampil (di akhir supaya pesan
+// yang sudah di-encode tidak berubah).
+const TAMPIL = `&${PARAM_TAMPIL}=1`;
 
 export async function simpanKategoriAset(formData: FormData) {
   const supabase = await assertMasterAdmin(BACK, "kategori aset");
@@ -14,12 +18,12 @@ export async function simpanKategoriAset(formData: FormData) {
   const akunBeban = String(formData.get("akun_beban") ?? "").trim();
   const akunAkumulasi = String(formData.get("akun_akumulasi") ?? "").trim();
 
-  if (!nama) redirect(`${BACK}?error=${encodeURIComponent("Nama kategori wajib diisi")}`);
+  if (!nama) redirect(`${BACK}?error=${encodeURIComponent("Nama kategori wajib diisi")}${TAMPIL}`);
   if (!Number.isInteger(umurBulan) || umurBulan <= 0) {
-    redirect(`${BACK}?error=${encodeURIComponent("Umur penyusutan harus lebih dari 0 bulan")}`);
+    redirect(`${BACK}?error=${encodeURIComponent("Umur penyusutan harus lebih dari 0 bulan")}${TAMPIL}`);
   }
   if (!akunBeban || !akunAkumulasi) {
-    redirect(`${BACK}?error=${encodeURIComponent("Akun beban & akun akumulasi wajib dipilih")}`);
+    redirect(`${BACK}?error=${encodeURIComponent("Akun beban & akun akumulasi wajib dipilih")}${TAMPIL}`);
   }
 
   // Kode akun berasal dari dropdown COA, tetap diverifikasi ada di coa_accounts —
@@ -27,7 +31,7 @@ export async function simpanKategoriAset(formData: FormData) {
   const { data: akun } = await supabase.from("coa_accounts").select("code").in("code", [akunBeban, akunAkumulasi]);
   const kode = new Set((akun ?? []).map((a) => a.code as string));
   if (!kode.has(akunBeban) || !kode.has(akunAkumulasi)) {
-    redirect(`${BACK}?error=${encodeURIComponent("Akun yang dipilih tidak ada di daftar akun")}`);
+    redirect(`${BACK}?error=${encodeURIComponent("Akun yang dipilih tidak ada di daftar akun")}${TAMPIL}`);
   }
 
   const patch = { nama, umur_bulan: umurBulan, akun_beban: akunBeban, akun_akumulasi: akunAkumulasi };
@@ -35,7 +39,7 @@ export async function simpanKategoriAset(formData: FormData) {
     ? await supabase.from("asset_categories").update(patch).eq("id", id)
     : await supabase.from("asset_categories").insert(patch);
 
-  redirect(error ? `${BACK}?error=${encodeURIComponent(pesanSimpanGagal(error.message))}` : `${BACK}?success=1`);
+  redirect(error ? `${BACK}?error=${encodeURIComponent(pesanSimpanGagal(error.message))}${TAMPIL}` : `${BACK}?success=1${TAMPIL}`);
 }
 
 // Tidak dihapus: aset lama & jurnal penyusutan masih menunjuk ke sini.
@@ -43,8 +47,8 @@ export async function toggleKategoriAset(formData: FormData) {
   const supabase = await assertMasterAdmin(BACK, "kategori aset");
   const id = String(formData.get("id") ?? "");
   const aktif = String(formData.get("aktif") ?? "") === "1";
-  if (!id) redirect(`${BACK}?error=${encodeURIComponent("Kategori tidak valid")}`);
+  if (!id) redirect(`${BACK}?error=${encodeURIComponent("Kategori tidak valid")}${TAMPIL}`);
 
   const { error } = await supabase.from("asset_categories").update({ is_active: !aktif }).eq("id", id);
-  redirect(error ? `${BACK}?error=${encodeURIComponent(error.message)}` : `${BACK}?success=1`);
+  redirect(error ? `${BACK}?error=${encodeURIComponent(error.message)}${TAMPIL}` : `${BACK}?success=1${TAMPIL}`);
 }

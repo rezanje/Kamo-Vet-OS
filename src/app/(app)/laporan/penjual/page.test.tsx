@@ -5,16 +5,23 @@ import type { DataTenagaPenjual } from "./data";
 
 // Fixture fiktif: nama orang dan dokumen di sini tidak merujuk data nyata.
 
-const state = vi.hoisted(() => ({ data: null as unknown }));
+const state = vi.hoisted(() => ({ data: null as unknown, dipanggil: 0 }));
 
 vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a> }));
 vi.mock("@/components/EmployeePicker", () => ({ EmployeePicker: () => <input name="karyawan" /> }));
 vi.mock("@/components/LaporanPage", () => ({
-  LaporanPage: ({ ringkasan, children }: { ringkasan: React.ReactNode; children: React.ReactNode }) => <main>{ringkasan}{children}</main>,
+  LaporanPage: ({ ringkasan, children, siap }: { ringkasan: React.ReactNode; children: React.ReactNode; siap: boolean }) =>
+    <main>{siap ? <>{ringkasan}{children}</> : "BELUM DITAMPILKAN"}</main>,
   KartuAngka: ({ items }: { items: { label: string; nilai: string }[] }) => <ul>{items.map((k) => <li key={k.label}>{k.label}: {k.nilai}</li>)}</ul>,
   TabelKosong: ({ pesan }: { pesan: string }) => <tr><td>{pesan}</td></tr>,
 }));
-vi.mock("./data", () => ({ ambilTenagaPenjual: async () => state.data }));
+vi.mock("./data", () => ({
+  ambilTenagaPenjual: async () => { state.dipanggil += 1; return state.data; },
+  ambilOpsiFilterPenjual: async () => {
+    const d = state.data as DataTenagaPenjual;
+    return { karyawan: d.karyawan, namaKaryawan: d.namaKaryawan, cabangOptions: d.cabangOptions, pesanError: "" };
+  },
+}));
 
 import PenjualPage from "./page";
 
@@ -37,10 +44,21 @@ function data(rows: BarisPenjual[], over: Partial<DataTenagaPenjual> = {}): Data
   };
 }
 
+// Semua tes isi laporan memakai tampil=1 — seperti setelah pengguna menekan Tampilkan (A1).
 const render = (sp: Record<string, string> = {}) =>
-  PenjualPage({ searchParams: Promise.resolve(sp) }).then(renderToStaticMarkup);
+  PenjualPage({ searchParams: Promise.resolve({ tampil: "1", ...sp }) }).then(renderToStaticMarkup);
 
-beforeEach(() => { state.data = data([]); });
+beforeEach(() => { state.data = data([]); state.dipanggil = 0; });
+
+it("A1: membuka laporan tanpa Tampilkan tidak menarik baris penjualan", async () => {
+  state.data = data([baris({ id: "a", dokterId: "dokter" })]);
+  const html = await PenjualPage({ searchParams: Promise.resolve({ karyawan: "dokter" }) }).then(renderToStaticMarkup);
+  expect(state.dipanggil).toBe(0);
+  expect(html).toContain("BELUM DITAMPILKAN");
+  expect(html).not.toContain("Drh. Fiktif");
+  await render();
+  expect(state.dipanggil).toBe(1);
+});
 
 it("memberi baris dua pelaksana ke dua orang tanpa melipatgandakan total perusahaan", async () => {
   state.data = data([baris({ id: "a", dokterId: "dokter", stafId: "perawat" })]);

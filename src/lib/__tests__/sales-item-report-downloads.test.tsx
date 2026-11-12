@@ -41,7 +41,7 @@ it.each(["csv", "xlsx", "print"])("exports all selected rows, applied filters an
 });
 
 it("provides only complete export links on the paginated report", async () => {
-  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Racikan", q: "obat", halaman: "2" }) }));
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Racikan", q: "obat", halaman: "2" }) }));
   expect(html).not.toContain("Unduh data yang tampil");
   expect(html).toContain("Excel lengkap");
   expect(html).toContain("Cetak / PDF lengkap");
@@ -52,7 +52,7 @@ it("provides only complete export links on the paginated report", async () => {
 
 it("preserves the exact saved performer filter in page navigation and export metadata", async () => {
   mocks.load.mockResolvedValue({ rows, cabangOptions: [], pelaksanaOptions: [{ id: "doctor-a", nama: "Dokter: Nama Sama" }], pesanError: "", nilaiTotal: 38950, qtyTotal: 410, ringkasan: ringkasKategori(rows), kategoriOptions: [] });
-  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Racikan", pelaksana_id: "doctor-a", halaman: "2" }) }));
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Racikan", pelaksana_id: "doctor-a", halaman: "2" }) }));
   expect(html).toContain("pelaksana_id=doctor-a");
   expect(html).toContain("Dokter: Nama Sama");
   const response = await GET(new Request("https://example.test/laporan/penjualan-barang/unduh?dari=2026-10-01&sampai=2026-10-04&kanal=Klinik&jenis=Racikan&pelaksana_id=doctor-a"));
@@ -68,7 +68,7 @@ it("does not read report data when download authorization fails", async () => {
 });
 
 it("passes the clinic Semua selection through the page, links and export route", async () => {
-  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Semua" }) }));
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Semua" }) }));
   expect(html).toContain('<option value="Semua" selected="">Semua baris invoice klinik</option>');
   expect(mocks.load).toHaveBeenLastCalledWith(expect.objectContaining({ kanal: "Klinik", jenis: "Semua" }));
   expect(html).toContain("jenis=Semua");

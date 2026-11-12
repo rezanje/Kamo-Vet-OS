@@ -22,7 +22,7 @@ it.each([
  ['sales advances',SalesAdvances,'sales_advances','advance-id'],
  ['payment orders',PaymentOrders,'payment_orders','order-id'],
 ] as const)('links an actual %s row to its own history and obeys existing navigation access',async(_name,Page,entity,id)=>{
- const page=await Page({searchParams:Promise.resolve({})});
+ const page=await Page({searchParams:Promise.resolve({tampil:'1'})});
  const allowed=renderToStaticMarkup(<ActivityNavigationProvider allowed>{page}</ActivityNavigationProvider>);
  expect(allowed).toContain(`entity=${entity}&amp;object=${id}`);
  const denied=renderToStaticMarkup(<ActivityNavigationProvider allowed={false}>{page}</ActivityNavigationProvider>);

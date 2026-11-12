@@ -9,7 +9,8 @@ import {
   type KanalPenjual, type PeranPenjual, type RekapPenjual,
 } from "@/lib/laporan-tenaga-penjual";
 import type { JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
-import { ambilTenagaPenjual } from "./data";
+import { laporanDiminta } from "@/lib/report-gate";
+import { ambilOpsiFilterPenjual, ambilTenagaPenjual } from "./data";
 
 // Penjualan per Tenaga Penjual.
 //
@@ -33,17 +34,22 @@ const satuDari = <T extends string>(nilai: string | undefined, pilihan: readonly
 export default async function PenjualPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang_id?: string; kanal?: string; peran?: string; karyawan?: string; jenis?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cabang_id?: string; kanal?: string; peran?: string; karyawan?: string; jenis?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const kanal = satuDari<KanalPenjual>(sp.kanal, KANAL_PENJUAL);
   const peran = satuDari<PeranPenjual>(sp.peran, PERAN_SEMUA);
   const jenis = satuDari<JenisBarisPenjualan>(sp.jenis, JENIS_PENJUAL);
 
-  const data = await ambilTenagaPenjual({ dari, sampai });
-  const cabangId = data.cabangOptions.some((c) => c.id === sp.cabang_id) ? sp.cabang_id! : "";
+  // A1: sebelum Tampilkan ditekan, hanya isian filter yang dibaca — tanpa baris penjualan.
+  const opsi = await ambilOpsiFilterPenjual();
+  const cabangId = opsi.cabangOptions.some((c) => c.id === sp.cabang_id) ? sp.cabang_id! : "";
+  const data = siap
+    ? await ambilTenagaPenjual({ dari, sampai, cabangId })
+    : { ...opsi, rows: [], faktur: [], selisihDokumen: 0, returTanpaSumber: 0 };
   const karyawanId = data.karyawan.some((k) => k.id === sp.karyawan) ? sp.karyawan! : "";
 
   const semua = atribusiPenjual(data.rows);
@@ -78,6 +84,7 @@ export default async function PenjualPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-user-dollar" title="PENJUALAN PER TENAGA PENJUAL"
       desc="Omzet per orang dari seluruh kanal — kasir petshop, tagihan klinik, dan faktur grosir — dipisah menurut peran Dokter dan Non-dokter pada tiap baris."
       filter={

@@ -41,7 +41,7 @@ function elements(node: React.ReactNode): React.ReactElement<Record<string, unkn
   if (!React.isValidElement<Record<string, unknown>>(node)) return [];
   return [node, ...React.Children.toArray(node.props.children as React.ReactNode).flatMap(elements)];
 }
-const page = () => Page({ searchParams: Promise.resolve({ periode: "2026-10" }) });
+const page = () => Page({ searchParams: Promise.resolve({ periode: "2026-10", tampil: "1" }) });
 beforeEach(() => { state.edit = true; state.policyInstalled = true; state.failed = ""; state.truncated = ""; state.report = false; state.reads = []; });
 it("offers every active exact product target with separate code and complete existing branch/category/employee references", async () => {
   const nodes = elements(await page());

@@ -5,7 +5,9 @@ import { ListLoadFailure } from "@/components/ListPagination";
 import { createClient } from "@/lib/supabase/server";
 import { paginateReport } from "@/lib/hpp-reports";
 import { loadOpnamePriceReport, opnameFilters, OPNAME_REPORT_PATH, type OpnameReportParams } from "@/lib/opname-price-report";
-import { ReportAccessError } from "@/lib/hpp-reports-server";
+import { readReportRows, ReportAccessError } from "@/lib/hpp-reports-server";
+import { bolehBukaPath } from "@/lib/akses";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
 import Decimal from "decimal.js";
 
 const qty = (n: number) => n.toLocaleString("id-ID", { maximumFractionDigits: 8 });
@@ -16,20 +18,56 @@ const money = (v: string | null) => {
   return `${number.startsWith("-") ? "−" : ""}Rp ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${decimal.replace(/0+$/, "").padEnd(2, "0")}`;
 };
 
-export default async function Page({ searchParams }: { searchParams: Promise<OpnameReportParams> }) {
+type Klien = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * A1 (meeting 12 Nov 2026): isian filter saja — cek akses yang sama dengan
+ * laporan penuh (OWNER/FINANCE aktif + izin modul) dan daftar cabang yang boleh
+ * diakses, tanpa membaca gudang, hasil opname, atau snapshot harga.
+ */
+async function bacaOpsiFilter(client: Klien): Promise<{ id: string; name: string }[]> {
+  const { data: { user }, error } = await client.auth.getUser();
+  if (error || !user) throw new ReportAccessError("Sesi tidak ditemukan", 401);
+  const { data: profile, error: profileError } = await client.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
+  if (profileError || !profile || profile.is_active !== true || !["OWNER", "FINANCE"].includes(profile.role)) throw new ReportAccessError("Laporan harga opname hanya untuk OWNER dan FINANCE aktif", 403);
+  const rules = await readReportRows<{ role: string; module_id: string }>(async (from, to) => {
+    const r = await client.from("role_modules").select("role,module_id", { count: "exact" }).eq("role", profile.role).order("module_id").range(from, to);
+    return { data: r.data, error: r.error, count: r.count };
+  }, row => `${row.role}:${row.module_id}`);
+  if (!bolehBukaPath(profile.role, OPNAME_REPORT_PATH, rules)) throw new ReportAccessError("Akses modul laporan ditolak", 403);
+  const semua = await readReportRows<{ id: string; name: string }>(async (from, to) => {
+    const r = await client.from("branches").select("id,name", { count: "exact" }).order("id").range(from, to);
+    return { data: r.data, error: r.error, count: r.count };
+  });
+  const boleh: typeof semua = [];
+  for (const branch of semua) {
+    const { data, error: branchError } = await client.rpc("user_can_access_branch", { b: branch.id });
+    if (branchError) throw new ReportAccessError("Akses cabang hasil opname tidak dapat diverifikasi", 403);
+    if (data === true) boleh.push(branch);
+  }
+  return boleh;
+}
+
+export default async function Page({ searchParams }: { searchParams: Promise<OpnameReportParams & { tampil?: string }> }) {
   const input = await searchParams;
+  const siap = laporanDiminta(input);
   let report: Awaited<ReturnType<typeof loadOpnamePriceReport>> | null = null;
+  let cabangSaja: { id: string; name: string }[] = [];
   let error: unknown = null;
-  try { report = await loadOpnamePriceReport(await createClient(), input); }
+  try {
+    if (siap) report = await loadOpnamePriceReport(await createClient(), input);
+    else cabangSaja = await bacaOpsiFilter(await createClient());
+  }
   catch (caught) { error = caught; }
   if (error instanceof ReportAccessError && error.status === 401) redirect("/login");
   if (error instanceof ReportAccessError && error.status === 403) redirect("/laporan");
   let filters: ReturnType<typeof opnameFilters> | null = null;
   try { filters = report?.filters ?? opnameFilters(input); } catch { /* invalid dates appear below */ }
-  const query = (extra: Record<string, string>) => `${OPNAME_REPORT_PATH}?${new URLSearchParams({
+  // Tautan di dalam laporan (dasar, arah, dokumen, halaman) tetap membawa tampil=1.
+  const query = (extra: Record<string, string>) => denganTampil(`${OPNAME_REPORT_PATH}?${new URLSearchParams({
     dari: filters?.dari ?? "", sampai: filters?.sampai ?? "", cabang: filters?.cabang ?? "",
     order: filters?.order ?? "", dasar: filters?.dasar ?? "modal", arah: filters?.arah ?? "semua", ...extra,
-  })}`;
+  })}`);
   const selected = report?.selected;
   const page = paginateReport(report?.entries ?? [], input.halaman);
   const sum = report && selected && !report.legacy ? [
@@ -39,7 +77,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Opn
     { label: "Neto selisih", nilai: money(report.net) },
     { label: "Tanpa nilai modal", nilai: String(report.unavailable) },
   ] : [];
-  return <LaporanPage icon="ti-clipboard-check" title="HASIL STOK OPNAME"
+  // Gagal membaca isian filter tetap ditampilkan (bukan disembunyikan petunjuk kosong).
+  return <LaporanPage siap={siap || !!error}icon="ti-clipboard-check" title="HASIL STOK OPNAME"
     desc="Snapshot harga saat hasil diposting. Harga jual cabang untuk laporan bukan dasar jurnal atau faktur selisih."
     unduhTampilan={false}
     filter={<>
@@ -47,7 +86,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Opn
       <div><label className="flab">Sampai tanggal</label><input className="fi" name="sampai" type="date" defaultValue={filters?.sampai} /></div>
       <div><label className="flab">Cabang</label><select className="fi" name="cabang" defaultValue={filters?.cabang ?? ""}>
         <option value="">Semua cabang yang diizinkan</option>
-        {report?.branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+        {(report?.branches ?? cabangSaja).map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
       </select></div>
       {/* Changing dates or branch keeps the chosen valuation basis and direction; the selected opname document is a drill-down and is not carried to a new range. */}
       {filters?.dasar === "jual" && <input type="hidden" name="dasar" value="jual" />}

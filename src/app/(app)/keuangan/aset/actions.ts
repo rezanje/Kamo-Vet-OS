@@ -8,8 +8,12 @@ import { periodeBelumSelesai, runDepreciationPeriod } from "@/lib/depreciation";
 import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { assetPurchaseJournal, assertNewAssetFunding } from "@/lib/asset-acquisition";
+import { PARAM_TAMPIL } from "@/lib/report-gate";
 
 const back = "/keuangan/aset";
+// A1 (meeting 12 Nov 2026): kembali ke daftar aset yang sudah tampil. Ditaruh di akhir
+// supaya pesan yang sudah di-encode tidak berubah.
+const TAMPIL = `&${PARAM_TAMPIL}=1`;
 
 type AssetInput = {
   nama: string; categoryId: string; tanggal: string; harga: number;
@@ -31,17 +35,17 @@ async function bacaAset(
 
   if (!nama || !categoryId || !/^\d{4}-\d{2}-\d{2}$/.test(tanggal)
     || !Number.isFinite(harga) || harga <= 0 || !Number.isFinite(umurBulan) || umurBulan <= 0) {
-    redirect(`${back}?error=${encodeURIComponent("Nama, kategori, tanggal, harga perolehan, dan umur ekonomis wajib diisi dengan benar")}`);
+    redirect(`${back}?error=${encodeURIComponent("Nama, kategori, tanggal, harga perolehan, dan umur ekonomis wajib diisi dengan benar")}${TAMPIL}`);
   }
   if (!Number.isFinite(nilaiSisa) || nilaiSisa < 0 || nilaiSisa >= harga) {
-    redirect(`${back}?error=${encodeURIComponent("Nilai sisa harus nol atau lebih, dan lebih kecil dari harga perolehan")}`);
+    redirect(`${back}?error=${encodeURIComponent("Nilai sisa harus nol atau lebih, dan lebih kecil dari harga perolehan")}${TAMPIL}`);
   }
 
   if (!readCategory) return { nama, categoryId, tanggal, harga, nilaiSisa, umurBulan, branchId, kategori: "" };
 
   const { data: kat, error } = await supabase.from("asset_categories")
     .select("nama").eq("id", categoryId).eq("is_active", true).maybeSingle();
-  if (error || !kat) redirect(`${back}?error=${encodeURIComponent("Kategori aset tidak valid")}`);
+  if (error || !kat) redirect(`${back}?error=${encodeURIComponent("Kategori aset tidak valid")}${TAMPIL}`);
   return { nama, categoryId, tanggal, harga, nilaiSisa, umurBulan, branchId, kategori: String(kat.nama) };
 }
 
@@ -49,26 +53,26 @@ export async function tambahSaldoAwalAset(formData: FormData) {
   const supabase = await createClient();
   const a = await bacaAset(supabase, formData);
   const pesanPeriode = await cekPeriode(supabase, a.tanggal);
-  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}`);
+  if (pesanPeriode) redirect(`${back}?error=${encodeURIComponent(pesanPeriode)}${TAMPIL}`);
   const { error } = await supabase.from("fixed_assets").insert({
     nama: a.nama, kategori: a.kategori, category_id: a.categoryId,
     tanggal_perolehan: a.tanggal, harga_perolehan: a.harga, nilai_sisa: a.nilaiSisa,
     umur_bulan: a.umurBulan, branch_id: a.branchId,
   });
-  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
-  redirect(`${back}?success=saldo-awal${transactionDraftAck(formData)}`);
+  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}${TAMPIL}`);
+  redirect(`${back}?success=saldo-awal${transactionDraftAck(formData)}${TAMPIL}`);
 }
 
 export async function tambahPembelianAset(formData: FormData) {
   const supabase = await createClient();
   const a = await bacaAset(supabase, formData, false);
   const requestKey = String(formData.get("request_key") ?? "").trim();
-  if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang formulir.")}`);
+  if (!requestKey) redirect(`${back}?error=${encodeURIComponent("Kunci transaksi tidak valid. Muat ulang formulir.")}${TAMPIL}`);
   const sumber = String(formData.get("sumber") ?? "").trim();
   try {
     assertNewAssetFunding(sumber);
   } catch (e) {
-    redirect(`${back}?error=${encodeURIComponent(e instanceof Error ? e.message : "Sumber dana tidak valid")}`);
+    redirect(`${back}?error=${encodeURIComponent(e instanceof Error ? e.message : "Sumber dana tidak valid")}${TAMPIL}`);
   }
 
   const creditCode = await kodeAkunBayar(
@@ -81,11 +85,11 @@ export async function tambahPembelianAset(formData: FormData) {
   try {
     journal = assetPurchaseJournal(a.harga, sumber, creditCode);
   } catch (e) {
-    redirect(`${back}?error=${encodeURIComponent(e instanceof Error ? e.message : "Data pembelian tidak valid")}`);
+    redirect(`${back}?error=${encodeURIComponent(e instanceof Error ? e.message : "Data pembelian tidak valid")}${TAMPIL}`);
   }
 
   const creditAccount = journal.find((line) => line.credit > 0)?.code;
-  if (!creditAccount) redirect(`${back}?error=${encodeURIComponent("Akun pembelian aset tidak valid")}`);
+  if (!creditAccount) redirect(`${back}?error=${encodeURIComponent("Akun pembelian aset tidak valid")}${TAMPIL}`);
   const { data, error } = await supabase.rpc("create_fixed_asset_purchase", {
     p_request_key: requestKey,
     p_nama: a.nama,
@@ -99,9 +103,9 @@ export async function tambahPembelianAset(formData: FormData) {
     p_credit_code: creditAccount,
   });
   if (error || !data) {
-    redirect(`${back}?error=${encodeURIComponent(`Pembelian belum terkonfirmasi: ${error?.message ?? "gagal"}`)}`);
+    redirect(`${back}?error=${encodeURIComponent(`Pembelian belum terkonfirmasi: ${error?.message ?? "gagal"}`)}${TAMPIL}`);
   }
-  redirect(`${back}?success=pembelian&request_done=${encodeURIComponent(requestKey)}&request_scope=asset`);
+  redirect(`${back}?success=pembelian&request_done=${encodeURIComponent(requestKey)}&request_scope=asset${TAMPIL}`);
 }
 
 // Jalankan penyusutan garis lurus untuk satu periode (YYYY-MM).
@@ -110,13 +114,13 @@ export async function jalankanPenyusutan(formData: FormData) {
   const supabase = await createClient();
   const periode = String(formData.get("periode") ?? "").slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(periode)) {
-    redirect(`${back}?error=${encodeURIComponent("Periode tidak valid")}`);
+    redirect(`${back}?error=${encodeURIComponent("Periode tidak valid")}${TAMPIL}`);
   }
   if (periodeBelumSelesai(periode, hariIniWIB())) {
-    redirect(`${back}?error=${encodeURIComponent("Bulan ini belum selesai — penyusutan baru bisa dijalankan setelah bulannya lewat.")}`);
+    redirect(`${back}?error=${encodeURIComponent("Bulan ini belum selesai — penyusutan baru bisa dijalankan setelah bulannya lewat.")}${TAMPIL}`);
   }
 
   const { total, jumlahAset } = await runDepreciationPeriod(supabase, periode);
-  if (total > 0) redirect(`${back}?success=susut&n=${jumlahAset}${transactionDraftAck(formData)}`);
-  redirect(`${back}?error=${encodeURIComponent("Tidak ada aset yang perlu disusutkan untuk periode ini (mungkin sudah dijalankan)")}`);
+  if (total > 0) redirect(`${back}?success=susut&n=${jumlahAset}${transactionDraftAck(formData)}${TAMPIL}`);
+  redirect(`${back}?error=${encodeURIComponent("Tidak ada aset yang perlu disusutkan untuk periode ini (mungkin sudah dijalankan)")}${TAMPIL}`);
 }

@@ -123,7 +123,49 @@ const kosong = (pesanError: string): DataTenagaPenjual => ({
   selisihDokumen: 0, returTanpaSumber: 0, pesanError,
 });
 
-export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampai: string }): Promise<DataTenagaPenjual> {
+type EmpRow = { id: string; nama: string; jabatan: string | null; status: string | null; profile_id: string | null; branches: Rel<{ name: string }> };
+
+const pilihanKaryawan = (rows: EmpRow[], munculDiData: Set<string>): PilihanKaryawanPenjual[] => rows
+  .filter((e) => (e.status ?? "").toLocaleLowerCase("id-ID") === "aktif" || munculDiData.has(e.id))
+  .map((e) => ({ id: e.id, nama: e.nama, jabatan: e.jabatan, branchName: one(e.branches)?.name ?? null }))
+  .sort((a, b) => a.nama.localeCompare(b.nama, "id") || a.id.localeCompare(b.id));
+
+export type OpsiFilterPenjual = Pick<DataTenagaPenjual, "karyawan" | "namaKaryawan" | "cabangOptions" | "pesanError">;
+
+/**
+ * A1 (meeting 12 Nov 2026): hanya isian filter (cabang + karyawan), tanpa baris
+ * penjualan. Dipakai saat laporan dibuka tetapi Tampilkan belum ditekan.
+ */
+export async function ambilOpsiFilterPenjual(): Promise<OpsiFilterPenjual> {
+  try {
+    const supabase = await createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    const [diizinkan, karyawanRows, cabangRows] = await Promise.all([
+      auth?.user ? allowedBranchIds(supabase, auth.user.id) : Promise.resolve([] as string[]),
+      completeReportQuery(supabase.from("employees")
+        .select("id, nama, jabatan, status, profile_id, branches!employees_branch_id_fkey(name)", { count: "exact" })),
+      completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true)),
+    ]);
+    const semuaKaryawan = (karyawanRows.data ?? []) as unknown as EmpRow[];
+    return {
+      karyawan: pilihanKaryawan(semuaKaryawan, new Set()),
+      namaKaryawan: new Map(semuaKaryawan.map((e) => [e.id, e.nama])),
+      cabangOptions: ((cabangRows.data ?? []) as { id: string; name: string }[])
+        .filter((cabang) => diizinkan === null || diizinkan.includes(cabang.id))
+        .sort((a, b) => a.name.localeCompare(b.name, "id")),
+      pesanError: "",
+    };
+  } catch (error) {
+    console.error("Pilihan filter laporan penjualan per tenaga penjual gagal:", error);
+    return { karyawan: [], namaKaryawan: new Map(), cabangOptions: [], pesanError: "Pilihan filter belum bisa dibaca. Muat ulang halaman." };
+  }
+}
+
+export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
+  dari: string; sampai: string;
+  /** Kosong = semua cabang yang boleh diakses. Diisi = disaring langsung di query (A1). */
+  cabangId?: string;
+}): Promise<DataTenagaPenjual> {
   if (!tanggalValid(dari) || !tanggalValid(sampai) || dari > sampai) {
     return kosong("Rentang tanggal tidak valid. Periksa tanggal awal dan akhir.");
   }
@@ -139,24 +181,27 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
 
     const [invoiceItems, saleItems, grosirItems, karyawanRows, cabangRows] = await Promise.all([
       readReportRows<InvoiceItemRow>(async (awal, ujung) => {
-        const { data, error, count } = await supabase.from("invoice_items")
-          .select("id, deskripsi, qty, harga, jenis, diskon_persen, item_id, compound_recipe_id, service_performers, salesperson_id, invoices!inner(id, visit_id, invoice_no, created_at, total, salesperson_id, voided_at, visits(branch_id, doctor_id, branches(name), customers(name), pets(name)))", { count: "exact" })
+        const query = supabase.from("invoice_items")
+          .select(`id, deskripsi, qty, harga, jenis, diskon_persen, item_id, compound_recipe_id, service_performers, salesperson_id, invoices!inner(id, visit_id, invoice_no, created_at, total, salesperson_id, voided_at, visits${cabangId ? "!inner" : ""}(branch_id, doctor_id, branches(name), customers(name), pets(name)))`, { count: "exact" })
           .is("invoices.voided_at", null)
-          .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
+          .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir);
+        const { data, error, count } = await (cabangId ? query.eq("invoices.visits.branch_id", cabangId) : query)
           .order("id").range(awal, ujung);
         return { data: data as unknown as InvoiceItemRow[] | null, error, count };
       }),
       readReportRows<SaleItemRow>(async (awal, ujung) => {
-        const { data, error, count } = await supabase.from("sale_items")
+        const query = supabase.from("sale_items")
           .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, branch_id, no_struk, created_at, total, merchant_fee_total, salesperson_id, cashier_id, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
-          .gte("sales.created_at", mulai).lte("sales.created_at", akhir)
+          .gte("sales.created_at", mulai).lte("sales.created_at", akhir);
+        const { data, error, count } = await (cabangId ? query.eq("sales.branch_id", cabangId) : query)
           .order("id").range(awal, ujung);
         return { data: data as unknown as SaleItemRow[] | null, error, count };
       }),
       readReportRows<GrosirItemRow>(async (awal, ujung) => {
-        const { data, error, count } = await supabase.from("sales_invoice_items")
+        const query = supabase.from("sales_invoice_items")
           .select(`id, nama, qty, harga, diskon, sales_invoices!inner(${SELECT_FAKTUR_GROSIR}, created_by, sales_orders(salesperson_id), branches(name), customers(name))`, { count: "exact" })
-          .gte("sales_invoices.tanggal", dari).lte("sales_invoices.tanggal", sampai)
+          .gte("sales_invoices.tanggal", dari).lte("sales_invoices.tanggal", sampai);
+        const { data, error, count } = await (cabangId ? query.eq("sales_invoices.branch_id", cabangId) : query)
           .order("id").range(awal, ujung);
         return { data: data as unknown as GrosirItemRow[] | null, error, count };
       }),
@@ -165,7 +210,6 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
       completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true)),
     ]);
 
-    type EmpRow = { id: string; nama: string; jabatan: string | null; status: string | null; profile_id: string | null; branches: Rel<{ name: string }> };
     const semuaKaryawan = (karyawanRows.data ?? []) as unknown as EmpRow[];
     const namaKaryawan = new Map(semuaKaryawan.map((e) => [e.id, e.nama]));
     const empPerProfile = new Map(semuaKaryawan.filter((e) => e.profile_id).map((e) => [e.profile_id as string, e.id]));
@@ -462,10 +506,7 @@ export async function ambilTenagaPenjual({ dari, sampai }: { dari: string; sampa
       rows: terlihat,
       // Pemilih karyawan: yang masih aktif, ditambah siapa pun yang muncul di data
       // rentang ini supaya penjual yang sudah keluar tetap bisa disaring.
-      karyawan: semuaKaryawan
-        .filter((e) => (e.status ?? "").toLocaleLowerCase("id-ID") === "aktif" || munculDiData.has(e.id))
-        .map((e) => ({ id: e.id, nama: e.nama, jabatan: e.jabatan, branchName: one(e.branches)?.name ?? null }))
-        .sort((a, b) => a.nama.localeCompare(b.nama, "id") || a.id.localeCompare(b.id)),
+      karyawan: pilihanKaryawan(semuaKaryawan, munculDiData),
       namaKaryawan,
       cabangOptions: cabangTerlihat
         .filter((cabang) => diizinkan === null || diizinkan.includes(cabang.id))

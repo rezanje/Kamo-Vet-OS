@@ -1,6 +1,6 @@
 # Rencana teknis P0 — A1, A2, A3 (meeting 12 Nov 2026)
 
-Status: **draf, menunggu persetujuan Reza**. Belum ada kode yang diubah.
+Status: disetujui ("sesuai to-do list"). A1 selesai di kode; migrasi index ditulis, belum dipasang ke Production.
 Branch kerja: `claude/epic-hypatia-raw2el` (dibuat dari `docs/meeting-2026-11-12`), PR ke `main`.
 Satu item = satu commit (`A1: …`, `A2: …`, `A3: …`), centang TODO.md di commit yang sama.
 
@@ -72,10 +72,28 @@ Satu item = satu commit (`A1: …`, `A2: …`, `A3: …`), centang TODO.md di co
   beberapa detik (ukuran data sekarang kecil–menengah) → pasang di luar jam operasional, terarah (bukan
   `db push` massal, sesuai runbook). Bisa dibatalkan dengan `drop index`.
 
-**Cakupan yang perlu keputusan:** beberapa entri di Daftar Laporan sebenarnya **daftar kerja harian**
-(Daftar Pesanan/Penerimaan/Faktur Pembelian, Uang Muka, Faktur Penjualan, Jurnal, History Bank/Rekening,
-Shift Kasir, Daftar Aset). Halaman ini sudah berhalaman (pagination) dan dipakai untuk kerja, bukan rekap.
-Usulan: **tidak** diberi gate; yang di-gate hanya halaman laporan/rekap.
+**Cakupan (diputuskan Reza: sesuai to-do = semua entri Daftar Laporan):** termasuk daftar kerja harian
+(Daftar Pesanan/Penerimaan/Faktur Pembelian, Uang Muka, Faktur Penjualan, Jurnal, Daftar Rekening, Shift Kasir,
+Daftar Aset, Kategori Aset, Rekonsiliasi, Piutang, Hutang, Komisi). Tombol/form kerja (buat baru, bayar, buka/tutup
+shift, form aturan komisi) tetap tampil; yang ditahan hanya daftar/angka laporannya.
+
+**Pengecualian yang disengaja:**
+- Jurnal: tautan langsung ke satu jurnal (`entry`/`nomor`) dianggap "tampil" — query satu baris, dipakai banyak tautan dokumen.
+- Hutang: tautan "ganti pembayaran" (`replace_payment`) dianggap "tampil".
+- Operation & Sales: tampilan kunci pilot / pesan error tetap tampil (tidak ada filter).
+- Pajak > Faktur pajak memakai kerangka laporan tetapi tidak ada di Daftar Laporan → tidak di-gate.
+- Pos Shift: hanya bagian "Riwayat shift" yang di-gate; shift aktif kasir tetap tampil.
+
+**Tautan & pengalihan:** semua redirect setelah aksi (bayar hutang, simpan jurnal, aset, rekening, PO, uang muka,
+faktur penjualan, komisi, shift, koreksi pembelian, PO dari stok minimum) dan tautan drill-down (Laba Rugi/Neraca →
+Buku Besar, Closing HPP, nilai persediaan historis, hasil opname dari stok opname, dashboard Operation & Sales,
+dokumen terkait uang muka) membawa `tampil=1`. `denganTampil()` menambah parameter tanpa meng-encode ulang query lain.
+
+**Saringan cabang di query (sudah):** penjual, penjualan-rinci, transaksi-cabang, pelanggan-harian, penjualan-kasir,
+rekap-klinik, penjualan-barang (layar), absensi, gaji, kpi, anamnesa, pembelian. **Belum/sengaja tidak:** faktur
+grosir (faktur koreksi menandai faktur asal dari kumpulan yang sama), retur/refund yang dibaca tanpa batas tanggal di
+penjualan-rinci & loader transaksi (perlu perubahan logika lebih besar), retensi (cabang = cabang transaksi pertama,
+dihitung setelah data dibaca). Saringan join bertingkat (`!inner`) baru diuji dengan tiruan → perlu dicek di data asli.
 
 **Risiko:** rendah untuk data (semua read-only, tidak menyentuh jurnal/stok). Risiko utama adalah perilaku:
 user yang terbiasa langsung melihat angka sekarang harus klik Tampilkan; tautan drill-down yang terlewat

@@ -17,6 +17,8 @@ import { batalkanUangMuka } from "./actions";
 import { EffectiveDateField } from "@/components/EffectiveDateField";
 import { loadPurchaseBackdateAccess } from "@/lib/purchase-backdate";
 import { loadPurchaseCancelAccess } from "@/lib/purchase-cancel-access";
+import { laporanDiminta } from "@/lib/report-gate";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -34,9 +36,12 @@ type UM = {
 export default async function UangMukaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; from?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; from?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  // A1 (meeting 12 Nov 2026): daftar uang muka (+ riwayat pemakaiannya) baru ditarik
+  // setelah Tampilkan. Form bayar uang muka tetap bisa dipakai sebelum itu.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
@@ -49,14 +54,19 @@ export default async function UangMukaPage({
     if (me) { const access = await loadPurchaseCancelAccess(supabase, me); cascadeAllowed = access.uangMuka && access.pembayaran; canBackdate = await loadPurchaseBackdateAccess(supabase, me); }
   } catch { cascadeAllowed = true; }
 
-  let daftar:UM[]=[],pemasok:{id:string;nama:string}[]=[],po:AdvancePO[]=[],receipts:{id:string;po_id:string;voided_at?:string|null}[]=[];
+  type SaldoDp = {id:string;po_id:string|null;status:string;jumlah:number};
+  let daftar:UM[]=[],saldoDp:SaldoDp[]=[],pemasok:{id:string;nama:string}[]=[],po:AdvancePO[]=[],receipts:{id:string;po_id:string;voided_at?:string|null}[]=[];
   let loadError="";
   const rekening=await loadRekeningAktif(supabase);
   try {
-    [daftar,pemasok,po,receipts] = await Promise.all([
-      readCompleteList<UM>((from,to)=>supabase.from("purchase_advances")
+    [daftar,saldoDp,pemasok,po,receipts] = await Promise.all([
+      siap ? readCompleteList<UM>((from,to)=>supabase.from("purchase_advances")
         .select("id,po_id,no_um,tanggal,jumlah,terpakai,metode,catatan,status,suppliers(nama),purchase_orders(no_po)",{count:"exact"})
-        .order("tanggal",{ascending:false}).order("id").range(from,to),"Daftar uang muka",{maxRows:null}),
+        .order("tanggal",{ascending:false}).order("id").range(from,to),"Daftar uang muka",{maxRows:null}) : Promise.resolve([] as UM[]),
+      // Sebelum Tampilkan, form tetap butuh DP aktif per PO untuk batas sisa DP — dibaca ramping.
+      siap ? Promise.resolve([] as SaldoDp[]) : readCompleteList<SaldoDp>((from,to)=>supabase.from("purchase_advances")
+        .select("id,po_id,jumlah,status",{count:"exact"}).eq("status","aktif").not("po_id","is",null)
+        .order("id").range(from,to),"Uang muka aktif per PO",{maxRows:null}),
       readCompleteList<{id:string;nama:string}>((from,to)=>supabase.from("suppliers").select("id,nama",{count:"exact"}).eq("is_active",true).order("nama").order("id").range(from,to),"Pemasok uang muka",{maxRows:null}),
       readCompleteList<AdvancePO>((from,to)=>supabase.from("purchase_orders").select("id,no_po,supplier_id,status,total",{count:"exact"}).order("tanggal",{ascending:false}).order("id").range(from,to),"PO uang muka",{maxRows:null}),
       readCompleteList<{id:string;po_id:string;voided_at?:string|null}>((from,to)=>supabase.from("goods_receipts").select("id,po_id,voided_at",{count:"exact"}).order("id").range(from,to),"Penerimaan PO uang muka",{maxRows:null}),
@@ -89,17 +99,22 @@ export default async function UangMukaPage({
         />
 
         <TransactionDraftComplete userId={user?.id??""}/>
-        {loadError ? <div role="alert">{loadError}</div> : boleh && <AdvanceForm key={user?.id??""} userId={user?.id??""} suppliers={pemasok} orders={po} advances={daftar} rekening={rekening}/>}
+        {loadError ? <div role="alert">{loadError}</div> : boleh && <AdvanceForm key={user?.id??""} userId={user?.id??""} suppliers={pemasok} orders={po} advances={siap?daftar:saldoDp} rekening={rekening}/>}
 
       </div>
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <SecHeader
           num="02" title="DAFTAR UANG MUKA"
-          desc={loadError?"Saldo belum dapat diverifikasi.":`Sisa yang belum terpakai: ${rp(totalSisa)}.`}
+          desc={!siap?"Klik Tampilkan untuk melihat daftar dan sisa uang muka.":loadError?"Saldo belum dapat diverifikasi.":`Sisa yang belum terpakai: ${rp(totalSisa)}.`}
         />
 
-        <div style={{ overflowX: "auto" }}>
+        <form method="get" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <InputTampil />
+          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+        </form>
+
+        {!siap ? <LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat daftar uang muka pembelian." /> : <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 860 }}>
             <thead>
               <tr>
@@ -172,7 +187,7 @@ export default async function UangMukaPage({
               )}
             </tbody>
           </table>
-        </div>
+        </div>}
       </div>
     </MasterPage>
   );

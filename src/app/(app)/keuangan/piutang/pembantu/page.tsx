@@ -4,6 +4,8 @@ import { bukuPembantu } from "@/lib/buku-pembantu";
 import { mutasiPiutang } from "@/lib/buku-pembantu-server";
 import { getAccountOpening, getAccountLedger } from "@/lib/ledger";
 import { hariIniWIB } from "@/lib/tanggal";
+import { laporanDiminta } from "@/lib/report-gate";
+import type { LedgerLine } from "@/lib/ledger";
 
 // Buku Besar Pembantu Piutang — permintaan Kamo Group 24 Agu 2026.
 // Menjawab dua baris sekaligus di daftar mereka: "buku besar pembantu piutang"
@@ -14,18 +16,20 @@ const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
 export default async function PembantuPiutangPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cari?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cari?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  // A1 (meeting 12 Nov 2026): mutasi & saldo buku besar baru dibaca setelah Tampilkan ditekan.
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const cari = (sp.cari || "").trim().toLowerCase();
 
   const supabase = await createClient();
   const [mutasi, opening, lines] = await Promise.all([
-    mutasiPiutang(supabase, sampai),
-    getAccountOpening(supabase, "150001", { from: dari }),
-    getAccountLedger(supabase, "150001", { from: dari, to: sampai }),
+    siap ? mutasiPiutang(supabase, sampai) : [],
+    siap ? getAccountOpening(supabase, "150001", { from: dari }) : 0,
+    siap ? getAccountLedger(supabase, "150001", { from: dari, to: sampai }) : ([] as LedgerLine[]),
   ]);
   const saldoBukuBesar = lines.reduce((a, l) => a + l.debit - l.credit, opening);
 
@@ -34,6 +38,7 @@ export default async function PembantuPiutangPage({
 
   return (
     <BukuPembantu
+      siap={siap}
       icon="ti-book-2" title="BUKU BESAR PEMBANTU PIUTANG"
       desc="Riwayat piutang per pelanggan: saldo awal, tiap tagihan dan tiap pembayaran, sampai saldo akhir."
       filter={

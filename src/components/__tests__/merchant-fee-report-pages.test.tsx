@@ -40,7 +40,7 @@ it("shows merchandise, merchant fee and final bill separately on sale detail", a
 });
 
 it("exports one completed header, goods and fee figures separately while keeping gross document totals", async () => {
-  const doc = new DOMParser().parseFromString(renderToStaticMarkup(await ReportPage({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31" }) })), "text/html");
+  const doc = new DOMParser().parseFromString(renderToStaticMarkup(await ReportPage({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", tampil: "1" }) })), "text/html");
   const sections = displaySections(doc.querySelector("#laporan-isi")!);
   const table = sections.find(section => section.rows.some(row => row.includes("No. Dokumen")))!;
   expect(table.rows[0]).toEqual(expect.arrayContaining(["Nilai sebelum fee", "Fee merchant", "Retur fee", "Total bersih"]));

@@ -7,14 +7,34 @@ import { getAccountBalances, getAccountLedger, getAccountOpening } from "@/lib/l
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 import { NoDok } from "@/components/NoDok";
+import { LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { PARAM_TAMPIL, laporanDiminta } from "@/lib/report-gate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
-export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string; dari?: string; sampai?: string; cabang?: string }> }) {
-  const { akun, dari, sampai, cabang } = await searchParams;
+export default async function BukuBesarPage({ searchParams }: { searchParams: Promise<{ akun?: string; dari?: string; sampai?: string; cabang?: string; tampil?: string }> }) {
+  const sp = await searchParams;
+  const { akun, dari, sampai, cabang } = sp;
+  // A1 (meeting 12 Nov 2026): saldo seluruh akun & mutasi baru dibaca setelah Tampilkan ditekan.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const { data: branches } = await completeReportQuery(supabase.from("branches").select("id, name, type", { count: "exact" }).order("name"));
+  const formFilter = <PeriodFilter basePath="/keuangan/buku-besar" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} unitPresets
+    hidden={akun ? { akun } : undefined} />;
+
+  if (!siap) {
+    return (
+      <div data-report-page id="laporan-isi">
+        <Judul />
+        <div className="crm-sec">
+          <SecHeader num="01" title="RINGKASAN BUKU BESAR" desc="Saldo seluruh akun (neraca saldo / trial balance)." />
+          {formFilter}
+          <LaporanBelumDitampilkan />
+        </div>
+      </div>
+    );
+  }
 
   // Cabang ikut disaring supaya angka di sini sama persis dengan baris laporan
   // yang mengantar ke sini (Laba Rugi/Neraca punya filter cabang). Kalau tidak,
@@ -46,8 +66,10 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
       sampai ? `sampai=${sampai}` : "",
       cabang ? `cabang=${encodeURIComponent(cabang)}` : "",
       extra,
+      // Tautan di dalam laporan yang sudah tampil tetap membawa tampil=1.
+      `${PARAM_TAMPIL}=1`,
     ].filter(Boolean);
-    return parts.length ? `?${parts.join("&")}` : "";
+    return `?${parts.join("&")}`;
   };
 
   // saldo berjalan untuk akun terpilih
@@ -61,16 +83,11 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
   return (
     <div data-report-page id="laporan-isi">
       <UnduhLaporan judul="Buku Besar" />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Buku Besar</span>
-      </div>
+      <Judul />
 
       <div className="crm-sec">
         <SecHeader num="01" title="RINGKASAN BUKU BESAR" desc="Saldo seluruh akun (neraca saldo / trial balance)." />
-        <PeriodFilter basePath="/keuangan/buku-besar" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} unitPresets
-          hidden={akun ? { akun } : undefined} />
+        {formFilter}
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 560 }}>
             <thead>
@@ -144,6 +161,16 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function Judul() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+      <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+      <span style={{ color: "var(--td)" }}>·</span>
+      <span style={{ fontSize: 13, fontWeight: 500 }}>Buku Besar</span>
     </div>
   );
 }

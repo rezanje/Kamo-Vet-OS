@@ -9,6 +9,8 @@ import { atribusiPenjual, rekapTenagaPenjual } from "@/lib/laporan-tenaga-penjua
 const state = vi.hoisted(() => ({
   tables: {} as Record<string, unknown[]>,
   allowed: null as string[] | null,
+  eq: [] as string[],
+  select: [] as string[],
 }));
 
 vi.mock("@/lib/branch-access", () => ({ allowedBranchIds: async () => state.allowed }));
@@ -19,7 +21,9 @@ vi.mock("@/lib/supabase/server", () => ({
       const data = state.tables[table] ?? [];
       const hasil = { data, count: data.length, error: null };
       const q: Record<string, unknown> = {
-        select: () => q, eq: () => q, is: () => q, not: () => q, neq: () => q,
+        select: (kolom: string) => { state.select.push(`${table}:${kolom}`); return q; },
+        eq: (kolom: string, nilai: unknown) => { state.eq.push(`${table}:${kolom}=${String(nilai)}`); return q; },
+        is: () => q, not: () => q, neq: () => q,
         gte: () => q, lte: () => q, in: () => q, order: () => q,
         range: async () => hasil,
         then: (resolve: (value: unknown) => unknown) => Promise.resolve(hasil).then(resolve),
@@ -29,7 +33,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-import { ambilTenagaPenjual } from "./data";
+import { ambilOpsiFilterPenjual, ambilTenagaPenjual } from "./data";
 
 const RENTANG = { dari: "2026-10-01", sampai: "2026-10-31" };
 
@@ -44,6 +48,8 @@ const invoiceDiskon = {
 
 beforeEach(() => {
   state.allowed = null;
+  state.eq = [];
+  state.select = [];
   state.tables = {
     employees: [
       { id: "dokter", nama: "Drh. Fiktif", jabatan: "Dokter", status: "Aktif", profile_id: "profil-dokter", branches: { name: "Cabang Uji" } },
@@ -229,4 +235,28 @@ it("query karyawan menyebut relasi cabang utama secara eksplisit (employees puny
   const src = readFileSync(join(__dirname, "data.ts"), "utf8");
   expect(src).toContain("branches!employees_branch_id_fkey(name)");
   expect(src).not.toMatch(/from\("employees"\)\s*\.select\("[^"]*\bbranches\(name\)/);
+});
+
+it("A1: saringan cabang ikut ke query ketiga kanal, bukan hanya disaring di memori", async () => {
+  await ambilTenagaPenjual({ ...RENTANG, cabangId: "cabang" });
+  expect(state.eq).toEqual(expect.arrayContaining([
+    "invoice_items:invoices.visits.branch_id=cabang",
+    "sale_items:sales.branch_id=cabang",
+    "sales_invoice_items:sales_invoices.branch_id=cabang",
+  ]));
+  // Join kunjungan wajib inner supaya saringan cabang benar-benar membatasi baris.
+  expect(state.select.find((s) => s.startsWith("invoice_items:"))).toContain("visits!inner(");
+
+  state.eq = []; state.select = [];
+  await ambilTenagaPenjual(RENTANG);
+  expect(state.eq.filter((e) => e.includes("branch_id"))).toEqual([]);
+  expect(state.select.find((s) => s.startsWith("invoice_items:"))).not.toContain("visits!inner(");
+});
+
+it("A1: pilihan filter hanya membaca karyawan dan cabang, tanpa tabel penjualan", async () => {
+  state.allowed = ["cabang"];
+  const opsi = await ambilOpsiFilterPenjual();
+  expect(opsi.cabangOptions).toEqual([{ id: "cabang", name: "Cabang Uji" }]);
+  expect(opsi.karyawan.map((k) => k.id)).toEqual(["dokter", "kasir", "perawat"]);
+  expect(state.select.map((s) => s.split(":")[0]).sort()).toEqual(["branches", "employees"]);
 });

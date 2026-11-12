@@ -1,7 +1,8 @@
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB, rentangTanggal } from "@/lib/tanggal";
 import { tanggalIndo } from "@/lib/followup";
-import { tarikTransaksi } from "@/lib/laporan-transaksi-server";
+import { tarikCabangAktif, tarikTransaksi } from "@/lib/laporan-transaksi-server";
+import { laporanDiminta } from "@/lib/report-gate";
 import { KANAL_SEMUA, LABEL_KANAL, kanalKosong, perHari, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
 
 // "Jumlah pelanggan per hari" — laporan dasar yang diminta Kamo Group (24 Agu 2026).
@@ -23,15 +24,21 @@ const pecahanKanal = (k: Record<Kanal, number>) => KANAL.map((nama) => k[nama]).
 export default async function PelangganHarianPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; kanal?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; kanal?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const cabang = sp.cabang || "";
   const kanal = (sp.kanal || "") as Kanal | "";
 
-  const { trx: semua, cabangList, terpotong } = await tarikTransaksi(dari, sampai);
+  // A1 (meeting 12 Nov 2026): sebelum Tampilkan ditekan hanya daftar cabang yang dibaca.
+  // Setelahnya, cabang yang dipilih (berdasarkan nama, sama dengan saringan di bawah)
+  // ikut disaring di query.
+  const { trx: semua, cabangList, terpotong } = siap
+    ? await tarikTransaksi(dari, sampai, cabang ? { cabangNama: cabang } : {})
+    : { trx: [] as Trx[], cabangList: await tarikCabangAktif(), terpotong: false };
   const trx: Trx[] = semua.filter(
     (t) => (!cabang || t.cabang === cabang) && (!kanal || t.kanal === kanal),
   );
@@ -56,6 +63,7 @@ export default async function PelangganHarianPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-users-group" title="PELANGGAN PER HARI"
       desc="Berapa orang yang dilayani tiap hari, dari kasir petshop, pesanan online, klinik, dan faktur grosir."
       filter={

@@ -14,7 +14,7 @@ const WARNA_JENIS: Record<string, string> = {
 
 export function BukuPembantu({
   icon, title, desc, filter, baris, labelPihak, labelNaik, labelTurun,
-  kodeAkun, namaAkun, saldoBukuBesar, dari, sampai, catatan,
+  kodeAkun, namaAkun, saldoBukuBesar, dari, sampai, catatan, siap,
 }: {
   icon: string;
   title: string;
@@ -31,12 +31,15 @@ export function BukuPembantu({
   dari: string;
   sampai: string;
   catatan: React.ReactNode;
+  /** A1 (meeting 12 Nov 2026): false = Tampilkan belum ditekan; halaman tidak menarik mutasi. */
+  siap: boolean;
 }) {
   const total = totalPembantu(baris);
   const selisih = selisihBukuBesar(total.saldoAkhir, saldoBukuBesar);
 
   return (
     <LaporanPage
+      siap={siap}
       icon={icon} title={title} desc={desc} filter={filter}
       ringkasan={
         <KartuAngka items={[

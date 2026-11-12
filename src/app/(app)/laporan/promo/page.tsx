@@ -7,6 +7,7 @@ import { rentangBulan } from "@/lib/pertumbuhan";
 import { hariIniWIB, tanggalWIB } from "@/lib/tanggal";
 import { tanggalIndo } from "@/lib/followup";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
+import { laporanDiminta } from "@/lib/report-gate";
 
 // Promo, Voucher & Diskon — permintaan Kamo Group 24 Agu 2026:
 // "voucher: diterbitkan, ditukarkan, redemption rate per program per cabang" dan
@@ -27,9 +28,10 @@ const WARNA_STATUS: Record<string, string> = {
 export default async function PromoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; promo_id?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; promo_id?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const promoId = (sp.promo_id ?? "").slice(0, 80);
@@ -37,25 +39,30 @@ export default async function PromoPage({
   const akhir = `${sampai}T23:59:59+07:00`;
 
   const supabase = await createClient();
+  // A1 (meeting 12 Nov 2026): sebelum Tampilkan ditekan hanya daftar promo (isian
+  // filter "Promo otomatis") yang dibaca; struk, invoice, voucher, target, dan
+  // kampanye baru ditarik setelahnya.
+  const belumDibaca = Promise.resolve({ data: [] as unknown[] });
+  const kampanyeKosong: Awaited<ReturnType<typeof muatKampanye>> = { tersedia: true, kode: [], sales: [], invoices: [] };
   const [{ data: salesData }, { data: invData }, { data: voucherData }, { data: promoData }, { data: targetData }, kampanyeData] =
     await Promise.all([
-      completeReportQuery(supabase.from("sales")
+      siap ? completeReportQuery(supabase.from("sales")
         .select("id, total, subtotal, discount, diskon_kategori, poin_digunakan, voucher_code, created_at, branch_id, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(qty, harga, item_discount_type, item_discount_value, promo_id, promo_discount)", { count: "exact" })
-        .gte("created_at", mulai).lte("created_at", akhir)),
-      completeReportQuery(supabase.from("invoices")
+        .gte("created_at", mulai).lte("created_at", akhir)) : belumDibaca,
+      siap ? completeReportQuery(supabase.from("invoices")
         .select("id, total, subtotal, discount, voucher_code, created_at, visits(branch_id, branches(name))", { count: "exact" })
-        .is("voided_at", null).gte("created_at", mulai).lte("created_at", akhir)),
-      completeReportQuery(supabase.from("vouchers")
-        .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id", { count: "exact" })),
+        .is("voided_at", null).gte("created_at", mulai).lte("created_at", akhir)) : belumDibaca,
+      siap ? completeReportQuery(supabase.from("vouchers")
+        .select("id, code, tipe, nilai, is_active, valid_from, valid_until, max_potongan, min_belanja, boleh_gabung_promo, customer_id, category_id", { count: "exact" })) : belumDibaca,
       completeReportQuery(supabase.from("promos").select("id, name, promo_type, valid_until", { count: "exact" })),
       // Hanya target murni cabang / perusahaan. Target per karyawan atau per kategori
       // sengaja tidak dijumlah di sini — kalau digabung, satu omzet bisa terhitung
       // memenuhi beberapa target sekaligus dan rasionya jadi mengarang.
-      completeReportQuery(supabase.from("sales_targets")
+      siap ? completeReportQuery(supabase.from("sales_targets")
         .select("id, periode, branch_id, basis, target", { count: "exact" })
-        .is("employee_id", null).is("category_id", null)),
+        .is("employee_id", null).is("category_id", null)) : belumDibaca,
       // Kode kampanye (C05) dibaca seumur hidup supaya sisa kuota benar; rentang disaring di ringkasKampanye.
-      muatKampanye(supabase as never),
+      siap ? muatKampanye(supabase as never) : Promise.resolve(kampanyeKosong),
     ]);
 
   type SaleItem = {
@@ -148,7 +155,7 @@ export default async function PromoPage({
   // ── Target penjualan ───────────────────────────────────────────────────────
   const bulan = new Set(rentangBulan(dari, sampai));
   type Target = { periode: string; branch_id: string | null; basis: string; target: number };
-  const targets = ((targetData ?? []) as Target[]).filter((t) => bulan.has(t.periode) && t.basis === "omzet");
+  const targets = ((targetData ?? []) as unknown as Target[]).filter((t) => bulan.has(t.periode) && t.basis === "omzet");
   const targetPerCabang = new Map<string | null, number>();
   for (const t of targets) {
     targetPerCabang.set(t.branch_id, (targetPerCabang.get(t.branch_id) ?? 0) + (Number(t.target) || 0));
@@ -194,7 +201,7 @@ export default async function PromoPage({
   const kodeYatim = [...pakaiVoucher].filter(([k]) => !kodeMaster.has(k));
 
   // ── Promo otomatis ─────────────────────────────────────────────────────────
-  const namaPromo = new Map(((promoData ?? []) as { id: string; name: string; promo_type: string }[])
+  const namaPromo = new Map(((promoData ?? []) as unknown as { id: string; name: string; promo_type: string }[])
     .map((p) => [p.id, p]));
   const promoRows = [...promoPakai].map(([id, v]) => ({
     id, nama: namaPromo.get(id)?.name ?? "(promo terhapus)",
@@ -214,6 +221,7 @@ export default async function PromoPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-discount" title="PROMO, VOUCHER & DISKON"
       desc="Berapa kode voucher yang ditukarkan, promo mana yang jalan, dan berapa besar potongan yang diberikan."
       filter={

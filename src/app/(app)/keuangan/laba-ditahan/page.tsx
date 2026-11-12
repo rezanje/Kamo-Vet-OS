@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
-import { getAccountBalances, getAccountLedger, getAccountOpening, nilaiSeksi } from "@/lib/ledger";
+import { getAccountBalances, getAccountLedger, getAccountOpening, nilaiSeksi, type AccountBalance, type LedgerLine } from "@/lib/ledger";
 import { AKUN_LABA_DITAHAN, buildClosingLines } from "@/lib/tutup-buku";
 import { hariIniWIB } from "@/lib/tanggal";
 import { tanggalIndo } from "@/lib/followup";
+import { laporanDiminta } from "@/lib/report-gate";
 
 // Laba Ditahan — permintaan Kamo Group 24 Agu 2026.
 //
@@ -22,18 +23,20 @@ const awalTahun = () => `${hariIniWIB().slice(0, 4)}-01-01`;
 export default async function LabaDitahanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  // A1 (meeting 12 Nov 2026): tanpa Tampilkan tidak ada query — filter cukup tanggal.
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalTahun();
   const sampai = sp.sampai || hariIniWIB();
 
   const supabase = await createClient();
   const [saldoAwal, mutasi, balances, { data: lock }] = await Promise.all([
-    getAccountOpening(supabase as never, AKUN_LABA_DITAHAN, { from: dari }),
-    getAccountLedger(supabase as never, AKUN_LABA_DITAHAN, { from: dari, to: sampai }),
-    getAccountBalances(supabase as never, { to: sampai }),
-    supabase.from("accounting_locks").select("closed_until, updated_at").eq("id", true).maybeSingle(),
+    siap ? getAccountOpening(supabase as never, AKUN_LABA_DITAHAN, { from: dari }) : 0,
+    siap ? getAccountLedger(supabase as never, AKUN_LABA_DITAHAN, { from: dari, to: sampai }) : ([] as LedgerLine[]),
+    siap ? getAccountBalances(supabase as never, { to: sampai }) : ([] as AccountBalance[]),
+    siap ? supabase.from("accounting_locks").select("closed_until, updated_at").eq("id", true).maybeSingle() : { data: null },
   ]);
 
   // Laba ditahan bersaldo normal kredit: kredit menambah, debit (rugi) mengurangi.
@@ -55,6 +58,7 @@ export default async function LabaDitahanPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-pig-money" title="LABA DITAHAN"
       desc="Laba yang sudah menjadi modal perusahaan, dan laba periode berjalan yang belum ditutup."
       filter={

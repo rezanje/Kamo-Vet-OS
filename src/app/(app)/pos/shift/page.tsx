@@ -8,6 +8,8 @@ import { openShift, closeShift, forceCloseShift } from "./actions";
 import { cashExpenseTotal, expectedCash, methodBreakdown } from "@/lib/shift-calc";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
 import { efekPenerimaanShift } from "@/lib/tutup-shift";
+import { laporanDiminta } from "@/lib/report-gate";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -19,9 +21,13 @@ const fmtDt = (iso: string) => new Date(iso).toLocaleString("id-ID", { timeZone:
 export default async function ShiftPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; tampil?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const sp = await searchParams;
+  const { error, success } = sp;
+  // A1 (meeting 12 Nov 2026): yang digerbang hanya bagian laporan (riwayat shift).
+  // Buka/tutup shift kasir dan tutup paksa shift nyangkut tetap jalan seperti biasa.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -57,12 +63,14 @@ export default async function ShiftPage({
   const expected = open ? expectedCash(Number(open.opening_balance), { Tunai: tunai }, cashExpenses) : 0;
 
   const { data: branches } = await supabase.from("branches").select("id, name").eq("is_active", true).order("name");
-  const { data: history } = await supabase
-    .from("cashier_shifts")
-    .select("id, shift_type, opening_balance, closing_balance, expected_cash, selisih, opened_at, closed_at, branches(name)")
-    .eq("status", "closed")
-    .order("closed_at", { ascending: false })
-    .limit(10);
+  const { data: history } = siap
+    ? await supabase
+      .from("cashier_shifts")
+      .select("id, shift_type, opening_balance, closing_balance, expected_cash, selisih, opened_at, closed_at, branches(name)")
+      .eq("status", "closed")
+      .order("closed_at", { ascending: false })
+      .limit(10)
+    : { data: null };
 
   // Addendum §1: shift nyangkut >24 jam (staff lupa tutup) — manajer bisa force-close.
   const dayAgo = new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toISOString();
@@ -176,12 +184,18 @@ export default async function ShiftPage({
         <SecHeader
           num="02" title="RIWAYAT SHIFT" desc="10 shift terakhir yang sudah ditutup & selisih kasnya."
           action={
-            <Link href="/pos/shift/riwayat" className="btn-def" style={{ fontSize: 11, textDecoration: "none" }}>
-              <i className="ti ti-history" /> Lihat semua riwayat
-            </Link>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <form method="get">
+                <InputTampil />
+                <button type="submit" className="btn-def" style={{ fontSize: 11 }}><i className="ti ti-filter" /> Tampilkan</button>
+              </form>
+              <Link href="/pos/shift/riwayat" className="btn-def" style={{ fontSize: 11, textDecoration: "none" }}>
+                <i className="ti ti-history" /> Lihat semua riwayat
+              </Link>
+            </div>
           }
         />
-        <div style={{ overflowX: "auto" }}>
+        {!siap ? <LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat 10 shift terakhir yang sudah ditutup." /> : <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 640 }}>
             <thead>
               <tr><th>Buka</th><th>Tutup</th><th>Cabang</th><th>Tipe</th><th style={{ textAlign: "right" }}>Modal</th><th style={{ textAlign: "right" }}>Seharusnya</th><th style={{ textAlign: "right" }}>Dihitung</th><th style={{ textAlign: "right" }}>Selisih</th><th /></tr>
@@ -215,7 +229,7 @@ export default async function ShiftPage({
               )}
             </tbody>
           </table>
-        </div>
+        </div>}
       </div>
     </>
   );

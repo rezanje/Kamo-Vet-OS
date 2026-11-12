@@ -3,7 +3,8 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { uniqueOptionLabels } from "@/lib/branch-display";
 import Link from "next/link";
 import { formatPosMoney } from "@/lib/pos-money";
-import { tarikTransaksi } from "@/lib/laporan-transaksi-server";
+import { tarikCabangAktif, tarikTransaksi } from "@/lib/laporan-transaksi-server";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
 import { KANAL_SEMUA, LABEL_KANAL, kanalKosong, perCabang, perHari, perKanal, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
 
 // Menjawab tiga laporan dasar sekaligus (permintaan Kamo Group 24 Agu 2026):
@@ -23,16 +24,22 @@ const pecahanKanal = (k: Record<Kanal, number>) => KANAL.map((nama) => k[nama]).
 export default async function TransaksiCabangPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; cabang_id?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; cabang_id?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const kanal = (sp.kanal || "") as Kanal | "";
   if (kanal && !KANAL.includes(kanal)) throw new Error("Pintu transaksi tidak valid. Pilih POS, Online, Klinik, Grosir, atau semua.");
   const cabangId = sp.cabang_id || "";
 
-  const { trx: semua, cabangList, terpotong } = await tarikTransaksi(dari, sampai);
+  // A1 (meeting 12 Nov 2026): sebelum Tampilkan ditekan hanya daftar cabang yang dibaca.
+  // Setelahnya, cabang yang dipilih (dan terdaftar) ikut disaring di query.
+  const cabangAktif = await tarikCabangAktif();
+  const { trx: semua, cabangList, terpotong } = siap
+    ? await tarikTransaksi(dari, sampai, cabangAktif.some((b) => b.id === cabangId) ? { cabangId } : {})
+    : { trx: [] as Trx[], cabangList: cabangAktif, terpotong: false };
   const cabangOptions = new Map(cabangList.map(b => [b.id, b.name]));
   for (const t of semua) if (t.cabangId) cabangOptions.set(t.cabangId,t.cabang);
   const unavailable = !!cabangId && !cabangOptions.has(cabangId);
@@ -49,6 +56,7 @@ export default async function TransaksiCabangPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-building-store" title="TRANSAKSI PER CABANG"
       desc="Berapa transaksi tiap cabang, berapa orang yang dilayani, dan seberapa besar sekali belanja. Sudah termasuk faktur penjualan grosir."
       filter={
@@ -121,7 +129,7 @@ export default async function TransaksiCabangPage({
                 return (
                   <tr key={b.cabangId ?? b.cabang}>
                     <td style={{ fontSize: 11, fontWeight: i < 3 ? 800 : 400, color: i < 3 ? "#b45309" : "var(--tm)" }}>{i + 1}</td>
-                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>{b.cabangId ? <Link href={`?${new URLSearchParams({dari,sampai,cabang_id:b.cabangId,...(kanal?{kanal}:{})})}`}>{labelCabang.get(b.cabangId) ?? b.cabang}</Link> : b.cabang}</td>
+                    <td style={{ fontSize: 11.5, fontWeight: 600 }}>{b.cabangId ? <Link href={denganTampil(`?${new URLSearchParams({dari,sampai,cabang_id:b.cabangId,...(kanal?{kanal}:{})})}`)}>{labelCabang.get(b.cabangId) ?? b.cabang}</Link> : b.cabang}</td>
                     <td style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700 }}>{b.trx}x</td>
                     <td style={{ textAlign: "center", fontSize: 10.5, color: "var(--tm)" }}>
                       {pecahanKanal(k)}
@@ -167,7 +175,7 @@ export default async function TransaksiCabangPage({
           <table className="tbl" aria-label="Omzet per hari" style={{minWidth:540}}>
             <thead><tr><th>Tanggal WIB</th><th>Transaksi</th><th>POS / Online / Klinik / Grosir</th><th style={{textAlign:"right"}}>Omzet</th></tr></thead>
             <tbody>{hari.map(h => {const k=perKanal(trx.filter(t=>t.tanggal===h.tanggal));return <tr key={h.tanggal}>
-              <td><Link href={`/laporan/penjualan-rinci?${new URLSearchParams({dari:h.tanggal,sampai:h.tanggal,...(cabangId?{cabang_id:cabangId}:{}),...(kanal?{kanal}:{})})}`}>{h.tanggal}</Link></td>
+              <td><Link href={denganTampil(`/laporan/penjualan-rinci?${new URLSearchParams({dari:h.tanggal,sampai:h.tanggal,...(cabangId?{cabang_id:cabangId}:{}),...(kanal?{kanal}:{})})}`)}>{h.tanggal}</Link></td>
               <td>{h.trx}x</td><td>{pecahanKanal(k)}</td><td style={{textAlign:"right"}}>{rp(h.omzet)}</td>
             </tr>})}{!hari.length&&<TabelKosong kolom={4} pesan="Belum ada transaksi pada filter ini."/>}</tbody>
             {!!hari.length&&<tfoot><tr><th>TOTAL</th><th>{total.trx}x</th><th/><th style={{textAlign:"right"}}>{rp(total.omzet)}</th></tr></tfoot>}

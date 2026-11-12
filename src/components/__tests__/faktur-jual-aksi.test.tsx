@@ -43,7 +43,7 @@ const baris = (over: Partial<BarisFaktur> & Pick<BarisFaktur, "id" | "sumber">):
 });
 
 const render = async (sp: Record<string, string> = {}) =>
-  renderToStaticMarkup(await Page({ searchParams: Promise.resolve(sp) }));
+  renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", ...sp }) }));
 
 beforeEach(() => {
   state.boleh = true;

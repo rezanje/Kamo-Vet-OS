@@ -3,8 +3,10 @@ import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { getAccountBalances } from "@/lib/ledger";
+import { getAccountBalances, type AccountBalance } from "@/lib/ledger";
 import { PeriodFilter } from "../PeriodFilter";
+import { LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { laporanDiminta } from "@/lib/report-gate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -12,13 +14,18 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 export default async function NeracaSaldoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; tampil?: string }>;
 }) {
-  const { dari, sampai, cabang } = await searchParams;
+  const sp = await searchParams;
+  const { dari, sampai, cabang } = sp;
+  // A1 (meeting 12 Nov 2026): tanpa Tampilkan, hanya daftar cabang untuk filter yang dibaca.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
 
   const [balances, { data: branches }] = await Promise.all([
-    getAccountBalances(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined }),
+    siap
+      ? getAccountBalances(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined })
+      : Promise.resolve([] as AccountBalance[]),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).order("name")),
   ]);
 
@@ -37,12 +44,12 @@ export default async function NeracaSaldoPage({
 
   return (
     <div data-report-page id="laporan-isi">
-      <UnduhLaporan judul="Neraca Saldo" />
+      {siap && <UnduhLaporan judul="Neraca Saldo" />}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Neraca Saldo</span>
-        <span className={`bge ${seimbang ? "g" : "r"}`}>{seimbang ? "Seimbang" : "TIDAK SEIMBANG"}</span>
+        {siap && <span className={`bge ${seimbang ? "g" : "r"}`}>{seimbang ? "Seimbang" : "TIDAK SEIMBANG"}</span>}
       </div>
 
       <div className="crm-sec">
@@ -53,7 +60,7 @@ export default async function NeracaSaldoPage({
         />
         <PeriodFilter basePath="/keuangan/neraca-saldo" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} />
 
-        <div style={{ overflowX: "auto" }}>
+        {!siap ? <LaporanBelumDitampilkan /> : <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 560 }}>
             <thead>
               <tr>
@@ -92,7 +99,7 @@ export default async function NeracaSaldoPage({
               </tfoot>
             )}
           </table>
-        </div>
+        </div>}
       </div>
     </div>
   );

@@ -45,7 +45,7 @@ export function displaySections(root: HTMLElement): DisplaySection[] {
 /** Use submitted defaults, including report defaults, rather than unsaved filter edits. */
 export function displayFilters(root: ParentNode): string[][] {
   return [...root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("form input[name],form select[name]")]
-    .filter(input => !input.hasAttribute("data-report-columns-input") && (!(input instanceof HTMLInputElement) || !["submit", "button"].includes(input.type)))
+    .filter(input => !input.hasAttribute("data-report-columns-input") && !input.hasAttribute("data-report-gate-input") && (!(input instanceof HTMLInputElement) || !["submit", "button"].includes(input.type)))
     .map(input => {
       const label = input.parentElement?.querySelector("label")?.textContent?.trim() || input.name;
       const value = input instanceof HTMLSelectElement

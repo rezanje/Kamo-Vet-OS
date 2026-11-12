@@ -3,7 +3,7 @@ import {normalizeReportColumns} from "./report-columns";
 /** Private preference URLs only. Destinations still run normal report authorization. */
 export type ReportPreset = {id:string;name:string;href:string;savedAt:string};
 const paths=new Set(['absensi','nilai-persediaan','gaji','rekap-klinik','transaksi-cabang','jadwal-anabul','margin-racikan','akuisisi','operasional-penjualan','pelanggan-harian','penjual','penjualan-barang','member','penjualan-rinci','pelanggan-teratas','retensi','penjualan-kasir','anamnesa','pembelian','kpi','promo','hasil-opname','nilai-persediaan/historis']);
-const filters=new Set(['dari','sampai','periode','cabang','cabang_id','gudang','dokter','q','masalah','rincian','kanal','jenis','horizon','preset','from','to','channel','branch','ambang','cari','kolom']);
+const filters=new Set(['dari','sampai','periode','cabang','cabang_id','gudang','dokter','q','masalah','rincian','kanal','jenis','horizon','preset','from','to','channel','branch','ambang','cari','kolom','tampil']);
 const opnameFilters=new Set(['order','dasar','arah']);
 const salesItemFilters=new Set(['pelaksana_id']);
 const promoFilters=new Set(['promo_id']);

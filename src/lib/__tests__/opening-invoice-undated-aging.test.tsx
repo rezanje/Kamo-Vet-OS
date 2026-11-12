@@ -32,7 +32,7 @@ it("keeps an opening payable without due date in the total but outside every agi
     { id: "dated", no_faktur: "FB.1", no_faktur_pemasok: "A-1", tanggal: "2026-08-01", jatuh_tempo: "2026-08-31", total: 100000, po_id: null, supplier_id: "s", opening_batch_id: "b", suppliers: { nama: "PT Fiksi" }, purchase_orders: null, purchase_invoice_payments: [] },
     { id: "undated", no_faktur: "FB.2", no_faktur_pemasok: "B-1", tanggal: null, jatuh_tempo: null, total: 400000, po_id: null, supplier_id: "s", opening_batch_id: "b", suppliers: { nama: "PT Fiksi" }, purchase_orders: null, purchase_invoice_payments: [] },
   ] };
-  const html = text(renderToStaticMarkup(await HutangPage({ searchParams: Promise.resolve({}) })));
+  const html = text(renderToStaticMarkup(await HutangPage({ searchParams: Promise.resolve({ tampil: "1" }) })));
   expect(html).toContain("Tanpa jatuh tempo · 1 faktur Rp 400.000");
   expect(html).toContain("&gt; 90 hari Rp 0");
   expect(html).toContain("61–90 hari Rp 100.000");
@@ -45,7 +45,7 @@ it("lists an opening receivable without invoice date last, without crashing or a
     { id: "undated", no_faktur: "FJ.9", tanggal: null, total: 120000, carried_paid: 0, opening_batch_id: "b", catatan: "Saldo awal Accurate · No. N-0", customers: { name: "Toko Fiksi" } },
     { id: "dated", no_faktur: "FJ.8", tanggal: "2026-11-10", total: 80000, carried_paid: 0, opening_batch_id: "b", catatan: "Saldo awal Accurate · No. N-1", customers: { name: "Toko Fiksi" } },
   ] };
-  const html = text(renderToStaticMarkup(await PiutangPage({ searchParams: Promise.resolve({}) })));
+  const html = text(renderToStaticMarkup(await PiutangPage({ searchParams: Promise.resolve({ tampil: "1" }) })));
   expect(html).toContain("Tanpa tanggal faktur · 1 Rp 120.000");
   expect(html).toContain("&gt; 90 hari Rp 0");
   expect(html).toContain("TOTAL PIUTANG Rp 200.000");
