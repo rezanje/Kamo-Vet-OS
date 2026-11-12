@@ -15,6 +15,11 @@ const pathname = (href: string) => href.split(/[?#]/)[0];
 // Tile pages that no module prefix owns today: only full-reach roles open them. The sub-menu layer must not
 // invent ownership for them (that would change who can open them), so they are classified, not mapped.
 const UNOWNED_TILE_PAGES = ["/pajak/faktur", "/keuangan/laba-ditahan"];
+// Tile laporan yang SENGAJA belum punya sub-menu Akses Grup: menambah sub-menu butuh baris baru di
+// katalog database (role_settings_private.submenu_catalog) yang belum disetujui pemilik. Peran tanpa
+// kebijakan sub-menu laporan tetap bisa membuka; peran dengan kebijakan laporan terbatas TERTUTUP
+// (gagal tertutup). Hapus dari daftar ini begitu sub-menunya didaftarkan.
+const TILE_LAPORAN_TANPA_SUBMENU = ["/laporan/visit"]; // A4, meeting 12 Nov 2026
 
 describe("sub-menu registry shape", () => {
   it("has unique ids, unique routes and stable module.slug ids", () => {
@@ -60,6 +65,7 @@ describe("every nav tile href resolves to exactly one sub-menu (or is explicitly
       if (SELALU_BOLEH.some(p => prefix(path, p))) return;
       if (Object.values(OPERATIONAL_PATHS).flat().some(p => prefix(path, p))) return;
       if (UNOWNED_TILE_PAGES.includes(path)) { expect(owners(path)).toEqual([]); expect(submenuOfPath(path)).toBeNull(); return; }
+      if (TILE_LAPORAN_TANPA_SUBMENU.includes(path)) { expect(submenuOfPath(path)).toBeNull(); expect(resolveSubmenu("laporan", path).kind).toBe("unmapped"); return; }
       const hits = SUBMENU_ENTRIES.filter(e => e.routes.some(r => prefix(path, r)));
       expect(hits.length, `no sub-menu for ${path}`).toBeGreaterThan(0);
       const entry = submenuOfPath(path);
@@ -85,6 +91,8 @@ describe("every real page route resolves under each module that owns it", () => 
   // Pages in a module prefix that deliberately get NO sub-menu: a restricted role cannot open them.
   const DENIED_WHEN_RESTRICTED: string[] = [
     "pengaturan /pengaturan/pajak", // opened by module `pajak`; restricted `pengaturan` must not open it
+    "laporan /laporan/visit", // A4: belum ada sub-menu (lihat TILE_LAPORAN_TANPA_SUBMENU)
+    "laporan /laporan/visit/unduh",
   ];
 
   it("found a realistic number of routes", () => { expect(routes.length).toBeGreaterThan(200); });

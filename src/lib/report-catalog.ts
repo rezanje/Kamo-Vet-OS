@@ -10,7 +10,7 @@ function category(tile:Tile):string {
   if(tile.label==='Laporan HPP')return 'Persediaan';
   if(path.startsWith('/keuangan/')||path.startsWith('/kas-bank/')||path==='/pos/shift')return 'Keuangan';
   if(/\/(absensi|gaji|kpi)$/.test(path))return 'HRIS';
-  if(/\/(rekap-klinik|anamnesa|jadwal-anabul)$/.test(path))return 'Klinik';
+  if(/\/(rekap-klinik|anamnesa|jadwal-anabul|visit)$/.test(path))return 'Klinik';
   if(/\/(retensi|member|akuisisi|promo)$/.test(path))return 'Marketing & pelanggan';
   if(path==='/laporan/pembelian')return 'Pembelian';
   return 'Penjualan & operasional';

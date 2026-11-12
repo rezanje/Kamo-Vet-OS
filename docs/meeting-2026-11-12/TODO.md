@@ -35,11 +35,15 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Status: tombol "Excel"/"CSV" kini membentuk berkas di server dari data & saringan yang sama dengan layar.
   Isi: Filter (nama, bukan ID), Rekap per orang, Rekap per item, Rincian baris, Faktur grosir.
 
-### A4 · [ ] P1 — Laporan Visit (baru)
+### A4 · [x] P1 — Laporan Visit (baru)
 - Belum ada. Dibutuhkan di klinik karena dokter/paramedis dapat insentif per visit.
 - Sumber data: laporan visit harian rawat inap (lihat bagian "Laporan Rawat Inap Harian" di `klinik-obat-khusus.jpg`), dengan kolom dokter visit dan paramedis.
 - Minimal: filter periode, cabang, dan dokter/paramedis; rekap jumlah visit per orang; bisa export Excel.
 - [?] Konfirmasi: insentif dihitung per visit saja, atau ada nilai rupiahnya?
+- Status: `/laporan/visit` (Daftar Laporan › Klinik) — filter periode, cabang, peran, dokter/paramedis; rekap jumlah visit,
+  pasien berbeda, hari visit per orang; rincian catatan; unduh Excel/CSV. 1 catatan "Visit dokter" = 1 visit untuk dokter
+  visit + 1 untuk paramedis di catatan itu; catatan "Pemantauan" tidak dihitung. **Nilai rupiah belum** (menunggu jawaban [?]).
+  Belum ada centang khusus di Akses Grup (butuh tambahan baris katalog di database — menunggu persetujuan).
 
 ### A5 · [ ] P1 — Akses koreksi visit untuk yang lupa input
 - Disepakati: tetap ada akses untuk mengedit/menambah visit yang terlupa, **hanya untuk Owner/Manager**. Diatur lewat Akses Grup.
