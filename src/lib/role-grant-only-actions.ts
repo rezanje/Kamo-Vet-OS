@@ -11,6 +11,7 @@
  */
 export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "penjualan.pos_penerimaan.batalkan",
+  "penjualan.pos_penerimaan.tanggal_mundur",
   "klinik.batalkan_penerimaan",
   "pembelian.batalkan_penerimaan",
   "pembelian.batalkan_faktur",

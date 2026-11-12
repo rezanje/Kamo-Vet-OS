@@ -27,6 +27,7 @@ bp = _load('bp', 'scripts/test-batalkan-penerimaan-petshop-postgres.py')
 okr, x, r, q, j, c = bk.okr, bk.x, bk.r, bk.q, bk.j, bk.c
 OWNER, ADMIN, FINANCE, STAFF = r.OWNER, r.ADMIN, r.FINANCE, r.STAFF
 CAND = '20261113100000_mitigasi_audit_integrasi_1111.sql'
+LATER = sorted(p.name for p in (Path(__file__).resolve().parents[1] / 'supabase/migrations').glob('*.sql') if p.name > CAND)
 MIG = ROOT / 'supabase/migrations'; TESTS = ROOT / 'supabase/tests'
 RESULTS = []
 NEXT = [21000]
@@ -407,6 +408,10 @@ def drop_created(db):
 def apply_text(db, name, text):
     rc, out, err = raw(db, 'begin;\n' + text + '\ncommit;', name)
     if rc: raise RuntimeError((err + out)[-1500:])
+    # Migrasi yang ditulis SESUDAH kandidat (mis. tanggal efektif petshop) dipasang di atasnya, urutan nyata; rantai dasar hanya memuat yang lebih lama.
+    for later in LATER:
+        rc, out, err = raw(db, 'begin;\n' + (MIG / later).read_text() + '\ncommit;', name)
+        if rc: raise RuntimeError(later + ': ' + (err + out)[-1500:])
 
 
 def suite_result(label, rc, err, expect_min):
@@ -547,7 +552,7 @@ def main():
                     run_sections(db, 'dev%d' % int(time.time()), None if a.baseline else cand_text, secs)
         else:
             with r.NativePostgres(r.BIN) as db:
-                build_templates(db, {CAND})
+                build_templates(db, {CAND, *LATER})
                 if a.mutations: extra['mutants'] = run_mutants(db, cand_text, a.only)
                 else: run_sections(db, 'v', None if a.baseline else cand_text, secs)
     except Exception as e:

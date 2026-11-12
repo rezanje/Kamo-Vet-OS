@@ -39,7 +39,7 @@ def main():
     rows = []
     with ctx as db:
         if not a.attach:
-            mt.okr.build(db, {CAND}); db.sql('create database tpl_chain template postgres;')
+            mt.okr.build(db, {CAND, *mt.LATER}); db.sql('create database tpl_chain template postgres;')
         # petshop: sisi TANPA = suite lama; sisi DENGAN = suite baru
         for label, suite_without, suite_with in [('batalkan_penerimaan_petshop.sql (versi lama TANPA / versi baru DENGAN)', old_petshop, new_petshop)] + [(s, (TESTS / s).read_text(), (TESTS / s).read_text()) for s in SUITES if (TESTS / s).exists()]:
             res = {}
