@@ -28,6 +28,7 @@ import { bacaKodeKampanye, pesanGagalKampanye, pesanKampanyeDitolak, promoDengan
 import { priceFloorFindings } from "@/lib/cashier-price-floor";
 import { buildPromoSelection, composedToLine, composeHppSafe, composeSyaratHasilCart, loadSyaratHasilKasir, pesanPromoSyaratHasil, type ShClaimMeta } from "@/lib/promo-syarat-hasil-checkout";
 import { quoteSaleLineCosts } from "@/lib/sale-fifo-quote";
+import { manualDiscountAllowed, PESAN_DISKON_MANUAL_DITOLAK } from "@/lib/manual-discount";
 import { hppWarningConfirmed, hppWarningQuery, hppWarningsFrom, type HppWarning } from "@/lib/hpp-warning";
 
 type CartLine = {
@@ -76,6 +77,8 @@ export async function checkoutSale(formData: FormData) {
   const rawRows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0)
     .map(l => ({ ...l, promo_discount: 0, official_price: undefined, sh_claim: undefined })); // bukti promo hanya dari master, bukan dari klien
   if (rawRows.length === 0) redirect(`/pos/transaksi?error=${encodeURIComponent("Keranjang kosong")}`);
+  // Diskon manual hanya Owner/Admin (12 Nov 2026); promo, voucher, dan diskon golongan tetap dihitung otomatis.
+  if (discount > 0 && !(await manualDiscountAllowed(supabase))) redirect(`/pos/transaksi?error=${encodeURIComponent(PESAN_DISKON_MANUAL_DITOLAK)}`);
 
   // Periode terkunci = struk tersimpan tapi jurnal pendapatannya hilang diam-diam.
   const pesanPeriode = await cekPeriode(supabase, hariIniWIB());

@@ -40,6 +40,7 @@ import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 import { mulai } from "@/lib/u07-waktu";
 import { readCompleteList } from "@/lib/checked-list";
+import { manualDiscountAllowed } from "@/lib/manual-discount";
 
 type SavedPrescriptionSource = Omit<PackagePrintSource, "deskripsi"> & {
   id: string; nama_obat: string; jenis: string | null; kategori: string | null;
@@ -85,6 +86,7 @@ export default async function PembayaranPage({
   // ditunggu & diperiksa di posisi lamanya (helper `mulai`), jadi urutan validasi,
   // notFound, dan pesan galat tidak berubah.
   const userP = mulai(supabase.auth.getUser());
+  const bolehDiskonP = mulai(manualDiscountAllowed(supabase));
   const visitP = mulai(supabase
     .from("visits")
     .select("id, status, poli, dokter, created_at, archived_at, archive_reason, branch_id, customer_id, doctor_id, service_provider_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
@@ -454,6 +456,7 @@ export default async function PembayaranPage({
     if (!shift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
   }
 
+  const bolehDiskon = await bolehDiskonP;
   return (
     <>
       <div style={{ marginBottom: 4 }}>
@@ -673,6 +676,7 @@ export default async function PembayaranPage({
       )}
       {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
+          bolehDiskon={bolehDiskon}
           serverError={error}
           key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
           visitId={visit.id}
@@ -823,6 +827,7 @@ export default async function PembayaranPage({
         </>
       ) : (
         <PembayaranForm
+          bolehDiskon={bolehDiskon}
           serverError={error}
           key={`${draftUser?.id ?? ""}:${visit.id}:new:${invoiceRequestKey}`}
           visitId={visit.id}

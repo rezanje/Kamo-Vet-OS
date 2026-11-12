@@ -13,6 +13,7 @@ import { loadKodeKampanyeAktif } from "@/lib/kode-kampanye";
 import { loadActiveVouchers } from "@/lib/voucher-loader";
 import { voucherBerlaku, type VoucherRow } from "@/lib/voucher";
 import { hariIniWIB } from "@/lib/tanggal";
+import { manualDiscountAllowed } from "@/lib/manual-discount";
 import { groomingDoctorRequired, isGroomingOutlet, isGroomingService } from "@/lib/grooming-requirements";
 
 type CatalogItem = { id: string; code: string; name: string; item_type: string; tindakan_kategori: string | null; unit: string; sell_price: number; target_species: string };
@@ -133,6 +134,7 @@ export default async function TransaksiPage({
         hariIni={hariIni}
         hppWarning={hppWarning ?? null}
         hppSignature={hppSignature ?? null}
+        bolehDiskon={await manualDiscountAllowed(supabase)}
       />
     </>
   );

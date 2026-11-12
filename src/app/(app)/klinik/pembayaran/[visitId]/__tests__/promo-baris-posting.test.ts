@@ -5,6 +5,9 @@ const state=vi.hoisted(()=>({version:null as 1|null,savedSalesperson:"groomer" a
 const potonganMesin=vi.hoisted(()=>({value:{total:0,tolakVoucher:null} as Record<string,unknown>}));
 vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
 vi.mock("next/navigation",()=>({redirect:(url:string)=>{throw new Error(`REDIRECT:${url}`);}}));
+// Skenario lama di file ini dijalankan sebagai Owner/Admin (izin diskon manual menyala); blok "diskon manual tanpa izin" mematikannya.
+const izin=vi.hoisted(()=>({boleh:true}));
+vi.mock("@/lib/manual-discount", async (original) => ({ ...(await original<typeof import("@/lib/manual-discount")>()), manualDiscountAllowed: async () => izin.boleh }));
 vi.mock("@/lib/clinic-payment",async()=>await vi.importActual("@/lib/clinic-payment"));
 vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({
  auth:{getUser:async()=>({data:{user:{id:"owner"}}})},
@@ -57,6 +60,7 @@ const PROMO_GROOM11={promo:45000,voucher:0,golongan:0,total:45000,tolakVoucher:n
 beforeEach(()=>{
  state.version=null;state.savedSalesperson="groomer";state.stockError=false;state.transportError=false;state.activeReadError=false;state.postReadError=false;state.checkoutError=false;state.lostResponse=false;state.paidExisting=false;state.inpatientOpen=false;state.correctionPending=false;state.shift="open";state.pajakThrow=false;state.periodeError=false;state.failTable="";state.errorTable="";state.tierAfterPoints=-1;state.visitWrites=[];state.existing=false;state.retry=false;state.customer=false;state.balance=100;state.pointWrites=[];state.calls=[];state.wrapper=true;state.wrapperError=null;state.attempted=[];state.wrapped=[];
  potonganMesin.value={total:0,tolakVoucher:null};
+ izin.boleh=true;
 });
 const posting=()=>state.calls.find(c=>["clinic_post_invoice","clinic_post_split_invoice","clinic_post_demo_invoice","clinic_post_dp_and_admit"].includes(c.name));
 type L={description:string;promo_discount?:number};
@@ -98,5 +102,28 @@ describe("lantai harga: potongan promo dikirim per baris (GROOM11)",()=>{
   await bayarVisit(f);
   const edit=state.calls.find(c=>c.name==="clinic_edit_invoice")!;
   expect((edit.params.p_lines as L[]).every(l=>!("promo_discount" in l))).toBe(true);
+ });
+});
+describe("diskon manual tanpa izin (anak toko/staf, 12 Nov 2026)",()=>{
+ const DITOLAK="Diskon%20manual%20hanya%20bisa%20diberikan%20Owner%2FAdmin";
+ const coba=(f:FormData)=>bayarVisit(f).then(()=>"lolos",(e:Error)=>e.message);
+ beforeEach(()=>{izin.boleh=false;});
+ it("diskon total pada tagihan baru ditolak; tidak ada posting",async()=>{
+  expect(await coba(form([ANTHEL,GROOM],{discount:"10000"}))).toContain(DITOLAK);
+  expect(posting()).toBeUndefined();
+ });
+ it("diskon % per baris pada tagihan baru ditolak; tidak ada posting",async()=>{
+  expect(await coba(form([ANTHEL,{...GROOM,diskon_persen:10}]))).toContain(DITOLAK);
+  expect(posting()).toBeUndefined();
+ });
+ it("promo otomatis tetap jalan tanpa izin diskon manual",async()=>{
+  potonganMesin.value=PROMO_GROOM11;
+  await bayarVisit(form([ANTHEL,GROOM],{voucherCode:"GROOM11"}));
+  expect(posting()!.params.p_invoice).toMatchObject({discount:45000});
+ });
+ it("koreksi: menambah diskon baris di atas yang tersimpan ditolak",async()=>{
+  state.existing=true;
+  const f=form([{...ANTHEL,source_invoice_item_id:"old-1",diskon_persen:20},{...GROOM,source_invoice_item_id:"old-2"}],{edit_reason:"Koreksi"});
+  expect(await coba(f)).toContain(DITOLAK);
  });
 });

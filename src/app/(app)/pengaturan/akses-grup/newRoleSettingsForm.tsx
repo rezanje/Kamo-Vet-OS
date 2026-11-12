@@ -3,7 +3,7 @@ import { useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { effectiveAllowedActions, ROLE_ACCESS_CATALOG, roleAccessScope, type RoleAccessConfig } from "@/lib/role-access-catalog";
-import { isGrantOnlyAction } from "@/lib/role-grant-only-actions";
+import { GRANT_ONLY_LEGACY_ROLES, isGrantOnlyAction } from "@/lib/role-grant-only-actions";
 import { roleCapabilities } from "@/lib/role-capabilities";
 import { modulBawaan } from "@/lib/akses";
 import { selectableSubmenus } from "@/lib/submenu-access";
@@ -42,11 +42,11 @@ export function NewRoleSettingsForm({ userId, config, canEdit }: { userId: strin
         {config.actions.source === "legacy" && <p role="note">Peran ini belum punya kebijakan tindakan tersimpan, sehingga semua tindakan yang terhubung saat ini diizinkan (dicentang). Menyimpan tanpa mengubah centang tindakan tidak mengubah kebijakan tindakan; menghapus centang membuat kebijakan eksplisit. Pilihan bawaan tidak menaikkan hak peran: batas peran, status transaksi, cabang, shift, dan kewenangan klinis tetap wajib dipenuhi.</p>}
         {[...new Set(enforced.map(a => a.group))].map(group => <section key={group} aria-label={`Tindakan ${group}`}>
           <h4>{group}</h4>
-          {enforced.filter(a => a.group === group).map(a => <label key={a.id} style={{ display: "block" }}><input type="checkbox" name={`act_${a.id}`} defaultChecked={allowed.has(a.id)} /> {a.label}{isGrantOnlyAction(a.id) ? " — izin khusus (bawaan mati; OWNER selalu boleh)" : ""}</label>)}
+          {enforced.filter(a => a.group === group).map(a => <label key={a.id} style={{ display: "block" }}><input type="checkbox" name={`act_${a.id}`} defaultChecked={allowed.has(a.id)} /> {a.label}{isGrantOnlyAction(a.id) ? (GRANT_ONLY_LEGACY_ROLES[a.id]?.length ? ` — izin khusus (bawaan hanya ${GRANT_ONLY_LEGACY_ROLES[a.id].join(", ")}; OWNER selalu boleh)` : " — izin khusus (bawaan mati; OWNER selalu boleh)") : ""}</label>)}
         </section>)}
         {!enforced.length && <p>Belum ada tindakan bisnis yang tersedia untuk diatur.</p>}
         {unavailable.length > 0 && <div role="note"><strong>Belum tersedia:</strong> {unavailable.length} tindakan yang direncanakan belum terhubung sepenuhnya; tidak dapat diberikan dari halaman ini.<details><summary>Lihat cakupan yang belum tersedia</summary><ul>{unavailable.map(a => <li key={a.id}>{a.group} — {a.label}</li>)}</ul></details></div>}
-        <p>Batas yang dilindungi: mengubah kebijakan hak akses serta harga/diskon transaksi manual tetap khusus OWNER aktif. Pilihan tindakan tidak menggantikan batas peran asli, cabang, shift, status, akuntansi, stok, dan klinis; promo kasir yang sah tetap mengikuti aturan asal.</p>
+        <p>Batas yang dilindungi: mengubah kebijakan hak akses tetap khusus OWNER aktif; harga jual kasir tetap dari master. Diskon manual di kasir dan tagihan klinik mengikuti izin &quot;Beri diskon manual&quot; (bawaan: OWNER dan ADMIN). Pilihan tindakan tidak menggantikan batas peran asli, cabang, shift, status, akuntansi, stok, dan klinis; promo kasir yang sah tetap mengikuti aturan asal.</p>
       </section>
       <h3>Hak cabang &amp; akun</h3>
       <label style={{ display: "block" }}><input type="checkbox" name="all_branches" defaultChecked={config.capabilities.all_branches} /> Akses semua cabang</label>
