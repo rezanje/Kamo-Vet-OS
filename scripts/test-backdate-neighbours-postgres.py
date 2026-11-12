@@ -43,7 +43,10 @@ def main():
             res = {}
             for tag, text, with_cand in (('without', suite_without, False), ('with', suite_with, True)):
                 nm = 'nbr_%s' % tag; mt.mkdb(db, nm, 'tpl_chain')
-                if with_cand: mt.apply_text(db, nm, cand)
+                if with_cand:
+                    # rantai sudah memuat migrasi tanggal efektif petshop/pembelian (lebih lama); kandidat dipasang SESUDAHNYA, urutan nyata (tanpa memasang ulang migrasi 'later').
+                    rc0, out0, err0 = mt.raw(db, 'begin;\n' + cand + '\ncommit;', nm)
+                    if rc0: raise RuntimeError('kandidat gagal: ' + (err0 + out0)[-1500:])
                 res[tag] = run(db, nm, text)
                 mt.drop_created(db)
             same = res['without']['rc'] == res['with']['rc'] and res['without']['err'] == res['with']['err']
