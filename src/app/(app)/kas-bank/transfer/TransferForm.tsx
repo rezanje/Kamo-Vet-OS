@@ -34,7 +34,7 @@ export function TransferForm({ userId, mode = "create", header, rekening = [], b
       {mode !== "void" && <>
         <div className="frow" style={{gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 220px), 1fr))"}}>
           {mode === "create" ? <div><label className="flab" htmlFor={field("tanggal")}>Tanggal *</label><input id={field("tanggal")} className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} required/></div>
-            : <><input type="hidden" name="tanggal" value={header?.tanggal ?? ""}/><input type="hidden" name="branch_id" value={header?.branch_id ?? ""}/><div>Tanggal dan cabang tetap mengikuti catatan asli: {header?.tanggal}.</div></>}
+            : <><div><label className="flab" htmlFor={field("tanggal")}>Tanggal *</label><input id={field("tanggal")} className="fi" type="date" name="tanggal" defaultValue={header?.tanggal ?? ""} max={hariIniWIB()} required/><small>Tanggal asli {header?.tanggal}. Pembalik dicatat di tanggal asli, pengganti di tanggal ini.</small></div><input type="hidden" name="branch_id" value={header?.branch_id ?? ""}/><div>Cabang tetap mengikuti catatan asli.</div></>}
           {mode === "create" && <div><label className="flab" htmlFor={field("branch_id")}>Cabang</label><select id={field("branch_id")} className="fi" name="branch_id" defaultValue=""><option value="">— Pusat / tanpa cabang —</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>}
         </div>
         <div className="frow" style={{ marginTop: 10, gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 220px), 1fr))" }}>

@@ -48,7 +48,8 @@ export default async function TransferPage({
   const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
   const rekening = (rekData ?? []) as { id: string; nama: string; jenis: string; coa_code: string }[];
   const daftar = transferPage?.rows ?? [];
-  const mayCorrect = profile?.role === "OWNER" && profile?.is_active;
+  // Koreksi/batal: OWNER/ADMIN/FINANCE aktif (keputusan 12 Nov 2026).
+  const mayCorrect = !!profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
   let selected = daftar.find(t => t.id === (koreksi ?? batal));
   let selectionError: unknown = null;
   if ((koreksi || batal) && !selected) {
@@ -96,7 +97,7 @@ export default async function TransferPage({
         </div>
       )}
       {!boleh && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN/FINANCE yang bisa membuat transfer.</div>}
-      {(koreksi || batal) && !mayCorrect && <div role="alert" className="p2ban">Hanya Super Admin/OWNER aktif yang berhak mengoreksi atau membatalkan catatan transfer.</div>}
+      {(koreksi || batal) && !mayCorrect && <div role="alert" className="p2ban">Hanya Super Admin/OWNER, Admin, atau Finance aktif yang berhak mengoreksi atau membatalkan catatan transfer.</div>}
       <TransferRecovery userId={user?.id ?? ""}/>
       {rekening.length < 2 && (
         <div className="p2ban">
@@ -157,6 +158,7 @@ export default async function TransferPage({
                         <div>
                           {mayCorrect && <Link href={`/kas-bank/transfer?koreksi=${t.id}&hal=${transferPage?.pageInfo.page ?? 1}#koreksi-transfer`}>Koreksi</Link>}
                           {mayCorrect && <div><Link href={`/kas-bank/transfer?batal=${t.id}&hal=${transferPage?.pageInfo.page ?? 1}#koreksi-transfer`}>Batalkan catatan</Link></div>}
+                          {mayCorrect && <div><Link href={`/kas-bank/transfer/lampiran/${t.id}`}>Lampiran</Link></div>}
                         </div>
                       )}
                       {history?.some(h=>h.transfer_id===t.id) && <details style={{marginTop:6}}><summary>Riwayat</summary>{history.filter(h=>h.transfer_id===t.id).map((h)=><p key={h.id} style={{fontSize:11}}>{fmtTgl(h.created_at)} · {h.action === "edit" ? "Koreksi" : "Pembatalan"}: {h.reason}<br/>Pelaku: {h.created_by}<br/>Jurnal asli: {h.original_journal_id}<br/>Pembalik: {h.reversal_journal_id}{h.replacement_journal_id && <><br/>Jurnal pengganti: {h.replacement_journal_id}</>}{h.replacement_transfer_id && <><br/>Catatan pengganti: {h.replacement_transfer_id}</>}</p>)}</details>}
@@ -176,7 +178,7 @@ export default async function TransferPage({
 
       {transferPage && <ListPagination path="/kas-bank/transfer" query={{}} total={transferPage.count} pageInfo={transferPage.pageInfo}/>}
       <div style={{ fontSize: 10, color: "var(--td)", marginTop: 10 }}>
-        Hanya Super Admin/OWNER dapat mengoreksi atau membatalkan. Catatan asli tetap tersimpan; jurnal pembalik dan pengganti memakai tanggal serta cabang yang sama. Saldo rekening asal dan tujuan diperbaiki bersama tanpa menambah pendapatan.
+        Super Admin/OWNER, Admin, dan Finance dapat mengoreksi atau membatalkan. Catatan asli tetap tersimpan; jurnal pembalik memakai tanggal asli, pengganti memakai tanggal yang dipilih, cabang tetap sama. Saldo rekening asal dan tujuan diperbaiki bersama tanpa menambah pendapatan.
       </div>
     </>
   );
