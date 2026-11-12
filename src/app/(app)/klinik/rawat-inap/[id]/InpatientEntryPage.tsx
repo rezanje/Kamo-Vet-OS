@@ -16,6 +16,7 @@ import { readStayTypesChecked } from "@/lib/inpatient-stay";
 import { catatWaktu, mulai } from "@/lib/u07-waktu";
 import { loadClinicPackages } from "@/lib/clinic-payment";
 import { stokPaket, type ResepPaket } from "@/lib/paket-klinik";
+import { bacaBolehKoreksiVisit, putuskanBolehKoreksiVisit } from "@/lib/koreksi-visit-akses";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -44,7 +45,9 @@ function itemUntukKlien(item: {
 }
 
 // Same checked master catalogue, stock, branch prices and official formulas.
-export async function InpatientEntryPage({ params, searchParams, mode }: { params: Promise<{ id: string }>; searchParams?: Promise<{ error?: string; tab?: string }>; mode: "clinical" | "billables" }) {
+export async function InpatientEntryPage({ params, searchParams, mode, koreksi = false }: { params: Promise<{ id: string }>; searchParams?: Promise<{ error?: string; tab?: string }>; mode: "clinical" | "billables";
+  /** A5: halaman "Tambah koreksi visit" setelah pasien pulang/RIP (form klinis yang sama, tanpa ubah kondisi, alasan wajib). */
+  koreksi?: boolean }) {
   const { id } = await params;
   const { error, tab } = await (searchParams ?? Promise.resolve({} as { error?: string; tab?: string }));
   const supabase = await createClient();
@@ -57,7 +60,7 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
   const userP = mulai(supabase.auth.getUser());
   const recP = mulai(supabase
     .from("inpatient_records")
-    .select("id, condition_status, doctor_name, admitted_at, visit_id, visits(created_at, branch_id, doctor_id, pets(name, species, breed, photo_url), customers(name, phone, address))")
+    .select("id, condition_status, doctor_name, admitted_at, discharged_at, visit_id, visits(created_at, branch_id, doctor_id, pets(name, species, breed, photo_url), customers(name, phone, address))")
     .eq("id", id).maybeSingle());
   const stayP = mulai(readStayTypesChecked(supabase, [id]));
   const masterP = mulai(readCompleteList<MasterRow>((from, to) => supabase
@@ -69,6 +72,8 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
   const bolehP = mulai(bolehRacikKhusus());
   // Paket (Grup) di daftar Obat. Gagal dibaca = paket tidak ditawarkan; form tetap jalan.
   const packagesP = mulai(loadClinicPackages(supabase).catch(() => []));
+  // A5: izin "Koreksi visit rawat inap" (kolom alasan koreksi / form koreksi setelah pulang). Bukan otorisasi; database memeriksa ulang.
+  const koreksiP = mode === "clinical" ? mulai(bacaBolehKoreksiVisit(supabase)) : null;
 
   const [{ data: { user } }, { data: rec }] = await Promise.all([userP, recP]);
   if (!rec) notFound();
@@ -137,6 +142,12 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
   const tglMasuk = new Date(rec.admitted_at as string).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
   const groomingDoctorRequired = groomingPolicy?.doctorRequired ?? false;
+  const koreksiDibaca = koreksiP ? await koreksiP : false;
+  // Gagal baca izin: Owner tetap boleh (database memutuskan), peran lain tidak — perlu peran hanya pada kasus jarang itu.
+  const bolehKoreksi = koreksiDibaca === null
+    ? putuskanBolehKoreksiVisit(null, user ? (await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()).data?.role : null)
+    : koreksiDibaca;
+  const setelahPulang = !!rec.discharged_at;
   waktu.selesai();
   return (
     <>
@@ -156,7 +167,14 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
       {error && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>{error}</div>}
       {stay.failed && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>Tipe rawat inap belum dapat diverifikasi. Muat ulang sebelum mengisi catatan.</div>}
 
-      <CatatanForm
+      {koreksi && !setelahPulang ? <div role="alert" className="p2ban">
+        Pasien masih dirawat — catat visit lewat <Link href={`/klinik/rawat-inap/${id}/catatan`} className="btn-def">Tambah</Link> biasa
+        (visit lebih dari 48 jam lalu: isi alasan koreksi di form itu).
+      </div> : koreksi && !bolehKoreksi ? <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>
+        Pasien sudah pulang. Koreksi visit setelah pulang hanya untuk Owner atau peran yang diberi izin Koreksi visit rawat inap di Akses Grup.
+      </div> : <CatatanForm
+        koreksiVisit={mode === "clinical" && bolehKoreksi}
+        setelahPulang={koreksi && setelahPulang}
         mode={mode}
         key={`${user?.id ?? ""}:${id}`}
         tabAwal={tab}
@@ -192,7 +210,7 @@ export async function InpatientEntryPage({ params, searchParams, mode }: { param
           kondisi: CONDITION_LABEL[rec.condition_status as Condition] ?? String(rec.condition_status),
           photo: pet?.photo_url ?? null,
         }}
-      />
+      />}
     </>
   );
 }

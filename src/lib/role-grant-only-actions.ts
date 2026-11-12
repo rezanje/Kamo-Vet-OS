@@ -19,6 +19,8 @@ export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "pembelian.batalkan_pembayaran",
   "pembelian.batalkan_uang_muka",
   "pembelian.tanggal_mundur",
+  // A5 (meeting 12 Nov 2026): koreksi visit rawat inap (migrasi 20261115400000_a5_koreksi_visit_rawat_inap.sql).
+  "klinik.koreksi_visit",
 ];
 
 export const isGrantOnlyAction = (id: string): boolean => GRANT_ONLY_ACTIONS.includes(id);

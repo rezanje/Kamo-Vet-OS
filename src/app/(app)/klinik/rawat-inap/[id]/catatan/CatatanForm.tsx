@@ -61,7 +61,7 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, petHotel = false, tabAwal, paketResep = {} }: {
+export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId, backHref, patient, items, racikanItems, bahanItems, jasaItems, tindakanItems, katalogRacikan, bolehManual, doctors=[],paramedics=[], serviceStaff = [], visitDoctorId = null, groomingDoctorRequired = false, groomingApplies = true, petHotel = false, tabAwal, paketResep = {}, koreksiVisit = false, setelahPulang = false }: {
   mode?: "legacy" | "clinical" | "billables";
   recordId: string; requestKey: string; draftUserId: string; backHref: string;
   /** `?tab=tindakan` membuka form langsung di tab "Tindakan & Racikan" — dipakai tombol
@@ -85,6 +85,10 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
   petHotel?: boolean;
   /** Resep paket (Grup) yang tampil di daftar Obat; dipilih utuh lalu dipecah jadi isinya. */
   paketResep?: Record<string, ResepPaket>;
+  /** A5: pengguna Owner / pemegang izin "Koreksi visit rawat inap" — tampilkan kolom alasan koreksi (wajib bila visit > 48 jam lalu). */
+  koreksiVisit?: boolean;
+  /** A5: form "Tambah koreksi visit" setelah pasien pulang/RIP — hanya catatan visit/pemantauan, tanpa ubah kondisi; alasan wajib. */
+  setelahPulang?: boolean;
 }) {
   const clinicalVisit = mode === "clinical" && !petHotel;
   const [staff,setStaff]=useState<InpatientStaff>({log_kind:clinicalVisit?'doctor_visit':'monitoring',visit_doctor_id:null,paramedic_id:null});
@@ -422,6 +426,11 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
             <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--posb)" }}>DETAIL RAWAT INAP</span>
           </div>
 
+          {setelahPulang && <div className="p2ban" role="note" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
+            <i className="ti ti-alert-triangle" /> <b>KOREKSI VISIT SETELAH PASIEN PULANG.</b> Isi tanggal &amp; jam visit yang sebenarnya (di dalam masa rawat).
+            Hanya catatan visit/pemantauan — obat, tagihan, dan kondisi pasien tidak berubah. Alasan wajib diisi.
+            <input type="hidden" name="koreksi_form" value="1" />
+          </div>}
           <div className="frow">
             <div>
               <label className="flab">Tanggal *</label>
@@ -547,7 +556,7 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
                 <InpatientStaffFields value={staff} onChange={setStaff} doctors={doctors} paramedics={paramedics} hideKind={clinicalVisit}/>
               </>}
             </div>
-            <div>
+            {!setelahPulang && <div>
               <label className="flab">Ubah kondisi</label>
               <select className="fi" name="new_status" defaultValue="">
                 <option value="">— tetap ({patient.kondisi})</option>
@@ -557,14 +566,19 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
                 <option value="rip">RIP (Meninggal)</option>
                 <option value="pulang_paksa">Pulang Paksa (perlu form khusus bertanda tangan)</option>
               </select>
-            </div>
+            </div>}
           </div>
+          {(setelahPulang || koreksiVisit) && <div className="fg">
+            <label className="flab" htmlFor="koreksi-alasan">Alasan koreksi{setelahPulang ? " *" : " (wajib bila visit dokter lebih dari 48 jam lalu)"}</label>
+            <input id="koreksi-alasan" className="fi" name="koreksi_alasan" required={setelahPulang} minLength={setelahPulang ? 3 : undefined} maxLength={500}
+              placeholder="mis. visit lupa dicatat, dikonfirmasi dokter" />
+          </div>}
 
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <Link href={backHref} className="btn-def">Batal</Link>
-            <SubmitButton className="pay-btn" icon="ti-device-floppy" pendingText="Menyimpan…" busy={draftLeaving} style={{ width: "auto", flex: 1 }}>Simpan Catatan Rawat Inap</SubmitButton>
+            <SubmitButton className="pay-btn" icon="ti-device-floppy" pendingText="Menyimpan…" busy={draftLeaving} style={{ width: "auto", flex: 1 }}>{setelahPulang ? "Simpan Koreksi Visit" : "Simpan Catatan Rawat Inap"}</SubmitButton>
           </div>
-          {clinical && <div className="p2ban">Obat, jasa, tindakan / BMHP dan racikan ditambahkan terpisah di{" "}<Link href={`${backHref}/obat-khusus`} className="btn-def">OBAT KHUSUS</Link>, tetap ke tagihan pasien yang sama.</div>}
+          {clinical && !setelahPulang && <div className="p2ban">Obat, jasa, tindakan / BMHP dan racikan ditambahkan terpisah di{" "}<Link href={`${backHref}/obat-khusus`} className="btn-def">OBAT KHUSUS</Link>, tetap ke tagihan pasien yang sama.</div>}
           </>}
         </div>
 

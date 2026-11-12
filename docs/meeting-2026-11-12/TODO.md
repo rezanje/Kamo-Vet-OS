@@ -46,10 +46,14 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
   Centang "Laporan Visit" di Akses Grup: migrasi `20261115300000_a4_submenu_laporan_visit.sql` (disetujui, dipasang malam ini
   sebelum deploy). ADMIN yang laporannya dibatasi perlu dicentang Owner di Akses Grup.
 
-### A5 · [ ] P1 — Akses koreksi visit untuk yang lupa input
+### A5 · [x] P1 — Akses koreksi visit untuk yang lupa input
 - Disepakati: tetap ada akses untuk mengedit/menambah visit yang terlupa, **hanya untuk Owner/Manager**. Diatur lewat Akses Grup.
 - Aturan bisnis ke depan: yang tidak mengisi visit tidak dapat insentif. Cukup didokumentasikan, tidak perlu enforcement di sistem.
 - Screenshot: `pengaturan-akses-grup.jpg`
+- Status: izin Akses Grup baru **"Koreksi visit rawat inap"** (Owner selalu; ADMIN otomatis dicentang — keputusan 1A/2A/3A,
+  lihat `USULAN-A5.md`). Pemegang izin: visit > 48 jam lalu, ubah waktu/dokter/jenis/paramedis visit, dan tambah/ubah catatan
+  setelah pasien pulang — alasan wajib & tersimpan. Migrasi `20261115400000_a5_koreksi_visit_rawat_inap.sql` **harus dipasang
+  sebelum** aplikasinya dideploy.
 
 ### A6 · [x] P1 — Laporan Penjualan per Cabang: omset harian
 - Tambahkan rekap omset per hari per cabang. Isinya **omset saja**, tanpa biaya operasional. Tujuannya membantu Finance.

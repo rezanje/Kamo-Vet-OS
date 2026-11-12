@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CONDITION_LABEL, type Condition } from "@/lib/inpatient";
 import { LogEditForm, type EditRow, type LogRow } from "./LogEditForm";
 import { daftarDokter } from '@/lib/dokter';
+import { bolehKoreksiVisit as bacaIzinKoreksiVisit } from "@/lib/koreksi-visit-akses";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -31,14 +32,20 @@ export default async function LogDetailPage({
       .eq("id", id).maybeSingle(),
     supabase
       .from("inpatient_daily_logs")
-      .select("id, log_kind, visit_doctor_id, paramedic_id, paramedic_name, log_date, created_at, condition_note, tindakan, keterangan, doctor_name, inpatient_record_id, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
+      // "*" supaya halaman tetap terbuka sebelum kolom A5 (correction_reason) terpasang; yang dikirim ke browser dipilih di bawah.
+      .select("*")
       .eq("id", logId).maybeSingle(),
   ]);
   if (!rec || !log || log.inpatient_record_id !== id) notFound();
-  // H06: only OWNER/ADMIN may correct a doctor visit's time, doctor or kind (the database enforces it too).
+  const LOG_KEYS = ["id", "log_kind", "visit_doctor_id", "paramedic_id", "paramedic_name", "log_date", "created_at", "condition_note", "tindakan", "keterangan",
+    "doctor_name", "makan", "minum", "bab", "pipis", "berat", "suhu", "foto_url", "komunikasi_owner", "komunikasi_via", "correction_reason"] as const;
+  const logRow = Object.fromEntries(LOG_KEYS.filter(k => k in log).map(k => [k, (log as unknown as Record<string, unknown>)[k]])) as unknown as LogRow;
+  // H06 + A5 (meeting 12 Nov 2026): koreksi waktu/dokter/jenis/paramedis visit dan perubahan setelah pasien pulang hanya untuk
+  // Owner atau pemegang izin Akses Grup "Koreksi visit rawat inap" (database memeriksa ulang setiap simpan).
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle() : { data: null };
-  const bolehKoreksiVisit = ["OWNER", "ADMIN"].includes(String(profile?.role ?? ""));
+  const bolehKoreksiVisit = user ? await bacaIzinKoreksiVisit(supabase, profile?.role as string | null | undefined) : false;
+  const setelahPulang = !!rec.discharged_at;
   const [doctors,paramedics]=await Promise.all([
     daftarDokter(supabase,{branchId:rec.branch_id,role:'doctor'}),
     daftarDokter(supabase,{branchId:rec.branch_id,role:'paramedic'}),
@@ -90,10 +97,11 @@ export default async function LogDetailPage({
       )}
 
       <LogEditForm key={`${id}:${logId}`}
-        log={log as unknown as LogRow}
+        log={logRow}
         recordId={id}
         backHref={`/klinik/rawat-inap/${id}`}
-        editable={!rec.discharged_at}
+        editable={!setelahPulang || bolehKoreksiVisit}
+        alasanWajib={setelahPulang && bolehKoreksiVisit}
         bolehKoreksiVisit={bolehKoreksiVisit}
         edits={edits}
         doctors={doctors}
