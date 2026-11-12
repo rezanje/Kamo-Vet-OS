@@ -151,14 +151,7 @@ select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-800
  'inactive owner cannot correct','Hanya Owner');
 set local role postgres;
 update profiles set is_active=true where id='e8100000-0000-4000-8000-000000000001';
-update payment_account_map set cash_account_id='e8600000-0000-4000-8000-000000000003'
- where branch_id='e8200000-0000-4000-8000-000000000001' and metode='Transfer';
-set local role authenticated;
-select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000003',1,'j02-map-drift','Kasir salah membagi metode',15000,30000)$q$,
- 'account mapping drift','Akun sumber berubah');
-set local role postgres;
-update payment_account_map set cash_account_id='e8600000-0000-4000-8000-000000000002'
- where branch_id='e8200000-0000-4000-8000-000000000001' and metode='Transfer';
+-- Peta rekening yang berubah sesudah struk dibuat kini diterima (J02_AKUN_LAMA, lihat bagian akhir).
 insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code)
  values((now() at time zone 'Asia/Jakarta')::date,'e8600000-0000-4000-8000-000000000002','1142');
 set local role authenticated;
@@ -287,4 +280,74 @@ select pg_temp.assert_ok((select revision=1 and metode_bayar='Split' and bayar=6
  and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000006','1141')=30000
  and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000006','1142')=20000,
  'split correction keeps tendered cash and change when a cash part remains');
+
+-- J02_AKUN_LAMA (laporan 12 Nov): struk dibuat saat Tunai masih ke kas lama (mis. 110003 Kas Kecil),
+-- lalu peta Tunai cabang dipindah ke kas toko cabang. Koreksi tetap bisa; metode yang sudah ada
+-- tetap di akun tercatatnya, metode baru memakai peta sekarang.
+insert into sales(id,branch_id,no_struk,subtotal,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint) values
+ ('e8700000-0000-4000-8000-000000000007','e8200000-0000-4000-8000-000000000001','J02.OLD.FULL',30000,30000,'Tunai',30000,
+  'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":30000}]','j02-old-full',repeat('1',64)),
+ ('e8700000-0000-4000-8000-000000000008','e8200000-0000-4000-8000-000000000001','J02.OLD.SPLIT',40000,40000,'Tunai',40000,
+  'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":40000}]','j02-old-split',repeat('2',64)),
+ ('e8700000-0000-4000-8000-000000000009','e8200000-0000-4000-8000-000000000001','J02.OLD.TRANSFER',20000,20000,'Transfer',20000,
+  'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Transfer","amount":20000}]','j02-old-transfer',repeat('3',64)),
+ ('e8700000-0000-4000-8000-00000000000a','e8200000-0000-4000-8000-000000000001','J02.OLD.BROKEN',10000,10000,'Tunai',10000,
+  'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":10000}]','j02-old-broken',repeat('4',64));
+insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) values
+ ('e8800000-0000-4000-8000-000000000007','e8700000-0000-4000-8000-000000000007','e8500000-0000-4000-8000-000000000001','J02 service',1,30000,'pcs',1,0),
+ ('e8800000-0000-4000-8000-000000000008','e8700000-0000-4000-8000-000000000008','e8500000-0000-4000-8000-000000000001','J02 service',1,40000,'pcs',1,0),
+ ('e8800000-0000-4000-8000-000000000009','e8700000-0000-4000-8000-000000000009','e8500000-0000-4000-8000-000000000001','J02 service',1,20000,'pcs',1,0),
+ ('e8800000-0000-4000-8000-00000000000a','e8700000-0000-4000-8000-00000000000a','e8500000-0000-4000-8000-000000000001','J02 service',1,10000,'pcs',1,0);
+select finalize_pos_sale('e8700000-0000-4000-8000-000000000007');
+select finalize_pos_sale('e8700000-0000-4000-8000-000000000008');
+select finalize_pos_sale('e8700000-0000-4000-8000-000000000009');
+select finalize_pos_sale('e8700000-0000-4000-8000-00000000000a');
+select pg_temp.assert_ok((select count(*)=3 and bool_and(coa_code='1141') from sale_payments where method='Tunai'
+ and sale_id in('e8700000-0000-4000-8000-000000000007','e8700000-0000-4000-8000-000000000008','e8700000-0000-4000-8000-00000000000a')),
+ 'fixture: old cash sales recorded on the old cash account');
+set local role postgres;
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('1144','J02 kas toko','ASET','D',false)
+ on conflict(code) do update set is_active=true,is_header=false;
+insert into cash_accounts(id,nama,jenis,coa_code,branch_id)
+ values('e8600000-0000-4000-8000-000000000004','J02 kas toko','Kas','1144','e8200000-0000-4000-8000-000000000001');
+update payment_account_map set cash_account_id='e8600000-0000-4000-8000-000000000004'
+ where branch_id='e8200000-0000-4000-8000-000000000001' and metode='Tunai';
+-- Snapshot rusak (rekening di snapshot bukan milik kode akunnya) tetap ditolak.
+set local session_replication_role=replica;
+update sale_payments set account_snapshot=jsonb_set(account_snapshot,'{cash_account_id}','"e8600000-0000-4000-8000-000000000002"')
+ where sale_id='e8700000-0000-4000-8000-00000000000a';
+set local session_replication_role=origin;
+set local role authenticated;
+select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000007',0,'j02-old-full','Kasir salah pilih metode',0,30000);
+select pg_temp.assert_ok((select revision=1 and metode_bayar='Transfer' from sales where id='e8700000-0000-4000-8000-000000000007')
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000007','1141')=0
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000007','1144')=0
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000007','1142')=30000
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000007','510001')=-30000,
+ 'old-account cash sale moves fully to Transfer after the cash map changed; old cash account reversed');
+select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000008',0,'j02-old-split','Sebagian dibayar transfer',15000,25000);
+select pg_temp.assert_ok(pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000008','1141')=15000
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000008','1144')=0
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000008','1142')=25000
+ and (select coa_code='1141' and account_snapshot->>'code'='1141'
+   and account_snapshot->>'cash_account_id'='e8600000-0000-4000-8000-000000000001'
+  from sale_payments where sale_id='e8700000-0000-4000-8000-000000000008' and method='Tunai'),
+ 'remaining cash part stays on its recorded account; only the moved amount changes account');
+select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000009',0,'j02-old-transfer','Ternyata dibayar tunai',20000,0);
+select pg_temp.assert_ok(pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000009','1142')=0
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000009','1144')=20000
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-000000000009','1141')=0
+ and (select coa_code='1144' and account_snapshot->>'cash_account_id'='e8600000-0000-4000-8000-000000000004'
+  from sale_payments where sale_id='e8700000-0000-4000-8000-000000000009' and method='Tunai'),
+ 'a newly introduced method uses the current branch map');
+select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-00000000000a',0,'j02-old-broken','Kasir salah pilih metode',0,10000)$q$,
+ 'inconsistent account snapshot','Akun sumber pembayaran tidak lengkap atau tidak konsisten');
+select pg_temp.assert_ok((select revision=0 and metode_bayar='Tunai' from sales where id='e8700000-0000-4000-8000-00000000000a'),
+ 'rejected inconsistent source leaves the sale untouched');
+set local role postgres;
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code)
+ values((now() at time zone 'Asia/Jakarta')::date,'e8600000-0000-4000-8000-000000000001','1141');
+set local role authenticated;
+select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000008',1,'j02-old-reconciled','Koreksi lagi',0,40000)$q$,
+ 'reconciliation on the recorded (old) cash account still blocks','Rekonsiliasi bank');
 rollback;
