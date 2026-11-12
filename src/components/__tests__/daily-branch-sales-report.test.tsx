@@ -25,3 +25,20 @@ it('reads more than one source page before presenting the daily control total',a
 it('propagates an unreadable clinic source instead of displaying partial daily revenue',async()=>{fixture.client=clientFixture({errorTable:'invoices'}).client;await expect(Page({searchParams:Promise.resolve(params)})).rejects.toThrow();});
 it('rejects an invalid channel instead of widening the report to all channels',async()=>{await expect(Page({searchParams:Promise.resolve({...params,kanal:'invalid'})})).rejects.toThrow('Pintu transaksi tidak valid');});
 it('subtracts posted clinic refunds from clinic omzet per branch and day and in the document drilldown',async()=>{fixture.client=clientFixture({tables:{sales:[sale('a','b1',100)],invoices:[{id:'i',invoice_no:'INV-FICTION',visit_id:'visit-fiction',total:30,created_at:'2026-10-24T00:01:00+07:00',voided_at:null,metode_bayar:'Tunai',paid_status:'lunas',visits:{branch_id:'b2',customer_id:null,branches:{name:'Cabang klinik'},customers:null},invoice_items:[]}],sales_returns:[],clinic_refunds:[{id:'f',invoice_id:'i',total:12.5}],branches:[{id:'b1',name:'Cabang toko',is_active:true},{id:'b2',name:'Cabang klinik',is_active:true}]}}).client;const page=doc(await Page({searchParams:Promise.resolve(params)}));const branches=page.querySelector('table[aria-label="Transaksi per cabang"]')?.textContent??'';expect(branches).toContain('Rp 17,5');expect(branches).not.toContain('Rp 30');const daily=page.querySelector('table[aria-label="Omzet per hari"]')?.textContent??'';expect(daily).toContain('Rp 17,5');expect(page.body.textContent).toContain('Rp 117,5');const detail=doc(await Detail({searchParams:Promise.resolve({dari:'2026-10-24',sampai:'2026-10-24',kanal:'Klinik',tampil:'1'})}));expect(detail.querySelector('tbody')?.textContent).toContain('− Rp 12,5');expect(detail.body.textContent).toContain('Rp 17,5');});
+it('A6: omzet harian per cabang — matriks tanggal × cabang, omzet saja, total per hari & per cabang',async()=>{
+  const page=doc(await Page({searchParams:Promise.resolve(params)}));
+  const tabel=page.querySelector('table[aria-label="Omzet harian per cabang"]')!;
+  expect(tabel).not.toBeNull();
+  // Dua cabang berlabel sama tetap jadi dua kolom terpisah, plus kolom Total.
+  expect(tabel.querySelectorAll('thead th')).toHaveLength(4);
+  const baris=[...tabel.querySelectorAll('tbody tr')].map(tr=>[...tr.querySelectorAll('td')].map(td=>td.textContent));
+  expect(baris).toEqual([
+    ['2026-10-23','Rp 80,05','Rp 50','Rp 130,05'],
+    ['2026-10-24','Rp 30,2','Rp 0','Rp 30,2'],
+  ]);
+  expect([...tabel.querySelectorAll('tfoot th')].map(th=>th.textContent)).toEqual(['TOTAL','Rp 110,25','Rp 50','Rp 160,25']);
+});
+it('A6: tanpa Tampilkan matriks harian tidak dibentuk',async()=>{
+  const page=doc(await Page({searchParams:Promise.resolve({dari:params.dari,sampai:params.sampai})}));
+  expect(page.querySelector('table[aria-label="Omzet harian per cabang"]')).toBeNull();
+});

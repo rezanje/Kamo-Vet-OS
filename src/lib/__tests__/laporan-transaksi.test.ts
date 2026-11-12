@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rekap, perCabang, perHari, perKanal, type Trx } from "../laporan-transaksi";
+import { omzetHarianPerCabang, rekap, perCabang, perHari, perKanal, type Trx } from "../laporan-transaksi";
 
 const t = (p: Partial<Trx>): Trx => ({
   tanggal: "2026-08-20", cabang: "DC LOJI", customerId: null,
@@ -78,5 +78,31 @@ describe("perKanal", () => {
   it("menghitung tiap pintu transaksi, termasuk yang nol", () => {
     expect(perKanal([t({ kanal: "POS" }), t({ kanal: "Klinik" }), t({ kanal: "Klinik" })]))
       .toEqual({ POS: 1, Online: 0, Klinik: 2, Grosir: 0 });
+  });
+});
+
+describe("A6: omzet harian per cabang", () => {
+  const t = (over: Partial<Trx>): Trx => ({ tanggal: "2026-11-01", cabang: "Pusat", cabangId: "a", customerId: null, omzet: 100, item: 1, kanal: "POS", ...over });
+
+  it("matriks tanggal × cabang berisi omzet, total per hari & per cabang, termasuk hari kosong", () => {
+    const hasil = omzetHarianPerCabang([
+      t({ tanggal: "2026-11-01", cabangId: "a", cabang: "Pusat", omzet: 100 }),
+      t({ tanggal: "2026-11-01", cabangId: "a", cabang: "Pusat", omzet: 50, kanal: "Klinik" }),
+      t({ tanggal: "2026-11-01", cabangId: "b", cabang: "Cabang B", omzet: 30 }),
+      t({ tanggal: "2026-11-03", cabangId: "b", cabang: "Cabang B", omzet: -10 }),
+    ], "2026-11-01", "2026-11-03");
+    expect(hasil.cabang.map((c) => c.cabang)).toEqual(["Pusat", "Cabang B"]);
+    expect(hasil.baris.map((b) => [b.tanggal, b.perCabang["id:a"], b.perCabang["id:b"], b.total])).toEqual([
+      ["2026-11-01", 150, 30, 180],
+      ["2026-11-02", 0, 0, 0],
+      ["2026-11-03", 0, -10, -10],
+    ]);
+    expect(hasil.totalPerCabang).toEqual({ "id:a": 150, "id:b": 20 });
+    expect(hasil.total).toBe(170);
+  });
+
+  it("total matriks sama dengan total omzet rekap", () => {
+    const list = [t({ omzet: 12.5 }), t({ tanggal: "2026-11-02", cabangId: null, cabang: "Online", omzet: 7.5 })];
+    expect(omzetHarianPerCabang(list, "2026-11-01", "2026-11-02").total).toBe(rekap(list).omzet);
   });
 });

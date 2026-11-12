@@ -51,8 +51,11 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Aturan bisnis ke depan: yang tidak mengisi visit tidak dapat insentif. Cukup didokumentasikan, tidak perlu enforcement di sistem.
 - Screenshot: `pengaturan-akses-grup.jpg`
 
-### A6 · [ ] P1 — Laporan Penjualan per Cabang: omset harian
+### A6 · [x] P1 — Laporan Penjualan per Cabang: omset harian
 - Tambahkan rekap omset per hari per cabang. Isinya **omset saja**, tanpa biaya operasional. Tujuannya membantu Finance.
+- Status: di laporan **Transaksi per Cabang** ditambah tabel "Omzet harian per cabang" (tanggal × cabang + total per hari
+  dan per cabang; hari tanpa transaksi = 0). Angka omzet sama dengan kolom Omzet laporan itu (setelah diskon & retur).
+  Ikut terunduh di Excel/CSV laporan tersebut.
 
 ### A7 · [?] P2 — Laporan lain mengikuti referensi Accurate
 - Tim klinik/finance akan memberi contoh laporan dari Accurate. **Tunggu input**, jangan dikerjakan dulu.

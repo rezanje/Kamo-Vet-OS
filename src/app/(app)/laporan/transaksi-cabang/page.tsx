@@ -5,7 +5,7 @@ import Link from "next/link";
 import { formatPosMoney } from "@/lib/pos-money";
 import { tarikCabangAktif, tarikTransaksi } from "@/lib/laporan-transaksi-server";
 import { denganTampil, laporanDiminta } from "@/lib/report-gate";
-import { KANAL_SEMUA, LABEL_KANAL, kanalKosong, perCabang, perHari, perKanal, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
+import { KANAL_SEMUA, LABEL_KANAL, kanalKosong, omzetHarianPerCabang, perCabang, perHari, perKanal, rekap, type Kanal, type Trx } from "@/lib/laporan-transaksi";
 
 // Menjawab tiga laporan dasar sekaligus (permintaan Kamo Group 24 Agu 2026):
 // jumlah transaksi per cabang, rata-rata transaksi per pelanggan, dan
@@ -46,6 +46,8 @@ export default async function TransaksiCabangPage({
   const labelCabang = uniqueOptionLabels([...cabangOptions].map(([id, name]) => ({ id, name })), (b) => b.name);
   const trx: Trx[] = semua.filter(t => (!kanal || t.kanal===kanal) && (!cabangId || t.cabangId===cabangId));
   const hari = perHari(trx);
+  // A6 (meeting 12 Nov 2026): matriks omzet harian per cabang untuk Finance.
+  const harianCabang = omzetHarianPerCabang(trx, dari, sampai);
 
   const baris = perCabang(trx);
   const total = rekap(trx);
@@ -179,6 +181,27 @@ export default async function TransaksiCabangPage({
               <td>{h.trx}x</td><td>{pecahanKanal(k)}</td><td style={{textAlign:"right"}}>{rp(h.omzet)}</td>
             </tr>})}{!hari.length&&<TabelKosong kolom={4} pesan="Belum ada transaksi pada filter ini."/>}</tbody>
             {!!hari.length&&<tfoot><tr><th>TOTAL</th><th>{total.trx}x</th><th/><th style={{textAlign:"right"}}>{rp(total.omzet)}</th></tr></tfoot>}
+          </table>
+        </div>
+        <h2 style={{fontSize:14,marginTop:20}}>Omzet harian per cabang</h2>
+        <p style={{fontSize:11,color:"var(--tm)"}}>Omzet saja (tanpa biaya operasional) per tanggal WIB untuk tiap cabang — untuk dicocokkan Finance. Hari tanpa transaksi ditulis 0.</p>
+        <div style={{overflowX:"auto"}}>
+          <table className="tbl" aria-label="Omzet harian per cabang" style={{minWidth:Math.max(540, 160 + 130 * (harianCabang.cabang.length + 1))}}>
+            <thead><tr>
+              <th style={{minWidth:100}}>Tanggal WIB</th>
+              {harianCabang.cabang.map(c => <th key={c.kunci} style={{textAlign:"right",minWidth:120}}>{c.cabangId ? labelCabang.get(c.cabangId) ?? c.cabang : c.cabang}</th>)}
+              <th style={{textAlign:"right",minWidth:130}}>Total</th>
+            </tr></thead>
+            <tbody>{harianCabang.baris.map(b => <tr key={b.tanggal}>
+              <td style={{fontSize:11}}>{b.tanggal}</td>
+              {harianCabang.cabang.map(c => <td key={c.kunci} style={{textAlign:"right",fontSize:11,color:b.perCabang[c.kunci]?undefined:"var(--td)"}}>{rp(b.perCabang[c.kunci] ?? 0)}</td>)}
+              <td style={{textAlign:"right",fontSize:11,fontWeight:700}}>{rp(b.total)}</td>
+            </tr>)}{!harianCabang.cabang.length&&<TabelKosong kolom={2} pesan="Belum ada transaksi pada filter ini."/>}</tbody>
+            {!!harianCabang.cabang.length&&<tfoot><tr>
+              <th>TOTAL</th>
+              {harianCabang.cabang.map(c => <th key={c.kunci} style={{textAlign:"right"}}>{rp(harianCabang.totalPerCabang[c.kunci] ?? 0)}</th>)}
+              <th style={{textAlign:"right"}}>{rp(harianCabang.total)}</th>
+            </tr></tfoot>}
           </table>
         </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
