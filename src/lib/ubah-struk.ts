@@ -1,5 +1,5 @@
 /**
- * Ubah transaksi struk kasir petshop (RPC edit_posted_pos_sale, migrasi 20261115500000).
+ * Ubah transaksi struk kasir petshop (RPC edit_posted_pos_sale, migrasi 20261116300000).
  *
  * Fungsi murni: menyusun isi struk baru dari struk lama (sumber kebenaran: database) + isian Owner/Finance.
  * - Baris lama membawa promo/klaim/pelaksana/komponen Grup apa adanya (keputusan 3A); qty, harga, satuan dan

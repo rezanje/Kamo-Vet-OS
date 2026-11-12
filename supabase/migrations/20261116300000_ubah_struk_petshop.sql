@@ -137,6 +137,19 @@ select pg_temp.bypass('public.guard_campaign_code_use()',
  $l$if tg_table_name='sales' and tg_op='INSERT' and public.pos_sale_edit_allowed((to_jsonb(new)->>'id')::uuid) then return new;end if;$l$, 'UBAH_STRUK');
 select pg_temp.bypass('public.guard_campaign_code_finalize()',
  $l$if public.pos_sale_edit_allowed(new.id) then return new;end if;$l$, 'UBAH_STRUK');
+-- Diskon manual (20261116100000): struk pengganti membawa diskon lama apa adanya. Peran tanpa izin diskon manual tetap tidak boleh
+-- MENAIKKAN total diskon lewat ubah transaksi (dibandingkan dengan struk yang diganti); peran berizin / Owner bebas seperti di kasir.
+select pg_temp.bypass('public.guard_sale_item_manual_discount()',
+ $l$if public.pos_sale_edit_allowed(new.sale_id) then return new;end if;$l$, 'UBAH_STRUK');
+select pg_temp.bypass('public.guard_sale_manual_discount()',
+ $l$if public.pos_sale_edit_allowed(new.id) then
+  if auth.uid() is not null and not public.manual_discount_allowed()
+   and coalesce(new.discount,0)+coalesce(new.diskon_kategori,0)>coalesce((select max(coalesce(o.discount,0)+coalesce(o.diskon_kategori,0)) from public.pos_sale_edit_gate g
+    join public.sales o on o.id=g.sale_id where g.transaction_id=txid_current() and g.backend_pid=pg_backend_pid() and g.sale_id<>new.id),0)+0.005 then
+   raise exception 'Anda tidak punya izin menambah diskon manual. Diskon struk hasil ubah tidak boleh lebih besar dari struk asal; minta Owner mengubahnya.' using errcode='42501';
+  end if;
+  return new;
+ end if;$l$, 'UBAH_STRUK');
 -- Pembatalan struk yang pernah dikoreksi metode bayarnya: varian ubah membalik seluruh rantai jurnal koreksinya.
 select pg_temp.bypass('public.guard_corrected_sale_cancellation()',
  $l$if public.pos_sale_edit_allowed(old.id) then return new;end if;$l$, 'UBAH_STRUK');
@@ -302,14 +315,15 @@ begin
  insert into public.sales(id,branch_id,customer_id,pet_id,no_struk,subtotal,discount,diskon_kategori,total,merchant_fee_total,
   metode_bayar,bayar,kembali,payment_plan,checkout_key,checkout_fingerprint,poin_earned,poin_digunakan,voucher_code,campaign_code,
   cashier_id,shift_id,salesperson_id,cashier_name,cashier_employee_id,created_at,quest_effects_tracked,
-  promo_pick_id,promo_pick_mode,promo_pick_exclusive,promo_selection)
+  promo_pick_id,promo_pick_mode,promo_pick_exclusive,promo_selection,manual_discount)
  values(new_id,s.branch_id,s.customer_id,s.pet_id,new_no,(h->>'subtotal')::numeric,(h->>'discount')::numeric,
   coalesce((h->>'diskon_kategori')::numeric,s.diskon_kategori),(h->>'total')::numeric,coalesce((h->>'merchant_fee_total')::numeric,0),
   h->>'metode_bayar',(h->>'bayar')::numeric,coalesce((h->>'kembali')::numeric,0),h->'payment_plan',
   'ubah:'||audit::text,encode(sha256(convert_to(payload::text,'UTF8')),'hex'),
   coalesce((h->>'poin_earned')::integer,s.poin_earned),coalesce((h->>'poin_digunakan')::integer,s.poin_digunakan),
   s.voucher_code,s.campaign_code,s.cashier_id,s.shift_id,s.salesperson_id,s.cashier_name,s.cashier_employee_id,
-  s.created_at+interval '1 millisecond',s.quest_effects_tracked,s.promo_pick_id,s.promo_pick_mode,s.promo_pick_exclusive,s.promo_selection);
+  s.created_at+interval '1 millisecond',s.quest_effects_tracked,s.promo_pick_id,s.promo_pick_mode,s.promo_pick_exclusive,s.promo_selection,
+  least(coalesce(s.manual_discount,0),greatest(coalesce((h->>'discount')::numeric,0),0)));
 
  for line in select value from jsonb_array_elements(p_edit->'lines') loop
   if jsonb_typeof(line) is distinct from 'object' or (line->>'qty')::numeric is null or (line->>'harga')::numeric is null then

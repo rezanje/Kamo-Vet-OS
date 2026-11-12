@@ -1,4 +1,4 @@
--- Ubah transaksi struk kasir petshop (migrasi 20261115500000_ubah_struk_petshop.sql). Fixture fiktif; semua di-rollback.
+-- Ubah transaksi struk kasir petshop (migrasi 20261116300000_ubah_struk_petshop.sql). Fixture fiktif; semua di-rollback.
 -- Dibuktikan: struk tetap di tanggal asli (omzet + kas/bank), stok & HPP di hari ubah, shift tertutup boleh, Owner + Finance,
 -- rekening tercatat dipertahankan, rantai koreksi metode bayar ikut dibalik, promo terbawa, idempotensi, penolakan yang perlu.
 begin;
@@ -210,6 +210,13 @@ select cancel_posted_sale(pg_temp.sid('UE-C-U1'),0,'ue-c-cancel','Batal beneran'
 set local role postgres;
 select pg_temp.ok((select voided_at is not null from sales where no_struk='UE-C-U1') and pg_temp.bal(array['UE-C','UE-C-U1'],'510001')=0,'edited receipt can still be cancelled');
 
+-- ── Izin diskon manual (20261116100000): Finance tanpa izin tidak boleh menaikkan diskon lewat ubah ──
+set local role authenticated;
+select pg_temp.as_('ee100000-0000-4000-8000-000000000002');
+select pg_temp.reject($q$select edit_posted_pos_sale(pg_temp.sid('UE-B'),0,'ue-b-disc','Kasih diskon',pg_temp.edit_payload('[{"item_id":"ee400000-0000-4000-8000-000000000002","nama":"UE barang","qty":1,"harga":50000,"satuan":"pcs","faktor":1}]',50000,5000,'[{"method":"Tunai","amount":45000}]',0))$q$,
+ 'tidak punya izin menambah diskon','finance without manual-discount permission cannot raise the discount');
+select pg_temp.as_('ee100000-0000-4000-8000-000000000001');
+set local role postgres;
 -- ── Penolakan periode & rekonsiliasi ──
 insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code) values((select d from ue_d),'ee500000-0000-4000-8000-000000000001','1191');
 set local role authenticated;

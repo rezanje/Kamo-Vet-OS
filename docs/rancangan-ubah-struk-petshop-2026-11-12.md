@@ -29,7 +29,7 @@ Hambatan teknis untuk mengubah di tempat dengan tanggal asli:
 - `sale_stock_out_fifo` mewajibkan tanggal stok = tanggal struk = hari ini.
 - `pos_sale_assert_actor` mewajibkan shift terbuka milik pelaku.
 
-## Tahap 2 — DIBANGUN (migrasi 20261115500000, keputusan Reza 12 Nov: 2A, 3A, Owner + Finance)
+## Tahap 2 — DIBANGUN (migrasi 20261116300000, keputusan Reza 12 Nov: 2A, 3A, Owner + Finance)
 Rancangan "ubah di struk yang sama" ditinggalkan: setiap fungsi hilir (pembatalan, koreksi metode, batal penerimaan,
 retur, laporan) mengandaikan satu jurnal `sale` per nomor struk. Yang dibangun = **tutup + ganti atomik** (pola klinik
 "void & terbitkan ulang") di satu transaksi database, sehingga semua jalur lama tetap berlaku untuk struk hasil ubah.
