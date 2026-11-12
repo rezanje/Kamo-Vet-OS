@@ -234,8 +234,8 @@ def section_roles(h):
         out = h.gagal(f"begin; alter table role_settings_private.action_policies rename to action_policies_x; set role authenticated; select set_config('request.jwt.claim.role','authenticated',false); select set_config('request.jwt.claim.sub',{q(OWNER)},false); select public.{RPC}({q(G['receipt'])},{q(pg[0]['id'])},'role-failopen',{q(REASON)},'QRIS'); rollback;")
         check('kebijakan tidak terbaca: OWNER tetap BOLEH (fail-open, tidak pernah terkunci)', out is None, dict(err=(out or '')[:200]))
         a_adm = h.nilai("select public.ubah_metode_allowed('klinik');", ADMIN); a_stf = h.nilai("select public.ubah_metode_allowed('klinik');", STAFF); a_own = h.nilai("select public.ubah_metode_allowed('klinik');", OWNER)
-        a_pj = h.nilai("select public.ubah_metode_allowed('penjualan');", ADMIN); a_bad = h.nilai("select public.ubah_metode_allowed('lain');", OWNER)
-        check('ubah_metode_allowed (untuk layar): Owner true; ADMIN dengan izin klinik true tapi penjualan false; STAFF false; domain asing false', (a_own, a_adm, a_pj, a_stf, a_bad) == ('t', 't', 'f', 'f', 'f'), dict(own=a_own, adm=a_adm, pj=a_pj, stf=a_stf, bad=a_bad))
+        a_pj = h.nilai("select public.ubah_metode_allowed('penjualan');", OWNER); a_bad = h.nilai("select public.ubah_metode_allowed('lain');", OWNER)
+        check('ubah_metode_allowed (untuk layar): Owner true; ADMIN dengan izin klinik true; STAFF false; domain lain (petshop belum ada di paket ini) dan domain asing false', (a_own, a_adm, a_stf, a_pj, a_bad) == ('t', 't', 'f', 'f', 'f'), dict(own=a_own, adm=a_adm, pj=a_pj, stf=a_stf, bad=a_bad))
     finally:
         h.sql("delete from role_settings_private.action_policies where role in ('ADMIN','STAFF');")
     e, _ = corr(h, H_['receipt'], ph[0]['id'], 'QRIS', 'role-fin', FINANCE)
@@ -260,9 +260,9 @@ def section_roles(h):
     try: e, _ = corr(h, I['receipt'], pi[0]['id'], 'QRIS', 'role-inactive', OWNER)
     finally: h.sistem(f"update public.profiles set is_active=true where id={q(OWNER)};")
     check('Owner NONAKTIF ditolak', has(e, 'ACCESS_DENIED'), dict(err=(e or '')[:200]))
-    cats = json.loads(h.nilai("select jsonb_agg(jsonb_build_object('id',c.id,'enforced',c.enforced,'group',c.\"group\",'mod',m.module_id) order by c.id) from role_settings_private.action_catalog c join role_settings_private.action_modules m on m.id=c.id where c.id in ('klinik.ubah_metode_bayar','penjualan.ubah_metode_bayar')"))
-    check('katalog aksi peran memuat klinik.ubah_metode_bayar dan penjualan.ubah_metode_bayar (enforced) di modul masing-masing',
-          cats == [dict(id='klinik.ubah_metode_bayar', enforced=True, group='Klinik', mod='klinik'), dict(id='penjualan.ubah_metode_bayar', enforced=True, group='Penjualan', mod='penjualan')], dict(cats=cats))
+    cats = json.loads(h.nilai("select jsonb_agg(jsonb_build_object('id',c.id,'enforced',c.enforced,'group',c.\"group\",'mod',m.module_id) order by c.id) from role_settings_private.action_catalog c join role_settings_private.action_modules m on m.id=c.id where c.id like '%.ubah_metode_bayar'"))
+    check('katalog aksi peran memuat klinik.ubah_metode_bayar (enforced) di modul klinik; tidak ada id petshop',
+          cats == [dict(id='klinik.ubah_metode_bayar', enforced=True, group='Klinik', mod='klinik')], dict(cats=cats))
     # anon / authenticated tanpa sesi
     e = h.gagal(f"set role anon; select public.{RPC}({q(I['receipt'])},{q(pi[0]['id'])},'anon-k',{q(REASON)},'QRIS');")
     check('anon tidak punya hak menjalankan RPC', bool(e), dict(err=(e or '')[:160]))
@@ -335,9 +335,9 @@ def section_static(h):
     text = (MIG / CANDIDATE).read_text() if (MIG / CANDIDATE).exists() else ''
     check('statik: migrasi tanpa begin/commit sendiri (aman dibungkus transaksi pemasangan)', text != '' and not any(l.strip().lower() in ('begin;', 'commit;') for l in text.splitlines()), {})
     funcs = json.loads(h.nilai("select coalesce(jsonb_agg(jsonb_build_object('f',p.proname,'sec',p.prosecdef,'cfg',p.proconfig,'anon',has_function_privilege('anon',p.oid,'execute'),'auth',has_function_privilege('authenticated',p.oid,'execute'),'svc',has_function_privilege('service_role',p.oid,'execute')) order by p.proname),'[]') "
-                               "from pg_proc p where p.proname in ('correct_clinic_receipt_part_method','ubah_metode_allowed','ubah_metode_actor','correct_pos_sale_method','correct_clinic_invoice_payment')"))
+                               "from pg_proc p where p.proname in ('correct_clinic_receipt_part_method','ubah_metode_allowed','ubah_metode_actor','correct_clinic_invoice_payment')"))
     pub = [f for f in funcs if f['f'] != 'ubah_metode_actor']; priv = [f for f in funcs if f['f'] == 'ubah_metode_actor']
-    check('ACL: RPC publik hanya authenticated (anon/service_role tidak), definer + search_path kosong; fungsi privat tanpa hak app', len(pub) == 4 and all(f['sec'] and f['auth'] and not f['anon'] and not f['svc'] and 'search_path=""' in ' '.join(f['cfg'] or []) for f in pub)
+    check('ACL: RPC publik hanya authenticated (anon/service_role tidak), definer + search_path kosong; fungsi privat tanpa hak app', len(pub) == 3 and all(f['sec'] and f['auth'] and not f['anon'] and not f['svc'] and 'search_path=""' in ' '.join(f['cfg'] or []) for f in pub)
           and len(priv) == 1 and not priv[0]['auth'] and not priv[0]['anon'], dict(funcs=funcs))
     tab = json.loads(h.nilai("select jsonb_build_object('anon',has_table_privilege('anon','public.clinic_receipt_method_corrections','select'),'auth_sel',has_table_privilege('authenticated','public.clinic_receipt_method_corrections','select'),'auth_ins',has_table_privilege('authenticated','public.clinic_receipt_method_corrections','insert'),'auth_upd',has_table_privilege('authenticated','public.clinic_receipt_method_corrections','update'),'auth_del',has_table_privilege('authenticated','public.clinic_receipt_method_corrections','delete'),'rls',(select relrowsecurity from pg_class where oid='public.clinic_receipt_method_corrections'::regclass))"))
     check('ACL tabel jejak: authenticated hanya SELECT (RLS aktif); tanpa INSERT/UPDATE/DELETE; anon tidak', tab == dict(anon=False, auth_sel=True, auth_ins=False, auth_upd=False, auth_del=False, rls=True), tab)

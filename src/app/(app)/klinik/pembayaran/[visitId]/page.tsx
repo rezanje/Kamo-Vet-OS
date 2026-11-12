@@ -389,25 +389,24 @@ export default async function PembayaranPage({
   let kwitansiRiwayat: KwitansiMetodeRiwayat[] = [];
   let kwitansiError = false;
   if (ubahMetodeBoleh) {
-    const [rc, rh] = await Promise.all([
-      supabase.from("clinic_payment_receipts").select("id, no_kwitansi, tanggal, shift_id, status, clinic_payment_receipt_parts(id, urutan, metode, amount)")
-        .eq("visit_id", visitId).eq("status", "aktif").order("created_at", { ascending: true }),
-      supabase.from("clinic_receipt_method_corrections").select("id, receipt_id, revision, amount, from_method, to_method, reason, created_at")
-        .order("created_at", { ascending: false }),
-    ]);
+    // Satu bacaan: kwitansi aktif kunjungan ini + bagiannya + riwayat koreksi metode (relasi FK; tanpa bacaan tak terbatas).
+    const rc = await supabase.from("clinic_payment_receipts")
+      .select("id, no_kwitansi, tanggal, shift_id, status, clinic_payment_receipt_parts(id, urutan, metode, amount), clinic_receipt_method_corrections(id, receipt_id, revision, amount, from_method, to_method, reason, created_at)")
+      .eq("visit_id", visitId).eq("status", "aktif").order("created_at", { ascending: true });
     const kwitansiRows = (rc.data ?? []) as unknown as { id: string; no_kwitansi: string; tanggal: string; shift_id: string | null;
-      clinic_payment_receipt_parts: { id: string; urutan: number; metode: string; amount: number }[] | null }[];
+      clinic_payment_receipt_parts: { id: string; urutan: number; metode: string; amount: number }[] | null;
+      clinic_receipt_method_corrections: KwitansiMetodeRiwayat[] | null }[];
     const shiftIds = [...new Set(kwitansiRows.map(k => k.shift_id).filter((s): s is string => !!s))];
     const shiftRead = shiftIds.length > 0 ? await supabase.from("cashier_shifts").select("id, status").in("id", shiftIds) : { data: [], error: null };
-    kwitansiError = !!rc.error || !!rh.error || !!shiftRead.error;
+    kwitansiError = !!rc.error || !!shiftRead.error;
     const shiftTutup = new Set(((shiftRead.data ?? []) as { id: string; status: string }[]).filter(s => s.status === "closed").map(s => s.id));
     kwitansiAktif = kwitansiRows.map(k => ({
       id: k.id, no: k.no_kwitansi, tanggal: k.tanggal, shiftClosed: !!k.shift_id && shiftTutup.has(k.shift_id),
       parts: [...(k.clinic_payment_receipt_parts ?? [])].sort((a, b) => a.urutan - b.urutan)
         .filter((p): p is typeof p & { metode: MetodeBayar } => metodeBayarSah(p.metode)).map(p => ({ id: p.id, urutan: p.urutan, metode: p.metode, amount: Number(p.amount) })),
     }));
-    const ids = new Set(kwitansiAktif.map(k => k.id));
-    kwitansiRiwayat = ((rh.data ?? []) as unknown as KwitansiMetodeRiwayat[]).filter(h => ids.has(h.receipt_id)).map(h => ({ ...h, amount: Number(h.amount) }));
+    kwitansiRiwayat = kwitansiRows.flatMap(k => k.clinic_receipt_method_corrections ?? []).map(h => ({ ...h, amount: Number(h.amount) }))
+      .sort((x, y) => y.created_at.localeCompare(x.created_at));
   }
   const riwayatResult = riwayatP ? await riwayatP : null;
   const tampilRiwayat = !!riwayatResult;

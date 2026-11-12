@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native PostgreSQL proof: koreksi metode bayar ke semua metode (petshop + klinik rawat jalan).
+"""Native PostgreSQL proof: koreksi metode bayar klinik rawat jalan ke semua metode (30 pasangan, aturan rekening live, izin khusus). Petshop SENGAJA tidak termasuk (PR #412/#510).
 
 Never accepts a database URL; throwaway socket-only cluster, fictional fixtures.
 
@@ -84,23 +84,6 @@ def run_suite(c, db, name=SUITE):
 
 
 MUTATIONS = [
-    ("pos role gate widened", "role in('OWNER','FINANCE') for share;", "role in('OWNER','FINANCE','ADMIN','STAFF') for share;", 1),
-    ("pos refund/return guard removed", "if exists(select 1 from public.sales_returns where sale_id=s.id)", "if false and exists(select 1 from public.sales_returns where sale_id=s.id)", 1),
-    ("pos fee guard removed", "if old_part.fee_percent<>0 or old_part.fee_amount<>0 or s.merchant_fee_total<>0 then", "if false then", 1),
-    ("pos split guard removed", "if source_count>1 or jsonb_array_length(s.payment_plan)>1 then", "if false then", 1),
-    ("pos accounting period guard removed", "if source_date>today or (closed is not null and (source_date<=closed or today<=closed)) then", "if false then", 1),
-    ("pos bank reconciliation guard removed", "if exists(select 1 from public.bank_reconciliations r left join", "if false and exists(select 1 from public.bank_reconciliations r left join", 1),
-    ("pos map drift guard removed", "if old_code is distinct from public.unit_posting_cash(old_part.method,s.branch_id)", "if false and old_code is distinct from public.unit_posting_cash(old_part.method,s.branch_id)", 1),
-    ("pos idempotency payload check removed", "if prior.payload is distinct from payload then raise exception", "if false then raise exception", 1),
-    ("pos stale revision check removed", "if s.revision<>p_expected_revision then", "if false then", 1),
-    ("pos reversal not reversed", "select reversal,account_id,credit,debit from public.journal_lines", "select reversal,account_id,debit,credit from public.journal_lines", 1),
-    ("pos replacement posts to the old account", "where a.code=new_code and a.is_active and not a.is_header and a.type='ASET' and a.normal_balance='D';", "where a.code=old_code and a.is_active and not a.is_header and a.type='ASET' and a.normal_balance='D';", 1),
-    ("pos change (kembali) kept on non-cash", "kembali=case when p_new_method='Tunai' then kembali else 0 end", "kembali=kembali", 1),
-    ("pos inactive destination accepted", "if new_code is null or not found or (select count(*) from public.cash_accounts where coa_code=new_code and is_active", "if false and (select count(*) from public.cash_accounts where coa_code=new_code and is_active", 1),
-    ("pos void guard removed", "if s.channel is not null or s.voided_at is not null or s.payment_plan is null", "if s.channel is not null or s.payment_plan is null", 1),
-    ("pos method whitelist removed", "if p_new_method is null or p_new_method not in('Tunai','Transfer','Debit','Kredit','QRIS','E-Wallet') then", "if p_new_method is null then", 1),
-    ("pos same-method guard removed", "if old_part.method=p_new_method then", "if false then", 1),
-    ("pos audit loses from/to", "source_journal.id,reversal,replacement,actor,shift_status,old_part.method,p_new_method);", "source_journal.id,reversal,replacement,actor,shift_status,null,null);", 1),
     ("clinic DEMO guard removed", "if exists(select 1 from public.clinic_demo_invoice_snapshots where invoice_id=inv.id) then", "if false and exists(select 1 from public.clinic_demo_invoice_snapshots where invoice_id=inv.id) then", 1),
     ("clinic receipt guard removed", "if pay.receipt_id is not null then", "if false then", 1),
     ("clinic label-only branch removed", "$r$ if from_code<>to_code then\n journal:=", "$r$ if true then\n journal:=", 1),
@@ -109,14 +92,13 @@ MUTATIONS = [
     ("clinic same-account asset count", "(case when from_code=to_code then 1 else 2 end)", "2", 1),
 ]
 
-PRESERVED = ["correct_pos_sale_payment(uuid,integer,text,text,numeric,numeric)", "pos_sale_protect_header()",
-             "unit_posted_sale_source_immutable()", "pos_sale_allocation_immutable()", "cancel_posted_sale(uuid,integer,text,text)",
-             "pos_sale_record_payments()", "guard_clinic_payment_corrected_invoice()", "clinic_write_journal(date,text,text,text,uuid,jsonb)"]
+PRESERVED = ["guard_clinic_payment_corrected_invoice()", "clinic_write_journal(date,text,text,text,uuid,jsonb)", "clinic_receive_visit_payment(uuid,text,date,jsonb,uuid,text)",
+             "clinic_cancel_invoice_receipt(uuid,text,text,date)"]
 
 
 def fingerprint(c, db):
     rows = []
-    for sig in PRESERVED + ["correct_pos_sale_method(uuid,integer,text,text,text)", "correct_clinic_invoice_payment(uuid,uuid,integer,text,text,text)"]:
+    for sig in PRESERVED + ["correct_clinic_invoice_payment(uuid,uuid,integer,text,text,text)", "correct_clinic_receipt_part_method(uuid,uuid,text,text,text)"]:
         out = c.q(f"""select coalesce((select md5(pg_get_functiondef(p.oid))||'|'||p.prosecdef||'|'||coalesce(p.proconfig::text,'')||'|'||
  coalesce(p.proacl::text,'')||'|'||p.proowner::regrole::text from pg_proc p where p.oid=to_regprocedure('public.{sig}')),'absent')""", db)
         rows.append((sig, out))
@@ -183,13 +165,12 @@ def main():
                 diffs = []
                 for (sig, b), (_, af) in zip(before, after):
                     same = b == af
-                    expected_change = sig.startswith("correct_pos_sale_method") or sig.startswith("correct_clinic_invoice_payment")
                     if sig.startswith("correct_clinic_invoice_payment"):
                         bparts, aparts = b.split("|"), af.split("|")
                         same_attrs = bparts[1:] == aparts[1:]
                         diffs.append({"function": sig, "body_changed": bparts[0] != aparts[0], "definer_config_acl_owner_unchanged": same_attrs})
                         ok = ok and same_attrs and bparts[0] != aparts[0]
-                    elif sig.startswith("correct_pos_sale_method"):
+                    elif sig.startswith("correct_clinic_receipt_part_method"):
                         diffs.append({"function": sig, "new": b == "absent" and af != "absent", "definition": af})
                         ok = ok and b == "absent" and af != "absent"
                     else:
@@ -198,14 +179,14 @@ def main():
                 report["function_invariants"] = diffs
                 for d in diffs:
                     print(" ", d if "definition" not in d else {k: v for k, v in d.items() if k != "definition"})
-                acl = c.q("select has_function_privilege('authenticated','public.correct_pos_sale_method(uuid,integer,text,text,text)','execute'),"
-                             "has_function_privilege('anon','public.correct_pos_sale_method(uuid,integer,text,text,text)','execute'),"
-                             "has_function_privilege('service_role','public.correct_pos_sale_method(uuid,integer,text,text,text)','execute')", "t_green")
+                acl = c.q("select has_function_privilege('authenticated','public.correct_clinic_receipt_part_method(uuid,uuid,text,text,text)','execute'),"
+                             "has_function_privilege('anon','public.correct_clinic_receipt_part_method(uuid,uuid,text,text,text)','execute'),"
+                             "has_function_privilege('service_role','public.correct_clinic_receipt_part_method(uuid,uuid,text,text,text)','execute')", "t_green")
                 report["new_function_acl_authenticated_anon_service"] = acl
                 ok = ok and acl == "t|f|f"
                 print("  new function ACL (authenticated|anon|service_role):", acl)
                 if a.regression:
-                    for name in ["pos_payment_method_corrections.sql", "clinic_payment_method_corrections.sql"]:
+                    for name in ["pos_payment_method_corrections.sql", "clinic_payment_method_corrections.sql"]:  # POS: bukti BYTE-IDENTIK (migrasi ini tidak menyentuh petshop)
                         db = "t_reg_" + name.split("_")[0]
                         c.q(f"create database {db} template t_base")
                         c.q("begin;\n" + cand + "\ncommit;", db)
