@@ -32,6 +32,8 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 
 import { tutupShiftKlinik } from "@/app/(app)/klinik/shift/actions";
 import { closeShift, forceCloseShift } from "@/app/(app)/pos/shift/actions";
+import { tutupShiftKasir } from "@/app/kasir/actions";
+import { PESAN_MASIH_DIPROSES_TUTUP_PAKSA } from "@/lib/transaksi-terputus";
 
 const laci = (opened_by: string, shift_type = "klinik") =>
   ({ id: "laci-1", shift_type, opening_balance: 150000, branch_id: "cabang-a", opened_by, status: "open" });
@@ -90,4 +92,29 @@ it("penolakan supervisor dari basis data tampil tanpa kode teknis", async () => 
   fx.rpcError = { message: "SHIFT_SUPERVISOR_DENIED: hanya Owner/Admin cabang yang bisa tutup paksa laci" };
   await expect(forceCloseShift(form({ shiftId: "laci-1", alasan: "Kasir lupa menutup laci kemarin" })))
     .rejects.toThrow(`REDIRECT:/pos/shift?error=${encodeURIComponent("hanya Owner/Admin cabang yang bisa tutup paksa laci")}`);
+});
+
+it("tutup paksa yang tertahan transaksi kasir terputus menyuruh kasir pemilik laci, bukan 'selesaikan transaksi'", async () => {
+  fx.user = "owner"; fx.shift = laci("kasir-b", "petshop");
+  fx.rpcError = { message: "Pembayaran masih diproses. Selesaikan transaksi sebelum menutup shift." };
+  await expect(forceCloseShift(form({ shiftId: "laci-1", alasan: "Kasir lupa menutup laci kemarin" })))
+    .rejects.toThrow(`REDIRECT:/pos/shift?error=${encodeURIComponent(PESAN_MASIH_DIPROSES_TUTUP_PAKSA)}`);
+});
+
+it("layar kasir menutup laci petshop milik sendiri seperti biasa", async () => {
+  fx.shift = laci("kasir-a", "petshop");
+  await expect(tutupShiftKasir(form({ shiftId: "laci-1", closing_balance: "150000" }))).rejects.toThrow("REDIRECT:/kasir/tutup/laci-1?success=closed");
+  expect(fx.tutup).toEqual([{ shift: fx.shift, closing: 150000 }]);
+});
+
+it("layar kasir tidak bisa menutup laci petshop rekan kerja (kasbon kas kurang jatuh ke pemilik laci)", async () => {
+  fx.user = "kasir-b"; fx.shift = laci("kasir-a", "petshop");
+  await expect(tutupShiftKasir(form({ shiftId: "laci-1", closing_balance: "0" }))).rejects.toThrow(/REDIRECT:\/kasir\/tutup\?error=.*milik%20kasir%20lain/);
+  expect(fx.tutup).toHaveLength(0);
+});
+
+it("layar kasir tanpa sesi diarahkan masuk, tidak menutup apa pun", async () => {
+  fx.user = null; fx.shift = laci("kasir-a", "petshop");
+  await expect(tutupShiftKasir(form({ shiftId: "laci-1", closing_balance: "0" }))).rejects.toThrow("REDIRECT:/login");
+  expect(fx.tutup).toHaveLength(0);
 });
