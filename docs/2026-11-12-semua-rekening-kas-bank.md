@@ -20,7 +20,7 @@ satu-satunya bank terbaca "Bank BCA" tanpa nomor rekening.
 
 ## Perbaikan
 
-1. Migrasi `supabase/migrations/20261115610000_semua_akun_kas_bank_jadi_rekening.sql` (idempoten):
+1. Migrasi `supabase/migrations/20261112070356_semua_akun_kas_bank_jadi_rekening.sql` (idempoten):
    - setiap akun aktif bukan-induk tipe ASET berkode `11xxxx`/`12xxxx` yang belum punya rekening didaftarkan:
      nama = nama akun, jenis Kas/Bank dari kode, **tanpa cabang** (bisa dipakai semua cabang), bank "BCA" bila
      nama memuat BCA, no. rekening dari angka dalam kurung;
@@ -45,7 +45,7 @@ satu-satunya bank terbaca "Bank BCA" tanpa nomor rekening.
 
 ## Rilis
 
-1. Terapkan migrasi `20261115610000_semua_akun_kas_bank_jadi_rekening.sql` ke Production (Supabase SQL editor,
+1. Terapkan migrasi `20261112070356_semua_akun_kas_bank_jadi_rekening.sql` ke Production (Supabase SQL editor,
    satu transaksi). Aman dijalankan sebelum atau sesudah aplikasi baru live.
 2. Kueri baca sesudah pasang:
 
@@ -68,3 +68,10 @@ bila sudah dipakai transaksi); nama bawaan bisa diganti lewat SQL `update cash_a
   ikatkan cabangnya — belum ada layar ubah cabang rekening, minta developer.
 - Akun kas/bank baru sebaiknya ditambah lewat Kas & Bank → Daftar Rekening (otomatis membuat akun + rekening).
   Akun yang ditambah langsung di Bagan Akun belum otomatis jadi rekening.
+
+## Status Production (12 Nov 2026)
+
+Migrasi diterapkan langsung ke Production lewat konektor Supabase atas izin Reza; tercatat sebagai versi
+`20261112070356` (nama berkas disamakan). Kueri baca sesudah pasang: 0 akun Kas/Bank aktif tanpa rekening,
+27 rekening, 0 dobel; 110001, 110002, 120001–120006 aktif untuk semua cabang dengan no. rekening;
+110003 = "Kas Kecil", 120002 = "Bank BCA Transaksi (4270086743)".
