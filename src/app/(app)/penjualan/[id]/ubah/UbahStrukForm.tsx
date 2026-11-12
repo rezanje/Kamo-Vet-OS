@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
+import { NumberInput } from "@/components/NumberInput";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { formatPosMoney, PosDecimal, posNetTotal, posSubtotal } from "@/lib/pos-money";
 import { diskonBaris, METODE_UBAH } from "@/lib/ubah-struk";
@@ -73,11 +74,11 @@ export function UbahStrukForm({ userId, saleId, revision, lines, katalog, diskon
                   onChange={e => set(r.key, { satuan: e.target.value, ...(r.asal ? {} : { harga: item?.unitHarga[e.target.value] ?? r.harga }) })}>
                   {units.map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
                 </select></td>
-                <td><input className="fi" aria-label={`Qty ${r.nama}`} type="number" min="0.001" step="any" inputMode="decimal" value={r.qty} onChange={e => set(r.key, { qty: num(e.target.value) })} /></td>
-                <td><input className="fi" aria-label={`Harga ${r.nama}`} type="number" min="0" step="0.01" inputMode="decimal" value={r.harga} onChange={e => set(r.key, { harga: num(e.target.value) })} /></td>
+                <td><NumberInput className="fi" aria-label={`Qty ${r.nama}`} type="number" min="0.001" step="any" inputMode="decimal" value={r.qty} onChange={e => set(r.key, { qty: num(e.target.value) })} /></td>
+                <td><NumberInput className="fi" aria-label={`Harga ${r.nama}`} type="number" min="0" step="0.01" inputMode="decimal" value={r.harga} onChange={e => set(r.key, { harga: num(e.target.value) })} /></td>
                 <td>{r.promo
-                  ? <input className="fi" aria-label={`Diskon promo ${r.nama}`} type="number" min="0" step="0.01" value={r.promo_diskon} onChange={e => set(r.key, { promo_diskon: num(e.target.value) })} />
-                  : <input className="fi" aria-label={`Diskon ${r.nama}`} type="number" min="0" step="0.01" value={r.diskon_tipe === "percent" ? r.diskon_nilai : r.diskon_nilai || ""} placeholder="0"
+                  ? <NumberInput className="fi" aria-label={`Diskon promo ${r.nama}`} type="number" min="0" step="0.01" value={r.promo_diskon} onChange={e => set(r.key, { promo_diskon: num(e.target.value) })} />
+                  : <NumberInput className="fi" aria-label={`Diskon ${r.nama}`} type="number" min="0" step="0.01" value={r.diskon_tipe === "percent" ? r.diskon_nilai : r.diskon_nilai || ""} placeholder="0"
                     onChange={e => set(r.key, { diskon_tipe: r.diskon_tipe === "percent" ? "percent" : "nominal", diskon_nilai: num(e.target.value) })} />}
                   {r.diskon_tipe === "percent" && !r.promo && <small>%</small>}</td>
                 <td style={{ textAlign: "right", fontSize: 11.5 }}>{formatPosMoney(new PosDecimal(r.qty).times(r.harga).toNumber())}</td>
@@ -93,9 +94,9 @@ export function UbahStrukForm({ userId, saleId, revision, lines, katalog, diskon
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginTop: 12 }}>
         <div><label className="flab" htmlFor="ubah-kat">Diskon golongan pelanggan</label>
-          <input id="ubah-kat" className="fi" type="number" min="0" step="0.01" value={katDisc} onChange={e => setKatDisc(e.target.value)} disabled={!punyaPelanggan && num(katDisc) === 0} /></div>
+          <NumberInput id="ubah-kat" className="fi" type="number" min="0" step="0.01" value={katDisc} onChange={e => setKatDisc(e.target.value)} disabled={!punyaPelanggan && num(katDisc) === 0} /></div>
         <div><label className="flab" htmlFor="ubah-lain">Potongan lain (voucher, poin, diskon total)</label>
-          <input id="ubah-lain" className="fi" type="number" min="0" step="0.01" value={lain} onChange={e => setLain(e.target.value)} />
+          <NumberInput id="ubah-lain" className="fi" type="number" min="0" step="0.01" value={lain} onChange={e => setLain(e.target.value)} />
           {poinDigunakan > 0 && <small>Termasuk {poinDigunakan.toLocaleString("id-ID")} poin yang dipakai (tetap).</small>}</div>
       </div>
       <p style={{ marginTop: 10 }}>Subtotal {formatPosMoney(subtotal)} · diskon baris {formatPosMoney(lineDisc)} · <strong>Total {formatPosMoney(total)}</strong></p>
@@ -103,9 +104,9 @@ export function UbahStrukForm({ userId, saleId, revision, lines, katalog, diskon
         {METODE_UBAH.map(m => <div key={m}>
           <label className="flab" htmlFor={`ubah-bayar-${m}`}>{m}</label>
           <div style={{ display: "flex", gap: 6 }}>
-            <input id={`ubah-bayar-${m}`} className="fi" type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={bayar[m].amount}
+            <NumberInput id={`ubah-bayar-${m}`} className="fi" type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={bayar[m].amount}
               onChange={e => setBayar(b => ({ ...b, [m]: { ...b[m], amount: e.target.value } }))} />
-            {m !== "Tunai" && <input className="fi" aria-label={`Fee ${m} persen`} title="Fee merchant %" type="number" min="0" max="100" step="0.01" style={{ maxWidth: 70 }} value={bayar[m].fee}
+            {m !== "Tunai" && <NumberInput className="fi" aria-label={`Fee ${m} persen`} title="Fee merchant %" type="number" min="0" max="100" step="0.01" style={{ maxWidth: 70 }} value={bayar[m].fee}
               onChange={e => setBayar(b => ({ ...b, [m]: { ...b[m], fee: e.target.value } }))} />}
           </div>
           {Math.abs(selisih) >= 0.005 && <button type="button" className="btn-def" style={{ fontSize: 10.5, marginTop: 3 }} onClick={() => isiSisa(m)}>Isi sisa {formatPosMoney(selisih)} ke {m}</button>}

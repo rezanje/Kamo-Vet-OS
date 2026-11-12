@@ -118,9 +118,12 @@ export default async function PenjualanDetailPage({
     .order("tanggal", { ascending: false });
   const returs = (returData ?? []) as unknown as ReturRow[];
   // Ubah transaksi: struk ini diganti (old) atau hasil ubah (new). Dibaca lewat RLS sale_edits (cabang + modul penjualan).
-  const { data: editData } = await supabase.from("sale_edits")
-    .select("id, created_at, created_by, reason, old_sale_id, new_sale_id, before_value, after_value, lama:old_sale_id(no_struk), baru:new_sale_id(no_struk)")
-    .or(`old_sale_id.eq.${id},new_sale_id.eq.${id}`);
+  const editCols = "id, created_at, created_by, reason, old_sale_id, new_sale_id, before_value, after_value, lama:old_sale_id(no_struk), baru:new_sale_id(no_struk)";
+  const [{ data: editKe }, { data: editDari }] = await Promise.all([
+    supabase.from("sale_edits").select(editCols).eq("old_sale_id", id),
+    supabase.from("sale_edits").select(editCols).eq("new_sale_id", id),
+  ]);
+  const editData = [...(editKe ?? []), ...(editDari ?? [])];
   type EditRow = { id: string; created_at: string; created_by: string | null; reason: string; old_sale_id: string; new_sale_id: string;
     before_value: { sale?: { total?: number } } | null; after_value: { sale?: { total?: number } } | null;
     lama: Rel<{ no_struk: string | null }>; baru: Rel<{ no_struk: string | null }> };
