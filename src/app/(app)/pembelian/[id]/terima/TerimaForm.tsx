@@ -121,7 +121,7 @@ export function TerimaForm({
         <div className="frow" style={{ marginBottom: 12 }}>
           <div>
             {replaceFloor
-              ? <EffectiveDateField id="terima-tanggal" label="Tanggal terima" docDate={replaceFloor} docLabel="penerimaan yang dibatalkan" canBackdate={canBackdate} />
+              ? <EffectiveDateField id="terima-tanggal" label="Tanggal pembukuan" docDate={replaceFloor} canBackdate={canBackdate} />
               : <>
                 <label className="flab">Tanggal terima</label>
                 <input className="fi" type="date" name="tanggal" defaultValue={today} />
@@ -133,7 +133,7 @@ export function TerimaForm({
           </div>
           <div>
             <label className="flab">Catatan penerimaan</label>
-            <input className="fi" name="catatan" placeholder={replaceFloor ? "mis. terima ulang; wajib bila tanggal mundur" : "mis. kiriman tahap 2"} />
+            <input className="fi" name="catatan" placeholder={replaceFloor && canBackdate ? "mis. terima ulang; wajib bila tanggal pembukuan diubah" : "mis. kiriman tahap 2"} />
           </div>
         </div>
 

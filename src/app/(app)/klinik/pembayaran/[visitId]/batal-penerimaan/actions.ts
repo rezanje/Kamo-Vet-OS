@@ -27,7 +27,7 @@ export async function batalkanPenerimaanKlinik(form: FormData): Promise<HasilAks
   if (!uuid.test(invoiceId) || !uuid.test(visitId)) return { ok: false, pesan: "Tagihan tidak valid. Muat ulang halaman." };
   if (reason.replace(/\s/g, "").length < 3 || reason.length > 500) return { ok: false, pesan: pesanBatalPenerimaan("RECEIPT_INVALID: x") };
   if (!key || key.length > 100) return { ok: false, pesan: "Identitas simpan belum siap. Muat ulang halaman." };
-  if (efektif && !tanggalIso.test(efektif)) return { ok: false, pesan: "Tanggal efektif tidak valid. Pilih tanggal dari kalender." };
+  if (efektif && !tanggalIso.test(efektif)) return { ok: false, pesan: "Tanggal tidak valid. Pilih dari kalender." };
   const db = await createClient();
   const args: Record<string, unknown> = { p_invoice_id: invoiceId, p_request_key: key, p_reason: reason };
   // Hari ini = tanpa tanggal (sidik permintaan sama persis dengan versi lama); selain itu dikirim dan diputuskan database.
@@ -42,7 +42,7 @@ export async function batalkanPenerimaanKlinik(form: FormData): Promise<HasilAks
 /** Pratinjau baca-saja untuk tanggal yang dipilih: ringkasan efek + alasan tanggal ditolak (periode, batas, hak) sebelum Owner menekan batalkan. */
 export async function pratinjauTanggalBatalPenerimaan(invoiceId: string, tanggal: string): Promise<HasilPratinjauTanggal> {
   if (!uuid.test(invoiceId)) return { ok: false, pesan: "Tagihan tidak valid. Muat ulang halaman." };
-  if (tanggal && !tanggalIso.test(tanggal)) return { ok: false, pesan: "Tanggal efektif tidak valid. Pilih tanggal dari kalender." };
+  if (tanggal && !tanggalIso.test(tanggal)) return { ok: false, pesan: "Tanggal tidak valid. Pilih dari kalender." };
   const db = await createClient();
   const args: Record<string, unknown> = { p_invoice_id: invoiceId };
   if (tanggal && tanggal !== hariIniWIB()) args.p_effective_date = tanggal;
@@ -53,7 +53,7 @@ export async function pratinjauTanggalBatalPenerimaan(invoiceId: string, tanggal
   return { ok: true, ringkasan: ringkasanPratinjau(p, tanggal || p.today), tolakTanggal: p.date_refuse?.message ?? null, minTanggal: p.min_date ?? null };
 }
 
-/** Owner melepas tanggal efektif sebuah tagihan: koreksi dan penerimaan ulang berikutnya kembali dibukukan pada hari ini. */
+/** Owner mengembalikan tanggal pembukuan sebuah tagihan ke hari ini: koreksi dan penerimaan ulang berikutnya kembali dibukukan pada hari ini. */
 export async function lepasTanggalEfektif(form: FormData): Promise<void> {
   const invoiceId = String(form.get("invoice_id") ?? "").trim();
   const visitId = String(form.get("visit_id") ?? "").trim();
@@ -61,10 +61,10 @@ export async function lepasTanggalEfektif(form: FormData): Promise<void> {
   const kembali = uuid.test(visitId) ? `/klinik/pembayaran/${visitId}${uuid.test(invoiceId) ? `?invoice_id=${invoiceId}` : ""}` : "/klinik/antrian";
   const sambung = kembali.includes("?") ? "&" : "?";
   if (!uuid.test(invoiceId)) redirect(`${kembali}${sambung}error=${encodeURIComponent("Tagihan tidak valid. Muat ulang halaman.")}`);
-  if (reason.replace(/\s/g, "").length < 3 || reason.length > 500) redirect(`${kembali}${sambung}error=${encodeURIComponent("Alasan melepas tanggal efektif wajib diisi (3 sampai 500 huruf).")}`);
+  if (reason.replace(/\s/g, "").length < 3 || reason.length > 500) redirect(`${kembali}${sambung}error=${encodeURIComponent("Alasan wajib diisi (3 sampai 500 huruf).")}`);
   const db = await createClient();
   const { error } = await db.rpc("clinic_backdate_release", { p_invoice_id: invoiceId, p_reason: reason });
   if (error) redirect(`${kembali}${sambung}error=${encodeURIComponent(pesanBatalPenerimaan(error.message))}`);
   revalidatePath("/", "layout");
-  redirect(`${kembali}${sambung}success=${encodeURIComponent("Tanggal efektif dilepas. Koreksi dan penerimaan berikutnya dibukukan hari ini.")}`);
+  redirect(`${kembali}${sambung}success=${encodeURIComponent("Tanggal pembukuan kembali ke hari ini.")}`);
 }

@@ -62,7 +62,7 @@ describe("tanggal efektif: Terima pembayaran lagi", () => {
     expect(state.rpc).toHaveBeenCalledExactlyOnceWith("receive_pos_sale_payment", { p_sale_id: id, p_expected_revision: 1, p_request_key: "key-tgl", p_plan: [{ method: "QRIS", amount: 100000 }], p_effective_date: d, p_reason: "Dibayar di hari struk" });
   });
   it("tanggal mundur tanpa alasan ditolak sebelum RPC; hari ini tanpa alasan boleh (alasan null)", async () => {
-    await expect(terimaPembayaranUlang(form({ tanggal: hariLalu(1), alasan: "", amount_QRIS: "100000" }))).rejects.toThrow(/alasan tanggal efektif mundur/);
+    await expect(terimaPembayaranUlang(form({ tanggal: hariLalu(1), alasan: "", amount_QRIS: "100000" }))).rejects.toThrow(/alasan mengubah tanggal/);
     await expect(terimaPembayaranUlang(form({ tanggal: hariLalu(1), alasan: "ab", amount_QRIS: "100000" }))).rejects.toThrow(/minimal 3 huruf/);
     expect(state.rpc).not.toHaveBeenCalled();
     state.rpc.mockResolvedValue({ data: { sale_id: id, unpaid: false, journal_id: "j1", effective_date: hariIni() }, error: null });

@@ -110,7 +110,7 @@ export function FakturForm({ options, userId, initial, priceWarning, canBackdate
             <div className="fg" style={{ marginBottom: 10, flex: 1 }}>
               <label className="flab">Tanggal faktur *</label>
               <input className="fi" type="date" name="tanggal" defaultValue={initial ? bounds.value : today} min={initial ? bounds.min : undefined} max={initial ? bounds.max : undefined} readOnly={initial ? bounds.locked : false} required />
-              {initial && <p style={{ fontSize: 10.5, color: "var(--tm)", margin: "3px 0 0" }}>{bounds.locked ? "Faktur pengganti dibukukan hari ini. Tanggal mundur hanya untuk Owner atau peran yang diberi izin Tanggal mundur." : `Bawaan hari ini; pilih ${initial.tanggal} agar terbaca di tanggal faktur aslinya. Tanggal mundur wajib beralasan: isi Keterangan.`}</p>}
+              {initial && !bounds.locked && <p style={{ fontSize: 10.5, color: "var(--tm)", margin: "3px 0 0" }}>Bila bukan hari ini, isi Keterangan sebagai alasan.</p>}
             </div>
             <div className="fg" style={{ marginBottom: 10, flex: 1 }}>
               <label className="flab">Jatuh tempo *</label>

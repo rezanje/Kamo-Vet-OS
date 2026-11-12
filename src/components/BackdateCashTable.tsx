@@ -31,7 +31,7 @@ export function BackdateCashTable({ rows, error }: { rows: BackdateCashRow[]; er
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
-              <td style={{ fontSize: 11 }}>{fmtDate(r.effective_date)}{r.days_back > 0 && <span style={{ color: "var(--tm)" }}> · mundur {r.days_back} hari</span>}</td>
+              <td style={{ fontSize: 11 }}>{fmtDate(r.effective_date)}{r.days_back > 0 && <span style={{ color: "var(--tm)" }}> · selisih {r.days_back} hari</span>}</td>
               <td style={{ fontSize: 11 }}>{fmtDate(r.actual_date)}</td>
               <td style={{ fontSize: 11 }}>{KIND[r.kind] ?? r.kind}</td>
               <td style={{ fontSize: 11 }}>{r.doc_ref ?? "—"}{r.no_jurnal && <span style={{ color: "var(--tm)" }}> · {r.no_jurnal}</span>}</td>
@@ -44,7 +44,7 @@ export function BackdateCashTable({ rows, error }: { rows: BackdateCashRow[]; er
           {rows.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada pembatalan pembelian yang mengembalikan uang.</td></tr>}
         </tbody>
       </table>
-      <p style={{ fontSize: 10.5, color: "var(--tm)" }}>Tanggal pembukuan = tanggal jurnal (laporan dan hutang). Tanggal uang fisik = hari pembatalan dicatat; cocokkan dengan mutasi rekening koran pada hari itu. <Link href="/keuangan/jurnal">Lihat jurnal</Link></p>
+      <p style={{ fontSize: 10.5, color: "var(--tm)" }}>Tanggal uang fisik = hari dicatat; cocokkan dengan rekening koran. <Link href="/keuangan/jurnal">Lihat jurnal</Link></p>
     </div>
   );
 }

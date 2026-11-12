@@ -6,7 +6,7 @@ const PESAN: Record<string, string> = {
   RECEIPT_INVALID: "Alasan wajib diisi (3 sampai 500 huruf).",
   IDEMPOTENCY_CONFLICT: "Permintaan ini sudah dipakai untuk pembatalan lain. Muat ulang halaman lalu coba lagi.",
   AUDIT_IMMUTABLE: "Jejak pembatalan tidak dapat diubah.",
-  BACKDATE_TIDAK_ADA: "Tagihan ini tidak sedang memakai tanggal efektif.",
+  BACKDATE_TIDAK_ADA: "Tagihan ini tidak memakai tanggal pembukuan lain.",
   JOURNAL_UNBALANCED: "Jurnal pembatalan tidak seimbang, jadi tidak ada yang diubah. Hubungi tim pengembang.",
   ACCOUNT_INVALID: "Rekening pembayaran tidak aktif atau tidak ditemukan, jadi tidak ada yang diubah. Hubungi Finance.",
 };
@@ -51,47 +51,40 @@ const rp = (n: number) => "Rp " + Number(n).toLocaleString("id-ID", { maximumFra
 export const labelRekening = (code: string) => (code === "110003" ? "Kas (laci)" : code === "314001" ? "Uang muka pasien" : code === "120002" ? "Bank" : `Rekening ${code}`);
 
 export const SHIFT_TEKS: Record<ShiftMode, string> = {
-  nonkas: "Tidak ada uang tunai di laci yang terpengaruh.",
-  shift_asal_terbuka: "Shift asal tagihan masih terbuka: pengurangan uang tunai otomatis tercatat di shift itu.",
-  shift_berjalan: "Shift asal tagihan sudah ditutup (rekamannya TIDAK diubah). Pengurangan uang tunai dicatat di shift Anda yang sedang terbuka.",
-  tanpa_shift: "Shift asal sudah ditutup dan Anda tidak punya shift terbuka. Pembatalan tetap berjalan; pengurangan uang tunai ditandai \"tanpa shift\" untuk disesuaikan Finance.",
+  nonkas: "",
+  shift_asal_terbuka: "",
+  shift_berjalan: "Shift asal sudah ditutup; pengurangan uang tunai dicatat di shift Anda yang sedang terbuka.",
+  tanpa_shift: "Shift asal sudah ditutup dan Anda tidak punya shift terbuka; pengurangan uang tunai ditandai \"tanpa shift\" untuk Finance.",
 };
 
-/** Daftar kalimat \"apa yang akan terjadi\" untuk layar konfirmasi. */
+/** Daftar kalimat singkat "apa yang akan terjadi" untuk layar konfirmasi. */
 export function ringkasanPratinjau(p: PratinjauBatal, tanggal?: string | null): string[] {
   const out: string[] = [];
-  if (p.direct) out.push(`Penerimaan langsung ${rp(p.direct.amount)} (${p.direct.metode ?? "-"}) dikeluarkan dari ${labelRekening(p.direct.kas_code)}; piutang tagihan kembali.`);
-  for (const a of p.apps) out.push(`Pemakaian uang muka ${a.advance_no} ${rp(a.amount)} dibatalkan: jumlahnya kembali ke saldo uang muka pasien (uang bank tidak bergerak).`);
+  if (p.direct) out.push(`Penerimaan langsung ${rp(p.direct.amount)} (${p.direct.metode ?? "-"}) dikeluarkan dari ${labelRekening(p.direct.kas_code)}.`);
+  for (const a of p.apps) out.push(`Pemakaian uang muka ${a.advance_no} ${rp(a.amount)} dibatalkan; saldo uang muka pasien kembali.`);
   for (const x of p.payments) out.push(`Pembayaran ${x.metode} ${rp(x.amount)} dikeluarkan dari ${labelRekening(x.kas_code)}.`);
   for (const k of p.receipts) {
-    out.push(`Kwitansi ${k.no} (${rp(k.total)}: ${k.parts.map((x) => `${x.metode} ${rp(x.amount)}`).join(", ")}) dibatalkan utuh.`);
-    if (k.other_invoices.length) out.push(`Kwitansi ${k.no} juga melunasi tagihan ${k.other_invoices.map((o) => o.no).join(", ")}: tagihan itu ikut kembali Belum Lunas.`);
-    if (k.advance) out.push(`Uang muka ${k.advance.no} (${rp(k.advance.amount)}) dari kwitansi ini ikut dibatalkan karena belum terpakai.`);
+    out.push(`Kwitansi ${k.no} (${rp(k.total)}: ${k.parts.map((x) => `${x.metode} ${rp(x.amount)}`).join(", ")}) dibatalkan.`);
+    if (k.other_invoices.length) out.push(`Tagihan ${k.other_invoices.map((o) => o.no).join(", ")} ikut kembali belum lunas.`);
+    if (k.advance) out.push(`Uang muka ${k.advance.no} (${rp(k.advance.amount)}) ikut dibatalkan karena belum terpakai.`);
   }
-  const mundur = !!tanggal && tanggal < p.today;
-  out.push(`Tagihan ${p.invoice.no ?? ""} kembali Belum Lunas dengan nomor yang sama; stok, HPP, dan jurnal penjualan TIDAK berubah. Jurnal pembalik bertanggal ${mundur ? tanggal : p.today}.`);
-  out.push(SHIFT_TEKS[p.shift_mode]);
-  if (mundur) out.push(...ringkasanTanggalMundur(tanggal as string, p.today));
+  out.push(`Tagihan ${p.invoice.no ?? ""} kembali belum lunas; stok, HPP, dan jurnal penjualan tidak berubah.`);
+  if (SHIFT_TEKS[p.shift_mode]) out.push(SHIFT_TEKS[p.shift_mode]);
+  if (!!tanggal && tanggal < p.today) out.push(...ringkasanTanggalMundur(tanggal));
   return out;
 }
 
-/** Apa yang ikut tanggal efektif dan apa yang tetap HARI INI (dipakai pratinjau dan hasil). */
-export function ringkasanTanggalMundur(efektif: string, hariIni: string): string[] {
-  return [
-    `Tanggal efektif ${efektif} (bukan hari ini, ${hariIni}): jurnal pembalik, baris pembayaran pembalik, lalu koreksi tagihan dan penerimaan ulang berikutnya dibukukan pada tanggal ${efektif}, jadi omzet dan penerimaan hari itu ikut berubah. Jurnal dan buku besar mencatat tanggal ${efektif} sekaligus waktu pencatatan sebenarnya (${hariIni}).`,
-    `Tetap HARI INI: uang tunai/QRIS fisik di laci shift (shift Anda yang sedang terbuka), waktu dan pelaku pencatatan, serta gerakan stok. Shift lama yang sudah ditutup tidak diubah.`,
-    `Berlaku sampai tagihan ini Lunas lagi atau Owner melepas tanggal efektif di halaman tagihan. Jika periode akuntansi/persediaan atau penggajian untuk tanggal itu sudah ditutup, sistem menolak (tidak dilewati).`,
-  ];
+/** Satu kalimat: apa yang ikut tanggal pembukuan yang dipilih dan apa yang tetap hari ini. */
+export function ringkasanTanggalMundur(efektif: string): string[] {
+  return [`Dicatat di tanggal ${efektif}; uang fisik tetap hari ini.`];
 }
 
 export function ringkasanHasil(h: HasilBatal): string[] {
-  const out = [`Penerimaan ${rp(h.amount)} pada ${h.invoice_no} dibatalkan. Status tagihan sekarang ${h.paid_status}.`];
+  const out = [`Penerimaan ${rp(h.amount)} pada ${h.invoice_no} dibatalkan. Status tagihan: ${h.paid_status}.`];
   if (h.receipts.length) out.push(`Kwitansi dibatalkan: ${h.receipts.join(", ")}.`);
-  if (h.other_invoices_unpaid.length) out.push(`Tagihan lain yang ikut kembali Belum Lunas: ${h.other_invoices_unpaid.join(", ")}.`);
+  if (h.other_invoices_unpaid.length) out.push(`Tagihan lain ikut kembali belum lunas: ${h.other_invoices_unpaid.join(", ")}.`);
   if (h.applications_released > 0) out.push("Uang muka yang dipakai kembali ke saldo uang muka pasien.");
-  out.push(SHIFT_TEKS[h.shift_mode]);
-  if (h.backdated && h.effective_date) {
-    out.push(`Dibukukan pada tanggal efektif ${h.effective_date} (dicatat sebenarnya ${h.actual_date ?? "hari ini"}). Ubah tagihan dan terima pembayaran lagi: keduanya otomatis bertanggal ${h.effective_date}; uang fisik tetap masuk shift Anda hari ini.`);
-  }
+  if (SHIFT_TEKS[h.shift_mode]) out.push(SHIFT_TEKS[h.shift_mode]);
+  if (h.backdated && h.effective_date) out.push(`Dicatat di tanggal ${h.effective_date}; uang fisik tetap hari ini.`);
   return out;
 }

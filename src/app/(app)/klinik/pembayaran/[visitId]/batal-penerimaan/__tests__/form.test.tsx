@@ -23,9 +23,9 @@ beforeEach(async () => {
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 
 it("menampilkan ringkasan efek dari database sebelum apa pun dikirim, tanpa istilah teknis", () => {
-  expect(host.textContent).toContain("Yang akan terjadi (belum ada yang berubah)");
+  expect(host.textContent).toContain("Nota kembali belum lunas. Setelah itu ubah transaksi di faktur, lalu terima pembayaran lagi.");
   expect(host.textContent).toContain("Penerimaan langsung Rp 175.000 (QRIS) dikeluarkan dari Bank.");
-  expect(host.textContent).toContain("Tidak ada kredit atau saldo tersembunyi");
+  expect(host.textContent).not.toMatch(/mundur|efektif|Accurate|Yang akan terjadi|tanggal/i);
   expect(host.textContent).not.toMatch(/RPC|journal|idempot/i);
   expect(calls.run).toEqual([]);
 });
@@ -44,7 +44,7 @@ it("kirim memakai kunci yang sama dan menampilkan hasil + langkah berikutnya", a
   const f = calls.run[0];
   expect([f.get("invoice_id"), f.get("visit_id"), f.get("reason"), f.get("request_key")]).toEqual(["i1", "v1", "Harga vaksin salah", "kunci-9"]);
   expect(host.textContent).toContain("Penerimaan INV-9 dibatalkan");
-  expect(host.textContent).toContain("ubah tagihan di halaman tagihan");
+  expect(host.textContent).toContain("ubah transaksi di faktur, lalu terima pembayaran lagi");
   expect(host.querySelector("a")?.getAttribute("href")).toBe("/klinik/pembayaran/v1?invoice_id=i1");
 });
 it("penolakan database ditampilkan dalam bahasa biasa dan formulir tetap bisa diulang dengan kunci yang sama", async () => {
