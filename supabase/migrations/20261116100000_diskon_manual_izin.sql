@@ -16,6 +16,9 @@
 --     — jadi klien yang dimodifikasi tidak bisa menyamarkan diskon manual sebagai promo. Pemeriksaan penuh saat struk difinalkan.
 --   * klinik: clinic_post_invoice dan clinic_edit_invoice_core memanggil clinic_private.assert_manual_discount (tambalan berjangkar);
 --     clinic_void_reissue_invoice_core membawa kolom manual_discount ke tagihan pengganti.
+--   * Promo yang dicabut Owner saat keranjang terbuka: kasir (server) menghitung ulang promo dari master saat bayar, jadi struk dari aplikasi tidak membawa promo yang sudah dicabut.
+--     Database tidak bisa tahu kapan keranjang dihitung, maka ia menilai terhadap promo yang berlaku SAAT struk difinalkan (tidak dilonggarkan). Bila terjadi balapan, penolakan
+--     terjadi di dalam transaksi finalisasi yang sama (stok/jurnal/pembayaran ikut batal, tidak ada baris sisa) dengan pesan: 'Jika promo sudah tidak berlaku, muat ulang keranjang.'
 --   * OWNER dan peran berizin tidak diperiksa batasnya; tanpa pengguna login (SQL editor / tugas sistem) tidak diperiksa.
 
 -- ───────────────────────── 1. Kolom jejak ─────────────────────────
@@ -101,7 +104,7 @@ begin
  cap:=clinic_private.discount_explained_cap(new.branch_id,new.customer_id,new.voucher_code,new.campaign_code,new.subtotal,coalesce(new.poin_digunakan,0),lines,'noncategory');
  if coalesce(new.discount,0)>cap+v_n+1
     or coalesce(new.diskon_kategori,0)>clinic_private.discount_explained_cap(new.branch_id,new.customer_id,null,null,new.subtotal,0,'[]'::jsonb,'category')+1 then
-  raise exception 'Diskon melebihi yang bisa dibenarkan promo, voucher, golongan, atau poin. Diskon manual hanya untuk peran yang diberi izin: minta Owner mengaktifkannya di Pengaturan > Akses Grup.' using errcode='42501';
+  raise exception 'Diskon melebihi yang bisa dibenarkan promo, voucher, golongan, atau poin. Jika promo sudah tidak berlaku, muat ulang keranjang. Diskon manual hanya untuk peran yang diberi izin: minta Owner mengaktifkannya di Pengaturan > Akses Grup.' using errcode='42501';
  end if;
  return new;
 end $$;
@@ -142,7 +145,7 @@ begin
           (select coalesce(jsonb_agg(jsonb_build_object('item_id',nullif(x.value->>'item_id',''),'qty',(x.value->>'qty')::numeric,'price',(x.value->>'price')::numeric,'claim',null)),'[]'::jsonb) from jsonb_array_elements(p_lines) x))
          +least(v_hdr,coalesce(v_old_hdr,0));
   if v_discount>v_cap+v_n+1 then
-   raise exception using errcode='P0001',message='Diskon melebihi yang bisa dibenarkan promo, voucher, golongan, atau poin. Diskon manual hanya untuk peran yang diberi izin: minta Owner mengaktifkannya di Pengaturan > Akses Grup.';
+   raise exception using errcode='P0001',message='Diskon melebihi yang bisa dibenarkan promo, voucher, golongan, atau poin. Jika promo sudah tidak berlaku, muat ulang keranjang. Diskon manual hanya untuk peran yang diberi izin: minta Owner mengaktifkannya di Pengaturan > Akses Grup.';
   end if;
  end if;
 end $$;

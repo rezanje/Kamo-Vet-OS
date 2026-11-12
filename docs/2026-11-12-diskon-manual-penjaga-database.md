@@ -26,17 +26,22 @@ Kolom opsional `sales.manual_discount` dan `invoices.manual_discount` (bawaan 0,
 mengisinya** (aplikasi #509 tidak mengirim kuncinya); kolom itu disiapkan supaya rilis aplikasi berikutnya bisa mencatat bagian diskon
 yang diketik per dokumen. Sampai itu, jejak pemberi diskon = `cashier_id` dokumen + nilai `discount`.
 
-## Uji back (Production, baca-saja, 90 hari)
-- Petshop 4.949 struk, 1.208 berdiskon. Yang akan ditolak untuk peran tanpa izin: 61 (59 oleh STAFF). 17 karena potongan melebihi batas master
-  (dinilai dengan promo yang aktif HARI INI): 13 struk STAFF terjadi karena promo B1G1 yang sudah dinonaktifkan sesudah transaksi (bukan diskon ketikan),
-  2 struk STAFF dan 2 struk OWNER diskon ketikan asli; 44 karena diskon baris ketikan (bukan diskon bawaan master).
-- Klinik 899 tagihan, 99 berdiskon; 10 melebihi batas master (diskon nota ketikan 9.000–40.000).
-- Konsekuensi yang disengaja: promo yang dinonaktifkan Owner saat keranjang masih terbuka membuat simpan ditolak (batas dihitung dari promo yang aktif saat disimpan).
+## Uji balik (Production, baca-saja, rollback-only, 90 hari) dan keputusan risiko
+- Petshop, struk selesai berdiskon oleh peran selain OWNER: 1.222. Dengan fungsi penjaga sungguhan (menghormati klaim promo bundling/kolam kuantitas) yang akan ditolak: 51 (semua STAFF):
+  44 karena diskon baris ketikan (bukan diskon bawaan master) dan 7 karena total potongan melebihi batas master (2 tanpa dasar sama sekali, 5 memakai promo 'Free ANC Creamy' yang sudah dinonaktifkan sesudah transaksi).
+  (Angka awal 61/1.208 memakai perhitungan lebih kasar yang tidak menghitung klaim promo; yang di atas yang benar.)
+- Klinik 899 tagihan, 99 berdiskon; 10 melebihi batas master (diskon nota ketikan 9.000-40.000) — angka dari uji balik awal, tidak dihitung ulang.
+- **Promo dicabut saat keranjang terbuka**: kasir (server) menghitung ulang promo dari master saat bayar (`src/app/kasir/checkout.ts`: "Promo dihitung ULANG di server dari master"), sehingga
+  struk dari aplikasi tidak membawa promo yang sudah dicabut dan tidak ditolak. Database tidak bisa tahu kapan keranjang dihitung, jadi ia menilai terhadap promo yang berlaku saat struk
+  difinalkan (tidak dilonggarkan). Bila terjadi balapan, penolakan terjadi di dalam transaksi finalisasi yang sama (stok, jurnal, pembayaran ikut batal; struk tertunda dihapus aplikasi)
+  dengan pesan "... Jika promo sudah tidak berlaku, muat ulang keranjang." Promo bundling/kolam kuantitas memakai klaim tersimpan sehingga tidak terpengaruh.
+- Klinik: OWNER, koreksi Owner, struk terbit ulang/batalkan penerimaan (tidak melewati penjaga ini) dan tanggal mundur tidak terpengaruh; koreksi yang tidak menaikkan diskon tetap boleh.
+- OWNER dicek lebih dulu oleh `manual_discount_allowed()` tanpa membaca tabel kebijakan/katalog (diuji: tabel kebijakan dan katalog hilang tetap lolos untuk Owner).
 
 ## Pengujian
-- `supabase/tests/diskon_manual_izin.sql` (PostgreSQL 17 native, data fiktif, 100 pernyataan lulus) dan `diskon_manual_izin_red.sql` (RED:
+- `supabase/tests/diskon_manual_izin.sql` (PostgreSQL 17 native, data fiktif, 114 pernyataan lulus) dan `diskon_manual_izin_red.sql` (RED:
   sebelum migrasi STAFF/DOCTOR/ADMIN/FINANCE menyimpan diskon di database; sesudahnya ditolak).
-- 34 mutan migrasi: 33 terbunuh; 1 setara (`+least(v_hdr, v_old_hdr)` sudah dijaga pemeriksaan sebelumnya).
+- 39 mutan migrasi: 38 terbunuh; 1 setara (`+least(v_hdr, v_old_hdr)` sudah dijaga pemeriksaan sebelumnya).
 - 167 suite SQL lama dijalankan tanpa dan dengan migrasi: hasil sama; lima fixture yang memposting diskon ketikan sebagai STAFF/DOCTOR diberi izin
   `kasir.diskon_manual` (c05_voucher_lewat_kampanye menyamakan diskon dengan nilai voucher), fixture lain tidak berubah.
 

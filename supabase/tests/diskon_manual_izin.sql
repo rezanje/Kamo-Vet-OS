@@ -303,6 +303,11 @@ select pg_temp.accept($q$select pg_temp.edit(1,(select id from invoices where re
 select pg_temp.ok((select manual_discount=30000 from invoices where request_key='dm-ko1'),'koreksi: kolom manual tercatat oleh Owner');
 select pg_temp.accept($q$select pg_temp.edit(4,(select id from invoices where request_key='dm-ko1'),'dm-e7',pg_temp.edithdr(80000,30001.5),pg_temp.line(100000,20))$q$,'koreksi: klien lama tanpa kunci; diskon Owner yang sudah ada tetap dibenarkan (selisih pembulatan 1,5 dalam toleransi)');
 
+-- faktur lama (dibuat sebelum migrasi: kolom jejak 0) yang berdiskon dari Owner: peran tanpa izin boleh menyimpan ulang tanpa menaikkan, tidak boleh menaikkan
+select pg_temp.anon();update invoices set manual_discount=0 where request_key='dm-ko1';
+select pg_temp.accept($q$select pg_temp.edit(4,(select id from invoices where request_key='dm-ko1'),'dm-e8',pg_temp.edithdr(80000,30001.5),pg_temp.line(100000,20))$q$,'koreksi: faktur lama (jejak 0) berdiskon Owner, STAFF simpan ulang tanpa menaikkan = boleh (draf lama tetap dengan diskon aslinya)');
+select pg_temp.reject($q$select pg_temp.edit(4,(select id from invoices where request_key='dm-ko1'),'dm-e9',pg_temp.edithdr(80000,40000),pg_temp.line(100000,20))$q$,'Diskon melebihi yang bisa dibenarkan','koreksi: faktur lama, STAFF menaikkan diskon nota ditolak');
+select pg_temp.accept($q$select pg_temp.edit(1,(select id from invoices where request_key='dm-ko1'),'dm-e10',pg_temp.edithdr(80000,40000),pg_temp.line(100000,20))$q$,'koreksi: faktur lama, OWNER boleh menaikkan');
 -- ── 6. tagihan terbit ulang membawa kolom jejak (definisi fungsi; terbit ulang butuh tagihan lunas, dibuktikan di suite pembayaran klinik) ──
 select pg_temp.ok(position('created_at,manual_discount)' in pg_get_functiondef('public.clinic_void_reissue_invoice_core(uuid,text,text)'::regprocedure))>0
  and position('v_invoice.manual_discount)' in pg_get_functiondef('public.clinic_void_reissue_invoice_core(uuid,text,text)'::regprocedure))>0,'terbit ulang: kolom manual_discount dibawa ke tagihan pengganti (definisi)');
@@ -312,5 +317,28 @@ select pg_temp.as_('dd100000-0000-4000-8000-000000000004');
 select pg_temp.reject($q$insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,item_discount_type,item_discount_value) select id,'dd400000-0000-4000-8000-000000000001','x',1,100000,'pcs',1,0,'nominal',5000 from sales where no_struk='DM-S0'$q$,'Anda tidak punya izin memberi diskon manual.','sisip baris berdiskon langsung ke sale_items oleh STAFF ditolak');
 select pg_temp.accept($q$insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,item_discount_type,item_discount_value) select id,'dd400000-0000-4000-8000-000000000005','x',1,100000,'pcs',1,0,'percent',10 from sales where no_struk='DM-PEND'$q$,'sisip baris: persen = diskon bawaan master (10%) lolos untuk STAFF');
 select pg_temp.reject($q$insert into sale_items(sale_id,item_id,nama,qty,harga,satuan,faktor,hpp,item_discount_type,item_discount_value) select id,'dd400000-0000-4000-8000-000000000005','x',1,100000,'pcs',1,0,'percent',11 from sales where no_struk='DM-PEND'$q$,'Anda tidak punya izin memberi diskon manual.','sisip baris: persen 11% di atas master (10%) ditolak seketika, bukan hanya saat finalisasi');
+
+-- ── 8. promo dicabut Owner saat keranjang terbuka: ditolak SEBELUM uang bergerak, pesan jelas, tanpa baris sisa ──
+select pg_temp.anon();
+create temp table dmb as select (select count(*) from journal_entries) j,(select count(*) from sale_payments) p,(select count(*) from sales) s,(select count(*) from sale_items) si;
+alter table promos disable trigger user;
+update promos set is_active=false where id='dd700000-0000-4000-8000-000000000001';
+alter table promos enable trigger user;
+select pg_temp.reject($q$select pg_temp.sale('DM-X1',4,jsonb_build_array(jsonb_build_object('item','dd400000-0000-4000-8000-000000000002','qty',2,'harga',50000,'promo_id','dd700000-0000-4000-8000-000000000001','promo_discount',10000)),10000)$q$,'Jika promo sudah tidak berlaku, muat ulang keranjang.','STAFF: promo dicabut saat keranjang terbuka ditolak dengan pesan yang jelas');
+select pg_temp.ok((select b.j=(select count(*) from journal_entries) and b.p=(select count(*) from sale_payments) and b.s=(select count(*) from sales) and b.si=(select count(*) from sale_items) from dmb b),'promo dicabut: penolakan atomik, tidak ada struk/baris/pembayaran/jurnal tersisa');
+select pg_temp.ok(not exists(select 1 from sales where no_struk='DM-X1'),'promo dicabut: struk tidak tersimpan');
+select pg_temp.accept($q$select pg_temp.sale('DM-X1b',4,jsonb_build_array(jsonb_build_object('item','dd400000-0000-4000-8000-000000000002','qty',2,'harga',50000)),0)$q$,'STAFF: keranjang dimuat ulang tanpa promo tetap jalan');
+select pg_temp.accept($q$select pg_temp.sale('DM-X2',1,jsonb_build_array(jsonb_build_object('item','dd400000-0000-4000-8000-000000000002','qty',2,'harga',50000,'promo_id','dd700000-0000-4000-8000-000000000001','promo_discount',10000)),10000)$q$,'OWNER: struk dengan promo yang sudah dicabut tidak diblokir (Owner tidak dibatasi)');
+select pg_temp.anon();
+alter table promos disable trigger user;
+update promos set is_active=true where id='dd700000-0000-4000-8000-000000000001';
+alter table promos enable trigger user;
+-- Owner tidak terkunci walau katalog izin juga hilang (fungsi izin memeriksa OWNER lebih dulu)
+alter table role_settings_private.action_catalog rename to action_catalog_x;
+alter table role_settings_private.action_policies rename to action_policies_x;
+select pg_temp.accept($q$select pg_temp.sale('DM-O5',1,pg_temp.svc(),10000,0,10000)$q$,'OWNER: katalog dan kebijakan izin sama-sama hilang tidak mengunci Owner (petshop)');
+select pg_temp.reject($q$select pg_temp.sale('DM-S9',4,pg_temp.svc(),10000,0,10000)$q$,'Anda tidak punya izin memberi diskon manual.','STAFF: katalog/kebijakan hilang tetap gagal-tertutup');
+alter table role_settings_private.action_policies_x rename to action_policies;
+alter table role_settings_private.action_catalog_x rename to action_catalog;
 select pg_temp.ok(true,'selesai');
 rollback;
