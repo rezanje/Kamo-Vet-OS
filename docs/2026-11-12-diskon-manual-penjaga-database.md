@@ -42,8 +42,13 @@ yang diketik per dokumen. Sampai itu, jejak pemberi diskon = `cashier_id` dokume
 - `supabase/tests/diskon_manual_izin.sql` (PostgreSQL 17 native, data fiktif, 114 pernyataan lulus) dan `diskon_manual_izin_red.sql` (RED:
   sebelum migrasi STAFF/DOCTOR/ADMIN/FINANCE menyimpan diskon di database; sesudahnya ditolak).
 - 39 mutan migrasi: 38 terbunuh; 1 setara (`+least(v_hdr, v_old_hdr)` sudah dijaga pemeriksaan sebelumnya).
-- 167 suite SQL lama dijalankan tanpa dan dengan migrasi: hasil sama; lima fixture yang memposting diskon ketikan sebagai STAFF/DOCTOR diberi izin
-  `kasir.diskon_manual` (c05_voucher_lewat_kampanye menyamakan diskon dengan nilai voucher), fixture lain tidak berubah.
+- Suite SQL lama (`supabase/tests`): 167 dijalankan tanpa dan dengan migrasi di rantai gabungan 416 migrasi. Hanya 81 yang berjalan valid di harness generik (hasil identik);
+  86 galat identik di kedua sisi karena butuh harness khusus, jadi TIDAK membuktikan apa-apa. Untuk yang menyentuh diskon, dipakai skrip khusus native: klinik batalkan 119,
+  backdate klinik 98, backdate petshop 14, mitigasi 68, promo-floor-line 9, shift-laci 48, clinic-metode-bayar 10, tagihan-berjalan 20, owner-bmhp (113 + 91), owner-koreksi-racikan (67 + 86), owner-tarik-baris-lunas 100,
+  promo-nilai-bersama (setelah fixture diperbaiki). Skrip lama yang butuh Docker atau sudah rusak oleh rantai terbaru (mis. p03-price-floor berhenti di DP_MINIMAL, quantity-pool PROMO_SH_DRIFT) tidak bisa dijalankan di sini
+  dan gagal juga tanpa migrasi ini; fixture di dalamnya yang memposting diskon ketikan sebagai STAFF/DOCTOR dicari lewat pemindaian statis dan diberi izin `kasir.diskon_manual` (tidak terverifikasi di harness aslinya).
+- Fixture yang diberi izin (yang diuji bukan diskonnya): `pos_split_payments`, `quantity_pool_pricing`, `pos_merchant_fees`, `clinic_invoice_post` (DOCTOR), `promo_syarat_hasil_fixture` (STAFF),
+  `clinic_manual_invoice_units` (DOCTOR); `c05_voucher_lewat_kampanye` menyamakan diskon dengan nilai voucher.
 
 ## Rilis
 Migrasi `20261116100000` dipasang dulu (satu transaksi, tanpa begin/commit sendiri), aplikasi tidak berubah. Pemasangan memeriksa
