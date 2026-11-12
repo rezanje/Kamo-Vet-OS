@@ -216,7 +216,7 @@ export default async function FakturJualPage({
                                   {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}
                                 </select>
                               </div>
-                              <PilihRekening rekening={rekening} label="Masuk ke" width={150} />
+                              <PilihRekening rekening={rekening} label="Masuk ke" width={260} />
                               {um.length > 0 && (
                                 <div>
                                   <label className="flab">Potong uang muka</label>
