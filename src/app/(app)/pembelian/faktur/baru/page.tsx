@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { loadUnitOptions } from "@/lib/satuan";
 import { FakturForm, type PoOption, type PoInvoiceInitial, type PoReceiptOption } from "./FakturForm";
+import { loadPurchaseBackdateAccess } from "@/lib/purchase-backdate";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? value[0] ?? null : value;
@@ -44,6 +45,9 @@ export default async function FakturBaruPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? "";
+  // Faktur pengganti boleh dibukukan di tanggal faktur asli hanya oleh Owner / peran yang diberi izin Tanggal mundur (database memeriksa ulang).
+  const { data: profile } = replace_invoice ? await supabase.from("profiles").select("role,is_active").eq("id", userId).maybeSingle() : { data: null };
+  const canBackdate = replace_invoice ? await loadPurchaseBackdateAccess(supabase, profile) : false;
 
   let initial: PoInvoiceInitial | undefined;
   let sourceLines: SourceLine[] = [];
@@ -227,7 +231,7 @@ export default async function FakturBaruPage({
       {!loadError && poNo && poPage?.count === 0 && <div role="status" className="p2ban">PO diterima dengan nomor itu tidak ditemukan.</div>}
       {!initial && !poNo && poPage && loadError === undefined && <ListPagination path="/pembelian/faktur/baru" query={{}} total={poPage.count} pageInfo={poPage.pageInfo} />}
 
-      <FakturForm initial={initial} options={options} userId={userId} priceWarning={harga_cek} />
+      <FakturForm initial={initial} options={options} userId={userId} priceWarning={harga_cek} canBackdate={canBackdate} />
     </>
   );
 }

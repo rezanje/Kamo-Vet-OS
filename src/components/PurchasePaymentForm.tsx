@@ -7,7 +7,7 @@ import { SubmitButton } from "./SubmitButton";
 import { PilihRekening, type RekeningOpsi } from "./PilihRekening";
 import { bayarFaktur } from "@/app/(app)/pembelian/faktur/actions";
 
-export type PurchasePaymentDefaults = { id: string; amount: number; metode: string; advance_id: string | null };
+export type PurchasePaymentDefaults = { id: string; amount: number; metode: string; advance_id: string | null; /** Tanggal pembayaran yang dibatalkan (batas bawah tanggal pengganti). */ tanggal?: string | null };
 export function PurchasePaymentForm({ userId, invoiceId, remaining, today, accounts, advances, replacement }: {
   userId: string; invoiceId: string; remaining: number; today: string; accounts: RekeningOpsi[];
   advances: { id: string; no_um: string; sisa: number }[]; replacement?: PurchasePaymentDefaults;
@@ -23,7 +23,8 @@ export function PurchasePaymentForm({ userId, invoiceId, remaining, today, accou
       <div><label className="flab" htmlFor={`method-${invoiceId}`}>Metode</label><select className="fi" id={`method-${invoiceId}`} name="metode" defaultValue={replacement?.metode ?? "Transfer"}><option>Transfer</option><option>Tunai</option><option>Debit</option></select></div>
       <PilihRekening rekening={accounts} width={150} />
       {advances.length > 0 && <div><label className="flab" htmlFor={`advance-${invoiceId}`}>Potong uang muka</label><select className="fi" id={`advance-${invoiceId}`} name="advance_id" defaultValue={advanceId}><option value="">— tidak pakai —</option>{advances.map(a => <option key={a.id} value={a.id}>{a.no_um} · sisa Rp {a.sisa.toLocaleString("id-ID")}</option>)}</select></div>}
-      <div><label className="flab" htmlFor={`date-${invoiceId}`}>Tanggal</label><input className="fi" id={`date-${invoiceId}`} name="tanggal" type="date" required max={today} defaultValue={today} /></div>
+      <div><label className="flab" htmlFor={`date-${invoiceId}`}>Tanggal</label><input className="fi" id={`date-${invoiceId}`} name="tanggal" type="date" required min={replacement?.tanggal ?? undefined} max={today} defaultValue={today} /></div>
+      {replacement && <div style={{ flex: "1 1 220px" }}><label className="flab" htmlFor={`note-${invoiceId}`}>Alasan / catatan</label><input className="fi" id={`note-${invoiceId}`} name="catatan" maxLength={1000} placeholder="Wajib bila tanggal sebelum hari ini" /><p style={{ fontSize: 10.5, color: "var(--tm)", margin: "3px 0 0" }}>Pembayaran pengganti boleh dibukukan di tanggal pembayaran asli ({replacement.tanggal ?? "tanggal asal"}); tanggal mundur wajib beralasan.</p></div>}
       <SubmitButton className="btn-acc" disabled={!ready}>Simpan pembayaran</SubmitButton>
     </>}
   </CorrectionTransactionForm>;

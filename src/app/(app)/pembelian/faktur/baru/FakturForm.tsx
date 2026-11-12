@@ -10,6 +10,7 @@ import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { buatFaktur } from "../actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { effectiveDateBounds } from "@/lib/purchase-backdate";
 import { PriceDeviationConfirm } from "@/components/PriceDeviationConfirm";
 
 /** N01: a non-cancelled receipt of the PO; `sudahDifaktur` = number of the active invoice that already covers it. */
@@ -39,8 +40,10 @@ export type PoInvoiceInitial = { id: string; po_id: string; tanggal: string; jat
 
 const selectable = (o?: PoOption) => (o?.receipts ?? []).filter((r) => !r.sudahDifaktur).map((r) => r.id);
 
-export function FakturForm({ options, userId, initial, priceWarning }: { options: PoOption[]; userId: string; initial?: PoInvoiceInitial; priceWarning?: string }) {
+export function FakturForm({ options, userId, initial, priceWarning, canBackdate = false }: { options: PoOption[]; userId: string; initial?: PoInvoiceInitial; priceWarning?: string; canBackdate?: boolean }) {
   const today = hariIniWIB();
+  // Faktur pengganti: tanggal efektif bawaan hari ini, mundur sampai tanggal faktur yang dibatalkan hanya Owner/izin.
+  const bounds = effectiveDateBounds({ docDate: initial?.tanggal, canBackdate });
   const [poId, setPoId] = useState(initial?.po_id ?? "");
   const [qty, setQty] = useState<Record<string, number>>(Object.fromEntries((initial?.purchase_invoice_items ?? []).map(row => [row.po_item_id, Number(row.qty)])));
   const [harga, setHarga] = useState<Record<string, number>>(Object.fromEntries((initial?.purchase_invoice_items ?? []).map(row => [row.po_item_id, Number(row.harga)])));
@@ -106,7 +109,8 @@ export function FakturForm({ options, userId, initial, priceWarning }: { options
           <div style={{ display: "flex", gap: 8 }}>
             <div className="fg" style={{ marginBottom: 10, flex: 1 }}>
               <label className="flab">Tanggal faktur *</label>
-              <input className="fi" type="date" name="tanggal" defaultValue={initial?.tanggal ?? today} required />
+              <input className="fi" type="date" name="tanggal" defaultValue={initial ? bounds.value : today} min={initial ? bounds.min : undefined} max={initial ? bounds.max : undefined} readOnly={initial ? bounds.locked : false} required />
+              {initial && <p style={{ fontSize: 10.5, color: "var(--tm)", margin: "3px 0 0" }}>{bounds.locked ? "Faktur pengganti dibukukan hari ini. Tanggal mundur hanya untuk Owner atau peran yang diberi izin Tanggal mundur." : `Bawaan hari ini; pilih ${initial.tanggal} agar terbaca di tanggal faktur aslinya. Tanggal mundur wajib beralasan: isi Keterangan.`}</p>}
             </div>
             <div className="fg" style={{ marginBottom: 10, flex: 1 }}>
               <label className="flab">Jatuh tempo *</label>

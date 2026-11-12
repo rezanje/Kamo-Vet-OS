@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { formatDokumen } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
+import { readEffectiveDate } from "@/lib/purchase-backdate";
 import Decimal from "decimal.js";
 
 const BASE = "/pembelian/uang-muka";
@@ -59,7 +60,11 @@ export async function batalkanUangMuka(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Uang muka tidak valid");
 
-  const {data,error} = await supabase.rpc("cancel_purchase_advance_atomic",{p_advance_id:id});
+  // Tanggal efektif: kosong = hari ini; tanggal mundur hanya Owner/izin dan wajib beralasan (database memeriksa).
+  const effective = readEffectiveDate(formData.get("tanggal"));
+  if (!effective.ok) gagal(effective.message);
+  const alasan = String(formData.get("alasan") ?? "").trim() || null;
+  const {data,error} = await supabase.rpc("cancel_purchase_advance_atomic",{p_advance_id:id,p_tanggal:effective.ok?effective.value:"",p_reason:alasan});
   if (error) gagal(error.message);
   if (!data?.advance_id || !data?.journal_id) gagal("Pembatalan uang muka belum terkonfirmasi lengkap. Periksa daftar sebelum mencoba kembali.");
   revalidatePath(BASE);

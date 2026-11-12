@@ -14,6 +14,7 @@ import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { terimaBarang } from "../../actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { EffectiveDateField } from "@/components/EffectiveDateField";
 import { sisaBelumDijatah, type BatchInput } from "@/lib/kadaluarsa-batch";
 
 export type BarisPO = {
@@ -36,6 +37,8 @@ export function TerimaForm({
   gudang,
   totalPO,
   rows,
+  replaceFloor = null,
+  canBackdate = false,
 }: {
   poId: string;
   userId: string;
@@ -44,6 +47,9 @@ export function TerimaForm({
   gudang: string;
   totalPO: number;
   rows: BarisPO[];
+  /** Tanggal penerimaan tertua yang dibatalkan di PO ini: terima ulang = penerimaan pengganti (tanggal efektif). */
+  replaceFloor?: string | null;
+  canBackdate?: boolean;
 }) {
   const [terima, setTerima] = useState<Record<string, number>>(
     Object.fromEntries(rows.map((r) => [r.id, r.qty])),
@@ -114,8 +120,12 @@ export function TerimaForm({
 
         <div className="frow" style={{ marginBottom: 12 }}>
           <div>
-            <label className="flab">Tanggal terima</label>
-            <input className="fi" type="date" name="tanggal" defaultValue={today} />
+            {replaceFloor
+              ? <EffectiveDateField id="terima-tanggal" label="Tanggal terima" docDate={replaceFloor} docLabel="penerimaan yang dibatalkan" canBackdate={canBackdate} />
+              : <>
+                <label className="flab">Tanggal terima</label>
+                <input className="fi" type="date" name="tanggal" defaultValue={today} />
+              </>}
           </div>
           <div>
             <label className="flab">No. surat jalan pemasok</label>
@@ -123,7 +133,7 @@ export function TerimaForm({
           </div>
           <div>
             <label className="flab">Catatan penerimaan</label>
-            <input className="fi" name="catatan" placeholder="mis. kiriman tahap 2" />
+            <input className="fi" name="catatan" placeholder={replaceFloor ? "mis. terima ulang; wajib bila tanggal mundur" : "mis. kiriman tahap 2"} />
           </div>
         </div>
 
