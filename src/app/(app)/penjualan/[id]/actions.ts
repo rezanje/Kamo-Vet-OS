@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { hariIniWIB } from "@/lib/tanggal";
 import { bacaTanggalEfektif, perluAlasanTanggal } from "@/lib/tanggal-efektif-petshop";
+import type { ActionRejection } from "@/components/LocalTransactionDraft";
 
 function correctionMoney(value: FormDataEntryValue | null): number {
   // A blank Tunai/Transfer box means nothing was paid that way.
@@ -18,7 +19,19 @@ function correctionMoney(value: FormDataEntryValue | null): number {
   return amount;
 }
 
-export async function koreksiMetodePembayaran(form: FormData) {
+/**
+ * Galat database ber-SQLSTATE berarti transaksi RPC sudah dibatalkan utuh (tidak ada yang tersimpan), jadi alasannya aman
+ * ditampilkan apa adanya. Melempar galat justru disembunyikan Next.js di produksi dan tampil sebagai "respons belum terkonfirmasi".
+ * Galat tanpa SQLSTATE (jaringan putus, dsb.) tetap dilempar: hasilnya belum pasti.
+ */
+function rpcRefusal(error: { code?: string; message?: string } | null): ActionRejection | null {
+  const code = error?.code ?? "";
+  if (!/^[0-9A-Z]{5}$/.test(code) || !error?.message) return null;
+  const retry = code.startsWith("40") || code === "55P03" || code === "57014";
+  return { ok: false, outcome: retry ? "retry" : "rejected", message: retry ? `${error.message}. Coba simpan lagi sebentar lagi.` : error.message };
+}
+
+export async function koreksiMetodePembayaran(form: FormData): Promise<void | ActionRejection> {
   const id = String(form.get("id") ?? "");
   const revisionText = String(form.get("revision") ?? "");
   const revision = Number(revisionText);
@@ -35,6 +48,8 @@ export async function koreksiMetodePembayaran(form: FormData) {
     p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason,
     p_cash_amount: cash, p_transfer_amount: transfer,
   });
+  const refusal = rpcRefusal(error);
+  if (refusal) return refusal;
   if (error || data?.sale_id !== id || data?.revision !== revision + 1 || !data?.audit_id) {
     throw new Error(error?.message ?? "Hasil koreksi belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
   }
