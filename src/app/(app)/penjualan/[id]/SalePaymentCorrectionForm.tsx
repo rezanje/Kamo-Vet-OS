@@ -61,7 +61,7 @@ export function SalePaymentCorrectionForm({ userId, saleId, revision, cash, tran
   return <CorrectionTransactionForm userId={userId} scope={`sale-payment:${saleId}:${revision}`} action={koreksiMetodePembayaran}>
     {({ ready }) => <>
       <input type="hidden" name="id" value={saleId} /><input type="hidden" name="revision" value={revision} />
-      <p>Ubah pembagian Tunai dan Transfer pada penjualan ini. Total tagihan dan metode pembayaran lain tetap. Jurnal lama dibalik dan jurnal baru dicatat dengan alasan koreksi.</p>
+      <p>Ubah pembagian Tunai dan Transfer pada penjualan ini. Total tagihan dan metode pembayaran lain tetap. Koreksi dibukukan di tanggal struk (bukan hari ini), dan waktu koreksi beserta alasannya tercatat di riwayat.</p>
       {fixed.length > 0 && <p>Metode tetap: {fixed.map(part => `${part.method} ${formatPosMoney(part.amount)}`).join(" · ")}</p>}
       <p>Total yang dibagi: <strong>{formatPosMoney(cash + transfer)}</strong> — isi salah satu, kolom lainnya menyesuaikan otomatis.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
