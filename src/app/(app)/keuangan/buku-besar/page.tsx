@@ -7,6 +7,7 @@ import { getAccountBalances, getAccountLedger, getAccountOpening } from "@/lib/l
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 import { NoDok } from "@/components/NoDok";
+import { nomorDokumenJurnal } from "@/lib/tautan-dokumen";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -125,7 +126,7 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                     <td style={{ fontFamily: "monospace", fontSize: 10.5 }}>{l.no_jurnal}</td>
                     {!cabang && <td style={{ fontSize: 10.5 }}>{l.branch_name}</td>}
                     <td style={{ fontSize: 10.5 }}>
-                      <NoDok nomor={l.source_ref} source={l.source} />
+                      <NoDok nomor={nomorDokumenJurnal(l.source_ref, l.deskripsi)} source={l.source} />
                       {selected.code === "600001" && l.source_ref && (
                         <Link href={`/keuangan/buku-besar/hpp/${encodeURIComponent(l.source_ref)}`} style={{ display: "block", fontSize: 9.5, color: "#2563eb", marginTop: 2 }}>Rincian HPP</Link>
                       )}
