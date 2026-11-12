@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Suite SQL tetangga untuk migrasi 20261115900000_ubah_metode_bayar.sql: semua suite HARUS lulus (rc=0) pada rantai DENGAN migrasi (suite metode bayar lama sengaja diperbarui untuk metode baru; sisi TANPA hanya dilaporkan)
+"""Suite SQL tetangga untuk migrasi 20261115900000_ubah_metode_bayar.sql: hasil HARUS sama pada rantai TANPA dan DENGAN migrasi (suite yang butuh harness khusus gagal sama di kedua sisi: itu bukan regresi)
 (satu-satunya perbedaan yang disengaja ada di batalkan_penerimaan_petshop.sql: pelaku tanpa shift terbuka kini 'tanpa_shift', bukan ditolak, dan
 efek jatuh di shift pelaku, bukan shift kasir lain; versi lama suite itu dijalankan di sisi TANPA, versi baru di sisi DENGAN).
   flock /opt/data/kamo-heavy-test.lock python3 -I scripts/test-ubah-metode-neighbours-postgres.py --pg-bin DIR --json out.json [--attach ROOT]
@@ -52,7 +52,7 @@ def main():
             same = res['without']['rc'] == res['with']['rc'] and res['without']['err'] == res['with']['err']
             rows.append(dict(suite=label, without=res['without'], with_=res['with'], identical=same))
             ok = same and (res['with']['rc'] == 0 or 'petshop' not in label)
-            mt.check('NEIGHBOUR %s: TANPA rc=%s | DENGAN rc=%s %s' % (label, res['without']['rc'], res['with']['rc'], 'identik' if same else 'BEDA'), res['with']['rc'] == 0, dict(without=res['without'], with_=res['with']))
+            mt.check('NEIGHBOUR %s: TANPA rc=%s | DENGAN rc=%s %s' % (label, res['without']['rc'], res['with']['rc'], 'identik' if same else 'BEDA'), same and (res['with']['rc'] == 0 or res['without']['rc'] != 0), dict(without=res['without'], with_=res['with']))
     totals = {s: sum(cc['status'] == s for cc in mt.RESULTS) for s in ['PASS', 'FAIL']}
     a.json.write_text(json.dumps(dict(cases=mt.RESULTS, rows=rows, totals=totals), indent=1, default=str)); print(totals)
     return int(totals['FAIL'] > 0)
