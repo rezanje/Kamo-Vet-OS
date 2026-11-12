@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { hariIniWIB } from "@/lib/tanggal";
 import { bacaTanggalEfektif, perluAlasanTanggal } from "@/lib/tanggal-efektif-petshop";
 import type { ActionRejection } from "@/components/LocalTransactionDraft";
+import { susunUbahStruk, type IsianUbah } from "@/lib/ubah-struk";
+import { loadKatalogUntuk, loadStrukUbah } from "@/lib/ubah-struk-server";
 
 function correctionMoney(value: FormDataEntryValue | null): number {
   // A blank Tunai/Transfer box means nothing was paid that way.
@@ -158,4 +160,45 @@ export async function batalkanPencairan(form: FormData) {
   }
   revalidatePath("/", "layout");
   redirect(`/penjualan/${id}?success=disbursement-cancelled${tglParam(data.effective_date)}&draft_scope=${encodeURIComponent(`sale-disbursement-cancel:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
+}
+
+/**
+ * Ubah transaksi struk kasir (Owner/Finance): isi baru disusun dari struk lama di database + isian formulir, lalu satu RPC atomik
+ * menutup struk lama dan membuat struk pengganti di TANGGAL ASLI (stok & HPP di hari ubah). Penolakan pasti dikembalikan sebagai pesan.
+ */
+export async function ubahTransaksi(form: FormData): Promise<void | ActionRejection> {
+  const id = String(form.get("id") ?? "");
+  const revisionText = String(form.get("revision") ?? "");
+  const revision = Number(revisionText);
+  const key = String(form.get("requestKey") ?? "");
+  const reason = String(form.get("alasan") ?? "").trim();
+  const tolak = (message: string): ActionRejection => ({ ok: false, outcome: "rejected", message });
+  if (!/^[0-9a-f-]{36}$/i.test(id) || !revisionText.trim() || !Number.isSafeInteger(revision) || revision < 0 || !key.trim() || key.length > 114) {
+    return tolak("Identitas struk tidak lengkap. Muat ulang halaman lalu coba lagi.");
+  }
+  if (reason.length < 3 || reason.length > 1000) return tolak("Isi alasan perubahan (minimal 3 huruf).");
+  let isian: IsianUbah;
+  try { isian = JSON.parse(String(form.get("isian") ?? "")) as IsianUbah; }
+  catch { return tolak("Isian perubahan tidak terbaca. Muat ulang halaman lalu coba lagi."); }
+  const db = await createClient();
+  const lama = await loadStrukUbah(db, id);
+  if (!lama) return tolak("Struk tidak ditemukan.");
+  if (lama.revision !== revision || lama.voided_at) return tolak("Struk sudah berubah atau sudah diubah. Muat ulang halaman sebelum mengubah lagi.");
+  let payload;
+  try {
+    const katalog = await loadKatalogUntuk(db, [...lama.items.map(line => line.item_id ?? ""), ...(isian.lines ?? []).map(line => line.item_id)]);
+    payload = susunUbahStruk({ lama, isian, katalog, rupiahPerPoin: lama.rupiahPerPoin });
+  } catch (error) {
+    return tolak(error instanceof Error ? error.message : "Isian perubahan tidak valid.");
+  }
+  const { data, error } = await db.rpc("edit_posted_pos_sale", {
+    p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason, p_edit: payload,
+  });
+  const refusal = rpcRefusal(error);
+  if (refusal) return refusal;
+  if (error || data?.old_sale_id !== id || typeof data?.sale_id !== "string" || !data?.edit_id) {
+    throw new Error(error?.message ?? "Hasil ubah transaksi belum terkonfirmasi. Periksa daftar penjualan sebelum menyimpan ulang.");
+  }
+  revalidatePath("/", "layout");
+  redirect(`/penjualan/${data.sale_id}?success=edited&draft_scope=${encodeURIComponent(`sale-edit:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
 }
