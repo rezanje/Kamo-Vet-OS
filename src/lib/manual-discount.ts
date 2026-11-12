@@ -1,7 +1,7 @@
 /**
  * Diskon manual hanya Owner/Admin (permintaan Aldi, 12 Nov 2026).
  *
- * Hak dibaca dari database (`manual_discount_allowed`, migrasi 20261115100000): OWNER selalu; peran tanpa kebijakan tersimpan
+ * Hak dibaca dari database (`manual_discount_allowed`, migrasi 20261115700000): OWNER selalu; peran tanpa kebijakan tersimpan
  * hanya ADMIN; peran berkebijakan bila Owner mencentang izin `kasir.diskon_manual` di Pengaturan › Akses Grup.
  *
  * Yang dihitung "diskon manual" = angka yang DIKETIK kasir: potongan per barang / diskon total (kasir petshop) dan diskon % per baris /

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Uji migrasi 20261115100000 (diskon manual hanya Owner/Admin) di PostgreSQL sungguhan, data fiktif.
+"""Uji migrasi 20261115700000 (diskon manual hanya Owner/Admin) di PostgreSQL sungguhan, data fiktif.
 
 Permintaan Aldi (grup Kamo, 12 Nov 2026): "Yg diskon jangan dikasih ke karyawan mas biar akun admin ajh".
 
@@ -30,7 +30,7 @@ _spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-a
 fixture = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(fixture)
 
-MIGRASI = ROOT / "supabase/migrations/20261115100000_diskon_manual_owner_admin.sql"
+MIGRASI = ROOT / "supabase/migrations/20261115700000_diskon_manual_owner_admin.sql"
 
 
 def uid(n):

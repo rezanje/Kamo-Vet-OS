@@ -18,7 +18,7 @@ Angka yang **diketik kasir**:
 poin, diskon golongan member, dan diskon bawaan barang dari master (`items.default_discount`, terpasang otomatis di kasir).
 
 ## Perbaikan
-1. Migrasi `20261115100000_diskon_manual_owner_admin.sql`
+1. Migrasi `20261115700000_diskon_manual_owner_admin.sql`
    - Katalog Akses Grup: tindakan `kasir.diskon_manual` (enforced, grup "Kasir & Tagihan", modul `kasir`).
    - Fungsi `public.manual_discount_allowed()` (SECURITY DEFINER, STABLE, hanya `authenticated`):
      OWNER selalu `true` (tidak membaca tabel kebijakan); peran tanpa kebijakan tindakan tersimpan (legacy) → hanya ADMIN;
