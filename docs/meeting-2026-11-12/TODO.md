@@ -39,11 +39,12 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Belum ada. Dibutuhkan di klinik karena dokter/paramedis dapat insentif per visit.
 - Sumber data: laporan visit harian rawat inap (lihat bagian "Laporan Rawat Inap Harian" di `klinik-obat-khusus.jpg`), dengan kolom dokter visit dan paramedis.
 - Minimal: filter periode, cabang, dan dokter/paramedis; rekap jumlah visit per orang; bisa export Excel.
-- [?] Konfirmasi: insentif dihitung per visit saja, atau ada nilai rupiahnya?
+- ~~[?] Konfirmasi: insentif dihitung per visit saja, atau ada nilai rupiahnya?~~ → **Dijawab Reza (12 Nov): jumlah visit saja**, rupiah dihitung manual Finance.
 - Status: `/laporan/visit` (Daftar Laporan › Klinik) — filter periode, cabang, peran, dokter/paramedis; rekap jumlah visit,
   pasien berbeda, hari visit per orang; rincian catatan; unduh Excel/CSV. 1 catatan "Visit dokter" = 1 visit untuk dokter
-  visit + 1 untuk paramedis di catatan itu; catatan "Pemantauan" tidak dihitung. **Nilai rupiah belum** (menunggu jawaban [?]).
-  Belum ada centang khusus di Akses Grup (butuh tambahan baris katalog di database — menunggu persetujuan).
+  visit + 1 untuk paramedis di catatan itu; catatan "Pemantauan" tidak dihitung. Tanpa nilai rupiah (sesuai jawaban).
+  Centang "Laporan Visit" di Akses Grup: migrasi `20261115300000_a4_submenu_laporan_visit.sql` (disetujui, dipasang malam ini
+  sebelum deploy). ADMIN yang laporannya dibatasi perlu dicentang Owner di Akses Grup.
 
 ### A5 · [ ] P1 — Akses koreksi visit untuk yang lupa input
 - Disepakati: tetap ada akses untuk mengedit/menambah visit yang terlupa, **hanya untuk Owner/Manager**. Diatur lewat Akses Grup.
