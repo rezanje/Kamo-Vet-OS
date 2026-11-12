@@ -74,6 +74,7 @@ type SaleRel = SaleCompletion & SaleMerchantTotal & {
 };
 type SaleItemRow = {
   id: string; nama: string; qty: number; harga: number;
+  item_id: string | null; satuan: string | null; faktor: number | null;
   item_discount_type: "nominal" | "percent" | null; item_discount_value: number | null; promo_discount: number | null;
   service_performers: ServicePerformersSnapshot | null; sales: Rel<SaleRel>;
 };
@@ -86,17 +87,40 @@ type FakturRel = FakturGrosirInti & {
 };
 type GrosirItemRow = {
   id: string; nama: string; qty: number; harga: number; diskon: number | null;
+  item_id: string | null; satuan: string | null;
   sales_invoices: Rel<FakturRel>;
 };
 
 type ReturRow = {
   id: string; sale_id: string; tanggal: string;
-  sales_return_items: { id: string; source_line_id: string | null; nama: string | null; qty: number; harga: number }[] | null;
+  sales_return_items: {
+    id: string; source_line_id: string | null; nama: string | null; qty: number; harga: number;
+    /** Qty retur dalam satuan pilihan (baris baru); `qty` selalu satuan dasar. */
+    selected_qty?: number | null; satuan?: string | null;
+  }[] | null;
 };
 type RefundRow = {
   id: string; invoice_id: string; tanggal: string;
   clinic_refund_items: { id: string; invoice_item_id: string; qty: number }[] | null;
 };
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function bacaKodeBarang(supabase: any, itemIds: (string | null | undefined)[]): Promise<Map<string, string>> {
+  const ids = [...new Set(itemIds.filter((id): id is string => !!id))];
+  const kode = new Map<string, string>();
+  try {
+    for (const batch of potong(ids)) {
+      const baris = await readReportRows<{ id: string; code: string | null }>(async (awal, ujung) => {
+        const { data, error, count } = await supabase.from("items").select("id, code", { count: "exact" }).in("id", batch).order("id").range(awal, ujung);
+        return { data, error, count };
+      });
+      for (const item of baris) if (item.code) kode.set(item.id, item.code);
+    }
+  } catch (error) {
+    console.error("Kode barang laporan tenaga penjual gagal dibaca:", error);
+  }
+  return kode;
+}
 
 export type PilihanKaryawanPenjual = { id: string; nama: string; jabatan: string | null; branchName: string | null };
 
@@ -191,7 +215,7 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
       }),
       readReportRows<SaleItemRow>(async (awal, ujung) => {
         const query = supabase.from("sale_items")
-          .select("id, nama, qty, harga, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, branch_id, no_struk, created_at, total, merchant_fee_total, salesperson_id, cashier_id, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
+          .select("id, nama, qty, harga, item_id, satuan, faktor, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, branch_id, no_struk, created_at, total, merchant_fee_total, salesperson_id, cashier_id, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
           .gte("sales.created_at", mulai).lte("sales.created_at", akhir);
         const { data, error, count } = await (cabangId ? query.eq("sales.branch_id", cabangId) : query)
           .order("id").range(awal, ujung);
@@ -199,7 +223,7 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
       }),
       readReportRows<GrosirItemRow>(async (awal, ujung) => {
         const query = supabase.from("sales_invoice_items")
-          .select(`id, nama, qty, harga, diskon, sales_invoices!inner(${SELECT_FAKTUR_GROSIR}, created_by, sales_orders(salesperson_id), branches(name), customers(name))`, { count: "exact" })
+          .select(`id, nama, qty, harga, diskon, item_id, satuan, sales_invoices!inner(${SELECT_FAKTUR_GROSIR}, created_by, sales_orders(salesperson_id), branches(name), customers(name))`, { count: "exact" })
           .gte("sales_invoices.tanggal", dari).lte("sales_invoices.tanggal", sampai);
         const { data, error, count } = await (cabangId ? query.eq("sales_invoices.branch_id", cabangId) : query)
           .order("id").range(awal, ujung);
@@ -276,6 +300,9 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
         stafId: performers ? performers.staff_id ?? null : null,
         penjualId: performers ? null : penjualLama,
         retur: false,
+        itemId: item.item_id ?? null,
+        namaItem: item.deskripsi,
+        satuan: null,
       };
       rows.push(baris);
       barisKlinikPerId.set(item.id, baris);
@@ -292,6 +319,8 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
     const netoKasir = new Map<string, number>();
     const strukPer = new Map<string, SaleRel>();
     const barisKasirPerId = new Map<string, BarisPenjual>();
+    /** Faktor satuan baris struk: qty dasar = qty × faktor. */
+    const faktorKasir = new Map<string, number>();
     for (const items of barisPerStruk.values()) {
       const sale = one(items[0].sales)!;
       strukPer.set(sale.id, sale);
@@ -334,9 +363,13 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
         stafId: performers?.staff_id ?? null,
         penjualId: performers ? null : penjualStruk(sale),
         retur: false,
+        itemId: item.item_id ?? null,
+        namaItem: item.nama,
+        satuan: item.satuan ?? null,
       };
       rows.push(baris);
       barisKasirPerId.set(item.id, baris);
+      faktorKasir.set(item.id, Number(item.faktor) || 1);
     }
 
     // ── Retur kasir: mengurangi omzet orang yang menjual baris aslinya ─────────
@@ -346,7 +379,7 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
     const returs: ReturRow[] = [];
     for (const batch of potong(strukIds)) {
       const { data } = await completeReportQuery(supabase.from("sales_returns")
-        .select("id, sale_id, tanggal, sales_return_items(id, source_line_id, nama, qty, harga)", { count: "exact" })
+        .select("id, sale_id, tanggal, sales_return_items(id, source_line_id, nama, qty, harga, selected_qty, satuan)", { count: "exact" })
         .is("voided_at", null).in("sale_id", batch));
       returs.push(...((data ?? []) as unknown as ReturRow[]));
     }
@@ -365,6 +398,11 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
           ? kotor.times(saleMerchandiseTotal(sale)).div(Number(sale.total)).toNumber() : kotor.toNumber();
         const asal = item.source_line_id ? barisKasirPerId.get(item.source_line_id) : undefined;
         const takPasti = !asal && performerAdaPerStruk.get(retur.sale_id) === true;
+        // Qty retur tersimpan dalam satuan DASAR, sedangkan baris struk dalam satuan
+        // jualnya. Dinyatakan dalam satuan baris asal supaya mengurangi qty yang sebanding.
+        const qtySatuanAsal = !asal ? qty
+          : item.selected_qty != null && (item.satuan ?? null) === (asal.satuan ?? null) ? Number(item.selected_qty) || 0
+          : qty / (faktorKasir.get(item.source_line_id!) || 1);
         if (takPasti) returTanpaSumber += nilai;
         rows.push({
           id: `retur-${item.id}`,
@@ -380,7 +418,7 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
           pelanggan: one(sale.customers)?.name ?? "Umum",
           pasien: "—",
           item: `Retur · ${item.nama ?? asal?.item ?? "barang"}`,
-          qty: -qty,
+          qty: -qtySatuanAsal,
           bruto: -nilai,
           netto: -nilai,
           // Baris retur yang sumbernya tidak pasti tidak ditebak pemiliknya.
@@ -388,6 +426,10 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
           stafId: asal?.stafId ?? null,
           penjualId: asal ? asal.penjualId : takPasti ? null : penjualStruk(sale),
           retur: true,
+          // Retur mewarisi identitas item asalnya (A2): qty retur mengurangi item yang sama.
+          itemId: asal?.itemId ?? null,
+          namaItem: asal?.namaItem ?? item.nama ?? "barang",
+          satuan: asal ? asal.satuan ?? null : null,
         });
       }
     }
@@ -463,6 +505,9 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
         stafId: null,
         penjualId: penjualFaktur(faktur),
         retur: false,
+        itemId: item.item_id ?? null,
+        namaItem: item.nama,
+        satuan: item.satuan ?? null,
       });
     }
 
@@ -499,6 +544,10 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
 
     // Akses cabang: baris cabang lain tidak pernah sampai ke layar maupun unduhan.
     const terlihat = diizinkan === null ? rows : rows.filter((row) => row.cabangId && diizinkan.includes(row.cabangId));
+
+    // Kode barang master untuk Rekap per item (A2). Murni keterangan: gagal dibaca = kode kosong.
+    const kodePerItem = await bacaKodeBarang(supabase, terlihat.map((row) => row.itemId));
+    for (const row of terlihat) if (row.itemId) row.kode = kodePerItem.get(row.itemId) ?? "";
     const munculDiData = new Set(terlihat.flatMap((row) =>
       [row.dokterId, row.stafId, row.penjualId].filter((id): id is string => !!id)));
     const cabangTerlihat = (cabangRows.data ?? []) as { id: string; name: string }[];

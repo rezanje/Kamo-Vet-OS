@@ -20,11 +20,13 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Status: dikerjakan di branch `claude/epic-hypatia-raw2el` (lihat `RENCANA-P0.md`). Index tanggal ditulis sebagai migrasi
   `20261115100000_a1_index_tanggal_laporan.sql`, **belum dipasang** ke Production (menunggu persetujuan).
 
-### A2 · [ ] P0 — Laporan Penjualan per Tenaga Penjual: rekap per item (qty)
+### A2 · [x] P0 — Laporan Penjualan per Tenaga Penjual: rekap per item (qty)
 - Halaman: `/laporan/penjual`
 - Masalah: rinciannya masih per customer/transaksi, terlalu detail untuk rekap gaji/insentif bulanan.
 - Yang diminta: tampilan **rekap per tenaga penjual → per item, dengan total quantity** dalam periode filter (misalnya sebulan).
 - Tampilan rincian yang sekarang **tetap ada**, jangan dihapus (misalnya jadi mode/tab terpisah).
+- Status: filter baru "Tampilan" → "Rekap per item (qty)" / "Rincian per transaksi" (bawaan tetap rincian).
+  Retur mengurangi item asalnya; satuan berbeda ditulis terpisah.
 - Screenshot: `laporan-penjualan-per-tenaga-penjual.jpg`
 
 ### A3 · [ ] P0 — Laporan Penjualan per Tenaga Penjual: download Excel

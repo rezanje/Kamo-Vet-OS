@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 import { kumpulkanBarisKomisi } from "@/lib/komisi-data";
-import { atribusiPenjual, rekapTenagaPenjual } from "@/lib/laporan-tenaga-penjual";
+import { atribusiPenjual, rekapPerItem, rekapTenagaPenjual } from "@/lib/laporan-tenaga-penjual";
 
 // Fixture fiktif: tidak ada data pelanggan, karyawan, atau tarif asli di sini.
 
@@ -259,4 +259,36 @@ it("A1: pilihan filter hanya membaca karyawan dan cabang, tanpa tabel penjualan"
   expect(opsi.cabangOptions).toEqual([{ id: "cabang", name: "Cabang Uji" }]);
   expect(opsi.karyawan.map((k) => k.id)).toEqual(["dokter", "kasir", "perawat"]);
   expect(state.select.map((s) => s.split(":")[0]).sort()).toEqual(["branches", "employees"]);
+});
+
+it("A2: retur membawa identitas item asal, qty dinyatakan dalam satuan jual baris asal, dan kode barang terbaca", async () => {
+  const sale = {
+    id: "struk", branch_id: "cabang", no_struk: "POS-2", created_at: "2026-10-21T03:00:00Z",
+    total: 400, merchant_fee_total: 0, salesperson_id: "kasir", cashier_id: null,
+    payment_plan: null, payments_finalized_at: null, voided_at: null,
+    branches: { name: "Cabang Uji" }, customers: { name: "Pemilik Fiktif" },
+  };
+  state.tables.sale_items = [
+    // 2 karung @ 1/2KG (faktor 0.5 kg dasar) dan 1 botol satuan dasar.
+    { id: "jual-a", nama: "Pakan Kucing", qty: 2, harga: 150, item_id: "pakan", satuan: "1/2KG", faktor: 0.5, item_discount_type: null, item_discount_value: 0, promo_discount: 0, service_performers: null, sales: sale },
+    { id: "jual-b", nama: "Vitamin", qty: 1, harga: 100, item_id: "vit", satuan: null, faktor: 1, item_discount_type: null, item_discount_value: 0, promo_discount: 0, service_performers: null, sales: sale },
+  ];
+  state.tables.sales_returns = [{
+    id: "retur", sale_id: "struk", tanggal: "2026-10-25",
+    sales_return_items: [
+      // Baris lama tanpa selected_qty: qty dasar 0.5 kg = 1 × 1/2KG.
+      { id: "retur-a", source_line_id: "jual-a", nama: "Pakan Kucing", qty: 0.5, harga: 300 },
+    ],
+  }];
+  state.tables.items = [{ id: "pakan", code: "PK-01" }, { id: "vit", code: "VT-02" }];
+
+  const { rows } = await ambilTenagaPenjual(RENTANG);
+  const retur = rows.find((r) => r.retur)!;
+  expect(retur).toMatchObject({ itemId: "pakan", satuan: "1/2KG", namaItem: "Pakan Kucing", qty: -1, kode: "PK-01" });
+
+  const perItem = rekapPerItem(atribusiPenjual(rows));
+  expect(perItem.map((r) => [r.kode, r.item, r.satuan, r.qty, r.qtyRetur])).toEqual([
+    ["PK-01", "Pakan Kucing", "1/2KG", 1, 1],
+    ["VT-02", "Vitamin", "", 1, 0],
+  ]);
 });

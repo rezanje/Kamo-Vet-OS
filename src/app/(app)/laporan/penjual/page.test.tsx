@@ -136,3 +136,20 @@ it("merekap sisa tagihan faktur grosir per penjual dan merincinya", async () => 
   expect(rekap).toContain("FJ-2");
   expect(rekap).toContain("Rp 600");
 });
+
+it("A2: tampilan Rekap per item menjumlah qty per orang per item; tampilan rincian tetap bawaan", async () => {
+  state.data = data([
+    baris({ id: "a", dokterId: "dokter", item: "Vaksin Rabies", itemId: "rabies", jenis: "Obat", qty: 2, dokumenId: "d1" }),
+    baris({ id: "b", dokterId: "dokter", item: "Vaksin Rabies", itemId: "rabies", jenis: "Obat", qty: 3, dokumenId: "d2" }),
+  ]);
+  const rekap = await render({ tampilan: "rekap-item" });
+  const bagian = rekap.split("02 · REKAP PER TENAGA PENJUAL → PER ITEM")[1];
+  expect(bagian).toBeDefined();
+  expect(bagian).toContain("Vaksin Rabies");
+  expect(bagian).toMatch(/>5<\/td>/);
+  expect(rekap).not.toContain("02 · RINCIAN BARIS PER ORANG");
+
+  const bawaan = await render();
+  expect(bawaan).toContain("02 · RINCIAN BARIS PER ORANG");
+  expect(bawaan).not.toContain("PER ITEM");
+});
