@@ -39,7 +39,7 @@ def build_chain(db, exclude):
     try:
         (tmp / 'supabase/migrations').mkdir(parents=True)
         for f in MIGRATIONS.glob('*.sql'):
-            if f.name not in exclude:
+            if f.name not in exclude and not (CAND in exclude and f.name > CAND):
                 (tmp / 'supabase/migrations' / f.name).symlink_to(f)
         old = fixture.ROOT
         fixture.ROOT = tmp
@@ -71,6 +71,10 @@ def clone(db, name, template='tpl_base'):
 def apply(db, dbname, text):
     rc, out, err = raw(db, 'begin;\n' + text + '\ncommit;', dbname)
     if rc: raise RuntimeError(err + out)
+    # Migrasi yang ditulis SESUDAH kandidat dipasang di atasnya (urutan nyata); rantai dasar hanya memuat yang lebih lama.
+    for later in sorted(p for p in MIGRATIONS.glob('*.sql') if p.name > CAND):
+        rc, out, err = raw(db, 'begin;\n' + later.read_text() + '\ncommit;', dbname)
+        if rc: raise RuntimeError(later.name + ': ' + err + out)
 
 
 def run_suite(db, dbname, name='promo_floor_line.sql'):
@@ -332,7 +336,8 @@ def mutants():
         ('M11 package: promo ignored', "v_net := round((v_line.amount - v_line.promo) * v_share, 2);\n    v_kind := case when v_net <= 0 then 'ZERO' when v_net < v_line.hpp then 'BELOW' end;", "v_net := round(v_line.amount * v_share, 2);\n    v_kind := case when v_net <= 0 then 'ZERO' when v_net < v_line.hpp then 'BELOW' end;"),
         ('M12 printed minimum (row) ignores promo', "case when v_line.promo > 0\n        then (coalesce(v_line.hpp, 0) / v_mshare + v_line.promo)", "case when false\n        then (coalesce(v_line.hpp, 0) / v_mshare + v_line.promo)"),
         ('M13 printed minimum (package) ignores promo', "greatest(ceil(case when v_line.promo > 0\n        then v_line.hpp / v_mshare + v_line.promo else v_line.hpp / v_mshare end), 1)", "greatest(ceil(v_line.hpp / v_mshare), 1)"),
-        ('M14 edit: promo inherited although qty/price changed', "and o.qty=(v_line->>'qty')::integer and o.harga=(v_line->>'price')::numeric", "and true"),
+        # M14 (promo diwarisi walau qty/harga berubah) DIPENSIUNKAN: sejak 20261113100000 (F1) baris promo yang berubah memang membawa promonya sebanding;
+        # mutan itu kini setara dengan perilaku sah. Penggantinya: F1-M06/M09/M10 di scripts/test-mitigasi-audit-mutants.py.
         ('M15 edit: promo never inherited', "o.id=any(v_service_old_ids)\n          and o.id=nullif", "o.id=any(array[]::uuid[])\n          and o.id=nullif"),
         ('M16 post: promo_discount not written', "nullif(v_line.value->>'package_qty','')::numeric,\n      v_promo\n    ) returning id", "nullif(v_line.value->>'package_qty','')::numeric,\n      0\n    ) returning id"),
         ('M17 RULE loosened: net 1 sen below HPP passes', "v_net := round((v_line.amount - v_line.promo) * v_share, 2);\n    v_kind := case when v_net <= 0 then 'ZERO' when v_line.hpp is null then 'COST' when v_net < v_line.hpp then 'BELOW' end;", "v_net := round((v_line.amount - v_line.promo) * v_share, 2);\n    v_kind := case when v_net <= 0 then 'ZERO' when v_line.hpp is null then 'COST' when v_net < v_line.hpp - 0.01 then 'BELOW' end;"),
