@@ -350,4 +350,45 @@ insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code)
 set local role authenticated;
 select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-000000000008',1,'j02-old-reconciled','Koreksi lagi',0,40000)$q$,
  'reconciliation on the recorded (old) cash account still blocks','Rekonsiliasi bank');
+
+-- J02_TANGGAL_ASLI (12 Nov): koreksi struk lama dibukukan di TANGGAL STRUK, bukan hari koreksi.
+set local role postgres;
+delete from bank_reconciliations where cash_account_id='e8600000-0000-4000-8000-000000000001';
+set local role authenticated;
+insert into sales(id,branch_id,no_struk,subtotal,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint,created_at)
+ values('e8700000-0000-4000-8000-00000000000b','e8200000-0000-4000-8000-000000000001','J02.BACKDATE',25000,25000,'Tunai',25000,
+ 'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":25000}]','j02-backdate',repeat('5',64),
+ now()-interval '4 days');
+insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) values
+ ('e8800000-0000-4000-8000-00000000000b','e8700000-0000-4000-8000-00000000000b','e8500000-0000-4000-8000-000000000001','J02 service',1,25000,'pcs',1,0);
+select finalize_pos_sale('e8700000-0000-4000-8000-00000000000b');
+select pg_temp.assert_ok((select tanggal=((now()-interval '4 days') at time zone 'Asia/Jakarta')::date from journal_entries
+ where source='sale' and source_ref='J02.BACKDATE'),'fixture: sale journal sits four days back');
+-- Rekonsiliasi bank sesudah tanggal struk tetap memblokir (jurnal koreksi akan jatuh di periode yang sudah dicocokkan).
+set local role postgres;
+insert into bank_reconciliations(tanggal,cash_account_id,bank_coa_code)
+ values(((now()-interval '2 days') at time zone 'Asia/Jakarta')::date,'e8600000-0000-4000-8000-000000000002','1142');
+set local role authenticated;
+select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-00000000000b',0,'j02-backdate-rec','Kasir salah pilih metode',0,25000)$q$,
+ 'reconciliation between sale date and today blocks a backdated correction','Rekonsiliasi bank');
+set local role postgres;
+delete from bank_reconciliations where cash_account_id='e8600000-0000-4000-8000-000000000002';
+set local role authenticated;
+select correct_pos_sale_payment('e8700000-0000-4000-8000-00000000000b',0,'j02-backdate','Kasir salah pilih metode',0,25000);
+select pg_temp.assert_ok((select count(*)=2 and bool_and(e.tanggal=((now()-interval '4 days') at time zone 'Asia/Jakarta')::date)
+ from journal_entries e where e.source_ref=(select id::text from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-00000000000b')),
+ 'reversal and replacement are booked on the original sale date, not the correction day');
+select pg_temp.assert_ok((select (created_at at time zone 'Asia/Jakarta')::date=(now() at time zone 'Asia/Jakarta')::date
+ from sale_payment_corrections where sale_id='e8700000-0000-4000-8000-00000000000b'),
+ 'the real correction time stays in the audit trail');
+select pg_temp.assert_ok(pg_temp.balance_for_sale('e8700000-0000-4000-8000-00000000000b','1144')=0
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-00000000000b','1142')=25000
+ and pg_temp.balance_for_sale('e8700000-0000-4000-8000-00000000000b','510001')=-25000,
+ 'backdated correction ledger');
+-- Tutup buku sampai tanggal struk: koreksi ditolak (tidak ada jurnal di periode tertutup).
+set local role postgres;
+update accounting_locks set closed_until=((now()-interval '4 days') at time zone 'Asia/Jakarta')::date where id;
+set local role authenticated;
+select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-8000-00000000000b',1,'j02-backdate-closed','Koreksi lagi',25000,0)$q$,
+ 'closed period on the sale date','Periode sumber');
 rollback;
