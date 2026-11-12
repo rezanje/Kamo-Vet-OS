@@ -9,6 +9,7 @@ import { akunLawanTerlarang, type JenisKas } from "@/lib/kas-entry";
 import { simpanKasEntry } from "./actions";
 import { KasCorrectionForm, KasVoidForm } from "./KasCorrectionForm";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { PilihAkunCari } from "@/components/PilihAkunCari";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -219,10 +220,8 @@ export async function KasEntryScreen({
             </div>
             <div>
               <label className="flab">{keluar ? "Untuk akun (beban) *" : "Dari akun *"}</label>
-              <select className="fi" name="lawan_code" defaultValue="" required>
-                <option value="">— pilih —</option>
-                {coa.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
-              </select>
+              {/* Bisa diketik/dicari (permintaan klinik 12 Nov) — daftar akun terlalu panjang untuk di-scroll. */}
+              <PilihAkunCari name="lawan_code" akun={coa} required ariaLabel={keluar ? "Untuk akun (beban)" : "Dari akun"} />
             </div>
           </div>
           <div className="frow" style={{ marginTop: 10 }}>
