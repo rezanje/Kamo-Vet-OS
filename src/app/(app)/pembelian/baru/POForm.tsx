@@ -6,6 +6,7 @@ import { NumberInput } from "@/components/NumberInput";
 
 import { usePreservedAction } from "@/components/LocalTransactionDraft";
 import { PurchasePriceInput } from "@/components/PurchasePriceInput";
+import { purchaseLineCentsProblem } from "@/lib/purchase-price-cents";
 import { PurchaseRequestKey } from "@/components/PurchaseRequestKey";
 import { draftRows } from "@/components/TransactionDraft";
 import Link from "next/link";
@@ -103,6 +104,7 @@ export function POForm({
   );
 
   const today = hariIniWIB();
+  const centsBlocked = rows.some((r) => (r.nama ?? "").trim() && purchaseLineCentsProblem(r.qty, r.harga_beli));
 
   return (
     <form action={save}>
@@ -249,6 +251,11 @@ export function POForm({
                   {r.item_id && (!byId.get(r.item_id)?.item_type || byId.get(r.item_id)?.item_type === "Persediaan") && (
                     <WarehouseStockHint warehouseId={warehouseId} quantity={stockByItem.get(r.item_id) ?? 0} baseUnit={byId.get(r.item_id)?.unit ?? dasar ?? "pcs"} selectedUnit={opts.find(u => u.unit === r.satuan)} />
                   )}
+                  {purchaseLineCentsProblem(r.qty, r.harga_beli) && (
+                    <div role="alert" style={{ fontSize: 10.5, color: "#b91c1c", marginTop: 2 }}>
+                      {purchaseLineCentsProblem(r.qty, r.harga_beli)}
+                    </div>
+                  )}
                   {faktor !== 1 && dasar && (
                     <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 2 }}>
                       Stok masuk {(Number(r.qty) || 0) * faktor} {dasar} ({faktor} {dasar} per {r.satuan})
@@ -272,7 +279,7 @@ export function POForm({
         <Link href="/pembelian" className="btn-def" style={{ textDecoration: "none" }}>
           Batal
         </Link>
-        <button type="submit" className="btn-acc">
+        <button type="submit" className="btn-acc" disabled={centsBlocked}>
           <i className="ti ti-device-floppy" /> Simpan PO
         </button>
       </div>

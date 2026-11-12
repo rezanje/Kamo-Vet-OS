@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { ItemUnit } from "@/lib/satuan";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { ubahPO, batalkanPO } from "../actions";
+import { purchaseLineCentsProblem } from "@/lib/purchase-price-cents";
 
 type Row = { id: string; item_id?: string | null; nama: string; qty: number; harga_beli: number; satuan?: string | null; faktor?: number };
 
@@ -39,10 +40,10 @@ export function POEditForm({ userId, poId, revision, supplierId, warehouseId, ta
           {options.map(unit => <option key={unit.unit} value={unit.unit}>{unit.unit}</option>)}
         </select>}
         <NumberInput className="fi" type="number" min={0} step="any" value={row.harga_beli} onChange={e => set(i, { harga_beli: Number(e.target.value) })} aria-label={`Harga item ${i + 1}`} style={{ width: 120 }} />
-      </div>{base && <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 4 }}>Stok masuk {Number(row.qty) * factor} {base} · modal Rp {Number(Number(row.harga_beli) / factor).toLocaleString("id-ID", { maximumFractionDigits: 2 })}/{base}</div>}</div>;
+      </div>{purchaseLineCentsProblem(row.qty, row.harga_beli) && <div role="alert" style={{ fontSize: 10.5, color: "#b91c1c", marginTop: 4 }}>{purchaseLineCentsProblem(row.qty, row.harga_beli)}</div>}{base && <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 4 }}>Stok masuk {Number(row.qty) * factor} {base} · modal Rp {Number(Number(row.harga_beli) / factor).toLocaleString("id-ID", { maximumFractionDigits: 2 })}/{base}</div>}</div>;
       })}
       <label className="flab">Alasan perubahan *</label><input className="fi" name="alasan" minLength={3} required placeholder="Contoh: jumlah pesanan dikoreksi" />
-      <button type="submit" className="btn-acc" disabled={!ready} style={{ marginTop: 8 }}>Simpan perubahan</button>
+      <button type="submit" className="btn-acc" disabled={!ready || items.some(row => purchaseLineCentsProblem(row.qty, row.harga_beli))} style={{ marginTop: 8 }}>Simpan perubahan</button>
     </>}
   </CorrectionTransactionForm>;
 }
