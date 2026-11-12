@@ -29,26 +29,35 @@ Hambatan teknis untuk mengubah di tempat dengan tanggal asli:
 - `sale_stock_out_fifo` mewajibkan tanggal stok = tanggal struk = hari ini.
 - `pos_sale_assert_actor` mewajibkan shift terbuka milik pelaku.
 
-## Rancangan tahap 2
-Satu RPC atomik `edit_posted_pos_sale(sale, expected_revision, request_key, reason, lines, payments, discount...)`
-untuk OWNER/FINANCE, pada **struk yang sama** (nomor & tanggal tetap, `revision+1`):
+## Tahap 2 — DIBANGUN (migrasi 20261116300000, keputusan Reza 12 Nov: 2A, 3A, Owner + Finance)
+Rancangan "ubah di struk yang sama" ditinggalkan: setiap fungsi hilir (pembatalan, koreksi metode, batal penerimaan,
+retur, laporan) mengandaikan satu jurnal `sale` per nomor struk. Yang dibangun = **tutup + ganti atomik** (pola klinik
+"void & terbitkan ulang") di satu transaksi database, sehingga semua jalur lama tetap berlaku untuk struk hasil ubah.
 
-1. Validasi: belum void; tidak ada retur/refund aktif; periode tanggal struk dan hari ini belum ditutup; tidak ada
-   rekonsiliasi bank ≥ tanggal struk di rekening terkait; alasan wajib; idempotensi seperti J02.
-2. Snapshot sebelum (header, baris, alokasi, jurnal) → tabel audit baru `sale_edits` (tampil di panel Riwayat).
-3. Stok: balik gerak stok lama dan keluarkan stok baru — **lihat Keputusan A** soal tanggalnya.
-4. Jurnal: balik jurnal penjualan/HPP aktif dan bukukan jurnal baru di **tanggal struk** (seperti tahap 1).
-5. Alokasi bayar & header diganti lewat gerbang koreksi yang diperluas (baris struk ikut gerbang).
-6. Poin pelanggan: selisih poin dibukukan; ditolak bila saldo poin pelanggan jadi minus.
-7. Komisi: dihitung live dari struk — otomatis ikut isi baru, tetap di bulan asli. Bila bulan itu sudah digaji → tolak.
-8. Laci shift: tidak diubah (angka tutup shift tetap); selisih tunai hanya ke kas di jurnal tanggal struk.
-9. UI: tombol **Ubah transaksi** di detail struk → formulir berisi isi struk sekarang (barang, qty, harga,
-   diskon, bayar) → Simpan. Tidak perlu shift terbuka, tidak lewat halaman kasir.
+`edit_posted_pos_sale(sale, revisi, kunci, alasan, isi)` — Owner/Finance:
+1. Struk lama ditutup lewat `pos_sale_edit_void` (turunan berjangkar `cancel_posted_sale`, hanya bisa dipanggil di
+   gerbang privat): jurnal pendapatan/kas + pasangan koreksi metode dibalik **di tanggal jurnalnya masing-masing**;
+   jurnal HPP dibalik & stok dikembalikan **hari ini**; shift tertutup boleh; promo/voucher boleh; efek quest staf
+   **dipindah** ke struk baru (tidak dibalik → aturan urutan quest tidak memblokir).
+2. Struk baru: `created_at` = lama + 1 ms (tanggal & urutan asli), kasir/shift/sales/pelanggan/pet sama, nomor
+   `<asli>-U<n>`; diposting oleh jalur resmi (trigger pembayaran, `cashier_post_stock_atomic` / `finalize_pos_sale`):
+   pendapatan di tanggal struk, stok & HPP hari ini, lantai harga P03 tetap berlaku. Metode bayar yang sudah ada tetap
+   di rekening tercatatnya (mis. Kas Kecil 1–6 Nov); metode baru memakai peta sekarang.
+3. Jalur khusus hanya di gerbang `pos_sale_edit_gate` (per transaksi, tak bisa ditulis klien): pemeriksaan pelaku/shift,
+   snapshot kasir, cek ulang promo/kuota/kampanye (3A), tanggal stok = hari ini, tanggal jurnal HPP = hari ini.
+4. Jejak `sale_edits` (sebelum/sesudah, alasan, pelaku, waktu nyata), idempotensi `sale_edit_requests`.
+5. Ditolak: periode tanggal struk/hari ini tutup buku; rekonsiliasi bank ≥ tanggal struk di rekening terkait; retur
+   aktif / refund; pernah batal penerimaan; bulan sudah digaji; poin pelanggan sudah terpakai; struk tanpa shift.
 
-Perkiraan: ±3–5 hari kerja termasuk uji database (FIFO/rata-rata, promo, poin, shift tertutup, periode tertutup,
-balapan dua sesi) dan uji coba di staging sebelum produksi.
+Aplikasi: tombol **Ubah transaksi** di detail struk (Owner/Finance) → `/penjualan/[id]/ubah`: ubah qty/harga/satuan/
+diskon baris (atau diskon promo lama), hapus baris, tambah barang (bukan paket), diskon golongan & potongan lain,
+pembayaran per metode + fee merchant → Simpan → buka struk baru. Struk lama menampilkan "sudah diubah → buka struk
+terbaru"; panel Riwayat menampilkan peristiwa ubah.
 
-## Keputusan yang dibutuhkan dari Reza
+Batasan versi ini: paket (Grup) baru tidak bisa ditambahkan dari layar ubah (paket lama bisa diubah qty / dihapus);
+uang tunai yang diserahkan/kembalian tidak dibawa (Dibayar = total); laci shift tertutup tidak diubah; poin dipakai tetap.
+
+## Keputusan Reza (12 Nov): A1 dan B1 dipilih
 **A. Stok & HPP selisihnya dicatat di tanggal mana?**
 - A1 (saran) — omzet, kas/bank, piutang di tanggal struk; **koreksi stok & HPP di hari diubah**. Stok fisik
   memang dibetulkan hari itu; aman untuk perhitungan HPP struk-struk sesudahnya. Efek: laba kotor tanggal asli

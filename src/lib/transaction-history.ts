@@ -172,6 +172,9 @@ export type PetshopReceiptCancel = {
   /** Tanggal efektif (tanggal pembukuan jurnal pembalik / terima ulang), bila dipilih; waktu nyata tetap created_at / closed_at. */
   effective_date?: string | null; receive_effective_date?: string | null; receive_reason?: string | null;
 };
+/** Ubah transaksi (sale_edits). `arah` dilihat dari struk yang sedang dibuka: "ke" = struk ini diganti, "dari" = struk ini hasil ubah. */
+export type PetshopEdit = { id: string; created_at: string; created_by: string | null; reason: string; arah: "ke" | "dari";
+  no_lama: string; no_baru: string; total_lama: number; total_baru: number };
 export type PetshopOnlineCancel = { id: string; reason: string; created_at: string; created_by: string | null; amount_bank: number; amount_fee: number; effective_date?: string | null };
 
 /** "2026-11-12" -> "12/11/2026" (tanpa zona waktu). */
@@ -187,7 +190,7 @@ const efektif = (date: string | null | undefined, atIso: string | null | undefin
 export function petshopHistory(input: {
   viewerId?: string | null; names: ActorNames;
   corrections: PetshopCorrection[]; cancellation: PetshopCancellation | null; returns: PetshopReturn[];
-  receiptCancellations?: PetshopReceiptCancel[]; onlineCancellations?: PetshopOnlineCancel[];
+  receiptCancellations?: PetshopReceiptCancel[]; onlineCancellations?: PetshopOnlineCancel[]; edits?: PetshopEdit[];
 }): HistoryEvent[] {
   const { viewerId, names } = input;
   const events: HistoryEvent[] = [];
@@ -196,7 +199,14 @@ export function petshopHistory(input: {
     events.push({ key: `koreksi-metode:${c.id}`, at: c.created_at, actor: actorLabel(c.created_by, names, viewerId), label: `Koreksi metode bayar (revisi ${c.revision})`,
       detail: [`${parts(c.before_payments)} → ${parts(c.after_payments)}`], reason: clean(c.reason), tone: "warn" });
   }
-  if (input.cancellation) {
+  for (const e of input.edits ?? []) {
+    events.push({ key: `ubah:${e.id}:${e.arah}`, at: e.created_at, actor: actorLabel(e.created_by, names, viewerId),
+      label: e.arah === "ke" ? `Transaksi diubah menjadi ${e.no_baru}` : `Hasil ubah dari ${e.no_lama}`,
+      detail: [`Total ${rp(Number(e.total_lama))} → ${rp(Number(e.total_baru))} · tetap di tanggal struk asli; koreksi stok & modal di hari ubah`],
+      reason: clean(e.reason), tone: "warn" });
+  }
+  // Struk yang diganti lewat "Ubah transaksi" tidak ditampilkan sebagai pembatalan biasa.
+  if (input.cancellation && !(input.edits ?? []).some(e => e.arah === "ke")) {
     const c = input.cancellation;
     events.push({ key: `batal:${c.id}`, at: c.created_at, actor: actorLabel(c.created_by, names, viewerId), label: "Penjualan dibatalkan",
       detail: ["Stok dan jurnal dibalik"], reason: clean(c.reason), tone: "danger" });
