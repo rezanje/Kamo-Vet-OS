@@ -10,7 +10,12 @@
 //   - Baris "Pemantauan" (monitoring) BUKAN visit; ditampilkan terpisah di kolom
 //     Pemantauan supaya tetap terlihat, tetapi tidak menambah jumlah visit.
 //   - Baris lama tanpa ID karyawan dikelompokkan menurut nama yang tercatat.
+//   - "Visit terhitung" = maks. 1 visit per orang per pasien rawat inap per tanggal WIB —
+//     aturan yang SAMA dengan komisi visit dokter (barisVisitRanap di komisi.ts, H06), supaya
+//     angka laporan ini cocok dengan yang dibayar menu Komisi untuk dokter.
 //   - Nilai rupiah per visit BELUM dihitung (pertanyaan [?] di to-do A4 masih terbuka).
+
+import { tanggalWIB } from "./tanggal";
 
 export type PeranVisit = "Dokter" | "Paramedis";
 export const PERAN_VISIT: PeranVisit[] = ["Dokter", "Paramedis"];
@@ -70,8 +75,10 @@ export type RekapVisit = {
   employeeId: string | null;
   nama: string;
   peran: PeranVisit;
-  /** Jumlah visit — dasar insentif. */
+  /** Semua catatan visit dokter yang mencantumkan orang ini. */
   visit: number;
+  /** Maks. 1 per pasien rawat inap per tanggal WIB — sama dengan aturan komisi visit dokter. */
+  visitTerhitung: number;
   /** Pasien rawat inap berbeda yang divisit. */
   pasien: number;
   /** Hari berbeda dengan minimal satu visit. */
@@ -82,19 +89,21 @@ export type RekapVisit = {
 
 /** Rekap per orang per peran. Satu orang yang tercatat sebagai dokter dan paramedis muncul dua baris. */
 export function rekapVisit(rows: readonly AtribusiVisit[]): RekapVisit[] {
-  type Akum = RekapVisit & { setPasien: Set<string>; setHari: Set<string> };
+  type Akum = RekapVisit & { setPasien: Set<string>; setHari: Set<string>; setTerhitung: Set<string> };
   const peta = new Map<string, Akum>();
   for (const { baris, kunci, employeeId, nama, peran } of rows) {
     const id = `${peran}|${kunci}`;
     let akun = peta.get(id);
     if (!akun) {
-      akun = { kunci, employeeId, nama, peran, visit: 0, pasien: 0, hari: 0, pemantauan: 0, setPasien: new Set(), setHari: new Set() };
+      akun = { kunci, employeeId, nama, peran, visit: 0, visitTerhitung: 0, pasien: 0, hari: 0, pemantauan: 0, setPasien: new Set(), setHari: new Set(), setTerhitung: new Set() };
       peta.set(id, akun);
     }
     if (hitungSebagaiVisit(baris)) {
       akun.visit += 1;
       akun.setPasien.add(baris.inpatientId);
       akun.setHari.add(baris.tanggal);
+      // Tanggal WIB dari waktu visit — persis kunci komisi (tanggalWIB(created_at)).
+      akun.setTerhitung.add(`${baris.inpatientId}|${tanggalWIB(baris.waktu)}`);
     } else {
       akun.pemantauan += 1;
     }
@@ -102,7 +111,7 @@ export function rekapVisit(rows: readonly AtribusiVisit[]): RekapVisit[] {
   return [...peta.values()]
     .map((a) => ({
       kunci: a.kunci, employeeId: a.employeeId, nama: a.nama, peran: a.peran,
-      visit: a.visit, pasien: a.setPasien.size, hari: a.setHari.size, pemantauan: a.pemantauan,
+      visit: a.visit, visitTerhitung: a.setTerhitung.size, pasien: a.setPasien.size, hari: a.setHari.size, pemantauan: a.pemantauan,
     }))
     .sort((a, b) => PERAN_VISIT.indexOf(a.peran) - PERAN_VISIT.indexOf(b.peran)
       || b.visit - a.visit || a.nama.localeCompare(b.nama, "id") || a.kunci.localeCompare(b.kunci));

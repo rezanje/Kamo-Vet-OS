@@ -38,8 +38,8 @@ it("A4: Excel berisi rekap per orang dan rincian; teks berbahaya diamankan", asy
   expect(book.worksheets.map((s) => s.name)).toEqual(["Filter", "Rekap per orang", "Rincian catatan"]);
   const rekap = (book.getWorksheet("Rekap per orang")!.getSheetValues().filter(Boolean) as unknown[][]).map((r) => r.slice(1));
   expect(rekap).toEqual([
-    ["Nama", "Peran", "Jumlah visit", "Pasien berbeda", "Hari visit", "Pemantauan (bukan visit)", "Keterangan"],
-    ["Perawat Fiktif", "Paramedis", 1, 1, 1, 0, ""],
+    ["Nama", "Peran", "Visit terhitung (maks 1/pasien/hari)", "Semua catatan visit", "Pasien berbeda", "Hari visit", "Pemantauan (bukan visit)", "Keterangan"],
+    ["Perawat Fiktif", "Paramedis", 1, 1, 1, 1, 0, ""],
   ]);
   const rincian = JSON.stringify(book.getWorksheet("Rincian catatan")!.getSheetValues());
   expect(rincian).toContain("'=SUM(1)");

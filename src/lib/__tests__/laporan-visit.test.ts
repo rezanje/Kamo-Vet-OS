@@ -50,3 +50,21 @@ describe("A4: laporan visit rawat inap", () => {
     expect(lama?.visit).toBe(2);
   });
 });
+
+describe("A4: visit terhitung sama dengan aturan komisi visit dokter", () => {
+  it("maks. 1 per orang per pasien per tanggal WIB; catatan tetap terlihat di 'semua catatan'", async () => {
+    const { barisVisitRanap } = await import("../komisi");
+    const rows = [
+      // Visit 1 dan Visit 2 di hari yang sama (WIB) untuk pasien yang sama.
+      baris({ id: "v1", waktu: "2026-11-10T01:00:00Z", inpatientId: "r1" }),
+      baris({ id: "v2", waktu: "2026-11-10T09:00:00Z", inpatientId: "r1" }),
+      // 23:30 WIB tanggal 10 = 16:30Z; 00:30 WIB tanggal 11 = 17:30Z → dua tanggal WIB berbeda.
+      baris({ id: "v3", waktu: "2026-11-10T17:30:00Z", inpatientId: "r1" }),
+      baris({ id: "v4", waktu: "2026-11-10T10:00:00Z", inpatientId: "r2" }),
+    ];
+    const dokter = rekapVisit(saringVisit(atribusiVisit(rows), { peran: "Dokter" }))[0];
+    expect([dokter.visit, dokter.visitTerhitung]).toEqual([4, 3]);
+    const komisi = barisVisitRanap(rows.map((r) => ({ id: r.id, inpatientRecordId: r.inpatientId, doctorId: r.dokterId, branchId: r.cabangId, createdAt: r.waktu })));
+    expect(komisi.baris).toHaveLength(dokter.visitTerhitung);
+  });
+});

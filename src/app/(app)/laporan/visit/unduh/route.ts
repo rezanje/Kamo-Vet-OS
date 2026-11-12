@@ -52,10 +52,10 @@ export async function GET(request: Request) {
     ["Visit dokter (catatan)", total.visit],
     ["Pasien rawat inap divisit", total.pasien],
     ["Pemantauan (bukan visit)", total.pemantauan],
-    ["Aturan hitung", "1 catatan Visit dokter = 1 visit untuk dokter visit dan 1 visit untuk paramedis di catatan itu. Catatan Pemantauan tidak dihitung sebagai visit. Nilai rupiah insentif belum dihitung."],
+    ["Aturan hitung", "1 catatan Visit dokter = 1 visit untuk dokter visit dan 1 visit untuk paramedis di catatan itu. Catatan Pemantauan tidak dihitung sebagai visit. Visit terhitung = maks. 1 per orang per pasien per hari (WIB), sama dengan aturan komisi visit dokter. Nilai rupiah dihitung Finance."],
   ];
-  const rekapKolom = ["Nama", "Peran", "Jumlah visit", "Pasien berbeda", "Hari visit", "Pemantauan (bukan visit)", "Keterangan"];
-  const rekapBaris: Sel[][] = rekap.map((r) => [r.nama, r.peran, r.visit, r.pasien, r.hari, r.pemantauan, r.employeeId ? "" : "Data lama, tanpa ID karyawan"]);
+  const rekapKolom = ["Nama", "Peran", "Visit terhitung (maks 1/pasien/hari)", "Semua catatan visit", "Pasien berbeda", "Hari visit", "Pemantauan (bukan visit)", "Keterangan"];
+  const rekapBaris: Sel[][] = rekap.map((r) => [r.nama, r.peran, r.visitTerhitung, r.visit, r.pasien, r.hari, r.pemantauan, r.employeeId ? "" : "Data lama, tanpa ID karyawan"]);
   const rincianKolom = ["Nama", "Peran", "Tanggal", "Jam", "Jenis", "Cabang", "Pasien", "Pemilik", "Kondisi", "Tindakan"];
   const rincianBaris: Sel[][] = [...terpilih]
     .sort((a, b) => a.peran.localeCompare(b.peran) || a.nama.localeCompare(b.nama, "id")

@@ -86,6 +86,7 @@ export default async function LaporanVisitPage({ searchParams }: { searchParams:
           { label: "Visit dokter (catatan)", nilai: `${total.visit}`, warna: "#15803d" },
           { label: "Pasien rawat inap divisit", nilai: `${total.pasien}` },
           { label: "Dokter", nilai: `${rekap.filter((r) => r.peran === "Dokter" && r.visit > 0).length} orang` },
+          { label: "Visit terhitung dokter (= Komisi)", nilai: `${rekap.filter((r) => r.peran === "Dokter").reduce((n, r) => n + r.visitTerhitung, 0)}` },
           { label: "Paramedis", nilai: `${rekap.filter((r) => r.peran === "Paramedis" && r.visit > 0).length} orang` },
           { label: "Pemantauan (bukan visit)", nilai: `${total.pemantauan}` },
         ]} />
@@ -109,7 +110,8 @@ export default async function LaporanVisitPage({ searchParams }: { searchParams:
               <tr>
                 <th style={{ minWidth: 200 }}>Nama</th>
                 <th style={{ width: 100 }}>Peran</th>
-                <th style={{ width: 90, textAlign: "right" }}>Jumlah visit</th>
+                <th style={{ width: 110, textAlign: "right" }}>Visit terhitung (maks 1/pasien/hari)</th>
+                <th style={{ width: 90, textAlign: "right" }}>Semua catatan visit</th>
                 <th style={{ width: 110, textAlign: "right" }}>Pasien berbeda</th>
                 <th style={{ width: 90, textAlign: "right" }}>Hari visit</th>
                 <th style={{ width: 120, textAlign: "right" }}>Pemantauan (bukan visit)</th>
@@ -120,21 +122,25 @@ export default async function LaporanVisitPage({ searchParams }: { searchParams:
                 <tr key={`${r.peran}|${r.kunci}`}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{r.nama}{!r.employeeId && <span style={{ color: "var(--td)", fontWeight: 400 }}> (data lama, tanpa ID karyawan)</span>}</td>
                   <td style={{ fontSize: 11 }}>{r.peran}</td>
-                  <td style={{ textAlign: "right", fontSize: 12, fontWeight: 800 }}>{r.visit}</td>
+                  <td style={{ textAlign: "right", fontSize: 12, fontWeight: 800 }}>{r.visitTerhitung}</td>
+                  <td style={{ textAlign: "right", fontSize: 11, color: r.visit !== r.visitTerhitung ? "#b45309" : undefined }}>{r.visit}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{r.pasien}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{r.hari}</td>
                   <td style={{ textAlign: "right", fontSize: 11, color: r.pemantauan ? "var(--tm)" : "var(--td)" }}>{r.pemantauan || "—"}</td>
                 </tr>
               ))}
-              {rekap.length === 0 && <TabelKosong kolom={6} pesan="Belum ada catatan visit pada saringan ini." />}
+              {rekap.length === 0 && <TabelKosong kolom={7} pesan="Belum ada catatan visit pada saringan ini." />}
             </tbody>
           </table>
         </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
           Satu catatan berjenis <b>Visit dokter</b> di Laporan Rawat Inap Harian dihitung 1 visit untuk dokter visitnya
           dan 1 visit untuk paramedis yang tercatat di baris itu. Catatan <b>Pemantauan</b> tidak dihitung sebagai visit.
-          Visit yang lupa diisi tidak terhitung — koreksi lewat detail rawat inap pasiennya. Nilai rupiah insentif per
-          visit belum dihitung di laporan ini.
+          <b>Visit terhitung</b> = maksimal 1 visit per orang per pasien per hari (tanggal WIB) — aturan yang sama
+          dengan komisi visit dokter di menu Komisi, jadi angka dokter di kolom ini sama dengan yang dibayar Komisi.
+          Kolom <b>Semua catatan visit</b> menghitung setiap catatan (mis. Visit 1 dan Visit 2 di hari yang sama).
+          Visit yang lupa diisi tidak terhitung — koreksi lewat detail rawat inap pasiennya. Nilai rupiah insentif
+          dihitung Finance dari jumlah visit ini.
         </div>
       </div>
 
