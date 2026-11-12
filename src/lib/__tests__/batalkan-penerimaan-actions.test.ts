@@ -18,7 +18,7 @@ describe("batalkanPenerimaan", () => {
   beforeEach(() => state.rpc.mockResolvedValue({ data: { sale_id: id, unpaid: true, cancellation_id: "c1", effect_in_other_shift: false }, error: null }));
   it("memanggil RPC atomik dengan revisi, alasan, dan kunci tahan-ulang, lalu mengarahkan dengan kunci draf", async () => {
     await expect(batalkanPenerimaan(form())).rejects.toThrow(`/penjualan/${id}?success=receipt-cancelled&draft_scope=${encodeURIComponent(`sale-receipt-cancel:${id}:2`)}&draft_done=durable-key`);
-    expect(state.rpc).toHaveBeenCalledExactlyOnceWith("cancel_pos_sale_receipt", { p_sale_id: id, p_expected_revision: 2, p_request_key: "durable-key", p_reason: "Pelanggan bayar QRIS" });
+    expect(state.rpc).toHaveBeenCalledExactlyOnceWith("cancel_pos_sale_receipt", { p_sale_id: id, p_expected_revision: 2, p_request_key: "durable-key", p_reason: "Pelanggan bayar QRIS", p_effective_date: null });
     expect(state.revalidate).toHaveBeenCalledWith("/", "layout");
   });
   it("melaporkan bila koreksi jatuh di shift lain (shift asal sudah tertutup)", async () => {
@@ -66,6 +66,7 @@ describe("terimaPembayaranUlang", () => {
     expect(state.rpc).toHaveBeenCalledExactlyOnceWith("receive_pos_sale_payment", {
       p_sale_id: id, p_expected_revision: 2, p_request_key: "durable-key",
       p_plan: [{ method: "Tunai", amount: 25000.5 }, { method: "Debit", amount: 10000 }, { method: "QRIS", amount: 64999.5 }],
+      p_effective_date: null, p_reason: "Pelanggan bayar QRIS",
     });
   });
   it("terima ulang tunai tanpa shift terbuka: ditandai 'tanpa shift' di pengalihan", async () => {
@@ -93,7 +94,7 @@ describe("batalkanPencairan", () => {
   beforeEach(() => state.rpc.mockResolvedValue({ data: { sale_id: id, status: "piutang", cancellation_id: "o1" }, error: null }));
   it("memanggil RPC pembatalan pencairan dan mengarahkan ke detail order", async () => {
     await expect(batalkanPencairan(form({ alasan: "Nominal salah ketik" }))).rejects.toThrow(`/penjualan/${id}?success=disbursement-cancelled`);
-    expect(state.rpc).toHaveBeenCalledExactlyOnceWith("cancel_online_disbursement", { p_sale_id: id, p_expected_revision: 2, p_request_key: "durable-key", p_reason: "Nominal salah ketik" });
+    expect(state.rpc).toHaveBeenCalledExactlyOnceWith("cancel_online_disbursement", { p_sale_id: id, p_expected_revision: 2, p_request_key: "durable-key", p_reason: "Nominal salah ketik", p_effective_date: null });
   });
   it("wajib konfirmasi dan alasan; jawaban salah tidak diakui", async () => {
     await expect(batalkanPencairan(form({ konfirmasi: "" }))).rejects.toThrow(/Centang kotak konfirmasi/);

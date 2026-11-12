@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""'Tanggal efektif (backdate)' untuk Batalkan penerimaan KLINIK (migrasi 20261114100000_batalkan_penerimaan_klinik_tanggal_efektif.sql).
+"""'Tanggal efektif (backdate)' untuk Batalkan penerimaan KLINIK (migrasi 20261115100000_batalkan_penerimaan_klinik_tanggal_efektif.sql).
 Owner memilih tanggal pembukuan: jurnal pembalik, koreksi tagihan dan penerimaan ulang jatuh pada tanggal ASLI; uang fisik (laci shift) tetap hari ini.
 
 Native full schema, fictional fixtures, throwaway local cluster, no network.
@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / 'scrip
 spec = importlib.util.spec_from_file_location('bk', ROOT / 'scripts/test-batalkan-penerimaan-klinik-postgres.py'); assert spec and spec.loader
 bk = importlib.util.module_from_spec(spec); spec.loader.exec_module(bk)
 okr, m, x, r, q, j, c = bk.okr, bk.m, bk.x, bk.r, bk.q, bk.j, bk.c
-CANDIDATE = '20261114100000_batalkan_penerimaan_klinik_tanggal_efektif.sql'
+CANDIDATE = '20261115100000_batalkan_penerimaan_klinik_tanggal_efektif.sql'
 MIG = ROOT / 'supabase/migrations'
 RESULTS = bk.RESULTS
 check, nxt, has, tb, net, inv_row, D, blocked, set_shift = bk.check, bk.nxt, bk.has, bk.tb, bk.net, bk.inv_row, bk.D, bk.blocked, bk.set_shift

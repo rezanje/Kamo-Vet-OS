@@ -6,7 +6,7 @@ import { pesanBatalPenerimaan, ringkasanHasil, ringkasanPratinjau, ringkasanTang
 import { parseClinicPostingError } from "../klinik-posting";
 import { GRANT_ONLY_ACTIONS, isGrantOnlyAction } from "../role-grant-only-actions";
 
-const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261114100000_batalkan_penerimaan_klinik_tanggal_efektif.sql"), "utf8");
+const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261115100000_batalkan_penerimaan_klinik_tanggal_efektif.sql"), "utf8");
 const P = { refuse: null, invoice: { id: "i", no: "INV-9", total: 63000, paid_status: "Lunas", metode_bayar: "QRIS", dp_amount: 0, shift_id: null, visit_id: "v", branch_id: null }, direct: { amount: 108000, kas_code: "120002", metode: "QRIS" }, payments: [], apps: [], receipts: [], actor: "OWNER", cash_amount: 0, shift_mode: "nonkas", today: "2026-11-12" } as unknown as PratinjauBatal;
 
 describe("kalimat tanggal efektif", () => {

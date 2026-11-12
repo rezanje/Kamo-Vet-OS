@@ -9,6 +9,7 @@ import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
 import { bolehLihatRiwayat, petshopHistory, type PetshopOnlineCancel, type PetshopReceiptCancel } from "@/lib/transaction-history";
 import { alasanUbahTransaksiTerhalang, bulanJakarta } from "@/lib/ubah-transaksi-petshop";
 import { loadActorNames } from "@/lib/transaction-history-server";
+import { bacaBatasTanggal, batasCadangan, catatanTanggalEfektif, tanggalId, tanggalIsoValid, tanggalWibDariWaktu, type BatasTanggal } from "@/lib/tanggal-efektif-petshop";
 
 import { SaleCancelForm } from "./SaleCancelForm";
 import { SalePaymentCorrectionForm } from "./SalePaymentCorrectionForm";
@@ -52,10 +53,11 @@ export default async function PenjualanDetailPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ success?: string; error?: string; shift?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; shift?: string; tgl?: string }>;
 }) {
   const { id } = await params;
-  const { success, error, shift: shiftParam } = await searchParams;
+  const { success, error, shift: shiftParam, tgl } = await searchParams;
+  const tglCatatan = tgl && tanggalIsoValid(tgl) ? ` Dibukukan di tanggal ${tanggalId(tgl)} (bukan hari ini); struk dan omzet tanggal struk tidak berubah.` : "";
   const shiftLain = shiftParam === "lain";
   const shiftTanpa = shiftParam === "tanpa";
   const supabase = await createClient();
@@ -80,12 +82,12 @@ export default async function PenjualanDetailPage({
 
   // Batalkan penerimaan: catatan struk ini, status shift asal, dan hak peran (Owner tidak pernah terkunci).
   const { data: receiptData, error: receiptError } = await supabase.from("pos_receipt_cancellations")
-    .select("id, reason, created_at, created_by, source_shift_status, source_shift_id, effect_shift_id, shift_mode, before_payments, after_payments, closed_at, closed_by, closed_kind")
+    .select("id, reason, created_at, created_by, source_shift_status, source_shift_id, effect_shift_id, shift_mode, before_payments, after_payments, closed_at, closed_by, closed_kind, effective_date, receive_effective_date, receive_reason")
     .eq("sale_id", id).order("created_at", { ascending: true });
   const receiptCancels = (receiptData ?? []) as unknown as PetshopReceiptCancel[];
   const openCancel = receiptCancels.find(c => !c.closed_at) ?? null;
   const { data: onlineData, error: onlineError } = sale.channel
-    ? await supabase.from("online_disbursement_cancellations").select("id, reason, created_at, created_by, amount_bank, amount_fee").eq("sale_id", id).order("created_at", { ascending: true })
+    ? await supabase.from("online_disbursement_cancellations").select("id, reason, created_at, created_by, amount_bank, amount_fee, effective_date").eq("sale_id", id).order("created_at", { ascending: true })
     : { data: null, error: null };
   const onlineCancels = (onlineData ?? []) as unknown as PetshopOnlineCancel[];
   const { data: shiftRow } = sale.shift_id ? await supabase.from("cashier_shifts").select("status").eq("id", sale.shift_id).maybeSingle() : { data: null };
@@ -97,6 +99,16 @@ export default async function PenjualanDetailPage({
     canCancelReceipt = allowed === true || (!!allowedError && isOwner);
   }
   const hasReceiptCycle = receiptCancels.length > 0;
+  // Tanggal efektif (backdate): rentang dibaca dari database (pratinjau); gagal baca = rentang dasar, Owner tidak dikunci layar (database memutuskan).
+  let batasTanggal: BatasTanggal | null = null;
+  if (canCancelReceipt && !sale.voided_at && !receiptError && !onlineError) {
+    const op = openCancel ? "receive" : sale.channel ? "online" : "cancel";
+    const wajib = openCancel || (sale.channel ? sale.marketplace_status === "cair" : !!sale.payment_plan && !!sale.payments_finalized_at);
+    if (wajib) {
+      const { data: batas } = await supabase.rpc("pos_receipt_date_bounds", { p_sale_id: sale.id, p_op: op });
+      batasTanggal = bacaBatasTanggal(batas) ?? batasCadangan(tanggalWibDariWaktu(sale.created_at), isOwner);
+    }
+  }
 
   const { data: returData } = await supabase
     .from("sales_returns")
@@ -150,9 +162,9 @@ export default async function PenjualanDetailPage({
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {success === "cancelled" ? "Penjualan dibatalkan. Riwayat dan pembalikannya tersimpan."
             : success === "payment-corrected" ? "Metode pembayaran terkoreksi pada penjualan ini. Jurnal pembalik dan pengganti tersimpan."
-            : success === "receipt-cancelled" ? `Penerimaan dibatalkan: uang dikeluarkan dari kas/bank dan struk menjadi belum dibayar.${shiftLain ? " Shift asal struk sudah ditutup; angka tutupnya tidak diubah, pengembalian dicatat di shift terbuka Anda." : ""}${shiftTanpa ? " Shift asal struk sudah ditutup dan Anda tidak punya shift terbuka: pengembalian tunai ditandai \"tanpa shift\" untuk Finance dan tidak mengubah laci kasir mana pun." : ""} Terima pembayaran lagi atau ubah transaksi di bawah.`
-            : success === "receipt-received" ? `Pembayaran diterima ulang. Jurnal dan laci shift tercatat.${shiftTanpa ? " Anda tidak punya shift terbuka: uang tunai ditandai \"tanpa shift\" untuk Finance dan tidak masuk laci kasir mana pun." : ""}`
-            : success === "disbursement-cancelled" ? "Pencairan dibatalkan: order kembali menjadi piutang marketplace." : "Dokumen tersimpan."}
+            : success === "receipt-cancelled" ? `Penerimaan dibatalkan: uang dikeluarkan dari kas/bank dan struk menjadi belum dibayar.${shiftLain ? " Shift asal struk sudah ditutup; angka tutupnya tidak diubah, pengembalian dicatat di shift terbuka Anda." : ""}${shiftTanpa ? " Shift asal struk sudah ditutup dan Anda tidak punya shift terbuka: pengembalian tunai ditandai \"tanpa shift\" untuk Finance dan tidak mengubah laci kasir mana pun." : ""}${tglCatatan} Terima pembayaran lagi atau ubah transaksi di bawah.`
+            : success === "receipt-received" ? `Pembayaran diterima ulang. Jurnal dan laci shift tercatat.${shiftTanpa ? " Anda tidak punya shift terbuka: uang tunai ditandai \"tanpa shift\" untuk Finance dan tidak masuk laci kasir mana pun." : ""}${tglCatatan}`
+            : success === "disbursement-cancelled" ? `Pencairan dibatalkan: order kembali menjadi piutang marketplace.${tglCatatan}` : "Dokumen tersimpan."}
         </div>
       )}
       {error && (
@@ -165,7 +177,7 @@ export default async function PenjualanDetailPage({
         {isOwner && <Link href={`${sale.channel ? "/penjualan/online/baru" : "/kasir"}?replace_sale=${sale.id}`}>Siapkan transaksi pengganti</Link>}
       </div>}
       {openCancel && !sale.voided_at && <div role="status" className="p2ban" style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#9a3412" }}>
-        <i className="ti ti-receipt-off" /> <strong>Belum dibayar — penerimaan dibatalkan</strong> pada {fmtDt(openCancel.created_at)} · {openCancel.reason}. Uang sudah dikeluarkan dari kas/bank.
+        <i className="ti ti-receipt-off" /> <strong>Belum dibayar — penerimaan dibatalkan</strong> pada {fmtDt(openCancel.created_at)} · {openCancel.reason}. Uang sudah dikeluarkan dari kas/bank.{catatanTanggalEfektif(openCancel.effective_date, openCancel.created_at) ? ` ${catatanTanggalEfektif(openCancel.effective_date, openCancel.created_at)}.` : ""}
         {" "}Terima pembayaran lagi{isOwner ? ", atau ubah transaksi (Batalkan penjualan lalu siapkan pengganti)" : ""}.
       </div>}
       {sale.channel && sale.marketplace_status === "piutang" && !sale.voided_at && onlineCancels.length > 0 && <div role="status" className="p2ban">Pencairan pernah dibatalkan; order ini kembali menjadi piutang marketplace.</div>}
@@ -258,10 +270,10 @@ export default async function PenjualanDetailPage({
         <summary>{openCancel ? "Struk belum dibayar — terima pembayaran atau ubah transaksi" : isOwner ? "Koreksi, batalkan penerimaan atau batalkan penjualan" : canCorrectRole ? "Koreksi metode pembayaran" : "Batalkan penerimaan"}</summary>
         {receiptError && <p role="alert">Riwayat pembatalan penerimaan belum dapat dibaca. Muat ulang sebelum tindakan berikutnya.</p>}
         {!receiptError && openCancel && canCancelReceipt && <SaleReceiveAgainForm userId={user.id} saleId={sale.id} revision={sale.revision}
-          total={Number(sale.total)} previous={openCancel.before_payments.map(part => ({ method: part.method, amount: Number(part.amount) }))} />}
+          total={Number(sale.total)} previous={openCancel.before_payments.map(part => ({ method: part.method, amount: Number(part.amount) }))} batasTanggal={batasTanggal} />}
         {!receiptError && !openCancel && canCancelReceipt && !sale.channel && !!sale.payment_plan && !!sale.payments_finalized_at && <SaleReceiptCancelForm userId={user.id} saleId={sale.id}
-          revision={sale.revision} total={Number(sale.total)} shiftClosed={shiftClosed} ubahTerhalang={ubahTerhalang} />}
-        {!receiptError && !onlineError && canCancelReceipt && !!sale.channel && sale.marketplace_status === "cair" && <OnlineDisbursementCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />}
+          revision={sale.revision} total={Number(sale.total)} shiftClosed={shiftClosed} ubahTerhalang={ubahTerhalang} batasTanggal={batasTanggal} />}
+        {!receiptError && !onlineError && canCancelReceipt && !!sale.channel && sale.marketplace_status === "cair" && <OnlineDisbursementCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} batasTanggal={batasTanggal} />}
         {canCorrectPayment && !correctionError && <SalePaymentCorrectionForm userId={user.id} saleId={sale.id}
           revision={sale.revision} cash={cash} transfer={transfer} change={Number(sale.kembali)}
           fixed={payments.filter(part => part.method !== "Tunai" && part.method !== "Transfer")} />}

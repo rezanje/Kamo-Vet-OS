@@ -11,6 +11,7 @@ import { PaymentCorrectionForm } from "./PaymentCorrectionForm";
 import { PurchaseCorrectionRequestPanel } from "@/components/PurchaseCorrectionRequestPanel";
 import { loadRequestsForSource, type PurchaseCorrectionRequest } from "@/lib/purchase-correction-requests";
 import { loadPurchaseCancelAccess } from "@/lib/purchase-cancel-access";
+import { loadPurchaseBackdateAccess } from "@/lib/purchase-backdate";
 
 const rp = (value: number) => `Rp ${Number(value).toLocaleString("id-ID")}`;
 type Rel<T> = T | T[] | null;
@@ -73,6 +74,8 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
   const owner = profile?.role === "OWNER" && profile.is_active;
   // Batal faktur / batal pembayaran: OWNER selalu; peran lain hanya dengan izin dari Akses Grup (database memeriksa ulang).
   const cancelAccess = await loadPurchaseCancelAccess(supabase, profile);
+  // Tanggal mundur untuk batal faktur/pembayaran: Owner selalu; peran lain hanya dengan izin Tanggal mundur (database memeriksa ulang).
+  const canBackdate = (cancelAccess.faktur || cancelAccess.pembayaran) && (await loadPurchaseBackdateAccess(supabase, profile));
   const canReprice = !!owner && !invoice.voided_at && !invoice.opening_batch_id;
   // Riwayat koreksi harga (P02) memuat selisih HPP/nilai stok: hanya OWNER/FINANCE (database juga membatasi).
   // Gagal baca tidak menyembunyikan faktur; tabel hanya tampil bila terbaca.
@@ -111,7 +114,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
         </tbody></table></div>
       </>}
       {!invoice.voided_at && <Link className="btn-def" href="/keuangan/hutang">Periksa sisa hutang &amp; bayar</Link>}
-      {cancelAccess.faktur && !invoice.opening_batch_id && <InvoiceCorrectionForm userId={user!.id} invoiceId={id} revision={invoice.revision} voided={!!invoice.voided_at} />}
+      {cancelAccess.faktur && !invoice.opening_batch_id && <InvoiceCorrectionForm userId={user!.id} invoiceId={id} revision={invoice.revision} voided={!!invoice.voided_at} docDate={invoice.tanggal} canBackdate={canBackdate} />}
     </section>
     <PurchaseCorrectionRequestPanel kind="purchase_invoice" sourceId={id} label={invoice.no_faktur} owner={!!owner}
       requests={correctionRequests} requestKey={crypto.randomUUID()}
@@ -133,7 +136,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
         {payment.catatan && <p>{payment.catatan}</p>}
         {one(payment.payment_order) ? <p><DocumentLink kind="payment-order" id={one(payment.payment_order)!.id} from={`/pembelian/faktur/${id}#payment-${payment.id}`}>Perintah bayar {one(payment.payment_order)!.no_pp}</DocumentLink> · {one(payment.payment_order)!.status}</p> : payment.payment_order_id && <p>Perintah bayar terkait tidak tersedia atau tidak dapat diakses.</p>}
         {cancelAccess.pembayaran && !payment.reversal_of && !payment.voided_at && <details><summary className="btn-def">Batalkan / koreksi pembayaran</summary>
-          <PaymentCorrectionForm userId={user!.id} invoiceId={id} paymentId={payment.id} revision={payment.revision} grouped={!!payment.payment_order_id} />
+          <PaymentCorrectionForm userId={user!.id} invoiceId={id} paymentId={payment.id} revision={payment.revision} grouped={!!payment.payment_order_id} docDate={payment.tanggal} canBackdate={canBackdate} />
         </details>}
         {cancelAccess.pembayaran && !invoice.voided_at && payment.voided_at && !payment.payment_order_id && !payments.some(p => p.replaces_payment_id === payment.id) && <Link href={`/keuangan/hutang?replace_payment=${payment.id}`}>Siapkan pembayaran pengganti</Link>}
       </article>)}

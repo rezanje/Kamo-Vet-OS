@@ -4,6 +4,8 @@ import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DocumentLink } from "@/components/RelatedDocuments";
 import { batalkanUangMukaBeserta } from "./actions";
+import { EffectiveDateField } from "@/components/EffectiveDateField";
+import { loadPurchaseBackdateAccess } from "@/lib/purchase-backdate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -12,7 +14,7 @@ type PlanRow = {
   uses_this_advance: boolean; no_um: string | null; invoice_id: string; no_faktur: string;
   invoice_voided: boolean; payment_order_id: string | null; no_pp: string | null;
 };
-type Preview = { advance_id: string; no_um: string; status: string; jumlah: number; terpakai: number; payments: PlanRow[]; fingerprint: string };
+type Preview = { advance_id: string; no_um: string; status: string; jumlah: number; terpakai: number; tanggal?: string; min_tanggal?: string; payments: PlanRow[]; fingerprint: string };
 
 /** P08: preview of everything a one-step cancel of a used advance reverses, then OWNER confirmation. */
 export default async function BatalUangMukaPage({ params, searchParams }: {
@@ -24,6 +26,11 @@ export default async function BatalUangMukaPage({ params, searchParams }: {
   const preview = data as Preview | null;
   const back = <Link href="/pembelian/uang-muka" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke uang muka</Link>;
   if (error || !preview) return <>{back}<div role="alert" className="p2ban">{error?.message ?? "Pratinjau pembatalan belum dapat dimuat."}</div></>;
+
+  // Tanggal mundur: Owner selalu; peran lain hanya dengan izin Tanggal mundur (database memeriksa ulang di RPC).
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle();
+  const canBackdate = await loadPurchaseBackdateAccess(supabase, profile);
 
   const invoices = new Map<string, string>();
   for (const row of preview.payments) invoices.set(row.invoice_id, row.no_faktur);
@@ -73,6 +80,7 @@ export default async function BatalUangMukaPage({ params, searchParams }: {
             <input type="hidden" name="request_key" value={crypto.randomUUID()} />
             <label className="flab" htmlFor="alasan">Alasan pembatalan *</label>
             <textarea className="fi" id="alasan" name="alasan" required minLength={3} maxLength={1000} rows={2} placeholder="Mis. uang muka salah pemasok" />
+            <EffectiveDateField id="batal-tanggal" docDate={preview.min_tanggal ?? preview.tanggal} docLabel="uang muka atau pembayaran terakhir" canBackdate={canBackdate} />
             <label style={{ fontSize: 11.5, display: "flex", gap: 6 }}>
               <input type="checkbox" name="setuju" value="1" required /> Saya sudah memeriksa daftar pembayaran di atas.
             </label>

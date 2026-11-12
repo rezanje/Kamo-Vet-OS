@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Suite SQL tetangga untuk migrasi 20261114100000_batalkan_penerimaan_klinik_tanggal_efektif.sql: hasil HARUS sama pada rantai TANPA dan DENGAN migrasi
+"""Suite SQL tetangga untuk migrasi 20261115100000_batalkan_penerimaan_klinik_tanggal_efektif.sql: hasil HARUS sama pada rantai TANPA dan DENGAN migrasi
 (satu-satunya perbedaan yang disengaja ada di batalkan_penerimaan_petshop.sql: pelaku tanpa shift terbuka kini 'tanpa_shift', bukan ditolak, dan
 efek jatuh di shift pelaku, bukan shift kasir lain; versi lama suite itu dijalankan di sisi TANPA, versi baru di sisi DENGAN).
   flock /opt/data/kamo-heavy-test.lock python3 -I scripts/test-mitigasi-neighbours-postgres.py --pg-bin DIR --json out.json [--attach ROOT]
@@ -11,7 +11,7 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / 'scripts'))
 spec = importlib.util.spec_from_file_location('mt', ROOT / 'scripts/test-mitigasi-audit-postgres.py'); mt = importlib.util.module_from_spec(spec); spec.loader.exec_module(mt)
 TESTS = ROOT / 'supabase/tests'
-CAND = '20261114100000_batalkan_penerimaan_klinik_tanggal_efektif.sql'
+CAND = '20261115100000_batalkan_penerimaan_klinik_tanggal_efektif.sql'
 SUITES = ['clinic_billing_lifecycle.sql', 'clinic_billing_consistency.sql', 'clinic_invoice_post.sql', 'clinic_payment_method_corrections.sql', 'clinic_refund_post.sql', 'clinic_refund_source.sql',
           'unpaid_clinical_correction.sql', 'clinic_inpatient_discharge.sql', 'clinic_procedure_bmhp.sql', 'clinic_compound_issue.sql', 'moving_average_clinic.sql', 'clinic_demo_financial_policy.sql',
           'expense_correction_after_shift.sql', 'refund_payout.sql', 'mitigasi_petshop.sql', 'batalkan_penerimaan_petshop.sql', 'pos_split_payments.sql', 'pos_payment_method_corrections.sql',

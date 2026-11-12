@@ -1,4 +1,4 @@
-"""Mutants of 20261114100000_batalkan_penerimaan_klinik_tanggal_efektif.sql. Each: (name, sections to run, [(old text, new text, expected occurrences)]).
+"""Mutants of 20261115100000_batalkan_penerimaan_klinik_tanggal_efektif.sql. Each: (name, sections to run, [(old text, new text, expected occurrences)]).
 Every mutant must make at least one case of the listed sections FAIL (a surviving mutant = an untested rule)."""
 MUTANTS = [
     ('M01 Owner no longer short-circuits the backdate right (needs a grant)', ['dates'],
