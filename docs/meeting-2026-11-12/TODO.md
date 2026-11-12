@@ -68,9 +68,12 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 
 ## B. KLINIK
 
-### B1 · [ ] P1 — Tambah beberapa obat racikan sekaligus
+### B1 · [x] P1 — Tambah beberapa obat racikan sekaligus
 - Di rawat inap, dokter tidak bisa menambahkan beberapa obat racikan (misalnya racik kapsul dan racik vitamin) dalam satu kali "Tambah obat / BMHP ke tagihan"; harus satu per satu.
 - Langkah: investigasi alurnya dulu. Apakah ini memang batasan desain atau bug? Laporkan temuannya sebelum mengubah apa pun.
+- Temuan (`TEMUAN-B1.md`): bukan batasan desain. Racikan yang sedang disusun terbuang diam-diam bila dokter memilih
+  racikan/tindakan lain sebelum klik "Tambah ke keranjang". Perbaikan (pilihan 2A): ditanya dulu — Masukkan ke keranjang &
+  lanjut / Buang / Batal — plus petunjuk cara memasukkan beberapa racikan.
 - Screenshot: `klinik-obat-khusus.jpg`
 
 ### B2 · [ ] P1 — Hapus/arsip data percobaan & transaksi oleh Owner/Admin

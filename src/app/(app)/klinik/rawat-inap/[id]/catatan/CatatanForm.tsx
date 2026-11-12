@@ -296,17 +296,36 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
     setRacikanEditKey(null);
   };
   /** Racikan baru maupun baris keranjang yang diubah memakai bentuk baris yang sama persis. */
-  const addRacikanToCart = () => {
+  const addRacikanToCart = (): boolean => {
     const sku = racikanItems.find(item => item.id === saleItemId) ?? null;
     let dibuat;
     try { dibuat = masterCompoundCartRow(sku, selectedFormula ?? null, compoundDraft, racikanEditKey ?? crypto.randomUUID(), bolehManual); }
-    catch (error) { setProcedureError(error instanceof Error ? error.message : "Racikan belum lengkap"); return; }
+    catch (error) { setProcedureError(error instanceof Error ? error.message : "Racikan belum lengkap"); return false; }
     const baris = dibuat; // konstan supaya bisa dipakai di dalam penutup setCart
     setCart(rows => racikanEditKey
       ? rows.map(line => line.key === racikanEditKey ? { ...baris, service_performers: line.service_performers } : line)
       : [...rows, { ...baris, service_performers: visitDefaultPerformers(visitDoctorId) }]);
     resetRacikan();
     setProcedureError("");
+    return true;
+  };
+
+  // B1 (meeting 12 Nov 2026): dokter mengira "hanya bisa satu racikan" karena racikan yang sedang
+  // disusun DIBUANG diam-diam saat ia memilih racikan/tindakan lain sebelum menekan
+  // "Tambah ke keranjang". Sekarang ditanya dulu: masukkan ke keranjang, buang, atau batal.
+  const [pilihTertunda, setPilihTertunda] = useState<{ jenis: "racikan" | "tindakan"; item: ItemLite } | null>(null);
+  const racikanBelumMasuk = !racikanEditKey && !!saleItemId && (racikBahan.length > 0 || !!officialVersionId);
+  const lanjutkanPilihan = (pilihan: { jenis: "racikan" | "tindakan"; item: ItemLite }) => {
+    setPilihTertunda(null);
+    if (pilihan.jenis === "racikan") selectRacikan(pilihan.item); else selectProcedure(pilihan.item);
+  };
+  const pilihRacikan = (item: ItemLite): void => {
+    if (racikanBelumMasuk && item.id !== saleItemId) { setPilihTertunda({ jenis: "racikan", item }); return; }
+    selectRacikan(item);
+  };
+  const pilihTindakan = (item: ItemLite): void => {
+    if (racikanBelumMasuk) { setPilihTertunda({ jenis: "tindakan", item }); return; }
+    selectProcedure(item);
   };
 
   const setQty = (key: string, qty: number) => setCart((c) => c.map((r) => (r.key === key ? { ...r, qty: Math.max(1, qty) } : r)));
@@ -636,11 +655,28 @@ export function CatatanForm({ mode = "legacy", recordId, requestKey, draftUserId
               {tab === "Jasa" && (
                 <ClinicServicePicker key={tab} kind="Jasa" items={jasaItems} onAdd={addObat} />
               )}
+              {tab === TINDAKAN && pilihTertunda && (
+                <div role="alertdialog" aria-label="Racikan belum masuk keranjang" className="p2ban"
+                  style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e", marginBottom: 8, fontSize: 11.5 }}>
+                  <div style={{ fontWeight: 700 }}>Racikan &quot;{racikNama || "ini"}&quot; belum masuk keranjang.</div>
+                  <div style={{ marginTop: 2 }}>Masukkan dulu sebelum memilih {pilihTertunda.jenis === "racikan" ? "racikan" : "tindakan"} &quot;{pilihTertunda.item.name}&quot;?</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                    <button type="button" className="btn-acc" onClick={() => { const pilihan = pilihTertunda; if (addRacikanToCart()) lanjutkanPilihan(pilihan); else setPilihTertunda(null); }}>Masukkan ke keranjang &amp; lanjut</button>
+                    <button type="button" className="btn-def" onClick={() => lanjutkanPilihan(pilihTertunda)}>Buang racikan ini</button>
+                    <button type="button" className="btn-def" onClick={() => setPilihTertunda(null)}>Batal</button>
+                  </div>
+                </div>
+              )}
+              {tab === TINDAKAN && (
+                <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 6 }}>
+                  Beberapa racikan sekaligus: susun satu racikan → klik <b>Tambah ke keranjang</b> → pilih racikan berikutnya → simpan sekali di akhir.
+                </div>
+              )}
               {tab === TINDAKAN && (
                 <TindakanRacikanForm tindakanItems={tindakanItems} racikanItems={racikanItems} bmhpItems={barangSaja} bahanItems={bahanItems}
                   katalogRacikan={katalogRacikan} bolehManual={bolehManual}
                   tindakan={procedureDraft} racikan={compoundDraft} editing={!!formEditKey} harga={formHarga}
-                  onPilihTindakan={selectProcedure} onPilihRacikan={selectRacikan}
+                  onPilihTindakan={pilihTindakan} onPilihRacikan={pilihRacikan}
                   onUbahBmhp={bmhp => setProcedureDraft(draft => draft ? { ...draft, bmhp } : draft)}
                   onUbahRacikan={changeCompound} onSimpan={commitForm} onBatal={cancelForm} />
               )}

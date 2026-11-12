@@ -1,6 +1,6 @@
 # Temuan B1 — "tidak bisa menambah beberapa obat racikan sekaligus" (rawat inap)
 
-Status: **investigasi selesai, belum ada perubahan.** Menunggu keputusan Reza.
+Status: investigasi selesai; Reza memilih **A** (12 Nov) — sudah dikerjakan di commit "B1: …".
 
 ## Kesimpulan
 Bukan batasan desain dan bukan error di database. Formulir rawat inap (baik "Tambah obat / BMHP ke tagihan" maupun
