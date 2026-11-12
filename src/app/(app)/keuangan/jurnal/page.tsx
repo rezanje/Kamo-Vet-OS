@@ -64,7 +64,7 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   "wholesale-return-void": { label: "Batal Retur Faktur", cls: "r" },
 };
 
-/** Jurnal bertanggal mundur: tanggal jurnal < hari (WIB) saat dicatat. */
+/** Pembukuan beda tanggal: tanggal jurnal < hari (WIB) saat dicatat. */
 function dicatatMundur(tanggal: string | null | undefined, createdAt: string | null | undefined): boolean {
   if (!tanggal || !createdAt) return false;
   const hariCatat = new Date(new Date(createdAt).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
@@ -260,7 +260,7 @@ export default async function JurnalPage({
         {mundur.length > 0 && (
           <details style={{ marginBottom: 10 }} data-testid="jurnal-mundur">
             <summary style={{ cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>
-              Jurnal klinik bertanggal mundur ({mundur.length}) — untuk rekonsiliasi bank/QRIS: tanggal jurnal vs waktu dicatat sebenarnya
+              Pembukuan beda tanggal ({mundur.length}) — tanggal jurnal vs waktu dicatat
             </summary>
             <div style={{ overflowX: "auto", marginTop: 6 }}>
               <table className="tbl" style={{ minWidth: 560 }}>
@@ -362,8 +362,8 @@ export default async function JurnalPage({
                         {tgl}
                         {/* Rekonsiliasi bank/QRIS: tanggal jurnal (efektif) DAN waktu dicatat sebenarnya. Hanya tampil bila dicatat di hari yang lebih lambat. */}
                         {dicatatMundur(e.tanggal, e.created_at) && (
-                          <div title="Tanggal jurnal lebih awal dari saat jurnal ini dicatat (tanggal efektif / backdate)" style={{ fontSize: 9.5, color: "#b45309" }}>
-                            dicatat {new Date(e.created_at as string).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                          <div title="Tanggal jurnal lebih awal dari saat jurnal dicatat" style={{ fontSize: 9.5, color: "#b45309" }}>
+                            tanggal pembukuan diubah · dicatat {new Date(e.created_at as string).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                           </div>
                         )}
                       </td>

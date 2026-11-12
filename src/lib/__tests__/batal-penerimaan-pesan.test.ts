@@ -30,16 +30,16 @@ describe("pesanBatalPenerimaan", () => {
 describe("ringkasan", () => {
   it("penerimaan langsung: menyebut jumlah, rekening, tagihan kembali Belum Lunas, stok/HPP tak berubah, tanggal jurnal, shift", () => {
     const t = ringkasanPratinjau(P()).join("\n");
-    expect(t).toMatch(/Rp 220\.000/); expect(t).toMatch(/Bank/); expect(t).toMatch(/Belum Lunas dengan nomor yang sama/);
-    expect(t).toMatch(/stok, HPP, dan jurnal penjualan TIDAK berubah/); expect(t).toMatch(/2026-11-11/); expect(t).toContain(SHIFT_TEKS.nonkas);
+    expect(t).toMatch(/Rp 220\.000/); expect(t).toMatch(/Bank/); expect(t).toMatch(/kembali belum lunas/);
+    expect(t).toMatch(/stok, HPP, dan jurnal penjualan tidak berubah/); expect(t).not.toMatch(/Jurnal pembalik bertanggal|mundur/); expect(SHIFT_TEKS.nonkas).toBe("");
   });
   it("kwitansi + tagihan lain + uang muka + pemakaian uang muka dijelaskan terpisah", () => {
     const t = ringkasanPratinjau(P({ direct: null,
       apps: [{ application_id: "a", advance_id: "x", advance_no: "UMK-1", amount: 50000 }],
       receipts: [{ id: "r", no: "KWT-1", total: 150000, tanggal: "2026-11-10", parts: [{ metode: "QRIS", amount: 150000, kas_code: "120002" }],
         other_invoices: [{ invoice_id: "o", no: "INV-8", amount: 50000 }], advance: { no: "UMK-2", amount: 50000 } }], shift_mode: "shift_berjalan" })).join("\n");
-    expect(t).toMatch(/Pemakaian uang muka UMK-1 Rp 50\.000 dibatalkan: jumlahnya kembali ke saldo/);
-    expect(t).toMatch(/Kwitansi KWT-1 .* dibatalkan utuh/); expect(t).toMatch(/juga melunasi tagihan INV-8/); expect(t).toMatch(/Uang muka UMK-2 .* ikut dibatalkan/);
+    expect(t).toMatch(/Pemakaian uang muka UMK-1 Rp 50\.000 dibatalkan; saldo uang muka pasien kembali/);
+    expect(t).toMatch(/Kwitansi KWT-1 .* dibatalkan\./); expect(t).toMatch(/Tagihan INV-8 ikut kembali belum lunas/); expect(t).toMatch(/Uang muka UMK-2 .* ikut dibatalkan/);
     expect(t).toContain(SHIFT_TEKS.shift_berjalan);
   });
   it("hasil: ringkas, menyebut kwitansi, tagihan lain, uang muka dan mode shift", () => {

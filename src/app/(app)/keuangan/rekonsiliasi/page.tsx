@@ -75,7 +75,7 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
       </div>
 
       <div className="crm-sec">
-        <SecHeader num="02" title="PEMBATALAN PEMBELIAN — TANGGAL PEMBUKUAN VS UANG FISIK" desc="Pembatalan pembayaran/uang muka yang dibukukan di tanggal asli; uang fisiknya kembali pada hari pencatatan." />
+        <SecHeader num="02" title="PEMBUKUAN BEDA TANGGAL — PEMBELIAN" desc="Pembatalan yang dibukukan di tanggal lain; uang fisik kembali pada hari dicatat." />
         <BackdateCashTable rows={(backdated.data ?? []) as BackdateCashRow[]} error={backdated.error ? "Daftar belum dapat dimuat. Muat ulang halaman." : null} />
       </div>
 

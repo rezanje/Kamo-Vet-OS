@@ -27,18 +27,14 @@ export function SaleReceiptCancelForm({ userId, saleId, revision, total, shiftCl
   return <CorrectionTransactionForm userId={userId} scope={`sale-receipt-cancel:${saleId}:${revision}`} action={batalkanPenerimaan}>
     {({ ready }) => <>
       <input type="hidden" name="id" value={saleId} /><input type="hidden" name="revision" value={revision} />
-      <p><strong>Batalkan penerimaan</strong> (gaya Accurate): pembayaran {formatPosMoney(total)} dikeluarkan dari kas/bank (jurnal dibalik, catatan tersimpan,
-        tidak ada yang dihapus) dan struk menjadi <em>belum dibayar</em>. Stok, HPP, dan pendapatan tidak berubah.
-        Sesudahnya Anda bisa <strong>Terima pembayaran</strong> lagi (metode boleh diganti), atau <strong>Ubah transaksi</strong> (harga, jumlah, barang, voucher) lewat kasir.</p>
-      {ubahTerhalang.length > 0 && <p role="alert"><strong>Perhatian:</strong> {ubahTerhalang.join(" dan ")}, sehingga isi struk TIDAK bisa diubah lewat <em>Batalkan penjualan</em> (perlu rekonsiliasi kuota promo atau komisi penggajian lebih dulu).
-        Sesudah penerimaan dibatalkan, pilihan Anda hanya <strong>Terima pembayaran</strong> lagi dengan total yang sama. Bila isi struk perlu berubah, selesaikan rekonsiliasi itu dulu atau hubungi tim teknis sebelum membatalkan penerimaan.</p>}
-      {shiftClosed && <p role="note">Shift struk ini sudah ditutup. Angka tutup shift lama tidak diubah; pengembalian uang dicatat di shift terbuka milik Anda (bukan shift kasir lain).
-        Bila struk dibayar tunai dan Anda tidak punya shift terbuka, pembatalan tetap berjalan dan ditandai &quot;tanpa shift&quot; untuk Finance; laci kasir mana pun tidak berubah.</p>}
+      <p><strong>Batalkan penerimaan</strong>: struk kembali belum dibayar ({formatPosMoney(total)} keluar dari kas/bank). Sesudah itu ubah transaksi, lalu terima pembayaran lagi.</p>
+      {ubahTerhalang.length > 0 && <p role="alert"><strong>Perhatian:</strong> {ubahTerhalang.join(" dan ")}, jadi isi struk tidak bisa diubah. Sesudah dibatalkan hanya bisa terima pembayaran lagi dengan total yang sama.</p>}
+      {shiftClosed && <p role="note">Shift struk sudah ditutup; pengembalian dicatat di shift terbuka Anda (bila tidak ada, ditandai &quot;tanpa shift&quot;).</p>}
       {batasTanggal && <TanggalEfektifField batas={batasTanggal} idPrefix="receipt-cancel" jenis="batal" />}
-      <label className="flab" htmlFor="receipt-cancel-reason">Alasan membatalkan penerimaan *</label>
+      <label className="flab" htmlFor="receipt-cancel-reason">Alasan *</label>
       <input id="receipt-cancel-reason" className="fi" name="alasan" minLength={3} maxLength={1000} required placeholder="Contoh: pelanggan bayar QRIS, kasir memilih tunai" />
       <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
-        <input type="checkbox" name="konfirmasi" value="ya" required /> Saya mengerti: uang pembayaran dikeluarkan dari kas/bank dan struk menjadi belum dibayar.
+        <input type="checkbox" name="konfirmasi" value="ya" required /> Saya mengerti: uang keluar dari kas/bank dan struk belum dibayar.
       </label>
       <button className="btn-def" type="submit" disabled={!ready} style={{ marginTop: 10 }}>Batalkan penerimaan</button>
     </>}
@@ -61,7 +57,7 @@ export function SaleReceiveAgainForm({ userId, saleId, revision, total, previous
   return <CorrectionTransactionForm userId={userId} scope={`sale-receipt-receive:${saleId}:${revision}`} action={terimaPembayaranUlang}>
     {({ ready }) => <>
       <input type="hidden" name="id" value={saleId} /><input type="hidden" name="revision" value={revision} />
-      <p><strong>Terima pembayaran</strong>: catat penerimaan lagi untuk struk ini (jumlah harus sama dengan total {formatPosMoney(total)}). Kolom sudah berisi penerimaan sebelumnya; ubah bila metodenya berbeda.</p>
+      <p><strong>Terima pembayaran</strong>: jumlah harus sama dengan total {formatPosMoney(total)}.</p>
       {batasTanggal && <TanggalEfektifField batas={batasTanggal} idPrefix="receipt-receive" jenis="terima" alasanWajibMundur />}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
         {METHODS.map(method => <div key={method}>
@@ -81,13 +77,12 @@ export function OnlineDisbursementCancelForm({ userId, saleId, revision, batasTa
   return <CorrectionTransactionForm userId={userId} scope={`sale-disbursement-cancel:${saleId}:${revision}`} action={batalkanPencairan}>
     {({ ready }) => <>
       <input type="hidden" name="id" value={saleId} /><input type="hidden" name="revision" value={revision} />
-      <p><strong>Batalkan pencairan</strong>: dana yang tercatat masuk bank dan potongan komisi platform dibalik, order kembali menjadi <em>piutang marketplace</em>.
-        Setelah itu order bisa dicairkan ulang dengan nominal yang benar, atau dibatalkan/diganti.</p>
+      <p><strong>Batalkan pencairan</strong>: order kembali menjadi <em>piutang marketplace</em>.</p>
       {batasTanggal && <TanggalEfektifField batas={batasTanggal} idPrefix="disb-cancel" jenis="pencairan" />}
-      <label className="flab" htmlFor="disb-cancel-reason">Alasan membatalkan pencairan *</label>
+      <label className="flab" htmlFor="disb-cancel-reason">Alasan *</label>
       <input id="disb-cancel-reason" className="fi" name="alasan" minLength={3} maxLength={1000} required placeholder="Contoh: nominal pencairan salah ketik" />
       <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
-        <input type="checkbox" name="konfirmasi" value="ya" required /> Saya mengerti: dana dikeluarkan dari bank dan order kembali menjadi piutang marketplace.
+        <input type="checkbox" name="konfirmasi" value="ya" required /> Saya mengerti: dana keluar dari bank dan order kembali piutang marketplace.
       </label>
       <button className="btn-def" type="submit" disabled={!ready} style={{ marginTop: 10 }}>Batalkan pencairan</button>
     </>}

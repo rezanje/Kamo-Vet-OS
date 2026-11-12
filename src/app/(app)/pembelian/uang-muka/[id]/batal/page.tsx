@@ -47,10 +47,7 @@ export default async function BatalUangMukaPage({ params, searchParams }: {
         {!active && <p>Uang muka ini sudah dibatalkan. Tidak ada yang perlu dilakukan.</p>}
         {active && <>
           <p style={{ fontSize: 12 }}>
-            Sistem akan membatalkan <strong>{preview.payments.length} pembayaran</strong> ({groups} jurnal) pada{" "}
-            <strong>{invoices.size} faktur</strong>, lalu membatalkan uang mukanya. Semua dalam satu langkah: kalau satu
-            bagian gagal, tidak ada yang berubah. Pembayaran asli tetap tersimpan dengan status dibatalkan, hutang faktur
-            terbuka lagi, dan uang muka kembali ke rekening asal lewat jurnal pembalik.
+            Membatalkan <strong>{preview.payments.length} pembayaran</strong> ({groups} jurnal) pada <strong>{invoices.size} faktur</strong>, lalu uang mukanya. Satu langkah: bila ada yang gagal, tidak ada yang berubah.
           </p>
           {others.length > 0 && (
             <div className="p2ban" style={{ background: "#fffbeb", border: ".5px solid #fcd34d", color: "#92400e" }}>
@@ -78,9 +75,9 @@ export default async function BatalUangMukaPage({ params, searchParams }: {
             <input type="hidden" name="advance_id" value={preview.advance_id} />
             <input type="hidden" name="fingerprint" value={preview.fingerprint} />
             <input type="hidden" name="request_key" value={crypto.randomUUID()} />
-            <label className="flab" htmlFor="alasan">Alasan pembatalan *</label>
+            <label className="flab" htmlFor="alasan">Alasan *</label>
             <textarea className="fi" id="alasan" name="alasan" required minLength={3} maxLength={1000} rows={2} placeholder="Mis. uang muka salah pemasok" />
-            <EffectiveDateField id="batal-tanggal" docDate={preview.min_tanggal ?? preview.tanggal} docLabel="uang muka atau pembayaran terakhir" canBackdate={canBackdate} />
+            <EffectiveDateField id="batal-tanggal" docDate={preview.min_tanggal ?? preview.tanggal} canBackdate={canBackdate} />
             <label style={{ fontSize: 11.5, display: "flex", gap: 6 }}>
               <input type="checkbox" name="setuju" value="1" required /> Saya sudah memeriksa daftar pembayaran di atas.
             </label>

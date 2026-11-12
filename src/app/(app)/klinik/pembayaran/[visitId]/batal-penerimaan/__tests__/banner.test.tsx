@@ -1,4 +1,4 @@
-// Banner tanggal efektif di halaman tagihan: tampil hanya bila jendela terbuka; tombol lepas hanya untuk yang berhak; gagal baca = tidak menampilkan apa pun.
+// Banner tanggal pembukuan di halaman tagihan: tampil hanya bila jendela terbuka DAN peran berhak; peran lain tidak melihat apa pun; gagal baca = tidak menampilkan apa pun.
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -19,14 +19,15 @@ import { TanggalEfektifBanner } from "../TanggalEfektifBanner";
 const html = async (tagihan = [{ id: "i1", no: "INV-9" }]) => renderToStaticMarkup((await TanggalEfektifBanner({ visitId: "v1", tagihan })) ?? <></>);
 beforeEach(() => { st.windows = [{ invoice_id: "i1", effective_date: "2026-11-09", opened_at: "2026-11-12T03:00:00Z" }]; st.err = null; st.boleh = true; st.throwOn = false; });
 
-it("jendela terbuka: tanggal efektif, bagian yang ikut tanggal itu, uang fisik tetap hari ini, dan tombol lepas untuk yang berhak", async () => {
+it("jendela terbuka (peran berhak): tanggal pembukuan diubah, uang fisik tetap hari ini, tombol 'Pakai tanggal hari ini'", async () => {
   const h = await html();
-  expect(h).toContain("Tanggal efektif 2026-11-09"); expect(h).toContain("INV-9"); expect(h).toContain("tetap masuk laci shift Anda hari ini");
-  expect(h).toContain("Lepas tanggal efektif"); expect(h).toContain('name="invoice_id"'); expect(h).toContain('value="v1"');
+  expect(h).toContain("Tanggal pembukuan diubah ke 2026-11-09"); expect(h).toContain("INV-9"); expect(h).toContain("uang fisik tetap hari ini");
+  expect(h).toContain("Pakai tanggal hari ini"); expect(h).toContain('name="invoice_id"'); expect(h).toContain('value="v1"');
+  expect(h).not.toMatch(/Lepas tanggal|mundur|efektif/i);
 });
-it("tanpa hak: banner tampil tetapi tanpa tombol lepas; hak tak terbaca = tanpa tombol", async () => {
-  st.boleh = false; expect(await html()).not.toContain("Lepas tanggal efektif");
-  st.boleh = null; const h = await html(); expect(h).toContain("Tanggal efektif 2026-11-09"); expect(h).not.toContain("Lepas tanggal efektif");
+it("tanpa hak atau hak tak terbaca: tidak menampilkan apa pun tentang tanggal", async () => {
+  st.boleh = false; expect(await html()).toBe("");
+  st.boleh = null; expect(await html()).toBe("");
 });
 it("tanpa jendela, galat baca, atau galat tak terduga: tidak menampilkan apa pun dan tidak melempar", async () => {
   st.windows = []; expect(await html()).toBe("");
