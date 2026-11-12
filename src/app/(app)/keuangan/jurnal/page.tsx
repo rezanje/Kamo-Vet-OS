@@ -4,6 +4,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { JurnalForm } from "./JurnalForm";
 import { JurnalCorrectionForm } from "./JurnalCorrectionForm";
 import { NoDok } from "@/components/NoDok";
+import { nomorDokumenJurnal } from "@/lib/tautan-dokumen";
 import { postRecurringCatchUp } from "@/lib/recurring";
 import { geserHari, hariIniWIB } from "@/lib/tanggal";
 
@@ -374,7 +375,7 @@ export default async function JurnalPage({
                       <td style={{ fontFamily: "monospace", fontSize: 10 }}>
                         {e.source === "recurring" && e.source_ref && sourceRecurringIds.has(e.source_ref.slice(0, 36))
                           ? <Link href={`/keuangan/jurnal-berulang/${e.source_ref.slice(0, 36)}`}>{e.source_ref.slice(-7)} · jadwal</Link>
-                          : <NoDok nomor={e.source_ref} source={e.source} />}
+                          : <NoDok nomor={nomorDokumenJurnal(e.source_ref, e.deskripsi)} source={e.source} />}
                       </td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`bge ${badge.cls}`} style={{ fontSize: 9 }}>
