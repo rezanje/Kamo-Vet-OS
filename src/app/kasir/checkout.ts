@@ -17,6 +17,7 @@ import {
 import { loadPromoAktif } from "@/lib/promo-hitung";
 import { buildPromoSelection, composedToLine, composeHppSafe, composeSyaratHasilCart, loadSyaratHasilKasir, pesanPromoSyaratHasil, type ShClaimMeta } from "@/lib/promo-syarat-hasil-checkout";
 import { simpanBernomor } from "@/lib/simpan-bernomor";
+import { kasirManualDiscountUsed, manualDiscountAllowed, PESAN_DISKON_MANUAL_DITOLAK } from "@/lib/manual-discount";
 import { hariIniWIB } from "@/lib/tanggal";
 import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
@@ -109,6 +110,18 @@ export async function checkoutKasir(formData: FormData) {
   const rows = cart.filter((l) => l.nama?.trim() && Number(l.qty) > 0)
     .map((l): CartLine & { promo_discount: number } => ({ ...l, promo_discount: 0, official_price: undefined, sh_claim: undefined })); // bukti promo hanya dari master, bukan dari klien
   if (rows.length === 0) redirect(`${failureUrl}${encodeURIComponent("Keranjang kosong")}`);
+
+  // Diskon manual hanya Owner/Admin (12 Nov 2026). Diskon bawaan barang dari master tetap boleh untuk semua kasir.
+  if (!(await manualDiscountAllowed(supabase))) {
+    const idDiskon = [...new Set(rows.filter((l) => Number(l.item_discount_value) > 0 && l.item_id).map((l) => l.item_id))];
+    const bawaan = new Map<string, number>();
+    if (idDiskon.length > 0) {
+      const { data: master, error: masterErr } = await supabase.from("items").select("id, default_discount").in("id", idDiskon);
+      if (masterErr) redirect(`${failureUrl}${encodeURIComponent("Diskon bawaan barang belum dapat diperiksa. Coba lagi.")}`);
+      for (const m of (master ?? []) as { id: string; default_discount: number | null }[]) bawaan.set(m.id, Number(m.default_discount) || 0);
+    }
+    if (kasirManualDiscountUsed(diskon, rows, bawaan)) redirect(`${failureUrl}${encodeURIComponent(PESAN_DISKON_MANUAL_DITOLAK)}`);
+  }
 
   // Struk boleh tersimpan hanya kalau jurnalnya juga bisa. Kalau periodenya terkunci,
   // penjualan akan tercatat di kasir tapi hilang dari buku besar tanpa peringatan.

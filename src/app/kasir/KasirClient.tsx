@@ -109,7 +109,7 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 export function KasirClient({
   branchName, items, customers = TANPA_PELANGGAN, vouchers, kodeKampanye = [], hariIni, draftContext, shiftId, promos = [], promoHitung = [], syaratHasil,
   aturanDiskon = {}, infoBarang = {}, salespeople = [], cashierName = "Akun login", error, replacementDraft, replacementId,
-  groomingDoctorRequired = false, groomingApplies = true,
+  groomingDoctorRequired = false, groomingApplies = true, bolehDiskon = true,
 }: {
   draftContext?: string; shiftId?: string; replacementDraft?: KasirDraft; replacementId?: string;
   branchName: string; items: ItemRow[];
@@ -126,6 +126,8 @@ export function KasirClient({
   salespeople?: PilihanPenjual[]; cashierName?: string;
   groomingDoctorRequired?: boolean;
   groomingApplies?: boolean;
+  /** Diskon manual (potongan per barang & diskon total) hanya Owner/Admin — dibaca server dari izin Akses Grup. Diskon bawaan barang tetap jalan. */
+  bolehDiskon?: boolean;
   error?: string;
 }) {
   const [q, setQ] = useState("");
@@ -178,7 +180,7 @@ export function KasirClient({
       setMerchantFeePercent(draft.merchantFeePercent ?? 0);
       setSplit(draft.split ?? draft.metode === "Split");
       if (draft.payments?.length) setPayments(draft.payments);
-      setDiskon(draft.diskon);
+      setDiskon(bolehDiskon ? draft.diskon : 0);
       setDiskonPct(draft.diskonPct);
       setLegacySalespersonId(draft.salespersonId);
       setPoin(draft.poin);
@@ -190,8 +192,13 @@ export function KasirClient({
         const unit = line.satuan
           ? item.satuan?.find((u) => u.unit === line.satuan)
           : item.satuan?.[0];
+        // Tanpa izin diskon manual: potongan dari draf lama dibuang, kecuali diskon bawaan barang itu sendiri.
+        const bawaan = Number(item.diskonDefault) || 0;
+        const potonganDraf = bolehDiskon || (line.item_discount_type === "percent" && bawaan > 0 && Number(line.item_discount_value) === bawaan)
+          ? {} : bawaan > 0 ? { item_discount_type: "percent" as const, item_discount_value: bawaan } : { item_discount_type: null, item_discount_value: null };
         return [{
           ...line,
+          ...potonganDraf,
           nama: item.name,
           item_type: item.itemType,
           tindakanKategori: item.tindakanKategori,
@@ -211,7 +218,7 @@ export function KasirClient({
       draftSiap.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [customers, items, salespeople, draftKey, replacementDraft]);
+  }, [customers, items, salespeople, draftKey, replacementDraft, bolehDiskon]);
 
   // Katalog baru dari server (mis. sesudah checkout ditolak, atau layar dimuat ulang tanpa
   // ganti tab) = harga master terbaru. Baris keranjang yang sudah ada ikut harga itu supaya
@@ -458,7 +465,7 @@ export function KasirClient({
     0,
   );
   const afterItems = subtotal - itemDiscTotal;
-  const diskonVal = diskonPct ? Math.round((afterItems * diskon) / 100) : diskon;
+  const diskonVal = !bolehDiskon ? 0 : diskonPct ? Math.round((afterItems * diskon) / 100) : diskon;
   // Diskon golongan dihitung server saat bayar; di sini hanya DITAMPILKAN supaya
   // angka di layar sama dengan yang ditagih — kalau beda, uang kembalian salah.
   // Per baris, karena sejak 0082 tiap barang bisa punya persen sendiri.
@@ -822,8 +829,10 @@ export function KasirClient({
                           <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers} staff={salespeople}
                             grooming={groomingApplies && l.item_type === "Jasa" && l.tindakanKategori === "Grooming"} doctorRequired={groomingDoctorRequired}
                             onChange={next => setCart(rows => rows.map(row => kunciBaris(row) === k ? { ...row, service_performers: next } : row))} />
-                          {/* Addendum §6: potongan per item (nominal / persen) */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}>
+                          {/* Addendum §6: potongan per item (nominal / persen) — diketik hanya oleh Owner/Admin (12 Nov 2026). */}
+                          {!bolehDiskon ? (Number(l.item_discount_value) > 0 && (
+                            <div style={{ fontSize: 8.5, color: "var(--td)", marginTop: 2 }}>Disk. bawaan {Number(l.item_discount_value)}%</div>
+                          )) : <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}>
                             <span style={{ fontSize: 8.5, color: "var(--td)" }}>Pot.</span>
                             <NumberInput className="fi" type="number" min={0} value={l.item_discount_value || ""} placeholder="0"
                               onChange={(e) => setPot(k, Number(e.target.value))}
@@ -831,7 +840,7 @@ export function KasirClient({
                             <button type="button" onClick={() => togglePotType(k)} className="btn-def" style={{ padding: "0px 5px", fontSize: 8.5 }}>
                               {l.item_discount_type === "percent" ? "%" : "Rp"}
                             </button>
-                          </div>
+                          </div>}
                         </td>
                         <td>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
@@ -940,13 +949,13 @@ export function KasirClient({
               <Row k={`Diskon ${cust?.kategori ?? "golongan"}`} v={`- ${rp(diskonKategori)}`} red />
             )}
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0", gap: 6 }}>
+            {bolehDiskon && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0", gap: 6 }}>
               <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Diskon</span>
               <span style={{ display: "flex", gap: 4 }}>
                 <NumberInput className="fi" type="number" min={0} step="0.01" value={diskon || ""} onChange={(e) => setDiskon(Number(e.target.value))} placeholder="0" style={{ width: 90, padding: "3px 7px", textAlign: "right", fontSize: 11 }} />
                 <button type="button" onClick={() => setDiskonPct(!diskonPct)} className="btn-def" style={{ padding: "2px 8px", fontSize: 10 }}>{diskonPct ? "%" : "Rp"}</button>
               </span>
-            </div>
+            </div>}
             {diskonVal > 0 && <Row k="" v={`- ${rp(diskonVal)}`} red />}
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "4px 0" }}>

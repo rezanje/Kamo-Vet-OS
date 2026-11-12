@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionRejection } from "@/components/LocalTransactionDraft";
 import { roleRpcFailure } from "@/lib/role-action-access";
-import { isGrantOnlyAction } from "@/lib/role-grant-only-actions";
+import { legacyRoleHasAction } from "@/lib/role-grant-only-actions";
 import { SUBMENU_ENTRIES, selectableSubmenus, submenuById } from "@/lib/submenu-access";
 import { editableRole, parseRoleAccessConfig, ROLE_ACCESS_CATALOG, roleAccessScope, validRequestKey, validRevision } from "@/lib/role-access-catalog";
 
@@ -90,7 +90,7 @@ export async function saveRoleSettings(role: string, revision: string, form: For
   // those as checked; if the Owner left them exactly so, do not create a policy row at all, so a menu-only
   // save can never turn the implicit allow-all into an explicit (or empty) list.
   // Izin khusus (grant-only) bawaannya mati untuk peran legacy: tidak ikut dihitung sebagai "semua dicentang".
-  const enforced = snapshot.action_catalog.filter(a => a.enforced && !isGrantOnlyAction(a.id)).map(a => a.id);
+  const enforced = snapshot.action_catalog.filter(a => a.enforced && legacyRoleHasAction(a.id, role)).map(a => a.id);
   const untouchedLegacy = snapshot.actions.source === "legacy" && actions.length === enforced.length && enforced.every(id => actions.includes(id));
   const { data: result, error } = await client.rpc("save_role_access_config", {
     p_role: role, p_expected_revision: revision, p_request_key: key, p_mode: mode,
