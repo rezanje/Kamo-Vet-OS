@@ -126,7 +126,7 @@ export async function batalkanPenerimaan(form: FormData) {
 export async function terimaPembayaranUlang(form: FormData) {
   const { id, revision, key, reason } = receiptFields(form);
   const tanggal = bacaTanggalEfektif(form.get("tanggal"));
-  if (perluAlasanTanggal(tanggal) && (reason.length < 3 || reason.length > 1000)) throw new Error("Isi alasan tanggal efektif mundur (minimal 3 huruf).");
+  if (perluAlasanTanggal(tanggal) && (reason.length < 3 || reason.length > 1000)) throw new Error("Isi alasan mengubah tanggal (minimal 3 huruf).");
   const plan = SALE_METHODS.flatMap(method => {
     const raw = form.get(`amount_${method}`);
     const amount = raw === null ? 0 : correctionMoney(raw); // kolom yang tidak dikirim = 0; basis data tetap memeriksa jumlah = total

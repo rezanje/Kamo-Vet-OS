@@ -9,6 +9,7 @@ import { akunLawanTerlarang, type JenisKas } from "@/lib/kas-entry";
 import { simpanKasEntry } from "./actions";
 import { KasCorrectionForm, KasVoidForm } from "./KasCorrectionForm";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { PilihAkunCari } from "@/components/PilihAkunCari";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -48,7 +49,8 @@ export async function KasEntryScreen({
   const boleh = await bolehTransaksiKas();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
-  const isOwner = profile?.role === "OWNER" && profile.is_active === true;
+  // Edit/koreksi: OWNER/ADMIN/FINANCE aktif (keputusan 12 Nov 2026).
+  const bolehEdit = profile?.is_active === true && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
   const keluar = jenis === "Keluar";
 
   const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }] = await Promise.all([
@@ -218,10 +220,8 @@ export async function KasEntryScreen({
             </div>
             <div>
               <label className="flab">{keluar ? "Untuk akun (beban) *" : "Dari akun *"}</label>
-              <select className="fi" name="lawan_code" defaultValue="" required>
-                <option value="">— pilih —</option>
-                {coa.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
-              </select>
+              {/* Bisa diketik/dicari (permintaan klinik 12 Nov) — daftar akun terlalu panjang untuk di-scroll. */}
+              <PilihAkunCari name="lawan_code" akun={coa} required ariaLabel={keluar ? "Untuk akun (beban)" : "Dari akun"} />
             </div>
           </div>
           <div className="frow" style={{ marginTop: 10 }}>
@@ -321,7 +321,8 @@ export async function KasEntryScreen({
                     <td>
                       {/* Pengeluaran kasir dibatalkan dari layar kasirnya sendiri — di sini
                           cuma ditampilkan, supaya satu dokumen tidak punya dua tombol batal. */}
-                      {!t.dibatalkan && t.asal === "kas" && (isOwner ? <KasCorrectionForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} tanggal={t.tanggal} accountId={t.accountId} lawanCode={t.lawanCode} jumlah={t.jumlah} keterangan={t.keterangan} rekening={rekening} coa={coa} /> : <KasVoidForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} />)}
+                      {t.asal === "kas" && UUID.test(t.id) && <div><Link href={`/kas-bank/kas-${keluar ? "keluar" : "masuk"}/lampiran/${t.id}`} style={{ color: "#2563eb", fontSize: 10.5 }}>Lampiran</Link></div>}
+                      {!t.dibatalkan && t.asal === "kas" && (bolehEdit ? <KasCorrectionForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} tanggal={t.tanggal} accountId={t.accountId} lawanCode={t.lawanCode} jumlah={t.jumlah} keterangan={t.keterangan} rekening={rekening} coa={coa} /> : <KasVoidForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} />)}
                     </td>
                   )}
                 </tr>

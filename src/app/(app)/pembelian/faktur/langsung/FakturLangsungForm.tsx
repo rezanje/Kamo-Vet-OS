@@ -143,7 +143,7 @@ export function FakturLangsungForm({
             <label className="flab">Tanggal faktur *</label>
             <input className="fi" type="date" name="tanggal" required value={tanggal} min={initial ? bounds.min : undefined} max={initial ? bounds.max : undefined} readOnly={initial ? bounds.locked : false}
               onChange={(e) => gantiTanggal(e.target.value)} />
-            {initial && <p style={{ fontSize: 10.5, color: "var(--tm)", margin: "3px 0 0" }}>{bounds.locked ? "Faktur pengganti dibukukan hari ini. Tanggal mundur hanya untuk Owner atau peran yang diberi izin Tanggal mundur." : `Bawaan hari ini; pilih ${initial.tanggal} agar terbaca di tanggal faktur aslinya. Tanggal mundur wajib beralasan: isi Keterangan.`}</p>}
+            {initial && !bounds.locked && <p style={{ fontSize: 10.5, color: "var(--tm)", margin: "3px 0 0" }}>Bila bukan hari ini, isi Keterangan sebagai alasan.</p>}
           </div>
           <div className="fg">
             <label className="flab">Jatuh tempo *</label>

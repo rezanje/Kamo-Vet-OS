@@ -18,16 +18,18 @@ it("Owner/izin: bawaan hari ini, rentang tanggal dokumen asal sampai hari ini, w
   expect(html).toContain('max="2026-11-12"');
   expect(html).toContain("required");
   expect(html).not.toContain("readOnly");
-  expect(html).toContain("terbaca di tanggal aslinya");
-  expect(html).toContain("wajib beralasan");
+  // satu kontrol kecil tertutup + satu catatan pendek; tidak ada kata "mundur"
+  expect(html).toContain("<details"); expect(html).not.toContain("<details open");
+  expect(html).toContain("Ubah tanggal pembukuan (opsional)");
+  expect(html).toContain("Dicatat di tanggal ini; uang fisik tetap hari ini.");
+  expect(html).not.toMatch(/mundur/i);
 });
 
-it("tanpa izin tanggal mundur: dikunci ke hari ini dengan penjelasan", () => {
+it("tanpa izin: tidak ada kata tentang tanggal sama sekali; tetap mengirim hari ini seperti sebelumnya", () => {
   const html = renderToStaticMarkup(<EffectiveDateField id="d" docDate="2026-11-05" canBackdate={false} />);
-  expect(html).toContain('min="2026-11-12"');
-  expect(html).toContain('max="2026-11-12"');
-  expect(html).toContain('readOnly=""');
-  expect(html).toContain("Tanggal mundur hanya untuk Owner");
+  expect(html).toBe('<input type="hidden" name="tanggal" value="2026-11-12"/>');
+  expect(html).not.toMatch(/mundur|tanggal pembukuan|Owner|<label|type="date"/i);
+  expect(renderToStaticMarkup(<EffectiveDateField id="d" docDate="2026-11-05" canBackdate={false} disabled />)).toBe("");
 });
 
 it("tanggal dokumen di masa depan atau rusak tidak membuka rentang melewati hari ini", () => {
@@ -52,7 +54,7 @@ it("tabel rekonsiliasi menampilkan tanggal pembukuan dan tanggal uang fisik berd
   expect(html).toContain("Tanggal uang fisik");
   expect(html).toContain("06 Nov 2026");
   expect(html).toContain("12 Nov 2026");
-  expect(html).toContain("mundur 6 hari");
+  expect(html).toContain("selisih 6 hari"); expect(html).not.toMatch(/mundur/i);
   expect(html).toContain("Pembatalan pembayaran");
   expect(html).toContain("FB.0001");
   expect(html).toContain("BCA Utama");

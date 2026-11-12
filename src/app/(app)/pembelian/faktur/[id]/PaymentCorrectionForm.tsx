@@ -13,10 +13,10 @@ export function PaymentCorrectionForm({ userId, invoiceId, paymentId, revision, 
       <input type="hidden" name="invoice_id" value={invoiceId} />
       <input type="hidden" name="payment_id" value={paymentId} />
       <input type="hidden" name="revision" value={revision} />
-      <p>{grouped ? "Seluruh pembayaran dalam perintah bayar ini akan dibalik bersama dan perintahnya kembali siap dibayar." : "Pembayaran ini akan dibalik; hutang kembali terbuka dan uang muka yang terpakai dikembalikan."} Pastikan pengembalian uang sesuai transaksi sebenarnya.</p>
-      <label className="flab" htmlFor={`payment-reason-${paymentId}`}>Alasan pembatalan atau koreksi</label>
+      <p>{grouped ? "Semua pembayaran di perintah bayar ini dibalik bersama." : "Pembayaran dibalik; hutang kembali terbuka."}</p>
+      <label className="flab" htmlFor={`payment-reason-${paymentId}`}>Alasan</label>
       <input className="fi" id={`payment-reason-${paymentId}`} name="alasan" required minLength={3} maxLength={1000} />
-      <EffectiveDateField id={`payment-date-${paymentId}`} docDate={docDate} docLabel="pembayaran" canBackdate={canBackdate} />
+      <EffectiveDateField id={`payment-date-${paymentId}`} docDate={docDate} canBackdate={canBackdate} />
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <button className="btn-def" type="submit" name="tindakan" value="periksa" formNoValidate disabled={!ready}>Periksa hasil terakhir</button>
         <SubmitButton className="btn-def" name="tindakan" value="batal" disabled={!ready}>Batalkan pembayaran</SubmitButton>

@@ -33,6 +33,8 @@ insert into auth.users (id, raw_user_meta_data) values
   ('d1000000-0000-4000-8000-000000000002', '{"full_name":"Pemilik Test"}');
 update public.profiles set role = 'DOCTOR' where id = 'd1000000-0000-4000-8000-000000000001';
 update public.profiles set role = 'OWNER' where id = 'd1000000-0000-4000-8000-000000000002';
+-- Izin diskon manual (20261116100000): koreksi 'hanya diskon' di bawah dilakukan DOCTOR uji; diberi izin kasir.diskon_manual lewat jalur pemeliharaan (yang diuji bukan izinnya).
+insert into role_settings_private.action_policies(role, allowed) values ('DOCTOR', array['kasir.diskon_manual']) on conflict (role) do update set allowed = excluded.allowed;
 insert into public.branches (id, code, name, type)
 values ('d2000000-0000-4000-8000-000000000001', 'INVTEST', 'Klinik Invoice Test', 'KLINIK');
 insert into public.user_branches (user_id, branch_id)

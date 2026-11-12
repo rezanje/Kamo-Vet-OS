@@ -109,6 +109,8 @@ begin
 end;
 $$;
 
+-- Izin diskon manual (20261116100000): faktur uji ini memuat diskon ketikan 10; peran DOCTOR uji diberi izin kasir.diskon_manual lewat jalur pemeliharaan.
+insert into role_settings_private.action_policies(role, allowed) values ('DOCTOR', array['kasir.diskon_manual']) on conflict (role) do update set allowed = excluded.allowed;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'd1000000-0000-4000-8000-000000000001', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);

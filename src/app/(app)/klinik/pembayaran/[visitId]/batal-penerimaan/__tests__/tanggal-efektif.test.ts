@@ -50,18 +50,17 @@ it("penolakan tanggal dari database diterjemahkan: periode terkunci memuat petun
   r = await batalkanPenerimaanKlinik(form({ effective_date: "2026-11-09" }));
   expect(!r.ok && r.pesan).toMatch(/hanya untuk Owner/);
 });
-it("pratinjau tanggal: ringkasan memuat tanggal efektif dan bagian yang tetap hari ini; alasan tanggal ditolak diteruskan", async () => {
+it("pratinjau tanggal: ringkasan memuat satu kalimat tanggal pembukuan; alasan tanggal ditolak diteruskan", async () => {
   const p = { refuse: null, invoice: { id: U(2), no: "INV-9", total: 63000, paid_status: "Lunas", metode_bayar: "QRIS", dp_amount: 0, shift_id: null, visit_id: U(1), branch_id: null }, direct: { amount: 108000, kas_code: "120002", metode: "QRIS" }, payments: [], apps: [], receipts: [], actor: "OWNER", cash_amount: 0, shift_mode: "nonkas", today: "2026-11-12", min_date: "2026-11-09", max_date: "2026-11-12", can_backdate: true, effective_date: "2026-11-09", date_refuse: null, window: null };
   state.reply = { data: p, error: null };
   const r = await pratinjauTanggalBatalPenerimaan(U(2), "2026-11-09");
-  expect(r.ok && r.ringkasan.join("\n")).toMatch(/Jurnal pembalik bertanggal 2026-11-09/);
-  expect(r.ok && r.ringkasan.join("\n")).toMatch(/Tetap HARI INI: uang tunai\/QRIS fisik/);
+  expect(r.ok && r.ringkasan.join("\n")).toMatch(/Dicatat di tanggal 2026-11-09; uang fisik tetap hari ini/);
   expect(r.ok && r.minTanggal).toBe("2026-11-09");
   expect(state.rpc[0]).toEqual({ name: "clinic_cancel_invoice_receipt_preview", params: { p_invoice_id: U(2), p_effective_date: "2026-11-09" } });
   state.reply = { data: { ...p, date_refuse: { code: "PERIODE_TERKUNCI", message: "Periode ditutup. Tutup Buku." } }, error: null };
   const r2 = await pratinjauTanggalBatalPenerimaan(U(2), "2026-11-09"); expect(r2.ok && r2.tolakTanggal).toBe("Periode ditutup. Tutup Buku.");
   state.rpc = []; state.reply = { data: { ...p, effective_date: hariIni }, error: null };
-  const r3 = await pratinjauTanggalBatalPenerimaan(U(2), hariIni); expect(r3.ok && !r3.ringkasan.join(" ").includes("Tetap HARI INI")).toBe(true);
+  const r3 = await pratinjauTanggalBatalPenerimaan(U(2), hariIni); expect(r3.ok && !r3.ringkasan.join(" ").includes("Dicatat di tanggal")).toBe(true);
   expect("p_effective_date" in state.rpc[0].params).toBe(false);
   expect((await pratinjauTanggalBatalPenerimaan("x", "2026-11-09")).ok).toBe(false); expect((await pratinjauTanggalBatalPenerimaan(U(2), "salah")).ok).toBe(false);
 });

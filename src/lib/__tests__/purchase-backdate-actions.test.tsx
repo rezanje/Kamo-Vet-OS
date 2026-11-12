@@ -85,13 +85,18 @@ it("formulir pembatalan: Owner/izin bisa mundur sampai tanggal dokumen asal; tan
     expect(html, name).toContain(`min="${min}"`);
     expect(html, name).toContain('max="2026-11-12"');
     expect(html, name).toContain('value="2026-11-12"');
+    expect(html, name).toContain("Ubah tanggal pembukuan (opsional)"); expect(html, name).not.toContain("<details open");
   }
   const locked = [
     <ReceiptCancelForm key="r" userId="u" receiptId="r1" docDate="2026-11-05" canBackdate={false} />,
     <InvoiceCorrectionForm key="i" userId="u" invoiceId="i1" revision={0} voided={false} docDate="2026-11-05" canBackdate={false} />,
     <PaymentCorrectionForm key="p" userId="u" invoiceId="i1" paymentId="p1" revision={0} grouped={false} docDate="2026-11-05" canBackdate={false} />,
   ].map(el => renderToStaticMarkup(el));
-  for (const html of locked) { expect(html).toContain('min="2026-11-12"'); expect(html).toContain("readOnly"); expect(html).toContain("Tanggal mundur hanya untuk Owner"); }
+  for (const html of locked) {
+    // peran tanpa hak: tidak ada kata tentang tanggal; kiriman tetap membawa hari ini seperti sebelumnya
+    expect(html).toContain('<input type="hidden" name="tanggal" value="2026-11-12"/>');
+    expect(html).not.toMatch(/mundur|tanggal pembukuan|Ubah tanggal|type="date"/i);
+  }
 });
 
 it("faktur yang sudah dibatalkan: isian tanggal dinonaktifkan", () => {
