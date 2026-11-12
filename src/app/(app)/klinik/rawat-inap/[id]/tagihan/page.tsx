@@ -13,6 +13,7 @@ import { SimpanBayarForm } from "./SimpanBayarForm";
 import { BatalKwitansiForm } from "./BatalKwitansiForm";
 import { LepasUangMukaForm } from "./LepasUangMukaForm";
 import { adaPenerimaan, bolehBatalPenerimaan } from "@/lib/batal-penerimaan-akses";
+import { TanggalEfektifBanner } from "../../../pembayaran/[visitId]/batal-penerimaan/TanggalEfektifBanner";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (iso: string) =>
@@ -91,6 +92,7 @@ export default async function TagihanRawatInapPage({
   // Piutang invoice nol saja belum lunas bila masih ada biaya pending/koreksi.
   const pembayaranLunas = data.riwayatUangTerpasang && rekap.total > 0 && rekap.sisa === 0
     && data.belumDitagih.length === 0 && !data.tahap.some((t) => t.correction_pending);
+  const bannerTanggalEfektif = await TanggalEfektifBanner({ visitId: data.visit.id, tagihan: data.tahap.map((t) => ({ id: t.id, no: t.invoice_no ?? null })) });
 
   return (
     <>
@@ -190,6 +192,7 @@ export default async function TagihanRawatInapPage({
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)", marginBottom: 9 }}>
           <i className="ti ti-file-invoice" /> TAGIHAN TAHAP
         </div>
+        {bannerTanggalEfektif}
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 640 }}>
             <thead>
