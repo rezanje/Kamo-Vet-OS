@@ -7,6 +7,7 @@ import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import { saleMerchandiseTotal, salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
 import { bolehLihatRiwayat, petshopHistory, type PetshopOnlineCancel, type PetshopReceiptCancel } from "@/lib/transaction-history";
+import { alasanUbahTransaksiTerhalang, bulanJakarta } from "@/lib/ubah-transaksi-petshop";
 import { loadActorNames } from "@/lib/transaction-history-server";
 
 import { SaleCancelForm } from "./SaleCancelForm";
@@ -36,7 +37,8 @@ type Sale = SalePaymentSource & {
   branches: Rel<{ name: string }>;
   customers: Rel<{ name: string; phone: string | null }>;
   kasir: Rel<{ full_name: string | null }>;
-  sale_items: { id: string; nama: string; qty: number; harga: number; satuan: string | null }[] | null;
+  voucher_code?: string | null;
+  sale_items: { id: string; nama: string; qty: number; harga: number; satuan: string | null; promo_id?: string | null }[] | null;
 };
 
 type ReturRow = {
@@ -55,11 +57,12 @@ export default async function PenjualanDetailPage({
   const { id } = await params;
   const { success, error, shift: shiftParam } = await searchParams;
   const shiftLain = shiftParam === "lain";
+  const shiftTanpa = shiftParam === "tanpa";
   const supabase = await createClient();
 
   const { data } = await supabase
     .from("sales")
-    .select("id, revision, channel, void_reason, branch_id, shift_id, marketplace_status, no_struk, created_at, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), sale_items(id, nama, qty, harga, satuan)")
+    .select("id, revision, channel, void_reason, branch_id, shift_id, marketplace_status, no_struk, created_at, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), voucher_code, sale_items(id, nama, qty, harga, satuan, promo_id)")
     .eq("id", id)
     .maybeSingle();
 
@@ -69,12 +72,15 @@ export default async function PenjualanDetailPage({
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
   const isOwner = profile?.role === "OWNER" && profile.is_active === true;
+  // R4 (audit 11 Nov): peringatan dini bahwa isi struk tak bisa diubah lewat "Batalkan penjualan" (voucher/promo/penggajian). Hanya peringatan; gagal baca = tanpa peringatan.
+  const payrollRes = isOwner && !sale.voided_at ? await supabase.from("payrolls").select("id", { count: "exact", head: true }).eq("periode", bulanJakarta(sale.created_at)) : null;
+  const ubahTerhalang = alasanUbahTransaksiTerhalang({ voucherCode: sale.voucher_code, promoItemCount: (sale.sale_items ?? []).filter(i => !!i.promo_id).length, payrollMonthExists: !!payrollRes && !payrollRes.error && (payrollRes.count ?? 0) > 0 });
   // J02: koreksi metode (juga sesudah shift ditutup) boleh Owner dan Finance; pembatalan tetap Owner.
   const canCorrectRole = isOwner || (profile?.role === "FINANCE" && profile.is_active === true);
 
   // Batalkan penerimaan: catatan struk ini, status shift asal, dan hak peran (Owner tidak pernah terkunci).
   const { data: receiptData, error: receiptError } = await supabase.from("pos_receipt_cancellations")
-    .select("id, reason, created_at, created_by, source_shift_status, source_shift_id, effect_shift_id, before_payments, after_payments, closed_at, closed_by, closed_kind")
+    .select("id, reason, created_at, created_by, source_shift_status, source_shift_id, effect_shift_id, shift_mode, before_payments, after_payments, closed_at, closed_by, closed_kind")
     .eq("sale_id", id).order("created_at", { ascending: true });
   const receiptCancels = (receiptData ?? []) as unknown as PetshopReceiptCancel[];
   const openCancel = receiptCancels.find(c => !c.closed_at) ?? null;
@@ -144,8 +150,8 @@ export default async function PenjualanDetailPage({
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {success === "cancelled" ? "Penjualan dibatalkan. Riwayat dan pembalikannya tersimpan."
             : success === "payment-corrected" ? "Metode pembayaran terkoreksi pada penjualan ini. Jurnal pembalik dan pengganti tersimpan."
-            : success === "receipt-cancelled" ? `Penerimaan dibatalkan: uang dikeluarkan dari kas/bank dan struk menjadi belum dibayar.${shiftLain ? " Shift asal struk sudah ditutup; angka tutupnya tidak diubah, pengembalian dicatat di shift terbuka cabang ini." : ""} Terima pembayaran lagi atau ubah transaksi di bawah.`
-            : success === "receipt-received" ? "Pembayaran diterima ulang. Jurnal dan laci shift tercatat."
+            : success === "receipt-cancelled" ? `Penerimaan dibatalkan: uang dikeluarkan dari kas/bank dan struk menjadi belum dibayar.${shiftLain ? " Shift asal struk sudah ditutup; angka tutupnya tidak diubah, pengembalian dicatat di shift terbuka Anda." : ""}${shiftTanpa ? " Shift asal struk sudah ditutup dan Anda tidak punya shift terbuka: pengembalian tunai ditandai \"tanpa shift\" untuk Finance dan tidak mengubah laci kasir mana pun." : ""} Terima pembayaran lagi atau ubah transaksi di bawah.`
+            : success === "receipt-received" ? `Pembayaran diterima ulang. Jurnal dan laci shift tercatat.${shiftTanpa ? " Anda tidak punya shift terbuka: uang tunai ditandai \"tanpa shift\" untuk Finance dan tidak masuk laci kasir mana pun." : ""}`
             : success === "disbursement-cancelled" ? "Pencairan dibatalkan: order kembali menjadi piutang marketplace." : "Dokumen tersimpan."}
         </div>
       )}
@@ -254,7 +260,7 @@ export default async function PenjualanDetailPage({
         {!receiptError && openCancel && canCancelReceipt && <SaleReceiveAgainForm userId={user.id} saleId={sale.id} revision={sale.revision}
           total={Number(sale.total)} previous={openCancel.before_payments.map(part => ({ method: part.method, amount: Number(part.amount) }))} />}
         {!receiptError && !openCancel && canCancelReceipt && !sale.channel && !!sale.payment_plan && !!sale.payments_finalized_at && <SaleReceiptCancelForm userId={user.id} saleId={sale.id}
-          revision={sale.revision} total={Number(sale.total)} shiftClosed={shiftClosed} />}
+          revision={sale.revision} total={Number(sale.total)} shiftClosed={shiftClosed} ubahTerhalang={ubahTerhalang} />}
         {!receiptError && !onlineError && canCancelReceipt && !!sale.channel && sale.marketplace_status === "cair" && <OnlineDisbursementCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} />}
         {canCorrectPayment && !correctionError && <SalePaymentCorrectionForm userId={user.id} saleId={sale.id}
           revision={sale.revision} cash={cash} transfer={transfer} change={Number(sale.kembali)}

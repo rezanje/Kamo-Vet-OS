@@ -109,6 +109,17 @@ def apply_text(db, text, database):
         os.environ.pop('PGDATABASE', None)
 
 
+def later_migrations():
+    """Migrasi yang ditulis SESUDAH kandidat: rantai dasar hanya memuat yang lebih lama, kandidat dipasang di atasnya, lalu yang lebih baru (urutan nyata)."""
+    return sorted(p for p in (ROOT / 'supabase/migrations').glob('*.sql') if p.name > CANDIDATE)
+
+
+def apply_with_later(db, text, database):
+    apply_text(db, text, database)
+    for path in later_migrations():
+        apply_text(db, path.read_text(), database)
+
+
 def mutate(text, subs):
     for old, new, times in subs:
         n = text.count(old)
@@ -177,7 +188,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix='batalbeli-chain-', dir='/opt/data') as tmp:
             migrations = Path(tmp) / 'supabase/migrations'
             migrations.mkdir(parents=True)
-            names = sorted(p.name for p in (ROOT / 'supabase/migrations').glob('*.sql') if p.name != CANDIDATE)
+            names = sorted(p.name for p in (ROOT / 'supabase/migrations').glob('*.sql') if p.name < CANDIDATE)
             for n in names:
                 (migrations / n).symlink_to(ROOT / 'supabase/migrations' / n)
             fixture.ROOT = Path(tmp)
@@ -190,7 +201,7 @@ def main():
                 db.sql((TESTS / '00_fixture.sql').read_text())
                 db.sql('create database tpl_bp_fix template postgres;')
                 if candidate and not args.baseline:
-                    apply_text(db, candidate, 'postgres')
+                    apply_with_later(db, candidate, 'postgres')
                 report['control'] = [] if args.suite_only else run_sections(db, 'postgres')
                 if args.only:
                     report['control'] = [c for c in report['control'] if args.only in c[0]]
@@ -202,7 +213,7 @@ def main():
                         db.sql(f'create database {variant} template tpl_bp_fix;')
                         crash = None
                         try:
-                            apply_text(db, text, variant)
+                            apply_with_later(db, text, variant)
                         except RuntimeError as e:
                             crash = str(e)[-240:]
                         failed = []
@@ -214,7 +225,7 @@ def main():
                         db.sql(f'drop database {variant};')
                 if args.suites and candidate:
                     db.sql('create database tpl_bp_nb_without template tpl_bp_chain; create database tpl_bp_nb_with template tpl_bp_chain;')
-                    apply_text(db, candidate, 'tpl_bp_nb_with')
+                    apply_with_later(db, candidate, 'tpl_bp_nb_with')
                     gr_avg = None
                     for suite in ([args.suite_only] if args.suite_only else NEIGHBOURS):
                         path = ROOT / 'supabase/tests' / suite

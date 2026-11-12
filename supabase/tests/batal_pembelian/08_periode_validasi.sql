@@ -46,14 +46,16 @@ select pg_temp.ok((select count(*) from purchase_receipt_cancellations)=1,'tepat
 
 -- Cakupan: FINANCE (modul pembelian tidak ada), peran dibatasi cabang, dan anon.
 select pg_temp.act(3);
-select pg_temp.expect_error(format('select preview_goods_receipt_cancellation(%L)',:'r2'),'Akses modul ditolak');
+-- MITIGASI_1111 R1: pratinjau kini memeriksa izin lebih dulu (sebelumnya membocorkan total bayar faktur): FINANCE tanpa izin ditolak dengan pesan izin.
+select pg_temp.expect_error(format('select preview_goods_receipt_cancellation(%L)',:'r2'),'Pratinjau pembatalan penerimaan hanya untuk Owner');
 select pg_temp.grant_role('ADMIN',array['pembelian.batalkan_penerimaan'],array['pembelian','kas-bank'],false);
 select pg_temp.act(2);
 select pg_temp.expect_error(format('select preview_goods_receipt_cancellation(%L)',:'r2'),'Cabang tidak dapat diakses');
 select pg_temp.expect_error(format('select cancel_goods_receipt(%L,%L,%L)',:'r2','pv-br','Coba'),'Cabang tidak dapat diakses');
 select pg_temp.grant_role('ADMIN',array['pembelian.batalkan_penerimaan'],array['kas-bank'],true);
 select pg_temp.act(2);
-select pg_temp.expect_error(format('select cancel_goods_receipt(%L,%L,%L)',:'r2','pv-md','Coba'),'Akses modul ditolak');
+-- MITIGASI_1111 R1: izin tersimpan tanpa modul pembelian sudah tidak cukup (purchase_cancel_allowed memeriksa gerbang modul): ditolak oleh gerbang izin.
+select pg_temp.expect_error(format('select cancel_goods_receipt(%L,%L,%L)',:'r2','pv-md','Coba'),'diberi izin Batalkan penerimaan');
 select pg_temp.su();
 set local role anon;
 do $$ begin

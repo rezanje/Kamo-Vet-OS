@@ -36,7 +36,7 @@ def build_chain(db, exclude):
     try:
         (tmp / 'supabase/migrations').mkdir(parents=True)
         for f in MIGRATIONS.glob('*.sql'):
-            if f.name not in exclude:
+            if f.name not in exclude and not (CAND in exclude and f.name > CAND):
                 (tmp / 'supabase/migrations' / f.name).symlink_to(f)
         old = fixture.ROOT
         fixture.ROOT = tmp
@@ -64,9 +64,17 @@ def clone(db, name, template='tpl_base'):
     db.sql('create database %s template %s' % (name, template))
 
 
-def apply(db, dbname, text):
+def apply(db, dbname, text, later=True):
     rc, out, err = raw(db, 'begin;\n' + text + '\ncommit;', dbname)
     if rc: raise RuntimeError(err + out)
+    if later: apply_later(db, dbname)
+
+
+def apply_later(db, dbname):
+    # Migrasi yang ditulis SESUDAH kandidat dipasang di atasnya (urutan nyata); rantai dasar hanya memuat yang lebih lama.
+    for later in sorted(p for p in MIGRATIONS.glob('*.sql') if p.name > CAND):
+        rc, out, err = raw(db, 'begin;\n' + later.read_text() + '\ncommit;', dbname)
+        if rc: raise RuntimeError(later.name + ': ' + err + out)
 
 
 def run_suite(db, dbname, name=SUITE, text=None):
@@ -232,7 +240,7 @@ def run_green(db, a):
     os.environ.pop('PGDATABASE', None)
     db.sql('create database tpl_base template postgres')
     clone(db, 'before'); before = fn_digests(db, 'before')
-    clone(db, 'g'); apply(db, 'g', (MIGRATIONS / CAND).read_text())
+    clone(db, 'g'); apply(db, 'g', (MIGRATIONS / CAND).read_text(), later=False)
     after = fn_digests(db, 'g')
     changed = sorted(k for k in before if k in after and before[k] != after[k])
     new = sorted(k for k in after if k not in before)
@@ -248,6 +256,7 @@ def run_green(db, a):
     check('ACL new functions: the 4 RPCs are executable by authenticated and postgres only (no anon, no PUBLIC); internal guards by postgres only',
           all(g == (['authenticated', 'postgres'] if k.split('(')[0] in client_rpcs else ['postgres']) for k, g in acl.items()), acl)
     tabs = db.sql("select c.relname||':'||coalesce(c.relacl::text,'') from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname in('pos_receipt_cancellations','sale_receipt_shift_effects','online_disbursement_cancellations','receipt_cancel_requests') order by 1") if False else None
+    apply_later(db, 'g')
     ok, passes, why = run_suite(db, 'g')
     check('SQL suite %s GREEN: %d assertions passed' % (SUITE, len(passes)), ok and len(passes) >= 90, why or 'passes=%d' % len(passes))
     # neighbouring suites: same outcome on the chain WITHOUT the candidate and WITH it (a legacy suite that already fails

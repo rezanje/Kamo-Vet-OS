@@ -25,6 +25,16 @@ describe("batalkanPenerimaan", () => {
     state.rpc.mockResolvedValue({ data: { sale_id: id, unpaid: true, cancellation_id: "c1", effect_in_other_shift: true }, error: null });
     await expect(batalkanPenerimaan(form())).rejects.toThrow("success=receipt-cancelled&shift=lain");
   });
+  it("melaporkan 'tanpa shift' bila pelaku tidak punya shift terbuka (tidak menyebut shift lain)", async () => {
+    state.rpc.mockResolvedValue({ data: { sale_id: id, unpaid: true, cancellation_id: "c1", effect_in_other_shift: false, shift_mode: "tanpa_shift", effect_shift_id: null }, error: null });
+    await expect(batalkanPenerimaan(form())).rejects.toThrow("success=receipt-cancelled&shift=tanpa");
+  });
+  it("shift asal terbuka / shift pelaku / nonkas: tidak ada tanda tambahan kecuali 'lain' untuk shift pelaku", async () => {
+    for (const shift_mode of ["shift_asal_terbuka", "nonkas"]) {
+      state.rpc.mockResolvedValue({ data: { sale_id: id, unpaid: true, cancellation_id: "c1", effect_in_other_shift: false, shift_mode }, error: null });
+      await expect(batalkanPenerimaan(form())).rejects.toThrow(new RegExp(`/penjualan/${id}\\?success=receipt-cancelled&draft_scope=`));
+    }
+  });
   it("tanpa konfirmasi tercentang atau tanpa alasan: ditolak sebelum RPC dengan pesan Indonesia", async () => {
     await expect(batalkanPenerimaan(form({ konfirmasi: "" }))).rejects.toThrow(/Centang kotak konfirmasi/);
     await expect(batalkanPenerimaan(form({ alasan: " a " }))).rejects.toThrow(/minimal 3 huruf/);
@@ -57,6 +67,10 @@ describe("terimaPembayaranUlang", () => {
       p_sale_id: id, p_expected_revision: 2, p_request_key: "durable-key",
       p_plan: [{ method: "Tunai", amount: 25000.5 }, { method: "Debit", amount: 10000 }, { method: "QRIS", amount: 64999.5 }],
     });
+  });
+  it("terima ulang tunai tanpa shift terbuka: ditandai 'tanpa shift' di pengalihan", async () => {
+    state.rpc.mockResolvedValue({ data: { sale_id: id, unpaid: false, journal_id: "j1", shift_mode: "tanpa_shift" }, error: null });
+    await expect(terimaPembayaranUlang(form({ amount_Tunai: "100000" }))).rejects.toThrow(`/penjualan/${id}?success=receipt-received&shift=tanpa&draft_scope=`);
   });
   it("semua metode kosong: ditolak sebelum RPC", async () => {
     await expect(terimaPembayaranUlang(form())).rejects.toThrow(/minimal satu metode/);

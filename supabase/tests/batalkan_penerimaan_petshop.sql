@@ -260,8 +260,10 @@ select pg_temp.ok(pg_temp.balanced(),'neraca saldo nol setelah batal struk belum
 
 -- ── 8. shift tertutup: angka tutup tidak disentuh, koreksi di shift terbuka ───────────────────────────────
 select pg_temp.close_shift('bb600000-0000-4000-8000-00000000000a');
+-- MITIGASI_1111 R2: SC dibuka oleh PELAKU (Owner): efek struk bershift-tutup hanya jatuh di shift terbuka milik pelaku.
+select pg_temp.as_('bb100000-0000-4000-8000-000000000001');
 insert into cashier_shifts(id,branch_id,opened_by,shift_type,opening_balance,opened_at) values
- ('bb600000-0000-4000-8000-00000000000c','bb200000-0000-4000-8000-000000000001','bb100000-0000-4000-8000-000000000004','petshop',10000,now()-interval '1 hour');
+ ('bb600000-0000-4000-8000-00000000000c','bb200000-0000-4000-8000-000000000001','bb100000-0000-4000-8000-000000000001','petshop',10000,now()-interval '1 hour');
 select pg_temp.ok((select status='closed' from cashier_shifts where id='bb600000-0000-4000-8000-00000000000a'),'SA ditutup');
 select pg_temp.ok((select (before_sale->>'shift_id')::text='bb600000-0000-4000-8000-00000000000a' from pos_receipt_cancellations where sale_id=pg_temp.sid('BP.A1') limit 1),'foto sebelumnya memuat shift asal SA');
 insert into fz values('SA',pg_temp.shift_row('bb600000-0000-4000-8000-00000000000a'));
@@ -284,12 +286,14 @@ select pg_temp.ok(pg_temp.shift_row('bb600000-0000-4000-8000-00000000000a')=(sel
 select pg_temp.ok(pg_temp.net('BP.C1','1112')=100000 and pg_temp.net('BP.C1','1111')=0 and pg_temp.net('BP.C1','1115')=0 and pg_temp.net('BP.C1','150001')=0,'C1: buku besar mengikuti metode baru');
 -- tanpa shift terbuka: tunai ditolak, non-tunai boleh tanpa efek laci
 select pg_temp.close_shift('bb600000-0000-4000-8000-00000000000b'),pg_temp.close_shift('bb600000-0000-4000-8000-00000000000c');
-select pg_temp.reject($q$select pg_temp.cancel('BP.C2','k-c2')$q$,'tidak ada shift kasir petshop yang terbuka','tunai tanpa shift terbuka ditolak dengan petunjuk');
-select pg_temp.ok((select count(*)=0 from pos_receipt_cancellations where sale_id=pg_temp.sid('BP.C2')) and pg_temp.balanced(),'penolakan itu tidak meninggalkan apa pun');
+-- MITIGASI_1111 R2: pelaku tanpa shift terbuka TIDAK ditolak lagi (Owner tidak dikunci): ditandai tanpa_shift, tidak menyentuh laci siapa pun.
+select pg_temp.ok((pg_temp.cancel('BP.C2','k-c2')->>'shift_mode')='tanpa_shift','tunai tanpa shift terbuka pelaku: boleh, ditandai tanpa_shift (tidak ditolak)');
+select pg_temp.ok((select count(*)=1 and min(shift_mode)='tanpa_shift' and min(effect_shift_id::text) is null from pos_receipt_cancellations where sale_id=pg_temp.sid('BP.C2')) and (select count(*)=0 from sale_receipt_shift_effects where sale_id=pg_temp.sid('BP.C2')) and pg_temp.balanced(),'tanpa_shift: catatan ada, tidak ada efek laci, neraca nol');
 select pg_temp.ok((pg_temp.cancel('BP.C3','k-c3')->>'effect_shift_id') is null,'QRIS saja tanpa shift terbuka: boleh, tanpa efek laci');
 select pg_temp.ok((select count(*)=0 from sale_receipt_shift_effects where sale_id=pg_temp.sid('BP.C3')),'tanpa efek laci tercatat');
-select pg_temp.reject($q$select pg_temp.receive('BP.C3','k-c3-cash','[{"method":"Tunai","amount":100000}]')$q$,'tidak ada shift kasir petshop yang terbuka','terima ulang TUNAI tanpa shift terbuka ditolak dengan petunjuk');
-select pg_temp.ok((select closed_at is null from pos_receipt_cancellations where sale_id=pg_temp.sid('BP.C3')) and pg_temp.balanced(),'penolakan terima ulang tunai tidak meninggalkan apa pun (struk tetap belum dibayar)');
+-- MITIGASI_1111 R2: terima ulang TUNAI tanpa shift pelaku: ditandai tanpa_shift (struk C2 yang tadi dibatalkan tanpa shift), laci tak tersentuh.
+select pg_temp.ok((pg_temp.receive('BP.C2','k-c2-cash','[{"method":"Tunai","amount":100000}]')->>'shift_mode')='tanpa_shift','terima ulang TUNAI tanpa shift pelaku: boleh, ditandai tanpa_shift');
+select pg_temp.ok((select closed_kind='diterima-ulang' and receive_effect_shift_id is null from pos_receipt_cancellations where sale_id=pg_temp.sid('BP.C2')) and (select count(*)=0 from sale_receipt_shift_effects where sale_id=pg_temp.sid('BP.C2')) and pg_temp.balanced(),'C2 dibayar lagi tanpa efek laci, neraca nol');
 update cashier_shifts set status='open',closed_at=null where id in('bb600000-0000-4000-8000-00000000000b','bb600000-0000-4000-8000-00000000000c');
 select pg_temp.receive('BP.C3','k-c3r','[{"method":"QRIS","amount":100000}]');
 select pg_temp.ok(pg_temp.net('BP.C3','150001')=0 and pg_temp.balanced(),'C3 terima ulang menutup piutang');

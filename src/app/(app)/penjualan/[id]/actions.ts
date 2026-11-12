@@ -91,7 +91,8 @@ export async function batalkanPenerimaan(form: FormData) {
     throw new Error(error?.message ?? "Hasil pembatalan penerimaan belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
   }
   revalidatePath("/", "layout");
-  const other = data.effect_in_other_shift === true ? "&shift=lain" : "";
+  // Efek laci jatuh di shift asal (terbuka), di shift terbuka PELAKU ("lain" dari shift asal), atau tidak di laci mana pun ("tanpa": ada uang tunai tetapi pelaku tanpa shift terbuka).
+  const other = data.effect_in_other_shift === true ? "&shift=lain" : data.shift_mode === "tanpa_shift" ? "&shift=tanpa" : "";
   redirect(`/penjualan/${id}?success=receipt-cancelled${other}&draft_scope=${encodeURIComponent(`sale-receipt-cancel:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
 }
 
@@ -112,7 +113,8 @@ export async function terimaPembayaranUlang(form: FormData) {
     throw new Error(error?.message ?? "Hasil penerimaan pembayaran belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
   }
   revalidatePath("/", "layout");
-  redirect(`/penjualan/${id}?success=receipt-received&draft_scope=${encodeURIComponent(`sale-receipt-receive:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
+  const tanpa = data.shift_mode === "tanpa_shift" ? "&shift=tanpa" : "";
+  redirect(`/penjualan/${id}?success=receipt-received${tanpa}&draft_scope=${encodeURIComponent(`sale-receipt-receive:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
 }
 
 /** Order marketplace: batalkan pencairan sehingga order kembali ke piutang marketplace (lalu bisa dicairkan ulang atau dibatalkan/diganti). */
