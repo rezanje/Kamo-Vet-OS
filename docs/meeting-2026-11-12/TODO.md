@@ -136,9 +136,10 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Akun tetap terhubung ke data karyawan (untuk insentif).
 - Screenshot: `pengaturan-akses-grup.jpg`
 - Status: dikerjakan (keputusan 1A/2A/3A, `USULAN-E3.md`). Owner mengatur "Akses khusus akun ini" di Pengaturan › Pengguna ›
-  edit akun: Ikuti peran / Peran + tambahan / Hanya akses khusus. Migrasi `20261116700000_e3_akses_khusus_akun.sql` **belum
-  dipasang** (menunggu persetujuan; bagian 8 memperluas `sales_module_access` untuk akun yang diberi modul Penjualan lewat
-  akses khusus — tanpa itu akun online bisa membuka halaman tetapi tidak bisa menyimpan).
+  edit akun: Ikuti peran / Peran + tambahan / Hanya akses khusus. Migrasi `20261116700000_e3_akses_khusus_akun.sql` disetujui
+  (1A, 13 Nov; bagian 8 memperluas `sales_module_access` untuk akun yang diberi modul Penjualan lewat akses khusus).
+  Detail order online kini punya rute sendiri `/penjualan/online/[id]` (3A), jadi akun "hanya Penjualan Online" bisa
+  membuka pesanannya tanpa akses Rekap penjualan.
 
 ### E4 · [ ] P1 — Gudang (WH) otomatis sesuai user/cabang saat impor
 - Saat impor, user tidak memilih WH lagi karena sering salah pilih. WH otomatis mengikuti cabang/WH yang terikat ke user (misalnya user Panduraya → WH Panduraya).
