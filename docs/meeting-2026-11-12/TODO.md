@@ -140,6 +140,12 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Saat impor, user tidak memilih WH lagi karena sering salah pilih. WH otomatis mengikuti cabang/WH yang terikat ke user (misalnya user Panduraya → WH Panduraya).
 - Hapus WH "Online" yang terpisah (misalnya "WH ONLINE TKI", "WH ONLINE PDRY"). Cukup satu WH per cabang.
 - [?] Konfirmasi: data stok dan transaksi yang sudah ada di WH Online dipindah ke WH cabang, atau WH Online cukup dinonaktifkan?
+- Status (sebagian): **gudang otomatis saat impor Shopee sudah dikerjakan** — yang dipilih kini CABANG, gudangnya = gudang
+  utama cabang (gudang Toko; cabang tanpa gudang Toko = satu-satunya gudangnya, mis. B2C). Akun satu cabang terkunci
+  otomatis; Owner/multi-cabang memilih cabang (bawaan = cabang petshop aktif). Server menghitung ulang gudangnya.
+  **Belum:** penghapusan/penonaktifan WH Online (menunggu jawaban [?]). Data 13 Nov: WH ONLINE PDRY 31 barang / 230 unit,
+  WH ONLINE TKI 3 barang / 16 unit masih bersaldo; mutasi terakhir 4 Nov. Order online manual (Penjualan Online → Baru)
+  masih memilih gudang seperti sebelumnya.
 - Screenshot: `penjualan-online-pilih-wh.jpg`
 
 ---
