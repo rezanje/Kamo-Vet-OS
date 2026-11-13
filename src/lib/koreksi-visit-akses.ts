@@ -4,7 +4,7 @@
  * Pemegang izin (dan Owner) boleh: mencatat visit dokter lebih dari 48 jam lalu; mengubah waktu/tanggal/dokter/jenis/paramedis
  * visit; menambah/mengubah catatan setelah pasien pulang/RIP (tanpa obat/tagihan). Semuanya wajib alasan.
  *
- * Ini BUKAN otorisasi: pagar database (migrasi 20261116600000_a5_koreksi_visit_rawat_inap.sql) memeriksa ulang setiap simpan.
+ * Ini BUKAN otorisasi: pagar database (migrasi 20261113031357_a5_koreksi_visit_rawat_inap.sql) memeriksa ulang setiap simpan.
  * Pola sama dengan "Batalkan penerimaan" (batal-penerimaan-akses.ts): Owner tidak pernah terkunci oleh galat baca; peran lain
  * gagal-tertutup.
  */

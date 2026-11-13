@@ -18,7 +18,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Screenshot: `laporan-daftar.jpg`, `laporan-penjualan-per-tenaga-penjual.jpg`
 - Kriteria selesai: membuka halaman laporan tidak memicu query berat; data baru ditarik setelah filter dipilih dan "Tampilkan" diklik.
 - Status: dikerjakan di branch `claude/epic-hypatia-raw2el` (lihat `RENCANA-P0.md`). Index tanggal ditulis sebagai migrasi
-  `20261116400000_a1_index_tanggal_laporan.sql`, **belum dipasang** ke Production (menunggu persetujuan).
+  `20261113031139_a1_index_tanggal_laporan.sql` — **terpasang di Production** (13 Nov 2026, 10.11 WIB).
 
 ### A2 · [x] P0 — Laporan Penjualan per Tenaga Penjual: rekap per item (qty)
 - Halaman: `/laporan/penjual`
@@ -43,8 +43,8 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Status: `/laporan/visit` (Daftar Laporan › Klinik) — filter periode, cabang, peran, dokter/paramedis; rekap jumlah visit,
   pasien berbeda, hari visit per orang; rincian catatan; unduh Excel/CSV. 1 catatan "Visit dokter" = 1 visit untuk dokter
   visit + 1 untuk paramedis di catatan itu; catatan "Pemantauan" tidak dihitung. Tanpa nilai rupiah (sesuai jawaban).
-  Centang "Laporan Visit" di Akses Grup: migrasi `20261116500000_a4_submenu_laporan_visit.sql` (disetujui, dipasang malam ini
-  sebelum deploy). ADMIN yang laporannya dibatasi perlu dicentang Owner di Akses Grup.
+  Centang "Laporan Visit" di Akses Grup: migrasi `20261113031150_a4_submenu_laporan_visit.sql` (**terpasang di Production** 13 Nov 2026,
+  10.11 WIB, sebelum deploy). ADMIN yang laporannya dibatasi perlu dicentang Owner di Akses Grup.
 
 ### A5 · [x] P1 — Akses koreksi visit untuk yang lupa input
 - Disepakati: tetap ada akses untuk mengedit/menambah visit yang terlupa, **hanya untuk Owner/Manager**. Diatur lewat Akses Grup.
@@ -52,8 +52,8 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Screenshot: `pengaturan-akses-grup.jpg`
 - Status: izin Akses Grup baru **"Koreksi visit rawat inap"** (Owner selalu; ADMIN otomatis dicentang — keputusan 1A/2A/3A,
   lihat `USULAN-A5.md`). Pemegang izin: visit > 48 jam lalu, ubah waktu/dokter/jenis/paramedis visit, dan tambah/ubah catatan
-  setelah pasien pulang — alasan wajib & tersimpan. Migrasi `20261116600000_a5_koreksi_visit_rawat_inap.sql` **harus dipasang
-  sebelum** aplikasinya dideploy.
+  setelah pasien pulang — alasan wajib & tersimpan. Migrasi `20261113031357_a5_koreksi_visit_rawat_inap.sql` — **terpasang di Production**
+  13 Nov 2026, 10.13 WIB (wajib sebelum aplikasinya dideploy).
 
 ### A6 · [x] P1 — Laporan Penjualan per Cabang: omset harian
 - Tambahkan rekap omset per hari per cabang. Isinya **omset saja**, tanpa biaya operasional. Tujuannya membantu Finance.

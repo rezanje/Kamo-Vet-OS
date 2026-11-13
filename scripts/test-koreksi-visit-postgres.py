@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A5 (meeting 12 Nov 2026): izin Akses Grup "Koreksi visit rawat inap" (klinik.koreksi_visit)
-(migrasi 20261116600000_a5_koreksi_visit_rawat_inap.sql).
+(migrasi 20261113031357_a5_koreksi_visit_rawat_inap.sql).
 
 Pemegang izin (dan Owner) boleh: visit dokter > 48 jam lalu; ubah waktu/tanggal/dokter/jenis/paramedis visit; tambah/ubah catatan
 setelah pasien pulang (tanpa obat/tagihan). Selalu dengan alasan. ADMIN otomatis diberi izin. Peran lain tetap seperti dulu.
@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT / 'scrip
 spec = importlib.util.spec_from_file_location('okr', ROOT / 'scripts/test-owner-koreksi-racikan-postgres.py'); assert spec and spec.loader
 okr = importlib.util.module_from_spec(spec); spec.loader.exec_module(okr)
 x, r, q, j = okr.x, okr.r, okr.q, okr.j
-CANDIDATE = '20261116600000_a5_koreksi_visit_rawat_inap.sql'
+CANDIDATE = '20261113031357_a5_koreksi_visit_rawat_inap.sql'
 MIG = ROOT / 'supabase/migrations'
 RESULTS = []
 OWNER, ADMIN, FINANCE, STAFF, DOCTOR = r.OWNER, r.ADMIN, r.FINANCE, r.STAFF, r.DOCTOR

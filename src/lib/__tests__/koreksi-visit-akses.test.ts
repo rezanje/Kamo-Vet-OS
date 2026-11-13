@@ -9,7 +9,7 @@ import {
 } from "../koreksi-visit-akses";
 
 // A5 (meeting 12 Nov 2026): izin Akses Grup "Koreksi visit rawat inap".
-const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261116600000_a5_koreksi_visit_rawat_inap.sql"), "utf8");
+const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261113031357_a5_koreksi_visit_rawat_inap.sql"), "utf8");
 
 describe("izin khusus klinik.koreksi_visit — sinkron dengan migrasi", () => {
   it("terdaftar sebagai izin khusus (bawaan mati), baris katalog enforced grup Klinik, modul klinik", () => {

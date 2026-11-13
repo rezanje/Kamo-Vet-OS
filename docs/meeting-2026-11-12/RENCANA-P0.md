@@ -59,7 +59,7 @@ Satu item = satu commit (`A1: …`, `A2: …`, `A3: …`), centang TODO.md di co
   (mis. `.eq("sales.branch_id", id)`, `.eq("invoices.visits.branch_id", id)` dengan join `!inner`).
   Saringan di memori tetap dipertahankan sebagai pengaman akses cabang.
 - **Migrasi index (BUTUH PERSETUJUAN — perubahan skema):** file baru
-  `supabase/migrations/20261116400000_a1_index_tanggal_laporan.sql`:
+  `supabase/migrations/20261113031139_a1_index_tanggal_laporan.sql`:
   ```sql
   create index if not exists sales_branch_created_idx        on public.sales (branch_id, created_at);
   create index if not exists sales_created_idx               on public.sales (created_at);
