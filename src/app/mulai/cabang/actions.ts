@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { bolehBukaPath } from "@/lib/akses";
+import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { branchCookie, branchSelectionUrl } from "@/lib/operational-context";
 import { resolveOperationalBranch } from "@/lib/operational-branch";
 import { getOpenShift } from "@/lib/shift";
@@ -15,12 +16,14 @@ export async function pilihCabang(form: FormData) {
   const client = await createClient();
   const { data: { user } } = await client.auth.getUser();
   if (!user) redirect("/login");
-  const [{ data: profile }, { data: rules, error: rulesError }] = await Promise.all([
+  // E3 (meeting 12 Nov 2026): hak buka memakai akses efektif akun (peran + sub-menu + akses khusus).
+  const [{ data: profile }, akses] = await Promise.all([
     client.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle(),
-    client.from("role_modules").select("role, module_id"),
+    bacaAkses(client),
   ]);
+  const rulesError = akses.rulesError;
   const destination = mode === "klinik" ? "/klinik" : "/kasir";
-  if (rulesError || !profile?.is_active || !bolehBukaPath(profile.role, destination, rules ?? [])) redirect("/mulai");
+  if (rulesError || !profile?.is_active || !bolehBukaPath(profile.role, destination, aturanEfektif(profile.role, akses))) redirect("/mulai");
   const branch = await resolveOperationalBranch(client, user.id, mode, branchId);
   const fail = (error: string) => redirect(`${branchSelectionUrl(mode)}&error=${encodeURIComponent(error)}`);
   if (!branch) fail("Cabang tidak tersedia untuk akun ini. Pilih ulang atau hubungi admin.");

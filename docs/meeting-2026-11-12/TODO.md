@@ -129,12 +129,16 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 ### E2 · [ ] P2 — Bundling / promo paket di impor
 - Belum didukung. Kerjakan setelah item P0/P1.
 
-### E3 · [ ] P1 — Akses khusus Penjualan Online per user
+### E3 · [x] P1 — Akses khusus Penjualan Online per user
 - Perlu akun untuk staf online dengan role Admin/Staff yang **hanya** punya akses Penjualan Online.
 - Masalah: akses diatur per role (Akses Grup). Kalau role Staff umum diberi akses penjualan, semua staff ikut dapat akses.
 - Yang diminta: pengaturan akses tambahan per user (override di atas role), atau solusi lain yang setara. Usulkan desainnya dulu.
 - Akun tetap terhubung ke data karyawan (untuk insentif).
 - Screenshot: `pengaturan-akses-grup.jpg`
+- Status: dikerjakan (keputusan 1A/2A/3A, `USULAN-E3.md`). Owner mengatur "Akses khusus akun ini" di Pengaturan › Pengguna ›
+  edit akun: Ikuti peran / Peran + tambahan / Hanya akses khusus. Migrasi `20261116700000_e3_akses_khusus_akun.sql` **belum
+  dipasang** (menunggu persetujuan; bagian 8 memperluas `sales_module_access` untuk akun yang diberi modul Penjualan lewat
+  akses khusus — tanpa itu akun online bisa membuka halaman tetapi tidak bisa menyimpan).
 
 ### E4 · [ ] P1 — Gudang (WH) otomatis sesuai user/cabang saat impor
 - Saat impor, user tidak memilih WH lagi karena sering salah pilih. WH otomatis mengikuti cabang/WH yang terikat ke user (misalnya user Panduraya → WH Panduraya).
