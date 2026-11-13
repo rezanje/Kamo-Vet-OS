@@ -2,6 +2,7 @@ import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
+import { laporanDiminta } from "@/lib/report-gate";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -16,17 +17,27 @@ type Row = {
 export default async function LaporanGajiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periode?: string; cabang?: string }>;
+  searchParams: Promise<{ periode?: string; cabang?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const periode = sp.periode || hariIniWIB().slice(0, 7);
   const cabang = sp.cabang || "";
 
   const supabase = await createClient();
+  // A1 (meeting 12 Nov 2026): slip gaji baru dibaca setelah Tampilkan ditekan;
+  // sebelum itu hanya daftar cabang untuk filter. Cabang dipilih = disaring di
+  // query, saringan di memori tetap jadi pengaman.
+  const bacaSlip = () => {
+    const query = supabase.from("payrolls")
+      .select(cabang
+        ? "id, gaji_pokok, tunjangan, potongan, total, employees!inner(nama, jabatan, branches!employees_branch_id_fkey!inner(name))"
+        : "id, gaji_pokok, tunjangan, potongan, total, employees(nama, jabatan, branches!employees_branch_id_fkey(name))", { count: "exact" })
+      .eq("periode", periode);
+    return completeReportQuery(cabang ? query.eq("employees.branches.name", cabang) : query);
+  };
   const [{ data }, { data: cabangList }] = await Promise.all([
-    completeReportQuery(supabase.from("payrolls")
-      .select("id, gaji_pokok, tunjangan, potongan, total, employees(nama, jabatan, branches!employees_branch_id_fkey(name))", { count: "exact" })
-      .eq("periode", periode)),
+    siap ? bacaSlip() : Promise.resolve({ data: [] as unknown[] }),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
@@ -58,6 +69,7 @@ export default async function LaporanGajiPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-moneybag" title="REKAP GAJI"
       desc="Beban gaji per bulan, per karyawan dan per cabang."
       filter={

@@ -23,6 +23,10 @@ import {
 import {
   bacaFakturGabungan, bacaFilterFaktur, muatSisaGrosir, paramFilter, type ParamFaktur,
 } from "@/lib/faktur-gabungan-server";
+import { allowedBranchIds } from "@/lib/branch-access";
+import { branchDisplayName } from "@/lib/branch-display";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 import { terimaPembayaranJual } from "./actions";
 import Link from "next/link";
 
@@ -37,9 +41,12 @@ const WARNA_SUMBER: Record<string, string> = { petshop: "b", klinik: "g", grosir
 export default async function FakturJualPage({
   searchParams,
 }: {
-  searchParams: Promise<ParamFaktur & { error?: string; success?: string }>;
+  searchParams: Promise<ParamFaktur & { error?: string; success?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  // A1 (meeting 12 Nov 2026): daftar gabungan, kredit, uang muka, dan sisa grosir baru
+  // ditarik setelah Tampilkan. Sebelum itu hanya pilihan cabang untuk filter.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const boleh = await bolehTransaksiKas();
@@ -48,14 +55,20 @@ export default async function FakturJualPage({
   const param = paramFilter(filter);
   const unduh = (format: string) => `/penjualan/faktur/unduh?${new URLSearchParams({ ...param, format })}`;
 
-  const daftar = await bacaFakturGabungan(supabase, user?.id ?? null, filter, sp.hal)
-    .then(hasil => ({ hasil, error: null as unknown }))
-    .catch(error => ({ hasil: null, error }));
+  const daftar = siap
+    ? await bacaFakturGabungan(supabase, user?.id ?? null, filter, sp.hal)
+      .then(hasil => ({ hasil, error: null as unknown }))
+      .catch(error => ({ hasil: null, error }))
+    : { hasil: null, error: null as unknown };
+  const cabangOptions = daftar.hasil?.cabangOptions ?? (siap ? [] : await opsiCabang(supabase, user?.id ?? null));
 
   type Advance = { id: string; no_um: string; customer_id: string | null; jumlah: number; terpakai: number };
   type Credit = { id: string; tanggal: string; customer_credit: number; no_retur?: string; sales_invoices: Rel<{ id: string; no_faktur: string; customers: Rel<{ name: string }> }> };
   const idGrosir = (daftar.hasil?.rows ?? []).filter(row => row.sumber === "grosir").map(row => row.id);
-  const [sisaGrosir, umData, rekening, correctionCredits, returnCredits] = await Promise.all([
+  type Muatan = [Map<string, number>, Advance[], Awaited<ReturnType<typeof loadRekeningAktif>>, Credit[], Credit[]];
+  const [sisaGrosir, umData, rekening, correctionCredits, returnCredits]: Muatan = !siap
+    ? [new Map<string, number>(), [], [], [], []]
+    : await Promise.all([
     boleh ? muatSisaGrosir(supabase, idGrosir) : Promise.resolve(new Map<string, number>()),
     readCompleteList<Advance>((from, to) => supabase.from("sales_advances").select("id,no_um,customer_id,jumlah,terpakai", { count: "exact" })
       .eq("status", "aktif").order("id").range(from, to), "Uang muka pelanggan", { maxRows: null }),
@@ -98,7 +111,7 @@ export default async function FakturJualPage({
           <label className="flab">Cabang</label>
           <select className="fi" name="cabang" defaultValue={filter.cabang}>
             <option value="">Semua cabang</option>
-            {(hasil?.cabangOptions ?? []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {cabangOptions.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
         <div style={{ minWidth: 130 }}>
@@ -122,14 +135,16 @@ export default async function FakturJualPage({
         <label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 5, paddingBottom: 7 }}>
           <input type="checkbox" name="batal" value="1" defaultChecked={filter.batal} /> Tampilkan batal
         </label>
+        <InputTampil />
         <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
         <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-          <a className="btn-def" href={unduh("xlsx")}>Excel</a>
-          <a className="btn-def" href={unduh("csv")}>CSV</a>
+          {siap && <a className="btn-def" href={unduh("xlsx")}>Excel</a>}
+          {siap && <a className="btn-def" href={unduh("csv")}>CSV</a>}
           {boleh && <Link href="/penjualan/faktur/baru" className="btn-acc" style={{ textDecoration: "none" }}>+ Faktur Penjualan baru</Link>}
         </div>
       </form>
 
+      {!siap && <LaporanBelumDitampilkan />}
       {daftar.error ? <ListLoadFailure error={daftar.error} label="Daftar faktur penjualan" /> : hasil && <>
         <div className="crm-sec" style={{ display: "flex", gap: 26, flexWrap: "wrap", marginBottom: 12 }}>
           <div><div style={{ fontSize: 9.5, color: "var(--td)", textTransform: "uppercase", letterSpacing: .3 }}>Jumlah dokumen</div>
@@ -146,7 +161,7 @@ export default async function FakturJualPage({
             {/* Rentang tanggal menyaring tagihan lama (mis. saldo awal per faktur). Jalan pintas
                 ke daftar tagihan yang masih harus ditagih, tanpa batas tanggal. */}
             {filter.status !== "belum" && (
-              <Link href={`/penjualan/faktur?${new URLSearchParams({ ...param, status: "belum", batal: "" })}`} style={{ fontSize: 10.5, fontWeight: 600 }}>
+              <Link href={denganTampil(`/penjualan/faktur?${new URLSearchParams({ ...param, status: "belum", batal: "" })}`)} style={{ fontSize: 10.5, fontWeight: 600 }}>
                 Lihat semua yang belum lunas (semua tanggal) →
               </Link>
             )}</div>
@@ -261,7 +276,7 @@ export default async function FakturJualPage({
               </tfoot>
             </table>
           </div>
-          <ListPagination path="/penjualan/faktur" query={param} total={hasil.ringkasan.jumlah} pageInfo={hasil.pageInfo} />
+          <ListPagination path="/penjualan/faktur" query={{ ...param, tampil: "1" }} total={hasil.ringkasan.jumlah} pageInfo={hasil.pageInfo} />
         </div>
       </>}
 
@@ -273,4 +288,17 @@ export default async function FakturJualPage({
       </div>}
     </MasterPage>
   );
+}
+
+// Pilihan cabang filter tanpa menarik dokumen apa pun — sama dengan isian di
+// bacaFakturGabungan (cabang aktif yang boleh dibaca pengguna ini).
+async function opsiCabang(supabase: Awaited<ReturnType<typeof createClient>>, userId: string | null) {
+  const [izin, { data }] = await Promise.all([
+    userId ? allowedBranchIds(supabase, userId) : Promise.resolve([] as string[]),
+    supabase.from("branches").select("id,code,name,type").eq("is_active", true).order("name"),
+  ]);
+  const katalog = (data ?? []) as { id: string; code: string | null; name: string; type: string | null }[];
+  return katalog
+    .filter((branch) => izin === null || izin.includes(String(branch.id)))
+    .map((branch) => ({ id: String(branch.id), name: branchDisplayName(branch, katalog) }));
 }

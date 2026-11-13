@@ -45,21 +45,21 @@ import PenerimaanPage from "@/app/(app)/pembelian/penerimaan/page";
 beforeEach(() => { state.failItemPage = false; state.receiptRanges = []; state.itemRanges = []; });
 
 it("paginates beyond 200 receipts and sums every item on the selected page", async () => {
-  const html = renderToStaticMarkup(await PenerimaanPage({ searchParams: Promise.resolve({ hal: "2" }) }));
+  const html = renderToStaticMarkup(await PenerimaanPage({ searchParams: Promise.resolve({ tampil: "1", hal: "2" }) }));
   expect(html).toContain("TB-051");
   expect(html).not.toContain("TB-001");
   expect(html).toContain("Rp 1.002");
   expect(html).toContain("501 unit");
   expect(state.receiptRanges).toEqual(["0-49", "50-99"]);
   expect(state.itemRanges).toEqual(["0-499", "500-999"]);
-  const last = renderToStaticMarkup(await PenerimaanPage({ searchParams: Promise.resolve({ hal: "5" }) }));
+  const last = renderToStaticMarkup(await PenerimaanPage({ searchParams: Promise.resolve({ tampil: "1", hal: "5" }) }));
   expect(last).toContain("TB-201");
   expect(last).not.toContain("TB-200");
 });
 
 it("hides receipt totals if a later item page fails", async () => {
   state.failItemPage = true;
-  const html = renderToStaticMarkup(await PenerimaanPage({ searchParams: Promise.resolve({ hal: "2" }) }));
+  const html = renderToStaticMarkup(await PenerimaanPage({ searchParams: Promise.resolve({ tampil: "1", hal: "2" }) }));
   expect(html).toContain("belum dapat dimuat lengkap");
   expect(html).not.toContain("TB-051");
 });

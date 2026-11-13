@@ -261,6 +261,11 @@ export function parseClinicRecordError(error: { code?: string; message: string }
     if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";
     if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "Form pemeriksaan ini sudah dipakai untuk data berbeda. Muat ulang kunjungan.";
     if (error.message.startsWith("RECIPE_REQUIRED:")) return recipeRequiredMessage(error.message);
+    // A5 (meeting 12 Nov 2026): koreksi visit rawat inap (izin Akses Grup "Koreksi visit rawat inap").
+    if (error.message.startsWith("VISIT_CORRECTION_DENIED:")) return "Koreksi visit (visit dokter lebih dari 48 jam lalu, ubah waktu/dokter/jenis/paramedis visit, atau catatan setelah pasien pulang) hanya untuk Owner atau peran yang diberi izin Koreksi visit rawat inap di Akses Grup.";
+    if (error.message.startsWith("VISIT_CORRECTION_REASON:")) return "Ini koreksi visit — isi alasan koreksi (minimal 3 huruf) lalu simpan lagi.";
+    if (error.message.startsWith("VISIT_CORRECTION_WINDOW:")) return "Tanggal catatan koreksi harus di antara tanggal masuk dan tanggal pulang pasien.";
+    if (error.message.startsWith("VISIT_CORRECTION_CART:")) return "Koreksi setelah pasien pulang hanya untuk catatan visit/pemantauan — tanpa obat, tagihan, atau ubah kondisi.";
   }
   const message = parseClinicPostingError(error);
   return message.startsWith("Transaksi belum tersimpan.")

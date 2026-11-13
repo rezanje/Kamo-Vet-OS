@@ -8,6 +8,7 @@ import { batasTanggalWIB, KANAL_SEMUA, LABEL_KANAL, type Kanal } from "@/lib/lap
 import { fakturGrosirOmzet, omzetDokumenGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "@/lib/laporan-grosir";
 import { isCompletedSale, saleMerchandiseTotal, salePaymentDescription, saleRefundMerchantFee, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 import { hrefInvoiceKlinik } from "@/lib/tautan-dokumen";
+import { laporanDiminta } from "@/lib/report-gate";
 
 // Rincian penjualan PER DOKUMEN (per struk / per invoice) — pelengkap laporan
 // "Penjualan per Kasir" yang hanya menampilkan rekap per orang. Sebelum halaman ini
@@ -59,9 +60,10 @@ const BADGE: Record<Kanal, { cls: string; style?: React.CSSProperties }> = {
 export default async function PenjualanRinciPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; cabang_id?: string; kanal?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; cabang_id?: string; kanal?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const cabang = sp.cabang || "";
@@ -73,17 +75,29 @@ export default async function PenjualanRinciPage({
   // jadi batasnya digeser 7 jam supaya struk jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const {mulai,akhir} = batasTanggalWIB(dari,sampai);
 
-  const [{ data: sales }, { data: invoices }, { data: grosir }, { data: returs }, { data: refundKlinik }, { data: returGrosir }, { data: cabangList }] = await Promise.all([
-    completeReportQuery(supabase
-      .from("sales")
-      .select("id, branch_id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name)", { count: "exact" })
-      .gte("created_at", mulai).lte("created_at", akhir)
+  // A1 (meeting 12 Nov 2026): sebelum Tampilkan ditekan hanya daftar cabang yang dibaca.
+  // Setelahnya, cabang terpilih ikut disaring di query struk & invoice (id cabang hanya
+  // bila terdaftar aktif — kolomnya uuid; nama dicocokkan persis seperti saringan di
+  // memori, yang tetap dipakai sebagai pengaman). Faktur grosir sengaja tidak disaring
+  // di query: faktur koreksi menandai faktur asalnya dari kumpulan yang sama.
+  const { data: cabangList } = await completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name"));
+  const saringId = cabangId && cabangList.some((b) => b.id === cabangId) ? cabangId : "";
+  const saringNama = cabangId ? "" : cabang;
+  const qSales = supabase
+    .from("sales")
+    .select(`id, branch_id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches${saringNama ? "!inner" : ""}(name), customers(name)`, { count: "exact" })
+    .gte("created_at", mulai).lte("created_at", akhir);
+  const qInvoices = supabase
+    .from("invoices")
+    .select(`id, invoice_no, total, metode_bayar, paid_status, created_at, visit_id, visits${saringId || saringNama ? "!inner" : ""}(branch_id, branches${saringNama ? "!inner" : ""}(name), customers(name))`, { count: "exact" })
+    .is("voided_at", null)
+    .gte("created_at", mulai).lte("created_at", akhir);
+  const tanpaData = Promise.resolve({ data: null, error: null });
+
+  const [{ data: sales }, { data: invoices }, { data: grosir }, { data: returs }, { data: refundKlinik }, { data: returGrosir }] = siap ? await Promise.all([
+    completeReportQuery((saringId ? qSales.eq("branch_id", saringId) : saringNama ? qSales.eq("branches.name", saringNama) : qSales)
       .order("created_at", { ascending: false })),
-    completeReportQuery(supabase
-      .from("invoices")
-      .select("id, invoice_no, total, metode_bayar, paid_status, created_at, visit_id, visits(branch_id, branches(name), customers(name))", { count: "exact" })
-      .is("voided_at", null)
-      .gte("created_at", mulai).lte("created_at", akhir)
+    completeReportQuery((saringId ? qInvoices.eq("visits.branch_id", saringId) : saringNama ? qInvoices.eq("visits.branches.name", saringNama) : qInvoices)
       .order("created_at", { ascending: false })),
     // Faktur grosir disaring memakai kolom tanggal faktur (sudah tanggal WIB),
     // bukan created_at: faktur boleh ditanggali mundur dari saat pengetikannya.
@@ -98,8 +112,7 @@ export default async function PenjualanRinciPage({
     completeReportQuery(supabase.from("clinic_refunds").select("id, invoice_id, total", { count: "exact" })),
     // Retur faktur grosir aktif, juga tanpa batas tanggal, dikurangkan dari faktur sumbernya.
     completeReportQuery(supabase.from("wholesale_returns").select("id, invoice_id, total", { count: "exact" }).eq("status", "posted")),
-    completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
-  ]);
+  ]) : await Promise.all([tanpaData, tanpaData, tanpaData, tanpaData, tanpaData, tanpaData]);
 
   const returPerStruk = new Map<string, number>();
   for (const r of (returs ?? []) as { sale_id: string; total: number }[]) {
@@ -211,6 +224,7 @@ export default async function PenjualanRinciPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-list-details" title="RINCIAN PENJUALAN PER TRANSAKSI"
       desc="Semua struk kasir, order online, invoice klinik, dan faktur penjualan grosir dalam satu daftar. Klik nomornya untuk melihat isi transaksi."
       filter={

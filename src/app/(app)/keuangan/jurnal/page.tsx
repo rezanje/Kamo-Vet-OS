@@ -6,6 +6,8 @@ import { JurnalCorrectionForm } from "./JurnalCorrectionForm";
 import { NoDok } from "@/components/NoDok";
 import { nomorDokumenJurnal } from "@/lib/tautan-dokumen";
 import { postRecurringCatchUp } from "@/lib/recurring";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { laporanDiminta } from "@/lib/report-gate";
 import { geserHari, hariIniWIB } from "@/lib/tanggal";
 
 // ponytail: jurnal umum — catat + riwayat. Real data dari journal_entries + journal_lines.
@@ -77,10 +79,17 @@ export default async function JurnalPage({
 }: {
   searchParams: Promise<{
     success?: string; error?: string;
-    cari?: string; cabang?: string; sumber?: string; dari?: string; sampai?: string; entry?: string; nomor?: string;
+    cari?: string; cabang?: string; sumber?: string; dari?: string; sampai?: string; entry?: string; nomor?: string; tampil?: string;
   }>;
 }) {
-  const { success, error, cari = "", cabang = "", sumber = "", dari = "", sampai = "", entry = "", nomor = "" } = await searchParams;
+  const sp = await searchParams;
+  const { success, error, cari = "", cabang = "", sumber = "", dari = "", sampai = "", entry = "", nomor = "" } = sp;
+  const selectedId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry);
+  const selectedNumber = !selectedId && /^JRN[.\-/][A-Za-z0-9.\-/]*\d{3,}$/.test(nomor);
+  // A1 (meeting 12 Nov 2026): riwayat jurnal baru dibaca setelah Tampilkan ditekan. Tautan
+  // dokumen yang menunjuk SATU jurnal (entry/nomor) tetap langsung tampil — query-nya
+  // disaring ke satu baris, bukan laporan berat.
+  const siap = laporanDiminta(sp) || selectedId || selectedNumber;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
@@ -108,8 +117,6 @@ export default async function JurnalPage({
   if (sumber) qEntries = qEntries.eq("source", sumber);
   if (dari) qEntries = qEntries.gte("tanggal", dari);
   if (sampai) qEntries = qEntries.lte("tanggal", sampai);
-  const selectedId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry);
-  const selectedNumber = !selectedId && /^JRN[.\-/][A-Za-z0-9.\-/]*\d{3,}$/.test(nomor);
   if (selectedId) qEntries = qEntries.eq("id", entry);
   else if (selectedNumber) qEntries = qEntries.eq("no_jurnal", nomor);
   if (cari.trim()) {
@@ -127,13 +134,14 @@ export default async function JurnalPage({
       .from("branches")
       .select("id, code, name")
       .order("name"),
-    qEntries,
+    siap ? qEntries : { data: [] },
   ]);
 
   // Rekonsiliasi bank/QRIS (Finance): jurnal klinik yang tanggalnya lebih awal dari saat dicatat (tanggal efektif / backdate Owner). Gagal baca = bagian ini tidak tampil.
   type Mundur = { no_jurnal: string; tanggal: string; dicatat_pada: string; sumber: string; ref: string | null; jumlah: number; rekening: string | null };
   let mundur: Mundur[] = [];
-  if (canCreateSourceSchedule) {
+  // A1: daftar ini juga laporan — baru dibaca setelah Tampilkan.
+  if (siap && canCreateSourceSchedule) {
     try {
       const hariIni = hariIniWIB();
       const awal = dari || geserHari(hariIni, -30);
@@ -229,6 +237,7 @@ export default async function JurnalPage({
         {/* Saringan (permintaan Bu Nisa, meeting 14 Agustus) — dulu layar ini hanya
             menampilkan 30 entri terbaru tanpa cara mencari. */}
         <form method="get" style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <InputTampil />
           <div style={{ flex: 1, minWidth: 180 }}>
             <label className="flab">Cari</label>
             <input className="fi" name="cari" defaultValue={cari} placeholder="No. jurnal, dokumen, atau keterangan" />
@@ -258,6 +267,7 @@ export default async function JurnalPage({
           <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
         </form>
 
+        {!siap ? <LaporanBelumDitampilkan pesan="Atur saringan (cabang, sumber, tanggal), lalu klik Tampilkan untuk melihat riwayat jurnal." /> : <>
         {mundur.length > 0 && (
           <details style={{ marginBottom: 10 }} data-testid="jurnal-mundur">
             <summary style={{ cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>
@@ -403,6 +413,7 @@ export default async function JurnalPage({
             </table>
           </div>
         )}
+        </>}
       </div>
     </>
   );

@@ -1,5 +1,7 @@
 import { readReportRows } from "@/lib/hpp-reports-server";
+import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
+import { allowedBranchIds } from "@/lib/branch-access";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { lineDiscount } from "@/lib/pos-calc";
 import { PosDecimal } from "@/lib/pos-money";
@@ -129,9 +131,40 @@ function alokasiNetoBaris(bases: InstanceType<typeof PosDecimal>[], target: Inst
 }
 
 
-export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId = "", pelaksanaId = "", kategori = "" }: {
+export type OpsiCabang = { id: string; name: string };
+
+/**
+ * A1 (meeting 12 Nov 2026): isian filter cabang tanpa membaca baris penjualan —
+ * cabang aktif yang boleh diakses pengguna. Dipakai sebelum Tampilkan ditekan, dan
+ * untuk memvalidasi id cabang sebelum disaring di query.
+ */
+export async function ambilOpsiCabangPenjualanBarang(): Promise<OpsiCabang[]> {
+  try {
+    const supabase = await createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    const [diizinkan, { data }] = await Promise.all([
+      auth?.user ? allowedBranchIds(supabase, auth.user.id) : Promise.resolve([] as string[]),
+      completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true)),
+    ]);
+    return ((data ?? []) as OpsiCabang[])
+      .filter((cabang) => diizinkan === null || diizinkan.includes(cabang.id))
+      .sort((a, b) => a.name.localeCompare(b.name, "id") || a.id.localeCompare(b.id));
+  } catch (error) {
+    console.error("Pilihan cabang laporan penjualan per barang gagal:", error);
+    return [];
+  }
+}
+
+export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId = "", pelaksanaId = "", kategori = "", saringCabangDiQuery = false }: {
   dari: string; sampai: string; kanal: Kanal;
   jenis: string; q: string; cabangId?: string; pelaksanaId?: string; kategori?: string;
+  /**
+   * A1: true = `cabangId` (sudah divalidasi pemanggil; kolomnya uuid) ikut disaring di
+   * query struk & invoice klinik. Bawaan false = perilaku lama (dipakai rute unduh).
+   * Faktur grosir tetap disaring di memori: faktur koreksi menandai faktur asalnya dari
+   * kumpulan yang sama.
+   */
+  saringCabangDiQuery?: boolean;
 }): Promise<{ rows: Baris[]; cabangOptions: { id: string; name: string }[]; pelaksanaOptions: PilihanPelaksana[]; pesanError: string; nilaiTotal: number; qtyTotal: number; ringkasan: RingkasanKategori; kategoriOptions: string[] }> {
   const tanggalSalah = !tanggalValid(dari) || !tanggalValid(sampai) || dari > sampai;
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
@@ -143,22 +176,25 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
   if (!tanggalSalah) {
     try {
       const supabase = await createClient();
+      const saringCabang = saringCabangDiQuery ? cabangId : "";
       const bacaKlinik = kanal === "Klinik";
       const bacaKasir = kanal === "POS" || kanal === "Online";
       const bacaGrosir = kanal === "Grosir";
       const [invoiceItems, saleItems, grosirItems] = await Promise.all([
         bacaKlinik ? readReportRows<InvoiceItem>(async (awal, ujung) => {
-          const { data, error, count } = await supabase.from("invoice_items")
-            .select("id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, bmhp_components, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, subtotal, discount, voided_at, visits(branch_id, branches(name), customers(name), pets(name)))", { count: "exact" })
+          const query = supabase.from("invoice_items")
+            .select(`id, deskripsi, qty, harga, diskon_persen, jenis, item_id, compound_recipe_id, bmhp_components, service_performers, invoices!inner(id, visit_id, invoice_no, created_at, paid_status, subtotal, discount, voided_at, visits${saringCabang ? "!inner" : ""}(branch_id, branches(name), customers(name), pets(name)))`, { count: "exact" })
             .is("invoices.voided_at", null)
-            .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
+            .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir);
+          const { data, error, count } = await (saringCabang ? query.eq("invoices.visits.branch_id", saringCabang) : query)
             .order("id").range(awal, ujung);
           return { data: data as unknown as InvoiceItem[] | null, error, count };
         }) : Promise.resolve([] as InvoiceItem[]),
         bacaKasir ? readReportRows<SaleItem>(async (awal, ujung) => {
-          const { data, error, count } = await supabase.from("sale_items")
+          const query = supabase.from("sale_items")
             .select("id, nama, qty, harga, item_id, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, branch_id, no_struk, created_at, channel, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
-            .gte("sales.created_at", mulai).lte("sales.created_at", akhir)
+            .gte("sales.created_at", mulai).lte("sales.created_at", akhir);
+          const { data, error, count } = await (saringCabang ? query.eq("sales.branch_id", saringCabang) : query)
             .order("id").range(awal, ujung);
           return { data: data as unknown as SaleItem[] | null, error, count };
         }) : Promise.resolve([] as SaleItem[]),

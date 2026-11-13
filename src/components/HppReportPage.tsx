@@ -2,10 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "./LaporanPage";
-import { loadCompoundReport, loadInventoryReport, normalizeReportFilters, REPORT_PATHS, type ReportKind, type ReportParams, type CompoundReport, type InventoryReport } from "@/lib/hpp-reports-server";
+import { inventoryMethod, loadCompoundReport, loadInventoryReport, normalizeReportFilters, readReportRows, reportScope, REPORT_PATHS, type ReportKind, type ReportParams, type CompoundReport, type InventoryReport } from "@/lib/hpp-reports-server";
 import { compoundTable, compoundIngredientsTable, compoundReconciliationTable, inventoryTable, reportWIB, type ReportCell, type ReportColumn } from "@/lib/hpp-reports-export";
 import { hppReportError } from "@/lib/hpp-reports-download";
 import { paginateReport } from "@/lib/hpp-reports";
+import { denganTampil } from "@/lib/report-gate";
 
 const money = (value: number | null) => value === null ? "Belum lengkap" : `Rp ${value.toLocaleString("id-ID",{ minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const percent = (value: number | null) => value === null ? "—" : `${value.toLocaleString("id-ID",{ maximumFractionDigits: 2 })}%`;
@@ -19,12 +20,41 @@ function cellText(value: ReportCell, column: ReportColumn): string {
   return value;
 }
 
-export async function HppReportPage({ kind, params }: { kind: ReportKind; params: ReportParams }) {
+type OpsiFilter = { branches: InventoryReport["scope"]["branches"]; warehouses: InventoryReport["warehouses"]; method: InventoryReport["method"] | null };
+
+/**
+ * A1 (meeting 12 Nov 2026): isian filter saja — cek akses yang sama dengan
+ * laporan penuh (reportScope) dan daftar gudang untuk nilai persediaan, tanpa
+ * membaca stok, lapisan, atau baris invoice racikan.
+ */
+async function bacaOpsiFilter(kind: ReportKind, params: ReportParams): Promise<OpsiFilter> {
+  const client = await createClient();
+  const scope = await reportScope(client, REPORT_PATHS[kind], normalizeReportFilters(params).cabang);
+  if (kind !== "inventory") return { branches: scope.branches, warehouses: [], method: null };
+  const [method, warehouses] = await Promise.all([
+    inventoryMethod(client),
+    scope.branchIds.length ? readReportRows<OpsiFilter["warehouses"][number]>(async (from, to) => {
+      const r = await client.from("warehouses").select("id,branch_id,code,name,type,is_active", { count: "exact" })
+        .in("branch_id", scope.branchIds).order("id").range(from, to);
+      return { data: r.data as OpsiFilter["warehouses"] | null, error: r.error, count: r.count };
+    }) : Promise.resolve([] as OpsiFilter["warehouses"]),
+  ]);
+  return { branches: scope.branches, warehouses, method };
+}
+
+export async function HppReportPage({ kind, params, siap }: {
+  kind: ReportKind; params: ReportParams;
+  /** A1: false = Tampilkan belum ditekan; hanya isian filter yang dibaca. */
+  siap: boolean;
+}) {
   let report: InventoryReport | CompoundReport | undefined;
+  let opsi: OpsiFilter | undefined;
   let message = "";
   try {
-    const client = await createClient();
-    report = kind === "inventory" ? await loadInventoryReport(client,params) : await loadCompoundReport(client,params);
+    if (siap) {
+      const client = await createClient();
+      report = kind === "inventory" ? await loadInventoryReport(client,params) : await loadCompoundReport(client,params);
+    } else opsi = await bacaOpsiFilter(kind, params);
   } catch (error) {
     const failure = hppReportError(error);
     if (failure.status === 401) redirect("/login");
@@ -32,9 +62,11 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
     message = failure.message;
   }
   const filters = report?.filters ?? normalizeReportFilters(params);
-  const branches = report?.scope.branches ?? [];
+  const branches = report?.scope.branches ?? opsi?.branches ?? [];
   const inventory = report && "warehouses" in report ? report : undefined;
   const compound = report && "doctors" in report ? report : undefined;
+  const warehouses = inventory?.warehouses ?? opsi?.warehouses ?? [];
+  const method = inventory?.method ?? opsi?.method;
   const ingredientView = kind === "compound" && params.rincian === "bahan";
   const reconciliationView = kind === "compound" && params.rincian === "rekonsiliasi";
   const table = inventory ? inventoryTable(inventory) : compound ? reconciliationView ? compoundReconciliationTable(compound) : ingredientView ? compoundIngredientsTable(compound) : compoundTable(compound) : undefined;
@@ -42,7 +74,8 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
   const path = REPORT_PATHS[kind];
   const query = new URLSearchParams({ cabang: filters.cabang, q: filters.q,
     ...(kind === "inventory" ? { gudang: filters.gudang, masalah: filters.masalah } : { dari: filters.dari, sampai: filters.sampai, dokter: filters.dokter, ...(reconciliationView ? { rincian: "rekonsiliasi" } : ingredientView ? { rincian: "bahan" } : {}) }) });
-  const pageHref = (page: number) => `${path}?${query}&halaman=${page}`;
+  // Halaman berikut/sebelumnya tetap membawa tampil=1 supaya tidak kembali kosong.
+  const pageHref = (page: number) => denganTampil(`${path}?${query}&halaman=${page}`);
   const cards = inventory ? [
     { label: "Barang / gudang", nilai: String(inventory.summary.count) },
     { label: inventory.method === "moving_average" ? "Subtotal saldo ber-HPP" : "Subtotal lapisan ber-HPP", nilai: money(inventory.summary.pricedValue) },
@@ -57,8 +90,9 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
     { label: "Baris perlu rekonsiliasi tautan / HPP", nilai: String(compound.reconciliation.length), warna: compound.reconciliation.length ? "#b45309" : "#15803d" },
     { label: "Baris tanpa HPP", nilai: String(compound.summary.missingCost), warna: compound.summary.missingCost ? "#b45309" : "#15803d" },
   ] : [];
-  return <LaporanPage icon={kind === "inventory" ? "ti-package" : "ti-flask"}
-    title={kind === "inventory" ? `NILAI PERSEDIAAN ${inventory?.method === "moving_average" ? "RATA-RATA BERGERAK" : "FIFO"} SAAT INI` : "HPP & MARGIN RACIKAN"}
+  // Pesan gagal baca tetap ditampilkan walau laporan belum diminta.
+  return <LaporanPage siap={siap || !!message} icon={kind === "inventory" ? "ti-package" : "ti-flask"}
+    title={kind === "inventory" ? `NILAI PERSEDIAAN ${method === "moving_average" ? "RATA-RATA BERGERAK" : "FIFO"} SAAT INI` : "HPP & MARGIN RACIKAN"}
     desc={kind === "inventory" ? "Saldo satuan dasar dan nilai persediaan, termasuk barang atau gudang nonaktif." : "Racikan yang sudah ditagih pada invoice aktif, dengan HPP historis setiap baris."}
     unduhTampilan={false}
     filter={<>
@@ -71,7 +105,7 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
       </select></div>
       {kind === "inventory" && <>
         <div><label className="flab">Gudang</label><select className="fi" name="gudang" defaultValue={filters.gudang}>
-          <option value="">Semua gudang</option>{inventory?.warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name} ({warehouse.type}){!warehouse.is_active ? " · nonaktif" : ""}</option>)}
+          <option value="">Semua gudang</option>{warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name} ({warehouse.type}){!warehouse.is_active ? " · nonaktif" : ""}</option>)}
         </select></div>
         <div><label className="flab">Cakupan</label><select className="fi" name="masalah" defaultValue={filters.masalah}>
           <option value="">Semua saldo</option><option value="ya">Perlu rekonsiliasi / HPP</option>
@@ -82,6 +116,8 @@ export async function HppReportPage({ kind, params }: { kind: ReportKind; params
       </select></div>}
       {kind === "compound" && <div><label className="flab">Dokter kunjungan</label><select className="fi" name="dokter" defaultValue={filters.dokter}>
         <option value="">Semua dokter</option>{compound?.doctors.map(doctor => <option key={doctor.id} value={doctor.id}>{doctor.name}</option>)}
+        {/* Daftar dokter berasal dari data laporan; sebelum Tampilkan, pilihan dari URL tetap terbawa. */}
+        {!compound && filters.dokter && <option value={filters.dokter}>Dokter terpilih</option>}
       </select></div>}
       <div><label className="flab">Cari</label><input className="fi" name="q" defaultValue={filters.q} maxLength={120} placeholder={kind === "inventory" ? "Barang / kode / gudang" : "Racikan / invoice / dokter"} /></div>
       <button className="btn-def" type="submit"><i className="ti ti-filter" /> Tampilkan</button>

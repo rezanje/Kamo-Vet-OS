@@ -28,5 +28,5 @@ export async function batalkanUangMukaBeserta(formData: FormData) {
   if (!data?.advance_id || !data?.journal_id || data.advance_id !== id) throw new Error("Pembatalan belum terkonfirmasi lengkap. Periksa daftar uang muka sebelum mengulang.");
   for (const path of ["/pembelian/uang-muka", "/keuangan/hutang", "/pembelian/faktur", "/pembelian/perintah-bayar", "/laporan/pembelian", "/"]) revalidatePath(path);
   const count = Number(data.payment_count ?? 0);
-  redirect(`/pembelian/uang-muka?success=${encodeURIComponent(`Uang muka ${data.no_um} dibatalkan${count ? ` bersama ${count} pembayaran yang memakainya` : ""}.`)}`);
+  redirect(`/pembelian/uang-muka?success=${encodeURIComponent(`Uang muka ${data.no_um} dibatalkan${count ? ` bersama ${count} pembayaran yang memakainya` : ""}.`)}&tampil=1`);
 }

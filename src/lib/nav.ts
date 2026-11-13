@@ -260,6 +260,8 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Retensi Pelanggan", icon: "ti-user-exclamation", ...A, nw: true, href: "/laporan/retensi" },
     { label: "Promo, Voucher & Diskon", icon: "ti-discount", ...A, nw: true, href: "/laporan/promo" },
     { label: "Rekap Klinik", icon: "ti-stethoscope", ...A, nw: true, href: "/laporan/rekap-klinik" },
+    // A4 (meeting 12 Nov 2026): dasar insentif visit dokter/paramedis rawat inap.
+    { label: "Laporan Visit Rawat Inap", icon: "ti-stethoscope", ...A, nw: true, href: "/laporan/visit" },
     { label: "Member & Poin", icon: "ti-users", ...A, nw: true, href: "/laporan/member" },
     { label: "Nilai KPI Karyawan", icon: "ti-chart-dots", ...A, nw: true, href: "/laporan/kpi" },
     { label: "Laba Rugi", icon: "ti-chart-bar", ...G, href: "/keuangan/laba-rugi" },

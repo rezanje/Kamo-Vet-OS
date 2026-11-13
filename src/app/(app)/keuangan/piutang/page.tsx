@@ -7,6 +7,8 @@ import { AGING_BUCKETS, AGING_LABEL, TANPA_TANGGAL, agingFaktur, type AgingBucke
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { terimaPelunasan } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { laporanDiminta } from "@/lib/report-gate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -25,10 +27,43 @@ type Row = {
   saldoAwal?: string | null;
 };
 
-export default async function PiutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
-  const { success, error } = await searchParams;
+export default async function PiutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; tampil?: string }> }) {
+  const sp = await searchParams;
+  const { success, error } = sp;
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
+
+  // A1 (meeting 12 Nov 2026): daftar piutang (seluruh tagihan belum lunas, semua cabang)
+  // baru dibaca setelah Tampilkan ditekan.
+  const kepala = (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+        <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+        <span style={{ color: "var(--td)" }}>·</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>Piutang Usaha (AR)</span>
+        <form method="get" style={{ marginLeft: "auto" }}>
+          <InputTampil />
+          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+        </form>
+        <Link href="/keuangan/piutang/pembantu" className="back-btn">
+          <i className="ti ti-book-2" /> Buku Besar Pembantu
+        </Link>
+      </div>
+
+      {success && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> Pelunasan tersimpan & sudah dijurnal.
+        </div>
+      )}
+      {error && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-triangle" /> {error}
+        </div>
+      )}
+    </>
+  );
+  if (!laporanDiminta(sp)) return <>{kepala}<LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat umur piutang dan daftar tagihan yang belum lunas." /></>;
+
   const today = hariIniWIB();
   const rekening = await loadRekeningAktif(supabase);
 
@@ -120,25 +155,7 @@ export default async function PiutangPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Piutang Usaha (AR)</span>
-        <Link href="/keuangan/piutang/pembantu" className="back-btn" style={{ marginLeft: "auto" }}>
-          <i className="ti ti-book-2" /> Buku Besar Pembantu
-        </Link>
-      </div>
-
-      {success && (
-        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Pelunasan tersimpan & sudah dijurnal.
-        </div>
-      )}
-      {error && (
-        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-          <i className="ti ti-alert-triangle" /> {error}
-        </div>
-      )}
+      {kepala}
 
       <div className="crm-sec">
         <SecHeader num="01" title="UMUR PIUTANG (AR AGING)" desc="Piutang dikelompokkan menurut umur faktur." />

@@ -10,38 +10,56 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 
 ## A. LAPORAN
 
-### A1 · [ ] P0 — Semua laporan wajib filter dulu sebelum menarik data
+### A1 · [x] P0 — Semua laporan wajib filter dulu sebelum menarik data
 - Masalah: laporan loading sangat lama karena saat dibuka langsung menarik semua data dari semua cabang (kasusnya sama dengan dashboard).
 - Yang diminta: alur seperti Accurate. Halaman laporan dibuka dalam keadaan kosong, user pilih filter dulu (minimal cabang dan rentang tanggal), lalu klik "Tampilkan" baru query jalan.
 - Berlaku untuk **semua laporan** di Daftar Laporan.
 - Tambahan: cek query/index supaya tetap cepat walaupun data sudah setahun.
 - Screenshot: `laporan-daftar.jpg`, `laporan-penjualan-per-tenaga-penjual.jpg`
 - Kriteria selesai: membuka halaman laporan tidak memicu query berat; data baru ditarik setelah filter dipilih dan "Tampilkan" diklik.
+- Status: dikerjakan di branch `claude/epic-hypatia-raw2el` (lihat `RENCANA-P0.md`). Index tanggal ditulis sebagai migrasi
+  `20261113031139_a1_index_tanggal_laporan.sql` — **terpasang di Production** (13 Nov 2026, 10.11 WIB).
 
-### A2 · [ ] P0 — Laporan Penjualan per Tenaga Penjual: rekap per item (qty)
+### A2 · [x] P0 — Laporan Penjualan per Tenaga Penjual: rekap per item (qty)
 - Halaman: `/laporan/penjual`
 - Masalah: rinciannya masih per customer/transaksi, terlalu detail untuk rekap gaji/insentif bulanan.
 - Yang diminta: tampilan **rekap per tenaga penjual → per item, dengan total quantity** dalam periode filter (misalnya sebulan).
 - Tampilan rincian yang sekarang **tetap ada**, jangan dihapus (misalnya jadi mode/tab terpisah).
+- Status: filter baru "Tampilan" → "Rekap per item (qty)" / "Rincian per transaksi" (bawaan tetap rincian).
+  Retur mengurangi item asalnya; satuan berbeda ditulis terpisah.
 - Screenshot: `laporan-penjualan-per-tenaga-penjual.jpg`
 
-### A3 · [ ] P0 — Laporan Penjualan per Tenaga Penjual: download Excel
+### A3 · [x] P0 — Laporan Penjualan per Tenaga Penjual: download Excel
 - Saat difilter ke **satu tenaga penjual**, laporan belum bisa diunduh.
 - Yang diminta: export ke Excel bisa dipakai untuk semua kombinasi filter, termasuk mode rekap per item dari A2.
+- Status: tombol "Excel"/"CSV" kini membentuk berkas di server dari data & saringan yang sama dengan layar.
+  Isi: Filter (nama, bukan ID), Rekap per orang, Rekap per item, Rincian baris, Faktur grosir.
 
-### A4 · [ ] P1 — Laporan Visit (baru)
+### A4 · [x] P1 — Laporan Visit (baru)
 - Belum ada. Dibutuhkan di klinik karena dokter/paramedis dapat insentif per visit.
 - Sumber data: laporan visit harian rawat inap (lihat bagian "Laporan Rawat Inap Harian" di `klinik-obat-khusus.jpg`), dengan kolom dokter visit dan paramedis.
 - Minimal: filter periode, cabang, dan dokter/paramedis; rekap jumlah visit per orang; bisa export Excel.
-- [?] Konfirmasi: insentif dihitung per visit saja, atau ada nilai rupiahnya?
+- ~~[?] Konfirmasi: insentif dihitung per visit saja, atau ada nilai rupiahnya?~~ → **Dijawab Reza (12 Nov): jumlah visit saja**, rupiah dihitung manual Finance.
+- Status: `/laporan/visit` (Daftar Laporan › Klinik) — filter periode, cabang, peran, dokter/paramedis; rekap jumlah visit,
+  pasien berbeda, hari visit per orang; rincian catatan; unduh Excel/CSV. 1 catatan "Visit dokter" = 1 visit untuk dokter
+  visit + 1 untuk paramedis di catatan itu; catatan "Pemantauan" tidak dihitung. Tanpa nilai rupiah (sesuai jawaban).
+  Centang "Laporan Visit" di Akses Grup: migrasi `20261113031150_a4_submenu_laporan_visit.sql` (**terpasang di Production** 13 Nov 2026,
+  10.11 WIB, sebelum deploy). ADMIN yang laporannya dibatasi perlu dicentang Owner di Akses Grup.
 
-### A5 · [ ] P1 — Akses koreksi visit untuk yang lupa input
+### A5 · [x] P1 — Akses koreksi visit untuk yang lupa input
 - Disepakati: tetap ada akses untuk mengedit/menambah visit yang terlupa, **hanya untuk Owner/Manager**. Diatur lewat Akses Grup.
 - Aturan bisnis ke depan: yang tidak mengisi visit tidak dapat insentif. Cukup didokumentasikan, tidak perlu enforcement di sistem.
 - Screenshot: `pengaturan-akses-grup.jpg`
+- Status: izin Akses Grup baru **"Koreksi visit rawat inap"** (Owner selalu; ADMIN otomatis dicentang — keputusan 1A/2A/3A,
+  lihat `USULAN-A5.md`). Pemegang izin: visit > 48 jam lalu, ubah waktu/dokter/jenis/paramedis visit, dan tambah/ubah catatan
+  setelah pasien pulang — alasan wajib & tersimpan. Migrasi `20261113031357_a5_koreksi_visit_rawat_inap.sql` — **terpasang di Production**
+  13 Nov 2026, 10.13 WIB (wajib sebelum aplikasinya dideploy).
 
-### A6 · [ ] P1 — Laporan Penjualan per Cabang: omset harian
+### A6 · [x] P1 — Laporan Penjualan per Cabang: omset harian
 - Tambahkan rekap omset per hari per cabang. Isinya **omset saja**, tanpa biaya operasional. Tujuannya membantu Finance.
+- Status: di laporan **Transaksi per Cabang** ditambah tabel "Omzet harian per cabang" (tanggal × cabang + total per hari
+  dan per cabang; hari tanpa transaksi = 0). Angka omzet sama dengan kolom Omzet laporan itu (setelah diskon & retur).
+  Ikut terunduh di Excel/CSV laporan tersebut.
 
 ### A7 · [?] P2 — Laporan lain mengikuti referensi Accurate
 - Tim klinik/finance akan memberi contoh laporan dari Accurate. **Tunggu input**, jangan dikerjakan dulu.
@@ -50,9 +68,12 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 
 ## B. KLINIK
 
-### B1 · [ ] P1 — Tambah beberapa obat racikan sekaligus
+### B1 · [x] P1 — Tambah beberapa obat racikan sekaligus
 - Di rawat inap, dokter tidak bisa menambahkan beberapa obat racikan (misalnya racik kapsul dan racik vitamin) dalam satu kali "Tambah obat / BMHP ke tagihan"; harus satu per satu.
 - Langkah: investigasi alurnya dulu. Apakah ini memang batasan desain atau bug? Laporkan temuannya sebelum mengubah apa pun.
+- Temuan (`TEMUAN-B1.md`): bukan batasan desain. Racikan yang sedang disusun terbuang diam-diam bila dokter memilih
+  racikan/tindakan lain sebelum klik "Tambah ke keranjang". Perbaikan (pilihan 2A): ditanya dulu — Masukkan ke keranjang &
+  lanjut / Buang / Batal — plus petunjuk cara memasukkan beberapa racikan.
 - Screenshot: `klinik-obat-khusus.jpg`
 
 ### B2 · [ ] P1 — Hapus/arsip data percobaan & transaksi oleh Owner/Admin

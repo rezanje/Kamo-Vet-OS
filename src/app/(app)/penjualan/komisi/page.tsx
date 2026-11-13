@@ -13,6 +13,8 @@ import { ListLoadFailure } from "@/components/ListPagination";
 import { ItemReferenceField } from "@/components/ItemReferenceField";
 import { rincianKomisiText } from "@/lib/komisi-detail";
 import { hariIniWIB } from "@/lib/tanggal";
+import { laporanDiminta } from "@/lib/report-gate";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const periodeSekarang = () => hariIniWIB().slice(0, 7);
@@ -35,9 +37,12 @@ type Aturan = {
 export default async function KomisiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; periode?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; periode?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  // A1 (meeting 12 Nov 2026): hitungan komisi per periode (baca semua penjualan bulan
+  // itu) baru jalan setelah Tampilkan. Aturan, kelompok, dan kebijakan tetap tampil.
+  const siap = laporanDiminta(sp);
   const periode = /^\d{4}-\d{2}$/.test(sp.periode ?? "") ? sp.periode! : periodeSekarang();
 
   const supabase = await createClient();
@@ -63,7 +68,7 @@ export default async function KomisiPage({
       readCompleteList<{ id: string; code: string | null; name: string }>((from, to) => supabase.from("items")
         .select("id, code, name", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Produk komisi", { maxRows: null }),
       muatKebijakanKomisiJasa(supabase),
-      komisiPeriode(supabase, periode),
+      siap ? komisiPeriode(supabase, periode) : Promise.resolve(null),
     ]); } catch (loadError) { return <ListLoadFailure error={loadError} label="Referensi komisi" />; }
   const [aturan, karyawan, cabang, kategori, barang, kebijakanTersimpan, hitungan] = loaded;
   const kebijakanJasa = kebijakanTersimpan.policies;
@@ -75,8 +80,8 @@ export default async function KomisiPage({
   const aturanById = new Map(aturan.map((a) => [a.id, a]));
   const groupEmp = new Map(karyawan.map((k) => [k.id, k.commission_group]));
   const kodeKelompok = [...new Set(karyawan.map(k => k.commission_group).filter((code): code is string => !!code))].sort();
-  const barisVisit = (hitungan.baris ?? []).filter(row => row.sumber === "visit_ranap");
-  const barisPaket = (hitungan.baris ?? []).filter(row => (row.paketKomponen ?? 0) > 0);
+  const barisVisit = (hitungan?.baris ?? []).filter(row => row.sumber === "visit_ranap");
+  const barisPaket = (hitungan?.baris ?? []).filter(row => (row.paketKomponen ?? 0) > 0);
 
   const cakupan = (a: Aturan): string => {
     const bagian = [
@@ -90,11 +95,11 @@ export default async function KomisiPage({
     return bagian.length ? bagian.join(" · ") : "Semua penjualan";
   };
 
-  const hasil = [...hitungan.hasil].sort((a, b) => b.komisi - a.komisi);
+  const hasil = [...(hitungan?.hasil ?? [])].sort((a, b) => b.komisi - a.komisi);
   const totalKomisi = hasil.reduce((a, h) => a + h.komisi, 0);
   // Each source line is counted once even when an explicit policy gives two actors a full commission basis.
-  const totalOmzet = hitungan.baris.reduce((a, row) => a + row.omzet, 0);
-  const visitDobel = hitungan.visitDobel ?? [];
+  const totalOmzet = (hitungan?.baris ?? []).reduce((a, row) => a + row.omzet, 0);
+  const visitDobel = hitungan?.visitDobel ?? [];
   const tanpaHpp = hasil.reduce((a, h) => a + h.barisTanpaHpp, 0);
   const adaAturanLaba = aturan.some((a) => a.is_active && a.basis === "laba");
 
@@ -347,11 +352,14 @@ export default async function KomisiPage({
           desc="Angka hidup dari struk kasir, retur, tagihan klinik yang lunas, dan faktur penjualan reseller bulan itu. Masuk slip gaji saat penggajian dihitung."
           action={
             <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <InputTampil />
               <input className="fi" type="month" name="periode" defaultValue={periode} style={{ fontSize: 11, height: 30, width: 150 }} />
-              <button type="submit" className="btn-def" style={{ height: 30, fontSize: 11 }}>Lihat</button>
+              <button type="submit" className="btn-def" style={{ height: 30, fontSize: 11 }}><i className="ti ti-filter" /> Tampilkan</button>
             </form>
           }
         />
+
+        {!hitungan ? <LaporanBelumDitampilkan pesan="Pilih periode, lalu klik Tampilkan untuk menghitung komisi per karyawan." /> : <>
 
         <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 10 }}>
           Periode <b>{periode}</b> · omzet sumber (sekali per baris) <b>{rp(totalOmzet)}</b> · total komisi{" "}
@@ -430,7 +438,9 @@ export default async function KomisiPage({
             </tbody>
           </table>
         </div>
+        </>}
       </div>
+      {hitungan && <>
       <ServiceAttributionTable rows={hitungan.baris ?? []} />
       <div className="crm-sec">
         <SecHeader num="03" title="DASAR VISIT RAWAT INAP"
@@ -459,6 +469,7 @@ export default async function KomisiPage({
               <td style={{ textAlign: "right" }}>{row.paketBagi ? `${row.paketBagi.qtyPaket} ÷ ${row.paketBagi.dari} penjual` : row.qty}</td><td style={{ textAlign: "right" }}>{rp(row.omzet)}</td>
               <td>{row.employeeId ? namaEmp.get(row.employeeId) ?? "—" : "Belum ada penerima"}</td></tr>)}</tbody></table></div>}
       </div>
+      </>}
     </MasterPage>
   );
 }

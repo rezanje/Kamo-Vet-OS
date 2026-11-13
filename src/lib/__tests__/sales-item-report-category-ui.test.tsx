@@ -25,7 +25,7 @@ beforeEach(() => {
   mocks.createClient.mockResolvedValue(clientFixture().client);
   mocks.load.mockReset().mockResolvedValue(hasil());
 });
-const halaman = async (sp: Record<string, string> = {}) => renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Semua", ...sp }) }));
+const halaman = async (sp: Record<string, string> = {}) => renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", dari: "2026-10-01", sampai: "2026-10-04", kanal: "Klinik", jenis: "Semua", ...sp }) }));
 
 it("layar menampilkan kolom Kode, Kategori, Sub kategori pada tiap baris", async () => {
   const html = await halaman();

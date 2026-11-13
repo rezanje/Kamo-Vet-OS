@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { pertumbuhanBulanan, labelBulan, rekapPoin } from "@/lib/pertumbuhan";
 import { hariIniWIB, tanggalWIB } from "@/lib/tanggal";
+import { laporanDiminta } from "@/lib/report-gate";
 
 // Member & Poin — menjawab dua baris permintaan Kamo Group (24 Agu 2026):
 // "pertumbuhan anggota member" dan "cashback/poin: terkumpul, ditukar, saldo".
@@ -23,25 +24,32 @@ function setahunLalu(): string {
 export default async function MemberPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || setahunLalu();
   const sampai = sp.sampai || hariIniWIB();
 
-  const supabase = await createClient();
-  const [{ data: custs }, { data: ledger }, { data: semuaMutasi }] = await Promise.all([
-    completeReportQuery(supabase.from("customers")
-      .select("id, name, tier, points, created_at, customer_categories(nama)", { count: "exact" })
-      .order("created_at")),
-    completeReportQuery(supabase.from("point_ledger")
-      .select("id, customer_id, delta, created_at, description", { count: "exact" })
-      .gte("created_at", `${dari}T00:00:00+07:00`).lte("created_at", `${sampai}T23:59:59+07:00`)
-      .order("created_at", { ascending: false })),
-    // Tanpa batas tanggal — dipakai memeriksa apakah saldo poin di kartu pelanggan
-    // benar-benar terjelaskan oleh riwayat transaksinya.
-    completeReportQuery(supabase.from("point_ledger").select("id, delta", { count: "exact" })),
-  ]);
+  // A1 (meeting 12 Nov 2026): semua query di bawah berat (seluruh pelanggan dan
+  // seluruh riwayat poin), jadi baru jalan setelah Tampilkan ditekan.
+  const baca = async () => {
+    const supabase = await createClient();
+    return Promise.all([
+      completeReportQuery(supabase.from("customers")
+        .select("id, name, tier, points, created_at, customer_categories(nama)", { count: "exact" })
+        .order("created_at")),
+      completeReportQuery(supabase.from("point_ledger")
+        .select("id, customer_id, delta, created_at, description", { count: "exact" })
+        .gte("created_at", `${dari}T00:00:00+07:00`).lte("created_at", `${sampai}T23:59:59+07:00`)
+        .order("created_at", { ascending: false })),
+      // Tanpa batas tanggal — dipakai memeriksa apakah saldo poin di kartu pelanggan
+      // benar-benar terjelaskan oleh riwayat transaksinya.
+      completeReportQuery(supabase.from("point_ledger").select("id, delta", { count: "exact" })),
+    ]);
+  };
+  const kosong = { data: [] as unknown[] };
+  const [{ data: custs }, { data: ledger }, { data: semuaMutasi }] = siap ? await baca() : [kosong, kosong, kosong];
 
   type Cust = {
     id: string; name: string; tier: string | null; points: number | null;
@@ -67,7 +75,7 @@ export default async function MemberPage({
   const perTier = hitung("tier");
 
   type Led = { customer_id: string | null; delta: number; created_at: string; description: string | null };
-  const mutasi = (ledger ?? []) as Led[];
+  const mutasi = (ledger ?? []) as unknown as Led[];
   const poin = rekapPoin(mutasi.map((m) => m.delta));
   const saldoSekarang = pelanggan.reduce((a, c) => a + c.poin, 0);
   const netSeluruhRiwayat = ((semuaMutasi ?? []) as { delta: number }[])
@@ -92,6 +100,7 @@ export default async function MemberPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-users" title="MEMBER & POIN"
       desc="Pertumbuhan anggota member per bulan, komposisinya, dan pergerakan poin loyalty."
       filter={

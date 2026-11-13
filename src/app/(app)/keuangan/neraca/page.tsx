@@ -6,13 +6,29 @@ import { SecHeader } from "@/components/SecHeader";
 import { getAccountBalances, nilaiSeksi } from "@/lib/ledger";
 import { PeriodFilter } from "../PeriodFilter";
 import { AkunGroup, PetunjukKlikAkun, bikinHrefAkun } from "../AkunGroup";
+import { LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export default async function NeracaPage({ searchParams }: { searchParams: Promise<{ sampai?: string; cabang?: string }> }) {
-  const { sampai, cabang } = await searchParams;
+export default async function NeracaPage({ searchParams }: { searchParams: Promise<{ sampai?: string; cabang?: string; tampil?: string }> }) {
+  const sp = await searchParams;
+  const { sampai, cabang } = sp;
+  // A1 (meeting 12 Nov 2026): saldo akun baru dibaca setelah Tampilkan ditekan.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const { data: branches } = await completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).order("name"));
+  const filter = <PeriodFilter basePath="/keuangan/neraca" sampai={sampai} cabang={cabang} branches={branches ?? []} tanggalOnly />;
+
+  if (!siap) {
+    return (
+      <div data-report-page id="laporan-isi">
+        <Judul />
+        {filter}
+        <LaporanBelumDitampilkan />
+      </div>
+    );
+  }
   // Neraca = posisi kumulatif s/d tanggal (bukan rentang) — laba berjalan ikut terpotong otomatis.
   const balances = await getAccountBalances(supabase as never, { to: sampai || undefined, branchId: cabang || undefined });
 
@@ -38,18 +54,15 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
   const totalPasiva = totalLiabilitas + totalEkuitas;
   const seimbang = Math.round(totalAset) === Math.round(totalPasiva);
   // Neraca posisi s/d tanggal — tautan buku besarnya ikut tanpa tanggal awal.
-  const hrefAkun = bikinHrefAkun({ sampai, cabang });
+  const keBukuBesar = bikinHrefAkun({ sampai, cabang });
+  const hrefAkun = (code: string) => denganTampil(keBukuBesar(code));
 
   return (
     <div data-report-page id="laporan-isi">
       <UnduhLaporan judul="Neraca" />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Neraca</span>
-      </div>
+      <Judul />
 
-      <PeriodFilter basePath="/keuangan/neraca" sampai={sampai} cabang={cabang} branches={branches ?? []} tanggalOnly />
+      {filter}
 
       <div className={`p2ban`} style={{ background: seimbang ? "#e8f5ee" : "#fef2f2", border: `.5px solid ${seimbang ? "#86efac" : "#fca5a5"}`, color: seimbang ? "#15803d" : "#b91c1c" }}>
         <i className={`ti ti-${seimbang ? "circle-check" : "alert-triangle"}`} /> {seimbang ? `Neraca seimbang — Aktiva = Pasiva = ${rp(totalAset)}` : "Neraca TIDAK seimbang — ada kesalahan posting!"}
@@ -75,6 +88,16 @@ export default async function NeracaPage({ searchParams }: { searchParams: Promi
           <TotalRow label="TOTAL PASIVA" value={totalPasiva} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function Judul() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+      <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+      <span style={{ color: "var(--td)" }}>·</span>
+      <span style={{ fontSize: 13, fontWeight: 500 }}>Neraca</span>
     </div>
   );
 }

@@ -4,8 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
 import { tanggalIndo, waLink } from "@/lib/followup";
-import { tarikRiwayat } from "@/lib/laporan-transaksi-server";
+import { tarikRiwayat, type TrxRiwayat } from "@/lib/laporan-transaksi-server";
 import { profilPelanggan, dorman, rataIntervalGabungan } from "@/lib/retensi";
+import { laporanDiminta } from "@/lib/report-gate";
 
 // Retensi Pelanggan — permintaan Kamo Group 24 Agu 2026:
 // "daftar pelanggan dorman (tidak transaksi > 90 hari, ambangnya bisa diatur) per cabang"
@@ -31,17 +32,24 @@ const EMBER = [
 export default async function RetensiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ambang?: string; cabang?: string }>;
+  searchParams: Promise<{ ambang?: string; cabang?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const ambang = Math.max(1, Math.min(3650, Number(sp.ambang) || AMBANG_BAWAAN));
   const cabang = sp.cabang || "";
 
   const hariIni = hariIniWIB();
   const supabase = await createClient();
+  // A1 (meeting 12 Nov 2026): riwayat transaksi & kartu pelanggan (berat) baru
+  // ditarik setelah Tampilkan ditekan; daftar cabang tetap dibaca untuk filter.
+  // Saringan cabang di sini memakai cabang transaksi PERTAMA (hasil hitungan),
+  // jadi tidak bisa dipindah ke query.
   const [{ trx, terpotong }, { data: custData }, { data: branchData }] = await Promise.all([
-    tarikRiwayat(hariIni),
-    completeReportQuery(supabase.from("customers").select("id, name, phone, tier, total_spending", { count: "exact" })),
+    siap ? tarikRiwayat(hariIni) : Promise.resolve({ trx: [] as TrxRiwayat[], terpotong: false }),
+    siap
+      ? completeReportQuery(supabase.from("customers").select("id, name, phone, tier, total_spending", { count: "exact" }))
+      : Promise.resolve({ data: [] as unknown[] }),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
@@ -51,7 +59,7 @@ export default async function RetensiPage({
   );
 
   type Cust = { id: string; name: string; phone: string | null; tier: string | null; total_spending: number | null };
-  const kartu = new Map(((custData ?? []) as Cust[]).map((c) => [c.id, c]));
+  const kartu = new Map(((custData ?? []) as unknown as Cust[]).map((c) => [c.id, c]));
 
   const belanjaPer = new Map<string, number>();
   for (const t of trx) {
@@ -92,6 +100,7 @@ export default async function RetensiPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-user-exclamation" title="RETENSI PELANGGAN"
       desc="Siapa yang sudah lama tidak datang, dan seberapa sering pelanggan biasanya kembali."
       filter={

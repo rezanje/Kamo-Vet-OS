@@ -5,16 +5,23 @@ import type { DataTenagaPenjual } from "./data";
 
 // Fixture fiktif: nama orang dan dokumen di sini tidak merujuk data nyata.
 
-const state = vi.hoisted(() => ({ data: null as unknown }));
+const state = vi.hoisted(() => ({ data: null as unknown, dipanggil: 0 }));
 
 vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a> }));
 vi.mock("@/components/EmployeePicker", () => ({ EmployeePicker: () => <input name="karyawan" /> }));
 vi.mock("@/components/LaporanPage", () => ({
-  LaporanPage: ({ ringkasan, children }: { ringkasan: React.ReactNode; children: React.ReactNode }) => <main>{ringkasan}{children}</main>,
+  LaporanPage: ({ ringkasan, children, siap }: { ringkasan: React.ReactNode; children: React.ReactNode; siap: boolean }) =>
+    <main>{siap ? <>{ringkasan}{children}</> : "BELUM DITAMPILKAN"}</main>,
   KartuAngka: ({ items }: { items: { label: string; nilai: string }[] }) => <ul>{items.map((k) => <li key={k.label}>{k.label}: {k.nilai}</li>)}</ul>,
   TabelKosong: ({ pesan }: { pesan: string }) => <tr><td>{pesan}</td></tr>,
 }));
-vi.mock("./data", () => ({ ambilTenagaPenjual: async () => state.data }));
+vi.mock("./data", () => ({
+  ambilTenagaPenjual: async () => { state.dipanggil += 1; return state.data; },
+  ambilOpsiFilterPenjual: async () => {
+    const d = state.data as DataTenagaPenjual;
+    return { karyawan: d.karyawan, namaKaryawan: d.namaKaryawan, cabangOptions: d.cabangOptions, pesanError: "" };
+  },
+}));
 
 import PenjualPage from "./page";
 
@@ -37,10 +44,21 @@ function data(rows: BarisPenjual[], over: Partial<DataTenagaPenjual> = {}): Data
   };
 }
 
+// Semua tes isi laporan memakai tampil=1 — seperti setelah pengguna menekan Tampilkan (A1).
 const render = (sp: Record<string, string> = {}) =>
-  PenjualPage({ searchParams: Promise.resolve(sp) }).then(renderToStaticMarkup);
+  PenjualPage({ searchParams: Promise.resolve({ tampil: "1", ...sp }) }).then(renderToStaticMarkup);
 
-beforeEach(() => { state.data = data([]); });
+beforeEach(() => { state.data = data([]); state.dipanggil = 0; });
+
+it("A1: membuka laporan tanpa Tampilkan tidak menarik baris penjualan", async () => {
+  state.data = data([baris({ id: "a", dokterId: "dokter" })]);
+  const html = await PenjualPage({ searchParams: Promise.resolve({ karyawan: "dokter" }) }).then(renderToStaticMarkup);
+  expect(state.dipanggil).toBe(0);
+  expect(html).toContain("BELUM DITAMPILKAN");
+  expect(html).not.toContain("Drh. Fiktif");
+  await render();
+  expect(state.dipanggil).toBe(1);
+});
 
 it("memberi baris dua pelaksana ke dua orang tanpa melipatgandakan total perusahaan", async () => {
   state.data = data([baris({ id: "a", dokterId: "dokter", stafId: "perawat" })]);
@@ -117,4 +135,28 @@ it("merekap sisa tagihan faktur grosir per penjual dan merincinya", async () => 
   expect(rekap).toContain("FJ-1");
   expect(rekap).toContain("FJ-2");
   expect(rekap).toContain("Rp 600");
+});
+
+it("A2: tampilan Rekap per item menjumlah qty per orang per item; tampilan rincian tetap bawaan", async () => {
+  state.data = data([
+    baris({ id: "a", dokterId: "dokter", item: "Vaksin Rabies", itemId: "rabies", jenis: "Obat", qty: 2, dokumenId: "d1" }),
+    baris({ id: "b", dokterId: "dokter", item: "Vaksin Rabies", itemId: "rabies", jenis: "Obat", qty: 3, dokumenId: "d2" }),
+  ]);
+  const rekap = await render({ tampilan: "rekap-item" });
+  const bagian = rekap.split("02 · REKAP PER TENAGA PENJUAL → PER ITEM")[1];
+  expect(bagian).toBeDefined();
+  expect(bagian).toContain("Vaksin Rabies");
+  expect(bagian).toMatch(/>5<\/td>/);
+  expect(rekap).not.toContain("02 · RINCIAN BARIS PER ORANG");
+
+  const bawaan = await render();
+  expect(bawaan).toContain("02 · RINCIAN BARIS PER ORANG");
+  expect(bawaan).not.toContain("PER ITEM");
+});
+
+it("A3: tombol unduh lengkap membawa semua saringan aktif, termasuk satu karyawan dan tampilan", async () => {
+  state.data = data([baris({ id: "a", dokterId: "dokter" })]);
+  const html = await render({ dari: "2026-10-01", sampai: "2026-10-31", karyawan: "dokter", tampilan: "rekap-item", cabang_id: "cabang" });
+  expect(html).toContain('href="/laporan/penjual/unduh?dari=2026-10-01&amp;sampai=2026-10-31&amp;cabang_id=cabang&amp;karyawan=dokter&amp;tampilan=rekap-item"');
+  expect(html).toContain("&amp;format=csv");
 });

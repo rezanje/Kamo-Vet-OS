@@ -24,22 +24,46 @@ export type HasilTarik = {
   terpotong: boolean;
 };
 
-export async function tarikTransaksi(dari: string, sampai: string): Promise<HasilTarik> {
+/**
+ * Saringan cabang yang ikut dikirim ke query (A1, meeting 12 Nov 2026) supaya laporan
+ * satu cabang tidak menarik data semua cabang. Opsional — tanpa saringan perilakunya
+ * sama seperti dulu. Halaman tetap menyaring ulang di memori sebagai pengaman.
+ * - `cabangId`: WAJIB id cabang yang sudah divalidasi pemanggil (kolom uuid; teks
+ *   sembarang dari URL membuat query gagal).
+ * - `cabangNama`: dicocokkan persis dengan nama cabang, sama seperti saringan di memori.
+ * Faktur grosir sengaja tidak disaring di query: faktur koreksi menandai faktur asalnya
+ * dari kumpulan yang sama, jadi kumpulannya dibiarkan utuh (volumenya kecil).
+ */
+export type SaringCabangTransaksi = { cabangId?: string; cabangNama?: string };
+
+/** Daftar cabang aktif untuk isian filter — ringan, tanpa transaksi (A1). */
+export async function tarikCabangAktif(): Promise<{ id: string; name: string }[]> {
+  const supabase = await createClient();
+  const { data } = await completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name"));
+  return (data ?? []) as { id: string; name: string }[];
+}
+
+export async function tarikTransaksi(dari: string, sampai: string, saring: SaringCabangTransaksi = {}): Promise<HasilTarik> {
   const supabase = await createClient();
   // created_at disimpan UTC; batasnya ditulis dengan offset +07:00 supaya struk
   // jam 07:00 WIB tidak jatuh ke hari sebelumnya.
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
+  const cabangId = saring.cabangId ?? "";
+  const cabangNama = cabangId ? "" : saring.cabangNama ?? "";
+
+  const qSales = supabase.from("sales")
+    .select(`id, branch_id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches${cabangNama ? "!inner" : ""}(name), sale_items(id)`, { count: "exact" })
+    .gte("created_at", mulai).lte("created_at", akhir);
+  // Tagihan klinik yang dibatalkan tidak dihitung sebagai transaksi.
+  const qInvoices = supabase.from("invoices")
+    .select(`id, total, created_at, visits${cabangId || cabangNama ? "!inner" : ""}(customer_id, branch_id, branches${cabangNama ? "!inner" : ""}(name)), invoice_items(id)`, { count: "exact" })
+    .is("voided_at", null)
+    .gte("created_at", mulai).lte("created_at", akhir);
 
   const [hasilSales, hasilInvoices, hasilGrosir, hasilReturs, hasilRefundKlinik, hasilReturGrosir, hasilCabang] =
     await Promise.all([
-      completeReportQuery(supabase.from("sales")
-        .select("id, branch_id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches(name), sale_items(id)", { count: "exact" })
-        .gte("created_at", mulai).lte("created_at", akhir)),
-      // Tagihan klinik yang dibatalkan tidak dihitung sebagai transaksi.
-      completeReportQuery(supabase.from("invoices")
-        .select("id, total, created_at, visits(customer_id, branch_id, branches(name)), invoice_items(id)", { count: "exact" })
-        .is("voided_at", null)
-        .gte("created_at", mulai).lte("created_at", akhir)),
+      completeReportQuery(cabangId ? qSales.eq("branch_id", cabangId) : cabangNama ? qSales.eq("branches.name", cabangNama) : qSales),
+      completeReportQuery(cabangId ? qInvoices.eq("visits.branch_id", cabangId) : cabangNama ? qInvoices.eq("visits.branches.name", cabangNama) : qInvoices),
       // Faktur grosir memakai kolom tanggal faktur (date, sudah WIB), bukan created_at:
       // fakturnya boleh dibuat mundur dan omzetnya milik tanggal fakturnya.
       completeReportQuery(supabase.from("sales_invoices")

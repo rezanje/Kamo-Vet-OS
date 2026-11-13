@@ -2,13 +2,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 import { kumpulkanBarisKomisi } from "@/lib/komisi-data";
-import { atribusiPenjual, rekapTenagaPenjual } from "@/lib/laporan-tenaga-penjual";
+import { atribusiPenjual, rekapPerItem, rekapTenagaPenjual } from "@/lib/laporan-tenaga-penjual";
 
 // Fixture fiktif: tidak ada data pelanggan, karyawan, atau tarif asli di sini.
 
 const state = vi.hoisted(() => ({
   tables: {} as Record<string, unknown[]>,
   allowed: null as string[] | null,
+  eq: [] as string[],
+  select: [] as string[],
 }));
 
 vi.mock("@/lib/branch-access", () => ({ allowedBranchIds: async () => state.allowed }));
@@ -19,7 +21,9 @@ vi.mock("@/lib/supabase/server", () => ({
       const data = state.tables[table] ?? [];
       const hasil = { data, count: data.length, error: null };
       const q: Record<string, unknown> = {
-        select: () => q, eq: () => q, is: () => q, not: () => q, neq: () => q,
+        select: (kolom: string) => { state.select.push(`${table}:${kolom}`); return q; },
+        eq: (kolom: string, nilai: unknown) => { state.eq.push(`${table}:${kolom}=${String(nilai)}`); return q; },
+        is: () => q, not: () => q, neq: () => q,
         gte: () => q, lte: () => q, in: () => q, order: () => q,
         range: async () => hasil,
         then: (resolve: (value: unknown) => unknown) => Promise.resolve(hasil).then(resolve),
@@ -29,7 +33,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-import { ambilTenagaPenjual } from "./data";
+import { ambilOpsiFilterPenjual, ambilTenagaPenjual } from "./data";
 
 const RENTANG = { dari: "2026-10-01", sampai: "2026-10-31" };
 
@@ -44,6 +48,8 @@ const invoiceDiskon = {
 
 beforeEach(() => {
   state.allowed = null;
+  state.eq = [];
+  state.select = [];
   state.tables = {
     employees: [
       { id: "dokter", nama: "Drh. Fiktif", jabatan: "Dokter", status: "Aktif", profile_id: "profil-dokter", branches: { name: "Cabang Uji" } },
@@ -229,4 +235,60 @@ it("query karyawan menyebut relasi cabang utama secara eksplisit (employees puny
   const src = readFileSync(join(__dirname, "data.ts"), "utf8");
   expect(src).toContain("branches!employees_branch_id_fkey(name)");
   expect(src).not.toMatch(/from\("employees"\)\s*\.select\("[^"]*\bbranches\(name\)/);
+});
+
+it("A1: saringan cabang ikut ke query ketiga kanal, bukan hanya disaring di memori", async () => {
+  await ambilTenagaPenjual({ ...RENTANG, cabangId: "cabang" });
+  expect(state.eq).toEqual(expect.arrayContaining([
+    "invoice_items:invoices.visits.branch_id=cabang",
+    "sale_items:sales.branch_id=cabang",
+    "sales_invoice_items:sales_invoices.branch_id=cabang",
+  ]));
+  // Join kunjungan wajib inner supaya saringan cabang benar-benar membatasi baris.
+  expect(state.select.find((s) => s.startsWith("invoice_items:"))).toContain("visits!inner(");
+
+  state.eq = []; state.select = [];
+  await ambilTenagaPenjual(RENTANG);
+  expect(state.eq.filter((e) => e.includes("branch_id"))).toEqual([]);
+  expect(state.select.find((s) => s.startsWith("invoice_items:"))).not.toContain("visits!inner(");
+});
+
+it("A1: pilihan filter hanya membaca karyawan dan cabang, tanpa tabel penjualan", async () => {
+  state.allowed = ["cabang"];
+  const opsi = await ambilOpsiFilterPenjual();
+  expect(opsi.cabangOptions).toEqual([{ id: "cabang", name: "Cabang Uji" }]);
+  expect(opsi.karyawan.map((k) => k.id)).toEqual(["dokter", "kasir", "perawat"]);
+  expect(state.select.map((s) => s.split(":")[0]).sort()).toEqual(["branches", "employees"]);
+});
+
+it("A2: retur membawa identitas item asal, qty dinyatakan dalam satuan jual baris asal, dan kode barang terbaca", async () => {
+  const sale = {
+    id: "struk", branch_id: "cabang", no_struk: "POS-2", created_at: "2026-10-21T03:00:00Z",
+    total: 400, merchant_fee_total: 0, salesperson_id: "kasir", cashier_id: null,
+    payment_plan: null, payments_finalized_at: null, voided_at: null,
+    branches: { name: "Cabang Uji" }, customers: { name: "Pemilik Fiktif" },
+  };
+  state.tables.sale_items = [
+    // 2 karung @ 1/2KG (faktor 0.5 kg dasar) dan 1 botol satuan dasar.
+    { id: "jual-a", nama: "Pakan Kucing", qty: 2, harga: 150, item_id: "pakan", satuan: "1/2KG", faktor: 0.5, item_discount_type: null, item_discount_value: 0, promo_discount: 0, service_performers: null, sales: sale },
+    { id: "jual-b", nama: "Vitamin", qty: 1, harga: 100, item_id: "vit", satuan: null, faktor: 1, item_discount_type: null, item_discount_value: 0, promo_discount: 0, service_performers: null, sales: sale },
+  ];
+  state.tables.sales_returns = [{
+    id: "retur", sale_id: "struk", tanggal: "2026-10-25",
+    sales_return_items: [
+      // Baris lama tanpa selected_qty: qty dasar 0.5 kg = 1 × 1/2KG.
+      { id: "retur-a", source_line_id: "jual-a", nama: "Pakan Kucing", qty: 0.5, harga: 300 },
+    ],
+  }];
+  state.tables.items = [{ id: "pakan", code: "PK-01" }, { id: "vit", code: "VT-02" }];
+
+  const { rows } = await ambilTenagaPenjual(RENTANG);
+  const retur = rows.find((r) => r.retur)!;
+  expect(retur).toMatchObject({ itemId: "pakan", satuan: "1/2KG", namaItem: "Pakan Kucing", qty: -1, kode: "PK-01" });
+
+  const perItem = rekapPerItem(atribusiPenjual(rows));
+  expect(perItem.map((r) => [r.kode, r.item, r.satuan, r.qty, r.qtyRetur])).toEqual([
+    ["PK-01", "Pakan Kucing", "1/2KG", 1, 1],
+    ["VT-02", "Vitamin", "", 1, 0],
+  ]);
 });

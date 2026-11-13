@@ -40,7 +40,7 @@ export default async function TerimaBarangPage({
 
   if (!po) notFound();
   if (po.status === "Diterima" || po.status === "Batal") {
-    redirect("/pembelian?error=" + encodeURIComponent(`PO ini berstatus ${po.status}.`) + `&recover_receipt=${encodeURIComponent(id)}`);
+    redirect("/pembelian?error=" + encodeURIComponent(`PO ini berstatus ${po.status}.`) + `&recover_receipt=${encodeURIComponent(id)}&tampil=1`);
   }
 
   // Yang ditawarkan untuk diterima adalah SISA yang belum datang, bukan qty PO

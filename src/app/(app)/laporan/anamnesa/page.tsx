@@ -4,6 +4,7 @@ import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { kelompokDiagnosa, samakan } from "@/lib/diagnosa";
 import { tanggalWIB, hariIniWIB } from "@/lib/tanggal";
 import { tanggalIndo } from "@/lib/followup";
+import { laporanDiminta } from "@/lib/report-gate";
 
 // Daftar Anamnesa / Penyakit — permintaan Kamo Group 24 Agu 2026.
 //
@@ -19,20 +20,28 @@ const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
 export default async function AnamnesaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; cari?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; cari?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const cabang = sp.cabang || "";
   const cari = samakan(sp.cari || "");
 
   const supabase = await createClient();
+  // A1 (meeting 12 Nov 2026): rekam medis baru dibaca setelah Tampilkan ditekan;
+  // sebelum itu hanya daftar cabang untuk filter. Cabang dipilih = disaring di
+  // query, saringan di memori tetap jadi pengaman.
+  const bacaRekamMedis = () => {
+    const query = supabase.from("medical_records")
+      .select(`id, diagnosis, anamnesis, gejala_klinis, follow_up, created_at, visits${cabang ? "!inner" : ""}(branch_id, dokter, branches(name), pets(name, species, breed), customers(name))`, { count: "exact" })
+      .gte("created_at", `${dari}T00:00:00+07:00`).lte("created_at", `${sampai}T23:59:59+07:00`);
+    return completeReportQuery((cabang ? query.eq("visits.branch_id", cabang) : query)
+      .order("created_at", { ascending: false }));
+  };
   const [{ data: mrData }, { data: branchData }] = await Promise.all([
-    completeReportQuery(supabase.from("medical_records")
-      .select("id, diagnosis, anamnesis, gejala_klinis, follow_up, created_at, visits(branch_id, dokter, branches(name), pets(name, species, breed), customers(name))", { count: "exact" })
-      .gte("created_at", `${dari}T00:00:00+07:00`).lte("created_at", `${sampai}T23:59:59+07:00`)
-      .order("created_at", { ascending: false })),
+    siap ? bacaRekamMedis() : Promise.resolve({ data: [] as unknown[] }),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
@@ -83,6 +92,7 @@ export default async function AnamnesaPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-report-medical" title="DAFTAR ANAMNESA & PENYAKIT"
       desc="Penyakit apa yang paling sering ditangani, dan riwayat anamnesa tiap kunjungan."
       filter={

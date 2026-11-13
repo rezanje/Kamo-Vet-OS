@@ -63,6 +63,18 @@ export type BarisPenjual = {
   penjualId: string | null;
   /** Baris retur/refund: qty dan nilainya negatif. */
   retur: boolean;
+  /**
+   * A2 (meeting 12 Nov 2026) — identitas item untuk "Rekap per item". Baris retur/refund
+   * MEWARISI nilai baris asalnya supaya qty retur mengurangi item yang sama.
+   * Opsional demi data lama/fixture: kosong = dikelompokkan menurut nama baris.
+   */
+  itemId?: string | null;
+  /** Nama item tanpa awalan "Retur · " / "Refund · ". */
+  namaItem?: string;
+  /** Satuan jual baris (mis. 1/2KG). Qty item hanya dijumlah dalam satuan yang sama. */
+  satuan?: string | null;
+  /** Kode barang master, bila ada. Murni keterangan. */
+  kode?: string;
 };
 
 /** Pasangan (baris × orang × peran). Baris tanpa siapa pun tetap muncul sekali dengan orang null. */
@@ -200,4 +212,78 @@ export function barisPerOrang(atribusi: readonly AtribusiPenjual[], employeeId: 
     .filter((row) => row.employeeId === employeeId)
     .map(({ baris, peran }) => ({ baris, peran }))
     .sort((a, b) => b.baris.waktu.localeCompare(a.baris.waktu) || a.baris.id.localeCompare(b.baris.id));
+}
+
+// ── A2 (meeting 12 Nov 2026): rekap per tenaga penjual → per item ─────────────
+//
+// Untuk rekap gaji/insentif bulanan: tiap orang, item apa saja, berapa qty-nya.
+// Aturan hitung sama dengan rekap per orang: baris Dokter + Non-dokter dihitung
+// penuh untuk masing-masing orang. Qty retur/refund mengurangi item asalnya.
+// Item yang sama dengan satuan berbeda (mis. 1KG vs 1/2KG) sengaja dipisah —
+// menjumlahkan qty beda satuan menghasilkan angka yang menyesatkan.
+
+export type RekapItemPenjual = {
+  employeeId: string | null;
+  peran: PeranPenjual[];
+  kunci: string;
+  item: string;
+  kode: string;
+  satuan: string;
+  jenis: JenisBarisPenjualan;
+  /** Qty bersih (penjualan dikurangi retur/refund) dalam `satuan`. */
+  qty: number;
+  /** Qty retur/refund (positif) — sudah termasuk di `qty`, ditampilkan agar tidak mengejutkan. */
+  qtyRetur: number;
+  netto: number;
+  transaksi: number;
+};
+
+const namaBersih = (baris: BarisPenjual): string =>
+  baris.namaItem ?? baris.item.replace(/^(Retur|Refund) · /, "");
+
+export function kunciItem(baris: BarisPenjual): string {
+  const satuan = (baris.satuan ?? "").trim().toLocaleUpperCase("id-ID");
+  return baris.itemId
+    ? `id:${baris.itemId}|${satuan}`
+    : `nama:${namaBersih(baris).trim().toLocaleLowerCase("id-ID")}|${satuan}`;
+}
+
+export function rekapPerItem(atribusi: readonly AtribusiPenjual[]): RekapItemPenjual[] {
+  type Akum = RekapItemPenjual & { dokumen: Set<string>; namaDariRetur: boolean };
+  const peta = new Map<string, Akum>();
+  for (const { baris, employeeId, peran } of atribusi) {
+    const kunci = kunciItem(baris);
+    const id = `${employeeId ?? ""}\u0000${kunci}`;
+    let akun = peta.get(id);
+    if (!akun) {
+      akun = {
+        employeeId, peran: [], kunci, item: namaBersih(baris), kode: baris.kode ?? "",
+        satuan: baris.satuan ?? "", jenis: baris.jenis, qty: 0, qtyRetur: 0, netto: 0, transaksi: 0,
+        dokumen: new Set<string>(), namaDariRetur: baris.retur,
+      };
+      peta.set(id, akun);
+    }
+    // Nama dari baris penjualan asli lebih bisa dipercaya daripada baris retur.
+    if (!baris.retur && akun.namaDariRetur) {
+      akun.item = namaBersih(baris);
+      akun.namaDariRetur = false;
+    }
+    if (!akun.kode && baris.kode) akun.kode = baris.kode;
+    akun.qty += baris.qty;
+    if (baris.retur) akun.qtyRetur += Math.abs(baris.qty);
+    else akun.dokumen.add(baris.dokumenId);
+    akun.netto += baris.netto;
+    if (peran && !akun.peran.includes(peran)) akun.peran.push(peran);
+  }
+  return [...peta.values()]
+    .map((akun) => ({
+      employeeId: akun.employeeId, kunci: akun.kunci, item: akun.item, kode: akun.kode, satuan: akun.satuan,
+      jenis: akun.jenis, qty: akun.qty, qtyRetur: akun.qtyRetur, netto: akun.netto,
+      transaksi: akun.dokumen.size, peran: PERAN_SEMUA.filter((p) => akun.peran.includes(p)),
+    }))
+    .sort((a, b) =>
+      // Ember tanpa tenaga penjual paling bawah; per orang: qty terbesar dulu.
+      Number(a.employeeId === null) - Number(b.employeeId === null)
+      || (a.employeeId ?? "").localeCompare(b.employeeId ?? "")
+      || b.qty - a.qty || a.item.localeCompare(b.item, "id") || a.kunci.localeCompare(b.kunci));
 }

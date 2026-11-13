@@ -160,7 +160,7 @@ describe("request actions", () => {
 
   it("P01: returns a requester from the Hutang screen there, and ignores unlisted return paths", async () => {
     await expect(ajukanKoreksiPembelian(form({ source_kind: "purchase_invoice", source_id: invoice, request_key: "fixture-key-0006", detail: "Total faktur seharusnya 90", back: "/keuangan/hutang" })))
-      .rejects.toThrow("REDIRECT /keuangan/hutang?koreksi=terkirim#request-purchase-correction");
+      .rejects.toThrow("REDIRECT /keuangan/hutang?koreksi=terkirim&tampil=1#request-purchase-correction");
     await expect(ajukanKoreksiPembelian(form({ source_kind: "purchase_invoice", source_id: invoice, request_key: "fixture-key-0007", detail: "Total faktur seharusnya 90", back: "https://evil.example/x" })))
       .rejects.toThrow(`REDIRECT /pembelian/faktur/${invoice}?koreksi=terkirim`);
   });

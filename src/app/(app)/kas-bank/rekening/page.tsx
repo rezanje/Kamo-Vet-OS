@@ -5,6 +5,8 @@ import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { getAccountBalances } from "@/lib/ledger";
+import { laporanDiminta } from "@/lib/report-gate";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 import { tambahRekening, toggleRekening } from "./actions";
 
 type Rel<T> = T | T[] | null;
@@ -23,19 +25,25 @@ const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 export default async function RekeningPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; tampil?: string }>;
 }) {
-  const { error, success } = await searchParams;
+  const sp = await searchParams;
+  const { error, success } = sp;
+  // A1 (meeting 12 Nov 2026): daftar + saldo (baca seluruh jurnal) baru ditarik
+  // setelah Tampilkan; form tambah rekening tetap bisa dipakai.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
   const [{ data }, { data: branches }, saldoAkun] = await Promise.all([
-    supabase
-      .from("cash_accounts")
-      .select("id, nama, jenis, coa_code, bank_nama, no_rekening, is_active, branches(name)")
-      .order("jenis").order("nama"),
+    siap
+      ? supabase
+        .from("cash_accounts")
+        .select("id, nama, jenis, coa_code, bank_nama, no_rekening, is_active, branches(name)")
+        .order("jenis").order("nama")
+      : Promise.resolve({ data: [] as unknown[] }),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-    getAccountBalances(supabase),
+    siap ? getAccountBalances(supabase) : Promise.resolve([] as Awaited<ReturnType<typeof getAccountBalances>>),
   ]);
 
   const rekening = (data ?? []) as unknown as Rekening[];
@@ -100,7 +108,12 @@ export default async function RekeningPage({
         </form>
       )}
 
-      <div className="crm-sec" style={{ marginBottom: 0 }}>
+      <form method="get" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <InputTampil />
+        <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+      </form>
+
+      {!siap ? <LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat daftar rekening dan saldonya." /> : <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 780 }}>
             <thead>
@@ -162,7 +175,7 @@ export default async function RekeningPage({
             )}
           </table>
         </div>
-      </div>
+      </div>}
 
       <div style={{ fontSize: 10, color: "var(--td)", marginTop: 10 }}>
         Klik nama rekening untuk melihat <b>buku mutasi</b>-nya. Rekening tidak bisa dihapus

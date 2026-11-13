@@ -44,27 +44,27 @@ import FakturBeliPage from "@/app/(app)/pembelian/faktur/page";
 beforeEach(() => { state.failPaymentPage = false; state.invoiceRanges = []; state.paymentRanges = []; });
 
 it("shows invoices after the former 200-row cutoff and sums every payment before showing outstanding debt", async () => {
-  const html = renderToStaticMarkup(await FakturBeliPage({ searchParams: Promise.resolve({ hal: "2" }) }));
+  const html = renderToStaticMarkup(await FakturBeliPage({ searchParams: Promise.resolve({ tampil: "1", hal: "2" }) }));
   expect(html).toContain("INV-051");
   expect(html).not.toContain("INV-001");
   expect(html).toContain("Rp 499");
   expect(html).toContain("201");
   expect(state.invoiceRanges).toEqual(["0-49", "50-99"]);
   expect(state.paymentRanges).toEqual(["0-499", "500-999"]);
-  const lastPage = renderToStaticMarkup(await FakturBeliPage({ searchParams: Promise.resolve({ hal: "5" }) }));
+  const lastPage = renderToStaticMarkup(await FakturBeliPage({ searchParams: Promise.resolve({ tampil: "1", hal: "5" }) }));
   expect(lastPage).toContain("INV-201");
   expect(lastPage).not.toContain("INV-200");
 });
 
 it("does not show a possibly incorrect debt balance if a payment page fails", async () => {
   state.failPaymentPage = true;
-  const html = renderToStaticMarkup(await FakturBeliPage({ searchParams: Promise.resolve({ hal: "2" }) }));
+  const html = renderToStaticMarkup(await FakturBeliPage({ searchParams: Promise.resolve({ tampil: "1", hal: "2" }) }));
   expect(html).toContain("belum dapat dimuat lengkap");
   expect(html).not.toContain("INV-051");
 });
 
 it("keeps the confirmed request key while navigating pages", async () => {
-  const html = renderToStaticMarkup(await FakturBeliPage({ searchParams: Promise.resolve({ request_done: "saved-key", request_scope: "invoice", hal: "2" }) }));
+  const html = renderToStaticMarkup(await FakturBeliPage({ searchParams: Promise.resolve({ tampil: "1", request_done: "saved-key", request_scope: "invoice", hal: "2" }) }));
   expect(html).toContain("request_done=saved-key");
   expect(html).toContain("request_scope=invoice");
 });

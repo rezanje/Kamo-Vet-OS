@@ -5,6 +5,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { hariIniWIB } from "@/lib/tanggal";
+import { PARAM_TAMPIL } from "@/lib/report-gate";
+
+// A1 (meeting 12 Nov 2026): kembali ke daftar yang sudah tampil. Ditaruh di akhir supaya
+// pesan yang sudah di-encode tidak di-encode ulang.
+const tampil = (url: string) => `${url}&${PARAM_TAMPIL}=1`;
 
 export async function terimaPelunasan(formData: FormData) {
   const supabase = await createClient();
@@ -17,12 +22,12 @@ export async function terimaPelunasan(formData: FormData) {
   const catatan = String(formData.get("catatan") ?? "").trim() || null;
   const accountId = String(formData.get("account_id") ?? "").trim() || null;
   if (!invoiceId || !requestKey || !Number.isFinite(amount) || amount <= 0) {
-    redirect(`${back}?error=${encodeURIComponent("Data pembayaran tidak lengkap; muat ulang halaman")}`);
+    redirect(tampil(`${back}?error=${encodeURIComponent("Data pembayaran tidak lengkap; muat ulang halaman")}`));
   }
   const { data: inv, error: invError } = await supabase.from("invoices")
     .select("visit_id, visits(branch_id, inpatient_records(id))").eq("id", invoiceId).maybeSingle();
-  if (invError) redirect(`${back}?error=${encodeURIComponent("Tagihan belum dapat dibaca. Muat ulang sebelum menerima uang.")}`);
-  if (!inv) redirect(`${back}?error=${encodeURIComponent("Tagihan tidak ditemukan")}`);
+  if (invError) redirect(tampil(`${back}?error=${encodeURIComponent("Tagihan belum dapat dibaca. Muat ulang sebelum menerima uang.")}`));
+  if (!inv) redirect(tampil(`${back}?error=${encodeURIComponent("Tagihan tidak ditemukan")}`));
   const visit = Array.isArray(inv.visits) ? inv.visits[0] : inv.visits;
   // Uang rawat inap WAJIB lewat kwitansi kunjungan di dalam shift klinik: hanya di sana
   // uangnya muncul pada riwayat DP dan ikut rekonsiliasi laci kasir penerimanya. Layar
@@ -39,6 +44,6 @@ export async function terimaPelunasan(formData: FormData) {
     p_metode: metode, p_kas_code: kasCode, p_catatan: catatan,
     p_request_key: requestKey,
   });
-  if (error) redirect(`${back}?error=${encodeURIComponent("Pembayaran belum tersimpan. " + error.message)}`);
-  redirect(`${back}?success=1${transactionDraftAck(formData)}`);
+  if (error) redirect(tampil(`${back}?error=${encodeURIComponent("Pembayaran belum tersimpan. " + error.message)}`));
+  redirect(tampil(`${back}?success=1${transactionDraftAck(formData)}`));
 }

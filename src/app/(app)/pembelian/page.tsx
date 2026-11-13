@@ -10,6 +10,8 @@ import { SecHeader } from "@/components/SecHeader";
 import { TileGrid } from "@/components/ModuleHome";
 import { updatePOStatus, tambahSupplier } from "./actions";
 import { adaSelisih, nilaiDiterima } from "@/lib/penerimaan";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 
 // ponytail: PO list + supplier section. Status badge colours match template.
 
@@ -57,9 +59,14 @@ const fmtDate = (d: string) =>
 export default async function PembelianPage({
   searchParams,
 }: {
-  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; success_sup?: string; success_terima?: string; recover_receipt?: string; error?: string; tab?: string; edit?: string; view?: string }>;
+  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; success_sup?: string; success_terima?: string; recover_receipt?: string; error?: string; tab?: string; edit?: string; view?: string; tampil?: string }>;
 }) {
-  const { request_done, request_scope, success, success_sup, success_terima, recover_receipt, error, tab, edit, view: viewRaw } = await searchParams;
+  const sp = await searchParams;
+  const { request_done, request_scope, success, success_sup, success_terima, recover_receipt, error, tab, edit, view: viewRaw } = sp;
+  // A1 (meeting 12 Nov 2026): daftar PO baru ditarik setelah Tampilkan. Tab Supplier
+  // (data master) tidak digerbang.
+  const siap = laporanDiminta(sp);
+  const showSupplier = tab === "supplier";
   const view = masterView(viewRaw);
   const bolehKelola = await bolehKelolaMaster();
   const supabase = await createClient();
@@ -67,10 +74,12 @@ export default async function PembelianPage({
   const userId = user?.id ?? "";
 
   const [{ data: poData }, { data: supData }, { data: supCatData }, pendingOrders] = await Promise.all([
-    supabase
-      .from("purchase_orders")
-      .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(qty, qty_terima, harga_beli)")
-      .order("created_at", { ascending: false }),
+    siap && !showSupplier
+      ? supabase
+        .from("purchase_orders")
+        .select("id, no_po, tanggal, status, total, suppliers(nama), warehouses(name), purchase_order_items(qty, qty_terima, harga_beli)")
+        .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as unknown[] }),
     supabase.from("suppliers").select("id, nama, kontak, telp, npwp, termin_hari, bank_nama, bank_rekening, alamat, category_id, bank_atas_nama, is_active, trashed_at, lifecycle_revision, supplier_categories(nama)").order("nama"),
     supabase.from("supplier_categories").select("id, nama").eq("is_active", true).order("nama"),
     bolehKelola ? supabase.from("payment_orders").select("id", { count: "exact", head: true }).eq("status", "draft") : Promise.resolve({ count: null, error: null }),
@@ -81,7 +90,8 @@ export default async function PembelianPage({
   const suppliers = visibleMasters((supData ?? []) as unknown as Supplier[], view, row => row.is_active);
   const editing = bolehKelola && edit ? suppliers.find(row => row.id === edit && !row.trashed_at) : null;
   const supplierCategories = (supCatData ?? []) as { id: string; nama: string }[];
-  const showSupplier = tab === "supplier";
+  // Pindah tab tidak menjatuhkan daftar yang sudah ditampilkan kembali ke kosong.
+  const tabHref = (href: string) => (siap ? denganTampil(href) : href);
 
   return (
     <>
@@ -127,14 +137,14 @@ export default async function PembelianPage({
       {/* Tab nav */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         <Link
-          href="/pembelian"
+          href={tabHref("/pembelian")}
           className={showSupplier ? "btn-def" : "btn-acc"}
           style={{ textDecoration: "none", padding: "5px 14px", fontSize: 11.5 }}
         >
           <i className="ti ti-file-invoice" /> Purchase Order
         </Link>
         <Link
-          href="/pembelian?tab=supplier"
+          href={tabHref("/pembelian?tab=supplier")}
           className={showSupplier ? "btn-acc" : "btn-def"}
           style={{ textDecoration: "none", padding: "5px 14px", fontSize: 11.5 }}
         >
@@ -155,7 +165,12 @@ export default async function PembelianPage({
             }
           />
 
-          <div style={{ overflowX: "auto" }}>
+          <form method="get" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+            <InputTampil />
+            <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+          </form>
+
+          {!siap ? <LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat daftar Purchase Order." /> : <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 860 }}>
               <thead>
                 <tr>
@@ -234,7 +249,7 @@ export default async function PembelianPage({
                 )}
               </tbody>
             </table>
-          </div>
+          </div>}
         </div>
       )}
 

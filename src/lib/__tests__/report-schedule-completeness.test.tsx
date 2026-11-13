@@ -15,9 +15,18 @@ it("applies the selected schedule kind before reading every report page", async 
     ...Array.from({ length: 1201 }, (_, index) => row(String(index))), row("grooming-only", "grooming"),
   ] } });
   fixture.client = client;
-  const html = renderToStaticMarkup(await JadwalAnabulPage({ searchParams: Promise.resolve({ jenis: "vaksin", horizon: "30" }) }));
+  const html = renderToStaticMarkup(await JadwalAnabulPage({ searchParams: Promise.resolve({ jenis: "vaksin", horizon: "30", tampil: "1" }) }));
   expect(html).toContain("Anabul 1200");
   expect(html).not.toContain("Anabul grooming-only");
   expect(records.some(record => record.table === "follow_ups" && record.method === "eq" && record.args[0] === "jenis" && record.args[1] === "vaksin")).toBe(true);
   expect(records.filter(record => record.table === "follow_ups" && record.method === "range")).toHaveLength(3);
+});
+
+it("A1 (meeting 12 Nov 2026): tanpa tampil=1 jadwal tidak dibaca dan halaman kosong", async () => {
+  const { client, records } = clientFixture({ tables: { follow_ups: [{ id: "x", jenis: "vaksin", status: "Menunggu", tanggal: "2026-10-08" }] } });
+  fixture.client = client;
+  const html = renderToStaticMarkup(await JadwalAnabulPage({ searchParams: Promise.resolve({ jenis: "vaksin" }) }));
+  expect(html).toContain("Laporan belum ditampilkan");
+  expect(html).toContain('name="tampil"');
+  expect(records.some(record => record.table === "follow_ups")).toBe(false);
 });

@@ -3,20 +3,41 @@ import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { getCashMovements } from "@/lib/ledger";
+import { getCashMovements, type CashMove } from "@/lib/ledger";
 import { SUMBER_KAS as SRC } from "@/lib/arus-kas";
 import { PeriodFilter } from "../PeriodFilter";
+import { LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { laporanDiminta } from "@/lib/report-gate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
 
-export default async function ArusKasPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }> }) {
-  const { dari, sampai, cabang } = await searchParams;
+export default async function ArusKasPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; tampil?: string }> }) {
+  const sp = await searchParams;
+  const { dari, sampai, cabang } = sp;
+  // A1 (meeting 12 Nov 2026): pergerakan kas (seluruh jurnal kas) baru dibaca setelah Tampilkan ditekan.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const [{ moves, saldoKasNow, saldoAwal }, { data: branches }] = await Promise.all([
-    getCashMovements(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined }),
+    siap
+      ? getCashMovements(supabase as never, { from: dari || undefined, to: sampai || undefined, branchId: cabang || undefined })
+      : Promise.resolve({ moves: [] as CashMove[], saldoKasNow: 0, saldoAwal: 0 }),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).order("name")),
   ]);
+  const filter = <PeriodFilter basePath="/keuangan/arus-kas" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} />;
+
+  if (!siap) {
+    return (
+      <div data-report-page id="laporan-isi">
+        <Judul />
+        <div className="crm-sec">
+          <SecHeader num="01" title="ARUS KAS (METODE LANGSUNG)" desc="Pergerakan kas dari seluruh transaksi, dikelompokkan per aktivitas." />
+          {filter}
+          <LaporanBelumDitampilkan />
+        </div>
+      </div>
+    );
+  }
 
   const rows = moves.map((m) => {
     const cfg = SRC[m.source] ?? { act: "operasi" as const, label: m.source };
@@ -36,11 +57,7 @@ export default async function ArusKasPage({ searchParams }: { searchParams: Prom
   return (
     <div data-report-page id="laporan-isi">
       <UnduhLaporan judul="Arus Kas" />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Laporan Arus Kas</span>
-      </div>
+      <Judul />
 
       <div className="p2ban" style={{ background: sinkron ? "#e8f5ee" : "#fef2f2", border: `.5px solid ${sinkron ? "#86efac" : "#fca5a5"}`, color: sinkron ? "#15803d" : "#b91c1c" }}>
         <i className={`ti ti-${sinkron ? "circle-check" : "alert-triangle"}`} />{" "}
@@ -51,7 +68,7 @@ export default async function ArusKasPage({ searchParams }: { searchParams: Prom
 
       <div className="crm-sec">
         <SecHeader num="01" title="ARUS KAS (METODE LANGSUNG)" desc="Pergerakan kas dari seluruh transaksi, dikelompokkan per aktivitas." />
-        <PeriodFilter basePath="/keuangan/arus-kas" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} />
+        {filter}
 
         <Activity title="AKTIVITAS OPERASI" rows={operasi} subtotal={netOperasi} />
         <div style={{ height: 14 }} />
@@ -68,6 +85,16 @@ export default async function ArusKasPage({ searchParams }: { searchParams: Prom
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Judul() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+      <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+      <span style={{ color: "var(--td)" }}>·</span>
+      <span style={{ fontSize: 13, fontWeight: 500 }}>Laporan Arus Kas</span>
     </div>
   );
 }

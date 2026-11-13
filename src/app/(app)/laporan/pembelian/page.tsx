@@ -2,6 +2,7 @@ import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
+import { laporanDiminta } from "@/lib/report-gate";
 
 // Pembelian per Pemasok & per Barang — permintaan Kamo Group 24 Agu 2026.
 //
@@ -20,21 +21,30 @@ const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
 export default async function LaporanPembelianPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const cabang = sp.cabang || "";
 
   const supabase = await createClient();
-  const [{ data: invData }, { data: retData }, { data: branchData }] = await Promise.all([
-    completeReportQuery(supabase.from("purchase_invoices")
+  // A1 (meeting 12 Nov 2026): faktur & retur baru dibaca setelah Tampilkan ditekan;
+  // sebelum itu hanya daftar cabang untuk filter. Cabang dipilih = disaring di
+  // query, saringan di memori tetap jadi pengaman.
+  const kosong = Promise.resolve({ data: [] as unknown[] });
+  const bacaFaktur = () => {
+    const query = supabase.from("purchase_invoices")
       .select("id, no_faktur, tanggal, total, branch_id, supplier_id, suppliers(nama), purchase_invoice_payments(amount), purchase_invoice_items(item_id, nama, qty, harga, faktor, items(unit, item_categories(name)))", { count: "exact" }).is("voided_at", null).is("opening_batch_id", null)
-      .gte("tanggal", dari).lte("tanggal", sampai)),
-    completeReportQuery(supabase.from("purchase_returns")
+      .gte("tanggal", dari).lte("tanggal", sampai);
+    return completeReportQuery(cabang ? query.eq("branch_id", cabang) : query);
+  };
+  const [{ data: invData }, { data: retData }, { data: branchData }] = await Promise.all([
+    siap ? bacaFaktur() : kosong,
+    siap ? completeReportQuery(supabase.from("purchase_returns")
       .select("id, total, tanggal, purchase_orders(supplier_id)", { count: "exact" }).is("voided_at", null)
-      .gte("tanggal", dari).lte("tanggal", sampai)),
+      .gte("tanggal", dari).lte("tanggal", sampai)) : kosong,
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
@@ -111,6 +121,7 @@ export default async function LaporanPembelianPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-truck-delivery" title="PEMBELIAN PER PEMASOK & BARANG"
       desc="Belanja ke siapa, belanja apa, berapa banyak, dan berapa yang belum dibayar."
       filter={

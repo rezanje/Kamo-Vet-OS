@@ -8,13 +8,32 @@ import { getAccountBalances, nilaiSeksi } from "@/lib/ledger";
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 import { AkunGroup, PetunjukKlikAkun, bikinHrefAkun } from "../AkunGroup";
+import { LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-export default async function LabaRugiPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }> }) {
-  const { dari, sampai, cabang } = await searchParams;
+export default async function LabaRugiPage({ searchParams }: { searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; tampil?: string }> }) {
+  const sp = await searchParams;
+  const { dari, sampai, cabang } = sp;
+  // A1 (meeting 12 Nov 2026): tanpa Tampilkan, saldo akun (seluruh buku besar) tidak dibaca.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const { data: branches } = await completeReportQuery(supabase.from("branches").select("id, name, type", { count: "exact" }).order("name"));
+  const filter = <PeriodFilter basePath="/keuangan/laba-rugi" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} unitPresets />;
+
+  if (!siap) {
+    return (
+      <div data-report-page id="laporan-isi">
+        <Judul />
+        <div className="crm-sec">
+          <SecHeader num="01" title="LABA RUGI" desc="Pendapatan dikurangi beban." />
+          {filter}
+          <LaporanBelumDitampilkan />
+        </div>
+      </div>
+    );
+  }
 
   // preset unit:KLINIK / unit:PETSHOP → filter daftar cabang berdasarkan tipe (laporan Memorize Accurate)
   const unitTypes = resolveUnitTypes(cabang);
@@ -51,21 +70,18 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
   const bebanOperasional = beban.filter((b) => !keturunanHpp(b));
   const totalBebanOps = totalDetail(bebanOperasional);
   const labaKotor = totalPendapatan - hpp;
-  const hrefAkun = bikinHrefAkun({ dari, sampai, cabang });
+  const keBukuBesar = bikinHrefAkun({ dari, sampai, cabang });
+  const hrefAkun = (code: string) => denganTampil(keBukuBesar(code));
   const labaBersih = labaKotor - totalBebanOps;
 
   return (
     <div data-report-page id="laporan-isi">
       <UnduhLaporan judul="Laba Rugi" />
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Laporan Laba Rugi</span>
-      </div>
+      <Judul />
 
       <div className="crm-sec">
         <SecHeader num="01" title="LABA RUGI" desc={dari || sampai ? `Periode ${dari || "awal"} s/d ${sampai || "sekarang"}.` : "Pendapatan dikurangi beban (seluruh periode)."} />
-        <PeriodFilter basePath="/keuangan/laba-rugi" dari={dari} sampai={sampai} cabang={cabang} branches={branches ?? []} unitPresets />
+        {filter}
 
         <PetunjukKlikAkun />
 
@@ -85,6 +101,16 @@ export default async function LabaRugiPage({ searchParams }: { searchParams: Pro
           <span style={{ fontSize: 18, fontWeight: 800, color: labaBersih >= 0 ? "#15803d" : "#b91c1c" }}>{rp(labaBersih)}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Judul() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+      <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+      <span style={{ color: "var(--td)" }}>·</span>
+      <span style={{ fontSize: 13, fontWeight: 500 }}>Laporan Laba Rugi</span>
     </div>
   );
 }

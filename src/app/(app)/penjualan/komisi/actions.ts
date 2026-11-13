@@ -2,9 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { assertMasterAdmin, assertRole } from "@/lib/master-guard";
+import { denganTampil } from "@/lib/report-gate";
 
 const BASE = "/penjualan/komisi";
-const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
+// A1 (meeting 12 Nov 2026): kembali ke halaman dengan hitungan yang sudah ditampilkan (tampil=1).
+const gagal = (msg: string): never => redirect(denganTampil(`${BASE}?error=${encodeURIComponent(msg)}`));
 
 // Dropdown cakupan mengirim "" untuk "semua" — disimpan sebagai null.
 const opsional = (v: FormDataEntryValue | null): string | null => {
@@ -27,7 +29,7 @@ export async function simpanKelompokKomisi(formData: FormData) {
   const { data, error } = await supabase.from("employees")
     .update({ commission_group: code }).eq("id", employeeId).select("id").maybeSingle();
   if (error || !data) gagal("Kelompok karyawan gagal disimpan");
-  redirect(`${BASE}?success=1`);
+  redirect(denganTampil(`${BASE}?success=1`));
 }
 
 export async function simpanAturanKomisi(formData: FormData) {
@@ -93,7 +95,7 @@ export async function simpanAturanKomisi(formData: FormData) {
     : await supabase.from("commission_rules").insert(row);
   if (error) gagal(error.message);
 
-  redirect(`${BASE}?success=1`);
+  redirect(denganTampil(`${BASE}?success=1`));
 }
 
 export async function toggleAturanKomisi(formData: FormData) {
@@ -104,7 +106,7 @@ export async function toggleAturanKomisi(formData: FormData) {
 
   const { data, error } = await supabase.from("commission_rules").update({ is_active: !aktif }).eq("id", id).select("id");
   if (!error && !(data ?? []).length) gagal("Aturan khusus karyawan/kelompok hanya bisa diubah OWNER");
-  redirect(error ? `${BASE}?error=${encodeURIComponent(error.message)}` : `${BASE}?success=1`);
+  redirect(denganTampil(error ? `${BASE}?error=${encodeURIComponent(error.message)}` : `${BASE}?success=1`));
 }
 
 export async function hapusAturanKomisi(formData: FormData) {
@@ -114,7 +116,7 @@ export async function hapusAturanKomisi(formData: FormData) {
 
   const { data, error } = await supabase.from("commission_rules").delete().eq("id", id).select("id");
   if (!error && !(data ?? []).length) gagal("Aturan khusus karyawan/kelompok hanya bisa dihapus OWNER");
-  redirect(error ? `${BASE}?error=${encodeURIComponent(error.message)}` : `${BASE}?success=1`);
+  redirect(denganTampil(error ? `${BASE}?error=${encodeURIComponent(error.message)}` : `${BASE}?success=1`));
 }
 
 /** Append-only: a later row at the same scope/date supersedes the previous choice. */
@@ -148,5 +150,5 @@ export async function simpanKebijakanKomisiJasa(formData: FormData) {
   if (error) gagal(error.code === "PGRST205" || error.code === "42P01"
     ? "Penyimpanan kebijakan komisi jasa belum terpasang di database. Hubungi pengelola rilis."
     : error.message);
-  redirect(`${BASE}?success=1`);
+  redirect(denganTampil(`${BASE}?success=1`));
 }

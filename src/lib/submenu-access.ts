@@ -164,6 +164,8 @@ export const SUBMENU_ENTRIES: readonly SubmenuEntry[] = [
   e("laporan", "retensi", ["/laporan/retensi"]),
   e("laporan", "promo", ["/laporan/promo"]),
   e("laporan", "rekap-klinik", ["/laporan/rekap-klinik"]),
+  // A4: baris katalognya ditambah migrasi 20261113031150_a4_submenu_laporan_visit.sql.
+  e("laporan", "visit", ["/laporan/visit"]),
   e("laporan", "member", ["/laporan/member"]),
   e("laporan", "kpi", ["/laporan/kpi"]),
   e("laporan", "hasil-opname", ["/laporan/hasil-opname"], "Hasil opname (laporan)"),

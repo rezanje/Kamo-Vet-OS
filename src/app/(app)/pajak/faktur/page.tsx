@@ -88,6 +88,9 @@ export default async function BerkasPajakPage({
 
   return (
     <LaporanPage
+      // A1 (meeting 12 Nov 2026) hanya berlaku untuk laporan di Daftar Laporan; berkas
+      // pajak ini bukan bagian katalog itu, jadi tetap langsung tampil seperti sebelumnya.
+      siap
       icon="ti-receipt-tax" title="BERKAS PAJAK PER MASA"
       desc="Daftar pajak keluaran & masukan satu bulan, siap dipindahkan ke berkas pelaporan."
       filter={

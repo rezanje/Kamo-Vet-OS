@@ -38,6 +38,7 @@ export default async function InventoryClosingPage({ searchParams }: { searchPar
   const ledgerHref = (branch?: string) => {
     const query = new URLSearchParams({ akun: "170001", sampai: report?.activeClose?.closed_through ?? "" });
     if (branch) query.set("cabang", branch);
+    query.set("tampil", "1");
     return `/keuangan/buku-besar?${query}`;
   };
   return <>

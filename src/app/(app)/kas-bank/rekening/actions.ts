@@ -6,11 +6,13 @@ import { cekPeriode } from "@/lib/jurnal-guard";
 import { kodeAkunBerikutnya } from "@/lib/transfer-kas";
 import { KODE_REKENING } from "@/lib/coa-sistem";
 import { hariIniWIB } from "@/lib/tanggal";
+import { denganTampil } from "@/lib/report-gate";
 
 const BACK = "/kas-bank/rekening";
 // Tipe ditulis di variabelnya (bukan cuma di arrow) supaya TypeScript memakai
 // `never` untuk mempersempit tipe sesudah pemanggilan.
-const gagal: (msg: string) => never = (msg) => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
+// A1 (meeting 12 Nov 2026): kembali ke daftar yang sudah ditampilkan (tampil=1).
+const gagal: (msg: string) => never = (msg) => redirect(denganTampil(`${BACK}?error=${encodeURIComponent(msg)}`));
 
 export async function tambahRekening(formData: FormData) {
   const supabase = await assertMasterAdmin(BACK, "daftar rekening");
@@ -72,7 +74,7 @@ export async function tambahRekening(formData: FormData) {
     }
   }
 
-  redirect(`${BACK}?success=1`);
+  redirect(denganTampil(`${BACK}?success=1`));
 }
 
 // Rekening tidak dihapus: akun COA-nya sudah dipakai jurnal. Nonaktif = tidak
@@ -85,5 +87,5 @@ export async function toggleRekening(formData: FormData) {
   if (!id) gagal("Rekening tidak valid");
 
   const { error } = await supabase.from("cash_accounts").update({ is_active: !aktif }).eq("id", id);
-  redirect(error ? `${BACK}?error=${encodeURIComponent(error.message)}` : `${BACK}?success=1`);
+  redirect(denganTampil(error ? `${BACK}?error=${encodeURIComponent(error.message)}` : `${BACK}?success=1`));
 }

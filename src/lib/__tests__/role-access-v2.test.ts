@@ -10,7 +10,8 @@ it("v2 canonical longest-prefix/query normalization covers every real navigation
  // ADMIN: original default was every module, so the complete selection keeps the full original reach.
  const rules=rows("ADMIN",["__role_v2__",...MODULES.map(m=>m.id),"kasir","quest-staff","pos-shift"]);
  const paths=new Set([...MODULES.map(m=>m.id==="dashboard"?"/":`/${m.id}`),...Object.values(TILES).flatMap(tiles=>tiles.flatMap(t=>t.href?[t.href.split(/[?#]/)[0]]:[])),"/kasir","/pos/quest"]);
- expect(paths.size).toBe(149);for(const path of paths)expect(bolehBukaPath("ADMIN",path,rules),path).toBe(true);
+ // +1: Laporan Visit Rawat Inap (A4, meeting 12 Nov 2026).
+  expect(paths.size).toBe(150);for(const path of paths)expect(bolehBukaPath("ADMIN",path,rules),path).toBe(true);
  expect(bolehBukaPath("ADMIN","/pembelian?tab=supplier#list",rules)).toBe(true);
  // Original matcher: `pengaturan` opens /pengaturan/pajak; v2 keeps that (saving the displayed list must not narrow).
  expect(bolehBukaPath("STAFF","/pengaturan/pajak",rows("STAFF",["__role_v2__","pengaturan"]))).toBe(true);

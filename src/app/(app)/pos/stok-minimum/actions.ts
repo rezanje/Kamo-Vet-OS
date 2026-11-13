@@ -89,5 +89,5 @@ export async function buatPOdariUsulan(formData: FormData) {
     dibuat += 1;
   }
 
-  redirect(`/pembelian?success=${encodeURIComponent(`${dibuat} draft PO dibuat dari usulan stok minimum`)}${transactionDraftAck(formData)}`);
+  redirect(`/pembelian?success=${encodeURIComponent(`${dibuat} draft PO dibuat dari usulan stok minimum`)}${transactionDraftAck(formData)}&tampil=1`);
 }

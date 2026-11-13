@@ -5,6 +5,8 @@ import { SecHeader } from "@/components/SecHeader";
 import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
 import { readCompleteList, readListPage } from "@/lib/checked-list";
 import { hariIniWIB } from "@/lib/tanggal";
+import { laporanDiminta } from "@/lib/report-gate";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? (value[0] ?? null) : value;
@@ -31,9 +33,12 @@ const fmtD = (d: string | null) => !d ? "Tidak ada" :
 export default async function FakturBeliPage({
   searchParams,
 }: {
-  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; error?: string; hal?: string }>;
+  searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; error?: string; hal?: string; tampil?: string }>;
 }) {
-  const { request_done, request_scope, success, error, hal } = await searchParams;
+  const sp = await searchParams;
+  const { request_done, request_scope, success, error, hal } = sp;
+  // A1 (meeting 12 Nov 2026): daftar faktur + pembayarannya baru ditarik setelah Tampilkan.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id ?? "";
@@ -41,7 +46,7 @@ export default async function FakturBeliPage({
   let invoicePage: Awaited<ReturnType<typeof readListPage<Row>>> | undefined;
   let loadError: unknown;
   const paidByInvoice = new Map<string, number>();
-  try {
+  if (siap) { try {
     invoicePage = await readListPage<Row>((from, to) => supabase.from("purchase_invoices")
       .select("id, voided_at, no_faktur, no_faktur_pemasok, surat_jalan, tanggal, jatuh_tempo, total, opening_batch_id, suppliers(nama), purchase_orders(no_po)", { count: "exact" })
       .order("created_at", { ascending: false }).order("id").range(from, to), "Daftar faktur pembelian", hal);
@@ -52,7 +57,7 @@ export default async function FakturBeliPage({
         .in("invoice_id", ids).order("id").range(from, to), "Pembayaran faktur pembelian", { maxRows: null });
       for (const payment of payments) paidByInvoice.set(payment.invoice_id, (paidByInvoice.get(payment.invoice_id) ?? 0) + Number(payment.amount));
     }
-  } catch (cause) { loadError = cause; }
+  } catch (cause) { loadError = cause; } }
   const rows = loadError ? [] : invoicePage?.rows ?? [];
   const today = hariIniWIB();
 
@@ -89,8 +94,13 @@ export default async function FakturBeliPage({
             </Link>
           }
         />
+        <form method="get" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <InputTampil />
+          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+        </form>
+        {!siap && <LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat daftar faktur pembelian." />}
         {loadError !== undefined && <ListLoadFailure error={loadError} label="Daftar faktur pembelian" />}
-        {!loadError && <div style={{ overflowX: "auto" }}>
+        {siap && !loadError && <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 880 }}>
             <thead>
               <tr>
@@ -141,7 +151,7 @@ export default async function FakturBeliPage({
             </tbody>
           </table>
         </div>}
-        {invoicePage && !loadError && <ListPagination path="/pembelian/faktur" query={{ request_done: request_done ?? "", request_scope: request_scope ?? "" }} total={invoicePage.count} pageInfo={invoicePage.pageInfo} />}
+        {invoicePage && !loadError && <ListPagination path="/pembelian/faktur" query={{ request_done: request_done ?? "", request_scope: request_scope ?? "", tampil: "1" }} total={invoicePage.count} pageInfo={invoicePage.pageInfo} />}
       </div>
     </>
   );

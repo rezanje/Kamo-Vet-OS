@@ -37,7 +37,7 @@ const faktur = (over: Record<string, unknown> = {}) => ({
   branches: { name: "DC" }, customers: { name: "Reseller A" },
   sales_invoice_items: [{ id: "l1" }], ...over,
 });
-const rentang = { dari: "2026-10-29", sampai: "2026-10-29" };
+const rentang = { dari: "2026-10-29", sampai: "2026-10-29", tampil: "1" };
 
 beforeEach(() => { fixture.fakturs = [faktur()]; });
 

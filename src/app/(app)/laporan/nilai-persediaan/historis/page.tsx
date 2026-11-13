@@ -7,8 +7,11 @@ import { ReportPresets } from "@/components/ReportPresets";
 import { SecHeader } from "@/components/SecHeader";
 import { paginateReport } from "@/lib/hpp-reports";
 import { loadHistoricalInventory, HISTORICAL_INVENTORY_PATH } from "@/lib/inventory-historical";
-import { ReportAccessError, ReportInputError } from "@/lib/hpp-reports-server";
+import { readReportRows, ReportAccessError, ReportInputError } from "@/lib/hpp-reports-server";
 import { hariIniWIB } from "@/lib/tanggal";
+import { bolehBukaPath } from "@/lib/akses";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
+import { LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 import { HistoricalFilters } from "./HistoricalFilters";
 
 function number(value: string | null) {
@@ -18,16 +21,43 @@ function number(value: string | null) {
 }
 const money = (value: string | null) => value === null ? "Belum tersedia" : `Rp ${number(value)}`;
 
+type Klien = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * A1 (meeting 12 Nov 2026): isian filter saja — cek akses yang sama dengan
+ * laporan penuh (OWNER/FINANCE aktif + izin modul) dan cabang yang boleh
+ * diakses, tanpa membaca event biaya, stok, lapisan, atau jurnal.
+ */
+async function bacaCabangDiizinkan(client: Klien): Promise<{ id: string; name: string }[]> {
+  const { data: { user }, error: authError } = await client.auth.getUser();
+  if (authError || !user) throw new ReportAccessError("Sesi tidak ditemukan", 401);
+  const { data: profile, error: profileError } = await client.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
+  if (profileError || !profile?.is_active || !["OWNER", "FINANCE"].includes(profile.role)) throw new ReportAccessError("Laporan nilai historis hanya untuk OWNER dan FINANCE aktif", 403);
+  const modules = await readReportRows<{ role: string; module_id: string }>(async (from, to) => client.from("role_modules")
+    .select("role,module_id", { count: "exact" }).order("role").order("module_id").range(from, to), row => `${row.role}:${row.module_id}`);
+  if (!bolehBukaPath(profile.role, HISTORICAL_INVENTORY_PATH, modules)) throw new ReportAccessError("Akses modul laporan ditolak", 403);
+  const semua = await readReportRows<{ id: string; name: string }>(async (from, to) => client.from("branches").select("id,name", { count: "exact" }).order("id").range(from, to));
+  const dicek = await Promise.all(semua.map(async branch => {
+    const { data, error } = await client.rpc("user_can_access_branch", { b: branch.id });
+    if (error) throw new Error(`Akses cabang gagal dibaca: ${error.message}`);
+    return data === true ? branch : null;
+  }));
+  return dicek.filter((branch): branch is { id: string; name: string } => branch !== null);
+}
+
 export default async function HistoricalInventoryPage({ searchParams }: {
-  searchParams: Promise<{ tanggal?: string; cabang?: string | string[]; halaman?: string }>;
+  searchParams: Promise<{ tanggal?: string; cabang?: string | string[]; halaman?: string; tampil?: string }>;
 }) {
   const params = await searchParams;
+  const siap = laporanDiminta(params);
   const selected = params.cabang === undefined ? [] : Array.isArray(params.cabang) ? params.cabang : [params.cabang];
   const requestedDate = params.tanggal || hariIniWIB();
   let report: Awaited<ReturnType<typeof loadHistoricalInventory>> | undefined;
+  let cabangSaja: { id: string; name: string }[] = [];
   let errorMessage = "";
   try {
-    report = await loadHistoricalInventory(await createClient(), { tanggal: requestedDate, cabang: selected });
+    if (siap) report = await loadHistoricalInventory(await createClient(), { tanggal: requestedDate, cabang: selected });
+    else cabangSaja = await bacaCabangDiizinkan(await createClient());
   } catch (error) {
     if (error instanceof ReportAccessError) redirect(error.status === 401 ? "/login" : "/laporan");
     errorMessage = error instanceof ReportInputError ? error.message : "Riwayat nilai persediaan belum dapat dibaca lengkap. Muat ulang atau persempit cakupan.";
@@ -36,7 +66,7 @@ export default async function HistoricalInventoryPage({ searchParams }: {
   const pageHref = (page: number) => {
     const query = new URLSearchParams({ tanggal: report?.asOf ?? requestedDate, halaman: String(page) });
     for (const id of report?.selectedIds ?? selected) query.append("cabang", id);
-    return `${HISTORICAL_INVENTORY_PATH}?${query}`;
+    return denganTampil(`${HISTORICAL_INVENTORY_PATH}?${query}`);
   };
   return <>
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}><Link href="/laporan/nilai-persediaan" className="back-btn">← Nilai persediaan saat ini</Link><span>Valuasi as-of</span></div>
@@ -46,13 +76,14 @@ export default async function HistoricalInventoryPage({ searchParams }: {
     </div>
     {/* No date default is saved: a preset without tanggal keeps opening at today's WIB position. */}
     <Suspense fallback={null}><ReportPresets title="Valuasi as-of" /></Suspense>
-    <HistoricalFilters asOf={requestedDate} branches={report?.branches ?? []} selected={report?.selectedIds ?? selected} />
+    <HistoricalFilters asOf={requestedDate} branches={report?.branches ?? cabangSaja} selected={report?.selectedIds ?? selected} />
     {errorMessage && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>{errorMessage}</div>}
+    {!siap && !errorMessage && <LaporanBelumDitampilkan pesan="Pilih tanggal posisi dan cabang, lalu klik Tampilkan nilai historis." />}
     {report && !report.available && <div role="status" className="p2ban">Nilai as-of dari event rata-rata bergerak belum tersedia untuk {report.asOf}{report.activatedAt ? `; aktivasi tercatat sejak ${report.activatedAt}` : "; metode belum diaktifkan"}. Gunakan snapshot closing yang memang tersimpan untuk periode terkait.</div>}
     {report && !report.available && report.fifoCurrent && <div className="crm-sec"><SecHeader num="02" title="POSISI FIFO HARI INI vs GL 170001" desc={`Sisa lapisan stok per cabang dibandingkan saldo akun persediaan sampai ${report.asOf}.`} />
       <p style={{ fontSize: 12 }}>Nilai lapisan = jumlah sisa qty × biaya per lapisan FIFO di semua gudang cabang (termasuk gudang nonaktif), mengikuti hubungan gudang–cabang saat ini. Hanya posisi hari ini yang bisa dibaca tepat; tanggal lampau tidak dihitung ulang. Selisih = nilai lapisan dikurangi GL. Selisih hanya ditampilkan untuk ditinjau Finance — tidak ada jurnal penyeimbang yang dibuat.</p>
       <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Cabang</th><th>Nilai lapisan FIFO</th><th>GL 170001</th><th>Selisih</th><th>Stok minus (tanpa nilai)</th><th>Buku besar</th></tr></thead><tbody>
-        {report.fifoCurrent.summary.map(branch => <tr key={branch.id}><td>{branch.name}</td><td>{money(branch.layerValue)}</td><td>{report.canViewLedger ? money(branch.ledgerValue) : "Akses diperlukan"}</td><td>{money(branch.difference)}</td><td>{branch.negativeCount}</td><td>{report.canViewLedger ? <Link href={`/keuangan/buku-besar?akun=170001&sampai=${report.asOf}&cabang=${encodeURIComponent(branch.id)}`}>Lihat jurnal</Link> : "Akses Buku Besar diperlukan"}</td></tr>)}
+        {report.fifoCurrent.summary.map(branch => <tr key={branch.id}><td>{branch.name}</td><td>{money(branch.layerValue)}</td><td>{report.canViewLedger ? money(branch.ledgerValue) : "Akses diperlukan"}</td><td>{money(branch.difference)}</td><td>{branch.negativeCount}</td><td>{report.canViewLedger ? <Link href={`/keuangan/buku-besar?tampil=1&akun=170001&sampai=${report.asOf}&cabang=${encodeURIComponent(branch.id)}`}>Lihat jurnal</Link> : "Akses Buku Besar diperlukan"}</td></tr>)}
         <tr><th>Total cabang terpilih</th><td>{money(report.fifoCurrent.total)}</td><td>{report.canViewLedger ? money(report.fifoCurrent.ledgerTotal) : "Akses diperlukan"}</td><td>{money(report.fifoCurrent.difference)}</td><td>{report.fifoCurrent.summary.reduce((sum, branch) => sum + branch.negativeCount, 0)}</td><td /></tr>
       </tbody></table></div>
       {report.fifoCurrent.unallocatedLedger !== null && report.fifoCurrent.unallocatedLedger !== "0" && <p style={{ fontSize: 12, color: "#b45309" }}>Jurnal 170001 tanpa cabang: {money(report.fifoCurrent.unallocatedLedger)}. Nilai ini tidak dialokasikan ke cabang dan tidak termasuk total GL cabang di atas.</p>}
@@ -63,7 +94,7 @@ export default async function HistoricalInventoryPage({ searchParams }: {
       <div className="crm-sec"><SecHeader num="02" title="RINGKASAN CABANG" desc={`Posisi akhir ${report.asOf}; subtotal dihitung dari seluruh baris, bukan hanya halaman ini.`} />
         <p style={{ fontSize: 12 }}>GL 170001 adalah saldo jurnal bertanggal sampai {report.asOf} yang terbaca sekarang, bukan snapshot jurnal terkunci. Jurnal bertanggal lama yang ditambah atau dikoreksi kemudian dapat mengubah perbandingan. Selisih = nilai event dikurangi GL; periksa sumber sebelum koreksi. Cabang event masih mengikuti hubungan gudang saat ini, sehingga angka ini belum membuktikan rekonsiliasi historis cabang.</p>
         <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Cabang gudang saat ini</th><th>Barang / gudang</th><th>Stok minus</th><th>Nilai minus taksiran</th><th>Nilai event</th><th>GL 170001 as-of</th><th>Selisih</th><th>Buku besar</th></tr></thead><tbody>
-          {report.summary.map(branch => <tr key={branch.id}><td>{branch.name}</td><td>{branch.count}</td><td>{branch.negativeCount}</td><td>{money(branch.estimatedValue)}{branch.estimatedCount ? ` (${branch.estimatedCount} baris)` : ""}</td><td>{money(branch.value)}</td><td>{report.canViewLedger ? money(branch.ledgerValue) : "Akses diperlukan"}</td><td>{money(branch.difference)}</td><td>{report.canViewLedger ? <Link href={`/keuangan/buku-besar?akun=170001&sampai=${report.asOf}&cabang=${encodeURIComponent(branch.id)}`}>Lihat jurnal</Link> : "Akses Buku Besar diperlukan"}</td></tr>)}
+          {report.summary.map(branch => <tr key={branch.id}><td>{branch.name}</td><td>{branch.count}</td><td>{branch.negativeCount}</td><td>{money(branch.estimatedValue)}{branch.estimatedCount ? ` (${branch.estimatedCount} baris)` : ""}</td><td>{money(branch.value)}</td><td>{report.canViewLedger ? money(branch.ledgerValue) : "Akses diperlukan"}</td><td>{money(branch.difference)}</td><td>{report.canViewLedger ? <Link href={`/keuangan/buku-besar?tampil=1&akun=170001&sampai=${report.asOf}&cabang=${encodeURIComponent(branch.id)}`}>Lihat jurnal</Link> : "Akses Buku Besar diperlukan"}</td></tr>)}
           <tr><th>Total cabang terpilih</th><td>{report.rows.length}</td><td>{report.summary.reduce((sum, branch) => sum + branch.negativeCount, 0)}</td><td>{money(report.estimatedValue)}{report.estimatedCount ? ` (${report.estimatedCount} baris)` : ""}</td><td>{money(report.total)}</td><td>{report.canViewLedger ? money(report.scopedLedgerValue) : "Akses diperlukan"}</td><td>{money(report.scopedDifference)}</td><td /></tr>
         </tbody></table></div>
         {report.fullBranchAccess && report.selected.length === report.branches.length && report.unallocatedLedger !== null && report.unallocatedLedger !== "0" && <p style={{ fontSize: 12, color: "#b45309" }}>Jurnal 170001 tanpa cabang: {money(report.unallocatedLedger)}. Nilai ini tidak dialokasikan ke cabang dan tidak termasuk total GL cabang di atas.</p>}
