@@ -43,9 +43,16 @@ select transfer_assert(not exists(select account_id from journal_lines group by 
 select transfer_assert((select count(*)=3 from cash_transfer_revisions),'immutable audit chain');
 select transfer_reject($q$select mutate_cash_transfer('stale','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='original'),0,(select header from transfer_input),'Stale edit')$q$,'sudah berubah');
 select set_config('request.jwt.claim.sub','f7100000-0000-4000-8000-000000000002',false);
-select transfer_reject($q$select mutate_cash_transfer('denied','void',(select(value->>'transfer_id')::uuid from transfer_results where name='original'),0,'{}','Denied admin')$q$,'Akses');
+-- 12 Nov 2026: ADMIN dan FINANCE boleh mengoreksi/membatalkan; yang menolak di sini pemeriksaan revisi, bukan akses.
+select transfer_reject($q$select mutate_cash_transfer('denied','void',(select(value->>'transfer_id')::uuid from transfer_results where name='original'),0,'{}','Stale admin')$q$,'sudah berubah');
 select set_config('request.jwt.claim.sub','f7100000-0000-4000-8000-000000000003',false);
-select transfer_reject($q$select mutate_cash_transfer('denied-finance','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='original'),0,(select header from transfer_input),'Denied finance')$q$,'Akses');
+select transfer_reject($q$select mutate_cash_transfer('denied-finance','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='original'),0,(select header from transfer_input),'Stale finance')$q$,'sudah berubah');
+insert into transfer_results values('finance-created',mutate_cash_transfer('create-finance','create',null,null,(select header from transfer_input),null));
+insert into transfer_results values('finance-corrected',mutate_cash_transfer('edit-finance','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='finance-created'),0,jsonb_set((select header from transfer_input),'{jumlah}','900'),'Finance correction'));
+select transfer_assert((select jumlah=900 and voided_at is null from cash_transfers where id=(select(value->>'replacement_transfer_id')::uuid from transfer_results where name='finance-corrected')),'finance correction posts replacement');
+select set_config('request.jwt.claim.sub','f7100000-0000-4000-8000-000000000002',false);
+insert into transfer_results values('admin-cancelled',mutate_cash_transfer('void-admin','void',(select(value->>'replacement_transfer_id')::uuid from transfer_results where name='finance-corrected'),0,'{}','Admin cancellation'));
+select transfer_assert((select voided_at is not null from cash_transfers where id=(select(value->>'replacement_transfer_id')::uuid from transfer_results where name='finance-corrected')),'admin cancellation voids');
 select set_config('request.jwt.claim.sub','f7100000-0000-4000-8000-000000000001',false);
 select transfer_reject($q$update cash_transfers set jumlah=2$q$,'permission denied');
 select transfer_reject($q$delete from journal_lines where entry_id=(select(value->>'journal_entry_id')::uuid from transfer_results where name='original')$q$,'jalur resmi');
@@ -92,7 +99,15 @@ insert into transfer_results values('fixed-source',mutate_cash_transfer('fix-sou
 select transfer_assert((select from_account_id='f7300000-0000-4000-8000-000000000003' and biaya_admin=5 from cash_transfers where id=(select(value->>'replacement_transfer_id')::uuid from transfer_results where name='fixed-source')),'source and fee replacement');
 select transfer_assert((select count(*)=0 from journal_lines l join journal_entries e on e.id=l.entry_id join coa_accounts a on a.id=l.account_id where e.id=(select(value->>'replacement_journal_id')::uuid from transfer_results where name='fixed-source') and a.type='PENDAPATAN'),'replacement never earns revenue');
 select transfer_reject($q$select mutate_cash_transfer('no-reason','void',(select(value->>'transfer_id')::uuid from transfer_results where name='rollback'),0,'{}','')$q$,'alasan');
-select transfer_reject($q$select mutate_cash_transfer('change-date','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='rollback'),0,jsonb_set((select header from transfer_input),'{tanggal}',to_jsonb(current_date-1)),'Wrong date')$q$,'tanggal dan cabang');
+-- 12 Nov 2026: koreksi boleh mengganti tanggal; pembalik di tanggal asli, pengganti di tanggal baru. Cabang tetap.
+select transfer_reject($q$select mutate_cash_transfer('change-branch','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='rollback'),0,jsonb_set((select header from transfer_input),'{branch_id}','"f7200000-0000-4000-8000-0000000000ff"'),'Wrong branch')$q$,'cabang catatan asli');
+select transfer_reject($q$select mutate_cash_transfer('future-date','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='rollback'),0,jsonb_set((select header from transfer_input),'{tanggal}',to_jsonb(current_date+1)),'Future date')$q$,'Tanggal transfer tidak valid');
+insert into transfer_results values('date-source',mutate_cash_transfer('create-date-source','create',null,null,(select header from transfer_input),null));
+insert into transfer_results values('date-fixed',mutate_cash_transfer('change-date','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='date-source'),0,jsonb_set((select header from transfer_input),'{tanggal}',to_jsonb(current_date-1)),'Wrong date'));
+select transfer_assert((select tanggal=current_date-1 and branch_id='f7200000-0000-4000-8000-000000000001' and voided_at is null from cash_transfers where id=(select(value->>'replacement_transfer_id')::uuid from transfer_results where name='date-fixed')),'replacement takes the corrected date and keeps the branch');
+select transfer_assert((select tanggal=current_date from journal_entries where id=(select(value->>'reversal_journal_id')::uuid from transfer_results where name='date-fixed')),'reversal stays on the original date');
+select transfer_assert((select tanggal=current_date-1 from journal_entries where id=(select(value->>'replacement_journal_id')::uuid from transfer_results where name='date-fixed')),'replacement journal on the corrected date');
+select mutate_cash_transfer('void-date-fixed','void',(select(value->>'replacement_transfer_id')::uuid from transfer_results where name='date-fixed'),0,'{}','Fictional cleanup');
 -- Protect both original and destination accounts, including reconciliation of a new destination.
 select mutate_bank_reconciliation('new-destination-rec','create',null,null,jsonb_build_object('account_id','f7300000-0000-4000-8000-000000000003','tanggal',current_date,'saldo_bank',0,'biaya_adm',0,'bunga',0),null);
 select transfer_reject($q$select mutate_cash_transfer('new-destination-blocked','edit',(select(value->>'transfer_id')::uuid from transfer_results where name='rollback'),0,jsonb_set((select header from transfer_input),'{to_account_id}','"f7300000-0000-4000-8000-000000000003"'),'New reconciled destination')$q$,'Rekonsiliasi');

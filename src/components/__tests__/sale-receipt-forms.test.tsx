@@ -22,14 +22,16 @@ it("Batalkan penerimaan: menjelaskan akibatnya, alasan dan konfirmasi wajib, per
   expect(text).toContain("Batalkan penerimaan");
   expect(text).toContain("Rp 150.000");
   expect(text).toContain("belum dibayar");
-  expect(text).toContain("Shift struk ini sudah ditutup");
+  expect(text).toContain("ubah transaksi, lalu terima pembayaran lagi");
+  expect(text).not.toMatch(/mundur|Accurate|tanggal/i);
+  expect(text).toContain("Shift struk sudah ditutup");
   expect(field("alasan").required).toBe(true);
   expect(field("konfirmasi").required).toBe(true);
   expect(field("revision").value).toBe("3");
 });
 it("tanpa shift tertutup tidak menampilkan peringatan shift", async () => {
   await act(async () => root.render(<SaleReceiptCancelForm userId="owner" saleId={saleId} revision={0} total={1000} shiftClosed={false} />));
-  expect(host.textContent).not.toContain("Shift struk ini sudah ditutup");
+  expect(host.textContent).not.toContain("Shift struk sudah ditutup");
 });
 it("Terima pembayaran: kolom terisi dari penerimaan lama, tombol aktif hanya bila jumlah sama dengan total", async () => {
   await act(async () => root.render(<SaleReceiveAgainForm userId="owner" saleId={saleId} revision={1} total={100000} previous={[{ method: "Tunai", amount: 40000 }, { method: "QRIS", amount: 60000 }]} />));

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Form "Batalkan penerimaan" dengan tanggal efektif: pemilih tanggal hanya untuk yang berhak, batas min/max, pratinjau ulang, penolakan menahan tombol.
+// Form "Batalkan penerimaan" dengan tanggal pembukuan: kontrol kecil tertutup hanya untuk yang berhak (peran lain tidak melihat kata tanggal), batas min/max, pratinjau ulang, penolakan menahan tombol.
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -22,31 +22,40 @@ async function mount(props: Record<string, unknown>) {
 beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); calls.run = []; calls.prev = []; calls.prevReply = { ok: true, ringkasan: ["Jurnal pembalik bertanggal 2026-11-09."], tolakTanggal: null, minTanggal: "2026-11-09" }; });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 
-it("Owner: pemilih tanggal bawaan hari ini, batas min = tanggal penerimaan asli, max = hari ini", async () => {
+it("Owner: kontrol tertutup 'Ubah tanggal pembukuan (opsional)', bawaan hari ini, min = tanggal penerimaan asli, max = hari ini", async () => {
   await mount({ hariIni: "2026-11-12", minTanggal: "2026-11-09", bolehMundur: true });
   const d = host.querySelector<HTMLInputElement>("#tanggal-efektif")!;
   expect([d.type, d.value, d.min, d.max]).toEqual(["date", "2026-11-12", "2026-11-09", "2026-11-12"]);
-  expect(host.textContent).toContain("masuk omzet hari aslinya");
+  const box = host.querySelector<HTMLDetailsElement>('[data-testid="ubah-tanggal-pembukuan"]')!;
+  expect(box.open).toBe(false); expect(box.querySelector("summary")!.textContent).toBe("Ubah tanggal pembukuan (opsional)");
+  expect(box.textContent).toContain("Dicatat di tanggal ini; uang fisik tetap hari ini.");
+  expect(host.textContent).not.toMatch(/mundur|efektif|omzet/i);
 });
-it("peran tanpa izin tanggal mundur: tidak ada pemilih tanggal, hanya keterangan hari ini; kiriman tanpa effective_date", async () => {
+it("peran tanpa izin: tidak ada pemilih dan tidak ada kata tentang tanggal; kiriman tanpa effective_date", async () => {
   await mount({ hariIni: "2026-11-12", minTanggal: "2026-11-09", bolehMundur: false });
   expect(host.querySelector("#tanggal-efektif")).toBeNull();
-  expect(host.textContent).toContain("hanya untuk Owner");
+  expect(host.textContent).not.toMatch(/tanggal|mundur|Owner/i);
   await setVal("#alasan-batal", "Harga salah"); await act(async () => host.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
   await act(async () => btn("Ya, batalkan penerimaan").click());
   expect(calls.run[0].has("effective_date")).toBe(false);
 });
-it("memilih tanggal mundur memuat pratinjau ulang (ringkasan baru) dan mengirim effective_date", async () => {
+it("mengubah tanggal pembukuan memuat pratinjau ulang (ringkasan baru) dan mengirim effective_date", async () => {
   await mount({ hariIni: "2026-11-12", minTanggal: "2026-11-09", bolehMundur: true });
   await setVal("#tanggal-efektif", "2026-11-09");
   expect(calls.prev).toEqual(["2026-11-09"]);
   expect(host.textContent).toContain("Jurnal pembalik bertanggal 2026-11-09.");
-  expect(host.textContent).toContain("pada tanggal 2026-11-09");
   await setVal("#alasan-batal", "Harga vaksin salah"); await act(async () => host.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
   await act(async () => btn("Ya, batalkan penerimaan").click());
   expect(calls.run[0].get("effective_date")).toBe("2026-11-09");
-  expect(host.textContent).toContain("Keduanya otomatis dibukukan pada tanggal 2026-11-09");
-  expect(host.textContent).toContain("dicatat sebenarnya 2026-11-12");
+  expect(host.textContent).toContain("Dicatat di tanggal 2026-11-09; uang fisik tetap hari ini.");
+  expect(host.textContent).toContain("ubah transaksi di faktur, lalu terima pembayaran lagi");
+});
+it("jalur bawaan (tanggal tidak diubah): kiriman identik dengan sebelumnya (visit_id, invoice_id, reason, request_key, effective_date = hari ini)", async () => {
+  await mount({ hariIni: "2026-11-12", minTanggal: "2026-11-09", bolehMundur: true });
+  await setVal("#alasan-batal", "Harga vaksin salah"); await act(async () => host.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
+  await act(async () => btn("Ya, batalkan penerimaan").click());
+  expect(calls.prev).toEqual([]);
+  expect([...calls.run[0].entries()]).toEqual([["visit_id", "v1"], ["invoice_id", "i1"], ["reason", "Harga vaksin salah"], ["request_key", "kunci-9"], ["effective_date", "2026-11-12"]]);
 });
 it("tanggal ditolak database (periode terkunci): pesan tampil dan tombol tetap terkunci sampai tanggal valid", async () => {
   calls.prevReply = { ok: true, ringkasan: ["x"], tolakTanggal: "Periode akuntansi sampai 2026-11-09 sudah ditutup. Owner perlu membuka kembali periodenya di Keuangan > Tutup Buku.", minTanggal: "2026-11-09" };

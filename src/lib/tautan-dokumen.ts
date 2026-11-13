@@ -79,3 +79,20 @@ export function hrefNomorModul(nomor: string): string | null {
 export function tampakNomorDokumen(teks: string): boolean {
   return /^[A-Z]{2,4}[.\-/][A-Za-z0-9.\-/]*\d{3,}$/.test(teks.trim());
 }
+
+/**
+ * Nomor dokumen yang ditampilkan di kolom "Dokumen" Buku Besar / Jurnal.
+ *
+ * Jurnal koreksi/pembatalan (mis. 'sale-payment-reversal', 'sale-payment-repost', 'sale-receipt-cancel') menyimpan ID jejak
+ * audit (UUID) di source_ref, bukan nomor struk — kolom Dokumen jadi berisi deretan huruf-angka yang bukan nomor dan nomor POS
+ * "tidak muncul" (nomornya hanya ada di keterangan). Bila source_ref berupa UUID polos, pakai nomor dokumen pertama yang ada
+ * di keterangan jurnal; bila tidak ada, tampilkan source_ref apa adanya.
+ */
+const UUID_POLOS = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NOMOR_DI_KETERANGAN = /(?<![A-Za-z0-9])(?:POS|INV|KWT|UMK|FJ|FJK|SO|DO|PO|PB|RJ|RET)[-.][A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*/;
+export function nomorDokumenJurnal(sourceRef: string | null | undefined, deskripsi: string | null | undefined): string {
+  const ref = (sourceRef ?? "").trim();
+  if (!ref || !UUID_POLOS.test(ref)) return ref;
+  const cocok = (deskripsi ?? "").match(NOMOR_DI_KETERANGAN);
+  return cocok && /\d{3,}/.test(cocok[0]) ? cocok[0] : ref;
+}

@@ -6,9 +6,8 @@ export type TagihanBanner = { id: string; no: string | null };
 type Jendela = { invoice_id: string; effective_date: string; opened_at: string };
 
 /**
- * Pemberitahuan di halaman tagihan: tagihan ini sedang memakai TANGGAL EFEKTIF yang dipilih Owner saat Batalkan penerimaan.
- * Koreksi tagihan dan penerimaan ulang dibukukan pada tanggal itu (omzet hari aslinya); uang fisik tetap masuk shift hari ini.
- * Owner (atau peran berizin) bisa melepasnya. Gagal membaca = tidak menampilkan apa pun (tidak pernah merusak halaman tagihan).
+ * Pemberitahuan di halaman tagihan untuk Owner / peran berizin: tagihan ini memakai tanggal pembukuan lain (dipilih saat Batalkan penerimaan).
+ * Peran lain tidak melihat apa pun. Gagal membaca = tidak menampilkan apa pun (tidak pernah merusak halaman tagihan).
  */
 export async function TanggalEfektifBanner({ visitId, tagihan }: { visitId: string; tagihan: TagihanBanner[] }) {
   let rows: Jendela[] = [];
@@ -21,6 +20,7 @@ export async function TanggalEfektifBanner({ visitId, tagihan }: { visitId: stri
     if (error || !data?.length) return null;
     rows = data as Jendela[];
     boleh = (await bacaBolehBatalPenerimaan(db)) === true;
+    if (!boleh) return null;
   } catch {
     return null;
   }
@@ -28,13 +28,12 @@ export async function TanggalEfektifBanner({ visitId, tagihan }: { visitId: stri
     {rows.map((w) => {
       const t = tagihan.find((x) => x.id === w.invoice_id);
       return <div key={w.invoice_id} style={{ marginBottom: 6 }}>
-        <b>Tanggal efektif {w.effective_date}</b> untuk tagihan {t?.no ?? ""}: perubahan tagihan (Koreksi) dan penerimaan pembayaran berikutnya dibukukan pada {w.effective_date} (omzet hari itu), bukan hari ini.
-        Uang tunai/QRIS fisik tetap masuk laci shift Anda hari ini. Berlaku sampai tagihan Lunas lagi.
+        <b>Tanggal pembukuan diubah ke {w.effective_date}</b> (tagihan {t?.no ?? ""}). Koreksi dan penerimaan berikutnya dicatat di tanggal itu; uang fisik tetap hari ini.
         {boleh && <form action={lepasTanggalEfektif} style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
           <input type="hidden" name="invoice_id" value={w.invoice_id} />
           <input type="hidden" name="visit_id" value={visitId} />
-          <input name="reason" className="fi" maxLength={500} required minLength={3} placeholder="Alasan melepas tanggal efektif" style={{ maxWidth: 260 }} aria-label="Alasan melepas tanggal efektif" />
-          <button type="submit" className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }}>Lepas tanggal efektif (pakai hari ini)</button>
+          <input name="reason" className="fi" maxLength={500} required minLength={3} placeholder="Alasan" style={{ maxWidth: 260 }} aria-label="Alasan kembali ke tanggal hari ini" />
+          <button type="submit" className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5 }}>Pakai tanggal hari ini</button>
         </form>}
       </div>;
     })}

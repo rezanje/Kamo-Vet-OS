@@ -160,9 +160,9 @@ export default async function UangMukaPage({
                             <summary className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }}>Batalkan</summary>
                             <form action={batalkanUangMuka} style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 220, padding: "6px 0" }}>
                               <input type="hidden" name="id" value={u.id} />
-                              <EffectiveDateField id={`batal-um-${u.id}`} docDate={u.tanggal} docLabel="uang muka" canBackdate={canBackdate} />
+                              <EffectiveDateField id={`batal-um-${u.id}`} docDate={u.tanggal} canBackdate={canBackdate} />
                               <label className="flab" htmlFor={`alasan-um-${u.id}`}>Alasan</label>
-                              <input className="fi" id={`alasan-um-${u.id}`} name="alasan" maxLength={1000} placeholder="Wajib bila tanggal sebelum hari ini" />
+                              <input className="fi" id={`alasan-um-${u.id}`} name="alasan" maxLength={1000} placeholder={canBackdate ? "Wajib bila tanggal pembukuan diubah" : "mis. uang muka salah pemasok"} />
                               <SubmitButton className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, color: "#b91c1c" }} pendingText="…">
                                 Batalkan uang muka
                               </SubmitButton>

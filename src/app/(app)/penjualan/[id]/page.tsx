@@ -6,7 +6,8 @@ import { SecHeader } from "@/components/SecHeader";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import { saleMerchandiseTotal, salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
-import { bolehLihatRiwayat, petshopHistory, type PetshopOnlineCancel, type PetshopReceiptCancel } from "@/lib/transaction-history";
+import { bolehLihatRiwayat, petshopHistory, type PetshopEdit, type PetshopOnlineCancel, type PetshopReceiptCancel } from "@/lib/transaction-history";
+import { alasanTidakBisaUbah } from "@/lib/ubah-struk";
 import { alasanUbahTransaksiTerhalang, bulanJakarta } from "@/lib/ubah-transaksi-petshop";
 import { loadActorNames } from "@/lib/transaction-history-server";
 import { bacaBatasTanggal, batasCadangan, catatanTanggalEfektif, tanggalId, tanggalIsoValid, tanggalWibDariWaktu, type BatasTanggal } from "@/lib/tanggal-efektif-petshop";
@@ -116,6 +117,22 @@ export default async function PenjualanDetailPage({
     .eq("sale_id", id)
     .order("tanggal", { ascending: false });
   const returs = (returData ?? []) as unknown as ReturRow[];
+  // Ubah transaksi: struk ini diganti (old) atau hasil ubah (new). Dibaca lewat RLS sale_edits (cabang + modul penjualan).
+  const editCols = "id, created_at, created_by, reason, old_sale_id, new_sale_id, before_value, after_value, lama:old_sale_id(no_struk), baru:new_sale_id(no_struk)";
+  const [{ data: editKe }, { data: editDari }] = await Promise.all([
+    supabase.from("sale_edits").select(editCols).eq("old_sale_id", id),
+    supabase.from("sale_edits").select(editCols).eq("new_sale_id", id),
+  ]);
+  const editData = [...(editKe ?? []), ...(editDari ?? [])];
+  type EditRow = { id: string; created_at: string; created_by: string | null; reason: string; old_sale_id: string; new_sale_id: string;
+    before_value: { sale?: { total?: number } } | null; after_value: { sale?: { total?: number } } | null;
+    lama: Rel<{ no_struk: string | null }>; baru: Rel<{ no_struk: string | null }> };
+  const editRows = (editData ?? []) as unknown as EditRow[];
+  const edits: PetshopEdit[] = editRows.map(e => ({ id: e.id, created_at: e.created_at, created_by: e.created_by, reason: e.reason,
+    arah: e.old_sale_id === id ? "ke" : "dari", no_lama: one(e.lama)?.no_struk ?? "struk lama", no_baru: one(e.baru)?.no_struk ?? "struk baru",
+    total_lama: Number(e.before_value?.sale?.total ?? 0), total_baru: Number(e.after_value?.sale?.total ?? 0) }));
+  const diubahKe = editRows.find(e => e.old_sale_id === id) ?? null;
+  const hasilDari = editRows.find(e => e.new_sale_id === id) ?? null;
   const { data: correctionData, error: correctionError } = canCorrectRole
     ? await supabase.from("sale_payment_corrections")
       .select("id, revision, reason, created_at, created_by, before_payments, after_payments")
@@ -128,12 +145,12 @@ export default async function PenjualanDetailPage({
     ? await supabase.from("sale_cancellations").select("id, reason, created_at, created_by").eq("sale_id", id).maybeSingle()
     : { data: null, error: null };
   const actors = tampilRiwayat
-    ? await loadActorNames(supabase, [...corrections.map(c => c.created_by), cancellationData?.created_by, ...receiptCancels.flatMap(c => [c.created_by, c.closed_by]), ...onlineCancels.map(c => c.created_by)])
+    ? await loadActorNames(supabase, [...corrections.map(c => c.created_by), ...edits.map(e => e.created_by), cancellationData?.created_by, ...receiptCancels.flatMap(c => [c.created_by, c.closed_by]), ...onlineCancels.map(c => c.created_by)])
     : { names: new Map<string, string>(), error: false };
   const riwayat = tampilRiwayat ? petshopHistory({
     viewerId: user?.id ?? null, names: actors.names, corrections,
     cancellation: (cancellationData as { id: string; reason: string; created_at: string; created_by: string | null } | null) ?? null,
-    returns: returs, receiptCancellations: receiptCancels, onlineCancellations: onlineCancels,
+    returns: returs, receiptCancellations: receiptCancels, onlineCancellations: onlineCancels, edits,
   }) : [];
   const cash = payments.find(part => part.method === "Tunai")?.amount ?? 0;
   const transfer = payments.find(part => part.method === "Transfer")?.amount ?? 0;
@@ -144,6 +161,7 @@ export default async function PenjualanDetailPage({
 
   const items = sale.sale_items ?? [];
   const cust = one(sale.customers);
+  const canEdit = canCorrectRole && !!user && !alasanTidakBisaUbah(sale, { receiptCycle: hasReceiptCycle, returns: returs.some(r => !r.voided_at) });
 
   return (
     <>
@@ -153,14 +171,20 @@ export default async function PenjualanDetailPage({
           <span style={{ color: "var(--td)" }}>·</span>
           <span style={{ fontSize: 13, fontWeight: 500 }}>{sale.no_struk ?? "Penjualan"}</span>
         </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {canEdit && <Link href={`/penjualan/${sale.id}/ubah`} className="btn-acc" style={{ textDecoration: "none" }}>
+          <i className="ti ti-edit" /> Ubah transaksi
+        </Link>}
         {!sale.voided_at && <Link href={`/penjualan/retur/baru?struk=${encodeURIComponent(sale.no_struk ?? "")}`} className="btn-def" style={{ textDecoration: "none" }}>
           <i className="ti ti-arrow-back-up" /> Buat retur
         </Link>}
+        </div>
       </div>
 
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {success === "cancelled" ? "Penjualan dibatalkan. Riwayat dan pembalikannya tersimpan."
+            : success === "edited" ? "Transaksi diubah. Ini struk hasil ubah: tetap di tanggal struk asli, struk lama tersimpan di riwayat."
             : success === "payment-corrected" ? "Metode pembayaran terkoreksi pada penjualan ini. Jurnal pembalik dan pengganti tersimpan."
             : success === "receipt-cancelled" ? `Penerimaan dibatalkan: uang dikeluarkan dari kas/bank dan struk menjadi belum dibayar.${shiftLain ? " Shift asal struk sudah ditutup; angka tutupnya tidak diubah, pengembalian dicatat di shift terbuka Anda." : ""}${shiftTanpa ? " Shift asal struk sudah ditutup dan Anda tidak punya shift terbuka: pengembalian tunai ditandai \"tanpa shift\" untuk Finance dan tidak mengubah laci kasir mana pun." : ""}${tglCatatan} Terima pembayaran lagi atau ubah transaksi di bawah.`
             : success === "receipt-received" ? `Pembayaran diterima ulang. Jurnal dan laci shift tercatat.${shiftTanpa ? " Anda tidak punya shift terbuka: uang tunai ditandai \"tanpa shift\" untuk Finance dan tidak masuk laci kasir mana pun." : ""}${tglCatatan}`
@@ -173,8 +197,14 @@ export default async function PenjualanDetailPage({
         </div>
       )}
 
-      {sale.voided_at && <div role="status" className="p2ban">Dibatalkan pada {fmtDt(sale.voided_at)} · {sale.void_reason}
+      {sale.voided_at && diubahKe && <div role="status" className="p2ban">Struk ini sudah <strong>diubah</strong> pada {fmtDt(diubahKe.created_at)} · {diubahKe.reason}.{" "}
+        <Link href={`/penjualan/${diubahKe.new_sale_id}`}>Buka struk terbaru {one(diubahKe.baru)?.no_struk ?? ""}</Link>
+      </div>}
+      {sale.voided_at && !diubahKe && <div role="status" className="p2ban">Dibatalkan pada {fmtDt(sale.voided_at)} · {sale.void_reason}
         {isOwner && <Link href={`${sale.channel ? "/penjualan/online/baru" : "/kasir"}?replace_sale=${sale.id}`}>Siapkan transaksi pengganti</Link>}
+      </div>}
+      {hasilDari && !sale.voided_at && <div role="status" className="p2ban">Hasil ubah dari{" "}
+        <Link href={`/penjualan/${hasilDari.old_sale_id}`}>{one(hasilDari.lama)?.no_struk ?? "struk lama"}</Link> pada {fmtDt(hasilDari.created_at)} · {hasilDari.reason}. Tanggal struk tetap tanggal asli.
       </div>}
       {openCancel && !sale.voided_at && <div role="status" className="p2ban" style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#9a3412" }}>
         <i className="ti ti-receipt-off" /> <strong>Belum dibayar — penerimaan dibatalkan</strong> pada {fmtDt(openCancel.created_at)} · {openCancel.reason}. Uang sudah dikeluarkan dari kas/bank.{catatanTanggalEfektif(openCancel.effective_date, openCancel.created_at) ? ` ${catatanTanggalEfektif(openCancel.effective_date, openCancel.created_at)}.` : ""}
@@ -263,7 +293,7 @@ export default async function PenjualanDetailPage({
 
       {tampilRiwayat && <TransactionHistoryPanel title="RIWAYAT PERUBAHAN TRANSAKSI" events={riwayat}
         error={!!correctionError || !!cancellationError || !!receiptError || !!onlineError}
-        hint={canCorrectRole ? "Koreksi metode bayar, pembatalan penerimaan, pembatalan dan retur pada struk ini: siapa, kapan, apa, alasan."
+        hint={canCorrectRole ? "Ubah transaksi, koreksi metode bayar, pembatalan penerimaan, pembatalan dan retur pada struk ini: siapa, kapan, apa, alasan."
           : "Pembatalan dan retur pada struk ini. Koreksi metode bayar hanya terlihat oleh Owner dan Finance."} />}
 
       {(canCorrectRole || canCancelReceipt) && user && !sale.voided_at && <details className="crm-sec" open={!!openCancel}>

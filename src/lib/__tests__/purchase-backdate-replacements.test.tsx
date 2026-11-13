@@ -21,7 +21,7 @@ it("bayar ulang: tanggal dibatasi mulai tanggal pembayaran yang dibatalkan sampa
   expect(html).toContain('min="2026-11-07"');
   expect(html).toContain('max="2026-11-12"');
   expect(html).toContain('name="catatan"');
-  expect(html).toContain("wajib beralasan");
+  expect(html).not.toMatch(/mundur|wajib beralasan/i);
   expect(html).toContain('name="replaces_payment_id"');
 });
 
@@ -32,7 +32,7 @@ it("pembayaran biasa: tidak ada batas bawah dan tidak ada kolom alasan baru (alu
   expect(html).toContain('max="2026-11-12"');
 });
 
-it("faktur pengganti (langsung): tanpa izin dikunci hari ini; Owner/izin bisa mundur sampai tanggal faktur asal", async () => {
+it("faktur pengganti (langsung): tanpa izin dikunci hari ini tanpa kata tanggal; Owner/izin bisa memilih sampai tanggal faktur asal", async () => {
   vi.doMock("@/lib/supabase/client", () => ({ createClient: vi.fn() }));
   vi.doMock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(), redirect: vi.fn(), useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
   vi.doMock("@/app/(app)/pembelian/faktur/langsung/actions", () => ({ buatFakturLangsung: vi.fn() }));
@@ -40,7 +40,7 @@ it("faktur pengganti (langsung): tanpa izin dikunci hari ini; Owner/izin bisa mu
   const initial = { id: "o", supplier_id: "s", warehouse_id: "w", tanggal: "2026-11-03", jatuh_tempo: "2026-12-03", no_faktur_pemasok: null, surat_jalan: null, keterangan: null, lampiran: [], purchase_invoice_items: [] } as never;
   const base = { userId: "u", suppliers: [], warehouses: [], items: [], initial };
   const locked = renderToStaticMarkup(<FakturLangsungForm {...base} canBackdate={false} />);
-  expect(locked).toContain('value="2026-11-12"'); expect(locked).toContain('min="2026-11-12"'); expect(locked).toContain("Tanggal mundur hanya untuk Owner");
+  expect(locked).toContain('value="2026-11-12"'); expect(locked).toContain('min="2026-11-12"'); expect(locked).not.toMatch(/mundur|Owner|dibukukan hari ini/i);
   const owner = renderToStaticMarkup(<FakturLangsungForm {...base} canBackdate />);
-  expect(owner).toContain('value="2026-11-12"'); expect(owner).toContain('min="2026-11-03"'); expect(owner).toContain('max="2026-11-12"'); expect(owner).toContain("wajib beralasan");
+  expect(owner).toContain('value="2026-11-12"'); expect(owner).toContain('min="2026-11-03"'); expect(owner).toContain('max="2026-11-12"'); expect(owner).toContain("Bila bukan hari ini, isi Keterangan sebagai alasan."); expect(owner).not.toMatch(/mundur/i);
 });

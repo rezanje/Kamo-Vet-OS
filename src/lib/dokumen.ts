@@ -3,7 +3,7 @@
 
 export type LampiranDraft = { path: string; nama: string; mime: string | null; ukuran: number | null };
 
-export const MODUL_DOKUMEN = ["pembelian", "penjualan", "pengeluaran"] as const;
+export const MODUL_DOKUMEN = ["pembelian", "penjualan", "pengeluaran", "transfer"] as const;
 export type ModulDokumen = (typeof MODUL_DOKUMEN)[number];
 
 // Path storage: hanya huruf/angka/titik/strip, biar tidak ada karakter yang bikin

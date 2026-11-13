@@ -24,40 +24,44 @@ it("tanpa batas tanggal (bentuk lama): tidak ada kolom tanggal", async () => {
   await act(async () => root.render(<SaleReceiptCancelForm userId="u" saleId={saleId} revision={1} total={1000} shiftClosed={false} />));
   expect(field("tanggal")).toBeNull();
 });
-it("Owner: kolom tanggal bawaan hari ini dengan rentang tanggal struk .. hari ini; tidak ada peringatan mundur", async () => {
+it("Owner: kolom tanggal bawaan hari ini dalam kontrol tertutup 'Ubah tanggal pembukuan (opsional)' + satu catatan", async () => {
   await act(async () => root.render(<SaleReceiptCancelForm userId="u" saleId={saleId} revision={1} total={1000} shiftClosed={false} batasTanggal={OWNER} />));
   const d = field("tanggal")!;
   expect([d.type, d.min, d.max, d.value]).toEqual(["date", "2026-11-05", "2026-11-12", "2026-11-12"]);
-  expect(host.querySelector('[data-testid="tanggal-efektif-mundur"]')).toBeNull();
-  expect(host.textContent).toContain("05/11/2026 sampai 12/11/2026");
+  const box = host.querySelector<HTMLDetailsElement>('[data-testid="tanggal-efektif"]')!;
+  expect(box.tagName).toBe("DETAILS"); expect(box.open).toBe(false);
+  expect(box.querySelector("summary")!.textContent).toBe("Ubah tanggal pembukuan (opsional)");
+  expect(box.textContent).toContain("Dicatat di tanggal ini; uang fisik tetap hari ini.");
+  expect(host.textContent).not.toMatch(/mundur|Accurate|efektif/i);
 });
-it("memilih tanggal sebelum hari ini menampilkan akibatnya (omzet struk tidak berubah, laci tetap shift sekarang)", async () => {
+it("memilih tanggal lain tidak menambah teks; catatan tetap satu kalimat", async () => {
   await act(async () => root.render(<SaleReceiptCancelForm userId="u" saleId={saleId} revision={1} total={1000} shiftClosed={false} batasTanggal={OWNER} />));
   await setDate("2026-11-10");
-  const note = host.querySelector('[data-testid="tanggal-efektif-mundur"]')!;
-  expect(note.textContent).toContain("10/11/2026");
-  expect(note.textContent).toContain("bukan hari ini");
-  expect(note.textContent).toContain("shift Anda");
+  expect(field("tanggal")!.value).toBe("2026-11-10");
+  expect(host.querySelectorAll('[data-testid="tanggal-efektif"] p')).toHaveLength(1);
+  expect(host.querySelector('[data-testid="tanggal-efektif"] p')!.textContent).toBe("Dicatat di tanggal ini; uang fisik tetap hari ini.");
   await setDate("2026-11-12");
-  expect(host.querySelector('[data-testid="tanggal-efektif-mundur"]')).toBeNull();
+  expect(field("tanggal")!.value).toBe("2026-11-12");
 });
-it("peran yang tak boleh mundur: tidak ada kolom (server memakai hari ini) dan alasannya dijelaskan", async () => {
+it("peran tanpa hak: tidak ada kolom dan tidak ada kata tentang tanggal sama sekali (server memakai hari ini)", async () => {
   await act(async () => root.render(<SaleReceiptCancelForm userId="u" saleId={saleId} revision={1} total={1000} shiftClosed={false} batasTanggal={{ ...OWNER, canBackdate: false }} />));
   expect(field("tanggal")).toBeNull();
-  expect(host.querySelector('[data-testid="tanggal-efektif-hanya-hari-ini"]')!.textContent).toContain("Tanggal mundur");
+  expect(host.querySelector('[data-testid="tanggal-efektif"]')).toBeNull();
+  expect(host.textContent).not.toMatch(/tanggal|mundur|Owner|Akses Grup/i);
+  const alasanTeks = host.textContent;
+  await act(async () => root.render(<SaleReceiveAgainForm userId="u" saleId={saleId} revision={1} total={1000} previous={[]} batasTanggal={{ ...OWNER, canBackdate: false }} />));
+  expect(host.textContent).not.toMatch(/tanggal|mundur|Owner|Akses Grup/i); expect(alasanTeks).toContain("Batalkan penerimaan");
 });
-it("periode tertutup: rentang mulai sesudah batas tutup dan petunjuk Tutup Buku tampil", async () => {
+it("periode tertutup: rentang mulai sesudah batas tutup (penolakan database tetap menjelaskan Tutup Buku)", async () => {
   await act(async () => root.render(<SaleReceiptCancelForm userId="u" saleId={saleId} revision={1} total={1000} shiftClosed={false} batasTanggal={{ ...OWNER, closedUntil: "2026-11-07", effectiveMin: "2026-11-08" }} />));
   expect(field("tanggal")!.min).toBe("2026-11-08");
-  expect(host.textContent).toContain("ditutup sampai 07/11/2026");
-  expect(host.textContent).toContain("Tutup Buku");
 });
 it("periode tertutup sampai hari ini: kolom tetap valid (min tidak melewati max)", async () => {
   await act(async () => root.render(<SaleReceiptCancelForm userId="u" saleId={saleId} revision={1} total={1000} shiftClosed={false} batasTanggal={{ ...OWNER, closedUntil: "2026-11-12", effectiveMin: "2026-11-13" }} />));
   const d = field("tanggal")!;
   expect([d.min, d.max]).toEqual(["2026-11-12", "2026-11-12"]);
 });
-it("Terima pembayaran: alasan tanggal mundur wajib muncul hanya bila tanggal sebelum hari ini", async () => {
+it("Terima pembayaran: alasan mengubah tanggal wajib muncul hanya bila tanggal sebelum hari ini", async () => {
   await act(async () => root.render(<SaleReceiveAgainForm userId="u" saleId={saleId} revision={1} total={1000} previous={[{ method: "Tunai", amount: 1000 }]} batasTanggal={OWNER} />));
   expect(field("alasan")).toBeNull();
   await setDate("2026-11-09");
@@ -65,10 +69,9 @@ it("Terima pembayaran: alasan tanggal mundur wajib muncul hanya bila tanggal seb
   await setDate("2026-11-12");
   expect(field("alasan")).toBeNull();
 });
-it("Batalkan pencairan: kolom tanggal ada dan memakai kata pembalikan pencairan", async () => {
+it("Batalkan pencairan: kolom tanggal ada di kontrol tertutup; alasan wajib bila tanggal diubah", async () => {
   await act(async () => root.render(<OnlineDisbursementCancelForm userId="u" saleId={saleId} revision={1} batasTanggal={OWNER} />));
   expect(field("tanggal")).not.toBeNull();
   await setDate("2026-11-08");
-  expect(host.textContent).toContain("Pembalikan dibukukan di tanggal 08/11/2026");
   expect(field("alasan")!.required).toBe(true);
 });
