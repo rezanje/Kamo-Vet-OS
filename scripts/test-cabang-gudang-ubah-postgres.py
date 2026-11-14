@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Uji migrasi 20261118100000 (ubah cabang, ubah/nonaktifkan/hapus gudang) di PostgreSQL sungguhan, data fiktif.
+"""Uji migrasi 20261117150000 (ubah cabang, ubah/nonaktifkan/hapus gudang) di PostgreSQL sungguhan, data fiktif.
 
 Dasar: skema penuh repo (semua migrasi KECUALI migrasi ini) diputar dari nol, data fiktif ditanam, lalu migrasi dipasang.
 Mode:
@@ -28,7 +28,7 @@ hris = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hris)
 
 MIGRATIONS = ROOT / "supabase/migrations"
-MIGRASI = MIGRATIONS / "20261118100000_cabang_gudang_ubah_hapus.sql"
+MIGRASI = MIGRATIONS / "20261117150000_cabang_gudang_ubah_hapus.sql"
 
 U = {k: f"10000000-0000-4000-8000-0000000000{n:02d}" for n, k in enumerate(["owner", "admin", "staff", "finance", "owner_off", "admin_off"], 1)}
 CAB = {k: f"a0000000-0000-4000-8000-0000000000{n:02d}" for n, k in enumerate(["a", "b", "c", "d", "e", "f"], 1)}
