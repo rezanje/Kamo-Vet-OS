@@ -4,6 +4,9 @@ import { SecHeader } from "@/components/SecHeader";
 import { EmployeePicker } from "@/components/EmployeePicker";
 import { simpanAbsensi } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { jamRingkas } from "@/lib/shift-master";
+import { menitPulangCepat, menitTelatShift } from "@/lib/absensi-shift";
+import { BUCKET_FOTO_ABSEN } from "@/lib/absensi-mandiri";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -29,6 +32,20 @@ type AttendanceRow = {
   status: StatusKey;
   keterangan: string | null;
   employees: Rel<{ nama: string; jabatan: string | null }>;
+  // C1 (ada setelah migrasi 20261118640000)
+  sumber?: string;
+  foto_masuk?: string | null;
+  foto_pulang?: string | null;
+  tanpa_jadwal?: boolean;
+  jarak_masuk_m?: number | null;
+};
+
+type ShiftJadwal = { nama: string; jam_masuk: string | null; jam_pulang: string | null; is_libur: boolean };
+
+const SUMBER: Record<string, { label: string; badge: string }> = {
+  mandiri: { label: "Mandiri", badge: "g" },
+  manual: { label: "Manual HR", badge: "b" },
+  koreksi: { label: "Koreksi", badge: "o" },
 };
 
 // ponytail: badge class per status absensi — Hadir=g, Izin/Cuti=b, Sakit=o, Alpha=r.
@@ -58,12 +75,30 @@ export default async function AbsensiPage({
   const employees = (empRaw ?? []) as unknown as EmployeeRow[];
 
   // ponytail: join employees untuk kolom Karyawan + Jabatan di tabel absensi.
-  const { data: attRaw } = await supabase
-    .from("attendance")
-    .select("id, employee_id, tanggal, jam_masuk, jam_pulang, status, keterangan, employees(nama, jabatan)")
-    .eq("tanggal", tanggalFilter)
-    .order("employees(nama)");
-  const rows = (attRaw ?? []) as unknown as AttendanceRow[];
+  // C1: kolom sumber/foto baru ada setelah migrasi — sebelum itu dibaca tanpa kolom tersebut.
+  const KOLOM = "id, employee_id, tanggal, jam_masuk, jam_pulang, status, keterangan, employees(nama, jabatan)";
+  const bacaAbsen = (kolom: string) => supabase.from("attendance").select(kolom)
+    .eq("tanggal", tanggalFilter).order("employees(nama)");
+  let attRes = await bacaAbsen(`${KOLOM}, sumber, foto_masuk, foto_pulang, tanpa_jadwal, jarak_masuk_m`);
+  if (attRes.error) attRes = await bacaAbsen(KOLOM);
+  const rows = (attRes.data ?? []) as unknown as AttendanceRow[];
+
+  // Shift terjadwal hari itu: telat & pulang cepat dihitung dari shift orang itu (sama dengan penggajian).
+  const { data: jadwalRaw } = await supabase.from("employee_schedules")
+    .select("employee_id, work_shifts(nama, jam_masuk, jam_pulang, is_libur)").eq("tanggal", tanggalFilter);
+  const shiftPer = new Map<string, ShiftJadwal>();
+  for (const j of (jadwalRaw ?? []) as unknown as { employee_id: string; work_shifts: Rel<ShiftJadwal> }[]) {
+    const sh = one(j.work_shifts);
+    if (sh) shiftPer.set(j.employee_id, sh);
+  }
+
+  // Selfie absen (bucket privat): tautan sementara 1 jam, hanya untuk yang berhak melihat.
+  const pathFoto = rows.flatMap((r) => [r.foto_masuk, r.foto_pulang]).filter((p): p is string => !!p);
+  const urlFoto = new Map<string, string>();
+  if (pathFoto.length > 0) {
+    const { data: signed } = await supabase.storage.from(BUCKET_FOTO_ABSEN).createSignedUrls(pathFoto, 3600);
+    for (const s of signed ?? []) if (s.path && s.signedUrl) urlFoto.set(s.path, s.signedUrl);
+  }
 
   // Summary cards untuk tanggal terpilih
   const cntHadir = rows.filter((r) => r.status === "Hadir").length;
@@ -175,28 +210,55 @@ export default async function AbsensiPage({
           }
         />
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 680 }}>
+          <table className="tbl" style={{ minWidth: 960 }}>
             <thead>
               <tr>
                 <th>Karyawan</th>
                 <th>Jabatan</th>
+                <th>Shift</th>
                 <th>Jam Masuk</th>
                 <th>Jam Pulang</th>
                 <th>Status</th>
+                <th>Sumber</th>
+                <th>Foto</th>
                 <th>Keterangan</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => {
                 const emp = one(r.employees);
+                const sh = shiftPer.get(r.employee_id);
+                const kerja = sh && !sh.is_libur;
+                const telat = kerja ? menitTelatShift(sh.jam_masuk, r.jam_masuk) : 0;
+                const cepat = kerja ? menitPulangCepat(sh.jam_masuk, sh.jam_pulang, r.jam_pulang) : 0;
+                const sumber = r.sumber ? SUMBER[r.sumber] : null;
                 return (
                   <tr key={r.id}>
                     <td style={{ fontWeight: 500, fontSize: 12 }}>{emp?.nama ?? "—"}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{emp?.jabatan ?? "—"}</td>
-                    <td style={{ fontSize: 11, fontFamily: "monospace" }}>{r.jam_masuk ?? "—"}</td>
-                    <td style={{ fontSize: 11, fontFamily: "monospace" }}>{r.jam_pulang ?? "—"}</td>
+                    <td style={{ fontSize: 10.5 }}>
+                      {sh ? <>{sh.nama} <span style={{ fontFamily: "monospace", color: "var(--tm)" }}>{jamRingkas(sh.jam_masuk, sh.jam_pulang)}</span></> : "—"}
+                      {r.tanpa_jadwal && <div><span className="bge o" style={{ fontSize: 9 }}>Tanpa jadwal</span></div>}
+                    </td>
+                    <td style={{ fontSize: 11, fontFamily: "monospace" }}>
+                      {r.jam_masuk?.slice(0, 5) ?? "—"}
+                      {telat > 0 && <div><span className="bge r" style={{ fontSize: 9 }}>Telat {telat} mnt</span></div>}
+                    </td>
+                    <td style={{ fontSize: 11, fontFamily: "monospace" }}>
+                      {r.jam_pulang?.slice(0, 5) ?? "—"}
+                      {cepat > 0 && <div><span className="bge o" style={{ fontSize: 9 }}>Cepat {cepat} mnt</span></div>}
+                    </td>
                     <td>
                       <span className={`bge ${statusBadge(r.status)}`}>{r.status}</span>
+                    </td>
+                    <td>{sumber ? <span className={`bge ${sumber.badge}`} style={{ fontSize: 9 }}>{sumber.label}</span> : "—"}</td>
+                    <td style={{ fontSize: 10.5 }}>
+                      {[["Masuk", r.foto_masuk], ["Pulang", r.foto_pulang]].map(([label, path]) => path && urlFoto.get(path) ? (
+                        <a key={label} href={urlFoto.get(path)} target="_blank" rel="noreferrer" style={{ color: "#2563eb", marginRight: 6 }}>
+                          <i className="ti ti-photo" /> {label}
+                        </a>
+                      ) : null)}
+                      {!r.foto_masuk && !r.foto_pulang && "—"}
                     </td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.keterangan ?? "—"}</td>
                   </tr>
@@ -205,7 +267,7 @@ export default async function AbsensiPage({
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={9}
                     style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}
                   >
                     Belum ada absensi tercatat untuk tanggal ini.

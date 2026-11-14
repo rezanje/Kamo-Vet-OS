@@ -8,9 +8,10 @@ import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { jadwalCicilan } from "@/lib/kasbon";
 import { bacaAturanGaji } from "@/lib/payroll-aturan";
+import { KATEGORI_KOREKSI } from "@/lib/absensi-mandiri";
 import {
-  setujuiKasbon, setujuiLembur, setujuiReimburse,
-  tolakKasbon, tolakLembur, tolakReimburse,
+  setujuiKasbon, setujuiKoreksiAbsen, setujuiLembur, setujuiReimburse,
+  tolakKasbon, tolakKoreksiAbsen, tolakLembur, tolakReimburse,
 } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -29,7 +30,7 @@ export default async function PengajuanPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data: lemburData }, { data: kasbonData }, { data: reimData }, rekening, { aturan }] = await Promise.all([
+  const [{ data: lemburData }, { data: kasbonData }, { data: reimData }, rekening, { aturan }, koreksiRes] = await Promise.all([
     supabase.from("overtime_requests")
       .select("id, tanggal, jam, alasan, status, employees(nama, jabatan)")
       .eq("status", "Menunggu").order("tanggal"),
@@ -41,7 +42,14 @@ export default async function PengajuanPage({
       .eq("status", "Menunggu").order("tanggal"),
     loadRekeningAktif(supabase),
     bacaAturanGaji(supabase),
+    // C1: koreksi absen. Tabel belum ada (aplikasi rilis sebelum migrasi) = bagian ini disembunyikan.
+    supabase.from("attendance_corrections")
+      .select("id, tanggal, jam_masuk, jam_pulang, kategori, alasan, employees(nama, jabatan)")
+      .eq("status", "Menunggu").order("tanggal"),
   ]);
+  const koreksi = (koreksiRes.error ? [] : koreksiRes.data ?? []) as unknown as {
+    id: string; tanggal: string; jam_masuk: string | null; jam_pulang: string | null; kategori: string; alasan: string; employees: Rel<Emp>;
+  }[];
 
   // Utang berjalan yang SUDAH disetujui — termasuk utang selisih kas yang lahir
   // otomatis saat tutup shift. Tanpa daftar ini, utang itu tidak terlihat oleh HR
@@ -55,7 +63,7 @@ export default async function PengajuanPage({
   const lembur = (lemburData ?? []) as unknown as { id: string; tanggal: string; jam: number; alasan: string | null; employees: Rel<Emp> }[];
   const kasbon = (kasbonData ?? []) as unknown as { id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null; employees: Rel<Emp> }[];
   const reimburse = (reimData ?? []) as unknown as { id: string; tanggal: string; kategori: string; jumlah: number; keterangan: string | null; employees: Rel<Emp> }[];
-  const total = lembur.length + kasbon.length + reimburse.length;
+  const total = lembur.length + kasbon.length + reimburse.length + koreksi.length;
 
   const berjalan = ((berjalanData ?? []) as unknown as {
     id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null;
@@ -172,6 +180,32 @@ export default async function PengajuanPage({
           </form>
         ))}
       </div>
+
+      {/* ── Koreksi absen (C1) ─────────────────────────────────── */}
+      {!koreksiRes.error && (
+        <div className="crm-sec" style={{ marginBottom: 0, marginTop: 14 }}>
+          <SecHeader
+            num="05" title="KOREKSI ABSEN"
+            desc="Lupa absen / foto gagal / lokasi gagal. Disetujui = absen tercatat dengan sumber Koreksi & nama penyetuju."
+          />
+          {koreksi.length === 0 ? (
+            <Kosong teks="Tidak ada pengajuan koreksi absen." />
+          ) : koreksi.map((k) => (
+            <form key={k.id} action={setujuiKoreksiAbsen} style={barisStyle}>
+              <div style={{ flex: "1 1 240px" }}>
+                <div style={{ fontSize: 11.5, fontWeight: 600 }}>{one(k.employees)?.nama ?? "—"}</div>
+                <div style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                  {tgl(k.tanggal)} · masuk <b>{k.jam_masuk?.slice(0, 5) ?? "tetap"}</b> · pulang <b>{k.jam_pulang?.slice(0, 5) ?? "tetap"}</b>
+                  {" · "}{KATEGORI_KOREKSI[k.kategori] ?? k.kategori} · {k.alasan}
+                </div>
+              </div>
+              <input type="hidden" name="id" value={k.id} />
+              <input className="fi" name="catatan" maxLength={300} placeholder="catatan (opsional)" style={{ width: 180, height: 28, fontSize: 10.5 }} />
+              <Tombol bolehKelola={bolehKelola} tolak={tolakKoreksiAbsen} />
+            </form>
+          ))}
+        </div>
+      )}
 
       {/* ── Utang berjalan ─────────────────────────────────────── */}
       <div className="crm-sec" style={{ marginBottom: 0, marginTop: 14 }}>

@@ -4,6 +4,8 @@
 // absen. Sisanya penjumlahan biasa, tapi tetap ditaruh di sini karena laporan
 // gaji & absensi dibaca orang untuk mengambil keputusan soal uang.
 
+import { menitTelatShift, menitPulangCepat, menitLemburShift, shiftSudahSelesai } from "./absensi-shift";
+
 export type JamKerja = {
   jamMasukStandar: string;      // 'HH:MM' atau 'HH:MM:SS'
   jamPulangStandar: string;
@@ -101,4 +103,107 @@ export function jamMenit(total: number): string {
   const j = Math.floor(t / 60);
   const m = t % 60;
   return j > 0 ? `${j}j ${m}m` : `${m}m`;
+}
+
+// ── C1: rekap berbasis JADWAL SHIFT (sama dengan penggajian) ────────────────────
+// Telat/pulang cepat/lembur dihitung dari shift orang itu pada tanggal itu. Hari terjadwal masuk
+// tanpa absen dan tanpa cuti/izin/sakit yang disetujui = Alpha (dihitung, tidak ditulis ke database).
+
+export type JadwalLaporan = {
+  employee_id: string; tanggal: string; is_libur: boolean; jam_masuk: string | null; jam_pulang: string | null;
+};
+export type AbsenLaporan = BarisAbsensi & { tanggal: string };
+export type CutiLaporan = { employee_id: string; jenis: string; tanggal_mulai: string; tanggal_selesai: string | null };
+
+export type RekapAbsensiJadwal = RekapAbsensi & {
+  pulangCepat: number;        // berapa HARI pulang sebelum jam shift selesai
+  menitPulangCepat: number;
+  tanpaJadwal: number;        // hari hadir tanpa jadwal / pada jadwal libur (telat tidak bisa dihitung)
+  hariTerjadwal: number;      // hari kerja terjadwal (bukan libur) dalam periode
+};
+
+export const rekapKosongJadwal = (employee_id: string): RekapAbsensiJadwal => ({
+  employee_id, hadir: 0, izin: 0, sakit: 0, alpha: 0, cuti: 0, telat: 0, menitTelat: 0, menitLembur: 0,
+  pulangCepat: 0, menitPulangCepat: 0, tanpaJadwal: 0, hariTerjadwal: 0,
+});
+
+function tanggalDalam(dari: string, sampai: string): string[] {
+  const out: string[] = [];
+  const d = new Date(`${dari}T00:00:00Z`);
+  const akhir = new Date(`${sampai}T00:00:00Z`);
+  while (d <= akhir && out.length < 400) {
+    out.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
+
+const STATUS_TIDAK_MASUK = ["Izin", "Sakit", "Alpha", "Cuti"];
+
+export function rekapAbsensiJadwal(input: {
+  jadwal: JadwalLaporan[];
+  absen: AbsenLaporan[];
+  cuti: CutiLaporan[];            // hanya yang SUDAH disetujui
+  awal: string; akhir: string;    // periode inklusif (YYYY-MM-DD)
+  hariIni: string;                // WIB
+  menitSekarang: number;          // menit sejak tengah malam WIB
+  toleransiMenit: number;
+}): Map<string, RekapAbsensiJadwal> {
+  const out = new Map<string, RekapAbsensiJadwal>();
+  const ambil = (id: string) => {
+    let r = out.get(id);
+    if (!r) { r = rekapKosongJadwal(id); out.set(id, r); }
+    return r;
+  };
+  const k = (emp: string, tgl: string) => `${emp}|${tgl}`;
+  const jadwalPer = new Map(input.jadwal.map((j) => [k(j.employee_id, j.tanggal), j]));
+  const absenPer = new Map(input.absen.map((a) => [k(a.employee_id, a.tanggal), a]));
+  const cutiPer = new Map<string, string>();
+  for (const c of input.cuti) {
+    if (c.jenis === "Lembur") continue;
+    const dari = c.tanggal_mulai < input.awal ? input.awal : c.tanggal_mulai;
+    const sampaiAsli = c.tanggal_selesai ?? c.tanggal_mulai;
+    const sampai = sampaiAsli > input.akhir ? input.akhir : sampaiAsli;
+    if (dari > sampai) continue;
+    for (const t of tanggalDalam(dari, sampai)) cutiPer.set(k(c.employee_id, t), c.jenis);
+  }
+
+  for (const a of input.absen) {
+    if (a.tanggal < input.awal || a.tanggal > input.akhir) continue;
+    const r = ambil(a.employee_id);
+    switch (a.status) {
+      case "Hadir": r.hadir++; break;
+      case "Izin": r.izin++; break;
+      case "Sakit": r.sakit++; break;
+      case "Alpha": r.alpha++; break;
+      case "Cuti": r.cuti++; break;
+      default: if (a.jam_masuk) r.hadir++;
+    }
+    const masuk = a.status === "Hadir" || (a.jam_masuk && !STATUS_TIDAK_MASUK.includes(a.status));
+    if (!masuk) continue;
+    const j = jadwalPer.get(k(a.employee_id, a.tanggal));
+    if (!j || j.is_libur || !j.jam_masuk || !j.jam_pulang) { r.tanpaJadwal++; continue; }
+    const t = menitTelatShift(j.jam_masuk, a.jam_masuk);
+    if (t > Math.max(0, input.toleransiMenit)) { r.telat++; r.menitTelat += t; }
+    const pc = menitPulangCepat(j.jam_masuk, j.jam_pulang, a.jam_pulang);
+    if (pc > 0) { r.pulangCepat++; r.menitPulangCepat += pc; }
+    r.menitLembur += menitLemburShift(j.jam_masuk, j.jam_pulang, a.jam_pulang);
+  }
+
+  for (const j of input.jadwal) {
+    if (j.is_libur || j.tanggal < input.awal || j.tanggal > input.akhir) continue;
+    const r = ambil(j.employee_id);
+    r.hariTerjadwal++;
+    const key = k(j.employee_id, j.tanggal);
+    if (absenPer.has(key)) continue;                 // sudah dihitung dari barisnya
+    const jenisCuti = cutiPer.get(key);
+    if (jenisCuti) {
+      if (jenisCuti === "Sakit") r.sakit++;
+      else if (jenisCuti === "Izin") r.izin++;
+      else r.cuti++;
+      continue;
+    }
+    if (shiftSudahSelesai(j.tanggal, j.jam_masuk, j.jam_pulang, input.hariIni, input.menitSekarang)) r.alpha++;
+  }
+  return out;
 }
