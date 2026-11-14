@@ -45,7 +45,7 @@ Rencana teknis (bila A/B): tambalan berjangkar pada `cancel_posted_sale` dan `cl
 (tanpa menulis ulang fungsi), uji harness Postgres + tes regresi laporan, migrasi baru di atas versi tertinggi
 Production dan `main`, dipasang setelah disetujui.
 
-## 4. Implementasi (Reza: A, 14 Nov) — migrasi `20261118610000_b3_jurnal_batal_tanggal_asli.sql`
+## 4. Implementasi (Reza: A, 14 Nov) — migrasi `20261114141422_b3_jurnal_batal_tanggal_asli.sql`
 
 - **Petshop (`cancel_posted_sale`):** pendekatan sama persis dengan `pos_sale_edit_void` (Ubah transaksi): tiap jurnal
   pendapatan (`sale`/`sale-online`) dan penerimaan (`sale-receipt-cancel`/`-repost`) dibalik di **tanggalnya sendiri**;

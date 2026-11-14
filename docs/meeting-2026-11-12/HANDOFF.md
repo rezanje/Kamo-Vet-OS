@@ -163,7 +163,7 @@ lalu rename file ke versi itu. Build lokal butuh `NODE_OPTIONS=--max-old-space-s
 
 ### 7b. Sesudah keputusan Reza 14 Nov sore (D1/D2 = A, sisanya ikut saran)
 - D1/D2 terpasang (lihat tabel di atas).
-- Kode + migrasi siap, **belum dipasang** (menunggu izin pasang): B3 `20261118610000`, B2 `20261118620000`, F1 `20261118630000`,
+- Kode + migrasi siap, **belum dipasang** (menunggu izin pasang): B3 `20261114141422`, B2 `20261118620000`, F1 `20261118630000`,
   C1 `20261118640000` (wajib: deploy aplikasi dulu, lalu segera pasang), E2 `20261118650000`, E4 tahap 2 `20261118500000`
   (syarat Transit kosong). Pasang satu per satu dengan urutan nomor; sesudah pasang rename ke versi Production.
 - Harness: B3 33/33, B2 62/62 (`--pg-bin /usr/lib/postgresql/16/bin` wajib), F1 33/33, C1 60/60, E2 41/41, E4 82/82, D1 24/24, D2 14/14.

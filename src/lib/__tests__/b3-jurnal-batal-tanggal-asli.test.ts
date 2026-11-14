@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseClinicPostingError } from "../klinik-posting";
 
-const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261118610000_b3_jurnal_batal_tanggal_asli.sql"), "utf8");
+const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261114141422_b3_jurnal_batal_tanggal_asli.sql"), "utf8");
 const err = (message: string) => ({ code: "P0001", message });
 
 describe("B3: pesan penolakan void & terbit ulang / koreksi nota pengganti", () => {

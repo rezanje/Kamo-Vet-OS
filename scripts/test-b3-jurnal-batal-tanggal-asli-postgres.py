@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """B3 (meeting 12 Nov 2026, keputusan A): jurnal pembatalan struk petshop (cancel_posted_sale) dan void & terbit ulang nota klinik
 (clinic_void_reissue_invoice_core + koreksi nota penggantinya) dibukukan di TANGGAL TRANSAKSI ASLI; stok & HPP tetap hari ini.
-Migrasi 20261118610000_b3_jurnal_batal_tanggal_asli.sql.
+Migrasi 20261114141422_b3_jurnal_batal_tanggal_asli.sql.
 
 Native throwaway PostgreSQL only (full migration chain, fictional fixtures). Never accepts a database URL, no network.
 
@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 spec = importlib.util.spec_from_file_location('bk', ROOT / 'scripts/test-batalkan-penerimaan-klinik-postgres.py'); assert spec and spec.loader
 bk = importlib.util.module_from_spec(spec); spec.loader.exec_module(bk)
 okr, x, r, q, j = bk.okr, bk.x, bk.r, bk.q, bk.j
-CANDIDATE = ROOT / 'supabase/migrations/20261118610000_b3_jurnal_batal_tanggal_asli.sql'
+CANDIDATE = ROOT / 'supabase/migrations/20261114141422_b3_jurnal_batal_tanggal_asli.sql'
 RESULTS = []
 CTX = {}
 NEXT = [8100]
