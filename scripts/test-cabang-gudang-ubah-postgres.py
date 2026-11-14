@@ -429,7 +429,7 @@ def jalankan_kasus(pg, db):
         for f in ("clinic_private.fk_referencing_tables('public.warehouses'::regclass,gen_random_uuid(),'{}')", "clinic_private.fk_usage_map('public.warehouses'::regclass,'{}')", "clinic_private.master_actor_role()"):
             ditolak("42501", "permission denied", lambda f=f: jalankan(pg, db, O, f"select {f}::text;"))
         acl = baca(pg, db, "select string_agg(proname||'='||coalesce(proacl::text,'NULL'), ';') from pg_proc where pronamespace='clinic_private'::regnamespace and proname in ('fk_referencing_tables','fk_usage_map','master_actor_role','branch_config_tables')")
-        assert "authenticated" not in acl and "anon" not in acl and not re.search(r"[{,;]=", acl), acl
+        assert "NULL" not in acl and "authenticated" not in acl and "anon" not in acl and not re.search(r"[{,;]=", acl), acl  # NULL = hak bawaan PUBLIC
         assert baca(pg, db, "select has_table_privilege('authenticated','clinic_private.master_edit_audit','select')::text||has_table_privilege('anon','clinic_private.master_edit_audit','insert')::text") == "falsefalse"
 
     @kasus("I2 anon tidak bisa memanggil (permission denied)")
