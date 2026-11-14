@@ -77,7 +77,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Screenshot: `klinik-obat-khusus.jpg`
 
 ### B2 · [ ] P1 — Hapus/arsip data percobaan & transaksi oleh Owner/Admin
-- **Keputusan Reza (14 Nov): A** — Tutup kunjungan lunas + Batalkan tagihan belum lunas/DP (stok & jurnal balik di tanggal asli) + arsip; Admin bila dicentang. Lihat `USULAN-B2.md`. Sedang dikerjakan.
+- **Keputusan Reza (14 Nov): A** — Tutup kunjungan lunas + Batalkan tagihan belum lunas/DP (stok & jurnal balik di tanggal asli) + arsip; Admin bila dicentang. Lihat `USULAN-B2.md` §4. **Kode + migrasi `20261118620000_b2_batalkan_tagihan_klinik.sql` siap (belum dipasang, menunggu izin Reza).** Data 14 Nov: 5 tagihan belum lunas/DP nyangkut semuanya rawat inap (di luar cakupan); 18 dari 19 kunjungan lunas pasiennya masih dirawat.
 - Antrian klinik masih banyak data tes. Transaksi berstatus "menunggu pembayaran" tidak bisa diarsipkan.
 - Yang diminta:
   - Role Owner (dan Admin kalau diizinkan) bisa **hapus/edit/arsip semua transaksi**, termasuk yang menunggu pembayaran.
@@ -86,7 +86,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Screenshot: `klinik-antrian-arsip.jpg`
 
 ### B3 · [ ] P1 — Void/koreksi transaksi harus masuk ke tanggal transaksi asli
-- **Keputusan Reza (14 Nov): A** — jurnal pembalik pembatalan struk & void-terbit-ulang klinik di tanggal transaksi asli; stok & HPP di hari pembatalan. Lihat `TEMUAN-B3.md`. Sedang dikerjakan.
+- **Keputusan Reza (14 Nov): A** — jurnal pembalik pembatalan struk & void-terbit-ulang klinik di tanggal transaksi asli; stok & HPP di hari pembatalan. Lihat `TEMUAN-B3.md` §4. **Kode + migrasi `20261118610000_b3_jurnal_batal_tanggal_asli.sql` siap (belum dipasang, menunggu izin Reza).**
 - Masalah: koreksi/void yang diminta malam hari lalu diproses besoknya ikut tercatat (termasuk omset) di tanggal perbaikan. Seharusnya masuk ke tanggal transaksi asli.
 - Catatan: sudah dilaporkan di Telegram dan katanya sedang dikerjakan. Cek status kode yang ada dulu sebelum mengerjakan ulang.
 
@@ -99,7 +99,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 ## C. HRIS (target selesai Desember, paling lambat awal tahun)
 
 ### C1 · [ ] P1 — Penjadwalan (shift) & absensi dulu
-- **Keputusan Reza (14 Nov): A** — tahap 1 (absen lewat server, selfie wajib + lokasi, jadwal & telat dari shift, koreksi absen) dulu, lalu pencocokan wajah layanan pihak ketiga. Lihat `USULAN-C1.md`. Tahap 1 sedang dikerjakan.
+- **Keputusan Reza (14 Nov): A** — tahap 1 (absen lewat server, selfie wajib + lokasi, jadwal & telat dari shift, koreksi absen) dulu, lalu pencocokan wajah layanan pihak ketiga. Lihat `USULAN-C1.md` §4. **Tahap 1: kode + migrasi `20261118640000_c1_absensi_mandiri_selfie.sql` siap (belum dipasang).** Urutan rilis: deploy aplikasi dulu, lalu langsung pasang migrasi. Data 14 Nov: 23 cabang aktif belum punya titik lokasi (cek lokasi mati sampai diisi).
 - Prioritas HRIS: penjadwalan dan absensi. Absensi memakai verifikasi wajah.
 - Setelah stabil, baru disambungkan ke modul lain (terutama penjualan/insentif).
 - Screenshot: `hris-menu.jpg`, `hris-absensi.jpg`
@@ -154,7 +154,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Screenshot: `penjualan-online-impor-satuan.jpg`
 
 ### E2 · [ ] P2 — Bundling / promo paket di impor
-- **Keputusan Reza (14 Nov): A** — pakai barang Grup (stok & HPP dari komponen). Lihat `USULAN-E2.md`. Sedang dikerjakan.
+- **Keputusan Reza (14 Nov): A** — pakai barang Grup (stok & HPP dari komponen). Lihat `USULAN-E2.md`. **Kode + migrasi `20261118650000_e2_grup_penjualan_online.sql` siap (belum dipasang).** Tim online perlu membuat barang Grup per bundling (kode = SKU Shopee).
 - Belum didukung. Kerjakan setelah item P0/P1.
 
 ### E3 · [x] P1 — Akses khusus Penjualan Online per user
@@ -197,7 +197,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 ## F. PERSEDIAAN — STOK OPNAME
 
 ### F1 · [ ] P1 — Laporan hasil stok opname
-- **Keputusan Reza (14 Nov): A** — laporan rekap periode HPP + harga jual berdampingan; selisih plus ke Pendapatan Lain-lain, minus tetap Beban Selisih Stok, minus HPP 0 tidak lolos tanpa jurnal; ganti ke average dibahas terpisah dengan Finance. Lihat `USULAN-F1-F2.md`. Sedang dikerjakan.
+- **Keputusan Reza (14 Nov): A** — laporan rekap periode HPP + harga jual berdampingan; selisih plus ke Pendapatan Lain-lain, minus tetap Beban Selisih Stok, minus HPP 0 tidak lolos tanpa jurnal; ganti ke average dibahas terpisah dengan Finance. Lihat `USULAN-F1-F2.md` §4. **Kode + migrasi `20261118630000_f1_opname_akun_selisih.sql` siap (belum dipasang).** Opname barang tanpa harga sama sekali akan ditolak sampai harga beli diisi.
 - Bisa ditampilkan dalam nilai HPP dan harga jual.
 - Selisih **plus** → Pendapatan Lain-lain. Selisih **minus** → Beban Selisih Stok. Yang minus **belum muncul**, jadi perlu dicek.
 - HPP memakai **average**. Cek apakah ada perbedaan hitungan average vs FIFO di kode sekarang.
