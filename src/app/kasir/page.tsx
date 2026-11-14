@@ -15,6 +15,7 @@ import { KasirClient, type ItemRow, type VoucherRow, type PromoRow } from "./Kas
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
 import { manualDiscountAllowed } from "@/lib/manual-discount";
+import { belowCostSaleAllowed } from "@/lib/jual-bawah-modal";
 import { loadKasirItems, loadKasirCatalogDetails, loadKasirGroupComponents } from "@/lib/kasir-catalog";
 import { cacheSebentar, segarkanCacheSebentar, KATALOG_KASIR_UMUR_MS } from "@/lib/cache-memori";
 import { loadBranchGroomingPolicy } from "@/lib/service-performers-server";
@@ -256,6 +257,7 @@ export default async function KasirPage({
       infoBarang={Object.fromEntries(infoBarang)}
       cashierName={(await loggedInCashier(supabase, user.id, shift.branch_id)).name}
       bolehDiskon={await manualDiscountAllowed(supabase)}
+      bolehBawahModal={await belowCostSaleAllowed(supabase)}
       salespeople={salespeople}
       error={error}
     />

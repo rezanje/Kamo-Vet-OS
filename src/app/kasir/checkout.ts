@@ -29,7 +29,8 @@ import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { PESAN_STRUK_BENTROK, posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
 import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
-import { cashierPriceFloorDbMessage, cashierPriceFloorIssue, isPriceFloorGoods } from "@/lib/cashier-price-floor";
+import { cashierPriceFloorDbMessage, cashierPriceFloorIssue, isPriceFloorGoods, priceFloorFindings } from "@/lib/cashier-price-floor";
+import { alasanBawahModalPerBaris, belowCostSaleAllowed, PESAN_BAWAH_MODAL_DITOLAK, pesanBawahModalDb } from "@/lib/jual-bawah-modal";
 import { quoteSaleLineCosts } from "@/lib/sale-fifo-quote";
 import {
   expandBarisGrup,
@@ -51,6 +52,7 @@ type CartLine = {
   group_components?: SnapshotKomponenGrup[];
   official_price?: number;           // diisi server: harga master sebelum tingkat harga (bukti promo syarat-hasil)
   sh_claim?: ShClaimMeta;            // diisi server: baris diklaim promo syarat-hasil (dibaca DB saat finalisasi)
+  bawah_modal_alasan?: string;       // Jual di bawah modal (Owner/berizin): alasan wajib; server memeriksa izin ke database dan DB menegakkannya lagi
 };
 
 // Earning sekarang ikut golongan pelanggan (lib/harga-golongan → poinDidapat).
@@ -369,7 +371,8 @@ export async function checkoutKasir(formData: FormData) {
   // `potonganPromo`: promo mana kena di baris mana (lineIndex menunjuk baris AKHIR; baris yang diklaim dipisah dari sisanya).
   let potonganPromo: { lineIndex: number; promoId: string; potongan: number }[];
   if (composed) {
-    rows.splice(0, rows.length, ...composed.rows.map((r) => composedToLine(r, true) as unknown as (typeof rows)[number]));
+    const asalBaris = rows.slice();
+    rows.splice(0, rows.length, ...composed.rows.map((r) => ({ ...(composedToLine(r, true) as unknown as (typeof rows)[number]), bawah_modal_alasan: asalBaris[r.origin_index]?.bawah_modal_alasan })));
     potonganPromo = composed.rows.flatMap((r, lineIndex) => (r.promo_id && r.promo_discount > 0 ? [{ lineIndex, promoId: r.promo_id, potongan: r.promo_discount }] : []));
   } else {
     potonganPromo = legacyPromos(rows);
@@ -511,6 +514,17 @@ export async function checkoutKasir(formData: FormData) {
   // any sale or issuing stock. Transaction discounts are apportioned to lines.
   // P03: a Grup line with stock components is priced against their summed FIFO cost.
   const floorRows = rows.filter(row => row.item_id && isPriceFloorGoods(row));
+  // Jual di bawah modal (Owner/berizin, hanya barang Persediaan, alasan wajib). Hak dibaca dari database; DB menegakkannya lagi saat posting.
+  // Baris promo di bawah HPP (waiver) tidak ikut: alasan dibuang agar penjaga promo tetap berlaku apa adanya.
+  const bawahModal = alasanBawahModalPerBaris(rows.map(row => (row.sh_claim?.waiver === true ? { ...row, bawah_modal_alasan: undefined } : row)));
+  let bawahModalBoleh = false;
+  if (bawahModal.diminta) {
+    bawahModalBoleh = await belowCostSaleAllowed(supabase);
+    if (!bawahModalBoleh) redirect(`${failureUrl}${encodeURIComponent(PESAN_BAWAH_MODAL_DITOLAK)}`);
+    if (bawahModal.tidakSah > 0) redirect(`${failureUrl}${encodeURIComponent("Alasan jual di bawah modal wajib diisi (3-200 huruf) dan hanya untuk barang persediaan.")}`);
+  }
+  const ownerBawahModal = rows.map((_, index) => bawahModalBoleh && bawahModal.alasan[index] !== null);
+  let alasanSimpan: (string | null)[] = rows.map(() => null);
   if (floorRows.length > 0 && wh) {
     let lineCosts: (number | null)[];
     try {
@@ -518,8 +532,14 @@ export async function checkoutKasir(formData: FormData) {
     } catch {
       redirect(`${failureUrl}${encodeURIComponent("HPP aktif belum dapat dibaca lengkap. Muat ulang sebelum membayar.")}`);
     }
-    const priceIssue = cashierPriceFloorIssue(rows.map(row => ({ ...row, item_type: row.item_type })), total, lineCosts, rows.map(row => row.sh_claim?.waiver === true));
+    const floorLines = rows.map(row => ({ ...row, item_type: row.item_type }));
+    const priceIssue = cashierPriceFloorIssue(floorLines, total, lineCosts, rows.map(row => row.sh_claim?.waiver === true), ownerBawahModal);
     if (priceIssue) redirect(`${failureUrl}${encodeURIComponent(priceIssue)}`);
+    // Alasan hanya disimpan pada baris yang benar-benar di bawah modal (catatan bersih; laporan membaca baris ini).
+    if (ownerBawahModal.some(Boolean)) {
+      const bawah = new Set(priceFloorFindings(floorLines, total, lineCosts, rows.map(row => row.sh_claim?.waiver === true)).filter(f => f.kind === "below").map(f => f.index));
+      alasanSimpan = rows.map((_, index) => (ownerBawahModal[index] && bawah.has(index) ? bawahModal.alasan[index] : null));
+    }
   }
   // Poin ikut golongan pelanggan (migrasi 0078); golongan tanpa pengaturan
   // sendiri tetap Rp1.000 = 1 poin seperti sebelumnya.
@@ -584,10 +604,11 @@ export async function checkoutKasir(formData: FormData) {
           promo_claim_id: r.sh_claim.promo_id, promo_sets: r.sh_claim.sets, promo_syarat_units: r.sh_claim.syarat_units,
           promo_hasil_units: r.sh_claim.hasil_units, promo_floor_waiver: r.sh_claim.waiver,
         } : {}),
+        ...(alasanSimpan[lineIndex] ? { below_hpp_owner_reason: alasanSimpan[lineIndex] } : {}),
         hpp: r.item_id ? 0 : null,
       }).select("id").single();
       if (itemErr || !saleItem) {
-        throw new Error(itemErr?.message ?? `Gagal simpan baris ${r.nama}`);
+        throw new Error(pesanBawahModalDb(itemErr?.message ?? `Gagal simpan baris ${r.nama}`));
       }
     }
     for (const {r,id:saleLineId} of pendingRows) {

@@ -21,6 +21,7 @@ export type BarisLama = {
   target_species: string | null; service_performers: unknown; item_discount_type: string | null; item_discount_value: number;
   promo_id: string | null; promo_discount: number; quantity_pool_claim: boolean; promo_claim_id: string | null;
   promo_sets: number; promo_syarat_units: number; promo_hasil_units: number; promo_floor_waiver: boolean;
+  below_hpp_owner_reason?: string | null; // Jual di bawah modal (Owner): alasan ikut ke struk pengganti selama barangnya sama
   source_position: number | null;
   components?: KomponenLama[];
 };
@@ -115,6 +116,7 @@ export function susunUbahStruk({ lama, isian, katalog, rupiahPerPoin }: {
       quantity_pool_claim: asal?.quantity_pool_claim ?? false, promo_claim_id: asal?.promo_claim_id ?? null,
       promo_sets: asal?.promo_sets ?? 0, promo_syarat_units: asal?.promo_syarat_units ?? 0,
       promo_hasil_units: asal?.promo_hasil_units ?? 0, promo_floor_waiver: asal?.promo_floor_waiver ?? false,
+      below_hpp_owner_reason: asal && asal.item_id === row.item_id ? asal.below_hpp_owner_reason ?? null : null,
       components,
     };
   });
