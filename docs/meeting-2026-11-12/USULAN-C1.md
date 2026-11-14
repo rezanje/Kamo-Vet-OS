@@ -44,3 +44,49 @@ keputusan Reza**. Sudah dikerjakan tanpa ubah database: Catat Absensi tidak lagi
   (bisa ikut tahap 1), cukup untuk mencegah titip absen kalau rutin dicek.
 
 Usul urutan: tahap 1 + selfie (C) jalan dulu sebelum Desember, lalu naik ke A di tahap 2.
+
+## 4. Implementasi — Tahap 1 + selfie wajib (Reza: A, 14 Nov)
+
+Migrasi `supabase/migrations/20261118640000_c1_absensi_mandiri_selfie.sql` (**belum dipasang**). Detail rancangan,
+dampak, rollback, dan cara cek ada di kepala file migrasi.
+
+**Urutan rilis (wajib):** merge + deploy aplikasi dulu → pastikan live → segera `apply_migration`. Kebalikannya berbahaya:
+aplikasi lama menulis absen langsung, ditolak database, tapi tetap menampilkan "Clock-in tercatat" (galat tidak dicek).
+Selama jeda aplikasi baru tanpa migrasi, absen mandiri menampilkan "sedang diperbarui"; layar HR & laporan tetap jalan.
+
+**Keputusan yang diambil (bisa diubah bila Reza mau lain):**
+- Tanggal absen = tanggal **mulai** shift. Absen pulang 06:00 untuk shift 22:00–06:00 menutup baris kemarin. Absen masuk
+  dicocokkan ke jadwal kemarin/hari ini/besok yang jendelanya (4 jam sebelum mulai s/d jam pulang) memuat jam sekarang.
+- **Tanpa jadwal / jadwal libur: tetap boleh absen**, ditandai "Tanpa jadwal" (layar Absensi & laporan) untuk dicek HR.
+- Absen pulang hanya untuk absen masuk ≤ 20 jam lalu; lebih dari itu (lupa pulang) → ajukan koreksi.
+- Cabang untuk cek lokasi: cabang milik shift terjadwal → cabang penugasan yang masih berjalan → cabang utama (data lama).
+  Lolos bila di dalam radius salah satunya. Cabang tanpa titik koordinat = cek lokasi mati (aturan lama dipertahankan).
+- Selfie wajib, dikompres di HP (sisi terpanjang 960 px, JPEG). Disimpan privat di bucket `absensi-foto`
+  (`<employee_id>/<tanggal>/<in|out>-<uuid>.jpg`). Yang bisa melihat: OWNER, ADMIN cabang karyawan itu, dan karyawan itu
+  sendiri. Foto tidak bisa diubah/dihapus dari aplikasi. Absen yang ditolak (mis. di luar radius) meninggalkan fotonya
+  sebagai jejak percobaan.
+- HR tetap bisa catat/ubah manual di `/hris/absensi`; baris yang diubah HR bertanda "Manual HR" (bukti foto & waktu asli
+  tetap tersimpan, perubahan tercatat di Log Aktifitas). Baris lama sebelum migrasi tercatat "manual".
+- Koreksi absen: staf mengajukan dari Menu Karyawan (maks. 31 hari ke belakang, satu pengajuan menunggu per tanggal);
+  diputuskan OWNER/ADMIN cabang di HRIS → Pengajuan Karyawan. ADMIN tidak bisa menyetujui koreksinya sendiri (OWNER bisa).
+  Disetujui = absen tertulis bersumber "Koreksi" + nama penyetuju.
+- Laporan Rekap Absensi: telat/pulang cepat/lembur dari shift masing-masing (sama dengan penggajian), toleransi telat tetap
+  dari Pengaturan perusahaan; hari terjadwal tanpa absen & tanpa cuti/izin/sakit disetujui = Alpha (hari ini dihitung
+  setelah jam shift selesai). Hadir tanpa jadwal tidak dihitung telat (kolom "Tanpa jadwal").
+- Penggajian: hitungan telat kini memakai aturan yang sama — shift 22:00 yang diabsen 00:30 = telat 150 menit (dulu 0).
+  Kasus lain tidak berubah.
+- Salin jadwal: "Salin dari bulan lalu" mengambil hari yang sama 4 minggu sebelumnya (tgl 29–31: 5 minggu). Bawaan hanya
+  mengisi sel kosong; menimpa harus dicentang + dikonfirmasi. Shift yang sudah nonaktif dilewati.
+- Edit shift: tombol Ubah di Master Shift. Mengubah jam shift ikut mengubah hitungan telat jadwal lama yang memakainya
+  (diberi peringatan di form).
+
+**Siap tahap 2 (pencocokan wajah):** kolom `verifikasi_status` (bawaan `belum`; nilai `cocok`/`tinjau`/`tidak_cocok`
+sudah diizinkan) + path foto per absen. Tahap 2 tinggal menambah skor/waktu verifikasi + tabel foto acuan per karyawan.
+
+**Uji:** harness Postgres `scripts/test-c1-absensi-postgres.py` (60/60; `--baseline` 45/45 RED) + vitest
+(`absensi-shift`, `absensi-mandiri`, `c1-jadwal-shift-koreksi`, `hris-absensi-c1`, `laporan-gerbang-g2`, `activity-log`).
+Belum diuji di HP sungguhan (kamera depan, izin lokasi iOS/Android) — perlu dicoba setelah rilis.
+
+**Pertanyaan terbuka:** (1) Absen ditolak karena di luar radius: perlu antrean "minta izin absen di luar lokasi"?
+(saat ini → ajukan koreksi). (2) Toleransi telat laporan memakai Pengaturan perusahaan, potongan gaji memakai Aturan gaji —
+disatukan? (3) Cabang yang belum punya titik koordinat = cek lokasi mati; perlu dipastikan semua cabang sudah diisi.
