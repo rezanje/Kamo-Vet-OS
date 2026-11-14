@@ -55,3 +55,51 @@ Menyentuh jurnal & stok → **menunggu keputusan Reza**. Belum ada perubahan kod
 - **C:** F1-a + F1-b + aktifkan average sekaligus (risiko: HPP semua penjualan berubah mulai tanggal aktif).
 
 Pertanyaan untuk F2 (bila jalan): beban karyawan dipotong gaji otomatis atau dicatat sebagai kasbon saja?
+
+## 4. Implementasi F1 (keputusan Reza: A — F1-a + F1-b; average & F2 di luar cakupan)
+
+Migrasi `supabase/migrations/20261118630000_f1_opname_akun_selisih.sql` (satu transaksi, tambalan jangkar
+eksak pada definisi yang berjalan — dicek sama dengan Production 14 Nov via `pg_get_functiondef`) + laporan.
+Hanya posting **baru**; jurnal/stok/snapshot lama tidak diubah.
+
+**F1-b — akun (jurnal ke depan)**
+- `stock_opname_account('gain')` = **810004** Pendapatan Diluar Operasional Lain (ada, aktif, akun rincian di
+  Production). `variance` tetap 720010, `inventory` tetap 170001.
+- `post_opname_atomic` dan `post_inventory_adjustment_atomic` (keduanya memakai pasangan akun yang sama →
+  diputuskan ikut berubah): lebih = Dr 170001 / Cr 810004; kurang = Dr 720010 / Cr 170001. Bukti posting
+  mencatat `gain_account`. Penyesuaian kini mewajibkan 170001, 720010, 810004 aktif sebelum menulis.
+- Nilai selisih lebih: tetap harga beli master (nilai stok masuk = nilai jurnal; tidak diubah ke harga terakhir).
+- **Kurang ber-HPP 0**: `stock_out_fifo` kini menilai kuantitas dari lapisan tanpa harga untuk sumber `opname`
+  dan `penyesuaian` dengan aturan taksiran yang sama dengan penjualan (harga lapisan terakhir yang terpakai →
+  riwayat masuk terakhir → harga beli master). Nilai ikut di mutasi stok & bukti pengeluaran, jadi jurnal =
+  mutasi = snapshot laporan, dan koreksi resmi tetap bisa membaliknya persis. Bila tetap 0 (tidak ada harga sama
+  sekali) posting **ditolak**: "Harga modal barang X belum ada … Isi harga beli barang ini dulu". Mode average:
+  harga efektif yang sama; 0 → ditolak.
+- **Koreksi stok** (`stock_correction_plan` / `correct_stock_document`): jurnal sumber boleh 720010 (lama) atau
+  810004 (baru) di sisi lawan; pengganti lebih → Cr 810004, kurang → Dr 720010, tanpa baris nol. Koreksi yang
+  selisih kurang barunya memakai lapisan tanpa harga ditolak dengan pesan (jalur koreksi tidak menilai taksiran).
+  Koreksi dokumen lama: jurnal asal (720010) dibalik persis, pengganti memakai kebijakan baru.
+- Snapshot `capture_opname_price_report` mengikuti metode: bila average aktif, HPP selisih = nilai yang dijurnal
+  (bukti pengeluaran / harga beli masuk), nilai stok setelah posting = qty × harga pokok average.
+
+**F1-a — Laporan › Hasil Opname**
+- Rekap periode lintas dokumen per cabang/gudang: jumlah dokumen, baris & nilai lebih/kurang/neto, **HPP dan
+  harga jual berdampingan** + selisih jual − HPP, baris total. Sumber: RPC baru `read_opname_price_recap(uuid[])`
+  (hak akses = snapshot per dokumen: OWNER/FINANCE aktif, izin modul laporan, izin cabang).
+- Rincian per dokumen tetap ada; tombol modal/jual diganti kolom berdampingan. Label "HPP FIFO"/"HPP average"
+  mengikuti metode (bukan "Modal FIFO" tetap). Parameter `dasar` lama diabaikan (preset tersimpan tetap jalan).
+- Unduh CSV/Excel di server (sesi + akses efektif lewat `loadOpnamePriceReport`, sel teks `amankanSel`):
+  lembar "Rekap periode", "Hasil opname" (bila satu dokumen dipilih), "Ringkasan dan filter". Rekap bisa diunduh
+  tanpa memilih dokumen. Gerbang A1 tetap: tanpa `tampil=1` tidak ada pembacaan data.
+
+**Tes**: `scripts/test-f1-opname-akun-selisih-postgres.py` 33/33 PASS, `--baseline` 25/25 kasus fitur RED;
+regresi SQL `opname_posting_atomic.sql` & `i02_inventory_adjustment_atomic.sql` disesuaikan ke kebijakan baru
+(lulus), `stock_document_corrections.sql`, `opname_price_report.sql`, `remaining_average_composition.sql` lulus
+tanpa perubahan; vitest penuh, lint, typecheck, build lulus.
+
+**Risiko Production / catatan**
+- Opname/penyesuaian barang yang tidak punya harga sama sekali (stok, riwayat, master = 0) akan ditolak sampai
+  harga beli diisi — sebelumnya lolos tanpa jurnal.
+- Lapisan stok tanpa harga yang terpakai opname kini menghasilkan beban (taksiran), sama seperti penjualan.
+- 810004 juga dipakai kelebihan kas tutup shift; bila Finance ingin memisahkan, tinggal ganti satu pemetaan
+  (`stock_opname_account('gain')` + literal di perencana koreksi) ke akun baru "Pendapatan Selisih Stok".

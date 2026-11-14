@@ -7,8 +7,17 @@ import { readReportRows, ReportAccessError, ReportInputError } from "./hpp-repor
 import { hariIniWIB } from "./tanggal";
 
 export const OPNAME_REPORT_PATH = "/laporan/hasil-opname";
+// F1 (meeting 12 Nov 2026): HPP dan harga jual tampil berdampingan; `dasar` lama (tombol pilih
+// modal/jual) masih diterima dari tautan tersimpan tetapi diabaikan.
 export type OpnameReportParams = { dari?: string; sampai?: string; cabang?: string; order?: string; dasar?: string; arah?: string; halaman?: string };
-export type OpnameFilters = { dari: string; sampai: string; cabang: string; order: string; dasar: "modal" | "jual"; arah: "semua" | "lebih" | "kurang" | "sama" };
+export type OpnameFilters = { dari: string; sampai: string; cabang: string; order: string; arah: "semua" | "lebih" | "kurang" | "sama" };
+export type OpnameBasis = "modal" | "jual";
+export type OpnameSummary = { plus: string | null; minus: string | null; net: string | null; unavailable: number };
+/** Satu baris rekap periode per cabang + gudang (nilai dari snapshot posting asal). */
+export type OpnameRecapGroup = { key: string; branchId: string; branch: string; warehouseId: string; warehouse: string;
+  documents: number; withoutSnapshot: number; corrected: number; plusCount: number; minusCount: number;
+  modal: OpnameSummary; jual: OpnameSummary; gap: string | null };
+export type OpnameRecap = { groups: OpnameRecapGroup[]; total: OpnameRecapGroup; methods: string[] };
 type SourceResult = { id: string; order_id: string; no_hasil: string; tanggal: string;
   opname_orders: { no_opname: string; warehouse_id: string; warehouses: { name: string; branch_id: string } | null } | null };
 export type OpnameEntry = { resultId: string; orderId: string; resultNo: string; orderNo: string; date: string; warehouseId: string; warehouse: string; branchId: string; branch: string };
@@ -19,13 +28,27 @@ export type OpnameJournalReview = { status: "cocok" | "perlu-periksa" | "tanpa-s
   journals: { id: string; number: string; debit: string; credit: string; accounts: string[]; valid: boolean }[] };
 export type OpnamePriceReport = { filters: OpnameFilters; entries: OpnameEntry[]; branches: { id: string; name: string }[];
   selected: OpnameEntry | null; scope: "Sebagian" | "Seluruh" | null; method: string | null; revision: number | null;
-  rows: OpnamePriceRow[]; shown: OpnamePriceRow[]; plus: string | null; minus: string | null; net: string | null; unavailable: number; legacy: boolean;
-  journalReview: OpnameJournalReview | null };
+  rows: OpnamePriceRow[]; shown: OpnamePriceRow[]; modal: OpnameSummary; jual: OpnameSummary; legacy: boolean;
+  journalReview: OpnameJournalReview | null; recap: OpnameRecap };
+
+/** Label metode HPP untuk layar/unduhan: FIFO atau average (bukan "Modal FIFO" tetap). */
+export function methodLabel(method: string | null | undefined): string {
+  return method === "moving_average" ? "average" : method === "fifo" ? "FIFO" : "";
+}
+/** Label gabungan untuk banyak dokumen: "HPP FIFO", "HPP average", atau "HPP FIFO/average". */
+export function hppLabel(methods: (string | null | undefined)[]): string {
+  const labels = [...new Set(methods.map(methodLabel).filter(Boolean))].sort();
+  return labels.length ? `HPP ${labels.join("/")}` : "HPP";
+}
+/** Selisih nilai harga jual − HPP (null bila HPP tidak tersedia). */
+export function selisihJualHpp(jual: string | null, modal: string | null): string | null {
+  return jual === null || modal === null ? null : new Decimal(jual).minus(modal).toFixed();
+}
 
 export function opnameFilters(params: OpnameReportParams): OpnameFilters {
   const today = hariIniWIB();
   const filters: OpnameFilters = { dari: params.dari || `${today.slice(0, 8)}01`, sampai: params.sampai || today,
-    cabang: params.cabang || "", order: params.order || "", dasar: params.dasar === "jual" ? "jual" : "modal",
+    cabang: params.cabang || "", order: params.order || "",
     arah: params.arah === "lebih" || params.arah === "kurang" || params.arah === "sama" ? params.arah : "semua" };
   if (!validReportDate(filters.dari) || !validReportDate(filters.sampai) || filters.dari > filters.sampai) throw new ReportInputError("Rentang tanggal laporan tidak valid");
   if (filters.order && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(filters.order)) throw new ReportInputError("Identitas opname tidak valid");
@@ -57,8 +80,8 @@ const quantity = (value: unknown, label: string): number => {
     || !Number.isFinite(n) || Math.abs(n) > 1e12) throw new ReportInputError(`Snapshot ${label} tidak valid`);
   return n;
 };
-const amount = (row: OpnamePriceRow, basis: OpnameFilters["dasar"]): string | null => basis === "modal" ? row.modalDifference : row.saleDifference;
-export function opnameSummary(rows: OpnamePriceRow[], basis: OpnameFilters["dasar"]) {
+const amount = (row: OpnamePriceRow, basis: OpnameBasis): string | null => basis === "modal" ? row.modalDifference : row.saleDifference;
+export function opnameSummary(rows: OpnamePriceRow[], basis: OpnameBasis): OpnameSummary {
   let plus = new Decimal(0), minus = new Decimal(0), unavailable = 0;
   for (const row of rows) {
     const value = amount(row, basis);
@@ -182,7 +205,66 @@ export async function loadOpnamePriceReport(client: SupabaseClient, params: Opna
   }
   const shown = rows.filter(row => filters.arah === "semua" || (filters.arah === "lebih" && row.difference > 0)
     || (filters.arah === "kurang" && row.difference < 0) || (filters.arah === "sama" && row.difference === 0));
-  const summary = opnameSummary(shown, filters.dasar);
   const journalReview = selected ? await loadOpnameJournalReview(client, selected, rows, legacy) : null;
-  return { filters, entries, branches: names, selected, scope, method, revision, rows, shown, legacy, journalReview, ...summary };
+  const recap = await loadOpnameRecap(client, entries);
+  return { filters, entries, branches: names, selected, scope, method, revision, rows, shown, legacy, journalReview, recap,
+    modal: opnameSummary(shown, "modal"), jual: opnameSummary(shown, "jual") };
+}
+
+type RecapSource = { result_id: string; snapshot: boolean; method: string | null; revision: number | null; rows: number;
+  plus_count: number; minus_count: number; plus_modal: string; minus_modal: string; plus_jual: string; minus_jual: string; modal_missing: number };
+type RecapAccumulator = { group: Omit<OpnameRecapGroup, "modal" | "jual" | "gap">; plusModal: Decimal; minusModal: Decimal; plusJual: Decimal; minusJual: Decimal; missing: number };
+
+const emptyAccumulator = (key: string, branchId: string, branch: string, warehouseId: string, warehouse: string): RecapAccumulator => ({
+  group: { key, branchId, branch, warehouseId, warehouse, documents: 0, withoutSnapshot: 0, corrected: 0, plusCount: 0, minusCount: 0 },
+  plusModal: new Decimal(0), minusModal: new Decimal(0), plusJual: new Decimal(0), minusJual: new Decimal(0), missing: 0 });
+
+function finishRecap(acc: RecapAccumulator): OpnameRecapGroup {
+  const modal: OpnameSummary = acc.missing ? { plus: null, minus: null, net: null, unavailable: acc.missing }
+    : { plus: acc.plusModal.toFixed(), minus: acc.minusModal.toFixed(), net: acc.plusModal.plus(acc.minusModal).toFixed(), unavailable: 0 };
+  const jual: OpnameSummary = { plus: acc.plusJual.toFixed(), minus: acc.minusJual.toFixed(), net: acc.plusJual.plus(acc.minusJual).toFixed(), unavailable: 0 };
+  return { ...acc.group, modal, jual, gap: selisihJualHpp(jual.net, modal.net) };
+}
+
+/**
+ * F1-a: rekap periode lintas dokumen per cabang/gudang dari snapshot posting asal (RPC read_opname_price_recap,
+ * hak akses sama dengan snapshot per dokumen). Koreksi stok sesudah posting tidak mengubah angka ini; jumlah
+ * dokumen yang dikoreksi ditampilkan terpisah. Hasil lama tanpa snapshot dihitung sebagai "tanpa snapshot".
+ */
+export async function loadOpnameRecap(client: SupabaseClient, entries: OpnameEntry[]): Promise<OpnameRecap> {
+  const total = emptyAccumulator("total", "", "Total", "", "");
+  const methods = new Set<string>();
+  if (!entries.length) return { groups: [], total: finishRecap(total), methods: [] };
+  const { data, error } = await client.rpc("read_opname_price_recap", { p_result_ids: entries.map(row => row.resultId) });
+  if (error) throw new ReportAccessError("Rekap harga opname tidak dapat diakses", 403);
+  if (!Array.isArray(data)) throw new ReportInputError("Rekap harga opname tidak valid");
+  const byResult = new Map<string, RecapSource>();
+  for (const raw of data as RecapSource[]) {
+    if (!raw || typeof raw.result_id !== "string" || byResult.has(raw.result_id) || typeof raw.snapshot !== "boolean"
+      || (raw.snapshot && !["fifo", "moving_average"].includes(String(raw.method))))
+      throw new ReportInputError("Rekap harga opname tidak sesuai dokumen asal");
+    for (const key of ["plus_modal", "minus_modal", "plus_jual", "minus_jual"] as const) price(raw[key], "rekap");
+    for (const key of ["rows", "plus_count", "minus_count", "modal_missing"] as const) quantity(raw[key], "rekap");
+    byResult.set(raw.result_id, raw);
+  }
+  if (byResult.size !== entries.length || entries.some(row => !byResult.has(row.resultId))) throw new ReportInputError("Rekap harga opname tidak lengkap");
+  const groups = new Map<string, RecapAccumulator>();
+  for (const entry of entries) {
+    const key = `${entry.branchId}:${entry.warehouseId}`;
+    if (!groups.has(key)) groups.set(key, emptyAccumulator(key, entry.branchId, entry.branch, entry.warehouseId, entry.warehouse));
+    const source = byResult.get(entry.resultId)!;
+    for (const acc of [groups.get(key)!, total]) {
+      acc.group.documents++;
+      if (!source.snapshot) { acc.group.withoutSnapshot++; continue; }
+      if (source.revision !== null) acc.group.corrected++;
+      acc.group.plusCount += Number(source.plus_count); acc.group.minusCount += Number(source.minus_count);
+      acc.plusModal = acc.plusModal.plus(source.plus_modal); acc.minusModal = acc.minusModal.plus(source.minus_modal);
+      acc.plusJual = acc.plusJual.plus(source.plus_jual); acc.minusJual = acc.minusJual.plus(source.minus_jual);
+      acc.missing += Number(source.modal_missing);
+    }
+    if (source.snapshot && source.method) methods.add(source.method);
+  }
+  const ordered = [...groups.values()].map(finishRecap)
+    .sort((a, b) => a.branch.localeCompare(b.branch, "id") || a.warehouse.localeCompare(b.warehouse, "id"));
+  return { groups: ordered, total: finishRecap(total), methods: [...methods].sort() };
 }
