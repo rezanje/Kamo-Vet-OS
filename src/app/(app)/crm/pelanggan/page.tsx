@@ -25,7 +25,7 @@ export default async function PelangganPage({ searchParams }: {
   const { cari, hal, success, error: pesanError, tersembunyi, tidak_datang } = await searchParams;
   // D2: ?tidak_datang=N -> hanya pelanggan yang terakhir datang lebih dari N bulan lalu (fungsi database lintas cabang).
   const bulanRetensi = bacaBulanRetensi(tidak_datang);
-  let retensiAktif = bulanRetensi !== null;
+  const retensiStatus = { aktif: bulanRetensi !== null };
   const hanyaTersembunyi = tersembunyi === "1";
   const supabase = await createClient();
   const filter = cari ? filterCariPelanggan(cari) : null;
@@ -57,7 +57,7 @@ export default async function PelangganPage({ searchParams }: {
       readListPage<CustomerRow>(async (from, to) => {
         const baca = (denganSembunyi: boolean) => {
           const kolom = KOLOM_PELANGGAN + (denganSembunyi ? KOLOM_SEMBUNYI : "");
-          let q = retensiAktif && bulanRetensi !== null
+          let q = retensiStatus.aktif && bulanRetensi !== null
             ? supabase.rpc("pelanggan_tidak_datang", { p_bulan: bulanRetensi }, { count: "exact" }).select(kolom)
             : supabase.from("customers").select(kolom, { count: "exact" });
           if (filter) q = q.or(filter);
@@ -66,7 +66,7 @@ export default async function PelangganPage({ searchParams }: {
         };
         let result = await baca(true);
         // Fungsi retensi belum terpasang: tampilkan daftar biasa + pesan, jangan gagal total.
-        if (retensiAktif && retensiBelumAktif(result.error as { code?: string; message?: string } | null)) { retensiAktif = false; result = await baca(true); }
+        if (retensiStatus.aktif && retensiBelumAktif(result.error as { code?: string; message?: string } | null)) { retensiStatus.aktif = false; result = await baca(true); }
         if (kolomSembunyiBelumAda(result.error)) result = await baca(false);
         return { ...result, data: result.data as unknown as CustomerRow[] | null };
       }, "Pelanggan", hal),
@@ -81,9 +81,9 @@ export default async function PelangganPage({ searchParams }: {
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   const isAdmin = !!me && ["OWNER", "ADMIN"].includes(me.role);
   const bolehPoinManual = await poinManualAllowed(supabase);
-  const terakhirDatang = retensiAktif ? await muatTerakhirDatang(supabase, customers.map((c) => c.id)) : {};
+  const terakhirDatang = retensiStatus.aktif ? await muatTerakhirDatang(supabase, customers.map((c) => c.id)) : {};
   const retensi = bulanRetensi === null ? null
-    : { bulan: bulanRetensi, aktif: retensiAktif, batas: batasRetensi(bulanRetensi), terakhir: terakhirDatang };
+    : { bulan: bulanRetensi, aktif: retensiStatus.aktif, batas: batasRetensi(bulanRetensi), terakhir: terakhirDatang };
 
   // Kartu anabul hasil pembersihan duplikat (status 'Digabung', migrasi 0076)
   // riwayatnya sudah dipindah ke kartu induk — jangan ditampilkan lagi supaya
