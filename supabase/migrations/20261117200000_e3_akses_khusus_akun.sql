@@ -276,7 +276,7 @@ begin
  if (length(v)-length(replace(v,v_anchor,'')))/length(v_anchor)<>1 then
    raise exception 'E3_MIGRATION_ANCHOR_MISMATCH: sales_module_access';
  end if;
- v:=replace(v,v_anchor,v_anchor||E'\n    -- E3 (meeting 12 Nov 2026): akses khusus akun yang memberi modul Penjualan (lihat 20261116700000).\n'
+ v:=replace(v,v_anchor,v_anchor||E'\n    -- E3 (meeting 12 Nov 2026): akses khusus akun yang memberi modul Penjualan (lihat 20261117200000).\n'
    ||$b$    or (p.role<>'OWNER' and exists(select 1 from role_settings_private.account_access_overrides o where o.profile_id=p.id and o.modules ? 'penjualan'))$b$);
  execute v;
 end $patch$;

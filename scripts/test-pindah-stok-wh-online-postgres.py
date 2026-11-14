@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """E4 bagian 2 (meeting 12 Nov 2026, keputusan owner 2A): sisa stok WH ONLINE PDRY/TKI dipindah ke gudang toko
 cabang yang sama lewat dokumen Pemindahan Barang resmi, lalu kedua gudang online dinonaktifkan
-(migrasi 20261116800000_e4_pindah_stok_wh_online.sql).
+(migrasi 20261117300000_e4_pindah_stok_wh_online.sql).
 
 Native throwaway PostgreSQL only (full migration chain, fictional fixtures shaped like production:
 31 barang / 230 unit di WH ONLINE PDRY, 3 barang / 16 unit di WH ONLINE TKI, plus WH B2C yang tidak boleh
@@ -24,7 +24,7 @@ spec = importlib.util.spec_from_file_location('fixture', ROOT / 'scripts/test-ac
 fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
 from native_postgres import NativePostgres  # noqa: E402
 
-CAND = '20261116800000_e4_pindah_stok_wh_online.sql'
+CAND = '20261117300000_e4_pindah_stok_wh_online.sql'
 MIGRATIONS = ROOT / 'supabase/migrations'
 NOTE = 'E4 meeting 12 Nov 2026: pemindahan sisa stok WH Online ke gudang toko'
 RESULTS = []
@@ -355,6 +355,14 @@ def main():
         build_chain(db)
         print('Chain built (without candidate).', flush=True)
         q(db, 'postgres', 'create database tpl_chain template postgres')
+        # Database tanpa gudang online produksi (rantai migrasi bersih, seperti harness lain): migrasi tidak boleh gagal
+        # dan tidak boleh mengubah apa pun — supaya harness lain yang memasang seluruh rantai tetap jalan.
+        clone(db, 'kosong', 'tpl_chain')
+        before = q(db, 'kosong', 'select count(*) from public.stock_transfers')
+        err = apply_candidate(db, 'kosong')
+        after = q(db, 'kosong', 'select count(*) from public.stock_transfers')
+        check('database tanpa WH ONLINE PDRY/TKI: migrasi selesai tanpa perubahan (tidak ada dokumen baru)',
+              err is None and before == after, dict(err=err, before=before, after=after), 'setup')
         for mode in ('fifo', 'average'):
             fx = 'fx_' + mode
             clone(db, fx, 'tpl_chain')

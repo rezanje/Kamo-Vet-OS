@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E3 (meeting 12 Nov 2026): akses khusus per akun (migrasi 20261116700000_e3_akses_khusus_akun.sql).
+"""E3 (meeting 12 Nov 2026): akses khusus per akun (migrasi 20261117200000_e3_akses_khusus_akun.sql).
 
 Owner-only save/clear with validation, request key and append-only history; get_my_access_override is self-only;
 the Activity Log sees every change; and the STAFF "Penjualan Online" database path (post_online_order, listing,
@@ -21,7 +21,7 @@ from native_postgres import NativePostgres  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-accurate-inventory-accounting-postgres.py")
 fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
-CANDIDATE = ROOT / "supabase/migrations/20261116700000_e3_akses_khusus_akun.sql"
+CANDIDATE = ROOT / "supabase/migrations/20261117200000_e3_akses_khusus_akun.sql"
 RESULTS = []
 
 U = lambda n: f"e3000000-0000-4000-8000-{n:012d}"

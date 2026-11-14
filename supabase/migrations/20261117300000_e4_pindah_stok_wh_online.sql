@@ -63,6 +63,13 @@ declare
  old_sub text := current_setting('request.jwt.claim.sub', true);
  old_role text := current_setting('request.jwt.claim.role', true);
 begin
+ -- Database yang sama sekali TIDAK punya kedua gudang online produksi (database uji / lokal): tidak ada yang
+ -- dipindah, migrasi selesai tanpa perubahan. Di Produksi keduanya ada, jadi semua pagar di bawah tetap berlaku
+ -- (satu saja hilang / berganti nama = ditolak). Sesudah dipasang di Produksi, hasilnya WAJIB diverifikasi.
+ if not exists(select 1 from public.warehouses where name in ('WH ONLINE PDRY','WH ONLINE TKI') and type = 'ONLINE') then
+  raise notice 'E4: gudang WH ONLINE PDRY / WH ONLINE TKI tidak ada di database ini — tidak ada yang dipindah.';
+  return;
+ end if;
  -- Aktor sistem, bukan pengguna mana pun (pola 20261104050000).
  perform set_config('request.jwt.claims', '', true);
  perform set_config('request.jwt.claim.sub', '', true);

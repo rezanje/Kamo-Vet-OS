@@ -136,7 +136,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Akun tetap terhubung ke data karyawan (untuk insentif).
 - Screenshot: `pengaturan-akses-grup.jpg`
 - Status: dikerjakan (keputusan 1A/2A/3A, `USULAN-E3.md`). Owner mengatur "Akses khusus akun ini" di Pengaturan › Pengguna ›
-  edit akun: Ikuti peran / Peran + tambahan / Hanya akses khusus. Migrasi `20261116700000_e3_akses_khusus_akun.sql` disetujui
+  edit akun: Ikuti peran / Peran + tambahan / Hanya akses khusus. Migrasi `20261117200000_e3_akses_khusus_akun.sql` disetujui
   (1A, 13 Nov; bagian 8 memperluas `sales_module_access` untuk akun yang diberi modul Penjualan lewat akses khusus).
   Detail order online kini punya rute sendiri `/penjualan/online/[id]` (3A), jadi akun "hanya Penjualan Online" bisa
   membuka pesanannya tanpa akses Rekap penjualan.
