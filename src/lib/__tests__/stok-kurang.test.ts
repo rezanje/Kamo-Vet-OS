@@ -189,6 +189,9 @@ describe("penjaga: kalimat 'tidak cukup' baru di database harus ikut diputuskan"
     "Stok gudang tidak cukup untuk mengurangi qty faktur",
     "Stok pembelian langsung tidak cukup untuk pembatalan",
     "Stok tidak cukup",
+    // E2 penjualan online (post_online_order): isi paket Grup kurang. Layar impor Shopee / order online menampilkan
+    // kalimatnya apa adanya per pesanan (tanpa popup), jadi tidak perlu diurai menjadi baris.
+    "Stok tidak cukup untuk isi paket: % (butuh %, tersedia %)",
     "Stok tidak cukup untuk koreksi. Barang sudah terpakai/terjual; rekonsiliasi dependensi dahulu",
     "Stok tidak cukup. Seluruh pengeluaran ini dibatalkan",
     "Stok/lapisan biaya tidak cukup atau tidak konsisten. Rekonsiliasi diperlukan",

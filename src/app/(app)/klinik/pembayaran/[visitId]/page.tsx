@@ -33,6 +33,7 @@ import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
 import { adaPenerimaan, bacaBolehBatalPenerimaan, putuskanBolehBatalPenerimaan } from "@/lib/batal-penerimaan-akses";
+import { bacaBolehBatalTagihan, bolehTawarkanBatalTagihan, putuskanBolehBatalTagihan } from "@/lib/batal-tagihan-klinik";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -260,7 +261,7 @@ export default async function PembayaranPage({
       };
     }))
     : null;
-  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult, batalDibaca] = await Promise.all([
+  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult, batalDibaca, batalTagihanDibaca] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
     invoice ? supabase.from("clinic_demo_invoice_snapshots").select("fee_bearer,fee_amount,payments,incentive_pool").eq("invoice_id",invoice.id).maybeSingle() : Promise.resolve({data:null,error:null}),
@@ -272,6 +273,8 @@ export default async function PembayaranPage({
     invoice ? supabase.rpc("clinic_invoice_correction_eligible", {p_invoice_id:invoice.id}) : Promise.resolve({data:false,error:null}),
     // Batalkan penerimaan: dibaca bersama bacaan lain (bukan rantai baru); peran dipakai belakangan hanya untuk jatuh-ke-Owner bila gagal baca.
     invoice ? bacaBolehBatalPenerimaan(supabase) : Promise.resolve(null),
+    // B2 Batalkan tagihan (void murni): hanya dibaca untuk tagihan rawat jalan Belum Lunas/DP.
+    bolehTawarkanBatalTagihan(invoice, !!inpat) ? bacaBolehBatalTagihan(supabase) : Promise.resolve(null),
   ]);
   const cartVersion = versiKeranjang(!invoice, cartVersionP ? await cartVersionP : {data:null,error:null});
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
@@ -355,6 +358,9 @@ export default async function PembayaranPage({
   // Batalkan penerimaan (Owner / peran berizin): hanya untuk tagihan yang punya uang diterima; database memeriksa ulang.
   const bolehBatalTerima = !!invoice && !invoice.correction_pending && adaPenerimaan(invoice, paidAmount)
     && putuskanBolehBatalPenerimaan(batalDibaca, (profilKasir as { role?: string } | null)?.role);
+  // B2 Batalkan tagihan (Owner / peran berizin): rawat jalan Belum Lunas/DP; database memeriksa ulang (uang tercatat, periode, poin, stok).
+  const bolehBatalTagihan = bolehTawarkanBatalTagihan(invoice, !!inpat)
+    && putuskanBolehBatalTagihan(batalTagihanDibaca, (profilKasir as { role?: string } | null)?.role);
 
   const lunas = invoice?.paid_status === "Lunas";
   // Pemberitahuan tanggal efektif (Owner memilih tanggal saat Batalkan penerimaan): diselesaikan di sini supaya halaman tetap satu render; gagal baca = tidak tampil.
@@ -797,6 +803,13 @@ export default async function PembayaranPage({
             </div>
           )}
 
+          {/* B2 Batalkan tagihan (void murni, tanpa pengganti): tagihan Belum Lunas/DP; Lunas harus Batalkan penerimaan dulu. */}
+          {bolehBatalTagihan && invoice && (
+            <div style={{ marginTop: 8 }}>
+              <Link href={`/klinik/pembayaran/${visit.id}/batalkan-tagihan?invoice_id=${invoice.id}`} className="btn-def" style={{ color: "#b91c1c" }}><i className="ti ti-file-x" /> Batalkan tagihan</Link>
+            </div>
+          )}
+
           {/* J03: refund per baris untuk invoice lunas. */}
           {refundData && (
             <ClinicRefundPanel data={refundData} visitId={visit.id} userId={draftUser?.id}
@@ -823,7 +836,7 @@ export default async function PembayaranPage({
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG
               </div>
               <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
-                Pembayaran yang sudah diterima dialihkan ke invoice baru. Setelah koreksi, sisa tagihan dihitung ulang tanpa menerima uang dua kali.
+                Pembayaran yang sudah diterima dialihkan ke invoice baru. Setelah koreksi, sisa tagihan dihitung ulang tanpa menerima uang dua kali. Pendapatan dari pembatalan, invoice baru, dan koreksinya tetap dibukukan di tanggal invoice asli.
               </div>
               <VoidReissueForm key={invoice.id} visitId={visit.id} invoiceId={invoice.id} requestKey={randomUUID()}/>
             </div>

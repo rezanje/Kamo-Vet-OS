@@ -35,9 +35,16 @@
 --   bertanggal sesudah 4 Nov 2026; tidak ada dokumen terbuka (pemindahan dalam perjalanan, permintaan
 --   barang, opname terbuka, PO, pesanan penjualan, produksi) yang memakai gudang online; barangnya aktif,
 --   bertipe Persediaan, tidak di tempat sampah; harga pokok lengkap (FIFO: lapisan = saldo; average:
---   average > 0); gudang Transit tidak sedang memegang barang yang sama; periode hari ini tidak dikunci.
+--   average > 0); periode hari ini tidak dikunci. (Barang yang sama sedang di gudang Transit: ditahan, lihat TAHAP 1.)
 --   Sesudah posting diperiksa ulang: saldo online 0, saldo toko naik tepat sebesar yang dipindah, nilai per
 --   barang tetap (kecuali barang yang gudang tokonya minus), tidak ada jurnal lain.
+--
+-- TAHAP 1 (keputusan owner "B", 14 Nov 2026): preflight 14 Nov menemukan 4 barang WH ONLINE PDRY (Chester Tuna 800gr,
+-- Cat Choize Tuna adult, Cat Choize Salmon adult, Pasir Lala 25L Coffee; 21 unit) yang SAMA dengan barang kiriman
+-- Permintaan Barang DC LOJI yang masih di gudang Transit (belum diterima toko). Barang seperti itu TIDAK dipindah dulu
+-- (tetap di gudang online, saldo & lapisan utuh) supaya harga pokoknya tidak tercampur kiriman lain; sisanya dipindah.
+-- Gudang online hanya dinonaktifkan bila saldonya sudah nol; yang masih memegang barang tertahan tetap aktif dan
+-- dipindah oleh migrasi lanjutan (tahap 2) setelah kiriman Transit itu diterima.
 --
 -- Rollback (bila owner berubah pikiran): aktifkan lagi gudangnya
 --   update public.warehouses set is_active=true where name in ('WH ONLINE PDRY','WH ONLINE TKI') and type='ONLINE';
@@ -167,15 +174,25 @@ begin
   if v_msg is not null then raise exception 'E4_PRASYARAT: lapisan FIFO tidak sama dengan saldo: %. Tidak ada yang diubah.', v_msg; end if;
  end if;
 
- -- 8. Gudang Transit (yang dipakai fungsi resmi) tidak sedang memegang barang yang sama, supaya harga
- --    pokok tidak tercampur kiriman lain.
+ -- 8. Barang yang SAMA sedang dipegang gudang Transit (yang dipakai fungsi resmi; kiriman lain belum diterima)
+ --    TIDAK dipindah di tahap ini supaya harga pokok tidak tercampur kiriman lain (keputusan owner "B", 14 Nov):
+ --    barangnya tetap di gudang online (saldo & lapisan utuh), gudang online itu tetap aktif sampai tahap 2.
+ create temp table e4_hold(urut int, item_id uuid, qty numeric, primary key (urut, item_id)) on commit drop;
  select id into v_transit from public.warehouses where type = 'TRANSIT' and is_active order by id limit 1;
  if v_transit is not null then
-  select string_agg(distinct i.name, '; ') into v_msg from e4_line l join public.items i on i.id = l.item_id
+  insert into e4_hold select l.urut, l.item_id, l.qty from e4_line l
    where exists (select 1 from public.stock s where s.warehouse_id = v_transit and s.item_id = l.item_id and s.qty <> 0)
       or exists (select 1 from public.stock_layers y where y.warehouse_id = v_transit and y.item_id = l.item_id and y.qty_left <> 0);
-  if v_msg is not null then raise exception 'E4_PRASYARAT: gudang Transit masih memegang barang yang sama (kiriman lain belum diterima): %. Tidak ada yang diubah.', v_msg; end if;
+  delete from e4_line l using e4_hold h where h.urut = l.urut and h.item_id = l.item_id;
+  for t in select e.online_name, count(*) n, sum(h.qty) q, string_agg(format('%s (%s)', i.name, h.qty), '; ' order by i.name) d
+    from e4_hold h join e4_target e using (urut) join public.items i on i.id = h.item_id group by e.urut, e.online_name order by e.urut loop
+   raise notice 'E4: ditahan di % (barang sama sedang di Transit): % barang, % unit: %', t.online_name, t.n, t.q, t.d;
+  end loop;
  end if;
+ create temp table e4_hold_layers on commit drop as
+  select y.warehouse_id, y.item_id, y.unit_cost, y.exp_date, sum(y.qty_left) qty_left from public.stock_layers y
+  join e4_target e on e.online_id = y.warehouse_id join e4_hold h on h.urut = e.urut and h.item_id = y.item_id
+  where y.qty_left <> 0 group by 1, 2, 3, 4;
 
  -- 9. Potret sebelum (nilai menurut metode yang aktif).
  create temp table e4_before(urut int, item_id uuid, online_qty numeric, online_value numeric, store_qty numeric, store_value numeric, primary key (urut, item_id)) on commit drop;
@@ -215,9 +232,23 @@ begin
  drop function pg_temp.e4_post_stock_transfer(uuid, uuid, uuid, uuid, date, text, jsonb);
 
  -- 12. Pemeriksaan sesudah posting.
- if exists (select 1 from public.stock s join e4_target e on e.online_id = s.warehouse_id where s.qty <> 0)
-  or exists (select 1 from public.stock_layers y join e4_target e on e.online_id = y.warehouse_id where y.qty_left <> 0) then
+ if exists (select 1 from public.stock s join e4_target e on e.online_id = s.warehouse_id
+    left join e4_hold h on h.urut = e.urut and h.item_id = s.item_id where s.qty <> 0 and h.item_id is null)
+  or exists (select 1 from public.stock_layers y join e4_target e on e.online_id = y.warehouse_id
+    left join e4_hold h on h.urut = e.urut and h.item_id = y.item_id where y.qty_left <> 0 and h.item_id is null) then
   raise exception 'E4_PASCA: saldo gudang online belum nol'; end if;
+ -- Barang tertahan: saldo & lapisan di gudang online persis seperti sebelum.
+ if exists (select 1 from e4_hold h join e4_target e using (urut)
+    left join public.stock s on s.warehouse_id = e.online_id and s.item_id = h.item_id where coalesce(s.qty, 0) <> h.qty)
+  or exists ((select warehouse_id, item_id, unit_cost, exp_date, qty_left from e4_hold_layers
+     except select y.warehouse_id, y.item_id, y.unit_cost, y.exp_date, sum(y.qty_left) from public.stock_layers y
+       join e4_target e on e.online_id = y.warehouse_id join e4_hold h on h.urut = e.urut and h.item_id = y.item_id
+       where y.qty_left <> 0 group by 1, 2, 3, 4)
+   union all (select y.warehouse_id, y.item_id, y.unit_cost, y.exp_date, sum(y.qty_left) from public.stock_layers y
+       join e4_target e on e.online_id = y.warehouse_id join e4_hold h on h.urut = e.urut and h.item_id = y.item_id
+       where y.qty_left <> 0 group by 1, 2, 3, 4
+     except select warehouse_id, item_id, unit_cost, exp_date, qty_left from e4_hold_layers)) then
+  raise exception 'E4_PASCA: barang yang ditahan berubah di gudang online'; end if;
  select string_agg(i.name, '; ') into v_msg from e4_before b join e4_target e using (urut) join public.items i on i.id = b.item_id
   left join public.stock s on s.warehouse_id = e.store_id and s.item_id = b.item_id
   where coalesce(s.qty, 0) <> b.store_qty + b.online_qty;
@@ -235,14 +266,18 @@ begin
  if (select count(*) from public.journal_entries where source is distinct from 'inventory-variance') <> v_journals then
   raise exception 'E4_PASCA: pemindahan menulis jurnal yang tidak diharapkan'; end if;
 
- -- 13. Nonaktifkan kedua gudang online (riwayat tetap utuh).
- update public.warehouses set is_active = false where id in (select online_id from e4_target) and is_active;
+ -- 13. Nonaktifkan gudang online yang sudah kosong (riwayat tetap utuh). Yang masih memegang barang tertahan
+ --     tetap aktif sampai tahap 2.
+ update public.warehouses set is_active = false
+  where id in (select online_id from e4_target e where not exists (select 1 from e4_hold h where h.urut = e.urut)) and is_active;
  get diagnostics v_n = row_count;
- if v_n <> 2 then raise exception 'E4_PASCA: gudang online yang dinonaktifkan % (harus 2)', v_n; end if;
+ if v_n <> (select count(*) from e4_target e where not exists (select 1 from e4_hold h where h.urut = e.urut)) then
+  raise exception 'E4_PASCA: jumlah gudang online yang dinonaktifkan % tidak sesuai', v_n; end if;
 
  for t in select * from e4_target order by urut loop
-  raise notice 'E4: % -> % : % barang, % unit, kirim %, terima %', t.online_name, t.store_name,
-   (select count(*) from e4_line where urut = t.urut), (select sum(qty) from e4_line where urut = t.urut), t.kirim_no, t.terima_no;
+  raise notice 'E4: % -> % : % barang, % unit, kirim %, terima %; gudang online %', t.online_name, t.store_name,
+   (select count(*) from e4_line where urut = t.urut), (select sum(qty) from e4_line where urut = t.urut), t.kirim_no, t.terima_no,
+   case when exists (select 1 from e4_hold h where h.urut = t.urut) then 'TETAP AKTIF (ada barang tertahan, tahap 2)' else 'dinonaktifkan' end;
  end loop;
 
  perform set_config('request.jwt.claims', coalesce(old_claims, ''), true);

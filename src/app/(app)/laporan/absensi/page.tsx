@@ -1,9 +1,13 @@
 import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
-import { hariIniWIB } from "@/lib/tanggal";
-import { rekapAbsensi, jamMenit, JAM_KERJA_DEFAULT, type BarisAbsensi, type JamKerja } from "@/lib/laporan-hris";
+import { geserHari, hariIniWIB } from "@/lib/tanggal";
+import {
+  rekapAbsensiJadwal, rekapKosongJadwal, jamMenit, JAM_KERJA_DEFAULT,
+  type AbsenLaporan, type CutiLaporan, type JadwalLaporan,
+} from "@/lib/laporan-hris";
 import { laporanDiminta } from "@/lib/report-gate";
+import { menitSekarangWIB } from "@/lib/absensi-shift";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -20,11 +24,11 @@ export default async function LaporanAbsensiPage({
 
   const supabase = await createClient();
 
-  // Rentang satu bulan penuh. Bulan 12 harus naik ke Januari tahun berikutnya —
-  // ditulis eksplisit supaya tidak jadi "bulan 13" yang tidak pernah cocok.
+  // Rentang satu bulan penuh (tanggal terakhir inklusif; new Date(th, bl, 0) = hari terakhir bulan itu,
+  // termasuk Desember → tidak ada "bulan 13").
   const [th, bl] = periode.split("-").map(Number);
   const awal = `${periode}-01`;
-  const akhir = bl === 12 ? `${th + 1}-01-01` : `${th}-${String(bl + 1).padStart(2, "0")}-01`;
+  const akhirInklusif = `${periode}-${String(new Date(th, bl, 0).getDate()).padStart(2, "0")}`;
 
   // A1 (meeting 12 Nov 2026): absensi & karyawan baru dibaca setelah Tampilkan
   // ditekan. Jam kerja standar dan daftar cabang tetap dibaca (ringan, untuk filter).
@@ -32,8 +36,8 @@ export default async function LaporanAbsensiPage({
   const kosong = Promise.resolve({ data: [] as unknown[] });
   const bacaAbsen = () => {
     const query = supabase.from("attendance")
-      .select(`id, employee_id, status, jam_masuk, jam_pulang${cabang ? ", employees!inner(branches!employees_branch_id_fkey!inner(name))" : ""}`, { count: "exact" })
-      .gte("tanggal", awal).lt("tanggal", akhir);
+      .select(`id, employee_id, tanggal, status, jam_masuk, jam_pulang${cabang ? ", employees!inner(branches!employees_branch_id_fkey!inner(name))" : ""}`, { count: "exact" })
+      .gte("tanggal", awal).lte("tanggal", akhirInklusif);
     return completeReportQuery(cabang ? query.eq("employees.branches.name", cabang) : query);
   };
   const bacaKaryawan = () => {
@@ -41,23 +45,41 @@ export default async function LaporanAbsensiPage({
       .select(`id, nama, jabatan, status, branches!employees_branch_id_fkey${cabang ? "!inner" : ""}(name)`, { count: "exact" });
     return completeReportQuery((cabang ? query.eq("branches.name", cabang) : query).order("nama"));
   };
-  const [{ data: absen }, { data: karyawan }, { data: setting }, { data: cabangList }] = await Promise.all([
+  // C1: telat/pulang cepat/lembur dihitung dari JADWAL SHIFT masing-masing (sama dengan penggajian),
+  // bukan jam kerja standar perusahaan. Hari terjadwal tanpa absen & tanpa cuti disetujui = Alpha.
+  const bacaJadwal = () => completeReportQuery(supabase.from("employee_schedules")
+    .select("id, employee_id, tanggal, work_shifts(is_libur, jam_masuk, jam_pulang)", { count: "exact" })
+    .gte("tanggal", awal).lte("tanggal", akhirInklusif));
+  const bacaCuti = () => completeReportQuery(supabase.from("leave_requests")
+    .select("id, employee_id, jenis, tanggal_mulai, tanggal_selesai", { count: "exact" })
+    // Cuti yang mulai ≤ 6 bulan sebelum periode; yang sudah selesai sebelum periode diabaikan di rekap.
+    .eq("status", "Disetujui").gte("tanggal_mulai", geserHari(awal, -186)).lte("tanggal_mulai", akhirInklusif));
+  const [{ data: absen }, { data: karyawan }, { data: jadwalRaw }, { data: cutiRaw }, { data: setting }, { data: cabangList }] = await Promise.all([
     siap ? bacaAbsen() : kosong,
     siap ? bacaKaryawan() : kosong,
+    siap ? bacaJadwal() : kosong,
+    siap ? bacaCuti() : kosong,
     supabase.from("company_settings")
-      .select("jam_masuk_standar, jam_pulang_standar, toleransi_telat_menit").maybeSingle(),
+      .select("toleransi_telat_menit").maybeSingle(),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
-  const jamKerja: JamKerja = setting
-    ? {
-        jamMasukStandar: String(setting.jam_masuk_standar),
-        jamPulangStandar: String(setting.jam_pulang_standar),
-        toleransiMenit: Number(setting.toleransi_telat_menit),
-      }
-    : JAM_KERJA_DEFAULT;
-
-  const rekap = rekapAbsensi((absen ?? []) as unknown as BarisAbsensi[], jamKerja);
+  const toleransiMenit = setting ? Number(setting.toleransi_telat_menit) || 0 : JAM_KERJA_DEFAULT.toleransiMenit;
+  type ShiftRel = { is_libur: boolean; jam_masuk: string | null; jam_pulang: string | null };
+  const jadwal: JadwalLaporan[] = ((jadwalRaw ?? []) as unknown as { employee_id: string; tanggal: string; work_shifts: Rel<ShiftRel> }[])
+    .flatMap((j) => {
+      const sh = one(j.work_shifts);
+      return sh ? [{ employee_id: j.employee_id, tanggal: j.tanggal, is_libur: sh.is_libur, jam_masuk: sh.jam_masuk, jam_pulang: sh.jam_pulang }] : [];
+    });
+  const rekap = rekapAbsensiJadwal({
+    jadwal,
+    absen: (absen ?? []) as unknown as AbsenLaporan[],
+    cuti: (cutiRaw ?? []) as unknown as CutiLaporan[],
+    awal, akhir: akhirInklusif,
+    hariIni: hariIniWIB(),
+    menitSekarang: menitSekarangWIB(),
+    toleransiMenit,
+  });
 
   type Emp = { id: string; nama: string; jabatan: string | null; status: string; branches: Rel<{ name: string }> };
   const rows = ((karyawan ?? []) as unknown as Emp[])
@@ -65,21 +87,19 @@ export default async function LaporanAbsensiPage({
     .map((e) => ({
       ...e,
       cabangNama: one(e.branches)?.name ?? "—",
-      r: rekap.get(e.id) ?? {
-        employee_id: e.id, hadir: 0, izin: 0, sakit: 0, alpha: 0, cuti: 0,
-        telat: 0, menitTelat: 0, menitLembur: 0,
-      },
+      r: rekap.get(e.id) ?? rekapKosongJadwal(e.id),
     }));
 
   const totalTelat = rows.reduce((a, r) => a + r.r.telat, 0);
   const totalAlpha = rows.reduce((a, r) => a + r.r.alpha, 0);
   const totalLembur = rows.reduce((a, r) => a + r.r.menitLembur, 0);
+  const totalPulangCepat = rows.reduce((a, r) => a + r.r.pulangCepat, 0);
 
   return (
     <LaporanPage
       siap={siap}
       icon="ti-clock-check" title="REKAP ABSENSI"
-      desc={`Telat, bolos, dan lembur per karyawan. Jam kerja standar ${String(jamKerja.jamMasukStandar).slice(0, 5)}–${String(jamKerja.jamPulangStandar).slice(0, 5)}, toleransi ${jamKerja.toleransiMenit} menit.`}
+      desc={`Telat, pulang cepat, bolos, dan lembur per karyawan — dihitung dari jadwal shift masing-masing (sama dengan penggajian), toleransi telat ${toleransiMenit} menit.`}
       filter={
         <>
           <div>
@@ -100,6 +120,7 @@ export default async function LaporanAbsensiPage({
         <KartuAngka items={[
           { label: "Karyawan", nilai: `${rows.length} orang` },
           { label: "Total hari telat", nilai: `${totalTelat} hari`, warna: totalTelat ? "#b45309" : undefined },
+          { label: "Total pulang cepat", nilai: `${totalPulangCepat} hari`, warna: totalPulangCepat ? "#b45309" : undefined },
           { label: "Total bolos (alpha)", nilai: `${totalAlpha} hari`, warna: totalAlpha ? "#b91c1c" : undefined },
           { label: "Total lembur", nilai: jamMenit(totalLembur), warna: "#15803d" },
         ]} />
@@ -107,17 +128,20 @@ export default async function LaporanAbsensiPage({
     >
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 900 }}>
+          <table className="tbl" style={{ minWidth: 1080 }}>
             <thead>
               <tr>
                 <th style={{ width: 30 }}>No.</th><th>Karyawan</th><th style={{ width: 150 }}>Cabang</th>
                 <th style={{ width: 60, textAlign: "center" }}>Hadir</th>
+                <th style={{ width: 60, textAlign: "center" }}>Terjadwal</th>
                 <th style={{ width: 90, textAlign: "center" }}>Telat</th>
+                <th style={{ width: 90, textAlign: "center" }}>Pulang cepat</th>
                 <th style={{ width: 60, textAlign: "center" }}>Izin</th>
                 <th style={{ width: 60, textAlign: "center" }}>Sakit</th>
                 <th style={{ width: 60, textAlign: "center" }}>Cuti</th>
                 <th style={{ width: 60, textAlign: "center" }}>Alpha</th>
                 <th style={{ width: 90, textAlign: "right" }}>Lembur</th>
+                <th style={{ width: 70, textAlign: "center" }}>Tanpa jadwal</th>
               </tr>
             </thead>
             <tbody>
@@ -130,8 +154,12 @@ export default async function LaporanAbsensiPage({
                   </td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{e.cabangNama}</td>
                   <td style={{ textAlign: "center", fontSize: 11 }}>{e.r.hadir}</td>
+                  <td style={{ textAlign: "center", fontSize: 11, color: "var(--tm)" }}>{e.r.hariTerjadwal || "—"}</td>
                   <td style={{ textAlign: "center", fontSize: 11, color: e.r.telat ? "#b45309" : "var(--td)" }}>
                     {e.r.telat ? `${e.r.telat}x · ${jamMenit(e.r.menitTelat)}` : "—"}
+                  </td>
+                  <td style={{ textAlign: "center", fontSize: 11, color: e.r.pulangCepat ? "#b45309" : "var(--td)" }}>
+                    {e.r.pulangCepat ? `${e.r.pulangCepat}x · ${jamMenit(e.r.menitPulangCepat)}` : "—"}
                   </td>
                   <td style={{ textAlign: "center", fontSize: 11 }}>{e.r.izin || "—"}</td>
                   <td style={{ textAlign: "center", fontSize: 11 }}>{e.r.sakit || "—"}</td>
@@ -140,14 +168,17 @@ export default async function LaporanAbsensiPage({
                     {e.r.alpha || "—"}
                   </td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{jamMenit(e.r.menitLembur)}</td>
+                  <td style={{ textAlign: "center", fontSize: 11, color: e.r.tanpaJadwal ? "#92400e" : "var(--td)" }}>{e.r.tanpaJadwal || "—"}</td>
                 </tr>
               ))}
-              {rows.length === 0 && <TabelKosong kolom={10} pesan="Belum ada karyawan di cabang ini." />}
+              {rows.length === 0 && <TabelKosong kolom={13} pesan="Belum ada karyawan di cabang ini." />}
             </tbody>
           </table>
         </div>
         <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
-          Jam kerja standar & toleransi telat diatur di Pengaturan perusahaan.
+          Jadwal diisi di HRIS → Jadwal Shift. Hari terjadwal tanpa absen dan tanpa cuti/izin/sakit yang disetujui dihitung Alpha
+          (hari ini baru dihitung setelah jam shift selesai). &quot;Tanpa jadwal&quot; = hadir di hari yang tidak dijadwalkan masuk — telatnya tidak dihitung.
+          Toleransi telat diatur di Pengaturan perusahaan.
         </div>
       </div>
     </LaporanPage>

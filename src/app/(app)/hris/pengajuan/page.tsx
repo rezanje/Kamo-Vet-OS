@@ -2,15 +2,16 @@ import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { ALASAN_SELISIH_KAS } from "@/lib/kasbon";
+import { asalKasbon, STATUS_KASBON_DICATAT } from "@/lib/beban-selisih-karyawan";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { jadwalCicilan } from "@/lib/kasbon";
 import { bacaAturanGaji } from "@/lib/payroll-aturan";
+import { KATEGORI_KOREKSI } from "@/lib/absensi-mandiri";
 import {
-  setujuiKasbon, setujuiLembur, setujuiReimburse,
-  tolakKasbon, tolakLembur, tolakReimburse,
+  setujuiKasbon, setujuiKoreksiAbsen, setujuiLembur, setujuiReimburse,
+  tolakKasbon, tolakKoreksiAbsen, tolakLembur, tolakReimburse,
 } from "./actions";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -29,7 +30,7 @@ export default async function PengajuanPage({
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
-  const [{ data: lemburData }, { data: kasbonData }, { data: reimData }, rekening, { aturan }] = await Promise.all([
+  const [{ data: lemburData }, { data: kasbonData }, { data: reimData }, rekening, { aturan }, koreksiRes] = await Promise.all([
     supabase.from("overtime_requests")
       .select("id, tanggal, jam, alasan, status, employees(nama, jabatan)")
       .eq("status", "Menunggu").order("tanggal"),
@@ -41,24 +42,33 @@ export default async function PengajuanPage({
       .eq("status", "Menunggu").order("tanggal"),
     loadRekeningAktif(supabase),
     bacaAturanGaji(supabase),
+    // C1: koreksi absen. Tabel belum ada (aplikasi rilis sebelum migrasi) = bagian ini disembunyikan.
+    supabase.from("attendance_corrections")
+      .select("id, tanggal, jam_masuk, jam_pulang, kategori, alasan, employees(nama, jabatan)")
+      .eq("status", "Menunggu").order("tanggal"),
   ]);
+  const koreksi = (koreksiRes.error ? [] : koreksiRes.data ?? []) as unknown as {
+    id: string; tanggal: string; jam_masuk: string | null; jam_pulang: string | null; kategori: string; alasan: string; employees: Rel<Emp>;
+  }[];
 
   // Utang berjalan yang SUDAH disetujui — termasuk utang selisih kas yang lahir
   // otomatis saat tutup shift. Tanpa daftar ini, utang itu tidak terlihat oleh HR
   // maupun keuangan sama sekali: satu-satunya yang bisa melihatnya adalah
   // karyawannya sendiri di layar /me.
+  // F2 (meeting 12 Nov 2026): utang beban selisih stok opname (status "Dicatat") ikut tampil, tapi TIDAK dipotong gaji
+  // otomatis — penggajian hanya membaca status "Disetujui".
   const { data: berjalanData } = await supabase
     .from("cash_advances")
-    .select("id, tanggal, jumlah, tenor_bulan, alasan, employees(nama, jabatan), cash_advance_installments(jumlah)")
-    .eq("status", "Disetujui").order("tanggal", { ascending: false });
+    .select("id, tanggal, jumlah, tenor_bulan, alasan, status, employees(nama, jabatan), cash_advance_installments(jumlah)")
+    .in("status", ["Disetujui", STATUS_KASBON_DICATAT]).order("tanggal", { ascending: false });
 
   const lembur = (lemburData ?? []) as unknown as { id: string; tanggal: string; jam: number; alasan: string | null; employees: Rel<Emp> }[];
   const kasbon = (kasbonData ?? []) as unknown as { id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null; employees: Rel<Emp> }[];
   const reimburse = (reimData ?? []) as unknown as { id: string; tanggal: string; kategori: string; jumlah: number; keterangan: string | null; employees: Rel<Emp> }[];
-  const total = lembur.length + kasbon.length + reimburse.length;
+  const total = lembur.length + kasbon.length + reimburse.length + koreksi.length;
 
   const berjalan = ((berjalanData ?? []) as unknown as {
-    id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null;
+    id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null; status: string;
     employees: Rel<Emp>; cash_advance_installments: { jumlah: number }[] | null;
   }[]).map((k) => {
     const dibayar = (k.cash_advance_installments ?? []).reduce((a, i) => a + Number(i.jumlah), 0);
@@ -173,11 +183,37 @@ export default async function PengajuanPage({
         ))}
       </div>
 
+      {/* ── Koreksi absen (C1) ─────────────────────────────────── */}
+      {!koreksiRes.error && (
+        <div className="crm-sec" style={{ marginBottom: 0, marginTop: 14 }}>
+          <SecHeader
+            num="05" title="KOREKSI ABSEN"
+            desc="Lupa absen / foto gagal / lokasi gagal. Disetujui = absen tercatat dengan sumber Koreksi & nama penyetuju."
+          />
+          {koreksi.length === 0 ? (
+            <Kosong teks="Tidak ada pengajuan koreksi absen." />
+          ) : koreksi.map((k) => (
+            <form key={k.id} action={setujuiKoreksiAbsen} style={barisStyle}>
+              <div style={{ flex: "1 1 240px" }}>
+                <div style={{ fontSize: 11.5, fontWeight: 600 }}>{one(k.employees)?.nama ?? "—"}</div>
+                <div style={{ fontSize: 10.5, color: "var(--tm)" }}>
+                  {tgl(k.tanggal)} · masuk <b>{k.jam_masuk?.slice(0, 5) ?? "tetap"}</b> · pulang <b>{k.jam_pulang?.slice(0, 5) ?? "tetap"}</b>
+                  {" · "}{KATEGORI_KOREKSI[k.kategori] ?? k.kategori} · {k.alasan}
+                </div>
+              </div>
+              <input type="hidden" name="id" value={k.id} />
+              <input className="fi" name="catatan" maxLength={300} placeholder="catatan (opsional)" style={{ width: 180, height: 28, fontSize: 10.5 }} />
+              <Tombol bolehKelola={bolehKelola} tolak={tolakKoreksiAbsen} />
+            </form>
+          ))}
+        </div>
+      )}
+
       {/* ── Utang berjalan ─────────────────────────────────────── */}
       <div className="crm-sec" style={{ marginBottom: 0, marginTop: 14 }}>
         <SecHeader
           num="04" title="UTANG KARYAWAN BERJALAN"
-          desc="Kasbon & selisih kas yang belum lunas. Dipotong otomatis dari gaji periode berikutnya."
+          desc="Kasbon & selisih kas yang belum lunas dipotong otomatis dari gaji periode berikutnya. Beban selisih stok opname hanya dicatat (tidak dipotong gaji)."
         />
         {berjalan.length === 0 ? (
           <Kosong teks="Tidak ada utang karyawan yang berjalan." />
@@ -197,14 +233,14 @@ export default async function PengajuanPage({
                 </thead>
                 <tbody>
                   {berjalan.map((k) => {
-                    const dariSelisih = String(k.alasan ?? "").startsWith(ALASAN_SELISIH_KAS);
+                    const asal = asalKasbon(k.status, k.alasan);
                     return (
                       <tr key={k.id}>
                         <td style={{ fontSize: 11.5, fontWeight: 600 }}>{one(k.employees)?.nama ?? "—"}</td>
                         <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{tgl(k.tanggal)}</td>
                         <td style={{ fontSize: 10.5 }}>
-                          <span className={`bge ${dariSelisih ? "o" : "b"}`} style={{ fontSize: 9 }}>
-                            {dariSelisih ? "Selisih kas" : "Kasbon"}
+                          <span className={`bge ${asal === "kasbon" ? "b" : asal === "selisih-kas" ? "o" : "r"}`} style={{ fontSize: 9 }}>
+                            {asal === "selisih-kas" ? "Selisih kas" : asal === "beban-opname" ? "Selisih stok · tidak potong gaji" : "Kasbon"}
                           </span>
                         </td>
                         <td style={{ textAlign: "right", fontSize: 11 }}>{rp(Number(k.jumlah))}</td>
@@ -224,7 +260,8 @@ export default async function PengajuanPage({
             </div>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
               Utang bertanda <b>Selisih kas</b> lahir otomatis saat tutup shift dan tidak
-              menghalangi karyawan mengajukan kasbon sendiri.
+              menghalangi karyawan mengajukan kasbon sendiri. Utang <b>Selisih stok</b> dicatat Owner/Finance dari hasil stok
+              opname: tidak dipotong gaji otomatis dan tidak menghalangi pengajuan kasbon.
             </div>
           </>
         )}

@@ -7,6 +7,7 @@ import { kodeAkunBayar } from "@/lib/kas-akun";
 import { AKUN_PIUTANG_KARYAWAN } from "@/lib/kasbon";
 import { cekPeriode, jurnalTersimpan } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
+import { pesanAbsen } from "@/lib/absensi-mandiri";
 
 const BACK = "/hris/pengajuan";
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
@@ -120,4 +121,25 @@ export async function setujuiKasbon(formData: FormData) {
   }
 
   redirect(`${BACK}?success=kasbon`);
+}
+
+// C1: koreksi absen staf. Keputusan + penulisan absen (sumber 'koreksi', penyetuju) satu transaksi di
+// fungsi database putuskan_koreksi_absen(), yang juga memeriksa cabang pengelola & larangan menyetujui diri sendiri.
+async function putuskanKoreksi(formData: FormData, setuju: boolean) {
+  const supabase = await assertHrisManager(BACK);
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) gagal("Pengajuan tidak valid");
+  const { error } = await supabase.rpc("putuskan_koreksi_absen", {
+    p_id: id, p_setuju: setuju, p_catatan: String(formData.get("catatan") ?? "").trim() || null,
+  });
+  if (error) gagal(pesanAbsen(error));
+  redirect(`${BACK}?success=koreksi`);
+}
+
+export async function setujuiKoreksiAbsen(formData: FormData) {
+  await putuskanKoreksi(formData, true);
+}
+
+export async function tolakKoreksiAbsen(formData: FormData) {
+  await putuskanKoreksi(formData, false);
 }

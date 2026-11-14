@@ -1,69 +1,79 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyEmployee } from "@/lib/employee";
-import { cekLokasiAbsen, pesanTolakLokasi, type TitikCabang } from "@/lib/lokasi";
+import { hariIniWIB } from "@/lib/tanggal";
+import {
+  BUCKET_FOTO_ABSEN, MAKS_FOTO_BYTE, pathFotoAbsen, pesanAbsen, pesanSuksesAbsen, pesanUnggahFoto,
+  type HasilAbsen, type JenisAbsen,
+} from "@/lib/absensi-mandiri";
 
-function todayJakarta(): string {
-  // WIB (UTC+7) date string YYYY-MM-DD.
-  const wib = new Date(new Date().getTime() + 7 * 3600 * 1000);
-  return wib.toISOString().slice(0, 10);
-}
-function nowTimeJakarta(): string {
-  const wib = new Date(new Date().getTime() + 7 * 3600 * 1000);
-  return wib.toISOString().slice(11, 16); // HH:MM
-}
+const gagalMe = (pesan: string): never => redirect(`/me?error=${encodeURIComponent(pesan)}`);
 
 // Posisi HP dikirim dari tombol absen; kosong = izin lokasi ditolak atau tidak tersedia.
+// Server (fungsi database) yang memutuskan boleh/tidaknya, bukan HP.
 function bacaPosisi(formData: FormData): { lat: number; lng: number } | null {
-  const lat = Number(formData.get("lat"));
-  const lng = Number(formData.get("lng"));
-  return Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)
-    ? { lat, lng }
-    : null;
+  const latIsi = String(formData.get("lat") ?? "").trim();
+  const lngIsi = String(formData.get("lng") ?? "").trim();
+  if (!latIsi || !lngIsi) return null;
+  const lat = Number(latIsi);
+  const lng = Number(lngIsi);
+  return Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0) ? { lat, lng } : null;
 }
 
-// Absen hanya boleh dari lokasi cabang karyawan — kalau cabangnya sudah diberi titik.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function pastikanDiLokasi(supabase: any, branchId: string | null, formData: FormData) {
-  if (!branchId) return;
-  const { data } = await supabase
-    .from("branches").select("lat, lng, radius_m").eq("id", branchId).maybeSingle();
-  if (!data) return;
-
-  const hasil = cekLokasiAbsen(data as TitikCabang, bacaPosisi(formData));
-  if (!hasil.boleh) redirect(`/me?error=${encodeURIComponent(pesanTolakLokasi(hasil))}`);
-}
-
-export async function clockIn(formData: FormData) {
+// C1: absen masuk/pulang mandiri. Jam TIDAK dikirim dari aplikasi — fungsi database memakai jam server.
+// Urutan: unggah selfie (bucket privat, folder milik karyawan sendiri) → panggil absen_mandiri().
+// Absen yang ditolak (mis. di luar radius) meninggalkan fotonya di bucket sebagai jejak percobaan.
+export async function absenMandiri(formData: FormData) {
+  const jenis: JenisAbsen = String(formData.get("jenis") ?? "") === "pulang" ? "pulang" : "masuk";
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const emp = user ? await getMyEmployee(supabase as never, user.id) : null;
-  if (!emp) redirect(`/me?error=${encodeURIComponent("Akun belum tertaut ke data karyawan")}`);
+  if (!user) gagalMe("Sesi login sudah berakhir. Silakan masuk lagi");
+  const emp = await getMyEmployee(supabase as never, user!.id);
+  if (!emp) gagalMe("Akun belum tertaut ke data karyawan");
 
-  await pastikanDiLokasi(supabase, emp!.branch_id, formData);
+  const foto = formData.get("foto");
+  if (!(foto instanceof Blob) || foto.size === 0) gagalMe("Foto selfie wajib diambil dulu sebelum absen.");
+  const file = foto as Blob;
+  if (file.size > MAKS_FOTO_BYTE) gagalMe("Foto terlalu besar. Ambil ulang fotonya.");
+  if (file.type && !/^image\/(jpeg|jpg)$/i.test(file.type)) gagalMe("Format foto tidak didukung. Ambil ulang fotonya.");
 
-  // upsert: buat / isi jam_masuk untuk hari ini (pola sama dgn hris/absensi).
-  await supabase.from("attendance").upsert(
-    { employee_id: emp!.id, tanggal: todayJakarta(), jam_masuk: nowTimeJakarta(), status: "Hadir" },
-    { onConflict: "employee_id,tanggal" },
-  );
-  redirect("/me?success=in");
+  const path = pathFotoAbsen(emp!.id, hariIniWIB(), jenis, randomUUID());
+  const { error: unggahError } = await supabase.storage.from(BUCKET_FOTO_ABSEN)
+    .upload(path, file, { contentType: "image/jpeg", upsert: false });
+  if (unggahError) gagalMe(pesanUnggahFoto(unggahError));
+
+  const posisi = bacaPosisi(formData);
+  const { data, error } = await supabase.rpc("absen_mandiri", {
+    p_jenis: jenis, p_lat: posisi?.lat ?? null, p_lng: posisi?.lng ?? null, p_foto: path,
+  });
+  if (error) gagalMe(pesanAbsen(error));
+
+  const pesan = pesanSuksesAbsen(data as HasilAbsen);
+  redirect(`/me?success=${jenis === "masuk" ? "in" : "out"}&info=${encodeURIComponent(pesan)}`);
 }
 
-export async function clockOut(formData: FormData) {
+// C1: pengajuan koreksi absen (lupa absen / foto gagal / lokasi gagal) → disetujui OWNER/ADMIN di /hris/pengajuan.
+export async function ajukanKoreksiAbsen(formData: FormData) {
+  const tanggal = String(formData.get("tanggal") ?? "").trim();
+  const jamMasuk = String(formData.get("jam_masuk") ?? "").trim() || null;
+  const jamPulang = String(formData.get("jam_pulang") ?? "").trim() || null;
+  const kategori = String(formData.get("kategori") ?? "").trim();
+  const alasan = String(formData.get("alasan") ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) gagalMe("Tanggal koreksi wajib diisi");
+  const jam = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if ((jamMasuk && !jam.test(jamMasuk)) || (jamPulang && !jam.test(jamPulang))) gagalMe("Format jam tidak valid");
+  if (!jamMasuk && !jamPulang) gagalMe("Isi jam masuk dan/atau jam pulang yang benar");
+  if (alasan.length < 3) gagalMe("Alasan koreksi wajib diisi");
+
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const emp = user ? await getMyEmployee(supabase as never, user.id) : null;
-  if (!emp) redirect(`/me?error=${encodeURIComponent("Akun belum tertaut ke data karyawan")}`);
-
-  await pastikanDiLokasi(supabase, emp!.branch_id, formData);
-
-  await supabase.from("attendance")
-    .update({ jam_pulang: nowTimeJakarta() })
-    .eq("employee_id", emp!.id).eq("tanggal", todayJakarta());
-  redirect("/me?success=out");
+  const { error } = await supabase.rpc("ajukan_koreksi_absen", {
+    p_tanggal: tanggal, p_jam_masuk: jamMasuk, p_jam_pulang: jamPulang, p_kategori: kategori, p_alasan: alasan,
+  });
+  if (error) gagalMe(pesanAbsen(error));
+  redirect("/me?success=koreksi");
 }
 
 export async function ajukanCutiPribadi(formData: FormData) {

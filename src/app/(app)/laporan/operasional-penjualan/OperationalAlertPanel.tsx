@@ -21,7 +21,7 @@ function AlertCard({ alert, filter }: {
   filter: { from: string; to: string };
 }) {
   const red = alert.severity === "red";
-  const tujuan = alertDetailHref(alert.detailUrl, { ...filter, branchName: alert.branchName });
+  const tujuan = alertDetailHref(alert.detailUrl, { ...filter, branchName: alert.branchName, branchId: alert.branchId });
   // A1: laporan tujuan langsung tampil sesuai periode & cabang alert; layar POS tidak berpintu.
   const href = tujuan?.startsWith("/laporan/") ? denganTampil(tujuan) : tujuan;
   const body = (
@@ -32,6 +32,7 @@ function AlertCard({ alert, filter }: {
       </div>
       <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 5 }}>{alert.branchName} · {alert.periodLabel}</div>
       <div style={{ fontSize: 10.5, color: "var(--sb)", marginTop: 6 }}>Aktual <b>{value(alert.ruleKey, alert.actual)}</b> · Batas <b>{value(alert.ruleKey, alert.threshold)}</b></div>
+      {alert.detail && <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 4 }}>{alert.detail}</div>}
       {href && <div style={{ fontSize: 10.5, color: "#2563eb", marginTop: 7 }}>Buka detail <i className="ti ti-arrow-right" /></div>}
     </div>
   );

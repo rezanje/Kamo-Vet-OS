@@ -3,12 +3,13 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
-import { analisisImpor, kunciBaris, satuanBarang, type AnalisisPesanan, type ExistingOrders } from "@/lib/shopee-import-match";
+import { analisisImpor, isPaket, kebutuhanIsiPaket, kunciBaris, satuanBarang, type AnalisisPesanan, type ExistingOrders } from "@/lib/shopee-import-match";
 import { pratinjauImporShopee, simpanImporShopee, type HasilImporOrder, type PratinjauImpor, type PilihanImpor } from "./actions";
 
 import { labelTipeGudang, type CabangImpor } from "@/lib/online-gudang";
 
 const rp = (n: number) => `Rp ${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
+const angka = (n: number) => String(Math.round(n * 1000) / 1000).replace(".", ",");
 const CHUNK = 10;
 const STATUS_LABEL: Record<AnalisisPesanan["status"], { teks: string; bg: string; fg: string }> = {
   siap: { teks: "Siap disimpan", bg: "#e8f5ee", fg: "#15803d" },
@@ -42,7 +43,8 @@ export function ShopeeImportWorkspace({ cabang, terkunci, defaultBranchId, isOwn
     ? analisisImpor(preview.orders, preview.catalog, { existing: { ...preview.existing, ...saved }, overrides, konfirmasi, sertakan, satuan })
     : [], [preview, saved, overrides, konfirmasi, sertakan, satuan]);
   const siap = analisis.filter(a => a.saveable);
-  const catalogPicker = useMemo(() => (preview?.catalog ?? []).map(c => ({ id: c.id, code: c.code, name: c.name })), [preview]);
+  // E2: barang Grup (paket/bundling) ditandai di pilihan barang.
+  const catalogPicker = useMemo(() => (preview?.catalog ?? []).map(c => ({ id: c.id, code: c.code, name: isPaket(c) ? `${c.name} (paket)` : c.name })), [preview]);
 
   function reset() { setPreview(null); setOverrides({}); setKonfirmasi(new Set()); setSatuan({}); setSertakan(new Set()); setSaved({}); setResults({}); setMessage(""); }
 
@@ -102,6 +104,7 @@ export function ShopeeImportWorkspace({ cabang, terkunci, defaultBranchId, isOwn
       <p style={{ fontSize: 12, color: "var(--tm)" }}>
         Unggah ekspor pesanan Shopee (.xlsx, Seller Centre → Pesanan → Ekspor). Satu No. Pesanan = satu order online; pesanan Pembatalan diajukan, Dibatalkan, dan Belum Bayar
         dilewati. Harga yang dicatat = Harga Setelah Diskon; komisi dihitung nanti saat dana cair (Tandai cair). Pesanan yang sudah pernah diimpor tidak dobel.
+        Bundling/paket: buat barang Grup di master dengan kode = SKU Shopee; stok yang keluar adalah isi paketnya.
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
@@ -183,6 +186,21 @@ export function ShopeeImportWorkspace({ cabang, terkunci, defaultBranchId, isOwn
                           <div style={{ fontSize: 10, color: "var(--tm)" }}>
                             {l.item ? `Master: ${l.item.name} · ` : ""}{KIND_LABEL[l.match.kind]}
                           </div>
+                          {l.item && isPaket(l.item) && (
+                            <div data-paket={key} style={{ fontSize: 10, color: "var(--tm)", marginTop: 2 }}>
+                              <div style={{ fontWeight: 600 }}>Isi paket (stok &amp; HPP dari isi):</div>
+                              {(l.item.grup ?? []).length === 0 && <div>—</div>}
+                              {(l.item.grup ?? []).map(isi => {
+                                const keb = kebutuhanIsiPaket(l.item!, l.qty).find(k => k.isi.id === isi.id);
+                                return (
+                                  <div key={isi.id}>
+                                    {angka(isi.qtyDasar)} {isi.unit} {isi.name}
+                                    {keb ? <> · butuh {angka(keb.butuh)} {isi.unit} · stok {angka(isi.stock)}{keb.butuh > isi.stock ? <b style={{ color: "#b45309" }}> (kurang)</b> : null}</> : <> · tanpa stok</>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                           {perkiraan && l.item && (
                             <label style={{ fontSize: 10.5, display: "block" }}>
                               <input type="checkbox" aria-label={`Konfirmasi kecocokan ${a.order.orderNo} baris ${l.index + 1}`} checked={konfirmasi.has(key)}
@@ -203,8 +221,9 @@ export function ShopeeImportWorkspace({ cabang, terkunci, defaultBranchId, isOwn
                                     {daftar.map(u => <option key={u.unit} value={u.unit}>{u.unit}</option>)}
                                   </select>
                                 ) : (
-                                  <span style={{ fontSize: 11.5 }}>{l.satuan.unit || "—"}</span>
+                                  <span style={{ fontSize: 11.5 }} aria-label={`Satuan ${a.order.orderNo} baris ${l.index + 1}`}>{l.satuan.unit || "—"}</span>
                                 )}
+                                {isPaket(l.item) && <div style={{ fontSize: 9.5, color: "var(--tm)" }}>paket: satuan dasar saja</div>}
                                 {l.satuan.factor !== 1 && (
                                   <div style={{ fontSize: 9.5, color: "var(--tm)" }}>stok keluar {String(Math.round(l.qty * l.satuan.factor * 1000) / 1000).replace(".", ",")} {dasar.unit}</div>
                                 )}

@@ -7,6 +7,7 @@ import {
   ALASAN_ARSIP_MAX, ALASAN_ARSIP_MIN, ALASAN_PAKSA_MIN_BERMAKNA, KATA_KONFIRMASI_PAKSA, PESAN_PAKSA_PERAN,
   bolehArsip, bolehPaksaArsip, hurufBermakna, pesanArsip,
 } from "@/lib/antrian-arsip";
+import { bolehTutupKunjungan, pesanTutupKunjungan } from "@/lib/batal-tagihan-klinik";
 
 export async function updateVisitStatus(formData: FormData) {
   const supabase = await createClient();
@@ -112,6 +113,19 @@ export async function forceArchiveVisit(formData: FormData) {
   if (error) redirect(galat(pesanArsip(error.message)));
   revalidatePath("/klinik/antrian");
   redirect("/klinik/antrian?success=arsip-paksa");
+}
+
+// B2 (meeting 12 Nov 2026): "Tutup kunjungan" untuk kunjungan Pembayaran yang semua tagihannya sudah Lunas. Hanya OWNER/ADMIN aktif; RPC
+// clinic_close_settled_visit mengulang peran dan memakai aturan penutupan yang sudah ada (rawat inap berjalan, belum ditagih, dst. ditolak).
+export async function closeSettledVisit(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "").trim();
+  if (!bolehTutupKunjungan(await profilPengguna(supabase))) redirect(galat("Hanya pemilik atau admin yang boleh menutup kunjungan."));
+  if (!id) redirect(galat("Muat ulang halaman lalu coba tutup kunjungan lagi."));
+  const { error } = await supabase.rpc("clinic_close_settled_visit", { p_visit_id: id });
+  if (error) redirect(galat(pesanTutupKunjungan(error.message)));
+  revalidatePath("/klinik/antrian");
+  redirect("/klinik/antrian?success=tutup");
 }
 
 export async function unarchiveVisit(formData: FormData) {

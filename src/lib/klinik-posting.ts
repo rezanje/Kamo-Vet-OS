@@ -241,7 +241,8 @@ export function parseClinicPostingError(error: { code?: string; message: string 
       return "Nilai invoice ditolak karena tidak konsisten. Periksa metode pembayaran, diskon, dan jumlah bayar, lalu pilih ulang metode atau muat ulang tagihan (belum ada yang tersimpan).";
     }
     // Tanggal efektif (backdate) Owner: penolakan periode/persediaan terkunci dan tagihan bercampur tanggal sudah berbahasa biasa.
-    const tanggalEfektif = /^(PERIODE_TERKUNCI|PERSEDIAAN_TERKUNCI|BACKDATE_CAMPUR|BACKDATE_SISA):\s*([^\r\n]{1,600})$/.exec(error.message);
+    // B3: void & terbit ulang / koreksi nota pengganti dibukukan di tanggal nota asli; rekonsiliasi bank & penggajian bulan itu menolak.
+    const tanggalEfektif = /^(PERIODE_TERKUNCI|PERSEDIAAN_TERKUNCI|BACKDATE_CAMPUR|BACKDATE_SISA|REKONSILIASI_TERKUNCI|GAJI_SUDAH_DIBUAT):\s*([^\r\n]{1,600})$/.exec(error.message);
     if (tanggalEfektif) return `${tanggalEfektif[2].trim()}. Belum ada yang tersimpan.`;
     const match = /^([A-Z_]+)(?::\s*([^\r\n]{1,100}))?$/.exec(error.message);
     if (match && fixedMessages[match[1]]) return fixedMessages[match[1]];

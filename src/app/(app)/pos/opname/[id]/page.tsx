@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { HasilView } from "./HasilView";
+import { BebanKaryawanPanel } from "./BebanKaryawanPanel";
 import { DaftarHitung } from "@/app/kasir/opname/[id]/DaftarHitung";
 
 type Order = OpnameCancellation & {
@@ -132,6 +133,8 @@ export default async function OpnameDetailPage({
             Laporan hasil SO: modal FIFO / harga jual
           </Link></div>
           <HasilView orderId={order.id} allowCorrections />
+          {/* F2: ringkasan selisih kurang (HPP & harga jual) + beban ke karyawan; hanya Owner/Finance/izin. */}
+          <BebanKaryawanPanel orderId={order.id} />
         </>
       ) : null}
     </>

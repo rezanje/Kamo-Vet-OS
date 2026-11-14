@@ -100,7 +100,7 @@ export const KODE_SISTEM: Record<string, string> = {
   "510002": "pendapatan jasa klinik",
   "810001": "pendapatan bunga bank (rekonsiliasi)",
   "810003": "laba pelepasan aset tetap",
-  "810004": "pendapatan lain-lain (kelebihan kas tutup shift)",
+  "810004": "pendapatan lain-lain (kelebihan kas tutup shift; selisih lebih opname & penyesuaian sejak F1)",
   "600001": "beban pokok penjualan — juga penanda HPP di Laba Rugi & dashboard",
   "710001": "beban gaji",
   "720002": "beban listrik & air (kategori pengeluaran)",
@@ -113,7 +113,7 @@ export const KODE_SISTEM: Record<string, string> = {
   "750004": "beban penyusutan",
   "820004": "rugi pelepasan aset tetap",
   "760002": "selisih kas tutup shift",
-  "720010": "selisih persediaan (opname, penyesuaian & retur barang rusak)",
+  "720010": "beban selisih stok (selisih kurang opname & penyesuaian, retur barang rusak)",
 };
 
 export const akunSistem = (code: string) => code in KODE_SISTEM;

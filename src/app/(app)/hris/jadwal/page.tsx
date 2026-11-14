@@ -3,9 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { hariIniWIB } from "@/lib/tanggal";
-import { saringanPenugasanAktif } from "@/lib/employee-assignment";
 import { jamRingkas } from "@/lib/shift-master";
-import { JadwalBoard, type KaryawanBaris, type ShiftOpsi } from "./JadwalBoard";
+import { bacaPapanJadwal } from "@/lib/jadwal-karyawan";
+import { bulanSebelumnya } from "@/lib/jadwal-salin";
+import { JadwalBoard, type ShiftOpsi } from "./JadwalBoard";
+import { SalinJadwalForm } from "./SalinJadwalForm";
 
 const NAMA_HARI = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
@@ -24,7 +26,7 @@ function hariDalamBulan(bulan: string) {
 export default async function JadwalPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cabang?: string; bulan?: string; error?: string; success?: string }>;
+  searchParams: Promise<{ cabang?: string; bulan?: string; error?: string; success?: string; info?: string }>;
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
@@ -41,22 +43,9 @@ export default async function JadwalPage({
   const awalBulan = hari[0]?.tanggal ?? `${bulan}-01`;
   const akhirBulan = hari[hari.length - 1]?.tanggal ?? `${bulan}-28`;
 
-  const [{ data: empData }, { data: shiftData }, { data: assignmentData }] = await Promise.all([
-    supabase.from("employees").select("id, nama, jabatan, branch_id").eq("status", "Aktif")
-      .order("nama"),
-    supabase.from("work_shifts").select("id, nama, warna, is_libur, jam_masuk, jam_pulang, branch_id")
-      .eq("is_active", true).or(`branch_id.is.null,branch_id.eq.${cabang}`).order("is_libur").order("jam_masuk"),
-    supabase.from("employee_branch_assignments").select("employee_id, branch_id").eq("branch_id", cabang)
-      .lte("effective_date", hariIni).or(saringanPenugasanAktif(hariIni)),
-  ]);
-
-  const assignedIds = new Set(((assignmentData ?? []) as { employee_id: string }[]).map((a) => a.employee_id));
-  const karyawan = ((empData ?? []) as (KaryawanBaris & { branch_id?: string | null })[])
-    .filter((e) => assignedIds.has(e.id) || (!assignmentData?.length && e.branch_id === cabang));
-  const shifts: ShiftOpsi[] = ((shiftData ?? []) as {
-    id: string; nama: string; warna: string; is_libur: boolean;
-    jam_masuk: string | null; jam_pulang: string | null;
-  }[]).map((s) => ({
+  const papan = await bacaPapanJadwal(supabase, cabang, hariIni);
+  const karyawan = papan.karyawan;
+  const shifts: ShiftOpsi[] = papan.shifts.map((s) => ({
     id: s.id, nama: s.nama, warna: s.warna, is_libur: s.is_libur,
     jam: jamRingkas(s.jam_masuk, s.jam_pulang),
   }));
@@ -90,7 +79,7 @@ export default async function JadwalPage({
       )}
       {sp.success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> Jadwal tersimpan.
+          <i className="ti ti-circle-check" /> {sp.info || "Jadwal tersimpan."}
         </div>
       )}
 
@@ -115,10 +104,15 @@ export default async function JadwalPage({
             <Link href="/hris/shift" style={{ color: "#2563eb" }}>Master Shift</Link>.
           </div>
         ) : (
-          <JadwalBoard
-            karyawan={karyawan} shifts={shifts} hari={hari} awal={awal}
-            cabang={cabang} bulan={bulan} bolehKelola={bolehKelola}
-          />
+          <>
+            {bolehKelola && karyawan.length > 0 && (
+              <SalinJadwalForm cabang={cabang} bulan={bulan} bulanLalu={bulanSebelumnya(bulan)} adaIsi={terisi > 0} />
+            )}
+            <JadwalBoard
+              karyawan={karyawan} shifts={shifts} hari={hari} awal={awal}
+              cabang={cabang} bulan={bulan} bolehKelola={bolehKelola}
+            />
+          </>
         )}
       </div>
     </>

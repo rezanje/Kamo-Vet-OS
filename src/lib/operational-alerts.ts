@@ -42,6 +42,8 @@ export type AlertMetric = {
   actual?: number;
   stockQty?: number;
   reason?: string;
+  /** Keterangan tambahan untuk kartu alert (mis. nilai harga jual & jumlah dokumen opname). */
+  detail?: string;
   periodLabel: string;
   detailUrl: string;
 };
@@ -55,6 +57,7 @@ export type OperationalAlert = {
   threshold: number;
   periodLabel: string;
   label: string;
+  detail?: string;
   detailUrl: string;
 };
 
@@ -85,15 +88,20 @@ const ALERT_DETAIL_PATHS = new Set([
   "/pos/opname",
   "/pos/expired",
   "/pos/stok",
+  "/laporan/hasil-opname",
 ]);
+
+// Laporan yang saringan cabangnya memakai ID cabang (bukan nama).
+const CABANG_BY_ID = new Set(["/laporan/hasil-opname"]);
 
 export function alertDetailHref(
   path: string,
-  filter: { from: string; to: string; branchName?: string },
+  filter: { from: string; to: string; branchName?: string; branchId?: string },
 ): string | null {
   if (!ALERT_DETAIL_PATHS.has(path)) return null;
   const params = new URLSearchParams({ dari: filter.from, sampai: filter.to });
-  if (filter.branchName) params.set("cabang", filter.branchName);
+  const cabang = CABANG_BY_ID.has(path) ? filter.branchId : filter.branchName;
+  if (cabang) params.set("cabang", cabang);
   return `${path}?${params.toString()}`;
 }
 
@@ -164,6 +172,7 @@ export function evaluateAlerts(metrics: AlertMetric[], settings: AlertSetting[])
       threshold: setting.threshold,
       periodLabel: metric.periodLabel,
       label: LABELS[metric.ruleKey],
+      ...(metric.detail ? { detail: metric.detail } : {}),
       detailUrl: metric.detailUrl,
     });
   }
