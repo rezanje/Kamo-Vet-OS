@@ -823,7 +823,7 @@ export default async function PembayaranPage({
                 <i className="ti ti-file-x" /> VOID &amp; TERBITKAN ULANG
               </div>
               <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
-                Pembayaran yang sudah diterima dialihkan ke invoice baru. Setelah koreksi, sisa tagihan dihitung ulang tanpa menerima uang dua kali.
+                Pembayaran yang sudah diterima dialihkan ke invoice baru. Setelah koreksi, sisa tagihan dihitung ulang tanpa menerima uang dua kali. Pendapatan dari pembatalan, invoice baru, dan koreksinya tetap dibukukan di tanggal invoice asli.
               </div>
               <VoidReissueForm key={invoice.id} visitId={visit.id} invoiceId={invoice.id} requestKey={randomUUID()}/>
             </div>

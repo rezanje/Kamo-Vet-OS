@@ -44,3 +44,20 @@ jadi memindah tanggal jurnal ke tanggal asli tidak membuka celah baru di periode
 Rencana teknis (bila A/B): tambalan berjangkar pada `cancel_posted_sale` dan `clinic_void_reissue_invoice_core`
 (tanpa menulis ulang fungsi), uji harness Postgres + tes regresi laporan, migrasi baru di atas versi tertinggi
 Production dan `main`, dipasang setelah disetujui.
+
+## 4. Implementasi (Reza: A, 14 Nov) — migrasi `20261118610000_b3_jurnal_batal_tanggal_asli.sql`
+
+- **Petshop (`cancel_posted_sale`):** pendekatan sama persis dengan `pos_sale_edit_void` (Ubah transaksi): tiap jurnal
+  pendapatan (`sale`/`sale-online`) dan penerimaan (`sale-receipt-cancel`/`-repost`) dibalik di **tanggalnya sendiri**;
+  `sale-void-hpp` dan mutasi stok `sale-void` tetap hari ini. Pagar baru: rekonsiliasi bank aktif bertanggal >= tanggal
+  jurnal pada rekening yang dibalik → ditolak. Tutup buku & penggajian tanggal struk sudah dijaga pagar lama.
+- **Klinik (`clinic_void_reissue_invoice_core`):** `klinik-void` + `klinik-reissue` di tanggal invoice asli (created_at WIB,
+  sama dengan invoice pengganti). Pasangan HPP (`klinik-hpp-void` + `klinik-hpp` invoice pengganti) **tetap hari ini**:
+  terbit ulang tidak menggerakkan stok dan pasangan ini saling meniadakan, jadi periode persediaan tanggal asli tidak tersentuh.
+- **Selisih nilai** sebenarnya terjadi saat invoice pengganti dikoreksi (`clinic_edit_invoice_core`, bukan saat terbit ulang
+  — terbit ulang menyalin nilai lama). Karena itu koreksi invoice pengganti yang belum selesai (correction_pending +
+  reissued_from, tanpa jendela tanggal efektif) ikut dibukukan di tanggal asli; HPP koreksinya tetap hari ini (aturan 2A).
+- Pagar klinik baru (kode dikenali layar): `PERIODE_TERKUNCI`, `REKONSILIASI_TERKUNCI`, `GAJI_SUDAH_DIBUAT` (komisi klinik
+  = tanggal lunas asli yang dipertahankan invoice pengganti). Ditolak di awal terbit ulang supaya invoice tidak tertahan
+  "koreksi belum selesai". Transaksi hari yang sama = perilaku lama persis.
+- Uji: `scripts/test-b3-jurnal-batal-tanggal-asli-postgres.py` (`--baseline` = kasus fitur merah tanpa migrasi).
