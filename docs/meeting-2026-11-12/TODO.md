@@ -105,10 +105,11 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 
 ## D. CRM & LOYALTY
 
-### D1 · [ ] P1 — Menu tambah/sesuaikan poin manual
+### D1 · [x] P1 — Menu tambah/sesuaikan poin manual
 - Pelanggan hasil migrasi sudah punya poin dari sistem lama. Perlu menu untuk menambah poin ke pelanggan secara manual, dengan alasan dan tercatat di log.
 - Bisa juga dipakai untuk hadiah quest/game.
-- Status (14 Nov): **kode siap, migrasi `20261118600000_d1_poin_manual.sql` BELUM dipasang (menunggu persetujuan Reza)**.
+- Status (14 Nov): dikerjakan; Reza setuju (A). Migrasi `20261114085215_d1_poin_manual.sql` **terpasang di Production** 14 Nov 2026,
+  15.52 WIB (cek live: 3 kolom jejak, penjaga, izin katalog, 2 fungsi; Owner = boleh). Tampil di aplikasi setelah PR di-merge & deploy.
   CRM › Pelanggan › detail › "Sesuaikan poin": tambah/kurangi, jumlah, alasan wajib (3–300 huruf); saldo tidak bisa minus;
   klik ganda tidak dobel; tercatat di riwayat poin (pelaku, alasan) + Log Aktifitas. Hak: Owner, atau peran yang dicentang
   izin khusus baru "Sesuaikan poin pelanggan" (CRM) di Akses Grup. Tanpa jurnal (poin memang tidak dijurnal).
@@ -116,11 +117,11 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
   VetOS sejak 1 Nov — poin sistem lama belum ada yang masuk. Bila saldo lama banyak, bisa ditambah impor Excel massal.
 - Screenshot: `crm-pelanggan.jpg`
 
-### D2 · [ ] P2 — Filter retensi: pelanggan tidak datang N bulan
+### D2 · [x] P2 — Filter retensi: pelanggan tidak datang N bulan
 - Filter pelanggan yang tidak datang dalam 2 bulan (sebaiknya N bisa diatur).
 - Retention WA masih "halaman dalam pengembangan", jadi lanjutkan setelah filter ada.
-- Status (14 Nov): **kode siap, migrasi `20261118700000_d2_filter_retensi.sql` BELUM dipasang (menunggu persetujuan Reza;
-  hanya fungsi baca, tanpa ubah data)**. CRM › Pelanggan: "Tidak datang ≥ N bulan" (1/2/3/6/12, bawaan 2; URL bisa 1–60),
+- Status (14 Nov): dikerjakan; Reza setuju (A). Migrasi fungsi baca `20261114085222_d2_filter_retensi.sql` **terpasang di Production**
+  14 Nov 2026, 15.52 WIB (cek live sebagai Owner: tidak datang ≥2 bln 1.882, ≥6 bln 970, ≥12 bln 760 pelanggan). CRM › Pelanggan: "Tidak datang ≥ N bulan" (1/2/3/6/12, bawaan 2; URL bisa 1–60),
   bisa digabung dengan cari, kolom "Terakhir Datang", jumlah hasil. "Datang" = transaksi petshop/online tidak dibatalkan atau
   kunjungan klinik tidak diarsipkan, dihitung lintas semua cabang; yang belum pernah datang tidak ikut. Catatan: riwayat klinik
   hasil impor ikut (bertanggal asli sejak 2024), riwayat petshop sistem lama tidak ada (VetOS mulai 1 Nov). Sebelum migrasi

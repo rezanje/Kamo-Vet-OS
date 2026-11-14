@@ -85,7 +85,7 @@ describe("aksi sesuaikanPoin", () => {
 });
 
 describe("sinkron migrasi", () => {
-  const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261118600000_d1_poin_manual.sql"), "utf8");
+  const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261114085215_d1_poin_manual.sql"), "utf8");
   it("katalog izin enforced di modul CRM, satu transaksi tanpa begin/commit sendiri", () => {
     expect(sql).toMatch(/action_catalog\(id,label,"group",enforced\) values\s*\('crm\.poin_manual',[\s\S]*?'CRM',true\)/);
     expect(sql).toMatch(/action_modules\(id,module_id\) values\('crm\.poin_manual','crm'\)/);

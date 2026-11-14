@@ -1,7 +1,7 @@
 /**
  * D1 (meeting 12 Nov 2026): Sesuaikan poin pelanggan manual — tambah/kurangi poin dengan alasan wajib.
  *
- * Hak dibaca dari database (`customer_points_adjust_allowed`, migrasi 20261118600000_d1_poin_manual.sql): OWNER selalu; peran lain hanya
+ * Hak dibaca dari database (`customer_points_adjust_allowed`, migrasi 20261114085215_d1_poin_manual.sql): OWNER selalu; peran lain hanya
  * bila Owner mencentang izin `crm.poin_manual` di Pengaturan > Akses Grup (izin khusus, bawaan MATI). Penyesuaian dijalankan atomik oleh
  * `adjust_customer_points` (saldo tidak boleh minus, anti-dobel lewat kunci permintaan, pelaku & alasan tercatat di riwayat poin).
  * Sebelum migrasinya terpasang: fungsi tidak ada -> tombol tidak tampil, aksi menjawab "belum aktif" (aman).

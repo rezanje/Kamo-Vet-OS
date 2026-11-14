@@ -153,11 +153,10 @@ kolom `correction_reason` ada.
 | B3 | [ ] temuan | — | `TEMUAN-B3.md`: omzet sudah di tanggal asli di semua jalur; sisa celah jurnal pembatalan struk / void-terbit-ulang klinik. Menunggu keputusan (A/B/C). |
 | B2 | [ ] usulan | — | `USULAN-B2.md` (59 dari 82 kunjungan Pembayaran tanpa tagihan → sudah bisa diarsipkan). Menunggu keputusan. |
 | C1 | [ ] sebagian | Belum (kode di PR) | Bug tanggal Catat Absensi (terkunci 1 Juli) diperbaiki. `USULAN-C1.md` (tahap + pilihan teknologi wajah). |
-| D1 | [ ] kode siap | Belum | Migrasi `20261118600000_d1_poin_manual.sql` **belum dipasang** (menunggu persetujuan). Harness `scripts/test-poin-manual-postgres.py` 24/24. |
-| D2 | [ ] kode siap | Belum | Migrasi `20261118700000_d2_filter_retensi.sql` (fungsi baca) **belum dipasang** (menunggu persetujuan). Harness `scripts/test-filter-retensi-postgres.py` 14/14. |
+| D1 | [x] | **Ya** — migrasi 15.52 WIB (kode setelah merge) | Migrasi `20261114085215_d1_poin_manual.sql` terpasang (Reza: A). Harness `scripts/test-poin-manual-postgres.py` 24/24. |
+| D2 | [x] | **Ya** — migrasi 15.52 WIB (kode setelah merge) | Migrasi fungsi baca `20261114085222_d2_filter_retensi.sql` terpasang (Reza: A). Harness `scripts/test-filter-retensi-postgres.py` 14/14. |
 | E2 | [ ] usulan | — | `USULAN-E2.md` (barang Grup untuk bundling online). |
 | F1, F2 | [ ] usulan | — | `USULAN-F1-F2.md` (Production masih FIFO; plus & minus opname sama-sama ke 720010). |
 
-Migrasi menunggu (urutan pasang bila disetujui): `20261118500000` (E4 tahap 2, syarat Transit kosong), `20261118600000` (D1),
-`20261118700000` (D2). Versi tertinggi Production saat ini `20261118200000` (cabang_gudang, dari PR lain); `apply_migration` mencatat jam pasang (mis. 2026111408…),
+Migrasi menunggu: `20261118500000` (E4 tahap 2, syarat Transit kosong). D1/D2 sudah terpasang (versi `20261114085215`/`20261114085222`). Versi tertinggi Production saat ini `20261118200000` (cabang_gudang, dari PR lain); `apply_migration` mencatat jam pasang (mis. 2026111408…),
 lalu rename file ke versi itu. Build lokal butuh `NODE_OPTIONS=--max-old-space-size=8192 npm run build`.

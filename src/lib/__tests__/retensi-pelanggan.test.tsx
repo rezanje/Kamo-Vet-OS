@@ -107,7 +107,7 @@ describe("halaman CRM › Pelanggan", () => {
 });
 
 describe("sinkron migrasi", () => {
-  const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261118700000_d2_filter_retensi.sql"), "utf8");
+  const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261114085222_d2_filter_retensi.sql"), "utf8");
   it("fungsi & parameter sama dengan yang dipanggil; satu transaksi", () => {
     expect(sql).toContain("create function public.pelanggan_tidak_datang(p_bulan integer) returns setof public.customers");
     expect(sql).toContain("create function public.pelanggan_terakhir_datang(p_ids uuid[])");

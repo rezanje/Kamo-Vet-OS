@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D2 (meeting 12 Nov 2026): filter retensi pelanggan tidak datang N bulan (migrasi 20261118700000_d2_filter_retensi.sql).
+"""D2 (meeting 12 Nov 2026): filter retensi pelanggan tidak datang N bulan (migrasi 20261114085222_d2_filter_retensi.sql).
 
 Native throwaway PostgreSQL only (full migration chain, fictional fixtures). Never accepts a database URL, no network.
 
@@ -17,7 +17,7 @@ from native_postgres import NativePostgres  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-accurate-inventory-accounting-postgres.py")
 fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
-CANDIDATE = ROOT / "supabase/migrations/20261118700000_d2_filter_retensi.sql"
+CANDIDATE = ROOT / "supabase/migrations/20261114085222_d2_filter_retensi.sql"
 RESULTS = []
 
 U = lambda n: f"d2000000-0000-4000-8000-{n:012d}"

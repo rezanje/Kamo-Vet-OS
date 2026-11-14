@@ -24,7 +24,7 @@ export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "kasir.jual_bawah_modal",
   // A5 (meeting 12 Nov 2026): koreksi visit rawat inap (migrasi 20261113031357_a5_koreksi_visit_rawat_inap.sql).
   "klinik.koreksi_visit",
-  // D1 (meeting 12 Nov 2026): sesuaikan poin pelanggan manual (migrasi 20261118600000_d1_poin_manual.sql).
+  // D1 (meeting 12 Nov 2026): sesuaikan poin pelanggan manual (migrasi 20261114085215_d1_poin_manual.sql).
   "crm.poin_manual",
 ];
 
