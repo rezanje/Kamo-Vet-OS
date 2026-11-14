@@ -13,7 +13,7 @@ export type StrukUbah = StrukLama & {
   rupiahPerPoin: number | null; customerName: string | null;
 };
 
-const ITEM_COLS = "id, item_id, nama, qty, harga, satuan, faktor, target_species, service_performers, item_discount_type, item_discount_value, promo_id, promo_discount, quantity_pool_claim, promo_claim_id, promo_sets, promo_syarat_units, promo_hasil_units, promo_floor_waiver, source_position";
+const ITEM_COLS = "id, item_id, nama, qty, harga, satuan, faktor, target_species, service_performers, item_discount_type, item_discount_value, promo_id, promo_discount, quantity_pool_claim, promo_claim_id, promo_sets, promo_syarat_units, promo_hasil_units, promo_floor_waiver, source_position, below_hpp_owner_reason";
 
 /** Struk lama dibaca dari database (sumber kebenaran untuk promo/pelaksana/komponen yang dibawa). */
 export async function loadStrukUbah(supabase: Client, saleId: string): Promise<StrukUbah | null> {

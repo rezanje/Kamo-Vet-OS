@@ -23,6 +23,7 @@ import { posNetTotal, posSubtotal } from "@/lib/pos-money";
 import { bacaKode, pesanKampanyeDitolak, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
 import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { muatPelanggan, useCariPelanggan } from "@/components/useCariPelanggan";
+import { bawahModalBelumSah, JualBawahModalField } from "@/components/JualBawahModalField";
 
 export type Item = { id: string; code?: string; name: string; item_type?: string; tindakan_kategori?: string | null; sell_price: number; target_species: string; units: ItemUnit[] };
 export type Pet = { id: string; name: string; species: string | null };
@@ -36,6 +37,7 @@ type Line = {
   row_key: string; item_type?: string; tindakan_kategori?: string | null; service_performers: ServicePerformersInput | null;
   item_id: string; nama: string; qty: number; harga: number; target_species: string;
   satuan: string; faktor: number;
+  bawah_modal_pilih?: string; bawah_modal_teks?: string; bawah_modal_alasan?: string; // Jual di bawah modal (Owner/berizin, Persediaan)
 };
 
 const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
@@ -51,7 +53,7 @@ export type HargaPerCabang = Record<string, Record<string, number>>; // branchId
 const TANPA_PELANGGAN: Cust[] = [];
 const NO_SH_DEFS: SyaratHasilDef[] = [];
 
-export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, syaratHasilPerCabang, promoPickerPerCabang, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null, bolehDiskon = true }: {
+export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, syaratHasilPerCabang, promoPickerPerCabang, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null, bolehDiskon = true, bolehBawahModal = false }: {
   items: Item[];
   /** Pelanggan yang sudah diketahui (opsional). Daftar lengkap tidak lagi dikirim — dicari di server. */
   customers?: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
@@ -70,6 +72,7 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
   infoBarang?: Record<string, BarangDiskon>;
   /** Diskon manual hanya Owner/Admin (izin Akses Grup, dibaca server). */
   bolehDiskon?: boolean;
+  bolehBawahModal?: boolean;
 }) {
   const [branchId, setBranchId] = useState("");
   const [q, setQ] = useState("");
@@ -114,7 +117,7 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
           const price = hargaPerCabang[branch]?.[`${item.id}|${unit.unit}`] ?? unit.sell_price;
           const rowKey = line.row_key && !rowKeys.has(line.row_key) ? line.row_key : crypto.randomUUID();
           rowKeys.add(rowKey);
-          return [{ ...line, row_key: rowKey, item_type: item.item_type, tindakan_kategori: item.tindakan_kategori,
+          return [{ ...line, ...(bolehBawahModal ? {} : { bawah_modal_pilih: undefined, bawah_modal_teks: undefined, bawah_modal_alasan: undefined }), row_key: rowKey, item_type: item.item_type, tindakan_kategori: item.tindakan_kategori,
             service_performers: line.service_performers ?? emptyServicePerformers(),
             nama: item.name, target_species: item.target_species, harga: price, faktor: unit.factor }];
         });
@@ -136,7 +139,7 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
       draftReady.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [branches, customers, hargaPerCabang, items, bolehDiskon]);
+  }, [branches, customers, hargaPerCabang, items, bolehDiskon, bolehBawahModal]);
 
   useEffect(() => {
     if (!draftReady.current) return;
@@ -298,7 +301,7 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
     finalTotal = quote.total;
     resolvePosPayments({ total: quote.total, method: split ? "Split" : metode, bayar, payments: split ? quote.parts : [] });
   } catch { paymentValid = false; }
-  const canPay = checkoutKey && branchId && cart.length > 0 && paymentValid && !tolakKode;
+  const canPay = checkoutKey && branchId && cart.length > 0 && paymentValid && !tolakKode && !(bolehBawahModal && cart.some(bawahModalBelumSah));
 
   function pickCust(hit: { id: string; name: string }, petAwal = "") {
     const req = ++custReq.current;
@@ -446,6 +449,10 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
                 <div style={{ fontSize: 10.5, minWidth: 62, textAlign: "right" }}>{rp(l.qty * l.harga)}</div>
                 <button type="button" aria-label={`Hapus ${l.nama}`} onClick={() => remove(k)} className="back-btn" style={{ color: "#b91c1c" }}><i className="ti ti-trash" /></button>
               </div>
+              {bolehBawahModal && l.item_type === "Persediaan" && (
+                <JualBawahModalField nama={l.nama} pilih={l.bawah_modal_pilih} teks={l.bawah_modal_teks}
+                  onChange={patch => setCart(rows => rows.map(row => row.row_key === k ? { ...row, ...patch } : row))} />
+              )}
               <ServicePerformersField label={`Pelaksana ${l.nama}`} value={l.service_performers}
                 grooming={groomingAppliesByBranch[branchId] && l.item_type === "Jasa" && l.tindakan_kategori === "Grooming"} doctorRequired={groomingDoctorByBranch[branchId]}
                 staff={serviceStaffByBranch[branchId] ?? []} onChange={value => setCart(rows => rows.map(row => row.row_key === k ? { ...row, service_performers: value } : row))} />

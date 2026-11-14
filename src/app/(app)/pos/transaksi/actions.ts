@@ -29,6 +29,7 @@ import { priceFloorFindings } from "@/lib/cashier-price-floor";
 import { buildPromoSelection, composedToLine, composeHppSafe, composeSyaratHasilCart, loadSyaratHasilKasir, pesanPromoSyaratHasil, type ShClaimMeta } from "@/lib/promo-syarat-hasil-checkout";
 import { quoteSaleLineCosts } from "@/lib/sale-fifo-quote";
 import { manualDiscountAllowed, PESAN_DISKON_MANUAL_DITOLAK } from "@/lib/manual-discount";
+import { alasanBawahModalPerBaris, belowCostSaleAllowed, PESAN_BAWAH_MODAL_DITOLAK, pesanBawahModalDb } from "@/lib/jual-bawah-modal";
 import { hppWarningConfirmed, hppWarningQuery, hppWarningsFrom, type HppWarning } from "@/lib/hpp-warning";
 
 type CartLine = {
@@ -37,6 +38,7 @@ type CartLine = {
   service_performers?: ServicePerformersInput | null;
   item_type?: string;
   official_price?: number; sh_claim?: ShClaimMeta; // diisi server saja (bukti promo syarat-hasil); nilai dari klien dibuang di bawah
+  bawah_modal_alasan?: string; // Jual di bawah modal (Owner/berizin): alasan wajib; izin diperiksa ke database, DB menegakkannya lagi
 };
 
 
@@ -195,7 +197,7 @@ export async function checkoutSale(formData: FormData) {
       }
     }
     const origin = rows.slice();
-    rows.splice(0, rows.length, ...composed.rows.map((r) => ({ ...(composedToLine(r, true) as unknown as (typeof rows)[number]), item_id: origin[r.origin_index].item_id })));
+    rows.splice(0, rows.length, ...composed.rows.map((r) => ({ ...(composedToLine(r, true) as unknown as (typeof rows)[number]), item_id: origin[r.origin_index].item_id, bawah_modal_alasan: origin[r.origin_index].bawah_modal_alasan })));
     rincianPromo = composed.rows.flatMap((r, lineIndex) => (r.promo_id && r.promo_discount > 0 ? [{ lineIndex, item_id: r.item_id ?? "", promoId: r.promo_id, potongan: r.promo_discount, qtyKena: r.qty, promoName: r.promo_name ?? "" }] : []));
   }
   // Ringkasan promo (audit/tampilan saja; uangnya ada di baris): ditulis hanya bila promo syarat-hasil dipakai, ada promo yang dilepas HPP,
@@ -296,6 +298,16 @@ export async function checkoutSale(formData: FormData) {
   // P03: back office boleh menjual di bawah HPP, tetapi hanya setelah peringatan yang
   // menyebut barangnya dikonfirmasi. Perkiraan HPP = FIFO gudang saat ini.
   const hppGoods = rows.filter(row => row.item_id && row.item_type === "Persediaan");
+  // Jual di bawah modal (Owner/berizin, barang Persediaan, alasan wajib): baris itu tidak perlu konfirmasi peringatan lagi dan alasannya dicatat.
+  // Baris promo di bawah HPP (waiver) tidak ikut. Hak dibaca dari database; trigger sale_items menegakkannya lagi saat baris ditulis.
+  const bawahModal = alasanBawahModalPerBaris(rows.map(row => (row.sh_claim?.waiver === true ? { ...row, bawah_modal_alasan: undefined } : row)));
+  let bawahModalBoleh = false;
+  if (bawahModal.diminta) {
+    bawahModalBoleh = await belowCostSaleAllowed(supabase);
+    if (!bawahModalBoleh) redirect(`/pos/transaksi?error=${encodeURIComponent(PESAN_BAWAH_MODAL_DITOLAK)}`);
+    if (bawahModal.tidakSah > 0) redirect(`/pos/transaksi?error=${encodeURIComponent("Alasan jual di bawah modal wajib diisi (3-200 huruf) dan hanya untuk barang persediaan.")}`);
+  }
+  let alasanSimpan: (string | null)[] = rows.map(() => null);
   if (wh && hppGoods.length > 0) {
     let warnings: HppWarning[] = [];
     let waiverStacked = false;
@@ -306,7 +318,10 @@ export async function checkoutSale(formData: FormData) {
       })));
       const findings = priceFloorFindings(lines, total, costs, rows.map(row => row.sh_claim?.waiver === true));
       waiverStacked = findings.some(finding => finding.waived === true);
-      warnings = hppWarningsFrom(findings);
+      // Temuan "di bawah HPP" pada baris obral Owner bukan peringatan lagi; alasan dicatat hanya pada baris yang memang di bawah modal.
+      const obral = (finding: (typeof findings)[number]) => finding.kind === "below" && !finding.paket && !finding.waived && bawahModalBoleh && bawahModal.alasan[finding.index] !== null;
+      alasanSimpan = rows.map((_, index) => (findings.some(finding => finding.index === index && obral(finding)) ? bawahModal.alasan[index] : null));
+      warnings = hppWarningsFrom(findings.filter(finding => !obral(finding)));
     } catch (error) {
       // Peringatan tidak boleh menghentikan transaksi bila HPP tidak terbaca; FIFO riil tetap dibukukan.
       console.error("[pos/transaksi] perkiraan HPP gagal dibaca:", error);
@@ -384,9 +399,10 @@ export async function checkoutSale(formData: FormData) {
           promo_claim_id: l.sh_claim.promo_id, promo_sets: l.sh_claim.sets, promo_syarat_units: l.sh_claim.syarat_units,
           promo_hasil_units: l.sh_claim.hasil_units, promo_floor_waiver: l.sh_claim.waiver,
         } : {}),
+        ...(alasanSimpan[index] ? { below_hpp_owner_reason: alasanSimpan[index] } : {}),
         hpp: l.item_id ? 0 : null,
       }).select("id").single();
-      if (itemErr || !insertedLine) throw new Error(itemErr?.message ?? "Gagal menyimpan rincian transaksi");
+      if (itemErr || !insertedLine) throw new Error(pesanBawahModalDb(itemErr?.message ?? "Gagal menyimpan rincian transaksi"));
       pendingLines.push({ id: insertedLine.id, line: l });
     }
     if (rows.some(row => row.sh_claim)) {

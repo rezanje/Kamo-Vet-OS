@@ -150,6 +150,7 @@ export const SUBMENU_ENTRIES: readonly SubmenuEntry[] = [
   e("laporan", "operasional-penjualan", ["/laporan/operasional-penjualan"]),
   e("laporan", "stok-slow-moving", ["/laporan/stok-slow-moving"]),
   e("laporan", "stok-harus-order", ["/laporan/stok-harus-order"]),
+  e("laporan", "jual-bawah-modal", ["/laporan/jual-bawah-modal"]),
   e("laporan", "pelanggan-teratas", ["/laporan/pelanggan-teratas"]),
   e("laporan", "jadwal-anabul", ["/laporan/jadwal-anabul"]),
   e("laporan", "absensi", ["/laporan/absensi"]),
