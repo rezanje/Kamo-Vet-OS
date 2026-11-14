@@ -140,3 +140,24 @@ kolom `correction_reason` ada.
 - `RENCANA-P0.md` — rencana & keputusan A1–A3.
 - `USULAN-A5.md`, `TEMUAN-B1.md`, `USULAN-E3.md` — usulan/temuan + keputusan Reza.
 - `docs/runbooks/e4-pindah-stok-wh-online/01-preflight-readonly.sql` — preflight E4 bagian 2.
+
+---
+
+## 7. Update sesi lanjutan (14 Nov 2026 sore, branch `claude/cool-mendel-xjtoy1`)
+
+| ID | Status | Live di Production? | Catatan |
+|---|---|---|---|
+| E3 | [x] | **Ya** — migrasi terpasang 14.43 WIB | Versi Production `20261114074354` (file di-rename). 0 akun ber-akses khusus. |
+| E4 bagian 2 | tahap 1 [x], tahap 2 [ ] | **Tahap 1 ya** (15.08 WIB, `20261114080823`) | Keputusan Reza **B**: 4 barang PDRY (21 unit) sama dengan kiriman Permintaan Barang yang masih di Transit → ditahan. TKI 3/16 pindah + nonaktif; PDRY 27/209 pindah, gudang tetap aktif. **Tahap 2** `20261118200000_e4_pindah_stok_wh_online_tahap2.sql` (diuji, belum dipasang) setelah kiriman Transit diterima toko. |
+| D3, E1 | [x] diverifikasi | — | Lihat TODO.md. |
+| B3 | [ ] temuan | — | `TEMUAN-B3.md`: omzet sudah di tanggal asli di semua jalur; sisa celah jurnal pembatalan struk / void-terbit-ulang klinik. Menunggu keputusan (A/B/C). |
+| B2 | [ ] usulan | — | `USULAN-B2.md` (59 dari 82 kunjungan Pembayaran tanpa tagihan → sudah bisa diarsipkan). Menunggu keputusan. |
+| C1 | [ ] sebagian | Belum (kode di PR) | Bug tanggal Catat Absensi (terkunci 1 Juli) diperbaiki. `USULAN-C1.md` (tahap + pilihan teknologi wajah). |
+| D1 | [ ] kode siap | Belum | Migrasi `20261118300000_d1_poin_manual.sql` **belum dipasang** (menunggu persetujuan). Harness `scripts/test-poin-manual-postgres.py` 24/24. |
+| D2 | [ ] kode siap | Belum | Migrasi `20261118400000_d2_filter_retensi.sql` (fungsi baca) **belum dipasang** (menunggu persetujuan). Harness `scripts/test-filter-retensi-postgres.py` 14/14. |
+| E2 | [ ] usulan | — | `USULAN-E2.md` (barang Grup untuk bundling online). |
+| F1, F2 | [ ] usulan | — | `USULAN-F1-F2.md` (Production masih FIFO; plus & minus opname sama-sama ke 720010). |
+
+Migrasi menunggu (urutan pasang bila disetujui): `20261118200000` (E4 tahap 2, syarat Transit kosong), `20261118300000` (D1),
+`20261118400000` (D2). Versi tertinggi Production saat ini `20261118100000`; `apply_migration` mencatat jam pasang (mis. 2026111408…),
+lalu rename file ke versi itu. Build lokal butuh `NODE_OPTIONS=--max-old-space-size=8192 npm run build`.
