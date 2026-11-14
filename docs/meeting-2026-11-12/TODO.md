@@ -153,6 +153,15 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
   **Belum:** penghapusan/penonaktifan WH Online (menunggu jawaban [?]). Data 13 Nov: WH ONLINE PDRY 31 barang / 230 unit,
   WH ONLINE TKI 3 barang / 16 unit masih bersaldo; mutasi terakhir 4 Nov. Order online manual (Penjualan Online → Baru)
   masih memilih gudang seperti sebelumnya.
+- ~~[?]~~ → **Dijawab Reza: 2A** (pindah stok ke gudang toko + nonaktifkan WH Online).
+- Bagian 2, **tahap 1 terpasang di Production** 14 Nov 2026, 15.08 WIB (migrasi `20261114080823_e4_pindah_stok_wh_online.sql`).
+  Preflight 14 Nov cocok persis (31/230 dan 3/16, mutasi terakhir 4 Nov), tetapi 4 barang PDRY sama dengan kiriman Permintaan
+  Barang DC LOJI yang masih di Transit → **keputusan Reza "B"**: pindah sekarang tanpa 4 barang itu.
+  Hasil: WH ONLINE TKI → WH TKI 3 barang / 16 unit (IT.2026.11.00330/00331), **WH ONLINE TKI nonaktif**;
+  WH ONLINE PDRY → WH PDRY 27 barang / 209 unit (IT.2026.11.00328/00329). Nilai pindah Rp3.604.373,06 = nilai masuk toko,
+  tanpa jurnal. **Sisa:** WH ONLINE PDRY masih aktif memegang 4 barang / 21 unit (Chester Tuna 800gr 8, Cat Choize Tuna adult 8,
+  Cat Choize Salmon adult 4, Pasir Lala 25L Coffee 1) → **tahap 2** `20261118200000_e4_pindah_stok_wh_online_tahap2.sql`
+  (ditulis + diuji, BELUM dipasang) dipasang setelah kiriman Transit itu diterima toko (Panduraya, Muara, Ciawi, TKI/Kopo).
 - Screenshot: `penjualan-online-pilih-wh.jpg`
 
 ---

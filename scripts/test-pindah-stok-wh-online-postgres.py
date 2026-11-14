@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """E4 bagian 2 (meeting 12 Nov 2026, keputusan owner 2A): sisa stok WH ONLINE PDRY/TKI dipindah ke gudang toko
 cabang yang sama lewat dokumen Pemindahan Barang resmi, lalu kedua gudang online dinonaktifkan
-(migrasi 20261117300000_e4_pindah_stok_wh_online.sql).
+(migrasi 20261114080823_e4_pindah_stok_wh_online.sql).
 
 Native throwaway PostgreSQL only (full migration chain, fictional fixtures shaped like production:
 31 barang / 230 unit di WH ONLINE PDRY, 3 barang / 16 unit di WH ONLINE TKI, plus WH B2C yang tidak boleh
@@ -24,7 +24,8 @@ spec = importlib.util.spec_from_file_location('fixture', ROOT / 'scripts/test-ac
 fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
 from native_postgres import NativePostgres  # noqa: E402
 
-CAND = '20261117300000_e4_pindah_stok_wh_online.sql'
+CAND = '20261114080823_e4_pindah_stok_wh_online.sql'
+TAHAP2 = '20261118200000_e4_pindah_stok_wh_online_tahap2.sql'
 MIGRATIONS = ROOT / 'supabase/migrations'
 NOTE = 'E4 meeting 12 Nov 2026: pemindahan sisa stok WH Online ke gudang toko'
 RESULTS = []
@@ -97,7 +98,7 @@ def apply_candidate(db, dbname):
     if rc:
         errs = [l for l in err.splitlines() if l.startswith('ERROR')]
         return (errs[0] if errs else err.strip())[:600]
-    for later in sorted(p for p in MIGRATIONS.glob('*.sql') if p.name > CAND):
+    for later in sorted(p for p in MIGRATIONS.glob('*.sql') if p.name > CAND and p.name != TAHAP2):
         rc, out, err = raw(db, 'begin;\n' + later.read_text() + '\ncommit;', dbname)
         if rc: raise RuntimeError(later.name + ': ' + err)
     return None
@@ -314,8 +315,6 @@ def refusals(db, template, baseline):
         ('opname terbuka di gudang online', f"insert into public.opname_orders(no_opname,warehouse_id,penanggung_jawab,status) values('OP-E4-X','{WH['on_tki']}','Fiktif','Terbuka');", 'dokumen terbuka'),
         ('periode akuntansi hari ini terkunci', "update public.accounting_locks set closed_until=(now() at time zone 'Asia/Jakarta')::date;", 'Periode akuntansi'),
         ('barang bersaldo sudah nonaktif', f"set session_replication_role=replica; update public.items set is_active=false where id='{pz}'; set session_replication_role=origin;", 'tidak aktif'),
-        ('Transit masih memegang barang yang sama', f"insert into public.warehouses(id,branch_id,code,name,type) values('e4020000-0000-4000-8000-000000000009','{BR['pdry']}','TRANSIT','Transit','TRANSIT');"
-         f"select public.stock_in_fifo('e4020000-0000-4000-8000-000000000009','{pz}',1,9000,'transfer','IT-E4-X','2026-11-03');", 'Transit'),
         ('lapisan FIFO tidak sama dengan saldo (mode FIFO)', f"update public.stock_layers set qty_left=qty_left-1 where warehouse_id='{WH['on_pdry']}' and item_id='{pz}' and qty_left>=1 and id=(select id from public.stock_layers where warehouse_id='{WH['on_pdry']}' and item_id='{pz}' and qty_left>=1 order by id limit 1);", 'lapisan FIFO'),
         ('fungsi posting resmi berubah (drift)', """do $d$ declare v text:=pg_get_functiondef('public.post_stock_transfer_atomic(uuid,uuid,uuid,uuid,date,text,jsonb)'::regprocedure);
 begin execute replace(v,'''transfer'',v_number,p_date);','''transfer'',v_number,p_date+0);');end $d$;""", 'E4_DRIFT'),
@@ -328,6 +327,102 @@ begin execute replace(v,'''transfer'',v_number,p_date);','''transfer'',v_number,
         err = None if baseline else apply_candidate(db, dbn)
         check('[tolak] ' + name, bool(err) and phrase in err and ('Tidak ada yang diubah' in err) and fingerprint(db, dbn) == fp, err)
         q(db, 'postgres', 'drop database %s' % dbn)
+
+
+def transit_hold(db, template, mode, baseline):
+    """Tahap 1 (keputusan owner B, 14 Nov): barang yang sama sedang di Transit -> ditahan di gudang online, sisanya pindah;
+    gudang online yang masih memegang barang tertahan tetap aktif, yang kosong dinonaktifkan."""
+    dbn = 'hold_' + mode
+    clone(db, dbn, template)
+    tr = 'e4020000-0000-4000-8000-000000000009'
+    held = [item_id('P', 7), item_id('P', 8)]
+    q(db, dbn, f"insert into public.warehouses(id,branch_id,code,name,type) values('{tr}','{BR['pdry']}','TRANSIT','Transit','TRANSIT');"
+          + ''.join(f"select public.stock_in_fifo('{tr}','{it}',1,9000,'transfer','IT-E4-X','2026-11-03');" for it in held))
+    before = snapshot(db, dbn)
+    held_layers = layers(db, dbn, WH['on_pdry'], "and item_id in ('%s')" % "','".join(held))
+    b2c = b2c_print(db, dbn)
+    journals = q(db, dbn, 'select count(*) from public.journal_entries')
+    err = None if baseline else apply_candidate(db, dbn)
+    if not baseline:
+        check(f'[{mode}][tahan] migrasi jalan walau Transit memegang barang yang sama', err is None, err)
+    after = snapshot(db, dbn)
+    on_left = {k[1]: v[0] for k, v in after.items() if k[0] == WH['on_pdry'] and v[0] != 0}
+    check(f'[{mode}][tahan] barang tertahan tetap di WH ONLINE PDRY (qty sama), barang lain sudah pindah semua',
+          on_left == {it: before[(WH['on_pdry'], it)][0] for it in held}, {k[-6:]: str(v) for k, v in on_left.items()})
+    check(f'[{mode}][tahan] lapisan barang tertahan di gudang online utuh',
+          bool(held_layers) and layers(db, dbn, WH['on_pdry'], "and item_id in ('%s')" % "','".join(held)) == held_layers
+          and not layers(db, dbn, WH['on_pdry'], "and item_id not in ('%s')" % "','".join(held)))
+    check(f'[{mode}][tahan] Transit tetap memegang kiriman lain (1 unit per barang tertahan)',
+          all(after.get((tr, it), [0])[0] == 1 for it in held) and all(after.get((STORE[WH['on_pdry']], it), [0])[0] == before.get((STORE[WH['on_pdry']], it), [0])[0] for it in held), '', 'invariant')
+    moved = {(w, it): v[0] for (w, it), v in before.items() if w in ONLINE and v[0] != 0 and it not in held}
+    bad = {it[-6:]: 1 for (w, it), q_ in moved.items() if after.get((STORE[w], it), [0])[0] != before.get((STORE[w], it), [0])[0] + q_
+           or after.get((w, it), [0])[0] != 0}
+    check(f'[{mode}][tahan] saldo toko naik tepat untuk 29 barang PDRY + 3 barang TKI', not bad and len(moved) == 32, bad)
+    tb = sum(v[1] for v in before.values()); ta = sum(v[1] for v in after.values())
+    check(f'[{mode}][tahan] total nilai persediaan tetap, tanpa jurnal baru, B2C tak tersentuh',
+          abs(tb - ta) <= Decimal('0.05') and q(db, dbn, 'select count(*) from public.journal_entries') == journals and b2c_print(db, dbn) == b2c,
+          (str(tb), str(ta)), 'invariant')
+    docs = js(db, dbn, f"""select coalesce(jsonb_agg(jsonb_build_object('proses',proses,'from',from_warehouse_id,
+ 'items',(select jsonb_agg(item_id) from public.stock_transfer_items where transfer_id=t.id))),'[]') from public.stock_transfers t where keterangan like '{NOTE}%';""")
+    kirim_pdry = [d for d in docs if d['proses'] == 'Kirim Barang' and d['from'] == WH['on_pdry']]
+    check(f'[{mode}][tahan] 4 dokumen; Kirim Barang PDRY berisi 29 barang tanpa barang tertahan',
+          len(docs) == 4 and len(kirim_pdry) == 1 and len(kirim_pdry[0]['items']) == 29 and not set(held) & set(kirim_pdry[0]['items']),
+          [(d['proses'], len(d['items'] or [])) for d in docs])
+    st = js(db, dbn, "select jsonb_object_agg(name,is_active) from public.warehouses where type<>'TRANSIT';")
+    check(f'[{mode}][tahan] WH ONLINE PDRY tetap aktif (ada barang tertahan), WH ONLINE TKI nonaktif',
+          st == {'WH ONLINE PDRY': True, 'WH ONLINE TKI': False, 'WH PDRY': True, 'WH TKI': True, 'WH B2C': True}, st)
+    fp = fingerprint(db, dbn)
+    err = apply_candidate(db, dbn) if not baseline else None
+    check(f'[{mode}][tahan] dijalankan ulang: ditolak, tidak ada yang berubah',
+          bool(err) and 'sudah tidak aktif' in err and fingerprint(db, dbn) == fp, err)
+    if not baseline:
+        tahap2(db, dbn, mode, tr, held)
+    q(db, 'postgres', 'drop database %s' % dbn)
+
+
+def apply_tahap2(db, dbname, today):
+    # Konstanta produksi (4 barang / 21 unit; mutasi terakhir 14 Nov) diganti ke bentuk fixture (2 barang tertahan / 14 unit; hari ini).
+    text = (MIGRATIONS / TAHAP2).read_text()
+    assert text.count("'WH PDRY', 4, 21)") == 1 and text.count("date '2026-11-14'") == 1
+    text = text.replace("'WH PDRY', 4, 21)", "'WH PDRY', 2, 14)").replace("date '2026-11-14'", f"date '{today}'")
+    rc, out, err = raw(db, 'begin;\n' + text + '\ncommit;', dbname)
+    if rc:
+        errs = [l for l in err.splitlines() if l.startswith('ERROR')]
+        return (errs[0] if errs else err.strip())[:600]
+    return None
+
+
+def tahap2(db, dbn, mode, tr, held):
+    """Tahap 2: sisa barang tertahan dipindah setelah Transit kosong, lalu WH ONLINE PDRY dinonaktifkan."""
+    today = q(db, dbn, "select to_char((now() at time zone 'Asia/Jakarta')::date,'YYYY-MM-DD')")
+    fp = fingerprint(db, dbn)
+    err = apply_tahap2(db, dbn, today)
+    check(f'[{mode}][tahap2] ditolak selama Transit masih memegang barang yang sama, tidak ada yang berubah',
+          bool(err) and 'Transit' in err and 'Tidak ada yang diubah' in err and fingerprint(db, dbn) == fp, err)
+    # kiriman lain diterima tokonya: Transit kosong untuk barang tertahan
+    q(db, dbn, ''.join(f"select * from public.stock_out_fifo('{tr}','{it}',1,'transfer','IT-E4-X2','{today}');" for it in held))
+    before = snapshot(db, dbn)
+    held_layers = layers(db, dbn, WH['on_pdry'])
+    journals = q(db, dbn, 'select count(*) from public.journal_entries')
+    err = apply_tahap2(db, dbn, today)
+    check(f'[{mode}][tahap2] berjalan setelah Transit kosong', err is None, err)
+    after = snapshot(db, dbn)
+    check(f'[{mode}][tahap2] WH ONLINE PDRY kosong (saldo & lapisan), toko naik tepat sebesar sisa',
+          all(v[0] == 0 for (w, _), v in after.items() if w == WH['on_pdry']) and not layers(db, dbn, WH['on_pdry'])
+          and all(after[(WH['pdry'], it)][0] == before.get((WH['pdry'], it), [0])[0] + before[(WH['on_pdry'], it)][0] for it in held))
+    tb = sum(v[1] for v in before.values()); ta = sum(v[1] for v in after.values())
+    check(f'[{mode}][tahap2] total nilai tetap, tanpa jurnal baru',
+          abs(tb - ta) <= Decimal('0.05') and q(db, dbn, 'select count(*) from public.journal_entries') == journals, (str(tb), str(ta)))
+    if mode == 'fifo':
+        terima = q(db, dbn, "select no_pemindahan from public.stock_transfers where keterangan like 'E4 meeting 12 Nov 2026 tahap 2%' and proses='Terima Barang'")
+        got = layers(db, dbn, WH['pdry'], f"and source='transfer' and source_ref='{terima}'")
+        check('[fifo][tahap2] lapisan FIFO barang tertahan pindah utuh', bool(held_layers) and got == held_layers, (len(held_layers), len(got)))
+    st = js(db, dbn, "select jsonb_object_agg(name,is_active) from public.warehouses where type<>'TRANSIT';")
+    check(f'[{mode}][tahap2] WH ONLINE PDRY & TKI nonaktif; toko & B2C aktif',
+          st == {'WH ONLINE PDRY': False, 'WH ONLINE TKI': False, 'WH PDRY': True, 'WH TKI': True, 'WH B2C': True}, st)
+    fp = fingerprint(db, dbn)
+    err = apply_tahap2(db, dbn, today)
+    check(f'[{mode}][tahap2] dijalankan ulang: ditolak, tidak ada yang berubah', bool(err) and 'sudah tidak aktif' in err and fingerprint(db, dbn) == fp, err)
 
 
 def negative_destination(db, template, mode, baseline):
@@ -372,6 +467,7 @@ def main():
             clone(db, run, fx)
             main_scenario(db, run, mode, a.baseline)
             negative_destination(db, fx, mode, a.baseline)
+            transit_hold(db, fx, mode, a.baseline)
             if mode == 'fifo':
                 refusals(db, fx, a.baseline)
     feature = [r for r in RESULTS if r['kind'] == 'feature']
