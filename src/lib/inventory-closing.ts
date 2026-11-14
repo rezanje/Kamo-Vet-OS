@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Decimal from "decimal.js";
 import { bolehBukaPath } from "./akses";
+import { aturanEfektif, bacaTambahanAkses } from "./akses-akun";
 import { inventoryMethod, readReportRows, ReportAccessError } from "./hpp-reports-server";
 
 export const INVENTORY_CLOSING_PATH = "/keuangan/closing-hpp";
@@ -51,13 +52,15 @@ function snapshotTotal(values: Value[]): number | null {
 export async function loadInventoryClosing(client: SupabaseClient, selectedClose?: string, selectedBranches: string[] = []) {
   const { data: { user }, error: authError } = await client.auth.getUser();
   if (authError || !user) throw new ReportAccessError("Sesi tidak ditemukan", 401);
+  // E3 (meeting 12 Nov 2026): akses khusus akun + sub-menu ikut dibaca bersamaan; hak buka = akses efektif akun.
+  const tambahanP = bacaTambahanAkses(client);
   const { data: profile, error: profileError } = await client.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
   if (profileError || !profile?.is_active || !["OWNER", "FINANCE"].includes(profile.role)) throw new ReportAccessError("Closing HPP hanya tersedia untuk OWNER dan FINANCE aktif", 403);
   const modules = await readReportRows<{ role: string; module_id: string }>(async (from, to) => {
     const result = await client.from("role_modules").select("role,module_id", { count: "exact" }).order("role").order("module_id").range(from, to);
     return result;
   }, row => `${row.role}:${row.module_id}`);
-  if (!bolehBukaPath(profile.role, INVENTORY_CLOSING_PATH, modules)) throw new ReportAccessError("Akses modul buku besar ditolak", 403);
+  if (!bolehBukaPath(profile.role, INVENTORY_CLOSING_PATH, aturanEfektif(profile.role, { rules: modules, ...(await tambahanP) }))) throw new ReportAccessError("Akses modul buku besar ditolak", 403);
   const branches = await readReportRows<{ id: string; name: string }>(async (from, to) => client.from("branches").select("id,name", { count: "exact" }).order("id").range(from, to));
   const allowed = await Promise.all(branches.map(async branch => {
     const { data, error } = await client.rpc("user_can_access_branch", { b: branch.id });

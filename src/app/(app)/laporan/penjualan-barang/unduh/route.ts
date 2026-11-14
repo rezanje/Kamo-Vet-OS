@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { bolehBukaPath } from "@/lib/akses";
+import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { reportCsv } from "@/lib/csv-report";
 import { hariIniWIB } from "@/lib/tanggal";
 import { jenisLaporan } from "@/lib/laporan-penjualan-barang";
@@ -28,11 +29,12 @@ export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ error: "Sesi tidak ditemukan" }, { status: 401 });
-  const [{ data: profile, error: profileError }, { data: aturan, error: aturanError }] = await Promise.all([
+  // E3 (meeting 12 Nov 2026): hak buka memakai akses efektif akun (peran + sub-menu + akses khusus), sama dengan middleware.
+  const [{ data: profile, error: profileError }, akses] = await Promise.all([
     supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
-    supabase.from("role_modules").select("role, module_id"),
+    bacaAkses(supabase),
   ]);
-  if (profileError || aturanError || !profile?.role || !bolehBukaPath(profile.role, "/laporan/penjualan-barang", aturan ?? [])) {
+  if (profileError || akses.rulesError || !profile?.role || !bolehBukaPath(profile.role, "/laporan/penjualan-barang", aturanEfektif(profile.role, akses))) {
     return NextResponse.json({ error: "Akses laporan tidak diizinkan" }, { status: 403 });
   }
 

@@ -43,6 +43,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 
 import PenjualanDetailPage from "@/app/(app)/penjualan/[id]/page";
 const render = async () => renderToStaticMarkup(await PenjualanDetailPage({ params: Promise.resolve({ id: "sale" }), searchParams: Promise.resolve({}) }));
+import PenjualanOnlineDetailPage from "@/app/(app)/penjualan/online/[id]/page";
 
 beforeEach(() => Object.assign(state, { role: "OWNER", allowed: true, allowedError: false, channel: null, marketplace: "piutang", open: false, cycle: false, shift: "open", receiptError: false, voided: false, voucher: null, promo: false, payrollCount: 0, payrollError: false }));
 
@@ -132,5 +133,22 @@ describe("Batalkan penerimaan: layar detail penjualan", () => {
     const html = await render();
     expect(html).not.toContain("form batalkan penerimaan");
     expect(html).not.toContain("form terima ulang");
+  });
+});
+
+describe("E3/3A: detail order online di bawah Penjualan Online", () => {
+  const renderOnline = async () => renderToStaticMarkup(await PenjualanOnlineDetailPage({ params: Promise.resolve({ id: "sale" }), searchParams: Promise.resolve({}) }));
+  it("order online terbuka di /penjualan/online/[id] dengan tombol Kembali ke Penjualan Online", async () => {
+    state.channel = "Shopee";
+    const html = await renderOnline();
+    expect(html).toContain("S-100");
+    expect(html).toContain('href="/penjualan/online"');
+    expect(html).not.toContain('href="/penjualan" ');
+  });
+  it("struk kasir (bukan order online) tidak bisa dibuka lewat rute Penjualan Online", async () => {
+    state.channel = null;
+    await expect(renderOnline()).rejects.toThrow("not found");
+    // Rute Rekap penjualan tetap membuka struk kasir seperti biasa.
+    expect(await render()).toContain('href="/penjualan"');
   });
 });

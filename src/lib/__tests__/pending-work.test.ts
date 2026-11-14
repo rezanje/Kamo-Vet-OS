@@ -15,6 +15,10 @@ const defaultRefunds: Record<RefundRpc, Record<string, unknown[]>> = {
   get_clinic_refund_requests: {},
 };
 
+const AKSES_RPC = ["get_my_submenu_policy", "get_my_access_override"] as const;
+/** Panggilan RPC antrean (di luar bacaan hak akses akun). */
+const queueRpcCalls = (db: { rpc: { mock: { calls: unknown[][] } } }) => db.rpc.mock.calls.filter(c => !(AKSES_RPC as readonly unknown[]).includes(c[0]));
+
 function fixture(roleModules: { role: string; module_id: string }[] = [], rulesError: unknown = null,
   refunds: Record<RefundRpc, Record<string, unknown[]> | { error: unknown }> = defaultRefunds) {
   const db = {
@@ -38,8 +42,12 @@ function fixture(roleModules: { role: string; module_id: string }[] = [], rulesE
       };
       return query;
     }),
-    rpc: vi.fn(async (name: RefundRpc, args: { p_status: string }) => {
+    rpc: vi.fn(async (name: RefundRpc | (typeof AKSES_RPC)[number], args?: { p_status: string }) => {
+      // E3 (meeting 12 Nov 2026): sub-menu + akses khusus akun ikut dibaca (tanpa kebijakan / tanpa akses khusus di sini).
+      if (name === "get_my_submenu_policy") return { data: [], error: null };
+      if (name === "get_my_access_override") return { data: null, error: null };
       const queue = refunds[name];
+      if (!args) throw new Error("refund rpc without args");
       if ("error" in queue) return { data: null, error: queue.error };
       return { data: queue[args.p_status] ?? [], error: null };
     }),
@@ -78,7 +86,7 @@ describe("pending action alerts", () => {
     const db = fixture([{ role: "ADMIN", module_id: "pembelian" }]);
     const items = await loadPendingWork(db, "ADMIN");
     expect(items.map(item => item.href)).toEqual(["/pembelian/perintah-bayar?pending=1"]);
-    expect(db.rpc).not.toHaveBeenCalled();
+    expect(queueRpcCalls(db)).toEqual([]);
     expect(db.from).not.toHaveBeenCalledWith("approval_requests");
   });
 
@@ -102,7 +110,8 @@ describe("pending action alerts", () => {
 
   it("shows a failed queue read as unknown rather than empty", async () => {
     const db = fixture();
-    db.rpc.mockRejectedValueOnce(new Error("offline"));
+    const rpc = db.rpc.getMockImplementation()!;
+    db.rpc.mockImplementation(async (name, args) => name === "get_sales_refund_requests" ? Promise.reject(new Error("offline")) : rpc(name, args));
     const items = await loadPendingWork(db, "FINANCE");
     expect(items.find(item => item.href === "/kas-bank/refund")?.count).toBeNull();
   });
