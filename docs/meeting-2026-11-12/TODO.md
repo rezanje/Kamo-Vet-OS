@@ -117,6 +117,12 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 
 ### D3 · [x] Promo paket
 - Sudah diperbaiki semalam. Cukup verifikasi.
+- **Diverifikasi 14 Nov 2026:** perbaikan "nilai belanja dipakai bersama" (rezanje/kamo-vet-os#497, migrasi
+  `20261111150000_promo_syarat_nilai_bersama`, terpasang di Production) — satu struk Rp155rb tidak lagi memberi 3 hadiah
+  "belanja min Rp100rb"; tiap promo memakai porsi belanja sendiri, total tidak melebihi belanja. Diuji vitest
+  `promo-syarat-hasil.shared.test.ts`, SQL `promo_nilai_bersama.sql`, harness Postgres + mutan. Ikut terkait: lantai harga
+  promo per baris klinik (`20261111140000`, GROOM11). Catatan kecil (bukan bug promo paket): saat koreksi nota klinik,
+  baris yang BARU diberi promo belum mengirim potongan promonya per baris (database sudah siap, aplikasi belum).
 
 ---
 
