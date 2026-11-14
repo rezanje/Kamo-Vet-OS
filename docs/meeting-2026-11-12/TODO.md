@@ -130,6 +130,11 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 
 ### E1 · [x] Impor dengan pilihan satuan — sudah jalan
 - Contoh: Shopee menjual 1 kg, master memakai satuan 1/2KG, jadi satuan diganti di kolom Satuan. **Qty dikunci** (ikut default dari Shopee); yang boleh diubah hanya satuan. Pastikan perilaku ini konsisten.
+- **Diverifikasi 14 Nov 2026 — konsisten:** kolom Qty hanya teks (tanpa input) untuk semua jenis baris; qty tidak dikirim
+  dari layar sama sekali — server membaca ulang file Shopee (qty & harga dari file); satuan yang dipilih wajib terdaftar
+  di satuan berjenjang barang (database menolak "Satuan tidak terdaftar"); stok keluar = qty × faktor satuan.
+  Diuji `shopee-import-workspace.test.tsx`, `shopee-import-actions.test.ts`, `shopee-import-match.test.ts`.
+  Catatan: order yang sudah tersimpan tidak bisa diimpor ulang dengan satuan lain (ditolak "rincian berbeda") — sesuai desain.
 - Screenshot: `penjualan-online-impor-satuan.jpg`
 
 ### E2 · [ ] P2 — Bundling / promo paket di impor
