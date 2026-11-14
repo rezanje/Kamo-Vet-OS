@@ -3,13 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { EmployeePicker } from "@/components/EmployeePicker";
 import { simpanAbsensi } from "./actions";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
-
-const TODAY = "2026-07-01";
 
 const STATUS_LIST = ["Hadir", "Izin", "Sakit", "Alpha", "Cuti"] as const;
 type StatusKey = (typeof STATUS_LIST)[number];
@@ -46,7 +45,7 @@ export default async function AbsensiPage({
   searchParams: Promise<{ tgl?: string; error?: string; success?: string }>;
 }) {
   const { tgl, error, success } = await searchParams;
-  const tanggalFilter = tgl && tgl.match(/^\d{4}-\d{2}-\d{2}$/) ? tgl : TODAY;
+  const tanggalFilter = tgl && tgl.match(/^\d{4}-\d{2}-\d{2}$/) ? tgl : hariIniWIB();
 
   const supabase = await createClient();
 
