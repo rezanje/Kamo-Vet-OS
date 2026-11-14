@@ -86,7 +86,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Screenshot: `klinik-antrian-arsip.jpg`
 
 ### B3 · [ ] P1 — Void/koreksi transaksi harus masuk ke tanggal transaksi asli
-- **Keputusan Reza (14 Nov): A** — jurnal pembalik pembatalan struk & void-terbit-ulang klinik di tanggal transaksi asli; stok & HPP di hari pembatalan. Lihat `TEMUAN-B3.md` §4. **Kode + migrasi `20261114141422_b3_jurnal_batal_tanggal_asli.sql` siap (belum dipasang, menunggu izin Reza).**
+- **Keputusan Reza (14 Nov): A** — jurnal pembalik pembatalan struk & void-terbit-ulang klinik di tanggal transaksi asli; stok & HPP di hari pembatalan. Lihat `TEMUAN-B3.md` §4. **Kode + migrasi `20261118610000_b3_jurnal_batal_tanggal_asli.sql` siap (belum dipasang, menunggu izin Reza).**
 - Masalah: koreksi/void yang diminta malam hari lalu diproses besoknya ikut tercatat (termasuk omset) di tanggal perbaikan. Seharusnya masuk ke tanggal transaksi asli.
 - Catatan: sudah dilaporkan di Telegram dan katanya sedang dikerjakan. Cek status kode yang ada dulu sebelum mengerjakan ulang.
 

@@ -19,7 +19,7 @@
 --       shift membaca tagihan yang tidak dibatalkan; tunggu shift ditutup), metode persediaan rata-rata, periode akuntansi tertutup pada
 --       tanggal tagihan asli, periode persediaan tertutup pada HARI INI, penggajian bulan tagihan sudah dibuat, poin dari tagihan ini sudah
 --       terpakai, kartu stok/HPP tidak cocok.
---     * Tanggal (aturan "2A" keputusan B3 A, sama dengan 20261116300000 Ubah transaksi dan 20261114141422 B3): jurnal pembalik pendapatan
+--     * Tanggal (aturan "2A" keputusan B3 A, sama dengan 20261116300000 Ubah transaksi dan 20261118610000 B3): jurnal pembalik pendapatan
 --       'klinik-void' (pendapatan, diskon, pajak, piutang, DP -> uang muka) dibukukan di TANGGAL TAGIHAN ASLI (tanggal jurnal penjualan
 --       pertama); jurnal pembalik HPP 'klinik-hpp-void' dan SEMUA pengembalian stok bertanggal HARI INI (current_date, seperti kode klinik
 --       lain; stok fisik kembali hari ini). Pagar periode akuntansi dan penggajian dibaca pada tanggal asli (bagian pendapatan); pagar periode
