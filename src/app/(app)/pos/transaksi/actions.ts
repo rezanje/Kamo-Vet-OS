@@ -31,6 +31,7 @@ import { quoteSaleLineCosts } from "@/lib/sale-fifo-quote";
 import { manualDiscountAllowed, PESAN_DISKON_MANUAL_DITOLAK } from "@/lib/manual-discount";
 import { alasanBawahModalPerBaris, belowCostSaleAllowed, PESAN_BAWAH_MODAL_DITOLAK, pesanBawahModalDb } from "@/lib/jual-bawah-modal";
 import { hppWarningConfirmed, hppWarningQuery, hppWarningsFrom, type HppWarning } from "@/lib/hpp-warning";
+import { kirimStrukWaPenjualan, setelahResponsStruk } from "@/lib/struk-wa";
 
 type CartLine = {
   item_id: string | null; nama: string; qty: number; harga: number; target_species: string;
@@ -460,6 +461,9 @@ export async function checkoutSale(formData: FormData) {
   // Progres quest staf (termasuk customer baru Q01) — best effort, tidak mem-block
   // pembayaran; yang gagal diulang otomatis pada checkout berikutnya.
   await processQuestProgress(supabase, { saleId: sale.id });
+
+  // Struk WA otomatis ke pelanggan (Aldi 14 Nov) — setelah respons, tidak menahan kasir.
+  if (customerId) await setelahResponsStruk(sale.id, () => kirimStrukWaPenjualan(supabase, sale.id));
 
   redirect(`/pos/struk/${sale!.id}?draft_done=${encodeURIComponent(checkout.key)}`);
 }

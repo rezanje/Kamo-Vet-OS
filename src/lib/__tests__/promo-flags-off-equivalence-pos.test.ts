@@ -25,6 +25,8 @@ vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "POS
 vi.mock("@/lib/posting", () => ({ postJournal: async () => {} }));
 vi.mock("@/lib/quest-hook", () => ({ processQuestProgress: async () => {} }));
 vi.mock("@/lib/customer-tier", () => ({ recomputeCustomerTier: async () => {} }));
+// Struk WA (setelah respons, 14 Nov) = efek samping seperti quest/tier; tidak termasuk jejak checkout yang dibandingkan.
+vi.mock("@/lib/struk-wa", () => ({ kirimStrukWaPenjualan: async () => ({ ok: false }), setelahResponsStruk: async () => {} }));
 vi.mock("@/lib/kode-kampanye", async original => ({ ...await original<typeof import("@/lib/kode-kampanye")>(), bacaKodeKampanye: async () => S.campaign }));
 const PRICE: Record<string, number> = { item: 20000, other: 20000, anc: 15000, jasa: 50000, grp: 100000, c1: 1, c2: 1 };
 const COST: Record<string, number> = { item: 17040, other: 17040, anc: 10000, c1: 5000, c2: 6000 };

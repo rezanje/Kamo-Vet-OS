@@ -25,6 +25,7 @@ import { serviceLinePromos, aggregateServiceLines } from "@/lib/service-line-pro
 import { loggedInCashier, validateServicePerformerRows } from "@/lib/service-performers-server";
 import type { ServicePerformersInput } from "@/lib/service-performers";
 import { resolvePosPayments } from "@/lib/pos-payments";
+import { kirimStrukWaPenjualan, setelahResponsStruk } from "@/lib/struk-wa";
 import { quotePosMerchantFees } from "@/lib/pos-merchant-fees";
 import { PESAN_STRUK_BENTROK, posCheckoutIdentity, resumePosCheckout } from "@/lib/pos-checkout-identity";
 import { posSubtotal, posNetTotal, roundPosMoney } from "@/lib/pos-money";
@@ -663,6 +664,9 @@ export async function checkoutKasir(formData: FormData) {
       saleId: sale.id,
     });
   }
+
+  // Struk WA otomatis ke pelanggan (Aldi 14 Nov) — setelah respons, tidak menahan kasir.
+  if (customerId) await setelahResponsStruk(noStruk ?? sale.id, () => kirimStrukWaPenjualan(supabase, sale.id));
 
   // Auto-cetak struk (fire window.print di halaman struk) — semua metode bayar.
   const checkoutKey = String(formData.get("checkout_key") ?? "");

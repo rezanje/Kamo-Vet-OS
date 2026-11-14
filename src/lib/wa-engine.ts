@@ -1,4 +1,4 @@
-import { sendWA } from "./fonnte";
+import { sendWA, type WaResult } from "./fonnte";
 import { tanggalWIB, geserHari } from "./tanggal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -174,28 +174,80 @@ export async function jalankanWaEngine(supabase: Db, now = new Date()) {
   return { enabled: true, created, sent, failed };
 }
 
-export async function kirimStrukWa(supabase: Db, input: {
+export type StrukWaInput = {
   invoiceNo: string; customerId: string; phone: string; customerName: string; petName?: string | null;
+  branchId?: string | null; branchName?: string | null; jenis?: "klinik" | "toko";
   total: number; items: { deskripsi: string; qty: number; harga: number }[];
-}) {
-  const { data: settings, error: settingsError } = await supabase.from("wa_engine_settings").select("is_enabled").eq("id", true).maybeSingle();
-  if (settingsError) return { ok: false, reason: "Pengaturan WA belum bisa dibaca. Struk belum dikirim." };
-  if (!settings?.is_enabled) return { ok: false, reason: "Pengiriman WA belum diaktifkan" };
-  const idempotencyKey = `receipt:${input.invoiceNo}`;
-  const message = [
-    `Halo Kak ${input.customerName || ""}, terima kasih sudah berkunjung${input.petName ? ` bersama ${input.petName}` : ""}.`,
-    `Struk ${input.invoiceNo}\n${input.items.map((i) => `${i.deskripsi} x${i.qty} — Rp ${Math.round(i.qty * i.harga).toLocaleString("id-ID")}`).join("\n")}\nTotal: Rp ${Math.round(input.total).toLocaleString("id-ID")}`,
+};
+
+const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+
+/** Isi pesan struk WA. Selisih rincian vs total (diskon, voucher, poin, biaya) ditampilkan satu baris. */
+export function pesanStrukWa(input: StrukWaInput) {
+  const sapaan = input.jenis === "toko"
+    ? `terima kasih sudah berbelanja${input.branchName ? ` di ${input.branchName}` : ""}`
+    : `terima kasih sudah berkunjung${input.petName ? ` bersama ${input.petName}` : ""}${input.branchName ? ` ke ${input.branchName}` : ""}`;
+  const rincian = input.items.map((i) => `${i.deskripsi} x${i.qty} — ${rupiah(i.qty * i.harga)}`);
+  const jumlahRincian = input.items.reduce((sum, i) => sum + Math.round(i.qty * i.harga), 0);
+  const selisih = Math.round(input.total) - jumlahRincian;
+  if (selisih < 0) rincian.push(`Potongan — -${rupiah(-selisih)}`);
+  if (selisih > 0) rincian.push(`Biaya lain — ${rupiah(selisih)}`);
+  return [
+    `Halo Kak ${input.customerName || ""}, ${sapaan}.`,
+    `Struk ${input.invoiceNo}\n${rincian.join("\n")}\nTotal: ${rupiah(input.total)}`,
     "Simpan pesan ini sebagai bukti transaksi. Terima kasih!",
   ].join("\n\n");
+}
+
+// Fungsi basis data yang mencatat struk WA atas nama kasir mana pun (bukan hanya
+// Owner/Admin — tabel riwayat WA sendiri tetap tertutup untuk staf). Bila migrasinya
+// belum terpasang, jatuh ke tulis langsung seperti sebelumnya (hanya lolos untuk Owner/Admin).
+const fungsiBelumAda = (error: { code?: string; message?: string } | null | undefined) =>
+  !!error && (error.code === "PGRST202" || error.code === "42883" || /could not find the function/i.test(error.message ?? ""));
+
+async function catatStruk(supabase: Db, input: StrukWaInput, message: string): Promise<{ id: string | null; reason?: string }> {
+  if (typeof supabase.rpc === "function") {
+    const { data, error } = await supabase.rpc("wa_struk_catat", {
+      p_ref: input.invoiceNo, p_customer_id: input.customerId, p_branch_id: input.branchId ?? null, p_phone: input.phone, p_message: message,
+    });
+    if (!fungsiBelumAda(error)) {
+      if (error) return { id: null, reason: "Struk WA gagal dicatat" };
+      return data ? { id: String(data) } : { id: null, reason: "Struk WA sudah pernah diproses" };
+    }
+  }
   const { data: log } = await supabase.from("whatsapp_message_log").insert({
-    customer_id: input.customerId, phone: input.phone, trigger_key: "receipt", idempotency_key: idempotencyKey, message,
+    customer_id: input.customerId, branch_id: input.branchId ?? null, phone: input.phone, trigger_key: "receipt", idempotency_key: `receipt:${input.invoiceNo}`, message,
   }).select("id").maybeSingle();
-  if (!log) return { ok: false, reason: "Struk WA sudah pernah diproses atau gagal dicatat" };
-  const result = await sendWA(input.phone, message);
+  return log ? { id: log.id } : { id: null, reason: "Struk WA sudah pernah diproses atau gagal dicatat" };
+}
+
+async function tandaiStruk(supabase: Db, id: string, result: WaResult): Promise<boolean> {
+  if (typeof supabase.rpc === "function") {
+    const { data, error } = await supabase.rpc("wa_struk_tandai", { p_log_id: id, p_sent: result.ok, p_error: result.ok ? null : (result.reason ?? "Gagal kirim") });
+    if (!fungsiBelumAda(error)) return !error && data === true;
+  }
   const { data: updated, error } = await supabase.from("whatsapp_message_log").update(result.ok
     ? { status: "sent", sent_at: new Date().toISOString() }
-    : { status: "failed", error: result.reason ?? "Gagal kirim" }).eq("id", log.id).select("id").maybeSingle();
-  if (error || updated?.id !== log.id) return {
+    : { status: "failed", error: result.reason ?? "Gagal kirim" }).eq("id", id).select("id").maybeSingle();
+  return !error && updated?.id === id;
+}
+
+/** Struk WA aktif? Saklar sendiri (`receipt_enabled`); sebelum migrasinya ada, ikut saklar utama. */
+export function strukWaAktif(settings: Record<string, unknown> | null | undefined) {
+  if (!settings) return false;
+  return typeof settings.receipt_enabled === "boolean" ? settings.receipt_enabled : settings.is_enabled === true;
+}
+
+export async function kirimStrukWa(supabase: Db, input: StrukWaInput): Promise<WaResult> {
+  const { data: settings, error: settingsError } = await supabase.from("wa_engine_settings").select("*").eq("id", true).maybeSingle();
+  if (settingsError) return { ok: false, reason: "Pengaturan WA belum bisa dibaca. Struk belum dikirim." };
+  if (!strukWaAktif(settings)) return { ok: false, reason: "Pengiriman struk WA belum diaktifkan" };
+  if (!input.phone?.replace(/\D/g, "")) return { ok: false, reason: "Pelanggan belum punya nomor WA" };
+  const message = pesanStrukWa(input);
+  const log = await catatStruk(supabase, input, message);
+  if (!log.id) return { ok: false, reason: log.reason };
+  const result = await sendWA(input.phone, message);
+  if (!(await tandaiStruk(supabase, log.id, result))) return {
     ok: false,
     reason: result.ok ? "Provider menerima struk, tetapi status WA belum tersimpan. Periksa riwayat; jangan kirim ulang otomatis." : "Status kegagalan struk WA belum tersimpan. Periksa riwayat sebelum mencoba lagi.",
   };

@@ -18,6 +18,8 @@ export async function simpanWaSettings(formData: FormData) {
     updated_at: new Date().toISOString(),
   };
   for (const key of KEYS) payload[key] = formData.get(key) === "on";
+  // Saklar struk WA hanya disimpan bila kolomnya sudah ada (form menandainya) — sebelum migrasi tetap aman.
+  if (formData.get("receipt_supported") === "1") payload.receipt_enabled = formData.get("receipt_enabled") === "on";
   const { error } = await supabase.from("wa_engine_settings").upsert({ id: true, ...payload }, { onConflict: "id" });
   if (error) redirect(`${BACK}?error=${encodeURIComponent("Pengaturan WA belum tersimpan")}`);
   revalidatePath(BACK);

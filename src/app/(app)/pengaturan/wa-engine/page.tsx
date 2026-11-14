@@ -17,7 +17,8 @@ export default async function WaEnginePage({ searchParams }: { searchParams: Pro
     supabase.from("whatsapp_message_log").select("trigger_key, phone, status, error, created_at").order("created_at", { ascending: false }).limit(30),
   ]);
   const s = (settings ?? { is_enabled: false }) as Record<string, boolean>;
-  const labelTrigger = new Map(WA_TRIGGERS);
+  const labelTrigger = new Map<string, string>([...WA_TRIGGERS, ["receipt", "Struk pembayaran"]]);
+  const strukDidukung = !!settings && "receipt_enabled" in settings;
 
   return (
     <>
@@ -33,10 +34,18 @@ export default async function WaEnginePage({ searchParams }: { searchParams: Pro
 
       <div className="crm-sec">
         <p role="status">{process.env.FONNTE_TOKEN ? "Koneksi pengiriman sudah dikonfigurasi. Penerimaan pesan tetap perlu diuji pada nomor yang disetujui." : "Pengiriman belum siap: akun WhatsApp pengirim perlu dihubungkan oleh admin."}</p>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", marginBottom: 12 }}>TRIGGER RETENSI</div>
         <form action={simpanWaSettings}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", marginBottom: 8 }}>STRUK PEMBAYARAN</div>
+          {strukDidukung ? <>
+            <input type="hidden" name="receipt_supported" value="1" />
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+              <input type="checkbox" name="receipt_enabled" defaultChecked={s.receipt_enabled} disabled={!bolehKelola} /> Kirim struk ke WA pelanggan setiap pembayaran
+            </label>
+            <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 16 }}>Terkirim otomatis dari nomor WA klinik setelah kasir menekan Bayar (kasir toko, POS, klinik, rawat inap) — tidak lewat HP kasir. Pelanggan tanpa nomor HP dilewati.</div>
+          </> : <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 16 }}>Struk pembayaran ikut saklar utama di bawah sampai pembaruan database terpasang.</div>}
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2563eb", marginBottom: 12 }}>TRIGGER RETENSI</div>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, marginBottom: 14 }}>
-            <input type="checkbox" name="is_enabled" defaultChecked={s.is_enabled} disabled={!bolehKelola} /> Aktifkan pengiriman otomatis
+            <input type="checkbox" name="is_enabled" defaultChecked={s.is_enabled} disabled={!bolehKelola} /> Aktifkan pengingat otomatis
           </label>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
             {WA_TRIGGERS.map(([key, label]) => {

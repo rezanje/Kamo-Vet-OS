@@ -26,6 +26,7 @@ import { normalizeKode, pesanVoucherDitolak, potonganVoucher, type VoucherRow } 
 import { clinicManualDiscountRaised, manualDiscountAllowed, PESAN_DISKON_MANUAL_DITOLAK } from "@/lib/manual-discount";
 import { bacaKodeKampanye, cekVoucherLewatKampanye, pesanGagalKampanye, pesanKampanyeDitolak } from "@/lib/kode-kampanye";
 import { kirimStrukWa } from "@/lib/wa-engine";
+import { kirimStrukWaInvoiceKlinik, setelahResponsStruk } from "@/lib/struk-wa";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { metodeBayarSah, pesanMetodeBayarTidakSah } from "@/lib/metode-bayar";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
@@ -742,6 +743,7 @@ export async function bayarRombongan(formData: FormData) {
   // potongannya diterbitkan lebih dulu: nota pertama membawa kodenya, sehingga batas
   // pemakaian sudah diperiksa database sebelum nota lain ikut menikmati potongan.
   const notaPoin: NotaPoin[] = [];
+  const notaLunas: string[] = [];                 // invoice yang terbit → struk WA
   const urutan = siap.map((_, i) => i);
   if (kampanye) urutan.sort((a, b) => Number(pakaiKode[b]) - Number(pakaiKode[a]));
   let kodeMenunggu = kampanye?.code ?? null;     // belum menempel di nota mana pun
@@ -792,6 +794,7 @@ export async function bayarRombongan(formData: FormData) {
     // nota (ref = nomor invoice) supaya refund invoice itu ikut menyesuaikan poinnya.
     await catatRincianPromoKlinik(supabase, posted.invoiceId, s.rincianPromo);
     notaPoin.push({ ref: posted.invoiceNo, dipakai: Math.floor(poinPerPet[idx] / RUPIAH_PER_POIN), total });
+    if (posted.invoiceId) notaLunas.push(posted.invoiceId);
     jumlahLunas++;
   }
 
@@ -808,6 +811,8 @@ export async function bayarRombongan(formData: FormData) {
   // U07: tier pelanggan = statistik turunan (best effort), dihitung setelah respons.
   const customerId = rombongan.customerId;
   if (customerId) await setelahRespons(() => recomputeCustomerTier(supabase, customerId));
+  // Struk WA otomatis per nota yang terbit (Aldi 14 Nov) — setelah respons, tidak menahan kasir.
+  for (const invoiceId of notaLunas) await setelahResponsStruk(invoiceId, () => kirimStrukWaInvoiceKlinik(supabase, invoiceId));
   waktu.selesai();
 
   if (jumlahLunas === 0) {

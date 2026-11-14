@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { hariIniWIB } from "@/lib/tanggal";
+import { kirimStrukWaInvoiceKlinik, setelahResponsStruk } from "@/lib/struk-wa";
 import { parseBagianPelunasan, pesanPelunasanGagal, totalBagian, type BagianPelunasan } from "@/lib/pelunasan-klinik";
 
 /**
@@ -44,6 +45,8 @@ export async function lunasiTagihanKlinik(formData: FormData) {
     p_parts: parts, p_expected_remaining: expected,
   });
   if (error) gagal(pesanPelunasanGagal(error));
+  // Tagihan kini lunas → struk WA otomatis ke pelanggan (Aldi 14 Nov); dilewati bila belum lunas.
+  await setelahResponsStruk(invoiceId, () => kirimStrukWaInvoiceKlinik(supabase, invoiceId));
 
   for (const path of [back, "/klinik/antrian", "/keuangan/piutang"]) revalidatePath(path);
   redirect(`${back}?success=bayar`);

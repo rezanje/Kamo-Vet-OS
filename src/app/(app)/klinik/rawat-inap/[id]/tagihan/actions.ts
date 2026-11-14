@@ -16,6 +16,7 @@ import { METODE_BAYAR } from "@/lib/kas-akun";
 import { nilaiBarisResep, type BarisResep } from "@/lib/tagihan-berjalan";
 import type { RanapPaymentState } from "@/lib/ranap-payment";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
+import { kirimStrukWaInvoiceKlinik, setelahResponsStruk } from "@/lib/struk-wa";
 import { clinicPackageOriginInput } from "@/lib/clinic-package-origin";
 
 const DRAFT_RESCUE_NOTE = "Keranjang yang Anda lihat (barang dihapus, jasa/obat ditambah, harga/jumlah diubah) sudah disimpan sebagai draft. Penyimpanan ini belum membuat invoice dan belum mencatat uang (invoice tahap atau uang muka dari simpan sebelumnya, bila ada, tidak berubah). Perbaiki baris yang ditolak, lalu simpan atau bayar lagi.";
@@ -148,6 +149,8 @@ export async function terimaPembayaran(formData: FormData) {
     p_parts: parts, p_invoice_id: invoiceId, p_catatan: catatan,
   });
   if (error) redirect(`${back}?error=${encodeURIComponent(parseClinicPostingError(error, tidakPasti))}`);
+  // Struk WA otomatis bila invoice kini lunas (Aldi 14 Nov); pembayaran sebagian dilewati.
+  if (invoiceId) await setelahResponsStruk(invoiceId, () => kirimStrukWaInvoiceKlinik(supabase, invoiceId));
   revalidatePath(back);
   redirect(`${back}?success=bayar${transactionDraftAck(formData)}`);
 }
@@ -223,6 +226,9 @@ export async function simpanBayar(formData: FormData): Promise<RanapPaymentState
   if (data?.status !== "SAVED" || data.visit_id !== visitId || data.record_id !== recordId || (!data.receipt_id && !data.invoice_id && !applicationIds.length)) {
     return { status: "ERROR", error: tidakPasti };
   }
+  // Struk WA otomatis bila invoice kini lunas (Aldi 14 Nov); DP/sebagian dilewati.
+  const invoiceLunas = typeof data.invoice_id === "string" ? data.invoice_id : null;
+  if (invoiceLunas) await setelahResponsStruk(invoiceLunas, () => kirimStrukWaInvoiceKlinik(supabase, invoiceLunas));
   const query = new URLSearchParams({ success: "transaksi" });
   if (data.receipt_id) query.set("receipt", data.receipt_id);
   if (data.invoice_id) query.set("invoice", data.invoice_id);
