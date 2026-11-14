@@ -25,6 +25,17 @@ describe("susunUbahStruk", () => {
     expect(out.lines[0]).toMatchObject({ promo_id: "p1", promo_discount: 5000, qty: 3, faktor: 1 });
     expect(out.lines[1]).toMatchObject({ item_id: SVC, promo_id: null, promo_discount: 0 });
   });
+  it("carries the Owner below-cost reason of the old line (same item) to the replacement line; a new line gets none", () => {
+    const old = lama([baris({ below_hpp_owner_reason: "Mau kadaluarsa" })]);
+    const out = susunUbahStruk({ lama: old, katalog, rupiahPerPoin: null, isian: {
+      lines: [{ asal: "l1", item_id: GOOD, qty: 2, harga: 50000, satuan: "pcs" }, { item_id: GOOD, qty: 1, harga: 50000, satuan: "pcs" }],
+      diskon_kategori: 0, potongan_lain: 0, payments: [{ method: "Tunai", amount: 150000 }] } });
+    expect(out.lines[0]).toMatchObject({ below_hpp_owner_reason: "Mau kadaluarsa" });
+    expect(out.lines[1]).toMatchObject({ below_hpp_owner_reason: null });
+    const plain = susunUbahStruk({ lama: lama([baris({})]), katalog, rupiahPerPoin: null, isian: {
+      lines: [{ asal: "l1", item_id: GOOD, qty: 2, harga: 50000, satuan: "pcs" }], diskon_kategori: 0, potongan_lain: 0, payments: [{ method: "Tunai", amount: 100000 }] } });
+    expect(plain.lines[0]).toMatchObject({ below_hpp_owner_reason: null });
+  });
   it("adds the merchant fee on top like the cashier and earns points from the goods total", () => {
     const out = susunUbahStruk({ lama: lama([baris({})], { customer_id: "c1" }), katalog, rupiahPerPoin: 1000, isian: {
       lines: [{ asal: "l1", item_id: GOOD, qty: 2, harga: 50000, satuan: "pcs" }], diskon_kategori: 0, potongan_lain: 0,

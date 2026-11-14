@@ -247,6 +247,8 @@ export const TILES: Record<string, Tile[]> = {
     // Dashboard stok (permintaan Pak Andri, 13 Nov 2026): dari riwayat penjualan, semua gudang digabung.
     { label: "Stok Slow Moving / Berlebih", icon: "ti-snowflake", ...A, nw: true, href: "/laporan/stok-slow-moving" },
     { label: "Stok Harus Order", icon: "ti-shopping-cart", ...A, nw: true, href: "/laporan/stok-harus-order" },
+    // Obral Owner (Andri, 14 Nov 2026): barang persediaan yang dijual di bawah modal dengan alasan.
+    { label: "Penjualan di Bawah Modal", icon: "ti-discount-2", ...A, nw: true, href: "/laporan/jual-bawah-modal" },
     { label: "Pelanggan Teratas", icon: "ti-trophy", ...A, nw: true, href: "/laporan/pelanggan-teratas" },
     { label: "Jadwal Anabul", icon: "ti-calendar-heart", ...A, nw: true, href: "/laporan/jadwal-anabul" },
     { label: "Rekap Absensi", icon: "ti-clock-check", ...A, nw: true, href: "/laporan/absensi" },

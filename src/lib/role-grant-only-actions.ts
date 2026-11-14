@@ -20,6 +20,8 @@ export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "pembelian.batalkan_uang_muka",
   "pembelian.tanggal_mundur",
   "kasir.diskon_manual",
+  // Owner jual di bawah modal (obral, Persediaan, petshop), 14 Nov 2026: bawaan MATI untuk semua peran selain OWNER (migrasi 20261118100000_owner_jual_bawah_modal.sql).
+  "kasir.jual_bawah_modal",
   // A5 (meeting 12 Nov 2026): koreksi visit rawat inap (migrasi 20261113031357_a5_koreksi_visit_rawat_inap.sql).
   "klinik.koreksi_visit",
 ];

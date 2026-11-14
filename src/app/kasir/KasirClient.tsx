@@ -31,6 +31,7 @@ import type { SyaratHasilDef } from "@/lib/promo-syarat-hasil";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { bulkFillServicePerformers, emptyServicePerformers, type ServicePerformersInput } from "@/lib/service-performers";
 import { KasirQuantityInput } from "./KasirQuantityInput";
+import { bawahModalBelumSah, JualBawahModalField } from "@/components/JualBawahModalField";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { stokKurangKasir } from "@/lib/stok-kasir";
 import { angkaTampil } from "@/lib/stok-kurang";
@@ -86,6 +87,8 @@ export type CartLine = {
   /** Stok saat barang dimasukkan — bahan peringatan. */
   stok?: number | null;
   groupComponents?: GroupComponentRow[];
+  /** Jual di bawah modal (Owner/berizin, Persediaan): pilihan, teks "Lainnya", dan alasan akhir; server memeriksa hak ke database. */
+  bawah_modal_pilih?: string; bawah_modal_teks?: string; bawah_modal_alasan?: string;
 };
 
 const rp = (n: number) => "Rp " + n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
@@ -109,7 +112,7 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 export function KasirClient({
   branchName, items, customers = TANPA_PELANGGAN, vouchers, kodeKampanye = [], hariIni, draftContext, shiftId, promos = [], promoHitung = [], syaratHasil,
   aturanDiskon = {}, infoBarang = {}, salespeople = [], cashierName = "Akun login", error, replacementDraft, replacementId,
-  groomingDoctorRequired = false, groomingApplies = true, bolehDiskon = true,
+  groomingDoctorRequired = false, groomingApplies = true, bolehDiskon = true, bolehBawahModal = false,
 }: {
   draftContext?: string; shiftId?: string; replacementDraft?: KasirDraft; replacementId?: string;
   branchName: string; items: ItemRow[];
@@ -128,6 +131,7 @@ export function KasirClient({
   groomingApplies?: boolean;
   /** Diskon manual (potongan per barang & diskon total) hanya Owner/Admin — dibaca server dari izin Akses Grup. Diskon bawaan barang tetap jalan. */
   bolehDiskon?: boolean;
+  bolehBawahModal?: boolean;
   error?: string;
 }) {
   const [q, setQ] = useState("");
@@ -199,6 +203,7 @@ export function KasirClient({
         return [{
           ...line,
           ...potonganDraf,
+          ...(bolehBawahModal ? {} : { bawah_modal_pilih: undefined, bawah_modal_teks: undefined, bawah_modal_alasan: undefined }),
           nama: item.name,
           item_type: item.itemType,
           tindakanKategori: item.tindakanKategori,
@@ -218,7 +223,7 @@ export function KasirClient({
       draftSiap.current = true;
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [customers, items, salespeople, draftKey, replacementDraft, bolehDiskon]);
+  }, [customers, items, salespeople, draftKey, replacementDraft, bolehDiskon, bolehBawahModal]);
 
   // Katalog baru dari server (mis. sesudah checkout ditolak, atau layar dimuat ulang tanpa
   // ganti tab) = harga master terbaru. Baris keranjang yang sudah ada ikut harga itu supaya
@@ -514,7 +519,7 @@ export function KasirClient({
   // 1 dus isi 12 tidak boleh ditolak hanya karena angkanya "1".
   const dibawahMin = cart.filter((l) => (l.minJual ?? 0) > 1 && l.qty * (l.faktor ?? 1) < (l.minJual ?? 0));
   const canPay = cart.length > 0 && stokKurang.length === 0 && (split || !!metode) && paymentValid && !voucherInvalid && !!cust && dibawahMin.length === 0 && !zeroPriceIssue
-    && !guardMenunggu && !waiverGabung && !pilihanHilang;
+    && !guardMenunggu && !waiverGabung && !pilihanHilang && !(bolehBawahModal && cart.some(bawahModalBelumSah));
 
   // Reminder Promo (§6): non-blocking, muncul lagi saat isi cart berubah setelah di-dismiss.
   // Promo yang sudah dipotong otomatis tidak perlu diingatkan lagi — kasir sudah
@@ -841,6 +846,11 @@ export function KasirClient({
                               {l.item_discount_type === "percent" ? "%" : "Rp"}
                             </button>
                           </div>}
+                          {/* Jual di bawah modal (obral): hanya Owner/peran berizin, hanya barang persediaan; alasan wajib. */}
+                          {bolehBawahModal && l.item_type === "Persediaan" && (
+                            <JualBawahModalField nama={l.nama} pilih={l.bawah_modal_pilih} teks={l.bawah_modal_teks}
+                              onChange={patch => setCart(rows => rows.map(row => kunciBaris(row) === k ? { ...row, ...patch } : row))} />
+                          )}
                         </td>
                         <td>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
