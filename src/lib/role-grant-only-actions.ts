@@ -26,6 +26,8 @@ export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "klinik.koreksi_visit",
   // D1 (meeting 12 Nov 2026): sesuaikan poin pelanggan manual (migrasi 20261114085215_d1_poin_manual.sql).
   "crm.poin_manual",
+  // B2 (meeting 12 Nov 2026): batalkan tagihan klinik belum lunas/DP (migrasi 20261118620000_b2_batalkan_tagihan_klinik.sql).
+  "klinik.batalkan_tagihan",
 ];
 
 export const isGrantOnlyAction = (id: string): boolean => GRANT_ONLY_ACTIONS.includes(id);
