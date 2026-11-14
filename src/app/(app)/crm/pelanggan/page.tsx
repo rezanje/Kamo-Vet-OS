@@ -3,6 +3,7 @@ import { ListLoadFailure } from "@/components/ListPagination";
 import { createClient } from "@/lib/supabase/server";
 import { filterCariPelanggan } from "@/lib/pelanggan-cari";
 import { PelangganClient, type CustomerRow } from "./PelangganClient";
+import { poinManualAllowed } from "@/lib/poin-manual";
 
 const KOLOM_PELANGGAN =
   "id, name, phone, email, dob, address, tier, kategori, category_id, points, total_spending, catatan, pekerjaan, sumber_info, created_at, " +
@@ -70,6 +71,7 @@ export default async function PelangganPage({ searchParams }: {
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   const isAdmin = !!me && ["OWNER", "ADMIN"].includes(me.role);
+  const bolehPoinManual = await poinManualAllowed(supabase);
 
   // Kartu anabul hasil pembersihan duplikat (status 'Digabung', migrasi 0076)
   // riwayatnya sudah dipindah ke kartu induk — jangan ditampilkan lagi supaya
@@ -102,7 +104,7 @@ export default async function PelangganPage({ searchParams }: {
         </div>
       )}
       <PelangganClient
-        cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin} hanyaTersembunyi={hanyaTersembunyi}
+        cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin} bolehPoinManual={bolehPoinManual} hanyaTersembunyi={hanyaTersembunyi}
         categories={categories} statusUlasan={statusUlasan}
         total={total} stats={stats} halaman={pageInfo}
       />

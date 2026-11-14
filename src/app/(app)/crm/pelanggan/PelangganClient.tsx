@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { aturSembunyiPelanggan, detailPelanggan, ubahDataPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
+import { SesuaikanPoinForm } from "./SesuaikanPoinForm";
 
 export type PetRow = {
   id: string; name: string; species: string | null; breed: string | null;
@@ -140,7 +141,7 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers, isAdmin, categories, statusUlasan, cariAwal = "", total, stats, halaman, hanyaTersembunyi = false }: {
+export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, categories, statusUlasan, cariAwal = "", total, stats, halaman, hanyaTersembunyi = false }: {
   /** Satu halaman pelanggan (50 baris) hasil pencarian di server — bukan seluruh pelanggan. */
   customers: CustomerRow[];
   /** Jumlah pelanggan yang cocok dengan pencarian. */
@@ -149,6 +150,8 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
   stats: { total: number; member: number; tierCounts: Record<string, number> };
   halaman: { page: number; from: number; totalPages: number };
   isAdmin: boolean;
+  /** D1: Owner atau peran berizin "Sesuaikan poin pelanggan" (dibaca dari database; fail-closed). */
+  bolehPoinManual?: boolean;
   categories: { id: string; nama: string; diskon_persen: number }[];
   statusUlasan: (StatusUlasan & { id: string })[];
   /** Kata kunci dari pencarian global — kotak cari langsung terisi. */
@@ -491,6 +494,7 @@ export function PelangganClient({ customers, isAdmin, categories, statusUlasan, 
                     </form>
                   </details>
                 )}
+                {bolehPoinManual && <SesuaikanPoinForm key={`poin-${sel.id}`} id={sel.id} phone={sel.phone} saldo={Number(sel.points ?? 0)} />}
                 {isAdmin && <ActivityHistoryLink entity="customers" id={sel.id} />}
                 {isAdmin && detail?.stat && (
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: ".5px solid var(--bd)" }}>

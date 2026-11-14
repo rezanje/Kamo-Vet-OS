@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
+import { bacaIsianPoin, kunciSah, pesanPoinManualDb } from "@/lib/poin-manual";
 
 export type DetailPelanggan = {
   purchases: { tgl: string; produk: string; qty: number; total: number; cabang: string; anabul: string }[];
@@ -187,4 +188,27 @@ export async function ubahDataPelanggan(formData: FormData) {
   if (!data?.length) redirect(`/crm/pelanggan?error=${encodeURIComponent("Pelanggan tidak ditemukan")}${kembali}`);
   revalidatePath("/crm/pelanggan");
   redirect(`/crm/pelanggan?success=${encodeURIComponent("Data pelanggan tersimpan.")}${kembali}`);
+}
+
+// D1 (meeting 12 Nov 2026): tambah/kurangi poin pelanggan manual dengan alasan wajib (saldo awal sistem lama, hadiah quest).
+// Hak & saldo dijaga database (adjust_customer_points: OWNER atau izin crm.poin_manual, saldo tidak minus, anti-dobel lewat kunci).
+export async function sesuaikanPoin(formData: FormData) {
+  const supabase = await createClient();
+  const id = String(formData.get("id") ?? "");
+  const phone = String(formData.get("phone") ?? "").trim().slice(0, 30);
+  const kembali = phone ? `&cari=${encodeURIComponent(phone)}` : "";
+  const gagal = (pesan: string): never => redirect(`/crm/pelanggan?error=${encodeURIComponent(pesan)}${kembali}`);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) gagal("Pelanggan tidak valid");
+  const kunci = formData.get("request_key");
+  if (!kunciSah(kunci)) gagal("Muat ulang halaman lalu coba lagi.");
+  const baca = bacaIsianPoin({ arah: formData.get("arah"), jumlah: formData.get("jumlah"), alasan: formData.get("alasan") });
+  if (!baca.ok) return gagal(baca.pesan);
+  const { data, error } = await supabase.rpc("adjust_customer_points", {
+    p_customer_id: id, p_delta: baca.delta, p_reason: baca.isian.alasan, p_request_key: kunci as string,
+  });
+  const hasil = data as { saldo?: number } | null;
+  if (error || typeof hasil?.saldo !== "number") gagal(pesanPoinManualDb(error));
+  revalidatePath("/crm/pelanggan");
+  const jumlah = baca.isian.jumlah.toLocaleString("id-ID");
+  redirect(`/crm/pelanggan?success=${encodeURIComponent(`Poin ${baca.isian.arah === "tambah" ? "ditambah" : "dikurangi"} ${jumlah}. Saldo sekarang ${hasil!.saldo!.toLocaleString("id-ID")} poin.`)}${kembali}`);
 }

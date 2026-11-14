@@ -108,6 +108,12 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 ### D1 · [ ] P1 — Menu tambah/sesuaikan poin manual
 - Pelanggan hasil migrasi sudah punya poin dari sistem lama. Perlu menu untuk menambah poin ke pelanggan secara manual, dengan alasan dan tercatat di log.
 - Bisa juga dipakai untuk hadiah quest/game.
+- Status (14 Nov): **kode siap, migrasi `20261118300000_d1_poin_manual.sql` BELUM dipasang (menunggu persetujuan Reza)**.
+  CRM › Pelanggan › detail › "Sesuaikan poin": tambah/kurangi, jumlah, alasan wajib (3–300 huruf); saldo tidak bisa minus;
+  klik ganda tidak dobel; tercatat di riwayat poin (pelaku, alasan) + Log Aktifitas. Hak: Owner, atau peran yang dicentang
+  izin khusus baru "Sesuaikan poin pelanggan" (CRM) di Akses Grup. Tanpa jurnal (poin memang tidak dijurnal).
+  Sebelum migrasi dipasang tombolnya tidak muncul (aman). Data 14 Nov: 3.771 pelanggan bersaldo poin, semuanya dari transaksi
+  VetOS sejak 1 Nov — poin sistem lama belum ada yang masuk. Bila saldo lama banyak, bisa ditambah impor Excel massal.
 - Screenshot: `crm-pelanggan.jpg`
 
 ### D2 · [ ] P2 — Filter retensi: pelanggan tidak datang N bulan
