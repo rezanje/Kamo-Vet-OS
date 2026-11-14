@@ -6,11 +6,13 @@ import { readCompleteList } from "@/lib/checked-list";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
 import { bacaGudangImpor } from "@/lib/online-gudang-server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
+import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
+import { pesanDbOnline } from "@/lib/online-grup";
 import { bacaShopeeXlsx, type ShopeeOrder } from "@/lib/shopee-import";
-import type { CatalogItem, ExistingOrders } from "@/lib/shopee-import-match";
+import type { CatalogItem, ExistingOrders, IsiPaket } from "@/lib/shopee-import-match";
 
 // Impor pesanan Shopee → jalur SAMA dengan input manual: RPC post_online_order (stok keluar FIFO dari gudang
-// online, jurnal Dr piutang marketplace, HPP). Satu pesanan = satu RPC = satu transaksi atomik; pesanan yang
+// online, jurnal Dr piutang marketplace, HPP). E2: SKU bundling = kode barang Grup; stok & HPP dari isi paketnya. Satu pesanan = satu RPC = satu transaksi atomik; pesanan yang
 // gagal tidak menghentikan pesanan lain dan tidak pernah tersimpan sebagian.
 const BACK = "/penjualan/online";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -97,13 +99,35 @@ export async function pratinjauImporShopee(formData: FormData): Promise<Pratinja
       loadItemUnits(db),
     ]);
     const qty = new Map(stock.map(s => [s.item_id, Number(s.qty) || 0]));
+    // E2: barang Grup (paket/bundling Shopee) ikut dicocokkan; isi paket = resep terbuka yang sama dengan kasir & database.
+    const grupIds = items.filter(i => i.item_type === "Grup").map(i => i.id);
+    const resep = grupIds.length ? await loadKasirGroupComponents(db, grupIds) : [];
+    const unitDasar = new Map(items.map(i => [i.id, (i.unit ?? "pcs") || "pcs"]));
+    const isiPerGrup = new Map<string, { isi: IsiPaket[]; masalah: string | null }>();
+    for (const id of grupIds) {
+      const rows = resep.filter(r => r.group_item_id === id);
+      let masalah: string | null = rows.length ? null : "Paket ini belum punya isi — lengkapi rincian Grup di master barang dulu.";
+      const isi = rows.map((r): IsiPaket => {
+        const c = Array.isArray(r.component) ? r.component[0] : r.component;
+        if (!c?.is_active || c.item_type === "Grup") masalah = `Isi paket ${c?.name ? `"${c.name}" ` : ""}nonaktif atau tidak valid — perbaiki rincian Grup di master barang.`;
+        return {
+          id: r.component_item_id, code: c?.code ?? "", name: c?.name ?? "", unit: unitDasar.get(r.component_item_id) ?? "pcs",
+          qtyDasar: Number(r.qty) * Number(r.factor), item_type: String(c?.item_type ?? "Persediaan"), stock: qty.get(r.component_item_id) ?? 0,
+        };
+      });
+      isiPerGrup.set(id, { isi, masalah });
+    }
     const catalog: CatalogItem[] = items
-      .filter(i => !i.item_type || i.item_type === "Persediaan")
+      .filter(i => !i.item_type || i.item_type === "Persediaan" || i.item_type === "Grup")
       .map(i => {
         const sell = Number(i.sell_price) || 0;
         // Harga beli tidak ikut dikirim ke browser.
         const units = unitOptions({ unit: i.unit, sell_price: sell }, extraUnits.get(i.id) ?? []).map(u => ({ unit: u.unit, factor: u.factor, sell_price: u.sell_price }));
-        return { id: i.id, code: i.code ?? "", name: i.name, sell_price: sell, stock: qty.get(i.id) ?? 0, units };
+        const base: CatalogItem = { id: i.id, code: i.code ?? "", name: i.name, sell_price: sell, stock: qty.get(i.id) ?? 0, units };
+        if (i.item_type !== "Grup") return base;
+        // Paket hanya dijual per satuan dasarnya (database menolak satuan lain).
+        const paket = isiPerGrup.get(i.id) ?? { isi: [], masalah: null };
+        return { ...base, units: units.slice(0, 1), grup: paket.isi, ...(paket.masalah ? { grupMasalah: paket.masalah } : {}) };
       });
     return { orders: baca.orders, catalog, existing };
   } catch (e) {
@@ -114,7 +138,7 @@ export async function pratinjauImporShopee(formData: FormData): Promise<Pratinja
 function pesanError(raw: string): string {
   if (/rincian berbeda/i.test(raw)) return "Order ini pernah dikirim dengan rincian berbeda. Periksa daftar Penjualan Online; bila sudah tercatat, tidak perlu diimpor lagi.";
   if (/satuan tidak terdaftar/i.test(raw)) return "Satuan yang dipilih sudah tidak ada di master barang. Muat ulang pratinjau lalu pilih satuannya lagi.";
-  return raw || "Gagal menyimpan order.";
+  return pesanDbOnline(raw) || "Gagal menyimpan order.";
 }
 
 export async function simpanImporShopee(formData: FormData): Promise<HasilSimpanImpor> {

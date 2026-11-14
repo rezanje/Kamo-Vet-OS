@@ -7,6 +7,7 @@ import { postJournal } from "@/lib/posting";
 import { kodeAkunBayar } from "@/lib/kas-akun";
 import { hitungKomisi, isMarketplace } from "@/lib/online";
 import { parseLampiran, type LampiranDraft } from "@/lib/dokumen";
+import { pesanDbOnline } from "@/lib/online-grup";
 
 const BACK = "/penjualan/online";
 const FOLDER_BUKTI = "penjualan-online";
@@ -57,7 +58,7 @@ export async function buatPenjualanOnline(formData: FormData) {
   header.tanggal = String(formData.get("tanggal") ?? "") || todayJakarta();
   const lampiran = parseLampiran(formData.get("lampiran")).filter(l => l.path.startsWith(`${FOLDER_BUKTI}/`));
   const { data, error } = await db.rpc("post_online_order", {p_request_key:key,p_header:header,p_items:items});
-  if (error || !data) fail(error?.message ?? "Respons simpan belum terkonfirmasi. Periksa hasil transaksi terakhir sebelum menyimpan ulang.");
+  if (error || !data) fail(error?.message ? pesanDbOnline(error.message) : "Respons simpan belum terkonfirmasi. Periksa hasil transaksi terakhir sebelum menyimpan ulang.");
   // Bukti order (screenshot Shopee/transfer) menempel ke penjualan yang baru jadi. Order tetap sah
   // walau lampiran gagal dicatat — operator diberi tahu dan bisa melampirkan lagi dari detail order.
   const lampiranGagal = !(await lampirkanBukti(db, data.document_id, lampiran));
