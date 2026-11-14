@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { aturSembunyiPelanggan, detailPelanggan, ubahDataPelanggan, updateKategoriPelanggan, updateUlasanPelanggan, type DetailPelanggan } from "./actions";
 import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { SesuaikanPoinForm } from "./SesuaikanPoinForm";
+import { BULAN_BAWAAN, PILIHAN_BULAN } from "@/lib/retensi-pelanggan";
 
 export type PetRow = {
   id: string; name: string; species: string | null; breed: string | null;
@@ -141,7 +142,7 @@ const PROGRAM_MEMBER = [
 
 type DetailTab = "pembelian" | "program" | "catatan";
 
-export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, categories, statusUlasan, cariAwal = "", total, stats, halaman, hanyaTersembunyi = false }: {
+export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, retensi = null, categories, statusUlasan, cariAwal = "", total, stats, halaman, hanyaTersembunyi = false }: {
   /** Satu halaman pelanggan (50 baris) hasil pencarian di server — bukan seluruh pelanggan. */
   customers: CustomerRow[];
   /** Jumlah pelanggan yang cocok dengan pencarian. */
@@ -152,6 +153,8 @@ export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, c
   isAdmin: boolean;
   /** D1: Owner atau peran berizin "Sesuaikan poin pelanggan" (dibaca dari database; fail-closed). */
   bolehPoinManual?: boolean;
+  /** D2: saringan "tidak datang N bulan" (null = mati). `aktif` false = fungsi database belum terpasang. */
+  retensi?: { bulan: number; aktif: boolean; batas: string; terakhir: Record<string, string> } | null;
   categories: { id: string; nama: string; diskon_persen: number }[];
   statusUlasan: (StatusUlasan & { id: string })[];
   /** Kata kunci dari pencarian global — kotak cari langsung terisi. */
@@ -189,6 +192,7 @@ export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, c
     if (cari.trim()) params.set("cari", cari.trim());
     if (hal > 1) params.set("hal", String(hal));
     if (hanyaTersembunyi) params.set("tersembunyi", "1");
+    if (retensi) params.set("tidak_datang", String(retensi.bulan));
     const qs = params.toString();
     setCariTerkirim(cari.trim());
     startMemuat(() => router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false }));
@@ -322,12 +326,29 @@ export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, c
                   <i className={hanyaTersembunyi ? "ti ti-users" : "ti ti-eye-off"} /> {hanyaTersembunyi ? "Semua pelanggan" : "Lihat yang disembunyikan"}
                 </Link>
               )}
+              <form method="get" action={pathname} aria-label="Saring pelanggan tidak datang" style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                {q.trim() && <input type="hidden" name="cari" value={q.trim()} />}
+                {hanyaTersembunyi && <input type="hidden" name="tersembunyi" value="1" />}
+                <label htmlFor="tidak_datang" style={{ color: "var(--tm)" }}>Tidak datang ≥</label>
+                <select id="tidak_datang" name="tidak_datang" className="fi" defaultValue={String(retensi?.bulan ?? BULAN_BAWAAN)} style={{ fontSize: 11, width: "auto" }}>
+                  {[...new Set([...PILIHAN_BULAN, retensi?.bulan ?? BULAN_BAWAAN])].sort((a, b) => a - b).map((b) => <option key={b} value={b}>{b} bulan</option>)}
+                </select>
+                <button type="submit" className="btn-def" style={{ fontSize: 11 }}><i className="ti ti-filter" /> Saring</button>
+                {retensi && <Link href={pathname} className="btn-def" style={{ fontSize: 11, textDecoration: "none" }}>Hapus saringan</Link>}
+              </form>
             </div>
             <div style={{ position: "relative", width: 220 }}>
               <input className="fi" placeholder="Cari nama / no. HP..." value={q} onChange={(e) => setQ(e.target.value)} style={{ fontSize: 11, paddingRight: 26 }} />
               <i className={memuat ? "ti ti-loader-2" : "ti ti-search"} style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", color: "var(--td)", fontSize: 11, pointerEvents: "none" }} />
             </div>
           </div>
+          {retensi && (
+            <div role="status" style={{ fontSize: 11, marginBottom: 8, padding: "6px 10px", borderRadius: 6, background: retensi.aktif ? "#fff7ed" : "#fef2f2", color: retensi.aktif ? "#9a3412" : "#b91c1c" }}>
+              {retensi.aktif
+                ? <>Pelanggan yang <b>tidak datang {retensi.bulan} bulan</b> terakhir (terakhir datang sebelum {fmtDate(retensi.batas)}): {fmt(total)} pelanggan. Dihitung dari transaksi petshop/online & kunjungan klinik di semua cabang; penjualan petshop sebelum 1 Nov 2026 belum tercatat.</>
+                : <>Saringan &quot;tidak datang&quot; belum aktif — menampilkan semua pelanggan.</>}
+            </div>
+          )}
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 500 }}>
               <thead>
@@ -335,7 +356,7 @@ export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, c
                   <th>No.</th><th>Nama Pelanggan</th><th>Kategori</th><th>Ulasan</th><th>Tier</th>
                   <th style={{ textAlign: "right" }}>Total Pembelian</th>
                   <th style={{ textAlign: "center" }}>Anabul</th>
-                  <th>Terdaftar Sejak</th><th>Aksi</th>
+                  <th>{retensi?.aktif ? "Terakhir Datang" : "Terdaftar Sejak"}</th><th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
@@ -354,7 +375,7 @@ export function PelangganClient({ customers, isAdmin, bolehPoinManual = false, c
                     <td><TierBadge c={c} /></td>
                     <td style={{ textAlign: "right", fontWeight: 500, fontSize: 11 }}>{rp(c.total_spending)}</td>
                     <td style={{ textAlign: "center" }}>{c.pets.length}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(c.created_at)}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{retensi?.aktif ? (retensi.terakhir[c.id] ? fmtDate(retensi.terakhir[c.id]) : "—") : fmtDate(c.created_at)}</td>
                     <td>
                       <button className="back-btn" title="Buka detail & anabul" aria-label={`Buka detail ${c.name}`} onClick={(e) => { e.stopPropagation(); pilihPelanggan(c.id); }}>
                         <i className="ti ti-eye" />

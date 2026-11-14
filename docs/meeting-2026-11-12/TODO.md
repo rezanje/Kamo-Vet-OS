@@ -119,6 +119,12 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 ### D2 · [ ] P2 — Filter retensi: pelanggan tidak datang N bulan
 - Filter pelanggan yang tidak datang dalam 2 bulan (sebaiknya N bisa diatur).
 - Retention WA masih "halaman dalam pengembangan", jadi lanjutkan setelah filter ada.
+- Status (14 Nov): **kode siap, migrasi `20261118400000_d2_filter_retensi.sql` BELUM dipasang (menunggu persetujuan Reza;
+  hanya fungsi baca, tanpa ubah data)**. CRM › Pelanggan: "Tidak datang ≥ N bulan" (1/2/3/6/12, bawaan 2; URL bisa 1–60),
+  bisa digabung dengan cari, kolom "Terakhir Datang", jumlah hasil. "Datang" = transaksi petshop/online tidak dibatalkan atau
+  kunjungan klinik tidak diarsipkan, dihitung lintas semua cabang; yang belum pernah datang tidak ikut. Catatan: riwayat klinik
+  hasil impor ikut (bertanggal asli sejak 2024), riwayat petshop sistem lama tidak ada (VetOS mulai 1 Nov). Sebelum migrasi
+  dipasang saringan menampilkan daftar biasa + pesan "belum aktif" (aman). Retention WA belum dikerjakan.
 - Screenshot: `crm-retention-wa.jpg`
 
 ### D3 · [x] Promo paket
