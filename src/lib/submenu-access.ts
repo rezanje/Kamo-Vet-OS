@@ -148,6 +148,8 @@ export const SUBMENU_ENTRIES: readonly SubmenuEntry[] = [
   e("pajak", "rekap-ppn", ["/keuangan/ppn"]),
   // ── Daftar Laporan ──
   e("laporan", "operasional-penjualan", ["/laporan/operasional-penjualan"]),
+  e("laporan", "stok-slow-moving", ["/laporan/stok-slow-moving"]),
+  e("laporan", "stok-harus-order", ["/laporan/stok-harus-order"]),
   e("laporan", "pelanggan-teratas", ["/laporan/pelanggan-teratas"]),
   e("laporan", "jadwal-anabul", ["/laporan/jadwal-anabul"]),
   e("laporan", "absensi", ["/laporan/absensi"]),

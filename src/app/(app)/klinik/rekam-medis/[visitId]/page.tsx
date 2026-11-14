@@ -14,6 +14,8 @@ import { hargaCabang, applyHargaCabang } from "@/lib/harga-cabang";
 import { daftarDokter } from "@/lib/dokter";
 import { performersForService } from '@/lib/clinical-staff';
 import { RekamForm } from "./RekamForm";
+import { GroomerHeaderField } from "./GroomerHeaderField";
+import { bacaHeaderGroomer } from "@/lib/groomer-kunjungan";
 import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
 import { clinicAdmissionReadiness } from "@/lib/clinic-admission-readiness";
@@ -186,6 +188,8 @@ export default async function RekamMedisPage({
   const menungguBayar = visit.status === "Pembayaran";
   const selesai = visit.status === "Selesai";
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
+  // Baris Groomer di header (baca saja): jalan bareng bacaan lain, gagal baca = baris tidak tampil.
+  const groomerP = recorded ? mulai(bacaHeaderGroomer(supabase, visit)) : null;
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: (Omit<ClinicalCorrection, "recordId" | "revision" | "prescriptions"> & { id: string; clinical_revision?: number }) | null = null;
   let mrId: string | null = null;
@@ -410,6 +414,7 @@ export default async function RekamMedisPage({
   // Satu pemilik yang datang membawa beberapa hewan: tiap hewan punya rekam medis
   // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
   const [saudara, bolehManual] = await Promise.all([saudaraP, bolehManualP]);
+  const groomerInfo = groomerP ? await groomerP : null;
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -532,6 +537,7 @@ export default async function RekamMedisPage({
             <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
             <Field label="Poli" value={visit.poli} />
             {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
+            <GroomerHeaderField info={groomerInfo} />
             <Field label="Keluhan" value={visit.keluhan ?? "—"} />
           </div>
         </div>
