@@ -33,7 +33,7 @@ export type KunjunganPetugas = { poli?: string | null; doctor_id?: string | null
 type Snapshot = { doctor_id?: string | null; doctor_name?: string | null; staff_id?: string | null; staff_name?: string | null };
 export type BarisTagihanPetugas = { service_performers?: Snapshot | null };
 
-function kelompokDariJabatan(jabatan: string | null | undefined): KelompokPetugas | null {
+export function kelompokDariJabatan(jabatan: string | null | undefined): KelompokPetugas | null {
   const roles = clinicalRoles(jabatan ?? null);
   if (roles.includes("doctor")) return "Dokter";
   if (roles.includes("groomer")) return "Groomer";
@@ -42,12 +42,12 @@ function kelompokDariJabatan(jabatan: string | null | undefined): KelompokPetuga
 
 const bersih = (teks: string | null | undefined) => (teks ?? "").trim() || null;
 
-/** Daftar baris "Dokter / Groomer / Staff" untuk satu kunjungan. Kelompok kosong tidak dicetak. */
-export function petugasCetak(
+/** Nama petugas per kelompok untuk satu kunjungan (dasar `petugasCetak`; juga dipakai header Rekam Medis). */
+export function petugasPerKelompok(
   visit: KunjunganPetugas | null | undefined,
   lines: readonly BarisTagihanPetugas[],
   kartu: ReadonlyMap<string, KartuPetugas>,
-): BarisPetugas[] {
+): Map<KelompokPetugas, string[]> {
   const grup = new Map<KelompokPetugas, string[]>(URUTAN_KELOMPOK.map((k) => [k, []]));
   const sudah = new Set<string>();
   const tambah = (kunci: string, nama: string | null, slot: KelompokPetugas, id?: string | null) => {
@@ -69,6 +69,16 @@ export function petugasCetak(
     if (p.doctor_id) tambah(p.doctor_id, bersih(p.doctor_name) ?? bersih(kartu.get(p.doctor_id)?.nama), "Dokter", p.doctor_id);
     if (p.staff_id) tambah(p.staff_id, bersih(p.staff_name) ?? bersih(kartu.get(p.staff_id)?.nama), "Staff", p.staff_id);
   }
+  return grup;
+}
+
+/** Daftar baris "Dokter / Groomer / Staff" untuk satu kunjungan. Kelompok kosong tidak dicetak. */
+export function petugasCetak(
+  visit: KunjunganPetugas | null | undefined,
+  lines: readonly BarisTagihanPetugas[],
+  kartu: ReadonlyMap<string, KartuPetugas>,
+): BarisPetugas[] {
+  const grup = petugasPerKelompok(visit, lines, kartu);
   return URUTAN_KELOMPOK.flatMap((label) => {
     const nama = grup.get(label)!;
     return nama.length ? [{ label, nama: nama.join(", ") }] : [];
