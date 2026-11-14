@@ -103,3 +103,70 @@ tanpa perubahan; vitest penuh, lint, typecheck, build lulus.
 - Lapisan stok tanpa harga yang terpakai opname kini menghasilkan beban (taksiran), sama seperti penjualan.
 - 810004 juga dipakai kelebihan kas tutup shift; bila Finance ingin memisahkan, tinggal ganti satu pemetaan
   (`stock_opname_account('gain')` + literal di perencana koreksi) ke akun baru "Pendapatan Selisih Stok".
+
+## 5. Implementasi F2 (keputusan Reza: A + "dicatat kasbon saja", bukan potong gaji otomatis)
+
+Migrasi `supabase/migrations/20261118660000_f2_beban_selisih_karyawan.sql` (satu transaksi, objek baru saja; pagar prasyarat
+mewajibkan F1 sudah terpasang). Kode siap; **migrasi belum dipasang** (menunggu izin, sesudah F1).
+
+**Ringkasan & notifikasi nilai minus**
+- Halaman hasil opname (`Persediaan › Stok Opname › [opname selesai]`) kini punya bagian **Selisih kurang & beban karyawan**:
+  jumlah barang kurang, nilai HPP (yang dijurnal), nilai harga jual cabang, selisih jual − HPP, dan rincian per barang.
+  Hanya Owner/Finance (atau pemegang izin di bawah) yang melihatnya; kasir tetap tanpa harga.
+- Alert operasional "Selisih stok opname" (Laporan › Operasional penjualan) tidak lagi stub: aktual = nilai HPP selisih
+  kurang per cabang pada periode, dibanding ambang yang sudah ada (bawaan Rp500.000); kartu menampilkan nilai harga jual &
+  jumlah dokumen, tombol detail ke Laporan › Hasil Opname (cabang + periode). Sumber: rekap F1 `read_opname_price_recap`
+  (hanya OWNER/FINANCE; peran lain mendapat keterangan "hanya untuk Owner/Finance", bukan angka).
+
+**Beban ke karyawan (kasbon)**
+- Tombol/form di bagian yang sama: pilih 1–10 karyawan aktif (karyawan cabang gudang di atas), bagi nominal (ada "Bagi rata"),
+  alasan wajib. Nilai = qty kurang × **harga jual** cabang dari snapshot posting (contoh meeting: HPP 100rb, jual 150rb →
+  karyawan 150rb).
+- **Aturan paling sederhana yang aman (diputuskan):** satu beban aktif per opname, mencakup **seluruh** baris kurang; total
+  pembagian wajib **sama persis** dengan nilai beban (tidak ada beban sebagian; bila sebagian barang memang rusak wajar,
+  bebankan manual lewat Finance atau usulkan fitur pilih-barang). Bisa dibatalkan lalu dicatat ulang.
+- Jurnal tanggal **hari ini** (periode harus terbuka), cabang gudang opname, sumber `opname-beban-karyawan`:
+  Dr **182001** Kasbon/Piutang Karyawan (nilai jual) / Cr **720010** Beban Selisih Stok (HPP kurang, mengurangi beban) /
+  Cr **810004** Pendapatan Lain-lain (jual − HPP). Bila harga jual < HPP: karyawan tetap menanggung harga jual; Cr 720010 =
+  harga jual, tanpa baris 810004 (sisa HPP tetap beban perusahaan).
+- Ditolak dengan pesan biasa: opname lama/sebelum F1, tanpa selisih kurang, nilai HPP tidak cocok dengan jurnal asal, opname
+  sudah dikoreksi, sudah ada beban aktif, harga jual 0, periode tertutup, karyawan nonaktif/ganda, total tidak pas, alasan kosong.
+  Kunci permintaan → klik ganda tidak mencatat dua kali.
+- **Batalkan beban** (Owner/izin, alasan wajib): hanya bila kasbonnya belum diubah/dibayar; jurnal pembalik persis tanggal hari
+  ini (sumber `opname-beban-batal`), kasbon → status "Batal".
+- Koreksi stok atas opname yang masih punya beban aktif **ditolak** ("batalkan beban karyawan dulu") supaya kasbon tidak
+  berbeda diam-diam dari hasil opname.
+
+**Kasbon di HRIS & penggajian (perilaku persis)**
+- Per karyawan dibuat satu baris kasbon (`cash_advances`) status baru **"Dicatat"**, tenor 1, alasan
+  "Beban selisih stok opname <no hasil> — <alasan>". Model kasbon lama: status "Disetujui" **otomatis dipotong gaji** (cicilan
+  per tenor saat penggajian disahkan). Penggajian hanya membaca status "Disetujui" (`src/lib/payroll-data.ts`), jadi kasbon
+  "Dicatat" **tidak pernah ikut dipotong** — tanpa ubah kode penggajian.
+- Tampil di HRIS › Pengajuan › **Utang karyawan berjalan** (label "Selisih stok · tidak potong gaji") dan di layar karyawan
+  (/me: "Utang selisih stok … tidak dipotong gaji"). Tidak menghalangi karyawan mengajukan kasbon sendiri.
+- **Belum ada** tombol pelunasan tunai atau "ubah jadi potong gaji" untuk kasbon "Dicatat" (lihat pertanyaan terbuka).
+
+**Izin**
+- Owner selalu. Peran lain hanya lewat izin khusus baru **`persediaan.beban_selisih_karyawan`** (Akses Grup › Persediaan,
+  bawaan MATI) + akses cabang. Finance tanpa izin tetap bisa **melihat** ringkasan, tidak bisa membebankan.
+- Jejak tetap `opname_variance_charges` (tidak bisa diubah/dihapus) + Log Aktifitas (sumber baru, pembaca Owner/Finance);
+  kasbon yang lahir tercatat lewat sumber kasbon yang sudah ada.
+
+**Tes**: `scripts/test-f2-beban-selisih-karyawan-postgres.py` 34/34 PASS, `--baseline` 32/32 kasus fitur RED; harness F1
+disesuaikan (ikut menahan F2 saat bootstrap tanpa F1) tetap 33/33; regresi SQL `opname_posting_atomic.sql`,
+`opname_price_report.sql`, `stock_document_corrections.sql` lulus dengan F2 terpasang (`hris_pilot_access.sql` dan
+`activity_audit_people_settings.sql` gagal karena fixture lama yang tidak terkait F2: kolom gaji pokok & simpan akses atomik).
+Vitest baru (aksi, panel, alert, pembacaan isian, sinkron izin/migrasi); vitest penuh, lint, typecheck lulus.
+
+**Pertanyaan terbuka (untuk Reza/Finance)**
+1. Kasbon "Dicatat" dilunasi bagaimana: bayar tunai (perlu fitur terima pelunasan: Dr Kas / Cr 182001) atau diubah jadi
+   potong gaji? Sampai diputuskan, saldo 182001 dari beban ini tetap terbuka.
+2. Perlu beban sebagian / pilih barang per opname?
+3. Akun 182001 di Production bernama "Cashbon Karyawan" menurut bagan akun repo — belum dicek langsung ke Production
+   (akses baca database tidak tersedia di sesi ini).
+
+**Risiko Production**
+- CHECK status `cash_advances` diganti (kunci singkat pada tabel kecil). Status lama tetap sah.
+- Laporan/penarikan pihak ketiga yang menghitung kasbon dengan "semua status kecuali Ditolak" akan ikut menghitung "Dicatat"
+  dan "Batal" — di kode repo tidak ada yang begitu (dicek: penggajian, HRIS, /me).
+- Koreksi stok opname yang sudah dibebankan kini ditolak sampai bebannya dibatalkan.

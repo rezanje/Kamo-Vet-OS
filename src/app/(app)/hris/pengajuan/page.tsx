@@ -2,7 +2,7 @@ import { NumberInput } from "@/components/NumberInput";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { ALASAN_SELISIH_KAS } from "@/lib/kasbon";
+import { asalKasbon, STATUS_KASBON_DICATAT } from "@/lib/beban-selisih-karyawan";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehKelolaMaster } from "@/lib/master-guard";
@@ -55,10 +55,12 @@ export default async function PengajuanPage({
   // otomatis saat tutup shift. Tanpa daftar ini, utang itu tidak terlihat oleh HR
   // maupun keuangan sama sekali: satu-satunya yang bisa melihatnya adalah
   // karyawannya sendiri di layar /me.
+  // F2 (meeting 12 Nov 2026): utang beban selisih stok opname (status "Dicatat") ikut tampil, tapi TIDAK dipotong gaji
+  // otomatis — penggajian hanya membaca status "Disetujui".
   const { data: berjalanData } = await supabase
     .from("cash_advances")
-    .select("id, tanggal, jumlah, tenor_bulan, alasan, employees(nama, jabatan), cash_advance_installments(jumlah)")
-    .eq("status", "Disetujui").order("tanggal", { ascending: false });
+    .select("id, tanggal, jumlah, tenor_bulan, alasan, status, employees(nama, jabatan), cash_advance_installments(jumlah)")
+    .in("status", ["Disetujui", STATUS_KASBON_DICATAT]).order("tanggal", { ascending: false });
 
   const lembur = (lemburData ?? []) as unknown as { id: string; tanggal: string; jam: number; alasan: string | null; employees: Rel<Emp> }[];
   const kasbon = (kasbonData ?? []) as unknown as { id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null; employees: Rel<Emp> }[];
@@ -66,7 +68,7 @@ export default async function PengajuanPage({
   const total = lembur.length + kasbon.length + reimburse.length + koreksi.length;
 
   const berjalan = ((berjalanData ?? []) as unknown as {
-    id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null;
+    id: string; tanggal: string; jumlah: number; tenor_bulan: number; alasan: string | null; status: string;
     employees: Rel<Emp>; cash_advance_installments: { jumlah: number }[] | null;
   }[]).map((k) => {
     const dibayar = (k.cash_advance_installments ?? []).reduce((a, i) => a + Number(i.jumlah), 0);
@@ -211,7 +213,7 @@ export default async function PengajuanPage({
       <div className="crm-sec" style={{ marginBottom: 0, marginTop: 14 }}>
         <SecHeader
           num="04" title="UTANG KARYAWAN BERJALAN"
-          desc="Kasbon & selisih kas yang belum lunas. Dipotong otomatis dari gaji periode berikutnya."
+          desc="Kasbon & selisih kas yang belum lunas dipotong otomatis dari gaji periode berikutnya. Beban selisih stok opname hanya dicatat (tidak dipotong gaji)."
         />
         {berjalan.length === 0 ? (
           <Kosong teks="Tidak ada utang karyawan yang berjalan." />
@@ -231,14 +233,14 @@ export default async function PengajuanPage({
                 </thead>
                 <tbody>
                   {berjalan.map((k) => {
-                    const dariSelisih = String(k.alasan ?? "").startsWith(ALASAN_SELISIH_KAS);
+                    const asal = asalKasbon(k.status, k.alasan);
                     return (
                       <tr key={k.id}>
                         <td style={{ fontSize: 11.5, fontWeight: 600 }}>{one(k.employees)?.nama ?? "—"}</td>
                         <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{tgl(k.tanggal)}</td>
                         <td style={{ fontSize: 10.5 }}>
-                          <span className={`bge ${dariSelisih ? "o" : "b"}`} style={{ fontSize: 9 }}>
-                            {dariSelisih ? "Selisih kas" : "Kasbon"}
+                          <span className={`bge ${asal === "kasbon" ? "b" : asal === "selisih-kas" ? "o" : "r"}`} style={{ fontSize: 9 }}>
+                            {asal === "selisih-kas" ? "Selisih kas" : asal === "beban-opname" ? "Selisih stok · tidak potong gaji" : "Kasbon"}
                           </span>
                         </td>
                         <td style={{ textAlign: "right", fontSize: 11 }}>{rp(Number(k.jumlah))}</td>
@@ -258,7 +260,8 @@ export default async function PengajuanPage({
             </div>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
               Utang bertanda <b>Selisih kas</b> lahir otomatis saat tutup shift dan tidak
-              menghalangi karyawan mengajukan kasbon sendiri.
+              menghalangi karyawan mengajukan kasbon sendiri. Utang <b>Selisih stok</b> dicatat Owner/Finance dari hasil stok
+              opname: tidak dipotong gaji otomatis dan tidak menghalangi pengajuan kasbon.
             </div>
           </>
         )}

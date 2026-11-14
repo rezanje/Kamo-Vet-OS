@@ -1,9 +1,10 @@
 import { NumberInput } from "@/components/NumberInput";
 import { ajukanKasbon, ajukanLembur, ajukanReimburse } from "./pengajuan";
 import { jadwalCicilan } from "@/lib/kasbon";
+import { STATUS_KASBON_DICATAT } from "@/lib/beban-selisih-karyawan";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
-const BADGE: Record<string, string> = { Menunggu: "o", Disetujui: "g", Ditolak: "r", Lunas: "b", Dibayar: "b" };
+const BADGE: Record<string, string> = { Menunggu: "o", Disetujui: "g", Ditolak: "r", Lunas: "b", Dibayar: "b", Dicatat: "o", Batal: "x" };
 const tgl = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short" });
 
 export type Lembur = { id: string; tanggal: string; jam: number; status: string };
@@ -122,8 +123,10 @@ export function PengajuanCards({
               return (
                 <Baris
                   key={k.id}
-                  kiri={`Kasbon ${rp(Number(k.jumlah))} · ${k.tenor_bulan}× ${rp(cicilan)}/bln`}
-                  kanan={k.status === "Disetujui" ? `sisa ${rp(sisa)}` : undefined}
+                  kiri={k.status === STATUS_KASBON_DICATAT
+                    ? `Utang selisih stok ${rp(Number(k.jumlah))} · tidak dipotong gaji`
+                    : `Kasbon ${rp(Number(k.jumlah))} · ${k.tenor_bulan}× ${rp(cicilan)}/bln`}
+                  kanan={k.status === "Disetujui" || k.status === STATUS_KASBON_DICATAT ? `sisa ${rp(sisa)}` : undefined}
                   status={k.status}
                 />
               );

@@ -212,6 +212,8 @@ export const ACTIVITY_ENTITIES: Record<string, string> = {
   account_access_overrides: "Akses Khusus Akun",
   // C1 (meeting 12 Nov 2026): pengajuan koreksi absen staf (metadata saja).
   attendance_corrections: "Koreksi Absensi",
+  // F2 (meeting 12 Nov 2026): beban selisih kurang stok opname ke karyawan (kasbon, tidak potong gaji).
+  opname_variance_charges: "Beban Selisih Opname ke Karyawan",
 };
 export const ACTIVITY_MODULES: Record<string, string> = {
   pos: 'Persediaan / POS', crm: 'CRM', pembelian: 'Pembelian', penjualan: 'Penjualan',

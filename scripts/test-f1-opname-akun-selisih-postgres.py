@@ -18,6 +18,8 @@ from native_postgres import NativePostgres  # noqa: E402
 spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-accurate-inventory-accounting-postgres.py")
 fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
 CANDIDATE = ROOT / "supabase/migrations/20261118630000_f1_opname_akun_selisih.sql"
+# Migrasi sesudahnya yang MEWAJIBKAN F1 (pagar prasyarat) ikut ditahan selama bootstrap tanpa kandidat.
+DEPENDENTS = [ROOT / "supabase/migrations/20261118660000_f2_beban_selisih_karyawan.sql"]
 RESULTS = []
 
 U = lambda n: f"f1000000-0000-4000-8000-{n:012d}"
@@ -39,7 +41,7 @@ class _HoldBack:
     """Shared fixture bootstrap, every migration except the candidate."""
     def __init__(self, db): self.db = db
     def sql(self, source):
-        if source == "begin;\n" + CANDIDATE.read_text() + "\ncommit;": return ""
+        if source in ["begin;\n" + m.read_text() + "\ncommit;" for m in [CANDIDATE, *DEPENDENTS] if m.exists()]: return ""
         return self.db.sql(source)
 
 
