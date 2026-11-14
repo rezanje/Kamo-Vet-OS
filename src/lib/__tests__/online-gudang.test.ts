@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TIPE_GUDANG_ORDER_ONLINE, kelompokPerCabang, labelTipeGudang, muatGudangOrderOnline } from "@/lib/online-gudang";
+import { TIPE_GUDANG_ORDER_ONLINE, gudangUtamaPerCabang, kelompokPerCabang, labelTipeGudang, muatGudangOrderOnline, tentukanGudangImpor } from "@/lib/online-gudang";
 
 const g = (id: string, branch: string, type: string, name = id) => ({ id, name, branch_id: `b-${branch}`, branch_name: branch, type });
 
@@ -34,5 +34,29 @@ describe("gudang order online", () => {
     expect(data).toEqual([{ id: "w", name: "Toko", branch_id: "b", type: "RETAIL", branch_name: "Kamo Pusat" }]);
     expect(calls).toContainEqual(["in", "type", ["ONLINE", "RETAIL", "DC", "VET"]]);
     expect(calls).toContainEqual(["eq", "is_active", true]);
+  });
+});
+
+describe("E4: gudang impor otomatis per cabang", () => {
+  const g = (id: string, branch: string, type: string, name = id) => ({ id, name, branch_id: branch, branch_name: `Cabang ${branch}`, type });
+  const rows = [
+    g("pdry", "PDRY", "RETAIL", "WH PDRY"), g("online-pdry", "PDRY", "ONLINE", "WH ONLINE PDRY"),
+    g("b2c", "B2C", "ONLINE", "WH B2C"),
+    g("dc1", "DC", "DC"), g("dc2", "DC", "DC"),
+    g("vet", "VET", "VET"),
+  ];
+
+  it("gudang utama: Toko bila ada, satu-satunya gudang bila tidak, cabang dengan gudang setara ganda tidak ditebak", () => {
+    expect(gudangUtamaPerCabang(rows).map(c => [c.id, c.gudang.id])).toEqual([
+      ["B2C", "b2c"], ["PDRY", "pdry"], ["VET", "vet"],
+    ]);
+  });
+
+  it("akun satu cabang terkunci; multi-cabang memakai pilihan yang sah saja", () => {
+    expect(tentukanGudangImpor(rows, ["PDRY"], "B2C")).toMatchObject({ terkunci: true, terpilih: { id: "PDRY", gudang: { id: "pdry" } } });
+    expect(tentukanGudangImpor(rows, null, "B2C")).toMatchObject({ terkunci: false, terpilih: { gudang: { id: "b2c" } } });
+    expect(tentukanGudangImpor(rows, ["PDRY", "VET"], "B2C").terpilih).toBeNull();
+    expect(tentukanGudangImpor(rows, null, "DC").terpilih).toBeNull();
+    expect(tentukanGudangImpor(rows, [], null)).toEqual({ cabang: [], terkunci: false, terpilih: null });
   });
 });

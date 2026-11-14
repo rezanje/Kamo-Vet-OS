@@ -2,8 +2,7 @@ import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { bolehBukaPath, tujuanSaatDiblokir } from "@/lib/akses";
-import { gabungSubmenu } from "@/lib/submenu-access";
-import { loadSubmenuPolicy } from "@/lib/submenu-policy";
+import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { BRANCH_HEADER, MODE_HEADER, branchCookie, operationalMode, parseBranchContext } from "@/lib/operational-context";
 import { resolveOperationalBranch } from "@/lib/operational-branch";
 import { getOpenShift } from "@/lib/shift";
@@ -86,18 +85,19 @@ export async function updateSession(request: NextRequest) {
       // gagal baca lain = tidak bisa dipastikan, jadi gagal tertutup seperti galat aturan modul — KECUALI untuk OWNER:
       // OWNER tidak pernah dibatasi sub-menu (bolehBukaPath selalu true), jadi galat RPC ini tidak boleh mengunci
       // satu-satunya peran yang bisa memperbaiki Akses Grup. Peran lain diarahkan ke /login dengan pesan yang jelas.
-      const [{ data: profile, error: profileError }, { data: aturan, error: rulesError }, submenu] = await Promise.all([
+      // E3 (meeting 12 Nov 2026): akses khusus akun ikut dibaca di putaran yang sama (bacaAkses = role_modules +
+      // sub-menu + akses khusus, paralel). Akses khusus tak terbaca = ikuti peran (tidak pernah memperluas akses).
+      const [{ data: profile, error: profileError }, akses] = await Promise.all([
         supabase.from("profiles").select("role, is_active").eq("id", userId).maybeSingle(),
-        supabase.from("role_modules").select("role, module_id"),
-        loadSubmenuPolicy(supabase),
+        bacaAkses(supabase),
       ]);
       // Auth deletion cascades the profile; an unexpired JWT alone is not enough.
-      if (profileError || rulesError || !profile || profile.is_active === false) return loginRedirect(request);
+      if (profileError || akses.rulesError || !profile || profile.is_active === false) return loginRedirect(request);
       const role = profile?.role ?? "";
-      if (submenu.status === "error" && role !== "OWNER") {
+      if (akses.submenu.status === "error" && role !== "OWNER") {
         return loginRedirect(request, "Hak akses halaman belum bisa diperiksa. Coba lagi sebentar lagi, atau masuk ulang.");
       }
-      const tersimpan = gabungSubmenu((aturan ?? []) as { role: string; module_id: string }[], submenu.rows);
+      const tersimpan = aturanEfektif(role, akses);
 
       const accountPage = path === "/pengaturan/pengguna";
       const canCreateAccount = accountPage && (await loadRoleCapabilities(supabase, role)).create_accounts;

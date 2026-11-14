@@ -6,9 +6,8 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { bolehBukaPath, type AturanTersimpan } from "@/lib/akses";
-import { gabungSubmenu } from "@/lib/submenu-access";
-import { loadSubmenuPolicy } from "@/lib/submenu-policy";
+import { bolehBukaPath } from "@/lib/akses";
+import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { amankanKueri, type HasilData } from "@/lib/cari-global";
 import { isCompletedSale } from "@/lib/sale-payment-reporting";
 
@@ -22,16 +21,16 @@ export async function GET(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ data: [] }, { status: 401 });
 
-  const [{ data: profile }, { data: aturanRows }, submenu] = await Promise.all([
+  const [{ data: profile }, akses] = await Promise.all([
     supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
-    supabase.from("role_modules").select("role, module_id"),
-    loadSubmenuPolicy(supabase),
+    bacaAkses(supabase),
   ]);
   const role = profile?.role ?? "STAFF";
   // Middleware melewati /api, jadi sub-menu ditegakkan di sini. Kebijakan tak terbaca (bukan "fungsi belum ada")
   // = tidak bisa dipastikan apa yang boleh dilihat peran ini: gagal tertutup. OWNER tidak pernah dibatasi.
-  if (submenu.status === "error" && role !== "OWNER") return NextResponse.json({ data: [] }, { status: 503 });
-  const aturan = gabungSubmenu((aturanRows ?? []) as AturanTersimpan, submenu.rows);
+  if (akses.submenu.status === "error" && role !== "OWNER") return NextResponse.json({ data: [] }, { status: 503 });
+  // E3 (meeting 12 Nov 2026): akses khusus akun ikut, sama dengan middleware dan sidebar.
+  const aturan = aturanEfektif(role, akses);
   const boleh = (path: string) => bolehBukaPath(role, path, aturan);
 
   const pola = `%${kueri}%`;

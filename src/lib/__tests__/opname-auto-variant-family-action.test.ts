@@ -81,7 +81,8 @@ beforeEach(() => {
 
 it("adds all eligible variants including zero stock after the 30 seed SKUs without unrelated families or duplicates", async () => {
   await expect(buatPerintah(form())).rejects.toThrow("/pos/opname/fiction-order");
-  expect(fixture.rpcCalls[0]).toEqual({ name: "opname_daftar_hitung", args: { p_warehouse: "fiction-warehouse", p_top: 20, p_acak: 10 } });
+  // E3 (meeting 12 Nov 2026): pemeriksaan hak buka ikut membaca sub-menu + akses khusus akun lebih dulu.
+  expect(fixture.rpcCalls.filter(c => !["get_my_submenu_policy", "get_my_access_override"].includes(c.name))[0]).toEqual({ name: "opname_daftar_hitung", args: { p_warehouse: "fiction-warehouse", p_top: 20, p_acak: 10 } });
   expect(fixture.selected).toHaveLength(32);
   expect(fixture.selected).toEqual(expect.arrayContaining([...fixture.seed, "zero-stock", "other-variant"]));
   expect(new Set(fixture.selected).size).toBe(32);
