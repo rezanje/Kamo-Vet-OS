@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { cashierPriceFloorDbMessage, cashierPriceFloorIssue } from "../cashier-price-floor";
-import { alasanBawahModalPerBaris, alasanBersih, alasanDariPilihan, belowCostSaleAllowed, pesanBawahModalDb } from "../jual-bawah-modal";
+import { alasanBawahModalPerBaris, alasanBersih, BELOW_COST_ACTION, alasanDariPilihan, belowCostSaleAllowed, pesanBawahModalDb } from "../jual-bawah-modal";
 import { GRANT_ONLY_ACTIONS, legacyRoleHasAction } from "../role-grant-only-actions";
 import { barisExcelBawahModal, rentangBawahModal, totalRugi, type BarisBawahModal } from "../jual-bawah-modal-server";
 
@@ -93,6 +95,16 @@ describe("izin khusus & laporan", () => {
     expect(legacyRoleHasAction("kasir.jual_bawah_modal", "ADMIN")).toBe(false);
     expect(legacyRoleHasAction("kasir.jual_bawah_modal", "FINANCE")).toBe(false);
     expect(legacyRoleHasAction("kasir.diskon_manual", "ADMIN")).toBe(true);
+  });
+  it("sinkron dengan migrasi: baris katalog enforced (modul kasir), submenu laporan, dan tanpa begin/commit sendiri", () => {
+    const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261118100000_owner_jual_bawah_modal.sql"), "utf8");
+    expect(sql).toMatch(/action_catalog\(id,label,"group",enforced\) values\s*\('kasir\.jual_bawah_modal',[\s\S]*?'Kasir & Tagihan',true\)/);
+    expect(sql).toMatch(/action_modules\(id,module_id\) values\('kasir\.jual_bawah_modal','kasir'\)/);
+    expect(sql).toContain("('laporan.jual-bawah-modal','laporan')");
+    expect(sql.replace(/--.*$/gm, "")).not.toMatch(/^\s*(begin|commit|rollback)\s*;/im);
+    expect(sql.split("\n").slice(0, 3).join("\n").toLowerCase()).toContain("apply as one transaction");
+    expect(BELOW_COST_ACTION).toBe("kasir.jual_bawah_modal");
+    expect(GRANT_ONLY_ACTIONS).toContain(BELOW_COST_ACTION);
   });
   const baris = (over: Partial<BarisBawahModal> = {}): BarisBawahModal => ({ sale_id: "s", tanggal: "2026-11-14", cabang_id: "c", cabang: "Ciawi", no_struk: "POS-1", item_id: "i", kode: "100222",
     barang: "Crystal Kitty HnS 400gr", qty: 2, satuan: "pcs", faktor: 1, hpp: 52152, harga_neto: 35000, rugi: 17152, alasan: "Mau kadaluarsa", oleh_id: "u", oleh: "Andri", ...over });

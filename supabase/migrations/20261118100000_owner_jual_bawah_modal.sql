@@ -178,7 +178,9 @@ comment on function public.laporan_jual_bawah_modal(date,date,uuid) is 'Hanya ba
 revoke all on function public.laporan_jual_bawah_modal(date,date,uuid) from public,anon;
 grant execute on function public.laporan_jual_bawah_modal(date,date,uuid) to authenticated,service_role;
 
-insert into role_settings_private.submenu_catalog(id,module_id) values('laporan.jual-bawah-modal','laporan') on conflict(id) do nothing;
+insert into role_settings_private.submenu_catalog(id,module_id) values
+('laporan.jual-bawah-modal','laporan')
+on conflict (id) do nothing;
 
 -- ───────────── 6. Pemeriksaan pasang ─────────────
 do $check$
