@@ -108,7 +108,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 ### D1 · [ ] P1 — Menu tambah/sesuaikan poin manual
 - Pelanggan hasil migrasi sudah punya poin dari sistem lama. Perlu menu untuk menambah poin ke pelanggan secara manual, dengan alasan dan tercatat di log.
 - Bisa juga dipakai untuk hadiah quest/game.
-- Status (14 Nov): **kode siap, migrasi `20261118300000_d1_poin_manual.sql` BELUM dipasang (menunggu persetujuan Reza)**.
+- Status (14 Nov): **kode siap, migrasi `20261118600000_d1_poin_manual.sql` BELUM dipasang (menunggu persetujuan Reza)**.
   CRM › Pelanggan › detail › "Sesuaikan poin": tambah/kurangi, jumlah, alasan wajib (3–300 huruf); saldo tidak bisa minus;
   klik ganda tidak dobel; tercatat di riwayat poin (pelaku, alasan) + Log Aktifitas. Hak: Owner, atau peran yang dicentang
   izin khusus baru "Sesuaikan poin pelanggan" (CRM) di Akses Grup. Tanpa jurnal (poin memang tidak dijurnal).
@@ -119,7 +119,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 ### D2 · [ ] P2 — Filter retensi: pelanggan tidak datang N bulan
 - Filter pelanggan yang tidak datang dalam 2 bulan (sebaiknya N bisa diatur).
 - Retention WA masih "halaman dalam pengembangan", jadi lanjutkan setelah filter ada.
-- Status (14 Nov): **kode siap, migrasi `20261118400000_d2_filter_retensi.sql` BELUM dipasang (menunggu persetujuan Reza;
+- Status (14 Nov): **kode siap, migrasi `20261118700000_d2_filter_retensi.sql` BELUM dipasang (menunggu persetujuan Reza;
   hanya fungsi baca, tanpa ubah data)**. CRM › Pelanggan: "Tidak datang ≥ N bulan" (1/2/3/6/12, bawaan 2; URL bisa 1–60),
   bisa digabung dengan cari, kolom "Terakhir Datang", jumlah hasil. "Datang" = transaksi petshop/online tidak dibatalkan atau
   kunjungan klinik tidak diarsipkan, dihitung lintas semua cabang; yang belum pernah datang tidak ikut. Catatan: riwayat klinik
@@ -183,7 +183,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
   Hasil: WH ONLINE TKI → WH TKI 3 barang / 16 unit (IT.2026.11.00330/00331), **WH ONLINE TKI nonaktif**;
   WH ONLINE PDRY → WH PDRY 27 barang / 209 unit (IT.2026.11.00328/00329). Nilai pindah Rp3.604.373,06 = nilai masuk toko,
   tanpa jurnal. **Sisa:** WH ONLINE PDRY masih aktif memegang 4 barang / 21 unit (Chester Tuna 800gr 8, Cat Choize Tuna adult 8,
-  Cat Choize Salmon adult 4, Pasir Lala 25L Coffee 1) → **tahap 2** `20261118200000_e4_pindah_stok_wh_online_tahap2.sql`
+  Cat Choize Salmon adult 4, Pasir Lala 25L Coffee 1) → **tahap 2** `20261118500000_e4_pindah_stok_wh_online_tahap2.sql`
   (ditulis + diuji, BELUM dipasang) dipasang setelah kiriman Transit itu diterima toko (Panduraya, Muara, Ciawi, TKI/Kopo).
 - Screenshot: `penjualan-online-pilih-wh.jpg`
 

@@ -25,7 +25,7 @@ fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture
 from native_postgres import NativePostgres  # noqa: E402
 
 CAND = '20261114080823_e4_pindah_stok_wh_online.sql'
-TAHAP2 = '20261118200000_e4_pindah_stok_wh_online_tahap2.sql'
+TAHAP2 = '20261118500000_e4_pindah_stok_wh_online_tahap2.sql'
 MIGRATIONS = ROOT / 'supabase/migrations'
 NOTE = 'E4 meeting 12 Nov 2026: pemindahan sisa stok WH Online ke gudang toko'
 RESULTS = []

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D1 (meeting 12 Nov 2026): sesuaikan poin pelanggan manual (migrasi 20261118300000_d1_poin_manual.sql).
+"""D1 (meeting 12 Nov 2026): sesuaikan poin pelanggan manual (migrasi 20261118600000_d1_poin_manual.sql).
 
 Native throwaway PostgreSQL only (full migration chain, fictional fixtures). Never accepts a database URL, no network.
 
@@ -17,7 +17,7 @@ from native_postgres import NativePostgres  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-accurate-inventory-accounting-postgres.py")
 fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
-CANDIDATE = ROOT / "supabase/migrations/20261118300000_d1_poin_manual.sql"
+CANDIDATE = ROOT / "supabase/migrations/20261118600000_d1_poin_manual.sql"
 RESULTS = []
 
 U = lambda n: f"d1000000-0000-4000-8000-{n:012d}"

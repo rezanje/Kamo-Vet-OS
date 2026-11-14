@@ -1,7 +1,7 @@
 /**
  * D2 (meeting 12 Nov 2026): filter retensi — pelanggan yang tidak datang dalam N bulan (CRM › Pelanggan, `?tidak_datang=N`).
  * Database: `pelanggan_tidak_datang(p_bulan)` (dipakai seperti tabel: cari, urutan, halaman, hitung) dan
- * `pelanggan_terakhir_datang(p_ids)` (migrasi 20261118400000_d2_filter_retensi.sql). "Datang" = transaksi petshop/online yang tidak
+ * `pelanggan_terakhir_datang(p_ids)` (migrasi 20261118700000_d2_filter_retensi.sql). "Datang" = transaksi petshop/online yang tidak
  * dibatalkan atau kunjungan klinik yang tidak diarsipkan; pelanggan yang tidak pernah datang tidak ikut.
  */
 export const PILIHAN_BULAN = [1, 2, 3, 6, 12] as const;
