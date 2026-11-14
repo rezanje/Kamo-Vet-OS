@@ -6,9 +6,7 @@ import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { analisisImpor, kunciBaris, satuanBarang, type AnalisisPesanan, type ExistingOrders } from "@/lib/shopee-import-match";
 import { pratinjauImporShopee, simpanImporShopee, type HasilImporOrder, type PratinjauImpor, type PilihanImpor } from "./actions";
 
-import { kelompokPerCabang, labelTipeGudang, type GudangOnline } from "@/lib/online-gudang";
-
-type Warehouse = Pick<GudangOnline, "id" | "name" | "branch_name"> & { type?: string };
+import { labelTipeGudang, type CabangImpor } from "@/lib/online-gudang";
 
 const rp = (n: number) => `Rp ${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
 const CHUNK = 10;
@@ -23,8 +21,11 @@ const KIND_LABEL: Record<string, string> = {
   sku: "cocok SKU", nama: "cocok nama", "nama-normal": "cocok nama (dirapikan)", perkiraan: "perkiraan", ambigu: "ambigu", tidak: "belum cocok",
 };
 
-export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner }: { warehouses: Warehouse[]; defaultWarehouseId: string; isOwner: boolean }) {
-  const [warehouseId, setWarehouseId] = useState(defaultWarehouseId);
+// E4 (meeting 12 Nov 2026): yang dipilih CABANG, gudangnya ditentukan sistem (gudang utama cabang).
+// Akun dengan satu cabang: terkunci otomatis. Server menghitung ulang gudang dari cabang yang dikirim.
+export function ShopeeImportWorkspace({ cabang, terkunci, defaultBranchId, isOwner }: { cabang: CabangImpor[]; terkunci: boolean; defaultBranchId: string; isOwner: boolean }) {
+  const [branchId, setBranchId] = useState(defaultBranchId);
+  const terpilih = cabang.find(c => c.id === branchId) ?? null;
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PratinjauImpor | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string | null>>({});
@@ -47,12 +48,12 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
 
   async function baca() {
     if (busyRef.current) return;
-    if (!warehouseId) { setMessage("Pilih gudang online tujuan dulu."); return; }
+    if (!terpilih) { setMessage("Pilih cabang tujuan dulu."); return; }
     if (!file) { setMessage("Pilih file Excel (.xlsx) ekspor pesanan Shopee dulu."); return; }
     busyRef.current = true; setBusy(true); reset();
     try {
       const fd = new FormData();
-      fd.set("file", file); fd.set("warehouse_id", warehouseId);
+      fd.set("file", file); fd.set("branch_id", branchId);
       const r = await pratinjauImporShopee(fd);
       setPreview(r);
       setMessage(r.error ?? `${r.orders.length} pesanan terbaca. Periksa kecocokan barang sebelum menyimpan.`);
@@ -75,7 +76,7 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
       for (let i = 0; i < pilihan.length; i += CHUNK) {
         const potong = pilihan.slice(i, i + CHUNK);
         const fd = new FormData();
-        fd.set("file", file); fd.set("warehouse_id", warehouseId); fd.set("selection", JSON.stringify(potong));
+        fd.set("file", file); fd.set("branch_id", branchId); fd.set("selection", JSON.stringify(potong));
         let r: Awaited<ReturnType<typeof simpanImporShopee>>;
         try { r = await simpanImporShopee(fd); }
         catch { r = { ok: false, results: potong.map(p => ({ orderNo: p.orderNo, status: "error" as const, message: "Hasil simpan belum dapat dipastikan. Muat ulang pratinjau untuk melihat order yang sudah tercatat." })) }; }
@@ -104,17 +105,26 @@ export function ShopeeImportWorkspace({ warehouses, defaultWarehouseId, isOwner 
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
-        <div className="fg" style={{ minWidth: 240 }}>
-          <label className="flab" htmlFor="gudang-impor">Cabang &amp; gudang *</label>
-          <select id="gudang-impor" className="fi" aria-label="Gudang online" value={warehouseId} onChange={e => { setWarehouseId(e.target.value); reset(); }}>
-            <option value="">Pilih gudang</option>
-            {kelompokPerCabang(warehouses.map(w => ({ ...w, branch_id: "", type: w.type ?? "" }))).map(k => (
-              <optgroup key={k.cabang} label={k.cabang}>
-                {k.gudang.map(w => <option key={w.id} value={w.id}>{w.name}{w.type ? ` · ${labelTipeGudang(w.type)}` : ""} · {w.branch_name}</option>)}
-              </optgroup>
-            ))}
-          </select>
-        </div>
+        {terkunci && terpilih ? (
+          <div className="fg" style={{ minWidth: 240 }}>
+            <span className="flab">Cabang &amp; gudang</span>
+            <div className="fi" aria-label="Gudang impor" style={{ background: "var(--bg2, #f8fafc)" }}>
+              {terpilih.name} · {terpilih.gudang.name}
+            </div>
+            <span style={{ fontSize: 10.5, color: "var(--tm)" }}>Otomatis dari cabang akun ini.</span>
+          </div>
+        ) : (
+          <div className="fg" style={{ minWidth: 260 }}>
+            <label className="flab" htmlFor="cabang-impor">Cabang *</label>
+            <select id="cabang-impor" className="fi" aria-label="Cabang impor" value={branchId} onChange={e => { setBranchId(e.target.value); reset(); }}>
+              <option value="">Pilih cabang</option>
+              {cabang.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <span style={{ fontSize: 10.5, color: "var(--tm)" }}>
+              {terpilih ? <>Gudang otomatis: <b>{terpilih.gudang.name}</b> ({labelTipeGudang(terpilih.gudang.type)})</> : "Gudang mengikuti cabang yang dipilih."}
+            </span>
+          </div>
+        )}
         <div className="fg" style={{ minWidth: 260 }}>
           <label className="flab" htmlFor="file-impor">File pesanan Shopee (.xlsx)</label>
           <input id="file-impor" className="fi" type="file" aria-label="File pesanan Shopee" accept=".xlsx" onChange={e => { setFile(e.target.files?.[0] ?? null); reset(); }} />

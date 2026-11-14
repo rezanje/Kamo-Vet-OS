@@ -3,6 +3,21 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/login/actions";
+import { bolehBukaPath } from "@/lib/akses";
+import { aturanEfektif, bacaAkses, menuTerbuka, punyaAksesKhusus } from "@/lib/akses-akun";
+
+// Satu kotak pilihan mode kerja.
+function Tile({ href, icon, color, title, desc }: { href: string; icon: string; color: string; title: string; desc: string }) {
+  return (
+    <Link href={href} prefetch={false} style={{ textDecoration: "none" }}>
+      <div className="mulai-tile">
+        <i className={`ti ${icon}`} style={{ fontSize: 40, color }} />
+        <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tx)" }}>{title}</div>
+        <div style={{ fontSize: 11, color: "var(--tm)", textAlign: "center" }}>{desc}</div>
+      </div>
+    </Link>
+  );
+}
 
 // Pilih mode kerja setelah login: dashboard VetOS penuh atau dunia POS kasir.
 export default async function MulaiPage({
@@ -15,11 +30,19 @@ export default async function MulaiPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles").select("full_name, role").eq("id", user.id).maybeSingle();
+  const [{ data: profile }, akses] = await Promise.all([
+    supabase.from("profiles").select("full_name, role").eq("id", user.id).maybeSingle(),
+    bacaAkses(supabase),
+  ]);
+  // E3 (meeting 12 Nov 2026): akun dengan akses khusus hanya diberi pilihan yang memang bisa dibuka (mis. staf
+  // Penjualan Online langsung ke menunya, bukan ke Petshop/Klinik yang akan ditolak). Akun lain: tampilan lama persis.
+  const role = profile?.role ?? "";
+  const khusus = punyaAksesKhusus(role, akses.akun);
+  const aturan = khusus ? aturanEfektif(role, akses) : [];
+  const menuKhusus = khusus ? menuTerbuka(role, aturan) : [];
 
   // FINANCE tidak pegang POS — langsung ke dashboard, skip pilihan mode kerja.
-  if (profile?.role === "FINANCE") redirect("/");
+  if (role === "FINANCE" && (!khusus || bolehBukaPath(role, "/", aturan))) redirect("/");
 
   const capabilities = await loadRoleCapabilities(supabase, profile?.role ?? "");
   const nama = profile?.full_name ?? user.email ?? "Pengguna";
@@ -48,7 +71,16 @@ export default async function MulaiPage({
       </div>
 
       <div className="pshop-card" style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", maxWidth: 860 }}>
-        {profile?.role === "STAFF" ? (
+        {khusus ? (
+          <>
+            <Tile href="/me" icon="ti-user-heart" color="var(--sb)" title="Dashboard Pribadi" desc="Quest, KPI, absensi & pengajuan cuti kamu." />
+            {menuKhusus.length > 0 && (menuKhusus.some(m => m.id === "dashboard")
+              ? <Tile href="/" icon="ti-layout-dashboard" color="var(--sb)" title="Dashboard VetOS" desc={`Menu kamu: ${menuKhusus.map(m => m.label).join(", ")}.`} />
+              : <Tile href={menuKhusus[0].href} icon="ti-layout-grid" color="var(--sb)" title="Menu Kerja" desc={`Menu kamu: ${menuKhusus.map(m => m.label).join(", ")}.`} />)}
+            {bolehBukaPath(role, "/kasir", aturan) && <Tile href="/mulai/cabang?mode=petshop" icon="ti-building-store" color="var(--acc)" title="Petshop" desc="Mulai shift, transaksi kasir, pengeluaran & persediaan toko." />}
+            {bolehBukaPath(role, "/klinik", aturan) && <Tile href="/mulai/cabang?mode=klinik" icon="ti-stethoscope" color="var(--acc)" title="Klinik" desc="Pilih cabang untuk operasional klinik." />}
+          </>
+        ) : profile?.role === "STAFF" ? (
           <>
             <Link href="/me" prefetch={false} style={{ textDecoration: "none" }}>
               <div className="mulai-tile">

@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
-import { bolehBukaPath, type AturanTersimpan } from "@/lib/akses";
+import { bolehBukaPath } from "@/lib/akses";
+import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { getOpenShift } from "@/lib/shift";
 import { readCompleteList } from "@/lib/checked-list";
 
@@ -30,12 +31,13 @@ async function bolehGudang(supabase: Db, warehouseId: string): Promise<boolean> 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return false;
 
-  const [{ data: profile }, { data: aturan }] = await Promise.all([
+  // E3 (meeting 12 Nov 2026): hak buka memakai akses efektif akun (peran + sub-menu + akses khusus), sama dengan middleware.
+  const [{ data: profile }, akses] = await Promise.all([
     supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
-    supabase.from("role_modules").select("role, module_id"),
+    bacaAkses(supabase),
   ]);
   const role = profile?.role ?? "";
-  if (role && bolehBukaPath(role, "/pos/opname", (aturan ?? []) as AturanTersimpan)) return true;
+  if (role && bolehBukaPath(role, "/pos/opname", aturanEfektif(role, akses))) return true;
 
   const shift = await getOpenShift(supabase as never, user.id);
   if (!shift) return false;

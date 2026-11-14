@@ -39,5 +39,6 @@ it.each(["STAFF", "inactive"])("hides clinic correction entry for %s", async rol
 });
 it("opens the sale correction detail from an online receipt number", async () => {
   const html = renderToStaticMarkup(await PenjualanOnlinePage({ searchParams: Promise.resolve({}) }));
-  expect(html).toContain('href="/penjualan/sale"'); expect(html).toContain("WA-001");
+  // E3/3A: nomor order online membuka detail di bawah Penjualan Online (komponen detail & koreksi yang sama).
+  expect(html).toContain('href="/penjualan/online/sale"'); expect(html).toContain("WA-001");
 });

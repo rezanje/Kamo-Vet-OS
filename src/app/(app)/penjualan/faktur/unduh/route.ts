@@ -4,7 +4,8 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { bolehBukaPath, type AturanTersimpan } from "@/lib/akses";
+import { bolehBukaPath } from "@/lib/akses";
+import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { ListLoadError } from "@/lib/checked-list";
 import { reportCsv } from "@/lib/csv-report";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -17,12 +18,13 @@ export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ error: "Sesi tidak ditemukan" }, { status: 401 });
-  const [{ data: profile }, { data: aturan, error: aturanError }] = await Promise.all([
+  // E3 (meeting 12 Nov 2026): hak buka memakai akses efektif akun (peran + sub-menu + akses khusus), sama dengan middleware.
+  const [{ data: profile }, akses] = await Promise.all([
     supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle(),
-    supabase.from("role_modules").select("role, module_id"),
+    bacaAkses(supabase),
   ]);
-  if (aturanError || !profile?.role || profile.is_active === false
-    || !bolehBukaPath(profile.role, HALAMAN, (aturan ?? []) as AturanTersimpan)) {
+  if (akses.rulesError || !profile?.role || profile.is_active === false
+    || !bolehBukaPath(profile.role, HALAMAN, aturanEfektif(profile.role, akses))) {
     return NextResponse.json({ error: "Akses daftar faktur penjualan tidak diizinkan" }, { status: 403 });
   }
 
