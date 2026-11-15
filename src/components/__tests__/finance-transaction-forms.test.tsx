@@ -49,8 +49,12 @@ it.each(forms)("%s retains its real controlled amount after transport rejection 
 
 it("manual journal rejects a one-cent imbalance before posting",async()=>{
  await act(async()=>root.render(<JurnalForm userId="cent-owner" accounts={[{id:"cash",code:"110003",name:"Cash"},{id:"income",code:"510001",name:"Income"}]} branches={[]}/>));
- const selects=host.querySelectorAll<HTMLSelectElement>("tbody select");
- await act(async()=>{for(const [index,value] of ["cash","income"].entries()){selects[index].value=value;selects[index].dispatchEvent(new Event("change",{bubbles:true}));}});
+ // Akun dipilih lewat pencarian (permintaan klinik 15 Nov 2026), bukan dropdown.
+ for(const [index,code] of ["110003","510001"].entries()){
+  const combo=host.querySelectorAll<HTMLInputElement>("tbody [role=combobox]")[index];
+  await act(async()=>combo.focus());await edit(combo,code);
+  await act(async()=>document.querySelector<HTMLElement>("[role=option]")!.click());
+ }
  await edit(host.querySelector<HTMLInputElement>('input[type="text"]')!,"Cent check");
  const amounts=host.querySelectorAll<HTMLInputElement>('input[type="number"]');
  await edit(amounts[0],"100.25");await edit(amounts[3],"100.24");
