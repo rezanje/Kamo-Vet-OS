@@ -13,7 +13,7 @@ it.each([
  ['sales_quotations',`/penjualan/penawaran?quotation=${id}#quotation-${id}`],
  ['journal_entries',`/keuangan/jurnal?entry=${id}#journal-${id}`],
  ['sales_advances',`/penjualan/uang-muka#advance-${id}`],
- ['purchase_advances',`/pembelian/uang-muka#advance-${id}`],
+ ['purchase_advances',`/pembelian/uang-muka?tampil=1#advance-${id}`],
  ['production_orders',`/pos/produksi?nomor=FICTION.2026.00001#selected-production`],
 ])('opens the exact saved %s document rather than an unfiltered list',async(table,path)=>{
  state.table=table;if(table==='production_orders')state.extra='FICTION.2026.00001';

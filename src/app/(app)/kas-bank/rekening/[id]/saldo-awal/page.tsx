@@ -32,7 +32,7 @@ export default async function MonetaryOpeningPage({ params, searchParams }: {
         <tbody>{(history ?? []).map(row => <tr key={row.id}>
           <td>{row.revision} · {new Date(row.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}</td>
           <td>{rp(row.old_amount)}</td><td>{rp(row.new_amount)}</td><td>{row.reason}</td><td>{(Array.isArray(row.profiles) ? row.profiles[0] : row.profiles)?.full_name ?? "Owner"}</td>
-          <td><Link href={`/keuangan/jurnal?cari=${row.id}&sumber=cash-open-reversal`}>Pembalik</Link> · <Link href={`/keuangan/jurnal?cari=${row.id}&sumber=cash-open-replacement`}>Pengganti</Link></td>
+          <td><Link href={`/keuangan/jurnal?cari=${row.id}&sumber=cash-open-reversal&tampil=1`}>Pembalik</Link> · <Link href={`/keuangan/jurnal?cari=${row.id}&sumber=cash-open-replacement`}>Pengganti</Link></td>
         </tr>)}
         {!history?.length && <tr><td colSpan={6}>Belum ada koreksi saldo pembuka.</td></tr>}</tbody>
       </table>

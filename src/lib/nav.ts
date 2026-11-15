@@ -244,6 +244,11 @@ export const TILES: Record<string, Tile[]> = {
     // Laporan operasional yang diminta tim (2026-08-01) — di luar laporan
     // keuangan standar Accurate, jadi ditaruh paling atas karena paling sering dibuka.
     { label: "Operation & Sales", icon: "ti-dashboard", ...A, nw: true, href: "/laporan/operasional-penjualan" },
+    // Dashboard stok (permintaan Pak Andri, 13 Nov 2026): dari riwayat penjualan, semua gudang digabung.
+    { label: "Stok Slow Moving / Berlebih", icon: "ti-snowflake", ...A, nw: true, href: "/laporan/stok-slow-moving" },
+    { label: "Stok Harus Order", icon: "ti-shopping-cart", ...A, nw: true, href: "/laporan/stok-harus-order" },
+    // Obral Owner (Andri, 14 Nov 2026): barang persediaan yang dijual di bawah modal dengan alasan.
+    { label: "Penjualan di Bawah Modal", icon: "ti-discount-2", ...A, nw: true, href: "/laporan/jual-bawah-modal" },
     { label: "Pelanggan Teratas", icon: "ti-trophy", ...A, nw: true, href: "/laporan/pelanggan-teratas" },
     { label: "Jadwal Anabul", icon: "ti-calendar-heart", ...A, nw: true, href: "/laporan/jadwal-anabul" },
     { label: "Rekap Absensi", icon: "ti-clock-check", ...A, nw: true, href: "/laporan/absensi" },
@@ -260,6 +265,8 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Retensi Pelanggan", icon: "ti-user-exclamation", ...A, nw: true, href: "/laporan/retensi" },
     { label: "Promo, Voucher & Diskon", icon: "ti-discount", ...A, nw: true, href: "/laporan/promo" },
     { label: "Rekap Klinik", icon: "ti-stethoscope", ...A, nw: true, href: "/laporan/rekap-klinik" },
+    // A4 (meeting 12 Nov 2026): dasar insentif visit dokter/paramedis rawat inap.
+    { label: "Laporan Visit Rawat Inap", icon: "ti-stethoscope", ...A, nw: true, href: "/laporan/visit" },
     { label: "Member & Poin", icon: "ti-users", ...A, nw: true, href: "/laporan/member" },
     { label: "Nilai KPI Karyawan", icon: "ti-chart-dots", ...A, nw: true, href: "/laporan/kpi" },
     { label: "Laba Rugi", icon: "ti-chart-bar", ...G, href: "/keuangan/laba-rugi" },

@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { TIPE_GUDANG_ORDER_ONLINE } from "@/lib/online-gudang";
 import { createClient } from "@/lib/supabase/server";
 import { readCompleteList } from "@/lib/checked-list";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
+import { bacaGudangImpor } from "@/lib/online-gudang-server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { bacaShopeeXlsx, type ShopeeOrder } from "@/lib/shopee-import";
 import type { CatalogItem, ExistingOrders } from "@/lib/shopee-import-match";
@@ -29,7 +29,7 @@ export type PilihanImpor = { orderNo: string; items: string[]; satuan?: string[]
 export type HasilImporOrder = { orderNo: string; status: "ok" | "duplikat" | "dilewati" | "error"; message: string; documentNo?: string };
 export type HasilSimpanImpor = { ok: boolean; error?: string; results: HasilImporOrder[] };
 
-type Sesi = { db: Awaited<ReturnType<typeof createClient>>; role: string };
+type Sesi = { db: Awaited<ReturnType<typeof createClient>>; role: string; userId: string };
 
 async function bukaSesi(): Promise<Sesi | { error: string }> {
   const db = await createClient();
@@ -37,7 +37,17 @@ async function bukaSesi(): Promise<Sesi | { error: string }> {
   if (!user) return { error: "Sesi berakhir. Masuk kembali sebelum mengimpor pesanan." };
   const { data: profile } = await db.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
   if (!profile?.is_active) return { error: "Akun tidak aktif atau tidak punya akses untuk mengimpor pesanan." };
-  return { db, role: String(profile.role ?? "") };
+  return { db, role: String(profile.role ?? ""), userId: user.id };
+}
+
+/** E4 (meeting 12 Nov 2026): cabang dari form → gudang utama cabang (sama persis dengan halaman). */
+async function gudangDariCabang(sesi: Sesi, formData: FormData): Promise<{ warehouseId: string } | { error: string }> {
+  const branchId = String(formData.get("branch_id") ?? "");
+  const { data, error } = await bacaGudangImpor(sesi.db, sesi.userId, branchId);
+  if (error) return { error: "Daftar gudang gagal dimuat. Muat ulang halaman lalu coba lagi." };
+  if (!data.terpilih) return { error: data.cabang.length ? "Pilih cabang tujuan dulu." : "Akun ini belum terhubung ke cabang yang punya gudang toko." };
+  if (!data.terkunci && branchId !== data.terpilih.id) return { error: "Cabang tidak valid. Muat ulang halaman." };
+  return { warehouseId: data.terpilih.gudang.id };
 }
 
 async function bacaFile(formData: FormData): Promise<{ orders: ShopeeOrder[] } | { error: string }> {
@@ -72,14 +82,12 @@ export async function pratinjauImporShopee(formData: FormData): Promise<Pratinja
     const sesi = await bukaSesi();
     if ("error" in sesi) return kosong(sesi.error);
     const { db } = sesi;
-    const warehouseId = String(formData.get("warehouse_id") ?? "");
-    if (!UUID.test(warehouseId)) return kosong("Pilih gudang online tujuan.");
+    // E4: gudang dihitung ulang di server dari cabang (tidak percaya kiriman klien).
+    const gudang = await gudangDariCabang(sesi, formData);
+    if ("error" in gudang) return kosong(gudang.error);
+    const warehouseId = gudang.warehouseId;
     const baca = await bacaFile(formData);
     if ("error" in baca) return kosong(baca.error);
-
-    const { data: wh } = await db.from("warehouses").select("id").eq("id", warehouseId)
-      .in("type", [...TIPE_GUDANG_ORDER_ONLINE]).eq("is_active", true).maybeSingle();
-    if (!wh) return kosong("Gudang tidak ditemukan, tidak aktif, atau tidak bisa dipakai untuk order online.");
 
     const [items, stock, existing, extraUnits] = await Promise.all([
       readCompleteList<{ id: string; code: string; name: string; unit: string | null; sell_price: number | string; item_type: string | null }>((from, to) => db.from("items")
@@ -115,8 +123,9 @@ export async function simpanImporShopee(formData: FormData): Promise<HasilSimpan
     const sesi = await bukaSesi();
     if ("error" in sesi) return gagal(sesi.error);
     const { db, role } = sesi;
-    const warehouseId = String(formData.get("warehouse_id") ?? "");
-    if (!UUID.test(warehouseId)) return gagal("Gudang online tidak valid. Pilih gudang lalu muat ulang pratinjau.");
+    const gudang = await gudangDariCabang(sesi, formData);
+    if ("error" in gudang) return gagal(gudang.error);
+    const warehouseId = gudang.warehouseId;
     let pilihan: PilihanImpor[];
     try { pilihan = JSON.parse(String(formData.get("selection") ?? "[]")); } catch { return gagal("Pilihan pesanan tidak valid."); }
     if (!Array.isArray(pilihan) || pilihan.length === 0) return gagal("Pilih minimal satu pesanan untuk disimpan.");

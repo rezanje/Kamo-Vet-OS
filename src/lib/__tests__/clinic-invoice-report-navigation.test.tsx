@@ -17,7 +17,7 @@ it("opens each saved clinic invoice in a shared visit from the sales detail repo
       { id: secondId, visit_id: visitId, invoice_no: "INV.2026.002", total: 200, metode_bayar: "Transfer", paid_status: "Belum Lunas", voided_at: null, created_at: "2026-10-24T06:00:00Z", visits: { branch_id: "b1", branches: { name: "Satu" }, customers: { name: "Fiktif" } } },
     ],
   } }).client);
-  const html = renderToStaticMarkup(await PenjualanRinciPage({ searchParams: Promise.resolve({ dari: "2026-10-24", sampai: "2026-10-24", kanal: "Klinik" }) }));
+  const html = renderToStaticMarkup(await PenjualanRinciPage({ searchParams: Promise.resolve({ dari: "2026-10-24", sampai: "2026-10-24", kanal: "Klinik", tampil: "1" }) }));
   expect(html).toContain(`/klinik/pembayaran/${visitId}/invoice?invoice_id=${firstId}`);
   expect(html).toContain(`/klinik/pembayaran/${visitId}/invoice?invoice_id=${secondId}`);
 });

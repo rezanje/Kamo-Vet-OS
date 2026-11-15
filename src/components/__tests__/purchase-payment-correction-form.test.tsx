@@ -17,7 +17,7 @@ it("retains cancellation identity after draft expiry and explains grouped revers
   sessionStorage.setItem("vetos:transaction-draft:v1:owner:transaction:purchase-payment-cancel:payment:0", JSON.stringify({ version: 1, savedAt: 1, requestKey: key, fields: {}, snapshot: {} }));
   await act(async () => root.unmount()); root = createRoot(host); await render();
   expect(host.querySelector<HTMLInputElement>('input[name="draft_key"]')!.value).toBe(key);
-  expect(host.textContent).toContain("Seluruh pembayaran");
+  expect(host.textContent).toContain("Semua pembayaran di perintah bayar ini dibalik bersama");
   expect(host.querySelectorAll("button")).toHaveLength(3);
   expect(host.querySelector<HTMLInputElement>('input[name="alasan"]')!.required).toBe(true);
 });

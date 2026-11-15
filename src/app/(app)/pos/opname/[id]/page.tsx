@@ -128,7 +128,7 @@ export default async function OpnameDetailPage({
         </div>
       ) : order.status === "Selesai" ? (
         <>
-          <div style={{ marginBottom: 12 }}><Link href={`/laporan/hasil-opname?order=${encodeURIComponent(order.id)}&dari=${encodeURIComponent(order.tanggal_mulai)}`} className="btn">
+          <div style={{ marginBottom: 12 }}><Link href={`/laporan/hasil-opname?order=${encodeURIComponent(order.id)}&dari=${encodeURIComponent(order.tanggal_mulai)}&tampil=1`} className="btn">
             Laporan hasil SO: modal FIFO / harga jual
           </Link></div>
           <HasilView orderId={order.id} allowCorrections />

@@ -17,7 +17,7 @@ const item = { trashed_at: null, lifecycle_revision: 0, id: "i", code: "SKU", na
 describe("financial cost UI boundary", () => {
   it("labels moving average reports and shows known negative inventory value", async () => {
     fixture.client = clientFixture({ averageMode: true, tables: { stock: [{ id: "s", warehouse_id: "w1", item_id: "i", qty: -2, average_cost: 80 }], stock_layers: [] } }).client;
-    const html = renderToStaticMarkup(await HppReportPage({ kind: "inventory", params: {} }));
+    const html = renderToStaticMarkup(await HppReportPage({ kind: "inventory", params: {}, siap: true }));
     expect(html).toContain("RATA-RATA BERGERAK");
     expect(html).toContain("-160,00");
     expect(html).toContain("rekonsiliasi fisik");
@@ -45,7 +45,7 @@ describe("financial cost UI boundary", () => {
       } }],
       compounding_ingredients: [{ id: "ingredient", recipe_id: "recipe", item_id: "i", ingredient_name: "Obat historis", quantity: 3, unit: "ml" }],
     } }).client;
-    const html = renderToStaticMarkup(await HppReportPage({ kind: "compound", params: { cabang: "b1", dari: "2026-10-04", sampai: "2026-10-04", rincian: "bahan" } }));
+    const html = renderToStaticMarkup(await HppReportPage({ kind: "compound", params: { cabang: "b1", dari: "2026-10-04", sampai: "2026-10-04", rincian: "bahan" }, siap: true }));
     expect(html).toContain("Obat historis");
     expect(html).toContain("nama resep saat dibaca");
     expect(html).toContain("Satuan resep saat dibaca");
@@ -63,6 +63,31 @@ it('renders stored compound parent recipe material and exact invoice source link
   clinic_compound_sales:[{request_key:'binding',recipe_id:'recipe',visit_id:'visit',sale_item_id:'parent',sale_name:'Stored parent',sale_unit:'racikan'}],
   compounding_ingredients:[{id:'ingredient',recipe_id:'recipe',item_id:'material',ingredient_name:'Material',quantity:1,unit:'ml'}],
  }}).client;
- const html=renderToStaticMarkup(await HppReportPage({kind:'compound',params:{cabang:'b1',dari:'2026-10-04',sampai:'2026-10-04',rincian:'bahan'}}));
+ const html=renderToStaticMarkup(await HppReportPage({kind:'compound',params:{cabang:'b1',dari:'2026-10-04',sampai:'2026-10-04',rincian:'bahan'},siap:true}));
  for(const href of ['/pos/sku/parent','/klinik/racik/recipe','/pos/sku/material','/klinik/pembayaran/visit/invoice?invoice_id=invoice'])expect(html.includes(`href="${href}"`)).toBe(true);
+});
+
+describe("A1 (meeting 12 Nov 2026): laporan HPP dibuka kosong", () => {
+  it("nilai persediaan tanpa Tampilkan: cek akses, cabang, gudang & metode saja — stok/lapisan tidak dibaca", async () => {
+    const { client, records } = clientFixture({ averageMode: true });
+    fixture.client = client;
+    const html = renderToStaticMarkup(await HppReportPage({ kind: "inventory", params: {}, siap: false }));
+    expect(html).toContain("Laporan belum ditampilkan");
+    expect(html).toContain("RATA-RATA BERGERAK");
+    expect(html).toContain("VET lama");
+    expect(records.some(row => ["stock", "stock_layers", "items"].includes(row.table))).toBe(false);
+  });
+  it("margin racikan tanpa Tampilkan: baris invoice tidak dibaca, akses tetap dicek", async () => {
+    const { client, records } = clientFixture();
+    fixture.client = client;
+    const html = renderToStaticMarkup(await HppReportPage({ kind: "compound", params: { dokter: "doctor" }, siap: false }));
+    expect(html).toContain("Laporan belum ditampilkan");
+    expect(html).toContain('value="doctor"');
+    expect(records.some(row => row.table === "profiles")).toBe(true);
+    expect(records.some(row => row.table === "invoice_items")).toBe(false);
+  });
+  it("tanpa izin tetap dialihkan walau belum Tampilkan", async () => {
+    fixture.client = clientFixture({ role: "STAFF" }).client;
+    await expect(HppReportPage({ kind: "inventory", params: {}, siap: false })).rejects.toThrow("REDIRECT:/laporan");
+  });
 });

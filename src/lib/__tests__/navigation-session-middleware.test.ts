@@ -213,7 +213,8 @@ describe("sub-menu policy: ROLE ADMIN restricted to a few pages (server-side, UR
   // ADMIN holds only these five modules here, so a blocked URL goes to /mulai (no dashboard module).
   it("reads the policy once per navigation, alongside profile and rules", async () => {
     await go("/crm/pelanggan");
-    expect(state.rpcCalls).toEqual(["get_my_submenu_policy"]);
+    // E3 (meeting 12 Nov 2026): akses khusus akun dibaca di putaran yang sama (mock ini menjawab bentuk lain = ikuti peran).
+    expect(state.rpcCalls).toEqual(["get_my_submenu_policy", "get_my_access_override"]);
   });
   it("opens the chosen sub-menu and nested detail pages", async () => {
     for (const p of ["/crm", "/crm/pelanggan", "/crm/pelanggan/baru", "/pos/stok", "/pos/stok/x", "/laporan/gaji", "/kas-bank/rekening"]) {

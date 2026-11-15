@@ -110,7 +110,7 @@ export default async function UangMukaJualPage({
                   {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
-              <PilihRekening rekening={rekening} label="Masuk ke" width={170} />
+              <PilihRekening rekening={rekening} label="Masuk ke" width={260} />
               <div>
                 <label className="flab">Catatan</label>
                 <input className="fi" name="catatan" placeholder="opsional" />

@@ -151,7 +151,7 @@ export async function batalkanKasEntry(formData: FormData) {
 
 export async function koreksiKasEntry(formData: FormData) {
   const jenis = bacaJenis(formData); const BACK = hrefKas(jenis);
-  const supabase = await assertRole(BACK, "kas masuk/keluar", ["OWNER"]);
+  const supabase = await assertRole(BACK, "kas masuk/keluar", BOLEH);
   let header: Record<string, string | number>;
   try { header = { tanggal: String(formData.get("tanggal") ?? ""), account_id: String(formData.get("account_id") ?? ""), lawan_code: String(formData.get("lawan_code") ?? ""), jumlah: Number(formData.get("jumlah")), keterangan: String(formData.get("keterangan") ?? "") }; } catch { redirect(`${BACK}?error=Data koreksi tidak valid`); }
   const { data: result, error } = await supabase.rpc("revise_cash_entry", {

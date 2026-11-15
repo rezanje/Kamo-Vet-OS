@@ -121,9 +121,12 @@ export function priceFloorFindings(lines: CashierLine[], netTotal: number, lineC
 }
 
 /** Total-level discounts, voucher and points are allocated by each line's share after item discounts. */
-export function cashierPriceFloorIssue(lines: CashierLine[], netTotal: number, fifoLineCosts: (number | null)[], waived: readonly boolean[] = []): string | null {
+export function cashierPriceFloorIssue(lines: CashierLine[], netTotal: number, fifoLineCosts: (number | null)[], waived: readonly boolean[] = [], ownerBelowCost: readonly boolean[] = []): string | null {
   if (!Number.isFinite(netTotal) || netTotal < 0 || fifoLineCosts.length !== lines.length) return "Harga neto atau HPP aktif tidak dapat diverifikasi.";
-  const finding = priceFloorFindings(lines, netTotal, fifoLineCosts, waived).find((f) => f.kind !== "below_waived");
+  // Jual di bawah modal (Owner/berizin, alasan terisi, barang Persediaan; cermin P06_OWNER_BELOW_COST di database): hanya temuan "di bawah HPP" baris itu
+  // yang dilewati. Harga neto nol, HPP tak diketahui, paket Grup, dan baris promo-waiver tetap menolak.
+  const lolos = (f: PriceFloorFinding) => f.kind === "below" && !f.paket && !f.waived && lines[f.index]?.item_type === "Persediaan" && ownerBelowCost[f.index] === true && waived[f.index] !== true;
+  const finding = priceFloorFindings(lines, netTotal, fifoLineCosts, waived).find((f) => f.kind !== "below_waived" && !lolos(f));
   if (!finding) return null;
   const { nama, paket, kind } = finding;
   if (finding.waived) return `Promo di bawah modal pada ${nama} tidak bisa digabung dengan voucher, poin, atau diskon total. Hapus potongan itu atau pilih Tanpa promo.`;
@@ -151,6 +154,10 @@ export function cashierPriceFloorDbMessage(message: string): string {
     ["Harga neto Persediaan nol; penjualan ditolak:",
       name => `Harga neto ${name} nol. Barang tidak boleh dijual gratis (jasa tetap boleh).`],
   ];
+  // P06: baris punya alasan obral tapi pemosting tidak berizin (nama baris membawa petunjuk dari database)
+  if (message.includes("(jual di bawah modal ditolak: hanya Owner")) {
+    return "Jual di bawah modal hanya untuk Owner atau peran yang diberi izin. Hapus centang \"Jual di bawah modal\" atau minta Owner mengaktifkannya di Pengaturan > Akses Grup.";
+  }
   // P05 waiver hint appended by cashier_post_stock_atomic to the name of a below-HPP promo line
   const waiverAt = message.indexOf("Harga neto Persediaan di bawah HPP FIFO; penjualan ditolak:");
   if (waiverAt >= 0 && message.includes("(baris promo di bawah HPP:")) {

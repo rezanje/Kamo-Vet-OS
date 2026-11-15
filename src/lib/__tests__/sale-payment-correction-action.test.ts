@@ -39,6 +39,22 @@ it("sends a blank Tunai box as zero when the whole bill moves to Transfer", asyn
   await expect(koreksiMetodePembayaran(data)).rejects.toThrow(`/penjualan/${id}?success=payment-corrected`);
   expect(fixture.rpc).toHaveBeenCalledWith("correct_pos_sale_payment", expect.objectContaining({ p_cash_amount: 0, p_transfer_amount: 100000 }));
 });
+it("shows a database refusal as a readable rejection instead of throwing (production hides thrown messages)", async () => {
+  fixture.rpc.mockResolvedValue({ data: null, error: { code: "P0001", message: "Rekonsiliasi bank sudah mencakup rekening sumber atau tujuan; koreksi rekonsiliasi dahulu" } });
+  await expect(koreksiMetodePembayaran(form())).resolves.toEqual({
+    ok: false, outcome: "rejected", message: "Rekonsiliasi bank sudah mencakup rekening sumber atau tujuan; koreksi rekonsiliasi dahulu",
+  });
+  expect(revalidatePath).not.toHaveBeenCalled();
+});
+it("marks lock timeouts and serialization failures as retry", async () => {
+  fixture.rpc.mockResolvedValue({ data: null, error: { code: "55P03", message: "canceling statement due to lock timeout" } });
+  await expect(koreksiMetodePembayaran(form())).resolves.toMatchObject({ ok: false, outcome: "retry" });
+});
+it("still throws when the failure has no database code (commit status unknown)", async () => {
+  fixture.rpc.mockResolvedValue({ data: null, error: { code: "", message: "TypeError: fetch failed" } });
+  await expect(koreksiMetodePembayaran(form())).rejects.toThrow(/fetch failed/);
+  expect(revalidatePath).not.toHaveBeenCalled();
+});
 it("does not acknowledge an uncertain response or change the retry key", async () => {
   fixture.rpc.mockResolvedValue({ data: null, error: null });
   await expect(koreksiMetodePembayaran(form())).rejects.toThrow(/belum terkonfirmasi/);

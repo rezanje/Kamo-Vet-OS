@@ -5,6 +5,8 @@ import { allowedBranchIds } from "@/lib/branch-access";
 import { rincianPembayaran } from "@/lib/rincian-tutup-shift";
 import { geserHari, hariIniWIB } from "@/lib/tanggal";
 import { readCompleteList } from "@/lib/checked-list";
+import { PARAM_TAMPIL, laporanDiminta } from "@/lib/report-gate";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -21,9 +23,12 @@ const PER_HALAMAN = 30;
 export default async function RiwayatTutupShiftPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cabang?: string; jenis?: string; dari?: string; sampai?: string; hal?: string }>;
+  searchParams: Promise<{ cabang?: string; jenis?: string; dari?: string; sampai?: string; hal?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  // A1 (meeting 12 Nov 2026): daftar + rekap tutup shift baru ditarik setelah Tampilkan;
+  // sebelum itu hanya pilihan cabang untuk filter.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -49,7 +54,7 @@ export default async function RiwayatTutupShiftPage({
   let total = 0;
 
   const cabangDicari = cabang ? [cabang] : izin === null ? null : cabangBoleh.map((c) => c.id);
-  if (cabangDicari === null || cabangDicari.length > 0) {
+  if (siap && (cabangDicari === null || cabangDicari.length > 0)) {
     let q = supabase
       .from("cashier_shifts")
       .select("id, shift_type, closing_balance, expected_cash, selisih, closing_breakdown, opened_at, closed_at, branches(name), profiles(full_name)", { count: "exact" })
@@ -109,6 +114,7 @@ export default async function RiwayatTutupShiftPage({
     p.set("dari", dari);
     p.set("sampai", sampai);
     p.set("hal", String(n));
+    p.set(PARAM_TAMPIL, "1");
     return `/pos/shift/riwayat?${p.toString()}`;
   };
 
@@ -124,6 +130,7 @@ export default async function RiwayatTutupShiftPage({
         <SecHeader num="01" title="RIWAYAT TUTUP SHIFT" desc="Semua laporan tutup shift kasir. Klik Buka untuk melihat rinciannya — sama dengan layar yang difoto kasir." />
 
         <form method="get" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+          <InputTampil />
           <div>
             <label className="flab">Cabang</label>
             <select className="fi" name="cabang" defaultValue={cabang} style={{ minWidth: 160 }}>
@@ -150,6 +157,7 @@ export default async function RiwayatTutupShiftPage({
           <button type="submit" className="btn-acc"><i className="ti ti-search" /> Tampilkan</button>
         </form>
 
+        {!siap && <LaporanBelumDitampilkan />}
         {rekapGagal && (
           <div className="p2ban" role="alert">Rekap per cabang belum dapat dihitung lengkap. Daftar shift di bawah tetap bisa dibuka; muat ulang untuk mencoba lagi.</div>
         )}
@@ -194,7 +202,7 @@ export default async function RiwayatTutupShiftPage({
           </div>
         )}
 
-        <div style={{ overflowX: "auto" }}>
+        {siap && <div style={{ overflowX: "auto" }}>
           <table className="tbl" aria-label="Daftar tutup shift" style={{ minWidth: 760 }}>
             <thead>
               <tr>
@@ -236,7 +244,7 @@ export default async function RiwayatTutupShiftPage({
               )}
             </tbody>
           </table>
-        </div>
+        </div>}
 
         {total > 0 && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontSize: 11, color: "var(--tm)", flexWrap: "wrap", gap: 8 }}>

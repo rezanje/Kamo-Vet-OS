@@ -120,7 +120,10 @@ select set_config('request.jwt.claim.sub', 'c5a00000-0000-4000-8000-000000000004
 create function pg_temp.clinic(visit_no int, campaign text, voucher text) returns void language plpgsql as $$
 begin
   perform public.clinic_post_invoice(('c5a50000-0000-4000-8000-00000000000' || visit_no)::uuid, 'c5a-clinic-' || visit_no || '-' || coalesce(campaign, voucher, '-'),
-    jsonb_build_object('tanggal', current_date::text, 'subtotal', 100000, 'discount', 10000, 'tax', 0, 'total', 90000,
+    jsonb_build_object('tanggal', current_date::text, 'subtotal', 100000,
+      -- diskon = nilai voucher yang sebenarnya (aplikasi menghitungnya dari master; izin diskon manual 20261116100000 menolak diskon yang tak terjelaskan)
+      'discount', case voucher when 'BEBAS5K' then 5000 when 'LAMA7K' then 7000 else 10000 end, 'tax', 0,
+      'total', 100000 - case voucher when 'BEBAS5K' then 5000 when 'LAMA7K' then 7000 else 10000 end,
       'dp_amount', 0, 'dp_date', null, 'paid_status', 'Lunas', 'metode_bayar', 'Tunai',
       'shift_id', 'c5a70000-0000-4000-8000-000000000002', 'voucher_code', voucher, 'campaign_code', campaign, 'salesperson_id', null),
     jsonb_build_array(jsonb_build_object('description', 'Konsultasi', 'qty', 1, 'price', 100000, 'kind', 'jasa', 'discount_percent', 0)));

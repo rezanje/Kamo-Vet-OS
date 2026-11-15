@@ -8,8 +8,10 @@ const SQL = readFileSync(`supabase/migrations/${NAMA}`, "utf8");
 describe("migrasi: nota terbit ulang memakai tanggal transaksi asli", () => {
   it("terpasang sesudah migrasi terakhir yang menulis ulang clinic_void_reissue_invoice_core", () => {
     const semua = readdirSync("supabase/migrations").filter(n => n.endsWith(".sql")).sort();
-    const penulis = semua.filter(n => n !== NAMA && readFileSync(`supabase/migrations/${n}`, "utf8")
-      .includes("clinic_void_reissue_invoice_core"));
+    // Penulis = migrasi yang MENULIS ULANG fungsinya. Migrasi yang hanya menambal definisi berjalan (pg_get_functiondef + jangkar
+    // tunggal, mis. 20261111140000_lantai_harga_promo_per_baris) mempertahankan tambalan ini, jadi boleh sesudahnya.
+    const penulis = semua.filter(n => n !== NAMA && !/pg_get_functiondef/.test(readFileSync(`supabase/migrations/${n}`, "utf8"))
+      && readFileSync(`supabase/migrations/${n}`, "utf8").includes("clinic_void_reissue_invoice_core"));
     expect(penulis.length).toBeGreaterThan(0);
     expect(NAMA > penulis[penulis.length - 1]).toBe(true);
   });

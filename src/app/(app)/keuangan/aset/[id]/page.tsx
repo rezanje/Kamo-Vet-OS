@@ -331,5 +331,5 @@ function KV({ k, v }: { k: string; v: string }) {
 
 function JurnalKoreksi({label,entry}:{label:string;entry:unknown}) {
   const number=one(entry as Rel<{no_jurnal:string}>)?.no_jurnal;
-  return number?<Link href={`/keuangan/jurnal?cari=${encodeURIComponent(number)}`}>{label}: {number}</Link>:<span>{label}: belum terbaca</span>;
+  return number?<Link href={`/keuangan/jurnal?cari=${encodeURIComponent(number)}&tampil=1`}>{label}: {number}</Link>:<span>{label}: belum terbaca</span>;
 }

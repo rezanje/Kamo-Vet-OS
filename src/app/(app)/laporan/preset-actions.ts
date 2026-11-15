@@ -2,6 +2,7 @@
 
 import {createClient} from '@/lib/supabase/server';
 import {bolehBukaPath,SEMUA_PERAN} from '@/lib/akses';
+import {aturanEfektif,bacaAkses} from '@/lib/akses-akun';
 import {readCompleteList} from '@/lib/checked-list';
 import {readReportPresets,type ReportPreset} from '@/lib/report-presets';
 
@@ -17,8 +18,9 @@ async function context(expectedUserId?:unknown){
  if(expectedUserId!==undefined&&expectedUserId!==user.id)throw Error('Akun berubah. Muat ulang halaman.');
  const {data:profile,error:profileError}=await db.from('profiles').select('role,is_active').eq('id',user.id).maybeSingle();
  if(profileError||!profile?.is_active||!SEMUA_PERAN.some(role=>role===profile.role))throw Error(unavailable);
- const {data:modules,error:moduleError}=await db.from('role_modules').select('role,module_id');
- if(moduleError||!modules||!bolehBukaPath(profile.role,'/laporan',modules))throw Error('Akses laporan tidak tersedia untuk akun ini.');
+ // E3 (meeting 12 Nov 2026): akses efektif akun (peran + sub-menu + akses khusus).
+ const akses=await bacaAkses(db);
+ if(akses.rulesError||!akses.rules||!bolehBukaPath(profile.role,'/laporan',aturanEfektif(profile.role,akses)))throw Error('Akses laporan tidak tersedia untuk akun ini.');
  return {db,userId:user.id};
 }
 type Context=Awaited<ReturnType<typeof context>>;

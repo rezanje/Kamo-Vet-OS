@@ -2,6 +2,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ headers: [] as Record<string, unknown>[], items: [] as Record<string, unknown>[], finalized: [] as string[], removed: false, finalizationError: "", confirmation: true, stock: false, stockCost: 34567, pointsWrites: 0, prior: null as null | Record<string, unknown>, lostResponse: false, tierUnavailable: false }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
+// Skenario di file ini dijalankan sebagai Owner/Admin: izin diskon manual (12 Nov 2026) diuji terpisah di manual-discount.test.ts.
+vi.mock("@/lib/manual-discount", async (original) => ({ ...(await original<typeof import("@/lib/manual-discount")>()), manualDiscountAllowed: async () => true }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "POS-SPLIT-TEST" }) }));

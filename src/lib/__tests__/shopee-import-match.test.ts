@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bacaShopeeXlsx, type ShopeeLine, type ShopeeOrder } from "../shopee-import";
-import { analisisImpor, cocokkanBarang, kunciBaris, normalisasiNama, pilihGudangDefault, satuanBarang, tebakSatuan, type CatalogItem } from "../shopee-import-match";
+import { analisisImpor, cocokkanBarang, kunciBaris, normalisasiNama, satuanBarang, tebakSatuan, type CatalogItem } from "../shopee-import-match";
 
 const FIXTURE = join(__dirname, "fixtures", "shopee-order-toship-sample.xlsx");
 const item = (id: string, code: string, name: string, sell_price: number, stock = 10): CatalogItem => ({ id, code, name, sell_price, stock });
@@ -107,17 +107,6 @@ describe("cocokkanBarang: Nama Variasi", () => {
   });
 });
 
-describe("pilihGudangDefault", () => {
-  const w = (id: string, branch: string) => ({ id, name: `Online ${branch}`, branch_name: branch });
-  it("tepat satu gudang cabang Panduraya -> terpilih", () => {
-    expect(pilihGudangDefault([w("1", "Kamo Pusat"), w("2", "KAMO PANDURAYA")])).toBe("2");
-  });
-  it("tidak ada / lebih dari satu -> kosong (wajib pilih)", () => {
-    expect(pilihGudangDefault([w("1", "Kamo Pusat")])).toBe("");
-    expect(pilihGudangDefault([w("1", "Panduraya A"), w("2", "Panduraya B")])).toBe("");
-    expect(pilihGudangDefault([])).toBe("");
-  });
-});
 
 describe("analisisImpor", () => {
   it("fixture contoh: pembatalan dilewati; dua pesanan Perlu Dikirim siap setelah perkiraan dikonfirmasi", async () => {

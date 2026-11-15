@@ -1,5 +1,6 @@
 // Filter periode + cabang untuk laporan keuangan — form GET biasa (tanpa JS).
 import Link from "next/link";
+import { InputTampil } from "@/components/GerbangLaporan";
 
 type Branch = { id: string; name: string };
 
@@ -21,6 +22,8 @@ export function PeriodFilter({
   return (
     <form method="get" action={basePath} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginBottom: 12 }}>
       {Object.entries(hidden ?? {}).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
+      {/* A1 (meeting 12 Nov 2026): laporan keuangan baru dihitung setelah Tampilkan. */}
+      <InputTampil />
       {!tanggalOnly && (
         <div>
           <label className="flab">Dari tanggal</label>
@@ -50,7 +53,7 @@ export function PeriodFilter({
         </div>
       )}
       <button type="submit" className="btn-def" style={{ padding: "7px 14px", fontSize: 11 }}>
-        <i className="ti ti-filter" /> Terapkan
+        <i className="ti ti-filter" /> Tampilkan
       </button>
       {aktif && (
         <Link href={basePath} className="back-btn" style={{ fontSize: 11 }}>Reset</Link>

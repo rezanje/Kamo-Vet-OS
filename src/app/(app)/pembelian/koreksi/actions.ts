@@ -29,15 +29,17 @@ export async function ajukanKoreksiPembelian(formData: FormData) {
   const from = String(formData.get("back") ?? "");
   const back = RETURN_PATHS.has(from) ? from
     : KINDS.includes(kind) && UUID.test(id) ? sourceHref({ source_kind: kind, po_id: id, invoice_id: id })! : "/pembelian";
+  // A1: daftar Hutang / PO dibuka kosong sampai Tampilkan; kembali dari koreksi langsung tampil.
+  const tampil = back === "/keuangan/hutang" || back === "/pembelian" ? "&tampil=1" : "";
   const supabase = await createClient();
   const { error } = await supabase.rpc("create_purchase_correction_request", {
     p_source_kind: kind, p_source_id: UUID.test(id) ? id : null,
     p_request_key: String(formData.get("request_key") ?? ""), p_detail: String(formData.get("detail") ?? ""),
   });
-  if (error) redirect(`${back}?koreksi_error=${encodeURIComponent(message(error, "Permintaan koreksi belum tersimpan. Coba lagi."))}${ANCHOR}`);
+  if (error) redirect(`${back}?koreksi_error=${encodeURIComponent(message(error, "Permintaan koreksi belum tersimpan. Coba lagi."))}${tampil}${ANCHOR}`);
   revalidatePath(back);
   revalidatePath(CORRECTION_QUEUE_PATH);
-  redirect(`${back}?koreksi=terkirim${ANCHOR}`);
+  redirect(`${back}?koreksi=terkirim${tampil}${ANCHOR}`);
 }
 
 /** Super Admin menandai request sudah diproses, dengan catatan tindak lanjut. Transaksi tidak disentuh. */

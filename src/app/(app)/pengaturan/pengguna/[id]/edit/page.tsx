@@ -8,6 +8,10 @@ import { readCompleteList } from "@/lib/checked-list";
 import { isAccountEditId, isUserAccountEditSnapshot, type UserAccountEditBranch, type UserAccountEditSnapshot } from "@/lib/user-account-edit";
 import { UserAccountEditForm } from "./UserAccountEditForm";
 import { ResetLoginForm } from "./ResetLoginForm";
+import { AksesKhususForm } from "./AksesKhususForm";
+import { aturanDariKonfigurasi, parseDataAksesAkun, ringkasAkses, ringkasAksesAkun, type DataAksesAkun } from "@/lib/akses-akun-form";
+import { terapkanAksesAkun } from "@/lib/akses-akun";
+import { editableRole, parseRoleAccessConfig } from "@/lib/role-access-catalog";
 
 const BACK = "/pengaturan/pengguna";
 const back = <Link href={BACK} className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke daftar pengguna</Link>;
@@ -44,6 +48,24 @@ async function history(client: Client, profileId: string): Promise<Audit[] | nul
   } catch { return null; }
 }
 
+// E3 (meeting 12 Nov 2026): data "Akses khusus akun ini" — hanya dibaca untuk Owner aktif.
+type AksesKhusus = { status: "ok"; data: DataAksesAkun; peran: string[] | "penuh" | null; efektif: string[] | "penuh" | null } | { status: "absent" } | { status: "error" };
+async function aksesKhusus(client: Client, profileId: string, role: string): Promise<AksesKhusus> {
+  try {
+    const [akun, peran] = await Promise.all([
+      client.rpc("get_account_access_override", { p_profile_id: profileId }),
+      editableRole(role) ? client.rpc("get_role_access_config", { p_role: role }) : Promise.resolve({ data: null, error: null }),
+    ]);
+    if (akun.error) return akun.error.code === "PGRST202" ? { status: "absent" } : { status: "error" };
+    const data = parseDataAksesAkun(akun.data, profileId);
+    if (!data) return { status: "error" };
+    const config = peran.error ? null : parseRoleAccessConfig(peran.data, role);
+    const aturan = config ? aturanDariKonfigurasi(config) : null;
+    return { status: "ok", data, peran: aturan ? ringkasAkses(role, aturan) : null, efektif: aturan ? ringkasAkses(role, terapkanAksesAkun(role, aturan, data.override)) : null };
+  } catch { return { status: "error" }; }
+}
+const daftar = (x: string[] | "penuh" | null) => x === null ? "belum dapat dimuat" : x === "penuh" ? "semua menu" : x.join("; ") || "tidak ada menu";
+
 export default async function EditPenggunaPage({ params }: { params: Promise<{ id: string }> }) {
   const client = await assertMasterAdmin(BACK, "akun karyawan");
   const { id } = await params;
@@ -75,6 +97,7 @@ export default async function EditPenggunaPage({ params }: { params: Promise<{ i
   }
   if (!branches) return <>{back}<p role="alert">Pilihan cabang akun belum dapat dimuat lengkap. Muat ulang sebelum mengedit; perubahan belum disimpan.</p></>;
   const edits = await history(client, id);
+  const akses = superAdmin && snapshot.role !== "OWNER" ? await aksesKhusus(client, id, snapshot.role) : null;
   const branchNames = (ids: string[]) => ids.map((branchId) => branches.find((branch) => branch.id === branchId)?.name ?? `Cabang tidak tersedia · ${branchId}`).join(", ") || "Tanpa penugasan";
   return <>
     <div style={{ marginBottom: 12 }}>{back}</div>
@@ -86,8 +109,34 @@ export default async function EditPenggunaPage({ params }: { params: Promise<{ i
         ? <p role="alert">Data login belum dapat dimuat. Muat ulang halaman sebelum mereset.</p>
         : <ResetLoginForm profileId={id} emailSekarang={emailLogin} />}
     </section>}
+    {superAdmin && <section data-akses-khusus-section>
+      <SecHeader num="03" title="AKSES KHUSUS AKUN INI" desc="Atur menu yang bisa dibuka akun ini tanpa mengubah perannya: ikuti peran, tambah menu, atau hanya menu tertentu (mis. hanya Penjualan Online). Hanya Owner yang bisa mengatur; setiap perubahan tercatat." />
+      {snapshot.role === "OWNER" ? <p role="note">Akun OWNER selalu punya akses penuh, jadi tidak bisa diberi akses khusus.</p>
+        : !akses || akses.status === "error" ? <p role="alert">Akses khusus akun ini belum dapat dimuat. Muat ulang halaman sebelum mengubahnya.</p>
+        : akses.status === "absent" ? <p role="note">Fitur akses khusus akun belum aktif di database. Akun ini mengikuti akses perannya.</p>
+        : <>
+          <div className="crm-sec" style={{ fontSize: 12 }}>
+            <div>Pengaturan sekarang: <b>{ringkasAksesAkun(akses.data.override)}</b></div>
+            <div>Akses peran {snapshot.role}: {daftar(akses.peran)}</div>
+            <div>Akses efektif akun ini: <b>{daftar(akses.efektif)}</b> (ditambah Dashboard Pribadi)</div>
+            {akses.data.override && <div style={{ color: "var(--tm)" }}>Terakhir diubah {akses.data.override.updated_at ? new Date(akses.data.override.updated_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) + " WIB" : "—"} oleh {akses.data.override.updated_by_name ?? "—"}</div>}
+          </div>
+          <AksesKhususForm key={`${id}:${akses.data.override?.updated_at ?? "ikuti"}:${akses.data.history[0]?.id ?? ""}`} profileId={id} role={snapshot.role} requestKey={randomUUID()} current={akses.data.override} />
+          <details className="crm-sec"><summary>Riwayat akses khusus ({akses.data.history.length})</summary>
+            {akses.data.history.length === 0 ? <p>Belum ada perubahan akses khusus untuk akun ini.</p> : <table className="tbl"><thead><tr><th>Waktu</th><th>Oleh</th><th>Sebelum</th><th>Sesudah</th><th>Alasan</th></tr></thead><tbody>
+              {akses.data.history.map(h => <tr key={h.id}>
+                <td>{new Date(h.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB</td>
+                <td>{h.created_by_name ?? "—"}</td>
+                <td style={{ fontSize: 11 }}>{ringkasAksesAkun(h.before)}</td>
+                <td style={{ fontSize: 11 }}>{ringkasAksesAkun(h.after)}</td>
+                <td style={{ fontSize: 11 }}>{h.reason ?? "—"}</td>
+              </tr>)}
+            </tbody></table>}
+          </details>
+        </>}
+    </section>}
     <section className="crm-sec">
-      <SecHeader num={superAdmin ? "03" : "02"} title="RIWAYAT PERUBAHAN AKUN" desc="10 perubahan terakhir: pelaku, waktu, role, penugasan cabang, dan penanda perubahan nama. Isi nama lama/baru tidak disalin ke riwayat ini." />
+      <SecHeader num={superAdmin ? "04" : "02"} title="RIWAYAT PERUBAHAN AKUN" desc="10 perubahan terakhir: pelaku, waktu, role, penugasan cabang, dan penanda perubahan nama. Isi nama lama/baru tidak disalin ke riwayat ini." />
       {edits === null ? <p role="alert">Riwayat perubahan belum dapat dimuat. Muat ulang untuk memeriksa riwayat.</p> : edits.length === 0 ? <p>Belum ada perubahan akun melalui fitur edit ini.</p> : <div style={{ overflowX: "auto" }}>
         <table className="tbl"><thead><tr><th>Waktu</th><th>Pelaku</th><th>Nama akun</th><th>Role</th><th>Cabang</th></tr></thead><tbody>
           {edits.map((edit) => <tr key={edit.id}>

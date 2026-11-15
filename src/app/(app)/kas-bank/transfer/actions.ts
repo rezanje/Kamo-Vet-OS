@@ -12,7 +12,8 @@ const BACK = "/kas-bank/transfer";
 const gagal = (message: string): never => redirect(`${BACK}?error=${encodeURIComponent(message)}`);
 
 async function simpan(formData: FormData, action: "create" | "edit" | "void") {
-  const supabase = await assertRole(BACK, "catatan transfer", action === "create" ? ["OWNER", "ADMIN", "FINANCE"] : ["OWNER"]);
+  // Catat, koreksi, dan batal: OWNER/ADMIN/FINANCE (keputusan 12 Nov 2026); izin per grup tetap dicek di bawah.
+  const supabase = await assertRole(BACK, "catatan transfer", ["OWNER", "ADMIN", "FINANCE"]);
   const key = String(formData.get("draft_key") ?? "").trim();
   const id = String(formData.get("id") ?? "").trim();
   const revisionText = String(formData.get("revision") ?? "");

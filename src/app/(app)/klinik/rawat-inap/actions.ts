@@ -16,6 +16,7 @@ import { hariIniWIB, waktuInputWIB } from "@/lib/tanggal";
 import { inpatientStaffInput } from '@/lib/clinical-staff';
 import { isMissingRpc, parseStayType, readStayTypesChecked } from "@/lib/inpatient-stay";
 import { clinicPackageOriginInput, type ClinicPackageOrigin } from "@/lib/clinic-package-origin";
+import { alasanKoreksi, bolehKoreksiVisit, ubahBagianVisit, visitTerlambat } from "@/lib/koreksi-visit-akses";
 
 function bacaPetugas(formData:FormData,back:string,allowLegacy=false) {
   try{return formData.has('log_kind')?inpatientStaffInput(formData,allowLegacy):{};}
@@ -146,7 +147,8 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
   const newStatus = (billables ? "" : String(formData.get("new_status") ?? "").trim()) as Condition | "";
   const cetak = String(formData.get("cetak") ?? "") === "1";
   const back = `/klinik/rawat-inap/${recordId}`;
-  const formHref = billables ? `${back}/obat-khusus` : `${back}/catatan`;
+  // A5: form "Tambah koreksi visit" (setelah pasien pulang) punya halamannya sendiri; galat kembali ke sana.
+  const formHref = billables ? `${back}/obat-khusus` : formData.get("koreksi_form") === "1" ? `${back}/koreksi` : `${back}/catatan`;
   if (!recordId || (!billables && !conditionNote) || !requestKey) redirect(`${formHref}?error=${encodeURIComponent("Isi data dan muat ulang formulir")}`);
   if (!billables && formData.has('visit_label')) {
     const label = formData.get('visit_label');
@@ -180,7 +182,7 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
   // validasi dan pesan galat sama; bacaan gagal menghentikan simpan (fail closed).
   const userP = mulai(supabase.auth.getUser());
   const recP = mulai(supabase
-    .from("inpatient_records").select("condition_status, visit_id, medical_record_id").eq("id", recordId).maybeSingle());
+    .from("inpatient_records").select("condition_status, visit_id, medical_record_id, discharged_at").eq("id", recordId).maybeSingle());
   const stayP = mulai(readStayTypesChecked(supabase, [recordId]));
   const mrP = mulai(recP.then(({ data }) => data && !data.medical_record_id
     ? supabase.from("medical_records").select("id").eq("visit_id", data.visit_id)
@@ -295,6 +297,20 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
       redirect(`${formHref}?error=${encodeURIComponent("Transisi kondisi hanya boleh dilakukan dokter")}`);
     }
   }
+  // A5 (meeting 12 Nov 2026): visit dokter lebih dari 48 jam lalu, atau catatan setelah pasien pulang/RIP, adalah KOREKSI:
+  // wajib alasan dan disimpan lewat RPC koreksi (alasan ikut tercatat). Siapa yang boleh (Owner / izin "Koreksi visit rawat inap")
+  // diputuskan database; setelah pulang hanya catatan visit/pemantauan — tanpa obat, tagihan, atau ubah kondisi.
+  const setelahPulang = !billables && !!rec!.discharged_at;
+  const koreksi = !billables && (setelahPulang || visitTerlambat(formData.get("log_kind"), stamp));
+  const alasan = koreksi ? alasanKoreksi(formData.get("koreksi_alasan")) : null;
+  if (setelahPulang && (rows.length > 0 || compounds.length > 0 || (newStatus && newStatus !== rec!.condition_status))) {
+    redirect(`${formHref}?error=${encodeURIComponent("Koreksi setelah pasien pulang hanya untuk catatan visit/pemantauan — tanpa obat, tagihan, atau ubah kondisi.")}`);
+  }
+  if (koreksi && !alasan) {
+    redirect(`${formHref}?error=${encodeURIComponent(setelahPulang
+      ? "Pasien sudah pulang — catatan ini adalah koreksi. Isi alasan koreksi (minimal 3 huruf)."
+      : "Visit dokter lebih dari 48 jam lalu adalah koreksi. Isi alasan koreksi (minimal 3 huruf); hanya Owner atau peran yang diberi izin Koreksi visit rawat inap yang bisa menyimpannya.")}`);
+  }
   waktu.tandai("baca");
   const { error: saveError } = billables ? await supabase.rpc("clinic_add_inpatient_billables", {
     p_inpatient_id: recordId,
@@ -302,6 +318,15 @@ async function saveInpatientEntry(formData: FormData, billables: boolean) {
     p_compounds: compounds,
     p_reason: String(formData.get("entry_reason") ?? "").trim(),
     p_request_key: requestKey,
+  }) : koreksi ? await supabase.rpc("clinic_save_inpatient_log_correction", {
+    p_inpatient_id: recordId,
+    p_medical_record_id: mrId,
+    p_log: log,
+    p_rows: rows,
+    p_compounds: compounds,
+    p_request_key: requestKey,
+    p_new_status: newStatus && newStatus !== rec!.condition_status ? newStatus : null,
+    p_reason: alasan,
   }) : await supabase.rpc("clinic_save_inpatient_log_with_status", {
     p_inpatient_id: recordId,
     p_medical_record_id: mrId,
@@ -409,26 +434,40 @@ export async function updateDailyLog(formData: FormData) {
 
   const { data: before } = await supabase
     .from("inpatient_daily_logs")
-    .select("id, inpatient_record_id, log_kind, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
+    .select("id, inpatient_record_id, log_kind, visit_doctor_id, paramedic_id, log_date, condition_note, tindakan, keterangan, doctor_name, created_at, makan, minum, bab, pipis, berat, suhu, foto_url, komunikasi_owner, komunikasi_via")
     .eq("id", logId).maybeSingle();
   if (!before) redirect(`${back}?error=${encodeURIComponent("Catatan tidak ditemukan")}`);
   if(before.inpatient_record_id!==recordId)redirect(`${back}?error=${encodeURIComponent('Catatan tidak sesuai pasien')}`);
 
-  // Pasien sudah pulang/RIP → catatan dikunci. Koreksi setelah kasus ditutup harus
-  // lewat jalur lain, bukan diam-diam dari layar ini.
+  // Pasien sudah pulang/RIP → catatan dikunci, KECUALI untuk Owner / pemegang izin "Koreksi visit rawat inap"
+  // (A5, meeting 12 Nov 2026) dengan alasan wajib. Database tetap memeriksa ulang.
   const { data: rec } = await supabase
     .from("inpatient_records").select("discharged_at").eq("id", recordId).maybeSingle();
-  if (rec?.discharged_at) redirect(`${back}?error=${encodeURIComponent("Rawat inap sudah ditutup — catatan tidak bisa diubah lagi")}`);
+  if (rec?.discharged_at) {
+    const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+    if (!(await bolehKoreksiVisit(supabase, me?.role as string | null | undefined))) {
+      redirect(`${back}?error=${encodeURIComponent("Rawat inap sudah ditutup — catatan tidak bisa diubah lagi")}`);
+    }
+  }
 
   // Send the time only when it really changed (minute resolution): a doctor visit keeps its
-  // server-set time, and only OWNER/ADMIN may move it (H06, enforced by the database).
+  // server-set time, and only Owner / holders of "Koreksi visit rawat inap" may move it (H06 + A5, enforced by the database).
   const beforeStamp = before.created_at ? new Date(new Date(before.created_at).getTime() + 7 * 3600_000).toISOString() : "";
   const sameTime = beforeStamp.slice(0, 10) === logDate && beforeStamp.slice(11, 16) === logTime;
   const stamp = sameTime ? null : waktuInputWIB(logDate, logTime);
+  const petugas = bacaPetugas(formData,here,before.log_kind==null);
+  // A5: koreksi setelah pasien pulang, dan perubahan waktu/tanggal/dokter/jenis/paramedis visit dokter, wajib alasan
+  // (isi lama + alasan tersimpan di riwayat koreksi).
+  const waktuBerubah = !!(stamp && !Number.isNaN(stamp.getTime())) || (!!logDate && logDate !== before.log_date);
+  if (!alasanKoreksi(alasan) && (rec?.discharged_at || ubahBagianVisit(before, petugas, waktuBerubah))) {
+    redirect(`${here}?error=${encodeURIComponent(rec?.discharged_at
+      ? "Pasien sudah pulang — isi alasan koreksi (minimal 3 huruf) sebelum menyimpan."
+      : "Mengubah waktu, tanggal, dokter, jenis, atau paramedis visit dokter adalah koreksi — isi alasan koreksi (minimal 3 huruf).")}`);
+  }
   const { error: upErr } = await supabase.rpc('clinic_update_inpatient_log',{
     p_inpatient_id:recordId,p_log_id:logId,p_reason:alasan,p_patch:{
     condition_note: conditionNote, tindakan, keterangan, doctor_name: doctorName,
-    ...bacaPetugas(formData,here,before.log_kind==null),
+    ...petugas,
     updated_at: new Date().toISOString(), updated_by: user?.id ?? null,
     // Angka pemantauan ikut bisa dikoreksi; nilai lamanya tersimpan di snapshot
     // `before` — berat/suhu yang salah ketik tidak boleh berubah tanpa jejak.

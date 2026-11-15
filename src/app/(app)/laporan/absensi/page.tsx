@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
 import { rekapAbsensi, jamMenit, JAM_KERJA_DEFAULT, type BarisAbsensi, type JamKerja } from "@/lib/laporan-hris";
+import { laporanDiminta } from "@/lib/report-gate";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -10,9 +11,10 @@ const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
 export default async function LaporanAbsensiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periode?: string; cabang?: string }>;
+  searchParams: Promise<{ periode?: string; cabang?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const periode = sp.periode || hariIniWIB().slice(0, 7);   // YYYY-MM
   const cabang = sp.cabang || "";
 
@@ -24,10 +26,24 @@ export default async function LaporanAbsensiPage({
   const awal = `${periode}-01`;
   const akhir = bl === 12 ? `${th + 1}-01-01` : `${th}-${String(bl + 1).padStart(2, "0")}-01`;
 
+  // A1 (meeting 12 Nov 2026): absensi & karyawan baru dibaca setelah Tampilkan
+  // ditekan. Jam kerja standar dan daftar cabang tetap dibaca (ringan, untuk filter).
+  // Bila cabang dipilih, saring langsung di query; saringan di memori tetap jadi pengaman.
+  const kosong = Promise.resolve({ data: [] as unknown[] });
+  const bacaAbsen = () => {
+    const query = supabase.from("attendance")
+      .select(`id, employee_id, status, jam_masuk, jam_pulang${cabang ? ", employees!inner(branches!employees_branch_id_fkey!inner(name))" : ""}`, { count: "exact" })
+      .gte("tanggal", awal).lt("tanggal", akhir);
+    return completeReportQuery(cabang ? query.eq("employees.branches.name", cabang) : query);
+  };
+  const bacaKaryawan = () => {
+    const query = supabase.from("employees")
+      .select(`id, nama, jabatan, status, branches!employees_branch_id_fkey${cabang ? "!inner" : ""}(name)`, { count: "exact" });
+    return completeReportQuery((cabang ? query.eq("branches.name", cabang) : query).order("nama"));
+  };
   const [{ data: absen }, { data: karyawan }, { data: setting }, { data: cabangList }] = await Promise.all([
-    completeReportQuery(supabase.from("attendance").select("id, employee_id, status, jam_masuk, jam_pulang", { count: "exact" })
-      .gte("tanggal", awal).lt("tanggal", akhir)),
-    completeReportQuery(supabase.from("employees").select("id, nama, jabatan, status, branches!employees_branch_id_fkey(name)", { count: "exact" }).order("nama")),
+    siap ? bacaAbsen() : kosong,
+    siap ? bacaKaryawan() : kosong,
     supabase.from("company_settings")
       .select("jam_masuk_standar, jam_pulang_standar, toleransi_telat_menit").maybeSingle(),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
@@ -41,7 +57,7 @@ export default async function LaporanAbsensiPage({
       }
     : JAM_KERJA_DEFAULT;
 
-  const rekap = rekapAbsensi((absen ?? []) as BarisAbsensi[], jamKerja);
+  const rekap = rekapAbsensi((absen ?? []) as unknown as BarisAbsensi[], jamKerja);
 
   type Emp = { id: string; nama: string; jabatan: string | null; status: string; branches: Rel<{ name: string }> };
   const rows = ((karyawan ?? []) as unknown as Emp[])
@@ -61,6 +77,7 @@ export default async function LaporanAbsensiPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-clock-check" title="REKAP ABSENSI"
       desc={`Telat, bolos, dan lembur per karyawan. Jam kerja standar ${String(jamKerja.jamMasukStandar).slice(0, 5)}–${String(jamKerja.jamPulangStandar).slice(0, 5)}, toleransi ${jamKerja.toleransiMenit} menit.`}
       filter={

@@ -8,6 +8,8 @@ const state = vi.hoisted(() => ({
   removed: false, finalizationError: "", pool: true, shRows: [] as Record<string, unknown>[], flags: {} as Record<string, boolean>, flagError: "" as string, promoReads: 0, prior: null as null | Record<string, unknown>, campaign: null as null | Record<string, unknown>, insertError: null as null | { table: string; message: string }, minSell: {} as Record<string, number>,
 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
+// Skenario di file ini dijalankan sebagai Owner/Admin: izin diskon manual (12 Nov 2026) diuji terpisah di manual-discount.test.ts.
+vi.mock("@/lib/manual-discount", async (original) => ({ ...(await original<typeof import("@/lib/manual-discount")>()), manualDiscountAllowed: async () => true }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));
 vi.mock("@/lib/no-dokumen", () => ({ nomorBerikutnya: async () => ({ nomor: "POS-SH-TEST" }) }));

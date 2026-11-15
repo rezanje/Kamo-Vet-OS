@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
+import { readEffectiveDate } from "@/lib/purchase-backdate";
 
 export async function batalkanPembayaranFaktur(formData: FormData) {
   const supabase = await createClient();
@@ -12,11 +13,15 @@ export async function batalkanPembayaranFaktur(formData: FormData) {
   const back = `/pembelian/faktur/${encodeURIComponent(invoiceId)}`;
   const recovery = formData.get("tindakan") === "periksa";
   const requestKey = String(formData.get("draft_key") ?? "");
+  // Tanggal efektif pembatalan (Accurate: bisa dibukukan di tanggal pembayaran asli). Kosong = hari ini; izin dan rentang diperiksa database.
+  const effective = readEffectiveDate(formData.get("tanggal"));
+  if (!recovery && !effective.ok) redirect(`${back}?error=${encodeURIComponent(effective.message)}`);
   const { data, error } = recovery
     ? await supabase.rpc("get_purchase_payment_cancellation", { p_payment_id: paymentId, p_request_key: requestKey })
     : await supabase.rpc("cancel_purchase_payment", {
       p_payment_id: paymentId, p_expected_revision: Number(formData.get("revision")),
       p_request_key: requestKey, p_reason: String(formData.get("alasan") ?? "").trim(),
+      p_tanggal: effective.ok ? effective.value : "",
     });
   if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
   if (recovery && !data) redirect(`${back}?error=${encodeURIComponent("Belum ada pembatalan terkonfirmasi untuk formulir ini. Periksa rincian sebelum mengirim kembali.")}`);

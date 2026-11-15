@@ -18,6 +18,8 @@ export type LogRow = {
   makan?: string | null; minum?: string | null; bab?: string | null; pipis?: string | null;
   berat?: number | string | null; suhu?: number | string | null; foto_url?: string | null;
   komunikasi_owner?: string | null; komunikasi_via?: string | null;
+  /** A5: alasan bila catatan ini DITAMBAHKAN sebagai koreksi (visit > 48 jam lalu / setelah pasien pulang). */
+  correction_reason?: string | null;
 };
 
 export type EditRow = {
@@ -25,14 +27,16 @@ export type EditRow = {
   before: { condition_note?: string; tindakan?: string | null; keterangan?: string | null; doctor_name?: string | null;paramedic_name?:string|null;log_kind?:string|null };
 };
 
-export function LogEditForm({ log, recordId, backHref, patient, editable, edits,doctors=[],paramedics=[],bolehKoreksiVisit=true }: {
+export function LogEditForm({ log, recordId, backHref, patient, editable, edits,doctors=[],paramedics=[],bolehKoreksiVisit=true,alasanWajib=false }: {
   log: LogRow; recordId: string; backHref: string;
   patient: { name: string; species: string; breed: string | null; noRM: string; owner: string; phone: string; address: string; tglMasuk: string; dokter: string; kondisi: string; photo: string | null };
   editable: boolean;
   edits: EditRow[];
   doctors?:ClinicalStaff[];paramedics?:ClinicalStaff[];
-  /** H06: false = visit time/doctor/kind are read-only (correction by Admin/Owner). */
+  /** H06 + A5: false = visit time/doctor/kind/paramedic are read-only (Owner atau pemegang izin "Koreksi visit rawat inap"). */
   bolehKoreksiVisit?: boolean;
+  /** A5: pasien sudah pulang dan pengguna pemegang izin — setiap perubahan adalah koreksi, alasan wajib. */
+  alasanWajib?: boolean;
 }) {
   const kunciVisit = !bolehKoreksiVisit;
   const kunciWaktu = kunciVisit && log.log_kind === "doctor_visit";
@@ -91,7 +95,7 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits,
               <input className="fi" type="time" name="log_time" defaultValue={timeStr} required disabled={!editable} readOnly={kunciWaktu} />
             </div>
           </div>
-          {kunciWaktu && <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 8 }}>Waktu dan dokter visit terkunci — koreksi waktu/dokter visit oleh Admin/Owner.</div>}
+          {kunciWaktu && <div style={{ fontSize: 11, color: "var(--tm)", marginBottom: 8 }}>Waktu, dokter, dan paramedis visit terkunci — koreksi oleh Owner atau pemegang izin Koreksi visit rawat inap.</div>}
           {/* Angka pemantauan bisa dikoreksi — salah ketik suhu/berat menyesatkan
               grafik dan bisa memicu tindakan yang tidak perlu. Nilai lamanya tetap
               tersimpan di riwayat koreksi. */}
@@ -182,11 +186,18 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits,
 
           {editable && (
             <div className="fg">
-              <label className="flab">Alasan koreksi</label>
-              <input className="fi" name="alasan" placeholder="mis. salah ketik suhu, koreksi jam pemberian obat" />
+              <label className="flab" htmlFor="alasan-koreksi">Alasan koreksi{alasanWajib ? " *" : ""}</label>
+              <input id="alasan-koreksi" className="fi" name="alasan" placeholder="mis. salah ketik suhu, koreksi jam pemberian obat"
+                required={alasanWajib} minLength={alasanWajib ? 3 : undefined} maxLength={500} />
               <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
                 <i className="ti ti-info-circle" /> Isi lama tetap tersimpan sebagai riwayat koreksi.
+                {!alasanWajib && bolehKoreksiVisit && log.log_kind === "doctor_visit" && " Wajib diisi bila mengubah waktu, tanggal, dokter, jenis, atau paramedis visit."}
               </div>
+            </div>
+          )}
+          {editable && alasanWajib && (
+            <div className="p2ban" role="note" style={{ marginBottom: 8 }}>
+              <i className="ti ti-alert-triangle" /> Pasien sudah pulang — perubahan ini adalah koreksi visit (izin Koreksi visit rawat inap). Alasan wajib diisi.
             </div>
           )}
 
@@ -208,6 +219,11 @@ export function LogEditForm({ log, recordId, backHref, patient, editable, edits,
           <div style={{ fontSize: 10, color: "var(--td)", marginBottom: 10 }}>
             Setiap perubahan catatan tersimpan di sini beserta isi sebelumnya.
           </div>
+          {log.correction_reason && (
+            <div style={{ border: ".5px solid #fcd34d", background: "#fffbeb", borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 10.5 }}>
+              <b>Ditambahkan sebagai koreksi visit.</b> Alasan: <i>“{log.correction_reason}”</i>
+            </div>
+          )}
 
           {edits.length === 0 ? (
             <div style={{ fontSize: 11, color: "var(--td)", padding: "10px 0" }}>

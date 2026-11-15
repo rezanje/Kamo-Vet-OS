@@ -49,7 +49,7 @@ beforeEach(() => {
   };
 });
 async function render(page: typeof PurchaseAdvances) {
-  document.body.innerHTML = renderToStaticMarkup(await page({ searchParams: Promise.resolve({}) }));
+  document.body.innerHTML = renderToStaticMarkup(await page({ searchParams: Promise.resolve({ tampil: "1" }) }));
   return document.getElementById(`advance-${page === PurchaseAdvances ? dp : sdp}`)!;
 }
 

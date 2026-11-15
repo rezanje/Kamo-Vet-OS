@@ -13,6 +13,8 @@ import { muatLabelMetodeInvoice } from "@/lib/metode-uang-muka";
 import { SimpanBayarForm } from "./SimpanBayarForm";
 import { BatalKwitansiForm } from "./BatalKwitansiForm";
 import { LepasUangMukaForm } from "./LepasUangMukaForm";
+import { adaPenerimaan, bolehBatalPenerimaan } from "@/lib/batal-penerimaan-akses";
+import { TanggalEfektifBanner } from "../../../pembayaran/[visitId]/batal-penerimaan/TanggalEfektifBanner";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (iso: string) =>
@@ -53,6 +55,8 @@ export default async function TagihanRawatInapPage({
   ]);
   const ppnRate = pajak.mode_pkp ? Number(pajak.ppn_rate) : 0;
   const bolehTerobos = bolehMenerobosDp(profil.data?.role as string | null);
+  const bolehBatalTerima = data.tahap.some((t) => adaPenerimaan(t, Number(t.dibayar) || 0))
+    ? await bolehBatalPenerimaan(supabase, profil.data?.role as string | null) : false;
   const estimasi = data.belumDitagih.reduce((sum, b) => sum + nilaiBarisResep(b), 0);
   const estimasiPpn = ppnRate > 0 && estimasi > 0 ? Math.round(estimasi * ppnRate / 100) : 0;
   const rekap = ringkasRekap(data.tahap, estimasi + estimasiPpn, data.saldoUangMuka);
@@ -93,6 +97,7 @@ export default async function TagihanRawatInapPage({
   // Piutang invoice nol saja belum lunas bila masih ada biaya pending/koreksi.
   const pembayaranLunas = data.riwayatUangTerpasang && rekap.total > 0 && rekap.sisa === 0
     && data.belumDitagih.length === 0 && !data.tahap.some((t) => t.correction_pending);
+  const bannerTanggalEfektif = await TanggalEfektifBanner({ visitId: data.visit.id, tagihan: data.tahap.map((t) => ({ id: t.id, no: t.invoice_no ?? null })) });
 
   return (
     <>
@@ -192,6 +197,7 @@ export default async function TagihanRawatInapPage({
         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sb)", marginBottom: 9 }}>
           <i className="ti ti-file-invoice" /> TAGIHAN TAHAP
         </div>
+        {bannerTanggalEfektif}
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 640 }}>
             <thead>
@@ -216,6 +222,12 @@ export default async function TagihanRawatInapPage({
                       style={{ padding: "3px 9px", fontSize: 10, textDecoration: "none" }}>
                       <i className="ti ti-printer" /> Invoice
                     </Link>
+                    {bolehBatalTerima && !t.correction_pending && adaPenerimaan(t, Number(t.dibayar) || 0) && (
+                      <Link href={`/klinik/pembayaran/${data.visit.id}/batal-penerimaan?invoice_id=${t.id}`} className="btn-def"
+                        style={{ padding: "3px 9px", fontSize: 10, textDecoration: "none", marginLeft: 6, color: "#b91c1c" }}>
+                        <i className="ti ti-receipt-off" /> Batalkan penerimaan
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))}

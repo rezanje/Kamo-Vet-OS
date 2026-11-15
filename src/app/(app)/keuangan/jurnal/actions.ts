@@ -3,13 +3,17 @@
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { PARAM_TAMPIL } from "@/lib/report-gate";
 
 // ponytail: server action untuk catat jurnal umum manual double-entry.
 // Guard ketat: tolak jika tidak balance, total 0, atau < 2 baris valid.
 
 type RawLine = { account_id: string; debit: number; credit: number };
 
-const kembali = (message: string) => redirect("/keuangan/jurnal?error=" + encodeURIComponent(message));
+// A1 (meeting 12 Nov 2026): kembali ke riwayat jurnal yang sudah tampil (tampil=1 di akhir
+// supaya pesan yang sudah di-encode tidak berubah).
+const TAMPIL = `&${PARAM_TAMPIL}=1`;
+const kembali = (message: string) => redirect("/keuangan/jurnal?error=" + encodeURIComponent(message) + TAMPIL);
 
 function parseCorrection(formData: FormData) {
   let lines: RawLine[] = [];
@@ -33,7 +37,7 @@ export async function koreksiJurnal(formData: FormData) {
     p_action: "edit", p_header: { tanggal: c.tanggal, deskripsi: c.deskripsi }, p_lines: c.lines, p_reason: c.reason,
   });
   if (error || !data?.reversal_journal_id || !data?.replacement_journal_id) kembali(error?.message ?? "Koreksi jurnal belum terkonfirmasi");
-  redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData));
+  redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData) + TAMPIL);
 }
 
 export async function batalkanJurnal(formData: FormData) {
@@ -44,7 +48,7 @@ export async function batalkanJurnal(formData: FormData) {
     p_action: "void", p_header: {}, p_lines: [], p_reason: c.reason,
   });
   if (error || !data?.reversal_journal_id) kembali(error?.message ?? "Pembatalan jurnal belum terkonfirmasi");
-  redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData));
+  redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData) + TAMPIL);
 }
 
 export async function jurnalManual(formData: FormData) {
@@ -63,5 +67,5 @@ export async function jurnalManual(formData: FormData) {
     p_branch_id: branchId, p_lines: lines,
   });
   if (error || !data?.entry_id) kembali(error?.message ?? "Jurnal belum terkonfirmasi. Periksa daftar sebelum mengulang.");
-  redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData));
+  redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData) + TAMPIL);
 }

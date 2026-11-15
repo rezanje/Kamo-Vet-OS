@@ -218,7 +218,7 @@ export default async function PerintahBayarPage({
                             {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}
                           </select>
                           <PilihRekening rekening={rekening} label="" width={140} />
-                          <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()}
+                          <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} max={hariIniWIB()}
                             style={{ width: 130, height: 26, fontSize: 10.5 }} />
                           <SubmitButton className="btn-acc" style={{ padding: "3px 9px", fontSize: 10.5, background: "#16a34a" }} pendingText="…">
                             Bayar

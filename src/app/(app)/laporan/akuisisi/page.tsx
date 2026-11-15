@@ -1,8 +1,9 @@
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
-import { tarikRiwayat } from "@/lib/laporan-transaksi-server";
+import { tarikRiwayat, type TrxRiwayat } from "@/lib/laporan-transaksi-server";
 import { profilPelanggan, pelangganBaru, baruVsLama } from "@/lib/retensi";
 import { pertumbuhanBulanan, labelBulan } from "@/lib/pertumbuhan";
+import { laporanDiminta } from "@/lib/report-gate";
 
 // Akuisisi Pelanggan — permintaan Kamo Group 24 Agu 2026:
 // "pelanggan baru per cabang per periode" dan "rasio pelanggan baru vs lama per transaksi".
@@ -19,13 +20,16 @@ const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
 export default async function AkuisisiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
 
-  const { trx, terpotong } = await tarikRiwayat(sampai);
+  // A1 (meeting 12 Nov 2026): riwayat transaksi (berat, semua cabang) baru
+  // ditarik setelah Tampilkan ditekan.
+  const { trx, terpotong } = siap ? await tarikRiwayat(sampai) : { trx: [] as TrxRiwayat[], terpotong: false };
   const profil = profilPelanggan(
     trx.filter((t) => t.customerId)
       .map((t) => ({ customerId: t.customerId as string, tanggal: t.tanggal, cabang: t.cabang })),
@@ -53,6 +57,7 @@ export default async function AkuisisiPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-user-plus" title="AKUISISI PELANGGAN"
       desc="Berapa pelanggan baru tiap cabang, dan berapa banyak transaksi yang datang dari orang baru."
       filter={

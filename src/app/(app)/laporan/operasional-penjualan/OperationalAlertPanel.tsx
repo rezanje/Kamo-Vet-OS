@@ -7,6 +7,7 @@ import {
   type OperationalAlert,
 } from "@/lib/operational-alerts";
 import type { DashboardBlock } from "@/lib/operation-sales-server";
+import { denganTampil } from "@/lib/report-gate";
 
 function value(ruleKey: AlertRuleKey, amount: number): string {
   if (ruleKey === "stock_opname_variance") return `Rp ${Math.round(amount).toLocaleString("id-ID")}`;
@@ -20,7 +21,9 @@ function AlertCard({ alert, filter }: {
   filter: { from: string; to: string };
 }) {
   const red = alert.severity === "red";
-  const href = alertDetailHref(alert.detailUrl, { ...filter, branchName: alert.branchName });
+  const tujuan = alertDetailHref(alert.detailUrl, { ...filter, branchName: alert.branchName });
+  // A1: laporan tujuan langsung tampil sesuai periode & cabang alert; layar POS tidak berpintu.
+  const href = tujuan?.startsWith("/laporan/") ? denganTampil(tujuan) : tujuan;
   const body = (
     <div className="crm-sec" style={{ margin: 0, borderColor: red ? "#fca5a5" : "#fde68a", background: red ? "#fef2f2" : "#fffbeb", minWidth: 230, flex: "1 1 230px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>

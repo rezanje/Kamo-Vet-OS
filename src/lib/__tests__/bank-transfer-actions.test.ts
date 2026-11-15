@@ -33,9 +33,9 @@ it("creates both ledger sides with a single durable atomic RPC", async () => {
   expect(rpc).toHaveBeenCalledWith("mutate_cash_transfer", expect.objectContaining({ p_request_key: "transfer-key", p_action: "create", p_transfer_id: null }));
   expect(redirect.mock.calls[0][0]).toContain("draft_done=transfer-key");
 });
-it.each([[koreksiTransfer, "edit"], [batalkanTransfer, "void"]] as const)("requires OWNER for corrections and cancellation", async (action, mode) => {
+it.each([[koreksiTransfer, "edit"], [batalkanTransfer, "void"]] as const)("allows OWNER, ADMIN and FINANCE to correct and cancel", async (action, mode) => {
   await expect(action(form())).rejects.toThrow("success=");
-  expect(guard).toHaveBeenCalledWith("/kas-bank/transfer", "catatan transfer", ["OWNER"]);
+  expect(guard).toHaveBeenCalledWith("/kas-bank/transfer", "catatan transfer", ["OWNER", "ADMIN", "FINANCE"]);
   expect(rpc).toHaveBeenCalledWith("mutate_cash_transfer", expect.objectContaining({ p_action: mode, p_transfer_id: "transfer", p_expected_revision: 0, p_reason: "Koreksi simulasi" }));
 });
 it("recovers a committed result read-only even when form fields are invalid", async () => {

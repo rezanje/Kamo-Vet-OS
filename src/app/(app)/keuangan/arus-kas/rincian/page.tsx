@@ -1,9 +1,10 @@
 import { completeReportQuery } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
-import { getCashLedgerPerAccount } from "@/lib/ledger";
+import { getCashLedgerPerAccount, type RekeningMutasi } from "@/lib/ledger";
 import { labelSumber } from "@/lib/arus-kas";
 import { hariIniWIB } from "@/lib/tanggal";
+import { laporanDiminta } from "@/lib/report-gate";
 
 // Rincian Arus Kas per Rekening — permintaan Kamo Group 24 Agu 2026.
 // Menjawab tiga baris di daftar mereka sekaligus: "rincian arus kas",
@@ -19,16 +20,20 @@ const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
 export default async function RincianArusKasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  // A1 (meeting 12 Nov 2026): mutasi per rekening baru dibaca setelah Tampilkan ditekan.
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const cabang = sp.cabang || "";
 
   const supabase = await createClient();
   const [rekening, { data: branches }] = await Promise.all([
-    getCashLedgerPerAccount(supabase as never, { from: dari, to: sampai, branchId: cabang || undefined }),
+    siap
+      ? getCashLedgerPerAccount(supabase as never, { from: dari, to: sampai, branchId: cabang || undefined })
+      : Promise.resolve([] as RekeningMutasi[]),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
@@ -52,6 +57,7 @@ export default async function RincianArusKasPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-building-bank" title="RINCIAN ARUS KAS PER REKENING"
       desc="Tiap kas dan rekening bank: saldo awal, uang masuk, uang keluar, dan saldo akhirnya."
       filter={

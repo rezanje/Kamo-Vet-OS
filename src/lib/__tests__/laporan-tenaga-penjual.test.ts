@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  atribusiPenjual, barisPerOrang, rekapTenagaPenjual, saringAtribusi,
+  atribusiPenjual, barisPerOrang, rekapPerItem, rekapTenagaPenjual, saringAtribusi,
   type BarisPenjual,
 } from "../laporan-tenaga-penjual";
 import { alokasiPotonganDokumen, selisihKepalaDokumen } from "../alokasi-potongan";
@@ -138,5 +138,65 @@ describe("alokasi potongan kepala dokumen", () => {
   it("aman untuk dokumen tanpa nilai baris", () => {
     expect(alokasiPotonganDokumen([], 0)).toEqual([]);
     expect(alokasiPotonganDokumen([0, 0], 0)).toEqual([0, 0]);
+  });
+});
+
+describe("A2: rekap per tenaga penjual → per item", () => {
+  it("menjumlah qty per orang per item lintas dokumen dan menghitung transaksinya", () => {
+    const rows = [
+      baris({ id: "a", dokumenId: "d1", penjualId: "andi", kanal: "Petshop", jenis: "Barang", item: "Royal Canin 2kg", itemId: "rc", qty: 2, netto: 200 }),
+      baris({ id: "b", dokumenId: "d2", penjualId: "andi", kanal: "Petshop", jenis: "Barang", item: "Royal Canin 2kg", itemId: "rc", qty: 3, netto: 300 }),
+      baris({ id: "c", dokumenId: "d2", penjualId: "andi", kanal: "Petshop", jenis: "Barang", item: "Pasir", itemId: "pasir", qty: 1, netto: 50 }),
+    ];
+    const hasil = rekapPerItem(atribusiPenjual(rows));
+    expect(hasil.map((r) => [r.employeeId, r.item, r.qty, r.netto, r.transaksi])).toEqual([
+      ["andi", "Royal Canin 2kg", 5, 500, 2],
+      ["andi", "Pasir", 1, 50, 1],
+    ]);
+  });
+
+  it("retur mengurangi item asal (bukan jadi item baru) dan tidak menambah transaksi", () => {
+    const rows = [
+      baris({ id: "a", dokumenId: "d1", penjualId: "andi", item: "Obat X", itemId: "x", qty: 4, netto: 400 }),
+      baris({ id: "r", dokumenId: "d1", penjualId: "andi", item: "Retur · Obat X", namaItem: "Obat X", itemId: "x", qty: -1, netto: -100, bruto: -100, retur: true }),
+    ];
+    const [r] = rekapPerItem(atribusiPenjual(rows));
+    expect([r.item, r.qty, r.qtyRetur, r.netto, r.transaksi]).toEqual(["Obat X", 3, 1, 300, 1]);
+  });
+
+  it("baris berdua dihitung penuh untuk dokter dan non-dokter, dengan perannya", () => {
+    const rows = [baris({ id: "a", dokterId: "dok", stafId: "perawat", item: "Vaksin", qty: 1, netto: 150 })];
+    const hasil = rekapPerItem(atribusiPenjual(rows));
+    expect(hasil.map((r) => [r.employeeId, r.qty, r.netto, r.peran])).toEqual([
+      ["dok", 1, 150, ["Dokter"]],
+      ["perawat", 1, 150, ["Non-dokter"]],
+    ]);
+  });
+
+  it("memisah satuan berbeda dari item yang sama, dan mengelompokkan item tanpa master menurut nama", () => {
+    const rows = [
+      baris({ id: "a", penjualId: "andi", item: "Whiskas", itemId: "w", satuan: "1KG", qty: 1 }),
+      baris({ id: "b", penjualId: "andi", item: "Whiskas", itemId: "w", satuan: "1/2KG", qty: 2 }),
+      baris({ id: "c", penjualId: "andi", item: "Racikan Kapsul", itemId: null, qty: 1, jenis: "Racikan" }),
+      baris({ id: "d", penjualId: "andi", item: "racikan kapsul", itemId: null, qty: 2, jenis: "Racikan" }),
+    ];
+    const hasil = rekapPerItem(atribusiPenjual(rows));
+    expect(hasil.map((r) => [r.item, r.satuan, r.qty]).sort()).toEqual([
+      ["Racikan Kapsul", "", 3],
+      ["Whiskas", "1/2KG", 2],
+      ["Whiskas", "1KG", 1],
+    ].sort());
+  });
+
+  it("baris tanpa tenaga penjual dikumpulkan paling bawah, dan saringan karyawan tetap berlaku", () => {
+    const rows = [
+      baris({ id: "a", item: "Tanpa orang", qty: 1 }),
+      baris({ id: "b", penjualId: "andi", item: "Punya Andi", qty: 1 }),
+      baris({ id: "c", penjualId: "budi", item: "Punya Budi", qty: 1 }),
+    ];
+    const semua = rekapPerItem(atribusiPenjual(rows));
+    expect(semua.at(-1)?.employeeId).toBeNull();
+    const andi = rekapPerItem(saringAtribusi(atribusiPenjual(rows), { karyawanId: "andi" }));
+    expect(andi.map((r) => r.item)).toEqual(["Punya Andi"]);
   });
 });

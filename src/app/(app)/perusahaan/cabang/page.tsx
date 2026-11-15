@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { CabangEditor } from "@/components/CabangGudangEditor";
+import { bacaPetaPemakaian, kodeCabangTerkunci } from "@/lib/cabang-gudang-edit";
 import { assignUser, tambahCabang, unassignUser } from "./actions";
 
 const ROLE_COLOR: Record<string, string> = {
@@ -26,6 +28,13 @@ export default async function PerusahaanCabangPage({
     supabase.from("profiles").select("id, full_name, role").order("full_name"),
     supabase.from("user_branches").select("user_id, branch_id, role"),
   ]);
+
+  // Pemakaian cabang (transaksi/riwayat) menentukan apakah kode boleh diubah. Gagal baca = kode dikunci (aman).
+  let pemakaian: ReturnType<typeof bacaPetaPemakaian> = null;
+  try {
+    const hasil = await supabase.rpc("read_branch_usage");
+    if (!hasil.error) pemakaian = bacaPetaPemakaian(hasil.data);
+  } catch { pemakaian = null; }
 
   const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
   const byBranch = new Map<string, { user_id: string; role: string }[]>();
@@ -86,6 +95,12 @@ export default async function PerusahaanCabangPage({
                   {b.code} · {b.type}
                 </span>
               </div>
+
+              <CabangEditor
+                branch={{ id: b.id, code: b.code, name: b.name, type: b.type, is_active: b.is_active }}
+                kodeTerkunci={kodeCabangTerkunci(pemakaian, b.id)}
+                namaLain={(branches ?? []).filter((other) => other.id !== b.id).map((other) => other.name)}
+              />
 
               {assigned.length === 0 ? (
                 <div style={{ fontSize: 11, color: "var(--td)", padding: "10px 0" }}>Belum ada pengguna ditugaskan.</div>

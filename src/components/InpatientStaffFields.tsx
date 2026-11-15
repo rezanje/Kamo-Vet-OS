@@ -3,7 +3,7 @@ import type { ClinicalStaff, InpatientStaff } from '@/lib/clinical-staff';
 export function InpatientStaffFields({value,onChange,doctors,paramedics,disabled=false,legacyName,doctorName,paramedicName,lockVisit=false,savedKind,hideKind=false}:{
  value:InpatientStaff;onChange:(value:InpatientStaff)=>void;doctors:ClinicalStaff[];paramedics:ClinicalStaff[];disabled?:boolean;
  legacyName?:string|null;doctorName?:string|null;paramedicName?:string|null;
- /** H06: editing a saved row without Admin/Owner rights — visit kind/doctor cannot change. */
+ /** H06 + A5: editing a saved row without the "Koreksi visit rawat inap" permission (Owner always has it) — visit kind/doctor/paramedic cannot change. */
  lockVisit?:boolean;savedKind?:InpatientStaff['log_kind'];hideKind?:boolean;
 }) {
  // A saved visit keeps its kind and doctor; a saved monitoring note cannot become a visit.
@@ -20,8 +20,10 @@ export function InpatientStaffFields({value,onChange,doctors,paramedics,disabled
    <label className="flab">Dokter visit{value.log_kind==='doctor_visit'?' *':''}<select className="fi" name={visitLocked?undefined:'visit_doctor_id'} disabled={visitLocked} aria-label="Dokter visit" required={!visitLocked&&value.log_kind==='doctor_visit'} value={value.visit_doctor_id??''} onChange={event=>onChange({...value,visit_doctor_id:event.target.value||null})}>
     <option value="">— tanpa dokter visit —</option>{options(doctors,value.visit_doctor_id,doctorName).map(row=><option key={row.id} value={row.id}>{row.nama}</option>)}
    </select></label>
-   {visitLocked&&<small>Koreksi waktu/dokter visit oleh Admin/Owner.</small>}
-   <label className="flab">Paramedis yang membantu (opsional)<select className="fi" name="paramedic_id" aria-label="Paramedis yang membantu" value={value.paramedic_id??''} onChange={event=>onChange({...value,paramedic_id:event.target.value||null})}>
+   {visitLocked&&<small>Koreksi waktu/dokter/paramedis visit oleh Owner atau pemegang izin Koreksi visit rawat inap.</small>}
+   {/* A5: paramedis pada catatan visit dokter ikut terkunci (database juga menolak). Nilai tersimpan tetap dikirim apa adanya. */}
+   {visitLocked&&value.paramedic_id&&<input type="hidden" name="paramedic_id" value={value.paramedic_id}/>}
+   <label className="flab">Paramedis yang membantu (opsional)<select className="fi" name={visitLocked?undefined:'paramedic_id'} disabled={visitLocked} aria-label="Paramedis yang membantu" value={value.paramedic_id??''} onChange={event=>onChange({...value,paramedic_id:event.target.value||null})}>
     <option value="">— tanpa paramedis —</option>{options(paramedics,value.paramedic_id,paramedicName).map(row=><option key={row.id} value={row.id}>{row.nama}</option>)}
    </select></label>
   </>}

@@ -13,6 +13,7 @@ import { loadUnitOptions, resolveSubmittedUnit } from "@/lib/satuan";
 import { type BatchInput } from "@/lib/kadaluarsa-batch";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
+import { denganTampil } from "@/lib/report-gate";
 
 type ItemInput = {
   nama: string; qty: number; harga_beli: number; item_id?: string | null;
@@ -74,7 +75,8 @@ export async function buatPO(formData: FormData) {
 
   revalidatePath("/pembelian");
   const scope = String(formData.get("request_scope") ?? "po-create");
-  redirect(`/pembelian?success=1&request_done=${encodeURIComponent(requestKey)}&request_scope=${encodeURIComponent(scope)}`);
+  // A1 (meeting 12 Nov 2026): kembali ke daftar PO yang sudah ditampilkan (tampil=1).
+  redirect(denganTampil(`/pembelian?success=1&request_done=${encodeURIComponent(requestKey)}&request_scope=${encodeURIComponent(scope)}`));
 }
 
 async function revisePO(formData: FormData, action: "edit" | "void") {
@@ -174,12 +176,12 @@ export async function updatePOStatus(formData: FormData) {
     const revision = Number(formData.get("revision"));
     if (!requestKey || !Number.isSafeInteger(revision)) { revalidatePath("/pembelian"); return; }
     const { error } = await supabase.rpc("revise_purchase_order", { p_request_key: requestKey, p_purchase_order_id: id, p_expected_revision: revision, p_action: "void", p_header: {}, p_items: [], p_reason: "Pembatalan PO dari daftar" });
-    if (error) redirect(`/pembelian?error=${encodeURIComponent(error.message)}`);
+    if (error) redirect(denganTampil(`/pembelian?error=${encodeURIComponent(error.message)}`));
   } else if (newStatus === "Dipesan") {
     const { error } = await supabase.rpc("transition_purchase_order_status", { p_purchase_order_id: id, p_status: "Dipesan" });
-    if (error) redirect(`/pembelian?error=${encodeURIComponent(error.message)}`);
+    if (error) redirect(denganTampil(`/pembelian?error=${encodeURIComponent(error.message)}`));
   } else {
-    redirect(`/pembelian?error=${encodeURIComponent("Status PO tidak diizinkan.")}`);
+    redirect(denganTampil(`/pembelian?error=${encodeURIComponent("Status PO tidak diizinkan.")}`));
   }
 
   revalidatePath("/pembelian");
@@ -226,7 +228,7 @@ export async function terimaBarang(formData: FormData) {
   revalidatePath("/pembelian/penerimaan");
   revalidatePath("/keuangan/hutang");
   const pesan = `Barang ${data.no_po ?? id} diterima ${data.complete ? "lengkap" : "sebagian"} — dokumen ${data.no_terima}.`;
-  redirect(`/pembelian?success_terima=${encodeURIComponent(pesan)}&request_done=${encodeURIComponent(requestKey)}&request_scope=${encodeURIComponent(`receipt:${id}`)}`);
+  redirect(denganTampil(`/pembelian?success_terima=${encodeURIComponent(pesan)}&request_done=${encodeURIComponent(requestKey)}&request_scope=${encodeURIComponent(`receipt:${id}`)}`));
 }
 
 // Check a prior committed submission without replaying refreshed form quantities.
@@ -244,7 +246,7 @@ export async function recoverPurchaseSubmission(formData: FormData) {
     const { data, error } = await supabase.rpc("get_purchase_order_result", { p_request_key: requestKey });
     if (error || !data?.po_id) redirect(`/pembelian/baru?error=${encodeURIComponent(error?.message ?? "Belum ada PO tersimpan untuk draf ini.")}`);
     revalidatePath("/pembelian");
-    redirect(`/pembelian?success=1&request_done=${encodeURIComponent(requestKey)}&request_scope=po-create`);
+    redirect(denganTampil(`/pembelian?success=1&request_done=${encodeURIComponent(requestKey)}&request_scope=po-create`));
   }
   const { data, error } = await supabase.rpc("get_purchase_operation_result", {
     p_kind: kind, p_request_key: requestKey,
@@ -256,9 +258,9 @@ export async function recoverPurchaseSubmission(formData: FormData) {
   revalidatePath("/pembelian");
   revalidatePath("/pembelian/faktur");
   revalidatePath("/keuangan/aset");
-  if (kind === "receipt") redirect(`/pembelian?success_terima=${encodeURIComponent(`Penerimaan ${data.no_terima} sudah tersimpan.`)}&${confirmed}`);
-  if (kind === "invoice") redirect(`/pembelian/faktur?success=${encodeURIComponent(`Faktur ${data.no_faktur} sudah tersimpan.`)}&${confirmed}`);
-  redirect(`/keuangan/aset?success=pembelian&${confirmed}`);
+  if (kind === "receipt") redirect(denganTampil(`/pembelian?success_terima=${encodeURIComponent(`Penerimaan ${data.no_terima} sudah tersimpan.`)}&${confirmed}`));
+  if (kind === "invoice") redirect(denganTampil(`/pembelian/faktur?success=${encodeURIComponent(`Faktur ${data.no_faktur} sudah tersimpan.`)}&${confirmed}`));
+  redirect(`/keuangan/aset?success=pembelian&${confirmed}&tampil=1`);
 }
 
 // Final partial receipt is an explicit immutable business action, not a PO edit.
@@ -283,6 +285,23 @@ export async function closeRemainingPO(formData: FormData) {
   if (!proof || proof.po_id !== poId || !proof.closed_at || !Array.isArray(proof.lines) || !proof.lines.length) fail("Hasil tutup sisa belum terkonfirmasi. Periksa hasil terakhir sebelum mengulang.");
   for (const path of ["/pembelian", `/pembelian/${poId}`, `/pembelian/${poId}/terima`, "/pembelian/faktur/baru", "/pembelian/uang-muka", "/"]) revalidatePath(path);
   redirect(`/pembelian/${poId}?success=${encodeURIComponent("Sisa penerimaan ditutup. Faktur hanya untuk jumlah diterima yang belum difakturkan.")}${transactionDraftAck(formData)}`);
+}
+
+/** Buka kembali sisa PO yang sudah ditutup (jalan keluar sebelum membatalkan penerimaannya). Semua pemeriksaan ada di RPC. */
+export async function bukaKembaliSisaPO(formData: FormData) {
+  const supabase = await createClient();
+  const poId = String(formData.get("po_id") ?? "").trim();
+  const requestKey = String(formData.get("draft_key") ?? "").trim();
+  const reason = String(formData.get("alasan") ?? "").trim();
+  const back = `/pembelian/${encodeURIComponent(poId)}`;
+  const fail = (message: string): never => redirect(`${back}?error=${encodeURIComponent(message)}`);
+  if (!poId || !requestKey || requestKey.length > 120) fail("Identitas pembukaan belum siap. Muat ulang halaman.");
+  if (reason.length < 3 || reason.length > 1000) fail("Alasan wajib diisi (3 sampai 1.000 karakter).");
+  const { data, error } = await supabase.rpc("reopen_purchase_order_remainder", { p_po_id: poId, p_request_key: requestKey, p_reason: reason });
+  if (error) fail(error.message);
+  if (!data || data.po_id !== poId || data.reopened !== true) throw new Error("Pembukaan belum terkonfirmasi. Muat ulang halaman sebelum mengulang.");
+  for (const path of ["/pembelian", back, `${back}/terima`, "/pembelian/penerimaan", "/pembelian/faktur/baru", "/pembelian/uang-muka", "/"]) revalidatePath(path);
+  redirect(`${back}?success=${encodeURIComponent("Sisa PO dibuka kembali. Penerimaan bisa dibatalkan atau barang yang tersisa diterima lagi.")}${transactionDraftAck(formData)}`);
 }
 
 export async function ubahHargaPO(formData: FormData) {

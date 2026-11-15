@@ -4,12 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LampiranPicker } from "@/components/LampiranPicker";
-import { getAccountBalances } from "@/lib/ledger";
 import { hariIniWIB } from "@/lib/tanggal";
 import { akunLawanTerlarang, type JenisKas } from "@/lib/kas-entry";
 import { simpanKasEntry } from "./actions";
 import { KasCorrectionForm, KasVoidForm } from "./KasCorrectionForm";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
+import { PilihAkunCari } from "@/components/PilihAkunCari";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -49,10 +49,11 @@ export async function KasEntryScreen({
   const boleh = await bolehTransaksiKas();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
-  const isOwner = profile?.role === "OWNER" && profile.is_active === true;
+  // Edit/koreksi: OWNER/ADMIN/FINANCE aktif (keputusan 12 Nov 2026).
+  const bolehEdit = profile?.is_active === true && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
   const keluar = jenis === "Keluar";
 
-  const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }, saldoAkun] = await Promise.all([
+  const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }] = await Promise.all([
     supabase.from("cash_accounts").select("id, nama, coa_code").eq("is_active", true).order("nama"),
     supabase.from("coa_accounts").select("code, name, type").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
@@ -61,7 +62,6 @@ export async function KasEntryScreen({
       .select(CASH_SELECT)
       .eq("jenis", jenis)
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(50),
-    getAccountBalances(supabase),
   ]);
 
   const rekening = (rekData ?? []) as { id: string; nama: string; coa_code: string }[];
@@ -74,7 +74,6 @@ export async function KasEntryScreen({
     if (selected.error) throw new Error("Bukti kas terpilih belum dapat dibaca.");
     if (selected.data) cashRows = [selected.data as unknown as Baris, ...cashRows];
   }
-  const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
 
   // Pengeluaran kasir cabang tercatat di tabel beban, bukan di kas entries. Sejak
   // menu "Pencatatan Beban" dihapus (menu kembar, keputusan meeting 14 Agustus),
@@ -215,19 +214,14 @@ export async function KasEntryScreen({
               <label className="flab">{keluar ? "Dibayar dari rekening *" : "Masuk ke rekening *"}</label>
               <select className="fi" name="account_id" defaultValue="" required>
                 <option value="">— pilih —</option>
-                {rekening.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.nama} — {rp(saldoPerKode.get(r.coa_code) ?? 0)}
-                  </option>
-                ))}
+                {/* Saldo sengaja tidak ditempel di pilihan rekening (permintaan klinik, 12 Nov). */}
+                {rekening.map((r) => <option key={r.id} value={r.id}>{r.nama}</option>)}
               </select>
             </div>
             <div>
               <label className="flab">{keluar ? "Untuk akun (beban) *" : "Dari akun *"}</label>
-              <select className="fi" name="lawan_code" defaultValue="" required>
-                <option value="">— pilih —</option>
-                {coa.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
-              </select>
+              {/* Bisa diketik/dicari (permintaan klinik 12 Nov) — daftar akun terlalu panjang untuk di-scroll. */}
+              <PilihAkunCari name="lawan_code" akun={coa} required ariaLabel={keluar ? "Untuk akun (beban)" : "Dari akun"} />
             </div>
           </div>
           <div className="frow" style={{ marginTop: 10 }}>
@@ -327,7 +321,8 @@ export async function KasEntryScreen({
                     <td>
                       {/* Pengeluaran kasir dibatalkan dari layar kasirnya sendiri — di sini
                           cuma ditampilkan, supaya satu dokumen tidak punya dua tombol batal. */}
-                      {!t.dibatalkan && t.asal === "kas" && (isOwner ? <KasCorrectionForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} tanggal={t.tanggal} accountId={t.accountId} lawanCode={t.lawanCode} jumlah={t.jumlah} keterangan={t.keterangan} rekening={rekening} coa={coa} /> : <KasVoidForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} />)}
+                      {t.asal === "kas" && UUID.test(t.id) && <div><Link href={`/kas-bank/kas-${keluar ? "keluar" : "masuk"}/lampiran/${t.id}`} style={{ color: "#2563eb", fontSize: 10.5 }}>Lampiran</Link></div>}
+                      {!t.dibatalkan && t.asal === "kas" && (bolehEdit ? <KasCorrectionForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} tanggal={t.tanggal} accountId={t.accountId} lawanCode={t.lawanCode} jumlah={t.jumlah} keterangan={t.keterangan} rekening={rekening} coa={coa} /> : <KasVoidForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} />)}
                     </td>
                   )}
                 </tr>

@@ -27,10 +27,12 @@ import { PembayaranForm } from "./PembayaranForm";
 import { InpatientPaymentPage } from "./InpatientPaymentPage";
 import { LunasiRombonganForm } from "./LunasiRombonganForm";
 import { PelunasanTagihanForm } from "./PelunasanTagihanForm";
+import { TanggalEfektifBanner } from "./batal-penerimaan/TanggalEfektifBanner";
 import { sisaTagihan } from "@/lib/pelunasan-klinik";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
+import { adaPenerimaan, bacaBolehBatalPenerimaan, putuskanBolehBatalPenerimaan } from "@/lib/batal-penerimaan-akses";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
 import { bacaRombongan } from "@/lib/rombongan-server";
@@ -39,6 +41,7 @@ import { UlasanBadge, type StatusUlasan } from "@/components/UlasanBadge";
 import { berikutnyaBelumSelesai, labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 import { mulai } from "@/lib/u07-waktu";
 import { readCompleteList } from "@/lib/checked-list";
+import { manualDiscountAllowed } from "@/lib/manual-discount";
 import { muatBagianUangMuka, labelMetodeInvoice } from "@/lib/metode-uang-muka";
 
 type SavedPrescriptionSource = Omit<PackagePrintSource, "deskripsi"> & {
@@ -85,6 +88,7 @@ export default async function PembayaranPage({
   // ditunggu & diperiksa di posisi lamanya (helper `mulai`), jadi urutan validasi,
   // notFound, dan pesan galat tidak berubah.
   const userP = mulai(supabase.auth.getUser());
+  const bolehDiskonP = mulai(manualDiscountAllowed(supabase));
   const visitP = mulai(supabase
     .from("visits")
     .select("id, status, poli, dokter, created_at, archived_at, archive_reason, branch_id, customer_id, doctor_id, service_provider_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
@@ -257,7 +261,7 @@ export default async function PembayaranPage({
       };
     }))
     : null;
-  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult] = await Promise.all([
+  const [demoPolicy, demoStaffResult, demoSnapshotResult, koreksiBolehResult, batalDibaca] = await Promise.all([
     !invoice ? readDemoPolicy(supabase) : Promise.resolve(null),
     !invoice ? supabase.rpc("clinic_demo_care_staff", {p_visit_id:visitId}) : Promise.resolve({data:[],error:null}),
     invoice ? supabase.from("clinic_demo_invoice_snapshots").select("fee_bearer,fee_amount,payments,incentive_pool").eq("invoice_id",invoice.id).maybeSingle() : Promise.resolve({data:null,error:null}),
@@ -267,6 +271,8 @@ export default async function PembayaranPage({
     // cabang, DEMO, tagihan batal). Tebakan lama di layar ini menolak keadaan yang
     // justru diterima RPC-nya, sehingga koreksi sesudah pembatalan kwitansi mentok.
     invoice ? supabase.rpc("clinic_invoice_correction_eligible", {p_invoice_id:invoice.id}) : Promise.resolve({data:false,error:null}),
+    // Batalkan penerimaan: dibaca bersama bacaan lain (bukan rantai baru); peran dipakai belakangan hanya untuk jatuh-ke-Owner bila gagal baca.
+    invoice ? bacaBolehBatalPenerimaan(supabase) : Promise.resolve(null),
   ]);
   const cartVersion = versiKeranjang(!invoice, cartVersionP ? await cartVersionP : {data:null,error:null});
   if (demoStaffResult.error || demoSnapshotResult.error) throw new Error("Rincian aturan DEMO gagal dibaca. Muat ulang sebelum membayar.");
@@ -347,8 +353,13 @@ export default async function PembayaranPage({
   // Batalkan + terbitkan ulang adalah pekerjaan keuangan (ditegakkan di database);
   // layar tidak menawarkannya ke peran lain supaya tidak menabrak penolakan.
   const bolehTerbitUlang = bolehSiklusTagihan((profilKasir as { role?: string } | null)?.role);
+  // Batalkan penerimaan (Owner / peran berizin): hanya untuk tagihan yang punya uang diterima; database memeriksa ulang.
+  const bolehBatalTerima = !!invoice && !invoice.correction_pending && adaPenerimaan(invoice, paidAmount)
+    && putuskanBolehBatalPenerimaan(batalDibaca, (profilKasir as { role?: string } | null)?.role);
 
   const lunas = invoice?.paid_status === "Lunas";
+  // Pemberitahuan tanggal efektif (Owner memilih tanggal saat Batalkan penerimaan): diselesaikan di sini supaya halaman tetap satu render; gagal baca = tidak tampil.
+  const bannerTanggalEfektif = invoice && !lunas ? await TanggalEfektifBanner({ visitId: visit.id, tagihan: [{ id: invoice.id, no: invoice.invoice_no ?? null }] }) : null;
   // Pelunasan DP/Belum Lunas rawat jalan oleh kasir klinik: invoice sama, laci shift sendiri.
   const sisaPelunasan = invoice ? sisaTagihan(Number(invoice.total), paidAmount) : 0;
   const pelunasanTerbuka = !inpat && !!invoice && !lunas && !invoice.correction_pending && sisaPelunasan > 0;
@@ -453,6 +464,7 @@ export default async function PembayaranPage({
     if (!shift) redirect(`/klinik/shift?error=${encodeURIComponent("Mulai shift klinik dulu sebelum memproses pembayaran")}`);
   }
 
+  const bolehDiskon = await bolehDiskonP;
   return (
     <>
       <div style={{ marginBottom: 4 }}>
@@ -666,12 +678,14 @@ export default async function PembayaranPage({
           <SubmitButton className="btn-acc" pendingText="Memproses…">Masukkan Rawat Inap (tanpa pembayaran ulang)</SubmitButton>
         </TransactionForm>
       </div>}
+      {bannerTanggalEfektif}
       {bolehTagih && pelunasanTerbuka && invoice && (
         <PelunasanTagihanForm key={`${invoice.id}:${sisaPelunasan}`} visitId={visit.id} invoiceId={invoice.id}
           invoiceNo={invoice.invoice_no ?? ""} total={Number(invoice.total)} diterima={paidAmount} sisa={sisaPelunasan} requestKey={randomUUID()} />
       )}
       {!bolehTagih ? null : invoice && canEdit ? (
         <PembayaranForm
+          bolehDiskon={bolehDiskon}
           serverError={error}
           key={`${draftUser?.id ?? ""}:${visit.id}:${invoice?.id ?? "new"}:${invoiceRequestKey}`}
           visitId={visit.id}
@@ -781,6 +795,13 @@ export default async function PembayaranPage({
             </div>
           )}
 
+          {/* Batalkan penerimaan (gaya Accurate): uang keluar dari kas/bank, tagihan kembali Belum Lunas, lalu diubah dan diterima lagi. */}
+          {bolehBatalTerima && invoice && (
+            <div style={{ marginTop: 8 }}>
+              <Link href={`/klinik/pembayaran/${visit.id}/batal-penerimaan?invoice_id=${invoice.id}`} className="btn-def"><i className="ti ti-receipt-off" /> Batalkan penerimaan</Link>
+            </div>
+          )}
+
           {/* J03: refund per baris untuk invoice lunas. */}
           {refundData && (
             <ClinicRefundPanel data={refundData} visitId={visit.id} userId={draftUser?.id}
@@ -815,6 +836,7 @@ export default async function PembayaranPage({
         </>
       ) : (
         <PembayaranForm
+          bolehDiskon={bolehDiskon}
           serverError={error}
           key={`${draftUser?.id ?? ""}:${visit.id}:new:${invoiceRequestKey}`}
           visitId={visit.id}

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Decimal from "decimal.js";
 import { bolehBukaPath } from "./akses";
+import { aturanEfektif, bacaTambahanAkses } from "./akses-akun";
 import { validReportDate } from "./hpp-reports";
 import { readReportRows, ReportAccessError, ReportInputError } from "./hpp-reports-server";
 import { hariIniWIB } from "./tanggal";
@@ -34,13 +35,15 @@ export function opnameFilters(params: OpnameReportParams): OpnameFilters {
 async function reportActor(client: SupabaseClient) {
   const { data: { user }, error } = await client.auth.getUser();
   if (error || !user) throw new ReportAccessError("Sesi tidak ditemukan", 401);
+  // E3 (meeting 12 Nov 2026): akses khusus akun + sub-menu ikut dibaca bersamaan; hak buka = akses efektif akun.
+  const tambahanP = bacaTambahanAkses(client);
   const { data: profile, error: profileError } = await client.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
   if (profileError || !profile || profile.is_active !== true || !["OWNER", "FINANCE"].includes(profile.role)) throw new ReportAccessError("Laporan harga opname hanya untuk OWNER dan FINANCE aktif", 403);
   const rules = await readReportRows<{ role: string; module_id: string }>(async (from, to) => {
     const r = await client.from("role_modules").select("role,module_id", { count: "exact" }).eq("role", profile.role).order("module_id").range(from, to);
     return { data: r.data, error: r.error, count: r.count };
   }, row => `${row.role}:${row.module_id}`);
-  if (!bolehBukaPath(profile.role, OPNAME_REPORT_PATH, rules)) throw new ReportAccessError("Akses modul laporan ditolak", 403);
+  if (!bolehBukaPath(profile.role, OPNAME_REPORT_PATH, aturanEfektif(profile.role, { rules, ...(await tambahanP) }))) throw new ReportAccessError("Akses modul laporan ditolak", 403);
 }
 
 const price = (value: unknown, label: string): string => {

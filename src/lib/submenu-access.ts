@@ -148,6 +148,9 @@ export const SUBMENU_ENTRIES: readonly SubmenuEntry[] = [
   e("pajak", "rekap-ppn", ["/keuangan/ppn"]),
   // ── Daftar Laporan ──
   e("laporan", "operasional-penjualan", ["/laporan/operasional-penjualan"]),
+  e("laporan", "stok-slow-moving", ["/laporan/stok-slow-moving"]),
+  e("laporan", "stok-harus-order", ["/laporan/stok-harus-order"]),
+  e("laporan", "jual-bawah-modal", ["/laporan/jual-bawah-modal"]),
   e("laporan", "pelanggan-teratas", ["/laporan/pelanggan-teratas"]),
   e("laporan", "jadwal-anabul", ["/laporan/jadwal-anabul"]),
   e("laporan", "absensi", ["/laporan/absensi"]),
@@ -164,6 +167,8 @@ export const SUBMENU_ENTRIES: readonly SubmenuEntry[] = [
   e("laporan", "retensi", ["/laporan/retensi"]),
   e("laporan", "promo", ["/laporan/promo"]),
   e("laporan", "rekap-klinik", ["/laporan/rekap-klinik"]),
+  // A4: baris katalognya ditambah migrasi 20261113031150_a4_submenu_laporan_visit.sql.
+  e("laporan", "visit", ["/laporan/visit"]),
   e("laporan", "member", ["/laporan/member"]),
   e("laporan", "kpi", ["/laporan/kpi"]),
   e("laporan", "hasil-opname", ["/laporan/hasil-opname"], "Hasil opname (laporan)"),

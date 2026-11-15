@@ -10,6 +10,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   },
 }) }));
 vi.mock("@/lib/report-query", () => ({ completeReportQuery: async () => {
+  fixture.calls++;
   // Panggilan ke-6..8 adalah baca kampanye; simulasi tabel/kolom belum ada.
   if (fixture.failCampaign && fixture.responses.length === 0) throw Object.assign(new Error("kolom tidak ada"), { code: "42703" });
   return fixture.responses.shift();
@@ -37,7 +38,7 @@ it("reopens a monthly named-promo view without changing overall transaction tota
     { data: [] },
     { data: [] }, { data: [] }, { data: [] }, // kampanye: kode, struk, invoice
   ];
-  const page = await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", promo_id: alpha }) });
+  const page = await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", promo_id: alpha, tampil: "1" }) });
   const html = renderToStaticMarkup(page);
   expect(html).toContain(`name="promo_id"`);
   expect(html).toContain(`value="${alpha}" selected=""`);
@@ -73,7 +74,7 @@ const kampanyeFixture = () => {
     { data: [{ id: "i1", total: 200, subtotal: 250, discount: 50, created_at: "2026-10-12T08:00:00Z", voided_at: null, campaign_code: "KAMOGAJIAN", visits: { branch_id: "b2", branches: { name: "Depok" } } }] },
   ];
 };
-const sp = (over: Record<string, string> = {}) => Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", ...over });
+const sp = (over: Record<string, string> = {}) => Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", tampil: "1", ...over });
 const bagianKampanye = (html: string) => html.split("04 · KAMPANYE / KODE KAMPANYE")[1] ?? "";
 
 it("menampilkan tabel kampanye: kode, tujuan, status, pemakaian POS/klinik, sisa kuota, termasuk kode tanpa pemakaian", async () => {
@@ -121,4 +122,12 @@ it("data kampanye belum tersedia di database: sisanya tetap tampil dan bagian ka
   fixture.failCampaign = false;
   expect(html).toContain("01 · VOUCHER");
   expect(bagianKampanye(html)).toContain("belum dapat dibaca");
+});
+
+it("A1: tanpa tampil=1 hanya daftar promo (isian filter) yang dibaca, laporan berat tidak ditarik", async () => {
+  fixture.calls = 0;
+  fixture.responses = [{ data: [{ id: "p1", name: "Vaksin Kitten", promo_type: "barang", valid_until: null }] }];
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31" }) }));
+  expect(fixture.calls).toBe(1);
+  expect(html).toContain("Vaksin Kitten");
 });

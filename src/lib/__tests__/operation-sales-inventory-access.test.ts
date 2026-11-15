@@ -44,7 +44,7 @@ describe("dashboard inventory value entry", () => {
     fixture.role = role;
     fixture.active = active;
     vi.stubEnv("OPERATION_SALES_ROLLOUT_ROLES", "FINANCE,DOCTOR,STAFF");
-    const page = await OperationSalesPage({ searchParams: Promise.resolve({}) });
+    const page = await OperationSalesPage({ searchParams: Promise.resolve({ tampil: "1" }) });
     const html = renderToStaticMarkup(page);
     expect(html.includes('href="/laporan/nilai-persediaan"')).toBe(allowed);
     expect(html).toContain("Coverage");

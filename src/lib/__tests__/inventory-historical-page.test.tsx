@@ -24,7 +24,7 @@ it("renders saved-event details and reconciles branch subtotal to complete detai
       { id: "l2", account_id: "a1301", debit: "5", credit: "0", journal_entries: { tanggal: "2026-10-22", branch_id: null } },
     ],
   } }).client;
-  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22", cabang: ["b1"] }) }));
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", tanggal: "2026-10-22", cabang: ["b1"] }) }));
   expect(html).toContain("Cabang dipilih: b1");
   expect(html).toContain("Konfigurasi tersimpan: Valuasi as-of");
   expect(html).toContain("Rp 20,125");
@@ -34,13 +34,13 @@ it("renders saved-event details and reconciles branch subtotal to complete detai
   expect(html).toContain("Rp 0,125");
   expect(html).toContain("belum membuktikan rekonsiliasi historis cabang");
   expect(html).toContain("akun=170001&amp;sampai=2026-10-22&amp;cabang=b1");
-  const allHtml = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22" }) }));
+  const allHtml = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", tanggal: "2026-10-22" }) }));
   expect(allHtml).toContain("Jurnal 170001 tanpa cabang: Rp 5");
 });
 
 it("explains unavailable FIFO history without presenting a fabricated total", async () => {
   fixture.client = clientFixture({ tables: { inventory_costing_settings: [{ id: true, method: "fifo", activated_at: null }] } }).client;
-  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22" }) }));
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", tanggal: "2026-10-22" }) }));
   expect(html).toContain("belum tersedia");
   expect(html).not.toContain("Total cabang terpilih");
 });
@@ -65,7 +65,7 @@ it("keeps the cutoff and every selected branch in paging and per-branch ledger l
       { id: "l4", account_id: "a1301", debit: "999", credit: "0", journal_entries: { tanggal: "2026-10-23", branch_id: "b1" } },
     ],
   } }).client;
-  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22", cabang: ["b1", "b2"], halaman: "2" }) }));
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", tanggal: "2026-10-22", cabang: ["b1", "b2"], halaman: "2" }) }));
   expect(html).toContain("Halaman 2 dari 2 · 120 baris");
   expect(html).toContain("tanggal=2026-10-22&amp;halaman=1&amp;cabang=b1&amp;cabang=b2");
   expect(html).toContain("akun=170001&amp;sampai=2026-10-22&amp;cabang=b1");
@@ -90,7 +90,7 @@ it("R04: shows a minus position valued at the last known average with a visible 
     coa_accounts: [{ id: "a1301", code: "170001" }],
     journal_lines: [],
   } }).client;
-  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22", cabang: ["b1"] }) }));
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", tanggal: "2026-10-22", cabang: ["b1"] }) }));
   expect(html).toContain("Rp -30 · taksiran HPP terakhir Rp 10");
   expect(html).toContain("Nilai minus taksiran");
   // Summary column is a rupiah amount (per branch and total), not a bare row count.
@@ -108,10 +108,25 @@ it("M01: shows today's FIFO layer value against GL 1301 per branch without a bal
     coa_accounts: [{ id: "a1301", code: "170001" }],
     journal_lines: [{ id: "g1", account_id: "a1301", debit: "100", credit: "0", journal_entries: { tanggal: hariIniWIB(), branch_id: "b1" } }],
   } }).client;
-  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: hariIniWIB(), cabang: "b1" }) }));
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tampil: "1", tanggal: hariIniWIB(), cabang: "b1" }) }));
   expect(html).toContain("POSISI FIFO HARI INI vs GL 170001");
   expect(html).toContain("Rp 150");
   expect(html).toContain("Rp 100");
   expect(html).toContain("Rp 50");
   expect(html).toContain("tidak ada jurnal penyeimbang");
+});
+
+it("A1 (meeting 12 Nov 2026): tanpa tampil=1 hanya cabang yang diizinkan dibaca, event & jurnal tidak", async () => {
+  const { client, records } = clientFixture({ tables: { inventory_costing_settings: [{ id: true, method: "moving_average", activated_at: "2026-10-22T03:00:00Z" }] } });
+  fixture.client = client;
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ tanggal: "2026-10-22", cabang: ["b1"] }) }));
+  expect(html).toContain("Laporan belum ditampilkan");
+  expect(html).toContain('name="tampil"');
+  expect(html).toContain("Cabang dipilih: b1");
+  expect(records.some(row => ["inventory_cost_events", "journal_lines", "stock_layers", "inventory_costing_settings"].includes(row.table))).toBe(false);
+});
+
+it("A1: tanpa izin tetap dialihkan walau belum Tampilkan", async () => {
+  fixture.client = clientFixture({ role: "STAFF" }).client;
+  await expect(Page({ searchParams: Promise.resolve({}) })).rejects.toThrow("REDIRECT:/laporan");
 });

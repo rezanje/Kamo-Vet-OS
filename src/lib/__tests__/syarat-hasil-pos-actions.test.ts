@@ -9,6 +9,8 @@ const state = vi.hoisted(() => ({
   insertError: null as null | { table: string; message: string }, stock: true, campaign: null as null | Record<string, unknown>,
 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
+// Skenario di file ini dijalankan sebagai Owner/Admin: izin diskon manual (12 Nov 2026) diuji terpisah di manual-discount.test.ts.
+vi.mock("@/lib/manual-discount", async (original) => ({ ...(await original<typeof import("@/lib/manual-discount")>()), manualDiscountAllowed: async () => true }));
 vi.mock("@/lib/jurnal-guard", () => ({ cekPeriode: async () => null }));
 vi.mock("@/lib/kode-kampanye", async original => ({ ...await original<typeof import("@/lib/kode-kampanye")>(), bacaKodeKampanye: async () => state.campaign }));
 vi.mock("@/lib/penjual", () => ({ penjualValid: async () => true }));

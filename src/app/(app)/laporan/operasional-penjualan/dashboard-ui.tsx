@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { DashboardBlock } from "@/lib/operation-sales-server";
+import { denganTampil } from "@/lib/report-gate";
 
 export function rupiah(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : `Rp ${Math.round(value).toLocaleString("id-ID")}`;
@@ -16,10 +17,11 @@ export function persen(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : `${angka(value, 1)}%`;
 }
 
+/** Drill-down ke laporan rinci: periode & cabang sudah dipilih, jadi langsung tampil (A1). */
 export function detailHref(path: string, filter: { from: string; to: string; branchName?: string }): string {
   const params = new URLSearchParams({ dari: filter.from, sampai: filter.to });
   if (filter.branchName) params.set("cabang", filter.branchName);
-  return `${path}?${params.toString()}`;
+  return denganTampil(`${path}?${params.toString()}`);
 }
 
 export function KpiCard({ label, value, note, href, tone }: {

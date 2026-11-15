@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { TerimaForm, type BarisPO } from "./TerimaForm";
+import { loadPurchaseBackdateAccess } from "@/lib/purchase-backdate";
 
 // ponytail: halaman terima barang — qty datang bisa ≠ qty PO (kurang/lebih kirim).
 
@@ -39,7 +40,7 @@ export default async function TerimaBarangPage({
 
   if (!po) notFound();
   if (po.status === "Diterima" || po.status === "Batal") {
-    redirect("/pembelian?error=" + encodeURIComponent(`PO ini berstatus ${po.status}.`) + `&recover_receipt=${encodeURIComponent(id)}`);
+    redirect("/pembelian?error=" + encodeURIComponent(`PO ini berstatus ${po.status}.`) + `&recover_receipt=${encodeURIComponent(id)}&tampil=1`);
   }
 
   // Yang ditawarkan untuk diterima adalah SISA yang belum datang, bukan qty PO
@@ -57,6 +58,14 @@ export default async function TerimaBarangPage({
       trackExpiry: Boolean(one(r.items)?.track_expiry),
     }))
     .filter((r) => r.qty > 0);
+
+  // Terima ulang (PO pernah dibatalkan penerimaannya) = penerimaan pengganti: tanggal efektif mulai tanggal penerimaan yang dibatalkan.
+  const [{ data: voided }, { data: profile }] = await Promise.all([
+    supabase.from("goods_receipts").select("tanggal").eq("po_id", id).not("voided_at", "is", null).order("tanggal", { ascending: true }).limit(1),
+    supabase.from("profiles").select("role,is_active").eq("id", userId).maybeSingle(),
+  ]);
+  const replaceFloor = (voided?.[0]?.tanggal as string | undefined) ?? null;
+  const canBackdate = replaceFloor ? await loadPurchaseBackdateAccess(supabase, profile) : false;
 
   const supplier = one(po.suppliers as Rel<{ nama: string }>)?.nama ?? "Tanpa supplier";
   const gudang = one(po.warehouses as Rel<{ name: string }>)?.name ?? "—";
@@ -85,6 +94,8 @@ export default async function TerimaBarangPage({
         gudang={gudang}
         totalPO={Number(po.total) || 0}
         rows={rows}
+        replaceFloor={replaceFloor}
+        canBackdate={canBackdate}
       />
     </>
   );

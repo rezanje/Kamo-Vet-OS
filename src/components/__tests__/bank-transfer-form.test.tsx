@@ -30,13 +30,16 @@ it("isolates mounted account changes and correction revisions",async()=>{
  await act(async()=>root.render(<TransferForm userId="owner" mode="edit" header={{...base,revision:1,jumlah:200}}/>));
  expect(host.querySelector<HTMLInputElement>('input[name="jumlah"]')!.value).toBe("200");
 });
-it("explains the two ledger sides, keeps source date immutable and offers read-only recovery",async()=>{
+it("explains the two ledger sides, lets the correction date change (branch stays) and offers read-only recovery",async()=>{
  const header={id:"transfer",revision:0,tanggal:"2026-10-20",from_account_id:"cash",to_account_id:"bank",jumlah:1000,biaya_admin:0,keterangan:null};
  await act(async()=>root.render(<TransferForm userId="owner" mode="edit" header={header} rekening={[{id:"cash",label:"Cash"},{id:"bank",label:"Bank"}]}/>));
  expect(host.textContent).toContain("catatan asli");
  expect(host.textContent).toContain("rekening asal dan tujuan");
  expect(host.textContent).toContain("bukan transfer uang");
- expect(host.querySelector('input[name="tanggal"]')?.getAttribute("type")).toBe("hidden");
+ // 12 Nov 2026: tanggal koreksi boleh diganti; cabang tetap mengikuti catatan asli.
+ const date=host.querySelector<HTMLInputElement>('input[name="tanggal"]');
+ expect(date?.getAttribute("type")).toBe("date"); expect(date?.value).toBe("2026-10-20");
+ expect(host.querySelector('input[name="branch_id"]')?.getAttribute("type")).toBe("hidden");
  expect(host.querySelector<HTMLButtonElement>('button[value="periksa"]')?.formNoValidate).toBe(true);
 });
 it("serializes a double submit while the first result is uncertain",async()=>{

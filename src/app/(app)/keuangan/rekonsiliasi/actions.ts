@@ -5,8 +5,12 @@ import { assertRole } from "@/lib/master-guard";
 import { roleActionRefusal, roleRpcFailure } from "@/lib/role-action-access";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { hariIniWIB } from "@/lib/tanggal";
+import { PARAM_TAMPIL } from "@/lib/report-gate";
 
 const BACK = "/keuangan/rekonsiliasi";
+// A1 (meeting 12 Nov 2026): kembali ke daftar rekonsiliasi yang sudah tampil. Ditaruh di
+// akhir supaya pesan yang sudah di-encode tidak berubah. Halaman detail tidak digerbang.
+const TAMPIL = `&${PARAM_TAMPIL}=1`;
 async function simpan(formData: FormData, action: "create" | "edit" | "void") {
   const supabase = await assertRole(BACK, "rekonsiliasi bank", action === "create" ? ["OWNER", "ADMIN", "FINANCE"] : ["OWNER"]);
   const key = String(formData.get("draft_key") ?? "").trim();
@@ -15,7 +19,7 @@ async function simpan(formData: FormData, action: "create" | "edit" | "void") {
   const revision = Number(revisionText);
   const reason = String(formData.get("reason") ?? "").trim();
   const back = action === "create" || !/^[0-9a-f-]{36}$/i.test(id) ? BACK : `${BACK}/${id}`;
-  const fail = (message: string): never => redirect(`${back}?error=${encodeURIComponent(message)}`);
+  const fail = (message: string): never => redirect(`${back}?error=${encodeURIComponent(message)}${back === BACK ? TAMPIL : ""}`);
   const refusal = await roleActionRefusal(supabase, `bank.bank_reconciliation.${action}`);
   if (refusal) fail(refusal.message);
   if (!key || key.length > 120) fail("Identitas simpan belum tersedia. Muat ulang formulir.");
@@ -48,11 +52,11 @@ export async function batalkanRekonsiliasi(formData: FormData) { return simpan(f
 export async function pulihkanRekonsiliasi(formData: FormData) {
   const supabase = await assertRole(BACK, "rekonsiliasi bank", ["OWNER", "ADMIN", "FINANCE"]);
   const refusal = await roleActionRefusal(supabase, "bank.bank_reconciliation.recover");
-  if (refusal) redirect(`${BACK}?error=${encodeURIComponent(refusal.message)}`);
+  if (refusal) redirect(`${BACK}?error=${encodeURIComponent(refusal.message)}${TAMPIL}`);
   const key = String(formData.get("draft_key") ?? "");
   const scope = String(formData.get("draft_scope") ?? "");
-  if (!key || key.length > 120 || !/^bank-reconciliation-(create|(?:edit|void)-[0-9a-f-]{36}-\d+)$/i.test(scope)) redirect(`${BACK}?error=${encodeURIComponent("Identitas pemeriksaan tidak valid.")}`);
+  if (!key || key.length > 120 || !/^bank-reconciliation-(create|(?:edit|void)-[0-9a-f-]{36}-\d+)$/i.test(scope)) redirect(`${BACK}?error=${encodeURIComponent("Identitas pemeriksaan tidak valid.")}${TAMPIL}`);
   const { data, error } = await supabase.rpc("get_bank_reconciliation_result", { p_request_key: key });
-  if (error || !data?.reconciliation_id) redirect(`${BACK}?error=${encodeURIComponent((error && roleRpcFailure(error)?.message) || error?.message || "Hasil belum tercatat. Isian lama tetap disimpan; periksa formulir sebelum mengirim ulang.")}`);
+  if (error || !data?.reconciliation_id) redirect(`${BACK}?error=${encodeURIComponent((error && roleRpcFailure(error)?.message) || error?.message || "Hasil belum tercatat. Isian lama tetap disimpan; periksa formulir sebelum mengirim ulang.")}${TAMPIL}`);
   redirect(`${BACK}/${data.reconciliation_id}?success=recovered${transactionDraftAck(formData)}`);
 }

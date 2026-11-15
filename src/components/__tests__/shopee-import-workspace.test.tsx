@@ -20,14 +20,19 @@ const CATALOG: CatalogItem[] = [
   { id: DIG, code: "MRV-DIG", name: "Mr.Vet Digestion Care T1 1kg", sell_price: 80000, stock: 5 },
   { id: HAIR, code: "MRV-HAIR", name: "Mr.Vet Hair & Skin Care T2 1kg", sell_price: 80000, stock: 5 },
 ];
-const WAREHOUSES = [{ id: WH_PUSAT, name: "Online Pusat", branch_name: "Kamo Pusat" }, { id: WH_PANDU, name: "Online Panduraya", branch_name: "Kamo Panduraya" }];
+// E4: workspace menerima CABANG (masing-masing dengan gudang utamanya), bukan daftar gudang.
+const BR_PUSAT = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", BR_PANDU = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2";
+const CABANG = [
+  { id: BR_PUSAT, name: "Kamo Pusat", gudang: { id: WH_PUSAT, name: "WH PUSAT", branch_id: BR_PUSAT, branch_name: "Kamo Pusat", type: "RETAIL" } },
+  { id: BR_PANDU, name: "Kamo Panduraya", gudang: { id: WH_PANDU, name: "WH PDRY", branch_id: BR_PANDU, branch_name: "Kamo Panduraya", type: "RETAIL" } },
+];
 
 async function mount(props: Partial<React.ComponentProps<typeof ShopeeImportWorkspace>> = {}) {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const c = document.createElement("div");
   document.body.append(c);
   const root = createRoot(c);
-  await act(async () => root.render(<ShopeeImportWorkspace warehouses={WAREHOUSES} defaultWarehouseId={WH_PANDU} isOwner={false} {...props} />));
+  await act(async () => root.render(<ShopeeImportWorkspace cabang={CABANG} terkunci={false} defaultBranchId={BR_PANDU} isOwner={false} {...props} />));
   return { c, dispose: async () => { await act(async () => root.unmount()); c.remove(); } };
 }
 const sel = (c: HTMLElement, q: string) => c.querySelector<HTMLElement>(q)!;
@@ -45,17 +50,22 @@ beforeEach(async () => {
   mocks.pratinjau.mockResolvedValue({ orders, catalog: CATALOG, existing: {} });
 });
 
-it("gudang bawaan = satu-satunya gudang cabang Panduraya; tanpa bawaan pengguna wajib memilih", async () => {
+it("E4: cabang bawaan menampilkan gudang otomatisnya; tanpa bawaan pengguna wajib memilih cabang; akun satu cabang terkunci", async () => {
   const a = await mount();
-  expect((sel(a.c, 'select[aria-label="Gudang online"]') as HTMLSelectElement).value).toBe(WH_PANDU);
+  expect((sel(a.c, 'select[aria-label="Cabang impor"]') as HTMLSelectElement).value).toBe(BR_PANDU);
+  expect(a.c.textContent).toContain("Gudang otomatis: WH PDRY");
   await a.dispose();
-  const b = await mount({ defaultWarehouseId: "" });
-  expect((sel(b.c, 'select[aria-label="Gudang online"]') as HTMLSelectElement).value).toBe("");
+  const b = await mount({ defaultBranchId: "" });
+  expect((sel(b.c, 'select[aria-label="Cabang impor"]') as HTMLSelectElement).value).toBe("");
   await pilihFile(b.c);
   await klik(tombol(b.c, /pratinjau/i));
   expect(mocks.pratinjau).not.toHaveBeenCalled();
-  expect(b.c.textContent).toMatch(/pilih gudang/i);
+  expect(b.c.textContent).toMatch(/pilih cabang/i);
   await b.dispose();
+  const t = await mount({ cabang: [CABANG[1]], terkunci: true });
+  expect(t.c.querySelector('select[aria-label="Cabang impor"]')).toBeNull();
+  expect(t.c.textContent).toContain("Kamo Panduraya · WH PDRY");
+  await t.dispose();
 });
 
 it("pratinjau per pesanan: barang cocok, qty, harga yang dibebankan, peringatan, dan alasan pesanan dilewati", async () => {
@@ -63,7 +73,7 @@ it("pratinjau per pesanan: barang cocok, qty, harga yang dibebankan, peringatan,
   await pilihFile(c);
   await klik(tombol(c, /pratinjau/i));
   const fd = mocks.pratinjau.mock.calls[0][0] as FormData;
-  expect(fd.get("warehouse_id")).toBe(WH_PANDU);
+  expect(fd.get("branch_id")).toBe(BR_PANDU);
   expect((fd.get("file") as File).name).toBe("Order.toship.xlsx");
 
   expect([...c.querySelectorAll("[data-order]")].map(e => [e.getAttribute("data-order"), e.getAttribute("data-status")])).toEqual([
@@ -99,7 +109,7 @@ it("Simpan semua aktif setelah perkiraan dikonfirmasi; mengirim hanya pesanan si
   await klik(simpan);
   expect(mocks.simpan).toHaveBeenCalledTimes(1);
   const fd = mocks.simpan.mock.calls[0][0] as FormData;
-  expect(fd.get("warehouse_id")).toBe(WH_PANDU);
+  expect(fd.get("branch_id")).toBe(BR_PANDU);
   expect(JSON.parse(String(fd.get("selection")))).toEqual([{ orderNo: O2, items: [JIO], satuan: [""] }, { orderNo: O3, items: [DIG, HAIR], satuan: ["", ""] }]);
   expect(sel(c, `[data-result="${O2}"]`).textContent).toMatch(/ONL-20261105-0001/);
   expect(sel(c, `[data-result="${O3}"]`).textContent).toMatch(/Stok tidak cukup/);

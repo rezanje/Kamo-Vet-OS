@@ -1,8 +1,7 @@
 import { ActivityNavigationProvider } from "@/components/ActivityHistoryLink";
 import { ActivityMenuLink } from "@/components/ActivityMenuLink";
 import { bolehBukaPath, roleUsesLegacyStaffShell } from "@/lib/akses";
-import { loadSubmenuPolicy } from "@/lib/submenu-policy";
-import { gabungSubmenu } from "@/lib/submenu-access";
+import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { RoleMenuProvider } from "@/components/RoleMenuContext";
 import { Suspense } from "react";
 import { DraftUserProvider, TransactionDraftComplete } from "@/components/LocalTransactionDraft";
@@ -33,9 +32,9 @@ export default async function AppLayout({
   // Klinik-A: keduanya tidak bergantung pada akun, jadi dimulai bersama bacaan sesi
   // (dulu menunggu sesi lalu profil: layout ini ikut dirender di tiap halaman klinik).
   const branchesP = mulai(supabase.from("branches").select("id, code, name, type").eq("is_active", true).order("name"));
-  const aksesModulP = mulai(supabase.from("role_modules").select("role, module_id"));
-  // Kebijakan sub-menu ikut dibaca bersamaan; hanya untuk tampilan (middleware yang menegakkan).
-  const submenuP = mulai(loadSubmenuPolicy(supabase));
+  // Kebijakan sub-menu dan akses khusus akun (E3, meeting 12 Nov 2026) ikut dibaca bersamaan lewat pembaca bersama;
+  // hanya untuk tampilan (middleware yang menegakkan) — daftar yang sama dengan middleware.
+  const aksesP = mulai(bacaAkses(supabase));
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -56,11 +55,13 @@ export default async function AppLayout({
     redirect("/login?error=" + encodeURIComponent("Akun Anda dinonaktifkan. Hubungi admin."));
   }
 
-  const [{ data: branches }, { data: aksesModulMentah }, submenu] = await Promise.all([branchesP, aksesModulP, submenuP]);
-  const aksesModul = aksesModulMentah ? gabungSubmenu(aksesModulMentah, submenu.rows) : aksesModulMentah;
+  const [{ data: branches }, akses] = await Promise.all([branchesP, aksesP]);
+  const aksesModul = akses.rules ? aturanEfektif(profile?.role ?? "STAFF", akses) : akses.rules;
 
   // STAFF cuma masuk (app) lewat alur kasir klinik (/klinik/shift & seterusnya) —
   // sidebar admin (Keuangan, HRIS, Pengaturan, dst) bukan buat mereka.
+  // E3: STAFF dengan akses khusus akun selalu berbentuk v2 (lihat terapkanAksesAkun), jadi memakai sidebar biasa
+  // yang berisi menu yang dicentang Owner, bukan tampilan kasir klinik lama.
   const isStaff = profile?.role === "STAFF";
   const legacyStaffShell = roleUsesLegacyStaffShell(profile?.role ?? "STAFF", aksesModul ?? []);
   const staffBranch = isStaff ? await staffShiftP : null;

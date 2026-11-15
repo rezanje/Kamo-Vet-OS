@@ -76,6 +76,9 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
   const [uploadErr, setUploadErr] = useState("");
 
   const pet = pets[aktif] ?? petKosong();
+  // Keluhan "Grooming" di poli lain = kunjungan grooming yang salah poli (groomer tak pernah tercatat). Hanya pengingat:
+  // poli tetap pilihan staf, tombolnya memakai state `service` yang sama dengan dropdown.
+  const kelihatanGrooming = service !== "Grooming" && pets.some((p) => /grooming/i.test(p.keluhan));
   const setPet = (patch: Partial<PetDraft>) =>
     setPets((ps) => ps.map((p, i) => (i === aktif ? { ...p, ...patch } : p)));
 
@@ -217,6 +220,12 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
               </select>
             </div>
           </div>
+          {kelihatanGrooming && (
+            <div role="status" data-testid="notice-grooming" className="p2ban" style={{ marginBottom: 10, justifyContent: "space-between", gap: 8 }}>
+              <span><i className="ti ti-scissors" /> Ini kunjungan grooming? Pilih Poli Grooming dan isi Groomer.</span>
+              <button type="button" className="btn-def" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => setService("Grooming")}>Pilih Poli Grooming</button>
+            </div>
+          )}
           <div className="frow">
             <div>
               <label className="flab">{service==="Grooming"?"Groomer":"Dokter"}</label>
@@ -228,6 +237,9 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
                   </option>
                 ))}
               </select>
+              {service === "Grooming" && (
+                <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Pilih groomer yang mengerjakan; namanya tampil di rekam medis dan struk.</div>
+              )}
             </div>
             <div>
               <label className="flab">Jenis kunjungan</label>
@@ -306,6 +318,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
               display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0,
             }}>
               {pet.photo_url
+                // eslint-disable-next-line @next/next/no-img-element
                 ? <img src={pet.photo_url} alt="Foto anabul" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 : <i className="ti ti-paw" style={{ fontSize: 24, color: "var(--td)" }} />}
             </div>

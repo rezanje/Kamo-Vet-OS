@@ -45,7 +45,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => buatDbPalsu(
 
 import Page from "@/app/(app)/penjualan/faktur/page";
 const render = async (sp: Record<string, string> = {}) =>
-  renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", ...sp }) }));
+  renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ dari: "2026-10-01", sampai: "2026-10-31", tampil: "1", ...sp }) }));
 
 beforeEach(() => { s.gagal = ""; s.tanpaCount = false; s.jejak = []; });
 

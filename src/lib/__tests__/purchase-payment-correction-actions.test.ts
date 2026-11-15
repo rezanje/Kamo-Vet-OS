@@ -10,7 +10,7 @@ const form = () => { const fd = new FormData(); Object.entries({ invoice_id: "in
 beforeEach(() => { vi.clearAllMocks(); mock.rpc.mockResolvedValue({ data: { payment_id: "payment", invoice_id: "invoice", cancellation_id: "audit", reversal_journal_id: "reversal" }, error: null }); });
 it("uses the exact revision, reason and durable identity for payment cancellation", async () => {
   await expect(batalkanPembayaranFaktur(form())).rejects.toThrow("draft_done=durable-key");
-  expect(mock.rpc).toHaveBeenCalledWith("cancel_purchase_payment", { p_payment_id: "payment", p_expected_revision: 0, p_request_key: "durable-key", p_reason: "Wrong allocation" });
+  expect(mock.rpc).toHaveBeenCalledWith("cancel_purchase_payment", { p_payment_id: "payment", p_expected_revision: 0, p_request_key: "durable-key", p_reason: "Wrong allocation", p_tanggal: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
   expect(mock.from).not.toHaveBeenCalled();
 });
 it.each([{ data: null, error: { message: "Closed period" } }, { data: { payment_id: "payment", invoice_id: "invoice" }, error: null }])("does not acknowledge rejected or incomplete reversal", async response => {

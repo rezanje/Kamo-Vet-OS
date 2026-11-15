@@ -208,6 +208,8 @@ export const ACTIVITY_ENTITIES: Record<string, string> = {
   inpatient_rx_evidence_settings: "Pengaturan Bukti Obat Rawat Inap",
   purchase_invoice_receipts: "Tautan Faktur dan Penerimaan Pembelian",
   quest_new_customer_claims: "Klaim Quest Pelanggan Baru",
+  // E3 (meeting 12 Nov 2026): akses khusus per akun (metadata saja; isi sebelum/sesudah di riwayat layar Pengguna).
+  account_access_overrides: "Akses Khusus Akun",
 };
 export const ACTIVITY_MODULES: Record<string, string> = {
   pos: 'Persediaan / POS', crm: 'CRM', pembelian: 'Pembelian', penjualan: 'Penjualan',

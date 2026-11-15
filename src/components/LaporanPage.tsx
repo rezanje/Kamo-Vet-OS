@@ -8,22 +8,29 @@ import { Suspense } from "react";
 import { ReportPresets } from "./ReportPresets";
 import { ReportColumns, ReportColumnsFilterInput } from "./ReportColumns";
 import { reportFilterDefaults } from "@/lib/report-filter-defaults";
+import { InputTampil, LaporanBelumDitampilkan } from "./GerbangLaporan";
 
 export function LaporanPage({
-  icon, title, desc, filter, ringkasan, children, unduhTampilan = true, pilihKolom = false,
+  icon, title, desc, filter, ringkasan, children, siap, unduhTampilan = true, pilihKolom = false,
 }: {
   icon: string;
   title: string;
   desc: string;
   filter?: ReactNode;
   ringkasan?: ReactNode;
-  children: ReactNode;
+  children?: ReactNode;
+  /**
+   * A1 (meeting 12 Nov 2026): false = pengguna belum menekan Tampilkan. Halaman
+   * WAJIB tidak menarik data laporan saat false; isi diganti petunjuk kosong.
+   * Lihat `laporanDiminta` di src/lib/report-gate.ts.
+   */
+  siap: boolean;
   /** Paginated financial reports use their complete server export instead. */
   unduhTampilan?: boolean;
   /** Allow saved column choices even when this report has its own full export. */
   pilihKolom?: boolean;
 }) {
-  const pilihanKolom = unduhTampilan || pilihKolom;
+  const pilihanKolom = siap && (unduhTampilan || pilihKolom);
   return (
     <div data-report-page>
       <div style={{ marginBottom: 4 }}>
@@ -43,18 +50,20 @@ export function LaporanPage({
       {/* Satu baris alat: unduh + konfigurasi tersimpan (terlipat). Dulu dua kotak
           besar yang makan setengah layar sebelum filter (keluhan Andri 29 Okt). */}
       <div data-report-toolbar className="no-print" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        {unduhTampilan && <UnduhLaporan judul={title} inline />}
+        {siap && unduhTampilan && <UnduhLaporan judul={title} inline />}
         <Suspense fallback={null}><ReportPresets title={title} appliedDefaults={reportFilterDefaults(filter)} compact /></Suspense>
       </div>
 
       {filter && (
         <form data-report-filters className="crm-sec" style={{ marginBottom: 8, padding: "10px 12px" }}>
-          {pilihanKolom && <Suspense fallback={null}><ReportColumnsFilterInput /></Suspense>}
+          {/* Tetap bawa pilihan kolom walau laporan belum ditampilkan. */}
+          {(unduhTampilan || pilihKolom) && <Suspense fallback={null}><ReportColumnsFilterInput /></Suspense>}
+          <InputTampil />
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>{filter}</div>
         </form>
       )}
 
-      {pilihanKolom ? <Suspense fallback={<div id="laporan-isi">{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</div>}>
+      {!siap ? <div id="laporan-isi"><LaporanBelumDitampilkan /></div> : pilihanKolom ? <Suspense fallback={<div id="laporan-isi">{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</div>}>
         <ReportColumns>{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</ReportColumns>
       </Suspense> : <div id="laporan-isi">{ringkasan && <div style={{ marginBottom: 12 }}>{ringkasan}</div>}{children}</div>}
     </div>

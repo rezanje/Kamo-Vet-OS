@@ -226,7 +226,7 @@ export function PaketEditor({ userId, mode, promoId, version: initialVersion, in
                   <input id={`${uid}-min-${i}`} className="fi" inputMode="numeric" name={`syarat-min-${i}`} value={r.min} onChange={(e) => setSyarat(i, { ...r, min: e.target.value })} placeholder={r.kind === "qty" ? "mis. 2" : "mis. 100000"} />
                 </div>
                 <div className={s.hint} style={{ paddingBottom: 6 }}>
-                  {r.kind === "qty" ? "Jumlah dihitung bersama untuk semua barang di bawah; satuan mengikuti pilihan tiap barang." : "Dihitung dari seluruh keranjang (total transaksi), bukan barang tertentu."}
+                  {r.kind === "qty" ? "Jumlah dihitung bersama untuk semua barang di bawah; satuan mengikuti pilihan tiap barang." : "Dihitung dari seluruh keranjang (total transaksi), bukan barang tertentu. Nilai ini dipakai bersama oleh semua Promo Paket di satu struk: tiap kelipatan hanya membeli satu hadiah, tidak bisa dipakai lagi oleh promo lain."}
                 </div>
                 <button type="button" className="btn-def" aria-label={`Buang syarat ${i + 1}`} disabled={form.syarat.length <= 1} onClick={() => patch({ syarat: form.syarat.filter((_, j) => j !== i) })}>×</button>
               </div>

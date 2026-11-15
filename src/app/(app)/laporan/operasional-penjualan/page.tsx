@@ -2,7 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { LaporanPage } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
 import { buildPeriod, canAccessOperationSales, type Channel, type PeriodPreset } from "@/lib/operation-sales";
-import { collectDashboard } from "@/lib/operation-sales-server";
+import { collectDashboard, resolveDashboardScope, type DashboardBranch } from "@/lib/operation-sales-server";
+import { laporanDiminta } from "@/lib/report-gate";
 import { collectOperationalAlertBlock } from "@/lib/operational-alerts-server";
 import { OperationSalesDashboard } from "./OperationSalesDashboard";
 import { PeriodPresetSync } from "./PeriodPresetSync";
@@ -26,6 +27,7 @@ export default async function OperationSalesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const today = hariIniWIB();
   // Link lama/eksternal yang hanya membawa tanggal tanpa preset = rentang custom.
   const rawPreset = one(sp.preset) ?? (one(sp.from) && one(sp.to) ? "custom" : "mtd");
@@ -49,30 +51,39 @@ export default async function OperationSalesPage({
   const role = profile?.role ?? "";
   if (!canAccessOperationSales(role, process.env.OPERATION_SALES_ROLLOUT_ROLES)) {
     return (
-      <LaporanPage icon="ti-dashboard" title="OPERATION & SALES" desc="Cockpit operasi, penjualan, customer, stok, pembelian, dan klinik.">
+      <LaporanPage siap icon="ti-dashboard" title="OPERATION & SALES" desc="Cockpit operasi, penjualan, customer, stok, pembelian, dan klinik.">
         <div className="crm-sec" style={{ color: "var(--tm)", fontSize: 11 }}><i className="ti ti-lock" /> Dashboard masih dalam tahap pilot OWNER/ADMIN.</div>
       </LaporanPage>
     );
   }
   const canViewInventoryValue = profile?.is_active === true && (role === "OWNER" || role === "FINANCE");
-  let dashboard;
+  // A1 (meeting 12 Nov 2026): sebelum Tampilkan ditekan hanya cakupan cabang (isian
+  // filter) yang dibaca — tanpa blok sales, customer, stok, pembelian, klinik, dan alert.
+  let dashboard: Awaited<ReturnType<typeof collectDashboard>> | null = null;
+  let cabangPilihan: DashboardBranch[];
   try {
-    dashboard = await collectDashboard(supabase, { from, to, branchIds: branch ? [branch] : [], channel }, { includeStockValue: canViewInventoryValue });
+    if (siap) {
+      dashboard = await collectDashboard(supabase, { from, to, branchIds: branch ? [branch] : [], channel }, { includeStockValue: canViewInventoryValue });
+      cabangPilihan = dashboard.scope.branches;
+    } else {
+      cabangPilihan = (await resolveDashboardScope(supabase, branch ? [branch] : [])).branches;
+    }
   } catch {
     return (
-      <LaporanPage icon="ti-dashboard" title="OPERATION & SALES" desc="Cockpit operasi, penjualan, customer, stok, pembelian, dan klinik.">
+      <LaporanPage siap icon="ti-dashboard" title="OPERATION & SALES" desc="Cockpit operasi, penjualan, customer, stok, pembelian, dan klinik.">
         <div className="crm-sec" style={{ color: "#b91c1c", fontSize: 11 }}>Akses cabang atau data dashboard belum dapat dibaca.</div>
       </LaporanPage>
     );
   }
-  const alerts = await collectOperationalAlertBlock(
+  const alerts = dashboard ? await collectOperationalAlertBlock(
     supabase,
     { from, to, branchIds: branch ? [branch] : [], channel },
     dashboard,
-  );
+  ) : null;
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-dashboard"
       title="OPERATION & SALES"
       desc="Cockpit operasi, penjualan, customer, stok, pembelian, dan klinik."
@@ -93,7 +104,7 @@ export default async function OperationSalesPage({
             <label className="flab">Cabang</label>
             <select className="fi" name="branch" defaultValue={branch}>
               <option value="">Semua cabang yang boleh diakses</option>
-              {dashboard.scope.branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              {cabangPilihan.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </div>
           <div style={{ minWidth: 140 }}>
@@ -110,7 +121,7 @@ export default async function OperationSalesPage({
         </>
       }
     >
-      <OperationSalesDashboard data={dashboard} alerts={alerts} showAlertDiagnostics={role === "OWNER" || role === "ADMIN"} canViewInventoryValue={canViewInventoryValue} />
+      {dashboard && alerts && <OperationSalesDashboard data={dashboard} alerts={alerts} showAlertDiagnostics={role === "OWNER" || role === "ADMIN"} canViewInventoryValue={canViewInventoryValue} />}
     </LaporanPage>
   );
 }

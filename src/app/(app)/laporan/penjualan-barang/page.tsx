@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
-import { ambilPenjualanBarang, waktuWIB } from "./data";
+import { ambilOpsiCabangPenjualanBarang, ambilPenjualanBarang, waktuWIB } from "./data";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
 import { normalizeReportColumns } from "@/lib/report-columns";
 import { jenisLaporan, SEMUA_JENIS_KLINIK } from "@/lib/laporan-penjualan-barang";
 import { barisTabelRingkasan } from "@/lib/laporan-kategori-penjualan";
@@ -12,9 +13,10 @@ const rupiah = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID"
 const UKURAN_HALAMAN_TAMPILAN = 100;
 
 export default async function LaporanPenjualanBarangPage({ searchParams }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; cabang_id?: string; pelaksana_id?: string; kategori?: string; kolom?: string; halaman?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; kanal?: string; jenis?: string; q?: string; cabang_id?: string; pelaksana_id?: string; kategori?: string; kolom?: string; halaman?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const hariIni = hariIniWIB();
   const dari = sp.dari || `${hariIni.slice(0, 8)}01`;
   const sampai = sp.sampai || hariIni;
@@ -28,9 +30,25 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const halaman = Number.isSafeInteger(halamanDiminta) && halamanDiminta > 0 ? halamanDiminta : 1;
   let kolom = "";
   try { kolom = normalizeReportColumns(sp.kolom ?? null); } catch { /* Invalid URL choices stay visible in the column editor. */ }
-  const { rows: terpilih, cabangOptions, pelaksanaOptions = [], pesanError, nilaiTotal, qtyTotal, ringkasan, kategoriOptions } = await ambilPenjualanBarang({
-    dari, sampai, kanal: kanal as Kanal, jenis, q, cabangId, pelaksanaId, ...(kategori ? { kategori } : {}),
-  });
+  // A1 (meeting 12 Nov 2026): sebelum Tampilkan ditekan hanya daftar cabang yang dibaca —
+  // baris penjualan, kategori, dan pelaksana baru ditarik setelahnya. Cabang yang dipilih
+  // (dan ada di daftar cabang yang boleh diakses) ikut disaring di query.
+  const cabangAkses = await ambilOpsiCabangPenjualanBarang();
+  const cabangTerdaftar = !!cabangId && cabangAkses.some((branch) => branch.id === cabangId);
+  const data: Awaited<ReturnType<typeof ambilPenjualanBarang>> = siap
+    ? await ambilPenjualanBarang({
+      dari, sampai, kanal: kanal as Kanal, jenis, q, cabangId, pelaksanaId, ...(kategori ? { kategori } : {}),
+      saringCabangDiQuery: cabangTerdaftar,
+    })
+    : {
+      rows: [], cabangOptions: [], pelaksanaOptions: [], pesanError: "", nilaiTotal: 0, qtyTotal: 0,
+      ringkasan: { groups: [], totalQty: 0, totalNilai: 0, totalBaris: 0 }, kategoriOptions: [],
+    };
+  const { rows: terpilih, pelaksanaOptions = [], pesanError, nilaiTotal, qtyTotal, ringkasan, kategoriOptions } = data;
+  // Pilihan cabang = cabang yang boleh diakses + cabang yang muncul di data (mis. cabang
+  // nonaktif yang masih punya transaksi di rentang ini).
+  const cabangOptions = [...new Map([...cabangAkses, ...data.cabangOptions].map((branch) => [branch.id, branch] as const)).values()]
+    .sort((a, b) => a.name.localeCompare(b.name, "id") || a.id.localeCompare(b.id));
   const labelCabang = uniqueOptionLabels(cabangOptions, (branch) => branch.name);
   const labelPelaksana = uniqueOptionLabels(pelaksanaOptions, (person) => person.nama);
   const banyakHalaman = Math.max(1, Math.ceil(terpilih.length / UKURAN_HALAMAN_TAMPILAN));
@@ -39,12 +57,13 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
   const tautanHalaman = (nomor: number) => {
     const params = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId, kategori, halaman: String(nomor) });
     if (kolom) params.set("kolom", kolom);
-    return `/laporan/penjualan-barang?${params}`;
+    return denganTampil(`/laporan/penjualan-barang?${params}`);
   };
   const csvParams = new URLSearchParams({ dari, sampai, kanal, jenis, q, cabang_id: cabangId, pelaksana_id: pelaksanaId, kategori });
 
   return (
     <LaporanPage
+      siap={siap}
       unduhTampilan={false}
       pilihKolom
       icon="ti-list-details" title="RINCIAN PENJUALAN PER BARANG"
@@ -58,7 +77,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
         </select></div>
         <div><label className="flab">Cabang</label><select className="fi" name="cabang_id" defaultValue={cabangId}>
           <option value="">Semua cabang yang dapat diakses</option>
-          {cabangId && !cabangOptions.some(branch => branch.id === cabangId) && <option value={cabangId}>Cabang tidak ada pada data</option>}
+          {cabangId && !cabangOptions.some(branch => branch.id === cabangId) && <option value={cabangId}>{siap ? "Cabang tidak ada pada data" : "Cabang terpilih"}</option>}
           {cabangOptions.map(branch => <option key={branch.id} value={branch.id}>{labelCabang.get(branch.id) ?? branch.name}</option>)}
         </select></div>
         <div><label className="flab">Jenis</label><select className="fi" name="jenis" defaultValue={jenis}>
@@ -75,7 +94,7 @@ export default async function LaporanPenjualanBarangPage({ searchParams }: {
         </select></div>
         <div><label className="flab">Pelaksana tersimpan</label><select className="fi" name="pelaksana_id" defaultValue={pelaksanaId}>
           <option value="">Semua pelaksana</option>
-          {pelaksanaId && !pelaksanaOptions.some(person => person.id === pelaksanaId) && <option value={pelaksanaId}>Pelaksana tidak ada pada data</option>}
+          {pelaksanaId && !pelaksanaOptions.some(person => person.id === pelaksanaId) && <option value={pelaksanaId}>{siap ? "Pelaksana tidak ada pada data" : "Pelaksana terpilih"}</option>}
           {pelaksanaOptions.map(person => <option key={person.id} value={person.id}>{labelPelaksana.get(person.id) ?? person.nama}</option>)}
         </select></div>
         <div><label className="flab">Cari nama / invoice / pelanggan / pelaksana</label><input className="fi" name="q" defaultValue={q} placeholder="Mis. puyer" style={{ minWidth: 190 }} /></div>

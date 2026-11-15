@@ -4,6 +4,7 @@
 // (same rule as the middleware), so the dashboard never links to a blocked page.
 // If Akses Grup cannot be read, the role's default modules decide the links.
 import { bolehBukaPath } from "@/lib/akses";
+import { aturanEfektif, bacaTambahanAkses } from "@/lib/akses-akun";
 import { CORRECTION_QUEUE_PATH } from "@/lib/purchase-correction-requests";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -27,9 +28,11 @@ export async function loadPendingWork(db: AnyClient, role: string | null): Promi
   let rules: { role: string; module_id: string }[] = [];
   const canOpen = (href: string) => bolehBukaPath(role, href.split("?")[0], rules);
   try {
-  const { data, error: rulesError } = await db.from("role_modules").select("role, module_id").eq("role", role);
+  // E3 (meeting 12 Nov 2026): tautan pekerjaan tertunda mengikuti akses efektif akun (peran + sub-menu + akses khusus).
+  const [{ data, error: rulesError }, tambahan] = await Promise.all([
+    db.from("role_modules").select("role, module_id").eq("role", role), bacaTambahanAkses(db)]);
   if (rulesError || !Array.isArray(data)) throw new Error("Akses Grup belum dapat dibaca");
-  rules = data;
+  rules = aturanEfektif(role, { rules: data, ...tambahan });
   const requests: Promise<PendingWork>[] = [];
 
   if (canOpen("/pengaturan/penyetuju")) {

@@ -89,7 +89,7 @@ it("shows split cash in the running shift and counts the sale once", async () =>
 
 it("shows each allocation in one detailed sales row available to report exports", async () => {
   fixture.sales.push({ ...fixture.sales[0], id: "pending", payments_finalized_at: null });
-  const page = doc(await PenjualanRinciPage({ searchParams: Promise.resolve({ dari: "2026-10-15", sampai: "2026-10-15" }) }));
+  const page = doc(await PenjualanRinciPage({ searchParams: Promise.resolve({ dari: "2026-10-15", sampai: "2026-10-15", tampil: "1" }) }));
   expect(page.body.textContent).toContain("Jumlah transaksi1x");
   expect(page.querySelectorAll("tbody tr")).toHaveLength(1);
   expect(page.querySelector("tbody")?.textContent).toContain("Tunai Rp 20.000 + Transfer Rp 80.000");
@@ -108,7 +108,7 @@ it.each([
   ["promo", PromoPage, "Rp 100.000"],
 ] as const)("excludes unfinished sales from the %s report", async (_name, Page, expected) => {
   fixture.sales.push({ ...fixture.sales[0], id: "pending", payments_finalized_at: null });
-  const page = doc(await Page({ searchParams: Promise.resolve({ dari: "2026-10-15", sampai: "2026-10-15" }) }));
+  const page = doc(await Page({ searchParams: Promise.resolve({ dari: "2026-10-15", sampai: "2026-10-15", tampil: "1" }) }));
   expect(page.body.textContent).toContain(expected);
   expect(page.body.textContent).not.toContain("Rp 200.000");
 });

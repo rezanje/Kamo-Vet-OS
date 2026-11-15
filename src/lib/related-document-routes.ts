@@ -32,7 +32,7 @@ export function relatedDocumentHref(kind: DocumentKind, id: string, parentId?: s
       if (!parentId || !UUID.test(parentId)) return null;
       path = kind === 'purchase-payment' ? `/pembelian/faktur/${parentId}#payment-${id}` : `/penjualan/faktur/${parentId}#receipt-${id}`;
       break;
-    case 'purchase-advance': path = `/pembelian/uang-muka#advance-${id}`; break;
+    case 'purchase-advance': path = `/pembelian/uang-muka?tampil=1#advance-${id}`; break;
     case 'sales-advance': path = `/penjualan/uang-muka#advance-${id}`; break;
     case 'payment-order': path = `/pembelian/perintah-bayar?order=${id}#payment-order-${id}`; break;
   }

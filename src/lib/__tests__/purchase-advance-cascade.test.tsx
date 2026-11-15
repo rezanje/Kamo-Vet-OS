@@ -2,11 +2,11 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ rpc: vi.fn(), revalidate: vi.fn() }));
+const state = vi.hoisted(() => ({ rpc: vi.fn(), revalidate: vi.fn(), profile: { role: "OWNER", is_active: true } as { role: string; is_active: boolean } }));
 vi.mock("next/cache", () => ({ revalidatePath: state.revalidate }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); } }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props}>{children}</a> }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: state.rpc }) }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: state.rpc, auth: { getUser: async () => ({ data: { user: { id: "u1" } } }) }, from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: state.profile }) }) }) }) }) }));
 vi.mock("@/components/RelatedDocuments", () => ({ DocumentLink: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }));
 vi.mock("@/components/SubmitButton", () => ({ SubmitButton: ({ children }: { children: React.ReactNode }) => <button>{children}</button> }));
 import { batalkanUangMukaBeserta } from "@/app/(app)/pembelian/uang-muka/[id]/batal/actions";
@@ -22,7 +22,7 @@ beforeEach(() => { vi.clearAllMocks(); });
 it("P08: cancels a used advance and its payments through one RPC with the previewed fingerprint", async () => {
   state.rpc.mockResolvedValue({ data: { advance_id: "adv", journal_id: "j", no_um: "UM.1", payment_count: 2 }, error: null });
   await expect(batalkanUangMukaBeserta(form())).rejects.toThrow(/REDIRECT:\/pembelian\/uang-muka\?success=.*2%20pembayaran/);
-  expect(state.rpc).toHaveBeenCalledExactlyOnceWith("cancel_purchase_advance_cascade", { p_advance_id: "adv", p_reason: "Salah pemasok", p_request_key: "key-1", p_expected_fingerprint: "fp" });
+  expect(state.rpc).toHaveBeenCalledExactlyOnceWith("cancel_purchase_advance_cascade", { p_advance_id: "adv", p_reason: "Salah pemasok", p_request_key: "key-1", p_expected_fingerprint: "fp", p_tanggal: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
   expect(state.revalidate).toHaveBeenCalledWith("/keuangan/hutang");
 });
 

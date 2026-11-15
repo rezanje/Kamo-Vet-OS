@@ -31,6 +31,11 @@ export type ClinicInvoiceLineInput = {
   salesperson_id?: string;
   package_item_id?: string;
   package_qty?: number;
+  /**
+   * Potongan PROMO (rupiah) yang jatuh pada baris ini; sudah termasuk di `discount` invoice. Hanya dikirim bila > 0 (kunci tidak
+   * ada = perilaku lama, hash idempotensi tetap). Database memeriksa: >= 0, <= nilai baris, jumlah semua baris <= diskon invoice.
+   */
+  promo_discount?: number;
 };
 
 export type ClinicInvoiceInput = {
@@ -235,6 +240,9 @@ export function parseClinicPostingError(error: { code?: string; message: string 
     if (error.message === "INVOICE_INVALID: nilai invoice tidak konsisten") {
       return "Nilai invoice ditolak karena tidak konsisten. Periksa metode pembayaran, diskon, dan jumlah bayar, lalu pilih ulang metode atau muat ulang tagihan (belum ada yang tersimpan).";
     }
+    // Tanggal efektif (backdate) Owner: penolakan periode/persediaan terkunci dan tagihan bercampur tanggal sudah berbahasa biasa.
+    const tanggalEfektif = /^(PERIODE_TERKUNCI|PERSEDIAAN_TERKUNCI|BACKDATE_CAMPUR|BACKDATE_SISA):\s*([^\r\n]{1,600})$/.exec(error.message);
+    if (tanggalEfektif) return `${tanggalEfektif[2].trim()}. Belum ada yang tersimpan.`;
     const match = /^([A-Z_]+)(?::\s*([^\r\n]{1,100}))?$/.exec(error.message);
     if (match && fixedMessages[match[1]]) return fixedMessages[match[1]];
     if (match && match[2] && detailMessages[match[1]]) return `${detailMessages[match[1]]}: ${match[2]}`;
@@ -253,6 +261,11 @@ export function parseClinicRecordError(error: { code?: string; message: string }
     if (error.message.startsWith("LOG_INVALID:")) return "Catatan rawat inap atau rekam medis untuk tagihan belum lengkap.";
     if (error.message.startsWith("IDEMPOTENCY_CONFLICT:")) return "Form pemeriksaan ini sudah dipakai untuk data berbeda. Muat ulang kunjungan.";
     if (error.message.startsWith("RECIPE_REQUIRED:")) return recipeRequiredMessage(error.message);
+    // A5 (meeting 12 Nov 2026): koreksi visit rawat inap (izin Akses Grup "Koreksi visit rawat inap").
+    if (error.message.startsWith("VISIT_CORRECTION_DENIED:")) return "Koreksi visit (visit dokter lebih dari 48 jam lalu, ubah waktu/dokter/jenis/paramedis visit, atau catatan setelah pasien pulang) hanya untuk Owner atau peran yang diberi izin Koreksi visit rawat inap di Akses Grup.";
+    if (error.message.startsWith("VISIT_CORRECTION_REASON:")) return "Ini koreksi visit — isi alasan koreksi (minimal 3 huruf) lalu simpan lagi.";
+    if (error.message.startsWith("VISIT_CORRECTION_WINDOW:")) return "Tanggal catatan koreksi harus di antara tanggal masuk dan tanggal pulang pasien.";
+    if (error.message.startsWith("VISIT_CORRECTION_CART:")) return "Koreksi setelah pasien pulang hanya untuk catatan visit/pemantauan — tanpa obat, tagihan, atau ubah kondisi.";
   }
   const message = parseClinicPostingError(error);
   return message.startsWith("Transaksi belum tersimpan.")

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loadUnitOptions } from "@/lib/satuan";
 import { readCompleteList } from "@/lib/checked-list";
 import { FakturLangsungForm, type DirectInvoiceInitial } from "./FakturLangsungForm";
+import { loadPurchaseBackdateAccess } from "@/lib/purchase-backdate";
 
 // Faktur Pembelian Langsung — beli barang tanpa PO, barang masuk di dokumen yang sama.
 type SourceLine = { id: string; item_id: string | null; qty: number; harga: number; satuan: string | null; faktor: number; exp_date: string | null };
@@ -15,6 +16,8 @@ export default async function FakturLangsungPage({
   const { error, replace_invoice, harga_cek } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = replace_invoice ? await supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle() : { data: null };
+  const canBackdate = replace_invoice ? await loadPurchaseBackdateAccess(supabase, profile) : false;
 
   let initial: DirectInvoiceInitial | undefined;
   let sourceLines: SourceLine[] = [];
@@ -100,7 +103,7 @@ export default async function FakturLangsungPage({
         </div>
       )}
 
-      <FakturLangsungForm initial={initial} userId={user?.id ?? ""} priceWarning={harga_cek}
+      <FakturLangsungForm initial={initial} userId={user?.id ?? ""} canBackdate={canBackdate} priceWarning={harga_cek}
         suppliers={(suppliers ?? []).map((s) => ({
           id: s.id as string, nama: s.nama as string, terminHari: Number(s.termin_hari) || 0,
         }))}

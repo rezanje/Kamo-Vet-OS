@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
 import { readCompleteList, readListPage } from "@/lib/checked-list";
+import { laporanDiminta } from "@/lib/report-gate";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string) => new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -19,13 +21,16 @@ type Dok = {
   purchase_orders: Rel<{ no_po: string | null; suppliers: Rel<{ nama: string }> }>;
 };
 
-export default async function PenerimaanPage({ searchParams }: { searchParams: Promise<{ hal?: string }> }) {
-  const { hal } = await searchParams;
+export default async function PenerimaanPage({ searchParams }: { searchParams: Promise<{ hal?: string; tampil?: string }> }) {
+  const sp = await searchParams;
+  const { hal } = sp;
+  // A1 (meeting 12 Nov 2026): dokumen penerimaan baru ditarik setelah Tampilkan.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   let receiptPage: Awaited<ReturnType<typeof readListPage<Dok>>> | undefined;
   let loadError: unknown;
   const totals = new Map<string, { nilai: number; rusak: number }>();
-  try {
+  if (siap) { try {
     receiptPage = await readListPage<Dok>((from, to) => supabase.from("goods_receipts")
       .select("id, no_terima, tanggal, surat_jalan, voided_at, purchase_orders(no_po, suppliers(nama))", { count: "exact" })
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).order("id")
@@ -42,7 +47,7 @@ export default async function PenerimaanPage({ searchParams }: { searchParams: P
         totals.set(item.receipt_id, current);
       }
     }
-  } catch (cause) { loadError = cause; }
+  } catch (cause) { loadError = cause; } }
   const dok = loadError === undefined ? receiptPage?.rows ?? [] : [];
 
   return (
@@ -59,8 +64,13 @@ export default async function PenerimaanPage({ searchParams }: { searchParams: P
           desc="Satu dokumen per kiriman. Kiriman bertahap dari satu PO tercatat terpisah."
         />
 
+        <form method="get" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <InputTampil />
+          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+        </form>
+        {!siap && <LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat dokumen penerimaan barang." />}
         {loadError !== undefined && <ListLoadFailure error={loadError} label="Daftar penerimaan barang" />}
-        {loadError === undefined && <div style={{ overflowX: "auto" }}>
+        {siap && loadError === undefined && <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
             <thead>
               <tr>
@@ -107,7 +117,7 @@ export default async function PenerimaanPage({ searchParams }: { searchParams: P
             </tbody>
           </table>
         </div>}
-        {receiptPage && loadError === undefined && <ListPagination path="/pembelian/penerimaan" query={{}} total={receiptPage.count} pageInfo={receiptPage.pageInfo} />}
+        {receiptPage && loadError === undefined && <ListPagination path="/pembelian/penerimaan" query={{ tampil: "1" }} total={receiptPage.count} pageInfo={receiptPage.pageInfo} />}
       </div>
     </>
   );

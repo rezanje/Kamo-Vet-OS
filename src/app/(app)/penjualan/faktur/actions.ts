@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { hariIniWIB } from "@/lib/tanggal";
+import { denganTampil } from "@/lib/report-gate";
 
 /** Receipt, advance usage, ledger and invoice status commit in one DB transaction. */
 export async function terimaPembayaranJual(form: FormData) {
@@ -22,10 +23,11 @@ export async function terimaPembayaranJual(form: FormData) {
       p_advance_id: String(form.get("advance_id") ?? "").trim() || null,
       p_catatan: String(form.get("catatan") ?? "").trim() || null,
     });
-  if (error) redirect(`${back}?error=${encodeURIComponent(error.message)}`);
+  // A1 (meeting 12 Nov 2026): kembali ke daftar yang sudah ditampilkan (tampil=1).
+  if (error) redirect(denganTampil(`${back}?error=${encodeURIComponent(error.message)}`));
   if (!data?.receipt_id || !data?.journal_id || data.invoice_id !== invoiceId) {
     throw new Error("Penerimaan belum terkonfirmasi lengkap. Periksa hasil terakhir sebelum mengirim ulang.");
   }
   for (const path of [back, `/penjualan/faktur/${encodeURIComponent(invoiceId)}`, "/keuangan/piutang", "/keuangan/piutang/pembantu", "/penjualan/uang-muka", "/laporan/penjual", "/"]) revalidatePath(path);
-  redirect(`${back}?success=${encodeURIComponent(`Penerimaan ${data.document_no} tercatat.`)}${transactionDraftAck(form)}`);
+  redirect(denganTampil(`${back}?success=${encodeURIComponent(`Penerimaan ${data.document_no} tercatat.`)}${transactionDraftAck(form)}`));
 }

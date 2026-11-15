@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { availableOperationalBranches } from "@/lib/operational-branch";
 import { branchDisplayName } from "@/lib/branch-display";
 import { bolehBukaPath } from "@/lib/akses";
+import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { getOpenShift } from "@/lib/shift";
 import { pilihCabang } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -16,11 +17,13 @@ export default async function BranchSelectionPage({ searchParams }: { searchPara
   const client = await createClient();
   const { data: { user } } = await client.auth.getUser();
   if (!user) redirect("/login");
-  const [{ data: profile }, { data: rules, error: rulesError }] = await Promise.all([
+  // E3 (meeting 12 Nov 2026): hak buka memakai akses efektif akun (peran + sub-menu + akses khusus).
+  const [{ data: profile }, akses] = await Promise.all([
     client.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle(),
-    client.from("role_modules").select("role, module_id"),
+    bacaAkses(client),
   ]);
-  if (rulesError || !profile?.is_active || !bolehBukaPath(profile.role, mode === "klinik" ? "/klinik" : "/kasir", rules ?? [])) redirect("/mulai");
+  const rulesError = akses.rulesError;
+  if (rulesError || !profile?.is_active || !bolehBukaPath(profile.role, mode === "klinik" ? "/klinik" : "/kasir", aturanEfektif(profile.role, akses))) redirect("/mulai");
   let branches: Awaited<ReturnType<typeof availableOperationalBranches>> = [];
   let loadError = "";
   try { branches = await availableOperationalBranches(client, user.id, mode); }

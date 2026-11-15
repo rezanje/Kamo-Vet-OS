@@ -19,7 +19,7 @@ beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 
 it("unduh + konfigurasi tersimpan ada di satu baris toolbar, konfigurasi terlipat", async () => {
-  await act(async () => root.render(<LaporanPage icon="ti-x" title="Uji" desc="d" filter={<input name="dari" />}><table><thead><tr><th>A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table></LaporanPage>));
+  await act(async () => root.render(<LaporanPage siap icon="ti-x" title="Uji" desc="d" filter={<input name="dari" />}><table><thead><tr><th>A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table></LaporanPage>));
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   const toolbar = host.querySelector("[data-report-toolbar]");
   expect(toolbar).not.toBeNull();
@@ -32,4 +32,13 @@ it("unduh + konfigurasi tersimpan ada di satu baris toolbar, konfigurasi terlipa
   expect(presets!.querySelector('[aria-label="Nama konfigurasi laporan"]')).not.toBeNull();
   // filter langsung setelah toolbar, bukan setelah kotak besar
   expect(toolbar!.nextElementSibling?.matches("form[data-report-filters]")).toBe(true);
+});
+
+it("A1: siap={false} → petunjuk kosong tampil, isi & tombol unduh disembunyikan, form membawa tampil=1", async () => {
+  await act(async () => root.render(<LaporanPage siap={false} icon="ti-x" title="Uji" desc="d" filter={<input name="dari" />}><table data-isi-laporan><tbody><tr><td>1</td></tr></tbody></table></LaporanPage>));
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  expect(host.querySelector("[data-report-gate]")).not.toBeNull();
+  expect(host.querySelector("[data-isi-laporan]")).toBeNull();
+  expect(host.querySelector("[data-report-toolbar]")!.textContent).not.toContain("CSV");
+  expect(host.querySelector('form[data-report-filters] input[name="tampil"][value="1"]')).not.toBeNull();
 });

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { tanggalIndo, FOLLOWUP_JENIS } from "@/lib/followup";
 import { hariIniWIB } from "@/lib/tanggal";
+import { laporanDiminta } from "@/lib/report-gate";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -24,9 +25,10 @@ function selisihHari(tanggal: string, hariIni: string): number {
 export default async function JadwalAnabulPage({
   searchParams,
 }: {
-  searchParams: Promise<{ jenis?: string; horizon?: string }>;
+  searchParams: Promise<{ jenis?: string; horizon?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const jenis = sp.jenis || "";
   const horizon = Number(sp.horizon) || 30;   // lihat berapa hari ke depan
 
@@ -37,15 +39,19 @@ export default async function JadwalAnabulPage({
 
   // Sumbernya follow_ups yang diisi dokter di rekam medis. Yang sudah 'Selesai'
   // atau 'Batal' tidak ikut — laporan ini soal siapa yang MASIH perlu dihubungi.
-  let q = supabase
-    .from("follow_ups")
-    .select("id, jenis, tanggal, catatan, pets(name, species), customers(name, phone), branches(name)", { count: "exact" })
-    .in("status", ["Menunggu", "Terkirim"])
-    .lte("tanggal", batas)
-    .order("tanggal");
-  if (jenis) q = q.eq("jenis", jenis);
+  // A1 (meeting 12 Nov 2026): jadwal baru dibaca setelah Tampilkan ditekan.
+  const bacaJadwal = () => {
+    let q = supabase
+      .from("follow_ups")
+      .select("id, jenis, tanggal, catatan, pets(name, species), customers(name, phone), branches(name)", { count: "exact" })
+      .in("status", ["Menunggu", "Terkirim"])
+      .lte("tanggal", batas)
+      .order("tanggal");
+    if (jenis) q = q.eq("jenis", jenis);
+    return completeReportQuery(q);
+  };
 
-  const { data } = await completeReportQuery(q);
+  const { data } = siap ? await bacaJadwal() : { data: [] as unknown[] };
   const rows = (data ?? []) as unknown as Row[];
 
   const lewat = rows.filter((r) => selisihHari(r.tanggal, hariIni) < 0);
@@ -54,6 +60,7 @@ export default async function JadwalAnabulPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-calendar-heart" title="JADWAL ANABUL"
       desc="Anabul yang sudah waktunya vaksin, kontrol, atau grooming — termasuk yang sudah lewat."
       filter={

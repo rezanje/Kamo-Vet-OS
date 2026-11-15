@@ -6,11 +6,14 @@ import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { formatDokumen } from "@/lib/no-dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
+import { readEffectiveDate } from "@/lib/purchase-backdate";
 import Decimal from "decimal.js";
+import { denganTampil } from "@/lib/report-gate";
 
 const BASE = "/pembelian/uang-muka";
 const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
-const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
+// A1 (meeting 12 Nov 2026): kembali ke daftar yang sudah ditampilkan (tampil=1).
+const gagal = (msg: string): never => redirect(denganTampil(`${BASE}?error=${encodeURIComponent(msg)}`));
 
 export async function bayarUangMuka(formData: FormData) {
   const supabase = await assertRole(BASE, "uang muka pembelian", BOLEH);
@@ -39,7 +42,7 @@ export async function bayarUangMuka(formData: FormData) {
   if (error) gagal(error.message);
   if (!data?.advance_id || !data?.journal_id || !data?.no_um) gagal("Uang muka belum terkonfirmasi lengkap. Periksa hasil transaksi sebelum menyimpan ulang.");
   revalidatePath(BASE);
-  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${data.no_um} tercatat.`)}${transactionDraftAck(formData)}`);
+  redirect(denganTampil(`${BASE}?success=${encodeURIComponent(`Uang muka ${data.no_um} tercatat.`)}${transactionDraftAck(formData)}`));
 }
 
 export async function periksaUangMuka(formData:FormData) {
@@ -49,7 +52,7 @@ export async function periksaUangMuka(formData:FormData) {
   const {data,error} = await supabase.rpc("get_purchase_advance_result",{p_request_key:key});
   if (error || !data?.advance_id || !data?.journal_id) gagal(error?.message ?? "Belum ada uang muka tersimpan untuk draf ini. Periksa daftar sebelum mencoba kembali.");
   revalidatePath(BASE);
-  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${data.no_um} sudah tersimpan; tidak diposting ulang.`)}${transactionDraftAck(formData)}`);
+  redirect(denganTampil(`${BASE}?success=${encodeURIComponent(`Uang muka ${data.no_um} sudah tersimpan; tidak diposting ulang.`)}${transactionDraftAck(formData)}`));
 }
 
 // Batal hanya boleh selama belum terpakai — kalau sudah dipotong ke pembayaran,
@@ -59,9 +62,13 @@ export async function batalkanUangMuka(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   if (!id) gagal("Uang muka tidak valid");
 
-  const {data,error} = await supabase.rpc("cancel_purchase_advance_atomic",{p_advance_id:id});
+  // Tanggal efektif: kosong = hari ini; tanggal mundur hanya Owner/izin dan wajib beralasan (database memeriksa).
+  const effective = readEffectiveDate(formData.get("tanggal"));
+  if (!effective.ok) gagal(effective.message);
+  const alasan = String(formData.get("alasan") ?? "").trim() || null;
+  const {data,error} = await supabase.rpc("cancel_purchase_advance_atomic",{p_advance_id:id,p_tanggal:effective.ok?effective.value:"",p_reason:alasan});
   if (error) gagal(error.message);
   if (!data?.advance_id || !data?.journal_id) gagal("Pembatalan uang muka belum terkonfirmasi lengkap. Periksa daftar sebelum mencoba kembali.");
   revalidatePath(BASE);
-  redirect(`${BASE}?success=${encodeURIComponent(`Uang muka ${data.no_um} dibatalkan.`)}${transactionDraftAck(formData)}`);
+  redirect(denganTampil(`${BASE}?success=${encodeURIComponent(`Uang muka ${data.no_um} dibatalkan.`)}${transactionDraftAck(formData)}`));
 }

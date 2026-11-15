@@ -11,7 +11,10 @@ const db = vi.hoisted(() => ({
   rpc: [] as { name: string; args: { p_request_key: string; p_header: Record<string, string>; p_items: Record<string, unknown>[] } }[],
   rpcImpl: null as null | ((args: { p_request_key: string; p_header: Record<string, string>; p_items: Record<string, unknown>[] }) => { data?: unknown; error?: { message: string }; throws?: boolean }),
   revalidated: [] as string[],
+  /** E4: cabang yang boleh dipakai akun (null = semua cabang). */
+  allowed: null as string[] | null,
 }));
+vi.mock("@/lib/branch-access", () => ({ allowedBranchIds: async () => db.allowed }));
 vi.mock("next/cache", () => ({ revalidatePath: (p: string) => { db.revalidated.push(p); } }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
@@ -35,6 +38,7 @@ vi.mock("@/lib/supabase/server", () => ({
         eq(c: string, v: unknown) { filters[c] = [v]; return q; },
         order: () => q,
         maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
+        then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: rows(), error: null }).then(resolve),
         range(from: number, to: number) { const all = rows(); return Promise.resolve({ data: all.slice(from, to + 1), count: all.length, error: null }); },
       };
       return q;
@@ -46,21 +50,23 @@ import { pratinjauImporShopee, simpanImporShopee } from "@/app/(app)/penjualan/o
 
 const FIXTURE = join(__dirname, "fixtures", "shopee-order-toship-sample.xlsx");
 const WH = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const BR = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const gudang = (over: Row = {}) => ({ id: WH, branch_id: BR, type: "ONLINE", is_active: true, name: "Online Fiktif", branches: { name: "Cabang Fiktif" }, ...over });
 const JIO = "11111111-1111-4111-8111-111111111111", DIG = "22222222-2222-4222-8222-222222222222", HAIR = "33333333-3333-4333-8333-333333333333";
 const O1 = "2611050FIKTIF1", O2 = "2611050FIKTIF2", O3 = "2611050FIKTIF3";
 const file = () => new File([readFileSync(FIXTURE)], "Order.toship.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 const form = (selection: unknown, extra: Record<string, string> = {}, f: File = file()) => {
   const fd = new FormData();
-  fd.set("file", f); fd.set("warehouse_id", WH); fd.set("selection", JSON.stringify(selection));
+  fd.set("file", f); fd.set("branch_id", BR); fd.set("selection", JSON.stringify(selection));
   for (const [k, v] of Object.entries(extra)) fd.set(k, v);
   return fd;
 };
 const SEL = [{ orderNo: O2, items: [JIO] }, { orderNo: O3, items: [DIG, HAIR] }];
 
 beforeEach(() => {
-  db.user = { id: "fixture-user" }; db.role = "STAFF"; db.active = true; db.rpc = []; db.rpcImpl = null; db.revalidated = [];
+  db.user = { id: "fixture-user" }; db.role = "STAFF"; db.active = true; db.rpc = []; db.rpcImpl = null; db.revalidated = []; db.allowed = null;
   db.tables = {
-    warehouses: [{ id: WH, type: "ONLINE", is_active: true, name: "Online Fiktif" }],
+    warehouses: [gudang()],
     items: [
       { id: JIO, code: "JIO-500", name: "Jio Dryfood 500gr", unit: "1/2kg", sell_price: "16500.00", is_active: true, item_type: "Persediaan" },
       { id: DIG, code: "MRV-DIG", name: "Mr.Vet Digestion Care T1 1kg", sell_price: "80000", is_active: true, item_type: "Persediaan" },
@@ -98,18 +104,18 @@ describe("pratinjauImporShopee", () => {
     expect((await pratinjauImporShopee(form([]))).error).toMatch(/masuk|login|sesi/i);
     db.user = { id: "fixture-user" };
     db.tables.warehouses = [];
-    expect((await pratinjauImporShopee(form([]))).error).toMatch(/gudang tidak ditemukan/i);
-    // Gudang expired/transit bukan stok jual — ditolak sama seperti database (20261107030000).
-    db.tables.warehouses = [{ id: WH, type: "EXPIRED", is_active: true }];
-    expect((await pratinjauImporShopee(form([]))).error).toMatch(/tidak bisa dipakai untuk order online/i);
-    db.tables.warehouses = [{ id: WH, type: "TRANSIT", is_active: true }];
-    expect((await pratinjauImporShopee(form([]))).error).toMatch(/tidak bisa dipakai untuk order online/i);
+    expect((await pratinjauImporShopee(form([]))).error).toMatch(/belum terhubung ke cabang/i);
+    // Gudang expired/transit bukan stok jual — tidak pernah jadi gudang utama cabang (20261107030000).
+    db.tables.warehouses = [gudang({ type: "EXPIRED" })];
+    expect((await pratinjauImporShopee(form([]))).error).toMatch(/belum terhubung ke cabang/i);
+    db.tables.warehouses = [gudang({ type: "TRANSIT" })];
+    expect((await pratinjauImporShopee(form([]))).error).toMatch(/belum terhubung ke cabang/i);
     // Gudang toko/petshop cabang boleh (Aldi 5 Nov 2026).
-    db.tables.warehouses = [{ id: WH, type: "RETAIL", is_active: true }];
-    expect((await pratinjauImporShopee(form([]))).error ?? "").not.toMatch(/gudang/i);
-    db.tables.warehouses = [{ id: WH, type: "ONLINE", is_active: true }];
+    db.tables.warehouses = [gudang({ type: "RETAIL" })];
+    expect((await pratinjauImporShopee(form([]))).error ?? "").not.toMatch(/gudang|cabang/i);
+    db.tables.warehouses = [gudang()];
     expect((await pratinjauImporShopee(form([], {}, new File(["x"], "a.csv")))).error).toMatch(/\.xlsx/);
-    const fd = new FormData(); fd.set("warehouse_id", WH);
+    const fd = new FormData(); fd.set("branch_id", BR);
     expect((await pratinjauImporShopee(fd)).error).toMatch(/file/i);
     expect(db.rpc).toEqual([]);
   });
@@ -266,8 +272,33 @@ describe("simpanImporShopee", () => {
     expect((await simpanImporShopee(form([]))).error).toMatch(/pilih/i);
     expect((await simpanImporShopee(form(Array.from({ length: 51 }, () => SEL[0])))).error).toMatch(/50/);
     expect((await simpanImporShopee(form(SEL, {}, new File(["x"], "a.csv")))).error).toMatch(/\.xlsx/);
-    expect((await simpanImporShopee(form(SEL, { warehouse_id: "bukan-uuid" }))).error).toMatch(/gudang/i);
+    // Cabang tidak sah dari form: lihat blok "E4" di bawah (akun satu cabang terkunci; multi-cabang ditolak).
     expect((await simpanImporShopee(form("bukan-json" as never, { selection: "{rusak" }))).error).toMatch(/pilihan/i);
+    expect(db.rpc).toEqual([]);
+  });
+});
+
+describe("E4: gudang impor otomatis dari cabang akun", () => {
+  const TOKO = "cccccccc-cccc-4ccc-8ccc-cccccccccccc", LAIN = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  it("cabang petshop dengan gudang toko + gudang online: order disimpan ke gudang TOKO, bukan gudang online", async () => {
+    db.tables.warehouses = [gudang({ name: "WH ONLINE FIKTIF" }), gudang({ id: TOKO, type: "RETAIL", name: "WH TOKO FIKTIF" })];
+    const r = await simpanImporShopee(form(SEL));
+    expect(r.error).toBeUndefined();
+    expect(db.rpc.map(c => c.args.p_header.warehouse_id)).toEqual([TOKO, TOKO]);
+  });
+  it("akun satu cabang: gudang terkunci ke cabangnya, walau form mengirim cabang lain", async () => {
+    db.allowed = [BR];
+    db.tables.warehouses = [gudang(), gudang({ id: LAIN, branch_id: LAIN, type: "RETAIL", name: "WH LAIN", branches: { name: "Cabang Lain" } })];
+    const r = await simpanImporShopee(form(SEL, { branch_id: LAIN }));
+    expect(r.error).toBeUndefined();
+    expect(db.rpc.every(c => c.args.p_header.warehouse_id === WH)).toBe(true);
+  });
+  it("akun multi-cabang wajib memilih cabang yang boleh diaksesnya; cabang di luar akses ditolak tanpa RPC", async () => {
+    db.allowed = [BR, TOKO];
+    db.tables.warehouses = [gudang(), gudang({ id: TOKO, branch_id: TOKO, type: "RETAIL", name: "WH B", branches: { name: "Cabang B" } }),
+      gudang({ id: LAIN, branch_id: LAIN, type: "RETAIL", name: "WH LAIN", branches: { name: "Cabang Lain" } })];
+    expect((await simpanImporShopee(form(SEL, { branch_id: "" }))).error).toMatch(/pilih cabang/i);
+    expect((await simpanImporShopee(form(SEL, { branch_id: LAIN }))).error).toMatch(/pilih cabang/i);
     expect(db.rpc).toEqual([]);
   });
 });

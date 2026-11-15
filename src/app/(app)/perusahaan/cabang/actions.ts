@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { roleRpcFailure } from "@/lib/role-action-access";
+import { pesanGalat, rapikanNama, validasiNamaCabang } from "@/lib/cabang-gudang-edit";
 
 const PATH = "/perusahaan/cabang";
 // Never show the raw database message: known role/people codes map to Indonesian, the rest is generic.
@@ -12,13 +13,13 @@ const pesanPenugasan = (error: unknown) => roleRpcFailure(error)?.message ?? "Pe
 // Friendly early manager gate only. The bounded RPC is authoritative, retains
 // the original account target/branch ceilings and writes the account audit.
 // Direct authenticated user_branches writes are deliberately rejected.
-async function requireAdmin() {
+async function requireAdmin(pesan = "Hanya owner/admin yang bisa mengatur pengguna cabang") {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase
     .from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
-    redirect(`${PATH}?error=${encodeURIComponent("Hanya owner/admin yang bisa mengatur pengguna cabang")}`);
+    redirect(`${PATH}?error=${encodeURIComponent(pesan)}`);
   }
   return supabase;
 }
@@ -84,4 +85,42 @@ export async function tambahCabang(formData: FormData) {
   revalidatePath("/perusahaan/gudang");
   revalidatePath("/pengaturan/cabang");
   redirect(`${PATH}?success=${encodeURIComponent(`Cabang ${name} sudah dibuat`)}`);
+}
+
+const gagal = (pesan: string): never => redirect(`${PATH}?error=${encodeURIComponent(pesan)}`);
+
+function segarkan() {
+  revalidatePath(PATH);
+  revalidatePath("/perusahaan/gudang");
+  revalidatePath("/pengaturan/cabang");
+}
+
+/**
+ * Ubah nama (wajib), kode (hanya bila dikirim), dan status cabang. OWNER/ADMIN; jenis cabang tidak bisa diubah.
+ * Pengaman sebenarnya: update_branch_info (peran, nama unik, kode terkunci bila ada transaksi, shift/antrian terbuka).
+ */
+export async function ubahCabang(formData: FormData) {
+  const supabase = await requireAdmin("Hanya owner/admin yang bisa mengubah cabang");
+  const id = String(formData.get("id") ?? "").trim();
+  const salahNama = validasiNamaCabang(formData.get("name"));
+  if (!id) gagal("Cabang tidak valid");
+  if (salahNama) gagal(salahNama);
+  const nama = rapikanNama(formData.get("name"));
+  const kode = String(formData.get("code") ?? "").trim() || null;
+  const { error } = await supabase.rpc("update_branch_info", { p_id: id, p_name: nama, p_code: kode, p_is_active: null });
+  if (error) gagal(pesanGalat(error));
+  segarkan();
+  redirect(`${PATH}?success=${encodeURIComponent(`Cabang ${nama} tersimpan`)}`);
+}
+
+/** Nonaktifkan / aktifkan cabang tanpa menyentuh nama dan kode. */
+export async function aturStatusCabang(formData: FormData) {
+  const supabase = await requireAdmin("Hanya owner/admin yang bisa mengubah cabang");
+  const id = String(formData.get("id") ?? "").trim();
+  const status = String(formData.get("is_active") ?? "");
+  if (!id || !["1", "0"].includes(status)) gagal("Pilih status cabang yang valid");
+  const { error } = await supabase.rpc("update_branch_info", { p_id: id, p_name: null, p_code: null, p_is_active: status === "1" });
+  if (error) gagal(pesanGalat(error));
+  segarkan();
+  redirect(`${PATH}?success=${encodeURIComponent(status === "1" ? "Cabang diaktifkan" : "Cabang dinonaktifkan")}`);
 }

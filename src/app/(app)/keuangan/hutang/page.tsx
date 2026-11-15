@@ -8,6 +8,8 @@ import { loadRekeningAktif } from "@/components/PilihRekening";
 import { NoDok } from "@/components/NoDok";
 import { hariIniWIB } from "@/lib/tanggal";
 import { PurchaseCorrectionQuickRequest } from "@/components/PurchaseCorrectionQuickRequest";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { laporanDiminta } from "@/lib/report-gate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string | null) => (s ? new Date(s + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -23,8 +25,48 @@ type UangMukaSiap = { id: string; no_um: string; sisa: number };
 
 type PoBelum = { id: string; no_po: string | null; supplier: string; tanggal: string; nilai: number; warning: string | null };
 
-export default async function HutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; replace_payment?: string; koreksi?: string; koreksi_error?: string }> }) {
-  const { success, error, replace_payment, koreksi, koreksi_error } = await searchParams;
+export default async function HutangPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; replace_payment?: string; koreksi?: string; koreksi_error?: string; tampil?: string }> }) {
+  const sp = await searchParams;
+  const { success, error, replace_payment, koreksi, koreksi_error } = sp;
+
+  // A1 (meeting 12 Nov 2026): daftar hutang (seluruh faktur, PO, retur) baru dibaca setelah
+  // Tampilkan ditekan. Tautan "Siapkan pembayaran pengganti" (replace_payment) dari halaman
+  // faktur langsung menuju satu faktur di daftar ini, jadi ikut dianggap minta tampil.
+  const siap = laporanDiminta(sp) || !!replace_payment;
+  const kepala = (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+        <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+        <span style={{ color: "var(--td)" }}>·</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>Hutang Usaha (AP)</span>
+        <form method="get" style={{ marginLeft: "auto" }}>
+          <InputTampil />
+          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+        </form>
+        <Link href="/keuangan/hutang/pembantu" className="back-btn">
+          <i className="ti ti-book-2" /> Buku Besar Pembantu
+        </Link>
+      </div>
+
+      {success && (
+        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
+          <i className="ti ti-circle-check" /> {success}
+        </div>
+      )}
+      {error && (
+        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
+          <i className="ti ti-alert-circle" /> {error}
+        </div>
+      )}
+
+      <div id="request-purchase-correction" style={{ scrollMarginTop: 90 }}>
+        {koreksi === "terkirim" && <p role="status" className="p2ban" style={{ background: "#e8f5ee", color: "#15803d" }}>Permintaan koreksi tersimpan dan masuk antrean Super Admin.</p>}
+        {koreksi_error && <p role="alert" className="p2ban" style={{ background: "#fef2f2", color: "#b91c1c" }}>{koreksi_error}</p>}
+      </div>
+    </>
+  );
+  if (!siap) return <>{kepala}<LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat umur hutang, faktur yang belum lunas, dan barang yang belum difakturkan." /></>;
+
   const supabase = await createClient();
   const {data:{user}} = await supabase.auth.getUser();
   // P01: siapa pun yang bisa membuka faktur di sini boleh meminta koreksi; OWNER memakai kontrol koreksi langsung.
@@ -79,12 +121,12 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   if (replace_payment) {
     const [{ data: profile }, { data: source }, { data: existingReplacement, error: replacementReadError }] = await Promise.all([
       supabase.from("profiles").select("role,is_active").eq("id", user?.id ?? "").maybeSingle(),
-      supabase.from("purchase_invoice_payments").select("id,invoice_id,amount,metode,advance_id,voided_at,reversal_of,payment_order_id").eq("id", replace_payment).maybeSingle(),
+      supabase.from("purchase_invoice_payments").select("id,invoice_id,tanggal,amount,metode,advance_id,voided_at,reversal_of,payment_order_id").eq("id", replace_payment).maybeSingle(),
       supabase.from("purchase_invoice_payments").select("id").eq("replaces_payment_id", replace_payment).maybeSingle(),
     ]);
     if (!replacementReadError && !existingReplacement && profile?.role === "OWNER" && profile.is_active && source?.voided_at && !source.reversal_of && !source.payment_order_id
       && rows.some(row => row.id === source.invoice_id) && ["Transfer", "Tunai", "Debit"].includes(source.metode)) {
-      replacement = { id: source.id, invoice_id: source.invoice_id, amount: Number(source.amount), metode: source.metode, advance_id: source.advance_id };
+      replacement = { id: source.id, invoice_id: source.invoice_id, tanggal: source.tanggal, amount: Number(source.amount), metode: source.metode, advance_id: source.advance_id };
     }
   }
 
@@ -154,30 +196,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-        <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
-        <span style={{ color: "var(--td)" }}>·</span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Hutang Usaha (AP)</span>
-        <Link href="/keuangan/hutang/pembantu" className="back-btn" style={{ marginLeft: "auto" }}>
-          <i className="ti ti-book-2" /> Buku Besar Pembantu
-        </Link>
-      </div>
-
-      {success && (
-        <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> {success}
-        </div>
-      )}
-      {error && (
-        <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
-          <i className="ti ti-alert-circle" /> {error}
-        </div>
-      )}
-
-      <div id="request-purchase-correction" style={{ scrollMarginTop: 90 }}>
-        {koreksi === "terkirim" && <p role="status" className="p2ban" style={{ background: "#e8f5ee", color: "#15803d" }}>Permintaan koreksi tersimpan dan masuk antrean Super Admin.</p>}
-        {koreksi_error && <p role="alert" className="p2ban" style={{ background: "#fef2f2", color: "#b91c1c" }}>{koreksi_error}</p>}
-      </div>
+      {kepala}
       {replace_payment && !replacement && <div role="alert" className="p2ban">Pembayaran pengganti tidak tersedia. Periksa riwayat dan sisa hutang terbaru.</div>}
       <div className="crm-sec">
         <SecHeader num="01" title="UMUR HUTANG (AP AGING)" desc="Faktur pembelian belum lunas, dikelompokkan menurut umur JATUH TEMPO (pola Accurate)." />

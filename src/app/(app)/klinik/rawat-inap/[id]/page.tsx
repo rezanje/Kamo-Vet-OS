@@ -18,6 +18,7 @@ import { readStayTypes, readVisitContinuation, STAY_TYPE_LABEL } from "@/lib/inp
 import { loadInpatientMedicationHistory } from "@/lib/inpatient-medication-history";
 import { catatWaktu, mulai } from "@/lib/u07-waktu";
 import { ringkasBelumDitagih } from "@/lib/tagihan-berjalan-server";
+import { bacaBolehKoreksiVisit, putuskanBolehKoreksiVisit } from "@/lib/koreksi-visit-akses";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -79,7 +80,7 @@ export default async function RawatInapDetailPage({
   // Reads below depend only on the parent that already passed the branch guard, so they run together.
   // U07: tipe inap, asal kunjungan dan riwayat obat khusus ikut gelombang ini (dulu
   // menyusul berurutan, dan Obat Khusus membaca pengguna sekali lagi).
-  const [handoff, { data: consentRows }, { data: paksaTemplates, error: paksaTemplatesError }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih, racikanPasien, riwayatObat] = await Promise.all([
+  const [handoff, { data: consentRows }, { data: paksaTemplates, error: paksaTemplatesError }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih, racikanPasien, riwayatObat, koreksiDibaca] = await Promise.all([
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
@@ -103,6 +104,8 @@ export default async function RawatInapDetailPage({
     bacaRacikanKunjungan(supabase, String(rec.visit_id)),
     // Ringkasan obat/racikan/BMHP urut tanggal, hanya baca.
     bacaRiwayatObat(supabase, String(rec.visit_id)),
+    // A5: izin "Koreksi visit rawat inap" hanya dibutuhkan setelah pasien pulang (tombol koreksi & edit catatan).
+    rec.discharged_at ? bacaBolehKoreksiVisit(supabase) : Promise.resolve(null),
   ]);
   waktu.tandai("anak");
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
@@ -117,6 +120,8 @@ export default async function RawatInapDetailPage({
   const isDoctor = me?.role === "DOCTOR";
   const canManageTemplates = me?.role === "OWNER" || me?.role === "ADMIN";
   const active = !rec.discharged_at;
+  // A5 (meeting 12 Nov 2026): setelah pulang/RIP, Owner / pemegang izin tetap bisa menambah & mengoreksi catatan visit (alasan wajib).
+  const bolehKoreksi = !active && putuskanBolehKoreksiVisit(koreksiDibaca, me?.role);
   // Datang dari tombol "Pulangkan" di daftar: pilihan kondisi dipilihkan ke Sembuh / Boleh Pulang
   // supaya staf tinggal menekan Simpan Kondisi. Tidak memulangkan apa pun sebelum disimpan.
   const mauPulang = pulang === "1" && active && !isTerminal(cond);
@@ -358,6 +363,11 @@ export default async function RawatInapDetailPage({
               <i className="ti ti-plus" /> Tambah
             </Link>
           )}
+          {bolehKoreksi && (
+            <Link href={`/klinik/rawat-inap/${rec.id}/koreksi`} className="btn-acc" style={{ textDecoration: "none", background: "#d97706" }}>
+              <i className="ti ti-plus" /> Tambah koreksi visit
+            </Link>
+          )}
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
@@ -376,7 +386,7 @@ export default async function RawatInapDetailPage({
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.doctor_name ?? "—"}</td>
                   <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.paramedic_name ?? "—"}</td>
                   <td style={{ textAlign: "center" }}>
-                    <LogRowAction recordId={String(rec.id)} logId={String(l.id)} editable={active} />
+                    <LogRowAction recordId={String(rec.id)} logId={String(l.id)} editable={active || bolehKoreksi} />
                   </td>
                 </tr>
               ))}

@@ -297,13 +297,18 @@ export function composeSyaratHasilCart<T extends ShRow>(args: {
     const plain = parts.filter((p) => !p.claim);
     const lg = legacyOn ? legacyOver(plain.map((p) => p.row)) : null;
     if (lg) plain.forEach((p, k) => { p.discount = lg.discount[k]; p.promoId = lg.id[k]; p.promoName = lg.name[k]; });
-    // the nilai syarat must still hold on the FINAL charges
+    // the nilai syarat must still hold on the FINAL charges, and it is ONE pool of money for the whole receipt (Andri 11 Nov): every claimed
+    // set consumes sets x (largest nilai row of its promo), and all promos together may not consume more than the money actually charged
+    // (promo_sh_verify_claims enforces the same aggregate).
     const money = finalNilai(parts);
+    let spendNeeded = 0;
     for (const [promoId, info] of claimedPromos) {
       const def = defs.find((d) => d.id === promoId);
       if (!def) return null;
       for (const r of def.syarat) if (r.kind === "nilai" && money < info.sets * r.min) return null;
+      spendNeeded += info.sets * def.syarat.reduce((mx, r) => (r.kind === "nilai" && r.min > mx ? r.min : mx), 0);
     }
+    if (money < spendNeeded) return null;
     const sh = [...claimedPromos.values()].reduce((s, x) => s + x.discount, 0);
     return {
       parts, legacy: lg ? lg.total : 0, sh, hits: (lg ? lg.hits : 0) + claimedPromos.size,

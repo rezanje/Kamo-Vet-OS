@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SUBMENU_ENTRIES } from "../submenu-access";
@@ -7,7 +7,17 @@ const path = join(__dirname, "../../../supabase/migrations/20261108110000_role_s
 const sql = readFileSync(path, "utf8");
 
 describe("migration 20261108110000_role_submenu_access.sql stays in sync with the TypeScript registry", () => {
-  const rows = [...sql.matchAll(/^\('([a-z0-9.-]+)','([a-z-]+)'\)[,;]?$/gm)].map(m => ({ id: m[1], module: m[2] }));
+  const baris = (teks: string) => [...teks.matchAll(/^\('([a-z0-9.-]+)','([a-z-]+)'\)[,;]?$/gm)].map(m => ({ id: m[1], module: m[2] }));
+  // Sub-menu yang ditambahkan SESUDAH migrasi ini (mis. A4 laporan.visit) memasang baris katalognya di migrasi
+  // bernomor lebih besar yang meng-insert ke role_settings_private.submenu_catalog — ikut dihitung di sini.
+  const tambahan = (() => {
+    const dir = join(__dirname, "../../../supabase/migrations");
+    return readdirSync(dir).filter(n => n.endsWith(".sql") && n > "20261108110000_role_submenu_access.sql").sort()
+      .map(n => readFileSync(join(dir, n), "utf8"))
+      .filter(t => /insert into role_settings_private\.submenu_catalog/i.test(t))
+      .flatMap(baris);
+  })();
+  const rows = [...baris(sql), ...tambahan];
 
   it("catalog rows == registry entries (same ids, same modules, no duplicates)", () => {
     expect(rows.length).toBe(SUBMENU_ENTRIES.length);

@@ -101,16 +101,6 @@ export function tebakSatuan(line: Pick<ShopeeLine, "namaProduk" | "variasi">, un
   return null;
 }
 
-/** Gudang bawaan: satu-satunya gudang online yang cabangnya memuat "Panduraya"; selain itu pengguna wajib memilih. */
-export function pilihGudangDefault(warehouses: { id: string; name: string; branch_name: string; type?: string }[]): string {
-  const hit = warehouses.filter(w => /panduraya/i.test(w.branch_name));
-  if (hit.length === 1) return hit[0].id;
-  // Sejak semua gudang cabang bisa dipilih, Panduraya punya lebih dari satu gudang: gudang
-  // online-nya tetap jadi bawaan bila hanya satu. Selain itu operator memilih sendiri.
-  const online = hit.filter(w => w.type === "ONLINE");
-  return online.length === 1 ? online[0].id : "";
-}
-
 export const kunciBaris = (orderNo: string, index: number) => `${orderNo}|${index}`;
 
 export type Peringatan = { level: "blok" | "peringatan" | "info"; text: string };

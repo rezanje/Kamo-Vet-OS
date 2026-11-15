@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
+import { laporanDiminta } from "@/lib/report-gate";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(r: Rel<T>): T | null => (Array.isArray(r) ? (r[0] ?? null) : r);
@@ -28,24 +29,31 @@ type ReturRow = {
 export default async function PenjualanKasirPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; cabang?: string; tampil?: string }>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
   const cabang = sp.cabang || "";
 
   const supabase = await createClient();
+  // A1 (meeting 12 Nov 2026): sebelum Tampilkan ditekan hanya daftar cabang yang dibaca.
+  // Setelahnya, cabang terpilih (dicocokkan dengan nama, sama seperti saringan di bawah)
+  // ikut disaring di query; saringan di memori tetap jadi pengaman.
+  const tanpaData = Promise.resolve({ data: null, error: null });
+  const qSales = supabase.from("sales")
+    .select(`id, cashier_id, total, discount, payment_plan, payments_finalized_at, voided_at, branches${cabang ? "!inner" : ""}(name)`, { count: "exact" })
+    .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`);
+  const qReturs = supabase.from("sales_returns")
+    .select(`id, total, sales${cabang ? "!inner" : ""}(cashier_id, branches${cabang ? "!inner" : ""}(name))`, { count: "exact" }).is("voided_at", null)
+    .gte("tanggal", dari).lte("tanggal", sampai);
   const [{ data: sales }, { data: returs }, { data: profiles }, { data: cabangList }] = await Promise.all([
-    completeReportQuery(supabase.from("sales")
-      .select("id, cashier_id, total, discount, payment_plan, payments_finalized_at, voided_at, branches(name)", { count: "exact" })
-      .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
-    completeReportQuery(supabase.from("sales_returns")
-      .select("id, total, sales(cashier_id, branches(name))", { count: "exact" }).is("voided_at", null)
-      .gte("tanggal", dari).lte("tanggal", sampai)),
+    siap ? completeReportQuery(cabang ? qSales.eq("branches.name", cabang) : qSales) : tanpaData,
+    siap ? completeReportQuery(cabang ? qReturs.eq("sales.branches.name", cabang) : qReturs) : tanpaData,
     // Kasir dikenali lewat akun login (sales.cashier_id → profiles), bukan lewat
     // tabel karyawan: tidak semua akun kasir punya kartu karyawan.
-    completeReportQuery(supabase.from("profiles").select("id, full_name, role", { count: "exact" })),
+    siap ? completeReportQuery(supabase.from("profiles").select("id, full_name, role", { count: "exact" })) : tanpaData,
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
   ]);
 
@@ -99,6 +107,7 @@ export default async function PenjualanKasirPage({
 
   return (
     <LaporanPage
+      siap={siap}
       icon="ti-cash-register" title="PENJUALAN PER KASIR"
       desc="Siapa yang paling produktif — jumlah transaksi, omset, dan rata-rata belanja per struk."
       filter={

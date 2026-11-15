@@ -10,12 +10,18 @@ import { catchUpDepreciation } from "@/lib/depreciation";
 import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
 import { tambahPembelianAset, tambahSaldoAwalAset, jalankanPenyusutan } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { laporanDiminta } from "@/lib/report-gate";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
-export default async function AsetPage({ searchParams }: { searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; error?: string; n?: string }> }) {
-  const { request_done, request_scope, success, error, n } = await searchParams;
+export default async function AsetPage({ searchParams }: { searchParams: Promise<{ request_done?: string; request_scope?: string; success?: string; error?: string; n?: string; tampil?: string }> }) {
+  const sp = await searchParams;
+  const { request_done, request_scope, success, error, n } = sp;
+  // A1 (meeting 12 Nov 2026): daftar aset + seluruh riwayat penyusutan baru dibaca setelah
+  // Tampilkan ditekan. Formulir pembelian/saldo awal tetap tersedia (isiannya ringan).
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const rekening = await loadRekeningAktif(supabase);
@@ -25,8 +31,10 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
   const autoRuns = await catchUpDepreciation(supabase);
 
   const [{ data: assets }, { data: deps }, { data: branches }, { data: katData }] = await Promise.all([
-    supabase.from("fixed_assets").select("id, nama, kategori, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, is_active, status").order("tanggal_perolehan"),
-    supabase.from("asset_depreciations").select("asset_id, amount"),
+    siap
+      ? supabase.from("fixed_assets").select("id, nama, kategori, tanggal_perolehan, harga_perolehan, nilai_sisa, umur_bulan, is_active, status").order("tanggal_perolehan")
+      : { data: [] },
+    siap ? supabase.from("asset_depreciations").select("asset_id, amount") : { data: [] },
     supabase.from("branches").select("id, name").order("name"),
     supabase.from("asset_categories").select("id, nama, umur_bulan").eq("is_active", true).order("nama"),
   ]);
@@ -59,6 +67,10 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
         <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Aset Tetap</span>
+        <form method="get" style={{ marginLeft: "auto" }}>
+          <InputTampil />
+          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+        </form>
       </div>
 
       {autoRuns.length > 0 && (
@@ -85,7 +97,7 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
       )}
 
       <div className="crm-sec">
-        <SecHeader num="01" title="DAFTAR ASET TETAP" desc={`Total perolehan ${rp(totalPerolehan)} · akumulasi penyusutan ${rp(totalAkum)} · nilai buku ${rp(totalPerolehan - totalAkum)}.`}
+        <SecHeader num="01" title="DAFTAR ASET TETAP" desc={siap ? `Total perolehan ${rp(totalPerolehan)} · akumulasi penyusutan ${rp(totalAkum)} · nilai buku ${rp(totalPerolehan - totalAkum)}.` : "Klik Tampilkan untuk melihat daftar aset dan nilai bukunya."}
           action={
             <form action={jalankanPenyusutan} style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <input className="fi" type="month" name="periode" defaultValue={periodeNow} style={{ width: 130 }} />
@@ -94,7 +106,7 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
               </button>
             </form>
           } />
-        <div style={{ overflowX: "auto" }}>
+        {!siap ? <LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat daftar aset tetap, akumulasi penyusutan, dan nilai bukunya." /> : <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 720 }}>
             <thead>
               <tr><th>Aset</th><th>Kategori</th><th>Perolehan</th><th style={{ textAlign: "right" }}>Harga</th><th style={{ textAlign: "right" }}>Susut/bln</th><th style={{ textAlign: "right" }}>Akumulasi</th><th style={{ textAlign: "right" }}>Nilai Buku</th><th>Umur</th><th style={{ width: 90 }}>Status</th></tr>
@@ -126,7 +138,7 @@ export default async function AsetPage({ searchParams }: { searchParams: Promise
               )}
             </tbody>
           </table>
-        </div>
+        </div>}
       </div>
 
       <div className="crm-sec">

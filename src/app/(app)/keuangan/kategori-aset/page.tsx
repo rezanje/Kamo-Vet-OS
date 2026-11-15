@@ -5,6 +5,8 @@ import { MasterPage } from "@/components/MasterPage";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { simpanKategoriAset, toggleKategoriAset } from "./actions";
+import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
+import { denganTampil, laporanDiminta } from "@/lib/report-gate";
 
 type Kat = {
   id: string; nama: string; umur_bulan: number;
@@ -14,15 +16,21 @@ type Kat = {
 export default async function KategoriAsetPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; success?: string; edit?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit?: string; tampil?: string }>;
 }) {
-  const { error, success, edit } = await searchParams;
+  const sp = await searchParams;
+  const { error, success, edit } = sp;
+  // A1 (meeting 12 Nov 2026): daftar kategori + hitungan aset per kategori baru dibaca
+  // setelah Tampilkan ditekan. Formulir tetap tersedia; kalau sedang mengubah, hanya
+  // kategori itu yang dibaca.
+  const siap = laporanDiminta(sp);
   const supabase = await createClient();
   const bolehKelola = await bolehKelolaMaster();
 
+  const kategoriQuery = supabase.from("asset_categories").select("id, nama, umur_bulan, akun_beban, akun_akumulasi, is_active").order("nama");
   const [{ data }, { data: asetRows }, { data: akunRows }] = await Promise.all([
-    supabase.from("asset_categories").select("id, nama, umur_bulan, akun_beban, akun_akumulasi, is_active").order("nama"),
-    supabase.from("fixed_assets").select("category_id").not("category_id", "is", null),
+    siap ? kategoriQuery : edit ? kategoriQuery.eq("id", edit) : { data: [] },
+    siap ? supabase.from("fixed_assets").select("category_id").not("category_id", "is", null) : { data: [] },
     supabase.from("coa_accounts").select("code, name").order("code"),
   ]);
 
@@ -43,6 +51,12 @@ export default async function KategoriAsetPage({
       error={error} success={success} successMsg="Kategori tersimpan."
       bolehKelola={bolehKelola}
       readOnlyNote="Hanya OWNER/ADMIN yang bisa mengubah kategori aset."
+      aksi={
+        <form method="get">
+          <InputTampil />
+          <button type="submit" className="btn-def"><i className="ti ti-filter" /> Tampilkan</button>
+        </form>
+      }
     >
       {bolehKelola && (
         <form action={simpanKategoriAset} className="crm-sec" style={{ marginBottom: 14 }}>
@@ -74,7 +88,7 @@ export default async function KategoriAsetPage({
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
-            {editing && <Link href="/keuangan/kategori-aset" className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}
+            {editing && <Link href={denganTampil("/keuangan/kategori-aset")} className="btn-def" style={{ textDecoration: "none" }}>Batal</Link>}
             <SubmitButton className="btn-acc" icon="ti-device-floppy" pendingText="Menyimpan…" style={{ background: "var(--posb)" }}>
               Simpan
             </SubmitButton>
@@ -82,7 +96,7 @@ export default async function KategoriAsetPage({
         </form>
       )}
 
-      <div className="crm-sec" style={{ marginBottom: 0 }}>
+      {!siap ? <LaporanBelumDitampilkan pesan="Klik Tampilkan untuk melihat daftar kategori aset dan jumlah aset yang memakainya." /> : <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 660 }}>
             <thead>
@@ -108,7 +122,7 @@ export default async function KategoriAsetPage({
                   {bolehKelola && (
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <Link href={`/keuangan/kategori-aset?edit=${k.id}`} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Ubah</Link>
+                        <Link href={denganTampil(`/keuangan/kategori-aset?edit=${k.id}`)} className="btn-def" style={{ padding: "3px 9px", fontSize: 10.5, textDecoration: "none" }}>Ubah</Link>
                         <form action={toggleKategoriAset}>
                           <input type="hidden" name="id" value={k.id} />
                           <input type="hidden" name="aktif" value={k.is_active ? "1" : "0"} />
@@ -129,7 +143,7 @@ export default async function KategoriAsetPage({
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
     </MasterPage>
   );
 }

@@ -4,12 +4,11 @@ import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { formatPosMoney } from "@/lib/pos-money";
 import { hariIniWIB } from "@/lib/tanggal";
 import {
-  atribusiPenjual, barisPerOrang, rekapTenagaPenjual, saringAtribusi,
-  JENIS_PENJUAL, KANAL_PENJUAL, LABEL_KANAL_PENJUAL, LABEL_PERAN, PERAN_SEMUA,
-  type KanalPenjual, type PeranPenjual, type RekapPenjual,
+  barisPerOrang, JENIS_PENJUAL, KANAL_PENJUAL, LABEL_KANAL_PENJUAL, LABEL_PERAN, PERAN_SEMUA,
 } from "@/lib/laporan-tenaga-penjual";
-import type { JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
-import { ambilTenagaPenjual } from "./data";
+import { laporanDiminta } from "@/lib/report-gate";
+import { ambilOpsiFilterPenjual, ambilTenagaPenjual } from "./data";
+import { bacaSaringan, labelPeran, olahLaporanPenjual, LABEL_TAMPILAN, TAMPILAN_PENJUAL, type ParamPenjual } from "./olah";
 
 // Penjualan per Tenaga Penjual.
 //
@@ -27,40 +26,28 @@ const awalBulan = () => hariIniWIB().slice(0, 8) + "01";
 const tanggalIndo = (t: string) =>
   new Date(`${t}T00:00:00+07:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "2-digit", timeZone: "Asia/Jakarta" });
 
-const satuDari = <T extends string>(nilai: string | undefined, pilihan: readonly T[]): T | "" =>
-  (pilihan as readonly string[]).includes(nilai ?? "") ? (nilai as T) : "";
-
 export default async function PenjualPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dari?: string; sampai?: string; cabang_id?: string; kanal?: string; peran?: string; karyawan?: string; jenis?: string }>;
+  searchParams: Promise<ParamPenjual>;
 }) {
   const sp = await searchParams;
+  const siap = laporanDiminta(sp);
   const dari = sp.dari || awalBulan();
   const sampai = sp.sampai || hariIniWIB();
-  const kanal = satuDari<KanalPenjual>(sp.kanal, KANAL_PENJUAL);
-  const peran = satuDari<PeranPenjual>(sp.peran, PERAN_SEMUA);
-  const jenis = satuDari<JenisBarisPenjualan>(sp.jenis, JENIS_PENJUAL);
+  const { kanal, peran, jenis, tampilan } = bacaSaringan(sp);
 
-  const data = await ambilTenagaPenjual({ dari, sampai });
-  const cabangId = data.cabangOptions.some((c) => c.id === sp.cabang_id) ? sp.cabang_id! : "";
+  // A1: sebelum Tampilkan ditekan, hanya isian filter yang dibaca — tanpa baris penjualan.
+  const opsi = await ambilOpsiFilterPenjual();
+  const cabangId = opsi.cabangOptions.some((c) => c.id === sp.cabang_id) ? sp.cabang_id! : "";
+  const data = siap
+    ? await ambilTenagaPenjual({ dari, sampai, cabangId })
+    : { ...opsi, rows: [], faktur: [], selisihDokumen: 0, returTanpaSumber: 0 };
   const karyawanId = data.karyawan.some((k) => k.id === sp.karyawan) ? sp.karyawan! : "";
 
-  const semua = atribusiPenjual(data.rows);
-  const terpilih = saringAtribusi(semua, { cabangId, kanal, peran, karyawanId, jenis });
-  const { orang, tanpaPenjual, total } = rekapTenagaPenjual(terpilih);
-
-  const jumlahNama = new Map<string, number>();
-  for (const nama of data.namaKaryawan.values()) jumlahNama.set(nama, (jumlahNama.get(nama) ?? 0) + 1);
-  const labelOrang = (employeeId: string | null): string => {
-    if (!employeeId) return "Tanpa tenaga penjual";
-    const nama = data.namaKaryawan.get(employeeId);
-    if (!nama) return `Karyawan terhapus (ID ${employeeId.slice(-8)})`;
-    return (jumlahNama.get(nama) ?? 0) > 1 ? `${nama} (ID ${employeeId.slice(-8)})` : nama;
-  };
-
-  const barisRekap: RekapPenjual[] = [...orang, ...(tanpaPenjual ? [tanpaPenjual] : [])];
-  const fakturTerpilih = data.faktur.filter((f) => !karyawanId || f.penjualId === karyawanId);
+  // Saringan & rumus bersama halaman dan unduhan (olah.ts) — angka layar = angka berkas.
+  const { terpilih, orang, tanpaPenjual, total, barisRekap, perItem, fakturTerpilih, labelOrang } =
+    olahLaporanPenjual(data, { cabangId, kanal, peran, karyawanId, jenis, tampilan });
   const sisaFaktur = fakturTerpilih.reduce((jumlah, f) => jumlah + f.sisa, 0);
   // Rekap "faktur belum lunas per penjual" — permintaan Kamo Group 24 Agu 2026.
   const fakturPerPenjual = [...fakturTerpilih.reduce((peta, f) => {
@@ -75,9 +62,16 @@ export default async function PenjualPage({
     .sort((a, b) => b.sisa - a.sisa || b.nilai - a.nilai);
 
   const KOLOM = 7 + KANAL_PENJUAL.length + JENIS_PENJUAL.length;
+  const paramUnduh = new URLSearchParams(Object.entries({
+    dari, sampai, cabang_id: cabangId, kanal, peran, karyawan: karyawanId, jenis, tampilan,
+  }).filter(([, nilai]) => nilai)).toString();
 
   return (
     <LaporanPage
+      siap={siap}
+      // A3: unduhan dibentuk di server (lengkap, semua kombinasi filter), bukan disalin dari layar.
+      unduhTampilan={false}
+      pilihKolom
       icon="ti-user-dollar" title="PENJUALAN PER TENAGA PENJUAL"
       desc="Omzet per orang dari seluruh kanal — kasir petshop, tagihan klinik, dan faktur grosir — dipisah menurut peran Dokter dan Non-dokter pada tiap baris."
       filter={
@@ -116,6 +110,12 @@ export default async function PenjualPage({
             <EmployeePicker employees={data.karyawan} name="karyawan" inputId="filter-karyawan"
               defaultValue={karyawanId} placeholder="Semua karyawan — ketik nama…" ariaLabel="Karyawan" />
           </div>
+          <div style={{ minWidth: 170 }}>
+            <label className="flab">Tampilan</label>
+            <select className="fi" name="tampilan" defaultValue={tampilan}>
+              {TAMPILAN_PENJUAL.map((t) => <option key={t} value={t}>{LABEL_TAMPILAN[t]}</option>)}
+            </select>
+          </div>
           <div style={{ minWidth: 140 }}>
             <label className="flab">Jenis</label>
             <select className="fi" name="jenis" defaultValue={jenis}>
@@ -139,6 +139,12 @@ export default async function PenjualPage({
         ]} />
       }
     >
+      <div className="no-print" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+        <span style={{ fontSize: 11, color: "var(--tm)" }}>Unduh lengkap (rekap per orang, rekap per item, rincian baris, faktur grosir):</span>
+        <a className="btn-def" style={{ fontSize: 11 }} href={`/laporan/penjual/unduh?${paramUnduh}`}>Excel</a>
+        <a className="btn-def" style={{ fontSize: 11 }} href={`/laporan/penjual/unduh?${paramUnduh}&format=csv`}>CSV</a>
+      </div>
+
       {data.pesanError && (
         <div className="crm-sec" role="alert" style={{ marginBottom: 12, color: "#b91c1c", fontSize: 12 }}>{data.pesanError}</div>
       )}
@@ -166,7 +172,7 @@ export default async function PenjualPage({
                 <tr key={r.employeeId ?? "tanpa-penjual"}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{labelOrang(r.employeeId)}</td>
                   <td style={{ fontSize: 10.5, color: "var(--tm)" }}>
-                    {r.peran.length ? r.peran.map((p) => LABEL_PERAN[p]).join(" · ") : "—"}
+                    {labelPeran(r.peran)}
                   </td>
                   <td style={{ textAlign: "center", fontSize: 11 }}>{r.transaksi}</td>
                   <td style={{ textAlign: "center", fontSize: 11 }}>{r.baris}</td>
@@ -232,6 +238,52 @@ export default async function PenjualPage({
         </div>
       </div>
 
+      {tampilan === "rekap-item" ? (
+      <div className="crm-sec" style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>02 · REKAP PER TENAGA PENJUAL → PER ITEM</div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 1100 }}>
+            <thead>
+              <tr>
+                <th style={{ minWidth: 170 }}>Tenaga penjual</th>
+                <th style={{ width: 130 }}>Peran</th>
+                <th style={{ width: 100 }}>Kode</th>
+                <th>Item</th>
+                <th style={{ width: 80 }}>Jenis</th>
+                <th style={{ width: 70 }}>Satuan</th>
+                <th style={{ width: 80, textAlign: "right" }}>Qty</th>
+                <th style={{ width: 70, textAlign: "right" }}>Retur</th>
+                <th style={{ width: 75, textAlign: "center" }}>Transaksi</th>
+                <th style={{ width: 130, textAlign: "right" }}>Netto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {perItem.map((r) => (
+                <tr key={`${r.employeeId ?? "tanpa"}:${r.kunci}`}>
+                  <td style={{ fontSize: 11, fontWeight: 600 }}>{labelOrang(r.employeeId)}</td>
+                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{labelPeran(r.peran)}</td>
+                  <td style={{ fontSize: 10.5, fontFamily: "monospace" }}>{r.kode || "—"}</td>
+                  <td style={{ fontSize: 11 }}>{r.item}</td>
+                  <td style={{ fontSize: 10.5 }}>{r.jenis}</td>
+                  <td style={{ fontSize: 10.5 }}>{r.satuan || "—"}</td>
+                  <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 700 }}>{num(r.qty)}</td>
+                  <td style={{ textAlign: "right", fontSize: 10.5, color: r.qtyRetur ? "#b91c1c" : "var(--td)" }}>{r.qtyRetur ? num(r.qtyRetur) : "—"}</td>
+                  <td style={{ textAlign: "center", fontSize: 11 }}>{r.transaksi}</td>
+                  <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.netto)}</td>
+                </tr>
+              ))}
+              {perItem.length === 0 && <TabelKosong kolom={10} pesan="Belum ada baris penjualan pada saringan ini." />}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8, lineHeight: 1.6 }}>
+          Qty = jumlah terjual dikurangi retur/refund item yang sama dalam periode. Item yang sama dengan
+          satuan berbeda (mis. 1KG dan 1/2KG) ditulis terpisah. Baris yang dikerjakan Dokter dan Non-dokter
+          dihitung penuh untuk masing-masing orang, sama seperti rekap per orang di atas. Ini rekap
+          kinerja — nilai komisi tetap mengikuti laporan Komisi (berbasis tanggal pelunasan).
+        </div>
+      </div>
+      ) : (
       <div className="crm-sec" style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>02 · RINCIAN BARIS PER ORANG</div>
         {barisRekap.length === 0 && <div style={{ fontSize: 11, color: "var(--td)" }}>Belum ada baris penjualan pada saringan ini.</div>}
@@ -286,6 +338,7 @@ export default async function PenjualPage({
           );
         })}
       </div>
+      )}
 
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}>03 · FAKTUR GROSIR BELUM LUNAS PER PENJUAL</div>

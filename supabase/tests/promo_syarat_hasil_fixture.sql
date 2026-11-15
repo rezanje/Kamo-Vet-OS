@@ -20,6 +20,7 @@ update profiles set role='STAFF',is_active=true where id in('e1100000-0000-4000-
 update profiles set role='OWNER',is_active=true where id='e1100000-0000-4000-8000-000000000003';
 update profiles set role='ADMIN',is_active=true where id='e1100000-0000-4000-8000-000000000004';
 insert into role_modules(role,module_id) values('STAFF','pos') on conflict do nothing;
+insert into role_settings_private.action_policies(role, allowed) values ('STAFF', array['kasir.diskon_manual']) on conflict (role) do update set allowed = excluded.allowed; -- izin diskon manual (20261116100000): suite ini menguji harga-dasar/klaim promo dengan diskon total ketikan sebagai STAFF; yang diuji bukan izin diskonnya
 insert into branches(id,code,name,type) values
  ('e2200000-0000-4000-8000-000000000001','ATOMICPOS','Atomic test','PETSHOP'),
  ('e2200000-0000-4000-8000-000000000002','OTHERPOS','Other test','PETSHOP');

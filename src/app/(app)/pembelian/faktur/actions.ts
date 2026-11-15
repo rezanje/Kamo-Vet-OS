@@ -93,12 +93,13 @@ export async function bayarFaktur(formData: FormData) {
   const catatan=String(formData.get("catatan")??"").trim()||null;
   const accountId=String(formData.get("account_id")??"").trim()||null;
   const advanceId=String(formData.get("advance_id")??"").trim()||null;
-  const fail=(message:string):never=>redirect(`${back}?error=${encodeURIComponent(message)}`);
+  // A1: Pembayaran Hutang dibuka kosong sampai Tampilkan; hasil bayar wajib langsung terlihat.
+  const fail=(message:string):never=>redirect(`${back}?error=${encodeURIComponent(message)}&tampil=1`);
   if(!invoiceId||!requestKey||!Number.isFinite(amount)||amount<=0)fail("Nominal atau identitas pembayaran tidak valid. Muat ulang formulir.");
   if(!Number.isInteger(amount))fail("Nominal pembayaran harus dalam rupiah bulat.");
   const replacesPaymentId=String(formData.get("replaces_payment_id")??"").trim()||null;
   const payload={invoice_id:invoiceId,tanggal,amount,metode,catatan,account_id:accountId,advance_id:advanceId,replaces_payment_id:replacesPaymentId};
-  const finish=(noFaktur:string):never=>{revalidatePath(back);redirect(`${back}?success=${encodeURIComponent(`Pembayaran ${noFaktur} tersimpan.`)}${transactionDraftAck(formData)}`);};
+  const finish=(noFaktur:string):never=>{revalidatePath(back);redirect(`${back}?success=${encodeURIComponent(`Pembayaran ${noFaktur} tersimpan.`)}${transactionDraftAck(formData)}&tampil=1`);};
   const {data:recovered,error:recoveryError}=await supabase.rpc("recover_purchase_payment",{p_request_key:requestKey,p_payload:payload});
   if(recoveryError)fail(recoveryError.message);
   if(recovered?.no_faktur)finish(recovered.no_faktur);
