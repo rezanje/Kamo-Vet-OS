@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "../PrintButton";
 import { labelPromo } from "@/lib/label-potongan";
 import { bacaRincianPromoKlinik, labelDiskonBaris, pasangPromoKeBaris } from "@/lib/rincian-promo-klinik";
+import { muatBagianUangMuka, ringkasMetodeInvoice } from "@/lib/metode-uang-muka";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -43,6 +44,9 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   const petugas = petugasCetak(visit, items, await bacaKartuPetugas(supabase, idPetugas([visit], items)));
   const { data: payments } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
+  // Invoice yang dipotong uang muka: metode dibaca dari kwitansi asal, bukan kolom bawaan "Tunai".
+  const metodeBayar = ringkasMetodeInvoice(invoice, payments ?? [],
+    await muatBagianUangMuka(supabase, [{ id: invoice.id, payments: payments ?? [] }]));
   const {data: demoSnapshot, error: demoError} = await supabase.from("clinic_demo_invoice_snapshots")
     .select("fee_bearer,fee_amount,payments").eq("invoice_id",invoice.id).maybeSingle();
   if (demoError) throw new Error("Rincian biaya admin tidak terbaca. Muat ulang sebelum mencetak.");
@@ -105,8 +109,8 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
           <span>TOTAL</span><span>{rp(invoice.total)}</span>
         </div>
         <Hr />
-        <Row k="Metode" v={(payments ?? []).filter(p => !p.transferred_from).length > 1 ? "Campuran" : invoice.metode_bayar ?? "-"} />
-        {(payments ?? []).filter(p => !p.transferred_from).map(payment => <Row key={payment.id} k={payment.metode ?? "Pembayaran"} v={rp(Number(payment.amount))} />)}
+        <Row k="Metode" v={metodeBayar.judul} />
+        {metodeBayar.baris.map((baris, index) => <Row key={`${baris.label}-${index}`} k={baris.label} v={rp(baris.amount)} />)}
         <ClinicDemoFees snapshot={demoSnapshot}/>
         <Row k="Status" v={invoice.paid_status} />
         {credit > 0 && <Row k="Dialihkan" v={rp(credit)} />}

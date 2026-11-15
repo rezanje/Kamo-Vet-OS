@@ -9,6 +9,7 @@ import { fakturGrosirOmzet, omzetDokumenGrosir, SELECT_FAKTUR_GROSIR, type Faktu
 import { isCompletedSale, saleMerchandiseTotal, salePaymentDescription, saleRefundMerchantFee, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 import { hrefInvoiceKlinik } from "@/lib/tautan-dokumen";
 import { laporanDiminta } from "@/lib/report-gate";
+import { muatLabelMetodeInvoice } from "@/lib/metode-uang-muka";
 
 // Rincian penjualan PER DOKUMEN (per struk / per invoice) — pelengkap laporan
 // "Penjualan per Kasir" yang hanya menampilkan rekap per orang. Sebelum halaman ini
@@ -89,7 +90,7 @@ export default async function PenjualanRinciPage({
     .gte("created_at", mulai).lte("created_at", akhir);
   const qInvoices = supabase
     .from("invoices")
-    .select(`id, invoice_no, total, metode_bayar, paid_status, created_at, visit_id, visits${saringId || saringNama ? "!inner" : ""}(branch_id, branches${saringNama ? "!inner" : ""}(name), customers(name))`, { count: "exact" })
+    .select(`id, invoice_no, total, metode_bayar, dp_amount, stage_billing, paid_status, created_at, visit_id, visits${saringId || saringNama ? "!inner" : ""}(branch_id, branches${saringNama ? "!inner" : ""}(name), customers(name))`, { count: "exact" })
     .is("voided_at", null)
     .gte("created_at", mulai).lte("created_at", akhir);
   const tanpaData = Promise.resolve({ data: null, error: null });
@@ -130,7 +131,7 @@ export default async function PenjualanRinciPage({
     branches: Rel<{ name: string }>; customers: Rel<{ name: string }>;
   };
   type InvRow = {
-    id: string; invoice_no: string | null; total: number; metode_bayar: string | null;
+    id: string; invoice_no: string | null; total: number; metode_bayar: string | null; dp_amount?: number | null; stage_billing?: boolean | null;
     paid_status: string | null; created_at: string; visit_id: string;
     visits: Rel<{ branch_id: string | null; branches: Rel<{ name: string }>; customers: Rel<{ name: string }> }>;
   };
@@ -154,6 +155,11 @@ export default async function PenjualanRinciPage({
     status: s.channel ? (s.marketplace_status === "piutang" ? "Belum cair" : "Cair") : "Lunas",
   }));
 
+  // Tagihan rawat inap bertahap berlabel kepala "Tunai" (bawaan tahap); cara bayar sebenarnya
+  // dibaca dari baris pembayaran / kwitansi uang muka. Invoice biasa tidak berubah.
+  const metodeBertahap = await muatLabelMetodeInvoice(supabase,
+    ((invoices ?? []) as unknown as InvRow[]).filter((i) => i.stage_billing)
+      .map((i) => ({ id: i.id, metode_bayar: i.metode_bayar, dp_amount: i.dp_amount ?? 0 })));
   const barisKlinik: Baris[] = ((invoices ?? []) as unknown as InvRow[]).map((i) => {
     const v = one(i.visits);
     return {
@@ -165,7 +171,7 @@ export default async function PenjualanRinciPage({
       cabang: one(v?.branches ?? null)?.name ?? "—",
       cabangId: v?.branch_id ?? null,
       pelanggan: one(v?.customers ?? null)?.name ?? "—",
-      metode: i.metode_bayar ?? "—",
+      metode: metodeBertahap.get(i.id) ?? i.metode_bayar ?? "—",
       total: Number(i.total) || 0,
       merchandise: Number(i.total) || 0,
       merchantFee: 0,
