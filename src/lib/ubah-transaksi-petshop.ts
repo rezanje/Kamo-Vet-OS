@@ -5,12 +5,14 @@
  * Fungsi murni ini dipakai halaman struk untuk memperingatkan Owner SEBELUM membatalkan penerimaan, supaya tidak terjebak di struk "belum dibayar"
  * yang isinya tak bisa diubah. Ini hanya peringatan: tidak menolak apa pun (Owner tidak dikunci).
  */
-export type UbahTransaksiInput = { voucherCode: string | null | undefined; promoItemCount: number; payrollMonthExists: boolean };
+export type UbahTransaksiInput = { voucherCode: string | null | undefined; promoItemCount: number; payrollMonthExists: boolean;
+  /** Owner: sejak migrasi 20261119100000 struk berpromo/voucher yang belum dibayar bisa diubah isinya lewat Ubah transaksi (jalur Owner). */
+  ownerJalurPromo?: boolean };
 
 export function alasanUbahTransaksiTerhalang(input: UbahTransaksiInput): string[] {
   const alasan: string[] = [];
-  if ((input.voucherCode ?? "").trim() !== "") alasan.push("struk ini memakai voucher");
-  if (input.promoItemCount > 0) alasan.push("struk ini berisi item promo");
+  if (!input.ownerJalurPromo && (input.voucherCode ?? "").trim() !== "") alasan.push("struk ini memakai voucher");
+  if (!input.ownerJalurPromo && input.promoItemCount > 0) alasan.push("struk ini berisi item promo");
   if (input.payrollMonthExists) alasan.push("penggajian bulan struk ini sudah dibuat");
   return alasan;
 }

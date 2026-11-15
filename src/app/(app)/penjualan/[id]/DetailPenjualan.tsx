@@ -7,7 +7,7 @@ import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import { saleMerchandiseTotal, salePaymentAllocations, type SalePaymentSource } from "@/lib/sale-payment-reporting";
 import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
 import { bolehLihatRiwayat, petshopHistory, type PetshopEdit, type PetshopOnlineCancel, type PetshopReceiptCancel } from "@/lib/transaction-history";
-import { alasanTidakBisaUbah } from "@/lib/ubah-struk";
+import { alasanTidakBisaUbah, jalurOwnerBelumDibayar } from "@/lib/ubah-struk";
 import { alasanUbahTransaksiTerhalang, bulanJakarta } from "@/lib/ubah-transaksi-petshop";
 import { loadActorNames } from "@/lib/transaction-history-server";
 import { bacaBatasTanggal, batasCadangan, catatanTanggalEfektif, tanggalId, tanggalIsoValid, tanggalWibDariWaktu, type BatasTanggal } from "@/lib/tanggal-efektif-petshop";
@@ -40,7 +40,9 @@ type Sale = SalePaymentSource & {
   customers: Rel<{ name: string; phone: string | null }>;
   kasir: Rel<{ full_name: string | null }>;
   voucher_code?: string | null;
-  sale_items: { id: string; nama: string; qty: number; harga: number; satuan: string | null; promo_id?: string | null }[] | null;
+  campaign_code?: string | null;
+  sale_items: { id: string; nama: string; qty: number; harga: number; satuan: string | null; promo_id?: string | null;
+    promo_claim_id?: string | null; quantity_pool_claim?: boolean | null; promo_discount?: number | null }[] | null;
 };
 
 type ReturRow = {
@@ -67,7 +69,7 @@ export async function DetailPenjualan({ id, sp, online = false }: { id: string; 
 
   const { data } = await supabase
     .from("sales")
-    .select("id, revision, channel, void_reason, branch_id, shift_id, marketplace_status, no_struk, created_at, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), voucher_code, sale_items(id, nama, qty, harga, satuan, promo_id)")
+    .select("id, revision, channel, void_reason, branch_id, shift_id, marketplace_status, no_struk, created_at, subtotal, discount, total, merchant_fee_total, metode_bayar, bayar, kembali, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches(name), customers(name, phone), kasir:cashier_id(full_name), voucher_code, campaign_code, sale_items(id, nama, qty, harga, satuan, promo_id, promo_claim_id, quantity_pool_claim, promo_discount)")
     .eq("id", id)
     .maybeSingle();
 
@@ -81,7 +83,8 @@ export async function DetailPenjualan({ id, sp, online = false }: { id: string; 
   const isOwner = profile?.role === "OWNER" && profile.is_active === true;
   // R4 (audit 11 Nov): peringatan dini bahwa isi struk tak bisa diubah lewat "Batalkan penjualan" (voucher/promo/penggajian). Hanya peringatan; gagal baca = tanpa peringatan.
   const payrollRes = isOwner && !sale.voided_at ? await supabase.from("payrolls").select("id", { count: "exact", head: true }).eq("periode", bulanJakarta(sale.created_at)) : null;
-  const ubahTerhalang = alasanUbahTransaksiTerhalang({ voucherCode: sale.voucher_code, promoItemCount: (sale.sale_items ?? []).filter(i => !!i.promo_id).length, payrollMonthExists: !!payrollRes && !payrollRes.error && (payrollRes.count ?? 0) > 0 });
+  // Owner: struk berpromo/voucher yang belum dibayar bisa diubah isinya lewat jalur Owner (migrasi 20261119100000) -> bukan penghalang lagi.
+  const ubahTerhalang = alasanUbahTransaksiTerhalang({ voucherCode: sale.voucher_code, promoItemCount: (sale.sale_items ?? []).filter(i => !!i.promo_id).length, payrollMonthExists: !!payrollRes && !payrollRes.error && (payrollRes.count ?? 0) > 0, ownerJalurPromo: isOwner });
   // J02: koreksi metode (juga sesudah shift ditutup) boleh Owner dan Finance; pembatalan tetap Owner.
   const canCorrectRole = isOwner || (profile?.role === "FINANCE" && profile.is_active === true);
 
@@ -165,7 +168,11 @@ export async function DetailPenjualan({ id, sp, online = false }: { id: string; 
 
   const items = sale.sale_items ?? [];
   const cust = one(sale.customers);
-  const canEdit = canCorrectRole && !!user && !alasanTidakBisaUbah(sale, { receiptCycle: hasReceiptCycle, returns: returs.some(r => !r.voided_at) });
+  // Jalur Owner (migrasi 20261119100000): struk berpromo/voucher yang penerimaannya sedang dibatalkan. Gagal baca riwayat = bukan jalur Owner.
+  const jalurOwner = !receiptError && jalurOwnerBelumDibayar({ isOwner, cancellations: receiptCancels, voucher_code: sale.voucher_code ?? null,
+    campaign_code: sale.campaign_code ?? null, items: (sale.sale_items ?? []).map(i => ({ promo_id: i.promo_id ?? null, promo_claim_id: i.promo_claim_id ?? null,
+      quantity_pool_claim: i.quantity_pool_claim ?? false, promo_discount: Number(i.promo_discount ?? 0) })) });
+  const canEdit = canCorrectRole && !!user && !alasanTidakBisaUbah(sale, { receiptCycle: hasReceiptCycle, returns: returs.some(r => !r.voided_at), jalurOwnerBelumDibayar: jalurOwner });
 
   return (
     <>
@@ -212,7 +219,8 @@ export async function DetailPenjualan({ id, sp, online = false }: { id: string; 
       </div>}
       {openCancel && !sale.voided_at && <div role="status" className="p2ban" style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#9a3412" }}>
         <i className="ti ti-receipt-off" /> <strong>Belum dibayar — penerimaan dibatalkan</strong> pada {fmtDt(openCancel.created_at)} · {openCancel.reason}. Uang sudah dikeluarkan dari kas/bank.{catatanTanggalEfektif(openCancel.effective_date, openCancel.created_at) ? ` ${catatanTanggalEfektif(openCancel.effective_date, openCancel.created_at)}.` : ""}
-        {" "}Terima pembayaran lagi{isOwner ? ", atau ubah transaksi (Batalkan penjualan lalu siapkan pengganti)" : ""}.
+        {" "}Terima pembayaran lagi{jalurOwner ? ", atau ubah isinya lewat Ubah transaksi (struk berpromo/voucher: potongan promo dihitung ulang sebanding nilai baris)"
+          : isOwner ? ", atau ubah transaksi (Batalkan penjualan lalu siapkan pengganti)" : ""}.
       </div>}
       {sale.channel && sale.marketplace_status === "piutang" && !sale.voided_at && onlineCancels.length > 0 && <div role="status" className="p2ban">Pencairan pernah dibatalkan; order ini kembali menjadi piutang marketplace.</div>}
       <div className="crm-sec">
