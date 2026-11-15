@@ -1,10 +1,10 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ rpc: vi.fn(), lama: vi.fn(), katalog: vi.fn() }));
+const fixture = vi.hoisted(() => ({ rpc: vi.fn(), lama: vi.fn(), katalog: vi.fn(), jalur: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: fixture.rpc }) }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Object.assign(Error(url), { digest: "NEXT_REDIRECT" }); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/ubah-struk-server", () => ({ loadStrukUbah: fixture.lama, loadKatalogUntuk: fixture.katalog }));
+vi.mock("@/lib/ubah-struk-server", () => ({ loadStrukUbah: fixture.lama, loadKatalogUntuk: fixture.katalog, bacaJalurOwnerBelumDibayar: fixture.jalur }));
 import { ubahTransaksi } from "@/app/(app)/penjualan/[id]/actions";
 import { revalidatePath } from "next/cache";
 
@@ -23,6 +23,22 @@ beforeEach(() => {
       promo_sets: 0, promo_syarat_units: 0, promo_hasil_units: 0, promo_floor_waiver: false, source_position: 0, components: [] }] });
   fixture.katalog.mockResolvedValue(new Map([[GOOD, { id: GOOD, nama: "Pakan", item_type: "Persediaan", is_active: true, units: [{ unit: "pcs", factor: 1 }] }]]));
   fixture.rpc.mockResolvedValue({ data: { old_sale_id: id, sale_id: newId, no_struk: "POS-1-U1", edit_id: "edit" }, error: null });
+  fixture.jalur.mockResolvedValue(false);
+});
+
+it("jalur Owner (struk berpromo belum dibayar): promo baris dihitung sebanding dari baris asal + source_line_id dikirim", async () => {
+  fixture.jalur.mockResolvedValue(true);
+  const base = await fixture.lama();
+  fixture.lama.mockResolvedValue({ ...base, discount: 10000, items: [{ ...base.items[0], promo_id: "p1", promo_discount: 10000 }] });
+  const isi = { ...isian, lines: [{ ...isian.lines[0], promo_diskon: 1 }], payments: [{ method: "Transfer", amount: 135000 }] };
+  await expect(ubahTransaksi(form({ isian: JSON.stringify(isi) }))).rejects.toThrow(`/penjualan/${newId}?success=edited`);
+  const sent = fixture.rpc.mock.calls[0][1].p_edit;
+  expect(sent.lines[0]).toMatchObject({ source_line_id: "l1", promo_id: "p1", promo_discount: 15000 });
+  expect(sent.header).toMatchObject({ subtotal: 150000, discount: 15000, total: 135000 });
+});
+it("jalur lama: payload tanpa source_line_id", async () => {
+  await expect(ubahTransaksi(form())).rejects.toThrow(`/penjualan/${newId}?success=edited`);
+  expect(fixture.rpc.mock.calls[0][1].p_edit.lines[0]).not.toHaveProperty("source_line_id");
 });
 
 it("sends the rebuilt receipt to the atomic RPC and opens the new receipt", async () => {

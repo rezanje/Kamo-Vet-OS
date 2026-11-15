@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatPosMoney } from "@/lib/pos-money";
-import { loadKatalogPilihan, loadKatalogUntuk, loadStrukUbah } from "@/lib/ubah-struk-server";
+import { bacaJalurOwnerBelumDibayar, loadKatalogPilihan, loadKatalogUntuk, loadStrukUbah } from "@/lib/ubah-struk-server";
 import { alasanTidakBisaUbah, potonganLainLama } from "@/lib/ubah-struk";
 import { UbahStrukForm } from "./UbahStrukForm";
 
@@ -19,11 +19,12 @@ export default async function UbahStrukPage({ params }: { params: Promise<{ id: 
   if (!lama) notFound();
   const back = <Link href={`/penjualan/${id}`} className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke struk</Link>;
   if (!boleh || !user) return <>{back}<div role="alert" className="p2ban">Hanya Owner atau Finance yang dapat mengubah transaksi.</div></>;
-  const [{ count: receiptCount }, { count: returnCount }] = await Promise.all([
+  const [{ count: receiptCount }, { count: returnCount }, jalurOwner] = await Promise.all([
     supabase.from("pos_receipt_cancellations").select("id", { count: "exact", head: true }).eq("sale_id", id),
     supabase.from("sales_returns").select("id", { count: "exact", head: true }).eq("sale_id", id).is("voided_at", null),
+    bacaJalurOwnerBelumDibayar(supabase, lama),
   ]);
-  const alasan = alasanTidakBisaUbah(lama, { receiptCycle: (receiptCount ?? 0) > 0, returns: (returnCount ?? 0) > 0 });
+  const alasan = alasanTidakBisaUbah(lama, { receiptCycle: (receiptCount ?? 0) > 0, returns: (returnCount ?? 0) > 0, jalurOwnerBelumDibayar: jalurOwner });
   if (alasan) return <>{back}<div role="alert" className="p2ban">{alasan}</div></>;
 
   const [pilihan, terlibat] = await Promise.all([
@@ -43,12 +44,19 @@ export default async function UbahStrukPage({ params }: { params: Promise<{ id: 
         Hasil ubah <strong>tetap tercatat di tanggal struk ini</strong> (omzet, kas/bank). Koreksi stok dan modal barang dicatat hari ini.
         Struk lama ditutup dan diganti nomor baru berakhiran &quot;-U&quot;; semua perubahan tercatat di riwayat.
       </div>
-      <UbahStrukForm userId={user.id} saleId={lama.id} revision={lama.revision}
+      {jalurOwner && <div role="status" className="p2ban" style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#9a3412" }}>
+        Struk ini <strong>belum dibayar</strong> (penerimaannya dibatalkan) dan memakai promo/voucher. Owner boleh mengubah isinya:
+        potongan promo tiap baris <strong>dihitung otomatis sebanding nilai barisnya</strong> (tidak bisa diketik), barang baru tanpa promo.
+        Isi pembayaran di bawah = uang yang diterima sekarang. Aturan harga di bawah modal tetap berlaku.
+      </div>}
+      <UbahStrukForm userId={user.id} saleId={lama.id} revision={lama.revision} jalurOwnerBelumDibayar={jalurOwner}
         lines={lama.items.map(line => ({
           asal: line.id, item_id: line.item_id ?? "", nama: line.nama, qty: line.qty, harga: line.harga, satuan: line.satuan ?? "",
           diskon_tipe: line.item_discount_type === "percent" ? "percent" : line.item_discount_value > 0 ? "nominal" : null,
           diskon_nilai: line.item_discount_value, promo: !!(line.promo_id || line.promo_claim_id), promo_diskon: line.promo_discount,
           grup: (line.components?.length ?? 0) > 0,
+          ...(jalurOwner ? { asal_data: { qty: line.qty, harga: line.harga, satuan: line.satuan, faktor: line.faktor, item_discount_type: line.item_discount_type,
+            item_discount_value: line.item_discount_value, promo_discount: line.promo_discount } } : {}),
         }))}
         katalog={katalog.map(item => ({ id: item.id, code: item.code, nama: item.nama, item_type: item.item_type, is_active: item.is_active, units: item.units, unitHarga: item.unitHarga }))}
         diskonKategori={lama.diskon_kategori} potonganLain={potonganLainLama(lama)} poinDigunakan={lama.poin_digunakan}

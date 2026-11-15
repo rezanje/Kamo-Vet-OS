@@ -57,10 +57,15 @@ describe("Batalkan penerimaan: layar detail penjualan", () => {
   });
   it("R4: struk voucher/promo/penggajian sudah dibuat: formulir batalkan penerimaan menerima peringatan; struk biasa tidak; error baca penggajian = tanpa peringatan", async () => {
     expect(await render()).not.toContain("terhalang:");
+    // Jalur Owner (migrasi 20261119100000): Owner bisa mengubah isi struk berpromo/voucher yang belum dibayar -> bukan penghalang bagi Owner.
     state.voucher = "HEMAT10";
-    expect(await render()).toContain("terhalang:struk ini memakai voucher");
+    expect(await render()).not.toContain("terhalang:");
     state.voucher = null; state.promo = true;
-    expect(await render()).toContain("terhalang:struk ini berisi item promo");
+    expect(await render()).not.toContain("terhalang:");
+    // Peran lain yang diberi izin batalkan penerimaan tetap diperingatkan (mereka tidak bisa mengubah isinya).
+    state.role = "ADMIN"; state.allowed = true; state.voucher = "HEMAT10";
+    expect(await render()).toContain("terhalang:struk ini memakai voucher|struk ini berisi item promo");
+    state.role = "OWNER"; state.voucher = null;
     state.promo = false; state.payrollCount = 1;
     expect(await render()).toContain("terhalang:penggajian bulan struk ini sudah dibuat");
     state.payrollError = true;
@@ -82,6 +87,22 @@ describe("Batalkan penerimaan: layar detail penjualan", () => {
     expect(html).not.toContain("form koreksi metode");
     expect(html).toContain("Penerimaan dibatalkan (struk belum dibayar)");
     expect(html).toContain("Alasan: Salah metode");
+  });
+  it("jalur Owner: struk berpromo/voucher belum dibayar -> tombol Ubah transaksi untuk Owner saja; struk tanpa promo / pernah diterima lagi tidak", async () => {
+    state.open = true; state.promo = true;
+    let html = await render();
+    expect(html).toContain('href="/penjualan/sale/ubah"');
+    expect(html).toContain("ubah isinya lewat Ubah transaksi");
+    state.promo = false; state.voucher = "HEMAT10";
+    expect(await render()).toContain('href="/penjualan/sale/ubah"');
+    state.voucher = null;
+    html = await render();
+    expect(html).not.toContain('href="/penjualan/sale/ubah"');
+    expect(html).toContain("Batalkan penjualan lalu siapkan pengganti");
+    state.promo = true; state.role = "FINANCE";
+    expect(await render()).not.toContain('href="/penjualan/sale/ubah"');
+    state.role = "OWNER"; state.open = false; state.cycle = true;
+    expect(await render()).not.toContain('href="/penjualan/sale/ubah"');
   });
   it("struk yang pernah dibatalkan lalu dibayar lagi: koreksi metode lama disembunyikan (pakai siklus baru), riwayat memuat terima ulang", async () => {
     state.cycle = true;
