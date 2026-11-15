@@ -65,14 +65,46 @@ export function diskonBaris(line: { qty: number; harga: number; item_discount_ty
   return PosDecimal.min(PosDecimal.max(raw, 0), gross).toNumber();
 }
 
+type BarisBaru = { qty: number; harga: number; satuan: string | null; faktor: number; item_discount_type: string | null; item_discount_value: number };
+const kunciDiskon = (type: string | null, value: number) => (Number(value) || 0) === 0 ? "x" : `${type || "nominal"}:${Number(value)}`;
+
+/**
+ * Jalur Owner (migrasi 20261119100000) — rumus SAMA dengan database: baris tidak berubah membawa promo lama persis; baris berubah membawa
+ * promo lama x nilai baris baru / nilai baris lama (2 desimal), dibatasi nilai baris baru. Nilai baris lama nol = tanpa promo.
+ */
+export function promoSebanding(asal: Pick<BarisLama, "qty" | "harga" | "satuan" | "faktor" | "item_discount_type" | "item_discount_value" | "promo_discount">, baru: BarisBaru): number {
+  const lamaPromo = new PosDecimal(asal.promo_discount || 0);
+  const sama = new PosDecimal(baru.qty).equals(asal.qty) && new PosDecimal(baru.harga).equals(asal.harga)
+    && (baru.satuan || null) === (asal.satuan || null) && new PosDecimal(baru.faktor || 1).equals(asal.faktor || 1)
+    && kunciDiskon(baru.item_discount_type, baru.item_discount_value) === kunciDiskon(asal.item_discount_type, asal.item_discount_value);
+  if (sama) return lamaPromo.toNumber();
+  const nilaiLama = new PosDecimal(asal.qty).times(asal.harga);
+  if (!nilaiLama.gt(0)) return 0;
+  const nilaiBaru = new PosDecimal(baru.qty).times(baru.harga);
+  return PosDecimal.min(lamaPromo.times(nilaiBaru).div(nilaiLama).toDecimalPlaces(2), nilaiBaru.toDecimalPlaces(2)).toNumber();
+}
+
+type BarisPromo = { promo_id: string | null; promo_claim_id: string | null; quantity_pool_claim: boolean | null; promo_discount: number | null };
+/** Struk memakai promo/voucher/kode kampanye (sama dengan syarat database jalur Owner). */
+export function strukBerpromo(s: { voucher_code: string | null; campaign_code: string | null; items: readonly BarisPromo[] }): boolean {
+  return (s.voucher_code ?? "").trim() !== "" || (s.campaign_code ?? "").trim() !== ""
+    || s.items.some(i => !!i.promo_id || !!i.promo_claim_id || !!i.quantity_pool_claim || Number(i.promo_discount || 0) > 0);
+}
+/** Owner aktif + pembatalan penerimaan yang MASIH terbuka (tanpa yang sudah ditutup) + struk berpromo/voucher. Database memeriksa ulang. */
+export function jalurOwnerBelumDibayar(s: { isOwner: boolean; cancellations: readonly { closed_at: string | null }[]; voucher_code: string | null; campaign_code: string | null; items: readonly BarisPromo[] }): boolean {
+  return s.isOwner && s.cancellations.some(c => !c.closed_at) && s.cancellations.every(c => !c.closed_at) && strukBerpromo(s);
+}
+
 /** Potongan lain di struk lama = diskon header di luar potongan baris (voucher, poin, diskon total). */
 export function potonganLainLama(struk: StrukLama): number {
   const baris = struk.items.reduce((sum, line) => sum.plus(diskonBaris(line)), new PosDecimal(0));
   return PosDecimal.max(0, new PosDecimal(struk.discount).minus(baris)).toDecimalPlaces(2).toNumber();
 }
 
-export function susunUbahStruk({ lama, isian, katalog, rupiahPerPoin }: {
+export function susunUbahStruk({ lama, isian, katalog, rupiahPerPoin, jalurOwnerBelumDibayar = false }: {
   lama: StrukLama; isian: IsianUbah; katalog: Map<string, BarangKatalog>; rupiahPerPoin: number | null;
+  /** Jalur Owner struk berpromo yang penerimaannya dibatalkan: promo dihitung dari baris asal + source_line_id dikirim. */
+  jalurOwnerBelumDibayar?: boolean;
 }): PayloadUbah {
   if (!Array.isArray(isian.lines) || isian.lines.length === 0) throw new Error("Isi minimal satu barang.");
   if (isian.lines.length > 300) throw new Error("Rincian barang terlalu banyak.");
@@ -101,7 +133,9 @@ export function susunUbahStruk({ lama, isian, katalog, rupiahPerPoin }: {
     const diskonTipe = row.diskon_tipe === "percent" ? "percent" : row.diskon_tipe === "nominal" ? "nominal" : null;
     const diskonNilai = diskonTipe ? angka(row.diskon_nilai ?? 0) : 0;
     if (!(diskonNilai >= 0) || (diskonTipe === "percent" && diskonNilai > 100)) throw new Error(`Diskon baris ${index + 1} tidak valid.`);
-    const promoDiskon = asal ? angka(row.promo_diskon ?? asal.promo_discount ?? 0) : 0;
+    const promoDiskon = !asal ? 0 : jalurOwnerBelumDibayar
+      ? promoSebanding(asal, { qty, harga, satuan, faktor, item_discount_type: diskonTipe, item_discount_value: diskonNilai })
+      : angka(row.promo_diskon ?? asal.promo_discount ?? 0);
     if (!(promoDiskon >= 0) || !sen(promoDiskon)) throw new Error(`Diskon promo baris ${index + 1} tidak valid.`);
     const components = asal?.components?.length
       ? asal.components.map(c => ({ ...c, total_base_qty: new PosDecimal(qty).times(c.qty_per_group).times(c.factor).toNumber() }))
@@ -109,10 +143,12 @@ export function susunUbahStruk({ lama, isian, katalog, rupiahPerPoin }: {
     if (barang.item_type === "Grup" && components.length === 0) throw new Error(`Rincian paket ${barang.nama} tidak lengkap.`);
     return {
       item_id: row.item_id, nama: asal?.nama ?? barang.nama, qty, harga, satuan, faktor,
+      ...(jalurOwnerBelumDibayar ? { source_line_id: asal?.id ?? null } : {}),
       target_species: asal?.target_species ?? "Universal",
       service_performers: asal?.service_performers ?? null,
       item_discount_type: diskonTipe, item_discount_value: diskonNilai,
-      promo_id: asal?.promo_id ?? null, promo_discount: asal?.promo_id || asal?.promo_claim_id ? promoDiskon : 0,
+      promo_id: asal?.promo_id ?? null,
+      promo_discount: jalurOwnerBelumDibayar ? promoDiskon : asal?.promo_id || asal?.promo_claim_id ? promoDiskon : 0,
       quantity_pool_claim: asal?.quantity_pool_claim ?? false, promo_claim_id: asal?.promo_claim_id ?? null,
       promo_sets: asal?.promo_sets ?? 0, promo_syarat_units: asal?.promo_syarat_units ?? 0,
       promo_hasil_units: asal?.promo_hasil_units ?? 0, promo_floor_waiver: asal?.promo_floor_waiver ?? false,
@@ -159,12 +195,12 @@ export function susunUbahStruk({ lama, isian, katalog, rupiahPerPoin }: {
 
 /** Alasan struk belum bisa diubah dari layar ini (database tetap memeriksa ulang semuanya). */
 export function alasanTidakBisaUbah(s: { channel?: string | null; voided_at?: string | null; payments_finalized_at?: string | null; shift_id?: string | null },
-  extra: { receiptCycle: boolean; returns: boolean }): string | null {
+  extra: { receiptCycle: boolean; returns: boolean; jalurOwnerBelumDibayar?: boolean }): string | null {
   if (s.voided_at) return "Struk ini sudah dibatalkan atau sudah diubah. Buka struk terbarunya.";
   if (s.channel) return "Ubah transaksi hanya untuk struk kasir petshop.";
   if (!s.payments_finalized_at) return "Pembayaran struk ini belum selesai.";
   if (!s.shift_id) return "Struk tanpa shift kasir belum bisa diubah dari sini.";
-  if (extra.receiptCycle) return "Struk ini pernah dibatalkan penerimaannya; ubah transaksi belum tersedia untuk struk seperti ini.";
+  if (extra.receiptCycle && !extra.jalurOwnerBelumDibayar) return "Struk ini pernah dibatalkan penerimaannya; ubah transaksi belum tersedia untuk struk seperti ini.";
   if (extra.returns) return "Struk ini sudah punya retur. Batalkan returnya dulu sebelum mengubah struk.";
   return null;
 }

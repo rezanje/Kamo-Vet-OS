@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "../PrintButton";
 import { labelPromo } from "@/lib/label-potongan";
 import { bacaRincianPromoKlinik, pasangPromoKeBaris } from "@/lib/rincian-promo-klinik";
+import { muatBagianUangMuka, ringkasMetodeInvoice } from "@/lib/metode-uang-muka";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -51,6 +52,11 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   const { data: payments,error:paymentsError } = await supabase.from("invoice_payments")
     .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
   if(paymentsError)throw new Error("Rincian invoice atau pembayaran belum dapat diverifikasi. Muat ulang sebelum mencetak.");
+
+  // Metode bayar invoice yang dipotong uang muka dibaca dari kwitansi asalnya; kolom
+  // invoices.metode_bayar hanya bawaan tahap ("Tunai") dan menyesatkan untuk kasus itu.
+  const metodeBayar = ringkasMetodeInvoice(invoice, payments ?? [],
+    await muatBagianUangMuka(supabase, [{ id: invoice.id, payments: payments ?? [] }]));
 
   type RecipeRelation = { id: string; medical_records: Rel<{ visit_id: string }> };
   const relatedRecipes = Array.from(new Map((items ?? []).flatMap(line => {
@@ -181,8 +187,8 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
         </div>
 
         <div style={{ marginTop: 24, fontSize: 11, color: "var(--tm)", borderTop: ".5px solid var(--bd)", paddingTop: 12 }}>
-          Metode pembayaran: <b style={{ color: "#141413" }}>{(payments ?? []).filter(p => !p.transferred_from).length > 1 ? "Campuran" : invoice.metode_bayar ?? "-"}</b>
-          {(payments ?? []).filter(p => !p.transferred_from).map(payment => <div key={payment.id} style={{ marginTop: 4 }}>{payment.metode}: {rp(Number(payment.amount))}</div>)}
+          Metode pembayaran: <b style={{ color: "#141413" }}>{metodeBayar.judul}</b>
+          {metodeBayar.baris.map((baris, index) => <div key={`${baris.label}-${index}`} style={{ marginTop: 4 }}>{baris.label}: {rp(baris.amount)}</div>)}
           {invoice.paid_at && ` · Lunas pada ${new Date(invoice.paid_at).toLocaleDateString("id-ID")}`}
           <div style={{ marginTop: 4, fontSize: 9.5, color: "var(--td)" }}>Invoice ini sah tanpa tanda tangan & cap. PPN 11% dihitung dari DPP (subtotal − diskon).</div>
         </div>

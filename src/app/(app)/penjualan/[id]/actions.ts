@@ -7,7 +7,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { bacaTanggalEfektif, perluAlasanTanggal } from "@/lib/tanggal-efektif-petshop";
 import type { ActionRejection } from "@/components/LocalTransactionDraft";
 import { susunUbahStruk, type IsianUbah } from "@/lib/ubah-struk";
-import { loadKatalogUntuk, loadStrukUbah } from "@/lib/ubah-struk-server";
+import { bacaJalurOwnerBelumDibayar, loadKatalogUntuk, loadStrukUbah } from "@/lib/ubah-struk-server";
 
 function correctionMoney(value: FormDataEntryValue | null): number {
   // A blank Tunai/Transfer box means nothing was paid that way.
@@ -187,7 +187,9 @@ export async function ubahTransaksi(form: FormData): Promise<void | ActionReject
   let payload;
   try {
     const katalog = await loadKatalogUntuk(db, [...lama.items.map(line => line.item_id ?? ""), ...(isian.lines ?? []).map(line => line.item_id)]);
-    payload = susunUbahStruk({ lama, isian, katalog, rupiahPerPoin: lama.rupiahPerPoin });
+    // Jalur Owner struk berpromo yang penerimaannya dibatalkan (migrasi 20261119100000): promo baris dihitung dari baris asal.
+    const jalurOwnerBelumDibayar = await bacaJalurOwnerBelumDibayar(db, lama);
+    payload = susunUbahStruk({ lama, isian, katalog, rupiahPerPoin: lama.rupiahPerPoin, jalurOwnerBelumDibayar });
   } catch (error) {
     return tolak(error instanceof Error ? error.message : "Isian perubahan tidak valid.");
   }

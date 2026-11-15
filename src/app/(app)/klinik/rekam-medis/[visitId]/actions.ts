@@ -14,6 +14,7 @@ import { bersihkanFollowUp, type FollowUpDraft } from "@/lib/followup";
 import { hariIniWIB } from "@/lib/tanggal";
 import { resolveDokter } from "@/lib/dokter";
 import { pesanBeratTidakWajar } from "@/lib/anabul";
+import { bacaBeratKoreksi } from "@/lib/koreksi-berat";
 import { validateClinicalCompletion, validateSoapCompletion } from "@/lib/clinic-required-fields";
 
 type RacikBahan = { item_id: string; nama: string; qty: number; satuan: string; harga: number };
@@ -444,6 +445,10 @@ export async function koreksiRekamMedisLengkap(formData: FormData) {
   const suhu = rawTemperature ? Number(rawTemperature) : null;
   if (!visitId || !recordId || !/^\d+$/.test(revisionRaw) || !Number.isSafeInteger(Number(revisionRaw)) || !requestKey || requestKey.length > 100
     || reason.length < 3 || reason.length > 1000 || (suhu !== null && (!Number.isFinite(suhu) || suhu < 0 || suhu > 60 || Math.round(suhu * 100) / 100 !== suhu))) fail("Identitas atau alasan koreksi tidak valid.");
+  // Berat badan boleh dikoreksi (OWNER/DOKTER, sebelum tagihan). Batas wajar spesies, >0, dan dua desimal
+  // diperiksa ulang oleh database; berat profil anabul diatur database (hanya bila ini catatan berat terbaru).
+  const berat = bacaBeratKoreksi(formData.get("berat"));
+  if (!berat.valid) fail("Berat badan tidak valid: harus lebih dari 0 kg, maksimal dua angka desimal.");
   let rows;
   let compounds: ReturnType<typeof compoundPayload>[] = [];
   try {
@@ -473,6 +478,7 @@ export async function koreksiRekamMedisLengkap(formData: FormData) {
   const args = {
     p_visit_id: visitId, p_record_id: recordId, p_expected_revision: Number(revisionRaw),
     p_changes: {anamnesis: text("anamnesis"), diagnosis: text("diagnosis"), therapy: text("therapy"), suhu,
+      ...(berat.ada ? {berat: berat.nilai} : {}),
       gejala_klinis: text("gejala_klinis"), hasil_penunjang: text("hasil_penunjang")},
     p_rows: rows, p_reason: reason, p_request_key: requestKey,
   };

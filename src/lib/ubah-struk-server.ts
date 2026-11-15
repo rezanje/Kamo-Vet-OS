@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readCompleteList } from "@/lib/checked-list";
-import type { BarangKatalog, BarisLama, KomponenLama, StrukLama } from "@/lib/ubah-struk";
+import { jalurOwnerBelumDibayar, type BarangKatalog, type BarisLama, type KomponenLama, type StrukLama } from "@/lib/ubah-struk";
 
 type Client = SupabaseClient;
 type Rel<T> = T | T[] | null | undefined;
@@ -11,14 +11,31 @@ export type StrukUbah = StrukLama & {
   voided_at: string | null; payments_finalized_at: string | null; created_at: string; total: number; merchant_fee_total: number;
   payments: { method: string; amount: number; fee_percent: number; fee_amount: number }[];
   rupiahPerPoin: number | null; customerName: string | null;
+  voucher_code: string | null; campaign_code: string | null;
 };
+
+/**
+ * Jalur Owner (migrasi 20261119100000): Owner aktif + struk berpromo/voucher yang penerimaannya sedang dibatalkan.
+ * Gagal baca = bukan jalur Owner (layar menolak seperti dulu; database tetap memutuskan).
+ */
+export async function bacaJalurOwnerBelumDibayar(supabase: Client, struk: Pick<StrukUbah, "id" | "voucher_code" | "campaign_code" | "items">): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+  const [{ data: profile, error: profileError }, { data: cancels, error: cancelError }] = await Promise.all([
+    supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle(),
+    supabase.from("pos_receipt_cancellations").select("closed_at").eq("sale_id", struk.id),
+  ]);
+  if (profileError || cancelError || !cancels) return false;
+  return jalurOwnerBelumDibayar({ isOwner: profile?.role === "OWNER" && profile.is_active === true,
+    cancellations: cancels as { closed_at: string | null }[], voucher_code: struk.voucher_code, campaign_code: struk.campaign_code, items: struk.items });
+}
 
 const ITEM_COLS = "id, item_id, nama, qty, harga, satuan, faktor, target_species, service_performers, item_discount_type, item_discount_value, promo_id, promo_discount, quantity_pool_claim, promo_claim_id, promo_sets, promo_syarat_units, promo_hasil_units, promo_floor_waiver, source_position, below_hpp_owner_reason";
 
 /** Struk lama dibaca dari database (sumber kebenaran untuk promo/pelaksana/komponen yang dibawa). */
 export async function loadStrukUbah(supabase: Client, saleId: string): Promise<StrukUbah | null> {
   const { data, error } = await supabase.from("sales")
-    .select(`id, revision, no_struk, branch_id, channel, shift_id, voided_at, payments_finalized_at, created_at, customer_id, poin_digunakan, subtotal, discount, diskon_kategori, total, merchant_fee_total,
+    .select(`id, revision, no_struk, branch_id, channel, shift_id, voided_at, payments_finalized_at, created_at, customer_id, poin_digunakan, subtotal, discount, diskon_kategori, total, merchant_fee_total, voucher_code, campaign_code,
       customers(name, customer_categories(rupiah_per_poin, is_active)),
       sale_payments(method, amount, fee_percent, fee_amount),
       sale_items(${ITEM_COLS}, sale_item_group_components(component_item_id, component_code, component_name, item_type, qty_per_group, unit, factor, total_base_qty, sort_order))`)
@@ -50,6 +67,7 @@ export async function loadStrukUbah(supabase: Client, saleId: string): Promise<S
     diskon_kategori: Number(row.diskon_kategori) || 0, total: Number(row.total), merchant_fee_total: Number(row.merchant_fee_total) || 0,
     payments: (row.sale_payments ?? []).map(p => ({ method: p.method, amount: Number(p.amount), fee_percent: Number(p.fee_percent) || 0, fee_amount: Number(p.fee_amount) || 0 })),
     rupiahPerPoin: kat?.is_active ? Number(kat.rupiah_per_poin) : null, customerName: cust?.name ?? null,
+    voucher_code: (row.voucher_code as string | null) ?? null, campaign_code: (row.campaign_code as string | null) ?? null,
     items,
   };
 }

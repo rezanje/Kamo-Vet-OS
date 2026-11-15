@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
 import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
 import { TANPA_BAYAR, bayarPerTagihan, sisaTagihan, statusUangTagihan, uangDiterimaTagihan } from "@/lib/uang-tagihan";
+import { muatBagianUangMuka, labelMetodeInvoice, type PembayaranMetode } from "@/lib/metode-uang-muka";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null { return Array.isArray(r) ? (r[0] ?? null) : r; }
@@ -72,7 +73,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
     .order("created_at", { ascending: true }).order("id", { ascending: true });
   const invoiceIds = ((invoiceRows ?? []) as { id: string }[]).map((i) => i.id);
   const { data: invoicePays, error: invoicePayError } = invoiceIds.length
-    ? await supabase.from("invoice_payments").select("invoice_id, amount").in("invoice_id", invoiceIds)
+    ? await supabase.from("invoice_payments").select("id, invoice_id, amount, metode, transferred_from").in("invoice_id", invoiceIds)
     : { data: [] as { invoice_id: string; amount: number }[], error: null };
   const tagihanTerbaca = !invoiceError && !invoicePayError;
   const masukPerInvoice = bayarPerTagihan((invoicePays ?? []) as { invoice_id: string; amount: number }[]);
@@ -86,7 +87,20 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
   const totalTagihan = tagihan.reduce((s, i) => s + (Number(i.total) || 0), 0);
   const totalDibayar = tagihan.reduce((s, i) => s + i.dibayar, 0);
   const totalSisa = tagihan.reduce((s, i) => s + i.sisa, 0);
-  const metodeTagihan = Array.from(new Set(tagihan.map((i) => i.metode_bayar).filter(Boolean))).join(" + ");
+  // Tagihan yang dipotong uang muka: metode dari kwitansi asal, bukan kolom bawaan "Tunai".
+  const bayarPerNota = new Map<string, PembayaranMetode[]>();
+  for (const p of (invoicePays ?? []) as (Partial<PembayaranMetode> & { invoice_id: string; amount: number })[]) {
+    if (!p.id) continue;
+    bayarPerNota.set(p.invoice_id, [...(bayarPerNota.get(p.invoice_id) ?? []),
+      { id: p.id, amount: p.amount, metode: p.metode ?? null, transferred_from: p.transferred_from ?? null }]);
+  }
+  const notaUangMuka = [...bayarPerNota].filter(([, pays]) => pays.some((p) => p.metode === "Uang Muka"))
+    .map(([id, payments]) => ({ id, payments }));
+  const bagianUangMuka = tagihanTerbaca && notaUangMuka.length ? await muatBagianUangMuka(supabase, notaUangMuka) : new Map();
+  const metodeTagihan = Array.from(new Set(tagihan.map((i) => {
+    const nota = notaUangMuka.find((n) => n.id === i.id);
+    return nota ? labelMetodeInvoice(i, nota.payments, bagianUangMuka) : i.metode_bayar;
+  }).filter(Boolean))).join(" + ");
   const statusTagihan = !tagihan.length ? "Belum ditagih"
     : statusUangTagihan(totalTagihan, totalDibayar);
 

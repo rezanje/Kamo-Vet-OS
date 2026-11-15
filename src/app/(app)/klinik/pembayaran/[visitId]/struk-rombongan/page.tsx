@@ -10,6 +10,7 @@ import { bacaRombongan } from "@/lib/rombongan-server";
 import { labelStatus, ringkasTagihanRombongan } from "@/lib/rombongan-tagihan";
 import { labelPromo } from "@/lib/label-potongan";
 import { bacaRincianPromoKlinik, labelDiskonBaris, pasangPromoKeBaris } from "@/lib/rincian-promo-klinik";
+import { muatLabelMetodeInvoice } from "@/lib/metode-uang-muka";
 
 // Struk gabungan satu kedatangan: pemilik menerima SATU lembar untuk seluruh
 // hewannya. Di belakang layar tagihannya tetap terpisah per kunjungan — nomor
@@ -90,7 +91,9 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   }));
   const totalDiskon = invRows.reduce((a, i) => a + Math.max(0, (Number(i.discount) || 0) - (cetakPerInv.get(i.id)?.totalPromo ?? 0)), 0);
   const totalPpn = invRows.reduce((a, i) => a + (Number(i.tax) || 0), 0);
-  const metode = [...new Set(invRows.map((i) => i.metode_bayar).filter(Boolean))].join(", ") || "-";
+  // Nota yang dibayar lewat uang muka / kwitansi: metode dari bayarannya, bukan kolom bawaan "Tunai".
+  const metodeUangMuka = await muatLabelMetodeInvoice(supabase, invRows);
+  const metode = [...new Set(invRows.map((i) => metodeUangMuka.get(i.id) ?? i.metode_bayar).filter(Boolean))].join(", ") || "-";
   const tgl = new Date(`${rombongan.tanggal}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta",
     day: "2-digit", month: "short", year: "numeric",
   });

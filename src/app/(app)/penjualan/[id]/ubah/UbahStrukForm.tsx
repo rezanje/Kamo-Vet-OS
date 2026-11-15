@@ -5,26 +5,38 @@ import { CorrectionTransactionForm } from "@/components/CorrectionTransactionFor
 import { NumberInput } from "@/components/NumberInput";
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { formatPosMoney, PosDecimal, posNetTotal, posSubtotal } from "@/lib/pos-money";
-import { diskonBaris, METODE_UBAH } from "@/lib/ubah-struk";
+import { diskonBaris, METODE_UBAH, promoSebanding } from "@/lib/ubah-struk";
 import { ubahTransaksi } from "../actions";
 
+/** Isi baris asal di database (jalur Owner: dasar hitung promo sebanding, sama dengan database). */
+type AsalData = { qty: number; harga: number; satuan: string | null; faktor: number; item_discount_type: string | null; item_discount_value: number; promo_discount: number };
 type Baris = {
   key: string; asal: string | null; item_id: string; nama: string; qty: number; harga: number; satuan: string;
   diskon_tipe: "nominal" | "percent" | null; diskon_nilai: number; promo: boolean; promo_diskon: number; grup: boolean;
+  asal_data?: AsalData;
 };
 type Barang = { id: string; code: string; nama: string; item_type: string; is_active: boolean; units: { unit: string; factor: number }[]; unitHarga: Record<string, number> };
 type Bayar = { method: string; amount: number; fee_percent: number };
 
 const num = (text: string) => { const v = Number(text.replace(",", ".")); return Number.isFinite(v) ? v : 0; };
 
-export function UbahStrukForm({ userId, saleId, revision, lines, katalog, diskonKategori, potonganLain, poinDigunakan, payments, punyaPelanggan }: {
+export function UbahStrukForm({ userId, saleId, revision, lines, katalog, diskonKategori, potonganLain, poinDigunakan, payments, punyaPelanggan, jalurOwnerBelumDibayar = false }: {
   userId: string; saleId: string; revision: number;
   lines: Omit<Baris, "key">[]; katalog: Barang[]; diskonKategori: number; potonganLain: number; poinDigunakan: number;
   payments: Bayar[]; punyaPelanggan: boolean;
+  /** Jalur Owner struk berpromo yang penerimaannya dibatalkan: promo baris dihitung sebanding (tidak diketik). */
+  jalurOwnerBelumDibayar?: boolean;
 }) {
   const byId = useMemo(() => new Map(katalog.map(item => [item.id, item])), [katalog]);
   const pilihan = useMemo(() => katalog.filter(item => item.is_active && item.item_type !== "Grup").map(item => ({ id: item.id, code: item.code, name: item.nama })), [katalog]);
-  const [rows, setRows] = useState<Baris[]>(() => lines.map((line, i) => ({ ...line, key: `l${i}` })));
+  const [rawRows, setRows] = useState<Baris[]>(() => lines.map((line, i) => ({ ...line, key: `l${i}` })));
+  // Jalur Owner: promo baris asal = promo lama sebanding nilai baris (rumus sama dengan database; server menghitung ulang).
+  const rows = useMemo(() => !jalurOwnerBelumDibayar ? rawRows : rawRows.map(r => {
+    if (!r.asal || !r.asal_data) return r;
+    const faktor = r.grup ? 1 : Number(byId.get(r.item_id)?.units.find(u => u.unit === r.satuan)?.factor ?? 1);
+    const promo = promoSebanding(r.asal_data, { qty: r.qty, harga: r.harga, satuan: r.satuan, faktor, item_discount_type: r.diskon_tipe, item_discount_value: r.diskon_tipe ? r.diskon_nilai : 0 });
+    return { ...r, promo: r.promo || promo > 0, promo_diskon: promo };
+  }), [rawRows, jalurOwnerBelumDibayar, byId]);
   const [katDisc, setKatDisc] = useState(String(diskonKategori));
   const [lain, setLain] = useState(String(potonganLain));
   const [bayar, setBayar] = useState<Record<string, { amount: string; fee: string }>>(() =>
@@ -76,7 +88,9 @@ export function UbahStrukForm({ userId, saleId, revision, lines, katalog, diskon
                 </select></td>
                 <td><NumberInput className="fi" aria-label={`Qty ${r.nama}`} type="number" min="0.001" step="any" inputMode="decimal" value={r.qty} onChange={e => set(r.key, { qty: num(e.target.value) })} /></td>
                 <td><NumberInput className="fi" aria-label={`Harga ${r.nama}`} type="number" min="0" step="0.01" inputMode="decimal" value={r.harga} onChange={e => set(r.key, { harga: num(e.target.value) })} /></td>
-                <td>{r.promo
+                <td>{r.promo && jalurOwnerBelumDibayar
+                  ? <small style={{ display: "block", color: "var(--tm)" }}>Promo {formatPosMoney(r.promo_diskon)} (dihitung otomatis)</small>
+                  : r.promo
                   ? <NumberInput className="fi" aria-label={`Diskon promo ${r.nama}`} type="number" min="0" step="0.01" value={r.promo_diskon} onChange={e => set(r.key, { promo_diskon: num(e.target.value) })} />
                   : <NumberInput className="fi" aria-label={`Diskon ${r.nama}`} type="number" min="0" step="0.01" value={r.diskon_tipe === "percent" ? r.diskon_nilai : r.diskon_nilai || ""} placeholder="0"
                     onChange={e => set(r.key, { diskon_tipe: r.diskon_tipe === "percent" ? "percent" : "nominal", diskon_nilai: num(e.target.value) })} />}
