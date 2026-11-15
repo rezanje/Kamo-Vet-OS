@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""F2 (meeting 12 Nov 2026): beban selisih kurang opname ke karyawan sebagai kasbon (migrasi 20261118660000_f2_beban_selisih_karyawan.sql).
+"""F2 (meeting 12 Nov 2026): beban selisih kurang opname ke karyawan sebagai kasbon (migrasi 20261120700000_f2_beban_selisih_karyawan.sql).
 
 Native throwaway PostgreSQL only (full migration chain incl. F1, fictional fixtures). Never accepts a database URL, no network.
 
@@ -17,7 +17,7 @@ from native_postgres import NativePostgres  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-accurate-inventory-accounting-postgres.py")
 fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
-CANDIDATE = ROOT / "supabase/migrations/20261118660000_f2_beban_selisih_karyawan.sql"
+CANDIDATE = ROOT / "supabase/migrations/20261120700000_f2_beban_selisih_karyawan.sql"
 RESULTS = []
 
 U = lambda n: f"f2000000-0000-4000-8000-{n:012d}"

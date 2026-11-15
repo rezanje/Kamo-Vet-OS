@@ -47,7 +47,7 @@ Usul urutan: tahap 1 + selfie (C) jalan dulu sebelum Desember, lalu naik ke A di
 
 ## 4. Implementasi — Tahap 1 + selfie wajib (Reza: A, 14 Nov)
 
-Migrasi `supabase/migrations/20261118640000_c1_absensi_mandiri_selfie.sql` (**belum dipasang**). Detail rancangan,
+Migrasi `supabase/migrations/20261120600000_c1_absensi_mandiri_selfie.sql` (**belum dipasang**). Detail rancangan,
 dampak, rollback, dan cara cek ada di kepala file migrasi.
 
 **Urutan rilis (wajib):** merge + deploy aplikasi dulu → pastikan live → segera `apply_migration`. Kebalikannya berbahaya:

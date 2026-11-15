@@ -1,7 +1,7 @@
 // C1: telat, pulang cepat, dan lembur dihitung dari SHIFT orang itu (bukan jam kantor global).
 // Murni — dipakai laporan absensi, layar /hris/absensi, dan penggajian (payroll-aturan.menitTelat).
 //
-// Baris absensi bertanggal = tanggal MULAI shift (migrasi 20261118640000). Jam disimpan tanpa
+// Baris absensi bertanggal = tanggal MULAI shift (migrasi 20261120600000). Jam disimpan tanpa
 // tanggal, jadi untuk shift yang lewat tengah malam jam absennya harus "diputar" ke hari yang benar.
 
 const SEHARI = 24 * 60;

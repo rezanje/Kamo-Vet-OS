@@ -106,7 +106,7 @@ tanpa perubahan; vitest penuh, lint, typecheck, build lulus.
 
 ## 5. Implementasi F2 (keputusan Reza: A + "dicatat kasbon saja", bukan potong gaji otomatis)
 
-Migrasi `supabase/migrations/20261118660000_f2_beban_selisih_karyawan.sql` (satu transaksi, objek baru saja; pagar prasyarat
+Migrasi `supabase/migrations/20261120700000_f2_beban_selisih_karyawan.sql` (satu transaksi, objek baru saja; pagar prasyarat
 mewajibkan F1 sudah terpasang). Kode siap; **migrasi belum dipasang** (menunggu izin, sesudah F1).
 
 **Ringkasan & notifikasi nilai minus**

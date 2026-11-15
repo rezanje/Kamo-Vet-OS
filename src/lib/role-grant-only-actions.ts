@@ -28,7 +28,7 @@ export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "crm.poin_manual",
   // B2 (meeting 12 Nov 2026): batalkan tagihan klinik belum lunas/DP (migrasi 20261118620000_b2_batalkan_tagihan_klinik.sql).
   "klinik.batalkan_tagihan",
-  // F2 (meeting 12 Nov 2026): bebankan selisih kurang opname ke karyawan sebagai kasbon (migrasi 20261118660000_f2_beban_selisih_karyawan.sql).
+  // F2 (meeting 12 Nov 2026): bebankan selisih kurang opname ke karyawan sebagai kasbon (migrasi 20261120700000_f2_beban_selisih_karyawan.sql).
   "persediaan.beban_selisih_karyawan",
 ];
 

@@ -99,7 +99,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 ## C. HRIS (target selesai Desember, paling lambat awal tahun)
 
 ### C1 · [ ] P1 — Penjadwalan (shift) & absensi dulu
-- **Keputusan Reza (14 Nov): A** — tahap 1 (absen lewat server, selfie wajib + lokasi, jadwal & telat dari shift, koreksi absen) dulu, lalu pencocokan wajah layanan pihak ketiga. Lihat `USULAN-C1.md` §4. **Tahap 1: kode + migrasi `20261118640000_c1_absensi_mandiri_selfie.sql` siap (belum dipasang).** Urutan rilis: deploy aplikasi dulu, lalu langsung pasang migrasi. Data 14 Nov: 23 cabang aktif belum punya titik lokasi (cek lokasi mati sampai diisi).
+- **Keputusan Reza (14 Nov): A** — tahap 1 (absen lewat server, selfie wajib + lokasi, jadwal & telat dari shift, koreksi absen) dulu, lalu pencocokan wajah layanan pihak ketiga. Lihat `USULAN-C1.md` §4. **Tahap 1: kode + migrasi `20261120600000_c1_absensi_mandiri_selfie.sql` siap (belum dipasang).** Urutan rilis: deploy aplikasi dulu, lalu langsung pasang migrasi. Data 14 Nov: 23 cabang aktif belum punya titik lokasi (cek lokasi mati sampai diisi).
 - Prioritas HRIS: penjadwalan dan absensi. Absensi memakai verifikasi wajah.
 - Setelah stabil, baru disambungkan ke modul lain (terutama penjualan/insentif).
 - Screenshot: `hris-menu.jpg`, `hris-absensi.jpg`
@@ -188,7 +188,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
   Hasil: WH ONLINE TKI → WH TKI 3 barang / 16 unit (IT.2026.11.00330/00331), **WH ONLINE TKI nonaktif**;
   WH ONLINE PDRY → WH PDRY 27 barang / 209 unit (IT.2026.11.00328/00329). Nilai pindah Rp3.604.373,06 = nilai masuk toko,
   tanpa jurnal. **Sisa:** WH ONLINE PDRY masih aktif memegang 4 barang / 21 unit (Chester Tuna 800gr 8, Cat Choize Tuna adult 8,
-  Cat Choize Salmon adult 4, Pasir Lala 25L Coffee 1) → **tahap 2** `20261118500000_e4_pindah_stok_wh_online_tahap2.sql`
+  Cat Choize Salmon adult 4, Pasir Lala 25L Coffee 1) → **tahap 2** `20261120500000_e4_pindah_stok_wh_online_tahap2.sql`
   (ditulis + diuji, BELUM dipasang) dipasang setelah kiriman Transit itu diterima toko (Panduraya, Muara, Ciawi, TKI/Kopo).
 - Screenshot: `penjualan-online-pilih-wh.jpg`
 
@@ -204,7 +204,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 - Screenshot: `persediaan-stok-opname.jpg`
 
 ### F2 · [ ] P2 — Notifikasi & beban selisih minus ke karyawan
-- **Keputusan Reza (14 Nov): A + kasbon (tidak potong gaji).** Kode + migrasi `20261118660000_f2_beban_selisih_karyawan.sql` siap (belum dipasang; menunggu izin). Ringkasan & peringatan nilai minus, bebankan ke 1–10 karyawan (bagi tepat), jurnal Dr 182001 / Cr 720010 (HPP) / Cr 810004 (selisih jual−HPP), kasbon berstatus "Dicatat" (tidak dipotong gaji), bisa dibatalkan selama belum ada cicilan. Harness 34/34.
+- **Keputusan Reza (14 Nov): A + kasbon (tidak potong gaji).** Kode + migrasi `20261120700000_f2_beban_selisih_karyawan.sql` siap (belum dipasang; menunggu izin). Ringkasan & peringatan nilai minus, bebankan ke 1–10 karyawan (bagi tepat), jurnal Dr 182001 / Cr 720010 (HPP) / Cr 810004 (selisih jual−HPP), kasbon berstatus "Dicatat" (tidak dipotong gaji), bisa dibatalkan selama belum ada cicilan. Harness 34/34.
 - Saat selisih minus, munculkan notifikasi/ringkasan nilai minusnya.
 - Nilai minus dikonversi ke harga jual sebagai beban karyawan. Contoh: selisih HPP Rp100rb, harga jual Rp150rb → yang ditanggung karyawan Rp150rb.
 - Alur proses opname tetap seperti sekarang; ini hanya hasil/laporannya.

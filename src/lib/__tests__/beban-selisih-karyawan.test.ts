@@ -16,7 +16,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { batalBebanKaryawan, catatBebanKaryawan } from "../../app/(app)/pos/opname/[id]/beban-karyawan-actions";
 
-const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261118660000_f2_beban_selisih_karyawan.sql"), "utf8");
+const sql = readFileSync(join(process.cwd(), "supabase/migrations/20261120700000_f2_beban_selisih_karyawan.sql"), "utf8");
 const ORDER = "a1000000-0000-4000-8000-000000000001";
 const RESULT = "a2000000-0000-4000-8000-000000000001";
 const EMP_A = "e1000000-0000-4000-8000-000000000001";

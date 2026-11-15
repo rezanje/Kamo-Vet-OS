@@ -148,7 +148,7 @@ kolom `correction_reason` ada.
 | ID | Status | Live di Production? | Catatan |
 |---|---|---|---|
 | E3 | [x] | **Ya** — migrasi terpasang 14.43 WIB | Versi Production `20261114074354` (file di-rename). 0 akun ber-akses khusus. |
-| E4 bagian 2 | tahap 1 [x], tahap 2 [ ] | **Tahap 1 ya** (15.08 WIB, `20261114080823`) | Keputusan Reza **B**: 4 barang PDRY (21 unit) sama dengan kiriman Permintaan Barang yang masih di Transit → ditahan. TKI 3/16 pindah + nonaktif; PDRY 27/209 pindah, gudang tetap aktif. **Tahap 2** `20261118500000_e4_pindah_stok_wh_online_tahap2.sql` (diuji, belum dipasang) setelah kiriman Transit diterima toko. |
+| E4 bagian 2 | tahap 1 [x], tahap 2 [ ] | **Tahap 1 ya** (15.08 WIB, `20261114080823`) | Keputusan Reza **B**: 4 barang PDRY (21 unit) sama dengan kiriman Permintaan Barang yang masih di Transit → ditahan. TKI 3/16 pindah + nonaktif; PDRY 27/209 pindah, gudang tetap aktif. **Tahap 2** `20261120500000_e4_pindah_stok_wh_online_tahap2.sql` (diuji, belum dipasang) setelah kiriman Transit diterima toko. |
 | D3, E1 | [x] diverifikasi | — | Lihat TODO.md. |
 | B3 | [ ] temuan | — | `TEMUAN-B3.md`: omzet sudah di tanggal asli di semua jalur; sisa celah jurnal pembatalan struk / void-terbit-ulang klinik. Menunggu keputusan (A/B/C). |
 | B2 | [ ] usulan | — | `USULAN-B2.md` (59 dari 82 kunjungan Pembayaran tanpa tagihan → sudah bisa diarsipkan). Menunggu keputusan. |
@@ -158,13 +158,13 @@ kolom `correction_reason` ada.
 | E2 | [ ] usulan | — | `USULAN-E2.md` (barang Grup untuk bundling online). |
 | F1, F2 | [ ] usulan | — | `USULAN-F1-F2.md` (Production masih FIFO; plus & minus opname sama-sama ke 720010). |
 
-Migrasi menunggu: `20261118500000` (E4 tahap 2, syarat Transit kosong). D1/D2 sudah terpasang (versi `20261114085215`/`20261114085222`). Versi tertinggi Production saat ini `20261118200000` (cabang_gudang, dari PR lain); `apply_migration` mencatat jam pasang (mis. 2026111408…),
+Migrasi menunggu: `20261120500000` (E4 tahap 2, syarat Transit kosong). D1/D2 sudah terpasang (versi `20261114085215`/`20261114085222`). Versi tertinggi Production saat ini `20261118200000` (cabang_gudang, dari PR lain); `apply_migration` mencatat jam pasang (mis. 2026111408…),
 lalu rename file ke versi itu. Build lokal butuh `NODE_OPTIONS=--max-old-space-size=8192 npm run build`.
 
 ### 7b. Sesudah keputusan Reza 14 Nov sore (D1/D2 = A, sisanya ikut saran)
 - D1/D2 terpasang (lihat tabel di atas).
 - Kode + migrasi siap, **belum dipasang** (menunggu izin pasang): B3 `20261118610000`, B2 `20261118620000`, F1 `20261118630000`,
-  C1 `20261118640000` (wajib: deploy aplikasi dulu, lalu segera pasang), E2 `20261118650000`, E4 tahap 2 `20261118500000`
+  C1 `20261120600000` (wajib: deploy aplikasi dulu, lalu segera pasang), E2 `20261118650000`, E4 tahap 2 `20261120500000`
   (syarat Transit kosong). Pasang satu per satu dengan urutan nomor; sesudah pasang rename ke versi Production.
 - Harness: B3 33/33, B2 62/62 (`--pg-bin /usr/lib/postgresql/16/bin` wajib), F1 33/33, C1 60/60, E2 41/41, E4 82/82, D1 24/24, D2 14/14.
 - Vitest: jalankan dengan `--exclude ".claude/**"` bila ada worktree agen di `.claude/worktrees/`.
@@ -181,9 +181,9 @@ lebih kecil dari migrasi lain di repo yang menjadi dasarnya (mis. 20261115100000
 | `20261118620000_b2_batalkan_tagihan_klinik.sql` | `20261114145039` | 14 Nov 21.50 WIB |
 | `20261118630000_f1_opname_akun_selisih.sql` | `20261114145231` | 14 Nov 21.52 WIB |
 | `20261118650000_e2_grup_penjualan_online.sql` | `20261114151407` | 14 Nov 22.14 WIB |
-| `20261118640000_c1_absensi_mandiri_selfie.sql` | — | belum (pasang segera SESUDAH deploy aplikasi) |
-| `20261118660000_f2_beban_selisih_karyawan.sql` | — | belum (menunggu izin; wajib sesudah F1) |
-| `20261118500000_e4_pindah_stok_wh_online_tahap2.sql` | — | belum (menunggu Transit kosong) |
+| `20261120600000_c1_absensi_mandiri_selfie.sql` | — | belum (pasang segera SESUDAH deploy aplikasi) |
+| `20261120700000_f2_beban_selisih_karyawan.sql` | — | belum (menunggu izin; wajib sesudah F1) |
+| `20261120500000_e4_pindah_stok_wh_online_tahap2.sql` | — | belum (menunggu Transit kosong) |
 
 Isi SQL yang tersimpan di `supabase_migrations.schema_migrations.statements` untuk B2/F1/E2 sama byte-per-byte dengan file saat
 dipasang (md5 dicek); sesudahnya hanya satu komentar di file B2 yang berubah (rujukan nomor B3).

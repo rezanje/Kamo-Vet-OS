@@ -2,7 +2,7 @@
  * F2 (meeting 12 Nov 2026, keputusan Reza: A + "dicatat kasbon saja") — ringkasan selisih kurang stok opname dan beban ke karyawan.
  *
  * Satu tempat untuk aturan layar, pembacaan isian, dan pesan. Penegak sebenarnya ada di database
- * (migrasi 20261118660000_f2_beban_selisih_karyawan.sql): read_opname_variance_charge / charge_opname_variance_to_employees /
+ * (migrasi 20261120700000_f2_beban_selisih_karyawan.sql): read_opname_variance_charge / charge_opname_variance_to_employees /
  * cancel_opname_variance_charge memeriksa ulang hak, cabang, nilai, pembagian, periode, dan anti-dobel.
  *
  * Aturan bisnis:

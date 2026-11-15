@@ -1,4 +1,4 @@
-// C1: absen mandiri lewat fungsi database absen_mandiri() + selfie wajib (migrasi 20261118640000).
+// C1: absen mandiri lewat fungsi database absen_mandiri() + selfie wajib (migrasi 20261120600000).
 // Murni — tombol di /me, server action, dan tesnya memakai aturan yang sama.
 
 export const BUCKET_FOTO_ABSEN = "absensi-foto";

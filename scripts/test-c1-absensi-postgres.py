@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """C1 (meeting 12 Nov 2026) tahap 1 + selfie wajib: absen mandiri lewat server, foto, koreksi absen
-(migrasi 20261118640000_c1_absensi_mandiri_selfie.sql).
+(migrasi 20261120600000_c1_absensi_mandiri_selfie.sql).
 
 Native throwaway PostgreSQL only (full migration chain, fictional fixtures). Never accepts a database URL, no network.
 The storage schema is the fixture's shim table; RLS is switched on for it here so the bucket policies are exercised.
@@ -19,7 +19,7 @@ from native_postgres import NativePostgres  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-accurate-inventory-accounting-postgres.py")
 fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
-CANDIDATE = ROOT / "supabase/migrations/20261118640000_c1_absensi_mandiri_selfie.sql"
+CANDIDATE = ROOT / "supabase/migrations/20261120600000_c1_absensi_mandiri_selfie.sql"
 RESULTS = []
 
 U = lambda n: f"c1000000-0000-4000-8000-{n:012d}"
