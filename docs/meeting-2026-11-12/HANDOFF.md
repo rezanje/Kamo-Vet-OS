@@ -182,7 +182,7 @@ lebih kecil dari migrasi lain di repo yang menjadi dasarnya (mis. 20261115100000
 | `20261118630000_f1_opname_akun_selisih.sql` | `20261114145231` | 14 Nov 21.52 WIB |
 | `20261118650000_e2_grup_penjualan_online.sql` | `20261114151407` | 14 Nov 22.14 WIB |
 | `20261120600000_c1_absensi_mandiri_selfie.sql` | — | belum (pasang segera SESUDAH deploy aplikasi) |
-| `20261120700000_f2_beban_selisih_karyawan.sql` | — | belum (menunggu izin; wajib sesudah F1) |
+| `20261120700000_f2_beban_selisih_karyawan.sql` | `20261115123913` | 15 Nov 19.39 WIB (Reza: A) |
 | `20261120500000_e4_pindah_stok_wh_online_tahap2.sql` | — | belum (menunggu Transit kosong) |
 
 Isi SQL yang tersimpan di `supabase_migrations.schema_migrations.statements` untuk B2/F1/E2 sama byte-per-byte dengan file saat

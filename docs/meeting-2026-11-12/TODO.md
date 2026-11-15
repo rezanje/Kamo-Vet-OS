@@ -76,7 +76,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
   lanjut / Buang / Batal — plus petunjuk cara memasukkan beberapa racikan.
 - Screenshot: `klinik-obat-khusus.jpg`
 
-### B2 · [ ] P1 — Hapus/arsip data percobaan & transaksi oleh Owner/Admin
+### B2 · [x] P1 — Hapus/arsip data percobaan & transaksi oleh Owner/Admin
 - **Keputusan Reza (14 Nov): A** — Tutup kunjungan lunas + Batalkan tagihan belum lunas/DP (stok & jurnal balik di tanggal asli) + arsip; Admin bila dicentang. Lihat `USULAN-B2.md` §4. **Migrasi `20261118620000_b2_batalkan_tagihan_klinik.sql` terpasang di Production 14 Nov 21.50 WIB** (versi tercatat `20261114145039`); tombol tampil setelah PR di-merge. Data 14 Nov: 5 tagihan belum lunas/DP nyangkut semuanya rawat inap (di luar cakupan); 18 dari 19 kunjungan lunas pasiennya masih dirawat.
 - Antrian klinik masih banyak data tes. Transaksi berstatus "menunggu pembayaran" tidak bisa diarsipkan.
 - Yang diminta:
@@ -85,7 +85,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
   - Semua aksi ini tercatat di log aktivitas.
 - Screenshot: `klinik-antrian-arsip.jpg`
 
-### B3 · [ ] P1 — Void/koreksi transaksi harus masuk ke tanggal transaksi asli
+### B3 · [x] P1 — Void/koreksi transaksi harus masuk ke tanggal transaksi asli
 - **Keputusan Reza (14 Nov): A** — jurnal pembalik pembatalan struk & void-terbit-ulang klinik di tanggal transaksi asli; stok & HPP di hari pembatalan. Lihat `TEMUAN-B3.md` §4. **Migrasi `20261118610000_b3_jurnal_batal_tanggal_asli.sql` terpasang di Production 14 Nov 21.14 WIB** (versi tercatat `20261114141422`); berlaku langsung.
 - Masalah: koreksi/void yang diminta malam hari lalu diproses besoknya ikut tercatat (termasuk omset) di tanggal perbaikan. Seharusnya masuk ke tanggal transaksi asli.
 - Catatan: sudah dilaporkan di Telegram dan katanya sedang dikerjakan. Cek status kode yang ada dulu sebelum mengerjakan ulang.
@@ -153,7 +153,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
   Catatan: order yang sudah tersimpan tidak bisa diimpor ulang dengan satuan lain (ditolak "rincian berbeda") — sesuai desain.
 - Screenshot: `penjualan-online-impor-satuan.jpg`
 
-### E2 · [ ] P2 — Bundling / promo paket di impor
+### E2 · [x] P2 — Bundling / promo paket di impor
 - **Keputusan Reza (14 Nov): A** — pakai barang Grup (stok & HPP dari komponen). Lihat `USULAN-E2.md`. **Migrasi `20261118650000_e2_grup_penjualan_online.sql` terpasang di Production 14 Nov 22.14 WIB** (versi `20261114151407`). Data: ±85 barang Grup aktif; 5 Grup tanpa isi (100738, 100308, 100345, 100185, 100309) ditolak sampai isinya dilengkapi. Tim online perlu membuat barang Grup per bundling (kode = SKU Shopee).
 - Belum didukung. Kerjakan setelah item P0/P1.
 
@@ -196,15 +196,15 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 
 ## F. PERSEDIAAN — STOK OPNAME
 
-### F1 · [ ] P1 — Laporan hasil stok opname
+### F1 · [x] P1 — Laporan hasil stok opname
 - **Keputusan Reza (14 Nov): A** — laporan rekap periode HPP + harga jual berdampingan; selisih plus ke Pendapatan Lain-lain, minus tetap Beban Selisih Stok, minus HPP 0 tidak lolos tanpa jurnal; ganti ke average dibahas terpisah dengan Finance. Lihat `USULAN-F1-F2.md` §4. **Migrasi `20261118630000_f1_opname_akun_selisih.sql` terpasang di Production 14 Nov 21.52 WIB** (versi `20261114145231`); posting opname baru langsung memakai akun baru, rekap laporan tampil setelah PR di-merge. Opname barang tanpa harga sama sekali akan ditolak sampai harga beli diisi.
 - Bisa ditampilkan dalam nilai HPP dan harga jual.
 - Selisih **plus** → Pendapatan Lain-lain. Selisih **minus** → Beban Selisih Stok. Yang minus **belum muncul**, jadi perlu dicek.
 - HPP memakai **average**. Cek apakah ada perbedaan hitungan average vs FIFO di kode sekarang.
 - Screenshot: `persediaan-stok-opname.jpg`
 
-### F2 · [ ] P2 — Notifikasi & beban selisih minus ke karyawan
-- **Keputusan Reza (14 Nov): A + kasbon (tidak potong gaji).** Kode + migrasi `20261120700000_f2_beban_selisih_karyawan.sql` siap (belum dipasang; menunggu izin). Ringkasan & peringatan nilai minus, bebankan ke 1–10 karyawan (bagi tepat), jurnal Dr 182001 / Cr 720010 (HPP) / Cr 810004 (selisih jual−HPP), kasbon berstatus "Dicatat" (tidak dipotong gaji), bisa dibatalkan selama belum ada cicilan. Harness 34/34.
+### F2 · [x] P2 — Notifikasi & beban selisih minus ke karyawan
+- **Keputusan Reza (14 Nov): A + kasbon (tidak potong gaji).** Migrasi `20261120700000_f2_beban_selisih_karyawan.sql` **terpasang di Production 15 Nov 19.39 WIB** (versi `20261115123913`; Reza: A). Pelunasan kasbon "Dicatat" sengaja belum dibuat (Reza: biarkan dulu). Ringkasan & peringatan nilai minus, bebankan ke 1–10 karyawan (bagi tepat), jurnal Dr 182001 / Cr 720010 (HPP) / Cr 810004 (selisih jual−HPP), kasbon berstatus "Dicatat" (tidak dipotong gaji), bisa dibatalkan selama belum ada cicilan. Harness 34/34.
 - Saat selisih minus, munculkan notifikasi/ringkasan nilai minusnya.
 - Nilai minus dikonversi ke harga jual sebagai beban karyawan. Contoh: selisih HPP Rp100rb, harga jual Rp150rb → yang ditanggung karyawan Rp150rb.
 - Alur proses opname tetap seperti sekarang; ini hanya hasil/laporannya.
