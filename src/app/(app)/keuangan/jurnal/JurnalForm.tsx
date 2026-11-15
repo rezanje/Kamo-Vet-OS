@@ -4,6 +4,7 @@ import { NumberInput } from "@/components/NumberInput";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { draftRows } from "@/components/TransactionDraft";
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 
 import { useMemo, useState } from "react";
 import { jurnalManual } from "./actions";
@@ -138,19 +139,17 @@ export function JurnalForm({
                   {idx + 1}
                 </td>
                 <td>
-                  <select
-                    className="fi"
-                    style={{ width: "100%", fontSize: 11 }}
+                  {/* Bisa diketik/dicari — permintaan klinik 15 Nov 2026 ("harus scroll, makan waktu"). */}
+                  <SearchableItemPicker
+                    items={accounts}
                     value={l.account_id}
-                    onChange={(e) => setLine(idx, { account_id: e.target.value })}
-                  >
-                    <option value="">— Pilih akun —</option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(id) => setLine(idx, { account_id: id })}
+                    ariaLabel={`Akun baris ${idx + 1}`}
+                    placeholder="Ketik kode / nama akun"
+                    selectedLabelFormat="code-name"
+                    detailLabel="Kode"
+                    requiredMessage="Pilih akun dari daftar hasil cari."
+                  />
                 </td>
                 <td>
                   <NumberInput
