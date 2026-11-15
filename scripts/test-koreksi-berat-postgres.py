@@ -88,9 +88,11 @@ def run(h):
     # 2. Validasi DB: nilai tidak sah ditolak tanpa jejak.
     v2, m2, pet2 = visit(h, 2001, species='Kucing')
     c2 = rows(h, m2)
-    for label, val in [('nol', 0), ('negatif', -1), ('3 desimal', 2.555), ('>= 10000', 10000), ('teks', '3'), ('di atas batas Kucing 15', 15.5), ('dikosongkan', None)]:
+    for label, val, pesan in [('nol', 0, 'Berat badan tidak valid'), ('negatif', -1, 'Berat badan tidak valid'), ('3 desimal', 2.555, 'Berat badan tidak valid'),
+                              ('>= 10000', 10000, 'Berat badan tidak valid'), ('teks', '3', 'Hanya catatan klinis'), ('di atas batas Kucing 15', 15.5, 'tidak wajar untuk kucing'),
+                              ('dikosongkan', None, 'tidak boleh dikosongkan')]:
         err = h.gagal(edit(v2, m2, 0, c2, 'bad-' + label.replace(' ', ''), fields(val)), r.DOCTOR)
-        check('tolak berat ' + label, bool(err) and berat(h, m2) == '2.60' and audits(h, m2) == 0 and weight(h, pet2) == '2.60', dict(error=(err or '')[:160]))
+        check('tolak berat ' + label + ' dengan pesan yang benar', bool(err) and pesan in err and berat(h, m2) == '2.60' and audits(h, m2) == 0 and weight(h, pet2) == '2.60', dict(error=(err or '')[:160]))
     err = h.gagal(edit(v2, m2, 0, c2, 'edge-15', fields(15)), r.DOCTOR)
     check('batas Kucing 15 kg tepat diterima', not err and berat(h, m2) == '15.00', dict(error=err))
     for sp, ok_, bad_ in [('Anjing', 100, 101), ('Kelinci', 10, 10.5), ('Burung', 5, 5.5)]:
@@ -113,6 +115,11 @@ def run(h):
     # 4. Berat tidak diubah / kunci berat tidak dikirim (klien lama): profil tidak disentuh.
     v4, m4, pet4 = visit(h, 2040, species='Kucing')
     h.sql(f"update pets set weight=9 where id={q(pet4)}")
+    # Profil = nilai rekam (2,6) dan berat yang sama dikirim: baris profil tidak boleh ditulis sama sekali (xmin tetap).
+    v4b, m4b, pet4b = visit(h, 2041, species='Kucing')
+    xmin0 = h.nilai(f"select xmin::text from pets where id={q(pet4b)}")
+    err = h.gagal(edit(v4b, m4b, 0, rows(h, m4b), 'same-berat-eq', fields(2.6), reason='Koreksi diagnosis saja'), r.DOCTOR)
+    check('berat sama + profil sama: profil tidak ditulis ulang (xmin tetap)', not err and h.nilai(f"select xmin::text from pets where id={q(pet4b)}") == xmin0 and rev(h, m4b) == 1, dict(error=err))
     err = h.gagal(edit(v4, m4, 0, rows(h, m4), 'same-berat', fields(2.6), reason='Koreksi diagnosis saja'), r.DOCTOR)
     check('berat sama dikirim: rekam tetap 2,6 dan profil (9) tidak ditulis', not err and berat(h, m4) == '2.60' and weight(h, pet4) == '9.00' and rev(h, m4) == 1, dict(error=err, weight=weight(h, pet4)))
     err = h.gagal(edit(v4, m4, 1, rows(h, m4), 'absent-berat', fields(), reason='Klien lama tanpa berat'), r.DOCTOR)
@@ -132,6 +139,16 @@ insert into prescription_items(medical_record_id,nama_obat,qty,harga,jenis,satua
     check('koreksi rekam LAMA: rekam berubah, profil (rekam terbaru 2,6) tidak ditimpa', not err and berat(h, m5o) == '0.90' and weight(h, pet5) == '2.60' and berat(h, m5) == '2.60', dict(error=err, weight=weight(h, pet5)))
     err = h.gagal(edit(v5, m5, 0, rows(h, m5), 'new-rec', fields(2.2), reason='Koreksi rekam terbaru'), r.DOCTOR)
     check('koreksi rekam TERBARU memperbarui profil, rekam lama utuh', not err and weight(h, pet5) == '2.20' and berat(h, m5o) == '0.90', dict(error=err, weight=weight(h, pet5)))
+
+    # 5b. Rekam lama dengan berat SAMA dengan profil (bukan terbaru): tetap tidak menimpa profil.
+    v5b, m5b, pet5b = visit(h, 2055, species='Kucing', berat='2.6', weight='2.6')
+    v5c = r.uid(6, 2056); m5c = r.uid(7, 2056)
+    h.sql(f"""insert into visits(id,branch_id,customer_id,pet_id,status,doctor_id,service_started_at,service_finished_at)
+ select {q(v5c)},branch_id,customer_id,pet_id,'Pembayaran',doctor_id,now()-interval '3 hour',now()-interval '2 hour' from visits where id={q(v5b)};
+insert into medical_records(id,visit_id,submission_key,submitted_by,berat,suhu,created_at) values ({q(m5c)},{q(v5c)},'initial-old2',{q(r.DOCTOR)},2.6,38,now()-interval '14 day');
+insert into prescription_items(medical_record_id,nama_obat,qty,harga,jenis,satuan,faktor) values ({q(m5c)},'Jasa Fiktif',1,1000,'jasa','kali',1);""")
+    err = h.gagal(edit(v5c, m5c, 0, rows(h, m5c), 'old-eq', fields(1.0), reason='Koreksi rekam lama sama berat'), r.DOCTOR)
+    check('rekam LAMA berberat sama dengan profil: profil tetap 2,6 (bukan rekam terbaru)', not err and berat(h, m5c) == '1.00' and weight(h, pet5b) == '2.60', dict(error=err, weight=weight(h, pet5b)))
 
     # 6. Peran & tagihan: gerbang lama tidak melebar.
     v6, m6, pet6 = visit(h, 2060, species='Kucing')
