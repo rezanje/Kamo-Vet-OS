@@ -256,3 +256,22 @@ a.skl-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,
   .ct { padding: 0 !important; }
   @page { margin: 16mm; }
 }
+
+/* Follow up pelanggan (marketing): daftar kartu, nyaman di HP. */
+.fu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+.fu-card { background: #fff; border: .5px solid var(--bd); border-radius: 10px; padding: 11px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fu-card[data-sudah="true"] { background: #f8fafc; }
+.fu-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 11px; margin: 0; }
+.fu-facts dt { color: var(--tm); }
+.fu-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.fu-aksi { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.fu-tabs { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 2px; }
+.fu-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 10px; }
+.fu-filter > div { min-width: 0; }
+.fu-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); display: flex; align-items: center; justify-content: center; padding: 14px; z-index: 60; }
+.fu-dialog { background: #fff; border-radius: 12px; padding: 16px; width: 100%; max-width: 420px; max-height: 92vh; overflow-y: auto; }
+@media (max-width: 520px) {
+  .fu-grid { grid-template-columns: minmax(0, 1fr); }
+  .fu-filter > div, .fu-filter .fi { width: 100%; }
+  .fu-aksi > * { flex: 1 1 140px; justify-content: center; }
+}

@@ -87,6 +87,8 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Promo & Voucher", icon: "ti-speakerphone", ...G, href: "/crm/promo" },
     { label: "Pelanggan", icon: "ti-users-group", ...B, href: "/crm/pelanggan" },
     { label: "Kategori Pelanggan", icon: "ti-crown", ...B, href: "/crm/kategori-pelanggan" },
+    // Follow up pelanggan (permintaan Pak Andri, 15 Nov 2026): lama tidak balik, pengingat grooming, follow up hari ini.
+    { label: "Follow up pelanggan", icon: "ti-message-heart", ...A, nw: true, href: "/crm/follow-up" },
     { label: "Status Ulasan", icon: "ti-star-half", ...B, nw: true, href: "/crm/status-ulasan" },
     { label: "Retention (WA)", icon: "ti-brand-whatsapp", ...P },
     { label: "Owner dashboard", icon: "ti-dashboard", ...P },

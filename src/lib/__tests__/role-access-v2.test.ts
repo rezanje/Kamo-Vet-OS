@@ -11,7 +11,7 @@ it("v2 canonical longest-prefix/query normalization covers every real navigation
  const rules=rows("ADMIN",["__role_v2__",...MODULES.map(m=>m.id),"kasir","quest-staff","pos-shift"]);
  const paths=new Set([...MODULES.map(m=>m.id==="dashboard"?"/":`/${m.id}`),...Object.values(TILES).flatMap(tiles=>tiles.flatMap(t=>t.href?[t.href.split(/[?#]/)[0]]:[])),"/kasir","/pos/quest"]);
  // +1: Laporan Visit Rawat Inap (A4, meeting 12 Nov 2026). +2: Stok Slow Moving dan Stok Harus Order (13 Nov 2026). +1: Penjualan di Bawah Modal (14 Nov 2026).
-  expect(paths.size).toBe(153);for(const path of paths)expect(bolehBukaPath("ADMIN",path,rules),path).toBe(true);
+  expect(paths.size).toBe(154);for(const path of paths)expect(bolehBukaPath("ADMIN",path,rules),path).toBe(true);
  expect(bolehBukaPath("ADMIN","/pembelian?tab=supplier#list",rules)).toBe(true);
  // Original matcher: `pengaturan` opens /pengaturan/pajak; v2 keeps that (saving the displayed list must not narrow).
  expect(bolehBukaPath("STAFF","/pengaturan/pajak",rows("STAFF",["__role_v2__","pengaturan"]))).toBe(true);

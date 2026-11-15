@@ -45,6 +45,8 @@ export const SUBMENU_ENTRIES: readonly SubmenuEntry[] = [
   e("crm", "kategori-pelanggan", ["/crm/kategori-pelanggan"]),
   e("crm", "status-ulasan", ["/crm/status-ulasan"]),
   e("crm", "kampanye", ["/crm/kampanye"], "Kampanye"),
+  // Marketing (15 Nov 2026): daftar nomor HP pelanggan. Bawaan MATI untuk selain OWNER (migrasi 20261121100000_marketing_follow_up.sql).
+  e("crm", "follow-up-pelanggan", ["/crm/follow-up"], "Follow up pelanggan"),
   // ── HRIS ──
   e("hris", "karyawan", ["/hris/karyawan"]),
   e("hris", "absensi", ["/hris/absensi"]),
