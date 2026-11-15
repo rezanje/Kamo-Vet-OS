@@ -21,3 +21,25 @@ it.each(['ACCESS_DENIED','RECORD_POSTED','COMPOUND_LOCKED'])('fails closed on %s
  await expect(koreksiRekamMedisLengkap(f)).rejects.toThrow(message);
  expect(s.calls.map(x=>x.name)).toEqual(['clinic_edit_queued_record_with_compounds']);
 });
+
+it('Berat Badan dikirim di p_changes (angka), tanpa kunci bila kolom tidak ada, null bila dikosongkan', async () => {
+ const withWeight=form();withWeight.set('berat','1');
+ await koreksiRekamMedisLengkap(withWeight);
+ expect(s.calls[0].args.p_changes).toMatchObject({berat:1,suhu:38.25});
+ s.calls=[];
+ await koreksiRekamMedisLengkap(form());
+ expect(s.calls[0].args.p_changes).not.toHaveProperty('berat');
+ s.calls=[];
+ const blank=form();blank.set('berat','  ');
+ await koreksiRekamMedisLengkap(blank);
+ expect(s.calls[0].args.p_changes).toHaveProperty('berat',null);
+});
+it.each(['0','-1','abc','2.555','10000','NaN'])('berat %s ditolak sebelum memanggil database', async (value) => {
+ const f=form();f.set('berat',value);
+ await expect(koreksiRekamMedisLengkap(f)).rejects.toThrow(/Berat%20badan%20tidak%20valid/);
+ expect(s.calls).toEqual([]);
+});
+it('pesan batas wajar dari database tampil apa adanya', async () => {
+ s.error={message:'Berat 16 kg tidak wajar untuk kucing; periksa lagi sebelum menyimpan'};const f=form();f.set('berat','16');
+ await expect(koreksiRekamMedisLengkap(f)).rejects.toThrow(/tidak%20wajar%20untuk%20kucing/);
+});

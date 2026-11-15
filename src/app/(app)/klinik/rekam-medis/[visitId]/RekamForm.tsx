@@ -6,6 +6,7 @@ import { QtyInput } from "@/components/QtyInput";
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { savedPackageOrigin, type ClinicalCorrection } from "@/lib/clinical-correction";
+import { batasBeratKoreksi, CATATAN_KOREKSI_BERAT } from "@/lib/koreksi-berat";
 import Link from "next/link";
 import { ServicePerformersField } from "@/components/ServicePerformersField";
 import { TindakanRacikanForm } from "@/components/TindakanRacikanForm";
@@ -461,9 +462,10 @@ export function RekamForm({ visitId, petId, requestKey, draftUserId, patient, it
           </ExamField>
           <ExamField icon="ti-weight" color="#0891b2" label="Berat Badan">
             <div style={{ display: "flex", alignItems: "stretch" }}>
-              <NumberInput className="fi" name="berat" type="number" step="0.1" min={0} max={batasBeratWajar(patient.species) ?? undefined} readOnly={!!correction} defaultValue={correction ? correction.berat ?? undefined : currentWeight ?? undefined} placeholder="12.5" style={{ borderRadius: "6px 0 0 6px" }} />
+              <NumberInput className="fi" name="berat" type="number" step={correction ? "0.01" : "0.1"} min={0} max={correction ? batasBeratKoreksi(patient.species, correction.berat) : batasBeratWajar(patient.species) ?? undefined} readOnly={!!correction && !correction.fullEdit} required={!!correction?.fullEdit && correction.berat != null} defaultValue={correction ? correction.berat ?? undefined : currentWeight ?? undefined} placeholder="12.5" style={{ borderRadius: "6px 0 0 6px" }} />
               <span style={{ background: "var(--sf1)", border: ".5px solid var(--bd)", borderLeft: "none", borderRadius: "0 6px 6px 0", padding: "6px 10px", fontSize: 11, color: "var(--tm)" }}>kg</span>
             </div>
+            {correction?.fullEdit && <p data-berat-catatan style={{ fontSize: 10.5, color: "var(--tm)", margin: "4px 0 0" }}>{CATATAN_KOREKSI_BERAT}</p>}
           </ExamField>
           <ExamField icon="ti-temperature" color="#dc2626" label="Suhu Badan">
             <div style={{ display: "flex", alignItems: "stretch" }}>
