@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getAccountBalances, getAccountLedger, nilaiSeksi } from "../ledger";
+import { getAccountBalances, getAccountLedger, getAccountOpening, nilaiSeksi } from "../ledger";
 
 // Mock supabase minimal: coa_accounts tetap, journal_lines difilter oleh chain gte/lte/eq/in
 // persis seperti fetchLines() memanggilnya (query-builder chainable + thenable).
@@ -7,6 +7,10 @@ type Line = {
   account_id: string; debit: number; credit: number;
   journal_entries: { tanggal: string; branch_id: string | null; source: string; source_ref?: string | null; no_jurnal: string | null; deskripsi: string | null; branches?: { name: string } | null };
 };
+
+// Setiap penyaring account_id yang dikirim ke journal_lines — untuk memastikan rincian satu akun
+// tidak menarik jurnal seluruh akun.
+let accountFilters: string[][] = [];
 
 function makeClient(accounts: { id: string; code: string; name: string; type: string; normal_balance: string }[], lines: Line[]) {
   return {
@@ -29,8 +33,12 @@ function makeClient(accounts: { id: string; code: string; name: string; type: st
           range(from: number, to: number) { return Promise.resolve({ data: rows.slice(from, to + 1), count: rows.length, error: null }); },
           gte(_col: string, val: string) { rows = rows.filter((l) => l.journal_entries.tanggal >= val); return builder; },
           lte(_col: string, val: string) { rows = rows.filter((l) => l.journal_entries.tanggal <= val); return builder; },
-          eq(_col: string, val: string) { rows = rows.filter((l) => l.journal_entries.branch_id === val); return builder; },
-          in(_col: string, vals: string[]) { rows = rows.filter((l) => vals.includes(l.journal_entries.branch_id as string)); return builder; },
+          eq(col: string, val: string) { rows = rows.filter((l) => (col === "account_id" ? l.account_id : l.journal_entries.branch_id) === val); return builder; },
+          in(col: string, vals: string[]) {
+            if (col === "account_id") accountFilters.push(vals);
+            rows = rows.filter((l) => vals.includes((col === "account_id" ? l.account_id : l.journal_entries.branch_id) as string));
+            return builder;
+          },
           then(resolve: (v: { data: Line[] }) => void) { return resolve({ data: rows }); },
         };
         return builder;
@@ -162,5 +170,43 @@ describe("getAccountBalances — agregat di database (ledger_account_totals)", (
     await expect(getAccountBalances(t.client, {})).rejects.toThrow("statement timeout");
     const lain = withRpc({ data: null, error: { code: "42883", message: "function public.other_fn(uuid) does not exist" } });
     await expect(getAccountBalances(lain.client, {})).rejects.toThrow("other_fn");
+  });
+});
+
+describe("Buku Besar per akun — hanya menarik baris akun yang dibuka", () => {
+  const dua = [
+    ...accounts,
+    { id: "acc-7200", code: "720004", name: "Beban Internet", type: "BEBAN", normal_balance: "D" },
+  ];
+  const campur: Line[] = [
+    ...lines,
+    { account_id: "acc-7200", debit: 50_000, credit: 0, journal_entries: { tanggal: "2026-10-20", branch_id: "b1", source: "expense", no_jurnal: "J0", deskripsi: null } },
+    { account_id: "acc-7200", debit: 75_000, credit: 0, journal_entries: { tanggal: "2026-11-05", branch_id: "b1", source: "expense", no_jurnal: "J3", deskripsi: null } },
+  ];
+
+  it("mutasi disaring account_id di database, bukan seluruh jurnal lalu dibuang di aplikasi", async () => {
+    accountFilters = [];
+    const ledger = await getAccountLedger(makeClient(dua, campur), "720004", { from: "2026-11-01", to: "2026-11-15" });
+    expect(ledger.map((l) => l.no_jurnal)).toEqual(["J3"]);
+    expect(accountFilters).toEqual([["acc-7200"]]);
+  });
+
+  it("saldo awal memakai agregat database, tanpa menarik riwayat baris jurnal", async () => {
+    let linesRead = false;
+    const calls: Record<string, unknown>[] = [];
+    const base = makeClient(dua, campur);
+    const client = {
+      from(t: string) { if (t === "journal_lines") linesRead = true; return base.from(t); },
+      rpc(_n: string, args: Record<string, unknown>) { calls.push(args); return Promise.resolve({ data: [{ account_id: "acc-7200", debit: 50_000, credit: 0 }, { account_id: "acc-4101", debit: 0, credit: 999 }], error: null }); },
+    };
+    expect(await getAccountOpening(client, "720004", { from: "2026-11-01", branchId: "b1" })).toBe(50_000);
+    expect(calls).toEqual([{ p_from: null, p_to: "2026-10-31", p_branch_ids: ["b1"] }]);
+    expect(linesRead).toBe(false);
+  });
+
+  it("saldo awal jalur lama (fungsi belum ada) tetap hanya membaca akun itu", async () => {
+    accountFilters = [];
+    expect(await getAccountOpening(makeClient(dua, campur), "720004", { from: "2026-11-01" })).toBe(50_000);
+    expect(accountFilters).toEqual([["acc-7200"]]);
   });
 });

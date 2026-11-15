@@ -1,6 +1,6 @@
 import { completeReportQuery } from "./report-query";
-// Agregasi buku besar dari journal_lines + coa_accounts. Read-only, hitung di JS
-// (volume prototype kecil). Saldo per akun mengikuti sifat saldo normal.
+// Agregasi buku besar dari journal_lines + coa_accounts. Read-only. Total per akun lewat
+// RPC agregat; rincian baris selalu disaring per akun di database. Saldo per akun mengikuti sifat saldo normal.
 // Semua fungsi menerima filter periode (from/to, inklusif) + cabang.
 
 import { kodeSemuaRekening } from "./kas-akun";
@@ -43,11 +43,15 @@ type RawLine = {
 
 // Satu jalur query untuk semua laporan — join inner ke journal_entries supaya
 // filter tanggal/cabang berlaku konsisten.
-async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLine[]> {
+// accountIds: hanya baris akun-akun ini (disaring di database). Rincian satu akun WAJIB
+// memakainya — tanpa itu seluruh jurnal semua akun ditarik 500 baris per permintaan lalu
+// dibuang di sini, dan halaman Buku Besar per akun gagal dimuat (Production 15 Nov 2026).
+async function fetchLines(supabase: AnyClient, f?: LedgerFilter, accountIds?: string[]): Promise<RawLine[]> {
   // branchIds: undefined = tanpa filter cabang; [] (allow-list eksplisit kosong) = tidak ada
   // baris yang cocok, BUKAN "semua cabang" — mis. preset unit:ONLINE saat tidak ada cabang
   // bertipe ONLINE. Jangan sampai array kosong jatuh ke default "tanpa filter".
   if (f?.branchIds && f.branchIds.length === 0) return [];
+  if (accountIds && accountIds.length === 0) return [];
 
   let q = supabase
     .from("journal_lines")
@@ -56,6 +60,7 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter): Promise<RawLin
   if (f?.to) q = q.lte("journal_entries.tanggal", f.to);
   if (f?.branchId) q = q.eq("journal_entries.branch_id", f.branchId);
   if (f?.branchIds?.length) q = q.in("journal_entries.branch_id", f.branchIds);
+  if (accountIds) q = q.in("account_id", accountIds);
   const { data } = await completeReportQuery<RawLine>(q);
   return ((data ?? []) as RawLine[]).map((r) => ({
     ...r,
@@ -73,7 +78,8 @@ function totalsFunctionMissing(error: { code?: string; message?: string }): bool
 // Total debit/kredit per akun. Jalur utama: satu RPC agregat di database (migrasi
 // 20261109084230) — tidak menarik seluruh baris jurnal ke aplikasi. Jalur lama (baca semua
 // baris lalu jumlah di sini) hanya dipakai bila fungsi itu belum ada.
-async function fetchTotals(supabase: AnyClient, f?: LedgerFilter): Promise<Map<string, { debit: number; credit: number }>> {
+// accountIds hanya mempersempit jalur lama (RPC selalu satu query untuk semua akun).
+async function fetchTotals(supabase: AnyClient, f?: LedgerFilter, accountIds?: string[]): Promise<Map<string, { debit: number; credit: number }>> {
   const agg = new Map<string, { debit: number; credit: number }>();
   // Sama dengan fetchLines: allow-list cabang kosong = tidak ada baris.
   if (f?.branchIds && f.branchIds.length === 0) return agg;
@@ -97,7 +103,7 @@ async function fetchTotals(supabase: AnyClient, f?: LedgerFilter): Promise<Map<s
     }
   }
 
-  for (const l of await fetchLines(supabase, f)) {
+  for (const l of await fetchLines(supabase, f, accountIds)) {
     const cur = agg.get(l.account_id) ?? { debit: 0, credit: 0 };
     cur.debit += Number(l.debit);
     cur.credit += Number(l.credit);
@@ -151,13 +157,9 @@ export async function getAccountOpening(supabase: AnyClient, code: string, f?: L
   const acc = accs?.[0];
   if (!acc) return 0;
 
-  const lines = await fetchLines(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds });
-  let debit = 0, credit = 0;
-  for (const l of lines) {
-    if (l.account_id !== acc.id) continue;
-    debit += Number(l.debit);
-    credit += Number(l.credit);
-  }
+  // Total sebelum periode lewat agregat database — bukan menarik seluruh riwayat jurnal.
+  const totals = await fetchTotals(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds }, [acc.id]);
+  const { debit, credit } = totals.get(acc.id) ?? { debit: 0, credit: 0 };
   return acc.normal_balance === "D" ? debit - credit : credit - debit;
 }
 
@@ -167,9 +169,8 @@ export async function getAccountLedger(supabase: AnyClient, code: string, f?: Le
   const accId = accs?.[0]?.id;
   if (!accId) return [];
 
-  const lines = await fetchLines(supabase, f);
+  const lines = await fetchLines(supabase, f, [accId]);
   const rows = lines
-    .filter((l) => l.account_id === accId)
     .map((r) => ({
       tanggal: r.journal_entries?.tanggal ?? "",
       no_jurnal: r.journal_entries?.no_jurnal ?? "",
@@ -205,7 +206,7 @@ export async function getCashMovements(
   const cashIds = await cashAccountIds(supabase);
   if (cashIds.size === 0) return { moves: [], saldoKasNow: 0, saldoAwal: 0 };
 
-  const lines = await fetchLines(supabase, f);
+  const lines = await fetchLines(supabase, f, [...cashIds]);
   const agg = new Map<string, CashMove>();
   let saldo = 0;
   for (const l of lines) {
@@ -223,10 +224,10 @@ export async function getCashMovements(
   if (f?.from) {
     // Filter cabang harus IKUT dibawa (termasuk branchIds/preset unit) — kalau tidak,
     // saldo awal dihitung se-perusahaan sementara mutasinya per cabang.
-    const before = await fetchLines(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds });
-    for (const l of before) {
-      if (!cashIds.has(l.account_id)) continue;
-      saldoAwal += Number(l.debit) - Number(l.credit);
+    const before = await fetchTotals(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds }, [...cashIds]);
+    for (const id of cashIds) {
+      const m = before.get(id);
+      if (m) saldoAwal += m.debit - m.credit;
     }
   }
 
@@ -252,11 +253,8 @@ export async function getCashLedgerPerAccount(
   supabase: AnyClient,
   f?: LedgerFilter,
 ): Promise<RekeningMutasi[]> {
-  const [{ data: rek }, lines] = await Promise.all([
-    completeReportQuery(supabase.from("cash_accounts").select("id, nama, jenis, coa_code", { count: "exact" }).eq("is_active", true).order("jenis").order("nama")) as
-      Promise<{ data: { nama: string; jenis: string; coa_code: string }[] | null }>,
-    fetchLines(supabase, f),
-  ]);
+  const { data: rek } = (await completeReportQuery(supabase.from("cash_accounts").select("id, nama, jenis, coa_code", { count: "exact" }).eq("is_active", true).order("jenis").order("nama"))) as
+    { data: { nama: string; jenis: string; coa_code: string }[] | null };
   const rekening = rek ?? [];
   if (rekening.length === 0) return [];
 
@@ -264,14 +262,16 @@ export async function getCashLedgerPerAccount(
   const { data: accs } = (await completeReportQuery(supabase.from("coa_accounts").select("id, code", { count: "exact" }).in("code", kode))) as
     { data: { id: string; code: string }[] | null };
   const kodePerId = new Map((accs ?? []).map((a) => [a.id, a.code]));
+  const rekIds = [...kodePerId.keys()];
+  const lines = await fetchLines(supabase, f, rekIds);
 
   const awalPerKode = new Map<string, number>();
   if (f?.from) {
-    const before = await fetchLines(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds });
-    for (const l of before) {
-      const c = kodePerId.get(l.account_id);
-      if (!c) continue;
-      awalPerKode.set(c, (awalPerKode.get(c) ?? 0) + Number(l.debit) - Number(l.credit));
+    const before = await fetchTotals(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds }, rekIds);
+    for (const id of rekIds) {
+      const m = before.get(id);
+      const c = kodePerId.get(id)!;
+      if (m) awalPerKode.set(c, (awalPerKode.get(c) ?? 0) + m.debit - m.credit);
     }
   }
 
