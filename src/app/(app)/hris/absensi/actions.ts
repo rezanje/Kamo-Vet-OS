@@ -2,10 +2,13 @@
 
 import { redirect } from "next/navigation";
 import { assertHrisManager } from "@/lib/master-guard";
+import { hariIniWIB } from "@/lib/tanggal";
 
 export async function simpanAbsensi(formData: FormData) {
   const employeeId = String(formData.get("employee_id") ?? "").trim();
-  const tanggal = String(formData.get("tanggal") ?? "").trim() || "2026-07-01";
+  // C1: dulu bawaan terkunci di 2026-07-01 (sisa data uji). Kosong/format salah = hari ini (WIB).
+  const tanggalIsi = String(formData.get("tanggal") ?? "").trim();
+  const tanggal = /^\d{4}-\d{2}-\d{2}$/.test(tanggalIsi) ? tanggalIsi : hariIniWIB();
   const supabase = await assertHrisManager(`/hris/absensi?tgl=${tanggal}`);
   const jamMasuk = String(formData.get("jam_masuk") ?? "").trim() || null;
   const jamPulang = String(formData.get("jam_pulang") ?? "").trim() || null;

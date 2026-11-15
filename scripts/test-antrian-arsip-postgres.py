@@ -20,6 +20,8 @@ x, r, q, j = m.x, m.r, m.q, m.j
 dp = x.dp
 CANDIDATE = '20261106400000_antrian_arsip_kunjungan.sql'
 FOLLOWUP = '20261107220000_antrian_arsip_paksa_dan_selesai_erp.sql'   # follow-up (Andri 4 Nov 2026): owner force-archive + Selesai only when ERP-origin
+# Later migrations that patch the follow-up's objects (fail closed without it): held back together with the follow-up.
+AFTER_FOLLOWUP = ('20261118620000_b2_batalkan_tagihan_klinik.sql',)   # B2: tambalan berjangkar visit_archive_classify
 RESULTS = []
 ADMIN2, ADMIN_OFF, OWNER_OFF = r.uid('a', 50), r.uid('a', 51), r.uid('a', 52)   # admin of another branch / inactive admin / inactive owner
 REASON = 'Percobaan batal fiktif'
@@ -312,7 +314,8 @@ insert into public.user_branches(user_id,branch_id) values({q(ADMIN2)},{q(r.BRAN
     known = {'public.invoices', 'public.clinic_payment_receipts', 'public.clinic_customer_advances', 'public.clinic_refunds', 'public.clinic_compound_sales', 'public.clinic_inpatient_billable_entries',
              'clinic_private.inpatient_bill_pay_requests', 'clinic_private.inpatient_cashier_requests', 'public.clinic_pending_cart_edits', 'public.clinic_record_item_additions', 'public.clinic_record_addenda',
              'public.inpatient_rx_evidence', 'public.inpatient_records', 'public.consents', 'public.follow_ups', 'public.visit_referrals', 'public.medical_records',
-             'public.bookings', 'public.visit_operational_events', 'public.visit_archive_events', 'clinic_private.posting_ctx', 'clinic_private.record_edit_permits', 'clinic_private.visit_archive_permits'}
+             'public.bookings', 'public.visit_operational_events', 'public.visit_archive_events', 'clinic_private.posting_ctx', 'clinic_private.record_edit_permits', 'clinic_private.visit_archive_permits',
+             'public.clinic_invoice_voids'}   # B2: jejak batalkan tagihan; penanda yang dibaca aturan arsip (invoice tetap penghalang bila belum dibatalkan)
     present = set(json.loads(h.nilai("select coalesce(json_agg(table_schema||'.'||table_name),'[]') from information_schema.columns c where table_schema in ('public','clinic_private') and column_name='visit_id' and table_name in (select relname from pg_class where relkind='r')")))
     check('coverage: every table that carries a visit_id is classified (blocker / guarded / explicitly allowed); a NEW unclassified table fails this test', present <= known, dict(unclassified=sorted(present - known)))
     guarded = {'public.medical_records', 'public.prescription_items', 'public.invoices', 'public.clinic_payment_receipts', 'public.clinic_customer_advances', 'public.clinic_compound_sales', 'public.clinic_inpatient_billable_entries', 'public.inpatient_records', 'public.consents'}
@@ -888,11 +891,11 @@ def main():
                 run_in_clone(db, 'arsip_run_%d' % int(time.time()), 'postgres', False)
             selected = sources
         elif a.atomic_only:
-            selected = [s for s in sources if s.name != FOLLOWUP]
+            selected = [s for s in sources if s.name not in (FOLLOWUP,) + AFTER_FOLLOWUP]
             with contextlib.ExitStack() as stack:
                 db = build_chain(stack, selected, r.NativePostgres); r.fixture.DisposablePostgres.bootstrap(db); atomic_checks(db, followup_text)
         elif a.mutations:
-            selected = [s for s in sources if s.name not in (CANDIDATE, FOLLOWUP)]
+            selected = [s for s in sources if s.name not in (CANDIDATE, FOLLOWUP) + AFTER_FOLLOWUP]
             only = os.environ.get('MUTANT_FILTER')   # development: comma-separated name fragments
             with contextlib.ExitStack() as stack:
                 db = build_chain(stack, selected, r.NativePostgres); r.fixture.DisposablePostgres.bootstrap(db); x.setup(x.Harness(db))
@@ -918,12 +921,12 @@ def main():
                         failed = [c['case'] for c in RESULTS[start:] if c['status'] == 'FAIL']; extra['mutants'][name] = dict(killed=bool(failed), failing_cases=failed)
                         print('MUTANT', 'KILLED' if failed else 'SURVIVED', name, len(failed), flush=True)
         else:
-            selected = [s for s in sources if not (a.baseline and s.name == FOLLOWUP)]
+            selected = [s for s in sources if not (a.baseline and s.name in (FOLLOWUP,) + AFTER_FOLLOWUP)]
             with contextlib.ExitStack() as stack:
                 db = build_chain(stack, selected, r.NativePostgres); r.fixture.DisposablePostgres.bootstrap(db); run(x.Harness(db))
             if not a.attach:   # the migration FILE on a database that does not have it yet (a clean chain without the follow-up)
                 with contextlib.ExitStack() as stack2:
-                    db2 = build_chain(stack2, [s for s in sources if s.name != FOLLOWUP], r.NativePostgres); r.fixture.DisposablePostgres.bootstrap(db2); atomic_checks(db2, followup_text)
+                    db2 = build_chain(stack2, [s for s in sources if s.name not in (FOLLOWUP,) + AFTER_FOLLOWUP], r.NativePostgres); r.fixture.DisposablePostgres.bootstrap(db2); atomic_checks(db2, followup_text)
     except Exception as e: check('HARNESS', False, str(e)[:600])
     totals = {s: sum(c['status'] == s for c in RESULTS) for s in ['PASS', 'FAIL']}
     a.json.write_text(json.dumps(dict(mode='MUTATIONS' if a.mutations else 'RED' if a.baseline else 'candidate', migration_count=len(selected), cases=RESULTS, totals=totals, **extra), indent=2, default=str)); print(totals, extra.get('mutants') and {k: v['killed'] for k, v in extra['mutants'].items()})

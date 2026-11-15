@@ -59,6 +59,8 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   recurring: { label: "Berulang", cls: "x" },
   closing: { label: "Tutup Buku", cls: "r" },
   opname: { label: "Opname", cls: "b" },
+  "opname-beban-karyawan": { label: "Beban Opname Karyawan", cls: "o" },
+  "opname-beban-batal": { label: "Batal Beban Opname", cls: "r" },
   "purchase-invoice": { label: "Faktur Beli", cls: "b" },
   "purchase-return": { label: "Retur Beli", cls: "o" },
   "sales-return": { label: "Retur Jual", cls: "o" },

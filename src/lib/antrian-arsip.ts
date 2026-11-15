@@ -15,7 +15,8 @@ export const ALASAN_PAKSA_MIN_BERMAKNA = 5;
 export const PESAN_PAKSA_PERAN = "Hanya pemilik yang boleh memaksa arsip antrean.";
 export const PERINGATAN_PAKSA_ARSIP =
   "Peringatan: kunjungan ini akan disembunyikan walau status/rekam medisnya sudah berisi data (isi klinis, item tertunda, persetujuan). " +
-  "Datanya TIDAK dihapus dan dapat dipulihkan dari tab Diarsipkan. Kunjungan yang sudah punya invoice, pembayaran, uang muka, refund, racikan terjual atau rawat inap tetap tidak dapat diarsipkan.";
+  "Datanya TIDAK dihapus dan dapat dipulihkan dari tab Diarsipkan. Kunjungan yang sudah punya invoice, pembayaran, uang muka, refund, racikan terjual, " +
+  "racikan yang bahannya sudah terpotong dari stok, atau rawat inap tetap tidak dapat diarsipkan — kecuali tagihannya sudah dibatalkan lewat \"Batalkan tagihan\".";
 
 export function bolehArsip(profile: { role?: string | null; is_active?: boolean | null } | null | undefined): boolean {
   return !!profile?.is_active && (PERAN_ARSIP as readonly string[]).includes(profile.role ?? "");

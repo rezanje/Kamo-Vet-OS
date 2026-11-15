@@ -5,7 +5,7 @@ update profiles set role='STAFF',is_active=true where id=md5('i02-cashier')::uui
 insert into branches(id,code,name,type) values(md5('i02-vet-branch')::uuid,'I02V','Fictional clinic','KLINIK'),(md5('i02-retail-branch')::uuid,'I02R','Fictional retail','PETSHOP');
 insert into warehouses(id,branch_id,code,name,type) values(md5('i02-vet-wh')::uuid,md5('i02-vet-branch')::uuid,'I02V','Fictional clinic warehouse','VET'),(md5('i02-retail-wh')::uuid,md5('i02-retail-branch')::uuid,'I02R','Fictional retail warehouse','RETAIL');
 insert into items(id,code,name,unit,item_type,buy_price,sell_price) values(md5('i02-a')::uuid,'I02A','Fictional item A','PCS','Persediaan',100,150),(md5('i02-b')::uuid,'I02B','Fictional item B','PCS','Persediaan',50,100);
-insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction inventory','ASET','D'),('720010','Fiction variance','BEBAN','D'),('600001','Fiction COGS','BEBAN','D'),('150001','Fiction receivable','ASET','D'),('510001','Fiction revenue','PENDAPATAN','K') on conflict(code) do update set is_active=true,is_header=false;
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction inventory','ASET','D'),('720010','Fiction variance','BEBAN','D'),('810004','Fiction other income','PENDAPATAN','K'),('600001','Fiction COGS','BEBAN','D'),('150001','Fiction receivable','ASET','D'),('510001','Fiction revenue','PENDAPATAN','K') on conflict(code) do update set is_active=true,is_header=false;
 create function pg_temp.assert_ok(ok boolean,label text) returns void language plpgsql as $$begin if ok is distinct from true then raise exception 'ASSERT: %',label;end if;end$$;
 create function pg_temp.order_doc(label text,wh text default 'i02-vet-wh') returns uuid language plpgsql as $$declare id uuid:=md5(label)::uuid;begin insert into opname_orders(id,no_opname,warehouse_id,penanggung_jawab) values(id,'OPO.'||left(md5(label),12),md5(wh)::uuid,'Fictional counter');return id;end$$;
 
@@ -102,19 +102,20 @@ select pg_temp.assert_ok((select sum(qty_left*unit_cost)=2.1875 from stock_layer
 rollback;
 
 -- I02 policy (28 Okt 2026): shop (toko) and clinic branches post opname
--- differences identically. Minus = debit 5902 / credit 1301 at FIFO/average cost;
--- plus = debit 1301 / credit 5902. No receivable invoice to the head store.
+-- differences identically. No receivable invoice to the head store.
+-- F1 (Nov 2026): minus = debit 720010 / credit 170001 at FIFO/average cost;
+-- plus = debit 170001 / credit 810004 (Pendapatan Lain-lain).
 create function pg_temp.assert_uniform_opname(label text,wh text,expected_inventory numeric) returns void language plpgsql as $$
 declare v_ref text;
 begin
  select r.no_hasil into strict v_ref from opname_results r where r.order_id=md5(label)::uuid;
  perform pg_temp.assert_ok((select sum(l.debit-l.credit)=expected_inventory from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='170001' and j.source='opname' and j.source_ref=v_ref),label||': inventory delta');
- perform pg_temp.assert_ok((select sum(l.debit-l.credit)=-expected_inventory from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code='720010' and j.source='opname' and j.source_ref=v_ref),label||': same variance expense account both directions');
- perform pg_temp.assert_ok(not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where j.source in('opname','opname-selisih') and j.source_ref=v_ref and a.code not in('170001','720010')),label||': no COGS/receivable/revenue line');
+ perform pg_temp.assert_ok((select sum(l.debit-l.credit)=-expected_inventory from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where a.code=case when expected_inventory<0 then '720010' else '810004' end and j.source='opname' and j.source_ref=v_ref),label||': minus -> 720010, plus -> 810004');
+ perform pg_temp.assert_ok(not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where j.source in('opname','opname-selisih') and j.source_ref=v_ref and a.code not in('170001',case when expected_inventory<0 then '720010' else '810004' end)),label||': no COGS/receivable/sales line, no opposite variance account');
  perform pg_temp.assert_ok(not exists(select j.id from journal_entries j join journal_lines l on l.entry_id=j.id where j.source='opname' and j.source_ref=v_ref group by j.id having sum(l.debit)<>sum(l.credit)),label||': balanced');
  perform pg_temp.assert_ok(not exists(select 1 from sales_invoices where kategori='selisih_stok') and not exists(select 1 from journal_entries where source='opname-selisih'),label||': no head-store receivable invoice');
  perform pg_temp.assert_ok((select invoice_id is null from opname_results where order_id=md5(label)::uuid),label||': result has no invoice');
- perform pg_temp.assert_ok((select source_snapshot->>'warehouse_policy'='uniform-variance-expense' and source_snapshot->>'variance_account'='720010' and receipt->>'no_faktur' is null from opname_posting_receipts where order_id=md5(label)::uuid),label||': receipt records uniform policy');
+ perform pg_temp.assert_ok((select source_snapshot->>'warehouse_policy'='variance-loss-expense-gain-income' and source_snapshot->>'variance_account'='720010' and source_snapshot->>'gain_account'='810004' and receipt->>'no_faktur' is null from opname_posting_receipts where order_id=md5(label)::uuid),label||': receipt records uniform policy');
  perform pg_temp.assert_ok((select sum(qty_left*unit_cost) from stock_layers where warehouse_id=md5(wh)::uuid)=1000+expected_inventory,label||': layer value equals GL');
 end$$;
 

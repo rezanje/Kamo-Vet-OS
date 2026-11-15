@@ -193,3 +193,36 @@ it("galat pratinjau ditampilkan dan tidak ada tabel", async () => {
   expect(c.querySelector("[data-order]")).toBeNull();
   await dispose();
 });
+
+it("E2: SKU bundling dicocokkan ke barang Grup — isi paket, kebutuhan & kekurangan stok per isi tampil, satuan paket tidak bisa diganti, item_id Grup ikut dikirim", async () => {
+  // Paket memakai kode/nama yang sama dengan baris Jio di file contoh, isi: 2 Kibble (stok 3) + 1 Mangkok (stok 5) + Jasa.
+  const PAKET: CatalogItem = {
+    id: JIO, code: "JIO-500", name: "Jio Dryfood 500gr", sell_price: 16500, stock: 0, units: [{ unit: "paket", factor: 1, sell_price: 16500 }],
+    grup: [
+      { id: "kib", code: "KIB", name: "Kibble Fiktif", unit: "pcs", qtyDasar: 2, item_type: "Persediaan", stock: 3 },
+      { id: "bowl", code: "BOWL", name: "Mangkok Fiktif", unit: "pcs", qtyDasar: 1, item_type: "Persediaan", stock: 5 },
+      { id: "wrap", code: "WRAP", name: "Jasa Bungkus", unit: "unit", qtyDasar: 1, item_type: "Jasa", stock: 0 },
+    ],
+  };
+  mocks.pratinjau.mockResolvedValue({ orders: (await bacaShopeeXlsx(readFileSync(FIXTURE))).orders, catalog: [PAKET, CATALOG[1], CATALOG[2]], existing: {} });
+  mocks.simpan.mockResolvedValue({ ok: true, results: [] });
+  const { c, dispose } = await mount();
+  await pilihFile(c); await klik(tombol(c, /pratinjau/i));
+  const o2 = sel(c, `[data-order="${O2}"]`);
+  const isi = sel(o2, "[data-paket]").textContent!;
+  // Shopee qty 2 paket -> Kibble 4 (stok 3, kurang), Mangkok 2 (cukup), Jasa tanpa stok
+  expect(isi).toContain("2 pcs Kibble Fiktif · butuh 4 pcs · stok 3 (kurang)");
+  expect(isi).toContain("1 pcs Mangkok Fiktif · butuh 2 pcs · stok 5");
+  expect(isi).not.toContain("stok 5 (kurang)");
+  expect(isi).toContain("Jasa Bungkus · tanpa stok");
+  expect(o2.textContent).toMatch(/Isi paket Kibble Fiktif: stok gudang 3 pcs, kebutuhan kumulatif 4 pcs/);
+  expect(o2.textContent).not.toMatch(/Stok gudang 0/); // stok "paket" sendiri tidak dipakai
+  expect(o2.querySelector(`select[aria-label="Satuan ${O2} baris 1"]`)).toBeNull();
+  expect(sel(o2, `span[aria-label="Satuan ${O2} baris 1"]`).textContent).toBe("paket");
+  expect(o2.textContent).toMatch(/paket: satuan dasar saja/);
+  for (const q of [`${O2} baris 1`, `${O3} baris 1`, `${O3} baris 2`]) await klik(sel(c, `input[aria-label="Konfirmasi kecocokan ${q}"]`));
+  await klik(tombol(c, /simpan semua/i));
+  const fd = mocks.simpan.mock.calls[0][0] as FormData;
+  expect(JSON.parse(String(fd.get("selection")))[0]).toEqual({ orderNo: O2, items: [JIO], satuan: ["paket"] });
+  await dispose();
+});

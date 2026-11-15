@@ -4,8 +4,17 @@ import type { ShopeeLine, ShopeeOrder } from "./shopee-import";
 
 /** Satuan jual barang (dasar dulu, faktor = isi dalam satuan dasar). Harga beli sengaja tidak dikirim ke browser. */
 export type SatuanKatalog = { unit: string; factor: number; sell_price: number };
-/** stock selalu dalam satuan dasar (units[0]). units kosong/tidak ada = satu satuan dasar tanpa nama. */
-export type CatalogItem = { id: string; code: string; name: string; sell_price: number; stock: number; units?: SatuanKatalog[] };
+/** Isi satu paket (barang Grup): qtyDasar = jumlah per 1 paket dalam satuan dasar barang isi; stock = stok gudang isi (satuan dasar). */
+export type IsiPaket = { id: string; code: string; name: string; unit: string; qtyDasar: number; item_type: string; stock: number };
+/**
+ * stock selalu dalam satuan dasar (units[0]). units kosong/tidak ada = satu satuan dasar tanpa nama.
+ * E2: barang Grup (paket/bundling) membawa `grup` = isi paket; stok & HPP diambil dari isinya, satuan hanya satuan dasar paket.
+ * `grupMasalah` terisi bila paket tidak bisa dijual (tanpa isi / isi nonaktif).
+ */
+export type CatalogItem = {
+  id: string; code: string; name: string; sell_price: number; stock: number; units?: SatuanKatalog[];
+  grup?: IsiPaket[]; grupMasalah?: string;
+};
 export type MatchKind = "sku" | "nama" | "nama-normal" | "perkiraan" | "ambigu" | "tidak";
 export type LineMatch = { itemId: string | null; kind: MatchKind; perluPeriksa: boolean };
 
@@ -72,10 +81,18 @@ export function cocokkanBarang(line: Pick<ShopeeLine, "skuInduk" | "skuRef" | "n
   return { itemId: null, kind: "tidak", perluPeriksa: true };
 }
 
-/** Daftar satuan barang; selalu minimal satu (satuan dasar, faktor 1). */
-export function satuanBarang(item: Pick<CatalogItem, "sell_price" | "units">): SatuanKatalog[] {
+export const isPaket = (item: Pick<CatalogItem, "grup"> | null | undefined): boolean => !!item?.grup;
+
+/** Daftar satuan barang; selalu minimal satu (satuan dasar, faktor 1). Paket (Grup) hanya satuan dasarnya. */
+export function satuanBarang(item: Pick<CatalogItem, "sell_price" | "units" | "grup">): SatuanKatalog[] {
   const valid = (item.units ?? []).filter(u => Number(u.factor) > 0);
-  return valid.length ? valid : [{ unit: "", factor: 1, sell_price: item.sell_price }];
+  const daftar = valid.length ? valid : [{ unit: "", factor: 1, sell_price: item.sell_price }];
+  return isPaket(item) ? daftar.slice(0, 1) : daftar;
+}
+
+/** Kebutuhan stok isi paket untuk qty paket tertentu (satuan dasar isi). Isi Jasa/Non-Persediaan tidak memakai stok. */
+export function kebutuhanIsiPaket(item: Pick<CatalogItem, "grup">, qtyPaket: number): { isi: IsiPaket; butuh: number }[] {
+  return (item.grup ?? []).filter(c => c.item_type === "Persediaan").map(isi => ({ isi, butuh: qtyPaket * isi.qtyDasar }));
 }
 
 // Satuan ukuran ("1kg", "500gr", "1/2kg") dibandingkan setelah dirapikan: huruf kecil, "½" = "1/2", koma desimal = titik,
@@ -170,6 +187,7 @@ export function analisisImpor(orders: ShopeeOrder[], catalog: CatalogItem[], opt
         if (!diganti && auto.kind === "perkiraan" && !opts.konfirmasi.has(key)) w.push({ level: "blok", text: "Kecocokan perkiraan — periksa lalu centang konfirmasi (atau pilih barang manual)." });
         const harga = satuan!.sell_price;
         const per = satuan!.unit ? ` per ${satuan!.unit}` : "";
+        if (item.grupMasalah) w.push({ level: "blok", text: item.grupMasalah });
         if (!(harga > 0)) w.push({ level: "peringatan", text: `Harga jual master ${item.name}${per} Rp 0 — periksa harga.` });
         else if (Math.abs(l.harga - harga) / harga > tol) {
           const pct = Math.round(((l.harga - harga) / harga) * 100);
@@ -199,6 +217,15 @@ export function analisisImpor(orders: ShopeeOrder[], catalog: CatalogItem[], opt
       if (lines.length === 0) warnings.push({ level: "blok", text: "Pesanan tidak punya baris barang." });
       for (const l of lines) {
         if (!l.item) continue;
+        if (isPaket(l.item)) {
+          // E2: paket memotong stok isinya (qty paket × isi per paket), digabung dengan baris lain yang memakai barang sama.
+          for (const { isi, butuh } of kebutuhanIsiPaket(l.item, l.qty)) {
+            const total = (kumulatif.get(isi.id) ?? 0) + butuh;
+            kumulatif.set(isi.id, total);
+            if (total > isi.stock) l.warnings.push({ level: "peringatan", text: `Isi paket ${isi.name}: stok gudang ${angka(isi.stock)}${isi.unit ? ` ${isi.unit}` : ""}, kebutuhan kumulatif ${angka(total)}${isi.unit ? ` ${isi.unit}` : ""} — stok tidak cukup, simpan bisa ditolak.` });
+          }
+          continue;
+        }
         // Stok dalam satuan dasar: qty Shopee × isi satuan yang dipilih.
         const total = (kumulatif.get(l.item.id) ?? 0) + l.qty * (l.satuan?.factor ?? 1);
         kumulatif.set(l.item.id, total);

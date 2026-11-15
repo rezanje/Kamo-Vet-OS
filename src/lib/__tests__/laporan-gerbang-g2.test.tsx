@@ -26,7 +26,7 @@ const render = async (Page: unknown, sp: Record<string, string>) =>
 
 describe("tanpa tampil=1: kosong, tanpa query berat", () => {
   it.each([
-    ["absensi", AbsensiPage, ["attendance", "employees"]],
+    ["absensi", AbsensiPage, ["attendance", "employees", "employee_schedules", "leave_requests"]],
     ["akuisisi", AkuisisiPage, ["sales", "invoices", "sales_invoices"]],
     ["anamnesa", AnamnesaPage, ["medical_records"]],
     ["gaji", GajiPage, ["payrolls"]],
@@ -87,6 +87,32 @@ describe("dengan tampil=1 + cabang: saringan cabang ikut ke query", () => {
     expect(html).not.toContain("Budi");
     expect(records.some(r => r.table === "attendance" && r.method === "eq" && r.args[0] === "employees.branches.name")).toBe(true);
     expect(records.some(r => r.table === "employees" && r.method === "eq" && r.args[0] === "branches.name")).toBe(true);
+  });
+
+  it("absensi (C1): telat & Alpha dari jadwal shift, bukan jam kerja standar", async () => {
+    const { client } = clientFixture({ tables: {
+      employees: [{ id: "e1", nama: "Ani", jabatan: null, status: "Aktif", branches: { name: "Satu" } }],
+      attendance: [
+        { id: "a1", employee_id: "e1", status: "Hadir", tanggal: "2026-10-01", jam_masuk: "13:20:00", jam_pulang: "21:00:00" },
+        { id: "a2", employee_id: "e1", status: "Hadir", tanggal: "2026-10-02", jam_masuk: "12:55:00", jam_pulang: "20:30:00" },
+      ],
+      employee_schedules: [
+        { id: "j1", employee_id: "e1", tanggal: "2026-10-01", work_shifts: { is_libur: false, jam_masuk: "13:00:00", jam_pulang: "21:00:00" } },
+        { id: "j2", employee_id: "e1", tanggal: "2026-10-02", work_shifts: { is_libur: false, jam_masuk: "13:00:00", jam_pulang: "21:00:00" } },
+        { id: "j3", employee_id: "e1", tanggal: "2026-10-03", work_shifts: { is_libur: false, jam_masuk: "13:00:00", jam_pulang: "21:00:00" } },
+        { id: "j4", employee_id: "e1", tanggal: "2026-10-05", work_shifts: { is_libur: false, jam_masuk: "13:00:00", jam_pulang: "21:00:00" } },
+      ],
+      leave_requests: [{ id: "c1", employee_id: "e1", jenis: "Sakit", tanggal_mulai: "2026-10-05", tanggal_selesai: null, status: "Disetujui" }],
+      company_settings: [{ id: 1, toleransi_telat_menit: 10 }],
+    } });
+    fixture.client = client;
+    const html = await render(AbsensiPage, { periode: "2026-10", tampil: "1" });
+    // 01: telat 20 menit dari shift 13:00 (jam standar 08:00 akan memberi 320 menit); 02: pulang cepat 30 menit;
+    // 03: terjadwal tanpa absen & tanpa cuti = Alpha; 05: sakit disetujui = bukan Alpha.
+    expect(html).toContain("1x · 20m");
+    expect(html).toContain("1x · 30m");
+    expect(html).toMatch(/Total bolos \(alpha\)[\s\S]*?1 hari/);
+    expect(html).toContain("jadwal shift masing-masing");
   });
 
   it("anamnesa", async () => {

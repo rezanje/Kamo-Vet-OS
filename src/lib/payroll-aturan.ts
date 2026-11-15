@@ -3,6 +3,8 @@
 // Semua nominal berasal dari pengaturan, tidak ada angka yang dipatok di kode.
 // Bawaan nol: sebelum pemilik menetapkan aturannya, tidak ada gaji yang terpotong.
 
+import { menitTelatShift } from "./absensi-shift";
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
 
@@ -37,14 +39,10 @@ export function potonganTelat(menitTelat: number, a: AturanGaji): number {
 }
 
 // Telat dihitung dari jam shift orang itu, bukan jam kantor global.
-// Absen lebih awal = 0, bukan angka negatif.
+// Absen lebih awal = 0, bukan angka negatif. C1: aturan yang sama dengan laporan absensi —
+// shift 22:00 yang diabsen 00:30 (lewat tengah malam) = telat 150 menit.
 export function menitTelat(jamShift: string | null, jamAbsen: string | null): number {
-  if (!jamShift || !jamAbsen) return 0;
-  const ke = (s: string) => {
-    const [h, m] = s.slice(0, 5).split(":").map(Number);
-    return (h || 0) * 60 + (m || 0);
-  };
-  return Math.max(0, ke(jamAbsen) - ke(jamShift));
+  return menitTelatShift(jamShift, jamAbsen);
 }
 
 export const ATURAN_GAJI_BELUM_DISIMPAN =

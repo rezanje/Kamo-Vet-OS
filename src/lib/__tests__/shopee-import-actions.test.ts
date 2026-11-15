@@ -86,7 +86,8 @@ describe("pratinjauImporShopee", () => {
     const r = await pratinjauImporShopee(form([]));
     expect(r.error).toBeUndefined();
     expect(r.orders.map(o => o.orderNo)).toEqual([O1, O2, O3]);
-    expect(r.catalog.map(c => c.code).sort()).toEqual(["JIO-500", "MRV-DIG", "MRV-HAIR"]);
+    // E2: barang Grup (paket/bundling) ikut katalog; Jasa tetap tidak.
+    expect(r.catalog.map(c => c.code).sort()).toEqual(["GRUP-1", "JIO-500", "MRV-DIG", "MRV-HAIR"]);
     expect(r.catalog.find(c => c.id === JIO)).toMatchObject({ sell_price: 16500, stock: 6 });
     // Satuan: dasar dari master (default pcs) + turunan dari item_units, tanpa harga beli.
     expect(r.catalog.find(c => c.id === JIO)?.units).toEqual([{ unit: "1/2kg", factor: 1, sell_price: 16500 }, { unit: "1kg", factor: 2, sell_price: 31000 }]);
@@ -118,6 +119,47 @@ describe("pratinjauImporShopee", () => {
     const fd = new FormData(); fd.set("branch_id", BR);
     expect((await pratinjauImporShopee(fd)).error).toMatch(/file/i);
     expect(db.rpc).toEqual([]);
+  });
+});
+
+describe("E2: barang Grup (paket/bundling Shopee)", () => {
+  const GRUP = "44444444-4444-4444-8444-444444444444", JASA = "55555555-5555-4555-8555-555555555555";
+  const KOSONG = "66666666-6666-4666-8666-666666666666";
+  beforeEach(() => {
+    db.tables.items.push({ id: KOSONG, code: "GRUP-KOSONG", name: "Paket Kosong", unit: "paket", sell_price: "5000", is_active: true, item_type: "Grup" });
+    db.tables.item_units.push({ item_id: GRUP, unit: "dus", factor: "6", sell_price: "6", buy_price: "0" });
+    db.tables.item_group_components = [
+      { id: "c1", group_item_id: GRUP, component_item_id: JIO, qty: "2", unit: "1kg", factor: "2", sort_order: 0, component: { id: JIO, code: "JIO-500", name: "Jio Dryfood 500gr", item_type: "Persediaan", is_active: true } },
+      { id: "c2", group_item_id: GRUP, component_item_id: JASA, qty: "1", unit: "pcs", factor: "1", sort_order: 1, component: { id: JASA, code: "JASA-1", name: "Jasa Grooming", item_type: "Jasa", is_active: true } },
+    ];
+  });
+  it("pratinjau: Grup membawa isi paket (qty per paket dalam satuan dasar isi + stok gudang isi), satuan dasar saja; Grup tanpa isi ditandai", async () => {
+    const r = await pratinjauImporShopee(form([]));
+    const g = r.catalog.find(c => c.id === GRUP)!;
+    expect(g.units).toEqual([{ unit: "pcs", factor: 1, sell_price: 1 }]);
+    expect(g.grup).toEqual([
+      { id: JIO, code: "JIO-500", name: "Jio Dryfood 500gr", unit: "1/2kg", qtyDasar: 4, item_type: "Persediaan", stock: 6 },
+      { id: JASA, code: "JASA-1", name: "Jasa Grooming", unit: "pcs", qtyDasar: 1, item_type: "Jasa", stock: 0 },
+    ]);
+    expect(g.grupMasalah).toBeUndefined();
+    expect(r.catalog.find(c => c.id === KOSONG)?.grupMasalah).toMatch(/belum punya isi/);
+    expect(r.catalog.find(c => c.id === JIO)?.grup).toBeUndefined();
+    expect(JSON.stringify(r.catalog)).not.toMatch(/buy_price/);
+  });
+  it("pratinjau: isi paket nonaktif membuat paket ditandai bermasalah", async () => {
+    db.tables.item_group_components[0].component = { id: JIO, code: "JIO-500", name: "Jio Dryfood 500gr", item_type: "Persediaan", is_active: false };
+    const r = await pratinjauImporShopee(form([]));
+    expect(r.catalog.find(c => c.id === GRUP)?.grupMasalah).toMatch(/Jio Dryfood 500gr.*nonaktif/);
+  });
+  it("simpan: baris paket dikirim ke RPC yang sama dengan item_id Grup; kode pesan database dibuang dari pesan pengguna", async () => {
+    await simpanImporShopee(form([{ orderNo: O2, items: [GRUP], satuan: ["pcs"] }]));
+    expect(db.rpc[0].args.p_items).toEqual([{ item_id: GRUP, qty: 2, harga: 16349, satuan: "pcs" }]);
+    db.rpcImpl = () => ({ error: { message: 'E2_GRUP_SATUAN: paket "Paket Grup" hanya bisa dijual per pcs (satuan dasar paket).' } });
+    const r = await simpanImporShopee(form([{ orderNo: O2, items: [GRUP], satuan: ["dus"] }]));
+    expect(r.results[0]).toMatchObject({ status: "error", message: 'paket "Paket Grup" hanya bisa dijual per pcs (satuan dasar paket).' });
+    db.rpcImpl = () => ({ error: { message: "Stok tidak cukup untuk isi paket: Jio Dryfood 500gr (butuh 8, tersedia 6)" } });
+    const r2 = await simpanImporShopee(form([{ orderNo: O2, items: [GRUP] }]));
+    expect(r2.results[0].message).toBe("Stok tidak cukup untuk isi paket: Jio Dryfood 500gr (butuh 8, tersedia 6)");
   });
 });
 

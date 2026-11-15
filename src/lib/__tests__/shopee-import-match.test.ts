@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bacaShopeeXlsx, type ShopeeLine, type ShopeeOrder } from "../shopee-import";
-import { analisisImpor, cocokkanBarang, kunciBaris, normalisasiNama, satuanBarang, tebakSatuan, type CatalogItem } from "../shopee-import-match";
+import { analisisImpor, cocokkanBarang, kebutuhanIsiPaket, kunciBaris, normalisasiNama, satuanBarang, tebakSatuan, type CatalogItem } from "../shopee-import-match";
 
 const FIXTURE = join(__dirname, "fixtures", "shopee-order-toship-sample.xlsx");
 const item = (id: string, code: string, name: string, sell_price: number, stock = 10): CatalogItem => ({ id, code, name, sell_price, stock });
@@ -262,5 +262,51 @@ describe("satuan (Shopee tidak mengirim satuan; sistem wajib tahu)", () => {
     expect(a.lines[0].sumberSatuan).toBe("dasar");
     expect(a.lines[0].warnings).toContainEqual({ level: "info", text: expect.stringMatching(/beberapa satuan \(1\/2kg, 1kg, Sak 20kg\); dipakai 1\/2kg/) });
     expect(a.saveable).toBe(true);
+  });
+});
+
+describe("E2: paket (barang Grup)", () => {
+  const PAKET: CatalogItem = {
+    id: "g-bundle", code: "BUNDLE-JIO-2", name: "Bundling Jio 2 pcs + Mangkok", sell_price: 35000, stock: 0,
+    units: [{ unit: "paket", factor: 1, sell_price: 35000 }, { unit: "dus", factor: 6, sell_price: 200000 }],
+    grup: [
+      { id: "i-jio", code: "JIO-500", name: "Jio Dryfood 500gr", unit: "pcs", qtyDasar: 2, item_type: "Persediaan", stock: 5 },
+      { id: "i-bowl", code: "BOWL", name: "Mangkok", unit: "pcs", qtyDasar: 1, item_type: "Persediaan", stock: 1 },
+      { id: "i-wrap", code: "WRAP", name: "Jasa bungkus", unit: "unit", qtyDasar: 1, item_type: "Jasa", stock: 0 },
+    ],
+  };
+  const CAT = [...CATALOG, PAKET];
+  it("SKU Shopee = kode Grup dicocokkan seperti barang biasa", () => {
+    expect(cocokkanBarang(line({ skuRef: "bundle-jio-2" }), CAT)).toEqual({ itemId: "g-bundle", kind: "sku", perluPeriksa: false });
+  });
+  it("paket hanya punya satuan dasar (pilihan satuan tidak muncul), pilihan satuan lain diabaikan", () => {
+    expect(satuanBarang(PAKET)).toEqual([{ unit: "paket", factor: 1, sell_price: 35000 }]);
+    const [a] = analisisImpor([order({ lines: [line({ skuRef: "BUNDLE-JIO-2", namaProduk: "Bundling dus isi 6", qty: 1, harga: 35000 })] })], CAT,
+      opts({ satuan: { [kunciBaris("FIKTIF-1", 0)]: "dus" } }));
+    expect(a.lines[0].satuan).toEqual({ unit: "paket", factor: 1, sell_price: 35000 });
+    expect(a.status).toBe("siap");
+  });
+  it("kebutuhan isi = qty paket x isi per paket, isi tanpa stok (Jasa) dilewati", () => {
+    expect(kebutuhanIsiPaket(PAKET, 3).map(k => [k.isi.id, k.butuh])).toEqual([["i-jio", 6], ["i-bowl", 3]]);
+  });
+  it("stok isi kurang = peringatan per isi; kebutuhan digabung dengan baris barang biasa yang sama", () => {
+    const [a] = analisisImpor([order({ lines: [
+      line({ skuRef: "JIO-500", qty: 2, harga: 16500 }),
+      line({ skuRef: "BUNDLE-JIO-2", qty: 2, harga: 35000 }),
+    ] })], [item("i-jio", "JIO-500", "Jio Dryfood 500gr", 16500, 5), PAKET], opts());
+    const w = a.lines[1].warnings.map(x => x.text);
+    // Jio: 2 (baris biasa) + 4 (2 paket x 2) = 6 > 5; Mangkok: 2 > 1.
+    expect(w.some(t => /Isi paket Jio Dryfood 500gr: stok gudang 5 pcs, kebutuhan kumulatif 6 pcs/.test(t))).toBe(true);
+    expect(w.some(t => /Isi paket Mangkok: stok gudang 1 pcs, kebutuhan kumulatif 2 pcs/.test(t))).toBe(true);
+    expect(w.some(t => /Jasa bungkus/.test(t))).toBe(false);
+    expect(a.lines[0].warnings.some(x => /stok tidak cukup/.test(x.text))).toBe(false);
+    // Peringatan stok tidak memblokir (database yang memutuskan), sama dengan barang biasa.
+    expect(a.status).toBe("siap");
+  });
+  it("paket bermasalah (tanpa isi / isi nonaktif) memblokir simpan", () => {
+    const rusak: CatalogItem = { ...PAKET, grup: [], grupMasalah: "Paket ini belum punya isi — lengkapi rincian Grup di master barang dulu." };
+    const [a] = analisisImpor([order({ lines: [line({ skuRef: "BUNDLE-JIO-2", qty: 1, harga: 35000 })] })], [...CATALOG, rusak], opts());
+    expect(a.status).toBe("perlu-perbaikan");
+    expect(a.lines[0].warnings).toContainEqual({ level: "blok", text: rusak.grupMasalah });
   });
 });

@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import ExcelJS from "exceljs";
 import { describe, expect, it, vi } from "vitest";
 import { clientFixture } from "./fixtures/hpp-report-client";
-import { loadOpnamePriceReport, opnameFilters, opnameSummary } from "../opname-price-report";
+import { hppLabel, loadOpnamePriceReport, methodLabel, opnameFilters, opnameSummary, selisihJualHpp } from "../opname-price-report";
 
 const state = vi.hoisted(() => ({ client: null as SupabaseClient | null }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => state.client }));
@@ -25,8 +25,11 @@ const snapshot = { version: 1, method: "fifo", scope: "Sebagian", branch_id: "b1
       harga_jual_cabang: "70", nilai_selisih_jual: "140" },
   ] };
 
+const recapRow = (result_id: string, extra: Record<string, unknown> = {}) => ({ result_id, snapshot: true, method: "fifo", revision: null, rows: 2,
+  plus_count: 1, minus_count: 1, plus_modal: "100", minus_modal: "-200", plus_jual: "140", minus_jual: "0", modal_missing: 0, ...extra });
+
 function fixture(options: { role?: string; active?: boolean; snapshot?: unknown; deniedBranch?: string; resultCount?: number; errorTable?: string; otherBranch?: boolean;
-  journals?: Record<string, unknown>[] } = {}) {
+  journals?: Record<string, unknown>[]; recap?: (ids: string[]) => unknown; recapError?: boolean } = {}) {
   const rows = Array.from({ length: options.resultCount ?? 1 }, (_, n) => ({ id: n ? `result-${n}` : RESULT, order_id: ORDER,
     no_hasil: n ? `OPR-${n}` : "OPR-I05", tanggal: "2026-10-25",
     opname_orders: { no_opname: "OPO-I05", warehouse_id: "w1", warehouses: { name: "VET", branch_id: "b1" } } }));
@@ -36,10 +39,18 @@ function fixture(options: { role?: string; active?: boolean; snapshot?: unknown;
     tables: { opname_results: rows, warehouses: [{ id: "w1", branch_id: "b1", name: "VET" }, { id: "w2", branch_id: "b2", name: "OTHER" }],
       journal_entries: options.journals ?? [] } });
   const rpc = base.client.rpc.bind(base.client);
-  (base.client as unknown as { rpc: (name: string, args: unknown) => unknown }).rpc = (name, args) =>
-    name === "read_opname_price_report" ? Promise.resolve({ data: "snapshot" in options ? options.snapshot : snapshot, error: null }) : rpc(name as never, args as never);
+  const recapCalls: string[][] = [];
+  (base.client as unknown as { rpc: (name: string, args: unknown) => unknown }).rpc = (name, args) => {
+    if (name === "read_opname_price_report") return Promise.resolve({ data: "snapshot" in options ? options.snapshot : snapshot, error: null });
+    if (name === "read_opname_price_recap") {
+      const ids = (args as { p_result_ids: string[] }).p_result_ids; recapCalls.push(ids);
+      if (options.recapError) return Promise.resolve({ data: null, error: { message: "denied" } });
+      return Promise.resolve({ data: options.recap ? options.recap(ids) : ids.map(id => recapRow(id)), error: null });
+    }
+    return rpc(name as never, args as never);
+  };
   state.client = base.client;
-  return base;
+  return { ...base, recapCalls };
 }
 
 describe("I05 posted price report", () => {
@@ -54,7 +65,7 @@ describe("I05 posted price report", () => {
       journal("loss", [{ debit: 200, credit: 0, code: "720010" }, { debit: 0, credit: 200, code: "170001" }]),
     ];
     const { client, records } = fixture({ journals });
-    const report = await loadOpnamePriceReport(client, { ...period, arah: "lebih", dasar: "jual" });
+    const report = await loadOpnamePriceReport(client, { ...period, arah: "lebih" });
     expect(report.shown).toHaveLength(1);
     expect(report.journalReview).toMatchObject({ status: "cocok", expectedGain: "100", expectedLoss: "200", ledgerGain: "100", ledgerLoss: "200" });
     expect(report.journalReview?.journals.map(row => row.id)).toEqual(["gain", "loss"]);
@@ -77,10 +88,14 @@ describe("I05 posted price report", () => {
     expect(modal.selected?.resultNo).toBe("OPR-I05");
     expect(modal.scope).toBe("Sebagian");
     expect(modal.rows[0]).toMatchObject({ unitCost: "100", modalDifference: "-200", branchPrice: "0", stockValueAfter: "1300" });
-    expect(modal).toMatchObject({ plus: "100", minus: "-200", net: "-100", unavailable: 0 });
-    const sale = await loadOpnamePriceReport(client, { ...period, dasar: "jual", arah: "lebih" });
-    expect(sale.shown.map(row => row.code)).toEqual(["I05-B"]);
-    expect(sale).toMatchObject({ plus: "140", minus: "0", net: "140" });
+    // F1-a: HPP dan harga jual dihitung berdampingan, bukan bergantian.
+    expect(modal.modal).toEqual({ plus: "100", minus: "-200", net: "-100", unavailable: 0 });
+    expect(modal.jual).toEqual({ plus: "140", minus: "0", net: "140", unavailable: 0 });
+    const plusOnly = await loadOpnamePriceReport(client, { ...period, dasar: "jual", arah: "lebih" });
+    expect(plusOnly.filters).not.toHaveProperty("dasar");
+    expect(plusOnly.shown.map(row => row.code)).toEqual(["I05-B"]);
+    expect(plusOnly.modal).toMatchObject({ plus: "100", minus: "0", net: "100" });
+    expect(plusOnly.jual).toMatchObject({ plus: "140", minus: "0", net: "140" });
   });
 
   it("accepts exact decimal stock differences without binary float drift", async () => {
@@ -127,6 +142,9 @@ describe("I05 posted price report", () => {
     expect(csv.headers.get("Cache-Control")).toBe("private, no-store");
     const body = await csv.text();
     expect(body).toContain("'\u003dSUM(1,1)");
+    expect(body).toContain("Rekap periode");
+    expect(body).toContain("HPP FIFO satuan");
+    expect(body).toContain("Harga jual cabang");
     expect(body).toContain("I05-A"); expect(body).not.toContain("I05-B");
     expect(body).toContain("Ringkasan dan filter");
     const excel = await GET(new Request(`https://example.test/laporan/hasil-opname/unduh?${query}&format=xlsx`));
@@ -134,8 +152,13 @@ describe("I05 posted price report", () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(Buffer.from(await excel.arrayBuffer()) as never);
     expect(workbook.getWorksheet("Hasil opname")?.rowCount).toBe(2);
-    expect(workbook.getWorksheet("Hasil opname")?.getCell("H2").value).toBe("=SUM(1,1)");
-    expect(workbook.getWorksheet("Ringkasan dan filter")?.getCell("B7").value).toBe("Modal FIFO saat posting");
+    // amankanSel: nama barang berawalan "=" disimpan sebagai teks, bukan rumus.
+    expect(workbook.getWorksheet("Hasil opname")?.getCell("H2").value).toBe("'=SUM(1,1)");
+    const header = (workbook.getWorksheet("Hasil opname")?.getRow(1).values as unknown[]).slice(1);
+    expect(header).toEqual(expect.arrayContaining(["HPP FIFO satuan", "Nilai selisih HPP FIFO", "Harga jual cabang", "Nilai selisih harga jual", "Selisih jual − HPP"]));
+    const row2 = (workbook.getWorksheet("Hasil opname")?.getRow(2).values as unknown[]).slice(1);
+    expect(row2.slice(12, 17)).toEqual([100, -200, 0, 0, 200]);
+    expect((workbook.getWorksheet("Rekap periode")?.getRow(2).values as unknown[]).slice(1)).toEqual(["Satu", "VET", 1, 0, 0, 1, 100, 140, 1, -200, 0, -100, 140, 240]);
   });
 
   it("does not export made-up legacy costs", async () => {
@@ -143,5 +166,79 @@ describe("I05 posted price report", () => {
     const response = await GET(new Request(`https://example.test/laporan/hasil-opname/unduh?dari=2026-10-01&sampai=2026-10-31&order=${ORDER}&format=csv`));
     expect(response.status).toBe(400);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+});
+
+describe("F1-a period recap, method labels and period download", () => {
+  it("aggregates every document per branch/warehouse with HPP and sale values side by side", async () => {
+    const { client, recapCalls } = fixture({ resultCount: 3, recap: ids => ids.map((id, n) => n === 0 ? recapRow(id)
+      : n === 1 ? recapRow(id, { plus_count: 0, minus_count: 2, plus_modal: "0", minus_modal: "-50.5", plus_jual: "0", minus_jual: "-80", revision: 1 })
+      : recapRow(id, { snapshot: false, method: null, rows: 0, plus_count: 0, minus_count: 0, plus_modal: "0", minus_modal: "0", plus_jual: "0", minus_jual: "0" })) });
+    const report = await loadOpnamePriceReport(client, { dari: period.dari, sampai: period.sampai });
+    expect(recapCalls).toEqual([report.entries.map(row => row.resultId)]);
+    expect(report.recap.groups).toHaveLength(1);
+    expect(report.recap.groups[0]).toMatchObject({ branch: "Satu", warehouse: "VET", documents: 3, withoutSnapshot: 1, corrected: 1, plusCount: 1, minusCount: 3,
+      modal: { plus: "100", minus: "-250.5", net: "-150.5", unavailable: 0 }, jual: { plus: "140", minus: "-80", net: "60" }, gap: "210.5" });
+    expect(report.recap.total).toMatchObject({ documents: 3, modal: { net: "-150.5" }, jual: { net: "60" } });
+    expect(report.recap.methods).toEqual(["fifo"]);
+  });
+
+  it("marks HPP unavailable when a document lacks journaled HPP, and reads nothing for an empty period", async () => {
+    const missing = await loadOpnamePriceReport(fixture({ recap: ids => ids.map(id => recapRow(id, { method: "moving_average", modal_missing: 1 })) }).client, { dari: period.dari, sampai: period.sampai });
+    expect(missing.recap.total.modal).toEqual({ plus: null, minus: null, net: null, unavailable: 1 });
+    expect(missing.recap.total.gap).toBeNull();
+    expect(missing.recap.methods).toEqual(["moving_average"]);
+    const empty = fixture({ resultCount: 0 });
+    const none = await loadOpnamePriceReport(empty.client, { dari: period.dari, sampai: period.sampai });
+    expect(empty.recapCalls).toEqual([]);
+    expect(none.recap).toMatchObject({ groups: [], methods: [], total: { documents: 0 } });
+  });
+
+  it("fails closed when the recap is denied, incomplete or malformed", async () => {
+    await expect(loadOpnamePriceReport(fixture({ recapError: true }).client, period)).rejects.toMatchObject({ status: 403 });
+    await expect(loadOpnamePriceReport(fixture({ recap: () => [] }).client, period)).rejects.toThrow("tidak lengkap");
+    await expect(loadOpnamePriceReport(fixture({ recap: ids => ids.map(id => recapRow(id, { plus_modal: "abc" })) }).client, period)).rejects.toThrow();
+    await expect(loadOpnamePriceReport(fixture({ recap: ids => [...ids, ...ids].map(id => recapRow(id)) }).client, period)).rejects.toThrow();
+  });
+
+  it("labels HPP by costing method instead of a fixed FIFO label", () => {
+    expect(methodLabel("fifo")).toBe("FIFO");
+    expect(methodLabel("moving_average")).toBe("average");
+    expect(hppLabel(["moving_average"])).toBe("HPP average");
+    expect(hppLabel(["fifo", "moving_average", "fifo"])).toBe("HPP FIFO/average");
+    expect(hppLabel([])).toBe("HPP");
+    expect(selisihJualHpp("140", "-100")).toBe("240");
+    expect(selisihJualHpp("140", null)).toBeNull();
+  });
+
+  it("accepts average snapshots carrying the journaled HPP", async () => {
+    const average = { ...snapshot, method: "moving_average", rows: snapshot.rows.map(row => ({ ...row, sumber_modal: "HPP average selisih keluar per unit" })) };
+    const report = await loadOpnamePriceReport(fixture({ snapshot: average }).client, period);
+    expect(report.method).toBe("moving_average");
+    expect(report.modal).toMatchObject({ plus: "100", minus: "-200", unavailable: 0 });
+  });
+
+  it("downloads the period recap without choosing a document (CSV and Excel)", async () => {
+    fixture({ resultCount: 2, recap: ids => ids.map(id => recapRow(id, { method: "moving_average" })) });
+    const csv = await GET(new Request("https://example.test/laporan/hasil-opname/unduh?dari=2026-10-01&sampai=2026-10-31&format=csv"));
+    expect(csv.status).toBe(200);
+    expect(csv.headers.get("Content-Disposition")).toContain("rekap-hasil-opname-2026-10-01-2026-10-31.csv");
+    const body = await csv.text();
+    expect(body).toContain("Rekap periode"); expect(body).toContain("Lebih (HPP average)"); expect(body).not.toContain("I05-A");
+    const excel = await GET(new Request("https://example.test/laporan/hasil-opname/unduh?dari=2026-10-01&sampai=2026-10-31&format=xlsx"));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Buffer.from(await excel.arrayBuffer()) as never);
+    expect(workbook.getWorksheet("Hasil opname")).toBeUndefined();
+    const total = workbook.getWorksheet("Rekap periode")!.getRow(3).values as unknown[];
+    expect(total.slice(1)).toEqual(["Total", "", 2, 0, 0, 2, 200, 280, 2, -400, 0, -200, 280, 480]);
+    const bad = await GET(new Request("https://example.test/laporan/hasil-opname/unduh?dari=2026-10-01&sampai=2026-10-31&format=pdf"));
+    expect(bad.status).toBe(400);
+  });
+
+  it("does not expose the period recap to roles outside OWNER/FINANCE", async () => {
+    const { records } = fixture({ role: "ADMIN" });
+    const response = await GET(new Request("https://example.test/laporan/hasil-opname/unduh?dari=2026-10-01&sampai=2026-10-31&format=csv"));
+    expect(response.status).toBe(403);
+    expect(records.some(row => row.table === "opname_results")).toBe(false);
   });
 });

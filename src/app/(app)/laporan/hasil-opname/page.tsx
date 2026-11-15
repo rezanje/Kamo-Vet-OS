@@ -4,7 +4,7 @@ import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { ListLoadFailure } from "@/components/ListPagination";
 import { createClient } from "@/lib/supabase/server";
 import { paginateReport } from "@/lib/hpp-reports";
-import { loadOpnamePriceReport, opnameFilters, OPNAME_REPORT_PATH, type OpnameReportParams } from "@/lib/opname-price-report";
+import { hppLabel, loadOpnamePriceReport, methodLabel, opnameFilters, OPNAME_REPORT_PATH, selisihJualHpp, type OpnameRecapGroup, type OpnameReportParams } from "@/lib/opname-price-report";
 import { readReportRows, ReportAccessError } from "@/lib/hpp-reports-server";
 import { bolehBukaPath } from "@/lib/akses";
 import { aturanEfektif, bacaTambahanAkses } from "@/lib/akses-akun";
@@ -18,8 +18,21 @@ const money = (v: string | null) => {
   const [whole, decimal] = number.replace(/^-/, "").split(".");
   return `${number.startsWith("-") ? "−" : ""}Rp ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${decimal.replace(/0+$/, "").padEnd(2, "0")}`;
 };
+const kanan = { textAlign: "right" } as const;
 
 type Klien = Awaited<ReturnType<typeof createClient>>;
+
+/** F1-a: satu baris rekap periode (per cabang/gudang atau total) — HPP dan harga jual berdampingan. */
+function BarisRekap({ row, total }: { row: OpnameRecapGroup; total?: boolean }) {
+  const Sel = total ? "th" : "td";
+  return <tr>
+    <Sel>{total ? "Total" : row.branch}</Sel><Sel>{total ? "" : row.warehouse}</Sel>
+    <Sel style={kanan}>{row.documents}{row.withoutSnapshot ? ` (${row.withoutSnapshot} tanpa snapshot)` : ""}</Sel>
+    <Sel style={kanan}>{row.plusCount}</Sel><Sel style={kanan}>{money(row.modal.plus)}</Sel><Sel style={kanan}>{money(row.jual.plus)}</Sel>
+    <Sel style={kanan}>{row.minusCount}</Sel><Sel style={kanan}>{money(row.modal.minus)}</Sel><Sel style={kanan}>{money(row.jual.minus)}</Sel>
+    <Sel style={kanan}>{money(row.modal.net)}</Sel><Sel style={kanan}>{money(row.jual.net)}</Sel><Sel style={kanan}>{money(row.gap)}</Sel>
+  </tr>;
+}
 
 /**
  * A1 (meeting 12 Nov 2026): isian filter saja — cek akses yang sama dengan
@@ -66,23 +79,40 @@ export default async function Page({ searchParams }: { searchParams: Promise<Opn
   if (error instanceof ReportAccessError && error.status === 403) redirect("/laporan");
   let filters: ReturnType<typeof opnameFilters> | null = null;
   try { filters = report?.filters ?? opnameFilters(input); } catch { /* invalid dates appear below */ }
-  // Tautan di dalam laporan (dasar, arah, dokumen, halaman) tetap membawa tampil=1.
+  // Tautan di dalam laporan (arah, dokumen, halaman) tetap membawa tampil=1.
   const query = (extra: Record<string, string>) => denganTampil(`${OPNAME_REPORT_PATH}?${new URLSearchParams({
     dari: filters?.dari ?? "", sampai: filters?.sampai ?? "", cabang: filters?.cabang ?? "",
-    order: filters?.order ?? "", dasar: filters?.dasar ?? "modal", arah: filters?.arah ?? "semua", ...extra,
+    order: filters?.order ?? "", arah: filters?.arah ?? "semua", ...extra,
   })}`);
+  // Unduhan dibentuk di server dengan saringan yang sama; tanpa dokumen = rekap periode saja.
+  const unduh = (format: "csv" | "xlsx", order: string) => `${OPNAME_REPORT_PATH}/unduh?${new URLSearchParams({
+    dari: filters?.dari ?? "", sampai: filters?.sampai ?? "", cabang: filters?.cabang ?? "", order, arah: filters?.arah ?? "semua", format,
+  })}`;
   const selected = report?.selected;
   const page = paginateReport(report?.entries ?? [], input.halaman);
+  // F1-a: label HPP mengikuti metode (FIFO/average), bukan "Modal FIFO" tetap.
+  const hppDok = hppLabel([report?.method]);
+  const hppPeriode = hppLabel(report?.recap.methods ?? []);
   const sum = report && selected && !report.legacy ? [
     { label: "Baris sesuai filter", nilai: String(report.shown.length) },
-    { label: "Nilai selisih lebih", nilai: money(report.plus) },
-    { label: "Nilai selisih kurang", nilai: money(report.minus) },
-    { label: "Neto selisih", nilai: money(report.net) },
-    { label: "Tanpa nilai modal", nilai: String(report.unavailable) },
+    { label: `Selisih lebih (${hppDok})`, nilai: money(report.modal.plus) },
+    { label: "Selisih lebih (harga jual)", nilai: money(report.jual.plus) },
+    { label: `Selisih kurang (${hppDok})`, nilai: money(report.modal.minus) },
+    { label: "Selisih kurang (harga jual)", nilai: money(report.jual.minus) },
+    { label: `Neto (${hppDok})`, nilai: money(report.modal.net) },
+    { label: "Neto (harga jual)", nilai: money(report.jual.net) },
+    { label: "Selisih harga jual − HPP", nilai: money(selisihJualHpp(report.jual.net, report.modal.net)) },
+  ] : report && !selected ? [
+    { label: "Dokumen opname", nilai: String(report.recap.total.documents) },
+    { label: `Selisih lebih (${hppPeriode})`, nilai: money(report.recap.total.modal.plus) },
+    { label: `Selisih kurang (${hppPeriode})`, nilai: money(report.recap.total.modal.minus) },
+    { label: `Neto (${hppPeriode})`, nilai: money(report.recap.total.modal.net) },
+    { label: "Neto (harga jual)", nilai: money(report.recap.total.jual.net) },
+    { label: "Selisih harga jual − HPP", nilai: money(report.recap.total.gap) },
   ] : [];
   // Gagal membaca isian filter tetap ditampilkan (bukan disembunyikan petunjuk kosong).
   return <LaporanPage siap={siap || !!error}icon="ti-clipboard-check" title="HASIL STOK OPNAME"
-    desc="Snapshot harga saat hasil diposting. Harga jual cabang untuk laporan bukan dasar jurnal atau faktur selisih."
+    desc="Rekap periode dan rincian per dokumen dari snapshot harga saat hasil diposting. HPP = nilai yang dijurnal; harga jual cabang hanya pembanding, bukan dasar jurnal atau faktur selisih."
     unduhTampilan={false}
     filter={<>
       <div><label className="flab">Dari tanggal</label><input className="fi" name="dari" type="date" defaultValue={filters?.dari} /></div>
@@ -91,8 +121,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Opn
         <option value="">Semua cabang yang diizinkan</option>
         {(report?.branches ?? cabangSaja).map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
       </select></div>
-      {/* Changing dates or branch keeps the chosen valuation basis and direction; the selected opname document is a drill-down and is not carried to a new range. */}
-      {filters?.dasar === "jual" && <input type="hidden" name="dasar" value="jual" />}
+      {/* Changing dates or branch keeps the chosen direction; the selected opname document is a drill-down and is not carried to a new range. */}
       {filters && filters.arah !== "semua" && <input type="hidden" name="arah" value={filters.arah} />}
       <button className="btn bp" type="submit">Terapkan</button>
     </>}
@@ -101,6 +130,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Opn
       {selected && <div className="p2ban" style={{ marginBottom: 12 }}>
         <strong>{selected.resultNo}</strong> · {selected.branch} · {selected.warehouse} · {selected.date} · {report?.scope ?? "Cakupan belum tersedia"}.
         <Link href={`/pos/opname/${encodeURIComponent(selected.orderId)}`} style={{ marginLeft: 12 }}>Buka perintah asal</Link>
+        <Link href={query({ order: "" })} style={{ marginLeft: 12 }}>Kembali ke rekap periode</Link>
         {report?.revision && <div>Angka harga ini berasal dari posting awal. Koreksi stok revisi {report.revision} tidak mengubah snapshot ini.</div>}
       </div>}
       {report?.legacy && <div className="p2ban" role="status">Hasil lama ini tidak mempunyai snapshot harga saat posting. Harga historis tidak tersedia.</div>}
@@ -108,42 +138,58 @@ export default async function Page({ searchParams }: { searchParams: Promise<Opn
         <h3 style={{ marginTop: 0 }}>Rekonsiliasi jurnal hasil asal</h3>
         <p>Perbandingan ini memakai seluruh baris hasil saat posting, termasuk yang tersembunyi oleh filter selisih. Akun lawan mengikuti jurnal yang tercatat dan tetap perlu ditinjau finance.</p>
         <div role="status" className="p2ban">
-          {report.journalReview.status === "cocok" ? "Mutasi akun persediaan 170001 cocok dengan nilai modal hasil asal; jurnal sumber berimbang." :
-            report.journalReview.status === "tanpa-selisih" ? "Tidak ada selisih nilai modal atau jurnal sumber untuk hasil ini." :
-              report.journalReview.status === "tidak-tersedia" ? "Nilai modal historis tidak tersedia; rekonsiliasi otomatis tidak dapat dilakukan." :
+          {report.journalReview.status === "cocok" ? "Mutasi akun persediaan 170001 cocok dengan nilai HPP hasil asal; jurnal sumber berimbang." :
+            report.journalReview.status === "tanpa-selisih" ? "Tidak ada selisih nilai HPP atau jurnal sumber untuk hasil ini." :
+              report.journalReview.status === "tidak-tersedia" ? "Nilai HPP historis tidak tersedia; rekonsiliasi otomatis tidak dapat dilakukan." :
                 "Mutasi akun persediaan atau kelengkapan jurnal belum cocok. Periksa jurnal dan dokumen asal; jangan posting ulang."}
         </div>
-        <p>Selisih lebih modal: {money(report.journalReview.expectedGain)} · Debit 170001: {money(report.journalReview.ledgerGain)}. Selisih kurang modal: {money(report.journalReview.expectedLoss)} · Kredit 170001: {money(report.journalReview.ledgerLoss)}.</p>
+        <p>Selisih lebih {hppDok}: {money(report.journalReview.expectedGain)} · Debit 170001: {money(report.journalReview.ledgerGain)}. Selisih kurang {hppDok}: {money(report.journalReview.expectedLoss)} · Kredit 170001: {money(report.journalReview.ledgerLoss)}.</p>
+        <p style={{ fontSize: 11 }}>Posting sejak F1 (Nov 2026): selisih lebih dikreditkan ke 810004 Pendapatan Lain-lain, selisih kurang didebit ke 720010 Beban Selisih Stok. Posting sebelumnya memakai 720010 untuk keduanya.</p>
         {report.journalReview.journals.length ? <ul>{report.journalReview.journals.map(journal => <li key={journal.id}>
           <Link href={`/keuangan/jurnal?entry=${encodeURIComponent(journal.id)}`}>{journal.number}</Link> · debit {money(journal.debit)}, kredit {money(journal.credit)} · {journal.accounts.join(", ")}{journal.valid ? "" : " · perlu diperiksa"}
         </li>)}</ul> : <p>Jurnal sumber belum ditemukan.</p>}
       </div>}
       {selected && !report?.legacy && <div className="crm-sec">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-          <Link className="btn" href={query({ dasar: "modal" })}>Modal FIFO</Link>
-          <Link className="btn" href={query({ dasar: "jual" })}>Harga jual cabang</Link>
-          <span style={{ fontSize: 11 }}>Dasar aktif: <b>{filters?.dasar === "jual" ? "harga jual cabang" : "modal FIFO"}</b></span>
           <span className="flab">Selisih:</span>
           {(["semua", "lebih", "kurang", "sama"] as const).map(arah => <Link key={arah} href={query({ arah })}>{arah === "semua" ? "Semua" : arah === "lebih" ? "Lebih" : arah === "kurang" ? "Kurang" : "Sama"}</Link>)}
-          <Link className="btn" href={`${OPNAME_REPORT_PATH}/unduh?${new URLSearchParams({ ...filters!, format: "csv" })}`}>Unduh CSV</Link>
-          <Link className="btn" href={`${OPNAME_REPORT_PATH}/unduh?${new URLSearchParams({ ...filters!, format: "xlsx" })}`}>Unduh Excel</Link>
+          <Link className="btn" href={unduh("csv", selected.orderId)}>Unduh CSV</Link>
+          <Link className="btn" href={unduh("xlsx", selected.orderId)}>Unduh Excel</Link>
         </div>
         <div className="p2ban" style={{ marginBottom: 12 }}>
-          {report?.method === "fifo" ? "Modal satuan untuk selisih kurang adalah HPP FIFO keluar per unit; untuk selisih lebih adalah biaya masuk/acuan PO per unit. Keduanya cocok dengan nilai selisih yang dijurnal. Barang tanpa selisih memakai rata-rata nilai lapisan setelah posting." : "Metode average aktif pada dokumen ini; modal FIFO tidak tersedia. Harga jual cabang tetap tersimpan sebagai referensi."}
+          {`Metode HPP dokumen ini: ${methodLabel(report?.method) || "tidak diketahui"}. ${hppDok} satuan untuk selisih kurang adalah HPP keluar per unit; untuk selisih lebih adalah biaya masuk/acuan PO per unit. Keduanya cocok dengan nilai selisih yang dijurnal. Barang tanpa selisih memakai nilai stok setelah posting. Harga jual cabang hanya pembanding.`}
         </div>
-        <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 980 }}><thead><tr>
+        <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 1180 }}><thead><tr>
           <th>Kode</th><th>Barang</th><th>Satuan</th><th>Sistem</th><th>Fisik</th><th>Selisih</th>
-          <th>{filters?.dasar === "jual" ? "Harga jual cabang" : "Modal satuan"}</th><th>Nilai selisih</th><th>Sumber modal</th>
+          <th>{hppDok} satuan</th><th>Nilai selisih {hppDok}</th><th>Harga jual cabang</th><th>Nilai selisih harga jual</th><th>Selisih jual − HPP</th><th>Sumber {hppDok}</th>
         </tr></thead><tbody>
           {report?.shown.map(row => <tr key={row.itemId}>
             <td>{row.code}</td><td>{row.name}</td><td>{row.unit}</td>
-            <td style={{ textAlign: "right" }}>{qty(row.systemQty)}</td><td style={{ textAlign: "right" }}>{qty(row.physicalQty)}</td>
-            <td style={{ textAlign: "right" }}>{row.difference > 0 ? "+" : ""}{qty(row.difference)}</td>
-            <td style={{ textAlign: "right" }}>{money(filters?.dasar === "jual" ? row.branchPrice : row.unitCost)}</td>
-            <td style={{ textAlign: "right" }}>{money(filters?.dasar === "jual" ? row.saleDifference : row.modalDifference)}</td>
-            <td>{filters?.dasar === "jual" ? "Referensi cabang saat posting" : row.modalDifferenceSource}</td>
+            <td style={kanan}>{qty(row.systemQty)}</td><td style={kanan}>{qty(row.physicalQty)}</td>
+            <td style={kanan}>{row.difference > 0 ? "+" : ""}{qty(row.difference)}</td>
+            <td style={kanan}>{money(row.unitCost)}</td><td style={kanan}>{money(row.modalDifference)}</td>
+            <td style={kanan}>{money(row.branchPrice)}</td><td style={kanan}>{money(row.saleDifference)}</td>
+            <td style={kanan}>{money(selisihJualHpp(row.saleDifference, row.modalDifference))}</td>
+            <td>{row.modalDifferenceSource}</td>
           </tr>)}
-          {!report?.shown.length && <TabelKosong kolom={9} pesan="Tidak ada baris untuk filter ini." />}
+          {!report?.shown.length && <TabelKosong kolom={12} pesan="Tidak ada baris untuk filter ini." />}
+        </tbody></table></div>
+      </div>}
+      {report && <div className="crm-sec" data-rekap-opname><h3 style={{ marginTop: 0 }}>Rekap periode per cabang &amp; gudang</h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+          <span style={{ fontSize: 11 }}>Semua dokumen pada periode dan cabang terpilih. Angka dari posting awal; koreksi sesudahnya tidak mengubah rekap{report.recap.total.corrected ? ` (${report.recap.total.corrected} dokumen pernah dikoreksi)` : ""}.</span>
+          <Link className="btn" href={unduh("csv", "")}>Unduh rekap CSV</Link>
+          <Link className="btn" href={unduh("xlsx", "")}>Unduh rekap Excel</Link>
+        </div>
+        <div style={{ overflowX: "auto" }}><table className="tbl" style={{ minWidth: 1180 }}><thead><tr>
+          <th>Cabang</th><th>Gudang</th><th>Dokumen</th>
+          <th>Baris lebih</th><th>Lebih ({hppPeriode})</th><th>Lebih (harga jual)</th>
+          <th>Baris kurang</th><th>Kurang ({hppPeriode})</th><th>Kurang (harga jual)</th>
+          <th>Neto ({hppPeriode})</th><th>Neto (harga jual)</th><th>Selisih jual − HPP</th>
+        </tr></thead><tbody>
+          {report.recap.groups.map(row => <BarisRekap key={row.key} row={row} />)}
+          {report.recap.groups.length > 0 && <BarisRekap row={report.recap.total} total />}
+          {!report.recap.groups.length && <TabelKosong kolom={12} pesan="Belum ada hasil opname pada periode dan cabang terpilih." />}
         </tbody></table></div>
       </div>}
       <div className="crm-sec"><h3 style={{ marginTop: 0 }}>Hasil dalam periode</h3>

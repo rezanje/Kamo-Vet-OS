@@ -14,7 +14,7 @@ insert into items(id,code,name,unit,item_type,buy_price) values
  ('e1400000-0000-4000-8000-00000000000a','ADJ-A','Barang A fiksi','pcs','Persediaan',100),
  ('e1400000-0000-4000-8000-00000000000b','ADJ-B','Barang B fiksi','pcs','Persediaan',250.5),
  ('e1400000-0000-4000-8000-00000000000c','ADJ-C','Barang C fiksi','pcs','Persediaan',40);
-insert into coa_accounts(code,name,type,normal_balance) values('170001','Persediaan','ASET','D'),('720010','Selisih persediaan','BEBAN','D')
+insert into coa_accounts(code,name,type,normal_balance) values('170001','Persediaan','ASET','D'),('720010','Selisih persediaan','BEBAN','D'),('810004','Pendapatan lain-lain','PENDAPATAN','K')
  on conflict(code) do update set is_active=true,is_header=false;
 update accounting_locks set closed_until=null;
 -- Opening layers: A = 10 @ 80 then 5 @ 120 (FIFO), B = 4 @ 250.5. C has no stock row.
@@ -51,7 +51,8 @@ do $$declare r jsonb;again jsonb;doc uuid;je uuid;before text;begin
  perform pg_temp.ok((select count(*)=1 from journal_entries where source='penyesuaian' and source_ref=r->>'no_adj' and id=je and branch_id='e1200000-0000-4000-8000-000000000001'),'one journal, traceable to document and branch');
  perform pg_temp.ok((select sum(debit)=sum(credit) and sum(debit)=1541 from journal_lines where entry_id=je),'journal balanced');
  perform pg_temp.ok((select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=je and a.code='170001')=-539
-  and (select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=je and a.code='720010')=539,'1301 net = in - out; 5902 is the only counter account');
+  and (select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=je and a.code='720010')=1040
+  and (select sum(l.debit-l.credit) from journal_lines l join coa_accounts a on a.id=l.account_id where l.entry_id=je and a.code='810004')=-501,'170001 net = in - out; F1: kurang -> 720010, lebih -> 810004');
  perform pg_temp.ok((select sum(qty_left*unit_cost) from stock_layers where warehouse_id='e1300000-0000-4000-8000-000000000001')=(0*80+3*120+6*250.5),'layers after FIFO issue and receipt');
  reset role;
  perform pg_temp.ok(exists(select 1 from stock_document_issue_proofs where kind='adjustment' and document_id=doc),'FIFO issue proof kept for later correction');

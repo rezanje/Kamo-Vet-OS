@@ -27,7 +27,7 @@ describe("izin khusus klinik.koreksi_visit — sinkron dengan migrasi", () => {
     // kasir.diskon_manual: izin khusus, TETAPI bawaan-lama-nya boleh untuk ADMIN (20261112072724), jadi kebijakan setara
     // untuk ADMIN bawaan-lama justru harus MEMUATNYA — tidak boleh ikut dikecualikan.
     // kasir.jual_bawah_modal: izin khusus dipasang SESUDAH A5 (20261118100000); daftar A5 adalah cuplikan waktu itu.
-    const bawaanLamaAdminBoleh = ["kasir.diskon_manual"], sesudahA5 = ["kasir.jual_bawah_modal"];
+    const bawaanLamaAdminBoleh = ["kasir.diskon_manual"], sesudahA5 = ["kasir.jual_bawah_modal", "crm.poin_manual", "klinik.batalkan_tagihan", "persediaan.beban_selisih_karyawan"];
     expect(inMigration).toEqual(GRANT_ONLY_ACTIONS.filter(id => id !== IZIN_KOREKSI_VISIT && !bawaanLamaAdminBoleh.includes(id) && !sesudahA5.includes(id)).slice().sort());
   });
 

@@ -21,7 +21,7 @@ export default async function OnlineBaruPage({
   // order online boleh langsung dari gudang petshop cabang.
   const [{ data: whRaw, error: whErr }, items, { data: initialCustomer }] = await Promise.all([
     muatGudangOrderOnline(supabase),
-    readCompleteList<{ id: string; code: string; name: string; sell_price: number }>((from, to) => supabase.from("items").select("id, code, name, sell_price", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang order online", { maxRows: null }),
+    readCompleteList<{ id: string; code: string; name: string; sell_price: number; item_type: string | null }>((from, to) => supabase.from("items").select("id, code, name, sell_price, item_type", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang order online", { maxRows: null }),
     // Hanya pelanggan order sumber; pelanggan lain dicari di server sambil mengetik.
     replacement?.customer_id
       ? supabase.from("customers").select("id, name, phone").eq("id", replacement.customer_id).maybeSingle()
@@ -67,7 +67,8 @@ export default async function OnlineBaruPage({
           replacement={replacement ?? undefined}
           userId={user?.id} confirmedScope={request_scope} confirmedKey={request_done}
           warehouses={warehouses}
-          items={items.map(it => ({...it, units: units.get(it.id) ?? []}))}
+          // E2: paket (Grup) dijual per satuan dasarnya saja; stok & HPP dari isi paket (database).
+          items={items.map(({ item_type, ...it }) => ({...it, units: item_type === "Grup" ? (units.get(it.id) ?? []).slice(0, 1) : units.get(it.id) ?? []}))}
           initialCustomer={(initialCustomer ?? null) as { id: string; name: string; phone: string | null } | null}
         />
       )}

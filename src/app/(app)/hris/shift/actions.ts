@@ -27,9 +27,15 @@ export async function simpanShift(formData: FormData) {
     jam_pulang: isLibur ? null : jamPulang,
   };
 
-  const { error } = id
-    ? await supabase.from("work_shifts").update(row).eq("id", id)
-    : await supabase.from("work_shifts").insert(row);
+  // C1: edit shift = form mengirim id. Update yang tidak mengenai baris apa pun (id salah / shift
+  // cabang lain yang tidak boleh diubah) dilaporkan, bukan dianggap berhasil.
+  if (id) {
+    const { data, error } = await supabase.from("work_shifts").update(row).eq("id", id).select("id");
+    if (error) gagal(error.message);
+    if (!data || data.length === 0) gagal("Shift tidak ditemukan atau bukan cabang yang kamu kelola");
+    redirect(`${BACK}?success=ubah`);
+  }
+  const { error } = await supabase.from("work_shifts").insert(row);
   if (error) gagal(error.message);
 
   redirect(`${BACK}?success=1`);

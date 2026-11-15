@@ -7,7 +7,8 @@ import { ALL_BRANCHES, BRANCH_HEADER } from "@/lib/operational-context";
 import { availableOperationalBranches, resolveOperationalBranch } from "@/lib/operational-branch";
 import { requireOperationalBranch } from "@/lib/operational-branch-server";
 import { randomUUID } from "node:crypto";
-import { archiveVisit, forceArchiveVisit, unarchiveVisit, updateVisitStatus } from "./actions";
+import { archiveVisit, closeSettledVisit, forceArchiveVisit, unarchiveVisit, updateVisitStatus } from "./actions";
+import { bolehTutupKunjungan, semuaTagihanLunas } from "@/lib/batal-tagihan-klinik";
 import { BATAS_DIARSIPKAN, ALASAN_ARSIP_MAX, ALASAN_ARSIP_MIN, KATA_KONFIRMASI_PAKSA, PERINGATAN_PAKSA_ARSIP, bolehArsip, bolehPaksaArsip } from "@/lib/antrian-arsip";
 import { CancelButton } from "./CancelButton";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -35,7 +36,7 @@ function petAge(dob: string | null | undefined): string | null {
   return y >= 1 ? `${y} Tahun` : `${m} Bulan`;
 }
 
-const KOLOM_ANTRIAN = "id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, archived_at, archived_by, archive_reason, legacy_source_key, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at)";
+const KOLOM_ANTRIAN = "id, poli, dokter, status, created_at, keluhan, queue_number, called_at, branch_id, checked_in_at, service_started_at, service_finished_at, checked_out_at, archived_at, archived_by, archive_reason, legacy_source_key, pets(name, species, breed, dob, photo_url), customers(name, phone, customer_review_statuses(nama, warna, nada)), branches(code), inpatient_records(discharged_at), invoices(paid_status, voided_at, correction_pending)";
 
 // Batas jumlah baris pasien belum selesai dari hari-hari sebelumnya (terbaru dulu) yang dikirim ke layar.
 // Beban basis datanya (layar diperbarui tiap 20 detik) dijaga oleh indeks parsial
@@ -102,6 +103,8 @@ export default async function AntrianPage({
   const { data: profilSaya } = await profilP;
   const adminArsip = bolehArsip(profilSaya);
   const pemilikPaksa = bolehPaksaArsip(profilSaya);
+  // B2: Tutup kunjungan (Owner/Admin) untuk kunjungan Pembayaran yang semua tagihannya Lunas.
+  const bolehTutup = bolehTutupKunjungan(profilSaya);
   // Tab Diarsipkan hanya ada untuk OWNER/ADMIN; permintaan tab itu dari peran lain jatuh ke tab Aktif.
   const filter = filterMinta === "diarsipkan" && !adminArsip ? "aktif" : filterMinta;
   const tabArsip = filter === "diarsipkan";
@@ -385,6 +388,13 @@ export default async function AntrianPage({
                 style={{ padding: "4px 10px", fontSize: 10.5, textDecoration: "none" }}>
                 <i className="ti ti-cash" /> Bayar
               </Link>
+              {/* B2: tagihan sudah Lunas semua tetapi kunjungan masih Pembayaran -> Owner/Admin bisa menutupnya (database memeriksa ulang). */}
+              {bolehTutup && semuaTagihanLunas(v.invoices) && (
+                <form action={closeSettledVisit}>
+                  <input type="hidden" name="id" value={v.id} />
+                  <SubmitButton className="btn-def" icon="ti-circle-check" style={{ padding: "4px 10px", fontSize: 10.5, color: "#15803d" }} pendingText="Menutup…">Tutup kunjungan</SubmitButton>
+                </form>
+              )}
               </>
             )}
             {/* Selesai hanya bila dibuat lewat alur ERP: riwayat impor (legacy_source_key) tidak pernah ditawari arsip; database yang memutuskan. */}
@@ -490,6 +500,8 @@ export default async function AntrianPage({
               ? "Kunjungan diarsipkan: disembunyikan dari daftar kerja, bisa dipulihkan dari tab Diarsipkan."
               : success === "arsip-paksa"
                 ? "Kunjungan diarsipkan secara paksa oleh pemilik (tercatat di jejak arsip): disembunyikan dari daftar kerja, bisa dipulihkan dari tab Diarsipkan."
+              : success === "tutup"
+                ? "Kunjungan ditutup: semua tagihannya sudah lunas."
               : success === "pulih"
                 ? "Kunjungan dipulihkan ke daftar semula."
             : Number(success) > 1
