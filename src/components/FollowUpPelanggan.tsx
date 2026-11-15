@@ -162,7 +162,7 @@ function Saringan({ f, data }: { f: FilterFollowUp; data: HasilDaftar }) {
         <select id="fu-status" className="fi" name="status" defaultValue={f.status}>
           {STATUS_KONTAK.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select></div>
-      <div><label className="flab" htmlFor="fu-tunggu">Dianggap sudah selama</label>
+      <div><label className="flab" htmlFor="fu-tunggu">Masa tunggu</label>
         <select id="fu-tunggu" className="fi" name="tunggu" defaultValue={String(f.cooldown)}>
           {MASA_TUNGGU_PILIHAN.map(h => <option key={h} value={h}>{h} hari</option>)}
         </select></div>
@@ -235,9 +235,9 @@ export function FollowUpPelanggan({ data, filter, bolehUnduh, catat, namaKlinik 
           <span style={{ color: "var(--tm)" }}>· dikecualikan: {data.dikecualikan.kunjungan_belum_selesai} kunjungan belum selesai, {data.dikecualikan.hewan_tiada} hewan sudah tiada</span>
         )}
         <span style={{ flex: 1 }} />
-        {tab === "hari_ini" && <Link className="btn-def" href="/klinik/follow-up"><i className="ti ti-calendar-event" /> Daftar Follow up klinik</Link>}
-        {tab === "grooming" && <Link className="btn-def" href="/laporan/jadwal-anabul"><i className="ti ti-calendar-heart" /> Jadwal Anabul</Link>}
-        {bolehUnduh && <a className="btn-def" href={unduh} data-unduh><i className="ti ti-file-spreadsheet" /> Unduh Excel</a>}
+        {tab === "hari_ini" && <Link className="btn-def" style={{ textDecoration: "none" }} href="/klinik/follow-up"><i className="ti ti-calendar-event" /> Daftar Follow up klinik</Link>}
+        {tab === "grooming" && <Link className="btn-def" style={{ textDecoration: "none" }} href="/laporan/jadwal-anabul"><i className="ti ti-calendar-heart" /> Jadwal Anabul</Link>}
+        {bolehUnduh && <a className="btn-def" style={{ textDecoration: "none" }} href={unduh} data-unduh><i className="ti ti-file-spreadsheet" /> Unduh Excel</a>}
       </div>
 
       {data.baris.length === 0 && (

@@ -272,6 +272,7 @@ a.skl-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,
 .fu-dialog { background: #fff; border-radius: 12px; padding: 16px; width: 100%; max-width: 420px; max-height: 92vh; overflow-y: auto; }
 @media (max-width: 520px) {
   .fu-grid { grid-template-columns: minmax(0, 1fr); }
-  .fu-filter > div, .fu-filter .fi { width: 100%; }
+  .fu-filter > div { flex: 1 1 44%; }
+  .fu-filter .fi { width: 100%; }
   .fu-aksi > * { flex: 1 1 140px; justify-content: center; }
 }
