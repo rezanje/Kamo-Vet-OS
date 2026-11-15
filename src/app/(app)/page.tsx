@@ -11,6 +11,8 @@ import { loadPendingWork } from "@/lib/pending-work";
 import { PendingWorkAlerts } from "@/components/PendingWorkAlerts";
 import { KartuStokDashboard } from "@/components/KartuStok";
 import { muatKartuStok } from "@/lib/stok-analisis-server";
+import { KartuFollowUpDashboard } from "@/components/KartuFollowUp";
+import { muatKartuMarketing } from "@/lib/marketing-followup-server";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const rpJt = (n: number) => {
@@ -43,7 +45,7 @@ export default async function Dashboard({
     return <DashboardLain sudut={sudut} role={profile?.role ?? null} />;
   }
 
-  const [hasil, pendingWork, kartuStok] = await Promise.all([
+  const [hasil, pendingWork, kartuStok, kartuMarketing] = await Promise.all([
     // Galat ringkasan keuangan tidak boleh menjatuhkan seluruh halaman (7 Nov 2026:
     // Owner hanya melihat "Application error"). Halaman tetap tampil dengan keterangannya.
     getDashboard(supabase as never, today).then(
@@ -56,6 +58,8 @@ export default async function Dashboard({
     loadPendingWork(supabase, profile?.role ?? null),
     // Kartu stok (slow moving / harus order): OWNER/ADMIN/FINANCE yang halamannya boleh dibuka. Galat tidak menjatuhkan dashboard.
     muatKartuStok(supabase, profile?.role ?? null),
+    // Kartu "Perlu follow up" (marketing): hanya Owner / peran yang dicentang di Akses Grup; galat tidak menjatuhkan dashboard.
+    muatKartuMarketing(supabase),
   ]);
 
   if (!hasil.data) {
@@ -168,6 +172,7 @@ export default async function Dashboard({
 
       {/* Baris 3: Stok slow moving · Harus order (semua gudang digabung, dari riwayat penjualan) */}
       <KartuStokDashboard data={kartuStok} />
+      <KartuFollowUpDashboard data={kartuMarketing} />
     </>
   );
 }
@@ -252,6 +257,7 @@ async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | nu
 
   if (sudut === "operasional") {
     const kartuStokP = muatKartuStok(supabase, role ?? null);
+    const kartuMarketingP = muatKartuMarketing(supabase);
     const hari = queueDayBounds(hariIni)!;
     const [
       { count: kunjungan, error: kunjunganError },
@@ -321,6 +327,7 @@ async function DashboardLain({ sudut, role }: { sudut: Sudut; role?: string | nu
           </div>
         </div>
         <KartuStokDashboard data={await kartuStokP} />
+        <KartuFollowUpDashboard data={await kartuMarketingP} />
       </>
     );
   }
