@@ -60,6 +60,16 @@ export async function simpanKasEntry(formData: FormData) {
     gagal("Akun lawan tidak boleh rekening kas/bank — pakai menu Transfer Bank.");
   }
 
+  // Akun lawan harus akun rincian yang aktif. Akun induk ditolak postJournal secara
+  // diam-diam, jadi dicek di sini supaya pesan galatnya jelas dan tidak ada nomor bukti terbuang.
+  const { data: lawanData } = await supabase
+    .from("coa_accounts").select("code, name, is_header, is_active").eq("code", lawanCode);
+  const lawan = ((lawanData ?? []) as { code: string; name: string; is_header: boolean; is_active: boolean }[])[0];
+  if (!lawan || !lawan.is_active) gagal("Akun tujuan tidak ditemukan atau sudah nonaktif");
+  if (lawan.is_header) {
+    gagal(`Akun ${lawan.code} · ${lawan.name} adalah akun induk — pilih salah satu akun rinciannya.`);
+  }
+
   // Formatnya dibaca dari master penomoran. Awalannya sudah memisahkan Masuk (KM)
   // dari Keluar (KK), jadi tidak perlu saringan jenis lagi saat mencari nomor tertinggi.
   const { nomor: noBukti } = await nomorBerikutnya(

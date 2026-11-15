@@ -129,6 +129,8 @@ export default async function JurnalPage({
       .from("coa_accounts")
       .select("id, code, name")
       .eq("is_active", true)
+      // Akun induk ditolak saat simpan (create_manual_journal_atomic) — jangan ditawarkan.
+      .eq("is_header", false)
       .order("code"),
     supabase
       .from("branches")

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { draftRows } from "@/components/TransactionDraft";
+import { SearchableItemPicker } from "@/components/SearchableItemPicker";
 import { PosDecimal } from "@/lib/pos-money";
 import { batalkanJurnal, koreksiJurnal } from "./actions";
 
@@ -39,7 +40,7 @@ export function JurnalCorrectionForm({ entryId, revision, tanggal: initialDate, 
         <input aria-label="Tanggal koreksi" className="fi" type="date" name="tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
         <input aria-label="Deskripsi koreksi" className="fi" name="deskripsi" value={deskripsi} onChange={(e) => setDeskripsi(e.target.value)} required />
         {lines.map((line, index) => <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px", gap: 5 }}>
-          <select aria-label={`Akun baris ${index + 1}`} className="fi" value={line.account_id} onChange={(e) => setLine(index, { account_id: e.target.value })}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.code} — {account.name}</option>)}</select>
+          <SearchableItemPicker items={accounts} value={line.account_id} onChange={(id) => setLine(index, { account_id: id })} ariaLabel={`Akun baris ${index + 1}`} placeholder="Ketik kode / nama akun" selectedLabelFormat="code-name" detailLabel="Kode" requiredMessage="Pilih akun dari daftar hasil cari." />
           <NumberInput aria-label={`Debit baris ${index + 1}`} className="fi" type="number" min="0" step="0.01" value={line.debit || ""} onChange={(e) => setLine(index, { debit: Number(e.target.value) || 0, credit: 0 })} />
           <NumberInput aria-label={`Kredit baris ${index + 1}`} className="fi" type="number" min="0" step="0.01" value={line.credit || ""} onChange={(e) => setLine(index, { credit: Number(e.target.value) || 0, debit: 0 })} />
         </div>)}

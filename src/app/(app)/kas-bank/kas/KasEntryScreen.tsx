@@ -55,7 +55,7 @@ export async function KasEntryScreen({
 
   const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }] = await Promise.all([
     supabase.from("cash_accounts").select("id, nama, coa_code").eq("is_active", true).order("nama"),
-    supabase.from("coa_accounts").select("code, name, type").eq("is_active", true).order("code"),
+    supabase.from("coa_accounts").select("code, name, type, is_header").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     supabase
       .from("cash_entries")
@@ -100,14 +100,18 @@ export async function KasEntryScreen({
   // Rekening kas/bank dikeluarkan dari pilihan akun lawan — pindah antar rekening
   // punya menunya sendiri (Transfer Bank).
   const terlarang = akunLawanTerlarang(rekening.map((r) => r.coa_code));
-  const coa = ((coaData ?? []) as { code: string; name: string; type: string }[])
-    .filter((a) => !terlarang.has(a.code))
+  const semuaAkun = (coaData ?? []) as { code: string; name: string; type: string; is_header: boolean }[];
+  // Akun induk (mis. 730000 Beban Marketing) cuma penjumlah rinciannya — tidak bisa
+  // dijurnal, jadi tidak ditawarkan. Pilih akun rinciannya (730001, 730002, ...).
+  const coa = semuaAkun
+    .filter((a) => !terlarang.has(a.code) && !a.is_header)
+    .map(({ code, name, type }) => ({ code, name, type }))
     .sort((a, b) => {
       const ia = URUTAN[jenis].indexOf(a.type);
       const ib = URUTAN[jenis].indexOf(b.type);
       return ia === ib ? a.code.localeCompare(b.code) : ia - ib;
     });
-  const namaAkun = new Map(coa.map((a) => [a.code, a.name]));
+  const namaAkun = new Map(semuaAkun.map((a) => [a.code, a.name]));
 
   const dariKas: BarisGabung[] = cashRows.map((t) => ({
     key: `kas-${t.id}`, id: t.id, no: t.no_bukti, tanggal: t.tanggal,
