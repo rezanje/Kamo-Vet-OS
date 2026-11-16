@@ -196,13 +196,20 @@ export default async function DaftarRekamMedisPage({
                       <span style={{ fontSize: 10, color: "var(--td)" }}>{row.branch ?? (row.isImported ? LABEL_RIWAYAT_IMPOR : "Tanpa cabang")}</span>
                       {row.isImported && <><br /><span className="bge" title="Riwayat hasil impor data lama" style={{ fontSize: 9.5 }}>Impor</span></>}
                     </td>
-                    <td><div style={{ fontWeight: 700 }}>{row.petName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{[row.species, row.breed].filter(Boolean).join(" · ") || "—"}</div></td>
+                    <td><div style={{ fontWeight: 700 }}>{row.petId ? <Link href={`/klinik/rekam-medis/pasien/${row.petId}`} title="Lihat riwayat lengkap pasien ini" style={{ color: "inherit", textDecoration: "underline" }}>{row.petName}</Link> : row.petName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{[row.species, row.breed].filter(Boolean).join(" · ") || "—"}</div></td>
                     <td><div style={{ fontWeight: 600 }}>{row.ownerName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.phone || "—"}</div></td>
                     <td style={{ whiteSpace: "nowrap" }}><span className={`bge ${row.patientStatus.badge}`}>{row.patientStatus.label}</span></td>
                     <td style={{ maxWidth: 230, fontSize: 11, lineHeight: 1.45 }}>{row.note || "—"}</td>
                     <td style={{ maxWidth: 190, fontSize: 11, lineHeight: 1.45 }}>{row.diagnosis || "Belum diisi"}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <BukaRekamMedisLink href={`/klinik/rekam-medis/${row.id}`} />
+                      <div style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
+                        {row.petId && (
+                          <Link href={`/klinik/rekam-medis/pasien/${row.petId}`} className="btn-def" title="Semua kunjungan hewan ini dalam satu halaman" style={{ textDecoration: "none", padding: "5px 10px" }}>
+                            <i className="ti ti-history" /> Riwayat
+                          </Link>
+                        )}
+                        <BukaRekamMedisLink href={`/klinik/rekam-medis/${row.id}`} />
+                      </div>
                     </td>
                   </tr>
                 ))}

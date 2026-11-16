@@ -423,6 +423,16 @@ export default async function RekamMedisPage({
         </Link>
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500 }}>Rekam Medis</span>
+        {visit.pet_id && (
+          <Link
+            href={`/klinik/rekam-medis/pasien/${visit.pet_id}`}
+            data-testid="riwayat-pasien-link"
+            title={`Semua kunjungan ${pet?.name ?? "pasien ini"} dalam satu halaman`}
+            style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, color: "var(--posb)", textDecoration: "none" }}
+          >
+            <i className="ti ti-history" /> Riwayat pasien{pet?.name ? ` · ${pet.name}` : ""}
+          </Link>
+        )}
       </div>
 
       {/* Tab per hewan — muncul hanya kalau pemilik ini datang membawa lebih dari
