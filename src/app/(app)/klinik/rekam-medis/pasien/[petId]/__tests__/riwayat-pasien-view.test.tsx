@@ -24,12 +24,35 @@ const DATA = [
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); });
-const render = (data: KunjunganRiwayat[]) => act(async () => root.render(<RiwayatPasienView kunjungan={data} />));
+const render = (data: KunjunganRiwayat[], cabangAktif?: string | null) => act(async () => root.render(<RiwayatPasienView kunjungan={data} cabangAktif={cabangAktif} />));
 const kartu = () => [...container.querySelectorAll<HTMLElement>("[data-testid=kartu-kunjungan]")];
 const bukaTombol = (teks: string) => [...container.querySelectorAll("button")].find((b) => b.textContent?.includes(teks))!;
 const terbuka = () => kartu().map((c) => c.querySelector("button[aria-expanded]")!.getAttribute("aria-expanded") === "true");
 
 describe("RiwayatPasienView", () => {
+  it("kunjungan cabang lain dari cabang aktif: isi tampil, tombol Buka (rekam medis/rawat inap) tidak ada; cabang aktif dan impor tetap ada tombol", async () => {
+    const data = [
+      kunjungan("vb", "2026-11-12T03:00:00Z", { cabangId: "B", cabang: "VET_BDG", rawatInap: { id: "ri-b", aktif: false } }),
+      kunjungan("va", "2026-11-11T03:00:00Z", { cabangId: "A" }),
+      kunjungan("vi", "2026-11-10T03:00:00Z", { cabangId: null, impor: true, cabang: null }),
+    ];
+    await render(data, "A");
+    await act(async () => bukaTombol("Buka semua").click());
+    const href = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+    expect(href).not.toContain("/klinik/rekam-medis/vb");
+    expect(href).not.toContain("/klinik/rawat-inap/ri-b");
+    expect(href).toContain("/klinik/rekam-medis/va");
+    expect(href).toContain("/klinik/rekam-medis/vi");
+    expect(container.textContent).toContain("Anamnesa vb");
+    expect(container.textContent).toContain("hanya bisa dibuka dari cabang itu");
+  });
+
+  it("tanpa cabang aktif (Semua cabang): semua tombol Buka ada", async () => {
+    await render([kunjungan("vb", "2026-11-12T03:00:00Z", { cabangId: "B" })], null);
+    expect([...container.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toContain("/klinik/rekam-medis/vb");
+    expect(container.textContent).not.toContain("hanya bisa dibuka dari cabang itu");
+  });
+
   it("urutan terbaru dulu sesuai data; hanya kunjungan terbaru yang terbuka di awal", async () => {
     await render(DATA);
     expect(kartu().map((c) => c.dataset.visit)).toEqual(["v3", "v2", "v1"]);

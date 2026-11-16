@@ -37,7 +37,7 @@ function DaftarItem({ label, items }: { label: string; items: BarisObat[] }) {
   );
 }
 
-function Isi({ k }: { k: KunjunganRiwayat }) {
+function Isi({ k, bisaDibuka }: { k: KunjunganRiwayat; bisaDibuka: boolean }) {
   const pemeriksaan = [
     k.suhu != null ? `Suhu ${angkaText(k.suhu, 1)} °C` : null,
     k.berat != null ? `Berat ${angkaText(k.berat)} kg` : null,
@@ -62,21 +62,28 @@ function Isi({ k }: { k: KunjunganRiwayat }) {
           <Baris label="Tindak lanjut" value={k.tindakLanjut} />
         </dl>
       ) : null}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        <Link href={`/klinik/rekam-medis/${k.visitId}`} className="btn-def" style={{ textDecoration: "none", padding: "5px 10px" }}>
-          <i className="ti ti-eye" /> Buka rekam medis lengkap
-        </Link>
-        {k.rawatInap && (
-          <Link href={`/klinik/rawat-inap/${k.rawatInap.id}`} className="btn-def" style={{ textDecoration: "none", padding: "5px 10px" }}>
-            <i className="ti ti-bed" /> Buka {LABEL_RAWAT_INAP.toLowerCase()}
+      {!bisaDibuka && (
+        <p style={{ fontSize: 11, color: "var(--tm)", margin: "12px 0 0" }}>
+          Kunjungan di cabang {k.cabang ?? "lain"}: isinya tampil di sini, tetapi halaman lengkapnya hanya bisa dibuka dari cabang itu (ganti cabang aktif).
+        </p>
+      )}
+      {bisaDibuka && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          <Link href={`/klinik/rekam-medis/${k.visitId}`} className="btn-def" style={{ textDecoration: "none", padding: "5px 10px" }}>
+            <i className="ti ti-eye" /> Buka rekam medis lengkap
           </Link>
-        )}
-      </div>
+          {k.rawatInap && (
+            <Link href={`/klinik/rawat-inap/${k.rawatInap.id}`} className="btn-def" style={{ textDecoration: "none", padding: "5px 10px" }}>
+              <i className="ti ti-bed" /> Buka {LABEL_RAWAT_INAP.toLowerCase()}
+            </Link>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function Kartu({ k, terbuka, onToggle }: { k: KunjunganRiwayat; terbuka: boolean; onToggle: () => void }) {
+function Kartu({ k, terbuka, onToggle, bisaDibuka }: { k: KunjunganRiwayat; terbuka: boolean; onToggle: () => void; bisaDibuka: boolean }) {
   const idBody = `riwayat-${k.visitId}`;
   const sub = [k.cabang, k.dokter, k.poli].filter(Boolean).join(" · ");
   return (
@@ -105,13 +112,16 @@ function Kartu({ k, terbuka, onToggle }: { k: KunjunganRiwayat; terbuka: boolean
           )}
         </span>
       </button>
-      {terbuka && <div id={idBody} role="region" aria-label={`Rekam medis ${tanggalText(k.tanggal)}`}><Isi k={k} /></div>}
+      {terbuka && <div id={idBody} role="region" aria-label={`Rekam medis ${tanggalText(k.tanggal)}`}><Isi k={k} bisaDibuka={bisaDibuka} /></div>}
     </div>
   );
 }
 
 /** Daftar kunjungan yang bisa dibuka-tutup satu per satu atau sekaligus. Kunjungan terbaru terbuka lebih dulu. */
-export function RiwayatPasienView({ kunjungan }: { kunjungan: KunjunganRiwayat[] }) {
+/** Halaman detail kunjungan dibaca per cabang aktif: kunjungan cabang lain tidak punya tombol buka (akan 404), isinya tetap tampil. */
+const bisaDibukaDariCabang = (k: KunjunganRiwayat, cabangAktif: string | null) => !cabangAktif || k.cabangId == null || k.cabangId === cabangAktif;
+
+export function RiwayatPasienView({ kunjungan, cabangAktif = null }: { kunjungan: KunjunganRiwayat[]; cabangAktif?: string | null }) {
   const [terbuka, setTerbuka] = useState<ReadonlySet<string>>(() => new Set(kunjungan[0] ? [kunjungan[0].visitId] : []));
   if (!kunjungan.length) {
     return (
@@ -137,7 +147,7 @@ export function RiwayatPasienView({ kunjungan }: { kunjungan: KunjunganRiwayat[]
         </button>
         <span style={{ fontSize: 11, color: "var(--tm)" }}>{kunjungan.length} kunjungan, terbaru di atas</span>
       </div>
-      {kunjungan.map((k) => <Kartu key={k.visitId} k={k} terbuka={terbuka.has(k.visitId)} onToggle={() => toggle(k.visitId)} />)}
+      {kunjungan.map((k) => <Kartu key={k.visitId} k={k} terbuka={terbuka.has(k.visitId)} onToggle={() => toggle(k.visitId)} bisaDibuka={bisaDibukaDariCabang(k, cabangAktif)} />)}
     </>
   );
 }

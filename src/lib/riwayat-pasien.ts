@@ -83,6 +83,8 @@ export type KunjunganRiwayat = {
   visitId: string;
   tanggal: string;
   cabang: string | null;
+  /** branch_id kunjungan (null = riwayat impor tanpa cabang). Dipakai agar tombol Buka hanya untuk cabang aktif. */
+  cabangId?: string | null;
   impor: boolean;
   diarsipkan: boolean;
   dokter: string | null;
@@ -167,6 +169,7 @@ export function susunKunjungan(input: {
       visitId: row.id,
       tanggal: row.created_at,
       cabang,
+      cabangId: row.branch_id,
       impor: Boolean(row.legacy_source_key),
       diarsipkan: Boolean(extra?.archived_at),
       dokter: teks(row.dokter),

@@ -13,15 +13,16 @@ const gagal = () => new ListLoadError(GAGAL);
 const PECAH = 200;
 
 export type RiwayatPasien =
-  | { status: "ada"; profil: ProfilPasien; kunjungan: KunjunganRiwayat[]; total: number; adaLagi: boolean; muatan: number }
+  | { status: "ada"; profil: ProfilPasien; kunjungan: KunjunganRiwayat[]; total: number; adaLagi: boolean; muatan: number; cabangAktif: string | null }
   | { status: "tidak-ada" };
 
 /**
  * Riwayat SATU hewan: semua kunjungan yang punya rekam medis, terbaru dulu.
  *
- * Akses = persis daftar Rekam Medis: klien tanpa header cabang (RLS pemanggil), cabang aktif dikirim sebagai
- * parameter RPC `daftar_rekam_medis_halaman` (cabang aktif + riwayat impor tanpa cabang), jadi tidak ada kunjungan
- * yang tidak juga muncul di daftar untuk pengguna yang sama. Bacaan lanjutan hanya untuk ID kunjungan yang
+ * Akses = RLS pemanggil: klien tanpa header cabang, RPC `daftar_rekam_medis_halaman` TANPA p_cabang, jadi semua cabang
+ * yang boleh dibaca pengguna ini (user_can_access_branch + izin riwayat impor) ikut tampil, bukan hanya cabang aktif;
+ * pengguna yang hanya punya akses cabang A tidak pernah melihat cabang B (RLS, bukan filter aplikasi). Sama dengan
+ * jumlah di kartu Per pasien (rekam-medis-semua-cabang-server.ts). Bacaan lanjutan hanya untuk ID kunjungan yang
  * dikembalikan RPC itu, digabung per kelompok (bukan satu bacaan per kunjungan). Tidak membaca invoice/harga.
  * Galat apa pun = ListLoadError (tidak pernah dianggap kosong).
  */
@@ -31,7 +32,7 @@ export async function bacaRiwayatPasien(petId: string, muatan: number): Promise<
   const halaman = async (nomor: number) => {
     const diminta = { batas: KUNJUNGAN_PER_MUATAN, offset: nomor * KUNJUNGAN_PER_MUATAN };
     const result = await client.rpc("daftar_rekam_medis_halaman", {
-      p_cabang: cabangAktif, p_cari: null, p_tampilan: "semua", p_pet: petId, p_batas: diminta.batas, p_offset: diminta.offset,
+      p_cabang: null, p_cari: null, p_tampilan: "semua", p_pet: petId, p_batas: diminta.batas, p_offset: diminta.offset,
     });
     return bacaHasilHalamanRekamMedis<SumberBarisRpc>(result, diminta, (pesan) => new ListLoadError(pesan));
   };
@@ -112,5 +113,6 @@ export async function bacaRiwayatPasien(petId: string, muatan: number): Promise<
     total,
     adaLagi: rpc.length < total,
     muatan,
+    cabangAktif,
   };
 }
