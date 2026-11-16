@@ -36,7 +36,7 @@ export default async function RiwayatPasienPage({
   }
   if (hasil.status === "tidak-ada") notFound();
 
-  const { profil, kunjungan, total, adaLagi } = hasil;
+  const { profil, kunjungan, total, adaLagi, cabangAktif } = hasil;
   return (
     <>
       <KembaliKeDaftar />
@@ -48,7 +48,7 @@ export default async function RiwayatPasienPage({
       <RiwayatPasienHeader profil={profil} kunjungan={kunjungan} />
 
       <div className="crm-sec">
-        <RiwayatPasienView kunjungan={kunjungan} />
+        <RiwayatPasienView kunjungan={kunjungan} cabangAktif={cabangAktif} />
         {adaLagi && (
           <div style={{ textAlign: "center", marginTop: 6 }}>
             {muatan < MAKS_MUATAN ? (

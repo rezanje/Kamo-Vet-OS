@@ -180,7 +180,7 @@ describe("complete operational page sources", () => {
     expect(fixture.rpcCalls).toHaveLength(0);
   });
   it("counts distinct animal IDs from the server summary rather than visit names", async () => {
-    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ kelompok: "kunjungan" }) }));
     expect(html).toMatch(/HEWAN TERCATAT<\/div><div[^>]*>1<\/div>/);
   });
   it("renders medical 50-row pages with q and pet preserved", async () => {

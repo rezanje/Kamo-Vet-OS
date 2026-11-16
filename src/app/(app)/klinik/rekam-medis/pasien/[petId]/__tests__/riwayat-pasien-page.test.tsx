@@ -119,10 +119,20 @@ describe("halaman Riwayat pasien: akses sama dengan daftar Rekam Medis", () => {
     expect(html).not.toContain(OTHER);
   });
 
-  it("memanggil RPC daftar yang sama: satu hewan, semua tampilan, cabang aktif sebagai parameter, 60 per muatan", async () => {
+  it("memanggil RPC daftar yang sama: satu hewan, semua tampilan, TANPA filter cabang aktif (RLS yang menentukan), 60 per muatan", async () => {
     s.cabangAktif = BR_A; s.role = "ADMIN";
     await render();
-    expect(s.rpcCalls).toEqual([{ name: "daftar_rekam_medis_halaman", args: { p_cabang: BR_A, p_cari: null, p_tampilan: "semua", p_pet: PET, p_batas: 60, p_offset: 0 } }]);
+    expect(s.rpcCalls).toEqual([{ name: "daftar_rekam_medis_halaman", args: { p_cabang: null, p_cari: null, p_tampilan: "semua", p_pet: PET, p_batas: 60, p_offset: 0 } }]);
+  });
+
+  it("OWNER dengan cabang aktif A melihat kunjungan semua cabang (sama dengan jumlah di kartu daftar); kunjungan cabang B tanpa tombol Buka (detail dibaca per cabang aktif)", async () => {
+    s.cabangAktif = BR_A; s.role = "OWNER";
+    const html = await render();
+    expect([...html.matchAll(/data-visit="([^"]+)"/g)].map((m) => m[1])).toEqual(["v-b", "v2", "v1", "v-impor"]);
+    expect(html).toContain("Cabang B");
+    expect(html).toContain("4 kunjungan dengan rekam medis");
+    expect(html).toContain("hanya bisa dibuka dari cabang itu"); // kartu teratas = v-b (cabang B), terbuka
+    expect(html).not.toContain('href="/klinik/rekam-medis/v-b"');
   });
 
   it("peran cabang A: kunjungan cabang A + impor; cabang B tidak terlihat", async () => {

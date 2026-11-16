@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LABEL_RIWAYAT_IMPOR } from "@/lib/daftar-rekam-medis";
 import { ringkasTeks, tanggalRekamMedis, type KelompokDaftar, type KelompokPasien } from "@/lib/rekam-medis-per-pasien";
+import type { RingkasanSemuaCabang } from "@/lib/rekam-medis-semua-cabang";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 
 /** Pilihan tampilan daftar: Per pasien (bawaan) | Per kunjungan (tampilan lama). Tautan biasa (tanpa JS), filter ikut terbawa. */
@@ -21,12 +22,25 @@ export function PilihTampilanDaftar({ kelompok, q, tampilan }: { kelompok: Kelom
 
 const chip = { fontSize: 10.5, padding: "2px 8px" } as const;
 
-/** Satu kartu per hewan: nama (ke riwayat), pemilik, jumlah kunjungan, kunjungan terakhir, Riwayat + Buka terakhir. */
-export function DaftarPerPasien({ kelompok, jendelaHabis }: { kelompok: KelompokPasien[]; jendelaHabis: boolean }) {
+const labelCabang = (cabang: string | null, impor: boolean) => cabang ?? (impor ? LABEL_RIWAYAT_IMPOR : "Tanpa cabang");
+
+/**
+ * Satu kartu per hewan: nama (ke riwayat), pemilik, jumlah kunjungan, kunjungan terakhir, Riwayat + Buka terakhir.
+ * Jumlah + "Terakhir" memakai `semuaCabang` (semua cabang yang boleh dibaca pengguna); bila ada cabang aktif dan
+ * jumlahnya berbeda, chip "x di cabang ini" menunjukkan bagian cabang aktif. "Buka terakhir" selalu membuka
+ * kunjungan terakhir yang bisa dibuka di cabang aktif (halaman detail dibaca per cabang aktif).
+ */
+export function DaftarPerPasien({ kelompok, semuaCabang }: { kelompok: KelompokPasien[]; semuaCabang: Map<string, RingkasanSemuaCabang> }) {
   return (
     <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
       {kelompok.map((g) => {
-        const t = g.terakhir;
+        const sc = semuaCabang.get(g.kunci);
+        // Tanpa ringkasan semua cabang (mis. kunjungan tanpa pet_id): tampil seperti semula, dari jendela daftar.
+        const t = sc ? { date: sc.terakhir.date, cabang: labelCabang(sc.terakhir.branch, sc.terakhir.isImported), status: sc.terakhir.patientStatus, note: sc.terakhir.note, diagnosis: sc.terakhir.diagnosis, lain: !sc.terakhir.dalamCabangIni }
+          : { date: g.terakhir.date, cabang: labelCabang(g.terakhir.branch, g.terakhir.isImported), status: g.terakhir.patientStatus, note: g.terakhir.note, diagnosis: g.terakhir.diagnosis, lain: false };
+        const jumlah = sc ? sc.jumlah : g.jumlah;
+        const rawatInap = sc ? sc.jumlahRawatInap : g.jumlahRawatInap;
+        const tanda = sc ? sc.lebih : Boolean(g.petId); // hewan ber-pet_id tanpa ringkasan hanya bila bacaan terpotong
         const ringkas = ringkasTeks(t.note);
         const dx = ringkasTeks(t.diagnosis);
         return (
@@ -46,15 +60,19 @@ export function DaftarPerPasien({ kelompok, jendelaHabis }: { kelompok: Kelompok
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              <span className="bge b" style={chip}>{g.jumlah}{jendelaHabis ? "+" : ""} kunjungan</span>
-              {g.jumlahRawatInap > 0 && <span className="bge" style={chip}>{g.jumlahRawatInap} rawat inap</span>}
+              <span className="bge b" style={chip}>{jumlah}{tanda ? "+" : ""} kunjungan</span>
+              {sc && sc.jumlahCabangIni !== null && sc.jumlahCabangIni !== sc.jumlah && (
+                <span className="bge" title="Kunjungan hewan ini di cabang aktif (ditambah riwayat impor). Sisanya di cabang lain." style={{ ...chip, color: "var(--tm)", background: "transparent", border: "1px solid var(--bd, #e5e7eb)" }}>{sc.jumlahCabangIni} di cabang ini</span>
+              )}
+              {rawatInap > 0 && <span className="bge" style={chip}>{rawatInap} rawat inap</span>}
               {g.jumlahImpor > 0 && <span className="bge" title="Riwayat hasil impor data lama" style={chip}>{g.jumlahImpor} impor</span>}
               {g.kembar && <span className="bge r" title="Ada hewan lain milik pemilik yang sama dengan nama dan jenis yang sama. Data tidak digabung." style={chip}>Ada data hewan kembar</span>}
             </div>
             <div style={{ fontSize: 11.5, lineHeight: 1.45 }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                <b>Terakhir:</b> {tanggalRekamMedis(t.date)} · {t.branch ?? (t.isImported ? LABEL_RIWAYAT_IMPOR : "Tanpa cabang")}
-                <span className={`bge ${t.patientStatus.badge}`} style={chip}>{t.patientStatus.label}</span>
+                <b>Terakhir:</b> {tanggalRekamMedis(t.date)} · {t.cabang}
+                <span className={`bge ${t.status.badge}`} style={chip}>{t.status.label}</span>
+                {t.lain && <span style={{ fontSize: 10.5, color: "var(--tm)" }}>(cabang lain)</span>}
               </div>
               <div style={{ color: "var(--tm)" }}>{ringkas ? `Keluhan: ${ringkas}` : "Keluhan: —"}</div>
               <div style={{ color: "var(--tm)" }}>{dx ? `Diagnosa: ${dx}` : "Diagnosa: Belum diisi"}</div>
@@ -66,7 +84,7 @@ export function DaftarPerPasien({ kelompok, jendelaHabis }: { kelompok: Kelompok
                   <i className="ti ti-history" /> Riwayat
                 </Link>
               )}
-              <BukaRekamMedisLink href={`/klinik/rekam-medis/${t.id}`} label="Buka terakhir" besar />
+              <BukaRekamMedisLink href={`/klinik/rekam-medis/${g.terakhir.id}`} label={t.lain ? "Buka terakhir di cabang ini" : "Buka terakhir"} besar />
             </div>
           </li>
         );

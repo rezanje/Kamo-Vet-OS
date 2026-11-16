@@ -9,9 +9,11 @@ import {
 } from "@/lib/daftar-rekam-medis";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 import { DaftarPerPasien, PilihTampilanDaftar } from "./DaftarPerPasien";
+import { bacaSemuaCabang } from "@/lib/rekam-medis-semua-cabang-server";
+import type { RingkasanSemuaCabang } from "@/lib/rekam-medis-semua-cabang";
 import {
   bacaKelompok, JENDELA_KUNJUNGAN, PASIEN_PER_HALAMAN, petakanKunjungan, susunDaftarPerPasien, tanggalRekamMedis,
-  type BarisKunjungan, type SumberBarisDaftar,
+  type BarisKunjungan, type KelompokPasien, type SumberBarisDaftar,
 } from "@/lib/rekam-medis-per-pasien";
 
 type SourceRow = SumberBarisDaftar;
@@ -39,6 +41,8 @@ export default async function DaftarRekamMedisPage({
   let pageInfo: ReturnType<typeof infoHalaman>;
   let rowsJendela: BarisKunjungan[] | null = null;
   let perPasien: ReturnType<typeof susunDaftarPerPasien> | null = null;
+  let kartuHalaman: KelompokPasien[] = [];
+  let semuaCabang = new Map<string, RingkasanSemuaCabang>();
   try {
     if (cari.length > MAKS_CARI_REKAM_MEDIS) throw new ListLoadError(PESAN_CARI_TERLALU_PANJANG);
     const lintas = await createClientLintasCabang();
@@ -62,6 +66,10 @@ export default async function DaftarRekamMedisPage({
       rowsJendela = hasil.baris.map(petakanKunjungan);
       perPasien = susunDaftarPerPasien(rowsJendela, hasil.jumlah, JENDELA_KUNJUNGAN);
       pageInfo = infoHalaman(hal, perPasien.kelompok.length, PASIEN_PER_HALAMAN);
+      // Hewan yang tampil ditentukan jendela di atas (cabang aktif + impor), tetapi jumlah kunjungan + "Terakhir" tiap
+      // kartu dihitung dari SEMUA cabang yang boleh dibaca pengguna (RLS pemanggil), hanya untuk hewan di halaman ini.
+      kartuHalaman = perPasien.kelompok.slice(pageInfo.from, pageInfo.to + 1);
+      semuaCabang = await bacaSemuaCabang(lintas.client, kartuHalaman, { cabangAktif, tampilan: displayMode });
     } else {
       const dimintaMentah = infoHalaman(hal, Number.MAX_SAFE_INTEGER, HALAMAN_REKAM_MEDIS).page;
       // offset RPC bertipe integer: nomor halaman absurd langsung dianggap di luar jangkauan (halaman 1).
@@ -117,7 +125,7 @@ export default async function DaftarRekamMedisPage({
           <Link href={`/klinik/rekam-medis?${new URLSearchParams({q,tampilan:"semua",kelompok})}`}>Semua riwayat (termasuk Rawat Inap)</Link>
           <Link href="/klinik/rawat-inap">Pasien Rawat Inap aktif</Link>
         </div>
-        {perPasien && <p style={{ fontSize: 11, color: "var(--tm)", margin: "0 0 8px" }}>Satu kartu per hewan. Jumlah kunjungan mengikuti filter daftar ini (tanpa kunjungan yang diarsipkan); tombol Riwayat membuka semua kunjungan hewan itu.</p>}
+        {perPasien && <p style={{ fontSize: 11, color: "var(--tm)", margin: "0 0 8px" }}>Satu kartu per hewan. Jumlah kunjungan dan kunjungan terakhir dihitung dari semua cabang yang bisa Anda akses (tanpa kunjungan yang diarsipkan), bukan hanya cabang aktif; tombol Riwayat membuka semua kunjungan hewan itu.</p>}
         {!fullHistory && <p style={{ fontSize: 11 }}>Pasien Rawat Inap aktif ada di Status Rawat Inap. Riwayat medisnya tetap tersedia lewat Semua riwayat atau riwayat pasien.</p>}
         {cabangAktif && hasil.ringkasan.impor > 0 && (
           <p style={{ fontSize: 11, color: "var(--tm)" }}>
@@ -146,10 +154,10 @@ export default async function DaftarRekamMedisPage({
             <>
               {perPasien.jendelaHabis && (
                 <p role="status" style={{ fontSize: 11.5, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px", margin: "0 0 10px" }}>
-                  Menampilkan {perPasien.kelompok.length} pasien dari {JENDELA_KUNJUNGAN} kunjungan terbaru (ada {perPasien.jumlahCocok} kunjungan yang cocok). Jumlah kunjungan bertanda + belum tentu lengkap. Persempit pencarian (nama hewan, pemilik, atau telepon) untuk melihat pasien lain.
+                  Menampilkan {perPasien.kelompok.length} pasien dari {JENDELA_KUNJUNGAN} kunjungan terbaru (ada {perPasien.jumlahCocok} kunjungan yang cocok). Hewan lain tidak tampil di sini; persempit pencarian (nama hewan, pemilik, atau telepon) untuk melihatnya.
                 </p>
               )}
-              <DaftarPerPasien kelompok={perPasien.kelompok.slice(pageInfo.from, pageInfo.to + 1)} jendelaHabis={perPasien.jendelaHabis} />
+              <DaftarPerPasien kelompok={kartuHalaman} semuaCabang={semuaCabang} />
             </>
           )
         ) : rows.length === 0 ? (

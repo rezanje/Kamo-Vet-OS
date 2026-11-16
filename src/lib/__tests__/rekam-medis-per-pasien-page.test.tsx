@@ -3,21 +3,61 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Daftar Rekam Medis: Per pasien (bawaan) = satu kartu per hewan; Per kunjungan = tampilan lama (tidak berubah).
-const s = vi.hoisted(() => ({ visits: [] as Record<string, unknown>[], rpc: [] as Record<string, unknown>[], cabang: null as string | null, ubah: null as null | ((d: Record<string, unknown>) => unknown) }));
+// Tiruan database: RPC = lingkup cabang aktif (s.visits). Bacaan `visits`/`medical_records` langsung = lingkup SEMUA cabang
+// yang boleh dibaca peran (RLS pemanggil, tanpa header cabang): s.visits + s.lain (kunjungan cabang lain), disaring s.akses.
+type Row = Record<string, unknown>;
+const s = vi.hoisted(() => ({
+  visits: [] as Record<string, unknown>[], lain: [] as Record<string, unknown>[], rpc: [] as Record<string, unknown>[], cabang: null as string | null,
+  akses: null as string[] | null, // null = semua cabang (OWNER/ADMIN); daftar = hanya cabang itu (+ impor)
+  gagalTabel: "", ubah: null as null | ((d: Record<string, unknown>) => unknown),
+  dari: [] as { table: string; select: string; filters: [string, string, unknown][] }[],
+}));
 vi.stubGlobal("React", React);
 vi.mock("next/link", () => ({ default: ({ children, href, ...props }: React.PropsWithChildren<{ href: string }>) => <a href={href} {...props}>{children}</a> }));
-vi.mock("@/lib/supabase/server", () => ({
-  createClientLintasCabang: async () => ({
-    cabangAktif: s.cabang,
-    client: {
-      rpc: async (_n: string, a: { p_batas: number; p_offset: number }) => {
-        s.rpc.push(a);
-        const data = { jumlah: s.visits.length, ringkasan: { riwayat: s.visits.length, hewan: Math.min(3, s.visits.length), impor: Math.min(1, s.visits.length) }, batas: a.p_batas, offset: a.p_offset, baris: s.visits.slice(a.p_offset, a.p_offset + a.p_batas) };
-        return { error: null, data: s.ubah ? s.ubah(data) : data };
+vi.mock("@/lib/supabase/server", () => {
+  const terlihat = () => [...s.visits, ...s.lain].filter((v) => v.branch_id == null || s.akses === null || s.akses.includes(v.branch_id as string));
+  const keBaris = (v: Row): Row => ({
+    id: v.id, pet_id: v.pet_id, created_at: v.created_at, branch_id: v.branch_id, status: "Selesai", poli: "Poli Umum", keluhan: v.keluhan,
+    legacy_source_key: v.legacy_source_key, branches: v.branches, archived_at: v.archived_at ?? null,
+    medical_records: [{ id: "m-" + v.id }], inpatient_records: v.inpatient_records,
+  });
+  const dari = (table: string) => {
+    const call = { table, select: "", filters: [] as [string, string, unknown][] };
+    s.dari.push(call);
+    let range: [number, number] | null = null;
+    const q = {
+      select(kolom: string) { call.select = kolom; return q; },
+      in(f: string, v: unknown[]) { call.filters.push([f, "in", v]); return q; },
+      is(f: string, v: unknown) { call.filters.push([f, "is", v]); return q; },
+      order() { return q; },
+      range(a: number, b: number) { range = [a, b]; return q; },
+      then(resolve: (v: unknown) => void, reject?: (e: unknown) => void) {
+        if (s.gagalTabel === table) return Promise.resolve({ data: null, count: null, error: { message: "detail DB rahasia" } }).then(resolve, reject);
+        const cocok = (r: Row) => call.filters.every(([f, op, v]) => (op === "in" ? (v as unknown[]).includes(r[f]) : (r[f] ?? null) === v));
+        let rows: Row[];
+        if (table === "visits") rows = terlihat().map(keBaris).filter(cocok).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(a.id).localeCompare(String(b.id)));
+        else if (table === "medical_records") rows = terlihat().map((v) => ({ visit_id: v.id, id: "m-" + v.id, ...((v.medical_records ?? {}) as Row) })).filter(cocok);
+        else rows = [];
+        const [a, b] = range ?? [0, rows.length];
+        return Promise.resolve({ data: rows.slice(a, b + 1), count: rows.length, error: null }).then(resolve, reject);
       },
-    },
-  }),
-}));
+    };
+    return q;
+  };
+  return {
+    createClientLintasCabang: async () => ({
+      cabangAktif: s.cabang,
+      client: {
+        from: dari,
+        rpc: async (_n: string, a: { p_batas: number; p_offset: number }) => {
+          s.rpc.push(a);
+          const data = { jumlah: s.visits.length, ringkasan: { riwayat: s.visits.length, hewan: Math.min(3, s.visits.length), impor: Math.min(1, s.visits.length) }, batas: a.p_batas, offset: a.p_offset, baris: s.visits.slice(a.p_offset, a.p_offset + a.p_batas) };
+          return { error: null, data: s.ubah ? s.ubah(data) : data };
+        },
+      },
+    }),
+  };
+});
 import MedicalPage from "../../app/(app)/klinik/rekam-medis/page";
 
 const P1 = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -33,7 +73,7 @@ const render = async (sp: Record<string, string> = {}) => renderToStaticMarkup(a
 const hitung = (html: string, cari: string) => html.split(cari).length - 1;
 
 beforeEach(() => {
-  s.rpc = []; s.cabang = null; s.ubah = null;
+  s.rpc = []; s.cabang = null; s.ubah = null; s.lain = []; s.akses = null; s.gagalTabel = ""; s.dari = [];
   s.visits = [
     baris("v5", P1, "2026-10-31T03:00:00Z", { inpatient_records: inap }),
     baris("v4", P1, "2026-10-20T03:00:00Z", { inpatient_records: inap }),
@@ -101,11 +141,11 @@ describe("Per pasien (bawaan)", () => {
     expect(html).toContain("4 pasien ditemukan (6 kunjungan).");
   });
 
-  it("jendela habis: catatan 'Menampilkan N pasien dari 400 kunjungan terbaru' + jumlah bertanda +", async () => {
+  it("jendela habis: catatan 'Menampilkan N pasien dari 400 kunjungan terbaru'; tanda + hanya dari batas 200 per hewan", async () => {
     s.visits = Array.from({ length: 450 }, (_, i) => baris(`w${String(i).padStart(3, "0")}`, i % 2 ? P1 : P2, new Date(Date.UTC(2026, 10, 1) - i * 3600_000).toISOString()));
     const html = await render();
     expect(html).toContain("Menampilkan 2 pasien dari 400 kunjungan terbaru (ada 450 kunjungan yang cocok)");
-    expect(html).toContain("Persempit pencarian");
+    expect(html).toContain("persempit pencarian");
     expect(html).toContain("200+ kunjungan");
     expect(html).not.toContain("w400"); // di luar jendela
     expect(html).toMatch(/RIWAYAT TERSIMPAN<\/div><div[^>]*>450</);
@@ -194,5 +234,136 @@ describe("Per kunjungan (tampilan lama)", () => {
     const html = await render({ kelompok: "ngawur" });
     expect(html).not.toContain("<table");
     expect(html).toContain("data-pasien=");
+  });
+});
+
+// ── Jumlah kunjungan + Terakhir dari SEMUA cabang (bukan hanya cabang aktif) ──
+const A = "bbbbbbbb-0000-4000-8000-00000000000a";
+const B = "bbbbbbbb-0000-4000-8000-00000000000b";
+const tanggal = (i: number) => new Date(Date.UTC(2026, 9, 1) + i * 86400_000).toISOString();
+/** choco/tes: 7 kunjungan di cabang aktif A (2 rawat inap) dan 6 di cabang B (1 rawat inap) + 1 arsip B; kunjungan terakhir ada di B. */
+function pasarChoco() {
+  s.cabang = A;
+  const a = Array.from({ length: 7 }, (_, i) => baris(`a${i}`, P1, tanggal(i), { branch_id: A, branches: { code: "VET_PDRY" }, inpatient_records: i < 2 ? inap : [] }));
+  const b = Array.from({ length: 6 }, (_, i) => baris(`b${i}`, P1, tanggal(10 + i), { branch_id: B, branches: { code: "VET_CMGG" }, inpatient_records: i === 5 ? inap : [], medical_records: { diagnosis: `dx-b${i}`, anamnesis: `anamnesa-b${i}` } }));
+  const arsip = baris("b-arsip", P1, tanggal(30), { branch_id: B, branches: { code: "VET_CMGG" }, archived_at: "2026-11-01T00:00:00Z" });
+  s.visits = [...a].reverse(); s.lain = [...b, arsip];
+}
+const adaChip = (html: string, teks: string) => html.includes(teks);
+
+describe("Per pasien: hitungan semua cabang", () => {
+  it("choco: cabang aktif 7, semua cabang 13 (arsip tidak dihitung); chip '7 di cabang ini'; Terakhir dari cabang lain", async () => {
+    pasarChoco();
+    const html = await render({ tampilan: "semua" });
+    expect(html).toContain(">13 kunjungan<");
+    expect(adaChip(html, ">7 kunjungan<")).toBe(false);
+    expect(html).toContain(">7 di cabang ini<");
+    expect(html).toContain(">3 rawat inap<"); // 2 di A + 1 di B
+    expect(html).toContain("VET_CMGG"); // Terakhir = b5 (cabang B)
+    expect(html).toContain("(cabang lain)");
+    expect(html).toContain("Keluhan: anamnesa-b5");
+    expect(html).toContain("Diagnosa: dx-b5");
+    expect(html).toContain("Sudah pulang");
+  });
+
+  it("'Buka terakhir' tetap membuka kunjungan terakhir di cabang aktif (detail dibaca per cabang aktif), bukan kunjungan cabang lain", async () => {
+    pasarChoco();
+    const html = await render({ tampilan: "semua" });
+    expect(html).toContain('href="/klinik/rekam-medis/a6"');
+    expect(html).not.toContain('href="/klinik/rekam-medis/b5"');
+    expect(html).toContain("Buka terakhir di cabang ini");
+    expect(html).toContain(`href="/klinik/rekam-medis/pasien/${P1}"`); // Riwayat tidak berubah
+  });
+
+  it("Semua cabang (tanpa cabang aktif): tanpa chip 'di cabang ini', jumlah 13, tombol Buka terakhir biasa", async () => {
+    pasarChoco(); s.cabang = null; s.visits = [...s.visits, ...s.lain.filter((v) => !v.archived_at)].sort((x, y) => String(y.created_at).localeCompare(String(x.created_at)));
+    s.lain = [s.lain.find((v) => v.archived_at)!];
+    const html = await render({ tampilan: "semua" });
+    expect(html).toContain(">13 kunjungan<");
+    expect(html).not.toContain("di cabang ini");
+    expect(html).not.toContain("(cabang lain)");
+    expect(html).toContain('href="/klinik/rekam-medis/b5"');
+    expect(html).toContain("</i> Buka terakhir</a>");
+  });
+
+  it("jumlah sama di cabang aktif dan semua cabang: tanpa chip", async () => {
+    pasarChoco(); s.lain = [];
+    const html = await render({ tampilan: "semua" });
+    expect(html).toContain(">7 kunjungan<");
+    expect(html).not.toContain("di cabang ini");
+    expect(html).not.toContain("(cabang lain)");
+  });
+
+  it("satu bacaan visits berkumpul untuk hewan di halaman: tanpa filter cabang, arsip dikecualikan, maks 20 hewan, tanpa N+1", async () => {
+    s.cabang = A;
+    s.visits = Array.from({ length: 45 }, (_, i) => baris(`x${i}`, `bbbbbbbb-0000-4000-8000-${String(i).padStart(12, "0")}`, new Date(Date.UTC(2026, 10, 1) - i * 3600_000).toISOString(), { branch_id: A, pets: { name: `hewan${i}`, species: "Kucing", breed: null } }));
+    await render({ tampilan: "semua" });
+    const visitsCalls = s.dari.filter((c) => c.table === "visits");
+    expect(visitsCalls).toHaveLength(1); // 20 hewan, < 500 baris: satu halaman bacaan
+    const [petFilter] = visitsCalls[0].filters.filter(([f]) => f === "pet_id");
+    expect((petFilter[2] as string[]).length).toBe(20);
+    expect(visitsCalls[0].filters.some(([f]) => f === "branch_id")).toBe(false);
+    expect(visitsCalls[0].filters).toContainEqual(["archived_at", "is", null]);
+    expect(visitsCalls[0].select).toContain("medical_records!inner(id)");
+    expect(s.dari.filter((c) => c.table !== "visits" && c.table !== "medical_records")).toEqual([]);
+    expect(s.dari.length).toBeLessThanOrEqual(2); // visits + (opsional) isi klinis kunjungan terakhir; bukan satu bacaan per hewan
+  });
+
+  it("batas per hewan: lebih dari 200 kunjungan ditampilkan '200+'", async () => {
+    s.cabang = A;
+    s.visits = Array.from({ length: 5 }, (_, i) => baris(`a${i}`, P1, tanggal(300 + i), { branch_id: A }));
+    s.lain = Array.from({ length: 260 }, (_, i) => baris(`b${String(i).padStart(3, "0")}`, P1, tanggal(i), { branch_id: B, branches: { code: "VET_CMGG" } }));
+    const html = await render({ tampilan: "semua" });
+    expect(html).toContain(">200+ kunjungan<");
+    expect(html).toContain(">5 di cabang ini<");
+  });
+
+  it("tampilan rawat-jalan: kunjungan rawat inap AKTIF di cabang lain ikut disembunyikan seperti daftar, tampilan semua menghitungnya", async () => {
+    pasarChoco();
+    s.lain[0] = { ...s.lain[0], inpatient_records: [{ created_at: tanggal(10), discharged_at: null, condition_status: "stabil" }] };
+    expect(await render({ tampilan: "rawat-jalan" })).toContain(">12 kunjungan<");
+    expect(await render({ tampilan: "semua" })).toContain(">13 kunjungan<");
+  });
+
+  it("RLS: peran yang hanya punya cabang A tidak melihat cabang B (jumlah 7, tanpa kode cabang B, tanpa chip); peran A+B melihat 13", async () => {
+    pasarChoco(); s.akses = [A];
+    const sempit = await render({ tampilan: "semua" });
+    expect(sempit).toContain(">7 kunjungan<");
+    expect(sempit).not.toContain("VET_CMGG");
+    expect(sempit).not.toContain("di cabang ini");
+    expect(sempit).not.toContain("anamnesa-b");
+    expect(s.dari.filter((c) => c.table === "medical_records")).toEqual([]); // tidak ada isi klinis cabang B yang dibaca
+    s.akses = [A, B]; s.dari = [];
+    const luas = await render({ tampilan: "semua" });
+    expect(luas).toContain(">13 kunjungan<");
+    expect(luas).toContain(">7 di cabang ini<");
+  });
+
+  it("galat bacaan semua cabang: halaman gagal tertutup, tidak diam-diam memakai angka cabang aktif", async () => {
+    pasarChoco(); s.gagalTabel = "visits";
+    const html = await render({ tampilan: "semua" });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("belum dapat dimuat lengkap");
+    expect(html).not.toContain("data-pasien=");
+    expect(html).not.toContain(">7 kunjungan<");
+  });
+
+  it("riwayat impor tanpa cabang ikut lingkup 'di cabang ini' dan jumlah semua cabang", async () => {
+    pasarChoco();
+    s.visits = [...s.visits, baris("imp", P1, tanggal(-5), { branch_id: null, branches: null, legacy_source_key: "impor::1" })];
+    const html = await render({ tampilan: "semua" });
+    expect(html).toContain(">14 kunjungan<");
+    expect(html).toContain(">8 di cabang ini<");
+    expect(html).toContain(">1 impor<");
+  });
+
+  it("Per kunjungan: tidak membaca semua cabang sama sekali (tidak ada bacaan visits langsung) dan tabel tetap", async () => {
+    pasarChoco();
+    const html = await render({ kelompok: "kunjungan", tampilan: "semua" });
+    expect(s.dari).toEqual([]);
+    expect(s.rpc).toEqual([expect.objectContaining({ p_cabang: A, p_batas: 50 })]);
+    expect(hitung(html, "<tr>") - 1).toBe(7);
+    expect(html).not.toContain("di cabang ini");
+    expect(html).not.toContain("13 kunjungan");
   });
 });
