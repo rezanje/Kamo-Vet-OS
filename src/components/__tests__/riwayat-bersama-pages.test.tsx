@@ -166,7 +166,7 @@ describe("pet history list (customer → pet → history)", () => {
     expect(listCalls()).toHaveLength(0);
   });
   it("general list (no pet): one server page for the active branch", async () => {
-    await listHtml({});
+    await listHtml({ kelompok: "kunjungan" });
     expect(s.rpcCalls).toEqual([{ name: "daftar_rekam_medis_halaman",
       args: { p_cabang: "branch-a", p_cari: null, p_tampilan: "rawat-jalan", p_pet: null, p_batas: 50, p_offset: 0 } }]);
   });
