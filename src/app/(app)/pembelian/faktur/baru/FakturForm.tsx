@@ -38,6 +38,9 @@ const plusDays = (iso: string, days: number) => {
 
 export type PoInvoiceInitial = { id: string; po_id: string; tanggal: string; jatuh_tempo: string; no_faktur_pemasok: string | null; keterangan: string | null; receipt_ids?: string[]; purchase_invoice_items: { po_item_id: string; qty: number; harga: number }[] };
 
+/** Draft restore is only safe while the PO lines (unit, factor, price, remaining) are unchanged since the draft was saved. */
+export const poDraftSignature = (o?: PoOption) => JSON.stringify((o?.items ?? []).map((it) => [it.po_item_id, it.satuan, it.faktor, it.harga_po, it.sisa, it.blockedReason ?? ""]));
+
 const selectable = (o?: PoOption) => (o?.receipts ?? []).filter((r) => !r.sudahDifaktur).map((r) => r.id);
 
 export function FakturForm({ options, userId, initial, priceWarning, canBackdate = false }: { options: PoOption[]; userId: string; initial?: PoInvoiceInitial; priceWarning?: string; canBackdate?: boolean }) {
@@ -78,8 +81,10 @@ export function FakturForm({ options, userId, initial, priceWarning, canBackdate
   const total = payload.reduce((a, r) => a + r.qty * r.harga, 0);
 
   return (
-    <CorrectionTransactionForm action={buatFaktur} scope={`invoice${initial ? `:${initial.id}` : ""}`} userId={userId} state={{ snapshot: { poId, qty, harga, tempo, receiptIds }, restore(value) {
+    <CorrectionTransactionForm action={buatFaktur} scope={`invoice${initial ? `:${initial.id}` : ""}`} userId={userId} state={{ snapshot: { poId, poSig: poDraftSignature(po), qty, harga, tempo, receiptIds }, restore(value) {
         if (typeof value.poId !== "string" || typeof value.tempo !== "string" || !draftRecord(value.qty, draftNumber) || !draftRecord(value.harga, draftNumber)) return false;
+        // PO diubah setelah draf tersimpan (satuan/harga/sisa beda) → qty & harga lama tidak boleh ikut terisi.
+        if (value.poId && value.poSig !== poDraftSignature(options.find((o) => o.id === value.poId))) return false;
         setPoId(value.poId); setQty(value.qty); setHarga(value.harga); setTempo(value.tempo);
         if (Array.isArray(value.receiptIds) && value.receiptIds.every((id: unknown) => typeof id === "string")) setReceiptIds(value.receiptIds);
         return true;

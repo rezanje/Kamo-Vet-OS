@@ -24,6 +24,8 @@ export async function buatFaktur(formData: FormData) {
   let items: ItemInput[];
   try { items = JSON.parse(String(formData.get("items") ?? "[]")); } catch { return fail("Rincian faktur tidak dapat dibaca."); }
   if (!Array.isArray(items) || !items.length || items.some(r => !r || !r.po_item_id || !Number.isFinite(r.qty) || r.qty <= 0 || !Number.isFinite(r.harga) || r.harga < 0)) return fail("Periksa jumlah dan harga barang.");
+  // Database menolak qty × harga yang menghasilkan pecahan di bawah 1 sen; beri pesan yang bisa ditindaklanjuti.
+  if (items.some(r => { const sen = r.qty * r.harga * 100; return Math.abs(sen - Math.round(sen)) > Math.max(1e-6, Math.abs(sen) * 1e-12); })) return fail("Ada harga faktur dengan lebih dari 2 angka di belakang koma. Bulatkan harga per satuan (mis. 222,23), atau pilih ulang PO agar harga terisi dari PO.");
   // N01: receipts this invoice covers; stored atomically with the invoice by the database.
   let receiptIds: string[];
   try { receiptIds = JSON.parse(String(formData.get("receipt_ids") ?? "[]")); } catch { return fail("Pilihan penerimaan tidak dapat dibaca."); }
