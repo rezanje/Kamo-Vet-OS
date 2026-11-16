@@ -105,9 +105,9 @@ describe("complete operational page sources", () => {
   });
   it("routes active inpatient out of default list but keeps explicit full/patient history", async () => {
     fixture.tables.visits=[{...fixture.tables.visits[0],inpatient_records:[{created_at:"2026-11-03",discharged_at:null,condition_status:"stabil"}]}];
-    const normal=renderToStaticMarkup(await MedicalPage({searchParams:Promise.resolve({})}));
+    const normal=renderToStaticMarkup(await MedicalPage({searchParams:Promise.resolve({kelompok:"kunjungan"})}));
     expect(normal).not.toContain('href="/klinik/rekam-medis/visit-0"');
-    const full=renderToStaticMarkup(await MedicalPage({searchParams:Promise.resolve({tampilan:"semua"})}));
+    const full=renderToStaticMarkup(await MedicalPage({searchParams:Promise.resolve({tampilan:"semua",kelompok:"kunjungan"})}));
     expect(full).toContain('href="/klinik/rekam-medis/visit-0"');
     const patient=renderToStaticMarkup(await MedicalPage({searchParams:Promise.resolve({pet:"pet-a"})}));
     expect(patient).toContain('href="/klinik/rekam-medis/visit-0"');
@@ -143,7 +143,7 @@ describe("complete operational page sources", () => {
   });
   it("asks the server for exactly one 50-row page (no full-list read, no 10.000-row cap)", async () => {
     fixture.tables.visits = Array.from({ length: 12_000 }, (_, i) => ({ ...fixture.tables.visits[0], id: `visit-${i}`, pet_id: `pet-${i}` }));
-    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ tampilan: "semua", hal: "240" }) }));
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ tampilan: "semua", hal: "240", kelompok: "kunjungan" }) }));
     expect(fixture.rpcCalls.map((c) => c.args)).toEqual([{ p_cabang: null, p_cari: null, p_tampilan: "semua", p_pet: null, p_batas: 50, p_offset: 11_950 }]);
     expect(tableRows(html)).toBe(50);
     expect(html).toContain('href="/klinik/rekam-medis/visit-11999"');
@@ -151,7 +151,7 @@ describe("complete operational page sources", () => {
     expect(html).not.toContain('role="alert"');
   });
   it("re-reads page 1 when the requested page is beyond the end", async () => {
-    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ tampilan: "semua", hal: "99" }) }));
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ tampilan: "semua", hal: "99", kelompok: "kunjungan" }) }));
     expect(fixture.rpcCalls.map((c) => c.args.p_offset)).toEqual([4900, 0]);
     expect(tableRows(html)).toBe(50);
     expect(html).toContain('href="/klinik/rekam-medis/visit-0"');
@@ -169,7 +169,7 @@ describe("complete operational page sources", () => {
     ["a non-object answer", () => { fixture.ubahJawaban = () => []; }],
   ])("fails closed (alert, never an empty or partial list) on %s", async (_label, setup) => {
     setup();
-    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ tampilan: "semua" }) }));
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ tampilan: "semua", kelompok: "kunjungan" }) }));
     expect(html).toContain("Rekam medis belum dapat dimuat lengkap");
     expect(html).not.toContain("<table");
     expect(html).not.toContain("Belum ada rekam medis");
@@ -188,7 +188,7 @@ describe("complete operational page sources", () => {
     expect(tableRows(html)).toBe(50);
     expect(html).toContain("Pet 349");
     expect(html).not.toContain("Pet 0</div>");
-    expect(html).toMatch(/q=Pet(?:&amp;|&)pet=pet-a(?:&amp;|&)tampilan=semua(?:&amp;|&)hal=6/);
+    expect(html).toMatch(/q=Pet(?:&amp;|&)pet=pet-a(?:&amp;|&)tampilan=semua(?:&amp;|&)kelompok=kunjungan(?:&amp;|&)hal=6/);
     expect(fixture.rpcCalls.map((c) => c.args.p_offset)).toEqual([300]);
   });
   it("active branch: sends the branch to the server and labels branchless imports instead of hiding them", async () => {
@@ -198,7 +198,7 @@ describe("complete operational page sources", () => {
       { ...fixture.tables.visits[1], id: "visit-impor", branch_id: null, branches: null, legacy_source_key: "impor::1", created_at: "2025-02-01T00:00:00Z" },
       { ...fixture.tables.visits[2], id: "visit-lain", branch_id: "branch-b", branches: { code: "B" } },
     ];
-    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
+    const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ kelompok: "kunjungan" }) }));
     expect(fixture.rpcCalls[0].args.p_cabang).toBe("branch-a");
     expect(html).toContain('href="/klinik/rekam-medis/visit-cabang"');
     expect(html).toContain('href="/klinik/rekam-medis/visit-impor"');

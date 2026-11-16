@@ -27,7 +27,7 @@ const PET = "aaaaaaaa-0000-4000-8000-000000000001";
 beforeEach(() => { s.visits = [baris("v2", PET, "2026-10-31T03:00:00Z"), baris("v1", PET, "2026-10-29T03:00:00Z"), baris("v0", null, "2026-10-01T03:00:00Z")]; });
 
 it("setiap baris: nama hewan dan tombol Riwayat menuju riwayat pasien; Buka tetap ke kunjungan itu", async () => {
-  const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
+  const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ kelompok: "kunjungan" }) }));
   const riwayat = `href="/klinik/rekam-medis/pasien/${PET}"`;
   // 2 baris punya petId x (nama + tombol) = 4 tautan
   expect(html.split(riwayat).length - 1).toBe(4);
@@ -38,7 +38,7 @@ it("setiap baris: nama hewan dan tombol Riwayat menuju riwayat pasien; Buka teta
 
 it("baris tanpa pet_id tidak mendapat tautan rusak (hanya Buka)", async () => {
   s.visits = [baris("v0", null, "2026-10-01T03:00:00Z")];
-  const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({}) }));
+  const html = renderToStaticMarkup(await MedicalPage({ searchParams: Promise.resolve({ kelompok: "kunjungan" }) }));
   expect(html).not.toContain("/klinik/rekam-medis/pasien/");
   expect(html).toContain('href="/klinik/rekam-medis/v0"');
 });
