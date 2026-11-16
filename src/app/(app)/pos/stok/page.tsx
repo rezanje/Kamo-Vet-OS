@@ -1,20 +1,19 @@
-import { readCompleteList, readListPage, TABLE_PAGE_SIZE } from "@/lib/checked-list";
+import { readListPage, TABLE_PAGE_SIZE } from "@/lib/checked-list";
 import { infoHalaman } from "@/lib/pagination";
 import { ListPagination, ListLoadFailure } from "@/components/ListPagination";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { pivotStokPerGudang, type StokBaris } from "@/lib/laporan";
 import { ResetSimulasiForm } from "./ResetSimulasiForm";
 import { GudangSelect } from "./GudangSelect";
-import { polaCariStok, cocokCariStok } from "@/lib/stok-cari";
+import { polaCariStok } from "@/lib/stok-cari";
+import { bacaGudangAktif, bacaMatrixStok, type GudangStok, type MatrixStok } from "@/lib/stok-gudang-server";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
   return Array.isArray(r) ? (r[0] ?? null) : r;
 }
 
-type Warehouse = { id: string; code: string; name: string; type: string };
 type Item = { id: string; code: string; name: string; unit: string | null };
 type StockRow = { id: string; qty: number; items: Rel<Item> };
 
@@ -32,14 +31,9 @@ export default async function StokPage({
     ? await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
     : { data: null };
 
-  let warehouses: Warehouse[];
+  let warehouses: GudangStok[];
   try {
-    warehouses = await readCompleteList<Warehouse>(async (from, to) => {
-      const result = await supabase.from("warehouses")
-        .select("id, code, name, type", { count: "exact" })
-        .eq("is_active", true).order("name").order("id").range(from, to);
-      return { ...result, data: result.data as unknown as Warehouse[] | null };
-    }, "Daftar gudang");
+    warehouses = await bacaGudangAktif(supabase);
   } catch (error) { return <ListLoadFailure error={error} label="Daftar gudang" />; }
 
   // "all" = matrix semua gudang (ala laporan Persediaan per Gudang Accurate).
@@ -47,32 +41,11 @@ export default async function StokPage({
   // gudang terpilih dari ?wh (filter Link-based), fallback ke yang pertama.
   const selectedWh = matrixMode ? null : warehouses.find((w) => w.id === wh) ?? warehouses[0] ?? null;
 
-  let matrix: ReturnType<typeof pivotStokPerGudang> | null = null;
+  let matrix: MatrixStok | null = null;
   if (matrixMode) {
-    type MatrixSource = { id: string; item_id: string; qty: number; warehouses: Rel<{ code: string }>; items: Rel<Item> };
-    let allStock: MatrixSource[];
     try {
-      allStock = await readCompleteList<MatrixSource>(async (from, to) => {
-        const result = await supabase.from("stock")
-          .select("id, item_id, qty, warehouses(code), items(id, code, name, unit)", { count: "exact" })
-          .order("id").range(from, to);
-        return { ...result, data: result.data as unknown as MatrixSource[] | null };
-      }, "Stok semua gudang");
+      matrix = await bacaMatrixStok(supabase, cari);
     } catch (error) { return <ListLoadFailure error={error} label="Stok semua gudang" />; }
-    const rows: StokBaris[] = ((allStock ?? []) as unknown as { item_id: string; qty: number; warehouses: Rel<{ code: string }>; items: Rel<Item> }[])
-      .map((s) => {
-        const it = one(s.items);
-        return {
-          item_id: s.item_id,
-          code: it?.code ?? "—",
-          name: it?.name ?? "—",
-          unit: it?.unit ?? "",
-          wh_code: one(s.warehouses)?.code ?? "?",
-          qty: Number(s.qty),
-        };
-      });
-    matrix = pivotStokPerGudang(rows);
-    if (cari) matrix = { ...matrix, items: matrix.items.filter((r) => cocokCariStok(cari, r.code, r.name)) };
   }
 
   let stock: StockRow[] = [];
@@ -93,6 +66,18 @@ export default async function StokPage({
       pageInfo = result.pageInfo;
     } catch (error) { return <ListLoadFailure error={error} label="Stok gudang" />; }
   }
+
+  // Unduhan memuat SEMUA barang sesuai saringan, bukan hanya halaman yang tampil.
+  const whUnduh = matrixMode ? "all" : selectedWh?.id;
+  const unduh = (format: "xlsx" | "csv") =>
+    `/pos/stok/unduh?${new URLSearchParams({ wh: whUnduh ?? "", ...(cari ? { q: cari } : {}), format })}`;
+  const tombolUnduh = whUnduh ? (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+      <span style={{ fontSize: 11, color: "var(--tm)" }}>Unduh semua barang{cari ? " yang cocok" : ""}:</span>
+      <a className="btn-def" style={{ fontSize: 11 }} href={unduh("xlsx")}><i className="ti ti-file-spreadsheet" /> Excel</a>
+      <a className="btn-def" style={{ fontSize: 11 }} href={unduh("csv")}><i className="ti ti-download" /> CSV</a>
+    </div>
+  ) : null;
 
   return (
     <>
@@ -131,14 +116,15 @@ export default async function StokPage({
           <SecHeader
             num="01"
             title="RINGKASAN PERSEDIAAN PER GUDANG"
-            desc={`${matrix.items.length} barang × ${matrix.gudang.length} gudang (ala laporan Accurate). Geser ke samping untuk semua gudang.`}
+            desc={`${matrix.items.length} barang × ${matrix.gudang.length} gudang (ala laporan Accurate). Geser ke samping untuk semua gudang — kode & nama barang tetap di tempat.`}
           />
+          {tombolUnduh}
           <div style={{ overflowX: "auto" }}>
-            <table className="tbl" style={{ minWidth: 520 + matrix.gudang.length * 72 }}>
+            <table className="tbl stok-matrix" style={{ minWidth: 520 + matrix.gudang.length * 72 }}>
               <thead>
                 <tr>
-                  <th>Kode</th>
-                  <th>Nama</th>
+                  <th className="sm-kode">Kode</th>
+                  <th className="sm-nama">Nama</th>
                   {matrix.gudang.map((g) => (
                     <th key={g} style={{ textAlign: "right", whiteSpace: "nowrap" }}>{g}</th>
                   ))}
@@ -148,8 +134,8 @@ export default async function StokPage({
               <tbody>
                 {matrix.items.slice(pageInfo.from, pageInfo.to + 1).map((r) => (
                   <tr key={r.item_id}>
-                    <td style={{ fontSize: 11, fontFamily: "var(--mono, monospace)" }}>{r.code}</td>
-                    <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>{r.name}</td>
+                    <td className="sm-kode" style={{ fontSize: 11, fontFamily: "var(--mono, monospace)" }}>{r.code}</td>
+                    <td className="sm-nama" style={{ fontSize: 11 }}>{r.name}</td>
                     {matrix!.gudang.map((g) => (
                       <td key={g} style={{ textAlign: "right", fontSize: 11, color: r.per[g] ? undefined : "var(--td)" }}>
                         {r.per[g] ? Number(r.per[g]).toLocaleString("id-ID") : "·"}
@@ -175,6 +161,7 @@ export default async function StokPage({
           title="STOK GUDANG"
           desc={selectedWh ? `${selectedWh.name} · ${selectedWh.code}` : "Pilih gudang dulu"}
         />
+        {selectedWh && tombolUnduh}
         {!selectedWh ? (
           <div style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>Belum ada gudang aktif untuk ditampilkan.</div>
         ) : (
