@@ -84,7 +84,7 @@ describe("source codes are never rewritten", () => {
     const r = rencana("kode,nama,tipe\n780100,Beban Salah Kelompok,ASET\n115000,Bank Fiktif,ASET\n182001,Piutang Fiktif,ASET");
     expect(baris(r, "780100")).toMatchObject({ status: "konflik" });
     expect(baris(r, "780100").alasan.join()).toMatch(/kelompok BEBAN/);
-    expect(baris(r, "115000").alasan.join()).toMatch(/rekening kas\/bank/);
+    expect(baris(r, "115000").alasan.join()).toMatch(/jatah rekening kas/);
     expect(baris(r, "182001").alasan.join()).toMatch(/dipakai sistem/);
   });
 });

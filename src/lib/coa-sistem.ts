@@ -67,6 +67,8 @@ export const KODE_REKENING = {
   Kas: { min: 110023, max: 119999 },
   Bank: { min: 120007, max: 129999 },
 } as const;
+/** Nama menu tempat rekening kas/bank dibuat — layar Bagan Akun memakainya untuk menampilkan tautan. */
+export const MENU_REKENING = "Kas & Bank → Rekening";
 export const jatahRekening = (code: string) => {
   const n = Number(code);
   return Object.values(KODE_REKENING).some((r) => n >= r.min && n <= r.max);
@@ -139,7 +141,11 @@ export function validasiAkunBaru(d: DraftAkun): string | null {
   }
 
   if (jatahRekening(code)) {
-    return `Kode ${KODE_REKENING.Kas.min}–${KODE_REKENING.Kas.max} dan ${KODE_REKENING.Bank.min}–${KODE_REKENING.Bank.max} adalah jatah rekening kas/bank yang dibuat otomatis dari menu Kas & Bank → Rekening. Pakai kode lain.`;
+    const jenis = Number(code) >= KODE_REKENING.Bank.min ? "Bank" : "Kas";
+    const { min, max } = KODE_REKENING[jenis];
+    return `Kode ${min}–${max} adalah jatah rekening ${jenis.toLowerCase()}. Rekening ${jenis.toLowerCase()} baru `
+      + `(mis. Xendit, e-wallet, rekening bank lain) dibuat lewat ${MENU_REKENING}: isi nama, pilih jenis ${jenis}, `
+      + `lalu Simpan rekening. Kodenya diberi otomatis dan rekeningnya langsung bisa dipilih di pembayaran & Arus Kas.`;
   }
 
   if (akunSistem(code)) {

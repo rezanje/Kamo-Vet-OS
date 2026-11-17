@@ -33,8 +33,11 @@ describe("validasiAkunBaru", () => {
   });
 
   it("jatah kode rekening kas/bank dilarang", () => {
-    expect(baru({ code: "115000", type: "ASET" })).toMatch(/110023–119999/);
-    expect(baru({ code: "120007", type: "ASET" })).toMatch(/120007–129999/);
+    expect(baru({ code: "115000", type: "ASET" })).toMatch(/110023–119999 adalah jatah rekening kas/);
+    // Laporan klinik 17 Nov: mau tambah 120007 Xendit — pesannya harus menunjuk menu yang benar.
+    expect(baru({ code: "120007", type: "ASET" })).toMatch(/120007–129999 adalah jatah rekening bank/);
+    expect(baru({ code: "120007", type: "ASET" })).toMatch(/Kas & Bank → Rekening: isi nama, pilih jenis Bank/);
+    expect(baru({ code: "120007", type: "ASET" })).not.toMatch(/Pakai kode lain/);
     expect(baru({ code: "110022", type: "ASET" })).toBeNull(); // bagian bagan akun, bukan jatah otomatis
   });
 
