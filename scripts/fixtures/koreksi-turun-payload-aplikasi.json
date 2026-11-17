@@ -1,0 +1,158 @@
+{
+ "a_line_discount_50": {
+  "res": {
+   "saved": true,
+   "href": "/klinik/pembayaran/visit?success=edit"
+  },
+  "call": [
+   {
+    "name": "clinic_edit_invoice",
+    "params": {
+     "p_invoice_id": "invoice",
+     "p_request_key": "request-new",
+     "p_invoice": {
+      "subtotal": 45000,
+      "discount": 0,
+      "tax": 0,
+      "total": 45000,
+      "dp_amount": 0,
+      "paid_status": "Lunas",
+      "metode_bayar": "QRIS",
+      "voucher_code": null,
+      "reason": "salah input harga"
+     },
+     "p_lines": [
+      {
+       "description": "Grooming VET Lengkap + CU",
+       "qty": 1,
+       "price": 90000,
+       "kind": "jasa",
+       "item_id": "item",
+       "unit": null,
+       "prescription_item_id": null,
+       "recipe_id": null,
+       "discount_percent": 50
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "b_price_45000": {
+  "res": {
+   "saved": true,
+   "href": "/klinik/pembayaran/visit?success=edit"
+  },
+  "call": [
+   {
+    "name": "clinic_edit_invoice",
+    "params": {
+     "p_invoice_id": "invoice",
+     "p_request_key": "request-new",
+     "p_invoice": {
+      "subtotal": 45000,
+      "discount": 0,
+      "tax": 0,
+      "total": 45000,
+      "dp_amount": 0,
+      "paid_status": "Lunas",
+      "metode_bayar": "QRIS",
+      "voucher_code": null,
+      "reason": "salah input harga"
+     },
+     "p_lines": [
+      {
+       "description": "Grooming VET Lengkap + CU",
+       "qty": 1,
+       "price": 45000,
+       "kind": "jasa",
+       "item_id": "item",
+       "unit": null,
+       "prescription_item_id": null,
+       "recipe_id": null,
+       "discount_percent": 0
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "c_invoice_discount_45000": {
+  "res": {
+   "saved": true,
+   "href": "/klinik/pembayaran/visit?success=edit"
+  },
+  "call": [
+   {
+    "name": "clinic_edit_invoice",
+    "params": {
+     "p_invoice_id": "invoice",
+     "p_request_key": "request-new",
+     "p_invoice": {
+      "subtotal": 90000,
+      "discount": 45000,
+      "tax": 0,
+      "total": 45000,
+      "dp_amount": 0,
+      "paid_status": "Lunas",
+      "metode_bayar": "QRIS",
+      "voucher_code": null,
+      "reason": "salah input harga"
+     },
+     "p_lines": [
+      {
+       "description": "Grooming VET Lengkap + CU",
+       "qty": 1,
+       "price": 90000,
+       "kind": "jasa",
+       "item_id": "item",
+       "unit": null,
+       "prescription_item_id": null,
+       "recipe_id": null,
+       "discount_percent": 0
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "d_unchanged_90000": {
+  "res": {
+   "saved": true,
+   "href": "/klinik/pembayaran/visit?success=edit"
+  },
+  "call": [
+   {
+    "name": "clinic_edit_invoice",
+    "params": {
+     "p_invoice_id": "invoice",
+     "p_request_key": "request-new",
+     "p_invoice": {
+      "subtotal": 90000,
+      "discount": 0,
+      "tax": 0,
+      "total": 90000,
+      "dp_amount": 0,
+      "paid_status": "Lunas",
+      "metode_bayar": "QRIS",
+      "voucher_code": null,
+      "reason": "salah input harga"
+     },
+     "p_lines": [
+      {
+       "description": "Grooming VET Lengkap + CU",
+       "qty": 1,
+       "price": 90000,
+       "kind": "jasa",
+       "item_id": "item",
+       "unit": null,
+       "prescription_item_id": null,
+       "recipe_id": null,
+       "discount_percent": 0
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

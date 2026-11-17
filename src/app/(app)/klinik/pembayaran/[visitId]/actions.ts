@@ -31,6 +31,7 @@ import { metodeBayarSah, pesanMetodeBayarTidakSah } from "@/lib/metode-bayar";
 import { parseSplitPaymentDraft, validateSplitPaymentTotal, type ClinicSplitPayment } from "@/lib/clinic-split-payment";
 import { isMissingRecordWrapper } from "@/lib/rekam-medis-susulan";
 import { gabungPaketCetak } from "@/lib/paket-klinik";
+import { pesanKoreksiDiBawahUangDiterima, uangSudahDiterima } from "@/lib/koreksi-di-bawah-bayar";
 
 type Line = {
   deskripsi: string; qty: number; harga: number; jenis?: string; item_id?: string | null;
@@ -412,6 +413,15 @@ export async function bayarVisit(formData: FormData) {
     const requestKey = String(formData.get("requestKey") ?? "").trim();
     if (!requestKey || !reason) {
       redirect(`${back}?error=${encodeURIComponent("Isi alasan koreksi dan muat ulang halaman bila perlu")}`);
+    }
+    // Total baru di bawah uang yang sudah diterima ditolak database dengan kalimat umum; jelaskan lebih dulu dengan angka (tanpa RPC).
+    // Hanya dibaca saat total memang turun; bacaan gagal = serahkan ke database (penentu).
+    if (total < Number(existing.total)) {
+      const { data: bayar, error: bayarError } = await supabase.from("invoice_payments").select("amount").eq("invoice_id", existing.id);
+      if (!bayarError && Array.isArray(bayar)) {
+        const tolak = pesanKoreksiDiBawahUangDiterima(total, uangSudahDiterima(dpAmount, bayar as { amount: number | string | null }[]));
+        if (tolak) redirect(`${back}?error=${encodeURIComponent(tolak)}`);
+      }
     }
     const koreksi = {
       p_invoice_id: existing.id,
