@@ -111,10 +111,15 @@ def main():
             F = reissued(h); inv, ls = from_payload(F, pay['b_price_45000'])
             e = err(h, edit_sql(F['inv'], f'k{F["n"]}-e', dict(inv, paid_status='DP'), ls))
             check('kontrol: total turun dengan status DP juga ditolak (uang diterima melebihi total baru)', bool(e) and MSG in e, (e or '')[:200])
-            # kontrol: jalur lain yang menyelesaikan masalah yang sama tidak ada: refund/batal penerimaan ditolak untuk nota correction_pending
+            # jalur keluar (migrasi 20261124100000): Batalkan penerimaan pada nota hasil terbit ulang kini diterima; sesudahnya total boleh turun
             F = reissued(h)
             e = err(h, f"select public.clinic_cancel_invoice_receipt({q(F['inv'])},{q('c-' + str(F['n']))},'uji');")
-            check('kontrol: Batalkan penerimaan pada nota correction_pending ditolak (KOREKSI_BERJALAN/selesaikan dulu)', bool(e), (e or '')[:240], 'regression')
+            s = state(h, F['inv'])
+            check('Batalkan penerimaan pada nota hasil terbit ulang diterima (uang pindahan dibalik); nota Belum Lunas', e is None and s['status'] == 'Belum Lunas' and int(s['total']) == 90000, dict(e=(e or '')[:240], s=s), 'feature')
+            inv, ls = from_payload(F, pay['a_line_discount_50'])
+            inv = dict(inv, paid_status='Belum Lunas')
+            e = err(h, edit_sql(F['inv'], f'k{F["n"]}-e', inv, ls)); s = state(h, F['inv'])
+            check('sesudah batal penerimaan: diskon baris 50% (total 45.000) DITERIMA dan koreksi selesai', e is None and int(s['total']) == 45000 and not s['pending'], dict(e=(e or '')[:240], s=s), 'feature')
     except Exception as e:
         check('HARNESS', False, str(e)[:800], 'harness')
     ok = all(c['status'] == 'PASS' for c in RESULTS)
