@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
 import { bolehKelolaMaster } from "@/lib/master-guard";
-import { TIPE_AKUN, akunSistem, KODE_SISTEM } from "@/lib/coa-sistem";
+import { TIPE_AKUN, akunSistem, KODE_SISTEM, MENU_REKENING } from "@/lib/coa-sistem";
 import { simpanAkun, toggleAkun } from "./actions";
 import { susunPohon, ratakan, type AkunPohon } from "@/lib/coa-pohon";
 
@@ -92,6 +92,14 @@ export default async function CoaPage({
       {errMsg && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {errMsg}
+          {errMsg.includes(MENU_REKENING) && (
+            <>
+              {" "}
+              <Link href="/kas-bank/rekening" style={{ color: "inherit", fontWeight: 600 }}>
+                Buka {MENU_REKENING} <i className="ti ti-arrow-right" />
+              </Link>
+            </>
+          )}
         </div>
       )}
       {success && (
@@ -169,9 +177,10 @@ export default async function CoaPage({
               Induk harus sekelompok dengan rinciannya.
             </div>
             <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 8 }}>
-              Kode 110023–119999 (kas) dan 120007–129999 (bank) dipesan untuk rekening yang dibuat otomatis dari
-              Kas &amp; Bank → Rekening. Menambah akun aset di sini <b>tidak</b> membuatnya
-              dihitung sebagai kas di Arus Kas — untuk itu buat rekeningnya di menu tersebut.
+              Kode 110023–119999 (kas) dan 120007–129999 (bank) dipesan untuk rekening yang dibuat otomatis dari{" "}
+              <Link href="/kas-bank/rekening">{MENU_REKENING}</Link>. Mau menambah rekening kas/bank (mis. Xendit,
+              e-wallet)? Buat di menu itu — menambah akun aset di sini <b>tidak</b> membuatnya dihitung sebagai kas
+              di Arus Kas dan tidak muncul di pilihan rekening pembayaran.
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
               <SubmitButton className="btn-acc">
