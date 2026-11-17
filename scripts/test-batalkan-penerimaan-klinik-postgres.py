@@ -441,7 +441,9 @@ def section_guards(h):
     h.sql(r.terbit_ulang_sql(V['inv'], f"k{V['n']}-ulang"), OWNER)
     new_inv = h.aktif(V['v'])
     e_old, _ = do_cancel(h, V['inv'], f"c-{V['n']}-old"); e_new, _ = do_cancel(h, new_inv, f"c-{V['n']}-new")
-    check('tagihan void ditolak (TAGIHAN_BATAL) dan tagihan hasil terbit ulang yang sedang dikoreksi ditolak (KOREKSI_BERJALAN)', has(e_old, 'TAGIHAN_BATAL') and has(e_new, 'KOREKSI_BERJALAN'), dict(old=(e_old or '')[:160], new=(e_new or '')[:160]))
+    # Sejak migrasi 20261124100000 nota hasil terbit ulang BOLEH dibatalkan penerimaannya (uang pindahan dibalik di rekening asal); bukti lengkap di
+    # scripts/test-batal-penerimaan-terbit-ulang-postgres.py. Nota void tetap ditolak.
+    check('tagihan void ditolak (TAGIHAN_BATAL); tagihan hasil terbit ulang (uang pindahan) kini DITERIMA (sebelumnya KOREKSI_BERJALAN/TERBIT_ULANG)', has(e_old, 'TAGIHAN_BATAL') and e_new is None, dict(old=(e_old or '')[:160], new=(e_new or '')[:160]))
     # koreksi metode bayar (Tunai -> Transfer): jurnal pembalik memakai rekening hasil koreksi
     h.sistem(f"insert into public.payment_account_map(metode,cash_account_id,branch_id) select 'Tunai',id,{q(r.BRANCH)}::uuid from public.cash_accounts where coa_code='110003' union all select 'Transfer',id,{q(r.BRANCH)}::uuid from public.cash_accounts where coa_code='120002';")
     M = rj(h, nxt(), 'Tunai'); hasil = h.gagal(f"select public.correct_clinic_invoice_payment({q(M['inv'])},null,0,{q('km-'+str(M['n']))},'Salah pilih metode',{q('Transfer')});", OWNER)

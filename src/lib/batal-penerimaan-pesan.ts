@@ -32,7 +32,7 @@ export type PratinjauBatal = {
   refuse: { code: string; message: string } | null;
   invoice: { id: string; no: string | null; total: number; paid_status: string; metode_bayar: string | null; dp_amount: number; shift_id: string | null; visit_id: string; branch_id: string | null };
   direct: { amount: number; kas_code: string; metode: string | null } | null;
-  payments: { id: string; amount: number; metode: string; kas_code: string; checkout: boolean }[];
+  payments: { id: string; amount: number; metode: string; kas_code: string; checkout: boolean; transferred?: boolean; transferred_from_no?: string | null }[];
   apps: { application_id: string; advance_id: string; advance_no: string; amount: number }[];
   receipts: { id: string; no: string; total: number; tanggal: string; parts: { metode: string; amount: number; kas_code: string }[];
     other_invoices: { invoice_id: string; no: string; amount: number }[]; advance: { no: string; amount: number } | null }[];
@@ -62,7 +62,11 @@ export function ringkasanPratinjau(p: PratinjauBatal, tanggal?: string | null): 
   const out: string[] = [];
   if (p.direct) out.push(`Penerimaan langsung ${rp(p.direct.amount)} (${p.direct.metode ?? "-"}) dikeluarkan dari ${labelRekening(p.direct.kas_code)}.`);
   for (const a of p.apps) out.push(`Pemakaian uang muka ${a.advance_no} ${rp(a.amount)} dibatalkan; saldo uang muka pasien kembali.`);
-  for (const x of p.payments) out.push(`Pembayaran ${x.metode} ${rp(x.amount)} dikeluarkan dari ${labelRekening(x.kas_code)}.`);
+  for (const x of p.payments) {
+    if (x.transferred) out.push(`Pembayaran ${x.metode} ${rp(x.amount)} yang dipindahkan dari tagihan lama ${x.transferred_from_no ?? "-"} (terbit ulang) dikeluarkan dari ${labelRekening(x.kas_code)}, rekening yang sama dengan penerimaan awalnya.`);
+    else out.push(`Pembayaran ${x.metode} ${rp(x.amount)} dikeluarkan dari ${labelRekening(x.kas_code)}.`);
+  }
+  if (p.payments.some((x) => x.transferred)) out.push("Pengembalian selisih ke pelanggan (bila nilai tagihan diturunkan) tetap dikerjakan Finance; tidak otomatis.");
   for (const k of p.receipts) {
     out.push(`Kwitansi ${k.no} (${rp(k.total)}: ${k.parts.map((x) => `${x.metode} ${rp(x.amount)}`).join(", ")}) dibatalkan.`);
     if (k.other_invoices.length) out.push(`Tagihan ${k.other_invoices.map((o) => o.no).join(", ")} ikut kembali belum lunas.`);

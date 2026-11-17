@@ -32,7 +32,7 @@ import { sisaTagihan } from "@/lib/pelunasan-klinik";
 import { getPajakSettings } from "@/lib/pajak";
 import { getDpMinimalPercent, bolehMenerobosDp } from "@/lib/dp-minimal";
 import { bolehSiklusTagihan } from "@/lib/uang-tagihan";
-import { adaPenerimaan, bacaBolehBatalPenerimaan, putuskanBolehBatalPenerimaan } from "@/lib/batal-penerimaan-akses";
+import { bacaBolehBatalPenerimaan, putuskanBolehBatalPenerimaan, tawarkanBatalPenerimaan } from "@/lib/batal-penerimaan-akses";
 import { bacaBolehBatalTagihan, bolehTawarkanBatalTagihan, putuskanBolehBatalTagihan } from "@/lib/batal-tagihan-klinik";
 import { bolehBayar, kategoriBerisiko } from "@/lib/tindakan";
 import { bacaAturanConsent } from "@/lib/consent-server";
@@ -357,7 +357,7 @@ export default async function PembayaranPage({
   // layar tidak menawarkannya ke peran lain supaya tidak menabrak penolakan.
   const bolehTerbitUlang = bolehSiklusTagihan((profilKasir as { role?: string } | null)?.role);
   // Batalkan penerimaan (Owner / peran berizin): hanya untuk tagihan yang punya uang diterima; database memeriksa ulang.
-  const bolehBatalTerima = !!invoice && !invoice.correction_pending && adaPenerimaan(invoice, paidAmount)
+  const bolehBatalTerima = !!invoice && tawarkanBatalPenerimaan(invoice, paidAmount)
     && putuskanBolehBatalPenerimaan(batalDibaca, (profilKasir as { role?: string } | null)?.role);
   // B2 Batalkan tagihan (Owner / peran berizin): rawat jalan Belum Lunas/DP; database memeriksa ulang (uang tercatat, periode, poin, stok).
   const bolehBatalTagihan = bolehTawarkanBatalTagihan(invoice, !!inpat)

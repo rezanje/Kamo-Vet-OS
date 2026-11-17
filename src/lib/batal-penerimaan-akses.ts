@@ -27,3 +27,17 @@ export async function bolehBatalPenerimaan(supabase: any, role: string | null | 
 export function adaPenerimaan(inv: { paid_status?: string | null; dp_amount?: number | string | null }, dibayar: number): boolean {
   return inv.paid_status === "Lunas" || inv.paid_status === "DP" || Number(inv.dp_amount ?? 0) > 0 || dibayar > 0;
 }
+
+/**
+ * Tombol "Batalkan penerimaan" ditawarkan bila ada uang diterima DAN tagihan tidak sedang dalam koreksi, KECUALI tagihan hasil Void & Terbitkan Ulang:
+ * uangnya dipindahkan dari tagihan lama dan database kini membaliknya di rekening asal (migrasi 20261124100000), jadi correction_pending pada
+ * tagihan hasil terbit ulang bukan lagi alasan menyembunyikan tombol. Pada tagihan tanpa reissued_from, correction_pending tetap menyembunyikannya.
+ * BUKAN otorisasi: database memutuskan (bentuk yang belum didukung dijawab dengan kalimat penolakan di layar).
+ */
+export function tawarkanBatalPenerimaan(
+  inv: { paid_status?: string | null; dp_amount?: number | string | null; correction_pending?: boolean | null; reissued_from?: string | null },
+  dibayar: number,
+): boolean {
+  if (!adaPenerimaan(inv, dibayar)) return false;
+  return !inv.correction_pending || !!inv.reissued_from;
+}
