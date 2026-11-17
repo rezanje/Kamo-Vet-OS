@@ -3,7 +3,8 @@
 import { NumberInput } from "@/components/NumberInput";
 
 import { SearchableItemPicker } from "@/components/SearchableItemPicker";
-import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
+import { LocalTransactionDraft } from "@/components/LocalTransactionDraft";
+import { useTransferRequestKey } from "@/components/useTransferRequestKey";
 import type { ItemUnit } from "@/lib/satuan";
 import { useEffect, useRef, useState } from "react";
 import type { WarehouseStock } from "@/lib/warehouse-stock";
@@ -24,8 +25,8 @@ const blank: Row = { display: "", item_id: "", qty: 1, satuan: "" };
 const label = (it: Item) => `${it.code} — ${it.name}`;
 
 export function PemindahanForm({ warehouses, items, userId, stock = [] }: { warehouses: Warehouse[]; items: Item[]; userId: string; stock?: WarehouseStock[] }) {
-  const { save, failure } = usePreservedAction(buatKirim);
-  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+  // Kunci simpan tidak ikut draf browser (lihat useTransferRequestKey): draf lama membawa kunci dokumen lain.
+  const { requestKey, save, failure, rotate } = useTransferRequestKey(buatKirim);
   const [warehouseId, setWarehouseId] = useState("");
   const warehouseSelect = useRef<HTMLSelectElement>(null);
   useEffect(() => {
@@ -86,7 +87,7 @@ export function PemindahanForm({ warehouses, items, userId, stock = [] }: { ware
       event.stopPropagation();
       setPopupKurang(kurang);
     }}>
-      <LocalTransactionDraft userId={userId} scope="pos:pemindahan:baru" state={{ snapshot: { rows, requestKey, warehouseId }, reset: () => { setWarehouseId(""); setRows([{ ...blank }]); setRequestKey(crypto.randomUUID()); }, restore: (value) => { const draft = value as { rows?: Row[]; requestKey?: string; warehouseId?: string }; if (Array.isArray(draft.rows)) setRows(draft.rows); if (draft.requestKey) setRequestKey(draft.requestKey); if (typeof draft.warehouseId === "string") setWarehouseId(draft.warehouseId); return true; } }} />
+      <LocalTransactionDraft userId={userId} scope="pos:pemindahan:baru" state={{ snapshot: { rows, warehouseId }, reset: () => { setWarehouseId(""); setRows([{ ...blank }]); rotate(); }, restore: (value) => { const draft = value as { rows?: Row[]; warehouseId?: string }; if (Array.isArray(draft.rows)) setRows(draft.rows); if (typeof draft.warehouseId === "string") setWarehouseId(draft.warehouseId); return true; } }} />
       <input type="hidden" name="request_key" value={requestKey} />
       {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
