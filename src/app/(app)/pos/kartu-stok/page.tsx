@@ -6,6 +6,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { loadKatalogPermintaan } from "@/lib/permintaan";
 import { readCompleteList } from "@/lib/checked-list";
 import { KartuStokItemFilter } from "./KartuStokItemFilter";
+import { muatTautanKartuStok, hrefSumber } from "@/lib/kartu-stok-tautan";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -48,6 +49,7 @@ export default async function KartuStokPage({
   let saldoAwal = 0;
   let baris: ReturnType<typeof susunKartuStok> = [];
   let perGudang: { nama: string; saldo: number }[] = [];
+  let tautan = new Map<string, string>();
   // Without the warehouse list a requested warehouse filter would silently become all-warehouse totals.
   let loadError = whError ? "Daftar gudang belum dapat dimuat. Coba muat ulang." : "";
 
@@ -77,6 +79,8 @@ export default async function KartuStokPage({
       gudang: one(m.warehouses)?.code ?? "—",
     }));
     baris = susunKartuStok(saldoAwal, mutasi);
+    // No. Sumber bisa diklik ke dokumen asalnya; gagal cari tautan tidak menggagalkan kartu.
+    tautan = await muatTautanKartuStok(supabase, mutasi).catch(() => new Map<string, string>());
 
     // Saldo per gudang PER TANGGAL `sampai` — dihitung dari mutasi, bukan dari
     // tabel stock, supaya bisa melihat posisi stok di tanggal yang sudah lewat.
@@ -210,9 +214,12 @@ export default async function KartuStokPage({
                     <tr key={i}>
                       <td style={{ fontSize: 10.5 }}>{r.tanggal}</td>
                       <td style={{ fontSize: 10.5, fontFamily: "var(--mono, monospace)", color: "var(--tm)" }}>
-                        {r.source === "racik" && r.source_ref && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.source_ref)
-                          ? <Link href={`/klinik/racik/${encodeURIComponent(r.source_ref)}`}>{r.source_ref}</Link>
-                          : r.source_ref ?? "—"}
+                        {(() => {
+                          const href = hrefSumber(tautan, r.source, r.source_ref);
+                          return href
+                            ? <Link href={href} style={{ color: "#2563eb" }} title={`Buka ${labelSource(r.source)}`}>{r.source_ref}</Link>
+                            : r.source_ref ?? "—";
+                        })()}
                       </td>
                       <td style={{ fontSize: 11 }}>{labelSource(r.source)}</td>
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{r.gudang}</td>

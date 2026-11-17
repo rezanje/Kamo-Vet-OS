@@ -104,7 +104,9 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
       const retAvail = returSisa.get(v.po_id) ?? 0;
       const retur = Math.min(retAvail, sisa);
       if (retur > 0) returSisa.set(v.po_id, retAvail - retur);
-      sisa -= retur;
+      // Faktur ber-PPN bisa bertotal sen (mis. 3.585.410,98): bulatkan ke sen supaya
+      // sisa 0,98 tidak terbaca 0,9800000004 dan bisa dilunasi persis.
+      sisa = Math.round((sisa - retur) * 100) / 100;
       return {
         id: v.id, no_faktur: v.no_faktur, no_faktur_pemasok: v.no_faktur_pemasok,
         po_no: v.purchase_orders?.no_po ?? null, po_id: v.po_id ?? null,
