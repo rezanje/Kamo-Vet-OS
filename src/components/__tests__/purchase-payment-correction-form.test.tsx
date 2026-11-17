@@ -29,3 +29,18 @@ it("revalidates replacement defaults against current debt and available advances
   expect(host.querySelector<HTMLInputElement>('input[name="replaces_payment_id"]')!.value).toBe("cancelled-payment");
   expect(host.querySelector<HTMLInputElement>('input[name="draft_scope"]')!.value).toBe("payable-replacement:cancelled-payment");
 });
+it("lets a cent remainder (Rp 0,98) be settled exactly instead of demanding a whole rupiah above the maximum", async () => {
+  await act(async () => root.render(<PurchasePaymentForm userId="owner" invoiceId="cents" remaining={0.98} today="2026-11-17" accounts={[]} advances={[]} />));
+  const amount = host.querySelector<HTMLInputElement>('input[name="amount"]')!;
+  expect(amount.value).toBe("0.98");
+  expect(Number(amount.min)).toBeLessThanOrEqual(Number(amount.max));
+  expect(amount.step).toBe("0.01");
+  expect(amount.validity.valid).toBe(true);
+  expect(host.textContent).toContain("melunasi sisa persis");
+});
+it("keeps whole-rupiah steps when the remainder has no cents", async () => {
+  await act(async () => root.render(<PurchasePaymentForm userId="owner" invoiceId="whole" remaining={1500} today="2026-11-17" accounts={[]} advances={[]} />));
+  const amount = host.querySelector<HTMLInputElement>('input[name="amount"]')!;
+  expect([amount.min, amount.step]).toEqual(["1", "1"]);
+  expect(host.textContent).not.toContain("melunasi sisa persis");
+});

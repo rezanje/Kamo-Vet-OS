@@ -13,19 +13,25 @@ export function PurchasePaymentForm({ userId, invoiceId, remaining, today, accou
   advances: { id: string; no_um: string; sisa: number }[]; replacement?: PurchasePaymentDefaults;
 }) {
   const amount = replacement ? Math.min(remaining, replacement.amount) : remaining;
+  // Total faktur ber-PPN bisa bersen (sisa 0,98). Rupiah bulat tetap aturan cicilan;
+  // sen hanya diterima untuk melunasi sisa persis (database memeriksa ulang).
+  const hasCents = Math.round(remaining * 100) % 100 !== 0;
+  const minimum = Math.min(1, remaining);
+  const step = hasCents ? 0.01 : 1;
   const advanceId = advances.some(a => a.id === replacement?.advance_id) ? replacement!.advance_id! : "";
   return <CorrectionTransactionForm userId={userId} scope={replacement ? `payable-replacement:${replacement.id}` : `payable-settle:${invoiceId}`} action={bayarFaktur} style={{ display: "flex", gap: 6, alignItems: "flex-end", padding: "8px 0", flexWrap: "wrap" }}>
     {({ ready }) => <>
       <input type="hidden" name="invoice_id" value={invoiceId} />
       {replacement && <input type="hidden" name="replaces_payment_id" value={replacement.id} />}
       {replacement && <p style={{ width: "100%" }}>Rincian dari pembayaran yang dibatalkan. Periksa nominal dan rekening.</p>}
-      <div><label className="flab" htmlFor={`amount-${invoiceId}`}>Nominal (maks Rp {remaining.toLocaleString("id-ID")})</label><NumberInput className="fi" id={`amount-${invoiceId}`} name="amount" type="number" required min={1} max={remaining} step={1} defaultValue={amount} /></div>
+      <div><label className="flab" htmlFor={`amount-${invoiceId}`}>Nominal (maks Rp {remaining.toLocaleString("id-ID")})</label><NumberInput className="fi" id={`amount-${invoiceId}`} name="amount" type="number" required min={minimum} max={remaining} step={step} defaultValue={amount} /></div>
       <div><label className="flab" htmlFor={`method-${invoiceId}`}>Metode</label><select className="fi" id={`method-${invoiceId}`} name="metode" defaultValue={replacement?.metode ?? "Transfer"}><option>Transfer</option><option>Tunai</option><option>Debit</option></select></div>
       <PilihRekening rekening={accounts} width={150} />
       {advances.length > 0 && <div><label className="flab" htmlFor={`advance-${invoiceId}`}>Potong uang muka</label><select className="fi" id={`advance-${invoiceId}`} name="advance_id" defaultValue={advanceId}><option value="">— tidak pakai —</option>{advances.map(a => <option key={a.id} value={a.id}>{a.no_um} · sisa Rp {a.sisa.toLocaleString("id-ID")}</option>)}</select></div>}
       <div><label className="flab" htmlFor={`date-${invoiceId}`}>Tanggal</label><input className="fi" id={`date-${invoiceId}`} name="tanggal" type="date" required min={replacement?.tanggal ?? undefined} max={today} defaultValue={today} /></div>
       {replacement && <div style={{ flex: "1 1 220px" }}><label className="flab" htmlFor={`note-${invoiceId}`}>Alasan / catatan</label><input className="fi" id={`note-${invoiceId}`} name="catatan" maxLength={1000} /></div>}
       <SubmitButton className="btn-acc" disabled={!ready}>Simpan pembayaran</SubmitButton>
+      {hasCents && <p style={{ width: "100%", fontSize: 11, color: "var(--tm)", margin: 0 }}>Sisa faktur ini ada sen-nya. Nominal bersen hanya untuk melunasi sisa persis; cicilan tetap rupiah bulat.</p>}
     </>}
   </CorrectionTransactionForm>;
 }

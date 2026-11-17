@@ -89,7 +89,9 @@ export async function bayarFaktur(formData: FormData) {
   const supabase=await createClient();const back="/keuangan/hutang";
   const invoiceId=String(formData.get("invoice_id")??"");
   const requestKey=String(formData.get("draft_key")??"");
-  const amount=Number(formData.get("amount"));
+  const rawAmount=Number(formData.get("amount"));
+  // Sen dibulatkan ke 2 desimal (0.98 dari input angka bisa terbaca 0.9800000001).
+  const amount=Number.isFinite(rawAmount)?Math.round(rawAmount*100)/100:rawAmount;
   const metode=String(formData.get("metode")??"Transfer");
   const tanggal=String(formData.get("tanggal")??"")||hariIniWIB();
   const catatan=String(formData.get("catatan")??"").trim()||null;
@@ -98,7 +100,8 @@ export async function bayarFaktur(formData: FormData) {
   // A1: Pembayaran Hutang dibuka kosong sampai Tampilkan; hasil bayar wajib langsung terlihat.
   const fail=(message:string):never=>redirect(`${back}?error=${encodeURIComponent(message)}&tampil=1`);
   if(!invoiceId||!requestKey||!Number.isFinite(amount)||amount<=0)fail("Nominal atau identitas pembayaran tidak valid. Muat ulang formulir.");
-  if(!Number.isInteger(amount))fail("Nominal pembayaran harus dalam rupiah bulat.");
+  // Sen hanya untuk melunasi sisa faktur ber-PPN yang bersen (mis. sisa Rp 0,98); database menolak sen untuk cicilan.
+  if(Math.abs(rawAmount*100-Math.round(rawAmount*100))>1e-6)fail("Nominal pembayaran maksimal 2 angka di belakang koma.");
   const replacesPaymentId=String(formData.get("replaces_payment_id")??"").trim()||null;
   const payload={invoice_id:invoiceId,tanggal,amount,metode,catatan,account_id:accountId,advance_id:advanceId,replaces_payment_id:replacesPaymentId};
   const finish=(noFaktur:string):never=>{revalidatePath(back);redirect(`${back}?success=${encodeURIComponent(`Pembayaran ${noFaktur} tersimpan.`)}${transactionDraftAck(formData)}&tampil=1`);};

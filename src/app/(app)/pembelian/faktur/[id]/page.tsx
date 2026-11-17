@@ -84,6 +84,9 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
     .select("id,invoice_item_id,tanggal,old_qty,new_qty,old_harga,new_harga,inventory_delta,hpp_delta,reason")
     .eq("invoice_id", id).order("created_at") : { data: null };
   const paid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+  // Rekening kas/bank tiap pembayaran dibaca dari jurnalnya — termasuk yang dipilih otomatis lewat
+  // Peta Rekening ("— ikut peta —"), supaya kelihatan uangnya keluar dari mana.
+  const paymentAccounts = await loadPaymentAccounts(supabase, payments.map(p => p.journal_id).filter((j): j is string => !!j));
   return <>
     <DocumentBackLink from={sp.from} />
     <ActivityHistoryLink entity="purchase_invoices" id={id} />
@@ -127,7 +130,12 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
         <ActivityHistoryLink entity="purchase_invoice_payments" id={payment.id} />
         <p><strong>{payment.reversal_of ? "Pembalik pembayaran" : payment.voided_at ? "Pembayaran dibatalkan" : payment.replaces_payment_id ? "Pembayaran pengganti" : "Pembayaran"}</strong> · {payment.tanggal} · {rp(payment.amount)} · {payment.metode}</p>
         {!!Number(payment.dari_uang_muka) && <p>Porsi uang muka: {rp(payment.dari_uang_muka)}</p>}
-        <p><DocumentLink kind="purchase-payment" id={payment.id} parentId={id}>Buka pembayaran ini</DocumentLink></p>
+        <p>Rekening: {payment.journal_id ? paymentAccounts.get(payment.journal_id) ?? "lihat di jurnal" : "—"}
+          {payment.journal_id && <> · <Link href={`/keuangan/jurnal?entry=${payment.journal_id}#journal-${payment.journal_id}`}>Lihat jurnal pembayaran</Link></>}</p>
+        {!cancelAccess.pembayaran && !payment.reversal_of && !payment.voided_at && <p style={{ fontSize: 11.5, color: "var(--tm)" }}>
+          Salah rekening atau nominal? Pembayaran dikoreksi dengan dibatalkan lalu dibuat pengganti. Akun Anda belum diberi izin
+          membatalkan pembayaran — minta Owner membatalkannya, atau memberi izin &ldquo;Batalkan pembayaran faktur pembelian&rdquo; di Akses Grup.
+        </p>}
         {payment.reversal_of && <p>Pembalik dari {payments.some(p => p.id===payment.reversal_of) ? <DocumentLink kind="purchase-payment" id={payment.reversal_of} parentId={id}>pembayaran asal</DocumentLink> : 'pembayaran yang tidak tersedia atau tidak dapat diakses'}</p>}
         {payment.replaces_payment_id && <p>Menggantikan {payments.some(p => p.id===payment.replaces_payment_id) ? <DocumentLink kind="purchase-payment" id={payment.replaces_payment_id} parentId={id}>pembayaran asal</DocumentLink> : 'pembayaran yang tidak tersedia atau tidak dapat diakses'}</p>}
         {payments.filter(p => p.replaces_payment_id===payment.id).map(p => <p key={p.id}><DocumentLink kind="purchase-payment" id={p.id} parentId={id}>Buka pembayaran pengganti</DocumentLink></p>)}
@@ -142,4 +150,31 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
       </article>)}
     </section>
   </>;
+}
+
+type PaymentAccountClient = { from: (table: string) => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+/** journal_id → "110209 · Bank BCA". Gagal baca (hak akses jurnal) = kosong; halaman tetap tampil. */
+async function loadPaymentAccounts(supabase: PaymentAccountClient, journalIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (journalIds.length === 0) return out;
+  try {
+    const [lines, accounts] = await Promise.all([
+      supabase.from("journal_lines").select("entry_id,credit,coa_accounts(code)").in("entry_id", journalIds).gt("credit", 0),
+      supabase.from("cash_accounts").select("coa_code,nama"),
+    ]);
+    if (lines.error || accounts.error) return out;
+    const names = new Map<string, string>();
+    for (const a of (accounts.data ?? []) as { coa_code: string; nama: string }[]) if (!names.has(a.coa_code)) names.set(a.coa_code, a.nama);
+    for (const l of (lines.data ?? []) as { entry_id: string; coa_accounts: Rel<{ code: string }> }[]) {
+      const code = one(l.coa_accounts)?.code;
+      const nama = code ? names.get(code) : undefined;
+      if (!nama) continue;
+      const label = `${code} · ${nama}`;
+      const prev = out.get(l.entry_id);
+      out.set(l.entry_id, prev && !prev.includes(label) ? `${prev}; ${label}` : prev ?? label);
+    }
+  } catch {
+    return out;
+  }
+  return out;
 }

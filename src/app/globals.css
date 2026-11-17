@@ -285,3 +285,9 @@ a.skl-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,
   .fu-filter .fi { width: 100%; }
   .fu-aksi > * { flex: 1 1 140px; justify-content: center; }
 }
+
+/* Tautan "Dokumen terkait" ke pembayaran/penerimaan di halaman yang sama hanya menggulir: sorot barisnya
+   supaya kelihatan mana yang dibuka (laporan 17 Nov: "diklik tidak ada apa-apa"). */
+article[id^="payment-"]:target, article[id^="receipt-"]:target {
+  background: #fffbeb; box-shadow: inset 3px 0 0 #f59e0b; padding-left: 10px !important;
+}
