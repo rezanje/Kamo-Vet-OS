@@ -5,10 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { hariIniWIB } from "@/lib/tanggal";
 import { kendalaBatalKirim } from "@/lib/pemindahan";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
+import { isStaleTransferKeyError, staleTransferKeyRejection, type TransferRejection } from "@/lib/transfer-key";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function post(formData: FormData, receive: boolean) {
+async function post(formData: FormData, receive: boolean): Promise<TransferRejection> {
   const supabase = await createClient();
   const source = String(formData.get("source_transfer_id") ?? "");
   const back = receive ? `/pos/pemindahan/${source}` : "/pos/pemindahan/baru";
@@ -21,12 +22,15 @@ async function post(formData: FormData, receive: boolean) {
     p_date: String(formData.get("tanggal") ?? "") || hariIniWIB(),
     p_notes: String(formData.get("keterangan") ?? "").trim() || null, p_items: items,
   });
+  // Kunci dimiliki dokumen LAIN: database membuktikan tidak ada yang tertulis untuk isian ini. Dikembalikan
+  // (bukan di-redirect/dilempar) supaya formulir mengganti kunci dan isian tetap ada.
+  if (isStaleTransferKeyError(error?.message)) return staleTransferKeyRejection(receive);
   if (error || !data) redirect(`${back}?error=${encodeURIComponent(error?.message ?? "Gagal menyimpan pemindahan.")}`);
   revalidatePath("/pos/pemindahan");
   redirect(`/pos/pemindahan/${receive ? source : data}?success=${encodeURIComponent("Pemindahan tersimpan.")}${transactionDraftAck(formData)}`);
 }
-export async function buatKirim(formData: FormData) { return post(formData, false); }
-export async function terimaBarang(formData: FormData) { return post(formData, true); }
+export async function buatKirim(formData: FormData): Promise<TransferRejection> { return post(formData, false); }
+export async function terimaBarang(formData: FormData): Promise<TransferRejection> { return post(formData, true); }
 
 /**
  * Batalkan pengiriman (dokumen Kirim Barang yang belum diterima sama sekali).

@@ -240,6 +240,17 @@ export function parseClinicPostingError(error: { code?: string; message: string 
     if (error.message === "INVOICE_INVALID: nilai invoice tidak konsisten") {
       return "Nilai invoice ditolak karena tidak konsisten. Periksa metode pembayaran, diskon, dan jumlah bayar, lalu pilih ulang metode atau muat ulang tagihan (belum ada yang tersimpan).";
     }
+    // Koreksi invoice (clinic_edit_invoice_core): tiap penolakan punya penyebab sendiri; dulu semuanya berbunyi
+    // "Nilai atau rincian invoice tidak konsisten." sehingga kasir tidak tahu angka mana yang salah (INV-202611-1285, 17 Nov 2026).
+    if (error.message === "INVOICE_INVALID: nilai koreksi tidak konsisten") {
+      return "Koreksi ditolak: total baru tidak boleh lebih kecil dari uang yang sudah diterima pada tagihan ini, status pembayaran dan metode bayar harus sama dengan tagihan, dan diskon tidak boleh melebihi subtotal. Periksa angkanya lalu coba lagi. Belum ada yang tersimpan.";
+    }
+    if (error.message === "INVOICE_INVALID: subtotal berbeda dari rincian") {
+      return "Subtotal tidak sama dengan jumlah baris setelah diskon baris. Muat ulang halaman lalu coba lagi. Belum ada yang tersimpan.";
+    }
+    if (error.message === "INVOICE_INVALID: tagihan ini perlu pemeriksaan keuangan") {
+      return "Tagihan ini perlu diperiksa keuangan sebelum bisa dikoreksi (ada racikan, obat tanpa barang, atau pembayaran yang belum dibalik). Belum ada yang tersimpan.";
+    }
     // Tanggal efektif (backdate) Owner: penolakan periode/persediaan terkunci dan tagihan bercampur tanggal sudah berbahasa biasa.
     // B3: void & terbit ulang / koreksi nota pengganti dibukukan di tanggal nota asli; rekonsiliasi bank & penggajian bulan itu menolak.
     const tanggalEfektif = /^(PERIODE_TERKUNCI|PERSEDIAAN_TERKUNCI|BACKDATE_CAMPUR|BACKDATE_SISA|REKONSILIASI_TERKUNCI|GAJI_SUDAH_DIBUAT):\s*([^\r\n]{1,600})$/.exec(error.message);

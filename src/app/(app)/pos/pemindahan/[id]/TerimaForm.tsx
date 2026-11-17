@@ -2,7 +2,8 @@
 
 import { NumberInput } from "@/components/NumberInput";
 
-import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
+import { LocalTransactionDraft } from "@/components/LocalTransactionDraft";
+import { useTransferRequestKey } from "@/components/useTransferRequestKey";
 import { useState } from "react";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -12,8 +13,8 @@ import { hariIniWIB } from "@/lib/tanggal";
 type Row = { item_id: string; name: string; code: string; unit: string; sisa: number };
 
 export function TerimaForm({ sourceTransferId, rows, userId }: { sourceTransferId: string; rows: Row[]; userId: string }) {
-  const { save, failure } = usePreservedAction(terimaBarang);
-  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+  // Kunci simpan tidak ikut draf browser (lihat useTransferRequestKey): draf lama membawa kunci dokumen lain.
+  const { requestKey, save, failure, rotate } = useTransferRequestKey(terimaBarang);
   // default: terima semua sisa
   const [qty, setQty] = useState<Record<string, number>>(
     Object.fromEntries(rows.map((r) => [r.item_id, r.sisa])),
@@ -25,7 +26,7 @@ export function TerimaForm({ sourceTransferId, rows, userId }: { sourceTransferI
 
   return (
     <form action={save}>
-      <LocalTransactionDraft userId={userId} scope={`pos:pemindahan:terima:${sourceTransferId}`} state={{ snapshot: { qty, requestKey }, reset: () => { setQty({}); setRequestKey(crypto.randomUUID()); }, restore: value => { const draft = value as { qty?: Record<string, number>; requestKey?: string }; if (draft.qty) setQty(draft.qty); if (draft.requestKey) setRequestKey(draft.requestKey); return true; } }} />
+      <LocalTransactionDraft userId={userId} scope={`pos:pemindahan:terima:${sourceTransferId}`} state={{ snapshot: { qty }, reset: () => { setQty({}); rotate(); }, restore: value => { const draft = value as { qty?: Record<string, number> }; if (draft.qty) setQty(draft.qty); return true; } }} />
       <input type="hidden" name="request_key" value={requestKey} />
       {failure && <div role="alert" className="p2ban">{failure}</div>}
       <input type="hidden" name="source_transfer_id" value={sourceTransferId} />
