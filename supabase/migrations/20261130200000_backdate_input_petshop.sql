@@ -55,6 +55,7 @@ begin
  if new.sale_id is null and (to_jsonb(new)-array['sale_id','linked_at']) is not distinct from (to_jsonb(old)-array['sale_id','linked_at']) then return new;end if;
  raise exception 'Jejak tanggal mundur tidak dapat diubah';
 end $$;
+revoke all on function public.guard_pos_sale_backdates() from public,anon,authenticated,service_role;
 create trigger pos_sale_backdates_guard before update or delete on public.pos_sale_backdates for each row execute function public.guard_pos_sale_backdates();
 
 insert into role_settings_private.action_catalog(id,label,"group",enforced) values
