@@ -52,7 +52,7 @@ it("sums daily cash flow in the database for cash accounts only", async () => {
   expect(result.arusKas.slice(0, 6).every((d) => d.masuk === 0 && d.keluar === 0)).toBe(true);
 });
 
-// 18 Nov 2026: dashboard lama sekali terbuka karena ±150.000 struk setahun ditarik 500 baris per
+// 18 Nov 2026: dashboard lama sekali terbuka karena seluruh struk tahun berjalan ditarik 500 baris per
 // permintaan. Penjualan kasir dan tagihan klinik kini dijumlah di database (satu panggilan).
 it("uses the database summary without reading cashier sales, clinic invoices or their payments row by row", async () => {
   const db = client({ kasir_total: "125000.5", kasir_piutang: 25000, kasir_harian: [{ tanggal: "2026-11-08", total: 1000 }, { tanggal: "2026-11-09", total: "2500" }], klinik_total: 80000, klinik_belum: "30000" });

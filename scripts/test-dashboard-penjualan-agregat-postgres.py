@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Uji migrasi 20261125100000 (Dashboard: penjualan kasir & tagihan klinik dijumlah di database), data fiktif.
+"""Uji migrasi 20261118045543 (Dashboard: penjualan kasir & tagihan klinik dijumlah di database), data fiktif.
 
 Babak:
   A. SKEMA PENUH — seluruh migrasi repo diputar dari nol, termasuk migrasi ini (dua kali: idempoten).
@@ -35,7 +35,7 @@ hris = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hris)
 
 MIGRATIONS = ROOT / "supabase/migrations"
-MIGRASI = MIGRATIONS / "20261125100000_dashboard_penjualan_agregat.sql"
+MIGRASI = MIGRATIONS / "20261118045543_dashboard_penjualan_agregat.sql"
 FUNGSI = "public.dashboard_penjualan_ringkas"
 
 CAB_A = "a0000000-0000-4000-8000-00000000000a"

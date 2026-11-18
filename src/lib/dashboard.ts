@@ -210,7 +210,7 @@ const angka = (v: unknown, label: string) => {
 
 /**
  * Penjualan kasir (tahun berjalan + 7 hari) dan tagihan klinik tahun berjalan.
- * Jalur utama: satu RPC agregat (migrasi 20261125100000) — tidak menarik ±150.000 struk setahun
+ * Jalur utama: satu RPC agregat (migrasi 20261118045543) — tidak menarik seluruh struk tahun berjalan
  * ke aplikasi 500 baris per permintaan (18 Nov 2026: dashboard lama sekali terbuka).
  * Jalur lama (baca semua baris lalu jumlah di sini) hanya dipakai bila fungsi itu belum terpasang.
  */

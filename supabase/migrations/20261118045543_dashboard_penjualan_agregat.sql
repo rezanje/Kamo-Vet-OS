@@ -1,11 +1,13 @@
 -- Dashboard Keuangan: penjualan kasir dan tagihan klinik dijumlah di database, bukan ditarik baris per baris.
+-- Versi riwayat Production: 20261118045543 (dipasang 18 Nov 2026 lewat MCP apply_migration; isi = berkas ini, kecuali baris ini).
 --
 -- Masalah (laporan Reza, 18 Nov 2026): dashboard lama sekali terbuka — layar kerangka abu-abu dulu, baru
 -- angka muncul. Sejak 9 Nov (perbaikan "penjualan terpotong 1.000 baris") dashboard membaca SELURUH
 -- transaksi kasir sejak 1 Januari ke aplikasi, 500 baris per permintaan, berurutan, dan tiap permintaan
--- menghitung ulang jumlah pasti baris (count exact). Kasir ±500 struk/hari → ±150.000 baris per
--- November = ±300 permintaan berurutan sebelum halaman bisa tampil. Tagihan klinik dan seluruh riwayat
--- pembayarannya dibaca dengan cara yang sama. Makin akhir tahun, makin lambat.
+-- menghitung ulang jumlah pasti baris (count exact) dengan RLS per baris. Production 18 Nov 2026: 7.348 struk
+-- tahun berjalan (2.851 dalam 7 hari terakhir, ±400/hari) = 15 permintaan berurutan × ±270 ms di database saja
+-- (diukur sebagai Owner), ±4–7 detik sebelum halaman tampil — dan bertambah setiap hari. Tagihan klinik
+-- (1.331) dan seluruh riwayat pembayarannya dibaca dengan cara yang sama. Bagian dashboard lain < 0,3 detik.
 --
 -- Perubahan: dua fungsi baca-saja yang mengembalikan angka yang sama dalam satu panggilan.
 -- Tidak ada tabel, kebijakan, atau data yang diubah.
@@ -13,7 +15,7 @@
 --   1. public.dashboard_kasir_ringkas — struk kasir. SECURITY DEFINER dengan hak baca SAMA dengan RLS
 --      tabel sales (kebijakan sales_all = true DAN pembatas operational_branch_isolation =
 --      user_can_access_branch(branch_id)); bedanya pengecekan cabang dilakukan sekali per cabang
---      (beberapa baris di branches), bukan sekali per struk (±12 µs × 150.000 struk). Pola sama dengan
+--      (beberapa baris di branches), bukan sekali per struk (±12 µs per struk; terus bertambah). Pola sama dengan
 --      ledger_account_totals (20261109084230). sales.branch_id wajib diisi dan merujuk branches, jadi setiap
 --      struk yang lolos RLS pasti cabangnya ada di daftar. Pemanggil tidak bisa memilih cabang.
 --   2. public.dashboard_penjualan_ringkas — yang dipanggil aplikasi. SECURITY INVOKER: tagihan klinik dan
