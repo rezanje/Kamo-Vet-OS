@@ -66,7 +66,7 @@ it("shows a database refusal instead of the hidden production error", async () =
 });
 it("kasir sudah jualan lagi (penjaga hadiah staf): pesan jelas dengan langkah, struk tidak berubah", async () => {
   fixture.rpc.mockResolvedValue({ data: null, error: { code: "P0001", message: "Transaksi staf berikutnya masih aktif. Batalkan dari transaksi terakhir atau rekonsiliasi hadiah staf terlebih dahulu" } });
-  await expect(ubahTransaksi(form())).resolves.toMatchObject({ ok: false, outcome: "rejected", message: expect.stringMatching(/kasir yang sama sudah membuat transaksi sesudahnya.*Tidak ada yang berubah.*Terima pembayaran.*transaksi baru di Kasir/s) });
+  await expect(ubahTransaksi(form())).resolves.toMatchObject({ ok: false, outcome: "rejected", message: expect.stringMatching(/kasir yang sama sudah membuat transaksi sesudahnya[\s\S]*Tidak ada yang berubah[\s\S]*Terima pembayaran[\s\S]*transaksi baru di Kasir/) });
   expect(revalidatePath).not.toHaveBeenCalled();
 });
 it("does not acknowledge an unconfirmed result", async () => {
