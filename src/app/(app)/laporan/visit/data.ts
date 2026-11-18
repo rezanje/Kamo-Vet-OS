@@ -60,7 +60,7 @@ type LogRow = {
   paramedic_id: string | null; paramedic_name: string | null;
   inpatient_record_id: string;
   inpatient_records: Rel<{
-    branch_id: string | null; branches: Rel<{ name: string }>;
+    branch_id: string | null; doctor_name?: string | null; branches: Rel<{ name: string }>;
     visits: Rel<{ pets: Rel<{ name: string }>; customers: Rel<{ name: string }> }>;
   }>;
 };
@@ -77,7 +77,7 @@ export async function ambilVisit({ dari, sampai, cabangId = "" }: { dari: string
     const diizinkan = auth?.user ? await allowedBranchIds(supabase, auth.user.id) : [];
     const logs = await readReportRows<LogRow>(async (awal, ujung) => {
       const query = supabase.from("inpatient_daily_logs")
-        .select("id, log_date, created_at, log_kind, condition_note, tindakan, visit_doctor_id, doctor_name, paramedic_id, paramedic_name, inpatient_record_id, inpatient_records!inner(branch_id, branches(name), visits(pets(name), customers(name)))", { count: "exact" })
+        .select("id, log_date, created_at, log_kind, condition_note, tindakan, visit_doctor_id, doctor_name, paramedic_id, paramedic_name, inpatient_record_id, inpatient_records!inner(branch_id, doctor_name, branches(name), visits(pets(name), customers(name)))", { count: "exact" })
         .gte("log_date", dari).lte("log_date", sampai);
       const { data, error, count } = await (cabangId ? query.eq("inpatient_records.branch_id", cabangId) : query)
         .order("id").range(awal, ujung);
@@ -96,6 +96,7 @@ export async function ambilVisit({ dari, sampai, cabangId = "" }: { dari: string
         cabang: one(rawat?.branches ?? null)?.name ?? "—",
         pasien: one(kunjungan?.pets ?? null)?.name ?? "—",
         pemilik: one(kunjungan?.customers ?? null)?.name ?? "—",
+        dokterPJ: rawat?.doctor_name ?? null,
         kondisi: log.condition_note?.trim() ?? "",
         tindakan: log.tindakan?.trim() ?? "",
         dokterId: log.visit_doctor_id ?? null,

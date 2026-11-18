@@ -54,7 +54,8 @@ describe("izin khusus tanggal mundur", () => {
     // Semua izin khusus klinik ada barisnya di migrasi klinik (A5 menambah klinik.koreksi_visit, B2 klinik.batalkan_tagihan di migrasinya sendiri).
     const klinikSql = sql + readFileSync(join(process.cwd(), "supabase/migrations/20261112100000_batalkan_penerimaan_klinik.sql"), "utf8")
       + readFileSync(join(process.cwd(), "supabase/migrations/20261113031357_a5_koreksi_visit_rawat_inap.sql"), "utf8")
-      + readFileSync(join(process.cwd(), "supabase/migrations/20261118620000_b2_batalkan_tagihan_klinik.sql"), "utf8");
+      + readFileSync(join(process.cwd(), "supabase/migrations/20261118620000_b2_batalkan_tagihan_klinik.sql"), "utf8")
+      + readFileSync(join(process.cwd(), "supabase/migrations/20261129100000_ubah_dokter_pj.sql"), "utf8");
     for (const id of GRANT_ONLY_ACTIONS.filter((x) => x.startsWith("klinik."))) expect(klinikSql).toContain(`'${id}'`);
   });
   it("migrasi tanpa begin/commit sendiri dan semua tambalan berjangkar memakai penanda BACKDATE_KLINIK", () => {

@@ -30,6 +30,8 @@ export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "klinik.batalkan_tagihan",
   // F2 (meeting 12 Nov 2026): bebankan selisih kurang opname ke karyawan sebagai kasbon (migrasi 20261120700000_f2_beban_selisih_karyawan.sql).
   "persediaan.beban_selisih_karyawan",
+  // Ubah dokter PJ kunjungan (Andri, 18 Nov 2026): koreksi dokter salah input; bawaan MATI selain Owner (migrasi 20261129100000_ubah_dokter_pj.sql).
+  "klinik.ubah_dokter_pj",
 ];
 
 export const isGrantOnlyAction = (id: string): boolean => GRANT_ONLY_ACTIONS.includes(id);
