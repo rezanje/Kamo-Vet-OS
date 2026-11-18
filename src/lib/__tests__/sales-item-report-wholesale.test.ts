@@ -63,8 +63,9 @@ it("memakai tanggal faktur WIB sebagai batas periode dan menyaring per cabang ya
   mocks.createClient.mockResolvedValue(client);
   const semua = await ambilPenjualanBarang(filters);
   expect(semua.rows.map(row => row.id)).toEqual(["grosir-cabang-lain", "grosir-dalam"]);
-  expect(records.some(call => call.table === "sales_invoice_items" && call.method === "gte"
-    && call.args[0] === "sales_invoices.tanggal" && call.args[1] === "2026-10-01")).toBe(true);
+  // Tanggal faktur disaring pada induk (sales_invoices.tanggal); item dibaca per id faktur yang lolos.
+  expect(records.some(call => call.table === "sales_invoices" && call.method === "gte"
+    && call.args[0] === "tanggal" && call.args[1] === "2026-10-01")).toBe(true);
   const satuCabang = await ambilPenjualanBarang({ ...filters, cabangId: "dc" });
   expect(satuCabang.rows.map(row => row.cabangId)).toEqual(["dc"]);
   expect(satuCabang.nilaiTotal).toBe(1_050_000);
