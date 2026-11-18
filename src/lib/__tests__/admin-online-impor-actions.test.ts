@@ -17,7 +17,7 @@ const db = vi.hoisted(() => ({
 vi.mock("@/lib/branch-access", () => ({ allowedBranchIds: async () => db.allowed }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
-/** Simulasi RPC database (bentuk jawaban = migrasi 20261126100100) dari data meja yang sama dengan jalur tabel. */
+/** Simulasi RPC database (bentuk jawaban = migrasi 20261130100100) dari data meja yang sama dengan jalur tabel. */
 function rpcDb(name: string, a: Record<string, unknown>): { data?: unknown; error?: { message: string } } {
   const t = db.tables;
   if (name === "admin_online_import_gudang") {

@@ -1,5 +1,5 @@
 -- Peran "Admin Online" (ADMIN_ONLINE), Andri 17-18 Nov 2026: akun yang HANYA boleh memasukkan penjualan marketplace
--- (Impor pesanan Shopee). Berkas 2 dari 2 (nilai enum ada di 20261126100000_admin_online_enum.sql dan harus sudah ter-commit).
+-- (Impor pesanan Shopee). Berkas 2 dari 2 (nilai enum ada di 20261130100000_admin_online_enum.sql dan harus sudah ter-commit).
 --
 -- Pertahanan berlapis di DATABASE (aplikasi punya pagar sendiri: middleware, layout, server action):
 --  1. PAGAR BACA  : kebijakan RESTRICTIVE `admin_online_fence_r` di setiap tabel public -> ADMIN_ONLINE tidak bisa SELECT apa pun kecuali
@@ -180,7 +180,9 @@ select pg_temp.admin_online_patch('public.get_user_account_for_edit(uuid)',
 -- yang dapat dieksekusi `authenticated` diberi satu baris di awal badan: `perform admin_online_private.deny_admin_online();` (menolak ADMIN_ONLINE
 -- kecuali di transaksi bergerbang post_online_order; untuk peran lain mengembalikan true tanpa efek). Dikecualikan: post_online_order (gerbangnya
 -- sendiri), fungsi yang dipakai kebijakan RLS (harus tetap bisa dievaluasi), dan yang sudah punya penjaga. Gagal tertutup bila posisi sisip meragukan.
-do $guard$
+-- Dibungkus fungsi admin_online_private.guard_all() (hanya pemilik) agar bisa dijalankan ulang sesudah migrasi lain menambah fungsi DEFINER.
+create or replace function admin_online_private.guard_all() returns integer
+language plpgsql as $guard$
 declare f record; v text; v_pos int; v_body text; v_prefix text; v_last text; v_n int := 0;
 begin
   for f in
@@ -211,7 +213,11 @@ begin
     v_n := v_n + 1;
   end loop;
   raise notice 'admin_online: % fungsi SECURITY DEFINER diberi penjaga', v_n;
+  return v_n;
 end $guard$;
+revoke all on function admin_online_private.guard_all() from public, anon, authenticated, service_role;
+-- Dapat dijalankan ulang (idempotent) oleh pemilik: migrasi sesudah ini yang menambah fungsi SECURITY DEFINER baru memanggil `select admin_online_private.guard_all();` di akhirnya.
+select admin_online_private.guard_all();
 
 -- Fungsi DEFINER berbahasa sql (tidak bisa diberi perform): dibungkus case. Pemeriksaan jangkar: harus tepat 1 kemunculan.
 select pg_temp.admin_online_patch('public.preview_clinic_refund_source(uuid)',
@@ -284,6 +290,8 @@ begin
   if has_table_privilege('authenticated', 'admin_online_private.permits', 'select,insert,update,delete')
      or has_function_privilege('authenticated', 'admin_online_private.online_gate(uuid,uuid,jsonb,jsonb)', 'execute')
      or has_function_privilege('authenticated', 'admin_online_private.write_fence()', 'execute')
+     or has_function_privilege('authenticated', 'admin_online_private.guard_all()', 'execute')
+     or has_function_privilege('anon', 'admin_online_private.guard_all()', 'execute')
      or has_function_privilege('anon', 'public.admin_online_import_catalog(uuid)', 'execute') then
     raise exception 'ADMIN_ONLINE_CHECK: hak akses privat bocor'; end if;
 end $check$;

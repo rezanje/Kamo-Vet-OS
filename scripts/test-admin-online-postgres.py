@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Peran "Admin Online" (ADMIN_ONLINE), Andri 17-18 Nov 2026: akun yang HANYA boleh memasukkan penjualan marketplace.
 
-Migrasi: 20261126100000_admin_online_enum.sql (nilai enum) + 20261126100100_admin_online_role.sql (isi).
+Migrasi: 20261130100000_admin_online_enum.sql (nilai enum) + 20261130100100_admin_online_role.sql (isi).
 Dibuktikan di database (gagal tertutup):
   - post_online_order: ADMIN_ONLINE hanya cabang sendiri, gudang ONLINE/RETAIL, channel marketplace, tanpa pelanggan,
     nomor pesanan wajib & tidak ganda; peran lain memakai pemeriksaan lama PERSIS;
@@ -27,8 +27,8 @@ from native_postgres import NativePostgres  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-accurate-inventory-accounting-postgres.py")
 fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
-ENUM = ROOT / "supabase/migrations/20261126100000_admin_online_enum.sql"
-CANDIDATE = ROOT / "supabase/migrations/20261126100100_admin_online_role.sql"
+ENUM = ROOT / "supabase/migrations/20261130100000_admin_online_enum.sql"
+CANDIDATE = ROOT / "supabase/migrations/20261130100100_admin_online_role.sql"
 RESULTS = []
 
 U = lambda n: f"a0a00000-0000-4000-8000-{n:012d}"

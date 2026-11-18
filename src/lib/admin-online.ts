@@ -5,7 +5,7 @@
 // Ini LANGIT-LANGIT: tidak ada aturan Akses Grup, akses khusus akun, atau modul yang bisa melebarkannya
 // (bolehBukaPath mengembalikan hasil fungsi ini untuk peran ini sebelum aturan lain dibaca).
 // Penegakan sebenarnya berlapis: middleware + layout + server action (file ini), lalu database (pagar baca/tulis
-// RLS + pemicu + gerbang di post_online_order, migrasi 20261126100100) yang tetap menolak walau lapisan aplikasi dilewati.
+// RLS + pemicu + gerbang di post_online_order, migrasi 20261130100100) yang tetap menolak walau lapisan aplikasi dilewati.
 
 export const ADMIN_ONLINE = "ADMIN_ONLINE";
 export const LABEL_ADMIN_ONLINE = "Admin Online";

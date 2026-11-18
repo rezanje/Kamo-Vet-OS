@@ -1,5 +1,5 @@
 // Peran Admin Online (lib/admin-online.ts): bacaan layar impor Shopee lewat RPC khusus, BUKAN tabel langsung.
-// Database menolak SELECT tabel apa pun untuk peran ini (pagar baca RLS, migrasi 20261126100100); tiga RPC SECURITY DEFINER
+// Database menolak SELECT tabel apa pun untuk peran ini (pagar baca RLS, migrasi 20261130100100); tiga RPC SECURITY DEFINER
 // (admin_online_import_gudang / _catalog / _existing) mengembalikan hanya yang dibutuhkan layar:
 // kode/nama/satuan/harga jual barang, stok satu gudang, isi paket, dan status "sudah diimpor" — tanpa harga beli/HPP/margin/pelanggan.
 // Fungsi di sini murni (bentuk jawaban -> bentuk yang sama dengan jalur biasa) kecuali dua pembaca di bawah.
