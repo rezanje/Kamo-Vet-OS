@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Uji migrasi 20261125100000 (laporan_stok_analisis: pemakaian BERSIH) di PostgreSQL 17 sungguhan, data fiktif.
+"""Uji migrasi 20261128100000 (laporan_stok_analisis: pemakaian BERSIH) di PostgreSQL 17 sungguhan, data fiktif.
 
 Masalah yang diuji: obat takaran/resep klinik dicatat 'klinik' (keluar) lalu langsung 'pesanan-selesai' (MASUK) pada tagihan,
 gudang dan barang yang sama (clinic_private.job_order_complete): bersih nol, pemakaian nyata di 'klinik-bmhp' bahan dasarnya.
@@ -32,7 +32,7 @@ hris = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hris)
 
 MIGRATIONS = ROOT / "supabase/migrations"
-MIGRASI = MIGRATIONS / "20261125100000_stok_pakai_bersih.sql"
+MIGRASI = MIGRATIONS / "20261128100000_stok_pakai_bersih.sql"
 HARI = "2026-11-18"
 FN = "public.laporan_stok_analisis"
 
