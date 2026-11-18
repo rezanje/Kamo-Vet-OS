@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Saldo awal Kas Toko ikut cabangnya (20261130300000) on a throwaway native PostgreSQL.
+"""Saldo awal Kas Toko ikut cabangnya (20261118082745) on a throwaway native PostgreSQL.
 
 Applies every repository migration (the target no-ops: a fresh database has no saldo-awal journal), seeds the
 production branch list from supabase/seed.sql, binds Kas Toko rekening to branches (re-applying
@@ -24,7 +24,7 @@ spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-ac
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
 BIN = Path(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PG_BIN", "/usr/lib/postgresql/16/bin"))
-TARGET = ROOT / "supabase/migrations/20261130300000_saldo_awal_kas_toko_ke_cabang.sql"
+TARGET = ROOT / "supabase/migrations/20261118082745_saldo_awal_kas_toko_ke_cabang.sql"
 KAS_CABANG = ROOT / "supabase/migrations/20261107010000_kas_tunai_per_cabang_pencairan_online.sql"
 OWNER = "5a1d0000-0000-4000-8000-000000000001"
 

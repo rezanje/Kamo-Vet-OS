@@ -17,7 +17,7 @@ akun 110004–110019 dengan saldo.
 
 ## Perbaikan
 
-Migrasi `supabase/migrations/20261130300000_saldo_awal_kas_toko_ke_cabang.sql`:
+Migrasi `supabase/migrations/20261118082745_saldo_awal_kas_toko_ke_cabang.sql`:
 
 1. Untuk tiap rekening kas/bank yang terikat cabang dan punya saldo di jurnal saldo awal Pusat, dibuat sepasang
    jurnal pemindahan bertanggal saldo awal (source `saldo-awal-cabang`, source_ref = kode akun):
@@ -61,3 +61,11 @@ select a.code, sum(l.debit-l.credit) from journal_lines l join journal_entries e
 Batalkan pasangan jurnal `saldo-awal-cabang` (hapus 30 jurnal itu sebagai superuser selama belum ada koreksi
 saldo awal moneter yang memakainya), lalu kembalikan `monetary_opening_context` dengan mengganti ekspresi
 `case … end` kembali ke `posting_branch:=original.branch_id;`.
+
+## Status Production (18 Nov 2026)
+
+Migrasi diterapkan langsung ke Production lewat konektor Supabase atas izin Reza; tercatat sebagai versi
+`20261118082745` (nama berkas disamakan). Kueri cek sesudah pasang: 30 jurnal `saldo-awal-cabang`, 0 kas toko
+bersaldo di Pusat, 0 jurnal tidak seimbang, jurnal saldo awal asli tetap 30 baris, `monetary_opening_context`
+sudah ikut cabang. Saldo per cabang: Kas Toko BTKM 16.278.000, Kas Toko Vet CMS 3.138.000 (selisih dengan
+pratinjau = transaksi hari ini).
