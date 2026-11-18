@@ -236,3 +236,7 @@ select pg_temp.patch('public.finalize_pos_sale(uuid)', array[
   or exists(select 1 from public.sale_items where sale_id=sale.id and (promo_id is not null or promo_claim_id is not null or coalesce(promo_discount,0)>0
    or coalesce(promo_floor_waiver,false)))) then
   raise exception 'Voucher, kode kampanye, poin, dan promo tidak berlaku pada transaksi tanggal mundur.' using errcode='22023';end if;$r$], 'BACKDATE_INPUT');
+
+-- Pagar Admin Online (#549): fungsi SECURITY DEFINER baru diberi penjaga deny_admin_online() dan tabel baru diberi pagar baca/tulis. Idempotent.
+select admin_online_private.guard_all();
+select admin_online_private.fence_all();

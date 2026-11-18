@@ -388,5 +388,18 @@ select pg_temp.as_('bd100000-0000-4000-8000-000000000001');
 select pg_temp.ok((select count(*)>=3 from pos_sale_backdates),'Owner membaca jejak');
 select pg_temp.reject($q$insert into pos_sale_backdates(actor_id,branch_id,checkout_key,effective_date,reason) values('bd100000-0000-4000-8000-000000000001','bd200000-0000-4000-8000-000000000001','k:acl',pg_temp.today()-1,'langsung')$q$,'','klien tidak bisa menulis jejak langsung');
 reset role;
+
+-- ── 11. Admin Online (#549): pagar baca/tulis dan penjaga fungsi ikut ke objek baru ───────────────────────────
+select pg_temp.ok((select count(*)=1 from pg_trigger where tgrelid='public.pos_sale_backdates'::regclass and tgname='zz_admin_online_write_fence') and (select count(*)=1 from pg_policy where polrelid='public.pos_sale_backdates'::regclass and polname='admin_online_fence_r'),'tabel jejak: pagar tulis + pagar baca Admin Online terpasang');
+select pg_temp.ok((select count(*)=0 from pg_proc p where p.pronamespace='public'::regnamespace and p.proname in('pos_sale_backdate_authorize','pos_sale_backdate_bounds','pos_sale_backdate_allowed','pos_sale_backdate_stamp','pos_sale_backdate_gate_check') and p.prosecdef and p.prosrc !~ 'deny_admin_online'),'fungsi klien SECURITY DEFINER baru: penjaga Admin Online terpasang');
+select pg_temp.ok(position('deny_admin_online' in pg_get_functiondef('public.finalize_pos_sale(uuid)'::regprocedure))>0 and position('BACKDATE_INPUT' in pg_get_functiondef('public.finalize_pos_sale(uuid)'::regprocedure))>0,'finalize_pos_sale: penjaga Admin Online lama tetap ada bersama tambalan tanggal mundur');
+insert into auth.users(id,raw_user_meta_data) values('bd100000-0000-4000-8000-0000000000a1','{"full_name":"BD admin online"}');
+update profiles set role='ADMIN_ONLINE',is_active=true where id='bd100000-0000-4000-8000-0000000000a1';
+insert into user_branches(user_id,branch_id) values('bd100000-0000-4000-8000-0000000000a1','bd200000-0000-4000-8000-000000000001');
+set local role authenticated;
+select pg_temp.as_('bd100000-0000-4000-8000-0000000000a1');
+select pg_temp.reject($q$select public.pos_sale_backdate_authorize('bd200000-0000-4000-8000-000000000001','k:ao',pg_temp.today()-1,'coba admin online')$q$,'ADMIN_ONLINE_FUNCTION_DENIED','Admin Online tidak bisa membuka izin tanggal mundur');
+select pg_temp.ok((select count(*)=0 from pos_sale_backdates),'Admin Online tidak bisa membaca jejak tanggal mundur');
+reset role;
 select pg_temp.ok(pg_temp.bal_by_date(),'akhir: neraca saldo nol per cabang per tanggal untuk seluruh uji');
 rollback;

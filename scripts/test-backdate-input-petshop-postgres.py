@@ -123,6 +123,8 @@ def mutants():
         ('M46 ACL: internal marker callable by clients', "revoke all on function public.pos_sale_backdated(uuid) from public,anon,authenticated,service_role;", "revoke all on function public.pos_sale_backdated(uuid) from public,anon,authenticated,service_role;\ngrant execute on function public.pos_sale_backdated(uuid) to authenticated;", 0),
         ('M47 RLS: audit table without row level security', "alter table public.pos_sale_backdates enable row level security;", "alter table public.pos_sale_backdates disable row level security;", 0),
         ('M48 RLS: any user reads every branch audit', "using (public.user_can_access_branch(branch_id) and public.sales_module_access());", "using (true);", 0),
+        ('M49 Admin Online: guard_all call removed', "select admin_online_private.guard_all();", "select 1;", 0),
+        ('M50 Admin Online: fence_all call removed', "select admin_online_private.fence_all();", "select 1;", 0),
     ]
 
 
