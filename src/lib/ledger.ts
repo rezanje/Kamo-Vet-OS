@@ -53,6 +53,21 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter, accountIds?: st
   if (f?.branchIds && f.branchIds.length === 0) return [];
   if (accountIds && accountIds.length === 0) return [];
 
+  // Jalur utama: satu RPC baca-saja di database (migrasi 20261201300000), hak baca sama dengan RLS.
+  // Jalur lama (500 baris per permintaan lewat RLS) hanya bila fungsinya belum ada.
+  if (typeof supabase.rpc === "function") {
+    const cabang = filterCabang(f);
+    if (cabang && cabang.length === 0) return [];
+    const { data, error } = await supabase.rpc(ACCOUNT_LINES_RPC, { p_from: f?.from ?? null, p_to: f?.to ?? null, p_branch_ids: cabang, p_account_ids: accountIds ?? null });
+    if (!error) {
+      if (!Array.isArray(data)) throw new Error("Data laporan gagal dibaca: baris jurnal tidak tersedia");
+      return (data as RawLine[]).map((r) => ({ ...r, journal_entries: Array.isArray(r.journal_entries) ? r.journal_entries[0] : r.journal_entries }));
+    }
+    if (!functionMissing(error, ACCOUNT_LINES_RPC)) {
+      throw Object.assign(new Error(`Data laporan gagal dibaca: ${error.message}`), { code: error.code });
+    }
+  }
+
   let q = supabase
     .from("journal_lines")
     .select("id, account_id, debit, credit, journal_entries!inner(tanggal, branch_id, source, source_ref, no_jurnal, deskripsi, branches(name))", { count: "exact" });
@@ -68,11 +83,25 @@ async function fetchLines(supabase: AnyClient, f?: LedgerFilter, accountIds?: st
   }));
 }
 
+export const ACCOUNT_LINES_RPC = "ledger_account_lines";
+
+/** Daftar cabang untuk RPC: branchId dan branchIds sama-sama penyaring (AND), seperti .eq() + .in() PostgREST. null = tanpa filter cabang. */
+function filterCabang(f?: LedgerFilter): string[] | null {
+  return f?.branchIds?.length
+    ? (f.branchId ? f.branchIds.filter((id) => id === f.branchId) : f.branchIds)
+    : (f?.branchId ? [f.branchId] : null);
+}
+
+/** Fungsi baca belum dipasang di database (aplikasi rilis lebih dulu) — HANYA bila galat menyebut fungsi itu. */
+function functionMissing(error: { code?: string; message?: string }, nama: string): boolean {
+  return (error.code === "PGRST202" || error.code === "42883") && (error.message ?? "").includes(nama);
+}
+
 export const ACCOUNT_TOTALS_RPC = "ledger_account_totals";
 
 /** Fungsi agregat belum dipasang di database (aplikasi rilis lebih dulu) — HANYA bila galat menyebut fungsi ini. */
 function totalsFunctionMissing(error: { code?: string; message?: string }): boolean {
-  return (error.code === "PGRST202" || error.code === "42883") && (error.message ?? "").includes(ACCOUNT_TOTALS_RPC);
+  return functionMissing(error, ACCOUNT_TOTALS_RPC);
 }
 
 // Total debit/kredit per akun. Jalur utama: satu RPC agregat di database (migrasi
@@ -86,9 +115,7 @@ async function fetchTotals(supabase: AnyClient, f?: LedgerFilter, accountIds?: s
 
   if (typeof supabase.rpc === "function") {
     // branchId dan branchIds sama-sama penyaring (AND), seperti .eq() + .in() di fetchLines.
-    const cabang = f?.branchIds?.length
-      ? (f.branchId ? f.branchIds.filter((id) => id === f.branchId) : f.branchIds)
-      : (f?.branchId ? [f.branchId] : null);
+    const cabang = filterCabang(f);
     if (cabang && cabang.length === 0) return agg;
     const { data, error } = await supabase.rpc(ACCOUNT_TOTALS_RPC, { p_from: f?.from ?? null, p_to: f?.to ?? null, p_branch_ids: cabang });
     if (!error) {

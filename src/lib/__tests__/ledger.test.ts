@@ -122,13 +122,14 @@ it("includes every journal line beyond the API row cap in financial totals and a
 });
 
 describe("getAccountBalances — agregat di database (ledger_account_totals)", () => {
-  function withRpc(result: { data: unknown; error: { code?: string; message?: string } | null }) {
+  type HasilRpc = { data: unknown; error: { code?: string; message?: string } | null };
+  function withRpc(result: HasilRpc | ((name: string) => HasilRpc)) {
     const calls: { name: string; args: Record<string, unknown> }[] = [];
     let linesRead = false;
     const base = makeClient(accounts, lines);
     const client = {
       from(table: string) { if (table === "journal_lines") linesRead = true; return base.from(table); },
-      rpc(name: string, args: Record<string, unknown>) { calls.push({ name, args }); return Promise.resolve(result); },
+      rpc(name: string, args: Record<string, unknown>) { calls.push({ name, args }); return Promise.resolve(typeof result === "function" ? result(name) : result); },
     };
     return { client, calls, linesRead: () => linesRead };
   }
@@ -159,7 +160,7 @@ describe("getAccountBalances — agregat di database (ledger_account_totals)", (
   });
 
   it("fungsi belum dipasang -> kembali ke pembaca lama, hasil sama", async () => {
-    const t = withRpc({ data: null, error: { code: "PGRST202", message: "Could not find the function public.ledger_account_totals(p_branch_ids, p_from, p_to) in the schema cache" } });
+    const t = withRpc((name) => ({ data: null, error: { code: "PGRST202", message: `Could not find the function public.${name}(p_branch_ids, p_from, p_to) in the schema cache` } }));
     const bal = await getAccountBalances(t.client, {});
     expect(bal.find((b) => b.code === "510001")?.saldo).toBe(300_000);
     expect(t.linesRead()).toBe(true);
@@ -222,5 +223,54 @@ describe("Buku Besar per akun — hanya menarik baris akun yang dibuka", () => {
     accountFilters = [];
     expect(await getAccountOpening(makeClient(dua, campur), "720004", { from: "2026-11-01" })).toBe(50_000);
     expect(accountFilters).toEqual([["acc-7200"]]);
+  });
+});
+
+describe("Baris jurnal per akun lewat RPC ledger_account_lines", () => {
+  const baris = [
+    { id: "l2", account_id: "acc-4101", debit: 0, credit: 200_000, journal_entries: { tanggal: "2026-11-05", branch_id: "b1", source: "sale", source_ref: "S2", no_jurnal: "J2", deskripsi: "Penjualan", branches: { name: "Cabang Satu" } } },
+    { id: "l1", account_id: "acc-4101", debit: 0, credit: 100_000, journal_entries: { tanggal: "2026-11-02", branch_id: null, source: "manual", source_ref: null, no_jurnal: "J1", deskripsi: null, branches: null } },
+  ];
+  function klien(hasil: (name: string) => { data: unknown; error: { code?: string; message?: string } | null }) {
+    const calls: { name: string; args: Record<string, unknown> }[] = [];
+    let linesRead = false;
+    const base = makeClient(accounts, lines);
+    return {
+      client: {
+        from(table: string) { if (table === "journal_lines") linesRead = true; return base.from(table); },
+        rpc(name: string, args: Record<string, unknown>) { calls.push({ name, args }); return Promise.resolve(hasil(name)); },
+      },
+      calls, linesRead: () => linesRead,
+    };
+  }
+
+  it("satu panggilan RPC membawa filter periode/cabang/akun; baris diurutkan tanggal lalu no_jurnal seperti jalur lama", async () => {
+    const t = klien(() => ({ data: baris, error: null }));
+    const hasil = await getAccountLedger(t.client, "510001", { from: "2026-11-01", to: "2026-11-30", branchIds: ["b1", "b2"], branchId: "b1" });
+    const rpc = t.calls.filter((c) => c.name === "ledger_account_lines");
+    expect(rpc).toHaveLength(1);
+    expect(rpc[0].args).toEqual({ p_from: "2026-11-01", p_to: "2026-11-30", p_branch_ids: ["b1"], p_account_ids: ["acc-4101"] });
+    expect(t.linesRead()).toBe(false);
+    expect(hasil.map((r) => [r.tanggal, r.no_jurnal, r.credit, r.branch_name])).toEqual([
+      ["2026-11-02", "J1", 100_000, "Pusat"], ["2026-11-05", "J2", 200_000, "Cabang Satu"],
+    ]);
+  });
+
+  it("filter cabang kosong atau tidak beririsan -> tanpa baris dan tanpa panggilan", async () => {
+    const t = klien(() => ({ data: baris, error: null }));
+    expect(await getAccountLedger(t.client, "510001", { branchIds: [] })).toEqual([]);
+    expect(await getAccountLedger(t.client, "510001", { branchId: "b3", branchIds: ["b1"] })).toEqual([]);
+    expect(t.calls.filter((c) => c.name === "ledger_account_lines")).toHaveLength(0);
+  });
+
+  it("fungsi belum dipasang -> pembaca lama (hasil sama); galat lain dilempar", async () => {
+    const hilang = klien((name) => ({ data: null, error: { code: "PGRST202", message: `Could not find the function public.${name}(p_account_ids) in the schema cache` } }));
+    const lama = await getAccountLedger(hilang.client, "510001");
+    expect(hilang.linesRead()).toBe(true);
+    expect(lama.length).toBeGreaterThan(0);
+    const gagal = klien(() => ({ data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } }));
+    await expect(getAccountLedger(gagal.client, "510001")).rejects.toThrow("statement timeout");
+    const bukanDaftar = klien(() => ({ data: {}, error: null }));
+    await expect(getAccountLedger(bukanDaftar.client, "510001")).rejects.toThrow("baris jurnal tidak tersedia");
   });
 });
