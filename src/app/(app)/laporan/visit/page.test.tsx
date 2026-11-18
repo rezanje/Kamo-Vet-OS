@@ -57,3 +57,21 @@ it("A4: saringan per orang hanya menyisakan orang itu", async () => {
   expect(rekap).toContain("Perawat Fiktif");
   expect(rekap).not.toContain("Drh. Fiktif");
 });
+
+it("Ubah dokter PJ: rincian menampilkan Dokter PJ saat ini, sementara insentif visit tetap atas nama dokter penulis catatan", async () => {
+  // Catatan ditulis DRH. ILHAM (dokter visit); PJ rawat inap pasien kemudian dikoreksi menjadi dr. Aini.
+  state.rows = [baris({ id: "a", dokterId: "ilham", dokterNama: "DRH. ILHAM", dokterPJ: "DRH LUTHFIAH RUSYDA AINI" })];
+  const html = await render({ tampil: "1" });
+  const rincian = html.split("02 · RINCIAN CATATAN")[1];
+  expect(rincian).toContain("Dokter PJ");
+  expect(rincian).toMatch(/data-testid="visit-dokter-pj"[^>]*>DRH LUTHFIAH RUSYDA AINI</);
+  const rekap = html.split("01 · REKAP VISIT PER ORANG")[1].split("02 · RINCIAN")[0];
+  expect(rekap).toContain("DRH. ILHAM");
+  expect(rekap).not.toContain("AINI");
+});
+
+it("Ubah dokter PJ: data lama tanpa Dokter PJ tampil strip, bukan galat", async () => {
+  state.rows = [baris({ id: "a" })];
+  const html = await render({ tampil: "1" });
+  expect(html).toMatch(/data-testid="visit-dokter-pj"[^>]*>—</);
+});

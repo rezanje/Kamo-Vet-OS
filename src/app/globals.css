@@ -291,3 +291,9 @@ a.skl-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,
 article[id^="payment-"]:target, article[id^="receipt-"]:target {
   background: #fffbeb; box-shadow: inset 3px 0 0 #f59e0b; padding-left: 10px !important;
 }
+
+/* Pilihan Pelaksana (Dokter / Non-dokter) di baris keranjang klinik: 20px cukup untuk mouse, terlalu kecil untuk jari.
+   Layar sentuh (tablet/ponsel kasir) memakai tinggi nyaman >= 32px; desktop tidak berubah. */
+@media (pointer: coarse) {
+  :root { --perf-select-h: 34px; --perf-select-fs: 13px; }
+}

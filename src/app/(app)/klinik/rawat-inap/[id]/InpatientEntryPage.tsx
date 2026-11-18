@@ -1,4 +1,6 @@
 import { loadBranchGroomingPolicy, loadServiceStaff } from "@/lib/service-performers-server";
+import { bacaBolehUbahDokterPJ, rakitPanelUbahDokter } from "@/lib/ubah-dokter-pj";
+import { UbahDokterPJ } from "@/components/UbahDokterPJ";
 import { loadClinicItemCategories, splitClinicItems } from "@/lib/clinic-item-categories";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -83,7 +85,7 @@ export async function InpatientEntryPage({ params, searchParams, mode, koreksi =
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
   const branchId = visit?.branch_id ?? null;
-  const [serviceStaff, stay, doctors, paramedics, categories, [itemRows, compoundIds, sku], katalogRacikan, bolehManual, groomingPolicy, packageRows] = await Promise.all([
+  const [serviceStaff, stay, doctors, paramedics, categories, [itemRows, compoundIds, sku], katalogRacikan, bolehManual, groomingPolicy, packageRows, ubahDokterDibaca] = await Promise.all([
     loadServiceStaff(supabase, branchId),
     stayP,
     daftarDokter(supabase,{branchId:visit?.branch_id,role:'doctor'}),
@@ -97,7 +99,10 @@ export async function InpatientEntryPage({ params, searchParams, mode, koreksi =
     bolehP,
     visit?.branch_id ? loadBranchGroomingPolicy(supabase, visit.branch_id) : Promise.resolve(null),
     packagesP,
+    // Tombol "Ubah dokter": izin dibaca bersamaan dengan bacaan lain (tanpa putaran tambahan); gagal baca = tersembunyi.
+    bacaBolehUbahDokterPJ(supabase),
   ]);
+  const panelUbahDokter = rakitPanelUbahDokter(ubahDokterDibaca, serviceStaff, visit?.doctor_id ?? null);
   waktu.tandai("katalog");
   const petHotel = stay.types.get(id) === "pet_hotel";
   const { units: unitMap, prices: hargaMap } = sku;
@@ -148,6 +153,7 @@ export async function InpatientEntryPage({ params, searchParams, mode, koreksi =
     ? putuskanBolehKoreksiVisit(null, user ? (await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()).data?.role : null)
     : koreksiDibaca;
   const setelahPulang = !!rec.discharged_at;
+  // Tombol "Ubah dokter" (koreksi dokter PJ salah input); gagal baca apa pun = tombol tersembunyi.
   waktu.selesai();
   return (
     <>
@@ -164,6 +170,12 @@ export async function InpatientEntryPage({ params, searchParams, mode, koreksi =
         </div>
       </div>
 
+      {panelUbahDokter.boleh && visit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }} data-testid="ubah-dokter-baris">
+          <span style={{ fontSize: 12.5, color: "var(--tm)" }}>Dokter PJ: <b>{rec.doctor_name ?? "belum tercatat"}</b></span>
+          <UbahDokterPJ visitId={String(rec.visit_id)} dokterSekarang={rec.doctor_name ?? null} dokter={panelUbahDokter.dokter} />
+        </div>
+      )}
       {error && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>{error}</div>}
       {stay.failed && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>Tipe rawat inap belum dapat diverifikasi. Muat ulang sebelum mengisi catatan.</div>}
 
