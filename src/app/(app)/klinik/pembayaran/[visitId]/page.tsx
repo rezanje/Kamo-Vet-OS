@@ -15,6 +15,7 @@ import { ClinicRefundPanel, loadClinicRefundData } from "./ClinicRefundPanel";
 import { UangMukaRefundSection } from "./UangMukaRefundSection";
 import { ClinicPaymentCorrectionPanel, type ClinicPaymentCorrectionRow } from "./ClinicPaymentCorrectionPanel";
 import { clinicCorrectableParts } from "@/lib/clinic-payment-correction";
+import { uangPindahanBersih } from "@/lib/uang-pindahan-bersih";
 import { loadClinicPackages, loadClinicPaymentMaster } from "@/lib/clinic-payment";
 import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { randomUUID, createHash } from "node:crypto";
@@ -207,7 +208,7 @@ export default async function PembayaranPage({
     .select("id, deskripsi, qty, harga, jenis, item_id, diskon_persen, compound_recipe_id, prescription_item_id, satuan, service_performers, salesperson_id, salesperson_name, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name)", { count: "exact" })
     .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian tagihan tersimpan", { maxRows: null })
     .catch(() => { throw unverifiedBilling(); })) : null;
-  const paymentRowsP = invoice ? mulai(supabase.from("invoice_payments").select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id)) : null;
+  const paymentRowsP = invoice ? mulai(supabase.from("invoice_payments").select("id, amount, metode, transferred_from, reversal_of").eq("invoice_id", invoice.id)) : null;
   const refundDataP = invoice && invoice.paid_status === "Lunas" && !invoice.correction_pending ? mulai(loadClinicRefundData(supabase, invoice.id)) : null;
   // J02: peran pembaca + riwayat koreksi metode ikut berangkat bersama bacaan invoice
   // (bukan putaran tersendiri); riwayat hanya dipakai bila perannya OWNER/FINANCE.
@@ -283,10 +284,10 @@ export default async function PembayaranPage({
   const invItems: SavedInvoiceSource[] = invItemsP ? await invItemsP : [];
   const { data: paymentRows, error: paymentsError } = paymentRowsP
     ? await paymentRowsP
-    : { error: null, data: [] as { id: string; amount: number; metode: string | null; transferred_from: string | null }[] };
+    : { error: null, data: [] as { id: string; amount: number; metode: string | null; transferred_from: string | null; reversal_of?: string | null }[] };
   if (paymentsError) throw unverifiedBilling();
-  const creditAmount = (paymentRows ?? []).filter((p) => p.transferred_from)
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+  // Uang pindahan terbit ulang yang penerimaannya sudah dibatalkan (baris pembalik tanpa transferred_from) tidak ikut terhitung.
+  const creditAmount = uangPindahanBersih(paymentRows ?? []);
   const paidAmount = Number(invoice?.dp_amount ?? 0) + (paymentRows ?? [])
     .reduce((sum, p) => sum + Number(p.amount), 0);
   // Gagal membaca kelayakan = form koreksi tidak ditawarkan (bukan layar mati):

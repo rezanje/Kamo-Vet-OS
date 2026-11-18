@@ -56,3 +56,13 @@ it("penolakan database ditampilkan dalam bahasa biasa dan formulir tetap bisa di
   await act(async () => btn("Ya, batalkan penerimaan").click());
   expect(calls.run.map((f) => f.get("request_key"))).toEqual(["kunci-9", "kunci-9"]);
 });
+
+it("memberi peringatan buku bank untuk Finance sebelum dan sesudah dibatalkan", async () => {
+  const kalimat = "Setelah dibatalkan, bank/kas di buku berkurang sebesar uang yang diterima. Jika selisih dikembalikan ke pelanggan, Finance transfer saja dan jangan membukukan jurnal pengurang bank lagi.";
+  expect(host.textContent).toContain(kalimat);
+  await type("Harga salah");
+  await act(async () => host.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
+  await act(async () => btn("Ya, batalkan penerimaan").click());
+  expect(host.textContent).toContain("dibatalkan");
+  expect(host.textContent).toContain(kalimat);
+});
