@@ -384,6 +384,23 @@ select count(*)||'|'||count(*) filter (where msg like 'ADMIN_ONLINE_FUNCTION_DEN
         check(f"peran lain tidak terpengaruh penjaga: {nm} memanggil fungsi berpenjaga tanpa penolakan ADMIN_ONLINE", "ADMIN_ONLINE" not in (e or ""), short(e))
     e = h.err("select * from public.pelanggan_tidak_datang(30)")
     check("jalur sistem (tanpa auth.uid): penjaga & pagar tidak menolak", "ADMIN_ONLINE" not in (e or ""), short(e))
+    for who, nm in ((AO, "Admin Online"), (OWNER, "OWNER")):
+        e = h.err("select admin_online_private.guard_all()", who)
+        check(f"guard_all() tidak dapat dipanggil dari API ({nm})", has(e, "permission denied"), short(e))
+    e = h.err("begin; set local role anon; select admin_online_private.guard_all(); commit;")
+    check("guard_all() tidak dapat dipanggil anon", has(e, "permission denied"), short(e))
+    n0 = h.val("select admin_online_private.guard_all()")
+    check("guard_all() idempotent: menjalankan ulang tidak mengubah apa pun (0 fungsi baru)", n0 == "0", n0)
+    h.sql("create function public.zz_ao_pembaca_baru() returns text language plpgsql security definer set search_path = '' as $f$ begin return 'bocor'; end $f$; grant execute on function public.zz_ao_pembaca_baru() to authenticated;")
+    try:
+        v1 = h.val("select public.zz_ao_pembaca_baru()", AO)
+        n1 = h.val("select admin_online_private.guard_all()")
+        e2 = h.err("select public.zz_ao_pembaca_baru()", AO)
+        v3 = h.val("select public.zz_ao_pembaca_baru()", OWNER)
+        check("fungsi DEFINER baru: belum berpenjaga sampai guard_all() dijalankan; sesudahnya Admin Online ditolak, peran lain tetap bisa",
+              v1 == "bocor" and n1 == "1" and has(e2, "ADMIN_ONLINE_FUNCTION_DENIED") and v3 == "bocor", dict(sebelum=v1, dijaga=n1, sesudah=short(e2), owner=v3))
+    finally:
+        h.sql("drop function if exists public.zz_ao_pembaca_baru()")
     e1 = h.err("select kamo_import.baca_hasil_impor(array['x'])", AO)
     check("skema kamo_import: pembaca impor menolak Admin Online (gerbang OWNER/ADMIN)", has(e1, "Hanya OWNER/ADMIN"), short(e1))
 
