@@ -10,6 +10,7 @@ import { PrintButton } from "../PrintButton";
 import { labelPromo } from "@/lib/label-potongan";
 import { bacaRincianPromoKlinik, pasangPromoKeBaris } from "@/lib/rincian-promo-klinik";
 import { muatBagianUangMuka, ringkasMetodeInvoice } from "@/lib/metode-uang-muka";
+import { uangPindahanBersih } from "@/lib/uang-pindahan-bersih";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -50,7 +51,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
     .from("invoice_items").select("id, invoice_id, item_id, deskripsi, qty, harga, diskon_persen, jenis, package_item_id, package_qty, package:items!invoice_items_package_item_id_fkey(name), service_performers, compound_recipe_id, compounding_recipes(id, medical_records(visit_id))", { count: "exact" })
     .eq("invoice_id", invoice.id).order("created_at").order("id").range(from, to), "Rincian invoice", { maxRows: null });
   const { data: payments,error:paymentsError } = await supabase.from("invoice_payments")
-    .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
+    .select("id, amount, metode, transferred_from, reversal_of").eq("invoice_id", invoice.id).order("created_at");
   if(paymentsError)throw new Error("Rincian invoice atau pembayaran belum dapat diverifikasi. Muat ulang sebelum mencetak.");
 
   // Metode bayar invoice yang dipotong uang muka dibaca dari kwitansi asalnya; kolom
@@ -81,8 +82,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   const branch = one(one(invoice.visits)?.branches ?? null);
   const tgl = new Date(invoice.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
   const lunas = invoice.paid_status === "Lunas";
-  const credit = (payments ?? []).filter((p) => p.transferred_from)
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const credit = uangPindahanBersih(payments ?? []);
   const received = Number(invoice.dp_amount) + (payments ?? [])
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const sisa = lunas ? 0 : Math.max(0, Number(invoice.total) - received);

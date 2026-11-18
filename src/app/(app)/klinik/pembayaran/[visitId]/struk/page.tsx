@@ -10,6 +10,7 @@ import { PrintButton } from "../PrintButton";
 import { labelPromo } from "@/lib/label-potongan";
 import { bacaRincianPromoKlinik, labelDiskonBaris, pasangPromoKeBaris } from "@/lib/rincian-promo-klinik";
 import { muatBagianUangMuka, ringkasMetodeInvoice } from "@/lib/metode-uang-muka";
+import { uangPindahanBersih } from "@/lib/uang-pindahan-bersih";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -43,7 +44,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   // Petugas dicetak per jabatan (Dokter / Groomer / Staff), bukan per baris — lihat petugas-cetak.ts.
   const petugas = petugasCetak(visit, items, await bacaKartuPetugas(supabase, idPetugas([visit], items)));
   const { data: payments } = await supabase.from("invoice_payments")
-    .select("id, amount, metode, transferred_from").eq("invoice_id", invoice.id).order("created_at");
+    .select("id, amount, metode, transferred_from, reversal_of").eq("invoice_id", invoice.id).order("created_at");
   // Invoice yang dipotong uang muka: metode dibaca dari kwitansi asal, bukan kolom bawaan "Tunai".
   const metodeBayar = ringkasMetodeInvoice(invoice, payments ?? [],
     await muatBagianUangMuka(supabase, [{ id: invoice.id, payments: payments ?? [] }]));
@@ -56,8 +57,7 @@ export default async function StrukPage({ params }: { params: Promise<{ visitId:
   const promoInvoice = (await bacaRincianPromoKlinik(supabase, [invoice.id])).get(invoice.id) ?? [];
   const { perBaris, totalPromo } = pasangPromoKeBaris(lines, promoInvoice, Number(invoice.discount));
   const diskonTransaksi = Math.max(0, Number(invoice.discount) - totalPromo);
-  const credit = (payments ?? []).filter((p) => p.transferred_from)
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+  const credit = uangPindahanBersih(payments ?? []);
   const received = Number(invoice.dp_amount) + (payments ?? [])
     .reduce((sum, p) => sum + Number(p.amount), 0);
 
