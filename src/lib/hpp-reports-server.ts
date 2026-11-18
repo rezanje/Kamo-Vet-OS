@@ -3,6 +3,7 @@ import { bolehBukaPath } from "./akses";
 import { aturanEfektif, bacaTambahanAkses } from "./akses-akun";
 import { batasTanggalWIB } from "./laporan-transaksi";
 import { hariIniWIB } from "./tanggal";
+import { petaBerbatas } from "./konkuren-batas";
 import { compoundSales, compoundSummary, validReportDate, valueInventory, type Numeric, type InventoryMethod } from "./hpp-reports";
 
 export type ReportKind = "inventory" | "compound";
@@ -18,12 +19,22 @@ type QueryError = { message: string } | null;
 const PAGE_SIZE = 500;
 export async function readReportRows<T>(read: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: QueryError; count: number | null }>,
   identity: (row: T) => string = row => typeof (row as Record<string,unknown>).id === "string" ? (row as Record<string,string>).id : "",
+  opsi: { paralel?: number } = {},
 ): Promise<T[]> {
   const rows: T[] = [];
   const seen = new Set<string>();
   let total: number | undefined;
-  for (let from = 0; total === undefined || from < total; from += PAGE_SIZE) {
-    const { data, error, count } = await read(from, from + PAGE_SIZE - 1);
+  const tambah = (data: T[]) => {
+    for (const row of data) {
+      const key = identity(row);
+      if (typeof key !== "string" || !key || seen.has(key)) throw new ReportInputError("Identitas baris laporan berubah atau tidak lengkap. Muat ulang laporan.");
+      seen.add(key);
+      rows.push(row);
+    }
+  };
+  // Satu halaman: error/hitungan pasti/panjang halaman diperiksa sama persis untuk jalur berurutan maupun bersamaan.
+  const periksa = (hasil: { data: T[] | null; error: QueryError; count: number | null }, from: number): T[] => {
+    const { data, error, count } = hasil;
     if (error) throw new Error(`Data laporan gagal dibaca: ${error.message}`);
     if (!Array.isArray(data) || typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
       throw new Error("Data laporan gagal dibaca: hasil atau jumlah pasti baris tidak tersedia");
@@ -32,12 +43,20 @@ export async function readReportRows<T>(read: (from: number, to: number) => Prom
     if (count !== total || data.length !== Math.min(PAGE_SIZE,total-from)) {
       throw new ReportInputError("Data laporan berubah atau terpotong selama pembacaan. Muat ulang atau persempit cakupan.");
     }
-    for (const row of data) {
-      const key = identity(row);
-      if (typeof key !== "string" || !key || seen.has(key)) throw new ReportInputError("Identitas baris laporan berubah atau tidak lengkap. Muat ulang laporan.");
-      seen.add(key);
-      rows.push(row);
-    }
+    return data;
+  };
+  if ((opsi.paralel ?? 1) > 1) {
+    // Halaman pertama menetapkan jumlah pasti; halaman sisanya dibaca bersamaan (batas kecil), tiap halaman memakai query baru.
+    tambah(periksa(await read(0, PAGE_SIZE - 1), 0));
+    const awal: number[] = [];
+    const jumlah = (): number => total ?? 0;
+    for (let from = PAGE_SIZE; from < jumlah(); from += PAGE_SIZE) awal.push(from);
+    const halaman = await petaBerbatas(awal, opsi.paralel!, async from => periksa(await read(from, from + PAGE_SIZE - 1), from));
+    for (const data of halaman) tambah(data);
+    return rows;
+  }
+  for (let from = 0; total === undefined || from < total; from += PAGE_SIZE) {
+    tambah(periksa(await read(from, from + PAGE_SIZE - 1), from));
   }
   return rows;
 }
