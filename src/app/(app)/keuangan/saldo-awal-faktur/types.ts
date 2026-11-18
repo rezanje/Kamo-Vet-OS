@@ -39,3 +39,19 @@ export type OpeningInvoicePreviewResult =
 export type OpeningInvoicePostResult =
   | { ok: true; receipt: OpeningInvoiceReceipt }
   | { ok: false; error: string };
+
+/** One opening invoice as listed by opening_invoice_correction_rows(). */
+export type OpeningInvoiceCorrectionRow = {
+  line_id: string; jenis: "HUTANG" | "PIUTANG"; batch_id: string; as_of: string; invoice_id: string;
+  no_faktur: string; no_asal: string; pihak: string; total: number; dibayar: number;
+  batal: boolean; periode_tutup: boolean; jumlah_koreksi: number;
+};
+
+export type OpeningInvoiceCorrectionReceipt = {
+  correction_id: string; journal_id: string; no_jurnal: string; no_faktur: string; jenis: "HUTANG" | "PIUTANG";
+  old_total: number; new_total: number; delta: number; dibayar: number; sisa: number; replayed?: boolean;
+};
+
+export type OpeningInvoiceCorrectionResult =
+  | { ok: true; receipt: OpeningInvoiceCorrectionReceipt }
+  | { ok: false; error: string };

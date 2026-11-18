@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getAccountBalances, getAccountLedger, getAccountOpening, nilaiSeksi } from "../ledger";
+import { getAccountBalances, getAccountLedger, getAccountOpening, getOpeningBalances, nilaiSeksi } from "../ledger";
 
 // Mock supabase minimal: coa_accounts tetap, journal_lines difilter oleh chain gte/lte/eq/in
 // persis seperti fetchLines() memanggilnya (query-builder chainable + thenable).
@@ -202,6 +202,20 @@ describe("Buku Besar per akun — hanya menarik baris akun yang dibuka", () => {
     expect(await getAccountOpening(client, "720004", { from: "2026-11-01", branchId: "b1" })).toBe(50_000);
     expect(calls).toEqual([{ p_from: null, p_to: "2026-10-31", p_branch_ids: ["b1"] }]);
     expect(linesRead).toBe(false);
+  });
+
+  it("saldo awal SEMUA akun untuk Ringkasan: satu agregat s/d sehari sebelum periode, sisi saldo normal; tanpa 'dari' = kosong", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const base = makeClient(dua, campur);
+    const client = {
+      from: (t: string) => base.from(t),
+      rpc(_n: string, args: Record<string, unknown>) { calls.push(args); return Promise.resolve({ data: [{ account_id: "acc-7200", debit: 372_267, credit: 0 }], error: null }); },
+    };
+    const awal = await getOpeningBalances(client, { from: "2026-11-01", to: "2026-11-30" });
+    expect(awal.get("acc-7200")).toBe(372_267);
+    expect(calls).toEqual([{ p_from: null, p_to: "2026-10-31", p_branch_ids: null }]);
+    expect((await getOpeningBalances(client, { to: "2026-11-30" })).size).toBe(0);
+    expect(calls).toHaveLength(1);
   });
 
   it("saldo awal jalur lama (fungsi belum ada) tetap hanya membaca akun itu", async () => {

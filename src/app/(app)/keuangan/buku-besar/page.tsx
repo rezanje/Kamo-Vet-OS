@@ -3,7 +3,7 @@ import { completeReportQuery } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
-import { getAccountBalances, getAccountLedger, getAccountOpening } from "@/lib/ledger";
+import { getAccountBalances, getAccountLedger, getAccountOpening, getOpeningBalances } from "@/lib/ledger";
 import { resolveUnitTypes } from "@/lib/laporan";
 import { PeriodFilter } from "../PeriodFilter";
 import { NoDok } from "@/components/NoDok";
@@ -51,7 +51,11 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
     branchId: unitTypes ? undefined : cabang || undefined,
     branchIds,
   };
-  const balances = await getAccountBalances(supabase as never, filter);
+  const [balances, openings] = await Promise.all([getAccountBalances(supabase as never, filter), getOpeningBalances(supabase as never, filter)]);
+  // Dengan tanggal "dari", Debit/Kredit = mutasi periode, dan kolom Saldo = saldo AKHIR (saldo awal sebelum periode
+  // + mutasi) — sama dengan saldo berjalan terakhir di rincian akun (laporan Anisa 18 Nov: BCA Gudang 2.830.825 vs 3.203.092).
+  const pakaiAwal = !!dari;
+  const awalOf = (id: string) => openings.get(id) ?? 0;
 
   const totalDebit = balances.reduce((a, b) => a + b.debit, 0);
   const totalKredit = balances.reduce((a, b) => a + b.credit, 0);
@@ -87,12 +91,12 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
       <Judul />
 
       <div className="crm-sec">
-        <SecHeader num="01" title="RINGKASAN BUKU BESAR" desc="Saldo seluruh akun (neraca saldo / trial balance)." />
+        <SecHeader num="01" title="RINGKASAN BUKU BESAR" desc={pakaiAwal ? "Saldo seluruh akun: saldo awal sebelum periode, mutasi debit/kredit dalam periode, dan saldo akhir." : "Saldo seluruh akun (neraca saldo / trial balance)."} />
         {formFilter}
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 560 }}>
             <thead>
-              <tr><th>Kode</th><th>Nama Akun</th><th>Tipe</th><th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Kredit</th><th style={{ textAlign: "right" }}>Saldo</th><th /></tr>
+              <tr><th>Kode</th><th>Nama Akun</th><th>Tipe</th>{pakaiAwal && <th style={{ textAlign: "right" }}>Saldo Awal</th>}<th style={{ textAlign: "right" }}>Debit</th><th style={{ textAlign: "right" }}>Kredit</th><th style={{ textAlign: "right" }}>{pakaiAwal ? "Saldo Akhir" : "Saldo"}</th><th /></tr>
             </thead>
             <tbody>
               {balances.map((b) => (
@@ -100,16 +104,17 @@ export default async function BukuBesarPage({ searchParams }: { searchParams: Pr
                   <td style={{ fontFamily: "monospace", fontSize: 11, color: "var(--tm)" }}>{b.code}</td>
                   <td style={{ fontSize: 12 }}>{b.name}</td>
                   <td style={{ fontSize: 10, color: "var(--tm)" }}>{b.type}</td>
+                  {pakaiAwal && <td style={{ textAlign: "right", fontSize: 11 }}>{awalOf(b.id) ? rp(awalOf(b.id)) : "—"}</td>}
                   <td style={{ textAlign: "right", fontSize: 11 }}>{b.debit ? rp(b.debit) : "—"}</td>
                   <td style={{ textAlign: "right", fontSize: 11 }}>{b.credit ? rp(b.credit) : "—"}</td>
-                  <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>{rp(b.saldo)}</td>
+                  <td style={{ textAlign: "right", fontSize: 11, fontWeight: 500 }}>{rp(awalOf(b.id) + b.saldo)}</td>
                   <td><Link href={`/keuangan/buku-besar${qs(`akun=${b.code}`)}`} className="back-btn" style={{ fontSize: 11 }} title="Lihat mutasi"><i className="ti ti-eye" /></Link></td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr style={{ borderTop: "2px solid #16213e" }}>
-                <td colSpan={3} style={{ fontWeight: 700, fontSize: 11, paddingTop: 8 }}>TOTAL</td>
+                <td colSpan={pakaiAwal ? 4 : 3} style={{ fontWeight: 700, fontSize: 11, paddingTop: 8 }}>TOTAL</td>
                 <td style={{ textAlign: "right", fontWeight: 700, fontSize: 11, paddingTop: 8 }}>{rp(totalDebit)}</td>
                 <td style={{ textAlign: "right", fontWeight: 700, fontSize: 11, paddingTop: 8 }}>{rp(totalKredit)}</td>
                 <td colSpan={2} style={{ textAlign: "right", paddingTop: 8 }}>

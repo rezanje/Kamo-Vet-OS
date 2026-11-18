@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('fixture', ROOT / 'scripts/test-accurate-inventory-accounting-postgres.py')
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
-SUITES = ['opening_ap_ar_invoices.sql', 'opening_invoice_optional_dates.sql']
+SUITES = ['opening_ap_ar_invoices.sql', 'opening_invoice_optional_dates.sql', 'opening_invoice_corrections.sql']
 
 
 def run(db, bootstrap):

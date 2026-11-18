@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { bacaWorkbookSaldoAwalFaktur, MAKS_BYTE_SALDO_AWAL_FAKTUR, rupiahBulat } from "@/lib/saldo-awal-faktur";
-import type { OpeningInvoicePayload, OpeningInvoicePostResult, OpeningInvoicePreviewResult, OpeningInvoiceReceipt, OpeningInvoiceReport } from "./types";
+import type {
+  OpeningInvoiceCorrectionReceipt, OpeningInvoiceCorrectionResult, OpeningInvoicePayload, OpeningInvoicePostResult,
+  OpeningInvoicePreviewResult, OpeningInvoiceReceipt, OpeningInvoiceReport,
+} from "./types";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -66,5 +69,31 @@ export async function postingSaldoAwalFaktur(input: { payload: OpeningInvoicePay
     return { ok: true, receipt: data as OpeningInvoiceReceipt };
   } catch (cause) {
     return { ok: false, error: cause instanceof Error ? cause.message : "Hasil posting belum dapat dipastikan. Periksa ulang file yang sama." };
+  }
+}
+
+/** OWNER only. Corrects one opening invoice value; the RPC re-checks everything, books a correction journal and is idempotent per request key. */
+export async function koreksiSaldoAwalFaktur(input: {
+  lineId: string; expectedTotal: number; newTotal: string; reason: string; confirmed: boolean; requestKey: string;
+}): Promise<OpeningInvoiceCorrectionResult> {
+  try {
+    const supabase = await actor(["OWNER"], "Hanya OWNER aktif yang dapat mengoreksi saldo awal per faktur.");
+    if (!uuid.test(String(input.lineId ?? ""))) throw new Error("Pilih faktur yang mau dikoreksi.");
+    const newTotal = rupiahBulat(input.newTotal);
+    if (newTotal === null || newTotal <= 0) throw new Error("Nilai baru harus rupiah bulat lebih dari 0, misalnya 10.101.500.");
+    if (!Number.isFinite(Number(input.expectedTotal))) throw new Error("Nilai lama belum terbaca. Muat ulang halaman.");
+    const reason = String(input.reason ?? "").trim();
+    if (!input.confirmed || reason.length < 10 || reason.length > 1000) throw new Error("Centang konfirmasi dan isi alasan koreksi 10–1.000 karakter.");
+    const requestKey = String(input.requestKey ?? "");
+    if (!requestKey || requestKey.length > 120) throw new Error("Identitas permintaan belum tersedia. Muat ulang halaman.");
+    const { data, error } = await supabase.rpc("correct_opening_invoice", {
+      p_line_id: input.lineId, p_expected_total: Number(input.expectedTotal), p_new_total: newTotal, p_reason: reason, p_request_key: requestKey,
+    });
+    if (error) throw new Error(error.message);
+    if (!data?.correction_id || !data?.journal_id) throw new Error("Hasil koreksi belum terkonfirmasi. Muat ulang halaman dan cek riwayat koreksi sebelum mencoba lagi.");
+    for (const path of ["/keuangan/saldo-awal-faktur", "/keuangan/hutang", "/keuangan/piutang", "/keuangan/neraca", "/keuangan/buku-besar", "/pembelian/faktur", "/penjualan/faktur", "/pembelian/perintah-bayar"]) revalidatePath(path);
+    return { ok: true, receipt: data as OpeningInvoiceCorrectionReceipt };
+  } catch (cause) {
+    return { ok: false, error: cause instanceof Error ? cause.message : "Hasil koreksi belum dapat dipastikan. Muat ulang halaman dan cek riwayat koreksi." };
   }
 }
