@@ -117,7 +117,7 @@ begin
    'pihak',coalesce(sp.nama::text,cu.name::text,l.party_name),
    'total',coalesce(pi.total,si.total),
    'dibayar',public.opening_invoice_paid(l.jenis,coalesce(l.purchase_invoice_id,l.sales_invoice_id)),
-   'batal',(pi.voided_at is not null or si.status='batal'),
+   'batal',coalesce(pi.voided_at is not null or si.status='batal',false),
    'periode_tutup',(v_closed is not null and b.as_of<=v_closed),
    'jumlah_koreksi',(select count(*) from public.opening_invoice_corrections c where c.line_id=l.id)) x
   from public.opening_invoice_lines l

@@ -65,7 +65,7 @@ begin
  rows:=opening_invoice_correction_rows();
  if jsonb_array_length(rows)<>3 then raise exception 'C1 FINANCE list wrong: %',rows;end if;
  select x into r from jsonb_array_elements(rows) x where x->>'line_id'=ap2::text;
- if (r->>'total')::numeric<>2060500 or (r->>'dibayar')::numeric<>1000000 or r->>'pihak'<>'PT Fiksi Hewan' or r->>'no_asal'<>'PI-OLD-2' or (r->>'batal')::boolean or (r->>'periode_tutup')::boolean
+ if (r->>'total')::numeric<>2060500 or (r->>'dibayar')::numeric<>1000000 or r->>'pihak'<>'PT Fiksi Hewan' or r->>'no_asal'<>'PI-OLD-2' or (r->>'batal') is distinct from 'false' or (r->>'periode_tutup')::boolean
   then raise exception 'C1 row content wrong: %',r;end if;
  select x into r from jsonb_array_elements(rows) x where x->>'line_id'=ar1::text;
  if (r->>'dibayar')::numeric<>2500000 or r->>'jenis'<>'PIUTANG' then raise exception 'C1 AR paid wrong: %',r;end if;

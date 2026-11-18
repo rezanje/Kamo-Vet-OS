@@ -55,3 +55,13 @@ FB.2026.10.00079 dan FB.2026.10.00030 (migrasi) mengubah jurnal batch langsung â
   ulang, non-Owner tidak bisa simpan.
 - `scripts/test-activity-audit-postgres.py`: `activity_audit_coverage.sql` sudah gagal sebelum perubahan ini (33 tabel lain belum
   terdaftar/dikecualikan); dua tabel baru tidak termasuk daftar yang gagal.
+
+## Status Production
+
+- Migrasi diterapkan ke Production 18 Nov 2026 lewat Supabase `apply_migration` (`koreksi_saldo_awal_per_faktur`), lalu
+  `koreksi_saldo_awal_per_faktur_batal_false` (perbaikan kecil: kolom `batal` di daftar selalu true/false, bukan null untuk faktur hutang).
+  Isi file migrasi di repo = gabungan keduanya.
+- Cek baca (transaksi di-rollback, sebagai Owner): `opening_invoice_correction_rows()` mengembalikan 118 faktur (80 hutang, 38 piutang),
+  0 nilai `batal` null; FB.2026.10.00030 = 10.101.500, sudah dibayar 10.101.500 (pembayaran tgl 14 Nov, dicatat 18 Nov 10.19 WIB).
+- Belum diuji: menyimpan koreksi sungguhan di Production (tidak dilakukan agar tidak membuat jurnal uji di buku besar asli).
+  Tampilan layar baru aktif setelah PR di-merge dan Vercel selesai deploy.
