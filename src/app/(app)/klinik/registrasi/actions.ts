@@ -9,6 +9,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { cariAnabulSenama, errorAnabulKembar, pesanAnabulKembar } from "@/lib/anabul";
 import { nomorHpValid, PESAN_HP_TIDAK_VALID } from "@/lib/kontak";
 import { resolveDokter } from "@/lib/dokter";
+import { bacaPemeriksaId, pemeriksaBerlaku, periksaPemeriksa } from "@/lib/dokter-pemeriksa";
 import { bacaPets, susunKeluhan } from "@/lib/rombongan";
 
 // Inti registrasi: buat/reuse pelanggan, simpan tiap anabul, buat satu kunjungan
@@ -39,6 +40,12 @@ async function daftar(formData: FormData): Promise<string[]> {
   if (!user) redirect("/login");
   const branch = await requireOperationalBranch(supabase, user.id, "klinik");
   if (branch.id !== branchId) redirect("/klinik/registrasi?error=" + encodeURIComponent("Cabang form berubah. Muat ulang pendaftaran."));
+  // Dokter pemeriksa (hanya poli Grooming; poli lain mengabaikannya): dicek SEBELUM menulis apa pun. Database mengulang aturan yang sama.
+  const pemeriksaId = bacaPemeriksaId(formData.get("pemeriksa_id"), poli);
+  if (pemeriksaId) {
+    const cek = await periksaPemeriksa(supabase, pemeriksaId, branchId);
+    if (!cek.ok) redirect(`/klinik/registrasi?error=${encodeURIComponent(cek.pesan)}`);
+  }
   const bookingId = String(formData.get("bookingId") ?? "").trim();
   const kontrol = String(formData.get("kontrol") ?? "baru");
   const tujuanKontrol = String(formData.get("tujuanKontrol") ?? "").trim();
@@ -152,6 +159,7 @@ async function daftar(formData: FormData): Promise<string[]> {
       .insert({
         branch_id: branchId, customer_id: customerId, pet_id: finalPetId,
         poli, dokter, doctor_id: doctorId,
+        ...(pemeriksaId ? { pemeriksa_id: pemeriksaId } : {}),
         keluhan: susunKeluhan(p.keluhan, kontrol, tujuanKontrol),
         status: "Menunggu", queue_number: queueNumber,
         source: bookingId ? "booking" : "walk_in",
@@ -159,7 +167,7 @@ async function daftar(formData: FormData): Promise<string[]> {
       })
       .select("id").single();
     if (visitErr || !visit) {
-      redirect(`/klinik/registrasi?error=${encodeURIComponent(visitErr?.message ?? "Gagal buat kunjungan")}`);
+      redirect(`/klinik/registrasi?error=${encodeURIComponent(pemeriksaBerlaku(visitErr?.message) ?? visitErr?.message ?? "Gagal buat kunjungan")}`);
     }
     visitIds.push(visit!.id);
   }

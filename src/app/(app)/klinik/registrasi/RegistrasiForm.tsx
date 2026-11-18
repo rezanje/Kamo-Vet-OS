@@ -3,6 +3,7 @@
 import { NumberInput } from "@/components/NumberInput";
 import { LocalTransactionDraft, usePreservedAction } from "@/components/LocalTransactionDraft";
 import { staffForService } from "@/lib/clinical-staff";
+import { pilihanPemeriksa, poliPakaiPemeriksa } from "@/lib/dokter-pemeriksa";
 
 import { batasBeratWajar, STATUS_REPRODUKSI } from "@/lib/anabul";
 
@@ -61,6 +62,9 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
   const registration = usePreservedAction(registrasiPasien);
   const payment = usePreservedAction(registrasiDanBayar);
   const [service,setService]=useState(awal?.poli??"Poli Umum");
+  // Dokter pemeriksa (hanya Grooming; di poli lain isian Dokter sudah ada). Dikosongkan tiap ganti poli supaya pilihan lama tidak ikut terkirim diam-diam.
+  const [pemeriksa,setPemeriksa]=useState("");
+  const gantiPoli=(nilai:string)=>{setService(nilai);setPemeriksa("");};
   const [phone, setPhone] = useState(awal?.phone ?? "");
   const [looking, setLooking] = useState(false);
   const [customer, setCustomer] = useState<CustomerLite | null>(null);
@@ -147,7 +151,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
       <LocalTransactionDraft scope={draftScope} state={{
         snapshot:{service,phone,pets:pets.map(p=>({...p,photo_url:p.photo_url.startsWith("blob:")?"":p.photo_url})),aktif},
         restore:value=>{if(typeof value.service!=="string"||typeof value.phone!=="string"||!Array.isArray(value.pets)||value.pets.length<1||value.pets.length>MAKS_HEWAN||!value.pets.every(p=>p&&typeof p==="object"&&Object.keys(petKosong()).every(k=>k==="weight"?p[k]===null||(typeof p[k]==="number"&&Number.isFinite(p[k])):typeof p[k]==="string")&&!p.photo_url.startsWith("blob:"))||typeof value.aktif!=="number"||!Number.isInteger(value.aktif)||value.aktif<0||value.aktif>=value.pets.length)return false;setService(value.service);setPhone(value.phone);setPets(value.pets);setAktif(value.aktif);return true;},
-        reset:()=>{setPhone(awal?.phone??"");setService(awal?.poli??"Poli Umum");setPets([awal?{...petKosong(),name:awal.namaHewan,species:awal.jenisHewan,keluhan:awal.keluhan}:petKosong()]);setAktif(0);setCustomer(null);setExistingPets([]);}
+        reset:()=>{setPhone(awal?.phone??"");setService(awal?.poli??"Poli Umum");setPemeriksa("");setPets([awal?{...petKosong(),name:awal.namaHewan,species:awal.jenisHewan,keluhan:awal.keluhan}:petKosong()]);setAktif(0);setCustomer(null);setExistingPets([]);}
       }}/>
       {(registration.failure||payment.failure)&&<div role="alert" className="p2ban">{registration.failure||payment.failure}</div>}
       <input type="hidden" name="pets" value={JSON.stringify(pets)} />
@@ -211,7 +215,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
             </div>
             <div>
               <label className="flab">Poli tujuan {req}</label>
-              <select className="fi" name="poli" value={service} onChange={event=>setService(event.target.value)}>
+              <select className="fi" name="poli" value={service} onChange={event=>gantiPoli(event.target.value)}>
                 <option>Poli Umum</option>
                 <option>Poli Gigi</option>
                 <option>Poli Kulit</option>
@@ -223,7 +227,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
           {kelihatanGrooming && (
             <div role="status" data-testid="notice-grooming" className="p2ban" style={{ marginBottom: 10, justifyContent: "space-between", gap: 8 }}>
               <span><i className="ti ti-scissors" /> Ini kunjungan grooming? Pilih Poli Grooming dan isi Groomer.</span>
-              <button type="button" className="btn-def" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => setService("Grooming")}>Pilih Poli Grooming</button>
+              <button type="button" className="btn-def" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => gantiPoli("Grooming")}>Pilih Poli Grooming</button>
             </div>
           )}
           <div className="frow">
@@ -249,6 +253,29 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
               </select>
             </div>
           </div>
+          {poliPakaiPemeriksa(service) && (
+            <>
+              <div className="frow">
+                <div>
+                  <label className="flab">Dokter pemeriksa</label>
+                  <select className="fi" name="pemeriksa_id" value={pemeriksa} onChange={event=>setPemeriksa(event.target.value)}>
+                    <option value="">— belum dipilih —</option>
+                    {pilihanPemeriksa(dokter).map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.nama}{d.jabatan ? ` · ${d.jabatan}` : ""}{d.jaga ? " · jaga hari ini" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Dokter yang mengecek pasien grooming; namanya tampil di rekam medis dan terisi otomatis sebagai Dokter di kasir. Boleh dikosongkan.</div>
+                </div>
+              </div>
+              {!pemeriksa && (
+                <div role="status" data-testid="notice-pemeriksa" className="p2ban" style={{ marginBottom: 10, gap: 8 }}>
+                  <i className="ti ti-stethoscope" /> Dokter pemeriksa belum dipilih — pilih dokter yang mengecek supaya tercatat dan terisi di kasir (boleh dilewati).
+                </div>
+              )}
+            </>
+          )}
           <div>
             <label className="flab">Tujuan kontrol (jika kontrol)</label>
             <input className="fi" name="tujuanKontrol" placeholder="Kontrol jahitan" />
