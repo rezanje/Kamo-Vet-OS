@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/login/actions";
 import { bolehBukaPath } from "@/lib/akses";
 import { aturanEfektif, bacaAkses, menuTerbuka, punyaAksesKhusus } from "@/lib/akses-akun";
+import { RUMAH_ADMIN_ONLINE, isAdminOnline } from "@/lib/admin-online";
 
 // Satu kotak pilihan mode kerja.
 function Tile({ href, icon, color, title, desc }: { href: string; icon: string; color: string; title: string; desc: string }) {
@@ -37,6 +38,8 @@ export default async function MulaiPage({
   // E3 (meeting 12 Nov 2026): akun dengan akses khusus hanya diberi pilihan yang memang bisa dibuka (mis. staf
   // Penjualan Online langsung ke menunya, bukan ke Petshop/Klinik yang akan ditolak). Akun lain: tampilan lama persis.
   const role = profile?.role ?? "";
+  // Admin Online: langsung ke satu-satunya layarnya (tanpa pilihan mode kerja).
+  if (isAdminOnline(role)) redirect(RUMAH_ADMIN_ONLINE);
   const khusus = punyaAksesKhusus(role, akses.akun);
   const aturan = khusus ? aturanEfektif(role, akses) : [];
   const menuKhusus = khusus ? menuTerbuka(role, aturan) : [];

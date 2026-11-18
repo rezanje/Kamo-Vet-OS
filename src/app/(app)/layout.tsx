@@ -19,6 +19,8 @@ import { ReleaseNotice } from "@/components/ReleaseNotice";
 import { ActiveBranch } from "@/components/ActiveBranch";
 import { branchDisplayName } from "@/lib/branch-display";
 import { mulai } from "@/lib/u07-waktu";
+import { isAdminOnline } from "@/lib/admin-online";
+import { AdminOnlineShell } from "@/components/AdminOnlineShell";
 
 export default async function AppLayout({
   children,
@@ -53,6 +55,12 @@ export default async function AppLayout({
   if (profile && profile.is_active === false) {
     await supabase.auth.signOut();
     redirect("/login?error=" + encodeURIComponent("Akun Anda dinonaktifkan. Hubungi admin."));
+  }
+
+  // Admin Online: cangkang minimal (tanpa sidebar/tab/pencarian/cabang aktif); halaman lain sudah ditolak middleware.
+  // Di sini sekali lagi (defense in depth): selain layar impor, children tidak pernah dirender untuk peran ini lewat jalur menu.
+  if (isAdminOnline(profile?.role)) {
+    return <AdminOnlineShell fullName={profile?.full_name ?? user.email ?? "Pengguna"}>{children}</AdminOnlineShell>;
   }
 
   const [{ data: branches }, akses] = await Promise.all([branchesP, aksesP]);

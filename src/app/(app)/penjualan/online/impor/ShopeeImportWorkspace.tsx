@@ -24,7 +24,7 @@ const KIND_LABEL: Record<string, string> = {
 
 // E4 (meeting 12 Nov 2026): yang dipilih CABANG, gudangnya ditentukan sistem (gudang utama cabang).
 // Akun dengan satu cabang: terkunci otomatis. Server menghitung ulang gudang dari cabang yang dikirim.
-export function ShopeeImportWorkspace({ cabang, terkunci, defaultBranchId, isOwner }: { cabang: CabangImpor[]; terkunci: boolean; defaultBranchId: string; isOwner: boolean }) {
+export function ShopeeImportWorkspace({ cabang, terkunci, defaultBranchId, isOwner, tanpaKembali = false }: { cabang: CabangImpor[]; terkunci: boolean; defaultBranchId: string; isOwner: boolean; tanpaKembali?: boolean }) {
   const [branchId, setBranchId] = useState(defaultBranchId);
   const terpilih = cabang.find(c => c.id === branchId) ?? null;
   const [file, setFile] = useState<File | null>(null);
@@ -246,7 +246,7 @@ export function ShopeeImportWorkspace({ cabang, terkunci, defaultBranchId, isOwn
 
       {analisis.length > 0 && (
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <Link href="/penjualan/online" className="btn-def" style={{ textDecoration: "none" }}>Kembali</Link>
+          {!tanpaKembali && <Link href="/penjualan/online" className="btn-def" style={{ textDecoration: "none" }}>Kembali</Link>}
           <button type="button" className="btn-acc" disabled={busy || siap.length === 0} onClick={simpan}>
             <i className="ti ti-device-floppy" /> Simpan semua ({siap.length} pesanan)
           </button>

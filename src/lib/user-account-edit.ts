@@ -1,3 +1,4 @@
+import { PERAN_AKUN } from "./admin-online";
 export type UserAccountEditSnapshot = {
   profile_id: string;
   full_name: string | null;
@@ -18,7 +19,7 @@ export function isAccountEditId(value: string): boolean {
 export function isUserAccountEditSnapshot(value: unknown, id: string): value is UserAccountEditSnapshot {
   if (!value || typeof value !== "object") return false;
   const row = value as Partial<UserAccountEditSnapshot>;
-  const roles = ["OWNER", "ADMIN", "FINANCE", "DOCTOR", "STAFF"];
+  const roles: readonly string[] = PERAN_AKUN;
   return row.profile_id === id && (typeof row.full_name === "string" || row.full_name === null)
     && typeof row.role === "string" && roles.includes(row.role)
     && typeof row.is_active === "boolean" && typeof row.self === "boolean"

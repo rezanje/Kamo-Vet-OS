@@ -2,6 +2,7 @@ import { loadRoleCapabilities } from "@/lib/role-capabilities";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { bolehBukaPath, tujuanSaatDiblokir } from "@/lib/akses";
+import { isAdminOnline } from "@/lib/admin-online";
 import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { BRANCH_HEADER, MODE_HEADER, branchCookie, operationalMode, parseBranchContext } from "@/lib/operational-context";
 import { resolveOperationalBranch } from "@/lib/operational-branch";
@@ -92,8 +93,26 @@ export async function updateSession(request: NextRequest) {
         bacaAkses(supabase),
       ]);
       // Auth deletion cascades the profile; an unexpired JWT alone is not enough.
-      if (profileError || akses.rulesError || !profile || profile.is_active === false) return loginRedirect(request);
+      if (profileError || !profile || profile.is_active === false) return loginRedirect(request);
       const role = profile?.role ?? "";
+      // Admin Online (lib/admin-online.ts): langit-langit daftar putih persis — satu-satunya layar adalah impor penjualan online.
+      // Aturan Akses Grup/akses khusus tidak dibaca untuk peran ini (tidak bisa melebarkan); gagal baca aturan tidak berarti apa-apa.
+      // Tanpa cabang operasional/shift: tidak ada jalur kasir/klinik yang boleh dibuka.
+      if (isAdminOnline(role)) {
+        if (!bolehBukaPath(role, path, [])) {
+          const url = request.nextUrl.clone();
+          url.pathname = tujuanSaatDiblokir(role, []);
+          url.search = "";
+          // 303: tindakan server (POST) yang ditolak tidak boleh diulang di halaman tujuan.
+          return NextResponse.redirect(url, { status: 303 });
+        }
+        request.headers.delete(BRANCH_HEADER);
+        request.headers.delete(MODE_HEADER);
+        const response = NextResponse.next({ request: { headers: request.headers } });
+        supabaseResponse.cookies.getAll().forEach(cookie => response.cookies.set(cookie));
+        return response;
+      }
+      if (akses.rulesError) return loginRedirect(request);
       if (akses.submenu.status === "error" && role !== "OWNER") {
         return loginRedirect(request, "Hak akses halaman belum bisa diperiksa. Coba lagi sebentar lagi, atau masuk ulang.");
       }

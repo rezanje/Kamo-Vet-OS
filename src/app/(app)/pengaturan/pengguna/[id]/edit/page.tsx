@@ -1,3 +1,4 @@
+import { isAdminOnline } from "@/lib/admin-online";
 import { randomUUID } from "node:crypto";
 import { branchDisplayName } from "@/lib/branch-display";
 import Link from "next/link";
@@ -97,7 +98,7 @@ export default async function EditPenggunaPage({ params }: { params: Promise<{ i
   }
   if (!branches) return <>{back}<p role="alert">Pilihan cabang akun belum dapat dimuat lengkap. Muat ulang sebelum mengedit; perubahan belum disimpan.</p></>;
   const edits = await history(client, id);
-  const akses = superAdmin && snapshot.role !== "OWNER" ? await aksesKhusus(client, id, snapshot.role) : null;
+  const akses = superAdmin && snapshot.role !== "OWNER" && !isAdminOnline(snapshot.role) ? await aksesKhusus(client, id, snapshot.role) : null;
   const branchNames = (ids: string[]) => ids.map((branchId) => branches.find((branch) => branch.id === branchId)?.name ?? `Cabang tidak tersedia · ${branchId}`).join(", ") || "Tanpa penugasan";
   return <>
     <div style={{ marginBottom: 12 }}>{back}</div>
@@ -111,7 +112,8 @@ export default async function EditPenggunaPage({ params }: { params: Promise<{ i
     </section>}
     {superAdmin && <section data-akses-khusus-section>
       <SecHeader num="03" title="AKSES KHUSUS AKUN INI" desc="Atur menu yang bisa dibuka akun ini tanpa mengubah perannya: ikuti peran, tambah menu, atau hanya menu tertentu (mis. hanya Penjualan Online). Hanya Owner yang bisa mengatur; setiap perubahan tercatat." />
-      {snapshot.role === "OWNER" ? <p role="note">Akun OWNER selalu punya akses penuh, jadi tidak bisa diberi akses khusus.</p>
+      {isAdminOnline(snapshot.role) ? <p role="note">Akun Admin Online hanya bisa membuka layar impor penjualan marketplace; tidak ada akses khusus atau pengaturan menu untuk peran ini.</p>
+        : snapshot.role === "OWNER" ? <p role="note">Akun OWNER selalu punya akses penuh, jadi tidak bisa diberi akses khusus.</p>
         : !akses || akses.status === "error" ? <p role="alert">Akses khusus akun ini belum dapat dimuat. Muat ulang halaman sebelum mengubahnya.</p>
         : akses.status === "absent" ? <p role="note">Fitur akses khusus akun belum aktif di database. Akun ini mengikuti akses perannya.</p>
         : <>
