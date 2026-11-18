@@ -52,6 +52,7 @@ insert into a01_excluded values
  ('compound_adjustments','domain correction trail: compound ingredients are captured'),
  ('master_data_lifecycle_audit','domain audit trail'),('payslip_override_history','domain audit trail'),
  ('user_account_edits','domain audit trail'),('inpatient_daily_log_edits','domain audit trail'),
+ ('visit_doctor_changes','domain correction trail: visit and stay doctor change is captured on visits and inpatient_records; this immutable log keeps who/why/old/new'),
  ('inpatient_status_log','domain audit trail'),('invoice_edit_log','domain audit trail'),
  ('simulation_reset_audits','domain audit trail'),
  -- Personal viewer preference, not business data.
