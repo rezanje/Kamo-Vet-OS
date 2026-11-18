@@ -22,10 +22,10 @@ async function mount(props: Record<string, unknown>) {
 beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); calls.run = []; calls.prev = []; calls.prevReply = { ok: true, ringkasan: ["Jurnal pembalik bertanggal 2026-11-09."], tolakTanggal: null, minTanggal: "2026-11-09" }; });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 
-it("Owner: kontrol tertutup 'Ubah tanggal pembukuan (opsional)', bawaan hari ini, min = tanggal penerimaan asli, max = hari ini", async () => {
-  await mount({ hariIni: "2026-11-12", minTanggal: "2026-11-09", bolehMundur: true });
+it("Owner, transaksi hari ini: kontrol tertutup 'Ubah tanggal pembukuan (opsional)', bawaan hari ini, min = tanggal penerimaan asli, max = hari ini", async () => {
+  await mount({ hariIni: "2026-11-12", minTanggal: "2026-11-12", bolehMundur: true });
   const d = host.querySelector<HTMLInputElement>("#tanggal-efektif")!;
-  expect([d.type, d.value, d.min, d.max]).toEqual(["date", "2026-11-12", "2026-11-09", "2026-11-12"]);
+  expect([d.type, d.value, d.min, d.max]).toEqual(["date", "2026-11-12", "2026-11-12", "2026-11-12"]);
   const box = host.querySelector<HTMLDetailsElement>('[data-testid="ubah-tanggal-pembukuan"]')!;
   expect(box.open).toBe(false); expect(box.querySelector("summary")!.textContent).toBe("Ubah tanggal pembukuan (opsional)");
   expect(box.textContent).toContain("Dicatat di tanggal ini; uang fisik tetap hari ini.");
@@ -50,8 +50,8 @@ it("mengubah tanggal pembukuan memuat pratinjau ulang (ringkasan baru) dan mengi
   expect(host.textContent).toContain("Dicatat di tanggal 2026-11-09; uang fisik tetap hari ini.");
   expect(host.textContent).toContain("ubah transaksi di faktur, lalu terima pembayaran lagi");
 });
-it("jalur bawaan (tanggal tidak diubah): kiriman identik dengan sebelumnya (visit_id, invoice_id, reason, request_key, effective_date = hari ini)", async () => {
-  await mount({ hariIni: "2026-11-12", minTanggal: "2026-11-09", bolehMundur: true });
+it("jalur bawaan transaksi hari ini (tanggal tidak diubah): kiriman identik dengan sebelumnya (visit_id, invoice_id, reason, request_key, effective_date = hari ini)", async () => {
+  await mount({ hariIni: "2026-11-12", minTanggal: "2026-11-12", bolehMundur: true });
   await setVal("#alasan-batal", "Harga vaksin salah"); await act(async () => host.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
   await act(async () => btn("Ya, batalkan penerimaan").click());
   expect(calls.prev).toEqual([]);
