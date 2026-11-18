@@ -139,6 +139,7 @@ export default async function LaporanVisitPage({ searchParams }: { searchParams:
           <b>Visit terhitung</b> = maksimal 1 visit per orang per pasien per hari (tanggal WIB) — aturan yang sama
           dengan komisi visit dokter di menu Komisi, jadi angka dokter di kolom ini sama dengan yang dibayar Komisi.
           Kolom <b>Semua catatan visit</b> menghitung setiap catatan (mis. Visit 1 dan Visit 2 di hari yang sama).
+          Kolom <b>Dokter PJ</b> di rincian = dokter PJ rawat inap pasien saat ini (ikut berubah bila PJ dikoreksi); insentif visit tetap mengikuti dokter yang menulis catatan.
           Visit yang lupa diisi tidak terhitung — koreksi lewat detail rawat inap pasiennya. Nilai rupiah insentif
           dihitung Finance dari jumlah visit ini.
         </div>
@@ -158,6 +159,7 @@ export default async function LaporanVisitPage({ searchParams }: { searchParams:
                 <th style={{ width: 110 }}>Cabang</th>
                 <th style={{ width: 110 }}>Pasien</th>
                 <th style={{ width: 120 }}>Pemilik</th>
+                <th style={{ width: 130 }}>Dokter PJ</th>
                 <th>Kondisi / tindakan</th>
               </tr>
             </thead>
@@ -174,10 +176,11 @@ export default async function LaporanVisitPage({ searchParams }: { searchParams:
                     <Link href={`/klinik/rawat-inap/${baris.inpatientId}`} style={{ color: "#2563eb", textDecoration: "none" }}>{baris.pasien}</Link>
                   </td>
                   <td style={{ fontSize: 10.5 }}>{baris.pemilik}</td>
+                  <td style={{ fontSize: 10.5 }} data-testid="visit-dokter-pj">{baris.dokterPJ ?? "—"}</td>
                   <td style={{ fontSize: 10.5 }}>{[baris.kondisi, baris.tindakan].filter(Boolean).join(" · ") || "—"}</td>
                 </tr>
               ))}
-              {rincian.length === 0 && <TabelKosong kolom={9} pesan="Belum ada catatan pada saringan ini." />}
+              {rincian.length === 0 && <TabelKosong kolom={10} pesan="Belum ada catatan pada saringan ini." />}
             </tbody>
           </table>
         </div>

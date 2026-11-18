@@ -42,7 +42,8 @@ insert into a01_excluded values
  ('stock_document_corrections','domain correction trail'),('return_record_corrections','domain correction trail'),
  ('sale_cancellations','domain correction trail'),('sale_payment_corrections','domain correction trail'),
  ('purchase_payment_cancellations','domain correction trail'),('wholesale_invoice_corrections','domain correction trail'),
- ('purchase_invoice_corrections','domain correction trail'),('purchase_receipt_cancellations','domain correction trail'),
+ ('purchase_invoice_corrections','domain correction trail'),('opening_invoice_corrections','domain correction trail: invoice, import line, batch and journal changes are captured'),
+ ('opening_invoice_correction_requests','request receipt'),('purchase_receipt_cancellations','domain correction trail'),
  ('sales_receipt_cancellations','domain correction trail: reversal receipt and journals are captured'),
  ('stock_request_shipment_cancellations','domain correction trail: reversal stock moves and request change are captured'),
  ('clinic_payment_corrections','domain correction trail: payment rows and journals are captured'),
@@ -51,6 +52,7 @@ insert into a01_excluded values
  ('compound_adjustments','domain correction trail: compound ingredients are captured'),
  ('master_data_lifecycle_audit','domain audit trail'),('payslip_override_history','domain audit trail'),
  ('user_account_edits','domain audit trail'),('inpatient_daily_log_edits','domain audit trail'),
+ ('visit_doctor_changes','domain correction trail: visit and stay doctor change is captured on visits and inpatient_records; this immutable log keeps who/why/old/new'),
  ('inpatient_status_log','domain audit trail'),('invoice_edit_log','domain audit trail'),
  ('simulation_reset_audits','domain audit trail'),
  -- Personal viewer preference, not business data.

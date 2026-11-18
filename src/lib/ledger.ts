@@ -163,6 +163,23 @@ export async function getAccountOpening(supabase: AnyClient, code: string, f?: L
   return acc.normal_balance === "D" ? debit - credit : credit - debit;
 }
 
+/** Saldo semua akun SEBELUM tanggal `from` (sisi saldo normal), per account id. Kosong bila tanpa `from`.
+ * Dipakai Ringkasan Buku Besar supaya kolom saldo = saldo akhir, sama dengan saldo berjalan di rincian. */
+export async function getOpeningBalances(supabase: AnyClient, f?: LedgerFilter): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!f?.from) return out;
+  const [{ data: accs }, totals] = await Promise.all([
+    completeReportQuery(supabase.from("coa_accounts").select("id, normal_balance", { count: "exact" })) as Promise<{ data: { id: string; normal_balance: string }[] | null }>,
+    fetchTotals(supabase, { to: hariSebelum(f.from), branchId: f.branchId, branchIds: f.branchIds }),
+  ]);
+  for (const a of accs ?? []) {
+    const t = totals.get(a.id);
+    if (!t) continue;
+    out.set(a.id, a.normal_balance === "D" ? t.debit - t.credit : t.credit - t.debit);
+  }
+  return out;
+}
+
 // Mutasi satu akun (untuk buku besar detail), urut tanggal — saldo berjalan dihitung di page.
 export async function getAccountLedger(supabase: AnyClient, code: string, f?: LedgerFilter): Promise<LedgerLine[]> {
   const { data: accs } = (await completeReportQuery(supabase.from("coa_accounts").select("id", { count: "exact" }).eq("code", code))) as { data: { id: string }[] | null };

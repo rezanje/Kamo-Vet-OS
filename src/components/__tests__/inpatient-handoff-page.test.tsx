@@ -1,19 +1,20 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { handoffSourceStatus, type InpatientHandoff } from '@/lib/inpatient-handoff';
-const s=vi.hoisted(()=>({branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,forcedConsent:false,paksaTemplate:'all' as 'all'|'other'|'none',role:'DOCTOR',paidStay:'' as ''|'Lunas'|'DP',secondStay:false,broken:'',dailyLogs:false,authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
-vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')}}));
+const s=vi.hoisted(()=>({ubah:false,branch:'branch-a',allowed:['branch-a'] as string[]|null,user:true,longRx:false,duplicateInvoice:false,forcedConsent:false,paksaTemplate:'all' as 'all'|'other'|'none',role:'DOCTOR',paidStay:'' as ''|'Lunas'|'DP',secondStay:false,broken:'',dailyLogs:false,authReads:0,reads:[] as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number}[]}));
+vi.mock('next/navigation',()=>({notFound:()=>{throw Error('NOT_FOUND')},useRouter:()=>({refresh(){}})}));
 vi.mock('@/lib/branch-access',()=>({allowedBranchIds:async()=>s.allowed,canUseBranch:(allowed:string[]|null,id:string)=>allowed===null||allowed.includes(id)}));
 vi.mock('@/app/(app)/klinik/rawat-inap/[id]/PapanPemantauan',()=>({PapanPemantauan:()=> <div>DAILY MONITORING</div>}));
 vi.mock('@/app/(app)/klinik/rawat-inap/[id]/ObatKhusus',()=>({ObatKhusus:()=> <div>DOSE PROTOCOL</div>}));
 vi.mock('@/app/(app)/klinik/rawat-inap/actions',()=>({changeCondition:async()=>{},sendRipWa:async()=>{}}));
-vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:async()=>{s.authReads++;return{data:{user:s.user?{id:'actor'}:null}}}},from(table:string){
+vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({rpc:async(fn:string)=>({data:fn==='clinic_visit_doctor_change_allowed'?s.ubah:null,error:null}),auth:{getUser:async()=>{s.authReads++;return{data:{user:s.user?{id:'actor'}:null}}}},from(table:string){
  const request={table,eq:{},in:{}} as {table:string;eq:Record<string,unknown>;in:Record<string,unknown>;from?:number;to?:number};s.reads.push(request);let single=false;
- const q={select:()=>q,eq:(k:string,v:unknown)=>{request.eq[k]=v;return q},in:(k:string,v:unknown)=>{request.in[k]=v;return q},order:()=>q,limit:()=>q,is:()=>q,range:(from:number,to:number)=>{request.from=from;request.to=to;return q},maybeSingle:()=>{single=true;return q},then:(done:(v:unknown)=>unknown)=>{
+ const q={select:()=>q,eq:(k:string,v:unknown)=>{request.eq[k]=v;return q},in:(k:string,v:unknown)=>{request.in[k]=v;return q},order:()=>q,limit:()=>q,is:()=>q,lte:()=>q,or:()=>q,range:(from:number,to:number)=>{request.from=from;request.to=to;return q},maybeSingle:()=>{single=true;return q},then:(done:(v:unknown)=>unknown)=>{
   let data:unknown=[];
   if(table==='inpatient_records')data={id:'inpat',branch_id:s.branch,visit_id:'visit-a',admitted_at:'2026-10-22T10:00:00Z',condition_status:'stabil',discharged_at:null,treatment_plan:'Fictional care',doctor_name:'Drh Inap',branches:{name:'Branch A'},visits:{id:'visit-a',poli:'Umum',keluhan:'Fictional complaint',created_at:'2026-10-22T08:00:00Z',pets:{name:'Fictional pet'},customers:{name:'Fictional owner'}}};
   if(table==='inpatient_records'&&request.eq.visit_id)data=s.secondStay?[{id:'inpat'},{id:'inpat-old'}]:[{id:'inpat'}];
   if(table==='inpatient_daily_logs'&&s.dailyLogs)data=[{id:'log-am',log_date:'2026-10-22',created_at:'2026-10-22T02:00:00Z',condition_note:'Pengamatan fiktif pagi',berat:3,suhu:38.5},{id:'log-pm',log_date:'2026-10-22',created_at:'2026-10-22T09:00:00Z',condition_note:'Pengamatan fiktif sore',berat:3.1,suhu:38.6}];
+  if(table==='employees')data=[{id:'d-aini',nama:'DRH AINI',jabatan:'Dokter'},{id:'d-lama',nama:'DRH LAMA',jabatan:'Dokter'},{id:'p-1',nama:'PARAMEDIS',jabatan:'Paramedis'}];
   if(table==='profiles')data={role:s.role};
   if(table==='consent_templates')data=s.paksaTemplate==='none'?[]:[{id:'tpl-paksa',branch_id:s.paksaTemplate==='all'?null:'branch-b',is_active:true}];
   if(table==='consents'&&s.forcedConsent)data=[{status:'sudah_ttd',kategori:'Pulang Paksa',signed_at:'2026-10-22T12:00:00Z'}];
@@ -33,7 +34,7 @@ vi.mock('@/lib/supabase/server',()=>({createClient:async()=>({auth:{getUser:asyn
  }};return q;}})}));
 import Page from '@/app/(app)/klinik/rawat-inap/[id]/page';
 const render=async()=>renderToStaticMarkup(await Page({params:Promise.resolve({id:'inpat'}),searchParams:Promise.resolve({})}));
-beforeEach(()=>{s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.forcedConsent=false;s.paksaTemplate='all';s.role='DOCTOR';s.paidStay='';s.secondStay=false;s.broken='';s.dailyLogs=false;s.authReads=0;s.reads=[]});
+beforeEach(()=>{s.ubah=false;s.branch='branch-a';s.allowed=['branch-a'];s.user=true;s.longRx=false;s.duplicateInvoice=false;s.forcedConsent=false;s.paksaTemplate='all';s.role='DOCTOR';s.paidStay='';s.secondStay=false;s.broken='';s.dailyLogs=false;s.authReads=0;s.reads=[]});
 it('removes the monitoring board while retaining both same-day notes and detail links',async()=>{
  s.dailyLogs=true;const html=await render();
  expect(html).not.toContain('DAILY MONITORING');
@@ -197,4 +198,11 @@ it('Pulangkan shortcut preselects Sembuh with a save hint, without discharging o
  expect(html).toContain('Stabil<span style="font-size:9.5px;opacity:0.75;margin-left:4px">(saat ini)</span>');
  expect(plain).not.toContain('Pasien <b>belum</b> dipulangkan');
  expect(plain).toContain('Pasien keluar dari daftar Sedang Dirawat setelah kondisi Sembuh / Pulang Paksa / RIP disimpan');
+});
+it('Ubah dokter PJ: tombol tampil di detail rawat inap hanya bila database mengizinkan; pilihan hanya dokter',async()=>{
+ const tanpa=await render();
+ expect(tanpa).not.toContain('Ubah dokter');
+ s.ubah=true;const dengan=await render();
+ expect(dengan).toContain('data-testid="ubah-dokter-buka"');
+ expect(dengan).toContain('Ubah dokter');
 });

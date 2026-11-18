@@ -15,6 +15,8 @@ import { daftarDokter } from "@/lib/dokter";
 import { performersForService } from '@/lib/clinical-staff';
 import { RekamForm } from "./RekamForm";
 import { GroomerHeaderField } from "./GroomerHeaderField";
+import { muatPanelUbahDokter, PANEL_UBAH_DOKTER_TERSEMBUNYI } from "@/lib/ubah-dokter-pj-server";
+import { UbahDokterPJ } from "@/components/UbahDokterPJ";
 import { bacaHeaderGroomer } from "@/lib/groomer-kunjungan";
 import { RacikanInline } from "./RacikanInline";
 import { ConsentSection, type ConsentRow } from "@/app/(app)/klinik/consent/ConsentSection";
@@ -190,6 +192,8 @@ export default async function RekamMedisPage({
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
   // Baris Groomer di header (baca saja): jalan bareng bacaan lain, gagal baca = baris tidak tampil.
   const groomerP = recorded ? mulai(bacaHeaderGroomer(supabase, visit)) : null;
+  // Tombol "Ubah dokter" (koreksi dokter PJ salah input, rawat jalan dan rawat inap); gagal baca apa pun = tombol tersembunyi.
+  const ubahDokterP = recorded && !visit.archived_at ? mulai(muatPanelUbahDokter(supabase, { branchId: visit.branch_id ?? null, dokterSekarang: visit.doctor_id ?? null })) : null;
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
   let record: (Omit<ClinicalCorrection, "recordId" | "revision" | "prescriptions"> & { id: string; clinical_revision?: number }) | null = null;
   let mrId: string | null = null;
@@ -415,6 +419,7 @@ export default async function RekamMedisPage({
   // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
   const [saudara, bolehManual] = await Promise.all([saudaraP, bolehManualP]);
   const groomerInfo = groomerP ? await groomerP : null;
+  const panelUbahDokter = ubahDokterP ? await ubahDokterP : PANEL_UBAH_DOKTER_TERSEMBUNYI;
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
@@ -547,6 +552,11 @@ export default async function RekamMedisPage({
             <Field label="Pemilik" value={`${cust?.name ?? "—"} · ${cust?.phone ?? ""}`} />
             <Field label="Poli" value={visit.poli} />
             {visit.dokter && <Field label="Dokter" value={visit.dokter} />}
+            {panelUbahDokter.boleh && (
+              <div data-testid="rekam-ubah-dokter" style={{ alignSelf: "flex-end" }}>
+                <UbahDokterPJ visitId={visitId} dokterSekarang={visit.dokter ?? null} dokter={panelUbahDokter.dokter} />
+              </div>
+            )}
             <GroomerHeaderField info={groomerInfo} />
             <Field label="Keluhan" value={visit.keluhan ?? "—"} />
           </div>

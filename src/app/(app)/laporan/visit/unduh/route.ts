@@ -58,12 +58,12 @@ export async function GET(request: Request) {
   ];
   const rekapKolom = ["Nama", "Peran", "Visit terhitung (maks 1/pasien/hari)", "Semua catatan visit", "Pasien berbeda", "Hari visit", "Pemantauan (bukan visit)", "Keterangan"];
   const rekapBaris: Sel[][] = rekap.map((r) => [r.nama, r.peran, r.visitTerhitung, r.visit, r.pasien, r.hari, r.pemantauan, r.employeeId ? "" : "Data lama, tanpa ID karyawan"]);
-  const rincianKolom = ["Nama", "Peran", "Tanggal", "Jam", "Jenis", "Cabang", "Pasien", "Pemilik", "Kondisi", "Tindakan"];
+  const rincianKolom = ["Nama", "Peran", "Tanggal", "Jam", "Jenis", "Cabang", "Pasien", "Pemilik", "Dokter PJ", "Kondisi", "Tindakan"];
   const rincianBaris: Sel[][] = [...terpilih]
     .sort((a, b) => a.peran.localeCompare(b.peran) || a.nama.localeCompare(b.nama, "id")
       || a.baris.tanggal.localeCompare(b.baris.tanggal) || a.baris.waktu.localeCompare(b.baris.waktu))
     .map(({ baris, nama, peran: p }) => [nama, p, baris.tanggal, jamWIB(baris.waktu), LABEL_JENIS_CATATAN(baris.jenis),
-      baris.cabang, baris.pasien, baris.pemilik, baris.kondisi, baris.tindakan]);
+      baris.cabang, baris.pasien, baris.pemilik, baris.dokterPJ ?? "", baris.kondisi, baris.tindakan]);
 
   const nama = `laporan-visit-${dari}-${sampai}`;
   if (params.get("format") === "csv") {

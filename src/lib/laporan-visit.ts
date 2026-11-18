@@ -34,6 +34,8 @@ export type BarisVisit = {
   cabang: string;
   pasien: string;
   pemilik: string;
+  /** Dokter PJ rawat inap SAAT INI (dibaca live dari inpatient_records); bukan dokter pelaku visit. Boleh kosong di data uji lama. */
+  dokterPJ?: string | null;
   kondisi: string;
   tindakan: string;
   dokterId: string | null;

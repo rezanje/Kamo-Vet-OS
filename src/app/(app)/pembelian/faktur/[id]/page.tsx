@@ -96,7 +96,7 @@ export default async function PurchaseInvoiceDetail({ params, searchParams }: {
     <section className="crm-sec">
       <SecHeader num="01" title={invoice.no_faktur} desc={`Tanggal ${invoice.tanggal ?? "tidak ada"} · jatuh tempo ${invoice.jatuh_tempo ?? "tidak ada"}`} />
       <p><strong>{invoice.voided_at ? "Faktur dibatalkan" : "Faktur aktif"}</strong></p>
-      {invoice.opening_batch_id && <p><span className="bge b">Saldo awal</span> Sisa hutang dari Accurate per tanggal cutover, tanpa barang, stok, atau PPN. Bayar lewat Pembayaran Hutang; pembatalan/koreksi faktur tidak tersedia.</p>}
+      {invoice.opening_batch_id && <p><span className="bge b">Saldo awal</span> Sisa hutang dari Accurate per tanggal cutover, tanpa barang, stok, atau PPN. Bayar lewat Pembayaran Hutang. Kalau nilainya salah, OWNER mengoreksinya di <Link href="/keuangan/saldo-awal-faktur#koreksi">Saldo Awal per Faktur → Koreksi</Link>.</p>}
       {invoice.void_reason && <p>Alasan: {invoice.void_reason}</p>}
       {invoice.replaces_invoice_id && !original && <p>Faktur asal tidak tersedia atau tidak dapat diakses.</p>}
 

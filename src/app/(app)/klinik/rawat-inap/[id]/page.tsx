@@ -19,6 +19,8 @@ import { loadInpatientMedicationHistory } from "@/lib/inpatient-medication-histo
 import { catatWaktu, mulai } from "@/lib/u07-waktu";
 import { ringkasBelumDitagih } from "@/lib/tagihan-berjalan-server";
 import { bacaBolehKoreksiVisit, putuskanBolehKoreksiVisit } from "@/lib/koreksi-visit-akses";
+import { muatPanelUbahDokter } from "@/lib/ubah-dokter-pj-server";
+import { UbahDokterPJ } from "@/components/UbahDokterPJ";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -62,7 +64,7 @@ export default async function RawatInapDetailPage({
   // anak (konsultasi, log, obat, dll.) yang dimulai sebelum penjaga cabang lolos.
   const recP = mulai(supabase
     .from("inpatient_records")
-    .select(`id, condition_status, treatment_plan, doctor_name, admitted_at, discharged_at, visit_id, branch_id,
+    .select(`id, condition_status, treatment_plan, doctor_name, doctor_id, admitted_at, discharged_at, visit_id, branch_id,
       branches(name), visits(id, poli, keluhan, created_at, pets(name, species, breed, dob, weight, photo_url), customers(name, phone, address))`)
     .eq("id", id).maybeSingle());
   const { data: { user: draftUser } } = await supabase.auth.getUser();
@@ -80,7 +82,7 @@ export default async function RawatInapDetailPage({
   // Reads below depend only on the parent that already passed the branch guard, so they run together.
   // U07: tipe inap, asal kunjungan dan riwayat obat khusus ikut gelombang ini (dulu
   // menyusul berurutan, dan Obat Khusus membaca pengguna sekali lagi).
-  const [handoff, { data: consentRows }, { data: paksaTemplates, error: paksaTemplatesError }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih, racikanPasien, riwayatObat, koreksiDibaca] = await Promise.all([
+  const [handoff, { data: consentRows }, { data: paksaTemplates, error: paksaTemplatesError }, { data: logs }, { data: statusLog }, { data: me }, stayTypes, continuation, medicationHistory, belumDitagih, racikanPasien, riwayatObat, koreksiDibaca, panelUbahDokter] = await Promise.all([
     loadInpatientHandoff(supabase,String(rec.visit_id),String(rec.branch_id)),
     // Rawat inap = tindakan berisiko. Sistem belum bisa mendeteksi jenis tindakan otomatis
     // (jasa masih teks bebas), jadi ini peringatan — bukan pemblokir (spec 2026-07-20).
@@ -106,6 +108,8 @@ export default async function RawatInapDetailPage({
     bacaRiwayatObat(supabase, String(rec.visit_id)),
     // A5: izin "Koreksi visit rawat inap" hanya dibutuhkan setelah pasien pulang (tombol koreksi & edit catatan).
     rec.discharged_at ? bacaBolehKoreksiVisit(supabase) : Promise.resolve(null),
+    // Tombol "Ubah dokter" (koreksi dokter PJ salah input); gagal baca apa pun = tombol tersembunyi.
+    muatPanelUbahDokter(supabase, { branchId: String(rec.branch_id), dokterSekarang: (rec as { doctor_id?: string | null }).doctor_id ?? null }),
   ]);
   waktu.tandai("anak");
   const consentBelum = !hasSignedConsent((consentRows ?? []) as { status: string }[]);
@@ -236,6 +240,11 @@ export default async function RawatInapDetailPage({
             <PairRow label="Tanggal Masuk" value={`${fmtDate(rec.admitted_at)} ${fmtT(admitDate.toISOString())}`} />
             <PairRow label="No. Rekam Medis" value={noRM} />
             <PairRow label="Dokter PIC" value={rec.doctor_name} />
+            {panelUbahDokter.boleh && (
+              <div style={{ margin: "2px 0 6px" }}>
+                <UbahDokterPJ visitId={String(rec.visit_id)} dokterSekarang={rec.doctor_name ?? null} dokter={panelUbahDokter.dokter} />
+              </div>
+            )}
             <PairRow label="Tipe" value={STAY_TYPE_LABEL[stayType]} />
             {continuation.sourceVisit && (
               <div style={{ fontSize: 11.5, padding: "4px 0" }}>
