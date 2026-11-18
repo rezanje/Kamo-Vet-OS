@@ -19,6 +19,7 @@ import { buildPromoSelection, composedToLine, composeHppSafe, composeSyaratHasil
 import { simpanBernomor } from "@/lib/simpan-bernomor";
 import { kasirManualDiscountUsed, manualDiscountAllowed, PESAN_DISKON_MANUAL_DITOLAK } from "@/lib/manual-discount";
 import { hariIniWIB } from "@/lib/tanggal";
+import { bacaTanggalMundurJual, cetakWaktuMundur, izinkanTanggalMundur, PESAN_MUNDUR_TANPA_PROMO, promoKenaPadaKeranjang, tolakKombinasiMundur } from "@/lib/jual-tanggal-mundur";
 import { hargaTingkat } from "@/lib/harga-tingkat";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { serviceLinePromos, aggregateServiceLines } from "@/lib/service-line-promos";
@@ -103,6 +104,15 @@ export async function checkoutKasir(formData: FormData) {
   const poinReq = Math.max(0, Math.floor(Number(formData.get("poinDigunakan")) || 0));
   const bayar = Number(formData.get("bayar")) || 0;
 
+  // Tanggal mundur (Owner / peran berizin; database memutuskan): kosong = hari ini = jalur biasa, tidak berubah sama sekali.
+  const bacaMundur = bacaTanggalMundurJual(formData);
+  if (!bacaMundur.ok) redirect(`${failureUrl}${encodeURIComponent(bacaMundur.message)}`);
+  const mundur = bacaMundur.value;
+  if (mundur) {
+    const tolakMundur = tolakKombinasiMundur({ kodeMasuk, poinDipakai: poinReq, pengganti: !!replacementId });
+    if (tolakMundur) redirect(`${failureUrl}${encodeURIComponent(tolakMundur)}`);
+  }
+
   let cart: CartLine[] = [];
   try {
     cart = JSON.parse(String(formData.get("cart") ?? "[]"));
@@ -129,6 +139,10 @@ export async function checkoutKasir(formData: FormData) {
   // penjualan akan tercatat di kasir tapi hilang dari buku besar tanpa peringatan.
   const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
   if (pesanPeriode) redirect(`${failureUrl}${encodeURIComponent(pesanPeriode)}`);
+  if (mundur) {
+    const pesanPeriodeMundur = await cekPeriode(supabase, mundur.tanggal);
+    if (pesanPeriodeMundur) redirect(`${failureUrl}${encodeURIComponent(pesanPeriodeMundur)}`);
+  }
 
   // Harga ditetapkan ULANG di server: harga jual sekarang bisa beda per cabang
   // (migrasi 0073), jadi layar kasir yang sudah lama terbuka tidak boleh menentukan
@@ -389,6 +403,9 @@ export async function checkoutKasir(formData: FormData) {
   // Promo mana yang kena di baris mana ikut disimpan ke struk (migrasi 0127) —
   // tanpa itu laporan promo cuma bisa menghitung total diskon, tidak bisa bilang
   // program mana yang menghabiskannya.
+  if (mundur && promoKenaPadaKeranjang({ potonganPromo, adaKlaim: rows.some(r => !!r.sh_claim), hitCount: composed?.hitCount })) {
+    redirect(`${failureUrl}${encodeURIComponent(PESAN_MUNDUR_TANPA_PROMO)}`);
+  }
   const promoPerItem = new Map(potonganPromo.map((h) => [h.lineIndex, h.promoId]));
   for (const h of potonganPromo) {
     const baris = rows[h.lineIndex];
@@ -543,15 +560,23 @@ export async function checkoutKasir(formData: FormData) {
   }
   // Poin ikut golongan pelanggan (migrasi 0078); golongan tanpa pengaturan
   // sendiri tetap Rp1.000 = 1 poin seperti sebelumnya.
-  const poinEarned = customerId ? poinDidapat(total, rupiahPerPoin) : 0;
+  const poinEarned = customerId && !mundur ? poinDidapat(total, rupiahPerPoin) : 0; // tanggal mundur: tanpa poin
 
   // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
   // Dua kasir yang membayar pada detik yang sama bisa memegang nomor yang sama;
   // yang kalah mengulang kepala struk dengan nomor baru (lib/simpan-bernomor),
   // bukan memperlihatkan penolakan database ke kasir.
+  // Izin-pakai tanggal mundur tepat sebelum INSERT: database memeriksa izin, alasan, 31 hari, periode, gaji, bank; gerbang INSERT memeriksa lagi.
+  if (mundur) {
+    const tolakIzin = await izinkanTanggalMundur(supabase, { branchId, checkoutKey: checkout.key, tanggal: mundur.tanggal, alasan: mundur.alasan });
+    if (tolakIzin) {
+      await resumePosCheckout(supabase, user.id, checkout, "cashier", undefined, replacementId);
+      redirect(`${failureUrl}${encodeURIComponent(tolakIzin)}`);
+    }
+  }
   const { data: sale, error: saleErr, nomor: noStruk, bentrok } = await simpanBernomor<{ id: string }>(
     supabase,
-    { jenis: "POS", tanggal: hariIniWIB(), table: "sales", column: "no_struk" },
+    { jenis: "POS", tanggal: mundur?.tanggal ?? hariIniWIB(), table: "sales", column: "no_struk" },
     (no_struk) => supabase
       .from("sales")
       .insert({
@@ -566,6 +591,8 @@ export async function checkoutKasir(formData: FormData) {
         ...(campaignCode ? { campaign_code: campaignCode } : {}),
         cashier_id: user?.id ?? null, shift_id: shift!.id,
         salesperson_id: salespersonId, cashier_name: cashier.name,
+        // Tanggal mundur: tanggal struk = tanggal pembukuan (23:59 WIB); waktu nyata ada di jejak + payments_finalized_at.
+        ...(mundur ? { created_at: cetakWaktuMundur(mundur.tanggal) } : {}),
       })
       .select("id").single(),
   );

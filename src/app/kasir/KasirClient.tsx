@@ -4,6 +4,8 @@ import { NumberInput } from "@/components/NumberInput";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { checkoutKasir } from "./checkout";
+import { TanggalPembukuanJual } from "@/components/TanggalPembukuanJual";
+import type { BatasMundurJual } from "@/lib/jual-tanggal-mundur";
 import { cashierPriceFloorIssue } from "@/lib/cashier-price-floor";
 import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -112,7 +114,7 @@ const TIER_BADGE: Record<string, { bg: string; color: string }> = {
 export function KasirClient({
   branchName, items, customers = TANPA_PELANGGAN, vouchers, kodeKampanye = [], hariIni, draftContext, shiftId, promos = [], promoHitung = [], syaratHasil,
   aturanDiskon = {}, infoBarang = {}, salespeople = [], cashierName = "Akun login", error, replacementDraft, replacementId,
-  groomingDoctorRequired = false, groomingApplies = true, bolehDiskon = true, bolehBawahModal = false,
+  groomingDoctorRequired = false, groomingApplies = true, bolehDiskon = true, bolehBawahModal = false, batasMundur = null,
 }: {
   draftContext?: string; shiftId?: string; replacementDraft?: KasirDraft; replacementId?: string;
   branchName: string; items: ItemRow[];
@@ -132,6 +134,8 @@ export function KasirClient({
   /** Diskon manual (potongan per barang & diskon total) hanya Owner/Admin — dibaca server dari izin Akses Grup. Diskon bawaan barang tetap jalan. */
   bolehDiskon?: boolean;
   bolehBawahModal?: boolean;
+  /** Tanggal pembukuan mundur (Owner / peran berizin saja; null = tidak ada apa pun di layar). */
+  batasMundur?: BatasMundurJual | null;
   error?: string;
 }) {
   const [q, setQ] = useState("");
@@ -990,6 +994,7 @@ export function KasirClient({
               <span style={{ fontSize: 19, fontWeight: 800, color: "var(--posb)" }}>{rp(finalTotal)}</span>
             </div>
 
+            {!replacementId && <TanggalPembukuanJual batas={batasMundur} idPrefix="kasir" hariIni={hariIni} />}
             <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--tm)", letterSpacing: ".04em", marginBottom: 5 }}>METODE PEMBAYARAN</div>
             <PosPaymentFields total={total} split={split} payments={payments} bayar={bayar}
               method={metode} feePercent={merchantFeePercent} onFeePercentChange={setMerchantFeePercent}

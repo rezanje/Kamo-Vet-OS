@@ -1,3 +1,4 @@
+import { catatanStrukMundur } from "@/lib/jual-tanggal-mundur";
 import { printBranchHeading } from "@/components/print-branch-heading";
 import { formatPosMoney } from "@/lib/pos-money";
 import Link from "next/link";
@@ -59,6 +60,8 @@ export default async function PosStrukPage({ params, searchParams }: {
   const golongan = one((cust?.customer_categories ?? null) as Rel<{ nama: string; diskon_persen: number }>);
   const diskonKategori = Number(sale.diskon_kategori) || 0;
   const tgl = new Date(sale.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  // Struk bertanggal mundur: tanggal di atas = tanggal pembukuan; waktu nyata pencatatan = waktu finalisasi pembayaran.
+  const catatanMundur = catatanStrukMundur(sale.created_at, (sale as { payments_finalized_at?: string | null }).payments_finalized_at);
 
   return (
     <>
@@ -78,6 +81,7 @@ export default async function PosStrukPage({ params, searchParams }: {
         <Hr />
         <Row k="No" v={sale.no_struk ?? "-"} />
         <Row k="Tgl" v={tgl} />
+        {catatanMundur && <Row k="Catatan" v={catatanMundur} />}
         <Row k="Pelanggan" v={cust?.name ?? "Umum"} />
         <Row k="Kasir" v={sale.cashier_name ?? "Kasir belum tercatat (data lama)"} />
         <Hr />
