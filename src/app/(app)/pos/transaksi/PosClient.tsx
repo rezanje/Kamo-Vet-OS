@@ -6,6 +6,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { checkoutSale } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { HppConfirmField } from "@/components/HppConfirmField";
+import { TanggalPembukuanJual } from "@/components/TanggalPembukuanJual";
+import type { BatasMundurJual } from "@/lib/jual-tanggal-mundur";
 import { pickUnit, type ItemUnit } from "@/lib/satuan";
 import { diskonGolonganKeranjang, poinDidapat, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
 import { bacaDraftPos, POS_DRAFT_KEY, type PosDraft } from "@/lib/pos-draft";
@@ -53,12 +55,14 @@ export type HargaPerCabang = Record<string, Record<string, number>>; // branchId
 const TANPA_PELANGGAN: Cust[] = [];
 const NO_SH_DEFS: SyaratHasilDef[] = [];
 
-export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, syaratHasilPerCabang, promoPickerPerCabang, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null, bolehDiskon = true, bolehBawahModal = false }: {
+export function PosClient({ items, customers = TANPA_PELANGGAN, branches, serviceStaffByBranch = {}, groomingDoctorByBranch = {}, groomingAppliesByBranch = {}, hargaPerCabang = {}, promoPerCabang = {}, syaratHasilPerCabang, promoPickerPerCabang, aturanDiskon = {}, infoBarang = {}, kodeKampanye = [], voucherKampanye = [], hariIni = "", hppWarning = null, hppSignature = null, batasMundurPerCabang = {}, tanggalAwal = "", alasanAwal = "", bolehDiskon = true, bolehBawahModal = false }: {
   items: Item[];
   /** Pelanggan yang sudah diketahui (opsional). Daftar lengkap tidak lagi dikirim — dicari di server. */
   customers?: Cust[]; branches: Branch[]; serviceStaffByBranch?: Record<string, ServiceStaff[]>; groomingDoctorByBranch?: Record<string, boolean>; groomingAppliesByBranch?: Record<string, boolean>; hargaPerCabang?: HargaPerCabang;
   /** P03: peringatan jual di bawah HPP dari simpan sebelumnya; wajib dikonfirmasi sebelum simpan ulang. */
   hppWarning?: string | null; hppSignature?: string | null;
+  /** Tanggal pembukuan mundur per cabang (Owner / peran berizin saja; kosong = tidak ada apa pun di layar). Tanggal/alasan awal dibawa balik dari peringatan HPP. */
+  batasMundurPerCabang?: Record<string, BatasMundurJual | null>; tanggalAwal?: string; alasanAwal?: string;
   promoPerCabang?: Record<string, PromoHitung[]>;
   /** Promo "syarat -> hasil" aktif per cabang. Hanya diisi server bila flag rilis DB menyala; tanpa ini layar persis seperti sebelumnya (tahap 4). */
   syaratHasilPerCabang?: Record<string, SyaratHasilDef[]>;
@@ -549,6 +553,7 @@ export function PosClient({ items, customers = TANPA_PELANGGAN, branches, servic
             </div>
           )}
 
+          <TanggalPembukuanJual key={branchId} batas={batasMundurPerCabang[branchId] ?? null} idPrefix="pos" tanggalAwal={tanggalAwal} alasanAwal={alasanAwal} hariIni={hariIni || undefined} />
           <HppConfirmField warning={hppWarning} signature={hppSignature} />
           <SubmitButton className="pay-btn" icon="ti-circle-check" disabled={!canPay} style={{ marginTop: 8, opacity: canPay ? 1 : 0.5 }} pendingText="Memproses…">Bayar {rp(finalTotal)}</SubmitButton>
         </div>

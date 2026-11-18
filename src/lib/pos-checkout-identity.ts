@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import type { createClient } from "@/lib/supabase/server";
 import { recomputeCustomerTier } from "@/lib/customer-tier";
+import { hariIniWIB } from "@/lib/tanggal";
 
 type Client = Awaited<ReturnType<typeof createClient>>;
 export type PosCheckoutIdentity = { key: string; fingerprint: string };
@@ -42,7 +43,9 @@ export function posCheckoutIdentity(form: FormData, branchId: string): PosChecko
     ...(number("merchant_fee_percent") !== 0 ? { merchant_fee_percent: number("merchant_fee_percent") } : {}),
     method: text("metode"), payments: parsed("split_payments"), bayar: number("bayar"),
     diskon: Number(form.get("checkout_diskon_requested") ?? form.get("diskon") ?? 0), diskonPct: text("checkout_diskon_pct"),
-    discount: number("discount"), poin: Number(form.get("checkout_poin_requested") ?? form.get("poinDigunakan") ?? 0), voucher: text("voucherCode").trim().toUpperCase() });
+    discount: number("discount"), poin: Number(form.get("checkout_poin_requested") ?? form.get("poinDigunakan") ?? 0), voucher: text("voucherCode").trim().toUpperCase(),
+    // Tanggal mundur (hanya bila dipilih): draft yang sama dengan tanggal lain bukan transaksi yang sama. Tanpa tanggal mundur sidik jari tidak berubah.
+    ...(text("tanggal_pembukuan").trim() && text("tanggal_pembukuan").trim() < hariIniWIB() ? { tanggalPembukuan: text("tanggal_pembukuan").trim() } : {}) });
   return { key, fingerprint: createHash("sha256").update(JSON.stringify(intent)).digest("hex") };
 }
 

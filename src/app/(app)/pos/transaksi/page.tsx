@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { PosClient, type Item } from "./PosClient";
+import { bacaBatasMundurJual } from "@/lib/jual-tanggal-mundur";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { loadServiceStaff } from "@/lib/service-performers-server";
 import { allowedBranchIds, canUseBranch } from "@/lib/branch-access";
@@ -22,9 +23,9 @@ type CatalogItem = { id: string; code: string; name: string; item_type: string; 
 export default async function TransaksiPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; completed_sale_id?: string; draft_used?: string; hpp_warning?: string; hpp_sig?: string }>;
+  searchParams: Promise<{ error?: string; completed_sale_id?: string; draft_used?: string; hpp_warning?: string; hpp_sig?: string; tgl?: string; alasan_tgl?: string }>;
 }) {
-  const { error, completed_sale_id: completedSaleId, draft_used: usedDraftKey, hpp_warning: hppWarning, hpp_sig: hppSignature } = await searchParams;
+  const { error, completed_sale_id: completedSaleId, draft_used: usedDraftKey, hpp_warning: hppWarning, hpp_sig: hppSignature, tgl: tanggalAwal, alasan_tgl: alasanAwal } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -135,6 +136,9 @@ export default async function TransaksiPage({
         hariIni={hariIni}
         hppWarning={hppWarning ?? null}
         hppSignature={hppSignature ?? null}
+        batasMundurPerCabang={Object.fromEntries(await Promise.all((branches ?? []).map(async branch => [branch.id, await bacaBatasMundurJual(supabase, branch.id)] as const)))}
+        tanggalAwal={/^\d{4}-\d{2}-\d{2}$/.test(tanggalAwal ?? "") ? tanggalAwal : ""}
+        alasanAwal={(alasanAwal ?? "").slice(0, 200)}
         bolehDiskon={await manualDiscountAllowed(supabase)}
         bolehBawahModal={await belowCostSaleAllowed(supabase)}
       />

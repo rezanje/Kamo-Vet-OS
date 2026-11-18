@@ -355,10 +355,17 @@ select pg_temp.reject($q$select correct_pos_sale_payment('e8700000-0000-4000-800
 set local role postgres;
 delete from bank_reconciliations where cash_account_id='e8600000-0000-4000-8000-000000000001';
 set local role authenticated;
-insert into sales(id,branch_id,no_struk,subtotal,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint,created_at)
+-- Fixture: struk berumur 4 hari. Sejak gerbang tanggal mundur peran klien tidak boleh memasang tanggal struk sendiri; pelaku di sini Owner,
+-- jadi memakai izin-pakai bila ada (rantai lama tanpa gerbang: created_at bebas seperti semula). Hanya tanggal (WIB) yang dipakai assertion.
+do $fx$ declare ts timestamptz:=now()-interval '4 days'; d date:=((now()-interval '4 days') at time zone 'Asia/Jakarta')::date; begin
+ if to_regprocedure('public.pos_sale_backdate_authorize(uuid,text,date,text)') is not null then
+  execute format('select public.pos_sale_backdate_authorize(%L,%L,%L,%L)','e8200000-0000-4000-8000-000000000001','j02-backdate',d,'Fixture uji koreksi tanggal asli');
+  execute format('select public.pos_sale_backdate_stamp(%L)',d) into ts;
+ end if;
+ insert into sales(id,branch_id,no_struk,subtotal,total,metode_bayar,bayar,cashier_id,shift_id,payment_plan,checkout_key,checkout_fingerprint,created_at)
  values('e8700000-0000-4000-8000-00000000000b','e8200000-0000-4000-8000-000000000001','J02.BACKDATE',25000,25000,'Tunai',25000,
- 'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":25000}]','j02-backdate',repeat('5',64),
- now()-interval '4 days');
+ 'e8100000-0000-4000-8000-000000000001','e8400000-0000-4000-8000-000000000001','[{"method":"Tunai","amount":25000}]','j02-backdate',repeat('5',64),ts);
+end $fx$;
 insert into sale_items(id,sale_id,item_id,nama,qty,harga,satuan,faktor,hpp) values
  ('e8800000-0000-4000-8000-00000000000b','e8700000-0000-4000-8000-00000000000b','e8500000-0000-4000-8000-000000000001','J02 service',1,25000,'pcs',1,0);
 select finalize_pos_sale('e8700000-0000-4000-8000-00000000000b');

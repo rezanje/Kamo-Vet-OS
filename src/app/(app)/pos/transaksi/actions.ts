@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PESAN_PELANGGAN_DISEMBUNYIKAN, pelangganDisembunyikan } from "@/lib/pelanggan-server";
 import { hariIniWIB } from "@/lib/tanggal";
+import { bacaTanggalMundurJual, cetakWaktuMundur, izinkanTanggalMundur, PESAN_MUNDUR_TANPA_PROMO, promoKenaPadaKeranjang, tolakKombinasiMundur } from "@/lib/jual-tanggal-mundur";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { stockOut } from "@/lib/inventory";
 import { loadUnitOptions, resolveSubmittedUnit, toBaseQty } from "@/lib/satuan";
@@ -58,6 +59,14 @@ export async function checkoutSale(formData: FormData) {
   const kodeMasuk = normalizeKode(formData.get("voucherCode")) || null;
 
   if (!branchId) redirect(`/pos/transaksi?error=${encodeURIComponent("Pilih cabang dulu")}`);
+  // Tanggal mundur (Owner / peran berizin; database memutuskan): kosong = hari ini = jalur biasa, tidak berubah sama sekali.
+  const bacaMundur = bacaTanggalMundurJual(formData);
+  if (!bacaMundur.ok) redirect(`/pos/transaksi?error=${encodeURIComponent(bacaMundur.message)}`);
+  const mundur = bacaMundur.value;
+  if (mundur) {
+    const tolakMundur = tolakKombinasiMundur({ kodeMasuk });
+    if (tolakMundur) redirect(`/pos/transaksi?error=${encodeURIComponent(tolakMundur)}`);
+  }
   let checkout: ReturnType<typeof posCheckoutIdentity>;
   try { checkout = posCheckoutIdentity(formData, branchId); }
   catch (error) { redirect(`/pos/transaksi?error=${encodeURIComponent(error instanceof Error ? error.message : "Identitas transaksi tidak valid")}`); }
@@ -85,6 +94,10 @@ export async function checkoutSale(formData: FormData) {
   // Periode terkunci = struk tersimpan tapi jurnal pendapatannya hilang diam-diam.
   const pesanPeriode = await cekPeriode(supabase, hariIniWIB());
   if (pesanPeriode) redirect(`/pos/transaksi?error=${encodeURIComponent(pesanPeriode)}`);
+  if (mundur) {
+    const pesanPeriodeMundur = await cekPeriode(supabase, mundur.tanggal);
+    if (pesanPeriodeMundur) redirect(`/pos/transaksi?error=${encodeURIComponent(pesanPeriodeMundur)}`);
+  }
 
   // Faktor satuan diambil ulang dari master — nilai dari keranjang cuma petunjuk
   // satuan mana yang dipilih, bukan sumber kebenaran konversi stok.
@@ -214,6 +227,9 @@ export async function checkoutSale(formData: FormData) {
       promoAktif.some((p) => p.id === promoKodeId), rincianPromo.some((h) => h.promoId === promoKodeId));
     if (tolak) redirect(`/pos/transaksi?error=${encodeURIComponent(tolak)}`);
   }
+  if (mundur && promoKenaPadaKeranjang({ potonganPromo: rincianPromo, adaKlaim: rows.some(r => !!r.sh_claim), hitCount: composed?.hitCount })) {
+    redirect(`/pos/transaksi?error=${encodeURIComponent(PESAN_MUNDUR_TANPA_PROMO)}`);
+  }
   const potonganPromo = totalPotonganPromo(rincianPromo);
   // Rinciannya ikut disimpan ke baris struk (migrasi 0127) supaya laporan promo
   // bisa menyebut program mana yang menghabiskan uang, bukan cuma totalnya.
@@ -328,7 +344,7 @@ export async function checkoutSale(formData: FormData) {
     }
     // Promo di bawah modal (izin Owner) tidak boleh digabung potongan tingkat-struk: lantai P03 di database hanya ada pada kasir petshop, jadi aplikasi menegakkannya di sini.
     if (waiverStacked) redirect(`/pos/transaksi?error=${encodeURIComponent("Promo di bawah modal tidak bisa digabung dengan voucher, poin, diskon total, atau diskon golongan. Hapus potongan itu atau lepas promonya.")}`);
-    if (!hppWarningConfirmed(formData, warnings)) redirect(`/pos/transaksi?${hppWarningQuery(warnings)}`);
+    if (!hppWarningConfirmed(formData, warnings)) redirect(`/pos/transaksi?${hppWarningQuery(warnings)}${mundur ? `&tgl=${encodeURIComponent(mundur.tanggal)}&alasan_tgl=${encodeURIComponent(mundur.alasan)}` : ""}`);
   }
 
   // §2.1: tautkan ke shift kasir yang sedang terbuka (kalau ada) untuk rekonsiliasi kas.
@@ -342,15 +358,23 @@ export async function checkoutSale(formData: FormData) {
     .eq("shift_type", "petshop").maybeSingle();
 
   // Poin ikut golongan pelanggan (migrasi 0078) — rumus sama dengan layar kasir.
-  const poin = customerId ? poinDidapat(total, rupiahPerPoin) : 0;
+  const poin = customerId && !mundur ? poinDidapat(total, rupiahPerPoin) : 0; // tanggal mundur: tanpa poin
 
   // Formatnya dibaca dari master penomoran; bawaannya POS-YYYYMMDD-NNNN.
   // Nomor yang sama bisa terbaca dua orang sekaligus; yang kalah mengulang kepala
   // struk dengan nomor baru (lib/simpan-bernomor) — belum ada baris atau stok
   // yang tersentuh pada titik ini.
+  // Izin-pakai tanggal mundur tepat sebelum INSERT: database memeriksa izin, alasan, 31 hari, periode, gaji, bank; gerbang INSERT memeriksa lagi.
+  if (mundur) {
+    const tolakIzin = await izinkanTanggalMundur(supabase, { branchId, checkoutKey: checkout.key, tanggal: mundur.tanggal, alasan: mundur.alasan });
+    if (tolakIzin) {
+      await resumePosCheckout(supabase, user.id, checkout, "backoffice");
+      redirect(`/pos/transaksi?error=${encodeURIComponent(tolakIzin)}`);
+    }
+  }
   const { data: sale, error: saleErr, nomor: noStruk, bentrok } = await simpanBernomor<{ id: string }>(
     supabase,
-    { jenis: "POS", tanggal: hariIniWIB(), table: "sales", column: "no_struk" },
+    { jenis: "POS", tanggal: mundur?.tanggal ?? hariIniWIB(), table: "sales", column: "no_struk" },
     (no_struk) => supabase
       .from("sales")
       .insert({
@@ -366,6 +390,8 @@ export async function checkoutSale(formData: FormData) {
         checkout_key: checkout.key, checkout_fingerprint: checkout.fingerprint,
         cashier_id: user?.id ?? null, shift_id: openShift?.id ?? null,
         cashier_name: cashier.name, salesperson_id: cashier.employeeId,
+        // Tanggal mundur: tanggal struk = tanggal pembukuan (23:59 WIB); waktu nyata ada di jejak + payments_finalized_at.
+        ...(mundur ? { created_at: cetakWaktuMundur(mundur.tanggal) } : {}),
         // Kode kampanye dicatat apa adanya; batas pemakaiannya dijaga database (dihitung
         // hanya dari struk yang lunas, void membebaskan kuota) — sama dengan /kasir.
         ...(kampanye ? { voucher_code: voucherCode, campaign_code: kampanye.code } : {}),
