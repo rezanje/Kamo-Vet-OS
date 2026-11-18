@@ -19,6 +19,11 @@ satu agregasi, tanpa N+1. Hak baca dan batas cabang/gudang (RLS) mengikuti peman
   (kasir, online, faktur grosir), `klinik`, `klinik-bmhp`, `klinik-edit`, `racik`, `racik-koreksi`, `racik-kembali` (klinik, BMHP, racikan),
   ditambah pembaliknya `sale-void`, `retur-jual`, `retur-jual-group`, `retur-klinik`, `wholesale-return`, `wholesale-return-void`.
   Struk batal dan retur MENGURANGI pemakaian. Tidak dihitung: pembelian, mutasi dan permintaan antar gudang, produksi, opname, penyesuaian.
+  **Pemakaian bersih (migrasi `20261125100000`, 18 Nov 2026):** obat takaran/resep klinik (suntik, infus, Teal) dicatat `klinik` (keluar) lalu langsung
+  `pesanan-selesai` (MASUK, tagihan+gudang+barang sama, `clinic_private.job_order_complete`): bersih nol; pemakaian nyata ada di `klinik-bmhp` bahan dasarnya.
+  Karena itu `pesanan-selesai`, `klinik-void` (tagihan klinik batal) dan `return-record-void` (batal retur penjualan) ikut dijumlah sebagai pembalik.
+  "Terakhir laku" juga tidak lagi memakai pengeluaran `klinik` yang seluruhnya dibatalkan pasangannya. Di data nyata 18 Nov: pemakaian 1.408 satuan terlalu besar,
+  "Harus order" 158 -> 99, "Slow moving" 952 -> 975.
 - **Nilai stok** = `stock_layers` (FIFO): `qty_left x unit_cost`, semua gudang. Stok = `stock.qty`.
 - `sale_items.hpp` adalah total modal baris (qty x faktor x biaya), BUKAN per satuan; jangan dikali qty lagi. Laporan ini tidak memakainya:
   modal terjual diambil dari `stock_moves.unit_cost`.
