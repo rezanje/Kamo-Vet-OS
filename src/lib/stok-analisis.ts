@@ -266,6 +266,10 @@ export function kelompokOrder(rows: BarisOrder[]) {
 
 // ───────────── Tampilan ─────────────
 
+/** Penjelasan "terjual dihitung bersih" (tooltip kolom, catatan halaman, lembar Keterangan Excel). */
+export const CATATAN_PAKAI_BERSIH =
+  "Dihitung bersih setelah pembatalan: struk batal, retur, dan obat takaran (suntik, infus, Teal: keluar klinik yang dibatalkan satu per satu oleh pesanan selesai, nol bersih) tidak dihitung terjual; pemakaian nyata dihitung pada bahan dasarnya (BMHP).";
+
 export const rupiah = (n: number) => "Rp " + Math.round(Number(n) || 0).toLocaleString("id-ID");
 export function rupiahRingkas(n: number): string {
   const a = Math.abs(n);

@@ -54,7 +54,7 @@ describe("halaman Stok Harus Order", () => {
     expect(html).toContain("Obat Habis");
     for (const bukan of ["Aman", "Nonaktif", "Tanpa Jual"]) expect(html).not.toContain(bukan);
     expect(html.indexOf("PT Pasir")).toBeLessThan(html.indexOf("Belum ada pemasok"));
-    for (const k of ["Saran order", "Cukup untuk (hari)", "Terjual/bulan", "Perkiraan"]) expect(html).toContain(k);
+    for (const k of ["Saran order", "Cukup untuk (hari)", "Terjual/bulan", "Perkiraan", "Dihitung bersih setelah pembatalan"]) expect(html).toContain(k);
     expect(html).toContain("Di bawah minimum");
     expect(html).toContain("Segera habis (sementara)");
     expect(html).toContain("riwayat baru 13 hari");
