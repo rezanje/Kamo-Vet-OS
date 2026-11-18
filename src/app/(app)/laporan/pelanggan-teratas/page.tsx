@@ -1,4 +1,4 @@
-import { completeReportQuery } from "@/lib/report-query";
+import { completeReportQuery, completeReportQueryParalel } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { tanggalIndo } from "@/lib/followup";
@@ -40,10 +40,10 @@ export default async function PelangganTeratasPage({
   const baca = async () => {
     const supabase = await createClient();
     return Promise.all([
-      completeReportQuery(supabase.from("sales")
+      completeReportQueryParalel(() => supabase.from("sales")
         .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at, voided_at", { count: "exact" })
         .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),
-      completeReportQuery(supabase.from("invoices")
+      completeReportQueryParalel(() => supabase.from("invoices")
         .select("id, total, created_at, visits!inner(customer_id)", { count: "exact" })
         .eq("paid_status", "Lunas").is("voided_at", null)
         .gte("created_at", `${dari}T00:00:00`).lte("created_at", `${sampai}T23:59:59`)),

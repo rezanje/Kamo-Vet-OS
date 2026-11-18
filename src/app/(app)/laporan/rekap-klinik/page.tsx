@@ -1,4 +1,5 @@
 import { completeReportQuery } from "@/lib/report-query";
+import { bacaItemRekapKlinik } from "./data";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
@@ -50,10 +51,6 @@ export default async function RekapKlinikPage({
   // cabang (kolomnya uuid; nilai lain dari URL tetap disaring di memori seperti dulu).
   const { data: branches } = await completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name"));
   const saringCabang = cabang && branches.some((b) => b.id === cabang) ? cabang : "";
-  const qItems = supabase.from("invoice_items")
-    .select("id, qty, harga, jenis, items!invoice_items_item_id_fkey(tindakan_kategori, item_type), invoices!inner(created_at, voided_at, visits!inner(branch_id))", { count: "exact" })
-    .gte("invoices.created_at", mulai).lte("invoices.created_at", akhir)
-    .is("invoices.voided_at", null);
   const qInap = supabase.from("inpatient_records")
     .select("id, condition_status, admitted_at, discharged_at, doctor_name, branch_id, visits(pets(name), customers(name))", { count: "exact" })
     .gte("admitted_at", mulai).lte("admitted_at", akhir);
@@ -62,7 +59,7 @@ export default async function RekapKlinikPage({
     .gte("tanggal", dari).lte("tanggal", sampai);
   const tanpaData = Promise.resolve({ data: null, error: null });
   const [{ data: itemRows }, { data: inapRows }, { data: fuRows }] = siap ? await Promise.all([
-    completeReportQuery(saringCabang ? qItems.eq("invoices.visits.branch_id", saringCabang) : qItems),
+    bacaItemRekapKlinik(supabase, mulai, akhir, saringCabang),
     completeReportQuery((saringCabang ? qInap.eq("branch_id", saringCabang) : qInap)
       .order("admitted_at", { ascending: false })),
     completeReportQuery(saringCabang ? qFu.eq("branch_id", saringCabang) : qFu),

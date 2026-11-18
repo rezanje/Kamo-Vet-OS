@@ -9,12 +9,15 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     return query;
   },
 }) }));
-vi.mock("@/lib/report-query", () => ({ completeReportQuery: async () => {
-  fixture.calls++;
-  // Panggilan ke-6..8 adalah baca kampanye; simulasi tabel/kolom belum ada.
-  if (fixture.failCampaign && fixture.responses.length === 0) throw Object.assign(new Error("kolom tidak ada"), { code: "42703" });
-  return fixture.responses.shift();
-} }));
+vi.mock("@/lib/report-query", () => {
+  const baca = async () => {
+    fixture.calls++;
+    // Panggilan ke-6..8 adalah baca kampanye; simulasi tabel/kolom belum ada.
+    if (fixture.failCampaign && fixture.responses.length === 0) throw Object.assign(new Error("kolom tidak ada"), { code: "42703" });
+    return fixture.responses.shift();
+  };
+  return { completeReportQuery: baca, completeReportQueryParalel: baca };
+});
 vi.mock("@/components/LaporanPage", () => ({
   LaporanPage: ({ filter, ringkasan, children }: { filter: React.ReactNode; ringkasan: React.ReactNode; children: React.ReactNode }) => <main><form>{filter}</form>{ringkasan}{children}</main>,
   KartuAngka: ({ items }: { items: Array<{ label: string; nilai: string }> }) => <div>{items.map(item => <span key={item.label}>{item.label}: {item.nilai}</span>)}</div>,

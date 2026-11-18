@@ -11,15 +11,28 @@ type QueryResult = { data: unknown; error: { message: string } | null };
 function query(result: QueryResult) {
   const q = {
     select: vi.fn(), gte: vi.fn(), lte: vi.fn(), limit: vi.fn(),
-    is: vi.fn(), eq: vi.fn(), order: vi.fn(),
+    is: vi.fn(), eq: vi.fn(), order: vi.fn(), in: vi.fn(),
     range: (from: number, to: number) => Promise.resolve({ ...result, data: Array.isArray(result.data) ? result.data.slice(from, to + 1) : result.data, count: Array.isArray(result.data) ? result.data.length : null }),
     then: (resolve: (value: QueryResult) => unknown, reject: (error: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   };
-  for (const key of ["select", "gte", "lte", "limit", "is", "eq", "order"] as const) {
+  for (const key of ["select", "gte", "lte", "limit", "is", "eq", "order", "in"] as const) {
     q[key].mockReturnValue(q);
   }
-  return q;
+  return Object.assign(q, { hasil: result });
+}
+
+type Dokumen = { id: string } & Record<string, unknown>;
+type Tiruan = ReturnType<typeof query>;
+/** Item per dokumen dibaca terpisah dari induknya: tabel item diturunkan dari baris `sale_items`/`invoice_items` yang tertanam di fixture induk. */
+function dariTabel(tables: Record<string, Tiruan>, table: string): Tiruan {
+  const turunan = (induk: string, kolom: string, fk: string) => query({
+    data: ((tables[induk]?.hasil.data as Dokumen[] | undefined) ?? []).flatMap((d) => ((d[kolom] as { id: string }[] | undefined) ?? []).map((baris) => ({ ...baris, [fk]: d.id }))),
+    error: null,
+  });
+  if (table === "sale_items") return turunan("sales", "sale_items", "sale_id");
+  if (table === "invoice_items") return turunan("invoices", "invoice_items", "invoice_id");
+  return tables[table];
 }
 
 describe("tarikTransaksi clinic invoices", () => {
@@ -29,10 +42,10 @@ describe("tarikTransaksi clinic invoices", () => {
     const sale = { id: "split", customer_id: "c1", total: 100000, channel: null, created_at: "2026-10-15T05:00:00Z", branches: { name: "A" },
       sale_items: [{ id: "item" }], payment_plan: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }],
       sale_payments: [{ method: "Tunai", amount: 20000 }, { method: "Transfer", amount: 80000 }], payments_finalized_at: "2026-10-15T05:00:01Z" };
-    const tables = { sales: query({ data: [sale, { ...sale, id: "pending", payments_finalized_at: null }], error: null }),
+    const tables = { sales: query({ data: [sale, { ...sale, id: "pending", sale_items: [{ id: "item-pending" }], payments_finalized_at: null }], error: null }),
       invoices: query({ data: [], error: null }), sales_invoices: query({ data: [], error: null }),
       sales_returns: query({ data: [], error: null }), clinic_refunds: query({ data: [], error: null }), wholesale_returns: query({ data: [], error: null }), branches: query({ data: [], error: null }) };
-    createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
+    createClient.mockResolvedValue({ from: (table: string) => dariTabel(tables as unknown as Record<string, Tiruan>, table) });
     const result = await tarikTransaksi("2026-10-15", "2026-10-15");
     expect(result.trx).toHaveLength(1);
     expect(result.trx[0].omzet).toBe(100000);
@@ -52,7 +65,7 @@ describe("tarikTransaksi clinic invoices", () => {
       clinic_refunds: query({ data: [], error: null }), wholesale_returns: query({ data: [], error: null }),
       branches: query({ data: [{ id: "b1", name: "Klinik A" }], error: null }),
     };
-    createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
+    createClient.mockResolvedValue({ from: (table: string) => dariTabel(tables as unknown as Record<string, Tiruan>, table) });
 
     const result = await tarikTransaksi("2026-09-24", "2026-09-24");
     expect(invoices.is).toHaveBeenCalledWith("voided_at", null);
@@ -71,7 +84,7 @@ describe("tarikTransaksi clinic invoices", () => {
       clinic_refunds: query({ data: [], error: null }), wholesale_returns: query({ data: [], error: null }),
       branches: query({ data: [], error: null }),
     };
-    createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
+    createClient.mockResolvedValue({ from: (table: string) => dariTabel(tables as unknown as Record<string, Tiruan>, table) });
     await expect(tarikTransaksi("2026-09-24", "2026-09-24"))
       .rejects.toThrow("query failed");
   });
@@ -91,7 +104,7 @@ describe("tarikTransaksi clinic invoices", () => {
       wholesale_returns: query({ data: [], error: null }),
       branches: query({ data: [{ id: "A", name: "A" }, { id: "B", name: "B" }], error: null }),
     };
-    createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
+    createClient.mockResolvedValue({ from: (table: string) => dariTabel(tables as unknown as Record<string, Tiruan>, table) });
 
     const { trx } = await tarikTransaksi("2026-10-20", "2026-10-21");
     expect(trx.map(t => [t.kanal, t.cabangId, t.tanggal, t.omzet])).toEqual([
@@ -114,7 +127,7 @@ describe("tarikTransaksi clinic invoices", () => {
       wholesale_returns: query({ data: [], error: null }),
       branches: query({ data: [], error: null }),
     };
-    createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
+    createClient.mockResolvedValue({ from: (table: string) => dariTabel(tables as unknown as Record<string, Tiruan>, table) });
     await expect(tarikTransaksi("2026-10-20", "2026-10-20")).rejects.toThrow("refund read failed");
   });
 });
@@ -133,7 +146,7 @@ describe("tarikTransaksi faktur grosir", () => {
     const tables = { sales: query({ data: [], error: null }), invoices: query({ data: [], error: null }),
       sales_invoices, sales_returns: query({ data: [], error: null }), clinic_refunds: query({ data: [], error: null }), wholesale_returns,
       branches: query({ data: [], error: null }) };
-    createClient.mockResolvedValue({ from: (table: keyof typeof tables) => tables[table] });
+    createClient.mockResolvedValue({ from: (table: string) => dariTabel(tables as unknown as Record<string, Tiruan>, table) });
     return tables;
   }
 

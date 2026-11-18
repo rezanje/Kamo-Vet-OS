@@ -84,7 +84,8 @@ it("pushes a branch chosen by name into the cashier and daily customer queries",
 
 it("pushes the clinic recap branch into all three clinic sources", async () => {
   await RekapKlinikPage({ searchParams: Promise.resolve({ ...rentang, cabang: "b2", tampil: "1" }) });
-  expect(eqPada("invoice_items")).toContainEqual(["invoices.visits.branch_id", "b2"]);
+  // Item dibaca per id invoice; saringan cabang menempel pada invoice induk.
+  expect(eqPada("invoices")).toContainEqual(["visits.branch_id", "b2"]);
   expect(eqPada("inpatient_records")).toContainEqual(["branch_id", "b2"]);
   expect(eqPada("follow_ups")).toContainEqual(["branch_id", "b2"]);
 });
