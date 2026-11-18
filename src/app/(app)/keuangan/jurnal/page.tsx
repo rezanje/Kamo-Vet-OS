@@ -41,6 +41,7 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   manual:  { label: "Manual",  cls: "x" },
   "manual-correction": { label: "Koreksi manual", cls: "o" },
   "manual-reversal": { label: "Pembalik manual", cls: "r" },
+  "saldo-awal-cabang": { label: "Saldo awal ke cabang", cls: "g" },
   expense: { label: "Expense", cls: "o" },
   sale:    { label: "Sale",    cls: "b" },
   "sale-hpp": { label: "HPP", cls: "b" },

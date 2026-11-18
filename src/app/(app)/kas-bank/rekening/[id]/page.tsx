@@ -29,6 +29,7 @@ const ASAL: Record<string, string> = {
   "bank-rec": "Penyesuaian rekonsiliasi",
   "cash-account-opening": "Saldo pembuka rekening",
   "saldo-awal": "Saldo awal",
+  "saldo-awal-cabang": "Saldo awal dipindah ke cabang",
   "cash-open-reversal": "Pembalik saldo pembuka moneter",
   "cash-open-replacement": "Pengganti saldo pembuka moneter",
   asset: "Pembelian aset",
