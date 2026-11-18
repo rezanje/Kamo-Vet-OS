@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { kumpulkanBarisKomisi } from "@/lib/komisi-data";
 import { atribusiPenjual, rekapTenagaPenjual } from "@/lib/laporan-tenaga-penjual";
+import { barisFixture } from "@/test-support/laporan-embed";
 
 // Ubah dokter PJ -> laporan Tenaga Penjual dan Komisi. Kedua laporan membaca tabel LANGSUNG (tanpa snapshot/cache):
 // baris tagihan dengan pelaksana tersimpan tetap milik pelaksananya; baris tanpa pelaksana/penjual mengikuti visits.doctor_id.
@@ -14,11 +15,12 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: "pengguna" } } }) },
     from(table: string) {
-      const data = state.tables[table] ?? [];
-      const hasil = { data, count: data.length, error: null };
+      let kolomDipilih = "";
+      const hasil = () => { const data = barisFixture(state.tables, table, kolomDipilih); return { data, count: data.length, error: null }; };
       const q: Record<string, unknown> = {
-        select: () => q, eq: () => q, is: () => q, not: () => q, neq: () => q, gte: () => q, lte: () => q, in: () => q, order: () => q,
-        range: async () => hasil, then: (resolve: (value: unknown) => unknown) => Promise.resolve(hasil).then(resolve),
+        select: (kolom: string) => { kolomDipilih = kolom; return q; },
+        eq: () => q, is: () => q, not: () => q, neq: () => q, gte: () => q, lte: () => q, in: () => q, order: () => q,
+        range: async () => hasil(), then: (resolve: (value: unknown) => unknown) => Promise.resolve(hasil()).then(resolve),
       };
       return q;
     },
