@@ -13,6 +13,17 @@ export function clientFixture(options: { role?: string; active?: boolean; module
     items: [{ id: "i", code: "SKU", name: "Obat lama", unit: "ml", is_active: false }],
     ...options.tables,
   };
+  // Laporan penjualan per barang klinik membaca `invoices` lebih dulu lalu `invoice_items` per invoice_id.
+  // Fixture lama menaruh invoice di dalam baris item (`invoices: {...}`): turunkan tabel invoices dan invoice_id
+  // dari sana supaya fixture itu tetap dapat dibaca. Tidak berlaku bila tabel invoices diberikan sendiri.
+  const embeddedInvoices = (tables.invoice_items ?? []).filter(row => row.invoices && typeof row.invoices === "object" && !Array.isArray(row.invoices));
+  if (!options.tables?.invoices && embeddedInvoices.length) {
+    const unique = new Map<unknown, Row>();
+    for (const row of embeddedInvoices) { const invoice = row.invoices as Row; unique.set(invoice.id ?? invoice, invoice); }
+    tables.invoices = [...unique.values()];
+    tables.invoice_items = tables.invoice_items.map(row => row.invoices && typeof row.invoices === "object" && !Array.isArray(row.invoices)
+      ? { invoice_id: (row.invoices as Row).id, ...row } : row);
+  }
   const nested = (row: Row, key: string): unknown => key.split(".").reduce<unknown>((value, part) => (value as Row | null)?.[part], row);
   const reads = new Map<string,number>();
   const client = {
