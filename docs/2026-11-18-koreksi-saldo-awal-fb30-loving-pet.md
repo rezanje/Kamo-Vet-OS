@@ -33,3 +33,17 @@ select pi.total, l.outstanding, b.ap_total
 
 Catatan: ini koreksi saldo awal per faktur kedua dalam dua hari — layar koreksi resmi
 (Owner, dengan alasan + jurnal koreksi) makin layak dibuat.
+
+## Ralat (18 Nov 2026, siang): 11.404.500 → 10.101.500
+
+Finance klinik meralat: angka yang benar 10.101.500 (salah ketik di permintaan pertama). Migrasi
+`supabase/migrations/20261124210000_ralat_saldo_awal_fb_2026_10_00030.sql` (pola sama, selisih −1.303.000,
+idempoten bila total masih 11.404.500). Sudah diterapkan ke Production; hasil cek:
+
+| Data | Sesudah ralat |
+|---|---|
+| `purchase_invoices.total` / `opening_invoice_lines.outstanding` | 10.101.500 |
+| `opening_invoice_batches.ap_total` / `result.hutang.total` | 861.324.103 |
+| Jurnal saldo awal 410001 D / 311001 K | 861.324.103 (seimbang) |
+
+Bersih dari nilai impor awal 9.939.500: naik 162.000.
