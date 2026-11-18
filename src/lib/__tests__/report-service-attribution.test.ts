@@ -8,14 +8,16 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       select: (fields: string) => { if (table === "invoice_items") fixture.snapshotsSelected = fields.includes("service_performers"); return q; },
       is: () => q, gte: () => q, lte: () => q, order: () => q, in: () => q, range: () => q,
       then: (resolve: (result: unknown) => void) => {
-        const rows = table === "invoice_items" ? [{
-          id: "line-1", deskripsi: "Grooming", qty: 1, harga: 100, diskon_persen: 0,
+        // Invoice dibaca lebih dulu (tanpa baris item), baris itemnya menyusul per invoice_id.
+        const rows = table === "invoices" ? [{
+          id: "invoice-1", visit_id: "visit-1", invoice_no: "INV.FICTION", created_at: "2026-10-24T09:00:00Z", subtotal: 100, discount: 0,
+          paid_status: "Lunas", visits: { branches: { name: "Ciawi" }, customers: { name: "Pelanggan Fiktif" }, pets: { name: "Anabul Fiktif" } },
+        }] : table === "invoice_items" ? [{
+          id: "line-1", invoice_id: "invoice-1", deskripsi: "Grooming", qty: 1, harga: 100, diskon_persen: 0,
           jenis: "jasa", item_id: "service-1", service_performers: {
             doctor_id: "doctor-saved", doctor_name: "Dokter Tersimpan",
             staff_id: "groomer-saved", staff_name: "Groomer Tersimpan",
           },
-          invoices: { id: "invoice-1", visit_id: "visit-1", invoice_no: "INV.FICTION", created_at: "2026-10-24T09:00:00Z", subtotal: 100, discount: 0,
-            paid_status: "Lunas", visits: { branches: { name: "Ciawi" }, customers: { name: "Pelanggan Fiktif" }, pets: { name: "Anabul Fiktif" } } },
         }] : [];
         return resolve({ data: rows, count: rows.length, error: null });
       },

@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { amankanSel } from "@/lib/laporan-kategori-penjualan";
 import {
-  daftarSlow, HALAMAN_SLOW, KONFIG_STOK, labelRiwayat, LABEL_STATUS, ringkasSlow, saring,
+  CATATAN_PAKAI_BERSIH, daftarSlow, HALAMAN_SLOW, KONFIG_STOK, labelRiwayat, LABEL_STATUS, ringkasSlow, saring,
 } from "@/lib/stok-analisis";
 import { muatPilihanStok, muatRingkasStok, periksaAksesStok } from "@/lib/stok-analisis-server";
 import { createClient } from "@/lib/supabase/server";
@@ -43,6 +43,7 @@ export async function GET(request: Request) {
     ["Jumlah barang", ringkas.jumlah], ["Modal tertahan (Rp)", Math.round(ringkas.modalTertahan)],
     ["Batas berlebih (bulan)", KONFIG_STOK.berlebihBulan], ["Tidak laku (hari)", KONFIG_STOK.tidakLakuHari], ["Mati (hari)", KONFIG_STOK.matiHari],
     ["Keterangan", "Terjual/bulan = barang keluar (kasir, klinik termasuk BMHP dan racikan, faktur grosir; struk batal dan retur dikurangkan) ÷ hari × 30, satuan dasar. Cukup untuk = stok ÷ terjual/bulan. Modal tertahan = nilai stok FIFO yang tidak terpakai."],
+    ["Pemakaian bersih", CATATAN_PAKAI_BERSIH],
   ];
   book.addWorksheet("Keterangan").addRows(info.map((r) => r.map(amankanSel)));
   const buffer = await book.xlsx.writeBuffer();

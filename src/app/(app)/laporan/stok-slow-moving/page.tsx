@@ -4,7 +4,7 @@ import { CatatanRiwayat } from "@/components/KartuStok";
 import { Definisi, FilterStok, NomorHalaman, UKURAN_HALAMAN_STOK, halamanDari } from "@/components/StokLaporanBagian";
 import { laporanDiminta } from "@/lib/report-gate";
 import {
-  daftarSlow, hitungPortofolio, KONFIG_STOK, labelRiwayat, LABEL_STATUS, ringkasSlow, rupiah, saring, tampilBulan, tampilQty,
+  CATATAN_PAKAI_BERSIH, daftarSlow, hitungPortofolio, KONFIG_STOK, labelRiwayat, LABEL_STATUS, ringkasSlow, rupiah, saring, tampilBulan, tampilQty,
   HALAMAN_SLOW, tanggalId, type StatusStok,
 } from "@/lib/stok-analisis";
 import { muatPilihanStok, muatRingkasStok, periksaAksesStok, StokAnalisisError } from "@/lib/stok-analisis-server";
@@ -66,7 +66,7 @@ export default async function StokSlowMovingPage({ searchParams }: {
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 880, width: "100%" }}>
             <thead><tr>
-              <th>Barang</th><th style={{ textAlign: "right" }}>Stok</th><th style={{ textAlign: "right" }}>Terjual/bulan</th>
+              <th>Barang</th><th style={{ textAlign: "right" }}>Stok</th><th style={{ textAlign: "right" }} title={CATATAN_PAKAI_BERSIH}>Terjual/bulan</th>
               <th style={{ textAlign: "right" }}>Cukup untuk (bulan)</th><th>Terakhir laku</th>
               <th style={{ textAlign: "right" }}>Nilai stok</th><th style={{ textAlign: "right" }}>Modal tertahan</th><th>Status</th>
             </tr></thead>
@@ -92,6 +92,7 @@ export default async function StokSlowMovingPage({ searchParams }: {
           {" "}{KONFIG_STOK.tidakLakuHari} hari; Mati = {KONFIG_STOK.matiHari} hari; Belum laku = belum ada yang keluar, riwayat masih pendek.
           Modal tertahan = nilai stok (FIFO) yang tidak terpakai: semua untuk tidak laku/mati, kelebihan di atas {KONFIG_STOK.berlebihBulan} bulan untuk berlebih.
           Penjualan = kasir, klinik (termasuk BMHP dan racikan), faktur grosir; struk batal dan retur dikurangkan.
+          {CATATAN_PAKAI_BERSIH}
         </Definisi>
       </div>}
     </LaporanPage>

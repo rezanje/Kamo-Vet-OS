@@ -62,6 +62,8 @@ describe("halaman Stok Slow Moving", () => {
     expect(html).toContain("riwayat baru 13 hari");
     expect(html).toContain("Rp 11.000.000");
     expect(html).toContain("Semua gudang digabung");
+    expect(html).toContain("Dihitung bersih setelah pembatalan");
+    expect(html).toContain("pesanan selesai");
   });
   it("cari, kategori dan gudang menyaring; gudang tidak dikenal = semua gudang", async () => {
     expect(await render({ tampil: "1", q: "cacing" })).not.toContain("Royal Canin");

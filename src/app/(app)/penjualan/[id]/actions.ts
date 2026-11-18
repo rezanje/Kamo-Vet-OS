@@ -26,11 +26,23 @@ function correctionMoney(value: FormDataEntryValue | null): number {
  * ditampilkan apa adanya. Melempar galat justru disembunyikan Next.js di produksi dan tampil sebagai "respons belum terkonfirmasi".
  * Galat tanpa SQLSTATE (jaringan putus, dsb.) tetap dilempar: hasilnya belum pasti.
  */
-function rpcRefusal(error: { code?: string; message?: string } | null): ActionRejection | null {
+function rpcRefusal(error: { code?: string; message?: string } | null, petunjukBatalUbah = false): ActionRejection | null {
   const code = error?.code ?? "";
   if (!/^[0-9A-Z]{5}$/.test(code) || !error?.message) return null;
   const retry = code.startsWith("40") || code === "55P03" || code === "57014";
-  return { ok: false, outcome: retry ? "retry" : "rejected", message: retry ? `${error.message}. Coba simpan lagi sebentar lagi.` : error.message };
+  const message = petunjukBatalUbah ? petunjukHadiahStaf(error.message) : error.message;
+  return { ok: false, outcome: retry ? "retry" : "rejected", message: retry ? `${message}. Coba simpan lagi sebentar lagi.` : message };
+}
+
+/**
+ * Batalkan penjualan / Ubah transaksi membalik hadiah staf kasir (poin, rangkaian, misi) dan HANYA bisa dari transaksi kasir yang terakhir
+ * (urutan wajib, kalau tidak hadiah transaksi sesudahnya ikut terhapus). Kasir yang sudah jualan lagi menabrak penjaga ini: database
+ * menolak seluruhnya (tidak ada yang tersimpan). Pesan database memakai istilah dalam; ganti dengan langkah yang bisa dikerjakan Owner.
+ */
+function petunjukHadiahStaf(message: string): string {
+  if (!/Transaksi staf berikutnya masih aktif|hadiah staf|aktivitas staf/i.test(message)) return message;
+  return "Struk ini tidak bisa dibatalkan atau diubah sekarang: kasir yang sama sudah membuat transaksi sesudahnya, dan hadiah staf harus dibalik berurutan. "
+    + "Tidak ada yang berubah. Jika struk sedang belum dibayar, klik Terima pembayaran satu kali agar kembali Lunas. Untuk menambah barang, catat sebagai transaksi baru di Kasir.";
 }
 
 export async function koreksiMetodePembayaran(form: FormData): Promise<void | ActionRejection> {
@@ -59,7 +71,7 @@ export async function koreksiMetodePembayaran(form: FormData): Promise<void | Ac
   redirect(`/penjualan/${id}?success=payment-corrected&draft_scope=${encodeURIComponent(`sale-payment:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
 }
 
-export async function batalkanPenjualan(form: FormData) {
+export async function batalkanPenjualan(form: FormData): Promise<void | ActionRejection> {
   const id = String(form.get("id") ?? "");
   const revisionText = String(form.get("revision") ?? "");
   const revision = Number(revisionText);
@@ -72,6 +84,8 @@ export async function batalkanPenjualan(form: FormData) {
   const { data, error } = await db.rpc("cancel_posted_sale", {
     p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason,
   });
+  const refusal = rpcRefusal(error, true);
+  if (refusal) return refusal;
   if (error || !data?.voided) throw new Error(error?.message ?? "Hasil pembatalan belum terkonfirmasi. Coba ulang dengan formulir yang sama.");
   revalidatePath("/", "layout");
   // A replacement is a fresh checkout with its own reviewed price/payment.
@@ -103,7 +117,7 @@ function receiptFields(form: FormData) {
 }
 
 /** Batalkan penerimaan (gaya Accurate): uang hilang dari kas/bank, struk menjadi belum dibayar. Hanya Owner (atau peran yang dicentang Owner). */
-export async function batalkanPenerimaan(form: FormData) {
+export async function batalkanPenerimaan(form: FormData): Promise<void | ActionRejection> {
   const { id, revision, key, reason } = receiptFields(form);
   if (reason.length < 3 || reason.length > 1000) throw new Error("Isi alasan membatalkan penerimaan (minimal 3 huruf).");
   if (form.get("konfirmasi") !== "ya") throw new Error("Centang kotak konfirmasi dulu: uang pembayaran akan dikeluarkan dari kas/bank dan struk menjadi belum dibayar.");
@@ -113,6 +127,8 @@ export async function batalkanPenerimaan(form: FormData) {
   const { data, error } = await db.rpc("cancel_pos_sale_receipt", {
     p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason, p_effective_date: tanggal,
   });
+  const refusal = rpcRefusal(error);
+  if (refusal) return refusal;
   if (error || data?.sale_id !== id || data?.unpaid !== true || !data?.cancellation_id) {
     throw new Error(error?.message ?? "Hasil pembatalan penerimaan belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
   }
@@ -123,7 +139,7 @@ export async function batalkanPenerimaan(form: FormData) {
 }
 
 /** Terima pembayaran lagi sesudah penerimaan dibatalkan: metode boleh diganti, jumlahnya harus sama dengan total struk. */
-export async function terimaPembayaranUlang(form: FormData) {
+export async function terimaPembayaranUlang(form: FormData): Promise<void | ActionRejection> {
   const { id, revision, key, reason } = receiptFields(form);
   const tanggal = bacaTanggalEfektif(form.get("tanggal"));
   if (perluAlasanTanggal(tanggal) && (reason.length < 3 || reason.length > 1000)) throw new Error("Isi alasan mengubah tanggal (minimal 3 huruf).");
@@ -137,6 +153,8 @@ export async function terimaPembayaranUlang(form: FormData) {
   const { data, error } = await db.rpc("receive_pos_sale_payment", {
     p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_plan: plan, p_effective_date: tanggal, p_reason: reason || null,
   });
+  const refusal = rpcRefusal(error);
+  if (refusal) return refusal;
   if (error || data?.sale_id !== id || data?.unpaid !== false || !data?.journal_id) {
     throw new Error(error?.message ?? "Hasil penerimaan pembayaran belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
   }
@@ -146,7 +164,7 @@ export async function terimaPembayaranUlang(form: FormData) {
 }
 
 /** Order marketplace: batalkan pencairan sehingga order kembali ke piutang marketplace (lalu bisa dicairkan ulang atau dibatalkan/diganti). */
-export async function batalkanPencairan(form: FormData) {
+export async function batalkanPencairan(form: FormData): Promise<void | ActionRejection> {
   const { id, revision, key, reason } = receiptFields(form);
   if (reason.length < 3 || reason.length > 1000) throw new Error("Isi alasan membatalkan pencairan (minimal 3 huruf).");
   if (form.get("konfirmasi") !== "ya") throw new Error("Centang kotak konfirmasi dulu: dana pencairan akan dikeluarkan dari bank dan order kembali menjadi piutang marketplace.");
@@ -155,6 +173,8 @@ export async function batalkanPencairan(form: FormData) {
   const { data, error } = await db.rpc("cancel_online_disbursement", {
     p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason, p_effective_date: tanggal,
   });
+  const refusal = rpcRefusal(error);
+  if (refusal) return refusal;
   if (error || data?.sale_id !== id || data?.status !== "piutang" || !data?.cancellation_id) {
     throw new Error(error?.message ?? "Hasil pembatalan pencairan belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
   }
@@ -196,7 +216,7 @@ export async function ubahTransaksi(form: FormData): Promise<void | ActionReject
   const { data, error } = await db.rpc("edit_posted_pos_sale", {
     p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason, p_edit: payload,
   });
-  const refusal = rpcRefusal(error);
+  const refusal = rpcRefusal(error, true);
   if (refusal) return refusal;
   if (error || data?.old_sale_id !== id || typeof data?.sale_id !== "string" || !data?.edit_id) {
     throw new Error(error?.message ?? "Hasil ubah transaksi belum terkonfirmasi. Periksa daftar penjualan sebelum menyimpan ulang.");
