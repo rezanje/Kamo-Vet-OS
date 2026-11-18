@@ -1,13 +1,15 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { ringkasanHasil, type HasilBatal } from "@/lib/batal-penerimaan-pesan";
-import { UBAH_TANGGAL_CATATAN, UBAH_TANGGAL_LABEL } from "@/lib/tanggal-pembukuan-copy";
+import { UBAH_TANGGAL_BAWAAN_ASLI, UBAH_TANGGAL_CATATAN, UBAH_TANGGAL_LABEL } from "@/lib/tanggal-pembukuan-copy";
 import { batalkanPenerimaanKlinik, pratinjauTanggalBatalPenerimaan } from "./actions";
 
 /**
  * "Batalkan penerimaan": satu kalimat akibat, rincian dari pratinjau database, alasan wajib, satu persetujuan, lalu satu kali kirim.
- * Tanggal pembukuan: bawaan hari ini; hanya Owner (atau peran berizin) melihat kontrol kecil tertutup untuk mengubahnya.
+ * Tanggal pembukuan: bawaan untuk Owner (atau peran berizin) = TANGGAL TRANSAKSI ASLI bila lebih awal dari hari ini (aturan Andri gaya Accurate:
+ * koreksi terbaca di tanggal aslinya; kontrol terbuka dan database memeriksa tanggal itu lebih dulu); transaksi hari ini = hari ini (kontrol tertutup).
+ * Memilih hari ini tetap bisa, secara sadar. Peran lain tidak melihat apa pun tentang tanggal.
  * Peran lain tidak melihat kata apa pun tentang tanggal. Database memutuskan sah-tidaknya tanggal (periode terkunci, batas, hak).
  */
 /** Peringatan untuk Finance: buku sudah mengurangi bank/kas saat penerimaan dibatalkan. */
@@ -22,12 +24,14 @@ export function BatalPenerimaanForm({ visitId, invoiceId, invoiceNo, ringkasan, 
   const [pesan, setPesan] = useState<string | null>(null);
   const [hasil, setHasil] = useState<HasilBatal | null>(null);
   const [key] = useState(requestKey);
-  const [tanggal, setTanggal] = useState(hariIni ?? "");
+  const tanggalAsli = bolehMundur && hariIni && minTanggal && minTanggal < hariIni ? minTanggal : null;
+  const [tanggal, setTanggal] = useState(tanggalAsli ?? hariIni ?? "");
+  const [menunggu, setMenunggu] = useState(!!tanggalAsli);
   const [teks, setTeks] = useState(ringkasan);
   const [tolakTanggal, setTolakTanggal] = useState<string | null>(null);
   const [sibuk, mulai] = useTransition();
   const [memuat, mulaiMuat] = useTransition();
-  const siap = alasan.replace(/\s/g, "").length >= 3 && paham && !sibuk && !memuat && !tolakTanggal && (!hariIni || !!tanggal);
+  const siap = alasan.replace(/\s/g, "").length >= 3 && paham && !sibuk && !memuat && !menunggu && !tolakTanggal && (!hariIni || !!tanggal);
 
   const kirim = () => mulai(async () => {
     setPesan(null);
@@ -38,7 +42,20 @@ export function BatalPenerimaanForm({ visitId, invoiceId, invoiceNo, ringkasan, 
     if (r.ok) setHasil(r.hasil); else setPesan(r.pesan);
   });
 
+  // Tanggal asli sebagai bawaan: minta pratinjau database untuk tanggal itu sebelum tombol bisa ditekan (ringkasan ikut tanggal, penolakan tampil).
+  useEffect(() => {
+    if (!tanggalAsli) return;
+    let batal = false;
+    pratinjauTanggalBatalPenerimaan(invoiceId, tanggalAsli).then((r) => {
+      if (batal) return;
+      if (!r.ok) setTolakTanggal(r.pesan); else { setTeks(r.ringkasan); setTolakTanggal(r.tolakTanggal); }
+      setMenunggu(false);
+    }).catch(() => { if (!batal) { setTolakTanggal("Tanggal belum bisa diperiksa. Muat ulang halaman."); setMenunggu(false); } });
+    return () => { batal = true; };
+  }, [invoiceId, tanggalAsli]);
+
   const ubahTanggal = (nilai: string) => {
+    setMenunggu(false);
     setTanggal(nilai); setPesan(null); setTolakTanggal(null);
     if (!nilai) return;
     mulaiMuat(async () => {
@@ -63,12 +80,13 @@ export function BatalPenerimaanForm({ visitId, invoiceId, invoiceNo, ringkasan, 
     <p style={{ fontSize: 11 }}>Nota kembali belum lunas. Setelah itu ubah transaksi di faktur, lalu terima pembayaran lagi.</p>
     <p data-testid="peringatan-buku-bank" style={{ fontSize: 11, color: "#92400e" }}>{PERINGATAN_BUKU_BANK}</p>
     <ul role="note" style={{ margin: "6px 0", paddingLeft: 18, fontSize: 11 }}>{teks.map((t) => <li key={t}>{t}</li>)}</ul>
-    {hariIni && bolehMundur && <details style={{ margin: "8px 0" }} data-testid="ubah-tanggal-pembukuan">
+    {hariIni && bolehMundur && <details style={{ margin: "8px 0" }} data-testid="ubah-tanggal-pembukuan" open={tanggalAsli ? true : undefined}>
       <summary style={{ cursor: "pointer", fontSize: 11 }}>{UBAH_TANGGAL_LABEL}</summary>
       <label className="flab" htmlFor="tanggal-efektif">Tanggal pembukuan</label>
       <input id="tanggal-efektif" type="date" className="fi" style={{ maxWidth: 180 }} value={tanggal} min={minTanggal ?? undefined} max={hariIni}
         onChange={(e) => ubahTanggal(e.target.value)} />
       <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3 }}>{UBAH_TANGGAL_CATATAN}</div>
+      {tanggalAsli && <div data-testid="bawaan-tanggal-asli" style={{ fontSize: 10.5, marginTop: 3 }}>{UBAH_TANGGAL_BAWAAN_ASLI}</div>}
       {memuat && <div style={{ fontSize: 10.5 }} role="status">Memeriksa tanggal…</div>}
       {tolakTanggal && <div className="p2ban" role="alert" style={{ marginTop: 6 }}>{tolakTanggal}</div>}
     </details>}
