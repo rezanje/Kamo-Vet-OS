@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isAdminOnline } from "@/lib/admin-online";
 import { cariPelangganDb, muatPelangganDasar, muatPelangganKasir, muatPelangganPos } from "@/lib/pelanggan-server";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -23,8 +24,11 @@ export async function GET(req: Request) {
 
   try {
     const id = params.get("id");
+    if (id !== null && !UUID.test(id)) return NextResponse.json({ data: null }, { headers: TANPA_CACHE });
+    // Admin Online tidak punya akses pelanggan (database juga menutup tabelnya); tolak sebelum membaca data pelanggan apa pun.
+    const { data: profil } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+    if (isAdminOnline(profil?.role)) return NextResponse.json({ error: "Akses ditolak." }, { status: 403, headers: TANPA_CACHE });
     if (id !== null) {
-      if (!UUID.test(id)) return NextResponse.json({ data: null }, { headers: TANPA_CACHE });
       const untuk = params.get("untuk");
       const data = untuk === "kasir" ? await muatPelangganKasir(supabase, id)
         : untuk === "pos" ? await muatPelangganPos(supabase, id)

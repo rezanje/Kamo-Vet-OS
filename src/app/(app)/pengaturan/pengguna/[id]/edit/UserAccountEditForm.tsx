@@ -1,5 +1,6 @@
 "use client";
 
+import { labelPeran } from "@/lib/admin-online";
 import { useState } from "react";
 import type { UserAccountEditBranch, UserAccountEditSnapshot } from "@/lib/user-account-edit";
 import { simpanEditPengguna } from "../../actions";
@@ -40,8 +41,8 @@ export function UserAccountEditForm({ snapshot, branches, requestId }: {
         </label>
         <label className="flab">Role *
           <select className="fi" name="role" required value={role} disabled={snapshot.self || pending} onChange={(event) => setRole(event.target.value)}>
-            {!snapshot.editable_roles.includes(snapshot.role) && <option value={snapshot.role} disabled>{snapshot.role} (role saat ini)</option>}
-            {snapshot.editable_roles.map((option) => <option key={option} value={option}>{option}</option>)}
+            {!snapshot.editable_roles.includes(snapshot.role) && <option value={snapshot.role} disabled>{labelPeran(snapshot.role)} (role saat ini)</option>}
+            {snapshot.editable_roles.map((option) => <option key={option} value={option}>{labelPeran(option)}</option>)}
           </select>
         </label>
       </div>

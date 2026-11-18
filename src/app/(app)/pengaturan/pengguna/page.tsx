@@ -1,4 +1,5 @@
 import { roleCapabilities, type RoleCapabilities } from "@/lib/role-capabilities";
+import { labelPeran } from "@/lib/admin-online";
 import { branchDisplayName } from "@/lib/branch-display";
 import { allowedBranchIds } from "@/lib/branch-access";
 import { PasswordInput } from "@/components/PasswordInput";
@@ -17,7 +18,7 @@ type ProfileRow = {
 type UB = { user_id: string; branches: { code: string; name: string; type: string } | null };
 type Emp = { nik: string | null; status: string; id: string; nama: string; jabatan: string | null; profile_id: string | null };
 
-const ROLE_BADGE: Record<string, string> = { OWNER: "r", ADMIN: "b", FINANCE: "o", DOCTOR: "g", STAFF: "x" };
+const ROLE_BADGE: Record<string, string> = { OWNER: "r", ADMIN: "b", FINANCE: "o", DOCTOR: "g", STAFF: "x", ADMIN_ONLINE: "x" };
 
 export default async function PenggunaPage({
   searchParams,
@@ -117,7 +118,7 @@ export default async function PenggunaPage({
               {shown.map((p) => (
                 <tr key={p.id} style={!p.is_active ? { opacity: 0.55 } : undefined}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{p.full_name ?? "—"}</td>
-                  <td><span className={`bge ${ROLE_BADGE[p.role] ?? "x"}`}>{p.role}</span></td>
+                  <td><span className={`bge ${ROLE_BADGE[p.role] ?? "x"}`}>{labelPeran(p.role)}</span></td>
                   <td style={{ fontSize: 11 }}>{roleCapabilities(p.role, capabilityMap.get(p.role)).all_branches ? "Semua cabang" : (ubMap.get(p.id) ?? []).join(", ") || "Belum ada akses cabang"}</td>
                   <td style={{ fontSize: 11 }}>{empByProfile.has(p.id) ? empByProfile.get(p.id) : canManage ? <form action={tautkanPengguna}>
                     <input type="hidden" name="profile_id" value={p.id} />
@@ -174,6 +175,7 @@ export default async function PenggunaPage({
                 <option value="STAFF">STAFF (kasir/staf)</option>
                 <option value="DOCTOR">DOCTOR (dokter)</option>
                 <option value="FINANCE">FINANCE (keuangan)</option>
+                <option value="ADMIN_ONLINE">Admin Online (hanya input penjualan marketplace)</option>
                 {actor?.role === "OWNER" && <option value="ADMIN">ADMIN</option>}
                 {actor?.role === "OWNER" && <option value="OWNER">OWNER</option>}
               </select>
@@ -190,7 +192,7 @@ export default async function PenggunaPage({
           </div>
 
           <div style={{ marginTop: 12 }}>
-            <div className="flab" style={{ marginBottom: 6 }}>Penugasan akun (wajib untuk STAFF/DOCTOR; akses semua cabang diatur Super Admin di Akses Grup)</div>
+            <div className="flab" style={{ marginBottom: 6 }}>Penugasan akun (wajib untuk STAFF/DOCTOR/Admin Online; akses semua cabang diatur Super Admin di Akses Grup)</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {branchCatalog.filter(b => b.is_active && (allowed === null || allowed.includes(b.id))).map((b) => (
                 <label key={b.id} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11, border: ".5px solid var(--bd)", borderRadius: 6, padding: "5px 9px", cursor: "pointer" }}>
