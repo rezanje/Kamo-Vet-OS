@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { readCompleteList } from "@/lib/checked-list";
 import { loadWarehouseStock } from "@/lib/warehouse-stock";
 import { bacaGudangImpor } from "@/lib/online-gudang-server";
+import { isAdminOnline } from "@/lib/admin-online";
+import { bacaSudahAdaAdminOnline, bacaSumberAdminOnline } from "@/lib/admin-online-impor";
 import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { loadKasirGroupComponents } from "@/lib/kasir-catalog";
 import { pesanDbOnline } from "@/lib/online-grup";
@@ -45,7 +47,7 @@ async function bukaSesi(): Promise<Sesi | { error: string }> {
 /** E4 (meeting 12 Nov 2026): cabang dari form → gudang utama cabang (sama persis dengan halaman). */
 async function gudangDariCabang(sesi: Sesi, formData: FormData): Promise<{ warehouseId: string } | { error: string }> {
   const branchId = String(formData.get("branch_id") ?? "");
-  const { data, error } = await bacaGudangImpor(sesi.db, sesi.userId, branchId);
+  const { data, error } = await bacaGudangImpor(sesi.db, sesi.userId, branchId, sesi.role);
   if (error) return { error: "Daftar gudang gagal dimuat. Muat ulang halaman lalu coba lagi." };
   if (!data.terpilih) return { error: data.cabang.length ? "Pilih cabang tujuan dulu." : "Akun ini belum terhubung ke cabang yang punya gudang toko." };
   if (!data.terkunci && branchId !== data.terpilih.id) return { error: "Cabang tidak valid. Muat ulang halaman." };
@@ -91,17 +93,26 @@ export async function pratinjauImporShopee(formData: FormData): Promise<Pratinja
     const baca = await bacaFile(formData);
     if ("error" in baca) return kosong(baca.error);
 
-    const [items, stock, existing, extraUnits] = await Promise.all([
-      readCompleteList<{ id: string; code: string; name: string; unit: string | null; sell_price: number | string; item_type: string | null }>((from, to) => db.from("items")
-        .select("id,code,name,unit,sell_price,item_type", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang", { maxRows: null }),
-      loadWarehouseStock(db, [warehouseId]),
-      cariSudahAda(db, baca.orders.map(o => o.orderNo)),
-      loadItemUnits(db),
-    ]);
+    // Admin Online: tabel tertutup baginya di database, jadi sumber yang sama dibaca lewat RPC khusus (tanpa harga beli/HPP).
+    // Peran lain: jalur lama persis. Sisanya (pencocokan, paket, katalog) dipakai bersama.
+    const orderNos = baca.orders.map(o => o.orderNo);
+    const sumber = isAdminOnline(sesi.role)
+      ? await bacaSumberAdminOnline(db, warehouseId, orderNos)
+      : await (async () => {
+        const [items, stock, existing, extraUnits] = await Promise.all([
+          readCompleteList<{ id: string; code: string; name: string; unit: string | null; sell_price: number | string; item_type: string | null }>((from, to) => db.from("items")
+            .select("id,code,name,unit,sell_price,item_type", { count: "exact" }).eq("is_active", true).order("name").order("id").range(from, to), "Daftar barang", { maxRows: null }),
+          loadWarehouseStock(db, [warehouseId]),
+          cariSudahAda(db, orderNos),
+          loadItemUnits(db),
+        ]);
+        const grup = items.filter(i => i.item_type === "Grup").map(i => i.id);
+        return { items, stock, existing, extraUnits, resep: grup.length ? await loadKasirGroupComponents(db, grup) : [] };
+      })();
+    const { items, stock, existing, extraUnits, resep } = sumber;
     const qty = new Map(stock.map(s => [s.item_id, Number(s.qty) || 0]));
     // E2: barang Grup (paket/bundling Shopee) ikut dicocokkan; isi paket = resep terbuka yang sama dengan kasir & database.
     const grupIds = items.filter(i => i.item_type === "Grup").map(i => i.id);
-    const resep = grupIds.length ? await loadKasirGroupComponents(db, grupIds) : [];
     const unitDasar = new Map(items.map(i => [i.id, (i.unit ?? "pcs") || "pcs"]));
     const isiPerGrup = new Map<string, { isi: IsiPaket[]; masalah: string | null }>();
     for (const id of grupIds) {
@@ -159,7 +170,8 @@ export async function simpanImporShopee(formData: FormData): Promise<HasilSimpan
 
     // Sumber kebenaran harga/qty/status = FILE (dibaca ulang di sini), bukan kiriman klien.
     const peta = new Map(baca.orders.map(o => [o.orderNo, o]));
-    const sudahAda = await cariSudahAda(db, pilihan.map(p => String(p?.orderNo ?? "")).filter(Boolean));
+    const refsPilihan = pilihan.map(p => String(p?.orderNo ?? "")).filter(Boolean);
+    const sudahAda = isAdminOnline(role) ? await bacaSudahAdaAdminOnline(db, refsPilihan) : await cariSudahAda(db, refsPilihan);
     const diproses = new Set<string>();
     const results: HasilImporOrder[] = [];
 

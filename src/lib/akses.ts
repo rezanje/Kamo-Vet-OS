@@ -1,3 +1,4 @@
+import { ADMIN_ONLINE, RUMAH_ADMIN_ONLINE, adminOnlineBolehBuka } from "./admin-online";
 import { moduleHasAllowedSubmenu, submenuIzinkan } from "./submenu-access";
 
 // Akses Grup (migrasi 0101) — murni, dites di __tests__/akses.test.ts
@@ -84,6 +85,7 @@ export function roleUsesLegacyStaffShell(role: string, rules: AturanTersimpan): 
  */
 export function modulDiizinkan(role: string, tersimpan: AturanTersimpan): string[] | null {
   if (role === "OWNER") return null;
+  if (role === ADMIN_ONLINE) return []; // langit-langit sendiri (lib/admin-online.ts): tak ada modul Akses Grup
   const baris = tersimpan.filter((r) => r.role === role);
   // Modul yang dibatasi sub-menu tetapi tidak ada satu pun sub-menu sah yang diizinkan = modul tidak bisa dibuka.
   return baris.length > 0
@@ -93,7 +95,7 @@ export function modulDiizinkan(role: string, tersimpan: AturanTersimpan): string
 
 /** Peran ini sedang memakai aturan sendiri, atau masih bawaan? */
 export function pakaiAturanSendiri(role: string, tersimpan: AturanTersimpan): boolean {
-  return role !== "OWNER" && tersimpan.some((r) => r.role === role);
+  return role !== "OWNER" && role !== ADMIN_ONLINE && tersimpan.some((r) => r.role === role);
 }
 
 const cocokPrefix = (path: string, prefix: string): boolean =>
@@ -107,6 +109,8 @@ const cocokPrefix = (path: string, prefix: string): boolean =>
  */
 export function bolehBukaPath(role: string, path: string, tersimpan: AturanTersimpan): boolean {
   if (role === "OWNER") return true;
+  // Admin Online: daftar putih persis, SEBELUM aturan lain dibaca — Akses Grup/akses khusus/modul tidak bisa melebarkannya.
+  if (role === ADMIN_ONLINE) return adminOnlineBolehBuka(path);
   const v2 = tersimpan.some(r => r.role === role && r.module_id === ROLE_V2_MARKER);
   if (v2) path = path.split(/[?#]/)[0];
   if (SELALU_BOLEH.some((p) => cocokPrefix(path, p))) return true;
@@ -163,6 +167,7 @@ export function bolehBukaPath(role: string, path: string, tersimpan: AturanTersi
 
 /** Halaman tujuan saat sebuah URL diblokir — jangan pernah melempar ke halaman yang juga diblokir. */
 export function tujuanSaatDiblokir(role: string, tersimpan: AturanTersimpan): string {
+  if (role === ADMIN_ONLINE) return RUMAH_ADMIN_ONLINE;
   const modul = modulDiizinkan(role, tersimpan);
   if (modul === null || modul.includes("dashboard")) return "/";
   return "/mulai";

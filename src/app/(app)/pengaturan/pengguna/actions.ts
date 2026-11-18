@@ -1,5 +1,6 @@
 "use server";
 
+import { PERAN_AKUN, PERAN_WAJIB_CABANG } from "@/lib/admin-online";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSbClient } from "@supabase/supabase-js";
@@ -26,7 +27,7 @@ export async function buatPengguna(formData: FormData) {
   const fail = (msg: string) => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
 
   if (!full_name || !email || password.length < 8) fail("Nama, email, dan password (min. 8 karakter) wajib diisi.");
-  if (!["OWNER", "ADMIN", "FINANCE", "STAFF", "DOCTOR"].includes(role)) fail("Role tidak dikenal.");
+  if (!(PERAN_AKUN as readonly string[]).includes(role)) fail("Role tidak dikenal.");
 
   if (["OWNER", "ADMIN"].includes(role)) {
     const { data: { user } } = await supabase.auth.getUser();
@@ -38,7 +39,7 @@ export async function buatPengguna(formData: FormData) {
   const { data: employee, error: employeeError } = await supabase.from("employees")
     .select("id, profile_id, status").eq("id", employee_id).maybeSingle();
   if (employeeError || !employee || employee.status !== "Aktif" || employee.profile_id) fail("Karyawan tidak tersedia atau sudah memiliki akun. Periksa HRIS.");
-  if (["STAFF", "DOCTOR"].includes(role) && !branchIds.length) fail("Pilih penugasan cabang akun.");
+  if (PERAN_WAJIB_CABANG.includes(role) && !branchIds.length) fail("Pilih penugasan cabang akun.");
   if (branchIds.length) {
     const { data: valid, error } = await supabase.from("branches").select("id").in("id", branchIds).eq("is_active", true);
     if (error || valid?.length !== new Set(branchIds).size) fail("Penugasan cabang tidak valid.");
@@ -124,7 +125,7 @@ export async function simpanEditPengguna(form: FormData): Promise<{ ok: false; m
   if (!isAccountEditId(profileId) || !isAccountEditId(requestId) || branchIds.some((id) => !isAccountEditId(id))) {
     return { ok: false, message: "Pilihan akun atau cabang tidak valid. Muat ulang halaman edit." };
   }
-  if (!fullName || fullName.length > 200 || !["OWNER", "ADMIN", "FINANCE", "DOCTOR", "STAFF"].includes(role) || !version || version.length > 200) {
+  if (!fullName || fullName.length > 200 || !(PERAN_AKUN as readonly string[]).includes(role) || !version || version.length > 200) {
     return { ok: false, message: "Isi nama akun (maks. 200 karakter), role, dan versi akun yang valid." };
   }
   try {
