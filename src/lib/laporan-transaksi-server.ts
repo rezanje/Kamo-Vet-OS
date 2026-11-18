@@ -1,4 +1,5 @@
-import { completeReportQuery } from "./report-query";
+import { completeReportQuery, completeReportQueryParalel } from "./report-query";
+import { bacaAnakPerInduk } from "./laporan-baca-berkelompok";
 // Penarikan data untuk laporan transaksi dasar. Dipisah dari halamannya karena
 // dipakai dua laporan sekaligus (per cabang & per hari) — angkanya wajib sama.
 import { createClient } from "./supabase/server";
@@ -51,19 +52,21 @@ export async function tarikTransaksi(dari: string, sampai: string, saring: Sarin
   const cabangId = saring.cabangId ?? "";
   const cabangNama = cabangId ? "" : saring.cabangNama ?? "";
 
-  const qSales = supabase.from("sales")
-    .select(`id, branch_id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches${cabangNama ? "!inner" : ""}(name), sale_items(id)`, { count: "exact" })
+  // Induk (struk/invoice) dibaca tanpa baris itemnya: halaman dibaca bersamaan, dan jumlah item per dokumen dihitung dari
+  // item yang dibaca per kelompok 100 id (dulu embed `sale_items(id)`/`invoice_items(id)` per halaman 500 lewat RLS: ±17 dtk).
+  const qSales = () => supabase.from("sales")
+    .select(`id, branch_id, customer_id, total, channel, created_at, payment_plan, payments_finalized_at, voided_at, branches${cabangNama ? "!inner" : ""}(name)`, { count: "exact" })
     .gte("created_at", mulai).lte("created_at", akhir);
   // Tagihan klinik yang dibatalkan tidak dihitung sebagai transaksi.
-  const qInvoices = supabase.from("invoices")
-    .select(`id, total, created_at, visits${cabangId || cabangNama ? "!inner" : ""}(customer_id, branch_id, branches${cabangNama ? "!inner" : ""}(name)), invoice_items(id)`, { count: "exact" })
+  const qInvoices = () => supabase.from("invoices")
+    .select(`id, total, created_at, visits${cabangId || cabangNama ? "!inner" : ""}(customer_id, branch_id, branches${cabangNama ? "!inner" : ""}(name))`, { count: "exact" })
     .is("voided_at", null)
     .gte("created_at", mulai).lte("created_at", akhir);
 
   const [hasilSales, hasilInvoices, hasilGrosir, hasilReturs, hasilRefundKlinik, hasilReturGrosir, hasilCabang] =
     await Promise.all([
-      completeReportQuery(cabangId ? qSales.eq("branch_id", cabangId) : cabangNama ? qSales.eq("branches.name", cabangNama) : qSales),
-      completeReportQuery(cabangId ? qInvoices.eq("visits.branch_id", cabangId) : cabangNama ? qInvoices.eq("visits.branches.name", cabangNama) : qInvoices),
+      completeReportQueryParalel(() => cabangId ? qSales().eq("branch_id", cabangId) : cabangNama ? qSales().eq("branches.name", cabangNama) : qSales()),
+      completeReportQueryParalel(() => cabangId ? qInvoices().eq("visits.branch_id", cabangId) : cabangNama ? qInvoices().eq("visits.branches.name", cabangNama) : qInvoices()),
       // Faktur grosir memakai kolom tanggal faktur (date, sudah WIB), bukan created_at:
       // fakturnya boleh dibuat mundur dan omzetnya milik tanggal fakturnya.
       completeReportQuery(supabase.from("sales_invoices")
@@ -81,6 +84,19 @@ export async function tarikTransaksi(dari: string, sampai: string, saring: Sarin
       completeReportQuery(supabase.from("wholesale_returns").select("id, invoice_id, total", { count: "exact" }).eq("status", "posted")),
       completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
     ]);
+  const hitungItem = async (tabel: "sale_items" | "invoice_items", fk: "sale_id" | "invoice_id", indukIds: string[]): Promise<Map<string, number>> => {
+    const item = await bacaAnakPerInduk<{ id: string } & Record<string, string>>(indukIds, async (batch, awal, ujung) => {
+      const { data, error, count } = await supabase.from(tabel).select(`id, ${fk}`, { count: "exact" }).in(fk, batch).order("id").range(awal, ujung);
+      return { data: data as unknown as ({ id: string } & Record<string, string>)[] | null, error, count };
+    });
+    const per = new Map<string, number>();
+    for (const baris of item) per.set(baris[fk], (per.get(baris[fk]) ?? 0) + 1);
+    return per;
+  };
+  const [itemPerStruk, itemPerInvoice] = await Promise.all([
+    hitungItem("sale_items", "sale_id", (hasilSales.data as unknown as { id: string }[]).map(s => s.id)),
+    hitungItem("invoice_items", "invoice_id", (hasilInvoices.data as unknown as { id: string }[]).map(i => i.id)),
+  ]);
 
   // completeReportQuery throws before returning any failed or incomplete source.
   const { data: sales } = hasilSales;
@@ -103,12 +119,11 @@ export async function tarikTransaksi(dari: string, sampai: string, saring: Sarin
 
   type SaleRow = SaleCompletion & {
     id: string; branch_id: string | null; customer_id: string | null; total: number; channel: string | null;
-    created_at: string; branches: Rel<{ name: string }>; sale_items: { id: string }[] | null;
+    created_at: string; branches: Rel<{ name: string }>;
   };
   type InvRow = {
     id: string; total: number; created_at: string;
     visits: Rel<{ customer_id: string | null; branch_id: string | null; branches: Rel<{ name: string }> }>;
-    invoice_items: { id: string }[] | null;
   };
 
   const trx: Trx[] = [];
@@ -120,7 +135,7 @@ export async function tarikTransaksi(dari: string, sampai: string, saring: Sarin
       cabangId: s.branch_id ?? null,
       customerId: s.customer_id,
       omzet: (Number(s.total) || 0) - (returPerStruk.get(s.id) ?? 0),
-      item: s.sale_items?.length ?? 0,
+      item: itemPerStruk.get(s.id) ?? 0,
       kanal: s.channel ? "Online" : "POS",
     });
   }
@@ -133,7 +148,7 @@ export async function tarikTransaksi(dari: string, sampai: string, saring: Sarin
       cabangId: v?.branch_id ?? null,
       customerId: v?.customer_id ?? null,
       omzet: (Number(inv.total) || 0) - (refundPerInvoice.get(inv.id) ?? 0),
-      item: inv.invoice_items?.length ?? 0,
+      item: itemPerInvoice.get(inv.id) ?? 0,
       kanal: "Klinik",
     });
   }
@@ -177,10 +192,10 @@ export async function tarikRiwayat(sampai: string): Promise<{ trx: TrxRiwayat[];
   const supabase = await createClient();
   const akhir = `${sampai}T23:59:59+07:00`;
   const [hasilSales, hasilInvoices, hasilGrosir] = await Promise.all([
-    completeReportQuery(supabase.from("sales")
+    completeReportQueryParalel(() => supabase.from("sales")
       .select("id, customer_id, total, created_at, payment_plan, payments_finalized_at, voided_at, branches(name)", { count: "exact" })
       .lte("created_at", akhir)),
-    completeReportQuery(supabase.from("invoices")
+    completeReportQueryParalel(() => supabase.from("invoices")
       .select("id, total, created_at, visits(customer_id, branches(name))", { count: "exact" })
       .is("voided_at", null).lte("created_at", akhir)),
     completeReportQuery(supabase.from("sales_invoices")
