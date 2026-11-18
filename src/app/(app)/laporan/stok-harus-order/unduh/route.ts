@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { amankanSel } from "@/lib/laporan-kategori-penjualan";
 import {
-  daftarHarusOrder, HALAMAN_ORDER, KONFIG_STOK, kelompokOrder, labelRiwayat, LABEL_ALASAN, saring,
+  CATATAN_PAKAI_BERSIH, daftarHarusOrder, HALAMAN_ORDER, KONFIG_STOK, kelompokOrder, labelRiwayat, LABEL_ALASAN, saring,
 } from "@/lib/stok-analisis";
 import { muatPendukungOrder, muatPilihanStok, muatRingkasStok, periksaAksesStok } from "@/lib/stok-analisis-server";
 import { createClient } from "@/lib/supabase/server";
@@ -46,6 +46,7 @@ export async function GET(request: Request) {
     ["Jumlah barang", jumlah], ["Perkiraan nilai pesanan (Rp)", Math.round(nilai)],
     ["Lead time (hari)", KONFIG_STOK.leadTimeHari], ["Isi sampai (hari penjualan)", KONFIG_STOK.targetCoverHari],
     ["Keterangan", "Harus order = stok sama dengan atau di bawah minimum, atau cukup kurang dari lead time. Saran order dalam satuan beli, dibulatkan ke atas dan minimum beli pemasok."],
+    ["Pemakaian bersih", CATATAN_PAKAI_BERSIH],
   ];
   book.addWorksheet("Keterangan").addRows(info.map((r) => r.map(amankanSel)));
   const buffer = await book.xlsx.writeBuffer();

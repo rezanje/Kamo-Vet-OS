@@ -36,5 +36,6 @@ describe("unduh Excel stok slow moving", () => {
     expect(baris.getCell(10).value).toBe(1000);
     const info = book.getWorksheet("Keterangan")!;
     expect(JSON.stringify(info.getSheetValues())).toContain("riwayat baru 13 hari");
+    expect(JSON.stringify(info.getSheetValues())).toContain("Dihitung bersih setelah pembatalan");
   });
 });

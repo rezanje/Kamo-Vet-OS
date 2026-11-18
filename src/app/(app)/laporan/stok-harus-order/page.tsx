@@ -5,7 +5,7 @@ import { Definisi, FilterStok, halamanDari, NomorHalaman, UKURAN_HALAMAN_STOK } 
 import { bolehBukaPath } from "@/lib/akses";
 import { laporanDiminta } from "@/lib/report-gate";
 import {
-  daftarHarusOrder, HALAMAN_ORDER, KONFIG_STOK, kelompokOrder, labelRiwayat, LABEL_ALASAN, rupiah, saring, tampilQty,
+  CATATAN_PAKAI_BERSIH, daftarHarusOrder, HALAMAN_ORDER, KONFIG_STOK, kelompokOrder, labelRiwayat, LABEL_ALASAN, rupiah, saring, tampilQty,
 } from "@/lib/stok-analisis";
 import { muatPendukungOrder, muatPilihanStok, muatRingkasStok, periksaAksesStok, StokAnalisisError } from "@/lib/stok-analisis-server";
 import { createClient } from "@/lib/supabase/server";
@@ -93,7 +93,7 @@ export default async function StokHarusOrderPage({ searchParams }: {
             <div style={{ overflowX: "auto" }}>
               <table className="tbl" style={{ minWidth: 820, width: "100%" }}>
                 <thead><tr>
-                  <th>Barang</th><th style={{ textAlign: "right" }}>Stok</th><th style={{ textAlign: "right" }}>Terjual/bulan</th>
+                  <th>Barang</th><th style={{ textAlign: "right" }}>Stok</th><th style={{ textAlign: "right" }} title={CATATAN_PAKAI_BERSIH}>Terjual/bulan</th>
                   <th style={{ textAlign: "right" }}>Cukup untuk (hari)</th><th>Alasan</th>
                   <th style={{ textAlign: "right" }}>Saran order</th><th style={{ textAlign: "right" }}>Perkiraan</th>
                 </tr></thead>
@@ -119,6 +119,7 @@ export default async function StokHarusOrderPage({ searchParams }: {
           Barang nonaktif/jasa, dan barang tanpa penjualan sekaligus tanpa minimum, tidak ikut.
           Saran order = isi sampai {KONFIG_STOK.targetCoverHari} hari penjualan (atau minimum bila lebih besar), dibulatkan ke atas ke satuan beli
           dan minimum beli pemasok. Perkiraan memakai harga beli master, atau biaya masuk terakhir bila harga beli kosong.
+          {CATATAN_PAKAI_BERSIH}
         </Definisi>
       </>}
     </LaporanPage>
