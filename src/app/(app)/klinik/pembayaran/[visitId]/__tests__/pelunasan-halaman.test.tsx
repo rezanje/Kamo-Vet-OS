@@ -3,12 +3,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
-type Pembayaran = { amount: number; transferred_from: string | null };
+type Pembayaran = { id?: string; amount: number; transferred_from: string | null; reversal_of?: string | null };
 const state = vi.hoisted(() => ({
   paidStatus: "DP",
   dp: 30000,
   correctionPending: false,
-  payments: [] as { amount: number; transferred_from: string | null }[],
+  payments: [] as { id?: string; amount: number; transferred_from: string | null; reversal_of?: string | null }[],
+  reissuedFrom: null as string | null,
   paymentsError: false,
   layak: false,
 }));
@@ -32,7 +33,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
       if (table === "inpatient_records") data = null;
       if (table === "profiles") data = { role: "STAFF" };
       if (table === "invoices") data = selected.includes("reissued_from")
-        ? [{ id: "tagihan-lama", invoice_no: "INV-PRODUK-1", subtotal: 50000, discount: 0, tax: 0, total: 50000, dp_amount: state.dp, dp_date: "2026-10-30", paid_status: state.paidStatus, metode_bayar: "Tunai", paid_at: null, reissued_from: null, correction_pending: state.correctionPending, created_at: "2026-10-30T00:00:00Z", request_key: "lama", salesperson_id: null, cashier_name: "Kasir Fiktif", service_pricing_version: 1 }]
+        ? [{ id: "tagihan-lama", invoice_no: "INV-PRODUK-1", subtotal: 50000, discount: 0, tax: 0, total: 50000, dp_amount: state.dp, dp_date: "2026-10-30", paid_status: state.paidStatus, metode_bayar: "Tunai", paid_at: null, reissued_from: state.reissuedFrom, correction_pending: state.correctionPending, created_at: "2026-10-30T00:00:00Z", request_key: "lama", salesperson_id: null, cashier_name: "Kasir Fiktif", service_pricing_version: 1 }]
         : [{ id: "tagihan-lama", invoice_no: "INV-PRODUK-1" }];
       if (table === "invoice_items") data = [{ id: "baris", deskripsi: "Obat Fiktif", qty: 2, harga: 25000, jenis: "obat", item_id: "obat", diskon_persen: 0, compound_recipe_id: null, prescription_item_id: null, satuan: "pcs" }];
       if (table === "invoice_payments") { data = state.payments; if (state.paymentsError) { data = null; error = { message: "baca saldo gagal" }; } }
@@ -80,7 +81,7 @@ vi.mock("@/lib/rombongan-server", () => ({ bacaRombongan: async () => null }));
 vi.mock("@/lib/dp-minimal", () => ({ getDpMinimalPercent: async () => 50, bolehMenerobosDp: () => false }));
 vi.mock("@/lib/tagihan-klinik", () => ({ perkiraanTagihan: async () => new Map(), bekalPotonganKlinik: async () => ({}), nilaiBaris: (r: { qty: number; harga: number }) => r.qty * r.harga }));
 vi.mock("@/app/(app)/klinik/pembayaran/[visitId]/PembayaranForm", () => ({
-  PembayaranForm: (props: { editMode?: boolean }) => <div data-form-koreksi={props.editMode ? "1" : "0"}>FORM</div>,
+  PembayaranForm: (props: { editMode?: boolean; initialCreditAmount?: number }) => <div data-form-koreksi={props.editMode ? "1" : "0"} data-credit={props.initialCreditAmount}>FORM</div>,
 }));
 vi.mock("@/app/(app)/klinik/pembayaran/[visitId]/LunasiRombonganForm", () => ({ LunasiRombonganForm: () => null }));
 vi.mock("@/app/(app)/klinik/pembayaran/[visitId]/VoidReissueForm", () => ({ VoidReissueForm: () => null }));
@@ -91,7 +92,7 @@ import Page from "@/app/(app)/klinik/pembayaran/[visitId]/page";
 
 beforeEach(() => {
   state.paidStatus = "DP"; state.dp = 30000; state.correctionPending = false;
-  state.payments = []; state.paymentsError = false; state.layak = false;
+  state.payments = []; state.paymentsError = false; state.layak = false; state.reissuedFrom = null;
 });
 const render = async () => renderToStaticMarkup(await Page({ params: Promise.resolve({ visitId: "visit" }), searchParams: Promise.resolve({}) }));
 const count = (html: string, needle: string) => html.split(needle).length - 1;
@@ -141,4 +142,23 @@ it.each([
 it("gagal tertutup bila saldo pembayaran tidak terbaca", async () => {
   state.paymentsError = true;
   await expect(render()).rejects.toThrow("Tagihan belum dapat diverifikasi");
+});
+
+const kredit = (html: string) => /data-credit="([^"]*)"/.exec(html)?.[1];
+
+it("terbit ulang yang penerimaannya sudah dibatalkan: form koreksi TIDAK lagi membawa uang pindahan lama (Kovu)", async () => {
+  state.layak = true; state.paidStatus = "Belum Lunas"; state.dp = 0; state.reissuedFrom = "tagihan-asal";
+  state.payments = [
+    { id: "p1", amount: 50000, transferred_from: "tagihan-asal", reversal_of: null },
+    { id: "p2", amount: -50000, transferred_from: null, reversal_of: "p1" },
+  ];
+  const html = await render();
+  expect(html).toContain('data-form-koreksi="1"');
+  expect(kredit(html)).toBe("0");
+});
+
+it("terbit ulang yang uang pindahannya masih menempel: form koreksi tetap membawanya", async () => {
+  state.layak = true; state.paidStatus = "Lunas"; state.dp = 0; state.correctionPending = true; state.reissuedFrom = "tagihan-asal";
+  state.payments = [{ id: "p1", amount: 50000, transferred_from: "tagihan-asal", reversal_of: null }];
+  expect(kredit(await render())).toBe("50000");
 });

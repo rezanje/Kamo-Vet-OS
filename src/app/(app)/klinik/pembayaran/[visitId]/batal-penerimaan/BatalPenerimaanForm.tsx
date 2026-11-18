@@ -10,6 +10,9 @@ import { batalkanPenerimaanKlinik, pratinjauTanggalBatalPenerimaan } from "./act
  * Tanggal pembukuan: bawaan hari ini; hanya Owner (atau peran berizin) melihat kontrol kecil tertutup untuk mengubahnya.
  * Peran lain tidak melihat kata apa pun tentang tanggal. Database memutuskan sah-tidaknya tanggal (periode terkunci, batas, hak).
  */
+/** Peringatan untuk Finance: buku sudah mengurangi bank/kas saat penerimaan dibatalkan. */
+export const PERINGATAN_BUKU_BANK = "Setelah dibatalkan, bank/kas di buku berkurang sebesar uang yang diterima. Jika selisih dikembalikan ke pelanggan, Finance transfer saja dan jangan membukukan jurnal pengurang bank lagi.";
+
 export function BatalPenerimaanForm({ visitId, invoiceId, invoiceNo, ringkasan, requestKey, kembaliHref, hariIni, minTanggal, bolehMundur }: {
   visitId: string; invoiceId: string; invoiceNo: string; ringkasan: string[]; requestKey: string; kembaliHref: string;
   hariIni?: string; minTanggal?: string | null; bolehMundur?: boolean;
@@ -50,6 +53,7 @@ export function BatalPenerimaanForm({ visitId, invoiceId, invoiceNo, ringkasan, 
       <div className="card-hd"><span><i className="ti ti-circle-check" /> Penerimaan {hasil.invoice_no} dibatalkan</span></div>
       <ul style={{ fontSize: 11.5, paddingLeft: 18 }}>{ringkasanHasil(hasil).map((t) => <li key={t}>{t}</li>)}</ul>
       <p style={{ fontSize: 11 }}>Berikutnya: ubah transaksi di faktur, lalu terima pembayaran lagi.</p>
+      <p style={{ fontSize: 11, color: "#92400e" }}>{PERINGATAN_BUKU_BANK}</p>
       <Link href={kembaliHref} className="btn-def"><i className="ti ti-arrow-left" /> Kembali ke tagihan</Link>
     </div>;
   }
@@ -57,6 +61,7 @@ export function BatalPenerimaanForm({ visitId, invoiceId, invoiceNo, ringkasan, 
   return <div className="card">
     <div className="card-hd"><span><i className="ti ti-receipt-off" /> Batalkan penerimaan {invoiceNo}</span></div>
     <p style={{ fontSize: 11 }}>Nota kembali belum lunas. Setelah itu ubah transaksi di faktur, lalu terima pembayaran lagi.</p>
+    <p data-testid="peringatan-buku-bank" style={{ fontSize: 11, color: "#92400e" }}>{PERINGATAN_BUKU_BANK}</p>
     <ul role="note" style={{ margin: "6px 0", paddingLeft: 18, fontSize: 11 }}>{teks.map((t) => <li key={t}>{t}</li>)}</ul>
     {hariIni && bolehMundur && <details style={{ margin: "8px 0" }} data-testid="ubah-tanggal-pembukuan">
       <summary style={{ cursor: "pointer", fontSize: 11 }}>{UBAH_TANGGAL_LABEL}</summary>
