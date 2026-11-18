@@ -401,6 +401,27 @@ select count(*)||'|'||count(*) filter (where msg like 'ADMIN_ONLINE_FUNCTION_DEN
               v1 == "bocor" and n1 == "1" and has(e2, "ADMIN_ONLINE_FUNCTION_DENIED") and v3 == "bocor", dict(sebelum=v1, dijaga=n1, sesudah=short(e2), owner=v3))
     finally:
         h.sql("drop function if exists public.zz_ao_pembaca_baru()")
+    for who, nm in ((AO, "Admin Online"), (OWNER, "OWNER")):
+        e = h.err("select admin_online_private.fence_all()", who)
+        check(f"fence_all() tidak dapat dipanggil dari API ({nm})", has(e, "permission denied"), short(e))
+    f0 = h.val("select admin_online_private.fence_all()")
+    check("fence_all() idempotent: menjalankan ulang tidak memasang apa pun (0 tabel baru)", f0 == "0", f0)
+    h.sql("create table public.zz_ao_tabel_baru(id int primary key, rahasia text); alter table public.zz_ao_tabel_baru enable row level security; "
+          "create policy buka_semua on public.zz_ao_tabel_baru for all to authenticated using (true) with check (true); grant all on public.zz_ao_tabel_baru to authenticated; "
+          "insert into public.zz_ao_tabel_baru values (1, 'rahasia');")
+    try:
+        sebelum = h.val("select count(*) from public.zz_ao_tabel_baru", AO)
+        f1 = h.val("select admin_online_private.fence_all()")
+        sesudah = h.val("select count(*) from public.zz_ao_tabel_baru", AO)
+        tulis = h.err("insert into public.zz_ao_tabel_baru values (2, 'x')", AO)
+        owner = h.val("select count(*) from public.zz_ao_tabel_baru", OWNER)
+        check("tabel BARU: terbaca Admin Online sampai fence_all() dijalankan; sesudahnya tertutup baca + tulis, peran lain tetap",
+              sebelum == "1" and f1 == "1" and sesudah == "0" and has(tulis, "ADMIN_ONLINE_WRITE_DENIED") and owner == "1", dict(sebelum=sebelum, dipagari=f1, sesudah=sesudah, tulis=short(tulis), owner=owner))
+        h.sql("create table public.zz_ao_tanpa_rls(id int); grant all on public.zz_ao_tanpa_rls to authenticated;")
+        e = h.err("select admin_online_private.fence_all()")
+        check("fence_all() menolak tabel public tanpa RLS (gagal tertutup, tidak diam-diam melewatkan)", has(e, "ADMIN_ONLINE_FENCE_RLS"), short(e))
+    finally:
+        h.sql("drop table if exists public.zz_ao_tanpa_rls; drop table if exists public.zz_ao_tabel_baru;")
     e1 = h.err("select kamo_import.baca_hasil_impor(array['x'])", AO)
     check("skema kamo_import: pembaca impor menolak Admin Online (gerbang OWNER/ADMIN)", has(e1, "Hanya OWNER/ADMIN"), short(e1))
 

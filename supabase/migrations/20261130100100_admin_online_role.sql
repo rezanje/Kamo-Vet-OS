@@ -228,11 +228,13 @@ select pg_temp.admin_online_patch('public.clinic_quote_inpatient_payment(uuid,uu
   array['select case when admin_online_private.deny_admin_online() then clinic_private.inpatient_payment_quote(p_record_id,p_visit_id,p_parts)-''lines''-''shift_id'' end']);
 
 -- Pagar baca + tulis di semua tabel. Pemilik tabel harus sama dengan penjalan migrasi (jika tidak: gagal tertutup, bukan dilewati).
-do $fence$
-declare t record; v_skip text[] := array['profiles','user_branches'];
+-- Dibungkus fungsi admin_online_private.fence_all() (hanya pemilik, idempotent): dijalankan ulang sesudah migrasi lain menambah TABEL baru.
+create or replace function admin_online_private.fence_all() returns integer
+language plpgsql as $fence$
+declare t record; v_skip text[] := array['profiles','user_branches']; v_n integer := 0;
 begin
   for t in
-    select c.oid, n.nspname, c.relname, c.relkind, pg_get_userbyid(c.relowner) owner
+    select c.oid, n.nspname, c.relname, c.relkind, c.relrowsecurity, pg_get_userbyid(c.relowner) owner
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where c.relkind in ('r', 'p') and n.nspname !~ '^pg_' and n.nspname not in ('information_schema', 'auth', 'storage', 'extensions', 'graphql',
       'graphql_public', 'vault', 'realtime', 'supabase_functions', 'supabase_migrations', 'cron', 'net', 'pgsodium', 'pgsodium_masks', 'pgbouncer',
@@ -240,14 +242,20 @@ begin
     order by n.nspname, c.relname
   loop
     if t.owner <> current_user then raise exception 'ADMIN_ONLINE_FENCE_OWNER: %.% dimiliki % (bukan %)', t.nspname, t.relname, t.owner, current_user; end if;
-    execute format('drop trigger if exists zz_admin_online_write_fence on %I.%I', t.nspname, t.relname);
-    execute format('create trigger zz_admin_online_write_fence before insert or update or delete or truncate on %I.%I for each statement execute function admin_online_private.write_fence()', t.nspname, t.relname);
-    if t.nspname = 'public' and not (t.relname = any (v_skip)) then
-      execute format('drop policy if exists admin_online_fence_r on %I.%I', t.nspname, t.relname);
+    if t.nspname = 'public' and not t.relrowsecurity then raise exception 'ADMIN_ONLINE_FENCE_RLS: tabel public %.% tanpa RLS; aktifkan RLS dulu', t.nspname, t.relname; end if;
+    if not exists (select 1 from pg_trigger g where g.tgrelid = t.oid and g.tgname = 'zz_admin_online_write_fence') then
+      execute format('create trigger zz_admin_online_write_fence before insert or update or delete or truncate on %I.%I for each statement execute function admin_online_private.write_fence()', t.nspname, t.relname);
+      v_n := v_n + 1;
+    end if;
+    if t.nspname = 'public' and not (t.relname = any (v_skip))
+       and not exists (select 1 from pg_policy pol where pol.polrelid = t.oid and pol.polname = 'admin_online_fence_r') then
       execute format('create policy admin_online_fence_r on %I.%I as restrictive for select to authenticated using (not (select admin_online_private.is_admin_online()))', t.nspname, t.relname);
     end if;
   end loop;
+  return v_n;
 end $fence$;
+revoke all on function admin_online_private.fence_all() from public, anon, authenticated, service_role;
+select admin_online_private.fence_all();
 
 -- Berkas unggahan (storage): pagar RESTRICTIVE agar ADMIN_ONLINE tidak bisa mengunggah/membaca lewat API Storage.
 do $stor$
@@ -292,6 +300,8 @@ begin
      or has_function_privilege('authenticated', 'admin_online_private.write_fence()', 'execute')
      or has_function_privilege('authenticated', 'admin_online_private.guard_all()', 'execute')
      or has_function_privilege('anon', 'admin_online_private.guard_all()', 'execute')
+     or has_function_privilege('authenticated', 'admin_online_private.fence_all()', 'execute')
+     or has_function_privilege('anon', 'admin_online_private.fence_all()', 'execute')
      or has_function_privilege('anon', 'public.admin_online_import_catalog(uuid)', 'execute') then
     raise exception 'ADMIN_ONLINE_CHECK: hak akses privat bocor'; end if;
 end $check$;
