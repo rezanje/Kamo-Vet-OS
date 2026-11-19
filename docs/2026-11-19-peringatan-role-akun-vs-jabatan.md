@@ -7,7 +7,7 @@ HR mengganti jabatan karyawan (Amalia Nurhalida) dari Dokter ke Paramedis, tetap
 Jabatan HRIS (`employees.jabatan`) dan role akun login (`profiles.role`) memang terpisah; menu mengikuti role.
 Akun Amalia dibuat dengan role **ADMIN** (bukan DOCTOR) dan tidak pernah diubah (`user_account_edits` kosong).
 
-## Perbaikan data (19 Nov, atas persetujuan Reza)
+## Perbaikan data (19 Nov, atas persetujuan pemilik)
 - `profiles.role` Amalia (810772bc-…) ADMIN → STAFF, langsung di database. Cabang tidak diubah
   (Garuda, Gerlong, TKI, Pejuang). Karena tidak lewat RPC `edit_user_account`, perubahan ini
   **tidak tercatat** di `user_account_edits`; catatan ini sebagai jejaknya.
@@ -19,7 +19,7 @@ Akun Amalia dibuat dengan role **ADMIN** (bukan DOCTOR) dan tidak pernah diubah 
 - Pengaturan → Pengguna: penanda kecil di kolom Role untuk akun yang tidak cocok.
 - Tidak ada perubahan database / hak akses; hanya tampilan.
 
-## Temuan lain (belum diubah, menunggu keputusan pemilik)
-Akun aktif yang ditandai aturan ini per 19 Nov: Santhi Yanithasari (Paramedis, ADMIN),
-Amanda Novita Sukmana (Paramedis, ADMIN). Aldiansyah Trisaputra (CEO, DOCTOR) tidak dinilai aturan,
-tapi tampak tidak lazim.
+## Temuan lain dan tindak lanjut
+Aturan ini juga menandai Santhi Yanithasari dan Amanda Novita Sukmana (Paramedis, ADMIN). Atas persetujuan
+pemilik (19 Nov), keduanya diubah ADMIN → STAFF dengan cara yang sama (langsung di database, cabang tidak diubah,
+tidak tercatat di `user_account_edits`). Aldiansyah Trisaputra (CEO, DOCTOR) tidak dinilai aturan dan tidak diubah.
