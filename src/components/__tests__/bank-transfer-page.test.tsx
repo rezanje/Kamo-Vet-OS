@@ -48,3 +48,11 @@ it("keeps older transfers reachable beyond the first fifty records", async () =>
   expect(html).toContain("51–51 dari 51");
   expect(html).toContain("Sebelumnya");
 });
+
+// 19 Nov 2026: kolom cabang menampilkan asal → tujuan untuk transfer antar cabang.
+it("shows origin and destination branch for an inter-branch transfer", async () => {
+  documents = [{...doc, asal: {name:"DC"}, tujuan: {name:"Kamo Petshop Ciomas"}, to_journal_entry_id: "j2"} as typeof doc, {...doc, id:"single", asal: {name:"DC"}, tujuan: {name:"DC"}} as typeof doc];
+  const html = renderToStaticMarkup(await TransferPage({ searchParams: Promise.resolve({}) }));
+  expect(html).toContain("DC → Kamo Petshop Ciomas");
+  expect(html).not.toContain("DC → DC");
+});

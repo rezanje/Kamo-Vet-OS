@@ -14,11 +14,17 @@ function one<T>(r: Rel<T>): T | null {
 
 type Baris = {
   id: string; no_transfer: string; tanggal: string; jumlah: number; biaya_admin: number;
-  keterangan: string | null; voided_at: string | null; void_reason: string | null; replacement_of: string | null; branch_id: string | null; revision: number; from_account_id: string; to_account_id: string;
-  from: Rel<{ nama: string }>; to: Rel<{ nama: string }>; branches: Rel<{ name: string }>;
+  keterangan: string | null; voided_at: string | null; void_reason: string | null; replacement_of: string | null; branch_id: string | null; to_branch_id?: string | null; to_journal_entry_id?: string | null; revision: number; from_account_id: string; to_account_id: string;
+  from: Rel<{ nama: string }>; to: Rel<{ nama: string }>; asal: Rel<{ name: string }>; tujuan: Rel<{ name: string }>;
 };
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
+/** "Asal → Tujuan" bila beda cabang; catatan lama (tanpa cabang tujuan) = satu cabang. */
+function cabangLabel(t: Baris) {
+  const asal = one(t.asal)?.name ?? "Pusat";
+  if (!t.to_journal_entry_id) return asal;
+  return `${asal} → ${one(t.tujuan)?.name ?? "Pusat"}`;
+}
 const fmtTgl = (d: string) =>
   new Date(d).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
 
@@ -33,20 +39,20 @@ export default async function TransferPage({
   const boleh = await bolehTransaksiKas();
   const {data: profile} = await supabase.from("profiles").select("role,is_active").eq("id",user?.id ?? "").maybeSingle();
 
-  const columns = "id, no_transfer, tanggal, jumlah, biaya_admin, keterangan, voided_at, void_reason, replacement_of, branch_id, revision, from_account_id, to_account_id, from:from_account_id(nama), to:to_account_id(nama), branches(name)";
+  const columns = "id, no_transfer, tanggal, jumlah, biaya_admin, keterangan, voided_at, void_reason, replacement_of, branch_id, to_branch_id, to_journal_entry_id, revision, from_account_id, to_account_id, from:from_account_id(nama), to:to_account_id(nama), asal:branches!cash_transfers_branch_id_fkey(name), tujuan:branches!cash_transfers_to_branch_id_fkey(name)";
   const loadTransfers = readListPage<Baris>((from, to) => supabase.from("cash_transfers")
     .select(columns, {count:"exact"}).order("tanggal", {ascending:false}).order("created_at", {ascending:false}).order("id").range(from,to)
     .then(result => ({...result,data:result.data as unknown as Baris[] | null})), "Catatan transfer", hal)
     .then(page => ({page,error:null})).catch((error: unknown) => ({page:null,error}));
   const [{ data: rekData }, { data: branches }, { page: transferPage, error: transferError }, saldoAkun] = await Promise.all([
-    supabase.from("cash_accounts").select("id, nama, jenis, coa_code").eq("is_active", true).order("nama"),
+    supabase.from("cash_accounts").select("id, nama, jenis, coa_code, branch_id").eq("is_active", true).order("nama"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     loadTransfers,
     getAccountBalances(supabase),
   ]);
 
   const saldoPerKode = new Map(saldoAkun.map((a) => [a.code, a.saldo]));
-  const rekening = (rekData ?? []) as { id: string; nama: string; jenis: string; coa_code: string }[];
+  const rekening = (rekData ?? []) as { id: string; nama: string; jenis: string; coa_code: string; branch_id?: string | null }[];
   const daftar = transferPage?.rows ?? [];
   // Koreksi/batal: OWNER/ADMIN/FINANCE aktif (keputusan 12 Nov 2026).
   const mayCorrect = !!profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
@@ -66,6 +72,7 @@ export default async function TransferPage({
   const opsi = rekening.map((r) => ({
     id: r.id,
     label: `${r.nama} — ${rp(saldoPerKode.get(r.coa_code) ?? 0)}`,
+    branch_id: r.branch_id ?? null,
   }));
 
   return (
@@ -93,7 +100,7 @@ export default async function TransferPage({
       )}
       {success && (
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
-          <i className="ti ti-circle-check" /> {success === "batal" ? "Transfer dibatalkan." : success === "koreksi" ? "Catatan asli dibalik dan pengganti tersimpan. Saldo kedua rekening sudah dikoreksi." : "Transfer tersimpan."}
+          <i className="ti ti-circle-check" /> {success === "batal" ? "Transfer dibatalkan." : success === "koreksi" ? "Perubahan transfer tersimpan. Saldo rekening dan cabang sudah disesuaikan; catatan lama tersimpan di riwayat." : "Transfer tersimpan."}
         </div>
       )}
       {!boleh && <div className="p2ban"><i className="ti ti-info-circle" /> Hanya OWNER/ADMIN/FINANCE yang bisa membuat transfer.</div>}
@@ -109,8 +116,8 @@ export default async function TransferPage({
       {(transferError || selectionError) && <div role="alert" className="p2ban">Daftar catatan transfer gagal dimuat. Muat ulang atau hubungi administrator.</div>}
       {historyError && <div role="alert" className="p2ban">Riwayat koreksi gagal dimuat. Muat ulang sebelum melanjutkan.</div>}
       {mayCorrect && selected && !selected.voided_at && <section id="koreksi-transfer" className="crm-sec" style={{marginBottom:14}}>
-        <h2>{koreksi ? "Koreksi" : "Batalkan"} catatan {selected.no_transfer}</h2>
-        <TransferForm userId={user?.id ?? ""} mode={koreksi ? "edit" : "void"} header={selected} rekening={opsi}/>
+        <h2>{koreksi ? "Ubah" : "Batalkan"} transfer {selected.no_transfer}</h2>
+        <TransferForm userId={user?.id ?? ""} mode={koreksi ? "edit" : "void"} header={{...selected, to_branch_id: selected.to_journal_entry_id ? (selected.to_branch_id ?? null) : selected.branch_id}} rekening={opsi} branches={branches ?? []}/>
         <Link href="/kas-bank/transfer" className="btn-def">Tutup koreksi</Link>
       </section>}
       {mayCorrect && (koreksi || batal) && (!selected || selected.voided_at) && <div role="alert" className="p2ban">Catatan tidak tersedia atau sudah berubah/dibatalkan. Periksa hasil sebelumnya atau pilih catatan aktif.</div>}
@@ -128,7 +135,7 @@ export default async function TransferPage({
                 <th>Dari → Ke</th>
                 <th style={{ width: 120, textAlign: "right" }}>Jumlah</th>
                 <th style={{ width: 100, textAlign: "right" }}>Biaya</th>
-                <th style={{ width: 120 }}>Cabang</th>
+                <th style={{ width: 160 }}>Cabang</th>
                 <th style={{ width: 90 }}>Status</th>
                 {boleh && <th style={{ width: 110 }}>Aksi</th>}
               </tr>
@@ -148,7 +155,7 @@ export default async function TransferPage({
                   <td style={{ fontSize: 10.5, textAlign: "right", color: "var(--tm)" }}>
                     {Number(t.biaya_admin) > 0 ? rp(Number(t.biaya_admin)) : "—"}
                   </td>
-                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{one(t.branches)?.name ?? "Pusat"}</td>
+                  <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{cabangLabel(t)}</td>
                   <td>
                     <span className={`bge ${t.voided_at ? "x" : "g"}`}>{t.voided_at ? "Dibatalkan" : "Aktif"}</span>
                   </td>
@@ -156,7 +163,7 @@ export default async function TransferPage({
                     <td>
                       {!t.voided_at && (
                         <div>
-                          {mayCorrect && <Link href={`/kas-bank/transfer?koreksi=${t.id}&hal=${transferPage?.pageInfo.page ?? 1}#koreksi-transfer`}>Koreksi</Link>}
+                          {mayCorrect && <Link href={`/kas-bank/transfer?koreksi=${t.id}&hal=${transferPage?.pageInfo.page ?? 1}#koreksi-transfer`}>Ubah</Link>}
                           {mayCorrect && <div><Link href={`/kas-bank/transfer?batal=${t.id}&hal=${transferPage?.pageInfo.page ?? 1}#koreksi-transfer`}>Batalkan catatan</Link></div>}
                           {mayCorrect && <div><Link href={`/kas-bank/transfer/lampiran/${t.id}`}>Lampiran</Link></div>}
                         </div>
@@ -178,7 +185,7 @@ export default async function TransferPage({
 
       {transferPage && <ListPagination path="/kas-bank/transfer" query={{}} total={transferPage.count} pageInfo={transferPage.pageInfo}/>}
       <div style={{ fontSize: 10, color: "var(--td)", marginTop: 10 }}>
-        Super Admin/OWNER, Admin, dan Finance dapat mengoreksi atau membatalkan. Catatan asli tetap tersimpan; jurnal pembalik memakai tanggal asli, pengganti memakai tanggal yang dipilih, cabang tetap sama. Saldo rekening asal dan tujuan diperbaiki bersama tanpa menambah pendapatan.
+        Super Admin/OWNER, Admin, dan Finance dapat mengubah atau membatalkan transfer (tanggal, rekening, cabang, nilai). Catatan asli tetap tersimpan sebagai riwayat; saldo rekening dan cabang ikut menyesuaikan. Transfer antar cabang mencatat uang keluar di cabang asal dan uang masuk di cabang tujuan.
       </div>
     </>
   );
