@@ -48,12 +48,12 @@ def has(db, sig, text):
 if __name__ == "__main__":
     with NativePostgres(BIN) as db:
         fixture.DisposablePostgres.bootstrap(db)
-        # Re-apply check dilepas 19 Nov 2026: 20261202100000_transfer_kas_dua_cabang menulis ulang mutate_cash_transfer
+        # Re-apply check dilepas 19 Nov 2026: 20261119092446_transfer_kas_dua_cabang menulis ulang mutate_cash_transfer
         # utuh, jadi potongan teks migrasi 12 Nov sengaja tidak ada lagi (migrasi memang hanya jalan sekali).
         ok(not has(db, CASH, "Hanya Super Admin yang bisa mengedit kas"), "cash entry edit no longer OWNER-only")
         ok(has(db, CASH, "role not in ('OWNER','ADMIN','FINANCE')"), "cash entry edit still limited to OWNER/ADMIN/FINANCE")
         ok(not has(db, TRANSFER, "d<>doc.tanggal"), "transfer correction may change the date")
-        # 19 Nov 2026 (20261202100000_transfer_kas_dua_cabang): koreksi boleh ganti cabang; akses cabang tetap dicek.
+        # 19 Nov 2026 (20261119092446_transfer_kas_dua_cabang): koreksi boleh ganti cabang; akses cabang tetap dicek.
         ok(has(db, TRANSFER, "Cabang transfer tidak dapat diakses"), "transfer correction still checks branch access")
         ok(db.last("select 'lock_timeout=5s'=any(proconfig) and exists(select 1 from unnest(proconfig) c where c like 'search_path=%') from pg_proc where oid='" + TRANSFER + "'::regprocedure;") == "t",
            "transfer function keeps search_path and lock timeout")

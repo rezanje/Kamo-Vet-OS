@@ -1,4 +1,4 @@
--- Transfer Kas dua cabang (20261202100000_transfer_kas_dua_cabang). Data fiktif saja.
+-- Transfer Kas dua cabang (20261119092446_transfer_kas_dua_cabang). Data fiktif saja.
 -- Dijalankan setelah internal_transfer_corrections.sql (memakai fungsi bantu dan pengguna fiktifnya).
 reset role;
 insert into branches(id,name,code,type) values

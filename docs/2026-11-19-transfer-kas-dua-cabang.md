@@ -11,7 +11,7 @@ Permintaan Mba Anisa (finance) via Reza, WA 19 Nov 2026:
 
 ## Yang berubah
 
-### Database — `supabase/migrations/20261202100000_transfer_kas_dua_cabang.sql`
+### Database — `supabase/migrations/20261119092446_transfer_kas_dua_cabang.sql`
 
 - `cash_transfers.to_branch_id` (cabang tujuan) dan `cash_transfers.to_journal_entry_id` (jurnal sisi tujuan).
   `branch_id` sekarang berarti cabang asal. Baris lama diisi `to_branch_id = branch_id` (angka lama tidak berubah).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Transfer Kas dua cabang (20261202100000_transfer_kas_dua_cabang.sql) on a throwaway native PostgreSQL.
+"""Transfer Kas dua cabang (20261119092446_transfer_kas_dua_cabang.sql) on a throwaway native PostgreSQL.
 
 Applies every repository migration from zero (fictional auth/storage shims), then runs
 supabase/tests/internal_transfer_corrections.sql (regresi transfer satu cabang) followed by
@@ -25,7 +25,7 @@ spec.loader.exec_module(fixture)
 args = [a for a in sys.argv[1:] if a != "--baseline"]
 BASELINE = "--baseline" in sys.argv[1:]
 BIN = Path(args[0] if args else os.environ.get("PG_BIN", "/usr/lib/postgresql/16/bin"))
-CANDIDATE = ROOT / "supabase/migrations/20261202100000_transfer_kas_dua_cabang.sql"
+CANDIDATE = ROOT / "supabase/migrations/20261119092446_transfer_kas_dua_cabang.sql"
 
 
 if __name__ == "__main__":
