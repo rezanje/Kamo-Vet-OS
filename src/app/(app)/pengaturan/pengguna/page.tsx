@@ -1,4 +1,5 @@
 import { roleCapabilities, type RoleCapabilities } from "@/lib/role-capabilities";
+import { cekPeranVsJabatan, labelPeranAkun } from "@/lib/peran-vs-jabatan";
 import { labelPeran } from "@/lib/admin-online";
 import { branchDisplayName } from "@/lib/branch-display";
 import { allowedBranchIds } from "@/lib/branch-access";
@@ -51,6 +52,7 @@ export default async function PenggunaPage({
   }
   const emps = (employees ?? []) as unknown as Emp[];
   const empByProfile = new Map(emps.filter((e) => e.profile_id).map((e) => [e.profile_id as string, `${e.nama} · ${e.nik ?? e.id}`]));
+  const jabatanByProfile = new Map(emps.filter((e) => e.profile_id).map((e) => [e.profile_id as string, e.jabatan]));
   const empBebas = emps.filter((e) => !e.profile_id && e.status === "Aktif");
   // Pencarian: nama akun, nama/NIK karyawan HRIS, cabang, atau role.
   const term = (q ?? "").trim().toLowerCase();
@@ -118,7 +120,12 @@ export default async function PenggunaPage({
               {shown.map((p) => (
                 <tr key={p.id} style={!p.is_active ? { opacity: 0.55 } : undefined}>
                   <td style={{ fontSize: 11.5, fontWeight: 600 }}>{p.full_name ?? "—"}</td>
-                  <td><span className={`bge ${ROLE_BADGE[p.role] ?? "x"}`}>{labelPeran(p.role)}</span></td>
+                  <td><span className={`bge ${ROLE_BADGE[p.role] ?? "x"}`}>{labelPeran(p.role)}</span>
+                    {(() => { const beda = cekPeranVsJabatan(jabatanByProfile.get(p.id), p.role); return beda && (
+                      <div data-testid="peran-vs-jabatan" style={{ fontSize: 10, color: "#b45309", marginTop: 3 }} title="Menu login mengikuti role akun, bukan jabatan HRIS">
+                        <i className="ti ti-alert-triangle" /> Jabatan {beda.jabatan} — biasanya {labelPeranAkun(beda.saran)}
+                      </div>); })()}
+                  </td>
                   <td style={{ fontSize: 11 }}>{roleCapabilities(p.role, capabilityMap.get(p.role)).all_branches ? "Semua cabang" : (ubMap.get(p.id) ?? []).join(", ") || "Belum ada akses cabang"}</td>
                   <td style={{ fontSize: 11 }}>{empByProfile.has(p.id) ? empByProfile.get(p.id) : canManage ? <form action={tautkanPengguna}>
                     <input type="hidden" name="profile_id" value={p.id} />
