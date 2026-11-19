@@ -22,6 +22,7 @@ const ASAL: Record<string, string> = {
   "kas-entry": "Kas masuk / keluar",
   "kas-entry-void": "Pembatalan kas",
   transfer: "Transfer antar rekening",
+  "transfer-tujuan": "Transfer masuk antar cabang",
   "transfer-void": "Pembatalan transfer",
   "transfer-reversal": "Pembalik koreksi transfer",
   "purchase-pay": "Pembayaran pemasok",

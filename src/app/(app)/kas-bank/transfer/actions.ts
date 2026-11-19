@@ -9,6 +9,7 @@ import { validasiTransfer } from "@/lib/transfer-kas";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BACK = "/kas-bank/transfer";
+const CABANG_DITOLAK = "Kamu belum punya akses ke cabang asal atau cabang tujuan. Untuk transfer antar cabang, pilih \"Semua Cabang\" di menu kiri dulu.";
 const gagal = (message: string): never => redirect(`${BACK}?error=${encodeURIComponent(message)}`);
 
 async function simpan(formData: FormData, action: "create" | "edit" | "void") {
@@ -31,6 +32,8 @@ async function simpan(formData: FormData, action: "create" | "edit" | "void") {
     to_account_id: String(formData.get("to_account_id") ?? "").trim(),
     jumlah: Number(formData.get("jumlah")), biaya_admin: Number(formData.get("biaya_admin") ?? 0),
     branch_id: String(formData.get("branch_id") ?? "").trim() || null,
+    // Cabang tujuan (19 Nov 2026). Kosong = Pusat; tidak dikirim (form lama) = sama dengan cabang asal.
+    ...(formData.has("to_branch_id") ? { to_branch_id: String(formData.get("to_branch_id") ?? "").trim() || null } : {}),
     keterangan: String(formData.get("keterangan") ?? "").trim() || null,
   };
   if (!recovery && action !== "void") {
@@ -45,7 +48,9 @@ async function simpan(formData: FormData, action: "create" | "edit" | "void") {
       p_expected_revision: action === "create" ? null : revision, p_header: header,
       p_reason: action === "create" ? null : reason,
     });
-  if (error) fail(["55P03", "40P01", "40001"].includes(error.code) ? "Catatan sedang diproses atau berubah bersamaan. Periksa hasil terakhir lalu muat ulang sebelum mencoba lagi." : roleRpcFailure(error)?.message ?? error.message);
+  if (error) fail(["55P03", "40P01", "40001"].includes(error.code) ? "Catatan sedang diproses atau berubah bersamaan. Periksa hasil terakhir lalu muat ulang sebelum mencoba lagi."
+    : /Cabang transfer tidak dapat diakses/.test(error.message ?? "") ? CABANG_DITOLAK
+    : roleRpcFailure(error)?.message ?? error.message);
   if (!data?.transfer_id || !data?.journal_entry_id || (action !== "create" && (!data?.reversal_journal_id || data.transfer_id !== id)) || (action === "edit" && (!data?.replacement_transfer_id || !data?.replacement_journal_id))) {
     fail("Hasil transfer belum terkonfirmasi lengkap. Isian tetap tersedia; periksa hasil terakhir sebelum mengirim ulang.");
   }
