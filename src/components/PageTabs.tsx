@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   HOME_TAB, closeTab, nextActive, normaliseTabs, openTab, tabLabel, type PageTab,
 } from "@/lib/tabs";
+import { lastPageUrl } from "@/lib/menu-last-path";
 
 const STORE_KEY = "vetos.tabs";
 const EMPTY: PageTab[] = [];
@@ -50,6 +51,16 @@ function subscribe(fn: () => void) {
   };
 }
 
+// Tab laporan membuka filter terakhirnya, bukan laporan kosong (permintaan Reza 19 Nov 2026).
+// Aman dibaca saat render: daftar tab selain Dashboard hanya ada di klien.
+function tabHref(href: string): string {
+  try {
+    return lastPageUrl(sessionStorage, href);
+  } catch {
+    return href;
+  }
+}
+
 // Server tidak punya sessionStorage → snapshot kosong yang stabil.
 const serverSnapshot = () => EMPTY;
 
@@ -83,7 +94,7 @@ export function PageTabs() {
         return (
           <div key={t.href} className={`ptab${on ? " on" : ""}`}>
             {/* Link beneran biar bisa keyboard & ctrl+klik buka tab browser baru. */}
-            <Link href={t.href} prefetch={false} className="ptab-l" title={t.href}>
+            <Link href={tabHref(t.href)} prefetch={false} className="ptab-l" title={t.href}>
               {t.label}
             </Link>
             {t.href !== HOME_TAB.href && (
