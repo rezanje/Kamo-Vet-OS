@@ -4,9 +4,9 @@ import { useState } from "react";
 import { CorrectionTransactionForm } from "@/components/CorrectionTransactionForm";
 import { NumberInput } from "@/components/NumberInput";
 import { formatPosMoney } from "@/lib/pos-money";
-import type { BatasTanggal } from "@/lib/tanggal-efektif-petshop";
+import { batasKolom, type BatasTanggal } from "@/lib/tanggal-efektif-petshop";
 import { TanggalEfektifField } from "./TanggalEfektifField";
-import { batalkanPenerimaan, batalkanPencairan, terimaPembayaranUlang } from "./actions";
+import { batalkanPenerimaan, batalkanPencairan, terimaPembayaranUlang, ubahPembayaran } from "./actions";
 
 const METHODS = ["Tunai", "Transfer", "Debit", "Kredit", "QRIS", "E-Wallet"] as const;
 
@@ -18,6 +18,51 @@ function cents(value: string): number | null {
   const [whole, decimal = ""] = text.split(".");
   const result = Number(whole) * 100 + Number(decimal.padEnd(2, "0"));
   return Number.isSafeInteger(result) ? result : null;
+}
+
+/**
+ * Ubah pembayaran (gaya Accurate, 19 Nov 2026): tanggal bayar + jumlah per metode langsung diubah, satu kali simpan.
+ * Tanggal hanya tampil untuk Owner / peran berizin tanggal mundur; bawaan = tanggal pembayaran yang tercatat.
+ */
+export function SalePaymentEditForm({ userId, saleId, revision, total, current, tanggalBayar, batasTanggal }: {
+  userId: string; saleId: string; revision: number; total: number; current: { method: string; amount: number }[];
+  tanggalBayar: string; batasTanggal?: BatasTanggal | null;
+}) {
+  const initial = Object.fromEntries(METHODS.map(method => [method, String(current.find(part => part.method === method)?.amount ?? "")]));
+  const [values, setValues] = useState<Record<string, string>>(initial);
+  const kolom = batasTanggal ? batasKolom(batasTanggal) : null;
+  const awal = kolom ? (tanggalBayar >= kolom.min && tanggalBayar <= kolom.max ? tanggalBayar : kolom.max) : "";
+  const [tanggal, setTanggal] = useState(awal);
+  const parsed = METHODS.map(method => cents(values[method] ?? ""));
+  const bad = parsed.some(value => value === null);
+  const sum = bad ? 0 : parsed.reduce<number>((a, b) => a + (b ?? 0), 0);
+  const totalCents = Math.round(total * 100);
+  const balanced = !bad && sum === totalCents && parsed.some(value => (value ?? 0) > 0);
+  const sama = METHODS.every((method, i) => (parsed[i] ?? 0) === Math.round((current.find(part => part.method === method)?.amount ?? 0) * 100)) && tanggal === awal;
+  const hint = bad ? "Isi angka Rupiah tanpa titik pemisah ribuan, maksimal dua desimal."
+    : !balanced ? `Jumlah sekarang ${formatPosMoney(sum / 100)}, harus sama dengan total struk ${formatPosMoney(total)}.`
+    : sama ? "Belum ada yang diubah." : "";
+  return <CorrectionTransactionForm userId={userId} scope={`sale-payment-edit:${saleId}:${revision}`} action={ubahPembayaran}>
+    {({ ready }) => <>
+      <input type="hidden" name="id" value={saleId} /><input type="hidden" name="revision" value={revision} />
+      <p><strong>Ubah pembayaran</strong>: ganti tanggal bayar atau metode langsung, lalu simpan. Total tetap {formatPosMoney(total)}; isi struk tidak berubah.</p>
+      {kolom && batasTanggal?.canBackdate && <div style={{ maxWidth: 220 }}>
+        <label className="flab" htmlFor="payment-edit-tanggal">Tanggal bayar</label>
+        <input id="payment-edit-tanggal" className="fi" type="date" name="tanggal" min={kolom.min} max={kolom.max} value={tanggal} onChange={event => setTanggal(event.currentTarget.value)} />
+      </div>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 8 }}>
+        {METHODS.map(method => <div key={method}>
+          <label className="flab" htmlFor={`payment-edit-${method}`}>{method}</label>
+          <NumberInput id={`payment-edit-${method}`} className="fi" name={`amount_${method}`} type="number" min="0" max="1000000000000" step="0.01" inputMode="decimal" placeholder="0"
+            value={values[method]} onInput={event => { const text = event.currentTarget.value; setValues(c => ({ ...c, [method]: text })); }} />
+        </div>)}
+      </div>
+      <label className="flab" htmlFor="payment-edit-reason" style={{ marginTop: 8 }}>Alasan *</label>
+      <input id="payment-edit-reason" className="fi" name="alasan" minLength={3} maxLength={980} required placeholder="Contoh: pelanggan transfer, kasir catat tunai" />
+      {hint && <p role="status">{hint}</p>}
+      <button className="btn-acc" type="submit" disabled={!ready || !balanced || sama} style={{ marginTop: 10 }}>Simpan perubahan pembayaran</button>
+    </>}
+  </CorrectionTransactionForm>;
 }
 
 /** Tombol "Batalkan penerimaan": konfirmasi + alasan wajib. Uang keluar dari kas/bank, struk menjadi belum dibayar. */

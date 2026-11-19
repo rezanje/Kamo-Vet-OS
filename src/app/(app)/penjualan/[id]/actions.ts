@@ -163,6 +163,38 @@ export async function terimaPembayaranUlang(form: FormData): Promise<void | Acti
   redirect(`/penjualan/${id}?success=receipt-received${tanpa}${tglParam(data.effective_date)}&draft_scope=${encodeURIComponent(`sale-receipt-receive:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
 }
 
+/**
+ * Ubah pembayaran satu langkah (gaya Accurate, permintaan Anisa 19 Nov 2026): tanggal bayar + pembagian metode diubah langsung.
+ * Database membalik penerimaan lama di tanggal aslinya dan mencatat yang baru di tanggal pilihan dalam SATU transaksi
+ * (struk tidak pernah tertinggal "belum dibayar"). Kolom tanggal tidak dikirim = hari ini.
+ */
+export async function ubahPembayaran(form: FormData): Promise<void | ActionRejection> {
+  const { id, revision, key, reason } = receiptFields(form);
+  if (key.length > 110) throw new Error("Identitas simpan tidak valid. Muat ulang halaman lalu coba lagi.");
+  if (reason.length < 3 || reason.length > 980) return { ok: false, outcome: "rejected", message: "Isi alasan perubahan (minimal 3 huruf)." };
+  const tanggal = bacaTanggalEfektif(form.get("tanggal"));
+  let plan: { method: string; amount: number }[];
+  try {
+    plan = SALE_METHODS.flatMap(method => {
+      const raw = form.get(`amount_${method}`);
+      const amount = raw === null ? 0 : correctionMoney(raw);
+      return amount > 0 ? [{ method, amount }] : [];
+    });
+  } catch (error) { return { ok: false, outcome: "rejected", message: error instanceof Error ? error.message : "Jumlah pembayaran tidak valid." }; }
+  if (plan.length === 0) return { ok: false, outcome: "rejected", message: "Isi jumlah pembayaran minimal satu metode." };
+  const db = await createClient();
+  const { data, error } = await db.rpc("change_pos_sale_payment", {
+    p_sale_id: id, p_expected_revision: revision, p_request_key: key, p_reason: reason, p_plan: plan, p_effective_date: tanggal,
+  });
+  const refusal = rpcRefusal(error);
+  if (refusal) return refusal;
+  if (error || data?.sale_id !== id || data?.unpaid !== false || data?.mode !== "ubah-pembayaran" || !data?.journal_id) {
+    throw new Error(error?.message ?? "Hasil ubah pembayaran belum terkonfirmasi. Coba lagi dengan formulir yang sama.");
+  }
+  revalidatePath("/", "layout");
+  redirect(`/penjualan/${id}?success=payment-changed${tglParam(data.effective_date)}&draft_scope=${encodeURIComponent(`sale-payment-edit:${id}:${revision}`)}&draft_done=${encodeURIComponent(key)}`);
+}
+
 /** Order marketplace: batalkan pencairan sehingga order kembali ke piutang marketplace (lalu bisa dicairkan ulang atau dibatalkan/diganti). */
 export async function batalkanPencairan(form: FormData): Promise<void | ActionRejection> {
   const { id, revision, key, reason } = receiptFields(form);

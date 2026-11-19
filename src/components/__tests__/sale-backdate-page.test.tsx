@@ -17,6 +17,7 @@ vi.mock("@/app/(app)/penjualan/[id]/SaleReceiptForms", () => ({
   SaleReceiptCancelForm: (p: { batasTanggal?: unknown }) => <span>form batalkan penerimaan batas:{JSON.stringify(p.batasTanggal ?? null)}</span>,
   SaleReceiveAgainForm: (p: { batasTanggal?: unknown }) => <span>form terima ulang batas:{JSON.stringify(p.batasTanggal ?? null)}</span>,
   OnlineDisbursementCancelForm: (p: { batasTanggal?: unknown }) => <span>form batalkan pencairan batas:{JSON.stringify(p.batasTanggal ?? null)}</span>,
+  SalePaymentEditForm: (p: { tanggalBayar?: string }) => <span>form ubah pembayaran tgl:{p.tanggalBayar}</span>,
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "viewer" } } }) },
