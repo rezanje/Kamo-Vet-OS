@@ -32,7 +32,7 @@ type AttendanceRow = {
   status: StatusKey;
   keterangan: string | null;
   employees: Rel<{ nama: string; jabatan: string | null }>;
-  // C1 (ada setelah migrasi 20261120600000)
+  // C1 (ada setelah migrasi 20261119092419)
   sumber?: string;
   foto_masuk?: string | null;
   foto_pulang?: string | null;
