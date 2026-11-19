@@ -1,8 +1,17 @@
 // C1: absen mandiri — pesan, path foto, tombol di /me, dan server action (unggah selfie → absen_mandiri()).
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { pathFotoAbsen, pesanAbsen, pesanSuksesAbsen, tombolAbsen, ukuranKompres } from "../absensi-mandiri";
+import { linkGoogleMaps, pathFotoAbsen, pesanAbsen, pesanSuksesAbsen, teksJarak, tombolAbsen, ukuranKompres } from "../absensi-mandiri";
 
 describe("helper absen mandiri", () => {
+  it("lokasi HR: tautan Google Maps & teks jarak", () => {
+    expect(linkGoogleMaps(-6.5971, 106.806)).toBe("https://www.google.com/maps/search/?api=1&query=-6.5971,106.806");
+    expect(linkGoogleMaps("-6.5971000", "106.8060000")).toBe("https://www.google.com/maps/search/?api=1&query=-6.5971,106.806");
+    expect(linkGoogleMaps(null, 106.8)).toBeNull();
+    expect(linkGoogleMaps(0, 0)).toBeNull();
+    expect(teksJarak(7)).toBe("7 m");
+    expect(teksJarak(1250)).toBe("1,3 km");
+    expect(teksJarak(null)).toBeNull();
+  });
   it("path foto mengikuti pola bucket", () => {
     expect(pathFotoAbsen("e1", "2026-11-20", "masuk", "u1")).toBe("e1/2026-11-20/in-u1.jpg");
     expect(pathFotoAbsen("e1", "2026-11-20", "pulang", "u1")).toBe("e1/2026-11-20/out-u1.jpg");

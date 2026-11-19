@@ -47,7 +47,7 @@ Usul urutan: tahap 1 + selfie (C) jalan dulu sebelum Desember, lalu naik ke A di
 
 ## 4. Implementasi — Tahap 1 + selfie wajib (Reza: A, 14 Nov)
 
-Migrasi `supabase/migrations/20261120600000_c1_absensi_mandiri_selfie.sql` (**belum dipasang**). Detail rancangan,
+Migrasi `supabase/migrations/20261119092419_c1_absensi_mandiri_selfie.sql` (**terpasang di Production 19 Nov 2026**). Detail rancangan,
 dampak, rollback, dan cara cek ada di kepala file migrasi.
 
 **Urutan rilis (wajib):** merge + deploy aplikasi dulu → pastikan live → segera `apply_migration`. Kebalikannya berbahaya:
@@ -90,3 +90,19 @@ Belum diuji di HP sungguhan (kamera depan, izin lokasi iOS/Android) — perlu di
 **Pertanyaan terbuka:** (1) Absen ditolak karena di luar radius: perlu antrean "minta izin absen di luar lokasi"?
 (saat ini → ajukan koreksi). (2) Toleransi telat laporan memakai Pengaturan perusahaan, potongan gaji memakai Aturan gaji —
 disatukan? (3) Cabang yang belum punya titik koordinat = cek lokasi mati; perlu dipastikan semua cabang sudah diisi.
+
+## 5. Update 19 Nov 2026 — Reza pilih A (aktifkan tahap 1 + tombol Maps seperti GajiHub)
+
+- Layar HR `/hris/absensi`: kolom baru **Lokasi** — per absen masuk/pulang: jarak ke titik cabang ("40 m dari <cabang>")
+  + tautan Google Maps ke titik HP saat absen. Cabang tanpa titik koordinat → "titik cabang belum diatur". Sebelum
+  migrasi C1 terpasang kolom ini kosong (baca kolom bertingkat: lengkap → tanpa nama cabang → kolom lama).
+- Cek Production (read-only, 19 Nov): migrasi C1 **belum terpasang** (`absen_mandiri` & bucket `absensi-foto` tidak ada),
+  sehingga tombol absen mandiri di aplikasi live menampilkan "sedang diperbarui".
+- **Dipasang 19 Nov 2026** (izin eksplisit Reza: "gas aktifin + rilis"): uji kering di Production dalam transaksi yang
+  di-rollback lolos, lalu dipasang lewat Management API → tercatat versi `20261119092419` (file dinomori ulang dari
+  20261120600000). Cek pasca-pasang: policy attendance_insert_self/update_self hilang, bucket absensi-foto privat (5 MB),
+  3 fungsi ada, fungsi terlihat di Data API (anon ditolak 42501 = benar), 9 baris lama bersumber 'manual'.
+- Kesiapan data: 23 cabang aktif, **0** punya titik koordinat (cek radius mati semua); 99 karyawan aktif, 96 punya akun
+  login (3 belum); **0** jadwal shift November tercatat (semua absen akan bertanda "Tanpa jadwal", telat tidak terhitung).
+- Harness `scripts/test-c1-absensi-postgres.py` 60/60 PASS (19 Nov).
+- Tidak ada paket/plugin baru untuk tahap 1. Tahap 2 (pencocokan wajah) butuh akun layanan wajah pihak ketiga + kunci API.
