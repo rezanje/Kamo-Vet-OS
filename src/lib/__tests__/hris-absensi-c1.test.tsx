@@ -19,7 +19,8 @@ function klien(kolomBaruAda: boolean) {
     attendance: [{
       id: "a1", employee_id: "e1", tanggal: "2026-11-20", jam_masuk: "08:20:11", jam_pulang: "16:30:00", status: "Hadir", keterangan: null,
       employees: { nama: "Ani", jabatan: "Kasir" }, sumber: "mandiri", foto_masuk: "e1/2026-11-20/in-x.jpg", foto_pulang: null,
-      tanpa_jadwal: false, jarak_masuk_m: 40,
+      tanpa_jadwal: false, jarak_masuk_m: 40, lat_masuk: -6.5971, lng_masuk: 106.806, jarak_pulang_m: null,
+      lat_pulang: null, lng_pulang: null, branches: { name: "Kamo Petshop Granada" },
     }],
     employee_schedules: [{ employee_id: "e1", tanggal: "2026-11-20", work_shifts: { nama: "Pagi", jam_masuk: "08:00:00", jam_pulang: "17:00:00", is_libur: false } }],
   } });
@@ -52,6 +53,9 @@ describe("/hris/absensi (C1)", () => {
     expect(html).toContain("Cepat 30 mnt");
     expect(html).toContain("Mandiri");
     expect(html).toContain("https://signed/e1/2026-11-20/in-x.jpg");
+    expect(html).toContain("40 m dari Kamo Petshop Granada");
+    expect(html).toContain("https://www.google.com/maps/search/?api=1&amp;query=-6.5971,106.806");
+    expect(html).not.toContain("Pulang:");
   });
   it("sebelum migrasi C1: tetap tampil tanpa kolom baru", async () => {
     fixture.client = klien(false);
@@ -59,7 +63,7 @@ describe("/hris/absensi (C1)", () => {
     const html = await render();
     expect(html).toContain("Ani");
     expect(html).toContain("Telat 20 mnt");
-    expect(fixture.selectAbsen).toHaveLength(2);
-    expect(fixture.selectAbsen[1]).not.toContain("foto_masuk");
+    expect(fixture.selectAbsen).toHaveLength(3);
+    expect(fixture.selectAbsen[2]).not.toContain("foto_masuk");
   });
 });

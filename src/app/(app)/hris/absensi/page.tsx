@@ -6,7 +6,7 @@ import { simpanAbsensi } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { jamRingkas } from "@/lib/shift-master";
 import { menitPulangCepat, menitTelatShift } from "@/lib/absensi-shift";
-import { BUCKET_FOTO_ABSEN } from "@/lib/absensi-mandiri";
+import { BUCKET_FOTO_ABSEN, linkGoogleMaps, teksJarak } from "@/lib/absensi-mandiri";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -38,6 +38,12 @@ type AttendanceRow = {
   foto_pulang?: string | null;
   tanpa_jadwal?: boolean;
   jarak_masuk_m?: number | null;
+  jarak_pulang_m?: number | null;
+  lat_masuk?: number | string | null;
+  lng_masuk?: number | string | null;
+  lat_pulang?: number | string | null;
+  lng_pulang?: number | string | null;
+  branches?: Rel<{ name: string }>;
 };
 
 type ShiftJadwal = { nama: string; jam_masuk: string | null; jam_pulang: string | null; is_libur: boolean };
@@ -79,7 +85,9 @@ export default async function AbsensiPage({
   const KOLOM = "id, employee_id, tanggal, jam_masuk, jam_pulang, status, keterangan, employees(nama, jabatan)";
   const bacaAbsen = (kolom: string) => supabase.from("attendance").select(kolom)
     .eq("tanggal", tanggalFilter).order("employees(nama)");
-  let attRes = await bacaAbsen(`${KOLOM}, sumber, foto_masuk, foto_pulang, tanpa_jadwal, jarak_masuk_m`);
+  const KOLOM_C1 = `${KOLOM}, sumber, foto_masuk, foto_pulang, tanpa_jadwal, jarak_masuk_m, jarak_pulang_m, lat_masuk, lng_masuk, lat_pulang, lng_pulang`;
+  let attRes = await bacaAbsen(`${KOLOM_C1}, branches(name)`);
+  if (attRes.error) attRes = await bacaAbsen(KOLOM_C1);
   if (attRes.error) attRes = await bacaAbsen(KOLOM);
   const rows = (attRes.data ?? []) as unknown as AttendanceRow[];
 
@@ -210,7 +218,7 @@ export default async function AbsensiPage({
           }
         />
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 960 }}>
+          <table className="tbl" style={{ minWidth: 1080 }}>
             <thead>
               <tr>
                 <th>Karyawan</th>
@@ -221,6 +229,7 @@ export default async function AbsensiPage({
                 <th>Status</th>
                 <th>Sumber</th>
                 <th>Foto</th>
+                <th>Lokasi</th>
                 <th>Keterangan</th>
               </tr>
             </thead>
@@ -260,6 +269,7 @@ export default async function AbsensiPage({
                       ) : null)}
                       {!r.foto_masuk && !r.foto_pulang && "—"}
                     </td>
+                    <td style={{ fontSize: 10.5 }}><LokasiAbsen r={r} /></td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.keterangan ?? "—"}</td>
                   </tr>
                 );
@@ -267,7 +277,7 @@ export default async function AbsensiPage({
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}
                   >
                     Belum ada absensi tercatat untuk tanggal ini.
@@ -278,6 +288,32 @@ export default async function AbsensiPage({
           </table>
         </div>
       </div>
+    </>
+  );
+}
+
+// Titik HP saat absen masuk/pulang: jarak ke titik cabang + tautan Google Maps (seperti layar presensi GajiHub).
+function LokasiAbsen({ r }: { r: AttendanceRow }) {
+  const cabang = one(r.branches ?? null)?.name ?? null;
+  const baris = ([
+    ["Masuk", r.lat_masuk, r.lng_masuk, r.jarak_masuk_m],
+    ["Pulang", r.lat_pulang, r.lng_pulang, r.jarak_pulang_m],
+  ] as const).map(([label, lat, lng, jarak]) => ({ label, maps: linkGoogleMaps(lat, lng), jarak: teksJarak(jarak) }))
+    .filter((b) => b.maps);
+  if (baris.length === 0) return <>—</>;
+  return (
+    <>
+      {baris.map((b) => (
+        <div key={b.label} style={{ whiteSpace: "nowrap" }}>
+          {b.label}:{" "}
+          {b.jarak
+            ? <span style={{ color: "#15803d" }}>{b.jarak}{cabang ? ` dari ${cabang}` : ""}</span>
+            : <span style={{ color: "var(--tm)" }}>titik cabang belum diatur</span>}{" "}
+          <a href={b.maps!} target="_blank" rel="noreferrer" style={{ color: "#2563eb" }}>
+            <i className="ti ti-map-pin" /> Maps
+          </a>
+        </div>
+      ))}
     </>
   );
 }

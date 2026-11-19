@@ -66,6 +66,29 @@ export function pesanSuksesAbsen(h: HasilAbsen): string {
   return bagian.join(" ");
 }
 
+// ── Lokasi absen di layar HR ──────────────────────────────────────────────────
+// Titik HP saat absen → tautan Google Maps (HR bisa cek posisinya), jarak ke titik cabang dalam teks singkat.
+type Angka = number | string | null | undefined;
+const keAngka = (v: Angka): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+export function linkGoogleMaps(lat: Angka, lng: Angka): string | null {
+  const a = keAngka(lat);
+  const b = keAngka(lng);
+  if (a === null || b === null || (a === 0 && b === 0)) return null;
+  return `https://www.google.com/maps/search/?api=1&query=${a},${b}`;
+}
+
+export function teksJarak(meter: Angka): string | null {
+  const m = keAngka(meter);
+  if (m === null || m < 0) return null;
+  if (m < 1000) return `${Math.round(m)} m`;
+  return `${(m / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 })} km`;
+}
+
 // ── Status tombol di /me ──────────────────────────────────────────────────────
 export type BarisAbsenSaya = {
   tanggal: string; jam_masuk: string | null; jam_pulang: string | null; waktu_masuk?: string | null;
