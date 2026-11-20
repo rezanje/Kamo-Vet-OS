@@ -40,6 +40,16 @@ const HERO: Hero[] = [
     tint: "#fffbeb",
     href: "/klinik/rawat-inap",
   },
+  // Riwayat rekam medis untuk staf front desk — baca saja (Aldi, 20 Nov). Mengubah isi rekam medis tetap
+  // hanya dokter: tombol Edit/Adendum dijaga database (clinic_can_correct_record, clinic_add_record_addendum).
+  {
+    label: "REKAM MEDIS",
+    desc: "Lihat riwayat rekam medis pasien (baca saja)",
+    icon: "ti-medical-cross",
+    color: "#dc2626",
+    tint: "#fef2f2",
+    href: "/klinik/rekam-medis",
+  },
 ];
 
 // Kartu "Lain-lain" = fitur klinik sisanya. href kalau sudah ada halaman.
