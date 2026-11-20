@@ -242,7 +242,7 @@ export function RegistrasiForm({ branches, dokter = [], lockBranch = false, awal
                 ))}
               </select>
               {service === "Grooming" && (
-                <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Pilih groomer yang mengerjakan; namanya tampil di rekam medis dan struk.</div>
+                <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>Pilih yang mengerjakan grooming (groomer atau paramedis); namanya tampil di rekam medis dan struk.</div>
               )}
             </div>
             <div>

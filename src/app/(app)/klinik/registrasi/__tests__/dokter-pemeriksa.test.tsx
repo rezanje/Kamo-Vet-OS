@@ -44,6 +44,8 @@ it("Grooming: dua isian terpisah — Groomer (doctor_id, tetap) dan Dokter pemer
   const groomer = container.querySelector<HTMLSelectElement>("select[name=\"doctor_id\"]")!;
   expect(Array.from(groomer.options).map((o) => o.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("Agung")]));
   expect(Array.from(groomer.options).some((o) => (o.textContent ?? "").includes("ILHAM"))).toBe(false);
+  // Paramedis ikut ditawarkan (di klinik merekalah yang menggroming), sesudah groomer, lengkap dengan jabatannya.
+  expect(Array.from(groomer.options).map((o) => o.textContent)).toEqual(["— belum ditentukan —", "Agung · Staff Toko - Groomer", "Sari · Paramedis"]);
   expect(pemeriksa()).not.toBeNull();
   expect(container.textContent).toContain("Dokter pemeriksa");
 });

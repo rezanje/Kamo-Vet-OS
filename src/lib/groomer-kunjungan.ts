@@ -64,6 +64,11 @@ export function headerGroomer(
   // Poli Grooming: pelaksana kunjungan yang dipilih di kolom Groomer tetap groomer walau jabatannya tidak terbaca.
   const providerBukanDokter = !!kartuProvider && kelompokDariJabatan(kartuProvider.jabatan) !== "Dokter";
   if (poliGrooming(visit) && namaProvider && providerBukanDokter && !groomer.includes(namaProvider)) groomer.push(namaProvider);
+  // Sama untuk PJ kunjungan poli Grooming: ia dipilih di isian "Groomer" pendaftaran, yang juga menawarkan paramedis
+  // (`staffForService`). Tanpa ini header menulis "belum diisi" padahal groomernya baru saja dipilih. Dokter tidak dihitung.
+  const kartuPJ = visit.doctor_id ? kartu.get(visit.doctor_id) : undefined;
+  const namaPJ = (kartuPJ?.nama ?? "").trim() || null;
+  if (poliGrooming(visit) && namaPJ && kelompokDariJabatan(kartuPJ!.jabatan) !== "Dokter" && !groomer.includes(namaPJ)) groomer.unshift(namaPJ);
   if (groomer.length) return { label: "Groomer", nama: groomer.join(", ") };
 
   if (!kunjunganTampakGrooming(visit, lines)) return null;

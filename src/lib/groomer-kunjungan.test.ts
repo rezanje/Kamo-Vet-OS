@@ -38,6 +38,19 @@ describe("headerGroomer", () => {
     expect(headerGroomer({ poli: "Grooming", doctor_id: "agung", dokter: "Agung", service_provider_id: null }, [], kartu)).toEqual({ label: "Groomer", nama: "Agung" });
     expect(headerGroomer({ poli: "Grooming", doctor_id: null, dokter: null, service_provider_id: "kosong" }, [], kartu)).toEqual({ label: "Groomer", nama: "Tanpa Jabatan" });
   });
+  it("poli Grooming: paramedis yang dipilih di isian Groomer tampil sebagai Groomer, bukan 'belum diisi'", () => {
+    const k = new Map(kartu).set("ruli", { nama: "RULIANSYAH SYAPUTRA", jabatan: "Paramedis" });
+    const visit = { poli: "Grooming", doctor_id: "ruli", dokter: "RULIANSYAH SYAPUTRA", service_provider_id: null };
+    expect(headerGroomer(visit, [], k)).toEqual({ label: "Groomer", nama: "RULIANSYAH SYAPUTRA" });
+    // Orang yang sama juga tercatat sebagai pelaksana baris: tetap satu kali; groomer lain di baris ikut tampil sesudahnya.
+    expect(headerGroomer(visit, [jasaGrooming({ staff_id: "ruli", staff_name: "RULIANSYAH SYAPUTRA" }), jasaGrooming({ staff_id: "agung", staff_name: "Agung" })], k))
+      .toEqual({ label: "Groomer", nama: "RULIANSYAH SYAPUTRA, Agung" });
+    // Dokter yang tersimpan sebagai PJ poli Grooming (data lama) tidak pernah disebut groomer.
+    expect(headerGroomer({ poli: "Grooming", doctor_id: "ilham", dokter: "DRH. ILHAM", service_provider_id: null }, [], k)).toEqual({ label: "Groomer", nama: null });
+    // Di luar poli Grooming aturan lama tetap: paramedis PJ tidak dihitung groomer.
+    expect(headerGroomer({ poli: "Poli Umum", keluhan: "Grooming", doctor_id: "ruli", dokter: "RULIANSYAH SYAPUTRA", service_provider_id: null }, [], k))
+      .toEqual({ label: "Groomer", nama: null });
+  });
   it("kunjungan non-grooming tidak menampilkan apa pun", () => {
     expect(headerGroomer({ poli: "Poli Umum", keluhan: "Batuk", doctor_id: "ilham", dokter: "DRH. ILHAM" }, [
       { item_type: "Jasa", tindakan_kategori: "Konsultasi", deskripsi: "Konsultasi dokter", service_performers: { doctor_id: "ilham", staff_id: null } },

@@ -10,6 +10,16 @@ it('uses employee job roles, including existing DR HEWAN, without treating assis
  expect(staffForService(staff,'Poli Umum').map(x=>x.id)).toEqual(['doctor']);
  expect(staffForService(staff,'Grooming').map(x=>x.id)).toEqual(['groomer']);
 });
+it('isian Groomer poli Grooming: groomer dulu, lalu paramedis; dokter dan jabatan lain tidak ditawarkan',()=>{
+ // Cimanggu, 20 Nov 2026: Ruliansyah & Abdul Rafi berjabatan Paramedis tetapi merekalah yang menggroming di klinik.
+ const staff=[{id:'dokter',jabatan:'Dokter Hewan Poli'},{id:'ruli',jabatan:'Paramedis'},{id:'kasir',jabatan:'Kasir'},
+  {id:'agung',jabatan:'Staff Toko - Groomer'},{id:'rangkap',jabatan:'Paramedis - Groomer'},{id:'kosong',jabatan:null}];
+ expect(staffForService(staff,'Grooming').map(x=>x.id)).toEqual(['agung','rangkap','ruli']);
+ expect(staffForService(staff,' grooming ').map(x=>x.id)).toEqual(['agung','rangkap','ruli']);
+ // Poli medis tidak ikut melebar: paramedis tetap bukan pilihan Dokter.
+ expect(staffForService(staff,'Poli Umum').map(x=>x.id)).toEqual(['dokter']);
+ expect(staffForService(staff,'Vaksinasi').map(x=>x.id)).toEqual(['dokter']);
+});
 it('requires a doctor ID for doctor visits, while monitoring has its own optional paramedic ID',()=>{
  const data=new FormData();data.set('log_kind','doctor_visit');
  expect(()=>inpatientStaffInput(data)).toThrow('Dokter visit wajib');

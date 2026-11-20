@@ -14,5 +14,6 @@ it('keeps paramedics out of doctor assignments and recognizes grooming without i
   expect(clinicalRoles('PCA')).toEqual([]);
   expect(staffForService(staff, 'Poli Umum')).toEqual([staff[0]]);
   expect(performersForService(staff, 'Poli Umum')).toEqual([staff[0], staff[1]]);
-  expect(staffForService(staff, 'Grooming')).toEqual([staff[2]]);
+  // Isian Groomer: groomer dulu, lalu paramedis (di klinik paramedis yang menggroming); dokter dan PCA tetap tidak ditawarkan.
+  expect(staffForService(staff, 'Grooming')).toEqual([staff[2], staff[1]]);
 });
