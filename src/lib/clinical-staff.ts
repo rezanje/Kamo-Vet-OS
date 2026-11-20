@@ -9,8 +9,14 @@ export function clinicalRoles(job: string | null): ClinicalRole[] {
   if (/groomer|grooming/.test(text)) roles.push('groomer');
   return roles;
 }
+// Isian "Groomer" poli Grooming (Anisa, 20 Nov 2026): di klinik yang menggroming adalah paramedis (Cimanggu: 107 dari 107
+// kunjungan grooming sebulan terakhir kosong karena groomernya berjabatan Paramedis dan tidak ada di daftar). Groomer tetap
+// didahulukan, paramedis menyusul; jabatan lain tidak ditawarkan. Aturan pelaksana baris tagihan dan cetakan TIDAK berubah.
 export function staffForService<T extends {jabatan:string|null}>(staff:T[],service?:string|null):T[] {
-  if (service?.trim().toLowerCase()==='grooming') return staff.filter(row=>clinicalRoles(row.jabatan).includes('groomer'));
+  if (service?.trim().toLowerCase()==='grooming') {
+    const groomer=staff.filter(row=>clinicalRoles(row.jabatan).includes('groomer'));
+    return [...groomer,...staff.filter(row=>!groomer.includes(row)&&clinicalRoles(row.jabatan).includes('paramedic'))];
+  }
   return isMedicalService(service)?staff.filter(row=>clinicalRoles(row.jabatan).includes('doctor')):staff;
 }
 export function performersForService<T extends {jabatan:string|null}>(staff:T[],service?:string|null):T[] {
