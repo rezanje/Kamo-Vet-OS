@@ -59,3 +59,10 @@ it("keeps the staff clinic home usable when the follow-up count cannot be read",
   expect(html).toContain("PENDAFTARAN"); expect(html).toContain("FOLLOW UP");
   expect(html).toContain("Ingatkan pelanggan jadwal kontrol &amp; vaksin lewat WhatsApp");
 });
+
+// Aldi (20 Nov): Rekam medis tampil di layar staf klinik (frontend), membuka daftar riwayat baca saja.
+it("shows staff a Rekam medis card that opens the read-only medical record list", async () => {
+  fixture.shift = open(); const html = renderToStaticMarkup(await Page());
+  expect(html).toContain("REKAM MEDIS"); expect(html).toContain('href="/klinik/rekam-medis"');
+  expect(html).toContain("baca saja");
+});

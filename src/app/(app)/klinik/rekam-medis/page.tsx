@@ -43,10 +43,12 @@ export default async function DaftarRekamMedisPage({
   let perPasien: ReturnType<typeof susunDaftarPerPasien> | null = null;
   let kartuHalaman: KelompokPasien[] = [];
   let semuaCabang = new Map<string, RingkasanSemuaCabang>();
+  let bacaSaja = false;
   try {
     if (cari.length > MAKS_CARI_REKAM_MEDIS) throw new ListLoadError(PESAN_CARI_TERLALU_PANJANG);
     const lintas = await createClientLintasCabang();
     cabangAktif = lintas.cabangAktif;
+    const peranP = perlakukanBacaSaja(lintas.client);
     const bacaRpc = async (diminta: { batas: number; offset: number }) => {
       const result = await lintas.client.rpc("daftar_rekam_medis_halaman", {
         p_cabang: cabangAktif, p_cari: cari || null, p_tampilan: displayMode, p_pet: petId || null,
@@ -82,6 +84,7 @@ export default async function DaftarRekamMedisPage({
         pageInfo = infoHalaman(pageInfo.page, hasil.jumlah, HALAMAN_REKAM_MEDIS);
       }
     }
+    bacaSaja = await peranP;
   } catch (error) { return <ListLoadFailure error={error} label="Rekam medis" />; }
 
   const rows: BarisKunjungan[] = rowsJendela ?? hasil.baris.map(petakanKunjungan);
@@ -102,14 +105,18 @@ export default async function DaftarRekamMedisPage({
           <div className="pg-hd" style={{ marginBottom: 2 }}>REKAM MEDIS</div>
           <div className="pg-sub">{subjudul}</div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {bacaSaja ? (
+          <span className="bge" title="Staf hanya dapat melihat rekam medis; perubahan dilakukan dokter" style={{ fontSize: 11, padding: "5px 10px" }}>
+            <i className="ti ti-eye" /> Baca saja
+          </span>
+        ) : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Link href="/klinik/rekam-medis/perlu-dilengkapi" className="btn-def" style={{ textDecoration: "none" }}>
             <i className="ti ti-clipboard-list" /> Perlu dilengkapi
           </Link>
           <Link href="/klinik/rekam-medis/impor" className="btn-acc" style={{ textDecoration: "none", background: "var(--posb)" }}>
             <i className="ti ti-file-import" /> Import rekam medis
           </Link>
-        </div>
+        </div>}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(150px, 1fr))", gap: 12, marginBottom: 14 }}>
@@ -200,6 +207,22 @@ export default async function DaftarRekamMedisPage({
       </div>
     </>
   );
+}
+
+/**
+ * Staf (front desk) membuka daftar ini dari layar sambutan klinik untuk MELIHAT riwayat (Aldi, 20 Nov): tombol
+ * Perlu dilengkapi & Import (alat OWNER/ADMIN, sudah ditolak di server) disembunyikan. Gagal membaca peran = tampilan
+ * lama; ini hanya tampilan, hak ubah tetap dijaga database.
+ */
+async function perlakukanBacaSaja(client: Awaited<ReturnType<typeof createClientLintasCabang>>["client"]): Promise<boolean> {
+  try {
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return false;
+    const { data } = await client.from("profiles").select("role").eq("id", user.id).maybeSingle();
+    return (data as { role?: string } | null)?.role === "STAFF";
+  } catch {
+    return false;
+  }
 }
 
 function PesanKosong({ petId }: { petId: string }) {
