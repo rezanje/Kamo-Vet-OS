@@ -1,5 +1,5 @@
 import { formatPosMoney } from "@/lib/pos-money";
-import { completeReportQuery } from "@/lib/report-query";
+import { completeReportQuery, completeReportQueryParalel } from "@/lib/report-query";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
@@ -84,11 +84,11 @@ export default async function PenjualanRinciPage({
   const { data: cabangList } = await completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name"));
   const saringId = cabangId && cabangList.some((b) => b.id === cabangId) ? cabangId : "";
   const saringNama = cabangId ? "" : cabang;
-  const qSales = supabase
+  const qSales = () => supabase
     .from("sales")
     .select(`id, branch_id, no_struk, total, merchant_fee_total, metode_bayar, channel, marketplace_status, created_at, payment_plan, payments_finalized_at, voided_at, sale_payments(method, amount, fee_percent, fee_amount), branches${saringNama ? "!inner" : ""}(name), customers(name)`, { count: "exact" })
     .gte("created_at", mulai).lte("created_at", akhir);
-  const qInvoices = supabase
+  const qInvoices = () => supabase
     .from("invoices")
     .select(`id, invoice_no, total, metode_bayar, dp_amount, stage_billing, paid_status, created_at, visit_id, visits${saringId || saringNama ? "!inner" : ""}(branch_id, branches${saringNama ? "!inner" : ""}(name), customers(name))`, { count: "exact" })
     .is("voided_at", null)
@@ -96,9 +96,9 @@ export default async function PenjualanRinciPage({
   const tanpaData = Promise.resolve({ data: null, error: null });
 
   const [{ data: sales }, { data: invoices }, { data: grosir }, { data: returs }, { data: refundKlinik }, { data: returGrosir }] = siap ? await Promise.all([
-    completeReportQuery((saringId ? qSales.eq("branch_id", saringId) : saringNama ? qSales.eq("branches.name", saringNama) : qSales)
+    completeReportQueryParalel(() => (saringId ? qSales().eq("branch_id", saringId) : saringNama ? qSales().eq("branches.name", saringNama) : qSales())
       .order("created_at", { ascending: false })),
-    completeReportQuery((saringId ? qInvoices.eq("visits.branch_id", saringId) : saringNama ? qInvoices.eq("visits.branches.name", saringNama) : qInvoices)
+    completeReportQueryParalel(() => (saringId ? qInvoices().eq("visits.branch_id", saringId) : saringNama ? qInvoices().eq("visits.branches.name", saringNama) : qInvoices())
       .order("created_at", { ascending: false })),
     // Faktur grosir disaring memakai kolom tanggal faktur (sudah tanggal WIB),
     // bukan created_at: faktur boleh ditanggali mundur dari saat pengetikannya.

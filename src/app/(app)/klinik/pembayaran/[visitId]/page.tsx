@@ -3,6 +3,7 @@ import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { SubmitButton } from "@/components/SubmitButton";
 import { STAY_TYPES, STAY_TYPE_LABEL } from "@/lib/inpatient-stay";
 import { loadBranchGroomingPolicy, loadServiceStaff, loggedInCashier } from "@/lib/service-performers-server";
+import { dokterAwalKasir } from "@/lib/dokter-pemeriksa";
 import { servicePerformerNames } from "@/lib/service-performers";
 import { ActivityHistoryLink } from "@/components/ActivityHistoryLink";
 import { TransactionHistoryPanel } from "@/components/TransactionHistoryPanel";
@@ -93,7 +94,7 @@ export default async function PembayaranPage({
   const bolehDiskonP = mulai(manualDiscountAllowed(supabase));
   const visitP = mulai(supabase
     .from("visits")
-    .select("id, status, poli, dokter, created_at, archived_at, archive_reason, branch_id, customer_id, doctor_id, service_provider_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
+    .select("id, status, poli, dokter, created_at, archived_at, archive_reason, branch_id, customer_id, doctor_id, pemeriksa_id, service_provider_id, pets(name, species, weight, photo_url), customers(name, phone, address, review_catatan, customer_review_statuses(nama, warna, nada))")
     .eq("id", visitId)
     .maybeSingle());
   // Rekam medis opsional: transaksi walk-in tanpa dokter (grooming, beli obat,
@@ -870,7 +871,7 @@ export default async function PembayaranPage({
           demoPolicy={demoPolicy}
           demoStaff={demoStaffResult.data ?? []}
           serviceStaff={serviceStaff}
-          visitDoctorId={visit.doctor_id ?? null}
+          visitDoctorId={dokterAwalKasir({ poli: visit.poli, doctorId: visit.doctor_id, pemeriksaId: visit.pemeriksa_id, groomingDoctorRequired })}
           groomingDoctorRequired={groomingDoctorRequired}
           groomingApplies={groomingPolicy?.applies ?? false}
           cashierName={cashier.name}

@@ -12,6 +12,7 @@ import { mulai } from "@/lib/u07-waktu";
 import { Popup } from "@/components/Popup";
 import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 import { adalahKekuranganStok } from "@/lib/stok-kurang";
+import { dokterAwalKasir } from "@/lib/dokter-pemeriksa";
 import { TambahItemForm, type ItemLite } from "./TambahItemForm";
 
 type Rel<T> = T | T[] | null;
@@ -55,7 +56,7 @@ export default async function TambahItemPage({
 
   const userP = mulai(supabase.auth.getUser());
   const visitP = mulai(supabase.from("visits")
-    .select("id, branch_id, poli, status, dokter, doctor_id, checked_out_at, pets(name, species, breed), customers(name)")
+    .select("id, branch_id, poli, status, dokter, doctor_id, pemeriksa_id, checked_out_at, pets(name, species, breed), customers(name)")
     .eq("id", visitId).maybeSingle());
   const recordP = mulai(supabase.from("medical_records").select("id")
     .eq("visit_id", visitId).order("created_at", { ascending: false }).limit(1).maybeSingle());
@@ -140,7 +141,7 @@ export default async function TambahItemPage({
         draftUserId={user?.id ?? ""}
         tabAwal={tab}
         serviceStaff={serviceStaff}
-        visitDoctorId={(visit.doctor_id as string | null) ?? null}
+        visitDoctorId={dokterAwalKasir({ poli: visit.poli as string | null, doctorId: visit.doctor_id as string | null, pemeriksaId: visit.pemeriksa_id as string | null, groomingDoctorRequired: groomingPolicy?.doctorRequired ?? false })}
         groomingDoctorRequired={groomingPolicy?.doctorRequired ?? false}
         groomingApplies={groomingPolicy?.applies ?? false}
         items={keKlien(split.obat)}

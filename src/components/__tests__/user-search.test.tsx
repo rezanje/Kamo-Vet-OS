@@ -12,8 +12,10 @@ vi.mock("@/lib/master-guard", () => ({ assertAccountCreator: async () => ({
       { id: "a", role: "STAFF", full_name: "ABDUL RAFI H", is_active: true },
       { id: "b", role: "STAFF", full_name: "ACENG PURNAMA", is_active: false },
       { id: "c", role: "FINANCE", full_name: "Budi", is_active: true },
+      { id: "d", role: "ADMIN", full_name: "AMALIA", is_active: true },
     ] : table === "employees" ? [
-      { id: "e1", nik: "K-2025085050", nama: "ABDUL RAFI H", jabatan: null, profile_id: "a", status: "Aktif" },
+      { id: "e1", nik: "K-2025085050", nama: "ABDUL RAFI H", jabatan: "Paramedis", profile_id: "a", status: "Aktif" },
+      { id: "e2", nik: "320406", nama: "AMALIA", jabatan: "Paramedis", profile_id: "d", status: "Aktif" },
     ] : [];
     const q = { select: () => q, eq: () => q, order: () => q,
       maybeSingle: async () => ({ data: { role: "OWNER" } }),
@@ -31,7 +33,7 @@ async function names(params: Record<string, string>) {
   return [...host.querySelectorAll("tbody tr td:first-child")].map((td) => td.textContent);
 }
 it("shows every account and a search box without a query", async () => {
-  expect(await names({})).toEqual(["Pemilik", "ABDUL RAFI H", "ACENG PURNAMA", "Budi"]);
+  expect(await names({})).toEqual(["Pemilik", "ABDUL RAFI H", "ACENG PURNAMA", "Budi", "AMALIA"]);
   expect(host.querySelector('input[name="q"]')).not.toBeNull();
 });
 it("filters by account name, HRIS NIK and role, case-insensitively", async () => {
@@ -42,4 +44,10 @@ it("filters by account name, HRIS NIK and role, case-insensitively", async () =>
 it("filters by status and reports an empty result", async () => {
   expect(await names({ status: "nonaktif" })).toEqual(["ACENG PURNAMA"]);
   expect(await names({ q: "tidak-ada" })).toEqual(["Tidak ada pengguna yang cocok."]);
+});
+it("flags an account whose role does not fit its clinical job title", async () => {
+  await names({});
+  const flagged = [...host.querySelectorAll('[data-testid="peran-vs-jabatan"]')].map((el) => el.closest("tr")?.querySelector("td")?.textContent);
+  expect(flagged).toEqual(["AMALIA"]);
+  expect(host.querySelector('[data-testid="peran-vs-jabatan"]')?.textContent).toContain("biasanya Staf");
 });

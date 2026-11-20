@@ -5,9 +5,10 @@ import { allowedBranchIds } from "@/lib/branch-access";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { lineDiscount } from "@/lib/pos-calc";
 import { PosDecimal } from "@/lib/pos-money";
-import { jenisBarisKlinik, SEMUA_JENIS_KLINIK, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
+import { jenisBarisKlinik, perluCocokNamaRacikan, SEMUA_JENIS_KLINIK, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
 import { namaRacikanPerKunjungan } from "@/lib/racikan-klinik-server";
 import { BATAS_BACA_LAPORAN, petaBerbatas } from "@/lib/konkuren-batas";
+import { bacaAnakPerInduk } from "@/lib/laporan-baca-berkelompok";
 import type { Kanal } from "@/lib/laporan-transaksi";
 import { fakturGrosirOmzet, hppBarisGrosir, nilaiBarisGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "@/lib/laporan-grosir";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
@@ -171,11 +172,11 @@ async function bacaInvoiceKlinik(supabase: any, mulai: string, akhir: string, sa
     const { data, error, count } = await (saringCabang ? query.eq("visits.branch_id", saringCabang) : query)
       .order("id").range(awal, ujung);
     return { data: data as unknown as InvoiceInduk[] | null, error, count };
-  });
+  }, undefined, { paralel: BATAS_BACA_LAPORAN });
   const perId = new Map(invoices.map(invoice => [invoice.id, invoice] as const));
-  // Baris item, snapshot biaya admin DEMO, dan nama racikan tidak saling bergantung: dibaca bersamaan.
+  // Baris item dan snapshot biaya admin DEMO tidak saling bergantung: dibaca bersamaan.
   // Invoice tanpa baris item ikut dicari (himpunan sedikit lebih luas); hasilnya hanya dipakai lewat id invoice/kunjungan baris item.
-  const [kelompok, demoFees, namaRacikan] = await Promise.all([
+  const [kelompok, demoFees] = await Promise.all([
     petaBerbatas(potong([...perId.keys()]), BATAS_BACA_LAPORAN, batch => readReportRows<InvoiceItem & { invoice_id: string }>(async (awal, ujung) => {
       const { data, error, count } = await supabase.from("invoice_items")
         .select(KOLOM_ITEM_KLINIK, { count: "exact" }).in("invoice_id", batch)
@@ -183,10 +184,13 @@ async function bacaInvoiceKlinik(supabase: any, mulai: string, akhir: string, sa
       return { data: data as unknown as (InvoiceItem & { invoice_id: string })[] | null, error, count };
     })),
     bacaBiayaAdminDemo(supabase, [...perId.keys()]),
-    // Invoice menyimpan nama racikan sebagai baris obat biasa. Cocokkan nama
-    // dengan resep di kunjungan sama agar racikan terpisah dari obat ketikan.
-    namaRacikanPerKunjungan(supabase, invoices.flatMap(invoice => invoice.visit_id ? [invoice.visit_id] : [])),
   ]);
+  // Invoice menyimpan nama racikan sebagai baris obat biasa. Cocokkan nama dengan resep di kunjungan sama agar racikan
+  // terpisah dari obat ketikan, tetapi hanya untuk kunjungan yang punya baris tanpa tautan (hanya baris itu yang dicocokkan;
+  // membaca rekam medis + resep seluruh kunjungan periode lewat RLS berat dan tidak mengubah hasil).
+  const kunjunganKandidat = kelompok.flat().filter(perluCocokNamaRacikan)
+    .flatMap(item => { const visitId = perId.get(item.invoice_id)?.visit_id; return visitId ? [visitId] : []; });
+  const namaRacikan = await namaRacikanPerKunjungan(supabase, kunjunganKandidat);
   // Urutan akhir = urutan id baris item, seperti `order("id")` pada query lama (alokasi neto per invoice bergantung pada urutan ini).
   const items = kelompok.flat().sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map(({ invoice_id: invoiceId, ...item }) => {
     const invoice = perId.get(invoiceId);
@@ -194,6 +198,59 @@ async function bacaInvoiceKlinik(supabase: any, mulai: string, akhir: string, sa
     return { ...item, invoices: invoice } as InvoiceItem;
   });
   return { items, demoFees, namaRacikan };
+}
+
+type SaleInduk = NonNullable<Exclude<SaleItem["sales"], unknown[]>>;
+const KOLOM_ITEM_KASIR = "id, sale_id, nama, qty, harga, item_id, item_discount_type, item_discount_value, promo_discount, service_performers";
+
+/**
+ * Baris struk kasir dalam periode. Sama dengan invoice klinik: struk dibaca sekali, lalu item per kelompok 100 id struk
+ * bersamaan, bukan satu query gabungan `sale_items x sales` per halaman 500 (±3-6 dtk per query, 30+ query).
+ * Hasil (baris, urutan id, isi struk) sama dengan gabungan lama.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function bacaItemKasir(supabase: any, mulai: string, akhir: string, saringCabang: string): Promise<SaleItem[]> {
+  const struk = await readReportRows<SaleInduk>(async (awal, ujung) => {
+    const query = supabase.from("sales")
+      .select("id, branch_id, no_struk, created_at, channel, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name)", { count: "exact" })
+      .gte("created_at", mulai).lte("created_at", akhir);
+    const { data, error, count } = await (saringCabang ? query.eq("branch_id", saringCabang) : query)
+      .order("id").range(awal, ujung);
+    return { data: data as unknown as SaleInduk[] | null, error, count };
+  }, undefined, { paralel: BATAS_BACA_LAPORAN });
+  const perId = new Map(struk.map(sale => [sale.id, sale] as const));
+  const item = await bacaAnakPerInduk<SaleItem & { sale_id: string }>(perId.keys(), async (batch, awal, ujung) => {
+    const { data, error, count } = await supabase.from("sale_items")
+      .select(KOLOM_ITEM_KASIR, { count: "exact" }).in("sale_id", batch).order("id").range(awal, ujung);
+    return { data: data as unknown as (SaleItem & { sale_id: string })[] | null, error, count };
+  });
+  return item.map(({ sale_id: saleId, ...baris }) => {
+    const sale = perId.get(saleId);
+    if (!sale) throw new Error("Struk sumber baris laporan tidak dapat diverifikasi.");
+    return { ...baris, sales: sale } as SaleItem;
+  });
+}
+
+/** Faktur grosir (tanggal faktur) dibaca sekali, item per kelompok id faktur; hasil sama dengan gabungan lama. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function bacaItemGrosir(supabase: any, dari: string, sampai: string): Promise<GrosirItem[]> {
+  const faktur = await readReportRows<FakturGrosirBaris>(async (awal, ujung) => {
+    const { data, error, count } = await supabase.from("sales_invoices")
+      .select(`${SELECT_FAKTUR_GROSIR}, branches(name), customers(name)`, { count: "exact" })
+      .gte("tanggal", dari).lte("tanggal", sampai).order("id").range(awal, ujung);
+    return { data: data as unknown as FakturGrosirBaris[] | null, error, count };
+  }, undefined, { paralel: BATAS_BACA_LAPORAN });
+  const perId = new Map(faktur.map(f => [f.id, f] as const));
+  const item = await bacaAnakPerInduk<GrosirItem & { invoice_id: string }>(perId.keys(), async (batch, awal, ujung) => {
+    const { data, error, count } = await supabase.from("sales_invoice_items")
+      .select("id, invoice_id, nama, satuan, qty, harga, diskon, hpp, item_id", { count: "exact" }).in("invoice_id", batch).order("id").range(awal, ujung);
+    return { data: data as unknown as (GrosirItem & { invoice_id: string })[] | null, error, count };
+  });
+  return item.map(({ invoice_id: fakturId, ...baris }) => {
+    const f = perId.get(fakturId);
+    if (!f) throw new Error("Faktur grosir sumber baris laporan tidak dapat diverifikasi.");
+    return { ...baris, sales_invoices: f } as GrosirItem;
+  });
 }
 
 export type OpsiCabang = { id: string; name: string };
@@ -247,22 +304,9 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
       const bacaGrosir = kanal === "Grosir";
       const [{ items: invoiceItems, demoFees, namaRacikan }, saleItems, grosirItems] = await Promise.all([
         bacaKlinik ? bacaInvoiceKlinik(supabase, mulai, akhir, saringCabang) : Promise.resolve({ items: [] as InvoiceItem[], demoFees: new Map<string, number>(), namaRacikan: new Set<string>() }),
-        bacaKasir ? readReportRows<SaleItem>(async (awal, ujung) => {
-          const query = supabase.from("sale_items")
-            .select("id, nama, qty, harga, item_id, item_discount_type, item_discount_value, promo_discount, service_performers, sales!inner(id, branch_id, no_struk, created_at, channel, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name))", { count: "exact" })
-            .gte("sales.created_at", mulai).lte("sales.created_at", akhir);
-          const { data, error, count } = await (saringCabang ? query.eq("sales.branch_id", saringCabang) : query)
-            .order("id").range(awal, ujung);
-          return { data: data as unknown as SaleItem[] | null, error, count };
-        }) : Promise.resolve([] as SaleItem[]),
+        bacaKasir ? bacaItemKasir(supabase, mulai, akhir, saringCabang) : Promise.resolve([] as SaleItem[]),
         // Faktur grosir disaring lewat tanggal faktur (date, sudah WIB), bukan created_at.
-        bacaGrosir ? readReportRows<GrosirItem>(async (awal, ujung) => {
-          const { data, error, count } = await supabase.from("sales_invoice_items")
-            .select(`id, nama, satuan, qty, harga, diskon, hpp, item_id, sales_invoices!inner(${SELECT_FAKTUR_GROSIR}, branches(name), customers(name))`, { count: "exact" })
-            .gte("sales_invoices.tanggal", dari).lte("sales_invoices.tanggal", sampai)
-            .order("id").range(awal, ujung);
-          return { data: data as unknown as GrosirItem[] | null, error, count };
-        }) : Promise.resolve([] as GrosirItem[]),
+        bacaGrosir ? bacaItemGrosir(supabase, dari, sampai) : Promise.resolve([] as GrosirItem[]),
       ]);
 
       const clinicLines = new Map<string, InvoiceItem[]>();

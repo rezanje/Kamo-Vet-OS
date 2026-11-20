@@ -30,17 +30,38 @@ it("isolates mounted account changes and correction revisions",async()=>{
  await act(async()=>root.render(<TransferForm userId="owner" mode="edit" header={{...base,revision:1,jumlah:200}}/>));
  expect(host.querySelector<HTMLInputElement>('input[name="jumlah"]')!.value).toBe("200");
 });
-it("explains the two ledger sides, lets the correction date change (branch stays) and offers read-only recovery",async()=>{
- const header={id:"transfer",revision:0,tanggal:"2026-10-20",from_account_id:"cash",to_account_id:"bank",jumlah:1000,biaya_admin:0,keterangan:null};
- await act(async()=>root.render(<TransferForm userId="owner" mode="edit" header={header} rekening={[{id:"cash",label:"Cash"},{id:"bank",label:"Bank"}]}/>));
- expect(host.textContent).toContain("catatan asli");
- expect(host.textContent).toContain("rekening asal dan tujuan");
- expect(host.textContent).toContain("bukan transfer uang");
- // 12 Nov 2026: tanggal koreksi boleh diganti; cabang tetap mengikuti catatan asli.
+it("simple edit like Accurate: date, accounts, both branches and amount editable, read-only recovery",async()=>{
+ // 19 Nov 2026 (Anisa): koreksi = ubah langsung; cabang asal & tujuan boleh diganti.
+ const header={id:"transfer",revision:0,tanggal:"2026-10-20",from_account_id:"cash",to_account_id:"bank",jumlah:1000,biaya_admin:0,branch_id:"a",keterangan:null};
+ await act(async()=>root.render(<TransferForm userId="owner" mode="edit" header={header} rekening={[{id:"cash",label:"Cash"},{id:"bank",label:"Bank"}]} branches={[{id:"a",name:"Cabang A"},{id:"b",name:"Cabang B"}]}/>));
+ expect(host.textContent).toContain("Catatan lama otomatis dibatalkan");
  const date=host.querySelector<HTMLInputElement>('input[name="tanggal"]');
  expect(date?.getAttribute("type")).toBe("date"); expect(date?.value).toBe("2026-10-20");
- expect(host.querySelector('input[name="branch_id"]')?.getAttribute("type")).toBe("hidden");
+ expect(host.querySelector<HTMLSelectElement>('select[name="branch_id"]')?.value).toBe("a");
+ // Catatan lama tanpa cabang tujuan: tujuan = asal.
+ expect(host.querySelector<HTMLSelectElement>('select[name="to_branch_id"]')?.value).toBe("a");
+ expect(host.textContent).toContain("Simpan perubahan");
  expect(host.querySelector<HTMLButtonElement>('button[value="periksa"]')?.formNoValidate).toBe(true);
+});
+it("fills the branch from the chosen account and flags an inter-branch transfer",async()=>{
+ await act(async()=>root.render(<TransferForm userId="owner" rekening={[{id:"cash",label:"Kas Toko A",branch_id:"a"},{id:"bank",label:"Bank Pusat",branch_id:null},{id:"kasb",label:"Kas Toko B",branch_id:"b"}]} branches={[{id:"a",name:"Cabang A"},{id:"b",name:"Cabang B"}]}/>));
+ const pick=async(name:string,value:string)=>act(async()=>{const el=host.querySelector<HTMLSelectElement>(`select[name="${name}"]`)!;el.value=value;el.dispatchEvent(new Event("change",{bubbles:true}));});
+ await pick("from_account_id","cash");
+ expect(host.querySelector<HTMLSelectElement>('select[name="branch_id"]')!.value).toBe("a");
+ expect(host.textContent).not.toContain("Antar cabang");
+ // Tujuan belum dipilih sendiri: ikut cabang asal; rekening tanpa cabang tidak mengubahnya.
+ expect(host.querySelector<HTMLSelectElement>('select[name="to_branch_id"]')!.value).toBe("a");
+ await pick("to_account_id","bank");
+ expect(host.querySelector<HTMLSelectElement>('select[name="to_branch_id"]')!.value).toBe("a");
+ expect(host.textContent).not.toContain("Antar cabang");
+ await pick("to_account_id","kasb");
+ expect(host.querySelector<HTMLSelectElement>('select[name="to_branch_id"]')!.value).toBe("b");
+ expect(host.textContent).toContain("Antar cabang");
+ await pick("branch_id","");
+ expect(host.querySelector<HTMLSelectElement>('select[name="to_branch_id"]')!.value).toBe("b");
+ await pick("to_branch_id","");
+ expect(host.querySelector<HTMLSelectElement>('select[name="to_branch_id"]')!.value).toBe("");
+ expect(host.textContent).not.toContain("Antar cabang");
 });
 it("serializes a double submit while the first result is uncertain",async()=>{
  let finish:()=>void=()=>{};

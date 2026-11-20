@@ -99,7 +99,7 @@ Urutan prioritas: **P0** (hari ini/besok) → **P1** (minggu ini) → **P2** (bi
 ## C. HRIS (target selesai Desember, paling lambat awal tahun)
 
 ### C1 · [ ] P1 — Penjadwalan (shift) & absensi dulu
-- **Keputusan Reza (14 Nov): A** — tahap 1 (absen lewat server, selfie wajib + lokasi, jadwal & telat dari shift, koreksi absen) dulu, lalu pencocokan wajah layanan pihak ketiga. Lihat `USULAN-C1.md` §4. **Tahap 1: kode + migrasi `20261120600000_c1_absensi_mandiri_selfie.sql` siap (belum dipasang).** Urutan rilis: deploy aplikasi dulu, lalu langsung pasang migrasi. Data 14 Nov: 23 cabang aktif belum punya titik lokasi (cek lokasi mati sampai diisi).
+- **Keputusan Reza (14 Nov): A** — tahap 1 (absen lewat server, selfie wajib + lokasi, jadwal & telat dari shift, koreksi absen) dulu, lalu pencocokan wajah layanan pihak ketiga. Lihat `USULAN-C1.md` §4. **Tahap 1 TERPASANG di Production 19 Nov 2026 (Reza: "gas aktifin + rilis"), versi migrasi `20261119092419`.** Kolom Lokasi + tautan Google Maps di layar HR menyusul lewat PR 19 Nov. Data 14 Nov: 23 cabang aktif belum punya titik lokasi (cek lokasi mati sampai diisi).
 - Prioritas HRIS: penjadwalan dan absensi. Absensi memakai verifikasi wajah.
 - Setelah stabil, baru disambungkan ke modul lain (terutama penjualan/insentif).
 - Screenshot: `hris-menu.jpg`, `hris-absensi.jpg`

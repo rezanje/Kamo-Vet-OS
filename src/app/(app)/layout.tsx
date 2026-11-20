@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/Sidebar";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { PageTabs } from "@/components/PageTabs";
+import { IngatPosisiHalaman } from "@/components/IngatPosisiHalaman";
 import { Clock } from "@/components/Clock";
 import { CariGlobal } from "@/components/CariGlobal";
 import { KlinikTopbar } from "@/components/KlinikTopbar";
@@ -83,6 +84,7 @@ export default async function AppLayout({
   return (
     <ActivityNavigationProvider allowed={canReadActivity}><RoleMenuProvider role={profile?.role ?? "STAFF"} rules={aksesModul ?? []}><DraftUserProvider userId={user.id}><div className="shell">
       <NavigationFeedback />
+      <Suspense fallback={null}><IngatPosisiHalaman /></Suspense>
       <Suspense fallback={null}><TransactionDraftComplete userId={user.id} /></Suspense>
       {!legacyStaffShell && (
         <Sidebar

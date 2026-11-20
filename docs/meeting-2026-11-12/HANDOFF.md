@@ -164,7 +164,7 @@ lalu rename file ke versi itu. Build lokal butuh `NODE_OPTIONS=--max-old-space-s
 ### 7b. Sesudah keputusan Reza 14 Nov sore (D1/D2 = A, sisanya ikut saran)
 - D1/D2 terpasang (lihat tabel di atas).
 - Kode + migrasi siap, **belum dipasang** (menunggu izin pasang): B3 `20261118610000`, B2 `20261118620000`, F1 `20261118630000`,
-  C1 `20261120600000` (wajib: deploy aplikasi dulu, lalu segera pasang), E2 `20261118650000`, E4 tahap 2 `20261120500000`
+  E2 `20261118650000`, E4 tahap 2 `20261120500000`
   (syarat Transit kosong). Pasang satu per satu dengan urutan nomor; sesudah pasang rename ke versi Production.
 - Harness: B3 33/33, B2 62/62 (`--pg-bin /usr/lib/postgresql/16/bin` wajib), F1 33/33, C1 60/60, E2 41/41, E4 82/82, D1 24/24, D2 14/14.
 - Vitest: jalankan dengan `--exclude ".claude/**"` bila ada worktree agen di `.claude/worktrees/`.
@@ -181,7 +181,7 @@ lebih kecil dari migrasi lain di repo yang menjadi dasarnya (mis. 20261115100000
 | `20261118620000_b2_batalkan_tagihan_klinik.sql` | `20261114145039` | 14 Nov 21.50 WIB |
 | `20261118630000_f1_opname_akun_selisih.sql` | `20261114145231` | 14 Nov 21.52 WIB |
 | `20261118650000_e2_grup_penjualan_online.sql` | `20261114151407` | 14 Nov 22.14 WIB |
-| `20261120600000_c1_absensi_mandiri_selfie.sql` | — | belum (pasang segera SESUDAH deploy aplikasi) |
+| `20261119092419_c1_absensi_mandiri_selfie.sql` | 20261119092419 | **terpasang 19 Nov 2026** |
 | `20261120700000_f2_beban_selisih_karyawan.sql` | `20261115123913` | 15 Nov 19.39 WIB (Reza: A) |
 | `20261120500000_e4_pindah_stok_wh_online_tahap2.sql` | — | belum (menunggu Transit kosong) |
 

@@ -1,10 +1,15 @@
 "use client";
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
+import {lastPageUrl} from '@/lib/menu-last-path';
 import Link from 'next/link';
 import {REPORT_GROUPS,type CatalogReport} from '@/lib/report-catalog';
 
 export function ReportCatalog({entries}:{entries:CatalogReport[]}) {
   const [query,setQuery]=useState(''),[group,setGroup]=useState('');
+  // Kotak laporan membuka filter terakhir yang dipakai di tab browser ini (dibaca setelah mount
+  // supaya markup server dan klien sama).
+  const [store,setStore]=useState<Storage|null>(null);
+  useEffect(()=>{const timer=window.setTimeout(()=>{try{setStore(window.sessionStorage);}catch{setStore(null);}},0);return ()=>window.clearTimeout(timer);},[]);
   const words=query.trim().toLocaleLowerCase('id-ID').split(/\s+/).filter(Boolean);
   const visible=entries.filter(row=>(!group||row.groups.includes(group))&&words.every(word=>[row.label,...row.groups,...row.coverage,...row.notes,...row.gaps].join(' ').toLocaleLowerCase('id-ID').includes(word)));
   return <>
@@ -20,7 +25,7 @@ export function ReportCatalog({entries}:{entries:CatalogReport[]}) {
       <h2 style={{fontSize:16}}>{name}</h2><div className="tile-grid">{rows.map(row=>{
         const label=<><div className="ticon" style={{background:row.bg}}><i className={`ti ${row.icon}`} style={{color:row.fg}}/></div><div className="tlabel">{row.label}</div></>;
         return <article key={row.key} style={{minWidth:0}}>
-          {row.href?<Link className="tile" href={row.href} prefetch={false}>{label}</Link>:<div className="tile" style={{opacity:.75,cursor:'default'}}>{label}</div>}
+          {row.href?<Link className="tile" href={lastPageUrl(store,row.href)} prefetch={false}>{label}</Link>:<div className="tile" style={{opacity:.75,cursor:'default'}}>{label}</div>}
           <div style={{fontSize:11,margin:'6px 4px',overflowWrap:'anywhere'}}>{row.status==='available'?'Halaman tersedia':row.status==='restricted'?'Memerlukan akses modul terkait':'Belum tersedia'}</div>
           {!!row.coverage.length&&<details style={{fontSize:11,margin:'6px 4px'}}><summary>Cakupan / kebutuhan terkait</summary><ul>{row.coverage.map(item=><li key={item}>{item}</li>)}</ul>{row.notes.map(note=><p key={note}>{note}</p>)}</details>}
           {row.gaps.map(gap=><p key={gap} style={{fontSize:11,color:'#92400e',margin:'6px 4px'}}>{gap}</p>)}

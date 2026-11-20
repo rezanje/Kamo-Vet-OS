@@ -11,6 +11,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { editKaryawan } from "../actions";
 import { AkhiriPenugasanForm } from "../AkhiriPenugasanForm";
 import { hariIniWIB } from "@/lib/tanggal";
+import { cekPeranVsJabatan, pesanPeranVsJabatan } from "@/lib/peran-vs-jabatan";
 import { keadaanPenugasan, labelPenugasan, tanggalSingkat } from "@/lib/employee-assignment";
 import { pasangKomponen, lepasKomponen, pasangTemplateKaryawan } from "../../komponen-gaji/actions";
 
@@ -27,7 +28,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const supabase = await createClient();
   const aturGaji = await bolehKelolaPayroll();
   const [empResult, detailResult, componentsResult, assignedResult, branchesResult, penugasanResult, jejakResult] = await Promise.all([
-    supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, status, branch_id, trashed_at").eq("id", id).maybeSingle(),
+    supabase.from("employees").select("id, nama, nik, jabatan, departemen, phone, email, tgl_masuk, status, branch_id, trashed_at, profile_id").eq("id", id).maybeSingle(),
     supabase.from("employee_import_details").select("fields, imported_at").eq("employee_id", id).maybeSingle(),
     supabase.from("salary_components").select("id, nama, tipe, nominal, is_active, calculation_basis, sales_source, sales_scope, rate_percent").order("nama"),
     supabase.from("employee_salary_components").select("id, component_id, nominal, rate_percent_override").eq("employee_id", id),
@@ -45,6 +46,11 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
   const employee = empResult.data;
   if (employee?.trashed_at) redirect("/hris/karyawan?view=trash");
   if (!employee) notFound();
+  // Jabatan tidak mengatur menu login; tandai bila role akunnya tidak lazim untuk jabatan klinisnya.
+  const akunResult = employee.profile_id
+    ? await supabase.from("profiles").select("role").eq("id", employee.profile_id).maybeSingle()
+    : { data: null };
+  const beda = cekPeranVsJabatan(employee.jabatan, (akunResult.data as { role: string } | null)?.role);
   const gajiPokok = aturGaji ? ((await bacaGajiPokok(supabase, [id])).get(id) ?? 0) : null;
   const nilai = (key: string): string | number | null =>
     key === "gaji_pokok" ? gajiPokok : (employee as Record<string, string | number | null>)[key];
@@ -116,6 +122,11 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
     <Link href="/hris/karyawan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali ke Karyawan</Link>
     {error && <div role="alert" className="p2ban" style={{ color: "#b91c1c" }}>{error}</div>}
     {success && <div role="status" className="p2ban" style={{ color: "#15803d" }}>{success === "benefit" ? "Benefit karyawan berhasil diperbarui." : "Data karyawan berhasil diperbarui."}</div>}
+    {beda && <div role="alert" className="p2ban" data-testid="peran-vs-jabatan" style={{ color: "#b45309", marginTop: 8 }}>
+      <i className="ti ti-alert-triangle" /> {pesanPeranVsJabatan(beda)}{" "}
+      <Link href={`/pengaturan/pengguna/${employee.profile_id}/edit`}>Ubah role akun</Link>
+      {["OWNER", "ADMIN"].includes(beda.sekarang) && " (akun Admin/Super Admin hanya bisa diubah Super Admin)"}
+    </div>}
     <div className="crm-sec" style={{ marginTop: 12 }}>
       <SecHeader num="01" title="PROFIL KARYAWAN" desc={`${employee.nama} · ${employee.nik ?? "Tanpa NIK"}`} action={edit !== "1" ? <Link className="btn-def" href={`/hris/karyawan/${id}?edit=1`}><i className="ti ti-pencil" /> Edit Karyawan</Link> : undefined} />
       {edit === "1" ? <form action={editKaryawan}>

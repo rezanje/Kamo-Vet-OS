@@ -16,6 +16,7 @@ vi.mock("@/app/(app)/penjualan/[id]/SaleReceiptForms", () => ({
   SaleReceiptCancelForm: (p: { shiftClosed: boolean; ubahTerhalang?: string[] }) => <span>form batalkan penerimaan{p.shiftClosed ? " shift-tertutup" : ""}{p.ubahTerhalang?.length ? ` terhalang:${p.ubahTerhalang.join("|")}` : ""}</span>,
   SaleReceiveAgainForm: (p: { previous: { method: string }[] }) => <span>form terima ulang {p.previous.map(x => x.method).join("+")}</span>,
   OnlineDisbursementCancelForm: () => <span>form batalkan pencairan</span>,
+  SalePaymentEditForm: (p: { tanggalBayar?: string }) => <span>form ubah pembayaran tgl:{p.tanggalBayar}</span>,
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "viewer" } } }) },
@@ -48,10 +49,12 @@ import PenjualanOnlineDetailPage from "@/app/(app)/penjualan/online/[id]/page";
 beforeEach(() => Object.assign(state, { role: "OWNER", allowed: true, allowedError: false, channel: null, marketplace: "piutang", open: false, cycle: false, shift: "open", receiptError: false, voided: false, voucher: null, promo: false, payrollCount: 0, payrollError: false }));
 
 describe("Batalkan penerimaan: layar detail penjualan", () => {
-  it("OWNER melihat tombol Batalkan penerimaan, Koreksi metode, dan Batalkan penjualan untuk struk terbayar", async () => {
+  // 19 Nov 2026: "Ubah pembayaran" satu langkah menggantikan Koreksi metode (tunai<->transfer) bagi yang boleh membatalkan penerimaan.
+  it("OWNER melihat Ubah pembayaran (tanggal bayar = pembayaran tercatat), Batalkan penerimaan, dan Batalkan penjualan untuk struk terbayar", async () => {
     const html = await render();
+    expect(html).toContain("form ubah pembayaran tgl:2026-11-01");
     expect(html).toContain("form batalkan penerimaan");
-    expect(html).toContain("form koreksi metode");
+    expect(html).not.toContain("form koreksi metode");
     expect(html).toContain("form batal penjualan");
     expect(html).not.toContain("Belum dibayar");
   });

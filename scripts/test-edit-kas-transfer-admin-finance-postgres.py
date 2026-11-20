@@ -48,13 +48,13 @@ def has(db, sig, text):
 if __name__ == "__main__":
     with NativePostgres(BIN) as db:
         fixture.DisposablePostgres.bootstrap(db)
-        before = (body(db, CASH), body(db, TRANSFER))
-        db.sql("begin;\n" + TARGET.read_text() + "\ncommit;")
-        ok((body(db, CASH), body(db, TRANSFER)) == before, "re-applying the migration is a no-op")
+        # Re-apply check dilepas 19 Nov 2026: 20261119092446_transfer_kas_dua_cabang menulis ulang mutate_cash_transfer
+        # utuh, jadi potongan teks migrasi 12 Nov sengaja tidak ada lagi (migrasi memang hanya jalan sekali).
         ok(not has(db, CASH, "Hanya Super Admin yang bisa mengedit kas"), "cash entry edit no longer OWNER-only")
         ok(has(db, CASH, "role not in ('OWNER','ADMIN','FINANCE')"), "cash entry edit still limited to OWNER/ADMIN/FINANCE")
         ok(not has(db, TRANSFER, "d<>doc.tanggal"), "transfer correction may change the date")
-        ok(has(db, TRANSFER, "Koreksi transfer harus memakai cabang catatan asli"), "transfer correction keeps the branch")
+        # 19 Nov 2026 (20261119092446_transfer_kas_dua_cabang): koreksi boleh ganti cabang; akses cabang tetap dicek.
+        ok(has(db, TRANSFER, "Cabang transfer tidak dapat diakses"), "transfer correction still checks branch access")
         ok(db.last("select 'lock_timeout=5s'=any(proconfig) and exists(select 1 from unnest(proconfig) c where c like 'search_path=%') from pg_proc where oid='" + TRANSFER + "'::regprocedure;") == "t",
            "transfer function keeps search_path and lock timeout")
         ok(db.last("select has_function_privilege('authenticated','" + TRANSFER + "','execute') and has_function_privilege('authenticated','" + CASH + "','execute') and not has_function_privilege('anon','" + TRANSFER + "','execute');") == "t",

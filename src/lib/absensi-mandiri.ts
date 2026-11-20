@@ -1,4 +1,4 @@
-// C1: absen mandiri lewat fungsi database absen_mandiri() + selfie wajib (migrasi 20261120600000).
+// C1: absen mandiri lewat fungsi database absen_mandiri() + selfie wajib (migrasi 20261119092419).
 // Murni — tombol di /me, server action, dan tesnya memakai aturan yang sama.
 
 export const BUCKET_FOTO_ABSEN = "absensi-foto";
@@ -64,6 +64,29 @@ export function pesanSuksesAbsen(h: HasilAbsen): string {
   if (h.jenis === "masuk" && (h.telat_menit ?? 0) > 0) bagian.push(`Telat ${h.telat_menit} menit dari jam shift ${h.shift ?? ""}.`.replace(" .", "."));
   if (h.jenis === "pulang" && (h.pulang_cepat_menit ?? 0) > 0) bagian.push(`Pulang ${h.pulang_cepat_menit} menit lebih awal dari jam shift.`);
   return bagian.join(" ");
+}
+
+// ── Lokasi absen di layar HR ──────────────────────────────────────────────────
+// Titik HP saat absen → tautan Google Maps (HR bisa cek posisinya), jarak ke titik cabang dalam teks singkat.
+type Angka = number | string | null | undefined;
+const keAngka = (v: Angka): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+export function linkGoogleMaps(lat: Angka, lng: Angka): string | null {
+  const a = keAngka(lat);
+  const b = keAngka(lng);
+  if (a === null || b === null || (a === 0 && b === 0)) return null;
+  return `https://www.google.com/maps/search/?api=1&query=${a},${b}`;
+}
+
+export function teksJarak(meter: Angka): string | null {
+  const m = keAngka(meter);
+  if (m === null || m < 0) return null;
+  if (m < 1000) return `${Math.round(m)} m`;
+  return `${(m / 1000).toLocaleString("id-ID", { maximumFractionDigits: 1 })} km`;
 }
 
 // ── Status tombol di /me ──────────────────────────────────────────────────────

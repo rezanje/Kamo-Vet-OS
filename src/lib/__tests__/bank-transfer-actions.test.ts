@@ -61,3 +61,19 @@ it("recovers a correction whose original is already voided without calling mutat
   expect(rpc).toHaveBeenCalledWith("get_cash_transfer_result", { p_request_key: "transfer-key" });
   expect(rpc).toHaveBeenCalledTimes(1);
 });
+// 19 Nov 2026: transfer dua cabang.
+it("sends the destination branch only when the form has it (old forms keep one branch)", async () => {
+  const data = form(); data.set("to_branch_id", "branch-b");
+  await expect(buatTransfer(data)).rejects.toThrow("success=1");
+  expect(rpc.mock.calls[0][1].p_header).toMatchObject({ branch_id: "branch", to_branch_id: "branch-b" });
+  rpc.mockClear(); const pusat = form(); pusat.set("to_branch_id", "");
+  await expect(buatTransfer(pusat)).rejects.toThrow("success=1");
+  expect(rpc.mock.calls[0][1].p_header.to_branch_id).toBeNull();
+  rpc.mockClear();
+  await expect(buatTransfer(form())).rejects.toThrow("success=1");
+  expect(rpc.mock.calls[0][1].p_header).not.toHaveProperty("to_branch_id");
+});
+it("explains a refused inter-branch transfer in plain words", async () => {
+  rpc.mockResolvedValueOnce({ data: null, error: { code: "42501", message: "Cabang transfer tidak dapat diakses" } });
+  await expect(buatTransfer(form())).rejects.toThrow(encodeURIComponent("Semua Cabang"));
+});

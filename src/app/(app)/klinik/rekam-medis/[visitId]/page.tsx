@@ -15,6 +15,8 @@ import { daftarDokter } from "@/lib/dokter";
 import { performersForService } from '@/lib/clinical-staff';
 import { RekamForm } from "./RekamForm";
 import { GroomerHeaderField } from "./GroomerHeaderField";
+import { PemeriksaHeaderField } from "./PemeriksaHeaderField";
+import { bacaNamaPemeriksa } from "@/lib/dokter-pemeriksa";
 import { muatPanelUbahDokter, PANEL_UBAH_DOKTER_TERSEMBUNYI } from "@/lib/ubah-dokter-pj-server";
 import { UbahDokterPJ } from "@/components/UbahDokterPJ";
 import { bacaHeaderGroomer } from "@/lib/groomer-kunjungan";
@@ -95,7 +97,7 @@ export default async function RekamMedisPage({
     supabase.auth.getUser(),
     supabase
       .from("visits")
-      .select("id, pet_id, branch_id, legacy_source_key, archived_at, archive_reason, poli, status, dokter, doctor_id, keluhan, created_at, source, checked_in_at, service_started_at, service_finished_at, checked_out_at, service_provider_id, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
+      .select("id, pet_id, branch_id, legacy_source_key, archived_at, archive_reason, poli, status, dokter, doctor_id, pemeriksa_id, keluhan, created_at, source, checked_in_at, service_started_at, service_finished_at, checked_out_at, service_provider_id, pets(name, species, breed, weight, photo_url, created_at), customers(name, phone, address, tier)")
       .eq("id", visitId)
       .maybeSingle(),
     // Rekam medis & invoice terakhir: dipakai hanya bila kunjungan sudah tersimpan,
@@ -192,6 +194,8 @@ export default async function RekamMedisPage({
   const recorded = menungguBayar || selesai; // rekam medis sudah disimpan
   // Baris Groomer di header (baca saja): jalan bareng bacaan lain, gagal baca = baris tidak tampil.
   const groomerP = recorded ? mulai(bacaHeaderGroomer(supabase, visit)) : null;
+  // Dokter pemeriksa dari antrian (visits.pemeriksa_id): baca saja; gagal baca = baris tidak tampil.
+  const pemeriksaP = recorded && visit.pemeriksa_id ? mulai(bacaNamaPemeriksa(supabase, visit.pemeriksa_id as string)) : null;
   // Tombol "Ubah dokter" (koreksi dokter PJ salah input, rawat jalan dan rawat inap); gagal baca apa pun = tombol tersembunyi.
   const ubahDokterP = recorded && !visit.archived_at ? mulai(muatPanelUbahDokter(supabase, { branchId: visit.branch_id ?? null, dokterSekarang: visit.doctor_id ?? null })) : null;
   // Rekam medis tersimpan (read-only) setelah pemeriksaan selesai.
@@ -419,6 +423,7 @@ export default async function RekamMedisPage({
   // dan input obatnya sendiri, dokter tinggal pindah tab tanpa balik ke antrian.
   const [saudara, bolehManual] = await Promise.all([saudaraP, bolehManualP]);
   const groomerInfo = groomerP ? await groomerP : null;
+  const pemeriksaNama = pemeriksaP ? await pemeriksaP : null;
   const panelUbahDokter = ubahDokterP ? await ubahDokterP : PANEL_UBAH_DOKTER_TERSEMBUNYI;
   return (
     <>
@@ -558,6 +563,7 @@ export default async function RekamMedisPage({
               </div>
             )}
             <GroomerHeaderField info={groomerInfo} />
+            <PemeriksaHeaderField nama={pemeriksaNama} />
             <Field label="Keluhan" value={visit.keluhan ?? "—"} />
           </div>
         </div>

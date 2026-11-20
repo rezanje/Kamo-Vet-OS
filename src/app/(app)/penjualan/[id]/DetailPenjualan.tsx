@@ -14,7 +14,7 @@ import { bacaBatasTanggal, batasCadangan, catatanTanggalEfektif, tanggalId, tang
 
 import { SaleCancelForm } from "./SaleCancelForm";
 import { SalePaymentCorrectionForm } from "./SalePaymentCorrectionForm";
-import { OnlineDisbursementCancelForm, SaleReceiptCancelForm, SaleReceiveAgainForm } from "./SaleReceiptForms";
+import { OnlineDisbursementCancelForm, SalePaymentEditForm, SaleReceiptCancelForm, SaleReceiveAgainForm } from "./SaleReceiptForms";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -161,7 +161,10 @@ export async function DetailPenjualan({ id, sp, online = false }: { id: string; 
   }) : [];
   const cash = payments.find(part => part.method === "Tunai")?.amount ?? 0;
   const transfer = payments.find(part => part.method === "Transfer")?.amount ?? 0;
-  const canCorrectPayment = canCorrectRole && !!user && !sale.voided_at && !sale.channel && !!sale.payment_plan && !openCancel && !hasReceiptCycle
+  // Ubah pembayaran satu langkah (19 Nov 2026): hak sama dengan Batalkan penerimaan; database tetap pemutus.
+  const canEditPayment = canCancelReceipt && !!user && !sale.voided_at && !sale.channel && !receiptError && !openCancel
+    && !!sale.payment_plan && !!sale.payments_finalized_at && Number(sale.merchant_fee_total ?? 0) === 0 && !returs.some(r => !r.voided_at);
+  const canCorrectPayment = !canEditPayment && canCorrectRole && !!user && !sale.voided_at && !sale.channel && !!sale.payment_plan && !openCancel && !hasReceiptCycle
     && !!sale.payments_finalized_at && cash + transfer > 0
     && returs.length === 0 && !sale.sale_payments?.some(part => ["Tunai", "Transfer"].includes(part.method)
       && (Number(part.fee_amount) !== 0 || Number(part.fee_percent) !== 0));
@@ -196,6 +199,7 @@ export async function DetailPenjualan({ id, sp, online = false }: { id: string; 
         <div className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d" }}>
           <i className="ti ti-circle-check" /> {success === "cancelled" ? "Penjualan dibatalkan. Riwayat dan pembalikannya tersimpan."
             : success === "edited" ? "Transaksi diubah. Ini struk hasil ubah: tetap di tanggal struk asli, struk lama tersimpan di riwayat."
+            : success === "payment-changed" ? `Pembayaran diubah: penerimaan lama dibalik di tanggal aslinya dan yang baru tercatat. Riwayat tersimpan.${tglCatatan}`
             : success === "payment-corrected" ? "Metode pembayaran terkoreksi pada penjualan ini. Jurnal pembalik dan pengganti tersimpan."
             : success === "receipt-cancelled" ? `Penerimaan dibatalkan: uang dikeluarkan dari kas/bank dan struk menjadi belum dibayar.${shiftLain ? " Shift asal struk sudah ditutup; angka tutupnya tidak diubah, pengembalian dicatat di shift terbuka Anda." : ""}${shiftTanpa ? " Shift asal struk sudah ditutup dan Anda tidak punya shift terbuka: pengembalian tunai ditandai \"tanpa shift\" untuk Finance dan tidak mengubah laci kasir mana pun." : ""}${tglCatatan} Terima pembayaran lagi atau ubah transaksi di bawah.`
             : success === "receipt-received" ? `Pembayaran diterima ulang. Jurnal dan laci shift tercatat.${shiftTanpa ? " Anda tidak punya shift terbuka: uang tunai ditandai \"tanpa shift\" untuk Finance dan tidak masuk laci kasir mana pun." : ""}${tglCatatan}`
@@ -309,10 +313,12 @@ export async function DetailPenjualan({ id, sp, online = false }: { id: string; 
           : "Pembatalan dan retur pada struk ini. Koreksi metode bayar hanya terlihat oleh Owner dan Finance."} />}
 
       {(canCorrectRole || canCancelReceipt) && user && !sale.voided_at && <details className="crm-sec" open={!!openCancel}>
-        <summary>{openCancel ? "Struk belum dibayar — terima pembayaran atau ubah transaksi" : isOwner ? "Koreksi, batalkan penerimaan atau batalkan penjualan" : canCorrectRole ? "Koreksi metode pembayaran" : "Batalkan penerimaan"}</summary>
+        <summary>{openCancel ? "Struk belum dibayar — terima pembayaran atau ubah transaksi" : canEditPayment ? "Ubah pembayaran, batalkan penerimaan atau batalkan penjualan" : isOwner ? "Koreksi, batalkan penerimaan atau batalkan penjualan" : canCorrectRole ? "Koreksi metode pembayaran" : "Batalkan penerimaan"}</summary>
         {receiptError && <p role="alert">Riwayat pembatalan penerimaan belum dapat dibaca. Muat ulang sebelum tindakan berikutnya.</p>}
         {!receiptError && openCancel && canCancelReceipt && <SaleReceiveAgainForm userId={user.id} saleId={sale.id} revision={sale.revision}
           total={Number(sale.total)} previous={openCancel.before_payments.map(part => ({ method: part.method, amount: Number(part.amount) }))} batasTanggal={batasTanggal} />}
+        {canEditPayment && user && <SalePaymentEditForm userId={user.id} saleId={sale.id} revision={sale.revision} total={Number(sale.total)}
+          current={payments.map(part => ({ method: part.method, amount: part.amount }))} tanggalBayar={batasTanggal?.min ?? ""} batasTanggal={batasTanggal} />}
         {!receiptError && !openCancel && canCancelReceipt && !sale.channel && !!sale.payment_plan && !!sale.payments_finalized_at && <SaleReceiptCancelForm userId={user.id} saleId={sale.id}
           revision={sale.revision} total={Number(sale.total)} shiftClosed={shiftClosed} ubahTerhalang={ubahTerhalang} batasTanggal={batasTanggal} />}
         {!receiptError && !onlineError && canCancelReceipt && !!sale.channel && sale.marketplace_status === "cair" && <OnlineDisbursementCancelForm userId={user.id} saleId={sale.id} revision={sale.revision} batasTanggal={batasTanggal} />}

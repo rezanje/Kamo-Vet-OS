@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { beforeEach, expect, it, vi } from "vitest";
 import { kumpulkanBarisKomisi } from "@/lib/komisi-data";
 import { atribusiPenjual, rekapPerItem, rekapTenagaPenjual } from "@/lib/laporan-tenaga-penjual";
+import { barisFixture } from "@/test-support/laporan-embed";
 
 // Fixture fiktif: tidak ada data pelanggan, karyawan, atau tarif asli di sini.
 
@@ -18,15 +19,15 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: "pengguna" } } }) },
     from(table: string) {
-      const data = state.tables[table] ?? [];
-      const hasil = { data, count: data.length, error: null };
+      let kolomDipilih = "";
+      const hasil = () => { const data = barisFixture(state.tables, table, kolomDipilih); return { data, count: data.length, error: null }; };
       const q: Record<string, unknown> = {
-        select: (kolom: string) => { state.select.push(`${table}:${kolom}`); return q; },
+        select: (kolom: string) => { kolomDipilih = kolom; state.select.push(`${table}:${kolom}`); return q; },
         eq: (kolom: string, nilai: unknown) => { state.eq.push(`${table}:${kolom}=${String(nilai)}`); return q; },
         is: () => q, not: () => q, neq: () => q,
         gte: () => q, lte: () => q, in: () => q, order: () => q,
-        range: async () => hasil,
-        then: (resolve: (value: unknown) => unknown) => Promise.resolve(hasil).then(resolve),
+        range: async () => hasil(),
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve(hasil()).then(resolve),
       };
       return q;
     },
@@ -240,17 +241,17 @@ it("query karyawan menyebut relasi cabang utama secara eksplisit (employees puny
 it("A1: saringan cabang ikut ke query ketiga kanal, bukan hanya disaring di memori", async () => {
   await ambilTenagaPenjual({ ...RENTANG, cabangId: "cabang" });
   expect(state.eq).toEqual(expect.arrayContaining([
-    "invoice_items:invoices.visits.branch_id=cabang",
-    "sale_items:sales.branch_id=cabang",
-    "sales_invoice_items:sales_invoices.branch_id=cabang",
+    "invoices:visits.branch_id=cabang",
+    "sales:branch_id=cabang",
+    "sales_invoices:branch_id=cabang",
   ]));
   // Join kunjungan wajib inner supaya saringan cabang benar-benar membatasi baris.
-  expect(state.select.find((s) => s.startsWith("invoice_items:"))).toContain("visits!inner(");
+  expect(state.select.find((s) => s.startsWith("invoices:"))).toContain("visits!inner(");
 
   state.eq = []; state.select = [];
   await ambilTenagaPenjual(RENTANG);
   expect(state.eq.filter((e) => e.includes("branch_id"))).toEqual([]);
-  expect(state.select.find((s) => s.startsWith("invoice_items:"))).not.toContain("visits!inner(");
+  expect(state.select.find((s) => s.startsWith("invoices:"))).not.toContain("visits!inner(");
 });
 
 it("A1: pilihan filter hanya membaca karyawan dan cabang, tanpa tabel penjualan", async () => {
