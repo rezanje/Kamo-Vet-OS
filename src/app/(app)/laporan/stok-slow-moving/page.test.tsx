@@ -31,7 +31,10 @@ beforeEach(() => {
   mock.akses = true;
   mock.pilihan.mockReset(); mock.ringkas.mockReset();
   mock.pilihan.mockResolvedValue({
-    gudang: [{ id: "g1", code: "G1", name: "Gudang Satu" }], kategori: [], kategoriOpsi: ["MAKANAN", "OBAT"],
+    gudang: [
+      { id: "g1", code: "G1", name: "Gudang Satu", type: "RETAIL" }, { id: "g2", code: "G2", name: "Gudang Dua", type: "RETAIL" },
+      { id: "v1", code: "V1", name: "Gudang Klinik", type: "VET" }, { id: "dc", code: "DC", name: "Gudang DC", type: "DC" },
+    ], kategori: [], kategoriOpsi: ["MAKANAN", "OBAT"],
     kategoriDari: (b: { id: string }) => (b.id === "a" ? "MAKANAN" : "OBAT"),
   });
   mock.ringkas.mockResolvedValue(hasil([
@@ -71,9 +74,20 @@ describe("halaman Stok Slow Moving", () => {
     expect(kat).toContain("Royal Canin");
     expect(kat).not.toContain("Obat Cacing");
     await render({ tampil: "1", gudang: "g1" });
-    expect(mock.ringkas).toHaveBeenLastCalledWith(expect.anything(), "g1");
+    expect(mock.ringkas).toHaveBeenLastCalledWith(expect.anything(), "g1", null);
     await render({ tampil: "1", gudang: "bukan-gudang" });
-    expect(mock.ringkas).toHaveBeenLastCalledWith(expect.anything(), "");
+    expect(mock.ringkas).toHaveBeenLastCalledWith(expect.anything(), "", null);
+  });
+  it("gabungan Semua petshop / Semua klinik: hanya gudang toko / gudang klinik yang dihitung, DC tidak ikut", async () => {
+    const awal = await render({});
+    expect(awal).toContain('<option value="petshop">Semua petshop (2 gudang toko)</option>');
+    expect(awal).toContain('<option value="klinik">Semua klinik (1 gudang klinik)</option>');
+    const ps = await render({ tampil: "1", gudang: "petshop" });
+    expect(mock.ringkas).toHaveBeenLastCalledWith(expect.anything(), "", ["g1", "g2"]);
+    expect(ps).toContain('<option value="petshop" selected="">');
+    expect(ps).toContain("/laporan/stok-slow-moving/unduh?gudang=petshop&amp;");
+    await render({ tampil: "1", gudang: "klinik" });
+    expect(mock.ringkas).toHaveBeenLastCalledWith(expect.anything(), "", ["v1"]);
   });
   it("tautan unduh Excel membawa filter", async () => {
     const html = await render({ tampil: "1", q: "royal", kategori: "makanan" });

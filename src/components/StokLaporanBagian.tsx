@@ -2,18 +2,26 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { denganTampil } from "@/lib/report-gate";
+import { opsiGrupGudang } from "@/lib/stok-analisis";
 import type { GudangOpsi } from "@/lib/stok-analisis-server";
 
 export const UKURAN_HALAMAN_STOK = 100;
 
-export function FilterStok({ gudang, gudangId, kategoriOpsi, kategori, q }: {
-  gudang: GudangOpsi[]; gudangId: string; kategoriOpsi: string[]; kategori: string; q: string;
+/** `gudangNilai` = isi URL gudang yang sudah divalidasi (`pilihGudang`): "", "petshop", "klinik", atau id gudang. */
+export function FilterStok({ gudang, gudangNilai, kategoriOpsi, kategori, q }: {
+  gudang: GudangOpsi[]; gudangNilai: string; kategoriOpsi: string[]; kategori: string; q: string;
 }) {
+  const grup = opsiGrupGudang(gudang);
   return <>
     <div><label className="flab">Hitung stok di</label>
-      <select className="fi" name="gudang" defaultValue={gudangId} style={{ minWidth: 220 }}>
+      <select className="fi" name="gudang" defaultValue={gudangNilai} style={{ minWidth: 220 }}>
         <option value="">Semua gudang digabung</option>
-        {gudang.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+        {grup.length > 0 && <optgroup label="Gabungan">
+          {grup.map((g) => <option key={g.nilai} value={g.nilai}>{g.label}</option>)}
+        </optgroup>}
+        <optgroup label="Per gudang">
+          {gudang.map((w) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+        </optgroup>
       </select></div>
     <div><label className="flab">Kategori</label>
       <select className="fi" name="kategori" defaultValue={kategori}>

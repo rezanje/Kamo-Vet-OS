@@ -19,7 +19,7 @@ export const FUNGSI_STOK = "laporan_stok_analisis";
 
 export class StokAnalisisError extends Error {}
 
-export type GudangOpsi = { id: string; code: string; name: string };
+export type GudangOpsi = { id: string; code: string; name: string; type: string | null };
 export type PilihanStok = { gudang: GudangOpsi[]; kategori: ClinicItemCategory[]; kategoriOpsi: string[]; kategoriDari: (b: BarisAnalisis) => string };
 
 function bacaHasil(data: unknown): HasilStokMentah {
@@ -30,27 +30,46 @@ function bacaHasil(data: unknown): HasilStokMentah {
   return d as HasilStokMentah;
 }
 
-/** Hanya angka ringkas (kartu dashboard): tanpa kategori/gudang. */
-export async function muatRingkasStok(client: AnyClient, gudang = "") {
-  const { data, error } = await client.rpc(FUNGSI_STOK, { p_gudang: gudang || null, p_jendela_hari: KONFIG_STOK.jendelaHari });
+/**
+ * Hanya angka ringkas (kartu dashboard): tanpa kategori/gudang. `gudang` = satu gudang; `daftar` = sekelompok gudang
+ * ("Semua petshop" / "Semua klinik", migrasi 20261203100000). Parameter daftar hanya dikirim bila diisi.
+ */
+export async function muatRingkasStok(client: AnyClient, gudang = "", daftar: readonly string[] | null = null) {
+  const args: Record<string, unknown> = { p_gudang: gudang || null, p_jendela_hari: KONFIG_STOK.jendelaHari };
+  if (daftar) args.p_gudang_daftar = [...daftar];
+  const { data, error } = await client.rpc(FUNGSI_STOK, args);
   if (error) {
     throw new StokAnalisisError(error.code === "PGRST202" ? "Fungsi laporan stok belum terpasang di database." : "Data stok belum dapat dibaca. Coba muat ulang.");
   }
   return analisisSemua(bacaHasil(data));
 }
 
-/** Pilihan filter (ringan, boleh dibaca sebelum Tampilkan): gudang aktif dan kategori induk. */
-export async function muatPilihanStok(client: AnyClient): Promise<PilihanStok> {
-  const [gudang, kategori] = await Promise.all([
-    readCompleteList<GudangOpsi>((from, to) => client.from("warehouses").select("id, code, name", { count: "exact" })
+/**
+ * Kategori induk yang bisa muncul di laporan stok: hanya induk yang memuat barang Persediaan (tidak dibuang), sama dengan
+ * barang yang dihitung fungsi laporan. Kategori jasa/tindakan/promo tanpa barang stok tidak ditawarkan (laporan Andaru, 21 Nov 2026).
+ */
+export function opsiKategoriStok(kategori: readonly ClinicItemCategory[], barang: readonly { category_id: string | null }[]): string[] {
+  const peta = petaKategori(kategori);
+  return [...new Set(barang.map((b) => resolveKategori(b.category_id, peta).kategori).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id"));
+}
+
+/**
+ * Pilihan filter (ringan, boleh dibaca sebelum Tampilkan): gudang aktif, kategori induk yang memuat barang stok.
+ * `opsiKategori: false` (unduhan) melewati pembacaan barang karena daftar pilihan tidak dipakai.
+ */
+export async function muatPilihanStok(client: AnyClient, { opsiKategori = true }: { opsiKategori?: boolean } = {}): Promise<PilihanStok> {
+  const [gudang, kategori, barang] = await Promise.all([
+    readCompleteList<GudangOpsi>((from, to) => client.from("warehouses").select("id, code, name, type", { count: "exact" })
       .eq("is_active", true).order("code").order("id").range(from, to), "Gudang", { maxRows: null }),
     loadClinicItemCategories(client),
+    opsiKategori
+      ? readCompleteList<{ id: string; category_id: string | null }>((from, to) => client.from("items").select("id, category_id", { count: "exact" })
+        .eq("item_type", "Persediaan").is("trashed_at", null).order("id").range(from, to), "Kategori barang stok", { maxRows: null })
+      : Promise.resolve([]),
   ]);
   const peta = petaKategori(kategori);
   const kategoriDari = (b: BarisAnalisis) => resolveKategori(b.kategoriId, peta).kategori;
-  const kategoriOpsi = [...new Set(kategori.filter((k) => !k.parent_id).map((k) => k.name.trim().toLocaleUpperCase("id-ID")).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, "id"));
-  return { gudang, kategori, kategoriOpsi, kategoriDari };
+  return { gudang, kategori, kategoriOpsi: opsiKategori ? opsiKategoriStok(kategori, barang) : [], kategoriDari };
 }
 
 function potong<T>(isi: T[], ukuran: number): T[][] {

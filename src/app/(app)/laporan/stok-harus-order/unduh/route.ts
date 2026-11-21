@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { amankanSel } from "@/lib/laporan-kategori-penjualan";
 import {
-  CATATAN_PAKAI_BERSIH, daftarHarusOrder, HALAMAN_ORDER, KONFIG_STOK, kelompokOrder, labelRiwayat, LABEL_ALASAN, saring,
+  CATATAN_PAKAI_BERSIH, daftarHarusOrder, HALAMAN_ORDER, KONFIG_STOK, kelompokOrder, labelRiwayat, LABEL_ALASAN, pilihGudang, saring, type PilihanGudang,
 } from "@/lib/stok-analisis";
 import { muatPendukungOrder, muatPilihanStok, muatRingkasStok, periksaAksesStok } from "@/lib/stok-analisis-server";
 import { createClient } from "@/lib/supabase/server";
@@ -15,17 +15,17 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const q = (params.get("q") ?? "").trim().slice(0, 120);
   const kategori = (params.get("kategori") ?? "").trim().toLocaleUpperCase("id-ID").slice(0, 80);
-  let pilihan, hasil, grup, gudang = "";
+  let pilihan, hasil, grup, lingkup: PilihanGudang;
   try {
-    pilihan = await muatPilihanStok(supabase);
-    gudang = pilihan.gudang.some((w) => w.id === params.get("gudang")) ? String(params.get("gudang")) : "";
-    hasil = await muatRingkasStok(supabase, gudang);
+    pilihan = await muatPilihanStok(supabase, { opsiKategori: false });
+    lingkup = pilihGudang(pilihan.gudang, params.get("gudang"));
+    hasil = await muatRingkasStok(supabase, lingkup.satu, lingkup.daftar);
     const kandidat = saring(hasil.baris.filter((b) => b.aktif && b.alasanOrder.length > 0 && (b.minStock > 0 || b.terjualHari > 0)), { q, kategori, kategoriDari: pilihan.kategoriDari });
     const pend = await muatPendukungOrder(supabase, kandidat);
     grup = kelompokOrder(daftarHarusOrder(kandidat, pend.satuanBeli, pend.pemasok, hasil.ctx));
   } catch { return NextResponse.json({ error: "Data stok belum dapat dihitung. Coba lagi." }, { status: 500 }); }
 
-  const namaGudang = gudang ? pilihan.gudang.find((w) => w.id === gudang)?.name ?? gudang : "Semua gudang digabung";
+  const namaGudang = lingkup.nama;
   const kolom = ["Pemasok", "Kode", "Barang", "Satuan dasar", "Stok", "Minimum", "Terjual/bulan", "Cukup untuk (hari)", "Alasan", "Saran order", "Satuan beli", "Perkiraan (Rp)", "Sementara"];
   const book = new ExcelJS.Workbook();
   const sheet = book.addWorksheet("Harus order", { views: [{ state: "frozen", ySplit: 1 }] });

@@ -157,6 +157,53 @@ export function analisisSemua(hasil: Pick<HasilStokMentah, "baris" | "hari_ini" 
   return { ctx, baris: hasil.baris.map((b) => analisisBarang(b, ctx, konfig)) };
 }
 
+// ───────────── Pilihan gudang ─────────────
+
+/** Gudang seperti dibaca filter (type = warehouse_type: RETAIL, VET, DC, ONLINE, TRANSIT, EXPIRED). */
+export type GudangPilih = { id: string; code: string; name: string; type?: string | null };
+
+/**
+ * Gabungan per jenis (permintaan Andaru, 21 Nov 2026: "grouping petshop aja atau klinik aja").
+ * Semua petshop = gudang toko (RETAIL); Semua klinik = gudang klinik (VET). DC, online, transit dan expired tidak ikut keduanya
+ * (tetap terhitung di "Semua gudang digabung" dan bisa dipilih satu per satu).
+ */
+export const GRUP_GUDANG = {
+  petshop: { label: "Semua petshop", jenis: "RETAIL", satuan: "gudang toko" },
+  klinik: { label: "Semua klinik", jenis: "VET", satuan: "gudang klinik" },
+} as const;
+export type KodeGrupGudang = keyof typeof GRUP_GUDANG;
+const KODE_GRUP = Object.keys(GRUP_GUDANG) as KodeGrupGudang[];
+
+export function anggotaGrupGudang<T extends GudangPilih>(gudang: readonly T[], kode: KodeGrupGudang): T[] {
+  return gudang.filter((w) => w.type === GRUP_GUDANG[kode].jenis);
+}
+
+/** Pilihan gabungan yang punya anggota, untuk daftar pilihan: "Semua petshop (11 gudang toko)". */
+export function opsiGrupGudang(gudang: readonly GudangPilih[]): { nilai: KodeGrupGudang; label: string }[] {
+  return KODE_GRUP.map((kode) => ({ kode, n: anggotaGrupGudang(gudang, kode).length }))
+    .filter((g) => g.n > 0)
+    .map(({ kode, n }) => ({ nilai: kode, label: `${GRUP_GUDANG[kode].label} (${n} ${GRUP_GUDANG[kode].satuan})` }));
+}
+
+/**
+ * Isi URL `gudang` -> lingkup hitung. "" / tidak dikenal = semua gudang; id gudang = satu gudang;
+ * "petshop"/"klinik" = daftar gudang jenis itu yang terlihat oleh pengguna (grup tanpa anggota = semua gudang).
+ */
+export type PilihanGudang = { nilai: string; nama: string; satu: string; daftar: string[] | null };
+export function pilihGudang(gudang: readonly GudangPilih[], raw: string | null | undefined): PilihanGudang {
+  const nilai = String(raw ?? "").trim();
+  const grup = KODE_GRUP.find((k) => k === nilai);
+  if (grup) {
+    const anggota = anggotaGrupGudang(gudang, grup);
+    if (anggota.length) {
+      return { nilai: grup, nama: `${GRUP_GUDANG[grup].label} (${anggota.length} ${GRUP_GUDANG[grup].satuan})`, satu: "", daftar: anggota.map((w) => w.id) };
+    }
+  }
+  const satu = nilai ? gudang.find((w) => w.id === nilai) : undefined;
+  if (satu) return { nilai: satu.id, nama: satu.name, satu: satu.id, daftar: null };
+  return { nilai: "", nama: "Semua gudang digabung", satu: "", daftar: null };
+}
+
 export type Saringan = { q?: string; kategori?: string; kategoriDari?: (b: BarisAnalisis) => string };
 
 /** Cari (kode/nama) + kategori induk. */
