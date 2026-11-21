@@ -24,6 +24,7 @@ type JournalEntry = {
   deskripsi: string;
   source: string;
   source_ref: string | null;
+  branch_id: string | null;
   branches: { name: string } | { name: string }[] | null;
   journal_lines: JournalLine[];
   revision: number;
@@ -407,7 +408,7 @@ export default async function JurnalPage({
                         {e.voided_at ? <span className="bge r" style={{ fontSize: 9 }}>Dibatalkan / digantikan</span> : ["manual", "manual-correction"].includes(e.source) ? <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                           {canCreateSourceSchedule && <Link className="btn-def" style={{ padding: "4px 8px", fontSize: 10 }} href={`/keuangan/jurnal-berulang/dari-jurnal/${e.id}`}>Buat jadwal dari jurnal</Link>}
                           {isOwner
-                            ? <JurnalCorrectionForm userId={user?.id ?? ""} entryId={e.id} revision={e.revision ?? 0} tanggal={e.tanggal} deskripsi={e.deskripsi ?? ""} accounts={accounts} lines={lines.map((l) => ({ account_id: akunDari(l)?.id ?? "", debit: Number(l.debit), credit: Number(l.credit) }))} />
+                            ? <JurnalCorrectionForm userId={user?.id ?? ""} entryId={e.id} revision={e.revision ?? 0} tanggal={e.tanggal} deskripsi={e.deskripsi ?? ""} accounts={accounts} branchId={e.branch_id ?? null} branches={branches} lines={lines.map((l) => ({ account_id: akunDari(l)?.id ?? "", debit: Number(l.debit), credit: Number(l.credit) }))} />
                             : !canCreateSourceSchedule && <span style={{ color: "var(--tm)", fontSize: 10 }}>Khusus Super Admin</span>}
                         </div> : <span style={{ color: "var(--tm)", fontSize: 10 }}>Koreksi dari transaksi sumber</span>}
                       </td>

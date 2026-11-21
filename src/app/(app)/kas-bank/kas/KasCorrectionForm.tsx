@@ -7,7 +7,12 @@ import { CorrectionTransactionForm } from "@/components/CorrectionTransactionFor
 import { SubmitButton } from "@/components/SubmitButton";
 import { koreksiKasEntry, batalkanKasEntry } from "./actions";
 
-type Rek = { id: string; nama: string; coa_code: string };
+type Rek = { id: string; nama: string; coa_code: string; branch_id?: string | null };
+type Cabang = { id: string; name: string };
+
+/** Rekening milik cabang tertentu hanya boleh dipakai di cabang itu; rekening tanpa cabang boleh di mana saja. */
+export const rekeningUntukCabang = (rekening: Rek[], branchId: string) =>
+  rekening.filter((r) => !r.branch_id || r.branch_id === branchId);
 type Coa = { code: string; name: string };
 
 export function KasVoidForm({ userId, jenis, id, revision }: { userId: string; jenis: "Masuk" | "Keluar"; id: string; revision: number }) {
@@ -21,20 +26,32 @@ export function KasVoidForm({ userId, jenis, id, revision }: { userId: string; j
   </CorrectionTransactionForm>;
 }
 
-export function KasCorrectionForm({ userId, jenis, id, revision, tanggal: initialDate, accountId: initialAccount, lawanCode: initialLawan, jumlah: initialAmount, keterangan: initialNote, rekening, coa }: {
+export function KasCorrectionForm({ userId, jenis, id, revision, tanggal: initialDate, accountId: initialAccount, lawanCode: initialLawan, jumlah: initialAmount, keterangan: initialNote, rekening, coa, branchId: initialBranch = null, cabangNama, branches = [] }: {
   userId: string; jenis: "Masuk" | "Keluar"; id: string; revision: number; tanggal: string; accountId: string; lawanCode: string; jumlah: number; keterangan: string | null; rekening: Rek[]; coa: Coa[];
+  branchId?: string | null; cabangNama?: string; branches?: Cabang[];
 }) {
   const [tanggal, setTanggal] = useState(initialDate); const [accountId, setAccountId] = useState(initialAccount); const [lawanCode, setLawanCode] = useState(initialLawan); const [jumlah, setJumlah] = useState(String(initialAmount)); const [keterangan, setKeterangan] = useState(initialNote ?? ""); const [reason, setReason] = useState("");
-  const snapshot = { tanggal, accountId, lawanCode, jumlah, keterangan, reason };
+  const [branchId, setBranchId] = useState(initialBranch ?? "");
+  // Cabang asal yang sudah nonaktif tetap ditampilkan supaya pilihan awal tidak berubah diam-diam.
+  const pilihanCabang = initialBranch && !branches.some((b) => b.id === initialBranch) ? [{ id: initialBranch, name: cabangNama ?? "Cabang asal" }, ...branches] : branches;
+  const rekeningCabang = rekeningUntukCabang(rekening, branchId);
+  const gantiCabang = (next: string) => {
+    setBranchId(next);
+    const boleh = rekeningUntukCabang(rekening, next);
+    if (!boleh.some((r) => r.id === accountId)) setAccountId(boleh.find((r) => r.branch_id === next)?.id ?? boleh[0]?.id ?? "");
+  };
+  const snapshot = { tanggal, branchId, accountId, lawanCode, jumlah, keterangan, reason };
   return <details><summary style={{ cursor: "pointer", color: "#2563eb", fontSize: 10.5 }}>Edit / koreksi</summary>
     <CorrectionTransactionForm userId={userId} scope={`cash-edit-${id}-${revision}`} action={koreksiKasEntry} state={{ snapshot, restore(value) {
       if (typeof value.tanggal !== "string" || typeof value.accountId !== "string" || typeof value.lawanCode !== "string" || typeof value.jumlah !== "string" || typeof value.keterangan !== "string" || typeof value.reason !== "string") return false;
+      if (typeof value.branchId === "string") setBranchId(value.branchId);
       setTanggal(value.tanggal); setAccountId(value.accountId); setLawanCode(value.lawanCode); setJumlah(value.jumlah); setKeterangan(value.keterangan); setReason(value.reason); return true;
     }, reset() {} }}>
       {({ ready }) => <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
-        <input type="hidden" name="id" value={id} /><input type="hidden" name="jenis" value={jenis} /><input type="hidden" name="revision" value={revision} />
+        <input type="hidden" name="id" value={id} /><input type="hidden" name="jenis" value={jenis} /><input type="hidden" name="revision" value={revision} /><input type="hidden" name="branch_asal" value={initialBranch ?? ""} />
         <label className="flab">Tanggal koreksi<input className="fi" type="date" name="tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required /></label>
-        <label className="flab">Rekening<select className="fi" name="account_id" value={accountId} onChange={(e) => setAccountId(e.target.value)}>{rekening.map((r) => <option key={r.id} value={r.id}>{r.nama}</option>)}</select></label>
+        <label className="flab">Cabang<select className="fi" name="branch_id" value={branchId} onChange={(e) => gantiCabang(e.target.value)}><option value="">— Pusat / tanpa cabang —</option>{pilihanCabang.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+        <label className="flab">Rekening<select className="fi" name="account_id" value={accountId} onChange={(e) => setAccountId(e.target.value)}>{rekeningCabang.map((r) => <option key={r.id} value={r.id}>{r.nama}</option>)}</select></label>
         <label className="flab">Akun lawan<select className="fi" name="lawan_code" value={lawanCode} onChange={(e) => setLawanCode(e.target.value)}>{coa.map((a) => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}</select></label>
         <label className="flab">Jumlah<NumberInput className="fi" type="number" min="0.01" step="0.01" name="jumlah" value={jumlah} onChange={(e) => setJumlah(e.target.value)} required /></label>
         <label className="flab">Keterangan<input className="fi" name="keterangan" value={keterangan} onChange={(e) => setKeterangan(e.target.value)} placeholder="Keterangan" /></label>
