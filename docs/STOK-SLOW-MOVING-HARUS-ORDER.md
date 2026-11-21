@@ -15,7 +15,7 @@ Hanya baca. Tidak mengubah uang, stok, atau data lain.
 - **Semua petshop / Semua klinik**: di pilihan "Hitung stok di" (kelompok "Gabungan"), URL `gudang=petshop` / `gudang=klinik`.
   Petshop = semua gudang aktif jenis `RETAIL` (gudang toko); klinik = jenis `VET` (gudang klinik). DC, online (`WH_B2C`, `WH_ONLINE_*`),
   transit dan expired TIDAK masuk keduanya; tetap terhitung di "Semua gudang digabung" dan bisa dipilih satu-satu. Aturan di `GRUP_GUDANG`
-  / `pilihGudang` (`src/lib/stok-analisis.ts`). Di data 21 Nov: 11 gudang toko, 11 gudang klinik (termasuk VET PEJUANG).
+  / `pilihGudang` (`src/lib/stok-analisis.ts`). Di data 21 Nov: 10 gudang toko, 10 gudang klinik aktif (termasuk VET PEJUANG).
   Berlaku di dua halaman dan dua unduhan Excel (lembar Keterangan menulis lingkupnya).
 - Database: migrasi `20261203100000_stok_grup_gudang` menambah parameter terakhir `p_gudang_daftar uuid[]` (null = tidak membatasi)
   pada `laporan_stok_analisis`; tanda tangan lama dihapus supaya PostgREST tidak melihat dua fungsi. Isi perhitungan sama persis.
