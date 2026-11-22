@@ -2,9 +2,18 @@
 type Baris = Record<string, unknown>;
 export type CatatanStatement = { table: string; select: string; filters: string[]; range: [number, number] | null };
 
-export function bikinKlienTiruan(tables: Record<string, Baris[]>) {
+export type RpcTiruan = (args: Record<string, unknown>) => { data: unknown; error: { message: string; code?: string } | null };
+
+/** `rpcs` (opsional) menambahkan `client.rpc`; tanpa itu klien tidak punya rpc (jalur lama laporan dipakai). */
+export function bikinKlienTiruan(tables: Record<string, Baris[]>, rpcs?: Record<string, RpcTiruan>) {
   const catatan: CatatanStatement[] = [];
+  const catatanRpc: { nama: string; args: Record<string, unknown> }[] = [];
   const client = {
+    ...(rpcs ? { rpc: async (nama: string, args: Record<string, unknown>) => {
+      catatanRpc.push({ nama, args });
+      const fn = rpcs[nama];
+      return fn ? fn(args) : { data: null, error: { message: `Could not find the function public.${nama} in the schema cache`, code: "PGRST202" } };
+    } } : {}),
     auth: { getUser: async () => ({ data: { user: { id: "pengguna" } }, error: null }) },
     from(table: string) {
       const filters: ((b: Baris) => boolean)[] = [];
@@ -32,5 +41,5 @@ export function bikinKlienTiruan(tables: Record<string, Baris[]>) {
       return q;
     },
   };
-  return { client, catatan };
+  return { client, catatan, catatanRpc };
 }

@@ -79,3 +79,16 @@ it("passes the clinic Semua selection through the page, links and export route",
   await GET(new Request("https://example.test/laporan/penjualan-barang/unduh?dari=2026-10-01&sampai=2026-10-04&kanal=POS&jenis=Semua&format=csv"));
   expect(mocks.load).toHaveBeenLastCalledWith(expect.objectContaining({ kanal: "POS", jenis: "Barang" }));
 });
+
+it("unduhan Kasir: kegagalan baca memberi status dan pesan spesifik (batas waktu 504, izin 403, lainnya 400), bukan satu pesan umum", async () => {
+  const gagal = (kodeError: string, pesanError: string) => ({ rows: [], cabangOptions: [], pelaksanaOptions: [], pesanError, kodeError, nilaiTotal: 0, qtyTotal: 0, ringkasan: ringkasKategori([]), kategoriOptions: [] });
+  const url = "https://example.test/laporan/penjualan-barang/unduh?dari=2026-11-01&sampai=2026-11-22&kanal=POS&jenis=Barang&format=xlsx";
+  mocks.load.mockResolvedValueOnce(gagal("batas_waktu", "Laporan melewati batas waktu database sebelum selesai dibaca."));
+  const waktu = await GET(new Request(url));
+  expect(waktu.status).toBe(504);
+  expect(await waktu.json()).toEqual({ error: "Laporan melewati batas waktu database sebelum selesai dibaca." });
+  mocks.load.mockResolvedValueOnce(gagal("izin", "Akun ini tidak punya izin membaca data laporan ini."));
+  expect((await GET(new Request(url))).status).toBe(403);
+  mocks.load.mockResolvedValueOnce(gagal("umum", "Laporan belum bisa dibaca."));
+  expect((await GET(new Request(url))).status).toBe(400);
+});
