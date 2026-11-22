@@ -8,6 +8,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { jenisLaporan } from "@/lib/laporan-penjualan-barang";
 import { KOLOM_ACCURATE, amankanSel, barisAccurate, barisTabelRingkasan } from "@/lib/laporan-kategori-penjualan";
 import { KANAL_SEMUA, type Kanal } from "@/lib/laporan-transaksi";
+import { statusGalatLaporan } from "@/lib/laporan-galat";
 import { ambilPenjualanBarang, waktuWIB } from "../data";
 
 function tambahRingkasanKategori(book: ExcelJS.Workbook, ringkasan: Parameters<typeof barisTabelRingkasan>[0]) {
@@ -49,8 +50,8 @@ export async function GET(request: Request) {
   const cabangId = (params.get("cabang_id") ?? "").slice(0, 80);
   const pelaksanaId = (params.get("pelaksana_id") ?? "").slice(0, 80);
   const kategori = (params.get("kategori") ?? "").trim().slice(0, 80);
-  const { rows, cabangOptions, pelaksanaOptions = [], pesanError, nilaiTotal, qtyTotal, ringkasan } = await ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId, pelaksanaId, ...(kategori ? { kategori } : {}) });
-  if (pesanError) return NextResponse.json({ error: pesanError }, { status: 400 });
+  const { rows, cabangOptions, pelaksanaOptions = [], pesanError, kodeError, nilaiTotal, qtyTotal, ringkasan } = await ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, cabangId, pelaksanaId, ...(kategori ? { kategori } : {}) });
+  if (pesanError) return NextResponse.json({ error: pesanError }, { status: statusGalatLaporan(kodeError) });
 
   const headers = {
     "Cache-Control": "private, no-store",

@@ -15,6 +15,8 @@ import { hrefInvoiceKlinik } from "@/lib/tautan-dokumen";
 import type { ServicePerformersSnapshot } from "@/lib/service-performers";
 import type { BarisPenjual } from "@/lib/laporan-tenaga-penjual";
 import { bacaAnakPerInduk } from "@/lib/laporan-baca-berkelompok";
+import { bacaStrukKasirCepat } from "@/lib/laporan-struk-kasir";
+import { klasifikasiGalatLaporan } from "@/lib/laporan-galat";
 import { BATAS_BACA_LAPORAN, petaBerbatas } from "@/lib/konkuren-batas";
 
 // Penarikan data laporan Penjualan per Tenaga Penjual.
@@ -189,7 +191,26 @@ async function bacaItemKlinik(supabase: any, mulai: string, akhir: string, caban
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function bacaItemKasir(supabase: any, mulai: string, akhir: string, cabangId: string): Promise<SaleItemRow[]> {
+async function bacaItemKasir(supabase: any, dari: string, sampai: string, mulai: string, akhir: string, cabangId: string): Promise<SaleItemRow[]> {
+  // Jalur utama: satu fungsi baca-saja di database per rentang 7 hari (migrasi 20261202200000, hak baca sama dengan RLS).
+  const cepat = await bacaStrukKasirCepat(supabase, { dari, sampai, cabangId });
+  if (cepat) {
+    const perStruk = new Map(cepat.sales.map(s => [s.id, {
+      id: s.id, branch_id: s.branch_id, no_struk: s.no_struk, created_at: s.created_at, total: s.total,
+      merchant_fee_total: s.merchant_fee_total, salesperson_id: s.salesperson_id, cashier_id: s.cashier_id,
+      payment_plan: s.payment_plan, payments_finalized_at: s.payments_finalized_at, voided_at: s.voided_at,
+      branches: s.branches, customers: s.customers,
+    } as unknown as SaleInduk] as const));
+    return cepat.items.map(i => {
+      const sale = perStruk.get(i.sale_id);
+      if (!sale) throw new Error("Struk sumber baris laporan tidak dapat diverifikasi.");
+      return {
+        id: i.id, nama: i.nama, qty: i.qty, harga: i.harga, item_id: i.item_id, satuan: i.satuan, faktor: i.faktor,
+        item_discount_type: i.item_discount_type, item_discount_value: i.item_discount_value, promo_discount: i.promo_discount,
+        service_performers: i.service_performers as ServicePerformersSnapshot | null, sales: sale,
+      } as SaleItemRow;
+    });
+  }
   const struk = await readReportRows<SaleInduk>(async (awal, ujung) => {
     const query = supabase.from("sales")
       .select("id, branch_id, no_struk, created_at, total, merchant_fee_total, salesperson_id, cashier_id, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name)", { count: "exact" })
@@ -287,7 +308,7 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
 
     const [invoiceItems, saleItems, grosirItems, karyawanRows, cabangRows] = await Promise.all([
       bacaItemKlinik(supabase, mulai, akhir, cabangId),
-      bacaItemKasir(supabase, mulai, akhir, cabangId),
+      bacaItemKasir(supabase, dari, sampai, mulai, akhir, cabangId),
       bacaItemGrosir(supabase, dari, sampai, cabangId),
       completeReportQuery(supabase.from("employees")
         .select("id, nama, jabatan, status, profile_id, branches!employees_branch_id_fkey(name)", { count: "exact" })),
@@ -628,8 +649,8 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
     };
   } catch (error) {
     console.error("Laporan penjualan per tenaga penjual gagal:", error);
-    return kosong(error instanceof Error && error.message.startsWith("Periode memuat")
-      ? error.message
-      : "Laporan belum bisa dibaca. Coba lagi atau pilih rentang tanggal lebih pendek.");
+    const galat = klasifikasiGalatLaporan(error);
+    return kosong(galat.kode === "periode" ? galat.pesan
+      : galat.kode === "umum" ? "Laporan belum bisa dibaca. Coba lagi atau pilih rentang tanggal lebih pendek." : galat.pesan);
   }
 }

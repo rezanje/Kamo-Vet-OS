@@ -9,6 +9,8 @@ import { jenisBarisKlinik, perluCocokNamaRacikan, SEMUA_JENIS_KLINIK, type Jenis
 import { namaRacikanPerKunjungan } from "@/lib/racikan-klinik-server";
 import { BATAS_BACA_LAPORAN, petaBerbatas } from "@/lib/konkuren-batas";
 import { bacaAnakPerInduk } from "@/lib/laporan-baca-berkelompok";
+import { bacaStrukKasirCepat } from "@/lib/laporan-struk-kasir";
+import { klasifikasiGalatLaporan, type KodeGalatLaporan } from "@/lib/laporan-galat";
 import type { Kanal } from "@/lib/laporan-transaksi";
 import { fakturGrosirOmzet, hppBarisGrosir, nilaiBarisGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "@/lib/laporan-grosir";
 import { isCompletedSale, type SaleCompletion } from "@/lib/sale-payment-reporting";
@@ -204,12 +206,30 @@ type SaleInduk = NonNullable<Exclude<SaleItem["sales"], unknown[]>>;
 const KOLOM_ITEM_KASIR = "id, sale_id, nama, qty, harga, item_id, item_discount_type, item_discount_value, promo_discount, service_performers";
 
 /**
- * Baris struk kasir dalam periode. Sama dengan invoice klinik: struk dibaca sekali, lalu item per kelompok 100 id struk
- * bersamaan, bukan satu query gabungan `sale_items x sales` per halaman 500 (±3-6 dtk per query, 30+ query).
- * Hasil (baris, urutan id, isi struk) sama dengan gabungan lama.
+ * Baris struk kasir dalam periode. Jalur utama: satu fungsi baca-saja di database (migrasi 20261202200000, hak baca sama
+ * dengan RLS) per rentang 7 hari, bukan ±115 query (struk per halaman 500 + hitungan pasti + item per 100 id struk) yang
+ * memeriksa hak cabang per baris dan melewati batas 8 detik database pada periode panjang.
+ * Jalur lama (struk sekali, item per kelompok 100 id struk) hanya dipakai bila fungsinya belum ada. Isi baris sama.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function bacaItemKasir(supabase: any, mulai: string, akhir: string, saringCabang: string): Promise<SaleItem[]> {
+async function bacaItemKasir(supabase: any, dari: string, sampai: string, mulai: string, akhir: string, saringCabang: string): Promise<SaleItem[]> {
+  const cepat = await bacaStrukKasirCepat(supabase, { dari, sampai, cabangId: saringCabang });
+  if (cepat) {
+    const perStruk = new Map(cepat.sales.map(s => [s.id, {
+      id: s.id, branch_id: s.branch_id, no_struk: s.no_struk, created_at: s.created_at, channel: s.channel, total: s.total,
+      merchant_fee_total: s.merchant_fee_total, payment_plan: s.payment_plan, payments_finalized_at: s.payments_finalized_at,
+      voided_at: s.voided_at, branches: s.branches, customers: s.customers,
+    } as unknown as SaleInduk] as const));
+    return cepat.items.map(i => {
+      const sale = perStruk.get(i.sale_id);
+      if (!sale) throw new Error("Struk sumber baris laporan tidak dapat diverifikasi.");
+      return {
+        id: i.id, nama: i.nama, qty: i.qty, harga: i.harga, item_id: i.item_id,
+        item_discount_type: i.item_discount_type, item_discount_value: i.item_discount_value, promo_discount: i.promo_discount,
+        service_performers: i.service_performers as ServicePerformersSnapshot | null, sales: sale,
+      } as SaleItem;
+    });
+  }
   const struk = await readReportRows<SaleInduk>(async (awal, ujung) => {
     const query = supabase.from("sales")
       .select("id, branch_id, no_struk, created_at, channel, total, merchant_fee_total, payment_plan, payments_finalized_at, voided_at, branches(name), customers(name)", { count: "exact" })
@@ -287,7 +307,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
    * kumpulan yang sama.
    */
   saringCabangDiQuery?: boolean;
-}): Promise<{ rows: Baris[]; cabangOptions: { id: string; name: string }[]; pelaksanaOptions: PilihanPelaksana[]; pesanError: string; nilaiTotal: number; qtyTotal: number; ringkasan: RingkasanKategori; kategoriOptions: string[] }> {
+}): Promise<{ rows: Baris[]; cabangOptions: { id: string; name: string }[]; pelaksanaOptions: PilihanPelaksana[]; pesanError: string; kodeError?: KodeGalatLaporan; nilaiTotal: number; qtyTotal: number; ringkasan: RingkasanKategori; kategoriOptions: string[] }> {
   const tanggalSalah = !tanggalValid(dari) || !tanggalValid(sampai) || dari > sampai;
   const { mulai, akhir } = batasTanggalWIB(dari, sampai);
   const rows: Baris[] = [];
@@ -295,6 +315,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
   const itemIdBaris = new Map<string, string | null>();
   const pilihanPelaksana = new Map<string, PilihanPelaksana>();
   let pesanError = tanggalSalah ? "Rentang tanggal tidak valid. Periksa tanggal awal dan akhir." : "";
+  let kodeError: KodeGalatLaporan | undefined;
   if (!tanggalSalah) {
     try {
       const supabase = await createClient();
@@ -304,7 +325,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
       const bacaGrosir = kanal === "Grosir";
       const [{ items: invoiceItems, demoFees, namaRacikan }, saleItems, grosirItems] = await Promise.all([
         bacaKlinik ? bacaInvoiceKlinik(supabase, mulai, akhir, saringCabang) : Promise.resolve({ items: [] as InvoiceItem[], demoFees: new Map<string, number>(), namaRacikan: new Set<string>() }),
-        bacaKasir ? bacaItemKasir(supabase, mulai, akhir, saringCabang) : Promise.resolve([] as SaleItem[]),
+        bacaKasir ? bacaItemKasir(supabase, dari, sampai, mulai, akhir, saringCabang) : Promise.resolve([] as SaleItem[]),
         // Faktur grosir disaring lewat tanggal faktur (date, sudah WIB), bukan created_at.
         bacaGrosir ? bacaItemGrosir(supabase, dari, sampai) : Promise.resolve([] as GrosirItem[]),
       ]);
@@ -466,8 +487,9 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
       }
     } catch (error) {
       console.error("Laporan penjualan per barang gagal:", error);
-      pesanError = error instanceof Error && error.message.startsWith("Periode memuat")
-        ? error.message : "Laporan belum bisa dibaca. Coba lagi atau pilih periode lebih pendek.";
+      const galat = klasifikasiGalatLaporan(error);
+      pesanError = galat.pesan;
+      kodeError = galat.kode;
     }
   }
 
@@ -488,5 +510,5 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
   const qtyTotal = terpilih.reduce((sum, row) => sum + row.qty, 0);
   // Baris anak BMHP menyusul induknya dan tidak pernah ikut menghitung total.
   const dengan = terpilih.flatMap(row => [row, ...(anakBmhp.get(row.id) ?? [])]);
-  return { rows: dengan, cabangOptions, pelaksanaOptions, pesanError, nilaiTotal, qtyTotal, ringkasan: ringkasKategori(terpilih), kategoriOptions };
+  return { rows: dengan, cabangOptions, pelaksanaOptions, pesanError, ...(kodeError ? { kodeError } : {}), nilaiTotal, qtyTotal, ringkasan: ringkasKategori(terpilih), kategoriOptions };
 }
