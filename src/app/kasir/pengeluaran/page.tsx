@@ -8,6 +8,7 @@ import { LampiranPicker } from "@/components/LampiranPicker";
 import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField";
 import { simpanPengeluaranKasir } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { KATEGORI_PENGELUARAN, badgeKategoriPengeluaran } from "@/lib/kategori-pengeluaran";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtTgl = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" });
@@ -21,14 +22,8 @@ type ExpenseRow = {
   metode_bayar: string;
 };
 
-const KATEGORI = ["Operasional", "Listrik & Air", "Perlengkapan", "Transportasi", "Perawatan", "Lain-lain"];
+const KATEGORI = KATEGORI_PENGELUARAN;
 const METODE = ["Tunai", "QRIS", "Transfer"];
-
-// Warna badge per kategori (mengikuti mockup pengeluaran petshop).
-const KAT_BADGE: Record<string, string> = {
-  "Operasional": "b", "Listrik & Air": "g", "Perlengkapan": "o",
-  "Transportasi": "pu", "Perawatan": "pk", "Lain-lain": "x",
-};
 
 // Pengeluaran dari dunia kasir — dibatasi ke cabang shift yang sedang terbuka (tanpa pilihan cabang).
 export default async function PengeluaranKasirPage({
@@ -150,7 +145,7 @@ export default async function PengeluaranKasirPage({
                   <tr key={r.id}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTgl(r.tanggal)}</td>
-                    <td style={{ fontSize: 11 }}><span className={`bge ${KAT_BADGE[r.kategori] ?? "x"}`}>{r.kategori}</span></td>
+                    <td style={{ fontSize: 11 }}><span className={`bge ${badgeKategoriPengeluaran(r.kategori)}`}>{r.kategori}</span></td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.deskripsi || "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(Number(r.jumlah))}</td>
                     <td style={{ fontSize: 11 }}>{r.metode_bayar}</td>

@@ -1,10 +1,7 @@
-// Kategori beban → akun COA (konsisten dgn pencatatan pengeluaran kasir).
-export const KATEGORI_BEBAN: Record<string, string> = {
-  "Listrik & Air": "720002",
-  "Perlengkapan": "740001",
-  "Transportasi": "740003",
-  "Perawatan Aset": "740007",
-  "Sewa Gedung": "760003",
-  "Operasional": "760003",
-  "Lain-lain": "760003",
-};
+// Kategori beban → akun COA (sama persis dengan pencatatan pengeluaran kasir; sumber: lib/kategori-pengeluaran).
+import { AKUN_KATEGORI_LAMA, AKUN_KATEGORI_PENGELUARAN, KATEGORI_PENGELUARAN_BACKOFFICE } from "@/lib/kategori-pengeluaran";
+
+const SEMUA: Record<string, string> = { ...AKUN_KATEGORI_LAMA, ...AKUN_KATEGORI_PENGELUARAN };
+export const KATEGORI_BEBAN: Record<string, string> = Object.fromEntries(
+  KATEGORI_PENGELUARAN_BACKOFFICE.map((k) => [k, SEMUA[k]]),
+);
