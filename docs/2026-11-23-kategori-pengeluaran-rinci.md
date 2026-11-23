@@ -9,9 +9,12 @@ Beban Operasional Lain), padahal kasir input per kategori.
   Transportasi→740003, Perawatan→740007. Hanya Operasional, Lain-lain, Sewa Gedung → 760003.
 - Tetapi ±67% transaksi (±Rp16 jt dari ±Rp27,7 jt) diinput sebagai Operasional/Lain-lain → menumpuk di 760003.
 - "Listrik & Air" seluruhnya ke Beban Listrik; Beban Air 720003 tidak pernah terpakai.
-- Temuan samping: 13 pengeluaran klinik tgl 1–2 Nov (±Rp1,27 jt) tersimpan tanpa jurnal (`journal_entry_id` null,
-  dibuat sebelum migrasi `20261106060000_pengeluaran_klinik_lampiran`). Belum diperbaiki — menunggu persetujuan
-  pemilik karena mengubah angka buku November.
+- Temuan samping: 13 pengeluaran klinik tgl 1–2 Nov (±Rp1,27 jt) tampak tanpa jurnal karena `journal_entry_id`
+  kosong. Pemeriksaan lanjut: jurnalnya **sudah ada** (`source='expense'`, `source_ref`=id pengeluaran, nominal dan
+  akun benar; kredit 110003 sama seperti semua pengeluaran sebelum kas per cabang 6 Nov). Yang hilang hanya tautan.
+  Disambungkan oleh migrasi `20261123085116_sambung_jurnal_pengeluaran_klinik_awal_nov.sql` (disetujui pemilik,
+  diterapkan ke Production 23 Nov) — tidak ada jurnal/angka yang dibuat atau diubah. Sesudahnya: 0 pengeluaran aktif
+  tanpa tautan jurnal.
 
 ## Perubahan
 - Kategori baru (rincian dari Anisa) dan akunnya:
