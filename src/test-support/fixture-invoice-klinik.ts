@@ -7,7 +7,7 @@ export const idKlinik = (n: number) => `00000000-0000-4000-8000-${String(n).padS
 export const CABANG_KLINIK = ["cab-a", "cab-b", "cab-c"];
 export const JUMLAH_INVOICE_KLINIK = 300;
 
-export function bikinTabelInvoiceKlinik(): TabelInvoiceKlinik & { branches: { id: string; name: string }[]; employees: Record<string, unknown>[] } {
+export function bikinTabelInvoiceKlinik(): Required<TabelInvoiceKlinik> & { branches: { id: string; name: string }[]; employees: Record<string, unknown>[] } {
   const invoices: Record<string, unknown>[] = [];
   const invoice_items: Record<string, unknown>[] = [];
   const clinic_demo_invoice_snapshots: Record<string, unknown>[] = [];

@@ -10,7 +10,7 @@ export type TabelInvoiceKlinik = {
 const urut = (a: Baris, b: Baris) => String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0;
 
 export function rpcInvoiceKlinikTiruan(tables: TabelInvoiceKlinik, boleh: string[] | null = null) {
-  return (args: Record<string, unknown>) => {
+  return (args: Record<string, unknown>): { data: unknown; error: { message: string; code?: string } | null } => {
     const dari = new Date(String(args.p_from)).getTime();
     const sampai = new Date(String(args.p_to)).getTime();
     const cabang = (args.p_branch_id as string | null) ?? null;
