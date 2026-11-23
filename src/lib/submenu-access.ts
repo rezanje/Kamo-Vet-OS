@@ -128,6 +128,7 @@ export const SUBMENU_ENTRIES: readonly SubmenuEntry[] = [
   e("pos", "penyesuaian", ["/pos/penyesuaian"]),
   e("pos", "produksi", ["/pos/produksi"], "Produksi own brand (pekerjaan dan penyelesaian pesanan)"),
   e("pos", "opname", ["/pos/opname"], "Stok opname (perintah dan hasil)"),
+  e("pos", "inventaris-operasional", ["/pos/inventaris-operasional"]),
   e("pos", "sku", ["/pos/sku"]),
   e("pos", "sku-varian", ["/pos/sku/varian"]),
   e("pos", "sku-impor", ["/pos/sku/impor"]),
