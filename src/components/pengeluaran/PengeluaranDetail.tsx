@@ -52,6 +52,10 @@ export async function PengeluaranDetail({
 
   const exp = data as unknown as Expense | null;
   if (!exp) notFound();
+  // Jejak tanggal mundur (tidak dapat diubah): pelaku sudah ada di "Dibuat oleh"; di sini alasan dan waktu nyata. Galat baca tidak menghalangi detail.
+  const { data: jejakRaw } = await supabase.from("expense_backdates").select("effective_date, reason, recorded_at").eq("expense_id", exp.id).maybeSingle();
+  const jejak = jejakRaw && !Array.isArray(jejakRaw) && typeof (jejakRaw as { reason?: unknown }).reason === "string"
+    ? jejakRaw as unknown as { effective_date: string; reason: string; recorded_at: string } : null;
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle() : { data: null };
   const canManage = !!profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
@@ -83,6 +87,11 @@ export async function PengeluaranDetail({
         </div>
       )}
       {exp.voided_at && <div className="p2ban" role="status">Pengeluaran dibatalkan. {exp.void_reason}</div>}
+      {jejak && (
+        <div className="p2ban" role="status" data-testid="jejak-tanggal-mundur">
+          Dicatat mundur: tanggal pengeluaran {fmtTgl(jejak.effective_date)}, diinput {new Date(jejak.recorded_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" })} WIB. Alasan: {jejak.reason}
+        </div>
+      )}
       {error && (
         <div className="p2ban" style={{ background: "#fef2f2", border: ".5px solid #fca5a5", color: "#b91c1c" }}>
           <i className="ti ti-alert-circle" /> {error}

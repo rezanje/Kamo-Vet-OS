@@ -2,7 +2,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const fixture = vi.hoisted(() => ({ role: "FINANCE", shift: "open", closed: null as string | null }));
+const fixture = vi.hoisted(() => ({ role: "FINANCE", shift: "open", closed: null as string | null, backdate: null as null | { effective_date: string; reason: string; recorded_at: string } }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw Error("notFound"); } }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props}>{children}</a> }));
 vi.mock("@/components/dokumen/DokumenPanel", () => ({ DokumenPanel: () => <div>Proof remains available</div> }));
@@ -13,7 +13,8 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
     const data = table === "expenses" ? { id: "ee400000-0000-4000-8000-000000000001", tanggal: "2026-10-15", kategori: "Operasional", deskripsi: "Cashier expense", jumlah: 25000, metode_bayar: "Tunai", revision: 0, voided_at: null, shift_id: "shift", branches: { name: "Cabang" }, pembuat: { full_name: "POS cashier" } }
       : table === "profiles" ? { role: fixture.role, is_active: true }
         : table === "cashier_shifts" ? { status: fixture.shift }
-          : table === "accounting_locks" ? { closed_until: fixture.closed } : [];
+          : table === "accounting_locks" ? { closed_until: fixture.closed }
+            : table === "expense_backdates" ? fixture.backdate : [];
     const query = { select: () => query, eq: () => query, order: () => query, maybeSingle: async () => ({ data, error: null }),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve) };
     return query;
@@ -21,7 +22,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
 }) }));
 import { PengeluaranDetail } from "@/components/pengeluaran/PengeluaranDetail";
 let host: HTMLDivElement, root: Root;
-beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); sessionStorage.clear(); fixture.role = "FINANCE"; fixture.shift = "open"; fixture.closed = null; host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
+beforeEach(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); sessionStorage.clear(); fixture.role = "FINANCE"; fixture.shift = "open"; fixture.closed = null; fixture.backdate = null; host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 async function render() { const detail = await PengeluaranDetail({ id: "ee400000-0000-4000-8000-000000000001", kembaliHref: "/buku-besar/beban", kembaliLabel: "Kembali" }); await act(async () => root.render(detail)); }
 
@@ -40,3 +41,11 @@ it("lets finance and owner correct an expense after its shift is closed", async 
 it("explains why admin cannot change an expense from a closed shift", async () => { fixture.role = "ADMIN"; fixture.shift = "closed"; await render(); expect(host.textContent).toContain("hanya dapat dilakukan Owner atau Finance"); expect(host.textContent).not.toContain("Simpan Perubahan"); });
 it("lets admin correct an expense while the shift is open", async () => { fixture.role = "ADMIN"; await render(); expect(host.textContent).toContain("Simpan Perubahan"); expect(host.textContent).not.toContain("angka tutup shift"); });
 it("explains the accounting period lock before offering a correction", async () => { fixture.closed = "2026-10-15"; await render(); expect(host.textContent).toContain("Periode akuntansi"); expect(host.textContent).not.toContain("Simpan Perubahan"); });
+
+it("shows the immutable backdate trail (reason and real time) on a backdated expense, nothing on a normal one", async () => {
+  await render(); expect(host.querySelector('[data-testid="jejak-tanggal-mundur"]')).toBeNull();
+  fixture.backdate = { effective_date: "2026-10-15", reason: "Nota listrik terlupa diinput", recorded_at: "2026-10-18T03:00:00Z" };
+  await render();
+  const note = host.querySelector('[data-testid="jejak-tanggal-mundur"]')!;
+  expect(note.textContent).toContain("Dicatat mundur"); expect(note.textContent).toContain("Nota listrik terlupa diinput"); expect(note.textContent).toContain("WIB");
+});

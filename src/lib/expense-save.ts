@@ -1,12 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { parseLampiran } from "@/lib/dokumen";
 import { hariIniWIB } from "@/lib/tanggal";
+import { cekTanggalMundur, penolakanTanggalMundurDB } from "@/lib/tanggal-mundur";
 
 const KEY_REUSED_MESSAGE = "Permintaan sudah digunakan dengan rincian berbeda";
 
 /** A deterministic refusal returned (not thrown): production masks thrown action errors as a generic
  * "Server Components render" digest, so the cashier could neither read nor recover from this one. */
-export type ExpenseRejection = { ok: false; outcome: "rejected"; code: "stale_request_key"; message: string };
+export type ExpenseRejection = { ok: false; outcome: "rejected"; code: "stale_request_key" | "backdate_invalid" | "backdate_rejected"; message: string };
 export const isExpenseRejection = (value: unknown): value is ExpenseRejection =>
   typeof value === "object" && value !== null && (value as ExpenseRejection).ok === false;
 
@@ -23,6 +24,11 @@ export async function saveExpense(formData: FormData, context: "cashier" | "clin
   if (Number(jumlah.toFixed(2)) !== jumlah) throw new Error("Jumlah pengeluaran maksimal 2 angka desimal.");
   if (!kategori) throw new Error("Pilih kategori dulu.");
   if (!lampiran.length) throw new Error("Lampiran bukti wajib diisi sebelum pengeluaran bisa disimpan.");
+  // Tanggal mundur (semua akun yang boleh input pengeluaran): alasan wajib, paling lama 31 hari, bukan masa depan.
+  // Penolakan DIKEMBALIKAN (bukan dilempar): galat yang dilempar disamarkan Next.js di produksi.
+  const today = hariIniWIB();
+  const tgl = cekTanggalMundur({ tanggal: String(formData.get("tanggal") ?? ""), alasan: String(formData.get("alasan_tanggal") ?? ""), today });
+  if (!tgl.ok) return { ok: false, outcome: "rejected", code: "backdate_invalid", message: tgl.message };
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("post_expense_atomic", {
     p_request_key: requestKey,
@@ -30,7 +36,8 @@ export async function saveExpense(formData: FormData, context: "cashier" | "clin
     // A cashier (petshop or clinic) cannot choose a branch; the RPC locks and reads their open shift.
     p_branch_id: context !== "backoffice" ? null : String(formData.get("branchId") ?? "") || null,
     p_expense: {
-      tanggal: String(formData.get("tanggal") ?? "") || hariIniWIB(), kategori,
+      tanggal: tgl.tanggal, kategori,
+      ...(tgl.mundur ? { alasan_tanggal: tgl.alasan } : {}),
       deskripsi: String(formData.get("deskripsi") ?? "").trim() || null,
       jumlah, metode_bayar: String(formData.get("metode_bayar") ?? "Tunai"),
       ...(context === "backoffice" && String(formData.get("account_id") ?? "").trim()
@@ -42,6 +49,8 @@ export async function saveExpense(formData: FormData, context: "cashier" | "clin
     return { ok: false, outcome: "rejected", code: "stale_request_key",
       message: "Kunci simpan lama sudah dipakai pengeluaran lain yang tersimpan sebelumnya. Pengeluaran ini BELUM tersimpan. Kunci sudah diganti otomatis; periksa isian lalu tekan Simpan sekali lagi." };
   }
+  const mundurDitolak = error ? penolakanTanggalMundurDB(error.message, tgl.mundur) : null;
+  if (mundurDitolak) return { ok: false, outcome: "rejected", code: "backdate_rejected", message: mundurDitolak };
   if (error) throw new Error(error.message || "Gagal menyimpan pengeluaran. Draf tetap tersedia.");
   if (!data?.expense_id || !data?.journal_id) throw new Error("Pengeluaran dan jurnal belum terkonfirmasi lengkap. Periksa daftar lalu coba lagi dengan draf yang sama.");
   return data as { expense_id: string; journal_id: string };

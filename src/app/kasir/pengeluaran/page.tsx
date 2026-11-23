@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getOpenShift } from "@/lib/shift";
 import { LampiranPicker } from "@/components/LampiranPicker";
+import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField";
 import { simpanPengeluaranKasir } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 
@@ -98,8 +99,7 @@ export default async function PengeluaranKasirPage({
           <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--posb)", marginBottom: 12, letterSpacing: ".03em" }}>TAMBAH PENGELUARAN</div>
           <ExpenseForm userId={user.id} scope={`cashier-expense:${shift.id}`} action={simpanPengeluaranKasir}>
             <div style={{ marginBottom: 10 }}>
-              <label className="flab">Tanggal *</label>
-              <input className="fi" name="tanggal" type="date" defaultValue={today} required />
+              <TanggalMundurField today={today} konteks="cashier" />
             </div>
             <div style={{ marginBottom: 10 }}>
               <label className="flab">Kategori *</label>
