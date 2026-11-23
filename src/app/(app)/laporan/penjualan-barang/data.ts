@@ -5,11 +5,12 @@ import { allowedBranchIds } from "@/lib/branch-access";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
 import { lineDiscount } from "@/lib/pos-calc";
 import { PosDecimal } from "@/lib/pos-money";
-import { jenisBarisKlinik, perluCocokNamaRacikan, SEMUA_JENIS_KLINIK, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
+import { jenisBarisKlinik, kunciRacikan, perluCocokNamaRacikan, SEMUA_JENIS_KLINIK, type JenisBarisPenjualan } from "@/lib/laporan-penjualan-barang";
 import { namaRacikanPerKunjungan } from "@/lib/racikan-klinik-server";
 import { BATAS_BACA_LAPORAN, petaBerbatas } from "@/lib/konkuren-batas";
 import { bacaAnakPerInduk } from "@/lib/laporan-baca-berkelompok";
 import { bacaStrukKasirCepat } from "@/lib/laporan-struk-kasir";
+import { bacaInvoiceKlinikCepat } from "@/lib/laporan-invoice-klinik";
 import { klasifikasiGalatLaporan, type KodeGalatLaporan } from "@/lib/laporan-galat";
 import type { Kanal } from "@/lib/laporan-transaksi";
 import { fakturGrosirOmzet, hppBarisGrosir, nilaiBarisGrosir, SELECT_FAKTUR_GROSIR, type FakturGrosirInti } from "@/lib/laporan-grosir";
@@ -165,7 +166,33 @@ const KOLOM_ITEM_KLINIK = "id, invoice_id, deskripsi, qty, harga, diskon_persen,
  * secara bersamaan (batas kecil). Hasil akhirnya (baris, urutan id, isi invoice) sama dengan gabungan lama.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function bacaInvoiceKlinik(supabase: any, mulai: string, akhir: string, saringCabang: string): Promise<{ items: InvoiceItem[]; demoFees: Map<string, number>; namaRacikan: Set<string> }> {
+async function bacaInvoiceKlinik(supabase: any, dari: string, sampai: string, mulai: string, akhir: string, saringCabang: string): Promise<{ items: InvoiceItem[]; demoFees: Map<string, number>; namaRacikan: Set<string> }> {
+  // Jalur utama: satu fungsi baca-saja di database per rentang 7 hari (migrasi 20261203100000, hak baca sama dengan RLS) —
+  // invoice, kunjungan, item, snapshot DEMO, dan nama racikan sekaligus. Jalur lama di bawah hanya bila fungsinya belum ada.
+  const cepat = await bacaInvoiceKlinikCepat(supabase, { dari, sampai, cabangId: saringCabang });
+  if (cepat) {
+    const perIdCepat = new Map(cepat.invoices.map(i => [i.id, {
+      id: i.id, visit_id: i.visit_id, invoice_no: i.invoice_no, created_at: i.created_at, paid_status: i.paid_status,
+      subtotal: i.subtotal, discount: i.discount,
+      visits: { branch_id: i.visits.branch_id, branches: i.visits.branches, customers: i.visits.customers, pets: i.visits.pets },
+    } as unknown as InvoiceInduk] as const));
+    const biayaDemo = new Map<string, number>();
+    for (const snapshot of cepat.demo) {
+      if (snapshot.fee_bearer === "customer" && Number(snapshot.fee_amount) > 0) biayaDemo.set(snapshot.invoice_id, Number(snapshot.fee_amount));
+    }
+    return {
+      items: cepat.items.map(i => {
+        const invoice = perIdCepat.get(i.invoice_id);
+        if (!invoice) throw new Error("Invoice sumber baris laporan tidak dapat diverifikasi.");
+        return {
+          id: i.id, deskripsi: i.deskripsi, qty: i.qty, harga: i.harga, diskon_persen: i.diskon_persen, jenis: i.jenis, item_id: i.item_id,
+          compound_recipe_id: i.compound_recipe_id, bmhp_components: i.bmhp_components, service_performers: i.service_performers, invoices: invoice,
+        } as unknown as InvoiceItem;
+      }),
+      demoFees: biayaDemo,
+      namaRacikan: new Set(cepat.racikan.map(r => kunciRacikan(r.visit_id, r.recipe_name))),
+    };
+  }
   const invoices = await readReportRows<InvoiceInduk>(async (awal, ujung) => {
     const query = supabase.from("invoices")
       .select(`id, visit_id, invoice_no, created_at, paid_status, subtotal, discount, visits${saringCabang ? "!inner" : ""}(branch_id, branches(name), customers(name), pets(name))`, { count: "exact" })
@@ -324,7 +351,7 @@ export async function ambilPenjualanBarang({ dari, sampai, kanal, jenis, q, caba
       const bacaKasir = kanal === "POS" || kanal === "Online";
       const bacaGrosir = kanal === "Grosir";
       const [{ items: invoiceItems, demoFees, namaRacikan }, saleItems, grosirItems] = await Promise.all([
-        bacaKlinik ? bacaInvoiceKlinik(supabase, mulai, akhir, saringCabang) : Promise.resolve({ items: [] as InvoiceItem[], demoFees: new Map<string, number>(), namaRacikan: new Set<string>() }),
+        bacaKlinik ? bacaInvoiceKlinik(supabase, dari, sampai, mulai, akhir, saringCabang) : Promise.resolve({ items: [] as InvoiceItem[], demoFees: new Map<string, number>(), namaRacikan: new Set<string>() }),
         bacaKasir ? bacaItemKasir(supabase, dari, sampai, mulai, akhir, saringCabang) : Promise.resolve([] as SaleItem[]),
         // Faktur grosir disaring lewat tanggal faktur (date, sudah WIB), bukan created_at.
         bacaGrosir ? bacaItemGrosir(supabase, dari, sampai) : Promise.resolve([] as GrosirItem[]),

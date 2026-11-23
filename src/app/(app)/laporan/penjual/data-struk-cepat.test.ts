@@ -43,7 +43,7 @@ for (const [dari, sampai, cabangId] of [["2026-11-01", "2026-11-30", ""], ["2026
     expect(hasilBaru.rows.length).toBeGreaterThan(0);
     expect(hasilBaru).toEqual(hasilLama);
     expect(sidik(hasilBaru)).toBe(sidik(hasilLama));
-    expect(baru.catatanRpc).toHaveLength(rentangHari(dari, sampai).length);
+    expect(baru.catatanRpc.filter(p => p.nama === STRUK_KASIR_RPC)).toHaveLength(rentangHari(dari, sampai).length);
     expect(baru.catatan.filter(c => c.table === "sales" || c.table === "sale_items")).toHaveLength(0);
   });
 }
