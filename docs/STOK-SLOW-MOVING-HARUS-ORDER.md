@@ -11,6 +11,21 @@ Hanya baca. Tidak mengubah uang, stok, atau data lain.
 - Akses Grup: sub-menu `laporan.stok-slow-moving` dan `laporan.stok-harus-order` (modul Daftar Laporan). Peran tanpa pembatasan sub-menu otomatis boleh;
   peran yang laporannya dipilih satu-satu (mis. ADMIN) dicentang Owner. Baris katalognya dipasang migrasi `20261117100000` SEBELUM aplikasi.
 
+## Filter gudang gabungan dan kategori (21 Nov 2026, laporan Andaru)
+- **Semua petshop / Semua klinik**: di pilihan "Hitung stok di" (kelompok "Gabungan"), URL `gudang=petshop` / `gudang=klinik`.
+  Petshop = semua gudang aktif jenis `RETAIL` (gudang toko); klinik = jenis `VET` (gudang klinik). DC, online (`WH_B2C`, `WH_ONLINE_*`),
+  transit dan expired TIDAK masuk keduanya; tetap terhitung di "Semua gudang digabung" dan bisa dipilih satu-satu. Aturan di `GRUP_GUDANG`
+  / `pilihGudang` (`src/lib/stok-analisis.ts`). Di data 21 Nov: 10 gudang toko, 10 gudang klinik aktif (termasuk VET PEJUANG).
+  Berlaku di dua halaman dan dua unduhan Excel (lembar Keterangan menulis lingkupnya).
+- Database: migrasi `20261204100000_stok_grup_gudang` menambah parameter terakhir `p_gudang_daftar uuid[]` (null = tidak membatasi)
+  pada `laporan_stok_analisis`; tanda tangan lama dihapus supaya PostgREST tidak melihat dua fungsi. Isi perhitungan sama persis.
+  Panggilan lama tetap jalan, jadi migrasi dipasang SEBELUM aplikasi. Aplikasi hanya mengirim `p_gudang_daftar` bila grup dipilih.
+  Uji: `scripts/test-stok-grup-gudang-postgres.py` (GREEN 14, `--baseline` RED 9/11, `--mutants` 9/9 mati).
+- **Pilihan kategori** hanya kategori induk yang memuat barang Persediaan (tidak dibuang) — sama dengan barang yang dihitung laporan.
+  Kategori jasa/tindakan/promo tanpa barang stok (PROMO DRY CAT, PROMO VACCINE, PROMO WET CAN, GROOMING, RAWAT INAP, ...) tidak ditawarkan lagi.
+  Catatan data 21 Nov: induk PROMO masih muncul karena memuat satu barang Persediaan ("Snack Google Rating", sub PROMO LAIN, stok 0);
+  akan hilang sendiri bila barang itu dipindah kategori / dijadikan non-persediaan di master barang.
+
 ## Sumber data
 Fungsi SQL `public.laporan_stok_analisis(gudang, jendela_hari, hari_ini)` (STABLE, SECURITY INVOKER, search_path kosong, hanya `authenticated`):
 satu agregasi, tanpa N+1. Hak baca dan batas cabang/gudang (RLS) mengikuti pemanggil.

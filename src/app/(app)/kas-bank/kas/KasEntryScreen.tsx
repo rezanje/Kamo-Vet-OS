@@ -17,12 +17,12 @@ function one<T>(r: Rel<T>): T | null {
 }
 
 type Baris = {
-  id: string; no_bukti: string; tanggal: string; jumlah: number; lawan_code: string; account_id: string; revision: number;
+  id: string; no_bukti: string; tanggal: string; jumlah: number; lawan_code: string; account_id: string; revision: number; branch_id: string | null;
   keterangan: string | null; voided_at: string | null;
   rekening: Rel<{ nama: string }>; branches: Rel<{ name: string }>;
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CASH_SELECT = "id, no_bukti, tanggal, jumlah, lawan_code, account_id, revision, keterangan, voided_at, rekening:account_id(nama), branches(name)";
+const CASH_SELECT = "id, no_bukti, tanggal, jumlah, lawan_code, account_id, revision, branch_id, keterangan, voided_at, rekening:account_id(nama), branches(name)";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtTgl = (d: string) =>
@@ -54,7 +54,7 @@ export async function KasEntryScreen({
   const keluar = jenis === "Keluar";
 
   const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }] = await Promise.all([
-    supabase.from("cash_accounts").select("id, nama, coa_code").eq("is_active", true).order("nama"),
+    supabase.from("cash_accounts").select("id, nama, coa_code, branch_id").eq("is_active", true).order("nama"),
     supabase.from("coa_accounts").select("code, name, type, is_header").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     supabase
@@ -64,7 +64,7 @@ export async function KasEntryScreen({
       .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(50),
   ]);
 
-  const rekening = (rekData ?? []) as { id: string; nama: string; coa_code: string }[];
+  const rekening = (rekData ?? []) as { id: string; nama: string; coa_code: string; branch_id: string | null }[];
   let cashRows = (rows ?? []) as unknown as Baris[];
   const byId = UUID.test(entry);
   const byProof = !byId && new RegExp(`^${jenis === "Masuk" ? "KM" : "KK"}[.\\-/][A-Za-z0-9.\\-/]*\\d{3,}$`).test(bukti);
@@ -94,7 +94,7 @@ export async function KasEntryScreen({
   type BarisGabung = {
     key: string; no: string; tanggal: string; rekening: string; akun: string;
     keterangan: string | null; jumlah: number; cabang: string;
-    dibatalkan: boolean; asal: "kas" | "beban"; id: string; accountId: string; lawanCode: string; revision: number;
+    dibatalkan: boolean; asal: "kas" | "beban"; id: string; accountId: string; lawanCode: string; revision: number; branchId: string | null;
   };
 
   // Rekening kas/bank dikeluarkan dari pilihan akun lawan — pindah antar rekening
@@ -119,7 +119,7 @@ export async function KasEntryScreen({
     akun: `${t.lawan_code} — ${namaAkun.get(t.lawan_code) ?? "—"}`,
     keterangan: t.keterangan, jumlah: Number(t.jumlah),
     cabang: one(t.branches)?.name ?? "Pusat",
-    dibatalkan: !!t.voided_at, asal: "kas", accountId: t.account_id, lawanCode: t.lawan_code, revision: t.revision,
+    dibatalkan: !!t.voided_at, asal: "kas", accountId: t.account_id, lawanCode: t.lawan_code, revision: t.revision, branchId: t.branch_id ?? null,
   }));
 
   const dariBeban: BarisGabung[] = ((bebanRows ?? []) as unknown as BebanRow[]).map((b) => ({
@@ -128,7 +128,7 @@ export async function KasEntryScreen({
     akun: b.kategori ?? "Beban lain",
     keterangan: b.deskripsi, jumlah: Number(b.jumlah),
     cabang: one(b.branches)?.name ?? "Pusat",
-    dibatalkan: !!b.voided_at, asal: "beban", accountId: "", lawanCode: "", revision: 0,
+    dibatalkan: !!b.voided_at, asal: "beban", accountId: "", lawanCode: "", revision: 0, branchId: null,
   }));
 
   const q = cari.trim().toLowerCase();
@@ -326,7 +326,7 @@ export async function KasEntryScreen({
                       {/* Pengeluaran kasir dibatalkan dari layar kasirnya sendiri — di sini
                           cuma ditampilkan, supaya satu dokumen tidak punya dua tombol batal. */}
                       {t.asal === "kas" && UUID.test(t.id) && <div><Link href={`/kas-bank/kas-${keluar ? "keluar" : "masuk"}/lampiran/${t.id}`} style={{ color: "#2563eb", fontSize: 10.5 }}>Lampiran</Link></div>}
-                      {!t.dibatalkan && t.asal === "kas" && (bolehEdit ? <KasCorrectionForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} tanggal={t.tanggal} accountId={t.accountId} lawanCode={t.lawanCode} jumlah={t.jumlah} keterangan={t.keterangan} rekening={rekening} coa={coa} /> : <KasVoidForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} />)}
+                      {!t.dibatalkan && t.asal === "kas" && (bolehEdit ? <KasCorrectionForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} tanggal={t.tanggal} accountId={t.accountId} lawanCode={t.lawanCode} jumlah={t.jumlah} keterangan={t.keterangan} rekening={rekening} coa={coa} branchId={t.branchId} cabangNama={t.cabang} branches={(branches ?? []) as { id: string; name: string }[]} /> : <KasVoidForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} />)}
                     </td>
                   )}
                 </tr>

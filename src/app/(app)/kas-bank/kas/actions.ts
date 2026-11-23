@@ -163,12 +163,20 @@ export async function koreksiKasEntry(formData: FormData) {
   const jenis = bacaJenis(formData); const BACK = hrefKas(jenis);
   const supabase = await assertRole(BACK, "kas masuk/keluar", BOLEH);
   let header: Record<string, string | number>;
-  try { header = { tanggal: String(formData.get("tanggal") ?? ""), account_id: String(formData.get("account_id") ?? ""), lawan_code: String(formData.get("lawan_code") ?? ""), jumlah: Number(formData.get("jumlah")), keterangan: String(formData.get("keterangan") ?? "") }; } catch { redirect(`${BACK}?error=Data koreksi tidak valid`); }
+  try { header = { tanggal: String(formData.get("tanggal") ?? ""), account_id: String(formData.get("account_id") ?? ""), lawan_code: String(formData.get("lawan_code") ?? ""), jumlah: Number(formData.get("jumlah")), keterangan: String(formData.get("keterangan") ?? "") };
+    // Cabang ikut dikirim hanya bila formnya memuat pilihan cabang ("" = Pusat). Tanpa key = cabang asli.
+    if (formData.has("branch_id")) header.branch_id = String(formData.get("branch_id") ?? "").trim(); } catch { redirect(`${BACK}?error=Data koreksi tidak valid`); }
   const { data: result, error } = await supabase.rpc("revise_cash_entry", {
     p_request_key: String(formData.get("draft_key") ?? formData.get("requestKey") ?? ""), p_cash_entry_id: String(formData.get("id") ?? ""),
     p_expected_revision: Number(formData.get("revision") ?? 0), p_action: "edit", p_header: header!,
     p_reason: String(formData.get("reason") ?? "").trim(),
   });
   if (error || !result?.reversal_journal_id || !result?.replacement_journal_id) redirect(`${BACK}?error=${encodeURIComponent(error?.message ?? "Koreksi kas belum terkonfirmasi")}`);
+  // Database versi lama mengabaikan cabang tanpa galat: jangan lapor sukses kalau cabang yang diminta tidak terpasang.
+  const branchDiminta = typeof header!.branch_id === "string" ? header!.branch_id || null : undefined;
+  if (branchDiminta !== undefined && branchDiminta !== (String(formData.get("branch_asal") ?? "") || null)
+    && (result as { branch_id?: string | null }).branch_id !== branchDiminta) {
+    redirect(`${BACK}?error=${encodeURIComponent("Koreksi tersimpan, tapi cabang belum ikut berubah. Hubungi admin sistem.")}`);
+  }
   redirect(`${BACK}?success=edit` + transactionDraftAck(formData));
 }

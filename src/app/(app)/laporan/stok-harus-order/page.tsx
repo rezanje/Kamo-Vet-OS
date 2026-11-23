@@ -5,7 +5,7 @@ import { Definisi, FilterStok, halamanDari, NomorHalaman, UKURAN_HALAMAN_STOK } 
 import { bolehBukaPath } from "@/lib/akses";
 import { laporanDiminta } from "@/lib/report-gate";
 import {
-  CATATAN_PAKAI_BERSIH, daftarHarusOrder, HALAMAN_ORDER, KONFIG_STOK, kelompokOrder, labelRiwayat, LABEL_ALASAN, rupiah, saring, tampilQty,
+  CATATAN_PAKAI_BERSIH, daftarHarusOrder, HALAMAN_ORDER, KONFIG_STOK, kelompokOrder, labelRiwayat, LABEL_ALASAN, pilihGudang, rupiah, saring, tampilQty,
 } from "@/lib/stok-analisis";
 import { muatPendukungOrder, muatPilihanStok, muatRingkasStok, periksaAksesStok, StokAnalisisError } from "@/lib/stok-analisis-server";
 import { createClient } from "@/lib/supabase/server";
@@ -23,14 +23,14 @@ export default async function StokHarusOrderPage({ searchParams }: {
   const kategori = (sp.kategori ?? "").trim().toLocaleUpperCase("id-ID").slice(0, 80);
   let pilihan, galat = "";
   try { pilihan = await muatPilihanStok(supabase); } catch { pilihan = null; galat = "Pilihan filter belum dapat dimuat. Muat ulang."; }
-  const gudangId = pilihan?.gudang.some((w) => w.id === sp.gudang) ? String(sp.gudang) : "";
+  const lingkup = pilihGudang(pilihan?.gudang ?? [], sp.gudang);
 
   let hasil = null;
   let order: ReturnType<typeof daftarHarusOrder> = [];
   let tidakValid: string[] = [];
   if (siap && pilihan) {
     try {
-      hasil = await muatRingkasStok(supabase, gudangId);
+      hasil = await muatRingkasStok(supabase, lingkup.satu, lingkup.daftar);
       const kandidat = saring(hasil.baris.filter((b) => b.aktif && b.alasanOrder.length > 0 && (b.minStock > 0 || b.terjualHari > 0)), { q, kategori, kategoriDari: pilihan.kategoriDari });
       const pend = await muatPendukungOrder(supabase, kandidat);
       tidakValid = pend.tidakValid;
@@ -50,7 +50,7 @@ export default async function StokHarusOrderPage({ searchParams }: {
   if (sekarang.length) potongan.push(sekarang);
   const halaman = Math.min(halamanDari(sp.halaman), Math.max(1, potongan.length));
   const terlihat = potongan[halaman - 1] ?? [];
-  const params = { gudang: gudangId, kategori, q };
+  const params = { gudang: lingkup.nilai, kategori, q };
   const bolehMinimum = bolehBukaPath(akses.role ?? "", "/pos/stok-minimum", akses.aturan);
   const bolehPembelian = bolehBukaPath(akses.role ?? "", "/pembelian", akses.aturan);
   const unduh = `/laporan/stok-harus-order/unduh?${new URLSearchParams(params)}`;
@@ -60,8 +60,8 @@ export default async function StokHarusOrderPage({ searchParams }: {
       siap={siap}
       unduhTampilan={false}
       icon="ti-shopping-cart" title="STOK HARUS ORDER"
-      desc="Barang aktif yang stoknya di bawah minimum atau akan habis sebelum pesanan datang. Dari riwayat penjualan, semua gudang digabung."
-      filter={pilihan ? <FilterStok gudang={pilihan.gudang} gudangId={gudangId} kategoriOpsi={pilihan.kategoriOpsi} kategori={kategori} q={q} /> : undefined}
+      desc={`Barang aktif yang stoknya di bawah minimum atau akan habis sebelum pesanan datang. Dari riwayat penjualan, ${lingkup.nama.toLocaleLowerCase("id-ID")}.`}
+      filter={pilihan ? <FilterStok gudang={pilihan.gudang} gudangNilai={lingkup.nilai} kategoriOpsi={pilihan.kategoriOpsi} kategori={kategori} q={q} /> : undefined}
       ringkasan={hasil ? <>
         <KartuAngka items={[
           { label: "Harus order", nilai: `${order.length.toLocaleString("id-ID")} barang`, warna: order.length ? "#b45309" : "#15803d" },

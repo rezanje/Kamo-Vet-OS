@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { amankanSel } from "@/lib/laporan-kategori-penjualan";
 import {
-  CATATAN_PAKAI_BERSIH, daftarSlow, HALAMAN_SLOW, KONFIG_STOK, labelRiwayat, LABEL_STATUS, ringkasSlow, saring,
+  CATATAN_PAKAI_BERSIH, daftarSlow, HALAMAN_SLOW, KONFIG_STOK, labelRiwayat, LABEL_STATUS, pilihGudang, ringkasSlow, saring,
 } from "@/lib/stok-analisis";
 import { muatPilihanStok, muatRingkasStok, periksaAksesStok } from "@/lib/stok-analisis-server";
 import { createClient } from "@/lib/supabase/server";
@@ -17,14 +17,14 @@ export async function GET(request: Request) {
   const kategori = (params.get("kategori") ?? "").trim().toLocaleUpperCase("id-ID").slice(0, 80);
   let pilihan, hasil;
   try {
-    pilihan = await muatPilihanStok(supabase);
-    const gudang = pilihan.gudang.some((w) => w.id === params.get("gudang")) ? String(params.get("gudang")) : "";
-    hasil = { ...(await muatRingkasStok(supabase, gudang)), gudang };
+    pilihan = await muatPilihanStok(supabase, { opsiKategori: false });
+    const lingkup = pilihGudang(pilihan.gudang, params.get("gudang"));
+    hasil = { ...(await muatRingkasStok(supabase, lingkup.satu, lingkup.daftar)), lingkup };
   } catch { return NextResponse.json({ error: "Data stok belum dapat dihitung. Coba lagi." }, { status: 500 }); }
 
   const rows = saring(daftarSlow(hasil.baris), { q, kategori, kategoriDari: pilihan.kategoriDari });
   const ringkas = ringkasSlow(rows);
-  const namaGudang = hasil.gudang ? pilihan.gudang.find((w) => w.id === hasil.gudang)?.name ?? hasil.gudang : "Semua gudang digabung";
+  const namaGudang = hasil.lingkup.nama;
   const kolom = ["Kode", "Barang", "Kategori", "Satuan", "Stok", "Terjual/bulan", "Cukup untuk (bulan)", "Terakhir laku", "Nilai stok", "Modal tertahan", "Status", "Sementara"];
   const book = new ExcelJS.Workbook();
   const sheet = book.addWorksheet("Slow moving", { views: [{ state: "frozen", ySplit: 1 }] });

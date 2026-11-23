@@ -5,7 +5,7 @@ import { Definisi, FilterStok, NomorHalaman, UKURAN_HALAMAN_STOK, halamanDari } 
 import { laporanDiminta } from "@/lib/report-gate";
 import {
   CATATAN_PAKAI_BERSIH, daftarSlow, hitungPortofolio, KONFIG_STOK, labelRiwayat, LABEL_STATUS, ringkasSlow, rupiah, saring, tampilBulan, tampilQty,
-  HALAMAN_SLOW, tanggalId, type StatusStok,
+  HALAMAN_SLOW, pilihGudang, tanggalId, type StatusStok,
 } from "@/lib/stok-analisis";
 import { muatPilihanStok, muatRingkasStok, periksaAksesStok, StokAnalisisError } from "@/lib/stok-analisis-server";
 import { createClient } from "@/lib/supabase/server";
@@ -25,11 +25,11 @@ export default async function StokSlowMovingPage({ searchParams }: {
   const kategori = (sp.kategori ?? "").trim().toLocaleUpperCase("id-ID").slice(0, 80);
   let pilihan, galat = "";
   try { pilihan = await muatPilihanStok(supabase); } catch { pilihan = null; galat = "Pilihan filter belum dapat dimuat. Muat ulang."; }
-  const gudangId = pilihan?.gudang.some((w) => w.id === sp.gudang) ? String(sp.gudang) : "";
+  const lingkup = pilihGudang(pilihan?.gudang ?? [], sp.gudang);
 
   let hasil = null;
   if (siap && pilihan) {
-    try { hasil = await muatRingkasStok(supabase, gudangId); }
+    try { hasil = await muatRingkasStok(supabase, lingkup.satu, lingkup.daftar); }
     catch (e) { galat = e instanceof StokAnalisisError ? e.message : "Data stok belum dapat dihitung. Muat ulang sebentar lagi."; }
   }
   const semua = hasil ? daftarSlow(hasil.baris) : [];
@@ -38,7 +38,7 @@ export default async function StokSlowMovingPage({ searchParams }: {
   const portofolio = hasil ? hitungPortofolio(hasil.baris) : null;
   const halaman = Math.min(halamanDari(sp.halaman), Math.max(1, Math.ceil(tersaring.length / UKURAN_HALAMAN_STOK)));
   const terlihat = tersaring.slice((halaman - 1) * UKURAN_HALAMAN_STOK, halaman * UKURAN_HALAMAN_STOK);
-  const params = { gudang: gudangId, kategori, q };
+  const params = { gudang: lingkup.nilai, kategori, q };
   const unduh = `/laporan/stok-slow-moving/unduh?${new URLSearchParams(params)}`;
   const label = hasil ? labelRiwayat(hasil.ctx) : "";
 
@@ -47,8 +47,8 @@ export default async function StokSlowMovingPage({ searchParams }: {
       siap={siap}
       unduhTampilan={false}
       icon="ti-snowflake" title="STOK SLOW MOVING / BERLEBIH"
-      desc="Barang yang stoknya terlalu banyak dibanding penjualannya. Dari riwayat penjualan, semua gudang digabung."
-      filter={pilihan ? <FilterStok gudang={pilihan.gudang} gudangId={gudangId} kategoriOpsi={pilihan.kategoriOpsi} kategori={kategori} q={q} /> : undefined}
+      desc={`Barang yang stoknya terlalu banyak dibanding penjualannya. Dari riwayat penjualan, ${lingkup.nama.toLocaleLowerCase("id-ID")}.`}
+      filter={pilihan ? <FilterStok gudang={pilihan.gudang} gudangNilai={lingkup.nilai} kategoriOpsi={pilihan.kategoriOpsi} kategori={kategori} q={q} /> : undefined}
       ringkasan={hasil && portofolio ? <>
         <KartuAngka items={[
           { label: "Barang slow moving", nilai: ringkas.jumlah.toLocaleString("id-ID") },
