@@ -8,6 +8,7 @@ import { catatBeban } from "./actions";
 import { KATEGORI_BEBAN } from "./kategori";
 import { hariIniWIB } from "@/lib/tanggal";
 import { ExpenseForm, ExpenseSubmitButton } from "@/components/pengeluaran/ExpenseForm";
+import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -48,10 +49,7 @@ export default async function BebanPage({ searchParams }: { searchParams: Promis
         <SecHeader num="01" title="CATAT BEBAN BARU" desc="Setiap beban langsung terekam di jurnal umum (seperti Accurate)." />
         <ExpenseForm userId={user?.id ?? ""} scope="book-expense" action={catatBeban}>
           <div className="frow" style={{ marginBottom: 10 }}>
-            <div>
-              <label className="flab">Tanggal</label>
-              <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} />
-            </div>
+            <TanggalMundurField today={hariIniWIB()} konteks="backoffice" />
             <div>
               <label className="flab">Cabang</label>
               <select className="fi" name="branch_id" required defaultValue="">

@@ -7,6 +7,7 @@ import { simpanExpense } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
 import { redirect } from "next/navigation";
 import { ExpenseForm, ExpenseSubmitButton } from "@/components/pengeluaran/ExpenseForm";
+import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField";
 import { readCompleteList } from "@/lib/checked-list";
 import { totalPengeluaranAktif } from "@/lib/expense-summary";
 
@@ -89,10 +90,7 @@ export default async function ExpensePage({
                 {(branches ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </div>
-            <div>
-              <label className="flab">Tanggal *</label>
-              <input className="fi" name="tanggal" type="date" defaultValue={today} required />
-            </div>
+            <TanggalMundurField today={today} konteks="backoffice" />
             <div>
               <label className="flab">Kategori *</label>
               <select className="fi" name="kategori" required>

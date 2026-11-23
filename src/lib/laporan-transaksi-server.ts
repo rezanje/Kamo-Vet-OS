@@ -1,5 +1,7 @@
 import { completeReportQuery, completeReportQueryParalel } from "./report-query";
 import { bacaAnakPerInduk } from "./laporan-baca-berkelompok";
+import { bacaStrukKasirCepat } from "./laporan-struk-kasir";
+import { bacaInvoiceKlinikCepat } from "./laporan-invoice-klinik";
 // Penarikan data untuk laporan transaksi dasar. Dipisah dari halamannya karena
 // dipakai dua laporan sekaligus (per cabang & per hari) — angkanya wajib sama.
 import { createClient } from "./supabase/server";
@@ -63,10 +65,34 @@ export async function tarikTransaksi(dari: string, sampai: string, saring: Sarin
     .is("voided_at", null)
     .gte("created_at", mulai).lte("created_at", akhir);
 
+  // Jalur utama: struk kasir + jumlah itemnya dan invoice klinik + jumlah itemnya masing-masing dari satu fungsi baca-saja di database
+  // (migrasi 20261202200000 / 20261203100000, hak baca sama dengan RLS), satu panggilan per rentang 7 hari. Saringan nama cabang
+  // dikerjakan di memori (sama dengan `branches!inner(name)` + eq nama). Jalur lama hanya bila fungsinya belum ada.
+  const namaCabang = (r: Rel<{ name: string }>) => one(r)?.name ?? null;
+  const bacaSales = async (): Promise<{ data: unknown[]; itemPer: Map<string, number> | null }> => {
+    const cepat = await bacaStrukKasirCepat(supabase, { dari, sampai, cabangId });
+    if (!cepat) {
+      const hasil = await completeReportQueryParalel(() => cabangId ? qSales().eq("branch_id", cabangId) : cabangNama ? qSales().eq("branches.name", cabangNama) : qSales());
+      return { data: hasil.data as unknown[], itemPer: null };
+    }
+    const itemPer = new Map<string, number>();
+    for (const i of cepat.items) itemPer.set(i.sale_id, (itemPer.get(i.sale_id) ?? 0) + 1);
+    return { data: cabangNama ? cepat.sales.filter(s => namaCabang(s.branches) === cabangNama) : cepat.sales, itemPer };
+  };
+  const bacaInvoices = async (): Promise<{ data: unknown[]; itemPer: Map<string, number> | null }> => {
+    const cepat = await bacaInvoiceKlinikCepat(supabase, { dari, sampai, cabangId, denganItem: false });
+    if (!cepat) {
+      const hasil = await completeReportQueryParalel(() => cabangId ? qInvoices().eq("visits.branch_id", cabangId) : cabangNama ? qInvoices().eq("visits.branches.name", cabangNama) : qInvoices());
+      return { data: hasil.data as unknown[], itemPer: null };
+    }
+    const itemPer = new Map(cepat.invoices.map(i => [i.id, Number(i.n_item) || 0] as const));
+    const dipilih = cabangNama ? cepat.invoices.filter(i => namaCabang(i.visits.branches) === cabangNama) : cepat.invoices;
+    return { data: dipilih.map(i => ({ id: i.id, total: i.total, created_at: i.created_at, visits: { customer_id: i.visits.customer_id, branch_id: i.visits.branch_id, branches: i.visits.branches } })), itemPer };
+  };
   const [hasilSales, hasilInvoices, hasilGrosir, hasilReturs, hasilRefundKlinik, hasilReturGrosir, hasilCabang] =
     await Promise.all([
-      completeReportQueryParalel(() => cabangId ? qSales().eq("branch_id", cabangId) : cabangNama ? qSales().eq("branches.name", cabangNama) : qSales()),
-      completeReportQueryParalel(() => cabangId ? qInvoices().eq("visits.branch_id", cabangId) : cabangNama ? qInvoices().eq("visits.branches.name", cabangNama) : qInvoices()),
+      bacaSales(),
+      bacaInvoices(),
       // Faktur grosir memakai kolom tanggal faktur (date, sudah WIB), bukan created_at:
       // fakturnya boleh dibuat mundur dan omzetnya milik tanggal fakturnya.
       completeReportQuery(supabase.from("sales_invoices")
@@ -94,8 +120,8 @@ export async function tarikTransaksi(dari: string, sampai: string, saring: Sarin
     return per;
   };
   const [itemPerStruk, itemPerInvoice] = await Promise.all([
-    hitungItem("sale_items", "sale_id", (hasilSales.data as unknown as { id: string }[]).map(s => s.id)),
-    hitungItem("invoice_items", "invoice_id", (hasilInvoices.data as unknown as { id: string }[]).map(i => i.id)),
+    hasilSales.itemPer ?? hitungItem("sale_items", "sale_id", (hasilSales.data as unknown as { id: string }[]).map(s => s.id)),
+    hasilInvoices.itemPer ?? hitungItem("invoice_items", "invoice_id", (hasilInvoices.data as unknown as { id: string }[]).map(i => i.id)),
   ]);
 
   // completeReportQuery throws before returning any failed or incomplete source.
