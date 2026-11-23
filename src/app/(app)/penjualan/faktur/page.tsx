@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { MasterPage } from "@/components/MasterPage";
 import { SecHeader } from "@/components/SecHeader";
 import { SubmitButton } from "@/components/SubmitButton";
-import { PilihRekening, loadRekeningAktif } from "@/components/PilihRekening";
+import { loadRekeningAktif } from "@/components/PilihRekening";
 import { bolehTransaksiKas } from "@/lib/master-guard";
 import { METODE_BAYAR } from "@/lib/kas-akun";
 import { hariIniWIB } from "@/lib/tanggal";
@@ -28,6 +28,7 @@ import { branchDisplayName } from "@/lib/branch-display";
 import { denganTampil, laporanDiminta } from "@/lib/report-gate";
 import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 import { terimaPembayaranJual } from "./actions";
+import { CabangPenerimaan } from "./CabangPenerimaan";
 import Link from "next/link";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -231,7 +232,8 @@ export default async function FakturJualPage({
                                   {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}
                                 </select>
                               </div>
-                              <PilihRekening rekening={rekening} label="Masuk ke" width={260} />
+                              {/* Kas per cabang (Anisa, 23 Nov 2026): pilih cabang penerima, rekening ikut cabang itu. */}
+                              <CabangPenerimaan rekening={rekening} cabang={cabangOptions} cabangFaktur={row.branchId} namaCabangFaktur={row.cabang} />
                               {um.length > 0 && (
                                 <div>
                                   <label className="flab">Potong uang muka</label>

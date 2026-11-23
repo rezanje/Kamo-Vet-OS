@@ -40,6 +40,6 @@ it("loads active accounts with the fields the label needs", async () => {
   const rows = await loadRekeningAktif({ from: (t: string) => (calls.push(["from", t]), query) });
   expect(rows).toHaveLength(3);
   expect(calls).toContainEqual(["from", "cash_accounts"]);
-  expect(calls).toContainEqual(["select", "id, nama, coa_code, jenis, no_rekening"]);
+  expect(calls).toContainEqual(["select", "id, nama, coa_code, jenis, no_rekening, branch_id"]);
   expect(calls).toContainEqual(["eq", "is_active", true]);
 });
