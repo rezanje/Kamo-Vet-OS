@@ -103,6 +103,9 @@ begin
   d:=case when random()<0.9 then today::text when random()<0.5 then (today+1)::text else null end;
   att:=case when random()<0.93 then '[{"path":"pengeluaran/diff.jpg","nama":"diff.jpg","mime":"image/jpeg","ukuran":100}]'::jsonb else '[]'::jsonb end;
   acct:=case when ctx='backoffice' and random()<0.3 then (case when random()<0.7 then 'ed500000-0000-4000-8000-000000000002' else 'ed500000-0000-4000-8000-000000000001' end) else null end;
+  if random()<0.07 then ctx:='backoffice'; br:='ed200000-0000-4000-8000-000000000001'; u:=users[4]; end if;   -- kasir biasa lewat back office: ditolak
+  if ctx<>'backoffice' and random()<0.07 then acct:='ed500000-0000-4000-8000-000000000002'; end if;     -- kasir memilih rekening: ditolak
+  if ctx='backoffice' and random()<0.07 then acct:=gen_random_uuid()::text; end if;                     -- rekening tidak ada: ditolak
   if i>1 and random()<0.1 then k:=prevk; if random()<0.5 then amt:=coalesce(prevamt,amt); end if; end if;
   ex:=jsonb_strip_nulls(jsonb_build_object('tanggal',d,'kategori',kat,'jumlah',amt,'metode_bayar',met,'deskripsi','DIFF '||i,'account_id',acct));
   prevk:=k;
@@ -155,7 +158,7 @@ def run_diff(db, a):
     first = next(((x, y) for x, y in zip(old, new) if x != y), None)
     check('DIFF per-call outcomes, expense rows, journals, request payloads, attachments IDENTICAL old vs new (%d comparison lines)' % len(new), same and len(new) > 150, str(first) + ' lens %d/%d' % (len(old), len(new)))
     msgs = {re.sub(r'^DIFF O \d+ ', '', l) for l in outcomes if not l.endswith(' OK')}
-    check('DIFF the refused calls cover several distinct refusal messages (%d)' % len(msgs), len(msgs) >= 4, '; '.join(sorted(msgs))[:300])
+    check('DIFF the refused calls cover several distinct refusal messages (%d)' % len(msgs), len(msgs) >= 5, '; '.join(sorted(msgs))[:300])
     nb = raw(db, "select count(*) from expense_backdates", 'new')[1].strip()
     check('DIFF no audit row was written by any same-day expense (expense_backdates empty on the new side)', nb == '0', nb)
 
