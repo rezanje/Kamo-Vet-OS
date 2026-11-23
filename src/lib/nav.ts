@@ -208,6 +208,8 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Penyelesaian Pesanan", icon: "ti-checklist", ...G, nw: true, href: "/pos/produksi" },
     { label: "Perintah Stok Opname", icon: "ti-clipboard-list", ...G, href: "/pos/opname" },
     { label: "Hasil Stok Opname", icon: "ti-clipboard-check", ...G, href: "/pos/opname" },
+    // Inventaris Operasional (23 Nov 2026): perlengkapan cabang (sapu, ember, alat pel) — jumlah saja, tanpa jurnal/penyusutan.
+    { label: "Inventaris Operasional", icon: "ti-bucket", ...G, nw: true, href: "/pos/inventaris-operasional" },
     { label: "Barang & Jasa", icon: "ti-package", ...B, href: "/pos/sku" },
     { label: "Keluarga Varian", icon: "ti-packages", ...B, nw: true, href: "/pos/sku/varian" },
     { label: "Impor Barang", icon: "ti-file-spreadsheet", ...B, nw: true, href: "/pos/sku/impor" },
