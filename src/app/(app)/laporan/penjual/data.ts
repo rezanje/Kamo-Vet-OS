@@ -1,5 +1,5 @@
 import { readReportRows } from "@/lib/hpp-reports-server";
-import { completeReportQuery } from "@/lib/report-query";
+import { completeReportQuery, completeReportQueryParalel } from "@/lib/report-query";
 import { createClient } from "@/lib/supabase/server";
 import { allowedBranchIds } from "@/lib/branch-access";
 import { batasTanggalWIB } from "@/lib/laporan-transaksi";
@@ -486,14 +486,30 @@ export async function ambilTenagaPenjual({ dari, sampai, cabangId = "" }: {
     // seperti Rincian Penjualan per Transaksi.
     const strukIds = [...strukPer.keys()];
     const returs: ReturRow[] = [];
-    // Kelompok id struk dibaca bersamaan (dulu satu per satu: ±1 query per 100 struk berurutan); urutan hasil tetap per kelompok.
-    const kelompokRetur = await petaBerbatas(potong(strukIds), BATAS_BACA_LAPORAN, async batch => {
-      const { data } = await completeReportQuery(supabase.from("sales_returns")
+    // Retur kasir sangat sedikit dibanding struk, tetapi dulu dibaca per kelompok 100 id struk (±1 query per 100 struk: 95 query untuk
+    // 1-22 Nov, hampir semuanya kosong). Sekarang jumlah retur yang bisa dilihat dihitung dulu (satu query kecil): bila kecil, semua retur
+    // dibaca sekali (per halaman 500) lalu disaring ke struk laporan di memori; bila besar, jalur lama per kelompok dipakai.
+    // Isi dan urutan sama dengan jalur lama (per kelompok struk, lalu id retur).
+    const posisiStruk = new Map(strukIds.map((id, indeks) => [id, indeks] as const));
+    const kelompokStruk = potong(strukIds).length;
+    const probe = await supabase.from("sales_returns").select("id", { count: "exact" }).is("voided_at", null).order("id").range(0, 0);
+    const jumlahRetur = !probe.error && typeof probe.count === "number" && Number.isSafeInteger(probe.count) ? probe.count : null;
+    if (jumlahRetur !== null && Math.ceil(jumlahRetur / 500) * 2 <= kelompokStruk) {
+      const { data } = await completeReportQueryParalel(() => supabase.from("sales_returns")
         .select("id, sale_id, tanggal, sales_return_items(id, source_line_id, nama, qty, harga, selected_qty, satuan)", { count: "exact" })
-        .is("voided_at", null).in("sale_id", batch));
-      return (data ?? []) as unknown as ReturRow[];
-    });
-    returs.push(...kelompokRetur.flat());
+        .is("voided_at", null));
+      returs.push(...(data as unknown as ReturRow[]).filter(r => posisiStruk.has(r.sale_id))
+        .sort((a, b) => Math.floor(posisiStruk.get(a.sale_id)! / 100) - Math.floor(posisiStruk.get(b.sale_id)! / 100) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
+    } else {
+      // Kelompok id struk dibaca bersamaan; urutan hasil tetap per kelompok.
+      const kelompokRetur = await petaBerbatas(potong(strukIds), BATAS_BACA_LAPORAN, async batch => {
+        const { data } = await completeReportQuery(supabase.from("sales_returns")
+          .select("id, sale_id, tanggal, sales_return_items(id, source_line_id, nama, qty, harga, selected_qty, satuan)", { count: "exact" })
+          .is("voided_at", null).in("sale_id", batch));
+        return (data ?? []) as unknown as ReturRow[];
+      });
+      returs.push(...kelompokRetur.flat());
+    }
     const performerAdaPerStruk = new Map<string, boolean>();
     for (const [saleId, items] of barisPerStruk) {
       performerAdaPerStruk.set(saleId, items.some((item) => item.service_performers != null));
