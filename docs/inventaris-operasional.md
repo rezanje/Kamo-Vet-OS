@@ -43,6 +43,46 @@ Akses sub-menu: `pos.inventaris-operasional` (Akses Grup), mengikuti hak modul P
   kebijakan, peran tanpa Persediaan, bawaan per peran, akses khusus tambah/khusus, katalog hilang, Admin Online. `--baseline` tanpa migrasi = RED.
 - `src/lib/__tests__/inventaris-operasional.test.ts`: parsing angka/form, pilihan cabang, pesan gagal, menu + sub-menu.
 
+## Catat Pembelian (migrasi `20261207100000_inventaris_pembelian.sql`)
+
+Tab **Pembelian** (`/pos/inventaris-operasional/pembelian`, sub-menu yang sama `pos.inventaris-operasional`).
+
+- **Siapa:** hanya **FINANCE aktif** yang lolos gerbang menu (Akses Grup / akses khusus) dan akses cabang. Owner, Admin,
+  staf hanya membaca daftarnya (bila lolos menu + cabang). Pilot: Owner memberi peran FINANCE modul Persediaan dengan
+  sub-menu **Inventaris Operasional saja** di Akses Grup — modul/sub-menu Persediaan lain tetap tertutup.
+- **Form:** barang terdaftar atau baru (nama + satuan), jumlah, nominal total, kas sumber (rekening kas/bank aktif milik
+  cabang atau rekening umum; kas kecil salah satunya), catatan, nota (wajib, folder `pengeluaran/`). Tanggal = hari ini (WIB).
+- **Satu simpan, satu transaksi** (`inventaris_operasional_beli`): Kas Keluar biasa (`cash_entries`, nomor KK master
+  penomoran) + jurnal `kas-entry` Dr akun beban / Cr akun rekening kas + nota (`document_attachments`, modul pengeluaran)
+  + jumlah barang & riwayat `pembelian` + baris penghubung `operational_inventory_purchases`. Gagal di mana pun = semua batal.
+  Kunci permintaan per pelaku: kiriman ulang/klik ganda mengembalikan hasil pertama.
+- **Persetujuan:** aturan `kas-keluar` di atas batas nominal tetap berlaku (kunci sama dengan Kas Keluar biasa); pengajuan
+  `disetujui` dipakai (`terpakai`) di transaksi yang sama.
+- **Batal/koreksi:** hanya dari tab Pembelian (`inventaris_operasional_batal_pembelian`, Finance): Kas Keluar dibatalkan
+  lewat `revise_cash_entry` (jurnal pembalik) dan jumlah barang dikurangi (riwayat `batal_pembelian`) sekaligus; ditolak
+  bila jumlah sekarang < jumlah pembelian. Koreksi = batalkan lalu catat ulang. Jalur kas umum (`revise_cash_entry` edit/void,
+  ubah/hapus langsung `cash_entries`, ubah/hapus nota) ditolak trigger untuk Kas Keluar pembelian (`INVENTARIS_KAS_TERKUNCI`).
+- **Barang lama / saldo awal / opname:** tidak dijurnal (tidak ada jurnal retroaktif). Pembelian menaikkan revisi barang,
+  jadi halaman opname yang dibuka sebelum pembelian ditolak saat disimpan.
+
+### Akun beban (ASUMSI UJI: 740001 Beban Perlengkapan Toko)
+
+Kode final menunggu konfirmasi klien. Disimpan di `operational_inventory_settings.beban_code` (satu baris). Mengganti dengan aman:
+
+    update public.operational_inventory_settings set beban_code = '<kode>' where id;  -- dalam migrasi kecil
+
+Trigger menolak akun induk, nonaktif, bukan tipe BEBAN, atau akun rekening kas/bank. Berlaku hanya untuk **pembelian baru**;
+pembelian lama tetap di akun saat dibukukan (`operational_inventory_purchases.beban_code`). Jangan mengubah jurnal lama.
+
+### Uji pembelian
+
+`scripts/test-inventaris-pembelian-postgres.py` (PostgreSQL native sekali pakai, rantai migrasi penuh, data fiktif dua cabang):
+Finance sah (barang baru & terdaftar, rekening cabang & umum), isi Kas Keluar/jurnal/nota/riwayat, nomor KK, kirim ulang,
+kunci dipakai ulang, kiriman bersamaan, bukan Finance (staf/Admin/Owner/nonaktif/Admin Online), cabang & kas salah, Finance
+tanpa menu, nota wajib/valid, angka tidak valid, kegagalan atomik di tengah, persetujuan, jalur kas umum ditolak (+ regresi
+kas biasa), pembatalan resmi (+ kirim ulang, ganda, jumlah kurang), opname tanpa jurnal, opname basi, ganti akun beban, jurnal
+seimbang, tanpa stok barang jual. `--baseline` tanpa migrasi = RED. Unit: `src/lib/__tests__/inventaris-pembelian.test.ts`.
+
 ## Belum termasuk
 
-Nonaktif/ubah nama barang, ekspor, nilai rupiah, jurnal, penyusutan, dan pemilihan cabang pilot nyata.
+Nonaktif/ubah nama barang, ekspor, penyusutan, tanggal mundur pembelian, unggah nota di sandbox (storage), dan pemilihan cabang pilot nyata.

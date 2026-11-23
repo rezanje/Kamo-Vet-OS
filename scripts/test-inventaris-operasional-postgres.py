@@ -70,6 +70,15 @@ def check(name, ok, detail=None, kind='feature'):
     print(RESULTS[-1]['status'], f'[{kind}]', name, json.dumps(detail, default=str)[:400], flush=True)
 
 
+def apply_later(db):
+    """Migrations numbered after the candidate (they depend on its tables); applied in order after it."""
+    later = [m for m in sorted((ROOT / 'supabase/migrations').glob('*.sql')) if m.name > CANDIDATE.name]
+    for m in later:
+        try: db.sql('begin;\n' + m.read_text() + '\ncommit;')
+        except RuntimeError as e: raise RuntimeError(m.name + ': ' + str(e)[:1500]) from e
+    if later: print(f'Applied {len(later)} later migrations.', flush=True)
+
+
 def bootstrap(db):
     db.sql("""create extension if not exists pgcrypto;
 create role anon; create role authenticated; create role service_role bypassrls;
@@ -86,7 +95,9 @@ grant execute on all functions in schema auth to authenticated,anon,service_role
 alter default privileges in schema public grant all on tables to authenticated,service_role;
 alter default privileges in schema public grant all on sequences to authenticated,service_role;
 """)
-    migrations = [m for m in sorted((ROOT / 'supabase/migrations').glob('*.sql')) if m != CANDIDATE]
+    # Only migrations BEFORE the candidate: later ones (e.g. 20261207100000_inventaris_pembelian) build on its tables
+    # and are applied after it by apply_later().
+    migrations = [m for m in sorted((ROOT / 'supabase/migrations').glob('*.sql')) if m.name < CANDIDATE.name]
     for m in migrations:
         if m.name.startswith('0068'):
             db.sql("insert into coa_accounts(code,name,type,normal_balance) values('1101','Fictional cash','ASET','D'),('1102','Fictional bank','ASET','D') on conflict do nothing;")
@@ -349,7 +360,7 @@ def static_checks(db):
     check('gerbang menu menolak ADMIN_ONLINE secara eksplisit dan gagal tertutup saat galat',
           db.sql("select count(*) from pg_proc where proname='inventaris_operasional_allowed' and prosecdef and prosrc ~ 'ADMIN_ONLINE' and prosrc ~ 'exception when others then return false'") == '1', kind='static')
     check('ketiga kebijakan baca memakai gerbang menu DAN akses cabang',
-          db.sql("select count(*) from pg_policies where tablename like 'operational_inventory_%' and cmd='SELECT' and qual ~ 'inventaris_operasional_allowed' and qual ~ 'user_can_access_branch'") == '3', kind='static')
+          db.sql("select count(*) from pg_policies where tablename in ('operational_inventory_items','operational_inventory_counts','operational_inventory_history') and cmd='SELECT' and qual ~ 'inventaris_operasional_allowed' and qual ~ 'user_can_access_branch'") == '3', kind='static')
     check('sub-menu pos.inventaris-operasional terdaftar di katalog Akses Grup',
           db.sql("select count(*) from role_settings_private.submenu_catalog where id='pos.inventaris-operasional' and module_id='pos'") == '1', kind='static')
     check('authenticated tidak punya hak insert/update/delete ke tabel modul',
@@ -367,6 +378,7 @@ def main():
             if not a.baseline:
                 db.sql('begin;\n' + CANDIDATE.read_text() + '\ncommit;')
                 print('Applied candidate ' + CANDIDATE.name, flush=True)
+                apply_later(db)
             try: run_cases(db)
             except Exception as e: check('SECTION cases aborted', False, str(e)[:600], 'feature' if a.baseline else 'harness')
             if not a.baseline:
