@@ -4,6 +4,7 @@ import { useState } from "react";
 import { NumberInput } from "@/components/NumberInput";
 import { LampiranPicker } from "@/components/LampiranPicker";
 import { ExpenseForm, ExpenseSubmitButton } from "@/components/pengeluaran/ExpenseForm";
+import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField";
 import { simpanPengeluaranKlinik } from "./actions";
 
 const KATEGORI = ["Operasional", "Listrik & Air", "Perlengkapan", "Transportasi", "Perawatan", "Lain-lain"];
@@ -26,18 +27,13 @@ export function TambahPengeluaran({ userId, today, shiftId }: { userId: string; 
               <div className="p2ban" role="alert">Mulai shift klinik dulu — pengeluaran klinik dicatat ke laci shift yang sedang dibuka.</div>
             ) : (
               <ExpenseForm userId={userId} scope={`clinic-expense:${shiftId}`} action={simpanPengeluaranKlinik}>
-                <div className="frow">
-                  <div>
-                    <label className="flab">Tanggal *</label>
-                    <input className="fi" name="tanggal" type="date" defaultValue={today} max={today} required />
-                  </div>
-                  <div>
-                    <label className="flab">Kategori *</label>
-                    <select className="fi" name="kategori" required defaultValue="">
-                      <option value="" disabled>Pilih kategori</option>
-                      {KATEGORI.map((k) => <option key={k} value={k}>{k}</option>)}
-                    </select>
-                  </div>
+                <div className="fg"><TanggalMundurField today={today} konteks="clinic" /></div>
+                <div className="fg">
+                  <label className="flab">Kategori *</label>
+                  <select className="fi" name="kategori" required defaultValue="">
+                    <option value="" disabled>Pilih kategori</option>
+                    {KATEGORI.map((k) => <option key={k} value={k}>{k}</option>)}
+                  </select>
                 </div>
                 <div className="fg">
                   <label className="flab">Deskripsi</label>

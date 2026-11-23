@@ -14,6 +14,7 @@ vi.mock("@/lib/transaction-draft-ack", async importOriginal => ({
   ...await importOriginal<object>(), assertDraftJournal: async () => undefined,
 }));
 
+import { hariIniWIB } from "@/lib/tanggal";
 import { simpanPengeluaranKasir } from "@/app/kasir/pengeluaran/actions";
 import { simpanPengeluaranKlinik } from "@/app/(app)/klinik/pengeluaran/actions";
 import { simpanExpense } from "@/app/(app)/pos/expense/actions";
@@ -21,7 +22,7 @@ import { catatBeban } from "@/app/(app)/buku-besar/beban/actions";
 
 function form() {
   const data = new FormData();
-  Object.entries({ branchId: "tampered-branch", tanggal: "2026-10-15", kategori: "Operasional", jumlah: "25000",
+  Object.entries({ branchId: "tampered-branch", tanggal: hariIniWIB(), kategori: "Operasional", jumlah: "25000",
     metode_bayar: "Tunai", request_key: "retry-identity", draft_key: "retry-identity", draft_scope: "cashier-expense:shift",
     lampiran: JSON.stringify([{ path: "pengeluaran/proof.jpg", nama: "proof.jpg" }]),
   }).forEach(([key, value]) => data.set(key, value));
@@ -42,7 +43,7 @@ beforeEach(() => {
 
 function bebanForm() {
   const data = new FormData();
-  Object.entries({ branch_id: "branch", tanggal: "2026-10-15", kategori: "Operasional", jumlah: "25000", metode: "Tunai", account_id: "", request_key: "beban-draft", draft_key: "beban-draft", draft_scope: "book-expense", lampiran: JSON.stringify([{ path: "pengeluaran/proof.jpg", nama: "proof.jpg" }]) }).forEach(([key, value]) => data.set(key, value));
+  Object.entries({ branch_id: "branch", tanggal: hariIniWIB(), kategori: "Operasional", jumlah: "25000", metode: "Tunai", account_id: "", request_key: "beban-draft", draft_key: "beban-draft", draft_scope: "book-expense", lampiran: JSON.stringify([{ path: "pengeluaran/proof.jpg", nama: "proof.jpg" }]) }).forEach(([key, value]) => data.set(key, value));
   return data;
 }
 
