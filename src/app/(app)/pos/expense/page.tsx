@@ -10,6 +10,7 @@ import { ExpenseForm, ExpenseSubmitButton } from "@/components/pengeluaran/Expen
 import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField";
 import { readCompleteList } from "@/lib/checked-list";
 import { totalPengeluaranAktif } from "@/lib/expense-summary";
+import { KATEGORI_PENGELUARAN_BACKOFFICE } from "@/lib/kategori-pengeluaran";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -29,7 +30,7 @@ type ExpenseRow = {
   branches: Rel<{ name: string }>;
 };
 
-const KATEGORI = ["Operasional", "Listrik & Air", "Perlengkapan", "Transportasi", "Perawatan", "Lain-lain"];
+const KATEGORI = KATEGORI_PENGELUARAN_BACKOFFICE;
 const METODE = ["Tunai", "QRIS", "Transfer"];
 
 export default async function ExpensePage({

@@ -5,15 +5,14 @@ import { getOpenShift } from "@/lib/shift";
 import { StokTabs, StatCard } from "../stok/StokTabs";
 import { TambahPengeluaran } from "./TambahPengeluaran";
 import { hariIniWIB } from "@/lib/tanggal";
+import { KATEGORI_PENGELUARAN_FILTER, badgeKategoriPengeluaran } from "@/lib/kategori-pengeluaran";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null { return Array.isArray(r) ? (r[0] ?? null) : r; }
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
-const KATEGORI = ["Operasional", "Listrik & Air", "Perlengkapan", "Transportasi", "Perawatan", "Lain-lain"];
-const KAT_BADGE: Record<string, string> = {
-  "Operasional": "b", "Listrik & Air": "g", "Perlengkapan": "o", "Transportasi": "pu", "Perawatan": "pk", "Lain-lain": "x",
-};
+// Filter memuat kategori lama juga supaya riwayat sebelum rincian baru tetap bisa dicari.
+const KATEGORI = KATEGORI_PENGELUARAN_FILTER;
 
 export default async function KlinikPengeluaranPage({
   searchParams,
@@ -129,7 +128,7 @@ export default async function KlinikPengeluaranPage({
                   <tr key={r.id}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
                     <td style={{ fontSize: 11 }}>{fmtDate(r.tanggal)}<div style={{ fontSize: 9.5, color: "var(--td)" }}>{fmtTime(r.created_at)}</div></td>
-                    <td><span className={`bge ${KAT_BADGE[r.kategori] ?? "x"}`}>{r.kategori}</span></td>
+                    <td><span className={`bge ${badgeKategoriPengeluaran(r.kategori)}`}>{r.kategori}</span></td>
                     <td style={{ fontSize: 11.5 }}>{r.deskripsi ?? "—"}
                       {r.voided_at && <span className="bge r" style={{ marginLeft: 5 }}>Dibatalkan</span>}
                       {canManage && <div><Link href={`/buku-besar/beban/${r.id}`}>Detail / koreksi</Link></div>}

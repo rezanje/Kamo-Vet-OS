@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import { ExpenseForm, ExpenseSubmitButton } from "./ExpenseForm";
 import { ubahExpense, batalkanExpense } from "@/app/(app)/pos/expense/actions";
+import { KATEGORI_PENGELUARAN_BACKOFFICE } from "@/lib/kategori-pengeluaran";
 
 // Detail satu pengeluaran + bukti/lampirannya. Dipakai dua rute supaya FINANCE
 // (yang sidebarnya tidak memuat modul Persediaan) tetap punya jalan ke bukti:
@@ -126,7 +127,7 @@ export async function PengeluaranDetail({
             <input type="hidden" name="id" value={exp.id} /><input type="hidden" name="revision" value={exp.revision} /><input type="hidden" name="kembali" value={kembaliHref} />
             <div className="grid2">
               <label className="flab">Tanggal<input className="fi" type="date" name="tanggal" defaultValue={exp.tanggal} required /></label>
-              <label className="flab">Kategori<select className="fi" name="kategori" defaultValue={exp.kategori} required>{Array.from(new Set([exp.kategori, "Operasional", "Listrik & Air", "Perlengkapan", "Transportasi", "Perawatan", "Perawatan Aset", "Sewa Gedung", "Lain-lain"])).map(category => <option key={category}>{category}</option>)}</select></label>
+              <label className="flab">Kategori<select className="fi" name="kategori" defaultValue={exp.kategori} required>{Array.from(new Set([exp.kategori, ...KATEGORI_PENGELUARAN_BACKOFFICE])).map(category => <option key={category}>{category}</option>)}</select></label>
               <label className="flab">Jumlah (Rp)<NumberInput className="fi" type="number" min="0.01" step="any" name="jumlah" defaultValue={Number(exp.jumlah)} required /></label>
               <label className="flab">Metode bayar<select className="fi" name="metode_bayar" defaultValue={exp.metode_bayar} required>{["Tunai", "Transfer", "QRIS", "Debit", "Kredit", "E-Wallet"].map(method => <option key={method}>{method}</option>)}</select></label>
               <label className="flab">Deskripsi<input className="fi" name="deskripsi" defaultValue={exp.deskripsi ?? ""} /></label>

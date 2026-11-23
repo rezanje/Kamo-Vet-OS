@@ -6,8 +6,7 @@ import { LampiranPicker } from "@/components/LampiranPicker";
 import { ExpenseForm, ExpenseSubmitButton } from "@/components/pengeluaran/ExpenseForm";
 import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField";
 import { simpanPengeluaranKlinik } from "./actions";
-
-const KATEGORI = ["Operasional", "Listrik & Air", "Perlengkapan", "Transportasi", "Perawatan", "Lain-lain"];
+import { KATEGORI_PENGELUARAN as KATEGORI } from "@/lib/kategori-pengeluaran";
 
 export function TambahPengeluaran({ userId, today, shiftId }: { userId: string; today: string; shiftId: string | null }) {
   const [open, setOpen] = useState(false);
