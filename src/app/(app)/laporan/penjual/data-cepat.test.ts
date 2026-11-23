@@ -51,7 +51,7 @@ it("hasil lengkap dan jumlah query dibatasi (item per 100 id, retur/refund per k
   expect(q("sale_items")).toHaveLength(Math.ceil(JUMLAH / 100));
   expect(q("invoices")).toHaveLength(1);
   expect(q("invoice_items")).toHaveLength(Math.ceil(130 / 100));
-  expect(q("sales_returns")).toHaveLength(Math.ceil(JUMLAH / 100));
+  expect(q("sales_returns").length).toBeLessThanOrEqual(2);   // jumlah retur dihitung dulu; retur kecil -> dibaca sekali, bukan per 100 struk
   expect(q("clinic_refunds")).toHaveLength(Math.ceil(130 / 100));
   expect(tiruan.catatan.some(c => c.select.includes("!inner"))).toBe(false);
   // Tanpa baris obat tanpa tautan, rekam medis/resep tidak dibaca sama sekali.
