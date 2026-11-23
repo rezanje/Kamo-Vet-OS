@@ -123,3 +123,10 @@ it("faktur grosir yang batal hanya bisa dilihat", async () => {
   expect(html.slice(mulai, html.indexOf("</tr>", mulai))).toContain("Lihat");
   expect(html).toContain("Dibatalkan");
 });
+
+it("form Penerimaan grosir punya pilihan cabang penerima, bawaan cabang faktur", async () => {
+  const html = await render();
+  expect(html).toContain('name="branch_id"');
+  expect(html).toContain("Cabang (kas penerima)");
+  expect(html).toMatch(/<option value="b1" selected="">Pondok Aren \(cabang faktur\)<\/option>/);
+});

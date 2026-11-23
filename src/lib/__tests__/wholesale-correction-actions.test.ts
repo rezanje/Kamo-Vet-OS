@@ -39,3 +39,20 @@ it("does not confirm a partial receipt response", async () => {
   db.rpc.mockResolvedValue({ data: { invoice_id: "invoice", receipt_id: "receipt" }, error: null });
   try { await terimaPembayaranJual(form()); } catch (error) { expect(String(error)).not.toContain("draft_done"); }
 });
+it("mengirim cabang penerima uang dan memastikan server mencatat cabang yang sama", async () => {
+  db.rpc.mockResolvedValue({ data: { invoice_id: "invoice", receipt_id: "receipt", journal_id: "journal", document_no: "RC-2", branch_id: "cms", cash_journal_id: "kas" }, error: null });
+  const fd = form(); fd.set("tindakan", "simpan"); fd.set("branch_id", "cms"); fd.set("invoice_branch_id", "dc");
+  await expect(terimaPembayaranJual(fd)).rejects.toThrow("draft_done=durable");
+  expect(db.rpc).toHaveBeenCalledExactlyOnceWith("receive_wholesale_payment", { p_request_key: "durable", p_invoice_id: "invoice", p_tanggal: "2026-10-21", p_amount: 30, p_metode: "Transfer", p_account_id: null, p_advance_id: null, p_catatan: null, p_branch_id: "cms" });
+});
+it("tidak mengonfirmasi penerimaan bila cabang yang tercatat berbeda", async () => {
+  db.rpc.mockResolvedValue({ data: { invoice_id: "invoice", receipt_id: "receipt", journal_id: "journal", document_no: "RC-3", branch_id: "dc" }, error: null });
+  const fd = form(); fd.set("tindakan", "simpan"); fd.set("branch_id", "cms"); fd.set("invoice_branch_id", "dc");
+  try { await terimaPembayaranJual(fd); throw new Error("Should throw"); } catch (error) { expect(String(error)).not.toContain("draft_done"); }
+});
+it("cabang sama dengan cabang faktur = panggilan lama persis (aman sebelum database diperbarui)", async () => {
+  db.rpc.mockResolvedValue({ data: { invoice_id: "invoice", receipt_id: "receipt", journal_id: "journal", document_no: "RC-4" }, error: null });
+  const fd = form(); fd.set("tindakan", "simpan"); fd.set("branch_id", "dc"); fd.set("invoice_branch_id", "dc");
+  await expect(terimaPembayaranJual(fd)).rejects.toThrow("draft_done=durable");
+  expect(db.rpc).toHaveBeenCalledExactlyOnceWith("receive_wholesale_payment", { p_request_key: "durable", p_invoice_id: "invoice", p_tanggal: "2026-10-21", p_amount: 30, p_metode: "Transfer", p_account_id: null, p_advance_id: null, p_catatan: null });
+});

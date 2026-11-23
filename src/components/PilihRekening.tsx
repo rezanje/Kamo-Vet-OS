@@ -7,6 +7,8 @@
 export type RekeningOpsi = {
   id: string; nama: string; coa_code: string;
   jenis?: string | null; no_rekening?: string | null;
+  /** Rekening milik satu cabang (mis. Kas Toko); kosong = bisa dipakai semua cabang. */
+  branch_id?: string | null;
 };
 
 /** "120002 · Bank BCA Transaksi (4270086743)"; no. rekening ditambah bila belum ada di nama. */
@@ -51,7 +53,7 @@ export function PilihRekening({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadRekeningAktif(supabase: any): Promise<RekeningOpsi[]> {
   const { data } = await supabase
-    .from("cash_accounts").select("id, nama, coa_code, jenis, no_rekening")
+    .from("cash_accounts").select("id, nama, coa_code, jenis, no_rekening, branch_id")
     .eq("is_active", true).order("jenis").order("coa_code").order("nama");
   return (data ?? []) as RekeningOpsi[];
 }
