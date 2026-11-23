@@ -80,6 +80,9 @@ export function clientFixture(options: { role?: string; active?: boolean; module
     rpc: (name: string, args: { b: string; p_invoice_item_ids?: string[] }) => {
       if (name === "inventory_is_average") return Promise.resolve({ data: options.averageMode ?? false, error: options.methodError ?? null });
       if (name === "user_can_access_branch") return Promise.resolve({ data: args.b !== options.deniedBranch, error: null });
+      // Database tiruan ini belum punya fungsi baca laporan struk kasir: pembaca menjatuhkan diri ke jalur tabel (seperti database sebelum migrasi).
+      if (name === "laporan_struk_kasir") return Promise.resolve({ data: null, error: { code: "PGRST202", message: "Could not find the function public.laporan_struk_kasir in the schema cache" } });
+      if (name === "laporan_invoice_klinik") return Promise.resolve({ data: null, error: { code: "PGRST202", message: "Could not find the function public.laporan_invoice_klinik in the schema cache" } });
       if (!(name in tables) && options.errorTable !== name) {
         const missing = { select: () => missing, order: () => missing, range: async () => ({ data: null, count: null, error: { code: "PGRST202", message: "missing function" } }) };
         return missing;

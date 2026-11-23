@@ -35,13 +35,14 @@ function rpcRefusal(error: { code?: string; message?: string } | null, petunjukB
 }
 
 /**
- * Batalkan penjualan / Ubah transaksi membalik hadiah staf kasir (poin, rangkaian, misi) dan HANYA bisa dari transaksi kasir yang terakhir
- * (urutan wajib, kalau tidak hadiah transaksi sesudahnya ikut terhapus). Kasir yang sudah jualan lagi menabrak penjaga ini: database
- * menolak seluruhnya (tidak ada yang tersimpan). Pesan database memakai istilah dalam; ganti dengan langkah yang bisa dikerjakan Owner.
+ * Batalkan penjualan / Ubah transaksi membalik hadiah staf kasir (poin, rangkaian, misi). Sejak 21 Nov 2026 struk yang tidak memberi
+ * hadiah (hanya menambah progres misi) boleh dibalik walau kasir sudah jualan lagi; struk yang memberi poin, memulai rangkaian hari itu,
+ * atau ikut menyelesaikan misi tetap harus dari transaksi kasir yang terakhir (kalau tidak, hadiah transaksi sesudahnya ikut terhapus).
+ * Database menolak seluruhnya (tidak ada yang tersimpan). Pesan database memakai istilah dalam; ganti dengan langkah yang bisa dikerjakan Owner.
  */
 function petunjukHadiahStaf(message: string): string {
   if (!/Transaksi staf berikutnya masih aktif|hadiah staf|aktivitas staf/i.test(message)) return message;
-  return "Struk ini tidak bisa dibatalkan atau diubah sekarang: kasir yang sama sudah membuat transaksi sesudahnya, dan hadiah staf harus dibalik berurutan. "
+  return "Struk ini tidak bisa dibatalkan atau diubah sekarang: kasir yang sama sudah membuat transaksi sesudahnya, dan struk ini ikut menentukan poin, rangkaian, atau misi kasir yang harus dibalik berurutan. "
     + "Tidak ada yang berubah. Jika struk sedang belum dibayar, klik Terima pembayaran satu kali agar kembali Lunas. Untuk menambah barang, catat sebagai transaksi baru di Kasir.";
 }
 

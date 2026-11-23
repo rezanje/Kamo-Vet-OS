@@ -9,6 +9,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: fixt
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Error(`REDIRECT:${url}`); } }));
 
+import { hariIniWIB } from "@/lib/tanggal";
 import { saveExpense } from "@/lib/expense-save";
 import { simpanPengeluaranKlinik } from "@/app/(app)/klinik/pengeluaran/actions";
 import { simpanPengeluaranKasir } from "@/app/kasir/pengeluaran/actions";
@@ -18,7 +19,7 @@ function form(extra: Record<string, string> = {}) {
   const data = new FormData();
   const base: Record<string, string> = {
     request_key: "key-lama", draft_key: "key-lama", draft_scope: "clinic-expense:shift", jumlah: "80000", kategori: "Transportasi",
-    deskripsi: "Transport housecall", metode_bayar: "Tunai", tanggal: "2026-11-11",
+    deskripsi: "Transport housecall", metode_bayar: "Tunai", tanggal: hariIniWIB(),
     lampiran: JSON.stringify([{ path: "pengeluaran/1-a.png", nama: "a.png", mime: "image/png", ukuran: 84374 }]), ...extra,
   };
   for (const [k, v] of Object.entries(base)) data.set(k, v);
