@@ -4,6 +4,7 @@ import { INVOP_PATH, type InvopBranch } from "@/lib/inventaris-operasional";
 const TABS = [
   { key: "daftar", label: "Daftar Barang", href: INVOP_PATH, icon: "ti-list" },
   { key: "opname", label: "Opname", href: `${INVOP_PATH}/opname`, icon: "ti-clipboard-check" },
+  { key: "pembelian", label: "Pembelian", href: `${INVOP_PATH}/pembelian`, icon: "ti-shopping-cart" },
   { key: "riwayat", label: "Riwayat Cabang", href: `${INVOP_PATH}/riwayat`, icon: "ti-history" },
 ] as const;
 

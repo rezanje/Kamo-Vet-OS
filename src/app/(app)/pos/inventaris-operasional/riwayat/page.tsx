@@ -1,12 +1,12 @@
 import { readListPage } from "@/lib/checked-list";
 import { ListLoadFailure, ListPagination } from "@/components/ListPagination";
 import { SecHeader } from "@/components/SecHeader";
-import { INVOP_PATH, fmtQty, fmtSelisih, isUuid } from "@/lib/inventaris-operasional";
+import { INVOP_PATH, LABEL_JENIS, fmtQty, fmtSelisih, isUuid, type JenisRiwayat } from "@/lib/inventaris-operasional";
 import { loadInvopContext } from "@/lib/inventaris-operasional-server";
 import { InvopHeader, TanpaCabang } from "../InvopHeader";
 
 type Row = {
-  id: string; jenis: "saldo_awal" | "opname"; count_id: string | null;
+  id: string; jenis: JenisRiwayat; count_id: string | null;
   qty_sebelum: number; qty_sesudah: number; selisih: number; alasan: string | null; actor_nama: string; created_at: string;
   operational_inventory_items: { nama: string; satuan: string } | null;
 };
@@ -55,11 +55,11 @@ export default async function RiwayatOperasionalPage({ searchParams }: {
                     <tr key={r.id}>
                       <td style={{ fontSize: 11, color: "var(--tm)", whiteSpace: "nowrap" }}>{fmtWaktu(r.created_at)}</td>
                       <td style={{ fontSize: 11.5, fontWeight: 500 }}>{r.operational_inventory_items?.nama ?? "—"} <span style={{ color: "var(--td)", fontWeight: 400 }}>{r.operational_inventory_items?.satuan}</span></td>
-                      <td><span className={`bge ${r.jenis === "opname" ? "o" : "g"}`}>{r.jenis === "opname" ? "Opname" : "Saldo awal"}</span></td>
+                      <td><span className={`bge ${r.jenis === "opname" ? "o" : r.jenis === "batal_pembelian" ? "r" : "g"}`}>{LABEL_JENIS[r.jenis] ?? r.jenis}</span></td>
                       <td style={{ textAlign: "right", fontSize: 11.5 }}>{fmtQty(Number(r.qty_sebelum))}</td>
                       <td style={{ textAlign: "right", fontSize: 11.5 }}>{fmtQty(Number(r.qty_sesudah))}</td>
-                      <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: r.jenis === "opname" && d !== 0 ? "#b91c1c" : "var(--tm)" }}>
-                        {r.jenis === "opname" ? (d === 0 ? "Sesuai" : fmtSelisih(d)) : "—"}
+                      <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: r.jenis !== "saldo_awal" && d < 0 ? "#b91c1c" : r.jenis === "pembelian" ? "#15803d" : "var(--tm)" }}>
+                        {r.jenis === "opname" ? (d === 0 ? "Sesuai" : fmtSelisih(d)) : r.jenis === "saldo_awal" ? "—" : fmtSelisih(d)}
                       </td>
                       <td style={{ fontSize: 11 }}>{r.alasan ?? ""}</td>
                       <td style={{ fontSize: 11 }}>{r.actor_nama}</td>
