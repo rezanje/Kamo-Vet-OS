@@ -19,7 +19,7 @@ export function bikinKlienTiruan(tables: Record<string, Baris[]>, rpcs?: Record<
       const filters: ((b: Baris) => boolean)[] = [];
       const teks: string[] = [];
       let select = ""; let urut = "id"; let range: [number, number] | null = null;
-      const nilai = (baris: Baris, kolom: string) => baris[kolom];
+      const nilai = (baris: Baris, kolom: string): unknown => kolom.split(".").reduce<unknown>((x, k) => (x && typeof x === "object" ? (x as Baris)[k] : undefined), baris);
       const q: Record<string, unknown> = {
         select: (kolom: string) => { select = kolom; return q; },
         eq: (kolom: string, v: unknown) => { teks.push(`${kolom}=${String(v)}`); filters.push(b => nilai(b, kolom) === v); return q; },

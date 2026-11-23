@@ -47,8 +47,11 @@ export function rentangHari(dari: string, sampai: string, panjang = HARI_PER_REN
 }
 
 /** Fungsi belum dipasang di database — HANYA bila galat menyebut fungsi ini (galat lain tidak boleh diam-diam jatuh ke jalur lama). */
+export function fungsiBelumAda(error: { code?: string; message?: string }, nama: string): boolean {
+  return (error.code === "PGRST202" || error.code === "42883") && (error.message ?? "").includes(nama);
+}
 export function fungsiStrukBelumAda(error: { code?: string; message?: string }): boolean {
-  return (error.code === "PGRST202" || error.code === "42883") && (error.message ?? "").includes(STRUK_KASIR_RPC);
+  return fungsiBelumAda(error, STRUK_KASIR_RPC);
 }
 
 async function bacaRentang(supabase: RpcClient, rentang: { dari: string; sampai: string }, cabangId: string, denganItem: boolean): Promise<{ hasil: HasilStrukKasir } | { belumAda: true }> {
