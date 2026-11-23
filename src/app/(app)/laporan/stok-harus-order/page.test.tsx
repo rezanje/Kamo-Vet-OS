@@ -72,6 +72,16 @@ describe("halaman Stok Harus Order", () => {
     const html = await render({ tampil: "1" });
     expect(html).not.toContain('href="/pos/stok-minimum"');
   });
+  it("Semua klinik: hanya gudang klinik yang dihitung, pilihan tetap terpilih dan ikut ke unduhan", async () => {
+    mock.pilihan.mockResolvedValue({
+      gudang: [{ id: "w1", code: "WH", name: "Toko", type: "RETAIL" }, { id: "v1", code: "VET", name: "Klinik", type: "VET" }, { id: "v2", code: "VET2", name: "Klinik 2", type: "VET" }],
+      kategori: [], kategoriOpsi: [], kategoriDari: () => "OBAT",
+    });
+    const html = await render({ tampil: "1", gudang: "klinik" });
+    expect(mock.ringkas).toHaveBeenLastCalledWith(expect.anything(), "", ["v1", "v2"]);
+    expect(html).toContain('<option value="klinik" selected="">Semua klinik (2 gudang klinik)</option>');
+    expect(html).toContain("/laporan/stok-harus-order/unduh?gudang=klinik&amp;");
+  });
   it("tidak ada yang harus dipesan: pesan kosong", async () => {
     mock.ringkas.mockResolvedValue(analisisSemua({ hari_ini: "2026-11-13", riwayat_hari: 13, baris: [m({ id: "c", stok: 500, keluar: 14 })] }));
     expect(await render({ tampil: "1" })).toContain("Tidak ada barang yang harus dipesan");
