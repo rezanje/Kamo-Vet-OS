@@ -32,7 +32,7 @@ function bacaHasil(data: unknown): HasilStokMentah {
 
 /**
  * Hanya angka ringkas (kartu dashboard): tanpa kategori/gudang. `gudang` = satu gudang; `daftar` = sekelompok gudang
- * ("Semua petshop" / "Semua klinik", migrasi 20261203100000). Parameter daftar hanya dikirim bila diisi.
+ * ("Semua petshop" / "Semua klinik", migrasi 20261204100000). Parameter daftar hanya dikirim bila diisi.
  */
 export async function muatRingkasStok(client: AnyClient, gudang = "", daftar: readonly string[] | null = null) {
   const args: Record<string, unknown> = { p_gudang: gudang || null, p_jendela_hari: KONFIG_STOK.jendelaHari };

@@ -488,7 +488,7 @@ def main():
     with DB(args.pg_bin) as pg:
         pg.sql(hris.PLATFORM)
         pg.sql(hris.PERAN)
-        lain = [f for f in sorted(MIGRATIONS.glob("*.sql")) if f.name not in (MIGRASI.name, "20261203100000_stok_grup_gudang.sql")]  # grup gudang menggantikan fungsi ini sesudahnya
+        lain = [f for f in sorted(MIGRATIONS.glob("*.sql")) if f.name not in (MIGRASI.name, "20261204100000_stok_grup_gudang.sql")]  # grup gudang menggantikan fungsi ini sesudahnya
         for berkas in lain:
             if berkas.name in hris.SEBELUM:
                 pg.sql(hris.SEBELUM[berkas.name])

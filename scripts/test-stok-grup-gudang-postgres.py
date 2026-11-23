@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Uji migrasi 20261203100000 (laporan_stok_analisis: parameter p_gudang_daftar untuk "Semua petshop" / "Semua klinik")
+"""Uji migrasi 20261204100000 (laporan_stok_analisis: parameter p_gudang_daftar untuk "Semua petshop" / "Semua klinik")
 di PostgreSQL sungguhan, data fiktif.
 
 Dasar: skema penuh repo (semua migrasi KECUALI migrasi ini; fungsi 20261128100000 terpasang), data fiktif suite
@@ -34,7 +34,7 @@ hris = _muat("hris", "test-hris-cabang-postgres.py")
 dasar = _muat("stok_dasar", "test-stok-slow-order-postgres.py")  # fixture + pembantu (DB, call, baris)
 
 MIGRATIONS = ROOT / "supabase/migrations"
-MIGRASI = MIGRATIONS / "20261203100000_stok_grup_gudang.sql"
+MIGRASI = MIGRATIONS / "20261204100000_stok_grup_gudang.sql"
 HARI, FN = dasar.HARI, dasar.FN
 WA, WB, ITEM, U_OWNER, U_STAFF, d = dasar.WA, dasar.WB, dasar.ITEM, dasar.U_OWNER, dasar.U_STAFF, dasar.d
 CAB_C = "c0000000-0000-4000-8000-00000000000c"

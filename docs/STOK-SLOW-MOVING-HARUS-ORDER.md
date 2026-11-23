@@ -17,7 +17,7 @@ Hanya baca. Tidak mengubah uang, stok, atau data lain.
   transit dan expired TIDAK masuk keduanya; tetap terhitung di "Semua gudang digabung" dan bisa dipilih satu-satu. Aturan di `GRUP_GUDANG`
   / `pilihGudang` (`src/lib/stok-analisis.ts`). Di data 21 Nov: 10 gudang toko, 10 gudang klinik aktif (termasuk VET PEJUANG).
   Berlaku di dua halaman dan dua unduhan Excel (lembar Keterangan menulis lingkupnya).
-- Database: migrasi `20261203100000_stok_grup_gudang` menambah parameter terakhir `p_gudang_daftar uuid[]` (null = tidak membatasi)
+- Database: migrasi `20261204100000_stok_grup_gudang` menambah parameter terakhir `p_gudang_daftar uuid[]` (null = tidak membatasi)
   pada `laporan_stok_analisis`; tanda tangan lama dihapus supaya PostgREST tidak melihat dua fungsi. Isi perhitungan sama persis.
   Panggilan lama tetap jalan, jadi migrasi dipasang SEBELUM aplikasi. Aplikasi hanya mengirim `p_gudang_daftar` bila grup dipilih.
   Uji: `scripts/test-stok-grup-gudang-postgres.py` (GREEN 14, `--baseline` RED 9/11, `--mutants` 9/9 mati).

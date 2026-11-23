@@ -316,7 +316,7 @@ def main():
     with DB(args.pg_bin) as pg:
         pg.sql(hris.PLATFORM)
         pg.sql(hris.PERAN)
-        lain = [f for f in sorted(MIGRATIONS.glob("*.sql")) if f.name != MIGRASI.name and f.name not in ("20261128100000_stok_pakai_bersih.sql", "20261203100000_stok_grup_gudang.sql")]  # migrasi sesudahnya menggantikan fungsi ini: suite ini menguji definisi aslinya
+        lain = [f for f in sorted(MIGRATIONS.glob("*.sql")) if f.name != MIGRASI.name and f.name not in ("20261128100000_stok_pakai_bersih.sql", "20261204100000_stok_grup_gudang.sql")]  # migrasi sesudahnya menggantikan fungsi ini: suite ini menguji definisi aslinya
         for berkas in lain:
             if berkas.name in hris.SEBELUM:
                 pg.sql(hris.SEBELUM[berkas.name])
