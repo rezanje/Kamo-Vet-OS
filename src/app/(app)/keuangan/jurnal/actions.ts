@@ -26,6 +26,9 @@ function parseCorrection(formData: FormData) {
     tanggal: String(formData.get("tanggal") ?? "").trim(),
     deskripsi: String(formData.get("deskripsi") ?? "").trim(),
     reason: String(formData.get("reason") ?? "").trim(), lines,
+    // undefined = form tanpa pilihan cabang (cabang asli); "" = Pusat.
+    branchId: formData.has("branchId") ? String(formData.get("branchId") ?? "").trim() : undefined,
+    branchAsal: String(formData.get("branchAsal") ?? "").trim(),
   };
 }
 
@@ -34,9 +37,13 @@ export async function koreksiJurnal(formData: FormData) {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("revise_manual_journal", {
     p_request_key: c.requestKey, p_entry_id: c.entryId, p_expected_revision: c.revision,
-    p_action: "edit", p_header: { tanggal: c.tanggal, deskripsi: c.deskripsi }, p_lines: c.lines, p_reason: c.reason,
+    p_action: "edit", p_header: { tanggal: c.tanggal, deskripsi: c.deskripsi, ...(c.branchId !== undefined ? { branch_id: c.branchId } : {}) }, p_lines: c.lines, p_reason: c.reason,
   });
   if (error || !data?.reversal_journal_id || !data?.replacement_journal_id) kembali(error?.message ?? "Koreksi jurnal belum terkonfirmasi");
+  // Database versi lama mengabaikan cabang tanpa galat: jangan lapor sukses kalau cabang yang diminta tidak terpasang.
+  if (c.branchId !== undefined && c.branchId !== c.branchAsal && (data as { branch_id?: string | null }).branch_id !== (c.branchId || null)) {
+    kembali("Koreksi tersimpan, tapi cabang belum ikut berubah. Hubungi admin sistem.");
+  }
   redirect("/keuangan/jurnal?success=1" + transactionDraftAck(formData) + TAMPIL);
 }
 

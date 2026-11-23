@@ -12,13 +12,16 @@ import { batalkanJurnal, koreksiJurnal } from "./actions";
 
 type Account = { id: string; code: string; name: string };
 type Line = { account_id: string; debit: number; credit: number };
+type Cabang = { id: string; name: string };
 
-export function JurnalCorrectionForm({ entryId, revision, tanggal: initialDate, deskripsi: initialDescription, lines: initialLines, accounts, userId }: {
+export function JurnalCorrectionForm({ entryId, revision, tanggal: initialDate, deskripsi: initialDescription, lines: initialLines, accounts, userId, branchId: initialBranch = null, branches = [] }: {
   entryId: string; revision: number; tanggal: string; deskripsi: string; lines: Line[]; accounts: Account[]; userId: string;
+  branchId?: string | null; branches?: Cabang[];
 }) {
   const [tanggal, setTanggal] = useState(initialDate);
   const [deskripsi, setDeskripsi] = useState(initialDescription);
   const [lines, setLines] = useState(initialLines.map((line) => ({ ...line })));
+  const [branchId, setBranchId] = useState(initialBranch ?? "");
   const [reason, setReason] = useState("");
   const [voidReason, setVoidReason] = useState("");
   const serialized = JSON.stringify(lines);
@@ -31,14 +34,19 @@ export function JurnalCorrectionForm({ entryId, revision, tanggal: initialDate, 
 
   return <details style={{ marginTop: 8 }}>
     <summary style={{ cursor: "pointer", color: "#2563eb", fontSize: 10.5 }}>Edit jurnal manual</summary>
-    <CorrectionTransactionForm userId={userId} scope={editScope} action={koreksiJurnal} state={{ snapshot: { tanggal, deskripsi, lines, reason }, restore(value) {
+    <CorrectionTransactionForm userId={userId} scope={editScope} action={koreksiJurnal} state={{ snapshot: { tanggal, deskripsi, branchId, lines, reason }, restore(value) {
       if (typeof value.tanggal !== "string" || typeof value.deskripsi !== "string" || typeof value.reason !== "string" || !draftRows(value.lines, { account_id: "", debit: 0, credit: 0 })) return false;
+      if (typeof value.branchId === "string") setBranchId(value.branchId);
       setTanggal(value.tanggal); setDeskripsi(value.deskripsi); setReason(value.reason); setLines(value.lines); return true;
     }, reset() {} }}>
       {({ ready }) => <div style={{ display: "grid", gap: 6, marginTop: 7 }}>
-        <input type="hidden" name="entryId" value={entryId} /><input type="hidden" name="revision" value={revision} /><input type="hidden" name="lines" value={serialized} />
+        <input type="hidden" name="entryId" value={entryId} /><input type="hidden" name="revision" value={revision} /><input type="hidden" name="lines" value={serialized} /><input type="hidden" name="branchAsal" value={initialBranch ?? ""} />
         <input aria-label="Tanggal koreksi" className="fi" type="date" name="tanggal" value={tanggal} onChange={(e) => setTanggal(e.target.value)} required />
         <input aria-label="Deskripsi koreksi" className="fi" name="deskripsi" value={deskripsi} onChange={(e) => setDeskripsi(e.target.value)} required />
+        <select aria-label="Cabang koreksi" className="fi" name="branchId" value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+          <option value="">— Pusat / tanpa cabang —</option>
+          {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
         {lines.map((line, index) => <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px", gap: 5 }}>
           <SearchableItemPicker items={accounts} value={line.account_id} onChange={(id) => setLine(index, { account_id: id })} ariaLabel={`Akun baris ${index + 1}`} placeholder="Ketik kode / nama akun" selectedLabelFormat="code-name" detailLabel="Kode" requiredMessage="Pilih akun dari daftar hasil cari." />
           <NumberInput aria-label={`Debit baris ${index + 1}`} className="fi" type="number" min="0" step="0.01" value={line.debit || ""} onChange={(e) => setLine(index, { debit: Number(e.target.value) || 0, credit: 0 })} />
