@@ -10,6 +10,7 @@ import { bolehBukaPath } from "@/lib/akses";
 import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { getOpenShift } from "@/lib/shift";
 import { readCompleteList } from "@/lib/checked-list";
+import { kalimatNilaiOpname, nilaiDariKuitansi } from "@/lib/opname-nilai";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -263,9 +264,11 @@ export async function simpanHasil(formData: FormData) {
     || receipt.tanggal !== tanggal || typeof receipt.already_posted !== "boolean" || !Array.isArray(receipt.journal_ids) || receipt.journal_ids.some(id => typeof id !== "string" || !uuid.test(id))
     || (receipt.no_faktur !== null && typeof receipt.no_faktur !== "string")) fail("Posting opname belum dapat dipastikan. Muat ulang dan periksa hasil asal sebelum mencoba lagi.");
   for (const path of ["/pos/opname", "/kasir/opname", `/pos/opname/${orderId}`, `/kasir/opname/${orderId}`]) revalidatePath(path);
+  // Layar kasir sengaja tanpa angka modal; kantor melihat nilai kurang/lebih/neto dan peringatan barang tanpa harga.
+  const nilai = kalimatNilaiOpname(nilaiDariKuitansi(result.data), basis === "/pos/opname");
   const message = receipt.already_posted
     ? `Hasil ${receipt.no_hasil} sudah tersimpan. Tidak ada posting ulang.`
-    : `Hasil ${receipt.no_hasil} tersimpan; stok dan ${receipt.journal_ids.length} jurnal terverifikasi.${receipt.no_faktur ? ` Selisih kurang ditagihkan lewat faktur ${receipt.no_faktur}.` : ""}`;
+    : `Hasil ${receipt.no_hasil} tersimpan; stok dan ${receipt.journal_ids.length} jurnal terverifikasi.${receipt.no_faktur ? ` Selisih kurang ditagihkan lewat faktur ${receipt.no_faktur}.` : ""}${nilai}`;
   redirect(`${back}?success=${encodeURIComponent(message)}` + transactionDraftAck(formData));
 }
 

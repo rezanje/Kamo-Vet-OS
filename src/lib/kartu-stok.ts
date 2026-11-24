@@ -58,6 +58,27 @@ export function labelSource(s: string): string {
   return LABEL_SOURCE[s] ?? s;
 }
 
+// Opname, penyesuaian, dan koreksi stok bisa menambah ATAU mengurangi stok: label menyebut arahnya supaya
+// selisih lebih (+) tidak tersamar sebagai baris "Stok Opname" biasa.
+const ARAH: Record<string, [string, string]> = {
+  opname: ["Stok Opname — selisih lebih (+)", "Stok Opname — selisih kurang (−)"],
+  penyesuaian: ["Penyesuaian Persediaan — lebih (+)", "Penyesuaian Persediaan — kurang (−)"],
+  "stock-correction": ["Koreksi Stok — tambah (+)", "Koreksi Stok — kurang (−)"],
+};
+export function labelMutasi(source: string, qty: number): string {
+  const a = ARAH[source];
+  if (!a || !qty) return labelSource(source);
+  return qty > 0 ? a[0] : a[1];
+}
+
+/** Nilai satuan untuk kolom kartu stok. Stok MASUK dari opname/penyesuaian/koreksi dengan nilai 0 ditandai (bukan "—"
+ *  yang terbaca kosong), supaya barang plus tanpa harga kelihatan dan bisa dikoreksi. */
+export function nilaiSatuanKartu(m: { source: string; qty: number; unit_cost: number }): { teks: string; tanpaHarga: boolean } {
+  if (m.unit_cost) return { teks: Math.round(m.unit_cost).toLocaleString("id-ID"), tanpaHarga: false };
+  const tanpaHarga = m.qty > 0 && ARAH[m.source] !== undefined;
+  return { teks: tanpaHarga ? "Rp 0 (belum ada harga)" : "—", tanpaHarga };
+}
+
 // Saldo berjalan. Urutan mutasi = urutan yang dikirim pemanggil (tanggal lalu
 // created_at); saldo tidak boleh diurut ulang di sini atau angkanya jadi ngawur.
 export function susunKartuStok(saldoAwal: number, moves: Mutasi[]): BarisKartu[] {
