@@ -7,6 +7,8 @@ import { createClient as createSbClient } from "@supabase/supabase-js";
 import { assertAccountCreator, assertMasterAdmin } from "@/lib/master-guard";
 import { isAccountEditId } from "@/lib/user-account-edit";
 import { roleRpcFailure } from "@/lib/role-action-access";
+import { cekEmail, normalEmail } from "@/lib/lupa-password";
+import { kirimLinkPemulihan } from "@/lib/lupa-password-server";
 
 const BACK = "/pengaturan/pengguna";
 
@@ -189,4 +191,27 @@ export async function resetLoginPengguna(form: FormData): Promise<ResetLoginResu
   } catch {
     return { ok: false, message: "Hasil reset belum dapat dipastikan. Muat ulang halaman sebelum mengulang." };
   }
+}
+
+// Kirim link "buat password baru" ke email login karyawan (seperti tombol "Reset & Kirim Password" GajiHub).
+// Email login hanya terbaca oleh Super Admin (fungsi database menolak role lain), jadi tombol ini juga khusus Super Admin.
+// Password tidak pernah dilihat admin: karyawan membuatnya sendiri lewat link.
+export async function kirimLinkResetPengguna(form: FormData): Promise<ResetLoginResult> {
+  const client = await assertMasterAdmin(BACK, "login akun karyawan");
+  const profileId = String(form.get("profile_id") ?? "");
+  if (!isAccountEditId(profileId)) return { ok: false, message: "Akun tidak valid. Muat ulang halaman." };
+  let email = "";
+  try {
+    const { data, error } = await client.rpc("get_user_login_email", { p_profile_id: profileId });
+    if (error) return { ok: false, message: "Email login belum dapat dibaca. Hanya Super Admin yang bisa mengirim link reset." };
+    email = normalEmail(data);
+  } catch {
+    return { ok: false, message: "Email login belum dapat dibaca. Muat ulang halaman, lalu coba lagi." };
+  }
+  if (!email) return { ok: false, message: "Akun ini belum punya email login. Atur password manual di bawah." };
+  if (cekEmail(email)) return { ok: false, message: `Email login ${email} bukan email asli, jadi link tidak bisa dikirim. Ganti email login atau atur password manual di bawah.` };
+  const hasil = await kirimLinkPemulihan(email);
+  return hasil.ok
+    ? { ok: true, message: `Link reset password dikirim ke ${email}. Minta karyawan cek kotak masuk/Spam; link berlaku 1 jam.` }
+    : hasil;
 }

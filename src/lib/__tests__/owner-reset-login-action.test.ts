@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({ rpc: vi.fn(), denied: false }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
@@ -10,7 +10,9 @@ vi.mock("@/lib/master-guard", () => ({
     return { rpc: db.rpc };
   },
 }));
-import { resetLoginPengguna } from "@/app/(app)/pengaturan/pengguna/actions";
+const kirim = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/lupa-password-server", () => ({ kirimLinkPemulihan: kirim }));
+import { kirimLinkResetPengguna, resetLoginPengguna } from "@/app/(app)/pengaturan/pengguna/actions";
 
 const profile = "a0000000-0000-4000-8000-000000000001";
 function form(isi: Record<string, string>) {
@@ -61,4 +63,43 @@ it("non-pengelola ditolak sebelum memanggil database", async () => {
   db.denied = true;
   await expect(resetLoginPengguna(form({ email: "a@b.id" }))).rejects.toThrow("manager required");
   expect(db.rpc).not.toHaveBeenCalled();
+});
+
+describe("kirim link reset ke email karyawan (Super Admin)", () => {
+  const f = () => { const d = new FormData(); d.set("profile_id", profile); return d; };
+  beforeEach(() => kirim.mockResolvedValue({ ok: true, message: "terkirim" }));
+
+  it("membaca email login lewat fungsi khusus Super Admin lalu mengirim link", async () => {
+    db.rpc.mockResolvedValue({ data: "Dokter@Gmail.com", error: null });
+    const res = await kirimLinkResetPengguna(f());
+    expect(res).toMatchObject({ ok: true, message: expect.stringContaining("dokter@gmail.com") });
+    expect(db.rpc).toHaveBeenCalledExactlyOnceWith("get_user_login_email", { p_profile_id: profile });
+    expect(kirim).toHaveBeenCalledExactlyOnceWith("dokter@gmail.com");
+  });
+
+  it("bukan Super Admin: email tidak terbaca, link tidak dikirim", async () => {
+    db.rpc.mockResolvedValue({ data: null, error: { message: "LOGIN_RESET_DENIED: hanya Super Admin" } });
+    expect(await kirimLinkResetPengguna(f())).toMatchObject({ ok: false, message: expect.stringContaining("Super Admin") });
+    expect(kirim).not.toHaveBeenCalled();
+  });
+
+  it("email bukan asli (mis. @vetos.local) tidak dikirimi link", async () => {
+    db.rpc.mockResolvedValue({ data: "kasir@vetos.local", error: null });
+    expect(await kirimLinkResetPengguna(f())).toMatchObject({ ok: false, message: expect.stringContaining("bukan email asli") });
+    expect(kirim).not.toHaveBeenCalled();
+  });
+
+  it("gagal kirim diteruskan apa adanya; id tidak valid ditolak", async () => {
+    db.rpc.mockResolvedValue({ data: "a@b.com", error: null });
+    kirim.mockResolvedValueOnce({ ok: false, message: "terlalu sering" });
+    expect(await kirimLinkResetPengguna(f())).toEqual({ ok: false, message: "terlalu sering" });
+    const salah = new FormData(); salah.set("profile_id", "bukan-id");
+    expect(await kirimLinkResetPengguna(salah)).toMatchObject({ ok: false });
+  });
+
+  it("non-pengelola ditolak sebelum membaca apa pun", async () => {
+    db.denied = true;
+    await expect(kirimLinkResetPengguna(f())).rejects.toThrow("manager required");
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
 });
