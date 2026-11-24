@@ -26,7 +26,7 @@ async function fill(value: string) {
 }
 async function lock() { await act(async () => [...host.querySelectorAll('tbody button')].find(b => b.textContent?.trim() === 'Kunci')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))); }
 it('shows the authoritative stored count after a duplicate lock, rather than an unsaved newer input', async () => {
-  await fill('2'); await lock(); expect(host.querySelector('tbody tr')?.cells[5]?.textContent).toBe('1');
+  await fill('2'); await lock(); expect(host.querySelector<HTMLTableRowElement>('tbody tr')?.cells[5]?.textContent).toBe('1');
   expect(host.textContent).toContain('Buka untuk mengubah');
   expect(host.querySelector<HTMLInputElement>('input[name=fisik]')?.value ?? host.querySelector<HTMLInputElement>('input[name=fisik_json]')?.value ?? host.innerHTML).not.toContain('"item":2');
 });
