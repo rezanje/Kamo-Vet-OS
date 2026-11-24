@@ -43,7 +43,7 @@ it('rejects a malformed physical-count payload before posting', async () => {
 });
 it('office success message states shortage, surplus (HPP rata-rata) and net, plus the unpriced warning', async () => {
  s.failure = false; s.responseMode = 'values'; const f = form(); f.set('kembali', 'office');
- await expect(simpanHasil(f)).rejects.toThrow(/success=.*Nilai selisih: kurang Rp 500, lebih Rp 300 \(HPP rata-rata.*neto kurang Rp 200.*1 barang selisih lebih belum punya harga sama sekali.*Barang Z/s);
+ await expect(simpanHasil(f)).rejects.toThrow(/success=[\s\S]*Nilai selisih: kurang Rp 500, lebih Rp 300 \(HPP rata-rata[\s\S]*neto kurang Rp 200[\s\S]*1 barang selisih lebih belum punya harga sama sekali[\s\S]*Barang Z/);
 });
 it('cashier success message never shows modal value, only the unpriced warning', async () => {
  s.failure = false; s.responseMode = 'values';
