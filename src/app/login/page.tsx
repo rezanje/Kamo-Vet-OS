@@ -1,13 +1,15 @@
 import { login } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PasswordInput } from "@/components/PasswordInput";
+import Link from "next/link";
+import { TerusanPemulihan } from "./TerusanPemulihan";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; reset?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, reset } = await searchParams;
 
   return (
     <main
@@ -16,6 +18,7 @@ export default async function LoginPage({
         background: "linear-gradient(160deg, #eef4ff 0%, #f6faff 55%, #eaf6f0 100%)",
       }}
     >
+      <TerusanPemulihan />
       <form action={login} className="card" style={{ width: "100%", maxWidth: 380, padding: 0, overflow: "hidden" }}>
         <div style={{ background: "linear-gradient(90deg, var(--posb-dk), var(--posb))", padding: "26px 28px", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(255,255,255,.16)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -33,6 +36,11 @@ export default async function LoginPage({
               <i className="ti ti-alert-circle" /> {error}
             </div>
           )}
+          {!error && reset === "ok" && (
+            <div role="status" className="p2ban" style={{ background: "#e8f5ee", border: ".5px solid #86efac", color: "#15803d", margin: 0 }}>
+              <i className="ti ti-circle-check" /> Password baru tersimpan. Silakan masuk dengan password baru.
+            </div>
+          )}
 
           <div className="fg">
             <label className="flab">Email</label>
@@ -42,6 +50,9 @@ export default async function LoginPage({
           <div className="fg">
             <label className="flab">Password</label>
             <PasswordInput name="password" required placeholder="••••••••" autoComplete="current-password" />
+            <div style={{ textAlign: "right", marginTop: 6 }}>
+              <Link href="/login/lupa-password" style={{ fontSize: 11.5 }}>Lupa password?</Link>
+            </div>
           </div>
 
           <SubmitButton className="btn-acc" style={{ width: "100%", justifyContent: "center", background: "var(--posb)", padding: "10px 0", fontSize: 13 }} pendingText="Masuk…">
@@ -50,7 +61,7 @@ export default async function LoginPage({
 
           {/* Akun dibuat oleh admin di Pengaturan → Manajemen Pengguna. */}
           <p style={{ fontSize: 10, color: "var(--td)", textAlign: "center", margin: 0 }}>
-            Lupa password atau belum punya akun? Hubungi admin Kamo Group.
+            Belum punya akun? Hubungi admin Kamo Group.
           </p>
 
         </div>

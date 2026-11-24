@@ -1,7 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import { resetLoginPengguna, type ResetLoginResult } from "../../actions";
+import { kirimLinkResetPengguna, resetLoginPengguna, type ResetLoginResult } from "../../actions";
+
+// Seperti tombol "Reset & Kirim Password" GajiHub: karyawan menerima link di email lalu membuat password sendiri.
+export function KirimLinkReset({ profileId, emailSekarang }: { profileId: string; emailSekarang: string | null }) {
+  const [hasil, setHasil] = useState<ResetLoginResult | null>(null);
+  const [pending, setPending] = useState(false);
+  const kirim = async () => {
+    setPending(true);
+    setHasil(null);
+    try {
+      const data = new FormData();
+      data.set("profile_id", profileId);
+      setHasil(await kirimLinkResetPengguna(data));
+    } catch {
+      setHasil({ ok: false, message: "Link belum dapat dipastikan terkirim. Muat ulang halaman sebelum mengulang." });
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <div className="crm-sec">
+      {hasil && <p role={hasil.ok ? "status" : "alert"} className="p2ban"
+        style={hasil.ok ? { color: "#15803d", background: "#e8f5ee" } : { color: "#b91c1c", background: "#fef2f2" }}>{hasil.message}</p>}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <p style={{ fontSize: 12, color: "var(--tm)", margin: 0, flex: "1 1 260px" }}>
+          Kirim link ke <b>{emailSekarang ?? "—"}</b> supaya karyawan membuat password baru sendiri (berlaku 1 jam).
+          Karyawan juga bisa memintanya sendiri lewat &quot;Lupa password?&quot; di halaman masuk.
+        </p>
+        <button type="button" className="btn-acc" disabled={pending || !emailSekarang} onClick={() => void kirim()}>
+          <i className="ti ti-mail-forward" /> {pending ? "Mengirim…" : "Reset & kirim link ke email"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // U13: hanya dirender untuk Super Admin. Kosongkan kolom yang tidak ingin diubah.
 export function ResetLoginForm({ profileId, emailSekarang }: { profileId: string; emailSekarang: string | null }) {

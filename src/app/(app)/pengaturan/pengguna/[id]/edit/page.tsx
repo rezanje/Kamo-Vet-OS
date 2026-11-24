@@ -8,7 +8,7 @@ import { allowedBranchIds } from "@/lib/branch-access";
 import { readCompleteList } from "@/lib/checked-list";
 import { isAccountEditId, isUserAccountEditSnapshot, type UserAccountEditBranch, type UserAccountEditSnapshot } from "@/lib/user-account-edit";
 import { UserAccountEditForm } from "./UserAccountEditForm";
-import { ResetLoginForm } from "./ResetLoginForm";
+import { KirimLinkReset, ResetLoginForm } from "./ResetLoginForm";
 import { AksesKhususForm } from "./AksesKhususForm";
 import { aturanDariKonfigurasi, parseDataAksesAkun, ringkasAkses, ringkasAksesAkun, type DataAksesAkun } from "@/lib/akses-akun-form";
 import { terapkanAksesAkun } from "@/lib/akses-akun";
@@ -105,10 +105,10 @@ export default async function EditPenggunaPage({ params }: { params: Promise<{ i
     <SecHeader num="01" title="EDIT AKUN PENGGUNA" desc="Perbarui nama akun, role, dan penugasan cabang akun login." />
     <UserAccountEditForm key={`${id}:${snapshot.version}`} snapshot={snapshot} branches={branches} requestId={randomUUID()} />
     {superAdmin && <section>
-      <SecHeader num="02" title="RESET LOGIN (SUPER ADMIN)" desc="Ganti email login dan/atau atur password baru untuk karyawan yang lupa password atau ganti email. Riwayat mencatat pelaku dan waktu, tanpa menyimpan password." />
+      <SecHeader num="02" title="RESET LOGIN (SUPER ADMIN)" desc="Kirim link reset password ke email karyawan, atau ganti email login dan/atau atur password baru secara manual. Riwayat mencatat pelaku dan waktu, tanpa menyimpan password." />
       {emailGagal
         ? <p role="alert">Data login belum dapat dimuat. Muat ulang halaman sebelum mereset.</p>
-        : <ResetLoginForm profileId={id} emailSekarang={emailLogin} />}
+        : <><KirimLinkReset profileId={id} emailSekarang={emailLogin} /><ResetLoginForm profileId={id} emailSekarang={emailLogin} /></>}
     </section>}
     {superAdmin && <section data-akses-khusus-section>
       <SecHeader num="03" title="AKSES KHUSUS AKUN INI" desc="Atur menu yang bisa dibuka akun ini tanpa mengubah perannya: ikuti peran, tambah menu, atau hanya menu tertentu (mis. hanya Penjualan Online). Hanya Owner yang bisa mengatur; setiap perubahan tercatat." />
