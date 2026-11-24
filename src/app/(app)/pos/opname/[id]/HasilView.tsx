@@ -3,6 +3,7 @@ import { ListLoadFailure } from "@/components/ListPagination";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { StockCorrectionPanel } from "../../koreksi-stok/StockCorrectionPanel";
+import { kalimatNilaiOpname, nilaiDariLaporanHarga } from "@/lib/opname-nilai";
 
 // Hasil opname yang sudah tersimpan. Dipakai modul Persediaan DAN layar kasir,
 // jadi isinya sengaja tanpa harga — kasir tidak perlu melihat modal barang.
@@ -51,6 +52,16 @@ export async function HasilView({ orderId, allowCorrections = false }: { orderId
       (a.items?.name ?? "").localeCompare(b.items?.name ?? ""));
   const beda = items.filter((r) => Number(r.selisih) !== 0);
 
+  // Hanya kantor (allowCorrections) dan hanya bila hasil belum dikoreksi: nilai kurang/lebih/neto dari foto laporan harga
+  // (HPP rata-rata untuk selisih lebih). Peran tanpa izin laporan menerima penolakan dan banner ini tidak tampil.
+  let ringkasNilai = "";
+  if (allowCorrections && !current) {
+    try {
+      const { data: laporan } = await supabase.rpc("read_opname_price_report", { p_result_id: result.id });
+      ringkasNilai = kalimatNilaiOpname(nilaiDariLaporanHarga(laporan), true).trim();
+    } catch { ringkasNilai = ""; }
+  }
+
   const invRaw = (result as unknown as { sales_invoices: Faktur | Faktur[] | null } | null)?.sales_invoices;
   const faktur = Array.isArray(invRaw) ? invRaw[0] ?? null : invRaw ?? null;
 
@@ -64,6 +75,7 @@ export async function HasilView({ orderId, allowCorrections = false }: { orderId
       {effectiveError && <div className="p2ban" role="status">Hasil koreksi belum dapat diperiksa. Angka di bawah adalah dokumen asal; muat ulang sebelum menggunakannya.</div>}
       {current && <div className="p2ban">Hasil efektif setelah koreksi revisi {current.revision}.</div>}
 
+      {ringkasNilai && <div className="p2ban" data-nilai-opname><i className="ti ti-coin" /> {ringkasNilai}</div>}
       {faktur && (
         <div className="p2ban" style={{ background: "#fff7ed", border: ".5px solid #fdba74", color: "#b45309" }}>
           <i className="ti ti-file-invoice" /> Selisih kurang ditagihkan lewat faktur{" "}

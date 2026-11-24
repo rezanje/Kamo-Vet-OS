@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
-import { susunKartuStok, labelSource, type Mutasi } from "@/lib/kartu-stok";
+import { susunKartuStok, labelSource, labelMutasi, nilaiSatuanKartu, type Mutasi } from "@/lib/kartu-stok";
 import { hariIniWIB } from "@/lib/tanggal";
 import { loadKatalogPermintaan } from "@/lib/permintaan";
 import { readCompleteList } from "@/lib/checked-list";
@@ -221,11 +221,16 @@ export default async function KartuStokPage({
                             : r.source_ref ?? "—";
                         })()}
                       </td>
-                      <td style={{ fontSize: 11 }}>{labelSource(r.source)}</td>
+                      <td style={{ fontSize: 11 }}>{labelMutasi(r.source, r.qty)}</td>
                       <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{r.gudang}</td>
-                      <td style={{ textAlign: "right", fontSize: 10.5, color: "var(--tm)" }}>
-                        {r.unit_cost ? Math.round(r.unit_cost).toLocaleString("id-ID") : "—"}
-                      </td>
+                      {(() => {
+                        const nilai = nilaiSatuanKartu(r);
+                        return (
+                          <td style={{ textAlign: "right", fontSize: 10.5, color: nilai.tanpaHarga ? "#b45309" : "var(--tm)" }} data-tanpa-harga={nilai.tanpaHarga ? "1" : undefined}>
+                            {nilai.teks}
+                          </td>
+                        );
+                      })()}
                       <td style={{ textAlign: "right", fontSize: 11, color: r.masuk ? "#15803d" : "var(--td)" }}>
                         {r.masuk ? r.masuk.toLocaleString("id-ID") : "·"}
                       </td>

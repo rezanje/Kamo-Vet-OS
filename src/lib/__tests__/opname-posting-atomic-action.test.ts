@@ -6,7 +6,7 @@ vi.mock('@/lib/inventory', () => ({ stockInAtBuyPrice: async () => { s.stock += 
 vi.mock('@/lib/no-dokumen', () => ({ nomorBerikutnya: async () => ({ nomor: 'OPR.FICTION' }) }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: 'actor' } } }) },
-  rpc: async (name: string, params: unknown) => { s.rpcCalls.push({ name, params }); if (s.responseMode === 'transport') throw Error('Synthetic private transport detail'); if (s.responseMode === 'empty') return { data: null, error: null }; return s.failure ? { data: null, error: { code: 'P0001', message: 'Fictional journal failure' } } : { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'] }, error: null }; },
+  rpc: async (name: string, params: unknown) => { s.rpcCalls.push({ name, params }); if (s.responseMode === 'transport') throw Error('Synthetic private transport detail'); if (s.responseMode === 'empty') return { data: null, error: null }; if (s.responseMode === 'values') return { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'], shortage_value: 500, surplus_value: 300, surplus_offset: 300, net_variance: 200, surplus_unpriced: [{ item_id: '20000000-0000-4000-8000-000000000002', name: 'Barang Z', qty: 2 }] }, error: null }; return s.failure ? { data: null, error: { code: 'P0001', message: 'Fictional journal failure' } } : { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'] }, error: null }; },
   from(table: string) {
     let op = 'read'; const q = { select: () => q, eq: () => q, in: () => q, order: () => q, limit: () => q, maybeSingle: () => q, single: () => q,
       insert: () => { op = 'insert'; return q; }, update: () => { op = 'update'; return q; }, delete: () => q,
@@ -41,3 +41,18 @@ it('reports a lost response as uncertain without leaking transport details or re
 it('rejects a malformed physical-count payload before posting', async () => {
  const f = form(); f.set('fisik','broken-json'); await expect(simpanHasil(f)).rejects.toThrow('Hitungan'); expect(s.rpcCalls).toHaveLength(0);
 });
+it('office success message states shortage, surplus (HPP rata-rata) and net, plus the unpriced warning', async () => {
+ s.failure = false; s.responseMode = 'values'; const f = form(); f.set('kembali', 'office');
+ await expect(simpanHasil(f)).rejects.toThrow(/success=.*Nilai selisih: kurang Rp 500, lebih Rp 300 \(HPP rata-rata.*neto kurang Rp 200.*1 barang selisih lebih belum punya harga sama sekali.*Barang Z/s);
+});
+it('cashier success message never shows modal value, only the unpriced warning', async () => {
+ s.failure = false; s.responseMode = 'values';
+ let msg = ''; try { await simpanHasil(form()); } catch (e) { msg = (e as Error).message; }
+ expect(msg).toContain('success='); expect(msg).not.toContain('Nilai selisih'); expect(msg).not.toContain('Rp 500'); expect(msg).toContain('Barang Z');
+});
+it('an old receipt without the new keys still reports success without invented numbers', async () => {
+ s.failure = false; s.responseMode = ''; const f = form(); f.set('kembali', 'office');
+ let msg = ''; try { await simpanHasil(f); } catch (e) { msg = (e as Error).message; }
+ expect(msg).toContain('tersimpan'); expect(msg).not.toContain('Nilai selisih');
+});
+
