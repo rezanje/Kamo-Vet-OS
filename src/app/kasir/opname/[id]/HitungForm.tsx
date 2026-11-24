@@ -169,13 +169,14 @@ export function HitungForm({
         </div>
 
         <div style={{ overflowX: "auto", maxHeight: 460, overflowY: "auto" }}>
-          <table className="tbl" style={{ minWidth: 620 }}>
+          <table className="tbl" style={{ minWidth: 680 }}>
             <thead>
               <tr>
                 <th>Kode #</th>
                 <th>Nama Barang</th>
                 <th>Kategori</th>
                 <th style={{ textAlign: "right" }}>Harga jual</th>
+                <th scope="col">Satuan</th>
                 <th style={{ textAlign: "right" }}>Jumlah fisik</th>
                 <th style={{ width: 108 }}>Kunci</th>
               </tr>
@@ -183,20 +184,25 @@ export function HitungForm({
             <tbody>
               {tampil.map((r) => {
                 const locked = kunci[r.item_id] !== undefined;
+                const unit = r.unit.trim();
                 return (
                   <tr key={r.item_id} style={locked ? { background: "#f0fdf4" } : undefined}>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.code}</td>
                     <td style={{ fontSize: 11.5 }}>{r.name}</td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{r.kategori}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.sell_price)}</td>
+                    <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+                      {unit || <span aria-label="Satuan belum diisi">—</span>}
+                    </td>
                     <td style={{ textAlign: "right" }}>
                       {locked ? (
                         <span style={{ fontSize: 12, fontWeight: 700, color: "#15803d" }}>
-                          {kunci[r.item_id]} {r.unit}
+                          {kunci[r.item_id]}
                         </span>
                       ) : (
                         <NumberInput className="fi" type="number" min={0} step="any" inputMode="decimal"
                           placeholder="—"
+                          aria-label={`Jumlah fisik ${r.name}${unit ? ` (${unit})` : ""}`}
                           value={isian[r.item_id] ?? ""}
                           onChange={(e) => setIsian((m) => ({ ...m, [r.item_id]: e.target.value }))}
                           style={{ width: 92, textAlign: "right" }} />
@@ -228,7 +234,7 @@ export function HitungForm({
               })}
               {tampil.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                  <td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                     {rows.length === 0 ? "Tidak ada barang dalam daftar hitung ini." : "Tidak ada barang cocok saringan."}
                   </td>
                 </tr>
