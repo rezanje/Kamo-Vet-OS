@@ -131,6 +131,10 @@ export function Sidebar({ branches, fullName, role, aksesModul = [] }: Props) {
           <Link href="/me" prefetch={false} style={{ color: "#fff", fontSize: 11, fontWeight: 500, textDecoration: "none" }} title="Buka dashboard pribadi">
             {fullName}
           </Link>
+          {" "}
+          <Link href="/crm/komplain" prefetch={false} style={{ color: "rgba(255,255,255,.7)", fontSize: 10, textDecoration: "none" }} title="Catat atau lihat komplain pelanggan">
+            <i className="ti ti-message-report" /> Komplain
+          </Link>
           <div style={{ color: "rgba(255,255,255,.38)", fontSize: 9.5 }}>
             {role}
           </div>

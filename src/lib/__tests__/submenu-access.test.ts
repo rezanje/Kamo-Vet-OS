@@ -94,6 +94,7 @@ describe("every real page route resolves under each module that owns it", () => 
     for (const route of new Set(routes)) {
       if (route === "/") continue;
       if (Object.values(OPERATIONAL_PATHS).flat().some(p => prefix(route, p))) continue; // governed by Operasional groups
+      if (SELALU_BOLEH.some(p => prefix(route, p))) continue; // always open (e.g. /crm/komplain): access is decided by the database, not by a sub-menu
       for (const m of owners(route)) {
         const r = resolveSubmenu(m, route);
         if (r.kind === "unmapped" && !DENIED_WHEN_RESTRICTED.includes(`${m} ${route}`)) unresolved.push(`${m} ${route}`);

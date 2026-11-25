@@ -51,7 +51,8 @@ export const MODULE_PATHS: Record<string, string[]> = {
 /** Halaman yang tidak pernah diblokir: login, dashboard pribadi, dan pemilih shift. */
 // `/booking` = formulir publik pemilik hewan; karyawan yang sedang login pun
 // boleh membukanya (mis. mendaftarkan pelanggan lewat telepon).
-export const SELALU_BOLEH = ["/me", "/mulai", "/login", "/auth", "/booking"];
+// `/crm/komplain` = Komplain Pelanggan: semua akun internal boleh mencatat/melihat komplain miliknya; siapa melihat apa ditentukan database (RLS/RPC), bukan modul.
+export const SELALU_BOLEH = ["/me", "/mulai", "/login", "/auth", "/booking", "/crm/komplain"];
 
 /**
  * Jalur non-modul yang melekat pada peran tertentu dan TIDAK diatur lewat layar

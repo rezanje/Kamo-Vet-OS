@@ -19,6 +19,8 @@ export function KlinikTopbar({ fullName, branchName }: { fullName: string; branc
         <Clock light />
         <span className="kt-divider" />
         <span className="kt-avatar">{initial}</span>
+        <Link href="/crm/komplain" className="kt-user" title="Catat atau lihat komplain pelanggan" prefetch={false}><i className="ti ti-message-report" /> Komplain</Link>
+        <span className="kt-divider" />
         <Link href="/me" className="kt-user" title="Profil dan password">{fullName}</Link>
       </div>
     </div>
