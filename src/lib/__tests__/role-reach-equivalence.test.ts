@@ -17,7 +17,8 @@ const ORIGINAL_MODULE_PATHS: Record<string, string[]> = {
   pajak: ["/keuangan/ppn", "/pengaturan/pajak"],
   laporan: ["/laporan", "/keuangan/laba-rugi", "/keuangan/neraca", "/keuangan/neraca-saldo", "/keuangan/arus-kas"],
 };
-const ORIGINAL_ALWAYS = ["/me", "/mulai", "/login", "/auth", "/booking"];
+// "/crm/komplain" is the one intended addition after base 0d5e2434 (Komplain Pelanggan, always open to internal accounts; the DB decides who sees what).
+const ORIGINAL_ALWAYS = ["/me", "/mulai", "/login", "/auth", "/booking", "/crm/komplain"];
 const ORIGINAL_EXTRA: Record<string, string[]> = { STAFF: ["/kasir"], DOCTOR: ["/kasir"], FINANCE: ["/pos/shift"] };
 const ORIGINAL_DEFAULT = (role: string): string[] | null =>
   role === "FINANCE" ? ["dashboard", "buku-besar", "kas-bank", "aset-tetap", "pajak", "laporan"] : role === "STAFF" ? ["klinik"] : null;

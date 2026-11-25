@@ -89,6 +89,9 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Kategori Pelanggan", icon: "ti-crown", ...B, href: "/crm/kategori-pelanggan" },
     // Follow up pelanggan (permintaan Pak Andri, 15 Nov 2026): lama tidak balik, pengingat grooming, follow up hari ini.
     { label: "Follow up pelanggan", icon: "ti-message-heart", ...A, nw: true, href: "/crm/follow-up" },
+    // Komplain Pelanggan (permintaan Pak Andri, 24 Nov 2026): daftar, dashboard, kategori. Hak ditentukan database, bukan modul (lihat SELALU_BOLEH di akses.ts).
+    { label: "Komplain pelanggan", icon: "ti-message-report", ...A, nw: true, href: "/crm/komplain" },
+    { label: "Dashboard komplain", icon: "ti-chart-bar", ...A, nw: true, href: "/crm/komplain/dashboard" },
     { label: "Status Ulasan", icon: "ti-star-half", ...B, nw: true, href: "/crm/status-ulasan" },
     { label: "Retention (WA)", icon: "ti-brand-whatsapp", ...P },
     { label: "Owner dashboard", icon: "ti-dashboard", ...P },
