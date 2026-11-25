@@ -168,7 +168,7 @@ def main():
     with NativePostgres(a.pg_bin) as db:
         lk = open(HEAVY, 'a'); fcntl.flock(lk, fcntl.LOCK_EX)
         try:
-            build_chain(db, {CAND}); db.sql('create database tpl_base template postgres')
+            build_chain(db, {f.name for f in MIGRATIONS.glob('*.sql') if f.name >= CAND}); db.sql('create database tpl_base template postgres')  # migrasi sesudah kandidat (mis. tambalan lampiran) tidak ikut: urutan nomor
         finally:
             fcntl.flock(lk, fcntl.LOCK_UN); lk.close()
         text = (MIGRATIONS / CAND).read_text()

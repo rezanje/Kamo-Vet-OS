@@ -52,7 +52,7 @@ export function DashboardKomplain({ d, filter }: { d: Dashboard; filter: FilterK
         <Kartu angka={String(k.terbuka)} label="Komplain terbuka" bantu="semua yang belum ditutup" />
         <Kartu angka={String(k.terlambat)} label={`Terlambat (> ${d.hari_telat} hari)`} bahaya={k.terlambat > 0} />
         <Kartu angka={String(k.kritis_terbuka)} label="Kritis, belum selesai" bahaya={k.kritis_terbuka > 0} />
-        <Kartu angka={String(k.ditutup_bulan_ini)} label="Ditutup bulan ini" />
+        <Kartu angka={String(k.ditutup_bulan_ini)} label="Ditutup bulan ini" bantu="tidak ikut saringan status & tanggal" />
         <Kartu angka={teksJam(k.rata_respons_jam)} label="Rata-rata respons pertama" />
         <Kartu angka={teksHari(k.rata_selesai_hari)} label="Rata-rata waktu penyelesaian" />
         <Kartu angka={String(k.total)} label={`Komplain ${tanggalPendek(d.rentang.dari)} – ${tanggalPendek(d.rentang.sampai)}`} bantu={`${k.ditutup_rentang} sudah ditutup`} />

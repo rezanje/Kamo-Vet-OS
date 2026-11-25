@@ -75,4 +75,16 @@ MUTANTS = [
     ('pagar-admin-online-guard-tidak-dijalankan', [("select admin_online_private.guard_all();\n", "", 1)]),
     ('pagar-admin-online-fence-tidak-dijalankan', [("select admin_online_private.fence_all();\n", "", 1)]),
     ('uang-disentuh', [("  perform clinic_private.komplain_log(c.id, c.branch_id, 'status', c.status, p_status, v_note,", "  -- point_ledger disentuh\n  perform clinic_private.komplain_log(c.id, c.branch_id, 'status', c.status, p_status, v_note,", 1)]),
+    # --- ditambahkan setelah review independen (mutan yang dulu selamat) ---
+    ('jejak-truncate-lepas', [("create trigger komplain_history_tetap_truncate before truncate on public.customer_complaint_history for each statement execute function clinic_private.komplain_guard_tetap();", "select 1;", 1)]),
+    ('lampiran-truncate-lepas', [("create trigger komplain_files_tetap_truncate before truncate on public.customer_complaint_files for each statement execute function clinic_private.komplain_guard_tetap();", "select 1;", 1)]),
+    ('kategori-dipakai-tanpa-visibilitas', [("'dipakai', (select count(*) from public.customer_complaints c where c.category_id = k.id and public.komplain_visible(c.branch_id, c.created_by, c.assigned_to)))", "'dipakai', (select count(*) from public.customer_complaints c where c.category_id = k.id))", 1)]),
+    ('daftar-limit-tanpa-batas', [("v_lim := least(greatest(coalesce(p_limit, 50), 1), 5000);", "v_lim := least(greatest(coalesce(p_limit, 50), 1), 5000000);", 1)]),
+    ('detail-ubah-tanpa-visibilitas', [("KOMPLAIN_ALASAN_UBAH: tulis alasan perubahan (minimal 3 huruf).'; end if;\n  select * into c from public.customer_complaints where id = p_id for update;\n  if not found or not public.komplain_visible(c.branch_id, c.created_by, c.assigned_to) then", "KOMPLAIN_ALASAN_UBAH: tulis alasan perubahan (minimal 3 huruf).'; end if;\n  select * into c from public.customer_complaints where id = p_id for update;\n  if not found then", 1)]),
+    ('json-umur-tutup-tidak-null', [("'umur_hari', case when c.closed_at is null then p_today - c.complaint_date end,", "'umur_hari', p_today - c.complaint_date,", 1)]),
+    ('log-nama-pelaku-kosong', [("v_name, v_role, p_key);", "null, v_role, p_key);", 1)]),
+    ('buat-nominal-batas-longgar', [("if p_nominal is not null and (p_nominal < 0 or p_nominal > 1000000000000) then\n    raise exception using errcode = '22023', message = 'KOMPLAIN_NOMINAL", "if p_nominal is not null and (p_nominal < 0 or p_nominal > 100000000000000) then\n    raise exception using errcode = '22023', message = 'KOMPLAIN_NOMINAL", 2)]),
 ]
+
+# Setara (tidak dimasukkan): 'trigger TRUNCATE di customer_complaints dilepas' (tabel anak jejak/lampiran punya pemicu TRUNCATE sendiri dan FK; TRUNCATE ... CASCADE ikut memicu pemicu tabel anak, jadi tetap ditolak)
+# dan 'buka_kembali = v_kelola and v_buka' tanpa v_buka (v_buka = pembuat atau petugas atau v_kelola, jadi v_kelola and v_buka = v_kelola; setara secara logika).
