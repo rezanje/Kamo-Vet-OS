@@ -9,7 +9,9 @@ import type { BatasMundurJual } from "@/lib/jual-tanggal-mundur";
 import { cashierPriceFloorIssue } from "@/lib/cashier-price-floor";
 import { tambahCustomerKasir } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
-import { computeTotals, lineDiscount, matchPromos, type Promo } from "@/lib/pos-calc";
+import { computeTotals, lineDiscount, linePromoApplied, matchPromos, type Promo } from "@/lib/pos-calc";
+import { ringkasBannerPromo } from "@/lib/promo-banner";
+import { PromoHariIniModal } from "./PromoHariIniModal";
 import { diskonGolonganKeranjang, type AturanDiskon, type BarangDiskon } from "@/lib/harga-golongan";
 import { pesanVoucherDitolak, potonganVoucher, type VoucherRow } from "@/lib/voucher";
 import { bacaKode, pesanKampanyeDitolak, pesanVoucherLewatKampanye, promoDenganKode, type KodeKampanye } from "@/lib/kode-kampanye";
@@ -469,10 +471,11 @@ export function KasirClient({
   const subtotal = cartHitung.reduce((a, l) => a + l.qty * l.harga, 0);
   const itemDiscTotal = cartHitung.reduce((a, l) => a + lineDiscount(l), 0);
   // Yang benar-benar terpakai dari promo (diskon manual kasir menang atas promo).
-  const promoTerpakai = cartHitung.reduce(
-    (a, l) => a + Math.min(lineDiscount(l), Number(l.promo_discount) || 0),
-    0,
-  );
+  const promoTerpakai = cartHitung.reduce((a, l) => a + linePromoApplied(l), 0);
+  // Banner "Promo diterapkan" memakai angka yang BENAR-BENAR masuk total; promo yang kalah dari diskon barang dijelaskan terpisah.
+  const bannerPromo = useMemo(() => komposisi
+    ? ringkasBannerPromo(komposisi.applied, komposisi.rows as unknown as Parameters<typeof ringkasBannerPromo>[1])
+    : null, [komposisi]);
   const afterItems = subtotal - itemDiscTotal;
   const diskonVal = !bolehDiskon ? 0 : diskonPct ? Math.round((afterItems * diskon) / 100) : diskon;
   // Diskon golongan dihitung server saat bayar; di sini hanya DITAMPILKAN supaya
@@ -905,11 +908,21 @@ export function KasirClient({
             <Row k={`Total item`} v={`${cart.reduce((a, l) => a + l.qty, 0)}`} />
             <Row k="Subtotal" v={rp(subtotal)} />
             {itemDiscTotal > 0 && <Row k="Pot. per item" v={`- ${rp(itemDiscTotal)}`} red />}
-            {komposisi && komposisi.applied.length > 0 && (
+            {bannerPromo && bannerPromo.dipakai.length > 0 && (
               <div data-testid="promo-diterapkan" style={{ fontSize: 10.5, color: "#15803d", margin: "-2px 0 6px", lineHeight: 1.45 }}>
                 <b><i className="ti ti-discount-2" /> Promo diterapkan</b>
-                {komposisi.applied.map((a) => (
+                {bannerPromo.dipakai.map((a) => (
                   <div key={a.promo_id}>{a.name ?? "Promo"} · hemat {rp(a.discount)}</div>
+                ))}
+              </div>
+            )}
+            {bannerPromo && bannerPromo.tertimpa.length > 0 && (
+              <div data-testid="promo-tidak-digabung" role="status" style={{ fontSize: 10.5, color: "#92400e", margin: "-2px 0 6px", lineHeight: 1.45 }}>
+                {bannerPromo.tertimpa.map((t) => (
+                  <div key={t.promo_id}>
+                    <b><i className="ti ti-info-circle" /> Promo {t.name ?? ""} tidak dipakai</b> di {t.barang.join(", ")}: barang ini sudah memakai diskon barang {t.itemDiscountLabel} ({rp(t.itemDiscount)}).
+                    Diskon barang dan promo tidak digabung, jadi yang dipotong {rp(t.itemDiscount)}, bukan {rp(t.promoDiscount)}.
+                  </div>
                 ))}
               </div>
             )}
@@ -1066,41 +1079,8 @@ export function KasirClient({
         </div>
       )}
 
-      {/* Daftar Promo Hari Ini — referensi kasir (read-only), diset dari pusat per cabang. */}
-      {showPromoList && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.35)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
-          onClick={() => setShowPromoList(false)}>
-          <div style={{ width: 460, maxHeight: "80vh", overflowY: "auto", background: "#fff", borderRadius: 12, overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ background: "var(--posb)", color: "#fff", padding: "11px 14px", display: "flex", alignItems: "center", gap: 8 }}>
-              <i className="ti ti-speakerphone" />
-              <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>Promo Berjalan Hari Ini · {branchName}</span>
-              <i className="ti ti-x" style={{ cursor: "pointer" }} onClick={() => setShowPromoList(false)} />
-            </div>
-            <div style={{ padding: "12px 14px" }}>
-              {promos.length === 0 ? (
-                <div style={{ fontSize: 11.5, color: "var(--td)", textAlign: "center", padding: "16px 0" }}>Tidak ada promo aktif hari ini untuk cabang ini.</div>
-              ) : (
-                promos.map((p) => (
-                  <div key={p.id} style={{ padding: "9px 0", borderBottom: ".5px dashed var(--bd)" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>
-                      <i className={`ti ${p.promo_type === "bundling" ? "ti-gift" : p.promo_type === "tebus_murah" ? "ti-tag" : "ti-discount-2"}`} style={{ marginRight: 5, color: "var(--posb)" }} />
-                      {p.name}
-                    </div>
-                    {p.rule?.suggest && <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 2 }}>{p.rule.suggest}</div>}
-                    <div style={{ fontSize: 9.5, color: "var(--td)", marginTop: 3 }}>
-                      {p.rule?.discount_value != null && <span>Diskon {p.rule.discount_value}{p.rule.discount_type === "percent" ? "%" : " Rp"} · </span>}
-                      Berlaku {p.valid_from ?? "—"} s/d {p.valid_until ?? "∞"}
-                    </div>
-                  </div>
-                ))
-              )}
-              <div style={{ fontSize: 9, color: "var(--td)", marginTop: 10 }}>
-                Diset dari pusat untuk cabang ini. Tawarkan ke customer — terapkan manual via potongan item / diskon.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Daftar Promo Hari Ini — referensi kasir (read-only), diset dari pusat per cabang. Komponen sendiri: daftar bergulir di dalam panel. */}
+      {showPromoList && <PromoHariIniModal promos={promos} branchName={branchName} onClose={() => setShowPromoList(false)} />}
 
       {showAddCust && (
         <div onClick={() => !addPending && setShowAddCust(false)}
