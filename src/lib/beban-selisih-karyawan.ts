@@ -6,10 +6,11 @@
  * cancel_opname_variance_charge memeriksa ulang hak, cabang, nilai, pembagian, periode, dan anti-dobel.
  *
  * Aturan bisnis:
- * - Nilai beban = qty kurang x HARGA JUAL cabang (snapshot saat posting), seluruh baris kurang satu opname.
+ * - Nilai beban = NETO per dokumen opname (keputusan Andri 24 Nov 2026): max(sum(qty kurang x harga jual cabang) - sum(qty lebih x harga jual cabang), 0),
+ *   harga jual snapshot saat posting; dibagi ke karyawan seperti biasa. Bila lebih menutup seluruh kurang, tidak ada beban (migrasi 20261210100000_so_kasbon_neto.sql).
  * - Dibagi ke 1-10 karyawan; jumlahnya wajib sama persis dengan nilai beban.
  * - Dicatat sebagai kasbon status "Dicatat": tampil di HRIS, TIDAK dipotong gaji otomatis (penggajian hanya membaca "Disetujui").
- * - Jurnal: Dr 182001 Kasbon Karyawan / Cr 720010 Beban Selisih Stok (HPP) / Cr 810004 Pendapatan Lain-lain (jual - HPP).
+ * - Jurnal: Dr 182001 Kasbon Karyawan / Cr 720010 Beban Selisih Stok (maks. beban yang masih tercatat setelah dikurangi lebih) / Cr 810004 Pendapatan Lain-lain (sisanya).
  */
 
 import { ALASAN_SELISIH_KAS } from "./kasbon";
@@ -27,15 +28,20 @@ export const MAKS_KARYAWAN = 10;
 export const PESAN_BEBAN_BELUM_TERKONFIRMASI =
   "Beban karyawan belum terkonfirmasi. Muat ulang halaman dan periksa riwayat beban sebelum mencoba lagi.";
 
+export type BarisLebih = BarisKurang;
 export type BarisKurang = { item_id: string; code: string; name: string; unit: string; qty: number; hpp: number | null; harga_jual: number; jual: number };
 export type BarisBeban = { employee_id: string; nama: string | null; amount: number; advance_id: string; status: string | null; dibayar: number };
 export type RiwayatBeban = {
   id: string; tanggal: string; reason: string; total: number; hpp_part: number; gain_part: number; actor_name: string | null; created_at: string;
+  /** Bukti neto (null untuk baris dari sebelum migrasi neto). */
+  jual_kurang: number | null; jual_lebih: number | null;
   journal_id: string; cancelled_at: string | null; cancel_reason: string | null; cancel_journal_id: string | null; lines: BarisBeban[];
 };
 export type RingkasanBeban = {
   result_id: string; no_hasil: string; tanggal_opname: string; order_id: string; no_opname: string; branch_id: string; warehouse: string;
   method: string | null; minus_lines: BarisKurang[]; minus_count: number; hpp_total: number; jual_total: number; hpp_part: number; gain_part: number;
+  /** Neto (migrasi so_kasbon_neto): jual_total = jual_kurang - jual_lebih (min. 0). Database lama tanpa kunci ini: lebih 0, neto = kotor. */
+  plus_lines: BarisLebih[]; plus_count: number; jual_kurang: number; jual_lebih: number; hpp_lebih: number; hpp_neto: number;
   today: string; refuse: { code: string; message: string } | null; can_charge: boolean; charges: RiwayatBeban[];
 };
 
@@ -53,14 +59,20 @@ export function bacaRingkasanBeban(raw: unknown): RingkasanBeban | null {
     || typeof r.can_charge !== "boolean" || nums.some((k) => angka(r[k]) === null)) return null;
   const refuse = r.refuse && typeof r.refuse === "object" && typeof (r.refuse as { message?: unknown }).message === "string"
     ? { code: String((r.refuse as { code?: unknown }).code ?? ""), message: (r.refuse as { message: string }).message } : null;
-  const minus = (r.minus_lines as Record<string, unknown>[]).map((x) => ({
+  const baris = (rows: unknown): BarisKurang[] => (Array.isArray(rows) ? rows as Record<string, unknown>[] : []).map((x) => ({
     item_id: String(x.item_id ?? ""), code: String(x.code ?? ""), name: String(x.name ?? ""), unit: String(x.unit ?? ""),
     qty: angka(x.qty) ?? 0, hpp: angka(x.hpp), harga_jual: angka(x.harga_jual) ?? 0, jual: angka(x.jual) ?? 0,
   }));
+  const minus = baris(r.minus_lines);
+  const plus = baris(r.plus_lines);
+  // Kunci neto hanya ada setelah migrasi so_kasbon_neto; bila ada tetapi bukan angka, bentuk dianggap tidak sah.
+  const netoKeys = ["plus_count", "jual_kurang", "jual_lebih", "hpp_lebih", "hpp_neto"] as const;
+  if (netoKeys.some((k) => r[k] !== undefined && angka(r[k]) === null)) return null;
   const charges = (r.charges as Record<string, unknown>[]).map((c) => ({
     id: String(c.id ?? ""), tanggal: String(c.tanggal ?? ""), reason: String(c.reason ?? ""),
     total: angka(c.total) ?? 0, hpp_part: angka(c.hpp_part) ?? 0, gain_part: angka(c.gain_part) ?? 0,
     actor_name: typeof c.actor_name === "string" ? c.actor_name : null, created_at: String(c.created_at ?? ""),
+    jual_kurang: angka(c.jual_kurang), jual_lebih: angka(c.jual_lebih),
     journal_id: String(c.journal_id ?? ""), cancelled_at: typeof c.cancelled_at === "string" ? c.cancelled_at : null,
     cancel_reason: typeof c.cancel_reason === "string" ? c.cancel_reason : null,
     cancel_journal_id: typeof c.cancel_journal_id === "string" ? c.cancel_journal_id : null,
@@ -74,6 +86,9 @@ export function bacaRingkasanBeban(raw: unknown): RingkasanBeban | null {
     no_opname: String(r.no_opname ?? ""), branch_id: String(r.branch_id ?? ""), warehouse: String(r.warehouse ?? ""),
     method: typeof r.method === "string" ? r.method : null, minus_lines: minus, minus_count: angka(r.minus_count)!,
     hpp_total: angka(r.hpp_total)!, jual_total: angka(r.jual_total)!, hpp_part: angka(r.hpp_part)!, gain_part: angka(r.gain_part)!,
+    plus_lines: plus, plus_count: r.plus_count === undefined ? 0 : angka(r.plus_count)!,
+    jual_kurang: r.jual_kurang === undefined ? angka(r.jual_total)! : angka(r.jual_kurang)!, jual_lebih: r.jual_lebih === undefined ? 0 : angka(r.jual_lebih)!,
+    hpp_lebih: r.hpp_lebih === undefined ? 0 : angka(r.hpp_lebih)!, hpp_neto: r.hpp_neto === undefined ? angka(r.hpp_total)! : angka(r.hpp_neto)!,
     today: String(r.today ?? ""), refuse, can_charge: r.can_charge, charges,
   };
 }

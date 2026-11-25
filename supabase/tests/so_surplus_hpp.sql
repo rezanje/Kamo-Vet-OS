@@ -360,4 +360,57 @@ select pg_temp.ok(not exists(select 1 from public.stock s where s.qty>=0 and s.q
 select pg_temp.ok((select count(*) from public.opname_results)>=16,'S19 sejumlah dokumen hasil terbentuk');
 select pg_temp.ok(not exists(select 1 from public.journal_entries e where e.source='opname' and (select count(*) from public.journal_entries x where x.source='opname' and x.source_ref=e.source_ref)>1),'S19 tidak ada dokumen opname dengan lebih dari satu jurnal');
 select pg_temp.ok(not exists(select 1 from public.stock_layers where source='opname' and unit_cost=0 and item_id in(select id from it where code not in('z6'))),'S19 tidak ada lapisan opname Rp0 kecuali barang yang memang tanpa harga (z6)');
+-- ═════════ S21 penjaga tiap langkah rantai cadangan (celah ulasan independen 24 Nov: mutan R03 R04 R05 R06 R08 R11 R12 R15 sebelumnya hidup) ═════════
+create table public.sx_reversed_mv(id uuid primary key);
+create or replace function public.stock_move_cost_was_reversed(p_move_id uuid) returns boolean language sql stable security definer set search_path='' as $$select exists(select 1 from public.sx_reversed_mv where id=p_move_id)$$;
+-- (R03) langkah harga masuk terakhir: lapisan/mutasi yang biayanya dibatalkan diabaikan
+select pg_temp.mk('r3');select pg_temp.lay(pg_temp.wa(),'r3',2,200,10);select pg_temp.lay(pg_temp.wa(),'r3',3,500,8);
+select public.stock_out_fifo(pg_temp.wa(),pg_temp.iid('r3'),5,'sale','SX-R3-OUT',pg_temp.today()-7);
+insert into public.sx_reversed select id from public.stock_layers where item_id=pg_temp.iid('r3') and unit_cost=500;
+insert into public.sx_reversed_mv select id from public.stock_moves where item_id=pg_temp.iid('r3') and qty>0 and unit_cost=500;
+select pg_temp.ok(pg_temp.sq(pg_temp.wa(),'r3')=0 and (pg_temp.cost(pg_temp.wa(),'r3')->>'unit_cost')::numeric=200 and pg_temp.cost(pg_temp.wa(),'r3')->>'source'='harga masuk terakhir gudang','S21a stok 0, lapisan terbaru 500 dibatalkan biayanya (lapisan + mutasi): harga masuk terakhir yang sah = 200');
+-- (R04) mutasi positif sale-void / purchase-invoice-void bukan bukti harga masuk; mutasi masuk lain tetap bukti
+select pg_temp.mk('r4a');select pg_temp.mk('r4b');select pg_temp.mk('r4c');
+select pg_temp.lay(pg_temp.wa(),c,2,100,10) from (values('r4a'),('r4b'),('r4c')) v(c);
+select public.stock_out_fifo(pg_temp.wa(),pg_temp.iid(c),2,'sale','SX-'||c||'-OUT',pg_temp.today()-9) from (values('r4a'),('r4b'),('r4c')) v(c);
+insert into public.stock_moves(tanggal,warehouse_id,item_id,qty,unit_cost,source,source_ref) values
+ (pg_temp.today()-1,pg_temp.wa(),pg_temp.iid('r4a'),1,999,'sale-void','SX-R4A-V'),(pg_temp.today()-1,pg_temp.wa(),pg_temp.iid('r4b'),1,888,'purchase-invoice-void','SX-R4B-V'),
+ (pg_temp.today()-1,pg_temp.wa(),pg_temp.iid('r4c'),1,777,'pesanan-selesai','SX-R4C-IN');
+select pg_temp.ok((pg_temp.cost(pg_temp.wa(),'r4a')->>'unit_cost')::numeric=100,'S21b mutasi sale-void bukan harga masuk: tetap 100 (bukan 999)');
+select pg_temp.ok((pg_temp.cost(pg_temp.wa(),'r4b')->>'unit_cost')::numeric=100,'S21b mutasi purchase-invoice-void bukan harga masuk: tetap 100 (bukan 888)');
+select pg_temp.ok((pg_temp.cost(pg_temp.wa(),'r4c')->>'unit_cost')::numeric=777 and pg_temp.cost(pg_temp.wa(),'r4c')->>'source'='harga masuk terakhir gudang','S21b mutasi masuk biasa (pesanan-selesai 777, lebih baru) tetap bukti harga masuk');
+-- (R05) lapisan bertanggal masa depan bukan harga masuk terakhir
+select pg_temp.mk('r5');select pg_temp.lay(pg_temp.wa(),'r5',2,100,10);select public.stock_out_fifo(pg_temp.wa(),pg_temp.iid('r5'),2,'sale','SX-R5-OUT',pg_temp.today()-9);
+select pg_temp.lay(pg_temp.wa(),'r5',1,900,-3);
+update public.stock_layers set qty_left=0 where item_id=pg_temp.iid('r5') and unit_cost=900;
+select pg_temp.ok((pg_temp.cost(pg_temp.wa(),'r5')->>'unit_cost')::numeric=100,'S21c lapisan bertanggal 3 hari ke depan (900) tidak dipakai: harga masuk terakhir 100');
+-- (R06) faktur langsung yang sudah dibatalkan (void) bukan harga masuk
+select pg_temp.mk('r6');select pg_temp.lay(pg_temp.wa(),'r6',2,100,10);select public.stock_out_fifo(pg_temp.wa(),pg_temp.iid('r6'),2,'sale','SX-R6-OUT',pg_temp.today()-9);
+select public.stock_in_fifo(pg_temp.wa(),pg_temp.iid('r6'),1,700,'faktur-langsung','FK-SX-R6',pg_temp.today()-2,null);
+update public.stock_layers set qty_left=0 where item_id=pg_temp.iid('r6') and unit_cost=700;
+insert into public.purchase_invoices(no_faktur,warehouse_id,voided_at) values('FK-SX-R6',pg_temp.wa(),now());
+select pg_temp.ok((pg_temp.cost(pg_temp.wa(),'r6')->>'unit_cost')::numeric=100,'S21d faktur langsung FK-SX-R6 sudah void (700): tidak dipakai, harga masuk terakhir sah 100');
+select pg_temp.mk('r6b');select pg_temp.lay(pg_temp.wa(),'r6b',2,100,10);select public.stock_out_fifo(pg_temp.wa(),pg_temp.iid('r6b'),2,'sale','SX-R6B-OUT',pg_temp.today()-9);
+select public.stock_in_fifo(pg_temp.wa(),pg_temp.iid('r6b'),1,700,'faktur-langsung','FK-SX-R6B',pg_temp.today()-2,null);
+update public.stock_layers set qty_left=0 where item_id=pg_temp.iid('r6b') and unit_cost=700;
+insert into public.purchase_invoices(no_faktur,warehouse_id) values('FK-SX-R6B',pg_temp.wa());
+select pg_temp.ok((pg_temp.cost(pg_temp.wa(),'r6b')->>'unit_cost')::numeric=700,'S21d kontrol: faktur langsung yang tidak void (700) tetap bukti harga masuk');
+-- (R08) langkah gudang lain: lapisan yang biayanya dibatalkan tidak ikut rata-rata
+select pg_temp.mk('r8');select pg_temp.lay(pg_temp.wb(),'r8',2,100,10);select pg_temp.lay(pg_temp.wb(),'r8',4,600,8);
+insert into public.sx_reversed select id from public.stock_layers where item_id=pg_temp.iid('r8') and unit_cost=600;
+select pg_temp.ok((pg_temp.cost(pg_temp.wa(),'r8')->>'unit_cost')::numeric=100 and pg_temp.cost(pg_temp.wa(),'r8')->>'source'='HPP rata-rata gudang lain','S21e gudang lain: 4@600 dibatalkan biayanya, rata-rata hanya 2@100 = 100 (bukan 433,33)');
+-- (R11, R15) presisi biaya: 3@10 + 3@10,01 = 10,005 (6 desimal) dipakai penuh di fungsi, jurnal, dan foto laporan harga
+select pg_temp.mk('r11');select pg_temp.lay(pg_temp.wa(),'r11',3,10,10);select pg_temp.lay(pg_temp.wa(),'r11',3,10.01,9);
+select pg_temp.ok((pg_temp.cost(pg_temp.wa(),'r11')->>'unit_cost')::numeric=10.005,'S21f fungsi biaya tidak membulatkan ke 2 desimal: 10,005');
+select pg_temp.post('s21f',pg_temp.wa(),'{"r11":10}');
+select pg_temp.ok((pg_temp.layer(pg_temp.ref('s21f'),'r11')).unit_cost=10.005 and pg_temp.n(pg_temp.gl('opname',pg_temp.ref('s21f')),'810004')=-40.02,'S21f lapisan 4 x 10,005 dan jurnal 40,02');
+select pg_temp.ok((pg_temp.snap('s21f','r11')->>'nilai_selisih_modal')::numeric=40.02 and (pg_temp.snap('s21f','r11')->>'modal_satuan')::numeric=10.005,'S21f foto laporan harga memuat biaya per unit 10,005 dan nilai 40,02 (bukan dibulatkan)');
+-- (R12) kuitansi: net_variance = kurang - lebih (bertanda), baik kurang > lebih maupun lebih saja
+select pg_temp.mk('r12s');select pg_temp.mk('r12g');select pg_temp.lay(pg_temp.wa(),'r12s',10,100,10);select pg_temp.lay(pg_temp.wa(),'r12g',4,50,10);
+select pg_temp.post('s21g',pg_temp.wa(),'{"r12s":7,"r12g":6}');
+select pg_temp.ok(pg_temp.n(pg_temp.rc('s21g'),'net_variance')=200 and pg_temp.n(pg_temp.rc('s21g'),'loss_cost')=300 and pg_temp.n(pg_temp.rc('s21g'),'gain_cost')=100 and pg_temp.n(pg_temp.rc('s21g'),'gain_offset')=100,'S21g foto sumber: net_variance +200 (kurang 300 - lebih 100), offset 100');
+select pg_temp.mk('r12h');select pg_temp.lay(pg_temp.wa(),'r12h',4,50,10);
+select pg_temp.post('s21h',pg_temp.wa(),'{"r12h":6}');
+select pg_temp.ok(pg_temp.n(pg_temp.rc('s21h'),'net_variance')=-100 and pg_temp.n(pg_temp.rc('s21h'),'loss_cost')=0 and pg_temp.n(pg_temp.rc('s21h'),'gain_offset')=0,'S21h hanya lebih: net_variance -100 (bertanda negatif), offset 0');
+select pg_temp.ok(pg_temp.n(pg_temp.rr('s21g'),'net_variance')=200 and pg_temp.n(pg_temp.rr('s21h'),'net_variance')=-100,'S21g/h kuitansi hasil posting memuat net_variance yang sama');
 rollback;

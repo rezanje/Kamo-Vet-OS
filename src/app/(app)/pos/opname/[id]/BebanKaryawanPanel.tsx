@@ -7,6 +7,7 @@ import { BebanKaryawanForm } from "./BebanKaryawanForm";
 import { batalBebanKaryawan } from "./beban-karyawan-actions";
 
 // F2 (meeting 12 Nov 2026): ringkasan selisih kurang (HPP & harga jual) + beban ke karyawan (kasbon, tidak potong gaji).
+// SO-KASBON-NETO (Andri 24 Nov 2026): nilai beban NETO per dokumen = kurang - lebih (harga jual), tidak negatif.
 // Hanya untuk Owner/Finance atau pemegang izin; database menolak peran lain (42501) dan panel ini tidak tampil.
 // Sebelum migrasi F2 terpasang (fungsi belum ada) panel juga tidak tampil.
 
@@ -35,17 +36,18 @@ export async function BebanKaryawanPanel({ orderId }: { orderId: string }) {
   // Karyawan cabang gudang opname di atas, sisanya menyusul (boleh lintas cabang).
   const karyawan = ((emp ?? []) as { id: string; nama: string; jabatan: string | null; branch_id: string | null }[])
     .sort((a, b) => Number(b.branch_id === r.branch_id) - Number(a.branch_id === r.branch_id) || a.nama.localeCompare(b.nama, "id"));
-  const selisih = r.jual_total - r.hpp_total;
+  const netto = r.jual_lebih > 0;
 
   return (
     <div id="beban-karyawan" className="crm-sec">
       <SecHeader num="03" title="SELISIH KURANG & BEBAN KARYAWAN"
-        desc="Nilai barang yang kurang saat opname, dalam HPP (yang dijurnal sebagai beban) dan harga jual. Hanya Owner/Finance yang melihat bagian ini." />
+        desc="Nilai barang yang kurang saat opname, dalam HPP (yang dijurnal sebagai beban) dan harga jual. Selisih lebih pada opname yang sama mengurangi nilai beban ke karyawan (neto, tidak pernah negatif). Hanya Owner/Finance yang melihat bagian ini." />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 10 }}>
         <div><div className="flab">Barang kurang</div><div style={{ fontSize: 13, fontWeight: 700 }}>{r.minus_count}</div></div>
-        <div><div className="flab">Nilai HPP</div><div style={{ fontSize: 13, fontWeight: 700, color: "#b91c1c" }}>{rupiah(r.hpp_total)}</div></div>
-        <div><div className="flab">Nilai harga jual</div><div style={{ fontSize: 13, fontWeight: 700 }}>{rupiah(r.jual_total)}</div></div>
-        <div><div className="flab">Selisih jual − HPP</div><div style={{ fontSize: 13, fontWeight: 700 }}>{rupiah(selisih)}</div></div>
+        <div><div className="flab">Nilai HPP kurang</div><div style={{ fontSize: 13, fontWeight: 700, color: "#b91c1c" }}>{rupiah(r.hpp_total)}</div></div>
+        <div><div className="flab">Nilai harga jual kurang</div><div style={{ fontSize: 13, fontWeight: 700 }}>{rupiah(r.jual_kurang)}</div></div>
+        {netto && <div><div className="flab">Nilai harga jual lebih (mengurangi)</div><div style={{ fontSize: 13, fontWeight: 700, color: "#15803d" }}>− {rupiah(r.jual_lebih)}</div></div>}
+        <div><div className="flab">{netto ? "Nilai beban (neto)" : "Nilai beban"}</div><div style={{ fontSize: 13, fontWeight: 700 }}>{rupiah(r.jual_total)}</div></div>
       </div>
       {r.minus_lines.length > 0 && (
         <div style={{ overflowX: "auto" }}>
@@ -53,6 +55,27 @@ export async function BebanKaryawanPanel({ orderId }: { orderId: string }) {
             <thead><tr><th>Kode</th><th>Barang</th><th style={kanan}>Kurang</th><th style={kanan}>HPP</th><th style={kanan}>Harga jual</th><th style={kanan}>Nilai harga jual</th></tr></thead>
             <tbody>
               {r.minus_lines.map((l) => (
+                <tr key={l.item_id}>
+                  <td style={{ fontSize: 11, color: "var(--tm)" }}>{l.code}</td>
+                  <td style={{ fontSize: 11.5 }}>{l.name}</td>
+                  <td style={{ ...kanan, fontSize: 11.5 }}>{qty(l.qty)} {l.unit}</td>
+                  <td style={{ ...kanan, fontSize: 11.5 }}>{l.hpp === null ? "—" : rupiah(l.hpp)}</td>
+                  <td style={{ ...kanan, fontSize: 11.5 }}>{rupiah(l.harga_jual)}</td>
+                  <td style={{ ...kanan, fontSize: 11.5, fontWeight: 600 }}>{rupiah(l.jual)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {r.plus_lines.length > 0 && (
+        <div style={{ overflowX: "auto", marginTop: 10 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 6 }}>Selisih lebih (mengurangi beban karyawan)</div>
+          <table className="tbl" style={{ minWidth: 640 }}>
+            <thead><tr><th>Kode</th><th>Barang</th><th style={kanan}>Lebih</th><th style={kanan}>HPP</th><th style={kanan}>Harga jual</th><th style={kanan}>Nilai harga jual</th></tr></thead>
+            <tbody>
+              {r.plus_lines.map((l) => (
                 <tr key={l.item_id}>
                   <td style={{ fontSize: 11, color: "var(--tm)" }}>{l.code}</td>
                   <td style={{ fontSize: 11.5 }}>{l.name}</td>
@@ -78,7 +101,7 @@ export async function BebanKaryawanPanel({ orderId }: { orderId: string }) {
       {bolehCatat && (
         <>
           <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 10 }}>
-            Bila dicatat: beban selisih stok berkurang {rupiah(r.hpp_part)}{r.gain_part > 0 ? ` dan ${rupiah(r.gain_part)} (harga jual − HPP) masuk Pendapatan Lain-lain` : ""}; karyawan berutang {rupiah(r.jual_total)}.
+            Bila dicatat: beban selisih stok berkurang {rupiah(r.hpp_part)}{r.gain_part > 0 ? ` dan ${rupiah(r.gain_part)} (harga jual − HPP) masuk Pendapatan Lain-lain` : ""}; karyawan berutang {rupiah(r.jual_total)}{netto ? ` (neto: kurang ${rupiah(r.jual_kurang)} − lebih ${rupiah(r.jual_lebih)})` : ""}.
           </div>
           <BebanKaryawanForm orderId={orderId} resultId={r.result_id} total={r.jual_total} requestKey={randomUUID()}
             karyawan={karyawan.map(({ id, nama, jabatan }) => ({ id, nama, jabatan }))} />
@@ -90,7 +113,7 @@ export async function BebanKaryawanPanel({ orderId }: { orderId: string }) {
           <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 6 }}>Riwayat beban karyawan</div>
           {r.charges.map((c) => (
             <div key={c.id} className="p2ban" style={{ display: "block", marginBottom: 8, opacity: c.cancelled_at ? 0.7 : 1 }}>
-              <div><b>{rupiah(c.total)}</b> · {c.tanggal} · oleh {c.actor_name ?? "—"} · alasan: {c.reason}{c.cancelled_at ? <> · <b>DIBATALKAN</b> ({c.cancel_reason})</> : null}</div>
+              <div><b>{rupiah(c.total)}</b>{c.jual_lebih !== null && c.jual_lebih > 0 && c.jual_kurang !== null ? <> (neto: kurang {rupiah(c.jual_kurang)} − lebih {rupiah(c.jual_lebih)})</> : null} · {c.tanggal} · oleh {c.actor_name ?? "—"} · alasan: {c.reason}{c.cancelled_at ? <> · <b>DIBATALKAN</b> ({c.cancel_reason})</> : null}</div>
               <ul style={{ margin: "4px 0 4px 16px" }}>
                 {c.lines.map((l) => (
                   <li key={l.advance_id}>{l.nama ?? "—"}: {rupiah(l.amount)} · kasbon {l.status === STATUS_KASBON_BATAL ? "batal" : (l.status ?? "—").toLowerCase()}{l.dibayar > 0 ? ` · sudah dibayar ${rupiah(l.dibayar)}` : ""}</li>
