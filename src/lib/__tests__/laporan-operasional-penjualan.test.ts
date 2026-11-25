@@ -134,7 +134,7 @@ describe("Operation & Sales: jalur cepat == jalur lama", () => {
     const cepat = bikinKlienOperasional({ tables, branches: BRANCHES, rpcOperasional: rpcOperasionalTiruan(tables) });
     const lama = bikinKlienOperasional({ tables, branches: BRANCHES });
     const scope = { branchIds: ["b1", "b2", "b3"], branches: BRANCHES };
-    const f = { from: "2026-08-01", to: "2026-12-31", branchIds: [], channel: "all" } as const;
+    const f = { from: "2026-08-01", to: "2026-12-31", branchIds: [] as string[], channel: "all" as const };
     const a = await loadSalesDocuments(cepat, scope, f);
     const b = await loadSalesDocuments(lama, scope, f);
     expect(sidik(a.documents)).toBe(sidik(b.documents));
