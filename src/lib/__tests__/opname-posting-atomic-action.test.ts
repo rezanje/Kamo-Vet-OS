@@ -1,12 +1,12 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const s = vi.hoisted(() => ({ stock: 0, results: 0, journals: 0, rpcCalls: [] as unknown[], failure: true, paths: [] as string[], responseMode: '' }));
+const s = vi.hoisted(() => ({ stock: 0, results: 0, journals: 0, rpcCalls: [] as unknown[], failure: true, failMsg: 'Fictional journal failure', paths: [] as string[], responseMode: '' }));
 vi.mock('next/navigation', () => ({ redirect: (url: string) => { throw Error(decodeURIComponent(url)); } }));
 vi.mock('next/cache', () => ({ revalidatePath: (path: string) => s.paths.push(path) }));
 vi.mock('@/lib/inventory', () => ({ stockInAtBuyPrice: async () => { s.stock += 1; } }));
 vi.mock('@/lib/no-dokumen', () => ({ nomorBerikutnya: async () => ({ nomor: 'OPR.FICTION' }) }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: 'actor' } } }) },
-  rpc: async (name: string, params: unknown) => { s.rpcCalls.push({ name, params }); if (s.responseMode === 'transport') throw Error('Synthetic private transport detail'); if (s.responseMode === 'empty') return { data: null, error: null }; if (s.responseMode === 'values') return { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'], shortage_value: 500, surplus_value: 300, surplus_offset: 300, net_variance: 200, surplus_unpriced: [{ item_id: '20000000-0000-4000-8000-000000000002', name: 'Barang Z', qty: 2 }] }, error: null }; return s.failure ? { data: null, error: { code: 'P0001', message: 'Fictional journal failure' } } : { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'] }, error: null }; },
+  rpc: async (name: string, params: unknown) => { s.rpcCalls.push({ name, params }); if (s.responseMode === 'transport') throw Error('Synthetic private transport detail'); if (s.responseMode === 'empty') return { data: null, error: null }; if (s.responseMode === 'values') return { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'], shortage_value: 500, surplus_value: 300, surplus_offset: 300, net_variance: 200, surplus_unpriced: [{ item_id: '20000000-0000-4000-8000-000000000002', name: 'Barang Z', qty: 2 }] }, error: null }; return s.failure ? { data: null, error: { code: 'P0001', message: s.failMsg } } : { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'] }, error: null }; },
   from(table: string) {
     let op = 'read'; const q = { select: () => q, eq: () => q, in: () => q, order: () => q, limit: () => q, maybeSingle: () => q, single: () => q,
       insert: () => { op = 'insert'; return q; }, update: () => { op = 'update'; return q; }, delete: () => q,
@@ -20,7 +20,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
 }) }));
 import { simpanHasil } from '@/app/(app)/pos/opname/actions';
 const form = () => { const f = new FormData(); f.set('order_id', '10000000-0000-4000-8000-000000000001'); f.set('tanggal', '2026-10-23'); f.set('fisik', JSON.stringify({ '20000000-0000-4000-8000-000000000002': 1 })); f.set('kembali', 'kasir'); return f; };
-beforeEach(() => { s.stock = 0; s.results = 0; s.journals = 0; s.rpcCalls = []; s.failure = true; s.paths = []; s.responseMode = ''; });
+beforeEach(() => { s.stock = 0; s.results = 0; s.journals = 0; s.rpcCalls = []; s.failure = true; s.failMsg = 'Fictional journal failure'; s.paths = []; s.responseMode = ''; });
 it('cannot leave stock or a result behind when journal posting fails', async () => {
   await expect(simpanHasil(form())).rejects.toThrow();
   expect(s.stock).toBe(0); expect(s.results).toBe(0); expect(s.journals).toBe(0);
@@ -56,3 +56,11 @@ it('an old receipt without the new keys still reports success without invented n
  expect(msg).toContain('tersimpan'); expect(msg).not.toContain('Nilai selisih');
 });
 
+it('recount guidance tells staff to count what is on the shelf now, not the opening stock', async () => {
+  s.failMsg = 'Hitungan barang berikut perlu diulang karena ...: Barang X (dihitung 0, stok saat dikunci 11, stok sekarang 0). Buka kunci barang tersebut, hitung ulang fisiknya, lalu simpan lagi.';
+  let msg = ''; try { await simpanHasil(form()); } catch (e) { msg = (e as Error).message; }
+  expect(msg).toContain('Barang X (dihitung 0, stok saat dikunci 11, stok sekarang 0)');
+  expect(msg).toContain('rak SEKARANG');
+  expect(msg).toContain('jangan isi stok awal opname');
+  expect(msg).not.toContain('hitung ulang fisiknya');
+});

@@ -44,3 +44,10 @@ it('shows each product unit beside its physical count, even before any count is 
 it('does not turn a negative count into a confirmed zero', async () => {
   await fill('-1'); await lock(); expect(s.calls).toBe(0); expect(host.textContent).toContain('jumlah fisik'); expect(host.querySelector('tbody')!.textContent).not.toContain('Buka');
 });
+it('reopening a locked count tells staff to enter the shelf quantity now, not the opening stock', async () => {
+  await fill('11'); s.qty = 11; await lock();
+  await act(async () => [...host.querySelectorAll('tbody button')].find(b => b.textContent?.trim() === 'Buka')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  expect(host.textContent).toContain('Hitung ulang Fictional item');
+  expect(host.textContent).toContain('rak SEKARANG');
+  expect(host.textContent).toContain('jangan isi stok awal opname');
+});

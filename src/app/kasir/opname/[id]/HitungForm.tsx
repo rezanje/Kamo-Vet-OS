@@ -101,7 +101,9 @@ export function HitungForm({
       if (!res.ok) { setPesan(res.pesan ?? "Gagal membuka kunci."); return; }
       setKunci((m) => { const next = { ...m }; delete next[r.item_id]; return next; });
       setIsian((m) => ({ ...m, [r.item_id]: String(kunci[r.item_id] ?? "") }));
-      setPesan(null);
+      // Kunci ulang = foto stok baru. Penjualan sejak hitungan pertama sudah tercatat, jadi yang diisi
+      // harus isi rak saat ini — bukan stok awal opname (insiden Meo Pouch Adult OPO.00013).
+      setPesan(`Hitung ulang ${r.name}: isi jumlah yang ada di rak SEKARANG. Barang yang laku sejak hitungan pertama sudah tercatat otomatis — jangan isi stok awal opname.`);
     });
   };
 
@@ -131,7 +133,7 @@ export function HitungForm({
         <SecHeader
           num="02"
           title="HITUNG FISIK"
-          desc={`${rows.length} barang dalam daftar hitung. Isi jumlah fisiknya lalu tekan Kunci — angka yang dikunci langsung tersimpan.`}
+          desc={`${rows.length} barang dalam daftar hitung. Isi jumlah yang ada di rak saat itu lalu tekan Kunci — angka yang dikunci langsung tersimpan.`}
         />
 
         {pesan && (
@@ -253,7 +255,7 @@ export function HitungForm({
           </button>
         </div>
         <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 6 }}>
-          Barang yang tidak dihitung dilewat — stoknya tidak diubah. Laporan selisih keluar setelah disimpan.
+          Barang yang tidak dihitung dilewat — stoknya tidak diubah. Barang yang laku sesudah dikunci otomatis diperhitungkan, tidak perlu dikurangi sendiri. Laporan selisih keluar setelah disimpan.
         </div>
       </div>
     </PreservedForm>

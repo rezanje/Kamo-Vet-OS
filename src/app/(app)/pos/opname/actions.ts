@@ -229,6 +229,15 @@ export async function muatUlangStok(orderId: string) {
 }
 
 // ================= Hasil Stok Opname =================
+// Insiden OPO.00013 (Meo Pouch Adult, 24 Nov): petunjuk "hitung ulang" dibaca sebagai "isi lagi stok awal SO",
+// padahal penjualan sesudah hitungan pertama sudah tercatat. Pertegas: isi yang ada di rak sekarang.
+function pesanPostingOpname(message: string): string {
+  return message.replace(
+    "hitung ulang fisiknya, lalu simpan lagi.",
+    "hitung ulang barang yang ada di rak SEKARANG (penjualan sesudah hitungan pertama sudah tercatat otomatis, jadi jangan isi stok awal opname), lalu simpan lagi.",
+  );
+}
+
 /**
  * Simpan semua & sesuaikan stok.
  *
@@ -258,7 +267,7 @@ export async function simpanHasil(formData: FormData) {
   try {
     result = await supabase.rpc("post_opname_atomic", { p_order_id: orderId, p_tanggal: tanggal, p_counts: counts });
   } catch { fail("Posting opname belum dapat dipastikan. Muat ulang dan periksa hasil asal sebelum mencoba lagi."); }
-  if (result.error) fail(result.error.code === "P0001" || result.error.code === "42501" ? result.error.message : "Posting opname belum dapat dipastikan. Muat ulang dan periksa hasil asal sebelum mencoba lagi.");
+  if (result.error) fail(result.error.code === "P0001" || result.error.code === "42501" ? pesanPostingOpname(result.error.message) : "Posting opname belum dapat dipastikan. Muat ulang dan periksa hasil asal sebelum mencoba lagi.");
   const receipt = result.data as { result_id?: unknown; no_hasil?: unknown; tanggal?: unknown; no_faktur?: unknown; journal_ids?: unknown; already_posted?: unknown } | null;
   if (!receipt || typeof receipt.result_id !== "string" || !uuid.test(receipt.result_id) || typeof receipt.no_hasil !== "string" || !receipt.no_hasil.trim()
     || receipt.tanggal !== tanggal || typeof receipt.already_posted !== "boolean" || !Array.isArray(receipt.journal_ids) || receipt.journal_ids.some(id => typeof id !== "string" || !uuid.test(id))
