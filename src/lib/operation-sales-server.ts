@@ -19,6 +19,9 @@ import { collectOperationalClinic } from "./operasional-klinik-server";
 import { collectNilaiStokBlock, collectPerbandinganBlock, type NilaiStokBlock, type PerbandinganBlock } from "./perbandingan-cabang-server";
 import { batasTanggalWIB } from "./laporan-transaksi";
 import { completeReportQuery } from "./report-query";
+import { bacaBagianOperasional, larik, urutId } from "./laporan-operasional-penjualan";
+import { rentangHari } from "./laporan-struk-kasir";
+import { BATAS_BACA_LAPORAN, petaBerbatas } from "./konkuren-batas";
 import { isCompletedSale, saleMerchandiseTotal, saleRefundMerchantFee, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
 
 type AnyClient = any;
@@ -254,23 +257,127 @@ function itemNetRows(
 
 export type SalesDocument = ReturnType<typeof itemNetRows> & { origin: "petshop" | "klinik" | "reseller" };
 
-export async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, filter: DashboardFilter): Promise<{ documents: SalesDocument[] }> {
+/** Rentang (hari) per panggilan fungsi dokumen: satu bulan penuh selesai < 1 dtk di database, jauh di bawah batas 8 dtk. */
+const HARI_PER_RENTANG_DOKUMEN = 31;
+
+/** Bacaan mentah dokumen penjualan, bentuk sama untuk jalur cepat (fungsi database) maupun jalur lama (halaman PostgREST). */
+type DokumenMentah = {
+  sales: SaleRow[];
+  returnMap: Map<string, number>;
+  invoices: Map<string, { invoice: InvoiceRow; visit: InvoiceVisit }>;
+  refundMap: Map<string, number>;
+  reseller: ResellerRow[];
+};
+
+function jumlahPerSumber(rows: { total: unknown }[], key: string): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    const id = String((row as Record<string, unknown>)[key]);
+    totals.set(id, (totals.get(id) ?? 0) + (Number(row.total) || 0));
+  }
+  return totals;
+}
+
+function susunInvoice(invoiceRows: InvoiceRow[], scope: DashboardScope): Map<string, { invoice: InvoiceRow; visit: InvoiceVisit }> {
+  const invoices = new Map<string, { invoice: InvoiceRow; visit: InvoiceVisit }>();
+  for (const invoice of invoiceRows) {
+    const visit = one(invoice.visits);
+    if (!visit || !scope.branchIds.includes(visit.branch_id) || invoices.has(invoice.id)) continue;
+    invoices.set(invoice.id, { invoice, visit });
+  }
+  return invoices;
+}
+
+/**
+ * Jalur cepat: satu panggilan fungsi database per rentang HARI_PER_RENTANG_DOKUMEN hari (rentang lebih panjang dipecah, maks. BATAS_BACA_LAPORAN
+ * bersamaan, hasil digabung urut id seperti pembacaan lama). `null` = fungsi belum ada / melewati batas waktu -> jalur lama.
+ */
+async function bacaDokumenCepat(supabase: AnyClient, scope: DashboardScope, filter: DashboardFilter): Promise<DokumenMentah | null> {
+  const rentang = rentangHari(filter.from, filter.to, HARI_PER_RENTANG_DOKUMEN);
+  const hasil = await petaBerbatas(rentang, BATAS_BACA_LAPORAN, async (jendela) => {
+    const { mulai, akhir } = batasTanggalWIB(jendela.dari, jendela.sampai);
+    return await bacaBagianOperasional(supabase, "dokumen", { mulai, akhir, dari: jendela.dari, sampai: jendela.sampai, cabang: scope.branchIds, kanal: filter.channel }, (d) => ({
+      sales: larik<SaleRow>(d, "sales", "n_sales"),
+      returns: larik<{ sale_id: string; total: unknown }>(d, "returns", "n_retur"),
+      invoices: larik<InvoiceRow>(d, "invoices", "n_invoice"),
+      refunds: larik<{ invoice_id: string; total: unknown }>(d, "refunds", "n_refund"),
+      reseller: larik<ResellerRow>(d, "reseller", "n_reseller"),
+    }));
+  });
+  if (hasil.some((jendela) => jendela === null)) return null;
+  const jendela = hasil as NonNullable<(typeof hasil)[number]>[];
+  const gabung = <T extends { id: string }>(ambil: (j: (typeof jendela)[number]) => T[]): T[] => {
+    const semua = jendela.flatMap(ambil);
+    return jendela.length > 1 ? urutId(semua) : semua;
+  };
+  const sales = gabung((j) => j.sales).filter(isCompletedSale);
+  const returnMap = jumlahPerSumber(jendela.flatMap((j) => j.returns), "sale_id");
+  const invoices = susunInvoice(gabung((j) => j.invoices), scope);
+  const refundMap = jumlahPerSumber(jendela.flatMap((j) => j.refunds), "invoice_id");
+  return { sales, returnMap, invoices, refundMap, reseller: gabung((j) => j.reseller) };
+}
+
+/** Jalur lama (halaman 500 baris lewat PostgREST), dipakai bila fungsi database belum ada. */
+async function bacaDokumenLama(supabase: AnyClient, scope: DashboardScope, filter: DashboardFilter): Promise<DokumenMentah> {
   const { start, end } = dateBounds(filter);
-  const documents: SalesDocument[] = [];
+  let sales: SaleRow[] = [];
+  let returnMap = new Map<string, number>();
+  let invoices = new Map<string, { invoice: InvoiceRow; visit: InvoiceVisit }>();
+  let refundMap = new Map<string, number>();
+  let reseller: ResellerRow[] = [];
 
   if (filter.channel !== "klinik" && filter.channel !== "reseller") {
     let query = supabase.from("sales")
       .select("id,branch_id,customer_id,total,merchant_fee_total,channel,created_at,payment_plan,payments_finalized_at, voided_at,sale_items(item_id,qty,hpp,harga,items(item_type,tindakan_kategori))", { count: "exact" })
       .in("branch_id", scope.branchIds).gte("created_at", start).lte("created_at", end);
     query = applyChannel(query, filter.channel);
-    const sales = (await readAll<SaleRow>(query)).filter(isCompletedSale);
+    sales = (await readAll<SaleRow>(query)).filter(isCompletedSale);
     // Retur struk mengikuti aturan Laporan Transaksi (laporan-transaksi-server.ts): dibaca
     // TANPA batas tanggal retur dan tetap dibukukan pada tanggal & cabang struk asal. Retur
     // bulan ini atas struk bulan lalu ikut menurunkan omzet bulan lalu, sehingga angka kedua
     // laporan sama untuk periode apa pun. Retur yang di-void tidak dihitung.
-    const returnMap = await sumTotalsBySource(sales.map((sale) => sale.id), "sale_id", (ids) =>
+    returnMap = await sumTotalsBySource(sales.map((sale) => sale.id), "sale_id", (ids) =>
       supabase.from("sales_returns").select("id,sale_id,total", { count: "exact" }).is("voided_at", null).in("sale_id", ids));
-    for (const sale of sales) {
+  }
+
+  if (filter.channel !== "pos" && filter.channel !== "online" && filter.channel !== "reseller") {
+    // Omzet klinik milik tanggal tagihannya, bukan tanggal kunjungannya: antrean membawa
+    // kunjungan yang belum dibayar ke hari berikutnya, jadi kunjungan tgl D sering
+    // ditagih tgl D+1. Cabang tetap diambil dari kunjungan (invoices tidak punya
+    // branch_id); `!inner` membuang tagihan yang kunjungannya di luar cabang scope.
+    // Jumlah kunjungan (blok klinik) tetap dihitung dari tanggal daftar kunjungan.
+    const invoiceRows = await readAll<InvoiceRow>(supabase.from("invoices")
+      .select("id,visit_id,total,created_at,voided_at,visits!inner(branch_id,customer_id),invoice_items(item_id,qty,hpp,harga,jenis)", { count: "exact" })
+      .in("visits.branch_id", scope.branchIds).is("voided_at", null)
+      .gte("created_at", start).lte("created_at", end));
+    invoices = susunInvoice(invoiceRows, scope);
+    // Refund klinik (J03) mengurangi omzet tagihan asalnya, aturannya sama dengan Laporan
+    // Transaksi (laporan-transaksi-server.ts): dibaca TANPA batas tanggal refund, dan tetap
+    // dibukukan pada tanggal & cabang tagihan. Jadi refund bulan ini atas tagihan bulan lalu
+    // ikut menurunkan omzet bulan lalu, dan angka klinik kedua laporan sama untuk periode
+    // apa pun. Refund klinik hanya ada setelah diposting dan tidak bisa di-void, jadi tidak
+    // ada filter voided_at. Dibaca per tagihan yang termuat (dipecah per 100 id), sehingga
+    // tiap baris refund terbaca tepat sekali dan tagihan batal/di luar scope tidak tersentuh.
+    refundMap = await sumTotalsBySource([...invoices.keys()], "invoice_id", (ids) =>
+      supabase.from("clinic_refunds").select("id,invoice_id,total", { count: "exact" }).in("invoice_id", ids));
+  }
+
+  if (filter.channel === "all" || filter.channel === "reseller") {
+    reseller = await readAll<ResellerRow>(supabase.from("sales_invoices")
+      .select("id,branch_id,customer_id,dpp,tanggal,status,sales_invoice_items(item_id,qty,harga)", { count: "exact" })
+      .in("branch_id", scope.branchIds).neq("status", "batal").is("opening_batch_id", null)
+      .gte("tanggal", filter.from).lte("tanggal", filter.to));
+  }
+  return { sales, returnMap, invoices, refundMap, reseller };
+}
+
+export async function loadSalesDocuments(supabase: AnyClient, scope: DashboardScope, filter: DashboardFilter): Promise<{ documents: SalesDocument[] }> {
+  const documents: SalesDocument[] = [];
+  const mentah = (await bacaDokumenCepat(supabase, scope, filter)) ?? await bacaDokumenLama(supabase, scope, filter);
+  const { returnMap, refundMap } = mentah;
+
+  if (filter.channel !== "klinik" && filter.channel !== "reseller") {
+    for (const sale of mentah.sales) {
       const items = sale.sale_items ?? [];
       documents.push({ origin: "petshop", ...itemNetRows(
         sale.id,
@@ -294,31 +401,7 @@ export async function loadSalesDocuments(supabase: AnyClient, scope: DashboardSc
   }
 
   if (filter.channel !== "pos" && filter.channel !== "online" && filter.channel !== "reseller") {
-    // Omzet klinik milik tanggal tagihannya, bukan tanggal kunjungannya: antrean membawa
-    // kunjungan yang belum dibayar ke hari berikutnya, jadi kunjungan tgl D sering
-    // ditagih tgl D+1. Cabang tetap diambil dari kunjungan (invoices tidak punya
-    // branch_id); `!inner` membuang tagihan yang kunjungannya di luar cabang scope.
-    // Jumlah kunjungan (blok klinik) tetap dihitung dari tanggal daftar kunjungan.
-    const invoiceRows = await readAll<InvoiceRow>(supabase.from("invoices")
-      .select("id,visit_id,total,created_at,voided_at,visits!inner(branch_id,customer_id),invoice_items(item_id,qty,hpp,harga,jenis)", { count: "exact" })
-      .in("visits.branch_id", scope.branchIds).is("voided_at", null)
-      .gte("created_at", start).lte("created_at", end));
-    const invoices = new Map<string, { invoice: InvoiceRow; visit: InvoiceVisit }>();
-    for (const invoice of invoiceRows) {
-      const visit = one(invoice.visits);
-      if (!visit || !scope.branchIds.includes(visit.branch_id) || invoices.has(invoice.id)) continue;
-      invoices.set(invoice.id, { invoice, visit });
-    }
-    // Refund klinik (J03) mengurangi omzet tagihan asalnya, aturannya sama dengan Laporan
-    // Transaksi (laporan-transaksi-server.ts): dibaca TANPA batas tanggal refund, dan tetap
-    // dibukukan pada tanggal & cabang tagihan. Jadi refund bulan ini atas tagihan bulan lalu
-    // ikut menurunkan omzet bulan lalu, dan angka klinik kedua laporan sama untuk periode
-    // apa pun. Refund klinik hanya ada setelah diposting dan tidak bisa di-void, jadi tidak
-    // ada filter voided_at. Dibaca per tagihan yang termuat (dipecah per 100 id), sehingga
-    // tiap baris refund terbaca tepat sekali dan tagihan batal/di luar scope tidak tersentuh.
-    const refundMap = await sumTotalsBySource([...invoices.keys()], "invoice_id", (ids) =>
-      supabase.from("clinic_refunds").select("id,invoice_id,total", { count: "exact" }).in("invoice_id", ids));
-    for (const { invoice, visit } of invoices.values()) {
+    for (const { invoice, visit } of mentah.invoices.values()) {
       documents.push({ origin: "klinik", ...itemNetRows(
         invoice.id,
         visit.branch_id,
@@ -332,11 +415,7 @@ export async function loadSalesDocuments(supabase: AnyClient, scope: DashboardSc
   }
 
   if (filter.channel === "all" || filter.channel === "reseller") {
-    const resellerInvoices = await readAll<ResellerRow>(supabase.from("sales_invoices")
-      .select("id,branch_id,customer_id,dpp,tanggal,status,sales_invoice_items(item_id,qty,harga)", { count: "exact" })
-      .in("branch_id", scope.branchIds).neq("status", "batal").is("opening_batch_id", null)
-      .gte("tanggal", filter.from).lte("tanggal", filter.to));
-    for (const invoice of resellerInvoices) {
+    for (const invoice of mentah.reseller) {
       documents.push({ origin: "reseller", ...itemNetRows(
         invoice.id,
         invoice.branch_id ?? "",
@@ -415,20 +494,35 @@ export async function collectBranchBlock(scope: DashboardScope, filter: Dashboar
 }
 
 export async function collectCustomerBlock(scope: DashboardScope, filter: DashboardFilter, supabase: AnyClient): Promise<CustomerBlock> {
-  const { end } = dateBounds(filter);
+  const { start, end } = dateBounds(filter);
   // All sales up to the end of the period: new/repeat/dormant need each customer's
   // earlier purchases. This set already contains the period itself, so no separate
   // period read is needed. It grows over the years, hence the complete paged read.
-  const history = await readAll<any>(supabase.from("sales")
-    .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at, voided_at", { count: "exact" })
-    .in("branch_id", scope.branchIds).lte("created_at", end));
-  const rows = history.filter(isCompletedSale).map((row) => ({
-    customerId: row.customer_id ?? null,
-    saleId: row.id,
-    date: String(row.created_at).slice(0, 10),
-    net: saleMerchandiseTotal(row),
-    status: "paid",
-  }));
+  // Jalur cepat: satu panggilan fungsi database mengembalikan struk selesai milik pelanggan (aturan isCompletedSale);
+  // struk tanpa pelanggan tidak memengaruhi klasifikasi maupun hitungan pelanggan.
+  const cepat = await bacaBagianOperasional(supabase, "pelanggan", { mulai: start, akhir: end, dari: filter.from, sampai: filter.to, cabang: scope.branchIds }, (d) =>
+    larik<[string, string, string, unknown, unknown]>(d, "rows", "n"));
+  let rows: { customerId: string | null; saleId: string; date: string; net: number; status: string }[];
+  if (cepat) {
+    rows = cepat.map(([id, customerId, createdAt, total, fee]) => ({
+      customerId: customerId ?? null,
+      saleId: id,
+      date: String(createdAt).slice(0, 10),
+      net: saleMerchandiseTotal({ total: total as number, merchant_fee_total: fee as number | null }),
+      status: "paid",
+    }));
+  } else {
+    const history = await readAll<any>(supabase.from("sales")
+      .select("id,customer_id,total,merchant_fee_total,created_at,channel,payment_plan,payments_finalized_at, voided_at", { count: "exact" })
+      .in("branch_id", scope.branchIds).lte("created_at", end));
+    rows = history.filter(isCompletedSale).map((row) => ({
+      customerId: row.customer_id ?? null,
+      saleId: row.id,
+      date: String(row.created_at).slice(0, 10),
+      net: saleMerchandiseTotal(row),
+      status: "paid",
+    }));
+  }
   const classification = classifyCustomers(rows, filter, 90, filter.to);
   const topSpenders = Object.entries(classification.spending)
     .map(([customerId, spending]) => ({ customerId, spending }))
@@ -437,29 +531,52 @@ export async function collectCustomerBlock(scope: DashboardScope, filter: Dashbo
   return { classification, totalCustomers: new Set(rows.map((row) => row.customerId).filter(Boolean)).size, topSpenders };
 }
 
+type StokBaris = { item_id: string; qty: number | string };
+type MutasiKeluar = { item_id: string; qty: number | string; tanggal: string };
+
 export async function collectStockBlock(scope: DashboardScope, filter: DashboardFilter, supabase: AnyClient): Promise<StockBlock> {
   const { start, end } = dateBounds(filter);
-  const warehouseResult = await read(supabase.from("warehouses").select("id,branch_id").in("branch_id", scope.branchIds).eq("is_active", true));
-  queryError(warehouseResult);
-  const warehouses = warehouseResult.data ?? [];
-  const warehouseIds = warehouses.map((row: any) => row.id);
-  const [stockRows, moves, itemRows] = await Promise.all([
-    readAll<any>(supabase.from("stock").select("id,warehouse_id,item_id,qty", { count: "exact" }).in("warehouse_id", warehouseIds).lte("updated_at", end)),
-    readAll<any>(supabase.from("return_record_effective_stock_moves").select("id,warehouse_id,item_id,qty,tanggal", { count: "exact" }).in("warehouse_id", warehouseIds).gte("tanggal", start.slice(0, 10)).lte("tanggal", filter.to)),
-    readAll<any>(supabase.from("items").select("id,min_stock", { count: "exact" }).eq("is_active", true)),
-  ]);
+  let stockRows: StokBaris[];
+  let moves: MutasiKeluar[];
+  let itemRows: { id: string; min_stock: number | string | null }[];
+  // Jalur cepat: satu panggilan fungsi database (gudang aktif cabang scope, stok sampai akhir periode, mutasi KELUAR pada periode,
+  // batas minimum barang aktif yang punya stok). Mutasi masuk tidak dipakai perhitungan di bawah, jadi tidak dikirim.
+  const cepat = await bacaBagianOperasional(supabase, "stok", { mulai: start, akhir: end, dari: start.slice(0, 10), sampai: filter.to, cabang: scope.branchIds }, (d) => ({
+    stok: larik<[string, number | string]>(d, "stok", "n_stok"),
+    mutasi: larik<[string, number | string, string]>(d, "mutasi", "n_mutasi"),
+    barang: larik<[string, number | string | null]>(d, "barang"),
+  }));
+  if (cepat) {
+    stockRows = cepat.stok.map(([item_id, qty]) => ({ item_id, qty }));
+    moves = cepat.mutasi.map(([item_id, qty, tanggal]) => ({ item_id, qty, tanggal }));
+    itemRows = cepat.barang.map(([id, min_stock]) => ({ id, min_stock }));
+  } else {
+    const warehouseResult = await read(supabase.from("warehouses").select("id,branch_id").in("branch_id", scope.branchIds).eq("is_active", true));
+    queryError(warehouseResult);
+    const warehouses = warehouseResult.data ?? [];
+    const warehouseIds = warehouses.map((row: any) => row.id);
+    [stockRows, moves, itemRows] = await Promise.all([
+      readAll<any>(supabase.from("stock").select("id,warehouse_id,item_id,qty", { count: "exact" }).in("warehouse_id", warehouseIds).lte("updated_at", end)),
+      readAll<any>(supabase.from("return_record_effective_stock_moves").select("id,warehouse_id,item_id,qty,tanggal", { count: "exact" }).in("warehouse_id", warehouseIds).gte("tanggal", start.slice(0, 10)).lte("tanggal", filter.to)),
+      readAll<any>(supabase.from("items").select("id,min_stock", { count: "exact" }).eq("is_active", true)),
+    ]);
+  }
   const usage = new Map<string, number>();
-  for (const row of moves) if (Number(row.qty) < 0) usage.set(row.item_id, (usage.get(row.item_id) ?? 0) + Math.abs(Number(row.qty)));
-  const movementRows: MovementRow[] = stockRows.map((row: any) => {
-    const itemMoves = moves.filter((move: any) => move.item_id === row.item_id && Number(move.qty) < 0);
-    return { itemId: row.item_id, soldQty: usage.get(row.item_id) ?? 0, stockQty: Number(row.qty) || 0, lastSoldAt: itemMoves.length ? itemMoves.map((move: any) => move.tanggal).sort().at(-1) ?? null : null };
-  });
-  const totalAvailable = stockRows.reduce((total: number, row: any) => total + Math.max(0, Number(row.qty) || 0), 0);
+  // Tanggal keluar terakhir per barang (satu lintasan, bukan menyaring seluruh mutasi untuk tiap baris stok).
+  const lastOut = new Map<string, string>();
+  for (const row of moves) {
+    if (!(Number(row.qty) < 0)) continue;
+    usage.set(row.item_id, (usage.get(row.item_id) ?? 0) + Math.abs(Number(row.qty)));
+    const previous = lastOut.get(row.item_id);
+    if (previous === undefined || row.tanggal > previous) lastOut.set(row.item_id, row.tanggal);
+  }
+  const movementRows: MovementRow[] = stockRows.map((row) => ({ itemId: row.item_id, soldQty: usage.get(row.item_id) ?? 0, stockQty: Number(row.qty) || 0, lastSoldAt: lastOut.get(row.item_id) ?? null }));
+  const totalAvailable = stockRows.reduce((total: number, row) => total + Math.max(0, Number(row.qty) || 0), 0);
   const totalUsage = [...usage.values()].reduce((total, value) => total + value, 0);
-  const minimumByItem = new Map<string, number>(itemRows.map((row: any) => [String(row.id), Number(row.min_stock) || 0]));
+  const minimumByItem = new Map<string, number>(itemRows.map((row) => [String(row.id), Number(row.min_stock) || 0]));
   return {
     coverageDays: stockCoverage(totalAvailable, totalUsage),
-    lowStock: stockRows.filter((row: any) => (Number(row.qty) || 0) < (minimumByItem.get(String(row.item_id)) ?? 0)).length,
+    lowStock: stockRows.filter((row) => (Number(row.qty) || 0) < (minimumByItem.get(String(row.item_id)) ?? 0)).length,
     fastMoving: rankMovement(movementRows, filter.to, 90).fast,
     slowMoving: rankMovement(movementRows, filter.to, 90).slow,
   };

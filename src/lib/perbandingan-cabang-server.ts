@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { batasTanggalWIB } from "./laporan-transaksi";
 import { completeReportQuery } from "./report-query";
+import { bacaBagianOperasional, larik } from "./laporan-operasional-penjualan";
 import { inventoryMethod } from "./hpp-reports-server";
 import { valueInventory } from "./hpp-reports";
 import { hariIniWIB } from "./tanggal";
@@ -77,21 +78,31 @@ export async function groomingPerCabang(supabase: AnyClient, scope: DashboardSco
   const out = new Map<string, number>();
   if (scope.branchIds.length === 0) return out;
   const { mulai, akhir } = batasTanggalWIB(from, to);
-  const [visits, kasir] = await Promise.all([
-    readAll<{ id: string; branch_id: string }>(supabase.from("visits")
-      .select("id,branch_id", { count: "exact" }).is("archived_at", null).ilike("poli", "%grooming%")
-      .in("branch_id", scope.branchIds).gte("created_at", mulai).lte("created_at", akhir)),
-    readAll<{ id: string; qty: number | string | null; sales: { branch_id: string } | { branch_id: string }[] | null }>(supabase.from("sale_items")
-      .select("id,qty,sales!inner(created_at,voided_at,branch_id),items!inner(item_type,tindakan_kategori)", { count: "exact" })
-      .eq("items.item_type", "Jasa").eq("items.tindakan_kategori", "Grooming")
-      .is("sales.voided_at", null).in("sales.branch_id", scope.branchIds)
-      .gte("sales.created_at", mulai).lte("sales.created_at", akhir)),
-  ]);
-  for (const visit of visits) out.set(visit.branch_id, (out.get(visit.branch_id) ?? 0) + 1);
-  for (const line of kasir) {
-    const sale = Array.isArray(line.sales) ? line.sales[0] : line.sales;
-    if (!sale) continue;
-    out.set(sale.branch_id, (out.get(sale.branch_id) ?? 0) + (Number(line.qty) || 0));
+  // Jalur cepat: satu panggilan fungsi database (kunjungan grooming + layanan grooming kasir, urutan id seperti pembacaan lama).
+  const cepat = await bacaBagianOperasional(supabase, "grooming", { mulai, akhir, dari: from, sampai: to, cabang: scope.branchIds }, (d) => ({
+    visits: larik<[string]>(d, "visits", "n_visits"),
+    kasir: larik<[string, number | string | null]>(d, "kasir", "n_kasir"),
+  }));
+  if (cepat) {
+    for (const [branchId] of cepat.visits) out.set(branchId, (out.get(branchId) ?? 0) + 1);
+    for (const [branchId, qty] of cepat.kasir) out.set(branchId, (out.get(branchId) ?? 0) + (Number(qty) || 0));
+  } else {
+    const [visits, kasir] = await Promise.all([
+      readAll<{ id: string; branch_id: string }>(supabase.from("visits")
+        .select("id,branch_id", { count: "exact" }).is("archived_at", null).ilike("poli", "%grooming%")
+        .in("branch_id", scope.branchIds).gte("created_at", mulai).lte("created_at", akhir)),
+      readAll<{ id: string; qty: number | string | null; sales: { branch_id: string } | { branch_id: string }[] | null }>(supabase.from("sale_items")
+        .select("id,qty,sales!inner(created_at,voided_at,branch_id),items!inner(item_type,tindakan_kategori)", { count: "exact" })
+        .eq("items.item_type", "Jasa").eq("items.tindakan_kategori", "Grooming")
+        .is("sales.voided_at", null).in("sales.branch_id", scope.branchIds)
+        .gte("sales.created_at", mulai).lte("sales.created_at", akhir)),
+    ]);
+    for (const visit of visits) out.set(visit.branch_id, (out.get(visit.branch_id) ?? 0) + 1);
+    for (const line of kasir) {
+      const sale = Array.isArray(line.sales) ? line.sales[0] : line.sales;
+      if (!sale) continue;
+      out.set(sale.branch_id, (out.get(sale.branch_id) ?? 0) + (Number(line.qty) || 0));
+    }
   }
   for (const [id, value] of out) out.set(id, Math.round(value * 10_000) / 10_000);
   return out;
@@ -138,19 +149,40 @@ export async function collectNilaiStokBlock(supabase: AnyClient, scope: Dashboar
   const today = hariIniWIB();
   const asOf = tanggal > today ? today : tanggal;
   const { to: tanggalPembanding } = rentangBulanLalu(asOf, asOf);
-  const warehouses = scope.branchIds.length === 0 ? [] : (await readAll<Warehouse>(supabase.from("warehouses")
-    .select("id,branch_id,type", { count: "exact" }).in("branch_id", scope.branchIds)))
-    .filter((warehouse) => unitGudang(warehouse.type) !== null);
-  const ids = warehouses.map((warehouse) => warehouse.id);
   const method = await inventoryMethod(supabase);
-  const [stock, layers, moves] = await Promise.all([
-    readPerId<StockRow>(ids, (id) => supabase.from("stock")
-      .select(`id,warehouse_id,item_id,qty${method === "moving_average" ? ",average_cost" : ""}`, { count: "exact" }).eq("warehouse_id", id)),
-    readPerId<LayerRow>(ids, (id) => supabase.from("stock_layers")
-      .select("id,warehouse_id,item_id,qty_left,unit_cost", { count: "exact" }).eq("warehouse_id", id).gt("qty_left", 0)),
-    readPerId<MoveRow>(ids, (id) => supabase.from("stock_moves")
-      .select("id,warehouse_id,tanggal,qty,unit_cost,valuation_adjustment", { count: "exact" }).eq("warehouse_id", id).gt("tanggal", tanggalPembanding)),
-  ]);
+  let warehouses: Warehouse[] = [];
+  let stock: StockRow[] = [];
+  let layers: LayerRow[] = [];
+  let moves: MoveRow[] = [];
+  // Jalur cepat: satu panggilan fungsi database (gudang cabang scope, lalu stok, lapisan sisa, dan mutasi sesudah tanggal pembanding
+  // untuk gudang VET/RETAIL/ONLINE, urut gudang lalu id seperti pembacaan lama per gudang).
+  const cepat = scope.branchIds.length === 0 ? null : await bacaBagianOperasional(supabase, "nilai_stok", {
+    mulai: `${asOf}T00:00:00+07:00`, akhir: `${asOf}T23:59:59.999999+07:00`, dari: asOf, sampai: tanggalPembanding, cabang: scope.branchIds, rataRata: method === "moving_average",
+  }, (d) => ({
+    gudang: larik<{ id: string; branch_id: string; type: string | null }>(d, "gudang"),
+    stok: larik<[string, string, number | string, number | string | null]>(d, "stok", "n_stok"),
+    lapisan: larik<[string, string, number | string, number | string]>(d, "lapisan", "n_lapisan"),
+    mutasi: larik<[string, string, number | string, number | string, number | string | null]>(d, "mutasi", "n_mutasi"),
+  }));
+  if (cepat) {
+    warehouses = cepat.gudang.map((row) => ({ id: row.id, branch_id: row.branch_id, type: row.type })).filter((warehouse) => unitGudang(warehouse.type) !== null);
+    stock = cepat.stok.map(([warehouse_id, item_id, qty, average_cost]) => ({ id: "", warehouse_id, item_id, qty, ...(method === "moving_average" ? { average_cost } : {}) }));
+    layers = cepat.lapisan.map(([warehouse_id, item_id, qty_left, unit_cost]) => ({ id: "", warehouse_id, item_id, qty_left, unit_cost }));
+    moves = cepat.mutasi.map(([warehouse_id, tanggal, qty, unit_cost, valuation_adjustment]) => ({ id: "", warehouse_id, tanggal, qty, unit_cost, valuation_adjustment }));
+  } else {
+    warehouses = scope.branchIds.length === 0 ? [] : (await readAll<Warehouse>(supabase.from("warehouses")
+      .select("id,branch_id,type", { count: "exact" }).in("branch_id", scope.branchIds)))
+      .filter((warehouse) => unitGudang(warehouse.type) !== null);
+    const ids = warehouses.map((warehouse) => warehouse.id);
+    [stock, layers, moves] = await Promise.all([
+      readPerId<StockRow>(ids, (id) => supabase.from("stock")
+        .select(`id,warehouse_id,item_id,qty${method === "moving_average" ? ",average_cost" : ""}`, { count: "exact" }).eq("warehouse_id", id)),
+      readPerId<LayerRow>(ids, (id) => supabase.from("stock_layers")
+        .select("id,warehouse_id,item_id,qty_left,unit_cost", { count: "exact" }).eq("warehouse_id", id).gt("qty_left", 0)),
+      readPerId<MoveRow>(ids, (id) => supabase.from("stock_moves")
+        .select("id,warehouse_id,tanggal,qty,unit_cost,valuation_adjustment", { count: "exact" }).eq("warehouse_id", id).gt("tanggal", tanggalPembanding)),
+    ]);
+  }
   const values = valueInventory(
     stock.map((row) => ({ warehouseId: row.warehouse_id, itemId: row.item_id, qty: row.qty, averageCost: row.average_cost ?? undefined })),
     layers.map((row) => ({ warehouseId: row.warehouse_id, itemId: row.item_id, qtyLeft: row.qty_left, unitCost: row.unit_cost })),

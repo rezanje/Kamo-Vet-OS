@@ -122,6 +122,8 @@ function fakeSupabase(options: {
     rpc: async (name: string, args: Record<string, unknown>) => {
       records.push({ table: `rpc:${name}`, calls: [{ method: "rpc", args: [args] }] });
       if (options.rpcs && name in options.rpcs) return { data: options.rpcs[name], error: null };
+      // Fungsi baca-saja laporan_operasional_penjualan (migrasi 20261212100000) belum ada di klien tiruan: pembaca lama dipakai.
+      if (name === "laporan_operasional_penjualan") return { data: null, error: { code: "PGRST202", message: "Could not find the function public.laporan_operasional_penjualan(p_bagian) in the schema cache" } };
       return { data: args.b === "foreign" ? false : true, error: null };
     },
     records,

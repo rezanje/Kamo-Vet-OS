@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { calculateOccupancy, countReferrals, followUpCompliance, serviceDurations } from "./operasional-klinik";
 import { completeReportQuery } from "./report-query";
+import { bacaBagianOperasional, larik } from "./laporan-operasional-penjualan";
 
 type SupabaseLike = {
   from: (table: string) => any;
@@ -52,14 +53,29 @@ export async function collectOperationalClinic(supabase: SupabaseLike, filters: 
 
   const start = `${filters.from}T00:00:00+07:00`;
   const end = `${filters.to}T23:59:59.999+07:00`;
-  const [bookings, visits, followUps, referrals, admissions, capacities] = await Promise.all([
-    readAll<any>(supabase.from("bookings").select("id,branch_id,status,attendance_outcome,tanggal", { count: "exact" }).in("branch_id", allowedIds).gte("tanggal", filters.from).lte("tanggal", filters.to)),
-    readAll<any>(supabase.from("visits").select("id,branch_id,status,checked_in_at,service_started_at,service_finished_at,checked_out_at", { count: "exact" }).in("branch_id", allowedIds).is("archived_at", null).gte("created_at", start).lte("created_at", end)),
-    readAll<any>(supabase.from("follow_ups").select("id,branch_id,status,tanggal,completed_at", { count: "exact" }).in("branch_id", allowedIds).lte("tanggal", filters.to)),
-    readAll<any>(supabase.from("visit_referrals").select("id,branch_id,direction,referred_at", { count: "exact" }).in("branch_id", allowedIds).gte("referred_at", start).lte("referred_at", end)),
-    readAll<any>(supabase.from("inpatient_records").select("id,branch_id,admitted_at,discharged_at", { count: "exact" }).in("branch_id", allowedIds).lt("admitted_at", end)),
-    readAll<any>(supabase.from("branch_capacity_periods").select("id,branch_id,capacity,valid_from,valid_until", { count: "exact" }).in("branch_id", allowedIds).lte("valid_from", filters.to)),
-  ]);
+  let bookings: any[], visits: any[], followUps: any[], referrals: any[], admissions: any[], capacities: any[];
+  // Jalur cepat: satu panggilan fungsi database mengembalikan keenam kumpulan baris (kolom dan urutan id sama seperti pembacaan lama).
+  const cepat = await bacaBagianOperasional(supabase, "klinik", { mulai: start, akhir: end, dari: filters.from, sampai: filters.to, cabang: allowedIds }, (d) => ({
+    bookings: larik<any>(d, "bookings"),
+    visits: larik<[string, string, string | null, string | null, string | null, string | null]>(d, "visits", "n_visits"),
+    followUps: larik<any>(d, "follow_ups"),
+    referrals: larik<any>(d, "referrals"),
+    admissions: larik<any>(d, "admissions"),
+    capacities: larik<any>(d, "capacities"),
+  }));
+  if (cepat) {
+    ({ bookings, followUps, referrals, admissions, capacities } = cepat);
+    visits = cepat.visits.map(([branch_id, status, checked_in_at, service_started_at, service_finished_at, checked_out_at]) => ({ branch_id, status, checked_in_at, service_started_at, service_finished_at, checked_out_at }));
+  } else {
+    [bookings, visits, followUps, referrals, admissions, capacities] = await Promise.all([
+      readAll<any>(supabase.from("bookings").select("id,branch_id,status,attendance_outcome,tanggal", { count: "exact" }).in("branch_id", allowedIds).gte("tanggal", filters.from).lte("tanggal", filters.to)),
+      readAll<any>(supabase.from("visits").select("id,branch_id,status,checked_in_at,service_started_at,service_finished_at,checked_out_at", { count: "exact" }).in("branch_id", allowedIds).is("archived_at", null).gte("created_at", start).lte("created_at", end)),
+      readAll<any>(supabase.from("follow_ups").select("id,branch_id,status,tanggal,completed_at", { count: "exact" }).in("branch_id", allowedIds).lte("tanggal", filters.to)),
+      readAll<any>(supabase.from("visit_referrals").select("id,branch_id,direction,referred_at", { count: "exact" }).in("branch_id", allowedIds).gte("referred_at", start).lte("referred_at", end)),
+      readAll<any>(supabase.from("inpatient_records").select("id,branch_id,admitted_at,discharged_at", { count: "exact" }).in("branch_id", allowedIds).lt("admitted_at", end)),
+      readAll<any>(supabase.from("branch_capacity_periods").select("id,branch_id,capacity,valid_from,valid_until", { count: "exact" }).in("branch_id", allowedIds).lte("valid_from", filters.to)),
+    ]);
+  }
 
   return {
     from: filters.from,
