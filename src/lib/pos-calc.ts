@@ -18,7 +18,7 @@ export type CartLine = {
 // Diskon manual kasir MENANG atas promo, tidak ditumpuk: kasir yang mengetik
 // potongan sendiri sedang menimpa harga dengan sengaja (nego, barang cacat).
 // Menumpuk keduanya diam-diam bikin harga jatuh di bawah modal tanpa disadari.
-function manualDiscount(l: CartLine): number {
+export function manualDiscount(l: CartLine): number {
   const gross = new PosDecimal(l.qty).times(l.harga).toNumber();
   const val = Number(l.item_discount_value) || 0;
   return l.item_discount_type === "percent" ? new PosDecimal(gross).times(val).div(100).toDecimalPlaces(0).toNumber() : val;
