@@ -101,6 +101,9 @@ insert into employees(id,nama,jabatan,branch_id,status) values
 alter table employees disable trigger user;update employees set trashed_at=now() where id='c3000000-0000-4000-8000-000000000003';alter table employees enable trigger user;
 insert into customers(id,name,phone) values('c4000000-0000-4000-8000-000000000001','Pelanggan Fiktif Satu','081200000001'),('c4000000-0000-4000-8000-000000000002','Pelanggan Fiktif Dua','081200000002');
 insert into pets(id,customer_id,name) values('c5000000-0000-4000-8000-000000000001','c4000000-0000-4000-8000-000000000001','Mochi Fiktif'),('c5000000-0000-4000-8000-000000000002','c4000000-0000-4000-8000-000000000002','Luna Fiktif');
+-- berkas lampiran: sejak migrasi 20261211200000 lampiran harus ADA di storage.objects dan milik pengunggah (di sini hanya fixture; uji kepemilikan ada di komplain_lampiran_storage.sql)
+alter table storage.objects add column if not exists owner_id text;
+insert into storage.objects(bucket_id,name,owner,owner_id) select 'dokumen',n,pg_temp.u('kp'),pg_temp.u('kp')::text from unnest(array['komplain/foto1.jpg','komplain/foto2.png','komplain/bukti.jpg']) n;
 -- jumlah baris keuangan/stok sebelum semua uji (harus sama sesudahnya)
 create temp table money0 as select (select count(*) from journal_entries) je,(select count(*) from journal_lines) jl,(select count(*) from stock_moves) sm,(select count(*) from expenses) ex,
  (select count(*) from invoices) iv,(select count(*) from sales) sa,(select count(*) from point_ledger) pl;
@@ -112,7 +115,7 @@ select pg_temp.eq((select string_agg(name,'|' order by sort_order) from public.c
  'Pelayanan staf|Dokter/Medis|Obat/Produk (kualitas/expired)|Harga/Tagihan/Kasir (salah hitung, double bayar)|Antrian/Waktu tunggu|Kebersihan/Fasilitas|Grooming|Rawat Inap|Pengiriman/Online|Lainnya','S0 daftar kategori awal sesuai permintaan');
 select pg_temp.eq((select overdue_days::text from public.complaint_settings),'3','S0 batas terlambat bawaan 3 hari');
 select pg_temp.ok(exists(select 1 from role_settings_private.action_catalog where id='crm.komplain_kelola' and enforced and "group"='CRM') and exists(select 1 from role_settings_private.action_modules where id='crm.komplain_kelola' and module_id='crm'),'S0 izin Akses Grup crm.komplain_kelola terdaftar (modul CRM)');
-select pg_temp.eq((select count(*)::text from pg_proc p where p.pronamespace='public'::regnamespace and p.proname like 'komplain\_%'),'13','S0 tepat 13 fungsi public');
+select pg_temp.eq((select count(*)::text from pg_proc p where p.pronamespace='public'::regnamespace and p.proname like 'komplain\_%' and p.proname not like 'komplain\_berkas\_%'),'13','S0 tepat 13 fungsi public (fungsi kebijakan storage komplain_berkas_* dihitung di komplain_lampiran_storage.sql)');
 select pg_temp.ok(not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in('public','clinic_private') and p.proname like 'komplain\_%' and (has_function_privilege('anon',p.oid,'execute') or has_function_privilege('service_role',p.oid,'execute'))),'S0 anon dan service_role tidak bisa menjalankan fungsi komplain');
 select pg_temp.ok(not exists(select 1 from pg_proc p where p.pronamespace='public'::regnamespace and p.proname like 'komplain\_%' and not has_function_privilege('authenticated',p.oid,'execute')),'S0 authenticated bisa menjalankan semua fungsi public komplain');
 select pg_temp.ok(not exists(select 1 from pg_proc p where p.pronamespace='clinic_private'::regnamespace and p.proname like 'komplain\_%' and has_function_privilege('authenticated',p.oid,'execute')),'S0 fungsi clinic_private komplain tidak terbuka untuk klien');
@@ -549,7 +552,7 @@ create function pg_temp.probe_ao() returns text language plpgsql as $$
 declare f record; args text; r text; a oid; i int; bad text:=''; n int:=0; t text; msg text;
 begin
  perform set_config('request.jwt.claim.sub',pg_temp.u('ao')::text,true);perform set_config('request.jwt.claims','{"role":"authenticated"}',true);
- for f in select p.oid,p.proname,p.proargtypes::oid[] ats,p.oid::regprocedure::text sig from pg_proc p where p.pronamespace='public'::regnamespace and p.proname like 'komplain\_%' and p.proname not in('komplain_boleh','komplain_visible') order by 2 loop
+ for f in select p.oid,p.proname,p.proargtypes::oid[] ats,p.oid::regprocedure::text sig from pg_proc p where p.pronamespace='public'::regnamespace and p.proname like 'komplain\_%' and p.proname not in('komplain_boleh','komplain_visible') and p.proname not like 'komplain\_berkas\_%' order by 2 loop
   select coalesce(string_agg('null::'||format_type(ty,null),',' order by ord),'') into args from unnest(f.ats) with ordinality t(ty,ord);
   n:=n+1;
   begin execute 'set local role authenticated'; execute 'select public.'||f.proname||'('||args||')'; execute 'reset role'; bad:=bad||f.proname||'(berhasil!) ';
@@ -563,6 +566,42 @@ select pg_temp.has(pg_temp.da('ao','insert into public.complaint_categories(name
 select pg_temp.has(pg_temp.da('ao','delete from public.customer_complaint_history'),'permission denied','S10 Admin Online tidak bisa menghapus jejak');
 
 -- ── S11. tanpa efek uang / stok / poin ───────────────────────────────────────────────────
+-- ── S12. celah yang ditemukan review independen (mutan yang dulu selamat): kategori, batas daftar, hak ubah detail, umur tertutup, nama pelaku, batas nilai, TRUNCATE ──
+-- a. kategori 'dipakai' hanya menghitung komplain yang boleh dilihat peminta (bukan seluruh tabel)
+select pg_temp.mkc('v1','st2','A',jsonb_build_object('desk','Kamar mandi kotor satu','kat','Kebersihan/Fasilitas'));
+select pg_temp.mkc('v2','st2','A',jsonb_build_object('desk','Kamar mandi kotor dua','kat','Kebersihan/Fasilitas'));
+select pg_temp.mkc('v3','kp','A',jsonb_build_object('desk','Kamar mandi kotor tiga','kat','Kebersihan/Fasilitas'));
+select pg_temp.eq(pg_temp.ra('kp','select (select (e->>''dipakai'') from jsonb_array_elements(public.komplain_kategori_daftar()->''kategori'') e where e->>''nama''=''Kebersihan/Fasilitas'')'),
+  pg_temp.ra('kp','select count(*)::text from public.customer_complaints where category_id=(select id from public.complaint_categories where name=''Kebersihan/Fasilitas'')'),'S12 kategori: jumlah "dipakai" untuk STAFF = komplain yang boleh dilihatnya (RLS), bukan semua');
+select pg_temp.ok((pg_temp.ra('kp','select (select (e->>''dipakai'') from jsonb_array_elements(public.komplain_kategori_daftar()->''kategori'') e where e->>''nama''=''Kebersihan/Fasilitas'')'))::int
+  < (pg_temp.ra('own','select (select (e->>''dipakai'') from jsonb_array_elements(public.komplain_kategori_daftar()->''kategori'') e where e->>''nama''=''Kebersihan/Fasilitas'')'))::int,'S12 kategori: Owner melihat jumlah lebih besar daripada STAFF (uji tidak sepele)');
+select pg_temp.eq(pg_temp.ra('own','select (select (e->>''dipakai'') from jsonb_array_elements(public.komplain_kategori_daftar()->''kategori'') e where e->>''nama''=''Kebersihan/Fasilitas'')'),
+  (select count(*)::text from customer_complaints where category_id=pg_temp.cat('Kebersihan/Fasilitas')),'S12 kategori: Owner = hitung manual semua komplain kategori itu');
+-- b. hak ubah detail: akun yang tak melihat komplain mendapat pesan "tidak ada", bukan "bukan penanganan"
+select pg_temp.has(pg_temp.ud('stx','c3','Grooming','Tinggi',null,array[]::uuid[],175000,'x','Struk petshop','STR-001','coba ubah komplain orang lain','udv1'),'KOMPLAIN_TIDAK_ADA','S12 ubah detail: akun yang tak melihat komplain mendapat KOMPLAIN_TIDAK_ADA');
+select pg_temp.has(pg_temp.ud('st2','c1','Grooming','Tinggi',null,array[]::uuid[],175000,'x',null,null,'rekan bukan pembuat','udv2'),'KOMPLAIN_TIDAK_ADA','S12 ubah detail: rekan satu cabang yang bukan pembuat/petugas juga KOMPLAIN_TIDAK_ADA');
+-- c. umur komplain tertutup kosong dan tidak pernah "terlambat"
+select pg_temp.ok((select count(*) from jsonb_array_elements(pg_temp.ra('own','select public.komplain_daftar(null,null,null,null,null,''ditutup'',null,null,null,null,null,null)->''baris''')::jsonb) e)>=1,'S12 ada komplain tertutup untuk diuji umurnya');
+select pg_temp.ok(not exists(select 1 from jsonb_array_elements(pg_temp.ra('own','select public.komplain_daftar(null,null,null,null,null,''ditutup'',null,null,null,null,null,null)->''baris''')::jsonb) e where e->'umur_hari' <> 'null'::jsonb or (e->>'terlambat')::boolean),'S12 komplain tertutup: umur_hari kosong dan tidak terlambat');
+select pg_temp.ok(not exists(select 1 from jsonb_array_elements(pg_temp.ra('own','select public.komplain_daftar(null,null,null,null,null,''terbuka'',null,null,null,null,null,null)->''baris''')::jsonb) e where e->'umur_hari' = 'null'::jsonb),'S12 komplain terbuka: umur_hari selalu terisi');
+-- d. jejak mencatat NAMA dan PERAN pelaku persis seperti profilnya
+select pg_temp.ok((select count(*) from customer_complaint_history)>=10 and not exists(select 1 from customer_complaint_history h join profiles p on p.id=h.actor where h.actor_name is distinct from p.full_name or h.actor_role is distinct from p.role::text or h.actor_name is null),'S12 jejak: actor_name dan actor_role sama dengan profil pelaku di semua baris');
+-- e. batas nilai rupiah (1.000.000.000.000) di pembuatan dan di ubah detail
+select pg_temp.has(pg_temp.mk('kp','nm1','A',jsonb_build_object('nominal','1000000000001')),'KOMPLAIN_NOMINAL','S12 nilai di atas 1 triliun ditolak saat membuat');
+select pg_temp.eq(left(pg_temp.mk('kp','nm2','A',jsonb_build_object('nominal','1000000000000')),1),'{','S12 nilai tepat 1 triliun diterima saat membuat (batas tajam)');
+select pg_temp.has(pg_temp.ud('kp','c3','Grooming','Tinggi',pg_temp.u('st2'),array['c3000000-0000-4000-8000-000000000001']::uuid[],1000000000001,'Minta uang kembali','Struk petshop','STR-001','nilai terlalu besar','udv3'),'KOMPLAIN_NOMINAL','S12 nilai di atas 1 triliun ditolak saat mengubah detail');
+-- f. batas jumlah baris daftar: permintaan 100000 baris dipotong 5000 (5100 komplain massal, dibatalkan di akhir)
+select pg_temp.eq(pg_temp.sup($sq$insert into public.customer_complaints(complaint_no,branch_id,channel,complained_at,complaint_date,category_id,severity,description,created_by,request_key,request_hash)
+  select 'KMP-LIM-'||g,pg_temp.b('A'),'Petshop',now(),(now() at time zone 'Asia/Jakarta')::date,(select id from complaint_categories order by sort_order limit 1),'Rendah','Baris massal untuk uji batas',pg_temp.u('own'),md5('lim'||g)::uuid,'h' from generate_series(1,5100) g$sq$),'OK','S12 5100 komplain massal dibuat (superuser)');
+select pg_temp.eq(pg_temp.ra('own','select jsonb_array_length(public.komplain_daftar(null,null,null,null,null,null,null,null,null,null,100000,0)->''baris'')::text'),'5000','S12 daftar: p_limit 100000 dipotong menjadi 5000 baris');
+select pg_temp.eq(pg_temp.ra('own','select jsonb_array_length(public.komplain_daftar(null,null,null,null,null,null,null,null,null,null,5000,0)->''baris'')::text'),'5000','S12 daftar: p_limit 5000 tepat 5000 baris');
+select pg_temp.ok((pg_temp.ra('own','select (public.komplain_daftar(null,null,null,null,null,null,null,null,null,null,100000,0)->>''total'')'))::int>5100,'S12 daftar: total tetap menghitung semua (bukan hanya yang dikirim)');
+-- g. TRUNCATE oleh pemilik database ditolak pada jejak dan lampiran (komplain: ditolak pula oleh tabel anak)
+select pg_temp.has(pg_temp.sup('truncate public.customer_complaint_history'),'KOMPLAIN_JEJAK_TETAP','S12 TRUNCATE jejak ditolak');
+select pg_temp.has(pg_temp.sup('truncate public.customer_complaint_files'),'KOMPLAIN_JEJAK_TETAP','S12 TRUNCATE lampiran ditolak');
+select pg_temp.has(pg_temp.sup('truncate public.customer_complaints cascade'),'KOMPLAIN_JEJAK_TETAP','S12 TRUNCATE komplain (cascade) ditolak');
+select pg_temp.ok((select count(*) from customer_complaint_history)>=10 and (select count(*) from customer_complaint_files)>=3,'S12 jejak dan lampiran masih utuh sesudah percobaan TRUNCATE');
+
 select pg_temp.ok((select je=(select count(*) from journal_entries) and jl=(select count(*) from journal_lines) and sm=(select count(*) from stock_moves) and ex=(select count(*) from expenses)
   and iv=(select count(*) from invoices) and sa=(select count(*) from sales) and pl=(select count(*) from point_ledger) from money0),'S11 jurnal, stok, pengeluaran, invoice, penjualan, poin tidak berubah oleh seluruh uji komplain');
 select pg_temp.ok(not exists(select 1 from pg_proc p where p.pronamespace in('public'::regnamespace,'clinic_private'::regnamespace) and p.proname like 'komplain\_%' and (p.prosrc ilike '%journal_%' or p.prosrc ilike '%stock_%' or p.prosrc ilike '%expenses%' or p.prosrc ilike '%point_ledger%' or p.prosrc ilike '%cash_%')),'S11 tidak ada fungsi komplain yang menyebut tabel jurnal/stok/kas/poin');

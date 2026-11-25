@@ -169,7 +169,7 @@ describe("pembaca sisi server", () => {
 describe("layar", () => {
   it("dashboard: semua KPI, bagian, dan tautan; teks pelanggan di-escape", () => {
     const h = html(<DashboardKomplain d={dash()} filter={bacaFilter({}, { bulanIni: true, hariIni: "2026-11-25" })} />);
-    for (const t of ["Komplain terbuka", "Terlambat (&gt; 3 hari)", "Kritis, belum selesai", "Ditutup bulan ini", "Rata-rata respons pertama", "2,5 jam", "Rata-rata waktu penyelesaian", "1,5 hari", "Per cabang", "Per kategori", "Per status", "Per asal komplain", "Tren komplain", "Menurut tingkat", "Pelanggan yang berulang kali komplain", "Budi Uji", "3×", "Karyawan yang paling sering disebut", "belum berarti bersalah", "tertua dulu", "Lihat semua yang terbuka"]) expect(h, t).toContain(t);
+    for (const t of ["Komplain terbuka", "Terlambat (&gt; 3 hari)", "Kritis, belum selesai", "Ditutup bulan ini", "tidak ikut saringan status &amp; tanggal", "Rata-rata respons pertama", "2,5 jam", "Rata-rata waktu penyelesaian", "1,5 hari", "Per cabang", "Per kategori", "Per status", "Per asal komplain", "Tren komplain", "Menurut tingkat", "Pelanggan yang berulang kali komplain", "Budi Uji", "3×", "Karyawan yang paling sering disebut", "belum berarti bersalah", "tertua dulu", "Lihat semua yang terbuka"]) expect(h, t).toContain(t);
     expect(h).toContain("KMP-202611-0001"); expect(h).toContain("Pelanggan &lt;b&gt;Uji&lt;/b&gt;"); expect(h).not.toContain("<b>Uji</b>");
     expect(h).toContain("status=terbuka"); expect(h).toContain("urut=umur");
   });
