@@ -87,6 +87,30 @@ describe("pembacaan isian & pesan", () => {
     expect(asalKasbon("Disetujui", "Selisih kas kurang saat tutup shift abcd1234")).toBe("selisih-kas");
     expect(asalKasbon("Disetujui", "butuh dana")).toBe("kasbon");
   });
+  it("bacaRingkasanBeban neto: kunci baru dibaca; database lama tanpa kunci = kotor (lebih 0)", () => {
+    const lama = { result_id: RESULT, no_hasil: "OPR.1", minus_lines: [], minus_count: 1, hpp_total: 100, jual_total: 150, hpp_part: 100, gain_part: 50, refuse: null, can_charge: true, charges: [] };
+    expect(bacaRingkasanBeban(lama)).toMatchObject({ jual_kurang: 150, jual_lebih: 0, hpp_lebih: 0, hpp_neto: 100, plus_count: 0, plus_lines: [] });
+    const baru = { ...lama, jual_kurang: 150, jual_lebih: 30, jual_total: 120, hpp_lebih: 20, hpp_neto: 80, plus_count: 1,
+      plus_lines: [{ item_id: "g", code: "G", name: "Lebih", unit: "PCS", qty: 1, hpp: "20.00", harga_jual: 30, jual: 30 }],
+      charges: [{ id: "c", tanggal: "2026-11-25", reason: "x", total: 120, hpp_part: 80, gain_part: 40, jual_kurang: 150, jual_lebih: 30, journal_id: "j", lines: [] },
+                { id: "c0", tanggal: "2026-11-25", reason: "x", total: 150, hpp_part: 100, gain_part: 50, journal_id: "j0", lines: [] }] };
+    const r = bacaRingkasanBeban(baru)!;
+    expect(r).toMatchObject({ jual_kurang: 150, jual_lebih: 30, jual_total: 120, hpp_lebih: 20, hpp_neto: 80, plus_count: 1 });
+    expect(r.plus_lines).toEqual([{ item_id: "g", code: "G", name: "Lebih", unit: "PCS", qty: 1, hpp: 20, harga_jual: 30, jual: 30 }]);
+    expect(r.charges[0]).toMatchObject({ jual_kurang: 150, jual_lebih: 30 });
+    expect(r.charges[1]).toMatchObject({ jual_kurang: null, jual_lebih: null });
+    expect(bacaRingkasanBeban({ ...baru, jual_lebih: "x" })).toBeNull();
+    expect(bacaRingkasanBeban({ ...baru, hpp_neto: "x" })).toBeNull();
+  });
+  it("migrasi so_kasbon_neto: aturan neto, lantai nol, tanpa kredit 720010 berlebih, ACL tidak berubah (teks migrasi)", () => {
+    const neto = readFileSync(join(process.cwd(), "supabase/migrations/20261210100000_so_kasbon_neto.sql"), "utf8");
+    expect(neto).toMatch(/v_total := greatest\(v_jual_kurang - v_jual_lebih, 0\);/);
+    expect(neto).toMatch(/v_hpp_part := least\(v_total, v_hpp_net\);/);
+    expect(neto).toMatch(/v_hpp_net := least\(v_hpp_total, greatest\(v_journal_loss - v_journal_credit, 0\)\);/);
+    expect(neto).toMatch(/'LEBIH_MENUTUPI'/);
+    expect(neto).not.toMatch(/^\s*grant execute on function public\.opname_variance_charge_basis/im);
+    expect(neto).not.toMatch(/^\s*revoke /im);
+  });
   it("bacaRingkasanBeban: bentuk RPC divalidasi; bentuk salah = null", () => {
     const raw = { result_id: RESULT, no_hasil: "OPR.1", minus_lines: [{ item_id: "i", code: "A", name: "Barang", unit: "PCS", qty: 1, hpp: 100, harga_jual: 150, jual: 150 }],
       minus_count: 1, hpp_total: 100, jual_total: 150, hpp_part: 100, gain_part: 50, refuse: null, can_charge: true, charges: [] };
