@@ -510,3 +510,79 @@ reset role;
 select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PENGELUARAN_MIRIP_KASIR' and (w->>'jumlah')::int=2 and w->>'tingkat'='peringatan') from res where name='dL-app'),'M5: penyetuju melihat peringatan PENGELUARAN_MIRIP_KASIR (2 baris sama dengan pengeluaran kasir)');
 select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PENGELUARAN_KEMBAR' and (w->>'jumlah')::int=1) from res where name='dL-app') and (select not exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode' in('PENGELUARAN_MELEBIHI','TANPA_SHIFT','PEMISAHAN_TUGAS')) from res where name='dL-app'),'M5: peringatan PENGELUARAN_KEMBAR (1 kelompok); tidak ada peringatan lain yang keliru');
 select pg_temp.ok((select not r ?| array['peringatan','keuangan'] from res where name='dL-staf'),'M5: staf tidak melihat peringatan duplikat');
+
+-- ── 6. M4: pemisahan tugas penyetuju ─────────────────────────────────────────────────────────────
+-- M: Finance 0c menginput baris pengeluaran. N: Admin 02 mencatat transfer. O: Admin 02 membuka shift. P: Finance 0c membuka shift (snapshot karyawan = 0c).
+select pg_temp.save('sM1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('c1'),'04',3,0,400000)));
+select pg_temp.save('sN1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('c2'),'04',3,0,400000)));
+select pg_temp.save('sO1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('c3'),'02',3,0,400000)));
+select pg_temp.save('sP1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('c4'),'0c',3,0,400000)));
+select pg_temp.mk('pM',pg_temp.br('c1'),'04');select pg_temp.mk('pN',pg_temp.br('c2'),'04');select pg_temp.mk('pO',pg_temp.br('c3'),'04');select pg_temp.mk('pP',pg_temp.br('c4'),'04');
+select pg_temp.exps('pM','0c',3,'Operasional',40000,'m-e1');
+select pg_temp.pay('pM',360000,'Serah tunai','04','03','m-t1',2);
+select pg_temp.pay('pN',400000,'Serah tunai','02','03','n-t1',2);
+select pg_temp.pay('pO',400000,'Serah tunai','04','03','o-t1',2);
+select pg_temp.pay('pP',400000,'Serah tunai','04','03','p-t1',2);
+select pg_temp.sub('pM','04','m-aj');select pg_temp.sub('pN','04','n-aj');select pg_temp.sub('pO','04','o-aj');select pg_temp.sub('pP','04','p-aj');
+select pg_temp.ok((select count(*)=4 from setoran where id in(pg_temp.sid('pM'),pg_temp.sid('pN'),pg_temp.sid('pO'),pg_temp.sid('pP')) and status='Diajukan'),'M4: empat setoran Diajukan siap diuji');
+select pg_temp.ok(pg_temp.ra('0c',$$select public.setoran_setujui(pg_temp.sid('pM'),pg_temp.kk('m4-m1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%menginput baris pengeluaran%','M4: Finance yang menginput baris pengeluaran tidak boleh menyetujui setoran itu');
+select pg_temp.ok(pg_temp.ra('02',$$select public.setoran_setujui(pg_temp.sid('pN'),pg_temp.kk('m4-n1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%mencatat transfer%','M4: Admin yang mencatat transfer/serah tunai tidak boleh menyetujui setoran itu');
+select pg_temp.ok(pg_temp.ra('02',$$select public.setoran_setujui(pg_temp.sid('pO'),pg_temp.kk('m4-o1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%membuka atau memegang shift%','M4: Admin yang membuka shift yang masuk hitungan tidak boleh menyetujui setoran itu');
+select pg_temp.ok(pg_temp.ra('0c',$$select public.setoran_setujui(pg_temp.sid('pP'),pg_temp.kk('m4-p1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PEMISAHAN_TUGAS%membuka atau memegang shift%','M4: Finance yang membuka shift yang masuk hitungan tidak boleh menyetujui');
+select pg_temp.ok((select count(*)=0 from journal_entries where source='setoran' and source_ref in(pg_temp.sid('pM')::text,pg_temp.sid('pN')::text,pg_temp.sid('pO')::text,pg_temp.sid('pP')::text)) and (select count(*)=4 from setoran where id in(pg_temp.sid('pM'),pg_temp.sid('pN'),pg_temp.sid('pO'),pg_temp.sid('pP')) and status='Diajukan'),'M4: penolakan atomik (status tetap Diajukan, tanpa jurnal)');
+-- layar penyetuju: peringatan untuk yang berkonflik, tidak untuk yang lain
+select pg_temp.as_('0c');set local role authenticated;
+select pg_temp.save('dM-0c',public.setoran_detail(pg_temp.sid('pM')));
+select pg_temp.save('dP-0c',public.setoran_detail(pg_temp.sid('pP')));
+select pg_temp.as_('03');
+select pg_temp.save('dM-03',public.setoran_detail(pg_temp.sid('pM')));
+select pg_temp.as_('02');
+select pg_temp.save('dN-02',public.setoran_detail(pg_temp.sid('pN')));
+select pg_temp.save('dO-02',public.setoran_detail(pg_temp.sid('pO')));
+select pg_temp.as_('01');
+select pg_temp.save('dN-01',public.setoran_detail(pg_temp.sid('pN')));
+reset role;
+select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'tingkat'='blokir' and w->>'pesan' like '%menginput baris pengeluaran%') from res where name='dM-0c'),'M4: layar Finance 0c: peringatan PEMISAHAN_TUGAS (blokir) menyebut alasannya');
+select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'pesan' like '%shift%') from res where name='dP-0c') and (select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'pesan' like '%transfer%') from res where name='dN-02') and (select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS' and w->>'pesan' like '%shift%') from res where name='dO-02'),'M4: peringatan PEMISAHAN_TUGAS muncul untuk konflik shift (P, O) dan transfer (N)');
+select pg_temp.ok((select not exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS') from res where name='dM-03') and (select not exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PEMISAHAN_TUGAS') from res where name='dN-01'),'M4: penyetuju yang tidak terlibat (03 untuk M, 01 untuk N) tidak mendapat peringatan');
+-- penyetuju yang tidak terlibat berhasil
+select pg_temp.appr('pM','03','m4-m2');
+select pg_temp.appr('pN','01','m4-n2');
+select pg_temp.appr('pO','03','m4-o2');
+select pg_temp.appr('pP','03','m4-p2');
+select pg_temp.ok((select count(*)=4 from setoran where id in(pg_temp.sid('pM'),pg_temp.sid('pN'),pg_temp.sid('pO'),pg_temp.sid('pP')) and status='Disetujui'),'M4: penyetuju yang tidak terlibat dapat menyetujui keempatnya');
+select pg_temp.ok((select count(*)=1 and bool_and(created_by=pg_temp.u('03')) from expenses where deskripsi like 'Setoran '||(select no_setoran from setoran where id=pg_temp.sid('pM'))||'%'),'M4: pengeluaran M dibukukan atas nama penyetuju yang sah (03)');
+-- pembuat/pengaju tetap dilarang (aturan lama) dan tolak oleh orang berkonflik tidak diblok oleh pemisahan tugas setujui
+select pg_temp.mk('pQ',pg_temp.br('c1'),'0c',9);
+select pg_temp.ok((select created_by=pg_temp.u('0c') from setoran where id=pg_temp.sid('pQ')),'pembuat setoran Q = Finance 0c (aturan lama pembuat/pengaju tetap berlaku)');
+
+-- ── 7. M6: shift tertutup tidak dapat diubah angka uangnya ────────────────────────────────────────
+select pg_temp.save('sZ1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('b1'),'07',20,100000,900000)));
+select pg_temp.ok(pg_temp.dml('08',format($$update cashier_shifts set closing_balance=1 where id=%L$$,pg_temp.sid('sZ1'))) like 'ERR:SHIFT_TUTUP_UANG_BEKU%','M6: STAFF tidak dapat mengubah closing_balance shift petshop yang sudah ditutup');
+select pg_temp.ok(pg_temp.dml('08',format($$update cashier_shifts set status='open' where id=%L$$,pg_temp.sid('sZ1'))) like 'ERR:SHIFT_TUTUP_UANG_BEKU%','M6: shift tertutup tidak dapat dibuka kembali');
+select pg_temp.ok(pg_temp.dml('08',format($$update cashier_shifts set %s where id=%L$$,c,pg_temp.sid('sZ1'))) like 'ERR:SHIFT\_%','M6: kolom '||split_part(c,'=',1)||' shift tertutup beku')
+ from unnest(array['expected_cash=1','selisih=5','closing_breakdown=''{"Tunai":1}''::jsonb','closed_at=now()','opening_balance=5','opened_at=now()','shift_type=''klinik''',format('branch_id=%L',pg_temp.br('0a')),format('opened_by=%L',pg_temp.u('04'))]) c;
+select pg_temp.ok(pg_temp.dml('08',format($$update cashier_shifts set employee_id=employee_id where id=%L$$,pg_temp.sid('sZ1')))='1','M6: pembaruan tanpa perubahan kolom uang tetap diizinkan (UPDATE no-op)');
+-- shift terbuka: jalur tutup yang sah (seperti tutupShift) tetap jalan, lalu beku
+reset role;
+select pg_temp.noauth();
+insert into cashier_shifts(id,branch_id,opened_by,shift_type,opening_balance,opened_at,status) values('f6400000-0000-4000-8000-0000000000e1',pg_temp.br('b1'),pg_temp.u('07'),'petshop',50000,now()-interval '3 hours','open');
+select pg_temp.ok(pg_temp.dml('07',$$update cashier_shifts set closing_balance=150000,expected_cash=150000,selisih=0,closing_breakdown='{"Tunai":100000}'::jsonb,closed_at=now(),status='closed' where id='f6400000-0000-4000-8000-0000000000e1' and status='open'$$)='1','M6: shift TERBUKA dapat ditutup lewat klien (alur tutup shift petshop tidak terganggu)');
+select pg_temp.ok(pg_temp.dml('07',$$update cashier_shifts set opening_balance=1 where id='f6400000-0000-4000-8000-0000000000e1' and status='open'$$)='1','M6: shift terbuka lain-lain tetap dapat diubah (modal awal sebelum tutup; perilaku lama)');
+update cashier_shifts set status='open',closing_balance=null,expected_cash=null,selisih=null,closing_breakdown=null,closed_at=null where id='f6400000-0000-4000-8000-0000000000e1';
+update cashier_shifts set status='closed',closing_balance=150000,expected_cash=150000,selisih=0,closing_breakdown='{"Tunai":100000}'::jsonb,closed_at=now() where id='f6400000-0000-4000-8000-0000000000e1';
+select pg_temp.ok((select closing_balance=150000 and status='closed' from cashier_shifts where id='f6400000-0000-4000-8000-0000000000e1'),'M6: jalur sistem/SECURITY DEFINER (pemilik tabel) tetap dapat mengubah shift (supervisor/perbaikan data tidak terhalang)');
+select pg_temp.ok(pg_temp.dml('0b',format($$update cashier_shifts set closing_balance=5 where id=%L$$,pg_temp.sid('sK1'))) like 'ERR:%','M6: shift tertutup dilindungi untuk akun lain juga (DOCTOR: ditolak)');
+select pg_temp.ok(pg_temp.dml('01',format($$update cashier_shifts set closing_balance=closing_balance+1 where id=%L$$,pg_temp.sid('sZ1'))) like 'ERR:SHIFT_TUTUP_UANG_BEKU%','M6: bahkan OWNER lewat klien tidak dapat mengubah uang shift tertutup (jalur koreksi harus lewat fungsi/migrasi)');
+-- aliran setoran tetap utuh: kewajiban tidak berubah setelah upaya ubah
+select pg_temp.ok((select shift_net=400000 from setoran_keuangan where setoran_id=pg_temp.sid('pM')),'kewajiban snapshot setoran M tetap 400.000');
+
+-- ── 8. fence_all / guard_all idempoten, keseluruhan ───────────────────────────────────────────────
+select pg_temp.ok(admin_online_private.guard_all()=0,'guard_all() sesudah semua uji: 0 fungsi perlu penjaga');
+select admin_online_private.fence_all();
+select pg_temp.ok(exists(select 1 from pg_policy where polrelid='public.setoran_lampiran_pakai'::regclass and polname='admin_online_fence_r'),'fence_all() dua kali: pagar tabel klaim tetap');
+select pg_temp.ok((select count(*) from pg_policy where polrelid='public.setoran_lampiran_pakai'::regclass)=1,'tabel klaim hanya punya satu kebijakan (pagar Admin Online); tanpa kebijakan permisif untuk klien');
+select pg_temp.ok(pg_temp.as_('06') is not null and pg_temp.ra('06',$$select public.setoran_detail(pg_temp.sid('pA'))::text$$) like 'ERR:%ADMIN_ONLINE%','Admin Online tetap ditolak di RPC setoran (setoran_detail)');
+select pg_temp.ok(pg_temp.ra('06',$$select public.ledger_account_totals(null,null,null)::text$$) like 'ERR:%ADMIN_ONLINE%','Admin Online tetap ditolak di ledger_account_totals');
+select pg_temp.ok(pg_temp.ra('0b',$$select public.setoran_detail(pg_temp.sid('pA'))::text$$) like 'ERR:%','DOCTOR tetap ditolak di setoran_detail');
+select pg_temp.ok(pg_temp.ra('0b',$$select jsonb_array_length(public.ledger_account_lines(null,null,null,array[(select id from coa_accounts where code='182001')]))::text$$)='0','DOCTOR: mutasi akun 182001 kosong');
