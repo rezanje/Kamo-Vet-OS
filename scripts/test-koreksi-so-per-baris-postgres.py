@@ -673,7 +673,8 @@ def run_concurrency(db, a):
 
 
 # ------------------------------------------------------------------ neighbours
-NEIGH = [('test-stock-document-corrections-postgres.py', 'stock_document_corrections'), ('test-f1-opname-akun-selisih-postgres.py', 'F1 opname'),
+# test-stock-document-corrections-postgres.py needs Docker (harness limit here): its SQL suite supabase/tests/stock_document_corrections.sql is run below on a native clone instead.
+NEIGH = [('test-f1-opname-akun-selisih-postgres.py', 'F1 opname'),
          ('test-f2-beban-selisih-karyawan-postgres.py', 'F2 beban'), ('test-f2-beban-selisih-karyawan-neto-postgres.py', 'F2 neto'),
          ('test-so-surplus-hpp-postgres.py', 'SO surplus'), ('test-so-kasbon-neto-postgres.py', 'SO kasbon neto')]
 
