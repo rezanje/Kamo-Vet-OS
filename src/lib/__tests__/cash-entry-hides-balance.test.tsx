@@ -11,7 +11,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: null } }) },
   from: (table: string) => {
     const data = table === "cash_accounts" ? [{ id: "30000000-0000-4000-8000-000000000003", nama: "Kas Toko CIAWI", coa_code: "110005" }] : [];
-    const q = { select: () => q, eq: () => q, order: () => q, limit: () => q,
+    const q = { select: () => q, eq: () => q, order: () => q, limit: () => q, gte: () => q, lte: () => q, range: () => q,
       maybeSingle: async () => ({ data: null, error: null }),
       then: (resolve: (v: unknown) => void) => resolve({ data, error: null }) };
     return q;

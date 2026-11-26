@@ -5,7 +5,7 @@ import { bolehTransaksiKas } from "@/lib/master-guard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { LampiranPicker } from "@/components/LampiranPicker";
 import { hariIniWIB } from "@/lib/tanggal";
-import { akunLawanTerlarang, type JenisKas } from "@/lib/kas-entry";
+import { akunLawanTerlarang, periodeKas, type JenisKas } from "@/lib/kas-entry";
 import { simpanKasEntry } from "./actions";
 import { KasCorrectionForm, KasVoidForm } from "./KasCorrectionForm";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
@@ -23,6 +23,22 @@ type Baris = {
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CASH_SELECT = "id, no_bukti, tanggal, jumlah, lawan_code, account_id, revision, branch_id, keterangan, voided_at, rekening:account_id(nama), branches(name)";
+
+// Riwayat dimuat per halaman sampai habis — jangan dipotong N baris terbaru lagi
+// (dulu limit 50: tanggal 1–18 Nov hilang dari Kas Keluar, laporan 26 Nov 2026).
+const HALAMAN = 1000;
+const BATAS_BARIS = 10000;
+type Hasil = { data: unknown[] | null; error: unknown };
+async function ambilSemua(halaman: (awal: number, akhir: number) => PromiseLike<Hasil>): Promise<{ rows: unknown[]; terpotong: boolean }> {
+  const rows: unknown[] = [];
+  for (let awal = 0; awal < BATAS_BARIS; awal += HALAMAN) {
+    const { data, error } = await halaman(awal, awal + HALAMAN - 1);
+    if (error) throw new Error("Riwayat kas belum dapat dibaca.");
+    rows.push(...(data ?? []));
+    if (!data || data.length < HALAMAN) return { rows, terpotong: false };
+  }
+  return { rows, terpotong: true };
+}
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtTgl = (d: string) =>
@@ -42,9 +58,12 @@ export async function KasEntryScreen({
   searchParams: Promise<{
     error?: string; success?: string;
     cari?: string; cabang?: string; akun?: string; urut?: string; entry?: string; bukti?: string;
+    dari?: string; sampai?: string;
   }>;
 }) {
-  const { error, success, cari = "", cabang = "", akun = "", urut = "tanggal", entry = "", bukti = "" } = await searchParams;
+  const sp = await searchParams;
+  const { error, success, cari = "", cabang = "", akun = "", urut = "tanggal", entry = "", bukti = "" } = sp;
+  const periode = periodeKas(sp.dari, sp.sampai, hariIniWIB());
   const supabase = await createClient();
   const boleh = await bolehTransaksiKas();
   const { data: { user } } = await supabase.auth.getUser();
@@ -53,19 +72,21 @@ export async function KasEntryScreen({
   const bolehEdit = profile?.is_active === true && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
   const keluar = jenis === "Keluar";
 
-  const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }] = await Promise.all([
+  const [{ data: rekData }, { data: coaData }, { data: branches }, kasDimuat] = await Promise.all([
     supabase.from("cash_accounts").select("id, nama, coa_code, branch_id").eq("is_active", true).order("nama"),
     supabase.from("coa_accounts").select("code, name, type, is_header").eq("is_active", true).order("code"),
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-    supabase
+    ambilSemua((awal, akhir) => supabase
       .from("cash_entries")
       .select(CASH_SELECT)
       .eq("jenis", jenis)
-      .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).limit(50),
+      .gte("tanggal", periode.dari).lte("tanggal", periode.sampai)
+      .order("tanggal", { ascending: false }).order("created_at", { ascending: false }).order("id")
+      .range(awal, akhir)),
   ]);
 
   const rekening = (rekData ?? []) as { id: string; nama: string; coa_code: string; branch_id: string | null }[];
-  let cashRows = (rows ?? []) as unknown as Baris[];
+  let cashRows = kasDimuat.rows as unknown as Baris[];
   const byId = UUID.test(entry);
   const byProof = !byId && new RegExp(`^${jenis === "Masuk" ? "KM" : "KK"}[.\\-/][A-Za-z0-9.\\-/]*\\d{3,}$`).test(bukti);
   if ((byId || byProof) && !cashRows.some((row) => byId ? row.id === entry : row.no_bukti === bukti)) {
@@ -79,12 +100,16 @@ export async function KasEntryScreen({
   // menu "Pencatatan Beban" dihapus (menu kembar, keputusan meeting 14 Agustus),
   // riwayatnya digabung ke sini supaya kantor tetap melihat semua uang keluar
   // dalam satu layar.
-  const { data: bebanRows } = keluar
-    ? await supabase
+  const bebanDimuat = keluar
+    ? await ambilSemua((awal, akhir) => supabase
         .from("expenses")
         .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, voided_at, branches(name)")
-        .order("tanggal", { ascending: false }).limit(100)
-    : { data: [] };
+        .gte("tanggal", periode.dari).lte("tanggal", periode.sampai)
+        .order("tanggal", { ascending: false }).order("id")
+        .range(awal, akhir))
+    : { rows: [], terpotong: false };
+  const bebanRows = bebanDimuat.rows;
+  const terpotong = kasDimuat.terpotong || bebanDimuat.terpotong;
 
   type BebanRow = {
     id: string; tanggal: string; kategori: string | null; deskripsi: string | null;
@@ -253,6 +278,14 @@ export async function KasEntryScreen({
       <div className="crm-sec" style={{ marginBottom: 0 }}>
         {/* Saringan & pencarian riwayat (permintaan Bu Nisa, meeting 14 Agustus). */}
         <form method="get" style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ width: 140 }}>
+            <label className="flab">Dari tanggal</label>
+            <input className="fi" type="date" name="dari" defaultValue={periode.dari} />
+          </div>
+          <div style={{ width: 140 }}>
+            <label className="flab">Sampai tanggal</label>
+            <input className="fi" type="date" name="sampai" defaultValue={periode.sampai} />
+          </div>
           <div style={{ flex: 1, minWidth: 170 }}>
             <label className="flab">Cari</label>
             <input className="fi" name="cari" defaultValue={cari} placeholder="No. bukti, akun, atau keterangan" />
@@ -283,7 +316,8 @@ export async function KasEntryScreen({
         </form>
 
         <div style={{ fontSize: 10.5, color: "var(--tm)", marginBottom: 8 }}>
-          {daftar.length} transaksi · total {rp(totalTampil)}
+          {daftar.length} transaksi · {fmtTgl(periode.dari)} – {fmtTgl(periode.sampai)} · total {rp(totalTampil)}
+          {terpotong && <span style={{ color: "#b91c1c" }}> · baru {BATAS_BARIS.toLocaleString("id-ID")} transaksi pertama yang tampil — persempit periode</span>}
         </div>
 
         <div style={{ overflowX: "auto" }}>
@@ -333,7 +367,7 @@ export async function KasEntryScreen({
               ))}
               {daftar.length === 0 && (
                 <tr><td colSpan={boleh ? 8 : 7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
-                  {cari || cabang || akun ? "Tidak ada transaksi cocok saringan." : `Belum ada kas ${keluar ? "keluar" : "masuk"}.`}
+                  {cari || cabang || akun ? "Tidak ada transaksi cocok saringan." : `Belum ada kas ${keluar ? "keluar" : "masuk"} di periode ini.`}
                 </td></tr>
               )}
             </tbody>
