@@ -243,6 +243,7 @@ select pg_temp.cr('s3','{"x":3}','kr-s3-a');
 select pg_temp.ok(pg_temp.sq('s3','x')=3 and (select (r->>'revision')::int from res where name='s3.cr1')=1,'S3 revisi 1 tersimpan (x 4 -> 3)');
 create temp table s3p as select pg_temp.pv('s3','{"y":8,"z":6}') p;grant all on s3p to public;
 select pg_temp.ok((select (p->>'applied')::int=1 and pg_temp.blocked_names(p)='Barang s3.y' and position('Stok sudah terpakai' in pg_temp.blk(p,'s3','y'))=1 from s3p),'S3 revisi 2: y (sudah terjual sebelum revisi 1, tidak disentuh waktu itu) tetap tertahan; z diterapkan');
+select pg_temp.ok((select (p->>'value_delta')::numeric=100 and (p->>'value_after')::numeric-(p->>'value_before')::numeric=100 from s3p),'S3 revisi 2: nilai pratinjau memuat nilai lama baris tertahan (y +200 tetap) sehingga selisih nilai hanya z (+1 x 100)');
 select pg_temp.ok(pg_temp.pve('s3','{"y":8}') like 'Koreksi tidak bisa disimpan%Barang s3.y%','S3 revisi 2 hanya y: semua tertahan, nama disebut');
 select pg_temp.cr('s3','{"z":6}','kr-s3-b');
 select pg_temp.ok(pg_temp.sq('s3','z')=6 and (select (r->>'revision')::int from res where name='s3.cr2')=2,'S3 revisi 2 tersimpan (z 5 -> 6)');
@@ -433,3 +434,36 @@ select pg_temp.reject('select pg_temp.cr(''s9'',''{"a":7,"b":13}'',''kr-s9-b'')'
 select pg_temp.ok((select h from s9pre)=pg_temp.snapall(),'S9 kegagalan di tengah baris: tidak ada efek sebagian');
 drop trigger kr_fail_move on public.stock_moves;
 select pg_temp.ok((select (pg_temp.cr('s9','{"a":7,"b":13}','kr-s9-c')->>'applied')::int=2),'S9 sesudah pemicu gagal dilepas: koreksi berhasil');
+
+-- ═════════ S10 gudang RETAIL (petshop): selisih kurang membutuhkan faktur tagihan -> baris tertahan; selisih lebih tetap boleh ═════════
+create or replace function pg_temp.wa() returns uuid language sql as $$select '5c300000-0000-4000-8000-000000000002'::uuid$$;
+select pg_temp.doc('s10','[{"c":"p","layers":[[10,100]],"count":12},{"c":"q","layers":[[10,100]],"count":13}]');
+select pg_temp.ok(pg_temp.pve('s10','{"p":14}')='OK' and pg_temp.pve('s10','{"q":11}')='OK','S10 gudang RETAIL: selisih lebih yang tetap lebih (12 -> 14, 13 -> 11) boleh dikoreksi');
+select pg_temp.ok(pg_temp.pve('s10','{"p":8}') like 'Koreksi tidak bisa disimpan%Barang s10.p: Selisih kurang opname gudang ini memerlukan faktur tagihan%','S10 gudang RETAIL: mengubah ke selisih kurang (12 -> 8) tertahan dengan pesan faktur tagihan dan nama barang');
+create temp table s10p as select pg_temp.pv('s10','{"p":8,"q":14}') p;grant all on s10p to public;
+select pg_temp.ok((select (p->>'applied')::int=1 and pg_temp.blocked_names(p)='Barang s10.p' and position('faktur tagihan' in pg_temp.blk(p,'s10','p'))>0 from s10p),'S10 campuran: q diterapkan, p tertahan (butuh faktur tagihan)');
+select pg_temp.cr('s10','{"p":8,"q":14}','kr-s10-a');
+select pg_temp.ok(pg_temp.sq('s10','q')=14 and pg_temp.sq('s10','p')=12,'S10 simpan campuran: q 13 -> 14, p tetap 12');
+create or replace function pg_temp.wa() returns uuid language sql as $$select '5c300000-0000-4000-8000-000000000001'::uuid$$;
+
+-- ═════════ S11 pemakaian stok TANPA tanda waktu sesudah SO (jam sama dengan SO): pemeriksaan lapisan/stok tetap menahan baris ═════════
+create function pg_temp.sale0(label text,c text,qty numeric) returns void language plpgsql as $$
+begin update seq set n=n+1;
+ perform public.stock_out_fifo(pg_temp.wa(),pg_temp.id(label,c),qty,'sale','KR-sale0-'||label||'-'||c||'-'||(select n from seq),pg_temp.today());end$$;
+select pg_temp.doc('s11','[{"c":"u","layers":[[5,100]],"count":7},{"c":"v","layers":[[5,100]],"count":5},{"c":"w","layers":[[5,100]],"count":5}]');
+select pg_temp.sale0('s11','u',7),pg_temp.sale0('s11','v',5),pg_temp.sale0('s11','w',3);
+select pg_temp.ok(pg_temp.pve('s11','{"u":6}') like 'Koreksi tidak bisa disimpan%Barang s11.u: Lapisan sumber sudah terpakai atau nilai berubah%','S11 lebih yang lapisan hasil SO-nya sudah habis dipakai (tanpa tanda waktu): tertahan dengan alasan lapisan sumber terpakai');
+select pg_temp.ok(pg_temp.pve('s11','{"v":4}') like 'Koreksi tidak bisa disimpan%Barang s11.v: Stok tidak cukup untuk koreksi%(stok sekarang 0, perlu dikurangi 1)%','S11 stok habis dipakai: mengurangi 1 tertahan dengan jumlah tersedia dan perlu');
+select pg_temp.ok(pg_temp.pve('s11','{"w":1}') like 'Koreksi tidak bisa disimpan%Barang s11.w: Stok tidak cukup untuk koreksi%(stok sekarang 2, perlu dikurangi 4)%','S11 stok tersisa 2: mengurangi 4 tertahan');
+select pg_temp.ok(pg_temp.pve('s11','{"w":4}')='OK','S11 stok tersisa 2: mengurangi 1 (5 -> 4) boleh');
+select pg_temp.cr('s11','{"w":4}','kr-s11-a');
+select pg_temp.ok(pg_temp.sq('s11','w')=1 and pg_temp.lq('s11','w')=1,'S11 koreksi w tersimpan: stok 2 -> 1, lapisan sama dengan stok');
+
+-- ═════════ S12 bukti FIFO/lapisan yang dirusak: tiap pagar pelindung menahan baris dengan pesannya sendiri ═════════
+select pg_temp.doc('s12','[{"c":"r","layers":[[5,100],[5,200]],"count":4},{"c":"sx","layers":[[5,100]],"count":7},{"c":"ok","layers":[[3,50]],"count":3}]');
+select pg_temp.ok(pg_temp.mp('s12','select 1','{"r":3,"sx":6}')='OK 2/0','S12 dasar: r (kurang 6 -> 7) dan sx (lebih 2 -> 1) lolos tanpa perusakan');
+select pg_temp.ok(pg_temp.mp('s12','set local session_replication_role=replica;update stock_document_issue_proofs set takes=(select jsonb_agg(case when t.ord=1 then jsonb_set(t.x,''{qty}'',to_jsonb((t.x->>''qty'')::numeric+1)) else jsonb_set(t.x,''{qty}'',to_jsonb((t.x->>''qty'')::numeric-1)) end order by t.ord) from jsonb_array_elements(takes) with ordinality t(x,ord)) where kind=''opname'' and document_id=''%RID%'' and item_id=pg_temp.id(''s12'',''r'')','{"r":3}') like 'Koreksi tidak bisa disimpan%Barang s12.r: Lapisan FIFO sumber berubah%','S12 bukti pengambilan menyebut lebih banyak dari qty_in lapisan: tertahan (Lapisan FIFO sumber berubah)');
+select pg_temp.ok(pg_temp.mp('s12','set local session_replication_role=replica;update stock_document_issue_proofs set takes=takes||''[{"id":"00000000-0000-4000-8000-0000000000aa","qty":1,"unit_cost":100,"exp_date":null}]''::jsonb where kind=''opname'' and document_id=''%RID%'' and item_id=pg_temp.id(''s12'',''r'')','{"r":3}') like 'Koreksi tidak bisa disimpan%Barang s12.r: Bukti FIFO stok keluar lama tidak lengkap%','S12 jumlah pengambilan lama tidak sama dengan selisih kurang tercatat: tertahan (bukti FIFO tidak lengkap)');
+select pg_temp.ok(pg_temp.mp('s12','set local session_replication_role=replica;update stock_document_issue_proofs set takes=(select jsonb_agg(case when t.ord=1 then jsonb_set(t.x,''{unit_cost}'',to_jsonb((t.x->>''unit_cost'')::numeric+1)) else t.x end order by t.ord) from jsonb_array_elements(takes) with ordinality t(x,ord)) where kind=''opname'' and document_id=''%RID%'' and item_id=pg_temp.id(''s12'',''r'')','{"r":3}') like 'Koreksi tidak bisa disimpan%Barang s12.r: Bukti FIFO stok keluar lama tidak lengkap%','S12 pengambilan lama tidak cocok dengan lapisan (biaya beda): jumlah lapisan virtual tidak sama, tertahan');
+select pg_temp.ok(pg_temp.mp('s12','set local session_replication_role=replica;delete from stock_layers where source=''opname'' and source_ref=''%REF%'' and item_id=pg_temp.id(''s12'',''sx'');update stock set qty=qty-2 where item_id=pg_temp.id(''s12'',''sx'') and warehouse_id=pg_temp.wa()','{"sx":6}') like 'Koreksi tidak bisa disimpan%Barang s12.sx: Asal lapisan stok masuk tidak lengkap%','S12 lapisan hasil SO hilang (saldo disesuaikan): tertahan (asal lapisan masuk tidak lengkap)');
+select pg_temp.ok(pg_temp.mp('s12','set local session_replication_role=replica;update stock_layers set exp_date=exp_date where false','{"ok":2}')='OK 1/0','S12 baris tak terkait (ok) tetap lolos walau barang lain dirusak');

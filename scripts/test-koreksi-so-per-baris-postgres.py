@@ -26,7 +26,7 @@ CANDFILE = sorted(MIGRATIONS.glob('*_koreksi_so_per_baris.sql'))[0]
 CAND = CANDFILE.name
 bp.CAND = CAND
 SUITE = 'koreksi_so_per_baris.sql'
-MIN_SUITE = 161
+MIN_SUITE = 177
 check, raw, clone, run_suite, apply = bp.check, bp.raw, bp.clone, bp.run_suite, bp.apply
 NativePostgres, RESULTS, Sess, waiting, sleeping, q1 = bp.NativePostgres, bp.RESULTS, bp.Sess, bp.waiting, bp.sleeping, bp.q1
 
