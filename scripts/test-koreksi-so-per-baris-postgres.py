@@ -532,6 +532,8 @@ select pg_temp.doc('c1','[{"c":"a","layers":[[10,100]],"count":8},{"c":"b","laye
 select pg_temp.doc('c2','[{"c":"a","layers":[[10,100]],"count":8},{"c":"b","layers":[[10,100]],"count":12},{"c":"c","layers":[[10,100]],"count":10}]');
 select pg_temp.doc('c3','[{"c":"a","sell":150,"layers":[[10,100]],"count":8},{"c":"b","sell":0,"layers":[[10,100]],"count":12},{"c":"c","layers":[[10,100]],"count":10}]');
 select pg_temp.doc('c4','[{"c":"a","layers":[[10,100]],"count":8},{"c":"b","layers":[[10,100]],"count":12},{"c":"c","layers":[[10,100]],"count":10}]');
+select pg_temp.doc('c5','[{"c":"a","layers":[[10,100]],"count":8},{"c":"b","layers":[[10,100]],"count":12},{"c":"c","layers":[[10,100]],"count":10}]');
+select pg_temp.doc('c6','[{"c":"a","sell":150,"layers":[[10,100]],"count":8},{"c":"b","sell":0,"layers":[[10,100]],"count":12},{"c":"c","layers":[[10,100]],"count":10}]');
 commit;
 """
     rc, out, err = raw(db, body, dbname)
@@ -552,12 +554,22 @@ select jsonb_build_object('rid',r.id,'rows',(select jsonb_agg(jsonb_build_object
 
 
 OWN_SESS = "set role authenticated; select set_config('request.jwt.claim.sub','5c100000-0000-4000-8000-000000000001',false); select set_config('request.jwt.claims','{\"role\":\"authenticated\"}',false);"
+OWN_CLAIMS = "select set_config('request.jwt.claim.sub','5c100000-0000-4000-8000-000000000001',false); select set_config('request.jwt.claims','{\"role\":\"authenticated\"}',false);"
 
 
-def corr_sql(rid, rows, key, hold=0.0, marker=''):
+def preview_token(db, dbname, rid, rows):
+    js = json.dumps(rows).replace("'", "''")
+    rc, out, err = raw(db, OWN_SESS + f" select 'TOK '||((public.preview_stock_document_correction('opname','{rid}','{js}'::jsonb))->>'token');", dbname)
+    assert rc == 0, err[-300:]
+    return [l for l in out.splitlines() if l.startswith('TOK ')][-1][4:]
+
+
+def corr_sql(rid, rows, key, hold=0.0, marker='', token=None):
+    """token=None: the preview is taken inside the same statement (after any lock wait); token given: a preview taken EARLIER, as the screen does."""
     js = json.dumps(rows).replace("'", "''")
     head = '' if hold else f"/* {marker} */ "
-    return (OWN_SESS + f" begin; {head}select public.correct_stock_document('opname','{rid}','{js}'::jsonb,'Balapan uji','{key}',(public.preview_stock_document_correction('opname','{rid}','{js}'::jsonb))->>'token')::text;"
+    tok = f"'{token}'" if token else f"(public.preview_stock_document_correction('opname','{rid}','{js}'::jsonb))->>'token'"
+    return (OWN_SESS + f" begin; {head}select public.correct_stock_document('opname','{rid}','{js}'::jsonb,'Balapan uji','{key}',{tok})::text;"
             + (f" /* {marker} */ select pg_sleep({hold});" if hold else '') + " commit;")
 
 
@@ -566,48 +578,67 @@ def run_concurrency(db, a):
     clone(db, 'cc'); apply_cand(db, 'cc')
     conc_fixture(db, 'cc')
     rc, out, err = raw(db, "update accounting_locks set closed_until=null", 'cc')
-    # 1. two sessions, same document, different keys, different rows: the second waits, then is judged on the first one's result
+    # 1a. the screen previews first (token T), another correction commits meanwhile; saving with T afterwards is refused as stale
     rid, ra_rows, ids = conc_rows(db, 'cc', 'c1', {'a': 7})
     rid, rb_rows, _ = conc_rows(db, 'cc', 'c1', {'b': 13})
+    tb = preview_token(db, 'cc', rid, rb_rows)
     A = Sess(db, 'cc', corr_sql(rid, ra_rows, 'ca', 2.5, 'race-holder-1'))
     s1 = sleeping(db, 'cc', 'race-holder-1')
-    B = Sess(db, 'cc', corr_sql(rid, rb_rows, 'cb', 0, 'race-comp-1'))
+    B = Sess(db, 'cc', corr_sql(rid, rb_rows, 'cb', 0, 'race-comp-1', token=tb))
     w1 = waiting(db, 'cc', 'race-comp-1')
     ra, rb = A.done(), B.done()
     nrev = q1(db, 'cc', f"select count(*) from stock_document_corrections where document_id='{rid}'")
-    stock = q1(db, 'cc', f"select string_agg(s.qty::text, ',' order by i.code) from stock s join items i on i.id=s.item_id where i.code like 'KR-c1.%'")
-    check('RACE two corrections of one document (different keys, different rows): second waits on the document lock, then its stale preview token is refused; exactly one correction saved',
+    stock = q1(db, 'cc', "select string_agg(s.qty::text, ',' order by i.code) from stock s join items i on i.id=s.item_id where i.code like 'KR-c1.%'")
+    check('RACE preview token taken before another correction committed: the second save waits on the document lock, then is refused as stale (Preview berubah); exactly one correction saved',
           s1 and w1 and ra[0] == 0 and rb[0] != 0 and 'Preview berubah' in rb[2] and nrev == '1' and stock == '7,12,10', (s1, w1, ra[0], rb[0], rb[2][-200:], nrev, stock))
-    # 2. same key from two sessions (double click)
+    # 1b. both sessions preview inside their own statement: they serialise, the second one is judged on the first one's committed result (revision 2)
+    rid5, r5a, _ = conc_rows(db, 'cc', 'c5', {'a': 7})
+    rid5, r5b, _ = conc_rows(db, 'cc', 'c5', {'b': 13})
+    A = Sess(db, 'cc', corr_sql(rid5, r5a, 'c5a', 2.5, 'race-holder-5'))
+    sleeping(db, 'cc', 'race-holder-5')
+    B = Sess(db, 'cc', corr_sql(rid5, r5b, 'c5b', 0, 'race-comp-5'))
+    waiting(db, 'cc', 'race-comp-5')
+    ra, rb = A.done(), B.done()
+    revs = q1(db, 'cc', f"select string_agg(revision::text, ',' order by revision) from stock_document_corrections where document_id='{rid5}'")
+    stock5 = q1(db, 'cc', "select string_agg(s.qty::text, ',' order by i.code) from stock s join items i on i.id=s.item_id where i.code like 'KR-c5.%'")
+    check('RACE two corrections of one document, previews taken inside the statements: they serialise (revisions 1 and 2), the second works on the first one\'s result (its rows restore a to 8 and set b to 13)',
+          ra[0] == 0 and rb[0] == 0 and revs == '1,2' and stock5 == '8,13,10', (ra[2][-150:], rb[2][-150:], revs, stock5))
+    # 2. same key from two sessions (double click, same preview token): one effect, identical answer
     rid2, rr, ids2 = conc_rows(db, 'cc', 'c2', {'a': 7})
-    A = Sess(db, 'cc', corr_sql(rid2, rr, 'dup', 2.5, 'race-holder-2'))
+    t2 = preview_token(db, 'cc', rid2, rr)
+    A = Sess(db, 'cc', corr_sql(rid2, rr, 'dup', 2.5, 'race-holder-2', token=t2))
     sleeping(db, 'cc', 'race-holder-2')
-    B = Sess(db, 'cc', corr_sql(rid2, rr, 'dup', 0, 'race-comp-2'))
+    B = Sess(db, 'cc', corr_sql(rid2, rr, 'dup', 0, 'race-comp-2', token=t2))
     waiting(db, 'cc', 'race-comp-2')
     ra, rb = A.done(), B.done()
-    check('RACE same request key from two sessions (double click): one correction, identical answer',
+    check('RACE same request key and preview token from two sessions (double click): one correction, identical answer',
           ra[0] == 0 and rb[0] == 0 and ra[1].strip() == rb[1].strip() and ra[1].strip() != '' and q1(db, 'cc', f"select count(*) from stock_document_corrections where document_id='{rid2}'") == '1', (ra[2][-150:], rb[2][-150:], ra[1][-100:], rb[1][-100:]))
     # 3. correction holds the lock; employee charge arrives: waits, then runs on the corrected document
     rid3, r3, ids3 = conc_rows(db, 'cc', 'c3', {'c': 9})
     A = Sess(db, 'cc', corr_sql(rid3, r3, 'c3a', 2.5, 'race-holder-3'))
     sleeping(db, 'cc', 'race-holder-3')
+
     def charge_sql(marker, rid_):
-        return OWN_SESS + (f" /* {marker} */ select public.charge_opname_variance_to_employees('{rid_}',jsonb_build_array(jsonb_build_object('employee_id','5c400000-0000-4000-8000-000000000001','amount',"
-                           f"(public.opname_variance_charge_basis('{rid_}')->>'jual_total')::numeric)),'Balapan beban',gen_random_uuid())::text;")
+        return OWN_CLAIMS + (f" /* {marker} */ select public.charge_opname_variance_to_employees('{rid_}',jsonb_build_array(jsonb_build_object('employee_id','5c400000-0000-4000-8000-000000000001','amount',"
+                             f"(public.opname_variance_charge_basis('{rid_}')->>'jual_total')::numeric)),'Balapan beban',gen_random_uuid())::text;")
     B = Sess(db, 'cc', charge_sql('race-charge-3', rid3))
     w3 = waiting(db, 'cc', 'race-charge-3')
     ra, rb = A.done(), B.done()
     ncorr = q1(db, 'cc', f"select count(*) from stock_document_corrections where document_id='{rid3}'")
     nchg = q1(db, 'cc', f"select count(*) from opname_variance_charges where result_id='{rid3}' and cancelled_at is null")
-    check('RACE correction first, employee charge second: the charge waits on the document lock; the outcome is a serial one (correction saved; charge recorded on the corrected document or refused plainly; never half)',
-          w3 and ra[0] == 0 and ncorr == '1' and ((rb[0] == 0 and nchg == '1') or (rb[0] != 0 and nchg == '0')), (w3, ra[0], rb[0], rb[2][-200:], ncorr, nchg))
-    if nchg == '0':
-        rc, out, err = raw(db, charge_sql('plain-charge-3', rid3), 'cc')
-        nchg = q1(db, 'cc', f"select count(*) from opname_variance_charges where result_id='{rid3}' and cancelled_at is null")
-    check('RACE sequel setup: an active employee charge exists on the corrected document', nchg == '1', nchg)
-    rid3, r3b, _ = conc_rows(db, 'cc', 'c3', {'a': 7})
-    rc, out, err = raw(db, corr_sql(rid3, r3b, 'c3b', 0, 'x'), 'cc')
-    check('RACE sequel: with the charge recorded, a correction of a row that affects the charge is refused with the charge note (pagar tetap)', rc != 0 and 'Batalkan beban karyawan dulu' in err, err[-300:])
+    check('RACE correction first, employee charge second: the charge waits on the document lock; the outcome is a serial one (correction saved; the charge is refused plainly because a corrected document cannot be charged (existing F2 rule); never half)',
+          w3 and ra[0] == 0 and ncorr == '1' and rb[0] != 0 and 'belum dikoreksi' in rb[2] and nchg == '0', (w3, ra[0], rb[0], rb[2][-200:], ncorr, nchg))
+    # 3c. the other order: the charge holds the document lock, a correction of an affecting row arrives, waits, then sees the active charge and holds the row
+    rid6, r6, _ = conc_rows(db, 'cc', 'c6', {'a': 7})
+    charge_hold = OWN_CLAIMS + (f" begin; select public.charge_opname_variance_to_employees('{rid6}',jsonb_build_array(jsonb_build_object('employee_id','5c400000-0000-4000-8000-000000000001','amount',"
+                                f"(public.opname_variance_charge_basis('{rid6}')->>'jual_total')::numeric)),'Balapan beban 6',gen_random_uuid())::text; /* race-holder-6 */ select pg_sleep(2.5); commit;")
+    A = Sess(db, 'cc', charge_hold)
+    sleeping(db, 'cc', 'race-holder-6')
+    B = Sess(db, 'cc', corr_sql(rid6, r6, 'c6b', 0, 'race-comp-6'))
+    w6 = waiting(db, 'cc', 'race-comp-6')
+    ra, rb = A.done(), B.done()
+    check('RACE charge first, correction of an affecting row second: the correction waits on the document lock, then sees the active charge and is refused with the charge note; stock unchanged',
+          w6 and ra[0] == 0 and rb[0] != 0 and 'Batalkan beban karyawan dulu' in rb[2] and q1(db, 'cc', "select s.qty from stock s join items i on i.id=s.item_id where i.code='KR-c6.a'") == '8', (w6, ra[0], rb[0], rb[2][-250:]))
     # 4. correction holds the lock on a changed item; a sale of that item arrives: waits on the stock row, then consumes from the corrected stock
     rid4, r4, ids4 = conc_rows(db, 'cc', 'c4', {'a': 7})
     A = Sess(db, 'cc', corr_sql(rid4, r4, 'c4a', 2.5, 'race-holder-4'))
