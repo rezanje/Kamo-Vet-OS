@@ -83,6 +83,9 @@ export function clientFixture(options: { role?: string; active?: boolean; module
       // Database tiruan ini belum punya fungsi baca laporan struk kasir: pembaca menjatuhkan diri ke jalur tabel (seperti database sebelum migrasi).
       if (name === "laporan_struk_kasir") return Promise.resolve({ data: null, error: { code: "PGRST202", message: "Could not find the function public.laporan_struk_kasir in the schema cache" } });
       if (name === "laporan_invoice_klinik") return Promise.resolve({ data: null, error: { code: "PGRST202", message: "Could not find the function public.laporan_invoice_klinik in the schema cache" } });
+      if (name === "laporan_anamnesa") return Promise.resolve({ data: null, error: { code: "PGRST202", message: "Could not find the function public.laporan_anamnesa in the schema cache" } });
+      if (name === "laporan_persediaan_lapisan") return Promise.resolve({ data: null, error: { code: "PGRST202", message: "Could not find the function public.laporan_persediaan_lapisan in the schema cache" } });
+      if (name === "laporan_persediaan_buku_besar") return Promise.resolve({ data: null, error: { code: "PGRST202", message: "Could not find the function public.laporan_persediaan_buku_besar in the schema cache" } });
       if (!(name in tables) && options.errorTable !== name) {
         const missing = { select: () => missing, order: () => missing, range: async () => ({ data: null, count: null, error: { code: "PGRST202", message: "missing function" } }) };
         return missing;

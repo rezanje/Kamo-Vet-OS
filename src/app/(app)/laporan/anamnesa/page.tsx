@@ -5,6 +5,7 @@ import { kelompokDiagnosa, samakan } from "@/lib/diagnosa";
 import { tanggalWIB, hariIniWIB } from "@/lib/tanggal";
 import { tanggalIndo } from "@/lib/followup";
 import { laporanDiminta } from "@/lib/report-gate";
+import { bacaRekamMedisAnamnesa } from "@/lib/laporan-anamnesa";
 
 // Daftar Anamnesa / Penyakit — permintaan Kamo Group 24 Agu 2026.
 //
@@ -33,13 +34,7 @@ export default async function AnamnesaPage({
   // A1 (meeting 12 Nov 2026): rekam medis baru dibaca setelah Tampilkan ditekan;
   // sebelum itu hanya daftar cabang untuk filter. Cabang dipilih = disaring di
   // query, saringan di memori tetap jadi pengaman.
-  const bacaRekamMedis = () => {
-    const query = supabase.from("medical_records")
-      .select(`id, diagnosis, anamnesis, gejala_klinis, follow_up, created_at, visits${cabang ? "!inner" : ""}(branch_id, dokter, branches(name), pets(name, species, breed), customers(name))`, { count: "exact" })
-      .gte("created_at", `${dari}T00:00:00+07:00`).lte("created_at", `${sampai}T23:59:59+07:00`);
-    return completeReportQuery((cabang ? query.eq("visits.branch_id", cabang) : query)
-      .order("created_at", { ascending: false }));
-  };
+  const bacaRekamMedis = () => bacaRekamMedisAnamnesa(supabase, { dari, sampai, cabang });
   const [{ data: mrData }, { data: branchData }] = await Promise.all([
     siap ? bacaRekamMedis() : Promise.resolve({ data: [] as unknown[] }),
     completeReportQuery(supabase.from("branches").select("id, name", { count: "exact" }).eq("is_active", true).order("name")),
