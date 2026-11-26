@@ -1,6 +1,7 @@
 import { roleCapabilities, type RoleCapabilities } from "@/lib/role-capabilities";
 import { cekPeranVsJabatan, labelPeranAkun } from "@/lib/peran-vs-jabatan";
 import { labelPeran } from "@/lib/admin-online";
+import { adminUmumDilarang } from "@/lib/peran-admin";
 import { branchDisplayName } from "@/lib/branch-display";
 import { allowedBranchIds } from "@/lib/branch-access";
 import { PasswordInput } from "@/components/PasswordInput";
@@ -138,10 +139,10 @@ export default async function PenggunaPage({
                   </form> : "Belum tertaut HRIS"}</td>
                   <td><span className={`bge ${p.is_active ? "g" : "r"}`}>{p.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   <td>
-                    {canManage && (actor?.role === "OWNER" || p.id === user?.id || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(p.role)) && (
+                    {canManage && (actor?.role === "OWNER" || p.id === user?.id || (!["OWNER", "ADMIN", "ADMIN_UMUM"].includes(p.role) && !adminUmumDilarang(actor?.role, p.role))) && (
                       <Link href={`/pengaturan/pengguna/${p.id}/edit`} className="btn-def" style={{ display: "inline-block", padding: "4px 10px", fontSize: 10.5, marginBottom: 6 }}>Edit</Link>
                     )}
-                    {canManage && <form action={togglePengguna}>
+                    {canManage && !adminUmumDilarang(actor?.role, p.role) && <form action={togglePengguna}>
                       <input type="hidden" name="id" value={p.id} />
                       <input type="hidden" name="aktif" value={p.is_active ? "0" : "1"} />
                       <button type="submit" className="btn-def" style={{ padding: "4px 10px", fontSize: 10.5, color: p.is_active ? "#b91c1c" : "#15803d" }}>
@@ -181,7 +182,7 @@ export default async function PenggunaPage({
               <select className="fi" name="role" defaultValue="STAFF" required>
                 <option value="STAFF">STAFF (kasir/staf)</option>
                 <option value="DOCTOR">DOCTOR (dokter)</option>
-                <option value="FINANCE">FINANCE (keuangan)</option>
+                {!adminUmumDilarang(actor?.role, "FINANCE") && <option value="FINANCE">FINANCE (keuangan)</option>}
                 <option value="ADMIN_ONLINE">Admin Online (hanya input penjualan marketplace)</option>
                 {actor?.role === "OWNER" && <option value="ADMIN">ADMIN</option>}
                 {actor?.role === "OWNER" && <option value="ADMIN_UMUM">Admin Umum (admin umum pembantu finance; hak aksesnya diatur di Akses Grup)</option>}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ADMIN_UMUM, LABEL_ADMIN_UMUM, PERAN_ADMIN, isAdminRole, peranPenyetujuEfektif } from "../peran-admin";
+import { ADMIN_UMUM, LABEL_ADMIN_UMUM, PERAN_ADMIN, PERAN_ISTIMEWA_BAGI_ADMIN_UMUM, adminUmumDilarang, isAdminRole, peranPenyetujuEfektif } from "../peran-admin";
 import { SEMUA_PERAN, bolehBukaPath, modulBawaan } from "../akses";
 import { editableRole } from "../role-access-catalog";
 import { labelPeran } from "../admin-online";
@@ -54,5 +54,16 @@ describe("peran Admin Umum: akses bawaan sama seperti ADMIN, bukan OWNER", () =>
   });
   it("izin khusus diskon manual: bawaan hidup untuk ADMIN dan ADMIN_UMUM sama", () => {
     expect(GRANT_ONLY_LEGACY_ROLES["kasir.diskon_manual"]).toEqual(["ADMIN", "ADMIN_UMUM"]);
+  });
+});
+
+describe("batas Admin Umum (database 20261218200000): penyaring tampilan", () => {
+  it("peran istimewa bagi Admin Umum = OWNER, ADMIN, ADMIN_UMUM, FINANCE", () => {
+    expect([...PERAN_ISTIMEWA_BAGI_ADMIN_UMUM]).toEqual(["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]);
+  });
+  it("adminUmumDilarang: hanya aktor ADMIN_UMUM, hanya untuk peran istimewa; STAFF/DOCTOR/ADMIN_ONLINE boleh", () => {
+    for (const r of ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]) expect(adminUmumDilarang("ADMIN_UMUM", r)).toBe(true);
+    for (const r of ["STAFF", "DOCTOR", "ADMIN_ONLINE", "", null, undefined]) expect(adminUmumDilarang("ADMIN_UMUM", r as never)).toBe(false);
+    for (const aktor of ["OWNER", "ADMIN", "FINANCE", "STAFF", null, undefined]) for (const r of ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE", "STAFF"]) expect(adminUmumDilarang(aktor as never, r)).toBe(false);
   });
 });

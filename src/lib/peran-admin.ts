@@ -26,3 +26,16 @@ export function isAdminRole(role: string | null | undefined): boolean {
 export function peranPenyetujuEfektif(role: string): string {
   return role === ADMIN_UMUM ? "ADMIN" : role;
 }
+
+/**
+ * Batas Admin Umum (database: 20261218200000_admin_umum_batas_peran.sql): akun ADMIN_UMUM tidak boleh membuat, memberikan, atau mengubah akun
+ * berperan FINANCE / OWNER / ADMIN / ADMIN_UMUM (peran istimewa atau lebih tinggi dari dirinya; FINANCE membaca gaji dan semua cabang).
+ * Hanya Super Admin (OWNER) yang boleh. Ini hanya penyaring tampilan; yang menegakkan adalah database (pesan ADMIN_UMUM_ROLE_DIBATASI).
+ * Peran lain tidak terpengaruh.
+ */
+export const PERAN_ISTIMEWA_BAGI_ADMIN_UMUM = ["OWNER", "ADMIN", ADMIN_UMUM, "FINANCE"] as const;
+
+/** true bila `aktor` adalah ADMIN_UMUM dan `peran` (peran baru atau peran akun target) termasuk yang dilarang baginya. */
+export function adminUmumDilarang(aktor: string | null | undefined, peran: string | null | undefined): boolean {
+  return aktor === ADMIN_UMUM && !!peran && (PERAN_ISTIMEWA_BAGI_ADMIN_UMUM as readonly string[]).includes(peran);
+}
