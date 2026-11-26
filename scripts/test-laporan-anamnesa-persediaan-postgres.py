@@ -29,9 +29,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from native_postgres import NativePostgres  # noqa: E402
 
-_spec = importlib.util.spec_from_file_location("hris", ROOT / "scripts/test-hris-cabang-postgres.py")
-hris = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(hris)
+# Rantai migrasi dari nol memakai pembantu yang sama dengan uji laporan Operation & Sales (akun beban fiktif untuk migrasi yang memeriksa COA hosted,
+# koreksi data khusus hosted ditoleransi, hak bawaan Supabase dipasang sebelum migrasi ini).
+_spec = importlib.util.spec_from_file_location("opl", ROOT / "scripts/test-laporan-operasional-penjualan-postgres.py")
+opl = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(opl)
 
 MIGRATIONS = ROOT / "supabase/migrations"
 MIGRASI = MIGRATIONS / "20261219100000_laporan_anamnesa_persediaan_cepat.sql"
@@ -139,7 +141,7 @@ def isi_persediaan(pg):
       insert into public.items(id, code, name, unit, buy_price, sell_price, item_type)
         select {uid('91000000', 'g')}, 'UJITEM' || g, 'Barang Uji ' || g, 'pcs', 1, 2, 'Persediaan' from generate_series(1, 30) g;
       insert into public.stock(warehouse_id, item_id, qty)
-        select w, i, case when (wi + ii) % 11 = 0 then -(1 + ii % 3) else 5 + ii end
+        select w, i, case when (wi + ii) % 11 = 0 then -(1 + ii % 3) when (wi + ii) % 13 = 0 then 0 else 5 + ii end
         from (select {uid('90000000', 'k')} w, k wi from generate_series(1, 6) k) a,
              (select {uid('91000000', 'g')} i, g ii from generate_series(1, 30) g) b;
       insert into public.stock_layers(warehouse_id, item_id, tanggal, qty_in, qty_left, unit_cost, source)
@@ -147,6 +149,10 @@ def isi_persediaan(pg):
                1000.0625 * (1 + (ii % 7)) + wi * 0.0001, 'purchase'
         from (select {uid('90000000', 'k')} w, k wi from generate_series(1, 6) k) a,
              (select {uid('91000000', 'g')} i, g ii from generate_series(1, 30) g) b;
+      -- lapisan berbiaya negatif: qty_left = 0 (tidak dihitung) di cabang A, dan qty_left > 0 di cabang X (hanya terlihat bila X diminta)
+      insert into public.stock_layers(warehouse_id, item_id, tanggal, qty_in, qty_left, unit_cost, source) values
+        ({uid('90000000', 2)}, {uid('91000000', 1)}, '2026-03-01', 1, 0, -7, 'purchase'),
+        ({uid('90000000', 6)}, {uid('91000000', 2)}, '2026-03-01', 2, 2, -3, 'purchase');
       set session_replication_role = origin;""")
     if int(pg.last("select count(*) from public.coa_accounts where code = '170001';")) == 0:
         pg.sql("insert into public.coa_accounts(code, name, type, normal_balance) values ('170001', 'Persediaan Uji', 'ASET', 'D'), ('199999', 'Lawan Uji', 'LIABILITAS', 'K');")
@@ -276,17 +282,11 @@ def main():
     laporan = {}
     with NativePostgres(args.pg_bin) as pg:
         # A. skema penuh
-        pg.sql(hris.PLATFORM)
-        pg.sql(hris.PERAN)
         semua = sorted(MIGRATIONS.glob("*.sql"))
         assert MIGRASI in semua
-        for berkas in semua:
-            if berkas.name in hris.SEBELUM:
-                pg.sql(hris.SEBELUM[berkas.name])
-            try:
-                muat(pg, berkas.read_text())
-            except RuntimeError as error:
-                raise AssertionError(f"Migrasi {berkas.name} gagal di klaster bersih:\n{str(error)[:2000]}") from None
+        opl.build_chain(pg, {MIGRASI.name})
+        pg.sql(opl.PRELUDE)   # hak bawaan Supabase: objek baru otomatis dapat hak anon/authenticated (tanpa ini mutan ACL hidup palsu)
+        muat(pg, MIGRASI.read_text())
         muat(pg, MIGRASI.read_text())
         print(f"PASS A: {len(semua)} migrasi repo berjalan dari nol; migrasi ini idempoten (dua kali)", flush=True)
 
@@ -297,7 +297,7 @@ def main():
         n_mr = int(pg.last("select count(*) from public.medical_records;"))
         n_lay = int(pg.last("select count(*) from public.stock_layers;"))
         n_jl = int(pg.last("select count(*) from public.journal_lines;"))
-        assert n_mr == 400 and n_lay == 180 and n_jl >= 1600, (n_mr, n_lay, n_jl)
+        assert n_mr == 400 and n_lay == 182 and n_jl >= 1600, (n_mr, n_lay, n_jl)
 
         # B. kesetaraan hak baca
         uids = [u[0] for n, u in PENGGUNA.items() if n != "admin_online"] + [TANPA_PROFIL]
@@ -320,7 +320,8 @@ def main():
             assert v == sorted(v), "waktu kembar harus berurut id"
         assert [r["created_at"] for r in besar["rows"]] == sorted([r["created_at"] for r in besar["rows"]], reverse=True)
         lap = jalan(pg, PENGGUNA["owner"][0], None, rpc_lapisan(SEMUA_CAB))
-        assert lap["per_cabang"] and all(int(v["minus"]) > 0 for v in lap["per_cabang"].values()) and lap["biaya_negatif"] == 0
+        assert lap["per_cabang"] and all(int(v["minus"]) > 0 for v in lap["per_cabang"].values()) and lap["biaya_negatif"] == 1, lap
+        assert jalan(pg, PENGGUNA["owner"][0], None, rpc_lapisan([CAB_A, CAB_B]))["biaya_negatif"] == 0   # qty_left = 0 tidak dihitung; cabang X tidak diminta
         bk = jalan(pg, PENGGUNA["owner"][0], None, rpc_buku(("2026-04-30", SEMUA_CAB, True)))
         assert bk["akun_ada"] is True and len(bk["per_cabang"]) == 3 and bk["tak_teralokasi"] not in ("0", None), bk
         print(f"PASS B: kombinasi identik dengan RLS tabel langsung — {hasil_b}; fixture {n_mr} rekam medis / {n_lay} lapisan / {n_jl} baris jurnal", flush=True)
@@ -343,8 +344,8 @@ def main():
             except RuntimeError:
                 negatif_ok[nama] = False
         if negatif_ok["lapisan"]:
-            assert jalan(pg, PENGGUNA["owner"][0], None, rpc_lapisan(SEMUA_CAB))["biaya_negatif"] == 1
-            pg.sql("delete from public.stock_layers where unit_cost < 0;")
+            assert jalan(pg, PENGGUNA["owner"][0], None, rpc_lapisan(SEMUA_CAB))["biaya_negatif"] == 2
+            pg.sql("delete from public.stock_layers where unit_cost = -5;")
         if negatif_ok["jurnal"]:
             assert jalan(pg, PENGGUNA["owner"][0], None, rpc_buku(("2026-04-30", SEMUA_CAB, True)))["negatif"] >= 1
             pg.sql("set session_replication_role = replica; delete from public.journal_lines where debit < 0; set session_replication_role = origin;")
@@ -400,10 +401,10 @@ def main():
             "anamnesa: dokter dibuang": ("a", [("'dokter', v.dokter,", "'dokter', null,")]),
             # --- lapisan ---
             "lapisan: SECURITY DEFINER (RLS gudang terlewati)": ("l", [("returns jsonb\nlanguage plpgsql\nstable\nsecurity invoker\nset search_path = ''\nas $$\ndeclare\n  v_per jsonb;\n  v_negatif bigint;", "returns jsonb\nlanguage plpgsql\nstable\nsecurity definer\nset search_path = ''\nas $$\ndeclare\n  v_per jsonb;\n  v_negatif bigint;")]),
-            "lapisan: qty_left >= 0": ("l", [("    where sl.qty_left > 0\n    group by w.branch_id", "    where sl.qty_left >= 0\n    group by w.branch_id")]),
+            "lapisan: biaya negatif ikut walau qty_left = 0": ("l", [("where w.branch_id = any(p_branch_ids) and sl.qty_left > 0 and sl.unit_cost < 0;", "where w.branch_id = any(p_branch_ids) and sl.qty_left >= 0 and sl.unit_cost < 0;")]),
             "lapisan: nilai tanpa biaya (hanya qty)": ("l", [("sum(sl.qty_left * sl.unit_cost)", "sum(sl.qty_left)")]),
             "lapisan: stok minus termasuk nol": ("l", [("where s.qty < 0\n", "where s.qty <= 0\n")]),
-            "lapisan: gudang semua cabang": ("l", [("select id, branch_id from public.warehouses where branch_id = any(p_branch_ids)", "select id, branch_id from public.warehouses")]),
+            "lapisan: hitungan biaya negatif lintas cabang": ("l", [("where w.branch_id = any(p_branch_ids) and sl.qty_left > 0 and sl.unit_cost < 0;", "where sl.qty_left > 0 and sl.unit_cost < 0;")]),
             "lapisan: cabang tanpa gudang hilang": ("l", [("left join lay on lay.branch_id = b.id", "join lay on lay.branch_id = b.id")]),
             # --- buku besar ---
             "buku besar: tanpa cek akses cabang": ("b", [("or (p_tak_teralokasi and e.branch_id is null))", "or (p_tak_teralokasi and e.branch_id is null)) or e.branch_id = any(p_branch_ids)")]),
