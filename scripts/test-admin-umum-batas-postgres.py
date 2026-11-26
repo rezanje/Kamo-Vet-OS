@@ -420,7 +420,7 @@ def sec_rollback(cl, base_name, cand_name, ctx):
     d2, dc = digest_x(Db(cl, "auf_rb")), digest_x(cand)
     diff2 = sorted(k for k in set(d2) | set(dc) if d2.get(k) != dc.get(k))
     ck("rollback: pasang ulang migrasi sesudah rollback berhasil dan hasilnya sama dengan pemasangan pertama", not diff2, diff2[:6], S)
-    e = Db(cl, "auf_rb").err("begin;\n" + MIG.read_text() + "\ncommit;")
+    e = cl.err("auf_rb", "begin;\n" + MIG.read_text() + "\ncommit;")
     ck("rollback: pemasangan ganda ditolak (fungsi pembantu sudah ada: gagal tertutup, tidak setengah terpasang)", has(e, "ADMIN_UMUM_BATAS_PRECONDITION"), (e or "")[-120:], S)
     cl.run("postgres", "drop database if exists auf_rb;")
 
