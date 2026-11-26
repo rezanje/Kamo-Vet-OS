@@ -9,7 +9,7 @@ export default async function PromoImportPage() {
   const db=await createClient();
   const {data:{user}}=await db.auth.getUser();
   const {data:me}=await db.from("profiles").select("role,is_active").eq("id",user?.id??"").maybeSingle();
-  const allowed=!!user&&!!me?.is_active&&["OWNER","ADMIN"].includes(me.role);
+  const allowed=!!user&&!!me?.is_active&&["OWNER","ADMIN", "ADMIN_UMUM"].includes(me.role);
   const branches=allowed?await readCompleteList<{id:string;name:string}>((from,to)=>db.from("branches")
     .select("id,name",{count:"exact"}).eq("is_active",true).order("name").order("id").range(from,to),
     "Cabang untuk impor promo",{maxRows:null}):[];

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateVariantMembers, variantMemberPayload } from "@/lib/varian";
+import { isAdminRole } from "@/lib/peran-admin";
 
 const BACK = "/pos/sku/varian";
 
@@ -12,7 +13,7 @@ export async function saveVariantFamily(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
-  if (!profile?.is_active || (profile.role !== "OWNER" && profile.role !== "ADMIN")) redirect(BACK);
+  if (!profile?.is_active || (profile.role !== "OWNER" && !isAdminRole(profile.role))) redirect(BACK);
 
   const name = String(formData.get("name") ?? "").trim();
   const categoryId = String(formData.get("category_id") ?? "").trim() || null;

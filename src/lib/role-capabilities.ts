@@ -1,10 +1,11 @@
+import { isAdminRole } from "@/lib/peran-admin";
 export type RoleCapabilities = { all_branches: boolean; create_accounts: boolean };
 
 export function roleCapabilities(role: string, saved?: RoleCapabilities | null): RoleCapabilities {
   if (role === "OWNER") return { all_branches: true, create_accounts: true };
   return saved ?? {
-    all_branches: ["ADMIN", "FINANCE"].includes(role),
-    create_accounts: role === "ADMIN",
+    all_branches: ["ADMIN", "ADMIN_UMUM", "FINANCE"].includes(role),
+    create_accounts: isAdminRole(role),
   };
 }
 

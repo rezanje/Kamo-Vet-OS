@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { readCompleteList } from "@/lib/checked-list";
 import { createClient } from "@/lib/supabase/server";
 import { VariantFamilyForm } from "./VariantFamilyForm";
+import { isAdminRole } from "@/lib/peran-admin";
 
 type Member = { item_id: string; label: string; sort_order: number; items: { code: string; name: string } | { code: string; name: string }[] | null };
 function one<T>(value: T | T[] | null): T | null { return Array.isArray(value) ? value[0] ?? null : value; }
@@ -21,7 +22,7 @@ export default async function VariantFamilyPage({ searchParams }: { searchParams
   ]); } catch { return <div role="alert" className="p2ban">Data keluarga varian belum dapat dimuat lengkap. Muat ulang sebelum mengubahnya.</div>; }
   const [{data:profile,error:profileError},items,categories,{data:families,error:familyError}] = result;
   if(profileError||familyError)return <div role="alert" className="p2ban">Data keluarga varian belum dapat dimuat lengkap. Muat ulang sebelum mengubahnya.</div>;
-  const boleh = profile?.is_active === true && (profile.role === "OWNER" || profile.role === "ADMIN");
+  const boleh = profile?.is_active === true && (profile.role === "OWNER" || isAdminRole(profile.role));
   return (
     <>
       <div style={{ marginBottom: 4 }}><Link href="/pos/sku" className="back-btn"><i className="ti ti-arrow-left" /> Barang &amp; Jasa</Link></div>

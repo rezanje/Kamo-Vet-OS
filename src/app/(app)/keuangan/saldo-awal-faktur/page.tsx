@@ -26,7 +26,7 @@ export default async function SaldoAwalFakturPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
-  if (!profile?.is_active || !["OWNER", "ADMIN", "FINANCE"].includes(profile.role)) {
+  if (!profile?.is_active || !["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(profile.role)) {
     return <div className="p2ban">Hanya OWNER/ADMIN/FINANCE aktif yang dapat membuka saldo awal per faktur.</div>;
   }
   const [branchResult, batchResult, rowResult, koreksiResult] = await Promise.all([

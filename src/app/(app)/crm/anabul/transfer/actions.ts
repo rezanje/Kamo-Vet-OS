@@ -15,7 +15,7 @@ export async function transferKepemilikan(form: FormData): Promise<{ error?: str
   const { data: { user } } = await db.auth.getUser();
   if (!user) return { error: "Silakan login kembali." };
   const { data: me } = await db.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) return { error: "Hanya owner/admin yang boleh memindahkan kepemilikan." };
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) return { error: "Hanya owner/admin yang boleh memindahkan kepemilikan." };
   const { error } = await db.rpc("transfer_pet_ownership", { p_pet_id: pet, p_from_customer_id: from, p_to_customer_id: to });
   if (error) {
     if (error.code === "23505") return { error: "Pemilik tujuan sudah memiliki anabul dengan nama sama. Periksa kartunya sebelum transfer." };

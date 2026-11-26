@@ -78,7 +78,7 @@ export default async function AppLayout({
   const staffBranchMaster = branches?.find(branch => branch.id === staffBranch?.branch_id);
   const staffBranchName = staffBranchMaster ? branchDisplayName(staffBranchMaster, branches ?? []) : staffBranch?.branchName ?? "—";
 
-  const canReadActivity = !!profile?.is_active && ["OWNER", "ADMIN"].includes(profile.role)
+  const canReadActivity = !!profile?.is_active && ["OWNER", "ADMIN", "ADMIN_UMUM"].includes(profile.role)
     && bolehBukaPath(profile.role, "/perusahaan/log-aktifitas", aksesModul ?? []);
 
   return (

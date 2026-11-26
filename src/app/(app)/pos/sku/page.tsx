@@ -11,6 +11,7 @@ import { BarangMatrixTable, type BarangMatrixRow } from "./BarangMatrixTable";
 import { loadSkuInventoryCosts } from "@/lib/hpp-reports-server";
 import { hppReportError } from "@/lib/hpp-reports-download";
 import { infoHalaman } from "@/lib/pagination";
+import { isAdminRole } from "@/lib/peran-admin";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -41,7 +42,7 @@ export default async function BarangJasaPage({
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
-  const bolehKelola = profile?.is_active === true && (profile.role === "OWNER" || profile.role === "ADMIN");
+  const bolehKelola = profile?.is_active === true && (profile.role === "OWNER" || isAdminRole(profile.role));
 
   const { data: categories } = await supabase
     .from("item_categories").select("id, name, parent_id, is_active").order("name");

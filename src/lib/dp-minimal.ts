@@ -11,7 +11,7 @@ type AnyClient = any;
 
 export const DP_MINIMAL_BAWAAN = 50;
 /** Peran yang boleh menerima di bawah minimum, dengan alasan yang dicatat. */
-export const PERAN_PENEROBOS_DP = ["OWNER", "ADMIN", "FINANCE"] as const;
+export const PERAN_PENEROBOS_DP = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"] as const;
 
 /**
  * Rupiah minimal yang harus diterima sebelum tagihan boleh disimpan belum lunas.

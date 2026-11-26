@@ -92,7 +92,7 @@ export async function bacaSaldoAwal(supabase: Awaited<ReturnType<typeof createCl
 
 /** Initial entry only; monetary corrections have their own reviewed workflow. */
 export async function simpanSaldoAwal(formData: FormData) {
-  const supabase = await assertRole(BACK, "saldo awal", ["OWNER", "ADMIN", "FINANCE"]);
+  const supabase = await assertRole(BACK, "saldo awal", ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]);
   const gagal = (message: string): never => redirect(`${BACK}?error=${encodeURIComponent(message)}`);
   const key = String(formData.get("draft_key") ?? "").trim();
   if (!key || key.length > 120) gagal("Identitas simpan belum tersedia. Muat ulang formulir.");

@@ -19,7 +19,7 @@ type ProfileRow = {
 type UB = { user_id: string; branches: { code: string; name: string; type: string } | null };
 type Emp = { nik: string | null; status: string; id: string; nama: string; jabatan: string | null; profile_id: string | null };
 
-const ROLE_BADGE: Record<string, string> = { OWNER: "r", ADMIN: "b", FINANCE: "o", DOCTOR: "g", STAFF: "x", ADMIN_ONLINE: "x" };
+const ROLE_BADGE: Record<string, string> = { OWNER: "r", ADMIN: "b", ADMIN_UMUM: "b", FINANCE: "o", DOCTOR: "g", STAFF: "x", ADMIN_ONLINE: "x" };
 
 export default async function PenggunaPage({
   searchParams,
@@ -31,7 +31,7 @@ export default async function PenggunaPage({
 
   const { data: { user } } = await supabase.auth.getUser();
   const { data: actor } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  const canManage = ["OWNER", "ADMIN"].includes(actor?.role ?? "");
+  const canManage = ["OWNER", "ADMIN", "ADMIN_UMUM"].includes(actor?.role ?? "");
   const allowed = await allowedBranchIds(supabase, user!.id);
   const [{ data: profiles }, { data: ubs }, { data: branches }, { data: employees }, { data: capabilityRows }] = await Promise.all([
     supabase.from("profiles").select("id, full_name, role, is_active").order("full_name"),
@@ -92,7 +92,7 @@ export default async function PenggunaPage({
             placeholder="Cari nama, NIK, cabang, atau role…" style={{ flex: "1 1 240px", minWidth: 0 }} autoFocus={!!q} />
           <select className="fi" name="role" defaultValue={roleFilter ?? ""} aria-label="Filter role" style={{ width: 140 }}>
             <option value="">Semua role</option>
-            {roles.map((r) => <option key={r} value={r}>{r}</option>)}
+            {roles.map((r) => <option key={r} value={r}>{labelPeran(r)}</option>)}
           </select>
           <select className="fi" name="status" defaultValue={statusFilter ?? ""} aria-label="Filter status" style={{ width: 130 }}>
             <option value="">Semua status</option>
@@ -138,7 +138,7 @@ export default async function PenggunaPage({
                   </form> : "Belum tertaut HRIS"}</td>
                   <td><span className={`bge ${p.is_active ? "g" : "r"}`}>{p.is_active ? "Aktif" : "Nonaktif"}</span></td>
                   <td>
-                    {canManage && (actor?.role === "OWNER" || p.id === user?.id || !["OWNER", "ADMIN"].includes(p.role)) && (
+                    {canManage && (actor?.role === "OWNER" || p.id === user?.id || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(p.role)) && (
                       <Link href={`/pengaturan/pengguna/${p.id}/edit`} className="btn-def" style={{ display: "inline-block", padding: "4px 10px", fontSize: 10.5, marginBottom: 6 }}>Edit</Link>
                     )}
                     {canManage && <form action={togglePengguna}>
@@ -184,6 +184,7 @@ export default async function PenggunaPage({
                 <option value="FINANCE">FINANCE (keuangan)</option>
                 <option value="ADMIN_ONLINE">Admin Online (hanya input penjualan marketplace)</option>
                 {actor?.role === "OWNER" && <option value="ADMIN">ADMIN</option>}
+                {actor?.role === "OWNER" && <option value="ADMIN_UMUM">Admin Umum (admin umum pembantu finance; hak aksesnya diatur di Akses Grup)</option>}
                 {actor?.role === "OWNER" && <option value="OWNER">OWNER</option>}
               </select>
             </div>

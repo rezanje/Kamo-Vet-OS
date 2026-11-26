@@ -11,7 +11,7 @@ import { nextNoDokumen } from "@/lib/penjualan-server";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/penjualan/uang-muka";
-const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
+const BOLEH = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"];
 const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
 
 export async function terimaUangMukaJual(formData: FormData) {

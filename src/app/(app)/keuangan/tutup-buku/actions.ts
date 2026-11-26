@@ -107,7 +107,7 @@ export async function simpanAturanAkhirBulan(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     redirect(`${BACK}?error=${encodeURIComponent("Hanya owner/admin yang boleh mengubah aturan akhir bulan.")}`);
   }
 
@@ -131,7 +131,7 @@ export async function jalankanAkhirBulanSekarang(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     redirect(`${BACK}?error=${encodeURIComponent("Hanya owner/admin yang boleh menjalankan proses akhir bulan.")}`);
   }
 

@@ -29,7 +29,7 @@ export async function buatPengguna(formData: FormData) {
   if (!full_name || !email || password.length < 8) fail("Nama, email, dan password (min. 8 karakter) wajib diisi.");
   if (!(PERAN_AKUN as readonly string[]).includes(role)) fail("Role tidak dikenal.");
 
-  if (["OWNER", "ADMIN"].includes(role)) {
+  if (["OWNER", "ADMIN", "ADMIN_UMUM"].includes(role)) {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: actor } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
     if (actor?.role !== "OWNER") fail("Hanya Super Admin yang boleh membuat akun Admin atau Super Admin.");

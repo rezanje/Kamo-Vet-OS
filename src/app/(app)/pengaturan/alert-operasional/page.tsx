@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { defaultAlertSettings, type AlertSetting } from "@/lib/operational-alerts";
 import { AlertSettingsForm } from "./AlertSettingsForm";
+import { isAdminRole } from "@/lib/peran-admin";
 
 function rowToSetting(row: Record<string, unknown>): AlertSetting {
   return {
@@ -25,7 +26,7 @@ export default async function AlertOperasionalSettings({ searchParams }: { searc
     supabase.from("branches").select("id,name").eq("is_active", true).order("name"),
     supabase.from("operational_alert_settings").select("rule_key,branch_id,threshold,period_days,active,severity").order("rule_key"),
   ]);
-  const allowed = profile?.role === "OWNER" || profile?.role === "ADMIN";
+  const allowed = profile?.role === "OWNER" || isAdminRole(profile?.role);
   const settings = (rows ?? []).map((row) => rowToSetting(row));
   const savedCompany = new Map(settings.filter((setting) => setting.branchId === null).map((setting) => [setting.ruleKey, setting]));
   const companySettings = defaultAlertSettings().map((setting) => savedCompany.get(setting.ruleKey) ?? setting);

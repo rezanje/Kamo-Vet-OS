@@ -11,7 +11,7 @@ async function requireManager() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role, is_active").eq("id", user?.id ?? "").maybeSingle();
-  if (!me?.is_active || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me?.is_active || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     redirect(`/pos/quest?error=${encodeURIComponent("Hanya owner/manajer yang bisa mengubah konfigurasi quest")}`);
   }
   return { supabase, userId: user!.id };

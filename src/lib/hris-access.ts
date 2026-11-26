@@ -1,4 +1,4 @@
-export const PERAN_PENGELOLA_HRIS = ["OWNER", "ADMIN"] as const;
+export const PERAN_PENGELOLA_HRIS = ["OWNER", "ADMIN", "ADMIN_UMUM"] as const;
 
 export function bolehKelolaHris(role: string): boolean {
   return PERAN_PENGELOLA_HRIS.includes(role as (typeof PERAN_PENGELOLA_HRIS)[number]);

@@ -21,6 +21,7 @@ export function NewRoleSettingsForm({ userId, config, canEdit }: { userId: strin
     uncertainNotice="Hasil simpan pengaturan belum terkonfirmasi. Isian dan kunci permintaan tetap tersedia. Muat ulang halaman untuk memeriksa pengaturan saat ini sebelum menyimpan ulang; menyimpan ulang dengan kunci yang sama aman.">
     {({ ready }) => <fieldset disabled={!canEdit || !ready} style={{ border: 0, padding: 0 }}>
       <legend>Hak buka menu untuk {config.role}</legend>
+      {config.role === "ADMIN_UMUM" && <p role="note"><strong>Admin Umum:</strong> bawaan sama seperti ADMIN (semua menu, semua cabang, tindakan bawaan-boleh) dan diatur terpisah dari ADMIN. Bagian <em>Jurnal Umum</em> di Tindakan bisnis mengatur layar Jurnal Umum: lihat halaman, buat jurnal manual, koreksi/batalkan jurnal manual (izin khusus, bawaan mati seperti ADMIN), dan lihat jurnal dari semua sumber (bila dimatikan hanya jurnal manual yang tampil di layar Jurnal Umum). Mengatur siapa yang boleh membuka halaman Jurnal Umum juga bisa lewat sub-menu Buku Besar.</p>}
       <input type="hidden" name="role" value={config.role} />
       <input type="hidden" name="expected_revision" value={config.revision} />
       <p>Centang mengatur hak buka menu: sidebar, pintasan, dan URL langsung. Hak buka menu bukan izin menjalankan tindakan bisnis. Tindakan yang sudah terhubung diatur terpisah di bawah; cakupan lainnya belum tersedia.</p>

@@ -52,7 +52,7 @@ export default async function KomisiPage({
   // Personal/group/exception rules are readable by OWNER/ADMIN/FINANCE only (RLS); others see partial totals.
   const { data: { user: viewer } } = await supabase.auth.getUser();
   const { data: viewerProfile } = viewer ? await supabase.from("profiles").select("role").eq("id", viewer.id).maybeSingle() : { data: null };
-  const aturanKhususTersembunyi = !["OWNER", "ADMIN", "FINANCE"].includes(String(viewerProfile?.role ?? ""));
+  const aturanKhususTersembunyi = !["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(String(viewerProfile?.role ?? ""));
 
   let loaded;
   try { loaded = await Promise.all([

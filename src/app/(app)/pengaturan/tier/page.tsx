@@ -11,7 +11,7 @@ export default async function TierSettingsPage({ searchParams }: { searchParams:
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) redirect("/pengaturan");
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) redirect("/pengaturan");
 
   const { data: cfg, error: cfgError } = await supabase.from("tier_settings").select("bronze_min, silver_min, gold_min, platinum_min, points_expiry_enabled, points_expiry_months, tier_downgrade_enabled, tier_downgrade_days").eq("id", 1).maybeSingle();
   if (cfgError) throw new Error("Aturan loyalty belum dapat diverifikasi. Muat ulang halaman.");

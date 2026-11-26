@@ -15,7 +15,7 @@ export default async function GudangPage({
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase
     .from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) redirect("/perusahaan");
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) redirect("/perusahaan");
 
   const [{ data: branches }, { data: warehouses }] = await Promise.all([
     supabase.from("branches").select("id, code, name, type, is_active").order("name"),

@@ -8,6 +8,7 @@ import type { PromoEditSnapshot } from "./promo-edit";
 import {
   SH_MAX_HASIL_ITEMS, SH_MAX_MONEY, SH_MAX_QTY_MIN, SH_MAX_REWARD_QTY, SH_MAX_ROW_ITEMS, SH_MAX_SYARAT_ROWS, validateSyaratHasilDef,
 } from "./promo-syarat-hasil";
+import { isAdminRole } from "@/lib/peran-admin";
 
 export type PaketItemRef = { item_id: string; unit: string };
 export type PaketSyaratForm = { kind: "qty"; min: string; items: PaketItemRef[] } | { kind: "nilai"; min: string };
@@ -342,7 +343,7 @@ export function pesanGalatPaket(error: { code?: string | null; message?: string 
 // Gerbang peran
 // ---------------------------------------------------------------------------------------------
 export function paketAkses(me: { role?: string | null; is_active?: boolean | null } | null | undefined): { allowed: boolean; isOwner: boolean } {
-  const ok = !!me && me.is_active === true && (me.role === "OWNER" || me.role === "ADMIN");
+  const ok = !!me && me.is_active === true && (me.role === "OWNER" || isAdminRole(me.role));
   return { allowed: ok, isOwner: ok && me!.role === "OWNER" };
 }
 export const UUID_RE = UUID;

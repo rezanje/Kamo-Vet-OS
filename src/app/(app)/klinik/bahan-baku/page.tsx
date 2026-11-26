@@ -5,6 +5,7 @@ import {readCompleteList,ListLoadError} from "@/lib/checked-list";
 import {flatOptions,labelPath,type KategoriRow} from "@/lib/kategori";
 import { SecHeader } from "@/components/SecHeader";
 import { BahanBakuClient, type ItemRow } from "./BahanBakuClient";
+import { isAdminRole } from "@/lib/peran-admin";
 
 export default async function BahanBakuPage() {
   const supabase = await createClient();
@@ -12,7 +13,7 @@ export default async function BahanBakuPage() {
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  if (profile?.role !== "OWNER" && profile?.role !== "ADMIN") redirect("/klinik"); // master data admin-only (selaras RLS 0045)
+  if (profile?.role !== "OWNER" && !isAdminRole(profile?.role)) redirect("/klinik"); // master data admin-only (selaras RLS 0045)
 
   let items: ItemRow[] = [];
   let categories: KategoriRow[] = [];

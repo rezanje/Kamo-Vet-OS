@@ -16,7 +16,7 @@ export class MarketingError extends Error {}
 
 export type AksesMarketing = { ok: boolean; role: string | null; bolehUnduh: boolean };
 const DITOLAK: AksesMarketing = { ok: false, role: null, bolehUnduh: false };
-export const PERAN_UNDUH = ["OWNER", "ADMIN"] as const;
+export const PERAN_UNDUH = ["OWNER", "ADMIN", "ADMIN_UMUM"] as const;
 
 /**
  * Gerbang sisi server (halaman, unduhan, kartu dashboard): peran aktif + Akses Grup (modul CRM dan sub-menu) + fungsi database
