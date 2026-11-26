@@ -7,7 +7,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => {} }) }))
 vi.mock('@/components/LocalTransactionDraft', () => ({ PreservedForm: ({ children }: { children: ReactNode }) => <form>{children}</form>, LocalTransactionDraft: () => null }));
 vi.mock('@/app/(app)/pos/opname/actions', () => ({
   kunciBaris: async () => { s.calls++; return { ok: true, qtyFisik: s.qty }; },
-  bukaKunci: async () => ({ ok: true }), muatUlangStok: async () => ({ ok: true }), simpanHasil: async () => {},
+  bukaKunci: async () => ({ ok: true }), periksaJumlahTakWajar: async () => ({ ok: true, janggal: [] }), muatUlangStok: async () => ({ ok: true }), simpanHasil: async () => {},
 }));
 import { HitungForm } from '@/app/kasir/opname/[id]/HitungForm';
 let root: Root, host: HTMLDivElement;
@@ -26,20 +26,20 @@ async function fill(value: string) {
 }
 async function lock() { await act(async () => [...host.querySelectorAll('tbody button')].find(b => b.textContent?.trim() === 'Kunci')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))); }
 it('shows the authoritative stored count after a duplicate lock, rather than an unsaved newer input', async () => {
-  await fill('2'); await lock(); expect(host.querySelector<HTMLTableRowElement>('tbody tr')?.cells[5]?.textContent).toBe('1');
+  await fill('2'); await lock(); expect(host.querySelector<HTMLTableRowElement>('tbody tr')?.cells[4]?.textContent).toBe('1PCS');
   expect(host.textContent).toContain('Buka untuk mengubah');
   expect(host.querySelector<HTMLInputElement>('input[name=fisik]')?.value ?? host.querySelector<HTMLInputElement>('input[name=fisik_json]')?.value ?? host.innerHTML).not.toContain('"item":2');
 });
-it('shows each product unit beside its physical count, even before any count is entered', async () => {
+it('shows each product unit big beside its physical count input, even before any count is entered', async () => {
   const rows = ['PCS', '1kg', '0.5kg', ' '].map((unit, index) => ({
     item_id: String(index), code: `SKU-${index}`, name: `Product ${index}`, unit, kategori: 'Fictional', sell_price: 0,
   }));
   await act(async () => root.render(<HitungForm orderId="order" rows={rows} terkunci={{}} />));
 
-  expect(host.querySelector('thead th:nth-child(5)')?.textContent).toBe('Satuan');
+  expect(host.querySelector('thead th:nth-child(5)')?.textContent).toBe('Jumlah fisik & satuan');
   const countRows = [...host.querySelectorAll<HTMLTableRowElement>('tbody tr')];
-  expect(countRows.map(row => row.cells[4].textContent)).toEqual(['PCS', '1kg', '0.5kg', '—']);
-  expect(countRows.map(row => row.cells[5].querySelector('input')?.value)).toEqual(['', '', '', '']);
+  expect(countRows.map(row => row.cells[4].querySelector('[data-satuan-besar]')?.textContent)).toEqual(['PCS', '1kg', '0.5kg', 'satuan?']);
+  expect(countRows.map(row => row.cells[4].querySelector('input')?.value)).toEqual(['', '', '', '']);
 });
 it('does not turn a negative count into a confirmed zero', async () => {
   await fill('-1'); await lock(); expect(s.calls).toBe(0); expect(host.textContent).toContain('jumlah fisik'); expect(host.querySelector('tbody')!.textContent).not.toContain('Buka');
