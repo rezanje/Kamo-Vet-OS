@@ -1,0 +1,295 @@
+-- Rekap Setoran — perbaikan review (migrasi *_rekap_setoran_fix): fixture fiktif di PostgreSQL sekali pakai; semuanya dibatalkan (rollback).
+-- Dibuktikan: B1 staf TIDAK dapat membaca/menulis jurnal setoran lewat tabel, join, tulis tanpa WHERE, maupun fungsi buku besar (lines/totals), sedangkan Owner/Admin/
+-- Admin Umum/Finance tetap melihatnya; jurnal umum lain tidak berubah; jalur SECURITY DEFINER dan service_role berjalan; nomor jurnal setoran SJR (tanpa celah JRN);
+-- M1 sisa staf = 0 sesudah diajukan; M2 pengeluaran > kewajiban diblok; M3 kebijakan storage setoran/ per cabang/peran; M4 pemisahan tugas; M5 validasi + klaim berkas,
+-- peringatan kembar; M6 shift tertutup beku; jejak berisi jumlah; ACL/kebijakan.
+begin;
+create function pg_temp.ok(value boolean, label text) returns void language plpgsql as $$begin
+ if value is distinct from true then raise exception 'Assertion failed: %',label;end if;raise notice 'BP_PASS %',label;end$$;
+create function pg_temp.reject(stmt text, expected text, label text) returns void language plpgsql as $$
+declare failed boolean:=false;msg text;begin
+ begin execute stmt;exception when others then failed:=true;msg:=sqlerrm;end;
+ if not failed then raise exception 'Expected rejection: %',label;end if;
+ if position(expected in msg)=0 then raise exception 'Unexpected rejection for %: %',label,msg;end if;
+ raise notice 'BP_PASS %',label;
+end$$;
+create function pg_temp.u(n text) returns uuid language sql immutable as $$select ('f6100000-0000-4000-8000-0000000000'||n)::uuid$$;
+create function pg_temp.br(n text) returns uuid language sql immutable as $$select ('f6200000-0000-4000-8000-0000000000'||n)::uuid$$;
+create function pg_temp.as_(n text) returns void language plpgsql as $$begin
+ perform set_config('request.jwt.claim.sub',pg_temp.u(n)::text,true);perform set_config('request.jwt.claims','{"role":"authenticated"}',true);end$$;
+create function pg_temp.noauth() returns void language sql as $$select set_config('request.jwt.claims','{}',true),set_config('request.jwt.claim.sub','',true)$$;
+create function pg_temp.today() returns date language sql as $$select (now() at time zone 'Asia/Jakarta')::date$$;
+create function pg_temp.kk(name text) returns uuid language sql immutable as $$select md5('f6-'||name)::uuid$$;
+create temp table res(name text primary key,r jsonb);grant all on res to public;
+create function pg_temp.save(name text,v jsonb) returns void language sql as $$insert into res values($1,$2) on conflict(name) do update set r=excluded.r$$;
+create function pg_temp.sid(name text) returns uuid language sql security definer as $$select (r->>'id')::uuid from res where res.name=$1$$;
+create function pg_temp.rev(name text) returns integer language sql security definer as $$select revision from public.setoran where id=(select (r->>'id')::uuid from res where res.name=$1)$$;
+create function pg_temp.st(name text) returns text language sql security definer as $$select status from public.setoran where id=(select (r->>'id')::uuid from res where res.name=$1)$$;
+create function pg_temp.sv(stmt text) returns text language plpgsql security definer as $$declare r text;begin execute stmt into r;return r;end$$;
+-- jalankan sebagai pengguna (RLS berlaku): hasil skalar teks atau 'ERR:'||pesan; semua dibatalkan di dalam sub-blok
+create function pg_temp.ra(un text, stmt text) returns text language plpgsql as $$
+declare r text;
+begin
+ perform pg_temp.as_(un);
+ begin execute 'set local role authenticated';execute stmt into r;execute 'reset role';return coalesce(r,'NULL');
+ exception when others then execute 'reset role';return 'ERR:'||sqlerrm;end;
+end$$;
+-- DML sebagai pengguna: jumlah baris terpengaruh, atau 'ERR:'||pesan; selalu dibatalkan
+create function pg_temp.dml(un text, stmt text) returns text language plpgsql as $$
+declare n bigint;
+begin
+ perform pg_temp.as_(un);
+ begin execute 'set local role authenticated';execute stmt;get diagnostics n=row_count;execute 'reset role';raise exception 'BATAL_%',n;
+ exception when others then execute 'reset role';
+  if sqlerrm like 'BATAL\_%' then return substr(sqlerrm,7);end if;return 'ERR:'||sqlerrm;end;
+end$$;
+create function pg_temp.dml_sisa(un text, stmt text) returns text language plpgsql as $$
+declare n bigint;m bigint;
+begin
+ perform pg_temp.as_(un);
+ begin execute 'set local role authenticated';execute stmt;get diagnostics n=row_count;execute 'reset role';
+  select count(*) into m from public.journal_lines where id in(select id from hid_lines);raise exception 'BATAL_%_%',n,m;
+ exception when others then execute 'reset role';
+  if sqlerrm like 'BATAL\_%' then return substr(sqlerrm,7);end if;return 'ERR:'||sqlerrm;end;
+end$$;
+create function pg_temp.raj(un text, stmt text) returns jsonb language plpgsql as $$
+declare r jsonb;
+begin
+ perform pg_temp.as_(un);
+ begin execute 'set local role authenticated';execute stmt into r;execute 'reset role';return r;
+ exception when others then execute 'reset role';return jsonb_build_object('err',sqlerrm);end;
+end$$;
+create sequence pg_temp.fseq;
+-- berkas bukti yang sah untuk setoran s: dibuat di storage.objects (pengunggah = akun yang sedang aktif) dan dikembalikan sebagai lampiran
+create function pg_temp.lamp(s uuid,k text) returns jsonb language plpgsql security definer as $$
+declare br uuid;p text;begin
+ select branch_id into br from public.setoran where id=s;p:='setoran/'||br::text||'/'||md5(k)||'.jpg';
+ insert into storage.objects(bucket_id,name,owner_id) select 'dokumen',p,coalesce(auth.uid()::text,'sistem') where not exists(select 1 from storage.objects where bucket_id='dokumen' and name=p);
+ return jsonb_build_array(jsonb_build_object('path',p,'nama','f6.jpg','mime','image/jpeg','ukuran',100));end$$;
+create function pg_temp.lampp(p text) returns jsonb language sql as $$select jsonb_build_array(jsonb_build_object('path',p,'nama','f6.jpg','mime','image/jpeg','ukuran',100))$$;
+create function pg_temp.obj(p text,own text) returns void language sql security definer as $$
+ insert into storage.objects(bucket_id,name,owner_id) values('dokumen',p,own)$$;
+create function pg_temp.mk_shift(br uuid,opener text,dayoff int,opening numeric,closing numeric,typ text default 'petshop') returns uuid language plpgsql security definer as $$
+declare id uuid:=gen_random_uuid();d date:=(now() at time zone 'Asia/Jakarta')::date-dayoff;
+begin
+ perform set_config('request.jwt.claims','{}',true);perform set_config('request.jwt.claim.sub','',true);
+ insert into public.cashier_shifts(id,branch_id,opened_by,shift_type,opening_balance,opened_at,closing_balance,expected_cash,selisih,closed_at,status,closing_breakdown)
+ values(id,br,pg_temp.u(opener),typ,opening,((d::timestamp+time '08:00') at time zone 'Asia/Jakarta'),closing,closing,0,((d::timestamp+time '17:00') at time zone 'Asia/Jakarta'),'closed',jsonb_build_object('Tunai',closing-opening));
+ return id;
+end$$;
+create function pg_temp.mk(nm text,br uuid,creator text,dayoff int default 3) returns void language plpgsql as $$
+begin
+ perform set_config('role','authenticated',true);perform pg_temp.as_(creator);
+ perform pg_temp.save(nm,public.setoran_buat(br,pg_temp.today()-dayoff,pg_temp.today()-dayoff,pg_temp.today()-dayoff+1,'12:00',pg_temp.kk('buat-'||nm)));
+ perform set_config('role','none',true);
+end$$;
+create function pg_temp.exps(nm text,u text,d int,kat text,amt numeric,k text) returns void language plpgsql as $$
+begin perform set_config('role','authenticated',true);perform pg_temp.as_(u);perform public.setoran_tambah_pengeluaran(pg_temp.sid(nm),pg_temp.today()-d,kat,amt,'uji '||k,pg_temp.lamp(pg_temp.sid(nm),k),pg_temp.rev(nm),pg_temp.kk(k));perform set_config('role','none',true);end$$;
+create function pg_temp.pay(nm text,amt numeric,metode text,enterer text,confirmer text,k text,tgl int default 1) returns void language plpgsql as $$
+declare r jsonb;acc uuid:=case when metode='Transfer' then 'f6500000-0000-4000-8000-000000000004'::uuid else 'f6500000-0000-4000-8000-000000000003'::uuid end;
+begin
+ perform set_config('role','authenticated',true);perform pg_temp.as_(enterer);
+ r:=public.setoran_tambah_transfer(pg_temp.sid(nm),pg_temp.today()-tgl,amt,metode,acc,case when metode='Transfer' then pg_temp.lamp(pg_temp.sid(nm),k) else null end,null,pg_temp.rev(nm),pg_temp.kk(k));
+ perform pg_temp.save(k,r);
+ if confirmer is not null then perform pg_temp.as_(confirmer);
+  perform public.setoran_putuskan_transfer(pg_temp.sid(nm),(r->>'transfer_id')::uuid,true,null,pg_temp.kk(k||'-c'));end if;
+ perform set_config('role','none',true);
+end$$;
+create function pg_temp.sub(nm text,u text,k text) returns void language plpgsql as $$
+begin perform set_config('role','authenticated',true);perform pg_temp.as_(u);perform public.setoran_ajukan(pg_temp.sid(nm),pg_temp.rev(nm),pg_temp.kk(k));perform set_config('role','none',true);end$$;
+create function pg_temp.appr(nm text,u text,k text,alok jsonb default null,beban boolean default false,besar boolean default false) returns jsonb language plpgsql as $$
+declare r jsonb;begin perform set_config('role','authenticated',true);perform pg_temp.as_(u);
+ r:=public.setoran_setujui(pg_temp.sid(nm),pg_temp.kk(k),null,alok,beban,besar,'catatan uji');perform set_config('role','none',true);perform pg_temp.save('ap-'||nm,r);return r;end$$;
+create function pg_temp.jn(src text,ref uuid) returns integer language sql security definer as $$select count(*)::int from public.journal_entries where source=src and source_ref=ref::text$$;
+create function pg_temp.hid() returns integer language sql security definer as $$select count(*)::int from public.journal_entries where source in ('setoran','setoran-batal')$$;
+
+-- ── fixtures ────────────────────────────────────────────────────────────────────────────────────
+insert into storage.buckets(id,name,public) values('dokumen','dokumen',false),('pembelian','pembelian',false) on conflict do nothing;
+-- kebijakan lama bucket dokumen (dokumen_read/write/delete) sudah ada dari rantai migrasi; kandidat menambah kebijakan RESTRICTIVE di atasnya
+create policy tmp_dokumen_ubah on storage.objects for update to authenticated using (bucket_id='dokumen') with check (bucket_id='dokumen');
+insert into auth.users(id,raw_user_meta_data) select pg_temp.u(n),jsonb_build_object('full_name','FX '||n) from unnest(array['01','02','03','04','05','06','07','08','09','0b','0c','0d','0e']) n;
+update profiles set role='OWNER',is_active=true where id=pg_temp.u('01');
+update profiles set role='ADMIN',is_active=true where id in(pg_temp.u('02'));
+update profiles set role='FINANCE',is_active=true where id in(pg_temp.u('03'),pg_temp.u('0c'));
+update profiles set role='STAFF',is_active=true where id in(pg_temp.u('04'),pg_temp.u('05'),pg_temp.u('07'),pg_temp.u('08'),pg_temp.u('0e'));
+update profiles set role='ADMIN_ONLINE',is_active=true where id=pg_temp.u('06');
+update profiles set role='FINANCE',is_active=false where id=pg_temp.u('09');
+update profiles set role='DOCTOR',is_active=true where id=pg_temp.u('0b');
+update profiles set role='ADMIN_UMUM',is_active=true where id=pg_temp.u('0d');
+insert into role_capabilities(role,all_branches,create_accounts) values('ADMIN',false,false),('FINANCE',false,false) on conflict(role) do update set all_branches=false;
+insert into role_modules(role,module_id) values('STAFF','pos'),('ADMIN','pos'),('FINANCE','pos'),('DOCTOR','klinik') on conflict do nothing;
+insert into branches(id,code,name,type) values
+ (pg_temp.br('0a'),'FXA','FX petshop A','PETSHOP'),(pg_temp.br('0b'),'FXB','FX cabang B','PETSHOP'),(pg_temp.br('0c'),'FXC','FX cabang C','PETSHOP'),
+ (pg_temp.br('0d'),'FXD','FX cabang D','PETSHOP'),(pg_temp.br('0e'),'FXE','FX cabang E','PETSHOP'),(pg_temp.br('0f'),'FXF','FX cabang F','PETSHOP'),
+ (pg_temp.br('a1'),'FXG','FX cabang G','PETSHOP'),(pg_temp.br('a2'),'FXH','FX cabang H','PETSHOP'),(pg_temp.br('a3'),'FXI','FX cabang I','PETSHOP'),
+ (pg_temp.br('a4'),'FXJ','FX cabang J','PETSHOP'),(pg_temp.br('a5'),'FXK','FX cabang K','PETSHOP'),(pg_temp.br('a6'),'FXL','FX cabang L','PETSHOP'),
+ (pg_temp.br('b1'),'FXX','FX cabang lain','PETSHOP');
+insert into user_branches(user_id,branch_id)
+ select pg_temp.u(n),b.id from unnest(array['02','03','04','05','0b','0c','0d','0e']) n cross join branches b where b.code in ('FXA','FXB','FXC','FXD','FXE','FXF','FXG','FXH','FXI','FXJ','FXK','FXL');
+insert into user_branches(user_id,branch_id) values(pg_temp.u('07'),pg_temp.br('b1')),(pg_temp.u('08'),pg_temp.br('b1')),(pg_temp.u('06'),pg_temp.br('0a'));
+insert into employees(id,nama,profile_id,status) values
+ ('f6300000-0000-4000-8000-000000000001','Kasir Satu',pg_temp.u('04'),'Aktif'),('f6300000-0000-4000-8000-000000000002','Kasir Dua',pg_temp.u('05'),'Aktif'),
+ ('f6300000-0000-4000-8000-000000000003','Admin Pegang Shift',pg_temp.u('02'),'Aktif');
+insert into coa_accounts(code,name,type,normal_balance,is_header,is_active,parent_id) values
+ ('1191','FX laci A','ASET','D',false,true,null),('1195','FX kas finance','ASET','D',false,true,null),('1192','FX bank utama','ASET','D',false,true,(select id from coa_accounts where code='120000'))
+ on conflict(code) do update set is_active=true,is_header=false;
+update coa_accounts set parent_id=(select id from coa_accounts where code='120000') where code='1192';
+insert into coa_accounts(code,name,type,normal_balance,is_header,is_active) select c,'FX '||c,'BEBAN','D',false,true from unnest(array['720002','740003','760003','740001']) c on conflict(code) do update set is_active=true,is_header=false;
+insert into cash_accounts(id,nama,jenis,coa_code,is_active,branch_id) values
+ ('f6500000-0000-4000-8000-000000000001','FX laci A','Kas','1191',true,pg_temp.br('0a')),
+ ('f6500000-0000-4000-8000-000000000003','FX kas finance','Kas','1195',true,null),
+ ('f6500000-0000-4000-8000-000000000004','FX bank utama','Bank','1192',true,null);
+insert into payment_account_map(metode,branch_id,cash_account_id) values('Tunai',pg_temp.br('0a'),'f6500000-0000-4000-8000-000000000001') on conflict do nothing;
+update accounting_locks set closed_until=null;
+-- jurnal umum biasa (bukan setoran) untuk pembanding: cabang A dan cabang lain X
+select public.sales_write_journal(pg_temp.today()-9,pg_temp.br('0a'),'manual','fx-man-1','FX jurnal umum A sebelum',jsonb_build_array(jsonb_build_object('code','720002','debit',11111,'credit',0),jsonb_build_object('code','1195','debit',0,'credit',11111)));
+select public.sales_write_journal(pg_temp.today()-9,pg_temp.br('b1'),'manual','fx-man-2','FX jurnal umum X',jsonb_build_array(jsonb_build_object('code','720002','debit',22222,'credit',0),jsonb_build_object('code','1195','debit',0,'credit',22222)));
+select pg_temp.save('jrn-before',jsonb_build_object('no',(select no_jurnal from journal_entries where source_ref='fx-man-2')));
+
+-- ── 0. objek baru, ACL, kebijakan ────────────────────────────────────────────────────────────────
+select pg_temp.ok(exists(select 1 from pg_policy p where p.polrelid='public.journal_entries'::regclass and p.polname='setoran_jurnal_tertutup' and not p.polpermissive and p.polcmd='*' and p.polroles=array['authenticated'::regrole::oid])
+  and exists(select 1 from pg_policy p where p.polrelid='public.journal_lines'::regclass and p.polname='setoran_jurnal_tertutup' and not p.polpermissive and p.polcmd='*' and p.polroles=array['authenticated'::regrole::oid]),'dua kebijakan RESTRICTIVE FOR ALL setoran_jurnal_tertutup (authenticated) ada di journal_entries dan journal_lines');
+select pg_temp.ok((select pg_get_expr(polqual,polrelid) from pg_policy where polrelid='public.journal_entries'::regclass and polname='je_all')~'user_can_access_branch'
+  and (select pg_get_expr(polqual,polrelid) from pg_policy where polrelid='public.journal_lines'::regclass and polname='jl_all')~'user_can_access_branch'
+  and (select polpermissive from pg_policy where polrelid='public.journal_entries'::regclass and polname='je_all') and (select count(*) from pg_policy where polrelid in('public.journal_entries'::regclass,'public.journal_lines'::regclass))=6,
+  'kebijakan umum je_all/jl_all tetap (permissive, hanya cabang); total 6 kebijakan jurnal (2 lama + 2 pagar Admin Online + 2 baru)');
+select pg_temp.ok(not has_table_privilege('authenticated','public.setoran_lampiran_pakai','select') and not has_table_privilege('authenticated','public.setoran_lampiran_pakai','insert')
+  and not has_table_privilege('anon','public.setoran_lampiran_pakai','select') and not has_table_privilege('service_role','public.setoran_lampiran_pakai','select')
+  and (select relrowsecurity from pg_class where oid='public.setoran_lampiran_pakai'::regclass),'tabel klaim berkas: RLS aktif, tanpa hak klien');
+select pg_temp.ok(exists(select 1 from pg_policy where polrelid='public.setoran_lampiran_pakai'::regclass and polname='admin_online_fence_r') and exists(select 1 from pg_trigger where tgrelid='public.setoran_lampiran_pakai'::regclass and tgname='zz_admin_online_write_fence'),'pagar Admin Online terpasang pada tabel klaim (fence_all)');
+select pg_temp.ok(not exists(select 1 from pg_proc p where p.oid=('public.'||f)::regprocedure and (has_function_privilege('authenticated',p.oid,'execute') or has_function_privilege('anon',p.oid,'execute') or has_function_privilege('service_role',p.oid,'execute'))),'fungsi internal '||f||' tidak bisa dipanggil klien')
+ from unnest(array['setoran_tulis_jurnal(date,uuid,text,text,text,jsonb)','setoran_konflik_tugas(uuid,uuid)','setoran_peringatan(uuid,uuid)','setoran_lampiran_cek(jsonb,uuid)','setoran_lampiran_klaim(uuid,text,uuid,jsonb)','guard_setoran_pakai()','guard_shift_tutup_uang()']) f;
+select pg_temp.ok(has_function_privilege('authenticated',('public.'||f)::regprocedure,'execute') and not has_function_privilege('anon',('public.'||f)::regprocedure,'execute') and not has_function_privilege('service_role',('public.'||f)::regprocedure,'execute'),'fungsi kebijakan '||f||': hanya authenticated')
+ from unnest(array['setoran_jurnal_boleh()','setoran_jurnal_tersembunyi()','setoran_berkas_cabang(text)','setoran_berkas_boleh(text)','setoran_berkas_boleh_hapus(text,text)']) f;
+select pg_temp.ok((select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname in('setoran_tulis_jurnal','setoran_konflik_tugas','setoran_peringatan','setoran_lampiran_cek','setoran_lampiran_klaim','setoran_jurnal_boleh','setoran_jurnal_tersembunyi','setoran_berkas_boleh','setoran_berkas_boleh_hapus') and p.prosecdef and 'search_path=""'=any(p.proconfig))=9,'9 fungsi baru SECURITY DEFINER dengan search_path kosong');
+select pg_temp.ok(exists(select 1 from pg_trigger where tgrelid='public.cashier_shifts'::regclass and tgname='cashier_shift_tutup_uang_guard' and not tgisinternal),'pemicu cashier_shift_tutup_uang_guard terpasang');
+select pg_temp.ok((select count(*) from pg_policies where schemaname='storage' and tablename='objects' and permissive='RESTRICTIVE' and policyname like 'setoran_berkas_%')=4,'4 kebijakan RESTRICTIVE storage setoran_berkas_* terpasang');
+select pg_temp.ok(admin_online_private.guard_all()=0,'guard_all() idempoten: 0 fungsi baru perlu penjaga (kebijakan storage mengecualikan pembantu kebijakan)');
+select pg_temp.ok((select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname like 'setoran%' and p.prosecdef and has_function_privilege('authenticated',p.oid,'execute') and p.prosrc !~ 'deny_admin_online' and p.proname not in('setoran_jurnal_boleh','setoran_jurnal_tersembunyi','setoran_berkas_cabang','setoran_berkas_boleh','setoran_berkas_boleh_hapus'))=0,'semua RPC setoran yang bisa dipanggil klien tetap memuat deny_admin_online');
+select pg_temp.ok(position('REKAP-SETORAN-FIX' in pg_get_functiondef('public.setoran_setujui(uuid,uuid,text,jsonb,boolean,boolean,text)'::regprocedure))>0
+  and position('sales_write_journal' in pg_get_functiondef('public.setoran_setujui(uuid,uuid,text,jsonb,boolean,boolean,text)'::regprocedure))=0
+  and position('sales_write_journal' in pg_get_functiondef('public.setoran_void(uuid,text,uuid)'::regprocedure))=0,'setujui dan void menulis jurnal lewat setoran_tulis_jurnal (bukan sales_write_journal)');
+
+-- ── skenario uang ───────────────────────────────────────────────────────────────────────────────
+-- A: kurang 100.000 -> kasbon otomatis (kasir 04 + 05). B: lebih 50.000 -> 810004, lalu void. C: kurang 80.000 -> beban perusahaan.
+select pg_temp.save('sA1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('0a'),'04',3,0,300000)));
+select pg_temp.save('sA2',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('0a'),'05',3,0,200000)));
+select pg_temp.save('sB1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('0b'),'04',3,0,300000)));
+select pg_temp.save('sC1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('0c'),'04',3,0,400000)));
+select pg_temp.mk('pA',pg_temp.br('0a'),'04');select pg_temp.mk('pB',pg_temp.br('0b'),'04');select pg_temp.mk('pC',pg_temp.br('0c'),'04');
+select pg_temp.exps('pA','04',3,'Operasional',50000,'a-e1');
+select pg_temp.pay('pA',350000,'Serah tunai','04','03','a-t1',2);
+select pg_temp.sub('pA','04','a-aj');
+select pg_temp.pay('pB',350000,'Serah tunai','04','03','b-t1',2);
+select pg_temp.sub('pB','04','b-aj');
+select pg_temp.pay('pC',320000,'Serah tunai','04','03','c-t1',2);
+select pg_temp.sub('pC','04','c-aj');
+select pg_temp.ok(pg_temp.hid()=0,'sebelum persetujuan belum ada jurnal setoran');
+-- tampilan staf SEBELUM persetujuan (Diajukan): sisa 0
+select pg_temp.as_('04');
+set local role authenticated;
+select pg_temp.save('dA-diajukan',public.setoran_detail(pg_temp.sid('pA')));
+reset role;
+select pg_temp.ok((select (r->>'sisa')::numeric=0 and (r->>'persen')::numeric=100 and r->>'status'='Diajukan' and not r ?| array['keuangan','diharapkan','selisih','jenis','peringatan'] from res where name='dA-diajukan'),
+  'M1: staf, setoran Diajukan: sisa 0, persen 100, tanpa bagian keuangan/diharapkan/selisih/peringatan');
+-- persetujuan oleh Owner (01): bukan pembuat, bukan penginput, bukan pemegang shift
+select pg_temp.appr('pA','01','ap-a');
+select pg_temp.appr('pB','01','ap-b');
+select pg_temp.appr('pC','02','ap-c',null,true,false);
+select pg_temp.ok((select r->>'penyelesaian'='Kasbon' and (r->>'selisih')::numeric=-100000 from res where name='ap-pA'),'A: disetujui kurang 100.000 -> Kasbon');
+select pg_temp.ok((select r->>'penyelesaian'='PendapatanLain' and (r->>'selisih')::numeric=50000 from res where name='ap-pB'),'B: disetujui lebih 50.000 -> 810004');
+select pg_temp.ok((select r->>'penyelesaian'='BebanPerusahaan' and (r->>'selisih')::numeric=-80000 from res where name='ap-pC'),'C: disetujui kurang 80.000 -> Beban perusahaan');
+select pg_temp.ok(pg_temp.hid()=3,'tiga jurnal setoran terbentuk (A kasbon, B lebih, C beban) lewat setoran_setujui (jalur SECURITY DEFINER tetap jalan)');
+select pg_temp.ok((select count(*)=3 and bool_and(no_jurnal ~ ('^SJR-'||to_char(tanggal,'YYYYMM')||'-[0-9]{4}$')) from journal_entries where source='setoran'),'B1: nomor jurnal setoran berpola SJR-YYYYMM-NNNN');
+select pg_temp.ok((select count(distinct no_jurnal)=3 from journal_entries where source='setoran'),'nomor SJR unik');
+-- void B (Owner) -> jurnal pembalik source setoran-batal
+select pg_temp.as_('01');
+set local role authenticated;
+select pg_temp.save('vB',public.setoran_void(pg_temp.sid('pB'),'salah hitung uji',pg_temp.kk('void-b')));
+reset role;
+select pg_temp.ok(pg_temp.hid()=4 and pg_temp.jn('setoran-batal',pg_temp.sid('pB'))=1,'void B: jurnal pembalik source setoran-batal terbentuk (4 jurnal setoran)');
+-- jurnal umum sesudah setoran: nomor JRN berurutan tanpa celah
+select public.sales_write_journal(pg_temp.today()-9,pg_temp.br('0a'),'manual','fx-man-3','FX jurnal umum A sesudah',jsonb_build_array(jsonb_build_object('code','720002','debit',33333,'credit',0),jsonb_build_object('code','1195','debit',0,'credit',33333)));
+select pg_temp.ok(not exists(select 1 from journal_entries where source in('setoran','setoran-batal') and no_jurnal like 'JRN-%') and (select count(*) from journal_entries where no_jurnal like 'SJR-%')=4,'B1: tidak ada jurnal setoran yang memakai deret JRN (semua 4 bernomor SJR): staf tidak melihat celah nomor JRN');
+
+-- ── 1. B1: staf tidak dapat membaca jurnal setoran lewat tabel ──────────────────────────────────
+create temp table hid_ids as select id from public.journal_entries where source in ('setoran','setoran-batal');grant all on hid_ids to public;
+select pg_temp.ok((select count(*) from hid_ids)=4,'fixture: 4 id entri jurnal setoran disimpan sebagai pembanding');
+create temp table hid_lines as select l.id from public.journal_lines l where l.entry_id in(select id from hid_ids);grant all on hid_lines to public;
+select pg_temp.ok((select count(*) from hid_lines)=8,'fixture: 8 baris jurnal setoran (4 entri x 2 baris)');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_entries where source in ('setoran','setoran-batal')$$)='0','B1: STAFF 04 (cabang A,B,C) melihat 0 entri jurnal source setoran/setoran-batal');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_entries where id in(select id from hid_ids)$$)='0','B1: STAFF 04: 0 entri menurut id');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_lines where id in(select id from hid_lines)$$)='0','B1: STAFF 04: 0 baris jurnal (journal_lines) setoran menurut id');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_lines where entry_id in(select id from hid_ids)$$)='0','B1: STAFF 04: 0 baris menurut entry_id');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_lines l join journal_entries e on e.id=l.entry_id where e.source like 'setoran%'$$)='0','B1: STAFF 04: join lines-entries source setoran: 0');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code in('810004','182001','760002') and l.entry_id in(select id from hid_ids)$$)='0','B1: STAFF 04: baris ke akun 810004/182001/760002 milik jurnal setoran: 0');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_entries where deskripsi ilike 'Selisih kurang setoran%' or deskripsi ilike 'Kelebihan kas setoran%' or deskripsi ilike 'Pembalik setoran%'$$)='0','B1: STAFF 04: pencarian deskripsi jurnal selisih/kelebihan/pembalik setoran: 0');
+select pg_temp.ok(pg_temp.ra('05',$$select count(*) from journal_entries where source in ('setoran','setoran-batal')$$)='0','B1: STAFF 05 (rekan kasir): 0');
+select pg_temp.ok(pg_temp.ra('0e',$$select count(*) from journal_lines where id in(select id from hid_lines)$$)='0','B1: STAFF 0e (tanpa karyawan): 0');
+select pg_temp.ok(pg_temp.ra('07',$$select count(*) from journal_entries where id in(select id from hid_ids)$$)='0' and pg_temp.ra('08',$$select count(*) from journal_lines where id in(select id from hid_lines)$$)='0','B1: STAFF cabang lain (07, 08): 0');
+select pg_temp.ok(pg_temp.ra('0b',$$select count(*) from journal_entries where id in(select id from hid_ids)$$)='0' and pg_temp.ra('0b',$$select count(*) from journal_lines where id in(select id from hid_lines)$$)='0','B1: DOCTOR 0b: 0 entri dan 0 baris');
+select pg_temp.ok(pg_temp.ra('06',$$select count(*) from journal_entries$$)='0' and pg_temp.ra('06',$$select count(*) from journal_lines$$)='0','Admin Online 06: 0 jurnal apa pun (pagar lama tetap)');
+select pg_temp.ok(pg_temp.ra('01',$$select count(*) from journal_entries where id in(select id from hid_ids)$$)='4' and pg_temp.ra('01',$$select count(*) from journal_lines where id in(select id from hid_lines)$$)='8','OWNER 01 melihat 4 entri dan 8 baris jurnal setoran');
+select pg_temp.ok(pg_temp.ra('02',$$select count(*) from journal_entries where id in(select id from hid_ids)$$)='4' and pg_temp.ra('02',$$select count(*) from journal_lines where id in(select id from hid_lines)$$)='8','ADMIN 02 melihat 4 entri dan 8 baris (jurnal setoran)');
+select pg_temp.ok(pg_temp.ra('03',$$select count(*) from journal_entries where id in(select id from hid_ids)$$)='4' and pg_temp.ra('03',$$select count(*) from journal_lines where id in(select id from hid_lines)$$)='8','FINANCE 03 melihat 4 entri dan 8 baris (jurnal setoran)');
+select pg_temp.ok(pg_temp.ra('0c',$$select count(*) from journal_entries where id in(select id from hid_ids)$$)='4','FINANCE 0c melihat 4 entri');
+select pg_temp.ok(pg_temp.ra('0d',$$select count(*) from journal_entries where id in(select id from hid_ids)$$)='4' and pg_temp.ra('0d',$$select count(*) from journal_lines where id in(select id from hid_lines)$$)='8','ADMIN_UMUM 0d melihat 4 entri dan 8 baris (jurnal setoran)');
+select pg_temp.ok(pg_temp.ra('09',$$select count(*) from journal_entries where id in(select id from hid_ids)$$)='0','FINANCE nonaktif 09: 0');
+-- jurnal umum lain tidak berubah untuk staf
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_entries where source='manual' and source_ref in('fx-man-1','fx-man-3')$$)='2','jurnal umum cabang A tetap terlihat oleh STAFF 04 (2 entri manual)');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_lines where entry_id in(select id from journal_entries where source='manual' and source_ref in('fx-man-1','fx-man-3'))$$)='4','baris jurnal umum A tetap terlihat oleh STAFF 04 (4 baris)');
+select pg_temp.ok(pg_temp.ra('07',$$select count(*) from journal_entries where source_ref='fx-man-2'$$)='1' and pg_temp.ra('07',$$select count(*) from journal_entries where source_ref='fx-man-1'$$)='0','STAFF 07: jurnal cabang X terlihat, cabang A tidak (kebijakan cabang lama tetap)');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_entries$$)::int=(select count(*)::int from journal_entries e where e.branch_id in(select branch_id from user_branches where user_id=pg_temp.u('04')) and e.source not in('setoran','setoran-batal')),'STAFF 04: jumlah entri terlihat = semua entri cabangnya kecuali setoran (tidak ada pemotongan lain)');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_lines$$)::int=(select count(*)::int from journal_lines l join journal_entries e on e.id=l.entry_id where e.branch_id in(select branch_id from user_branches where user_id=pg_temp.u('04')) and e.source not in('setoran','setoran-batal')),'STAFF 04: jumlah baris terlihat = semua baris cabangnya kecuali setoran');
+select pg_temp.ok(pg_temp.ra('01',$$select count(*) from journal_entries$$)::int=(select count(*)::int from journal_entries where branch_id is null or branch_id in(select id from branches)),'OWNER 01 melihat semua entri (tidak ada yang disembunyikan dari penyetuju)');
+-- tulis tertutup
+select pg_temp.ok(pg_temp.dml('04',$$update journal_entries set deskripsi='diubah' where id in(select id from hid_ids)$$)='0','B1: STAFF 04 tidak dapat mengubah entri jurnal setoran (0 baris)');
+select pg_temp.ok(pg_temp.dml('04',$$delete from journal_entries where id in(select id from hid_ids)$$)='0','B1: STAFF 04 tidak dapat menghapus entri jurnal setoran menurut id (0 baris)');
+select pg_temp.ok(pg_temp.dml('04',$$delete from journal_lines where entry_id in(select id from hid_ids)$$)='0','B1: STAFF 04 tidak dapat menghapus baris jurnal setoran (0 baris)');
+select pg_temp.ok(pg_temp.dml('04',$$update journal_lines set debit=0 where id in(select id from hid_lines)$$)='0','B1: STAFF 04 tidak dapat mengubah baris jurnal setoran (0 baris)');
+select pg_temp.ok(pg_temp.dml_sisa('04',$$delete from journal_lines$$) like '%\_8','B1: DELETE tanpa WHERE atas journal_lines oleh STAFF tidak menyentuh baris jurnal setoran (8 tetap ada)');
+select pg_temp.ok(pg_temp.dml_sisa('04',$$update journal_lines set debit=debit$$) like '%\_8' and pg_temp.dml_sisa('01',$$update journal_lines set debit=debit where true$$) like '%\_8','UPDATE tanpa WHERE oleh STAFF/OWNER: baris setoran tetap 8');
+select pg_temp.ok(pg_temp.dml('04',$$insert into journal_entries(tanggal,branch_id,source,source_ref,deskripsi,no_jurnal) values(current_date,'f6200000-0000-4000-8000-00000000000a','setoran','palsu','palsu','SJR-PALSU-1')$$) like 'ERR:%row-level security%','B1: STAFF tidak dapat memalsukan entri jurnal source setoran (ditolak RLS)');
+select pg_temp.ok(pg_temp.dml('04',$$insert into journal_entries(tanggal,branch_id,source,source_ref,deskripsi,no_jurnal) values(current_date,'f6200000-0000-4000-8000-00000000000a','setoran-batal','palsu','palsu','SJR-PALSU-2')$$) like 'ERR:%row-level security%','B1: STAFF tidak dapat memalsukan entri source setoran-batal (ditolak RLS)');
+select pg_temp.ok(pg_temp.dml('04',$$insert into journal_entries(tanggal,branch_id,source,source_ref,deskripsi,no_jurnal) values(current_date,'f6200000-0000-4000-8000-00000000000a','manual','fx-ok','jurnal biasa','JRN-FX-1')$$)='1','kebijakan umum tidak diubah: STAFF masih dapat menulis jurnal non-setoran (perilaku lama; lubang umum dilaporkan terpisah)');
+select pg_temp.ok(pg_temp.dml('01',$$update journal_entries set deskripsi=deskripsi where id in(select id from hid_ids)$$)='4','OWNER dapat memproses entri jurnal setoran (4 baris) lewat jalur klien yang sama');
+-- fungsi buku besar
+create temp table tot_staff as select (x->>'account_id')::uuid acc,(x->>'debit')::numeric d,(x->>'credit')::numeric c from jsonb_array_elements(coalesce(pg_temp.raj('04',$$select public.ledger_account_totals(null,null,array['f6200000-0000-4000-8000-00000000000a'::uuid,'f6200000-0000-4000-8000-00000000000b'::uuid,'f6200000-0000-4000-8000-00000000000c'::uuid])$$),'[]'::jsonb)) x;
+create temp table tot_owner as select (x->>'account_id')::uuid acc,(x->>'debit')::numeric d,(x->>'credit')::numeric c from jsonb_array_elements(coalesce(pg_temp.raj('01',$$select public.ledger_account_totals(null,null,array['f6200000-0000-4000-8000-00000000000a'::uuid,'f6200000-0000-4000-8000-00000000000b'::uuid,'f6200000-0000-4000-8000-00000000000c'::uuid])$$),'[]'::jsonb)) x;
+grant all on tot_staff,tot_owner to public;
+select pg_temp.ok((select count(*) from tot_owner)>=6 and (select count(*) from tot_staff)>=2,'buku besar: total per akun terbaca untuk STAFF (>=2 akun) dan OWNER (>=6 akun)');
+select pg_temp.ok(not exists(select 1 from tot_staff s join coa_accounts a on a.id=s.acc where a.code in('810004','182001','760002')),'B1: ledger_account_totals untuk STAFF tidak memuat akun 810004/182001/760002');
+select pg_temp.ok(exists(select 1 from tot_owner s join coa_accounts a on a.id=s.acc where a.code='810004') and exists(select 1 from tot_owner s join coa_accounts a on a.id=s.acc where a.code='182001') and exists(select 1 from tot_owner s join coa_accounts a on a.id=s.acc where a.code='760002'),'ledger_account_totals untuk OWNER memuat 810004/182001/760002');
+select pg_temp.ok(not exists(
+  select 1 from (select coalesce(o.acc,s.acc) acc, coalesce(o.d-o.c,0)-coalesce(s.d-s.c,0) diff from tot_owner o full join tot_staff s on s.acc=o.acc) q
+   left join (select l.account_id acc,sum(l.debit-l.credit) h from journal_lines l where l.entry_id in(select id from hid_ids) group by 1) h on h.acc=q.acc
+  where q.diff is distinct from coalesce(h.h,0)),'buku besar: selisih total OWNER - STAFF per akun = persis jumlah baris jurnal setoran (tidak ada pemotongan lain)');
+select pg_temp.ok((select sum(d)-sum(c) from tot_staff)=0 and (select sum(d)-sum(c) from tot_owner)=0,'buku besar tetap seimbang (debit=kredit) untuk STAFF dan OWNER (entri disaring utuh)');
+select pg_temp.ok(jsonb_array_length(pg_temp.raj('04',$$select public.ledger_account_lines(null,null,array['f6200000-0000-4000-8000-00000000000a'::uuid,'f6200000-0000-4000-8000-00000000000b'::uuid,'f6200000-0000-4000-8000-00000000000c'::uuid],null)$$))
+  +8=jsonb_array_length(pg_temp.raj('01',$$select public.ledger_account_lines(null,null,array['f6200000-0000-4000-8000-00000000000a'::uuid,'f6200000-0000-4000-8000-00000000000b'::uuid,'f6200000-0000-4000-8000-00000000000c'::uuid],null)$$)),'buku besar: ledger_account_lines OWNER = STAFF + 8 baris jurnal setoran');
+select pg_temp.ok(position('"source": "setoran' in pg_temp.raj('04',$$select public.ledger_account_lines(null,null,null,null)$$)::text)=0 and position('Selisih' in pg_temp.raj('04',$$select public.ledger_account_lines(null,null,null,null)$$)::text)=0 and position('Kelebihan' in pg_temp.raj('04',$$select public.ledger_account_lines(null,null,null,null)$$)::text)=0,'B1: ledger_account_lines untuk STAFF tidak memuat source setoran/Selisih/Kelebihan');
+select pg_temp.ok(position('Selisih kurang setoran' in pg_temp.raj('01',$$select public.ledger_account_lines(null,null,null,null)$$)::text)>0 and position('Kelebihan kas setoran' in pg_temp.raj('03',$$select public.ledger_account_lines(null,null,null,null)$$)::text)>0 and position('Pembalik setoran' in pg_temp.raj('0d',$$select public.ledger_account_lines(null,null,null,null)$$)::text)>0,'OWNER/FINANCE/ADMIN_UMUM: buku besar memuat deskripsi jurnal setoran');
+select pg_temp.ok(jsonb_array_length(pg_temp.raj('02',$$select public.ledger_account_lines(null,null,array['f6200000-0000-4000-8000-00000000000a'::uuid],array[(select id from coa_accounts where code='182001')])$$))=1,'ADMIN 02: ledger_account_lines per akun 182001 memuat jurnal kasbon setoran (1 baris)');
+select pg_temp.ok(jsonb_array_length(pg_temp.raj('04',$$select public.ledger_account_lines(null,null,null,array[(select id from coa_accounts where code in('182001'))])$$))=0 and jsonb_array_length(pg_temp.raj('04',$$select public.ledger_account_lines(null,null,null,array[(select id from coa_accounts where code='810004')])$$))=0,'B1: STAFF: daftar mutasi akun 182001 dan 810004 kosong');
+-- mutasi akun kas laci (cash account list) untuk staf tidak membuka selisih
+select pg_temp.ok((select count(*) from jsonb_array_elements(pg_temp.raj('04',$$select public.ledger_account_lines(null,null,array['f6200000-0000-4000-8000-00000000000a'::uuid],array[(select id from coa_accounts where code='1195')])$$)))=
+  (select count(*) from journal_lines l join journal_entries e on e.id=l.entry_id where l.account_id=(select id from coa_accounts where code='1195') and e.branch_id='f6200000-0000-4000-8000-00000000000a' and e.source not in('setoran','setoran-batal')),'mutasi akun kas finance (1195) cabang A untuk STAFF = tanpa baris setoran');
+-- jalur service / anon / tanpa profil
+select set_config('request.jwt.claims','{"role":"service_role"}',true),set_config('request.jwt.claim.sub','',true);
+select pg_temp.ok(public.setoran_jurnal_boleh() and public.setoran_jurnal_tersembunyi()='{}'::uuid[],'service_role: setoran_jurnal_boleh() true dan daftar tersembunyi kosong');
+select set_config('request.jwt.claims','{"role":"anon"}',true);
+select pg_temp.ok(not public.setoran_jurnal_boleh() and cardinality(public.setoran_jurnal_tersembunyi())=4,'anon: tidak boleh; 4 entri tersembunyi');
+select set_config('request.jwt.claims','{"role":"authenticated"}',true),set_config('request.jwt.claim.sub','f6100000-0000-4000-8000-0000000000ff',true);
+select pg_temp.ok(not public.setoran_jurnal_boleh(),'authenticated tanpa profil: tidak boleh');
+select set_config('request.jwt.claim.sub','',true);
+select pg_temp.ok(not public.setoran_jurnal_boleh() and cardinality(public.setoran_jurnal_tersembunyi())=4,'authenticated tanpa sub: tidak boleh');
+select pg_temp.noauth();
+select pg_temp.as_('04');select pg_temp.ok(not public.setoran_jurnal_boleh() and cardinality(public.setoran_jurnal_tersembunyi())=4,'STAFF: tidak boleh; 4 entri tersembunyi');
+select pg_temp.as_('0b');select pg_temp.ok(not public.setoran_jurnal_boleh(),'DOCTOR: tidak boleh');
+select pg_temp.as_('06');select pg_temp.ok(not public.setoran_jurnal_boleh(),'Admin Online: tidak boleh');
+select pg_temp.as_('09');select pg_temp.ok(not public.setoran_jurnal_boleh(),'Finance nonaktif: tidak boleh');
+select pg_temp.as_('0d');select pg_temp.ok(public.setoran_jurnal_boleh() and public.setoran_jurnal_tersembunyi()='{}'::uuid[],'ADMIN_UMUM: boleh; tanpa entri tersembunyi');
+select pg_temp.as_('01');select pg_temp.ok(public.setoran_jurnal_boleh(),'OWNER: boleh');
+select pg_temp.as_('02');select pg_temp.ok(public.setoran_jurnal_boleh(),'ADMIN: boleh');
+select pg_temp.as_('03');select pg_temp.ok(public.setoran_jurnal_boleh(),'FINANCE: boleh');
+select pg_temp.noauth();
