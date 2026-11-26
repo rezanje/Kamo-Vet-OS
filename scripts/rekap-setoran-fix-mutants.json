@@ -1,0 +1,248 @@
+[
+ [
+  "M01 je policy: setoran-batal tidak disaring",
+  "using (coalesce(source, '') not in ('setoran','setoran-batal') or (select public.setoran_jurnal_boleh()))\n  with check",
+  "using (coalesce(source, '') not in ('setoran') or (select public.setoran_jurnal_boleh()))\n  with check"
+ ],
+ [
+  "M02 je policy: penyetuju tidak diberi jalan",
+  "using (coalesce(source, '') not in ('setoran','setoran-batal') or (select public.setoran_jurnal_boleh()))\n  with check",
+  "using (coalesce(source, '') not in ('setoran','setoran-batal'))\n  with check"
+ ],
+ [
+  "M03 je policy: with check dilonggarkan (pemalsuan jurnal setoran oleh staf)",
+  "  with check (coalesce(source, '') not in ('setoran','setoran-batal') or (select public.setoran_jurnal_boleh()));",
+  "  with check (true);"
+ ],
+ [
+  "M04 je policy: menjadi PERMISSIVE",
+  "create policy setoran_jurnal_tertutup on public.journal_entries as restrictive for all",
+  "create policy setoran_jurnal_tertutup on public.journal_entries as permissive for all"
+ ],
+ [
+  "M05 jl policy: menyaring entri yang salah (= any)",
+  "using (entry_id <> all (((select public.setoran_jurnal_tersembunyi()))::uuid[]))",
+  "using (entry_id = any (((select public.setoran_jurnal_tersembunyi()))::uuid[]) or true)"
+ ],
+ [
+  "M06 jl policy: dibatasi SELECT saja (tulis bebas)",
+  "create policy setoran_jurnal_tertutup on public.journal_lines as restrictive for all",
+  "create policy setoran_jurnal_tertutup on public.journal_lines as restrictive for select"
+ ],
+ [
+  "M07 boleh: service_role dihapus",
+  "  select coalesce(public.setoran_penyetuju(), false) or coalesce(auth.role(), '') = 'service_role'\n",
+  "  select coalesce(public.setoran_penyetuju(), false)\n"
+ ],
+ [
+  "M08 boleh: semua authenticated boleh",
+  "  select coalesce(public.setoran_penyetuju(), false) or coalesce(auth.role(), '') = 'service_role'\n",
+  "  select coalesce(public.setoran_penyetuju(), false) or coalesce(auth.role(), '') in ('service_role','authenticated')\n"
+ ],
+ [
+  "M09 tersembunyi: sumber setoran-batal tidak ikut",
+  "from public.journal_entries e where e.source in ('setoran','setoran-batal')), '{}'::uuid[]) end",
+  "from public.journal_entries e where e.source in ('setoran')), '{}'::uuid[]) end"
+ ],
+ [
+  "M10 tersembunyi: selalu kosong",
+  "  select case when public.setoran_jurnal_boleh() then '{}'::uuid[]\n",
+  "  select case when true then '{}'::uuid[]\n"
+ ],
+ [
+  "M11 buku besar lines: penyaringan dihapus",
+  "      and e.id <> all(v_tutup)\n      and (p_from is null or e.tanggal >= p_from)\n      and (p_to is null or e.tanggal <= p_to)\n      and (p_branch_ids is null or e.branch_id = any(p_branch_ids))\n      and (p_account_ids is null or l.account_id = any(p_account_ids))",
+  "      and (p_from is null or e.tanggal >= p_from)\n      and (p_to is null or e.tanggal <= p_to)\n      and (p_branch_ids is null or e.branch_id = any(p_branch_ids))\n      and (p_account_ids is null or l.account_id = any(p_account_ids))"
+ ],
+ [
+  "M12 buku besar totals: penyaringan dihapus",
+  "      where (e.branch_id is null or e.branch_id = any(v_boleh))\n      and e.id <> all(v_tutup)\n        and (p_from is null or e.tanggal >= p_from)",
+  "      where (e.branch_id is null or e.branch_id = any(v_boleh))\n        and (p_from is null or e.tanggal >= p_from)"
+ ],
+ [
+  "M13 setujui: pemisahan tugas (penginput/pemegang shift) dimatikan",
+  "  if cardinality(v_konflik) > 0 then\n    raise exception 'SETORAN_PEMISAHAN_TUGAS: Anda tidak boleh",
+  "  if false and cardinality(v_konflik) > 0 then\n    raise exception 'SETORAN_PEMISAHAN_TUGAS: Anda tidak boleh"
+ ],
+ [
+  "M14 setujui: pengeluaran melebihi kewajiban tidak diblok",
+  "  if v_raw < 0 then\n    raise exception 'SETORAN_PENGELUARAN_MELEBIHI",
+  "  if false and v_raw < 0 then\n    raise exception 'SETORAN_PENGELUARAN_MELEBIHI"
+ ],
+ [
+  "M15 setujui: batas nol salah (<= 0 menolak setoran dengan pengeluaran = kewajiban)",
+  "  if v_raw < 0 then\n    raise exception 'SETORAN_PENGELUARAN_MELEBIHI",
+  "  if v_raw <= 0 then\n    raise exception 'SETORAN_PENGELUARAN_MELEBIHI"
+ ],
+ [
+  "M16 setujui: jurnal lewat sales_write_journal (nomor JRN bocor celah)",
+  "    perform public.setoran_tulis_jurnal(v_s.periode_selesai, v_s.branch_id, 'setoran', p_id::text, v_desc, v_jl);",
+  "    perform public.sales_write_journal(v_s.periode_selesai, v_s.branch_id, 'setoran', p_id::text, v_desc, v_jl);"
+ ],
+ [
+  "M17 tulis_jurnal: nomor memakai deret JRN",
+  "  v_prefix := 'SJR-' || to_char(p_date, 'YYYYMM') || '-';",
+  "  v_prefix := 'JRN-' || to_char(p_date, 'YYYYMM') || '-';"
+ ],
+ [
+  "M18 void: jurnal pembalik lewat sales_write_journal",
+  "    perform public.setoran_tulis_jurnal(v_s.periode_selesai, v_s.branch_id, 'setoran-batal'",
+  "    perform public.sales_write_journal(v_s.periode_selesai, v_s.branch_id, 'setoran-batal'"
+ ],
+ [
+  "M19 lampiran cek: awalan cabang tidak diperiksa",
+  "              where x.path is null or length(x.path) <= length(v_pre) or left(x.path, length(v_pre)) <> v_pre or position('/' in substr(x.path, length(v_pre) + 1)) > 0) then",
+  "              where x.path is null or length(x.path) <= length(v_pre) or position('/' in substr(x.path, length(v_pre) + 1)) > 0) then"
+ ],
+ [
+  "M20 lampiran cek: keberadaan di storage tidak diperiksa",
+  "              where not exists (select 1 from storage.objects o where o.bucket_id = 'dokumen' and o.name = x.path)) then",
+  "              where false and not exists (select 1 from storage.objects o where o.bucket_id = 'dokumen' and o.name = x.path)) then"
+ ],
+ [
+  "M21 lampiran cek: pra-cek berkas terpakai dihapus (EQUIVALENT: PK + penangkap unique_violation memberi galat yang sama; lapisan ganda disengaja)",
+  "  if exists (select 1 from jsonb_to_recordset(p_lampiran) as x(path text) join public.setoran_lampiran_pakai u on u.path = x.path) then",
+  "  if false and exists (select 1 from jsonb_to_recordset(p_lampiran) as x(path text) join public.setoran_lampiran_pakai u on u.path = x.path) then",
+  "EQUIV"
+ ],
+ [
+  "M22 lampiran cek: berkas ganda dalam satu baris lolos",
+  "  if v_n <> v_d then raise exception 'SETORAN_LAMPIRAN_GANDA",
+  "  if false and v_n <> v_d then raise exception 'SETORAN_LAMPIRAN_GANDA"
+ ],
+ [
+  "M23 tambah pengeluaran: klaim tidak dicatat",
+  "  perform public.setoran_lampiran_klaim(p_id, 'pengeluaran', v_line, p_lampiran);\n",
+  "  null;\n"
+ ],
+ [
+  "M24 tambah transfer: klaim tidak dicatat",
+  "  perform public.setoran_lampiran_klaim(p_id, 'transfer', v_tr, v_lamp);\n",
+  "  null;\n"
+ ],
+ [
+  "M25 hapus pengeluaran: klaim tidak dilepas",
+  "  delete from public.setoran_lampiran_pakai where baris_id = p_baris;   -- REKAP-SETORAN-FIX: berkas dilepas hanya saat Draft/Ditolak\n",
+  "  null;\n"
+ ],
+ [
+  "M26 hapus transfer: klaim tidak dilepas",
+  "  delete from public.setoran_lampiran_pakai where baris_id = p_transfer;   -- REKAP-SETORAN-FIX: berkas dilepas hanya saat Draft/Ditolak\n",
+  "  null;\n"
+ ],
+ [
+  "M27 trigger klaim: lepas klaim diizinkan di setoran Diajukan",
+  "  if v_status is null or v_status not in ('Draft','Ditolak') then",
+  "  if v_status is null then"
+ ],
+ [
+  "M28 storage boleh: cabang tidak diperiksa",
+  "  return public.user_can_access_branch(v_b);\nend $$;\nrevoke all on function public.setoran_berkas_boleh(text)",
+  "  return true;\nend $$;\nrevoke all on function public.setoran_berkas_boleh(text)"
+ ],
+ [
+  "M29 storage boleh: peran setoran tidak diperiksa (Dokter masuk)",
+  "  if v_b is null or public.setoran_role() is null then return false; end if;",
+  "  if v_b is null then return false; end if;"
+ ],
+ [
+  "M30 storage hapus: berkas terklaim boleh dihapus",
+  "  if exists (select 1 from public.setoran_lampiran_pakai u where u.path = p_name) then return false; end if;\n",
+  "  null;\n"
+ ],
+ [
+  "M31 storage hapus: siapa pun boleh (bukan hanya pengunggah/Owner)",
+  "  return public.setoran_role() = 'OWNER' or (p_owner is not null and p_owner = auth.uid()::text);",
+  "  return true;"
+ ],
+ [
+  "M32 storage ubah: terbuka",
+  "using (bucket_id <> 'dokumen' or name not like 'setoran/%') with check (bucket_id <> 'dokumen' or name not like 'setoran/%')$p$;\nend $storage$;",
+  "using (true) with check (true)$p$;\nend $storage$;"
+ ],
+ [
+  "M33 storage baca: kebijakan RESTRICTIVE baca menjadi longgar",
+  "    using (bucket_id <> 'dokumen' or name not like 'setoran/%' or public.setoran_berkas_boleh(name))$p$;\n  execute $p$create policy setoran_berkas_tulis_ketat",
+  "    using (true)$p$;\n  execute $p$create policy setoran_berkas_tulis_ketat"
+ ],
+ [
+  "M34 storage tulis: kebijakan unggah longgar",
+  "    with check (bucket_id <> 'dokumen' or name not like 'setoran/%' or public.setoran_berkas_boleh(name))$p$;",
+  "    with check (true)$p$;"
+ ],
+ [
+  "M35 detail: sisa staf tidak dinolkan",
+  "    'sisa', case when (not v_app and v_s.status in ('Diajukan','Disetujui','Void')) then 0 else greatest(v_sisa, 0) end,",
+  "    'sisa', greatest(v_sisa, 0),"
+ ],
+ [
+  "M36 detail: persen staf tidak dipatok 100",
+  "    'persen', case when (not v_app and v_s.status in ('Diajukan','Disetujui','Void')) or v_kew - v_peng <= 0 then 100",
+  "    'persen', case when v_kew - v_peng <= 0 then 100"
+ ],
+ [
+  "M37 daftar: sisa staf tidak dinolkan",
+  "'sisa', case when not v_app and s.status in ('Diajukan','Disetujui','Void') then 0 else greatest((a.v ->> 'sisa')::numeric, 0) end,",
+  "'sisa', greatest((a.v ->> 'sisa')::numeric, 0),"
+ ],
+ [
+  "M38 daftar: staf ikut mendapat sisa nol padahal masih Draft (sisa nyata hilang)",
+  "'sisa', case when not v_app and s.status in ('Diajukan','Disetujui','Void') then 0 else",
+  "'sisa', case when not v_app then 0 else"
+ ],
+ [
+  "M39 shift guard: pemicu tidak mengunci closing_balance",
+  "    or new.selisih is distinct from old.selisih or new.closing_breakdown is distinct from old.closing_breakdown or new.closed_at is distinct from old.closed_at",
+  "    or new.closing_breakdown is distinct from old.closing_breakdown or new.closed_at is distinct from old.closed_at"
+ ],
+ [
+  "M40 shift guard: status closed tidak dijaga",
+  "  if old.status = 'closed' and (\n       new.status is distinct from old.status or",
+  "  if old.status = 'never' and (\n       new.status is distinct from old.status or"
+ ],
+ [
+  "M41 konflik: penginput pengeluaran tidak dihitung",
+  "    case when exists (select 1 from public.setoran_pengeluaran x where x.setoran_id = p_id and x.entered_by = p_user)\n         then 'menginput baris pengeluaran setoran ini' end,\n",
+  "    null,\n"
+ ],
+ [
+  "M42 konflik: pencatat transfer tidak dihitung",
+  "    case when exists (select 1 from public.setoran_transfer x where x.setoran_id = p_id and x.entered_by = p_user)\n         then 'mencatat transfer/serah tunai setoran ini' end,\n",
+  "    null,\n"
+ ],
+ [
+  "M43 konflik: pembuka shift tidak dihitung",
+  "                         and (s.opened_by = p_user or s.employee_id in (select e.id from public.employees e where e.profile_id = p_user)))",
+  "                         and false)"
+ ],
+ [
+  "M44 peringatan: pengeluaran kembar tidak dilaporkan",
+  "  if v_n > 0 then\n    v_out := v_out || jsonb_build_array(jsonb_build_object('kode', 'PENGELUARAN_KEMBAR'",
+  "  if false then\n    v_out := v_out || jsonb_build_array(jsonb_build_object('kode', 'PENGELUARAN_KEMBAR'"
+ ],
+ [
+  "M45 peringatan: mirip pengeluaran kasir tidak dilaporkan",
+  "  if v_n > 0 then\n    v_out := v_out || jsonb_build_array(jsonb_build_object('kode', 'PENGELUARAN_MIRIP_KASIR'",
+  "  if false then\n    v_out := v_out || jsonb_build_array(jsonb_build_object('kode', 'PENGELUARAN_MIRIP_KASIR'"
+ ],
+ [
+  "M46 peringatan: melebihi kewajiban tidak dilaporkan",
+  "  if v_k.setoran_id is not null and v_k.expected_amount < 0 then",
+  "  if false and v_k.setoran_id is not null and v_k.expected_amount < 0 then"
+ ],
+ [
+  "M47 jejak: jumlah pengeluaran ditambah tidak disimpan",
+  "    jsonb_build_object('baris', v_line, 'jumlah', p_jumlah, 'tanggal', p_tanggal, 'kategori', p_kategori, 'lampiran', p_lampiran));",
+  "    jsonb_build_object('baris', v_line));"
+ ],
+ [
+  "M48 detail: peringatan tidak dikirim ke penyetuju",
+  "        'peringatan', public.setoran_peringatan(p_id, auth.uid())));",
+  "        'peringatan', '[]'::jsonb));"
+ ],
+ [
+  "M49 daftar: penanda pengeluaran_melebihi dihapus",
+  "'penyelesaian', k.penyelesaian, 'pengeluaran_melebihi', (k.expected_amount < 0))",
+  "'penyelesaian', k.penyelesaian, 'pengeluaran_melebihi', false)"
+ ]
+]

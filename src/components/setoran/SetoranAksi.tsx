@@ -158,6 +158,8 @@ export function PanelPenyetuju({ d, basis, kunci, karyawan, role, so }: { d: Det
   const sel = k.selisih ?? k.selisih_sementara;
   const jenis = k.jenis ?? (sel === 0 ? "Pas" : sel < 0 ? "Kurang" : "Lebih");
   const warna = jenis === "Pas" ? "#15803d" : jenis === "Kurang" ? "#dc2626" : "#1d4ed8";
+  // Basis data tetap menolak (SETORAN_PENGELUARAN_MELEBIHI / SETORAN_PEMISAHAN_TUGAS); tombol dimatikan supaya penyetuju tahu sebabnya sebelum mencoba.
+  const diblokir = k.peringatan.some((w) => w.tingkat === "blokir");
   return (
     <section className="card" aria-label="Penutupan periode (Finance)" style={{ borderColor: warna }}>
       <h3 style={{ fontSize: 14, marginBottom: 8 }}>Penutupan periode — khusus Finance / penyetuju</h3>
@@ -166,6 +168,15 @@ export function PanelPenyetuju({ d, basis, kunci, karyawan, role, so }: { d: Det
         <div><div style={{ fontSize: 11.5, color: "var(--tm)" }}>Uang masuk terkonfirmasi</div><strong>{rp(k.transfer_dikonfirmasi)}</strong></div>
         <div><div style={{ fontSize: 11.5, color: "var(--tm)" }}>{k.selisih === null ? "Selisih sementara" : "Selisih"}</div><strong data-testid="selisih" style={{ color: warna }}>{jenis === "Pas" ? "Pas" : `${jenis} ${rp(Math.abs(sel))}`}</strong></div>
       </div>
+      {k.peringatan.length > 0 && (
+        <ul aria-label="Peringatan penyetuju" data-testid="peringatan-setoran" style={{ margin: "0 0 8px", padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
+          {k.peringatan.map((w) => (
+            <li key={w.kode} data-kode={w.kode} style={{ fontSize: 12.5, padding: "6px 10px", borderRadius: 8, border: ".5px solid", borderColor: w.tingkat === "blokir" ? "#dc2626" : w.tingkat === "peringatan" ? "#d97706" : "var(--bd)", background: w.tingkat === "blokir" ? "#fee2e2" : w.tingkat === "peringatan" ? "#ffedd5" : "transparent" }}>
+              <strong>{w.tingkat === "blokir" ? "Tidak bisa disetujui: " : w.tingkat === "peringatan" ? "Periksa: " : "Info: "}</strong>{w.pesan}
+            </li>
+          ))}
+        </ul>
+      )}
       {k.transfer_menunggu > 0 && d.status === "Diajukan" && <p className="p2ban">Masih ada {k.transfer_menunggu} setoran yang belum dikonfirmasi/ditolak. Putuskan dulu di bagian “Setoran ke perusahaan”.</p>}
       <details style={{ marginBottom: 8 }}>
         <summary style={{ cursor: "pointer", fontSize: 12.5 }}>Rincian per shift ({k.rincian_shift.length})</summary>
@@ -202,7 +213,7 @@ export function PanelPenyetuju({ d, basis, kunci, karyawan, role, so }: { d: Det
             )}
             {Math.abs(sel) > 5_000_000 && <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" name="besar" /> Selisih lebih dari Rp 5.000.000 — saya sudah memeriksa bahwa ini bukan salah ketik</label>}
             <label style={lbl}>Catatan Finance (tidak terlihat staf)<input className="fi" name="catatan" maxLength={500} /></label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><SubmitButton className="btn-acc" pendingText="Menyetujui…">Setujui &amp; tutup periode</SubmitButton></div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><SubmitButton className="btn-acc" pendingText="Menyetujui…" disabled={diblokir}>Setujui &amp; tutup periode</SubmitButton></div>
           </form>
           <form action={tolakSetoran} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
             <Tersembunyi d={d} basis={basis} kunci={kunci} nama="tolak" />
