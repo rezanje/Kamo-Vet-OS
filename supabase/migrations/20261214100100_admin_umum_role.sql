@@ -102,6 +102,7 @@ end $f$;
 revoke all on function admin_umum_private.kembalikan(text, text) from public, anon, authenticated, service_role;
 
 -- ───────────────────────── 2. Penerap massal (definisi hidup) ─────────────────────────
+-- Skema milik platform (auth, storage, realtime, vault, dst.) sengaja TIDAK disentuh: itu kode Supabase, bukan aturan peran Kamo.
 -- p_dry = true: hanya melaporkan. Fungsi yang bukan milik pengguna migrasi dilaporkan 'DILEWATI_BUKAN_PEMILIK' (tidak diubah, tidak gagal).
 create function admin_umum_private.terapkan_semua(p_dry boolean default false)
 returns table (jenis text, nama text, status text)
@@ -111,7 +112,7 @@ begin
   for r in
     select p.oid, n.nspname, p.oid::regprocedure::text as sig, p.proowner
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-    where p.prokind in ('f','p') and n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private')
+    where p.prokind in ('f','p') and n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private','auth','storage','realtime','vault','graphql','graphql_public','pgsodium','supabase_functions','supabase_migrations','net','cron','pgbouncer')
       and p.prosrc ~ '''ADMIN''(?![A-Za-z_0-9])'
       and not exists (select 1 from pg_depend e where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')
     order by p.oid::regprocedure::text
@@ -163,7 +164,7 @@ declare r record; v text; v2 text; w text; w2 text; cmd text; n int := 0;
 begin
   for r in
     select p.oid from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-    where p.prokind in ('f','p') and n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private')
+    where p.prokind in ('f','p') and n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private','auth','storage','realtime','vault','graphql','graphql_public','pgsodium','supabase_functions','supabase_migrations','net','cron','pgbouncer')
       and p.prosrc ~ 'ADMIN_UMUM' and not exists (select 1 from pg_depend e where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')
   loop
     v := pg_get_functiondef(r.oid); v2 := admin_umum_private.kembalikan(v, 'fn');

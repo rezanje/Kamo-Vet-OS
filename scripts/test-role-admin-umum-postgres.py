@@ -17,7 +17,7 @@ Dibuktikan di PostgreSQL 17 sungguhan (rantai penuh semua migrasi repo, kandidat
   --mutations: tiap mutan migrasi isi di database klon; semua mutan harus mati.
     python3 -I scripts/test-role-admin-umum-postgres.py [--pg-bin DIR] [--json out.json] [--baseline] [--mutations] [--dev-root SOCKETDIR --dev-template DB]
 """
-import argparse, importlib.util, json, os, re, subprocess, sys, tempfile
+import argparse, hashlib, importlib.util, json, os, re, subprocess, sys, tempfile
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -149,6 +149,7 @@ def seed(db, reset_admin=True):
     users = [(SUBJ, "Subjek Matriks", "ADMIN"), (OWNER, "Owner Fiktif", "OWNER"), (ADMIN, "Admin Fiktif", "ADMIN"), (UMUM, "Admin Umum Fiktif", "ADMIN"),
              (FIN, "Finance Fiktif", "FINANCE"), (STAFF, "Staf Fiktif", "STAFF"), (AO, "Admin Online Fiktif", "ADMIN_ONLINE"),
              (TARGET, "Calon Akun", "STAFF"), (CASHIER, "Kasir Fiktif", "STAFF")]
+    db.sql("create or replace function auth.umum_probe_platform() returns text language sql as $$ select 'ADMIN'::text $$;")
     db.sql("insert into auth.users(id,raw_user_meta_data) values " + ",".join(f"({q(u)},{q(json.dumps(dict(full_name=n)))}::jsonb)" for u, n, _ in users) + ";")
     db.sql("".join(f"update public.profiles set role={q(r)},is_active=true where id={q(u)};" for u, _, r in users))
     db.sql(f"""
@@ -305,7 +306,7 @@ rollback;
 DIGEST = r"""
 select 'F|'||p.oid::regprocedure::text||'|'||md5(pg_get_functiondef(p.oid)||'|'||coalesce(p.proacl::text,'')||'|'||coalesce(p.proconfig::text,'')||'|'||pg_get_userbyid(p.proowner))
 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-where p.prokind in ('f','p') and n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private')
+where p.prokind in ('f','p') and n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private','auth','storage','realtime','vault','graphql','graphql_public','pgsodium','supabase_functions','supabase_migrations','net','cron','pgbouncer')
   and not exists (select 1 from pg_depend e where e.classid='pg_proc'::regclass and e.objid=p.oid and e.deptype='e')
 union all
 select 'P|'||pol.polrelid::regclass::text||'.'||pol.polname||'|'||md5(coalesce(pg_get_expr(pol.polqual,pol.polrelid),'')||'#'||coalesce(pg_get_expr(pol.polwithcheck,pol.polrelid),'')||'#'||pol.polcmd::text||'#'||pol.polpermissive::text||'#'||pol.polroles::text)
@@ -464,11 +465,11 @@ def sec_struktur(db, base_dig, ctx):
     res = db.sql("select jenis||':'||status||':'||count(*) from admin_umum_private.terapkan_semua(true) group by jenis,status order by 1")
     check("struktur: terapkan_semua(dry) sesudah pasang: 0 DIUBAH, 0 SISA (idempoten)", "DIUBAH" not in res and "SISA" not in res and "kebijakan:SUDAH:44" in res and int(re.search(r"fungsi:SUDAH:(\d+)", res).group(1)) >= 100, res, S)
     sisa = db.sql("""select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private') and admin_umum_private.sisa(pg_get_functiondef(p.oid)) > 0 and p.prokind in ('f','p')""")
+      where n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private','auth','storage','realtime','vault','graphql','graphql_public','pgsodium','supabase_functions','supabase_migrations','net','cron','pgbouncer') and admin_umum_private.sisa(pg_get_functiondef(p.oid)) > 0 and p.prokind in ('f','p')""")
     check("struktur: nol fungsi memuat 'ADMIN' tanpa pasangan ADMIN_UMUM (kecuali penanda tertulis)", sisa == "0", sisa, S)
     again = db.sql("select count(*) from admin_umum_private.terapkan_semua(false) where status='DIUBAH'")
     check("struktur: jalan ulang terapkan_semua tidak mengubah apa pun (idempotensi)", again == "0", again, S)
-    rt = db.sql("""select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private') and p.prokind in ('f','p')
+    rt = db.sql("""select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private','auth','storage','realtime','vault','graphql','graphql_public','pgsodium','supabase_functions','supabase_migrations','net','cron','pgbouncer') and p.prokind in ('f','p')
        and p.prosrc ~ 'ADMIN_UMUM' and admin_umum_private.tulis_ulang(admin_umum_private.kembalikan(pg_get_functiondef(p.oid),'fn'),'fn') <> pg_get_functiondef(p.oid)""")
     check("struktur: tulis_ulang(kembalikan(x)) == x untuk semua fungsi (pulang-pergi persis)", rt == "0", rt, S)
     check("struktur: enum user_role = 6 nilai + ADMIN_UMUM terakhir", db.sql("select string_agg(e.enumlabel,',' order by e.enumsortorder) from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='user_role'")
@@ -476,6 +477,8 @@ def sec_struktur(db, base_dig, ctx):
     cat = db.sql("select string_agg(id||':'||enforced::text||':'||module_id,',' order by id) from role_settings_private.action_catalog c join role_settings_private.action_modules m using (id) where id like 'jurnal.%'")
     check("struktur: 4 tombol jurnal.* di katalog (enforced) dipetakan ke modul buku-besar",
           cat == "jurnal.buat_manual:true:buku-besar,jurnal.koreksi_manual:true:buku-besar,jurnal.lihat:true:buku-besar,jurnal.lihat_semua_sumber:true:buku-besar", cat, S)
+    pp = db.sql("select (prosrc !~ 'ADMIN_UMUM')::text from pg_proc where oid='auth.umum_probe_platform()'::regprocedure").splitlines()[-1]
+    check("struktur: fungsi di skema platform (auth) yang menyebut 'ADMIN' TIDAK diubah (kode Supabase tidak disentuh)", pp == "true", pp, S)
     check("struktur: baris epoch ADMIN_UMUM ada (0) dan epoch_guard menyala", db.sql("select epoch::text from role_settings_private.epochs where role='ADMIN_UMUM'") == "0"
           and db.sql("select tgenabled from pg_trigger where tgname='epoch_guard'") == "O", None, S)
     check("struktur: tak ada akun ber-peran ADMIN_UMUM di data (migrasi tidak memberi peran ke siapa pun)", db.sql("select count(*) from public.profiles where role='ADMIN_UMUM'") == "0", None, S)
@@ -560,8 +563,8 @@ def sec_kebijakan(db, ctx):
         b = pb.get(f"{p['rel']}.{p['name']}")
         for key in ("q", "wc"):
             if p[key] is None and (b or {}).get(key) is None: continue
-            back = db.sql(f"select admin_umum_private.kembalikan({q(p[key])},'pol')").splitlines()[-1]
-            if b is None or back != b[key]: bad_rt.append(f"{p['rel']}.{p['name']}:{key}")
+            back = db.sql(f"select md5(admin_umum_private.kembalikan({q(p[key])},'pol'))").splitlines()[-1]
+            if b is None or back != hashlib.md5(b[key].encode()).hexdigest(): bad_rt.append(f"{p['rel']}.{p['name']}:{key}")
     check("kebijakan: ungkapan tiap kebijakan, dikembalikan ke bentuk lama, persis sama dengan sebelum kandidat (hanya ADMIN_UMUM yang ditambahkan)", not bad_rt, bad_rt[:5], S)
     ctx["pol_cand"] = cand
 
@@ -773,7 +776,7 @@ def prepare_base(cl, tpl):
     d = Db(cl, tpl)
     ctx = {"base_dig": digest(d)}
     sigs = d.sql("""select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-       where n.nspname not in ('pg_catalog','information_schema','extensions') and p.prokind in ('f','p') and p.prosrc ~ '''ADMIN''(?![A-Za-z_0-9])'
+       where n.nspname not in ('pg_catalog','information_schema','extensions','auth','storage','realtime','vault','graphql','graphql_public','pgsodium','supabase_functions','supabase_migrations','net','cron','pgbouncer') and p.prokind in ('f','p') and p.prosrc ~ '''ADMIN''(?![A-Za-z_0-9])'
        and not exists (select 1 from pg_depend e where e.classid='pg_proc'::regclass and e.objid=p.oid and e.deptype='e') order by 1""").splitlines()
     ctx["base_fn_sigs"] = list(sigs)
     ctx["pols_base"] = policy_list(d)
