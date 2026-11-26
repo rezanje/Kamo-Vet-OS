@@ -832,5 +832,12 @@ update cashier_shifts set closed_at=closed_at-interval '3 days' where id=pg_temp
 set local role authenticated;
 select pg_temp.as_('04');
 select pg_temp.reject($$select public.setoran_ajukan(pg_temp.sid('pM7'),pg_temp.rev('pM7'),pg_temp.kk('m7-aj'))$$,'SETORAN_SHIFT: shift setoran harus sudah ditutup','shift tersambung yang kini di luar periode menahan pengajuan');
+
+-- ── 28. peran di luar Owner/Admin/Finance/Staf (mis. Dokter) tidak punya jalur ke setoran walau punya akses cabang ──────────────
+set local role authenticated;
+select pg_temp.as_('0b');
+select pg_temp.ok(not (public.setoran_akses()->>'masuk')::boolean,'Dokter: tidak masuk ke setoran walau punya akses cabang');
+select pg_temp.reject($$select public.setoran_daftar(null,null,null,null,null)$$,'SETORAN_DITOLAK','Dokter: daftar setoran ditolak');
+select pg_temp.reject($$select public.setoran_buat('e5200000-0000-4000-8000-00000000000b',pg_temp.today()-3,pg_temp.today()-3,pg_temp.today()-2,'12:00',pg_temp.kk('dok1'))$$,'SETORAN_DITOLAK','Dokter: tidak boleh membuat setoran');
 reset role;
 rollback;

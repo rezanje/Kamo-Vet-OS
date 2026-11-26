@@ -306,6 +306,7 @@ create trigger setoran_keuangan_guard_truncate before truncate on public.setoran
 create function public.setoran_role() returns text
 language sql stable security definer set search_path = '' as $$
   select p.role::text from public.profiles p where p.id = auth.uid() and p.is_active and auth.role() = 'authenticated'
+     and p.role::text in ('OWNER','ADMIN','FINANCE','STAFF','ADMIN_UMUM')
 $$;
 revoke all on function public.setoran_role() from public, anon, authenticated, service_role;
 

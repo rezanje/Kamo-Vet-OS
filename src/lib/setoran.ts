@@ -179,7 +179,7 @@ export const bisaDiedit = (status: StatusSetoran): boolean => status === "Draft"
 
 /** Pesan galat basis data tanpa kode teknis di depannya ("SETORAN_X: pesan"). Pesan lain dikembalikan apa adanya. */
 export function pesanSetoran(message: string): string {
-  const m = /^(?:ERROR:\s*)?SETORAN_[A-Z_]+:\s*(.*)$/s.exec(message.trim());
+  const m = /^(?:ERROR:\s*)?SETORAN_[A-Z_]+:\s*([\s\S]*)$/.exec(message.trim());
   if (m) return m[1];
   if (/ADMIN_ONLINE_FUNCTION_DENIED/.test(message)) return "Fitur ini tidak tersedia untuk akun Admin Online.";
   return message;

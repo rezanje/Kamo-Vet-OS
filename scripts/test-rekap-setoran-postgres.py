@@ -107,7 +107,7 @@ f as (select p.oid::regprocedure::text k, md5(pg_get_functiondef(p.oid)||coalesc
 t as (select tg.tgrelid::regclass::text||'.'||tg.tgname k, md5(pg_get_triggerdef(tg.oid)) h from pg_trigger tg where not tg.tgisinternal and tg.tgrelid::regclass::text not in (select 'public.'||t from new_t) and tg.tgrelid::regclass::text not in (select t from new_t)),
 c as (select table_name||'.'||column_name k, md5(data_type||is_nullable||coalesce(column_default,'')) h from information_schema.columns where table_schema='public' and table_name not in (select t from new_t)),
 k as (select conrelid::regclass::text||'.'||conname k, md5(pg_get_constraintdef(oid)) h from pg_constraint where connamespace='public'::regnamespace and conrelid::regclass::text not in (select t from new_t) and conrelid::regclass::text not in (select 'public.'||t from new_t)),
-po as (select polrelid::regclass::text||'.'||polname k, md5(coalesce(pg_get_expr(polqual,polrelid),'')||coalesce(pg_get_expr(polwithcheck,polrelid),'')||polcmd) h from pg_policy where polrelid::regclass::text not in (select t from new_t)),
+po as (select polrelid::regclass::text||'.'||polname k, md5(coalesce(pg_get_expr(polqual,polrelid),'')||coalesce(pg_get_expr(polwithcheck,polrelid),'')||polcmd::text) h from pg_policy where polrelid::regclass::text not in (select t from new_t)),
 ix as (select schemaname||'.'||indexname k, md5(indexdef) h from pg_indexes where schemaname='public' and tablename not in (select t from new_t)),
 a as (select 'F'||k k,h from f union all select 'T'||k,h from t union all select 'C'||k,h from c union all select 'K'||k,h from k union all select 'P'||k,h from po union all select 'I'||k,h from ix)
 select count(*)||' '||md5(string_agg(k||h,',' order by k)) from a;
@@ -117,10 +117,12 @@ select count(*)||' '||md5(string_agg(k||h,',' order by k)) from a;
 def run_digest(db, a):
     fresh(db)
     clone(db, 'old'); clone(db, 'new'); apply(db, 'new', PRELUDE + (MIGRATIONS / CAND).read_text())
-    o = raw(db, DIGEST, 'old')[1].strip(); n = raw(db, DIGEST, 'new')[1].strip()
+    ro = raw(db, DIGEST, 'old'); rn = raw(db, DIGEST, 'new')
+    o = ro[1].strip() or '0 ERR'; n = rn[1].strip() or '0 ERR'
+    if o == '0 ERR' or n == '0 ERR': print('DIGEST SQL error:', (ro[2] or rn[2])[:400], flush=True)
     check('DIGEST objects outside the new ones are identical before and after (%s | %s)' % (o, n), o == n and int(o.split()[0]) > 1000, '')
     rc, out, err = raw(db, "select count(*) from journal_entries; select count(*) from expenses; select count(*) from cash_advances", 'new')
-    check('DIGEST the migration writes no journal, expense or cashbon rows', out.split() == ['0', '0', '0'] or True, out)
+    check('DIGEST the migration writes no journal, expense or cashbon rows', out.split() == ['0', '0', '0'], out)
     rc, out, err = raw(db, "select (select count(*) from setoran)+(select count(*) from setoran_event)+(select count(*) from setoran_permintaan)", 'new')
     check('DIGEST new tables are empty after install', out.strip() == '0', out)
 
@@ -140,7 +142,8 @@ update accounting_locks set closed_until=null;
 insert into cashier_shifts(id,branch_id,opened_by,shift_type,opening_balance,opened_at,closing_balance,expected_cash,selisih,closed_at,status,closing_breakdown)
  values('c5400000-0000-4000-8000-000000000001','c5200000-0000-4000-8000-000000000001','c5100000-0000-4000-8000-000000000003','petshop',0,
   (((now() at time zone 'Asia/Jakarta')::date-3)::timestamp+time '08:00') at time zone 'Asia/Jakarta',500000,500000,0,(((now() at time zone 'Asia/Jakarta')::date-3)::timestamp+time '17:00') at time zone 'Asia/Jakarta','closed','{"Tunai":500000}');
-insert into cash_accounts(id,nama,jenis,coa_code,is_active) values('c5500000-0000-4000-8000-000000000001','Conc kas','Kas','110003',true) on conflict do nothing;
+insert into coa_accounts(code,name,type,normal_balance,is_header,is_active) values('119900','Conc kas','ASET','D',false,true) on conflict(code) do update set is_active=true,is_header=false;
+insert into cash_accounts(id,nama,jenis,coa_code,is_active) values('c5500000-0000-4000-8000-000000000001','Conc kas','Kas','119900',true) on conflict do nothing;
 commit;
 """
 CONC_STEPS = r"""

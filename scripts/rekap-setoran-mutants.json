@@ -1,302 +1,307 @@
 [
-[
-"M01 penyetuju: Finance dihapus",
-"in ('OWNER','FINANCE','ADMIN','ADMIN_UMUM'), false)",
-"in ('OWNER','ADMIN','ADMIN_UMUM'), false)"
-],
-[
-"M02 penyetuju: STAFF ikut menyetujui",
-"in ('OWNER','FINANCE','ADMIN','ADMIN_UMUM'), false)",
-"in ('OWNER','FINANCE','ADMIN','ADMIN_UMUM','STAFF'), false)"
-],
-[
-"M03 penyetuju: Admin dihapus",
-"in ('OWNER','FINANCE','ADMIN','ADMIN_UMUM'), false)",
-"in ('OWNER','FINANCE','ADMIN_UMUM'), false)"
-],
-[
-"M04 pemisahan tugas setujui: dimatikan",
-"if v_uid in (v_s.created_by, v_s.submitted_by) then",
-"if false and v_uid in (v_s.created_by, v_s.submitted_by) then"
-],
-[
-"M05 pemisahan tugas setujui: pengaju tidak dicek",
-"if v_uid in (v_s.created_by, v_s.submitted_by) then",
-"if v_uid in (v_s.created_by) then"
-],
-[
-"M06 pemisahan tugas setujui: pembuat tidak dicek",
-"if v_uid in (v_s.created_by, v_s.submitted_by) then",
-"if v_uid in (v_s.submitted_by) then"
-],
-[
-"M07 pemisahan tugas transfer: dimatikan",
-"if auth.uid() = v_t.entered_by then",
-"if false and auth.uid() = v_t.entered_by then"
-],
-[
-"M08 transfer Menunggu tidak menahan persetujuan",
-"if exists (select 1 from public.setoran_transfer where setoran_id = p_id and status = 'Menunggu') then\n    raise exception 'SETORAN_TRANSFER_MENUNGGU",
-"if false and exists (select 1 from public.setoran_transfer where setoran_id = p_id and status = 'Menunggu') then\n    raise exception 'SETORAN_TRANSFER_MENUNGGU"
-],
-[
-"M09 shift baru tidak menahan persetujuan",
-"raise exception 'SETORAN_SHIFT_BARU: ada shift",
-"null; raise notice 'SETORAN_SHIFT_BARU: ada shift"
-],
-[
-"M10 snapshot dibandingkan: dimatikan",
-"if v_exp is distinct from v_k.expected_amount or (v_h ->> 'shift_net')::numeric is distinct from v_k.shift_net",
-"if false and v_exp is distinct from v_k.expected_amount or (v_h ->> 'shift_net')::numeric is distinct from v_k.shift_net and false"
-],
-[
-"M11 batas selisih besar 50 juta",
-"if v_abs > 5000000 and not coalesce(p_konfirmasi_besar, false) then",
-"if v_abs > 50000000 and not coalesce(p_konfirmasi_besar, false) then"
-],
-[
-"M12 selisih besar tanpa konfirmasi diloloskan",
-"if v_abs > 5000000 and not coalesce(p_konfirmasi_besar, false) then",
-"if v_abs > 5000000 and false then"
-],
-[
-"M13 lebih dijurnal ke 530000",
-"jsonb_build_object('code', '810004', 'debit', 0, 'credit', v_abs)",
-"jsonb_build_object('code', '530000', 'debit', 0, 'credit', v_abs)"
-],
-[
-"M14 kurang dijurnal ke 760002 (bukan kasbon)",
-"jsonb_build_object('code', '182001', 'debit', v_abs, 'credit', 0), jsonb_build_object('code', v_cash, 'debit', 0, 'credit', v_abs));\n      v_desc := 'Selisih kurang setoran ' || v_s.no_setoran || ' — kasbon karyawan';",
-"jsonb_build_object('code', '760002', 'debit', v_abs, 'credit', 0), jsonb_build_object('code', v_cash, 'debit', 0, 'credit', v_abs));\n      v_desc := 'Selisih kurang setoran ' || v_s.no_setoran || ' — kasbon karyawan';"
-],
-[
-"M15 kas laci tetap 110003",
-"v_cash := public.unit_posting_cash('Tunai', v_s.branch_id);",
-"v_cash := '110003';"
-],
-[
-"M16 jurnal selisih bertanggal hari persetujuan",
-"perform public.sales_write_journal(v_s.periode_selesai, v_s.branch_id, 'setoran', p_id::text, v_desc, v_jl);",
-"perform public.sales_write_journal(v_today, v_s.branch_id, 'setoran', p_id::text, v_desc, v_jl);"
-],
-[
-"M17 kasbon berstatus Disetujui (potong gaji otomatis)",
-"values (v_adv, v_a.employee_id, v_s.periode_selesai, v_a.jumlah, 1, 'Dicatat',",
-"values (v_adv, v_a.employee_id, v_s.periode_selesai, v_a.jumlah, 1, 'Disetujui',"
-],
-[
-"M18 sisa sen pembagian: sisa ke yang terakhir",
-"case when v_i <= v_rem then 1 else 0 end",
-"case when v_i > cardinality(v_emp) - v_rem then 1 else 0 end"
-],
-[
-"M19 alokasi manual: total tidak dicek",
-"if v_sum <> v_abs then",
-"if false and v_sum <> v_abs then"
-],
-[
-"M20 alokasi manual: karyawan nonaktif lolos",
-"and e.status = 'Aktif' and e.trashed_at is null) <> v_n then\n          raise exception 'SETORAN_ALOKASI: karyawan yang dipilih",
-"and true) <> v_n then\n          raise exception 'SETORAN_ALOKASI: karyawan yang dipilih"
-],
-[
-"M21 alokasi manual: jumlah per orang tanpa pemeriksaan",
-"where x.jumlah <= 0 or x.jumlah <> round(x.jumlah, 2)) then",
-"where false and (x.jumlah <= 0 or x.jumlah <> round(x.jumlah, 2))) then"
-],
-[
-"M22 tanpa karyawan: tidak menolak (diam-diam tidak ada kasbon)",
-"if cardinality(v_emp) = 0 then\n          raise exception 'SETORAN_PENANGGUNG",
-"if false and cardinality(v_emp) = 0 then\n          raise exception 'SETORAN_PENANGGUNG"
-],
-[
-"M23 beban perusahaan tanpa alasan lolos",
-"if v_cat is null or length(v_cat) < 3 then\n        raise exception 'SETORAN_ALASAN: beban perusahaan",
-"if false and (v_cat is null or length(v_cat) < 3) then\n        raise exception 'SETORAN_ALASAN: beban perusahaan"
-],
-[
-"M24 pengeluaran diposting di tanggal persetujuan",
-"jsonb_strip_nulls(jsonb_build_object('tanggal', v_line.tanggal::text,",
-"jsonb_strip_nulls(jsonb_build_object('tanggal', v_today::text,"
-],
-[
-"M25 pengeluaran tanpa alasan tanggal (ditolak post_expense)",
-"'alasan_tanggal', case when v_line.tanggal < v_today then 'Pengeluaran dari dana setoran ' || v_s.no_setoran || ' tanggal ' || v_line.tanggal::text end)),",
-"'alasan_tanggal', null)),"
-],
-[
-"M26 bagian keuangan terlihat staf",
-"if v_app and v_s.status in ('Diajukan','Disetujui','Void') then\n    select * into v_k from public.setoran_keuangan where setoran_id = p_id;",
-"if v_s.status in ('Diajukan','Disetujui','Void') then\n    select * into v_k from public.setoran_keuangan where setoran_id = p_id;"
-],
-[
-"M27 sisa tidak dipatok (lebih bocor ke staf)",
-"'sisa', greatest(v_sisa, 0),",
-"'sisa', v_sisa,"
-],
-[
-"M28 persen tidak dipatok 100",
-"else least(100, floor(((v_peng + v_tr) / v_kew) * 100)) end,",
-"else floor(((v_peng + v_tr) / v_kew) * 100) end,"
-],
-[
-"M29 daftar: kolom selisih terlihat staf",
-"|| case when v_app and s.status in ('Diajukan','Disetujui','Void') and k.setoran_id is not null",
-"|| case when s.status in ('Diajukan','Disetujui','Void') and k.setoran_id is not null"
-],
-[
-"M30 riwayat: catatan penyetuju terlihat staf",
-"|| case when v_app or ev.jenis = 'ditolak' then jsonb_build_object('catatan', ev.catatan) else '{}'::jsonb end order by ev.id)",
-"|| jsonb_build_object('catatan', ev.catatan) order by ev.id)"
-],
-[
-"M31 riwayat: peristiwa keuangan terlihat staf",
-"where ev.setoran_id = p_id and (v_app or ev.jenis not in ('disetujui','void','transfer_dikonfirmasi','transfer_ditolak'))",
-"where ev.setoran_id = p_id"
-],
-[
-"M32 ACL: klien punya hak atas tabel",
-"execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);",
-"execute format('revoke all on public.%I from public, anon, service_role', t);"
-],
-[
-"M33 void: Admin ikut boleh",
-"if public.setoran_role() is null or public.setoran_role() not in ('OWNER','FINANCE') then",
-"if public.setoran_role() is null or public.setoran_role() not in ('OWNER','FINANCE','ADMIN') then"
-],
-[
-"M34 void: kasbon yang sudah diproses tidak menahan",
-"if v_adv_n <> (select count(*) from public.setoran_kasbon where setoran_id = p_id) then",
-"if false and v_adv_n <> (select count(*) from public.setoran_kasbon where setoran_id = p_id) then"
-],
-[
-"M35 void: pengeluaran tidak dibalik",
-"perform public.revise_expense_atomic('setoran-void:' || v_line.id::text, v_line.expense_id, v_rev, 'void', null, 'Setoran ' || v_s.no_setoran || ' dibatalkan: ' || v_alasan);",
-"null;"
-],
-[
-"M36 void: jurnal pembalik tidak ditulis",
-"perform public.sales_write_journal(v_s.periode_selesai, v_s.branch_id, 'setoran-batal', p_id::text, 'Pembalik setoran ' || v_s.no_setoran || ': ' || v_alasan, v_lines);\n    select id into strict v_rj from public.journal_entries where source = 'setoran-batal' and source_ref = p_id::text;",
-"v_rj := null;"
-],
-[
-"M37 void: kasbon tidak dibatalkan",
-"update public.cash_advances set status = 'Batal', catatan_penyetuju",
-"update public.cash_advances set status = status, catatan_penyetuju"
-],
-[
-"M38 void: shift tidak dilepas",
-"update public.setoran_shift set aktif = false where setoran_id = p_id and aktif;\n  perform public.setoran_log(p_id, 'void'",
-"perform public.setoran_log(p_id, 'void'"
-],
-[
-"M39 mesin status: setoran beku bisa diubah",
-"else raise exception 'SETORAN_BEKU: setoran berstatus % tidak dapat diubah.', old.status using errcode = '42501'; end if;",
-"else v_allow := array['status','catatan','revision','decision_note']; end if;"
-],
-[
-"M40 jejak: peristiwa bisa diubah",
-"raise exception 'SETORAN_JEJAK: jejak setoran tidak dapat diubah atau dihapus.' using errcode = '42501';\nend $$;",
-"return coalesce(new, old);\nend $$;"
-],
-[
-"M41 periode: irisan periode tidak dicek",
-"if exists (select 1 from public.setoran s where s.branch_id = p_branch and s.status <> 'Void' and s.periode_mulai <= p_selesai and s.periode_selesai >= p_mulai) then",
-"if false and exists (select 1 from public.setoran s where s.branch_id = p_branch and s.status <> 'Void' and s.periode_mulai <= p_selesai and s.periode_selesai >= p_mulai) then"
-],
-[
-"M42 periode: panjang 31 hari menjadi 300",
-"p_selesai < p_mulai or p_selesai - p_mulai > 30 then",
-"p_selesai < p_mulai or p_selesai - p_mulai > 300 then"
-],
-[
-"M43 periode: masa depan boleh",
-"if p_selesai > v_today then raise exception 'SETORAN_PERIODE: periode transaksi belum berakhir",
-"if false and p_selesai > v_today then raise exception 'SETORAN_PERIODE: periode transaksi belum berakhir"
-],
-[
-"M44 kunci: isi berbeda tidak dideteksi",
-"if v_prior.jenis is distinct from p_jenis or v_prior.payload is distinct from p_payload then",
-"if false then"
-],
-[
-"M45 transfer: bukti tidak wajib",
-"case when p_metode = 'Transfer' then 1 else 0 end",
-"0"
-],
-[
-"M46 rekening: bank di bawah 120000 tidak dicek",
-"if not exists (select 1 from public.coa_accounts a join public.coa_accounts g on g.id = a.parent_id where a.code = v_a.coa_code and g.code = '120000' and g.is_header) then",
-"if false then"
-],
-[
-"M47 rekening: jenis Bank tidak dicek untuk transfer",
-"if v_a.jenis <> 'Bank' then raise exception 'SETORAN_REKENING: transfer harus ke rekening bank perusahaan.'",
-"if false then raise exception 'SETORAN_REKENING: transfer harus ke rekening bank perusahaan.'"
-],
-[
-"M48 rekening: cabang tidak dicek",
-"select * into v_a from public.cash_accounts where id = p_account and is_active and (branch_id is null or branch_id = p_branch);",
-"select * into v_a from public.cash_accounts where id = p_account and is_active;"
-],
-[
-"M49 tutup buku: batas dibuat longgar",
-"if exists (select 1 from public.accounting_locks where id and p_tanggal <= closed_until) then\n    raise exception 'SETORAN_PERIODE:",
-"if exists (select 1 from public.accounting_locks where id and p_tanggal < closed_until) then\n    raise exception 'SETORAN_PERIODE:"
-],
-[
-"M50 setujui: tutup buku tidak dicek",
-"perform public.setoran_periode_terbuka(v_s.periode_selesai);\n  select * into v_k from public.setoran_keuangan where setoran_id = p_id for update;\n  if not found then raise exception 'SETORAN_BERUBAH: data keuangan setoran tidak ada;",
-"select * into v_k from public.setoran_keuangan where setoran_id = p_id for update;\n  if not found then raise exception 'SETORAN_BERUBAH: data keuangan setoran tidak ada;"
-],
-[
-"M51 kewajiban memakai kas seharusnya (selisih tutup shift terhitung ulang)",
-"'bersih', s.closing_balance - s.opening_balance) order by s.closed_at, s.id), '[]'::jsonb)\n    from public.setoran_shift ss",
-"'bersih', s.expected_cash - s.opening_balance) order by s.closed_at, s.id), '[]'::jsonb)\n    from public.setoran_shift ss"
-],
-[
-"M52 akses cabang: tidak dicek",
-"if p_branch is null or not public.user_can_access_branch(p_branch) then",
-"if p_branch is null then"
-],
-[
-"M53 detail: cabang tidak dicek",
-"if not found or not public.user_can_access_branch(v_s.branch_id) then\n    raise exception 'SETORAN_TIDAK_ADA: setoran tidak ditemukan atau tidak dapat diakses.'",
-"if not found then\n    raise exception 'SETORAN_TIDAK_ADA: setoran tidak ditemukan atau tidak dapat diakses.'"
-],
-[
-"M54 rekap: bukan penyetuju boleh",
-"if not public.setoran_penyetuju() then\n    raise exception 'SETORAN_DITOLAK_PERAN: rekap setoran hanya",
-"if false then\n    raise exception 'SETORAN_DITOLAK_PERAN: rekap setoran hanya"
-],
-[
-"M55 rekap: cabang tidak dibatasi",
-"where public.user_can_access_branch(s.branch_id) and s.status <> 'Void' or (s.status = 'Void' and p_status = 'Void' and public.user_can_access_branch(s.branch_id))",
-"where s.status <> 'Void' or (s.status = 'Void' and p_status = 'Void')"
-],
-[
-"M56 ajukan: shift terbuka tidak menahan",
-"if exists (select 1 from public.cashier_shifts s where s.branch_id = v_s.branch_id and s.status = 'open'",
-"if false and exists (select 1 from public.cashier_shifts s where s.branch_id = v_s.branch_id and s.status = 'open'"
-],
-[
-"M57 tolak: bukan penyetuju boleh",
-"if not public.setoran_penyetuju() then\n    raise exception 'SETORAN_DITOLAK_PERAN: hanya Owner, Finance, atau Admin cabang yang dapat menolak setoran.'",
-"if false then\n    raise exception 'SETORAN_DITOLAK_PERAN: hanya Owner, Finance, atau Admin cabang yang dapat menolak setoran.'"
-],
-[
-"M58 transfer: konfirmasi oleh bukan penyetuju",
-"if not public.setoran_penyetuju() then\n    raise exception 'SETORAN_DITOLAK_PERAN: hanya Owner, Finance, atau Admin cabang yang dapat mengonfirmasi transfer.'",
-"if false then\n    raise exception 'SETORAN_DITOLAK_PERAN: hanya Owner, Finance, atau Admin cabang yang dapat mengonfirmasi transfer.'"
-],
-[
-"M59 setujui: pembayaran dihitung dari semua transfer (bukan hanya Dikonfirmasi)",
-"select coalesce(sum(jumlah), 0) into v_tr from public.setoran_transfer where setoran_id = p_id and status = 'Dikonfirmasi';",
-"select coalesce(sum(jumlah), 0) into v_tr from public.setoran_transfer where setoran_id = p_id and status in ('Dikonfirmasi','Menunggu','Ditolak');"
-],
-[
-"M60 hitung: shift sendiri tidak divalidasi",
-"if v_bad then raise exception 'SETORAN_SHIFT: shift setoran harus sudah ditutup, satu cabang, dan ditutup di dalam periode.' using errcode = '22023'; end if;",
-"null;"
-]
+ [
+  "M01 penyetuju: Finance dihapus",
+  "in ('OWNER','FINANCE','ADMIN','ADMIN_UMUM'), false)",
+  "in ('OWNER','ADMIN','ADMIN_UMUM'), false)"
+ ],
+ [
+  "M02 penyetuju: STAFF ikut menyetujui",
+  "in ('OWNER','FINANCE','ADMIN','ADMIN_UMUM'), false)",
+  "in ('OWNER','FINANCE','ADMIN','ADMIN_UMUM','STAFF'), false)"
+ ],
+ [
+  "M03 penyetuju: Admin dihapus",
+  "in ('OWNER','FINANCE','ADMIN','ADMIN_UMUM'), false)",
+  "in ('OWNER','FINANCE','ADMIN_UMUM'), false)"
+ ],
+ [
+  "M04 pemisahan tugas setujui: dimatikan",
+  "if v_uid in (v_s.created_by, v_s.submitted_by) then",
+  "if false and v_uid in (v_s.created_by, v_s.submitted_by) then"
+ ],
+ [
+  "M05 pemisahan tugas setujui: pengaju tidak dicek",
+  "if v_uid in (v_s.created_by, v_s.submitted_by) then",
+  "if v_uid in (v_s.created_by) then"
+ ],
+ [
+  "M06 pemisahan tugas setujui: pembuat tidak dicek",
+  "if v_uid in (v_s.created_by, v_s.submitted_by) then",
+  "if v_uid in (v_s.submitted_by) then"
+ ],
+ [
+  "M07 pemisahan tugas transfer: dimatikan",
+  "if auth.uid() = v_t.entered_by then",
+  "if false and auth.uid() = v_t.entered_by then"
+ ],
+ [
+  "M08 transfer Menunggu tidak menahan persetujuan",
+  "if exists (select 1 from public.setoran_transfer where setoran_id = p_id and status = 'Menunggu') then\n    raise exception 'SETORAN_TRANSFER_MENUNGGU",
+  "if false and exists (select 1 from public.setoran_transfer where setoran_id = p_id and status = 'Menunggu') then\n    raise exception 'SETORAN_TRANSFER_MENUNGGU"
+ ],
+ [
+  "M09 shift baru tidak menahan persetujuan",
+  "raise exception 'SETORAN_SHIFT_BARU: ada shift",
+  "null; raise notice 'SETORAN_SHIFT_BARU: ada shift"
+ ],
+ [
+  "M10 snapshot dibandingkan: dimatikan",
+  "if v_exp is distinct from v_k.expected_amount or (v_h ->> 'shift_net')::numeric is distinct from v_k.shift_net",
+  "if false and v_exp is distinct from v_k.expected_amount or (v_h ->> 'shift_net')::numeric is distinct from v_k.shift_net and false"
+ ],
+ [
+  "M11 batas selisih besar 50 juta",
+  "if v_abs > 5000000 and not coalesce(p_konfirmasi_besar, false) then",
+  "if v_abs > 50000000 and not coalesce(p_konfirmasi_besar, false) then"
+ ],
+ [
+  "M12 selisih besar tanpa konfirmasi diloloskan",
+  "if v_abs > 5000000 and not coalesce(p_konfirmasi_besar, false) then",
+  "if v_abs > 5000000 and false then"
+ ],
+ [
+  "M13 lebih dijurnal ke 530000",
+  "jsonb_build_object('code', '810004', 'debit', 0, 'credit', v_abs)",
+  "jsonb_build_object('code', '530000', 'debit', 0, 'credit', v_abs)"
+ ],
+ [
+  "M14 kurang dijurnal ke 760002 (bukan kasbon)",
+  "jsonb_build_object('code', '182001', 'debit', v_abs, 'credit', 0), jsonb_build_object('code', v_cash, 'debit', 0, 'credit', v_abs));\n      v_desc := 'Selisih kurang setoran ' || v_s.no_setoran || ' — kasbon karyawan';",
+  "jsonb_build_object('code', '760002', 'debit', v_abs, 'credit', 0), jsonb_build_object('code', v_cash, 'debit', 0, 'credit', v_abs));\n      v_desc := 'Selisih kurang setoran ' || v_s.no_setoran || ' — kasbon karyawan';"
+ ],
+ [
+  "M15 kas laci tetap 110003",
+  "v_cash := public.unit_posting_cash('Tunai', v_s.branch_id);",
+  "v_cash := '110003';"
+ ],
+ [
+  "M16 jurnal selisih bertanggal hari persetujuan",
+  "perform public.sales_write_journal(v_s.periode_selesai, v_s.branch_id, 'setoran', p_id::text, v_desc, v_jl);",
+  "perform public.sales_write_journal(v_today, v_s.branch_id, 'setoran', p_id::text, v_desc, v_jl);"
+ ],
+ [
+  "M17 kasbon berstatus Disetujui (potong gaji otomatis)",
+  "values (v_adv, v_a.employee_id, v_s.periode_selesai, v_a.jumlah, 1, 'Dicatat',",
+  "values (v_adv, v_a.employee_id, v_s.periode_selesai, v_a.jumlah, 1, 'Disetujui',"
+ ],
+ [
+  "M18 sisa sen pembagian: sisa ke yang terakhir",
+  "case when v_i <= v_rem then 1 else 0 end",
+  "case when v_i > cardinality(v_emp) - v_rem then 1 else 0 end"
+ ],
+ [
+  "M19 alokasi manual: total tidak dicek",
+  "if v_sum <> v_abs then",
+  "if false and v_sum <> v_abs then"
+ ],
+ [
+  "M20 alokasi manual: karyawan nonaktif lolos",
+  "and e.status = 'Aktif' and e.trashed_at is null) <> v_n then\n          raise exception 'SETORAN_ALOKASI: karyawan yang dipilih",
+  "and true) <> v_n then\n          raise exception 'SETORAN_ALOKASI: karyawan yang dipilih"
+ ],
+ [
+  "M21 alokasi manual: jumlah per orang tanpa pemeriksaan",
+  "where x.jumlah <= 0 or x.jumlah <> round(x.jumlah, 2)) then",
+  "where false and (x.jumlah <= 0 or x.jumlah <> round(x.jumlah, 2))) then"
+ ],
+ [
+  "M22 tanpa karyawan: tidak menolak (diam-diam tidak ada kasbon)",
+  "if cardinality(v_emp) = 0 then\n          raise exception 'SETORAN_PENANGGUNG",
+  "if false and cardinality(v_emp) = 0 then\n          raise exception 'SETORAN_PENANGGUNG"
+ ],
+ [
+  "M23 beban perusahaan tanpa alasan lolos",
+  "if v_cat is null or length(v_cat) < 3 then\n        raise exception 'SETORAN_ALASAN: beban perusahaan",
+  "if false and (v_cat is null or length(v_cat) < 3) then\n        raise exception 'SETORAN_ALASAN: beban perusahaan"
+ ],
+ [
+  "M24 pengeluaran diposting di tanggal persetujuan",
+  "jsonb_strip_nulls(jsonb_build_object('tanggal', v_line.tanggal::text,",
+  "jsonb_strip_nulls(jsonb_build_object('tanggal', v_today::text,"
+ ],
+ [
+  "M25 pengeluaran tanpa alasan tanggal (ditolak post_expense)",
+  "'alasan_tanggal', case when v_line.tanggal < v_today then 'Pengeluaran dari dana setoran ' || v_s.no_setoran || ' tanggal ' || v_line.tanggal::text end)),",
+  "'alasan_tanggal', null)),"
+ ],
+ [
+  "M26 bagian keuangan terlihat staf",
+  "if v_app and v_s.status in ('Diajukan','Disetujui','Void') then\n    select * into v_k from public.setoran_keuangan where setoran_id = p_id;",
+  "if v_s.status in ('Diajukan','Disetujui','Void') then\n    select * into v_k from public.setoran_keuangan where setoran_id = p_id;"
+ ],
+ [
+  "M27 sisa tidak dipatok (lebih bocor ke staf)",
+  "'sisa', greatest(v_sisa, 0),",
+  "'sisa', v_sisa,"
+ ],
+ [
+  "M28 persen tidak dipatok 100",
+  "else least(100, floor(((v_peng + v_tr) / v_kew) * 100)) end,",
+  "else floor(((v_peng + v_tr) / v_kew) * 100) end,"
+ ],
+ [
+  "M29 daftar: kolom selisih terlihat staf",
+  "|| case when v_app and s.status in ('Diajukan','Disetujui','Void') and k.setoran_id is not null",
+  "|| case when s.status in ('Diajukan','Disetujui','Void') and k.setoran_id is not null"
+ ],
+ [
+  "M30 riwayat: catatan penyetuju terlihat staf",
+  "|| case when v_app or ev.jenis = 'ditolak' then jsonb_build_object('catatan', ev.catatan) else '{}'::jsonb end order by ev.id)",
+  "|| jsonb_build_object('catatan', ev.catatan) order by ev.id)"
+ ],
+ [
+  "M31 riwayat: peristiwa keuangan terlihat staf",
+  "where ev.setoran_id = p_id and (v_app or ev.jenis not in ('disetujui','void','transfer_dikonfirmasi','transfer_ditolak'))",
+  "where ev.setoran_id = p_id"
+ ],
+ [
+  "M32 ACL: klien punya hak atas tabel",
+  "execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);",
+  "execute format('revoke all on public.%I from public, anon, service_role', t);"
+ ],
+ [
+  "M33 void: Admin ikut boleh",
+  "if public.setoran_role() is null or public.setoran_role() not in ('OWNER','FINANCE') then",
+  "if public.setoran_role() is null or public.setoran_role() not in ('OWNER','FINANCE','ADMIN') then"
+ ],
+ [
+  "M34 void: kasbon yang sudah diproses tidak menahan",
+  "if v_adv_n <> (select count(*) from public.setoran_kasbon where setoran_id = p_id) then",
+  "if false and v_adv_n <> (select count(*) from public.setoran_kasbon where setoran_id = p_id) then"
+ ],
+ [
+  "M35 void: pengeluaran tidak dibalik",
+  "perform public.revise_expense_atomic('setoran-void:' || v_line.id::text, v_line.expense_id, v_rev, 'void', null, 'Setoran ' || v_s.no_setoran || ' dibatalkan: ' || v_alasan);",
+  "null;"
+ ],
+ [
+  "M36 void: jurnal pembalik tidak ditulis",
+  "perform public.sales_write_journal(v_s.periode_selesai, v_s.branch_id, 'setoran-batal', p_id::text, 'Pembalik setoran ' || v_s.no_setoran || ': ' || v_alasan, v_lines);\n    select id into strict v_rj from public.journal_entries where source = 'setoran-batal' and source_ref = p_id::text;",
+  "v_rj := null;"
+ ],
+ [
+  "M37 void: kasbon tidak dibatalkan",
+  "update public.cash_advances set status = 'Batal', catatan_penyetuju",
+  "update public.cash_advances set status = status, catatan_penyetuju"
+ ],
+ [
+  "M38 void: shift tidak dilepas",
+  "update public.setoran_shift set aktif = false where setoran_id = p_id and aktif;\n  perform public.setoran_log(p_id, 'void'",
+  "perform public.setoran_log(p_id, 'void'"
+ ],
+ [
+  "M39 mesin status: setoran beku bisa diubah",
+  "else raise exception 'SETORAN_BEKU: setoran berstatus % tidak dapat diubah.', old.status using errcode = '42501'; end if;",
+  "else v_allow := array['status','catatan','revision','decision_note']; end if;"
+ ],
+ [
+  "M40 jejak: peristiwa bisa diubah",
+  "raise exception 'SETORAN_JEJAK: jejak setoran tidak dapat diubah atau dihapus.' using errcode = '42501';\nend $$;",
+  "return coalesce(new, old);\nend $$;"
+ ],
+ [
+  "M41 periode: irisan periode tidak dicek",
+  "if exists (select 1 from public.setoran s where s.branch_id = p_branch and s.status <> 'Void' and s.periode_mulai <= p_selesai and s.periode_selesai >= p_mulai) then",
+  "if false and exists (select 1 from public.setoran s where s.branch_id = p_branch and s.status <> 'Void' and s.periode_mulai <= p_selesai and s.periode_selesai >= p_mulai) then"
+ ],
+ [
+  "M42 periode: panjang 31 hari menjadi 300",
+  "p_selesai < p_mulai or p_selesai - p_mulai > 30 then",
+  "p_selesai < p_mulai or p_selesai - p_mulai > 300 then"
+ ],
+ [
+  "M43 periode: masa depan boleh",
+  "if p_selesai > v_today then raise exception 'SETORAN_PERIODE: periode transaksi belum berakhir",
+  "if false and p_selesai > v_today then raise exception 'SETORAN_PERIODE: periode transaksi belum berakhir"
+ ],
+ [
+  "M44 kunci: isi berbeda tidak dideteksi",
+  "if v_prior.jenis is distinct from p_jenis or v_prior.payload is distinct from p_payload then",
+  "if false then"
+ ],
+ [
+  "M45 transfer: bukti tidak wajib",
+  "case when p_metode = 'Transfer' then 1 else 0 end",
+  "0"
+ ],
+ [
+  "M46 rekening: bank di bawah 120000 tidak dicek",
+  "if not exists (select 1 from public.coa_accounts a join public.coa_accounts g on g.id = a.parent_id where a.code = v_a.coa_code and g.code = '120000' and g.is_header) then",
+  "if false then"
+ ],
+ [
+  "M47 rekening: jenis Bank tidak dicek untuk transfer",
+  "if v_a.jenis <> 'Bank' then raise exception 'SETORAN_REKENING: transfer harus ke rekening bank perusahaan.'",
+  "if false then raise exception 'SETORAN_REKENING: transfer harus ke rekening bank perusahaan.'"
+ ],
+ [
+  "M48 rekening: cabang tidak dicek",
+  "select * into v_a from public.cash_accounts where id = p_account and is_active and (branch_id is null or branch_id = p_branch);",
+  "select * into v_a from public.cash_accounts where id = p_account and is_active;"
+ ],
+ [
+  "M49 tutup buku: batas dibuat longgar",
+  "if exists (select 1 from public.accounting_locks where id and p_tanggal <= closed_until) then\n    raise exception 'SETORAN_PERIODE:",
+  "if exists (select 1 from public.accounting_locks where id and p_tanggal < closed_until) then\n    raise exception 'SETORAN_PERIODE:"
+ ],
+ [
+  "M50 setujui: tutup buku tidak dicek",
+  "perform public.setoran_periode_terbuka(v_s.periode_selesai);\n  select * into v_k from public.setoran_keuangan where setoran_id = p_id for update;\n  if not found then raise exception 'SETORAN_BERUBAH: data keuangan setoran tidak ada;",
+  "select * into v_k from public.setoran_keuangan where setoran_id = p_id for update;\n  if not found then raise exception 'SETORAN_BERUBAH: data keuangan setoran tidak ada;"
+ ],
+ [
+  "M51 kewajiban memakai kas seharusnya (selisih tutup shift terhitung ulang)",
+  "'bersih', s.closing_balance - s.opening_balance) order by s.closed_at, s.id), '[]'::jsonb)\n    from public.setoran_shift ss",
+  "'bersih', s.expected_cash - s.opening_balance) order by s.closed_at, s.id), '[]'::jsonb)\n    from public.setoran_shift ss"
+ ],
+ [
+  "M52 akses cabang: tidak dicek",
+  "if p_branch is null or not public.user_can_access_branch(p_branch) then",
+  "if p_branch is null then"
+ ],
+ [
+  "M53 detail: cabang tidak dicek",
+  "if not found or not public.user_can_access_branch(v_s.branch_id) then\n    raise exception 'SETORAN_TIDAK_ADA: setoran tidak ditemukan atau tidak dapat diakses.'",
+  "if not found then\n    raise exception 'SETORAN_TIDAK_ADA: setoran tidak ditemukan atau tidak dapat diakses.'"
+ ],
+ [
+  "M54 rekap: bukan penyetuju boleh",
+  "if not public.setoran_penyetuju() then\n    raise exception 'SETORAN_DITOLAK_PERAN: rekap setoran hanya",
+  "if false then\n    raise exception 'SETORAN_DITOLAK_PERAN: rekap setoran hanya"
+ ],
+ [
+  "M55 rekap: cabang tidak dibatasi",
+  "where public.user_can_access_branch(s.branch_id) and s.status <> 'Void' or (s.status = 'Void' and p_status = 'Void' and public.user_can_access_branch(s.branch_id))",
+  "where s.status <> 'Void' or (s.status = 'Void' and p_status = 'Void')"
+ ],
+ [
+  "M56 ajukan: shift terbuka tidak menahan",
+  "if exists (select 1 from public.cashier_shifts s where s.branch_id = v_s.branch_id and s.status = 'open'",
+  "if false and exists (select 1 from public.cashier_shifts s where s.branch_id = v_s.branch_id and s.status = 'open'"
+ ],
+ [
+  "M57 tolak: bukan penyetuju boleh",
+  "if not public.setoran_penyetuju() then\n    raise exception 'SETORAN_DITOLAK_PERAN: hanya Owner, Finance, atau Admin cabang yang dapat menolak setoran.'",
+  "if false then\n    raise exception 'SETORAN_DITOLAK_PERAN: hanya Owner, Finance, atau Admin cabang yang dapat menolak setoran.'"
+ ],
+ [
+  "M58 transfer: konfirmasi oleh bukan penyetuju",
+  "if not public.setoran_penyetuju() then\n    raise exception 'SETORAN_DITOLAK_PERAN: hanya Owner, Finance, atau Admin cabang yang dapat mengonfirmasi transfer.'",
+  "if false then\n    raise exception 'SETORAN_DITOLAK_PERAN: hanya Owner, Finance, atau Admin cabang yang dapat mengonfirmasi transfer.'"
+ ],
+ [
+  "M59 setujui: pembayaran dihitung dari semua transfer (bukan hanya Dikonfirmasi)",
+  "select coalesce(sum(jumlah), 0) into v_tr from public.setoran_transfer where setoran_id = p_id and status = 'Dikonfirmasi';",
+  "select coalesce(sum(jumlah), 0) into v_tr from public.setoran_transfer where setoran_id = p_id and status in ('Dikonfirmasi','Menunggu','Ditolak');"
+ ],
+ [
+  "M60 hitung: shift sendiri tidak divalidasi",
+  "if v_bad then raise exception 'SETORAN_SHIFT: shift setoran harus sudah ditutup, satu cabang, dan ditutup di dalam periode.' using errcode = '22023'; end if;",
+  "null;"
+ ],
+ [
+  "M61 peran di luar daftar boleh mengakses setoran",
+  "     and p.role::text in ('OWNER','ADMIN','FINANCE','STAFF','ADMIN_UMUM')\n",
+  ""
+ ]
 ]
