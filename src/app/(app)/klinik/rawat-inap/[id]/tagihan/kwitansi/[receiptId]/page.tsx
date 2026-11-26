@@ -1,4 +1,6 @@
 import { printBranchHeading } from "@/components/print-branch-heading";
+import { KopStruk } from "@/components/KopStruk";
+import { bacaIdentitasKop } from "@/lib/cabang-identitas-server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -31,6 +33,8 @@ export default async function KwitansiPage({ params }: { params: Promise<{ id: s
   const pet = one(visit?.pets as Rel<{ name: string; species: string | null }>);
   const cust = one(visit?.customers as Rel<{ name: string }>);
   const branch = one(receipt.branches as Rel<{ name: string; code: string | null }>);
+  // Kop = identitas CABANG PENERBIT kwitansi (receipt.branch_id), bukan cabang terpilih; gagal baca = nama cabang saja.
+  const identitas = await bacaIdentitasKop(supabase, (receipt.branch_id as string | null) ?? null);
   const kasir = one(receipt.profiles as Rel<{ full_name: string | null }>);
   const bagian = ((receipt.clinic_payment_receipt_parts ?? []) as { urutan: number; metode: string; amount: number }[])
     .slice().sort((a, b) => a.urutan - b.urutan);
@@ -49,10 +53,9 @@ export default async function KwitansiPage({ params }: { params: Promise<{ id: s
       </div>
 
       <div style={{ width: "74mm", margin: "0 auto", background: "#fff", padding: "10px 8px", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5 }}>
-        <div style={{ textAlign: "center", marginBottom: 6 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>{printBranchHeading(branch)}</div>
+        <KopStruk nama={printBranchHeading(branch)} alamat={identitas.alamat} telepon={identitas.telepon}>
           <div style={{ fontSize: 10, fontWeight: 700, marginTop: 3 }}>KWITANSI PEMBAYARAN</div>
-        </div>
+        </KopStruk>
         <Hr />
         <Kv k="No" v={receipt.no_kwitansi as string} />
         <Kv k="Tgl" v={tgl} />

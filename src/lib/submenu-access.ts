@@ -100,6 +100,7 @@ export const SUBMENU_ENTRIES: readonly SubmenuEntry[] = [
   e("kas-bank", "rekening", ["/kas-bank/rekening"]),
   e("kas-bank", "peta", ["/kas-bank/peta"]),
   e("kas-bank", "refund", ["/kas-bank/refund"], "Antrean pengembalian dana"),
+  e("kas-bank", "setoran", ["/kas-bank/setoran"], "Rekap Setoran"),
   // ── Penjualan ── (halaman utama /penjualan = rekap penjualan + rincian transaksi per id)
   e("penjualan", "rekap", ["/penjualan"], "Rekap penjualan (halaman utama)"),
   e("penjualan", "penawaran", ["/penjualan/penawaran"]),

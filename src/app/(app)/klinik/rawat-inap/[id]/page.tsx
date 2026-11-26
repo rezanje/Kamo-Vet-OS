@@ -206,7 +206,7 @@ export default async function RawatInapDetailPage({
             <i className="ti ti-brand-whatsapp" /> REVIEW PESAN WA SEBELUM KIRIM (template duka — bukan template rutin)
           </div>
           <pre style={{ fontSize: 11, whiteSpace: "pre-wrap", background: "#fff", border: ".5px solid var(--bd)", borderRadius: 8, padding: 12, fontFamily: "inherit" }}>
-            {ripWaMessage(pet?.name ?? "anabul Anda", cust?.name ?? "Pemilik", branch?.name ?? "klinik kami")}
+            {ripWaMessage(pet?.name ?? "anabul Anda", cust?.name ?? "Pemilik", branch?.name ?? null)}
           </pre>
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <form action={sendRipWa}>

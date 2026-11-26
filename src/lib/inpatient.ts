@@ -23,13 +23,17 @@ export function isTerminal(c: Condition): boolean {
 }
 
 // Template WA khusus RIP (bukan template monitoring rutin) — dikirim via Fonnte setelah review dokter.
-export function ripWaMessage(petName: string, ownerName: string, branchName: string): string {
+// `branchName` = nama cabang kunjungan bila diketahui (dipakai di isi pesan DAN sebagai penutup);
+// kalau tidak diketahui (null/kosong) isi pesan memakai "klinik kami" dan penutupnya merek lama.
+export const WA_PENUTUP_CADANGAN = "KAMO PET CARE";
+export function ripWaMessage(petName: string, ownerName: string, branchName: string | null | undefined): string {
+  const cabang = typeof branchName === "string" ? branchName.replace(/\s+/g, " ").trim() : "";
   return (
     `Kepada Yth. ${ownerName},\n\n` +
-    `Dengan berat hati kami menyampaikan bahwa ${petName} telah berpulang saat perawatan di ${branchName}. ` +
+    `Dengan berat hati kami menyampaikan bahwa ${petName} telah berpulang saat perawatan di ${cabang || "klinik kami"}. ` +
     `Tim dokter kami telah memberikan perawatan terbaik hingga akhir.\n\n` +
     `Kami turut berduka cita yang sedalam-dalamnya. Silakan hubungi klinik untuk informasi selanjutnya.\n\n` +
-    `— KAMO PET CARE`
+    `— ${cabang || WA_PENUTUP_CADANGAN}`
   );
 }
 

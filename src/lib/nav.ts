@@ -160,6 +160,7 @@ export const TILES: Record<string, Tile[]> = {
     { label: "Penerimaan Piutang", icon: "ti-cash-banknote", ...G, href: "/keuangan/piutang" },
     { label: "Kas Keluar (Petty Cash)", icon: "ti-cash-off", ...G, href: "/kas-bank/kas-keluar" },
     { label: "Kas Masuk", icon: "ti-wallet", ...G, href: "/kas-bank/kas-masuk" },
+    { label: "Rekap Setoran", icon: "ti-cash-banknote", ...G, nw: true, href: "/kas-bank/setoran" },
     { label: "Transfer Bank", icon: "ti-building-bank", ...G, href: "/kas-bank/transfer" },
     { label: "Rekonsiliasi Bank", icon: "ti-checkbox", ...P, href: "/keuangan/rekonsiliasi" },
     { label: "Daftar Rekening", icon: "ti-wallet", ...B, href: "/kas-bank/rekening" },
