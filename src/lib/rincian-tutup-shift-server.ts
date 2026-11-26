@@ -2,6 +2,7 @@
 // dan layar riwayat tutup shift backoffice, supaya keduanya menampilkan angka yang sama.
 
 import { batasPeriode, tanggalBaris } from "./komisi-data";
+import { formatTanggalID } from "./tanggal-mundur";
 import { completeReportQuery } from "./report-query";
 import { isCompletedSale } from "./sale-payment-reporting";
 import { cashExpenseTotal } from "./shift-calc";
@@ -104,8 +105,8 @@ export async function muatRincianTutupShift(supabase: AnyClient, shiftId: string
   if (!shift) return null;
 
   const { data: expenses } = await supabase
-    .from("expenses").select("kategori, deskripsi, jumlah, metode_bayar").eq("shift_id", shiftId);
-  const semuaPengeluaran = (expenses ?? []) as { kategori: string; deskripsi: string | null; jumlah: number; metode_bayar: string }[];
+    .from("expenses").select("kategori, deskripsi, jumlah, metode_bayar, tanggal").eq("shift_id", shiftId);
+  const semuaPengeluaran = (expenses ?? []) as { kategori: string; deskripsi: string | null; jumlah: number; metode_bayar: string; tanggal?: string | null }[];
   const tunaiRows = semuaPengeluaran.filter((e) => e.metode_bayar === "Tunai");
   const pengeluaranTunai = cashExpenseTotal(semuaPengeluaran);
   const pengeluaranNonTunai = semuaPengeluaran
@@ -155,7 +156,12 @@ export async function muatRincianTutupShift(supabase: AnyClient, shiftId: string
     selisih: Number(shift.selisih) || 0,
     pembayaran: rincianPembayaran(shift.closing_breakdown as Record<string, number> | null),
     pengeluaranTunai,
-    pengeluaranTunaiRincian: tunaiRows.map((e) => ({ keterangan: e.deskripsi?.trim() || e.kategori, jumlah: Number(e.jumlah) || 0 })),
+    // Pengeluaran tunai bertanggal mundur tetap mengurangi laci shift INI (hitungan per shift); tandai supaya Finance tahu
+    // selisih laci bukan kesalahan hitung (review PR #570, MINOR-5).
+    pengeluaranTunaiRincian: tunaiRows.map((e) => ({
+      keterangan: (e.deskripsi?.trim() || e.kategori) + (e.tanggal && e.tanggal < tanggalBaris(shift.opened_at) ? ` (tanggal mundur ${formatTanggalID(e.tanggal)})` : ""),
+      jumlah: Number(e.jumlah) || 0,
+    })),
     pengeluaranNonTunai,
     target,
   };

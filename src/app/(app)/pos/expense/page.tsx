@@ -11,6 +11,8 @@ import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField"
 import { readCompleteList } from "@/lib/checked-list";
 import { totalPengeluaranAktif } from "@/lib/expense-summary";
 import { KATEGORI_PENGELUARAN_BACKOFFICE } from "@/lib/kategori-pengeluaran";
+import { muatJejakMundurSejak } from "@/lib/expense-jejak";
+import { LencanaMundur } from "@/components/pengeluaran/LencanaMundur";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -58,6 +60,9 @@ export default async function ExpensePage({
     .gte("tanggal", yearStart)
     .order("tanggal", { ascending: false }).order("id")
     .range(from, to), "Riwayat pengeluaran", { maxRows: null });
+
+  // Penanda "Mundur" (jejak tak dapat diubah); galat baca hanya menghilangkan lencana.
+  const jejak = await muatJejakMundurSejak(supabase, yearStart);
 
   const totHari = totalPengeluaranAktif(rows.filter((r) => r.tanggal === today));
   const totBulan = totalPengeluaranAktif(rows.filter((r) => r.tanggal >= monthStart));
@@ -136,7 +141,7 @@ export default async function ExpensePage({
                 const br = one(r.branches);
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTgl(r.tanggal)}{r.voided_at && <span className="bge r" style={{ marginLeft: 5 }}>Dibatalkan</span>}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTgl(r.tanggal)}<LencanaMundur jejak={jejak.get(r.id)} />{r.voided_at && <span className="bge r" style={{ marginLeft: 5 }}>Dibatalkan</span>}</td>
                     <td style={{ fontSize: 11 }}><span className="bge o">{r.kategori}</span></td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.deskripsi || "—"}</td>
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>

@@ -10,6 +10,8 @@ import { simpanKasEntry } from "./actions";
 import { KasCorrectionForm, KasVoidForm } from "./KasCorrectionForm";
 import { TransactionForm } from "@/components/LocalTransactionDraft";
 import { PilihAkunCari } from "@/components/PilihAkunCari";
+import { muatJejakMundurSejak } from "@/lib/expense-jejak";
+import { LencanaMundur } from "@/components/pengeluaran/LencanaMundur";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -109,6 +111,8 @@ export async function KasEntryScreen({
         .range(awal, akhir))
     : { rows: [], terpotong: false };
   const bebanRows = bebanDimuat.rows;
+  // Penanda "Mundur" untuk pengeluaran kasir bertanggal mundur (galat baca hanya menghilangkan lencana).
+  const jejakMundur = keluar ? await muatJejakMundurSejak(supabase, periode.dari) : new Map();
   const terpotong = kasDimuat.terpotong || bebanDimuat.terpotong;
 
   type BebanRow = {
@@ -344,7 +348,7 @@ export async function KasEntryScreen({
                       ? <Link href={`/buku-besar/beban/${t.id}`} style={{ color: "#2563eb" }}>Pengeluaran kasir</Link>
                       : t.no}
                   </td>
-                  <td style={{ fontSize: 10.5 }}>{fmtTgl(t.tanggal)}</td>
+                  <td style={{ fontSize: 10.5 }}>{fmtTgl(t.tanggal)}{t.asal === "beban" && <LencanaMundur jejak={jejakMundur.get(t.id)} />}</td>
                   <td style={{ fontSize: 11 }}>{t.rekening}</td>
                   <td style={{ fontSize: 11 }}>
                     {t.akun}

@@ -9,20 +9,24 @@ import { KATEGORI_BEBAN } from "./kategori";
 import { hariIniWIB } from "@/lib/tanggal";
 import { ExpenseForm, ExpenseSubmitButton } from "@/components/pengeluaran/ExpenseForm";
 import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField";
+import { LaporanMundur } from "@/components/pengeluaran/LaporanMundur";
+import { LencanaMundur } from "@/components/pengeluaran/LencanaMundur";
+import { muatJejakMundurByIds } from "@/lib/expense-jejak";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const fmtDate = (s: string) => (s ? new Date(s).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
 
-export default async function BebanPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
-  const { success, error } = await searchParams;
+export default async function BebanPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string; mdari?: string; msampai?: string }> }) {
+  const { success, error, mdari, msampai } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const rekening = await loadRekeningAktif(supabase);
 
   const [{ data: branches }, { data: rows }] = await Promise.all([
     supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
-    supabase.from("expenses").select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, voided_at, branches(name)").order("tanggal", { ascending: false }).limit(30),
+    supabase.from("expenses").select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar, voided_at, branches(name)").order("created_at", { ascending: false }).limit(30),
   ]);
+  const jejak = await muatJejakMundurByIds(supabase, (rows ?? []).map((r) => r.id));
 
   const bulanIni = (rows ?? []).filter((r) => !r.voided_at && String(r.tanggal).slice(0, 7) === new Date().toISOString().slice(0, 7)).reduce((a, r) => a + Number(r.jumlah), 0);
 
@@ -105,7 +109,7 @@ export default async function BebanPage({ searchParams }: { searchParams: Promis
                 const br = Array.isArray(r.branches) ? r.branches[0] : r.branches;
                 return (
                   <tr key={r.id}>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(r.tanggal)}{r.voided_at && <span className="bge r" style={{ marginLeft: 5 }}>Dibatalkan</span>}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtDate(r.tanggal)}<LencanaMundur jejak={jejak.get(r.id)} />{r.voided_at && <span className="bge r" style={{ marginLeft: 5 }}>Dibatalkan</span>}</td>
                     <td style={{ fontSize: 12 }}>{r.kategori}</td>
                     <td style={{ fontSize: 11.5, color: "var(--tm)" }}>{r.deskripsi ?? "—"}</td>
                     <td style={{ fontSize: 11 }}>{br?.name ?? "—"}</td>
@@ -126,6 +130,8 @@ export default async function BebanPage({ searchParams }: { searchParams: Promis
           </table>
         </div>
       </div>
+
+      <LaporanMundur dari={mdari} sampai={msampai} aksi="/buku-besar/beban" />
     </>
   );
 }

@@ -6,6 +6,8 @@ import { StokTabs, StatCard } from "../stok/StokTabs";
 import { TambahPengeluaran } from "./TambahPengeluaran";
 import { hariIniWIB } from "@/lib/tanggal";
 import { KATEGORI_PENGELUARAN_FILTER, badgeKategoriPengeluaran } from "@/lib/kategori-pengeluaran";
+import { muatJejakMundurByIds } from "@/lib/expense-jejak";
+import { LencanaMundur } from "@/components/pengeluaran/LencanaMundur";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null { return Array.isArray(r) ? (r[0] ?? null) : r; }
@@ -62,6 +64,8 @@ export default async function KlinikPengeluaranPage({
       else buktiOf[l.ref_id] = { url: urlOf.get(l.path) ?? null, nama: l.nama, jumlah: 1 };
     }
   } catch { /* kolom Bukti tampil "—" */ }
+
+  const jejak = await muatJejakMundurByIds(supabase, ids);
 
   // Stat: hari / bulan / tahun (dari cabang ini).
   // Tanggal WIB (server Vercel berjalan di UTC — sebelum jam 07.00 WIB "hari ini" dulu masih kemarin).
@@ -127,7 +131,7 @@ export default async function KlinikPengeluaranPage({
                 {(rows ?? []).map((r, i) => (
                   <tr key={r.id}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-                    <td style={{ fontSize: 11 }}>{fmtDate(r.tanggal)}<div style={{ fontSize: 9.5, color: "var(--td)" }}>{fmtTime(r.created_at)}</div></td>
+                    <td style={{ fontSize: 11 }}>{fmtDate(r.tanggal)}<LencanaMundur jejak={jejak.get(r.id)} /><div style={{ fontSize: 9.5, color: "var(--td)" }}>{fmtTime(r.created_at)}</div></td>
                     <td><span className={`bge ${badgeKategoriPengeluaran(r.kategori)}`}>{r.kategori}</span></td>
                     <td style={{ fontSize: 11.5 }}>{r.deskripsi ?? "—"}
                       {r.voided_at && <span className="bge r" style={{ marginLeft: 5 }}>Dibatalkan</span>}

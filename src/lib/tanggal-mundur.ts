@@ -37,6 +37,11 @@ export function formatTanggalID(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
+/** Alasan harus memuat sedikitnya satu huruf atau angka: \"...\", tab, atau baris kosong bukan alasan (review PR #570, MINOR-1). */
+export function alasanBermakna(alasan: string): boolean {
+  return /[\p{L}\p{N}]/u.test(alasan);
+}
+
 export type CekTanggalMundur =
   | { ok: true; tanggal: string; mundur: false; alasan: null }
   | { ok: true; tanggal: string; mundur: true; alasan: string }
@@ -49,8 +54,8 @@ export function cekTanggalMundur(input: { tanggal: string | null | undefined; al
   if (tanggal === input.today) return { ok: true, tanggal, mundur: false, alasan: null };
   if (tanggal > input.today) return { ok: false, message: "Tanggal pengeluaran tidak boleh di masa depan. Pengeluaran ini BELUM tersimpan." };
   const alasan = (input.alasan ?? "").trim();
-  if (alasan.length < ALASAN_MIN || alasan.length > ALASAN_MAX) {
-    return { ok: false, message: `Tanggal mundur wajib disertai alasan ${ALASAN_MIN}-${ALASAN_MAX} huruf (mis. "nota terlupa diinput kemarin"). Pengeluaran ini BELUM tersimpan.` };
+  if (alasan.length < ALASAN_MIN || alasan.length > ALASAN_MAX || !alasanBermakna(alasan)) {
+    return { ok: false, message: `Tanggal mundur wajib disertai alasan ${ALASAN_MIN}-${ALASAN_MAX} huruf atau angka (mis. "nota terlupa diinput kemarin"). Pengeluaran ini BELUM tersimpan.` };
   }
   if (nilaiHari(input.today) - nilaiHari(tanggal) > BATAS_HARI_MUNDUR) {
     return { ok: false, message: `Tanggal mundur paling lama ${BATAS_HARI_MUNDUR} hari ke belakang (sampai ${formatTanggalID(batasTanggalMundur(input.today))}). Pengeluaran ini BELUM tersimpan.` };
@@ -70,4 +75,36 @@ export function penolakanTanggalMundurDB(message: string | undefined, mundur: bo
     return "Periode akuntansi untuk tanggal itu sudah ditutup. Pilih tanggal sesudah penutupan buku atau minta Finance membuka periodenya. Pengeluaran ini BELUM tersimpan.";
   }
   return null;
+}
+
+export type CekTanggalUbah = { ok: true; tanggal: string; berubah: boolean } | { ok: false; message: string };
+
+/**
+ * Aturan tanggal untuk UBAH pengeluaran (Owner / Admin / Finance), sama dengan input baru:
+ * bukan masa depan; bila tanggal DIGANTI paling lama 31 hari ke belakang dan alasan koreksi 3-200 huruf/angka.
+ * Tanggal lama yang tidak diganti boleh berapa pun umurnya (hanya nominal/kategori/metode yang dikoreksi).
+ * Alasan koreksi (3-1000) tetap diperiksa terpisah oleh aksi; di sini hanya batas 200 untuk penggantian tanggal ke masa lalu.
+ */
+export function cekTanggalUbah(input: { tanggal: string | null | undefined; tanggalLama: string; alasan: string | null | undefined; today: string }): CekTanggalUbah {
+  const tanggal = (input.tanggal ?? "").trim();
+  if (!tanggalSah(tanggal)) return { ok: false, message: "Tanggal pengeluaran tidak valid. Perubahan BELUM tersimpan." };
+  if (tanggal > input.today) return { ok: false, message: "Tanggal pengeluaran tidak boleh di masa depan. Perubahan BELUM tersimpan." };
+  if (tanggal === input.tanggalLama) return { ok: true, tanggal, berubah: false };
+  if (tanggal < input.today) {
+    if (nilaiHari(input.today) - nilaiHari(tanggal) > BATAS_HARI_MUNDUR) {
+      return { ok: false, message: `Tanggal pengeluaran yang diganti paling lama ${BATAS_HARI_MUNDUR} hari ke belakang (sampai ${formatTanggalID(batasTanggalMundur(input.today))}). Perubahan BELUM tersimpan.` };
+    }
+    const alasan = (input.alasan ?? "").trim();
+    if (alasan.length < ALASAN_MIN || alasan.length > ALASAN_MAX || !alasanBermakna(alasan)) {
+      return { ok: false, message: `Mengganti tanggal ke masa lalu wajib disertai alasan koreksi ${ALASAN_MIN}-${ALASAN_MAX} huruf atau angka. Perubahan BELUM tersimpan.` };
+    }
+  }
+  return { ok: true, tanggal, berubah: true };
+}
+
+/** Penolakan pasti dari database untuk Ubah (transaksi dibatalkan: tidak ada yang tersimpan). Selain ini galat tetap dilempar (hasil belum pasti). */
+const PENOLAKAN_UBAH = ["Periode akuntansi sudah ditutup", "Pengeluaran sudah berubah", "Shift sudah ditutup", "Pengeluaran sudah dibatalkan", "Tanggal, kategori, metode", "Akses pengeluaran ditolak"];
+export function penolakanUbahDB(message: string | undefined): string | null {
+  const m = (message ?? "").trim();
+  return PENOLAKAN_UBAH.some((p) => m.startsWith(p)) ? `${m}${m.endsWith(".") ? "" : "."} Perubahan BELUM tersimpan.` : null;
 }
