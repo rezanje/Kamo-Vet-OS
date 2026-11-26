@@ -5,11 +5,15 @@ import { StokKurangDariPesan } from "@/components/StokKurangPopup";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { parseBlocked } from "@/lib/stock-correction-blocked";
 import { previewStockCorrection, saveStockCorrection, recoverStockCorrection } from "./actions";
-import type { StockCorrectionKind, StockCorrectionRow, StockCorrectionPreview, StockCorrectionInput, StockCorrectionResult } from "@/lib/stock-correction-types";
+import type { StockCorrectionKind, StockCorrectionRow, StockCorrectionPreview, StockCorrectionInput, StockCorrectionResult, StockCorrectionBlocked } from "@/lib/stock-correction-types";
 
 type Submission = { rows: StockCorrectionInput[]; reason: string; key: string; token: string };
 type Saved = { key: string; revision: number; quantities: Record<string, string>; reason: string; submission?: Submission };
+const savedMessage = (revision: number, applied: number | undefined, held: number) => held > 0
+  ? `Koreksi revisi ${revision} tersimpan untuk ${applied ?? "sebagian"} baris. ${held} baris TIDAK diubah (alasan di bawah); stok, jurnal, dan riwayat baris yang diterapkan telah diperbarui.`
+  : `Koreksi revisi ${revision} tersimpan. Stok, jurnal, dan riwayat telah diperbarui.`;
 const money = (n: number) => Number(n).toLocaleString("id-ID", { maximumFractionDigits: 2 });
 
 export function StockCorrectionForm({ userId, kind, documentId, revision, rows }: {
@@ -17,11 +21,15 @@ export function StockCorrectionForm({ userId, kind, documentId, revision, rows }
 }) {
   const router = useRouter();
   const storage = `vetos:stock-correction:v1:${userId}:${kind}:${documentId}`;
+  // Panel di-remount saat revisi berubah (router.refresh), jadi ringkasan hasil terakhir (termasuk baris tertahan) disimpan di sini agar tetap terbaca.
+  const resultKey = `vetos:stock-correction-result:v1:${userId}:${kind}:${documentId}`;
   const [saved, setSaved] = useState<Saved | null>(null);
   const [preview, setPreview] = useState<StockCorrectionPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [done, setDone] = useState(false);
+  // Baris yang diubah tetapi ditahan server (dari pratinjau, hasil simpan, atau galat "semua baris tertahan"): alasan per baris.
+  const [held, setHeld] = useState<StockCorrectionBlocked[]>([]);
   const inFlight = useRef(false);
 
   useEffect(() => {
@@ -43,6 +51,21 @@ export function StockCorrectionForm({ userId, kind, documentId, revision, rows }
     return () => { cancelled = true; };
   }, [storage, rows, revision]);
 
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => { if (cancelled) return;
+      try {
+        const raw = sessionStorage.getItem(resultKey);
+        if (!raw) return;
+        const last = JSON.parse(raw) as { revision?: unknown; applied?: unknown; blocked?: unknown };
+        const blocked = parseBlocked(last.blocked);
+        if (last.revision !== revision || !blocked || blocked.length === 0) return;
+        setHeld(blocked); setMessage(savedMessage(revision, typeof last.applied === "number" ? last.applied : undefined, blocked.length));
+      } catch { /* Ringkasan opsional. */ }
+    });
+    return () => { cancelled = true; };
+  }, [resultKey, revision]);
+
   function persist(next: Saved) {
     try { sessionStorage.setItem(storage, JSON.stringify(next)); setSaved(next); return true; }
     catch { setMessage("Draf belum tersimpan. Periksa penyimpanan browser sebelum melanjutkan."); return false; }
@@ -54,7 +77,10 @@ export function StockCorrectionForm({ userId, kind, documentId, revision, rows }
     finally { inFlight.current = false; setBusy(false); }
   }
   function confirmed(result: StockCorrectionResult) {
-    setDone(true);setMessage(`Koreksi revisi ${result.revision} tersimpan. Stok, jurnal, dan riwayat telah diperbarui.`);
+    const blocked = result.blocked ?? [];
+    setHeld(blocked);setPreview(null);
+    setDone(true);setMessage(savedMessage(result.revision, result.applied, blocked.length));
+    try { sessionStorage.setItem(resultKey, JSON.stringify({ revision: result.revision, applied: result.applied ?? null, blocked })); } catch { /* Ringkasan hanya tampilan; hasil server tetap sah. */ }
     try { sessionStorage.removeItem(storage); } catch { /* Server result is authoritative. */ }
     router.refresh();
   }
@@ -63,38 +89,51 @@ export function StockCorrectionForm({ userId, kind, documentId, revision, rows }
     if (result.data) confirmed(result.data);
     else {
       setMessage(result.error ?? "Hasil koreksi belum terkonfirmasi.");
+      if (result.blocked) setHeld(result.blocked);
       if (!result.uncertain && saved) { persist({ ...saved, revision, submission: undefined }); setPreview(null); }
     }
   }
   const inputs = rows.map(r => ({ item_id: r.item_id, qty: Number(saved?.quantities[r.item_id]) }));
+  const heldById = new Map((preview?.blocked ?? held).filter(b => b.item_id).map(b => [b.item_id as string, b.reason]));
+  const previewHeld = preview?.blocked ?? [];
   const valid = !!saved && saved.reason.trim().length >= 3 && saved.reason.length <= 1000 && rows.every(r => saved.quantities[r.item_id]?.trim() !== "" && Number.isFinite(Number(saved.quantities[r.item_id])) && Number(saved.quantities[r.item_id]) >= 0);
 
   return <div className="crm-sec">
     <h3>Koreksi jumlah oleh Super Admin</h3>
     <p>Masukkan jumlah yang seharusnya tercatat pada transaksi asal. Perubahan diterapkan sebagai selisih terhadap stok saat ini. Dokumen asal, jurnal pembalikan, dan pengganti tetap tersimpan.</p>
     <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Barang</th><th>Jumlah tercatat</th><th>Jumlah yang benar</th></tr></thead><tbody>
-      {rows.map(r => <tr key={r.item_id}><td>{r.name}</td><td>{Number(r.qty)}</td><td><NumberInput className="fi" aria-label={`Jumlah benar ${r.name}`} name={`qty-${r.item_id}`} type="number" min="0" max="1000000000" step="any" value={saved?.quantities[r.item_id] ?? String(r.qty)} disabled={!saved || busy || !!saved.submission || done} onChange={e => { if (saved && persist({ ...saved, quantities: { ...saved.quantities, [r.item_id]: e.target.value } })) setPreview(null); }} /></td></tr>)}
+      {rows.map(r => <tr key={r.item_id}><td>{r.name}</td><td>{Number(r.qty)}</td><td><NumberInput className="fi" aria-label={`Jumlah benar ${r.name}`} name={`qty-${r.item_id}`} type="number" min="0" max="1000000000" step="any" value={saved?.quantities[r.item_id] ?? String(r.qty)} disabled={!saved || busy || !!saved.submission || done} onChange={e => { if (saved && persist({ ...saved, quantities: { ...saved.quantities, [r.item_id]: e.target.value } })) { setPreview(null); setHeld([]); try { sessionStorage.removeItem(resultKey); } catch { /* opsional */ } } }} />{heldById.has(r.item_id) && <div className="p2ban" data-blocked-row={r.item_id}>Tertahan, jumlah tidak diubah: {heldById.get(r.item_id)}</div>}</td></tr>)}
     </tbody></table></div>
     <label className="flab" htmlFor={`stock-reason-${documentId}`}>Alasan koreksi</label>
     <input id={`stock-reason-${documentId}`} className="fi" name="reason" required minLength={3} maxLength={1000} value={saved?.reason ?? ""} disabled={!saved || busy || !!saved.submission || done} onChange={e => { if(saved) persist({ ...saved, reason: e.target.value }); }} />
     {message && <div role="status" className="p2ban">{message}</div>}
     {/* "Stok tidak cukup untuk koreksi" naik jadi popup yang sama dengan proses stok lain. */}
     <StokKurangDariPesan pesan={message} />
+    {held.length > 0 && !preview && <div role="region" aria-label="Baris yang tidak bisa dikoreksi">
+      <h4>Baris yang tidak bisa dikoreksi ({held.length})</h4>
+      <p>Baris ini dibiarkan seperti semula. Baris lain pada dokumen tidak terpengaruh.</p>
+      <ul>{held.map((b, i) => <li key={b.item_id ?? `${b.name}-${i}`}><strong>{b.name}</strong>{b.old_qty !== undefined && b.new_qty !== undefined ? <> (tercatat {b.old_qty}, diminta {b.new_qty})</> : null}: {b.reason}</li>)}</ul>
+    </div>}
     {preview && <div role="region" aria-label="Preview dampak koreksi">
       <h4>Dampak sebelum disimpan</h4>
+      {preview.applied !== undefined && <p>{preview.applied} baris akan dikoreksi{previewHeld.length > 0 ? `, ${previewHeld.length} baris tertahan dan dibiarkan seperti semula` : ""}.</p>}
+      {previewHeld.length > 0 && <div role="region" aria-label="Baris yang tidak bisa dikoreksi">
+        <h5>Baris yang tidak bisa dikoreksi ({previewHeld.length})</h5>
+        <ul>{previewHeld.map((b, i) => <li key={b.item_id ?? `${b.name}-${i}`}><strong>{b.name}</strong>{b.old_qty !== undefined && b.new_qty !== undefined ? <> (tercatat {b.old_qty}, diminta {b.new_qty})</> : null}: {b.reason}</li>)}</ul>
+      </div>}
       {preview.lines.map(line => <p key={line.item_id}>{line.name}: jumlah transaksi {line.old_qty} → {line.new_qty}; stok sekarang {line.stock_before} → {line.stock_after} (selisih {line.delta}).</p>)}
       <p>Nilai persediaan transaksi: Rp {money(preview.value_before)} → Rp {money(preview.value_after)}. Dampak jurnal persediaan: Rp {money(preview.value_delta)}; akun selisih mencatat nilai berlawanan.</p>
     </div>}
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
       <button type="button" className="btn-def" disabled={!valid || busy || !!saved?.submission || done} onClick={() => run(async () => {
         const response = await previewStockCorrection(kind, documentId, inputs);
-        setPreview(response.data ?? null); if (response.error) setMessage(response.error);
+        setPreview(response.data ?? null); setHeld(response.blocked ?? []); if (response.error) setMessage(response.error);
       })}>Periksa dampak koreksi</button>
       <button type="button" className="btn-acc" data-save disabled={!valid || !preview || busy || !!saved?.submission || done} onClick={() => run(async () => {
         if (!saved || !preview) return;
         const submission = { rows: inputs, reason: saved.reason.trim(), key: saved.key, token: preview.token };
         if (persist({ ...saved, submission })) await submit(submission);
-      })}>Simpan koreksi</button>
+      })}>{previewHeld.length > 0 ? `Simpan ${preview?.applied ?? preview?.lines.length ?? 0} baris yang bisa dikoreksi` : "Simpan koreksi"}</button>
       {saved?.submission && !done && <>
         <button type="button" className="btn-def" disabled={busy} onClick={() => run(async () => {
           const response = await recoverStockCorrection(kind, documentId, saved.key);
