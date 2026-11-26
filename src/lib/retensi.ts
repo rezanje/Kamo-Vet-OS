@@ -147,3 +147,14 @@ export function rataIntervalGabungan(profil: ProfilPelanggan[]): { rata: number 
   const total = punya.reduce((a, p) => a + (p.rataInterval as number), 0);
   return { rata: total / punya.length, dihitungDari: punya.length };
 }
+
+/**
+ * Pesan WA pembuka untuk pelanggan dorman. Tanpa janji diskon (penawaran ditentukan marketing).
+ * Tempat berkunjung = nama cabang pertama pelanggan bila tercatat; kalau tidak (kosong atau "—") merek lama "Kamo Pet Care".
+ */
+export function pesanRetensi(nama: string, cabang: string | null | undefined): string {
+  const c = typeof cabang === "string" ? cabang.replace(/\s+/g, " ").trim() : "";
+  const tempat = c && c !== "—" ? c : "Kamo Pet Care";
+  return `Halo Kak ${nama}, sudah lama tidak berkunjung ke ${tempat}. ` +
+    `Apa kabar anabulnya? Kalau berkenan, boleh dibalas pesan ini untuk atur jadwal kunjungan ya. Terima kasih!`;
+}
