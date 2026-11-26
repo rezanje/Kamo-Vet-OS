@@ -198,6 +198,8 @@ def jalankan(pg, migrasi_teks, migrasi2_teks=None):
     sidik_awal = None
     pandangan_awal = {}
     for berkas in semua:
+        if berkas.name == "20261213100000_daftar_rekam_medis_cari_obat.sql":
+            continue  # migrasi 20261213100000 mengganti tanda tangan fungsi ini (6 -> 7 argumen); diuji di test-rekmed-cari-obat-postgres.py
         if berkas.name in hris.SEBELUM:
             pg.sql(hris.SEBELUM[berkas.name])
         if berkas.name == MIGRASI2.name:
