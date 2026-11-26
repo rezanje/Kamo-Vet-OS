@@ -79,6 +79,9 @@ describe("halaman booking publik", () => {
       expect(h).toContain("KAMO PET CARE");
       expect(h).not.toContain('data-kop="cabang"');
       expect(h).not.toContain("<script>alert");
+      // pilihan formulir tetap di placeholder "pilih klinik" (bukan klinik pertama yang terpilih diam-diam)
+      expect(h).toMatch(/<option value=""[^>]*disabled[^>]*selected|<option value=""[^>]*selected[^>]*disabled/);
+      expect(h).not.toMatch(/<option value="[0-9a-f-]{36}"[^>]*selected/);
     }
   });
   it("kolom alamat/telepon gagal dibaca: formulir tetap hidup dengan daftar klinik (id dan nama saja), kop umum", async () => {
