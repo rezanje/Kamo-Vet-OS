@@ -161,6 +161,13 @@ it("beberapa barang janggal -> SATU dialog memuat semuanya (hanya yang janggal);
   expect(dialog()).toBeNull(); expect(s.simpan).toHaveLength(1);
   expect(JSON.parse(s.simpan[0])).toEqual({ th4: 1000, sh: 3000, pk: 38 });
 });
+it("sesudah satu konfirmasi dan simpan, angka janggal berikutnya tetap ditanya lagi (izin sekali pakai)", async () => {
+  await isi("th4", "1000"); await simpan(); await act(async () => tombol("Ya, jumlah ini benar", dialog()!).click());
+  expect(s.simpan).toHaveLength(1);
+  await isi("sh", "3000"); await simpan();
+  expect(dialog()!.textContent).toContain("Yakin 3.000 ML?");
+  expect(s.simpan).toHaveLength(1);
+});
 it("Batal pada Simpan semua tidak menyimpan; setelah diperbaiki, simpan lolos tanpa dialog", async () => {
   await isi("th4", "1000"); await simpan(); await tekan("Escape");
   expect(s.simpan).toEqual([]);
