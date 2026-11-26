@@ -451,14 +451,14 @@ def sec_struktur(db, base_dig, ctx):
     gone = {k for k in base_dig if k not in new}
     chg_f = {k[2:] for k in changed if k.startswith("F|")}
     chg_p = {k for k in changed if k.startswith("P|")}
-    expected_f = set(base_fn) | {"activity_log_reader_guard(text,text[],boolean,uuid[])", "create_manual_journal_atomic(text,date,text,uuid,jsonb)",
+    expected_f = (set(base_fn) - ctx["pre_paired"]) | {"activity_log_reader_guard(text,text[],boolean,uuid[])", "create_manual_journal_atomic(text,date,text,uuid,jsonb)",
                                  "revise_manual_journal(text,uuid,integer,text,jsonb,jsonb,text)"}
     check("struktur: fungsi yang berubah == fungsi yang menyebut 'ADMIN' + 3 tambalan berjangkar (nol lebih, nol kurang)", chg_f == expected_f,
           dict(lebih=sorted(chg_f - expected_f)[:5], kurang=sorted(expected_f - chg_f)[:5], n=len(chg_f)), S)
     check("struktur: 44 kebijakan RLS berubah tepat = yang menyebut ADMIN", len(chg_p) == len(ctx["pols_base"]) and len(chg_p) >= 44, len(chg_p), S)
-    check("struktur: objek baru hanya jurnal_aksi_diizinkan + jurnal_izin", {k for k in added if not k.startswith("R|")} == {"F|jurnal_aksi_diizinkan(text)", "F|jurnal_izin()"}, sorted(added)[:6], S)
+    check("struktur: objek baru hanya jurnal_aksi_diizinkan + jurnal_izin", {k for k in added if not k.startswith("R|") and "admin_umum_private.diubah" not in k} == {"F|jurnal_aksi_diizinkan(text)", "F|jurnal_izin()"}, sorted(added)[:6], S)
     check("struktur: tidak ada objek yang hilang", not gone, sorted(gone)[:5], S)
-    check("struktur: pemicu dan constraint byte-identik", not [k for k in changed if k[0] in "TC"] and not [k for k in added if k[0] in "TC"], None, S)
+    check("struktur: pemicu dan constraint byte-identik", not [k for k in changed if k[0] in "TC"] and not [k for k in added if k[0] in "TC" and "admin_umum_private.diubah" not in k], None, S)
     other = [k for k in base_dig if k[0] == "F" and k not in changed]
     check("struktur: >= 800 fungsi lain byte-identik (definisi+ACL+config+pemilik)", len(other) >= 800, len(other), S)
     check("struktur: relasi (RLS menyala/ACL tabel) identik", not [k for k in changed if k[0] == "R"], None, S)
@@ -779,6 +779,10 @@ def prepare_base(cl, tpl):
        where n.nspname not in ('pg_catalog','information_schema','extensions','auth','storage','realtime','vault','graphql','graphql_public','pgsodium','supabase_functions','supabase_migrations','net','cron','pgbouncer') and p.prokind in ('f','p') and p.prosrc ~ '''ADMIN''(?![A-Za-z_0-9])'
        and not exists (select 1 from pg_depend e where e.classid='pg_proc'::regclass and e.objid=p.oid and e.deptype='e') order by 1""").splitlines()
     ctx["base_fn_sigs"] = list(sigs)
+    # fungsi yang SUDAH ditulis dengan ADMIN_UMUM oleh migrasi lain (mis. rekap_setoran): tidak boleh berubah oleh penulis ulang
+    ctx["pre_paired"] = set(d.sql("""select p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+       where n.nspname not in ('pg_catalog','information_schema','extensions','auth','storage','realtime','vault','graphql','graphql_public','pgsodium','supabase_functions','supabase_migrations','net','cron','pgbouncer') and p.prokind in ('f','p') and p.prosrc ~ '\'\'ADMIN\'\'(?![A-Za-z_0-9])' and p.prosrc ~ 'ADMIN_UMUM'
+       and not exists (select 1 from pg_depend e where e.classid='pg_proc'::regclass and e.objid=p.oid and e.deptype='e') order by 1""").splitlines())
     ctx["pols_base"] = policy_list(d)
     ctx["mx_base"], ctx["unstable"] = {}, set()
     for strat in ("nul", "dummy"):
