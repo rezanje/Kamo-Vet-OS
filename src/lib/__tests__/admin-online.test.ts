@@ -109,7 +109,7 @@ describe("matriks rute (semua page.tsx / route.ts di src/app)", () => {
     const ditinjau: Record<string, RegExp> = {
       "/api/cari": /bolehBukaPath\(role, path, aturan\)/,                // tiap sumber disaring bolehBukaPath -> Admin Online tidak mendapat apa pun
       "/api/pelanggan": /isAdminOnline\(profil\?\.role\)[\s\S]*403/,      // ditolak eksplisit
-      "/api/impor/accurate/progres": /profile\?\.role !== "OWNER" && profile\?\.role !== "ADMIN"/, // daftar positif
+      "/api/impor/accurate/progres": /profile\?\.role !== "OWNER" && !isAdminRole\(profile\?\.role\)/, // daftar positif (OWNER + ADMIN/ADMIN_UMUM via isAdminRole; ADMIN_ONLINE tidak termasuk)
       "/api/version": /process\.env\.VERCEL_GIT_COMMIT_SHA/,              // publik, hanya versi build
       "/api/cron/akhir-bulan": /CRON_SECRET/,
       "/api/cron/wa-engine": /CRON_SECRET/,

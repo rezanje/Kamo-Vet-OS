@@ -45,7 +45,7 @@ it.each(["ADMIN", "FINANCE", "OWNER"])("offers %s the edit form and the attachme
 
 it("opens the attachment page of a Kas Masuk entry for Admin with the shared cash module", async () => {
   const html = renderToStaticMarkup(await LampiranKasScreen({ jenis: "Masuk", params: Promise.resolve({ id: ENTRY }) }));
-  expect(state.assertCalls[0]).toEqual(["/kas-bank/kas-masuk", "lampiran", ["OWNER", "ADMIN", "FINANCE"]]);
+  expect(state.assertCalls[0]).toEqual(["/kas-bank/kas-masuk", "lampiran", ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]]);
   expect(html).toContain("KK.2026.11.00001");
   expect(html).toContain(`data-panel="pengeluaran|${ENTRY}|/kas-bank/kas-masuk/lampiran/${ENTRY}"`);
 });
@@ -58,6 +58,6 @@ it("refuses malformed or unknown documents on the attachment page", async () => 
 
 it("keeps transfer attachments in their own module", async () => {
   const html = renderToStaticMarkup(await LampiranKasScreen({ jenis: "Transfer", params: Promise.resolve({ id: ENTRY }) }));
-  expect(state.assertCalls[0]).toEqual(["/kas-bank/transfer", "lampiran", ["OWNER", "ADMIN", "FINANCE"]]);
+  expect(state.assertCalls[0]).toEqual(["/kas-bank/transfer", "lampiran", ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]]);
   expect(html).toContain(`data-panel="transfer|${ENTRY}|/kas-bank/transfer/lampiran/${ENTRY}"`);
 });
