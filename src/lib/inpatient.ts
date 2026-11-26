@@ -1,7 +1,7 @@
 // Aturan rawat inap (Addendum §3) — pure, dipakai server action + UI.
 
 export type Condition = "stabil" | "kritis" | "sembuh" | "rip" | "pulang_paksa";
-export type Role = "OWNER" | "ADMIN" | "FINANCE" | "STAFF" | "DOCTOR";
+export type Role = "OWNER" | "ADMIN" | "ADMIN_UMUM" | "FINANCE" | "STAFF" | "DOCTOR";
 
 export const CONDITION_LABEL: Record<Condition, string> = {
   stabil: "Stabil",

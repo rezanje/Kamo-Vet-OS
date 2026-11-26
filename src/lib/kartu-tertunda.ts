@@ -7,6 +7,7 @@
  */
 import { kunciHpIndonesia } from "./kontak";
 import { kunciTeksImporRekamMedis } from "./impor-rekam-medis";
+import { isAdminRole } from "@/lib/peran-admin";
 
 // Supabase clients and the lightweight test clients share this surface.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,7 +107,7 @@ export async function bolehKelolaKartuTertunda(client: Client, userId: string | 
   if (!userId) return false;
   const { data, error } = await client.from("profiles").select("role, is_active").eq("id", userId).maybeSingle();
   if (error) throw new KartuTertundaGagal(PESAN_GAGAL_KARTU_TERTUNDA);
-  return (data?.role === "OWNER" || data?.role === "ADMIN") && data?.is_active === true;
+  return (data?.role === "OWNER" || isAdminRole(data?.role)) && data?.is_active === true;
 }
 
 /** HP kartu yang boleh dipakai otomatis (bukan bila kartu bertanda masalah HP). */

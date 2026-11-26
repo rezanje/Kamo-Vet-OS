@@ -14,7 +14,7 @@ export type HistoryEvent = {
 };
 export type ActorNames = ReadonlyMap<string, string>;
 
-const RIWAYAT_ROLES = ["OWNER", "ADMIN", "FINANCE"] as const;
+const RIWAYAT_ROLES = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"] as const;
 
 /** Panel riwayat hanya untuk peran keuangan/pemilik; basis data tetap memeriksa RLS tiap sumber. */
 export function bolehLihatRiwayat(profile: { role?: string | null; is_active?: boolean | null } | null | undefined): boolean {

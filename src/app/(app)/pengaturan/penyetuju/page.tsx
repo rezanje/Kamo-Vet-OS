@@ -10,6 +10,7 @@ import { JENIS_PERSETUJUAN, PERAN_PENYETUJU, labelJenis } from "@/lib/persetujua
 import {
   hapusAturanPersetujuan, setujuiPengajuan, tambahAturanPersetujuan, tolakPengajuan, ubahStatusAturan,
 } from "./actions";
+import { peranPenyetujuEfektif } from "@/lib/peran-admin";
 
 // Penyetuju Transaksi (S6) — aturan "berapa nilai yang boleh dilepas tanpa bertanya"
 // plus antrean pengajuan yang menunggu keputusan.
@@ -43,8 +44,8 @@ export default async function PenyetujuPage({
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   if (!me) redirect("/login");
 
-  const peranSaya = String(me.role);
-  const bolehAtur = ["OWNER", "ADMIN"].includes(peranSaya);
+  const peranSaya = peranPenyetujuEfektif(String(me.role));
+  const bolehAtur = ["OWNER", "ADMIN", "ADMIN_UMUM"].includes(peranSaya);
 
   const [{ data: rulesRaw }, { data: historyRaw, error: historyError }, { data: profiles }] = await Promise.all([
     supabase.from("approval_rules")

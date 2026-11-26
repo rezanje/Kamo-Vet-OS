@@ -55,7 +55,7 @@ export default async function TransferPage({
   const rekening = (rekData ?? []) as { id: string; nama: string; jenis: string; coa_code: string; branch_id?: string | null }[];
   const daftar = transferPage?.rows ?? [];
   // Koreksi/batal: OWNER/ADMIN/FINANCE aktif (keputusan 12 Nov 2026).
-  const mayCorrect = !!profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
+  const mayCorrect = !!profile?.is_active && ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(profile.role);
   let selected = daftar.find(t => t.id === (koreksi ?? batal));
   let selectionError: unknown = null;
   if ((koreksi || batal) && !selected) {

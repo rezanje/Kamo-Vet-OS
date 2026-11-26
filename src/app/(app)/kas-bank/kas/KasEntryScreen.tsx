@@ -50,7 +50,7 @@ export async function KasEntryScreen({
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
   // Edit/koreksi: OWNER/ADMIN/FINANCE aktif (keputusan 12 Nov 2026).
-  const bolehEdit = profile?.is_active === true && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
+  const bolehEdit = profile?.is_active === true && ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(profile.role);
   const keluar = jenis === "Keluar";
 
   const [{ data: rekData }, { data: coaData }, { data: branches }, { data: rows }] = await Promise.all([

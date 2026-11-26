@@ -4,6 +4,7 @@ import { loadItemUnits, unitOptions } from "@/lib/satuan";
 import { completeReportQuery } from "@/lib/report-query";
 import { readCompleteList } from "@/lib/checked-list";
 import type { BarangRow, KandidatKomponenGrup } from "./BarangForm";
+import { isAdminRole } from "@/lib/peran-admin";
 
 export const BARANG_FIELDS =
   "id, name, code, unit, upc, category_id, brand_id, item_type, sell_price, buy_price, min_stock, track_expiry, is_active, tindakan_kategori, supplier_id, buy_unit, min_buy, min_sell_qty, default_discount, substitute_item_id";
@@ -15,7 +16,7 @@ export async function siapkanFormBarang() {
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
-  if (!profile?.is_active || (profile.role !== "OWNER" && profile.role !== "ADMIN")) {
+  if (!profile?.is_active || (profile.role !== "OWNER" && !isAdminRole(profile.role))) {
     redirect(`/pos/sku?error=${encodeURIComponent("Hanya OWNER/ADMIN yang boleh mengubah master barang")}`);
   }
 

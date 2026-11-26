@@ -12,7 +12,7 @@ import { hppWarningConfirmed, hppWarningQuery } from "@/lib/hpp-warning";
 import { grosirHppWarnings } from "@/lib/hpp-warning-server";
 
 const FORM = "/penjualan/faktur/baru";
-const BOLEH = ["OWNER", "ADMIN", "FINANCE", "STAFF"];
+const BOLEH = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE", "STAFF"];
 
 /**
  * Faktur Penjualan langsung dari halaman faktur, tanpa mengetik pesanan dulu.

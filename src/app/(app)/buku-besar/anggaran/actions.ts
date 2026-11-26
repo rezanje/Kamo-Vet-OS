@@ -7,7 +7,7 @@ import { serapanPeriode } from "@/lib/anggaran-data";
 
 const BASE = "/buku-besar/anggaran";
 const TRANSFER = "/buku-besar/transfer-anggaran";
-const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
+const BOLEH = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"];
 
 const kembali = (base: string, periode: string) => `${base}?periode=${periode}`;
 const periodeValid = (p: string) => /^\d{4}-\d{2}$/.test(p);

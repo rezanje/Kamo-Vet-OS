@@ -79,7 +79,7 @@ export default async function PelangganPage({ searchParams }: {
   } catch (error) { return <ListLoadFailure error={error} label="Pelanggan" />; }
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  const isAdmin = !!me && ["OWNER", "ADMIN"].includes(me.role);
+  const isAdmin = !!me && ["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role);
   const bolehPoinManual = await poinManualAllowed(supabase);
   const terakhirDatang = retensiStatus.aktif ? await muatTerakhirDatang(supabase, customers.map((c) => c.id)) : {};
   const retensi = bulanRetensi === null ? null

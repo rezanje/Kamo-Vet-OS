@@ -13,7 +13,7 @@ import type { InpatientCashierData, InpatientCashierReadOnly } from "@/lib/inpat
 import { PaymentPageHeading, PaymentPatientHeader, type PaymentPatient } from "./PaymentPresentation";
 import { InpatientCashier } from "./InpatientCashier";
 // Sama dengan penjaga database: DOKTER tidak mengganti pelaksana di kasir (tidak melakukan pembayaran).
-const PERAN_GANTI_PELAKSANA=["OWNER","ADMIN","FINANCE","STAFF"];
+const PERAN_GANTI_PELAKSANA=["OWNER","ADMIN", "ADMIN_UMUM","FINANCE","STAFF"];
 const rp=(n:number)=>`Rp ${Math.round(n).toLocaleString("id-ID")}`;
 type Query={error?:string;success?:string;invoice?:string;receipt?:string;applications?:string};
 export async function InpatientPaymentPage({db,visitId,recordId,branchId,userId,query,patient,catatanResep = null,stayStatus,visitDoctorId = null}: {

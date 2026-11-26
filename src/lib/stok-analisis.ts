@@ -30,7 +30,7 @@ export const KONFIG_STOK = {
 export const HALAMAN_SLOW = "/laporan/stok-slow-moving";
 export const HALAMAN_ORDER = "/laporan/stok-harus-order";
 /** Peran yang melihat kartu di dashboard (halamannya tetap ikut Akses Grup). */
-export const PERAN_STOK = ["OWNER", "ADMIN", "FINANCE"] as const;
+export const PERAN_STOK = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"] as const;
 export type KonfigStok = { [K in keyof typeof KONFIG_STOK]: number };
 
 /** Satu baris per barang dari fungsi SQL (angka bisa datang sebagai teks/angka). */

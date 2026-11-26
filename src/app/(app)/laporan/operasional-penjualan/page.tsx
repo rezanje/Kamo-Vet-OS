@@ -7,6 +7,7 @@ import { laporanDiminta } from "@/lib/report-gate";
 import { collectOperationalAlertBlock } from "@/lib/operational-alerts-server";
 import { OperationSalesDashboard } from "./OperationSalesDashboard";
 import { PeriodPresetSync } from "./PeriodPresetSync";
+import { isAdminRole } from "@/lib/peran-admin";
 
 const CHANNELS: Channel[] = ["all", "pos", "online", "reseller", "klinik"];
 const PRESETS: PeriodPreset[] = ["today", "mtd", "custom"];
@@ -121,7 +122,7 @@ export default async function OperationSalesPage({
         </>
       }
     >
-      {dashboard && alerts && <OperationSalesDashboard data={dashboard} alerts={alerts} showAlertDiagnostics={role === "OWNER" || role === "ADMIN"} canViewInventoryValue={canViewInventoryValue} />}
+      {dashboard && alerts && <OperationSalesDashboard data={dashboard} alerts={alerts} showAlertDiagnostics={role === "OWNER" || isAdminRole(role)} canViewInventoryValue={canViewInventoryValue} />}
     </LaporanPage>
   );
 }

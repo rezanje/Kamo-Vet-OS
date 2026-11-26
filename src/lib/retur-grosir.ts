@@ -8,7 +8,7 @@
 import Decimal from "decimal.js";
 
 /** Membuat retur: sama dengan peran penerimaan grosir (OWNER/ADMIN/FINANCE aktif). */
-export const PERAN_RETUR_GROSIR = ["OWNER", "ADMIN", "FINANCE"] as const;
+export const PERAN_RETUR_GROSIR = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"] as const;
 /** Membatalkan retur = koreksi pembukuan: OWNER/FINANCE aktif, sama dengan koreksi grosir J01. */
 export const PERAN_BATAL_RETUR_GROSIR = ["OWNER", "FINANCE"] as const;
 

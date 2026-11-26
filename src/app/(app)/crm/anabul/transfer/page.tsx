@@ -7,7 +7,7 @@ export default async function TransferPage({ searchParams }: { searchParams: Pro
   const db = await createClient();
   const { data: { user } } = await db.auth.getUser();
   const { data: me } = await db.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) return <p>Hanya owner/admin yang dapat mengakses transfer kepemilikan.</p>;
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) return <p>Hanya owner/admin yang dapat mengakses transfer kepemilikan.</p>;
   const { data: pet } = await db.from("pets").select("id, name, customer_id, status").eq("id", id ?? "").maybeSingle();
   if (!pet) return <p>Anabul tidak ditemukan. <Link href="/crm/pelanggan">Kembali ke pelanggan</Link></p>;
   // Pemilik tujuan dicari di server sambil mengetik (TransferForm) — tidak lagi memuat semua pelanggan.

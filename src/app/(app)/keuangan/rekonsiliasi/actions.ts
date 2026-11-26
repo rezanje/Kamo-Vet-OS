@@ -12,7 +12,7 @@ const BACK = "/keuangan/rekonsiliasi";
 // akhir supaya pesan yang sudah di-encode tidak berubah. Halaman detail tidak digerbang.
 const TAMPIL = `&${PARAM_TAMPIL}=1`;
 async function simpan(formData: FormData, action: "create" | "edit" | "void") {
-  const supabase = await assertRole(BACK, "rekonsiliasi bank", action === "create" ? ["OWNER", "ADMIN", "FINANCE"] : ["OWNER"]);
+  const supabase = await assertRole(BACK, "rekonsiliasi bank", action === "create" ? ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"] : ["OWNER"]);
   const key = String(formData.get("draft_key") ?? "").trim();
   const id = String(formData.get("id") ?? "").trim();
   const revisionText = String(formData.get("revision") ?? "");
@@ -50,7 +50,7 @@ export async function koreksiRekonsiliasi(formData: FormData) { return simpan(fo
 export async function batalkanRekonsiliasi(formData: FormData) { return simpan(formData, "void"); }
 
 export async function pulihkanRekonsiliasi(formData: FormData) {
-  const supabase = await assertRole(BACK, "rekonsiliasi bank", ["OWNER", "ADMIN", "FINANCE"]);
+  const supabase = await assertRole(BACK, "rekonsiliasi bank", ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]);
   const refusal = await roleActionRefusal(supabase, "bank.bank_reconciliation.recover");
   if (refusal) redirect(`${BACK}?error=${encodeURIComponent(refusal.message)}${TAMPIL}`);
   const key = String(formData.get("draft_key") ?? "");

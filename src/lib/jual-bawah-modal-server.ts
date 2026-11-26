@@ -6,7 +6,7 @@ import type { createClient } from "@/lib/supabase/server";
 type Client = Awaited<ReturnType<typeof createClient>>;
 
 export const HALAMAN_BAWAH_MODAL = "/laporan/jual-bawah-modal";
-const PERAN_LAPORAN = ["OWNER", "ADMIN", "FINANCE"] as const;
+const PERAN_LAPORAN = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"] as const;
 
 export type BarisBawahModal = {
   sale_id: string; tanggal: string; cabang_id: string; cabang: string | null; no_struk: string; item_id: string; kode: string | null; barang: string;

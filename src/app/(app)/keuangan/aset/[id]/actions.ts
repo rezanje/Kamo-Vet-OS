@@ -9,7 +9,7 @@ import { cekPeriode } from "@/lib/jurnal-guard";
 import { jurnalPelepasan, nilaiBuku } from "@/lib/aset";
 import { hariIniWIB } from "@/lib/tanggal";
 
-const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
+const BOLEH = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"];
 const back = (id: string) => `/keuangan/aset/${id}`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

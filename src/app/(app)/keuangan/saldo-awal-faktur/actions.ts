@@ -31,7 +31,7 @@ const kontrol = (value: FormDataEntryValue | null) => {
 /** Read the file and let the database validate every row; nothing is written. */
 export async function periksaSaldoAwalFaktur(form: FormData): Promise<OpeningInvoicePreviewResult> {
   try {
-    const supabase = await actor(["OWNER", "ADMIN", "FINANCE"], "Hanya OWNER/ADMIN/FINANCE aktif yang dapat memeriksa saldo awal per faktur.");
+    const supabase = await actor(["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"], "Hanya OWNER/ADMIN/FINANCE aktif yang dapat memeriksa saldo awal per faktur.");
     const file = form.get("file");
     if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".xlsx")) throw new Error("Pilih file Excel .xlsx dari format saldo awal per faktur.");
     if (file.size > MAKS_BYTE_SALDO_AWAL_FAKTUR) throw new Error("File maksimal 2 MB.");

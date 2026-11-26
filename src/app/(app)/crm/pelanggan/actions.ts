@@ -35,7 +35,7 @@ export async function detailPelanggan(customerId: string): Promise<DetailPelangg
   }
   const pointHistory = (ledger ?? []).map((item) => ({ tgl: item.created_at as string, desc: (item.description as string | null) ?? "—", delta: Number(item.delta), saldo: Number(item.saldo) }));
   const { data: me } = await supabase.from("profiles").select("role").eq("id", userData.user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) return { purchases, ledger: pointHistory, stat: null };
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) return { purchases, ledger: pointHistory, stat: null };
   const [{ data: salesAgg }, { data: invAgg }] = await Promise.all([
     supabase.from("sales").select("total, channel, payment_plan, payments_finalized_at, voided_at, branches(name)").eq("customer_id", customerId),
     supabase.from("invoices").select("total, visits!inner(customer_id, branches(name))").eq("paid_status", "Lunas").is("voided_at", null).eq("visits.customer_id", customerId),
@@ -70,7 +70,7 @@ export async function updateKategoriPelanggan(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     redirect(`/crm/pelanggan?error=${encodeURIComponent("Hanya owner/admin yang bisa mengubah golongan")}`);
   }
 
@@ -96,7 +96,7 @@ export async function updateUlasanPelanggan(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     redirect(`/crm/pelanggan?error=${encodeURIComponent("Hanya owner/admin yang bisa mengubah status ulasan & catatan internal")}`);
   }
 
@@ -130,7 +130,7 @@ export async function aturSembunyiPelanggan(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     redirect(`/crm/pelanggan?error=${encodeURIComponent("Hanya owner/admin yang bisa menyembunyikan pelanggan")}`);
   }
 
@@ -169,7 +169,7 @@ export async function ubahDataPelanggan(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const phone = String(formData.get("phone") ?? "").trim().slice(0, 30);
   const kembali = phone ? `&cari=${encodeURIComponent(phone)}` : "";
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     redirect(`/crm/pelanggan?error=${encodeURIComponent("Hanya owner/admin yang bisa mengubah data pelanggan")}${kembali}`);
   }
   if (!/^[0-9a-f-]{36}$/i.test(id)) redirect(`/crm/pelanggan?error=${encodeURIComponent("Pelanggan tidak valid")}${kembali}`);

@@ -59,7 +59,7 @@ export async function PengeluaranDetail({
     ? jejakRaw as unknown as { effective_date: string; reason: string; recorded_at: string } : null;
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle() : { data: null };
-  const canManage = !!profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
+  const canManage = !!profile?.is_active && ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(profile.role);
   const [lock, shift, history] = canManage ? await Promise.all([
     supabase.from("accounting_locks").select("closed_until").eq("id", true).maybeSingle(),
     exp.shift_id ? supabase.from("cashier_shifts").select("status").eq("id", exp.shift_id).maybeSingle() : Promise.resolve({ data: null, error: null }),

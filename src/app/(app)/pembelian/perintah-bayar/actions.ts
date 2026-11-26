@@ -10,7 +10,7 @@ const BASE = "/pembelian/perintah-bayar";
 const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
 
 async function mutateOrder(formData: FormData, action: "create" | "approve" | "cancel") {
-  const supabase = await assertRole(BASE, "perintah pembayaran", action === "create" ? ["OWNER", "ADMIN", "FINANCE"] : ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BASE, "perintah pembayaran", action === "create" ? ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"] : ["OWNER", "ADMIN", "ADMIN_UMUM"]);
   const items: { invoice_id: string; jumlah: number }[] = [];
   if (action === "create") {
     for (const [key, value] of formData.entries()) {
@@ -45,7 +45,7 @@ export async function setujuiPerintahBayar(formData: FormData) { await mutateOrd
 export async function batalkanPerintahBayar(formData: FormData) { await mutateOrder(formData, "cancel"); }
 
 export async function bayarPerintahBayar(formData: FormData) {
-  const supabase = await assertRole(BASE, "pembayaran hutang", ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BASE, "pembayaran hutang", ["OWNER", "ADMIN", "ADMIN_UMUM"]);
   const id = String(formData.get("id") ?? "").trim();
   const key = String(formData.get("draft_key") ?? "");
   if (!id || !key) gagal("Identitas perintah bayar tidak valid. Muat ulang formulir.");

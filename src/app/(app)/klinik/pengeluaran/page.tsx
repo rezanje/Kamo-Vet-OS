@@ -25,7 +25,7 @@ export default async function KlinikPengeluaranPage({
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).single();
-  const canManage = profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
+  const canManage = profile?.is_active && ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(profile.role);
   const shift = await getOpenShift(supabase as never, user.id, "klinik");
   if (!shift && profile?.role === "STAFF") redirect("/klinik/shift");
   const branchId = shift?.branch_id ?? "";

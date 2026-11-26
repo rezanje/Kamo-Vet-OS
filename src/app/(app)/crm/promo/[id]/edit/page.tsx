@@ -34,7 +34,7 @@ export default async function EditPromoPage({params}:{params:Promise<{id:string}
  const {id}=await params;
  const db=await createClient();const {data:{user}}=await db.auth.getUser();
  const {data:me}=await db.from('profiles').select('role,is_active').eq('id',user?.id??'').maybeSingle();
- if(!user||!me?.is_active||!['OWNER','ADMIN'].includes(me.role))return <>{back}<p role="alert">Hanya owner/manajer aktif yang bisa mengatur promo.</p></>;
+ if(!user||!me?.is_active||!['OWNER','ADMIN', 'ADMIN_UMUM'].includes(me.role))return <>{back}<p role="alert">Hanya owner/manajer aktif yang bisa mengatur promo.</p></>;
  if(!/^[0-9a-f-]{36}$/i.test(id))return <>{back}<p role="alert">Promo tidak ditemukan atau tidak dapat diakses.</p></>;
  const {data,error}=await db.rpc('read_promo_edit',{p_id:id});
  if(error||!data)return <>{back}<p role="alert">Data promo belum dapat dimuat. Muat ulang atau kembali ke daftar; perubahan belum disimpan.</p></>;

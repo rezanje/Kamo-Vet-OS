@@ -12,7 +12,7 @@ import { kunciKasKeluar } from "@/lib/persetujuan";
 import { nomorBerikutnya } from "@/lib/no-dokumen";
 import { assertDraftJournal, transactionDraftAck } from "@/lib/transaction-draft-ack";
 
-const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
+const BOLEH = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"];
 
 const bacaJenis = (formData: FormData): JenisKas =>
   String(formData.get("jenis") ?? "") === "Masuk" ? "Masuk" : "Keluar";

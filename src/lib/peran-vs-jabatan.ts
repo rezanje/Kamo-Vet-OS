@@ -6,7 +6,7 @@
 export type PeranSaran = "DOCTOR" | "STAFF";
 
 const LABEL_PERAN: Record<string, string> = {
-  OWNER: "Super Admin", ADMIN: "Admin", FINANCE: "Finance", DOCTOR: "Dokter", STAFF: "Staf", ADMIN_ONLINE: "Admin Online",
+  OWNER: "Super Admin", ADMIN: "Admin", ADMIN_UMUM: "Admin Umum", FINANCE: "Finance", DOCTOR: "Dokter", STAFF: "Staf", ADMIN_ONLINE: "Admin Online",
 };
 
 export function labelPeranAkun(role: string): string {

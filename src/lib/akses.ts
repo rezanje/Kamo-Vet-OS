@@ -6,7 +6,7 @@ import { moduleHasAllowedSubmenu, submenuIzinkan } from "./submenu-access";
 // Satu tempat memutuskan "peran ini boleh buka apa", dipakai sidebar DAN middleware.
 // Sebelumnya dua-duanya punya daftar sendiri dan gampang tidak sinkron.
 
-export const SEMUA_PERAN = ["OWNER", "ADMIN", "FINANCE", "STAFF", "DOCTOR"] as const;
+export const SEMUA_PERAN = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE", "STAFF", "DOCTOR"] as const;
 export type Peran = (typeof SEMUA_PERAN)[number];
 export const ROLE_V2_MARKER = "__role_v2__";
 export const OPERATIONAL_PATHS: Record<string, string[]> = {

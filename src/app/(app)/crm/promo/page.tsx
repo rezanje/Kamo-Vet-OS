@@ -29,7 +29,7 @@ export default async function PromoAdminPage({
   const {data:{user}} = await supabase.auth.getUser();
 
   const {data:me}=await supabase.from("profiles").select("role,is_active").eq("id",user?.id??"").maybeSingle();
-  const canEdit=!!user&&!!me?.is_active&&["OWNER","ADMIN"].includes(me.role);
+  const canEdit=!!user&&!!me?.is_active&&["OWNER","ADMIN", "ADMIN_UMUM"].includes(me.role);
 
   const [promos, branches, activeItems, promoItems, categoryRows] = await Promise.all([
     readCompleteList<PromoRow>((from,to)=>supabase.from("promos")

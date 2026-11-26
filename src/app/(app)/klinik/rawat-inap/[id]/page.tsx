@@ -21,6 +21,7 @@ import { ringkasBelumDitagih } from "@/lib/tagihan-berjalan-server";
 import { bacaBolehKoreksiVisit, putuskanBolehKoreksiVisit } from "@/lib/koreksi-visit-akses";
 import { muatPanelUbahDokter } from "@/lib/ubah-dokter-pj-server";
 import { UbahDokterPJ } from "@/components/UbahDokterPJ";
+import { isAdminRole } from "@/lib/peran-admin";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -122,7 +123,7 @@ export default async function RawatInapDetailPage({
   const stayType = stayTypes.get(id) ?? "sakit";
   const cond = rec.condition_status as Condition;
   const isDoctor = me?.role === "DOCTOR";
-  const canManageTemplates = me?.role === "OWNER" || me?.role === "ADMIN";
+  const canManageTemplates = me?.role === "OWNER" || isAdminRole(me?.role);
   const active = !rec.discharged_at;
   // A5 (meeting 12 Nov 2026): setelah pulang/RIP, Owner / pemegang izin tetap bisa menambah & mengoreksi catatan visit (alasan wajib).
   const bolehKoreksi = !active && putuskanBolehKoreksiVisit(koreksiDibaca, me?.role);

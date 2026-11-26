@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { buatTemplateImporBarang, buatTemplateKategoriImporBarang } from "@/lib/template-impor-barang";
 import { buatTemplateRincianGrup } from "@/lib/template-rincian-grup";
+import { isAdminRole } from "@/lib/peran-admin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,7 +12,7 @@ export async function GET(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Sesi tidak ditemukan" }, { status: 401 });
   const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
-  if (!profile?.is_active || (profile.role !== "OWNER" && profile.role !== "ADMIN")) {
+  if (!profile?.is_active || (profile.role !== "OWNER" && !isAdminRole(profile.role))) {
     return NextResponse.json({ error: "Akses impor tidak diizinkan" }, { status: 403 });
   }
 

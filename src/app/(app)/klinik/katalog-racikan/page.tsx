@@ -15,7 +15,7 @@ export default async function KatalogRacikanPage({ searchParams }: {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  if (!profile || !["OWNER", "ADMIN"].includes(profile.role)) redirect("/klinik");
+  if (!profile || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(profile.role)) redirect("/klinik");
   const katalog = await loadKatalogRacikan(true);
   const saleItems = await loadClinicCompoundSkus(supabase);
   const items=await readCompleteList<{id:string;code:string;name:string;unit:string;sell_price:number}>((from,to)=>supabase.from("items")

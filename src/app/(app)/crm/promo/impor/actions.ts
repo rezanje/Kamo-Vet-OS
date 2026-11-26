@@ -27,7 +27,7 @@ async function managerClient() {
   const { data: { user } } = await db.auth.getUser();
   if (!user) throw new Error("Sesi berakhir. Masuk kembali sebelum mengimpor promo.");
   const { data: profile, error } = await db.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle();
-  if (error || !profile?.is_active || !["OWNER","ADMIN"].includes(profile.role)) {
+  if (error || !profile?.is_active || !["OWNER","ADMIN", "ADMIN_UMUM"].includes(profile.role)) {
     throw new Error("Hanya Owner/Admin aktif yang boleh mengimpor promo.");
   }
   return db;

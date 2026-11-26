@@ -8,7 +8,7 @@ import { validasiSatuanJual } from "@/lib/penjualan-satuan";
 import { hariIniWIB } from "@/lib/tanggal";
 
 const BASE = "/penjualan/penawaran";
-const BOLEH = ["OWNER", "ADMIN", "FINANCE", "STAFF"];
+const BOLEH = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE", "STAFF"];
 const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
 
 export async function buatPenawaran(formData: FormData) {
