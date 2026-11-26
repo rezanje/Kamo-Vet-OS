@@ -176,6 +176,8 @@ export async function kunciBaris(orderId: string, itemId: string, qtyFisik: numb
 
   // Retry after a lost response must not overwrite the first lock snapshot.
   // Changing a confirmed count requires the existing explicit Buka action.
+  // qty_sistem di bawah hanya usulan: database (trigger opname_counts_tetapkan_baseline) menimpanya dengan foto
+  // PERTAMA barang ini di opname ini (tetap walau Buka lalu kunci ulang), atau stok saat ini bila belum pernah dikunci.
   const { error } = await supabase.from("opname_counts").upsert({
     order_id: orderId,
     item_id: itemId,
@@ -229,15 +231,6 @@ export async function muatUlangStok(orderId: string) {
 }
 
 // ================= Hasil Stok Opname =================
-// Insiden OPO.00013 (Meo Pouch Adult, 24 Nov): petunjuk "hitung ulang" dibaca sebagai "isi lagi stok awal SO",
-// padahal penjualan sesudah hitungan pertama sudah tercatat. Pertegas: isi yang ada di rak sekarang.
-function pesanPostingOpname(message: string): string {
-  return message.replace(
-    "hitung ulang fisiknya, lalu simpan lagi.",
-    "hitung ulang barang yang ada di rak SEKARANG (penjualan sesudah hitungan pertama sudah tercatat otomatis, jadi jangan isi stok awal opname), lalu simpan lagi.",
-  );
-}
-
 /**
  * Simpan semua & sesuaikan stok.
  *
@@ -245,8 +238,10 @@ function pesanPostingOpname(message: string): string {
  * simpan). Barang yang tidak dihitung sama sekali dilewat — menganggapnya nol akan
  * menghapus stok yang sebenarnya tidak pernah dihitung.
  *
- * Penyesuaian stok memakai SELISIH terhadap foto saat dikunci, bukan "set ke angka
- * fisik". Kalau barang laku setelah dihitung, penjualannya tidak ikut terhapus.
+ * Penyesuaian stok memakai SELISIH terhadap foto saat dikunci PERTAMA (bukan "set ke angka
+ * fisik"): selisih = hitungan - foto, stok akhir = stok sekarang + selisih. Penjualan,
+ * penerimaan, dan transfer sesudah dikunci tidak ikut terhapus dan tidak menjadi selisih.
+ * Foto pertama bertahan walau barangnya dibuka lalu dikunci ulang (dijaga di database).
  */
 export async function simpanHasil(formData: FormData) {
   const orderId = String(formData.get("order_id") ?? "");
@@ -267,17 +262,20 @@ export async function simpanHasil(formData: FormData) {
   try {
     result = await supabase.rpc("post_opname_atomic", { p_order_id: orderId, p_tanggal: tanggal, p_counts: counts });
   } catch { fail("Posting opname belum dapat dipastikan. Muat ulang dan periksa hasil asal sebelum mencoba lagi."); }
-  if (result.error) fail(result.error.code === "P0001" || result.error.code === "42501" ? pesanPostingOpname(result.error.message) : "Posting opname belum dapat dipastikan. Muat ulang dan periksa hasil asal sebelum mencoba lagi.");
-  const receipt = result.data as { result_id?: unknown; no_hasil?: unknown; tanggal?: unknown; no_faktur?: unknown; journal_ids?: unknown; already_posted?: unknown } | null;
+  if (result.error) fail(result.error.code === "P0001" || result.error.code === "42501" ? result.error.message : "Posting opname belum dapat dipastikan. Muat ulang dan periksa hasil asal sebelum mencoba lagi.");
+  const receipt = result.data as { result_id?: unknown; no_hasil?: unknown; tanggal?: unknown; no_faktur?: unknown; journal_ids?: unknown; already_posted?: unknown; bergerak_sejak_hitung?: unknown } | null;
   if (!receipt || typeof receipt.result_id !== "string" || !uuid.test(receipt.result_id) || typeof receipt.no_hasil !== "string" || !receipt.no_hasil.trim()
     || receipt.tanggal !== tanggal || typeof receipt.already_posted !== "boolean" || !Array.isArray(receipt.journal_ids) || receipt.journal_ids.some(id => typeof id !== "string" || !uuid.test(id))
     || (receipt.no_faktur !== null && typeof receipt.no_faktur !== "string")) fail("Posting opname belum dapat dipastikan. Muat ulang dan periksa hasil asal sebelum mencoba lagi.");
   for (const path of ["/pos/opname", "/kasir/opname", `/pos/opname/${orderId}`, `/kasir/opname/${orderId}`]) revalidatePath(path);
   // Layar kasir sengaja tanpa angka modal; kantor melihat nilai kurang/lebih/neto dan peringatan barang tanpa harga.
   const nilai = kalimatNilaiOpname(nilaiDariKuitansi(result.data), basis === "/pos/opname");
+  // Barang yang terjual/masuk/pindah sejak dikunci sudah dihitung otomatis (selisih = hitungan - foto saat dikunci pertama).
+  const bergerak = typeof receipt.bergerak_sejak_hitung === "number" && receipt.bergerak_sejak_hitung > 0
+    ? ` ${receipt.bergerak_sejak_hitung} barang terjual/masuk/pindah sejak dihitung; sudah dihitung otomatis, bukan selisih.` : "";
   const message = receipt.already_posted
     ? `Hasil ${receipt.no_hasil} sudah tersimpan. Tidak ada posting ulang.`
-    : `Hasil ${receipt.no_hasil} tersimpan; stok dan ${receipt.journal_ids.length} jurnal terverifikasi.${receipt.no_faktur ? ` Selisih kurang ditagihkan lewat faktur ${receipt.no_faktur}.` : ""}${nilai}`;
+    : `Hasil ${receipt.no_hasil} tersimpan; stok dan ${receipt.journal_ids.length} jurnal terverifikasi.${bergerak}${receipt.no_faktur ? ` Selisih kurang ditagihkan lewat faktur ${receipt.no_faktur}.` : ""}${nilai}`;
   redirect(`${back}?success=${encodeURIComponent(message)}` + transactionDraftAck(formData));
 }
 

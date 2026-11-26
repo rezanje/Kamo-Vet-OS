@@ -101,9 +101,9 @@ export function HitungForm({
       if (!res.ok) { setPesan(res.pesan ?? "Gagal membuka kunci."); return; }
       setKunci((m) => { const next = { ...m }; delete next[r.item_id]; return next; });
       setIsian((m) => ({ ...m, [r.item_id]: String(kunci[r.item_id] ?? "") }));
-      // Kunci ulang = foto stok baru. Penjualan sejak hitungan pertama sudah tercatat, jadi yang diisi
-      // harus isi rak saat ini — bukan stok awal opname (insiden Meo Pouch Adult OPO.00013).
-      setPesan(`Hitung ulang ${r.name}: isi jumlah yang ada di rak SEKARANG. Barang yang laku sejak hitungan pertama sudah tercatat otomatis — jangan isi stok awal opname.`);
+      // Foto stok sistem TIDAK berubah oleh Buka + kunci ulang (dijaga database: foto kunci PERTAMA). Hitungan = jumlah di rak
+      // PADA SAAT dikunci pertama; penjualan/barang masuk sesudahnya dihitung otomatis (insiden Meo Pouch Adult OPO.00013).
+      setPesan(`Hitung ulang ${r.name}: foto stok sistem tidak berubah dan penjualan atau barang masuk sejak dikunci sudah dihitung otomatis, jadi jangan mengubah hitungan hanya karena barangnya laku. Isi jumlah yang ada di rak PADA SAAT barang ini pertama dikunci (isi rak sekarang + yang sudah terjual sejak itu).`);
     });
   };
 
@@ -255,7 +255,7 @@ export function HitungForm({
           </button>
         </div>
         <div style={{ fontSize: 10, color: "var(--tm)", marginTop: 6 }}>
-          Barang yang tidak dihitung dilewat — stoknya tidak diubah. Barang yang laku sesudah dikunci otomatis diperhitungkan, tidak perlu dikurangi sendiri. Laporan selisih keluar setelah disimpan.
+          Barang yang tidak dihitung dilewat — stoknya tidak diubah. Barang yang laku atau masuk sesudah dikunci otomatis diperhitungkan: jangan mengubah hitungan hanya karena ada penjualan. Kunci tiap barang tepat sesudah dihitung; barang yang belum dikunci dan stoknya sudah bergerak sejak opname dimulai tidak bisa disimpan. Laporan selisih keluar setelah disimpan.
         </div>
       </div>
     </PreservedForm>
