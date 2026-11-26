@@ -58,3 +58,21 @@ export function nomorKasEntry(jenis: JenisKas, tanggal: string, jumlahBulanIni: 
 export function akunLawanTerlarang(kodeRekeningKas: string[]): Set<string> {
   return new Set(kodeRekeningKas.map((k) => String(k).trim()));
 }
+
+// Periode riwayat Kas Masuk/Keluar. Laporan klinik 26 Nov 2026: daftar Kas Keluar
+// cuma memuat 50 transaksi terbaru, jadi tanggal 1–18 hilang begitu bulan ramai.
+// Sekarang riwayat diambil per periode (bawaan: awal bulan ini s/d hari ini) dan
+// semua transaksi di periode itu dimuat. Input yang rusak jatuh ke bawaan; kalau
+// "dari" lebih besar dari "sampai", keduanya ditukar.
+const TGL = /^\d{4}-\d{2}-\d{2}$/;
+function tanggalSah(s: string): boolean {
+  if (!TGL.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+export function periodeKas(dari: string | undefined, sampai: string | undefined, hariIni: string): { dari: string; sampai: string } {
+  let a = dari && tanggalSah(dari) ? dari : `${hariIni.slice(0, 8)}01`;
+  let b = sampai && tanggalSah(sampai) ? sampai : hariIni;
+  if (a > b) [a, b] = [b, a];
+  return { dari: a, sampai: b };
+}
