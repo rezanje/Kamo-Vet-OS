@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { readCompleteList, ListLoadError } from "@/lib/checked-list";
 import { HitungForm, type BarisHitung } from "./HitungForm";
+import { loadItemUnits } from "@/lib/satuan";
 
 // Penyedia data layar hitung. Yang dikirim ke peramban hanya identitas barang dan
 // harga jualnya — angka stok sistem TIDAK ikut, supaya petugas hitung tidak bisa
@@ -44,6 +45,14 @@ export async function DaftarHitung({ orderId, warehouseId, kembali = "kasir" }: 
         sell_price: Number(item.sell_price) || 0,
       };
     });
+
+  // Isi kemasan (item_units). Tambahan informasi saja: gagal baca = tidak ditampilkan, hitungan tetap jalan.
+  let satuanLain = new Map<string, { unit: string; factor: number }[]>();
+  try { satuanLain = await loadItemUnits(supabase, rows.map((r) => r.item_id)); } catch { /* tanpa isi kemasan */ }
+  for (const r of rows) {
+    const lain = satuanLain.get(r.item_id)?.filter((u) => u.unit !== r.unit.trim());
+    if (lain?.length) r.turunan = lain.map((u) => ({ unit: u.unit, factor: u.factor }));
+  }
 
   const terkunci = Object.fromEntries(
     kunciRows.map((r) => [r.item_id, Number(r.qty_fisik)]),

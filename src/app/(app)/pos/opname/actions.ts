@@ -11,6 +11,7 @@ import { aturanEfektif, bacaAkses } from "@/lib/akses-akun";
 import { getOpenShift } from "@/lib/shift";
 import { readCompleteList } from "@/lib/checked-list";
 import { kalimatNilaiOpname, nilaiDariKuitansi } from "@/lib/opname-nilai";
+import { jumlahTakWajar } from "@/lib/opname-jumlah-tak-wajar";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -194,6 +195,40 @@ export async function kunciBaris(orderId: string, itemId: string, qtyFisik: numb
   revalidatePath(`/kasir/opname/${orderId}`);
   revalidatePath(`/pos/opname/${orderId}`);
   return { ok: true, qtyFisik: Number(confirmed.qty_fisik) };
+}
+
+/**
+ * Peringatan jumlah janggal (insiden OPR.00009: 1000 diketik padahal 1). BACA SAJA: tidak menulis apa pun dan tidak
+ * menyentuh RPC simpan. Stok sistem dibaca di server dan TIDAK dikirim balik ke peramban (layar hitung sengaja buta
+ * stok sistem, keputusan meeting 14 Agustus): yang kembali hanya id barang yang ditandai janggal.
+ */
+export async function periksaJumlahTakWajar(orderId: string, baris: { itemId: string; qty: number }[]):
+  Promise<{ ok: true; janggal: string[] } | { ok: false; pesan: string }> {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!Array.isArray(baris) || baris.length > 5000 || baris.some((b) => !b || !uuid.test(String(b.itemId)) || !Number.isFinite(b.qty) || b.qty < 0)) {
+    return { ok: false, pesan: "Isian jumlah fisik tidak valid. Periksa lagi sebelum menyimpan." };
+  }
+  if (baris.length === 0) return { ok: true, janggal: [] };
+  try {
+    const supabase = await createClient();
+    const order = await orderTerjangkau(supabase, orderId);
+    if (!order) return { ok: false, pesan: "Kamu tidak berhak menghitung stok gudang ini." };
+    const ids = [...new Set(baris.map((b) => b.itemId))];
+    const sistem = new Map<string, number>();
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await supabase.from("stock").select("item_id, qty")
+        .eq("warehouse_id", order.warehouse_id).in("item_id", ids.slice(i, i + 200));
+      if (error) return { ok: false, pesan: "Pemeriksaan jumlah belum dapat dipastikan. Coba lagi." };
+      for (const row of (data ?? []) as { item_id: string; qty: number }[]) {
+        const qty = Number(row.qty);
+        if (!Number.isFinite(qty)) return { ok: false, pesan: "Pemeriksaan jumlah belum dapat dipastikan. Coba lagi." };
+        sistem.set(row.item_id, (sistem.get(row.item_id) ?? 0) + qty);
+      }
+    }
+    return { ok: true, janggal: [...new Set(baris.filter((b) => jumlahTakWajar(b.qty, sistem.get(b.itemId) ?? 0)).map((b) => b.itemId))] };
+  } catch {
+    return { ok: false, pesan: "Pemeriksaan jumlah belum dapat dipastikan. Coba lagi." };
+  }
 }
 
 /** Buka kunci: hitungan barang itu dibuang, petugas menghitung ulang. */
