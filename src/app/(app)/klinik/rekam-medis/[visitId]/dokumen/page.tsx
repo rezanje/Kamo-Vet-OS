@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
 import { RekamMedisKop } from "@/components/RekamMedisKop";
-import { LOGO_BUCKET, jalurLogoSah } from "@/lib/cabang-identitas";
+import { bacaIdentitasKop } from "@/lib/cabang-identitas-server";
 import { addendumAuthor, loadRecordAddenda, type AddendaLoad } from "@/lib/clinic-record-addenda";
 import { TANPA_BAYAR, bayarPerTagihan, sisaTagihan, statusUangTagihan, uangDiterimaTagihan } from "@/lib/uang-tagihan";
 import { muatBagianUangMuka, labelMetodeInvoice, type PembayaranMetode } from "@/lib/metode-uang-muka";
@@ -40,19 +40,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
 
   // Kop = identitas CABANG KUNJUNGAN ini (bukan cabang yang sedang dipilih pengguna). Alamat/telepon/logo opsional:
   // gagal baca atau belum diisi = kop tetap tercetak dengan nama cabang saja, tidak pernah menggagalkan cetak.
-  let identitas: { alamat: string | null; telepon: string | null; logo_path: string | null } | null = null;
-  let logoUrl: string | null = null;
-  const branchId = (visit as { branch_id?: string | null }).branch_id ?? null;
-  if (branchId) {
-    try {
-      const { data: idn } = await supabase.from("branches").select("alamat, telepon, logo_path").eq("id", branchId).maybeSingle();
-      identitas = idn ?? null;
-      if (identitas?.logo_path && jalurLogoSah(branchId, identitas.logo_path)) {
-        const { data: signed } = await supabase.storage.from(LOGO_BUCKET).createSignedUrl(identitas.logo_path, 3600);
-        logoUrl = signed?.signedUrl ?? null;
-      }
-    } catch { /* kop jatuh ke nama cabang saja */ }
-  }
+  const identitas = await bacaIdentitasKop(supabase, (visit as { branch_id?: string | null }).branch_id ?? null);
 
   const { data: mr } = await supabase
     .from("medical_records")
@@ -139,7 +127,7 @@ export default async function DokumenRekamMedisPage({ params }: { params: Promis
       <div className="rm-doc" style={{ maxWidth: 900, margin: "0 auto", background: "#fff", border: ".5px solid var(--bd)", padding: "30px 34px", fontSize: 11.5, color: "#141413" }}>
         {/* ===== Kop ===== */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 260px", gap: 16, alignItems: "flex-start", borderBottom: `2px solid ${BLUE}`, paddingBottom: 14, marginBottom: 16 }}>
-          <RekamMedisKop nama={branch?.name} alamat={identitas?.alamat} telepon={identitas?.telepon} logoUrl={logoUrl} />
+          <RekamMedisKop nama={branch?.name} alamat={identitas.alamat} telepon={identitas.telepon} logoUrl={identitas.logoUrl} />
           <div style={{ textAlign: "center", paddingTop: 4 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#141413", letterSpacing: ".01em" }}>REKAM MEDIS PASIEN</div>
             <div style={{ fontSize: 10.5, color: "var(--tm)" }}>Pemeriksaan oleh Dokter Poli</div>

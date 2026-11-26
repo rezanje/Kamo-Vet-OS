@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "@/components/PrintButton";
+import { RekamMedisKop } from "@/components/RekamMedisKop";
+import { bacaIdentitasKop } from "@/lib/cabang-identitas-server";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -16,15 +18,17 @@ export default async function ConsentPrintPage({ params }: { params: Promise<{ c
 
   const { data: c } = await supabase
     .from("consents")
-    .select("id, tindakan, isi_snapshot, status, signer_name, signature_data, signed_at, created_at, visit_id, visits(dokter, pets(name, species), customers(name, phone), branches(name))")
+    .select("id, tindakan, isi_snapshot, status, signer_name, signature_data, signed_at, created_at, visit_id, visits(branch_id, dokter, pets(name, species), customers(name, phone), branches(name))")
     .eq("id", consentId)
     .maybeSingle();
   if (!c) notFound();
 
-  const visit = one(c.visits as Rel<{ dokter: string | null; pets: Rel<{ name: string; species: string | null }>; customers: Rel<{ name: string; phone: string }>; branches: Rel<{ name: string }> }>);
+  const visit = one(c.visits as Rel<{ dokter: string | null; pets: Rel<{ name: string; species: string | null }>; customers: Rel<{ name: string; phone: string }>; branches: Rel<{ name: string }>; branch_id?: string | null }>);
   const pet = one(visit?.pets ?? null);
   const cust = one(visit?.customers ?? null);
   const branch = one(visit?.branches ?? null);
+  // Kop = identitas CABANG KUNJUNGAN (sama dengan rekam medis); gagal baca = nama cabang saja.
+  const identitas = await bacaIdentitasKop(supabase, visit?.branch_id ?? null);
 
   const tgl = new Date(c.created_at as string).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
 
@@ -39,8 +43,9 @@ export default async function ConsentPrintPage({ params }: { params: Promise<{ c
 
       <div className="rm-doc" style={{ maxWidth: 640, margin: "0 auto", background: "#fff", border: ".5px solid var(--bd)", borderRadius: 10, padding: "30px 34px", fontSize: 12.5, color: "#141413" }}>
         <div style={{ textAlign: "center", borderBottom: "2px solid #16213e", paddingBottom: 12, marginBottom: 18 }}>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>KAMO<i className="ti ti-paw" style={{ fontSize: 15, verticalAlign: -1 }} /> PET CARE</div>
-          <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 2 }}>{branch?.name ?? "Klinik Hewan"}</div>
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <RekamMedisKop nama={branch?.name} alamat={identitas.alamat} telepon={identitas.telepon} logoUrl={identitas.logoUrl} />
+          </div>
           <div style={{ fontSize: 14, fontWeight: 800, marginTop: 10, letterSpacing: ".03em" }}>SURAT PERSETUJUAN TINDAKAN</div>
         </div>
 

@@ -8,7 +8,10 @@ const state = vi.hoisted(() => ({
   invoiceResult: undefined as undefined | null | string[],
   invoiceError: false,
   nullInvoiceBranch: false,
+  identity: null as null | { alamat: string | null; telepon: string | null; logo_path: string | null },
+  eqs: [] as string[],
 }));
+const KOP_BRANCH = "3c9fa638-c99d-4bb7-925b-e28b6bdb4564";
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-kamo-operational-branch": "selected-west" }) }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw Error("NOT_FOUND"); } }));
 vi.mock("@/components/PrintButton", () => ({ PrintButton: () => null, AutoPrint: () => null }));
@@ -18,23 +21,25 @@ vi.mock("@/app/(app)/klinik/pembayaran/[visitId]/PrintButton", () => ({ PrintBut
 vi.mock("@/lib/rombongan-server", () => ({ bacaRombongan: async () => ({ tanggal: "2026-10-23", customerName: "Pelanggan Uji", baris: [{ visitId: "visit", hewan: "Pasien Uji", invoiceNo: state.requested[0] ?? null, invoiceNos: state.requested, total: 111000, dibayar: 111000, paidStatus: "Lunas" }] }) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: "actor" } } }) },
+  storage: { from: () => ({ createSignedUrl: async (path: string) => ({ data: { signedUrl: `https://storage.test/sign/${path}?token=t` }, error: null }) }) },
   from(table: string) {
     const branch = { name: state.name, code: state.code };
     const branches = state.array ? [branch] : branch;
     const invoice = { id: "invoice", invoice_no: "INV-001", no_faktur: "FJ-001", branch_id: "saved-east", branches,
-      visits: { branches: state.nullInvoiceBranch ? null : branches }, order_id: null, total: 111000, subtotal: 100000, dpp: 100000, ppn: 11000, tax: 11000,
+      visits: { branch_id: KOP_BRANCH, branches: state.nullInvoiceBranch ? null : branches }, order_id: null, total: 111000, subtotal: 100000, dpp: 100000, ppn: 11000, tax: 11000,
       discount: 0, carried_paid: 0, dp_amount: 0, paid_status: "Lunas", status: "lunas", created_at: "2026-10-23T00:00:00Z",
       cashier_name: "Kasir Uji", customers: { name: "Pelanggan Uji" }, revision: 1 };
     const sale = { ...invoice, no_struk: "POS-001", metode_bayar: "Tunai", bayar: 111000, kembali: 0,
       poin_earned: 0, poin_digunakan: 0, sale_payments: [], payment_plan: null, payments_finalized_at: null };
     const data = table === "clinic_payment_receipts" ? { ...invoice, no_kwitansi: "KW-001", visit_id: "visit", clinic_payment_receipt_parts: [{ urutan: 1, metode: "Tunai", amount: 111000 }] } : table === "sales" ? sale : table === "invoices" || table === "sales_invoices" ? invoice
       : table === "visits" ? { id: "visit", pets: { name: "Pasien Uji" }, customers: { name: "Pelanggan Uji" }, branches: { name: "Cabang Kunjungan Salah", code: "WRONG" } }
+      : table === "branches" ? state.identity
       : table === "company_settings" ? { ppn_rate: 11, nama_perusahaan: "Perusahaan Bukan Cabang" }
       : table === "clinic_demo_invoice_snapshots" ? null : [];
     const invoiceRows = state.invoiceResult !== undefined ? state.invoiceResult?.map(invoice_no => ({ ...invoice, id: invoice_no, invoice_no })) ?? null : [invoice];
     const clinicItems = (invoiceRows ?? []).map(inv => ({ id: `line-${inv.id}`, invoice_id: inv.id, deskripsi: "Saved clinic service", qty: 1, harga: 100000, diskon_persen: 0 }));
     let from = 0, to = Number.MAX_SAFE_INTEGER, exact = false;
-    const q = { select: (s: string, options?: { count?: string }) => { exact = options?.count === "exact"; state.selects.push(`${table}:${s}`); return q; }, eq: () => q, is: () => q,
+    const q = { select: (s: string, options?: { count?: string }) => { exact = options?.count === "exact"; state.selects.push(`${table}:${s}`); return q; }, eq: (c: string, v: string) => { state.eqs.push(`${table}.${c}=${v}`); return q; }, is: () => q,
       in: () => q, order: () => q, limit: () => q, range: (start: number, end: number) => { from = start; to = end; return q; }, maybeSingle: async () => ({ data, error: null, count: 1 }),
       then: (resolve: (r: unknown) => unknown) => {
         const rows = table === "invoice_items" ? clinicItems : table === "invoices" ? invoiceRows : table === "sales_invoices" ? [invoice] : table === "visits" ? [] : data;
@@ -75,7 +80,7 @@ const paper = (markup: string) => {
   doc.querySelectorAll("style,script,.no-print").forEach(el => el.remove());
   return doc.body;
 };
-beforeEach(() => { state.name = "Cabang Timur"; state.code = "TMR"; state.array = false; state.selects = []; state.requested = ["INV-001"]; state.invoiceResult = undefined; state.invoiceError = false; state.nullInvoiceBranch = false; });
+beforeEach(() => { state.name = "Cabang Timur"; state.code = "TMR"; state.array = false; state.selects = []; state.requested = ["INV-001"]; state.invoiceResult = undefined; state.invoiceError = false; state.nullInvoiceBranch = false; state.identity = null; state.eqs = []; });
 async function check(render: () => Promise<React.ReactNode>, invoiceCode: string) {
   for (const [name, code, array] of [["Cabang Timur", "TMR", false], ["Cabang Barat", "BRT", true], ["  ", "LEGACY", false]] as const) {
     Object.assign(state, { name, code, array });
@@ -86,7 +91,7 @@ async function check(render: () => Promise<React.ReactNode>, invoiceCode: string
     for (const text of [invoiceCode, "Pelanggan Uji", "Rp 111.000"]) expect(body.textContent).toContain(text);
     if (invoiceCode === "INV-001") {
       expect(body.textContent).toContain("Rp 11.000");
-      expect(state.selects.some(s => s.startsWith("invoices:") && s.includes("visits(branches(name, code))"))).toBe(true);
+      expect(state.selects.some(s => s.startsWith("invoices:") && /visits\((branch_id, )?branches\(name, code\)\)/.test(s))).toBe(true);
     }
     if (invoiceCode === "FJ-001") expect(state.selects.some(s => s.startsWith("sales_invoices:") && s.includes("branches(name, code)"))).toBe(true);
   }
@@ -136,4 +141,28 @@ it("group confirmed invoice with a null branch prints explicit missing branch, n
   expect(body.textContent).toContain("Cabang belum tercatat");
   expect(body.textContent).not.toContain("Cabang Kunjungan Salah");
   expect(body.textContent).not.toContain("tagihan belum dibuat");
+});
+
+const IDN = { alamat: "Jl. Raya Cimanggu 12, Bogor", telepon: "0251 8888", logo_path: `cabang-logo/${KOP_BRANCH}/1700000000000-ab12cd34.png` };
+const kopIni = (markup: string) => markup.includes('data-kop="cabang"');
+
+it("invoice klinik memakai kop identitas cabang PENERBIT invoice; struk/kwitansi termal tetap teks saja (tanpa logo/alamat)", async () => {
+  state.identity = IDN;
+  const inv = renderToStaticMarkup(await ClinicFormal({ params: Promise.resolve({ visitId: "visit" }), searchParams: Promise.resolve({}) }));
+  expect(kopIni(inv)).toBe(true);
+  expect(inv).toContain("Jl. Raya Cimanggu 12, Bogor · Telp. 0251 8888");
+  expect(inv).toContain(`src="https://storage.test/sign/cabang-logo/${KOP_BRANCH}/1700000000000-ab12cd34.png?token=t"`);
+  expect(state.eqs).toContain(`branches.id=${KOP_BRANCH}`);
+  for (const render of [
+    () => ClinicThermal({ params: Promise.resolve({ visitId: "visit" }) }),
+    () => GroupReceipt({ params: Promise.resolve({ visitId: "visit" }) }),
+    () => Inpatient({ params: Promise.resolve({ id: "stay", receiptId: "receipt" }) }),
+    () => Backoffice({ params: Promise.resolve({ saleId: "sale" }) }),
+    () => Cashier({ params: Promise.resolve({ saleId: "sale" }), searchParams: Promise.resolve({}) }),
+  ]) {
+    const out = renderToStaticMarkup(await render());
+    expect(kopIni(out)).toBe(false);
+    expect(out).not.toContain("Jl. Raya Cimanggu");
+    expect(out).not.toContain("storage.test");
+  }
 });
