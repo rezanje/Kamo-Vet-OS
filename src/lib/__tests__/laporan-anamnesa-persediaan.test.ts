@@ -191,7 +191,7 @@ const EXACT = Decimal.clone({ precision: 80 });
 function rpcTiruan(tables: Tabel, opsi: { tanpaAkun?: boolean } = {}) {
   const panggilan: { nama: string; args: Record<string, unknown> }[] = [];
   const fungsi = (nama: string, args: Record<string, unknown>) => {
-    panggilan.push({ nama, args });
+    if (nama === PERSEDIAAN_LAPISAN_RPC || nama === PERSEDIAAN_BUKU_BESAR_RPC) panggilan.push({ nama, args });
     if (nama === PERSEDIAAN_LAPISAN_RPC) {
       const ids = args.p_branch_ids as string[];
       const gudang = (tables.warehouses ?? []).filter(w => ids.includes(String(w.branch_id)));
@@ -201,7 +201,7 @@ function rpcTiruan(tables: Tabel, opsi: { tanpaAkun?: boolean } = {}) {
         const g = gudang.filter(w => w.branch_id === id).map(w => w.id);
         const lay = (tables.stock_layers ?? []).filter(l => g.includes(l.warehouse_id) && new EXACT(String(l.qty_left)).gt(0));
         negatif += lay.filter(l => new EXACT(String(l.unit_cost)).isNegative()).length;
-        per[id] = { nilai: lay.reduce((s, l) => s.plus(new EXACT(String(l.qty_left)).times(String(l.unit_cost))), new EXACT(0)).toFixed(4), minus: (tables.stock ?? []).filter(s => g.includes(s.warehouse_id) && Number(s.qty) < 0).length };
+        per[id] = { nilai: lay.reduce((s, l) => s.plus(new EXACT(String(l.qty_left)).times(String(l.unit_cost))), new EXACT(0)).toFixed(), minus: (tables.stock ?? []).filter(s => g.includes(s.warehouse_id) && Number(s.qty) < 0).length };
       }
       return { data: { per_cabang: per, biaya_negatif: negatif }, error: null };
     }
@@ -214,9 +214,9 @@ function rpcTiruan(tables: Tabel, opsi: { tanpaAkun?: boolean } = {}) {
       const per: Record<string, string> = {}; let tak = new EXACT(0);
       for (const l of garis) {
         const nilai = new EXACT(String(l.debit)).minus(String(l.credit)); const b = (l.journal_entries as Row).branch_id as string | null;
-        if (b === null) tak = tak.plus(nilai); else per[b] = new EXACT(per[b] ?? 0).plus(nilai).toFixed(4);
+        if (b === null) tak = tak.plus(nilai); else per[b] = new EXACT(per[b] ?? 0).plus(nilai).toFixed();
       }
-      return { data: { akun_ada: true, per_cabang: per, tak_teralokasi: tak.toFixed(4), negatif: garis.filter(l => new EXACT(String(l.debit)).isNegative() || new EXACT(String(l.credit)).isNegative()).length }, error: null };
+      return { data: { akun_ada: true, per_cabang: per, tak_teralokasi: tak.toFixed(), negatif: garis.filter(l => new EXACT(String(l.debit)).isNegative() || new EXACT(String(l.credit)).isNegative()).length }, error: null };
     }
     return null;
   };
@@ -272,7 +272,8 @@ describe("Nilai Persediaan Historis: jalur baru == jalur lama", () => {
         expect(hasilBaru.fifoCurrent).not.toBeNull();
         expect(tiruan.panggilan.map(p => p.nama)).toEqual([PERSEDIAAN_LAPISAN_RPC, PERSEDIAAN_BUKU_BESAR_RPC]);
         for (const tabelBaca of ["stock_layers", "stock", "journal_lines", "coa_accounts"]) expect(baru.records.some(r => r.table === tabelBaca)).toBe(false);
-        expect(lama.records.some(r => r.table === "stock_layers")).toBe(true);
+        // cabang tanpa gudang (b3): pembaca lama memang tidak membaca lapisan sama sekali
+        expect(lama.records.some(r => r.table === "stock_layers")).toBe(kasus.cabang?.join() !== "b3");
       } else {
         expect(tiruan.panggilan).toHaveLength(0);
         expect(hasilBaru.fifoCurrent).toBeNull();

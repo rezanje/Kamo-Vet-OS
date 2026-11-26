@@ -31,20 +31,25 @@ type KlienBaca = KlienRpc & { from: (tabel: string) => any };
 
 const melewatiBatasWaktu = (error: NonNullable<Galat>) => error.code === "57014" || /statement timeout/i.test(error.message ?? "");
 
-/** Tambah n hari pada YYYY-MM-DD (kalender murni, tanpa zona). */
-function tambahHari(tanggal: string, n: number): string {
-  const [y, m, d] = tanggal.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-}
 const TANGGAL = /^\d{4}-\d{2}-\d{2}$/;
+const HARI_MS = 86_400_000;
+/** Hari ke-n sejak epoch untuk YYYY-MM-DD yang nyata di kalender (null bila bukan tanggal nyata, mis. 2026-13-45). */
+function nomorHari(tanggal: string): number | null {
+  if (!TANGGAL.test(tanggal)) return null;
+  const ms = Date.parse(`${tanggal}T00:00:00Z`);
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === tanggal ? ms / HARI_MS : null;
+}
+const keTanggal = (hari: number) => new Date(hari * HARI_MS).toISOString().slice(0, 10);
 
-/** Pecah dari..sampai (YYYY-MM-DD inklusif) menjadi jendela ≤ `panjang` hari berurutan tanpa celah/tumpang tindih. */
+/**
+ * Pecah dari..sampai (YYYY-MM-DD inklusif, tanggal nyata) menjadi jendela ≤ `panjang` hari berurutan tanpa celah/tumpang tindih.
+ * Kosong bila masukan bukan tanggal nyata, terbalik, atau lebih dari MAKS_JENDELA jendela (pemanggil memakai pembaca lama).
+ */
 export function jendelaAnamnesa(dari: string, sampai: string, panjang = HARI_PER_RENTANG_ANAMNESA): { dari: string; sampai: string }[] {
+  const a = nomorHari(dari), z = nomorHari(sampai);
+  if (a === null || z === null || a > z || (z - a) / panjang > MAKS_JENDELA) return [];
   const hasil: { dari: string; sampai: string }[] = [];
-  for (let awal = dari; awal <= sampai; awal = tambahHari(awal, panjang)) {
-    const ujung = tambahHari(awal, panjang - 1);
-    hasil.push({ dari: awal, sampai: ujung < sampai ? ujung : sampai });
-  }
+  for (let awal = a; awal <= z; awal += panjang) hasil.push({ dari: keTanggal(awal), sampai: keTanggal(Math.min(awal + panjang - 1, z)) });
   return hasil;
 }
 
@@ -83,9 +88,8 @@ async function bacaJendela(supabase: KlienRpc, jendela: { dari: string; sampai: 
  */
 export async function bacaRekamMedisAnamnesa(supabase: KlienBaca, masukan: { dari: string; sampai: string; cabang: string }): Promise<{ data: RekamMedisAnamnesa[]; error: null }> {
   const { dari, sampai, cabang } = masukan;
-  if (typeof supabase.rpc === "function" && TANGGAL.test(dari) && TANGGAL.test(sampai) && dari <= sampai) {
-    const jendela = jendelaAnamnesa(dari, sampai);
-    if (jendela.length > MAKS_JENDELA) return bacaRekamMedisAnamnesaLama(supabase, masukan);
+  const jendela = typeof supabase.rpc === "function" ? jendelaAnamnesa(dari, sampai) : [];
+  if (jendela.length > 0) {
     const hasil = await petaBerbatas(jendela, BATAS_BACA_LAPORAN, (j, i) =>
       bacaJendela(supabase, j, cabang, i < jendela.length - 1 ? jendela[i + 1].dari : null));
     if (hasil.every((h): h is RekamMedisAnamnesa[] => h !== null)) {
