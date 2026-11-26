@@ -2,9 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { StockCorrectionKind, StockCorrectionInput, StockCorrectionPreview, StockCorrectionResult } from "@/lib/stock-correction-types";
+import type { StockCorrectionKind, StockCorrectionInput, StockCorrectionPreview, StockCorrectionResult, StockCorrectionBlocked } from "@/lib/stock-correction-types";
+import { parseBlocked } from "@/lib/stock-correction-blocked";
 
-type Reply<T> = { data?: T; error?: string; uncertain?: boolean };
+// `blocked` = baris yang diubah tetapi ditahan server beserta alasannya (galat "semua baris tertahan" membawanya di `details`).
+type Reply<T> = { data?: T; error?: string; uncertain?: boolean; blocked?: StockCorrectionBlocked[] };
+const blockedOf = (error: { details?: unknown }) => { const list = parseBlocked(error.details); return list && list.length > 0 ? { blocked: list } : {}; };
 const complete = (value: unknown): value is StockCorrectionResult => {
   const row = value as StockCorrectionResult | null;
   return !!row && typeof row.correction_id === "string" && typeof row.document_id === "string" && Number.isInteger(row.revision) && row.revision > 0;
@@ -13,16 +16,22 @@ const complete = (value: unknown): value is StockCorrectionResult => {
 export async function previewStockCorrection(kind: StockCorrectionKind, documentId: string, rows: StockCorrectionInput[]): Promise<Reply<StockCorrectionPreview>> {
   const db = await createClient();
   const { data, error } = await db.rpc("preview_stock_document_correction", { p_kind: kind, p_id: documentId, p_rows: rows });
-  if (error) return { error: error.message };
+  if (error) return { error: error.message, ...blockedOf(error) };
   if (!data || typeof data.token !== "string" || !Array.isArray(data.lines)) return { error: "Preview belum terkonfirmasi. Coba periksa kembali." };
+  if ("blocked" in data) {
+    const blocked = parseBlocked(data.blocked);
+    if (!blocked) return { error: "Preview belum terkonfirmasi. Coba periksa kembali." };
+    return { data: { ...data, blocked } as StockCorrectionPreview };
+  }
   return { data: data as StockCorrectionPreview };
 }
 
 export async function saveStockCorrection(kind: StockCorrectionKind, documentId: string, rows: StockCorrectionInput[], reason: string, requestKey: string, previewToken: string): Promise<Reply<StockCorrectionResult>> {
   const db = await createClient();
   const { data, error } = await db.rpc("correct_stock_document", { p_kind: kind, p_id: documentId, p_rows: rows, p_reason: reason, p_request_key: requestKey, p_preview_token: previewToken });
-  if (error) return { error: error.message, ...(!error.code || !/^(P0001|42501|22\w{3}|23\w{3}|40\w{3})$/.test(error.code) ? { uncertain: true } : {}) };
+  if (error) return { error: error.message, ...blockedOf(error), ...(!error.code || !/^(P0001|42501|22\w{3}|23\w{3}|40\w{3})$/.test(error.code) ? { uncertain: true } : {}) };
   if (!complete(data)) return { error: "Hasil simpan belum terkonfirmasi. Periksa hasil terakhir sebelum mengoreksi lagi.", uncertain: true };
+  if ("blocked" in data) { const blocked = parseBlocked((data as { blocked?: unknown }).blocked); if (blocked) data.blocked = blocked; else delete data.blocked; }
   for (const path of ["/pos/penyesuaian", "/pos/opname", "/kasir/opname", "/pos/stok", "/pos/kartu-stok", "/laporan/nilai-persediaan", "/keuangan/jurnal", "/"]) revalidatePath(path, "layout");
   return { data };
 }
