@@ -11,6 +11,8 @@ vi.mock("@/app/kasir/pengeluaran/actions", () => ({ simpanPengeluaranKasir: fixt
 vi.mock("@/app/(app)/klinik/pengeluaran/actions", () => ({ simpanPengeluaranKlinik: fixture.save }));
 vi.mock("@/app/(app)/pos/expense/actions", () => ({ periksaExpense: vi.fn(), simpanExpense: fixture.save }));
 vi.mock("@/app/(app)/buku-besar/beban/actions", () => ({ catatBeban: fixture.save }));
+// Laporan tanggal mundur adalah komponen server async (diuji sendiri di laporan-mundur.test.tsx); di sini hanya layar input yang dicek.
+vi.mock("@/components/pengeluaran/LaporanMundur", () => ({ LaporanMundur: () => null }));
 vi.mock("@/lib/shift", () => ({ getOpenShift: async () => ({ id: "shift", branch_id: "branch", branchName: "Cabang" }) }));
 vi.mock("@/lib/checked-list", () => ({ readCompleteList: async () => [] }));
 vi.mock("@/components/PilihRekening", () => ({ PilihRekening: () => null, loadRekeningAktif: async () => [] }));
@@ -70,7 +72,12 @@ async function cekLayar(konteks: "cashier" | "clinic" | "backoffice") {
   expect(banner.textContent).toContain("Pengeluaran ini dicatat di tanggal");
   expect(banner.textContent).toContain(kemarin.split("-").reverse().join("/"));
   if (konteks === "backoffice") expect(banner.textContent).toContain("tidak memakai laci kasir");
-  else expect(banner.textContent).toContain("laci shift Anda yang sedang terbuka hari ini");
+  else {
+    // Review MINOR-5: teks tidak lagi mengklaim uang keluar hari ini; menjelaskan efek ke tutup shift dan meminta Finance diberi tahu.
+    expect(banner.textContent).toContain("mengurangi laci shift Anda yang terbuka SEKARANG");
+    expect(banner.textContent).toContain("tutup shift hari ini akan tampak lebih besar"); expect(banner.textContent).toContain("beri tahu Finance");
+    expect(banner.textContent).not.toContain("tetap keluar dari laci");
+  }
   // kembali ke hari ini: banner hilang, alasan tidak dikirim
   await ubahTanggal(today);
   expect(host.querySelector('[data-testid="banner-tanggal-mundur"]')).toBeNull();

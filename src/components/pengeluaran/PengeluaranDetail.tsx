@@ -6,6 +6,9 @@ import { DokumenPanel } from "@/components/dokumen/DokumenPanel";
 import { ExpenseForm, ExpenseSubmitButton } from "./ExpenseForm";
 import { ubahExpense, batalkanExpense } from "@/app/(app)/pos/expense/actions";
 import { KATEGORI_PENGELUARAN_BACKOFFICE } from "@/lib/kategori-pengeluaran";
+import { hariIniWIB } from "@/lib/tanggal";
+import { BATAS_HARI_MUNDUR, batasTanggalMundur, formatTanggalID } from "@/lib/tanggal-mundur";
+import { ringkasPerubahan } from "@/lib/expense-jejak";
 
 // Detail satu pengeluaran + bukti/lampirannya. Dipakai dua rute supaya FINANCE
 // (yang sidebarnya tidak memuat modul Persediaan) tetap punya jalan ke bukti:
@@ -72,7 +75,10 @@ export async function PengeluaranDetail({
   const blocked = lock.error || shift.error ? "Status periode atau shift belum dapat diperiksa. Muat ulang sebelum mengoreksi."
     : shiftClosed && !canCorrectAfterShift ? "Shift sudah ditutup. Koreksi pengeluaran ini hanya dapat dilakukan Owner atau Finance."
       : lock.data?.closed_until && exp.tanggal <= lock.data.closed_until ? `Periode akuntansi s/d ${lock.data.closed_until} sudah ditutup.` : null;
-  const revisions = (history.data ?? []) as { id: string; action: string; reason: string; before_value: { jumlah: number }; after_value: { jumlah: number }; created_at: string }[];
+  const revisions = (history.data ?? []) as { id: string; action: string; reason: string; before_value: Record<string, unknown>; after_value: Record<string, unknown>; created_at: string }[];
+  // Jejak tanggal mundur tidak berubah setelah Ubah (sengaja): tampilkan tanggal sekarang dan koreksi tanggal bersama-sama (review PR #570, MINOR-3).
+  const tanggalDiubah = revisions.some((r) => r.action === "edit" && r.before_value?.tanggal !== undefined && r.after_value?.tanggal !== undefined && r.before_value.tanggal !== r.after_value.tanggal);
+  const today = hariIniWIB();
 
   return (
     <>
@@ -91,6 +97,12 @@ export async function PengeluaranDetail({
       {jejak && (
         <div className="p2ban" role="status" data-testid="jejak-tanggal-mundur">
           Dicatat mundur: tanggal pengeluaran {fmtTgl(jejak.effective_date)}, diinput {new Date(jejak.recorded_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" })} WIB. Alasan: {jejak.reason}
+          {jejak.effective_date !== exp.tanggal && <> Tanggal pengeluaran sekarang {fmtTgl(exp.tanggal)} (diubah lewat koreksi, lihat Riwayat koreksi).</>}
+        </div>
+      )}
+      {!jejak && tanggalDiubah && (
+        <div className="p2ban" role="status" data-testid="tanggal-diubah-koreksi">
+          Tanggal pengeluaran ini pernah diubah lewat koreksi (sekarang {fmtTgl(exp.tanggal)}). Rincian dan alasannya ada di Riwayat koreksi di bawah.
         </div>
       )}
       {error && (
@@ -126,7 +138,10 @@ export async function PengeluaranDetail({
           <ExpenseForm userId={user.id} scope={`expense-edit:${exp.id}:${exp.revision}`} action={ubahExpense}>
             <input type="hidden" name="id" value={exp.id} /><input type="hidden" name="revision" value={exp.revision} /><input type="hidden" name="kembali" value={kembaliHref} />
             <div className="grid2">
-              <label className="flab">Tanggal<input className="fi" type="date" name="tanggal" defaultValue={exp.tanggal} required /></label>
+              <label className="flab">Tanggal<input className="fi" type="date" name="tanggal" defaultValue={exp.tanggal} max={today} required />
+                <span style={{ display: "block", fontSize: 10.5, color: "var(--tm)", marginTop: 3 }} data-testid="aturan-tanggal-ubah">
+                  Tanggal yang DIGANTI paling lama {BATAS_HARI_MUNDUR} hari ke belakang (mulai {formatTanggalID(batasTanggalMundur(today))}) dan tidak boleh masa depan; alasan koreksi wajib diisi. Tanggal lama yang tidak diganti boleh tetap.
+                </span></label>
               <label className="flab">Kategori<select className="fi" name="kategori" defaultValue={exp.kategori} required>{Array.from(new Set([exp.kategori, ...KATEGORI_PENGELUARAN_BACKOFFICE])).map(category => <option key={category}>{category}</option>)}</select></label>
               <label className="flab">Jumlah (Rp)<NumberInput className="fi" type="number" min="0.01" step="any" name="jumlah" defaultValue={Number(exp.jumlah)} required /></label>
               <label className="flab">Metode bayar<select className="fi" name="metode_bayar" defaultValue={exp.metode_bayar} required>{["Tunai", "Transfer", "QRIS", "Debit", "Kredit", "E-Wallet"].map(method => <option key={method}>{method}</option>)}</select></label>
@@ -152,6 +167,7 @@ export async function PengeluaranDetail({
         {revisions.map(revision => <div key={revision.id} style={{ borderTop: ".5px solid var(--bd)", padding: "10px 0", fontSize: 11 }}>
           <strong>{revision.action === "void" ? "Dibatalkan" : "Diperbarui"}</strong> · {new Date(revision.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
           <div>{rp(Number(revision.before_value.jumlah))} → {rp(Number(revision.after_value.jumlah))} · {revision.reason}</div>
+          {ringkasPerubahan(revision.before_value, revision.after_value).filter((x) => !x.startsWith("Jumlah")).map((x) => <div key={x} style={{ color: "var(--tm)" }}>{x}</div>)}
         </div>)}
       </div>}
 

@@ -3,7 +3,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { transactionDraftAck } from "@/lib/transaction-draft-ack";
-import { saveExpense, isExpenseRejection } from "@/lib/expense-save";
+import { saveExpense, isExpenseRejection, type ExpenseRejection } from "@/lib/expense-save";
+import { hariIniWIB } from "@/lib/tanggal";
+import { alasanBermakna, cekTanggalUbah, penolakanUbahDB } from "@/lib/tanggal-mundur";
 import { createClient } from "@/lib/supabase/server";
 
 export async function simpanExpense(formData: FormData) {
@@ -15,7 +17,7 @@ export async function simpanExpense(formData: FormData) {
   redirect(`/pos/expense?success=1${transactionDraftAck(formData)}`);
 }
 
-async function correctExpense(formData: FormData, kind: "edit" | "void") {
+async function correctExpense(formData: FormData, kind: "edit" | "void"): Promise<ExpenseRejection | void> {
   const id = String(formData.get("id") ?? "");
   const requestKey = String(formData.get("request_key") ?? "").trim();
   const revision = Number(formData.get("revision"));
@@ -25,7 +27,18 @@ async function correctExpense(formData: FormData, kind: "edit" | "void") {
   if (reason.length < 3 || reason.length > 1000) throw new Error("Alasan koreksi wajib diisi (3–1000 karakter).");
   const jumlah = Number(formData.get("jumlah"));
   if (kind === "edit" && (!Number.isFinite(jumlah) || jumlah <= 0 || jumlah > 1_000_000_000_000)) throw new Error("Jumlah pengeluaran harus lebih dari 0 dan valid.");
+  if (!alasanBermakna(reason)) throw new Error("Alasan koreksi wajib diisi (3–1000 karakter).");
   const supabase = await createClient();
+  // Ubah memakai aturan tanggal yang sama dengan input baru (keputusan Owner 23 Nov; review PR #570 MINOR-2):
+  // bukan masa depan; bila tanggal DIGANTI ke masa lalu paling lama 31 hari + alasan. Tanggal lama yang tidak diganti boleh berapa pun.
+  // Penolakan DIKEMBALIKAN (bukan dilempar) supaya pesannya terbaca di produksi dan isian tetap ada.
+  if (kind === "edit") {
+    const { data: lama, error: lamaError } = await supabase.from("expenses").select("tanggal").eq("id", id).maybeSingle();
+    const tanggalLama = typeof (lama as { tanggal?: unknown } | null)?.tanggal === "string" ? (lama as { tanggal: string }).tanggal : "";
+    if (lamaError || !tanggalLama) return { ok: false, outcome: "rejected", code: "backdate_invalid", message: "Pengeluaran tidak dapat dibaca untuk diperiksa. Muat ulang detail. Perubahan BELUM tersimpan." };
+    const tgl = cekTanggalUbah({ tanggal: String(formData.get("tanggal") ?? ""), tanggalLama, alasan: reason, today: hariIniWIB() });
+    if (!tgl.ok) return { ok: false, outcome: "rejected", code: "backdate_invalid", message: tgl.message };
+  }
   const { data, error } = await supabase.rpc("revise_expense_atomic", {
     p_request_key: requestKey, p_expense_id: id, p_expected_revision: revision, p_action: kind, p_reason: reason,
     p_expense: kind === "void" ? {} : {
@@ -34,6 +47,8 @@ async function correctExpense(formData: FormData, kind: "edit" | "void") {
       metode_bayar: String(formData.get("metode_bayar") ?? ""),
     },
   });
+  const ditolak = error ? penolakanUbahDB(error.message) : null;
+  if (ditolak) return { ok: false, outcome: "rejected", code: "backdate_rejected", message: ditolak };
   if (error) throw new Error(error.message || "Koreksi pengeluaran gagal. Isian tetap tersedia.");
   if (!data?.expense_id || !data?.journal_id) throw new Error("Koreksi dan jurnal belum terkonfirmasi lengkap.");
   const back = formData.get("kembali") === "/buku-besar/beban" ? "/buku-besar/beban" : "/pos/expense";
@@ -41,8 +56,8 @@ async function correctExpense(formData: FormData, kind: "edit" | "void") {
   redirect(`${back}/${id}?success=${kind}${transactionDraftAck(formData)}`);
 }
 
-export async function ubahExpense(formData: FormData) { await correctExpense(formData, "edit"); }
-export async function batalkanExpense(formData: FormData) { await correctExpense(formData, "void"); }
+export async function ubahExpense(formData: FormData) { return correctExpense(formData, "edit"); }
+export async function batalkanExpense(formData: FormData) { return correctExpense(formData, "void"); }
 
 export async function periksaExpense(formData: FormData) {
   const requestKey = String(formData.get("request_key") ?? "").trim();

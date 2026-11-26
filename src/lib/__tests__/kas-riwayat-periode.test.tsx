@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   boleh: false,
   role: "OWNER",
   expenses: [] as unknown[],
+  jejak: [] as unknown[],
 }));
 
 function cashRow(i: number) {
@@ -37,6 +38,7 @@ function client() {
           let data: unknown[] = [];
           if (table === "cash_entries") data = Array.from({ length: state.cashTotal }, (_, i) => cashRow(i)).slice(awal, akhir + 1);
           if (table === "expenses") data = state.expenses.slice(awal, akhir + 1);
+          if (table === "expense_backdates") data = state.jejak.slice(awal, akhir + 1);
           if (table === "cash_accounts") data = [{ id: "rek-1", nama: "Kas Blu BCA", coa_code: "110005", branch_id: null }];
           resolve({ data, error: null });
         },
@@ -60,7 +62,7 @@ vi.mock("next/navigation", async (orig) => ({
 
 import { KasEntryScreen } from "@/app/(app)/kas-bank/kas/KasEntryScreen";
 
-beforeEach(() => { state.calls = []; state.cashTotal = 0; state.boleh = false; state.role = "OWNER"; state.expenses = []; });
+beforeEach(() => { state.calls = []; state.cashTotal = 0; state.boleh = false; state.role = "OWNER"; state.expenses = []; state.jejak = []; });
 
 it("defaults the period to the start of this month through today and fixes bad input", () => {
   expect(periodeKas(undefined, undefined, "2026-11-26")).toEqual({ dari: "2026-11-01", sampai: "2026-11-26" });
@@ -108,4 +110,19 @@ it("shows only a view link for a cancelled store expense", async () => {
   const html = renderToStaticMarkup(await KasEntryScreen({ jenis: "Keluar", searchParams: Promise.resolve({}) }));
   expect(html).toMatch(new RegExp(`href="/buku-besar/beban/${EXP}"[^>]*>Lihat<`));
   expect(html).not.toMatch(/>Edit</);
+});
+
+// Review PR #570 MINOR-4: pengeluaran kasir bertanggal mundur ditandai di Kas Keluar (alasan di tooltip).
+it("marks a backdated store expense with the Mundur badge and its reason, and leaves normal ones unmarked", async () => {
+  state.boleh = true; state.role = "FINANCE"; state.expenses = [expense(false)];
+  const biasa = renderToStaticMarkup(await KasEntryScreen({ jenis: "Keluar", searchParams: Promise.resolve({}) }));
+  expect(biasa).not.toContain("Mundur");
+  state.jejak = [{ expense_id: EXP, effective_date: "2026-11-03", reason: "token listrik terlupa", recorded_at: "2026-11-05T03:00:00Z" }];
+  const html = renderToStaticMarkup(await KasEntryScreen({ jenis: "Keluar", searchParams: Promise.resolve({}) }));
+  expect(html).toContain("Mundur"); expect(html).toContain("token listrik terlupa");
+  expect(state.calls).toContainEqual({ table: "expense_backdates", op: "gte", args: ["effective_date", "2026-11-01"] });
+});
+it("Kas Masuk never reads the backdate trail", async () => {
+  await KasEntryScreen({ jenis: "Masuk", searchParams: Promise.resolve({}) });
+  expect(state.calls.some((c) => c.table === "expense_backdates")).toBe(false);
 });

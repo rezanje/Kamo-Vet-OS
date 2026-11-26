@@ -8,6 +8,8 @@ import { LampiranPicker } from "@/components/LampiranPicker";
 import { TanggalMundurField } from "@/components/pengeluaran/TanggalMundurField";
 import { simpanPengeluaranKasir } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { muatJejakMundurByIds } from "@/lib/expense-jejak";
+import { LencanaMundur } from "@/components/pengeluaran/LencanaMundur";
 import { KATEGORI_PENGELUARAN, badgeKategoriPengeluaran } from "@/lib/kategori-pengeluaran";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -66,9 +68,11 @@ export default async function PengeluaranKasirPage({
     .from("expenses")
     .select("id, tanggal, kategori, deskripsi, jumlah, metode_bayar")
     .eq("branch_id", shift.branch_id)
-    .order("tanggal", { ascending: false })
+    // Terbaru DIINPUT lebih dulu: pengeluaran bertanggal mundur tidak boleh tenggelam di bawah 20 baris hari ini.
+    .order("created_at", { ascending: false })
     .limit(20);
   const rows = (rowsRaw ?? []) as ExpenseRow[];
+  const jejak = await muatJejakMundurByIds(supabase, rows.map((r) => r.id));
   const totDaftar = rows.reduce((a, r) => a + Number(r.jumlah), 0);
 
   return (
@@ -144,7 +148,7 @@ export default async function PengeluaranKasirPage({
                 {rows.map((r, i) => (
                   <tr key={r.id}>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{i + 1}</td>
-                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTgl(r.tanggal)}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{fmtTgl(r.tanggal)}<LencanaMundur jejak={jejak.get(r.id)} /></td>
                     <td style={{ fontSize: 11 }}><span className={`bge ${badgeKategoriPengeluaran(r.kategori)}`}>{r.kategori}</span></td>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.deskripsi || "—"}</td>
                     <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{rp(Number(r.jumlah))}</td>

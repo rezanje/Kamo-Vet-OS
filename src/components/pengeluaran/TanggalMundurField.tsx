@@ -50,7 +50,7 @@ export function TanggalMundurField({ today, konteks }: { today: string; konteks:
               id="pengeluaran-alasan-tanggal" className="fi" name="alasan_tanggal" type="text" maxLength={ALASAN_MAX} minLength={ALASAN_MIN}
               required={mundur} disabled={!mundur} placeholder="mis. nota terlupa diinput kemarin"
             />
-            <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3 }}>Wajib {ALASAN_MIN}-{ALASAN_MAX} huruf. Tercatat bersama nama dan waktu input Anda dan tidak dapat diubah.</div>
+            <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 3 }}>Wajib {ALASAN_MIN}-{ALASAN_MAX} huruf atau angka. Tercatat bersama nama dan waktu input Anda dan tidak dapat diubah.</div>
           </div>
         </div>
       </details>
@@ -59,7 +59,7 @@ export function TanggalMundurField({ today, konteks }: { today: string; konteks:
           <b>{pesanDicatatDi(tanggal, today)}</b>
           {konteks === "backoffice"
             ? " Jurnal dan laporan memakai tanggal itu; pengeluaran ini tidak memakai laci kasir."
-            : " Uang tunai tetap keluar dari laci shift Anda yang sedang terbuka hari ini; hanya jurnal dan laporan yang memakai tanggal itu. Kas di buku besar tanggal itu tercatat berkurang walau uangnya keluar dari laci hari ini — Finance perlu tahu."}
+            : " Pengeluaran Tunai mengurangi laci shift Anda yang terbuka SEKARANG (hitungan kas shift ini berkurang); jurnal dan laporan memakai tanggal itu. Bila uangnya sebenarnya sudah keluar dari laci pada hari itu, tutup shift hari ini akan tampak lebih besar sebesar jumlah ini: tulis di alasan dan beri tahu Finance."}
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const fixture = vi.hoisted(() => ({ rpc: vi.fn() }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: fixture.rpc }) }));
+const fixture = vi.hoisted(() => ({ rpc: vi.fn(), tanggalLama: "2026-10-15" }));
+// `from("expenses")` membaca tanggal tersimpan: Ubah hanya membatasi tanggal yang DIGANTI (lihat expense-ubah-tanggal-actions.test.ts).
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc: fixture.rpc, from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { tanggal: fixture.tanggalLama }, error: null }) }) }) }) }) }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw Object.assign(Error(url), { digest: "NEXT_REDIRECT" }); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 import * as actions from "@/app/(app)/pos/expense/actions";
@@ -28,7 +29,10 @@ it.each([["ubahExpense", "edit"], ["batalkanExpense", "void"]] as const)("%s use
 it("preserves corrections when the accounting period or shift rejects them", async () => {
   const action = actions["ubahExpense" as keyof typeof actions]; expect(typeof action).toBe("function");
   fixture.rpc.mockResolvedValue({ data: null, error: { message: "Shift sudah ditutup" } });
-  await expect(action(form())).rejects.toThrow("Shift sudah ditutup");
+  // Penolakan pasti dikembalikan (bukan dilempar): produksi menyamarkan galat yang dilempar; isian tetap ada di form.
+  await expect(action(form())).resolves.toMatchObject({ ok: false, outcome: "rejected", message: expect.stringContaining("Shift sudah ditutup") });
+  fixture.rpc.mockResolvedValue({ data: null, error: { message: "fetch failed" } });
+  await expect(action(form())).rejects.toThrow("fetch failed");
 });
 
 it("requires a correction reason before mutation", async () => {
