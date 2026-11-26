@@ -6,7 +6,7 @@ vi.mock('@/lib/inventory', () => ({ stockInAtBuyPrice: async () => { s.stock += 
 vi.mock('@/lib/no-dokumen', () => ({ nomorBerikutnya: async () => ({ nomor: 'OPR.FICTION' }) }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
   auth: { getUser: async () => ({ data: { user: { id: 'actor' } } }) },
-  rpc: async (name: string, params: unknown) => { s.rpcCalls.push({ name, params }); if (s.responseMode === 'transport') throw Error('Synthetic private transport detail'); if (s.responseMode === 'empty') return { data: null, error: null }; if (s.responseMode === 'values') return { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'], shortage_value: 500, surplus_value: 300, surplus_offset: 300, net_variance: 200, surplus_unpriced: [{ item_id: '20000000-0000-4000-8000-000000000002', name: 'Barang Z', qty: 2 }] }, error: null }; return s.failure ? { data: null, error: { code: 'P0001', message: s.failMsg } } : { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'] }, error: null }; },
+  rpc: async (name: string, params: unknown) => { s.rpcCalls.push({ name, params }); if (s.responseMode === 'transport') throw Error('Synthetic private transport detail'); if (s.responseMode === 'empty') return { data: null, error: null }; if (s.responseMode === 'moved') return { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: [], bergerak_sejak_hitung: 2 }, error: null }; if (s.responseMode === 'values') return { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'], shortage_value: 500, surplus_value: 300, surplus_offset: 300, net_variance: 200, surplus_unpriced: [{ item_id: '20000000-0000-4000-8000-000000000002', name: 'Barang Z', qty: 2 }] }, error: null }; return s.failure ? { data: null, error: { code: 'P0001', message: s.failMsg } } : { data: { result_id: '30000000-0000-4000-8000-000000000003', no_hasil: 'OPR.FICTION', tanggal: '2026-10-23', no_faktur: null, already_posted: false, journal_ids: ['40000000-0000-4000-8000-000000000004'] }, error: null }; },
   from(table: string) {
     let op = 'read'; const q = { select: () => q, eq: () => q, in: () => q, order: () => q, limit: () => q, maybeSingle: () => q, single: () => q,
       insert: () => { op = 'insert'; return q; }, update: () => { op = 'update'; return q; }, delete: () => q,
@@ -56,11 +56,20 @@ it('an old receipt without the new keys still reports success without invented n
  expect(msg).toContain('tersimpan'); expect(msg).not.toContain('Nilai selisih');
 });
 
-it('recount guidance tells staff to count what is on the shelf now, not the opening stock', async () => {
-  s.failMsg = 'Hitungan barang berikut perlu diulang karena ...: Barang X (dihitung 0, stok saat dikunci 11, stok sekarang 0). Buka kunci barang tersebut, hitung ulang fisiknya, lalu simpan lagi.';
+it('passes the database refusal through unchanged: the guidance now lives in the database message (first-lock rule)', async () => {
+  s.failMsg = 'Hitungan barang berikut perlu diulang karena ...: Barang X (dihitung 0, stok saat dikunci 11, sejak itu berubah -11, stok sekarang 0). Hitungan harus sama dengan isi rak PADA SAAT barang pertama kali dikunci (isi rak sekarang ditambah yang sudah terjual sejak itu), bukan isi rak sekarang.';
   let msg = ''; try { await simpanHasil(form()); } catch (e) { msg = (e as Error).message; }
-  expect(msg).toContain('Barang X (dihitung 0, stok saat dikunci 11, stok sekarang 0)');
-  expect(msg).toContain('rak SEKARANG');
-  expect(msg).toContain('jangan isi stok awal opname');
-  expect(msg).not.toContain('hitung ulang fisiknya');
+  expect(msg).toContain('Barang X (dihitung 0, stok saat dikunci 11, sejak itu berubah -11, stok sekarang 0)');
+  expect(msg).toContain('PADA SAAT barang pertama kali dikunci');
+  expect(msg).not.toContain('jangan isi stok awal opname');
+});
+it('tells the user how many items moved (sold/received) since they were counted, as already handled automatically', async () => {
+  s.failure = false; s.responseMode = 'moved';
+  let msg = ''; try { await simpanHasil(form()); } catch (e) { msg = (e as Error).message; }
+  expect(msg).toContain('success='); expect(msg).toContain('2 barang terjual/masuk/pindah sejak dihitung; sudah dihitung otomatis, bukan selisih.');
+});
+it('an unlocked-and-moved refusal from the database is shown as is', async () => {
+  s.failMsg = 'Barang berikut belum dikunci dan stoknya sudah bergerak (terjual, masuk, atau dipindah) sejak opname dimulai, jadi sistem tidak tahu hitungan itu dibuat sebelum atau sesudah pergerakan: Barang Y. Tekan Kunci pada barang tersebut tepat sesudah dihitung, lalu simpan lagi.';
+  let msg = ''; try { await simpanHasil(form()); } catch (e) { msg = (e as Error).message; }
+  expect(msg).toContain('Tekan Kunci pada barang tersebut tepat sesudah dihitung'); expect(msg).toContain('error=');
 });

@@ -44,10 +44,13 @@ it('shows each product unit big beside its physical count input, even before any
 it('does not turn a negative count into a confirmed zero', async () => {
   await fill('-1'); await lock(); expect(s.calls).toBe(0); expect(host.textContent).toContain('jumlah fisik'); expect(host.querySelector('tbody')!.textContent).not.toContain('Buka');
 });
-it('reopening a locked count tells staff to enter the shelf quantity now, not the opening stock', async () => {
+it('reopening a locked count keeps the first snapshot: staff must not change the count just because it sold, and enters the shelf at first lock', async () => {
   await fill('11'); s.qty = 11; await lock();
   await act(async () => [...host.querySelectorAll('tbody button')].find(b => b.textContent?.trim() === 'Buka')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
   expect(host.textContent).toContain('Hitung ulang Fictional item');
-  expect(host.textContent).toContain('rak SEKARANG');
-  expect(host.textContent).toContain('jangan isi stok awal opname');
+  expect(host.textContent).toContain('foto stok sistem tidak berubah');
+  expect(host.textContent).toContain('jangan mengubah hitungan hanya karena barangnya laku');
+  expect(host.textContent).toContain('PADA SAAT barang ini pertama dikunci');
+  expect(host.textContent).not.toContain('rak SEKARANG');
+  expect(host.textContent).not.toContain('jangan isi stok awal opname');
 });
