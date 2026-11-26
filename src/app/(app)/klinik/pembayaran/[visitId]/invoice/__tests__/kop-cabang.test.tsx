@@ -151,7 +151,7 @@ describe("kop invoice klinik per cabang penerbit", () => {
   it("tata letak cetak tidak berubah: A4 margin 14mm, tombol 'Cetak Invoice' (tidak ikut tercetak), logo 46x46 tetap sehingga kop satu halaman", async () => {
     const h = await render();
     expect(h).toContain("@media print { @page { size: A4; margin: 14mm; } }");
-    expect(h).toMatch(/class="no-print"[^>]*>.*Cetak Invoice/s);
+    expect(h).toMatch(/class="no-print"[^>]*>[\s\S]*Cetak Invoice/);
     expect(h).toContain("width:46px;height:46px"); expect(h).toContain("object-fit:contain");
     expect(h).toContain("flex-shrink:0");
     expect((h.match(/data-kop="cabang"/g) ?? []).length).toBe(1);
