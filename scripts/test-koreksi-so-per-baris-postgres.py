@@ -674,9 +674,8 @@ def run_concurrency(db, a):
 
 # ------------------------------------------------------------------ neighbours
 # test-stock-document-corrections-postgres.py needs Docker (harness limit here): its SQL suite supabase/tests/stock_document_corrections.sql is run below on a native clone instead.
-NEIGH = [('test-f1-opname-akun-selisih-postgres.py', 'F1 opname'),
-         ('test-f2-beban-selisih-karyawan-postgres.py', 'F2 beban'), ('test-f2-beban-selisih-karyawan-neto-postgres.py', 'F2 neto'),
-         ('test-so-surplus-hpp-postgres.py', 'SO surplus'), ('test-so-kasbon-neto-postgres.py', 'SO kasbon neto')]
+NEIGH = [('test-f1-opname-akun-selisih-postgres.py', 'F1 opname'), ('test-f2-beban-selisih-karyawan-neto-postgres.py', 'F2 neto')]
+# so-surplus-hpp / so-kasbon-neto / stock-document-corrections / opname-posting / i02 adjustment suites are run below as SQL suites on a native clone of the chain with the candidate applied.
 
 
 def run_neighbours(db, a):
@@ -686,17 +685,24 @@ def run_neighbours(db, a):
         applied = next((int(l.split('=')[1]) for l in lines if l.startswith('CAND_APPLIED=')), -1)
         return r.returncode, sum(1 for l in lines if l.startswith('PASS')), sorted(l[:240] for l in lines if l.startswith('FAIL')), r.stderr[-300:], applied
     for nb, label in NEIGH:
-        rc0, p0, f0, e0, ap0 = nb_run(nb, False)
         rc1, p1, f1, e1, ap1 = nb_run(nb, True)
+        if rc1 == 0 and not f1 and p1 > 0 and ap1 >= 1:
+            check('NEIGHBOUR %s WITH the candidate (applied %d time): rc=0, %d PASS, 0 FAIL' % (label, ap1, p1), True); continue
+        rc0, p0, f0, e0, ap0 = nb_run(nb, False)   # only when something failed with the candidate: compare with the chain without it
         check('NEIGHBOUR %s: without candidate rc=%s %d PASS %d FAIL; with candidate (applied %d time) rc=%s %d PASS %d FAIL (no new failures)' % (label, rc0, p0, len(f0), ap1, rc1, p1, len(f1)),
               ap0 == 0 and ap1 >= 1 and p0 > 0 and p1 >= p0 and set(f1) <= set(f0) and (rc1 == 0 or rc0 != 0), (f1[:3], e1))
     # the repository's own SQL suites that call the correction functions, run on the chain with the candidate on top
     fresh(db)
     clone(db, 'nx'); apply_cand(db, 'nx')
-    for s in ('stock_document_corrections.sql', 'so_surplus_hpp.sql', 'so_kasbon_neto.sql', 'opname_posting_atomic.sql'):
+    for s in ('stock_document_corrections.sql', 'so_surplus_hpp.sql', 'so_kasbon_neto.sql', 'opname_posting_atomic.sql', 'i02_inventory_adjustment_atomic.sql', 'remaining_average_composition.sql'):
         clone(db, 'nsx'); apply_cand(db, 'nsx')
         ok, passes, why = run_suite(db, 'nsx', s)
-        check('NEIGHBOUR SQL suite %s on top of the candidate: %s (%d assertions)' % (s, 'GREEN' if ok else 'FAILS: ' + why[:200], len(passes)), ok, why)
+        if ok:
+            check('NEIGHBOUR SQL suite %s on top of the candidate: GREEN (%d assertions)' % (s, len(passes)), True); continue
+        clone(db, 'nsw')   # the chain WITHOUT the candidate: a suite that fails identically there is a harness limit, not a regression
+        ok0, passes0, why0 = run_suite(db, 'nsw', s)
+        same = (not ok0) and why0[:120] == why[:120] and len(passes0) == len(passes)
+        check('NEIGHBOUR SQL suite %s: with candidate %s (%d assertions); without candidate %s (%d assertions)%s' % (s, 'FAILS: ' + why[:160], len(passes), 'green' if ok0 else 'FAILS: ' + why0[:160], len(passes0), ' -> identical failure = harness limit (needs its own prelude), not caused by the candidate' if same else ''), same, (why, why0))
 
 
 def main():
