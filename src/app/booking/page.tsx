@@ -3,6 +3,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { hariIniWIB } from "@/lib/tanggal";
 import { JAM_BUKA, JENIS_HEWAN, POLI_BOOKING, MAKS_HARI_KE_DEPAN } from "@/lib/booking";
 import { kirimBooking } from "./actions";
+import { BookingKlinikProvider, BookingKop, PilihKlinikBooking, type KlinikBooking } from "@/components/BookingKop";
 
 export const metadata = {
   title: "Booking Klinik — Kamo Pet Care",
@@ -14,14 +15,18 @@ export const metadata = {
 export default async function BookingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; sukses?: string }>;
+  searchParams: Promise<{ error?: string; sukses?: string; cabang?: string }>;
 }) {
-  const { error, sukses } = await searchParams;
+  const { error, sukses, cabang } = await searchParams;
   const supabase = await createClient();
 
-  const { data: branchData } = await supabase
-    .from("branches").select("id, name").eq("is_active", true).eq("type", "KLINIK").order("name");
-  const klinik = (branchData ?? []) as { id: string; name: string }[];
+  // Alamat/telepon cabang boleh dibaca publik (kebijakan branches_public_read untuk cabang aktif) dan dipakai untuk kop.
+  // Gagal membaca kolom identitas tidak boleh mematikan formulir: ulangi hanya dengan id dan nama.
+  const { data: branchData, error: branchError } = await supabase
+    .from("branches").select("id, name, alamat, telepon").eq("is_active", true).eq("type", "KLINIK").order("name");
+  const klinik: KlinikBooking[] = branchError
+    ? (((await supabase.from("branches").select("id, name").eq("is_active", true).eq("type", "KLINIK").order("name")).data ?? []) as KlinikBooking[])
+    : ((branchData ?? []) as KlinikBooking[]);
 
   const hariIni = hariIniWIB();
   const batas = new Date(`${hariIni}T00:00:00Z`);
@@ -29,13 +34,9 @@ export default async function BookingPage({
 
   return (
     <main style={{ minHeight: "100vh", background: "#f4f5f7", padding: "28px 16px" }}>
+      <BookingKlinikProvider klinik={klinik} awal={typeof cabang === "string" ? cabang : ""}>
       <div style={{ maxWidth: 620, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: 18 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#1e3a8a" }}>KAMO PET CARE</div>
-          <div style={{ fontSize: 13, color: "#4b5563", marginTop: 2 }}>
-            Booking jadwal periksa hewan kesayangan
-          </div>
-        </div>
+        <BookingKop />
 
         {sukses && (
           <div style={{
@@ -62,10 +63,7 @@ export default async function BookingPage({
           <Judul>1 · Klinik & jadwal</Judul>
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
             <Kolom label="Klinik tujuan *" full>
-              <select className="fi" name="branch_id" required defaultValue="">
-                <option value="" disabled>— pilih klinik —</option>
-                {klinik.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              <PilihKlinikBooking />
             </Kolom>
             <Kolom label="Layanan *">
               <select className="fi" name="poli" defaultValue="Poli Umum">
@@ -127,6 +125,7 @@ export default async function BookingPage({
           </div>
         </form>
       </div>
+      </BookingKlinikProvider>
     </main>
   );
 }

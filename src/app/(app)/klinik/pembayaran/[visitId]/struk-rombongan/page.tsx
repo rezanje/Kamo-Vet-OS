@@ -1,6 +1,8 @@
 import { readCompleteList } from "@/lib/checked-list";
 import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { printBranchHeading } from "@/components/print-branch-heading";
+import { KopStruk } from "@/components/KopStruk";
+import { bacaIdentitasKop } from "@/lib/cabang-identitas-server";
 import { bacaKartuPetugas, idPetugas, petugasCetak, type BarisTagihanPetugas, type KunjunganPetugas } from "@/lib/petugas-cetak";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -31,7 +33,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   const ringkasan = ringkasTagihanRombongan(rombongan.baris);
 
   const { data: acuan } = await supabase
-    .from("visits").select("branches(name, code)").eq("id", visitId).maybeSingle();
+    .from("visits").select("branch_id, branches(name, code)").eq("id", visitId).maybeSingle();
   const branch = one(acuan?.branches as Rel<{ name: string; code: string | null }>);
 
   // Rincian tiap tagihan. Kunjungan yang belum ditagih sengaja tetap tampil sebagai
@@ -43,7 +45,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   const { data: invs, error: invoiceError } = invoiceIds.length
     ? await supabase
         .from("invoices")
-        .select("id, invoice_no, subtotal, discount, tax, total, metode_bayar, paid_status, dp_amount, cashier_name, visits(branches(name, code))")
+        .select("id, invoice_no, subtotal, discount, tax, total, metode_bayar, paid_status, dp_amount, cashier_name, visits(branch_id, branches(name, code))")
         .in("invoice_no", invoiceIds)
     : { data: [] as Record<string, unknown>[], error: null };
 
@@ -57,11 +59,17 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
   }
 
   type Inv = {
-    visits: Rel<{ branches: Rel<{ name: string; code: string | null }> }>;
+    visits: Rel<{ branch_id?: string | null; branches: Rel<{ name: string; code: string | null }> }>;
     id: string; invoice_no: string; subtotal: number; discount: number; tax: number;
     total: number; metode_bayar: string | null; paid_status: string; dp_amount: number; cashier_name: string | null;
   };
   const invRows = (invs ?? []) as unknown as Inv[];
+  // Kop = identitas CABANG PENERBIT. Struk gabungan hanya membawa alamat/telepon bila semua tagihannya satu cabang
+  // (beda cabang = hanya daftar nama seperti semula); tanpa tagihan dipakai cabang kunjungan acuan.
+  const idCabangKop = invoiceIds.length
+    ? (() => { const ids = new Set(invRows.map((i) => one(i.visits)?.branch_id ?? null)); return ids.size === 1 ? [...ids][0] : null; })()
+    : ((acuan as { branch_id?: string | null } | null)?.branch_id ?? null);
+  const identitas = await bacaIdentitasKop(supabase, idCabangKop);
 
   const allItems = invRows.length
     ? await readCompleteList<PackagePrintSource & BarisTagihanPetugas & { id: string; invoice_id: string }>((from, to) => supabase.from("invoice_items")
@@ -114,9 +122,7 @@ export default async function StrukRombonganPage({ params }: { params: Promise<{
       )}
 
       <div style={{ width: "74mm", margin: "0 auto", background: "#fff", padding: "10px 8px", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11, color: "#000", lineHeight: 1.5 }}>
-        <div style={{ textAlign: "center", marginBottom: 6 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: ".05em" }}>{invoiceIds.length ? [...new Set(invRows.map(inv => printBranchHeading(one(one(inv.visits)?.branches ?? null))))].join(" · ") : printBranchHeading(branch)}</div>
-        </div>
+        <KopStruk nama={invoiceIds.length ? [...new Set(invRows.map(inv => printBranchHeading(one(one(inv.visits)?.branches ?? null))))].join(" · ") : printBranchHeading(branch)} alamat={identitas.alamat} telepon={identitas.telepon} />
         <Hr />
         <Kv k="Tgl" v={tgl} />
         <Kv k="Pemilik" v={rombongan.customerName} />
