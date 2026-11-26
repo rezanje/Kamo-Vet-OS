@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Identitas cabang untuk dokumen cetak (migrasi 20261213100000_cabang_identitas_dokumen.sql): rantai migrasi asli, PostgreSQL native, data fiktif.
+"""Identitas cabang untuk dokumen cetak (migrasi 20261215100000_cabang_identitas_dokumen.sql): rantai migrasi asli, PostgreSQL native, data fiktif.
 
   python3 -I scripts/test-cabang-identitas-postgres.py --pg-bin DIR --json out.json
   --baseline    rantai TANPA kandidat: suite dijalankan terus walau gagal; harus banyak GAGAL (MERAH)
@@ -21,7 +21,7 @@ mspec = importlib.util.spec_from_file_location('cmut', ROOT / 'scripts/test-caba
 cmut = importlib.util.module_from_spec(mspec); mspec.loader.exec_module(cmut)
 NativePostgres = kp.NativePostgres
 
-CAND = '20261213100000_cabang_identitas_dokumen.sql'
+CAND = '20261215100000_cabang_identitas_dokumen.sql'
 MIGRATIONS = kp.MIGRATIONS
 SUITE = ROOT / 'supabase/tests/cabang_identitas_dokumen.sql'
 STORAGE_PREP = ("alter table storage.objects add column if not exists owner_id text; alter table storage.objects enable row level security;"

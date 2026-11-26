@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mutan untuk migrasi 20261213100000_cabang_identitas_dokumen: (nama, [(teks lama, teks baru, jumlah kemunculan)]).
+"""Mutan untuk migrasi 20261215100000_cabang_identitas_dokumen: (nama, [(teks lama, teks baru, jumlah kemunculan)]).
 Dipakai test-cabang-identitas-postgres.py --mutations. Setiap mutan harus membuat suite SQL GAGAL lewat pernyataan uji (bukan galat pasang).
 Blok pemeriksaan pasang (do $check$) dibuang dari semua varian (termasuk kontrol) supaya suite sendiri yang membuktikan."""
 

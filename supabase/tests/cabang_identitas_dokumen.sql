@@ -1,4 +1,4 @@
--- Identitas cabang untuk dokumen cetak (migrasi 20261213100000_cabang_identitas_dokumen): fixture fiktif, semuanya dibatalkan (rollback).
+-- Identitas cabang untuk dokumen cetak (migrasi 20261215100000_cabang_identitas_dokumen): fixture fiktif, semuanya dibatalkan (rollback).
 -- Dijalankan oleh scripts/test-cabang-identitas-postgres.py setelah pelari menyiapkan storage.objects seperti hosted (kolom owner_id, RLS aktif,
 -- hak authenticated) lalu memasang migrasi. Setiap pernyataan benar = NOTICE BP_PASS.
 -- Dibuktikan: kolom baru nullable dan kosong; batasan data; update_branch_identity hanya OWNER/ADMIN aktif (Admin Online, finance, staf, dokter, akun nonaktif,
