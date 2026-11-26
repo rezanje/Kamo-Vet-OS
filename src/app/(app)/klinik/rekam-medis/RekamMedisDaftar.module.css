@@ -1,0 +1,97 @@
+/* Tata letak daftar Rekam Medis: ringkas, pencarian paling atas, daftar langsung terlihat.
+   Hanya tampilan; tidak ada logika di sini. Memakai token warna aplikasi (--bd, --tm, --td, --sf1, --posb). */
+
+.kepala { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.kepalaAksi { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Ringkasan angka: satu baris keping kecil di bawah subjudul (bukan tiga kartu tinggi). */
+.ringkasan { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.stat { display: inline-flex; align-items: center; gap: 7px; padding: 3px 11px 3px 8px; border: .5px solid var(--bd); border-radius: 20px; background: #fff; }
+.statIkon { font-size: 13px; }
+.statLabel { font-size: 9.5px; font-weight: 700; letter-spacing: .03em; }
+.statNilai { font-size: 13px; font-weight: 800; color: var(--sb); line-height: 1.2; }
+
+/* Pencarian: satu baris di layar lebar, bertumpuk di ponsel. */
+.cari { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.kolom { display: grid; gap: 3px; font-size: 11px; flex: 1 1 220px; min-width: 0; }
+.kolom input { box-sizing: border-box; }
+.kolomJudul { font-weight: 600; color: var(--tm); }
+.cariAksi { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cariAksi a { text-decoration: none; }
+.tautanHalus { font-size: 12px; color: var(--tm); text-decoration: underline; padding: 6px 2px; }
+
+/* Baris kontrol: Per pasien | Per kunjungan di kiri, "Tampilkan" di kanan. */
+.kontrol { display: flex; gap: 8px 18px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 12px 0 14px; padding-top: 12px; border-top: .5px solid var(--bd); }
+.kelompokKontrol { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.labelKontrol { font-size: 11px; color: var(--tm); }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border: .5px solid var(--bd); border-radius: 8px; background: var(--sf1); max-width: 100%; }
+.seg a { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 28px; padding: 3px 11px; font-size: 12px; font-weight: 600; color: var(--tm); border-radius: 6px; }
+.seg a:hover { color: var(--tx); }
+.seg a.segAktif { background: var(--posb); color: #fff; font-weight: 700; }
+
+/* Judul daftar + keterangan hasil + "Cara membaca daftar". */
+.judulDaftar { display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; }
+.judulTeks { font-size: 14px; font-weight: 800; color: var(--sb); }
+.hasil { font-size: 11.5px; color: var(--tm); margin: 2px 0 8px; min-height: 0; }
+.info { position: relative; font-size: 11.5px; }
+.info > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; color: var(--tm); border: .5px solid var(--bd); background: #fff; }
+.info > summary::-webkit-details-marker { display: none; }
+.info[open] > summary { color: var(--tx); background: var(--sf1); }
+.infoIsi { margin: 8px 0 4px; padding: 10px 12px; border: .5px solid var(--bd); border-radius: 8px; background: var(--sf1); display: grid; gap: 6px; color: var(--tm); font-size: 11.5px; line-height: 1.5; }
+.infoIsi p { margin: 0; }
+.infoIsiBlok { flex-basis: 100%; }
+
+/* Daftar per pasien: satu baris ringkas per hewan, dipisah garis tipis (bukan kartu bertumpuk). */
+.daftar { list-style: none; margin: 0; padding: 0; border: .5px solid var(--bd); border-radius: 10px; overflow: hidden; background: #fff; }
+.baris { display: flex; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 10px 12px; border-bottom: .5px solid var(--bd); }
+.baris:last-child { border-bottom: none; }
+.baris:hover { background: var(--sf1); }
+.barisIsi { min-width: 0; flex: 1 1 320px; display: grid; gap: 3px; }
+.barisJudul { display: flex; align-items: baseline; gap: 4px 8px; flex-wrap: wrap; }
+.barisNama { font-weight: 800; font-size: 14px; overflow-wrap: anywhere; }
+.barisJenis { font-size: 11px; color: var(--tm); }
+.barisChip { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.barisMeta { font-size: 12px; display: flex; gap: 2px 6px; flex-wrap: wrap; align-items: center; overflow-wrap: anywhere; }
+.barisMetaHalus { font-size: 11.5px; color: var(--tm); }
+.barisRingkas { font-size: 11.5px; color: var(--tm); line-height: 1.45; display: flex; gap: 0 14px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.diberikan { display: flex; gap: 4px 10px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--tm); }
+.diberikan span { padding: 0 6px; border-radius: 4px; background: var(--sf1); }
+.barisAksi { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex: 0 0 auto; }
+.barisAksi a { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+
+/* Keping kecil di dalam baris (jumlah kunjungan, rawat inap, impor): lebih halus dari lencana bawaan. */
+.keping { font-size: 10.5px; padding: 1px 7px; }
+.kepingTepi { color: var(--tm); background: transparent; border: .5px solid var(--bd); }
+
+/* Per kunjungan (tabel). Di ponsel setiap kunjungan menjadi satu kotak bertumpuk, bukan tabel 850px yang digeser. */
+/* Label cabang panjang ("Riwayat impor (semua cabang)") boleh turun baris supaya kolom Tanggal tidak melebarkan tabel. */
+.tabelKunjungan td[data-label="Tanggal"] span { white-space: normal; }
+.tabelObat { font-size: 11px; line-height: 1.7; }
+.tabelObat span { display: inline-block; margin: 0 4px 2px 0; padding: 0 6px; border-radius: 4px; background: var(--sf1); color: var(--tm); }
+
+@media (max-width: 640px) {
+  .kepala { flex-direction: column; }
+  .kolom { flex: 1 1 100%; }
+  .cari > .cariAksi { width: 100%; }
+  .cariAksi button { flex: 1 1 auto; justify-content: center; min-height: 40px; }
+  .seg { display: flex; flex-wrap: wrap; width: 100%; box-sizing: border-box; }
+  .seg a { flex: 1 1 auto; min-height: 38px; text-align: center; white-space: nowrap; }
+  .kelompokKontrol { width: 100%; }
+  .kontrol { gap: 10px; }
+  .baris { flex-direction: column; align-items: stretch; }
+  .barisIsi { flex: 0 0 auto; }
+  .ringkasan { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stat { flex-direction: column; align-items: flex-start; gap: 1px; padding: 5px 9px; border-radius: 10px; }
+  .statIkon { display: none; }
+  .barisAksi { justify-content: stretch; flex-wrap: wrap; }
+  .barisAksi a { flex: 1 1 120px; min-height: 40px; white-space: normal; text-align: center; }
+  .judulDaftar { align-items: flex-start; }
+
+  .tabelKunjungan { min-width: 0 !important; }
+  .tabelKunjungan thead { display: none; }
+  .tabelKunjungan, .tabelKunjungan tbody, .tabelKunjungan tr, .tabelKunjungan td { display: block; width: 100%; box-sizing: border-box; }
+  .tabelKunjungan tr { border: .5px solid var(--bd); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; background: #fff; }
+  .tabelKunjungan td { border: none !important; padding: 3px 0 !important; max-width: none !important; white-space: normal !important; text-align: left !important; }
+  .tabelKunjungan td[data-label]::before { content: attr(data-label); display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--td); }
+  .tabelKunjungan td > div { justify-content: flex-start !important; }
+}
