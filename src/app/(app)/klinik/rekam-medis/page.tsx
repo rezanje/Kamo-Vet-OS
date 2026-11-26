@@ -7,6 +7,9 @@ import {
   bacaHasilHalamanRekamMedis, HALAMAN_REKAM_MEDIS, LABEL_RIWAYAT_IMPOR, MAKS_CARI_REKAM_MEDIS, PESAN_CARI_TERLALU_PANJANG,
   type HalamanRekamMedis,
 } from "@/lib/daftar-rekam-medis";
+import {
+  BANTUAN_CARI_OBAT, BATASAN_CARI_OBAT, MAKS_CARI_OBAT, PESAN_OBAT_BELUM_TERSEDIA, fungsiObatBelumAda, periksaCariObat, teksObatCocok,
+} from "@/lib/daftar-rekam-medis-obat";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 import { DaftarPerPasien, PilihTampilanDaftar } from "./DaftarPerPasien";
 import { bacaSemuaCabang } from "@/lib/rekam-medis-semua-cabang-server";
@@ -23,12 +26,15 @@ const GAGAL_JENDELA = "Rekam medis belum dapat dimuat lengkap. Coba muat ulang."
 export default async function DaftarRekamMedisPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; pet?: string; hal?: string; tampilan?: string; kelompok?: string }>;
+  searchParams: Promise<{ q?: string; pet?: string; hal?: string; tampilan?: string; kelompok?: string; obat?: string }>;
 }) {
-  const { q = "", pet: petId = "", hal, tampilan, kelompok: kelompokMentah } = await searchParams;
+  const { q = "", pet: petId = "", hal, tampilan, kelompok: kelompokMentah, obat: obatMentah = "" } = await searchParams;
   const fullHistory = tampilan === "semua" || !!petId;
   const displayMode = fullHistory ? "semua" : "rawat-jalan";
   const cari = q.trim();
+  // Filter "Obat / produk diberikan" (RPC p_obat). Aturan sama dengan database; teks ikut di URL dan tautan halaman.
+  const periksaObat = periksaCariObat(obatMentah);
+  const obatAktif = periksaObat.ok && periksaObat.aktif ? periksaObat.teks : "";
   // Per pasien (bawaan) = satu baris per hewan; Per kunjungan = daftar lama. Riwayat satu hewan (?pet=) selalu per kunjungan.
   const kelompok = petId ? "kunjungan" : bacaKelompok(kelompokMentah);
   const perPasienAktif = kelompok === "pasien";
@@ -36,7 +42,9 @@ export default async function DaftarRekamMedisPage({
   // Paginasi + pencarian di server: satu RPC SECURITY INVOKER (RLS pemanggil) mengembalikan jumlah + SATU halaman
   // (dulu seluruh daftar ~5 MB sekaligus, ~5 dtk, melewati batas 8 dtk). Klien TANPA header cabang + cabang aktif
   // sebagai parameter: cabang aktif + riwayat impor tanpa cabang. RLS tetap membatasi siapa melihat impor.
-  let hasil: HalamanRekamMedis<SourceRow>;
+  // `tanpaObat`: database belum punya p_obat (jalan mundur); daftar sengaja kosong, hanya ringkasan.
+  type HasilDaftar = HalamanRekamMedis<SourceRow> & { tanpaObat?: boolean };
+  let hasil: HasilDaftar;
   let cabangAktif: string | null;
   let pageInfo: ReturnType<typeof infoHalaman>;
   let rowsJendela: BarisKunjungan[] | null = null;
@@ -46,14 +54,24 @@ export default async function DaftarRekamMedisPage({
   let bacaSaja = false;
   try {
     if (cari.length > MAKS_CARI_REKAM_MEDIS) throw new ListLoadError(PESAN_CARI_TERLALU_PANJANG);
+    if (!periksaObat.ok) throw new ListLoadError(periksaObat.pesan);
     const lintas = await createClientLintasCabang();
     cabangAktif = lintas.cabangAktif;
     const peranP = perlakukanBacaSaja(lintas.client);
-    const bacaRpc = async (diminta: { batas: number; offset: number }) => {
-      const result = await lintas.client.rpc("daftar_rekam_medis_halaman", {
+    const bacaRpc = async (diminta: { batas: number; offset: number }): Promise<HasilDaftar> => {
+      // Tanpa filter obat: panggilan PERSIS seperti sebelumnya (6 argumen), jalan di database lama maupun baru.
+      const argumen = {
         p_cabang: cabangAktif, p_cari: cari || null, p_tampilan: displayMode, p_pet: petId || null,
         p_batas: diminta.batas, p_offset: diminta.offset,
-      });
+      };
+      const result = await lintas.client.rpc("daftar_rekam_medis_halaman", obatAktif ? { ...argumen, p_obat: obatAktif } : argumen);
+      if (obatAktif && fungsiObatBelumAda(result.error)) {
+        // Database belum punya p_obat (aplikasi terpasang lebih dulu): pakai panggilan lama hanya untuk ringkasan, tanpa baris,
+        // supaya daftar yang BELUM disaring tidak pernah tampil seolah hasil pencarian obat.
+        const lama = await lintas.client.rpc("daftar_rekam_medis_halaman", { ...argumen, p_batas: 1, p_offset: 0 });
+        const ringkas = bacaHasilHalamanRekamMedis<SourceRow>(lama, { batas: 1, offset: 0 }, (pesan) => new ListLoadError(pesan));
+        return { jumlah: 0, ringkasan: ringkas.ringkasan, baris: [], tanpaObat: true };
+      }
       return bacaHasilHalamanRekamMedis<SourceRow>(result, diminta, (pesan) => new ListLoadError(pesan));
     };
     const baca = (halaman: number) => bacaRpc({ batas: HALAMAN_REKAM_MEDIS, offset: (halaman - 1) * HALAMAN_REKAM_MEDIS });
@@ -64,7 +82,7 @@ export default async function DaftarRekamMedisPage({
       const ids = new Set<string>();
       for (const row of [...awal.baris, ...lanjut.baris]) { if (ids.has(row.id)) throw new ListLoadError(GAGAL_JENDELA); ids.add(row.id); }
       if (awal.jumlah !== lanjut.jumlah || awal.ringkasan.riwayat !== lanjut.ringkasan.riwayat) throw new ListLoadError(GAGAL_JENDELA);
-      hasil = { jumlah: awal.jumlah, ringkasan: awal.ringkasan, baris: [...awal.baris, ...lanjut.baris] };
+      hasil = { jumlah: awal.jumlah, ringkasan: awal.ringkasan, baris: [...awal.baris, ...lanjut.baris], tanpaObat: Boolean(awal.tanpaObat || lanjut.tanpaObat) };
       rowsJendela = hasil.baris.map(petakanKunjungan);
       perPasien = susunDaftarPerPasien(rowsJendela, hasil.jumlah, JENDELA_KUNJUNGAN);
       pageInfo = infoHalaman(hal, perPasien.kelompok.length, PASIEN_PER_HALAMAN);
@@ -87,6 +105,7 @@ export default async function DaftarRekamMedisPage({
     bacaSaja = await peranP;
   } catch (error) { return <ListLoadFailure error={error} label="Rekam medis" />; }
 
+  const obatBelumTersedia = Boolean(hasil.tanpaObat);
   const rows: BarisKunjungan[] = rowsJendela ?? hasil.baris.map(petakanKunjungan);
   const selectedPet = petId ? rows[0] : null;
   const subjudul = selectedPet
@@ -126,13 +145,13 @@ export default async function DaftarRekamMedisPage({
       </div>
 
       <div className="crm-sec">
-        {!petId && <PilihTampilanDaftar kelompok={kelompok} q={q} tampilan={displayMode} />}
+        {!petId && <PilihTampilanDaftar kelompok={kelompok} q={q} tampilan={displayMode} obat={obatAktif} />}
         <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
-          <Link href={`/klinik/rekam-medis?${new URLSearchParams({q,tampilan:"rawat-jalan",kelompok})}`}>Daftar rekam medis · selain Rawat Inap aktif</Link>
-          <Link href={`/klinik/rekam-medis?${new URLSearchParams({q,tampilan:"semua",kelompok})}`}>Semua riwayat (termasuk Rawat Inap)</Link>
+          <Link href={`/klinik/rekam-medis?${new URLSearchParams({q,tampilan:"rawat-jalan",kelompok,...(obatAktif ? { obat: obatAktif } : {})})}`}>Daftar rekam medis · selain Rawat Inap aktif</Link>
+          <Link href={`/klinik/rekam-medis?${new URLSearchParams({q,tampilan:"semua",kelompok,...(obatAktif ? { obat: obatAktif } : {})})}`}>Semua riwayat (termasuk Rawat Inap)</Link>
           <Link href="/klinik/rawat-inap">Pasien Rawat Inap aktif</Link>
         </div>
-        {perPasien && <p style={{ fontSize: 11, color: "var(--tm)", margin: "0 0 8px" }}>Satu kartu per hewan. Jumlah kunjungan dan kunjungan terakhir dihitung dari semua cabang yang bisa Anda akses (tanpa kunjungan yang diarsipkan), bukan hanya cabang aktif; tombol Riwayat membuka semua kunjungan hewan itu.</p>}
+        {perPasien && <p style={{ fontSize: 11, color: "var(--tm)", margin: "0 0 8px" }}>Satu kartu per hewan. Jumlah kunjungan dan kunjungan terakhir dihitung dari semua cabang yang bisa Anda akses (tanpa kunjungan yang diarsipkan), bukan hanya cabang aktif; tombol Riwayat membuka semua kunjungan hewan itu.{obatAktif ? " Saat mencari obat, hanya hewan dengan kunjungan yang cocok yang tampil; \"Diberikan\" menjumlahkan produk yang cocok dari kunjungan-kunjungan itu dan \"Buka kunjungan yang cocok\" membuka yang terbaru." : ""}</p>}
         {!fullHistory && <p style={{ fontSize: 11 }}>Pasien Rawat Inap aktif ada di Status Rawat Inap. Riwayat medisnya tetap tersedia lewat Semua riwayat atau riwayat pasien.</p>}
         {cabangAktif && hasil.ringkasan.impor > 0 && (
           <p style={{ fontSize: 11, color: "var(--tm)" }}>
@@ -143,37 +162,51 @@ export default async function DaftarRekamMedisPage({
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Daftar riwayat</div>
             <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 2 }}>
-              {cari ? (perPasien ? `${perPasien.kelompok.length} pasien ditemukan (${hasil.jumlah} kunjungan).` : `${hasil.jumlah} riwayat ditemukan.`) : selectedPet ? `Seluruh riwayat medis ${selectedPet.petName}.` : "Cari lewat nama pemilik, nama hewan, atau nomor telepon."}
+              {obatBelumTersedia ? "Pencarian obat belum tersedia."
+                : (cari || obatAktif) ? `${perPasien ? `${perPasien.kelompok.length} pasien ditemukan (${hasil.jumlah} kunjungan)` : `${hasil.jumlah} riwayat ditemukan`}${obatAktif ? ` dengan obat/produk “${obatAktif}”` : ""}.`
+                : selectedPet ? `Seluruh riwayat medis ${selectedPet.petName}.` : "Cari lewat nama pemilik, nama hewan, atau nomor telepon; atau cari menurut obat/produk yang diberikan."}
             </div>
           </div>
-          <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <form method="get" style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
             <input type="hidden" name="tampilan" value={displayMode} />
             <input type="hidden" name="kelompok" value={kelompok} />
             {petId && <input type="hidden" name="pet" value={petId} />}
-            <input className="fi" name="q" defaultValue={q} maxLength={MAKS_CARI_REKAM_MEDIS} placeholder="Cari pemilik, hewan, atau telepon..." style={{ width: 240 }} />
-            <button className="btn-def" type="submit"><i className="ti ti-search" /> Cari</button>
-            {(q || petId) && <Link href={`/klinik/rekam-medis?${new URLSearchParams({ tampilan: "semua", kelompok })}`} className="btn-def" style={{ textDecoration: "none" }}>Semua riwayat</Link>}
+            <label style={{ display: "grid", gap: 3, fontSize: 11 }}>
+              <span style={{ fontWeight: 600 }}>Pemilik, hewan, atau telepon</span>
+              <input className="fi" name="q" defaultValue={q} maxLength={MAKS_CARI_REKAM_MEDIS} placeholder="Cari pemilik, hewan, atau telepon..." style={{ width: 240 }} />
+            </label>
+            <label style={{ display: "grid", gap: 3, fontSize: 11 }}>
+              <span style={{ fontWeight: 600 }}>Cari obat / produk diberikan</span>
+              <input className="fi" name="obat" defaultValue={obatMentah.trim()} maxLength={MAKS_CARI_OBAT} placeholder="Mis. RC Recovery" aria-describedby="bantuan-cari-obat" style={{ width: 240 }} />
+            </label>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", paddingTop: 18 }}>
+              <button className="btn-def" type="submit"><i className="ti ti-search" /> Cari</button>
+              {(q || petId) && <Link href={`/klinik/rekam-medis?${new URLSearchParams({ tampilan: "semua", kelompok })}`} className="btn-def" style={{ textDecoration: "none" }}>Semua riwayat</Link>}
+              {obatMentah.trim() && <Link href={`/klinik/rekam-medis?${new URLSearchParams({ q, tampilan: displayMode, kelompok, ...(petId ? { pet: petId } : {}) })}`} className="btn-def" style={{ textDecoration: "none" }}><i className="ti ti-x" /> Hapus filter obat</Link>}
+            </div>
+            <p id="bantuan-cari-obat" style={{ flexBasis: "100%", margin: 0, fontSize: 10.5, color: "var(--tm)" }}>{BANTUAN_CARI_OBAT} {BATASAN_CARI_OBAT}</p>
           </form>
         </div>
 
-        {perPasien ? (
-          perPasien.kelompok.length === 0 ? <PesanKosong petId={petId} /> : (
+        {obatBelumTersedia && <p role="alert" className="p2ban" style={{ background: "#fffbeb", color: "#92400e", fontSize: 12 }}>{PESAN_OBAT_BELUM_TERSEDIA}</p>}
+        {obatBelumTersedia ? null : perPasien ? (
+          perPasien.kelompok.length === 0 ? <PesanKosong petId={petId} obat={obatAktif} /> : (
             <>
               {perPasien.jendelaHabis && (
                 <p role="status" style={{ fontSize: 11.5, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px", margin: "0 0 10px" }}>
                   Menampilkan {perPasien.kelompok.length} pasien dari {JENDELA_KUNJUNGAN} kunjungan terbaru (ada {perPasien.jumlahCocok} kunjungan yang cocok). Hewan lain tidak tampil di sini; persempit pencarian (nama hewan, pemilik, atau telepon) untuk melihatnya.
                 </p>
               )}
-              <DaftarPerPasien kelompok={kartuHalaman} semuaCabang={semuaCabang} />
+              <DaftarPerPasien kelompok={kartuHalaman} semuaCabang={semuaCabang} tampilkanObat={Boolean(obatAktif)} />
             </>
           )
         ) : rows.length === 0 ? (
-          <PesanKosong petId={petId} />
+          <PesanKosong petId={petId} obat={obatAktif} />
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table className="tbl" style={{ minWidth: 850 }}>
+            <table className="tbl" style={{ minWidth: obatAktif ? 1080 : 850 }}>
               <thead>
-                <tr><th>Tanggal</th><th>Pasien</th><th>Pemilik</th><th>Status pasien</th><th>Ringkasan kunjungan</th><th>Diagnosa</th><th /></tr>
+                <tr><th>Tanggal</th><th>Pasien</th><th>Pemilik</th><th>Status pasien</th><th>Ringkasan kunjungan</th><th>Diagnosa</th>{obatAktif && <th>Obat / produk diberikan</th>}<th /></tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
@@ -187,6 +220,13 @@ export default async function DaftarRekamMedisPage({
                     <td style={{ whiteSpace: "nowrap" }}><span className={`bge ${row.patientStatus.badge}`}>{row.patientStatus.label}</span></td>
                     <td style={{ maxWidth: 230, fontSize: 11, lineHeight: 1.45 }}>{row.note || "—"}</td>
                     <td style={{ maxWidth: 190, fontSize: 11, lineHeight: 1.45 }}>{row.diagnosis || "Belum diisi"}</td>
+                    {obatAktif && (
+                      <td style={{ maxWidth: 230, fontSize: 11, lineHeight: 1.6 }} data-obat-cocok>
+                        {row.obatCocok.length === 0 ? "—" : row.obatCocok.map((o) => (
+                          <span key={`${o.sumber}|${o.nama}`} className="bge" style={{ fontSize: 10.5, marginRight: 4, display: "inline-block" }}>Diberikan: {teksObatCocok(o)}</span>
+                        ))}
+                      </td>
+                    )}
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       <div style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
                         {row.petId && (
@@ -203,7 +243,7 @@ export default async function DaftarRekamMedisPage({
             </table>
           </div>
         )}
-        <ListPagination path="/klinik/rekam-medis" query={{ q, pet: petId, tampilan: displayMode, kelompok }} total={perPasien ? perPasien.kelompok.length : hasil.jumlah} pageInfo={pageInfo} />
+        <ListPagination path="/klinik/rekam-medis" query={{ q, pet: petId, tampilan: displayMode, kelompok, obat: obatAktif }} total={perPasien ? perPasien.kelompok.length : hasil.jumlah} pageInfo={pageInfo} />
       </div>
     </>
   );
@@ -225,11 +265,13 @@ async function perlakukanBacaSaja(client: Awaited<ReturnType<typeof createClient
   }
 }
 
-function PesanKosong({ petId }: { petId: string }) {
+function PesanKosong({ petId, obat }: { petId: string; obat?: string }) {
   return (
     <div style={{ padding: "30px 12px", textAlign: "center", color: "var(--tm)", fontSize: 12 }}>
       <i className="ti ti-notes-off" style={{ display: "block", fontSize: 28, marginBottom: 7, color: "var(--td)" }} />
-      {petId ? "Belum ada riwayat medis untuk anabul ini." : "Belum ada rekam medis yang cocok."}
+      {obat
+        ? <>Tidak ada rekam medis dengan obat/produk “{obat}” untuk pencarian ini.<br />Periksa ejaan atau coba kata yang lebih pendek (mis. “recovery”).</>
+        : petId ? "Belum ada riwayat medis untuk anabul ini." : "Belum ada rekam medis yang cocok."}
     </div>
   );
 }

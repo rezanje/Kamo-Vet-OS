@@ -1,4 +1,5 @@
 import { isPlaceholderOwnerName } from "@/lib/impor-rekam-medis";
+import { bacaObatCocok, gabungObatCocok, type ObatCocok } from "@/lib/daftar-rekam-medis-obat";
 import type { BarisDaftarRekamMedis } from "@/lib/daftar-rekam-medis";
 import { hasActiveInpatient, statusPasienRekamMedis, type CatatanStatusRawatInap } from "@/lib/status-pasien-rekam-medis";
 
@@ -22,6 +23,8 @@ export type SumberBarisDaftar = {
   branches: Rel<{ code: string }>;
   medical_records: Rel<{ diagnosis: string | null; anamnesis: string | null }>;
   inpatient_records: Rel<CatatanStatusRawatInap>;
+  /** Hanya ada bila filter obat dipakai: produk yang cocok ({nama, qty, sumber}). Bentuk lain diabaikan. */
+  obat_cocok?: unknown;
 };
 
 /** Satu kunjungan di daftar (dipakai tampilan Per kunjungan dan Per pasien — satu pemeta, tidak ada salinan). */
@@ -40,6 +43,8 @@ export type BarisKunjungan = BarisDaftarRekamMedis & {
   /** Kunjungan ini pernah/ sedang punya catatan rawat inap. */
   punyaRawatInap: boolean;
   patientStatus: ReturnType<typeof statusPasienRekamMedis>;
+  /** Produk yang cocok dengan filter obat (kosong bila filter tidak dipakai). */
+  obatCocok: ObatCocok[];
 };
 
 export function petakanKunjungan(visit: SumberBarisDaftar): BarisKunjungan {
@@ -66,6 +71,7 @@ export function petakanKunjungan(visit: SumberBarisDaftar): BarisKunjungan {
     activeInpatient: hasActiveInpatient(inap),
     punyaRawatInap: (Array.isArray(inap) ? inap.length : inap ? 1 : 0) > 0,
     patientStatus: statusPasienRekamMedis(inap, Boolean(visit.legacy_source_key)),
+    obatCocok: bacaObatCocok(visit.obat_cocok),
   };
 }
 
@@ -96,6 +102,8 @@ export type KelompokPasien = {
   jumlah: number;
   jumlahRawatInap: number;
   jumlahImpor: number;
+  /** Produk yang cocok dengan filter obat, dijumlah dari kunjungan hewan ini dalam jendela (kosong tanpa filter). */
+  obatCocok: ObatCocok[];
   terakhir: BarisKunjungan;
   /** Ada hewan lain milik pemilik yang sama dengan nama + jenis yang sama (id berbeda) di hasil ini. Tidak digabung. */
   kembar: boolean;
@@ -129,6 +137,7 @@ export function kelompokkanPerPasien(kunjungan: BarisKunjungan[]): KelompokPasie
       jumlah: urut.length,
       jumlahRawatInap: urut.filter((k) => k.punyaRawatInap).length,
       jumlahImpor: urut.filter((k) => k.isImported).length,
+      obatCocok: gabungObatCocok(urut.map((k) => k.obatCocok)),
       terakhir, kembar: false,
     };
   });
