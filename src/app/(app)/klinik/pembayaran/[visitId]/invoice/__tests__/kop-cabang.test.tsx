@@ -77,6 +77,7 @@ describe("kop invoice klinik per cabang penerbit", () => {
     expect(k).toContain("Jl. Raya Cimanggu 12, Bogor · Telp. 0251 8888");
     expect(k).toContain('src="https://storage.test/sign/dokumen/logo.png?token=t1"');
     expect(k).not.toContain("data-kop-logo-bawaan");
+    expect(k).toMatch(/data-kop-kontak[^>]*font-size:10px/);
     expect(state.signedPaths).toEqual([`dokumen:${LOGO}`]);
     const sisi = h.slice(h.indexOf("INVOICE</div>"));
     expect(sisi.indexOf("INV-202611-1864")).toBeGreaterThan(-1);

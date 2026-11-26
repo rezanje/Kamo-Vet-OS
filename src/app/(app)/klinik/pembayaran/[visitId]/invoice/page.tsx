@@ -109,7 +109,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
       <div style={{ maxWidth: 720, margin: "0 auto", background: "#fff", border: ".5px solid var(--bd)", borderRadius: 10, padding: "32px 36px", fontSize: 12.5, color: "#141413" }}>
         {/* Kop */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, borderBottom: "2px solid #16213e", paddingBottom: 14, marginBottom: 18 }}>
-          <KopCabang nama={printBranchHeading(branch)} alamat={identitas.alamat} telepon={identitas.telepon} logoUrl={identitas.logoUrl} ukuranNama={20} warnaNama="#141413" />
+          <KopCabang nama={printBranchHeading(branch)} alamat={identitas.alamat} telepon={identitas.telepon} logoUrl={identitas.logoUrl} ukuranNama={20} warnaNama="#141413" ukuranKontak={10} />
           <div style={{ textAlign: "right", flexShrink: 0 }}>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: ".04em" }}>INVOICE</div>
             <div style={{ fontSize: 12, color: "var(--tm)", marginTop: 3 }}>{invoice.invoice_no ?? "-"}</div>

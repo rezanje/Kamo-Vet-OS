@@ -10,9 +10,9 @@ export const KOP_BIRU = "var(--posb)";
  * Komponen murni (tanpa hook): bisa dipakai di halaman server maupun pratinjau layar pengaturan.
  * `nama` sudah harus berupa teks final (nama cabang atau cadangan yang dipilih pemanggil).
  */
-export function KopCabang({ nama, alamat, telepon, logoUrl, tagline = null, ukuranNama = 16, warnaNama = KOP_BIRU }: {
+export function KopCabang({ nama, alamat, telepon, logoUrl, tagline = null, ukuranNama = 16, warnaNama = KOP_BIRU, ukuranKontak = 8.5 }: {
   nama: string; alamat?: string | null; telepon?: string | null; logoUrl?: string | null;
-  tagline?: string | null; ukuranNama?: number; warnaNama?: string;
+  tagline?: string | null; ukuranNama?: number; warnaNama?: string; ukuranKontak?: number;
 }) {
   const kontak = barisKontakKop({ alamat: alamat ?? null, telepon: telepon ?? null });
   return (
@@ -28,8 +28,8 @@ export function KopCabang({ nama, alamat, telepon, logoUrl, tagline = null, ukur
       <div style={{ minWidth: 0 }}>
         <div data-kop-nama style={{ fontSize: ukuranNama, fontWeight: 900, color: warnaNama, lineHeight: 1.1 }}>{nama}</div>
         {kontak
-          ? <div data-kop-kontak style={{ fontSize: 8.5, color: "var(--tm)", lineHeight: 1.25, marginTop: 2 }}>{kontak}</div>
-          : tagline ? <div data-kop-tagline style={{ fontSize: 8.5, color: "var(--tm)", letterSpacing: ".08em" }}>{tagline}</div> : null}
+          ? <div data-kop-kontak style={{ fontSize: ukuranKontak, color: "var(--tm)", lineHeight: 1.25, marginTop: 2 }}>{kontak}</div>
+          : tagline ? <div data-kop-tagline style={{ fontSize: ukuranKontak, color: "var(--tm)", letterSpacing: ".08em" }}>{tagline}</div> : null}
       </div>
     </div>
   );

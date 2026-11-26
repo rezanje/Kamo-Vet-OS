@@ -27,6 +27,10 @@ describe("KopCabang (kop bersama invoice dan dokumen klinik)", () => {
     const h = html({ nama: "A", ukuranNama: 20, warnaNama: "#141413", logoUrl: "https://x.test/l.png" });
     expect(h).toContain("font-size:20px"); expect(h).toContain("color:#141413"); expect(h).toContain("width:46px;height:46px");
   });
+  it("ukuran baris kontak: bawaan 8.5px (sama dengan rekam medis), dapat diperbesar oleh invoice", () => {
+    expect(html({ nama: "A", alamat: "Jl. A" })).toContain("font-size:8.5px");
+    expect(html({ nama: "A", alamat: "Jl. A", ukuranKontak: 10 })).toContain("font-size:10px");
+  });
   it("RekamMedisKop tetap memakai cadangan nama + tagline yang sama seperti sebelumnya", () => {
     const h = renderToStaticMarkup(<RekamMedisKop nama="  " />);
     expect(h).toContain("KAMO PET CARE"); expect(h).toContain("WE CARE, THEY DESERVE"); expect(h).toContain("font-size:16px");
