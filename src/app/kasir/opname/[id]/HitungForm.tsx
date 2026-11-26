@@ -4,10 +4,12 @@ import { NumberInput } from "@/components/NumberInput";
 import { draftRecord, draftString } from "@/components/TransactionDraft";
 import { PreservedForm, LocalTransactionDraft } from "@/components/LocalTransactionDraft";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { SecHeader } from "@/components/SecHeader";
-import { bukaKunci, kunciBaris, muatUlangStok, simpanHasil } from "@/app/(app)/pos/opname/actions";
+import { bukaKunci, kunciBaris, muatUlangStok, periksaJumlahTakWajar, simpanHasil } from "@/app/(app)/pos/opname/actions";
+import { KonfirmasiJumlah, PetunjukSatuan, SatuanBesar, type ButirKonfirmasi } from "@/components/SatuanHitung";
+import { teksKemasan, type SatuanTurunan } from "@/lib/opname-jumlah-tak-wajar";
 import { hariIniWIB } from "@/lib/tanggal";
 
 // Layar hitung untuk petugas toko.
@@ -23,6 +25,8 @@ export type BarisHitung = {
   unit: string;
   kategori: string;
   sell_price: number;
+  /** Satuan lain barang ini dari item_units (factor = isi dalam satuan dasar). Kosong/tidak ada = tidak ditampilkan. */
+  turunan?: SatuanTurunan[];
 };
 
 type Urut = "nama" | "kategori" | "harga";
@@ -50,6 +54,11 @@ export function HitungForm({
   const [kategori, setKategori] = useState("");
   const [urut, setUrut] = useState<Urut>("nama");
   const [sisaSaja, setSisaSaja] = useState(false);
+  // Jumlah janggal (mis. 1000 padahal maksudnya 1) wajib dikonfirmasi sebelum dikunci / disimpan.
+  const [konfirmasi, setKonfirmasi] = useState<{ butir: ButirKonfirmasi[]; lanjut: () => void; fokusId: string } | null>(null);
+  // Jumlah per barang yang sudah diperiksa/dikonfirmasi di layar ini; berubah angka = diperiksa lagi.
+  const [diperiksa, setDiperiksa] = useState<Record<string, number>>({});
+  const lolos = useRef(false);
 
   const daftarKategori = useMemo(
     () => [...new Set(rows.map((r) => r.kategori).filter(Boolean))].sort(),
@@ -74,6 +83,25 @@ export function HitungForm({
   const jumlahIsi = rows.filter((r) => kunci[r.item_id] === undefined && isian[r.item_id]?.trim()).length;
   const belum = rows.length - jumlahKunci - jumlahIsi;
 
+  const fokusInput = (itemId: string) => {
+    setTimeout(() => document.getElementById(`fisik-${itemId}`)?.focus(), 0);
+  };
+
+  const butirDari = (ids: string[], jumlah: Record<string, number>): ButirKonfirmasi[] =>
+    ids.flatMap((id) => {
+      const r = rows.find((x) => x.item_id === id);
+      return r ? [{ id, nama: r.name, jumlah: jumlah[id], satuan: r.unit }] : [];
+    });
+
+  const kunciSekarang = async (r: BarisHitung, qty: number) => {
+    const res = await kunciBaris(orderId, r.item_id, qty);
+    if (!res.ok || res.qtyFisik === undefined) { setPesan(res.pesan ?? "Gagal menyimpan."); return; }
+    const confirmedQty = res.qtyFisik;
+    setKunci((m) => ({ ...m, [r.item_id]: confirmedQty }));
+    setIsian((m) => { const next = { ...m }; delete next[r.item_id]; return next; });
+    setPesan(confirmedQty !== qty ? "Hitungan sebelumnya tetap tersimpan. Tekan Buka untuk mengubah, lalu hitung ulang." : null);
+  };
+
   const kunciSatu = (r: BarisHitung) => {
     const nilai = isian[r.item_id];
     if (nilai === undefined || nilai.trim() === "") {
@@ -86,12 +114,22 @@ export function HitungForm({
       return;
     }
     start(async () => {
-      const res = await kunciBaris(orderId, r.item_id, qty);
-      if (!res.ok || res.qtyFisik === undefined) { setPesan(res.pesan ?? "Gagal menyimpan."); return; }
-      const confirmedQty = res.qtyFisik;
-      setKunci((m) => ({ ...m, [r.item_id]: confirmedQty }));
-      setIsian((m) => { const next = { ...m }; delete next[r.item_id]; return next; });
-      setPesan(confirmedQty !== qty ? "Hitungan sebelumnya tetap tersimpan. Tekan Buka untuk mengubah, lalu hitung ulang." : null);
+      if (diperiksa[r.item_id] !== qty) {
+        const cek = await periksaJumlahTakWajar(orderId, [{ itemId: r.item_id, qty }]);
+        if (!cek.ok) { setPesan(cek.pesan); return; }
+        if (cek.janggal.includes(r.item_id)) {
+          setKonfirmasi({
+            butir: butirDari([r.item_id], { [r.item_id]: qty }), fokusId: r.item_id,
+            lanjut: () => {
+              setDiperiksa((m) => ({ ...m, [r.item_id]: qty }));
+              start(async () => { await kunciSekarang(r, qty); });
+            },
+          });
+          return;
+        }
+        setDiperiksa((m) => ({ ...m, [r.item_id]: qty }));
+      }
+      await kunciSekarang(r, qty);
     });
   };
 
@@ -121,9 +159,36 @@ export function HitungForm({
     const v = isian[r.item_id];
     if (v !== undefined && v.trim() !== "") dikirim[r.item_id] = Math.max(0, Number(v) || 0);
   }
+  const dikirimJson = JSON.stringify(dikirim);
+  const dikirimTerbaru = useRef(dikirimJson);
+  useEffect(() => { dikirimTerbaru.current = dikirimJson; }, [dikirimJson]);
+
+  // "Simpan semua": periksa dulu hitungan yang belum diperiksa (termasuk yang terkunci sebelum fitur ini ada).
+  // Server yang menilai (stok sistem tidak dikirim ke layar). Ada yang janggal -> satu dialog untuk semuanya.
+  const sebelumSimpan = (e: FormEvent<HTMLFormElement>) => {
+    if (lolos.current) { lolos.current = false; return; }
+    e.preventDefault();
+    if (pending) return;
+    const form = e.currentTarget;
+    const snapshot = dikirimJson;
+    const kirimSekarang = () => { lolos.current = true; form.requestSubmit(); };
+    const baris = Object.entries(dikirim).filter(([id, qty]) => diperiksa[id] !== qty).map(([itemId, qty]) => ({ itemId, qty }));
+    if (baris.length === 0) { kirimSekarang(); return; }
+    start(async () => {
+      const cek = await periksaJumlahTakWajar(orderId, baris);
+      if (!cek.ok) { setPesan(cek.pesan); return; }
+      if (dikirimTerbaru.current !== snapshot) { setPesan("Isian berubah saat diperiksa. Tekan Simpan semua sekali lagi."); return; }
+      const tandai = () => setDiperiksa((m) => ({ ...m, ...Object.fromEntries(baris.map((b) => [b.itemId, b.qty])) }));
+      if (cek.janggal.length === 0) { tandai(); kirimSekarang(); return; }
+      setKonfirmasi({
+        butir: butirDari(cek.janggal, dikirim), fokusId: cek.janggal[0],
+        lanjut: () => { tandai(); kirimSekarang(); },
+      });
+    });
+  };
 
   return (
-    <PreservedForm action={simpanHasil}>
+    <PreservedForm action={simpanHasil} onSubmit={sebelumSimpan}>
       <LocalTransactionDraft scope={`opname-count:${orderId}`} state={{snapshot:{isian,cari,kategori,urut,sisaSaja},restore:s=>{if(!draftRecord(s.isian,draftString)||!Object.keys(s.isian).every(id=>rows.some(r=>r.item_id===id))||typeof s.cari!=="string"||typeof s.kategori!=="string"||!["nama","kategori","harga"].includes(String(s.urut))||typeof s.sisaSaja!=="boolean")return false;setIsian(Object.fromEntries(Object.entries(s.isian).filter(([id])=>terkunci[id]===undefined)));setCari(s.cari);setKategori(s.kategori);setUrut(s.urut as Urut);setSisaSaja(s.sisaSaja);return true;},reset:()=>setIsian({})}}/>
       <input type="hidden" name="order_id" value={orderId} />
       <input type="hidden" name="kembali" value={kembali} />
@@ -164,6 +229,11 @@ export function HitungForm({
           </button>
         </div>
 
+        <div data-awas-satuan style={{ fontSize: 11.5, marginBottom: 8, background: "#eff6ff", border: ".5px solid #93c5fd", color: "#1e3a8a", borderRadius: 8, padding: "6px 10px" }}>
+          <i className="ti ti-ruler-measure" /> <strong>Lihat SATUAN di samping kolom isian.</strong> Isi jumlah dalam satuan itu —
+          misalnya barang bersatuan <strong>1L</strong>: satu botol 1 liter ditulis <strong>1</strong>, bukan 1000.
+        </div>
+
         <div style={{ display: "flex", gap: 10, marginBottom: 8, fontSize: 10.5, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 700, color: "#15803d" }}>{jumlahKunci} terkunci</span>
           <span style={{ color: "#b45309" }}>{jumlahIsi} terisi belum dikunci</span>
@@ -171,15 +241,14 @@ export function HitungForm({
         </div>
 
         <div style={{ overflowX: "auto", maxHeight: 460, overflowY: "auto" }}>
-          <table className="tbl" style={{ minWidth: 680 }}>
+          <table className="tbl" style={{ minWidth: 720 }}>
             <thead>
               <tr>
                 <th>Kode #</th>
                 <th>Nama Barang</th>
                 <th>Kategori</th>
                 <th style={{ textAlign: "right" }}>Harga jual</th>
-                <th scope="col">Satuan</th>
-                <th style={{ textAlign: "right" }}>Jumlah fisik</th>
+                <th style={{ textAlign: "right" }}>Jumlah fisik &amp; satuan</th>
                 <th style={{ width: 108 }}>Kunci</th>
               </tr>
             </thead>
@@ -187,27 +256,37 @@ export function HitungForm({
               {tampil.map((r) => {
                 const locked = kunci[r.item_id] !== undefined;
                 const unit = r.unit.trim();
+                const kemasan = teksKemasan(unit, r.turunan);
                 return (
                   <tr key={r.item_id} style={locked ? { background: "#f0fdf4" } : undefined}>
                     <td style={{ fontSize: 11, color: "var(--tm)" }}>{r.code}</td>
-                    <td style={{ fontSize: 11.5 }}>{r.name}</td>
+                    <td style={{ fontSize: 11.5 }}>
+                      {r.name}
+                      {kemasan && (
+                        <div data-isi-kemasan style={{ fontSize: 10, color: "var(--tm)", marginTop: 1 }}>Isi kemasan: {kemasan}</div>
+                      )}
+                    </td>
                     <td style={{ fontSize: 10.5, color: "var(--tm)" }}>{r.kategori}</td>
                     <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.sell_price)}</td>
-                    <td style={{ fontSize: 11, whiteSpace: "nowrap" }}>
-                      {unit || <span aria-label="Satuan belum diisi">—</span>}
-                    </td>
                     <td style={{ textAlign: "right" }}>
                       {locked ? (
-                        <span style={{ fontSize: 12, fontWeight: 700, color: "#15803d" }}>
-                          {kunci[r.item_id]}
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: "#15803d" }}>{kunci[r.item_id]}</span>
+                          <SatuanBesar unit={unit} />
                         </span>
                       ) : (
-                        <NumberInput className="fi" type="number" min={0} step="any" inputMode="decimal"
-                          placeholder="—"
-                          aria-label={`Jumlah fisik ${r.name}${unit ? ` (${unit})` : ""}`}
-                          value={isian[r.item_id] ?? ""}
-                          onChange={(e) => setIsian((m) => ({ ...m, [r.item_id]: e.target.value }))}
-                          style={{ width: 92, textAlign: "right" }} />
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                          <PetunjukSatuan unit={unit} htmlFor={`fisik-${r.item_id}`} />
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <NumberInput className="fi" type="number" min={0} step="any" inputMode="decimal"
+                              id={`fisik-${r.item_id}`} placeholder="—"
+                              aria-label={`Jumlah fisik ${r.name}${unit ? ` (${unit})` : ""}`}
+                              value={isian[r.item_id] ?? ""}
+                              onChange={(e) => setIsian((m) => ({ ...m, [r.item_id]: e.target.value }))}
+                              style={{ width: 110, textAlign: "right", fontSize: 15, fontWeight: 700 }} />
+                            <SatuanBesar unit={unit} />
+                          </div>
+                        </div>
                       )}
                     </td>
                     <td>
@@ -236,7 +315,7 @@ export function HitungForm({
               })}
               {tampil.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
+                  <td colSpan={6} style={{ textAlign: "center", color: "var(--td)", padding: "20px 0", fontSize: 11 }}>
                     {rows.length === 0 ? "Tidak ada barang dalam daftar hitung ini." : "Tidak ada barang cocok saringan."}
                   </td>
                 </tr>
@@ -258,6 +337,13 @@ export function HitungForm({
           Barang yang tidak dihitung dilewat — stoknya tidak diubah. Barang yang laku sesudah dikunci otomatis diperhitungkan, tidak perlu dikurangi sendiri. Laporan selisih keluar setelah disimpan.
         </div>
       </div>
+      {konfirmasi && (
+        <KonfirmasiJumlah
+          butir={konfirmasi.butir}
+          onBatal={() => { const id = konfirmasi.fokusId; setKonfirmasi(null); fokusInput(id); }}
+          onYa={() => { const lanjut = konfirmasi.lanjut; setKonfirmasi(null); lanjut(); }}
+        />
+      )}
     </PreservedForm>
   );
 }
