@@ -516,8 +516,8 @@ def run_conc(db, a):
     fresh(db)
     clone(db, 'conc'); apply_cand(db, 'conc')
     rc, out, err = raw(db, CONC_FIX, 'conc'); assert rc == 0, err
-    sq = lambda i: q1(db, 'conc', f"select qty from stock where warehouse_id='{W}' and item_id='{it_(i)}'")
-    cq = lambda o, i: q1(db, 'conc', f"select qty_sistem from opname_counts where order_id='{od_(o)}' and item_id='{it_(i)}'")
+    sq = lambda i: q1(db, 'conc', f"select qty::numeric(20,4)::text from stock where warehouse_id='{W}' and item_id='{it_(i)}'")
+    cq = lambda o, i: q1(db, 'conc', f"select qty_sistem::numeric(20,4)::text from opname_counts where order_id='{od_(o)}' and item_id='{it_(i)}'")
     # 1. sale in flight, save arrives: save waits on the stock row, then sees the sale; baseline = lock photo 10, count 10 -> selisih 0, stock stays 5
     raw(db, f"insert into opname_counts(order_id,item_id,qty_fisik,qty_sistem) values('{od_(1)}','{it_(1)}',10,10);", 'conc')
     a1 = Sess(db, 'conc', f"begin; select public.stock_out_fifo('{W}','{it_(1)}',5,'sale','CC-SALE-1',current_date); /* conc-holder1 */ select pg_sleep(2.5); commit;")
@@ -526,7 +526,7 @@ def run_conc(db, a):
     ok2 = waiting(db, 'conc', 'conc-post1')
     ra, rb = a1.done(), b1.done()
     check('CONC 1 sale in flight when the save starts: the save waits on the stock row, then posts against the lock photo (selisih 0, stock 5, no journal)',
-          ok1 and ok2 and ra[0] == 0 and rb[0] == 0 and sq(1) == '5.0000' and q1(db, 'conc', f"select selisih::text from opname_result_items where result_id=(select id from opname_results where order_id='{od_(1)}')") == '0'
+          ok1 and ok2 and ra[0] == 0 and rb[0] == 0 and sq(1) == '5.0000' and q1(db, 'conc', f"select (selisih=0)::text from opname_result_items where result_id=(select id from opname_results where order_id='{od_(1)}')") == 'true'
           and q1(db, 'conc', "select count(*) from journal_entries where source='opname' and deskripsi like '%OPO.CC.1%'") == '0', (ok1, ok2, ra[2][-150:], rb[2][-200:], sq(1)))
     # 2. save in flight, a sale arrives: the sale waits, then runs on the post-save stock (variance -2 applied, then sale 3): 10 - 2 - 3 = 5
     raw(db, f"insert into opname_counts(order_id,item_id,qty_fisik,qty_sistem) values('{od_(2)}','{it_(2)}',8,10);", 'conc')
@@ -536,7 +536,7 @@ def run_conc(db, a):
     ok2 = waiting(db, 'conc', 'conc-sale2')
     ra, rb = a2.done(), b2.done()
     check('CONC 2 save in flight when a sale arrives: the sale waits, then sells from the adjusted stock (10 - 2 - 3 = 5), layers equal stock',
-          ok1 and ok2 and ra[0] == 0 and rb[0] == 0 and sq(2) == '5.0000' and q1(db, 'conc', f"select coalesce(sum(qty_left),0)::text from stock_layers where warehouse_id='{W}' and item_id='{it_(2)}'") == '5.0000', (ok1, ok2, ra[2][-150:], rb[2][-150:], sq(2)))
+          ok1 and ok2 and ra[0] == 0 and rb[0] == 0 and sq(2) == '5.0000' and q1(db, 'conc', f"select coalesce(sum(qty_left),0)::numeric(20,4)::text from stock_layers where warehouse_id='{W}' and item_id='{it_(2)}'") == '5.0000', (ok1, ok2, ra[2][-150:], rb[2][-150:], sq(2)))
     # 3. lock while a sale is in flight: the lock photo waits for the sale (FOR SHARE) and records the post-sale stock (6), never the stale 10
     a3 = Sess(db, 'conc', f"begin; select public.stock_out_fifo('{W}','{it_(3)}',4,'sale','CC-SALE-3',current_date); /* conc-holder3 */ select pg_sleep(2.5); commit;")
     ok1 = sleeping(db, 'conc', 'conc-holder3')
