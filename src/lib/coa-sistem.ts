@@ -116,6 +116,7 @@ export const KODE_SISTEM: Record<string, string> = {
   "820004": "rugi pelepasan aset tetap",
   "760002": "selisih kas tutup shift",
   "720010": "beban selisih stok (selisih kurang opname & penyesuaian, retur barang rusak)",
+  "740018": "beban admin EDC — fee merchant POS dikreditkan ke sini (permintaan Finance 25 Nov 2026)",
 };
 
 export const akunSistem = (code: string) => code in KODE_SISTEM;

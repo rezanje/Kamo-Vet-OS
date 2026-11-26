@@ -21,7 +21,7 @@ function client() {
       const row = { id: ENTRY, no_bukti: "KK.2026.11.00001", tanggal: "2026-11-12", jumlah: 50000, lawan_code: "610001", account_id: "20000000-0000-4000-8000-000000000002", revision: 0, keterangan: "Galon", voided_at: null, rekening: { nama: "Kas Toko CIAWI" }, branches: null };
       const transfer = { no_transfer: "TF.2026.11.00001", tanggal: "2026-11-12", jumlah: 1000, voided_at: null, from: { nama: "Shopee Bogor" }, to: { nama: "Bank BCA Toko" } };
       const data = table === "cash_entries" ? [row] : table === "cash_accounts" ? [{ id: row.account_id, nama: "Kas Toko CIAWI", coa_code: "110005" }] : [];
-      const q = { select: () => q, eq: () => q, order: () => q, limit: () => q,
+      const q = { select: () => q, eq: () => q, order: () => q, limit: () => q, gte: () => q, lte: () => q, range: () => q,
         maybeSingle: async () => ({ data: table === "profiles" ? { role: state.role, is_active: true } : table === "cash_transfers" ? transfer : table === "cash_entries" && state.entry ? row : null, error: null }),
         then: (resolve: (v: unknown) => void) => resolve({ data, error: null }) };
       return q;
