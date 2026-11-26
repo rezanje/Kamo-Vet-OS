@@ -165,3 +165,10 @@ it("account creation: when configuration fails AFTER Auth signup the message say
   db.rpc.mockReset(); db.rpc.mockImplementation(async (name: string) => ({ data: null, error: name === "configure_employee_account" ? busy : null }));
   expect(decode(await buatPengguna(create).catch(e => e))).toMatch(/beberapa detik/);
 });
+
+it("batas Admin Umum: pesan database ADMIN_UMUM_ROLE_DIBATASI dipetakan ke teks Indonesia yang jelas (ditolak, bukan retry)", () => {
+  const r = roleRpcFailure({ code: "42501", message: "ADMIN_UMUM_ROLE_DIBATASI: Admin Umum tidak boleh membuat, memberikan, atau mengubah akun berperan Finance, Admin, Admin Umum, atau Super Admin (Owner). Hanya Super Admin yang boleh. Tidak ada yang disimpan." });
+  expect(r).toMatchObject({ ok: false, outcome: "rejected", code: "ADMIN_UMUM_ROLE_DIBATASI" });
+  expect(r?.message).toContain("Admin Umum tidak boleh membuat");
+  expect(r?.message).toContain("Hanya Super Admin");
+});

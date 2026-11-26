@@ -12,6 +12,7 @@ const REJECTIONS: [RegExp, string, string][] = [
   [/ROLE_ACTION_DENIED/, "ROLE_ACTION_DENIED", "Tindakan ini tidak diizinkan untuk peran Anda. Tidak ada yang disimpan. Minta pemilik membukanya di Pengaturan › Akses Grup."],
   [/BANK_SCOPE_DENIED/, "BANK_SCOPE_DENIED", "Rekening atau cabang ini di luar cakupan akses peran Anda (menu Kas & Bank, akses semua cabang, atau cabang rekening). Tidak ada yang disimpan."],
   [/EMPLOYEE_SCOPE_DENIED/, "EMPLOYEE_SCOPE_DENIED", "Karyawan atau cabang ini di luar cakupan akses peran Anda. Tidak ada yang disimpan."],
+  [/ADMIN_UMUM_ROLE_DIBATASI/, "ADMIN_UMUM_ROLE_DIBATASI", "Admin Umum tidak boleh membuat, memberikan, atau mengubah akun berperan Finance, Admin, Admin Umum, atau Super Admin (Owner). Hanya Super Admin yang boleh. Tidak ada yang disimpan."],
   [/ACCOUNT_EDIT_DENIED|PEOPLE_ACCOUNT_RPC_REQUIRED/, "ACCOUNT_EDIT_DENIED", "Perubahan akun ini tidak diizinkan untuk peran Anda atau akun target di luar cakupan Anda. Tidak ada yang disimpan."],
 ];
 const RETRY_CODES = new Set(["55P03", "40P01", "57014", "40001"]);
