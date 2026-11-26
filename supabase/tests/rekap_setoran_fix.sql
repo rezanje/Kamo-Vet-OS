@@ -25,6 +25,8 @@ create function pg_temp.save(name text,v jsonb) returns void language sql as $$i
 create function pg_temp.sid(name text) returns uuid language sql security definer as $$select (r->>'id')::uuid from res where res.name=$1$$;
 create function pg_temp.rev(name text) returns integer language sql security definer as $$select revision from public.setoran where id=(select (r->>'id')::uuid from res where res.name=$1)$$;
 create function pg_temp.st(name text) returns text language sql security definer as $$select status from public.setoran where id=(select (r->>'id')::uuid from res where res.name=$1)$$;
+create function pg_temp.lineid(nm text,n int default 0) returns uuid language sql security definer as $$select id from public.setoran_pengeluaran where setoran_id=(select (r->>'id')::uuid from res where res.name=$1) order by created_at,id offset $2 limit 1$$;
+create function pg_temp.trid(nm text,n int default 0) returns uuid language sql security definer as $$select id from public.setoran_transfer where setoran_id=(select (r->>'id')::uuid from res where res.name=$1) order by created_at,id offset $2 limit 1$$;
 create function pg_temp.sv(stmt text) returns text language plpgsql security definer as $$declare r text;begin execute stmt into r;return r;end$$;
 -- jalankan sebagai pengguna (RLS berlaku): hasil skalar teks atau 'ERR:'||pesan; semua dibatalkan di dalam sub-blok
 create function pg_temp.ra(un text, stmt text) returns text language plpgsql as $$
@@ -123,13 +125,14 @@ insert into branches(id,code,name,type) values
  (pg_temp.br('0d'),'FXD','FX cabang D','PETSHOP'),(pg_temp.br('0e'),'FXE','FX cabang E','PETSHOP'),(pg_temp.br('0f'),'FXF','FX cabang F','PETSHOP'),
  (pg_temp.br('a1'),'FXG','FX cabang G','PETSHOP'),(pg_temp.br('a2'),'FXH','FX cabang H','PETSHOP'),(pg_temp.br('a3'),'FXI','FX cabang I','PETSHOP'),
  (pg_temp.br('a4'),'FXJ','FX cabang J','PETSHOP'),(pg_temp.br('a5'),'FXK','FX cabang K','PETSHOP'),(pg_temp.br('a6'),'FXL','FX cabang L','PETSHOP'),
+ (pg_temp.br('c1'),'FXM','FX cabang M','PETSHOP'),(pg_temp.br('c2'),'FXN','FX cabang N','PETSHOP'),(pg_temp.br('c3'),'FXO','FX cabang O','PETSHOP'),(pg_temp.br('c4'),'FXP','FX cabang P','PETSHOP'),
  (pg_temp.br('b1'),'FXX','FX cabang lain','PETSHOP');
 insert into user_branches(user_id,branch_id)
- select pg_temp.u(n),b.id from unnest(array['02','03','04','05','0b','0c','0d','0e']) n cross join branches b where b.code in ('FXA','FXB','FXC','FXD','FXE','FXF','FXG','FXH','FXI','FXJ','FXK','FXL');
+ select pg_temp.u(n),b.id from unnest(array['02','03','04','05','0b','0c','0d','0e']) n cross join branches b where b.code in ('FXA','FXB','FXC','FXD','FXE','FXF','FXG','FXH','FXI','FXJ','FXK','FXL','FXM','FXN','FXO','FXP');
 insert into user_branches(user_id,branch_id) values(pg_temp.u('07'),pg_temp.br('b1')),(pg_temp.u('08'),pg_temp.br('b1')),(pg_temp.u('06'),pg_temp.br('0a'));
 insert into employees(id,nama,profile_id,status) values
  ('f6300000-0000-4000-8000-000000000001','Kasir Satu',pg_temp.u('04'),'Aktif'),('f6300000-0000-4000-8000-000000000002','Kasir Dua',pg_temp.u('05'),'Aktif'),
- ('f6300000-0000-4000-8000-000000000003','Admin Pegang Shift',pg_temp.u('02'),'Aktif');
+ ('f6300000-0000-4000-8000-000000000003','Admin Pegang Shift',pg_temp.u('02'),'Aktif'),('f6300000-0000-4000-8000-000000000004','Finance Kasir',pg_temp.u('0c'),'Aktif');
 insert into coa_accounts(code,name,type,normal_balance,is_header,is_active,parent_id) values
  ('1191','FX laci A','ASET','D',false,true,null),('1195','FX kas finance','ASET','D',false,true,null),('1192','FX bank utama','ASET','D',false,true,(select id from coa_accounts where code='120000'))
  on conflict(code) do update set is_active=true,is_header=false;
@@ -293,3 +296,91 @@ select pg_temp.as_('01');select pg_temp.ok(public.setoran_jurnal_boleh(),'OWNER:
 select pg_temp.as_('02');select pg_temp.ok(public.setoran_jurnal_boleh(),'ADMIN: boleh');
 select pg_temp.as_('03');select pg_temp.ok(public.setoran_jurnal_boleh(),'FINANCE: boleh');
 select pg_temp.noauth();
+
+-- ── 2. M1: yang terlihat staf sesudah diajukan / disetujui / dibatalkan ──────────────────────────
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.save('dA-staf',public.setoran_detail(pg_temp.sid('pA')));
+select pg_temp.save('dB-staf',public.setoran_detail(pg_temp.sid('pB')));
+select pg_temp.save('dC-staf',public.setoran_detail(pg_temp.sid('pC')));
+select pg_temp.save('lst-staf',public.setoran_daftar(null,null,pg_temp.br('0a'),null,null));
+select pg_temp.as_('01');
+select pg_temp.save('dA-app',public.setoran_detail(pg_temp.sid('pA')));
+select pg_temp.save('lst-app',public.setoran_daftar(null,null,pg_temp.br('0a'),null,null));
+reset role;
+select pg_temp.ok((select r->>'status'='Disetujui' and (r->>'sisa')::numeric=0 and (r->>'persen')::numeric=100 and r->>'badge'='Lunas' from res where name='dA-staf'),'M1: staf, A disetujui dengan KURANG 100.000: sisa 0, persen 100, badge Lunas (tidak lagi membocorkan kekurangan)');
+select pg_temp.ok((select not r ?| array['keuangan','diharapkan','selisih','selisih_sementara','jenis','penyelesaian','peringatan','pengeluaran_melebihi'] from res where name='dA-staf'),'M1: detail staf tidak memuat kunci keuangan/diharapkan/selisih/jenis/penyelesaian/peringatan');
+select pg_temp.ok((select (r->>'sisa')::numeric=0 and (r->>'persen')::numeric=100 and r->>'badge'='Dibatalkan' from res where name='dB-staf'),'M1: staf, B dibatalkan (void): sisa 0, persen 100, badge Dibatalkan');
+select pg_temp.ok((select (r->>'sisa')::numeric=0 and (r->>'persen')::numeric=100 and r->>'badge'='Lunas' from res where name='dC-staf'),'M1: staf, C disetujui kurang 80.000 (beban perusahaan): sisa 0, persen 100, Lunas');
+select pg_temp.ok((select (r->>'sisa')::numeric=100000 and (r->>'persen')::numeric=80 and (r->'keuangan'->>'selisih')::numeric=-100000 and r->'keuangan'->>'jenis'='Kurang' from res where name='dA-app'),'M1: penyetuju tetap melihat angka nyata: sisa 100.000, persen 80, selisih -100.000 (Kurang)');
+select pg_temp.ok((select (x->>'sisa')::numeric=0 and x->>'status'='Disetujui' and not x ?| array['diharapkan','selisih','jenis','penyelesaian','pengeluaran_melebihi'] from res,jsonb_array_elements(r->'baris') x where name='lst-staf' and x->>'no_setoran'=(select no_setoran from setoran where id=pg_temp.sid('pA'))),'M1: daftar staf: baris A Disetujui sisa 0, tanpa kolom selisih/jenis/penyelesaian');
+select pg_temp.ok((select (x->>'sisa')::numeric=100000 and x->>'jenis'='Kurang' and (x->>'pengeluaran_melebihi')::boolean=false from res,jsonb_array_elements(r->'baris') x where name='lst-app' and x->>'no_setoran'=(select no_setoran from setoran where id=pg_temp.sid('pA'))),'M1: daftar penyetuju: baris A sisa 100.000 jenis Kurang pengeluaran_melebihi=false');
+-- Draft/Ditolak: staf melihat sisa nyata supaya tahu berapa yang harus disetor
+select pg_temp.save('sD1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('0d'),'04',3,0,400000)));
+select pg_temp.mk('pD',pg_temp.br('0d'),'04');
+select pg_temp.pay('pD',100000,'Serah tunai','04',null,'d-t1',2);
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.save('dD1',public.setoran_detail(pg_temp.sid('pD')));
+reset role;
+select pg_temp.ok((select r->>'status'='Draft' and (r->>'sisa')::numeric=300000 and (r->>'persen')::numeric=25 and r->>'badge' in('Belum lunas','Terlambat') from res where name='dD1'),'M1: Draft: staf tetap melihat sisa nyata 300.000 dan persen 25 (kebutuhan kerja, tidak berubah)');
+select pg_temp.pay('pD',350000,'Serah tunai','04',null,'d-t2',2);
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.save('dD2',public.setoran_detail(pg_temp.sid('pD')));
+reset role;
+select pg_temp.ok((select (r->>'sisa')::numeric=0 and (r->>'persen')::numeric=100 from res where name='dD2'),'M1: Draft: transfer melebihi kewajiban: sisa dipatok 0 (kata "lebih" tidak muncul), persen 100');
+select pg_temp.sub('pD','04','d-aj');
+select pg_temp.as_('03');set local role authenticated;
+select pg_temp.save('tolakD',public.setoran_tolak(pg_temp.sid('pD'),'nominal belum jelas',pg_temp.kk('d-tolak')));
+reset role;
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.save('dD3',public.setoran_detail(pg_temp.sid('pD')));
+reset role;
+select pg_temp.ok((select r->>'status'='Ditolak' and (r->>'sisa')::numeric=0 and r->>'alasan_tolak'='nominal belum jelas' from res where name='dD3'),'Ditolak: staf melihat status, alasan penolakan; sisa dipatok >= 0');
+
+-- ── 3. M2: pengeluaran lebih besar dari kewajiban ────────────────────────────────────────────────
+-- E: periode tanpa shift + pengeluaran 1.000.000 (bukti ada). F: kewajiban 500.000, pengeluaran 600.000. G: pengeluaran = kewajiban (batas). H: negatif + transfer. I: tanpa kewajiban, transfer 100.000.
+select pg_temp.save('sF1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('0f'),'04',3,0,500000)));
+select pg_temp.save('sG1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('a1'),'04',3,0,300000)));
+select pg_temp.save('sH1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('a2'),'04',3,0,100000)));
+select pg_temp.mk('pE',pg_temp.br('0e'),'04');select pg_temp.mk('pF',pg_temp.br('0f'),'04');select pg_temp.mk('pG',pg_temp.br('a1'),'04');select pg_temp.mk('pH',pg_temp.br('a2'),'04');select pg_temp.mk('pI',pg_temp.br('a3'),'04');
+select pg_temp.exps('pE','04',3,'Operasional',1000000,'e-e1');
+select pg_temp.exps('pF','04',3,'Operasional',600000,'f-e1');
+select pg_temp.exps('pG','04',3,'Operasional',300000,'g-e1');
+select pg_temp.exps('pH','04',3,'Operasional',250000,'h-e1');
+select pg_temp.pay('pH',50000,'Serah tunai','04','03','h-t1',2);
+select pg_temp.pay('pI',100000,'Serah tunai','04','03','i-t1',2);
+select pg_temp.sub('pE','04','e-aj');select pg_temp.sub('pF','04','f-aj');select pg_temp.sub('pG','04','g-aj');select pg_temp.sub('pH','04','h-aj');select pg_temp.sub('pI','04','i-aj');
+select pg_temp.save('cnt0',jsonb_build_object('j',(select count(*) from journal_entries),'e',(select count(*) from expenses)));
+select pg_temp.ok((select (r->>'j')::int=(select count(*) from journal_entries) from res where name='cnt0'),'penghitung awal jurnal/pengeluaran tersimpan');
+select pg_temp.as_('01');set local role authenticated;
+select pg_temp.ok(pg_temp.ra('01',$$select public.setoran_setujui(pg_temp.sid('pE'),pg_temp.kk('ap-e1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PENGELUARAN_MELEBIHI%1000000%','M2: periode tanpa shift + pengeluaran 1.000.000: setujui DITOLAK dengan pesan jelas memuat angka (bukan kelebihan palsu)');
+select pg_temp.ok(pg_temp.ra('01',$$select public.setoran_setujui(pg_temp.sid('pF'),pg_temp.kk('ap-f1'),null,null,false,true,'ok')::text$$) like 'ERR:SETORAN_PENGELUARAN_MELEBIHI%600000%500000%100000%','M2: kewajiban 500.000 vs pengeluaran 600.000: ditolak; pesan memuat 600.000, 500.000 dan kelebihan 100.000 (konfirmasi selisih besar tidak menembusnya)');
+select pg_temp.ok(pg_temp.ra('01',$$select public.setoran_setujui(pg_temp.sid('pH'),pg_temp.kk('ap-h1'),null,null,false,false,'ok')::text$$) like 'ERR:SETORAN_PENGELUARAN_MELEBIHI%','M2: pengeluaran 250.000 > kewajiban 100.000 dengan transfer 50.000: tetap ditolak');
+reset role;
+select pg_temp.ok((select (r->>'j')::int=(select count(*) from journal_entries) and (r->>'e')::int=(select count(*) from expenses) from res where name='cnt0') and pg_temp.st('pE')='Diajukan' and pg_temp.st('pF')='Diajukan' and pg_temp.st('pH')='Diajukan','M2: penolakan atomik: tidak ada jurnal, tidak ada pengeluaran terposting, status tetap Diajukan');
+select pg_temp.ok(not exists(select 1 from journal_entries j join journal_lines l on l.entry_id=j.id join coa_accounts a on a.id=l.account_id where a.code='810004' and j.source='setoran' and j.source_ref in(pg_temp.sid('pE')::text,pg_temp.sid('pF')::text,pg_temp.sid('pH')::text)),'M2: tidak ada jurnal 810004 palsu untuk setoran E/F/H');
+select pg_temp.as_('01');set local role authenticated;
+select pg_temp.save('dE-app',public.setoran_detail(pg_temp.sid('pE')));
+select pg_temp.save('lst-app2',public.setoran_daftar(null,null,pg_temp.br('0e'),null,null));
+reset role;
+select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PENGELUARAN_MELEBIHI' and w->>'tingkat'='blokir') and exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='TANPA_SHIFT') and (r->'keuangan'->>'diharapkan')::numeric=-1000000 from res where name='dE-app'),'M2: layar penyetuju: peringatan PENGELUARAN_MELEBIHI (blokir) + TANPA_SHIFT, diharapkan -1.000.000 tampil apa adanya');
+select pg_temp.ok((select (x->>'pengeluaran_melebihi')::boolean from res,jsonb_array_elements(r->'baris') x where name='lst-app2'),'M2: daftar penyetuju: pengeluaran_melebihi = true');
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.save('dE-staf',public.setoran_detail(pg_temp.sid('pE')));
+reset role;
+select pg_temp.ok((select not r ?| array['keuangan','peringatan','diharapkan'] and (r->>'sisa')::numeric=0 from res where name='dE-staf'),'M2: staf tidak melihat peringatan/keuangan apa pun');
+-- batas: pengeluaran = kewajiban -> lolos (Pas), pengeluaran dibukukan sekali
+select pg_temp.appr('pG','01','ap-g');
+select pg_temp.ok((select r->>'penyelesaian'='Pas' and (r->>'selisih')::numeric=0 and jsonb_array_length(r->'pengeluaran_ids')=1 from res where name='ap-pG') and pg_temp.jn('setoran',pg_temp.sid('pG'))=0,'M2 batas: pengeluaran = kewajiban 300.000, transfer 0: disetujui Pas tanpa jurnal selisih, pengeluaran dibukukan sekali');
+-- lebih sungguhan (uang diterima tanpa kewajiban) tetap menjadi 810004
+select pg_temp.appr('pI','01','ap-i');
+select pg_temp.ok((select r->>'penyelesaian'='PendapatanLain' and (r->>'selisih')::numeric=100000 from res where name='ap-pI') and (select coalesce(sum(l.credit-l.debit),0) from journal_lines l join journal_entries j on j.id=l.entry_id join coa_accounts a on a.id=l.account_id where j.source='setoran' and j.source_ref=pg_temp.sid('pI')::text and a.code='810004')=100000,'tanpa kewajiban + transfer 100.000: kelebihan nyata 100.000 -> 810004 (perilaku lama untuk kasus sah tetap)');
+-- jalan keluar: tolak, hapus baris, ajukan ulang, setujui
+select pg_temp.as_('03');set local role authenticated;
+select pg_temp.save('tolakE',public.setoran_tolak(pg_temp.sid('pE'),'pengeluaran lebih besar dari kewajiban',pg_temp.kk('e-tolak')));
+reset role;
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.save('delE',public.setoran_hapus_pengeluaran(pg_temp.sid('pE'),pg_temp.lineid('pE'),pg_temp.rev('pE'),pg_temp.kk('e-del')));
+reset role;
+select pg_temp.sub('pE','04','e-aj2');
+select pg_temp.appr('pE','01','ap-e2');
+select pg_temp.ok((select r->>'penyelesaian'='Pas' from res where name='ap-pE') and pg_temp.st('pE')='Disetujui' and (select count(*) from expenses where deskripsi like 'Setoran '||(select no_setoran from setoran where id=pg_temp.sid('pE'))||'%')=0,'M2 jalan keluar: tolak -> hapus baris -> ajukan ulang -> disetujui Pas, tidak ada pengeluaran terposting');
