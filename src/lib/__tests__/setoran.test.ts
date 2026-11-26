@@ -58,6 +58,19 @@ describe("bacaDaftar / bacaRekap", () => {
     expect(r.total.lebih).toBe(3); expect(r.cabang).toHaveLength(1);
     expect(() => bacaRekap({})).toThrow();
   });
+  it("penyetuju menerima penanda pengeluaran_melebihi; staf tidak (walau dikirim)", () => {
+    const ada = bacaDaftar({ penyetuju: true, baris: [{ ...baris, pengeluaran_melebihi: true }] });
+    expect(ada.baris[0].pengeluaran_melebihi).toBe(true);
+    const staf = bacaDaftar({ penyetuju: false, baris: [{ ...baris, pengeluaran_melebihi: true }] });
+    expect(staf.baris[0].pengeluaran_melebihi).toBeUndefined();
+  });
+  it("kolom keuangan baru (peringatan, pengeluaran_melebihi) tercatat sebagai bidang terlarang untuk staf", () => {
+    expect(BIDANG_KEUANGAN).toContain("peringatan"); expect(BIDANG_KEUANGAN).toContain("pengeluaran_melebihi");
+  });
+  it("Excel: setoran Draft/Ditolak belum dihitung -> selisih dikosongkan, bukan 0 (tampak pas)", () => {
+    const { baris: b } = barisExcel(bacaDaftar({ penyetuju: true, baris: [{ ...baris, status: "Draft", selisih_sementara: undefined, diharapkan: 10 }, { ...baris, status: "Ditolak", diharapkan: 10, selisih_sementara: 5 }] }).baris);
+    expect(b[0][10]).toBe(""); expect(b[1][10]).toBe("");
+  });
   it("Excel: satu baris per setoran, selisih memakai sementara bila belum final", () => {
     const { judul, baris: b } = barisExcel(bacaDaftar({ penyetuju: true, baris: [baris] }).baris);
     expect(b).toHaveLength(1); expect(b[0]).toHaveLength(judul.length); expect(b[0][10]).toBe(5);

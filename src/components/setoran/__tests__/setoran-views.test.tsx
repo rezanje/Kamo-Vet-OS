@@ -55,3 +55,28 @@ it("setoran Diajukan tidak bisa diedit: tidak ada form tambah/hapus; Void hanya 
   expect(html(<PanelPenyetuju d={ok} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />)).toContain("Batalkan setoran ini");
   expect(html(<PanelPenyetuju d={ok} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="ADMIN" so={null} />)).not.toContain("Batalkan setoran ini");
 });
+
+it("penyetuju melihat peringatan dan tombol Setujui dimatikan bila ada peringatan blokir (pengeluaran melebihi kewajiban / pemisahan tugas)", () => {
+  const blok = { kode: "PENGELUARAN_MELEBIHI", tingkat: "blokir", pesan: "Pengeluaran lebih besar dari kewajiban; tolak agar diperiksa." };
+  const d = bacaDetail({ ...dasar, penyetuju: true, status: "Diajukan", keuangan: { ...keuangan("Lebih", 1000000), peringatan: [blok, { kode: "PENGELUARAN_KEMBAR", tingkat: "peringatan", pesan: "Ada baris kembar." }, { kode: "X", tingkat: "info", pesan: "" }] } });
+  expect(d.keuangan?.peringatan.map((w) => w.kode)).toEqual(["PENGELUARAN_MELEBIHI", "PENGELUARAN_KEMBAR"]);
+  const h = html(<PanelPenyetuju d={d} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />);
+  expect(h).toContain("Tidak bisa disetujui: "); expect(h).toContain("Periksa: "); expect(h).toContain("tolak agar diperiksa");
+  expect(h).toMatch(/<button[^>]*disabled[^>]*>Setujui &amp; tutup periode/);
+  const aman = bacaDetail({ ...dasar, penyetuju: true, status: "Diajukan", keuangan: keuangan("Pas", 0) });
+  const h2 = html(<PanelPenyetuju d={aman} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />);
+  expect(h2).not.toContain("peringatan-setoran"); expect(h2).not.toMatch(/<button[^>]*disabled[^>]*>Setujui &amp; tutup periode/);
+});
+
+it("staf tidak pernah melihat peringatan, walau payload salah mengirimnya di bagian keuangan", () => {
+  const staf = bacaDetail({ ...dasar, penyetuju: false, keuangan: { ...keuangan("Lebih", 5), peringatan: [{ kode: "PENGELUARAN_MELEBIHI", tingkat: "blokir", pesan: "RAHASIA-PERINGATAN" }] } });
+  expect(staf.keuangan).toBeUndefined();
+  const h = html(<><SetoranDashboard detail={staf} /><DaftarPengeluaran d={staf} basis="/kasir/setoran" kunci={kunci} urls={{}} /></>);
+  expect(h).not.toContain("RAHASIA-PERINGATAN"); expect(h).not.toContain("melebihi");
+});
+
+it("staf: setoran Disetujui/Diajukan tampil Lunas / Menunggu dengan sisa 0 (basis data mengirim sisa 0)", () => {
+  const d = bacaDetail({ ...dasar, status: "Disetujui", sisa: 0, persen: 100, badge: "Lunas", status_periode: "Selesai" });
+  const h = html(<SetoranDashboard detail={d} />);
+  expect(h).toContain("Lunas"); expect(h).toContain("100% kewajiban sudah diselesaikan");
+});

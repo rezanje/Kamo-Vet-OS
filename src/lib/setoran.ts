@@ -4,6 +4,10 @@
 // melihat kelebihan (lebih), selisih, jenis (kurang/lebih), kasbon, jurnal, atau catatan penyetuju. Yang menentukan siapa melihat apa
 // adalah fungsi basis data (setoran_detail / setoran_daftar / setoran_rekap membentuk hasil menurut peran); pembaca di bawah hanya
 // MENOLAK bentuk yang tidak dikenal dan tidak pernah menambahkan bidang keuangan sendiri.
+//
+// Perbaikan review (REKAP-SETORAN-FIX): sesudah diajukan / disetujui / dibatalkan, staf menerima sisa 0 dan persen 100 (kekurangan nyata hanya untuk penyetuju);
+// peringatan (pemisahan tugas, pengeluaran melebihi kewajiban, pengeluaran kembar/mirip kasir) hanya dikirim ke penyetuju di dalam `keuangan`.
+// Yang tetap dapat disimpulkan staf (tak terhindarkan): kewajiban dan apa yang mereka sendiri catat/transfer/keluarkan sebelum diajukan.
 
 export const STATUS_SETORAN = ["Draft", "Diajukan", "Disetujui", "Ditolak", "Void"] as const;
 export type StatusSetoran = (typeof STATUS_SETORAN)[number];
@@ -33,11 +37,12 @@ export type PengeluaranShift = { shift_id: string; kategori: string; deskripsi: 
 export type RiwayatSetoran = { jenis: string; dari: string | null; ke: string | null; at: string; oleh: string; catatan?: string | null };
 export type KasbonSetoran = { employee_id: string; nama: string; jumlah: number; advance_id: string; mode: string; status: string | null };
 /** Bagian keuangan: HANYA ada untuk penyetuju. Staf tidak pernah menerima kunci `keuangan`. */
+export type PeringatanSetoran = { kode: string; tingkat: "blokir" | "peringatan" | "info"; pesan: string; jumlah?: number };
 export type KeuanganSetoran = {
   diharapkan: number; bersih_shift: number; pengeluaran_setoran: number; transfer_dikonfirmasi: number; transfer_menunggu: number; selisih_sementara: number;
   selisih: number | null; jenis: "Pas" | "Kurang" | "Lebih" | null; penjelasan_lebih: string | null; penyelesaian: string | null; journal_id: string | null;
   pembalik_journal_id: string | null; catatan_keuangan: string | null; penanggung_otomatis: { employee_id: string; nama: string }[]; kasbon: KasbonSetoran[];
-  rincian_shift: Record<string, unknown>[];
+  rincian_shift: Record<string, unknown>[]; peringatan: PeringatanSetoran[];
 };
 export type DetailSetoran = {
   id: string; no_setoran: string; branch_id: string; cabang: string; periode_mulai: string; periode_selesai: string; jadwal: string; batas_jam: string;
@@ -50,6 +55,7 @@ export type BarisDaftar = {
   id: string; no_setoran: string; branch_id: string; cabang: string; periode_mulai: string; periode_selesai: string; jadwal: string; batas_jam: string; status: StatusSetoran;
   kewajiban: number; pengeluaran: number; transfer: number; sisa: number; transfer_menunggu: number; umur_hari: number | null; badge: string; status_periode: string;
   terlambat: boolean; dibuat_oleh: string; alasan_tolak?: string | null; diharapkan?: number; selisih_sementara?: number; selisih?: number | null; jenis?: string | null; penyelesaian?: string | null;
+  pengeluaran_melebihi?: boolean;
 };
 export type RekapCabang = { branch_id: string; cabang: string; jumlah: number; menunggu: number; terlambat: number; kewajiban: number; pengeluaran: number; diharapkan: number; disetor: number; kurang: number; lebih: number };
 export type RekapSetoran = {
@@ -79,7 +85,7 @@ function lampiran(v: unknown): Lampiran[] {
 }
 
 /** Bidang keuangan yang TIDAK boleh muncul pada pembacaan untuk staf. Dipakai tes dan pembaca. */
-export const BIDANG_KEUANGAN = ["keuangan", "selisih", "selisih_sementara", "jenis", "diharapkan", "penjelasan_lebih", "kasbon", "rincian_shift", "penyelesaian", "journal_id"] as const;
+export const BIDANG_KEUANGAN = ["keuangan", "selisih", "selisih_sementara", "jenis", "diharapkan", "penjelasan_lebih", "kasbon", "rincian_shift", "penyelesaian", "journal_id", "peringatan", "pengeluaran_melebihi"] as const;
 
 export function bacaDetail(raw: unknown): DetailSetoran {
   if (!isObj(raw)) throw new Error("Data setoran tidak dapat dibaca. Muat ulang halaman.");
@@ -117,6 +123,10 @@ export function bacaDetail(raw: unknown): DetailSetoran {
       penanggung_otomatis: arr(k.penanggung_otomatis ?? [], "penanggung").filter(isObj).map((e) => ({ employee_id: String(e.employee_id), nama: String(e.nama) })),
       kasbon: arr(k.kasbon ?? [], "kasbon").filter(isObj).map((b) => ({ employee_id: String(b.employee_id), nama: String(b.nama), jumlah: num(b.jumlah, "kasbon"), advance_id: String(b.advance_id), mode: String(b.mode), status: teksNull(b.status) })),
       rincian_shift: arr(k.rincian_shift ?? [], "rincian shift").filter(isObj),
+      peringatan: arr(k.peringatan ?? [], "peringatan").filter(isObj).map((w): PeringatanSetoran => ({
+        kode: String(w.kode ?? ""), tingkat: w.tingkat === "blokir" ? "blokir" : w.tingkat === "peringatan" ? "peringatan" : "info", pesan: String(w.pesan ?? ""),
+        ...(typeof w.jumlah === "number" ? { jumlah: w.jumlah } : {}),
+      })).filter((w) => w.kode && w.pesan),
     };
   }
   return out;
@@ -138,6 +148,7 @@ export function bacaDaftar(raw: unknown): { penyetuju: boolean; baris: BarisDaft
     if (penyetuju && b.diharapkan !== undefined) {
       row.diharapkan = num(b.diharapkan, "diharapkan"); row.selisih_sementara = num(b.selisih_sementara ?? 0, "selisih sementara");
       row.selisih = b.selisih === null || b.selisih === undefined ? null : num(b.selisih, "selisih"); row.jenis = teksNull(b.jenis); row.penyelesaian = teksNull(b.penyelesaian);
+      row.pengeluaran_melebihi = b.pengeluaran_melebihi === true;
     }
     return row;
   });
@@ -189,7 +200,7 @@ export function pesanSetoran(message: string): string {
 export function barisExcel(daftar: BarisDaftar[]): { judul: string[]; baris: (string | number)[][] } {
   const judul = ["No setoran", "Cabang", "Periode mulai", "Periode selesai", "Jadwal", "Status", "Kewajiban", "Pengeluaran", "Diharapkan", "Ditransfer", "Selisih", "Jenis", "Penyelesaian", "Umur menunggu (hari)"];
   const baris = daftar.map((b) => [b.no_setoran, b.cabang, b.periode_mulai, b.periode_selesai, b.jadwal, b.status, b.kewajiban, b.pengeluaran, b.diharapkan ?? b.kewajiban - b.pengeluaran, b.transfer,
-    b.selisih ?? b.selisih_sementara ?? 0, b.jenis ?? "", b.penyelesaian ?? "", b.umur_hari ?? ""]);
+    b.selisih ?? (b.status === "Draft" || b.status === "Ditolak" ? "" : b.selisih_sementara ?? ""), b.jenis ?? "", b.penyelesaian ?? "", b.umur_hari ?? ""]);
   return { judul, baris };
 }
 
