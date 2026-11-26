@@ -100,9 +100,10 @@
   "              where false and not exists (select 1 from storage.objects o where o.bucket_id = 'dokumen' and o.name = x.path)) then"
  ],
  [
-  "M21 lampiran cek: berkas terpakai tidak ditolak",
+  "M21 lampiran cek: pra-cek berkas terpakai dihapus (EQUIVALENT: PK + penangkap unique_violation memberi galat yang sama; lapisan ganda disengaja)",
   "  if exists (select 1 from jsonb_to_recordset(p_lampiran) as x(path text) join public.setoran_lampiran_pakai u on u.path = x.path) then",
-  "  if false and exists (select 1 from jsonb_to_recordset(p_lampiran) as x(path text) join public.setoran_lampiran_pakai u on u.path = x.path) then"
+  "  if false and exists (select 1 from jsonb_to_recordset(p_lampiran) as x(path text) join public.setoran_lampiran_pakai u on u.path = x.path) then",
+  "EQUIV"
  ],
  [
   "M22 lampiran cek: berkas ganda dalam satu baris lolos",

@@ -300,9 +300,11 @@ def run_mutations(db, a):
     only = os.environ.get('BP_ONLY')
     killed_n = total = 0
     muts = json.loads((ROOT / 'scripts/rekap-setoran-fix-mutants.json').read_text())
-    for name, old, new in muts:
+    equiv = []
+    for mu in muts:
+        name, old, new = mu[0], mu[1], mu[2]; is_eq = len(mu) > 3 and mu[3] == 'EQUIV'
         if only and not any(name.startswith(o) for o in only.split(',')): continue
-        total += 1
+        if not is_eq: total += 1
         n = base.count(old)
         if n != 1:
             check('MUTANT ' + name + ' (anchor found exactly once)', False, 'anchor count %d' % n); continue
@@ -320,6 +322,8 @@ def run_mutations(db, a):
             clone(db, 'mut2'); apply(db, 'mut2', PRELUDE + STORAGE_PREP + mutated, later=False)
             ok, passes, why = run_suite(db, 'mut2', SUITE_REG)
             killed = (not ok) or len(passes) < want2; by = 'suite regresi'
+        if is_eq:
+            equiv.append(name); check('MUTANT (equivalent, documented) ' + name + ' -> %s' % ('survived as expected' if not killed else 'unexpectedly killed'), not killed, why); continue
         killed_n += 1 if killed else 0
         check('MUTANT ' + name + ' -> %s' % ('KILLED by %s: %s' % (by, why[:90]) if killed else 'SURVIVED (kedua suite hijau)'), killed, why)
     print('MUTANTS killed %d / %d' % (killed_n, total), flush=True)

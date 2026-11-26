@@ -61,6 +61,18 @@ begin
  begin execute 'set local role authenticated';execute stmt into r;execute 'reset role';return r;
  exception when others then execute 'reset role';return jsonb_build_object('err',sqlerrm);end;
 end$$;
+-- jl_all dilonggarkan (using true) di dalam sub-blok yang dibatalkan: kebijakan jurnal setoran harus tetap berdiri sendiri (tidak bergantung pada subquery jl_all -> journal_entries)
+create function pg_temp.loose_jl(un text) returns text language plpgsql as $$
+declare n bigint;m bigint;
+begin
+ perform pg_temp.as_(un);
+ begin
+  drop policy jl_all on public.journal_lines;create policy jl_all on public.journal_lines for all to authenticated using (true) with check (true);
+  execute 'set local role authenticated';
+  select count(*) into n from public.journal_lines where id in(select id from hid_lines);
+  execute 'reset role';raise exception 'BATAL_%',n;
+ exception when others then execute 'reset role';if sqlerrm like 'BATAL\_%' then return substr(sqlerrm,7);end if;return 'ERR:'||sqlerrm;end;
+end$$;
 create sequence pg_temp.fseq;
 -- berkas bukti yang sah untuk setoran s: dibuat di storage.objects (pengunggah = akun yang sedang aktif) dan dikembalikan sebagai lampiran
 create function pg_temp.lamp(s uuid,k text) returns jsonb language plpgsql security definer as $$
@@ -245,6 +257,8 @@ select pg_temp.ok(pg_temp.ra('07',$$select count(*) from journal_entries where s
 select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_entries$$)::int=(select count(*)::int from journal_entries e where e.branch_id in(select branch_id from user_branches where user_id=pg_temp.u('04')) and e.source not in('setoran','setoran-batal')),'STAFF 04: jumlah entri terlihat = semua entri cabangnya kecuali setoran (tidak ada pemotongan lain)');
 select pg_temp.ok(pg_temp.ra('04',$$select count(*) from journal_lines$$)::int=(select count(*)::int from journal_lines l join journal_entries e on e.id=l.entry_id where e.branch_id in(select branch_id from user_branches where user_id=pg_temp.u('04')) and e.source not in('setoran','setoran-batal')),'STAFF 04: jumlah baris terlihat = semua baris cabangnya kecuali setoran');
 select pg_temp.ok(pg_temp.ra('01',$$select count(*) from journal_entries$$)::int=(select count(*)::int from journal_entries where branch_id is null or branch_id in(select id from branches)),'OWNER 01 melihat semua entri (tidak ada yang disembunyikan dari penyetuju)');
+select pg_temp.ok(pg_temp.loose_jl('04')='0' and pg_temp.loose_jl('0b')='0','B1 berlapis: walau jl_all dilonggarkan (using true), STAFF/DOCTOR tetap 0 baris jurnal setoran (kebijakan journal_lines berdiri sendiri)');
+select pg_temp.ok(pg_temp.loose_jl('01')='8','B1 berlapis: dengan jl_all longgar OWNER tetap melihat 8 baris jurnal setoran');
 -- tulis tertutup
 select pg_temp.ok(pg_temp.dml('04',$$update journal_entries set deskripsi='diubah' where id in(select id from hid_ids)$$)='0','B1: STAFF 04 tidak dapat mengubah entri jurnal setoran (0 baris)');
 select pg_temp.ok(pg_temp.dml('04',$$delete from journal_entries where id in(select id from hid_ids)$$)='0','B1: STAFF 04 tidak dapat menghapus entri jurnal setoran menurut id (0 baris)');
