@@ -34,6 +34,8 @@ export const GRANT_ONLY_ACTIONS: readonly string[] = [
   "klinik.ubah_dokter_pj",
   // Komplain Pelanggan (Andri, 24 Nov 2026): kelola komplain orang lain, kategori, batas terlambat; bawaan MATI selain Owner (migrasi 20261211100000_komplain_pelanggan.sql).
   "crm.komplain_kelola",
+  // Jurnal Umum (Andri, 26 Nov 2026): koreksi/batalkan jurnal manual untuk Admin Umum; bawaan MATI (hari ini hanya Owner), migrasi 20261214110100_admin_umum_role.sql.
+  "jurnal.koreksi_manual",
 ];
 
 export const isGrantOnlyAction = (id: string): boolean => GRANT_ONLY_ACTIONS.includes(id);
@@ -43,7 +45,7 @@ export const isGrantOnlyAction = (id: string): boolean => GRANT_ONLY_ACTIONS.inc
  * Harus sama dengan fungsi database pemeriksanya (mis. manual_discount_allowed: legacy hanya ADMIN).
  */
 export const GRANT_ONLY_LEGACY_ROLES: Readonly<Record<string, readonly string[]>> = {
-  "kasir.diskon_manual": ["ADMIN"],
+  "kasir.diskon_manual": ["ADMIN", "ADMIN_UMUM"],
 };
 
 /** Peran legacy dianggap punya tindakan ini? Tindakan biasa: ya. Izin khusus: hanya bila peran ada di daftar pengecualian. */

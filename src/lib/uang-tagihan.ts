@@ -82,7 +82,7 @@ export function statusUangTagihan(totalTagihan: number, dibayar: number): string
  * (clinic_void_reissue_invoice / clinic_edit_invoice); layar hanya menyembunyikan
  * tombolnya supaya staf tidak menabrak penolakan, bukan sebagai penjaga utama.
  */
-export const PERAN_SIKLUS_TAGIHAN = ["OWNER", "ADMIN", "FINANCE"] as const;
+export const PERAN_SIKLUS_TAGIHAN = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"] as const;
 
 export function bolehSiklusTagihan(role: string | null | undefined): boolean {
   return !!role && (PERAN_SIKLUS_TAGIHAN as readonly string[]).includes(role);

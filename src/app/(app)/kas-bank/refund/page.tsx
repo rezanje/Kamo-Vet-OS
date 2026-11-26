@@ -31,7 +31,7 @@ export default async function RefundPage({searchParams}:{searchParams:Promise<{s
  const params=await searchParams,db=await createClient();
  const {data:{user}}=await db.auth.getUser();if(!user)throw Error('Akses refund memerlukan sesi aktif.');
  const {data:profile,error:profileError}=await db.from('profiles').select('role,is_active').eq('id',user.id).maybeSingle();
- if(profileError||!profile?.is_active||!['OWNER','ADMIN','FINANCE'].includes(profile.role))throw Error('Akses antrean refund hanya untuk finance berwenang.');
+ if(profileError||!profile?.is_active||!['OWNER','ADMIN', 'ADMIN_UMUM','FINANCE'].includes(profile.role))throw Error('Akses antrean refund hanya untuk finance berwenang.');
  const status=params.status??'',offset=Number(params.offset??0);
  if(!['','pending','diproses','selesai','batal'].includes(status)||!Number.isInteger(offset)||offset<0||offset>100000)throw Error('Filter antrean refund tidak valid.');
  const [result,clinic,advance,banks]=await Promise.all([

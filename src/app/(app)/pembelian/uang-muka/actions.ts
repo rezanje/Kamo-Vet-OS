@@ -11,7 +11,7 @@ import Decimal from "decimal.js";
 import { denganTampil } from "@/lib/report-gate";
 
 const BASE = "/pembelian/uang-muka";
-const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
+const BOLEH = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"];
 // A1 (meeting 12 Nov 2026): kembali ke daftar yang sudah ditampilkan (tampil=1).
 const gagal = (msg: string): never => redirect(denganTampil(`${BASE}?error=${encodeURIComponent(msg)}`));
 

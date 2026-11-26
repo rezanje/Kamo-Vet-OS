@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (!me || !["OWNER", "ADMIN", "FINANCE"].includes(String(me.role))) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(String(me.role))) {
     return NextResponse.json({ error: "Berkas pajak hanya untuk owner, admin, dan finance." }, { status: 403 });
   }
 

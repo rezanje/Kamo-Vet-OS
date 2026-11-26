@@ -6,6 +6,7 @@
 import { bolehBukaPath } from "@/lib/akses";
 import { aturanEfektif, bacaTambahanAkses } from "@/lib/akses-akun";
 import { CORRECTION_QUEUE_PATH } from "@/lib/purchase-correction-requests";
+import { isAdminRole, peranPenyetujuEfektif } from "@/lib/peran-admin";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyClient = any;
@@ -24,7 +25,7 @@ export function isMissingFunction(error: unknown): boolean {
 }
 
 export async function loadPendingWork(db: AnyClient, role: string | null): Promise<PendingWork[]> {
-  if (!role || !["OWNER", "ADMIN", "FINANCE"].includes(role)) return [];
+  if (!role || !["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(role)) return [];
   let rules: { role: string; module_id: string }[] = [];
   const canOpen = (href: string) => bolehBukaPath(role, href.split("?")[0], rules);
   try {
@@ -37,7 +38,7 @@ export async function loadPendingWork(db: AnyClient, role: string | null): Promi
 
   if (canOpen("/pengaturan/penyetuju")) {
   const approvalQuery = db.from("approval_requests").select("id", { count: "exact", head: true }).eq("status", "menunggu");
-  if (role !== "OWNER") approvalQuery.eq("penyetuju_role", role);
+  if (role !== "OWNER") approvalQuery.eq("penyetuju_role", peranPenyetujuEfektif(role));
   requests.push(Promise.resolve(approvalQuery).then(
     (result: { count: number | null; error: unknown }) => ({
       label: "Pengajuan menunggu persetujuan", href: "/pengaturan/penyetuju",
@@ -46,7 +47,7 @@ export async function loadPendingWork(db: AnyClient, role: string | null): Promi
   ));
   }
 
-  if ((role === "OWNER" || role === "ADMIN") && canOpen("/pembelian/perintah-bayar")) {
+  if ((role === "OWNER" || isAdminRole(role)) && canOpen("/pembelian/perintah-bayar")) {
     requests.push(Promise.resolve(db.from("payment_orders").select("id", { count: "exact", head: true }).eq("status", "draft"))
       .then((result: { count: number | null; error: unknown }) => ({
         label: "Perintah bayar menunggu persetujuan", href: "/pembelian/perintah-bayar?pending=1",
@@ -80,7 +81,7 @@ export async function loadPendingWork(db: AnyClient, role: string | null): Promi
   } catch {
     return [
       { label: "Pengajuan menunggu persetujuan", href: "/pengaturan/penyetuju", count: null },
-      ...(["OWNER", "ADMIN"].includes(role) ? [{ label: "Perintah bayar menunggu persetujuan", href: "/pembelian/perintah-bayar?pending=1", count: null }] : []),
+      ...(["OWNER", "ADMIN", "ADMIN_UMUM"].includes(role) ? [{ label: "Perintah bayar menunggu persetujuan", href: "/pembelian/perintah-bayar?pending=1", count: null }] : []),
       ...(role === "OWNER" ? [{ label: "Permintaan koreksi pembelian", href: CORRECTION_QUEUE_PATH, count: null }] : []),
       { label: "Refund transfer belum selesai", href: "/kas-bank/refund", count: null },
     ].filter(item => canOpen(item.href));

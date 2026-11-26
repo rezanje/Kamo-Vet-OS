@@ -11,7 +11,7 @@ async function pastikanBoleh() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     kembali(`error=${encodeURIComponent("Hanya owner/admin yang boleh mengubah format nomor dokumen.")}`);
   }
   return { supabase, userId: user?.id ?? null };

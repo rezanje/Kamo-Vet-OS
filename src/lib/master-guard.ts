@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { bolehKelolaPayroll as peranBolehKelolaPayroll } from "@/lib/hris-access";
 import { createClient } from "@/lib/supabase/server";
 
-const ADMIN = ["OWNER", "ADMIN"];
+const ADMIN = ["OWNER", "ADMIN", "ADMIN_UMUM"];
 
 // Satu halaman memanggil beberapa guard sekaligus (bolehKelolaMaster +
 // bolehLihatGaji + bolehKelolaPayroll). Tanpa memo, tiap panggilan mengulang
@@ -41,7 +41,7 @@ export async function klienMasterAdmin() {
 }
 
 export async function assertHrisManager(back: string) {
-  return assertRole(back, "data HRIS cabang ini", ["OWNER", "ADMIN"]);
+  return assertRole(back, "data HRIS cabang ini", ["OWNER", "ADMIN", "ADMIN_UMUM"]);
 }
 
 export async function assertPayrollOwner(back: string) {

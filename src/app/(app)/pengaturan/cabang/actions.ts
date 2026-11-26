@@ -15,7 +15,7 @@ const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURICompone
 // Titik lokasi cabang untuk absen berlokasi (fase 2). Dikosongkan = pengecekan
 // lokasi mati untuk cabang itu dan absen jalan seperti biasa.
 export async function simpanLokasiCabang(formData: FormData) {
-  const supabase = await assertRole(BACK, "lokasi cabang", ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BACK, "lokasi cabang", ["OWNER", "ADMIN", "ADMIN_UMUM"]);
 
   const id = String(formData.get("id") ?? "").trim();
   const latRaw = String(formData.get("lat") ?? "").trim();
@@ -42,7 +42,7 @@ export async function simpanLokasiCabang(formData: FormData) {
 }
 
 export async function simpanAturanGroomingCabang(formData: FormData) {
-  const supabase = await assertRole(BACK, "aturan grooming cabang", ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BACK, "aturan grooming cabang", ["OWNER", "ADMIN", "ADMIN_UMUM"]);
   const branchId = String(formData.get("id") ?? "").trim();
   const choice = String(formData.get("doctor_required") ?? "");
   if (!branchId || !["1", "0"].includes(choice)) gagal("Aturan grooming cabang tidak valid");

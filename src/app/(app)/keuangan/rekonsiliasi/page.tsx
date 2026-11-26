@@ -26,7 +26,7 @@ export default async function RekonsiliasiPage({ searchParams }: { searchParams:
 
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle() : { data: null };
   const capabilities = await loadRoleCapabilities(supabase, profile?.role ?? "");
-  if (!profile?.is_active || !["OWNER","ADMIN","FINANCE"].includes(profile.role) || !capabilities.all_branches) return <div className="p2ban">Rekonsiliasi bank memerlukan akses keuangan seluruh cabang agar saldo buku lengkap.</div>;
+  if (!profile?.is_active || !["OWNER","ADMIN", "ADMIN_UMUM","FINANCE"].includes(profile.role) || !capabilities.all_branches) return <div className="p2ban">Rekonsiliasi bank memerlukan akses keuangan seluruh cabang agar saldo buku lengkap.</div>;
 
   // A1 (meeting 12 Nov 2026): saldo buku tiap rekening dihitung dari SELURUH jurnal, jadi
   // formulir, daftar pembatalan, dan riwayat baru dibaca setelah Tampilkan ditekan.

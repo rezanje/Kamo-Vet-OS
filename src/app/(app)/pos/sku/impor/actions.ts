@@ -45,6 +45,7 @@ import {
 import { bagiImporBatch, hitungProgresImpor, type ProgresImpor } from "@/lib/impor-accurate-batch";
 
 import { kategoriTergantikan } from "@/lib/impor-category-cleanup";
+import { isAdminRole } from "@/lib/peran-admin";
 
 const BACK = "/pos/sku/impor";
 
@@ -53,7 +54,7 @@ async function assertBolehKelola() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
-  if (!profile?.is_active || (profile.role !== "OWNER" && profile.role !== "ADMIN")) {
+  if (!profile?.is_active || (profile.role !== "OWNER" && !isAdminRole(profile.role))) {
     redirect(`${BACK}?error=${encodeURIComponent("Hanya OWNER/ADMIN yang boleh mengimpor barang")}`);
   }
   return supabase;

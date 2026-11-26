@@ -12,7 +12,7 @@ const KEYS = [
 ] as const;
 
 export async function simpanWaSettings(formData: FormData) {
-  const supabase = await assertRole(BACK, "pengaturan WA", ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BACK, "pengaturan WA", ["OWNER", "ADMIN", "ADMIN_UMUM"]);
   const payload: Record<string, boolean | string> = {
     is_enabled: formData.get("is_enabled") === "on",
     updated_at: new Date().toISOString(),
@@ -25,7 +25,7 @@ export async function simpanWaSettings(formData: FormData) {
 }
 
 export async function jalankanWaManual() {
-  const supabase = await assertRole(BACK, "pengiriman WA", ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BACK, "pengiriman WA", ["OWNER", "ADMIN", "ADMIN_UMUM"]);
   let hasil;
   try {
     hasil = await jalankanWaEngine(supabase);

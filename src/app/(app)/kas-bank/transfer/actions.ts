@@ -14,7 +14,7 @@ const gagal = (message: string): never => redirect(`${BACK}?error=${encodeURICom
 
 async function simpan(formData: FormData, action: "create" | "edit" | "void") {
   // Catat, koreksi, dan batal: OWNER/ADMIN/FINANCE (keputusan 12 Nov 2026); izin per grup tetap dicek di bawah.
-  const supabase = await assertRole(BACK, "catatan transfer", ["OWNER", "ADMIN", "FINANCE"]);
+  const supabase = await assertRole(BACK, "catatan transfer", ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]);
   const key = String(formData.get("draft_key") ?? "").trim();
   const id = String(formData.get("id") ?? "").trim();
   const revisionText = String(formData.get("revision") ?? "");
@@ -62,7 +62,7 @@ export async function koreksiTransfer(formData: FormData) { return simpan(formDa
 export async function batalkanTransfer(formData: FormData) { return simpan(formData, "void"); }
 
 export async function pulihkanTransfer(formData: FormData) {
-  const supabase = await assertRole(BACK, "catatan transfer", ["OWNER", "ADMIN", "FINANCE"]);
+  const supabase = await assertRole(BACK, "catatan transfer", ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]);
   const refusal = await roleActionRefusal(supabase, "bank.cash_transfer.recover");
   if (refusal) gagal(refusal.message);
   const key = String(formData.get("draft_key") ?? "").trim();

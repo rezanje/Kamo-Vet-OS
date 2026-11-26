@@ -5,6 +5,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { TemplateForm, type TemplateRow } from "./TemplateForm";
 import { toggleTemplate, simpanAturanConsent } from "./actions";
 import { TINDAKAN_KATEGORI } from "@/lib/tindakan";
+import { isAdminRole } from "@/lib/peran-admin";
 
 // Kelola template form persetujuan (spec 2026-07-20). Admin/owner saja.
 export default async function PersetujuanPage({
@@ -18,7 +19,7 @@ export default async function PersetujuanPage({
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  const bolehKelola = profile?.role === "OWNER" || profile?.role === "ADMIN";
+  const bolehKelola = profile?.role === "OWNER" || isAdminRole(profile?.role);
 
   const [{ data: templates }, { data: branches }, { data: aturanRows }] = await Promise.all([
     supabase.from("consent_templates")

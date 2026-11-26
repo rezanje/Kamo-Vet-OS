@@ -12,7 +12,7 @@ export default async function KasBankPage() {
   const { data: profile, error: profileError } = user
     ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle()
     : { data: null, error: null };
-  const canViewRefund = !profileError && profile?.is_active && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
+  const canViewRefund = !profileError && profile?.is_active && ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(profile.role);
   // Petshop dan klinik (J03) berbagi antrean refund transfer yang sama.
   const pendingResults = canViewRefund
     ? await Promise.all(REFUND_QUEUES.map(queue =>

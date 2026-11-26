@@ -2,6 +2,7 @@
 // Tidak menulis apa pun, tidak memulangkan, tidak ada pengingat/gerbang.
 import type { createClient } from "./supabase/server";
 import { BILLING_LUNAS_LABEL } from "./inpatient-billing-status";
+import { isAdminRole } from "@/lib/peran-admin";
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -57,7 +58,7 @@ export function laporanHarian(logs: readonly DailyLogRow[], todayWib: string): L
 }
 
 export function canSeeLaporanTertinggal(role: string | null | undefined): boolean {
-  return role === "OWNER" || role === "ADMIN";
+  return role === "OWNER" || isAdminRole(role);
 }
 
 export function groupLogsByRecord(rows: readonly DailyLogRow[]): Map<string, DailyLogRow[]> {

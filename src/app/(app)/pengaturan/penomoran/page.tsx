@@ -31,7 +31,7 @@ export default async function PenomoranPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) redirect("/pengaturan");
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) redirect("/pengaturan");
 
   const hariIni = hariIniWIB();
   const contoh = (jenis: string, pola: string, digit: number) =>

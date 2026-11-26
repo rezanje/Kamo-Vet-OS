@@ -9,6 +9,7 @@ import { postRecurringCatchUp } from "@/lib/recurring";
 import { InputTampil, LaporanBelumDitampilkan } from "@/components/GerbangLaporan";
 import { laporanDiminta } from "@/lib/report-gate";
 import { geserHari, hariIniWIB } from "@/lib/tanggal";
+import { bacaIzinJurnal, SUMBER_MANUAL, tentukanJurnalUi } from "@/lib/jurnal-izin";
 
 // ponytail: jurnal umum — catat + riwayat. Real data dari journal_entries + journal_lines.
 
@@ -98,7 +99,22 @@ export default async function JurnalPage({
   const {data:{user}} = await supabase.auth.getUser();
   const { data: profile } = user ? await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle() : { data: null };
   const isOwner = profile?.role === "OWNER" && profile.is_active === true;
-  const canCreateSourceSchedule = profile?.is_active === true && ["OWNER", "ADMIN", "FINANCE"].includes(profile.role);
+  const canCreateSourceSchedule = profile?.is_active === true && ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(profile.role);
+  // Admin Umum: tombol Jurnal Umum dari Akses Grup (lihat / buat manual / koreksi / semua sumber). Peran lain: tampilan lama persis.
+  const jurnalUi = tentukanJurnalUi({ role: profile?.role, aktif: profile?.is_active === true, izin: await bacaIzinJurnal(supabase, profile?.role) });
+  if (jurnalUi.tolak) {
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
+          <Link href="/keuangan" className="back-btn"><i className="ti ti-arrow-left" /> Kembali</Link>
+          <span style={{ color: "var(--td)" }}>·</span>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>Jurnal Umum</span>
+        </div>
+        <div className="p2ban" role="alert"><i className="ti ti-lock" /> {jurnalUi.pesan}</div>
+      </>
+    );
+  }
+  const bolehKoreksi = isOwner || jurnalUi.bolehKoreksi;
 
   // Jurnal berulang: catch-up bulan tertinggal (idempotent via last_posted).
   let recurringPosted: { nama: string; periode: string }[] = [];
@@ -118,6 +134,7 @@ export default async function JurnalPage({
     .order("created_at", { ascending: false })
     .limit(200);
   if (cabang) qEntries = qEntries.eq("branch_id", cabang);
+  if (!jurnalUi.semuaSumber) qEntries = qEntries.in("source", [...SUMBER_MANUAL]);
   if (sumber) qEntries = qEntries.eq("source", sumber);
   if (dari) qEntries = qEntries.gte("tanggal", dari);
   if (sampai) qEntries = qEntries.lte("tanggal", sampai);
@@ -229,7 +246,9 @@ export default async function JurnalPage({
           title="CATAT JURNAL"
           desc="Jurnal umum manual — minimal 2 baris, harus balance (total debit = total kredit)."
         />
-        <JurnalForm key={user?.id} userId={user?.id ?? ""} accounts={accounts} branches={branches} />
+        {jurnalUi.bolehBuat
+          ? <JurnalForm key={user?.id} userId={user?.id ?? ""} accounts={accounts} branches={branches} />
+          : <div className="p2ban" role="note"><i className="ti ti-lock" /> Membuat jurnal manual belum diberikan untuk peran Anda. Minta Owner membukanya di Pengaturan › Akses Grup.</div>}
       </div>
 
       {/* §02 RIWAYAT JURNAL */}
@@ -259,7 +278,7 @@ export default async function JurnalPage({
             <label className="flab">Sumber</label>
             <select className="fi" name="sumber" defaultValue={sumber}>
               <option value="">Semua sumber</option>
-              {Object.entries(SOURCE_BADGE).map(([kode, b]) => <option key={kode} value={kode}>{b.label}</option>)}
+              {Object.entries(SOURCE_BADGE).filter(([kode]) => jurnalUi.semuaSumber || (SUMBER_MANUAL as readonly string[]).includes(kode)).map(([kode, b]) => <option key={kode} value={kode}>{b.label}</option>)}
             </select>
           </div>
           <div style={{ width: 135 }}>
@@ -407,7 +426,7 @@ export default async function JurnalPage({
                       <td>
                         {e.voided_at ? <span className="bge r" style={{ fontSize: 9 }}>Dibatalkan / digantikan</span> : ["manual", "manual-correction"].includes(e.source) ? <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                           {canCreateSourceSchedule && <Link className="btn-def" style={{ padding: "4px 8px", fontSize: 10 }} href={`/keuangan/jurnal-berulang/dari-jurnal/${e.id}`}>Buat jadwal dari jurnal</Link>}
-                          {isOwner
+                          {bolehKoreksi
                             ? <JurnalCorrectionForm userId={user?.id ?? ""} entryId={e.id} revision={e.revision ?? 0} tanggal={e.tanggal} deskripsi={e.deskripsi ?? ""} accounts={accounts} branchId={e.branch_id ?? null} branches={branches} lines={lines.map((l) => ({ account_id: akunDari(l)?.id ?? "", debit: Number(l.debit), credit: Number(l.credit) }))} />
                             : !canCreateSourceSchedule && <span style={{ color: "var(--tm)", fontSize: 10 }}>Khusus Super Admin</span>}
                         </div> : <span style={{ color: "var(--tm)", fontSize: 10 }}>Koreksi dari transaksi sumber</span>}

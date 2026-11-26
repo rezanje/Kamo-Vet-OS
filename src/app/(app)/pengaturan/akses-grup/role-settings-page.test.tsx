@@ -11,7 +11,7 @@ import Page from "./page";
 beforeEach(()=>{state.role="OWNER";state.active=true;state.bad=false;state.rpc.mockReset();state.rpc.mockImplementation(async (_name:string,{p_role}:{p_role:string})=>({data:state.bad?null:{role:p_role,revision:"a".repeat(32),source:"defaults",modules:["klinik"],capabilities:{all_branches:false,create_accounts:false},audit:[],actions:{source:"legacy",allowed:[]},action_catalog:[]},error:null}));});
 it("actual page reads consistent snapshot only for supported nonOwner roles and only active Owner edits",async()=>{
  for(const role of ["OWNER","ADMIN","FINANCE","STAFF","DOCTOR"]){state.role=role;const html=renderToStaticMarkup(await Page({searchParams:Promise.resolve({peran:"STAFF"})}));expect(html).toContain(`data-edit="${role === "OWNER"}"`);}
- expect(new Set(state.rpc.mock.calls.map(c=>c[1].p_role)).size).toBe(4);
+ expect(new Set(state.rpc.mock.calls.map(c=>c[1].p_role)).size).toBe(5);
 });
 it("null config is unknown and no editor is rendered",async()=>{state.bad=true;const html=renderToStaticMarkup(await Page({searchParams:Promise.resolve({})}));expect(html).toContain("tidak diketahui");expect(html).not.toContain("EDITOR");});
 it("read errors, wrong-role and malformed RPC snapshots disable editor rather than invent defaults",async()=>{

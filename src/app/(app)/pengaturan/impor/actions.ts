@@ -16,6 +16,7 @@ import { pemetaanAkun } from "@/lib/impor-akun-pemetaan";
 import { KONFIG, isJenisImpor, type JenisImpor } from "@/lib/impor-jenis";
 import { kunciNama, kunciTarget, periksaKomisi, periksaTarget } from "@/lib/impor-komisi";
 import { pesanSimpanGagal } from "@/lib/barang";
+import { isAdminRole } from "@/lib/peran-admin";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
@@ -25,7 +26,7 @@ async function assertBoleh(back: string): Promise<Db> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "OWNER" && profile?.role !== "ADMIN") {
+  if (profile?.role !== "OWNER" && !isAdminRole(profile?.role)) {
     redirect(`${back}?error=${encodeURIComponent("Hanya OWNER/ADMIN yang boleh mengimpor data")}`);
   }
   return supabase;

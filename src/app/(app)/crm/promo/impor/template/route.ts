@@ -10,7 +10,7 @@ export async function GET() {
   const {data:{user}}=await db.auth.getUser();
   if(!user)return NextResponse.json({error:"Sesi tidak ditemukan"},{status:401});
   const {data:me}=await db.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle();
-  if(!me?.is_active||!["OWNER","ADMIN"].includes(me.role))
+  if(!me?.is_active||!["OWNER","ADMIN", "ADMIN_UMUM"].includes(me.role))
     return NextResponse.json({error:"Akses format promo tidak diizinkan"},{status:403});
   return new NextResponse(await makePromoExcelTemplate() as unknown as BodyInit,{
     headers:{

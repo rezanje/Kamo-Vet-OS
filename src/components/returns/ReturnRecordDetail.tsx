@@ -67,7 +67,7 @@ export async function ReturnRecordDetail({ kind, id, error, success }: {
     {payout&&<section className="crm-sec"><h3>Payout refund tersimpan</h3>
       <p>{payout.method} · {payout.account_name} · Rp {payout.amount.toLocaleString("id-ID",{maximumFractionDigits:2})}</p>
       <p>Koreksi otomatis ditahan untuk payout akun terpilih. Periksa bukti refund bersama Finance sebelum membalik uang atau stok.</p>
-      {payout.request_id&&["OWNER","ADMIN","FINANCE"].includes(profile.data?.role??"")&&<Link href="/kas-bank/refund?status=selesai">Buka antrean refund selesai</Link>}
+      {payout.request_id&&["OWNER","ADMIN", "ADMIN_UMUM","FINANCE"].includes(profile.data?.role??"")&&<Link href="/kas-bank/refund?status=selesai">Buka antrean refund selesai</Link>}
     </section>}
     {audit.data && <div className="crm-sec">
       <h3>Audit koreksi</h3>

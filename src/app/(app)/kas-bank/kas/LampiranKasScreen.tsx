@@ -25,7 +25,7 @@ const DAFTAR: Record<JenisLampiran, { href: string; judul: string }> = {
 export async function LampiranKasScreen({ jenis, params }: { jenis: JenisLampiran; params: Promise<{ id: string }> }) {
   const { id } = await params;
   const daftar = DAFTAR[jenis];
-  const supabase = await assertRole(daftar.href, "lampiran", ["OWNER", "ADMIN", "FINANCE"]);
+  const supabase = await assertRole(daftar.href, "lampiran", ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]);
   if (!UUID.test(id)) notFound();
   const kembali = `${daftar.href}/lampiran/${id}`;
 

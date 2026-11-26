@@ -64,7 +64,7 @@ describe("Akses Grup: izin khusus diskon manual, bawaan hanya ADMIN", () => {
   });
   it("terdaftar sebagai izin khusus dengan pengecualian ADMIN", () => {
     expect(isGrantOnlyAction(MANUAL_DISCOUNT_ACTION)).toBe(true);
-    expect(GRANT_ONLY_LEGACY_ROLES[MANUAL_DISCOUNT_ACTION]).toEqual(["ADMIN"]);
+    expect(GRANT_ONLY_LEGACY_ROLES[MANUAL_DISCOUNT_ACTION]).toEqual(["ADMIN", "ADMIN_UMUM"]);
     expect(legacyRoleHasAction(MANUAL_DISCOUNT_ACTION, "ADMIN")).toBe(true);
     expect(legacyRoleHasAction(MANUAL_DISCOUNT_ACTION, "STAFF")).toBe(false);
     expect(legacyRoleHasAction("pembelian.tanggal_mundur", "ADMIN")).toBe(false);

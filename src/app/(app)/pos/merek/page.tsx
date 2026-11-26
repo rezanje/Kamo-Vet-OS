@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { simpanMerek } from "./actions";
+import { isAdminRole } from "@/lib/peran-admin";
 
 type Brand = { id: string; name: string; is_active: boolean } & LifecycleRow;
 
@@ -21,7 +22,7 @@ export default async function MerekPage({
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("role, is_active").eq("id", user.id).maybeSingle();
-  const bolehKelola = profile?.is_active === true && (profile.role === "OWNER" || profile.role === "ADMIN");
+  const bolehKelola = profile?.is_active === true && (profile.role === "OWNER" || isAdminRole(profile.role));
 
   const { data } = await supabase.from("brands").select("id, name, is_active, trashed_at, lifecycle_revision").order("name");
   const brands = visibleMasters((data ?? []) as Brand[], view, row => row.is_active);

@@ -6,7 +6,7 @@ import { bacaPetaPemakaian, kodeCabangTerkunci } from "@/lib/cabang-gudang-edit"
 import { assignUser, tambahCabang, unassignUser } from "./actions";
 
 const ROLE_COLOR: Record<string, string> = {
-  OWNER: "#7c3aed", ADMIN: "#2563eb", FINANCE: "#d97706", STAFF: "#16a34a", DOCTOR: "#dc2626",
+  OWNER: "#7c3aed", ADMIN: "#2563eb", ADMIN_UMUM: "#0891b2", FINANCE: "#d97706", STAFF: "#16a34a", DOCTOR: "#dc2626",
 };
 
 export default async function PerusahaanCabangPage({
@@ -19,7 +19,7 @@ export default async function PerusahaanCabangPage({
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase
     .from("profiles").select("role, is_active").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) redirect("/perusahaan");
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) redirect("/perusahaan");
   // U11: hanya OWNER aktif yang melihat form cabang baru; RPC create_branch menolak peran lain.
   const bolehBuatCabang = me.role === "OWNER" && me.is_active === true;
 

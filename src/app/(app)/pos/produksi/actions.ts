@@ -21,7 +21,7 @@ async function assertBoleh(): Promise<Db> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     redirect(`${BASE}?error=${encodeURIComponent("Hanya owner/admin yang bisa mengelola produksi")}`);
   }
   return supabase;

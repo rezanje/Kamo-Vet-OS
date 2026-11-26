@@ -1,4 +1,5 @@
 // Alur permintaan & penerimaan barang (Addendum §5) — pure.
+import { isAdminRole } from "@/lib/peran-admin";
 
 export const REQUEST_FLOW = ["Menunggu Persetujuan", "Disetujui", "Dikirim", "Selesai"] as const;
 
@@ -12,7 +13,7 @@ export function canTransitionRequest(from: string, to: string): boolean {
 
 // Approval hanya Kepala Gudang / Manajer (role OWNER/ADMIN di skema existing).
 export function canApprove(role: string): boolean {
-  return role === "OWNER" || role === "ADMIN";
+  return role === "OWNER" || isAdminRole(role);
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100; // qty bisa pecahan — hindari artefak float di UI
