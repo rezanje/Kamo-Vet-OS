@@ -10,7 +10,7 @@ beforeEach(()=>{vi.clearAllMocks();state.actionGuard.mockReset();state.actionGua
 it.each([[prosesRekonsiliasi,"create"],[koreksiRekonsiliasi,"edit"],[batalkanRekonsiliasi,"void"]] as const)("submits %s only once through the atomic family operation",async(action,mode)=>{
  const f=form();await expect(action(f)).rejects.toThrow(`/keuangan/rekonsiliasi/${id}?success=${mode}`);
  expect(state.rpc).toHaveBeenCalledExactlyOnceWith("mutate_bank_reconciliation",expect.objectContaining({p_request_key:"same-key",p_action:mode,p_id:mode==="create"?null:id,p_expected_revision:mode==="create"?null:2}));
- expect(state.guard).toHaveBeenCalledWith("/keuangan/rekonsiliasi","rekonsiliasi bank",mode==="create"?["OWNER","ADMIN","FINANCE"]:["OWNER"]);
+ expect(state.guard).toHaveBeenCalledWith("/keuangan/rekonsiliasi","rekonsiliasi bank",mode==="create"?["OWNER","ADMIN","ADMIN_UMUM","FINANCE"]:["OWNER"]);
 });
 it.each([[prosesRekonsiliasi,"create"],[koreksiRekonsiliasi,"edit"],[batalkanRekonsiliasi,"void"],[pulihkanRekonsiliasi,"recover"]] as const)("denies the exact reconciliation action before posting or recovery",async(action,key)=>{
  state.actionGuard.mockResolvedValueOnce({ ok: false, outcome: "rejected", code: "ROLE_ACTION_DENIED", message: "Tindakan ini tidak diizinkan" });

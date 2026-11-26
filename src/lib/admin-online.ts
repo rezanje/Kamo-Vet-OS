@@ -22,7 +22,7 @@ export function isAdminOnline(role: string | null | undefined): boolean {
 
 /** Label tampilan peran; peran lain mengembalikan kodenya. */
 export function labelPeran(role: string): string {
-  return role === ADMIN_ONLINE ? LABEL_ADMIN_ONLINE : role;
+  return role === ADMIN_ONLINE ? LABEL_ADMIN_ONLINE : role === "ADMIN_UMUM" ? "Admin Umum" : role;
 }
 
 /** Bersihkan URL jadi jalur baku: tanpa query/hash, % didekode, garis miring ganda/akhir dibuang, huruf kecil. null = tidak bisa dipastikan. */
@@ -47,6 +47,6 @@ export function adminOnlineBolehBuka(path: string): boolean {
 export const API_ADMIN_ONLINE: readonly string[] = ["/api/version"];
 
 /** Semua peran yang boleh dipilih/dikenali di Pengaturan > Pengguna (peran Akses Grup + Admin Online). Urutan tampil. */
-export const PERAN_AKUN = ["OWNER", "ADMIN", "FINANCE", "DOCTOR", "STAFF", ADMIN_ONLINE] as const;
+export const PERAN_AKUN = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE", "DOCTOR", "STAFF", ADMIN_ONLINE] as const;
 /** Peran yang wajib punya penugasan cabang saat akun dibuat/diubah (database menegakkan hal yang sama). */
 export const PERAN_WAJIB_CABANG: readonly string[] = ["STAFF", "DOCTOR", ADMIN_ONLINE];

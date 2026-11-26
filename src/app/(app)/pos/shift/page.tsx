@@ -81,7 +81,7 @@ export default async function ShiftPage({
     .lt("opened_at", dayAgo)
     .order("opened_at");
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  const isManager = !!me && ["OWNER", "ADMIN"].includes(me.role);
+  const isManager = !!me && ["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role);
 
   const openBranch = one(open?.branches as Rel<{ name: string }>);
 

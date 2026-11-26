@@ -20,6 +20,7 @@ import {
 } from "@/lib/impor-rekam-medis";
 import { bagiKirimanBaris, MAKS_BARIS_PER_KIRIMAN, MAKS_BARIS_POTONGAN_REKAM_MEDIS } from "@/lib/impor-rekam-medis-aliran";
 import { barisHasilImpor, kunciPeriksaHasil, type HasilImporRekamMedis } from "@/lib/impor-rekam-medis-hasil";
+import { isAdminRole } from "@/lib/peran-admin";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_BATCH_BYTES = 30 * 1024 * 1024;
@@ -57,7 +58,7 @@ async function assertBolehImpor() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Silakan masuk ulang.");
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "OWNER" && profile?.role !== "ADMIN") {
+  if (profile?.role !== "OWNER" && !isAdminRole(profile?.role)) {
     throw new Error("Hanya OWNER/ADMIN yang boleh mengimpor rekam medis.");
   }
   return supabase;

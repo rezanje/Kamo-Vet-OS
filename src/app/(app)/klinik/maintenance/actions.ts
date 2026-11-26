@@ -9,7 +9,7 @@ import { geserHari } from "@/lib/tanggal";
 const BACK = "/klinik/maintenance";
 
 export async function simpanAlatMedis(formData: FormData) {
-  const supabase = await assertRole(BACK, "alat medis", ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BACK, "alat medis", ["OWNER", "ADMIN", "ADMIN_UMUM"]);
   const name = String(formData.get("name") ?? "").trim();
   const branchId = String(formData.get("branch_id") ?? "").trim();
   if (!name || !branchId) redirect(`${BACK}?error=${encodeURIComponent("Nama alat dan cabang wajib diisi")}`);
@@ -34,7 +34,7 @@ export async function simpanAlatMedis(formData: FormData) {
 }
 
 export async function simpanMaintenance(formData: FormData) {
-  const supabase = await assertRole(BACK, "riwayat maintenance", ["OWNER", "ADMIN"]);
+  const supabase = await assertRole(BACK, "riwayat maintenance", ["OWNER", "ADMIN", "ADMIN_UMUM"]);
   const equipmentId = String(formData.get("equipment_id") ?? "").trim();
   const date = String(formData.get("maintenance_date") ?? "").trim();
   const type = String(formData.get("maintenance_type") ?? "").trim();

@@ -105,7 +105,7 @@ export function putuskanBolehBatalTagihan(dibaca: boolean | null, role: string |
 
 // ───────────── Tutup kunjungan (Owner/Admin) ─────────────
 
-export const PERAN_TUTUP_KUNJUNGAN = ["OWNER", "ADMIN"] as const;
+export const PERAN_TUTUP_KUNJUNGAN = ["OWNER", "ADMIN", "ADMIN_UMUM"] as const;
 
 export function bolehTutupKunjungan(profile: { role?: string | null; is_active?: boolean | null } | null | undefined): boolean {
   return !!profile?.is_active && (PERAN_TUTUP_KUNJUNGAN as readonly string[]).includes(profile.role ?? "");

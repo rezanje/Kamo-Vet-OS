@@ -5,7 +5,7 @@ import { assertRole } from "@/lib/master-guard";
 import { METODE_BAYAR } from "@/lib/kas-akun";
 
 const BACK = "/kas-bank/peta";
-const BOLEH = ["OWNER", "ADMIN", "FINANCE"];
+const BOLEH = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"];
 
 const gagal = (msg: string): never => redirect(`${BACK}?error=${encodeURIComponent(msg)}`);
 

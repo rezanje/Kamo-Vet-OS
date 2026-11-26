@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { JENIS_PERSETUJUAN, PERAN_PENYETUJU } from "@/lib/persetujuan";
+import { peranPenyetujuEfektif } from "@/lib/peran-admin";
 
 const BACK = "/pengaturan/penyetuju";
 const kembali = (q: string): never => redirect(`${BACK}?${q}`);
@@ -12,7 +13,7 @@ async function pastikanBoleh() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN"].includes(me.role)) {
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM"].includes(me.role)) {
     kembali(`error=${encodeURIComponent("Hanya owner/admin yang boleh mengatur penyetuju transaksi.")}`);
   }
   return { supabase, userId: user?.id ?? null };
@@ -96,7 +97,7 @@ async function putuskan(formData: FormData, setuju: boolean) {
     kembali(`error=${encodeURIComponent("Pengajuan itu sudah diputuskan sebelumnya.")}`);
   }
 
-  const peranSaya = String(me?.role ?? "");
+  const peranSaya = peranPenyetujuEfektif(String(me?.role ?? ""));
   if (peranSaya !== "OWNER" && peranSaya !== pengajuan!.penyetuju_role) {
     kembali(`error=${encodeURIComponent(`Hanya ${pengajuan!.penyetuju_role} yang boleh memutuskan pengajuan ini.`)}`);
   }

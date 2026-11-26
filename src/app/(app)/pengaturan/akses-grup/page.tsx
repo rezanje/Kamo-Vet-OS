@@ -4,7 +4,7 @@ import { SEMUA_PERAN } from "@/lib/akses";
 import { submenuSummary } from "@/lib/submenu-access";
 import { editableRole, parseRoleAccessConfig, ROLE_ACCESS_CATALOG } from "@/lib/role-access-catalog";
 
-import { ADMIN_ONLINE, LABEL_ADMIN_ONLINE } from "@/lib/admin-online";
+import { ADMIN_ONLINE, LABEL_ADMIN_ONLINE, labelPeran } from "@/lib/admin-online";
 import { NewRoleSettingsForm } from "./newRoleSettingsForm";
 
 export default async function AksesGrupPage({ searchParams }: { searchParams: Promise<{ error?: string; success?: string; peran?: string }> }) {
@@ -29,11 +29,11 @@ export default async function AksesGrupPage({ searchParams }: { searchParams: Pr
 
     <section className="crm-sec"><h2>Ringkasan peran</h2>
       <p>Perubahan berlaku untuk semua pengguna dengan peran terkait. Jumlah pengguna tidak ditampilkan karena visibilitas akun dapat dibatasi. OWNER selalu penuh dan tidak dapat mengunci dirinya sendiri.</p>
-      <table className="tbl"><thead><tr><th>Peran</th><th>Menu</th><th>Sub-menu</th><th>Sumber</th></tr></thead><tbody>{snapshots.map(s => <tr key={s.role}><td>{s.role}</td><td>{s.role === "OWNER" ? "Selalu penuh" : s.config ? `${s.config.modules.length}/${ROLE_ACCESS_CATALOG.length}` : "tidak diketahui"}</td><td>{s.role === "OWNER" ? "Selalu penuh" : s.config ? (Object.keys(s.config.submenus ?? {}).length ? Object.entries(s.config.submenus ?? {}).map(([m, ids]) => { const x = submenuSummary(m, ids); return `${ROLE_ACCESS_CATALOG.find(c => c.id === m)?.label ?? m}: ${x.allowed} dari ${x.total} sub-menu`; }).join("; ") : "Semua sub-menu") : "tidak diketahui"}</td><td>{s.config?.source ?? "tidak diketahui"}</td></tr>)}
+      <table className="tbl"><thead><tr><th>Peran</th><th>Menu</th><th>Sub-menu</th><th>Sumber</th></tr></thead><tbody>{snapshots.map(s => <tr key={s.role}><td>{labelPeran(s.role)}{labelPeran(s.role) !== s.role ? ` (${s.role})` : ""}</td><td>{s.role === "OWNER" ? "Selalu penuh" : s.config ? `${s.config.modules.length}/${ROLE_ACCESS_CATALOG.length}` : "tidak diketahui"}</td><td>{s.role === "OWNER" ? "Selalu penuh" : s.config ? (Object.keys(s.config.submenus ?? {}).length ? Object.entries(s.config.submenus ?? {}).map(([m, ids]) => { const x = submenuSummary(m, ids); return `${ROLE_ACCESS_CATALOG.find(c => c.id === m)?.label ?? m}: ${x.allowed} dari ${x.total} sub-menu`; }).join("; ") : "Semua sub-menu") : "tidak diketahui"}</td><td>{s.config?.source ?? "tidak diketahui"}</td></tr>)}
         <tr data-peran-terkunci="ADMIN_ONLINE"><td>{LABEL_ADMIN_ONLINE} ({ADMIN_ONLINE})</td><td colSpan={2}>Terkunci: hanya Impor penjualan online (tidak ada menu lain)</td><td>tetap, tidak dapat diubah di sini</td></tr></tbody></table>
       <p>Peran {LABEL_ADMIN_ONLINE} dipilih di Pengaturan → Pengguna. Menunya tetap satu layar (impor penjualan marketplace) dan dijaga juga oleh database; pengaturan menu, akses khusus, dan kemampuan akun tidak berlaku untuk peran ini.</p>
     </section>
-    <section className="crm-sec"><form method="get"><label>Peran <select name="peran" defaultValue={role}>{SEMUA_PERAN.filter(editableRole).map(r => <option key={r}>{r}</option>)}</select></label><button type="submit" className="btn-def">Lihat</button></form>
+    <section className="crm-sec"><form method="get"><label>Peran <select name="peran" defaultValue={role}>{SEMUA_PERAN.filter(editableRole).map(r => <option key={r} value={r}>{labelPeran(r)}{labelPeran(r) !== r ? ` (${r})` : ""}</option>)}</select></label><button type="submit" className="btn-def">Lihat</button></form>
       {!config || !user ? <div role="alert">Konfigurasi tidak diketahui atau gagal dibaca. Penyimpanan dinonaktifkan; muat ulang. Tidak ada izin kosong/bawaan yang diasumsikan.</div>
         : <><p>Sumber: {config.source} · Revisi: <code>{config.revision}</code></p><NewRoleSettingsForm key={`${user.id}:${role}:${config.revision}`} userId={user.id} config={config} canEdit={owner} />
           {owner && <section aria-label="Riwayat perubahan"><h3>Riwayat perubahan</h3>{config.audit.length ? <ul>{config.audit.map(a => <li key={a.id}>{a.created_at} · {a.created_by} · {a.reason}<details><summary>Sebelum / sesudah</summary><pre>{JSON.stringify({before:a.before,after:a.after},null,2)}</pre></details></li>)}</ul> : <p>Belum ada riwayat yang tersedia.</p>}</section>}</>}

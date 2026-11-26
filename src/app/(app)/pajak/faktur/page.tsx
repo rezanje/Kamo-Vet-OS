@@ -78,7 +78,7 @@ export default async function BerkasPajakPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
-  if (!me || !["OWNER", "ADMIN", "FINANCE"].includes(String(me.role))) redirect("/pajak");
+  if (!me || !["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"].includes(String(me.role))) redirect("/pajak");
 
   const { keluaran, masukan, perusahaan, modePkp } = await tarikPajakMasa(masa);
   const ringkas = ringkasMasa(masa, keluaran, masukan);

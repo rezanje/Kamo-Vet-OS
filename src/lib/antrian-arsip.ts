@@ -3,7 +3,7 @@
 // database (RPC clinic_archive_visit / clinic_unarchive_visit memeriksa peran lagi); ini hanya menyembunyikan tombol dan
 // menolak lebih awal dengan pesan jelas.
 
-export const PERAN_ARSIP = ["OWNER", "ADMIN"] as const;
+export const PERAN_ARSIP = ["OWNER", "ADMIN", "ADMIN_UMUM"] as const;
 export const ALASAN_ARSIP_MIN = 5;
 export const ALASAN_ARSIP_MAX = 500;
 export const BATAS_DIARSIPKAN = 200;

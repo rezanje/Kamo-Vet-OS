@@ -23,6 +23,7 @@ import { bacaBagianOperasional, larik, urutId } from "./laporan-operasional-penj
 import { rentangHari } from "./laporan-struk-kasir";
 import { BATAS_BACA_LAPORAN, petaBerbatas } from "./konkuren-batas";
 import { isCompletedSale, saleMerchandiseTotal, saleRefundMerchantFee, type SaleCompletion, type SaleMerchantTotal } from "./sale-payment-reporting";
+import { isAdminRole } from "@/lib/peran-admin";
 
 type AnyClient = any;
 
@@ -154,7 +155,7 @@ async function safeBlock<T>(load: () => Promise<T>): Promise<DashboardBlock<T>> 
 }
 
 function roleAllowsAllBranches(role: string): boolean {
-  return role === "OWNER" || role === "ADMIN" || role === "FINANCE";
+  return role === "OWNER" || isAdminRole(role) || role === "FINANCE";
 }
 
 export async function resolveDashboardScope(supabase: AnyClient, requestedBranchIds: string[] = []): Promise<DashboardScope> {

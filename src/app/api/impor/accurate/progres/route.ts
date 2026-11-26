@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bacaProgresDariRingkasan } from "@/lib/impor-accurate-batch";
 import { createClient } from "@/lib/supabase/server";
+import { isAdminRole } from "@/lib/peran-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Sesi tidak ditemukan" }, { status: 401 });
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (profile?.role !== "OWNER" && profile?.role !== "ADMIN") {
+  if (profile?.role !== "OWNER" && !isAdminRole(profile?.role)) {
     return NextResponse.json({ error: "Akses impor tidak diizinkan" }, { status: 403 });
   }
 

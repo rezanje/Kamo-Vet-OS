@@ -10,7 +10,7 @@ import { hppWarningConfirmed, hppWarningQuery } from "@/lib/hpp-warning";
 import { grosirHppWarnings } from "@/lib/hpp-warning-server";
 
 const LIST = "/penjualan/pesanan";
-const BOLEH = ["OWNER", "ADMIN", "FINANCE", "STAFF"];
+const BOLEH = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE", "STAFF"];
 const detail = (id: string) => `${LIST}/${id}`;
 
 export async function buatPesanan(formData: FormData) {

@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { katalogFromRows, type BahanKatalog, type KatalogRacikan } from "@/lib/katalog-racikan";
 import { ListLoadError, readCompleteList } from "@/lib/checked-list";
+import { isAdminRole } from "@/lib/peran-admin";
 
 type FormulaRow = { id: string; code: string; active: boolean; current_version_id: string | null; sale_item_id: string | null };
 type VersionRow = { id: string; version: number; name: string; dosage_form: string; dosage_instruction: string | null; ingredients: BahanKatalog[] };
@@ -38,7 +39,7 @@ export async function bolehRacikKhusus(): Promise<boolean> {
   if (!user) return false;
   const { data } = await supabase.from("profiles").select("role,is_active").eq("id", user.id).maybeSingle();
   if (data?.is_active !== true) return false;
-  if (data.role === "OWNER" || data.role === "ADMIN") return true;
+  if (data.role === "OWNER" || isAdminRole(data.role)) return true;
   if (data.role !== "DOCTOR") return false;
   const { data: ready, error } = await supabase.rpc("clinic_doctor_custom_compound_supported");
   return !error && ready === true;

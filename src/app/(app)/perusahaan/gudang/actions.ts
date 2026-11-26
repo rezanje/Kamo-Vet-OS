@@ -19,7 +19,7 @@ async function requireRole(roles: string[], pesan: string) {
 }
 
 async function requireAdmin() {
-  return (await requireRole(["OWNER", "ADMIN"], "Hanya owner/admin yang bisa mengatur gudang")).supabase;
+  return (await requireRole(["OWNER", "ADMIN", "ADMIN_UMUM"], "Hanya owner/admin yang bisa mengatur gudang")).supabase;
 }
 
 export async function tambahGudang(formData: FormData) {
@@ -57,7 +57,7 @@ const VALID_TYPES = ["RETAIL", "VET", "EXPIRED", "TRANSIT", "ONLINE", "DC"];
 
 /** Ubah nama (wajib), kode dan jenis (hanya bila dikirim; database menolak bila gudang sudah dipakai). OWNER/ADMIN. */
 export async function ubahGudang(formData: FormData) {
-  const { supabase } = await requireRole(["OWNER", "ADMIN"], "Hanya owner/admin yang bisa mengubah gudang");
+  const { supabase } = await requireRole(["OWNER", "ADMIN", "ADMIN_UMUM"], "Hanya owner/admin yang bisa mengubah gudang");
   const id = String(formData.get("id") ?? "").trim();
   const salahNama = validasiNamaGudang(formData.get("name"));
   if (!id) gagal("Gudang tidak valid");
@@ -74,7 +74,7 @@ export async function ubahGudang(formData: FormData) {
 
 /** Nonaktifkan / aktifkan gudang (stok, dokumen terbuka, dan gudang terakhir dijaga database). */
 export async function aturStatusGudang(formData: FormData) {
-  const { supabase } = await requireRole(["OWNER", "ADMIN"], "Hanya owner/admin yang bisa mengubah gudang");
+  const { supabase } = await requireRole(["OWNER", "ADMIN", "ADMIN_UMUM"], "Hanya owner/admin yang bisa mengubah gudang");
   const id = String(formData.get("id") ?? "").trim();
   const status = String(formData.get("is_active") ?? "");
   if (!id || !["1", "0"].includes(status)) gagal("Pilih status gudang yang valid");
@@ -86,7 +86,7 @@ export async function aturStatusGudang(formData: FormData) {
 
 /** Hapus gudang: hanya OWNER, alasan wajib, dan hanya bila belum dipakai sama sekali (diperiksa ulang di database). */
 export async function hapusGudang(formData: FormData) {
-  const { supabase, role } = await requireRole(["OWNER", "ADMIN"], "Hanya owner yang bisa menghapus gudang");
+  const { supabase, role } = await requireRole(["OWNER", "ADMIN", "ADMIN_UMUM"], "Hanya owner yang bisa menghapus gudang");
   const keputusan = keputusanHapusGudang(role, false);
   if (!keputusan.boleh) gagal(keputusan.alasan ?? "Hanya owner yang bisa menghapus gudang");
   const id = String(formData.get("id") ?? "").trim();

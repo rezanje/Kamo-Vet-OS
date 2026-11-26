@@ -12,7 +12,7 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
   const db = await createClient();
   const { data: { user } } = await db.auth.getUser();
   const { data: profile } = user ? await db.from('profiles').select('role,is_active').eq('id', user.id).maybeSingle() : { data: null };
-  if (!profile?.is_active || !['OWNER', 'ADMIN'].includes(profile.role)) {
+  if (!profile?.is_active || !['OWNER', 'ADMIN', 'ADMIN_UMUM'].includes(profile.role)) {
     return <div className="p2ban" role="alert">Log aktivitas tersedia untuk OWNER/ADMIN aktif sesuai akses modul dan cabang yang berlaku.</div>;
   }
 

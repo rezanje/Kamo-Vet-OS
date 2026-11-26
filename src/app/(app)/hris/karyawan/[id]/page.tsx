@@ -125,7 +125,7 @@ export default async function RincianKaryawanPage({ params, searchParams }: {
     {beda && <div role="alert" className="p2ban" data-testid="peran-vs-jabatan" style={{ color: "#b45309", marginTop: 8 }}>
       <i className="ti ti-alert-triangle" /> {pesanPeranVsJabatan(beda)}{" "}
       <Link href={`/pengaturan/pengguna/${employee.profile_id}/edit`}>Ubah role akun</Link>
-      {["OWNER", "ADMIN"].includes(beda.sekarang) && " (akun Admin/Super Admin hanya bisa diubah Super Admin)"}
+      {["OWNER", "ADMIN", "ADMIN_UMUM"].includes(beda.sekarang) && " (akun Admin/Super Admin hanya bisa diubah Super Admin)"}
     </div>}
     <div className="crm-sec" style={{ marginTop: 12 }}>
       <SecHeader num="01" title="PROFIL KARYAWAN" desc={`${employee.nama} · ${employee.nik ?? "Tanpa NIK"}`} action={edit !== "1" ? <Link className="btn-def" href={`/hris/karyawan/${id}?edit=1`}><i className="ti ti-pencil" /> Edit Karyawan</Link> : undefined} />

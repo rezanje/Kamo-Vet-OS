@@ -49,7 +49,7 @@ export const ATURAN_GAJI_BELUM_DISIMPAN =
   "Aturan gaji belum pernah disimpan. OWNER perlu menyimpannya dulu di Pengaturan → Aturan gaji.";
 
 const TIDAK_TERVERIFIKASI = "Aturan gaji belum dapat diverifikasi. Coba muat ulang.";
-const PERAN_BACA_ATURAN_GAJI = ["OWNER", "ADMIN", "FINANCE"];
+const PERAN_BACA_ATURAN_GAJI = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"];
 
 async function bolehBacaAturanGaji(supabase: AnyClient): Promise<boolean> {
   const { data: auth, error: authError } = await supabase.auth.getUser();

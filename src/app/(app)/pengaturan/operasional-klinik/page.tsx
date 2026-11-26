@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/SubmitButton";
 import { tambahKapasitasRawatInap, simpanUangMukaMinimal } from "./actions";
 import { getDpMinimalPercent } from "@/lib/dp-minimal";
+import { isAdminRole } from "@/lib/peran-admin";
 
 type Rel<T> = T | T[] | null;
 const one = <T,>(value: Rel<T>): T | null => Array.isArray(value) ? value[0] ?? null : value;
@@ -20,7 +21,7 @@ export default async function OperasionalKlinikSettings({ searchParams }: { sear
     supabase.from("branch_capacity_periods").select("id,branch_id,capacity,valid_from,valid_until,created_at,branches(name)").order("valid_from", { ascending: false }),
     getDpMinimalPercent(supabase),
   ]);
-  const boleh = profile?.role === "OWNER" || profile?.role === "ADMIN";
+  const boleh = profile?.role === "OWNER" || isAdminRole(profile?.role);
   return (
     <>
       <div style={{ marginBottom: 4 }}><Link href="/pengaturan" className="back-btn"><i className="ti ti-arrow-left" /> Pengaturan</Link></div>

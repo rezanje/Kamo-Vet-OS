@@ -46,6 +46,7 @@ import { mulai } from "@/lib/u07-waktu";
 import { readCompleteList } from "@/lib/checked-list";
 import { manualDiscountAllowed } from "@/lib/manual-discount";
 import { muatBagianUangMuka, labelMetodeInvoice } from "@/lib/metode-uang-muka";
+import { isAdminRole } from "@/lib/peran-admin";
 
 type SavedPrescriptionSource = Omit<PackagePrintSource, "deskripsi"> & {
   id: string; nama_obat: string; jenis: string | null; kategori: string | null;
@@ -887,7 +888,7 @@ export default async function PembayaranPage({
       {invoice && <ActivityHistoryLink entity="invoices" id={invoice.id} />}
       {tampilRiwayat ? (
         <TransactionHistoryPanel title="RIWAYAT PERUBAHAN TRANSAKSI" events={riwayatResult!.events} error={riwayatResult!.error}
-          hint={riwayatResult!.role === "ADMIN"
+          hint={isAdminRole(riwayatResult!.role)
             ? "Edit invoice, terbit ulang, refund dan batal kwitansi untuk kunjungan ini. Koreksi metode bayar hanya terlihat oleh Owner dan Finance."
             : "Edit invoice, terbit ulang, koreksi metode bayar, refund dan batal kwitansi untuk kunjungan ini: siapa, kapan, apa, alasan."} />
       ) : (
