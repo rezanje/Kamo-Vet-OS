@@ -443,4 +443,29 @@ select pg_temp.ok((select first_locked_at from public.opname_count_baselines whe
 -- pagar Admin Online pada penulisan tabel baseline
 select pg_temp.ok(exists(select 1 from pg_trigger t where t.tgrelid='public.opname_count_baselines'::regclass and t.tgname='zz_admin_online_write_fence'),'S19 trigger pagar tulis Admin Online terpasang pada tabel baseline');
 select pg_temp.ok(admin_online_private.guard_all()=0 and admin_online_private.fence_all()=0,'S19 guard_all dan fence_all dijalankan ulang: tidak ada fungsi/tabel tanpa pagar (0 dan 0)');
+
+-- ═════════ S20 foto pertama tidak bergeser (Buka berulang, lintas opname, cascade, NaN) ═════════
+select pg_temp.mk(c,1000,0) from (values('sw1'),('sw2'),('sw3')) v(c);
+select pg_temp.lay('sw1',10,100);select pg_temp.lay('sw2',10,100);select pg_temp.lay('sw3',10,100);
+do $$begin perform pg_temp.ord('s20a');perform pg_temp.ord('s20c');end$$;
+-- Buka, kunci ulang, ubah (sebagai pemilik) foto/jam di baris, Buka lagi: baseline TETAP foto + jam pertama
+select pg_temp.lock('s20a','sw1',10);
+update public.opname_counts set locked_at='2026-02-03 04:05:06+00' where order_id=pg_temp.oid('s20a') and item_id=pg_temp.iid('sw1');
+select pg_temp.buka('s20a','sw1');
+select pg_temp.lock('s20a','sw1',10);
+update public.opname_counts set qty_sistem=3,locked_at='2026-03-04 05:06:07+00' where order_id=pg_temp.oid('s20a') and item_id=pg_temp.iid('sw1');
+select pg_temp.buka('s20a','sw1');
+select pg_temp.ok(pg_temp.bq('s20a','sw1')=10,'S20 Buka kedua dengan baris berfoto 3: baseline tetap foto pertama 10 (yang pertama menang)');
+select pg_temp.ok((select first_locked_at from public.opname_count_baselines where order_id=pg_temp.oid('s20a') and item_id=pg_temp.iid('sw1'))='2026-02-03 04:05:06+00'::timestamptz,'S20 Buka kedua: jam kunci pertama tidak digeser oleh Buka berikutnya');
+-- hapus opname yang punya baris kunci TANPA pernah Buka (cascade dari induk): tidak boleh gagal dan tidak meninggalkan baseline
+select pg_temp.lock('s20c','sw2',10);
+do $$begin begin delete from public.opname_orders where id=pg_temp.oid('s20c');exception when others then raise exception 'Assertion failed: S20 hapus opname berisi baris kunci (tanpa Buka) gagal: %',sqlerrm;end;end$$;
+select pg_temp.ok(not exists(select 1 from public.opname_counts where order_id=pg_temp.oid('s20c')) and not exists(select 1 from public.opname_count_baselines where order_id=pg_temp.oid('s20c')) and not exists(select 1 from public.opname_orders where id=pg_temp.oid('s20c')),'S20 hapus opname berisi baris kunci tanpa Buka: induk, baris, dan baseline hilang bersih');
+-- baseline opname A tidak boleh bocor ke opname B (barang sama): A foto 10; stok kini 14 (diterima 10 hari lalu); B tanpa kunci & tanpa gerakan sejak B dibuat
+select pg_temp.lay('sw1',4,100);
+select pg_temp.ok(pg_temp.sq('sw1')=14 and pg_temp.bq('s20a','sw1')=10,'S20 prasyarat: stok sw1 14, baseline opname A 10');
+select pg_temp.ok(pg_temp.post('s20b','{"sw1":14}') ? 'no_hasil' and (pg_temp.ri('s20b','sw1')->>'qty_sistem')::numeric=14 and (pg_temp.ri('s20b','sw1')->>'selisih')::numeric=0,'S20 baseline opname A tidak bocor ke opname B: B memakai stok sekarang 14, selisih 0');
+-- NaN / tak hingga ditolak di tabel baseline; ACL posting
+select pg_temp.reject('insert into public.opname_count_baselines(order_id,item_id,qty_sistem,first_locked_at) values('''||pg_temp.oid('s9')||''','''||pg_temp.iid('sw3')||''',''NaN''::numeric,now())','check constraint','S20 baseline menolak NaN');
+select pg_temp.ok(not has_function_privilege('anon','public.post_opname_atomic(uuid,date,jsonb)','EXECUTE') and not has_function_privilege('public','public.post_opname_atomic(uuid,date,jsonb)','EXECUTE') and not has_function_privilege('service_role','public.post_opname_atomic(uuid,date,jsonb)','EXECUTE') and has_function_privilege('authenticated','public.post_opname_atomic(uuid,date,jsonb)','EXECUTE'),'S20 post_opname_atomic: hanya authenticated yang boleh memanggil');
 rollback;
