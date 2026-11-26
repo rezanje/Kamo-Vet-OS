@@ -26,7 +26,7 @@ CANDFILE = sorted(MIGRATIONS.glob('*_koreksi_so_per_baris.sql'))[0]
 CAND = CANDFILE.name
 bp.CAND = CAND
 SUITE = 'koreksi_so_per_baris.sql'
-MIN_SUITE = 156
+MIN_SUITE = 161
 check, raw, clone, run_suite, apply = bp.check, bp.raw, bp.clone, bp.run_suite, bp.apply
 NativePostgres, RESULTS, Sess, waiting, sleeping, q1 = bp.NativePostgres, bp.RESULTS, bp.Sess, bp.waiting, bp.sleeping, bp.q1
 
@@ -136,6 +136,9 @@ def run_green(db, a):
     gone = sorted(k for k in before if k not in after)
     check('IDENTITY existing functions that changed == exactly the 4 reviewed correction functions', changed == sorted(CHANGED) and not gone, (changed, gone))
     check('IDENTITY exactly one new function: stock_correction_charge_note(uuid)', new == NEWFN, new)
+    if os.environ.get('KR_EVIDENCE'):
+        Path(os.environ['KR_EVIDENCE'], 'native-md5.json').write_text(json.dumps(dict(
+            pre={k: before[k].split('|')[0] for k in CHANGED + ['stock_correction_source(text,uuid)']}, post={k: after[k].split('|')[0] for k in CHANGED + NEWFN})))
     check('IDENTITY stock_correction_source/access/row_protected, guard_stock_correction_history, get_stock_document_correction(_result), opname_surplus_cost, post_opname_atomic, stock_out_fifo, stock_in_fifo byte-identical',
           all(before[k] == after[k] for k in before if re.match(r'(stock_correction_source|stock_correction_access|stock_correction_row_protected|guard_stock_correction_history|get_stock_document_correction|get_stock_document_correction_result|opname_surplus_cost|post_opname_atomic|post_inventory_adjustment_atomic|stock_out_fifo|stock_in_fifo|charge_opname_variance_to_employees|cancel_opname_variance_charge|opname_variance_charge_basis)\(', k)), 'unexpected drift')
     for k in CHANGED:
@@ -631,12 +634,13 @@ def run_neighbours(db, a):
     def nb_run(nb, with_cand):
         r = subprocess.run([sys.executable, '-I', str(ROOT / 'scripts/koreksi-so-neighbour.py'), nb, '--pg-bin', a.pg_bin, '--with-cand' if with_cand else '--without-cand'], capture_output=True, text=True)
         lines = r.stdout.splitlines()
-        return r.returncode, sum(1 for l in lines if l.startswith('PASS')), sorted(l[:240] for l in lines if l.startswith('FAIL')), r.stderr[-300:]
+        applied = next((int(l.split('=')[1]) for l in lines if l.startswith('CAND_APPLIED=')), -1)
+        return r.returncode, sum(1 for l in lines if l.startswith('PASS')), sorted(l[:240] for l in lines if l.startswith('FAIL')), r.stderr[-300:], applied
     for nb, label in NEIGH:
-        rc0, p0, f0, e0 = nb_run(nb, False)
-        rc1, p1, f1, e1 = nb_run(nb, True)
-        check('NEIGHBOUR %s: without candidate rc=%s %d PASS %d FAIL; with candidate rc=%s %d PASS %d FAIL (no new failures)' % (label, rc0, p0, len(f0), rc1, p1, len(f1)),
-              p1 >= p0 and set(f1) <= set(f0) and (rc1 == 0 or rc0 != 0), (f1[:3], e1))
+        rc0, p0, f0, e0, ap0 = nb_run(nb, False)
+        rc1, p1, f1, e1, ap1 = nb_run(nb, True)
+        check('NEIGHBOUR %s: without candidate rc=%s %d PASS %d FAIL; with candidate (applied %d time) rc=%s %d PASS %d FAIL (no new failures)' % (label, rc0, p0, len(f0), ap1, rc1, p1, len(f1)),
+              ap0 == 0 and ap1 >= 1 and p0 > 0 and p1 >= p0 and set(f1) <= set(f0) and (rc1 == 0 or rc0 != 0), (f1[:3], e1))
     # the repository's own SQL suites that call the correction functions, run on the chain with the candidate on top
     fresh(db)
     clone(db, 'nx'); apply_cand(db, 'nx')

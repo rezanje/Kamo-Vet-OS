@@ -226,7 +226,9 @@ begin
  if applied=0 then
   select string_agg((b.x->>'name')||': '||(b.x->>'reason'),'; ' order by b.ord) into msg from jsonb_array_elements(blocked) with ordinality b(x,ord) where b.ord<=8;
   blocked_count:=jsonb_array_length(blocked);
-  raise exception '%',left('Koreksi tidak bisa disimpan: semua baris yang diubah tertahan. '||coalesce(msg,'')||case when blocked_count>8 then format(' (dan %s baris lain)',blocked_count-8) else '' end,2000);
+  -- DETAIL = daftar terstruktur (maks 8 baris) yang dibaca layar untuk menampilkan alasan per baris.
+  raise exception '%',left('Koreksi tidak bisa disimpan: semua baris yang diubah tertahan. '||coalesce(msg,'')||case when blocked_count>8 then format(' (dan %s baris lain)',blocked_count-8) else '' end,2000)
+   using detail=(select coalesce(jsonb_agg(b.x order by b.ord),'[]'::jsonb)::text from jsonb_array_elements(blocked) with ordinality b(x,ord) where b.ord<=8);
  end if;
  select coalesce(sum(j.debit-j.credit) filter(where a.code='170001'),0),coalesce(sum(j.debit-j.credit) filter(where a.code in('720010','810004')),0) into inventory,contra from public.journal_lines j join public.coa_accounts a on a.id=j.account_id where j.entry_id in(select id from public.journal_entries where source=state->>'source' and source_ref=state->>'ref');
  select coalesce(sum(j.debit) filter(where a.code='170001'),0),coalesce(sum(j.credit) filter(where a.code='170001'),0) into jr_in,jr_out from public.journal_lines j join public.coa_accounts a on a.id=j.account_id where j.entry_id in(select id from public.journal_entries where source=state->>'source' and source_ref=state->>'ref');

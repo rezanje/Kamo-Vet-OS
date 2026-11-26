@@ -212,6 +212,13 @@ select pg_temp.ok((select (x->>'old_qty')::numeric=12 and (x->>'new_qty')::numer
 select pg_temp.ok((select p->>'token' is not null and (pg_temp.pv('s2','{"d":14,"e":8}')->>'token')<>p->>'token' from s2p),'S2 token pratinjau mengikat daftar tertahan (token beda bila baris yang diubah berbeda)');
 select pg_temp.ok((pg_temp.pv('s2','{"d":14,"e":8}')->>'token')<>(pg_temp.pv('s2','{"d":14,"e":8,"a":10}')->>'token') and pg_temp.pv('s2','{"d":14,"e":8,"a":10}')->'lines'=pg_temp.pv('s2','{"d":14,"e":8}')->'lines','S2 token mengikat daftar tertahan: baris yang diterapkan sama persis, daftar tertahan beda -> token beda');
 select pg_temp.ok(position('Koreksi tidak bisa disimpan: semua baris yang diubah tertahan' in pg_temp.pve('s2','{"a":10}'))=1 and position('Barang s2.a' in pg_temp.pve('s2','{"a":10}'))>0 and position('sudah terpakai' in pg_temp.pve('s2','{"a":10}'))>0,'S2 hanya baris tertahan yang diubah: galat berisi nama barang + alasan');
+create function pg_temp.pvd(label text,ch jsonb) returns text language plpgsql as $$declare d text;begin
+ begin perform pg_temp.pv(label,ch);return 'OK';exception when others then get stacked diagnostics d=pg_exception_detail;return coalesce(d,'(tanpa detail)');end;end$$;
+create function pg_temp.dv(x jsonb,nm text,k text) returns text language sql as $$select e->>k from jsonb_array_elements(x) e where e->>'name'=nm$$;
+select pg_temp.ok((select jsonb_typeof(x)='array' and jsonb_array_length(x)=3 and pg_temp.dv(x,'Barang s2.a','reason') like 'Stok sudah terpakai%' and pg_temp.dv(x,'Barang s2.b','reason') like 'Lapisan FIFO sumber%' and pg_temp.dv(x,'Barang s2.c','reason') like 'Stok sudah terpakai%'
+  and pg_temp.dv(x,'Barang s2.a','old_qty')='12' and pg_temp.dv(x,'Barang s2.a','new_qty')='10' and pg_temp.dv(x,'Barang s2.a','item_id')=pg_temp.id('s2','a')::text
+  from (select pg_temp.pvd('s2','{"a":10,"b":9,"c":11}')::jsonb x) q),'S2 galat semua-tertahan membawa DETAIL JSON terstruktur (nama, jumlah, alasan per baris) untuk layar');
+select pg_temp.ok(pg_temp.pvd('s2','{"d":14}')='OK' and pg_temp.pvd('s2','{}')='(tanpa detail)','S2 galat lain tidak membawa DETAIL (hanya galat semua-tertahan)');
 select pg_temp.ok(pg_temp.pve('s2','{"a":10,"b":9,"c":11}') like '%Barang s2.a: Stok%' and pg_temp.pve('s2','{"a":10,"b":9,"c":11}') like '%Barang s2.b: Lapisan%' and pg_temp.pve('s2','{"a":10,"b":9,"c":11}') like '%Barang s2.c: Stok%','S2 beberapa baris tertahan: galat memuat semuanya satu per satu');
 select pg_temp.ok(pg_temp.pve('s2','{}')='Jumlah koreksi sama dengan hasil saat ini','S2 tidak ada baris diubah: galat lama dipertahankan');
 select pg_temp.ok((select pg_temp.pve('s2','{"d":14,"e":8}')='OK'),'S2 hanya baris yang aman diubah: pratinjau OK');
