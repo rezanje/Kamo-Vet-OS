@@ -359,6 +359,13 @@ export async function KasEntryScreen({
                     <td>
                       {/* Pengeluaran kasir dibatalkan dari layar kasirnya sendiri — di sini
                           cuma ditampilkan, supaya satu dokumen tidak punya dua tombol batal. */}
+                      {/* Pengeluaran toko diedit/dibatalkan di layar detailnya (ada jurnal koreksi & riwayat) —
+                          tombolnya ditaruh di sini juga karena orang mencarinya di Aksi (Anisa, 25 Nov 2026). */}
+                      {t.asal === "beban" && UUID.test(t.id) && (
+                        <Link href={`/buku-besar/beban/${t.id}`} className="btn-def" style={{ padding: "3px 8px", fontSize: 10.5, textDecoration: "none", display: "inline-block" }}>
+                          {bolehEdit && !t.dibatalkan ? "Edit" : "Lihat"}
+                        </Link>
+                      )}
                       {t.asal === "kas" && UUID.test(t.id) && <div><Link href={`/kas-bank/kas-${keluar ? "keluar" : "masuk"}/lampiran/${t.id}`} style={{ color: "#2563eb", fontSize: 10.5 }}>Lampiran</Link></div>}
                       {!t.dibatalkan && t.asal === "kas" && (bolehEdit ? <KasCorrectionForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} tanggal={t.tanggal} accountId={t.accountId} lawanCode={t.lawanCode} jumlah={t.jumlah} keterangan={t.keterangan} rekening={rekening} coa={coa} branchId={t.branchId} cabangNama={t.cabang} branches={(branches ?? []) as { id: string; name: string }[]} /> : <KasVoidForm userId={user?.id ?? ""} jenis={jenis} id={t.id} revision={t.revision} />)}
                     </td>
@@ -378,7 +385,7 @@ export async function KasEntryScreen({
       <div style={{ fontSize: 10, color: "var(--td)", marginTop: 10 }}>
         Transaksi tidak bisa dihapus — dibatalkan dengan jurnal balik bertanggal sama, supaya laporan
         bulan mana pun tidak ikut bergeser.
-        {keluar && " Daftar ini sudah termasuk pengeluaran yang dicatat kasir cabang."}
+        {keluar && " Daftar ini sudah termasuk pengeluaran yang dicatat kasir cabang — koreksinya lewat tombol Edit di barisnya."}
       </div>
     </>
   );

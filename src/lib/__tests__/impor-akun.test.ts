@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { bacaFileAkun, rencanakanImporAkun, type AkunAda, type KonteksImporAkun } from "../impor-akun";
 import { PEMETAAN_AKUN } from "../impor-akun-pemetaan";
@@ -256,7 +256,12 @@ describe("file reading and mapping hook", () => {
 
 describe("database backstop uses the same system-code list", () => {
   it("migration array, recoded to the new chart of accounts, equals KODE_SISTEM", () => {
-    const sql = readFileSync(new URL("../../../supabase/migrations/20261104330000_coa_import_atomic.sql", import.meta.url), "utf8");
+    // Definisi terbaru yang berlaku (migrasi terakhir yang membuat ulang fungsinya).
+    const dir = new URL("../../../supabase/migrations/", import.meta.url);
+    const terakhir = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()
+      .filter((f) => /function public\.coa_import_system_codes\(\)/.test(readFileSync(new URL(f, dir), "utf8"))).at(-1)!;
+    expect(terakhir).toBeDefined();
+    const sql = readFileSync(new URL(terakhir, dir), "utf8");
     const m = sql.match(/coa_import_system_codes\(\)[\s\S]*?array\[([^\]]+)\]/);
     expect(m).not.toBeNull();
     // 20261105010000 rewrites every live function literal through its old→new table.

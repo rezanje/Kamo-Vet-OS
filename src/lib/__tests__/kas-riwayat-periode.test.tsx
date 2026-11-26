@@ -8,6 +8,9 @@ import { periodeKas } from "@/lib/kas-entry";
 const state = vi.hoisted(() => ({
   calls: [] as { table: string; op: string; args: unknown[] }[],
   cashTotal: 0,
+  boleh: false,
+  role: "OWNER",
+  expenses: [] as unknown[],
 }));
 
 function cashRow(i: number) {
@@ -29,10 +32,11 @@ function client() {
         select: log("select"), eq: log("eq"), order: log("order"), gte: log("gte"), lte: log("lte"),
         limit: () => { throw new Error("riwayat tidak boleh dipotong limit"); },
         range: (a: number, b: number) => { awal = a; akhir = b; state.calls.push({ table, op: "range", args: [a, b] }); return q; },
-        maybeSingle: async () => ({ data: table === "profiles" ? { role: "OWNER", is_active: true } : null, error: null }),
+        maybeSingle: async () => ({ data: table === "profiles" ? { role: state.role, is_active: true } : null, error: null }),
         then: (resolve: (v: unknown) => void) => {
           let data: unknown[] = [];
           if (table === "cash_entries") data = Array.from({ length: state.cashTotal }, (_, i) => cashRow(i)).slice(awal, akhir + 1);
+          if (table === "expenses") data = state.expenses.slice(awal, akhir + 1);
           if (table === "cash_accounts") data = [{ id: "rek-1", nama: "Kas Blu BCA", coa_code: "110005", branch_id: null }];
           resolve({ data, error: null });
         },
@@ -42,7 +46,8 @@ function client() {
   };
 }
 
-vi.mock("@/lib/master-guard", () => ({ bolehTransaksiKas: async () => false }));
+vi.mock("@/lib/master-guard", () => ({ bolehTransaksiKas: async () => state.boleh }));
+vi.mock("@/components/LocalTransactionDraft", async (orig) => ({ ...(await orig<object>()), TransactionForm: ({ children }: { children: React.ReactNode }) => <form>{children}</form> }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => client() }));
 vi.mock("@/lib/tanggal", async (orig) => ({ ...(await orig<object>()), hariIniWIB: () => "2026-11-26" }));
 vi.mock("@/components/LampiranPicker", () => ({ LampiranPicker: () => null }));
@@ -55,7 +60,7 @@ vi.mock("next/navigation", async (orig) => ({
 
 import { KasEntryScreen } from "@/app/(app)/kas-bank/kas/KasEntryScreen";
 
-beforeEach(() => { state.calls = []; state.cashTotal = 0; });
+beforeEach(() => { state.calls = []; state.cashTotal = 0; state.boleh = false; state.role = "OWNER"; state.expenses = []; });
 
 it("defaults the period to the start of this month through today and fixes bad input", () => {
   expect(periodeKas(undefined, undefined, "2026-11-26")).toEqual({ dari: "2026-11-01", sampai: "2026-11-26" });
@@ -85,4 +90,22 @@ it("uses the period chosen in the filter", async () => {
   expect(state.calls.some((c) => c.table === "expenses")).toBe(false); // kas masuk tidak memuat beban kasir
   expect(html).toContain('name="dari"');
   expect(html).toContain('value="2026-10-01"');
+});
+
+// Anisa 25 Nov 2026: "kalo edit pengeluaran yang diinput toko dimana?" — tombolnya ada di baris itu sendiri.
+const EXP = "8e692432-a8c6-4363-bf23-24c13b73faf6";
+const expense = (voided: boolean) => ({ id: EXP, tanggal: "2026-11-03", kategori: "Beban Listrik", deskripsi: "token listrik",
+  jumlah: 193500, metode_bayar: "Tunai", voided_at: voided ? "2026-11-04T00:00:00Z" : null, branches: { name: "Kamo Petshop Ciawi" } });
+
+it("offers an Edit button for a store expense to finance staff", async () => {
+  state.boleh = true; state.role = "FINANCE"; state.expenses = [expense(false)];
+  const html = renderToStaticMarkup(await KasEntryScreen({ jenis: "Keluar", searchParams: Promise.resolve({}) }));
+  expect(html).toMatch(new RegExp(`href="/buku-besar/beban/${EXP}"[^>]*>Edit<`));
+});
+
+it("shows only a view link for a cancelled store expense", async () => {
+  state.boleh = true; state.role = "FINANCE"; state.expenses = [expense(true)];
+  const html = renderToStaticMarkup(await KasEntryScreen({ jenis: "Keluar", searchParams: Promise.resolve({}) }));
+  expect(html).toMatch(new RegExp(`href="/buku-besar/beban/${EXP}"[^>]*>Lihat<`));
+  expect(html).not.toMatch(/>Edit</);
 });

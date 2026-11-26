@@ -77,7 +77,27 @@ export function hrefNomorModul(nomor: string): string | null {
  * OPO.00385, JRN-202608-0091, POS-20260814-0003.
  */
 export function tampakNomorDokumen(teks: string): boolean {
-  return /^[A-Z]{2,4}[.\-/][A-Za-z0-9.\-/]*\d{3,}$/.test(teks.trim());
+  // Struk kasir offline membawa akhiran acak 4 huruf/angka (POS-20261101-0001-6L1M) — ~75% struk
+  // November begitu, dan dulu tidak bisa diklik dari Buku Besar (laporan Anisa 25 Nov 2026).
+  return /^[A-Z]{2,4}[.\-/][A-Za-z0-9.\-/]*\d{3,}(?:-[A-Z0-9]{4})?$/.test(teks.trim());
+}
+
+/**
+ * Tautan untuk jurnal yang source_ref-nya id (UUID), bukan nomor dokumen — Buku Besar menampilkan
+ * deretan huruf-angka yang buntu (laporan Anisa 25 Nov 2026: pengeluaran kasir toko di mutasi
+ * Beban Listrik tidak tersambung ke transaksinya, jadi tidak bisa langsung dikoreksi).
+ */
+export function tautanSumberJurnal(source: string | null | undefined, ref: string | null | undefined): { href: string; label: string } | null {
+  const id = (ref ?? "").trim();
+  if (!UUID_POLOS.test(id)) return null;
+  switch (source) {
+    case "expense": case "expense-reversal": case "expense-correction":
+      return { href: `/buku-besar/beban/${id}`, label: "Pengeluaran kasir" };
+    case "manual": case "manual-reversal": case "manual-correction":
+      return { href: `/keuangan/jurnal?entry=${id}#journal-${id}`, label: "Jurnal umum" };
+    default:
+      return null;
+  }
 }
 
 /**
@@ -89,7 +109,7 @@ export function tampakNomorDokumen(teks: string): boolean {
  * di keterangan jurnal; bila tidak ada, tampilkan source_ref apa adanya.
  */
 const UUID_POLOS = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const NOMOR_DI_KETERANGAN = /(?<![A-Za-z0-9])(?:POS|INV|KWT|UMK|FJ|FJK|SO|DO|PO|PB|RJ|RET)[-.][A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*/;
+const NOMOR_DI_KETERANGAN = /(?<![A-Za-z0-9])(?:POS|INV|KWT|UMK|FJ|FJK|SO|DO|PO|PB|RJ|RET|KK|KM)[-.][A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*/;
 export function nomorDokumenJurnal(sourceRef: string | null | undefined, deskripsi: string | null | undefined): string {
   const ref = (sourceRef ?? "").trim();
   if (!ref || !UUID_POLOS.test(ref)) return ref;
