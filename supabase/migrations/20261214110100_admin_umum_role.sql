@@ -46,6 +46,9 @@ end $pre$;
 
 create schema admin_umum_private;
 revoke all on schema admin_umum_private from public, anon, authenticated, service_role;
+-- Catatan objek yang DIUBAH penulis ulang (supaya kembalikan_semua hanya membalik yang kita ubah, bukan daftar ber-ADMIN_UMUM tulisan migrasi lain).
+create table admin_umum_private.diubah (jenis text not null, nama text not null, primary key (jenis, nama));
+revoke all on table admin_umum_private.diubah from public, anon, authenticated, service_role;
 
 -- ───────────────────────── 1. Penulis ulang murni ─────────────────────────
 -- mode 'fn'  : teks fungsi (pg_get_functiondef): daftar `in (...)` / `array[...]` yang hanya berisi string, serta `= 'ADMIN'` / `<> 'ADMIN'`.
@@ -77,9 +80,15 @@ revoke all on function admin_umum_private.tulis_ulang(text, text) from public, a
 
 -- Sisa 'ADMIN' yang BELUM dipasangkan dengan ADMIN_UMUM (bentuk tak dikenal). Pengecualian tertulis: penanda /*umum*/ dan `when 'ADMIN' then N when 'ADMIN_UMUM'`.
 create function admin_umum_private.sisa(p_src text) returns integer
-language sql immutable set search_path = '' as $f$
-  select count(*)::int from regexp_matches(p_src, '''ADMIN''(?![A-Za-z_0-9])(?!\s*,\s*''ADMIN_UMUM'')(?!::[a-z_]+\s*,\s*''ADMIN_UMUM'')(?!\s*/\*umum\*/)(?!\s+then\s+[0-9]+\s+when\s+''ADMIN_UMUM'')', 'g');
-$f$;
+language plpgsql immutable set search_path = '' as $f$
+declare s text := p_src; m text[];
+begin
+  -- daftar in(...)/array[...] yang SUDAH memuat 'ADMIN_UMUM' (ditulis tangan oleh migrasi lain, mis. rekap_setoran) dianggap berpasangan.
+  for m in select regexp_matches(s, '((?:\mnot\s+)?\min\s*\(\s*''[A-Za-z_]+''(?:\s*,\s*''[A-Za-z_]+'')*\s*\)|\marray\s*\[\s*''[A-Za-z_]+''(?:\s*,\s*''[A-Za-z_]+'')*\s*\])', 'gi') loop
+    if m[1] ~ '''ADMIN_UMUM''' then s := replace(s, m[1], ''); end if;
+  end loop;
+  return (select count(*)::int from regexp_matches(s, '''ADMIN''(?![A-Za-z_0-9])(?!\s*,\s*''ADMIN_UMUM'')(?!::[a-z_]+\s*,\s*''ADMIN_UMUM'')(?!\s*/\*umum\*/)(?!\s+then\s+[0-9]+\s+when\s+''ADMIN_UMUM'')', 'g'));
+end $f$;
 revoke all on function admin_umum_private.sisa(text) from public, anon, authenticated, service_role;
 
 create function admin_umum_private.kembalikan(p_src text, p_mode text) returns text
@@ -130,7 +139,7 @@ begin
     if not pg_has_role(current_user, r.proowner, 'USAGE') then
       jenis := 'fungsi'; nama := r.sig; status := 'DILEWATI_BUKAN_PEMILIK'; return next; continue;
     end if;
-    if not p_dry then execute v2; end if;
+    if not p_dry then execute v2; insert into admin_umum_private.diubah(jenis, nama) values ('fungsi', r.sig) on conflict do nothing; end if;
     jenis := 'fungsi'; nama := r.sig; status := 'DIUBAH'; return next;
   end loop;
   for r in
@@ -151,7 +160,7 @@ begin
     cmd := format('alter policy %I on %s', r.polname, r.rel)
            || case when v2 is not null then ' using (' || v2 || ')' else '' end
            || case when w2 is not null then ' with check (' || w2 || ')' else '' end;
-    if not p_dry then execute cmd; end if;
+    if not p_dry then execute cmd; insert into admin_umum_private.diubah(jenis, nama) values ('kebijakan', r.rel || '.' || r.polname) on conflict do nothing; end if;
     jenis := 'kebijakan'; nama := r.rel || '.' || r.polname; status := 'DIUBAH'; return next;
   end loop;
 end $f$;
@@ -166,6 +175,7 @@ begin
     select p.oid from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where p.prokind in ('f','p') and n.nspname not in ('pg_catalog','information_schema','extensions','admin_umum_private','auth','storage','realtime','vault','graphql','graphql_public','pgsodium','supabase_functions','supabase_migrations','net','cron','pgbouncer')
       and p.prosrc ~ 'ADMIN_UMUM' and not exists (select 1 from pg_depend e where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')
+      and p.oid::regprocedure::text in (select d.nama from admin_umum_private.diubah d where d.jenis = 'fungsi')
   loop
     v := pg_get_functiondef(r.oid); v2 := admin_umum_private.kembalikan(v, 'fn');
     if v2 <> v then execute v2; n := n + 1; end if;
@@ -174,6 +184,7 @@ begin
     select pol.polname, pol.polrelid::regclass::text as rel, pg_get_expr(pol.polqual, pol.polrelid) as q, pg_get_expr(pol.polwithcheck, pol.polrelid) as wc
     from pg_policy pol
     where (coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), '')) ~ 'ADMIN_UMUM'
+      and (pol.polrelid::regclass::text || '.' || pol.polname) in (select d.nama from admin_umum_private.diubah d where d.jenis = 'kebijakan')
   loop
     v2 := case when r.q is null then null else admin_umum_private.kembalikan(r.q, 'pol') end;
     w2 := case when r.wc is null then null else admin_umum_private.kembalikan(r.wc, 'pol') end;
