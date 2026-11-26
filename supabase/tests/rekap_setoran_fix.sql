@@ -384,3 +384,129 @@ reset role;
 select pg_temp.sub('pE','04','e-aj2');
 select pg_temp.appr('pE','01','ap-e2');
 select pg_temp.ok((select r->>'penyelesaian'='Pas' from res where name='ap-pE') and pg_temp.st('pE')='Disetujui' and (select count(*) from expenses where deskripsi like 'Setoran '||(select no_setoran from setoran where id=pg_temp.sid('pE'))||'%')=0,'M2 jalan keluar: tolak -> hapus baris -> ajukan ulang -> disetujui Pas, tidak ada pengeluaran terposting');
+
+-- ── 4. M3: storage bucket dokumen, awalan setoran/ ───────────────────────────────────────────────
+-- objek uji: f1,f2 cabang A (milik 04 dan 05); f3 cabang X (milik 08); z non-awalan; m1..m3 cabang K (m1 akan diklaim); rusak: tanpa cabang / bersarang / cabang bukan uuid
+select pg_temp.obj('setoran/f6200000-0000-4000-8000-00000000000a/f1.jpg',pg_temp.u('04')::text);
+select pg_temp.obj('setoran/f6200000-0000-4000-8000-00000000000a/f2.jpg',pg_temp.u('05')::text);
+select pg_temp.obj('setoran/f6200000-0000-4000-8000-0000000000b1/f3.jpg',pg_temp.u('08')::text);
+select pg_temp.obj('pembelian/zz.jpg',pg_temp.u('08')::text);
+select pg_temp.obj('setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg',pg_temp.u('04')::text);
+select pg_temp.obj('setoran/f6200000-0000-4000-8000-0000000000a5/m2.jpg',pg_temp.u('04')::text);
+select pg_temp.obj('setoran/f6200000-0000-4000-8000-0000000000a5/m3.jpg',pg_temp.u('05')::text);
+select pg_temp.obj('setoran/rusak1.jpg',pg_temp.u('04')::text);
+select pg_temp.obj('setoran/f6200000-0000-4000-8000-00000000000a/sub/rusak2.jpg',pg_temp.u('04')::text);
+select pg_temp.obj('setoran/bukan-uuid/rusak3.jpg',pg_temp.u('04')::text);
+create temp table nm_obj(n text);grant all on nm_obj to public;
+insert into nm_obj values('setoran/f6200000-0000-4000-8000-00000000000a/f1.jpg'),('setoran/f6200000-0000-4000-8000-00000000000a/f2.jpg'),('setoran/f6200000-0000-4000-8000-0000000000b1/f3.jpg');
+create temp table nm_bad(n text);grant all on nm_bad to public;
+insert into nm_bad values('setoran/rusak1.jpg'),('setoran/f6200000-0000-4000-8000-00000000000a/sub/rusak2.jpg'),('setoran/bukan-uuid/rusak3.jpg');
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_obj)$$)='2','M3: STAFF 04 (cabang A) melihat berkas setoran cabang A (2) dan TIDAK berkas cabang X');
+select pg_temp.ok(pg_temp.ra('05',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_obj)$$)='2' and pg_temp.ra('0e',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_obj)$$)='2','M3: rekan STAFF 05 dan 0e (cabang A) juga melihat 2');
+select pg_temp.ok(pg_temp.ra('08',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_obj)$$)='1' and pg_temp.ra('07',$$select count(*) from storage.objects where bucket_id='dokumen' and name like 'setoran/%' and name in(select n from nm_obj)$$)='1','M3: STAFF cabang X (07, 08) hanya melihat berkas cabang X (1): tidak dapat mendaftar folder setoran cabang lain');
+select pg_temp.ok(pg_temp.ra('01',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_obj)$$)='3' and pg_temp.ra('0d',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_obj)$$)='3','M3: OWNER dan ADMIN_UMUM (semua cabang) melihat 3');
+select pg_temp.ok(pg_temp.ra('02',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_obj)$$)='2' and pg_temp.ra('03',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_obj)$$)='2','M3: ADMIN/FINANCE dengan akses cabang terbatas melihat berkas cabangnya saja (2)');
+select pg_temp.ok(pg_temp.ra('0b',$$select count(*) from storage.objects where bucket_id='dokumen' and name like 'setoran/%'$$)='0','M3: DOCTOR 0b melihat 0 berkas setoran/ (walau punya akses cabang)');
+select pg_temp.ok(pg_temp.ra('06',$$select count(*) from storage.objects$$)='0','Admin Online: 0 objek storage apa pun (pagar lama tetap)');
+select pg_temp.ok(pg_temp.ra('09',$$select count(*) from storage.objects where bucket_id='dokumen' and name like 'setoran/%'$$)='0','Finance nonaktif 09: 0 berkas setoran/');
+select pg_temp.ok(pg_temp.ra('01',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_bad)$$)='0' and pg_temp.ra('04',$$select count(*) from storage.objects where bucket_id='dokumen' and name in(select n from nm_bad)$$)='0','M3: nama rusak di bawah setoran/ (tanpa cabang, bersarang, cabang bukan uuid) tidak terbaca siapa pun lewat API (Owner pun)');
+select pg_temp.ok(pg_temp.ra('0b',$$select count(*) from storage.objects where bucket_id='dokumen' and name='pembelian/zz.jpg'$$)='1' and pg_temp.ra('04',$$select count(*) from storage.objects where bucket_id='dokumen' and name='pembelian/zz.jpg'$$)='1','diferensial: berkas non-setoran (pembelian/) tetap terbaca DOCTOR dan STAFF seperti semula');
+-- unggah
+select pg_temp.ok(pg_temp.dml('04',$$insert into storage.objects(bucket_id,name,owner_id) values('dokumen','setoran/f6200000-0000-4000-8000-00000000000a/baru1.jpg',auth.uid()::text)$$)='1','M3: STAFF 04 dapat mengunggah ke setoran/<cabang A>/');
+select pg_temp.ok(pg_temp.dml('04',$$insert into storage.objects(bucket_id,name,owner_id) values('dokumen','setoran/f6200000-0000-4000-8000-0000000000b1/baru2.jpg',auth.uid()::text)$$) like 'ERR:%row-level security%','M3: STAFF 04 tidak dapat mengunggah ke folder cabang X');
+select pg_temp.ok(pg_temp.dml('04',$$insert into storage.objects(bucket_id,name,owner_id) values('dokumen','setoran/baru3.jpg',auth.uid()::text)$$) like 'ERR:%row-level security%','M3: unggah ke setoran/ tanpa cabang ditolak');
+select pg_temp.ok(pg_temp.dml('0b',$$insert into storage.objects(bucket_id,name,owner_id) values('dokumen','setoran/f6200000-0000-4000-8000-00000000000a/baru4.jpg',auth.uid()::text)$$) like 'ERR:%row-level security%','M3: DOCTOR tidak dapat mengunggah ke setoran/');
+select pg_temp.ok(pg_temp.dml('06',$$insert into storage.objects(bucket_id,name,owner_id) values('dokumen','setoran/f6200000-0000-4000-8000-00000000000a/baru5.jpg',auth.uid()::text)$$) like 'ERR:%row-level security%','Admin Online tidak dapat mengunggah ke setoran/');
+select pg_temp.ok(pg_temp.dml('04',$$insert into storage.objects(bucket_id,name,owner_id) values('dokumen','pembelian/baru6.jpg',auth.uid()::text)$$)='1' and pg_temp.dml('0b',$$insert into storage.objects(bucket_id,name,owner_id) values('dokumen','pembelian/baru7.jpg',auth.uid()::text)$$)='1','diferensial: unggah non-setoran tetap diizinkan (STAFF dan DOCTOR)');
+select pg_temp.ok(pg_temp.dml('01',$$insert into storage.objects(bucket_id,name,owner_id) values('dokumen','setoran/f6200000-0000-4000-8000-0000000000b1/baru8.jpg',auth.uid()::text)$$)='1','OWNER dapat mengunggah ke folder cabang mana pun');
+-- klaim m1 lewat baris pengeluaran nyata (setoran K)
+select pg_temp.save('sK1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('a5'),'04',3,0,300000)));
+select pg_temp.mk('pK',pg_temp.br('a5'),'04');
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.save('k-e1',public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',10000,'dengan m1',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'),pg_temp.rev('pK'),pg_temp.kk('k-e1')));
+reset role;
+select pg_temp.ok((select count(*)=1 from setoran_lampiran_pakai where path='setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg' and jenis='pengeluaran' and setoran_id=pg_temp.sid('pK') and dipakai_oleh=pg_temp.u('04')),'M5: berkas m1 diklaim oleh baris pengeluaran setoran K');
+-- hapus
+select pg_temp.ok(pg_temp.dml('04',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-0000000000a5/m2.jpg'$$)='1','M3: STAFF 04 dapat menghapus unggahan yatim miliknya sendiri (m2)');
+select pg_temp.ok(pg_temp.dml('04',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-0000000000a5/m3.jpg'$$)='0','M3: STAFF 04 tidak dapat menghapus unggahan yatim milik rekan (m3)');
+select pg_temp.ok(pg_temp.dml('05',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-0000000000a5/m3.jpg'$$)='1','M3: pemilik (05) dapat menghapus m3');
+select pg_temp.ok(pg_temp.dml('01',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-0000000000a5/m3.jpg'$$)='1','M3: OWNER dapat menghapus berkas yatim milik orang lain');
+select pg_temp.ok(pg_temp.dml('04',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'$$)='0','M3: berkas yang sudah dipakai baris (m1) tidak dapat dihapus pengunggahnya (bukti tidak boleh hilang)');
+select pg_temp.ok(pg_temp.dml('01',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'$$)='0' and pg_temp.dml('03',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'$$)='0','M3: berkas terklaim juga tidak dapat dihapus OWNER maupun FINANCE');
+select pg_temp.ok(pg_temp.dml('08',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-00000000000a/f1.jpg'$$)='0' and pg_temp.dml('0b',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-00000000000a/f1.jpg'$$)='0','M3: staf cabang lain dan DOCTOR tidak dapat menghapus berkas setoran cabang A');
+select pg_temp.ok(pg_temp.dml('05',$$delete from storage.objects where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-00000000000a/f1.jpg'$$)='0','M3: rekan cabang A (05) tidak dapat menghapus berkas f1 milik 04');
+select pg_temp.ok(pg_temp.dml('0b',$$delete from storage.objects where bucket_id='dokumen' and name='pembelian/zz.jpg'$$)='1','diferensial: DOCTOR masih dapat menghapus berkas non-setoran (perilaku lama; di luar lingkup)');
+-- ubah
+select pg_temp.ok(pg_temp.dml('04',$$update storage.objects set name=name||'x' where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-00000000000a/f1.jpg'$$)='0' and pg_temp.dml('01',$$update storage.objects set name=name||'x' where bucket_id='dokumen' and name='setoran/f6200000-0000-4000-8000-00000000000a/f1.jpg'$$)='0','M3: berkas setoran tidak dapat diubah (ganti nama/timpa) oleh STAFF maupun OWNER');
+select pg_temp.ok(pg_temp.dml('04',$$update storage.objects set name=name where bucket_id='dokumen' and name='pembelian/zz.jpg'$$)='1','diferensial: ubah berkas non-setoran tetap seperti semula (kebijakan uji)');
+-- fungsi kebijakan langsung
+select pg_temp.ok(pg_temp.ra('04',$$select public.setoran_berkas_boleh('setoran/f6200000-0000-4000-8000-00000000000a/apa.jpg')::text$$)='true' and pg_temp.ra('08',$$select public.setoran_berkas_boleh('setoran/f6200000-0000-4000-8000-00000000000a/apa.jpg')::text$$)='false','setoran_berkas_boleh: STAFF cabang A true, STAFF cabang X false');
+select pg_temp.ok(pg_temp.ra('0b',$$select public.setoran_berkas_boleh('setoran/f6200000-0000-4000-8000-00000000000a/apa.jpg')::text$$)='false' and pg_temp.ra('04',$$select public.setoran_berkas_boleh(null)::text$$)='false' and pg_temp.ra('01',$$select public.setoran_berkas_boleh('setoran/xx')::text$$)='false','setoran_berkas_boleh: DOCTOR false, nama kosong false, nama rusak false (Owner pun)');
+select pg_temp.ok(pg_temp.ra('04',$$select public.setoran_berkas_boleh_hapus('setoran/f6200000-0000-4000-8000-00000000000a/f1.jpg','x')::text$$)='false' and pg_temp.ra('04',$$select public.setoran_berkas_boleh_hapus('setoran/f6200000-0000-4000-8000-00000000000a/f1.jpg',auth.uid()::text)::text$$)='true','setoran_berkas_boleh_hapus: bukan pemilik false, pemilik true (berkas yatim)');
+select pg_temp.ok(pg_temp.ra('04',$$select public.setoran_berkas_boleh_hapus('setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg',auth.uid()::text)::text$$)='false','setoran_berkas_boleh_hapus: berkas terklaim false walau pemilik');
+select pg_temp.ok(pg_temp.ra('04',$$select public.setoran_berkas_cabang('setoran/f6200000-0000-4000-8000-00000000000a/apa.jpg')::text$$)='f6200000-0000-4000-8000-00000000000a' and pg_temp.ra('04',$$select coalesce(public.setoran_berkas_cabang('setoran/f6200000-0000-4000-8000-00000000000a/a/b.jpg')::text,'NULL')$$)='NULL' and pg_temp.ra('04',$$select coalesce(public.setoran_berkas_cabang('Setoran/f6200000-0000-4000-8000-00000000000a/b.jpg')::text,'NULL')$$)='NULL','setoran_berkas_cabang: path sah -> cabang; bersarang -> kosong; huruf besar -> kosong');
+
+-- ── 5. M5: validasi + klaim berkas bukti; peringatan kembar ──────────────────────────────────────
+select pg_temp.obj('setoran/f6200000-0000-4000-8000-0000000000a5/n1.jpg',pg_temp.u('04')::text);select pg_temp.obj('setoran/f6200000-0000-4000-8000-0000000000a5/n2.jpg',pg_temp.u('04')::text);
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.reject($$select public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',1000,'x',pg_temp.lampp('f.jpg'),pg_temp.rev('pK'),pg_temp.kk('m5-1'))$$,'SETORAN_LAMPIRAN_PATH','M5: path tanpa awalan setoran/<cabang>/ ditolak');
+select pg_temp.reject($$select public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',1000,'x',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000b1/f3.jpg'),pg_temp.rev('pK'),pg_temp.kk('m5-2'))$$,'SETORAN_LAMPIRAN_PATH','M5: berkas milik cabang LAIN (X) tidak dapat dilampirkan ke setoran cabang K');
+select pg_temp.reject($$select public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',1000,'x',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/sub/n1.jpg'),pg_temp.rev('pK'),pg_temp.kk('m5-3'))$$,'SETORAN_LAMPIRAN_PATH','M5: path bersarang ditolak');
+select pg_temp.reject($$select public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',1000,'x',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/'),pg_temp.rev('pK'),pg_temp.kk('m5-4'))$$,'SETORAN_LAMPIRAN_PATH','M5: nama berkas kosong ditolak');
+select pg_temp.reject($$select public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',1000,'x',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/tidakada.jpg'),pg_temp.rev('pK'),pg_temp.kk('m5-5'))$$,'SETORAN_LAMPIRAN_TIDAK_ADA','M5: berkas yang tidak ada di storage ditolak');
+select pg_temp.reject($$select public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',1000,'x',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/n1.jpg')||pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/n1.jpg'),pg_temp.rev('pK'),pg_temp.kk('m5-6'))$$,'SETORAN_LAMPIRAN_GANDA','M5: berkas yang sama dua kali dalam satu baris ditolak');
+select pg_temp.reject($$select public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',1000,'x',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'),pg_temp.rev('pK'),pg_temp.kk('m5-7'))$$,'SETORAN_LAMPIRAN_PAKAI','M5: berkas yang sudah dipakai baris lain di setoran yang sama ditolak');
+select pg_temp.reject($$select public.setoran_tambah_transfer(pg_temp.sid('pK'),pg_temp.today()-1,1000,'Transfer','f6500000-0000-4000-8000-000000000004',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'),null,pg_temp.rev('pK'),pg_temp.kk('m5-8'))$$,'SETORAN_LAMPIRAN_PAKAI','M5: bukti pengeluaran tidak dapat dipakai ulang sebagai bukti transfer');
+select pg_temp.reject($$select public.setoran_tambah_transfer(pg_temp.sid('pK'),pg_temp.today()-1,1000,'Transfer','f6500000-0000-4000-8000-000000000004',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/rusak.jpg'),null,pg_temp.rev('pK'),pg_temp.kk('m5-9'))$$,'SETORAN_LAMPIRAN_TIDAK_ADA','M5: bukti transfer yang tidak ada di storage ditolak');
+select pg_temp.reject($$select public.setoran_tambah_transfer(pg_temp.sid('pK'),pg_temp.today()-1,1000,'Transfer','f6500000-0000-4000-8000-000000000004',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000b1/f3.jpg'),null,pg_temp.rev('pK'),pg_temp.kk('m5-10'))$$,'SETORAN_LAMPIRAN_PATH','M5: bukti transfer dari folder cabang lain ditolak');
+-- pakai ulang di setoran lain cabang yang sama
+reset role;
+select pg_temp.mk('pK2',pg_temp.br('a5'),'04',6);
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.reject($$select public.setoran_tambah_pengeluaran(pg_temp.sid('pK2'),pg_temp.today()-6,'Operasional',1000,'x',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'),pg_temp.rev('pK2'),pg_temp.kk('m5-11'))$$,'SETORAN_LAMPIRAN_PAKAI','M5: berkas yang sudah dipakai di SETORAN LAIN (periode lain, cabang sama) ditolak');
+-- idempoten: panggilan ulang dengan kunci+isi sama mengembalikan hasil lama (tidak kena PAKAI)
+select pg_temp.save('k-e1b',public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',10000,'dengan m1',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'),(select (r->>'revision')::int-1 from res where name='k-e1'),pg_temp.kk('k-e1')));
+select pg_temp.ok((select (r->>'ulang')::boolean and r->>'baris_id'=(select r->>'baris_id' from res where name='k-e1') from res where name='k-e1b'),'M5: percobaan ulang dengan kunci dan isi sama mengembalikan hasil lama (tanpa galat berkas dipakai)');
+-- lepas klaim saat baris dihapus (Draft), lalu pakai lagi
+select pg_temp.save('k-del',public.setoran_hapus_pengeluaran(pg_temp.sid('pK'),(select (r->>'baris_id')::uuid from res where name='k-e1'),pg_temp.rev('pK'),pg_temp.kk('k-del')));
+reset role;
+select pg_temp.ok((select count(*)=0 from setoran_lampiran_pakai where path='setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'),'M5: klaim dilepas saat baris dihapus selagi Draft');
+select pg_temp.ok((select e.data->>'jumlah'='10000.00' or (e.data->>'jumlah')::numeric=10000 from setoran_event e where e.setoran_id=pg_temp.sid('pK') and e.jenis='pengeluaran_dihapus') and (select e.data->'lampiran'->0->>'path'='setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg' from setoran_event e where e.setoran_id=pg_temp.sid('pK') and e.jenis='pengeluaran_dihapus'),'m2: jejak baris yang dihapus menyimpan jumlah dan path berkas');
+select pg_temp.ok((select (e.data->>'jumlah')::numeric=10000 and e.data->>'kategori'='Operasional' and e.data->'lampiran'->0->>'path' like '%/m1.jpg' from setoran_event e where e.setoran_id=pg_temp.sid('pK') and e.jenis='pengeluaran_ditambah'),'m2: jejak baris yang ditambah menyimpan jumlah, kategori, path berkas');
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.save('k-e2',public.setoran_tambah_pengeluaran(pg_temp.sid('pK'),pg_temp.today()-3,'Operasional',10000,'dengan m1 lagi',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'),pg_temp.rev('pK'),pg_temp.kk('k-e2')));
+select pg_temp.ok(pg_temp.ra('04',$$select count(*) from storage.objects where name='setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg'$$)='1','berkas m1 masih ada di storage dan dapat dipakai lagi sesudah dilepas');
+-- transfer: klaim dan lepas
+select pg_temp.obj('setoran/f6200000-0000-4000-8000-0000000000a5/t1.jpg',pg_temp.u('04')::text);
+select pg_temp.save('k-t1',public.setoran_tambah_transfer(pg_temp.sid('pK'),pg_temp.today()-1,100000,'Transfer','f6500000-0000-4000-8000-000000000004',pg_temp.lampp('setoran/f6200000-0000-4000-8000-0000000000a5/t1.jpg'),null,pg_temp.rev('pK'),pg_temp.kk('k-t1')));
+reset role;
+select pg_temp.ok((select count(*)=1 from setoran_lampiran_pakai where path like '%/t1.jpg' and jenis='transfer' and baris_id=(select (r->>'transfer_id')::uuid from res where name='k-t1')),'M5: bukti transfer diklaim (jenis transfer)');
+select pg_temp.as_('04');set local role authenticated;
+select pg_temp.save('k-tdel',public.setoran_hapus_transfer(pg_temp.sid('pK'),(select (r->>'transfer_id')::uuid from res where name='k-t1'),pg_temp.rev('pK'),pg_temp.kk('k-tdel')));
+reset role;
+select pg_temp.ok((select count(*)=0 from setoran_lampiran_pakai where path like '%/t1.jpg') and (select (e.data->>'jumlah')::numeric=100000 and e.data->>'metode'='Transfer' from setoran_event e where e.setoran_id=pg_temp.sid('pK') and e.jenis='transfer_dihapus'),'M5: klaim bukti transfer dilepas saat transfer dihapus; jejak menyimpan jumlah dan metode');
+-- klaim beku sesudah diajukan
+select pg_temp.pay('pK',290000,'Serah tunai','04','03','k-t2',2);
+select pg_temp.sub('pK','04','k-aj');
+select pg_temp.reject($$delete from setoran_lampiran_pakai where setoran_id=pg_temp.sid('pK')$$,'SETORAN_BEKU','M5: klaim berkas setoran Diajukan tidak dapat dilepas (trigger)');
+select pg_temp.reject($$update setoran_lampiran_pakai set path=path||'x' where setoran_id=pg_temp.sid('pK')$$,'SETORAN_JEJAK','M5: klaim tidak dapat diubah');
+select pg_temp.reject($$truncate setoran_lampiran_pakai$$,'SETORAN_JEJAK','M5: klaim tidak dapat di-TRUNCATE');
+select pg_temp.reject($$insert into setoran_lampiran_pakai(path,setoran_id,jenis,baris_id,dipakai_oleh) values('setoran/f6200000-0000-4000-8000-0000000000a5/m1.jpg',pg_temp.sid('pK2'),'pengeluaran',gen_random_uuid(),pg_temp.u('04'))$$,'duplicate key','M5: path klaim unik di tingkat database (PK)');
+select pg_temp.reject($$insert into setoran_lampiran_pakai(path,setoran_id,jenis,baris_id,dipakai_oleh) values('x',pg_temp.sid('pK2'),'lain',gen_random_uuid(),pg_temp.u('04'))$$,'check constraint','M5: jenis klaim dibatasi pengeluaran/transfer');
+select pg_temp.ok(pg_temp.dml('04',$$delete from setoran_lampiran_pakai$$) like 'ERR:permission denied%' and pg_temp.dml('04',$$select 1 from setoran_lampiran_pakai$$) like 'ERR:permission denied%','M5: klien tidak dapat membaca atau mengubah tabel klaim');
+select pg_temp.ok((select count(*)=2 from setoran_lampiran_pakai where setoran_id=pg_temp.sid('pK')) or (select count(*)=1 from setoran_lampiran_pakai where setoran_id=pg_temp.sid('pK')),'klaim berkas setoran K tercatat');
+-- layar penyetuju: pengeluaran mirip kasir + kembar
+select pg_temp.save('sL1',jsonb_build_object('id',pg_temp.mk_shift(pg_temp.br('a6'),'04',3,0,300000)));
+insert into expenses(branch_id,tanggal,kategori,deskripsi,jumlah,metode_bayar,shift_id,created_by) values(pg_temp.br('a6'),pg_temp.today()-3,'Operasional','galon dari kasir',25000,'Tunai',pg_temp.sid('sL1'),pg_temp.u('04'));
+select pg_temp.mk('pL',pg_temp.br('a6'),'04');
+select pg_temp.exps('pL','04',3,'Operasional',25000,'l-e1');select pg_temp.exps('pL','04',3,'Operasional',25000,'l-e2');select pg_temp.exps('pL','04',3,'Transportasi',7000,'l-e3');
+select pg_temp.pay('pL',243000,'Serah tunai','04','03','l-t1',2);
+select pg_temp.sub('pL','04','l-aj');
+select pg_temp.as_('01');set local role authenticated;
+select pg_temp.save('dL-app',public.setoran_detail(pg_temp.sid('pL')));
+select pg_temp.as_('04');
+select pg_temp.save('dL-staf',public.setoran_detail(pg_temp.sid('pL')));
+reset role;
+select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PENGELUARAN_MIRIP_KASIR' and (w->>'jumlah')::int=2 and w->>'tingkat'='peringatan') from res where name='dL-app'),'M5: penyetuju melihat peringatan PENGELUARAN_MIRIP_KASIR (2 baris sama dengan pengeluaran kasir)');
+select pg_temp.ok((select exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode'='PENGELUARAN_KEMBAR' and (w->>'jumlah')::int=1) from res where name='dL-app') and (select not exists(select 1 from jsonb_array_elements(r->'keuangan'->'peringatan') w where w->>'kode' in('PENGELUARAN_MELEBIHI','TANPA_SHIFT','PEMISAHAN_TUGAS')) from res where name='dL-app'),'M5: peringatan PENGELUARAN_KEMBAR (1 kelompok); tidak ada peringatan lain yang keliru');
+select pg_temp.ok((select not r ?| array['peringatan','keuangan'] from res where name='dL-staf'),'M5: staf tidak melihat peringatan duplikat');
