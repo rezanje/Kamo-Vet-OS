@@ -466,7 +466,7 @@ def apply_mut(cl, base_name, name, text, edits):
             return None, f"jangkar mutan muncul {n}x: {old_s[:70]!r}"
         t = t.replace(old_s, new_s)
     cl.clone(base_name, name)
-    err = Db(cl, name).err("begin;\n" + t + "\ncommit;")
+    err = cl.err(name, "begin;\n" + t + "\ncommit;")
     if not err:
         post_seed(Db(cl, name))
     return (t, err)
