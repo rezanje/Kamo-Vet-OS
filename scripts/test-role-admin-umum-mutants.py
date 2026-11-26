@@ -1,4 +1,4 @@
-"""Mutan untuk migrasi 20261214100100_admin_umum_role.sql (dipakai: test-role-admin-umum-postgres.py --mutations).
+"""Mutan untuk migrasi 20261214110100_admin_umum_role.sql (dipakai: test-role-admin-umum-postgres.py --mutations).
 
 build(body) -> [(nama, [(jangkar, pengganti), ...], [bagian tes yang dijalankan])]
 Tiap jangkar harus muncul TEPAT 1 kali di berkas migrasi. Mutan harus tetap terpasang (bukan galat pasang) dan harus dimatikan oleh minimal satu kasus tes.

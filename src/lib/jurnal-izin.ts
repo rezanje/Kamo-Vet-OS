@@ -1,6 +1,6 @@
 // Tombol Jurnal Umum per peran (Akses Grup > Tindakan; hanya peran ADMIN_UMUM): lihat, buat jurnal manual, koreksi/batalkan jurnal manual
 // (izin khusus, bawaan MATI), lihat semua sumber. Penegakan SEBENARNYA ada di database (create_manual_journal_atomic / revise_manual_journal lewat
-// public.jurnal_aksi_diizinkan, migrasi 20261214100100); file ini hanya menyusun tampilan layar Jurnal Umum dari hasil RPC `jurnal_izin`.
+// public.jurnal_aksi_diizinkan, migrasi 20261214110100); file ini hanya menyusun tampilan layar Jurnal Umum dari hasil RPC `jurnal_izin`.
 // Peran lain tidak berubah sama sekali (tampilan lama persis).
 import { ADMIN_UMUM } from "./peran-admin";
 

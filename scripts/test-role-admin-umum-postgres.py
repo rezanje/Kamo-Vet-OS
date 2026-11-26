@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Peran "Admin Umum" (ADMIN_UMUM), Andri 26 Nov 2026: admin umum yang membantu finance; akses bawaan SAMA seperti ADMIN, terpisah supaya diatur sendiri.
 
-Migrasi: 20261214100000_admin_umum_enum.sql (nilai enum) + 20261214100100_admin_umum_role.sql (isi).
+Migrasi: 20261214110000_admin_umum_enum.sql (nilai enum) + 20261214110100_admin_umum_role.sql (isi).
 Dibuktikan di PostgreSQL 17 sungguhan (rantai penuh semua migrasi repo, kandidat dipasang TERAKHIR seperti hosted; data fiktif; tanpa jaringan):
   A  Struktur : hanya fungsi/kebijakan yang menyebut ADMIN (+ tambalan berjangkar) berubah; objek lain byte-identik; tidak ada sisa 'ADMIN' tak berpasangan.
   B  ACL      : fungsi/skema baru tidak bisa dipanggil peran API, search_path kosong, penjaga Admin Online ada.
@@ -26,8 +26,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from native_postgres import NativePostgres  # noqa: E402
 
 MIG = ROOT / "supabase/migrations"
-ENUM = MIG / "20261214100000_admin_umum_enum.sql"
-BODY = MIG / "20261214100100_admin_umum_role.sql"
+ENUM = MIG / "20261214110000_admin_umum_enum.sql"
+BODY = MIG / "20261214110100_admin_umum_role.sql"
 ROLLBACK = Path(os.environ.get("UMUM_ROLLBACK", "/opt/data/kamo-cost-missing-evidence/ship-role-admin-umum/ROLLBACK.sql"))
 RESULTS = []
 SEED = ("insert into coa_accounts(code,name,type,normal_balance) select c,'Fiktif '||c,'BEBAN','D' from unnest(array['720002','720003','720004','740017','740005','720008','740021','740016','730002','720005','720006','720009','740002','740014','740013','740022','740012','760003']) c on conflict(code) do update set is_active=true,is_header=false;\n")

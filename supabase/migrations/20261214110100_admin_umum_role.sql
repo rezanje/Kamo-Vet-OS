@@ -1,5 +1,5 @@
 -- Peran "Admin Umum" (ADMIN_UMUM), Andri 26 Nov 2026: admin umum yang membantu pekerjaan finance. Berkas 2 dari 2
--- (nilai enum ada di 20261214100000_admin_umum_enum.sql dan harus sudah ter-commit).
+-- (nilai enum ada di 20261214110000_admin_umum_enum.sql dan harus sudah ter-commit).
 --
 -- TUJUAN: ADMIN_UMUM berperilaku SAMA PERSIS seperti ADMIN (peran ADMIN tanpa pengaturan Akses Grup tersimpan: semua modul, semua cabang)
 -- di setiap tempat database yang menyebut ADMIN; hak aksesnya kemudian diatur sendiri lewat Akses Grup (modul, sub-menu, tindakan, kemampuan).
@@ -27,7 +27,7 @@ do $pre$
 begin
   if not exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid join pg_namespace n on n.oid = t.typnamespace
                  where n.nspname = 'public' and t.typname = 'user_role' and e.enumlabel = 'ADMIN_UMUM') then
-    raise exception 'ADMIN_UMUM_PRECONDITION: nilai enum ADMIN_UMUM belum ter-commit (jalankan 20261214100000 lebih dulu)';
+    raise exception 'ADMIN_UMUM_PRECONDITION: nilai enum ADMIN_UMUM belum ter-commit (jalankan 20261214110000 lebih dulu)';
   end if;
   if to_regprocedure('admin_online_private.fence_all()') is null or to_regprocedure('admin_online_private.guard_all()') is null
      or to_regprocedure('public.role_action_allowed(text)') is null or to_regprocedure('public.get_role_access_config(text)') is null

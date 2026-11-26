@@ -4,7 +4,7 @@
 // ATURAN: ADMIN_UMUM berperilaku SAMA seperti ADMIN di setiap tempat yang menyebut ADMIN (bawaan: semua modul, semua cabang), tetapi dikelola
 // sebagai peran TERPISAH di Pengaturan > Akses Grup supaya hak aksesnya bisa diatur sendiri tanpa menyentuh ADMIN. Ia TIDAK setara OWNER:
 // semua daftar "OWNER + ADMIN" tetap memuat OWNER seperti semula; peran ini hanya ditambahkan di sebelah ADMIN.
-// Di database aturan yang sama ditegakkan oleh migrasi 20261214100100_admin_umum_role.sql (admin_umum_private.terapkan_semua).
+// Di database aturan yang sama ditegakkan oleh migrasi 20261214110100_admin_umum_role.sql (admin_umum_private.terapkan_semua).
 //
 // Tes pemindai (src/lib/__tests__/peran-admin-sebaran.test.ts) menggagalkan build bila ada daftar peran yang menyebut "ADMIN" tetapi tidak memuat
 // "ADMIN_UMUM" dan tidak tercantum di daftar pengecualian tertulis.

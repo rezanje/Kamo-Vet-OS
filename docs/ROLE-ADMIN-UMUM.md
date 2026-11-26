@@ -16,7 +16,7 @@ Permintaan Andri, 26 Nov 2026: "ROLE admin umum khusus", akses tetap lengkap, di
 - `jurnal.lihat_semua_sumber` — bila dimatikan, layar Jurnal Umum hanya menampilkan jurnal manual (manual, koreksi, pembalik), bukan yang otomatis dari kasir/klinik/pembelian. Penegakan di layar.
 
 ## Cara kerja di database
-Migrasi `20261214100000_admin_umum_enum.sql` (hanya nilai enum) lalu `20261214100100_admin_umum_role.sql`.
+Migrasi `20261214110000_admin_umum_enum.sql` (hanya nilai enum) lalu `20261214110100_admin_umum_role.sql`.
 `admin_umum_private.terapkan_semua()` menulis ulang DEFINISI HIDUP semua fungsi dan kebijakan RLS yang menyebut `'ADMIN'` agar memuat ADMIN_UMUM di sebelahnya (gagal tertutup untuk bentuk tak dikenal); `kembalikan_semua()` kebalikannya (dipakai ROLLBACK.sql).
 
 ### Wajib untuk migrasi berikutnya
