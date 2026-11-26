@@ -624,7 +624,7 @@ def main():
                     suite_cepat(pg)
                     hidup.append(label)
                     print(f"MUTAN HIDUP: {label}", flush=True)
-                except (AssertionError, RuntimeError) as error:
+                except (AssertionError, RuntimeError, KeyError) as error:
                     print(f"MUTAN MATI: {label} -> {str(error).splitlines()[0][:150]}", flush=True)
                 # pulihkan fungsi + ACL asli
                 pg.sql(fungsi_asli + f"\nrevoke all on function {SIG} from public, anon;\ngrant execute on function {SIG} to authenticated;")
