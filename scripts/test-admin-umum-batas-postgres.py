@@ -158,7 +158,7 @@ def col_jurnal(db, ctx):
     r = {}
     eid = ctx["entry_id"]
     fast = ctx.get("fast")
-    for st in (("umum_tanpa_buat",) if fast else ("default", "umum_tanpa_buat", "umum_tanpa_bukubesar")):
+    for st in (("default", "umum_tanpa_buat") if fast else ("default", "umum_tanpa_buat", "umum_tanpa_bukubesar")):
         set_state(db, st)
         for a in (("ADMIN_UMUM", "ADMIN") if fast else ("ADMIN_UMUM", "ADMIN", "FINANCE", "OWNER", "STAFF")):
             k = f"{st}|{a}|"
@@ -180,7 +180,7 @@ def col_hris(db, ctx):
         "tambah": f"select public.assign_employee_secondary_branches({q(EMP)},array[{q(BR_B)}]::uuid[],current_date)::text",
     }
     fast = ctx.get("fast")
-    for st in (("umum_nohris",) if fast else ("default", "umum_nohris", "umum_hris")):
+    for st in (("default", "umum_nohris") if fast else ("default", "umum_nohris", "umum_hris")):
         set_state(db, st)
         for a in (("ADMIN_UMUM", "ADMIN") if fast else ("ADMIN_UMUM", "ADMIN", "OWNER", "FINANCE")):
             for n, s in calls.items():
@@ -255,6 +255,12 @@ def col_struct(db, ctx):
                       "where to_regprocedure(f) is not null")
     r["schema_usage"] = db.sql("select has_schema_privilege('authenticated','admin_umum_private','usage')::text||has_schema_privilege('anon','admin_umum_private','usage')::text")
     r["cfg"] = db.sql("select count(*) filter (where p.proconfig = array['search_path=\"\"'])::text||'/'||count(*) filter (where p.prosecdef)::text from pg_proc p where p.pronamespace='admin_umum_private'::regnamespace and p.proname in ('peran_istimewa','aktor_admin_umum','tolak_peran_istimewa','tolak_edit_akun','wajib_modul')")
+    chk = {"preflight_employee_account(uuid,text,uuid[])": r"perform admin_umum_private\.tolak_peran_istimewa\(p_role\)", "configure_employee_account(uuid,uuid,text,text,uuid[])": r"perform admin_umum_private\.tolak_peran_istimewa\(p_role\)",
+           "edit_user_account(uuid,text,text,uuid[],text,uuid)": r"perform admin_umum_private\.tolak_edit_akun\(p_profile_id,p_role\)", "user_account_edit_allowed(uuid)": r"admin_umum_private\.peran_istimewa\(target\.role::text\)",
+           "get_user_account_for_edit(uuid)": r"admin_umum_private\.peran_istimewa\(candidate\)", "recurring_require_finance()": r"public\.jurnal_aksi_diizinkan\('jurnal\.buat_manual'\)",
+           "reopen_employee_branch_assignments(uuid,uuid[],date)": r"perform admin_umum_private\.wajib_modul\('hris'\)", "end_employee_branch_assignment(uuid,uuid,date,text)": r"perform admin_umum_private\.wajib_modul\('hris'\)",
+           "set_employee_primary_branches(uuid[],uuid,text)": r"perform admin_umum_private\.wajib_modul\('hris'\)", "get_wholesale_payroll_epoch(text)": r"perform admin_umum_private\.wajib_modul\('hris'\)"}
+    r["callsites"] = ",".join(sig for sig, rx in chk.items() if db.sql(f"select (prosrc ~ {q(rx)})::text from pg_proc where oid='public.{sig}'::regprocedure") != "true")
     r["akun_umum"] = db.sql("select count(*)::text from public.profiles where role::text='ADMIN_UMUM' and id<>" + q(UMUM))
     return r
 
@@ -381,6 +387,7 @@ def a_struct(B, C, base_only=False):
     ck("struktur: kebijakan, trigger, constraint, RLS/ACL tabel, catatan admin_umum_private.diubah: TIDAK berubah", not [k for k in changed if k[0] in "PTCRD"] and not [k for k in added | gone if k[0] in "PTCRD"], sorted(k for k in changed | added | gone if k[0] in "PTCRD")[:6], S)
     new_f = {k[2:] for k in added if k.startswith("F|")}
     ck("struktur: fungsi baru hanya 5 pembantu di admin_umum_private", new_f == NEW_FN and not gone, sorted(new_f ^ NEW_FN), S)
+    ck("struktur: ke-10 fungsi memanggil pembatas yang benar (bukan hanya kata kunci di komentar)", C["callsites"] == "", C["callsites"], S)
     ck("struktur: penulis ulang peran Admin Umum (terapkan_semua(true)) tidak melaporkan DIUBAH/SISA_TAK_DIKENAL (semantik tabel catatan terjaga)", C["terapkan_ubah"] == "0", (C["terapkan"], C["terapkan_ubah"]), S)
     ck("struktur: pembantu tidak dapat dipanggil anon/authenticated/service_role; skema tanpa USAGE", all(v.endswith("=falsefalsefalse") for v in C["acl"].split(";")) and len(C["acl"].split(";")) == 5 and C["schema_usage"] == "falsefalse", (C["acl"], C["schema_usage"]), S)
     ck("struktur: pembantu SECURITY DEFINER (kecuali peran_istimewa) dengan search_path kosong", C["cfg"] == "5/4", C["cfg"], S)
@@ -432,7 +439,7 @@ def mutants(text):
     M = []
     m = lambda n, e, s: M.append((n, e, s))
     m("preflight-tanpa-tolak", [(P + "\n if not exists(select 1 from public.profiles where id=auth.uid() and is_active and role='OWNER') and (", "/* tolak_peran_istimewa */\n if not exists(select 1 from public.profiles where id=auth.uid() and is_active and role='OWNER') and (")], ["create"])
-    m("configure-tanpa-tolak", [(P + "\n if not exists(select 1 from public.profiles where id=auth.uid() and is_active and role='OWNER') then", "/* tolak_peran_istimewa */\n if not exists(select 1 from public.profiles where id=auth.uid() and is_active and role='OWNER') then")], ["create"])
+    m("configure-tanpa-tolak", [(P + "\n if not exists(select 1 from public.profiles where id=auth.uid() and is_active and role='OWNER') then", "/* tolak_peran_istimewa */\n if not exists(select 1 from public.profiles where id=auth.uid() and is_active and role='OWNER') then")], ["create", "struktur"])
     m("edit-tanpa-tolak-edit-akun", [("perform admin_umum_private.tolak_edit_akun(p_profile_id,p_role);\n if not public.user_account_edit_allowed", "/* tolak_edit_akun */\n if not public.user_account_edit_allowed")], ["edit"])
     m("edit-allowed-tanpa-target-finance", [(" if actor.role='ADMIN_UMUM' and target.id<>actor.id and admin_umum_private.peran_istimewa(target.role::text) then return false;end if;", " /* peran_istimewa */")], ["edit"])
     m("editable-roles-tanpa-pengecualian", [("not (actor.role='ADMIN_UMUM' and admin_umum_private.peran_istimewa(candidate)) and (not candidate_all", "/* peran_istimewa */ (not candidate_all")], ["edit"])
@@ -477,6 +484,8 @@ def run_mutations(cl, base_name, ctx, args, base_res):
     base_name = "auf_tpl"  # klon dari templat (belum ada akun ADMIN_UMUM) supaya pemeriksa pasca-pasang migrasi lolos; post_seed dijalankan sesudah pasang
     killed, survived, broken = [], [], []
     for i, (name, edits, sections) in enumerate(mutants(text)):
+        if args.mutant and name not in args.mutant.split(","):
+            continue
         mdb = f"auf_m{i}"
         t, err = apply_mut(cl, base_name, mdb, text, edits)
         if t is None:
@@ -508,6 +517,7 @@ def main():
     ap.add_argument("--baseline", action="store_true")
     ap.add_argument("--mutations", action="store_true")
     ap.add_argument("--only", default="")
+    ap.add_argument("--mutant", default="")
     ap.add_argument("--evidence", default="/opt/data/kamo-cost-missing-evidence/ship-admin-umum-fix")
     args = ap.parse_args()
     import os
