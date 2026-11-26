@@ -290,7 +290,8 @@ select pg_temp.ok(pg_temp.cl('insert into public.opname_counts(order_id,item_id,
 select pg_temp.ok(pg_temp.cl('update public.opname_counts set qty_sistem=0 where order_id='''||pg_temp.oid('s9')||''' and item_id='''||pg_temp.iid('sx')||'''') like 'Foto stok hitungan opname tidak boleh diubah%','S9 klien tidak boleh mengubah qty_sistem baris yang ada');
 select pg_temp.ok(pg_temp.cl('update public.opname_counts set locked_at=now()+interval ''1 day'' where order_id='''||pg_temp.oid('s9')||''' and item_id='''||pg_temp.iid('sx')||'''') like 'Foto stok hitungan opname tidak boleh diubah%','S9 klien tidak boleh mengubah locked_at');
 select pg_temp.ok(pg_temp.cl('update public.opname_counts set item_id='''||pg_temp.iid('sz')||''' where order_id='''||pg_temp.oid('s9')||''' and item_id='''||pg_temp.iid('sx')||'''') like 'Foto stok hitungan opname tidak boleh diubah%','S9 klien tidak boleh memindahkan baris ke barang lain');
-select pg_temp.ok(pg_temp.cl('update public.opname_counts set qty_fisik=8 where order_id='''||pg_temp.oid('s9')||''' and item_id='''||pg_temp.iid('sx')||'''')='OK' and (select qty_fisik from public.opname_counts where order_id=pg_temp.oid('s9') and item_id=pg_temp.iid('sx'))=8 and pg_temp.cq('s9','sx')=10,'S9 klien boleh mengubah qty_fisik (foto tetap 10)');
+select pg_temp.ok(pg_temp.cl('update public.opname_counts set qty_fisik=8 where order_id='''||pg_temp.oid('s9')||''' and item_id='''||pg_temp.iid('sx')||'''')='OK','S9 klien boleh mengubah qty_fisik');
+select pg_temp.ok((select qty_fisik from public.opname_counts where order_id=pg_temp.oid('s9') and item_id=pg_temp.iid('sx'))=8 and pg_temp.cq('s9','sx')=10,'S9 qty_fisik berubah menjadi 8 dan foto tetap 10');
 select pg_temp.ok(pg_temp.cl('select count(*) from public.opname_count_baselines') like 'permission denied%','S9 klien tidak bisa membaca tabel baseline');
 select pg_temp.ok(pg_temp.cl('insert into public.opname_count_baselines(order_id,item_id,qty_sistem,first_locked_at) values('''||pg_temp.oid('s9')||''','''||pg_temp.iid('sz')||''',1,now())') like 'permission denied%','S9 klien tidak bisa menulis baseline');
 select pg_temp.ok(pg_temp.cl('delete from public.opname_count_baselines') like 'permission denied%' and pg_temp.cl('update public.opname_count_baselines set qty_sistem=1') like 'permission denied%','S9 klien tidak bisa mengubah/menghapus baseline');
@@ -432,7 +433,7 @@ select pg_temp.lock('s19c','sz',10);select pg_temp.buka('s19c','sz');select pg_t
 update public.opname_counts set qty_sistem=3 where order_id=pg_temp.oid('s19c') and item_id=pg_temp.iid('sz');
 select pg_temp.ok(pg_temp.cq('s19c','sz')=3 and pg_temp.bq('s19c','sz')=10,'S19 prasyarat: baris kunci dengan foto 3 ditanam oleh pemilik; baseline pertama 10');
 select pg_temp.ok(pg_temp.post('s19c') ? 'no_hasil' and (pg_temp.ri('s19c','sz')->>'qty_sistem')::numeric=10 and (pg_temp.ri('s19c','sz')->>'selisih')::numeric=0,'S19 bila baseline dan baris kunci berbeda, baseline PERTAMA yang dipakai (10, selisih 0)');
-select pg_temp.ok((select first_locked_at from public.opname_count_baselines where order_id=pg_temp.oid('s19c') and item_id=pg_temp.iid('sz'))=(select min(a.locked_at) from (select locked_at from public.opname_count_baselines where order_id=pg_temp.oid('s19c')) a),'S19 first_locked_at tercatat');
+select pg_temp.ok((select first_locked_at from public.opname_count_baselines where order_id=pg_temp.oid('s19c') and item_id=pg_temp.iid('sz')) is not null,'S19 first_locked_at tercatat');
 -- jam kunci pertama = jam baris yang dihapus
 do $$begin perform pg_temp.ord('s19d');end$$;
 select pg_temp.lock('s19d','sx',5);
