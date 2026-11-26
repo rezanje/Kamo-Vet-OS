@@ -5,7 +5,7 @@ import { LaporanPage, KartuAngka, TabelKosong } from "@/components/LaporanPage";
 import { hariIniWIB } from "@/lib/tanggal";
 import { tanggalIndo, waLink } from "@/lib/followup";
 import { tarikRiwayat, type TrxRiwayat } from "@/lib/laporan-transaksi-server";
-import { profilPelanggan, dorman, rataIntervalGabungan } from "@/lib/retensi";
+import { profilPelanggan, dorman, rataIntervalGabungan, pesanRetensi } from "@/lib/retensi";
 import { laporanDiminta } from "@/lib/report-gate";
 
 // Retensi Pelanggan — permintaan Kamo Group 24 Agu 2026:
@@ -92,11 +92,8 @@ export default async function RetensiPage({
   const nilaiDorman = daftarDorman.reduce((a, r) => a + r.belanja, 0);
   const sekaliDatang = disaring.filter((p) => p.kunjungan === 1).length;
 
-  // Pesan dibuat seragam supaya tim tidak menulis dari nol tiap kali; isinya sengaja
-  // tanpa janji diskon — penawaran ditentukan marketing, bukan oleh laporan ini.
-  const pesan = (nama: string) =>
-    `Halo Kak ${nama}, sudah lama tidak berkunjung ke Kamo Pet Care. ` +
-    `Apa kabar anabulnya? Kalau berkenan, boleh dibalas pesan ini untuk atur jadwal kunjungan ya. Terima kasih!`;
+  // Pesan dibuat seragam supaya tim tidak menulis dari nol tiap kali (pesanRetensi: tanpa janji diskon;
+  // tempat berkunjung = cabang pertama pelanggan).
 
   return (
     <LaporanPage
@@ -202,7 +199,7 @@ export default async function RetensiPage({
                   <td style={{ textAlign: "right", fontSize: 11 }}>{rp(r.belanja)}</td>
                   <td style={{ textAlign: "center" }}>
                     {r.hp ? (
-                      <a href={waLink(r.hp, pesan(r.nama))} target="_blank" rel="noopener noreferrer"
+                      <a href={waLink(r.hp, pesanRetensi(r.nama, r.cabangPertama))} target="_blank" rel="noopener noreferrer"
                         style={{ fontSize: 10.5, color: "#15803d", textDecoration: "none", fontWeight: 700 }}>
                         <i className="ti ti-brand-whatsapp" /> WA
                       </a>
