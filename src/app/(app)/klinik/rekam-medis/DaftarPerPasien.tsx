@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { LABEL_RIWAYAT_IMPOR } from "@/lib/daftar-rekam-medis";
+import { teksObatCocok } from "@/lib/daftar-rekam-medis-obat";
 import { ringkasTeks, tanggalRekamMedis, type KelompokDaftar, type KelompokPasien } from "@/lib/rekam-medis-per-pasien";
 import type { RingkasanSemuaCabang } from "@/lib/rekam-medis-semua-cabang";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
 
 /** Pilihan tampilan daftar: Per pasien (bawaan) | Per kunjungan (tampilan lama). Tautan biasa (tanpa JS), filter ikut terbawa. */
-export function PilihTampilanDaftar({ kelompok, q, tampilan }: { kelompok: KelompokDaftar; q: string; tampilan: string }) {
-  const href = (k: KelompokDaftar) => `/klinik/rekam-medis?${new URLSearchParams({ q, tampilan, kelompok: k })}`;
+export function PilihTampilanDaftar({ kelompok, q, tampilan, obat }: { kelompok: KelompokDaftar; q: string; tampilan: string; obat?: string }) {
+  const href = (k: KelompokDaftar) => `/klinik/rekam-medis?${new URLSearchParams({ q, tampilan, kelompok: k, ...(obat ? { obat } : {}) })}`;
   const gaya = (aktif: boolean) => ({
     textDecoration: "none", minHeight: 40, display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "1 1 120px",
     padding: "6px 14px", fontSize: 12, fontWeight: aktif ? 800 : 600, borderRadius: 8,
@@ -30,7 +31,7 @@ const labelCabang = (cabang: string | null, impor: boolean) => cabang ?? (impor 
  * jumlahnya berbeda, chip "x di cabang ini" menunjukkan bagian cabang aktif. "Buka terakhir" selalu membuka
  * kunjungan terakhir yang bisa dibuka di cabang aktif (halaman detail dibaca per cabang aktif).
  */
-export function DaftarPerPasien({ kelompok, semuaCabang }: { kelompok: KelompokPasien[]; semuaCabang: Map<string, RingkasanSemuaCabang> }) {
+export function DaftarPerPasien({ kelompok, semuaCabang, tampilkanObat = false }: { kelompok: KelompokPasien[]; semuaCabang: Map<string, RingkasanSemuaCabang>; tampilkanObat?: boolean }) {
   return (
     <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
       {kelompok.map((g) => {
@@ -68,6 +69,13 @@ export function DaftarPerPasien({ kelompok, semuaCabang }: { kelompok: KelompokP
               {g.jumlahImpor > 0 && <span className="bge" title="Riwayat hasil impor data lama" style={chip}>{g.jumlahImpor} impor</span>}
               {g.kembar && <span className="bge r" title="Ada hewan lain milik pemilik yang sama dengan nama dan jenis yang sama. Data tidak digabung." style={chip}>Ada data hewan kembar</span>}
             </div>
+            {tampilkanObat && (
+              <div data-obat-cocok style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 11.5 }}>
+                {g.obatCocok.length === 0 ? <span style={{ color: "var(--tm)" }}>Diberikan: —</span> : g.obatCocok.map((o) => (
+                  <span key={`${o.sumber}|${o.nama}`} className="bge" style={chip}>Diberikan: {teksObatCocok(o)}</span>
+                ))}
+              </div>
+            )}
             <div style={{ fontSize: 11.5, lineHeight: 1.45 }}>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <b>Terakhir:</b> {tanggalRekamMedis(t.date)} · {t.cabang}
@@ -84,7 +92,7 @@ export function DaftarPerPasien({ kelompok, semuaCabang }: { kelompok: KelompokP
                   <i className="ti ti-history" /> Riwayat
                 </Link>
               )}
-              <BukaRekamMedisLink href={`/klinik/rekam-medis/${g.terakhir.id}`} label={t.lain ? "Buka terakhir di cabang ini" : "Buka terakhir"} besar />
+              <BukaRekamMedisLink href={`/klinik/rekam-medis/${g.terakhir.id}`} label={tampilkanObat ? "Buka kunjungan yang cocok" : t.lain ? "Buka terakhir di cabang ini" : "Buka terakhir"} besar />
             </div>
           </li>
         );
