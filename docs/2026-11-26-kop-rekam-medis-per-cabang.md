@@ -3,7 +3,7 @@
 Permintaan Andri (26 Nov 2026): rekam medis harus tercetak sesuai cabang kunjungannya (mis. Kamo Pets Clinic Cimanggu), bukan kop tetap "KAMO PET CARE".
 
 ## Yang berubah
-- **Database** (migrasi `20261215100000_cabang_identitas_dokumen.sql`, aditif, tanpa mengisi data): `public.branches` mendapat kolom `alamat`, `telepon`, `logo_path` (semua boleh kosong).
+- **Database** (migrasi `20261213050000_cabang_identitas_dokumen.sql`, aditif, tanpa mengisi data): `public.branches` mendapat kolom `alamat`, `telepon`, `logo_path` (semua boleh kosong).
   Nama cabang tetap kolom `name` (diubah di Perusahaan > Cabang).
   - Menulis ketiga kolom hanya lewat `update_branch_identity(...)` (SECURITY DEFINER, hanya OWNER/ADMIN aktif, Admin Online ditolak, jejak ke `clinic_private.master_edit_audit`). Pemicu `a00_guard_branch_identity_edit` menolak penulisan langsung dari akun login (kebijakan `branches_update` memakai `USING true`).
   - Logo disimpan di bucket `dokumen`, awalan `cabang-logo/<id cabang>/`. Tiga kebijakan RESTRICTIVE hanya untuk awalan itu: unggah hanya OWNER/ADMIN dengan nama yang sah, hapus hanya OWNER/ADMIN, ubah ditolak. Baca tetap lewat `dokumen_read` (semua akun internal; Admin Online ditolak pagar lama). Kebijakan lama dan awalan lain tidak berubah.
