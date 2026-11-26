@@ -399,4 +399,35 @@ select pg_temp.ok(not exists(select 1 from public.expenses e where e.revision=0 
 select pg_temp.ok(not exists(select 1 from public.expense_backdates where effective_date>=(recorded_at at time zone 'Asia/Jakarta')::date or effective_date<(recorded_at at time zone 'Asia/Jakarta')::date-31 or length(btrim(reason)) not between 3 and 200),'tidak ada jejak di luar aturan (hari ini/ masa depan, > 31 hari, alasan di luar 3-200)');
 select pg_temp.ok((select count(*) from public.expense_posting_requests where kind='create' and payload->'expense'?'alasan_tanggal')>=10,'alasan ikut dalam isi permintaan yang disimpan untuk idempotensi');
 
+-- ── 10. CELAH TES dari review independen PR #570 (rapikan, 26 Nov 2026): mutan X01/X02/X04/X14 selamat dari suite lama ──
+reset role;
+select pg_temp.as_('ed100000-0000-4000-8000-000000000001'); -- bagian 8 meninggalkan klaim Admin Online; pagar profiles menolak INSERT atas namanya
+insert into auth.users(id,raw_user_meta_data) values('ed100000-0000-4000-8000-00000000000a','{"full_name":"BDP finance cabang lain"}');
+update profiles set role='FINANCE',is_active=true where id='ed100000-0000-4000-8000-00000000000a';
+insert into user_branches(user_id,branch_id) values('ed100000-0000-4000-8000-00000000000a','ed200000-0000-4000-8000-000000000003');
+create function pg_temp.nvisible() returns integer language sql as $$select count(*)::int from public.expense_backdates$$;
+select pg_temp.ok(pg_temp.nback()>=10,'prasyarat bagian 10: sudah ada >= 10 baris jejak untuk diuji pembacaannya');
+select pg_temp.as_('ed100000-0000-4000-8000-000000000003');
+set local role authenticated;
+select pg_temp.ok(pg_temp.nvisible()>=10,'FINANCE cabang yang sama membaca jejak cabangnya (kontrol)');
+select pg_temp.as_('ed100000-0000-4000-8000-00000000000a');
+select pg_temp.ok(pg_temp.nvisible()=0,'FINANCE cabang LAIN tidak membaca satu pun jejak (RLS akses cabang; X01)');
+select pg_temp.as_('ed100000-0000-4000-8000-000000000009');
+select pg_temp.ok(pg_temp.nvisible()=0,'FINANCE NONAKTIF di cabang yang sama tidak membaca satu pun jejak (X02)');
+select pg_temp.as_('ed100000-0000-4000-8000-000000000008');
+select pg_temp.ok(pg_temp.nvisible()=0,'kasir cabang lain tidak membaca jejak');
+select pg_temp.as_('ed100000-0000-4000-8000-000000000007');
+select pg_temp.ok(pg_temp.nvisible()=0 and not exists(select 1 from public.expense_backdates where actor_id<>auth.uid()),'kasir lain di cabang yang sama tidak membaca jejak orang lain');
+select pg_temp.as_('ed100000-0000-4000-8000-000000000004');
+select pg_temp.ok(pg_temp.nvisible()>=1 and not exists(select 1 from public.expense_backdates where actor_id<>auth.uid()),'pelaku hanya membaca jejak miliknya sendiri');
+select pg_temp.as_('ed100000-0000-4000-8000-000000000001');
+select pg_temp.ok(pg_temp.nvisible()=pg_temp.nback(),'OWNER membaca semua jejak');
+-- INSERT langsung dengan tanggal KOSONG: harus ditolak gerbang (bukan lolos ke NOT NULL); mutan "<>" meloloskan NULL (X14)
+select pg_temp.as_('ed100000-0000-4000-8000-000000000004');
+select pg_temp.ok(pg_temp.try($q$insert into public.expenses(branch_id,tanggal,kategori,jumlah,metode_bayar,created_by) values('ed200000-0000-4000-8000-000000000001',null,'Operasional',99000,'Tunai',auth.uid())$q$) like 'Tanggal mundur: pengeluaran bertanggal selain hari ini%','INSERT langsung dengan tanggal KOSONG ditolak oleh gerbang (X14)');
+reset role;
+-- jejak menyimpan kategori dan jumlah pengeluaran yang SEBENARNYA, bukan konstanta (X04)
+select pg_temp.ok(not exists(select 1 from public.expense_backdates b join public.expenses e on e.id=b.expense_id where e.revision=0 and (b.kategori is distinct from e.kategori or b.jumlah is distinct from e.jumlah))
+ and (select count(distinct kategori) from public.expense_backdates)>=3 and exists(select 1 from public.expense_backdates where kategori='Perlengkapan') and exists(select 1 from public.expense_backdates where kategori='Transportasi'),'jejak menyimpan kategori dan jumlah sebenarnya (>= 3 kategori berbeda; X04)');
+
 rollback;
