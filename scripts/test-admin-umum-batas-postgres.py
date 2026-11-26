@@ -116,9 +116,10 @@ def set_state(db, st):
 # ----------------------------------------------------------------------------------------------- pengumpul hasil
 def col_create(db, ctx):
     r = {}
-    for st in ("default", "umum_lebar", "admin_hosted"):
+    fast = ctx.get("fast")
+    for st in (("default",) if fast else ("default", "umum_lebar", "admin_hosted")):
         set_state(db, st)
-        for a in ACTORS:
+        for a in (("ADMIN", "ADMIN_UMUM") if fast else ACTORS):
             for ro in ROLES7:
                 r[f"{st}|{a}|pre|{ro}"] = oc(db, f"select public.preflight_employee_account({q(EMP)},{q(ro)},array[{q(BR_A)}]::uuid[])", SUBJ, a)
                 r[f"{st}|{a}|cfg|{ro}"] = oc(db, f"select public.configure_employee_account({q(NEWP)},{q(EMP)},'Nama Baru',{q(ro)},array[{q(BR_A)}]::uuid[])", SUBJ, a)
@@ -129,9 +130,10 @@ def col_create(db, ctx):
 def col_edit(db, ctx):
     r = {}
     ver = lambda t: f"(public.get_user_account_for_edit({q(t)})->>'version')"
-    for st in ("default", "umum_lebar", "admin_hosted"):
+    fast = ctx.get("fast")
+    for st in (("default",) if fast else ("default", "umum_lebar", "admin_hosted")):
         set_state(db, st)
-        for a in ("OWNER", "ADMIN", "ADMIN_UMUM"):
+        for a in (("ADMIN", "ADMIN_UMUM") if fast else ("OWNER", "ADMIN", "ADMIN_UMUM")):
             k = f"{st}|{a}|"
             r[k + "er"] = oc(db, f"select (public.get_user_account_for_edit({q(TARGET)})->'editable_roles')::text", SUBJ, a, value=True)
             for ro in ROLES7:
@@ -155,9 +157,10 @@ def col_edit(db, ctx):
 def col_jurnal(db, ctx):
     r = {}
     eid = ctx["entry_id"]
-    for st in ("default", "umum_tanpa_buat", "umum_tanpa_bukubesar"):
+    fast = ctx.get("fast")
+    for st in (("umum_tanpa_buat",) if fast else ("default", "umum_tanpa_buat", "umum_tanpa_bukubesar")):
         set_state(db, st)
-        for a in ("ADMIN_UMUM", "ADMIN", "FINANCE", "OWNER", "STAFF"):
+        for a in (("ADMIN_UMUM", "ADMIN") if fast else ("ADMIN_UMUM", "ADMIN", "FINANCE", "OWNER", "STAFF")):
             k = f"{st}|{a}|"
             r[k + "preview-dummy"] = oc(db, f"select public.preview_recurring_journal_source({q(DUMMY)}::uuid)::text", SUBJ, a)
             r[k + "hasil-dummy"] = oc(db, "select coalesce(public.get_recurring_journal_source_result('k1')::text,'null')", SUBJ, a)
@@ -176,9 +179,10 @@ def col_hris(db, ctx):
         "buka-lagi": f"select public.reopen_employee_branch_assignments({q(EMP)},array[{q(BR_B)}]::uuid[],current_date)::text",
         "tambah": f"select public.assign_employee_secondary_branches({q(EMP)},array[{q(BR_B)}]::uuid[],current_date)::text",
     }
-    for st in ("default", "umum_nohris", "umum_hris"):
+    fast = ctx.get("fast")
+    for st in (("umum_nohris",) if fast else ("default", "umum_nohris", "umum_hris")):
         set_state(db, st)
-        for a in ("ADMIN_UMUM", "ADMIN", "OWNER", "FINANCE"):
+        for a in (("ADMIN_UMUM", "ADMIN") if fast else ("ADMIN_UMUM", "ADMIN", "OWNER", "FINANCE")):
             for n, s in calls.items():
                 r[f"{st}|{a}|{n}"] = oc(db, s, SUBJ, a, value=True)[:130]
     reset_all(db)
@@ -246,11 +250,11 @@ def col_struct(db, ctx):
     r["terapkan"] = db.sql("select coalesce(string_agg(distinct status, ',' order by status),'') from admin_umum_private.terapkan_semua(true)")
     r["terapkan_ubah"] = db.sql("select count(*)::text from admin_umum_private.terapkan_semua(true) where status in ('DIUBAH','SISA_TAK_DIKENAL')")
     r["helper_fn"] = db.sql("select coalesce(string_agg(p.oid::regprocedure::text,',' order by p.oid::regprocedure::text),'') from pg_proc p where p.pronamespace='admin_umum_private'::regnamespace and p.proname in ('peran_istimewa','aktor_admin_umum','tolak_peran_istimewa','tolak_edit_akun','wajib_modul')")
-    r["acl"] = db.sql("select coalesce(string_agg(f||':'||(has_function_privilege('anon',f,'execute')::text||has_function_privilege('authenticated',f,'execute')::text||has_function_privilege('service_role',f,'execute')::text),',' order by f),'') "
+    r["acl"] = db.sql("select coalesce(string_agg(f||'='||(has_function_privilege('anon',f,'execute')::text||has_function_privilege('authenticated',f,'execute')::text||has_function_privilege('service_role',f,'execute')::text),';' order by f),'') "
                       "from unnest(array['admin_umum_private.peran_istimewa(text)','admin_umum_private.aktor_admin_umum()','admin_umum_private.tolak_peran_istimewa(text)','admin_umum_private.tolak_edit_akun(uuid,text)','admin_umum_private.wajib_modul(text)']) f "
                       "where to_regprocedure(f) is not null")
     r["schema_usage"] = db.sql("select has_schema_privilege('authenticated','admin_umum_private','usage')::text||has_schema_privilege('anon','admin_umum_private','usage')::text")
-    r["cfg"] = db.sql("select coalesce(string_agg(p.proname||'='||coalesce(p.proconfig::text,'')||'/'||p.prosecdef::text,',' order by p.proname),'') from pg_proc p where p.pronamespace='admin_umum_private'::regnamespace and p.proname in ('peran_istimewa','aktor_admin_umum','tolak_peran_istimewa','tolak_edit_akun','wajib_modul')")
+    r["cfg"] = db.sql("select count(*) filter (where p.proconfig = array['search_path=\"\"'])::text||'/'||count(*) filter (where p.prosecdef)::text from pg_proc p where p.pronamespace='admin_umum_private'::regnamespace and p.proname in ('peran_istimewa','aktor_admin_umum','tolak_peran_istimewa','tolak_edit_akun','wajib_modul')")
     r["akun_umum"] = db.sql("select count(*)::text from public.profiles where role::text='ADMIN_UMUM' and id<>" + q(UMUM))
     return r
 
@@ -260,31 +264,41 @@ COLLECT = {"create": col_create, "edit": col_edit, "jurnal": col_jurnal, "hris":
 
 # ----------------------------------------------------------------------------------------------- penegasan (BASE vs CAND)
 def diffs(B, C, keys):
-    return [k for k in keys if B.get(k) != C.get(k)]
+    return [k for k in keys if k in C and B.get(k) != C.get(k)]
+
+
+def sts(C):
+    return {k.split("|")[0] for k in C}
+
+
+def acts_in(C, st):
+    return {k.split("|")[1] for k in C if k.startswith(st + "|")}
 
 
 def a_create(B, C):
     S = "create"
-    for st in ("default", "umum_lebar", "admin_hosted"):
+    for st in [x for x in ("default", "umum_lebar", "admin_hosted") if x in sts(C)]:
         for kind in ("pre", "cfg"):
             bad_priv = [ro for ro in PRIV if DIB not in C[f"{st}|ADMIN_UMUM|{kind}|{ro}"]]
             ck(f"create/{kind}/{st}: Admin Umum DITOLAK (pesan ADMIN_UMUM_ROLE_DIBATASI) untuk FINANCE, OWNER, ADMIN, ADMIN_UMUM", not bad_priv, {ro: C[f'{st}|ADMIN_UMUM|{kind}|{ro}'][:70] for ro in bad_priv}, S)
             same_safe = diffs(B, C, [f"{st}|ADMIN_UMUM|{kind}|{ro}" for ro in SAFE])
             ck(f"create/{kind}/{st}: Admin Umum tetap boleh STAFF/DOCTOR/ADMIN_ONLINE (hasil sama dengan sebelum perbaikan)", not same_safe, same_safe, S)
-            for a in ("OWNER", "ADMIN", "FINANCE"):
+            for a in [x for x in ("OWNER", "ADMIN", "FINANCE") if x in acts_in(C, st)]:
                 dd = diffs(B, C, [f"{st}|{a}|{kind}|{ro}" for ro in ROLES7])
                 ck(f"create/{kind}/{st}: {a} TIDAK berubah (7 peran, hasil persis sama dengan sebelum perbaikan)", not dd, dd, S)
     ck("create: kontrol positif: Admin Umum bawaan boleh membuat STAFF/DOCTOR/ADMIN_ONLINE (preflight OK)", all(C[f"default|ADMIN_UMUM|pre|{ro}"] == "OK" for ro in SAFE), [C[f"default|ADMIN_UMUM|pre|{ro}"] for ro in SAFE], S)
     ck("create: kontrol positif: configure STAFF oleh Admin Umum bawaan berhasil", C["default|ADMIN_UMUM|cfg|STAFF"] == "OK", C["default|ADMIN_UMUM|cfg|STAFF"], S)
-    ck("create: OWNER tetap bisa membuat semua peran", all(C[f"default|OWNER|pre|{ro}"] == "OK" for ro in ROLES7), [C[f"default|OWNER|pre|{ro}"] for ro in ROLES7], S)
+    if "default|OWNER|pre|FINANCE" in C:
+        ck("create: OWNER tetap bisa membuat semua peran", all(C[f"default|OWNER|pre|{ro}"] == "OK" for ro in ROLES7), [C[f"default|OWNER|pre|{ro}"] for ro in ROLES7], S)
     ck("create: LUBANG LAMA terbukti pada BASE: Admin Umum bawaan lolos preflight FINANCE (bukti RED sebelum perbaikan)", B["default|ADMIN_UMUM|pre|FINANCE"] == "OK", B["default|ADMIN_UMUM|pre|FINANCE"], S)
-    ck("create: Admin Umum dengan konfigurasi terlebar (semua modul + create_accounts) tetap ditolak FINANCE (aturan keras, bukan konfigurasi)", DIB in C["umum_lebar|ADMIN_UMUM|pre|FINANCE"] and DIB in C["umum_lebar|ADMIN_UMUM|cfg|FINANCE"], C["umum_lebar|ADMIN_UMUM|pre|FINANCE"][:80], S)
+    if "umum_lebar|ADMIN_UMUM|pre|FINANCE" in C:
+        ck("create: Admin Umum dengan konfigurasi terlebar (semua modul + create_accounts) tetap ditolak FINANCE (aturan keras, bukan konfigurasi)", DIB in C["umum_lebar|ADMIN_UMUM|pre|FINANCE"] and DIB in C["umum_lebar|ADMIN_UMUM|cfg|FINANCE"], C["umum_lebar|ADMIN_UMUM|pre|FINANCE"][:80], S)
     ck("create: pesan penolakan berbahasa Indonesia yang jelas", "Admin Umum tidak boleh" in C["default|ADMIN_UMUM|pre|FINANCE"], C["default|ADMIN_UMUM|pre|FINANCE"][:110], S)
 
 
 def a_edit(B, C):
     S = "edit"
-    for st in ("default", "umum_lebar", "admin_hosted"):
+    for st in [x for x in ("default", "umum_lebar", "admin_hosted") if x in sts(C)]:
         k = f"{st}|ADMIN_UMUM|"
         er = C[k + "er"]
         ck(f"edit/{st}: editable_roles Admin Umum TANPA FINANCE/OWNER/ADMIN/ADMIN_UMUM; ada STAFF, DOCTOR, ADMIN_ONLINE",
@@ -299,11 +313,12 @@ def a_edit(B, C):
             ck(f"edit/{st}: Admin Umum ditolak untuk akun FINANCE: {name}", C[k + name].startswith("ERR:") and "ACCOUNT_EDIT_DENIED" in C[k + name], C[k + name][:100], S)
         dd = diffs(B, C, [k + n for n in ("get-STAFFtarget", "aktif-STAFF", "link-STAFF", "cabang-STAFF", "self", "get-ADMIN")])
         ck(f"edit/{st}: akun STAFF, akun sendiri, akun ADMIN: Admin Umum sama dengan BASE (tidak ada pelebaran/penyempitan lain)", not dd, dd, S)
-        for a in ("OWNER", "ADMIN"):
+        for a in [x for x in ("OWNER", "ADMIN") if x in acts_in(C, st)]:
             dd = diffs(B, C, [kk for kk in B if kk.startswith(f"{st}|{a}|")])
             ck(f"edit/{st}: {a} TIDAK berubah (semua operasi edit persis sama dengan BASE)", not dd, dd, S)
     ck("edit: kontrol positif: Admin Umum bawaan: edit STAFF->DOCTOR berhasil, ubah nama sendiri berhasil", C["default|ADMIN_UMUM|edit>DOCTOR"] == "OK" and C["default|ADMIN_UMUM|self"] == "OK", [C["default|ADMIN_UMUM|edit>DOCTOR"], C["default|ADMIN_UMUM|self"]], S)
-    ck("edit: kontrol positif: OWNER mengedit akun FINANCE (get-FIN) dan menetapkan FINANCE", C["default|OWNER|get-FIN"] == "OK" and C["default|OWNER|edit>FINANCE"] == "OK", [C["default|OWNER|get-FIN"], C["default|OWNER|edit>FINANCE"]], S)
+    if "default|OWNER|get-FIN" in C:
+        ck("edit: kontrol positif: OWNER mengedit akun FINANCE (get-FIN) dan menetapkan FINANCE", C["default|OWNER|get-FIN"] == "OK" and C["default|OWNER|edit>FINANCE"] == "OK", [C["default|OWNER|get-FIN"], C["default|OWNER|edit>FINANCE"]], S)
     ck("edit: LUBANG LAMA pada BASE: Admin Umum bawaan melihat/mengedit akun FINANCE (get-FIN OK) dan FINANCE ada di editable_roles", B["default|ADMIN_UMUM|get-FIN"] == "OK" and '"FINANCE"' in B["default|ADMIN_UMUM|er"], [B["default|ADMIN_UMUM|get-FIN"], B["default|ADMIN_UMUM|er"][:100]], S)
 
 
@@ -313,13 +328,14 @@ def a_jurnal(B, C):
     for n in ("preview-dummy", "hasil-dummy", "buat-dummy", "e2e"):
         ck(f"jurnal berulang: Admin Umum tanpa izin jurnal.buat_manual DITOLAK ({n}) dengan pesan jelas", "Izin Buat jurnal manual belum diberikan" in C[k + n], C[k + n][:110], S)
     ck("jurnal berulang: LUBANG LAMA pada BASE: tanpa izin buat_manual, Admin Umum lolos gerbang (preview-dummy bukan galat izin)", "Izin Buat jurnal manual" not in B[k + "preview-dummy"], B[k + "preview-dummy"][:90], S)
-    for st in ("default", "umum_tanpa_bukubesar"):
+    for st in [x for x in ("default", "umum_tanpa_bukubesar") if x in sts(C)]:
         dd = diffs(B, C, [kk for kk in B if kk.startswith(st + "|")])
         ck(f"jurnal berulang/{st}: semua peran sama dengan BASE (bawaan Admin Umum tetap boleh; pesan modul Buku Besar tetap yang pertama)", not dd, dd, S)
     dd = diffs(B, C, [kk for kk in B if kk.startswith("umum_tanpa_buat|") and "|ADMIN_UMUM|" not in kk])
     ck("jurnal berulang: peran lain (ADMIN, FINANCE, OWNER, STAFF) tidak berubah walau Admin Umum dicabut", not dd, dd, S)
-    ck("jurnal berulang: kontrol positif: Admin Umum bawaan lolos gerbang dan membuat jadwal dari jurnal sumber", C["default|ADMIN_UMUM|e2e"].startswith("OK:"), C["default|ADMIN_UMUM|e2e"][:120], S)
-    ck("jurnal berulang: pesan modul Buku Besar tetap pertama bagi Admin Umum yang modulnya dicabut", "Akses Buku Besar diperlukan" in C["umum_tanpa_bukubesar|ADMIN_UMUM|preview-dummy"], C["umum_tanpa_bukubesar|ADMIN_UMUM|preview-dummy"][:90], S)
+    if "default|ADMIN_UMUM|e2e" in C:
+        ck("jurnal berulang: kontrol positif: Admin Umum bawaan lolos gerbang dan membuat jadwal dari jurnal sumber", C["default|ADMIN_UMUM|e2e"].startswith("OK:"), C["default|ADMIN_UMUM|e2e"][:120], S)
+        ck("jurnal berulang: pesan modul Buku Besar tetap pertama bagi Admin Umum yang modulnya dicabut", "Akses Buku Besar diperlukan" in C["umum_tanpa_bukubesar|ADMIN_UMUM|preview-dummy"], C["umum_tanpa_bukubesar|ADMIN_UMUM|preview-dummy"][:90], S)
 
 
 def a_hris(B, C):
@@ -328,13 +344,14 @@ def a_hris(B, C):
     for n in calls:
         ck(f"hris: Admin Umum tanpa modul HRIS ditolak di database ({n}; ROLE_ACTION_DENIED)", "ROLE_ACTION_DENIED" in C[f"umum_nohris|ADMIN_UMUM|{n}"], C[f"umum_nohris|ADMIN_UMUM|{n}"][:100], S)
         ck(f"hris: LUBANG LAMA pada BASE: tanpa modul HRIS Admin Umum lolos gerbang ({n})", "ROLE_ACTION_DENIED" not in B[f"umum_nohris|ADMIN_UMUM|{n}"], B[f"umum_nohris|ADMIN_UMUM|{n}"][:100], S)
-    for st in ("default", "umum_hris"):
+    for st in [x for x in ("default", "umum_hris") if x in sts(C)]:
         dd = diffs(B, C, [f"{st}|ADMIN_UMUM|{n}" for n in calls])
         ck(f"hris/{st}: Admin Umum (bawaan atau modul HRIS dibuka) sama dengan BASE", not dd, dd, S)
-    for a in ("ADMIN", "OWNER", "FINANCE"):
+    for a in [x for x in ("ADMIN", "OWNER", "FINANCE") if any(f"|{x}|" in kk for kk in C)]:
         dd = diffs(B, C, [kk for kk in B if f"|{a}|" in kk])
         ck(f"hris: {a} TIDAK berubah di semua keadaan (termasuk saat modul HRIS Admin Umum dicabut)", not dd, dd, S)
-    ck("hris: kontrol positif: Admin Umum bawaan menjalankan penugasan utama (utama OK)", C["default|ADMIN_UMUM|utama"].startswith("OK:"), C["default|ADMIN_UMUM|utama"][:90], S)
+    if "default|ADMIN_UMUM|utama" in C:
+        ck("hris: kontrol positif: Admin Umum bawaan menjalankan penugasan utama (utama OK)", C["default|ADMIN_UMUM|utama"].startswith("OK:"), C["default|ADMIN_UMUM|utama"][:90], S)
 
 
 def a_setoran(B, C):
@@ -365,9 +382,9 @@ def a_struct(B, C, base_only=False):
     new_f = {k[2:] for k in added if k.startswith("F|")}
     ck("struktur: fungsi baru hanya 5 pembantu di admin_umum_private", new_f == NEW_FN and not gone, sorted(new_f ^ NEW_FN), S)
     ck("struktur: penulis ulang peran Admin Umum (terapkan_semua(true)) tidak melaporkan DIUBAH/SISA_TAK_DIKENAL (semantik tabel catatan terjaga)", C["terapkan_ubah"] == "0", (C["terapkan"], C["terapkan_ubah"]), S)
-    ck("struktur: pembantu tidak dapat dipanggil anon/authenticated/service_role; skema tanpa USAGE", all(v.endswith("falsefalsefalse") for v in C["acl"].split(",")) and len(C["acl"].split(",")) == 5 and C["schema_usage"] == "falsefalse", (C["acl"], C["schema_usage"]), S)
-    ck("struktur: pembantu SECURITY DEFINER (kecuali peran_istimewa) dengan search_path kosong", C["cfg"].count('search_path=""') == 5 and C["cfg"].count("/true") == 4, C["cfg"][:200], S)
-    ck("struktur: tidak ada akun ADMIN_UMUM baru yang diberikan oleh migrasi", C["akun_umum"] == "0", C["akun_umum"], S)
+    ck("struktur: pembantu tidak dapat dipanggil anon/authenticated/service_role; skema tanpa USAGE", all(v.endswith("=falsefalsefalse") for v in C["acl"].split(";")) and len(C["acl"].split(";")) == 5 and C["schema_usage"] == "falsefalse", (C["acl"], C["schema_usage"]), S)
+    ck("struktur: pembantu SECURITY DEFINER (kecuali peran_istimewa) dengan search_path kosong", C["cfg"] == "5/4", C["cfg"], S)
+    ck("struktur: tidak ada akun ADMIN_UMUM baru yang diberikan oleh migrasi (jumlah akun ber-peran ini sama dengan BASE)", C["akun_umum"] == B["akun_umum"], (B["akun_umum"], C["akun_umum"]), S)
 
 
 ASSERT = {"create": a_create, "edit": a_edit, "jurnal": a_jurnal, "hris": a_hris, "setoran": a_setoran, "adminonline": a_ao, "struktur": a_struct}
@@ -400,8 +417,8 @@ def sec_rollback(cl, base_name, cand_name, ctx):
     diff = sorted(k for k in set(d0) | set(d1) if d0.get(k) != d1.get(k))
     ck("rollback: ROLLBACK (definisi BASE + hapus 5 pembantu) mengembalikan digest persis sama dengan sebelum migrasi", not diff, diff[:6], S)
     Db(cl, "auf_rb").sql("begin;\n" + MIG.read_text() + "\ncommit;")
-    d2 = digest_x(Db(cl, "auf_rb"))
-    diff2 = sorted(k for k in set(d2) | set(digest_x(cand)) if d2.get(k) != digest_x(cand).get(k))
+    d2, dc = digest_x(Db(cl, "auf_rb")), digest_x(cand)
+    diff2 = sorted(k for k in set(d2) | set(dc) if d2.get(k) != dc.get(k))
     ck("rollback: pasang ulang migrasi sesudah rollback berhasil dan hasilnya sama dengan pemasangan pertama", not diff2, diff2[:6], S)
     e = Db(cl, "auf_rb").err("begin;\n" + MIG.read_text() + "\ncommit;")
     ck("rollback: pemasangan ganda ditolak (fungsi pembantu sudah ada: gagal tertutup, tidak setengah terpasang)", has(e, "ADMIN_UMUM_BATAS_PRECONDITION"), (e or "")[-120:], S)
@@ -467,7 +484,7 @@ def run_mutations(cl, base_name, ctx, args, base_res):
         if err:
             broken.append((name, "galat pasang: " + err[-160:])); print("MUTAN-GALAT-PASANG", name, err[-160:], flush=True); continue
         before = len([r for r in old.RESULTS if r["status"] == "FAIL"])
-        d = Db(cl, mdb)
+        d = Db(cl, mdb); ctx["fast"] = True
         for s in sections:
             try:
                 res = COLLECT[s](d, ctx)

@@ -42,6 +42,8 @@ begin
              where n.nspname = 'admin_umum_private' and p.proname in ('peran_istimewa', 'aktor_admin_umum', 'tolak_peran_istimewa', 'tolak_edit_akun', 'wajib_modul')) then
     raise exception 'ADMIN_UMUM_BATAS_PRECONDITION: fungsi pembantu sudah ada; periksa urutan migrasi';
   end if;
+  -- jumlah akun ADMIN_UMUM saat mulai: migrasi ini tidak boleh mengubahnya (akun yang sudah ada tidak disentuh, tidak ada yang diberi peran)
+  perform set_config('admin_umum.batas_awal', (select count(*) from public.profiles where role::text = 'ADMIN_UMUM')::text, false);
 end $pre$;
 
 -- ───────────────────────── 1. Fungsi pembantu (skema admin_umum_private: tanpa USAGE/EXECUTE bagi peran API) ─────────────────────────
@@ -200,5 +202,6 @@ begin
   end loop;
   if has_schema_privilege('authenticated', 'admin_umum_private', 'usage') or has_schema_privilege('anon', 'admin_umum_private', 'usage') then
     raise exception 'ADMIN_UMUM_BATAS_CHECK: skema admin_umum_private terbuka'; end if;
-  if exists (select 1 from public.profiles where role::text = 'ADMIN_UMUM') then raise exception 'ADMIN_UMUM_BATAS_CHECK: ada akun ADMIN_UMUM; migrasi ini tidak boleh memberi peran'; end if;
+  if (select count(*) from public.profiles where role::text = 'ADMIN_UMUM') is distinct from nullif(current_setting('admin_umum.batas_awal', true), '')::bigint then
+    raise exception 'ADMIN_UMUM_BATAS_CHECK: jumlah akun ADMIN_UMUM berubah selama migrasi; migrasi ini tidak boleh memberi atau mencabut peran'; end if;
 end $check$;
