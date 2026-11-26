@@ -1,6 +1,6 @@
 # Rekap Setoran (Andri, 26 Nov 2026)
 
-Migrasi `20261216100000_rekap_setoran.sql` (satu transaksi), layar `/kas-bank/setoran` (back office) dan `/kasir/setoran` (kasir/staf), sub-menu Akses Grup `kas-bank.setoran`.
+Migrasi `20261213200000_rekap_setoran.sql` (satu transaksi), layar `/kas-bank/setoran` (back office) dan `/kasir/setoran` (kasir/staf), sub-menu Akses Grup `kas-bank.setoran`.
 
 ## Cara pakai
 - Petugas toko: **Setoran** (menu kasir) → **Buat periode** (cabang, periode Jumat–Minggu, jadwal Senin, batas jam) → dashboard menampilkan kewajiban, pengeluaran, sudah ditransfer, sisa, progres. Di bawahnya: input **pengeluaran dari dana setoran** (tanggal sendiri, kategori, jumlah, foto nota) dan **setoran ke perusahaan** (cicilan boleh; Transfer wajib foto bukti; Serah tunai tanpa foto). Setelah semua disetor: **Selesai disetor — ajukan penutupan**.
