@@ -1,14 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { NumberInput } from "@/components/NumberInput";
 import { SubmitButton } from "@/components/SubmitButton";
+import { KonfirmasiJumlah, PetunjukSatuan, SatuanBesar, type ButirKonfirmasi } from "@/components/SatuanHitung";
+import { jumlahTakWajar } from "@/lib/opname-jumlah-tak-wajar";
 import { fmtQty, fmtSelisih, parseQty, selisih, type InvopItem } from "@/lib/inventaris-operasional";
 import { simpanOpnameOperasional } from "../actions";
 
 /** Isi jumlah fisik per barang; selisih tampil langsung dan alasan jadi wajib bila ada selisih. */
 export function OpnameForm({ branchId, requestKey, items }: { branchId: string; requestKey: string; items: InvopItem[] }) {
   const [fisik, setFisik] = useState<Record<string, string>>({});
+  // Jumlah janggal (mis. 1000 padahal maksudnya 1) wajib dikonfirmasi sebelum opname disimpan.
+  const [janggal, setJanggal] = useState<{ butir: ButirKonfirmasi[]; form: HTMLFormElement } | null>(null);
+  const lolos = useRef(false);
   const diffs = items.map(i => {
     const n = parseQty(fisik[i.id]);
     return n === null ? null : selisih(i.qty, n);
@@ -16,14 +21,25 @@ export function OpnameForm({ branchId, requestKey, items }: { branchId: string; 
   const terisi = diffs.filter(d => d !== null).length;
   const beda = diffs.filter(d => d !== null && d !== 0).length;
 
+  const sebelumSimpan = (e: FormEvent<HTMLFormElement>) => {
+    if (lolos.current) { lolos.current = false; return; }
+    const butir = items.flatMap((i): ButirKonfirmasi[] => {
+      const n = parseQty(fisik[i.id]);
+      return n !== null && jumlahTakWajar(n, i.qty) ? [{ id: i.id, nama: i.nama, jumlah: n, satuan: i.satuan, sistem: i.qty }] : [];
+    });
+    if (butir.length === 0) return;
+    e.preventDefault();
+    setJanggal({ butir, form: e.currentTarget });
+  };
+
   return (
-    <form action={simpanOpnameOperasional}>
+    <form action={simpanOpnameOperasional} onSubmit={sebelumSimpan}>
       <input type="hidden" name="branch_id" value={branchId} />
       <input type="hidden" name="request_key" value={requestKey} />
       <div style={{ overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 760 }}>
           <thead>
-            <tr><th>Nama Barang</th><th>Satuan</th><th style={{ textAlign: "right" }}>Tercatat</th><th style={{ width: 120 }}>Jumlah Fisik</th>
+            <tr><th>Nama Barang</th><th style={{ textAlign: "right" }}>Tercatat</th><th style={{ width: 200 }}>Jumlah Fisik &amp; satuan</th>
               <th style={{ textAlign: "right" }}>Selisih</th><th>Alasan Selisih</th></tr>
           </thead>
           <tbody>
@@ -36,12 +52,17 @@ export function OpnameForm({ branchId, requestKey, items }: { branchId: string; 
                     <input type="hidden" name="item_id" value={i.id} />
                     <input type="hidden" name="revision" value={i.revision} />
                   </td>
-                  <td style={{ fontSize: 11.5 }}>{i.satuan}</td>
-                  <td style={{ textAlign: "right", fontSize: 11.5 }}>{fmtQty(i.qty)}</td>
+                  <td style={{ textAlign: "right", fontSize: 11.5 }}>{fmtQty(i.qty)} {i.satuan}</td>
                   <td>
-                    <NumberInput className="fi" name={`fisik_${i.id}`} type="number" min={0} step="0.01" required
-                      aria-label={`Jumlah fisik ${i.nama}`} value={fisik[i.id] ?? ""} onChange={e => setFisik(s => ({ ...s, [i.id]: e.target.value }))}
-                      style={{ width: 100 }} />
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3 }}>
+                      <PetunjukSatuan unit={i.satuan} htmlFor={`fisik-${i.id}`} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <NumberInput className="fi" name={`fisik_${i.id}`} id={`fisik-${i.id}`} type="number" min={0} step="0.01" required
+                          aria-label={`Jumlah fisik ${i.nama}${i.satuan ? ` (${i.satuan})` : ""}`} value={fisik[i.id] ?? ""} onChange={e => setFisik(s => ({ ...s, [i.id]: e.target.value }))}
+                          style={{ width: 110, fontSize: 15, fontWeight: 700 }} />
+                        <SatuanBesar unit={i.satuan} />
+                      </div>
+                    </div>
                   </td>
                   <td style={{ textAlign: "right", fontSize: 11.5, fontWeight: 600, color: d === null ? "var(--td)" : d === 0 ? "#15803d" : "#b91c1c" }}>
                     {d === null ? "—" : d === 0 ? "Sesuai" : fmtSelisih(d)}
@@ -66,6 +87,13 @@ export function OpnameForm({ branchId, requestKey, items }: { branchId: string; 
           Simpan Opname
         </SubmitButton>
       </div>
+      {janggal && (
+        <KonfirmasiJumlah
+          butir={janggal.butir}
+          onBatal={() => { const id = janggal.butir[0].id; setJanggal(null); setTimeout(() => document.getElementById(`fisik-${id}`)?.focus(), 0); }}
+          onYa={() => { const form = janggal.form; setJanggal(null); lolos.current = true; form.requestSubmit(); }}
+        />
+      )}
     </form>
   );
 }
