@@ -409,6 +409,14 @@ def run_diff(db, a):
 
 
 # ------------------------------------------------------------------ mutants
+# Mutants that are PROVABLY equivalent: the guard they remove cannot fire once the guards before it hold. They are run and reported, never counted as killed.
+#  M22: 'Lapisan FIFO tidak cukup untuk koreksi' needs needed > sum(virtual layers); but the stock check before it enforces r.qty-newqty <= current_qty, and the
+#  virtual layers sum to current_qty (old_diff = 0) or current_qty - old_diff (old_diff < 0, enforced by the 'Bukti FIFO' guard), so needed <= sum(virtual) always.
+EQUIVALENT = [
+    ('M22 plan: lapisan FIFO tidak cukup tidak ditahan', "if needed>0 then raise exception using errcode='KR001',message='Lapisan FIFO tidak cukup untuk koreksi'", "if false then raise exception using errcode='KR001',message='Lapisan FIFO tidak cukup untuk koreksi'"),
+]
+
+
 def mutants():
     T = lambda *pairs: list(pairs)
     X = [
@@ -433,7 +441,6 @@ def mutants():
      ('M19 plan: jumlah pengambilan FIFO lama tidak diperiksa', "(select sum(x.qty) from jsonb_to_recordset(m.fifo_takes)x(qty numeric)) is distinct from -old_diff or", "false or"),
      ('M20 plan: jumlah lapisan virtual tidak diperiksa', "(select sum((x->>'qty')::numeric) from jsonb_array_elements(virtual)x) is distinct from current_qty-old_diff) then", "false) then"),
      ('M21 plan: stok tidak cukup tidak ditahan', "if current_qty+newqty-r.qty<0 then raise exception using errcode='KR001'", "if false then raise exception using errcode='KR001'"),
-     ('M22 plan: lapisan FIFO tidak cukup tidak ditahan', "if needed>0 then raise exception using errcode='KR001',message='Lapisan FIFO tidak cukup untuk koreksi'", "if false then raise exception using errcode='KR001',message='Lapisan FIFO tidak cukup untuk koreksi'"),
      ('M23 plan: pengurangan memakai lapisan Rp0 tidak ditahan', "if new_diff<0 and exists(select 1 from jsonb_to_recordset(takes)x(unit_cost numeric) where x.unit_cost=0) then", "if false and new_diff<0 and exists(select 1 from jsonb_to_recordset(takes)x(unit_cost numeric) where x.unit_cost=0) then"),
      ('M24 plan: harga master tidak valid tidak ditahan', "if buy is null or buy<0 or buy>1e12 or buy::text in('NaN','Infinity','-Infinity') then raise exception using errcode='KR001'", "if false then raise exception using errcode='KR001'"),
      ('M25 plan: selisih lebih opname memakai harga master, bukan rata-rata', "if new_diff>0 and p_kind='opname' then select c.unit_cost into buy from public.opname_surplus_cost(wh,r.item_id,buy) c;end if;", "null;"),
@@ -516,7 +523,17 @@ def run_mutations(db, a):
         dead = not ok or len(passes) < want
         killed += dead
         check('MUTANT ' + name + ' -> %s' % ('KILLED: ' + why[:90] if dead else 'SURVIVED (suite still green, %d)' % len(passes)), dead, why)
-    check('MUTANTS killed %d / %d (>= 40 required)' % (killed, total), killed == total and (total >= 40 or only is not None))
+    for name, olds, news in EQUIVALENT:
+        if only and not any(name.startswith(o) for o in only): continue
+        olds = olds if isinstance(olds, list) else [olds]; news = news if isinstance(news, list) else [news]
+        if any(base.count(o) != 1 for o in olds):
+            check('EQUIVALENT ' + name + ' (anchor found exactly once)', False); continue
+        mutated = base
+        for o, n in zip(olds, news): mutated = mutated.replace(o, n)
+        clone(db, 'mut'); apply_cand(db, 'mut', mutated)
+        ok, passes, why = run_suite(db, 'mut', SUITE)
+        check('EQUIVALENT (not counted) ' + name + ' -> %s' % ('survives as predicted (unreachable guard, see EQUIVALENT comment)' if ok else 'unexpectedly killed: ' + why[:80]), True)
+    check('MUTANTS killed %d / %d (>= 40 required; 1 provably equivalent mutant reported separately)' % (killed, total), killed == total and (total >= 40 or only is not None))
 
 
 # ------------------------------------------------------------------ concurrency
