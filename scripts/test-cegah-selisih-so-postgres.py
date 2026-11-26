@@ -203,9 +203,9 @@ select public.stock_out_fifo('5c300000-0000-4000-8000-0000000000a1','5c400000-00
 delete from opname_counts where order_id='5c500000-0000-4000-8000-0000000000a1';
 insert into opname_counts(order_id,item_id,qty_fisik,qty_sistem) values('5c500000-0000-4000-8000-0000000000a1','5c400000-0000-4000-8000-0000000000a1',11,0);
 select set_config('request.jwt.claim.sub','5c100000-0000-4000-8000-0000000000a1',true);select set_config('request.jwt.claims','{"role":"authenticated"}',true);
+select public.post_opname_atomic('5c500000-0000-4000-8000-0000000000a1',current_date,'{"5c400000-0000-4000-8000-0000000000a1":11}'::jsonb) is not null;
 select 'DEFECT selisih='||x.selisih||' qty_sistem='||x.qty_sistem||' journal810004='||coalesce((select sum(l.credit-l.debit) from journal_lines l join coa_accounts c on c.id=l.account_id join journal_entries e on e.id=l.entry_id where c.code='810004' and e.source='opname'),0)
- from (select public.post_opname_atomic('5c500000-0000-4000-8000-0000000000a1',current_date,'{"5c400000-0000-4000-8000-0000000000a1":11}'::jsonb)) r,
- lateral (select selisih,qty_sistem from opname_result_items order by id limit 1) x;
+ from (select selisih,qty_sistem from opname_result_items order by id limit 1) x;
 rollback;
 """
     rc, out, err = raw(db, probe, 'red')
