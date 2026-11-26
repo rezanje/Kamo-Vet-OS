@@ -194,7 +194,7 @@ create temp table r(k text,v jsonb);
 insert into r select 'p',public.setoran_buat('c7200000-0000-4000-8000-000000000001',((now() at time zone 'Asia/Jakarta')::date-3),((now() at time zone 'Asia/Jakarta')::date-3),((now() at time zone 'Asia/Jakarta')::date-2),'12:00','c7600000-0000-4000-8000-000000000001');
 insert into r select 'e1',public.setoran_tambah_pengeluaran((select (v->>'id')::uuid from r where k='p'),((now() at time zone 'Asia/Jakarta')::date-3),'Operasional',1000,'lama 1','[{"path":"setoran/lama-ganda.jpg","nama":"a.jpg"}]'::jsonb,0,'c7600000-0000-4000-8000-000000000002');
 insert into r select 'e2',public.setoran_tambah_pengeluaran((select (v->>'id')::uuid from r where k='p'),((now() at time zone 'Asia/Jakarta')::date-3),'Operasional',2000,'lama 2','[{"path":"setoran/lama-ganda.jpg","nama":"a.jpg"},{"path":"setoran/lama-unik.jpg","nama":"b.jpg"}]'::jsonb,1,'c7600000-0000-4000-8000-000000000003');
-insert into r select 't1',public.setoran_tambah_transfer((select (v->>'id')::uuid from r where k='p'),((now() at time zone 'Asia/Jakarta')::date-2),100000,'Transfer',(select id from public.cash_accounts where nama='Up kas' limit 1),'[{"path":"setoran/lama-transfer.jpg","nama":"c.jpg"}]'::jsonb,null,2,'c7600000-0000-4000-8000-000000000004');
+insert into r select 't1',public.setoran_tambah_transfer((select (v->>'id')::uuid from r where k='p'),((now() at time zone 'Asia/Jakarta')::date-2),100000,'Serah tunai',(select id from public.cash_accounts where nama='Up kas' limit 1),'[{"path":"setoran/lama-transfer.jpg","nama":"c.jpg"}]'::jsonb,null,2,'c7600000-0000-4000-8000-000000000004');
 select 'PID '||(v->>'id') from r where k='p';
 """
 UP_AFTER = r"""
