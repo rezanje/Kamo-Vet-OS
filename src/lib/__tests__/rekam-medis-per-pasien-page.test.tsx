@@ -219,7 +219,10 @@ describe("Per kunjungan (tampilan lama)", () => {
     const html = await render({ kelompok: "kunjungan", tampilan: "semua" });
     const tabel = html.slice(html.indexOf("<table"), html.indexOf("</table>") + "</table>".length);
     expect(tabel.length).toBeGreaterThan(500);
-    expect(tabel).toMatchSnapshot();
+    // Tampilan rapi (ponsel): tabel hanya mendapat kelas tata letak + atribut data-label per sel (label di kotak ponsel).
+    // Dengan keduanya dibuang, markup HARUS sama persis dengan snapshot lama (isi, kolom, tautan, lencana tidak berubah).
+    const tanpaTataLetak = tabel.replace(/ data-label="[^"]*"/g, "").replace(/class="tbl [^"]*"/, 'class="tbl"');
+    expect(tanpaTataLetak).toMatchSnapshot();
   });
 
   it("?pet= selalu per kunjungan (riwayat satu hewan) dan tanpa toggle", async () => {
