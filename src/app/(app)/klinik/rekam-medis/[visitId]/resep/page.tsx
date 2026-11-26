@@ -3,6 +3,8 @@ import { labelSusulanRingkas, type SusulanFields } from "@/lib/rekam-medis-susul
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PrintButton } from "./PrintButton";
+import { RekamMedisKop } from "@/components/RekamMedisKop";
+import { bacaIdentitasKop } from "@/lib/cabang-identitas-server";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -15,7 +17,7 @@ export default async function ResepPage({ params, searchParams }: { params: Prom
 
   const { data: visit } = await supabase
     .from("visits")
-    .select("id, dokter, poli, created_at, pets(name, species, breed, weight), customers(name, phone), branches(name, code)")
+    .select("id, branch_id, dokter, poli, created_at, pets(name, species, breed, weight), customers(name, phone), branches(name, code)")
     .eq("id", visitId)
     .maybeSingle();
   if (!visit) notFound();
@@ -23,6 +25,8 @@ export default async function ResepPage({ params, searchParams }: { params: Prom
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const branch = one(visit.branches);
+  // Kop = identitas CABANG KUNJUNGAN (sama dengan rekam medis); gagal baca = nama cabang saja.
+  const identitas = await bacaIdentitasKop(supabase, (visit as { branch_id?: string | null }).branch_id ?? null);
 
   const requestedRecord = (await searchParams)?.record;
   let recordQuery = supabase
@@ -55,11 +59,8 @@ export default async function ResepPage({ params, searchParams }: { params: Prom
       <div style={{ maxWidth: 560, margin: "0 auto", background: "#fff", border: ".5px solid var(--bd)", borderRadius: 10, padding: "26px 30px", fontSize: 12.5, color: "#141413" }}>
         {/* Kop klinik */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #16213e", paddingBottom: 12, marginBottom: 16 }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 900 }}>KAMO<i className="ti ti-paw" style={{ fontSize: 15, verticalAlign: -1 }} /> PET CARE</div>
-            <div style={{ fontSize: 10.5, color: "var(--tm)", marginTop: 2 }}>{branch?.name ?? "Klinik Hewan"}</div>
-          </div>
-          <div style={{ textAlign: "right", fontSize: 10.5, color: "var(--tm)" }}>
+          <RekamMedisKop nama={branch?.name} alamat={identitas.alamat} telepon={identitas.telepon} logoUrl={identitas.logoUrl} />
+          <div style={{ textAlign: "right", fontSize: 10.5, color: "var(--tm)", flexShrink: 0 }}>
             <div style={{ fontWeight: 700, color: "#141413", fontSize: 13 }}>RESEP</div>
             <div style={{ marginTop: 2 }}>{tgl}</div>
           </div>

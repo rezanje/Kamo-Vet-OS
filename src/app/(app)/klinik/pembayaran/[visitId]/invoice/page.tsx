@@ -1,6 +1,8 @@
 import { readCompleteList } from "@/lib/checked-list";
 import { customerPackageLines, type PackagePrintSource } from "@/lib/clinic-package-print";
 import { printBranchHeading } from "@/components/print-branch-heading";
+import { KopCabang } from "@/components/KopCabang";
+import { bacaIdentitasKop } from "@/lib/cabang-identitas-server";
 import { bacaKartuPetugas, idPetugas, petugasCetak, type BarisTagihanPetugas } from "@/lib/petugas-cetak";
 import { ClinicDemoFees } from "@/components/ClinicDemoFees";
 import Link from "next/link";
@@ -32,7 +34,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   if (!visit) notFound();
 
   let invoiceQuery=supabase.from("invoices")
-    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name,visits(branches(name, code))", {count:"exact"})
+    .select("id,invoice_no,subtotal,discount,tax,total,dp_amount,dp_date,paid_status,metode_bayar,paid_at,created_at,cashier_name,visits(branch_id, branches(name, code))", {count:"exact"})
     .eq("visit_id",visitId).is("voided_at",null);
   if(requested)invoiceQuery=invoiceQuery.eq("id",requested);
   const{data:invoice,error:invoiceError,count:invoiceCount}=await invoiceQuery
@@ -80,6 +82,9 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   const pet = one(visit.pets);
   const cust = one(visit.customers);
   const branch = one(one(invoice.visits)?.branches ?? null);
+  // Kop = identitas CABANG PENERBIT invoice (kunjungan invoice ini), bukan cabang yang sedang dipilih pengguna.
+  // Logo/alamat/telepon pelengkap: gagal baca = kop tetap dicetak dengan nama cabang.
+  const identitas = await bacaIdentitasKop(supabase, (one(invoice.visits) as { branch_id?: string | null } | null)?.branch_id ?? null);
   const tgl = new Date(invoice.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "long", year: "numeric" });
   const lunas = invoice.paid_status === "Lunas";
   const credit = uangPindahanBersih(payments ?? []);
@@ -103,11 +108,9 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
 
       <div style={{ maxWidth: 720, margin: "0 auto", background: "#fff", border: ".5px solid var(--bd)", borderRadius: 10, padding: "32px 36px", fontSize: 12.5, color: "#141413" }}>
         {/* Kop */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #16213e", paddingBottom: 14, marginBottom: 18 }}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 900 }}>{printBranchHeading(branch)}</div>
-          </div>
-          <div style={{ textAlign: "right" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, borderBottom: "2px solid #16213e", paddingBottom: 14, marginBottom: 18 }}>
+          <KopCabang nama={printBranchHeading(branch)} alamat={identitas.alamat} telepon={identitas.telepon} logoUrl={identitas.logoUrl} ukuranNama={20} warnaNama="#141413" />
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: ".04em" }}>INVOICE</div>
             <div style={{ fontSize: 12, color: "var(--tm)", marginTop: 3 }}>{invoice.invoice_no ?? "-"}</div>
             <div style={{ fontSize: 10.5, color: "var(--tm)" }}>{tgl}</div>

@@ -10,10 +10,16 @@ Permintaan Andri (26 Nov 2026): rekam medis harus tercetak sesuai cabang kunjung
 - **Layar** Pengaturan > Cabang, bagian 01 "Identitas cabang di dokumen cetak": per cabang klinik ada alamat, telepon, logo (PNG/JPG/WEBP maks. 1 MB, pratinjau, hapus) dan pratinjau kop. Nama cabang: tautan ke Perusahaan > Cabang.
 - **Dokumen** `/klinik/rekam-medis/[visitId]/dokumen`: kop memakai identitas CABANG KUNJUNGAN (bukan cabang yang sedang dipilih pengguna). Logo lewat tautan bertanda tangan dibuat di server (1 jam). Tanpa logo: logo cakar lama. Tanpa alamat/telepon: tagline lama. Kunjungan tanpa cabang (impor lama): "KAMO PET CARE". Gagal membaca identitas tidak pernah menggagalkan cetak. Ukuran logo dan kolom kop tidak berubah (tetap satu halaman A4).
 
-## Dokumen klinik yang masih memakai kop lama
-- Resep (`/klinik/rekam-medis/[visitId]/resep`) dan Formulir persetujuan (`/klinik/consent/[consentId]`): merek "KAMO PET CARE" tetap, nama cabang hanya baris kecil.
+## Dokumen klinik yang memakai kop cabang (lanjutan, aplikasi saja, tanpa migrasi)
+Satu aturan untuk semua: `src/lib/cabang-identitas-server.ts` (`bacaIdentitasKop`) dan tampilan `src/components/KopCabang.tsx`.
+- **Invoice klinik** (`/klinik/pembayaran/[id]/invoice?invoice_id=...`): kiri logo + nama cabang + "alamat · Telp. telepon" milik cabang kunjungan INVOICE itu (bukan cabang yang sedang dipilih); kanan tetap INVOICE, nomor, tanggal, status. Tanpa logo: logo cakar. Tanpa alamat/telepon: baris itu dihilangkan. Cabang invoice tidak tercatat: "Cabang belum tercatat" seperti semula. A4, margin 14 mm, tombol "Cetak Invoice" tidak berubah.
+- **Resep** (`/klinik/rekam-medis/[id]/resep`) dan **Formulir persetujuan** (`/klinik/consent/[id]`): kop yang sama dengan rekam medis (logo cabang, nama cabang, alamat/telepon; "KAMO PET CARE" hanya bila kunjungan tanpa cabang).
+- Gagal membaca identitas atau gagal membuat tautan logo tidak pernah menggagalkan cetak: dokumen tetap tercetak dengan nama cabang.
+
+## Dokumen yang sengaja belum memakai kop ini
+- Struk/kwitansi klinik termal 80 mm (struk, struk rombongan, kwitansi rawat inap) dan struk petshop/kasir: kertas sempit, keputusan logo/alamat di struk menunggu Andri.
+- Faktur penjualan (grosir/petshop), surat jalan permintaan stok dan pemindahan: cabang petshop belum bisa mengisi identitas (layar Pengaturan > Cabang hanya menampilkan cabang klinik).
 - Pesan WhatsApp rawat inap (`src/lib/inpatient.ts`) dan halaman booking publik masih menyebut "KAMO PET CARE".
-- Faktur/struk/kwitansi klinik sudah memakai nama cabang penerbitnya (print-branch-heading), tanpa logo/alamat.
 
 ## Rollback
 `ROLLBACK.sql` ada di folder cadangan (prod-backups/cabang-identitas-*). Menghapus kolom = alamat/telepon/logo yang sudah diisi hilang; berkas logo di storage tidak ikut terhapus. Kode aplikasi harus dikembalikan juga.
