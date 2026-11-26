@@ -26,7 +26,7 @@ CANDFILE = sorted(MIGRATIONS.glob('*_koreksi_so_per_baris.sql'))[0]
 CAND = CANDFILE.name
 bp.CAND = CAND
 SUITE = 'koreksi_so_per_baris.sql'
-MIN_SUITE = 177
+MIN_SUITE = 188
 check, raw, clone, run_suite, apply = bp.check, bp.raw, bp.clone, bp.run_suite, bp.apply
 NativePostgres, RESULTS, Sess, waiting, sleeping, q1 = bp.NativePostgres, bp.RESULTS, bp.Sess, bp.waiting, bp.sleeping, bp.q1
 
@@ -444,7 +444,7 @@ def mutants():
      ('M30 plan: harga jual tidak dikenal dianggap tidak berdampak', "if price is null or price<>0 or old_value<>0 or round(value,2)<>0 then reason:=charge_note;end if;", "if price<>0 or old_value<>0 or round(value,2)<>0 then reason:=charge_note;end if;"),
      ('M31 plan: semua baris tertahan tidak berhenti', "if applied=0 then\n  select string_agg", "if false then\n  select string_agg"),
      ('M32 plan: tanpa perubahan tidak ditolak', "if not changed then raise exception 'Jumlah koreksi sama dengan hasil saat ini';end if;", "null;"),
-     ('M33 plan: nilai jurnal vs stok tidak dicocokkan', "if abs(inventory-original)>0.000001 or abs(contra+original)>0.000001 then", "if false and abs(inventory-original)>0.000001 or abs(contra+original)>0.000001 then"),
+     ('M33 plan: nilai jurnal vs stok tidak dicocokkan', "if abs(inventory-original)>0.000001 or abs(contra+original)>0.000001 then raise", "if false then raise"),
      ('M34 plan: rincian debit/kredit sumber tidak dicocokkan', "if exists(select 1 from (values('170001'::text,array['170001']),('720010'::text,array['720010','810004'])) a(code,codes) where (", "if false and exists(select 1 from (values('170001'::text,array['170001']),('720010'::text,array['720010','810004'])) a(code,codes) where ("),
      ('M35 plan: header penyesuaian tidak dicocokkan', "if p_kind='adjustment' and (state->>'revision')::integer=0 and", "if false and p_kind='adjustment' and (state->>'revision')::integer=0 and"),
      ('M36 plan: jurnal pengganti lupa nilai lama baris diterapkan', "new_in:=greatest(jr_in-ch_old_in+ch_new_in,0);", "new_in:=greatest(jr_in+ch_new_in,0);"),
@@ -469,8 +469,8 @@ def mutants():
      ('M55 correct: hasil simpan tanpa daftar tertahan', "'applied',plan->'applied','blocked',plan->'blocked');\n insert into public.stock_document_correction_requests", "'applied',plan->'applied','blocked','[]'::jsonb);\n insert into public.stock_document_correction_requests"),
      ('M56 correct: tanda beban sudah diperiksa tidak disimpan', "after_state:=jsonb_build_object('charge_checked',(plan->>'charge_checked')::boolean,", "after_state:=jsonb_build_object('charge_checked',false,"),
      ('M57 correct: token pratinjau tidak diperiksa', "if p_preview_token is null or p_preview_token is distinct from plan->>'token' then", "if false and p_preview_token is null or p_preview_token is distinct from plan->>'token' and false then"),
-     ('M58 correct: pagar Admin Online dihapus', "begin\n  perform admin_online_private.deny_admin_online();\n -- Take the existing costing-mode shared lock before document/stock/ledger locks.\n if public.inventory_is_average() then raise exception 'Koreksi historis FIFO tidak tersedia saat HPP average aktif. Rekonsiliasi melalui Finance diperlukan';end if;\n if auth.uid() is null", "begin\n -- Take the existing costing-mode shared lock before document/stock/ledger locks.\n if public.inventory_is_average() then raise exception 'Koreksi historis FIFO tidak tersedia saat HPP average aktif. Rekonsiliasi melalui Finance diperlukan';end if;\n if auth.uid() is null"),
-     ('M59 preview: pagar Admin Online dihapus', "declare plan jsonb;begin\n  perform admin_online_private.deny_admin_online();\n plan:=", "declare plan jsonb;begin\n plan:="),
+     ('M58 correct: pagar Admin Online dihapus (dan tidak dipasang ulang oleh guard_all/fence_all)', ["begin\n  perform admin_online_private.deny_admin_online();\n -- Take the existing costing-mode shared lock before document/stock/ledger locks.\n if public.inventory_is_average() then raise exception 'Koreksi historis FIFO tidak tersedia saat HPP average aktif. Rekonsiliasi melalui Finance diperlukan';end if;\n if auth.uid() is null", "select admin_online_private.guard_all();\nselect admin_online_private.fence_all();"], ["begin\n -- Take the existing costing-mode shared lock before document/stock/ledger locks.\n if public.inventory_is_average() then raise exception 'Koreksi historis FIFO tidak tersedia saat HPP average aktif. Rekonsiliasi melalui Finance diperlukan';end if;\n if auth.uid() is null", "select 1;"]),
+     ('M59 preview: pagar Admin Online dihapus (dan tidak dipasang ulang oleh guard_all/fence_all)', ["declare plan jsonb;begin\n  perform admin_online_private.deny_admin_online();\n plan:=", "select admin_online_private.guard_all();\nselect admin_online_private.fence_all();"], ["declare plan jsonb;begin\n plan:=", "select 1;"]),
      ('M60 preview: daftar tertahan tidak dikembalikan', "'applied',plan->'applied','blocked',plan->'blocked');\nend$function$;", "'applied',plan->'applied','blocked','[]'::jsonb);\nend$function$;"),
      ('M61 charge-note: pagar Admin Online dihapus', "declare c public.opname_variance_charges%rowtype;names text;\nbegin\n  perform admin_online_private.deny_admin_online();", "declare c public.opname_variance_charges%rowtype;names text;\nbegin"),
      ('M62 charge-note: pesan tanpa petunjuk batalkan beban', "Batalkan beban karyawan dulu di halaman hasil opname %s (bagian Riwayat beban karyawan, tombol Batalkan beban), lalu koreksi baris ini.", "Lanjut."),
