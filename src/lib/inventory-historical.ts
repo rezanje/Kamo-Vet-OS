@@ -5,6 +5,28 @@ import { aturanEfektif, bacaTambahanAkses } from "./akses-akun";
 import { validReportDate } from "./hpp-reports";
 import { readReportRows, ReportAccessError, ReportInputError } from "./hpp-reports-server";
 import { hariIniWIB, tanggalWIB } from "./tanggal";
+import { fungsiBelumAda } from "./laporan-struk-kasir";
+
+// Migrasi 20261219100000: buku besar 170001 dan lapisan FIFO dibaca di database dalam satu panggilan (hak baca = RLS).
+// Pembaca halaman lama tetap dipakai bila fungsinya belum ada atau melewati batas waktu pernyataan.
+export const PERSEDIAAN_BUKU_BESAR_RPC = "laporan_persediaan_buku_besar";
+export const PERSEDIAAN_LAPISAN_RPC = "laporan_persediaan_lapisan";
+type Galat = { message?: string; code?: string } | null;
+const melewatiBatasWaktu = (error: NonNullable<Galat>) => error.code === "57014" || /statement timeout/i.test(error.message ?? "");
+/** null = pembaca lama dipakai (fungsi belum ada, melewati batas waktu, atau jawaban bukan objek). Galat lain dilempar. */
+async function panggilFungsi(client: SupabaseClient, nama: string, args: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  if (typeof client.rpc !== "function") return null;
+  const { data, error } = await client.rpc(nama, args) as { data: unknown; error: Galat };
+  if (error) {
+    if (fungsiBelumAda(error, nama) || melewatiBatasWaktu(error)) return null;
+    throw Object.assign(new Error(`Data laporan gagal dibaca: ${error.message}`), { code: error.code });
+  }
+  return data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : null;
+}
+function angkaFungsi(nilai: unknown, label: string): Decimal {
+  if (typeof nilai !== "string") throw new Error(`Data laporan gagal dibaca: ${label} tidak lengkap`);
+  return amount(nilai, label);
+}
 
 export const HISTORICAL_INVENTORY_PATH = "/laporan/nilai-persediaan/historis";
 const Exact = Decimal.clone({ precision: 80 });
@@ -73,6 +95,16 @@ function eventPositions(events: CostEvent[]) {
 }
 
 async function inventoryLedgerAtDate(client: SupabaseClient, asOf: string, branchIds: string[], includeUnallocated: boolean) {
+  const cepat = await panggilFungsi(client, PERSEDIAAN_BUKU_BESAR_RPC, { p_as_of: asOf, p_branch_ids: branchIds, p_tak_teralokasi: includeUnallocated });
+  if (cepat) {
+    if (cepat.akun_ada === false) return null;
+    const per = cepat.per_cabang;
+    if (cepat.akun_ada !== true || !per || typeof per !== "object" || Array.isArray(per) || typeof cepat.negatif !== "number") throw new Error("Data laporan gagal dibaca: saldo buku besar persediaan tidak lengkap");
+    if (cepat.negatif > 0) throw new ReportInputError("Nilai jurnal persediaan negatif; rekonsiliasi sumber diperlukan.");
+    const balances = new Map(branchIds.map(id => [id, new Exact(0)]));
+    for (const [id, saldo] of Object.entries(per as Record<string, unknown>)) if (balances.has(id)) balances.set(id, angkaFungsi(saldo, "Saldo GL 170001"));
+    return { balances, unallocated: includeUnallocated ? angkaFungsi(cepat.tak_teralokasi, "Saldo GL 170001 tanpa cabang") : new Exact(0) };
+  }
   const { data: account, error } = await client.from("coa_accounts").select("id").eq("code", "170001").maybeSingle();
   if (error) throw new Error(`Akun persediaan gagal dibaca: ${error.message}`);
   if (!account) return null;
@@ -138,7 +170,7 @@ export async function loadHistoricalInventory(client: SupabaseClient, input: { t
   if (!available) {
     // M01: in FIFO mode only TODAY's position can be read exactly (remaining layers).
     const fifoCurrent = settings?.method !== "moving_average" && asOf === hariIniWIB()
-      ? await fifoPositionVersusLedger(client, asOf, selected, await warehousesOf(client, selected), canViewLedger, includeUnallocated)
+      ? await fifoPositionVersusLedger(client, asOf, selected, canViewLedger, includeUnallocated)
       : null;
     return { asOf, activatedAt, available: false as const, branches, selectedIds, selected, canViewLedger, rows: [], summary: [], total: null, fifoCurrent, fullBranchAccess };
   }
@@ -248,11 +280,41 @@ async function warehousesOf(client: SupabaseClient, selected: Branch[]) {
  * Negative stock has no layer and therefore no value here; it is counted, never
  * estimated. A difference is shown for review only — nothing is journaled.
  */
-async function fifoPositionVersusLedger(client: SupabaseClient, asOf: string, selected: Branch[], warehouses: Warehouse[],
+async function fifoPositionVersusLedger(client: SupabaseClient, asOf: string, selected: Branch[],
   canViewLedger: boolean, includeUnallocated: boolean) {
-  const branchOf = new Map(warehouses.map(warehouse => [warehouse.id, warehouse.branch_id]));
   const layerValue = new Map(selected.map(branch => [branch.id, new Exact(0)]));
   const negative = new Map(selected.map(branch => [branch.id, 0]));
+  const cepat = await panggilFungsi(client, PERSEDIAAN_LAPISAN_RPC, { p_branch_ids: selected.map(branch => branch.id) });
+  const per = cepat?.per_cabang;
+  if (cepat && per && typeof per === "object" && !Array.isArray(per) && typeof cepat.biaya_negatif === "number") {
+    if (cepat.biaya_negatif > 0) throw new ReportInputError("Biaya lapisan stok negatif; rekonsiliasi sumber diperlukan.");
+    for (const [id, nilai] of Object.entries(per as Record<string, { nilai?: unknown; minus?: unknown }>)) {
+      if (!layerValue.has(id)) continue;
+      if (!nilai || typeof nilai.minus !== "number") throw new Error("Data laporan gagal dibaca: lapisan stok tidak lengkap");
+      layerValue.set(id, angkaFungsi(nilai.nilai, "Nilai lapisan"));
+      negative.set(id, nilai.minus);
+    }
+  } else {
+    await bacaLapisanLama(client, selected, layerValue, negative);
+  }
+  const ledger = canViewLedger ? await inventoryLedgerAtDate(client, asOf, selected.map(branch => branch.id), includeUnallocated) : null;
+  const summary = selected.map(branch => {
+    const value = layerValue.get(branch.id)!.toFixed();
+    const ledgerValue = ledger?.balances.get(branch.id)?.toFixed() ?? null;
+    return { ...branch, layerValue: value, ledgerValue, negativeCount: negative.get(branch.id)!,
+      difference: ledgerValue === null ? null : new Exact(value).minus(ledgerValue).toFixed() };
+  });
+  const total = summary.reduce((sum, branch) => sum.plus(branch.layerValue), new Exact(0)).toFixed();
+  const ledgerTotal = ledger ? summary.reduce((sum, branch) => sum.plus(branch.ledgerValue ?? 0), new Exact(0)).toFixed() : null;
+  return { summary, total, ledgerTotal, difference: ledgerTotal === null ? null : new Exact(total).minus(ledgerTotal).toFixed(),
+    unallocatedLedger: ledger && includeUnallocated ? ledger.unallocated.toFixed() : null,
+    ledgerMissing: canViewLedger && ledger === null };
+}
+
+/** Pembaca lama (cadangan): lapisan FIFO bersisa dan stok minus per halaman 500 baris. */
+async function bacaLapisanLama(client: SupabaseClient, selected: Branch[], layerValue: Map<string, Decimal>, negative: Map<string, number>) {
+  const warehouses = await warehousesOf(client, selected);
+  const branchOf = new Map(warehouses.map(warehouse => [warehouse.id, warehouse.branch_id]));
   for (let start = 0; start < warehouses.length; start += 100) {
     const ids = warehouses.slice(start, start + 100).map(warehouse => warehouse.id);
     const layers = await readReportRows<{ id: string; warehouse_id: string; qty_left: number | string; unit_cost: number | string }>(async (from, to) => client.from("stock_layers")
@@ -271,16 +333,4 @@ async function fifoPositionVersusLedger(client: SupabaseClient, asOf: string, se
       negative.set(branch, negative.get(branch)! + 1);
     }
   }
-  const ledger = canViewLedger ? await inventoryLedgerAtDate(client, asOf, selected.map(branch => branch.id), includeUnallocated) : null;
-  const summary = selected.map(branch => {
-    const value = layerValue.get(branch.id)!.toFixed();
-    const ledgerValue = ledger?.balances.get(branch.id)?.toFixed() ?? null;
-    return { ...branch, layerValue: value, ledgerValue, negativeCount: negative.get(branch.id)!,
-      difference: ledgerValue === null ? null : new Exact(value).minus(ledgerValue).toFixed() };
-  });
-  const total = summary.reduce((sum, branch) => sum.plus(branch.layerValue), new Exact(0)).toFixed();
-  const ledgerTotal = ledger ? summary.reduce((sum, branch) => sum.plus(branch.ledgerValue ?? 0), new Exact(0)).toFixed() : null;
-  return { summary, total, ledgerTotal, difference: ledgerTotal === null ? null : new Exact(total).minus(ledgerTotal).toFixed(),
-    unallocatedLedger: ledger && includeUnallocated ? ledger.unallocated.toFixed() : null,
-    ledgerMissing: canViewLedger && ledger === null };
 }
