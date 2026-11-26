@@ -28,7 +28,7 @@ export function peranPenyetujuEfektif(role: string): string {
 }
 
 /**
- * Batas Admin Umum (database: 20261218200000_admin_umum_batas_peran.sql): akun ADMIN_UMUM tidak boleh membuat, memberikan, atau mengubah akun
+ * Batas Admin Umum (database: 20261219500000_admin_umum_batas_peran.sql): akun ADMIN_UMUM tidak boleh membuat, memberikan, atau mengubah akun
  * berperan FINANCE / OWNER / ADMIN / ADMIN_UMUM (peran istimewa atau lebih tinggi dari dirinya; FINANCE membaca gaji dan semua cabang).
  * Hanya Super Admin (OWNER) yang boleh. Ini hanya penyaring tampilan; yang menegakkan adalah database (pesan ADMIN_UMUM_ROLE_DIBATASI).
  * Peran lain tidak terpengaruh.

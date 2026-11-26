@@ -165,7 +165,7 @@ select pg_temp.batas_patch('public.get_wholesale_payroll_epoch(text)',
 -- ───────────────────────── 3. Dokumentasi (SEDANG-3) ─────────────────────────
 comment on function public.setoran_role() is 'Peran akun yang boleh masuk ke Rekap Setoran: OWNER, ADMIN, ADMIN_UMUM, FINANCE, STAFF (selain itu null). Admin Umum disamakan dengan ADMIN (Andri, 26 Nov 2026).';
 comment on function public.setoran_penyetuju() is 'Penyetuju Rekap Setoran SENGAJA: OWNER, FINANCE, ADMIN, ADMIN_UMUM (Admin Umum sama seperti ADMIN, bukan lebih). Void: OWNER/FINANCE saja (setoran_role). Pembuat tidak boleh menyetujui setorannya sendiri. Fungsi ini tidak memeriksa modul/tindakan Akses Grup: penyempitan hanya di layar (lihat review PR #594, SEDANG-1/3).';
-comment on schema admin_umum_private is 'Penulis ulang peran Admin Umum (terapkan_semua/kembalikan_semua; tabel diubah) + pembatas peran (peran_istimewa, aktor_admin_umum, tolak_peran_istimewa, tolak_edit_akun, wajib_modul; 20261218200000). Tanpa akses peran API.';
+comment on schema admin_umum_private is 'Penulis ulang peran Admin Umum (terapkan_semua/kembalikan_semua; tabel diubah) + pembatas peran (peran_istimewa, aktor_admin_umum, tolak_peran_istimewa, tolak_edit_akun, wajib_modul; 20261219500000). Tanpa akses peran API.';
 
 -- ───────────────────────── 4. Pagar Admin Online dijalankan ulang ─────────────────────────
 select admin_online_private.fence_all();

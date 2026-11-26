@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Batas peran Admin Umum (ADMIN_UMUM): migrasi 20261218200000_admin_umum_batas_peran.sql (perbaikan TINGGI-2 + SEDANG-1(orang)/2/3 review independen PR #594).
+"""Batas peran Admin Umum (ADMIN_UMUM): migrasi 20261219500000_admin_umum_batas_peran.sql (perbaikan TINGGI-2 + SEDANG-1(orang)/2/3 review independen PR #594).
 
 Dibuktikan di PostgreSQL 17 sungguhan (rantai penuh semua migrasi repo SEBELUM kandidat; kandidat dipasang TERAKHIR seperti hosted; data fiktif; tanpa jaringan).
 Dua database dibandingkan: BASE (tanpa kandidat) dan CAND (kandidat dipasang). Tiap bagian mengumpulkan hasil pada keduanya lalu menegaskan:
@@ -28,7 +28,7 @@ old = importlib.util.module_from_spec(_spec); sys.modules["umum_old"] = old; _sp
 Cl, Db, q, has, errmsg, U = old.Cl, old.Db, old.q, old.has, old.errmsg, old.U
 SUBJ, OWNER, ADMIN, UMUM, FIN, STAFF, AO, TARGET, CASHIER = old.SUBJ, old.OWNER, old.ADMIN, old.UMUM, old.FIN, old.STAFF, old.AO, old.TARGET, old.CASHIER
 BR_A, BR_B, DUMMY = old.BR_A, old.BR_B, old.DUMMY
-MIG = ROOT / "supabase/migrations/20261218200000_admin_umum_batas_peran.sql"
+MIG = ROOT / "supabase/migrations/20261219500000_admin_umum_batas_peran.sql"
 EMP, EMP2, NEWP = U(701), U(702), U(703)
 ROLES7 = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE", "DOCTOR", "STAFF", "ADMIN_ONLINE"]
 PRIV = ["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]

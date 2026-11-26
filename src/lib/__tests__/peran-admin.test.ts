@@ -57,7 +57,7 @@ describe("peran Admin Umum: akses bawaan sama seperti ADMIN, bukan OWNER", () =>
   });
 });
 
-describe("batas Admin Umum (database 20261218200000): penyaring tampilan", () => {
+describe("batas Admin Umum (database 20261219500000): penyaring tampilan", () => {
   it("peran istimewa bagi Admin Umum = OWNER, ADMIN, ADMIN_UMUM, FINANCE", () => {
     expect([...PERAN_ISTIMEWA_BAGI_ADMIN_UMUM]).toEqual(["OWNER", "ADMIN", "ADMIN_UMUM", "FINANCE"]);
   });
