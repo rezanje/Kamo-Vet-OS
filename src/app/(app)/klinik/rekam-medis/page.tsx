@@ -11,7 +11,9 @@ import {
   BANTUAN_CARI_OBAT, BATASAN_CARI_OBAT, MAKS_CARI_OBAT, PESAN_OBAT_BELUM_TERSEDIA, fungsiObatBelumAda, periksaCariObat, teksObatCocok,
 } from "@/lib/daftar-rekam-medis-obat";
 import { BukaRekamMedisLink } from "./BukaRekamMedisLink";
-import { DaftarPerPasien, PilihTampilanDaftar } from "./DaftarPerPasien";
+import { DaftarPerPasien } from "./DaftarPerPasien";
+import { CaraBacaDaftar, PilihStatusDaftar, PilihTampilanDaftar, StatRingkas } from "./KontrolDaftar";
+import s from "./RekamMedisDaftar.module.css";
 import { bacaSemuaCabang } from "@/lib/rekam-medis-semua-cabang-server";
 import type { RingkasanSemuaCabang } from "@/lib/rekam-medis-semua-cabang";
 import {
@@ -119,16 +121,21 @@ export default async function DaftarRekamMedisPage({
         <span style={{ color: "var(--td)" }}>·</span>
         <span style={{ fontSize: 12, fontWeight: 600 }}>Rekam medis</span>
       </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+      <div className={s.kepala}>
         <div>
           <div className="pg-hd" style={{ marginBottom: 2 }}>REKAM MEDIS</div>
-          <div className="pg-sub">{subjudul}</div>
+          <div className="pg-sub" style={{ marginBottom: 0 }}>{subjudul}</div>
+          <div className={s.ringkasan}>
+            <StatRingkas icon="ti-medical-cross" label="RIWAYAT TERSIMPAN" value={hasil.ringkasan.riwayat} color="var(--posb)" />
+            <StatRingkas icon="ti-paw" label="HEWAN TERCATAT" value={hasil.ringkasan.hewan} color="#16a34a" />
+            <StatRingkas icon="ti-file-import" label="HASIL IMPORT" value={hasil.ringkasan.impor} color="#7c3aed" />
+          </div>
         </div>
         {bacaSaja ? (
           <span className="bge" title="Staf hanya dapat melihat rekam medis; perubahan dilakukan dokter" style={{ fontSize: 11, padding: "5px 10px" }}>
             <i className="ti ti-eye" /> Baca saja
           </span>
-        ) : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        ) : <div className={s.kepalaAksi}>
           <Link href="/klinik/rekam-medis/perlu-dilengkapi" className="btn-def" style={{ textDecoration: "none" }}>
             <i className="ti ti-clipboard-list" /> Perlu dilengkapi
           </Link>
@@ -138,55 +145,49 @@ export default async function DaftarRekamMedisPage({
         </div>}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(150px, 1fr))", gap: 12, marginBottom: 14 }}>
-        <Stat icon="ti-medical-cross" label="RIWAYAT TERSIMPAN" value={hasil.ringkasan.riwayat} color="var(--posb)" bg="#eff6ff" />
-        <Stat icon="ti-paw" label="HEWAN TERCATAT" value={hasil.ringkasan.hewan} color="#16a34a" bg="#e8f5ee" />
-        <Stat icon="ti-file-import" label="HASIL IMPORT" value={hasil.ringkasan.impor} color="#7c3aed" bg="#f3f0ff" />
-      </div>
-
       <div className="crm-sec">
-        {!petId && <PilihTampilanDaftar kelompok={kelompok} q={q} tampilan={displayMode} obat={obatAktif} />}
-        <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
-          <Link href={`/klinik/rekam-medis?${new URLSearchParams({q,tampilan:"rawat-jalan",kelompok,...(obatAktif ? { obat: obatAktif } : {})})}`}>Daftar rekam medis · selain Rawat Inap aktif</Link>
-          <Link href={`/klinik/rekam-medis?${new URLSearchParams({q,tampilan:"semua",kelompok,...(obatAktif ? { obat: obatAktif } : {})})}`}>Semua riwayat (termasuk Rawat Inap)</Link>
-          <Link href="/klinik/rawat-inap">Pasien Rawat Inap aktif</Link>
-        </div>
-        {perPasien && <p style={{ fontSize: 11, color: "var(--tm)", margin: "0 0 8px" }}>Satu kartu per hewan. Jumlah kunjungan dan kunjungan terakhir dihitung dari semua cabang yang bisa Anda akses (tanpa kunjungan yang diarsipkan), bukan hanya cabang aktif; tombol Riwayat membuka semua kunjungan hewan itu.{obatAktif ? " Saat mencari obat, hanya hewan dengan kunjungan yang cocok yang tampil; \"Diberikan\" menjumlahkan produk yang cocok dari kunjungan-kunjungan itu dan \"Buka kunjungan yang cocok\" membuka yang terbaru." : ""}</p>}
-        {!fullHistory && <p style={{ fontSize: 11 }}>Pasien Rawat Inap aktif ada di Status Rawat Inap. Riwayat medisnya tetap tersedia lewat Semua riwayat atau riwayat pasien.</p>}
-        {cabangAktif && hasil.ringkasan.impor > 0 && (
-          <p style={{ fontSize: 11, color: "var(--tm)" }}>
-            Riwayat hasil impor tidak punya data cabang, jadi ikut tampil di setiap cabang dengan label <b>Impor</b>.
-          </p>
-        )}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sb)" }}>Daftar riwayat</div>
-            <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 2 }}>
-              {obatBelumTersedia ? "Pencarian obat belum tersedia."
-                : (cari || obatAktif) ? `${perPasien ? `${perPasien.kelompok.length} pasien ditemukan (${hasil.jumlah} kunjungan)` : `${hasil.jumlah} riwayat ditemukan`}${obatAktif ? ` dengan obat/produk “${obatAktif}”` : ""}.`
-                : selectedPet ? `Seluruh riwayat medis ${selectedPet.petName}.` : "Cari lewat nama pemilik, nama hewan, atau nomor telepon; atau cari menurut obat/produk yang diberikan."}
-            </div>
+        <form method="get" className={s.cari} role="search" aria-label="Cari rekam medis">
+          <input type="hidden" name="tampilan" value={displayMode} />
+          <input type="hidden" name="kelompok" value={kelompok} />
+          {petId && <input type="hidden" name="pet" value={petId} />}
+          <label className={s.kolom}>
+            <span className={s.kolomJudul}>Pemilik, hewan, atau telepon</span>
+            <input className="fi" name="q" defaultValue={q} maxLength={MAKS_CARI_REKAM_MEDIS} placeholder="Cari pemilik, hewan, atau telepon..." />
+          </label>
+          <label className={s.kolom}>
+            <span className={s.kolomJudul}>Cari obat / produk diberikan</span>
+            <input className="fi" name="obat" defaultValue={obatMentah.trim()} maxLength={MAKS_CARI_OBAT} placeholder="Mis. RC Recovery" aria-describedby="bantuan-cari-obat" />
+          </label>
+          <div className={s.cariAksi}>
+            <button className="btn-acc" type="submit"><i className="ti ti-search" /> Cari</button>
+            {(q || petId) && <Link href={`/klinik/rekam-medis?${new URLSearchParams({ tampilan: "semua", kelompok })}`} className={s.tautanHalus} title="Hapus pencarian pemilik/hewan dan tampilkan semua riwayat">{q ? "Hapus pencarian" : "Lihat semua riwayat"}</Link>}
+            {obatMentah.trim() && <Link href={`/klinik/rekam-medis?${new URLSearchParams({ q, tampilan: displayMode, kelompok, ...(petId ? { pet: petId } : {}) })}`} className={s.tautanHalus}><i className="ti ti-x" /> Hapus filter obat</Link>}
           </div>
-          <form method="get" style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-            <input type="hidden" name="tampilan" value={displayMode} />
-            <input type="hidden" name="kelompok" value={kelompok} />
-            {petId && <input type="hidden" name="pet" value={petId} />}
-            <label style={{ display: "grid", gap: 3, fontSize: 11 }}>
-              <span style={{ fontWeight: 600 }}>Pemilik, hewan, atau telepon</span>
-              <input className="fi" name="q" defaultValue={q} maxLength={MAKS_CARI_REKAM_MEDIS} placeholder="Cari pemilik, hewan, atau telepon..." style={{ width: 240 }} />
-            </label>
-            <label style={{ display: "grid", gap: 3, fontSize: 11 }}>
-              <span style={{ fontWeight: 600 }}>Cari obat / produk diberikan</span>
-              <input className="fi" name="obat" defaultValue={obatMentah.trim()} maxLength={MAKS_CARI_OBAT} placeholder="Mis. RC Recovery" aria-describedby="bantuan-cari-obat" style={{ width: 240 }} />
-            </label>
-            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", paddingTop: 18 }}>
-              <button className="btn-def" type="submit"><i className="ti ti-search" /> Cari</button>
-              {(q || petId) && <Link href={`/klinik/rekam-medis?${new URLSearchParams({ tampilan: "semua", kelompok })}`} className="btn-def" style={{ textDecoration: "none" }}>Semua riwayat</Link>}
-              {obatMentah.trim() && <Link href={`/klinik/rekam-medis?${new URLSearchParams({ q, tampilan: displayMode, kelompok, ...(petId ? { pet: petId } : {}) })}`} className="btn-def" style={{ textDecoration: "none" }}><i className="ti ti-x" /> Hapus filter obat</Link>}
-            </div>
-            <p id="bantuan-cari-obat" style={{ flexBasis: "100%", margin: 0, fontSize: 10.5, color: "var(--tm)" }}>{BANTUAN_CARI_OBAT} {BATASAN_CARI_OBAT}</p>
-          </form>
+        </form>
+
+        <div className={s.kontrol}>
+          {!petId ? <PilihTampilanDaftar kelompok={kelompok} q={q} tampilan={displayMode} obat={obatAktif} /> : <span />}
+          <PilihStatusDaftar q={q} kelompok={kelompok} tampilan={displayMode} obat={obatAktif} />
         </div>
+
+        <div className={s.judulDaftar}>
+          <div className={s.judulTeks}>Daftar riwayat</div>
+          <CaraBacaDaftar>
+            {perPasien && <p>Satu kartu per hewan. Jumlah kunjungan dan kunjungan terakhir dihitung dari semua cabang yang bisa Anda akses (tanpa kunjungan yang diarsipkan), bukan hanya cabang aktif; tombol Riwayat membuka semua kunjungan hewan itu.{obatAktif ? " Saat mencari obat, hanya hewan dengan kunjungan yang cocok yang tampil; \"Diberikan\" menjumlahkan produk yang cocok dari kunjungan-kunjungan itu dan \"Buka kunjungan yang cocok\" membuka yang terbaru." : ""}</p>}
+            {!fullHistory && <p>Pasien Rawat Inap aktif ada di Status Rawat Inap. Riwayat medisnya tetap tersedia lewat Semua riwayat atau riwayat pasien.</p>}
+            {cabangAktif && hasil.ringkasan.impor > 0 && (
+              <p>Riwayat hasil impor tidak punya data cabang, jadi ikut tampil di setiap cabang dengan label <b>Impor</b>.</p>
+            )}
+            <p id="bantuan-cari-obat">{BANTUAN_CARI_OBAT} {BATASAN_CARI_OBAT}</p>
+          </CaraBacaDaftar>
+        </div>
+        {/* Keterangan hasil: satu baris kecil tepat di atas daftar. Kata-kata sama dengan sebelumnya; tanpa pencarian tidak ada baris. */}
+        {!obatBelumTersedia && (cari || obatAktif || selectedPet) && (
+          <div className={s.hasil} role="status">
+            {(cari || obatAktif) ? `${perPasien ? `${perPasien.kelompok.length} pasien ditemukan (${hasil.jumlah} kunjungan)` : `${hasil.jumlah} riwayat ditemukan`}${obatAktif ? ` dengan obat/produk “${obatAktif}”` : ""}.`
+              : `Seluruh riwayat medis ${selectedPet?.petName}.`}
+          </div>
+        )}
 
         {obatBelumTersedia && <p role="alert" className="p2ban" style={{ background: "#fffbeb", color: "#92400e", fontSize: 12 }}>{PESAN_OBAT_BELUM_TERSEDIA}</p>}
         {obatBelumTersedia ? null : perPasien ? (
@@ -204,26 +205,26 @@ export default async function DaftarRekamMedisPage({
           <PesanKosong petId={petId} obat={obatAktif} />
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table className="tbl" style={{ minWidth: obatAktif ? 1080 : 850 }}>
+            <table className={`tbl ${s.tabelKunjungan}`} style={{ minWidth: obatAktif ? 960 : 850 }}>
               <thead>
                 <tr><th>Tanggal</th><th>Pasien</th><th>Pemilik</th><th>Status pasien</th><th>Ringkasan kunjungan</th><th>Diagnosa</th>{obatAktif && <th>Obat / produk diberikan</th>}<th /></tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id}>
-                    <td style={{ whiteSpace: "nowrap", fontSize: 11 }}>{dateText(row.date)}<br />
+                    <td data-label="Tanggal" style={{ whiteSpace: "nowrap", fontSize: 11 }}>{dateText(row.date)}<br />
                       <span style={{ fontSize: 10, color: "var(--td)" }}>{row.branch ?? (row.isImported ? LABEL_RIWAYAT_IMPOR : "Tanpa cabang")}</span>
                       {row.isImported && <><br /><span className="bge" title="Riwayat hasil impor data lama" style={{ fontSize: 9.5 }}>Impor</span></>}
                     </td>
-                    <td><div style={{ fontWeight: 700 }}>{row.petId ? <Link href={`/klinik/rekam-medis/pasien/${row.petId}`} title="Lihat riwayat lengkap pasien ini" style={{ color: "inherit", textDecoration: "underline" }}>{row.petName}</Link> : row.petName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{[row.species, row.breed].filter(Boolean).join(" · ") || "—"}</div></td>
-                    <td><div style={{ fontWeight: 600 }}>{row.ownerName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.phone || "—"}</div></td>
-                    <td style={{ whiteSpace: "nowrap" }}><span className={`bge ${row.patientStatus.badge}`}>{row.patientStatus.label}</span></td>
-                    <td style={{ maxWidth: 230, fontSize: 11, lineHeight: 1.45 }}>{row.note || "—"}</td>
-                    <td style={{ maxWidth: 190, fontSize: 11, lineHeight: 1.45 }}>{row.diagnosis || "Belum diisi"}</td>
+                    <td data-label="Pasien"><div style={{ fontWeight: 700 }}>{row.petId ? <Link href={`/klinik/rekam-medis/pasien/${row.petId}`} title="Lihat riwayat lengkap pasien ini" style={{ color: "inherit", textDecoration: "underline" }}>{row.petName}</Link> : row.petName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{[row.species, row.breed].filter(Boolean).join(" · ") || "—"}</div></td>
+                    <td data-label="Pemilik"><div style={{ fontWeight: 600 }}>{row.ownerName}</div><div style={{ fontSize: 10.5, color: "var(--tm)" }}>{row.phone || "—"}</div></td>
+                    <td data-label="Status pasien" style={{ whiteSpace: "nowrap" }}><span className={`bge ${row.patientStatus.badge}`}>{row.patientStatus.label}</span></td>
+                    <td data-label="Ringkasan kunjungan" style={{ maxWidth: 230, fontSize: 11, lineHeight: 1.45 }}>{row.note || "—"}</td>
+                    <td data-label="Diagnosa" style={{ maxWidth: 190, fontSize: 11, lineHeight: 1.45 }}>{row.diagnosis || "Belum diisi"}</td>
                     {obatAktif && (
-                      <td style={{ maxWidth: 230, fontSize: 11, lineHeight: 1.6 }} data-obat-cocok>
+                      <td data-label="Obat / produk diberikan" className={s.tabelObat} style={{ maxWidth: 230 }} data-obat-cocok>
                         {row.obatCocok.length === 0 ? "—" : row.obatCocok.map((o) => (
-                          <span key={`${o.sumber}|${o.nama}`} className="bge" style={{ fontSize: 10.5, marginRight: 4, display: "inline-block" }}>Diberikan: {teksObatCocok(o)}</span>
+                          <span key={`${o.sumber}|${o.nama}`}>Diberikan: {teksObatCocok(o)}</span>
                         ))}
                       </td>
                     )}
@@ -272,19 +273,6 @@ function PesanKosong({ petId, obat }: { petId: string; obat?: string }) {
       {obat
         ? <>Tidak ada rekam medis dengan obat/produk “{obat}” untuk pencarian ini.<br />Periksa ejaan atau coba kata yang lebih pendek (mis. “recovery”).</>
         : petId ? "Belum ada riwayat medis untuk anabul ini." : "Belum ada rekam medis yang cocok."}
-    </div>
-  );
-}
-
-function Stat({ icon, label, value, color, bg }: { icon: string; label: string; value: number; color: string; bg: string }) {
-  return (
-    <div className="card" style={{ padding: 15 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-        <div style={{ width: 42, height: 42, borderRadius: 10, background: bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <i className={`ti ${icon}`} style={{ fontSize: 21, color }} />
-        </div>
-        <div><div style={{ fontSize: 9.5, fontWeight: 700, color, letterSpacing: ".03em" }}>{label}</div><div style={{ fontSize: 24, fontWeight: 800, color: "var(--sb)", lineHeight: 1.15 }}>{value}</div></div>
-      </div>
     </div>
   );
 }
