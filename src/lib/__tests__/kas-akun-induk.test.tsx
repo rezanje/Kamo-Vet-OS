@@ -19,7 +19,7 @@ function client() {
       const rows = () => table === "coa_accounts" ? COA.filter((a) => !filterCode || a.code === filterCode)
         : table === "cash_accounts" ? [{ id: "rek-1", nama: "Kas Blu BCA", coa_code: "110005", is_active: true }] : [];
       const q = {
-        select: () => q, order: () => q, limit: () => q, in: () => q,
+        select: () => q, order: () => q, limit: () => q, gte: () => q, lte: () => q, range: () => q, in: () => q,
         eq: (col: string, val: string) => { if (table === "coa_accounts" && col === "code") filterCode = val; return q; },
         insert: () => { state.inserts.push(table); return q; },
         maybeSingle: async () => ({ data: table === "profiles" ? { role: "OWNER", is_active: true } : null, error: null }),
