@@ -120,9 +120,9 @@ rollback;
 
 def run_baseline(db, a):
     fresh(db)
-    clone(db, 'base')
+    clone(db, 'base'); apply(db, 'base', PRELUDE + STORAGE_PREP, later=False)
     ok, passes, why = run_suite(db, 'base', SUITE_FIX)
-    check('RED baseline: suite baru gagal tanpa kandidat (lulus sebelum gagal: %d)' % len(passes), (not ok) and len(passes) == 0, why)
+    check('RED baseline: suite baru gagal tanpa kandidat pada asersi pertama (lulus sebelum gagal: %d)' % len(passes), (not ok) and len(passes) == 0 and 'Assertion failed' in why, why)
     rc, out, err = raw(db, "select count(*) from pg_class where relname='setoran_lampiran_pakai' and relnamespace='public'::regnamespace", 'base')
     check('BASELINE: tabel klaim berkas belum ada sebelum kandidat', out.strip() == '0', out)
     rc, out, err = raw(db, DEFECT, 'base')

@@ -62,10 +62,10 @@ it("penyetuju melihat peringatan dan tombol Setujui dimatikan bila ada peringata
   expect(d.keuangan?.peringatan.map((w) => w.kode)).toEqual(["PENGELUARAN_MELEBIHI", "PENGELUARAN_KEMBAR"]);
   const h = html(<PanelPenyetuju d={d} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />);
   expect(h).toContain("Tidak bisa disetujui: "); expect(h).toContain("Periksa: "); expect(h).toContain("tolak agar diperiksa");
-  expect(h).toMatch(/<button[^>]*disabled[^>]*>Setujui &amp; tutup periode/);
+  expect(h).toMatch(/<button[^>]*disabled[^>]*>\s*Setujui &amp; tutup periode/);
   const aman = bacaDetail({ ...dasar, penyetuju: true, status: "Diajukan", keuangan: keuangan("Pas", 0) });
   const h2 = html(<PanelPenyetuju d={aman} basis="/kas-bank/setoran" kunci={kunci} karyawan={[]} role="FINANCE" so={null} />);
-  expect(h2).not.toContain("peringatan-setoran"); expect(h2).not.toMatch(/<button[^>]*disabled[^>]*>Setujui &amp; tutup periode/);
+  expect(h2).not.toContain("peringatan-setoran"); expect(h2).not.toMatch(/<button[^>]*disabled[^>]*>\s*Setujui &amp; tutup periode/);
 });
 
 it("staf tidak pernah melihat peringatan, walau payload salah mengirimnya di bagian keuangan", () => {
