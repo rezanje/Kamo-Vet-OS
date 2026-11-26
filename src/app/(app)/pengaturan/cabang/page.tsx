@@ -5,11 +5,13 @@ import { SecHeader } from "@/components/SecHeader";
 import { bolehKelolaMaster } from "@/lib/master-guard";
 import { groomingDoctorRequired, isGroomingOutlet } from "@/lib/grooming-requirements";
 import { simpanAturanGroomingCabang, simpanLokasiCabang } from "./actions";
+import { IdentitasCabangForm } from "./IdentitasCabangForm";
+import { LOGO_BUCKET, jalurLogoSah } from "@/lib/cabang-identitas";
 
 // REAL data. branches = readable by all authenticated; warehouses = RLS-filtered
 // (STAFF sees only assigned-branch warehouses, OWNER/ADMIN see all).
 // Cabang baru dibuat OWNER di Perusahaan → Cabang (U11). Yang bisa diubah dari sini
-// titik lokasi absen dan aturan grooming.
+// titik lokasi absen, aturan grooming, dan identitas dokumen cetak (alamat, telepon, logo; nama tetap di Perusahaan → Cabang).
 export default async function CabangPage({
   searchParams,
 }: {
@@ -24,6 +26,22 @@ export default async function CabangPage({
     supabase.from("warehouses").select("code, name, type, branches(name)").order("code"),
     supabase.from("branch_grooming_rules").select("branch_id,doctor_required"),
   ]);
+
+  // Identitas dokumen cetak dibaca terpisah: gagal baca tidak boleh merusak bagian lain layar ini.
+  type IdentitasRow = { id: string; alamat: string | null; telepon: string | null; logo_path: string | null };
+  let identitas: IdentitasRow[] = []; let identitasGalat = false;
+  const logoUrl = new Map<string, string>();
+  try {
+    const { data, error: idError } = await supabase.from("branches").select("id, alamat, telepon, logo_path");
+    if (idError) throw idError;
+    identitas = (data ?? []) as IdentitasRow[];
+    const paths = identitas.filter((r) => r.logo_path && jalurLogoSah(r.id, r.logo_path)).map((r) => r.logo_path as string);
+    if (paths.length) {
+      const { data: signed } = await supabase.storage.from(LOGO_BUCKET).createSignedUrls(paths, 3600);
+      for (const s of signed ?? []) if (s.path && s.signedUrl) logoUrl.set(s.path, s.signedUrl);
+    }
+  } catch { identitasGalat = true; }
+  const identitasById = new Map(identitas.map((r) => [r.id, r]));
 
   const cabang = (branches ?? []) as {
     id: string; code: string; name: string; type: string; is_active: boolean;
@@ -60,7 +78,26 @@ export default async function CabangPage({
 
       <div className="crm-sec">
         <SecHeader
-          num="01" title="LOKASI ABSEN CABANG"
+          num="01" title="IDENTITAS CABANG DI DOKUMEN CETAK"
+          desc="Logo, nama, alamat, dan telepon cabang yang tercetak di kop Rekam Medis (sesuai cabang kunjungannya). Kosong = kop memakai nama cabang saja."
+        />
+        {identitasGalat ? <p role="alert">Identitas cabang belum dapat dimuat. Muat ulang sebelum menyimpan.</p> : cabang.filter((b) => b.type === "KLINIK" || b.type === "BOTH").map((b) => {
+          const idn = identitasById.get(b.id);
+          return (
+            <IdentitasCabangForm
+              key={b.id} bolehKelola={bolehKelola}
+              branch={{ id: b.id, code: b.code, name: b.name, alamat: idn?.alamat ?? null, telepon: idn?.telepon ?? null, logoUrl: idn?.logo_path ? (logoUrl.get(idn.logo_path) ?? null) : null }}
+            />
+          );
+        })}
+        <div style={{ fontSize: 10, color: "var(--td)", marginTop: 8 }}>
+          Nama cabang diubah di Perusahaan › Cabang (tombol Ubah). Hanya cabang klinik yang ditampilkan di sini.
+        </div>
+      </div>
+
+      <div className="crm-sec">
+        <SecHeader
+          num="02" title="LOKASI ABSEN CABANG"
           desc="Absen staf hanya diterima dari dalam radius ini. Titik dikosongkan = pengecekan lokasi mati untuk cabang itu."
         />
         {/* Satu form utuh per cabang, bukan tabel: input yang ditaruh di luar <form>
@@ -119,7 +156,7 @@ export default async function CabangPage({
       </div>
 
       <div className="crm-sec">
-        <SecHeader num="02" title="PELAKSANA GROOMING PER CABANG" desc="Groomer selalu wajib. Cabang berklinik juga memerlukan dokter, kecuali diatur berbeda di sini." />
+        <SecHeader num="03" title="PELAKSANA GROOMING PER CABANG" desc="Groomer selalu wajib. Cabang berklinik juga memerlukan dokter, kecuali diatur berbeda di sini." />
         {groomingRulesError ? <p role="alert">Aturan grooming belum dapat dimuat. Muat ulang sebelum menyimpan.</p> : cabang.filter(branch => isGroomingOutlet(branch.type)).map(branch => (
           <form key={branch.id} action={simpanAturanGroomingCabang} style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap", borderBottom: "1px solid var(--bd)", padding: "10px 0" }}>
             <input type="hidden" name="id" value={branch.id} />
