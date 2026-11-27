@@ -10,6 +10,7 @@ import { hariIniWIB } from "@/lib/tanggal";
 import { cekPeriode } from "@/lib/jurnal-guard";
 import { cekPersetujuan } from "@/lib/persetujuan-server";
 import { priceCheckBeforeSave } from "@/lib/purchase-price-check";
+import { bacaCabangPembukuan } from "@/lib/cabang-pembukuan";
 
 type ItemInput = { po_item_id: string; qty: number; harga: number };
 
@@ -103,7 +104,9 @@ export async function bayarFaktur(formData: FormData) {
   // Sen hanya untuk melunasi sisa faktur ber-PPN yang bersen (mis. sisa Rp 0,98); database menolak sen untuk cicilan.
   if(Math.abs(rawAmount*100-Math.round(rawAmount*100))>1e-6)fail("Nominal pembayaran maksimal 2 angka di belakang koma.");
   const replacesPaymentId=String(formData.get("replaces_payment_id")??"").trim()||null;
-  const payload={invoice_id:invoiceId,tanggal,amount,metode,catatan,account_id:accountId,advance_id:advanceId,replaces_payment_id:replacesPaymentId};
+  // Cabang pembukuan jurnal pembayaran (kosong = cabang faktur). Hutang tetap milik cabang faktur; database memeriksa akses dan keaktifan cabang.
+  const journalBranchId=bacaCabangPembukuan(formData.get("journal_branch_id"));
+  const payload={invoice_id:invoiceId,tanggal,amount,metode,catatan,account_id:accountId,advance_id:advanceId,replaces_payment_id:replacesPaymentId,journal_branch_id:journalBranchId};
   const finish=(noFaktur:string):never=>{revalidatePath(back);redirect(`${back}?success=${encodeURIComponent(`Pembayaran ${noFaktur} tersimpan.`)}${transactionDraftAck(formData)}&tampil=1`);};
   const {data:recovered,error:recoveryError}=await supabase.rpc("recover_purchase_payment",{p_request_key:requestKey,p_payload:payload});
   if(recoveryError)fail(recoveryError.message);
@@ -114,7 +117,7 @@ export async function bayarFaktur(formData: FormData) {
   const {data:{user}}=await supabase.auth.getUser();
   const izin=await cekPersetujuan(supabase,{jenis:"bayar-faktur",refId:invoiceId,nilai:amount,noDokumen:inv!.no_faktur,keterangan:`Pembayaran faktur ${inv!.no_faktur} sebesar Rp ${Math.round(amount).toLocaleString("id-ID")}`,userId:user?.id??null,deferConsumption:true});
   if(!izin.boleh)fail(izin.pesan??"Transaksi ini butuh persetujuan atasan.");
-  const {data:result,error}=await supabase.rpc("pay_purchase_invoice_atomic",{p_request_key:requestKey,p_invoice_id:invoiceId,p_tanggal:tanggal,p_amount:amount,p_metode:metode,p_catatan:catatan,p_account_id:accountId,p_advance_id:advanceId,p_replaces_payment_id:replacesPaymentId});
+  const {data:result,error}=await supabase.rpc("pay_purchase_invoice_atomic",{p_request_key:requestKey,p_invoice_id:invoiceId,p_tanggal:tanggal,p_amount:amount,p_metode:metode,p_catatan:catatan,p_account_id:accountId,p_advance_id:advanceId,p_replaces_payment_id:replacesPaymentId,p_journal_branch:journalBranchId});
   if(error)fail(error.message);
   if(!result?.payment_id||!result?.journal_id||!result?.no_faktur)throw new Error("Pembayaran belum terkonfirmasi lengkap. Periksa transaksi sebelum menyimpan ulang.");
   finish(result.no_faktur);

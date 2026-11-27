@@ -5,12 +5,16 @@ import { NumberInput } from "@/components/NumberInput";
 import { CorrectionTransactionForm } from "./CorrectionTransactionForm";
 import { SubmitButton } from "./SubmitButton";
 import { PilihRekening, type RekeningOpsi } from "./PilihRekening";
+import { PilihCabangPembukuan } from "./PilihCabangPembukuan";
+import type { CabangPembukuan } from "@/lib/cabang-pembukuan";
 import { bayarFaktur } from "@/app/(app)/pembelian/faktur/actions";
 
 export type PurchasePaymentDefaults = { id: string; amount: number; metode: string; advance_id: string | null; /** Tanggal pembayaran yang dibatalkan (batas bawah tanggal pengganti). */ tanggal?: string | null };
-export function PurchasePaymentForm({ userId, invoiceId, remaining, today, accounts, advances, replacement }: {
+export function PurchasePaymentForm({ userId, invoiceId, remaining, today, accounts, advances, replacement, branches = [], invoiceBranchId = null }: {
   userId: string; invoiceId: string; remaining: number; today: string; accounts: RekeningOpsi[];
   advances: { id: string; no_um: string; sisa: number }[]; replacement?: PurchasePaymentDefaults;
+  /** Cabang yang boleh dipilih untuk pembukuan jurnal pembayaran (kosong/1 = pilihan disembunyikan). */
+  branches?: CabangPembukuan[]; invoiceBranchId?: string | null;
 }) {
   const amount = replacement ? Math.min(remaining, replacement.amount) : remaining;
   // Total faktur ber-PPN bisa bersen (sisa 0,98). Rupiah bulat tetap aturan cicilan;
@@ -27,6 +31,7 @@ export function PurchasePaymentForm({ userId, invoiceId, remaining, today, accou
       <div><label className="flab" htmlFor={`amount-${invoiceId}`}>Nominal (maks Rp {remaining.toLocaleString("id-ID")})</label><NumberInput className="fi" id={`amount-${invoiceId}`} name="amount" type="number" required min={minimum} max={remaining} step={step} defaultValue={amount} /></div>
       <div><label className="flab" htmlFor={`method-${invoiceId}`}>Metode</label><select className="fi" id={`method-${invoiceId}`} name="metode" defaultValue={replacement?.metode ?? "Transfer"}><option>Transfer</option><option>Tunai</option><option>Debit</option></select></div>
       <PilihRekening rekening={accounts} width={150} />
+      <PilihCabangPembukuan cabang={branches} awal={invoiceBranchId} id={`journal-branch-${invoiceId}`} />
       {advances.length > 0 && <div><label className="flab" htmlFor={`advance-${invoiceId}`}>Potong uang muka</label><select className="fi" id={`advance-${invoiceId}`} name="advance_id" defaultValue={advanceId}><option value="">— tidak pakai —</option>{advances.map(a => <option key={a.id} value={a.id}>{a.no_um} · sisa Rp {a.sisa.toLocaleString("id-ID")}</option>)}</select></div>}
       <div><label className="flab" htmlFor={`date-${invoiceId}`}>Tanggal</label><input className="fi" id={`date-${invoiceId}`} name="tanggal" type="date" required min={replacement?.tanggal ?? undefined} max={today} defaultValue={today} /></div>
       {replacement && <div style={{ flex: "1 1 220px" }}><label className="flab" htmlFor={`note-${invoiceId}`}>Alasan / catatan</label><input className="fi" id={`note-${invoiceId}`} name="catatan" maxLength={1000} /></div>}
