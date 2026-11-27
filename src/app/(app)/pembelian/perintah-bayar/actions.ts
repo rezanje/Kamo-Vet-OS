@@ -5,6 +5,7 @@ import { transactionDraftAck } from "@/lib/transaction-draft-ack";
 import { redirect } from "next/navigation";
 import { assertRole } from "@/lib/master-guard";
 import { hariIniWIB } from "@/lib/tanggal";
+import { bacaCabangPembukuan } from "@/lib/cabang-pembukuan";
 
 const BASE = "/pembelian/perintah-bayar";
 const gagal = (msg: string): never => redirect(`${BASE}?error=${encodeURIComponent(msg)}`);
@@ -54,6 +55,7 @@ export async function bayarPerintahBayar(formData: FormData) {
     p_tanggal: String(formData.get("tanggal") ?? "").trim() || hariIniWIB(),
     p_metode: String(formData.get("metode") ?? "Transfer"),
     p_account_id: String(formData.get("account_id") ?? "").trim() || null,
+    p_journal_branch: bacaCabangPembukuan(formData.get("journal_branch_id")),
   });
   if (error) gagal(error.message);
   if (!data?.order_id || !data?.journal_id || !data?.no_pp) throw new Error("Pembayaran belum terkonfirmasi lengkap. Periksa perintah bayar sebelum menyimpan ulang.");

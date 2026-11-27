@@ -5,6 +5,7 @@ import { SecHeader } from "@/components/SecHeader";
 import { AGING_BUCKETS, AGING_LABEL, TANPA_TANGGAL, agingFaktur, type AgingBucket, type AgingBucketFaktur } from "@/lib/aging";
 import { sisaFakturablePerBaris } from "@/lib/faktur-beli";
 import { loadRekeningAktif } from "@/components/PilihRekening";
+import { muatCabangPembukuan } from "@/lib/cabang-pembukuan";
 import { NoDok } from "@/components/NoDok";
 import { hariIniWIB } from "@/lib/tanggal";
 import { PurchaseCorrectionQuickRequest } from "@/components/PurchaseCorrectionQuickRequest";
@@ -19,6 +20,8 @@ type FakturRow = {
   /** Kosong hanya pada faktur saldo awal yang di Accurate tidak punya tanggal ini (M05). */
   tanggal: string | null; jatuh_tempo: string | null; supplier: string; supplier_id: string | null;
   total: number; dibayar: number; retur: number; sisa: number; days: number | null; bucket: AgingBucketFaktur; saldoAwal: boolean;
+  /** Cabang faktur (atau cabang PO bila faktur tanpa cabang): bawaan pilihan Cabang pembukuan. */
+  branch_id: string | null;
 };
 
 type UangMukaSiap = { id: string; no_um: string; sisa: number };
@@ -74,12 +77,13 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
   const bolehMintaKoreksi = profile?.is_active === true && profile.role !== "OWNER";
   const today = hariIniWIB();
   const rekening = await loadRekeningAktif(supabase);
+  const cabangPembukuan = await muatCabangPembukuan(supabase, user?.id ?? "");
 
   // Hutang usaha (311001) lahir dari Faktur Pembelian; umur dihitung dari JATUH TEMPO (ala Accurate).
   const [{ data: invs }, { data: pos }, { data: rets }] = await Promise.all([
     supabase
       .from("purchase_invoices")
-      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, opening_batch_id, suppliers(nama), purchase_orders(no_po), purchase_invoice_payments(amount)").is("voided_at", null)
+      .select("id, no_faktur, no_faktur_pemasok, tanggal, jatuh_tempo, total, po_id, supplier_id, branch_id, opening_batch_id, suppliers(nama), purchase_orders(no_po, branch_id), purchase_invoice_payments(amount)").is("voided_at", null)
       .order("jatuh_tempo").order("id"),
     supabase
       .from("purchase_orders")
@@ -94,8 +98,8 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
 
   const rows: FakturRow[] = ((invs ?? []) as unknown as {
     id: string; no_faktur: string; no_faktur_pemasok: string | null; tanggal: string | null; jatuh_tempo: string | null;
-    total: number; po_id: string; supplier_id: string | null; opening_batch_id: string | null; suppliers: { nama: string } | null;
-    purchase_orders: { no_po: string | null } | null; purchase_invoice_payments: { amount: number }[] | null;
+    total: number; po_id: string; supplier_id: string | null; branch_id?: string | null; opening_batch_id: string | null; suppliers: { nama: string } | null;
+    purchase_orders: { no_po: string | null; branch_id?: string | null } | null; purchase_invoice_payments: { amount: number }[] | null;
   }[])
     .map((v) => {
       const dibayar = (v.purchase_invoice_payments ?? []).reduce((a, p) => a + Number(p.amount), 0);
@@ -115,6 +119,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
         total: Number(v.total), dibayar, retur, sisa,
         ...agingFaktur(v.jatuh_tempo, today),
         saldoAwal: !!v.opening_batch_id,
+        branch_id: v.branch_id ?? v.purchase_orders?.branch_id ?? null,
       };
     })
     .filter((r) => r.sisa > 0);
@@ -269,7 +274,7 @@ export default async function HutangPage({ searchParams }: { searchParams: Promi
                       <summary className="btn-acc" style={{ padding: "4px 10px", fontSize: 10.5, cursor: "pointer", listStyle: "none", display: "inline-block" }}>
                         Bayar
                       </summary>
-                      <PurchasePaymentForm userId={user?.id ?? ""} invoiceId={r.id} remaining={r.sisa} today={today} accounts={rekening}
+                      <PurchasePaymentForm userId={user?.id ?? ""} invoiceId={r.id} remaining={r.sisa} today={today} accounts={rekening} branches={cabangPembukuan} invoiceBranchId={r.branch_id}
                         advances={umPerSupplier.get(r.supplier_id ?? "") ?? []} replacement={replacement?.invoice_id === r.id ? replacement : undefined} />
                     </details>
                     {bolehMintaKoreksi && <PurchaseCorrectionQuickRequest kind="purchase_invoice" sourceId={r.id} label={r.no_faktur}

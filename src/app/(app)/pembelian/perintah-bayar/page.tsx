@@ -16,6 +16,8 @@ import { readListPage } from "@/lib/checked-list";
 import { sisaFakturBayar } from "@/lib/perintah-bayar";
 import { batalkanPerintahBayar, bayarPerintahBayar, buatPerintahBayar, setujuiPerintahBayar } from "./actions";
 import { hariIniWIB } from "@/lib/tanggal";
+import { PilihCabangPembukuan } from "@/components/PilihCabangPembukuan";
+import { muatCabangPembukuan } from "@/lib/cabang-pembukuan";
 
 const rp = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const tgl = (s: string | null) => (s ? new Date(`${s}T00:00:00`).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -27,10 +29,20 @@ type Order = {
   id: string; no_pp: string; tanggal: string; rencana_bayar: string | null;
   total: number; status: string; revision: number; catatan: string | null;
   suppliers: Rel<{ nama: string }>;
-  payment_order_items: { id: string; jumlah: number; purchase_invoices: Rel<{ id: string; no_faktur: string }> }[] | null;
+  payment_order_items: { id: string; jumlah: number; purchase_invoices: Rel<{ id: string; no_faktur: string; branch_id?: string | null; purchase_orders?: Rel<{ branch_id: string | null }> }> }[] | null;
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ORDER_SELECT = "id, no_pp, tanggal, rencana_bayar, total, status, revision, catatan, suppliers(nama), payment_order_items(id, jumlah, purchase_invoices(id, no_faktur))";
+const ORDER_SELECT = "id, no_pp, tanggal, rencana_bayar, total, status, revision, catatan, suppliers(nama), payment_order_items(id, jumlah, purchase_invoices(id, no_faktur, branch_id, purchase_orders(branch_id)))";
+
+/** Cabang faktur-faktur perintah bayar (database mewajibkan satu cabang); bawaan pilihan Cabang pembukuan. */
+function cabangFakturPerintah(o: Order): string | null {
+  for (const item of o.payment_order_items ?? []) {
+    const invoice = one(item.purchase_invoices);
+    const branch = invoice?.branch_id ?? one(invoice?.purchase_orders ?? null)?.branch_id ?? null;
+    if (branch) return branch;
+  }
+  return null;
+}
 
 const BADGE: Record<string, string> = { draft: "o", disetujui: "b", dibayar: "g", batal: "x" };
 const LABEL: Record<string, string> = { draft: "Menunggu setuju", disetujui: "Siap dibayar", dibayar: "Dibayar", batal: "Batal" };
@@ -52,6 +64,7 @@ export default async function PerintahBayarPage({
       supabase.from("payment_order_items").select("invoice_id, jumlah, payment_orders!inner(status)").in("payment_orders.status", ["draft", "disetujui"]),
       loadRekeningAktif(supabase),
     ]);
+  const cabangPembukuan = await muatCabangPembukuan(supabase, user?.id ?? "");
 
   let orderPage;
   let orderError: unknown;
@@ -218,6 +231,7 @@ export default async function PerintahBayarPage({
                             {METODE_BAYAR.map((m) => <option key={m} value={m}>{m}</option>)}
                           </select>
                           <PilihRekening rekening={rekening} label="" width={140} />
+                          <PilihCabangPembukuan cabang={cabangPembukuan} awal={cabangFakturPerintah(o)} id={`journal-branch-${o.id}`} width={150} />
                           <input className="fi" type="date" name="tanggal" defaultValue={hariIniWIB()} max={hariIniWIB()}
                             style={{ width: 130, height: 26, fontSize: 10.5 }} />
                           <SubmitButton className="btn-acc" style={{ padding: "3px 9px", fontSize: 10.5, background: "#16a34a" }} pendingText="…">
