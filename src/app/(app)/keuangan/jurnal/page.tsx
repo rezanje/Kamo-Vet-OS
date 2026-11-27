@@ -1,8 +1,9 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { JurnalForm } from "./JurnalForm";
-import { JurnalCorrectionForm } from "./JurnalCorrectionForm";
+import { JurnalKoreksiBaris, JurnalKoreksiProvider, JurnalKoreksiTombol } from "./JurnalKoreksiPanel";
 import { NoDok } from "@/components/NoDok";
 import { nomorDokumenJurnal } from "@/lib/tautan-dokumen";
 import { postRecurringCatchUp } from "@/lib/recurring";
@@ -334,6 +335,7 @@ export default async function JurnalPage({
             {adaSaringan ? "Tidak ada jurnal cocok saringan." : "Belum ada jurnal tercatat."}
           </div>
         ) : (
+          <JurnalKoreksiProvider>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 600 }}>
               <thead>
@@ -356,9 +358,12 @@ export default async function JurnalPage({
                   const totK = lines.reduce((a, l) => a + Number(l.credit), 0);
                   const badge = SOURCE_BADGE[e.source] ?? { label: e.source, cls: "g" };
                   const tgl = e.tanggal ? new Date(e.tanggal).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "2-digit" }) : "—";
+                  // Form koreksi dibuka selebar tabel di baris tersendiri — di dalam kolom Tindakan terlalu sempit.
+                  const bisaDikoreksi = bolehKoreksi && !e.voided_at && ["manual", "manual-correction"].includes(e.source);
                   return (
+                    <Fragment key={e.id}>
                     <tr id={entry === e.id ? `journal-${e.id}` : selectedNumber && nomor === e.no_jurnal ? "selected-journal" : undefined}
-                      style={entry === e.id || selectedNumber && nomor === e.no_jurnal ? { scrollMarginTop: 90 } : undefined} key={e.id}>
+                      style={entry === e.id || selectedNumber && nomor === e.no_jurnal ? { scrollMarginTop: 90 } : undefined}>
                       {/* Rinciannya dibuka pakai <details> bawaan browser — tidak perlu
                           halaman baru maupun JavaScript. Sebelum ini layar jurnal hanya
                           menampilkan total, jadi akun yang kena tidak kelihatan di mana pun
@@ -427,16 +432,19 @@ export default async function JurnalPage({
                         {e.voided_at ? <span className="bge r" style={{ fontSize: 9 }}>Dibatalkan / digantikan</span> : ["manual", "manual-correction"].includes(e.source) ? <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                           {canCreateSourceSchedule && <Link className="btn-def" style={{ padding: "4px 8px", fontSize: 10 }} href={`/keuangan/jurnal-berulang/dari-jurnal/${e.id}`}>Buat jadwal dari jurnal</Link>}
                           {bolehKoreksi
-                            ? <JurnalCorrectionForm userId={user?.id ?? ""} entryId={e.id} revision={e.revision ?? 0} tanggal={e.tanggal} deskripsi={e.deskripsi ?? ""} accounts={accounts} branchId={e.branch_id ?? null} branches={branches} lines={lines.map((l) => ({ account_id: akunDari(l)?.id ?? "", debit: Number(l.debit), credit: Number(l.credit) }))} />
+                            ? <JurnalKoreksiTombol entryId={e.id} />
                             : !canCreateSourceSchedule && <span style={{ color: "var(--tm)", fontSize: 10 }}>Khusus Super Admin</span>}
                         </div> : <span style={{ color: "var(--tm)", fontSize: 10 }}>Koreksi dari transaksi sumber</span>}
                       </td>
                     </tr>
+                    {bisaDikoreksi && <JurnalKoreksiBaris colSpan={9} noJurnal={e.no_jurnal} userId={user?.id ?? ""} entryId={e.id} revision={e.revision ?? 0} tanggal={e.tanggal} deskripsi={e.deskripsi ?? ""} accounts={accounts} branchId={e.branch_id ?? null} branches={branches} lines={lines.map((l) => ({ account_id: akunDari(l)?.id ?? "", debit: Number(l.debit), credit: Number(l.credit) }))} />}
+                    </Fragment>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          </JurnalKoreksiProvider>
         )}
         </>}
       </div>
