@@ -31,6 +31,8 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const wh = params.get("wh") ?? "all";
   const cari = (params.get("q") ?? "").trim();
+  // Sama dengan layar: "semua=1" = cocokan longgar (di tengah kata/kode) ikut diunduh.
+  const semua = params.get("semua") === "1";
   const hariIni = hariIniWIB();
   const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 
@@ -41,7 +43,7 @@ export async function GET(request: Request) {
   let kolomAngkaMulai: number;
   try {
     if (wh === "all") {
-      const matrix = await bacaMatrixStok(supabase, cari);
+      const matrix = await bacaMatrixStok(supabase, cari, semua);
       judul = "Stok per Gudang — semua gudang";
       kolom = ["Kode", "Nama", "Satuan", ...matrix.gudang, "Total"];
       data = matrix.items.map((r) => [r.code, r.name, r.unit, ...matrix.gudang.map((g) => r.per[g] ?? 0), r.total]);
@@ -50,7 +52,7 @@ export async function GET(request: Request) {
     } else {
       const gudang = (await bacaGudangAktif(supabase)).find((g) => g.id === wh);
       if (!gudang) return NextResponse.json({ error: "Gudang tidak ditemukan atau tidak aktif" }, { status: 404, headers });
-      const baris = await bacaSemuaStokGudang(supabase, gudang.id, cari);
+      const baris = await bacaSemuaStokGudang(supabase, gudang.id, cari, semua);
       judul = `Stok gudang ${gudang.name} · ${gudang.code}`;
       kolom = ["Kode", "Nama", "Satuan", "Qty"];
       data = baris.map((b) => [b.code, b.name, b.unit, b.qty]);

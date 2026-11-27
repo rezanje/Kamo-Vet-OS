@@ -6,8 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { SecHeader } from "@/components/SecHeader";
 import { ResetSimulasiForm } from "./ResetSimulasiForm";
 import { GudangSelect } from "./GudangSelect";
-import { polaCariStok } from "@/lib/stok-cari";
-import { bacaGudangAktif, bacaMatrixStok, type GudangStok, type MatrixStok } from "@/lib/stok-gudang-server";
+import { polaCariStok, type RingkasCariStok } from "@/lib/stok-cari";
+import { bacaGudangAktif, bacaMatrixStok, cariStokGudang, type BarisStokGudang, type GudangStok, type MatrixStok } from "@/lib/stok-gudang-server";
 
 type Rel<T> = T | T[] | null;
 function one<T>(r: Rel<T>): T | null {
@@ -20,11 +20,13 @@ type StockRow = { id: string; qty: number; items: Rel<Item> };
 export default async function StokPage({
   searchParams,
 }: {
-  searchParams: Promise<{ wh?: string; error?: string; success?: string; hal?: string; q?: string }>;
+  searchParams: Promise<{ wh?: string; error?: string; success?: string; hal?: string; q?: string; semua?: string }>;
 }) {
-  const { wh, error, success, hal, q } = await searchParams;
+  const { wh, error, success, hal, q, semua: semuaParam } = await searchParams;
   const cari = (q ?? "").trim();
   const pola = polaCariStok(cari);
+  // "semua=1": barang yang hanya memuat kata pencarian di TENGAH kata/kode ikut tampil.
+  const semua = !!pola && semuaParam === "1";
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user
@@ -44,33 +46,52 @@ export default async function StokPage({
   let matrix: MatrixStok | null = null;
   if (matrixMode) {
     try {
-      matrix = await bacaMatrixStok(supabase, cari);
+      matrix = await bacaMatrixStok(supabase, cari, semua);
     } catch (error) { return <ListLoadFailure error={error} label="Stok semua gudang" />; }
   }
 
-  let stock: StockRow[] = [];
+  let stock: BarisStokGudang[] = [];
   let stockCount = 0;
+  let ringkasCari: RingkasCariStok | null = matrix?.ringkasCari ?? null;
   let pageInfo = infoHalaman(hal, matrix?.items.length ?? 0, TABLE_PAGE_SIZE);
   if (selectedWh) {
     try {
-      const result = await readListPage<StockRow>(async (from, to) => {
-        let query = supabase.from("stock")
-          .select(pola ? "id, qty, items!inner(id, code, name, unit)" : "id, qty, items(id, code, name, unit)", { count: "exact" })
-          .eq("warehouse_id", selectedWh.id);
-        if (pola) query = query.or(`name.ilike.${pola},code.ilike.${pola}`, { referencedTable: "items" });
-        const response = await query.order("updated_at", { ascending: false }).order("id").range(from, to);
-        return { ...response, data: response.data as unknown as StockRow[] | null };
-      }, "Stok gudang", hal);
-      stock = result.rows;
-      stockCount = result.count;
-      pageInfo = result.pageInfo;
+      if (pola) {
+        // Ada pencarian: semua barang yang cocok dimuat lalu diurutkan (paling pas
+        // di atas) di server, baru dipotong per halaman — sama dengan mode matrix.
+        const hasil = await cariStokGudang(supabase, selectedWh.id, cari, semua);
+        ringkasCari = hasil.ringkas;
+        stockCount = hasil.baris.length;
+        pageInfo = infoHalaman(hal, stockCount, TABLE_PAGE_SIZE);
+        stock = hasil.baris.slice(pageInfo.from, pageInfo.to + 1);
+      } else {
+        const result = await readListPage<StockRow>(async (from, to) => {
+          const response = await supabase.from("stock")
+            .select("id, qty, items(id, code, name, unit)", { count: "exact" })
+            .eq("warehouse_id", selectedWh.id)
+            .order("updated_at", { ascending: false }).order("id").range(from, to);
+          return { ...response, data: response.data as unknown as StockRow[] | null };
+        }, "Stok gudang", hal);
+        stock = result.rows.map((s) => {
+          const it = one(s.items);
+          return { id: s.id, code: it?.code ?? "—", name: it?.name ?? "—", unit: it?.unit ?? "", qty: Number(s.qty) };
+        });
+        stockCount = result.count;
+        pageInfo = result.pageInfo;
+      }
     } catch (error) { return <ListLoadFailure error={error} label="Stok gudang" />; }
   }
+
+  // Saringan aktif, dibawa oleh tautan halaman, unduhan, dan tombol "tampilkan juga".
+  const whAktif = matrixMode ? "all" : selectedWh?.id ?? "";
+  const saringan = (denganSemua: boolean): Record<string, string> =>
+    ({ wh: whAktif, ...(cari ? { q: cari } : {}), ...(denganSemua ? { semua: "1" } : {}) });
+  const jumlahCocok = matrixMode ? matrix?.items.length ?? 0 : stockCount;
 
   // Unduhan memuat SEMUA barang sesuai saringan, bukan hanya halaman yang tampil.
   const whUnduh = matrixMode ? "all" : selectedWh?.id;
   const unduh = (format: "xlsx" | "csv") =>
-    `/pos/stok/unduh?${new URLSearchParams({ wh: whUnduh ?? "", ...(cari ? { q: cari } : {}), format })}`;
+    `/pos/stok/unduh?${new URLSearchParams({ ...saringan(semua), wh: whUnduh ?? "", format })}`;
   const tombolUnduh = whUnduh ? (
     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
       <span style={{ fontSize: 11, color: "var(--tm)" }}>Unduh semua barang{cari ? " yang cocok" : ""}:</span>
@@ -103,11 +124,31 @@ export default async function StokPage({
             <input className="fi" type="search" name="q" defaultValue={cari} aria-label="Cari barang"
               placeholder="Cari kode atau nama barang…" style={{ flex: "1 1 220px", minWidth: 0 }} autoFocus={!!cari} />
             <button type="submit" className="btn-acc" style={{ fontSize: 11 }}><i className="ti ti-search" /> Tampilkan</button>
-            {cari && <Link href={`/pos/stok?wh=${matrixMode ? "all" : selectedWh?.id ?? ""}`} className="btn-def" style={{ fontSize: 11 }}>Reset</Link>}
+            {semua && <input type="hidden" name="semua" value="1" />}
+            {cari && <Link href={`/pos/stok?wh=${whAktif}`} className="btn-def" style={{ fontSize: 11 }}>Reset</Link>}
             {cari && <span style={{ fontSize: 11, color: "var(--tm)" }}>
-              {(matrixMode ? matrix?.items.length ?? 0 : stockCount).toLocaleString("id-ID")} barang cocok dengan “{cari}”
+              {jumlahCocok.toLocaleString("id-ID")} barang cocok dengan “{cari}”
             </span>}
           </form>
+        )}
+        {/* Yang tampil = barang yang nama/kodenya DIAWALI kata pencarian. Barang yang
+            hanya memuatnya di tengah kata/kode ("RC" di "Curcuma" / kode "DRC…")
+            disembunyikan, tapi selalu bisa dimunculkan dari sini. */}
+        {ringkasCari && ringkasCari.longgar > 0 && ringkasCari.pas > 0 && (
+          <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 8 }}>
+            {ringkasCari.tampilLonggar ? (
+              <>Termasuk {ringkasCari.longgar.toLocaleString("id-ID")} barang yang hanya memuat “{cari}” di tengah nama/kode (ditaruh paling bawah).{" "}
+                <Link href={`/pos/stok?${new URLSearchParams(saringan(false))}`}>Tampilkan yang paling cocok saja</Link></>
+            ) : (
+              <>Yang tampil: nama atau kodenya diawali “{cari}”. Ada {ringkasCari.longgar.toLocaleString("id-ID")} barang lain yang hanya memuat “{cari}” di tengah nama/kode.{" "}
+                <Link href={`/pos/stok?${new URLSearchParams(saringan(true))}`}>Tampilkan juga</Link></>
+            )}
+          </div>
+        )}
+        {ringkasCari && ringkasCari.pas === 0 && ringkasCari.longgar > 0 && (
+          <div style={{ fontSize: 11, color: "var(--tm)", marginTop: 8 }}>
+            Tidak ada nama/kode yang diawali “{cari}” — yang tampil adalah barang yang memuatnya di tengah nama/kode.
+          </div>
         )}
       </div>
 
@@ -150,7 +191,7 @@ export default async function StokPage({
               </tbody>
             </table>
           </div>
-          <ListPagination path="/pos/stok" query={cari ? { wh: "all", q: cari } : { wh: "all" }} total={matrix.items.length} pageInfo={pageInfo} />
+          <ListPagination path="/pos/stok" query={saringan(semua)} total={matrix.items.length} pageInfo={pageInfo} />
         </div>
       )}
 
@@ -171,17 +212,14 @@ export default async function StokPage({
                 <tr><th>Kode</th><th>Nama</th><th>Satuan</th><th style={{ textAlign: "right" }}>Qty</th></tr>
               </thead>
               <tbody>
-                {stock.map((s) => {
-                  const it = one(s.items);
-                  return (
-                    <tr key={s.id}>
-                      <td style={{ fontSize: 11, fontFamily: "var(--mono, monospace)" }}>{it?.code ?? "—"}</td>
-                      <td style={{ fontSize: 11 }}>{it?.name ?? "—"}</td>
-                      <td style={{ fontSize: 11, color: "var(--tm)" }}>{it?.unit ?? "—"}</td>
-                      <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{Number(s.qty).toLocaleString("id-ID")}</td>
-                    </tr>
-                  );
-                })}
+                {stock.map((s) => (
+                  <tr key={s.id}>
+                    <td style={{ fontSize: 11, fontFamily: "var(--mono, monospace)" }}>{s.code}</td>
+                    <td style={{ fontSize: 11 }}>{s.name}</td>
+                    <td style={{ fontSize: 11, color: "var(--tm)" }}>{s.unit || "—"}</td>
+                    <td style={{ textAlign: "right", fontSize: 11, fontWeight: 600 }}>{s.qty.toLocaleString("id-ID")}</td>
+                  </tr>
+                ))}
                 {stock.length === 0 && (
                   <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--td)", padding: "16px 0", fontSize: 11 }}>{cari ? `Tidak ada barang yang cocok dengan “${cari}” di gudang ini.` : "Belum ada stok di gudang ini. Stok akan bertambah lewat penerimaan pembelian, pemindahan masuk, atau penyesuaian stok."}</td></tr>
                 )}
@@ -189,7 +227,7 @@ export default async function StokPage({
             </table>
           </div>
         )}
-        {selectedWh && <ListPagination path="/pos/stok" query={cari ? { wh: selectedWh.id, q: cari } : { wh: selectedWh.id }} total={stockCount} pageInfo={pageInfo} />}
+        {selectedWh && <ListPagination path="/pos/stok" query={saringan(semua)} total={stockCount} pageInfo={pageInfo} />}
       </div>
       )}
 
