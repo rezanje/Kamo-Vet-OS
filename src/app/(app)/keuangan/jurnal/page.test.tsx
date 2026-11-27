@@ -71,3 +71,29 @@ it("does not offer a source schedule from voided journals", async () => {
   const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ entry: ENTRY }) }));
   expect(html).not.toContain("Buat jadwal dari jurnal");
 });
+
+// Permintaan klinik 27 Nov 2026: form edit jurnal dibuka selebar tabel (baris tersendiri), bukan di kolom Tindakan.
+const barisKoreksi = (html: string) => html.match(/<tr[^>]*data-testid="jurnal-koreksi-baris"[^>]*>/g) ?? [];
+
+it("gives a correctable manual journal a full-width edit row, closed until its button is pressed", async () => {
+  fixture.role = "OWNER";
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ entry: ENTRY }) }));
+  expect(html).toContain("Edit jurnal manual");
+  expect(barisKoreksi(html)).toHaveLength(1);
+  expect(barisKoreksi(html)[0]).toContain(`id="koreksi-jurnal-${ENTRY}"`);
+  expect(barisKoreksi(html)[0]).toContain("hidden");
+  expect(html).toContain(`aria-controls="koreksi-jurnal-${ENTRY}"`);
+  expect(html).toMatch(/data-testid="jurnal-koreksi-baris"[^>]*><td colSpan="9"/);
+});
+
+it("offers no edit row to roles that may not correct, nor on voided or non-manual journals", async () => {
+  const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ entry: ENTRY }) })); // FINANCE
+  expect(html).not.toContain("Edit jurnal manual");
+  expect(barisKoreksi(html)).toHaveLength(0);
+
+  fixture.role = "OWNER";
+  fixture.entries = [journal(ENTRY, "manual", null, "2026-10-21T00:00:00Z")];
+  expect(barisKoreksi(renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ entry: ENTRY }) })))).toHaveLength(0);
+  fixture.entries = [journal(ENTRY, "sale")];
+  expect(barisKoreksi(renderToStaticMarkup(await Page({ searchParams: Promise.resolve({ entry: ENTRY }) })))).toHaveLength(0);
+});
