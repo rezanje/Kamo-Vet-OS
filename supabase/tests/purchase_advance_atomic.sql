@@ -81,19 +81,30 @@ insert into branches(id,code,name,type,is_active)values('d6100000-0000-4000-8000
 insert into coa_accounts(code,name,type,normal_balance)values('1197','Fiction other cash','ASET','D');
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id,is_active)values('d6700000-0000-4000-8000-000000000002','Fiction other bank','Bank','1197','d6100000-0000-4000-8000-000000000002',true);
 set local role authenticated;
-do $$declare failed boolean:=false;begin
- begin perform pay_purchase_advance_atomic('wrong-bank','UM.QA.',5,'d6300000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-000000000003',current_date,1,'Transfer','d6700000-0000-4000-8000-000000000002',null);exception when insufficient_privilege then failed:=true;end;
- if not failed then raise exception 'cross-branch account accepted';end if;
+reset role;
+savepoint foreign_branch_dp;
+set local role authenticated;
+-- Any ACTIVE account of another branch may pay the DP; the journal stays in the PO branch and credits the chosen account.
+do $$declare receipt jsonb;begin
+ receipt:=pay_purchase_advance_atomic('wrong-bank','UM.QA.',5,'d6300000-0000-4000-8000-000000000001','d6400000-0000-4000-8000-000000000003',current_date,1,'Transfer','d6700000-0000-4000-8000-000000000002',null);
+ if (select branch_id from journal_entries where id=(receipt->>'journal_id')::uuid) is distinct from 'd6100000-0000-4000-8000-000000000001'::uuid then raise exception 'foreign-branch bank moved the PO advance journal out of the PO branch';end if;
+ if not exists(select 1 from journal_lines l join coa_accounts c on c.id=l.account_id where l.entry_id=(receipt->>'journal_id')::uuid and c.code='1197' and l.credit=1) then raise exception 'foreign-branch bank was not credited';end if;
+ -- Cancelling it re-checks the source account through the same scope function and must still work.
+ perform cancel_purchase_advance_atomic((receipt->>'advance_id')::uuid,current_date,'Wrong bank');
+ if not exists(select 1 from journal_entries j join journal_lines l on l.entry_id=j.id join coa_accounts c on c.id=l.account_id where j.source='purchase-advance-void' and j.branch_id='d6100000-0000-4000-8000-000000000001' and c.code='1197' and l.debit=1) then raise exception 'foreign-branch DP cancellation did not return the cash to the same account and branch';end if;
 end$$;
 reset role;
+rollback to foreign_branch_dp;
 -- Optional-PO DP must keep working under the existing operational branch context.
 set local request.headers='{"x-kamo-operational-branch":"d6100000-0000-4000-8000-000000000001"}';
 set local role authenticated;
 do $$declare receipt jsonb;failed boolean:=false;begin
  receipt:=pay_purchase_advance_atomic('unbound-context','UM.QA.',5,'d6300000-0000-4000-8000-000000000001',null,current_date,700000,'Transfer','d6700000-0000-4000-8000-000000000001',null);
  if (select branch_id from journal_entries where id=(receipt->>'journal_id')::uuid) is distinct from 'd6100000-0000-4000-8000-000000000001'::uuid then raise exception 'unbound selected branch was lost';end if;
- begin perform pay_purchase_advance_atomic('unbound-wrong-bank','UM.QA.',5,'d6300000-0000-4000-8000-000000000001',null,current_date,1,'Transfer','d6700000-0000-4000-8000-000000000002',null);exception when insufficient_privilege then failed:=true;end;
- if not failed then raise exception 'unbound advance crossed operational branch';end if;
+ -- A foreign-branch bank no longer blocks the DP: it posts to the selected operational branch and credits the chosen account.
+ receipt:=pay_purchase_advance_atomic('unbound-wrong-bank','UM.QA.',5,'d6300000-0000-4000-8000-000000000001',null,current_date,1,'Transfer','d6700000-0000-4000-8000-000000000002',null);
+ if (select branch_id from journal_entries where id=(receipt->>'journal_id')::uuid) is distinct from 'd6100000-0000-4000-8000-000000000001'::uuid then raise exception 'foreign-branch bank moved the unbound DP out of the selected operational branch';end if;
+ if not exists(select 1 from journal_lines l join coa_accounts c on c.id=l.account_id where l.entry_id=(receipt->>'journal_id')::uuid and c.code='1197' and l.credit=1) then raise exception 'foreign-branch bank was not credited for the unbound DP';end if;
 end$$;
 reset role;set local request.headers='{}';set local role authenticated;
 do $$declare receipt jsonb;begin

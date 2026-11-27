@@ -7,7 +7,7 @@ insert into branches(id,code,name,type) values('ed100000-0000-4000-8000-00000000
 insert into warehouses(id,branch_id,code,name,type) values('ed200000-0000-4000-8000-000000000001','ed100000-0000-4000-8000-000000000001','PAY-WH','Payment warehouse','VET');
 insert into suppliers(id,nama) values('ed300000-0000-4000-8000-000000000001','Fiction supplier');
 insert into items(id,code,name,unit,item_type) values('ed400000-0000-4000-8000-000000000001','PAY-SKU','Fiction goods','pcs','Persediaan');
-insert into purchase_orders(id,no_po,supplier_id,branch_id,to_warehouse_id,status) values('ed500000-0000-4000-8000-000000000001','PO.PAY.FIC','ed300000-0000-4000-8000-000000000001','ed100000-0000-4000-8000-000000000001','ed200000-0000-4000-8000-000000000001','Dipesan');
+insert into purchase_orders(id,no_po,supplier_id,branch_id,to_warehouse_id,status,total) values('ed500000-0000-4000-8000-000000000001','PO.PAY.FIC','ed300000-0000-4000-8000-000000000001','ed100000-0000-4000-8000-000000000001','ed200000-0000-4000-8000-000000000001','Dipesan',1000);
 insert into purchase_order_items(id,po_id,item_id,nama,qty,harga_beli,satuan,faktor) values('ed600000-0000-4000-8000-000000000001','ed500000-0000-4000-8000-000000000001','ed400000-0000-4000-8000-000000000001','Fiction goods',10,100,'pcs',1);
 insert into coa_accounts(code,name,type,normal_balance) values('170001','Fiction inventory','ASET','D'),('311001','Fiction payable','LIABILITAS','K'),('130009','Fiction VAT input','ASET','D'),('110209','Fiction bank account','ASET','D') on conflict(code) do update set is_active=true,is_header=false;
 update coa_accounts set is_active=true,is_header=false where code in('170001','160001','311003','110003','120002');
@@ -126,9 +126,25 @@ select pg_temp.expect_error(format('select pay_purchase_payment_order_atomic(%L,
 reset role;
 update cash_accounts set is_active=true,branch_id='ed100000-0000-4000-8000-000000000002' where id='ed700000-0000-4000-8000-000000000001';
 set local role authenticated;
-select pg_temp.expect_error(format('select pay_purchase_invoice_atomic(%L,%L,current_date,1,%L,null,null,null)','mapped-cross-branch',result->>'invoice_id','Transfer'),'sesuai cabang') from payment_test_results where name='invoice';
-select pg_temp.expect_error(format('select recover_purchase_payment(%L,%L::jsonb)','mapped-pay',result),'sesuai cabang') from payment_test_results where name='mapped-payload';
-select pg_temp.expect_error(format('select pay_purchase_payment_order_atomic(%L,%L,current_date,%L,null,1)','mapped-order-pay',result->>'order_id','Transfer'),'sesuai cabang') from payment_test_results where name='mapped-order';
+reset role;
+-- Any ACTIVE account of another branch can now pay (mapped and explicit), replay and recover; the journal stays in the invoice branch.
+savepoint foreign_branch_ok;
+set local role authenticated;
+insert into payment_test_results select 'foreign-mapped',pay_purchase_invoice_atomic('foreign-mapped',(result->>'invoice_id')::uuid,current_date,1,'Transfer',null,null,null) from payment_test_results where name='invoice';
+insert into payment_test_results select 'foreign-explicit',pay_purchase_invoice_atomic('foreign-explicit',(result->>'invoice_id')::uuid,current_date,2,'Transfer',null,'ed700000-0000-4000-8000-000000000001',null) from payment_test_results where name='invoice';
+select recover_purchase_payment('mapped-pay',result) from payment_test_results where name='mapped-payload';
+select pay_purchase_payment_order_atomic('mapped-order-pay',(result->>'order_id')::uuid,current_date,'Transfer',null,1) from payment_test_results where name='mapped-order';
+do $$begin
+ if (select count(*) from journal_entries j where j.source='purchase-pay' and j.branch_id='ed100000-0000-4000-8000-000000000001' and j.id in(select (result->>'journal_id')::uuid from payment_test_results where name in('foreign-mapped','foreign-explicit')))<>2 then raise exception 'Foreign-branch payment journal not in the invoice branch';end if;
+ if (select count(*) from journal_lines l join coa_accounts a on a.id=l.account_id where a.code='110209' and l.credit>0 and l.entry_id in(select (result->>'journal_id')::uuid from payment_test_results where name in('foreign-mapped','foreign-explicit')))<>2 then raise exception 'Foreign-branch payment did not credit the chosen account';end if;
+end$$;
+-- Cancellation (which re-checks the source account through the same scope function) still works.
+select cancel_purchase_payment((result->>'payment_id')::uuid,0,'foreign-cancel','Wrong bank account') from payment_test_results where name='foreign-explicit';
+do $$begin
+ if not exists(select 1 from journal_lines l join coa_accounts a on a.id=l.account_id join journal_entries j on j.id=l.entry_id where j.source='purchase-pay-void' and a.code='110209' and l.debit=2 and j.branch_id='ed100000-0000-4000-8000-000000000001') then raise exception 'Foreign-branch cancellation did not reverse onto the same account and branch';end if;
+end$$;
+reset role;
+rollback to foreign_branch_ok;
 reset role;
 update cash_accounts set branch_id='ed100000-0000-4000-8000-000000000001' where id='ed700000-0000-4000-8000-000000000001';
 -- Reopen this small order, then test a fresh mapped order payment, not only idempotent replay.
@@ -141,9 +157,40 @@ select pg_temp.expect_error(format('select pay_purchase_payment_order_atomic(%L,
 reset role;
 update cash_accounts set is_active=true,branch_id='ed100000-0000-4000-8000-000000000002' where id='ed700000-0000-4000-8000-000000000001';
 set local role authenticated;
-select pg_temp.expect_error(format('select pay_purchase_payment_order_atomic(%L,%L,current_date,%L,null,3)','mapped-order-new-branch',result->>'order_id','Transfer'),'sesuai cabang') from payment_test_results where name='mapped-order';
+reset role;
+savepoint foreign_order_ok;
+set local role authenticated;
+insert into payment_test_results select 'foreign-order',pay_purchase_payment_order_atomic('mapped-order-new-branch',(result->>'order_id')::uuid,current_date,'Transfer',null,3) from payment_test_results where name='mapped-order';
+do $$begin
+ if not exists(select 1 from journal_entries j join journal_lines l on l.entry_id=j.id join coa_accounts a on a.id=l.account_id where j.id=(select (result->>'journal_id')::uuid from payment_test_results where name='foreign-order') and j.branch_id='ed100000-0000-4000-8000-000000000001' and a.code='110209' and l.credit>0) then raise exception 'Foreign-branch order payment not posted to invoice branch / chosen account';end if;
+end$$;
+reset role;
+rollback to foreign_order_ok;
 reset role;
 update cash_accounts set branch_id='ed100000-0000-4000-8000-000000000001' where id='ed700000-0000-4000-8000-000000000001';
+-- A foreign-branch account is still refused when inactive, missing, a header, or not an asset account.
+savepoint foreign_still_refused;
+insert into coa_accounts(code,name,type,normal_balance,is_header) values('110211','Fiction foreign header','ASET','D',true),('110212','Fiction foreign liability','LIABILITAS','K',false),('110213','Fiction foreign inactive','ASET','D',false);
+insert into cash_accounts(id,nama,jenis,coa_code,branch_id,is_active) values('ed700000-0000-4000-8000-000000000011','Foreign header','Bank','110211','ed100000-0000-4000-8000-000000000002',true),('ed700000-0000-4000-8000-000000000012','Foreign liability','Bank','110212','ed100000-0000-4000-8000-000000000002',true),('ed700000-0000-4000-8000-000000000013','Foreign inactive','Bank','110213','ed100000-0000-4000-8000-000000000002',false);
+set local role authenticated;
+select pg_temp.expect_error(format('select pay_purchase_invoice_atomic(%L,%L,current_date,1,%L,null,%L,null)','foreign-header',result->>'invoice_id','Transfer','ed700000-0000-4000-8000-000000000011'),'bukan akun rincian aset') from payment_test_results where name='invoice';
+select pg_temp.expect_error(format('select pay_purchase_invoice_atomic(%L,%L,current_date,1,%L,null,%L,null)','foreign-liability',result->>'invoice_id','Transfer','ed700000-0000-4000-8000-000000000012'),'bukan akun rincian aset') from payment_test_results where name='invoice';
+select pg_temp.expect_error(format('select pay_purchase_invoice_atomic(%L,%L,current_date,1,%L,null,%L,null)','foreign-inactive',result->>'invoice_id','Transfer','ed700000-0000-4000-8000-000000000013'),'Rekening pembayaran tidak aktif atau tidak ditemukan') from payment_test_results where name='invoice';
+select pg_temp.expect_error(format('select pay_purchase_invoice_atomic(%L,%L,current_date,1,%L,null,%L,null)','foreign-missing',result->>'invoice_id','Transfer','ed7ffff0-0000-4000-8000-000000000099'),'Rekening pembayaran tidak aktif atau tidak ditemukan') from payment_test_results where name='invoice';
+reset role;
+-- The scope function itself (payment and cash helpers repeat the COA check with the same text, so test it directly).
+select pg_temp.expect_error('select public.purchase_payment_scope(''ed100000-0000-4000-8000-000000000001'',''ed700000-0000-4000-8000-000000000011'')','bukan akun rincian aset');
+select pg_temp.expect_error('select public.purchase_payment_scope(''ed100000-0000-4000-8000-000000000001'',''ed700000-0000-4000-8000-000000000012'')','bukan akun rincian aset');
+select pg_temp.expect_error('select public.purchase_payment_scope(''ed100000-0000-4000-8000-000000000001'',''ed700000-0000-4000-8000-000000000013'')','tidak aktif atau tidak ditemukan');
+select pg_temp.expect_error('select public.purchase_payment_scope(''ed100000-0000-4000-8000-000000000001'',''ed7ffff0-0000-4000-8000-000000000099'')','tidak aktif atau tidak ditemukan');
+update cash_accounts set branch_id='ed100000-0000-4000-8000-000000000002' where id='ed700000-0000-4000-8000-000000000001';
+select public.purchase_payment_scope('ed100000-0000-4000-8000-000000000001','ed700000-0000-4000-8000-000000000001');
+select public.purchase_payment_scope('ed100000-0000-4000-8000-000000000001',null);
+-- The invoice branch itself must still be accessible to the actor (only the ACCOUNT's branch stopped mattering).
+select set_config('request.headers','{"x-kamo-operational-branch":"ed100000-0000-4000-8000-000000000002"}',true);
+select pg_temp.expect_error('select public.purchase_payment_scope(''ed100000-0000-4000-8000-000000000001'',''ed700000-0000-4000-8000-000000000001'')','Cabang tidak dapat diakses');
+select set_config('request.headers','{}',true);
+rollback to foreign_still_refused;
 insert into coa_accounts(code,name,type,normal_balance) values('110210','Fiction replacement bank','ASET','D');
 insert into cash_accounts(id,nama,jenis,coa_code,branch_id) values('ed700000-0000-4000-8000-000000000002','New mapped account','Bank','110210','ed100000-0000-4000-8000-000000000001');
 update payment_account_map set cash_account_id='ed700000-0000-4000-8000-000000000002' where metode='Transfer' and branch_id='ed100000-0000-4000-8000-000000000001';
@@ -210,7 +257,10 @@ set local role authenticated;
 select pg_temp.expect_error(format('select cancel_purchase_payment(%L,0,%L,%L)',result->>'payment_id','advance-cancel','Wrong advance allocation'),'Cabang') from payment_test_results where name='advance';
 reset role;
 update branches set is_active=true where id='ed100000-0000-4000-8000-000000000001';
+-- role_modules is guarded (role_settings config_guard): write it as the native DBA, i.e. with no JWT identity.
+select set_config('request.jwt.claim.role','',true),set_config('request.jwt.claim.sub','',true);
 insert into role_modules(role,module_id) values('FINANCE','pembelian') on conflict do nothing;
+select set_config('request.jwt.claim.role','authenticated',true),set_config('request.jwt.claim.sub','ed000000-0000-4000-8000-000000000001',true);
 set local role authenticated;
 select set_config('request.jwt.claim.sub','ed000000-0000-4000-8000-000000000002',true);
 select pg_temp.expect_error(format('select pay_purchase_invoice_atomic(%L,%L,current_date,1,%L,null,null,null)','module-denied',result->>'invoice_id','Transfer'),'Kas & Bank') from payment_test_results where name='invoice';
