@@ -85,6 +85,25 @@ describe("invoice gabungan: isi dokumen", () => {
     expect(h).toMatch(/data-total-semua[^>]*>Rp 225\.500</); expect(t).toContain("Dibayar Rp 225.500");
   });
 
+  it("kasir yang tidak tercatat ditulis apa adanya, tidak ditebak dari dokter", async () => {
+    tabel.invoices[0] = { ...tabel.invoices[0], cashier_name: null }; pasang();
+    const m = teks(bagian(await render(), "v1"));
+    expect(m).toContain("Kasir: Kasir belum tercatat"); expect(m).not.toContain("Kasir: drh. Fiktif");
+  });
+
+  it("promo per barang tampil di bawah barangnya; 'Diskon transaksi' hanya sisanya; total tidak berubah", async () => {
+    tabel.invoice_promo_lines = [{ id: "pl1", invoice_id: "i2", item_id: "it-l2", promo_name: "Promo Fiktif Grooming", potongan: 15000, created_at: "2026-11-27T04:31:00Z" }]; pasang();
+    const h = await render(); const g = teks(bagian(h, "v2"));
+    expect(g).toContain("Promo Fiktif Grooming"); expect(g).toContain("- Rp 15.000");
+    expect(g).toContain("Diskon transaksi - Rp 5.000"); expect(g).toContain("Subtotal Rp 105.000");
+    expect(g).toContain("Total INV-202611-0102 Rp 100.000");
+    expect(h).toMatch(/data-total-semua[^>]*>Rp 225\.500</);
+  });
+
+  it("tiap bagian hewan tidak terpotong di tengah halaman saat dicetak", async () => {
+    expect(await render()).toContain("[data-bagian-hewan] { break-inside: avoid; }");
+  });
+
   it("hewan yang belum ditagih tetap tampil sebagai bagian kosong dan dokumen memperingatkan", async () => {
     tabel.visits.push({ id: "v4", customer_id: "cust-1", branch_id: CAB_A, created_at: "2026-11-27T03:30:00Z", archived_at: null, pet_id: "pet-9", poli: "Poli Umum", doctor_id: null, dokter: null });
     pasang();
