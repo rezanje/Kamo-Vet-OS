@@ -135,6 +135,17 @@ describe("invoice gabungan: siapa yang ikut (rombongan sama dengan struk gabunga
     expect(h).toMatch(/data-total-semua[^>]*>Rp 225\.500</); expect(t).toContain("3 invoice");
   });
 
+  it("tanggal dokumen memakai hari WIB: kunjungan 20:00 UTC (03:00 WIB) jatuh di hari berikutnya, dan rombongannya ikut hari itu", async () => {
+    tabel.visits = tabel.visits.map((v, i) => ({ ...v, created_at: `2026-11-27T20:${String(i * 10).padStart(2, "0")}:00Z` }));
+    tabel.visits.push({ id: "vz", customer_id: "cust-1", branch_id: CAB_A, created_at: "2026-11-27T10:00:00Z", archived_at: null, pet_id: "pet-9", poli: "Poli Umum", doctor_id: null, dokter: null });
+    tabel.invoices.push({ ...tabel.invoices[0], id: "iz", invoice_no: "INV-X-HARI-SEBELUMNYA-WIB", visit_id: "vz", subtotal: 7000, total: 7000 });
+    tabel.invoice_items.push({ ...tabel.invoice_items[0], id: "lz", invoice_id: "iz", deskripsi: "Jasa hari sebelumnya", qty: 1, harga: 7000 });
+    pasang();
+    const h = await render(); const t = teks(h);
+    expect(t).toContain("28 November 2026"); expect(t).not.toContain("27 November 2026");
+    expect(t).not.toContain("INV-X-HARI-SEBELUMNYA-WIB"); expect(t).toContain("3 pasien · 3 invoice");
+  });
+
   it("hanya kunjungan pemilik yang sama, cabang yang sama, hari yang sama, dan tidak diarsipkan", async () => {
     const tambah = (id: string, extra: Record<string, unknown>, no: string) => {
       tabel.visits.push({ id, customer_id: "cust-1", branch_id: CAB_A, created_at: "2026-11-27T03:40:00Z", archived_at: null, pet_id: "pet-9", poli: "Poli Umum", doctor_id: null, dokter: null, ...extra });
