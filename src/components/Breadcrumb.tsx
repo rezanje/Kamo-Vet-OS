@@ -7,6 +7,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { BackLink } from "@/components/BackLink";
 import { MODULE_LABEL, MODULES } from "@/lib/nav";
 import { daftarMenu } from "@/lib/cari-global";
 
@@ -40,7 +41,9 @@ export function Breadcrumb() {
       : idMentah(part) ? "Detail" : (labelPerHref.get(href) ?? cantik(part));
     // Ruas terakhir = halaman yang sedang dibuka; tidak perlu ditautkan ke dirinya.
     const bolehKlik = adaHalaman.has(href) && i < parts.length - 1;
-    return { href, label, bolehKlik, terakhir: i === parts.length - 1 };
+    // Ruas induk di dalam modul = jalan kembali ke daftar asal: bawa filter/halaman terakhir (BackLink).
+    // Akar modul tetap tautan polos.
+    return { href, label, bolehKlik, terakhir: i === parts.length - 1, Tautan: i === 0 ? Link : BackLink };
   });
 
   return (
@@ -54,14 +57,14 @@ export function Breadcrumb() {
           <span style={{ color: "var(--tx)", fontWeight: 500 }}>Dashboard</span>
         </>
       ) : (
-        ruas.map((r) => (
+        ruas.map(({ Tautan, ...r }) => (
           <span key={r.href} style={{ display: "contents" }}>
             <span>/</span>
             {r.bolehKlik ? (
-              <Link href={r.href} prefetch={false}
+              <Tautan href={r.href} prefetch={false}
                 style={{ color: "var(--tx)", fontWeight: 500, textDecoration: "none", borderBottom: "1px dotted var(--td)" }}>
                 {r.label}
-              </Link>
+              </Tautan>
             ) : (
               <span style={r.terakhir
                 ? { color: "var(--acc)" }

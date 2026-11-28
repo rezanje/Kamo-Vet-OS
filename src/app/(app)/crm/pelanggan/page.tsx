@@ -19,10 +19,10 @@ const kolomSembunyiBelumAda = (error: { code?: string; message?: string } | null
   !!error && (error.code === "42703" || error.code === "PGRST204" || /hidden_/.test(error.message ?? ""));
 
 export default async function PelangganPage({ searchParams }: {
-  searchParams: Promise<{ cari?: string; hal?: string; success?: string; error?: string; tersembunyi?: string; tidak_datang?: string }>;
+  searchParams: Promise<{ cari?: string; hal?: string; success?: string; error?: string; tersembunyi?: string; tidak_datang?: string; pilih?: string }>;
 }) {
   // `cari` datang dari kotak cari halaman ini atau pencarian global di topbar.
-  const { cari, hal, success, error: pesanError, tersembunyi, tidak_datang } = await searchParams;
+  const { cari, hal, success, error: pesanError, tersembunyi, tidak_datang, pilih } = await searchParams;
   // D2: ?tidak_datang=N -> hanya pelanggan yang terakhir datang lebih dari N bulan lalu (fungsi database lintas cabang).
   const bulanRetensi = bacaBulanRetensi(tidak_datang);
   const retensiStatus = { aktif: bulanRetensi !== null };
@@ -116,7 +116,7 @@ export default async function PelangganPage({ searchParams }: {
         </div>
       )}
       <PelangganClient
-        cariAwal={cari ?? ""} customers={enriched} isAdmin={isAdmin} bolehPoinManual={bolehPoinManual} retensi={retensi} hanyaTersembunyi={hanyaTersembunyi}
+        cariAwal={cari ?? ""} pilihAwal={pilih} customers={enriched} isAdmin={isAdmin} bolehPoinManual={bolehPoinManual} retensi={retensi} hanyaTersembunyi={hanyaTersembunyi}
         categories={categories} statusUlasan={statusUlasan}
         total={total} stats={stats} halaman={pageInfo}
       />

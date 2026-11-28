@@ -23,9 +23,10 @@ type Req = {
 export default async function PersediaanKasirPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; success?: string; trm?: string; selisih?: string; error?: string }>;
+  searchParams: Promise<{ tab?: string; success?: string; trm?: string; selisih?: string; error?: string; status?: string; dari?: string; sampai?: string; cari?: string; hal?: string }>;
 }) {
-  const { tab: tabParam, success, trm, selisih, error } = await searchParams;
+  const { tab: tabParam, success, trm, selisih, error, status, dari, sampai, cari, hal } = await searchParams;
+  const filterAwal = { status, dari, sampai, cari, hal };
   const tab = tabParam === "penerimaan" ? "penerimaan" : "permintaan";
 
   const supabase = await createClient();
@@ -104,8 +105,8 @@ export default async function PersediaanKasirPage({
 
       <div className="crm-sec">
         {tab === "permintaan"
-          ? <PersediaanTable rows={permintaanRows} tab="permintaan" />
-          : <PersediaanTable rows={penerimaanRows} tab="penerimaan" />}
+          ? <PersediaanTable rows={permintaanRows} tab="permintaan" awal={filterAwal} />
+          : <PersediaanTable rows={penerimaanRows} tab="penerimaan" awal={filterAwal} />}
       </div>
     </>
   );

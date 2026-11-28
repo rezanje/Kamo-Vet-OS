@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { filterDariAlamat, queryDenganFilter, type PersediaanFilterAwal } from "@/lib/persediaan-filter";
 
 export type PersRow = {
   id: string;
@@ -30,12 +31,13 @@ const isoDay = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
 const PAGE_SIZE = 8;
 
-export function PersediaanTable({ rows, tab }: { rows: PersRow[]; tab: "permintaan" | "penerimaan" }) {
-  const [status, setStatus] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [q, setQ] = useState("");
-  const [page, setPage] = useState(1);
+export function PersediaanTable({ rows, tab, awal }: { rows: PersRow[]; tab: "permintaan" | "penerimaan"; awal?: PersediaanFilterAwal }) {
+  const mula = useMemo(() => filterDariAlamat(awal, STATUS.map((s) => s.k)), [awal]);
+  const [status, setStatus] = useState(mula.status);
+  const [from, setFrom] = useState(mula.from);
+  const [to, setTo] = useState(mula.to);
+  const [q, setQ] = useState(mula.q);
+  const [page, setPage] = useState(mula.page);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -56,6 +58,12 @@ export function PersediaanTable({ rows, tab }: { rows: PersRow[]; tab: "perminta
   const colCount = 8; // No, Tanggal, Dari, Tujuan, Total Item, Status, Dibuat Oleh, Aksi
 
   const reset = () => setPage(1);
+
+  // Cerminkan filter ke alamat (tanpa memuat ulang halaman) supaya Kembali dari detail membukanya persis seperti terakhir.
+  useEffect(() => {
+    const baru = queryDenganFilter(window.location.search, { status, from, to, q, page: safePage });
+    if (baru !== window.location.search) window.history.replaceState(window.history.state, "", `${window.location.pathname}${baru}${window.location.hash}`);
+  }, [status, from, to, q, safePage]);
 
   return (
     <>

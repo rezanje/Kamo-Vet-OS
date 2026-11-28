@@ -83,7 +83,7 @@ describe("BackLink", () => {
 describe("menu samping dan tab TIDAK memulihkan filter (hanya BackLink)", () => {
   const src = (p: string) => fs.readFileSync(path.join(process.cwd(), p), "utf8");
   it("Sidebar, PageTabs, ReportCatalog dan IngatPosisiHalaman tidak memakai back-state/BackLink", () => {
-    for (const f of ["src/components/Sidebar.tsx", "src/components/PageTabs.tsx", "src/components/ReportCatalog.tsx", "src/components/IngatPosisiHalaman.tsx", "src/components/Breadcrumb.tsx"]) {
+    for (const f of ["src/components/Sidebar.tsx", "src/components/PageTabs.tsx", "src/components/ReportCatalog.tsx", "src/components/IngatPosisiHalaman.tsx"]) {
       const text = src(f);
       expect(text, f).not.toMatch(/back-state|BackLink|JejakDaftar/);
     }
