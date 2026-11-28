@@ -69,7 +69,8 @@ export async function SetoranDaftarView({ basis, sp }: { basis: BasisSetoran; sp
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <div><div className="pg-hd">Rekap Setoran</div><div className="pg-sub">Kewajiban setoran per periode, pengeluaran dari dana setoran, dan penutupan oleh Finance</div></div>
+      <div><div className="pg-hd">Rekap Setoran</div><div className="pg-sub">Kewajiban setoran per periode, pengeluaran dari dana setoran, dan penutupan oleh Finance</div>
+        {akses.penyetuju && <div style={{ marginTop: 6, fontSize: 13 }}><Link href="/kas-bank/setoran/riwayat" data-testid="tautan-riwayat">Riwayat Setoran (per hari, kas toko) →</Link> <span style={{ fontSize: 11.5, color: "var(--tm)" }}>tampilan awal, hanya lihat</span></div>}</div>
       {galat && <div className="p2ban" role="alert" style={{ background: "#fef2f2", borderColor: "#fecaca", color: "#991b1b" }}>{galat}</div>}
       {sp.success && <div className="p2ban" role="status">{sp.success}</div>}
 
